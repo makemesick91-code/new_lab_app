@@ -44,4 +44,16 @@ class DeviceProofMessageTest {
             DeviceProofMessage.build(DeviceProofMessage.PURPOSE_DEVICE_PROOF, "n", "fp"),
         )
     }
+
+    @Test
+    fun `the doctor login purpose is distinct from the device proof purpose`() {
+        // The purpose is part of the signed bytes. If these two ever collided,
+        // a signature captured from one flow would verify in the other.
+        assertNotEquals(DeviceProofMessage.PURPOSE_DEVICE_PROOF, DeviceProofMessage.PURPOSE_DOCTOR_LOGIN)
+
+        assertNotEquals(
+            DeviceProofMessage.build(DeviceProofMessage.PURPOSE_DEVICE_PROOF, "n", "f"),
+            DeviceProofMessage.build(DeviceProofMessage.PURPOSE_DOCTOR_LOGIN, "n", "f"),
+        )
+    }
 }

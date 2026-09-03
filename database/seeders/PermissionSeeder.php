@@ -176,6 +176,16 @@ class PermissionSeeder extends Seeder
         // the global Gate::before, exactly like view_developer_console.
         'view_doctor_devices',
         'manage_doctor_devices',
+        // REVISION-DOCTOR-AUTO-DEVICE-APPROVAL-APP-ONLY-LOGIN-1 —
+        // Approval → Approval Device Dokter.
+        //
+        // A SEPARATE authority from the device registry above: this is the
+        // operational "may this doctor use this device?" inbox, not physical
+        // hardware security administration. RoleSeeder grants BOTH to
+        // Supervisor RME (and to no other role); Super Admin reaches them via
+        // the global Gate::before, as with every permission.
+        'view_doctor_device_authorizations',
+        'manage_doctor_device_authorizations',
         // SATUSEHAT-1 — Readiness foundation & controlled submission filter.
         // Separate view/review/send + mapping/settings governance permissions.
         // send is intentionally very restricted (no auto-send exists yet).

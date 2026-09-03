@@ -23,6 +23,20 @@ class DoctorDevice extends Model
     /** Currently trusted, and eligible for a future enforcement phase. */
     public const STATUS_ACTIVE = 'active';
 
+    /**
+     * REVISION-DOCTOR-AUTO-DEVICE-APPROVAL-APP-ONLY-LOGIN-1 — auto-provisioned
+     * hardware that has proved possession of its key but that no administrator
+     * has admitted yet.
+     *
+     * STRICTLY LESS PRIVILEGED THAN EVERY STATUS THAT CAME BEFORE IT. Nothing
+     * that was denied in Phase 3 becomes permitted: `isActive()` is false, so
+     * the proof endpoint, `isTrustworthy()` and login-ticket minting all still
+     * refuse it. It exists so the first doctor login can register the tablet
+     * without also trusting it, which is what lets one operator decision cover
+     * both the device and the doctor.
+     */
+    public const STATUS_PENDING_APPROVAL = 'pending_approval';
+
     /** Temporarily withdrawn. May be reactivated. */
     public const STATUS_DISABLED = 'disabled';
 
@@ -30,6 +44,7 @@ class DoctorDevice extends Model
     public const STATUS_REVOKED = 'revoked';
 
     public const STATUSES = [
+        self::STATUS_PENDING_APPROVAL,
         self::STATUS_ACTIVE,
         self::STATUS_DISABLED,
         self::STATUS_REVOKED,
@@ -139,6 +154,15 @@ class DoctorDevice extends Model
         return $this->status === self::STATUS_DISABLED;
     }
 
+    /**
+     * Registered by a proven device, not yet admitted by a human. Never trusted:
+     * `isActive()` is deliberately false for this status.
+     */
+    public function isPendingApproval(): bool
+    {
+        return $this->status === self::STATUS_PENDING_APPROVAL;
+    }
+
     /** Terminal. A revoked device is never restored to trust. */
     public function isRevoked(): bool
     {
@@ -166,6 +190,15 @@ class DoctorDevice extends Model
     public function enrollments(): HasMany
     {
         return $this->hasMany(DoctorDeviceEnrollment::class, 'doctor_device_id');
+    }
+
+    /**
+     * Which doctors may use this device. One physical tablet legitimately
+     * serves several doctors, so this is a collection, not a column.
+     */
+    public function authorizations(): HasMany
+    {
+        return $this->hasMany(DoctorDeviceAuthorization::class, 'doctor_device_id');
     }
 
     public function verifiedBy(): BelongsTo

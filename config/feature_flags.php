@@ -391,6 +391,22 @@ $registry = [
             'rollback_action' => 'Set the env override to false and clear the config cache; every legacy upload/processing/retry/review/publish/void/branch-admission path is refused again, so no new evidence can enter or leave the archive. Nothing is deleted — the schema, already imported staging rows, published legacy records and their files on the private disk all stay exactly as they are. LEGACY-RME-PDF-HISTORY-1A: this rollback stops MUTATIONS, it does not hide already-published evidence — an authorized clinical reader keeps reading a published archive, which is deliberate so a rollback never removes a patient medical history from the doctor treating them. To contain a READ incident use the mechanisms built for it: revoke view_legacy_rme_archive / view_legacy_rme_imports from the affected actors, and/or VOID the offending record, which stops its bytes streaming immediately while preserving it as auditable evidence.',
         ],
 
+        // --- REVISION-DOCTOR-AUTO-DEVICE-APPROVAL-APP-ONLY-LOGIN-1 —
+        //     doctor trusted-device enforcement (capability shipped, stays OFF) ---
+
+        'doctor.trusted_device_enforcement' => [
+            'name' => 'Doctor Trusted Device Enforcement',
+            'description' => 'ENFORCEMENT switch for the doctor trusted-device lock. The capability is complete: a doctor logging in from the Clinic App proves the device key cryptographically, an unknown (doctor, device) pair automatically becomes a PENDING request, Approval -> Approval Device Dokter approves or refuses it, and an approved session is bound to that device and re-verified on every protected request. THIS FLAG IS THE ONLY THING THAT MAKES ANY OF IT BINDING. While it is off nothing in the login path touches the device registry: the app-only gate returns before its first query, the session middleware returns on its first line, no login ticket is ever minted, and ticket redemption is refused outright. So a doctor keeps logging in through an ordinary browser exactly as before, and an empty authorization table cannot lock anybody out. Turning it on DENIES browser login for every account holding the Doctor role and permits only an approved device, which is a clinical lockout if the fleet is not enrolled and approved first — so it belongs to a controlled Phase 4 pilot on real hardware, never to a deploy.',
+            'default' => false,
+            'env_key' => 'FEATURE_DOCTOR_TRUSTED_DEVICE_ENFORCEMENT',
+            'owner' => 'rme',
+            'risk_level' => 'critical',
+            'rollout_status' => 'implemented',
+            'review_target' => 'FEATURE-DOCTOR-TRUSTED-ANDROID-DEVICE-LOCK-1 Phase 4',
+            'dependencies' => [],
+            'rollback_action' => 'Set the environment override to false and clear the config cache. Doctor browser login works again immediately and every doctor session stops being device-checked; no data is changed, no device is unenrolled and no authorization is altered. Nothing needs to be migrated back, because the flag only ever gated a decision - it never wrote one.',
+        ],
+
         // --- FIX-04b — legacy ODONTOGRAM chart archive (runtime shipped, stays OFF) ---
 
         'rme.legacy_odontogram_archive' => [

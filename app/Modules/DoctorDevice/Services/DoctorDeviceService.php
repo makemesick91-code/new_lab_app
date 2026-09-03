@@ -208,6 +208,19 @@ class DoctorDeviceService
                 return $locked;
             }
 
+            // REVISION-DOCTOR-AUTO-DEVICE-APPROVAL-APP-ONLY-LOGIN-1 —
+            // `reactivate` undoes a DISABLE and nothing else. Without this
+            // assertion the new `pending_approval` status would fall through to
+            // the update below, so an operator could administratively activate
+            // hardware nobody ever approved simply by pressing "reactivate" —
+            // a side door around the approval decision. Admission happens in
+            // one place: approving the doctor/device authorization.
+            if (! $locked->isDisabled()) {
+                throw ValidationException::withMessages([
+                    'status' => 'Hanya perangkat berstatus DISABLED yang dapat diaktifkan kembali.',
+                ]);
+            }
+
             $updated = $this->devices->update($locked, [
                 'status' => DoctorDevice::STATUS_ACTIVE,
                 'disabled_at' => null,

@@ -554,19 +554,44 @@ class AndroidReleaseGovernanceScanner
     {
         $checks = [];
 
+        // REVISION-DOCTOR-AUTO-DEVICE-APPROVAL-APP-ONLY-LOGIN-1 — the flag now
+        // exists, so "off" is no longer "there is nothing to flip". It is read
+        // from the REAL feature-flag registry rather than from this config, so
+        // android_release.php cannot assert an off state the application does
+        // not actually have. A missing or unreadable flag is a FAIL, not a pass:
+        // an absence assertion over nothing proves nothing.
+        $flagKey = (string) config('android_release.enforcement.flag_key');
+        $flagDefaultOff = null;
+
+        if ($flagKey !== '') {
+            $definition = config('feature_flags.flags.'.$flagKey);
+
+            // The key contains dots, so the dotted lookup above cannot reach it;
+            // the registry has to be read as a literal array key.
+            if (! is_array($definition)) {
+                $definition = (array) config('feature_flags.flags', []);
+                $definition = is_array($definition[$flagKey] ?? null) ? $definition[$flagKey] : null;
+            }
+
+            $flagDefaultOff = is_array($definition) ? (($definition['default'] ?? null) === false) : null;
+        }
+
         $off = config('android_release.enforcement.active') === false
             && config('android_release.enforcement.doctor_browser_login_denied') === false
-            && config('android_release.enforcement.flag_exists') === false;
+            && $flagDefaultOff === true;
 
         $checks[] = $this->check(
             'enforcement_off',
             $off ? 'PASS' : 'FAIL',
             $off
-                ? 'Device enforcement is off, browser login is not denied, and no flag exists to flip.'
-                : 'Configuration claims enforcement is active. Phase 3.5 must end with it off.',
+                ? "Device enforcement is off, browser login is not denied, and the '{$flagKey}' flag defaults to false."
+                : ($flagDefaultOff === null
+                    ? "Enforcement flag '{$flagKey}' is not declared in the feature flag registry."
+                    : 'Configuration claims enforcement is active. It must ship off.'),
         );
 
         $token = (string) config('android_release.scanner.enforcement_coupling_token');
+        $allowedSymbols = (array) config('android_release.scanner.enforcement_coupling_allowed_symbols');
         $surfaces = (array) config('android_release.scanner.enforcement_coupling_surfaces');
         $coupled = [];
         $absent = [];
@@ -597,8 +622,25 @@ class AndroidReleaseGovernanceScanner
             foreach ($targets as $file) {
                 $contents = $this->readBounded($file);
 
-                if ($contents !== null && str_contains($contents, $token)) {
-                    $coupled[] = ltrim(str_replace($this->basePath, '', $file), '/');
+                if ($contents === null || ! str_contains($contents, $token)) {
+                    continue;
+                }
+
+                // REVISION-DOCTOR-AUTO-DEVICE-APPROVAL-APP-ONLY-LOGIN-1 — a
+                // reference is only coupling if it is something OTHER than the
+                // one sanctioned gate. See the allow-list rationale in
+                // config/android_release.php.
+                // Whole identifiers, not a prefix match: `EnsureDoctorDeviceSession`
+                // must be compared as itself, otherwise the scan reports the
+                // fragment `DoctorDeviceSession` and no allow-list entry can
+                // ever match the symbol that is actually in the file.
+                preg_match_all('/[A-Za-z_]*'.preg_quote($token, '/').'[A-Za-z_]*/', $contents, $matches);
+
+                $unexpected = array_values(array_diff(array_unique($matches[0]), $allowedSymbols));
+
+                if ($unexpected !== []) {
+                    $coupled[] = ltrim(str_replace($this->basePath, '', $file), '/')
+                        .' ('.implode(', ', $unexpected).')';
                 }
             }
         }
@@ -616,11 +658,13 @@ class AndroidReleaseGovernanceScanner
         );
 
         $checks[] = $this->check(
-            'authentication_not_coupled_to_device_registry',
-            $coupled === [] ? 'PASS' : 'FAIL',
-            $coupled === []
-                ? 'No authentication, session, middleware-registration or module-middleware surface references the device registry.'
-                : 'Enforcement coupling found in: '.implode(', ', $coupled),
+            'authentication_coupled_only_through_the_gate',
+            $coupled === [] && $allowedSymbols !== [] ? 'PASS' : 'FAIL',
+            $allowedSymbols === []
+                ? 'No allowed coupling symbols declared; this check would pass on anything.'
+                : ($coupled === []
+                    ? 'Authentication, session and middleware surfaces reference the device registry only through the sanctioned gate.'
+                    : 'Unsanctioned enforcement coupling found in: '.implode(', ', $coupled)),
         );
 
         return $checks;

@@ -18,7 +18,9 @@ use App\Modules\Consent\Controllers\RmeVisitConsentController;
 use App\Modules\Delivery\Controllers\DeliveryController;
 use App\Modules\Doctor\Controllers\DoctorAccountLinkController;
 use App\Modules\Doctor\Controllers\DoctorController;
+use App\Modules\DoctorDevice\Controllers\DoctorDeviceAuthorizationController;
 use App\Modules\DoctorDevice\Controllers\DoctorDeviceController;
+use App\Modules\DoctorDevice\Controllers\DoctorDeviceLoginController;
 use App\Modules\Inventory\Controllers\GoodsReceiptController;
 use App\Modules\Inventory\Controllers\InventoryActivityLogController;
 use App\Modules\Inventory\Controllers\InventoryAlertController;
@@ -1633,5 +1635,67 @@ if (config('rollout_readiness.enabled', true)) {
         ->get('/foundation/rollout/five-branch-readiness', [FiveBranchRolloutReadinessController::class, 'index'])
         ->name('foundation.rollout.five-branch-readiness');
 }
+
+/*
+|--------------------------------------------------------------------------
+| REVISION-DOCTOR-AUTO-DEVICE-APPROVAL-APP-ONLY-LOGIN-1
+|--------------------------------------------------------------------------
+|
+| APPROVAL → Approval Device Dokter.
+|
+| Deliberately NOT under `settings.` and not inside Master Data. Master Data →
+| Device Dokter manages PHYSICAL hardware and its security lifecycle; this is an
+| operational inbox answering "may this doctor use this device?". Merging them
+| would have put a daily approval queue behind a security-administration screen.
+|
+| Authority is the two dedicated permissions, so Super Admin reaches it through
+| the global Gate::before and Supervisor RME because RoleSeeder grants exactly
+| these — no role-name comparison anywhere. Every write re-authorizes through the
+| policy as well: the sidebar is a courtesy, never the boundary.
+|
+| There is no destroy route. An authorization is security history; trust is
+| withdrawn with `revoke`.
+*/
+Route::middleware(['auth'])->group(function () {
+    Route::middleware('permission:view_doctor_device_authorizations|manage_doctor_device_authorizations')
+        ->group(function () {
+            Route::get('doctor-device-authorizations', [DoctorDeviceAuthorizationController::class, 'index'])
+                ->name('doctor-device-authorizations.index');
+            Route::get('doctor-device-authorizations/{authorization}', [DoctorDeviceAuthorizationController::class, 'show'])
+                ->name('doctor-device-authorizations.show');
+        });
+
+    Route::middleware('permission:manage_doctor_device_authorizations')->group(function () {
+        Route::post('doctor-device-authorizations/{authorization}/approve',
+            [DoctorDeviceAuthorizationController::class, 'approve'])
+            ->name('doctor-device-authorizations.approve');
+        Route::post('doctor-device-authorizations/{authorization}/reject',
+            [DoctorDeviceAuthorizationController::class, 'reject'])
+            ->name('doctor-device-authorizations.reject');
+        Route::post('doctor-device-authorizations/{authorization}/revoke',
+            [DoctorDeviceAuthorizationController::class, 'revoke'])
+            ->name('doctor-device-authorizations.revoke');
+        Route::post('doctor-device-authorizations/{authorization}/allow-re-request',
+            [DoctorDeviceAuthorizationController::class, 'allowReRequest'])
+            ->name('doctor-device-authorizations.allow-re-request');
+    });
+});
+
+/*
+| Ticket redemption — the ONLY route that can turn a proven device plus valid
+| credentials into a session.
+|
+| Unauthenticated by necessity (there is no session yet) but not unguarded: the
+| ticket is a server-minted, hashed-at-rest, single-use, 60-second credential
+| bound to user + doctor + device + authorization, all re-asserted here. It can
+| only exist while enforcement is ON, and redemption refuses outright when it is
+| OFF — so today this route cannot succeed at all.
+|
+| Throttled because it is an unauthenticated endpoint that ends in a login.
+*/
+Route::middleware('throttle:10,1')
+    ->get('device-login/{ticket}', [DoctorDeviceLoginController::class, 'redeem'])
+    ->where('ticket', '[a-f0-9]{64}')
+    ->name('doctor-device-login.redeem');
 
 require __DIR__.'/auth.php';

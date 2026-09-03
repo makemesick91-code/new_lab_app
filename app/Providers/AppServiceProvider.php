@@ -15,7 +15,10 @@ use App\Support\Devflow\CanonicalBaseRefResolver;
 use App\Support\Devflow\DevflowScanner;
 use App\Support\Devflow\GitChangeInspector;
 use App\Support\Devflow\SharedFoundationScanner;
+use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Client\Factory as HttpFactory;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -92,6 +95,42 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        //
+        $this->registerDoctorAppLoginRateLimiters();
+    }
+
+    /**
+     * REVISION-DOCTOR-AUTO-DEVICE-APPROVAL-APP-ONLY-LOGIN-1 — dedicated buckets
+     * for the doctor login surface.
+     *
+     * WHY NAMED LIMITERS RATHER THAN `throttle:10,1`.
+     *
+     * Laravel resolves an anonymous throttle signature from the DOMAIN and the
+     * IP — not the URI. Every anonymously-throttled route therefore shares ONE
+     * counter per caller, and the strictest limit on any of them governs all of
+     * them. Adding a strict `throttle:10,1` to doctor login would have silently
+     * tightened enrolment, status polling, challenge and proof to the same ten
+     * requests a minute, which for a clinic whose tablets sit behind one NAT
+     * address is an outage rather than a control.
+     *
+     * These two buckets are keyed independently, so the new surface is
+     * rate limited hard without touching the Phase 3 device channel.
+     *
+     * `doctor-app-login` is the one endpoint that both accepts a password and
+     * can create a row an approver has to look at, so it is what a credential
+     * stuffer would grind and what an attacker would use to flood the approval
+     * inbox. Ten a minute per address is generous for humans mistyping a
+     * password and useless for that.
+     */
+    private function registerDoctorAppLoginRateLimiters(): void
+    {
+        RateLimiter::for('doctor-app-login', function (Request $request) {
+            return Limit::perMinute(10)->by('doctor-app-login|'.$request->ip());
+        });
+
+        // Challenges are cheap and a client legitimately asks for one per
+        // attempt, plus retries after a network blip.
+        RateLimiter::for('doctor-app-login-challenge', function (Request $request) {
+            return Limit::perMinute(30)->by('doctor-app-login-challenge|'.$request->ip());
+        });
     }
 }

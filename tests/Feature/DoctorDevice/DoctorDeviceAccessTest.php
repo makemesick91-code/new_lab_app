@@ -196,10 +196,17 @@ it('filters the device list by status', function () {
 // NON-NEGOTIABLE — enforcement stays OFF and Phase 1 stays intact
 // ---------------------------------------------------------------------------
 
-it('does not couple authentication to the device registry', function () {
-    // Nothing in the auth/session path may consult the registry in Phase 2.
-    // Grepping the source is the honest assertion here: a passing login test
-    // would not prove the absence of a coupling that simply has not fired yet.
+it('couples authentication to the device registry only through the sanctioned gate', function () {
+    // PHASE 2 asserted a total absence, because in Phase 2 nothing in the auth
+    // path had any business knowing the registry existed.
+    // REVISION-DOCTOR-AUTO-DEVICE-APPROVAL-APP-ONLY-LOGIN-1 ships the app-only
+    // gate, which cannot exist unless the login path can ask it a question.
+    //
+    // Grepping the source is still the honest assertion — a passing login test
+    // would not prove the absence of a coupling that has simply not fired yet —
+    // but what it asserts is now the rule that was actually load-bearing: ONE
+    // gate, by name. A proof service, a direct authorization query or a second
+    // flag read in an auth surface is still a failure.
     $authSurfaces = array_merge(
         glob(base_path('app/Http/Controllers/Auth/*.php')) ?: [],
         glob(base_path('app/Http/Middleware/*.php')) ?: [],
@@ -207,12 +214,32 @@ it('does not couple authentication to the device registry', function () {
         [base_path('bootstrap/app.php'), base_path('app/Http/Requests/Auth/LoginRequest.php')],
     );
 
+    $allowed = [
+        // The module namespace segment in a `use` statement is not a decision.
+        'DoctorDevice',
+        'DoctorAppLoginGate',
+        'DoctorDeviceSessionService',
+        'EnsureDoctorDeviceSession',
+    ];
+
     foreach ($authSurfaces as $file) {
         if (! is_file($file)) {
             continue;
         }
-        expect(file_get_contents($file))
-            ->not->toContain('DoctorDevice');
+
+        $contents = file_get_contents($file);
+        $relative = str_replace(base_path().'/', '', $file);
+
+        expect($contents)
+            ->not->toContain('DoctorDeviceProofService', "{$relative} must not verify device proofs")
+            ->not->toContain('DoctorDeviceAuthorization::', "{$relative} must not query authorizations directly")
+            ->not->toContain("'doctor.trusted_device_enforcement'", "{$relative} must not read the flag itself");
+
+        preg_match_all('/[A-Za-z_]*DoctorDevice[A-Za-z_]*/', $contents, $matches);
+
+        foreach (array_unique($matches[0]) as $symbol) {
+            expect($symbol)->toBeIn($allowed, "{$relative} references {$symbol}");
+        }
     }
 });
 

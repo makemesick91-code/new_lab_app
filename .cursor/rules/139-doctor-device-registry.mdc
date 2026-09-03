@@ -16,13 +16,24 @@ in force and must not be weakened.
 
 ## 1. Enforcement is OFF — and structurally so
 
-Nothing in authentication, session handling or any middleware may read
-`DoctorDevice`. A doctor logs in exactly as before, and an **empty registry
-locks nobody out**.
+> **NARROWED by REVISION-DOCTOR-AUTO-DEVICE-APPROVAL-APP-ONLY-LOGIN-1.**
+> See `.cursor/rules/143-doctor-device-authorization-and-app-only-login.mdc`
+> and ADR 0011. The "nothing may read `DoctorDevice`" clause below is
+> superseded; **everything else in this rule still stands**.
 
-`DoctorDeviceAccessTest` asserts this by scanning the auth surfaces for the
-string `DoctorDevice`. If you are about to add that reference, you are starting
-Phase 4, not fixing a test — get the enforcement decision made first.
+Enforcement is still OFF: `doctor.trusted_device_enforcement` defaults to false,
+a doctor logs in exactly as before, and an **empty registry locks nobody out**.
+
+What changed is only *how* that is asserted. The app-only gate cannot exist while
+the login path is forbidden from asking whether a doctor's session may exist, so
+the auth surfaces may now reference exactly `DoctorAppLoginGate`,
+`DoctorDeviceSessionService` and `EnsureDoctorDeviceSession` — and nothing else.
+A proof service, a direct authorization query or a second read of the enforcement
+flag in an auth surface is still a failure.
+
+`DoctorDeviceAccessTest` asserts that narrowed rule. If you are about to add a
+reference outside that allow-list, you are starting Phase 4, not fixing a test —
+get the enforcement decision made first.
 
 Do not add a feature flag "in preparation". The minimum-scope decision was
 deliberate: no flag exists until the phase that actually needs one.

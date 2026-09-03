@@ -264,6 +264,24 @@ return [
         // gate has to select the suite that pins it.
         'tests/Feature/DoctorDevice/DoctorDeviceAndroidDirectApkReleaseTest.php',
 
+        // REVISION-DOCTOR-AUTO-DEVICE-APPROVAL-APP-ONLY-LOGIN-1 — the
+        // doctor/device authorization lifecycle, the automatic request on first
+        // app login, the approval inbox's authority, and the app-only gate.
+        //
+        // Declared rather than left to the `DoctorDevice` filter token for the
+        // reason Phase 1 established: a token match is an accident of naming and
+        // nothing would tell us the day it stopped selecting. What these pin is
+        // not hypothetical in either direction. One direction is a bypass — a
+        // refused doctor re-queueing themselves, a session outliving the tablet
+        // it was approved on. The other is worse: the enforcement-OFF cases are
+        // the only thing standing between shipping this capability and locking
+        // every doctor out of a live clinic, and a suite the gate does not run
+        // cannot stop that.
+        'tests/Feature/DoctorDevice/DoctorDeviceAuthorizationLifecycleTest.php',
+        'tests/Feature/DoctorDevice/DoctorDeviceAppLoginRequestTest.php',
+        'tests/Feature/DoctorDevice/DoctorDeviceEnforcementGateTest.php',
+        'tests/Feature/DoctorDevice/DoctorDeviceApprovalAccessTest.php',
+
         // REVISION-TELKOMAS-BRANCH-CODE-TKM1-TO-TLK1-1 — the branch-code alias
         // policy and the collision-safe rename that depends on it.
         //
