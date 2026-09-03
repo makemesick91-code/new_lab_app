@@ -1,0 +1,169 @@
+---
+description: Direct admin-managed APK distribution and self-managed DaengtisiaMS Android signing authority
+globs: android/**,config/android_release.php,app/Support/Android/**,docs/governance/android-*,docs/runbooks/android-*,docs/adr/0010-*
+alwaysApply: false
+---
+
+# REVISION-DOCTOR-ANDROID-DIRECT-APK-SIGNING-DISTRIBUTION-1 — durable rules
+
+Decision: `docs/adr/0010-android-direct-apk-signing-and-distribution.md`.
+Config: `config/android_release.php`.
+Gates: `php artisan android:release-readiness --strict` ·
+`php artisan android:verify-release <apk> <manifest>`.
+
+**Supersedes** rule 141's clauses 2 and 7 (Play App Signing, Managed Google
+Play). Every other rule in 141 stands; rules 139 and 140 are untouched.
+
+## 1. Google Play is not used
+
+Google Play, Managed Google Play, Play App Signing and a Play Developer account
+are **NOT used** and are **not a prerequisite** for building, signing,
+distributing, installing or updating the clinic app. Reintroducing any of them
+requires a new ADR, not a convenient exception. Gate: `google_play_not_required`.
+
+## 2. The signing key is ours, and its loss is unrecoverable
+
+DaengtisiaMS owns the production app signing key. No third party holds it and no
+third party can restore it.
+
+Follow the chain before arguing with the custody rules: Android requires an
+update to be signed by the same certificate → a mismatched APK installs only
+after an **uninstall** → uninstall **erases app data** → app data holds the
+**Keystore device identity** → that identity is the DoctorDevice enrolment. Key
+loss therefore costs the **entire fleet's enrolment**, not just updates.
+
+Hence three custodians, three encrypted copies (one offsite, one sealed cold),
+and a **90-day** restore drill. Those numbers are stricter than the Play era's
+on purpose: removing Google removed the safety net.
+
+## 3. Never create a production key to make a sprint green
+
+Provision it only under recorded custody with named custodian roles and a tested
+restore. Rehearse with a **disposable** key and destroy it afterwards. The
+honest pair stays `SIGNING_RECOVERY_RUNBOOK_TESTED_WITH_DISPOSABLE_KEY=true` /
+`PRODUCTION_KEY_RECOVERY_VERIFIED=false`.
+
+## 4. The APK is the release artifact
+
+An `.aab` is a Play upload format that Google converts into device APKs. With no
+Play in the chain nothing performs that conversion, so a bundle is not
+installable and cannot be the release artifact. Canonical names:
+`DaengtisiaMS-Clinic-v<versionName>.apk` and its `.release.json` manifest.
+
+## 5. Nothing is installed without verification
+
+Every install and update runs `android:verify-release` first, and its exit code
+is the contract: non-zero means DO NOT INSTALL.
+
+Be precise about what it proves. **APK-derived:** SHA-256 and the signer
+certificate fingerprint. **Manifest-declared, checked against pinned config:**
+package name, build variant, approval status, release channel.
+**Manifest-declared, shape only:** versionName, versionCode, filename. The
+manifest is not signed, so those last two groups are provenance metadata, not
+proof — see §5a.
+
+Verification reads only public material. Requiring the signing key to verify a
+release would make verification something only the signer can perform.
+
+## 5a. The trust anchor is config, never the manifest
+
+The expected certificate fingerprint lives in
+`config/android_release.signing.production_certificate_sha256` and the APK is
+compared against **that**. The manifest's copy is a cross-check, never the
+authority.
+
+Reading it from the manifest — as the first implementation did — verifies
+self-consistency, not authenticity: whoever replaces the APK replaces the
+manifest with it, naming their own key, and every other check is a public
+constant. That is a checksum wearing a signature's clothes, and with Google Play
+gone it was the only control between a substituted artifact and a clinic tablet.
+
+While the pin is `null`, `android:verify-release` **fails closed**. That is
+correct — there is no authority to verify against yet. Never work around it by
+falling back to the manifest.
+
+Say precisely what verification proves. Only the SHA-256 and the signer
+fingerprint are read from the APK; package name, versionName and versionCode are
+manifest-declared. Telling an operator otherwise is a false assurance.
+
+## 6. Signer mismatch is never fixed by uninstalling
+
+The tempting move when an update is refused is `adb uninstall` then install.
+It erases app data, destroys the Keystore identity and costs the device its
+enrolment. A signer mismatch means the artifact is not from the DaengtisiaMS
+authority: stop and escalate. The usual truth is "wrong file", not "erase the
+tablet".
+
+## 7. versionCode — know which rule is whose
+
+| Layer | Rule |
+|---|---|
+| Android platform | update must be **>=** installed |
+| Google Play (gone) | additionally **strictly >** |
+| **DaengtisiaMS** | **strictly >**, enforced by us |
+
+Play was silently supplying the stricter half. Two builds sharing a
+`versionCode` would now install over each other in silence. Never reuse or
+decrement one.
+
+## 8. There is no production downgrade
+
+Installing an older versionCode requires an uninstall, which destroys the device
+identity. `adb install -d` bypasses the block only for **debuggable** builds,
+which a production release is not. Recovery is **stop distribution, then
+forward-fix under a higher versionCode**.
+
+## 9. Update in place preserves trust; uninstall destroys it
+
+Same package + same signer + higher versionCode = in-place update: app data,
+Keystore identity and DoctorDevice enrolment all survive. Uninstall or
+clear-app-data destroys the identity and requires **fresh enrolment**. Trust is
+never restored by installation alone — possession of an APK is not trust.
+
+## 10. Installer authority is not application authority
+
+A DaengtisiaMS Super Admin approves a device in Master Data. Installing an OS
+package on clinic hardware is a separate Admin/IT permission and is not implied
+by any application role. Prefer separating signer from installer; where
+headcount forces one person to hold both, record the exception.
+
+## 11. ADB is for provisioning, not fleet management
+
+USB debugging is enabled for a provisioning or maintenance visit and **disabled**
+before the device returns to the floor. Leaving it on turns a kiosk tablet into
+an open install surface.
+
+## 12. The release source is access-controlled
+
+It must carry artifact identity, release metadata, a published SHA-256, access
+control and version history. Chat, email, an unauthenticated public bucket and
+an open shared drive are not release channels — none of them can answer "is this
+the artifact we published?".
+
+## 13. EMM is advisory, not required
+
+The Phase-3.5 "EMM required at 5 devices" rule was a Managed Google Play
+dependency, not a kiosk requirement. Direct admin management is
+product-supported at any fleet size; an MDM/EMM is advisory past roughly ten
+devices and is an owner decision. Device Owner + Lock Task is unchanged, and
+screen pinning is still never a security control.
+
+## 14. Enforcement is STILL off
+
+`DEVICE_ENFORCEMENT_ACTIVE=false`, `DOCTOR_BROWSER_LOGIN_DENIED=false`, and no
+feature flag exists. This revision changed distribution, not authentication. If
+you are adding a `DoctorDevice` reference to an auth surface, you are starting
+Phase 4/5.
+
+## 15. A term scan cannot judge a supersession
+
+The prose explaining why Play was dropped necessarily names Play, so scanning
+active docs for "Google Play" goes red on a repository that already obeys the
+rule — the trap that bit the Phase 3 TLS guard and the Phase 3.5 read guard.
+The load-bearing assertion is the machine-readable negatives, which prose cannot
+satisfy. The term scan only requires that a file naming a Play term also carries
+a negation or supersession marker.
+
+Historical records (ADR 0009, the Phase 3.5 sprint doc) keep the old decision
+and carry a `SUPERSEDED` marker. Do not delete them: that would be rewriting
+history rather than superseding it.

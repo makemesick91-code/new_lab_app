@@ -20,6 +20,7 @@ cannot answer "why?" turns into a shopping list somebody negotiates down.
 |---|---|
 | Hardware-backed Keystore | The device identity is an EC keypair whose private half must be non-exportable. Software-backed key storage makes the identity copyable, which defeats the entire feature. |
 | Device Owner capable | Kiosk is Lock Task under Device Owner. Screen pinning is user-dismissible and is not a security control. |
+| Sideload-capable, no Google account required | The app is installed directly by Admin/IT from a DaengtisiaMS-signed APK. Google Play is **not used**, so a device that can only install from Play is unusable. |
 | Android 13+ | `minSdk` is 26, but 13+ is what still receives security updates and what Android Enterprise Recommended currently covers. |
 | ≥10" screen, ≥4 GB RAM | The RME workspace and odontogram are dense server-rendered pages in a WebView. A phone-sized screen makes the odontogram unusable. |
 | Stylus (recommended) | Handwriting RME is the **primary** doctor-facing clinical input. A finger is a poor pen. |
@@ -153,9 +154,11 @@ per branch = concurrent Doctor stations + 1 spare
 The `+1` is not optional — see the
 [device loss runbook](../runbooks/android-device-loss-replacement-and-decommission.md) §3.
 
-At **≥5 devices**, hand-provisioning stops being defensible and the EMM /
-Managed Google Play model applies
-(`config/android_release.device_management.scale_model_required_at_devices`).
+There is **no fleet size at which an EMM becomes mandatory.** That Phase-3.5
+rule came from Managed Google Play being the distribution channel, and Google
+Play is **not used**. Direct admin-managed installation is product-supported at
+any size; an MDM/EMM is advisory past roughly ten devices and is an owner
+decision.
 
 ---
 

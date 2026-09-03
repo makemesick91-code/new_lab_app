@@ -1,25 +1,23 @@
-# Active sprint manifest — FEATURE-DOCTOR-TRUSTED-ANDROID-DEVICE-LOCK-1 Phase 3.5
+# Active sprint manifest — REVISION-DOCTOR-ANDROID-DIRECT-APK-SIGNING-DISTRIBUTION-1
 # Validated by: php artisan sprint:manifest-check
 
-id: FEATURE-DOCTOR-TRUSTED-ANDROID-DEVICE-LOCK-1-PHASE-3-5
+id: REVISION-DOCTOR-ANDROID-DIRECT-APK-SIGNING-DISTRIBUTION-1
 type: MODULE_SPRINT
 module: DoctorDevice
-title: "Android production readiness and governance: signing custody, distribution, device management, rollback and the Phase 4 pilot plan (device login enforcement stays OFF)"
+title: "Supersede Play App Signing and Managed Google Play with a self-managed DaengtisiaMS signing key and direct admin-managed APK installation (device login enforcement stays OFF)"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-runtime_change: true            # read-only governance scanner + android:release-readiness command
-schema_change: false            # no migration; nothing in this phase touches the database
+runtime_change: true            # release verifier + android:verify-release command + scanner checks
+schema_change: false            # no migration; nothing here touches the database
 frontend_change: false          # no Blade, no JS, no asset build
-security_impact: true           # signing custody, release trust chain, standing enforcement-off contract
+security_impact: true           # signing authority, release trust chain, artifact verification
 branch_isolation_impact: false  # no BranchContext / branch-scoped query change
 ledger_impact: false            # no inventory ledger / billing / payment behaviour change
 
 deploy_required: true           # new config + command ship to the VPS pilot
 browser_required: false         # no UI surface added
 
-# The READINESS tag for this phase. Deliberately NOT the full-feature tag —
-# see the carried-forward note below.
-go_tag: feature-doctor-trusted-android-device-lock-1-phase-3-5-readiness-go
+go_tag: revision-doctor-android-direct-apk-signing-distribution-1-go
 
 test_profiles:
   - security
@@ -27,18 +25,20 @@ test_profiles:
 # Carried forward from the preceding sprint's manifest. `.sprint/current.yml` is
 # a rolling file, so these inherited facts have to be restated by every sprint
 # after closure — dropping one is precisely the quiet contradiction
-# LegacyRmeProgramClosureContractTest exists to catch. It caught this sprint's
-# first draft, which is the contract working.
+# LegacyRmeProgramClosureContractTest exists to catch.
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
 inherits_hold: FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1/FIX-02
-inherits_phase: feature-doctor-trusted-android-device-lock-1-phase-3-go
+inherits_phase: feature-doctor-trusted-android-device-lock-1-phase-3-5-readiness-go
 
-# Phase 3.5 is READINESS AND GOVERNANCE ONLY. The full feature stays NO-GO:
-# device enforcement is not active, Doctor browser login is not denied,
-# real-device validation has NOT been performed, no production signing key has
-# been provisioned, and the full-feature GO tag
+# This is a DISTRIBUTION AND SIGNING revision, not a phase advance. Google Play,
+# Managed Google Play and Play App Signing are NOT used and NOT required; the
+# release artifact is a signed APK installed directly by authorised Admin/IT.
+#
+# The full feature stays NO-GO: device enforcement is not active, Doctor browser
+# login is not denied, real-device validation has NOT been performed, no
+# production signing key has been provisioned, and the full-feature GO tag
 # `feature-doctor-trusted-android-device-lock-1-go` must NOT be created.
 #
-# What Phase 3.5 DOES change is the Phase 3 posture line "production signing
-# governance is UNRESOLVED" — that is now RESOLVED by ADR 0009. Deciding how to
-# sign is not signing: the key itself is a Phase 4 input.
+# Phase 3.5's readiness GO is NOT withdrawn. Its Google-Play signing and
+# distribution decision is SUPERSEDED by ADR 0010; everything else it
+# established still stands.

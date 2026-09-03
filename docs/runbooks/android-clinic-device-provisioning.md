@@ -26,8 +26,9 @@ blocker that stood here is closed. What replaces it is a checklist, because the
 | Prerequisite | Where | Ready? |
 |---|---|---|
 | Tablet meets the minimum specification | [tablet spec](../operations/clinic-tablet-procurement-specification.md) | ☐ |
-| Play Developer account (role account) exists | [release runbook](android-release-distribution-and-rollback.md) §0 | ☐ |
-| Play App Signing enrolled | same | ☐ |
+| 3 signing custodians designated | [release runbook](android-release-distribution-and-rollback.md) §0 | ☐ |
+| Designated signing workstation ready | same | ☐ |
+| Access-controlled release source ready | same | ☐ |
 | Upload key generated, backed up, restore drill passed | [key runbook](android-signing-key-backup-and-recovery.md) | ☐ |
 | Artifact signed by the **production** authority | ADR 0009 | ☐ |
 | Branch chosen for this device | Master Data → Cabang | ☐ |
@@ -45,11 +46,15 @@ have to be wiped and redone.
 
 | Model | Use when | Device Owner is | App installed by |
 |---|---|---|---|
-| **Self-owned Device Owner** | Phase 4 pilot, ≤4 devices | our `ClinicDeviceAdminReceiver` | ADB side-load of the Play-signed artifact |
-| **EMM dedicated device** | ≥5 devices, multi-branch | the EMM's DPC | Managed Google Play policy |
+| **Self-owned Device Owner** | pilot **and fleet** — the product-supported default | our `ClinicDeviceAdminReceiver` | direct install of the DaengtisiaMS-signed APK |
+| **EMM dedicated device** | optional, if the owner later adopts an EMM | the EMM's DPC | EMM app policy |
 
-At **five devices** hand-provisioning stops being defensible
-(`config/android_release.device_management.scale_model_required_at_devices`).
+**An EMM is no longer required at any fleet size.** That Phase-3.5 rule came
+from Managed Google Play being the distribution channel, not from kiosk needs —
+and Managed Google Play is superseded. Direct admin management is
+product-supported at any size; an MDM/EMM is *advisory* past roughly ten devices
+(`config/android_release.device_management.mdm_recommended_at_devices`) and
+adopting one is an owner decision.
 
 Under the EMM model **our app is not the Device Owner** — the DPC is, and it
 lock-task-allowlists our package by policy. Sections 3 and 4 below are the
@@ -85,21 +90,26 @@ Any account present ⇒ factory reset again. Do not continue and hope.
 
 ## 3. Install the app
 
+Verify the artifact **before** touching the tablet — full procedure in the
+[direct APK installation runbook](android-direct-apk-installation.md) §2:
+
 ```bash
-adb install -r <play-signed>.apk
+php artisan android:verify-release DaengtisiaMS-Clinic-v1.0.0.apk \
+                                   DaengtisiaMS-Clinic-v1.0.0.release.json
+adb install DaengtisiaMS-Clinic-v1.0.0.apk
 ```
 
-The artifact must be the **Play-signed** one (Play Console → App bundle explorer
-→ download signed universal APK, or Internal app sharing). See the release
-runbook §2.1 for why the pilot side-loads rather than using Managed Google Play:
-a device with no Google account cannot install from it.
+The APK must be the one signed by the **DaengtisiaMS production signing
+authority** and fetched from the access-controlled release source. Google Play
+is **NOT used**; there is no Play step and no Google account is required on the
+device.
 
 **Fail-closed checkpoint 2** — confirm the installed signer is the production
 authority, not a debug key:
 
 ```bash
 adb shell pm list packages | grep com.daengtisia.clinic     # no .debug suffix
-apksigner verify --print-certs <play-signed>.apk | grep -i 'SHA-256'
+apksigner verify --print-certs DaengtisiaMS-Clinic-v1.0.0.apk | grep -i 'SHA-256'
 ```
 
 The fingerprint must match the one recorded in the release manifest. A `.debug`
@@ -185,7 +195,9 @@ reporting software-backed storage is a finding, not something to round up.
 2. **QR payloads must not carry secrets** — anyone who can photograph the screen
    can read one. Google's own guidance says so, and
    `device_management.qr_provisioning_may_carry_secrets` is `false`.
-3. Push the clinic app from Managed Google Play.
+3. Push the clinic app through the EMM's own app distribution, using the same
+   DaengtisiaMS-signed APK. (Only relevant if an EMM is adopted; Google Play is
+   **not used**.)
 4. Configure the dedicated-device policy: lock-task-allowlist
    `com.daengtisia.clinic`, set it as the home/launcher activity, restrict
    "clear app data" for the package (see the device-loss runbook §7).

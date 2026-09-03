@@ -30,71 +30,110 @@ return [
     | Signing authority
     |--------------------------------------------------------------------------
     |
-    | The decision that unblocks everything else.
+    | REVISED by REVISION-DOCTOR-ANDROID-DIRECT-APK-SIGNING-DISTRIBUTION-1.
+    | Play App Signing is SUPERSEDED: see docs/adr/0010-android-direct-apk-
+    | signing-and-distribution.md.
     |
-    | Play App Signing means Google holds the app signing key in its KMS. The
-    | clinic holds only an UPLOAD key — and an upload key, unlike an app
-    | signing key, can be reset if it is lost or compromised. That single
-    | property is why this model was chosen: it converts the worst outcome in
-    | Android release management (key loss => the app can never be updated,
-    | only uninstalled and reinstalled, destroying every device enrolment)
-    | from unrecoverable into a support ticket.
+    | DaengtisiaMS now owns the production Android app signing key outright.
+    | That is the owner's decision, and it comes with a consequence that must
+    | not be softened: under Play App Signing the clinic held only a RESETTABLE
+    | upload key, so key loss was a support ticket. Holding the app signing key
+    | itself makes loss UNRECOVERABLE.
     |
-    | Retrieved 2026-09-03 from developer.android.com/studio/publish/app-signing
-    | and support.google.com/googleplay/android-developer/answer/9842756.
+    | The blast radius is worse here than for a typical app. Android requires an
+    | update to be signed by the same certificate; anything else can only be
+    | installed after an UNINSTALL, and uninstalling erases app data, and app
+    | data is where the Android Keystore device identity lives. So losing this
+    | key does not merely end updates — it forces a reinstall that destroys
+    | EVERY enrolled device's identity and re-enrols the whole fleet by hand.
+    |
+    | The custody rules below are therefore deliberately STRICTER than the
+    | Play-era ones (three copies, not two; a 90-day restore drill, not 180).
+    | Removing Google as custodian removed the safety net, so the governance has
+    | to supply it.
+    |
+    | Platform behaviour retrieved 2026-09-03 from
+    | source.android.com/docs/security/features/apksigning and
+    | developer.android.com/studio/publish/app-signing.
     |
     */
     'signing' => [
-        // The near-permanent identity that end devices verify. Held by Google
-        // KMS under Play App Signing — never on a workstation, never in CI.
-        'app_signing_authority' => 'play_app_signing',
+        // The production app signing key is owned and operated by DaengtisiaMS.
+        // No third party holds it, and no third party can restore it.
+        'app_signing_authority' => 'self_managed_daengtisiams',
+        'production_key_custody' => 'daengtisiams_offline_custody',
 
-        // The only key material the clinic holds. Resettable via Play Console
-        // if lost or compromised, which is the whole point.
-        'upload_key_authority' => 'clinic_offline_custody',
+        // ------------------------------------------------------------------
+        // THE TRUST ANCHOR
+        // ------------------------------------------------------------------
+        //
+        // The SHA-256 fingerprint of the production signing certificate, as a
+        // lower-case 64-character hex string. This is the ONLY authority an
+        // installer can verify an artifact against.
+        //
+        // Security review caught the first version reading the expected
+        // fingerprint out of the release manifest that ships beside the APK.
+        // That verifies self-consistency, not authenticity: an attacker who
+        // can replace the APK replaces the manifest in the same motion, sets
+        // the digest to their artifact and the fingerprint to their own key,
+        // and every check passes. It was a checksum wearing a signature's
+        // clothes — and with Google Play gone, this control is the ONLY thing
+        // between a substituted artifact and a clinic tablet.
+        //
+        // NULL until the production key is provisioned. While it is null,
+        // `android:verify-release` cannot authenticate anything and FAILS
+        // CLOSED saying so. That is correct rather than unfortunate: there is
+        // no authority to verify against yet, and a manifest cannot vouch for
+        // itself. Pinning this is a Phase-4 entry step.
+        'production_certificate_sha256' => null,
+        'production_certificate_pin_required_before_install' => true,
 
-        // Two custodians so a single departure or a single lost laptop is not
-        // an outage. Roles, not names — names live in the governance doc,
-        // which is where a person leaving is actually noticed.
-        'minimum_custodians' => 2,
+        // Stated as a value rather than left implicit, because every custody
+        // rule below exists because of it.
+        'key_loss_recoverable' => false,
+        'key_loss_consequence' => 'fleet_wide_reenrolment_after_forced_reinstall',
 
-        // Where the upload keystore may live.
+        // Three custodians, one more than the Play era. With no resettable
+        // upload key behind us, two simultaneous losses would be terminal.
+        'minimum_custodians' => 3,
+
         'permitted_storage' => [
             'encrypted_offline_medium_held_by_custodian',
             'organisation_password_manager_secure_note_attachment',
+            'encrypted_offsite_recovery_medium',
         ],
 
         // Where it may never live. Each of these has bitten someone.
         'forbidden_storage' => [
-            'git_repository',                 // history is forever, and public one day
+            'git_repository',                 // history is forever, and repositories become public
             'shared_network_drive_unencrypted',
             'developer_workstation_home_directory_unencrypted',
             'ci_secret_used_by_pull_request_jobs', // a fork PR must never reach it
             'chat_or_email_attachment',
             'unencrypted_cloud_sync_folder',
+            'clinic_android_device',          // the device never carries the signing key
+            'production_vps',                 // the server signs nothing
         ],
 
-        // Normal CI must not be able to sign a production release. PR CI runs
-        // untrusted code by definition; giving it the upload key makes every
-        // contributor a release authority.
+        // Pull-request CI executes untrusted code. A key it can reach makes
+        // every contributor — and every fork — a release authority.
         'pull_request_ci_may_sign' => false,
 
-        // Release signing happens from a controlled operator context, gated by
-        // a protected environment, never automatically on push.
-        'release_signing_context' => 'protected_release_environment_manual_approval',
+        // Signing happens on the designated signing workstation under manual
+        // approval, never automatically on push.
+        'release_signing_context' => 'designated_signing_workstation_manual_approval',
 
-        // Play App Signing key rotation is limited and the choice is close to
-        // permanent; the upload key is the resettable one. Recording this
-        // stops a future sprint assuming rotation is routine.
+        // Android 13+ supports rotation via the v3.1 signing block, but it is
+        // constrained and does not apply to older devices. Treat the key as
+        // permanent and plan custody accordingly rather than banking on it.
         'app_signing_key_rotation' => 'constrained_treat_as_permanent',
-        'upload_key_rotation' => 'resettable_via_play_console',
 
         'backup' => [
             'required' => true,
-            'copies' => 2,                    // primary custodian + offline recovery copy
+            'copies' => 3,                    // primary + offsite recovery + sealed cold copy
             'encryption' => 'required',
             'offsite_copy_required' => true,
-            'restore_test_cadence_days' => 180,
+            'restore_test_cadence_days' => 90,
         ],
 
         'runbook' => 'docs/runbooks/android-signing-key-backup-and-recovery.md',
@@ -106,38 +145,61 @@ return [
     | Distribution authority
     |--------------------------------------------------------------------------
     |
-    | Managed Google Play private app: organisation-restricted, centrally
-    | updatable, and the same channel that provisions dedicated devices at
-    | scale. Publishing a private app creates a Play Developer account for the
-    | organisation with no registration fee.
+    | REVISED by REVISION-DOCTOR-ANDROID-DIRECT-APK-SIGNING-DISTRIBUTION-1.
+    | Managed Google Play is SUPERSEDED.
     |
-    | The pilot exception is real and is written down rather than discovered:
-    | a self-owned Device Owner tablet has NO Google account on it (that is a
-    | precondition of `dpm set-device-owner`), so it cannot install from
-    | Managed Google Play. For the single Phase 4 pilot device the Play-SIGNED
-    | artifact is downloaded from Play Console and side-loaded over ADB. The
-    | signing identity is identical to production; only the transport differs.
+    | Distribution is a signed APK installed directly by authorised
+    | DaengtisiaMS Admin/IT. Google Play, Managed Google Play and Play App
+    | Signing are NOT used and are NOT a prerequisite for anything.
+    |
+    | This removes the Phase-3.5 "pilot exception" entirely rather than
+    | widening it. That exception existed only because a self-owned Device
+    | Owner tablet has no Google account and so could not install from Managed
+    | Google Play. With direct installation as the canonical channel there is
+    | no mismatch to except: the pilot and the fleet use the same path.
+    |
+    | The artifact is an APK, not an App Bundle. A bundle is a Play upload
+    | format that Google converts into device APKs; with no Play in the chain
+    | there is nothing to perform that conversion, so an AAB is not installable
+    | and cannot be the release artifact.
     |
     */
     'distribution' => [
-        'canonical_channel' => 'managed_google_play_private_app',
-        'artifact_format' => 'aab',           // Play App Signing requires a bundle
+        'canonical_channel' => 'direct_admin_managed_apk',
+        'artifact_format' => 'apk',
         'organisation_restricted' => true,
 
-        'pilot_exception' => [
-            'permitted' => true,
-            'channel' => 'adb_sideload_of_play_signed_artifact',
-            'max_devices' => 1,
-            'requires_owner_signoff' => true,
-            // The artifact still comes from Play, signed by the production
-            // authority. Sideloading a locally signed build is NOT this.
-            'artifact_source' => 'play_console_signed_universal_apk',
-        ],
+        // Explicit negatives. Asserted by tests, so a future sprint cannot
+        // reintroduce a Play dependency without the contract going red.
+        'google_play_required' => false,
+        'play_app_signing_used' => false,
+        'managed_google_play_used' => false,
+        'play_developer_account_required' => false,
 
-        // Deleting a private app does not release its package name, so the
-        // package id is effectively permanent from first publish.
-        'package_id_is_permanent' => true,
+        // The controlled internal source an authorised installer fetches from.
+        // Not chat, not email, not a shared drive: the channel has to carry
+        // identity, metadata, a checksum, access control and version history.
+        'release_source' => 'protected_github_release_artifact',
+        'release_source_requirements' => [
+            'artifact_identity',
+            'release_metadata',
+            'sha256_published',
+            'access_controlled',
+            'version_history',
+        ],
+        'public_unauthenticated_artifact_hosting_permitted' => false,
+
+        // The APK filename pattern operators will actually type.
+        'artifact_name_pattern' => 'DaengtisiaMS-Clinic-v{versionName}.apk',
+        'manifest_name_pattern' => 'DaengtisiaMS-Clinic-v{versionName}.release.json',
+
         'package_id' => 'com.daengtisia.clinic',
+
+        // Still true, and now for a platform reason rather than a Play one:
+        // the package name plus the signing certificate together are the
+        // update identity, and neither can be changed after the first install
+        // without an uninstall that erases app data.
+        'package_id_is_permanent' => true,
 
         'runbook' => 'docs/runbooks/android-release-distribution-and-rollback.md',
     ],
@@ -147,29 +209,32 @@ return [
     | Device management / kiosk
     |--------------------------------------------------------------------------
     |
-    | Two supported models, chosen by fleet size rather than preference. The
-    | app already treats "not Device Owner" as a supported state, so it runs
-    | correctly under both — it simply does not lock, and says so, instead of
-    | implying protection it lacks.
+    | Unchanged by the distribution revision: Device Owner + Lock Task is the
+    | kiosk mechanism, and how the APK arrives has no bearing on that.
     |
-    | Screen pinning is not on this list and never will be: it is dismissible
-    | by the user, so it is not a security control.
+    | What DID change is the fleet posture. Phase 3.5 said an EMM was REQUIRED
+    | at five devices, and that requirement came from Managed Google Play being
+    | the distribution channel — not from kiosk needs. With direct installation
+    | canonical, direct admin management stays product-supported at any fleet
+    | size. An MDM/EMM may be RECOMMENDED as the fleet grows, but adopting one
+    | is an owner decision, not an automatic trigger.
     |
     */
     'device_management' => [
         'supported_models' => [
-            // Phase 4 pilot. Factory reset, no accounts, our own
-            // ClinicDeviceAdminReceiver becomes Device Owner over ADB.
+            // Factory reset, no accounts, our own ClinicDeviceAdminReceiver
+            // becomes Device Owner. Works for the pilot and for the fleet.
             'self_owned_device_owner',
-            // Fleet. The EMM's DPC is Device Owner and lock-task-allowlists
-            // our package by policy. Our app is a managed payload, not the DO.
+            // Available if the owner later adopts an EMM. Not required.
             'emm_managed_dedicated_device',
         ],
         'pilot_model' => 'self_owned_device_owner',
-        'scale_model' => 'emm_managed_dedicated_device',
+        'fleet_model' => 'self_owned_device_owner',
 
-        // The fleet size at which hand-provisioning stops being defensible.
-        'scale_model_required_at_devices' => 5,
+        // Advisory, not a gate. Phase 3.5's `scale_model_required_at_devices`
+        // is deliberately gone: it encoded a Play dependency as a device rule.
+        'mdm_recommended_at_devices' => 10,
+        'mdm_required' => false,
 
         'forbidden_kiosk_mechanisms' => [
             'screen_pinning',                 // user-dismissible
@@ -178,8 +243,7 @@ return [
             'hardcoded_exit_pin',             // a shared secret on every device
         ],
 
-        // A QR provisioning payload is readable by anyone who can photograph
-        // the screen. Google's own guidance says it must not carry secrets.
+        // Only relevant if an EMM is ever adopted; harmless to keep true.
         'qr_provisioning_may_carry_secrets' => false,
 
         'runbook' => 'docs/runbooks/android-clinic-device-provisioning.md',
@@ -190,41 +254,145 @@ return [
     | Version and rollback policy
     |--------------------------------------------------------------------------
     |
-    | The rollback rule is the one people get wrong. Play refuses a versionCode
-    | that is not greater than the current one, and Android itself blocks
-    | downgrade installs. So "roll back" on Play means: halt the rollout (new
-    | users fall back to the previous release) and then ship the older CODE
-    | under a HIGHER versionCode. There is no decrement, ever.
+    | REVISED. Phase 3.5 described rollback as "halt the rollout, then
+    | forward-fix" — but "halt the rollout" is a Play Console operation and
+    | there is no Play Console any more. The forward-fix half survives, because
+    | it rests on PLATFORM behaviour rather than on Play.
     |
-    | Retrieved 2026-09-03 from developer.android.com/studio/publish/versioning
-    | and support.google.com/googleplay/android-developer/answer/16285429.
+    | A precision the Play-era wording hid, and which matters more now:
+    |
+    |   PLATFORM rule  : the update's versionCode must be >= the installed one.
+    |   PLAY rule      : Play additionally refused anything not strictly >.
+    |   OUR rule       : strictly >, enforced by us.
+    |
+    | Play was silently supplying the stricter half. Removing Play removes that
+    | enforcement, so the governance has to state it: two different builds must
+    | never share a versionCode, or "which build is on that tablet?" stops
+    | having an answer. The platform would happily install one over the other.
+    |
+    | Retrieved 2026-09-03 from source.android.com/docs/security/features/
+    | apksigning and developer.android.com/studio/publish/versioning.
     |
     */
     'versioning' => [
         'version_code_monotonic' => true,
         'version_code_reuse_permitted' => false,
         'version_code_decrement_permitted' => false,
-        'rollback_mechanism' => 'halt_rollout_then_forward_fix_with_higher_version_code',
-        // The first release on a track cannot be halted — there is nothing to
-        // fall back to. That makes the pilot's first build a one-way door.
-        'first_release_cannot_be_halted' => true,
+
+        // The honest split. Do not conflate them: one is enforced by Android,
+        // the other only by us.
+        'platform_version_code_rule' => 'update_must_be_greater_or_equal',
+        'governance_version_code_rule' => 'new_release_must_be_strictly_greater',
+
+        'rollback_mechanism' => 'stop_distribution_then_forward_fix_with_higher_version_code',
+
+        // There is no supported production downgrade. Installing an older
+        // versionCode requires uninstalling first, and uninstalling erases app
+        // data — which destroys the Keystore device identity and forces
+        // re-enrolment. `adb install -d` only bypasses this for debuggable
+        // builds, which a production release is not.
+        'production_downgrade_supported' => false,
+        'downgrade_requires_uninstall' => true,
+        'uninstall_destroys_device_identity' => true,
 
         'release_metadata_required' => [
+            'package_name',
             'version_name',
             'version_code',
             'git_commit',
             'ci_run_id',
+            'build_variant',
+            'apk_filename',
             'artifact_sha256',
             'signing_certificate_fingerprint_sha256',
             'release_channel',
+            'approval_status',
         ],
 
         // Validated as 64 hex characters. A key holding a placeholder is not
-        // provenance, and a manifest that gates a release has to mean something.
+        // provenance, and a manifest that gates an install has to mean something.
         'release_metadata_sha256_fields' => [
             'artifact_sha256',
             'signing_certificate_fingerprint_sha256',
         ],
+
+        'approved_release_states' => ['approved'],
+        'approved_build_variants' => ['release'],
+        'release_channel_value' => 'direct_admin_managed_apk',
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Installation authority
+    |--------------------------------------------------------------------------
+    |
+    | Direct installation means a human installs the APK, so who that human is
+    | becomes a security control rather than a logistics detail.
+    |
+    | Application Super Admin is NOT the same authority as device installer.
+    | A DaengtisiaMS Super Admin approves a device in Master Data; installing an
+    | operating-system package on clinic hardware is a separate, IT-side
+    | permission and is not implied by any application role.
+    |
+    */
+    'installation' => [
+        'authorized_installer_role' => 'daengtisiams_admin_it',
+        'application_super_admin_implies_install_authority' => false,
+
+        // Preferred separation: whoever signs is not automatically whoever
+        // installs. Below the headcount for that, record the exception rather
+        // than pretending it is not one.
+        'signer_and_installer_separation_preferred' => true,
+
+        'workstation_requirements' => [
+            'organisation_controlled_machine',
+            'malware_hygiene_maintained',
+            'artifact_fetched_from_release_source',
+            'sha256_verified_before_install',
+            'signer_fingerprint_verified_before_install',
+            'install_action_recorded',
+        ],
+
+        // The signing key does not live on the installer workstation unless
+        // that workstation IS the designated signing authority.
+        'installer_workstation_holds_signing_key' => false,
+
+        // ADB is acceptable for controlled provisioning. It is not a fleet
+        // management strategy, and leaving USB debugging on afterwards turns
+        // every kiosk tablet into an open install surface.
+        'adb_permitted_for_provisioning' => true,
+        'adb_debugging_disabled_after_provisioning' => true,
+
+        'runbook' => 'docs/runbooks/android-direct-apk-installation.md',
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Update contract
+    |--------------------------------------------------------------------------
+    |
+    | The behaviour an operator most needs to predict, and the one where a
+    | wrong assumption costs the whole fleet its enrolment.
+    |
+    */
+    'update_contract' => [
+        // Same package + same signer + higher versionCode = in-place update.
+        // App data survives, so the Android Keystore device identity survives,
+        // so the DoctorDevice enrolment survives.
+        'in_place_update_preserves_app_data' => true,
+        'in_place_update_preserves_device_identity' => true,
+        'in_place_update_preserves_enrolment' => true,
+
+        // Anything else cannot install over the existing app at all. Android
+        // requires an uninstall first, and that erases app data.
+        'signer_mismatch_blocks_update' => true,
+        'signer_mismatch_requires_uninstall' => true,
+
+        // Deliberate and load-bearing: possession of an APK is not trust.
+        'uninstall_destroys_keystore_identity' => true,
+        'clear_app_data_destroys_keystore_identity' => true,
+        'reinstall_requires_fresh_enrolment' => true,
+        'trust_restored_by_installation_alone' => false,
     ],
 
     /*
@@ -316,6 +484,7 @@ return [
         'branch_count' => 1,
         'requires_real_device' => true,
         'requires_production_signing_identity' => true,
+        'requires_google_play_setup' => false,
         'requires_owner_signoff' => true,
         'rollback_owner_named_before_start' => true,
 
@@ -325,6 +494,11 @@ return [
         'acceptance_checks' => [
             'artifact_signed_by_production_authority',
             'signing_certificate_fingerprint_recorded',
+            'apk_sha256_verified_before_install',
+            'release_manifest_verified_before_install',
+            'direct_install_performed_by_authorized_admin',
+            'adb_debugging_disabled_after_provisioning',
+            'in_place_update_preserved_device_enrolment',
             'real_android_keystore_identity_generated',
             'hardware_backed_result_recorded_truthfully',
             'strongbox_result_recorded_truthfully',
@@ -479,12 +653,101 @@ return [
         'required_documents' => [
             'docs/governance/android-production-signing-governance.md',
             'docs/adr/0009-android-production-signing-distribution-and-device-management.md',
+            'docs/adr/0010-android-direct-apk-signing-and-distribution.md',
             'docs/runbooks/android-release-distribution-and-rollback.md',
+            'docs/runbooks/android-direct-apk-installation.md',
             'docs/runbooks/android-signing-key-backup-and-recovery.md',
             'docs/runbooks/android-device-loss-replacement-and-decommission.md',
             'docs/runbooks/android-clinic-device-provisioning.md',
             'docs/operations/clinic-tablet-procurement-specification.md',
             'docs/sprints/feature-doctor-trusted-android-device-lock-1-phase-3-5.md',
+            'docs/sprints/revision-doctor-android-direct-apk-signing-distribution-1.md',
+        ],
+
+        // ------------------------------------------------------------------
+        // Google Play remnant detection
+        // ------------------------------------------------------------------
+        //
+        // The ACTIVE authority must not require Google Play. Historical
+        // records may still describe the superseded decision, so they are
+        // listed as historical rather than scanned — deleting them would be
+        // rewriting history, and scanning them would make the guard red on a
+        // repository that already obeys the rule.
+        //
+        // Every historical file must carry a supersession marker, which is
+        // itself checked: that is what keeps "historical" from becoming a
+        // parking space for a live contradiction.
+        'play_dependency_terms' => [
+            'Play App Signing',
+            'Managed Google Play',
+            'Play Console',
+            'Play Developer account',
+        ],
+        'play_scan_paths' => [
+            'config/android_release.php',
+            'docs/governance/android-production-signing-governance.md',
+            'docs/runbooks/android-release-distribution-and-rollback.md',
+            'docs/runbooks/android-direct-apk-installation.md',
+            'docs/runbooks/android-signing-key-backup-and-recovery.md',
+            'docs/runbooks/android-clinic-device-provisioning.md',
+            'docs/operations/clinic-tablet-procurement-specification.md',
+        ],
+        'play_historical_paths' => [
+            'docs/adr/0009-android-production-signing-distribution-and-device-management.md',
+            'docs/sprints/feature-doctor-trusted-android-device-lock-1-phase-3-5.md',
+        ],
+        'supersession_marker' => 'SUPERSEDED',
+
+        // The marker must be DECLARED, not merely mentioned.
+        //
+        // Mutant M11 survived a check that accepted the marker anywhere in the
+        // file: it rewrote ADR 0009's status line to "Accepted, current
+        // authority" while an incidental body paragraph still contained the
+        // word SUPERSEDED, so a document asserting it was live authority passed
+        // the supersession check. A header window does not fix it either —
+        // that paragraph is near the top too.
+        //
+        // So the marker has to sit on a STATUS or HEADING line: `**Status:**`
+        // for an ADR, a `### ...` banner for a sprint doc (optionally quoted).
+        // Prose in a paragraph no longer counts.
+        // Anchored to the STATUS VALUE, not merely to a status-or-heading line.
+        //
+        // The first version allowed `#{1,4}\s[^\n]*SUPERSEDED`, so ANY heading
+        // in the file mentioning the word satisfied it — and even a status line
+        // reading "Active, current authority. This ADR is NOT SUPERSEDED" passed,
+        // because the word appeared somewhere on it. Security review demonstrated
+        // both. The marker must now be the status VALUE itself.
+        'supersession_declaration_pattern' => '/^\\s*>?\\s*\\*\\*Status:\\*\\*\\s*\\**\\s*SUPERSEDED\\b/mi',
+
+        // A term scan alone cannot tell "requires Play" from "Play is NOT
+        // used" — the prose explaining the decision necessarily names the thing
+        // it rejects. Rule 141 §14, a third time.
+        //
+        // So the LOAD-BEARING control is `required_distribution_negatives`
+        // below: machine-readable booleans that prose cannot satisfy. Those are
+        // what actually prevent a Play dependency returning.
+        //
+        // The marker scan is a WEAKER BACKSTOP, and its limits are stated
+        // rather than overclaimed. It matches markers file-wide with no
+        // proximity to the Play mention, so a document that reintroduced a Play
+        // requirement while containing an unrelated "not used" elsewhere would
+        // pass it. Security review demonstrated exactly that. It is kept
+        // because it costs nothing and catches the careless case; it is not
+        // relied upon for the careful one.
+        'play_negation_markers' => [
+            'SUPERSEDED',
+            'NOT used',
+            'not used',
+            'not required',
+            'not a prerequisite',
+        ],
+
+        // The real assertion. Prose cannot satisfy these.
+        'required_distribution_negatives' => [
+            'google_play_required',
+            'play_app_signing_used',
+            'managed_google_play_used',
+            'play_developer_account_required',
         ],
 
         // Any of these appearing in an authentication or session surface means
