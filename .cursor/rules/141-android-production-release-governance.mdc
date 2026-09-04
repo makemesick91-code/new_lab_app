@@ -186,9 +186,28 @@ specifically. Pilot enforcement is a governed advance along that ladder, not a
 new abstraction, and a sprint that invents a parallel `OFF/PILOT/GLOBAL` model
 is duplicating shipped governance.
 
-Consequently `may_be_enabled_in_phase` is doing exactly one job: recording that
-an owner has accepted the pilot's clinical risk. Editing it is a **sign-off
-decision, never a code change**, and it moves only with
-`requires_owner_signoff` satisfied and a rollback owner named before start. The
-pilot Doctor, pilot branch and rollback owner are supplied explicitly by the
-owner and are **never guessed, never defaulted to the first Doctor found**.
+Editing a phase bound is a **sign-off decision, never a code change**, and it
+moves only with `requires_owner_signoff` satisfied and a rollback owner named
+before start. The pilot Doctor, pilot branch and rollback owner are supplied
+explicitly by the owner and are **never guessed, never defaulted to the first
+Doctor found**.
+
+REVISION-ANDROID-RELEASE-READINESS-PHASE4A-PILOT-AUTHORITY-1 split the bound,
+because one number could not carry two answers. A sign-off that reads "Phase 4
+is approved" slides into "enforcement is approved", and the rung that locks
+every Doctor out of a browser is one line further down the same ladder:
+
+- `enforcement.pilot_may_be_enabled_in_phase` — `'4A'`. The
+  `pilot_branch_or_device` rung, one named Doctor at one named branch.
+- `enforcement.global_may_be_enabled_in_phase` — `5`. The
+  `global_doctor_enforcement` rung. **Never earlier, whatever a pilot sign-off
+  says.**
+- `enforcement.may_be_enabled_in_phase` — **retained** because this rule, ADR
+  0009/0011 and both Phase-4 closure records cite it by name. It is the GLOBAL
+  bound, it declares that with `may_be_enabled_in_phase_scope`, and the scanner
+  FAILs if it ever drifts from `global_may_be_enabled_in_phase`. It does **not**
+  mean "nothing may be enabled before Phase 5".
+
+`enforcement.global_enforcement_stage` names the global rung rather than
+deriving it from the last array element, so appending a future rung cannot
+silently move what "global" means.
