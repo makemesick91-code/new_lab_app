@@ -1,0 +1,132 @@
+---
+description: The Android release-readiness gate must pass under the production runtime identity, and the Phase 4A pilot authorization is recorded but not activated
+globs: app/Support/Android/**,config/android_release.php,app/Console/Commands/Android*,tests/Feature/DoctorDevice/**
+alwaysApply: false
+---
+
+# REVISION-ANDROID-RELEASE-READINESS-PHASE4A-PILOT-AUTHORITY-1 — durable rules
+
+Gate: `php artisan android:release-readiness --strict`.
+Config: `config/android_release.php`.
+Scanner: `app/Support/Android/AndroidReleaseGovernanceScanner.php`.
+Extends rule `141-android-production-release-governance.mdc` §17. Nothing in
+rule 141 or 142 is withdrawn.
+
+## 1. A root-only green is not green
+
+The gate must reach `GO` when run by the **canonical production runtime
+identity** (`daengtisiams`), not only by `root`. A control that passes only for
+the privileged account trains operators to run audits as root, which is the
+opposite of what INFRA-SEC-RUNTIME-1 bought.
+
+Root must keep working too. It simply stops being the workaround that makes
+readiness reportable.
+
+## 2. The root-owned deployed tree stays root-owned
+
+INFRA-SEC-RUNTIME-1 deliberately pairs a root-owned checkout with an
+unprivileged application runtime. That is the boundary functioning. Git's
+foreign-ownership refusal is a **consequence of the boundary, not a defect in
+it**, and the repository is not to be chowned to make an audit green.
+
+## 3. Answer the refusal narrowly, never disable it
+
+The scanner passes an **invocation-scoped** `-c safe.directory=<the repository
+it was constructed to audit>` and nothing else. All of the following are
+forbidden:
+
+- `safe.directory=*`, in any scope.
+- A persistent `--global` / `--system` entry written by a script, a deploy step
+  or a runbook instruction.
+- Any change that makes running the audit as root the supported path.
+- Disabling git's ownership check by any other means.
+
+Verified behaviour, on production git 2.43.0 and development git 2.53.0:
+the command scope is protected configuration, so `-c safe.directory=<path>` is
+honoured; the same option naming a **different** path is still refused; and a
+`safe.directory` entry for a parent directory does **not** trust a nested
+repository. The trust is genuinely one repository.
+
+## 4. The path is an argument, never a shell string
+
+Git is invoked with an argument array, so `-c`, `safe.directory=<path>` and the
+subcommand are separate argv entries and no path is ever parsed by a shell. The
+path comes from the container binding (`base_path()`); it is not, and must not
+become, request input.
+
+## 5. Every other git failure stays closed
+
+If the index cannot be read, `no_committed_key_material` is **FAIL**. Absence of
+evidence is never evidence of absence, and a scanner that reports "clean"
+because it could not look is worse than no scanner. This applies to every
+failure mode except the one narrow ownership case above, which is answered
+rather than tolerated.
+
+## 6. Say which failure happened
+
+Checks carry a `reason`, because an unreadable index and a real finding are the
+same status and completely different incidents:
+
+- `index_access_error` — git could not read the index. No conclusion about
+  contents was reached.
+- `forbidden_key_material_found` — the index was read and a forbidden artifact
+  is tracked.
+- `not_tracked` — the index was read and the file genuinely is not in it.
+- `clean` / `tracked` — the index was read and the expected state holds.
+
+`gradle_wrapper_executable` must never say a file "is not tracked by git" when
+git refused to open the repository. That message cost a full diagnosis once.
+
+## 7. Phase 4A pilot authority — recorded, not exercised
+
+`enforcement.owner_signoff` records the owner's decision:
+
+| Field | Value |
+|---|---|
+| `phase_4a_pilot_authorized` | `true` |
+| `authorized_scope` | `pilot_branch_or_device` — **never** `global_doctor_enforcement` |
+| `pilot_doctor` | `drg Karmila` |
+| `pilot_branch` | `Cabang Sunu` |
+| `rollback_owner` | `Custodian 1 / Raushan Fikri Ridha / IT` |
+| `pilot_activated` | `false` |
+
+Human authority is recorded **as written**, not as production row ids. Resolving
+those names to real records belongs to the phase that actually runs the pilot;
+an id copied between environments is how the wrong Doctor gets enrolled.
+
+## 8. Authorization is not activation
+
+Recording a sign-off moves nothing. After this revision, and until a later phase
+explicitly enables the pilot:
+
+- `enforcement.active` = `false`
+- `enforcement.doctor_browser_login_denied` = `false`
+- `enforcement.current_stage` = `off`
+- `doctor.trusted_device_enforcement` defaults to `false`
+- no `DoctorDeviceAuthorization` row exists because of this sign-off
+- **no** Doctor, pilot or otherwise, is enforced
+
+The rollback owner may disable a pilot and return the ladder to `off` at any
+time. That is the whole point of naming one before starting.
+
+## 9. Signing is untouched by this authority
+
+Phase 4A authorization says nothing about keys. `production_certificate_sha256`
+stays `null`, no production signing key is provisioned, custody remains
+**PARTIAL** (Custodian 1 established; Custodian 2, offsite backup, Custodian 3
+and sealed-cold backup deferred by explicit owner decision), and
+`android:verify-release` still fails closed with no authority to verify against.
+
+The gate reporting `GO` means **repository release governance** is in order. It
+has never meant a signed production APK exists, and both
+`PRODUCTION_SIGNING_KEY_PROVISIONED=false` and
+`ANDROID_REAL_DEVICE_VALIDATION=false` are printed on every run precisely so
+that inference cannot be made.
+
+## 10. History stays historical
+
+Phase 4 and the first Phase 4A attempt are recorded **BLOCKED / NO-GO** and are
+not rewritten as successes. This revision is a prerequisite cleanup and a
+governance record, not a replacement attempt, and it creates neither
+`feature-doctor-trusted-android-device-lock-1-phase-4a-app-only-real-device-pilot-go`
+nor `feature-doctor-trusted-android-device-lock-1-go`.

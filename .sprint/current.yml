@@ -1,23 +1,23 @@
-# Active sprint manifest — REVISION-DOCTOR-AUTO-DEVICE-APPROVAL-APP-ONLY-LOGIN-1
+# Active sprint manifest — REVISION-ANDROID-RELEASE-READINESS-PHASE4A-PILOT-AUTHORITY-1
 # Validated by: php artisan sprint:manifest-check
 
-id: REVISION-DOCTOR-AUTO-DEVICE-APPROVAL-APP-ONLY-LOGIN-1
-type: MODULE_SPRINT
+id: REVISION-ANDROID-RELEASE-READINESS-PHASE4A-PILOT-AUTHORITY-1
+type: RUNTIME_FIX
 module: DoctorDevice
-title: "Automatic doctor/device authorization request on first Clinic App login, an Approval Device Dokter inbox, the app-only login gate and session/device binding — with enforcement shipped OFF"
+title: "Make android:release-readiness pass under the production runtime identity without weakening git trust, and record the owner's Phase 4A pilot authorization while global enforcement stays deferred to Phase 5"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-runtime_change: true            # auth gate, device-channel login endpoints, session binding middleware
-schema_change: true             # 3 additive tables: authorizations, login tickets, login challenges
-frontend_change: true           # Approval sidebar group + approval views (Blade only, no asset build)
-security_impact: true           # authentication path, device trust, approval authority, session lifetime
-branch_isolation_impact: false  # BranchContext untouched; device branch is server-resolved, never requested
+runtime_change: true            # the release-readiness scanner's git invocation and check classification
+schema_change: false            # no migration, no table, no column
+frontend_change: false          # no Blade, no JS, no CSS, no asset build
+security_impact: true           # git trust boundary, fail-closed key-material scan, enforcement authority
+branch_isolation_impact: false  # BranchContext untouched
 ledger_impact: false            # no inventory ledger / billing / payment behaviour change
 
-deploy_required: true           # migration + permission and role seeding ship to the VPS pilot
-browser_required: false         # server-rendered Blade; verified through feature tests, not a browser driver
+deploy_required: true           # the runtime-identity fix only matters once it is on the VPS
+browser_required: false         # console command and config; verified through feature tests
 
-go_tag: revision-doctor-auto-device-approval-app-only-login-1-go
+go_tag: revision-android-release-readiness-phase4a-pilot-authority-1-go
 
 test_profiles:
   - security
@@ -30,30 +30,40 @@ inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
 inherits_hold: FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1/FIX-02
 inherits_phase: feature-doctor-trusted-android-device-lock-1-phase-3-5-readiness-go
 
-# THIS IS A CAPABILITY REVISION, NOT A PHASE ADVANCE.
+# THIS IS A TOOLING FIX AND A GOVERNANCE RECORD, NOT A PHASE ADVANCE.
 #
-# The complete doctor trusted-device lock now exists: automatic PENDING requests
-# from a cryptographically proven device, the approval inbox, the app-only login
-# gate and per-request session/device binding. All of it is behind
-# `doctor.trusted_device_enforcement`, which defaults to FALSE and stays false in
-# production.
+# 1. The readiness gate was green for root and red for `daengtisiams`, the
+#    identity that actually operates production. INFRA-SEC-RUNTIME-1 leaves the
+#    deployed tree root-owned on purpose, so git refused it as foreign-owned and
+#    two checks failed — one of them with a message that blamed the repository
+#    ("gradlew is not tracked by git") for a refusal that never looked at it.
 #
-# So after this revision: DEVICE_ENFORCEMENT_ACTIVE=false and
-# DOCTOR_BROWSER_LOGIN_DENIED=false. Doctors keep logging in exactly as they do
-# today, and an empty authorization table locks nobody out.
+#    The refusal is answered, never disabled: an invocation-scoped
+#    `-c safe.directory=<this repository>` and nothing else. No wildcard, no
+#    persistent host entry, no ownership change, and every other git failure
+#    still fails closed. Checks now carry a reason so an unreadable index and a
+#    real finding stop looking identical.
 #
-# The full feature stays NO-GO. Real-device validation has NOT been performed,
-# no production signing key has been provisioned, Phase 4 has NOT started, and
-# the full-feature GO tag `feature-doctor-trusted-android-device-lock-1-go` must
-# NOT be created.
+# 2. The owner authorized a Phase 4A PILOT — drg Karmila, Cabang Sunu, rollback
+#    owner Custodian 1 / Raushan Fikri Ridha / IT. GLOBAL enforcement stays
+#    prohibited until Phase 5, and `may_be_enabled_in_phase` was split into a
+#    pilot bound and a global bound so one number cannot be read two ways.
+#
+# AUTHORIZATION IS NOT ACTIVATION. After this revision:
+# DEVICE_ENFORCEMENT_ACTIVE=false, DOCTOR_BROWSER_LOGIN_DENIED=false,
+# enforcement.current_stage=off, the flag defaults false, no pilot target row
+# exists, and no doctor — pilot or otherwise — is enforced.
+#
+# Signing custody stays PARTIAL: Custodian 1 established; Custodian 2, offsite
+# backup, Custodian 3 and sealed-cold backup deferred by explicit owner
+# decision. No production signing key was created and no certificate pinned.
+#
+# Phase 4 and the first Phase 4A attempt remain BLOCKED / NO-GO and are not
+# rewritten. Neither
+# `feature-doctor-trusted-android-device-lock-1-phase-4a-app-only-real-device-pilot-go`
+# nor the full-feature `feature-doctor-trusted-android-device-lock-1-go` may be
+# created from this revision.
 #
 # Google Play, Managed Google Play and Play App Signing remain unused (ADR 0010).
 # Phase 1 room isolation, RME/odontogram print denial, Phase 2 device lifecycle
 # and Phase 3 cryptographic identity are all preserved.
-#
-# ONE PRIOR CONTRACT IS DELIBERATELY NARROWED, WITH ITS OWN REVIEW: Phase 2/3
-# asserted that NO authentication surface may reference the device registry, and
-# said in its own comment that "Phase 4 is where that changes, deliberately and
-# with its own review". An app-only gate cannot exist under that rule. The rule
-# is therefore narrowed — not dropped — to "the auth path may consult exactly ONE
-# gate, by name", and the enforcement-OFF behaviour is pinned by its own suite.

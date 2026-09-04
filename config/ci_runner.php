@@ -264,6 +264,14 @@ return [
         // gate has to select the suite that pins it.
         'tests/Feature/DoctorDevice/DoctorDeviceAndroidDirectApkReleaseTest.php',
 
+        // REVISION-ANDROID-RELEASE-READINESS-PHASE4A-PILOT-AUTHORITY-1 — the
+        // git trust boundary the readiness gate depends on, and the Phase 4A
+        // pilot authorization's bound. Both are the kind of control that fails
+        // silently: a wildcard trust exemption still reports GO, and a
+        // sign-off read one rung too broadly is a clinic-wide lockout. The
+        // gate has to select the suite that would notice.
+        'tests/Feature/DoctorDevice/DoctorDeviceAndroidRuntimeIdentityReadinessTest.php',
+
         // REVISION-DOCTOR-AUTO-DEVICE-APPROVAL-APP-ONLY-LOGIN-1 — the
         // doctor/device authorization lifecycle, the automatic request on first
         // app login, the approval inbox's authority, and the app-only gate.

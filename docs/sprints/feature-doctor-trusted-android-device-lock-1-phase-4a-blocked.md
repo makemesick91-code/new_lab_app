@@ -289,3 +289,23 @@ now closed by the re-scoping itself; the rest are unchanged and unmet.
 **The first six rows are one decision.** Until signing custody is a real
 organisational fact, Phase 4A cannot begin, and no amount of tooling can
 substitute for it.
+
+---
+
+## Forward reference — what happened after this record
+
+This record stands as written. Phase 4A's first attempt was, and remains,
+**BLOCKED / NO-GO**.
+
+`REVISION-ANDROID-RELEASE-READINESS-PHASE4A-PILOT-AUTHORITY-1`
+(`docs/sprints/revision-android-release-readiness-phase4a-pilot-authority-1.md`)
+subsequently closed the four **B4** rows above — the owner recorded sign-off for
+pilot enforcement, named drg Karmila as the pilot Doctor, Cabang Sunu as the
+pilot branch, and Custodian 1 / Raushan Fikri Ridha / IT as the rollback owner.
+It also fixed a false FAIL in `android:release-readiness` under the production
+runtime identity (§5's `may_be_enabled_in_phase` question is resolved there by
+splitting the pilot and global bounds).
+
+It did **not** resume the pilot. The six **B1** signing-custody rows are
+untouched and still open, signing custody is still `PARTIAL`, no production key
+exists, and enforcement is still off. Phase 4A resumes only when those rows do.
