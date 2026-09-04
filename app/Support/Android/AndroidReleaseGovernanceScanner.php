@@ -2,6 +2,7 @@
 
 namespace App\Support\Android;
 
+use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Support\Facades\Process;
 
 /**
@@ -19,10 +20,86 @@ use Illuminate\Support\Facades\Process;
  */
 class AndroidReleaseGovernanceScanner
 {
+    /**
+     * Why a check reached its verdict.
+     *
+     * REVISION-ANDROID-RELEASE-READINESS-PHASE4A-PILOT-AUTHORITY-1 — a FAIL
+     * that says "no key material was found" and a FAIL that says "the index
+     * could not be read" are the same status and completely different
+     * incidents. Collapsing them cost an operator a full diagnosis: the gate
+     * reported the Gradle wrapper "is not tracked by git" when git had merely
+     * declined to open a repository owned by another user, and the wrapper was
+     * tracked all along. The status stays closed either way; the reason is how
+     * a reader learns which door to walk through.
+     */
+    public const REASON_CLEAN = 'clean';
+
+    public const REASON_TRACKED = 'tracked';
+
+    public const REASON_NOT_TRACKED = 'not_tracked';
+
+    public const REASON_FORBIDDEN_KEY_MATERIAL_FOUND = 'forbidden_key_material_found';
+
+    public const REASON_INDEX_ACCESS_ERROR = 'index_access_error';
+
     public function __construct(
         private readonly KotlinSourceScanner $kotlin,
         private readonly string $basePath,
     ) {}
+
+    /**
+     * Every git invocation this scanner makes goes through here.
+     *
+     * INFRA-SEC-RUNTIME-1 deliberately leaves the deployed tree owned by root
+     * while the application runs as an unprivileged identity. That is the
+     * security boundary working, not a misconfiguration — so git's
+     * foreign-ownership refusal is not something to switch off. It is
+     * something to answer, narrowly: this scanner declares that THIS ONE
+     * repository is the one it was constructed to audit, for the length of one
+     * process, and says nothing about any other repository on the host.
+     *
+     * The rejected alternatives all trade the control away for the symptom:
+     * a wildcard exemption trusts every repository anyone can create; a
+     * persistent global entry survives the process, the deploy and the
+     * operator's memory; and running the audit as root makes the privileged
+     * identity the only one that can check whether the tree is safe.
+     *
+     * `-c name=value` is passed as its own argv entries to an argument array,
+     * so the path is never parsed by a shell no matter what it contains. The
+     * path itself is the constructor's base path, which the container binds
+     * from base_path() — it is not, and must never become, request input.
+     *
+     * @param  array<int,string>  $arguments
+     */
+    private function git(array $arguments): ProcessResult
+    {
+        return Process::path($this->basePath)->run(array_merge(
+            ['git', '-c', 'safe.directory='.$this->basePath],
+            $arguments,
+        ));
+    }
+
+    /**
+     * Turn a failed git invocation into a sentence an operator can act on.
+     *
+     * The ownership marker lives in config for the same reason every other
+     * literal here does: a scanner whose own source contains the strings it
+     * matches on eventually matches itself.
+     */
+    private function indexAccessDetail(string $what, ProcessResult $result): string
+    {
+        $stderr = $result->errorOutput();
+
+        foreach ((array) config('android_release.scanner.git_ownership_error_markers') as $marker) {
+            if (is_string($marker) && $marker !== '' && str_contains($stderr, $marker)) {
+                return $what.' git refused the repository as foreign-owned, so the index was never read. '
+                    .'This is an index ACCESS failure, not a finding about the repository contents.';
+            }
+        }
+
+        return $what.' git could not read the index. '
+            .'This is an index ACCESS failure, not a finding about the repository contents.';
+    }
 
     /**
      * @return array{status:string, checks:array<int,array<string,mixed>>, summary:array<string,mixed>}
@@ -37,6 +114,7 @@ class AndroidReleaseGovernanceScanner
             $this->governanceDecisionChecks(),
             $this->directApkDistributionChecks(),
             $this->enforcementChecks(),
+            $this->enforcementAuthorityChecks(),
         );
 
         $failed = array_values(array_filter($checks, fn (array $c): bool => $c['status'] === 'FAIL'));
@@ -181,13 +259,22 @@ class AndroidReleaseGovernanceScanner
                     : 'Key-material guard no longer covers: '.implode(', ', array_merge($disarmed, $ignoreDisarmed))),
         );
 
-        $result = Process::path($this->basePath)->run(['git', 'ls-files']);
+        $result = $this->git(['ls-files']);
 
         if (! $result->successful()) {
             // Append rather than return: discarding the armed check above would
             // silently shrink the reported check count on this path. The
             // ignore-file check does not need git, so it still runs below.
-            $checks[] = $this->check('no_committed_key_material', 'FAIL', 'Could not read the git index to verify no key material is tracked.');
+            //
+            // FAIL, not PASS, and that is the whole point. If the gate cannot
+            // prove forbidden key material is absent, it must not report that
+            // it is. Absence of evidence is not evidence of absence.
+            $checks[] = $this->check(
+                'no_committed_key_material',
+                'FAIL',
+                $this->indexAccessDetail('Could not verify that no key material is tracked:', $result),
+                self::REASON_INDEX_ACCESS_ERROR,
+            );
 
             return array_merge($checks, [$this->ignoreFileCheck($ignorePatterns)]);
         }
@@ -210,6 +297,7 @@ class AndroidReleaseGovernanceScanner
             $offenders === []
                 ? 'No signing key material is tracked by git.'
                 : 'Tracked key material: '.implode(', ', $offenders),
+            $offenders === [] ? self::REASON_CLEAN : self::REASON_FORBIDDEN_KEY_MATERIAL_FOUND,
         );
 
         $checks[] = $this->ignoreFileCheck($ignorePatterns);
@@ -258,11 +346,29 @@ class AndroidReleaseGovernanceScanner
         $relative = (string) config('android_release.scanner.gradle_wrapper');
         $expected = (string) config('android_release.scanner.gradle_wrapper_required_index_mode');
 
-        $result = Process::path($this->basePath)->run(['git', 'ls-files', '-s', '--', $relative]);
+        $result = $this->git(['ls-files', '-s', '--', $relative]);
         $output = trim($result->output());
 
-        if (! $result->successful() || $output === '') {
-            return [$this->check('gradle_wrapper_executable', 'FAIL', "{$relative} is not tracked by git.")];
+        // These were one branch, and the merged message was actively
+        // misleading: a refused repository was reported as an untracked
+        // wrapper, sending an operator to look for a file that was committed
+        // the whole time. Same FAIL, different incident, different fix.
+        if (! $result->successful()) {
+            return [$this->check(
+                'gradle_wrapper_executable',
+                'FAIL',
+                $this->indexAccessDetail("Could not read the index mode of {$relative}:", $result),
+                self::REASON_INDEX_ACCESS_ERROR,
+            )];
+        }
+
+        if ($output === '') {
+            return [$this->check(
+                'gradle_wrapper_executable',
+                'FAIL',
+                "{$relative} is not tracked by git.",
+                self::REASON_NOT_TRACKED,
+            )];
         }
 
         $mode = explode(' ', $output)[0];
@@ -273,6 +379,7 @@ class AndroidReleaseGovernanceScanner
             $mode === $expected
                 ? 'The Gradle wrapper is committed executable.'
                 : "The Gradle wrapper is committed {$mode}; CI needs {$expected}.",
+            self::REASON_TRACKED,
         )];
     }
 
@@ -671,6 +778,87 @@ class AndroidReleaseGovernanceScanner
     }
 
     /**
+     * Who has authorized what, and how far up the ladder it reaches.
+     *
+     * REVISION-ANDROID-RELEASE-READINESS-PHASE4A-PILOT-AUTHORITY-1 — the owner
+     * signed off on a Phase 4A PILOT (one doctor, one branch, a named rollback
+     * owner) while GLOBAL enforcement stays forbidden until Phase 5. Both
+     * halves are checked here rather than only written down, because the
+     * dangerous reading of a sign-off is always the broader one: "Phase 4 is
+     * approved" quietly becomes "enforcement is approved", and the rung that
+     * locks every doctor out of a browser is the same switch one line further
+     * down the ladder.
+     *
+     * Neither check activates anything. They assert that an authorization was
+     * recorded and that it is bounded — the ladder position in force is still
+     * `off`, and `enforcement_off` above proves that independently.
+     *
+     * @return array<int,array<string,mixed>>
+     */
+    private function enforcementAuthorityChecks(): array
+    {
+        $signoff = (array) config('android_release.enforcement.owner_signoff');
+        $stages = (array) config('android_release.enforcement.stages');
+        $globalStage = (string) config('android_release.enforcement.global_enforcement_stage');
+        $scope = is_string($signoff['authorized_scope'] ?? null) ? $signoff['authorized_scope'] : '';
+
+        $named = array_values(array_filter(
+            ['pilot_doctor', 'pilot_branch', 'rollback_owner', 'rollback_action'],
+            fn (string $field): bool => ! is_string($signoff[$field] ?? null) || $signoff[$field] === '',
+        ));
+
+        // A pilot with no named rollback owner is not a pilot, it is a launch.
+        $recorded = ($signoff['phase_4a_pilot_authorized'] ?? null) === true
+            && ($signoff['pilot_activated'] ?? null) === false
+            && $named === []
+            && $scope !== ''
+            && $stages !== []
+            && in_array($scope, $stages, true)
+            && $scope !== $globalStage;
+
+        $checks = [];
+
+        $checks[] = $this->check(
+            'pilot_authority_recorded',
+            $recorded ? 'PASS' : 'FAIL',
+            $recorded
+                ? "Owner authorized the '{$scope}' rung for a named pilot doctor and branch, with a named rollback owner, and it is recorded as authorized rather than activated."
+                : ($named !== []
+                    ? 'Pilot authorization is missing: '.implode(', ', $named)
+                    : ($scope === $globalStage
+                        ? 'The recorded pilot scope is the global rung. A pilot authorization cannot be the global one.'
+                        : 'Pilot authorization is absent, marks itself activated, or names a rung that is not on the ladder.')),
+        );
+
+        $globalBound = config('android_release.enforcement.global_may_be_enabled_in_phase');
+        $pilotBound = config('android_release.enforcement.pilot_may_be_enabled_in_phase');
+        $retained = config('android_release.enforcement.may_be_enabled_in_phase');
+        $retainedScope = config('android_release.enforcement.may_be_enabled_in_phase_scope');
+
+        // The retained key is cited by rules, ADRs and two closure records, so
+        // it stays. What it may not do is stay readable two ways: it now
+        // declares the scope it bounds, and has to agree with the bound it
+        // duplicates. If the two ever drift, the ambiguity is back and this
+        // check is what notices.
+        $bounded = $globalBound === 5
+            && $retained === $globalBound
+            && $retainedScope === $globalStage
+            && $globalStage !== ''
+            && $pilotBound !== $globalBound
+            && config('android_release.enforcement.current_stage') === 'off';
+
+        $checks[] = $this->check(
+            'global_enforcement_deferred',
+            $bounded ? 'PASS' : 'FAIL',
+            $bounded
+                ? "Global doctor enforcement is bounded to phase {$globalBound}; the pilot rung is bounded to phase {$pilotBound}; the ladder position in force is off."
+                : 'The global enforcement bound is missing, disagrees with the retained authority, or the ladder is no longer at off.',
+        );
+
+        return $checks;
+    }
+
+    /**
      * Ignore rules that actually take effect: comments and blank lines dropped,
      * and a `!` negation removed from the set rather than counted as coverage.
      *
@@ -815,8 +1003,14 @@ class AndroidReleaseGovernanceScanner
         ];
     }
 
-    private function check(string $id, string $status, string $detail): array
+    private function check(string $id, string $status, string $detail, ?string $reason = null): array
     {
-        return ['id' => $id, 'status' => $status, 'detail' => $detail];
+        $check = ['id' => $id, 'status' => $status, 'detail' => $detail];
+
+        if ($reason !== null) {
+            $check['reason'] = $reason;
+        }
+
+        return $check;
     }
 }

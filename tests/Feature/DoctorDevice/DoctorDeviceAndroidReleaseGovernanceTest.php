@@ -643,12 +643,33 @@ it('shells out only to read-only git subcommands', function () {
 
     androidScanner()->scan();
 
+    // REVISION-ANDROID-RELEASE-READINESS-PHASE4A-PILOT-AUTHORITY-1 — the
+    // scanner now passes an invocation-scoped `-c safe.directory=<this repo>`
+    // so the audit is runnable by the unprivileged production runtime identity
+    // against a root-owned tree. That puts option pairs before the subcommand,
+    // so the subcommand is resolved rather than read off a fixed index.
+    //
+    // Resolving it also makes this control stricter than the version it
+    // replaces: the injected configuration is constrained to exactly one key
+    // with exactly one value, so `-c core.hooksPath=...` or a wildcard trust
+    // is now a failure here rather than an unnoticed extra argument.
     $subcommand = function ($process): array {
         $command = is_array($process->command)
             ? $process->command
             : explode(' ', (string) $process->command);
 
-        return [$command[0] ?? null, $command[1] ?? null];
+        $binary = array_shift($command) ?? null;
+
+        while (($command[0] ?? null) === '-c') {
+            array_shift($command);
+
+            expect(array_shift($command))->toBe(
+                'safe.directory='.base_path(),
+                'git was given configuration other than this repository\'s scoped trust.',
+            );
+        }
+
+        return [$binary, $command[0] ?? null];
     };
 
     // Presence: if the scan stops invoking git at all, the index checks have

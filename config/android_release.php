@@ -566,7 +566,64 @@ return [
         'flag_key' => 'doctor.trusted_device_enforcement',
         'flag_default_off' => true,
 
+        /*
+        | REVISION-ANDROID-RELEASE-READINESS-PHASE4A-PILOT-AUTHORITY-1 — the
+        | owner has authorized a Phase 4A PILOT. That authorization is recorded
+        | here; it is NOT exercised anywhere. `active`, `doctor_browser_login_denied`
+        | and `current_stage` above are unchanged, and the feature flag still
+        | defaults to false, so no doctor's login changes because of this block.
+        |
+        | The distinction this records is the one that matters clinically:
+        | one named doctor at one named branch is a recoverable experiment,
+        | and the global rung is a clinic-wide lockout if the fleet is not
+        | enrolled first. They are different decisions and they get different
+        | phases.
+        */
+        'owner_signoff' => [
+            'phase_4a_pilot_authorized' => true,
+
+            // Recorded so nothing downstream can read this block as an
+            // instruction. Authorization is permission to act later.
+            'pilot_activated' => false,
+
+            // The rung this sign-off reaches, by name from `stages` below.
+            // Explicitly NOT `global_doctor_enforcement`.
+            'authorized_scope' => 'pilot_branch_or_device',
+
+            // Human authority, deliberately as written rather than as an id.
+            // Resolving these to production rows belongs to the phase that
+            // actually runs the pilot; an id copied between environments is
+            // how the wrong doctor gets enrolled.
+            'pilot_doctor' => 'drg Karmila',
+            'pilot_branch' => 'Cabang Sunu',
+            'rollback_owner' => 'Custodian 1 / Raushan Fikri Ridha / IT',
+            'rollback_action' => 'The rollback owner disables pilot enforcement and returns the ladder to off. Browser login works again immediately; no device is unenrolled and no authorization is altered.',
+
+            'recorded_by' => 'REVISION-ANDROID-RELEASE-READINESS-PHASE4A-PILOT-AUTHORITY-1',
+        ],
+
+        /*
+        | The phase in which each SCOPE may FIRST be switched on.
+        |
+        | Split because one number could not carry two answers. Phase 4A may
+        | run the pilot rung. Nothing before Phase 5 may run the global one,
+        | and the owner sign-off above deliberately does not reach it.
+        */
+        'pilot_may_be_enabled_in_phase' => '4A',
+        'global_may_be_enabled_in_phase' => 5,
+
+        /*
+        | RETAINED. Rules 141/142, ADR 0009/0011 and both Phase-4 closure
+        | records cite this key by name, so removing it would orphan every
+        | citation. What it may no longer do is be read two ways: it is the
+        | GLOBAL bound, it now says which scope it bounds, and the scanner
+        | fails if it ever disagrees with `global_may_be_enabled_in_phase`.
+        |
+        | It does NOT mean "nothing may be enabled before phase 5". The pilot
+        | rung is bounded separately, and above.
+        */
         'may_be_enabled_in_phase' => 5,
+        'may_be_enabled_in_phase_scope' => 'global_doctor_enforcement',
 
         'stages' => [
             'off',
@@ -575,6 +632,12 @@ return [
             'all_ready_doctors',
             'global_doctor_enforcement',
         ],
+
+        // Named rather than assumed to be the last element: a stage appended
+        // for a future rung would silently move "global" if this were derived
+        // from position.
+        'global_enforcement_stage' => 'global_doctor_enforcement',
+
         'current_stage' => 'off',
 
         // Turning enforcement on without these is how a clinic loses a day.
@@ -603,6 +666,23 @@ return [
         'app_build_file' => 'android/daengtisia-clinic/app/build.gradle.kts',
         'gradle_wrapper' => 'android/daengtisia-clinic/gradlew',
         'gradle_wrapper_required_index_mode' => '100755',
+
+        /*
+        | How git says it refused to open a repository owned by somebody else.
+        |
+        | The deployed tree is root-owned while the application runs as an
+        | unprivileged identity (INFRA-SEC-RUNTIME-1), which is the boundary
+        | working as designed — so this refusal is expected and the scanner
+        | answers it with a trust scoped to exactly that one repository for
+        | exactly one invocation. This marker exists only so the operator-facing
+        | message can name what happened instead of blaming the repository.
+        |
+        | Matching on it never changes a verdict. An unreadable index is a FAIL
+        | whether or not this string appears.
+        */
+        'git_ownership_error_markers' => [
+            'detected dubious ownership',
+        ],
 
         // Extraction is ANCHORED to this nested path, never a file-wide search
         // for `release {`. String literals are preserved on purpose (the
