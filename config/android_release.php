@@ -214,7 +214,54 @@ return [
                     'os' => 'ubuntu',
                     'location' => 'Cabang Pusat',
                     'authorized_access' => ['IT'],
-                    'disk_encryption' => true,
+
+                    // -------------------------------------------------------
+                    // REVISION-PRODUCTION-SIGNING-CUSTODIAN1-ENCRYPTED-VAULT-1
+                    //
+                    // This workstation is NOT full-disk encrypted, and saying
+                    // so plainly is the point of this field.
+                    //
+                    // The record used to read `disk_encryption => true`. It
+                    // was measured against the machine during the provisioning
+                    // attempt and found untrue: `/` and `/home` mount straight
+                    // from raw ext4 partitions (`/dev/sda1`, `/dev/sda3`),
+                    // there is no `/dev/mapper` device, no LUKS signature, no
+                    // eCryptfs and no fscrypt. A single ambiguous boolean had
+                    // been carrying a claim nobody had checked, and the
+                    // release gate was reporting PASS on the strength of it.
+                    //
+                    // So the claim is split in two. The host fact is recorded
+                    // as the false thing it is, and the control that actually
+                    // protects the key gets its own explicit record below.
+                    // Nothing here may be read as "the workstation is
+                    // encrypted" — it is not.
+                    // -------------------------------------------------------
+                    'host_full_disk_encryption' => false,
+
+                    // The control that does the work: a dedicated LUKS2
+                    // container, created non-destructively beside the host
+                    // filesystem, which is where the production signing
+                    // keystore must live once it exists. Closed at rest and
+                    // opened only by an interactive custody action.
+                    //
+                    // `verified => true` records that the container was
+                    // opened, mounted, written to, closed, reopened and
+                    // proven to hide its contents while closed — not that a
+                    // boolean was typed. See the signing custody runbook.
+                    //
+                    // No path, UUID or size is recorded here: none of them
+                    // improve the governance claim and each widens what a
+                    // committed file discloses about the operator's machine.
+                    'primary_secret_storage' => [
+                        'type' => 'dedicated_encrypted_vault',
+                        'encryption' => 'luks2',
+                        'verified' => true,
+                        'default_state' => 'closed',
+                        'auto_unlock' => false,
+                        'plaintext_keyfile' => false,
+                        'outside_repository' => true,
+                    ],
+
                     'login_password' => true,
                     'screen_lock' => true,
                     'initial_key_generation_authority' => true,
@@ -236,7 +283,22 @@ return [
                     'os' => 'windows',
                     'location' => 'Klinik Daengtisia',
                     'authorized_access' => ['IT', 'Admin Klinik'],
-                    'disk_encryption' => true,
+
+                    // Renamed from `disk_encryption` by
+                    // REVISION-PRODUCTION-SIGNING-CUSTODIAN1-ENCRYPTED-VAULT-1
+                    // so the field says which claim it is making. The value is
+                    // unchanged and remains an operator DECLARATION about a
+                    // remote Windows machine — this scanner has never measured
+                    // it, and after what the same boolean concealed on
+                    // custodian 1 that distinction is worth stating.
+                    //
+                    // It is not load-bearing for secrecy either way: whatever
+                    // this machine's disk does, custodian 2's copy has to
+                    // arrive inside its own encrypted container, because
+                    // Admin Klinik can log in here and must not reach the
+                    // signing key by doing so.
+                    'host_full_disk_encryption' => true,
+
                     'login_password' => true,
                     'screen_lock' => true,
                     'initial_key_generation_authority' => false,

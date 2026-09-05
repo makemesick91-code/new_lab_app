@@ -120,7 +120,7 @@ it('records custodian 2 as an encrypted backup destination with endpoint control
     expect($two['os'])->toBe('windows');
     expect($two['location'])->toBe('Klinik Daengtisia');
 
-    expect($two['disk_encryption'])->toBeTrue();
+    expect($two['host_full_disk_encryption'])->toBeTrue();
     expect($two['login_password'])->toBeTrue();
     expect($two['screen_lock'])->toBeTrue();
 
@@ -363,9 +363,9 @@ it('rejects a custody model with the primary signing authority removed', functio
     ))->toBe('FAIL');
 });
 
-it('rejects a backup destination whose disk encryption is off', function () {
+it('rejects a backup destination with neither host encryption nor a vault', function () {
     expect(custodyMutate(
-        'android_release.signing.custody.custodians.custodian_2.disk_encryption',
+        'android_release.signing.custody.custodians.custodian_2.host_full_disk_encryption',
         false,
         'custody_endpoint_controls_recorded',
     ))->toBe('FAIL');
