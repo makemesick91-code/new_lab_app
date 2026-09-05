@@ -112,6 +112,12 @@ class AndroidReleaseReadinessCommand extends Command
         // command could do is let a reader infer readiness it has not proven.
         $this->line('PRODUCTION_SIGNING_KEY_PROVISIONED='.($summary['production_signing_key_provisioned'] ? 'true' : 'false'));
         $this->line('ANDROID_REAL_DEVICE_VALIDATION='.($summary['real_device_validation'] ? 'true' : 'false'));
+        // Printed immediately under the line it is most likely to be confused
+        // with. The hardware preflight is a narrow gate: the key the app
+        // generates lives in secure hardware. It is NOT the real-device pilot
+        // validation above, and a reader who conflates them reads a signed
+        // APK, an enrolled device and a run pilot into a keystore measurement.
+        $this->line('ANDROID_REAL_DEVICE_HARDWARE_PREFLIGHT='.($summary['real_device_hardware_preflight'] ? 'PASS' : 'NOT PROVEN'));
         $this->line('DEVICE_ENFORCEMENT_ACTIVE='.($summary['device_enforcement_active'] ? 'true' : 'false'));
 
         if (isset($report['release_manifest'])) {

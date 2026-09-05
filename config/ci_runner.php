@@ -272,6 +272,13 @@ return [
         // gate has to select the suite that would notice.
         'tests/Feature/DoctorDevice/DoctorDeviceAndroidRuntimeIdentityReadinessTest.php',
 
+        // EVIDENCE-PHASE4A-REAL-DEVICE-KEYINFO-PREFLIGHT-1. The hardware gate
+        // for the pilot tablet: the key the app generates must measure
+        // TRUSTED_ENVIRONMENT or STRONGBOX and be non-exportable, a device
+        // capability flag is never accepted as proof of it, and the pass must
+        // move signing, enrolment and enforcement not at all.
+        'tests/Feature/DoctorDevice/DoctorDeviceAndroidRealDevicePreflightTest.php',
+
         // REVISION-DOCTOR-AUTO-DEVICE-APPROVAL-APP-ONLY-LOGIN-1 — the
         // doctor/device authorization lifecycle, the automatic request on first
         // app login, the approval inbox's authority, and the app-only gate.
