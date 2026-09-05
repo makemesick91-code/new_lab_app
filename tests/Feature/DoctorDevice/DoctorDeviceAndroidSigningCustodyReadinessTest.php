@@ -548,3 +548,14 @@ it('rejects a passphrase recorded anywhere in the custody block', function () {
         'custody_records_no_secret_material',
     ))->toBe('FAIL');
 });
+
+it('registers this suite in the critical gate so something selects it', function () {
+    // A `DoctorDevice` token match would run this file today. It is declared
+    // explicitly for the reason the registry itself gives: a token match is an
+    // accident of naming, and nothing would announce the day it stopped
+    // selecting. The drift this suite catches — config claiming backups that
+    // were never written — is silent, and would first surface as a lost key
+    // with no recoverable copy.
+    expect(config('ci_runner.critical_gate_mandatory_suites'))
+        ->toContain('tests/Feature/DoctorDevice/DoctorDeviceAndroidSigningCustodyReadinessTest.php');
+});
