@@ -559,3 +559,163 @@ it('registers this suite in the critical gate so something selects it', function
     expect(config('ci_runner.critical_gate_mandatory_suites'))
         ->toContain('tests/Feature/DoctorDevice/DoctorDeviceAndroidSigningCustodyReadinessTest.php');
 });
+
+// ---------------------------------------------------------------------------
+// Security review findings. Each of these PASSED before the fix, while the
+// check printed a message asserting the opposite.
+// ---------------------------------------------------------------------------
+
+it('rejects the primary custodian sitting on a medium outside the scanner allowlist', function () {
+    // M1. The first version read the permitted and forbidden media from the
+    // same config block being edited, so one edit could move key generation
+    // onto the production VPS and still print "VPS ... excluded".
+    expect(custodyMutate(
+        'android_release.signing.custody.custodians.custodian_1.media',
+        'production_vps',
+        'custody_key_generation_hosts_restricted',
+    ))->toBe('FAIL');
+
+    expect(custodyMutate(
+        'android_release.signing.custody.custodians.custodian_1.media',
+        'usb',
+        'custody_key_generation_hosts_restricted',
+    ))->toBe('FAIL');
+});
+
+it('rejects widening the permitted key generation media beyond the scanner allowlist', function () {
+    expect(custodyMutate(
+        'android_release.signing.custody.permitted_initial_key_generation_media',
+        ['primary_it_workstation', 'production_vps'],
+        'custody_key_generation_hosts_restricted',
+    ))->toBe('FAIL');
+});
+
+it('rejects dropping a medium the scanner requires to stay forbidden', function () {
+    expect(custodyMutate(
+        'android_release.signing.custody.forbidden_initial_key_generation_media',
+        ['browser'],
+        'custody_key_generation_hosts_restricted',
+    ))->toBe('FAIL');
+});
+
+it('rejects denying the shared-access concentration the access lists prove', function () {
+    // M2. Declaring false cost nothing, while `authorized_access` three lines
+    // away showed IT on every destination. A caveat that can be switched off
+    // by denying it is not a caveat.
+    expect(custodyMutate(
+        'android_release.signing.custody.single_party_can_reach_all_copies',
+        false,
+        'custody_shared_access_declared',
+    ))->toBe('FAIL');
+});
+
+it('derives the shared-access answer rather than trusting the declaration', function () {
+    $detail = custodyCheck('custody_shared_access_declared')['detail'];
+
+    expect($detail)->toContain('Derived from authorised access');
+    expect($detail)->toContain('IT');
+});
+
+it('rejects a custody destination that does not record who may reach it', function () {
+    expect(custodyMutate(
+        'android_release.signing.custody.custodians.custodian_2.authorized_access',
+        [],
+        'custody_shared_access_declared',
+    ))->toBe('FAIL');
+});
+
+it('rejects a second primary signing authority hidden in the plural roles field', function () {
+    // L1. Check 4 read only the singular `role`, so a custodian carrying
+    // `primary_signing_authority` in `roles[]` stayed invisible while the
+    // check printed "sole".
+    expect(custodyMutate(
+        'android_release.signing.custody.custodians.custodian_2.roles',
+        ['encrypted_backup_destination', 'primary_signing_authority'],
+        'custody_primary_signing_authority_designated',
+    ))->toBe('FAIL');
+});
+
+it('does not count an empty entry as a custody destination', function () {
+    // L3. `count()` counted array entries, so `'custodian_4' => []` satisfied
+    // the minimum with nothing behind it.
+    $custodians = config('android_release.signing.custody.custodians');
+    unset($custodians['custodian_3']);
+    $custodians['custodian_4'] = [];
+
+    expect(custodyMutate(
+        'android_release.signing.custody.custodians',
+        $custodians,
+        'custody_minimum_custodians_designated',
+    ))->toBe('FAIL');
+});
+
+it('does not assert the claims are false once custody is past readiness', function () {
+    // L2. For any status other than ready_for_provisioning the check printed
+    // "claims no key, no backup copy and no verified recovery — those remain
+    // false", including for an operational record where all of them were true.
+    $custody = config('android_release.signing.custody');
+    $custody['status'] = 'operational';
+    $custody['production_signing_key_provisioned'] = true;
+    $custody['backup_1_key_copy_created'] = true;
+    $custody['recovery_verified'] = true;
+
+    $original = config('android_release.signing.custody');
+    config()->set('android_release.signing.custody', $custody);
+
+    try {
+        $check = collect(custodyScan()['checks'])
+            ->firstWhere('id', 'custody_readiness_does_not_claim_provisioning');
+    } finally {
+        config()->set('android_release.signing.custody', $original);
+    }
+
+    expect($check['detail'])->not->toContain('Those remain false');
+    expect($check['detail'])->toContain('asserts nothing');
+});
+
+it('rejects secret-shaped values a key-name denylist would miss', function () {
+    // M3. Every one of these PASSED, while the check printed "no passphrase,
+    // serial, identifier or private address".
+    $cases = [
+        'usb serial' => 'SN 0123456789ABCDEF0',
+        'filesystem uuid' => 'a1b2c3d4-e5f6-7890-abcd-ef0123456789',
+        'private address' => 'Perumahan Griya Indah Blok C5 No. 12',
+        'phone number' => '+6281234567890',
+        'colon fingerprint' => 'A1:B2:C3:D4:E5:F6:07:18',
+    ];
+
+    foreach ($cases as $label => $value) {
+        expect(custodyMutate(
+            'android_release.signing.custody.custodians.custodian_3.location',
+            $value,
+            'custody_records_no_secret_material',
+        ))->toBe('FAIL', "a {$label} must not pass the secret scan");
+    }
+});
+
+it('rejects an unrecognised field on a custody destination', function () {
+    // A denylist only catches the leaks somebody already imagined, so
+    // custodian entries are confined to an allowlist instead.
+    foreach (['device_id', 'unlock_hint', 'wrapped_material'] as $field) {
+        expect(custodyMutate(
+            "android_release.signing.custody.custodians.custodian_3.{$field}",
+            'anything at all',
+            'custody_records_no_secret_material',
+        ))->toBe('FAIL', "{$field} must not be accepted silently");
+    }
+});
+
+it('rejects a custodian field that no denylist would ever name', function () {
+    // Mutation testing caught the previous test proving nothing about the
+    // allowlist: `device_id` and `unlock_hint` are ALSO on the key denylist,
+    // so disabling the allowlist entirely still passed. These field names are
+    // on neither list — which is the whole point of an allowlist, since the
+    // leak you have to survive is the one nobody named in advance.
+    foreach (['cabinet_number', 'notes', 'holder_initials'] as $field) {
+        expect(custodyMutate(
+            "android_release.signing.custody.custodians.custodian_3.{$field}",
+            'ordinary looking text',
+            'custody_records_no_secret_material',
+        ))->toBe('FAIL', "an unrecognised field {$field} must be refused, not ignored");
+    }
+});

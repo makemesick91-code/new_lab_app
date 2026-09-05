@@ -145,19 +145,54 @@ VPS, Custodian 2 and the USB each promoted to key-generation authority; fewer
 destinations than the minimum; shared access undeclared and declared without
 controls; a serial and a passphrase planted in the block.
 
-Four **real code mutants** were applied to the scanner and all four were
-killed — `custody_state_machine_consistent` forced to PASS (4 tests failed),
-the secret-leak detector stubbed to return nothing (2 failed), the
-key-generation host restriction short-circuited (3 failed), and the
-readiness-honesty check forced to PASS (1 failed). The file was restored by
-copy and verified byte-identical by checksum after each. **Survivors: 0.**
+Eight **real code mutants** were applied to the scanner. Seven were killed on
+the first pass; the file was restored by copy and verified byte-identical by
+checksum after each. **Final survivors: 0.**
 
-One test defect was found and fixed rather than worked around: the first
-version of the secret scan swept the encoded block for the substring
-`passphrase`, which failed on the compensating control legitimately named
+### What independent security review found
+
+Review returned **CRITICAL: 0, HIGH: 0** and confirmed no path to a green scan
+that claims a key exists, no activation, and no secret in the diff. It also
+found three MEDIUM defects pointing the *other* way — checks that verified a
+self-declared value against another self-declared value and then printed a PASS
+message asserting a specific fact they had never checked. All are fixed:
+
+| Finding | The hole | Fix |
+|---|---|---|
+| **M1** | Key generation read the permitted *and* forbidden media from the same config block being edited. Setting `custodian_1.media = 'production_vps'` and `permitted = ['production_vps']` in one edit produced PASS — while printing *"VPS, CI, backup destinations, USB and the clinic device are all excluded"*. Every clause was false. | The allowlist and the must-forbid list are now constants the scanner owns. Config may forbid more, never less, and may not widen past the allowlist. |
+| **M2** | The concentration caveat was self-declared. Setting `single_party_can_reach_all_copies => false` cost nothing and required no controls, while `authorized_access` three lines away showed IT on every destination. | Now **derived** from the intersection of every custodian's `authorized_access`. Denying a concentration the data proves is a FAIL, and a destination that records no access list fails too. |
+| **M3** | The secret detector was a leaf-key denylist plus one anchored hex regex. A USB serial, a filesystem UUID, a private street address, a phone number and a colon-separated fingerprint all passed — under a message claiming none of them could. | Custodian entries are confined to a **field allowlist**, plus value-shape detection for hex runs, separator-bearing hex, UUIDs, phone numbers, emails, base64 blobs and street-level address vocabulary. The PASS message now states what was actually checked. |
+
+Three LOW findings were also closed: a second primary signing authority hidden
+in the plural `roles[]` field (check 4 read only the singular `role`);
+`count()` counting array entries so `'custodian_4' => []` satisfied the
+minimum; and check 12 printing *"those remain false"* for any status past
+readiness, including an `operational` record where all of them were true.
+
+### Two defects found in the tests themselves
+
+Neither was worked around.
+
+The first secret scan swept the encoded block for the substring `passphrase`
+and failed on the compensating control legitimately named
 `passphrase_held_separately_from_every_medium`. Renaming the control to satisfy
-the test would have been evasion; the test was rewritten to match on leaf keys
-and value shapes, as the scanner does.
+the test would have been evasion; the test was rewritten to match leaf keys and
+value shapes as the scanner does.
+
+Then mutation testing caught the **allowlist test proving nothing**: disabling
+`custodianUnknownFields()` entirely still passed, because the fields it probed
+(`device_id`, `unlock_hint`) are *also* on the key denylist. A test using field
+names on neither list (`cabinet_number`, `notes`) now kills that mutant — which
+is the entire point of an allowlist, since the leak you have to survive is the
+one nobody named in advance.
+
+### Accepted limitation
+
+The scanner never observes a filesystem. A key that existed on disk with the
+config flag left `false` and no certificate pinned would be undetectable here.
+This gate proves the *record* is internally consistent and not silently
+downgraded; it cannot prove the absence of a key. Stage B's runbook procedure
+is what establishes that.
 
 ---
 

@@ -37,6 +37,11 @@ It is superseded forward, never rewritten.
 4. It may **never** be generated on: the production VPS, any CI runner
    (hosted or self-hosted), pull-request CI, Custodian 2, the USB, a clinic
    Android device, a cloud VM, a temporary container, or a browser.
+   These media are anchored in `AndroidReleaseGovernanceScanner` constants
+   (`GENERATION_MEDIA_ALLOWLIST`, `GENERATION_MEDIA_MUST_FORBID`), **not only
+   in config**. Config may forbid more; it may never forbid less, and it may
+   not widen the permitted list. A rule about where an unrecoverable key is
+   born must not be satisfiable by the same edit that breaks it.
 5. Custodian 2 and Custodian 3 are **destinations, never signing authorities**.
 6. Custodian 2 requires disk encryption, a login password and a screen lock,
    with access limited to IT and Admin Klinik.
@@ -88,6 +93,11 @@ ahead of what it depends on.
     `single_party_can_reach_all_copies` with compensating controls, not hidden
     behind the phrase "three custodians". A second independent human custodian
     is an open item before the `operational` state.
+    The answer is **derived** from the intersection of every custodian's
+    `authorized_access`, not taken from the boolean: a caveat that can be
+    switched off by denying it is not a caveat. Denying a concentration the
+    access lists prove is a FAIL, and so is a destination that records no
+    access list at all.
 22. Custodian 3 carries **both** the sealed-cold and the offsite property. The
     governance table had expected them on separate holders; the concentration
     is an owner-accepted residual risk, recorded rather than smoothed over.

@@ -679,6 +679,45 @@ class AndroidReleaseGovernanceScanner
     }
 
     /**
+     * The only media on which the first production signing key may ever be
+     * generated. Owned by this class, deliberately not by config: the config
+     * block is what an edit changes, so a rule read entirely out of it can be
+     * satisfied by the same edit that breaks it.
+     */
+    private const GENERATION_MEDIA_ALLOWLIST = [
+        'primary_it_workstation',
+    ];
+
+    /**
+     * Media the config's forbidden list must always contain. It may forbid
+     * more; it may never forbid less.
+     */
+    private const GENERATION_MEDIA_MUST_FORBID = [
+        'production_vps',
+        'pull_request_ci',
+        'ci_runner',
+        'self_hosted_ci_runner',
+        'admin_klinik_workstation',
+        'usb',
+        'clinic_android_device',
+        'cloud_vm',
+        'temporary_container',
+        'browser',
+    ];
+
+    /**
+     * Fields a custodian entry may carry. An allowlist rather than a denylist,
+     * because a denylist only ever catches the leaks somebody already thought
+     * of — `device_id`, `volume_id`, `contact` and `unlock_hint` all sailed
+     * through the first version.
+     */
+    private const CUSTODIAN_PERMITTED_FIELDS = [
+        'role', 'roles', 'responsible_party', 'media', 'medium_type', 'os',
+        'location', 'authorized_access', 'disk_encryption', 'login_password',
+        'screen_lock', 'initial_key_generation_authority', 'status',
+    ];
+
+    /**
      * PRODUCTION-ANDROID-SIGNING-CUSTODY-READINESS-1.
      *
      * The custody DESIGNATION — who holds what, where, under which controls.
@@ -750,7 +789,15 @@ class AndroidReleaseGovernanceScanner
 
         // ---- 3. Enough destinations to satisfy the standing policy. --------
         $minimum = (int) config('android_release.signing.minimum_custodians');
-        $designated = count($custodians);
+
+        // Well-formed entries only. `'custodian_4' => []` is not a custody
+        // destination, and counting it would satisfy the minimum with nothing.
+        $designated = count(array_filter(
+            $custodians,
+            fn ($c): bool => is_array($c)
+                && is_string($c['media'] ?? null)
+                && (array) ($c['roles'] ?? []) !== [],
+        ));
 
         $checks[] = $this->check(
             'custody_minimum_custodians_designated',
@@ -761,9 +808,16 @@ class AndroidReleaseGovernanceScanner
         );
 
         // ---- 4. Exactly one primary signing authority, and it is #1. -------
+        // Both the singular `role` and the plural `roles` are read. Checking
+        // only `role` let a second custodian carry
+        // `primary_signing_authority` inside `roles[]` — the field checks 7
+        // and 8 do read — while this one still printed "sole".
         $primaries = array_keys(array_filter(
             $custodians,
-            fn ($c): bool => is_array($c) && ($c['role'] ?? null) === 'primary_signing_authority',
+            fn ($c): bool => is_array($c) && (
+                ($c['role'] ?? null) === 'primary_signing_authority'
+                || in_array('primary_signing_authority', (array) ($c['roles'] ?? []), true)
+            ),
         ));
 
         $primaryOk = $primaries === ['custodian_1'];
@@ -787,32 +841,47 @@ class AndroidReleaseGovernanceScanner
         $permittedMedia = (array) ($custody['permitted_initial_key_generation_media'] ?? []);
         $forbiddenMedia = (array) ($custody['forbidden_initial_key_generation_media'] ?? []);
 
-        // A flag alone is not trusted: the medium it sits on is cross-checked
-        // against the permitted and forbidden lists, so a backup destination
-        // cannot promote itself by flipping one boolean.
-        $illegalGenerators = array_values(array_filter($generators, function (string $key) use ($custodians, $permittedMedia, $forbiddenMedia): bool {
-            $medium = $custodians[$key]['media'] ?? null;
+        // The medium is checked against lists this class owns, NOT only the
+        // ones in the config block being edited.
+        //
+        // Security review caught the first version reading both sides from
+        // config: setting `custodian_1.media = 'production_vps'` and
+        // `permitted = ['production_vps']` in one edit produced a PASS whose
+        // message still read "VPS, CI, backup destinations, USB and the clinic
+        // device are all excluded". Every clause of that sentence was false.
+        // A rule that says where an unrecoverable key may be born cannot be
+        // satisfied by the same edit that breaks it, so the anchors are here.
+        $generatorMedium = $custodians['custodian_1']['media'] ?? null;
 
-            return ! is_string($medium)
-                || in_array($medium, $forbiddenMedia, true)
-                || ! in_array($medium, $permittedMedia, true);
-        }));
+        $mediumAllowed = is_string($generatorMedium)
+            && in_array($generatorMedium, self::GENERATION_MEDIA_ALLOWLIST, true);
+
+        // The config may forbid MORE than this, never less.
+        $missingForbidden = array_values(array_diff(self::GENERATION_MEDIA_MUST_FORBID, $forbiddenMedia));
+
+        // The config's own permitted list may not widen past the allowlist.
+        $overbroadPermitted = array_values(array_diff($permittedMedia, self::GENERATION_MEDIA_ALLOWLIST));
 
         $generationOk = $generators === ['custodian_1']
-            && $illegalGenerators === []
-            && $permittedMedia !== []
-            && $forbiddenMedia !== [];
+            && $mediumAllowed
+            && $missingForbidden === []
+            && $overbroadPermitted === []
+            && $permittedMedia !== [];
 
         $checks[] = $this->check(
             'custody_key_generation_hosts_restricted',
             $generationOk ? 'PASS' : 'FAIL',
             $generationOk
-                ? 'Only the primary IT workstation may generate the first production key. VPS, CI, backup destinations, USB and the clinic device are all excluded.'
-                : ($illegalGenerators !== []
-                    ? 'Key generation authority claimed on a forbidden or unlisted medium: '.implode(', ', $illegalGenerators)
-                    : ($generators === []
+                ? 'Only the primary IT workstation may generate the first production key; VPS, CI, backup destinations, USB, cloud VMs, containers and the clinic device are all excluded by a list this scanner owns.'
+                : ($generators !== ['custodian_1']
+                    ? ($generators === []
                         ? 'No key generation authority is designated.'
-                        : 'Key generation authority is not restricted to custodian 1: '.implode(', ', $generators))),
+                        : 'Key generation authority is not restricted to custodian 1: '.implode(', ', $generators))
+                    : (! $mediumAllowed
+                        ? 'Key generation authority sits on a medium outside the scanner allowlist: '.var_export($generatorMedium, true)
+                        : ($missingForbidden !== []
+                            ? 'Media that must always be forbidden are missing from the forbidden list: '.implode(', ', $missingForbidden)
+                            : 'The permitted generation media list has been widened beyond the scanner allowlist: '.implode(', ', $overbroadPermitted)))),
         );
 
         // ---- 6. Endpoint controls on every workstation holding a copy. -----
@@ -898,21 +967,51 @@ class AndroidReleaseGovernanceScanner
         $shared = $custody['single_party_can_reach_all_copies'] ?? null;
         $controls = (array) ($custody['single_party_access_compensating_controls'] ?? []);
 
-        // Three media held by one party is not three custodians. Whichever way
-        // that is answered it must be answered explicitly, and answering "yes"
-        // costs compensating controls.
-        $sharedOk = is_bool($shared) && ($shared === false || $controls !== []);
+        // DERIVED, not taken on trust. Security review caught the first
+        // version accepting a bare `false` at no cost, while the refuting
+        // evidence sat three lines away in `authorized_access`. A caveat that
+        // can be switched off by denying it is not a caveat, and this one is
+        // the integrity centrepiece of the whole record.
+        //
+        // The concentration is the intersection of every custodian's
+        // authorised-access list: a party present in all of them can reach
+        // every copy, whatever the boolean says.
+        $accessLists = array_values(array_map(
+            fn ($c): array => array_map('strval', (array) ($c['authorized_access'] ?? [])),
+            array_filter($custodians, 'is_array'),
+        ));
+
+        $intersection = $accessLists === [] ? [] : array_values(array_intersect(...$accessLists));
+        $concentrationExists = $accessLists !== [] && $intersection !== [];
+
+        // Every custodian must state who may reach it, or the intersection is
+        // computed over a hole and means nothing.
+        $accessRecorded = $accessLists !== []
+            && ! in_array([], $accessLists, true)
+            && count($accessLists) === count($custodians);
+
+        $sharedOk = is_bool($shared)
+            && $accessRecorded
+            && $shared === $concentrationExists
+            && ($shared === false || $controls !== []);
 
         $checks[] = $this->check(
             'custody_shared_access_declared',
             $sharedOk ? 'PASS' : 'FAIL',
             $sharedOk
                 ? ($shared
-                    ? 'One party can reach all copies; declared, with '.count($controls).' compensating controls recorded.'
-                    : 'No single party can reach all copies.')
-                : (is_bool($shared)
-                    ? 'One party can reach all copies and no compensating control is recorded.'
-                    : 'Whether one party can reach every copy is undeclared. It must be answered either way.'),
+                    ? 'Derived from authorised access: '.implode(', ', $intersection)
+                        .' can reach every copy. Declared, with '.count($controls).' compensating controls recorded.'
+                    : 'Derived from authorised access: no party appears on every custody destination.')
+                : (! $accessRecorded
+                    ? 'Not every custody destination records who may reach it; the concentration cannot be derived.'
+                    : (! is_bool($shared)
+                        ? 'Whether one party can reach every copy is undeclared. It must be answered either way.'
+                        : ($shared !== $concentrationExists
+                            ? 'The declaration contradicts the recorded access lists: declared '
+                                .var_export($shared, true).', derived '.var_export($concentrationExists, true)
+                                .($intersection !== [] ? ' (shared by: '.implode(', ', $intersection).')' : '')
+                            : 'One party can reach all copies and no compensating control is recorded.'))),
         );
 
         // ---- 11. The lifecycle cannot be claimed out of order. -------------
@@ -966,28 +1065,40 @@ class AndroidReleaseGovernanceScanner
             fn (string $claim): bool => ($custody[$claim] ?? null) === true,
         ));
 
-        $readinessHonest = $status !== 'ready_for_provisioning'
-            || ($premature === [] && ! $pinned);
+        $readinessStatus = $status === 'ready_for_provisioning';
+        $readinessHonest = ! $readinessStatus || ($premature === [] && ! $pinned);
 
+        // The detail must describe what was actually verified. The first
+        // version printed "claims no key, no backup copy and no verified
+        // recovery — those remain false" for ANY status other than
+        // ready_for_provisioning, including an `operational` record with every
+        // created flag true. Check 2 failed alongside it, so the gate was red
+        // overall — but a reader consuming the report check by check, which
+        // is the documented usage, saw an affirmatively false PASS line.
         $checks[] = $this->check(
             'custody_readiness_does_not_claim_provisioning',
             $readinessHonest ? 'PASS' : 'FAIL',
             $readinessHonest
-                ? 'Custody is ready for provisioning and claims no key, no backup copy and no verified recovery. Those remain false.'
+                ? ($readinessStatus
+                    ? 'Custody is ready for provisioning and claims no key, no backup copy and no verified recovery. Those remain false.'
+                    : "Custody state is '{$status}', past readiness; this check does not apply and asserts nothing about the claims below it.")
                 : 'Custody is still ready_for_provisioning yet claims: '
                     .implode(', ', $premature !== [] ? $premature : ['a pinned production certificate'])
                     .'. Readiness is a decision, not an artifact.',
         );
 
         // ---- 13. No secret or locating material in a committed file. -------
-        $leaks = $this->custodySecretLeaks($custody);
+        $leaks = array_merge(
+            $this->custodySecretLeaks($custody),
+            $this->custodianUnknownFields($custodians),
+        );
 
         $checks[] = $this->check(
             'custody_records_no_secret_material',
             $leaks === [] ? 'PASS' : 'FAIL',
             $leaks === []
-                ? 'The custody designation records roles, media classes and locations only — no passphrase, serial, identifier or private address.'
-                : 'Secret or locating material recorded in committed custody config: '.implode(', ', $leaks),
+                ? 'Custodian fields are confined to the allowlist, and no leaf key or value matches a passphrase, serial, identifier, contact detail or street-level address pattern.'
+                : 'Secret, locating or unrecognised material recorded in committed custody config: '.implode(', ', $leaks),
         );
 
         return $checks;
@@ -995,8 +1106,18 @@ class AndroidReleaseGovernanceScanner
 
     /**
      * Walk the custody designation looking for anything that must never be
-     * committed. Matching is on the exact leaf key, so policy booleans such as
-     * `login_password` and `password_stored_with_key_permitted` are not
+     * committed.
+     *
+     * Two independent mechanisms, because either alone has a documented hole.
+     * A leaf-key denylist only catches leaks somebody already imagined —
+     * security review walked `device_id`, `volume_id`, `contact`,
+     * `unlock_hint` and `wrapped_material` straight past the first version.
+     * Value-shape detection catches the rest. Custodian entries additionally
+     * get a FIELD ALLOWLIST, so an unanticipated key is refused rather than
+     * ignored.
+     *
+     * Matching on the exact leaf key keeps policy vocabulary such as
+     * `login_password` and `password_stored_with_key_permitted` from being
      * mistaken for a stored password.
      *
      * @param  array<string,mixed>  $custody
@@ -1005,10 +1126,12 @@ class AndroidReleaseGovernanceScanner
     private function custodySecretLeaks(array $custody, string $path = 'custody'): array
     {
         $forbiddenKeys = [
-            'serial', 'serial_number', 'hardware_serial', 'uuid', 'filesystem_uuid',
-            'passphrase', 'password', 'key_password', 'store_password', 'keystore_password',
-            'secret', 'token', 'credential', 'credentials', 'private_key', 'recovery_key',
-            'street', 'street_address', 'home_address', 'postal_address', 'phone', 'email',
+            'serial', 'serial_number', 'hardware_serial', 'device_id', 'volume_id',
+            'uuid', 'filesystem_uuid', 'passphrase', 'password', 'key_password',
+            'store_password', 'keystore_password', 'secret', 'token', 'credential',
+            'credentials', 'private_key', 'recovery_key', 'unlock_hint', 'hint',
+            'street', 'street_address', 'home_address', 'postal_address', 'address',
+            'phone', 'contact', 'email', 'fingerprint', 'wrapped_material',
         ];
 
         $leaks = [];
@@ -1028,14 +1151,75 @@ class AndroidReleaseGovernanceScanner
                 continue;
             }
 
-            // A long unbroken hex or base64-ish run in a governance file is a
-            // fingerprint, a serial or a key. None of them belong here.
-            if (is_string($value) && preg_match('/^[A-Fa-f0-9]{16,}$/', $value) === 1) {
+            if (is_string($value) && $this->looksLikeSecretValue($value)) {
                 $leaks[] = $leafPath;
             }
         }
 
         return $leaks;
+    }
+
+    /**
+     * Fields outside the custodian allowlist, anywhere in the designation.
+     *
+     * @param  array<string,mixed>  $custodians
+     * @return array<int,string>
+     */
+    private function custodianUnknownFields(array $custodians): array
+    {
+        $unknown = [];
+
+        foreach ($custodians as $key => $custodian) {
+            if (! is_array($custodian)) {
+                continue;
+            }
+
+            foreach (array_keys($custodian) as $field) {
+                if (! in_array((string) $field, self::CUSTODIAN_PERMITTED_FIELDS, true)) {
+                    $unknown[] = "custodians.{$key}.{$field}";
+                }
+            }
+        }
+
+        return $unknown;
+    }
+
+    /**
+     * Value-shape detection. A key-name denylist alone passed a USB serial, a
+     * filesystem UUID, a private street address, a phone number and a
+     * separator-bearing certificate fingerprint — while the check still
+     * printed "no passphrase, serial, identifier or private address".
+     *
+     * Organisation-level place names ("Cabang Pusat", "Kantor Management
+     * Klinik") are deliberately NOT matched; street-level vocabulary is.
+     */
+    private function looksLikeSecretValue(string $value): bool
+    {
+        $trimmed = trim($value);
+
+        if ($trimmed === '') {
+            return false;
+        }
+
+        $patterns = [
+            '/[A-Fa-f0-9]{16,}/',
+            '/(?:[A-Fa-f0-9]{2}[:\-\s]){5,}[A-Fa-f0-9]{2}/',
+            '/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/',
+            '/\+?\d[\d\s\-]{8,}\d/',
+            '/[^\s@]+@[^\s@]+\.[^\s@]+/',
+            '/[A-Za-z0-9+\/]{24,}={0,2}/',
+            '/\b(?:jalan|jl\.?|gang|gg\.?|blok|perumahan|kelurahan|kecamatan|kode\s*pos)\b/i',
+            '/\brt\s*\d|\brw\s*\d/i',
+            '/\bno\.?\s*\d+/i',
+        ];
+
+        foreach ($patterns as $pattern) {
+            if (preg_match($pattern, $trimmed) === 1) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
