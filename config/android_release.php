@@ -476,6 +476,162 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Real-device hardware preflight
+    |--------------------------------------------------------------------------
+    |
+    | EVIDENCE-PHASE4A-REAL-DEVICE-KEYINFO-PREFLIGHT-1.
+    |
+    | The distinction this block exists to make, because getting it wrong is
+    | how a device passes a security gate it never met:
+    |
+    |   a DEVICE CAPABILITY FLAG is not proof of anything.
+    |
+    | `android.hardware.hardware_keystore` says the platform declares a
+    | hardware keystore. It does not say the key this app actually generated
+    | went there. A keystore can fall back to software for a specific key —
+    | for an unsupported algorithm, a spec the hardware refuses, a StrongBox
+    | request on hardware without one — and the feature flag keeps reading
+    | exactly the same. Reading the flag and concluding "hardware-backed" is
+    | reading the brochure and concluding the car started.
+    |
+    | The authoritative proof is a property of the GENERATED KEY: obtain a
+    | `KeyInfo` for the private key that `DeviceIdentityManager` actually
+    | produced and read `KeyInfo.getSecurityLevel()` (API 31+). That value
+    | describes where THAT key lives. `isInsideSecureHardware()` is the
+    | pre-31 compatibility path only, is deprecated, and must never be the
+    | preferred proof on a device that can answer the newer question.
+    |
+    | Nothing here activates anything. A preflight PASS closes exactly one
+    | gate — the hardware one — and leaves signing custody, the production
+    | key, the certificate pin, enrolment and the enforcement ladder exactly
+    | where they were.
+    |
+    */
+    'real_device_preflight' => [
+
+        // ------------------------------------------------------------------
+        // The rule (durable; applies to every future pilot device)
+        // ------------------------------------------------------------------
+
+        // Read the key, not the brochure.
+        'capability_flag_is_sufficient_proof' => false,
+        'authoritative_proof' => 'android_keystore_keyinfo_security_level',
+        'preferred_api' => 'KeyInfo.getSecurityLevel',
+        'legacy_compatibility_api' => 'KeyInfo.isInsideSecureHardware',
+        'legacy_api_is_preferred_proof' => false,
+
+        // TRUSTED_ENVIRONMENT is the TEE; STRONGBOX is a separate secure
+        // element. Either satisfies Phase 4A. SOFTWARE does not, and neither
+        // does UNKNOWN_SECURE — an unattested claim is not a measurement.
+        'accepted_security_levels' => [
+            'TRUSTED_ENVIRONMENT',
+            'STRONGBOX',
+        ],
+        'rejected_security_levels' => [
+            'SOFTWARE',
+            'UNKNOWN_SECURE',
+        ],
+
+        // A key that can leave the device is not a device identity.
+        'private_key_must_be_non_exportable' => true,
+
+        // StrongBox is requested opportunistically and falls back to the TEE.
+        // Mandating it would refuse most acceptable clinic hardware.
+        'strongbox_required' => false,
+        'strongbox_preferred' => true,
+
+        // A device whose boot chain is unverified, or whose bootloader or
+        // vbmeta is unlocked, can be re-imaged under the app. The keystore
+        // guarantee is only as good as the boot state carrying it.
+        'verified_boot_state_required' => 'green',
+        'bootloader_must_be_locked' => true,
+        'vbmeta_must_be_locked' => true,
+        'emulator_permitted' => false,
+
+        // Serials identify a physical object a person carries. Governance
+        // needs the class of device, never the instance, so evidence uses a
+        // logical label and the serial stays out of the repository.
+        'device_serial_may_be_committed' => false,
+        'device_reference_style' => 'logical_label',
+
+        // ------------------------------------------------------------------
+        // Recorded evidence — the pilot tablet, observed on real hardware
+        // ------------------------------------------------------------------
+        'evidence' => [
+            'recorded_by' => 'EVIDENCE-PHASE4A-REAL-DEVICE-KEYINFO-PREFLIGHT-1',
+            'evidence_doc' => 'docs/sprints/evidence-phase4a-real-device-keyinfo-preflight-1.md',
+
+            'device_label' => 'PHASE4A_PILOT_TABLET_01',
+            'manufacturer' => 'samsung',
+            'model' => 'SM-X236B',
+            'product' => 'gta11pxx',
+            'android_version' => '16',
+            'api_level' => 36,
+            'security_patch' => '2026-07-05',
+
+            'physical_device' => true,
+            'emulator' => false,
+            'verified_boot_state' => 'green',
+            'bootloader_locked' => true,
+            'vbmeta_locked' => true,
+
+            // Capability flags: recorded as context, never as the proof.
+            'hardware_keystore_capability' => true,
+            'app_attest_key_capability' => true,
+            'strongbox_available' => false,
+
+            // The existing protocol suite, run targeted on the real tablet.
+            // It proves the enrolment protocol end to end; on its own it does
+            // NOT establish where the key lives.
+            'protocol_suite' => 'android/daengtisia-clinic/app/src/androidTest/java/com/daengtisia/clinic/DeviceIdentityInstrumentedTest.kt',
+            'protocol_tests_run' => 7,
+            'protocol_tests_failed' => 0,
+            'protocol_result' => 'PASS',
+
+            // The hardware gate itself: a temporary instrumentation probe that
+            // read KeyInfo off the key DeviceIdentityManager generated. It was
+            // an evidence probe and was never committed.
+            'keyinfo_probe_committed' => false,
+            'keyinfo_tests_run' => 1,
+            'keyinfo_tests_failed' => 0,
+            'keyinfo_result' => 'PASS',
+
+            // The measurement.
+            'key_security_level' => 'TRUSTED_ENVIRONMENT',
+            'hardware_backed_private_key' => true,
+            'private_key_exportable' => false,
+            'strongbox_backed' => false,
+
+            // The probe used the instrumented test alias, which setUp() and
+            // tearDown() both destroy. The production alias was never touched.
+            'test_key_alias' => 'daengtisiams_instrumented_test_key',
+            'production_key_alias_untouched' => 'daengtisiams_device_identity_v1',
+            'production_device_identity_created' => false,
+
+            'debug_app_residue' => false,
+            'test_instrumentation_residue' => false,
+        ],
+
+        // ------------------------------------------------------------------
+        // What a preflight PASS does NOT unlock
+        // ------------------------------------------------------------------
+        //
+        // Stated as explicit negatives because the damaging failure mode here
+        // is not a wrong value, it is an absent one being read as consent.
+        'unlocks' => [
+            'signing_custody_completion' => false,
+            'production_signing_key_provisioning' => false,
+            'certificate_pinning' => false,
+            'production_apk_build' => false,
+            'production_apk_installation' => false,
+            'production_enrollment' => false,
+            'pilot_enforcement_activation' => false,
+            'global_enforcement_activation' => false,
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Phase 4 pilot
     |--------------------------------------------------------------------------
     */
@@ -763,6 +919,8 @@ return [
             'docs/operations/clinic-tablet-procurement-specification.md',
             'docs/sprints/feature-doctor-trusted-android-device-lock-1-phase-3-5.md',
             'docs/sprints/revision-doctor-android-direct-apk-signing-distribution-1.md',
+            'docs/sprints/revision-android-release-readiness-phase4a-pilot-authority-1.md',
+            'docs/sprints/evidence-phase4a-real-device-keyinfo-preflight-1.md',
         ],
 
         // ------------------------------------------------------------------

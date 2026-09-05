@@ -1,23 +1,26 @@
-# Active sprint manifest — REVISION-ANDROID-RELEASE-READINESS-PHASE4A-PILOT-AUTHORITY-1
+# Active sprint manifest — EVIDENCE-PHASE4A-REAL-DEVICE-KEYINFO-PREFLIGHT-1
 # Validated by: php artisan sprint:manifest-check
 
-id: REVISION-ANDROID-RELEASE-READINESS-PHASE4A-PILOT-AUTHORITY-1
-type: RUNTIME_FIX
+id: EVIDENCE-PHASE4A-REAL-DEVICE-KEYINFO-PREFLIGHT-1
+# NOT DOCS_ONLY: this record ships three read-only gate checks in the
+# release-readiness scanner, so declaring documentation-only would be a false
+# declaration about a security surface.
+type: SECURITY_FIX
 module: DoctorDevice
-title: "Make android:release-readiness pass under the production runtime identity without weakening git trust, and record the owner's Phase 4A pilot authorization while global enforcement stays deferred to Phase 5"
+title: "Make the real-device hardware preflight durable: the generated AndroidKeyStore key measured TRUSTED_ENVIRONMENT and non-exportable on the pilot tablet, a capability flag is never accepted as proof of it, and the pass activates nothing"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-runtime_change: true            # the release-readiness scanner's git invocation and check classification
+runtime_change: true            # three read-only gate checks + one summary line in the release-readiness scanner
 schema_change: false            # no migration, no table, no column
 frontend_change: false          # no Blade, no JS, no CSS, no asset build
-security_impact: true           # git trust boundary, fail-closed key-material scan, enforcement authority
+security_impact: true           # the hardware gate for device identity, and the serial-leak boundary
 branch_isolation_impact: false  # BranchContext untouched
 ledger_impact: false            # no inventory ledger / billing / payment behaviour change
 
-deploy_required: true           # the runtime-identity fix only matters once it is on the VPS
+deploy_required: true           # the gate must be the one production actually runs
 browser_required: false         # console command and config; verified through feature tests
 
-go_tag: revision-android-release-readiness-phase4a-pilot-authority-1-go
+go_tag: evidence-phase4a-real-device-keyinfo-preflight-1-go
 
 test_profiles:
   - security
@@ -30,40 +33,52 @@ inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
 inherits_hold: FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1/FIX-02
 inherits_phase: feature-doctor-trusted-android-device-lock-1-phase-3-5-readiness-go
 
-# THIS IS A TOOLING FIX AND A GOVERNANCE RECORD, NOT A PHASE ADVANCE.
+# THIS IS AN EVIDENCE RECORD, NOT A PHASE ADVANCE.
 #
-# 1. The readiness gate was green for root and red for `daengtisiams`, the
-#    identity that actually operates production. INFRA-SEC-RUNTIME-1 leaves the
-#    deployed tree root-owned on purpose, so git refused it as foreign-owned and
-#    two checks failed — one of them with a message that blamed the repository
-#    ("gradlew is not tracked by git") for a refusal that never looked at it.
+# The Phase 4A pilot rested on a claim nobody had measured: that the device
+# identity key lives in secure hardware and cannot be exported. Phases 1-3.5
+# assumed it. The Phase 3 instrumentation suite proves the enrolment PROTOCOL,
+# and every one of its assertions would also pass against a software-backed key.
 #
-#    The refusal is answered, never disabled: an invocation-scoped
-#    `-c safe.directory=<this repository>` and nothing else. No wildcard, no
-#    persistent host entry, no ownership change, and every other git failure
-#    still fails closed. Checks now carry a reason so an unreadable index and a
-#    real finding stop looking identical.
+# The trap being closed is reading a DEVICE CAPABILITY FLAG as proof.
+# `android.hardware.hardware_keystore` describes the platform, not the key: a
+# keystore can issue a particular key in software while the flag reads exactly
+# the same. The authoritative answer is `KeyInfo.getSecurityLevel()` on the key
+# the app actually generated. Accepted: TRUSTED_ENVIRONMENT, STRONGBOX.
+# Rejected: SOFTWARE, UNKNOWN_SECURE.
 #
-# 2. The owner authorized a Phase 4A PILOT — drg Karmila, Cabang Sunu, rollback
-#    owner Custodian 1 / Raushan Fikri Ridha / IT. GLOBAL enforcement stays
-#    prohibited until Phase 5, and `may_be_enabled_in_phase` was split into a
-#    pilot bound and a global bound so one number cannot be read two ways.
+# Measured on PHASE4A_PILOT_TABLET_01 (SM-X236B, Android 16 / API 36, verified
+# boot green, bootloader and vbmeta locked, physical device): existing suite
+# 7/7 PASS, temporary KeyInfo probe 1/1 PASS reporting
+# securityLevel=TRUSTED_ENVIRONMENT and privateKeyExportable=false. StrongBox is
+# absent and that is NOT a failure — it is preferred, never mandated.
 #
-# AUTHORIZATION IS NOT ACTIVATION. After this revision:
+# THE TABLET WAS NOT TOUCHED BY THIS SPRINT. The measurements already existed;
+# this makes them durable, machine-checked and hard to misread. The temporary
+# probe was NOT committed, and the production alias
+# `daengtisiams_device_identity_v1` was never generated.
+#
+# A PREFLIGHT PASS ACTIVATES NOTHING. Still false after this record:
+# signing custody completion (PARTIAL — Custodian 2, offsite backup, Custodian 3
+# and sealed-cold backup deferred by explicit owner decision), production
+# signing key provisioning, certificate pinning (production_certificate_sha256
+# stays null), production APK build or installation, production enrolment,
+# pilot enforcement activation, global enforcement activation.
 # DEVICE_ENFORCEMENT_ACTIVE=false, DOCTOR_BROWSER_LOGIN_DENIED=false,
-# enforcement.current_stage=off, the flag defaults false, no pilot target row
-# exists, and no doctor — pilot or otherwise — is enforced.
+# enforcement.current_stage=off, the flag defaults false, and no doctor —
+# pilot or otherwise — is enforced.
 #
-# Signing custody stays PARTIAL: Custodian 1 established; Custodian 2, offsite
-# backup, Custodian 3 and sealed-cold backup deferred by explicit owner
-# decision. No production signing key was created and no certificate pinned.
+# ANDROID_REAL_DEVICE_VALIDATION stays false. It is a different, wider gate
+# (signed release installed, device enrolled, pilot run) and conflating it with
+# the hardware preflight is the specific misreading this record refuses.
 #
 # Phase 4 and the first Phase 4A attempt remain BLOCKED / NO-GO and are not
 # rewritten. Neither
 # `feature-doctor-trusted-android-device-lock-1-phase-4a-app-only-real-device-pilot-go`
 # nor the full-feature `feature-doctor-trusted-android-device-lock-1-go` may be
-# created from this revision.
+# created from this record.
 #
 # Google Play, Managed Google Play and Play App Signing remain unused (ADR 0010).
-# Phase 1 room isolation, RME/odontogram print denial, Phase 2 device lifecycle
-# and Phase 3 cryptographic identity are all preserved.
+# Device Owner and kiosk remain Phase 4B. Phase 1 room isolation, RME/odontogram
+# print denial, Phase 2 device lifecycle and Phase 3 cryptographic identity are
+# all preserved.

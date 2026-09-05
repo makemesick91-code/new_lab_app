@@ -1,0 +1,149 @@
+---
+description: A device capability flag never proves a hardware-backed key; the authoritative proof is KeyInfo.getSecurityLevel on the generated AndroidKeyStore key, and a preflight pass activates nothing
+globs: app/Support/Android/**,config/android_release.php,app/Console/Commands/Android*,android/**,tests/Feature/DoctorDevice/**
+alwaysApply: false
+---
+
+# EVIDENCE-PHASE4A-REAL-DEVICE-KEYINFO-PREFLIGHT-1 — durable rules
+
+Gate: `php artisan android:release-readiness`.
+Config: `config/android_release.real_device_preflight`.
+Scanner: `AndroidReleaseGovernanceScanner::realDevicePreflightChecks()`.
+Evidence: `docs/sprints/evidence-phase4a-real-device-keyinfo-preflight-1.md`.
+
+Extends rules `140`, `141`, `142`, `143`. Nothing in any of them is withdrawn.
+
+## 1. A capability flag is not proof
+
+`android.hardware.hardware_keystore` describes the **platform**. It does not
+say the key this app generated went to hardware. A keystore can issue a
+particular key in software — an algorithm it does not back, a spec it refuses,
+StrongBox asked of hardware that has none — and the flag reads identically
+either way.
+
+Never conclude "hardware-backed" from a capability flag, a device datasheet, a
+model number, or the fact that `DeviceIdentityManager` asked for StrongBox.
+
+## 2. The authoritative proof is the key's own security level
+
+Generate the key through `AndroidKeyStore`, obtain its `KeyInfo`, and read
+**`KeyInfo.getSecurityLevel()`** (API 31+). That value describes where *that
+key* lives.
+
+`KeyInfo.isInsideSecureHardware()` is the pre-API-31 compatibility path. It is
+deprecated and **must never be the preferred proof** on a device that can
+answer the newer question. A deprecation warning from a compatibility branch is
+not a finding.
+
+## 3. Accepted and rejected security levels
+
+Accepted for the Phase 4A pilot:
+
+- `TRUSTED_ENVIRONMENT`
+- `STRONGBOX`
+
+Rejected:
+
+- `SOFTWARE` — the failure mode.
+- `UNKNOWN_SECURE` — an unattested claim is not a measurement.
+
+## 4. The private key must be non-exportable
+
+`privateKeyExportable` must be `false`. A key that can leave the device is not
+a device identity; it is a credential that can be copied to a second tablet,
+and the trusted-device model collapses into a shared secret.
+
+An accepted security level with an exportable key **fails**. Both halves are
+required.
+
+## 5. StrongBox is preferred, never mandatory
+
+`DeviceIdentityManager` requests StrongBox opportunistically and falls back to
+the TEE. StrongBox absence is **not a failure** and must never be recorded as
+one. Mandating a discrete secure element would refuse most acceptable clinic
+hardware for a marginal gain.
+
+Equally: StrongBox must never be *claimed* on hardware that has none. A false
+record is worse than an absent capability.
+
+## 6. TEE is not StrongBox, and neither is tamper-proof
+
+`TRUSTED_ENVIRONMENT` means the Android Keystore reports the key is protected
+by the device's trusted execution environment. Do not describe it as
+tamper-proof, unhackable, impossible to extract under all threat models, a
+hardware secure element, or StrongBox.
+
+## 7. The boot chain is part of the guarantee
+
+For pilot authority the device must be:
+
+- `ro.boot.verifiedbootstate` = `green`
+- `ro.boot.flash.locked` = `1`
+- `ro.boot.vbmeta.device_state` = `locked`
+- a physical device — **an emulator result satisfies nothing**
+
+A device that can be re-imaged under the app is a device whose keystore answer
+can be replaced.
+
+## 8. A preflight PASS activates nothing
+
+Closing the hardware gate does **not**:
+
+- complete signing custody (it stays **PARTIAL**);
+- provision a production signing key;
+- pin a production certificate;
+- permit building or installing a production APK;
+- create a production device identity or enrol a device;
+- activate pilot enforcement;
+- activate global enforcement;
+- complete Phase 4A;
+- complete the feature.
+
+`preflight_unlocks_nothing` fails if any of these is claimed.
+
+## 9. Hardware preflight ≠ real-device pilot validation
+
+Two separate lines, adjacent in the command output and easily conflated:
+
+- `ANDROID_REAL_DEVICE_VALIDATION` — the Phase 4 pilot: signed release
+  installed, device enrolled, pilot run. **Still false.**
+- `ANDROID_REAL_DEVICE_HARDWARE_PREFLIGHT` — the key measurement. **PASS.**
+
+Never report one as the other.
+
+## 10. Device serials stay out of the repository
+
+Governance records the **class** of device, never the instance. Committed
+docs, rules, config and evidence use a logical label
+(`PHASE4A_PILOT_TABLET_01`). Model, product, API level and patch level are
+fine; an ADB/USB serial, IMEI, MEID, ICCID or Android ID is not.
+
+## 11. Probes are probes
+
+A temporary instrumentation probe used to obtain evidence is **not committed**
+by default. Adding a permanent hardware-security-level instrumentation test is
+a separate, explicitly proposed change — not a silent by-product of collecting
+evidence.
+
+A probe must reuse a test alias whose fixture destroys it. It must never touch
+the production alias `daengtisiams_device_identity_v1`.
+
+## 12. Pilot and global remain separate
+
+- Pilot: drg Karmila, Cabang Sunu; rollback owner Custodian 1 / Raushan Fikri
+  Ridha / IT; **may first be enabled in Phase 4A**; currently authorized and
+  **not activated**.
+- Global: **may first be enabled in Phase 5**; not authorized.
+
+`current_stage` is `off`. `doctor_browser_login_denied` is `false`. Non-pilot
+doctors are unaffected. Device Owner and kiosk remain Phase 4B. Google Play
+remains unused; direct admin-managed signed APK remains canonical.
+
+## 13. Historical closures are not rewritten
+
+Phase 4 and the first Phase 4A attempt remain **BLOCKED / NO-GO**. A later gate
+passing does not retroactively turn an earlier blocked attempt into a GO.
+
+Neither `feature-doctor-trusted-android-device-lock-1-phase-4a-app-only-real-device-pilot-go`
+nor `feature-doctor-trusted-android-device-lock-1-go` may be created from this
+evidence.

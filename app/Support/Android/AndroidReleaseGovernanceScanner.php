@@ -115,6 +115,7 @@ class AndroidReleaseGovernanceScanner
             $this->directApkDistributionChecks(),
             $this->enforcementChecks(),
             $this->enforcementAuthorityChecks(),
+            $this->realDevicePreflightChecks(),
         );
 
         $failed = array_values(array_filter($checks, fn (array $c): bool => $c['status'] === 'FAIL'));
@@ -132,7 +133,12 @@ class AndroidReleaseGovernanceScanner
                 // production key in existence, and saying otherwise would be
                 // the single most damaging thing this command could print.
                 'production_signing_key_provisioned' => false,
+                // The full Phase 4 real-device validation — signed release
+                // installed, device enrolled, pilot run — has NOT happened.
+                // The hardware preflight below is a different, narrower gate
+                // and conflating the two is exactly the claim this refuses.
                 'real_device_validation' => false,
+                'real_device_hardware_preflight' => $this->preflightPassed($checks),
                 'device_enforcement_active' => (bool) config('android_release.enforcement.active'),
             ],
         ];
@@ -795,6 +801,149 @@ class AndroidReleaseGovernanceScanner
      *
      * @return array<int,array<string,mixed>>
      */
+
+    /**
+     * EVIDENCE-PHASE4A-REAL-DEVICE-KEYINFO-PREFLIGHT-1.
+     *
+     * The hardware gate for the Phase 4A pilot device.
+     *
+     * The failure this guards against is a device capability flag being read
+     * as proof that the app's key is hardware-backed. It is not: the flag
+     * describes the platform, and a specific key can still be issued in
+     * software while the flag reads exactly the same. So the accepted proof
+     * is the security level of the GENERATED key, and this check refuses a
+     * recorded level that is not on the accepted list — which is what a
+     * downgrade to SOFTWARE would be.
+     *
+     * @return array<int,array<string,string>>
+     */
+    private function realDevicePreflightChecks(): array
+    {
+        $preflight = (array) config('android_release.real_device_preflight');
+        $evidence = (array) ($preflight['evidence'] ?? []);
+        $accepted = array_values(array_filter(
+            (array) ($preflight['accepted_security_levels'] ?? []),
+            'is_string',
+        ));
+        $rejected = (array) ($preflight['rejected_security_levels'] ?? []);
+        $level = is_string($evidence['key_security_level'] ?? null)
+            ? $evidence['key_security_level']
+            : '';
+
+        $checks = [];
+
+        // 1. The device baseline. A green boot chain behind a locked
+        //    bootloader is what makes the keystore's answer worth having; an
+        //    emulator result satisfies nothing at all.
+        // Both sides must be a real recorded string before they are compared.
+        // Every other clause here compares against a hardcoded literal, so it
+        // fails when its key is deleted; this one compares config to config,
+        // and without the string guards `null === null` would let the check
+        // PASS with NO boot state recorded at all — a device whose boot chain
+        // is unknown or orange passing by having the field removed rather than
+        // answered. Deletion must fail exactly like a wrong value.
+        $requiredBoot = $preflight['verified_boot_state_required'] ?? null;
+        $recordedBoot = $evidence['verified_boot_state'] ?? null;
+
+        $baseline = ($evidence['physical_device'] ?? null) === true
+            && ($evidence['emulator'] ?? null) === false
+            && is_string($requiredBoot) && $requiredBoot !== ''
+            && is_string($recordedBoot) && $recordedBoot === $requiredBoot
+            && ($evidence['bootloader_locked'] ?? null) === true
+            && ($evidence['vbmeta_locked'] ?? null) === true
+            && is_string($evidence['device_label'] ?? null)
+            && ($evidence['device_label'] ?? '') !== '';
+
+        $checks[] = $this->check(
+            'real_device_preflight_baseline',
+            $baseline ? 'PASS' : 'FAIL',
+            $baseline
+                ? "Preflight recorded on physical device {$evidence['device_label']} with verified boot {$recordedBoot}, bootloader and vbmeta locked."
+                : 'The recorded preflight is not a locked, verified-boot, physical device, records no boot state, or carries no logical device label.',
+        );
+
+        // 2. The measurement itself. Both halves are load-bearing: a
+        //    hardware-backed key that can be exported is not a device
+        //    identity, and an accepted level claimed without the probe having
+        //    run is a claim, not a measurement.
+        $measured = ($preflight['capability_flag_is_sufficient_proof'] ?? null) === false
+            && $accepted !== []
+            && in_array($level, $accepted, true)
+            && ! in_array($level, $rejected, true)
+            && ($preflight['private_key_must_be_non_exportable'] ?? null) === true
+            && ($evidence['private_key_exportable'] ?? null) === false
+            && ($evidence['hardware_backed_private_key'] ?? null) === true
+            && ($evidence['keyinfo_result'] ?? null) === 'PASS'
+            // `>= 1` alone is not enough: PHP 8 makes 'many' >= 1 and true >= 1
+            // both true, so the one clause separating a MEASUREMENT from an
+            // ASSERTION would be satisfiable by an arbitrary string.
+            && is_int($evidence['keyinfo_tests_run'] ?? null)
+            && $evidence['keyinfo_tests_run'] >= 1
+            && ($evidence['keyinfo_tests_failed'] ?? null) === 0;
+
+        $checks[] = $this->check(
+            'key_security_level_accepted',
+            $measured ? 'PASS' : 'FAIL',
+            $measured
+                ? "The generated AndroidKeyStore key measured {$level} and is non-exportable; the capability flag is explicitly not accepted as proof."
+                : ($level === ''
+                    ? 'No key security level is recorded. A capability flag is not a substitute for one.'
+                    : "Recorded key security level '{$level}' is not an accepted Phase 4A level, or the key is exportable, or the probe did not pass."),
+        );
+
+        // 3. What the pass must NOT have moved. A hardware gate closing is
+        //    the single most tempting moment to read the rest as consent, so
+        //    the rest is asserted rather than assumed.
+        // Every entry must be exactly `false`. A strict search for `true` would
+        // miss 1, 1.0, 'true' and 'yes' — each of which reads to a human as
+        // unlocked while leaving the check green.
+        $unlocks = (array) ($preflight['unlocks'] ?? []);
+        $claimed = array_keys(array_filter($unlocks, fn ($v): bool => $v !== false));
+
+        $contained = $unlocks !== []
+            && $claimed === []
+            && config('android_release.signing.production_certificate_sha256') === null
+            && ($evidence['production_device_identity_created'] ?? null) === false
+            && ($evidence['keyinfo_probe_committed'] ?? null) === false
+            && config('android_release.enforcement.owner_signoff.pilot_activated') === false
+            && config('android_release.enforcement.current_stage') === 'off'
+            && config('android_release.enforcement.active') === false;
+
+        $checks[] = $this->check(
+            'preflight_unlocks_nothing',
+            $contained ? 'PASS' : 'FAIL',
+            $contained
+                ? 'The hardware gate closed and moved nothing else: no production key, no certificate pin, no enrolment, no probe committed, and the enforcement ladder is still off.'
+                : ($claimed !== []
+                    ? 'A real-device preflight pass is recorded as unlocking: '.implode(', ', $claimed).'. It unlocks none of them.'
+                    : 'A real-device preflight pass has been read as unlocking signing, enrolment or enforcement, or the containment record is missing. It unlocks none of them.'),
+        );
+
+        return $checks;
+    }
+
+    /**
+     * Derived from the checks that were actually produced, never asserted
+     * independently: a summary line that can disagree with its own checks is
+     * a summary line that will eventually lie.
+     *
+     * @param  array<int,array<string,string>>  $checks
+     */
+    private function preflightPassed(array $checks): bool
+    {
+        $ids = ['real_device_preflight_baseline', 'key_security_level_accepted', 'preflight_unlocks_nothing'];
+
+        foreach ($ids as $id) {
+            $match = array_values(array_filter($checks, fn (array $c): bool => $c['id'] === $id));
+
+            if ($match === [] || $match[0]['status'] !== 'PASS') {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     private function enforcementAuthorityChecks(): array
     {
         $signoff = (array) config('android_release.enforcement.owner_signoff');

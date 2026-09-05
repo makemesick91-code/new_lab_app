@@ -88,6 +88,101 @@ Any account present ⇒ factory reset again. Do not continue and hope.
 
 ---
 
+## 2A. Hardware preflight — a capability flag is not proof
+
+**Do this before the device is trusted for a pilot, and read the result
+carefully: this is the step most easily faked by accident.**
+
+`android.hardware.hardware_keystore` describes the **platform**, not the key.
+A keystore can still issue a *particular* key in software — an algorithm it
+does not back in hardware, a spec it refuses, StrongBox asked of hardware that
+has none — and the capability flag reads exactly the same either way. Reading
+the flag and writing down "hardware-backed" is reading the brochure and
+concluding the car started.
+
+### Step 1 — boot state (context)
+
+```bash
+adb shell getprop ro.boot.verifiedbootstate    # expect: green
+adb shell getprop ro.boot.flash.locked         # expect: 1
+adb shell getprop ro.boot.vbmeta.device_state  # expect: locked
+adb shell getprop ro.kernel.qemu               # expect: 0  (not an emulator)
+```
+
+Any other answer ⇒ the device is not eligible for pilot authority. A tablet
+that can be re-imaged under the app is a tablet whose keystore answer can be
+replaced.
+
+### Step 2 — capabilities (context only, never the verdict)
+
+```bash
+adb shell pm list features | grep -i keystore
+```
+
+`hardware_keystore` present is expected. **StrongBox absent is normal and is
+not a failure** — the app requests StrongBox opportunistically and falls back
+to the TEE, and the procurement specification marks it preferred rather than
+mandatory. Record whatever is actually there; never claim StrongBox on hardware
+that has none.
+
+### Step 3 — the actual measurement (this is the gate)
+
+Generate an identity through `AndroidKeyStore`, obtain the `KeyInfo` for that
+private key, and read:
+
+| API | Use |
+|---|---|
+| `KeyInfo.getSecurityLevel()` | **authoritative** (API 31+) |
+| `KeyInfo.isInsideSecureHardware()` | pre-31 compatibility path only; deprecated; never the preferred proof |
+
+| Result | Verdict |
+|---|---|
+| `TRUSTED_ENVIRONMENT` | **accepted** |
+| `STRONGBOX` | **accepted** |
+| `SOFTWARE` | **rejected** |
+| `UNKNOWN_SECURE` | **rejected** — an unattested claim is not a measurement |
+
+The key must also be **non-exportable**. An accepted security level with an
+exportable key fails: a key that can leave the device is not a device identity,
+it is a credential that can be copied to a second tablet.
+
+A deprecation warning from the compatibility branch is **not** a finding.
+
+### Step 4 — leave nothing behind
+
+Use a **test alias** whose fixture destroys it (`@Before` and `@After` both
+calling `clearIdentity()`), never the production alias
+`daengtisiams_device_identity_v1`. Afterwards confirm no debug package and no
+instrumentation remain registered, and do not commit the probe: obtaining
+evidence is not the same act as shipping a permanent test.
+
+### Step 5 — record it, and record what it did not do
+
+Write the result into `config/android_release.real_device_preflight.evidence`
+using a **logical device label** (`PHASE4A_PILOT_TABLET_01`). **Never commit the
+ADB/USB serial, IMEI, MEID, ICCID or Android ID** — governance needs the class
+of device, never the instance somebody carries in a bag. Model, product, API
+level and patch level are fine.
+
+Then run:
+
+```bash
+php artisan android:release-readiness
+```
+
+and read the two adjacent summary lines as the different things they are:
+
+- `ANDROID_REAL_DEVICE_HARDWARE_PREFLIGHT` — the key measurement.
+- `ANDROID_REAL_DEVICE_VALIDATION` — the Phase 4 pilot: signed release
+  installed, device enrolled, pilot run.
+
+**A preflight PASS unlocks nothing else.** Signing custody, the production key,
+the certificate pin, APK installation, enrolment and the enforcement ladder are
+all untouched by it, and `preflight_unlocks_nothing` fails if any of them is
+claimed on its strength.
+
+---
+
 ## 3. Install the app
 
 Verify the artifact **before** touching the tablet — full procedure in the
@@ -271,3 +366,18 @@ remains unproven, as do the other three bullets above. A feature flag is a
 capability claim, not a measurement. That attempt closed BLOCKED / NO-GO on four
 prerequisites; evidence and entry checklist:
 [Phase 4 blocked](../sprints/feature-doctor-trusted-android-device-lock-1-phase-4-blocked.md).
+
+**The key-level measurement is now CLOSED on real hardware.** On
+`PHASE4A_PILOT_TABLET_01` (SM-X236B, Android 16 / API 36, verified boot green,
+bootloader and vbmeta locked) the existing instrumentation suite ran 7/7 PASS
+and a temporary `KeyInfo` probe measured the generated identity key at
+`securityLevel = TRUSTED_ENVIRONMENT` with `privateKeyExportable = false`. The
+first bullet above — hardware-backed key storage — is therefore no longer
+unproven; StrongBox remains absent and remains not required. Procedure: §2A.
+Evidence:
+[real-device KeyInfo preflight](../sprints/evidence-phase4a-real-device-keyinfo-preflight-1.md).
+
+**The other three bullets are still open**, and so is Phase 4A. Device Owner
+provisioning on real clinic hardware, field behaviour, and production signing on
+a real device are all unproven, no production signing key exists, no certificate
+is pinned, no APK was installed and no device was enrolled.
