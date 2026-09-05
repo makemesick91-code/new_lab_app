@@ -713,8 +713,55 @@ class AndroidReleaseGovernanceScanner
      */
     private const CUSTODIAN_PERMITTED_FIELDS = [
         'role', 'roles', 'responsible_party', 'media', 'medium_type', 'os',
-        'location', 'authorized_access', 'disk_encryption', 'login_password',
-        'screen_lock', 'initial_key_generation_authority', 'status',
+        'location', 'authorized_access', 'host_full_disk_encryption',
+        'primary_secret_storage', 'login_password', 'screen_lock',
+        'initial_key_generation_authority', 'status',
+    ];
+
+    /**
+     * REVISION-PRODUCTION-SIGNING-CUSTODIAN1-ENCRYPTED-VAULT-1.
+     *
+     * `disk_encryption` is deliberately absent from the allowlist above, and
+     * this is the one removal in it. The field is not merely renamed: it was
+     * ambiguous enough that `true` on custodian 1 meant "somebody believes
+     * this disk is encrypted" while the machine underneath had no LUKS device
+     * at all. Leaving the old name accepted would let that exact record come
+     * back and satisfy the endpoint gate again.
+     *
+     * So a config still carrying `disk_encryption` is now an UNRECOGNISED
+     * field and fails `custody_records_no_secret_material` — a loud rejection
+     * rather than a silent one. The replacement is a pair: the host fact
+     * (`host_full_disk_encryption`) and, where the host fact is false, the
+     * control that actually protects the key (`primary_secret_storage`).
+     */
+    private const CUSTODIAN_REJECTED_LEGACY_FIELDS = [
+        'disk_encryption',
+    ];
+
+    /**
+     * Fields the primary secret storage record may carry.
+     *
+     * A second allowlist because `custodianUnknownFields()` only ever walked
+     * the TOP level of a custodian entry. Introducing the first nested array
+     * would otherwise have opened a hole underneath the very check that exists
+     * to stop `unlock_hint` and friends reaching a committed file — a nested
+     * `primary_secret_storage.passphrase_hint` would have sailed straight
+     * through. The walk now descends, and this is what it allows down there.
+     */
+    private const PRIMARY_SECRET_STORAGE_PERMITTED_FIELDS = [
+        'type', 'encryption', 'verified', 'default_state', 'auto_unlock',
+        'plaintext_keyfile', 'outside_repository',
+    ];
+
+    /**
+     * Encryption a dedicated signing vault may use.
+     *
+     * An allowlist, so "encrypted" cannot be satisfied by a value that merely
+     * sounds like it — `plain`, `ecryptfs`, `zip`, `none` and an empty string
+     * all have to be rejected by construction rather than by review.
+     */
+    private const APPROVED_PRIMARY_VAULT_ENCRYPTION = [
+        'luks2',
     ];
 
     /**
@@ -893,23 +940,86 @@ class AndroidReleaseGovernanceScanner
         $unprotected = [];
 
         foreach ($workstations as $key => $workstation) {
-            foreach (['disk_encryption', 'login_password', 'screen_lock'] as $control) {
+            foreach (['login_password', 'screen_lock'] as $control) {
                 if (($workstation[$control] ?? null) !== true) {
                     $unprotected[] = "{$key}.{$control}";
                 }
+            }
+
+            // Encryption at rest, which is no longer one boolean.
+            //
+            // A workstation satisfies it EITHER by encrypting the whole host
+            // OR by holding signing material in a verified dedicated vault.
+            // Custodian 1 does the second: the host is honestly recorded as
+            // unencrypted and a LUKS2 container carries the key instead.
+            //
+            // What this must never again accept is a bare `true` with nothing
+            // behind it, so when the host claim is false the vault record has
+            // to survive `primaryVaultEncrypted()` in full — right encryption,
+            // verified, closed at rest, no auto-unlock, no keyfile, outside
+            // the repository. A half-filled vault block fails here.
+            if (! $this->workstationEncryptedAtRest($workstation)) {
+                $unprotected[] = "{$key}.encryption_at_rest";
             }
         }
 
         $endpointOk = $workstations !== [] && $unprotected === [];
 
+        $vaulted = count(array_filter(
+            $workstations,
+            fn (array $w): bool => ($w['host_full_disk_encryption'] ?? null) !== true
+                && $this->primaryVaultEncrypted($w['primary_secret_storage'] ?? null),
+        ));
+
         $checks[] = $this->check(
             'custody_endpoint_controls_recorded',
             $endpointOk ? 'PASS' : 'FAIL',
             $endpointOk
-                ? count($workstations).' custody workstations record disk encryption, a login password and a screen lock.'
+                ? count($workstations).' custody workstations record a login password, a screen lock and encryption at rest'
+                    .($vaulted > 0
+                        ? " ({$vaulted} of them through a verified dedicated encrypted vault rather than host full-disk encryption)."
+                        : ' through host full-disk encryption.')
                 : ($workstations === []
                     ? 'No custody workstation was scanned; the endpoint control check would be vacuous.'
                     : 'Missing endpoint controls: '.implode(', ', $unprotected)),
+        );
+
+        // ---- 6b. The primary signing authority's key storage, specifically.
+        //
+        // Check 6 covers every workstation holding a copy. This one is about
+        // the one machine that will hold the LIVE keystore, and it is separate
+        // so the report can never blur "the backup machine is fine" into "the
+        // signing machine is fine". It also states the host/vault distinction
+        // in words, because that distinction is the entire finding this
+        // revision exists to record.
+        $primary = null;
+
+        foreach ($custodians as $custodian) {
+            if (is_array($custodian) && ($custodian['initial_key_generation_authority'] ?? null) === true) {
+                $primary = $custodian;
+
+                break;
+            }
+        }
+
+        $primaryHostFde = is_array($primary) && ($primary['host_full_disk_encryption'] ?? null) === true;
+        $primaryVault = is_array($primary) ? ($primary['primary_secret_storage'] ?? null) : null;
+        $primaryVaultOk = $this->primaryVaultEncrypted($primaryVault);
+        $primaryOk = is_array($primary) && ($primaryHostFde || $primaryVaultOk);
+
+        $checks[] = $this->check(
+            'custody_primary_secret_storage_encrypted',
+            $primaryOk ? 'PASS' : 'FAIL',
+            $primaryOk
+                ? ($primaryHostFde
+                    ? 'The primary signing authority encrypts its whole host, so the future keystore is covered at rest by host full-disk encryption.'
+                    : 'The primary signing authority does NOT encrypt its host; the future keystore is covered at rest by a verified '
+                        .var_export($primaryVault['encryption'] ?? null, true)
+                        .' vault that stays closed when not in approved use. Host full-disk encryption is recorded false, which is the true value.')
+                : ($primary === null
+                    ? 'No custodian holds initial key generation authority, so no primary secret storage could be assessed.'
+                    : 'The primary signing authority records neither host full-disk encryption nor a verified dedicated encrypted vault. '
+                        .'There is nowhere lawful to put the production keystore.'),
         );
 
         // ---- 7 & 8. Sealed-cold and offsite destinations both exist. ------
@@ -1175,13 +1285,83 @@ class AndroidReleaseGovernanceScanner
             }
 
             foreach (array_keys($custodian) as $field) {
+                if (in_array((string) $field, self::CUSTODIAN_REJECTED_LEGACY_FIELDS, true)) {
+                    // Named separately from a merely unrecognised field so the
+                    // report says WHY, rather than leaving a reader to think
+                    // they mistyped something.
+                    $unknown[] = "custodians.{$key}.{$field} (retired: ambiguous encryption claim, "
+                        .'use host_full_disk_encryption and primary_secret_storage)';
+
+                    continue;
+                }
+
                 if (! in_array((string) $field, self::CUSTODIAN_PERMITTED_FIELDS, true)) {
                     $unknown[] = "custodians.{$key}.{$field}";
+                }
+            }
+
+            // Descend one level into the primary secret storage record.
+            //
+            // Without this the nested block would be the only unpoliced
+            // surface in the whole designation, which is precisely how
+            // `unlock_hint` got in the first time — at the top level, back
+            // when nothing walked it either.
+            $storage = $custodian['primary_secret_storage'] ?? null;
+
+            if (is_array($storage)) {
+                foreach (array_keys($storage) as $field) {
+                    if (! in_array((string) $field, self::PRIMARY_SECRET_STORAGE_PERMITTED_FIELDS, true)) {
+                        $unknown[] = "custodians.{$key}.primary_secret_storage.{$field}";
+                    }
                 }
             }
         }
 
         return $unknown;
+    }
+
+    /**
+     * Encryption at rest for one custody workstation.
+     *
+     * Two lawful ways to satisfy it, and exactly two: encrypt the host, or
+     * keep signing material in a vault that survives every clause of
+     * `primaryVaultEncrypted()`. A recorded vault that is unverified, open at
+     * rest, auto-unlocking, keyfile-backed, inside a repository or using an
+     * unapproved encryption is NOT a second way — it is a claim, and claims
+     * are what put the scanner in this position to begin with.
+     *
+     * @param  array<string,mixed>  $workstation
+     */
+    private function workstationEncryptedAtRest(array $workstation): bool
+    {
+        if (($workstation['host_full_disk_encryption'] ?? null) === true) {
+            return true;
+        }
+
+        return $this->primaryVaultEncrypted($workstation['primary_secret_storage'] ?? null);
+    }
+
+    /**
+     * Whether a dedicated signing vault record describes real protection.
+     *
+     * Every clause is strict identity against the expected value rather than
+     * truthiness, so a string `"false"`, a `1`, a `null` or a missing key all
+     * fail rather than quietly passing. That is the specific shape of the bug
+     * being corrected here: a value that read as true without being true.
+     */
+    private function primaryVaultEncrypted(mixed $vault): bool
+    {
+        if (! is_array($vault)) {
+            return false;
+        }
+
+        return ($vault['type'] ?? null) === 'dedicated_encrypted_vault'
+            && in_array($vault['encryption'] ?? null, self::APPROVED_PRIMARY_VAULT_ENCRYPTION, true)
+            && ($vault['verified'] ?? null) === true
+            && ($vault['default_state'] ?? null) === 'closed'
+            && ($vault['auto_unlock'] ?? null) === false
+            && ($vault['plaintext_keyfile'] ?? null) === false
+            && ($vault['outside_repository'] ?? null) === true;
     }
 
     /**
@@ -1526,6 +1706,7 @@ class AndroidReleaseGovernanceScanner
             'custody_primary_signing_authority_designated',
             'custody_key_generation_hosts_restricted',
             'custody_endpoint_controls_recorded',
+            'custody_primary_secret_storage_encrypted',
             'custody_sealed_cold_destination_designated',
             'custody_offsite_destination_designated',
             'custody_media_secret_handling_rules',

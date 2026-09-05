@@ -292,6 +292,16 @@ return [
         // lost key with no recoverable copy.
         'tests/Feature/DoctorDevice/DoctorDeviceAndroidSigningCustodyReadinessTest.php',
 
+        // REVISION-PRODUCTION-SIGNING-CUSTODIAN1-ENCRYPTED-VAULT-1 — declared
+        // for the same reason and one sharper one. The suite it replaces the
+        // gap in already existed and still passed while `disk_encryption =>
+        // true` described a workstation with no encryption on it, so the
+        // failure mode here is not a gate that stops running but a gate that
+        // keeps running against a boolean nobody measured. These tests pin the
+        // host fact as false and force every clause of the vault record to be
+        // real, which only helps for as long as they are actually selected.
+        'tests/Feature/DoctorDevice/DoctorDeviceCustodian1EncryptedVaultTest.php',
+
         // REVISION-DOCTOR-AUTO-DEVICE-APPROVAL-APP-ONLY-LOGIN-1 — the
         // doctor/device authorization lifecycle, the automatic request on first
         // app login, the approval inbox's authority, and the app-only gate.

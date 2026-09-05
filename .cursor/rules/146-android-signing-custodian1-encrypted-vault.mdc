@@ -1,0 +1,108 @@
+---
+description: Custodian 1 is NOT full-disk encrypted — the production signing keystore lives in a dedicated verified LUKS2 vault instead, closed at rest, and storage readiness implies nothing downstream.
+globs:
+  - "config/android_release.php"
+  - "app/Support/Android/**"
+  - "app/Console/Commands/Android*.php"
+  - "docs/runbooks/android-signing-key-backup-and-recovery.md"
+  - "tests/Feature/DoctorDevice/DoctorDeviceCustodian1EncryptedVault*.php"
+alwaysApply: false
+---
+
+# Custodian 1 encrypted signing vault
+
+REVISION-PRODUCTION-SIGNING-CUSTODIAN1-ENCRYPTED-VAULT-1. Corrects one control
+record written by PRODUCTION-ANDROID-SIGNING-CUSTODY-READINESS-1. That record
+is superseded on this one point and otherwise stands unchanged.
+
+## 1. The host is not encrypted, and the record says so
+
+Custodian 1 — the primary IT workstation, Ubuntu, Cabang Pusat — has **no
+full-disk encryption**. `/` and `/home` mount straight from raw ext4 partitions,
+there is no `/dev/mapper` device, no LUKS signature, no eCryptfs, no fscrypt.
+
+`config/android_release.php` records `host_full_disk_encryption => false` for
+custodian 1. **Never set it true unless the disk is genuinely encrypted.** The
+previous record said `disk_encryption => true`, the release gate believed it,
+and the claim only failed when somebody finally measured the machine.
+
+Do not claim, anywhere: full-disk encryption, encrypted `/home`, or an
+encrypted root filesystem. All three are false on this host.
+
+## 2. What actually protects the key
+
+A dedicated **LUKS2** container on custodian 1, outside every repository and
+worktree, owner-only (`0600` container, `0700` parent and mountpoint), holding
+the production signing keystore once it exists.
+
+`custodian_1.primary_secret_storage` must satisfy **every** clause or the gate
+fails: `type = dedicated_encrypted_vault`, `encryption` in the approved list
+(`luks2`), `verified = true`, `default_state = closed`, `auto_unlock = false`,
+`plaintext_keyfile = false`, `outside_repository = true`. Strict identity, not
+truthiness — a string `"false"` or a `1` fails, because a value that read as
+true without being true is the exact bug this rule exists to prevent.
+
+`verified = true` means the vault was opened, mounted, written to, closed,
+proven to hide its contents while closed, reopened and proven to return them.
+Not that somebody typed a boolean.
+
+## 3. The retired field cannot come back
+
+`disk_encryption` is **not** in `CUSTODIAN_PERMITTED_FIELDS`. A config still
+carrying it is an unrecognised field and fails
+`custody_records_no_secret_material`. This is deliberate: renaming alone would
+have let the original ambiguous record return and satisfy the endpoint gate a
+second time.
+
+## 4. Vault operating rules
+
+- Closed and unmounted at rest. Open only for an approved custody operation,
+  close immediately after.
+- **No auto-unlock.** No `/etc/crypttab` entry, no systemd unit, no
+  login-triggered unlock.
+- **No plaintext keyfile**, no recovery-key file. The interactive passphrase is
+  the only unlock secret.
+- The passphrase never enters argv, an environment variable, a file, a script
+  literal, shell history, a log, a commit or a chat message. Interactive entry
+  only.
+- The vault passphrase must differ from the future keystore password and from
+  both backup container passphrases.
+- **The production keystore must be created inside the vault and must never
+  exist outside it.**
+- No path, UUID, size or serial belonging to the vault goes into committed
+  governance. None strengthens the claim; each discloses the operator's machine.
+
+## 5. Storage readiness implies nothing downstream
+
+A ready vault is a place to put a key. It is not a key.
+
+Still false, and asserted false by the scanner: production signing key
+provisioned, backup 1 created, backup 2 created, sealed-cold created, offsite
+created, recovery verified, certificate pinned
+(`production_certificate_sha256` stays null), production APK built, pilot
+enforcement, global enforcement.
+
+Custodian 1 remains the **only** host permitted to generate the first
+production key. Never the VPS, never CI, never custodian 2, never the USB,
+never a tablet, never a container.
+
+## 6. Residual exposure — state it, do not paper over it
+
+The vault protects the keystore **at rest**. It does not make the workstation
+encrypted. Swap is a 4 GB file on the unencrypted root filesystem, so material
+held in memory while the vault is open can page out in the clear. Disable swap
+for signing operations and re-enable it afterwards.
+
+Custodian 2's `host_full_disk_encryption` is an operator **declaration** about
+a remote Windows machine that no scanner has measured. Custodian 2's backup
+must therefore arrive inside its own encrypted container regardless — Admin
+Klinik can log in to that machine and must not reach the signing key by doing
+so.
+
+## 7. Key provisioning is still blocked
+
+The storage gap is closed. The physical custody gap is not: Backup 1 needs an
+operator at the Admin Klinik workstation, Backup 2 needs the Custodian 3 USB
+attached. Do not generate the production key until both are genuinely
+available — a key with no backups is the failure mode the three-destination
+model exists to prevent.

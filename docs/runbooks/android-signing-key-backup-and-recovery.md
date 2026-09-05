@@ -76,14 +76,59 @@ php artisan android:release-readiness --strict
 
 ---
 
+## 0. Open the Custodian 1 signing vault
+
+**Custodian 1 is NOT full-disk encrypted.** `/` and `/home` mount from raw ext4
+partitions. The encrypted-at-rest requirement is met by a dedicated **LUKS2
+vault**, established by
+REVISION-PRODUCTION-SIGNING-CUSTODIAN1-ENCRYPTED-VAULT-1, and the keystore must
+live inside it. A keystore written anywhere else on this host is written in the
+clear.
+
+The vault is **closed at rest**. Its full lifecycle for any signing operation:
+
+```
+OPEN → MOUNT → approved operation → SYNC → UNMOUNT → CLOSE
+```
+
+```bash
+# Swap is a 4 GB file on the UNENCRYPTED root filesystem. Key material held in
+# memory can page out in the clear, so take swap down for the operation.
+sudo swapoff -a
+
+sudo cryptsetup open \
+  "$HOME/.local/share/daengtisiams-signing/production-signing-vault.luks" \
+  daengtisiams-signing-vault              # prompts for the passphrase
+
+sudo mount /dev/mapper/daengtisiams-signing-vault "$HOME/DaengtisiaMS-Signing-Vault"
+cd "$HOME/DaengtisiaMS-Signing-Vault"
+```
+
+The passphrase is typed at the prompt. Never in argv, an environment variable,
+a file, a script literal or a chat message. It is a **different** secret from
+the keystore password and from both backup container passphrases.
+
+Confirm the vault is genuinely open and you are inside it before continuing:
+
+```bash
+findmnt -no SOURCE,TARGET "$HOME/DaengtisiaMS-Signing-Vault"
+# must print /dev/mapper/daengtisiams-signing-vault
+```
+
+---
+
 ## 1. Generate the production signing key (once)
 
 **Stage B.** Run as **Custodian 1** — the primary IT workstation (Ubuntu,
-Cabang Pusat, disk encryption and screen lock active) — not in a repository
-directory. No other host may generate this key: not the production VPS, not a
-CI runner, not Custodian 2, not the USB, not a clinic tablet, not a container.
+Cabang Pusat, screen lock and login password active, **host not full-disk
+encrypted**, signing vault open per §0) — **with the working directory inside
+the mounted vault**, never in a repository directory. No other host may
+generate this key: not the production VPS, not a CI runner, not Custodian 2,
+not the USB, not a clinic tablet, not a container.
 
 ```bash
+cd "$HOME/DaengtisiaMS-Signing-Vault"     # inside the vault, always
+
 keytool -genkeypair -v \
   -keystore daengtisia-clinic-release.jks \
   -alias daengtisia-clinic-release \
@@ -162,6 +207,35 @@ support.
 **Never** back up to: a git repository, an unencrypted shared drive, chat, email,
 or an unencrypted cloud sync folder. Each of those creates copies nobody can
 count and nobody can revoke.
+
+---
+
+## 2b. Close the vault — every time, without exception
+
+The operation is not finished until the vault is closed. An open vault on an
+otherwise unencrypted workstation is an ordinary directory holding an
+unrecoverable signing key.
+
+```bash
+cd ~                                        # leave the mountpoint first
+sync
+sudo umount "$HOME/DaengtisiaMS-Signing-Vault"
+sudo cryptsetup close daengtisiams-signing-vault
+sudo swapon -a                              # restore swap taken down in §0
+```
+
+Verify the resting state, and do not walk away until it prints clean:
+
+```bash
+ls /dev/mapper/ | grep -c '^daengtisiams-signing-vault$'   # must be 0
+findmnt -no TARGET "$HOME/DaengtisiaMS-Signing-Vault"      # must be empty
+ls -A "$HOME/DaengtisiaMS-Signing-Vault"                   # must be empty
+```
+
+No plaintext keystore, certificate or scratch copy may remain outside the
+vault. The vault does **not** auto-unlock: there is no `/etc/crypttab` entry,
+no systemd unit and no keyfile, and none may be added — the interactive
+passphrase is the only unlock secret by design.
 
 ---
 
