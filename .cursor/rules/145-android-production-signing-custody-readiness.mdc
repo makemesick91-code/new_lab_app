@@ -1,0 +1,113 @@
+---
+description: Production Android signing custody — the three designated destinations, what "ready" does and does not mean, and where the first production key may be generated.
+globs:
+  - "config/android_release.php"
+  - "app/Support/Android/**"
+  - "app/Console/Commands/Android*.php"
+  - "docs/governance/android-production-signing-governance.md"
+  - "docs/runbooks/android-signing-key-backup-and-recovery.md"
+  - "tests/Feature/DoctorDevice/DoctorDeviceAndroidSigningCustody*.php"
+alwaysApply: false
+---
+
+# Android production signing custody
+
+PRODUCTION-ANDROID-SIGNING-CUSTODY-READINESS-1. Supersedes the custody
+`PARTIAL` state recorded by EVIDENCE-PHASE4A-REAL-DEVICE-KEYINFO-PREFLIGHT-1.
+That record was accurate when written — Custodian 2, Custodian 3, the offsite
+copy and the sealed-cold copy were all genuinely deferred by owner decision.
+It is superseded forward, never rewritten.
+
+## 1. Signing authority
+
+1. Production signing is **self-managed by DaengtisiaMS**. No third party holds
+   the key and no third party can restore it.
+2. **Google Play, Managed Google Play and Play App Signing remain unused**
+   (ADR 0010). There is no resettable upload key behind us.
+
+## 2. The three designated destinations
+
+| # | Role | Medium | Where | Responsible |
+|---|------|--------|-------|-------------|
+| 1 | primary signing authority | primary IT workstation (Ubuntu) | Cabang Pusat | Raushan Fikri Ridha / IT |
+| 2 | encrypted backup destination | Admin Klinik workstation (Windows) | Klinik Daengtisia | IT + Admin Klinik |
+| 3 | encrypted backup + **sealed-cold** + **offsite** | USB | Kantor Management Klinik | IT |
+
+3. The **first production signing key may be generated only on Custodian 1**.
+4. It may **never** be generated on: the production VPS, any CI runner
+   (hosted or self-hosted), pull-request CI, Custodian 2, the USB, a clinic
+   Android device, a cloud VM, a temporary container, or a browser.
+   These media are anchored in `AndroidReleaseGovernanceScanner` constants
+   (`GENERATION_MEDIA_ALLOWLIST`, `GENERATION_MEDIA_MUST_FORBID`), **not only
+   in config**. Config may forbid more; it may never forbid less, and it may
+   not widen the permitted list. A rule about where an unrecoverable key is
+   born must not be satisfiable by the same edit that breaks it.
+5. Custodian 2 and Custodian 3 are **destinations, never signing authorities**.
+6. Custodian 2 requires disk encryption, a login password and a screen lock,
+   with access limited to IT and Admin Klinik.
+
+## 3. USB rules
+
+7. The USB **may keep unrelated data already on it**. No wipe is required, and
+   demanding one would destroy data this programme has no authority over.
+8. Signing material on the USB must live in an **encrypted container**.
+   Plaintext key material on that medium is forbidden.
+9. The passphrase must **never** sit on the same medium as the key.
+10. The USB stays **offline** except during an approved custody operation, and
+    is not returned to general daily use afterwards.
+
+## 4. Readiness is not provisioning — the distinction that matters most
+
+11. Custody readiness ≠ key provisioned.
+12. Custody readiness ≠ backup created.
+13. Custody readiness ≠ recovery verified.
+14. Custody readiness ≠ certificate pinned.
+15. Custody readiness ≠ signed APK.
+16. Custody readiness ≠ pilot activation.
+
+`*_destination_ready` means a place is prepared to receive a copy.
+`*_backup_created` means a copy exists. As of this rule **every `_created` and
+`_verified` flag is false and `production_certificate_sha256` is null.**
+`android:release-readiness` reports both families side by side, and
+`custody_state_machine_consistent` fails if any downstream fact is claimed
+ahead of what it depends on.
+
+## 5. Secret handling
+
+17. The production key must never enter Git, CI, the VPS, chat, email,
+    documentation, logs, screenshots or a prompt.
+18. Passphrases are entered interactively, never echoed, never persisted in
+    command output or shell history where avoidable.
+19. The committed custody block records **roles, media classes and
+    organisation-level locations only** — no serial, no filesystem identifier,
+    no private address, no passphrase. `custody_records_no_secret_material`
+    enforces this on the exact leaf key, so policy vocabulary such as
+    `login_password` is not mistaken for a stored password.
+20. The certificate fingerprint is **public** material and may be committed —
+    but it stays null until a key actually exists.
+
+## 6. Honest caveat: three media are not three people
+
+21. IT is responsible for Custodian 1 and Custodian 3 and holds access to
+    Custodian 2, so **one party can reach every copy**. This is recorded in
+    `single_party_can_reach_all_copies` with compensating controls, not hidden
+    behind the phrase "three custodians". A second independent human custodian
+    is an open item before the `operational` state.
+    The answer is **derived** from the intersection of every custodian's
+    `authorized_access`, not taken from the boolean: a caveat that can be
+    switched off by denying it is not a caveat. Denying a concentration the
+    access lists prove is a FAIL, and so is a destination that records no
+    access list at all.
+22. Custodian 3 carries **both** the sealed-cold and the offsite property. The
+    governance table had expected them on separate holders; the concentration
+    is an owner-accepted residual risk, recorded rather than smoothed over.
+
+## 7. What is still off
+
+23. Phase 4A pilot enforcement remains **off** (`enforcement.current_stage=off`,
+    `enforcement.active=false`). This rule activates nothing.
+24. Global enforcement remains prohibited before Phase 5.
+25. Device Owner and kiosk remain Phase 4B.
+26. The real-device KeyInfo preflight (TRUSTED_ENVIRONMENT, non-exportable
+    private key, on PHASE4A_PILOT_TABLET_01) remains PASS authority and is not
+    re-run without a direct reason.

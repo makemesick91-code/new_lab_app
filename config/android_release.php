@@ -136,6 +136,206 @@ return [
             'restore_test_cadence_days' => 90,
         ],
 
+        // ------------------------------------------------------------------
+        // CUSTODY DESIGNATION
+        // PRODUCTION-ANDROID-SIGNING-CUSTODY-READINESS-1
+        // ------------------------------------------------------------------
+        //
+        // Everything above this point is POLICY: how many copies, which media
+        // are permitted, what may never happen. It was written before anyone
+        // had been named. This block is the owner's DESIGNATION — who holds
+        // what, where, under which endpoint controls — so that a later and
+        // separate provisioning task has somewhere lawful to put the key at
+        // the moment it is created.
+        //
+        // READ THIS BEFORE READING ANYTHING BELOW IT:
+        //
+        //   A destination being READY means it is prepared to receive a copy.
+        //   It does NOT mean a copy is there. As of this record there is no
+        //   production signing key anywhere in the world, no backup copy on
+        //   any medium, and no rehearsed recovery. Every `*_ready` flag below
+        //   is paired with a `*_created` flag that is false, precisely so the
+        //   two can never be read as the same statement.
+        //
+        // No secret material belongs here. Not a passphrase, not a hardware
+        // serial, not a filesystem UUID, not a private address. This file is
+        // committed, and a committed secret is a published secret. The
+        // `custody_records_no_secret_material` scanner check enforces that
+        // rather than trusting anyone to remember it.
+        'custody' => [
+            // The custody lifecycle, in order. A state may only be claimed
+            // when every state before it is genuinely true.
+            'states' => [
+                'deferred',
+                'designated',
+                'ready_for_provisioning',
+                'key_provisioned',
+                'backups_created',
+                'recovery_verified',
+                'operational',
+            ],
+
+            'status' => 'ready_for_provisioning',
+
+            // Three DESTINATIONS, which is not the same claim as three
+            // independent people. See `single_party_can_reach_all_copies`.
+            'model' => 'three_destination_custody',
+
+            // ---------------------------------------------------------------
+            // The negative facts. These are the whole point of this record.
+            // ---------------------------------------------------------------
+            'production_signing_key_provisioned' => false,
+            'backup_1_key_copy_created' => false,
+            'backup_2_key_copy_created' => false,
+            'sealed_cold_backup_created' => false,
+            'offsite_backup_created' => false,
+            'recovery_verified' => false,
+
+            // ...and the readiness facts they are deliberately kept apart from.
+            'primary_signing_workstation_ready' => true,
+            'backup_destination_1_ready' => true,
+            'sealed_cold_destination_ready' => true,
+            'offsite_destination_ready' => true,
+
+            'custodians' => [
+                // -----------------------------------------------------------
+                // CUSTODIAN 1 — primary signing authority.
+                // The only place the first production key may be generated.
+                // -----------------------------------------------------------
+                'custodian_1' => [
+                    'role' => 'primary_signing_authority',
+                    'roles' => [
+                        'primary_signing_authority',
+                        'primary_key_holder',
+                    ],
+                    'responsible_party' => 'Raushan Fikri Ridha / IT',
+                    'media' => 'primary_it_workstation',
+                    'medium_type' => 'workstation',
+                    'os' => 'ubuntu',
+                    'location' => 'Cabang Pusat',
+                    'authorized_access' => ['IT'],
+                    'disk_encryption' => true,
+                    'login_password' => true,
+                    'screen_lock' => true,
+                    'initial_key_generation_authority' => true,
+                    'status' => 'ready_for_provisioning',
+                ],
+
+                // -----------------------------------------------------------
+                // CUSTODIAN 2 — encrypted backup destination 1.
+                // A destination, never a signing authority.
+                // -----------------------------------------------------------
+                'custodian_2' => [
+                    'role' => 'encrypted_backup_destination',
+                    'roles' => [
+                        'encrypted_backup_destination',
+                    ],
+                    'responsible_party' => 'IT + Admin Klinik',
+                    'media' => 'admin_klinik_workstation',
+                    'medium_type' => 'workstation',
+                    'os' => 'windows',
+                    'location' => 'Klinik Daengtisia',
+                    'authorized_access' => ['IT', 'Admin Klinik'],
+                    'disk_encryption' => true,
+                    'login_password' => true,
+                    'screen_lock' => true,
+                    'initial_key_generation_authority' => false,
+                    'status' => 'ready_for_provisioning',
+                ],
+
+                // -----------------------------------------------------------
+                // CUSTODIAN 3 — sealed-cold AND offsite destination.
+                //
+                // The owner assigned both properties to one medium. The
+                // governance table had expected them on separate holders, so
+                // the concentration is recorded openly in
+                // `single_party_access_compensating_controls` rather than
+                // being smoothed over.
+                // -----------------------------------------------------------
+                'custodian_3' => [
+                    'role' => 'sealed_cold_destination',
+                    'roles' => [
+                        'encrypted_backup_destination',
+                        'sealed_cold_destination',
+                        'offsite_destination',
+                    ],
+                    'responsible_party' => 'IT',
+                    'media' => 'usb',
+                    'medium_type' => 'removable_medium',
+                    'location' => 'Kantor Management Klinik',
+                    'authorized_access' => ['IT'],
+                    'initial_key_generation_authority' => false,
+                    'status' => 'ready_for_provisioning',
+                ],
+            ],
+
+            // Rules that bind the media themselves, independent of who holds
+            // them. Each exists because the alternative has burned someone.
+            'media_rules' => [
+                // The USB may keep whatever unrelated data is already on it.
+                // Requiring a wipe would be this record inventing an authority
+                // it was never granted, over data belonging to someone else.
+                'existing_unrelated_data_wipe_required' => false,
+
+                // But signing material goes into an encrypted container or it
+                // does not go on at all.
+                'plaintext_signing_material_permitted' => false,
+                'encrypted_container_required' => true,
+
+                // A key and the passphrase that opens it on one medium is one
+                // theft, not two.
+                'password_stored_with_key_permitted' => false,
+
+                // Cold means cold.
+                'offline_when_not_in_approved_use' => true,
+                'general_daily_use_after_custody_permitted' => false,
+            ],
+
+            // Where the FIRST production key may be generated, and where it
+            // may never be. The scanner cross-checks the custodian entries
+            // against these rather than trusting the flags alone.
+            'permitted_initial_key_generation_media' => [
+                'primary_it_workstation',
+            ],
+            'forbidden_initial_key_generation_media' => [
+                'production_vps',
+                'pull_request_ci',
+                'ci_runner',
+                'self_hosted_ci_runner',
+                'admin_klinik_workstation',
+                'usb',
+                'clinic_android_device',
+                'cloud_vm',
+                'temporary_container',
+                'browser',
+            ],
+
+            // ---------------------------------------------------------------
+            // The honest caveat.
+            // ---------------------------------------------------------------
+            //
+            // "Three custodians" in the governance table meant three
+            // independent holders, so that compromising one person could not
+            // reach every copy. The owner's designation names three
+            // DESTINATIONS, and IT is responsible for custodian 1 and 3 and
+            // holds access to custodian 2. One party can therefore reach all
+            // three copies.
+            //
+            // That is an accepted residual risk, not an oversight, and it is
+            // written down here so no future reader mistakes three media for
+            // three people.
+            'single_party_can_reach_all_copies' => true,
+            'single_party_access_compensating_controls' => [
+                'every_copy_encrypted_at_rest',
+                'passphrase_held_separately_from_every_medium',
+                'sealed_cold_copy_stays_offline_and_sealed_between_declared_operations',
+                'restore_drill_every_90_days_and_after_any_custodian_change',
+                'second_independent_human_custodian_is_an_open_item_before_operational_state',
+            ],
+
+            'runbook' => 'docs/runbooks/android-signing-key-backup-and-recovery.md',
+        ],
+
         'runbook' => 'docs/runbooks/android-signing-key-backup-and-recovery.md',
         'governance_doc' => 'docs/governance/android-production-signing-governance.md',
     ],
@@ -921,6 +1121,7 @@ return [
             'docs/sprints/revision-doctor-android-direct-apk-signing-distribution-1.md',
             'docs/sprints/revision-android-release-readiness-phase4a-pilot-authority-1.md',
             'docs/sprints/evidence-phase4a-real-device-keyinfo-preflight-1.md',
+            'docs/sprints/production-android-signing-custody-readiness-1.md',
         ],
 
         // ------------------------------------------------------------------

@@ -279,6 +279,19 @@ return [
         // move signing, enrolment and enforcement not at all.
         'tests/Feature/DoctorDevice/DoctorDeviceAndroidRealDevicePreflightTest.php',
 
+        // PRODUCTION-ANDROID-SIGNING-CUSTODY-READINESS-1. The custody
+        // designation for a key that cannot be replaced, and the separation
+        // between a destination being READY and a backup EXISTING.
+        //
+        // Declared rather than left to the `DoctorDevice` filter token for the
+        // reason Phase 1 established. The specific failure this selects for is
+        // silent in the worst way: config drifting until the scanner announces
+        // three encrypted backups that were never written, read by someone
+        // deciding whether it is safe to proceed. A gate that stopped running
+        // would not say so, and the first evidence of the drift would be a
+        // lost key with no recoverable copy.
+        'tests/Feature/DoctorDevice/DoctorDeviceAndroidSigningCustodyReadinessTest.php',
+
         // REVISION-DOCTOR-AUTO-DEVICE-APPROVAL-APP-ONLY-LOGIN-1 — the
         // doctor/device authorization lifecycle, the automatic request on first
         // app login, the approval inbox's authority, and the app-only gate.

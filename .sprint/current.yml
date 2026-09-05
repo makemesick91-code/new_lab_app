@@ -1,26 +1,26 @@
-# Active sprint manifest — EVIDENCE-PHASE4A-REAL-DEVICE-KEYINFO-PREFLIGHT-1
+# Active sprint manifest — PRODUCTION-ANDROID-SIGNING-CUSTODY-READINESS-1
 # Validated by: php artisan sprint:manifest-check
 
-id: EVIDENCE-PHASE4A-REAL-DEVICE-KEYINFO-PREFLIGHT-1
-# NOT DOCS_ONLY: this record ships three read-only gate checks in the
-# release-readiness scanner, so declaring documentation-only would be a false
-# declaration about a security surface.
+id: PRODUCTION-ANDROID-SIGNING-CUSTODY-READINESS-1
+# NOT DOCS_ONLY: this record ships thirteen read-only gate checks and four
+# summary lines in the release-readiness scanner, so declaring
+# documentation-only would be a false declaration about a security surface.
 type: SECURITY_FIX
 module: DoctorDevice
-title: "Make the real-device hardware preflight durable: the generated AndroidKeyStore key measured TRUSTED_ENVIRONMENT and non-exportable on the pilot tablet, a capability flag is never accepted as proof of it, and the pass activates nothing"
+title: "Designate the three production signing custody destinations so key provisioning may begin — and make ready-for-provisioning structurally impossible to read as key provisioned, backup created or recovery verified"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-runtime_change: true            # three read-only gate checks + one summary line in the release-readiness scanner
+runtime_change: true            # thirteen read-only gate checks + four summary lines in the release-readiness scanner
 schema_change: false            # no migration, no table, no column
 frontend_change: false          # no Blade, no JS, no CSS, no asset build
-security_impact: true           # the hardware gate for device identity, and the serial-leak boundary
+security_impact: true           # the custody boundary for an unrecoverable production signing key
 branch_isolation_impact: false  # BranchContext untouched
 ledger_impact: false            # no inventory ledger / billing / payment behaviour change
 
 deploy_required: true           # the gate must be the one production actually runs
 browser_required: false         # console command and config; verified through feature tests
 
-go_tag: evidence-phase4a-real-device-keyinfo-preflight-1-go
+go_tag: production-android-signing-custody-readiness-1-go
 
 test_profiles:
   - security
@@ -32,45 +32,62 @@ test_profiles:
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
 inherits_hold: FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1/FIX-02
 inherits_phase: feature-doctor-trusted-android-device-lock-1-phase-3-5-readiness-go
+inherits_preflight: evidence-phase4a-real-device-keyinfo-preflight-1-go
 
-# THIS IS AN EVIDENCE RECORD, NOT A PHASE ADVANCE.
+# THIS IS A CUSTODY DESIGNATION, NOT A KEY.
 #
-# The Phase 4A pilot rested on a claim nobody had measured: that the device
-# identity key lives in secure hardware and cannot be exported. Phases 1-3.5
-# assumed it. The Phase 3 instrumentation suite proves the enrolment PROTOCOL,
-# and every one of its assertions would also pass against a software-backed key.
+# The signing policy — three copies, encrypted, one offsite, one sealed cold —
+# has been recorded since Phase 3.5. What did not exist was anyone named to
+# hold them. EVIDENCE-PHASE4A-REAL-DEVICE-KEYINFO-PREFLIGHT-1 correctly
+# recorded custody as PARTIAL, with Custodian 2, Custodian 3, the offsite copy
+# and the sealed-cold copy all deferred by explicit owner decision. That record
+# was true when written and is SUPERSEDED FORWARD, never rewritten.
 #
-# The trap being closed is reading a DEVICE CAPABILITY FLAG as proof.
-# `android.hardware.hardware_keystore` describes the platform, not the key: a
-# keystore can issue a particular key in software while the flag reads exactly
-# the same. The authoritative answer is `KeyInfo.getSecurityLevel()` on the key
-# the app actually generated. Accepted: TRUSTED_ENVIRONMENT, STRONGBOX.
-# Rejected: SOFTWARE, UNKNOWN_SECURE.
+# The owner has now designated three destinations:
+#   Custodian 1 — primary signing authority. Primary IT workstation, Ubuntu,
+#                 Cabang Pusat, Raushan Fikri Ridha / IT. Disk encryption,
+#                 login password and screen lock active. The ONLY host on which
+#                 the first production key may be generated.
+#   Custodian 2 — encrypted backup destination. Admin Klinik workstation,
+#                 Windows, Klinik Daengtisia. Disk encryption, login password
+#                 and screen lock active. Access limited to IT + Admin Klinik.
+#   Custodian 3 — encrypted backup, sealed-cold AND offsite destination. USB,
+#                 Kantor Management Klinik, IT. Encrypted container only;
+#                 unrelated existing data on the medium is NOT wiped; the
+#                 passphrase never travels on the same medium; offline except
+#                 during an approved operation.
 #
-# Measured on PHASE4A_PILOT_TABLET_01 (SM-X236B, Android 16 / API 36, verified
-# boot green, bootloader and vbmeta locked, physical device): existing suite
-# 7/7 PASS, temporary KeyInfo probe 1/1 PASS reporting
-# securityLevel=TRUSTED_ENVIRONMENT and privateKeyExportable=false. StrongBox is
-# absent and that is NOT a failure — it is preferred, never mandated.
+# READY IS NOT CREATED, AND THAT IS THE WHOLE POINT.
 #
-# THE TABLET WAS NOT TOUCHED BY THIS SPRINT. The measurements already existed;
-# this makes them durable, machine-checked and hard to misread. The temporary
-# probe was NOT committed, and the production alias
-# `daengtisiams_device_identity_v1` was never generated.
+# Still false after this record, and asserted as false by the scanner:
+# production signing key provisioning, backup copy 1 created, backup copy 2
+# created, sealed-cold backup created, offsite backup created, recovery
+# verified, certificate pinning (production_certificate_sha256 stays null),
+# production APK build or installation, production enrolment, pilot enforcement
+# activation, global enforcement activation. `custody_state_machine_consistent`
+# FAILS if any of those is claimed ahead of what it depends on, so the config
+# cannot quietly drift into announcing backups that do not exist.
 #
-# A PREFLIGHT PASS ACTIVATES NOTHING. Still false after this record:
-# signing custody completion (PARTIAL — Custodian 2, offsite backup, Custodian 3
-# and sealed-cold backup deferred by explicit owner decision), production
-# signing key provisioning, certificate pinning (production_certificate_sha256
-# stays null), production APK build or installation, production enrolment,
-# pilot enforcement activation, global enforcement activation.
 # DEVICE_ENFORCEMENT_ACTIVE=false, DOCTOR_BROWSER_LOGIN_DENIED=false,
-# enforcement.current_stage=off, the flag defaults false, and no doctor —
-# pilot or otherwise — is enforced.
+# enforcement.current_stage=off. No doctor — pilot or otherwise — is enforced.
+# drg Karmila at Cabang Sunu is unaffected.
 #
-# ANDROID_REAL_DEVICE_VALIDATION stays false. It is a different, wider gate
-# (signed release installed, device enrolled, pilot run) and conflating it with
-# the hardware preflight is the specific misreading this record refuses.
+# TWO EXCEPTIONS ARE RECORDED RATHER THAN SMOOTHED OVER. IT is responsible for
+# Custodian 1 and Custodian 3 and holds access to Custodian 2, so one party can
+# reach every copy — "three custodians" in the governance table meant three
+# independent holders, and three media under one party is a weaker claim.
+# Custodian 3 also carries both the sealed-cold and the offsite property, which
+# the table had expected on separate holders. Both are owner-accepted residual
+# risks with compensating controls, and a second independent human custodian is
+# an open item before the `operational` state.
+#
+# NO KEY WAS GENERATED BY THIS SPRINT. No keytool, no openssl signing identity,
+# no placeholder, no "temporary production key". No backup artifact was written
+# to any medium. The tablet was not touched and ADB was not started.
+#
+# The next task is a SEPARATE authorised one —
+# PRODUCTION-ANDROID-SIGNING-KEY-PROVISIONING-1 — and it may not skip the
+# backup and recovery stages before production rollout.
 #
 # Phase 4 and the first Phase 4A attempt remain BLOCKED / NO-GO and are not
 # rewritten. Neither
@@ -81,4 +98,5 @@ inherits_phase: feature-doctor-trusted-android-device-lock-1-phase-3-5-readiness
 # Google Play, Managed Google Play and Play App Signing remain unused (ADR 0010).
 # Device Owner and kiosk remain Phase 4B. Phase 1 room isolation, RME/odontogram
 # print denial, Phase 2 device lifecycle and Phase 3 cryptographic identity are
-# all preserved.
+# all preserved. The real-device KeyInfo preflight remains PASS authority and
+# was not re-run.

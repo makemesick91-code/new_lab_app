@@ -23,10 +23,65 @@ Scope: the **DaengtisiaMS production app signing key**.
 
 ---
 
+## 0. Stage gates — where we actually are
+
+*PRODUCTION-ANDROID-SIGNING-CUSTODY-READINESS-1.*
+
+This runbook covers seven stages. **Only stage A is closed.** Each stage is a
+separate authorised task; none of them may be folded into another because
+"we were already in there".
+
+| Stage | What it is | State |
+|---|---|---|
+| **A — Custody readiness** | custodians designated, media and controls recorded, destinations prepared | **CLOSED — GO** |
+| **B — Key provisioning** | generate the production key on Custodian 1 (§1) | open |
+| **C — Backup creation** | write encrypted copies to Custodians 2 and 3 (§2) | open |
+| **D — Recovery verification** | restore drill proves a copy actually restores (§3) | open |
+| **E — Certificate pinning** | record `production_certificate_sha256` from the real key | open |
+| **F — APK signing** | build and sign a production artifact | open |
+| **G — Device installation** | install on the pilot tablet, enrol, activate the pilot | open |
+
+**Stage A closed means only this:** three destinations are designated, their
+controls are recorded, and stage B is permitted to begin. It does **not** mean
+a key exists, a backup exists, or a recovery has been rehearsed. Those are
+stages B, C and D and every one of them is still open.
+
+**Do not skip C and D.** A provisioned key with no verified backup is the exact
+unrecoverable state the warning at the top of this file describes. Stage B
+without C and D is worse than not starting, because it creates something
+irreplaceable and leaves it in one place.
+
+### The three destinations
+
+| # | Role | Medium | Location | Responsible |
+|---|---|---|---|---|
+| 1 | primary signing authority | primary IT workstation, Ubuntu | Cabang Pusat | Raushan Fikri Ridha / IT |
+| 2 | encrypted backup destination | Admin Klinik workstation, Windows | Klinik Daengtisia | IT + Admin Klinik |
+| 3 | encrypted backup, sealed-cold, offsite | USB | Kantor Management Klinik | IT |
+
+**Stage B runs on Custodian 1 and nowhere else.** Not the VPS, not CI, not
+Custodian 2, not the USB, not a tablet, not a container.
+
+**USB rules (Custodian 3).** Unrelated data already on the medium stays — no
+wipe is required. Signing material goes into an encrypted container or it does
+not go on at all. The passphrase never travels on the same medium. The USB is
+offline except during an approved operation and does not return to general
+daily use afterwards.
+
+Verify the recorded posture at any time with:
+
+```bash
+php artisan android:release-readiness --strict
+```
+
+---
+
 ## 1. Generate the production signing key (once)
 
-Run as the **signing custodian**, on a trusted machine, not in a repository
-directory.
+**Stage B.** Run as **Custodian 1** — the primary IT workstation (Ubuntu,
+Cabang Pusat, disk encryption and screen lock active) — not in a repository
+directory. No other host may generate this key: not the production VPS, not a
+CI runner, not Custodian 2, not the USB, not a clinic tablet, not a container.
 
 ```bash
 keytool -genkeypair -v \
@@ -75,18 +130,34 @@ gpg --symmetric --cipher-algo AES256 \
     --output daengtisia-clinic-release.jks.gpg \
     daengtisia-clinic-release.jks
 
-# Copy 2 — recovery custodian, OFFSITE. Same ciphertext, different holder.
-# Copy 3 — sealed cold copy, opened only on a declared key-loss incident.
+# Copy 2 — CUSTODIAN 2. Admin Klinik workstation (Windows), Klinik Daengtisia.
+#          Encrypted at rest. Never in Downloads, Desktop or a temp directory,
+#          and never into a consumer cloud sync folder.
+#
+# Copy 3 — CUSTODIAN 3. USB, Kantor Management Klinik. Sealed cold AND offsite.
+#          Encrypted container only — never a plaintext keystore on the medium.
+#          Unrelated data already on the USB stays; no wipe is required.
+#          Opened only on a declared key-loss incident or a scheduled drill.
 ```
 
-Checklist:
+Checklist (**stage C**):
 
-- [ ] both copies encrypted at rest
-- [ ] passphrase stored separately from both copies
-- [ ] copy 2 physically offsite
+- [ ] all three copies encrypted at rest
+- [ ] passphrase stored separately from every copy — never on the same medium
+- [ ] copy 2 on Custodian 2, not in Downloads/Desktop/temp, no cloud sync
+- [ ] copy 3 in an encrypted container on the Custodian 3 USB
+- [ ] copy 3 offsite at Kantor Management Klinik
 - [ ] copy 3 sealed, holder recorded, not routinely accessed
-- [ ] restore drill scheduled (**90 days**)
+- [ ] USB taken **offline** and not returned to general daily use
+- [ ] restore drill scheduled (**90 days**) — that is stage D, still open
 - [ ] custodian roles recorded in the operations register
+
+Only when every box above is genuinely ticked may
+`signing.custody.backup_1_key_copy_created` / `backup_2_key_copy_created` /
+`sealed_cold_backup_created` / `offsite_backup_created` be set true. Setting one
+early makes `custody_state_machine_consistent` fail, which is the point:
+`android:release-readiness` refuses to carry a claim the artifacts do not
+support.
 
 **Never** back up to: a git repository, an unencrypted shared drive, chat, email,
 or an unencrypted cloud sync folder. Each of those creates copies nobody can

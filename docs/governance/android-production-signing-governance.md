@@ -80,6 +80,62 @@ means a compromised installer workstation cannot produce a signed artifact, and
 a compromised signing workstation cannot reach the tablets. Below that
 headcount, record the exception rather than pretending it is not one.
 
+### 2.1 Designated destinations
+
+*PRODUCTION-ANDROID-SIGNING-CUSTODY-READINESS-1. Supersedes the `PARTIAL`
+custody state recorded by EVIDENCE-PHASE4A-REAL-DEVICE-KEYINFO-PREFLIGHT-1 —
+which was accurate when written, and is superseded forward rather than
+rewritten.*
+
+The roles above were abstract until the owner designated them. They now map to
+three destinations:
+
+| # | Role | Medium | Location | Responsible | Endpoint controls |
+|---|---|---|---|---|---|
+| **1** | primary signing authority | primary IT workstation, Ubuntu | Cabang Pusat | Raushan Fikri Ridha / IT | disk encryption, login password, screen lock |
+| **2** | encrypted backup destination | Admin Klinik workstation, Windows | Klinik Daengtisia | IT + Admin Klinik | disk encryption, login password, screen lock |
+| **3** | encrypted backup, **sealed-cold**, **offsite** | USB | Kantor Management Klinik | IT | encrypted container, offline between operations |
+
+The machine-readable form is `config/android_release.php` →
+`signing.custody`, and `android:release-readiness` fails closed on every
+control in it.
+
+**Custodian 1 is the only place the first production key may be generated.**
+Not the VPS, not CI (hosted or self-hosted), not Custodian 2, not the USB, not
+a clinic tablet, not a cloud VM or container. Custodians 2 and 3 are
+destinations; they never sign.
+
+**READY IS NOT CREATED.** A destination being ready means it is prepared to
+receive a copy. As of this record there is no production signing key, no backup
+copy on any medium, no rehearsed recovery, and
+`production_certificate_sha256` is null. Anyone reading "custody ready" as
+"three encrypted backups exist in three buildings" has been misled — see §7.
+
+### 2.2 Two recorded exceptions
+
+The doc's own instruction is to record an exception rather than pretend it is
+not one. There are two.
+
+**One party can reach every copy.** IT is responsible for Custodian 1 and
+Custodian 3 and holds access to Custodian 2. "Three custodians" in the table
+above meant three independent holders, so that compromising one person could
+not reach every copy; the designation names three *media* under substantially
+one party. Recorded as
+`single_party_can_reach_all_copies`, with compensating controls: every copy
+encrypted at rest, the passphrase held separately from every medium, the cold
+copy sealed and offline between declared operations, and a restore drill every
+90 days. **A second independent human custodian is an open item before the
+`operational` state.**
+
+**Sealed-cold and offsite sit on one medium.** The table expected the offsite
+copy on the recovery custodian and the sealed copy on the cold custodian. The
+owner assigned both properties to Custodian 3. Three copies across three sites
+still satisfy §4, and any single site loss leaves two copies — but losing
+Kantor Management Klinik leaves no sealed copy, and the remaining two are both
+workstation disks. The 90-day restore drill and re-sealing after any opening
+are the compensating controls; consolidating them onto one medium is an
+owner-accepted residual risk, not an oversight.
+
 ---
 
 ## 3. Where the signing key may live
