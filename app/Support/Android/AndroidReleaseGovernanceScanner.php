@@ -835,9 +835,20 @@ class AndroidReleaseGovernanceScanner
         // 1. The device baseline. A green boot chain behind a locked
         //    bootloader is what makes the keystore's answer worth having; an
         //    emulator result satisfies nothing at all.
+        // Both sides must be a real recorded string before they are compared.
+        // Every other clause here compares against a hardcoded literal, so it
+        // fails when its key is deleted; this one compares config to config,
+        // and without the string guards `null === null` would let the check
+        // PASS with NO boot state recorded at all — a device whose boot chain
+        // is unknown or orange passing by having the field removed rather than
+        // answered. Deletion must fail exactly like a wrong value.
+        $requiredBoot = $preflight['verified_boot_state_required'] ?? null;
+        $recordedBoot = $evidence['verified_boot_state'] ?? null;
+
         $baseline = ($evidence['physical_device'] ?? null) === true
             && ($evidence['emulator'] ?? null) === false
-            && ($evidence['verified_boot_state'] ?? null) === ($preflight['verified_boot_state_required'] ?? null)
+            && is_string($requiredBoot) && $requiredBoot !== ''
+            && is_string($recordedBoot) && $recordedBoot === $requiredBoot
             && ($evidence['bootloader_locked'] ?? null) === true
             && ($evidence['vbmeta_locked'] ?? null) === true
             && is_string($evidence['device_label'] ?? null)
@@ -847,8 +858,8 @@ class AndroidReleaseGovernanceScanner
             'real_device_preflight_baseline',
             $baseline ? 'PASS' : 'FAIL',
             $baseline
-                ? "Preflight recorded on physical device {$evidence['device_label']} with verified boot {$evidence['verified_boot_state']}, bootloader and vbmeta locked."
-                : 'The recorded preflight is not a locked, verified-boot, physical device, or carries no logical device label.',
+                ? "Preflight recorded on physical device {$evidence['device_label']} with verified boot {$recordedBoot}, bootloader and vbmeta locked."
+                : 'The recorded preflight is not a locked, verified-boot, physical device, records no boot state, or carries no logical device label.',
         );
 
         // 2. The measurement itself. Both halves are load-bearing: a
@@ -863,7 +874,11 @@ class AndroidReleaseGovernanceScanner
             && ($evidence['private_key_exportable'] ?? null) === false
             && ($evidence['hardware_backed_private_key'] ?? null) === true
             && ($evidence['keyinfo_result'] ?? null) === 'PASS'
-            && ($evidence['keyinfo_tests_run'] ?? 0) >= 1
+            // `>= 1` alone is not enough: PHP 8 makes 'many' >= 1 and true >= 1
+            // both true, so the one clause separating a MEASUREMENT from an
+            // ASSERTION would be satisfiable by an arbitrary string.
+            && is_int($evidence['keyinfo_tests_run'] ?? null)
+            && $evidence['keyinfo_tests_run'] >= 1
             && ($evidence['keyinfo_tests_failed'] ?? null) === 0;
 
         $checks[] = $this->check(
@@ -879,9 +894,14 @@ class AndroidReleaseGovernanceScanner
         // 3. What the pass must NOT have moved. A hardware gate closing is
         //    the single most tempting moment to read the rest as consent, so
         //    the rest is asserted rather than assumed.
+        // Every entry must be exactly `false`. A strict search for `true` would
+        // miss 1, 1.0, 'true' and 'yes' — each of which reads to a human as
+        // unlocked while leaving the check green.
         $unlocks = (array) ($preflight['unlocks'] ?? []);
+        $claimed = array_keys(array_filter($unlocks, fn ($v): bool => $v !== false));
+
         $contained = $unlocks !== []
-            && ! in_array(true, array_values($unlocks), true)
+            && $claimed === []
             && config('android_release.signing.production_certificate_sha256') === null
             && ($evidence['production_device_identity_created'] ?? null) === false
             && ($evidence['keyinfo_probe_committed'] ?? null) === false
@@ -894,7 +914,9 @@ class AndroidReleaseGovernanceScanner
             $contained ? 'PASS' : 'FAIL',
             $contained
                 ? 'The hardware gate closed and moved nothing else: no production key, no certificate pin, no enrolment, no probe committed, and the enforcement ladder is still off.'
-                : 'A real-device preflight pass has been read as unlocking signing, enrolment or enforcement. It unlocks none of them.',
+                : ($claimed !== []
+                    ? 'A real-device preflight pass is recorded as unlocking: '.implode(', ', $claimed).'. It unlocks none of them.'
+                    : 'A real-device preflight pass has been read as unlocking signing, enrolment or enforcement, or the containment record is missing. It unlocks none of them.'),
         );
 
         return $checks;

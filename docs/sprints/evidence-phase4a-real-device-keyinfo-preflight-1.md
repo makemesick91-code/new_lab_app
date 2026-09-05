@@ -371,6 +371,42 @@ likely to be confused. They are different gates:
 
 ---
 
+## Adversarial review of the gate itself
+
+The gate was reviewed against the question it exists to answer: *can a clause
+pass without the claim being met?* Three could, all the same shape — a clause
+satisfiable by a config edit rather than by the fact it describes. All three
+are fixed, and each has a regression test that **fails on the pre-fix logic**
+(verified by reverting the fix and re-running, not by inspection).
+
+| Hole | Why it passed | Fix |
+|---|---|---|
+| **Boot state passed by deletion.** The only clause comparing config to config, so removing both keys made `null === null` true — an unknown or orange device passing by having the field *removed* rather than answered, while the PASS message printed a blank where the boot state should be. | `===` between two absent keys | Both sides must be a non-empty string before comparison; the wrong-value *and* the deleted-key case now fail |
+| **Probe count passed by type.** `($evidence['keyinfo_tests_run'] ?? 0) >= 1` is non-strict, and PHP 8 makes `'many' >= 1`, `'9x' >= 1` and `true >= 1` all true — so the one clause separating a **measurement** from an **assertion** was satisfiable by an arbitrary string. | loose `>=` | `is_int(...)` first |
+| **Unlock claim passed by truthiness.** `in_array(true, …, true)` is strict, so `1`, `1.0`, `'true'`, `'yes'` all left `preflight_unlocks_nothing` green while reading to a human as unlocked. | strict search for one shape | every entry must be exactly `false`; the failure now names which key claimed otherwise |
+
+The third was **not** an activation bypass — `unlocks` is read only by this
+scanner and its own test, nothing consumes it as a switch, and the same check
+independently re-asserts the four real config values (`enforcement.active`,
+`current_stage`, `owner_signoff.pilot_activated`,
+`signing.production_certificate_sha256`). The worst case was a governance
+record contradicting itself, not enforcement turning on. It is fixed anyway,
+because a record that can contradict itself is the thing this file is for.
+
+**What the gate can and cannot prove.** It validates a *recorded* value;
+nothing re-reads the tablet in CI. It proves the evidence record is internally
+consistent and has not been silently downgraded. It cannot prove the tablet
+measured `TRUSTED_ENVIRONMENT` — that is what the run on real hardware, above,
+is for.
+
+Clean on review: no secret or key material, no device serial or other hardware
+instance identifier, no clinical data or PII, no overclaim (StrongBox recorded
+absent and optional throughout), no historical rewrite (both blocked closures
+untouched), no shell execution or injection surface, and **no change to any
+enforcement, signing or activation value**.
+
+---
+
 ## Remaining Phase 4A gates (reported, not executed)
 
 1. Owner reopens the deferred signing-custody controls

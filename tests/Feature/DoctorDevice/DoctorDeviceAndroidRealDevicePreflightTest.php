@@ -58,6 +58,18 @@ function preflightStatus(array $report, string $id): string
     return (string) collect($report['checks'])->firstWhere('id', $id)['status'];
 }
 
+/** Delete one key from the recorded evidence and rescan. */
+function preflightWithoutEvidenceKey(string $key): array
+{
+    $preflight = (array) config('android_release.real_device_preflight');
+    $evidence = (array) $preflight['evidence'];
+    unset($evidence[$key]);
+    $preflight['evidence'] = $evidence;
+    config()->set('android_release.real_device_preflight', $preflight);
+
+    return preflightScan();
+}
+
 // ---------------------------------------------------------------------------
 // The rule
 // ---------------------------------------------------------------------------
@@ -299,6 +311,83 @@ it('fails when a preflight pass is read as unlocking signing or enforcement', fu
         config()->set('android_release.real_device_preflight', null);
         $this->refreshApplication();
     }
+});
+
+// ---------------------------------------------------------------------------
+// Vacuity — the ways a clause can pass without meaning anything
+//
+// Found by adversarial review of this very gate, which is the point: a check
+// that is only ever fed the correct value has not been shown to reject
+// anything, and the three shapes below all reported PASS on a claim that was
+// not met.
+// ---------------------------------------------------------------------------
+
+it('fails when the boot state is deleted rather than answered', function () {
+    // The boot clause is the only one comparing config to config, so before
+    // the fix `null === null` let the check PASS with NO boot state recorded —
+    // an unknown or orange device passing by having the field removed. The
+    // wrong-value case was already covered; deletion was not.
+    expect(preflightStatus(preflightWithoutEvidenceKey('verified_boot_state'), 'real_device_preflight_baseline'))->toBe('FAIL');
+
+    // The requirement side must not be deletable either.
+    $preflight = (array) config('android_release.real_device_preflight');
+    unset($preflight['verified_boot_state_required']);
+    config()->set('android_release.real_device_preflight', $preflight);
+
+    expect(preflightStatus(preflightScan(), 'real_device_preflight_baseline'))->toBe('FAIL');
+});
+
+it('fails when any other baseline fact is deleted rather than answered', function () {
+    foreach (['physical_device', 'emulator', 'bootloader_locked', 'vbmeta_locked', 'device_label'] as $key) {
+        expect(preflightStatus(preflightWithoutEvidenceKey($key), 'real_device_preflight_baseline'))
+            ->toBe('FAIL', "Deleting '{$key}' left the baseline check green.");
+
+        $this->refreshApplication();
+    }
+});
+
+it('refuses a probe count that is not actually a count', function () {
+    // PHP 8 makes 'many' >= 1 and true >= 1 both true, so a loose comparison
+    // let an arbitrary string assert that the KeyInfo probe had run — the one
+    // clause separating a measurement from an assertion.
+    foreach (['many', '9x', true, '1 (approximately)'] as $bogus) {
+        expect(preflightStatus(preflightWithEvidence(['keyinfo_tests_run' => $bogus]), 'key_security_level_accepted'))
+            ->toBe('FAIL', 'A non-integer probe count was accepted as proof the probe ran.');
+
+        $this->refreshApplication();
+    }
+
+    expect(preflightStatus(preflightWithoutEvidenceKey('keyinfo_tests_run'), 'key_security_level_accepted'))->toBe('FAIL');
+});
+
+it('refuses a truthy unlock, not merely a boolean true one', function () {
+    // A strict search for `true` misses 1, 1.0, 'true' and 'yes' — every one
+    // of which reads to a human reviewer as unlocked while leaving the record
+    // green. The containment record must be exactly false, or nothing.
+    foreach ([1, 1.0, 'true', 'yes', 'pending'] as $truthy) {
+        $preflight = (array) config('android_release.real_device_preflight');
+        $preflight['unlocks']['pilot_enforcement_activation'] = $truthy;
+        config()->set('android_release.real_device_preflight', $preflight);
+
+        $report = preflightScan();
+
+        expect(preflightStatus($report, 'preflight_unlocks_nothing'))
+            ->toBe('FAIL', 'A truthy non-boolean unlock claim was not detected.');
+
+        // And it says which one, so the operator is not left guessing.
+        expect(collect($report['checks'])->firstWhere('id', 'preflight_unlocks_nothing')['detail'])
+            ->toContain('pilot_enforcement_activation');
+
+        $this->refreshApplication();
+    }
+});
+
+it('fails when the containment record is emptied instead of answered', function () {
+    $preflight = (array) config('android_release.real_device_preflight');
+    $preflight['unlocks'] = [];
+    config()->set('android_release.real_device_preflight', $preflight);
+
+    expect(preflightStatus(preflightScan(), 'preflight_unlocks_nothing'))->toBe('FAIL');
 });
 
 // ---------------------------------------------------------------------------
