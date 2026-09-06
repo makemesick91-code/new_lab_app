@@ -1,0 +1,122 @@
+---
+description: A production APK is built from a frozen RELEASE SOURCE that passed CI, signed only by the one permanent key in a human ceremony, and proven by extracting the signer OUT OF THE APK and comparing it to the source-controlled pin; the evidence commit that records this is a SECOND commit and must never pose as the tree that built the artifact. An interactive REPL is never run on production.
+globs:
+  - "config/android_release.php"
+  - "config/release_safety.php"
+  - "app/Support/Android/**"
+  - "app/Support/Deploy/**"
+  - "app/Console/Commands/Android*.php"
+  - "app/Console/Commands/DeployForbiddenCommandCheckCommand.php"
+  - "android/daengtisia-clinic/app/**"
+  - "scripts/*.sh"
+  - "tests/Feature/DoctorDevice/DoctorDeviceAndroid*.php"
+  - "tests/Feature/Deploy/**"
+alwaysApply: false
+---
+
+# Production Android release APK evidence
+
+Builds on rule 148 (the pin is armed) and rule 147 (relaxing a predicate
+requires a blast-radius review of its siblings).
+
+## 1. One permanent signer. Never a second one.
+
+alias `daengtisia-clinic-release`, RSA 4096, SHA-256
+
+    79db269b7cd38e920b80efbcf2f59142721f1e57924d3048d07a862f34fea2d9
+
+Never regenerate it, never add a second production signer, never rotate it as
+part of ordinary work. The same signer is what makes an update installable
+over an existing install; a different one forces an uninstall, and uninstalling
+erases the Keystore device identity and the enrolment with it.
+
+If a signed APK's certificate does not equal the pin: **stop**. Do not change
+the pin to match the artifact. That inverts the trust anchor into a mirror.
+
+## 2. Evidence is measured out of the artifact, never out of config
+
+The signer fingerprint in release evidence MUST be extracted from the final
+signed APK (`apksigner verify --print-certs`, via `ApksignerFingerprintResolver`)
+and compared against the pin in source control.
+
+Comparing config to config is not evidence — both sides are the same claim
+written twice, and it is exactly the residual the certificate-pin sprint could
+not close because no signed artifact existed yet.
+
+`artifact_sha256` is computed AFTER signing. A digest taken before signing
+identifies a file nobody will ever install.
+
+## 3. Two commits, and they are not interchangeable
+
+    RELEASE SOURCE   the commit + tree the APK was compiled from.
+                     Clean worktree, frozen, green in CI BEFORE signing.
+    FINAL CANDIDATE  the evidence-only commit recording digest, signer and CI
+                     run. Merged and deployed. Must pass CI again on its tree.
+
+The manifest carries `release_source_sha` and `release_source_tree` — not
+`git_commit`, which is ambiguous precisely where ambiguity is dangerous. The
+tree is content-addressed and is what makes the binding tamper-evident.
+
+An evidence commit that presents itself as the build source asserts a build
+that never happened, and the signature then appears to vouch for code the
+signer never saw. Never claim the APK was built from the final candidate when
+the manifest was committed afterwards.
+
+## 4. The key never enters git, CI or the VPS
+
+No PKCS12, no keystore, no password in the repository, in a workflow, or on the
+production host. The application's only key material is PUBLIC (device
+attestation). Signing happens in a human ceremony on Custodian 1: swap OFF
+before the vault opens, passwords typed interactively — never in argv, an
+environment variable, a log, a document or a chat — vault and mapper closed
+before swap is restored.
+
+CI must be able to build and test without any of it. `pull_request_ci_may_sign`
+stays false.
+
+## 5. A release build must actually build
+
+`isMinifyEnabled` with a `proguardFiles(...)` naming a file that is not in the
+tree fails at `:app:minifyReleaseWithR8`, and the whole release governance
+chain will report GO around an artifact that cannot be produced. A marker
+proving a string is PRESENT is not a check that the thing it NAMES exists —
+`release_proguard_files_present` is the check that closes it.
+
+Keep the rules file minimal by verification. A blanket `-keep class com.**`
+goes green faster and disables the shrinking the release build type exists to
+apply. Before concluding a keep rule is unnecessary, confirm what is actually
+reflective — and in particular that nothing transmitted to the server derives
+from a Kotlin symbol name, because obfuscation would then break attestation in
+release builds only.
+
+## 6. An interactive REPL is never run on production
+
+Not for diagnostics, not for `--version`, not to ask which environment you are
+in. It writes ERROR records into the application log, which pins the monitoring
+log signal to WATCH for 24 hours and blinds it to real errors.
+
+This is now mechanical, because prose failed twice: `deploy:forbidden-command-check`
+runs in `scripts/sprint-release.sh` BEFORE the deploy runner opens a connection,
+and refuses without a bypass flag. Patterns live in `config/release_safety.php`
+so the guard never contains the literal it forbids.
+
+Scripts and runbooks are both recurrence vectors — both incidents came from
+following a documented step. Use a purpose-built read-only command
+(`artisan env`, `satusehat:diagnose`, `pilot:performance-snapshot`).
+
+## 7. Building or signing unlocks nothing else
+
+A signed APK and its evidence do NOT mean distributed, installed, enrolled,
+piloted or enforced. `DEVICE_ENFORCEMENT_ACTIVE` stays false until a sprint
+that explicitly decides otherwise. Reading a green release gate as permission
+to install on a tablet is the misreading rules 148 and this rule both exist to
+prevent.
+
+## 8. Full Suite deferral is authorised, and is not a pass
+
+The GLOBAL TEMPORARY FULL-SUITE POLICY is ACTIVE
+(`.github/ci-policy/full-suite-policy.json`). The classifier's
+`run_full_suite=required` is a RISK SIGNAL, not an authorisation; the suite is
+gated by event plus policy, and `pull_request` never enabled it. Report such a
+run as **DEFERRED**, never as passed. Retiring the policy is reserved for the
+consolidated closure and is forbidden as a side effect of another sprint.

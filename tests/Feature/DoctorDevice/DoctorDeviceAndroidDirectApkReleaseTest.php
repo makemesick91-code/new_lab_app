@@ -53,7 +53,8 @@ function stageRelease(array $overrides = [], string $body = 'clinic-apk-bytes'):
         'package_name' => 'com.daengtisia.clinic',
         'version_name' => '1.0.0',
         'version_code' => 2,
-        'git_commit' => str_repeat('c', 40),
+        'release_source_sha' => str_repeat('c', 40),
+        'release_source_tree' => str_repeat('e', 40),
         'ci_run_id' => '12345',
         'build_variant' => 'release',
         'apk_filename' => $apkName,
@@ -432,4 +433,82 @@ it('registers the direct-APK suite in the critical gate so something selects it'
     // A control the gate never selects is not a control.
     expect(config('ci_runner.critical_gate_mandatory_suites'))
         ->toContain('tests/Feature/DoctorDevice/DoctorDeviceAndroidDirectApkReleaseTest.php');
+});
+
+// ---------------------------------------------------------------------------
+// PRODUCTION-ANDROID-RELEASE-APK-EVIDENCE-1 — which commit built this APK
+// ---------------------------------------------------------------------------
+
+/**
+ * The APK is built from one tree; the evidence describing it is committed
+ * afterwards, because the evidence contains facts (the signed artifact's
+ * digest, the signer, the CI run) that do not exist until after the build.
+ *
+ * That makes two commits, and conflating them is a provenance forgery waiting
+ * to happen: an evidence commit that claims to be the source of the artifact
+ * asserts a build that never occurred from that tree. The manifest therefore
+ * names the RELEASE SOURCE explicitly — sha AND tree, because the tree is
+ * content-addressed and is what makes the binding tamper-evident.
+ */
+it('records the exact source commit and tree the APK was built from', function () {
+    [$apk, $manifest, $fp, $dir] = stageRelease();
+    pinAnchor($fp);
+
+    try {
+        $result = verifyWith(fakeSigner($fp), $apk, $manifest);
+
+        expect($result['status'])->toBe('PASS');
+
+        $ids = array_column($result['checks'], 'id');
+        expect($ids)->toContain('release_source_provenance');
+    } finally {
+        cleanupRelease($dir);
+    }
+});
+
+it('refuses a manifest whose release source is not a git object', function (mixed $sha, mixed $tree) {
+    [$apk, $manifest, $fp, $dir] = stageRelease([
+        'release_source_sha' => $sha,
+        'release_source_tree' => $tree,
+    ]);
+    pinAnchor($fp);
+
+    try {
+        $result = verifyWith(fakeSigner($fp), $apk, $manifest);
+
+        expect($result['status'])->toBe('FAIL');
+        expect($result['failures'])->toContain('release_source_provenance');
+    } finally {
+        cleanupRelease($dir);
+    }
+})->with([
+    'short sha' => [str_repeat('c', 39), str_repeat('d', 40)],
+    'long sha' => [str_repeat('c', 41), str_repeat('d', 40)],
+    'non-hex sha' => [str_repeat('z', 40), str_repeat('d', 40)],
+    // The predecessor's expensive lesson: PHP's $ also matches before a
+    // trailing newline, so an anchor without /D validates "<40 hex>\n" and
+    // then reports a provenance that does not match the repository.
+    'trailing newline' => [str_repeat('c', 40)."\n", str_repeat('d', 40)],
+    'short tree' => [str_repeat('c', 40), str_repeat('d', 39)],
+    'non-hex tree' => [str_repeat('c', 40), str_repeat('z', 40)],
+]);
+
+it('will not let the evidence commit pose as the tree that built the APK', function () {
+    // Governance has to SAY which commit is which, or "the two-commit model"
+    // is an oral tradition. These are the field names the manifest carries and
+    // the runbook instructs, so a future reader cannot conclude the evidence
+    // commit was the build source.
+    $provenance = config('android_release.release_provenance');
+
+    expect($provenance['model'])->toBe('two_commit');
+    expect($provenance['release_source']['manifest_fields'])
+        ->toBe(['release_source_sha', 'release_source_tree']);
+    expect($provenance['release_source']['must_pass_ci_before_signing'])->toBeTrue();
+    expect($provenance['final_candidate']['must_not_claim_to_have_built_the_apk'])->toBeTrue();
+    expect($provenance['final_candidate']['must_pass_ci_before_merge'])->toBeTrue();
+
+    // And the manifest must actually demand them, or the model is decorative.
+    expect(config('android_release.versioning.release_metadata_required'))
+        ->toContain('release_source_sha')
+        ->toContain('release_source_tree');
 });

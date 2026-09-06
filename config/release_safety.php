@@ -85,6 +85,58 @@ return [
         'no_release_with_secrets_or_pii_in_logs_or_artifacts',
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Forbidden production shell commands
+    |--------------------------------------------------------------------------
+    |
+    | An interactive REPL on production is an unaudited write path, and PsySH
+    | writes real ERROR records into the application log — which pins the
+    | monitoring log signal to WATCH for 24 hours and blinds it to genuine
+    | errors. The prohibition was written down in four places and the command
+    | was still executed against production twice, because prose is not a
+    | control.
+    |
+    | The patterns live HERE rather than in the guard's own source so the guard
+    | never contains the literal it forbids. A scanner that reddens on itself
+    | is one people learn to switch off — the same reasoning that keeps the
+    | destructive-command patterns of ENT-11 and ENT-12 in config.
+    |
+    | KNOWN LIMIT, stated rather than implied: this matches the command as
+    | written. A dynamically assembled invocation is not detectable by reading
+    | the script, so this narrows the path, it does not seal it.
+    |
+    */
+    'forbidden_production_commands' => [
+        'reason' => 'An interactive REPL on production is an unaudited write path, and it writes ERROR records into the application log that pin the monitoring log signal to WATCH.',
+
+        'patterns' => [
+            // `\b` after the command name on purpose: a longer command that
+            // merely starts with the same letters is a different command, and
+            // a guard that reddens on obedience gets deleted.
+            'artisan_repl' => '/\bartisan\s+tinker\b/i',
+            'repl_binary' => '/(^|[\/\s])psysh\b/i',
+            'repl_programmatic' => '/\bPsy\\\\Shell\b/',
+        ],
+
+        // Executable scripts only. Runbooks and rule files quote the forbidden
+        // command in order to forbid it; scanning them would redden the very
+        // documents that carry the prohibition.
+        'scanned_files' => [
+            'scripts/sprint-release.sh',
+            'scripts/deploy-vps.sh',
+            'scripts/deploy-vps-runner.sh',
+            'scripts/deploy-immutable-exec.sh',
+            'scripts/rollback-vps.sh',
+            'scripts/backup-vps.sh',
+            'scripts/restore-rehearsal.sh',
+            'scripts/rollout-restore-drill.sh',
+            'scripts/load-test-baseline.sh',
+            'scripts/load-test-scale-projection.sh',
+            'scripts/vps_pilot_preflight.sh',
+        ],
+    ],
+
     'deploy_gate_files' => [
         'deploy_script' => 'scripts/deploy-vps.sh',
         'rollback_script' => 'scripts/rollback-vps.sh',

@@ -72,9 +72,56 @@ class AndroidReleaseArtifactVerifier
         $checks[] = $this->approvalCheck($manifest);
         $checks[] = $this->channelCheck($manifest);
         $checks[] = $this->versionCodeCheck($manifest);
+        $checks[] = $this->provenanceCheck($manifest);
         $checks = array_merge($checks, $this->signerChecks($apkPath, $manifest));
 
         return $this->result($checks);
+    }
+
+    /**
+     * The release source this artifact was compiled from.
+     *
+     * Two fields, not one: the tree is content-addressed, so it pins the actual
+     * bytes that were compiled, while the commit alone would still be satisfied
+     * by a commit whose tree was later rewritten. Both are validated as real
+     * git object ids rather than merely present, because a manifest field
+     * holding "TBD" is not provenance.
+     *
+     * `/D` is not decoration. Without it PHP's `$` also matches before a
+     * trailing newline, so "<40 hex>\n" would validate here and then fail to
+     * resolve against the repository — reporting a forged provenance as a
+     * clerical mismatch. That exact defect shipped in the predecessor's
+     * fingerprint regexes.
+     */
+    private function provenanceCheck(array $manifest): array
+    {
+        $fields = (array) config('android_release.versioning.release_metadata_git_object_fields');
+
+        if ($fields === []) {
+            return $this->check(
+                'release_source_provenance',
+                'FAIL',
+                'No release-source fields declared; the check would pass on nothing.',
+            );
+        }
+
+        $invalid = array_values(array_filter(
+            $fields,
+            function (string $field) use ($manifest): bool {
+                $value = $manifest[$field] ?? null;
+
+                return ! is_string($value) || preg_match('/^[0-9a-f]{40}$/D', $value) !== 1;
+            },
+        ));
+
+        return $this->check(
+            'release_source_provenance',
+            $invalid === [] ? 'PASS' : 'FAIL',
+            $invalid === []
+                ? 'Release source is recorded as a git commit and tree: '.implode(', ', $fields).'.'
+                : 'Release source is not a valid git object id: '.implode(', ', $invalid)
+                    .'. The manifest cannot show which tree produced this artifact.',
+        );
     }
 
     private function apkPresenceCheck(string $apkPath): array

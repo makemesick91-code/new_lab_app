@@ -1,21 +1,16 @@
 # PRODUCTION-ANDROID-RELEASE-APK-EVIDENCE-1
 
-**STATUS: BLOCKED — awaiting the human signing ceremony. No GO tag. Not merged.**
+**STATUS: RELEASE SOURCE FROZEN — awaiting the human signing ceremony.**
+Not signed, not merged, not deployed, no GO tag.
 
 Base: `5c50fdd74c5f5e92a3740cd1cb79e6169803efe2`
 (tree `75ad7d8d2f8c9a785caeda1f24aa288882a6a556`, tag
 `production-android-signing-certificate-pin-1-go`, tag object
 `45afdefcfc4f6282d14274eca0777913a8094da0` — all four verified independently).
 
-Objective: produce the first authoritative production-signed release APK and
-its evidence, signed by the existing permanent production key. That objective
-is **not** met, for one reason and one reason only: the signing ceremony is a
-human-custodian action (below). Everything that does not need the private key
-is done, and the ceremony's input artifact now exists for the first time.
-
 ---
 
-## The finding: the release build was impossible
+## 1. The finding: the release build was impossible
 
 `android/daengtisia-clinic/app/build.gradle.kts` line 43 reads
 
@@ -23,12 +18,8 @@ is done, and the ceremony's input artifact now exists for the first time.
 proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
 ```
 
-`app/proguard-rules.pro` **has never existed in this repository.** `assembleRelease`
-therefore failed at `:app:minifyReleaseWithR8`:
-
-```
-Supplied proguard configuration does not exist: .../app/proguard-rules.pro
-```
+`app/proguard-rules.pro` **had never existed in this repository.** `assembleRelease`
+therefore failed at `:app:minifyReleaseWithR8`.
 
 Three sprints built the machinery around a release artifact — the artifact
 verifier, the signer-fingerprint resolver, the certificate pin, the custody
@@ -36,145 +27,152 @@ model, a 42-check readiness gate that reported **GO** — and none of them ever
 ran `assembleRelease`. The production APK could not have been built on any day
 of that period.
 
-### Why governance did not catch it
+**Why governance did not catch it.** `scanner.required_release_block_markers`
+requires the release block to *contain the string* `proguardFiles`. Nothing
+asserted that the file that call **names** exists. A marker proving a string is
+present, with no check that the thing it names exists, is exactly the orphaned
+predicate rule 147 is about — and this is its second instance.
 
-`config/android_release.php` requires the release block to *contain the string*
-`proguardFiles` (`scanner.required_release_block_markers`). Nothing asserted
-that the file that call **names** exists. A marker proving a string is present,
-with no check that the thing it names exists, is exactly the orphaned predicate
-rule 147 is about — and this is its second instance.
+## 2. The second finding: the repository taught the forbidden habit
 
----
+`php artisan tinker` has been run against production twice. The prohibition was
+written in rules 113, 121 and 125 and in two runbooks. Meanwhile **three tracked
+scripts invoked it**, and a runbook *instructed* it:
 
-## What changed
+| Site | What it was doing |
+|---|---|
+| `scripts/load-test-baseline.sh:30` | asking "am I on production?" **by running the forbidden command** |
+| `scripts/load-test-scale-projection.sh:31` | the same |
+| `scripts/sprint-release.sh:125` | reading one YAML key, on the release path |
+| `docs/runbooks/satusehat-integration-readiness-runbook.md:45` | telling an operator to run it, in a section that seeds production |
 
-1. **`android/daengtisia-clinic/app/proguard-rules.pro`** — new. Minimal *by
-   verification, not by neglect*; each category was checked against the source
-   before concluding no keep rule was needed:
-   - framework entry points are manifest-declared, so AGP generates their keep
-     rules — restating them would create a second, drifting source of truth;
-   - there is deliberately no `addJavascriptInterface` / `@JavascriptInterface`;
-   - no reflection, JNI, or dynamic loading anywhere;
-   - **the device-proof wire protocol is built from string literals**
-     (`daengtisiams-device-proof|v1|…`), not from Kotlin symbol names, so R8
-     cannot alter a byte the device signs. Had the message been derived from
-     symbol names, obfuscation would have broken device attestation in
-     production builds only.
+The two load-test scripts are the sharpest shape: the REPL ran on production
+*before* the check that would have refused to run there — and the REPL writes
+ERROR records into `laravel.log`, which pins the monitoring log signal to WATCH
+for 24 hours. Prose was never going to fix this.
 
-   A blanket `-keep class com.daengtisia.**` would have gone green faster and
-   disabled most of the shrinking this build type exists to apply. It was not
-   used. Line numbers are kept (`-keepattributes SourceFile,LineNumberTable`)
-   because there is no crash-reporting SDK uploading a mapping file.
+## 3. What changed
 
-2. **`release_proguard_files_present`** — new scanner check closing the gap.
-   It walks balanced parentheses rather than using one regex, because a naive
-   `\(([^)]*)\)` stops at the close paren belonging to `getDefaultProguardFile`
-   and silently truncates the list before the repository-local file it was
-   meant to check. `getDefaultProguardFile(...)` is excluded on purpose: it
-   resolves inside the SDK, and a control that reddens on a correct build file
-   is one people learn to delete.
+**Release build**
+- `android/daengtisia-clinic/app/proguard-rules.pro` — minimal *by verification*.
+  Manifest-declared components are auto-kept by AGP; there is no
+  `addJavascriptInterface`, no reflection, no JNI; and the device-proof message
+  is built from **string literals**, so R8 cannot alter a byte the device signs.
+  Had it derived from Kotlin symbol names, obfuscation would have broken device
+  attestation in release builds only. Line numbers are kept — there is no
+  crash-reporting SDK uploading a mapping file.
+- `release_proguard_files_present` — new scanner check. Walks balanced
+  parentheses, because a naive `\(([^)]*)\)` stops at the close paren belonging
+  to `getDefaultProguardFile` and truncates the list before the local file it
+  was meant to check. The SDK default is excluded on purpose.
 
-3. **Three tests**, written failing first: the real tree passes *and names the
-   file it resolved* (a parser that extracted nothing would also pass); the SDK
-   default is not mistaken for a repository file; and a synthetic tree
-   reproducing the shipped defect is detected, then goes green when the named
-   file appears.
+**Release provenance — two commits, not one**
+- The manifest now carries `release_source_sha` + `release_source_tree` instead
+  of the ambiguous `git_commit`, validated as real git object ids with an
+  end-of-string anchor (`/D` — without it PHP's `$` also matches before a
+  trailing newline, the exact defect the predecessor shipped in two regexes).
+- `config/android_release.release_provenance` declares the model:
 
-## Verified
+      RELEASE SOURCE   the commit + tree the APK was compiled from.
+                       Clean, frozen, CI-green BEFORE signing.
+      FINAL CANDIDATE  the evidence-only commit recording digest, signer and CI
+                       run. Merged and deployed. Passes CI again on its tree.
 
-| Fact | Value |
+  Conflating them is provenance forgery, not bookkeeping: an evidence commit
+  posing as the build source asserts a build that never happened from that
+  tree, and the signature would appear to vouch for code the signer never saw.
+  No production manifest exists yet, so this was the one moment the rename was
+  free.
+
+**The REPL guard**
+- `App\Support\Deploy\ProductionShellCommandGuard` + `deploy:forbidden-command-check`,
+  wired into `scripts/sprint-release.sh` **before** the deploy runner opens a
+  connection. No `--force`, no `--strict` escape hatch.
+- Patterns live in `config/release_safety.php` so the guard never contains the
+  literal it forbids — otherwise the scanner reddens on itself and gets deleted.
+- All four sites above are fixed: `artisan env` for the environment, a `sed` on
+  the manifest for the tag, `satusehat:diagnose` for the runbook.
+- Registered in `ci_runner.critical_gate_mandatory_suites` **and** given a
+  filter token, because the registry cross-checks selection by literal
+  substring and a guard nothing selects is prose again.
+
+## 4. Verified
+
+| | |
 |---|---|
 | `assembleRelease` | **BUILD SUCCESSFUL** (was: failed at R8) |
-| Artifact | `app/build/outputs/apk/release/app-release-unsigned.apk`, 738,069 bytes |
+| Artifact | `app/build/outputs/apk/release/app-release-unsigned.apk` |
 | applicationId | `com.daengtisia.clinic` |
 | versionName / versionCode | `0.3.0-phase3` / `1` |
-| minSdk / targetSdk | 26 / 35 |
 | Signature state | `DOES NOT VERIFY — Missing META-INF/MANIFEST.MF` (**unsigned, by design**) |
-| Unsigned digest | `a9b80e2b87ceacb5d0a01c1c3a97e6ff41fb297aa1e7e8761e5f1b95542270d1` — **NOT** the release hash |
-| `tests/Feature/DoctorDevice` | 374 passed, 1 risky, 0 failed |
-| `android:release-readiness` | **GO — 43/43 PASS, 0 WATCH, 0 FAIL** (42 + the new check) |
+| `tests/Feature/DoctorDevice` | 382 passed, 0 failed |
+| `deploy:forbidden-command-check` | refuses the REPL (exit 1), permits `migrate --force` (exit 0) |
+| `android:release-readiness` | **GO — 43/43 PASS, 0 WATCH, 0 FAIL** |
 | Enforcement | `DEVICE_ENFORCEMENT_ACTIVE=false` — unchanged |
 
-The unsigned digest is recorded only to identify the ceremony's input. The
-authoritative `artifact_sha256` must be taken from the **signed** APK, after
-signing, per `release_metadata_sha256_fields`.
+Key material topology, verified rather than assumed: the only key material this
+application ever sees is **public** (device attestation). No PHP loads a PKCS12;
+neither CI nor `scripts/deploy-vps.sh` references signing key material.
 
----
+## 5. Full Suite — the ambiguity the predecessor left open
 
-## Why this sprint stopped
+The predecessor reported that the classifier requested `run_full_suite=required`
+while the job was skipped, and did not resolve whether that was legal. It is:
 
-The ceremony is not blocked by tooling. It is blocked because it is a human
-control, and the repository says so: `release_signing_context =
-designated_signing_workstation_manual_approval`, `pull_request_ci_may_sign =
-false`.
+- `.github/ci-policy/full-suite-policy.json` → **`status: ACTIVE`**, authorised
+  by explicit project-owner decision, effective 2026-08-19.
+- The classifier's `run_full_suite` is a **risk signal**, not an authorisation.
+  The suite is gated by event *plus* policy, and `pull_request` never enabled it
+  (`FULL_SUITE_NOT_ENABLED_FOR_EVENT`).
+- Retirement is reserved for the consolidated closure and is explicitly
+  forbidden as a side effect of another sprint.
 
-1. **The passphrases are the custodian's and nobody else's.** The LUKS vault
-   passphrase and the PKCS12 password were never held by this session and must
-   never be pasted into a chat, an argv, or an environment variable. No
-   terminal fixes that.
-2. **No interactive input exists here** — `tty` reports not a tty, `TERM=dumb`.
-3. **`sudo -n` fails**, so `swapoff /swap.img` — a precondition for exposing
-   the private key — cannot be performed.
+So for this sprint the Full Suite is **DEFERRED** — reported as deferred, never
+as passed. The semantics are already pinned mechanically by
+`tests/Feature/Cicd/TemporaryFullSuiteScheduleGateTest.php`, so no duplicate
+control was added.
+
+## 6. Why this sprint stops here
+
+The ceremony is not blocked by tooling. It is a human control, and the
+repository says so: `release_signing_context =
+designated_signing_workstation_manual_approval`, `pull_request_ci_may_sign = false`.
+
+1. **The passphrases are the custodian's and nobody else's.** They were never
+   held by the automated session and must never be pasted into a chat, an argv
+   or an environment variable. No terminal fixes that.
+2. No interactive input exists in the automated environment (`TERM=dumb`).
+3. `sudo -n` fails, so `swapoff /swap.img` — a precondition for exposing the key
+   — cannot be performed.
 
 No workaround was attempted. `cryptsetup --key-file`, a piped passphrase,
-`-storepass`, or a sudoers entry would each have converted a custody control
-into a convenience.
+`-storepass` or a sudoers entry would each have converted a custody control into
+a convenience.
 
-## The ceremony, for the custodian
+## 7. The ceremony
 
-Run on Custodian 1 only, at the frozen candidate, **after** authoritative CI
-(the manifest binds `ci_run_id` and `git_commit`).
+See §"Ceremony" in `docs/runbooks/android-direct-apk-installation.md` and the
+operator commands returned with this sprint's handoff. In order:
 
-```sh
-# 0. apksigner must be on PATH or android:verify-release reports it missing:
-export PATH="$ANDROID_HOME/build-tools/35.0.0:$PATH"
+1. **CI green on RELEASE_SOURCE_SHA first** — the manifest binds `ci_run_id`.
+2. `sudo swapoff /swap.img`, verify `swapon --show` is empty.
+3. Open the vault interactively. No keyfile, no piped passphrase.
+4. `zipalign`, then `apksigner sign` — passwords **prompted**, never flags.
+5. `apksigner verify --verbose --print-certs`, then `sha256sum` the **signed**
+   file. Order matters: a digest taken before signing identifies a file nobody
+   will install.
+6. Signer certificate must equal
+   `79db269b7cd38e920b80efbcf2f59142721f1e57924d3048d07a862f34fea2d9`.
+   **If it does not, stop.** Do not change the pin to match the artifact.
+7. `sync`, unmount, `cryptsetup close`, then restore swap.
 
-# 1. swap off — verify empty before the key is exposed
-sudo swapoff /swap.img && swapon --show
+`apksigner` is not on `PATH` by default — export
+`$ANDROID_HOME/build-tools/35.0.0` first, or `android:verify-release` reports
+the tooling missing and fails closed.
 
-# 2. open the vault interactively (no keyfile, no piped passphrase)
-sudo cryptsetup luksOpen ~/.local/share/daengtisiams-signing/production-signing-vault.luks \
-     daengtisiams-signing-vault
-sudo mount /dev/mapper/daengtisiams-signing-vault ~/DaengtisiaMS-Signing-Vault
+## 8. Not done, and deliberately not faked
 
-# 3. sign — apksigner PROMPTS for the passwords; never pass them as flags
-zipalign -p -f 4 app-release-unsigned.apk DaengtisiaMS-Clinic-v0.3.0-phase3.apk
-apksigner sign \
-  --ks ~/DaengtisiaMS-Signing-Vault/daengtisia-clinic-production.p12 \
-  --ks-type PKCS12 --ks-key-alias daengtisia-clinic-release \
-  DaengtisiaMS-Clinic-v0.3.0-phase3.apk
-
-# 4. verify, then hash the SIGNED file (order matters)
-apksigner verify --verbose --print-certs DaengtisiaMS-Clinic-v0.3.0-phase3.apk
-sha256sum DaengtisiaMS-Clinic-v0.3.0-phase3.apk
-
-# 5. close before restoring swap
-sync && sudo umount ~/DaengtisiaMS-Signing-Vault
-sudo cryptsetup close daengtisiams-signing-vault
-sudo swapon /swap.img
-```
-
-The signer certificate SHA-256 must equal the pin
-`79db269b7cd38e920b80efbcf2f59142721f1e57924d3048d07a862f34fea2d9`.
-**If it does not, stop. Do not change the pin to match the APK, and do not
-generate another key.**
-
-Then write `DaengtisiaMS-Clinic-v0.3.0-phase3.release.json` with the eleven
-`release_metadata_required` fields and run
-`php artisan android:verify-release`, which re-reads the certificate **out of
-the APK** via `apksigner verify --print-certs`. That is the independent
-measurement the certificate-pin sprint could not make: signer-from-artifact
-against pin-from-source, not config against config.
-
-## Not done, and deliberately not faked
-
-APK signing · signer verification · release manifest · merge · deploy · GO tag ·
-authoritative CI (the candidate cannot be frozen while the manifest is still
-missing, so dispatching CI now would validate a tree that must change).
-
-`docs`-only items carried forward: the §17 predeploy Tinker/PsySH guard was
-not implemented — it cannot land through a sprint that cannot merge, and it
-deserves its own candidate rather than a ride on this one.
+APK signing · signer verification · release manifest · merge · deploy · GO tag.
 
 Untouched throughout: tablet, adb, pilot enforcement, global enforcement,
 certificate pin, custody topology, Backup 1, Backup 2, the private key.

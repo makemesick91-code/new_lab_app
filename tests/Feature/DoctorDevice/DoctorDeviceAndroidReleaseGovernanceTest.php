@@ -532,7 +532,8 @@ it('validates a release manifest for the provenance a rollback needs', function 
         'build_variant' => 'release',
         'apk_filename' => 'DaengtisiaMS-Clinic-v1.0.0.apk',
         'approval_status' => 'approved',
-        'git_commit' => str_repeat('a', 40),
+        'release_source_sha' => str_repeat('a', 40),
+        'release_source_tree' => str_repeat('e', 40),
         'ci_run_id' => '123456',
         'artifact_sha256' => str_repeat('b', 64),
         // A certificate fingerprint is a public identifier, not a secret. It is
@@ -571,7 +572,8 @@ it('rejects structurally junk provenance rather than counting the key as present
         'build_variant' => 'release',
         'apk_filename' => 'DaengtisiaMS-Clinic-v1.0.0.apk',
         'approval_status' => 'approved',
-        'git_commit' => str_repeat('a', 40),
+        'release_source_sha' => str_repeat('a', 40),
+        'release_source_tree' => str_repeat('e', 40),
         'ci_run_id' => '123456',
         'artifact_sha256' => 'abcd',
         'signing_certificate_fingerprint_sha256' => str_repeat('c', 64),
@@ -747,7 +749,7 @@ it('does not mistake the SDK default proguard file for a repository file', funct
 it('detects a release block naming a proguard file that does not exist', function () {
     // The assertion above is only worth anything if the scan can see the
     // violation. Prove it on a tree that reproduces the shipped defect.
-    $base = sys_get_temp_dir().'/android-proguard-'.bin2hex(random_bytes(6));
+    $base = tempArtifactDir('android-proguard-');
     $module = $base.'/android/daengtisia-clinic/app';
 
     mkdir($module, 0o755, true);
@@ -780,11 +782,8 @@ it('detects a release block naming a proguard file that does not exist', functio
 
         expect($present['status'])->toBe('PASS');
     } finally {
-        @unlink($module.'/proguard-rules.pro');
-        @unlink($module.'/build.gradle.kts');
-        @rmdir($module);
-        @rmdir($base.'/android/daengtisia-clinic');
-        @rmdir($base.'/android');
-        @rmdir($base);
+        // One owned root, removed recursively. Unlinking each leaf by hand is
+        // how a later edit adds a file and silently stops cleaning it.
+        tempArtifactRemove($base);
     }
 });
