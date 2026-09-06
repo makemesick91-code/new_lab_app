@@ -23,6 +23,22 @@ browser_required: false         # no UI surface added
 # Created only after production verification, never before.
 go_tag: phase4a-doctor-android-pilot-preparation-1-go
 
+# Carried forward. `.sprint/current.yml` is a rolling file, so these inherited
+# facts have to be restated by every sprint after closure — dropping one is
+# precisely the quiet contradiction LegacyRmeProgramClosureContractTest exists
+# to catch. This sprint dropped the whole block on its first candidate and that
+# gate caught it, which is the gate working; restating all of them rather than
+# only the asserted one is the point.
+inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
+inherits_hold: FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1/FIX-02
+inherits_phase: feature-doctor-trusted-android-device-lock-1-phase-3-5-readiness-go
+inherits_preflight: evidence-phase4a-real-device-keyinfo-preflight-1-go
+inherits_custody: production-android-signing-custody-readiness-1-go
+inherits_vault: revision-production-signing-custodian1-encrypted-vault-1-go
+inherits_key: production-android-signing-key-provisioning-1-go
+inherits_pin: production-android-signing-certificate-pin-1-go
+inherits_release_artifact: production-android-release-apk-evidence-1-go
+
 notes: |
   THE FINDING.
 
