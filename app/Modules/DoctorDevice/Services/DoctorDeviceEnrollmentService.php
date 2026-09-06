@@ -189,6 +189,111 @@ class DoctorDeviceEnrollmentService
         });
     }
 
+    /**
+     * Step 2, first-device variant — approve a pairing into a registry entry
+     * that does not exist yet.
+     *
+     * WHY THIS EXISTS
+     *
+     * `approve()` above says its device may be "one created here for this
+     * pairing", and nothing created one. So on a deployment whose registry is
+     * empty, the FIRST device to enrol could never be approved: the approval
+     * screen builds its list from existing devices and offered zero options.
+     * Not the first device of a doctor — the first device at all. This is the
+     * branch that docblock already described.
+     *
+     * WHAT THE OPERATOR MAY SUPPLY, AND WHAT THEY MAY NOT
+     *
+     * Two administrative facts a public key cannot carry: a human-readable
+     * name, and the branch that owns the hardware. Nothing else. The key, the
+     * fingerprint and the algorithm come from the verified enrolment, and the
+     * device-reported platform/model/OS/app are copied from the request rather
+     * than retyped — an operator must not be able to describe hardware into
+     * looking like different hardware.
+     *
+     * The device is created with NO key material, and `approve()` binds it
+     * afterwards. That is deliberate: it keeps one binding path rather than
+     * two, so the ACTIVE-only rule, the already-bound-to-another-key rule and
+     * the audit entry are the same ones a pre-registered device goes through.
+     * It is also why this cannot be used to smuggle a key in — the create step
+     * has nowhere to put one.
+     *
+     * Both writes are one transaction, and THAT is what guarantees no orphan
+     * registry row: `approve()` re-checks the enrolment and its throw rolls the
+     * device insert back. A mutation campaign established this — removing the
+     * two guards below leaves the no-orphan behaviour intact, so they are
+     * defence in depth and a clearer error, not the mechanism. The duplicate
+     * fingerprint check is different: `approve()` only asks whether the TARGET
+     * device is already bound, and the target here is always a fresh row with
+     * no key, so nothing else catches a key another device already holds.
+     *
+     * @param  array{device_name: string, branch_id: int}  $attributes
+     */
+    public function approveIntoNewDevice(DoctorDeviceEnrollment $enrollment, array $attributes, User $actor): DoctorDeviceEnrollment
+    {
+        return DB::transaction(function () use ($enrollment, $attributes, $actor) {
+            $locked = $this->lock($enrollment);
+
+            // Checked here as well as inside approve(), and deliberately so:
+            // approve() would reject these too, but only after this method had
+            // already created a device. Refusing first is what keeps a stale
+            // request from leaving a registry row nobody asked for.
+            if (! $locked->isPending()) {
+                throw ValidationException::withMessages([
+                    'status' => 'Permintaan pendaftaran ini sudah tidak menunggu persetujuan.',
+                ]);
+            }
+
+            if ($locked->isExpired()) {
+                throw ValidationException::withMessages([
+                    'status' => 'Permintaan pendaftaran sudah kedaluwarsa.',
+                ]);
+            }
+
+            // Defence in depth against a second registry row for one key. The
+            // enrolment request path already refuses a fingerprint that a live
+            // device holds; this covers the window where two approvals race on
+            // the same pending request.
+            $alreadyRegistered = DoctorDevice::query()
+                ->where('public_key_fingerprint', $locked->public_key_fingerprint)
+                ->lockForUpdate()
+                ->exists();
+
+            if ($alreadyRegistered) {
+                throw ValidationException::withMessages([
+                    'device' => 'Identitas kunci perangkat ini sudah terdaftar.',
+                ]);
+            }
+
+            $device = new DoctorDevice;
+            $device->forceFill([
+                'uuid' => (string) Str::uuid(),
+
+                // Operator-supplied, and the only operator-supplied values here.
+                // Neither is a trust input: authorisation is decided by the key
+                // and by BranchContext, never by this label.
+                'device_name' => $attributes['device_name'],
+                'branch_id' => $attributes['branch_id'],
+
+                // Device-reported, copied from the verified request.
+                'platform' => $locked->platform,
+                'device_model' => $locked->device_model,
+                'os_version' => $locked->os_version,
+                'app_version' => $locked->app_version,
+
+                'status' => DoctorDevice::STATUS_ACTIVE,
+                'identity_state' => DoctorDevice::IDENTITY_UNVERIFIED,
+                'enrollment_status' => DoctorDevice::ENROLLMENT_PENDING,
+                'registered_at' => now(),
+                'registered_by' => $actor->id,
+            ])->save();
+
+            // No key material was written above. approve() is still the single
+            // place a device becomes bound to an identity.
+            return $this->approve($locked, $device->refresh(), $actor);
+        });
+    }
+
     public function reject(DoctorDeviceEnrollment $enrollment, ?string $reason, User $actor): DoctorDeviceEnrollment
     {
         $reason = is_string($reason) ? trim($reason) : '';
