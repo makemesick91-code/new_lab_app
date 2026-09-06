@@ -1,28 +1,31 @@
-# Active sprint manifest — PRODUCTION-ANDROID-SIGNING-CERTIFICATE-PIN-1
+# Active sprint manifest — PRODUCTION-ANDROID-RELEASE-APK-EVIDENCE-1
 # Validated by: php artisan sprint:manifest-check
 
-id: PRODUCTION-ANDROID-SIGNING-CERTIFICATE-PIN-1
-# NOT DOCS_ONLY: this arms the single control that stands between a substituted
-# APK and a clinic tablet, and it rewrites the predicates that decide whether a
-# fingerprint is valid, whether two fingerprints are the same, and whether a
-# hardware-preflight pass is contained. Declaring documentation-only would be a
-# false declaration about a security surface.
+id: PRODUCTION-ANDROID-RELEASE-APK-EVIDENCE-1
+# NOT DOCS_ONLY and not a refactor. This sprint makes the production release
+# build possible for the first time, adds the check that would have caught its
+# absence, binds the artifact to the tree that produced it, and turns a
+# prohibition that failed twice as prose into a mechanical gate.
 type: SECURITY_FIX
 module: DoctorDevice
-title: "Arm the production Android certificate pin: one canonical public fingerprint, one shared validator for reporting and enforcement, and a containment check that stops freezing a value another authority may lawfully change"
+title: "Make the production release APK buildable and its provenance provable: the proguard file the build named but never had, the check that would have caught it, a two-commit release-source model, and a mechanical refusal to run an interactive REPL on production"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-runtime_change: true            # new shared fingerprint value object, three rewritten predicates, one new containment predicate, one config trust anchor
+runtime_change: true            # new deploy guard + artisan gate, new scanner check, new verifier check, three scripts rewired
 schema_change: false            # no migration, no table, no column
 frontend_change: false          # no Blade, no JS, no CSS, no asset build
-security_impact: true           # the install-time trust anchor for an unrecoverable signing identity
+security_impact: true           # the release trust chain, and a production execution guard
 branch_isolation_impact: false  # BranchContext untouched
 ledger_impact: false            # no inventory ledger / billing / payment behaviour change
 
-deploy_required: true           # the gate must be the one production actually runs
-browser_required: false         # console command and config; verified through feature tests
+deploy_required: true           # the guard and the gates must be the ones production actually runs
+browser_required: false         # console commands, config and scripts; verified through feature tests
 
-go_tag: production-android-signing-certificate-pin-1-go
+go_tag: production-android-release-apk-evidence-1-go
+
+# CEREMONY COMPLETE. The APK was built from RELEASE_SOURCE 1fecab7b (tree
+# 0f6544f2, CI 34018374405) and signed by the existing permanent production
+# key. This evidence commit is the FINAL CANDIDATE and did NOT build the APK.
 
 test_profiles:
   - security
@@ -38,71 +41,47 @@ inherits_preflight: evidence-phase4a-real-device-keyinfo-preflight-1-go
 inherits_custody: production-android-signing-custody-readiness-1-go
 inherits_vault: revision-production-signing-custodian1-encrypted-vault-1-go
 inherits_key: production-android-signing-key-provisioning-1-go
+inherits_pin: production-android-signing-certificate-pin-1-go
 
 # WHAT CHANGED IN THE WORLD.
 #
-# Nothing outside this repository. No key was generated, no vault was opened, no
-# PKCS12 was read, no password was typed, no APK was built, no tablet was
-# touched. This sprint takes one DECISION about a key that already exists.
+# Nothing outside this repository, and nothing signed. No key was generated, no
+# vault was opened, no PKCS12 was read, no password was typed, no tablet was
+# touched, no APK was distributed. An UNSIGNED release APK was compiled from
+# this tree for the first time in the project's history.
 #
-# alias  daengtisia-clinic-release
-# key    RSA 4096, PKCS12 PrivateKeyEntry, self-signed
-# sha256 79db269b7cd38e920b80efbcf2f59142721f1e57924d3048d07a862f34fea2d9
+# THE FINDING.
 #
-# That fingerprint is a PUBLIC identifier — it ships inside every signed APK, so
-# committing it discloses nothing. The private key, the keystore and every
-# password remain out of git, off the production VPS and out of CI, and no
-# control added here can be evaluated only with them.
+# `assembleRelease` had never succeeded. app/build.gradle.kts named
+# `proguard-rules.pro`; the file was never committed, so the build died at
+# :app:minifyReleaseWithR8. Three sprints built an artifact verifier, a signer
+# resolver, a certificate pin and a 42-check readiness gate that reported GO
+# around an artifact that could not be produced on any of those days.
+#
+# Governance missed it because `required_release_block_markers` proves the
+# release block CONTAINS the string `proguardFiles` and nothing proved the file
+# it NAMES exists. That is rule 147's orphaned predicate, second instance.
 #
 # WHAT THIS SPRINT DOES.
 #
-# 1. ARMS THE PIN. signing.production_certificate_sha256 moves from null to the
-#    fingerprint above — the same certificate as ..._recorded, which the custody
-#    state machine already refuses to let disagree. RECORDED (a fact about a key
-#    that exists) and PINNED (a decision to enforce) stay two fields; both are
-#    now true, which is exactly when a split like that stops being scrutinised,
-#    so it is asserted structurally rather than by opposite values.
-#
-# 2. ONE SEMANTIC, ASKED IN ONE PLACE. "Is this a fingerprint, and is it the
-#    same one?" previously had four answers: the scanner's case-insensitive
-#    regex, the verifier's own inline copy of it, the lifecycle's
-#    is_string && !== '', and a case-SENSITIVE regex for the recorded value.
-#    They are now one class, App\Support\Android\AndroidCertificateFingerprint,
-#    and reporting and enforcement both ask it — so PRODUCTION_CERTIFICATE_PINNED
-#    cannot report armed for a value the verifier is rejecting.
-#
-#    isPresent() SURVIVES ON PURPOSE and is not a weaker isValid(). The
-#    lifecycle needs junk to count as a CLAIM so 'TBD' written with no key still
-#    trips "pinned while no key is claimed provisioned". Merging them is a
-#    fail-open regression that reads as a cleanup; a mutation test kills it.
-#
-# 3. FIXES A LATENT VALIDATION DEFECT FOUND BY THE NEW TESTS. Both replaced
-#    regexes lacked the D modifier, so PHP's $ also matched before a trailing
-#    newline and "<64 hex>\n" validated. The anchor would report ARMED and the
-#    comparison would then fail, telling an operator the APK was signed by a
-#    DIFFERENT KEY. A newline in config would have been reported as a
-#    substituted signing key.
-#
-# 4. STOPS A CONTAINMENT CHECK FREEZING A VALUE IT DOES NOT OWN.
-#    preflight_unlocks_nothing demanded the pin be null forever. The predecessor
-#    already corrected that line's MESSAGE when the key was provisioned; the
-#    CONDITION still read the pin, so this sprint hit the same wall one field
-#    later. It is REPLACED, not deleted (Rule 147): the pin must be absent or
-#    exactly the recorded production certificate — strictly narrower than "null"
-#    was broad. A rogue well-formed anchor and junk both still go red, and two
-#    tests exist solely to prove that gap was not orphaned.
+# 1. Adds proguard-rules.pro, minimal by verification: the wire protocol is
+#    built from string literals, so R8 cannot alter a byte the device signs.
+# 2. Adds release_proguard_files_present, which walks balanced parentheses
+#    because a naive regex stops at getDefaultProguardFile's close paren.
+# 3. Renames the manifest's ambiguous `git_commit` to release_source_sha and
+#    adds release_source_tree, declaring the two-commit provenance model: the
+#    tree that BUILT the artifact is not the evidence commit that DESCRIBES it.
+# 4. Turns "never run an interactive REPL on production" into a gate that runs
+#    before the deploy runner opens a connection — and removes the three
+#    tracked scripts that were doing exactly that, two of them in order to ask
+#    whether they were running on production.
 #
 # STILL FALSE, AND ASSERTED FALSE.
 #
-# Production APK built, signed or distributed; tablet touched; ADB used; device
+# APK signed, distributed or installed; tablet touched; ADB used; device
 # enrolled; pilot enforcement activated; global enforcement activated.
+# DEVICE_ENFORCEMENT_ACTIVE=false.
 #
-# DEVICE_ENFORCEMENT_ACTIVE=false, DOCTOR_BROWSER_LOGIN_DENIED=false,
-# enforcement.current_stage=off, owner_signoff.pilot_activated=false.
-# drg Karmila at Cabang Sunu is unaffected.
-#
-# Reading PRODUCTION_CERTIFICATE_PINNED=true as permission to build, install or
-# enforce is the specific misreading rule 148 exists to prevent.
-#
-# NEXT TASK: PRODUCTION-ANDROID-RELEASE-APK-EVIDENCE-1. It is deliberately
-# separate and must not be folded into anything else.
+# The signing ceremony is a human custodian action and is deliberately NOT part
+# of this candidate. RELEASE SOURCE is frozen and CI-green BEFORE signing; the
+# evidence commit comes after and is a SECOND commit.

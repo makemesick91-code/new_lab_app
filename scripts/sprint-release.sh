@@ -102,6 +102,12 @@ log "manifest: ${MANIFEST}"
 log "verifying release readiness (sprint:release-check)"
 php artisan sprint:release-check --manifest "${MANIFEST}" || die "sprint:release-check reported NO-GO — aborting."
 
+# Refuse an interactive-REPL invocation BEFORE the deploy runner opens a
+# connection to production. Placed here, not in the deploy script, because a
+# guard that fires on the far side of the SSH has already lost.
+log "checking deploy/release scripts for forbidden production commands"
+php artisan deploy:forbidden-command-check || die "forbidden production command found — aborting before anything reaches production."
+
 if [[ "${APPLY}" != "true" ]]; then
   log "DRY-RUN complete. Nothing was mutated. Re-run with --apply to deploy."
   exit 0
@@ -122,7 +128,9 @@ log "deploy runner reported success (deploy + smoke OK)"
 if [[ "${DO_TAG}" == "true" ]]; then
   TAG="${GO_TAG}"
   if [[ -z "${TAG}" ]]; then
-    TAG="$(php artisan tinker --execute="echo \\App\\Support\\Devflow\\SprintManifest::fromFile('${MANIFEST}')->goTag();" 2>/dev/null | tail -n1)"
+    # Read straight out of the manifest. Booting the interactive REPL to
+    # read one YAML key is the forbidden command on the release path.
+    TAG="$(sed -n 's/^go_tag:[[:space:]]*//p' "${MANIFEST}" | tail -n1 | tr -d '[:space:]')"
   fi
   [[ -n "${TAG}" ]] || die "no go_tag resolved; pass --go-tag <tag>"
   if git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then

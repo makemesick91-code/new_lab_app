@@ -10,6 +10,7 @@ use App\Support\Android\AndroidReleaseGovernanceScanner;
 use App\Support\Android\ApksignerFingerprintResolver;
 use App\Support\Android\KotlinSourceScanner;
 use App\Support\Android\SignerFingerprintResolver;
+use App\Support\Deploy\ProductionShellCommandGuard;
 use App\Support\DeveloperConsole\SensitiveValueMasker;
 use App\Support\Devflow\CanonicalBaseRefResolver;
 use App\Support\Devflow\DevflowScanner;
@@ -46,6 +47,8 @@ class AppServiceProvider extends ServiceProvider
         // release verifier reads the signer certificate through this seam, so
         // a test can drive it without shipping a signed APK into the repo.
         $this->app->bind(SignerFingerprintResolver::class, ApksignerFingerprintResolver::class);
+
+        $this->app->bind(ProductionShellCommandGuard::class, fn ($app) => new ProductionShellCommandGuard(base_path(), $app->make(SensitiveValueMasker::class)));
 
         // DEVFLOW-FIX-BASE-REF-1 — the canonical base authority. Bound per
         // resolution (not shared) so each command invocation pins its own base

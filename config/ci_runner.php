@@ -324,6 +324,12 @@ return [
         // substituted signer through.
         'tests/Feature/DoctorDevice/DoctorDeviceAndroidCertificatePinTest.php',
 
+        // PRODUCTION-ANDROID-RELEASE-APK-EVIDENCE-1 — the mechanical guard
+        // against running an interactive REPL on production. Registered rather
+        // than left to a token match because the prohibition already failed
+        // twice as prose, and a guard nothing selects is prose again.
+        'tests/Feature/Deploy/ProductionShellCommandGuardTest.php',
+
         // REVISION-PRODUCTION-SIGNING-CUSTODIAN1-ENCRYPTED-VAULT-1 — declared
         // for the same reason and one sharper one. The suite it replaces the
         // gap in already existed and still passed while `disk_encryption =>

@@ -42,8 +42,13 @@ php artisan permission:cache-reset
 ## 3. Verifying disabled state (no external network)
 
 ```
-php artisan tinker --execute="dump(config('satusehat.enabled')); dump(get_class(app(App\Modules\Satusehat\Gateways\SatusehatGatewayInterface::class)));"
-# expect: false  and  DisabledSatusehatGateway
+php artisan satusehat:diagnose --json
+# expect: enabled false, gateway DisabledSatusehatGateway
+#
+# NOT the interactive REPL. This section runs on the production pilot, and the
+# REPL writes ERROR records into the application log that pin the monitoring
+# log signal to WATCH for 24 hours. satusehat:diagnose is read-only, prints
+# posture booleans only, and never prints a credential.
 ```
 
 Automated test proof: `php artisan test tests/Feature/Satusehat/SatusehatFoundationTest.php`

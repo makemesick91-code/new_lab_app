@@ -53,7 +53,8 @@ function stageRelease(array $overrides = [], string $body = 'clinic-apk-bytes'):
         'package_name' => 'com.daengtisia.clinic',
         'version_name' => '1.0.0',
         'version_code' => 2,
-        'git_commit' => str_repeat('c', 40),
+        'release_source_sha' => str_repeat('c', 40),
+        'release_source_tree' => str_repeat('e', 40),
         'ci_run_id' => '12345',
         'build_variant' => 'release',
         'apk_filename' => $apkName,
@@ -432,4 +433,201 @@ it('registers the direct-APK suite in the critical gate so something selects it'
     // A control the gate never selects is not a control.
     expect(config('ci_runner.critical_gate_mandatory_suites'))
         ->toContain('tests/Feature/DoctorDevice/DoctorDeviceAndroidDirectApkReleaseTest.php');
+});
+
+// ---------------------------------------------------------------------------
+// PRODUCTION-ANDROID-RELEASE-APK-EVIDENCE-1 — which commit built this APK
+// ---------------------------------------------------------------------------
+
+/**
+ * The APK is built from one tree; the evidence describing it is committed
+ * afterwards, because the evidence contains facts (the signed artifact's
+ * digest, the signer, the CI run) that do not exist until after the build.
+ *
+ * That makes two commits, and conflating them is a provenance forgery waiting
+ * to happen: an evidence commit that claims to be the source of the artifact
+ * asserts a build that never occurred from that tree. The manifest therefore
+ * names the RELEASE SOURCE explicitly — sha AND tree, because the tree is
+ * content-addressed and is what makes the binding tamper-evident.
+ */
+it('records the exact source commit and tree the APK was built from', function () {
+    [$apk, $manifest, $fp, $dir] = stageRelease();
+    pinAnchor($fp);
+
+    try {
+        $result = verifyWith(fakeSigner($fp), $apk, $manifest);
+
+        expect($result['status'])->toBe('PASS');
+
+        $ids = array_column($result['checks'], 'id');
+        expect($ids)->toContain('release_source_provenance');
+    } finally {
+        cleanupRelease($dir);
+    }
+});
+
+it('refuses a manifest whose release source is not a git object', function (mixed $sha, mixed $tree) {
+    [$apk, $manifest, $fp, $dir] = stageRelease([
+        'release_source_sha' => $sha,
+        'release_source_tree' => $tree,
+    ]);
+    pinAnchor($fp);
+
+    try {
+        $result = verifyWith(fakeSigner($fp), $apk, $manifest);
+
+        expect($result['status'])->toBe('FAIL');
+        expect($result['failures'])->toContain('release_source_provenance');
+    } finally {
+        cleanupRelease($dir);
+    }
+})->with([
+    'short sha' => [str_repeat('c', 39), str_repeat('d', 40)],
+    'long sha' => [str_repeat('c', 41), str_repeat('d', 40)],
+    'non-hex sha' => [str_repeat('z', 40), str_repeat('d', 40)],
+    // The predecessor's expensive lesson: PHP's $ also matches before a
+    // trailing newline, so an anchor without /D validates "<40 hex>\n" and
+    // then reports a provenance that does not match the repository.
+    'trailing newline' => [str_repeat('c', 40)."\n", str_repeat('d', 40)],
+    'short tree' => [str_repeat('c', 40), str_repeat('d', 39)],
+    'non-hex tree' => [str_repeat('c', 40), str_repeat('z', 40)],
+]);
+
+it('will not let the evidence commit pose as the tree that built the APK', function () {
+    // Governance has to SAY which commit is which, or "the two-commit model"
+    // is an oral tradition. These are the field names the manifest carries and
+    // the runbook instructs, so a future reader cannot conclude the evidence
+    // commit was the build source.
+    $provenance = config('android_release.release_provenance');
+
+    expect($provenance['model'])->toBe('two_commit');
+    expect($provenance['release_source']['manifest_fields'])
+        ->toBe(['release_source_sha', 'release_source_tree']);
+    expect($provenance['release_source']['must_pass_ci_before_signing'])->toBeTrue();
+    expect($provenance['final_candidate']['must_not_claim_to_have_built_the_apk'])->toBeTrue();
+    expect($provenance['final_candidate']['must_pass_ci_before_merge'])->toBeTrue();
+
+    // And the manifest must actually demand them, or the model is decorative.
+    expect(config('android_release.versioning.release_metadata_required'))
+        ->toContain('release_source_sha')
+        ->toContain('release_source_tree');
+});
+
+// ---------------------------------------------------------------------------
+// PRODUCTION-ANDROID-RELEASE-APK-EVIDENCE-1 — the committed release evidence
+// ---------------------------------------------------------------------------
+
+/**
+ * The signed APK is gitignored, so CI can never re-verify the artifact itself.
+ * What CI CAN do is refuse to let the committed evidence drift into something
+ * that contradicts the trust anchor, understates the rollout state, or claims
+ * a provenance it cannot have. That is what this pins.
+ */
+function releaseEvidenceManifest(): array
+{
+    $path = base_path('docs/evidence/android-release/DaengtisiaMS-Clinic-v0.3.0-phase3.release.json');
+
+    expect(is_file($path))->toBeTrue('The committed release evidence manifest is missing.');
+
+    $decoded = json_decode((string) file_get_contents($path), true);
+
+    expect($decoded)->toBeArray('The release evidence manifest is not valid JSON.');
+
+    return $decoded;
+}
+
+it('carries every field the verifier requires of a release manifest', function () {
+    $manifest = releaseEvidenceManifest();
+    $required = (array) config('android_release.versioning.release_metadata_required');
+
+    expect($required)->not->toBeEmpty('No required fields declared; this check would pass on nothing.');
+
+    foreach ($required as $field) {
+        expect($manifest)->toHaveKey($field);
+        expect(trim((string) $manifest[$field]))->not->toBe('', "Field {$field} is blank.");
+    }
+});
+
+it('names the pinned release authority and never a second one', function () {
+    $manifest = releaseEvidenceManifest();
+    $pinned = (string) config('android_release.signing.production_certificate_sha256');
+
+    // The manifest is a CROSS-CHECK, never the anchor — the verifier reads
+    // config. But a manifest naming a different certificate describes some
+    // other release, so paperwork and artifact would disagree even if the APK
+    // itself were authentic.
+    foreach (['signing_certificate_fingerprint_sha256', 'signer_certificate_sha256', 'pinned_certificate_sha256'] as $field) {
+        expect(strtolower((string) $manifest[$field]))->toBe(strtolower($pinned));
+    }
+
+    expect($manifest['signer_matches_pin'])->toBeTrue();
+    expect($manifest['signer_extracted_from'])->toBe('final_signed_apk_via_apksigner_print_certs');
+});
+
+it('records a provenance it could actually have', function () {
+    $manifest = releaseEvidenceManifest();
+
+    // Git object ids, end-of-string anchored — the same /D lesson as the
+    // verifier's own predicate.
+    foreach (['release_source_sha', 'release_source_tree'] as $field) {
+        expect((string) $manifest[$field])->toMatch('/^[0-9a-f]{40}$/D');
+    }
+
+    expect((string) $manifest['artifact_sha256'])->toMatch('/^[0-9a-f]{64}$/D');
+    expect($manifest['artifact_sha256_taken_after_signing'])->toBeTrue();
+
+    // Pinned to the frozen release source rather than compared against live
+    // HEAD. Comparing to HEAD only holds AFTER the evidence commit exists, so
+    // it fails on the very tree that is about to be committed — and it makes a
+    // security assertion depend on git state. These two values are a historical
+    // fact about one released artifact, so an edit that quietly swaps in the
+    // evidence commit's own sha is exactly what this catches.
+    expect($manifest['release_source_sha'])->toBe('1fecab7b14f6e603c73d12e19f5d2a61b26fadd6');
+    expect($manifest['release_source_tree'])->toBe('0f6544f2b12be997fbfe1337f631dae182cbcb2b');
+    expect($manifest['ci_run_id'])->toBe('34018374405');
+});
+
+it('reports the signature schemes actually observed, not an optimistic set', function () {
+    $verification = releaseEvidenceManifest()['signature_verification'];
+
+    expect($verification['apksigner_verify_exit'])->toBe(0);
+    expect($verification['verified'])->toBeTrue();
+    expect($verification['number_of_signers'])->toBe(1);
+
+    // v2+v3 is what minSdk 26 with modern build-tools produces; claiming v1 or
+    // v4 as well would be an evidence overstatement, and v4 in particular is a
+    // separate .idsig file that is not distributed here.
+    expect($verification['v2_scheme'])->toBeTrue();
+    expect($verification['v3_scheme'])->toBeTrue();
+    expect($verification['v1_jar_signing'])->toBeFalse();
+    expect($verification['v4_scheme'])->toBeFalse();
+});
+
+it('does not let the evidence quietly claim a rollout that has not happened', function () {
+    $rollout = releaseEvidenceManifest()['rollout_state'];
+
+    // Producing a signed artifact unlocks nothing. If any of these ever flips
+    // to true it must be a sprint that decided so, not an edit to a JSON file.
+    expect($rollout['apk_distributed'])->toBeFalse();
+    expect($rollout['tablet_touched'])->toBeFalse();
+    expect($rollout['adb_used'])->toBeFalse();
+    expect($rollout['pilot_enforcement'])->toBeFalse();
+    expect($rollout['global_enforcement'])->toBeFalse();
+
+    // And the runtime enforcement ladder still agrees with it.
+    expect(config('android_release.enforcement.active'))->toBeFalse();
+});
+
+it('keeps key material out of the committed evidence', function () {
+    $raw = (string) file_get_contents(base_path('docs/evidence/android-release/DaengtisiaMS-Clinic-v0.3.0-phase3.release.json'));
+
+    foreach (['PRIVATE KEY', 'BEGIN ', 'passphrase', 'storepass', 'keypass', '.p12', '.jks'] as $forbidden) {
+        expect(str_contains(strtolower($raw), strtolower($forbidden)))
+            ->toBeFalse("Release evidence contains '{$forbidden}'.");
+    }
+
+    $boundary = releaseEvidenceManifest()['key_material_boundary'];
+    expect($boundary['private_key_in_git'])->toBeFalse();
+    expect($boundary['private_key_in_ci'])->toBeFalse();
+    expect($boundary['private_key_on_vps'])->toBeFalse();
 });

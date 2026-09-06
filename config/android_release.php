@@ -669,7 +669,13 @@ return [
             'package_name',
             'version_name',
             'version_code',
-            'git_commit',
+            // NOT `git_commit`. The evidence describing a release is committed
+            // AFTER the build, so "the commit" is ambiguous exactly where it
+            // must not be: one of the two commits built the artifact and the
+            // other only describes it. No production manifest exists yet, so
+            // this is the one moment the name can be made unambiguous for free.
+            'release_source_sha',
+            'release_source_tree',
             'ci_run_id',
             'build_variant',
             'apk_filename',
@@ -681,6 +687,15 @@ return [
 
         // Validated as 64 hex characters. A key holding a placeholder is not
         // provenance, and a manifest that gates an install has to mean something.
+        // 40 hex, validated with an end-of-string anchor. The predecessor
+        // shipped two regexes without /D, where PHP's `$` also matches before
+        // a trailing newline — so "<hex>\n" validated, and the mismatch was
+        // then reported as a substituted signing key.
+        'release_metadata_git_object_fields' => [
+            'release_source_sha',
+            'release_source_tree',
+        ],
+
         'release_metadata_sha256_fields' => [
             'artifact_sha256',
             'signing_certificate_fingerprint_sha256',
@@ -689,6 +704,52 @@ return [
         'approved_release_states' => ['approved'],
         'approved_build_variants' => ['release'],
         'release_channel_value' => 'direct_admin_managed_apk',
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Release provenance — which commit built the APK, and which only says so
+    |--------------------------------------------------------------------------
+    |
+    | A signed release needs two commits and they are not interchangeable.
+    |
+    |   RELEASE SOURCE   the exact commit and tree the APK was compiled from.
+    |                    Frozen, clean, and green in CI BEFORE the signing
+    |                    ceremony, because the signature attests to those bytes.
+    |
+    |   FINAL CANDIDATE  the evidence-only commit that records what the ceremony
+    |                    produced — artifact digest, signer fingerprint, CI run.
+    |                    It cannot exist earlier: those facts do not exist until
+    |                    after the build is signed. It is what gets merged and
+    |                    deployed, and it must pass CI again on its own tree.
+    |
+    | Conflating them is provenance forgery, not bookkeeping: an evidence commit
+    | that presents itself as the build source asserts a build that never
+    | happened from that tree, and the APK's signature would appear to vouch
+    | for code the signer never saw.
+    |
+    */
+    'release_provenance' => [
+        'model' => 'two_commit',
+
+        'release_source' => [
+            'meaning' => 'the exact commit and tree the production APK was compiled from',
+            'manifest_fields' => ['release_source_sha', 'release_source_tree'],
+            'must_be_clean_worktree' => true,
+            'must_pass_ci_before_signing' => true,
+        ],
+
+        'final_candidate' => [
+            'meaning' => 'the evidence-only commit recording the signed artifact, later merged and deployed',
+            'may_differ_from_release_source' => true,
+            'must_not_claim_to_have_built_the_apk' => true,
+            'must_pass_ci_before_merge' => true,
+            'permitted_changes' => [
+                'release_evidence_manifest',
+                'sprint_documentation',
+                'governance_records',
+            ],
+        ],
     ],
 
     /*
@@ -1242,6 +1303,12 @@ return [
         ],
 
         'required_gitignore_patterns' => [
+            // apksigner writes a v4 signature (.idsig) BESIDE every APK it
+            // signs. The list covered .apk/.aab and every keystore extension
+            // and missed this one, so the first real ceremony left a signing
+            // artifact that git offered to commit. It carries no private key;
+            // it is still signing output, and signing output is not source.
+            'android/**/*.idsig',
             'android/**/*.jks',
             'android/**/*.keystore',
             'android/**/*.p12',

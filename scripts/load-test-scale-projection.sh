@@ -28,7 +28,13 @@ EVIDENCE_DIR="storage/app/load-test"
 cd "$APP_DIR"
 
 # Resolve the current environment without printing secrets.
-APP_ENV_VALUE="$(php artisan tinker --execute='echo app()->environment();' 2>/dev/null | tail -n1 | tr -d '[:space:]')"
+#
+# Deliberately NOT the interactive REPL. This line asks "am I on production?",
+# so running the REPL to answer it executes the forbidden command on production
+# BEFORE the check that would have refused it — and the REPL writes ERROR
+# records into the application log on its way. `artisan env` is purpose-built,
+# read-only, and prints one line.
+APP_ENV_VALUE="$(php artisan env 2>/dev/null | sed -n 's/.*\[\(.*\)\].*/\1/p' | tail -n1 | tr -d '[:space:]')"
 
 case "$APP_ENV_VALUE" in
   local|stress|testing)
