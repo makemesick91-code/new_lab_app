@@ -487,8 +487,16 @@ it('never claims a production key or a real device it does not have', function (
     expect($summary['production_signing_key_provisioned'])
         ->toBe(config('android_release.signing.custody.production_signing_key_provisioned') === true);
 
-    // A key exists; nothing downstream of it does.
-    expect($summary['production_certificate_pinned'])->toBeFalse();
+    // PRODUCTION-ANDROID-SIGNING-CERTIFICATE-PIN-1 then armed the pin, so this
+    // line gets the same treatment the key line got one sprint earlier: it
+    // asserts the reporting CONTRACT — the summary states the pin from the
+    // config field rather than a literal — instead of freezing a value that a
+    // separately authorised task is entitled to change.
+    expect($summary['production_certificate_pinned'])
+        ->toBe(config('android_release.signing.production_certificate_sha256') !== null);
+
+    // A key exists and an anchor is armed; nothing downstream of either does.
+    // These two are what green must never be read as consent to.
     expect($summary['real_device_validation'])->toBeFalse();
     expect($summary['device_enforcement_active'])->toBeFalse();
 });

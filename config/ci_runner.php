@@ -307,6 +307,23 @@ return [
         // tree would notice.
         'tests/Feature/DoctorDevice/DoctorDeviceAndroidSigningKeyProvisioningTest.php',
 
+        // PRODUCTION-ANDROID-SIGNING-CERTIFICATE-PIN-1. The trust anchor is
+        // now ARMED, which makes this the highest-consequence entry in the
+        // list: `android:verify-release` compares a candidate APK against this
+        // one config value, and with Google Play out of the chain nothing else
+        // stands between a substituted artifact and a clinic tablet.
+        //
+        // Declared rather than left to the `DoctorDevice` token for the reason
+        // Phase 1 established, and for a sharper one. The failure this selects
+        // for is a SILENT semantic drift: reporting and enforcement each used
+        // to carry their own copy of "is this a fingerprint", and while they
+        // disagreed the command printed PINNED=true for a value the verifier
+        // was rejecting. The copies are now one class, and these tests are
+        // what notices if a future edit reintroduces a second opinion — or
+        // widens the accepted form, or lets a prefix match, or lets a
+        // substituted signer through.
+        'tests/Feature/DoctorDevice/DoctorDeviceAndroidCertificatePinTest.php',
+
         // REVISION-PRODUCTION-SIGNING-CUSTODIAN1-ENCRYPTED-VAULT-1 — declared
         // for the same reason and one sharper one. The suite it replaces the
         // gap in already existed and still passed while `disk_encryption =>

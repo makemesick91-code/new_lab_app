@@ -1,0 +1,141 @@
+---
+description: The production Android certificate is PINNED — one canonical public fingerprint, one shared validator used by both reporting and enforcement, fail-closed on anything else; changing the pin is a signer rotation, and pinning unlocks no release, tablet or enforcement.
+globs:
+  - "config/android_release.php"
+  - "app/Support/Android/**"
+  - "app/Console/Commands/Android*.php"
+  - "docs/governance/android-production-signing-governance.md"
+  - "docs/runbooks/android-signing-key-backup-and-recovery.md"
+  - "tests/Feature/DoctorDevice/DoctorDeviceAndroid*.php"
+alwaysApply: false
+---
+
+# The production Android certificate is pinned
+
+PRODUCTION-ANDROID-SIGNING-CERTIFICATE-PIN-1. Supersedes, forward and never by
+rewriting, every earlier record that says the certificate is not pinned —
+including rule 147 §3 and §6, which were accurate when written.
+
+Rule 147 remains in force in full for the KEY: there is exactly one production
+signer, it is permanent, and it must never be regenerated. This rule governs the
+DECISION taken about it.
+
+## 1. The trust anchor
+
+| Field | Value |
+|---|---|
+| Alias | `daengtisia-clinic-release` |
+| Algorithm | RSA 4096 |
+| SHA-256 | `79db269b7cd38e920b80efbcf2f59142721f1e57924d3048d07a862f34fea2d9` |
+| `signing.production_certificate_sha256` | **armed** with the value above |
+| `signing.production_certificate_sha256_recorded` | the same value |
+
+The fingerprint is **public** — it is derived from the certificate, which ships
+inside every signed APK, so committing it discloses nothing. The private key,
+the keystore and every passphrase remain out of git, off the production VPS and
+out of CI. **No control in this subsystem may require the private key to
+verify anything.** If an implementation appears to need it, that is an
+architecture defect — stop and report it; it is never authority to open the
+vault.
+
+RECORDED and PINNED stay two fields answering two questions (rule 147 §3). Both
+are now true. That is exactly when a split like this stops being scrutinised, so
+they are asserted structurally — two keys, two summary lines, one certificate —
+rather than by opposite values.
+
+## 2. One semantic, asked in one place
+
+`App\Support\Android\AndroidCertificateFingerprint` is the **only** definition of
+what a fingerprint is and when two of them are the same.
+
+1. **Reporting and enforcement must ask the same object.** The scanner's
+   `production_certificate_pinned` summary and the verifier's
+   `signer_trust_anchor` check both call `isValid()`. Never reintroduce a second
+   opinion — an inline regex, a local `strtolower`, a `!== ''`. The predecessor
+   shipped exactly that and the command printed `PRODUCTION_CERTIFICATE_PINNED=true`
+   for a `'TBD'` the verifier was rejecting.
+2. **`isPresent()` and `isValid()` are not the same predicate and must not be
+   merged.** `isPresent()` asks "does the field carry a claim?" and the custody
+   lifecycle needs it: a pin of `'TBD'` written while no key exists must still
+   trip "a certificate is pinned while no key is claimed provisioned". Tightening
+   it to `isValid()` makes that junk invisible to the rule that catches it — a
+   fail-open regression that looks like a cleanup. A mutation test kills it.
+3. **Accepted form is exactly 64 contiguous hex characters**, either case. The
+   colon-separated form `keytool -list` prints is **rejected, never normalized**:
+   a normalizer that strips separators also quietly accepts values a reviewer
+   would reject. It fails closed and the operator reformats.
+4. **The `D` regex modifier is load-bearing.** Without it PHP's `$` also matches
+   before a trailing newline, so `"<64 hex>\n"` validated. That is not a
+   whitespace nit: the anchor reported ARMED and the byte comparison then failed,
+   printing "signed by a different key" — a newline in config reported to an
+   operator as a **substituted signing key**.
+5. **Compare case-insensitively, on the whole value.** `keytool` prints upper
+   case, and a correct pin differing only in case must never be reported as a
+   substitution. Never prefix, suffix, substring or `str_contains`. Invalid on
+   either side is `false` — "could not tell" is never "matches".
+
+## 3. Fail closed, and what that now means
+
+`null`, `''`, whitespace, `'TBD'`, any placeholder, wrong length, non-hex,
+embedded or trailing whitespace, colon form, SHA-1 length and any substituted
+fingerprint are all **unpinned**, in the report and in the control alike. With
+no valid anchor, `android:verify-release` authenticates nothing and says so.
+
+`custody_state_machine_consistent` binds the pair in both directions: a pin
+without a key, and a pin that disagrees with the recorded certificate, are
+contradictions and go red.
+
+## 4. Changing the pin is a signer rotation
+
+Editing `production_certificate_sha256` to a different certificate is **not a
+config tweak**. The key is unrecoverable and `app_signing_key_rotation` is
+`constrained_treat_as_permanent`; a different anchor means every enrolled tablet
+must be UNINSTALLED to take an update, which erases app data, destroys each
+device's Keystore identity, and re-enrols the fleet by hand.
+
+A different signer certificate must **never** be silently accepted. If the
+fingerprint appears to have changed, that is a STOP condition under rule 147 §1.
+
+## 5. Pinning is one decision, and it is not the other five
+
+Arming the anchor moved exactly one thing. All of these remain false and are
+asserted false:
+
+- production APK built, signed or distributed; tablet touched; ADB used;
+- device enrolled; pilot enforcement activated; global enforcement activated;
+- `enforcement.active` false, `enforcement.current_stage` `off`,
+  `owner_signoff.pilot_activated` false.
+
+Reading `PRODUCTION_CERTIFICATE_PINNED=true` as permission to build, install or
+enforce is the specific misreading this rule exists to prevent.
+
+## 6. Gate hygiene learned here
+
+1. **A containment check must assert what its own subject moved, not freeze a
+   value another authority may lawfully change.** `preflight_unlocks_nothing`
+   demanded the pin be `null` forever. The predecessor had already corrected the
+   *message* on that exact line when the key was provisioned; the *condition*
+   still read the pin, so this sprint hit the same wall one field later — and it
+   would have reported a lawful pinning decision as "a real-device preflight pass
+   unlocked signing", a false accusation on the message an operator acts on
+   hardest.
+2. **Replace such a predicate; do not delete it (rule 147 §5, Rule 147).** The
+   clause is now `noUnauthorisedTrustAnchor()`: the pin must be **absent or
+   exactly the recorded production certificate**. That is strictly narrower than
+   "null" was broad, so a rogue well-formed anchor and junk both still go red.
+   Two mutation tests exist solely to prove the gap was not orphaned.
+3. **When a flag flips true, re-read every test that asserted it false.** Ten
+   assertions across five suites pinned "not pinned" as a frozen value. Each was
+   rewritten to its suite's own invariant — usually "this sprint introduced no
+   anchor of its own", expressed as pin == recorded — instead of being deleted.
+4. **A test that establishes its own precondition outlives the config.** The
+   no-fallback proof ("the recorded fingerprint must not arm the verifier") only
+   worked while the pin happened to be null. It now sets the pin to null itself,
+   so the invariant stays testable for the life of the repository.
+5. **Mutation-test the predicate you just documented.** The comment explaining
+   why `isPresent()` must not become `isValid()` was written before any test
+   enforced it, and the mutation survived. A claim in a comment that no test
+   defends is exactly the drift this programme exists to catch.
+6. **Register a new suite in `ci_runner.critical_gate_mandatory_suites`.** A
+   filter token match is an accident of naming, and nothing would say the day it
+   stopped selecting.

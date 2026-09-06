@@ -80,12 +80,36 @@ return [
         // clothes — and with Google Play gone, this control is the ONLY thing
         // between a substituted artifact and a clinic tablet.
         //
-        // NULL until the production key is provisioned. While it is null,
-        // `android:verify-release` cannot authenticate anything and FAILS
-        // CLOSED saying so. That is correct rather than unfortunate: there is
-        // no authority to verify against yet, and a manifest cannot vouch for
-        // itself. Pinning this is a Phase-4 entry step.
-        'production_certificate_sha256' => null,
+        // ARMED by PRODUCTION-ANDROID-SIGNING-CERTIFICATE-PIN-1.
+        //
+        // It was null for as long as there was nothing to point at, and while
+        // it was null `android:verify-release` authenticated nothing and failed
+        // closed saying so. The key now exists — generated once on custodian 1,
+        // backed up twice, restored from both destination copies — so the
+        // authority this field names is real and the control is live.
+        //
+        // The value is the SAME certificate as `..._recorded` below, and the
+        // custody state machine refuses any scan where those two disagree. The
+        // fields are not redundant: RECORDED is a FACT about a key that exists,
+        // PINNED is a DECISION to enforce, and this task made only the second.
+        //
+        // Required form: exactly 64 contiguous hex characters, lower case.
+        // The colon-separated form `keytool -list` prints is REJECTED rather
+        // than normalized — a normalizer that strips separators also quietly
+        // accepts values a reviewer would reject. Case is compared
+        // insensitively everywhere, so an upper-case paste is a formatting
+        // error and never a substitution alarm.
+        //
+        // CHANGING THIS VALUE IS A SIGNER ROTATION, not a config tweak. The key
+        // is unrecoverable and `app_signing_key_rotation` is
+        // `constrained_treat_as_permanent`; a different certificate here means
+        // every enrolled tablet must be UNINSTALLED to accept an update, which
+        // erases the Keystore identity and re-enrols the fleet by hand.
+        //
+        // Arming it unlocks nothing downstream. No APK has been built, no
+        // tablet touched, the pilot rung is authorized but not activated, and
+        // doctor enforcement is off.
+        'production_certificate_sha256' => '79db269b7cd38e920b80efbcf2f59142721f1e57924d3048d07a862f34fea2d9',
         'production_certificate_pin_required_before_install' => true,
 
         // ------------------------------------------------------------------

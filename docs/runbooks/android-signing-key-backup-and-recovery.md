@@ -69,13 +69,24 @@ public identifier — it ships inside every signed APK):
 | Validity | 2026-09-06 → 2054-01-22 |
 | SHA-256 | `79db269b7cd38e920b80efbcf2f59142721f1e57924d3048d07a862f34fea2d9` |
 
-**Stage E is NOT closed, and that distinction is load-bearing.** The fingerprint
-above is RECORDED in `signing.production_certificate_sha256_recorded` as
-evidence that a key exists. It is NOT PINNED:
-`signing.production_certificate_sha256` is still `null`, so
-`android:verify-release` authenticates nothing and fails closed. Pinning is the
-separate task **PRODUCTION-ANDROID-SIGNING-CERTIFICATE-PIN-1**. Until it runs,
-no production APK may be installed on any device.
+**Stage E is now CLOSED, and the distinction it turned on is still
+load-bearing.** The fingerprint above is RECORDED in
+`signing.production_certificate_sha256_recorded` as evidence that a key exists,
+and PRODUCTION-ANDROID-SIGNING-CERTIFICATE-PIN-1 separately PINNED it:
+`signing.production_certificate_sha256` now holds the same value, so
+`android:verify-release` can authenticate an artifact instead of failing closed.
+
+The two fields remain two facts and must never be collapsed into one — RECORDED
+says a key exists, PINNED says the install path is armed. See rule 148.
+
+**Closing Stage E did not authorise a release.** No production APK has been
+built, signed or distributed, no tablet has been touched, no device is enrolled,
+and doctor enforcement is off. Installing on a device additionally requires a
+signed artifact whose signer fingerprint and release manifest both verify
+against the pin — run `php artisan android:verify-release` and do not install an
+APK it refuses. If it reports a signer mismatch, **do not uninstall the existing
+app to force the install**: uninstalling erases app data, and app data is where
+the device's Keystore identity lives.
 
 **What closing C and D actually required.** Both were verified by restoring
 **from the destination copy** — the file as it sits on Custodian 2 and on the

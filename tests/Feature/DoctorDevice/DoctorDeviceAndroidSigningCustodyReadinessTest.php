@@ -59,6 +59,27 @@ function custodyCheck(string $id): array
 }
 
 /**
+ * PRODUCTION-ANDROID-SIGNING-CERTIFICATE-PIN-1.
+ *
+ * Whether the scanner REFUSES a given value in the trust anchor. The pin is
+ * armed now, so "fail closed" can no longer be demonstrated by the shipped
+ * value being null — it has to be demonstrated by mutating the field into the
+ * ways it could be wrong and requiring the gate to go red.
+ */
+function custodyPinnedRejects(mixed $pin): bool
+{
+    $original = config('android_release.signing.production_certificate_sha256');
+
+    config()->set('android_release.signing.production_certificate_sha256', $pin);
+
+    try {
+        return custodyScan()['status'] !== 'GO';
+    } finally {
+        config()->set('android_release.signing.production_certificate_sha256', $original);
+    }
+}
+
+/**
  * Mutate one custody config key, scan, restore. Returns the scanner status for
  * the named check so a test can assert the gate actually rejected the mutation.
  */
@@ -209,14 +230,17 @@ it('claims a production signing key exists only alongside its recorded certifica
     expect(config('android_release.signing.production_certificate_sha256_recorded'))
         ->toMatch('/^[0-9a-f]{64}$/');
 
-    // And the decision that has deliberately NOT been taken with it.
-    expect(config('android_release.signing.production_certificate_sha256'))->toBeNull();
+    // And the decision taken with it, separately, by
+    // PRODUCTION-ANDROID-SIGNING-CERTIFICATE-PIN-1. What this suite asserts is
+    // that custody did not take it: the anchor in force is the certificate
+    // custody recorded, never a second identity.
+    expect(config('android_release.signing.production_certificate_sha256'))
+        ->toBe(config('android_release.signing.production_certificate_sha256_recorded'));
 
     $summary = custodyScan()['summary'];
 
     expect($summary['production_signing_key_provisioned'])->toBeTrue();
     expect($summary['production_certificate_recorded'])->toBeTrue();
-    expect($summary['production_certificate_pinned'])->toBeFalse();
     expect($summary['signing_custody_provisioning_preconditions_met'])->toBeTrue();
 
     expect(custodyCheck('custody_readiness_does_not_claim_provisioning')['status'])->toBe('PASS');
@@ -242,10 +266,22 @@ it('claims recovery is verified only with the backups it was rehearsed from', fu
     expect($custody['backup_2_key_copy_created'])->toBeTrue();
 });
 
-it('keeps the certificate pin fail-closed while no key exists', function () {
+it('keeps the certificate pin fail-closed for anything that is not the production certificate', function () {
+    // This used to assert the pin was null, which was the whole of "fail
+    // closed" while no key existed. A key exists now and the pin is armed, so
+    // the assertion moves from the VALUE to the RULE it was standing in for:
+    // the requirement is still declared, and a pin that is not the recorded
+    // production certificate is still refused.
     expect(config('android_release.signing.production_certificate_pin_required_before_install'))
         ->toBeTrue();
-    expect(config('android_release.signing.production_certificate_sha256'))->toBeNull();
+
+    expect(config('android_release.signing.production_certificate_sha256'))
+        ->toBe(config('android_release.signing.production_certificate_sha256_recorded'));
+
+    // Mutated into the way it could be wrong, as everywhere else in this
+    // programme: a well-formed fingerprint that is not ours must go red.
+    expect(custodyPinnedRejects(str_repeat('cd', 32)))->toBeTrue();
+    expect(custodyPinnedRejects('TBD'))->toBeTrue();
 });
 
 it('separates a ready destination from an established backup in the recorded vocabulary', function () {
@@ -295,9 +331,10 @@ it('leaves the whole release readiness report green without inventing anything d
     // The key is real and reported as such.
     expect($report['summary']['production_signing_key_provisioned'])->toBeTrue();
 
-    // Everything downstream of it is not, and green must never be read as
-    // consent to any of them.
-    expect($report['summary']['production_certificate_pinned'])->toBeFalse();
+    // Everything downstream of the signing chain is not, and green must never
+    // be read as consent to any of them. The pin is no longer on this list: it
+    // was armed by a separately authorised task, and asserting it false here
+    // would make this suite fail for a decision it does not own.
     expect($report['summary']['real_device_validation'])->toBeFalse();
     expect($report['summary']['device_enforcement_active'])->toBeFalse();
 });

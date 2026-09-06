@@ -211,7 +211,13 @@ class AndroidReleaseArtifactVerifier
     {
         $checks = [];
         $pinned = config('android_release.signing.production_certificate_sha256');
-        $anchored = is_string($pinned) && preg_match('/^[0-9a-f]{64}$/i', $pinned) === 1;
+
+        // PRODUCTION-ANDROID-SIGNING-CERTIFICATE-PIN-1 replaced an inline copy
+        // of the scanner's regex with the shared definition. Two copies of one
+        // rule is how the report came to say PINNED=true for a `'TBD'` this
+        // very check was rejecting: whichever copy is edited next, the other
+        // keeps answering the old question.
+        $anchored = AndroidCertificateFingerprint::isValid($pinned);
 
         $checks[] = $this->check(
             'signer_trust_anchor',
@@ -229,7 +235,6 @@ class AndroidReleaseArtifactVerifier
             return $checks;
         }
 
-        $expected = strtolower((string) $pinned);
         $actual = $this->signer->fingerprintFor($apkPath);
 
         if ($actual === null) {
@@ -245,10 +250,14 @@ class AndroidReleaseArtifactVerifier
             return $checks;
         }
 
+        // Case-insensitive through the shared comparison, and false for a
+        // malformed value on either side. "Could not tell" is never "matches".
+        $signerMatches = AndroidCertificateFingerprint::matches($pinned, $actual);
+
         $checks[] = $this->check(
             'signer_fingerprint',
-            hash_equals($expected, $actual) ? 'PASS' : 'FAIL',
-            hash_equals($expected, $actual)
+            $signerMatches ? 'PASS' : 'FAIL',
+            $signerMatches
                 ? 'Signer certificate matches the pinned DaengtisiaMS release authority.'
                 : 'Signer certificate does NOT match the pinned release authority. This APK was signed by a different key — '
                     .'do not install it, and do not uninstall the existing app to force it.',
@@ -258,12 +267,15 @@ class AndroidReleaseArtifactVerifier
         // certificate than the pin describes some other release, which means
         // the paperwork and the artifact disagree even if the APK itself is
         // authentic.
-        $declared = strtolower((string) $manifest['signing_certificate_fingerprint_sha256']);
+        $manifestMatches = AndroidCertificateFingerprint::matches(
+            $pinned,
+            $manifest['signing_certificate_fingerprint_sha256'],
+        );
 
         $checks[] = $this->check(
             'manifest_matches_trust_anchor',
-            hash_equals($expected, $declared) ? 'PASS' : 'FAIL',
-            hash_equals($expected, $declared)
+            $manifestMatches ? 'PASS' : 'FAIL',
+            $manifestMatches
                 ? 'Manifest names the pinned release authority.'
                 : 'Manifest names a certificate that is not the pinned release authority.',
         );
