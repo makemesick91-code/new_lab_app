@@ -18,6 +18,13 @@ alwaysApply: false
 > was accurate when written and is no longer. The certificate is RECORDED but
 > deliberately **not PINNED** — read rule 147 before acting on this file.
 > Never generate a second production signing key.
+>
+> **SUPERSEDED FURTHER by rule 148** (`PRODUCTION-ANDROID-SIGNING-CERTIFICATE-PIN-1`).
+> The certificate is **now PINNED** to
+> `79db269b7cd38e920b80efbcf2f59142721f1e57924d3048d07a862f34fea2d9`, so any
+> statement below or above that the pin is null was accurate when written and is
+> no longer. Pinning armed the install-time verifier and nothing else: no APK
+> was built, no tablet touched, no enforcement activated.
 
 PRODUCTION-ANDROID-SIGNING-CUSTODY-READINESS-1. Supersedes the custody
 `PARTIAL` state recorded by EVIDENCE-PHASE4A-REAL-DEVICE-KEYINFO-PREFLIGHT-1.

@@ -187,10 +187,20 @@ it('fails closed while no production certificate is pinned', function () {
     }
 });
 
-it('ships with the trust anchor unpinned and says so', function () {
-    // The production key does not exist. Claiming a pinned authority would be
-    // the most damaging thing this config could assert.
-    expect(config('android_release.signing.production_certificate_sha256'))->toBeNull();
+it('ships with the trust anchor pinned to the one recorded production certificate', function () {
+    // This test used to assert the opposite, and it was right to: while no
+    // production key existed, claiming a pinned authority would have been the
+    // most damaging thing this config could assert.
+    //
+    // The key exists now, and PRODUCTION-ANDROID-SIGNING-CERTIFICATE-PIN-1
+    // armed the anchor. The damaging assertion has therefore INVERTED: the
+    // dangerous config today is one that pins something other than the
+    // certificate custody recorded, because an installer trusts this value and
+    // nothing downstream of it asks a second time.
+    $pin = config('android_release.signing.production_certificate_sha256');
+
+    expect($pin)->toBe(config('android_release.signing.production_certificate_sha256_recorded'));
+    expect($pin)->toMatch('/^[0-9a-f]{64}$/');
     expect(config('android_release.signing.production_certificate_pin_required_before_install'))->toBeTrue();
 });
 

@@ -1,27 +1,28 @@
-# Active sprint manifest — PRODUCTION-ANDROID-SIGNING-KEY-PROVISIONING-1
+# Active sprint manifest — PRODUCTION-ANDROID-SIGNING-CERTIFICATE-PIN-1
 # Validated by: php artisan sprint:manifest-check
 
-id: PRODUCTION-ANDROID-SIGNING-KEY-PROVISIONING-1
-# NOT DOCS_ONLY: this changes the custody control record for an unrecoverable
-# production signing key, rewrites two release-gate predicates and adds a third,
-# so declaring documentation-only would be a false declaration about a security
-# surface.
+id: PRODUCTION-ANDROID-SIGNING-CERTIFICATE-PIN-1
+# NOT DOCS_ONLY: this arms the single control that stands between a substituted
+# APK and a clinic tablet, and it rewrites the predicates that decide whether a
+# fingerprint is valid, whether two fingerprints are the same, and whether a
+# hardware-preflight pass is contained. Declaring documentation-only would be a
+# false declaration about a security surface.
 type: SECURITY_FIX
 module: DoctorDevice
-title: "The production Android signing key exists: record the provisioned, backed-up and recovery-verified custody state, and split the certificate being RECORDED from the certificate being PINNED"
+title: "Arm the production Android certificate pin: one canonical public fingerprint, one shared validator for reporting and enforcement, and a containment check that stops freezing a value another authority may lawfully change"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-runtime_change: true            # one rewritten readiness predicate, one rewritten consistency predicate, one new gate check, two summary lines, one corrected message
+runtime_change: true            # new shared fingerprint value object, three rewritten predicates, one new containment predicate, one config trust anchor
 schema_change: false            # no migration, no table, no column
 frontend_change: false          # no Blade, no JS, no CSS, no asset build
-security_impact: true           # the custody record for a key that can never be regenerated
+security_impact: true           # the install-time trust anchor for an unrecoverable signing identity
 branch_isolation_impact: false  # BranchContext untouched
 ledger_impact: false            # no inventory ledger / billing / payment behaviour change
 
 deploy_required: true           # the gate must be the one production actually runs
 browser_required: false         # console command and config; verified through feature tests
 
-go_tag: production-android-signing-key-provisioning-1-go
+go_tag: production-android-signing-certificate-pin-1-go
 
 test_profiles:
   - security
@@ -36,64 +37,72 @@ inherits_phase: feature-doctor-trusted-android-device-lock-1-phase-3-5-readiness
 inherits_preflight: evidence-phase4a-real-device-keyinfo-preflight-1-go
 inherits_custody: production-android-signing-custody-readiness-1-go
 inherits_vault: revision-production-signing-custodian1-encrypted-vault-1-go
+inherits_key: production-android-signing-key-provisioning-1-go
 
 # WHAT CHANGED IN THE WORLD.
 #
-# The production Android signing identity was GENERATED, exactly once, on
-# custodian 1, inside the LUKS2 vault that REVISION-PRODUCTION-SIGNING-
-# CUSTODIAN1-ENCRYPTED-VAULT-1 built for it. Two encrypted backups were written
-# to their destinations, and BOTH were restored FROM THE DESTINATION COPY — not
-# from the staging source — and proven to yield a usable private key.
+# Nothing outside this repository. No key was generated, no vault was opened, no
+# PKCS12 was read, no password was typed, no APK was built, no tablet was
+# touched. This sprint takes one DECISION about a key that already exists.
 #
 # alias  daengtisia-clinic-release
 # key    RSA 4096, PKCS12 PrivateKeyEntry, self-signed
 # sha256 79db269b7cd38e920b80efbcf2f59142721f1e57924d3048d07a862f34fea2d9
 #
-# A certificate fingerprint is a PUBLIC identifier; it ships inside every signed
-# APK. The private key, the keystore and every password are not in this
-# repository, not on the production VPS and not in CI. The vault and backup
-# passphrases were typed at a real TTY and are not known to any agent.
-#
-# The key is PERMANENT. key_loss_recoverable is false and app_signing_key_
-# rotation is constrained_treat_as_permanent. There is no second attempt, and a
-# second signer is never the fix for a failing gate.
+# That fingerprint is a PUBLIC identifier — it ships inside every signed APK, so
+# committing it discloses nothing. The private key, the keystore and every
+# password remain out of git, off the production VPS and out of CI, and no
+# control added here can be evaluated only with them.
 #
 # WHAT THIS SPRINT DOES.
 #
-# It records that state, and closes the gate defects that recording it exposed.
+# 1. ARMS THE PIN. signing.production_certificate_sha256 moves from null to the
+#    fingerprint above — the same certificate as ..._recorded, which the custody
+#    state machine already refuses to let disagree. RECORDED (a fact about a key
+#    that exists) and PINNED (a decision to enforce) stay two fields; both are
+#    now true, which is exactly when a split like that stops being scrutinised,
+#    so it is asserted structurally rather than by opposite values.
 #
-# 1. signing_custody_ready_for_provisioning demanded status == 'ready_for_
-#    provisioning' EXACTLY, so it went red the moment the lifecycle it guards
-#    moved forward. It now asserts the preconditions — every destination still
-#    prepared, custody at or past readiness — and still fails below readiness.
+# 2. ONE SEMANTIC, ASKED IN ONE PLACE. "Is this a fingerprint, and is it the
+#    same one?" previously had four answers: the scanner's case-insensitive
+#    regex, the verifier's own inline copy of it, the lifecycle's
+#    is_string && !== '', and a case-SENSITIVE regex for the recorded value.
+#    They are now one class, App\Support\Android\AndroidCertificateFingerprint,
+#    and reporting and enforcement both ask it — so PRODUCTION_CERTIFICATE_PINNED
+#    cannot report armed for a value the verifier is rejecting.
 #
-# 2. custody_state_machine_consistent required a provisioned key to have a
-#    certificate PINNED. That made "the key exists" unstateable without also
-#    arming android:verify-release, which would have pushed an operator to pin a
-#    certificate before the pinning task reviewed anything. The claim is split:
+#    isPresent() SURVIVES ON PURPOSE and is not a weaker isValid(). The
+#    lifecycle needs junk to count as a CLAIM so 'TBD' written with no key still
+#    trips "pinned while no key is claimed provisioned". Merging them is a
+#    fail-open regression that reads as a cleanup; a mutation test kills it.
 #
-#      production_certificate_sha256_recorded = FACT     (set)
-#      production_certificate_sha256          = DECISION (still null)
+# 3. FIXES A LATENT VALIDATION DEFECT FOUND BY THE NEW TESTS. Both replaced
+#    regexes lacked the D modifier, so PHP's $ also matched before a trailing
+#    newline and "<64 hex>\n" validated. The anchor would report ARMED and the
+#    comparison would then fail, telling an operator the APK was signed by a
+#    DIFFERENT KEY. A newline in config would have been reported as a
+#    substituted signing key.
 #
-#    Four rules bind the pair in both directions, the recorded value must be a
-#    real fingerprint, and a test proves the verifier does not fall back to it.
-#
-# 3. NEW custody_status_matches_recorded_facts. Every state past readiness could
-#    previously be declared with nothing behind it — status => 'operational'
-#    with all six flags false contradicted no rule, and the summary line a human
-#    reads would have announced it. Requirements are cumulative; the rule is
-#    one-directional (a status may lag the facts, never lead them).
+# 4. STOPS A CONTAINMENT CHECK FREEZING A VALUE IT DOES NOT OWN.
+#    preflight_unlocks_nothing demanded the pin be null forever. The predecessor
+#    already corrected that line's MESSAGE when the key was provisioned; the
+#    CONDITION still read the pin, so this sprint hit the same wall one field
+#    later. It is REPLACED, not deleted (Rule 147): the pin must be absent or
+#    exactly the recorded production certificate — strictly narrower than "null"
+#    was broad. A rogue well-formed anchor and junk both still go red, and two
+#    tests exist solely to prove that gap was not orphaned.
 #
 # STILL FALSE, AND ASSERTED FALSE.
 #
-# Certificate pinned (production_certificate_sha256 stays null, so
-# android:verify-release authenticates nothing and fails closed), production APK
-# built or signed, artifact distributed, device enrolled, pilot enforcement
-# activation, global enforcement activation.
+# Production APK built, signed or distributed; tablet touched; ADB used; device
+# enrolled; pilot enforcement activated; global enforcement activated.
 #
 # DEVICE_ENFORCEMENT_ACTIVE=false, DOCTOR_BROWSER_LOGIN_DENIED=false,
-# enforcement.current_stage=off. No tablet was touched, no ADB, no Device Owner.
+# enforcement.current_stage=off, owner_signoff.pilot_activated=false.
 # drg Karmila at Cabang Sunu is unaffected.
 #
-# NEXT TASK: PRODUCTION-ANDROID-SIGNING-CERTIFICATE-PIN-1. It is deliberately
+# Reading PRODUCTION_CERTIFICATE_PINNED=true as permission to build, install or
+# enforce is the specific misreading rule 148 exists to prevent.
+#
+# NEXT TASK: PRODUCTION-ANDROID-RELEASE-APK-EVIDENCE-1. It is deliberately
 # separate and must not be folded into anything else.

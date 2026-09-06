@@ -156,11 +156,26 @@ it('records the production certificate fingerprint as a lower-case sha-256', fun
 it('keeps the certificate recorded and the certificate pinned as separate facts', function () {
     $summary = provisioningScan()['summary'];
 
+    // PRODUCTION-ANDROID-SIGNING-CERTIFICATE-PIN-1 took the deferred decision,
+    // so both lines now read true. That is the moment a split like this stops
+    // being scrutinised, so it is asserted STRUCTURALLY rather than by opposite
+    // values: two independent fields, reported on two independent lines,
+    // holding the same certificate because one is the fact and the other is the
+    // decision taken about it.
     expect($summary['production_certificate_recorded'])->toBeTrue();
-    expect($summary['production_certificate_pinned'])->toBeFalse();
+    expect($summary['production_certificate_pinned'])->toBeTrue();
 
-    // The pin is the enforcement decision, deferred to the next task.
-    expect(config('android_release.signing.production_certificate_sha256'))->toBeNull();
+    expect(config('android_release.signing.production_certificate_sha256'))
+        ->toBe(config('android_release.signing.production_certificate_sha256_recorded'));
+
+    // The fields remain distinct keys, not one aliased to the other. If they
+    // ever collapse, "the key exists" and "the install path is armed" become
+    // one claim again, which is the coupling the split exists to prevent.
+    $signing = config('android_release.signing');
+
+    expect(array_key_exists('production_certificate_sha256', $signing))->toBeTrue();
+    expect(array_key_exists('production_certificate_sha256_recorded', $signing))->toBeTrue();
+
     expect(config('android_release.signing.production_certificate_pin_required_before_install'))->toBeTrue();
 });
 
@@ -172,7 +187,15 @@ it('does not let the recorded fingerprint arm the release verifier', function ()
     // would have nothing left to decide. Authenticity has to come from the
     // explicit pin, never from a governance record that happens to hold the
     // right hex.
-    expect(config('android_release.signing.production_certificate_sha256'))->toBeNull();
+    //
+    // PRODUCTION-ANDROID-SIGNING-CERTIFICATE-PIN-1 armed the pin, which would
+    // have made this test unable to tell the difference: with a pin set, the
+    // verifier arming proves nothing about whether it read the pin or the
+    // evidence field. So the no-pin condition is now ESTABLISHED here rather
+    // than inherited from the shipped config. The invariant stays testable for
+    // the life of the repository instead of only while the pin happened to be
+    // null.
+    config()->set('android_release.signing.production_certificate_sha256', null);
 
     $recorded = (string) config('android_release.signing.production_certificate_sha256_recorded');
     expect($recorded)->toMatch('/^[0-9a-f]{64}$/');
@@ -301,8 +324,28 @@ it('refuses a later custody state that skips an earlier requirement', function (
 
     // And `operational` additionally needs the certificate armed: a key no
     // installer can verify an artifact against is not operational, whatever
-    // the backups say. The pin is null, so this must fail today.
-    expect(provisioningCustodyStatus(['status' => 'operational']))->toBe('FAIL');
+    // the backups say.
+    //
+    // PRODUCTION-ANDROID-SIGNING-CERTIFICATE-PIN-1 armed it, so a single
+    // assertion of FAIL would now be asserting a stale value rather than the
+    // rule. The rule is asserted by MUTATION instead, in both directions —
+    // which is what the original line was reaching for and could only
+    // approximate while the pin happened to be null.
+    $withoutPin = config('android_release.signing.production_certificate_sha256');
+
+    config()->set('android_release.signing.production_certificate_sha256', null);
+
+    try {
+        expect(provisioningCustodyStatus(['status' => 'operational']))->toBe('FAIL');
+    } finally {
+        config()->set('android_release.signing.production_certificate_sha256', $withoutPin);
+    }
+
+    // With the anchor armed, the same claim is supported. The record itself
+    // still says `recovery_verified`: a status is allowed to lag its facts, and
+    // moving it is a custody decision this task has no authority to take.
+    expect(provisioningCustodyStatus(['status' => 'operational']))->toBe('PASS');
+    expect(config('android_release.signing.custody.status'))->toBe('recovery_verified');
 });
 
 it('does not make a status below readiness claim artifacts it never mentioned', function () {

@@ -106,10 +106,21 @@ a clinic tablet, not a cloud VM or container. Custodians 2 and 3 are
 destinations; they never sign.
 
 **READY IS NOT CREATED.** A destination being ready means it is prepared to
-receive a copy. As of this record there is no production signing key, no backup
-copy on any medium, no rehearsed recovery, and
-`production_certificate_sha256` is null. Anyone reading "custody ready" as
+receive a copy. As originally recorded there was no production signing key, no
+backup copy on any medium, no rehearsed recovery, and
+`production_certificate_sha256` was null. Anyone reading "custody ready" as
 "three encrypted backups exist in three buildings" has been misled — see §7.
+
+> **SUPERSEDED FORWARD.** PRODUCTION-ANDROID-SIGNING-KEY-PROVISIONING-1
+> generated the key and recorded its certificate; custody is at
+> `recovery_verified` with both encrypted backups created and recovery verified
+> from the destination copies. PRODUCTION-ANDROID-SIGNING-CERTIFICATE-PIN-1 then
+> **armed the pin**: `production_certificate_sha256` is
+> `79db269b7cd38e920b80efbcf2f59142721f1e57924d3048d07a862f34fea2d9`, the same
+> certificate as `..._recorded`, so `android:verify-release` can now authenticate
+> an artifact. The paragraph above is retained as the record of what was true
+> when written. Pinning armed the verifier and nothing else — no production APK
+> has been built or installed, no device enrolled, and doctor enforcement is off.
 
 ### 2.2 Two recorded exceptions
 

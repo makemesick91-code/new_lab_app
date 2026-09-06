@@ -12,6 +12,14 @@ alwaysApply: false
 
 # The production Android signing key exists
 
+> **SUPERSEDED FORWARD, IN PART, by rule 148**
+> (`PRODUCTION-ANDROID-SIGNING-CERTIFICATE-PIN-1`). The certificate is **now
+> PINNED**. §3's table entry of `null` and §6's "certificate pinned" line were
+> accurate when written and are no longer — read rule 148 for the pin's rules.
+> Everything else here stands unchanged, and §1 in particular: there is exactly
+> one production signing key, it is permanent, and a second one must never be
+> generated. Rule 148 governs the DECISION taken about that key, never the key.
+
 PRODUCTION-ANDROID-SIGNING-KEY-PROVISIONING-1. Supersedes, forward and never by
 rewriting, every earlier record that says no production key exists — including
 rules 145 and 146, which were accurate when written.

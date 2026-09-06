@@ -243,8 +243,17 @@ it('does not let storage readiness imply any backup or verified recovery', funct
 });
 
 it('does not let storage readiness pin the production certificate', function () {
-    // V10 / M12. The install trust root stays fail-closed.
-    expect(config('android_release.signing.production_certificate_sha256'))->toBeNull();
+    // V10 / M12. The install trust root was fail-closed for as long as there
+    // was nothing to point at, and PRODUCTION-ANDROID-SIGNING-CERTIFICATE-PIN-1
+    // armed it under its own authority.
+    //
+    // That does not retire this test, it sharpens it. What the storage sprint
+    // must never have done is INTRODUCE an anchor of its own, so the assertion
+    // is that whatever is pinned is the certificate custody recorded — the one
+    // belonging to the key that exists — and not some value a vault-readiness
+    // change put there.
+    expect(config('android_release.signing.production_certificate_sha256'))
+        ->toBe(config('android_release.signing.production_certificate_sha256_recorded'));
     expect(config('android_release.signing.production_certificate_pin_required_before_install'))->toBeTrue();
 });
 
@@ -381,11 +390,12 @@ it('leaves the whole release readiness report green without inventing a key', fu
     // genuinely closed. That precondition still holds after provisioning, and
     // the check now says so without re-asserting that no key exists.
     expect($scan['summary']['signing_custody_provisioning_preconditions_met'])->toBeTrue();
-    // The vault sprint did not create a key, and this suite must not be the
-    // place that asserts whether one exists now — the custody suite owns that
-    // fact. What stays pinned here is everything the STORAGE gap closing must
-    // not have moved on its own.
-    expect($scan['summary']['production_certificate_pinned'])->toBeFalse();
+    // The vault sprint did not create a key or arm an anchor, and this suite
+    // must not be the place that asserts whether either exists now — the
+    // custody and pinning suites own those facts. What stays pinned here is
+    // everything the STORAGE gap closing must not have moved on its own, and
+    // both of these remain false regardless of what the signing chain has since
+    // legitimately advanced.
     expect($scan['summary']['real_device_validation'])->toBeFalse();
     expect($scan['summary']['device_enforcement_active'])->toBeFalse();
 });

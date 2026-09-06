@@ -401,13 +401,24 @@ it('provisions no production key and pins no certificate', function () {
     // PRODUCTION-ANDROID-SIGNING-KEY-PROVISIONING-1 later generated the key,
     // on a separate authority, so `production_signing_key_provisioned` is now
     // true and asserting it false here would pin a stale fact rather than this
-    // suite's own invariant. What the preflight must still not have moved is
-    // the PIN — the control that arms `android:verify-release` — and the
-    // recorded `unlocks` block, both of which are asserted below and by
-    // `preflight_unlocks_nothing`.
-    expect(config('android_release.signing.production_certificate_sha256'))->toBeNull();
+    // suite's own invariant.
+    //
+    // PRODUCTION-ANDROID-SIGNING-CERTIFICATE-PIN-1 then armed the PIN, also on
+    // a separate authority, and the same reasoning applies a second time —
+    // more sharply, because this suite had explicitly named the pin as the
+    // thing it would keep asserting. Keeping `toBeNull()` here would not have
+    // been conservatism: it would have made an authorised pinning decision
+    // read as a hardware preflight that unlocked signing, which is a false
+    // accusation on the exact message an operator would act on hardest.
+    //
+    // What this suite can still honestly assert is that the anchor in force is
+    // the AUTHORISED one — the certificate custody records — and not something
+    // this preflight introduced. That is the invariant, and it is the same one
+    // `preflight_unlocks_nothing` now enforces.
+    expect(config('android_release.signing.production_certificate_sha256'))
+        ->toBe(config('android_release.signing.production_certificate_sha256_recorded'));
     expect(config('android_release.signing.production_certificate_pin_required_before_install'))->toBeTrue();
-    expect(preflightScan()['summary']['production_certificate_pinned'])->toBeFalse();
+    expect(preflightCheck('preflight_unlocks_nothing')['status'])->toBe('PASS');
 
     // The preflight's own containment record: it unlocked none of these,
     // whatever a later authorised task went on to do.

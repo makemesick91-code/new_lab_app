@@ -1228,7 +1228,15 @@ class AndroidReleaseGovernanceScanner
         $certificate = config('android_release.signing.production_certificate_sha256');
         $recordedCertificate = config('android_release.signing.production_certificate_sha256_recorded');
         $keyProvisioned = ($custody['production_signing_key_provisioned'] ?? null) === true;
-        $pinned = is_string($certificate) && $certificate !== '';
+
+        // PRESENCE, not validity, and PRODUCTION-ANDROID-SIGNING-CERTIFICATE-
+        // PIN-1 deliberately left it that way while making it explicit. The
+        // ordering rules below have to treat junk as a CLAIM: a pin of 'TBD'
+        // written while no key exists must still trip "pinned while no key is
+        // claimed provisioned". Tightening this to isValid() would have made
+        // that junk invisible to the very rule that catches it — a fail-open
+        // relaxation dressed as a cleanup.
+        $pinned = AndroidCertificateFingerprint::isPresent($certificate);
 
         // PRODUCTION-ANDROID-SIGNING-KEY-PROVISIONING-1.
         //
@@ -1236,8 +1244,14 @@ class AndroidReleaseGovernanceScanner
         // non-empty string. `'yes'` and `'TBD'` would otherwise satisfy "a
         // certificate is recorded" and let a key be claimed with no evidence
         // that one was ever generated.
-        $recorded = is_string($recordedCertificate)
-            && preg_match('/^[0-9a-f]{64}$/', $recordedCertificate) === 1;
+        // PRODUCTION-ANDROID-SIGNING-CERTIFICATE-PIN-1 also corrected the CASE
+        // here. This regex had no `i` flag while the summary line derived from
+        // the same field did, so an upper-case recorded value — the form
+        // `keytool -list` prints — reported PRODUCTION_CERTIFICATE_RECORDED=true
+        // and, in the same scan, "key claimed provisioned while no valid
+        // certificate fingerprint is recorded". One field, two verdicts, both
+        // printed. Case is representation, not identity.
+        $recorded = AndroidCertificateFingerprint::isValid($recordedCertificate);
 
         $anyBackup = ($custody['backup_1_key_copy_created'] ?? null) === true
             || ($custody['backup_2_key_copy_created'] ?? null) === true
@@ -1290,8 +1304,7 @@ class AndroidReleaseGovernanceScanner
         // a correct pin differing only in case would otherwise be reported as
         // "the wrong key or a substituted one" — a false accusation of
         // substitution, on the one message an operator would act on hardest.
-        if ($pinned && $recorded
-            && strtolower((string) $certificate) !== strtolower((string) $recordedCertificate)) {
+        if ($pinned && $recorded && ! AndroidCertificateFingerprint::matches($certificate, $recordedCertificate)) {
             $inconsistencies[] = 'the pinned certificate does not match the recorded production certificate';
         }
 
@@ -1649,7 +1662,50 @@ class AndroidReleaseGovernanceScanner
      */
     private function isCertificateFingerprint(mixed $value): bool
     {
-        return is_string($value) && preg_match('/^[0-9a-f]{64}$/i', $value) === 1;
+        // PRODUCTION-ANDROID-SIGNING-CERTIFICATE-PIN-1 moved the definition out
+        // of this class. It is kept as a named method because the checks read
+        // better for it, but it no longer OWNS the rule: the verifier asks the
+        // same object, so the report and the control cannot drift apart
+        // without AndroidCertificateFingerprint changing.
+        return AndroidCertificateFingerprint::isValid($value);
+    }
+
+    /**
+     * Whether the configured trust anchor is one the real-device preflight
+     * could lawfully have left behind.
+     *
+     * This REPLACES `production_certificate_sha256 === null` in
+     * `preflight_unlocks_nothing`, and the replacement is the point. Rule 147
+     * is that relaxing a predicate orphans the gap a sibling was quietly
+     * covering, so this is not a deletion: the check still asserts STATE, and
+     * the state it now demands is strictly narrower than "null" was broad.
+     *
+     * Two values are containable. Absent — the preflight introduced nothing.
+     * Or exactly the RECORDED production certificate — the anchor is the key
+     * custody says exists, pinned by the separately authorised pinning task.
+     * Anything else is precisely what "the preflight introduced a trust anchor"
+     * would look like: a well-formed fingerprint that is not ours, or junk in
+     * the field, and both stay red.
+     *
+     * What it deliberately does NOT try to do is decide whether the pin is
+     * authentic. That belongs to `custody_state_machine_consistent`, which
+     * already requires the pin to equal the recorded certificate AND the key to
+     * be provisioned, and which is a stronger owner of the question than a
+     * containment check could be. This one answers only "did the hardware gate
+     * move it", and it answers it without reading a private key.
+     */
+    private function noUnauthorisedTrustAnchor(): bool
+    {
+        $pin = config('android_release.signing.production_certificate_sha256');
+
+        if ($pin === null) {
+            return true;
+        }
+
+        return AndroidCertificateFingerprint::matches(
+            $pin,
+            config('android_release.signing.production_certificate_sha256_recorded'),
+        );
     }
 
     /**
@@ -1978,7 +2034,7 @@ class AndroidReleaseGovernanceScanner
 
         $contained = $unlocks !== []
             && $claimed === []
-            && config('android_release.signing.production_certificate_sha256') === null
+            && $this->noUnauthorisedTrustAnchor()
             && ($evidence['production_device_identity_created'] ?? null) === false
             && ($evidence['keyinfo_probe_committed'] ?? null) === false
             && config('android_release.enforcement.owner_signoff.pilot_activated') === false
@@ -1991,15 +2047,23 @@ class AndroidReleaseGovernanceScanner
             $contained
                 // PRODUCTION-ANDROID-SIGNING-KEY-PROVISIONING-1 removed the
                 // words "no production key" from this line. `$contained`
-                // never read the custody key flag — it reads the PIN — so the
+                // never read the custody key flag — it read the PIN — so the
                 // claim was always wider than the evidence, and once a key
                 // existed (created by a separate authorised task, not by this
                 // preflight) it became simply untrue. A message must describe
                 // what its own condition verified.
-                ? 'The hardware gate closed and moved nothing else: no certificate pin, no production device identity, no probe committed, and the enforcement ladder is still off.'
+                //
+                // PRODUCTION-ANDROID-SIGNING-CERTIFICATE-PIN-1 hit the same
+                // wall one field later, and fixing the message a second time
+                // would not have been enough: the CONDITION still demanded the
+                // pin be null forever, so an authorised pinning decision would
+                // have been reported as a preflight that unlocked signing.
+                // See `noUnauthorisedTrustAnchor()` for why this is a stricter
+                // assertion rather than a removed one.
+                ? 'The hardware gate closed and moved nothing else: no trust anchor it had no authority to introduce, no production device identity, no probe committed, and the enforcement ladder is still off.'
                 : ($claimed !== []
                     ? 'A real-device preflight pass is recorded as unlocking: '.implode(', ', $claimed).'. It unlocks none of them.'
-                    : 'A real-device preflight pass has been read as unlocking signing, enrolment or enforcement, or the containment record is missing. It unlocks none of them.'),
+                    : 'A real-device preflight pass has been read as unlocking signing, enrolment or enforcement, or an unauthorised trust anchor is configured, or the containment record is missing. It unlocks none of them.'),
         );
 
         return $checks;
