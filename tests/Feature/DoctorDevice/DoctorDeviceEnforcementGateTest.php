@@ -51,6 +51,32 @@ function enforceDeviceLock(bool $on): void
     $flags[DoctorAppLoginGate::ENFORCEMENT_FLAG]['env_value'] = $on;
 
     config()->set('feature_flags.flags', $flags);
+
+    // PHASE4A-DOCTOR-ANDROID-PILOT-PREPARATION-1 — the scope this file's
+    // assertions have always assumed, now stated.
+    //
+    // Every assertion below this helper is about enforcement applying to a
+    // doctor because they hold the Doctor role. That used to be the only thing
+    // the flag could mean. It no longer is: enforcement is now scoped, and the
+    // committed default is a pilot scope with no target, which covers nobody.
+    //
+    // So this helper declares the FLEET-WIDE scope explicitly. Nothing here is
+    // weakened — the same doctors are enforced for the same reasons — but a test
+    // that asserts fleet-wide denial should have to say that it wants fleet-wide
+    // denial, rather than getting it from a default. `Phase4aPilotPreparation
+    // Test` owns the pilot-scoped behaviour.
+    // Both halves: the mode is a runtime value, fleet-wide permission is a
+    // source-controlled one. Fleet-wide denial needs both, which is why arming
+    // the enforcement flag alone can no longer lock a fleet out.
+    config()->set('doctor_device_enforcement.scope', array_merge(
+        (array) config('doctor_device_enforcement.scope'),
+        ['mode' => 'unscoped'],
+    ));
+
+    config()->set('android_release.enforcement.scope', array_merge(
+        (array) config('android_release.enforcement.scope'),
+        ['global_permitted' => true],
+    ));
 }
 
 function gateFixture(): array

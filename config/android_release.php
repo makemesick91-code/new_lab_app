@@ -592,13 +592,39 @@ return [
     */
     'device_management' => [
         'supported_models' => [
+            // PHASE4A-DOCTOR-ANDROID-PILOT-PREPARATION-1 — the pilot model.
+            //
+            // An existing, in-use tablet. The production-signed APK is
+            // installed alongside whatever else is on the device, no reset, no
+            // Device Owner, no lock task. It is listed FIRST because it is the
+            // only model the Phase 4A pilot may use, and the owner has refused
+            // a factory reset for that pilot.
+            'self_owned_non_destructive',
             // Factory reset, no accounts, our own ClinicDeviceAdminReceiver
-            // becomes Device Owner. Works for the pilot and for the fleet.
+            // becomes Device Owner. Still the model for a DEDICATED clinic
+            // device, and still where the six deferred kiosk acceptance checks
+            // in `phase_4a.deferred_to_dedicated_device_phase` are proved.
             'self_owned_device_owner',
             // Available if the owner later adopts an EMM. Not required.
             'emm_managed_dedicated_device',
         ],
-        'pilot_model' => 'self_owned_device_owner',
+
+        // CHANGED by PHASE4A-DOCTOR-ANDROID-PILOT-PREPARATION-1, from
+        // 'self_owned_device_owner'.
+        //
+        // Android grants Device Owner only on a device with no accounts on it,
+        // which in practice means immediately after a factory reset. The owner
+        // has refused a factory reset for this pilot, and the pilot tablet is
+        // already in use. So the previous value described a pilot that could
+        // not be run: an activation agent reading it had to wipe the device
+        // against an explicit instruction, record six acceptance checks as PASS
+        // falsely, or stall. See `phase_4a` for what replaces the properties
+        // Device Owner was providing.
+        'pilot_model' => 'self_owned_non_destructive',
+
+        // Unchanged. A dedicated, wiped, Device-Owner tablet is still the right
+        // answer for a rolled-out fleet; it is just not available for a pilot
+        // on a tablet that is already in service.
         'fleet_model' => 'self_owned_device_owner',
 
         // Advisory, not a gate. Phase 3.5's `scale_model_required_at_devices`
@@ -1235,6 +1261,298 @@ return [
             'device_loss_runbook_rehearsed',
             'rollback_to_browser_login_proven',
         ],
+
+        /*
+        | WHO enforcement applies to.
+        |
+        | PHASE4A-DOCTOR-ANDROID-PILOT-PREPARATION-1. `stages` above has listed
+        | `pilot_branch_or_device` since Phase 3.5, and nothing implemented it:
+        | `doctor.trusted_device_enforcement` is one boolean, and its registry
+        | entry says plainly that turning it on "DENIES browser login for every
+        | account holding the Doctor role". The two reachable states were
+        | therefore nobody and everybody. `App\Support\Android\
+        | AndroidDoctorEnforcementScope` reads this block and turns the middle
+        | stage into something real.
+        |
+        | Both values below have to be changed for a fleet-wide denial to be
+        | possible, and neither of them is the enforcement flag. Arming the flag
+        | on its own can no longer lock a fleet out.
+        */
+        'scope' => [
+            // The POLICY only. This file never reads the environment, on
+            // purpose: `android:release-readiness` must be safe to run on a fork
+            // pull request, and that property is kept with a bright line rather
+            // than a per-key judgement about which environment reads happen to
+            // be harmless. An asserted absence of environment reads is worth
+            // more than an audited list of permitted ones — and the governance
+            // suite enforces exactly that on this file, so the prose here avoids
+            // the function-call spelling it forbids.
+            //
+            // The host-set values — which mode, and which doctor — live in the
+            // runtime config named here.
+            'runtime_config' => 'doctor_device_enforcement',
+
+            'modes' => ['pilot', 'unscoped'],
+
+            // What a deployment gets when it declares nothing: a pilot scope
+            // with no target, which enforces for nobody.
+            'default_mode' => 'pilot',
+
+            // Fleet-wide denial, and deliberately NOT reachable from the
+            // environment.
+            //
+            // Every doctor in every branch is the blast radius, so flipping this
+            // is a source-control change that goes through review — not a
+            // variable somebody sets on a host at 2am during an incident.
+            // Phase 5, once `global_prerequisites` above are met.
+            'global_permitted' => false,
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Phase 4A — the non-destructive doctor pilot
+    |--------------------------------------------------------------------------
+    |
+    | PHASE4A-DOCTOR-ANDROID-PILOT-PREPARATION-1.
+    |
+    | THE DEFECT THIS BLOCK EXISTS TO FIX.
+    |
+    | `pilot.acceptance_checks` records thirty-three checks for Phase 4A. Six of
+    | them — device_owner_established, lock_task_active, home_escape_blocked,
+    | recents_escape_blocked, external_browser_escape_blocked and
+    | reboot_returns_to_clinic_app — are Device Owner and lock-task properties.
+    | Android grants Device Owner only on a device carrying no accounts, i.e.
+    | after a factory reset. The owner has refused a factory reset for this
+    | pilot and the tablet is already in service, so those six checks were
+    | unsatisfiable and the recorded pilot could not be run as written.
+    |
+    | RULE 147 — WHAT THE DEFERRAL GIVES UP.
+    |
+    | Deleting six checks is the easy half. Lock task was also the thing that
+    | physically stopped a doctor reaching a browser, so removing it moves the
+    | app-only boundary entirely onto the server. That boundary does hold there:
+    | DoctorAppLoginGate denies a browser session from the ABSENCE of a
+    | server-verified device binding, re-checks it on every protected request,
+    | and a signature over a server-issued nonce is the only thing that can
+    | create one. Leaving the app is not a bypass, because leaving the app
+    | grants nothing.
+    |
+    | But it holds only while enforcement is actually armed FOR THIS DOCTOR, and
+    | that is what `enforcement.scope` had no way to express. Without kiosk and
+    | without scoping there was no state in which "app-only pilot" was true:
+    | either every doctor in every branch was denied a browser, or the pilot
+    | doctor could simply open Chrome. So the deferral and the scope mechanism
+    | are one change, not two.
+    |
+    */
+    'phase_4a' => [
+        'model' => 'self_owned_non_destructive',
+
+        // The owner's decision, recorded so it cannot be re-litigated by
+        // someone reading only the fleet model.
+        'factory_reset_required' => false,
+        'device_owner_required' => false,
+        'full_kiosk_required' => false,
+        'managed_google_play_required' => false,
+
+        // Logical label only. `real_device_preflight.device_serial_may_be_
+        // committed` is false and stays false: a serial in source control is a
+        // hardware identifier nobody needs in order to run a pilot.
+        'pilot_device_label' => 'PHASE4A_PILOT_TABLET_01',
+
+        // Moved OUT of Phase 4A, not deleted. They remain the acceptance
+        // criteria for a dedicated, wiped, Device-Owner device, and they remain
+        // listed in `pilot.acceptance_checks` as the historical Phase 3.5
+        // record. A check that is deferred is a check somebody still owes.
+        'deferred_to_dedicated_device_phase' => [
+            'device_owner_established',
+            'lock_task_active',
+            'home_escape_blocked',
+            'recents_escape_blocked',
+            'external_browser_escape_blocked',
+            'reboot_returns_to_clinic_app',
+        ],
+
+        // What replaces them. The first three are device hygiene an operator
+        // performs by hand because no Device Owner policy is there to enforce
+        // it. The last two are the ones that actually matter: without kiosk,
+        // app-only is a server property, and a server property that is not
+        // armed for the pilot doctor is not a property at all.
+        'compensating_controls' => [
+            'device_screen_lock_enabled',
+            'usb_debugging_disabled_and_verified',
+            'install_unknown_sources_permission_revoked_after_install',
+            'app_only_boundary_enforced_server_side',
+            'pilot_enforcement_scope_armed_before_app_only_claimed',
+        ],
+
+        // The Phase 4A matrix: the twenty-seven applicable Phase 3.5 checks,
+        // plus seven the non-destructive model introduces. Executed by the
+        // ACTIVATION sprint, never by this one.
+        'acceptance_checks' => [
+            'artifact_signed_by_production_authority',
+            'signing_certificate_fingerprint_recorded',
+            'apk_sha256_verified_before_install',
+            'release_manifest_verified_before_install',
+            'direct_install_performed_by_authorized_admin',
+            'adb_debugging_disabled_after_provisioning',
+            'in_place_update_preserved_device_enrolment',
+            'real_android_keystore_identity_generated',
+            'hardware_backed_result_recorded_truthfully',
+            'strongbox_result_recorded_truthfully',
+            'external_origin_blocked',
+            'cleartext_blocked',
+            'tls_error_fails_closed',
+            'device_enrolment_verified',
+            'device_active_accepted',
+            'device_disabled_denied',
+            'device_revoked_denied',
+            'doctor_login_through_trusted_device',
+            'daily_branch_lock_verified',
+            'device_branch_intersection_verified',
+            'room_selection_verified',
+            'other_room_patients_hidden',
+            'cross_room_direct_access_denied',
+            'doctor_rme_print_denied',
+            'doctor_odontogram_print_denied',
+            'session_invalidated_after_revoke',
+            'rollback_verified',
+
+            // New, and specific to a device that was not wiped.
+            'device_screen_lock_verified',
+            'usb_debugging_disabled_verified',
+            'unknown_sources_permission_revoked_after_install',
+            'pilot_enforcement_scope_armed_for_pilot_doctor_only',
+            'pilot_doctor_browser_login_denied',
+            // The one that proves the scope mechanism did its job. A doctor at
+            // another branch must still be able to log in through a browser
+            // while the pilot is enforced. If this fails, the pilot has become
+            // a fleet-wide lockout.
+            'non_pilot_doctor_browser_login_still_works',
+            'pilot_enforcement_disarmed_on_rollback',
+        ],
+
+        // Run in this order before the APK is allowed near the tablet. Every
+        // comparison is exact and full-length; a prefix match on a fingerprint
+        // is not a verification.
+        // The subset the readiness gate insists on. Declared here rather than
+        // inline in the scanner so the scanner's own source never carries the
+        // tool names it is asserted not to invoke — the Phase 3 self-match
+        // failure class, which cost a working TLS guard its life.
+        'preinstall_verification_required' => [
+            'apk_sha256',
+            'apksigner_verify',
+            'signer_matches_pinned_certificate',
+            'application_id',
+            'version_code',
+        ],
+
+        'preinstall_verification' => [
+            'apk_filename',
+            'apk_sha256',
+            'apksigner_verify',
+            'signer_certificate_sha256',
+            'signer_matches_pinned_certificate',
+            'application_id',
+            'version_name',
+            'version_code',
+        ],
+
+        // Everything this sprint did NOT do. Asserted false by the readiness
+        // gate, so "prepared" can never be read as "started".
+        'activation_boundary' => [
+            'apk_distributed' => false,
+            'apk_installed' => false,
+            'tablet_touched' => false,
+            'adb_used' => false,
+            'device_enrolled' => false,
+            'pilot_activated' => false,
+            'pilot_browser_denial_active' => false,
+            'global_enforcement_active' => false,
+        ],
+
+        'preparation' => [
+            'states' => [
+                'off',
+                'preparation',
+                'ready_for_pilot',
+                'activation',
+                'pilot_active',
+                'stabilization',
+                'phase4a_go',
+            ],
+
+            // Where this sprint stops.
+            'state' => 'ready_for_pilot',
+            'terminal_preparation_state' => 'ready_for_pilot',
+
+            // Rule 147: an unrecognised state must not be read as ready, and a
+            // state at or past activation must not be reachable by a sprint
+            // that touched no hardware. Listed explicitly rather than derived
+            // from position, because a reordering of `states` would otherwise
+            // silently change which ones imply a running pilot.
+            'states_that_imply_activation' => [
+                'activation',
+                'pilot_active',
+                'stabilization',
+                'phase4a_go',
+            ],
+
+            'requires_signing_key_access' => false,
+            'requires_device_access' => false,
+            'requires_adb' => false,
+        ],
+
+        /*
+        | Rollback, decided before activation rather than during an incident.
+        |
+        | Uninstall is absent from every routine route on purpose: it destroys
+        | the Android Keystore identity and the enrolment with it, so the cheap
+        | reflex is the one that costs a re-enrolment.
+        */
+        'rollback' => [
+            'server_side_pilot_problem' => 'Set the enforcement scope mode away from pilot, or clear ANDROID_PILOT_ENFORCEMENT_DOCTOR_USER_ID, and clear the config cache. The pilot doctor returns to browser login immediately. No device is unenrolled and no authorization is altered.',
+            'device_authorization_problem' => 'Disable or revoke the (doctor, device) authorization through Approval Device Dokter. The open session stops on its next protected request because the gate re-checks the binding every time. The device and its key survive.',
+            'bad_apk_behaviour' => 'Forward-fix. Build a new APK from the same application id and the same signing identity with a strictly higher versionCode, and update in place. Never a downgrade and never an uninstall.',
+            'app_unusable' => 'Disarm pilot enforcement first so the doctor can work in a browser the same minute, then diagnose the app with no clinical time pressure. Do not uninstall to "start clean".',
+            'signer_mismatch' => 'STOP. A different signer cannot update in place, and uninstalling to force it destroys the device identity. Do not re-sign and do not uninstall; establish which artifact is wrong first.',
+            'device_identity_lost' => 'Treat as a new device: enrol again, approve the new (doctor, device) pair through Approval Device Dokter, and record why the previous identity was lost. Installation alone restores no trust.',
+        ],
+
+        // The recorded release manifest, named outright.
+        //
+        // The first version of the preparation scanner interpolated a version
+        // string from config into this path. Nothing could reach that config in
+        // production, so it was not exploitable — but it was a path assembled
+        // from a value, in a class whose entire claim is that it only reads, and
+        // the scanner now refuses anything that is not exactly this basename
+        // inside exactly this directory. A read-only auditor should not have a
+        // traversal surface to argue about.
+        'release_manifest' => 'docs/evidence/android-release/DaengtisiaMS-Clinic-v0.3.0-phase3.release.json',
+        'release_manifest_directory' => 'docs/evidence/android-release',
+
+        'operator_checklist' => 'docs/runbooks/android-phase4a-pilot-activation-checklist.md',
+
+        // Of the events below, these three must be individually accountable: an
+        // approval with no named approver and a rejection with no recorded
+        // reason are the two that get re-litigated a month later.
+        'audit_events_mandatory' => [
+            'authorization_approved',
+            'authorization_rejected_with_reason',
+            'session_invalidated_with_reason',
+        ],
+
+        'audit_events_required' => [
+            'device_enrollment_requested',
+            'authorization_pending_created',
+            'authorization_approved',
+            'authorization_rejected_with_reason',
+            'device_disabled',
+            'device_revoked',
+            'session_invalidated_with_reason',
+            'pilot_enforcement_scope_changed',
+        ],
     ],
 
     /*
@@ -1344,6 +1662,23 @@ return [
             'proguardFiles',
         ],
 
+        // The canonical Device Owner / lock-task acceptance checks.
+        //
+        // PHASE4A-DOCTOR-ANDROID-PILOT-PREPARATION-1 first had the scanner walk
+        // `phase_4a.deferred_to_dedicated_device_phase` to prove nothing was
+        // dropped, which proves nothing: deleting an entry from the list also
+        // deletes it from the loop, and the requirement vanishes silently. The
+        // authority for WHICH checks are owed has to sit outside the list that
+        // says where they went.
+        'dedicated_device_kiosk_checks' => [
+            'device_owner_established',
+            'lock_task_active',
+            'home_escape_blocked',
+            'recents_escape_blocked',
+            'external_browser_escape_blocked',
+            'reboot_returns_to_clinic_app',
+        ],
+
         'required_documents' => [
             'docs/governance/android-production-signing-governance.md',
             'docs/adr/0009-android-production-signing-distribution-and-device-management.md',
@@ -1359,6 +1694,13 @@ return [
             'docs/sprints/revision-android-release-readiness-phase4a-pilot-authority-1.md',
             'docs/sprints/evidence-phase4a-real-device-keyinfo-preflight-1.md',
             'docs/sprints/production-android-signing-custody-readiness-1.md',
+            // PHASE4A-DOCTOR-ANDROID-PILOT-PREPARATION-1. The checklist is
+            // listed here as well as in `phase_4a.operator_checklist` on
+            // purpose: the activation sprint is told to follow it line by line,
+            // and a runbook that can go missing without reddening a gate is a
+            // runbook that will go missing.
+            'docs/runbooks/android-phase4a-pilot-activation-checklist.md',
+            'docs/sprints/phase4a-doctor-android-pilot-preparation-1.md',
         ],
 
         // ------------------------------------------------------------------

@@ -1,39 +1,34 @@
-# Active sprint manifest — PRODUCTION-ANDROID-RELEASE-APK-EVIDENCE-1
+# Active sprint manifest — PHASE4A-DOCTOR-ANDROID-PILOT-PREPARATION-1
 # Validated by: php artisan sprint:manifest-check
 
-id: PRODUCTION-ANDROID-RELEASE-APK-EVIDENCE-1
-# NOT DOCS_ONLY and not a refactor. This sprint makes the production release
-# build possible for the first time, adds the check that would have caught its
-# absence, binds the artifact to the tree that produced it, and turns a
-# prohibition that failed twice as prose into a mechanical gate.
+id: PHASE4A-DOCTOR-ANDROID-PILOT-PREPARATION-1
+# NOT DOCS_ONLY. This sprint changes the runtime authority on WHICH doctors are
+# subject to device enforcement, so it is a security sprint even though nothing it
+# ships is armed. The recorded Phase 4A pilot could not be run at all; fixing that
+# required an actual mechanism, not a document.
 type: SECURITY_FIX
 module: DoctorDevice
-title: "Make the production release APK buildable and its provenance provable: the proguard file the build named but never had, the check that would have caught it, a two-commit release-source model, and a mechanical refusal to run an interactive REPL on production"
+title: "Make the Phase 4A doctor pilot runnable without wiping the tablet: defer the Device Owner acceptance checks, and give enforcement the pilot scope its own stage list has claimed since Phase 3.5"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-runtime_change: true            # new deploy guard + artisan gate, new scanner check, new verifier check, three scripts rewired
+runtime_change: true            # new scope resolver consulted by DoctorAppLoginGate, new scanner, new artisan gate
 schema_change: false            # no migration, no table, no column
 frontend_change: false          # no Blade, no JS, no CSS, no asset build
-security_impact: true           # the release trust chain, and a production execution guard
-branch_isolation_impact: false  # BranchContext untouched
+security_impact: true           # who doctor device enforcement applies to
+branch_isolation_impact: false  # BranchContext untouched; the pilot branch code is advisory only
 ledger_impact: false            # no inventory ledger / billing / payment behaviour change
+deploy_required: true           # config and runtime reach production, inert
+browser_required: false         # no UI surface added
 
-deploy_required: true           # the guard and the gates must be the ones production actually runs
-browser_required: false         # console commands, config and scripts; verified through feature tests
-
-go_tag: production-android-release-apk-evidence-1-go
-
-# CEREMONY COMPLETE. The APK was built from RELEASE_SOURCE 1fecab7b (tree
-# 0f6544f2, CI 34018374405) and signed by the existing permanent production
-# key. This evidence commit is the FINAL CANDIDATE and did NOT build the APK.
-
-test_profiles:
-  - security
+# Created only after production verification, never before.
+go_tag: phase4a-doctor-android-pilot-preparation-1-go
 
 # Carried forward. `.sprint/current.yml` is a rolling file, so these inherited
 # facts have to be restated by every sprint after closure — dropping one is
 # precisely the quiet contradiction LegacyRmeProgramClosureContractTest exists
-# to catch.
+# to catch. This sprint dropped the whole block on its first candidate and that
+# gate caught it, which is the gate working; restating all of them rather than
+# only the asserted one is the point.
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
 inherits_hold: FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1/FIX-02
 inherits_phase: feature-doctor-trusted-android-device-lock-1-phase-3-5-readiness-go
@@ -42,46 +37,45 @@ inherits_custody: production-android-signing-custody-readiness-1-go
 inherits_vault: revision-production-signing-custodian1-encrypted-vault-1-go
 inherits_key: production-android-signing-key-provisioning-1-go
 inherits_pin: production-android-signing-certificate-pin-1-go
+inherits_release_artifact: production-android-release-apk-evidence-1-go
 
-# WHAT CHANGED IN THE WORLD.
-#
-# Nothing outside this repository, and nothing signed. No key was generated, no
-# vault was opened, no PKCS12 was read, no password was typed, no tablet was
-# touched, no APK was distributed. An UNSIGNED release APK was compiled from
-# this tree for the first time in the project's history.
-#
-# THE FINDING.
-#
-# `assembleRelease` had never succeeded. app/build.gradle.kts named
-# `proguard-rules.pro`; the file was never committed, so the build died at
-# :app:minifyReleaseWithR8. Three sprints built an artifact verifier, a signer
-# resolver, a certificate pin and a 42-check readiness gate that reported GO
-# around an artifact that could not be produced on any of those days.
-#
-# Governance missed it because `required_release_block_markers` proves the
-# release block CONTAINS the string `proguardFiles` and nothing proved the file
-# it NAMES exists. That is rule 147's orphaned predicate, second instance.
-#
-# WHAT THIS SPRINT DOES.
-#
-# 1. Adds proguard-rules.pro, minimal by verification: the wire protocol is
-#    built from string literals, so R8 cannot alter a byte the device signs.
-# 2. Adds release_proguard_files_present, which walks balanced parentheses
-#    because a naive regex stops at getDefaultProguardFile's close paren.
-# 3. Renames the manifest's ambiguous `git_commit` to release_source_sha and
-#    adds release_source_tree, declaring the two-commit provenance model: the
-#    tree that BUILT the artifact is not the evidence commit that DESCRIBES it.
-# 4. Turns "never run an interactive REPL on production" into a gate that runs
-#    before the deploy runner opens a connection — and removes the three
-#    tracked scripts that were doing exactly that, two of them in order to ask
-#    whether they were running on production.
-#
-# STILL FALSE, AND ASSERTED FALSE.
-#
-# APK signed, distributed or installed; tablet touched; ADB used; device
-# enrolled; pilot enforcement activated; global enforcement activated.
-# DEVICE_ENFORCEMENT_ACTIVE=false.
-#
-# The signing ceremony is a human custodian action and is deliberately NOT part
-# of this candidate. RELEASE SOURCE is frozen and CI-green BEFORE signing; the
-# evidence commit comes after and is a SECOND commit.
+notes: |
+  THE FINDING.
+
+  `device_management.pilot_model` was `self_owned_device_owner`, and six of the
+  thirty-three recorded `pilot.acceptance_checks` are Device Owner / lock-task
+  properties. Android grants Device Owner only on a device carrying no accounts,
+  i.e. immediately after a factory reset. The owner refused a factory reset for
+  this pilot and the tablet is already in service, so those six checks were
+  unsatisfiable and the recorded pilot was unrunnable. An existing test pinned the
+  unrunnable value in place. Rule 147's orphaned-predicate class, third instance.
+
+  THE HALF THAT MATTERED MORE.
+
+  Lock task was also what physically kept a doctor away from a browser, so
+  deferring it moves the app-only boundary entirely onto the server. It holds
+  there — a browser session is denied from the ABSENCE of a server-verified device
+  binding, re-checked on every protected request — but only while enforcement is
+  armed FOR THAT DOCTOR. The only switch was one global boolean that denies browser
+  login to every Doctor-role account. So the two reachable states were a fleet-wide
+  clinical lockout, or an "app-only pilot" in which the doctor can simply open
+  Chrome. The deferral and the pilot-scoping mechanism are one change, not two.
+
+  WHAT CHANGED IN THE WORLD.
+
+  Nothing outside this repository. No tablet was touched, no ADB was run, no APK
+  was distributed, installed, rebuilt or re-signed, no device was enrolled, no
+  authorization was approved, no enforcement was armed, no vault was opened and no
+  signing key was read.
+
+  STILL FALSE, AND ASSERTED FALSE.
+
+  apk_distributed, apk_installed, tablet_touched, adb_used, device_enrolled,
+  pilot_activated, pilot_browser_denial_active, global_enforcement_active — all
+  eight asserted by `activation_boundary_all_false`. The preparation lifecycle
+  stops at `ready_for_pilot`, and an unrecognised state is a FAIL rather than a
+  pass.
+
+  Fleet-wide denial is deliberately NOT reachable from a host: `global_permitted`
+  lives in the governance record, which never reads the environment, so widening
+  enforcement to every doctor costs a reviewed source-control change.

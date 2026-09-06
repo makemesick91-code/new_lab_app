@@ -8,6 +8,7 @@ use App\Modules\DoctorDevice\Interfaces\DoctorDeviceAuthorizationRepositoryInter
 use App\Modules\DoctorDevice\Models\DoctorDevice;
 use App\Modules\DoctorDevice\Models\DoctorDeviceAuthorization;
 use App\Services\Foundation\FeatureFlagService;
+use App\Support\Android\AndroidDoctorEnforcementScope;
 use Illuminate\Http\Request;
 
 /**
@@ -67,6 +68,7 @@ class DoctorAppLoginGate
         private readonly FeatureFlagService $flags,
         private readonly DoctorIdentityResolver $doctors,
         private readonly DoctorDeviceAuthorizationRepositoryInterface $authorizations,
+        private readonly AndroidDoctorEnforcementScope $scope,
     ) {}
 
     /**
@@ -96,6 +98,38 @@ class DoctorAppLoginGate
     }
 
     /**
+     * Does enforcement apply to THIS doctor, on this deployment?
+     *
+     * PHASE4A-DOCTOR-ANDROID-PILOT-PREPARATION-1. `appliesTo()` answers "is
+     * this account subject to the doctor device rules at all", which is a
+     * question about the role. This answers "is enforcement switched on for
+     * them", which is a question about the rollout — and until now there was no
+     * way to ask it. One boolean meant a pilot could only be run by denying
+     * browser login to every doctor in every branch at once.
+     *
+     * A Phase 4A pilot on a tablet that was not wiped needs this. Lock task was
+     * what physically kept a doctor away from a browser; without it, app-only
+     * is exactly this decision and nothing else. Enforcing it for one doctor is
+     * the difference between a pilot and a fleet-wide clinical lockout.
+     *
+     * Composed with `appliesTo()` rather than folded into it, because the role
+     * question has other callers whose meaning must not change.
+     *
+     * Decided from the user id alone. No query: `denyBrowserSessionReason()`
+     * promises to return before touching the database, and a scope check that
+     * loaded a doctor record would quietly break that promise for every
+     * request.
+     */
+    public function inEnforcementScope(User $user): bool
+    {
+        if (! $this->appliesTo($user)) {
+            return false;
+        }
+
+        return $this->scope->coversUser((int) $user->id);
+    }
+
+    /**
      * May this user hold an ordinary browser session?
      *
      * Returns null when yes, or a deny code when no. The caller is responsible
@@ -107,7 +141,10 @@ class DoctorAppLoginGate
             return null;
         }
 
-        if (! $this->appliesTo($user)) {
+        // Role AND rollout scope. A doctor outside the declared scope keeps
+        // browser login exactly as they have it today, which is what makes a
+        // one-doctor pilot possible at all.
+        if (! $this->inEnforcementScope($user)) {
             return null;
         }
 
@@ -136,7 +173,10 @@ class DoctorAppLoginGate
             return null;
         }
 
-        if (! $this->appliesTo($user)) {
+        // Same narrowing as the browser path. Checked here too rather than at
+        // login only: enforcement that applied at sign-in and then stopped
+        // being re-evaluated is enforcement a session outlives.
+        if (! $this->inEnforcementScope($user)) {
             return null;
         }
 
