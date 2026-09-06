@@ -47,18 +47,56 @@
                         </div>
 
                         <div class="mt-3 flex flex-wrap items-end gap-3">
-                            <form method="POST" action="{{ route('settings.doctor-device-enrollments.approve', $enrollment) }}" class="flex items-end gap-2">
+                            @php
+                                // Devices that can still receive a key: ACTIVE and not yet bound.
+                                $pairable = $devices->filter(
+                                    fn ($candidate) => $candidate->isActive() && $candidate->public_key_fingerprint === null,
+                                );
+                            @endphp
+
+                            <form method="POST"
+                                  action="{{ route('settings.doctor-device-enrollments.approve', $enrollment) }}"
+                                  class="flex flex-wrap items-end gap-2"
+                                  x-data="{ mode: '{{ $pairable->isEmpty() ? 'new' : 'existing' }}' }">
                                 @csrf
-                                <x-ui.select name="doctor_device_id" label="Pasangkan ke perangkat" required>
-                                    <option value="">Pilih perangkat</option>
-                                    @foreach ($devices as $candidate)
-                                        @if ($candidate->isActive() && $candidate->public_key_fingerprint === null)
-                                            <option value="{{ $candidate->id }}">{{ $candidate->device_name }} - {{ $candidate->branch?->name }}</option>
-                                        @endif
-                                    @endforeach
+
+                                {{-- PHASE4A-DOCTOR-ANDROID-PILOT-ACTIVATION-1 — the registry can be
+                                     empty, and on a new deployment it always is for the first device.
+                                     Offering only a dropdown made that device unapprovable. --}}
+                                <x-ui.select name="pair_mode" label="Cara pasangkan" x-model="mode">
+                                    <option value="existing" @disabled($pairable->isEmpty())>Perangkat terdaftar</option>
+                                    <option value="new">Daftarkan perangkat baru</option>
                                 </x-ui.select>
+
+                                <div x-show="mode === 'existing'" x-cloak>
+                                    <x-ui.select name="doctor_device_id" label="Pasangkan ke perangkat">
+                                        <option value="">Pilih perangkat</option>
+                                        @foreach ($pairable as $candidate)
+                                            <option value="{{ $candidate->id }}">{{ $candidate->device_name }} - {{ $candidate->branch?->name }}</option>
+                                        @endforeach
+                                    </x-ui.select>
+                                </div>
+
+                                <div x-show="mode === 'new'" x-cloak class="flex flex-wrap items-end gap-2">
+                                    <x-ui.input name="device_name" label="Nama perangkat baru" placeholder="mis. PHASE4A_PILOT_TABLET_01" />
+                                    <x-ui.select name="branch_id" label="Cabang pemilik">
+                                        <option value="">Pilih cabang</option>
+                                        @foreach ($branches as $branch)
+                                            <option value="{{ $branch->id }}">{{ $branch->name }}</option>
+                                        @endforeach
+                                    </x-ui.select>
+                                </div>
+
                                 <x-ui.button type="submit" variant="success" size="sm">Setujui</x-ui.button>
                             </form>
+
+                            @if ($pairable->isEmpty())
+                                <p class="w-full text-xs text-ink-soft">
+                                    Belum ada perangkat terdaftar yang bisa dipasangkan, jadi permintaan ini
+                                    akan mendaftarkan perangkat baru. Identitas kunci diambil dari permintaan
+                                    yang sudah terverifikasi &mdash; nama dan cabang hanya label administratif.
+                                </p>
+                            @endif
 
                             <form method="POST" action="{{ route('settings.doctor-device-enrollments.reject', $enrollment) }}" class="flex items-end gap-2">
                                 @csrf

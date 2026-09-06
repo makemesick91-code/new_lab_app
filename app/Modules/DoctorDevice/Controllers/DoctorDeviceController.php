@@ -143,12 +143,29 @@ class DoctorDeviceController extends Controller
         ApproveDoctorDeviceEnrollmentRequest $request,
         DoctorDeviceEnrollment $enrollment,
     ): RedirectResponse {
-        $device = DoctorDevice::query()->findOrFail($request->validated()['doctor_device_id']);
+        $validated = $request->validated();
 
-        $this->enrollments->approve($enrollment, $device, $request->user());
+        // PHASE4A-DOCTOR-ANDROID-PILOT-ACTIVATION-1 — two ways in, one binding
+        // path. An existing ACTIVE registry row, or a row created for this
+        // pairing when the registry has nothing to offer. Either way the key
+        // itself is bound by the service, from the verified enrolment.
+        $approved = $request->createsNewDevice()
+            ? $this->enrollments->approveIntoNewDevice(
+                $enrollment,
+                [
+                    'device_name' => $validated['device_name'],
+                    'branch_id' => (int) $validated['branch_id'],
+                ],
+                $request->user(),
+            )
+            : $this->enrollments->approve(
+                $enrollment,
+                DoctorDevice::query()->findOrFail($validated['doctor_device_id']),
+                $request->user(),
+            );
 
         return redirect()
-            ->route('settings.doctor-devices.show', $device)
+            ->route('settings.doctor-devices.show', $approved->doctor_device_id)
             ->with('status', 'Pendaftaran perangkat disetujui. Perangkat harus membuktikan kunci sebelum terverifikasi.');
     }
 
