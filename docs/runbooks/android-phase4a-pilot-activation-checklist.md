@@ -158,6 +158,14 @@ workstation does **not** hold the signing key.
 - [ ] **F9.** Doctor cannot print or download RME, RM, PDF or odontogram — check
       the route and the endpoint, not only the hidden button.
 - [ ] **F10.** Device screen lock, USB debugging off, unknown-sources revoked.
+- [ ] **F11.** Confirm the audit trail actually recorded the run. Every event in
+      `android_release.phase_4a.audit_events_required` must be present for this
+      pilot, and three of them are individually accountable
+      (`audit_events_mandatory`): who approved, who rejected **and why**, and why
+      a session was invalidated. A pilot with no approver named and no rejection
+      reason recorded is a pilot that gets re-litigated a month from now.
+      Record the logical device label — never a serial, an IMEI, a MAC or an
+      Android ID.
 
 ## G. Rollback — decided now, not during the incident
 
@@ -174,11 +182,12 @@ Uninstall appears in no routine route above, on purpose.
 
 ## H. GO / NO-GO
 
-GO requires every box in A, B, C, D, E and F ticked, including **F8**.
+GO requires every box in A, B, C, D, E and F ticked, including **F8** and **F11**.
 
 NO-GO on any of: a digest or signer mismatch; a factory reset performed; Device
 Owner provisioned; fleet-wide enforcement armed; F8 failing; a rejection recorded
-without a reason; a revoked device usable; a doctor able to print.
+without a reason; a missing mandatory audit event; a revoked device usable; a
+doctor able to print.
 
 The pilot is not GO because the app installed. It is GO when the boundary has
 been demonstrated in both directions — the pilot doctor denied a browser, and

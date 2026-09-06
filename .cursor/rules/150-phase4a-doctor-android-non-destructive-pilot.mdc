@@ -151,6 +151,19 @@ Keystore device identity and the enrolment with it**. Clearing app data does the
 same. Installation alone restores no trust. Uninstall appears in no routine
 rollback route.
 
+## The pilot has to leave a trail
+
+`phase_4a.audit_events_required` lists the eight events the activation sprint owes:
+enrolment requested, PENDING created, approved, **rejected with a reason**, device
+disabled, device revoked, **session invalidated with a reason**, and pilot
+enforcement scope changed. Three of those are mandatory
+(`phase_4a.audit_events_mandatory`) and the readiness gate FAILS if they are not
+declared — an approval with no named approver and a rejection with no recorded
+reason are exactly the two decisions that get re-litigated later.
+
+Record the logical device label. Never a serial, an IMEI, a MAC or an Android ID,
+and never a challenge nonce or signature beyond what the decision needed.
+
 ## Running the pilot
 
 Follow `docs/runbooks/android-phase4a-pilot-activation-checklist.md` line by line.
