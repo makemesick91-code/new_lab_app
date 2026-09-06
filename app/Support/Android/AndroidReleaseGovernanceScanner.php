@@ -267,7 +267,102 @@ class AndroidReleaseGovernanceScanner
                 : 'Release build type references debug signing: '.implode(', ', $found),
         );
 
+        // A release block may NAME a proguard file that is not in the tree.
+        // `required_release_block_markers` proves the block mentions
+        // `proguardFiles`; it cannot prove the file that call names exists.
+        // That gap shipped: the block referenced `proguard-rules.pro` while
+        // the file was absent, so `:app:minifyReleaseWithR8` failed and no
+        // production APK could be built, while this scanner reported GO.
+        $referenced = $this->localProguardReferences($releaseBlock);
+
+        $appDirectory = dirname($path);
+
+        $missing = array_values(array_filter(
+            $referenced,
+            fn (string $name): bool => ! is_file($appDirectory.'/'.$name),
+        ));
+
+        $checks[] = $this->check(
+            'release_proguard_files_present',
+            $missing === [] ? 'PASS' : 'FAIL',
+            $referenced === []
+                ? 'Release build type names no repository-local proguard file.'
+                : ($missing === []
+                    ? 'Release build type names proguard files, all present in the tree: '.implode(', ', $referenced).'.'
+                    : 'Release build type names proguard files absent from the tree: '.implode(', ', $missing).'. The release build cannot be assembled.'),
+        );
+
         return $checks;
+    }
+
+    /**
+     * The repository-local proguard files a release block references.
+     *
+     * `getDefaultProguardFile(...)` is deliberately excluded: it resolves
+     * inside the Android SDK, not this repository, so demanding it exist here
+     * would redden every correct build file — and a control that reddens on
+     * obedience is one people learn to delete.
+     *
+     * Parsed by walking balanced parentheses rather than with one regex,
+     * because the argument list legitimately nests a call of its own and a
+     * naive `\(([^)]*)\)` stops at the FIRST close paren — which belongs to
+     * `getDefaultProguardFile`, silently truncating the list before the
+     * repository-local file it was supposed to check.
+     *
+     * @return array<int,string>
+     */
+    public function localProguardReferences(string $releaseBlock): array
+    {
+        $references = [];
+        $offset = 0;
+        $length = strlen($releaseBlock);
+
+        // `proguardFile` rather than `proguardFiles`: Gradle accepts both the
+        // singular and the plural, and the singular is a prefix of the plural.
+        while (($start = strpos($releaseBlock, 'proguardFile', $offset)) !== false) {
+            $open = strpos($releaseBlock, '(', $start);
+
+            if ($open === false) {
+                break;
+            }
+
+            $depth = 0;
+            $end = null;
+
+            for ($index = $open; $index < $length; $index++) {
+                if ($releaseBlock[$index] === '(') {
+                    $depth++;
+                } elseif ($releaseBlock[$index] === ')') {
+                    $depth--;
+
+                    if ($depth === 0) {
+                        $end = $index;
+
+                        break;
+                    }
+                }
+            }
+
+            if ($end === null) {
+                break;
+            }
+
+            $arguments = (string) preg_replace(
+                '/getDefaultProguardFile\s*\([^)]*\)/',
+                '',
+                substr($releaseBlock, $open + 1, $end - $open - 1),
+            );
+
+            if (preg_match_all('/"([^"\r\n]+)"/', $arguments, $matches) > 0) {
+                foreach ($matches[1] as $name) {
+                    $references[] = $name;
+                }
+            }
+
+            $offset = $end + 1;
+        }
+
+        return array_values(array_unique($references));
     }
 
     /**

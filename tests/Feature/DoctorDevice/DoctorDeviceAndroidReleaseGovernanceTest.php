@@ -701,3 +701,90 @@ it('shells out only to read-only git subcommands', function () {
     // straight through it.
     Process::assertNotRan(fn ($process): bool => $subcommand($process) !== ['git', 'ls-files']);
 });
+
+// ---------------------------------------------------------------------------
+// PRODUCTION-ANDROID-RELEASE-APK-EVIDENCE-1 — a named proguard file that is
+// not actually in the repository
+// ---------------------------------------------------------------------------
+
+/**
+ * `required_release_block_markers` already proves the release block MENTIONS
+ * `proguardFiles`. It cannot prove the file that call names exists, and that
+ * gap shipped: the release block referenced `proguard-rules.pro` while the
+ * file was absent from git, so `:app:minifyReleaseWithR8` failed and no
+ * production APK could be built — while every Android governance check
+ * reported GO. A marker that proves a string is present, next to no check
+ * that the thing it names exists, is the orphaned predicate rule 147 is about.
+ */
+function androidScannerAt(string $basePath): AndroidReleaseGovernanceScanner
+{
+    return new AndroidReleaseGovernanceScanner(new KotlinSourceScanner, $basePath);
+}
+
+it('proves every proguard file the release block names is actually in the tree', function () {
+    $check = androidCheck('release_proguard_files_present');
+
+    expect($check['status'])->toBe('PASS');
+
+    // Non-vacuity. A parser that extracted nothing would also report PASS, and
+    // would have reported PASS on the very tree that could not build. The
+    // detail has to name the file it resolved, or this assertion is theatre.
+    expect($check['detail'])->toContain('proguard-rules.pro');
+});
+
+it('does not mistake the SDK default proguard file for a repository file', function () {
+    // getDefaultProguardFile() resolves inside the Android SDK, not the repo.
+    // Demanding it exist here would redden every correct build file on earth,
+    // and a control that reddens on obedience gets deleted.
+    $refs = androidScannerAt(base_path())->localProguardReferences(<<<'KOTLIN'
+        isMinifyEnabled = true
+        proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+    KOTLIN);
+
+    expect($refs)->toBe(['proguard-rules.pro']);
+});
+
+it('detects a release block naming a proguard file that does not exist', function () {
+    // The assertion above is only worth anything if the scan can see the
+    // violation. Prove it on a tree that reproduces the shipped defect.
+    $base = sys_get_temp_dir().'/android-proguard-'.bin2hex(random_bytes(6));
+    $module = $base.'/android/daengtisia-clinic/app';
+
+    mkdir($module, 0o755, true);
+    file_put_contents($module.'/build.gradle.kts', <<<'KOTLIN'
+    android {
+        buildTypes {
+            release {
+                isMinifyEnabled = true
+                proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            }
+        }
+    }
+    KOTLIN);
+
+    try {
+        // Deliberately NOT creating proguard-rules.pro.
+        $missing = collect(androidScannerAt($base)->scan()['checks'])
+            ->firstWhere('id', 'release_proguard_files_present');
+
+        expect($missing)->not->toBeNull('The check vanished when pointed at another tree.');
+        expect($missing['status'])->toBe('FAIL');
+        expect($missing['detail'])->toContain('proguard-rules.pro');
+
+        // And it goes green the moment the named file is there — otherwise the
+        // check is just a constant FAIL that says nothing about this tree.
+        file_put_contents($module.'/proguard-rules.pro', "# rules\n");
+
+        $present = collect(androidScannerAt($base)->scan()['checks'])
+            ->firstWhere('id', 'release_proguard_files_present');
+
+        expect($present['status'])->toBe('PASS');
+    } finally {
+        @unlink($module.'/proguard-rules.pro');
+        @unlink($module.'/build.gradle.kts');
+        @rmdir($module);
+        @rmdir($base.'/android/daengtisia-clinic');
+        @rmdir($base.'/android');
+        @rmdir($base);
+    }
+});
