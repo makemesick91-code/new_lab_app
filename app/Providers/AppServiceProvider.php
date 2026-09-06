@@ -6,9 +6,12 @@ use App\Modules\Prescription\Gateways\CloudApiWhatsAppGateway;
 use App\Modules\Prescription\Gateways\DisabledWhatsAppGateway;
 use App\Modules\Prescription\Gateways\FakeWhatsAppGateway;
 use App\Modules\Prescription\Gateways\WhatsAppGatewayInterface;
+use App\Services\Foundation\FeatureFlagService;
+use App\Support\Android\AndroidDoctorEnforcementScope;
 use App\Support\Android\AndroidReleaseGovernanceScanner;
 use App\Support\Android\ApksignerFingerprintResolver;
 use App\Support\Android\KotlinSourceScanner;
+use App\Support\Android\Phase4aPilotPreparationScanner;
 use App\Support\Android\SignerFingerprintResolver;
 use App\Support\Deploy\ProductionShellCommandGuard;
 use App\Support\DeveloperConsole\SensitiveValueMasker;
@@ -41,6 +44,19 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(
             AndroidReleaseGovernanceScanner::class,
             fn ($app) => new AndroidReleaseGovernanceScanner($app->make(KotlinSourceScanner::class), base_path()),
+        );
+
+        // PHASE4A-DOCTOR-ANDROID-PILOT-PREPARATION-1. Same reason as the
+        // scanner above: the base path is a constructor argument rather than a
+        // `base_path()` call inside the class, so a test can point it somewhere
+        // else without reaching into the container.
+        $this->app->bind(
+            Phase4aPilotPreparationScanner::class,
+            fn ($app) => new Phase4aPilotPreparationScanner(
+                $app->make(FeatureFlagService::class),
+                $app->make(AndroidDoctorEnforcementScope::class),
+                base_path(),
+            ),
         );
 
         // REVISION-DOCTOR-ANDROID-DIRECT-APK-SIGNING-DISTRIBUTION-1 — the

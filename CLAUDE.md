@@ -2365,3 +2365,98 @@ The custodian performed the ceremony. **The first production-signed DaengtisiaMS
 **Do not pin evidence tests to live `git HEAD`.** A "release source ≠ current commit" assertion only holds *after* the evidence commit exists, so it fails on the very tree about to be committed. Pin the known historical SHA/tree instead — that catches the real risk (an edit swapping in the evidence commit's own sha) without making a security assertion depend on git state.
 
 `approval_status: approved` gates whether a sanctioned release **may** be installed; it is **not** a record that anything was. Rollout stays false and is asserted so by test: distributed/tablet/adb/pilot/global all false, `DEVICE_ENFORCEMENT_ACTIVE=false`. **Next task: PHASE4A-DOCTOR-ANDROID-PILOT-PREPARATION-1 — do not begin it automatically.**
+
+## PHASE4A-DOCTOR-ANDROID-PILOT-PREPARATION-1 — non-destructive doctor Android pilot, prepared and inert (2026-09-06)
+
+Branch `feature/phase4a-doctor-android-pilot-preparation-1` (base
+`feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report`,
+baseline `production-android-release-apk-evidence-1-go` @ `724e8308`; do NOT target
+main). Sprint doc `docs/sprints/phase4a-doctor-android-pilot-preparation-1.md`;
+operator checklist `docs/runbooks/android-phase4a-pilot-activation-checklist.md`;
+rule mirror `.cursor/rules/150-phase4a-doctor-android-non-destructive-pilot.mdc`.
+**Preparation only — no tablet touched, no ADB, no APK distributed or installed,
+no device enrolled, no pilot activated, no enforcement armed, no signing key
+accessed, no migration.**
+
+**The defect.** `device_management.pilot_model` was `self_owned_device_owner` and
+six of the thirty-three recorded `pilot.acceptance_checks` are Device Owner /
+lock-task properties (`device_owner_established`, `lock_task_active`,
+`home_escape_blocked`, `recents_escape_blocked`,
+`external_browser_escape_blocked`, `reboot_returns_to_clinic_app`). Android grants
+Device Owner only on a device with no accounts, i.e. after a factory reset; the
+owner refused a factory reset and the pilot tablet is already in service. So the
+recorded pilot was unrunnable: wipe the tablet against instruction, mark six checks
+PASS falsely, or stall. Rule 147's orphaned-predicate class, third instance — an
+existing test pinned `pilot_model` to the unrunnable value.
+
+**The half that mattered (rule 147 sibling audit).** Lock task was also what
+physically kept a doctor away from a browser, so the deferral moves the app-only
+boundary entirely onto the server. It does hold there — `DoctorAppLoginGate`
+denies a browser session from the ABSENCE of a server-verified device binding and
+re-checks every protected request — but only while enforcement is armed FOR THAT
+DOCTOR, and `doctor.trusted_device_enforcement` is one global boolean that "DENIES
+browser login for every account holding the Doctor role". `enforcement.stages` had
+listed `pilot_branch_or_device` since Phase 3.5 with nothing implementing it. The
+only two reachable states were fleet-wide clinical lockout, or an "app-only pilot"
+where the doctor can just open Chrome. **The deferral and the scoping mechanism are
+one change.**
+
+**Changes.** `config/android_release.php`: `supported_models` gains
+`self_owned_non_destructive` (pilot points at it; `fleet_model` unchanged); new
+`phase_4a` block (non-destructive decision, 6 deferred kiosk checks, 5
+compensating controls, 34-check acceptance matrix, preinstall verification,
+8-claim activation boundary, preparation lifecycle stopping at `ready_for_pilot`,
+6-case rollback matrix, mandatory audit events, explicitly-named release
+manifest); `scanner.dedicated_device_kiosk_checks` as the canonical deferral
+authority; `enforcement.scope` policy (modes, `default_mode` `pilot`,
+`global_permitted` **false**). New `config/doctor_device_enforcement.php` holds the
+two host values. New `App\Support\Android\AndroidDoctorEnforcementScope` (only ever
+NARROWS; unusable/unknown config covers nobody). `DoctorAppLoginGate::
+inEnforcementScope()` composed with the existing `appliesTo()` and consulted by
+both deny paths. New `Phase4aPilotPreparationScanner` +
+`php artisan android:phase4a-pilot-readiness` (`--json`, `--strict`), separate from
+`android:release-readiness` because "can a release be MADE" and "can a pilot be
+STARTED" must be able to disagree.
+
+**Durable rules.** (1) Phase 4A is non-destructive: factory reset / Device Owner /
+kiosk all false; `fleet_model` is not permission to wipe the pilot device. (2) The
+six kiosk checks are deferred, never deleted, and the deferral is proven against
+`scanner.dedicated_device_kiosk_checks`, never against the deferral list itself.
+(3) Without kiosk, app-only is a server decision and is true only while the pilot
+scope is armed. (4) Scope the enforcement, clear the cache, verify, THEN arm the
+flag — arming it while the scope covers nobody enforces nothing. (5) The scope only
+narrows; it never reads a request. (6) **`config/android_release.php` must never
+read the environment** — the readiness gate must be fork-PR-safe, and the
+governance suite pattern-matches the function-call spelling even inside a comment
+(this sprint tripped it twice). (7) `global_permitted` lives in the governance
+record, so a fleet-wide clinical lockout is **not reachable from a host** — it costs
+a reviewed source-control change. (8) The scope fails toward "enforce nobody"
+because a fleet lockout is a clinical incident while "enforce nobody" is today's
+posture; the silent-no-op cost is paid by `enforcement_inactive` FAILING when the
+flag is armed with an unusable scope, and by checklist step F8 requiring proof that
+a non-pilot doctor can still use a browser. (9) Preparation ≠ activation; approved ≠
+distributed; an unrecognised lifecycle state is a FAIL. (10) Preinstall comparisons
+are exact and full-length, against the pin in source control, never the manifest
+copy. (11) Uninstall and clear-data destroy the Keystore device identity — never a
+routine rollback. (12) Pilot authority: drg Karmila / Cabang Sunu /
+`PHASE4A_PILOT_TABLET_01`; no serial/IMEI/MAC/Android ID committed.
+
+**Sibling assertions repinned:** `DoctorDeviceAndroidReleaseGovernanceTest`
+`pilot_model` pin (it *was* the defect); `enforceDeviceLock()` in
+`DoctorDeviceEnforcementGateTest` now declares the fleet-wide scope explicitly
+(one helper, 11 call sites, no assertion weakened — a test asserting fleet denial
+should have to say so).
+
+**Validation.** `Phase4aPilotPreparationTest` 54 tests; `tests/Feature/DoctorDevice`
+green. Mutation campaign 28 mutants: **27 killed, 1 equivalent** (an unreachable
+`match` default arm guarded by `isUsable()`, documented in place so nobody hunts it
+again) — real survivors **0**. Four survivors from the first pass were real test
+gaps and were closed: a prefix-matched signer, a truncated-but-hex digest, a
+traversal path resolving to a valid manifest, and the browser-path scope check
+(whose only test called the scope helper directly instead of
+`denyBrowserSessionReason`). Two governance rules were unpinned and are now pinned
+by exact list (`audit_events_mandatory`, `dedicated_device_kiosk_checks`) — a rule
+validated only by its own consumer is not pinned.
+
+**Next:** `PHASE4A-DOCTOR-ANDROID-PILOT-ACTIVATION-1`, following the operator
+checklist line by line. It must not start as a side effect of this sprint.

@@ -96,7 +96,16 @@ it('keeps the release source access-controlled rather than a chat attachment', f
 });
 
 it('records a device management model and refuses dismissible kiosk mechanisms', function () {
-    expect(config('android_release.device_management.pilot_model'))->toBe('self_owned_device_owner');
+    // REPINNED by PHASE4A-DOCTOR-ANDROID-PILOT-PREPARATION-1, from
+    // 'self_owned_device_owner'.
+    //
+    // This assertion was holding the defect in place. Device Owner is granted
+    // only on a device with no accounts on it, i.e. after a factory reset; the
+    // owner refused a factory reset for the Phase 4A pilot and the tablet is
+    // already in service. So this line pinned a pilot model that made six of the
+    // recorded acceptance checks unsatisfiable. The dedicated-device model is
+    // unchanged and still lives in `fleet_model` below.
+    expect(config('android_release.device_management.pilot_model'))->toBe('self_owned_non_destructive');
     // The Phase-3.5 "EMM required at 5 devices" rule was a Managed Google Play
     // dependency wearing a device costume — it came from the distribution
     // channel, not from kiosk needs. Advisory now, and never mandatory.

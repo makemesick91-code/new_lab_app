@@ -1,0 +1,158 @@
+---
+description: The Phase 4A doctor Android pilot is NON-DESTRUCTIVE — no factory reset, no Device Owner, no kiosk — so the app-only boundary is a server decision and nothing else, and doctor device enforcement must be scoped to one doctor before it is armed. Preparation is not activation, an approved APK is not a distributed one, and fleet-wide denial is not reachable from a host.
+globs:
+  - "config/android_release.php"
+  - "config/doctor_device_enforcement.php"
+  - "app/Support/Android/**"
+  - "app/Modules/DoctorDevice/**"
+  - "app/Console/Commands/Android*.php"
+  - "docs/runbooks/android-phase4a-pilot-activation-checklist.md"
+  - "tests/Feature/DoctorDevice/**"
+alwaysApply: false
+---
+
+# Phase 4A doctor Android pilot — non-destructive, and scoped
+
+`PHASE4A-DOCTOR-ANDROID-PILOT-PREPARATION-1`. Read this before touching the
+pilot, the enforcement flag, or the device model.
+
+## The pilot, in full
+
+| Item | Value |
+| --- | --- |
+| Doctor | drg Karmila |
+| Branch | Cabang Sunu |
+| Device | logical label `PHASE4A_PILOT_TABLET_01` |
+| Devices / branches / doctors | 1 / 1 / 1 |
+
+A hardware serial, IMEI, MAC or Android ID is never committed. The logical label
+is the only device reference in source control.
+
+## Phase 4A is non-destructive. This is not negotiable by reading the fleet model.
+
+- `factory_reset_required` = **false**
+- `device_owner_required` = **false**
+- `full_kiosk_required` = **false**
+- `pilot_model` = `self_owned_non_destructive`
+
+The owner refused a factory reset for this pilot, and the tablet is already in
+service. Android grants Device Owner only on a device with no accounts on it,
+which in practice means immediately after a reset.
+
+`fleet_model` is still `self_owned_device_owner` and that is correct — a
+dedicated clinic tablet should be wiped and locked down. It is simply not
+available for a pilot on a tablet somebody is already working on. Do not read
+the fleet model as permission to wipe the pilot device.
+
+## Six acceptance checks are DEFERRED, not deleted
+
+`device_owner_established`, `lock_task_active`, `home_escape_blocked`,
+`recents_escape_blocked`, `external_browser_escape_blocked` and
+`reboot_returns_to_clinic_app` are Device Owner and lock-task properties. They
+live in `phase_4a.deferred_to_dedicated_device_phase` and remain owed by whoever
+provisions a dedicated device.
+
+The canonical set is `scanner.dedicated_device_kiosk_checks`, and the readiness
+gate proves the deferral against **that**, not against the deferral list — a
+proof that walks the list it is proving can be defeated by editing the list.
+
+## Rule 147, and the thing the deferral actually gave up
+
+Lock task was also what physically kept a doctor away from a browser. Without it,
+**app-only is a server-side decision and nothing else.**
+
+The boundary does hold there: `DoctorAppLoginGate` denies a browser session from
+the **absence** of a server-verified device binding, re-checks it on every
+protected request, and only redemption of a server-minted ticket signed over a
+single-use nonce can create one. Leaving the app grants nothing.
+
+But it holds **only while enforcement is armed for that doctor**. So on a
+non-destructive pilot, "app-only" is true if and only if the pilot scope is armed.
+Claiming app-only without an armed scope is claiming a property you do not have.
+
+## Enforcement must be scoped before it is armed
+
+`doctor.trusted_device_enforcement` is one boolean and its registry entry says
+what arming it does: it denies browser login to **every** account holding the
+Doctor role. `App\Support\Android\AndroidDoctorEnforcementScope` narrows that.
+
+| Configuration | Enforced for |
+| --- | --- |
+| `pilot` with a valid `doctor_user_id` | that one doctor |
+| `pilot` with no target | **nobody** |
+| `unscoped` with `global_permitted` | every doctor |
+| `unscoped` without `global_permitted` | **nobody** |
+| an unrecognised mode | **nobody** |
+
+The scope only ever **narrows**. It never widens, it never reads a request, and
+it never invents a target.
+
+**Order of operations, always:** set the scope, clear the config cache, verify,
+*then* arm the flag. Arming the flag while the scope covers nobody enforces
+nothing — it looks like protection and is not. `android:phase4a-pilot-readiness`
+FAILS on exactly that state; run it.
+
+## Two files, on purpose
+
+- `config/android_release.php` is the governance record and **never reads the
+  environment** — the release readiness gate must be safe on a fork pull request,
+  and that is held as a bright line rather than a per-key argument. Do not write
+  the environment-read function-call spelling in that file, not even in a comment:
+  the governance suite pattern-matches it.
+- `config/doctor_device_enforcement.php` carries the two host values: the mode and
+  the pilot doctor's user id. User ids are not portable between this repository and
+  production, so the committed target is null and null enforces nobody.
+- `global_permitted` lives in the governance record, so **a fleet-wide clinical
+  lockout is not reachable by setting a variable on a host.** It costs a reviewed
+  source-control change. Keep that asymmetry.
+
+## Why the scope fails toward "enforce nobody"
+
+This is the opposite of the usual deny-by-default reflex, so it is deliberate.
+
+Denying here does not withhold data from an attacker — RBAC, branch, room and
+consent gates all still apply, and a doctor still needs their password. It
+withholds a doctor's ability to reach their patients. A mistyped variable that
+locked every doctor out of every branch is a clinical incident; the same mistake
+resolving to "enforce nobody" leaves production as it is today and grants nothing
+new.
+
+The cost is a possible silent no-op, so it is made loud: `enforcement_inactive`
+FAILS when the flag is armed while the scope covers nobody, the command prints
+`ENFORCEMENT_SCOPE_USABLE` directly under `ENFORCEMENT_FLAG_ARMED`, and checklist
+step **F8** requires proving a non-pilot doctor can still log in through a browser.
+
+## Preparation is not activation. Approved is not distributed.
+
+`phase_4a.activation_boundary` records eight claims that must all be false:
+`apk_distributed`, `apk_installed`, `tablet_touched`, `adb_used`,
+`device_enrolled`, `pilot_activated`, `pilot_browser_denial_active`,
+`global_enforcement_active`.
+
+The preparation lifecycle stops at `ready_for_pilot`. An unrecognised state is a
+FAIL, never a pass — that is how an unset decision passes for a made one.
+
+## Before the APK goes near the tablet
+
+Exact, full-length comparisons. A prefix match on a digest or a fingerprint is not
+a verification.
+
+- SHA-256 `ab3e30df111ca3cfb6aa5efeb37dde1b3624e822c88134065c2c314a2fd10a03`
+- signer `79db269b7cd38e920b80efbcf2f59142721f1e57924d3048d07a862f34fea2d9`,
+  compared against the pin in **source control**, never the copy in the manifest —
+  whoever can swap the APK can swap the file beside it
+- `com.daengtisia.clinic`, versionName `0.3.0-phase3`, versionCode `1`
+
+## Update in place, and never uninstall as a reflex
+
+Same application id, same signer, strictly higher versionCode. A signer mismatch
+cannot update in place, and uninstalling to force it **destroys the Android
+Keystore device identity and the enrolment with it**. Clearing app data does the
+same. Installation alone restores no trust. Uninstall appears in no routine
+rollback route.
+
+## Running the pilot
+
+Follow `docs/runbooks/android-phase4a-pilot-activation-checklist.md` line by line.
+Preparation required no signing key, no tablet and no ADB, and the production
+signing key stays out of git, CI and the VPS.
