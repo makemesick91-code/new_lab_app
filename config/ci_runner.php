@@ -292,6 +292,21 @@ return [
         // lost key with no recoverable copy.
         'tests/Feature/DoctorDevice/DoctorDeviceAndroidSigningCustodyReadinessTest.php',
 
+        // PRODUCTION-ANDROID-SIGNING-KEY-PROVISIONING-1. The production
+        // signing identity now EXISTS, which inverts the risk this registry
+        // entry guards. The custody suite above was declared because config
+        // could drift into claiming backups nobody wrote; this one is declared
+        // because config can now drift into claiming a release is installable.
+        //
+        // It pins the split between the certificate being RECORDED (evidence
+        // that a key exists) and PINNED (the trust anchor that arms
+        // android:verify-release), and it proves the verifier does not fall
+        // back to the recorded value. If that fallback ever appeared, every
+        // install-time authenticity control would be armed by a governance
+        // record instead of by an explicit decision — and nothing else in the
+        // tree would notice.
+        'tests/Feature/DoctorDevice/DoctorDeviceAndroidSigningKeyProvisioningTest.php',
+
         // REVISION-PRODUCTION-SIGNING-CUSTODIAN1-ENCRYPTED-VAULT-1 — declared
         // for the same reason and one sharper one. The suite it replaces the
         // gap in already existed and still passed while `disk_encryption =>

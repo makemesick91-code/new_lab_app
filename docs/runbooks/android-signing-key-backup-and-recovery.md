@@ -25,31 +25,67 @@ Scope: the **DaengtisiaMS production app signing key**.
 
 ## 0. Stage gates — where we actually are
 
-*PRODUCTION-ANDROID-SIGNING-CUSTODY-READINESS-1.*
+*PRODUCTION-ANDROID-SIGNING-KEY-PROVISIONING-1, superseding
+PRODUCTION-ANDROID-SIGNING-CUSTODY-READINESS-1 forward.*
 
-This runbook covers seven stages. **Only stage A is closed.** Each stage is a
+This runbook covers seven stages. **Stages A to D are closed.** Each stage is a
 separate authorised task; none of them may be folded into another because
 "we were already in there".
 
 | Stage | What it is | State |
 |---|---|---|
 | **A — Custody readiness** | custodians designated, media and controls recorded, destinations prepared | **CLOSED — GO** |
-| **B — Key provisioning** | generate the production key on Custodian 1 (§1) | open |
-| **C — Backup creation** | write encrypted copies to Custodians 2 and 3 (§2) | open |
-| **D — Recovery verification** | restore drill proves a copy actually restores (§3) | open |
-| **E — Certificate pinning** | record `production_certificate_sha256` from the real key | open |
+| **B — Key provisioning** | generate the production key on Custodian 1 (§1) | **CLOSED — GO** |
+| **C — Backup creation** | write encrypted copies to Custodians 2 and 3 (§2) | **CLOSED — GO** |
+| **D — Recovery verification** | restore drill proves a copy actually restores (§3) | **CLOSED — GO** |
+| **E — Certificate pinning** | pin `production_certificate_sha256` from the real key | open |
 | **F — APK signing** | build and sign a production artifact | open |
 | **G — Device installation** | install on the pilot tablet, enrol, activate the pilot | open |
 
-**Stage A closed means only this:** three destinations are designated, their
-controls are recorded, and stage B is permitted to begin. It does **not** mean
-a key exists, a backup exists, or a recovery has been rehearsed. Those are
-stages B, C and D and every one of them is still open.
+**A THE KEY NOW EXISTS.** It was generated exactly once, on Custodian 1, inside
+the LUKS2 vault. It is **permanent production authority**: `key_loss_recoverable`
+is false and `app_signing_key_rotation` is `constrained_treat_as_permanent`.
 
-**Do not skip C and D.** A provisioned key with no verified backup is the exact
-unrecoverable state the warning at the top of this file describes. Stage B
-without C and D is worse than not starting, because it creates something
-irreplaceable and leaves it in one place.
+> **There is no second attempt.** Do not generate another production signing
+> key, do not "rotate to a clean one", and do not create a second signer to get
+> a gate green. If something appears wrong with the identity, STOP and report
+> it — a replacement key does not fix a problem, it creates a permanently
+> divergent app identity that can only be installed by uninstalling the first,
+> which erases every enrolled device's app data.
+
+Section 1 below is therefore **history, not an instruction**. It records how
+the one key was created. Running it again is the failure this box exists to
+prevent.
+
+**Public identity of the production signer** (a certificate fingerprint is a
+public identifier — it ships inside every signed APK):
+
+| Field | Value |
+|---|---|
+| Alias | `daengtisia-clinic-release` |
+| Key format | PKCS12, `PrivateKeyEntry` |
+| Algorithm | RSA 4096 |
+| Certificate | self-signed, `CN=DaengtisiaMS Android Production, OU=IT, O=DaengtisiaMS, C=ID` |
+| Validity | 2026-09-06 → 2054-01-22 |
+| SHA-256 | `79db269b7cd38e920b80efbcf2f59142721f1e57924d3048d07a862f34fea2d9` |
+
+**Stage E is NOT closed, and that distinction is load-bearing.** The fingerprint
+above is RECORDED in `signing.production_certificate_sha256_recorded` as
+evidence that a key exists. It is NOT PINNED:
+`signing.production_certificate_sha256` is still `null`, so
+`android:verify-release` authenticates nothing and fails closed. Pinning is the
+separate task **PRODUCTION-ANDROID-SIGNING-CERTIFICATE-PIN-1**. Until it runs,
+no production APK may be installed on any device.
+
+**What closing C and D actually required.** Both were verified by restoring
+**from the destination copy** — the file as it sits on Custodian 2 and on the
+Custodian 3 USB — never by re-hashing the artifact that was sent. A hash of the
+source proves the source; only a restore from the destination proves the
+destination. Each restore produced a `PrivateKeyEntry` under the production
+alias, with a certificate fingerprint equal to the primary's, and the recovered
+private key was proven usable by generating a certificate signing request. A
+deliberately corrupted disposable copy was additionally rejected by the
+decryption step, so the positive results are known not to be vacuous.
 
 ### The three destinations
 

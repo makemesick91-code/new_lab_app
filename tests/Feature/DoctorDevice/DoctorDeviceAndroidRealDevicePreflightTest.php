@@ -395,10 +395,28 @@ it('fails when the containment record is emptied instead of answered', function 
 // ---------------------------------------------------------------------------
 
 it('provisions no production key and pins no certificate', function () {
-    // E7/E8. Custody is PARTIAL and the deferred controls stay deferred.
+    // E7/E8. The hardware preflight unlocked no signing step, and that is what
+    // this asserts.
+    //
+    // PRODUCTION-ANDROID-SIGNING-KEY-PROVISIONING-1 later generated the key,
+    // on a separate authority, so `production_signing_key_provisioned` is now
+    // true and asserting it false here would pin a stale fact rather than this
+    // suite's own invariant. What the preflight must still not have moved is
+    // the PIN — the control that arms `android:verify-release` — and the
+    // recorded `unlocks` block, both of which are asserted below and by
+    // `preflight_unlocks_nothing`.
     expect(config('android_release.signing.production_certificate_sha256'))->toBeNull();
     expect(config('android_release.signing.production_certificate_pin_required_before_install'))->toBeTrue();
-    expect(preflightScan()['summary']['production_signing_key_provisioned'])->toBeFalse();
+    expect(preflightScan()['summary']['production_certificate_pinned'])->toBeFalse();
+
+    // The preflight's own containment record: it unlocked none of these,
+    // whatever a later authorised task went on to do.
+    expect(config('android_release.real_device_preflight.unlocks'))
+        ->toMatchArray([
+            'production_signing_key_provisioning' => false,
+            'certificate_pinning' => false,
+            'production_apk_build' => false,
+        ]);
 });
 
 it('keeps every enforcement switch off after the hardware gate closes', function () {
