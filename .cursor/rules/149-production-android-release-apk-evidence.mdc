@@ -46,6 +46,19 @@ not close because no signed artifact existed yet.
 `artifact_sha256` is computed AFTER signing. A digest taken before signing
 identifies a file nobody will ever install.
 
+**This has now been done once, and the values are historical fact:**
+
+    release source   1fecab7b14f6e603c73d12e19f5d2a61b26fadd6
+                     tree 0f6544f2b12be997fbfe1337f631dae182cbcb2b, CI 34018374405
+    artifact         DaengtisiaMS-Clinic-v0.3.0-phase3-production.apk
+                     784404 bytes, sha256 ab3e30df…10a03
+    signer           79db269b…a2d9 — RSA 4096, 1 signer, extracted from the APK
+    schemes          v2 true, v3 true; v1, v3.1 and v4 false; zipalign PASS
+
+Report the schemes actually observed. Claiming v1 or v4 as well is an evidence
+overstatement — v4 in particular is a separate `.idsig` file that is not part of
+this distribution.
+
 ## 3. Two commits, and they are not interchangeable
 
     RELEASE SOURCE   the commit + tree the APK was compiled from.
@@ -73,6 +86,17 @@ before swap is restored.
 
 CI must be able to build and test without any of it. `pull_request_ci_may_sign`
 stays false.
+
+The ceremony also writes artifacts that are not the APK. `apksigner` emits a v4
+signature (`.idsig`) beside every APK it signs; the ignore list covered
+`.apk`/`.aab` and every keystore extension and missed that one, so the first
+real ceremony left signing output git offered to commit. Signing output is not
+source even when it carries no key — `required_gitignore_patterns` owns this,
+not a one-off `.gitignore` edit.
+
+Delete the unsigned intermediate once the signed artifact exists. An unsigned
+APK sharing a prefix with the signed one, in the same directory, is a
+substitution waiting to happen.
 
 ## 5. A release build must actually build
 
@@ -107,7 +131,9 @@ following a documented step. Use a purpose-built read-only command
 ## 7. Building or signing unlocks nothing else
 
 A signed APK and its evidence do NOT mean distributed, installed, enrolled,
-piloted or enforced. `DEVICE_ENFORCEMENT_ACTIVE` stays false until a sprint
+piloted or enforced. `approval_status: approved` gates whether a sanctioned
+release MAY be installed; it is not a record that anything was. The rollout
+flags carry that, and they are asserted false by test. `DEVICE_ENFORCEMENT_ACTIVE` stays false until a sprint
 that explicitly decides otherwise. Reading a green release gate as permission
 to install on a tablet is the misreading rules 148 and this rule both exist to
 prevent.

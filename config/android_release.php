@@ -1303,6 +1303,12 @@ return [
         ],
 
         'required_gitignore_patterns' => [
+            // apksigner writes a v4 signature (.idsig) BESIDE every APK it
+            // signs. The list covered .apk/.aab and every keystore extension
+            // and missed this one, so the first real ceremony left a signing
+            // artifact that git offered to commit. It carries no private key;
+            // it is still signing output, and signing output is not source.
+            'android/**/*.idsig',
             'android/**/*.jks',
             'android/**/*.keystore',
             'android/**/*.p12',

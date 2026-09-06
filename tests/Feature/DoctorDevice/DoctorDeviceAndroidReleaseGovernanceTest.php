@@ -787,3 +787,23 @@ it('detects a release block naming a proguard file that does not exist', functio
         tempArtifactRemove($base);
     }
 });
+
+// ---------------------------------------------------------------------------
+// PRODUCTION-ANDROID-RELEASE-APK-EVIDENCE-1 — what the ceremony leaves behind
+// ---------------------------------------------------------------------------
+
+it('ignores every artifact the signing ceremony writes, not just the APK', function () {
+    // The ignore list covered .apk/.aab and every keystore extension, and missed
+    // the file apksigner writes BESIDE each signed APK: the v4 signature
+    // (.idsig). The real ceremony produced one, and git offered to commit it.
+    // Signing output does not belong in the repository even when it carries no
+    // private key.
+    expect(androidCheck('keystore_ignored')['status'])->toBe('PASS');
+
+    expect(config('android_release.scanner.required_gitignore_patterns'))
+        ->toContain('android/**/*.idsig');
+
+    // Non-vacuity: the declared pattern has to be in the real ignore file, and
+    // git has to actually act on it.
+    expect(file_get_contents(base_path('.gitignore')))->toContain('android/**/*.idsig');
+});

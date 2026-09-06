@@ -23,6 +23,10 @@ browser_required: false         # console commands, config and scripts; verified
 
 go_tag: production-android-release-apk-evidence-1-go
 
+# CEREMONY COMPLETE. The APK was built from RELEASE_SOURCE 1fecab7b (tree
+# 0f6544f2, CI 34018374405) and signed by the existing permanent production
+# key. This evidence commit is the FINAL CANDIDATE and did NOT build the APK.
+
 test_profiles:
   - security
 

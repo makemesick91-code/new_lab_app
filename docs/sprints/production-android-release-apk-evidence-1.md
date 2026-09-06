@@ -1,7 +1,9 @@
 # PRODUCTION-ANDROID-RELEASE-APK-EVIDENCE-1
 
-**STATUS: RELEASE SOURCE FROZEN — awaiting the human signing ceremony.**
-Not signed, not merged, not deployed, no GO tag.
+**STATUS: SIGNED. Signer verified against the pin, evidence committed.**
+
+The ceremony was performed by the custodian. Nothing in this repository ever
+held the vault passphrase or the keystore password.
 
 Base: `5c50fdd74c5f5e92a3740cd1cb79e6169803efe2`
 (tree `75ad7d8d2f8c9a785caeda1f24aa288882a6a556`, tag
@@ -132,47 +134,54 @@ as passed. The semantics are already pinned mechanically by
 `tests/Feature/Cicd/TemporaryFullSuiteScheduleGateTest.php`, so no duplicate
 control was added.
 
-## 6. Why this sprint stops here
+## 6. The signed artifact
 
-The ceremony is not blocked by tooling. It is a human control, and the
-repository says so: `release_signing_context =
-designated_signing_workstation_manual_approval`, `pull_request_ci_may_sign = false`.
+The ceremony ran on Custodian 1 with swap off, the vault opened interactively,
+and the password prompted rather than passed. The vault and mapper were closed
+before swap was restored. No key, keystore or password entered git, CI or the
+VPS, and none was regenerated.
 
-1. **The passphrases are the custodian's and nobody else's.** They were never
-   held by the automated session and must never be pasted into a chat, an argv
-   or an environment variable. No terminal fixes that.
-2. No interactive input exists in the automated environment (`TERM=dumb`).
-3. `sudo -n` fails, so `swapoff /swap.img` — a precondition for exposing the key
-   — cannot be performed.
+| | |
+|---|---|
+| Artifact | `DaengtisiaMS-Clinic-v0.3.0-phase3-production.apk` |
+| Size / sha256 | 784,404 bytes &middot; `ab3e30df111ca3cfb6aa5efeb37dde1b3624e822c88134065c2c314a2fd10a03` |
+| Built from | `1fecab7b` / tree `0f6544f2`, CI run `34018374405` |
+| `apksigner verify` | **exit 0 — Verifies** |
+| Schemes | v2 **true**, v3 **true**; v1, v3.1, v4 false &middot; zipalign PASS |
+| Signers | 1 &middot; `CN=DaengtisiaMS Android Production, OU=IT, O=DaengtisiaMS, C=ID` |
+| Signer certificate | `79db269b…a2d9` &middot; RSA 4096 |
+| Pin | `79db269b…a2d9` &mdash; **match** |
 
-No workaround was attempted. `cryptsetup --key-file`, a piped passphrase,
-`-storepass` or a sudoers entry would each have converted a custody control into
-a convenience.
+The digest was taken **after** signing. The signer was extracted **from the
+finished APK** with `apksigner verify --print-certs` and compared against the
+pin held in source control — not config against config. That closes the
+residual the certificate-pin sprint could not close, because no signed artifact
+existed then.
 
-## 7. The ceremony
+`php artisan android:verify-release <apk> <manifest>` returns **PASS on 14/14
+checks, exit 0**, including `signer_fingerprint`, `release_source_provenance`
+and `manifest_matches_trust_anchor`.
 
-See §"Ceremony" in `docs/runbooks/android-direct-apk-installation.md` and the
-operator commands returned with this sprint's handoff. In order:
+## 7. What the ceremony left behind
 
-1. **CI green on RELEASE_SOURCE_SHA first** — the manifest binds `ci_run_id`.
-2. `sudo swapoff /swap.img`, verify `swapon --show` is empty.
-3. Open the vault interactively. No keyfile, no piped passphrase.
-4. `zipalign`, then `apksigner sign` — passwords **prompted**, never flags.
-5. `apksigner verify --verbose --print-certs`, then `sha256sum` the **signed**
-   file. Order matters: a digest taken before signing identifies a file nobody
-   will install.
-6. Signer certificate must equal
-   `79db269b7cd38e920b80efbcf2f59142721f1e57924d3048d07a862f34fea2d9`.
-   **If it does not, stop.** Do not change the pin to match the artifact.
-7. `sync`, unmount, `cryptsetup close`, then restore swap.
+Two findings, both fixed rather than tidied away:
 
-`apksigner` is not on `PATH` by default — export
-`$ANDROID_HOME/build-tools/35.0.0` first, or `android:verify-release` reports
-the tooling missing and fails closed.
+- **`.idsig` was not ignored.** `apksigner` writes a v4 signature beside every
+  APK it signs. The ignore list covered `.apk`, `.aab` and every keystore
+  extension and missed this one, so the first real ceremony produced signing
+  output that git offered to commit. Now a governed
+  `required_gitignore_patterns` entry, not a one-off `.gitignore` edit.
+- **An unsigned intermediate sat beside the signed artifact**, sharing its
+  prefix and differing only by suffix — a substitution hazard. Verified
+  byte-identical to the build output (so nothing was lost) and removed.
 
 ## 8. Not done, and deliberately not faked
 
-APK signing · signer verification · release manifest · merge · deploy · GO tag.
+Distribution, installation, tablet, ADB, device enrolment, pilot enforcement
+and global enforcement. `DEVICE_ENFORCEMENT_ACTIVE=false`, and the release
+manifest asserts every rollout flag false under test.
 
-Untouched throughout: tablet, adb, pilot enforcement, global enforcement,
-certificate pin, custody topology, Backup 1, Backup 2, the private key.
+A signed artifact unlocks none of that. `approval_status: approved` gates
+whether a sanctioned release MAY be installed; it is not a record that anything
+was. Untouched throughout: certificate pin, custody topology, Backup 1,
+Backup 2, and the signing key itself.

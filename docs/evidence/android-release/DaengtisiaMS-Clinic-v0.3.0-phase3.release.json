@@ -1,0 +1,80 @@
+{
+  "_schema": "DaengtisiaMS Android direct-APK release manifest",
+  "_sprint": "PRODUCTION-ANDROID-RELEASE-APK-EVIDENCE-1",
+  "_provenance_model": "two_commit — release_source_* is the tree the APK was COMPILED from. The evidence commit that carries this file is a different, later commit and did not build the artifact.",
+  "_trust_anchor": "The authority for the signer is android_release.signing.production_certificate_sha256 in SOURCE CONTROL. pinned_certificate_sha256 below is a human-readable copy only; the verifier reads config, never this file, because whoever can replace the APK can replace the manifest beside it.",
+  "_contains_no_secrets": "Certificate fingerprints are public identifiers that ship inside every signed APK. No secret material of any kind appears in this file.",
+
+  "package_name": "com.daengtisia.clinic",
+  "version_name": "0.3.0-phase3",
+  "version_code": 1,
+
+  "release_source_sha": "1fecab7b14f6e603c73d12e19f5d2a61b26fadd6",
+  "release_source_tree": "0f6544f2b12be997fbfe1337f631dae182cbcb2b",
+  "ci_run_id": "34018374405",
+  "source_ci_status": "success",
+
+  "build_variant": "release",
+  "release_channel": "direct_admin_managed_apk",
+  "approval_status": "approved",
+
+  "apk_filename": "DaengtisiaMS-Clinic-v0.3.0-phase3-production.apk",
+  "artifact_size_bytes": 784404,
+  "artifact_sha256": "ab3e30df111ca3cfb6aa5efeb37dde1b3624e822c88134065c2c314a2fd10a03",
+  "artifact_sha256_taken_after_signing": true,
+
+  "signing_certificate_fingerprint_sha256": "79db269b7cd38e920b80efbcf2f59142721f1e57924d3048d07a862f34fea2d9",
+  "signer_certificate_sha256": "79db269b7cd38e920b80efbcf2f59142721f1e57924d3048d07a862f34fea2d9",
+  "pinned_certificate_sha256": "79db269b7cd38e920b80efbcf2f59142721f1e57924d3048d07a862f34fea2d9",
+  "signer_matches_pin": true,
+  "signer_certificate_dn": "CN=DaengtisiaMS Android Production, OU=IT, O=DaengtisiaMS, C=ID",
+  "signer_key_algorithm": "RSA",
+  "signer_key_size_bits": 4096,
+  "signer_extracted_from": "final_signed_apk_via_apksigner_print_certs",
+
+  "signature_verification": {
+    "apksigner_verify_exit": 0,
+    "verified": true,
+    "number_of_signers": 1,
+    "v1_jar_signing": false,
+    "v2_scheme": true,
+    "v3_scheme": true,
+    "v3_1_scheme": false,
+    "v4_scheme": false,
+    "source_stamp": false,
+    "zipalign": "PASS"
+  },
+
+  "signing_ceremony": {
+    "existing_production_signer_used": true,
+    "new_signer_generated": false,
+    "performed_by": "custodian_1_manual_ceremony",
+    "pkcs12_copied_outside_vault": false,
+    "password_in_argv": false,
+    "password_in_env": false,
+    "swap_off_during_signing": true,
+    "vault_closed_after_signing": true,
+    "mapper_closed_after_signing": true,
+    "swap_restored_after_close": true
+  },
+
+  "key_material_boundary": {
+    "private_key_in_git": false,
+    "private_key_in_ci": false,
+    "private_key_on_vps": false
+  },
+
+  "rollout_state": {
+    "apk_distributed": false,
+    "tablet_touched": false,
+    "adb_used": false,
+    "pilot_enforcement": false,
+    "global_enforcement": false
+  },
+
+  "update_compatibility": {
+    "same_signer_required_for_update_in_place": true,
+    "downgrade_supported": false,
+    "note": "A different signer would force an uninstall, and uninstalling erases the Keystore device identity and the enrolment with it."
+  }
+}
