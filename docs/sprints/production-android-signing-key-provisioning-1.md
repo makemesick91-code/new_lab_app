@@ -219,13 +219,17 @@ asserted directly. Three cases are worth naming:
 
 ## Mutation results
 
-15 mutants against the changed predicates, three campaigns.
+22 mutants against the changed predicates. Seven (`M16`–`M22`) were added after
+the security review, one per fix, because a fix without a mutant is a fix nobody
+has shown to be load-bearing.
 
-| Campaign | Killed | Survived |
-|---|---|---|
-| 1 | 8 | 7 |
-| 2 | 13 | 2 (`M04`, `M15`) |
-| 3 — final | **14** | **1** (`M15`, equivalent) |
+| Campaign | Killed | Survived | Not applied |
+|---|---|---|---|
+| 1 | 8 | 7 | 0 |
+| 2 | 13 | 2 (`M04`, `M15`) | 0 |
+| 3 | 14 | 1 (`M15`) | 0 |
+| 4 — post-review | 17 | 2 (`M15`, `M20`) | 3 |
+| 5 — final | **21** | **1** (`M15`, equivalent) | **0** |
 
 Every survivor in campaign 1 was a real gap, and they all failed the same way:
 the mutation was caught by a **different** rule firing on the same fixture, so
@@ -240,10 +244,28 @@ recorded fingerprint as well, leaving a pin over no key as the only
 contradiction standing. That is worth recording: writing a test *aimed* at a
 predicate does not mean the test *reaches* it, and only the mutation run said so.
 
+`M20` — removing the denylist/shape walk over `signing.*` — **survived campaign
+4**, and it exposed a blind spot in my own tests rather than in the code. Every
+signing test written for the review fixes was being caught by the field
+*allowlist*, which stops undeclared field NAMES and says nothing about what a
+DECLARED field may hold. The closing tests therefore use allowlisted fields, and
+one nested inside `signing.backup`, where the walk is the only thing between the
+value and a committed file.
+
+Campaign 4 also reported **three mutants `NOT-APPLIED`**, not killed: the review
+fixes had moved their target source, so they silently stopped applying. The
+harness reports that state distinctly rather than counting a no-op as a kill,
+which is the only reason it was noticed — three phantom kills would otherwise
+have inflated the score. All three were re-targeted against the current source
+and verified to apply before the final run.
+
 `M15` drops `$keyProvisioned` from the `backups_created` requirement. The
 cumulative fold already folds the `key_provisioned` term in beforehand, so no
-verdict can differ. Classified **equivalent by exhaustive enumeration** — all
-3,584 (state × flag) combinations produce identical verdicts — not by argument.
+verdict can differ. Classified **equivalent by exhaustive enumeration**, and
+**re-proven against the post-review predicate** rather than assumed to carry
+over — the guard now also consults `$undefinedPastReadiness`, so the original
+proof no longer described the code. All 4,096 (state × flag × position)
+combinations produce identical verdicts.
 
 The harness reverts **by copy**, never `git checkout --`, and the scanner was
 verified byte-identical to the pre-mutation original after every campaign.
@@ -266,15 +288,105 @@ assertion — would have removed a working test to accommodate a harness mistake
 The failure was reproduced-against rather than explained away: the same command
 on a quiet worktree is green.
 
+## Security review
+
+An independent adversarial review of the diff found **no CRITICAL**. It
+confirmed the pin stays null and the verifier fails closed, that the recorded
+fingerprint has no path into the verifier, that nothing enables enforcement or a
+Play dependency, and that the single-signing-authority checks were not loosened.
+
+It also found six real defects, **one of which this sprint introduced**. Each was
+reproduced against the real scanner before being fixed, and each now has a test
+that records the exploit rather than only the corrected behaviour.
+
+### HIGH — the new gate failed open, and my own relaxation removed its backstop
+
+`custody_status_matches_recorded_facts` decided whether a status claimed
+artifacts by looking it up in a hardcoded map — so a state **absent** from that
+map was read as "claims nothing" and PASSed. Nothing constrains the membership of
+`custody.states`, and check 2 no longer pinned the status to an exact value.
+
+Those two facts compose. Appending one state, setting the status to it, and
+leaving all six artifact flags false produced:
+
+```
+ALL SIXTEEN custody checks: PASS        Decision: GO
+signing_custody_...preconditions_met:  true
+```
+
+— for a record claiming zero key, zero backups and zero recovery, with the
+PASS message affirmatively stating the status "makes no artifact claim".
+
+**This was created here.** Before this sprint, check 2 would have gone red on
+`$status !== 'ready_for_provisioning'` and caught it; relaxing check 2 is what
+removed the backstop that had been making the gap harmless. Position, not map
+membership, now decides: a state at or past readiness with no requirement
+defined is an unanswerable claim, and the only safe answer to an unanswerable
+claim about an unrecoverable key is to refuse it.
+
+### MEDIUM — `PRODUCTION_CERTIFICATE_PINNED=true` for a pin that arms nothing
+
+The summary predicate was `is_string(...) && !== ''` while its sibling one line
+above applied the fingerprint regex. With the pin set to `'TBD'` the command
+printed `PRODUCTION_CERTIFICATE_PINNED=true` while the verifier rejected the same
+value on its own regex and failed closed — inverting the exact reading the
+printed pair was added to give the operator. Both now share one
+`isCertificateFingerprint()` helper, so they cannot drift again.
+
+### MEDIUM — the `signing.*` namespace was unpoliced, and this sprint put a field in it
+
+`custodySecretLeaks()` walked `signing.custody.*` and nothing above it. A
+hardware serial, the vault filesystem UUID or a passphrase hint could be
+committed at `signing.*` and no control in the tree would notice — while the
+check printed "no leaf key or value matches a passphrase, serial, identifier…".
+The three things it named were the three that got through.
+
+The pre-existing gap became load-bearing the moment this sprint added a field
+there. Extending the leaf-key denylist alone does **not** close it: that denylist
+matches EXACT keys, so `primary_workstation_serial` and `keystore_passphrase_hint`
+walk straight past `serial` and `hint` — which is precisely why custodian entries
+were given a field allowlist in the first place. So `signing.*` gets the same
+mechanism: a 16-entry allowlist, plus the denylist and shape detection.
+
+The two certificate fingerprints are the only shape exemption, named
+individually so no future field inherits it by resemblance — and they are exempt
+from *shape detection*, never from *being fingerprints*: a fingerprint field
+holding a serial is still reported.
+
+### LOW — a correct upper-case pin was reported as a substituted key
+
+The pin/recorded comparison was case-sensitive while the verifier normalises.
+`keytool -list` prints SHA-256 in upper case, so an upper-case paste is the most
+likely form the pin will arrive in during the next task — and it produced
+"the wrong key or a substituted one", a false accusation of substitution on the
+one message an operator would act on hardest. Both sides are lower-cased now.
+
+### LOW — a summary field named for a state that had passed
+
+`signing_custody_ready_for_provisioning` became permanently `true` once check 2
+stopped requiring an exact status. Under an invariant that exactly one production
+key may ever exist, a machine-readable field named "ready for provisioning"
+reading true forever is the wrong signal to leave in output an agent may act on.
+Renamed to `signing_custody_provisioning_preconditions_met`, which is what the
+checks behind it actually assert.
+
+### Accepted, not fixed
+
+The review noted that `docs/` records the two backup filenames and their
+ciphertext SHA-256s, which is a confirmation oracle for anyone already holding a
+custody medium. The digests are the integrity evidence for stages C and D and
+were explicitly authorised for this record, so they stay — but the residual is
+real and is written down here rather than implied away.
+
 ## Files
 
 | File | Change |
 |---|---|
 | `config/android_release.php` | recorded-fingerprint field; custody lifecycle advanced; preamble corrected |
 | `config/ci_runner.php` | new suite declared in the critical gate |
-| `app/Support/Android/AndroidReleaseGovernanceScanner.php` | check 2 accepts lawful progress; check 11 split pin/recorded + 3 new rules; new `custody_status_matches_recorded_facts`; summary lines; corrected preflight message |
+| `app/Support/Android/AndroidReleaseGovernanceScanner.php` | check 2 accepts lawful progress; check 11 split pin/recorded + 3 new rules; new `custody_status_matches_recorded_facts` (fails closed on an undefined post-readiness state); `signing.*` field allowlist + leak walk; shared `isCertificateFingerprint()`; case-insensitive pin comparison; renamed summary field; corrected preflight message |
 | `app/Console/Commands/AndroidReleaseReadinessCommand.php` | prints the recorded/pinned split |
-| `tests/Feature/DoctorDevice/DoctorDeviceAndroidSigningKeyProvisioningTest.php` | new — 19 tests |
+| `tests/Feature/DoctorDevice/DoctorDeviceAndroidSigningKeyProvisioningTest.php` | new — 29 tests |
 | `tests/Feature/DoctorDevice/DoctorDeviceAndroidSigningCustodyReadinessTest.php` | carried forward to the new truth; no-op mutations inverted |
 | `tests/Feature/DoctorDevice/DoctorDeviceCustodian1EncryptedVaultTest.php` | V7–V9 rewritten as independence tests |
 | `tests/Feature/DoctorDevice/DoctorDeviceAndroidReleaseGovernanceTest.php` | asserts the reporting contract, not a frozen value |

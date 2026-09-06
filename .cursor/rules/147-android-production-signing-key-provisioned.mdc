@@ -134,3 +134,31 @@ command prints `PRODUCTION_CERTIFICATE_PINNED` directly beneath it.
    custody mutation tests silently became no-ops — mutating a value to what it
    already was — while still reading as guards. Prefer testing *independence*
    over pinning a frozen opposite value.
+5. **Relaxing a check can orphan a gap another check was quietly covering.**
+   `custody_status_matches_recorded_facts` decided "does this status claim
+   artifacts?" by map lookup, so an unlisted state fell through to PASS. That
+   was harmless only while check 2 pinned the status to an exact value — and
+   this sprint relaxed check 2. Every custody gate then reported PASS, with an
+   overall GO, for a record claiming no key, no backup and no recovery. When
+   loosening a predicate, ask what *else* was depending on its strictness.
+6. **Decide from position, never from map membership.** A state at or past
+   readiness with no requirement defined is an unanswerable claim, and the only
+   safe answer to an unanswerable claim about an unrecoverable key is to refuse
+   it. `custody.states` is plain config and nothing constrains what may be added.
+7. **A denylist of exact leaf keys is not a boundary; an allowlist is.**
+   `primary_workstation_serial` and `keystore_passphrase_hint` walk straight
+   past `serial` and `hint`. That is why custodian entries have a field
+   allowlist, and why `signing.*` now has one too — it had none, and this sprint
+   added a field there. Both certificate fingerprints are exempt from *shape
+   detection* only, never from *being fingerprints*.
+8. **Two predicates answering the same question must share one helper.** The
+   summary reported `PRODUCTION_CERTIFICATE_PINNED=true` for a pin of `'TBD'`
+   while the verifier rejected it on a regex and failed closed — the report said
+   armed, the control said unarmed. `isCertificateFingerprint()` is now the
+   single definition.
+9. **Normalise before comparing a fingerprint.** `keytool` prints upper case. A
+   case-sensitive comparison accused a *correct* pin of being a substituted key.
+10. **Do not leave a stale name in machine-readable output.** A field called
+    `signing_custody_ready_for_provisioning` reading `true` forever, under a
+    "never generate a second key" invariant, is a trap for whoever reads it
+    next. It is now `signing_custody_provisioning_preconditions_met`.

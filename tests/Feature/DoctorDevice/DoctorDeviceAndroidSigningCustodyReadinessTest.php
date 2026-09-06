@@ -217,7 +217,7 @@ it('claims a production signing key exists only alongside its recorded certifica
     expect($summary['production_signing_key_provisioned'])->toBeTrue();
     expect($summary['production_certificate_recorded'])->toBeTrue();
     expect($summary['production_certificate_pinned'])->toBeFalse();
-    expect($summary['signing_custody_ready_for_provisioning'])->toBeTrue();
+    expect($summary['signing_custody_provisioning_preconditions_met'])->toBeTrue();
 
     expect(custodyCheck('custody_readiness_does_not_claim_provisioning')['status'])->toBe('PASS');
 });

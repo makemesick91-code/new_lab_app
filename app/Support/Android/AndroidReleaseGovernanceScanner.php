@@ -149,7 +149,18 @@ class AndroidReleaseGovernanceScanner
                 // Reported next to the line above so the two are read
                 // together and never substituted for one another.
                 'signing_custody_status' => config('android_release.signing.custody.status'),
-                'signing_custody_ready_for_provisioning' => $this->custodyReadyForProvisioning($checks),
+
+                // RENAMED by PRODUCTION-ANDROID-SIGNING-KEY-PROVISIONING-1.
+                //
+                // This was `signing_custody_ready_for_provisioning`, and once
+                // the check behind it stopped requiring an exact status it
+                // became permanently true. A machine-readable field literally
+                // named "ready for provisioning" reading true forever, under an
+                // invariant that exactly ONE production key may ever exist, is
+                // the wrong signal to leave in output an agent may act on. The
+                // checks it derives from assert that the PRECONDITIONS were
+                // met, so that is what it is now called.
+                'signing_custody_provisioning_preconditions_met' => $this->custodyReadyForProvisioning($checks),
                 'signing_custody_backups_created' => config('android_release.signing.custody.backup_1_key_copy_created') === true
                     || config('android_release.signing.custody.backup_2_key_copy_created') === true,
                 'signing_custody_recovery_verified' => config('android_release.signing.custody.recovery_verified') === true,
@@ -160,10 +171,20 @@ class AndroidReleaseGovernanceScanner
                 // that `android:verify-release` can authenticate an artifact.
                 // It cannot: the pin is what arms it, and the pin is null
                 // until PRODUCTION-ANDROID-SIGNING-CERTIFICATE-PIN-1.
-                'production_certificate_recorded' => is_string(config('android_release.signing.production_certificate_sha256_recorded'))
-                    && preg_match('/^[0-9a-f]{64}$/', (string) config('android_release.signing.production_certificate_sha256_recorded')) === 1,
-                'production_certificate_pinned' => is_string(config('android_release.signing.production_certificate_sha256'))
-                    && config('android_release.signing.production_certificate_sha256') !== '',
+                'production_certificate_recorded' => $this->isCertificateFingerprint(
+                    config('android_release.signing.production_certificate_sha256_recorded'),
+                ),
+                // Shape-checked with the SAME regex as the line above, not
+                // merely "a non-empty string". Security review set the pin to
+                // 'TBD' and this reported true while
+                // AndroidReleaseArtifactVerifier rejected it on the regex and
+                // failed closed — so the command would have printed
+                // PRODUCTION_CERTIFICATE_PINNED=true for a verifier that
+                // authenticates nothing, which is the exact inversion the
+                // printed pair exists to prevent.
+                'production_certificate_pinned' => $this->isCertificateFingerprint(
+                    config('android_release.signing.production_certificate_sha256'),
+                ),
                 // The full Phase 4 real-device validation — signed release
                 // installed, device enrolled, pilot run — has NOT happened.
                 // The hardware preflight below is a different, narrower gate
@@ -765,6 +786,44 @@ class AndroidReleaseGovernanceScanner
     ];
 
     /**
+     * Top-level fields the signing namespace may carry, outside `custody`.
+     *
+     * An ALLOWLIST, because the denylist beneath it is known-insufficient by
+     * this class's own admission: `custodySecretLeaks()` matches exact leaf
+     * keys, so `primary_workstation_serial` and `keystore_passphrase_hint`
+     * both walk straight past `serial` and `hint`. That is precisely why
+     * custodian entries were given a field allowlist, and the reasoning
+     * applies identically one level up — a namespace nobody enumerated is a
+     * namespace where an unanticipated key is ignored rather than refused.
+     *
+     * `custody` is absent deliberately: it is unset before this list is
+     * consulted and walked by its own rules.
+     */
+    private const SIGNING_PERMITTED_FIELDS = [
+        'app_signing_authority', 'production_key_custody',
+        'production_certificate_sha256', 'production_certificate_sha256_recorded',
+        'production_certificate_pin_required_before_install',
+        'key_loss_recoverable', 'key_loss_consequence', 'minimum_custodians',
+        'permitted_storage', 'forbidden_storage', 'pull_request_ci_may_sign',
+        'release_signing_context', 'app_signing_key_rotation', 'backup',
+        'runbook', 'governance_doc',
+    ];
+
+    /**
+     * The only `signing.*` leaves allowed to hold a value that LOOKS secret.
+     *
+     * Both are certificate SHA-256 fingerprints, which are public by
+     * construction — the certificate ships inside every signed APK, so the
+     * fingerprint discloses nothing that an installed artifact does not. They
+     * are named individually rather than matched by pattern, so a future field
+     * cannot inherit the exemption by resembling one of them.
+     */
+    private const SIGNING_PUBLIC_IDENTIFIER_FIELDS = [
+        'production_certificate_sha256',
+        'production_certificate_sha256_recorded',
+    ];
+
+    /**
      * Encryption a dedicated signing vault may use.
      *
      * An allowlist, so "encrypted" cannot be satisfied by a value that merely
@@ -1226,7 +1285,13 @@ class AndroidReleaseGovernanceScanner
         // installer verifies an artifact against, so a pin that disagrees with
         // the recorded production certificate is either the wrong key or a
         // substituted one, and there is no third possibility worth assuming.
-        if ($pinned && $recorded && $certificate !== $recordedCertificate) {
+        // Compared case-INSENSITIVELY. `keytool -list` prints SHA-256 in
+        // upper case, which is the most likely paste in the pinning task, and
+        // a correct pin differing only in case would otherwise be reported as
+        // "the wrong key or a substituted one" — a false accusation of
+        // substitution, on the one message an operator would act on hardest.
+        if ($pinned && $recorded
+            && strtolower((string) $certificate) !== strtolower((string) $recordedCertificate)) {
             $inconsistencies[] = 'the pinned certificate does not match the recorded production certificate';
         }
 
@@ -1341,10 +1406,29 @@ class AndroidReleaseGovernanceScanner
             }
         }
 
-        // States before readiness make no artifact claim, so they are always
-        // supportable and are not listed above.
+        // States BEFORE readiness make no artifact claim and are not listed
+        // above. States AT OR AFTER readiness always do.
+        //
+        // Security review found this failing open. The guard was
+        // `array_key_exists($status, $supported)`, so any state absent from the
+        // map was read as "claims nothing" and PASSed — and check 2 above no
+        // longer pins the status to an exact value, so a state appended to
+        // `custody.states` after `ready_for_provisioning` sailed through every
+        // custody gate with all six artifact flags false. The relaxation in
+        // check 2 is what removed the backstop that had been making this
+        // harmless, so this is a defect introduced with that change, not one
+        // inherited.
+        //
+        // The map is therefore not the authority on whether a state claims
+        // artifacts; POSITION is. A state at or past readiness with no
+        // requirement defined for it is an unanswerable claim, and the only
+        // safe answer to an unanswerable claim about an unrecoverable key is
+        // to refuse it.
         $claimsArtifacts = array_key_exists((string) $status, $supported);
-        $statusSupported = ! $claimsArtifacts || $supported[(string) $status] === true;
+        $undefinedPastReadiness = ! $claimsArtifacts && $pastReadiness;
+
+        $statusSupported = ! $undefinedPastReadiness
+            && (! $claimsArtifacts || $supported[(string) $status] === true);
 
         $firstUnmet = array_key_first($unmet);
 
@@ -1354,13 +1438,38 @@ class AndroidReleaseGovernanceScanner
             $statusSupported
                 ? ($claimsArtifacts
                     ? "Custody status '{$status}' is supported by the recorded artifacts; no state is claimed ahead of what exists."
-                    : "Custody status '{$status}' makes no artifact claim, so there is nothing for the recorded facts to contradict.")
-                : "Custody status '{$status}' claims more than the recorded facts support; the first unmet requirement is '"
-                    .$firstUnmet."'. The status is a summary of the artifacts, never a substitute for them.",
+                    : "Custody status '{$status}' is before readiness and makes no artifact claim, so there is nothing for the recorded facts to contradict.")
+                : ($undefinedPastReadiness
+                    ? "Custody status '{$status}' is declared at or past readiness but no artifact requirement is defined for it, "
+                        .'so what it claims cannot be checked. Add it to the supported-state requirements before using it.'
+                    : "Custody status '{$status}' claims more than the recorded facts support; the first unmet requirement is '"
+                        .$firstUnmet."'. The status is a summary of the artifacts, never a substitute for them."),
         );
 
         // ---- 13. No secret or locating material in a committed file. -------
+        // PRODUCTION-ANDROID-SIGNING-KEY-PROVISIONING-1 widened this beyond
+        // `custody`.
+        //
+        // Security review demonstrated that the walk covered `signing.custody.*`
+        // and nothing above it, so a hardware serial, the vault filesystem UUID
+        // or a passphrase hint could be committed at `signing.*` and no control
+        // in the tree would notice — while this very check printed "no leaf key
+        // or value matches a passphrase, serial, identifier...". The three
+        // things it named are exactly the three that got through.
+        //
+        // The finding was found here because this sprint ADDED a field at
+        // `signing.*`, which is precisely when an unpoliced namespace stops
+        // being theoretical.
+        $signing = config('android_release.signing');
+        $signing = is_array($signing) ? $signing : [];
+
+        // `custody` is walked separately below, with the custodian field
+        // allowlist that only applies down there. Excluded here so a leak
+        // inside it is reported once rather than twice.
+        unset($signing['custody']);
+
         $leaks = array_merge(
+            $this->signingSecretLeaks($signing),
             $this->custodySecretLeaks($custody),
             $this->custodianUnknownFields($custodians),
         );
@@ -1369,8 +1478,9 @@ class AndroidReleaseGovernanceScanner
             'custody_records_no_secret_material',
             $leaks === [] ? 'PASS' : 'FAIL',
             $leaks === []
-                ? 'Custodian fields are confined to the allowlist, and no leaf key or value matches a passphrase, serial, identifier, contact detail or street-level address pattern.'
-                : 'Secret, locating or unrecognised material recorded in committed custody config: '.implode(', ', $leaks),
+                ? 'Across the whole signing namespace, every field is declared in an allowlist and no leaf key or value matches a passphrase, serial, identifier, contact detail or street-level address pattern. '
+                    .'The certificate fingerprints are the only shape exemption, and they are public identifiers.'
+                : 'Secret, locating or unrecognised material recorded in committed signing config: '.implode(', ', $leaks),
         );
 
         return $checks;
@@ -1432,6 +1542,53 @@ class AndroidReleaseGovernanceScanner
     }
 
     /**
+     * The same leak walk, over the signing namespace above the custody block.
+     *
+     * Delegates to `custodySecretLeaks()` rather than reimplementing it, so the
+     * denylist and the value-shape patterns can never drift apart — two copies
+     * of a security rule is one copy that will be forgotten.
+     *
+     * @param  array<string,mixed>  $signing
+     * @return array<int,string>
+     */
+    private function signingSecretLeaks(array $signing): array
+    {
+        $exempt = [];
+
+        foreach (self::SIGNING_PUBLIC_IDENTIFIER_FIELDS as $field) {
+            if (array_key_exists($field, $signing)) {
+                $exempt[$field] = $signing[$field];
+                unset($signing[$field]);
+            }
+        }
+
+        // Any field nobody declared. This is the half that actually stops an
+        // unanticipated leak; the denylist below only catches the shapes
+        // somebody already thought of.
+        $leaks = array_values(array_map(
+            fn (string $field): string => "signing.{$field} (undeclared signing field)",
+            array_filter(
+                array_map('strval', array_keys($signing)),
+                fn (string $field): bool => ! in_array($field, self::SIGNING_PERMITTED_FIELDS, true),
+            ),
+        ));
+
+        // Exempt from SHAPE detection, never from existing. A fingerprint field
+        // holding something that is not a fingerprint is not covered by the
+        // "public identifier" justification, so it is checked for shape here
+        // and reported like any other leak.
+        $leaks = array_merge($leaks, $this->custodySecretLeaks($signing, 'signing'));
+
+        foreach ($exempt as $field => $value) {
+            if ($value !== null && ! $this->isCertificateFingerprint($value)) {
+                $leaks[] = "signing.{$field} (exempt only as a certificate fingerprint; this is not one)";
+            }
+        }
+
+        return $leaks;
+    }
+
+    /**
      * Fields outside the custodian allowlist, anywhere in the designation.
      *
      * @param  array<string,mixed>  $custodians
@@ -1480,6 +1637,19 @@ class AndroidReleaseGovernanceScanner
         }
 
         return $unknown;
+    }
+
+    /**
+     * Whether a value is a usable certificate SHA-256 fingerprint.
+     *
+     * One helper so the recorded field, the pin and the report can never drift
+     * into disagreeing about what counts as a fingerprint. Case-insensitive
+     * because `keytool` prints upper case, and separators are NOT accepted:
+     * the verifier compares against a bare lower-case hex string.
+     */
+    private function isCertificateFingerprint(mixed $value): bool
+    {
+        return is_string($value) && preg_match('/^[0-9a-f]{64}$/i', $value) === 1;
     }
 
     /**

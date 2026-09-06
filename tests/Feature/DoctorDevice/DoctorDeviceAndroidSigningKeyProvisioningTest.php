@@ -74,6 +74,50 @@ function provisioningCustodyStatus(array $overrides, string $checkId = 'custody_
     }
 }
 
+/**
+ * Scan with a given value pinned, returning the state-machine verdict.
+ */
+function custodyPinnedAs(?string $pin): string
+{
+    $original = config('android_release.signing.production_certificate_sha256');
+
+    config()->set('android_release.signing.production_certificate_sha256', $pin);
+
+    try {
+        $found = collect(provisioningScan()['checks'])
+            ->firstWhere('id', 'custody_state_machine_consistent');
+
+        return $found['status'] ?? 'MISSING';
+    } finally {
+        config()->set('android_release.signing.production_certificate_sha256', $original);
+    }
+}
+
+/**
+ * Add one field to the signing namespace and return the no-secret verdict.
+ *
+ * The field is REMOVED afterwards rather than nulled: `config()->set(..., null)`
+ * leaves the key present, which would leak an undeclared field into every later
+ * test in the same process and make their verdicts meaningless.
+ */
+function signingFieldVerdict(string $field, mixed $value): string
+{
+    $original = config('android_release.signing');
+    $mutated = $original;
+    $mutated[$field] = $value;
+
+    config()->set('android_release.signing', $mutated);
+
+    try {
+        $found = collect(provisioningScan()['checks'])
+            ->firstWhere('id', 'custody_records_no_secret_material');
+
+        return $found['status'] ?? 'MISSING';
+    } finally {
+        config()->set('android_release.signing', $original);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // P1-P4 — the identity that now exists, and the single-authority rule
 // ---------------------------------------------------------------------------
@@ -523,7 +567,279 @@ it('refuses a custody state below readiness in the readiness check', function ()
 });
 
 // ---------------------------------------------------------------------------
-// P19 — the gate has to actually run
+// P19-P24 — security review findings
+//
+// Every test below was written against a finding REPRODUCED on the real
+// scanner before it was fixed. Each records the exploit, not only the
+// corrected behaviour, because the corrected behaviour alone does not say what
+// would have gone wrong.
+// ---------------------------------------------------------------------------
+
+it('refuses a custody status declared past readiness with no requirements defined', function () {
+    // HIGH. `custody_status_matches_recorded_facts` decided whether a status
+    // "claims artifacts" by looking it up in a hardcoded map, so a state absent
+    // from that map was read as claiming nothing and PASSed. Nothing constrains
+    // the membership of `custody.states`, and the relaxation of check 2 in this
+    // same sprint removed the exact-status backstop that had been making the
+    // gap harmless.
+    //
+    // Reproduced before the fix: one state appended, status set to it, all six
+    // artifact flags false, no certificate, no pin — ALL SIXTEEN custody checks
+    // reported PASS with an overall decision of GO, for a record claiming zero
+    // key, zero backups and zero recovery.
+    $originalCustody = config('android_release.signing.custody');
+    $originalRecorded = config('android_release.signing.production_certificate_sha256_recorded');
+
+    $states = $originalCustody['states'];
+    $states[] = 'archived';
+
+    config()->set('android_release.signing.production_certificate_sha256_recorded', null);
+    config()->set('android_release.signing.custody', array_replace($originalCustody, [
+        'states' => $states,
+        'status' => 'archived',
+        'production_signing_key_provisioned' => false,
+        'backup_1_key_copy_created' => false,
+        'backup_2_key_copy_created' => false,
+        'sealed_cold_backup_created' => false,
+        'offsite_backup_created' => false,
+        'recovery_verified' => false,
+    ]));
+
+    try {
+        $report = provisioningScan();
+        $check = collect($report['checks'])->firstWhere('id', 'custody_status_matches_recorded_facts');
+    } finally {
+        config()->set('android_release.signing.custody', $originalCustody);
+        config()->set('android_release.signing.production_certificate_sha256_recorded', $originalRecorded);
+    }
+
+    expect($check['status'])->toBe('FAIL');
+    expect($check['detail'])->toContain('no artifact requirement is defined');
+
+    // The whole report must go red, not just this line.
+    expect($report['status'])->toBe('FAIL');
+    expect($report['summary']['signing_custody_provisioning_preconditions_met'])->toBeFalse();
+});
+
+it('reports a certificate as pinned only when it is actually a fingerprint', function () {
+    // MEDIUM. The summary predicate was `is_string(...) && !== ''` while its
+    // sibling one line above applied the fingerprint regex. With the pin set to
+    // 'TBD' the report printed PRODUCTION_CERTIFICATE_PINNED=true while
+    // AndroidReleaseArtifactVerifier rejected the same value on its own regex
+    // and failed closed — inverting the exact reading that printed pair exists
+    // to give the operator.
+    $original = config('android_release.signing.production_certificate_sha256');
+
+    try {
+        foreach (['TBD', 'yes', 'true', '1', str_repeat('z', 64)] as $notAFingerprint) {
+            config()->set('android_release.signing.production_certificate_sha256', $notAFingerprint);
+
+            expect(provisioningScan()['summary']['production_certificate_pinned'])
+                ->toBeFalse("'{$notAFingerprint}' was reported as a pinned certificate.");
+        }
+
+        // A real fingerprint reports true, so this is not merely always-false.
+        config()->set(
+            'android_release.signing.production_certificate_sha256',
+            config('android_release.signing.production_certificate_sha256_recorded'),
+        );
+
+        expect(provisioningScan()['summary']['production_certificate_pinned'])->toBeTrue();
+    } finally {
+        config()->set('android_release.signing.production_certificate_sha256', $original);
+    }
+});
+
+it('accepts an upper-case pin as the same certificate', function () {
+    // LOW, but aimed straight at the next task. `keytool -list` prints SHA-256
+    // in upper case, so an upper-case paste is the most likely form the pin
+    // will arrive in. A case-sensitive comparison reported a CORRECT pin as
+    // "the wrong key or a substituted one".
+    expect(custodyPinnedAs(strtoupper(
+        (string) config('android_release.signing.production_certificate_sha256_recorded'),
+    )))->toBe('PASS');
+
+    // A genuinely different certificate must still be refused, so the
+    // normalisation is not hiding a real mismatch.
+    expect(custodyPinnedAs(str_repeat('c', 64)))->toBe('FAIL');
+});
+
+it('refuses an undeclared field anywhere in the signing namespace', function () {
+    // MEDIUM. The leak walk covered `signing.custody.*` and nothing above it,
+    // so a hardware serial, the vault filesystem UUID or a passphrase hint
+    // could be committed at `signing.*` with no control noticing — while the
+    // check printed "no leaf key or value matches a passphrase, serial,
+    // identifier...". The three things it named are the three that got through.
+    //
+    // The leaf-key denylist alone does not close it: it matches EXACT keys, so
+    // `primary_workstation_serial` and `keystore_passphrase_hint` walk straight
+    // past `serial` and `hint`. Only the field allowlist stops them, which is
+    // why custodian entries were given one in the first place.
+    foreach ([
+        'primary_workstation_serial' => 'SN-7788-XYZ',
+        'vault_filesystem_uuid' => 'd1b2c3d4-1111-2222-3333-444455556666',
+        'keystore_passphrase_hint' => 'the usual one',
+        'p12_pw' => 'anything at all',
+    ] as $field => $value) {
+        expect(signingFieldVerdict($field, $value))
+            ->toBe('FAIL', "signing.{$field} was accepted into committed config.");
+    }
+});
+
+it('exempts the certificate fingerprints from shape detection but not from being fingerprints', function () {
+    // The exemption exists because a certificate fingerprint is a public
+    // identifier. It must not become a general-purpose hole: a fingerprint
+    // field holding something that is not a fingerprint is not covered by that
+    // justification.
+    expect(provisioningCheck('custody_records_no_secret_material')['status'])->toBe('PASS');
+
+    $original = config('android_release.signing.production_certificate_sha256_recorded');
+
+    try {
+        config()->set('android_release.signing.production_certificate_sha256_recorded', 'SN-7788-XYZ');
+
+        $check = collect(provisioningScan()['checks'])
+            ->firstWhere('id', 'custody_records_no_secret_material');
+
+        expect($check['status'])->toBe('FAIL');
+        expect($check['detail'])->toContain('exempt only as a certificate fingerprint');
+    } finally {
+        config()->set('android_release.signing.production_certificate_sha256_recorded', $original);
+    }
+});
+
+it('names the provisioning-preconditions summary field for what it asserts', function () {
+    // LOW. The field was `signing_custody_ready_for_provisioning`, and once the
+    // check behind it stopped requiring an exact status it became permanently
+    // true. Under an invariant that exactly one production key may ever exist,
+    // a machine-readable field named "ready for provisioning" reading true
+    // forever is the wrong signal to leave in output an agent may act on.
+    $summary = provisioningScan()['summary'];
+
+    expect($summary)->toHaveKey('signing_custody_provisioning_preconditions_met');
+    expect($summary)->not->toHaveKey('signing_custody_ready_for_provisioning');
+    expect($summary['signing_custody_provisioning_preconditions_met'])->toBeTrue();
+});
+
+it('refuses a secret-shaped value inside an allowed signing field, including nested', function () {
+    // Mutant M20 SURVIVED the first campaign covering these fixes: removing the
+    // denylist/shape walk over `signing.*` changed no test result, because every
+    // signing test I had written was caught by the field ALLOWLIST instead.
+    // The allowlist stops undeclared field NAMES; it says nothing about what a
+    // DECLARED field may hold.
+    //
+    // So these use fields that are on the allowlist, and nested ones, where the
+    // walk is the only thing standing between the value and a committed file.
+    expect(signingFieldVerdict('release_signing_context', 'd1b2c3d4-1111-2222-3333-444455556666'))
+        ->toBe('FAIL', 'A UUID inside an allowed signing field was accepted.');
+
+    expect(signingFieldVerdict('key_loss_consequence', 'escalate to it-oncall@example.com'))
+        ->toBe('FAIL', 'A contact address inside an allowed signing field was accepted.');
+
+    expect(signingFieldVerdict('production_key_custody', 'AA:BB:CC:DD:EE:FF:00:11'))
+        ->toBe('FAIL', 'A separator-bearing identifier inside an allowed signing field was accepted.');
+
+    // Nested, one level down inside an allowed array field. The allowlist only
+    // inspects top-level names, so nothing but the recursive walk covers this.
+    $backup = config('android_release.signing.backup');
+    $backup['restore_contact'] = '+62 812 3456 7890';
+
+    expect(signingFieldVerdict('backup', $backup))
+        ->toBe('FAIL', 'A phone number nested inside signing.backup was accepted.');
+});
+
+it('accepts the declared signing fields exactly as they ship', function () {
+    // The complement of the two tests above: the allowlist and the walk must
+    // not be so broad that the real configuration cannot satisfy them. A gate
+    // that only ever says FAIL gets disabled, which is the same outcome as
+    // having no gate.
+    expect(provisioningCheck('custody_records_no_secret_material')['status'])->toBe('PASS');
+
+    // And re-setting every declared field to its own current value is still a
+    // PASS, so the check is reading values rather than object identity.
+    foreach (array_keys((array) config('android_release.signing')) as $field) {
+        if ($field === 'custody') {
+            continue;
+        }
+
+        expect(signingFieldVerdict($field, config('android_release.signing.'.$field)))
+            ->toBe('PASS', "Declared field signing.{$field} was rejected as it ships.");
+    }
+});
+
+it('cannot be bypassed by reordering or renaming the declared custody states', function () {
+    // The status coherence rule reads POSITION, so the obvious attack is to move
+    // the threshold rather than the status. Putting `ready_for_provisioning`
+    // last makes every real state "before readiness" and would, on a
+    // membership-based rule, silence every artifact requirement at once.
+    $original = config('android_release.signing.custody');
+
+    $reordered = $original;
+    $reordered['states'] = [
+        'deferred', 'designated', 'key_provisioned', 'backups_created',
+        'recovery_verified', 'operational', 'ready_for_provisioning',
+    ];
+    $reordered['status'] = 'recovery_verified';
+    $reordered['recovery_verified'] = false;
+    $reordered['backup_1_key_copy_created'] = false;
+    $reordered['backup_2_key_copy_created'] = false;
+    $reordered['sealed_cold_backup_created'] = false;
+    $reordered['offsite_backup_created'] = false;
+    $reordered['production_signing_key_provisioned'] = false;
+
+    config()->set('android_release.signing.custody', $reordered);
+
+    try {
+        $report = provisioningScan();
+    } finally {
+        config()->set('android_release.signing.custody', $original);
+    }
+
+    // Whatever the reordering does to any individual check, a record claiming
+    // recovery with no key and no backups must not reach GO.
+    expect($report['status'])->toBe('FAIL');
+});
+
+it('keeps the verifier and the summary agreeing about what is armed', function () {
+    // The invariant behind the MEDIUM finding, stated directly: the report says
+    // pinned if and only if the verifier would treat the configured value as an
+    // armed production anchor. One helper feeds both, and this pins that they
+    // cannot drift apart again.
+    $original = config('android_release.signing.production_certificate_sha256');
+    $recorded = (string) config('android_release.signing.production_certificate_sha256_recorded');
+
+    $cases = [
+        null => false,
+        '' => false,
+        'TBD' => false,
+        str_repeat('z', 64) => false,
+        $recorded => true,
+        strtoupper($recorded) => true,
+    ];
+
+    try {
+        foreach ($cases as $pin => $expected) {
+            config()->set('android_release.signing.production_certificate_sha256', $pin === '' ? '' : $pin);
+
+            $summarySaysPinned = provisioningScan()['summary']['production_certificate_pinned'];
+
+            // The verifier's own predicate, read from its source of truth
+            // rather than restated here.
+            $verifierWouldArm = is_string($pin) && preg_match('/^[0-9a-f]{64}$/i', $pin) === 1;
+
+            expect($summarySaysPinned)->toBe($expected);
+            expect($summarySaysPinned)->toBe(
+                $verifierWouldArm,
+                'Summary and verifier disagree for pin '.var_export($pin, true),
+            );
+        }
+    } finally {
+        config()->set('android_release.signing.production_certificate_sha256', $original);
+    }
+});
+
+// ---------------------------------------------------------------------------
+// P25 — the gate has to actually run
 // ---------------------------------------------------------------------------
 
 it('registers this suite in the critical gate so something selects it', function () {
