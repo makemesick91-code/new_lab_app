@@ -11,6 +11,13 @@ alwaysApply: false
 
 # Custodian 1 encrypted signing vault
 
+> **SUPERSEDED FORWARD by rule 147** (`PRODUCTION-ANDROID-SIGNING-KEY-PROVISIONING-1`).
+> The production signing key **now exists**; custody is at `recovery_verified`.
+> Any statement below that no key exists, or that provisioning is still to come,
+> was accurate when written and is no longer. The certificate is RECORDED but
+> deliberately **not PINNED** — read rule 147 before acting on this file.
+> Never generate a second production signing key.
+
 REVISION-PRODUCTION-SIGNING-CUSTODIAN1-ENCRYPTED-VAULT-1. Corrects one control
 record written by PRODUCTION-ANDROID-SIGNING-CUSTODY-READINESS-1. That record
 is superseded on this one point and otherwise stands unchanged.

@@ -88,6 +88,46 @@ return [
         'production_certificate_sha256' => null,
         'production_certificate_pin_required_before_install' => true,
 
+        // ------------------------------------------------------------------
+        // THE TRUST ANCHOR'S EVIDENCE, WHICH IS NOT THE TRUST ANCHOR
+        // PRODUCTION-ANDROID-SIGNING-KEY-PROVISIONING-1
+        // ------------------------------------------------------------------
+        //
+        // The SHA-256 fingerprint of the production signing certificate that
+        // now exists, recorded as a lower-case 64-character hex string.
+        //
+        // Until this task those two facts were one field, because both were
+        // false at the same time: no key existed, so nothing could be
+        // recorded and nothing could be pinned. They separate here for the
+        // first time, and collapsing them again would be a real loss:
+        //
+        //   RECORDED  is a FACT.  This certificate is the one the production
+        //             private key belongs to. It became true the moment the
+        //             key was generated and it can never change, because the
+        //             key can never be regenerated.
+        //
+        //   PINNED    is a DECISION to enforce. It arms
+        //             `android:verify-release`, which is the only thing
+        //             standing between a substituted APK and a clinic tablet.
+        //             It is deliberately still null: pinning is the separate
+        //             task PRODUCTION-ANDROID-SIGNING-CERTIFICATE-PIN-1.
+        //
+        // This is the same split REVISION-PRODUCTION-SIGNING-CUSTODIAN1-
+        // ENCRYPTED-VAULT-1 made when one ambiguous `disk_encryption` boolean
+        // was carrying two different claims. One field answering two
+        // questions is how a record starts lying without anyone editing it.
+        //
+        // A fingerprint is a PUBLIC identifier — it is derived from the
+        // certificate, which ships inside every signed APK. Committing it
+        // discloses nothing. The private key, the keystore and its passwords
+        // are not here, are not anywhere in this repository, and are not on
+        // the production server or in CI.
+        //
+        // `custody_state_machine_consistent` binds this to the custody record
+        // in both directions: a key claimed without a recorded certificate is
+        // fiction, and a certificate recorded without a key is fiction too.
+        'production_certificate_sha256_recorded' => '79db269b7cd38e920b80efbcf2f59142721f1e57924d3048d07a862f34fea2d9',
+
         // Stated as a value rather than left implicit, because every custody
         // rule below exists because of it.
         'key_loss_recoverable' => false,
@@ -151,11 +191,23 @@ return [
         // READ THIS BEFORE READING ANYTHING BELOW IT:
         //
         //   A destination being READY means it is prepared to receive a copy.
-        //   It does NOT mean a copy is there. As of this record there is no
-        //   production signing key anywhere in the world, no backup copy on
-        //   any medium, and no rehearsed recovery. Every `*_ready` flag below
-        //   is paired with a `*_created` flag that is false, precisely so the
-        //   two can never be read as the same statement.
+        //   It does NOT mean a copy is there. The two are recorded as separate
+        //   flags — `*_ready` and `*_created` — precisely so they can never be
+        //   read as the same statement.
+        //
+        //   PRODUCTION-ANDROID-SIGNING-KEY-PROVISIONING-1 changed the answer
+        //   to the second question, and only the second. When this block was
+        //   written there was no production signing key anywhere in the world,
+        //   no backup copy on any medium and no rehearsed recovery, and every
+        //   `*_created` flag below was false. A key now exists, both encrypted
+        //   backups exist on their destinations, and recovery has been
+        //   rehearsed from both. The `*_ready` flags did not move, because
+        //   readiness was already true and is not what changed.
+        //
+        //   What has NOT happened, and is asserted as not having happened:
+        //   the certificate is not pinned (`production_certificate_sha256` is
+        //   still null), no production APK has been built or signed, no device
+        //   has been enrolled, and no enforcement — pilot or global — is on.
         //
         // No secret material belongs here. Not a passphrase, not a hardware
         // serial, not a filesystem UUID, not a private address. This file is
@@ -175,7 +227,14 @@ return [
                 'operational',
             ],
 
-            'status' => 'ready_for_provisioning',
+            // PRODUCTION-ANDROID-SIGNING-KEY-PROVISIONING-1 advanced this from
+            // 'ready_for_provisioning'. The key was generated once, on
+            // custodian 1, inside the LUKS2 vault; both encrypted backups were
+            // written to their destinations, and both were RESTORED FROM THE
+            // DESTINATION COPY — never from the staging source — and proven to
+            // yield a usable private key. `custody_status_matches_recorded_facts`
+            // now refuses any status the flags below do not actually support.
+            'status' => 'recovery_verified',
 
             // Three DESTINATIONS, which is not the same claim as three
             // independent people. See `single_party_can_reach_all_copies`.
@@ -184,12 +243,37 @@ return [
             // ---------------------------------------------------------------
             // The negative facts. These are the whole point of this record.
             // ---------------------------------------------------------------
-            'production_signing_key_provisioned' => false,
-            'backup_1_key_copy_created' => false,
-            'backup_2_key_copy_created' => false,
-            'sealed_cold_backup_created' => false,
-            'offsite_backup_created' => false,
-            'recovery_verified' => false,
+            // PRODUCTION-ANDROID-SIGNING-KEY-PROVISIONING-1.
+            //
+            // These were the negative facts, and the paragraph above them has
+            // been left standing on purpose. It is the record of what this
+            // block meant before a key existed, and a future reader needs to
+            // see that these flags moved because artifacts were created — not
+            // because a sentence was rewritten.
+            //
+            // Every one is an ARTIFACT claim. Each backup was verified by
+            // RESTORING FROM THE DESTINATION COPY and reading the recovered
+            // entry back, never by re-hashing the file that was sent.
+            'production_signing_key_provisioned' => true,
+            'backup_1_key_copy_created' => true,
+            'backup_2_key_copy_created' => true,
+
+            // Custodian 3 carries the sealed-cold and the offsite property on
+            // a single medium — the concentration already declared in
+            // `single_party_access_compensating_controls`. One artifact
+            // satisfies all three of these flags, and saying so plainly is
+            // better than three flags implying three separate media.
+            'sealed_cold_backup_created' => true,
+            'offsite_backup_created' => true,
+
+            // Both destination copies were restored and produced a
+            // PrivateKeyEntry under the production alias whose certificate
+            // fingerprint equals the primary's, and the recovered private key
+            // was proven usable by generating a certificate signing request.
+            // A deliberately corrupted disposable copy of the offsite artifact
+            // was rejected by the decryption step, so the positive result is
+            // known not to be vacuous.
+            'recovery_verified' => true,
 
             // ...and the readiness facts they are deliberately kept apart from.
             'primary_signing_workstation_ready' => true,
@@ -265,7 +349,7 @@ return [
                     'login_password' => true,
                     'screen_lock' => true,
                     'initial_key_generation_authority' => true,
-                    'status' => 'ready_for_provisioning',
+                    'status' => 'holds_primary_key',
                 ],
 
                 // -----------------------------------------------------------
@@ -302,7 +386,7 @@ return [
                     'login_password' => true,
                     'screen_lock' => true,
                     'initial_key_generation_authority' => false,
-                    'status' => 'ready_for_provisioning',
+                    'status' => 'holds_encrypted_backup',
                 ],
 
                 // -----------------------------------------------------------
@@ -327,7 +411,7 @@ return [
                     'location' => 'Kantor Management Klinik',
                     'authorized_access' => ['IT'],
                     'initial_key_generation_authority' => false,
-                    'status' => 'ready_for_provisioning',
+                    'status' => 'holds_encrypted_backup',
                 ],
             ],
 

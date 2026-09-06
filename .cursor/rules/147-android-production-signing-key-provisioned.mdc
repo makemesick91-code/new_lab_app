@@ -1,0 +1,136 @@
+---
+description: The production Android signing key EXISTS and is permanent — never generate a second one; the certificate is recorded but not pinned, and those are different facts.
+globs:
+  - "config/android_release.php"
+  - "app/Support/Android/**"
+  - "app/Console/Commands/Android*.php"
+  - "docs/runbooks/android-signing-key-backup-and-recovery.md"
+  - "docs/governance/android-production-signing-governance.md"
+  - "tests/Feature/DoctorDevice/DoctorDeviceAndroidSigning*.php"
+alwaysApply: false
+---
+
+# The production Android signing key exists
+
+PRODUCTION-ANDROID-SIGNING-KEY-PROVISIONING-1. Supersedes, forward and never by
+rewriting, every earlier record that says no production key exists — including
+rules 145 and 146, which were accurate when written.
+
+## 1. There is exactly one, and there will only ever be one
+
+1. The production Android signing identity **has been generated**, once, on
+   Custodian 1, inside the LUKS2 vault.
+2. It is **permanent production authority**. `key_loss_recoverable` is false and
+   `app_signing_key_rotation` is `constrained_treat_as_permanent`.
+3. **Never generate another production signing key.** Not to "rotate to a clean
+   one", not to replace a suspect one, not to get a gate green, not because a
+   ceremony looked incomplete. A second signer is a permanently divergent app
+   identity: installing it requires uninstalling the first, which erases app
+   data and destroys every device's Keystore identity and enrolment.
+4. If anything about the identity looks wrong — a fingerprint mismatch, a second
+   signer, an unrecoverable backup — **STOP and report the blocker**. Preserve
+   the existing identity. A new key never solves a blocker; it converts a
+   recoverable problem into an unrecoverable one.
+5. Section 1 of the backup-and-recovery runbook is **history, not an
+   instruction**. It records how the one key was made.
+
+## 2. Public identity
+
+A certificate fingerprint is a **public identifier** — it ships inside every
+signed APK, so committing it discloses nothing.
+
+| Field | Value |
+|---|---|
+| Alias | `daengtisia-clinic-release` |
+| Algorithm | RSA 4096, PKCS12 `PrivateKeyEntry`, self-signed |
+| SHA-256 | `79db269b7cd38e920b80efbcf2f59142721f1e57924d3048d07a862f34fea2d9` |
+
+If this value ever changes, either the key was regenerated — which is forbidden
+— or the record is describing a different identity. Both are STOP conditions.
+
+## 3. RECORDED is not PINNED
+
+Two fields, two different questions. Never collapse them into one again.
+
+| Field | Kind | State |
+|---|---|---|
+| `signing.production_certificate_sha256_recorded` | **fact** — the certificate the production key belongs to | set |
+| `signing.production_certificate_sha256` | **decision** — the trust anchor that arms `android:verify-release` | **`null`** |
+
+1. While the pin is null, `android:verify-release` authenticates nothing and
+   **fails closed**. That is correct, not unfortunate.
+2. **The verifier must never fall back to the recorded value.** If it did,
+   recording evidence would silently arm the install path and the pinning task
+   would have nothing left to decide. A test asserts the fallback is absent, and
+   asserts a genuinely production-signed artifact is still refused while unpinned.
+3. Pinning is the separate task **PRODUCTION-ANDROID-SIGNING-CERTIFICATE-PIN-1**.
+   Do not fold it into any other sprint.
+4. `custody_state_machine_consistent` binds the pair in both directions: a key
+   without a recorded certificate, a recorded certificate without a key, a pin
+   without a key, and a pin that disagrees with the recorded certificate are all
+   contradictions. The recorded value must match `/^[0-9a-f]{64}$/`, so `'yes'`
+   cannot stand in for a certificate.
+
+## 4. Custody: verify from the destination, not from the source
+
+1. Custody is at `recovery_verified`. Both encrypted backups exist and both were
+   **restored from the destination copy** — the file as it sits on Custodian 2
+   and on the Custodian 3 USB — never from the staging source.
+2. **Hashing the file you just sent proves the file you just sent.** Only
+   reading it back from where it now lives proves the destination. Any future
+   restore drill follows the same rule.
+3. A restore is verified only when it yields a `PrivateKeyEntry` under the
+   production alias whose certificate fingerprint equals the primary's **and**
+   the recovered private key is proven usable (`keytool -certreq`). Presence is
+   not recoverability.
+4. **Prove the negative too.** A corrupted copy must be rejected. Two passing
+   restores without it only show the procedure returns something. Corrupt a
+   disposable copy only — never a durable backup.
+5. Passwords may be rotated; the key may not. A password exposure is remediated
+   with `keytool` on the same keystore, preserving alias, entry and fingerprint.
+
+## 5. Secrets, and where they are not
+
+1. The vault passphrase, keystore password and backup passphrases are typed at a
+   real TTY. They are not known to any agent and must never appear in argv, an
+   environment variable, a file, a log, chat, evidence or this repository.
+2. **Never ask the operator for them, and never script around the interactive
+   step.** The ceremony is human-only by design.
+3. No private key, keystore, `.p12`, `.pfx`, `.jks` or password is in git, on
+   the production VPS, or in CI. Normal CI must never require the production key
+   or decrypt a custody backup; it validates governance and configuration only.
+4. Public certificate SHA-256 and encrypted-backup artifact SHA-256 values are
+   safe to record. Removable-media serials, filesystem UUIDs, private addresses
+   and shell history are not — the custody block's field allowlist and
+   value-shape detection enforce that rather than trusting memory.
+
+## 6. A key is not a release
+
+Provisioning moved exactly one thing. All of these remain false and are asserted
+false:
+
+- certificate pinned; production APK built or signed; artifact distributed;
+- device enrolled; pilot enforcement activated; global enforcement activated;
+- `enforcement.active`, `enforcement.doctor_browser_login_denied`, and
+  `enforcement.current_stage` is `off`.
+
+Reading `PRODUCTION_SIGNING_KEY_PROVISIONED=true` as permission to install a
+build is the specific misreading this rule exists to prevent, which is why the
+command prints `PRODUCTION_CERTIFICATE_PINNED` directly beneath it.
+
+## 7. Gate hygiene learned here
+
+1. **A gate must not fail on the lawful progress of the thing it guards.**
+   `signing_custody_ready_for_provisioning` demanded an exact status and went red
+   the moment custody advanced. A check that fails on correct behaviour teaches
+   operators that its FAIL is normal.
+2. **The status may never run ahead of the artifacts.**
+   `custody_status_matches_recorded_facts` derives the furthest state the flags
+   support and refuses anything beyond it, cumulatively. One-directional: a
+   status may lag the facts, never lead them.
+3. **A message must describe what its own condition verified.** Any check
+   printing a claim wider than its evidence is a finding, even while green.
+4. **When a flag flips true, re-read every test that asserted it false.** Four
+   custody mutation tests silently became no-ops — mutating a value to what it
+   already was — while still reading as guards. Prefer testing *independence*
+   over pinning a frozen opposite value.

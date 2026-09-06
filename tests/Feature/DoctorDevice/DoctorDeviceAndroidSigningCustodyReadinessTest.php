@@ -15,18 +15,29 @@ uses()->group('DoctorDevice', 'Android', 'Security');
  *   KEY_PROVISIONED         is not  BACKUPS_CREATED
  *   BACKUPS_CREATED         is not  RECOVERY_VERIFIED
  *
- * At the time of writing NO production signing key exists. No keystore has
- * been generated, no backup copy has been written to any medium, no recovery
- * has been rehearsed and `production_certificate_sha256` is still null. What
- * exists is a decision about WHO holds WHAT, WHERE, under WHICH controls — so
- * that a later, separate provisioning task has somewhere lawful to put the key
- * the moment it is created.
+ * PRODUCTION-ANDROID-SIGNING-KEY-PROVISIONING-1 then executed that
+ * separation, and the suite has been carried forward rather than rewritten.
  *
- * The failure mode this suite refuses is a future reader — human or agent —
- * finding "three custodians designated, custody ready" and concluding that
- * three encrypted backups already sit in three buildings. They do not. Every
- * assertion below that says "ready" is paired with one that says "and nothing
- * has been created yet".
+ * When it was written NO production signing key existed. One now does: it was
+ * generated exactly once on custodian 1 inside the LUKS2 vault, copied to two
+ * encrypted backup destinations, and RESTORED FROM BOTH DESTINATION COPIES to
+ * prove the private key is recoverable. So the ladder above has climbed three
+ * rungs, and the assertions that used to pin `false` now pin the artifacts
+ * that made them true.
+ *
+ * What has NOT happened: `production_certificate_sha256` is still null. The
+ * fingerprint is RECORDED as evidence that a key exists; it is not PINNED, and
+ * pinning is the separate task PRODUCTION-ANDROID-SIGNING-CERTIFICATE-PIN-1.
+ * Until it is pinned, `android:verify-release` authenticates nothing and fails
+ * closed. No production APK has been built, no device enrolled, no enforcement
+ * switched on.
+ *
+ * The failure mode this suite refuses is unchanged and now cuts the other way.
+ * It used to be a reader finding "three custodians designated, custody ready"
+ * and concluding three encrypted backups existed. It is now a reader finding
+ * "key provisioned" and concluding an APK can be built and installed. Every
+ * assertion below that says a thing exists is paired with one that says what
+ * still does not.
  *
  * As with the preflight suite, the checks are not "the config says PASS".
  * Each control is mutated into the way it could be wrong and the scanner is
@@ -72,7 +83,10 @@ function custodyMutate(string $configKey, mixed $badValue, string $checkId): str
 // ---------------------------------------------------------------------------
 
 it('records the custody state as ready for provisioning, not as provisioned', function () {
-    expect(config('android_release.signing.custody.status'))->toBe('ready_for_provisioning');
+    // The state advanced when artifacts were created, and the gate that stops
+    // it advancing on words alone is asserted immediately below.
+    expect(config('android_release.signing.custody.status'))->toBe('recovery_verified');
+    expect(custodyCheck('custody_status_matches_recorded_facts')['status'])->toBe('PASS');
 
     expect(custodyCheck('signing_custody_status_recorded')['status'])->toBe('PASS');
     expect(custodyCheck('signing_custody_ready_for_provisioning')['status'])->toBe('PASS');
@@ -186,29 +200,46 @@ it('requires the custody USB to be offline outside an approved operation', funct
 // C14-C18 — readiness is NOT provisioning. The core of this suite.
 // ---------------------------------------------------------------------------
 
-it('does not claim a production signing key exists', function () {
+it('claims a production signing key exists only alongside its recorded certificate', function () {
     $custody = config('android_release.signing.custody');
 
-    expect($custody['production_signing_key_provisioned'])->toBeFalse();
+    expect($custody['production_signing_key_provisioned'])->toBeTrue();
+
+    // The evidence that makes the claim above sayable at all.
+    expect(config('android_release.signing.production_certificate_sha256_recorded'))
+        ->toMatch('/^[0-9a-f]{64}$/');
+
+    // And the decision that has deliberately NOT been taken with it.
     expect(config('android_release.signing.production_certificate_sha256'))->toBeNull();
 
     $summary = custodyScan()['summary'];
 
-    expect($summary['production_signing_key_provisioned'])->toBeFalse();
+    expect($summary['production_signing_key_provisioned'])->toBeTrue();
+    expect($summary['production_certificate_recorded'])->toBeTrue();
+    expect($summary['production_certificate_pinned'])->toBeFalse();
     expect($summary['signing_custody_ready_for_provisioning'])->toBeTrue();
 
     expect(custodyCheck('custody_readiness_does_not_claim_provisioning')['status'])->toBe('PASS');
 });
 
-it('does not claim any backup copy has been created', function () {
+it('claims both backup copies only with the key they are copies of', function () {
     $custody = config('android_release.signing.custody');
 
-    expect($custody['backup_1_key_copy_created'])->toBeFalse();
-    expect($custody['backup_2_key_copy_created'])->toBeFalse();
+    expect($custody['backup_1_key_copy_created'])->toBeTrue();
+    expect($custody['backup_2_key_copy_created'])->toBeTrue();
+
+    // A backup is a copy OF something. The state machine refuses the pair in
+    // the wrong order, and that refusal is what makes the claim above mean
+    // anything.
+    expect($custody['production_signing_key_provisioned'])->toBeTrue();
 });
 
-it('does not claim recovery has been verified', function () {
-    expect(config('android_release.signing.custody.recovery_verified'))->toBeFalse();
+it('claims recovery is verified only with the backups it was rehearsed from', function () {
+    $custody = config('android_release.signing.custody');
+
+    expect($custody['recovery_verified'])->toBeTrue();
+    expect($custody['backup_1_key_copy_created'])->toBeTrue();
+    expect($custody['backup_2_key_copy_created'])->toBeTrue();
 });
 
 it('keeps the certificate pin fail-closed while no key exists', function () {
@@ -219,15 +250,25 @@ it('keeps the certificate pin fail-closed while no key exists', function () {
 
 it('separates a ready destination from an established backup in the recorded vocabulary', function () {
     // "ready" describes a place that is prepared to receive a copy.
-    // "created" describes a copy that exists. Conflating them is the single
-    // most damaging misreading this record can produce.
+    // "created" describes a copy that exists. They are now BOTH true, which
+    // is exactly when a pair of fields like this stops being scrutinised — so
+    // the separation is asserted structurally instead of by opposite values:
+    // the two must remain independent keys, and the created side must still be
+    // refusable while the ready side stays true.
     $custody = config('android_release.signing.custody');
 
-    expect($custody['sealed_cold_destination_ready'])->toBeTrue();
-    expect($custody['sealed_cold_backup_created'])->toBeFalse();
+    foreach (['sealed_cold', 'offsite'] as $kind) {
+        expect($custody[$kind.'_destination_ready'])->toBeTrue();
+        expect($custody[$kind.'_backup_created'])->toBeTrue();
+    }
 
-    expect($custody['offsite_destination_ready'])->toBeTrue();
-    expect($custody['offsite_backup_created'])->toBeFalse();
+    // Readiness alone must never be able to carry the created claim: strip the
+    // key while leaving every destination ready, and the gate has to go red.
+    expect(custodyMutate(
+        'android_release.signing.custody.production_signing_key_provisioned',
+        false,
+        'custody_state_machine_consistent',
+    ))->toBe('FAIL');
 });
 
 // ---------------------------------------------------------------------------
@@ -245,13 +286,20 @@ it('activates neither the pilot nor global enforcement', function () {
     expect(collect($report['checks'])->firstWhere('id', 'global_enforcement_deferred')['status'])->toBe('PASS');
 });
 
-it('leaves the whole release readiness report green without inventing a key', function () {
+it('leaves the whole release readiness report green without inventing anything downstream', function () {
     $report = custodyScan();
 
     expect($report['status'])->toBe('GO');
     expect($report['summary']['failed'])->toBe(0);
-    expect($report['summary']['production_signing_key_provisioned'])->toBeFalse();
+
+    // The key is real and reported as such.
+    expect($report['summary']['production_signing_key_provisioned'])->toBeTrue();
+
+    // Everything downstream of it is not, and green must never be read as
+    // consent to any of them.
+    expect($report['summary']['production_certificate_pinned'])->toBeFalse();
     expect($report['summary']['real_device_validation'])->toBeFalse();
+    expect($report['summary']['device_enforcement_active'])->toBeFalse();
 });
 
 // ---------------------------------------------------------------------------
@@ -419,42 +467,112 @@ it('rejects storing the key password on the same medium as the key', function ()
     ))->toBe('FAIL');
 });
 
-it('rejects claiming the key is provisioned while no certificate is pinned', function () {
+it('rejects claiming the key is provisioned while no certificate is recorded', function () {
+    // This mutation used to be `production_signing_key_provisioned => true`.
+    // That value is now the truth, so mutating to it asserted nothing at all —
+    // a test that had quietly become a no-op while still reading as a guard.
+    //
+    // The rule it defends is unchanged: a key that exists has a certificate.
+    // So the mutation now removes the certificate instead.
     expect(custodyMutate(
-        'android_release.signing.custody.production_signing_key_provisioned',
-        true,
+        'android_release.signing.production_certificate_sha256_recorded',
+        null,
         'custody_state_machine_consistent',
     ))->toBe('FAIL');
 });
 
-it('rejects claiming a backup exists before the key is provisioned', function () {
+it('rejects a recorded certificate that is not a fingerprint', function () {
+    // Without a shape check, any non-empty string would satisfy "a certificate
+    // is recorded" and let the key claim above stand on the word 'yes'.
+    foreach (['yes', 'TBD', 'true', '1', str_repeat('z', 64), 'ABCDEF'] as $notAFingerprint) {
+        expect(custodyMutate(
+            'android_release.signing.production_certificate_sha256_recorded',
+            $notAFingerprint,
+            'custody_state_machine_consistent',
+        ))->toBe('FAIL');
+    }
+});
+
+it('rejects a certificate recorded while no key is claimed provisioned', function () {
+    // The reverse direction. Without it, the recorded field would itself be
+    // the loophole in the check it was added to serve: write 64 hex characters
+    // and the "a key has a certificate" rule is satisfied by nothing.
     expect(custodyMutate(
-        'android_release.signing.custody.backup_1_key_copy_created',
-        true,
+        'android_release.signing.custody.production_signing_key_provisioned',
+        false,
+        'custody_state_machine_consistent',
+    ))->toBe('FAIL');
+});
+
+it('rejects pinning a certificate that is not the recorded production certificate', function () {
+    // The pin is the ONLY authority an installer verifies an artifact against.
+    // A pin that disagrees with the recorded production certificate is either
+    // the wrong key or a substituted one.
+    expect(custodyMutate(
+        'android_release.signing.production_certificate_sha256',
+        str_repeat('a', 64),
+        'custody_state_machine_consistent',
+    ))->toBe('FAIL');
+});
+
+it('accepts a pin that matches the recorded production certificate', function () {
+    // The lawful end state of PRODUCTION-ANDROID-SIGNING-CERTIFICATE-PIN-1.
+    // Asserted here so this gate is known to permit the next task rather than
+    // to have accidentally walled it off.
+    expect(custodyMutate(
+        'android_release.signing.production_certificate_sha256',
+        config('android_release.signing.production_certificate_sha256_recorded'),
+        'custody_state_machine_consistent',
+    ))->toBe('PASS');
+});
+
+it('rejects claiming a backup exists before the key is provisioned', function () {
+    // Same inversion as above: the flags are now true, so the mutation that
+    // proves the ordering rule is removing the KEY and leaving the backups.
+    $custody = config('android_release.signing.custody');
+    $custody['production_signing_key_provisioned'] = false;
+    $custody['backup_1_key_copy_created'] = true;
+
+    expect(custodyMutate(
+        'android_release.signing.custody',
+        $custody,
         'custody_state_machine_consistent',
     ))->toBe('FAIL');
 });
 
 it('rejects claiming recovery is verified before any backup exists', function () {
+    $custody = config('android_release.signing.custody');
+    $custody['recovery_verified'] = true;
+    $custody['backup_1_key_copy_created'] = false;
+    $custody['backup_2_key_copy_created'] = false;
+    $custody['sealed_cold_backup_created'] = false;
+    $custody['offsite_backup_created'] = false;
+
     expect(custodyMutate(
-        'android_release.signing.custody.recovery_verified',
-        true,
+        'android_release.signing.custody',
+        $custody,
         'custody_state_machine_consistent',
     ))->toBe('FAIL');
 });
 
 it('rejects a sealed-cold backup claimed as created while the key does not exist', function () {
+    $custody = config('android_release.signing.custody');
+    $custody['production_signing_key_provisioned'] = false;
+    $custody['sealed_cold_backup_created'] = true;
+
     expect(custodyMutate(
-        'android_release.signing.custody.sealed_cold_backup_created',
-        true,
+        'android_release.signing.custody',
+        $custody,
         'custody_state_machine_consistent',
     ))->toBe('FAIL');
 });
 
 it('rejects a readiness status that also claims provisioning', function () {
-    // Status stays ready_for_provisioning while a downstream fact says the key
-    // exists. Either the status or the fact is a lie; the gate must not pick.
+    // Status is forced back to ready_for_provisioning while the downstream
+    // facts say the key exists. Either the status or the fact is a lie; the
+    // gate must not pick.
     $custody = config('android_release.signing.custody');
+    $custody['status'] = 'ready_for_provisioning';
     $custody['production_signing_key_provisioned'] = true;
 
     expect(custodyMutate(

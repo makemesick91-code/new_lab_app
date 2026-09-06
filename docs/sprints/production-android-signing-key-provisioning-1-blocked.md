@@ -1,5 +1,19 @@
 # PRODUCTION-ANDROID-SIGNING-KEY-PROVISIONING-1 — BLOCKED BEFORE KEY GENERATION
 
+> **SUPERSEDED — historical record of the FIRST attempt.**
+>
+> The task was resumed and completed. The production signing key now exists, both
+> encrypted backups exist, and recovery was verified from both destination
+> copies. See **`docs/sprints/production-android-signing-key-provisioning-1.md`**
+> for the closed record, and rule 147 for the durable invariants.
+>
+> **The statement "no production Android signing key exists" below was true when
+> written and is no longer true.** It is kept unedited because the reasoning that
+> produced the stop is the reason the key was eventually created safely — with
+> all three destinations genuinely available, rather than in one place.
+>
+> Superseded forward, never rewritten.
+
 **Status:** BLOCKED. Stopped at the provisioning precheck, before `keytool` ran.
 **No production Android signing key exists.** No GO tag was created.
 

@@ -169,33 +169,77 @@ it('records the vault as closed at rest with no auto-unlock and no keyfile', fun
 // V7-V12 — storage readiness implies nothing downstream
 // ---------------------------------------------------------------------------
 
+/**
+ * PRODUCTION-ANDROID-SIGNING-KEY-PROVISIONING-1 rewrote V7-V9.
+ *
+ * They asserted "storage readiness implies nothing downstream" by pinning the
+ * downstream facts to false. That worked only while they happened to be false;
+ * once a key genuinely existed the assertions failed without anything about
+ * the vault having changed, which is a stale-fact test rather than a claim
+ * about the vault.
+ *
+ * The claim they were reaching for is INDEPENDENCE: the vault check must reach
+ * its verdict from the vault record alone, and never borrow confidence from a
+ * key, a backup or a recovery. That is testable directly and stays true in
+ * every future programme state, including the one where all three are true.
+ *
+ * @param  array<string,mixed>  $overrides
+ */
+function vaultCheckWithCustody(array $overrides, string $id = 'custody_primary_secret_storage_encrypted'): string
+{
+    $original = config('android_release.signing.custody');
+
+    config()->set('android_release.signing.custody', array_replace($original, $overrides));
+
+    try {
+        $found = collect(vaultScan()['checks'])->firstWhere('id', $id);
+
+        return $found['status'] ?? 'MISSING';
+    } finally {
+        config()->set('android_release.signing.custody', $original);
+    }
+}
+
 it('is valid for primary secret storage to be ready while no key is provisioned', function () {
-    // V7. These two facts must be able to coexist; that is the entire shape
-    // of the current programme state.
+    // V7. The vault verdict must be identical whether or not a key exists —
+    // both directions, so the check is shown not to read the flag at all.
     expect(vaultCheck('custody_primary_secret_storage_encrypted')['status'])->toBe('PASS');
 
-    expect(config('android_release.signing.custody.production_signing_key_provisioned'))->toBeFalse();
+    expect(vaultCheckWithCustody(['production_signing_key_provisioned' => false]))->toBe('PASS');
+    expect(vaultCheckWithCustody(['production_signing_key_provisioned' => true]))->toBe('PASS');
 });
 
 it('does not let storage readiness imply a production key exists', function () {
-    // V8 / M11.
-    $custody = config('android_release.signing.custody');
+    // V8 / M11. Storage readiness is not a key, so the vault check must not
+    // move when the lifecycle status does — and the readiness-honesty check
+    // must still refuse a record that is ready_for_provisioning while claiming
+    // a key, which is the misreading this pairing exists to prevent.
+    foreach (['designated', 'ready_for_provisioning', 'key_provisioned', 'recovery_verified'] as $status) {
+        expect(vaultCheckWithCustody(['status' => $status]))->toBe('PASS');
+    }
 
-    expect($custody['production_signing_key_provisioned'])->toBeFalse();
-    expect($custody['status'])->toBe('ready_for_provisioning');
-
-    expect(vaultCheck('custody_readiness_does_not_claim_provisioning')['status'])->toBe('PASS');
+    expect(vaultCheckWithCustody([
+        'status' => 'ready_for_provisioning',
+        'production_signing_key_provisioned' => true,
+    ], 'custody_readiness_does_not_claim_provisioning'))->toBe('FAIL');
 });
 
 it('does not let storage readiness imply any backup or verified recovery', function () {
-    // V9.
-    $custody = config('android_release.signing.custody');
+    // V9. Flip every artifact flag underneath the vault check, in both
+    // directions. A vault is a place to put a key; it is never evidence that
+    // one was written, copied or restored.
+    $artifacts = [
+        'backup_1_key_copy_created',
+        'backup_2_key_copy_created',
+        'sealed_cold_backup_created',
+        'offsite_backup_created',
+        'recovery_verified',
+    ];
 
-    expect($custody['backup_1_key_copy_created'])->toBeFalse();
-    expect($custody['backup_2_key_copy_created'])->toBeFalse();
-    expect($custody['sealed_cold_backup_created'])->toBeFalse();
-    expect($custody['offsite_backup_created'])->toBeFalse();
-    expect($custody['recovery_verified'])->toBeFalse();
+    foreach ($artifacts as $flag) {
+        expect(vaultCheckWithCustody([$flag => false]))->toBe('PASS');
+        expect(vaultCheckWithCustody([$flag => true]))->toBe('PASS');
+    }
 });
 
 it('does not let storage readiness pin the production certificate', function () {
@@ -333,11 +377,15 @@ it('leaves the whole release readiness report green without inventing a key', fu
 
     expect($scan['status'])->toBe('GO');
 
-    // Custody may return to ready_for_provisioning ONLY because the primary
-    // secret storage gap is genuinely closed — and still without claiming a
-    // key, which is the pairing this whole programme keeps having to defend.
+    // Custody cleared readiness ONLY because the primary secret storage gap is
+    // genuinely closed. That precondition still holds after provisioning, and
+    // the check now says so without re-asserting that no key exists.
     expect($scan['summary']['signing_custody_ready_for_provisioning'])->toBeTrue();
-    expect($scan['summary']['production_signing_key_provisioned'])->toBeFalse();
+    // The vault sprint did not create a key, and this suite must not be the
+    // place that asserts whether one exists now — the custody suite owns that
+    // fact. What stays pinned here is everything the STORAGE gap closing must
+    // not have moved on its own.
+    expect($scan['summary']['production_certificate_pinned'])->toBeFalse();
     expect($scan['summary']['real_device_validation'])->toBeFalse();
     expect($scan['summary']['device_enforcement_active'])->toBeFalse();
 });

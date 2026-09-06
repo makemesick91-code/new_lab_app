@@ -111,6 +111,21 @@ class AndroidReleaseReadinessCommand extends Command
         // Stated on every run, in every mode. The most damaging thing this
         // command could do is let a reader infer readiness it has not proven.
         $this->line('PRODUCTION_SIGNING_KEY_PROVISIONED='.($summary['production_signing_key_provisioned'] ? 'true' : 'false'));
+
+        // PRODUCTION-ANDROID-SIGNING-KEY-PROVISIONING-1 printed these two
+        // immediately under the line above, for the same reason the hardware
+        // preflight is printed under the pilot validation.
+        //
+        // The line above now reads `true` for the first time, and the natural
+        // next thought is "so we can install a signed build". We cannot. The
+        // RECORDED fingerprint is evidence that a key exists; the PINNED one
+        // is what arms `android:verify-release`, and while it is false that
+        // command authenticates nothing and fails closed. An installer acting
+        // on the provisioned line alone would install an artifact no control
+        // has verified.
+        $this->line('PRODUCTION_CERTIFICATE_RECORDED='.($summary['production_certificate_recorded'] ? 'true' : 'false'));
+        $this->line('PRODUCTION_CERTIFICATE_PINNED='.($summary['production_certificate_pinned'] ? 'true' : 'false'));
+
         $this->line('ANDROID_REAL_DEVICE_VALIDATION='.($summary['real_device_validation'] ? 'true' : 'false'));
         // Printed immediately under the line it is most likely to be confused
         // with. The hardware preflight is a narrow gate: the key the app

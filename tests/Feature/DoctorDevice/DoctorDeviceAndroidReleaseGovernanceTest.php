@@ -477,7 +477,18 @@ it('never claims a production key or a real device it does not have', function (
 
     // The single most damaging thing this tooling could do is let a reader
     // infer readiness it has not proven.
-    expect($summary['production_signing_key_provisioned'])->toBeFalse();
+    //
+    // PRODUCTION-ANDROID-SIGNING-KEY-PROVISIONING-1 made the key line true, so
+    // this now asserts the reporting CONTRACT rather than a frozen value: the
+    // summary must state the key fact from the custody record instead of a
+    // literal, and the two facts most likely to be inferred from it — that an
+    // artifact can be verified, and that a device has been validated — must
+    // still be false and reported separately.
+    expect($summary['production_signing_key_provisioned'])
+        ->toBe(config('android_release.signing.custody.production_signing_key_provisioned') === true);
+
+    // A key exists; nothing downstream of it does.
+    expect($summary['production_certificate_pinned'])->toBeFalse();
     expect($summary['real_device_validation'])->toBeFalse();
     expect($summary['device_enforcement_active'])->toBeFalse();
 });

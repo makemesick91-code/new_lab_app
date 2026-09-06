@@ -153,6 +153,17 @@ class AndroidReleaseGovernanceScanner
                 'signing_custody_backups_created' => config('android_release.signing.custody.backup_1_key_copy_created') === true
                     || config('android_release.signing.custody.backup_2_key_copy_created') === true,
                 'signing_custody_recovery_verified' => config('android_release.signing.custody.recovery_verified') === true,
+
+                // PRODUCTION-ANDROID-SIGNING-KEY-PROVISIONING-1. Reported as
+                // two lines rather than one, because they are now two facts
+                // and a reader who sees only "certificate: yes" would conclude
+                // that `android:verify-release` can authenticate an artifact.
+                // It cannot: the pin is what arms it, and the pin is null
+                // until PRODUCTION-ANDROID-SIGNING-CERTIFICATE-PIN-1.
+                'production_certificate_recorded' => is_string(config('android_release.signing.production_certificate_sha256_recorded'))
+                    && preg_match('/^[0-9a-f]{64}$/', (string) config('android_release.signing.production_certificate_sha256_recorded')) === 1,
+                'production_certificate_pinned' => is_string(config('android_release.signing.production_certificate_sha256'))
+                    && config('android_release.signing.production_certificate_sha256') !== '',
                 // The full Phase 4 real-device validation — signed release
                 // installed, device enrolled, pilot run — has NOT happened.
                 // The hardware preflight below is a different, narrower gate
@@ -822,16 +833,46 @@ class AndroidReleaseGovernanceScanner
             fn (string $flag): bool => ($custody[$flag] ?? null) !== true,
         ));
 
-        $readyForProvisioning = $status === 'ready_for_provisioning' && $notReady === [];
+        // PRODUCTION-ANDROID-SIGNING-KEY-PROVISIONING-1.
+        //
+        // This used to demand `$status === 'ready_for_provisioning'` exactly,
+        // which made the check red the moment the lifecycle it guards moved
+        // forward. A state machine whose own gate fails on lawful progress
+        // teaches the next operator that a FAIL here is normal, and that is
+        // how a gate stops being read at all.
+        //
+        // What it must actually assert is that provisioning has cleared its
+        // preconditions: every destination is still prepared, and custody has
+        // reached AT LEAST readiness. It is deliberately not weakened for the
+        // states BELOW readiness — `deferred` and `designated` still fail —
+        // and the destination flags are still required in every state, so a
+        // destination cannot be quietly retired after a key is written to it.
+        //
+        // Position is read from the config's own declared `states` order. An
+        // unknown status has no position and fails here as well as in check 1.
+        $position = array_search($status, $states, true);
+        $readinessIndex = array_search('ready_for_provisioning', $states, true);
+
+        $pastReadiness = is_int($position)
+            && is_int($readinessIndex)
+            && $position >= $readinessIndex;
+
+        $readyForProvisioning = $pastReadiness && $notReady === [];
+        $atReadiness = $status === 'ready_for_provisioning';
 
         $checks[] = $this->check(
             'signing_custody_ready_for_provisioning',
             $readyForProvisioning ? 'PASS' : 'FAIL',
             $readyForProvisioning
-                ? 'All three custody destinations are designated and prepared. Key provisioning is permitted to start.'
+                ? ($atReadiness
+                    ? 'All three custody destinations are designated and prepared. Key provisioning is permitted to start.'
+                    : "All three custody destinations are designated and prepared, and custody has advanced to '{$status}'. "
+                        .'This check asserts the preconditions for provisioning were met; it asserts nothing about what was created.')
                 : ($notReady !== []
                     ? 'Destinations not marked ready: '.implode(', ', $notReady)
-                    : "Custody state is '{$status}', not ready_for_provisioning."),
+                    : (is_int($position)
+                        ? "Custody state is '{$status}', which is before ready_for_provisioning."
+                        : "Custody state '{$status}' has no position in the declared lifecycle.")),
         );
 
         // ---- 3. Enough destinations to satisfy the standing policy. --------
@@ -1126,8 +1167,18 @@ class AndroidReleaseGovernanceScanner
 
         // ---- 11. The lifecycle cannot be claimed out of order. -------------
         $certificate = config('android_release.signing.production_certificate_sha256');
+        $recordedCertificate = config('android_release.signing.production_certificate_sha256_recorded');
         $keyProvisioned = ($custody['production_signing_key_provisioned'] ?? null) === true;
         $pinned = is_string($certificate) && $certificate !== '';
+
+        // PRODUCTION-ANDROID-SIGNING-KEY-PROVISIONING-1.
+        //
+        // A recorded fingerprint has to be a fingerprint, not merely a
+        // non-empty string. `'yes'` and `'TBD'` would otherwise satisfy "a
+        // certificate is recorded" and let a key be claimed with no evidence
+        // that one was ever generated.
+        $recorded = is_string($recordedCertificate)
+            && preg_match('/^[0-9a-f]{64}$/', $recordedCertificate) === 1;
 
         $anyBackup = ($custody['backup_1_key_copy_created'] ?? null) === true
             || ($custody['backup_2_key_copy_created'] ?? null) === true
@@ -1140,8 +1191,43 @@ class AndroidReleaseGovernanceScanner
 
         // A key that exists has a certificate. Claiming one without the other
         // means one of the two facts is fiction.
-        if ($keyProvisioned && ! $pinned) {
-            $inconsistencies[] = 'key claimed provisioned while no certificate fingerprint is recorded';
+        //
+        // PRODUCTION-ANDROID-SIGNING-KEY-PROVISIONING-1 corrected WHICH field
+        // answers this. It used to read the PIN, which conflated a fact with
+        // an enforcement decision: while both were false at once the single
+        // field was adequate, but it made "the key exists" unstateable
+        // without also arming `android:verify-release`. Coupling a custody
+        // record to an enforcement switch would have pushed a future operator
+        // to pin a certificate before the pinning task had reviewed anything,
+        // to get the gate green.
+        //
+        // So the fact is checked against the recorded fingerprint, and the
+        // pin gets its own rules below.
+        if ($keyProvisioned && ! $recorded) {
+            $inconsistencies[] = 'key claimed provisioned while no valid certificate fingerprint is recorded';
+        }
+
+        // The reverse, which nothing checked before: a certificate cannot
+        // exist without the key it belongs to. Without this, the recorded
+        // field would be a way to satisfy the rule above by writing 64 hex
+        // characters, and the evidence field would have become the loophole
+        // in the check it was added to serve.
+        if ($recorded && ! $keyProvisioned) {
+            $inconsistencies[] = 'a certificate fingerprint is recorded while no key is claimed provisioned';
+        }
+
+        // Pinning is downstream of the key, never ahead of it.
+        if ($pinned && ! $keyProvisioned) {
+            $inconsistencies[] = 'a certificate is pinned while no key is claimed provisioned';
+        }
+
+        // And the pin must be THE certificate, not A certificate. This is the
+        // one that matters at install time: the pin is the only authority an
+        // installer verifies an artifact against, so a pin that disagrees with
+        // the recorded production certificate is either the wrong key or a
+        // substituted one, and there is no third possibility worth assuming.
+        if ($pinned && $recorded && $certificate !== $recordedCertificate) {
+            $inconsistencies[] = 'the pinned certificate does not match the recorded production certificate';
         }
 
         if ($anyBackup && ! $keyProvisioned) {
@@ -1176,7 +1262,13 @@ class AndroidReleaseGovernanceScanner
         ));
 
         $readinessStatus = $status === 'ready_for_provisioning';
-        $readinessHonest = ! $readinessStatus || ($premature === [] && ! $pinned);
+
+        // A recorded fingerprint counts as a claim here too. A certificate
+        // cannot be recorded unless a key was generated, so a record still
+        // calling itself ready_for_provisioning while carrying one is
+        // describing a key it says does not exist.
+        $readinessHonest = ! $readinessStatus
+            || ($premature === [] && ! $pinned && ! $recorded);
 
         // The detail must describe what was actually verified. The first
         // version printed "claims no key, no backup copy and no verified
@@ -1193,8 +1285,78 @@ class AndroidReleaseGovernanceScanner
                     ? 'Custody is ready for provisioning and claims no key, no backup copy and no verified recovery. Those remain false.'
                     : "Custody state is '{$status}', past readiness; this check does not apply and asserts nothing about the claims below it.")
                 : 'Custody is still ready_for_provisioning yet claims: '
-                    .implode(', ', $premature !== [] ? $premature : ['a pinned production certificate'])
+                    .implode(', ', $premature !== []
+                        ? $premature
+                        : [$pinned ? 'a pinned production certificate' : 'a recorded production certificate'])
                     .'. Readiness is a decision, not an artifact.',
+        );
+
+        // ---- 12b. The status may not run ahead of the artifacts. ----------
+        //
+        // PRODUCTION-ANDROID-SIGNING-KEY-PROVISIONING-1.
+        //
+        // Check 11 forbids a DOWNSTREAM fact without its upstream one, and
+        // check 12 guards the single state `ready_for_provisioning`. Between
+        // them sat an unguarded gap: every state past readiness could be
+        // declared with nothing behind it at all. `status => 'operational'`
+        // with all six flags false contradicted no rule, and the summary line
+        // a human actually reads — `signing_custody_status` — would have
+        // announced it.
+        //
+        // That gap matters most in exactly the direction this task moves. The
+        // whole reason three destinations exist is that a key held in one
+        // place is a key that will eventually be lost, so "custody is
+        // finished" must be answerable only by the artifacts, never by the
+        // word.
+        //
+        // The rule is one-directional on purpose. A status may lag the facts —
+        // that is merely conservative, and check 12 already refuses the one
+        // lagging state that would mislead. It may never lead them.
+        $supported = [
+            'ready_for_provisioning' => $notReady === [],
+            'key_provisioned' => $keyProvisioned,
+            'backups_created' => $keyProvisioned
+                && ($custody['backup_1_key_copy_created'] ?? null) === true
+                && ($custody['backup_2_key_copy_created'] ?? null) === true
+                && ($custody['sealed_cold_backup_created'] ?? null) === true
+                && ($custody['offsite_backup_created'] ?? null) === true,
+            'recovery_verified' => $recovered,
+            // `operational` additionally requires the certificate to be armed:
+            // a key nobody can verify an artifact against is not operational,
+            // whatever the backups say.
+            'operational' => $recovered && $pinned,
+        ];
+
+        // Each state inherits every requirement before it, so a later claim
+        // cannot be satisfied by skipping an earlier one.
+        $cumulative = true;
+        $unmet = [];
+
+        foreach ($supported as $state => $ok) {
+            $cumulative = $cumulative && $ok;
+            $supported[$state] = $cumulative;
+
+            if (! $ok) {
+                $unmet[$state] = true;
+            }
+        }
+
+        // States before readiness make no artifact claim, so they are always
+        // supportable and are not listed above.
+        $claimsArtifacts = array_key_exists((string) $status, $supported);
+        $statusSupported = ! $claimsArtifacts || $supported[(string) $status] === true;
+
+        $firstUnmet = array_key_first($unmet);
+
+        $checks[] = $this->check(
+            'custody_status_matches_recorded_facts',
+            $statusSupported ? 'PASS' : 'FAIL',
+            $statusSupported
+                ? ($claimsArtifacts
+                    ? "Custody status '{$status}' is supported by the recorded artifacts; no state is claimed ahead of what exists."
+                    : "Custody status '{$status}' makes no artifact claim, so there is nothing for the recorded facts to contradict.")
+                : "Custody status '{$status}' claims more than the recorded facts support; the first unmet requirement is '"
+                    .$firstUnmet."'. The status is a summary of the artifacts, never a substitute for them.",
         );
 
         // ---- 13. No secret or locating material in a committed file. -------
@@ -1657,7 +1819,14 @@ class AndroidReleaseGovernanceScanner
             'preflight_unlocks_nothing',
             $contained ? 'PASS' : 'FAIL',
             $contained
-                ? 'The hardware gate closed and moved nothing else: no production key, no certificate pin, no enrolment, no probe committed, and the enforcement ladder is still off.'
+                // PRODUCTION-ANDROID-SIGNING-KEY-PROVISIONING-1 removed the
+                // words "no production key" from this line. `$contained`
+                // never read the custody key flag — it reads the PIN — so the
+                // claim was always wider than the evidence, and once a key
+                // existed (created by a separate authorised task, not by this
+                // preflight) it became simply untrue. A message must describe
+                // what its own condition verified.
+                ? 'The hardware gate closed and moved nothing else: no certificate pin, no production device identity, no probe committed, and the enforcement ladder is still off.'
                 : ($claimed !== []
                     ? 'A real-device preflight pass is recorded as unlocking: '.implode(', ', $claimed).'. It unlocks none of them.'
                     : 'A real-device preflight pass has been read as unlocking signing, enrolment or enforcement, or the containment record is missing. It unlocks none of them.'),
@@ -1713,6 +1882,7 @@ class AndroidReleaseGovernanceScanner
             'custody_shared_access_declared',
             'custody_state_machine_consistent',
             'custody_readiness_does_not_claim_provisioning',
+            'custody_status_matches_recorded_facts',
             'custody_records_no_secret_material',
         ];
 
