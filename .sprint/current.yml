@@ -1,34 +1,24 @@
-# Active sprint manifest — PHASE4A-DOCTOR-ANDROID-PILOT-PREPARATION-1
-# Validated by: php artisan sprint:manifest-check
-
-id: PHASE4A-DOCTOR-ANDROID-PILOT-PREPARATION-1
-# NOT DOCS_ONLY. This sprint changes the runtime authority on WHICH doctors are
-# subject to device enforcement, so it is a security sprint even though nothing it
-# ships is armed. The recorded Phase 4A pilot could not be run at all; fixing that
-# required an actual mechanism, not a document.
+id: PHASE4A-DOCTOR-ANDROID-PILOT-ACTIVATION-1
 type: SECURITY_FIX
 module: DoctorDevice
-title: "Make the Phase 4A doctor pilot runnable without wiping the tablet: defer the Device Owner acceptance checks, and give enforcement the pilot scope its own stage list has claimed since Phase 3.5"
+title: "Activate the Phase 4A doctor Android pilot on real hardware: prove the boundary in both directions, fix what the live run exposed, and make arming accountable"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-runtime_change: true            # new scope resolver consulted by DoctorAppLoginGate, new scanner, new artisan gate
+runtime_change: true            # ticket-shape compatibility, enrolment materialisation, console guard, audited enforcement switch
 schema_change: false            # no migration, no table, no column
-frontend_change: false          # no Blade, no JS, no CSS, no asset build
-security_impact: true           # who doctor device enforcement applies to
-branch_isolation_impact: false  # BranchContext untouched; the pilot branch code is advisory only
+frontend_change: false          # one Blade approval form; no asset build
+security_impact: true           # who is denied a browser, and who may change that
+branch_isolation_impact: false  # BranchContext untouched; pilot branch code stays advisory
 ledger_impact: false            # no inventory ledger / billing / payment behaviour change
-deploy_required: true           # config and runtime reach production, inert
-browser_required: false         # no UI surface added
-
-# Created only after production verification, never before.
-go_tag: phase4a-doctor-android-pilot-preparation-1-go
+deploy_required: true           # three deploys reached production during this sprint
+browser_required: false         # verification is credential-free and server-side
 
 # Carried forward. `.sprint/current.yml` is a rolling file, so these inherited
 # facts have to be restated by every sprint after closure — dropping one is
 # precisely the quiet contradiction LegacyRmeProgramClosureContractTest exists
-# to catch. This sprint dropped the whole block on its first candidate and that
-# gate caught it, which is the gate working; restating all of them rather than
-# only the asserted one is the point.
+# to catch, and the previous sprint dropped the whole block on its first
+# candidate. Restating all of them rather than only the asserted one is the
+# point.
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
 inherits_hold: FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1/FIX-02
 inherits_phase: feature-doctor-trusted-android-device-lock-1-phase-3-5-readiness-go
@@ -38,44 +28,77 @@ inherits_vault: revision-production-signing-custodian1-encrypted-vault-1-go
 inherits_key: production-android-signing-key-provisioning-1-go
 inherits_pin: production-android-signing-certificate-pin-1-go
 inherits_release_artifact: production-android-release-apk-evidence-1-go
+inherits_preparation: phase4a-doctor-android-pilot-preparation-1-go
 
 notes: |
-  THE FINDING.
+  STATE AT THIS CHECKPOINT: NON-DISRUPTIVE WORK COMPLETE, PILOT ARMED, NOT
+  GO-TAGGED. The disruptive half of the F-matrix is deliberately unfinished.
 
-  `device_management.pilot_model` was `self_owned_device_owner`, and six of the
-  thirty-three recorded `pilot.acceptance_checks` are Device Owner / lock-task
-  properties. Android grants Device Owner only on a device carrying no accounts,
-  i.e. immediately after a factory reset. The owner refused a factory reset for
-  this pilot and the tablet is already in service, so those six checks were
-  unsatisfiable and the recorded pilot was unrunnable. An existing test pinned the
-  unrunnable value in place. Rule 147's orphaned-predicate class, third instance.
+  WHAT IS TRUE IN PRODUCTION NOW.
 
-  THE HALF THAT MATTERED MORE.
+  drg Karmila (users.id 18) at Cabang Sunu (SPN4, branch 5) on
+  PHASE4A_PILOT_TABLET_01 (device 1, active, cryptographically_verified) with an
+  ACTIVE doctor-device authorization. Pilot enforcement is ARMED. Global
+  enforcement is false and is not reachable from a host. She works through the
+  app on a device-bound session; her browser is denied and every other doctor's
+  is not.
 
-  Lock task was also what physically kept a doctor away from a browser, so
-  deferring it moves the app-only boundary entirely onto the server. It holds
-  there — a browser session is denied from the ABSENCE of a server-verified device
-  binding, re-checked on every protected request — but only while enforcement is
-  armed FOR THAT DOCTOR. The only switch was one global boolean that denies browser
-  login to every Doctor-role account. So the two reachable states were a fleet-wide
-  clinical lockout, or an "app-only pilot" in which the doctor can simply open
-  Chrome. The deferral and the pilot-scoping mechanism are one change, not two.
+  THE BOUNDARY, MEASURED.
 
-  WHAT CHANGED IN THE WORLD.
+  F7 and F8 together: covered=[18], denied=1, allowed=14, total=15, global=false,
+  verdict GO. F4 was proven unsimulated — arming invalidated her pre-existing
+  unbound web session on its next protected request, recorded twice as
+  DOCTOR_SESSION_DEVICE_INVALIDATED with a reason. F1 was proven end to end:
+  challenge 200, login 200, challenge consumed, one real ticket minted and
+  redeemed exactly once, device-bound session, branch SPN4, room SPN-A.
 
-  Nothing outside this repository. No tablet was touched, no ADB was run, no APK
-  was distributed, installed, rebuilt or re-signed, no device was enrolled, no
-  authorization was approved, no enforcement was armed, no vault was opened and no
-  signing key was read.
+  WHAT THE LIVE RUN EXPOSED, AND WHAT WAS FIXED.
 
-  STILL FALSE, AND ASSERTED FALSE.
+  1. The first device on ANY deployment was unapprovable. Approval could only
+     bind to a device that already existed, and the registry is empty on a clean
+     deployment. `approveIntoNewDevice()` adds the branch the service docblock
+     had described and nobody implemented: the row is created with NO key
+     material and `approve()` remains the sole binder.
 
-  apk_distributed, apk_installed, tablet_touched, adb_used, device_enrolled,
-  pilot_activated, pilot_browser_denial_active, global_enforcement_active — all
-  eight asserted by `activation_boundary_all_false`. The preparation lifecycle
-  stops at `ready_for_pilot`, and an unrecognised state is a FAIL rather than a
-  pass.
+  2. A fully successful login ended on a 404 at `/device-login/null`. With
+     enforcement off no ticket is minted and the response carried
+     `"login_ticket": null`; Android's `optString` returns the literal string
+     `"null"` for a JSON null and its `""` fallback only for an ABSENT key, so
+     the shipped client read a four-character ticket and took the branch
+     reserved for holding one. The server now omits the key. This defeated a
+     fail-closed property, which is why it is a security fix and not a cosmetic
+     one.
 
-  Fleet-wide denial is deliberately NOT reachable from a host: `global_permitted`
-  lives in the governance record, which never reads the environment, so widening
-  enforcement to every doctor costs a reviewed source-control change.
+  3. Arming produced no audit row. It was a host file edit plus a cache rebuild,
+     so no application code ran. Renaming a device LABEL produced a full
+     before/after with a named actor; denying a clinician her browser produced
+     nothing. `android:phase4a-pilot-enforcement` now owns the change, refuses
+     every scope that would make it a fleet lockout or a silent no-op, verifies
+     in a fresh process because the writing process holds stale config, rolls
+     back when that verification is not GO, and writes
+     PILOT_ENFORCEMENT_SCOPE_CHANGED.
+
+  4. The REPL prohibition had no reach over a keyboard. The existing scanner
+     covers eleven tracked scripts and works; both invocations during this
+     sprint were typed into interactive SSH and were in no file. A guard now
+     refuses the command at CommandStarting, whoever types it. Its first version
+     passed every event-level test while blocking nothing, and only running the
+     real binary showed it — the suite now runs the real binary.
+
+  PROCESS DEVIATIONS, RECORDED NOT HIDDEN.
+
+  `php artisan tinker --version` was executed against production twice by me,
+  after the prohibition was acknowledged. Nil observed runtime impact:
+  laravel.log mtime remained 2026-09-04 with zero entries dated 2026-09-07.
+  Symfony answers `--version` before any command resolves, so it starts no REPL
+  and the new guard does not block that form either — stated as a limit, not
+  claimed as coverage.
+
+  STILL OWED, AND DELIBERATELY NOT DONE.
+
+  The rejection, disable, revoke and governed-recovery tests interrupt a working
+  clinician and require an explicit safe clinical window. No GO tag, no final
+  freeze, no final merge. `BUGFIX-ANDROID-LOGIN-NULL-PARSING-ERROR-MAPPING-1` is
+  booked and not started: the shipped APK still mis-parses nullable JSON and
+  still reports validation failures and wrong passwords as "cannot contact
+  server".

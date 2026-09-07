@@ -1359,7 +1359,40 @@ return [
         // Logical label only. `real_device_preflight.device_serial_may_be_
         // committed` is false and stays false: a serial in source control is a
         // hardware identifier nobody needs in order to run a pilot.
-        'pilot_device_label' => 'PHASE4A_PILOT_TABLET_01',
+        //
+        // PHASE4A-DOCTOR-ANDROID-PILOT-ACTIVATION-1 — `_02`, and the `_01` above
+        // is deliberately left alone.
+        //
+        // The pilot device was revoked during the disruptive ceremony. The
+        // server refuses re-enrolment of a revoked key permanently, so recovery
+        // could not restore the old identity and produced a NEW device record
+        // with a NEW key. Same physical tablet, second cryptographic identity.
+        //
+        // So there are two labels and they mean different things:
+        //
+        //   `_01` — the revoked identity. Still the subject of
+        //           `real_device_preflight.evidence`, which records what was
+        //           observed on that hardware and must not be rewritten.
+        //   `_02` — the identity in service now.
+        //
+        // A label is administrative throughout. Trust is the key, and the two
+        // labels correspond to two different keys, which is exactly why the
+        // lineage is worth stating rather than overwriting.
+        'pilot_device_label' => 'PHASE4A_PILOT_TABLET_02',
+
+        // Kept so the succession is readable from the declaration itself.
+        'pilot_device_label_history' => [
+            [
+                'label' => 'PHASE4A_PILOT_TABLET_01',
+                'state' => 'revoked',
+                'note' => 'First identity. Revoked during the Phase 4A disruptive ceremony; its key is terminal and cannot be re-enrolled.',
+            ],
+            [
+                'label' => 'PHASE4A_PILOT_TABLET_02',
+                'state' => 'active',
+                'note' => 'Replacement identity on the same physical tablet, created by the governed recovery after revocation.',
+            ],
+        ],
 
         // Moved OUT of Phase 4A, not deleted. They remain the acceptance
         // criteria for a dedicated, wiped, Device-Owner device, and they remain

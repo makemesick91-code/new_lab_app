@@ -2,6 +2,8 @@
 
 namespace App\Providers;
 
+use App\Exceptions\ForbiddenProductionCommandException;
+use App\Modules\DoctorDevice\Services\DoctorAppLoginGate;
 use App\Modules\Prescription\Gateways\CloudApiWhatsAppGateway;
 use App\Modules\Prescription\Gateways\DisabledWhatsAppGateway;
 use App\Modules\Prescription\Gateways\FakeWhatsAppGateway;
@@ -10,9 +12,11 @@ use App\Services\Foundation\FeatureFlagService;
 use App\Support\Android\AndroidDoctorEnforcementScope;
 use App\Support\Android\AndroidReleaseGovernanceScanner;
 use App\Support\Android\ApksignerFingerprintResolver;
+use App\Support\Android\EnvFileWriter;
 use App\Support\Android\KotlinSourceScanner;
 use App\Support\Android\Phase4aPilotPreparationScanner;
 use App\Support\Android\SignerFingerprintResolver;
+use App\Support\Deploy\ForbiddenConsoleCommandGuard;
 use App\Support\Deploy\ProductionShellCommandGuard;
 use App\Support\DeveloperConsole\SensitiveValueMasker;
 use App\Support\Devflow\CanonicalBaseRefResolver;
@@ -20,8 +24,10 @@ use App\Support\Devflow\DevflowScanner;
 use App\Support\Devflow\GitChangeInspector;
 use App\Support\Devflow\SharedFoundationScanner;
 use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Console\Events\CommandStarting;
 use Illuminate\Http\Client\Factory as HttpFactory;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 
@@ -75,7 +81,22 @@ class AppServiceProvider extends ServiceProvider
             $app->make(CanonicalBaseRefResolver::class),
         ));
 
+        // The env key is resolved HERE from the flag registry, using the gate's
+        // own constant rather than the literal flag key: DoctorAppLoginGate is
+        // the single permitted reader of that key and a test enforces it, so
+        // nothing downstream may name it.
+        $this->app->bind(EnvFileWriter::class, function () {
+            $flags = (array) config('feature_flags.flags', []);
+
+            return new EnvFileWriter(
+                (string) config('android_release.enforcement.env_file', base_path('.env')),
+                base_path(),
+                (string) ($flags[DoctorAppLoginGate::ENFORCEMENT_FLAG]['env_key'] ?? ''),
+            );
+        });
+
         $this->bindWhatsAppGateway();
+
     }
 
     /**
@@ -114,6 +135,22 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // PHASE4A-DOCTOR-ANDROID-PILOT-ACTIVATION-1 — refuse a forbidden
+        // command at the moment it is typed.
+        //
+        // ProductionShellCommandGuard scans the tracked scripts before they
+        // ship and does that well, but it cannot see an invocation that was
+        // never written to a file. Both production invocations during that
+        // sprint were typed into an interactive SSH command. CommandStarting is
+        // the one place every invocation passes through however it began.
+        Event::listen(CommandStarting::class, function (CommandStarting $event): void {
+            $guard = $this->app->make(ForbiddenConsoleCommandGuard::class);
+
+            if ($guard->shouldBlock($event->command, (string) $this->app->environment())) {
+                throw new ForbiddenProductionCommandException($guard->reason((string) $event->command));
+            }
+        });
+
         $this->registerDoctorAppLoginRateLimiters();
     }
 

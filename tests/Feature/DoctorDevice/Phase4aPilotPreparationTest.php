@@ -82,7 +82,21 @@ function phase4aScope(array $overrides): void
 it('records the exact pilot doctor, branch and logical device label', function () {
     expect(config('android_release.enforcement.owner_signoff.pilot_doctor'))->toBe('drg Karmila');
     expect(config('android_release.enforcement.owner_signoff.pilot_branch'))->toBe('Cabang Sunu');
-    expect(config('android_release.phase_4a.pilot_device_label'))->toBe('PHASE4A_PILOT_TABLET_01');
+    // PHASE4A-DOCTOR-ANDROID-PILOT-ACTIVATION-1 — `_02` is the identity in
+    // service. `_01` was revoked during the disruptive ceremony and its key is
+    // terminal, so recovery necessarily produced a second identity on the same
+    // physical tablet. The succession is asserted rather than the label alone,
+    // so an accidental revert to `_01` fails here.
+    expect(config('android_release.phase_4a.pilot_device_label'))->toBe('PHASE4A_PILOT_TABLET_02');
+
+    $history = config('android_release.phase_4a.pilot_device_label_history');
+    expect(array_column($history, 'label'))->toBe(['PHASE4A_PILOT_TABLET_01', 'PHASE4A_PILOT_TABLET_02']);
+    expect(array_column($history, 'state'))->toBe(['revoked', 'active']);
+
+    // The preflight evidence records what was observed on the FIRST identity
+    // and must not be rewritten to match the current one.
+    expect(config('android_release.real_device_preflight.evidence.device_label'))
+        ->toBe('PHASE4A_PILOT_TABLET_01');
 
     expect(phase4aCheck('pilot_authority_declared')['status'])->toBe('PASS');
 });

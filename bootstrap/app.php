@@ -5,6 +5,7 @@ use App\Console\Commands\PatientDocumentsAuditCommand;
 use App\Console\Commands\PatientDocumentsPruneTempCommand;
 use App\Console\Commands\PruneInventoryAnalyticsSummaryCommand;
 use App\Console\Commands\RefreshInventoryAnalyticsSummaryCommand;
+use App\Exceptions\ForbiddenProductionCommandException;
 use App\Http\Middleware\AttachRequestCorrelationContext;
 use App\Modules\ClinicVisit\Middleware\EnsureVisitRoomAssigned;
 use App\Modules\DoctorDevice\Middleware\EnsureDoctorDeviceSession;
@@ -83,5 +84,13 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
-        //
+        // PHASE4A-DOCTOR-ANDROID-PILOT-ACTIVATION-1 — a refused console command
+        // must not be written to the application log. Half the reason the REPL
+        // is forbidden is that it writes ERROR records which pin the monitoring
+        // log signal to WATCH for 24 hours; a guard that logged an ERROR on
+        // every refusal would cause the exact harm it prevents. The refusal is
+        // reported on the console instead.
+        $exceptions->dontReport([
+            ForbiddenProductionCommandException::class,
+        ]);
     })->create();

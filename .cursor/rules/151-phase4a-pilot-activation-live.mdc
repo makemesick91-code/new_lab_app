@@ -1,0 +1,73 @@
+---
+description: Phase 4A doctor Android pilot — the live activation facts, the identifiers that decide who gets locked out, and the controls added during the run.
+globs:
+  - "app/Support/Android/**"
+  - "app/Modules/DoctorDevice/**"
+  - "config/doctor_device_enforcement.php"
+  - "config/android_release.php"
+  - "docs/runbooks/android-phase4a-pilot-activation-checklist.md"
+alwaysApply: false
+---
+
+# Phase 4A pilot — activated, and what that established
+
+Supersedes nothing in rule 150; that rule describes the non-destructive model,
+this one records the live run.
+
+## The pilot, as activated
+
+drg Karmila, **`users.id` 18** · Cabang Sunu, **`SPN4`**, branch id 5 ·
+`PHASE4A_PILOT_TABLET_01`, device id 1, `active` + `cryptographically_verified` ·
+authorization `active` · pilot enforcement **armed** · global enforcement
+**false** and unreachable from a host.
+
+## Identifiers
+
+- Enforcement targets a **`users.id`**, never `mst_doctors.id`. Karmila is
+  `users.id` 18 / `mst_doctors.id` 21, and `users.id` 21 is a **different
+  doctor** — the mix-up leaves the pilot unenforced and locks out someone else.
+- `ANDROID_PILOT_ENFORCEMENT_BRANCH_CODE` is **advisory**. `BranchContext` is
+  the authority on where a doctor works.
+- The device label is **administrative**. Trust is the key, never the name.
+
+## F7 and F8 are one check
+
+Never accept "the pilot doctor is denied" without "every other doctor is
+allowed", measured at the same moment. Denied=1 / allowed=N-1 / global=false, or
+it is not a pilot. If a non-pilot doctor is denied, disarm immediately.
+
+## Arming
+
+- Arming an enforcement-OFF **web** session invalidates it on the next protected
+  request. That is correct. The doctor then needs the app's **native** login —
+  force-stop and reopen — because the WebView's web form is an ordinary browser
+  login and stays denied.
+- Canonical path is `android:phase4a-pilot-enforcement arm --actor= --reason=`.
+  It refuses a missing reason, an unauthorised actor, fleet-wide permission,
+  and any scope not covering exactly the declared target; verifies **in a fresh
+  process** because the writing process holds stale config; rolls back if that
+  verification is not GO; and writes `PILOT_ENFORCEMENT_SCOPE_CHANGED`.
+- A silent environment-only arm is no longer the normal workflow — it produces
+  no audit row and F11 requires one.
+
+## Client compatibility
+
+Never send JSON `null` for a field the Clinic App reads with `optString`:
+Android returns the literal string `"null"`, and that is what produced
+`/device-login/null` from a fully successful login. **Omit the key.** The client
+defect is still shipped; `BUGFIX-ANDROID-LOGIN-NULL-PARSING-ERROR-MAPPING-1`
+fixes it at versionCode 2 with the same permanent signer.
+
+## Console REPL
+
+An execution-time guard refuses `artisan tinker` outside `local`/`testing`,
+whoever types it — proven by a real subprocess, not only a dispatched event.
+It does **not** block `artisan tinker --version`, which Symfony answers before
+any command resolves; that form is harmless but remains prohibited by policy.
+Do not describe interactive shell as mechanically sealed.
+
+## Disruptive tests
+
+Rejection, disable, revoke and governed recovery interrupt a working clinician
+and require an explicit safe clinical window. A REVOKED device is not
+ordinary-reactivatable, and the physical device is never deleted or recreated.

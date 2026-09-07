@@ -2460,3 +2460,22 @@ validated only by its own consumer is not pinned.
 
 **Next:** `PHASE4A-DOCTOR-ANDROID-PILOT-ACTIVATION-1`, following the operator
 checklist line by line. It must not start as a side effect of this sprint.
+
+## PHASE4A-DOCTOR-ANDROID-PILOT-ACTIVATION-1 — pilot armed on real hardware (2026-09-07)
+
+Branch `feature/phase4a-doctor-android-pilot-activation-1` (base `feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report`, base `bfcb6cc0`; do NOT target main). **Status: NON-DISRUPTIVE WORK COMPLETE, PILOT ARMED, NOT GO-TAGGED.** Runbook: `docs/runbooks/android-phase4a-pilot-activation-checklist.md` (Activation record section); rule mirror `.cursor/rules/151-phase4a-pilot-activation-live.mdc`.
+
+**Live pilot state:** drg Karmila **`users.id` 18** · Cabang Sunu **`SPN4`** branch 5 · `PHASE4A_PILOT_TABLET_01` device 1 `active`+`cryptographically_verified` · authorization `active` · **pilot enforcement ARMED** · **global enforcement false** and unreachable from a host. Measured together: covered=[18], **denied=1, allowed=14, total=15**, verdict GO.
+
+**Identifier trap (durable):** enforcement targets a **`users.id`**, never `mst_doctors.id`. Karmila is `users.id` 18 / `mst_doctors.id` 21, and `users.id` 21 is a **different doctor** — the mix-up leaves the pilot unenforced *and* locks out someone else. `ANDROID_PILOT_ENFORCEMENT_BRANCH_CODE` is **advisory only** (`BranchContext` is authority); the device label is administrative, trust is the key.
+
+**Three defects the live run exposed, all fixed:**
+1. **The first device on any deployment was unapprovable** — approval could only bind to an existing `DoctorDevice` and the registry is empty on a clean deployment. `DoctorDeviceEnrollmentService::approveIntoNewDevice()` adds the branch its own docblock described ("or one created here for this pairing"): the row is created with **no key material** and `approve()` stays the sole binder.
+2. **`/device-login/null`** — with enforcement off no ticket is minted; the response carried `"login_ticket": null`, and Android's `optString` returns the literal string `"null"` for a JSON null (the `""` fallback only for an **absent** key). The shipped client read a 4-char ticket and took the "enforcement on" branch. **The server now omits the key.** Defeated a fail-closed property, hence a security fix.
+3. **Arming produced no audit row** — it was a host env edit plus a cache rebuild, so no application code ran. New `android:phase4a-pilot-enforcement status|arm|disarm` refuses a missing reason/unauthorised actor/fleet-wide permission/any scope not covering exactly the declared target, verifies **in a fresh process** (the writing process holds stale config), rolls back when verification is not GO, and writes `PILOT_ENFORCEMENT_SCOPE_CHANGED`.
+
+**Console REPL control:** new `ForbiddenConsoleCommandGuard` refuses `artisan tinker` at `CommandStarting` outside `local`/`testing`, whoever types it, **proven by a real subprocess test** — its first version passed every event-level test while blocking nothing. It does **NOT** block `artisan tinker --version` (Symfony answers `--version` before any command resolves); that form is harmless but **prohibited by policy**. The pre-existing `ProductionShellCommandGuard` scans 11 tracked scripts and could never have caught an interactive SSH invocation. **Process deviations recorded:** `tinker --version` run against production twice by the agent, nil observed impact (laravel.log mtime 2026-09-04, zero entries dated 2026-09-07).
+
+**Arming order (corrected):** arming while the doctor holds an enforcement-OFF **web** session invalidates it on the next protected request (correct — F4, proven unsimulated). The app's WebView is then stranded on the web login form, which is an ordinary browser login and stays denied. Recovery is **force-stop and reopen the app** for its **native** login → challenge → ticket → `/device-login/<ticket>` → device-bound session. Prefer arming *before* the doctor logs in.
+
+**Still owed:** rejection, disable, revoke and governed-recovery tests require an explicit **safe clinical window** — not done. No GO tag, no final freeze/merge. `BUGFIX-ANDROID-LOGIN-NULL-PARSING-ERROR-MAPPING-1` booked and NOT started (`docs/sprints/`): the shipped APK still mis-parses nullable JSON and still reports validation failures and wrong passwords as "Tidak dapat menghubungi server"; fix is versionCode 2, same permanent signer, update in place.

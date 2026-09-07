@@ -119,6 +119,34 @@ return [
             'repl_programmatic' => '/\bPsy\\\\Shell\b/',
         ],
 
+        /*
+        | PHASE4A-DOCTOR-ANDROID-PILOT-ACTIVATION-1 — the half a file scan
+        | cannot reach.
+        |
+        | The scan above covers the tracked scripts, and it works. It caught
+        | nothing during this sprint because both production invocations were
+        | typed into an interactive SSH command and existed in no file. The
+        | note above this block was already right — prose is not a control —
+        | and the control it produced still had no reach over a keyboard.
+        |
+        | `ForbiddenConsoleCommandGuard` refuses these at `CommandStarting`,
+        | which every invocation passes through however it was started. Exact
+        | command names, matched exactly: a longer command that merely begins
+        | with the same letters is a different command.
+        */
+        'blocked_console_commands' => [
+            'tinker',
+        ],
+
+        // Only these may run a blocked command. Everything else — production,
+        // pilot, staging, a typo, an unset value — is refused, because the cost
+        // of a false refusal is naming your environment and the cost of a false
+        // permit is an unaudited write path against clinical data.
+        'repl_allowed_environments' => [
+            'local',
+            'testing',
+        ],
+
         // Executable scripts only. Runbooks and rule files quote the forbidden
         // command in order to forbid it; scanning them would redden the very
         // documents that carry the prohibition.
