@@ -1,0 +1,62 @@
+---
+description: PWA-FOUNDATION-1 — installable PWA layer; deny-by-default service worker cache; clinical data stays online-only
+globs:
+  - "public/sw.js"
+  - "public/manifest.webmanifest"
+  - "public/offline.html"
+  - "public/pwa/**"
+  - "resources/js/pwa.js"
+  - "resources/views/layouts/**"
+  - "tests/Feature/Pwa/**"
+  - "tests/js/pwa-service-worker.test.mjs"
+alwaysApply: false
+---
+
+# PWA-FOUNDATION-1 — PWA Foundation Rules
+
+Durable contract: `docs/architecture/pwa-foundation.md`.
+
+1. DaengtisiaMS uses PWA as an **additive web layer**. Removing it must leave a
+   fully functional server-rendered application behind.
+2. Laravel / Blade / Tailwind / Alpine / Vite remains the canonical frontend
+   architecture.
+3. Do **not** introduce React, Vue, Next.js, Nuxt, an SPA rewrite, or any new
+   frontend framework, bundler plugin or PWA library (no Workbox,
+   no `vite-plugin-pwa`). No business logic in JavaScript or the service worker.
+4. The service worker may cache **only** safe static assets, via the
+   `PWA-CACHE-ALLOWLIST` block in `public/sw.js`: prefixes `/build/`, `/pwa/`,
+   `/assets/brand/` and the exact paths `/offline.html`,
+   `/manifest.webmanifest`, `/favicon.ico`.
+5. Never cache patient, RME, medical record, odontogram, consent, prescription,
+   invoice, payment, receivable, report, export, dashboard or any authenticated
+   response — including authenticated HTML, APIs, login, logout, session and
+   CSRF endpoints. Navigations are network-first and their responses are never
+   written to any cache.
+6. Clinical operations stay **online-only**. Offline clinical data is a separate
+   approved programme, never a side effect of PWA work.
+7. Never store clinical data in Cache Storage, IndexedDB or `localStorage`
+   through the PWA layer, and never queue a clinical write for later sync.
+8. The manifest, icons and service-worker lifecycle are production foundation.
+   Do not delete or rename them casually; `/sw.js` must stay at the document
+   root or it loses root scope.
+9. Every service-worker change must consider **cache versioning** and
+   **stale-cache cleanup**: bump `CACHE_VERSION`, and purge only caches whose
+   key starts with `daengtisiams-`. `cache.put()` must remain reachable from
+   exactly one helper (`putIfAllowed`), which re-checks the allowlist. Do not
+   add `skipWaiting()` — a release must never swap assets under a live form.
+10. The PWA foundation is **not** doctor device authentication. An installed PWA
+    proves nothing about which device is running it.
+11. WebAuthn, passkeys and device restriction are a separate phase. Do not
+    couple them to this layer.
+12. PWA changes must preserve existing RBAC, policies, `BranchContext`, the room
+    gate, authentication, `DoctorDeviceAuthorization` semantics, device
+    enforcement flags and the RME workflow. PWA-FOUNDATION-1 is
+    security-neutral with respect to authentication; keep it that way.
+13. Every PWA change needs build + test + regression verification:
+    `npm run build`, `npm run test:js`, `php artisan test tests/Feature/Pwa`.
+    `tests/Feature/Pwa/PwaServiceWorkerCachePolicyTest.php` is a declared
+    mandatory critical-gate suite in `config/ci_runner.php`; a rename must move
+    that declaration, never drop it.
+14. Source invariants are claims about **code**, not prose. The worker documents
+    the APIs it must not call, so scans strip comments first — do not "fix" a
+    scan by deleting the documentation.

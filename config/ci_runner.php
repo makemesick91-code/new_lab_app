@@ -571,6 +571,21 @@ return [
         // consent, and finishing the examination stays refused. Coverage that
         // nothing required is not coverage.
         'tests/Feature/RME/RmePreConsentFirstPageUiGateTest.php',
+
+        // PWA-FOUNDATION-1. The service worker's cache policy is the only thing
+        // standing between an installed clinic device and a copy of patient,
+        // billing or report content written to disk by the browser, where no
+        // Laravel policy, BranchContext scope or audit trail reaches it.
+        //
+        // Declared rather than left to the `Pwa` filter token for the reason
+        // Phase 1 established, and the shape of the likely regression makes the
+        // distinction matter more than usual: widening CACHE_ALLOWLIST is a
+        // one-line edit that produces no error, no exception and no log line —
+        // only clinical data at rest on a device. The suite sweeps the COMPLETE
+        // route table and asserts every registered URI is refused, so it is
+        // exactly the check that would notice. A rename must move that
+        // coverage, never quietly delete it.
+        'tests/Feature/Pwa/PwaServiceWorkerCachePolicyTest.php',
     ],
 
     /*

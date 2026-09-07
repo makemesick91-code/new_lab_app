@@ -1,34 +1,32 @@
-# Active sprint manifest — PHASE4A-DOCTOR-ANDROID-PILOT-PREPARATION-1
+# Active sprint manifest — PWA-FOUNDATION-1
 # Validated by: php artisan sprint:manifest-check
 
-id: PHASE4A-DOCTOR-ANDROID-PILOT-PREPARATION-1
-# NOT DOCS_ONLY. This sprint changes the runtime authority on WHICH doctors are
-# subject to device enforcement, so it is a security sprint even though nothing it
-# ships is armed. The recorded Phase 4A pilot could not be run at all; fixing that
-# required an actual mechanism, not a document.
-type: SECURITY_FIX
-module: DoctorDevice
-title: "Make the Phase 4A doctor pilot runnable without wiping the tablet: defer the Device Owner acceptance checks, and give enforcement the pilot scope its own stage list has claimed since Phase 3.5"
+id: PWA-FOUNDATION-1
+type: MODULE_SPRINT
+module: Pwa
+title: "Installable PWA foundation — web app manifest, icons, standalone display, deny-by-default service worker cache, safe offline fallback (security-neutral: no authentication, device-authorization or RBAC change)"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-runtime_change: true            # new scope resolver consulted by DoctorAppLoginGate, new scanner, new artisan gate
+runtime_change: false           # no controller, service, repository, model, command or policy
 schema_change: false            # no migration, no table, no column
-frontend_change: false          # no Blade, no JS, no CSS, no asset build
-security_impact: true           # who doctor device enforcement applies to
-branch_isolation_impact: false  # BranchContext untouched; the pilot branch code is advisory only
+frontend_change: true           # Blade head partial, Vite entry registration, static public/ assets
+security_impact: true           # a new client-side cache surface; deny-by-default policy + route sweep
+branch_isolation_impact: false  # no BranchContext / branch-scoped query change
 ledger_impact: false            # no inventory ledger / billing / payment behaviour change
-deploy_required: true           # config and runtime reach production, inert
-browser_required: false         # no UI surface added
 
-# Created only after production verification, never before.
-go_tag: phase4a-doctor-android-pilot-preparation-1-go
+deploy_required: true           # static assets + layout metadata must reach production
+browser_required: true          # installability is only observable in a browser
 
-# Carried forward. `.sprint/current.yml` is a rolling file, so these inherited
+test_profiles:
+  - security
+  - ui
+
+# Carried forward. `.sprint/current.yml` is a ROLLING file, so these inherited
 # facts have to be restated by every sprint after closure — dropping one is
 # precisely the quiet contradiction LegacyRmeProgramClosureContractTest exists
-# to catch. This sprint dropped the whole block on its first candidate and that
-# gate caught it, which is the gate working; restating all of them rather than
-# only the asserted one is the point.
+# to catch. This sprint dropped the whole block on its first candidate and the
+# gate caught it, exactly as the previous sprint recorded happening to it.
+# Restating all of them, rather than only the asserted one, is the point.
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
 inherits_hold: FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1/FIX-02
 inherits_phase: feature-doctor-trusted-android-device-lock-1-phase-3-5-readiness-go
@@ -38,44 +36,17 @@ inherits_vault: revision-production-signing-custodian1-encrypted-vault-1-go
 inherits_key: production-android-signing-key-provisioning-1-go
 inherits_pin: production-android-signing-certificate-pin-1-go
 inherits_release_artifact: production-android-release-apk-evidence-1-go
+inherits_pilot_preparation: phase4a-doctor-android-pilot-preparation-1-go
 
-notes: |
-  THE FINDING.
+# The Phase 4A doctor-device pilot is ARMED in production and its sprint is
+# frozen mid-flight (PR #392 open, unmerged, no GO tag). PWA-FOUNDATION-1 is
+# deliberately built on 1555ad5b — the exact commit production is running — and
+# touches no authentication, device-authorization or enforcement surface, so the
+# pilot's state is unaffected. The enforcement scope is captured before and
+# after deploy and must be identical: covered=[18], denied 1, allowed 14,
+# GLOBAL_ENFORCEMENT_ACTIVE=false.
+inherits_armed_pilot: PHASE4A-DOCTOR-ANDROID-PILOT-ACTIVATION-1 (frozen, armed, unmerged)
 
-  `device_management.pilot_model` was `self_owned_device_owner`, and six of the
-  thirty-three recorded `pilot.acceptance_checks` are Device Owner / lock-task
-  properties. Android grants Device Owner only on a device carrying no accounts,
-  i.e. immediately after a factory reset. The owner refused a factory reset for
-  this pilot and the tablet is already in service, so those six checks were
-  unsatisfiable and the recorded pilot was unrunnable. An existing test pinned the
-  unrunnable value in place. Rule 147's orphaned-predicate class, third instance.
-
-  THE HALF THAT MATTERED MORE.
-
-  Lock task was also what physically kept a doctor away from a browser, so
-  deferring it moves the app-only boundary entirely onto the server. It holds
-  there — a browser session is denied from the ABSENCE of a server-verified device
-  binding, re-checked on every protected request — but only while enforcement is
-  armed FOR THAT DOCTOR. The only switch was one global boolean that denies browser
-  login to every Doctor-role account. So the two reachable states were a fleet-wide
-  clinical lockout, or an "app-only pilot" in which the doctor can simply open
-  Chrome. The deferral and the pilot-scoping mechanism are one change, not two.
-
-  WHAT CHANGED IN THE WORLD.
-
-  Nothing outside this repository. No tablet was touched, no ADB was run, no APK
-  was distributed, installed, rebuilt or re-signed, no device was enrolled, no
-  authorization was approved, no enforcement was armed, no vault was opened and no
-  signing key was read.
-
-  STILL FALSE, AND ASSERTED FALSE.
-
-  apk_distributed, apk_installed, tablet_touched, adb_used, device_enrolled,
-  pilot_activated, pilot_browser_denial_active, global_enforcement_active — all
-  eight asserted by `activation_boundary_all_false`. The preparation lifecycle
-  stops at `ready_for_pilot`, and an unrecognised state is a FAIL rather than a
-  pass.
-
-  Fleet-wide denial is deliberately NOT reachable from a host: `global_permitted`
-  lives in the governance record, which never reads the environment, so widening
-  enforcement to every doctor costs a reviewed source-control change.
+# No go_tag until the sprint closes: a GO tag requires CI green, a merge, a VPS
+# deploy from the runner ON the server, and production verification of the
+# manifest, icons, service worker and offline shell over HTTPS.
