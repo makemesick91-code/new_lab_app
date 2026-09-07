@@ -407,6 +407,19 @@ $registry = [
             'rollback_action' => 'Set the environment override to false and clear the config cache. Doctor browser login works again immediately and every doctor session stops being device-checked; no data is changed, no device is unenrolled and no authorization is altered. Nothing needs to be migrated back, because the flag only ever gated a decision - it never wrote one.',
         ],
 
+        'doctor.pwa_webauthn_device_login' => [
+            'name' => 'Doctor PWA WebAuthn Device Login',
+            'description' => 'CAPABILITY switch for letting a BROWSER earn the same device-bound session that, until now, only the Android Clinic App could earn. A WebAuthn credential registered against an approved mst_doctor_devices row is asserted after the password step, and on success the ordinary session binding is written and re-verified on every protected request exactly as ticket redemption writes it. THIS FLAG DOES NOT ENFORCE ANYTHING AND CANNOT LOCK ANYBODY OUT. It is only reachable at all when doctor.trusted_device_enforcement is ALSO on, because that is the only condition under which a doctor browser login is denied and therefore the only condition under which an assertion is ever requested; with enforcement off no doctor is ever asked for a credential. Turning this flag on ADMITS rather than denies, and it can only admit an account that already holds a registered credential on an ACTIVE device with an ACTIVE authorization - so on a fleet with no credentials registered it changes nothing. It is NOT a replacement for the Android path: both write the same binding, the Android endpoints are untouched, and the APK is not retired. A PWA being installed grants nothing; the credential is the proof.',
+            'default' => false,
+            'env_key' => 'FEATURE_DOCTOR_PWA_WEBAUTHN_DEVICE_LOGIN',
+            'owner' => 'rme',
+            'risk_level' => 'critical',
+            'rollout_status' => 'implemented',
+            'review_target' => 'DOCTOR-PWA-WEBAUTHN-1',
+            'dependencies' => ['doctor.trusted_device_enforcement'],
+            'rollback_action' => 'Set the environment override to false and clear the config cache. Requesting assertion options and completing a WebAuthn login are both refused immediately, and a denied doctor is denied exactly as they were before this sprint - which means the Android Clinic App path is the remaining way in, unchanged. No data is altered: registered credentials, devices and authorizations all stay exactly as they are, so re-enabling needs no re-enrolment. Nothing needs migrating back, because the flag only ever gated a decision - it never wrote one.',
+        ],
+
         // --- FIX-04b — legacy ODONTOGRAM chart archive (runtime shipped, stays OFF) ---
 
         'rme.legacy_odontogram_archive' => [

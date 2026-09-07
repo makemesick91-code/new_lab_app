@@ -5,6 +5,7 @@ namespace App\Modules\DoctorDevice\Services;
 use App\Models\User;
 use App\Modules\Doctor\Services\DoctorIdentityResolver;
 use App\Modules\DoctorDevice\Interfaces\DoctorDeviceAuthorizationRepositoryInterface;
+use App\Modules\DoctorDevice\Interfaces\DoctorDeviceWebAuthnCredentialRepositoryInterface;
 use App\Modules\DoctorDevice\Models\DoctorDevice;
 use App\Modules\DoctorDevice\Models\DoctorDeviceAuthorization;
 use App\Services\Foundation\FeatureFlagService;
@@ -160,6 +161,31 @@ class DoctorAppLoginGate
     }
 
     /**
+     * DOCTOR-PWA-WEBAUTHN-1 — could this denial still be answered by a trusted
+     * BROWSER, rather than only by the Clinic App?
+     *
+     * WHY THIS QUESTION IS ASKED HERE AND NOT IN THE LOGIN CONTROLLER
+     *
+     * Because the login controller is allowed to consult exactly one authority
+     * about devices, and this is it. Letting the controller reach for a second
+     * collaborator — a proof service, a credential query, its own flag read —
+     * is the precise thing `authentication_coupled_only_through_the_gate`
+     * forbids, and the reason it forbids it is that a second consultation is
+     * how the auth path grows its own quietly-diverging copy of the rules.
+     *
+     * So the gate answers, as it answers every other "may this session exist"
+     * question, and the WebAuthn service stays behind it.
+     *
+     * Resolved from the container rather than injected: the WebAuthn login
+     * service depends on THIS class, and a constructor cycle would be a
+     * needless price for a call that only happens on a denied login.
+     */
+    public function deviceCredentialLoginAvailable(User $user): bool
+    {
+        return app(DoctorDeviceWebAuthnLoginService::class)->canAssert($user);
+    }
+
+    /**
      * Is an already-established doctor session still allowed to be used?
      *
      * Called on every protected request under enforcement, because a
@@ -230,9 +256,58 @@ class DoctorAppLoginGate
      */
     public function deviceUsable(DoctorDevice $device): bool
     {
-        return $device->isActive()
-            && $device->isCryptographicallyVerified()
-            && $device->public_key !== null;
+        return $device->isActive() && $this->deviceIdentityProven($device);
+    }
+
+    /**
+     * DOCTOR-PWA-WEBAUTHN-1 — has this device proved WHICH HARDWARE IT IS?
+     *
+     * There are now two ways to answer that, and this method is the only place
+     * that knows there are two. `deviceUsable()` keeps meaning exactly what it
+     * meant before: administratively active, and identity proved.
+     *
+     * WHY THE ANDROID KEY CANNOT BE THE ONLY PROOF
+     *
+     * `public_key` and `identity_state` describe the Clinic App's KEYSTORE
+     * enrolment. They are the right proof for an Android login and the wrong
+     * question for a browser one: a tablet enrolled through WebAuthn has proved
+     * itself just as cryptographically, with a key that is equally
+     * non-exportable, and has no Android keystore key at all. Requiring one
+     * would mean the PWA could only work on tablets that had first been
+     * enrolled through the APK — which is the coupling this sprint exists to
+     * remove.
+     *
+     * WHY THIS WIDENS NOTHING FOR THE ANDROID PATH
+     *
+     * A WebAuthn-only device has `public_key` null and no key fingerprint, so
+     * `DoctorAppLoginService` cannot find it by fingerprint and could not verify
+     * a keystore proof against it if it did. The Clinic App still needs the
+     * Clinic App's key. Nothing here hands an Android login a shortcut.
+     *
+     * WHY IT IS GATED ON THE WEBAUTHN FLAG
+     *
+     * So that the flag is a real master switch. Turning it off must return the
+     * deployment to exactly its previous behaviour, and that includes ending a
+     * browser session that is open at the time — which is what the flag's
+     * documented rollback promises. A device whose only proof is a credential
+     * the deployment has stopped honouring is, correctly, not proved.
+     */
+    private function deviceIdentityProven(DoctorDevice $device): bool
+    {
+        if ($device->isCryptographicallyVerified() && $device->public_key !== null) {
+            return true;
+        }
+
+        if (! $this->flags->enabled(DoctorDeviceWebAuthnLoginService::FLAG)) {
+            return false;
+        }
+
+        // A credential exists only because an operator ran a real ceremony on
+        // this device and it satisfied the device-binding policy. Revoking it
+        // takes the proof away again, on the next request.
+        return app(DoctorDeviceWebAuthnCredentialRepositoryInterface::class)
+            ->usableForDevice((int) $device->id)
+            ->isNotEmpty();
     }
 
     /**

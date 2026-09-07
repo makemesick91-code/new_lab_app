@@ -170,6 +170,13 @@ return [
      * not a reflex.
      */
     'critical_gate_mandatory_suites' => [
+        // DOCTOR-PWA-WEBAUTHN-1 — the browser device-credential login. A `|Pwa`
+        // or `|DoctorDevice` token does not select it: --filter matches the test
+        // IDENTITY, and this class is `DoctorPwaWebAuthnTest`, which contains
+        // neither. Declared here so the coverage reconciliation fails loudly if
+        // the workflow token is ever dropped.
+        'tests/Feature/DoctorDeviceWebAuthn/DoctorPwaWebAuthnTest.php',
+
         // MONITORING-LOG-SOURCE-RESILIENCE-1 — the monitor reads where the
         // application writes; a missing or unreadable source fails closed.
         'tests/Unit/Services/Monitoring/MonitoringLogSourceResilienceTest.php',

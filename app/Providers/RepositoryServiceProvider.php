@@ -38,12 +38,14 @@ use App\Modules\Doctor\Policies\DoctorPolicy;
 use App\Modules\Doctor\Repositories\DoctorRepository;
 use App\Modules\DoctorDevice\Interfaces\DoctorDeviceAuthorizationRepositoryInterface;
 use App\Modules\DoctorDevice\Interfaces\DoctorDeviceRepositoryInterface;
+use App\Modules\DoctorDevice\Interfaces\DoctorDeviceWebAuthnCredentialRepositoryInterface;
 use App\Modules\DoctorDevice\Models\DoctorDevice;
 use App\Modules\DoctorDevice\Models\DoctorDeviceAuthorization;
 use App\Modules\DoctorDevice\Policies\DoctorDeviceAuthorizationPolicy;
 use App\Modules\DoctorDevice\Policies\DoctorDevicePolicy;
 use App\Modules\DoctorDevice\Repositories\DoctorDeviceAuthorizationRepository;
 use App\Modules\DoctorDevice\Repositories\DoctorDeviceRepository;
+use App\Modules\DoctorDevice\Repositories\DoctorDeviceWebAuthnCredentialRepository;
 use App\Modules\Inventory\Interfaces\GoodsReceiptRepositoryInterface;
 use App\Modules\Inventory\Interfaces\InventoryActivityLogRepositoryInterface;
 use App\Modules\Inventory\Interfaces\InventoryAnalyticsRepositoryInterface;
@@ -288,6 +290,7 @@ class RepositoryServiceProvider extends ServiceProvider
         ClinicRoomRepositoryInterface::class => ClinicRoomRepository::class,
         DoctorDeviceRepositoryInterface::class => DoctorDeviceRepository::class,
         DoctorDeviceAuthorizationRepositoryInterface::class => DoctorDeviceAuthorizationRepository::class,
+        DoctorDeviceWebAuthnCredentialRepositoryInterface::class => DoctorDeviceWebAuthnCredentialRepository::class,
         // Sprint 20 — RME: Clinic Visit Queue
         ClinicVisitRepositoryInterface::class => ClinicVisitRepository::class,
         TreatmentCategoryRepositoryInterface::class => TreatmentCategoryRepository::class,

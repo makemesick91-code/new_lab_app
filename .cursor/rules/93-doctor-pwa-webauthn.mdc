@@ -1,0 +1,107 @@
+---
+description: DOCTOR-PWA-WEBAUTHN-1 — WebAuthn device credentials for the doctor browser login; a PWA is not a trust boundary; syncable passkeys are refused
+globs:
+  - "app/Modules/DoctorDevice/**"
+  - "app/Http/Controllers/Auth/**"
+  - "config/webauthn.php"
+  - "config/feature_flags.php"
+  - "resources/js/doctor-device-webauthn.js"
+  - "resources/views/auth/doctor-device-webauthn.blade.php"
+  - "resources/views/settings/doctor-devices/**"
+  - "tests/Feature/DoctorDeviceWebAuthn/**"
+  - "tests/Support/FakeWebAuthnAuthenticator.php"
+alwaysApply: false
+---
+
+# Doctor PWA WebAuthn — durable rules
+
+Durable contract: `docs/architecture/doctor-pwa-webauthn.md`.
+
+## Trust
+
+1. **A PWA is not a security boundary.** Installation, `display-mode`,
+   `beforeinstallprompt`, a `localStorage` UUID, a cookie, a User-Agent, an IP
+   or a screen fingerprint may **never** influence an authentication decision.
+   The WebAuthn credential is the device proof.
+2. **`authenticatorAttachment: "platform"` does not mean device-bound.** A
+   platform authenticator routinely produces a *synced passkey* that is also on
+   the doctor's phone. Only the **BE (Backup Eligible)** flag distinguishes the
+   two.
+3. **A syncable credential is refused** while `WEBAUTHN_REQUIRE_DEVICE_BOUND` is
+   true, which is the default and should stay true. `BS` is mutable and must not
+   be the gate. **`unknown` is not a pass** — an authenticator that reports no
+   backup flags has not told us anything.
+4. **Private keys never leave the authenticator.** Never store a private key, a
+   reusable device secret, a password or biometric data.
+
+## Ceremonies
+
+5. Registration and authentication both require a **one-time, expiring,
+   ceremony-bound** challenge, with origin and RP ID verified.
+6. **Burn the challenge in its own committed transaction BEFORE verifying the
+   signature.** A rolled-back burn turns a one-shot nonce into an unlimited
+   retry oracle — this codebase has already shipped a fix for exactly that on
+   the Android path.
+7. Never bind a ceremony to `session()->getId()`: it rotates legitimately and
+   the failure mode is a doctor locked out. Bind to a token in session data.
+8. **User verification is `required`.** `discouraged` must be refused, never
+   silently accepted.
+9. **Never hand-roll the cryptography.** CBOR, COSE, authenticator data and
+   signature verification come from `web-auth/webauthn-lib`.
+10. Allowed origins are an **exact list**; subdomain wildcards stay off.
+
+## Authorization
+
+11. **Device approval and DoctorDeviceAuthorization are separate checks.**
+    Registering a credential approves nothing; approval stays in Approval →
+    Device Dokter.
+12. A credential belongs to a **device**, never to a doctor. The WebAuthn user
+    handle is the device uuid, so one tablet serves several doctors and each is
+    revocable independently.
+13. **Branch is a property of the device row, resolved server-side.** Never read
+    a branch from the request.
+14. Credential, device and authorization revocation are three independent
+    levers, each **fail-closed on the next request**.
+15. Losing a credential means **re-enrolment through approval** — never silent
+    recreation from a cookie or a stored identifier.
+16. **Enrolment authority is `manage_doctor_devices`, which is also the approval
+    authority.** A credential proves *a* device is present, not *which room it
+    is in*: device name, model and branch are administrative metadata, not
+    attested. Do not describe this as a segregation-of-duties control. Adding
+    one is a separate change to the device registry.
+
+## Boundaries that must not move
+
+17. **No password-only fallback** for a doctor under enforcement. A failed or
+    cancelled assertion denies.
+18. The **authenticated session is torn down before** the pending marker is
+    written. A verified password alone must never yield a usable session.
+19. The auth path may consult **exactly one** device authority
+    (`DoctorAppLoginGate`) and act through **one** session service
+    (`DoctorDeviceSessionService`). A proof service, a credential query or a
+    second flag read in `app/Http/Controllers/Auth` breaks
+    `authentication_coupled_only_through_the_gate`.
+20. **WebAuthn endpoints are never cached** by the service worker, and clinical
+    data stays online-only. The worker is deny-by-default; do not add a
+    denylist, which would imply the allowlist was insufficient.
+21. **The Android Keystore path stays intact.** Its endpoints, protocol and APK
+    are a valid transition and rollback route until an explicit retirement
+    programme.
+22. **Global enforcement stays OFF.** `doctor.pwa_webauthn_device_login` admits;
+    it never denies, and it is reachable only while
+    `doctor.trusted_device_enforcement` is also on.
+23. Device-schema migrations stay **additive** during the transition.
+
+## Evidence
+
+24. Every WebAuthn change needs security regression tests driven by a **real
+    software authenticator** — real keys, real signatures. A mocked verifier
+    proves a function was called, not that a forgery is refused.
+25. **Verify the relying party before a ceremony, not during one.** Run
+    `php artisan webauthn:readiness` (read-only, no secrets, counts not
+    identities) before asking anyone to stand at a tablet: an RP
+    misconfiguration fails silently inside the browser, not on the server.
+26. **Automated tests are necessary and not sufficient.** A device-binding claim
+    requires a ceremony on the real tablet: attachment, user verification, and
+    the BE/BS flags as actually reported. Never record a device-bound verdict
+    that hardware did not produce.

@@ -126,6 +126,24 @@ class DoctorDeviceSessionService
         return $user;
     }
 
+    /**
+     * DOCTOR-PWA-WEBAUTHN-1 — park a password-verified login while the BROWSER
+     * proves which device it is running on.
+     *
+     * Lives here, next to `bind()` and `invalidate()`, because this class is
+     * the sanctioned owner of doctor session writes. The login controller may
+     * consult the gate and act through this service, and nothing else — see
+     * `authentication_coupled_only_through_the_gate`.
+     *
+     * The caller must have torn the authenticated session down FIRST. This
+     * writes a note of which account passed its password; it is not a session,
+     * it grants nothing, and the assertion still has to verify.
+     */
+    public function beginDeviceCredentialLogin(Request $request, User $user): void
+    {
+        app(DoctorDeviceWebAuthnLoginService::class)->beginPending($request, $user);
+    }
+
     /** Write the server-side binding. Only redemption ever calls this. */
     public function bind(Request $request, int $deviceId, int $authorizationId, int $doctorId): void
     {
