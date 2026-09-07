@@ -736,3 +736,61 @@ it('sends a visitor with no pending login back to the login form', function () {
 
     get(route('doctor-device-webauthn.show'))->assertRedirect(route('login'));
 });
+
+/* ---------------------------------------------------------------------------
+ | The wire contract between the server and the browser
+ |-------------------------------------------------------------------------- */
+
+it('serializes ceremony options in the exact shape the client decoder expects', function () {
+    $fixture = waClinicFixture();
+    waEnroll($fixture['device']);
+
+    actingAs(superAdmin());
+
+    $creation = postJson(route('settings.doctor-devices.webauthn.options', $fixture['device']))->json();
+
+    auth()->logout();
+    waFlags(enforcement: true, webauthn: true);
+    post(route('login'), ['email' => $fixture['user']->email, 'password' => 'rahasia-klinik']);
+
+    $request = postJson(route('doctor-device-webauthn.options'))->json();
+
+    /*
+     * `resources/js/doctor-device-webauthn.js` converts exactly these fields
+     * from base64url to an ArrayBuffer before handing them to the browser. The
+     * serializer is a library dependency, so this shape is not ours to assume:
+     * if an upgrade emitted raw bytes or standard base64 instead, registration
+     * would fail on the tablet with a signature error that reads like broken
+     * hardware. This is the only place that contract is checked, and it is
+     * checked here because the alternative is checking it in a clinic.
+     */
+    $isBase64Url = fn ($value) => is_string($value) && preg_match('/^[A-Za-z0-9_-]+$/', $value) === 1;
+
+    expect($isBase64Url($creation['challenge']))->toBeTrue()
+        ->and($isBase64Url($creation['user']['id']))->toBeTrue()
+        ->and($isBase64Url($creation['excludeCredentials'][0]['id']))->toBeTrue()
+        ->and($creation['rp']['id'])->toBe(WA_RP_ID)
+        // The three ceremony properties the server asks the authenticator for.
+        ->and($creation['authenticatorSelection']['userVerification'])->toBe('required')
+        ->and($creation['authenticatorSelection']['authenticatorAttachment'])->toBe('platform')
+        ->and($creation['attestation'])->toBe('none');
+
+    expect($isBase64Url($request['challenge']))->toBeTrue()
+        ->and($isBase64Url($request['allowCredentials'][0]['id']))->toBeTrue()
+        ->and($request['rpId'])->toBe(WA_RP_ID)
+        ->and($request['userVerification'])->toBe('required');
+
+    // The user handle is the DEVICE uuid — the modelling decision the whole
+    // shared-tablet design rests on, pinned on the wire rather than only in a
+    // service.
+    expect(base64_decode(strtr($creation['user']['id'], '-_', '+/'), true))
+        ->toBe((string) $fixture['device']->uuid);
+});
+
+it('ships defaults that refuse a syncable credential and demand a verified human', function () {
+    // These two defaults ARE the security posture. A config edit that flipped
+    // either would leave every other test passing.
+    expect(config('webauthn.device_binding.require_device_bound'))->toBeTrue()
+        ->and(config('webauthn.ceremony.user_verification'))->toBe('required')
+        ->and(config('webauthn.relying_party.allow_insecure_localhost'))->toBeFalse();
+});
