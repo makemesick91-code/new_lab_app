@@ -286,6 +286,38 @@ Those are the hard gates for a GO tag, and they require the physical device.
 
 ## 11. Operational runbook
 
+**Before anybody stands at a tablet**
+
+```
+php artisan webauthn:readiness           # human-readable
+php artisan webauthn:readiness --json
+php artisan webauthn:readiness --strict  # non-zero only if a ceremony is impossible
+```
+
+A relying party misconfiguration does not fail on the server — it fails inside
+the browser, on the tablet, with no message, because the authenticator simply
+refuses an origin whose registrable domain does not match the id the credential
+was created under. That is undiagnosable from the outside, so the configuration
+has to be checkable from the inside first.
+
+The command is read-only and safe on production. It reports the resolved RP id
+and origins, whether a ceremony is possible, the user-verification and
+device-binding policy, **both** switches, and COUNTS of active devices and
+usable credentials — never a credential id, a public key, a device name or a
+doctor's name.
+
+| Verdict | Meaning |
+| --- | --- |
+| `RELYING_PARTY_UNUSABLE` | a ceremony cannot run; fix before enrolling |
+| `CONFIGURED_NO_CREDENTIALS` | expected before the first tablet is enrolled |
+| `READY_NOT_ARMED` | credentials exist, the flag is off |
+| `ARMED_WITHOUT_CREDENTIALS` | the flag is on and nothing could use it |
+| `ARMED` | live |
+
+`--strict` fails only on an unusable relying party. "No credentials yet" is a
+state, not a fault — exiting non-zero on it would train an operator to ignore
+the command.
+
 **Enrolling a tablet**
 
 1. On the tablet, open Master Data → Device Dokter → the device → *Kredensial

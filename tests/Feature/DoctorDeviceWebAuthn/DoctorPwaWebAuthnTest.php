@@ -32,7 +32,10 @@ use App\Modules\DoctorDevice\Models\DoctorDeviceWebAuthnCredential;
 use App\Modules\DoctorDevice\Services\DoctorAppLoginGate;
 use App\Modules\DoctorDevice\Services\DoctorDeviceWebAuthnLoginService;
 use App\Modules\DoctorDevice\Support\WebAuthnRelyingParty;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Schema;
+use Symfony\Component\Console\Output\BufferedOutput;
 use Tests\Support\FakeWebAuthnAuthenticator;
 
 use function Pest\Laravel\actingAs;
@@ -793,4 +796,76 @@ it('ships defaults that refuse a syncable credential and demand a verified human
     expect(config('webauthn.device_binding.require_device_bound'))->toBeTrue()
         ->and(config('webauthn.ceremony.user_verification'))->toBe('required')
         ->and(config('webauthn.relying_party.allow_insecure_localhost'))->toBeFalse();
+});
+
+/* ---------------------------------------------------------------------------
+ | The pre-activation readiness command
+ |-------------------------------------------------------------------------- */
+
+it('reports a usable relying party without naming a single device or credential', function () {
+    $fixture = waClinicFixture();
+    ['credential' => $credential] = waEnroll($fixture['device']);
+
+    $this->artisan('webauthn:readiness')
+        ->expectsOutputToContain('RELYING_PARTY_ID='.WA_RP_ID)
+        ->assertExitCode(0);
+
+    $json = json_decode(
+        (string) tap(new BufferedOutput, function ($out) {
+            Artisan::call('webauthn:readiness', ['--json' => true], $out);
+        })->fetch(),
+        true,
+    );
+
+    expect($json['usable'])->toBeTrue()
+        ->and($json['usability_failure'])->toBeNull()
+        ->and($json['user_verification'])->toBe('required')
+        ->and($json['require_device_bound'])->toBeTrue()
+        // Both switches reported, neither changed.
+        ->and($json['device_enforcement_armed'])->toBeFalse()
+        ->and($json['webauthn_login_armed'])->toBeFalse()
+        ->and($json['credentials_usable'])->toBe(1)
+        ->and($json['credentials_device_bound'])->toBe(1)
+        ->and($json['verdict'])->toBe('READY_NOT_ARMED');
+
+    // The device estate is not something a console report needs to enumerate.
+    $raw = json_encode($json);
+    expect($raw)->not->toContain($credential->credential_id)
+        ->and($raw)->not->toContain($credential->public_key)
+        ->and($raw)->not->toContain($fixture['device']->device_name)
+        ->and($raw)->not->toContain($fixture['user']->name);
+});
+
+it('fails under --strict when the relying party could not run a ceremony', function () {
+    // A plaintext origin outside local development: the browser would refuse
+    // the ceremony with no message, so the server has to say so first.
+    config()->set('app.url', 'http://clinic.example.test');
+    config()->set('webauthn.relying_party.id', 'clinic.example.test');
+    config()->set('webauthn.relying_party.allowed_origins', 'http://clinic.example.test');
+
+    $this->artisan('webauthn:readiness')->assertExitCode(0);
+    $this->artisan('webauthn:readiness', ['--strict' => true])->assertExitCode(1);
+});
+
+it('reports a missing schema as unavailable rather than as zero credentials', function () {
+    waClinicFixture();
+
+    // The command is meant to be safe at awkward moments — during a deploy,
+    // before a migration. A read-only diagnostic that answers a schema question
+    // with a SQL stack trace looks like an incident.
+    Schema::drop('trx_doctor_device_webauthn_credentials');
+
+    $output = new BufferedOutput;
+    $exit = Artisan::call('webauthn:readiness', ['--json' => true], $output);
+
+    $json = json_decode($output->fetch(), true);
+
+    expect($exit)->toBe(0)
+        // "I could not count" and "there are none" are different answers.
+        ->and($json['credentials_usable'])->toBeNull()
+        ->and($json['verdict'])->toBe('SCHEMA_UNAVAILABLE')
+        // The relying party question is independent of the schema and is still
+        // answered, which is the half an operator needs before a ceremony.
+        ->and($json['relying_party_id'])->toBe(WA_RP_ID)
+        ->and($json['usable'])->toBeTrue();
 });

@@ -97,7 +97,11 @@ Durable contract: `docs/architecture/doctor-pwa-webauthn.md`.
 24. Every WebAuthn change needs security regression tests driven by a **real
     software authenticator** — real keys, real signatures. A mocked verifier
     proves a function was called, not that a forgery is refused.
-25. **Automated tests are necessary and not sufficient.** A device-binding claim
+25. **Verify the relying party before a ceremony, not during one.** Run
+    `php artisan webauthn:readiness` (read-only, no secrets, counts not
+    identities) before asking anyone to stand at a tablet: an RP
+    misconfiguration fails silently inside the browser, not on the server.
+26. **Automated tests are necessary and not sufficient.** A device-binding claim
     requires a ceremony on the real tablet: attachment, user verification, and
     the BE/BS flags as actually reported. Never record a device-bound verdict
     that hardware did not produce.
