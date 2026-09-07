@@ -64,35 +64,40 @@ Durable contract: `docs/architecture/doctor-pwa-webauthn.md`.
     levers, each **fail-closed on the next request**.
 15. Losing a credential means **re-enrolment through approval** — never silent
     recreation from a cookie or a stored identifier.
+16. **Enrolment authority is `manage_doctor_devices`, which is also the approval
+    authority.** A credential proves *a* device is present, not *which room it
+    is in*: device name, model and branch are administrative metadata, not
+    attested. Do not describe this as a segregation-of-duties control. Adding
+    one is a separate change to the device registry.
 
 ## Boundaries that must not move
 
-16. **No password-only fallback** for a doctor under enforcement. A failed or
+17. **No password-only fallback** for a doctor under enforcement. A failed or
     cancelled assertion denies.
-17. The **authenticated session is torn down before** the pending marker is
+18. The **authenticated session is torn down before** the pending marker is
     written. A verified password alone must never yield a usable session.
-18. The auth path may consult **exactly one** device authority
+19. The auth path may consult **exactly one** device authority
     (`DoctorAppLoginGate`) and act through **one** session service
     (`DoctorDeviceSessionService`). A proof service, a credential query or a
     second flag read in `app/Http/Controllers/Auth` breaks
     `authentication_coupled_only_through_the_gate`.
-19. **WebAuthn endpoints are never cached** by the service worker, and clinical
+20. **WebAuthn endpoints are never cached** by the service worker, and clinical
     data stays online-only. The worker is deny-by-default; do not add a
     denylist, which would imply the allowlist was insufficient.
-20. **The Android Keystore path stays intact.** Its endpoints, protocol and APK
+21. **The Android Keystore path stays intact.** Its endpoints, protocol and APK
     are a valid transition and rollback route until an explicit retirement
     programme.
-21. **Global enforcement stays OFF.** `doctor.pwa_webauthn_device_login` admits;
+22. **Global enforcement stays OFF.** `doctor.pwa_webauthn_device_login` admits;
     it never denies, and it is reachable only while
     `doctor.trusted_device_enforcement` is also on.
-22. Device-schema migrations stay **additive** during the transition.
+23. Device-schema migrations stay **additive** during the transition.
 
 ## Evidence
 
-23. Every WebAuthn change needs security regression tests driven by a **real
+24. Every WebAuthn change needs security regression tests driven by a **real
     software authenticator** — real keys, real signatures. A mocked verifier
     proves a function was called, not that a forgery is refused.
-24. **Automated tests are necessary and not sufficient.** A device-binding claim
+25. **Automated tests are necessary and not sufficient.** A device-binding claim
     requires a ceremony on the real tablet: attachment, user verification, and
     the BE/BS flags as actually reported. Never record a device-bound verdict
     that hardware did not produce.

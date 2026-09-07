@@ -61,6 +61,30 @@ credential that simply had not synced yet.
 An authenticator that reports **no** backup flags is `unknown`, and `unknown` is
 refused under the default policy. Silence is not a pass.
 
+### Residual risk, stated rather than smoothed over
+
+Enrolment requires `manage_doctor_devices` — the same permission that creates,
+approves, disables and revokes devices, and the same human who can grant a
+doctor an authorization.
+
+That means an operator with this permission could enrol **their own** browser
+against a device row they created, name it after a clinic tablet, and authorize a
+doctor on it. Nothing in the ceremony detects this: the credential proves *a*
+device is present, not *which room it is in*. Device name, model and branch are
+administrative metadata and are not cryptographically attested.
+
+This is **not new** and **not widened** by this sprint — the same operator can
+already approve any Android device and any authorization. It is recorded here
+because a device-trust document that did not say who can mint trust would be
+describing a stronger property than the system has.
+
+What contains it: every enrolment, approval, authorization and revocation is
+audited with the actor; the three records are separately revocable; and a
+credential is inert until a device is ACTIVE *and* a doctor authorization is
+ACTIVE. What would remove it is a second human in the approval path — a
+segregation-of-duties change to the device registry, which is a separate piece
+of work and is not claimed here.
+
 ---
 
 ## 3. Domain model — three separately revocable records
