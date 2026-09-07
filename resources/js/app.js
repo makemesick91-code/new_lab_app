@@ -3,8 +3,16 @@ import './bootstrap';
 import Alpine from 'alpinejs';
 import { createPatientCombobox } from './patient-combobox';
 import { bootPwa } from './pwa';
+import doctorDeviceWebAuthn from './doctor-device-webauthn';
 
 window.Alpine = Alpine;
+
+// DOCTOR-PWA-WEBAUTHN-1 — transport helpers for the two device ceremonies.
+// Exposed as a global because the enrolment and login pages are plain Blade
+// forms, not Alpine components: the ceremony is a one-shot call, and there is
+// no client-side state worth modelling. Nothing here decides anything — see the
+// module's own comment.
+window.doctorDeviceWebAuthn = doctorDeviceWebAuthn;
 
 document.addEventListener('alpine:init', () => {
     Alpine.store('sidebar', {

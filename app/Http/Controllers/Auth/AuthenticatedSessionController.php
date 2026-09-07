@@ -49,7 +49,44 @@ class AuthenticatedSessionController extends Controller
         $denial = $gate->denyBrowserSessionReason($request->user(), $request);
 
         if ($denial !== null) {
-            app(DoctorDeviceSessionService::class)->invalidate($request, $request->user(), $denial);
+            $user = $request->user();
+
+            /*
+             * DOCTOR-PWA-WEBAUTHN-1 — a denial that a trusted BROWSER can still
+             * answer.
+             *
+             * The only denial reachable at login time is "no device session",
+             * because a binding is written by redemption and none has happened
+             * yet. Until now that was the end of the story for a browser. It no
+             * longer has to be: a browser enrolled on an approved clinic device
+             * can prove itself with a WebAuthn assertion and earn exactly the
+             * same binding the Clinic App earns.
+             *
+             * THE PRIVILEGED SESSION IS TORN DOWN FIRST, ALWAYS.
+             *
+             * `invalidate()` runs before the pending marker is written, so a
+             * doctor waiting at the biometric prompt is NOT logged in — the
+             * password step alone never yields a usable session. What survives
+             * is a short-lived note of which account passed the password, which
+             * grants nothing on its own.
+             *
+             * `canAssert()` is checked BEFORE redirecting because a doctor with
+             * no registered credential would otherwise be sent to a ceremony
+             * that cannot succeed. A clear denial is better than a dead end.
+             */
+            $mayAssert = $denial === DoctorAppLoginGate::DENY_NO_DEVICE_SESSION
+                && $user !== null
+                && $gate->deviceCredentialLoginAvailable($user);
+
+            $sessions = app(DoctorDeviceSessionService::class);
+
+            $sessions->invalidate($request, $user, $denial);
+
+            if ($mayAssert) {
+                $sessions->beginDeviceCredentialLogin($request, $user);
+
+                return redirect()->route('doctor-device-webauthn.show');
+            }
 
             throw ValidationException::withMessages([
                 'email' => $gate->denialMessage($denial),

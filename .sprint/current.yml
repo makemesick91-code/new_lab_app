@@ -1,21 +1,21 @@
-# Active sprint manifest — PWA-FOUNDATION-1
+# Active sprint manifest — DOCTOR-PWA-WEBAUTHN-1
 # Validated by: php artisan sprint:manifest-check
 
-id: PWA-FOUNDATION-1
+id: DOCTOR-PWA-WEBAUTHN-1
 type: MODULE_SPRINT
-module: Pwa
-title: "Installable PWA foundation — web app manifest, icons, standalone display, deny-by-default service worker cache, safe offline fallback (security-neutral: no authentication, device-authorization or RBAC change)"
+module: DoctorDevice
+title: "WebAuthn device credentials for the doctor browser login — a second, cryptographically equivalent way to earn the SAME device-bound session the Clinic App earns, behind its own flag, default OFF"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-runtime_change: false           # no controller, service, repository, model, command or policy
-schema_change: false            # no migration, no table, no column
-frontend_change: true           # Blade head partial, Vite entry registration, static public/ assets
-security_impact: true           # a new client-side cache surface; deny-by-default policy + route sweep
-branch_isolation_impact: false  # no BranchContext / branch-scoped query change
+runtime_change: true            # services, controllers, repository, policy-gated routes
+schema_change: true             # two additive tables: webauthn credentials + ceremony challenges
+frontend_change: true           # two Blade views, one Vite-bundled transport module
+security_impact: true           # an authentication path; a new cryptographic device proof
+branch_isolation_impact: false  # branch stays a property of the device row, never a request value
 ledger_impact: false            # no inventory ledger / billing / payment behaviour change
 
-deploy_required: true           # static assets + layout metadata must reach production
-browser_required: true          # installability is only observable in a browser
+deploy_required: true           # migrations must reach production
+browser_required: true          # a WebAuthn ceremony only exists in a browser, on real hardware
 
 test_profiles:
   - security
@@ -24,9 +24,7 @@ test_profiles:
 # Carried forward. `.sprint/current.yml` is a ROLLING file, so these inherited
 # facts have to be restated by every sprint after closure — dropping one is
 # precisely the quiet contradiction LegacyRmeProgramClosureContractTest exists
-# to catch. This sprint dropped the whole block on its first candidate and the
-# gate caught it, exactly as the previous sprint recorded happening to it.
-# Restating all of them, rather than only the asserted one, is the point.
+# to catch.
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
 inherits_hold: FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1/FIX-02
 inherits_phase: feature-doctor-trusted-android-device-lock-1-phase-3-5-readiness-go
@@ -37,16 +35,28 @@ inherits_key: production-android-signing-key-provisioning-1-go
 inherits_pin: production-android-signing-certificate-pin-1-go
 inherits_release_artifact: production-android-release-apk-evidence-1-go
 inherits_pilot_preparation: phase4a-doctor-android-pilot-preparation-1-go
+inherits_pwa_foundation: pwa-foundation-1-go
 
 # The Phase 4A doctor-device pilot is ARMED in production and its sprint is
-# frozen mid-flight (PR #392 open, unmerged, no GO tag). PWA-FOUNDATION-1 is
-# deliberately built on 1555ad5b — the exact commit production is running — and
-# touches no authentication, device-authorization or enforcement surface, so the
-# pilot's state is unaffected. The enforcement scope is captured before and
-# after deploy and must be identical: covered=[18], denied 1, allowed 14,
-# GLOBAL_ENFORCEMENT_ACTIVE=false.
+# frozen mid-flight (PR #392 open, unmerged, no GO tag). This sprint is built on
+# the PWA foundation GO commit, which is exactly what production runs.
+#
+# THE RELATIONSHIP BETWEEN THE TWO IS THE POINT, AND IT IS NOT A CONFLICT.
+#
+# The armed pilot denies drg Karmila's BROWSER because a browser had no way to
+# write a device binding. This sprint gives a browser that way — cryptographic,
+# server-verified, and only on an approved device with an active authorization.
+# It therefore does not weaken the armed enforcement; it is the mechanism by
+# which the same armed enforcement can admit a verified browser.
+#
+# It still admits nobody on deploy: the new flag is OFF, and even switched on it
+# can only admit an account that already holds a registered credential on an
+# ACTIVE device with an ACTIVE authorization. Production holds zero such
+# credentials.
 inherits_armed_pilot: PHASE4A-DOCTOR-ANDROID-PILOT-ACTIVATION-1 (frozen, armed, unmerged)
 
-# No go_tag until the sprint closes: a GO tag requires CI green, a merge, a VPS
-# deploy from the runner ON the server, and production verification of the
-# manifest, icons, service worker and offline shell over HTTPS.
+# No go_tag. A GO tag for THIS sprint additionally requires a ceremony on the
+# real pilot tablet — registration, approval, assertion and a scoped login —
+# because a WebAuthn device restriction cannot be proved by a simulated
+# authenticator. Automated tests use a real software authenticator and real
+# cryptography, which is necessary and not sufficient.

@@ -21,6 +21,8 @@ use App\Modules\Doctor\Controllers\DoctorController;
 use App\Modules\DoctorDevice\Controllers\DoctorDeviceAuthorizationController;
 use App\Modules\DoctorDevice\Controllers\DoctorDeviceController;
 use App\Modules\DoctorDevice\Controllers\DoctorDeviceLoginController;
+use App\Modules\DoctorDevice\Controllers\DoctorDeviceWebAuthnController;
+use App\Modules\DoctorDevice\Controllers\DoctorDeviceWebAuthnLoginController;
 use App\Modules\Inventory\Controllers\GoodsReceiptController;
 use App\Modules\Inventory\Controllers\InventoryActivityLogController;
 use App\Modules\Inventory\Controllers\InventoryAlertController;
@@ -473,6 +475,28 @@ Route::middleware('auth')->prefix('settings')->name('settings.')->group(function
             ->name('doctor-device-enrollments.approve');
         Route::post('doctor-device-enrollments/{enrollment}/reject', [DoctorDeviceController::class, 'rejectEnrollment'])
             ->name('doctor-device-enrollments.reject');
+
+        /*
+        | DOCTOR-PWA-WEBAUTHN-1 — browser enrolment, on the SAME device surface.
+        |
+        | Deliberately not a separate admin screen and deliberately not a
+        | separate permission: the operator who may enrol a browser onto a
+        | tablet is the operator who may create, approve, disable and revoke
+        | that tablet. Registering a credential never changes a device's
+        | status, so this cannot approve anything by itself.
+        |
+        | There is no destroy route, matching the device registry above: a
+        | credential is revoked, never deleted, because deleting it would
+        | delete the evidence of what was trusted and when.
+        */
+        Route::get('doctor-devices/{doctorDevice}/webauthn', [DoctorDeviceWebAuthnController::class, 'create'])
+            ->name('doctor-devices.webauthn.create');
+        Route::post('doctor-devices/{doctorDevice}/webauthn/options', [DoctorDeviceWebAuthnController::class, 'options'])
+            ->name('doctor-devices.webauthn.options');
+        Route::post('doctor-devices/{doctorDevice}/webauthn', [DoctorDeviceWebAuthnController::class, 'store'])
+            ->name('doctor-devices.webauthn.store');
+        Route::post('doctor-devices/{doctorDevice}/webauthn/{credential}/revoke', [DoctorDeviceWebAuthnController::class, 'revoke'])
+            ->name('doctor-devices.webauthn.revoke');
     });
 
     Route::middleware('permission:view_clinic_master_data|manage_clinic_master_data')->group(function () {
@@ -1679,6 +1703,33 @@ Route::middleware(['auth'])->group(function () {
             [DoctorDeviceAuthorizationController::class, 'allowReRequest'])
             ->name('doctor-device-authorizations.allow-re-request');
     });
+});
+
+/*
+| DOCTOR-PWA-WEBAUTHN-1 — the browser's route to the same device binding.
+|
+| Unauthenticated for the same reason ticket redemption is: there is no session
+| yet, and creating one is the whole point. What stands in for a session is a
+| short-lived server-side marker naming the account whose PASSWORD already
+| verified, plus a one-time challenge bound to that marker's session.
+|
+| The marker is not a credential. Holding it lets a visitor ask for a challenge
+| for an account whose password they already typed; completing the ceremony
+| still requires a private key held by an approved clinic device, and the
+| device, the doctor authorization and the credential are all re-asserted
+| server-side before any session is opened.
+|
+| Reachable at all only when doctor.trusted_device_enforcement is on AND
+| doctor.pwa_webauthn_device_login is on. With either off these routes exist but
+| refuse, and a doctor's login behaves exactly as it does today.
+*/
+Route::middleware('web')->group(function () {
+    Route::get('doctor-device-webauthn', [DoctorDeviceWebAuthnLoginController::class, 'show'])
+        ->name('doctor-device-webauthn.show');
+    Route::post('doctor-device-webauthn/options', [DoctorDeviceWebAuthnLoginController::class, 'options'])
+        ->name('doctor-device-webauthn.options');
+    Route::post('doctor-device-webauthn', [DoctorDeviceWebAuthnLoginController::class, 'store'])
+        ->name('doctor-device-webauthn.store');
 });
 
 /*

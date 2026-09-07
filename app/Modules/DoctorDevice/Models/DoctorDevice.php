@@ -201,6 +201,19 @@ class DoctorDevice extends Model
         return $this->hasMany(DoctorDeviceAuthorization::class, 'doctor_device_id');
     }
 
+    /**
+     * DOCTOR-PWA-WEBAUTHN-1 — browser credentials enrolled on this device.
+     *
+     * A collection for the same reason `authorizations()` is: one tablet may
+     * legitimately have several browser profiles enrolled, each with its own
+     * signature counter and its own revocation state, so revoking one browser
+     * must not revoke the tablet.
+     */
+    public function webAuthnCredentials(): HasMany
+    {
+        return $this->hasMany(DoctorDeviceWebAuthnCredential::class, 'doctor_device_id');
+    }
+
     public function verifiedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'verified_by');
