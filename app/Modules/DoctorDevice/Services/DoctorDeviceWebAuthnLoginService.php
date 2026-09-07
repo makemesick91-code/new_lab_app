@@ -389,7 +389,10 @@ class DoctorDeviceWebAuthnLoginService
             $credential->transports ?? [],
             $credential->attestation_format ?? 'none',
             EmptyTrustPath::create(),
-            Uuid::fromString($credential->aaguid ?: Uuid::v4()->__toString()),
+            // The nil uuid, not a fresh random one: the aaguid is not consulted
+            // by the assertion check, and inventing a different value on every
+            // call would make an unused field look like it carried meaning.
+            Uuid::fromString($credential->aaguid ?: '00000000-0000-0000-0000-000000000000'),
             (string) base64_decode($credential->public_key, true),
             (string) $device->uuid,
             (int) $credential->signature_counter,

@@ -651,3 +651,88 @@ it('ends an open browser session when the webauthn flag is switched off', functi
 
     expect(auth()->check())->toBeFalse();
 });
+
+/* ---------------------------------------------------------------------------
+ | Enrolment authority and abuse ceilings
+ |-------------------------------------------------------------------------- */
+
+it('refuses enrolment to an operator who may only VIEW the device registry', function () {
+    $fixture = waClinicFixture();
+
+    // The route group admits `view_doctor_devices|manage_doctor_devices`, so a
+    // read-only operator reaches the controller. The policy — not the route — is
+    // what stops them, which is the layer that must be pinned.
+    actingAs(userWith(['view_doctor_devices']));
+
+    postJson(route('settings.doctor-devices.webauthn.options', $fixture['device']))->assertForbidden();
+
+    post(route('settings.doctor-devices.webauthn.store', $fixture['device']), [
+        'credential' => (new FakeWebAuthnAuthenticator(WA_RP_ID, WA_ORIGIN))->attestation('Y2hhbGxlbmdl'),
+    ])->assertForbidden();
+
+    expect(DoctorDeviceWebAuthnCredential::query()->count())->toBe(0);
+});
+
+it('puts a ceiling on assertion attempts without locking a clinic out', function () {
+    $fixture = waClinicFixture();
+    ['authenticator' => $authenticator] = waEnroll($fixture['device']);
+    waFlags(enforcement: true, webauthn: true);
+
+    post(route('login'), ['email' => $fixture['user']->email, 'password' => 'rahasia-klinik']);
+
+    $accepted = 0;
+
+    for ($attempt = 0; $attempt < 45; $attempt++) {
+        if (postJson(route('doctor-device-webauthn.options'))->status() === 429) {
+            break;
+        }
+
+        $accepted++;
+    }
+
+    // A ceiling exists…
+    expect($accepted)->toBeLessThan(45)
+        // …and it is not so tight that a clinic full of tablets trips it during
+        // an ordinary morning. One sign-in costs two requests.
+        ->and($accepted)->toBeGreaterThanOrEqual(20);
+});
+
+/* ---------------------------------------------------------------------------
+ | The two pages actually render
+ |-------------------------------------------------------------------------- */
+
+it('renders the enrolment page for an operator who may manage the device', function () {
+    $fixture = waClinicFixture();
+    ['credential' => $credential] = waEnroll($fixture['device']);
+
+    actingAs(superAdmin());
+
+    // A Blade prop mismatch is invisible until a page is rendered, and this one
+    // would only be rendered by an operator standing at a tablet.
+    get(route('settings.doctor-devices.webauthn.create', $fixture['device']))
+        ->assertOk()
+        ->assertSee($fixture['device']->device_name)
+        ->assertSee('Terikat perangkat')
+        // The credential id and public key are the device's identity material.
+        // They are not secrets, but the admin UI has no reason to spray them.
+        ->assertDontSee($credential->credential_id)
+        ->assertDontSee($credential->public_key);
+});
+
+it('renders the device step for a doctor who is mid-login', function () {
+    $fixture = waClinicFixture();
+    waEnroll($fixture['device']);
+    waFlags(enforcement: true, webauthn: true);
+
+    post(route('login'), ['email' => $fixture['user']->email, 'password' => 'rahasia-klinik']);
+
+    get(route('doctor-device-webauthn.show'))
+        ->assertOk()
+        ->assertSee($fixture['user']->name);
+});
+
+it('sends a visitor with no pending login back to the login form', function () {
+    waFlags(enforcement: true, webauthn: true);
+
+    get(route('doctor-device-webauthn.show'))->assertRedirect(route('login'));
+});

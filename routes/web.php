@@ -1726,10 +1726,28 @@ Route::middleware(['auth'])->group(function () {
 Route::middleware('web')->group(function () {
     Route::get('doctor-device-webauthn', [DoctorDeviceWebAuthnLoginController::class, 'show'])
         ->name('doctor-device-webauthn.show');
-    Route::post('doctor-device-webauthn/options', [DoctorDeviceWebAuthnLoginController::class, 'options'])
-        ->name('doctor-device-webauthn.options');
-    Route::post('doctor-device-webauthn', [DoctorDeviceWebAuthnLoginController::class, 'store'])
-        ->name('doctor-device-webauthn.store');
+
+    /*
+    | Throttled because these two are the unauthenticated surface: a visitor
+    | holding a pending marker could otherwise mint challenges and attempt
+    | assertions without limit.
+    |
+    | The number is chosen for a CLINIC, not for one person. Tablets sit behind
+    | one NAT address, so a per-IP limit is really a per-clinic limit, and a
+    | limit tight enough to stop a determined attacker would also be tight
+    | enough to lock a busy morning out of their patients. One login costs two
+    | requests, so 30/minute is roughly fifteen sign-ins a minute from a single
+    | clinic — generous for real use, and still a hard ceiling on grinding.
+    |
+    | It is a rate limit, not a lockout: nothing is disabled and the window
+    | clears on its own.
+    */
+    Route::middleware('throttle:30,1')->group(function () {
+        Route::post('doctor-device-webauthn/options', [DoctorDeviceWebAuthnLoginController::class, 'options'])
+            ->name('doctor-device-webauthn.options');
+        Route::post('doctor-device-webauthn', [DoctorDeviceWebAuthnLoginController::class, 'store'])
+            ->name('doctor-device-webauthn.store');
+    });
 });
 
 /*
