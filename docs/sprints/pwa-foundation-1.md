@@ -112,6 +112,100 @@ code, not to delete the documentation.
 
 Production validation commands are in `docs/architecture/pwa-foundation.md` §12.
 
+## Shipped
+
+**PR #393** squash-merged as `e4fa78b1c9b2eff715221458864943527f157b2a`, tree
+`8ff6e777a58400f5513b02623f2336adce0d03bf` — byte-identical to the CI-verified
+candidate tree. GO tag `pwa-foundation-1-go` @ `e4fa78b1` (annotated, tag object
+`4a7206d71d2d6a4cf2efa8665ec027dd41a8e06e`), exact-matching production HEAD.
+
+**CI run `34141791126`** — every gate success: Classifier, NSF-R012 Quality
+(including the newly wired `npm run test:js` step), NSF-R011 Critical
+(`1 risky, 3499 passed / 15257 assertions`; the base branch's last green run was
+`1 risky, 3475 passed`, so the delta is exactly this sprint's 24 PWA tests, and
+the 1 risky is pre-existing), CICD-CTRL Selective Module, Phase 3 Android Clinic
+App, NSF-9 Release Safety & Smoke, NSF-10 Release Evidence. The Full Suite gate
+is skipped per the standing temporary policy.
+
+The first candidate `7530b52a` FAILED the critical gate on
+`LegacyRmeProgramClosureContractTest` — replacing the rolling `.sprint/current.yml`
+dropped its carried-forward inherited-state block. Fixed as the contract's own
+comment prescribes (restate the inherited facts, do not relax the expectation),
+not by weakening the gate.
+
+**Local:** layout-wide regression `Pwa|Auth|Ui|Navigation|Dashboard|Profile`
+— 1441 passed / 2 skipped / 8828 assertions, zero failures. All deploy-time
+governance gates GO (`ui-governance --strict`, `security-compliance` 9/9,
+`cicd-enterprise-gate` 10/10, `enterprise-documentation` 21/21,
+`ci-runtime-control --strict` 6/6, `roadmap --strict` next `MON-1` not stale).
+
+## Deployed
+
+`scripts/deploy-vps-runner.sh start` run **on** `srv1730088` in
+`/var/www/asia-dental-lab-v2`; `final exit=0`, `DEPLOY RUNNER OK`,
+`DEPLOY OK: 20260907-170232`. Runtime isolation 70 GO / 0 FAIL. `PRODUCTION_HEAD`
+and `PRODUCTION_TREE` both match the merge exactly. Automated smoke 6 passed /
+1 warning: `SMOKE-HTTP-HEALTH` probes `http://127.0.0.1/login` and gets 404 from
+the shared-VPS `default_server` catch-all — **pre-existing**, identical in the
+previous four deploy logs, and unrelated to this change. The canonical entry
+point is the domain, which returns 200.
+
+Server prerequisite applied once: `deploy/nginx/pwa-manifest-mime.conf` included
+in the DaengtisiaMS nginx `server` block (backup
+`asia-dental-lab.bak-20260907-pwa-foundation-1`, `nginx -t` ok, reload). The
+resulting config diff is exactly three lines, inside that block only.
+
+## Production verification
+
+Over `https://daengtisia.online`:
+
+| Check | Result |
+| --- | --- |
+| `/manifest.webmanifest` | 200 `application/manifest+json` |
+| `/sw.js` | 200 `application/javascript`, `Cache-Control: no-cache` |
+| `/offline.html` | 200 `text/html` |
+| `/pwa/*.png` (5 icons) | 200 `image/png` |
+| `/login` | 200, carries `rel="manifest"` and `theme-color #2563EB` |
+| `/health/live`, `/health/ready` | 200 |
+| guest `/dashboard`, `/rme/visits`, `/rme/cashier` | 302 (no 500) |
+| `/storage/` | 403 — STORAGE-1 containment intact |
+
+**In a real browser (headless Chrome 149 against production):**
+
+- Chrome's own manifest parser returned `errors: []` — `standalone`,
+  `start_url` `/`, `scope` `/`, name and short_name correct, theme `#2563EB`,
+  background `#F7F9FC`, four icons including maskable 192 and 512.
+- The service worker registered and reached `activated` at scope
+  `https://daengtisia.online/` from `/sw.js` — root scope confirmed.
+- **The security claim, measured rather than argued:** after browsing `/login`,
+  `/dashboard`, `/rme/visits` and `/rme/cashier/receivables`, Cache Storage held
+  only `daengtisiams-static-v1` containing the seven-file shell plus the brand
+  logo and the content-hashed build CSS/JS. No navigation response, no route, no
+  API response, no patient data.
+- **Offline:** with DNS failing for the origin in *every* context including the
+  worker's own (`--host-resolver-rules="MAP daengtisia.online ~NOTFOUND"` —
+  CDP's `Network.emulateNetworkConditions` only reaches the page target and is
+  not a valid test of this), navigating to `/rme/patient-queue` rendered the
+  static offline shell: title "Tidak Ada Koneksi — DaengtisiaMS", the
+  "Koneksi internet tidak tersedia" copy, the "Coba Lagi" button, no clinical
+  content, `navigator.serviceWorker.controller` present.
+
+**Security neutrality, proven rather than asserted.** The Phase 4A doctor-device
+pilot enforcement scope was captured before and after the deploy and is
+byte-identical: `ENFORCEMENT_FLAG_ARMED=true`, `ENFORCEMENT_SCOPE_MODE=pilot`,
+`GLOBAL_ENFORCEMENT_ACTIVE=false`, `COVERED_DOCTOR_USER_IDS=18`,
+`BROWSER_DENIED_DOCTOR_COUNT=1`, `BROWSER_ALLOWED_DOCTOR_COUNT=14`,
+`SCOPE_VERDICT=GO`. The deploy changed no enforcement state.
+
+Post-deploy: no Laravel log for the day (zero application errors), nginx error
+log shows only the STORAGE-1 containment 403s, `queue:failed` empty,
+`APP_ENV=pilot`, `APP_DEBUG=false`, maintenance off, nginx and `php8.3-fpm`
+active.
+
+**Real device smoke: NOT EXECUTED** — no Android tablet was reachable from this
+environment. The browser evidence above is the equivalent automated validation;
+an install from a physical device has not been performed and is not claimed.
+
 ## Deploy
 
 No migration. No seeder. No permission. Static assets and the rebuilt Vite
