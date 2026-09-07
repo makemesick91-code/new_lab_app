@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex">
+    <meta name="theme-color" content="#2563EB">
+    <title>Tidak Ada Koneksi — DaengtisiaMS</title>
+    <!--
+        PWA-FOUNDATION-1 offline shell.
+
+        This page is static and self-contained on purpose. It carries no patient
+        data, no clinical record, no billing figure, no session state and no
+        build-asset dependency, so it renders correctly even when nothing else
+        has been cached. It must stay that way: it is the one document the
+        service worker is allowed to show while the network is unavailable.
+    -->
+    <style>
+        :root {
+            --canvas: #F7F9FC;
+            --surface: #FFFFFF;
+            --navy: #0F2540;
+            --ink-soft: #5B6B7F;
+            --brand: #2563EB;
+            --brand-strong: #1D4ED8;
+            --hairline: #E3E8EF;
+        }
+
+        * { box-sizing: border-box; }
+
+        html, body {
+            height: 100%;
+            margin: 0;
+        }
+
+        body {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 1.5rem;
+            background: var(--canvas);
+            color: var(--navy);
+            font-family: Figtree, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+            line-height: 1.6;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .card {
+            width: 100%;
+            max-width: 30rem;
+            padding: 2rem;
+            background: var(--surface);
+            border: 1px solid var(--hairline);
+            border-radius: 0.75rem;
+            box-shadow: 0 1px 2px rgba(15, 37, 64, 0.06), 0 4px 16px rgba(15, 37, 64, 0.06);
+            text-align: center;
+        }
+
+        .logo {
+            width: 88px;
+            height: 88px;
+            margin: 0 auto 1.25rem;
+            display: block;
+        }
+
+        h1 {
+            margin: 0 0 0.5rem;
+            font-size: 1.25rem;
+            font-weight: 600;
+        }
+
+        .lead {
+            margin: 0 0 0.25rem;
+            font-weight: 500;
+        }
+
+        p {
+            margin: 0 0 1.25rem;
+            color: var(--ink-soft);
+            font-size: 0.9375rem;
+        }
+
+        .note {
+            margin: 1.5rem 0 0;
+            padding-top: 1rem;
+            border-top: 1px solid var(--hairline);
+            font-size: 0.8125rem;
+        }
+
+        button {
+            display: inline-block;
+            width: 100%;
+            padding: 0.75rem 1.25rem;
+            border: 0;
+            border-radius: 0.5rem;
+            background: var(--brand);
+            color: #FFFFFF;
+            font: inherit;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        button:hover { background: var(--brand-strong); }
+
+        button:focus-visible {
+            outline: 2px solid var(--brand-strong);
+            outline-offset: 2px;
+        }
+    </style>
+</head>
+<body>
+    <main class="card">
+        <img class="logo" src="/pwa/icon-192.png" alt="Logo Klinik Gigi Daengtisia" width="88" height="88">
+
+        <h1>DaengtisiaMS</h1>
+
+        <p class="lead">Koneksi internet tidak tersedia.</p>
+
+        <p>
+            Untuk menjaga keamanan dan konsistensi data klinik, data pasien dan
+            transaksi tidak tersedia dalam mode offline. Sambungkan kembali
+            perangkat ke internet, lalu coba lagi.
+        </p>
+
+        <button type="button" onclick="window.location.reload()">Coba Lagi</button>
+
+        <p class="note">
+            Tidak ada data pasien yang disimpan di perangkat ini oleh aplikasi web.
+        </p>
+    </main>
+</body>
+</html>

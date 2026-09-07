@@ -2,6 +2,7 @@ import './bootstrap';
 
 import Alpine from 'alpinejs';
 import { createPatientCombobox } from './patient-combobox';
+import { bootPwa } from './pwa';
 
 window.Alpine = Alpine;
 
@@ -522,3 +523,7 @@ Alpine.data('adlmsSidebar', (routeOpen = {}) => ({
 Alpine.data('patientCombobox', (config = {}) => createPatientCombobox(config));
 
 Alpine.start();
+
+// PWA-FOUNDATION-1 — register the service worker after the page has loaded.
+// Additive only: a failed registration never blocks or changes the app.
+bootPwa();
