@@ -184,7 +184,7 @@ class DoctorDeviceApiController extends Controller
             return $this->opaqueDenial();
         }
 
-        return response()->json([
+        $payload = [
             'outcome' => $result['outcome'],
             'authorization_uuid' => $result['authorization']->uuid,
             'doctor' => ['name' => $result['doctor']->name],
@@ -196,9 +196,31 @@ class DoctorDeviceApiController extends Controller
             ],
             // Said plainly so no client author mistakes capability for rollout.
             'enforcement_active' => $result['enforcement_active'],
-            'login_ticket' => $result['login_ticket'],
-            'login_ticket_expires_at' => $result['login_ticket_expires_at']?->toIso8601String(),
-        ]);
+        ];
+
+        // PHASE4A-DOCTOR-ANDROID-PILOT-ACTIVATION-1 — the ticket keys appear
+        // only when a ticket exists.
+        //
+        // This used to send `"login_ticket": null` whenever none was minted,
+        // which is most of the time, because a ticket needs enforcement to be
+        // ON. Android's `JSONObject.optString` returns the literal string
+        // `"null"` for a JSON null and only returns its `""` fallback for an
+        // ABSENT key, so the shipped v0.3.0-phase3 client read that null as a
+        // four-character ticket, took the "approved and enforcement on" branch
+        // of its state machine, and navigated to `/device-login/null` — a 404,
+        // from a login that had entirely succeeded.
+        //
+        // Absence rather than `""` because absence is what is true: there is no
+        // ticket. An empty string would be a VALUE meaning "a ticket that is
+        // empty", which a corrected client would have to keep special-casing.
+        // Nothing about ticket VALIDATION moves — an unminted ticket was never
+        // redeemable and still is not; only the shape of "there isn't one".
+        if (is_string($result['login_ticket']) && $result['login_ticket'] !== '') {
+            $payload['login_ticket'] = $result['login_ticket'];
+            $payload['login_ticket_expires_at'] = $result['login_ticket_expires_at']?->toIso8601String();
+        }
+
+        return response()->json($payload);
     }
 
     /**
