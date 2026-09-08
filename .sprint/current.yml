@@ -1,15 +1,17 @@
-### Active sprint manifest — DOCTOR-PWA-WEBAUTHN-KILL-SWITCH-1
+### Active sprint manifest — DOCTOR-PWA-WEBAUTHN-CREDENTIAL-REVOKE-CONTAINMENT-1
 ### Validated by: php artisan sprint:manifest-check
 
-id: DOCTOR-PWA-WEBAUTHN-KILL-SWITCH-1
+id: DOCTOR-PWA-WEBAUTHN-CREDENTIAL-REVOKE-CONTAINMENT-1
 type: SECURITY_FIX
 module: DoctorDevice
-title: "The WebAuthn admission switch is proven as a rollback on the live pilot tablet — an open WebAuthn session is denied on its next protected request, an Android session on the same dual-proof device is not, and no device, authorization or credential is revoked by the flip"
+title: "Revoking one WebAuthn credential is proven on the live pilot tablet to contain exactly the session it authenticated — a pre-existing Android session on the same dual-proof device survives, the device and authorization are untouched, and a fresh device-bound credential recovers the doctor"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-runtime_change: false           # the runtime is byte-identical to the base authority;
-                                # PROOF-BINDING-1 already implements KS-1..KS-5 and the
-                                # audit found no defect to manufacture
+runtime_change: false           # the runtime is byte-identical to the base authority.
+                                # PROOF-BINDING-1 already re-verifies a WebAuthn session
+                                # against its exact credential, and the source audit found
+                                # no defect to manufacture. What was missing was coverage
+                                # of the blast radius, not the containment itself.
 schema_change: false            # no migration; no column; no data touched
 frontend_change: false          # no JS, no CSS, no Blade
 security_impact: true           # it is an authentication containment path, gated as one
@@ -18,11 +20,13 @@ ledger_impact: false            # no inventory ledger / billing / payment behavi
 
 deploy_required: true           # NOT for behaviour — production already carries the
                                 # mechanism. The deploy aligns production HEAD with the
-                                # merge SHA so the live containment evidence and the GO
+                                # merge SHA so the live revocation evidence and the GO
                                 # tag describe the same authority.
-browser_required: true          # the switch is read through a cached config file written
-                                # by a runtime user for a session held in a real browser
-                                # on the physical SM-X236B. None of that is in the suite.
+browser_required: true          # a credential is revoked by an operator in one browser
+                                # while a doctor session stays open in another, on the
+                                # physical SM-X236B, alongside a real Clinic App session.
+                                # Nothing in the suite can hold three live sessions on
+                                # real hardware.
 
 test_profiles:
   - security

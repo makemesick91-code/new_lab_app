@@ -623,3 +623,140 @@ config file** written on the host, by a **runtime user**, for a session held in
 a **real browser** on a physical tablet. Every one of those is outside the
 suite. The physical device gate exists for the same reason section 10 exists,
 and for the same reason section 13 had to be found in production.
+
+---
+
+## 15. Credential revocation, proven as containment — DOCTOR-PWA-WEBAUTHN-CREDENTIAL-REVOKE-CONTAINMENT-1
+
+Section 14 proved the *switch* is a rollback: turning WebAuthn off ends an open
+WebAuthn session. That is an estate-wide control. This section is about the
+narrow one — withdrawing **one credential** while everything else keeps running,
+which is what an operator actually reaches for when a single browser profile is
+suspect and the clinic still has to see patients.
+
+The two are not the same control, and proving one does not prove the other. The
+switch is checked before the credential is ever looked up, so a switch test can
+pass on an implementation whose credential check is broken.
+
+### What was audited before anything was changed
+
+No runtime defect was found, and none was manufactured. `PROOF-BINDING-1`
+already:
+
+- binds a WebAuthn session to `DoctorSessionProof::webAuthn($credential->id)` —
+  a reference to **one** credential row, not to "this device has a credential";
+- re-verifies that reference on every protected request through
+  `EnsureDoctorDeviceSession` → `denySessionReason()` → `deviceProofDenyReason()`;
+- resolves it through `usableForDevice()`, which filters `whereNull('revoked_at')`,
+  so a revoked credential is absent and the request lands on
+  `DENY_WEBAUTHN_CREDENTIAL_NOT_USABLE`;
+- returns from the Android branch **before** any WebAuthn state is read, so a
+  credential revocation cannot reach an `android_keystore` session.
+
+What was missing was coverage of the **blast radius** — the properties the live
+ceremony depends on and which nothing pinned. So this sprint is tests and rules,
+and the runtime is byte-identical to the base authority.
+
+### The rules
+
+**CR-1.** A WebAuthn session is bound to the **exact credential** that
+authenticated it, by row reference, recorded at authentication and never
+inferred afterwards from what the device holds.
+
+**CR-2.** Revoking that credential invalidates the session on its **next
+protected request**. No logout, no session sweep, no waiting for expiry. A
+control that only takes effect at logout is not containment.
+
+**CR-3.** Another usable credential **on the same device** does not rescue a
+session bound to a revoked one. The lookup is `firstWhere('id', …)`, not
+`first()`. The session was earned by one ceremony and does not migrate.
+
+**CR-4.** An Android Keystore key on the same dual-proof device does not rescue
+a WebAuthn session whose credential was revoked. This is the section 12 rule,
+restated because credential revocation is the second way to reach it.
+
+**CR-5.** Revoking a WebAuthn credential does **not** invalidate a genuine
+`android_keystore` session — including one established *before* the revocation
+and never re-authenticated.
+
+**CR-6.** Credential revocation does not mutate the device row, and creates no
+replacement device.
+
+**CR-7.** Credential revocation does not mutate the doctor-device authorization,
+and creates no replacement authorization.
+
+**CR-8.** Revocation is **terminal for that credential row**. `revoke()` returns
+early if already revoked, and there is no un-revoke path anywhere. Recovery is a
+fresh registration.
+
+**CR-9.** A revoked credential does not block re-enrolment on the same device,
+and is not offered in `excludeCredentials` — otherwise the one tablet whose
+credential you just withdrew would become the one tablet that cannot be
+recovered, and the containment action would have caused the outage.
+
+**CR-10.** A replacement credential must independently satisfy the same policy
+as the original: user-verified, `backup_eligible = false`, device-bound,
+un-revoked. A replacement admitted on looser terms is a downgrade wearing the
+name of a recovery.
+
+**CR-11.** Registering a replacement never clears `revoked_at`, never reuses the
+old row, and never reinterprets it as active. The revoked row is the record of a
+security decision; erasing it erases the reason.
+
+**CR-12.** Old sessions do not migrate onto a replacement credential, including
+one enrolled while the denied session is still open.
+
+**CR-13.** Device revoke is **not** an acceptable substitute for credential
+revoke. Device revoke is terminal and a replacement device means an on-site
+re-enrolment ceremony. Reaching for the wider control because the narrow one is
+untested is how a containment action becomes a clinical outage.
+
+**CR-14.** Global doctor enforcement stays `false` throughout. Containment is
+proven inside the pilot scope or it is not proven.
+
+**CR-15.** After any credential ceremony, production returns to an explicitly
+**verified** safe rollout state — both switches off, readiness re-read — and
+clinical continuity is proven by a real ordinary doctor login, not asserted.
+
+### The blast-radius tests, and why the existing suite did not cover them
+
+`DoctorPwaWebAuthnCredentialRevocationTest` revokes through
+`settings.doctor-devices.webauthn.revoke` — the route an operator posts to —
+rather than by writing `revoked_at`, because between the route and the column
+sit a policy check, a device-ownership check, a mandatory reason, a transaction
+and an audit write.
+
+Two mutations show the tests are load-bearing rather than merely green:
+
+- dropping `whereNull('revoked_at')` from `usableForDevice()` kills **6**;
+- replacing `firstWhere('id', $credentialId)` with `first()` kills **2** — and
+  the pre-existing suites catch that one only incidentally, through a test about
+  a credential reference naming nothing. Nothing there covered *a second valid
+  credential on the same device*, which is exactly the state recovery creates.
+
+### The harness trap this sprint hit
+
+The test client has **one** session; the clinic has **two browsers**. A helper
+that acted as the operator and then flushed left the doctor logged out — so the
+suite "proved" containment it had caused itself, reporting a denial reason of
+`no_device_session` instead of the credential, and a dead Android session.
+
+Both were the harness. The helpers now snapshot the doctor's session, act as the
+operator, restore it verbatim and forget the resolved user. A mutation run is
+what exposed the remaining vacuous case, which is the argument for running one.
+
+### The safe operational sequence
+
+As section 14, with the revocation substituted for the switch flip, and two
+additions that are not optional:
+
+1. Establish the real Android Clinic App session **before** revoking, and prove
+   it usable with one protected request. A control session created afterwards
+   proves only that login still works — not that revocation spared it.
+2. Get explicit operator approval immediately before revoking. Revocation is
+   irreversible for that row (CR-8), and the approval must be given knowing that.
+
+Then: revoke, deny the open WebAuthn session, confirm the pre-existing Android
+session survives, roll both switches off, enrol the replacement, re-arm, prove
+the recovery assertion binds to the **new** credential id, roll both switches off
+again, and finish with an ordinary doctor login.

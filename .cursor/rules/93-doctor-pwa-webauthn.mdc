@@ -208,3 +208,47 @@ proof" silently answered "this session's proof is still good".*
 54. **Rebuild the config cache as the runtime user.** The switch is read through
     a cached config file; a cache written as root is unreadable by the web
     process and surfaces as a 500, not as a permission error.
+
+## Credential revocation — DOCTOR-PWA-WEBAUTHN-CREDENTIAL-REVOKE-CONTAINMENT-1
+
+55. **A WebAuthn session belongs to ONE credential row.** The binding records
+    `DoctorSessionProof::webAuthn($credential->id)` at authentication and is
+    re-verified as that credential on every protected request. Never infer the
+    proof afterwards from what the device happens to hold.
+56. **Revoking that credential denies the open session on its NEXT protected
+    request.** Not at logout, not at expiry. `usableForDevice()` filters
+    `whereNull('revoked_at')`, so the row is absent and the request lands on
+    `webauthn_credential_not_usable`.
+57. **Look the credential up by id, never by "first usable on this device".**
+    `firstWhere('id', $credentialId)`, not `first()`. A second valid credential
+    on the same device must not rescue a session bound to the revoked one — and
+    recovery deliberately creates exactly that state.
+58. **The switch and the credential are different controls.** A flag test can
+    pass on a broken credential check, because the flag is consulted first.
+    Prove each on its own, and assert the deny CODE to tell them apart.
+59. **Credential revocation must not touch the device or the authorization.**
+    No status change, no replacement row. Device revoke is terminal and needs an
+    on-site re-enrolment; reaching for it because the narrow control is untested
+    turns containment into a clinical outage.
+60. **Revocation is terminal for that row; recovery is a NEW credential.** There
+    is no un-revoke path and none may be added. Registering a replacement never
+    clears `revoked_at` and never reuses the row — it is the record of why the
+    decision was made.
+61. **A revoked credential must stay OUT of `excludeCredentials`.** Otherwise the
+    one tablet whose credential you just withdrew becomes the one tablet that
+    cannot be re-enrolled.
+62. **A replacement credential satisfies the ORIGINAL policy, in full.**
+    User-verified, `backup_eligible = false`, device-bound. Unknown backup
+    eligibility under a require-device-bound policy is a rejection, not a
+    judgement call.
+63. **Establish the Android control session BEFORE revoking, and prove it
+    usable.** A control created after the revocation shows only that login still
+    works — not that the revocation spared an existing session.
+64. **The test client has one session; the clinic has two browsers.** A helper
+    that acts as the operator and then flushes logs the doctor out, and the test
+    then "proves" containment it caused itself. Snapshot the doctor session,
+    act, restore it verbatim, and forget the resolved user.
+65. **Run the mutation.** Dropping `whereNull('revoked_at')` must kill the
+    containment tests, and swapping `firstWhere('id', …)` for `first()` must kill
+    the exact-binding tests. A green suite that survives both is not protecting
+    the invariant it is named after.
