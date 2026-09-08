@@ -1,5 +1,5 @@
 ---
-description: DOCTOR-PWA-WEBAUTHN-1 — WebAuthn device credentials for the doctor browser login; a PWA is not a trust boundary; syncable passkeys are refused
+description: DOCTOR-PWA-WEBAUTHN-1 + PROOF-BINDING-1 — WebAuthn device credentials for the doctor browser login; a PWA is not a trust boundary; syncable passkeys are refused; a session remembers the proof that authenticated it
 globs:
   - "app/Modules/DoctorDevice/**"
   - "app/Http/Controllers/Auth/**"
@@ -105,3 +105,49 @@ Durable contract: `docs/architecture/doctor-pwa-webauthn.md`.
     requires a ceremony on the real tablet: attachment, user verification, and
     the BE/BS flags as actually reported. Never record a device-bound verdict
     that hardware did not produce.
+
+## Session proof binding
+
+*DOCTOR-PWA-WEBAUTHN-PROOF-BINDING-1. The pilot tablet holds BOTH an Android
+Keystore key and a WebAuthn credential, and on such a device "the device has some
+proof" silently answered "this session's proof is still good".*
+
+27. **A session must remember the proof that authenticated it.**
+    `doctor_device.proof_type` is written at authentication success by the path
+    that ran, and `doctor_device.webauthn_credential_id` names the exact
+    credential. Store a reference — never key material, a signature, a challenge
+    or client data.
+28. **Never infer the session's proof from the proofs the device holds.** That
+    inference is the defect, not a shortcut around it.
+29. **A dual-proof device does not permit proof substitution.** An Android
+    Keystore key may never keep a WebAuthn session alive, and a WebAuthn
+    credential may never redeem an Android login ticket.
+30. **A WebAuthn session requires the flag ON.** Switching
+    `doctor.pwa_webauthn_device_login` off denies it on the **next protected
+    request**, on a dual-proof device included.
+31. **A WebAuthn session requires the exact bound credential to remain usable** —
+    un-revoked, registered to the **bound device**, and still satisfying the
+    device-binding policy, re-checked per request so a tightened policy ends
+    sessions admitted under a looser one.
+32. **Android sessions are unaffected** by the WebAuthn flag and by WebAuthn
+    credential revocation.
+33. **Device revocation stays terminal, and authorization revocation is
+    unchanged** — both deny either proof.
+34. **An unknown, absent or unverifiable `proof_type` is DENIED**, and the doctor
+    re-authenticates. Never read it as the permissive proof; that grandfathers
+    exactly what rule 29 forbids.
+35. **There is no "does this device have some proof" predicate**, by
+    construction. `deviceUsable()` and `deviceIdentityProven()` were deleted
+    rather than documented-around. Ask `deviceProofDenyReason()` /
+    `deviceUsableForProof()` with the proof in hand.
+36. **`bind()` takes the proof as a required argument.** No default, no optional
+    parameter — a forgotten proof must not compile.
+37. **Login-time and per-request use the same predicate.** A session that can be
+    established but not kept is two rules pretending to be one.
+38. **Proof-containment claims need a DUAL-PROOF fixture.** A WebAuthn-only
+    device cannot fail this way, so a suite built on one proves nothing about
+    the tablet in the clinic. See
+    `tests/Feature/DoctorDeviceWebAuthn/DoctorPwaWebAuthnProofBindingTest.php`.
+39. **All proof denials render one message.** The reason code goes to
+    `sys_audit_logs`; naming the withdrawn proof to the client maps the estate
+    and helps nobody sign in.

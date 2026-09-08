@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Modules\DoctorDevice\Models\DoctorDevice;
 use App\Modules\DoctorDevice\Models\DoctorDeviceAuthorization;
 use App\Modules\DoctorDevice\Models\DoctorDeviceLoginTicket;
+use App\Modules\DoctorDevice\Support\DoctorSessionProof;
 use App\Modules\LabOrder\Services\AuditLogService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -94,7 +95,12 @@ class DoctorDeviceSessionService
             $this->deny($ticket, 'ticket_subject_missing');
         }
 
-        if (! $this->gate->deviceUsable($device)) {
+        // The Clinic App's own proof, asserted as itself. A WebAuthn
+        // credential on this tablet is a different proof for a different path
+        // and never redeems an Android ticket.
+        $proof = DoctorSessionProof::androidKeystore();
+
+        if (! $this->gate->deviceUsableForProof($device, $proof)) {
             $this->deny($ticket, 'device_not_usable');
         }
 
@@ -110,7 +116,7 @@ class DoctorDeviceSessionService
         // binding is written AFTER regeneration so it lands in the new session.
         $request->session()->regenerate();
 
-        $this->bind($request, (int) $device->id, (int) $authorization->id, (int) $ticket->doctor_id);
+        $this->bind($request, (int) $device->id, (int) $authorization->id, (int) $ticket->doctor_id, $proof);
 
         $this->authorizations->markAuthorizedLogin($authorization);
 
@@ -144,13 +150,32 @@ class DoctorDeviceSessionService
         app(DoctorDeviceWebAuthnLoginService::class)->beginPending($request, $user);
     }
 
-    /** Write the server-side binding. Only redemption ever calls this. */
-    public function bind(Request $request, int $deviceId, int $authorizationId, int $doctorId): void
-    {
+    /**
+     * Write the server-side binding, including WHICH proof earned it.
+     *
+     * DOCTOR-PWA-WEBAUTHN-PROOF-BINDING-1 — the proof is a required argument,
+     * not an optional extra with a permissive default. A caller that forgets it
+     * does not silently produce a session validated by the wrong rules; it does
+     * not compile. That is the point: on a dual-proof device the difference
+     * between "the proof that ran" and "a proof the device holds" is the
+     * difference between a kill switch that works and one that does not.
+     */
+    public function bind(
+        Request $request,
+        int $deviceId,
+        int $authorizationId,
+        int $doctorId,
+        DoctorSessionProof $proof,
+    ): void {
         $request->session()->put(DoctorAppLoginGate::SESSION_DEVICE_ID, $deviceId);
         $request->session()->put(DoctorAppLoginGate::SESSION_AUTHORIZATION_ID, $authorizationId);
         $request->session()->put(DoctorAppLoginGate::SESSION_DOCTOR_ID, $doctorId);
         $request->session()->put(DoctorAppLoginGate::SESSION_BOUND_AT, now()->toIso8601String());
+        $request->session()->put(DoctorAppLoginGate::SESSION_PROOF_TYPE, $proof->type());
+        $request->session()->put(
+            DoctorAppLoginGate::SESSION_WEBAUTHN_CREDENTIAL_ID,
+            $proof->webAuthnCredentialId(),
+        );
     }
 
     /**

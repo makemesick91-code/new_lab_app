@@ -205,7 +205,8 @@ function ticketArmEnforcement(bool $on): void
  * Approve BOTH halves the way an administrator does.
  *
  * A device the app provisioned during first login is `pending_approval`, and a
- * ticket needs `deviceUsable()` as well as an ACTIVE authorization — so
+ * ticket needs a valid Android keystore proof as well as an ACTIVE
+ * authorization — so
  * approving only the pair leaves a state that can never mint one. Modelling
  * half an approval would have made the enforcement-ON tests pass for the wrong
  * reason.
