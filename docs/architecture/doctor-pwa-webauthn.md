@@ -760,3 +760,78 @@ Then: revoke, deny the open WebAuthn session, confirm the pre-existing Android
 session survives, roll both switches off, enrol the replacement, re-arm, prove
 the recovery assertion binds to the **new** credential id, roll both switches off
 again, and finish with an ordinary doctor login.
+
+---
+
+## 16. Parent closure — DOCTOR-PWA-WEBAUTHN-PARENT-CLOSURE-1
+
+The parent programme `DOCTOR-PWA-WEBAUTHN-1` had six GO-tagged children and no
+GO of its own, because the thing it claims — that a named doctor can be held to
+a hardware-bound browser login without touching anybody else — had never been
+demonstrated end to end in the configuration production runs.
+
+### The hole the closure found
+
+Every successful-admission test in the WebAuthn suites arms the feature
+**fleet-wide**. `waFlags()`, `pbFlags()` and `crvFlags()` each set
+`doctor_device_enforcement.scope.mode = 'unscoped'` **and**
+`android_release.enforcement.scope.global_permitted = true`, because those
+suites are about credential mechanics and want the scope out of the way.
+
+The two suites that do set `MODE_PILOT` sign the doctor in *first* under
+unscoped mode and only then narrow the scope — so they prove **containment**,
+never **admission**. Before this closure, no test completed a WebAuthn login
+while the enforcement scope actually named the pilot doctor.
+
+`DoctorPwaWebAuthnParentClosureTest` closes that: it arms `MODE_PILOT` against
+one user, never touches `global_permitted`, and drives a real assertion through
+to a bound session — asserting proof type, credential id, device, doctor and
+authorization on the way.
+
+### The defect mutation found that reading did not
+
+A read-only audit of the admission chain reported no defect, and it was right
+about the mechanism: the device-binding verdict *is* re-checked on every
+protected request. What neither the audit nor the suite noticed is that
+**nothing was holding that check**.
+
+Deleting `WebAuthnDeviceBinding::isAcceptable($credential->device_bound_verdict)`
+from `DoctorAppLoginGate::deviceProofDenyReason()` left **all 80 WebAuthn tests
+green**. Registration refusing a syncable credential had been mistaken for
+coverage of the invariant, but registration cannot reach the case the check
+exists for: a credential stored while the policy was loose must stop working
+when the policy is tightened, not merely stop being issued.
+
+Two tests now hold it — `backup_eligible` and `unknown` both end the session on
+the next protected request, while the device, the authorization and
+`revoked_at` stay exactly as they were. It is a proof failure, not a revocation.
+
+### Mutation results
+
+| Mutation | Outcome |
+|---|---|
+| `MODE_PILOT => true` (scope covers everyone) | killed — non-pilot isolation |
+| `firstWhere('id', $credentialId)` → `first()` | killed — 3 exact-binding tests |
+| WebAuthn flag check removed | killed — 6 tests |
+| device-binding revalidation removed | **survived**, until this sprint added coverage |
+
+### What the parent GO does and does not authorise
+
+It authorises **the pilot**: one named doctor, one approved device, one active
+authorization, one device-bound credential, at one branch. Global doctor
+enforcement stays `false` — and cannot be reached from the environment at all,
+because `global_permitted` is a hard-coded `false` in `config/android_release.php`
+that no host value overrides.
+
+It does not authorise a second doctor, a second device, another branch, or
+Phase 5. Expansion is a separate decision with its own stabilisation sprint.
+
+### Why a green suite is still not a GO
+
+The suite drives a software authenticator. It cannot produce a platform
+authenticator's attachment, a real user-verification prompt, or the BE/BS flags
+as actual hardware reports them — and it cannot distinguish a browser tab from
+an installed PWA client context. The parent GO therefore requires the physical
+ceremony on the approved tablet, in Chrome **and** in the installed PWA, both
+binding the current active credential. Server gates are prerequisites, never
+substitutes.
