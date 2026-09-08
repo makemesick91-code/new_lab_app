@@ -26,3 +26,11 @@ browser_required: true          # the switch is read through a cached config fil
 
 test_profiles:
   - security
+
+# Carried forward. `.sprint/current.yml` is a ROLLING file, so these inherited
+# facts have to be restated by every sprint after closure — dropping one is
+# precisely the quiet contradiction LegacyRmeProgramClosureContractTest exists
+# to catch.
+inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
+inherits_hold: FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1/FIX-02
+inherits_phase: feature-doctor-trusted-android-device-lock-1-phase-3-5-readiness-go
