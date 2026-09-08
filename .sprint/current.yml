@@ -1,22 +1,23 @@
-# Active sprint manifest — DOCTOR-PWA-WEBAUTHN-PROOF-BINDING-1
+# Active sprint manifest — BUGFIX-DOCTOR-PWA-WEBAUTHN-VERIFY-BUTTON-1
 # Validated by: php artisan sprint:manifest-check
 
-id: DOCTOR-PWA-WEBAUTHN-PROOF-BINDING-1
-type: SECURITY_FIX
+id: BUGFIX-DOCTOR-PWA-WEBAUTHN-VERIFY-BUTTON-1
+type: RUNTIME_FIX
 module: DoctorDevice
-title: "Proof-aware doctor session binding — a session records WHICH proof authenticated it, so an Android Keystore key on a dual-proof device can no longer keep a WebAuthn browser session alive after the flag is switched off or the credential is revoked"
+title: "The doctor device step shipped a verify button with no handler — layouts/guest.blade.php had no @stack('scripts'), so the page's pushed assertion wiring was discarded at render time on every browser"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-runtime_change: true            # gate predicate, session binding, both login paths
-schema_change: false            # the binding is session state; no migration
-frontend_change: false          # no view, no JS, no asset
-security_impact: true           # authentication containment; a live kill switch
+runtime_change: true            # the rendered response gains the wiring it always intended to ship
+schema_change: false            # no migration; no column; no data touched
+frontend_change: true           # layouts/guest.blade.php + delivered inline script
+security_impact: true           # it is an authentication path, so it is gated as one
 branch_isolation_impact: false  # branch stays a property of the device row
 ledger_impact: false            # no inventory ledger / billing / payment behaviour
 
-deploy_required: true           # the containment only holds once production runs it
-browser_required: false         # no ceremony: dual-proof containment is provable with a real
-                                # software authenticator plus a real Android keystore proof
+deploy_required: true           # a render-time defect is only fixed once production renders it
+browser_required: true          # the defect was invisible to the server suite and only a real
+                                # SM-X236B assertion can prove the button now reaches the
+                                # Android authenticator
 
 test_profiles:
   - security
@@ -28,48 +29,3 @@ test_profiles:
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
 inherits_hold: FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1/FIX-02
 inherits_phase: feature-doctor-trusted-android-device-lock-1-phase-3-5-readiness-go
-inherits_preflight: evidence-phase4a-real-device-keyinfo-preflight-1-go
-inherits_custody: production-android-signing-custody-readiness-1-go
-inherits_vault: revision-production-signing-custodian1-encrypted-vault-1-go
-inherits_key: production-android-signing-key-provisioning-1-go
-inherits_pin: production-android-signing-certificate-pin-1-go
-inherits_release_artifact: production-android-release-apk-evidence-1-go
-inherits_pilot_preparation: phase4a-doctor-android-pilot-preparation-1-go
-inherits_pwa_foundation: pwa-foundation-1-go
-
-# The parent sprint is MERGED AND DEPLOYED, and deliberately carries NO GO TAG:
-# a device-binding claim needs a ceremony on the real Samsung tablet, and no
-# simulated authenticator can stand in for the BE/BS hardware flags.
-#
-# THIS SUB-SPRINT DOES NOT INHERIT THAT BLOCKER, AND DOES NOT LIFT IT.
-#
-# What is being proved here is containment, not hardware: that a session
-# authenticated by proof X stops when proof X is withdrawn, on a device that also
-# holds proof Y. Both proofs are real in the suite — a genuine EC P-256 software
-# authenticator and a genuine Android keystore signature over a server nonce —
-# and neither claim depends on what a physical tablet reports about backup
-# eligibility. So this may be tagged on its own evidence.
-#
-# `doctor-pwa-webauthn-1-go` REMAINS FORBIDDEN until the tablet ceremony runs.
-inherits_webauthn: DOCTOR-PWA-WEBAUTHN-1 (merged f0da6f90, deployed, NO GO TAG — tablet ceremony still pending)
-
-# The Phase 4A doctor-device pilot is ARMED in production and its sprint is
-# frozen mid-flight (PR #392 open, unmerged, no GO tag). drg Karmila (users.id
-# 18) works from PHASE4A_PILOT_TABLET_02 — device 3, authorization 2, ACTIVE,
-# cryptographically_verified, Android public key present.
-#
-# THAT TABLET IS THE DUAL-PROOF DEVICE THIS SPRINT IS ABOUT, and nothing here
-# touches it: no device is revoked, no authorization is revoked, no credential is
-# registered, no flag is armed, no enforcement scope changes.
-#
-# One deploy-day effect is real and is stated rather than smoothed over: a
-# doctor-device session bound before this build carries no recorded proof and is
-# denied on its next protected request. Inside the armed scope that is exactly
-# one account, and re-authentication is the path her tablet already uses. The
-# alternative — reading an absent proof as the permissive one — would grandfather
-# precisely the sessions this sprint exists to contain.
-inherits_armed_pilot: PHASE4A-DOCTOR-ANDROID-PILOT-ACTIVATION-1 (frozen, armed, unmerged)
-
-# A GO tag for THIS sub-sprint means the proof-binding hardening is
-# production-ready. It does NOT mean the parent WebAuthn programme is GO.
-go_tag: doctor-pwa-webauthn-proof-binding-1-go

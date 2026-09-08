@@ -33,6 +33,7 @@ use App\Modules\DoctorDevice\Services\DoctorAppLoginGate;
 use App\Modules\DoctorDevice\Services\DoctorDeviceWebAuthnLoginService;
 use App\Modules\DoctorDevice\Support\WebAuthnRelyingParty;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Schema;
 use Symfony\Component\Console\Output\BufferedOutput;
@@ -869,4 +870,69 @@ it('reports a missing schema as unavailable rather than as zero credentials', fu
         // answered, which is the half an operator needs before a ceremony.
         ->and($json['relying_party_id'])->toBe(WA_RP_ID)
         ->and($json['usable'])->toBeTrue();
+});
+
+/* ---------------------------------------------------------------------------
+ | BUGFIX-DOCTOR-PWA-WEBAUTHN-VERIFY-BUTTON-1 — the button must actually work
+ |
+ | The suite already proved the server ceremony end to end with real signatures,
+ | and the JS module's encoders are pinned by tests/js. Between those two sat an
+ | untested gap: whether the wiring that connects the button to the module is
+ | ever DELIVERED to the browser.
+ |
+ | It was not. The device step renders through <x-guest-layout>, whose layout had
+ | no @stack('scripts'), so its @push('scripts') block was discarded at render
+ | time. The bundled module still loaded — it only exports functions and binds
+ | nothing — so the page showed a live-looking submit button with no handler.
+ | Clicking it posted seven empty credential fields and bounced back, on every
+ | client, in both the installed PWA and plain Chrome, because the script was
+ | dropped on the SERVER before any browser saw it.
+ |
+ | These tests assert the delivered response, not the Blade source: a test that
+ | greps the template would still have passed while production was broken.
+ |-------------------------------------------------------------------------- */
+
+it('delivers the assertion wiring to the browser on the device step', function () {
+    $fixture = waClinicFixture();
+    waEnroll($fixture['device']);
+    waFlags(enforcement: true, webauthn: true);
+
+    post(route('login'), ['email' => $fixture['user']->email, 'password' => 'rahasia-klinik']);
+
+    $html = get(route('doctor-device-webauthn.show'))->assertOk()->getContent();
+
+    // The handler that turns a click into a ceremony. Without it the button is
+    // a plain submit and the doctor never reaches the authenticator.
+    expect($html)->toContain('window.doctorDeviceWebAuthn.assert(');
+    expect($html)->toContain("addEventListener('submit'");
+    expect($html)->toContain('form.dataset.optionsUrl');
+});
+
+it('gives the verify button a form, an options url and a handler to reach', function () {
+    $fixture = waClinicFixture();
+    waEnroll($fixture['device']);
+    waFlags(enforcement: true, webauthn: true);
+
+    post(route('login'), ['email' => $fixture['user']->email, 'password' => 'rahasia-klinik']);
+
+    $html = get(route('doctor-device-webauthn.show'))->assertOk()->getContent();
+
+    // Actionable means: a submit button, inside the form the handler binds to,
+    // pointing at the options endpoint the ceremony starts from — and never
+    // disabled in the page as served.
+    expect($html)->toContain('data-webauthn-assert');
+    expect($html)->toContain('data-webauthn-start');
+    expect($html)->toContain(route('doctor-device-webauthn.options'));
+    expect($html)->not->toContain('data-webauthn-start disabled');
+});
+
+it('renders scripts a guest page pushes', function () {
+    // The layout contract itself, stated once. Any future guest-layout page
+    // that pushes a script — a login step, a recovery flow — depends on this,
+    // and the failure mode is silent: no error, just a dead control.
+    $html = Blade::render(
+        '<x-guest-layout>@push("scripts")<script>window.__guestScriptStackProbe = true;</script>@endpush</x-guest-layout>'
+    );
+
+    expect($html)->toContain('__guestScriptStackProbe');
 });

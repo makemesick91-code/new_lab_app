@@ -151,3 +151,23 @@ proof" silently answered "this session's proof is still good".*
 39. **All proof denials render one message.** The reason code goes to
     `sys_audit_logs`; naming the withdrawn proof to the client maps the estate
     and helps nobody sign in.
+40. **A ceremony the browser cannot start is a broken ceremony.** The device step
+    wires its verify button through `@push('scripts')`, so every layout that
+    renders an authentication page MUST render `@stack('scripts')`. A missing
+    stack fails silently: the page still renders, the button still looks live,
+    and the click posts empty credential fields. `layouts/guest.blade.php` had
+    no stack, which is why registration worked and assertion never started.
+41. **Registration and assertion are separate ceremonies on separate layouts.**
+    Registration renders through `layouts/app.blade.php`; assertion renders
+    through `layouts/guest.blade.php`, deliberately unauthenticated. Proving one
+    proves nothing about the other — they shared a bug for exactly this reason.
+42. **The bundled module binds nothing.** `resources/js/doctor-device-webauthn.js`
+    only exports `isSupported`/`register`/`assert` onto `window`; the listener
+    that reaches them lives in the page. Delivering the bundle is therefore NOT
+    evidence the button works.
+43. **Test the DELIVERED response, not the template.** Asserting a string in a
+    `.blade.php` file would have passed throughout this outage. Assert that the
+    rendered HTTP response carries the wiring, so a layout that drops it fails.
+44. **PWA and plain browser share one origin-bound credential and one code
+    path.** A defect reproducing in both is server-side render evidence, not a
+    service-worker problem; installation state must never enter an auth path.

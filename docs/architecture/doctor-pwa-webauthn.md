@@ -477,3 +477,58 @@ Enrolment, the ceremony, the challenge protocol, the relying party, the device
 registry, the authorization model, branch scope, the service worker, the Android
 `/device-api/v1/*` endpoints, the APK, and both feature flags' default values.
 No migration: the binding is session state.
+
+## 13. The verify button had no handler — BUGFIX-DOCTOR-PWA-WEBAUTHN-VERIFY-BUTTON-1
+
+The device step shipped a button that looked live and did nothing, in the
+installed PWA and in plain Chrome alike.
+
+### Mechanism
+
+`resources/views/auth/doctor-device-webauthn.blade.php` puts its wiring in
+`@push('scripts')`. It renders through `<x-guest-layout>` →
+`App\View\Components\GuestLayout` → `resources/views/layouts/guest.blade.php`,
+and that layout had **no `@stack('scripts')`**. Blade discards a push with no
+matching stack silently: no error, no warning, no console message.
+
+So the server rendered a form whose seven credential inputs were empty and a
+`type="submit"` button with no submit listener. Clicking it posted the empty
+form, `DoctorDeviceWebAuthnAssertionRequest` rejected it, and the page bounced
+back — which reads, to the person holding the tablet, as a dead button.
+
+The bundled module was delivered the whole time. `layouts/guest.blade.php`
+carries `@vite([... 'resources/js/app.js'])`, and `app.js` exposes
+`window.doctorDeviceWebAuthn`. But that module only *exports* functions; it
+binds no listener. Delivering it was never sufficient.
+
+### Why both modes failed identically
+
+The script was dropped **server-side, at render time**. No client of any kind
+ever received it, so the defect could not be a service-worker or installation
+issue. Reproduction in both modes was the clue that it was a render bug.
+
+### Why registration worked
+
+Registration renders through `settings-shell` → `x-app-layout` →
+`layouts/app.blade.php`, which does render `@stack('scripts')`. Identical
+wiring, different layout — the only difference that mattered.
+
+### Evidence the ceremony never started
+
+`trx_doctor_device_webauthn_challenges` held only `ceremony = registration`
+rows. No assertion challenge was ever created, proving the failure occurred in
+the client before the options endpoint was called.
+
+### Fix
+
+One line: `@stack('scripts')` in `layouts/guest.blade.php`, mirroring the app
+layout. No WebAuthn semantics, RP configuration, device-binding policy,
+authorization rule or session-proof rule was touched.
+
+### Test gap that allowed it
+
+The suite proved the server ceremony with real signatures, and `tests/js`
+pinned the module's encoders. Nothing asserted that the wiring reaches the
+browser. Regression tests now assert the **rendered response** contains the
+handler, and pin the guest layout's script-stack contract for every future
+guest page. A test that grepped the Blade source would have passed throughout.

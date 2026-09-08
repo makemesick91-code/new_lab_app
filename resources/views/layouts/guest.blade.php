@@ -28,5 +28,15 @@
                 {{ $slot }}
             </div>
         </div>
+
+        {{--
+            Guest pages may push scripts, and one of them must: the doctor device
+            step wires its verify button here. Without this stack the push is
+            discarded at render time and the button becomes a plain submit with
+            no handler — a control that looks live and does nothing, on every
+            browser, because it is the SERVER that dropped the script.
+            Mirrors layouts/app.blade.php.
+        --}}
+        @stack('scripts')
     </body>
 </html>
