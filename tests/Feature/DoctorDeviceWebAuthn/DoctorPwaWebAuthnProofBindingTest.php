@@ -375,6 +375,35 @@ it('refuses a session whose binding carries no proof type at all', function () {
     expect(auth()->check())->toBeFalse();
 });
 
+it('leaves a doctor denied for a missing proof at a stable login page, not in a redirect loop', function () {
+    $f = pbDualProofFixture();
+    ['authenticator' => $authenticator] = pbEnroll($f['device']);
+    pbFlags(enforcement: true, webauthn: true);
+
+    pbWebAuthnSignIn($f, $authenticator);
+
+    session()->forget(DoctorAppLoginGate::SESSION_PROOF_TYPE);
+    session()->forget(DoctorAppLoginGate::SESSION_WEBAUTHN_CREDENTIAL_ID);
+    session()->save();
+
+    // Deploy day for every session bound before this build. The denial fires on
+    // the FIRST protected request each of them makes, so a loop here would be
+    // an outage rather than a containment: the middleware invalidates the
+    // session and redirects to `login`, and `login` is exempt from the very
+    // check that is refusing it.
+    get(route('profile.edit'))->assertRedirect(route('login'));
+
+    expect(auth()->check())->toBeFalse();
+
+    // The redirect target itself must render, and a second attempt at the
+    // protected route must behave like an ordinary guest — one hop to login,
+    // no second invalidation, no ping-pong.
+    get(route('login'))->assertOk();
+    get(route('profile.edit'))->assertRedirect(route('login'));
+
+    expect(auth()->check())->toBeFalse();
+});
+
 it('refuses a session whose proof type is not a value this deployment knows', function () {
     $f = pbDualProofFixture();
     ['authenticator' => $authenticator] = pbEnroll($f['device']);
