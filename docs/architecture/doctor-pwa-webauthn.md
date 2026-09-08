@@ -169,8 +169,12 @@ account that already holds a registered credential on an ACTIVE device with an
 ACTIVE authorization. On a fleet with no credentials registered it changes
 nothing at all.
 
-Turning it off ends browser sessions that are open at the time — which is what
-makes the rollback real rather than nominal.
+Turning it off blocks new WebAuthn logins **and** invalidates existing
+WebAuthn-authenticated sessions on their next protected request — including on a
+device that also holds an Android Keystore key. It does not disable the Android
+Keystore path for that same approved device. See §12; before
+DOCTOR-PWA-WEBAUTHN-PROOF-BINDING-1 the first half of that sentence was true and
+the second half was not.
 
 ---
 
@@ -256,12 +260,15 @@ credential being registered against one device row and approved by a human.
 ### The one existing behaviour that did change
 
 `DoctorAppLoginGate::deviceUsable()` previously required the **Android keystore
-key** as the only proof of device identity. It now accepts either that or a
-usable WebAuthn credential, gated on this sprint's flag.
+key** as the only proof of device identity. DOCTOR-PWA-WEBAUTHN-1 made it accept
+either that or a usable WebAuthn credential, gated on this sprint's flag.
 
-This widens nothing for the Android path: a WebAuthn-only device has no
+That widened nothing for the Android path: a WebAuthn-only device has no
 `public_key` and no key fingerprint, so `DoctorAppLoginService` cannot find it by
 fingerprint and could not verify a keystore proof against it if it did.
+
+It did, however, make the *reverse* substitution possible on a device holding
+both proofs — which is the defect §12 closes. `deviceUsable()` no longer exists.
 
 ---
 
@@ -348,3 +355,125 @@ Three independent levers, each fail-closed on the next request:
 | the credential | that browser only |
 | the device | every doctor on that tablet |
 | the authorization | that doctor on that tablet only |
+
+---
+
+## 12. Session proof binding — DOCTOR-PWA-WEBAUTHN-PROOF-BINDING-1
+
+### Device identity proof is not session authentication proof
+
+Two questions look alike and are not:
+
+| Question | Answered by |
+| --- | --- |
+| Does this device hold **some** acceptable proof? | provisioning, enrolment, approval |
+| Is the **exact proof that established THIS session** still valid? | every protected request |
+
+`deviceIdentityProven()` answered the first and was used for the second. On a
+device holding only one proof the two answers coincide, which is why the
+original suite — every fixture a `DoctorDevice::factory()` device with
+`identity_state = unverified` and `public_key = null` — could pass while the
+property it claimed to prove did not hold.
+
+### The device the pilot actually runs on
+
+`PHASE4A_PILOT_TABLET_02` is **ACTIVE**, `cryptographically_verified`, and
+carries an Android Keystore public key. It is a **dual-proof device**. On it, the
+old check short-circuited on the Android branch before the WebAuthn flag or the
+credential was ever consulted, so a browser session established by WebAuthn:
+
+- **survived the kill switch** — the flag's documented rollback did not end it;
+- **survived revocation of the very credential that authenticated it** — the
+  Android key kept it alive.
+
+New browser logins were never affected: `completeLogin()` verifies a real
+assertion. The defect was **existing session containment**, and it is the reason
+this sprint exists.
+
+### What the session now records
+
+`DoctorDeviceSessionService::bind()` writes, in addition to device,
+authorization and doctor:
+
+| Session key | Value |
+| --- | --- |
+| `doctor_device.proof_type` | `android_keystore` or `webauthn` |
+| `doctor_device.webauthn_credential_id` | the credential row id, or `null` |
+
+The proof is recorded **at authentication success, by the path that ran**. It is
+never inferred afterwards from what the device happens to carry — that inference
+is the defect. On one dual-proof tablet, an Android login writes
+`android_keystore` and a browser login writes `webauthn`, and the WebAuthn
+credential's existence does not change the first nor the keystore key the second.
+
+No key material, signature, challenge or client data goes into the session. A
+**reference** is all a re-check needs, and the row id is already what the audit
+trail records.
+
+### What is re-verified on every protected request
+
+`DoctorAppLoginGate::deviceProofDenyReason()` re-asserts the recorded proof
+**as itself**. `deviceUsable()` and `deviceIdentityProven()` are gone: a method
+that can substitute one proof for another is a method that will be called by
+someone who does not know it can.
+
+| Bound proof | Device ACTIVE | Extra requirement |
+| --- | --- | --- |
+| `android_keystore` | yes | `identity_state = cryptographically_verified` **and** `public_key` present |
+| `webauthn` | yes | flag ON **and** that exact credential un-revoked, registered to **this** device, still satisfying the device-binding policy |
+
+Scoping the credential lookup to the bound device makes three failures land in
+one place: revoked, names nothing, and belongs to another tablet. A perfectly
+valid credential from a different approved device cannot keep this session alive.
+
+Re-checking the device-binding verdict per request — not only at registration —
+means a **tightened** policy ends sessions admitted under the looser one, rather
+than merely refusing to issue new credentials.
+
+### Resulting contract
+
+| Event | WebAuthn session | Android session |
+| --- | --- | --- |
+| `FEATURE_DOCTOR_PWA_WEBAUTHN_DEVICE_LOGIN=false` | denied next protected request | unchanged |
+| WebAuthn credential revoked | denied next protected request | unchanged |
+| Device revoked / disabled | denied | denied |
+| Authorization revoked | denied | denied |
+
+All four rows hold **on the dual-proof device**, which is the only place the
+first two were ever in doubt.
+
+### Sessions with no recorded proof
+
+A binding written before this build carries no `proof_type`. It is **denied**,
+and the doctor re-authenticates.
+
+The alternative — treating an absent proof as Android because the device happens
+to hold a keystore key — is the same substitution stated one level up, and it
+would grandfather exactly the sessions this sprint exists to contain. An unknown
+proof is not read generously. The same denial covers a `proof_type` this build
+does not recognise, and a `webauthn` binding with no credential reference: in
+both cases there is nothing that can be re-checked, and a proof that cannot be
+re-checked is not a proof.
+
+The operational cost is bounded and recoverable: it can only reach a doctor
+**inside the enforcement scope** who holds an open bound session at deploy time,
+and re-authentication is the path their device already uses.
+
+### Denial and audit
+
+Three new stable codes — `session_proof_unknown`, `webauthn_login_disabled`,
+`webauthn_credential_not_usable` — travel to `sys_audit_logs` through the
+existing `DOCTOR_SESSION_DEVICE_INVALIDATED` entry that
+`DoctorDeviceSessionService::invalidate()` already writes. No new audit
+subsystem, and no per-request success logging.
+
+All three render **one** message to the doctor. Telling them which proof was
+withdrawn tells anyone holding the tablet how the estate is configured, and does
+not help them sign in again.
+
+### What this sprint did not touch
+
+Enrolment, the ceremony, the challenge protocol, the relying party, the device
+registry, the authorization model, branch scope, the service worker, the Android
+`/device-api/v1/*` endpoints, the APK, and both feature flags' default values.
+No migration: the binding is session state.

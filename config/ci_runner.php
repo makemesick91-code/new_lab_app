@@ -177,6 +177,12 @@ return [
         // the workflow token is ever dropped.
         'tests/Feature/DoctorDeviceWebAuthn/DoctorPwaWebAuthnTest.php',
 
+        // DOCTOR-PWA-WEBAUTHN-PROOF-BINDING-1 — the dual-proof containment
+        // regressions. The sibling suite above cannot cover them: every fixture
+        // there is a single-proof device, and the defect only exists on a device
+        // carrying BOTH an Android keystore key and a WebAuthn credential.
+        'tests/Feature/DoctorDeviceWebAuthn/DoctorPwaWebAuthnProofBindingTest.php',
+
         // MONITORING-LOG-SOURCE-RESILIENCE-1 — the monitor reads where the
         // application writes; a missing or unreadable source fails closed.
         'tests/Unit/Services/Monitoring/MonitoringLogSourceResilienceTest.php',

@@ -581,7 +581,7 @@ it('keeps the android device api untouched by this sprint', function () {
 });
 
 /* ---------------------------------------------------------------------------
- | The session AFTER login — what the `deviceUsable()` change actually decides
+ | The session AFTER login — what the proof-aware device check decides
  |-------------------------------------------------------------------------- */
 
 it('lets a webauthn-bound session survive the per-request device check', function () {
@@ -598,7 +598,8 @@ it('lets a webauthn-bound session survive the per-request device check', functio
     expect(auth()->check())->toBeTrue();
 
     // EnsureDoctorDeviceSession runs on every protected request and calls
-    // deviceUsable(). Before this sprint that demanded the ANDROID keystore
+    // the proof-aware device check. Before DOCTOR-PWA-WEBAUTHN-1 that demanded
+    // the ANDROID keystore
     // key, so a browser-bound session would have been torn down here on the
     // very next request — a login that appeared to work and then did not.
     get(route('profile.edit'));

@@ -13,6 +13,7 @@ use App\Modules\DoctorDevice\Models\DoctorDeviceLoginChallenge;
 use App\Modules\DoctorDevice\Models\DoctorDeviceLoginTicket;
 use App\Modules\DoctorDevice\Support\DeviceKeyMaterial;
 use App\Modules\DoctorDevice\Support\DeviceProofMessage;
+use App\Modules\DoctorDevice\Support\DoctorSessionProof;
 use App\Modules\LabOrder\Services\AuditLogService;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -205,7 +206,7 @@ class DoctorAppLoginService
 
         if ($outcome === self::OUTCOME_ACTIVE
             && $this->gate->enforcementEnabled()
-            && $this->gate->deviceUsable($device)) {
+            && $this->gate->deviceUsableForProof($device, DoctorSessionProof::androidKeystore())) {
             [$ticket, $ticketExpiry] = $this->mintLoginTicket($user, $doctor, $device, $authorization);
         }
 

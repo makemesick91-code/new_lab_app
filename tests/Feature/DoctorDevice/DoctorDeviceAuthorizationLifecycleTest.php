@@ -19,6 +19,7 @@ use App\Modules\DoctorDevice\Services\DoctorDeviceAuthorizationService;
 use App\Modules\DoctorDevice\Services\DoctorDeviceProofService;
 use App\Modules\DoctorDevice\Services\DoctorDeviceService;
 use App\Modules\DoctorDevice\Support\DeviceKeyMaterial;
+use App\Modules\DoctorDevice\Support\DoctorSessionProof;
 use App\Modules\LabOrder\Models\AuditLog;
 use Database\Factories\DoctorDeviceEnrollmentFactory;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
@@ -365,9 +366,13 @@ it('leaves a pending_approval device untrusted by every gate that matters', func
     $f['device']->forceFill(['status' => DoctorDevice::STATUS_PENDING_APPROVAL])->save();
     $device = $f['device']->fresh();
 
+    // DOCTOR-PWA-WEBAUTHN-PROOF-BINDING-1 — "every gate that matters" now means
+    // both proofs, asked separately. An administratively unapproved device is
+    // refused whichever ceremony is claiming it.
     expect($device->isActive())->toBeFalse()
         ->and(app(DoctorDeviceProofService::class)->isTrustworthy($device))->toBeFalse()
-        ->and(app(DoctorAppLoginGate::class)->deviceUsable($device))->toBeFalse();
+        ->and(app(DoctorAppLoginGate::class)->deviceUsableForProof($device, DoctorSessionProof::androidKeystore()))->toBeFalse()
+        ->and(app(DoctorAppLoginGate::class)->deviceUsableForProof($device, DoctorSessionProof::webAuthn(1)))->toBeFalse();
 });
 
 // ---------------------------------------------------------------------------

@@ -9,6 +9,7 @@ use App\Modules\DoctorDevice\Models\DoctorDevice;
 use App\Modules\DoctorDevice\Models\DoctorDeviceAuthorization;
 use App\Modules\DoctorDevice\Models\DoctorDeviceWebAuthnChallenge;
 use App\Modules\DoctorDevice\Models\DoctorDeviceWebAuthnCredential;
+use App\Modules\DoctorDevice\Support\DoctorSessionProof;
 use App\Modules\DoctorDevice\Support\WebAuthnCeremonyFactory;
 use App\Modules\DoctorDevice\Support\WebAuthnDeviceBinding;
 use App\Modules\DoctorDevice\Support\WebAuthnRelyingParty;
@@ -276,7 +277,14 @@ class DoctorDeviceWebAuthnLoginService
 
         $device = DoctorDevice::query()->find($credential->doctor_device_id);
 
-        if ($device === null || ! $this->gate->deviceUsable($device)) {
+        // DOCTOR-PWA-WEBAUTHN-PROOF-BINDING-1 — the proof this login is about
+        // to write, asserted through the SAME predicate the per-request check
+        // will use. Login-time and per-request agreeing by construction is the
+        // point: a session that could be established but not kept, or kept but
+        // not established, is two rules pretending to be one.
+        $proof = DoctorSessionProof::webAuthn((int) $credential->id);
+
+        if ($device === null || ! $this->gate->deviceUsableForProof($device, $proof)) {
             $this->deny($credential, $user, 'device_not_usable');
         }
 
@@ -349,6 +357,7 @@ class DoctorDeviceWebAuthnLoginService
             (int) $device->id,
             (int) $authorization->id,
             (int) $doctor->id,
+            $proof,
         );
 
         $this->forgetPending($request);

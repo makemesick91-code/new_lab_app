@@ -8,6 +8,8 @@ use App\Modules\DoctorDevice\Interfaces\DoctorDeviceAuthorizationRepositoryInter
 use App\Modules\DoctorDevice\Interfaces\DoctorDeviceWebAuthnCredentialRepositoryInterface;
 use App\Modules\DoctorDevice\Models\DoctorDevice;
 use App\Modules\DoctorDevice\Models\DoctorDeviceAuthorization;
+use App\Modules\DoctorDevice\Support\DoctorSessionProof;
+use App\Modules\DoctorDevice\Support\WebAuthnDeviceBinding;
 use App\Services\Foundation\FeatureFlagService;
 use App\Support\Android\AndroidDoctorEnforcementScope;
 use Illuminate\Http\Request;
@@ -54,6 +56,18 @@ class DoctorAppLoginGate
 
     public const SESSION_BOUND_AT = 'doctor_device.bound_at';
 
+    /**
+     * DOCTOR-PWA-WEBAUTHN-PROOF-BINDING-1 — WHICH proof authenticated this
+     * session, and for WebAuthn, which credential specifically.
+     *
+     * Written at authentication success by whichever path ran, and never
+     * derived afterwards from what the device happens to hold. See
+     * {@see DoctorSessionProof}.
+     */
+    public const SESSION_PROOF_TYPE = 'doctor_device.proof_type';
+
+    public const SESSION_WEBAUTHN_CREDENTIAL_ID = 'doctor_device.webauthn_credential_id';
+
     /** Why a doctor session was refused. Stable codes; the audit trail uses them. */
     public const DENY_NO_DEVICE_SESSION = 'no_device_session';
 
@@ -64,6 +78,18 @@ class DoctorAppLoginGate
     public const DENY_DOCTOR_MISMATCH = 'doctor_mismatch';
 
     public const DENY_DOCTOR_NOT_LINKED = 'doctor_not_linked';
+
+    /**
+     * The binding does not say how it was earned, or names a proof this build
+     * cannot verify. Every session bound before this sprint looks like this.
+     */
+    public const DENY_SESSION_PROOF_UNKNOWN = 'session_proof_unknown';
+
+    /** A WebAuthn session, on a deployment that has switched WebAuthn off. */
+    public const DENY_WEBAUTHN_LOGIN_DISABLED = 'webauthn_login_disabled';
+
+    /** Revoked, moved to another device, or no longer meeting the bound policy. */
+    public const DENY_WEBAUTHN_CREDENTIAL_NOT_USABLE = 'webauthn_credential_not_usable';
 
     public function __construct(
         private readonly FeatureFlagService $flags,
@@ -218,6 +244,22 @@ class DoctorAppLoginGate
             return self::DENY_NO_DEVICE_SESSION;
         }
 
+        // DOCTOR-PWA-WEBAUTHN-PROOF-BINDING-1 — how did this session get here?
+        //
+        // Read before anything is validated, because the answer decides WHICH
+        // validation is the right one. A binding that cannot say how it was
+        // earned is refused rather than interpreted: the permissive reading of
+        // an unknown proof is the bug this sprint closes, and a session bound
+        // before this build carries exactly that shape.
+        $proof = DoctorSessionProof::fromSessionValues(
+            $request->session()->get(self::SESSION_PROOF_TYPE),
+            $request->session()->get(self::SESSION_WEBAUTHN_CREDENTIAL_ID),
+        );
+
+        if ($proof === null) {
+            return self::DENY_SESSION_PROOF_UNKNOWN;
+        }
+
         $doctor = $this->doctors->resolveForUser($user);
 
         if ($doctor === null) {
@@ -232,8 +274,17 @@ class DoctorAppLoginGate
 
         $device = DoctorDevice::query()->find($deviceId);
 
-        if ($device === null || ! $this->deviceUsable($device)) {
+        if ($device === null) {
             return self::DENY_DEVICE_NOT_USABLE;
+        }
+
+        // The proof is re-verified AS ITSELF. A WebAuthn session is not rescued
+        // by an Android keystore key sitting on the same tablet, and an Android
+        // session is not ended by a WebAuthn credential being withdrawn.
+        $proofDenial = $this->deviceProofDenyReason($device, $proof);
+
+        if ($proofDenial !== null) {
+            return $proofDenial;
         }
 
         $authorization = DoctorDeviceAuthorization::query()->find($authorizationId);
@@ -249,65 +300,91 @@ class DoctorAppLoginGate
     }
 
     /**
-     * A device may carry a doctor session only when it is administratively
-     * ACTIVE and has cryptographically proved its key. `pending_approval`,
-     * `disabled` and `revoked` all fail here, which is the whole point of
-     * keeping the administrative axis separate from the identity axis.
+     * May this device carry a session earned by THIS PARTICULAR proof?
+     *
+     * @see deviceProofDenyReason() for why a proof is refused
      */
-    public function deviceUsable(DoctorDevice $device): bool
+    public function deviceUsableForProof(DoctorDevice $device, DoctorSessionProof $proof): bool
     {
-        return $device->isActive() && $this->deviceIdentityProven($device);
+        return $this->deviceProofDenyReason($device, $proof) === null;
     }
 
     /**
-     * DOCTOR-PWA-WEBAUTHN-1 — has this device proved WHICH HARDWARE IT IS?
+     * DOCTOR-PWA-WEBAUTHN-PROOF-BINDING-1 — is the proof that authenticated
+     * this session still good, on its own terms?
      *
-     * There are now two ways to answer that, and this method is the only place
-     * that knows there are two. `deviceUsable()` keeps meaning exactly what it
-     * meant before: administratively active, and identity proved.
+     * WHAT THIS REPLACED, AND WHY IT HAD TO GO
      *
-     * WHY THE ANDROID KEY CANNOT BE THE ONLY PROOF
+     * There used to be a `deviceIdentityProven()` that asked "does this device
+     * hold SOME acceptable proof?" — Android keystore key, or failing that, a
+     * WebAuthn credential. That is the right question for provisioning and the
+     * wrong one for a live session, and on a DUAL-PROOF device the difference
+     * was a security hole rather than a nuance: the pilot tablet is ACTIVE,
+     * `cryptographically_verified` and carries a keystore key, so the Android
+     * branch answered "yes" before the WebAuthn flag or the credential was ever
+     * consulted. A browser session established by WebAuthn therefore survived
+     * both the kill switch and a credential revocation.
      *
-     * `public_key` and `identity_state` describe the Clinic App's KEYSTORE
-     * enrolment. They are the right proof for an Android login and the wrong
-     * question for a browser one: a tablet enrolled through WebAuthn has proved
-     * itself just as cryptographically, with a key that is equally
-     * non-exportable, and has no Android keystore key at all. Requiring one
-     * would mean the PWA could only work on tablets that had first been
-     * enrolled through the APK — which is the coupling this sprint exists to
-     * remove.
+     * The permissive method is not documented-around; it is deleted. A method
+     * that can substitute one proof for another is a method that will be
+     * called by someone who does not know it can.
      *
-     * WHY THIS WIDENS NOTHING FOR THE ANDROID PATH
+     * ADMINISTRATIVE STATE IS COMMON TO BOTH PROOFS
      *
-     * A WebAuthn-only device has `public_key` null and no key fingerprint, so
-     * `DoctorAppLoginService` cannot find it by fingerprint and could not verify
-     * a keystore proof against it if it did. The Clinic App still needs the
-     * Clinic App's key. Nothing here hands an Android login a shortcut.
-     *
-     * WHY IT IS GATED ON THE WEBAUTHN FLAG
-     *
-     * So that the flag is a real master switch. Turning it off must return the
-     * deployment to exactly its previous behaviour, and that includes ending a
-     * browser session that is open at the time — which is what the flag's
-     * documented rollback promises. A device whose only proof is a credential
-     * the deployment has stopped honouring is, correctly, not proved.
+     * `pending_approval`, `disabled` and `revoked` fail for either path. That
+     * axis is deliberately separate from the identity axis and stays that way.
      */
-    private function deviceIdentityProven(DoctorDevice $device): bool
+    public function deviceProofDenyReason(DoctorDevice $device, DoctorSessionProof $proof): ?string
     {
-        if ($device->isCryptographicallyVerified() && $device->public_key !== null) {
-            return true;
+        if (! $device->isActive()) {
+            return self::DENY_DEVICE_NOT_USABLE;
         }
 
+        if ($proof->isAndroidKeystore()) {
+            // The Clinic App's KEYSTORE enrolment, and only that. A WebAuthn
+            // credential on this device is not an Android proof and never
+            // stands in for one — which is also why a WebAuthn-only device
+            // cannot be reached by the app path at all: it has no fingerprint
+            // for `DoctorAppLoginService` to find it by.
+            return $device->isCryptographicallyVerified() && $device->public_key !== null
+                ? null
+                : self::DENY_DEVICE_NOT_USABLE;
+        }
+
+        // The flag is a real master switch: turning it off returns the
+        // deployment to its previous behaviour, and that has to include a
+        // browser session that is open at the time. An Android session is
+        // untouched by it, because an Android session is not this proof.
         if (! $this->flags->enabled(DoctorDeviceWebAuthnLoginService::FLAG)) {
-            return false;
+            return self::DENY_WEBAUTHN_LOGIN_DISABLED;
         }
 
-        // A credential exists only because an operator ran a real ceremony on
-        // this device and it satisfied the device-binding policy. Revoking it
-        // takes the proof away again, on the next request.
-        return app(DoctorDeviceWebAuthnCredentialRepositoryInterface::class)
+        $credentialId = $proof->webAuthnCredentialId();
+
+        if ($credentialId === null) {
+            return self::DENY_SESSION_PROOF_UNKNOWN;
+        }
+
+        // Scoped to THIS device and filtered to un-revoked credentials, so all
+        // three of "revoked", "names nothing" and "belongs to another tablet"
+        // land here — a credential from a different device cannot keep this
+        // session alive, however valid it is in its own right.
+        $credential = app(DoctorDeviceWebAuthnCredentialRepositoryInterface::class)
             ->usableForDevice((int) $device->id)
-            ->isNotEmpty();
+            ->firstWhere('id', $credentialId);
+
+        if ($credential === null) {
+            return self::DENY_WEBAUTHN_CREDENTIAL_NOT_USABLE;
+        }
+
+        // Re-checked per request, not only at registration: a credential
+        // admitted under a looser device-binding policy must stop working when
+        // the policy is tightened, not merely stop being issued.
+        if (! WebAuthnDeviceBinding::isAcceptable($credential->device_bound_verdict)) {
+            return self::DENY_WEBAUTHN_CREDENTIAL_NOT_USABLE;
+        }
+
+        return null;
     }
 
     /**
@@ -328,6 +405,13 @@ class DoctorAppLoginGate
             self::DENY_AUTHORIZATION_NOT_ACTIVE => 'Akses dokter untuk perangkat ini belum atau tidak lagi disetujui.',
             self::DENY_DEVICE_NOT_USABLE => 'Perangkat ini tidak lagi diizinkan untuk digunakan.',
             self::DENY_DOCTOR_MISMATCH => 'Sesi perangkat tidak sesuai dengan akun dokter ini.',
+            // Deliberately identical wording for all three proof failures. A
+            // doctor can act on "sign in again"; telling them WHICH proof was
+            // withdrawn tells anyone holding the tablet how the estate is
+            // configured, and does not help them.
+            self::DENY_SESSION_PROOF_UNKNOWN,
+            self::DENY_WEBAUTHN_LOGIN_DISABLED,
+            self::DENY_WEBAUTHN_CREDENTIAL_NOT_USABLE => 'Sesi perangkat ini sudah tidak berlaku. Silakan masuk kembali dari perangkat yang disetujui.',
             default => 'Login dokter hanya dapat dilakukan melalui aplikasi klinik DaengtisiaMS pada perangkat yang disetujui.',
         };
     }
