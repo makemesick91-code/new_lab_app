@@ -532,3 +532,94 @@ pinned the module's encoders. Nothing asserted that the wiring reaches the
 browser. Regression tests now assert the **rendered response** contains the
 handler, and pin the guest layout's script-stack contract for every future
 guest page. A test that grepped the Blade source would have passed throughout.
+
+## 14. The kill switch, proven as a rollback — DOCTOR-PWA-WEBAUTHN-KILL-SWITCH-1
+
+Section 12 built the mechanism: a session records the proof that authenticated
+it, and that proof is re-verified as itself on every protected request. This
+section states what the mechanism is *for* — the operational promise an engineer
+is relying on when they turn `FEATURE_DOCTOR_PWA_WEBAUTHN_DEVICE_LOGIN` off
+while doctors are working — and pins the half of it that was never asserted.
+
+### What a rollback has to mean
+
+Turning the switch off has to end WebAuthn browser sessions. That much was
+already proven. But "the session ended" is not by itself a rollback, and three
+further properties decide whether an operator can safely touch the switch at
+all:
+
+| Property | Why it is not optional |
+| --- | --- |
+| A WebAuthn session survives a protected request while the switch is **on** | Without this control, "it ended after I flipped the switch" is a claim about a coincidence. A session that could not survive *any* second request would produce identical evidence. |
+| The denial is attributable to **this** switch | `session_proof_unknown` and `device_not_usable` also log a doctor out. Either would be a different defect wearing the same symptom, and an operator reading only "logged out" could not tell them apart. |
+| The switch destroys no identity | A rollback that quietly revokes the tablet, the authorization or the credential is one-way. Re-arming would then require the whole physical enrolment ceremony again — which is not a rollback, it is an outage with extra steps. |
+
+### The durable rules
+
+- **KS-1.** A session authenticated with `proof_type = webauthn` is revalidated
+  **as WebAuthn** on every protected request. Never as "the device holds some
+  proof".
+- **KS-2.** When `doctor.pwa_webauthn_device_login` becomes OFF, an existing
+  WebAuthn session is denied on its **next** protected request. Not at its next
+  login, not when the doctor happens to log out.
+- **KS-3.** A cryptographically verified Android Keystore key on the same device
+  **must not** rescue a WebAuthn session or let it be reinterpreted as Android.
+  The pilot tablet holds both proofs; this is the case that matters.
+- **KS-4.** An Android-Keystore session **must not** be invalidated merely
+  because the WebAuthn admission switch is off. The two proofs fail
+  independently, in both directions.
+- **KS-5.** Switch rollback revokes **nothing** — not the device, not the
+  authorization, not the credential. It withdraws an admission. The same
+  credential is usable again the moment the switch goes back on, with no new
+  ceremony.
+- **KS-6.** Kill-switch testing keeps `android_release.enforcement.scope.
+  global_permitted` false and the scope on the pilot. Fleet-wide denial is a
+  clinical-scale action and is never a test posture.
+- **KS-7.** Live revocation of a device, an authorization or a credential is
+  **out of scope** for kill-switch testing. Credential-revoke containment is its
+  own sprint; device revocation is terminal.
+- **KS-8.** Production rollback is followed by explicit readiness and scope
+  verification — `webauthn:readiness` and `android:phase4a-pilot-scope` — not by
+  assuming the file edit took effect.
+- **KS-9.** Clinical continuity after rollback is verified with a **real**
+  ordinary doctor login. A green readiness report is not evidence that a doctor
+  can see patients.
+
+### The safe operational sequence
+
+Arming and rolling back are not symmetric, because in between there is a live
+clinical session. The order below is the one the evidence in this sprint was
+gathered with, and departing from it invalidates the containment claim.
+
+1. Prove the safe baseline first: both switches off, `VERDICT=READY_NOT_ARMED`,
+   `SCOPE_VERDICT=GO`, `BROWSER_DENIED_DOCTOR_COUNT=0`.
+2. Record the environment file's checksum, owner, group and mode. Only the two
+   flag values are read; the file is never dumped.
+3. Arm **both** switches, then `config:clear && config:cache` **as the runtime
+   user**. A cache rebuilt as root leaves a file the web process cannot read,
+   and the symptom is a 500 on the next request, not a permission error.
+4. Re-run both readiness commands and require `VERDICT=ARMED`,
+   `GLOBAL_ENFORCEMENT_ACTIVE=false`, and the covered set exactly the pilot.
+   If any hard gate differs, stop — do not ask the doctor to log in.
+5. Establish the real WebAuthn session on the physical tablet.
+6. Turn **only** the WebAuthn switch off, keeping enforcement armed. Rebuild the
+   config cache. **Do not log the session out** — the open session is the
+   subject of the test, and a manual logout destroys the evidence.
+7. Make the next protected request from that same session and require denial.
+8. Verify the Android control session is still allowed, and that the device,
+   authorization and credential are all still active.
+9. Restore **both** switches off, rebuild the cache, re-verify readiness and
+   scope, and finish with a real ordinary doctor login (KS-9).
+
+### Why the test suite alone cannot close this
+
+`DoctorPwaWebAuthnProofBindingTest` exercises the real HTTP protected-request
+path with real signatures on a dual-proof fixture, and the kill-switch cases
+were confirmed non-vacuous by mutation: removing the flag check from
+`deviceProofDenyReason()` fails them. That is strong evidence about the code.
+
+It is not evidence about the deployment. The switch is read through a **cached
+config file** written on the host, by a **runtime user**, for a session held in
+a **real browser** on a physical tablet. Every one of those is outside the
+suite. The physical device gate exists for the same reason section 10 exists,
+and for the same reason section 13 had to be found in production.

@@ -1,23 +1,28 @@
-# Active sprint manifest — BUGFIX-DOCTOR-PWA-WEBAUTHN-VERIFY-BUTTON-1
-# Validated by: php artisan sprint:manifest-check
+### Active sprint manifest — DOCTOR-PWA-WEBAUTHN-KILL-SWITCH-1
+### Validated by: php artisan sprint:manifest-check
 
-id: BUGFIX-DOCTOR-PWA-WEBAUTHN-VERIFY-BUTTON-1
-type: RUNTIME_FIX
+id: DOCTOR-PWA-WEBAUTHN-KILL-SWITCH-1
+type: SECURITY_FIX
 module: DoctorDevice
-title: "The doctor device step shipped a verify button with no handler — layouts/guest.blade.php had no @stack('scripts'), so the page's pushed assertion wiring was discarded at render time on every browser"
+title: "The WebAuthn admission switch is proven as a rollback on the live pilot tablet — an open WebAuthn session is denied on its next protected request, an Android session on the same dual-proof device is not, and no device, authorization or credential is revoked by the flip"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-runtime_change: true            # the rendered response gains the wiring it always intended to ship
+runtime_change: false           # the runtime is byte-identical to the base authority;
+                                # PROOF-BINDING-1 already implements KS-1..KS-5 and the
+                                # audit found no defect to manufacture
 schema_change: false            # no migration; no column; no data touched
-frontend_change: true           # layouts/guest.blade.php + delivered inline script
-security_impact: true           # it is an authentication path, so it is gated as one
+frontend_change: false          # no JS, no CSS, no Blade
+security_impact: true           # it is an authentication containment path, gated as one
 branch_isolation_impact: false  # branch stays a property of the device row
 ledger_impact: false            # no inventory ledger / billing / payment behaviour
 
-deploy_required: true           # a render-time defect is only fixed once production renders it
-browser_required: true          # the defect was invisible to the server suite and only a real
-                                # SM-X236B assertion can prove the button now reaches the
-                                # Android authenticator
+deploy_required: true           # NOT for behaviour — production already carries the
+                                # mechanism. The deploy aligns production HEAD with the
+                                # merge SHA so the live containment evidence and the GO
+                                # tag describe the same authority.
+browser_required: true          # the switch is read through a cached config file written
+                                # by a runtime user for a session held in a real browser
+                                # on the physical SM-X236B. None of that is in the suite.
 
 test_profiles:
   - security

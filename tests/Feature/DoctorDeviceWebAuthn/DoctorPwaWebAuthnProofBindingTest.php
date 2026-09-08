@@ -41,6 +41,8 @@ use App\Modules\DoctorDevice\Services\DoctorDeviceWebAuthnLoginService;
 use App\Modules\DoctorDevice\Support\DeviceKeyMaterial;
 use App\Modules\DoctorDevice\Support\DeviceProofMessage;
 use App\Modules\DoctorDevice\Support\DoctorSessionProof;
+use App\Modules\LabOrder\Models\AuditLog;
+use App\Support\Android\AndroidDoctorEnforcementScope;
 use Database\Factories\DoctorDeviceEnrollmentFactory;
 use Tests\Support\FakeWebAuthnAuthenticator;
 
@@ -489,4 +491,146 @@ it('answers the two proof questions independently for one dual-proof device', fu
 
     expect($gate->deviceUsableForProof($device, DoctorSessionProof::webAuthn((int) $credential->id)))->toBeFalse()
         ->and($gate->deviceUsableForProof($device, DoctorSessionProof::androidKeystore()))->toBeTrue();
+});
+
+/* ---------------------------------------------------------------------------
+ | DOCTOR-PWA-WEBAUTHN-KILL-SWITCH-1 — the rollback, proven as a rollback
+ |
+ | The cases above prove the session ENDS when the flag goes off. That is half
+ | of what an operator needs before they are willing to touch the switch in a
+ | clinic. The other half is everything the switch must NOT do, and none of it
+ | was pinned:
+ |
+ |   - a WebAuthn session must survive an ordinary protected request while the
+ |     flag is ON, or the denial above proves nothing about the flag — it would
+ |     be equally satisfied by a session that dies on its second request for
+ |     any reason at all;
+ |   - the denial must be attributable to the WebAuthn switch specifically, not
+ |     merely be A denial. `session_proof_unknown` and `device_not_usable` also
+ |     log the doctor out, and either would be a different bug wearing the same
+ |     symptom;
+ |   - the switch is a DECISION change, not identity destruction. Rolling it
+ |     back must leave the device, the authorization and the credential exactly
+ |     as they were — a rollback that quietly revokes the pilot's enrolment is
+ |     not reversible, and the next arming would need the whole ceremony again;
+ |   - and it must stay inside the pilot scope while it does all of that.
+ |-------------------------------------------------------------------------- */
+
+it('keeps an open webauthn session alive across a protected request while the flag is on', function () {
+    $f = pbDualProofFixture();
+    ['authenticator' => $authenticator] = pbEnroll($f['device']);
+    pbFlags(enforcement: true, webauthn: true);
+
+    pbWebAuthnSignIn($f, $authenticator);
+
+    // The control for the kill switch. Without it, "the session ended after I
+    // flipped the flag" is a claim about a coincidence: any session that could
+    // not survive a second request would produce the same evidence.
+    get(route('profile.edit'));
+
+    expect(auth()->check())->toBeTrue()
+        ->and(session(DoctorAppLoginGate::SESSION_PROOF_TYPE))->toBe(DoctorSessionProof::TYPE_WEBAUTHN);
+});
+
+it('names the webauthn switch as the reason it ended the session, not some other denial', function () {
+    $f = pbDualProofFixture();
+    ['authenticator' => $authenticator, 'credential' => $credential] = pbEnroll($f['device']);
+    pbFlags(enforcement: true, webauthn: true);
+
+    pbWebAuthnSignIn($f, $authenticator);
+
+    pbFlags(enforcement: true, webauthn: false);
+
+    // Asked of the gate directly, with the binding this live session holds, so
+    // the answer is the reason itself rather than an inference from a redirect.
+    $request = request();
+    $request->setLaravelSession(session()->driver());
+
+    expect(app(DoctorAppLoginGate::class)->denySessionReason($f['user']->fresh(), $request))
+        ->toBe(DoctorAppLoginGate::DENY_WEBAUTHN_LOGIN_DISABLED);
+
+    get(route('profile.edit'));
+
+    expect(auth()->check())->toBeFalse();
+
+    // And the trail an operator will read afterwards says the same thing.
+    $invalidation = AuditLog::query()
+        ->where('action', 'DOCTOR_SESSION_DEVICE_INVALIDATED')
+        ->where('entity_id', $f['user']->id)
+        ->latest('id')
+        ->first();
+
+    expect($invalidation)->not->toBeNull()
+        ->and($invalidation->new_values['reason'] ?? null)
+        ->toBe(DoctorAppLoginGate::DENY_WEBAUTHN_LOGIN_DISABLED)
+        ->and($credential->fresh()->revoked_at)->toBeNull();
+});
+
+it('leaves the device, the authorization and the credential untouched when the switch ends the session', function () {
+    $f = pbDualProofFixture();
+    ['authenticator' => $authenticator, 'credential' => $credential] = pbEnroll($f['device']);
+    pbFlags(enforcement: true, webauthn: true);
+
+    pbWebAuthnSignIn($f, $authenticator);
+
+    $devicesBefore = DoctorDevice::query()->count();
+    $credentialsBefore = DoctorDeviceWebAuthnCredential::query()->count();
+
+    pbFlags(enforcement: true, webauthn: false);
+
+    get(route('profile.edit'));
+
+    expect(auth()->check())->toBeFalse();
+
+    // Turning the switch off withdraws an ADMISSION. It does not revoke a
+    // tablet, tear up an authorization or burn a credential — if it did, the
+    // rollback would be one-way and re-arming would mean re-enrolling the
+    // pilot's hardware from scratch.
+    expect($f['device']->fresh()->status)->toBe(DoctorDevice::STATUS_ACTIVE)
+        ->and($f['authorization']->fresh()->isActive())->toBeTrue()
+        ->and($credential->fresh()->revoked_at)->toBeNull()
+        ->and(DoctorDevice::query()->count())->toBe($devicesBefore)
+        ->and(DoctorDeviceWebAuthnCredential::query()->count())->toBe($credentialsBefore);
+
+    // Reversible in the direction that matters: the same credential is usable
+    // again the moment the switch goes back on, with no new ceremony.
+    pbFlags(enforcement: true, webauthn: true);
+
+    expect(app(DoctorAppLoginGate::class)->deviceUsableForProof(
+        $f['device']->fresh(),
+        DoctorSessionProof::webAuthn((int) $credential->id),
+    ))->toBeTrue();
+});
+
+it('ends only the pilot doctor\'s webauthn session while the switch is off', function () {
+    $pilot = pbDualProofFixture();
+    ['authenticator' => $authenticator] = pbEnroll($pilot['device']);
+    pbFlags(enforcement: true, webauthn: true);
+
+    pbWebAuthnSignIn($pilot, $authenticator);
+
+    $other = pbDualProofFixture();
+
+    // Enforcement stays ARMED and the switch goes off — but the scope names one
+    // doctor. A kill switch that reaches past its scope is a clinical outage,
+    // not a containment test.
+    pbFlags(enforcement: true, webauthn: false);
+    config()->set('doctor_device_enforcement.scope', array_replace_recursive(
+        (array) config('doctor_device_enforcement.scope'),
+        [
+            'mode' => AndroidDoctorEnforcementScope::MODE_PILOT,
+            'pilot' => ['doctor_user_id' => $pilot['user']->id],
+        ],
+    ));
+
+    get(route('profile.edit'));
+
+    expect(auth()->check())->toBeFalse();
+
+    // The doctor nobody armed anything against is untouched by all of it.
+    actingAs($other['user']);
+    get(route('profile.edit'));
+
+    expect(auth()->check())->toBeTrue()
+        ->and(app(DoctorAppLoginGate::class)->inEnforcementScope($other['user']->fresh()))->toBeFalse();
 });
