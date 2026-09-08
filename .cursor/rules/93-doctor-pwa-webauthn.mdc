@@ -1,5 +1,5 @@
 ---
-description: DOCTOR-PWA-WEBAUTHN-1 + PROOF-BINDING-1 — WebAuthn device credentials for the doctor browser login; a PWA is not a trust boundary; syncable passkeys are refused; a session remembers the proof that authenticated it
+description: DOCTOR-PWA-WEBAUTHN-1 + PROOF-BINDING-1 + KILL-SWITCH-1 — WebAuthn device credentials for the doctor browser login; a PWA is not a trust boundary; syncable passkeys are refused; a session remembers the proof that authenticated it; the admission switch ends a WebAuthn session on its next request without revoking any identity
 globs:
   - "app/Modules/DoctorDevice/**"
   - "app/Http/Controllers/Auth/**"
@@ -171,3 +171,40 @@ proof" silently answered "this session's proof is still good".*
 44. **PWA and plain browser share one origin-bound credential and one code
     path.** A defect reproducing in both is server-side render evidence, not a
     service-worker problem; installation state must never enter an auth path.
+
+## Kill switch — DOCTOR-PWA-WEBAUTHN-KILL-SWITCH-1
+
+45. **KS-1 — a WebAuthn session is revalidated as WebAuthn**, on every protected
+    request, never as "the device holds some acceptable proof". The permissive
+    question belongs to provisioning and nowhere near a live session.
+46. **KS-2 — switching `doctor.pwa_webauthn_device_login` off denies an open
+    WebAuthn session on its NEXT protected request.** Not at next login, not at
+    logout. A rollback that waits for the doctor to log out is not a rollback.
+47. **KS-3 — an Android Keystore key on the same device must never rescue a
+    WebAuthn session** or let it be reinterpreted as Android. The pilot tablet is
+    dual-proof; this is the production case, not an edge case.
+48. **KS-4 — an Android session must never die because the WebAuthn switch is
+    off.** The two proofs fail independently in BOTH directions. Coupling them is
+    a defect even when it fails safe.
+49. **KS-5 — the switch withdraws an admission, it does not revoke identity.**
+    Rolling it back leaves device, authorization and credential active and
+    un-revoked, and the same credential works again when it goes back on. If a
+    rollback needs a re-enrolment ceremony, it was not a rollback.
+50. **KS-6/KS-7 — kill-switch testing stays pilot-scoped and non-destructive.**
+    `global_permitted` stays false. Never live-revoke a device, an authorization
+    or a credential to test containment: credential-revoke containment is its own
+    sprint and device revocation is terminal.
+51. **A denial must be attributable, not merely present.** Assert the reason
+    (`webauthn_login_disabled`), not just that `auth()->check()` went false —
+    `session_proof_unknown` and `device_not_usable` produce the same symptom from
+    a different defect.
+52. **Every containment test needs its flag-ON control.** Without proving the
+    session survives a protected request while the switch is on, "it ended after
+    I flipped it" is a statement about a coincidence.
+53. **KS-8/KS-9 — rollback ends with verification, not with an edit.** Re-run
+    `webauthn:readiness` and `android:phase4a-pilot-scope`, then prove clinical
+    continuity with a REAL ordinary doctor login. A green report is not evidence
+    a doctor can see patients.
+54. **Rebuild the config cache as the runtime user.** The switch is read through
+    a cached config file; a cache written as root is unreadable by the web
+    process and surfaces as a 500, not as a permission error.
