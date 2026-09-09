@@ -835,3 +835,42 @@ an installed PWA client context. The parent GO therefore requires the physical
 ceremony on the approved tablet, in Chrome **and** in the installed PWA, both
 binding the current active credential. Server gates are prerequisites, never
 substitutes.
+
+### The ceremony, as it actually ran
+
+Production `41f87199`, armed by the two flags only (env delta proven to be
+exactly two lines, keyset hash unchanged, `root:daengtisiams:640` preserved).
+Gate before anyone touched the tablet: `VERDICT=ARMED`, `SCOPE_VERDICT=GO`,
+covered users `[18]`, denied 1 / allowed 14, `GLOBAL_ENFORCEMENT_ACTIVE=false`.
+
+An audit watermark was taken first (`id=622`) so the ceremony's events could be
+isolated from history rather than inferred. Everything above it:
+
+| id | event | credential | actor | at |
+|---|---|---|---|---|
+| 623 | `DOCTOR_SESSION_DEVICE_INVALIDATED` | — | 18 | 01:19:59 |
+| 624 | `DOCTOR_DEVICE_WEBAUTHN_LOGIN_SUCCESS` | **2** | 18 | 01:20:04 |
+| 625 | `DOCTOR_SESSION_DEVICE_INVALIDATED` | — | 18 | 01:26:20 |
+| 626 | `DOCTOR_DEVICE_WEBAUTHN_LOGIN_SUCCESS` | **2** | 18 | 01:26:24 |
+
+Two independent logins, each preceded by the documented session teardown, so
+neither reused the other's session. Signature counter `1 → 3`: two increments
+for two assertions, which also confirms the library's clone check is live
+against a real hardware counter. Credential 1 stayed revoked with its counter
+frozen at 6. Row counts before and after are identical — 3 devices, 3
+authorizations, 2 credentials — so nothing was created to make the ceremony pass.
+
+**What the server cannot prove, and is not claimed.** The audit trail does not
+record client context, and by design it cannot: Chrome and the installed PWA use
+the same origin-bound credential, which is the property PC-13 asserts. The server
+proves two real assertions bound to the approved credential; *which* of them was
+the PWA rests on the operator's attestation. Recording it that way is the point —
+a closure that inflated operator testimony into server evidence would be the
+exact failure this programme exists to avoid.
+
+**One telemetry gap, not a security one.** `mst_doctor_device_authorizations.
+last_authorized_login_at` did not move (still 2026-09-08 15:25:16, an Android
+login). The WebAuthn path does not stamp it, so that column reflects Android
+logins only. The authorization *is* verified active on every admission and every
+protected request — this is an observability inconsistency to fix in
+stabilisation, not a gate.

@@ -80,8 +80,9 @@
 <div class="wrap">
 
   <h1>DOCTOR-PWA-WEBAUTHN-1 — parent closure evidence</h1>
-  <p class="sub">Server-side gates complete. The parent GO is not taken:
-     it requires a physical ceremony that has not happened.</p>
+  <p class="sub">Closed. Both physical ceremonies completed on the approved
+     tablet against credential 2; the pilot is live for one doctor and global
+     enforcement remains off.</p>
   <p class="meta">
     runtime authority 267c44b9 · base 7560b5aa · pilot user 18 · doctor 21 ·
     branch 5 SPN4 · device 3 PHASE4A_PILOT_TABLET_02 · authorization 2 ·
@@ -126,20 +127,35 @@
             <td><span class="st off"><span class="dot"></span>FALSE</span></td>
             <td class="ev">hard-coded in source; unreachable from environment</td></tr>
         <tr><td>Final Chrome ceremony</td>
-            <td><span class="st pend"><span class="dot"></span>NOT RUN</span></td>
-            <td class="ev">requires physical SM-X236B + drg Karmila</td></tr>
+            <td><span class="st go"><span class="dot"></span>PASS</span></td>
+            <td class="ev">audit 624 · credential 2 · user 18 · 2026-09-09 01:20:04</td></tr>
         <tr><td>Final installed-PWA ceremony</td>
-            <td><span class="st pend"><span class="dot"></span>NOT RUN</span></td>
-            <td class="ev">requires physical SM-X236B + drg Karmila</td></tr>
+            <td><span class="st go"><span class="dot"></span>PASS</span></td>
+            <td class="ev">audit 626 · credential 2 · user 18 · 2026-09-09 01:26:24</td></tr>
+        <tr><td>Signature counter</td>
+            <td><span class="st go"><span class="dot"></span>1 &rarr; 3</span></td>
+            <td class="ev">two increments, two real assertions; clone check active</td></tr>
+        <tr><td>Identity rows unchanged</td>
+            <td><span class="st go"><span class="dot"></span>PASS</span></td>
+            <td class="ev">3 devices · 3 authorizations · 2 credentials, before and after</td></tr>
+        <tr><td>Non-pilot isolation, armed</td>
+            <td><span class="st go"><span class="dot"></span>PASS</span></td>
+            <td class="ev">denied 1 / allowed 14, <code>SCOPE_VERDICT=GO</code></td></tr>
         <tr><td>Parent GO</td>
-            <td><span class="st pend"><span class="dot"></span>NOT TAKEN</span></td>
-            <td class="ev">blocked on the two ceremonies above</td></tr>
+            <td><span class="st go"><span class="dot"></span>GO</span></td>
+            <td class="ev"><code>doctor-pwa-webauthn-1-go</code> @ 41f87199</td></tr>
       </tbody>
     </table>
   </div>
 
   <div class="note">
-    <strong>Nothing above is a substitute for the ceremony.</strong> The suite
+    <strong>The ceremony was run, not simulated.</strong> The server records two
+    independent assertions six minutes apart, both binding credential 2, each
+    preceded by a session teardown — but it cannot itself distinguish Chrome from
+    the installed PWA, because both use the same origin-bound credential by
+    design. Which client ran which login rests on the operator's attestation.
+    <br><br>
+    <strong>Nothing here is a substitute for the ceremony.</strong> The suite
     drives a software authenticator: it cannot produce a platform authenticator's
     attachment, a real user-verification prompt, or the BE/BS flags as hardware
     reports them — and it cannot tell a browser tab from an installed PWA client.
@@ -151,18 +167,18 @@
       <li class="rung now">
         <span class="rail"><span class="node"></span><span class="line"></span></span>
         <span><span class="rlabel">Global enforcement OFF</span>
-          <span class="tag">now</span>
+          <span class="tag">holds</span>
           <div class="rnote">Source-controlled <code>global_permitted = false</code>.
             No environment value reaches it.</div></span>
       </li>
-      <li class="rung future">
+      <li class="rung now">
         <span class="rail"><span class="node"></span><span class="line"></span></span>
         <span><span class="rlabel">Pilot ON — drg Karmila only</span>
-          <span class="tag">pending ceremony</span>
+          <span class="tag">now</span>
           <div class="rnote">user 18, device 3, authorization 2, credential 2.
             Armed by two environment flags, nothing else.</div></span>
       </li>
-      <li class="rung future">
+      <li class="rung now">
         <span class="rail"><span class="node"></span><span class="line"></span></span>
         <span><span class="rlabel">14 non-pilot doctors unchanged</span>
           <div class="rnote">Ordinary browser login throughout. Proven server-side
