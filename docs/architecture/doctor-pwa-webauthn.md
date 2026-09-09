@@ -1,7 +1,12 @@
 # DOCTOR-PWA-WEBAUTHN-1 — WebAuthn device credentials for the doctor browser login
 
-**Status:** implemented, deployed with the capability flag **OFF**.
-**Not GO.** A GO tag requires a ceremony on the real pilot tablet — see
+**Status:** implemented, deployed, and LIVE for a bounded cohort of three doctors.
+The parent programme closed at §16 and the cohort went live at §17; this header
+said **Not GO** until DOCTOR-PWA-GLOBAL-ROLLOUT-READINESS-1 corrected it, having
+been written before either happened and never updated since.
+
+**Fleet-wide enforcement remains OFF**, and §18 measures how far away it is. A GO
+on readiness is not a GO on activation — see
 [Why automated tests are not sufficient](#why-automated-tests-are-not-sufficient).
 
 ---
@@ -970,3 +975,152 @@ preparation sprint's "ship it off" contract. The gate for a running pilot is
 
 Full record: `docs/sprints/doctor-pwa-multi-doctor-pilot-1.md`. Rules: MD-R1…R14 in
 `.cursor/rules/151-doctor-pilot-enforcement-cohort.mdc`.
+
+---
+
+## 18. Global rollout readiness — DOCTOR-PWA-GLOBAL-ROLLOUT-READINESS-1
+
+Three doctors are enforced onto trusted devices and it works. The question this
+section answers is the next one, and it is not the same question: could that be
+switched on for *everybody* without stranding a clinician?
+
+The answer, measured against production, is no — and the shape of the no is the
+useful part. Fifteen doctors hold an active account linked to an active doctor
+record. Three of them have a complete trusted path. The other twelve hold no
+device authorization at all, so they have no credential and no rehearsal either.
+Every one of them falls at the same gate, and nothing downstream of that gate can
+be fixed in software: a credential only exists once a person registers it on a
+tablet under their own biometric.
+
+### What "ready" means, and why it is counted per doctor
+
+A doctor is ready when at least one complete path exists: an active doctor record
+linked to an active account, an active and cryptographically verified device, an
+active authorization joining the two, and on that device a credential that is
+user-verified, not backup-eligible, device-bound and not revoked.
+
+Counted per DOCTOR, never per device. A credential belongs to a device, so a
+fleet with three usable credentials and fifteen doctors is entirely consistent —
+and entirely unready. Sharing a tablet is not being authorized on it. A doctor
+with two devices needs only one of them to work; a doctor with none is unready
+however many tablets sit in their clinic.
+
+Branch is reported three ways because one number would lie. Every doctor is
+pivot-authorized to practise at every RME branch, so a count keyed on that pivot
+returns the whole fleet for every branch. The number that means something is
+"doctors whose complete path runs through a device registered here".
+
+### The gate that failed on success
+
+`android:phase4a-pilot-readiness` exited non-zero on production, printed NOT
+READY, and was right by its own contract and wrong about the world. It was
+written for a preparation sprint whose claim was "we shipped nothing armed", so
+it failed whenever the enforcement flag was armed — and §17 armed it, on purpose,
+with an owner's approval. §17 recorded the contradiction as a known limit rather
+than fixing it. This section fixes it.
+
+The status narrowed to the condition the durable rules already described, and
+which the code was already computing one line above for its own detail text: the
+flag armed while the scope covers nobody. That state denies no doctor anything,
+so it cannot lock a clinic out, but it reads as protection while providing none.
+Browser denial configured outside a declared scope stays a failure exactly as
+before.
+
+What replaced the dropped breadth is not nothing. Enforcement stopped being a
+boolean, because a boolean cannot tell an owner-approved three-doctor pilot apart
+from a clinic-wide lockout — and that conflation is the whole defect.
+
+### The rules
+
+**GR-1.** Readiness GO is not activation GO. Measuring a fleet enforces nobody,
+and a readiness tag authorises a later sprint to decide, never the switch itself.
+
+**GR-2.** Fleet-wide enforcement stays off until a dedicated activation authority
+says otherwise. Nothing in a readiness sprint may move it.
+
+**GR-3.** Readiness is per doctor. Every doctor intended for enforcement needs at
+least one complete trusted path of their own.
+
+**GR-4.** A complete path is all five of: active doctor record, active account,
+active cryptographically verified device, active doctor-device authorization, and
+a usable device-bound credential on that device. Four out of five is not a path.
+
+**GR-5.** A credential belongs to a device, not to a doctor. Counting credentials
+measures hardware; counting doctors with paths measures readiness.
+
+**GR-6.** Two doctors may share one trusted device, and only through two explicit
+active authorizations. Device sharing never implies doctor authorization.
+
+**GR-7.** `user_verified` must be true and `backup_eligible` must be exactly
+false. The column is nullable because an authenticator that reported neither flag
+told us nothing, and silence is not a pass — so the test is `=== false`, never
+`!== true`.
+
+**GR-8.** The stored device-bound verdict is checked separately from the flag it
+was derived from. The two agreeing is the normal case; the two disagreeing is the
+only route by which a syncable passkey could reach a clinical session, and
+collapsing the check would remove the only place it is visible.
+
+**GR-9.** A revoked device stays revoked. Revocation is terminal, it is counted
+in the estate, and it never contributes to readiness.
+
+**GR-10.** The readiness engine reports; it never provisions. That is a
+structural claim: a test scans its source for the primitives that could write,
+spawn, fetch or read a request, because a readiness gate that can act is a
+readiness gate whose output describes its own side effects.
+
+**GR-11.** Enforcement has four postures — off, bounded pilot, global rollout
+readiness, global — and the report names which one is observed. A boolean that
+cannot separate a bounded pilot from a fleet lockout is how a gate ends up
+failing on success.
+
+**GR-12.** The declared posture lives in source control and is a CEILING, not an
+equality. The same reviewed code runs quiet in CI and armed on production; what
+must never happen is a deployment enforcing MORE than anyone reviewed.
+
+**GR-13.** `indeterminate` — armed over a scope resolving to nobody — is a state
+a deployment can be observed in and never a posture a reviewer may declare.
+
+**GR-14.** Global rollout readiness sits at the same enforcement strength as the
+bounded pilot it describes, never above it. If measuring outranked the pilot,
+declaring it would itself be an activation.
+
+**GR-15.** Whether fleet-wide enforcement is live is MEASURED from the resolved
+scope, never read from a recorded claim. The activation boundary carries a
+hardcoded `false` for the same field; a safety line that is true because somebody
+typed it is not a safety line, and the activation checklist reads it before
+arming anything.
+
+**GR-16.** Fleet enumeration lives in its own repository interface, which the
+login gate is never given. The credential interface's refusal to expose an "all
+credentials" accessor is a boundary the login path depends on, and a reporting
+need is not a reason to widen it.
+
+**GR-17.** The engine's answer and the login gate's answer are compared, and a
+disagreement is reported as a finding rather than resolved in either direction. A
+second implementation of a security decision is a second implementation that can
+drift.
+
+**GR-18.** A doctor covered by the cohort but not provisioned is the state that
+strands a clinician, and it is reported explicitly. Membership and readiness are
+different facts.
+
+**GR-19.** PARTIAL is the ordinary state of a staged rollout and exits zero. A
+gate that reddens for the whole duration of a rollout is a gate somebody removes
+from the deploy chain.
+
+**GR-20.** No count of ready doctors substitutes for a ceremony. Readiness says a
+path exists on paper; only a person at a tablet proves it carries them.
+
+### What this section does not claim
+
+That any of the twelve can be provisioned from a terminal. They cannot. Each
+needs an authorization approved through the canonical screen, a credential
+registered on a real tablet under their own biometric, and one genuine login
+plus one protected request so the audit trail names the exact user, device,
+authorization and credential. Rehearsals run in batches no larger than the
+source-controlled cohort ceiling, so twelve doctors are at least three rotations,
+and the cohort returns to its approved membership afterwards.
+
+Full record: `docs/sprints/doctor-pwa-global-rollout-readiness-1.md`. Rules:
+GR-R1…R20 in `.cursor/rules/152-doctor-global-rollout-readiness.mdc`.

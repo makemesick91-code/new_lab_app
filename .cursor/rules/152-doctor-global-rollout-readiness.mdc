@@ -1,0 +1,155 @@
+---
+description: Fleet-wide doctor enforcement readiness is measured per DOCTOR, never per device or per credential, and measuring it activates nothing. A credential belongs to a tablet, so sharing hardware is not being authorized on it; silence from an authenticator is not a pass; a revoked device is terminal. Enforcement has four postures rather than a boolean, the declared posture is a source-controlled ceiling, and whether the fleet is locked is measured from the resolved scope instead of read from a recorded false.
+globs:
+  - "app/Modules/DoctorDevice/**"
+  - "app/Support/Android/**"
+  - "app/Support/Deploy/**"
+  - "app/Console/Commands/Doctor*.php"
+  - "app/Console/Commands/Android*.php"
+  - "config/android_release.php"
+  - "config/doctor_device_enforcement.php"
+  - "config/release_safety.php"
+  - "tests/Feature/DoctorDevice/**"
+  - "tests/Feature/Deploy/**"
+alwaysApply: false
+---
+
+# Global rollout readiness
+
+`DOCTOR-PWA-GLOBAL-ROLLOUT-READINESS-1`. Read this with rules 93, 150 and 151,
+which it extends rather than replaces. Durable contract:
+`docs/architecture/doctor-pwa-webauthn.md` §18.
+
+## What changed
+
+Three doctors are enforced onto trusted devices and it works. This sprint
+measured the next question — could that be switched on for everybody — and the
+answer is no by twelve doctors, all of whom fall at the same gate.
+
+It also fixed a gate that failed on success: `android:phase4a-pilot-readiness`
+exited non-zero on production because it was written for a sprint whose claim was
+"we shipped nothing armed", and a live owner-approved pilot is armed on purpose.
+
+## The rules
+
+1. **GR-R1 — readiness GO is not activation GO.** A readiness tag authorises a
+   later sprint to decide. It never authorises the switch.
+
+2. **GR-R2 — fleet-wide enforcement stays off.** Nothing in a readiness sprint
+   moves it, and no readiness verdict may be read as permission to.
+
+3. **GR-R3 — readiness is per doctor.** Every doctor intended for enforcement
+   needs at least one complete trusted path of their own.
+
+4. **GR-R4 — a complete path is all five.** Active doctor record, active account,
+   active cryptographically verified device, active doctor-device authorization,
+   usable device-bound credential on that device. Four out of five is not a path.
+
+5. **GR-R5 — a credential belongs to a device, not to a doctor.** Counting usable
+   credentials measures hardware. Three credentials and fifteen doctors is a
+   consistent and completely unready fleet.
+
+6. **GR-R6 — device sharing never implies authorization.** Two doctors may share
+   one tablet through two explicit active authorizations and no other way.
+
+7. **GR-R7 — `user_verified` true, `backup_eligible` exactly false.** The column
+   is nullable because an authenticator that reported neither flag told us
+   nothing. Write `=== false`; a predicate written `!== true` admits that silence.
+
+8. **GR-R8 — check the stored verdict separately from the flag it came from.**
+   The two disagreeing is the only route by which a syncable passkey reaches a
+   clinical session. Do not collapse them into one condition.
+
+9. **GR-R9 — a revoked device is terminal.** Counted in the estate, never
+   contributing to readiness, never reactivated to make a number look better.
+
+10. **GR-R10 — the readiness engine cannot act.** No write, no process, no HTTP,
+    no request read, enforced by a source scan rather than by intention. A gate
+    that can act eventually describes its own side effects.
+
+11. **GR-R11 — enforcement has four postures, not two states.** off,
+    bounded_pilot, global_rollout_readiness, global. A boolean cannot separate an
+    owner-approved pilot from a clinic-wide lockout, and that conflation is what
+    made the preparation gate fail on a working pilot.
+
+12. **GR-R12 — the declared posture is a source-controlled ceiling.** Quieter than
+    declared is safe and ordinary; the same reviewed code runs off in CI and armed
+    on production. Enforcing MORE than anyone reviewed is the drift that fails.
+
+13. **GR-R13 — `indeterminate` is observable, never declarable.** Armed over a
+    scope that resolves to nobody is a state to be caught, not a posture to sign
+    off on.
+
+14. **GR-R14 — measuring is not a stronger rung than the pilot it measures.**
+    `global_rollout_readiness` sits at the same strength as `bounded_pilot`. If it
+    outranked it, declaring readiness would itself be an activation.
+
+15. **GR-R15 — the global line is measured, not recorded.** Ask the resolved
+    scope. The activation boundary's hardcoded `false` for the same field is a
+    historical claim about one past sprint, and the activation checklist reads
+    the live line before arming anything.
+
+16. **GR-R16 — fleet enumeration stays out of the login gate's interface.** The
+    credential repository's refusal to expose an "all credentials" accessor is a
+    boundary the login path depends on. A reporting need gets its own interface.
+
+17. **GR-R17 — a disagreement between the engine and the gate is a finding.**
+    Never silently resolved in either direction. Two implementations of one
+    security decision will drift, and the report is where that becomes visible.
+
+18. **GR-R18 — covered but not provisioned is reported explicitly.** That pairing
+    is what a lockout looks like. Membership and readiness are different facts.
+
+19. **GR-R19 — PARTIAL exits zero.** A staged rollout is PARTIAL for its whole
+    duration; a gate that reddens that long gets removed from the deploy chain.
+    NOT_READY — nobody provisioned at all — fails with or without `--strict`.
+
+20. **GR-R20 — no count substitutes for a ceremony.** Readiness says a path exists
+    on paper. Only a person at a tablet proves it carries them, and the twelve
+    outstanding doctors each need an approval, a registration, a real login and a
+    protected request.
+
+## The narrowed check, and what must not move with it
+
+`enforcement_inactive` now fails on the flag armed while the scope covers nobody,
+and on browser denial configured outside a declared scope. It no longer fails
+merely because a declared, bounded, owner-approved pilot is running.
+
+Do not rename that check id: a sibling suite asserts by name with the message
+"Check {id} disappeared from the preparation scanner", and a rename would
+silently stop ten-plus documents asserting anything. Do not widen it back to
+`$armed` alone either — that is the defect, and §17 recorded it as a known limit
+before this sprint closed it.
+
+## The console refusal
+
+`ForbiddenConsoleCommandGuard` refuses a forbidden command at `CommandStarting`,
+which every invocation passes through however it started. It is the runtime half
+of a control whose other half — `ProductionShellCommandGuard` — scans tracked
+scripts and cannot see a command typed into an interactive session.
+
+Exact command match only. `migrate --force`, `queue:work`, `config:cache` and
+every foundation gate must keep working, and a prefix match here would teach an
+operator to switch the guard off. The blocked names live in config, never in the
+guard's own source, because a guard that reddens on itself gets deleted. The
+exception is in `dontReport`: logging an ERROR on every refusal would pin the
+monitoring signal to WATCH for 24 hours, which is half of why the shell is
+forbidden.
+
+Salvaged from the closed `PHASE4A-DOCTOR-ANDROID-PILOT-ACTIVATION-1` pull
+request. The rest of that branch was already upstream, superseded, or could no
+longer operate on a cohort — see the sprint doc before reopening it.
+
+## Traps
+
+- A new suite under `tests/Feature/Deploy/` matches NO token in the critical
+  gate filter. `ForbiddenConsoleCommand` was added to both the GitHub-hosted and
+  self-hosted variants; editing one desynchronises the gate.
+- `config()->set('feature_flags.flags.doctor.…')` builds a nested array the flag
+  service never reads, and the test passes with enforcement quietly off. Set the
+  registry array.
+- `pilotDoctorUserId()` returns null for a multi-doctor cohort by design. Any
+  branch on the singular accessor is single-doctor code.
+- The declared posture must never appear in `config/doctor_device_enforcement.php`.
+  A declaration a host can edit does not audit the host values; it agrees with
+  itself.

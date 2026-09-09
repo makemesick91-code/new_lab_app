@@ -1,36 +1,35 @@
-### Active sprint manifest — DOCTOR-PWA-MULTI-DOCTOR-PILOT-1 (live half)
+### Active sprint manifest — DOCTOR-PWA-GLOBAL-ROLLOUT-READINESS-1
 ### Validated by: php artisan sprint:manifest-check
 
-id: DOCTOR-PWA-MULTI-DOCTOR-PILOT-1
+id: DOCTOR-PWA-GLOBAL-ROLLOUT-READINESS-1
 type: SECURITY_FIX
 module: DoctorDevice
-title: "The doctor device pilot goes live for three doctors across three branches on three clinic tablets: two tablets enrolled and cryptographically verified, two doctors provisioned and covered, the cohort expanded from [18] to [9,15,18], and every path proven by physical Chrome and installed-PWA ceremony with live signature-counter movement"
+title: "Measure whether fleet-wide doctor enforcement could be switched on without stranding a clinician: a read-only per-doctor readiness engine over the whole fleet, a preparation gate that stopped failing the live pilot it was describing, a global line that is measured rather than recorded, and the one still-safe control salvaged from the closed PHASE4A activation pull request"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-runtime_change: false           # the capability half already shipped every line of code this
-                                # pilot runs on. Going live was a HOST CONFIGURATION change —
-                                # one added env key, unioned with the existing singular one —
-                                # so this commit carries documentation, rules and evidence only.
-schema_change: false            # no migration; no column; no data touched
+runtime_change: true            # a new artisan command, a new module service and
+                                # repository, a narrowed check in the preparation
+                                # scanner, and a CommandStarting listener. All of it
+                                # read-only or refusing; none of it on a clinical path.
+schema_change: false            # no migration, no column, no data touched
 frontend_change: false          # no JS, no CSS, no Blade
-security_impact: true           # it is the enforcement admission scope, and it is now armed
-                                # for three real clinicians
-branch_isolation_impact: false  # branch stays a property of the device row and the doctor's
-                                # own session context; the cohort never consults or sets one
+security_impact: true           # it changes a security gate's verdict, adds a runtime
+                                # console refusal, and reports the enforcement posture
+                                # that decides whether a doctor keeps browser login
+branch_isolation_impact: false  # branch is read from the device row for reporting only;
+                                # nothing here sets, consults or trusts a request branch
 ledger_impact: false            # no inventory ledger / billing / payment behaviour
 
-deploy_required: false          # NOT a shortcut. Production already runs the exact commit this
-                                # GO tags (4d1b57fa), verified by git describe on the VPS. The
-                                # cohort is a host value, so activation needed no release, and
-                                # deploying a docs commit would move production HEAD off the
-                                # runtime that was actually proven.
-browser_required: true          # and it happened. Five live WebAuthn assertions across two
-                                # doctors on two different tablets, each preceded by the
-                                # password session being torn down, each advancing the
-                                # authenticator's own signature counter. None of that is
-                                # simulable and none of it was simulated.
+deploy_required: true           # the readiness command and the console guard only exist
+                                # on the deployment that carries them, and the whole
+                                # point of the engine is to be run against production
+browser_required: false         # nothing here has a UI surface, and nothing here can be
+                                # proven by a ceremony: it MEASURES provisioning rather
+                                # than performing any. The twelve doctors who are not
+                                # ready need physical ceremonies, and this sprint
+                                # deliberately claims none of them.
 
-go_tag: doctor-pwa-multi-doctor-pilot-1-go
+go_tag: doctor-pwa-global-rollout-readiness-1-go
 
 test_profiles:
   - security
@@ -44,3 +43,4 @@ inherits_hold: FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1/FIX-02
 inherits_phase: feature-doctor-trusted-android-device-lock-1-phase-3-5-readiness-go
 inherits_parent_go: doctor-pwa-webauthn-1-go
 inherits_capability_go: doctor-pwa-multi-doctor-pilot-1-capability-go
+inherits_pilot_go: doctor-pwa-multi-doctor-pilot-1-go

@@ -92,6 +92,14 @@ class AndroidPhase4aPilotReadinessCommand extends Command
         $this->line('ENFORCEMENT_SCOPE_USABLE='.$this->bool($summary['enforcement_scope_usable']));
         $this->line('ENFORCEMENT_FLAG_ARMED='.$this->bool($summary['enforcement_flag_armed']));
 
+        // DOCTOR-PWA-GLOBAL-ROLLOUT-READINESS-1. The posture pair replaces a
+        // boolean that could not tell a bounded pilot from a fleet lockout, and
+        // the live line is measured rather than read from the recorded claim
+        // further down.
+        $this->line('ENFORCEMENT_POSTURE='.$summary['enforcement_posture']);
+        $this->line('ENFORCEMENT_POSTURE_DECLARED='.$summary['enforcement_posture_declared']);
+        $this->line('GLOBAL_ENFORCEMENT_ACTIVE_LIVE='.$this->bool($summary['global_enforcement_active_live']));
+
         $this->newLine();
         $this->line('-- Activation boundary: everything below is what this sprint did NOT do --');
         $this->line('APK_DISTRIBUTED='.$this->bool($summary['apk_distributed']));
