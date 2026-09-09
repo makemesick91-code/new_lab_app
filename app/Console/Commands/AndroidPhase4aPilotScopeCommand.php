@@ -82,6 +82,19 @@ class AndroidPhase4aPilotScopeCommand extends Command
         $this->line('GLOBAL_ENFORCEMENT_ACTIVE='.$this->bool($result['global_enforcement_active']));
         $this->line('DECLARED_PILOT_DOCTOR_USER_ID='.($result['declared_pilot_doctor_user_id'] ?? 'none'));
         $this->line('DECLARED_PILOT_BRANCH_CODE='.($result['declared_pilot_branch_code'] ?? 'none'));
+
+        // DOCTOR-PWA-MULTI-DOCTOR-PILOT-1. Printed beside the singular line
+        // rather than replacing it: an operator comparing this output against a
+        // previous single-doctor run should see the old field where it was.
+        $this->line(
+            'DECLARED_PILOT_DOCTOR_USER_IDS='.(
+                $result['declared_pilot_doctor_user_ids'] === []
+                    ? 'none'
+                    : implode(',', $result['declared_pilot_doctor_user_ids'])
+            )
+        );
+        $this->line('DECLARED_PILOT_COHORT_SIZE='.$result['declared_pilot_cohort_size']);
+        $this->line('PILOT_COHORT_MAXIMUM='.$result['pilot_cohort_maximum']);
         $this->line('DOCTOR_ROLE_ACCOUNT_COUNT='.$result['doctor_role_account_count']);
         $this->line('COVERED_DOCTOR_COUNT='.$result['covered_doctor_count']);
         $this->line('COVERED_DOCTOR_USER_IDS='.(

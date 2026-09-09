@@ -1,0 +1,98 @@
+---
+description: Doctor device enforcement scope is an explicit, ceilinged cohort of user ids. Covered means named — no wildcard, no role, no branch, no "all doctors". A list long enough to name the fleet is fleet-wide denial wearing a pilot's label, so the ceiling lives in source control. One unreadable entry voids the whole cohort. Naming a doctor is not provisioning one, and readiness always comes before enforcement.
+globs:
+  - "config/android_release.php"
+  - "config/doctor_device_enforcement.php"
+  - "app/Support/Android/**"
+  - "app/Modules/DoctorDevice/**"
+  - "app/Console/Commands/Android*.php"
+  - "tests/Feature/DoctorDevice/**"
+alwaysApply: false
+---
+
+# The doctor enforcement cohort
+
+`DOCTOR-PWA-MULTI-DOCTOR-PILOT-1`. Read this with rule 150, which it extends
+rather than replaces — everything Phase 4A says about non-destructive pilots,
+preparation-is-not-activation and unreachable fleet-wide denial still holds.
+
+## What changed
+
+Until this sprint the pilot was one `?int` compared with `===`. "A pilot" and
+"one doctor" were the same statement, and a second doctor could only be added
+by going fleet-wide, which is Phase 5 and is refused. The scope is now an
+explicit LIST — `AndroidDoctorEnforcementScope::pilotDoctorUserIds()` — and the
+list is the only expansion shape that exists.
+
+## The rules
+
+**MD-R1 — Covered means named.** The cohort is an explicit allowlist of
+`users.id`. No wildcard, no role name, no branch, no "all doctors", no implicit
+expansion of any kind. An id is covered because somebody wrote that id down.
+
+**MD-R2 — A pilot is not a rollout.** Expanding the cohort is never global
+enforcement. `GLOBAL_ENFORCEMENT_ACTIVE` stays false, and Phase 5 remains a
+separate programme with its own GO.
+
+**MD-R3 — The ceiling lives in source control.**
+`android_release.enforcement.scope.pilot_cohort_maximum` bounds how many ids
+the word "pilot" may name. It is NOT in the runtime file, for the same reason
+`global_permitted` is not: a bound an operator can raise on a host is not a
+bound. Without it, an explicit list written out until it names every doctor is
+fleet-wide denial that passes every guard watching for fleet-wide denial. A
+missing or unreadable ceiling resolves to 1, never to unlimited.
+
+**MD-R4 — Readiness before enforcement.** A doctor is provisioned before they
+are covered: active account, active device, active doctor-device authorization,
+and a usable credential with `user_verified=true`, `backup_eligible=false` and
+`device_bound`. Adding an id to the cohort before that path exists locks a
+doctor out of their own patients.
+
+**MD-R5 — Unreadable covers nobody.** One entry that cannot be parsed voids the
+ENTIRE cohort. Dropping the bad entry instead would leave a doctor silently
+unenforced behind a list that still reads correctly; voiding covers nobody and
+trips `armed_but_covers_nobody`, which is loud. Loud beats quiet — this class
+has always accepted a loud failure as the price of never over-covering.
+
+**MD-R6 — Scope is configuration, not provisioning.** Expanding the cohort
+creates no device, authorization or credential. Contracting it revokes none.
+Those are three separately revocable records and they are changed only through
+their own audited product paths.
+
+**MD-R7 — Membership is not admission.** The cohort decides that enforcement
+APPLIES to a doctor. Whether they get in still needs a device-bound session,
+re-asserted on every protected request. Adding ids is a way to shut a browser,
+never a way to let anybody in.
+
+**MD-R8 — The role predicate still holds.** Naming a non-doctor account in the
+cohort covers nobody. A cohort is a narrowing, never a grant.
+
+**MD-R9 — GO means the covered set equals the declared set.** Not "exactly one
+doctor", and not merely the right count. A cohort of the right SIZE built from
+the wrong IDS is the `users.id` / `mst_doctors.id` mix-up this report exists to
+catch.
+
+**MD-R10 — Device revoke stays terminal.** It is not a rollback mechanism and
+not a routine test. Narrowing the cohort is how a doctor leaves the pilot.
+
+## Two mutants that are equivalent, and stay
+
+Recorded so no future campaign re-derives them:
+
+- Strict membership in `coversUser()`. Dropping the `true` argument changes no
+  test, because `$userId` is a typed int and the cohort holds only ints. It
+  stays because the equivalence is a property of the LIST, and that property is
+  pinned by `MultiDoctorPilotCohortTest`.
+- The set comparison in the report's verdict. Forcing it to `true` changes no
+  test, because both directions are already findings and a non-empty findings
+  list returns FAIL first. It stays so a suppressed or renamed finding cannot
+  turn a scope covering the wrong doctors into a GO.
+
+## Status at the time of writing
+
+The mechanism shipped INERT. Production sets only the singular key, the two
+sources are unioned, and the live cohort is still `[18]` — drg Karmila alone.
+The multi-doctor pilot itself is BLOCKED: the fleet holds exactly one active
+enrolled device, at one branch, and only the Android Clinic App can create the
+cryptographically-verified identity a new one needs. Do not read the presence
+of the cohort mechanism as permission to use it.

@@ -56,6 +56,27 @@ return [
             // to the approved pilot doctor. Null here, and null enforces nobody.
             'doctor_user_id' => env('ANDROID_PILOT_ENFORCEMENT_DOCTOR_USER_ID'),
 
+            // DOCTOR-PWA-MULTI-DOCTOR-PILOT-1 — the cohort, as a comma-separated
+            // list of user ids.
+            //
+            // The singular key above still works and still means what it always
+            // meant. This is deliberate rather than tidy: production is running
+            // a live pilot whose scope is set by that variable, and a rename
+            // would have made deploying this change an act that altered who is
+            // enforced. The two are UNIONED, so a deployment that sets only the
+            // old one resolves to exactly the cohort it resolved to before, and
+            // shipping the cohort mechanism changes nobody's access.
+            //
+            // Parsing is strict and fails CLOSED as a whole: one unusable entry
+            // voids the entire cohort rather than being dropped from it. A
+            // dropped entry would leave a doctor silently unenforced behind a
+            // list that still looks right; a voided cohort covers nobody and
+            // trips `armed_but_covers_nobody`, which is loud. The ceiling on
+            // how many ids may appear here is NOT in this file — it is
+            // `android_release.enforcement.scope.pilot_cohort_maximum`, because
+            // a bound an operator can raise is not a bound.
+            'doctor_user_ids' => (string) env('ANDROID_PILOT_ENFORCEMENT_DOCTOR_USER_IDS', ''),
+
             // Advisory: it appears in the readiness report and the audit trail so
             // an operator can see which branch was intended. It is NOT an
             // authorization input. The authority on which branch a doctor is

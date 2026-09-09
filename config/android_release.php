@@ -1306,6 +1306,30 @@ return [
             // variable somebody sets on a host at 2am during an incident.
             // Phase 5, once `global_prerequisites` above are met.
             'global_permitted' => false,
+
+            // DOCTOR-PWA-MULTI-DOCTOR-PILOT-1 — the largest cohort the word
+            // "pilot" is allowed to mean.
+            //
+            // The pilot cohort is an explicit list of user ids, which is the
+            // only expansion shape permitted: no wildcard, no role, no branch.
+            // But an explicit list can still be written out until it names
+            // every doctor in the fleet, and at that point "pilot" has become
+            // fleet-wide denial by enumeration while every guard that watches
+            // for fleet-wide denial still reads false. That is the one way the
+            // pilot boundary can be crossed without anybody deciding to cross
+            // it.
+            //
+            // So the ceiling lives HERE rather than beside the cohort, for the
+            // same reason `global_permitted` does: the runtime file is a host
+            // value an operator sets, and a bound that an operator can raise
+            // is not a bound. Widening the pilot past this number is a
+            // source-control change that goes through review.
+            //
+            // A cohort larger than this covers NOBODY rather than everybody,
+            // and says why. Five is the fleet the pilot was scoped for — three
+            // doctors with room for two — and it is deliberately far below the
+            // fifteen Doctor-role accounts in service.
+            'pilot_cohort_maximum' => 5,
         ],
     ],
 
