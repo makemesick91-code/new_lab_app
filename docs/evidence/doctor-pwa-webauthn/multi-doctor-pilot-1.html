@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DOCTOR-PWA-MULTI-DOCTOR-PILOT-1 — evidence</title>
+<style>
+  /* Light is the base; dark is SELECTED from the same ramps, not an auto-flip. */
+  :root{
+    --surface:#fcfcfb; --surface-2:#f4f4f2; --hairline:#e2e2dd;
+    --ink:#1a1a19; --ink-soft:#4a4a46; --ink-muted:#6f6f69;
+    --good:#0ca30c; --warning:#fab219; --serious:#ec835a; --critical:#d03b3b;
+    --good-ink:#006300; --warning-ink:#7a5300; --critical-ink:#9c1f1f;
+    --rule:#c9c9c2;
+  }
+  :root[data-theme="dark"]{
+    --surface:#1a1a19; --surface-2:#242422; --hairline:#3a3a37;
+    --ink:#f2f2ef; --ink-soft:#c3c3bd; --ink-muted:#96968f;
+    --good:#0ca30c; --warning:#fab219; --serious:#ec835a; --critical:#d03b3b;
+    --good-ink:#4fc44f; --warning-ink:#fab219; --critical-ink:#e97070;
+    --rule:#4a4a46;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--surface);color:var(--ink);
+    font:15px/1.6 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;}
+  .wrap{max-width:1080px;margin:0 auto;padding:40px 24px 80px}
+  header{border-bottom:2px solid var(--rule);padding-bottom:20px;margin-bottom:8px}
+  h1{font-size:24px;margin:0 0 6px;letter-spacing:-.01em}
+  h2{font-size:17px;margin:40px 0 12px;padding-top:20px;border-top:1px solid var(--hairline)}
+  h2:first-of-type{border-top:0}
+  p{margin:0 0 12px;color:var(--ink-soft);max-width:74ch}
+  .sub{color:var(--ink-muted);font-size:13px;margin:0}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.88em;
+    background:var(--surface-2);padding:1px 5px;border-radius:4px;color:var(--ink)}
+  /* Status = icon + text label. Colour only supports; it never carries meaning
+     alone, which is also the documented relief for the sub-3:1 warning step. */
+  .st{display:inline-flex;align-items:center;gap:6px;font-weight:600;font-size:13px;
+    white-space:nowrap}
+  .dot{width:9px;height:9px;border-radius:50%;flex:none;
+    box-shadow:0 0 0 2px var(--surface)}
+  .st.good{color:var(--good-ink)} .st.good .dot{background:var(--good)}
+  .st.warn{color:var(--warning-ink)} .st.warn .dot{background:var(--warning)}
+  .st.crit{color:var(--critical-ink)} .st.crit .dot{background:var(--critical)}
+  .st.neutral{color:var(--ink-muted)} .st.neutral .dot{background:var(--rule)}
+  table{border-collapse:collapse;width:100%;margin:12px 0 4px;font-size:13.5px}
+  caption{text-align:left;color:var(--ink-muted);font-size:12.5px;padding-bottom:8px}
+  th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--hairline);
+    vertical-align:top}
+  th{color:var(--ink-muted);font-weight:600;font-size:12px;text-transform:uppercase;
+    letter-spacing:.04em;background:var(--surface-2)}
+  td.num{font-variant-numeric:tabular-nums}
+  .scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .banner{border:1px solid var(--rule);border-left:4px solid var(--critical);
+    background:var(--surface-2);padding:14px 18px;border-radius:6px;margin:20px 0}
+  .banner.ok{border-left-color:var(--good)}
+  .banner p{margin:0;color:var(--ink)}
+  .banner p + p{margin-top:8px;color:var(--ink-soft)}
+  ol,ul{color:var(--ink-soft);max-width:74ch;padding-left:22px}
+  li{margin-bottom:7px}
+  figure{margin:16px 0}
+  figcaption{color:var(--ink-muted);font-size:12.5px;margin-top:8px}
+  .legend{display:flex;gap:18px;flex-wrap:wrap;margin:10px 0 0;padding:0;list-style:none}
+  .legend li{margin:0}
+  footer{margin-top:48px;padding-top:16px;border-top:1px solid var(--hairline);
+    color:var(--ink-muted);font-size:12.5px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>DOCTOR-PWA-MULTI-DOCTOR-PILOT-1</h1>
+  <p class="sub">Enforcement cohort capability · evidence record · 2026-09-09</p>
+</header>
+
+<div class="banner">
+  <p><span class="st crit"><span class="dot"></span>PILOT BLOCKED</span> &nbsp;
+     <span class="st good"><span class="dot"></span>CAPABILITY SHIPPED</span></p>
+  <p>The cohort mechanism is built, tested and deployed inert. The multi-doctor pilot is
+     <strong>not</strong> live. No <code>doctor-pwa-multi-doctor-pilot-1-go</code> tag exists
+     and none may be created until real doctors are covered on real hardware.
+     <code>GLOBAL_ENFORCEMENT_ACTIVE=false</code> · <code>GLOBAL_ROLLOUT_AUTHORIZED=NO</code></p>
+</div>
+
+<h2>A. Authority</h2>
+<p>Every value re-derived from canonical git, the VPS and the live database rather than
+   carried over from the brief.</p>
+<div class="scroll">
+<table>
+  <caption>Verified authority chain</caption>
+  <thead><tr><th>Fact</th><th>Value</th><th>Check</th></tr></thead>
+  <tbody>
+    <tr><td>Parent GO tag</td><td><code>doctor-pwa-webauthn-1-go</code> → <code>41f87199</code></td>
+        <td><span class="st good"><span class="dot"></span>verified</span></td></tr>
+    <tr><td>Parent closure tag</td><td><code>doctor-pwa-webauthn-parent-closure-1-go</code> → same commit</td>
+        <td><span class="st good"><span class="dot"></span>verified</span></td></tr>
+    <tr><td>Production HEAD / tree</td><td><code>41f87199</code> / <code>b2c0cb8a</code></td>
+        <td><span class="st good"><span class="dot"></span>exact match</span></td></tr>
+    <tr><td>Base branch SHA</td><td><code>9eabff07</code> (local == remote)</td>
+        <td><span class="st good"><span class="dot"></span>verified</span></td></tr>
+    <tr><td>Health endpoints</td><td><code>/login</code> · <code>/health/live</code> · <code>/health/ready</code></td>
+        <td><span class="st good"><span class="dot"></span>200 / 200 / 200</span></td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2>B. The cohort, as production actually stands</h2>
+<div class="scroll">
+<table>
+  <caption>Pilot matrix — one row per covered doctor. The cohort is unchanged at <code>[18]</code>.</caption>
+  <thead><tr>
+    <th>Doctor</th><th>User</th><th>Doctor id</th><th>Branch</th><th>Device</th>
+    <th>Authz</th><th>Credential</th><th>UV</th><th>BE</th><th>Device bound</th><th>Result</th>
+  </tr></thead>
+  <tbody>
+    <tr>
+      <td>drg Karmila</td><td class="num">18</td><td class="num">21</td>
+      <td>SPN4 · Cabang Sunu</td>
+      <td>3 · SM-X236B <span class="st good"><span class="dot"></span>active</span></td>
+      <td class="num">2 · active</td><td class="num">2 · active</td>
+      <td>true</td><td>false</td><td>yes</td>
+      <td><span class="st good"><span class="dot"></span>unchanged</span></td>
+    </tr>
+    <tr>
+      <td colspan="10"><em>No second doctor. No third doctor.</em> The sprint minimum asked for
+        3 doctors across 2 branches on 2 devices; none of the additional rows can be created
+        without physical hardware.</td>
+      <td><span class="st crit"><span class="dot"></span>blocked</span></td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<h2>C. Why the pilot is blocked</h2>
+<p>The entire production device fleet is three rows, and the constraint is physical rather
+   than architectural.</p>
+<div class="scroll">
+<table>
+  <caption>Doctor device inventory, live</caption>
+  <thead><tr><th>Device</th><th>Model</th><th>Branch</th><th>Status</th></tr></thead>
+  <tbody>
+    <tr><td>1 · PHASE4A_PILOT_TABLET_01</td><td>SM-X236B</td><td>SPN4</td>
+        <td><span class="st crit"><span class="dot"></span>revoked — terminal</span></td></tr>
+    <tr><td>3 · PHASE4A_PILOT_TABLET_02</td><td>SM-X236B</td><td>SPN4</td>
+        <td><span class="st good"><span class="dot"></span>active</span></td></tr>
+    <tr><td>4 · PHASE4A_PILOT_TABLET_03</td><td>2311DRK48G</td><td>SPN4</td>
+        <td><span class="st crit"><span class="dot"></span>revoked — terminal</span></td></tr>
+  </tbody>
+</table>
+</div>
+<p><code>identity_state = cryptographically_verified</code> is written by exactly two code
+   paths, both inside the Android Clinic App. A trusted device cannot be created from the
+   server side — it needs a physical tablet completing a real enrolment, and a credential
+   needs a human performing user verification at that device.</p>
+<p>One nuance that lowers the cost of the doctor half, though not the device half: the
+   WebAuthn credential is bound to the <strong>device</strong>, not the doctor, and the
+   authorization table has supported many doctors per device since Phase&nbsp;3. A second
+   doctor on the existing tablet would need only an authorization and would reuse
+   credential&nbsp;2.</p>
+
+<h2>D. Where this sprint sits on the rollout</h2>
+<figure>
+<svg viewBox="0 0 900 190" width="100%" role="img"
+     aria-label="Rollout stages: single doctor GO complete; multi-doctor pre-provision blocked; multi-doctor scope shipped inert; ceremonies, multi-doctor GO, global readiness and global activation all not started. Global enforcement is false throughout.">
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+    </marker>
+  </defs>
+  <g color="var(--rule)" stroke="currentColor" stroke-width="2" fill="none">
+    <line x1="118" y1="52" x2="160" y2="52" marker-end="url(#ar)"/>
+    <line x1="288" y1="52" x2="330" y2="52" marker-end="url(#ar)"/>
+    <line x1="458" y1="52" x2="500" y2="52" marker-end="url(#ar)"/>
+    <line x1="628" y1="52" x2="670" y2="52" marker-end="url(#ar)"/>
+    <line x1="118" y1="132" x2="160" y2="132" marker-end="url(#ar)"/>
+    <line x1="288" y1="132" x2="330" y2="132" marker-end="url(#ar)"/>
+    <path d="M775,72 L775,100 L60,100 L60,118" marker-end="url(#ar)"/>
+  </g>
+  <g font-family="ui-sans-serif,system-ui,sans-serif" font-size="11.5" font-weight="600">
+    <!-- row 1 -->
+    <rect x="8" y="32" width="110" height="40" rx="6" fill="var(--surface-2)" stroke="var(--good)" stroke-width="2"/>
+    <text x="63" y="49" text-anchor="middle" fill="var(--ink)">SINGLE DOCTOR</text>
+    <text x="63" y="63" text-anchor="middle" fill="var(--good-ink)">GO · done</text>
+
+    <rect x="160" y="32" width="128" height="40" rx="6" fill="var(--surface-2)" stroke="var(--critical)" stroke-width="2"/>
+    <text x="224" y="49" text-anchor="middle" fill="var(--ink)">PRE-PROVISION</text>
+    <text x="224" y="63" text-anchor="middle" fill="var(--critical-ink)">blocked · no device</text>
+
+    <rect x="330" y="32" width="128" height="40" rx="6" fill="var(--surface-2)" stroke="var(--good)" stroke-width="2"/>
+    <text x="394" y="49" text-anchor="middle" fill="var(--ink)">COHORT SCOPE</text>
+    <text x="394" y="63" text-anchor="middle" fill="var(--good-ink)">shipped inert</text>
+
+    <rect x="500" y="32" width="128" height="40" rx="6" fill="var(--surface-2)" stroke="var(--rule)" stroke-width="2"/>
+    <text x="564" y="49" text-anchor="middle" fill="var(--ink-muted)">CEREMONIES</text>
+    <text x="564" y="63" text-anchor="middle" fill="var(--ink-muted)">not started</text>
+
+    <rect x="670" y="32" width="210" height="40" rx="6" fill="var(--surface-2)" stroke="var(--rule)" stroke-width="2"/>
+    <text x="775" y="49" text-anchor="middle" fill="var(--ink-muted)">MULTI-DOCTOR GO</text>
+    <text x="775" y="63" text-anchor="middle" fill="var(--ink-muted)">not issued</text>
+
+    <!-- row 2 -->
+    <rect x="8" y="118" width="110" height="40" rx="6" fill="var(--surface-2)" stroke="var(--rule)" stroke-width="2"/>
+    <text x="63" y="135" text-anchor="middle" fill="var(--ink-muted)">GLOBAL</text>
+    <text x="63" y="149" text-anchor="middle" fill="var(--ink-muted)">READINESS</text>
+
+    <rect x="160" y="118" width="128" height="40" rx="6" fill="var(--surface-2)" stroke="var(--rule)" stroke-width="2"/>
+    <text x="224" y="135" text-anchor="middle" fill="var(--ink-muted)">GLOBAL</text>
+    <text x="224" y="149" text-anchor="middle" fill="var(--ink-muted)">ACTIVATION</text>
+
+    <rect x="330" y="118" width="300" height="40" rx="6" fill="var(--surface-2)" stroke="var(--critical)" stroke-width="2"/>
+    <text x="480" y="142" text-anchor="middle" fill="var(--critical-ink)">GLOBAL_ENFORCEMENT_ACTIVE = false — throughout</text>
+  </g>
+</svg>
+<ul class="legend">
+  <li><span class="st good"><span class="dot"></span>complete</span></li>
+  <li><span class="st crit"><span class="dot"></span>blocked / held false</span></li>
+  <li><span class="st neutral"><span class="dot"></span>not started</span></li>
+</ul>
+<figcaption>Stage status is stated in each box as text; colour is a second encoding only.</figcaption>
+</figure>
+
+<h2>E. Verification</h2>
+<div class="scroll">
+<table>
+  <caption>Gates run against candidate <code>0098f071</code></caption>
+  <thead><tr><th>Gate</th><th>Result</th><th>Detail</th></tr></thead>
+  <tbody>
+    <tr><td>New cohort suite</td><td><span class="st good"><span class="dot"></span>pass</span></td>
+        <td class="num">27 tests · 146 assertions</td></tr>
+    <tr><td>Pre-existing scope contracts</td><td><span class="st good"><span class="dot"></span>pass</span></td>
+        <td class="num">65 tests · 356 assertions</td></tr>
+    <tr><td>DoctorDevice + WebAuthn + Auth + AccessControl + Pwa</td>
+        <td><span class="st good"><span class="dot"></span>pass</span></td>
+        <td class="num">770 tests · 4733 assertions · 0 failed</td></tr>
+    <tr><td>Pint (whole repo) · <code>git diff --check</code></td>
+        <td><span class="st good"><span class="dot"></span>pass</span></td><td>clean</td></tr>
+    <tr><td>manifest-check · scope-audit · devflow-check · shared-service-audit</td>
+        <td><span class="st good"><span class="dot"></span>GO</span></td><td>all four</td></tr>
+    <tr><td>Full Suite</td><td><span class="st warn"><span class="dot"></span>deferred</span></td>
+        <td>classifier required it; deferred under the in-repo
+            <code>CI-TEMP-FULL-SUITE-SCHEDULE-GATE</code> policy, which is still ACTIVE.
+            Recorded as deferred, not as passed.</td></tr>
+    <tr><td>Baseline skips / risky</td><td><span class="st good"><span class="dot"></span>proven baseline</span></td>
+        <td>9 PostgreSQL row-lock skips and 1 risky test reproduce identically at the
+            unmodified base <code>9eabff07</code></td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2>F. Mutation campaign</h2>
+<p>Nine mutations applied locally, never committed, restored by copy and verified by
+   checksum. Seven killed; two proven equivalent and documented in the source rather than
+   left for a future campaign to rediscover.</p>
+<div class="scroll">
+<table>
+  <caption>Mutation results</caption>
+  <thead><tr><th>#</th><th>Mutation</th><th>Outcome</th><th>Evidence</th></tr></thead>
+  <tbody>
+    <tr><td>MUT-1</td><td>cohort resolver always covers</td>
+        <td><span class="st good"><span class="dot"></span>killed</span></td><td class="num">10 failures</td></tr>
+    <tr><td>MUT-2</td><td>strict membership → loose</td>
+        <td><span class="st warn"><span class="dot"></span>equivalent</span></td>
+        <td>typed int vs int list; precondition now pinned by test</td></tr>
+    <tr><td>MUT-3</td><td>verdict stops comparing covered vs declared</td>
+        <td><span class="st warn"><span class="dot"></span>equivalent</span></td>
+        <td>findings already return FAIL first; kept as redundancy</td></tr>
+    <tr><td>MUT-4</td><td>global guard treated as true</td>
+        <td><span class="st good"><span class="dot"></span>killed</span></td><td class="num">4</td></tr>
+    <tr><td>MUT-5</td><td>reviewed ceiling ignored</td>
+        <td><span class="st good"><span class="dot"></span>killed</span></td><td class="num">3</td></tr>
+    <tr><td>MUT-6</td><td>bad entry dropped instead of voiding cohort</td>
+        <td><span class="st good"><span class="dot"></span>killed</span></td><td class="num">4</td></tr>
+    <tr><td>MUT-7</td><td>ceiling fails open when unreadable</td>
+        <td><span class="st good"><span class="dot"></span>killed</span></td><td class="num">1</td></tr>
+    <tr><td>MUT-8</td><td>cohort entries stored unnormalised</td>
+        <td><span class="st good"><span class="dot"></span>killed</span></td><td class="num">12</td></tr>
+    <tr><td>MUT-9</td><td>report ignores an unresolved declared id</td>
+        <td><span class="st good"><span class="dot"></span>killed</span></td><td class="num">3</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2>G. What unblocks the multi-doctor GO</h2>
+<ol>
+  <li><strong>Hardware.</strong> At least one more physical Android clinic tablet, enrolled
+      until <code>cryptographically_verified</code>, ideally at a branch other than SPN4 so
+      the two-branch minimum is met by geography rather than by paperwork.</li>
+  <li><strong>Named doctors.</strong> All 14 non-pilot accounts are equally eligible on the
+      data available, so there is no objective ranking to offer and one must not be invented.</li>
+  <li><strong>Provisioning, then enforcement.</strong> Device, authorization and a usable
+      device-bound credential must all exist <em>before</em> any id joins the cohort.</li>
+  <li><strong>Ceremonies.</strong> Per doctor: Chrome login, protected request, independently
+      initiated installed-PWA login, protected request — each against a fresh audit watermark,
+      separating server-verified facts from operator-attested client context.</li>
+  <li><strong>Then</strong> set the cohort variable, rebuild config as <code>daengtisiams</code>,
+      and reconcile covered / denied / allowed against the live doctor count.</li>
+</ol>
+
+<footer>
+  Sprint record <code>docs/sprints/doctor-pwa-multi-doctor-pilot-1.md</code> ·
+  architecture §17 <code>docs/architecture/doctor-pwa-webauthn.md</code> ·
+  rules <code>.cursor/rules/151-doctor-pilot-enforcement-cohort.mdc</code> (MD-R1…R10).
+  Next programme: <code>DOCTOR-PWA-GLOBAL-ROLLOUT-READINESS-1</code>, itself gated behind a
+  real multi-doctor pilot.
+</footer>
+
+</div>
+</body>
+</html>

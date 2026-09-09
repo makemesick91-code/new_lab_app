@@ -1,33 +1,40 @@
-### Active sprint manifest — DOCTOR-PWA-WEBAUTHN-PARENT-CLOSURE-1
+### Active sprint manifest — DOCTOR-PWA-MULTI-DOCTOR-PILOT-1
 ### Validated by: php artisan sprint:manifest-check
 
-id: DOCTOR-PWA-WEBAUTHN-PARENT-CLOSURE-1
+id: DOCTOR-PWA-MULTI-DOCTOR-PILOT-1
 type: SECURITY_FIX
 module: DoctorDevice
-title: "The parent DOCTOR-PWA-WEBAUTHN-1 programme closes against the configuration production actually runs: a WebAuthn login completed while the enforcement scope names one pilot doctor and the fleet-wide permit stays shut, plus the device-binding revalidation a mutation campaign proved nothing was holding"
+title: "The doctor device pilot stops meaning exactly one doctor: enforcement scope becomes an explicit, ceilinged cohort of user ids, shipped inert so the live single-doctor pilot resolves unchanged — the multi-doctor pilot itself stays BLOCKED on physical hardware that does not exist yet"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-runtime_change: false           # no application source changed. Every mutation applied
-                                # during the sensitivity campaign was restored by copy and
-                                # `git status` proves zero tracked modifications. The
-                                # closure adds coverage and durable rules, not behaviour.
+runtime_change: true            # AndroidDoctorEnforcementScope, its resolution report and
+                                # the scope command changed. The pilot target went from one
+                                # `?int` compared with `===` to a bounded list. Two config
+                                # files gained keys; no key changes a value production sets.
 schema_change: false            # no migration; no column; no data touched
 frontend_change: false          # no JS, no CSS, no Blade
-security_impact: true           # it is the authentication admission path, gated as one
-branch_isolation_impact: false  # branch stays a property of the device row
+security_impact: true           # it is the enforcement admission scope, gated as one
+branch_isolation_impact: false  # branch stays a property of the device row; the cohort is
+                                # a list of user ids and never consults or sets a branch
 ledger_impact: false            # no inventory ledger / billing / payment behaviour
 
-deploy_required: true           # NOT for behaviour — production already carries the
-                                # mechanism. The deploy aligns production HEAD with the
-                                # merge SHA so the final ceremony evidence and the parent
-                                # GO tag describe the same authority.
-browser_required: true          # the parent GO turns on a real physical gate: drg Karmila
-                                # completing a WebAuthn assertion on the approved
-                                # SM-X236B, in Chrome AND in the installed PWA. A platform
-                                # authenticator, a user-verification prompt and an
-                                # installed-app client context cannot be simulated by any
-                                # suite, and a parent GO taken without them would be a
-                                # claim rather than a proof.
+deploy_required: true           # and deliberately INERT. Production sets only
+                                # ANDROID_PILOT_ENFORCEMENT_DOCTOR_USER_ID=18; the cohort
+                                # variable is unset, the two are unioned, and the scope
+                                # therefore resolves to exactly [18] after deploy as it did
+                                # before. Nobody is added by shipping this.
+browser_required: false         # NOT because a ceremony was skipped, but because this
+                                # sprint activates nothing there is a ceremony for. No new
+                                # doctor is covered, no device is enrolled and no credential
+                                # is registered. Every one of those needs a physical tablet
+                                # the fleet does not have, and the multi-doctor GO is held
+                                # BLOCKED until it does — see the sprint doc.
+
+# Deliberately NOT `doctor-pwa-multi-doctor-pilot-1-go`. That name would claim a
+# live multi-doctor pilot, and there is not one: the cohort is still [18]. This
+# tags the only thing that actually shipped — the mechanism, deployed inert.
+# The pilot GO stays unissued until real doctors are covered on real hardware.
+go_tag: doctor-pwa-multi-doctor-pilot-1-capability-go
 
 test_profiles:
   - security
@@ -39,3 +46,4 @@ test_profiles:
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
 inherits_hold: FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1/FIX-02
 inherits_phase: feature-doctor-trusted-android-device-lock-1-phase-3-5-readiness-go
+inherits_parent_go: doctor-pwa-webauthn-1-go

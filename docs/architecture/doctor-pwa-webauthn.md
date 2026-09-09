@@ -874,3 +874,77 @@ login). The WebAuthn path does not stamp it, so that column reflects Android
 logins only. The authorization *is* verified active on every admission and every
 protected request — this is an observability inconsistency to fix in
 stabilisation, not a gate.
+
+## 17. The enforcement cohort — DOCTOR-PWA-MULTI-DOCTOR-PILOT-1
+
+Sprint record: `docs/sprints/doctor-pwa-multi-doctor-pilot-1.md`.
+Durable rules: `.cursor/rules/151-doctor-pilot-enforcement-cohort.mdc` (MD-R1…R10).
+
+### The statement that was two statements
+
+Until this sprint `AndroidDoctorEnforcementScope` held one `?int` and compared
+it with `===`. "A pilot" and "one doctor" were therefore the same statement, and
+the only way to reach a second doctor was `unscoped` — which is Phase 5, and is
+refused by a source-controlled `global_permitted => false`. Section 15 of the
+programme had listed `pilot_branch_or_device` as a stage since Phase 3.5 with
+nothing implementing it.
+
+The scope is now a list: `pilotDoctorUserIds()`, sorted, deduplicated,
+`list<int>`. The mode name did not change because the guarantee did not change —
+**covered means named**. No wildcard, no role, no branch, no "all doctors".
+
+### The failure direction is unchanged, and now has two more ways in
+
+This class has always narrowed rather than denied: an unusable configuration
+covers NOBODY, because a mistyped variable that locked every doctor out of every
+branch would be a clinical incident, while one resolving to "enforce nobody"
+leaves production as it was and is caught loudly by the readiness gate. A cohort
+adds two more routes to that same answer:
+
+- **One unreadable entry voids the entire list.** Dropping it would be friendlier
+  and wrong: `18,19,2O` with a letter O would resolve to a working two-doctor
+  pilot with the third doctor silently unenforced behind a list that still reads
+  correctly. Voiding covers nobody and trips `armed_but_covers_nobody`.
+- **A cohort larger than the reviewed ceiling covers nobody.**
+
+### Why the ceiling is not beside the cohort
+
+`android_release.enforcement.scope.pilot_cohort_maximum` is source-controlled,
+next to `global_permitted`, and deliberately not in the runtime file an operator
+edits. An explicit allowlist is the only expansion shape permitted — but a list
+can be written out until it names every doctor in the fleet, and at that point
+"pilot" has become fleet-wide denial while every guard watching for fleet-wide
+denial still reads false. That is the one way this boundary can be crossed
+without anybody deciding to cross it. A bound an operator can raise is not a
+bound, so raising it costs a review. Missing or unreadable resolves to 1.
+
+### GO stopped meaning "one doctor" and started meaning something stronger
+
+`Phase4aPilotScopeResolutionReport` previously failed any scope covering more
+than one doctor and passed on `count($coveredIds) === 1`. It now compares the
+covered set against the declared cohort as sets. That is strictly stronger: a
+cardinality check passes when the count is right and the members are wrong,
+which is exactly the `users.id` / `mst_doctors.id` adjacency this report was
+written to catch. Findings gained `pilot_scope_covers_more_doctors_than_reviewed_maximum`
+and `declared_pilot_cohort_does_not_resolve_to_covered_doctors`.
+
+### What a cohort still is not
+
+Membership decides only that enforcement APPLIES. Admission still needs an
+active device, an active authorization and a usable device-bound credential,
+re-asserted on every protected request by services this class never calls.
+Expanding the cohort creates none of them; contracting it revokes none of them.
+Readiness comes before enforcement, always — naming a doctor who has no device
+locks them out of their own patients.
+
+### Shipped inert
+
+Production sets only `ANDROID_PILOT_ENFORCEMENT_DOCTOR_USER_ID=18`. The singular
+key and the cohort key are unioned, so deploying the mechanism resolves to
+exactly `[18]` — the same doctor, the same denial, the same fourteen browsers.
+A rename would have made the deploy itself change who is enforced.
+
+At the time of writing the multi-doctor pilot is **BLOCKED, not live**: the
+fleet holds exactly one active enrolled device, at one branch, and only the
+Android Clinic App can create the cryptographically-verified identity a second
+one needs. The presence of the mechanism is not permission to use it.
