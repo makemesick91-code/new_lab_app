@@ -1,32 +1,33 @@
-### Active sprint manifest — DOCTOR-PWA-WEBAUTHN-CREDENTIAL-REVOKE-CONTAINMENT-1
+### Active sprint manifest — DOCTOR-PWA-WEBAUTHN-PARENT-CLOSURE-1
 ### Validated by: php artisan sprint:manifest-check
 
-id: DOCTOR-PWA-WEBAUTHN-CREDENTIAL-REVOKE-CONTAINMENT-1
+id: DOCTOR-PWA-WEBAUTHN-PARENT-CLOSURE-1
 type: SECURITY_FIX
 module: DoctorDevice
-title: "Revoking one WebAuthn credential is proven on the live pilot tablet to contain exactly the session it authenticated — a pre-existing Android session on the same dual-proof device survives, the device and authorization are untouched, and a fresh device-bound credential recovers the doctor"
+title: "The parent DOCTOR-PWA-WEBAUTHN-1 programme closes against the configuration production actually runs: a WebAuthn login completed while the enforcement scope names one pilot doctor and the fleet-wide permit stays shut, plus the device-binding revalidation a mutation campaign proved nothing was holding"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-runtime_change: false           # the runtime is byte-identical to the base authority.
-                                # PROOF-BINDING-1 already re-verifies a WebAuthn session
-                                # against its exact credential, and the source audit found
-                                # no defect to manufacture. What was missing was coverage
-                                # of the blast radius, not the containment itself.
+runtime_change: false           # no application source changed. Every mutation applied
+                                # during the sensitivity campaign was restored by copy and
+                                # `git status` proves zero tracked modifications. The
+                                # closure adds coverage and durable rules, not behaviour.
 schema_change: false            # no migration; no column; no data touched
 frontend_change: false          # no JS, no CSS, no Blade
-security_impact: true           # it is an authentication containment path, gated as one
+security_impact: true           # it is the authentication admission path, gated as one
 branch_isolation_impact: false  # branch stays a property of the device row
 ledger_impact: false            # no inventory ledger / billing / payment behaviour
 
 deploy_required: true           # NOT for behaviour — production already carries the
                                 # mechanism. The deploy aligns production HEAD with the
-                                # merge SHA so the live revocation evidence and the GO
-                                # tag describe the same authority.
-browser_required: true          # a credential is revoked by an operator in one browser
-                                # while a doctor session stays open in another, on the
-                                # physical SM-X236B, alongside a real Clinic App session.
-                                # Nothing in the suite can hold three live sessions on
-                                # real hardware.
+                                # merge SHA so the final ceremony evidence and the parent
+                                # GO tag describe the same authority.
+browser_required: true          # the parent GO turns on a real physical gate: drg Karmila
+                                # completing a WebAuthn assertion on the approved
+                                # SM-X236B, in Chrome AND in the installed PWA. A platform
+                                # authenticator, a user-verification prompt and an
+                                # installed-app client context cannot be simulated by any
+                                # suite, and a parent GO taken without them would be a
+                                # claim rather than a proof.
 
 test_profiles:
   - security

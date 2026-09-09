@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DOCTOR-PWA-WEBAUTHN-1 — parent closure evidence</title>
+<style>
+  /* Status palette is fixed and never themed. Every status below is carried by
+     an icon AND a text label, never by colour alone: on the light surface the
+     warning step is sub-3:1 by design, and the documented mitigation is exactly
+     this pairing plus a table view. Validator on the three steps used here:
+     CVD separation PASS (worst adjacent dE 11.3 protan / 27.6 normal). */
+  :root{
+    --surface:#fcfcfb; --panel:#ffffff; --ink:#1a1a19; --ink-soft:#55554f;
+    --ink-muted:#7a7a72; --hairline:#e4e4de;
+    --good:#0ca30c; --warning:#fab219; --critical:#d03b3b; --pending:#7a7a72;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --surface:#1a1a19; --panel:#232320; --ink:#f2f2ee; --ink-soft:#b6b6ad;
+      --ink-muted:#8d8d84; --hairline:#38382f;
+    }
+  }
+  :root[data-theme="dark"]{
+    --surface:#1a1a19; --panel:#232320; --ink:#f2f2ee; --ink-soft:#b6b6ad;
+    --ink-muted:#8d8d84; --hairline:#38382f;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--surface);color:var(--ink);
+       font:14px/1.55 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+       padding:32px 20px 64px}
+  .wrap{max-width:940px;margin:0 auto}
+  h1{font-size:20px;margin:0 0 4px;letter-spacing:-.01em}
+  .sub{color:var(--ink-soft);margin:0 0 4px}
+  .meta{color:var(--ink-muted);font-size:12px;margin:0 0 28px;
+        font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  h2{font-size:13px;text-transform:uppercase;letter-spacing:.07em;
+     color:var(--ink-muted);margin:34px 0 12px;font-weight:600}
+  .panel{background:var(--panel);border:1px solid var(--hairline);border-radius:10px;
+         overflow:hidden}
+  .scroll{overflow-x:auto}
+  table{border-collapse:collapse;width:100%;min-width:620px}
+  th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.06em;
+     color:var(--ink-muted);font-weight:600;padding:10px 14px;
+     border-bottom:1px solid var(--hairline);white-space:nowrap}
+  td{padding:10px 14px;border-bottom:1px solid var(--hairline);vertical-align:top}
+  tr:last-child td{border-bottom:0}
+  .st{display:inline-flex;align-items:center;gap:7px;font-weight:600;
+      white-space:nowrap;font-size:13px}
+  .dot{width:9px;height:9px;border-radius:50%;flex:none}
+  .go   .dot{background:var(--good)}     .go{color:var(--good)}
+  .pend .dot{background:var(--pending)}  .pend{color:var(--ink-muted)}
+  .off  .dot{background:var(--good)}     .off{color:var(--good)}
+  .warn .dot{background:var(--warning)}  .warn{color:var(--ink)}
+  .ev{color:var(--ink-soft);font-size:13px}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;
+       color:var(--ink-soft)}
+  /* ladder */
+  .ladder{list-style:none;margin:0;padding:14px 16px}
+  .rung{display:flex;gap:12px;align-items:flex-start;padding:9px 0}
+  .rail{display:flex;flex-direction:column;align-items:center;flex:none;width:16px}
+  .node{width:11px;height:11px;border-radius:50%;border:2px solid var(--surface);
+        background:var(--ink-muted);flex:none}
+  .rung.now .node{background:var(--good)}
+  .rung.future .node{background:transparent;border:2px dashed var(--ink-muted)}
+  .line{width:2px;flex:1;min-height:16px;background:var(--hairline)}
+  .rung:last-child .line{display:none}
+  .rlabel{font-weight:600}
+  .rnote{color:var(--ink-soft);font-size:13px}
+  .tag{display:inline-block;font-size:10px;letter-spacing:.05em;text-transform:uppercase;
+       border:1px solid var(--hairline);border-radius:99px;padding:1px 7px;
+       color:var(--ink-muted);margin-left:7px;vertical-align:1px}
+  .note{border-left:3px solid var(--warning);background:var(--panel);
+        border-radius:0 8px 8px 0;padding:12px 16px;color:var(--ink-soft);
+        font-size:13px;margin-top:12px}
+  .note strong{color:var(--ink)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>DOCTOR-PWA-WEBAUTHN-1 — parent closure evidence</h1>
+  <p class="sub">Server-side gates complete. The parent GO is not taken:
+     it requires a physical ceremony that has not happened.</p>
+  <p class="meta">
+    runtime authority 267c44b9 · base 7560b5aa · pilot user 18 · doctor 21 ·
+    branch 5 SPN4 · device 3 PHASE4A_PILOT_TABLET_02 · authorization 2 ·
+    active credential 2
+  </p>
+
+  <h2>Programme gate matrix</h2>
+  <div class="panel scroll">
+    <table>
+      <thead>
+        <tr><th>Gate</th><th>Status</th><th>Evidence</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>PWA foundation</td>
+            <td><span class="st go"><span class="dot"></span>GO</span></td>
+            <td class="ev"><code>pwa-foundation-1-go</code> @ e4fa78b1</td></tr>
+        <tr><td>Proof binding</td>
+            <td><span class="st go"><span class="dot"></span>GO</span></td>
+            <td class="ev"><code>doctor-pwa-webauthn-proof-binding-1-go</code> @ 3d690acd</td></tr>
+        <tr><td>Verify button bugfix</td>
+            <td><span class="st go"><span class="dot"></span>GO</span></td>
+            <td class="ev"><code>bugfix-…-verify-button-1-go</code> @ 3c4b93f4</td></tr>
+        <tr><td>Kill switch</td>
+            <td><span class="st go"><span class="dot"></span>GO</span></td>
+            <td class="ev"><code>doctor-pwa-webauthn-kill-switch-1-go</code> @ 9d4779c1</td></tr>
+        <tr><td>Credential revoke containment</td>
+            <td><span class="st go"><span class="dot"></span>GO</span></td>
+            <td class="ev"><code>…-credential-revoke-containment-1-go</code> @ 267c44b9</td></tr>
+        <tr><td>Fresh credential recovery</td>
+            <td><span class="st go"><span class="dot"></span>GO</span></td>
+            <td class="ev">credential 2 enrolled, real assertion 2026-09-08 15:37:27</td></tr>
+        <tr><td>Pilot-scoped admission test</td>
+            <td><span class="st go"><span class="dot"></span>GO</span></td>
+            <td class="ev">new — first login proven under <code>MODE_PILOT</code></td></tr>
+        <tr><td>Device-binding revalidation</td>
+            <td><span class="st go"><span class="dot"></span>GO</span></td>
+            <td class="ev">gap found by mutation, closed by 2 tests</td></tr>
+        <tr><td>Mutation sensitivity</td>
+            <td><span class="st go"><span class="dot"></span>4 / 4 killed</span></td>
+            <td class="ev">scope · exact credential · flag · device-bound</td></tr>
+        <tr><td>Global doctor enforcement</td>
+            <td><span class="st off"><span class="dot"></span>FALSE</span></td>
+            <td class="ev">hard-coded in source; unreachable from environment</td></tr>
+        <tr><td>Final Chrome ceremony</td>
+            <td><span class="st pend"><span class="dot"></span>NOT RUN</span></td>
+            <td class="ev">requires physical SM-X236B + drg Karmila</td></tr>
+        <tr><td>Final installed-PWA ceremony</td>
+            <td><span class="st pend"><span class="dot"></span>NOT RUN</span></td>
+            <td class="ev">requires physical SM-X236B + drg Karmila</td></tr>
+        <tr><td>Parent GO</td>
+            <td><span class="st pend"><span class="dot"></span>NOT TAKEN</span></td>
+            <td class="ev">blocked on the two ceremonies above</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="note">
+    <strong>Nothing above is a substitute for the ceremony.</strong> The suite
+    drives a software authenticator: it cannot produce a platform authenticator's
+    attachment, a real user-verification prompt, or the BE/BS flags as hardware
+    reports them — and it cannot tell a browser tab from an installed PWA client.
+  </div>
+
+  <h2>Rollout ladder</h2>
+  <div class="panel">
+    <ol class="ladder">
+      <li class="rung now">
+        <span class="rail"><span class="node"></span><span class="line"></span></span>
+        <span><span class="rlabel">Global enforcement OFF</span>
+          <span class="tag">now</span>
+          <div class="rnote">Source-controlled <code>global_permitted = false</code>.
+            No environment value reaches it.</div></span>
+      </li>
+      <li class="rung future">
+        <span class="rail"><span class="node"></span><span class="line"></span></span>
+        <span><span class="rlabel">Pilot ON — drg Karmila only</span>
+          <span class="tag">pending ceremony</span>
+          <div class="rnote">user 18, device 3, authorization 2, credential 2.
+            Armed by two environment flags, nothing else.</div></span>
+      </li>
+      <li class="rung future">
+        <span class="rail"><span class="node"></span><span class="line"></span></span>
+        <span><span class="rlabel">14 non-pilot doctors unchanged</span>
+          <div class="rnote">Ordinary browser login throughout. Proven server-side
+            while the pilot scope is genuinely armed.</div></span>
+      </li>
+      <li class="rung future">
+        <span class="rail"><span class="node"></span><span class="line"></span></span>
+        <span><span class="rlabel">DOCTOR-PWA-PILOT-STABILIZATION-1</span>
+          <div class="rnote">3–7 operational days before anything widens.</div></span>
+      </li>
+      <li class="rung future">
+        <span class="rail"><span class="node"></span><span class="line"></span></span>
+        <span><span class="rlabel">Broader rollout</span>
+          <div class="rnote">Its own decision, its own sprint. A parent GO does not
+            authorise it.</div></span>
+      </li>
+    </ol>
+  </div>
+
+  <h2>Rollback, unchanged</h2>
+  <div class="panel scroll">
+    <table>
+      <thead><tr><th>Step</th><th>Action</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td class="ev">Both feature flags to <code>false</code> — nothing else</td></tr>
+        <tr><td>2</td><td class="ev"><code>config:clear</code> then <code>config:cache</code> as <code>daengtisiams</code></td></tr>
+        <tr><td>3</td><td class="ev">Expect browser denied 0 / allowed 15</td></tr>
+        <tr><td>4</td><td class="ev">Device, authorization and credential history all preserved</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+</div>
+</body>
+</html>

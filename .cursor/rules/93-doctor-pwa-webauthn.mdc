@@ -252,3 +252,50 @@ proof" silently answered "this session's proof is still good".*
     containment tests, and swapping `firstWhere('id', …)` for `first()` must kill
     the exact-binding tests. A green suite that survives both is not protecting
     the invariant it is named after.
+
+## Parent programme closure — pilot authority
+
+66. **A pilot is proven in the pilot's shape, not the convenient one.** Every
+    admission suite before the parent closure armed the feature fleet-wide
+    (`mode = unscoped`, `global_permitted = true`) because the scope was in the
+    way of the credential mechanics. The consequence was that no test ever
+    completed a WebAuthn login while the enforcement scope named the pilot
+    doctor — the one configuration production runs. At least one admission test
+    MUST arm `MODE_PILOT`, name the pilot user, and leave `global_permitted` at
+    its committed `false`. A pilot that only works with the fleet-wide escape
+    hatch open is not a pilot.
+67. **The device-binding verdict is revalidated on every protected request, and
+    a test must hold it there.** Registration refusing a syncable credential is
+    NOT coverage of this: deleting the `WebAuthnDeviceBinding::isAcceptable()`
+    check in the revalidation path left all 80 WebAuthn tests green. The check
+    exists for the case registration cannot reach — a credential stored while
+    the policy was loose must stop working when the policy is tightened, not
+    merely stop being issued. `unknown` fails closed alongside
+    `backup_eligible`: "we could not tell" is not "device-bound".
+68. **Widening the scope mode fails OPEN, and that is the correct direction.**
+    A host setting `mode = unscoped` without the source-controlled
+    `global_permitted` produces an unusable scope that covers NOBODY — not one
+    that covers everybody. Enforcement is lost, clinical access is not. Assert
+    the behaviour (the doctor still logs in), never just the config value.
+69. **`GLOBAL_ENFORCEMENT_ACTIVE` is a derived label, not a setting.** There is
+    no such config key. It is computed for the readiness commands; the
+    enforceable input is `android_release.enforcement.scope.global_permitted`,
+    a hard-coded `false` in source that no environment value can reach. Going
+    fleet-wide requires two independent changes, one of them reviewed code.
+    Never "verify global is off" by grepping for the label.
+70. **Rollback must not depend on unwinding the scope.** The canonical rollback
+    is both flags off and nothing else. A rollback test that also resets the
+    scope proves a procedure no operator will follow under pressure.
+71. **A parent GO requires physical evidence from the approved device.** Chrome
+    AND the installed PWA, both completing a real assertion against the current
+    active credential, on the tablet named in the authorization. Server-side
+    gates, CI and a clean deploy are prerequisites, never substitutes. Evidence
+    that was not produced by hardware is not written down as though it were.
+72. **A parent GO authorises the pilot only.** It is not fleet-wide authority,
+    not a new device, not a new branch, not Phase 5. Expansion beyond the named
+    pilot doctor requires its own stabilisation sprint and its own decision.
+73. **The active credential stays device-bound for the life of the pilot.** If
+    the verdict on the live credential ever moves off `device_bound`, the pilot
+    is over until a fresh conforming credential is enrolled — the session dies
+    on the next protected request by design (rule 67), and that is the intended
+    behaviour, not an incident to work around.
