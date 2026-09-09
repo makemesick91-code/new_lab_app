@@ -294,7 +294,11 @@ proof" silently answered "this session's proof is still good".*
 72. **A parent GO authorises the pilot only.** It is not fleet-wide authority,
     not a new device, not a new branch, not Phase 5. Expansion beyond the named
     pilot doctor requires its own stabilisation sprint and its own decision.
-73. **The active credential stays device-bound for the life of the pilot.** If
+73. **Every active credential stays device-bound for the life of the pilot.**
+    (Written when the pilot had one credential; there are now three, one per
+    active device — credential 2 on device 3, 3 on device 5, 5 on device 6. The
+    rule applies to each independently, and one failing verdict ends only that
+    doctor's access, not the pilot.) If
     the verdict on the live credential ever moves off `device_bound`, the pilot
     is over until a fresh conforming credential is enrolled — the session dies
     on the next protected request by design (rule 67), and that is the intended

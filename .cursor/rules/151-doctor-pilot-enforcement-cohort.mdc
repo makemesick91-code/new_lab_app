@@ -75,6 +75,36 @@ catch.
 **MD-R10 — Device revoke stays terminal.** It is not a rollback mechanism and
 not a routine test. Narrowing the cohort is how a doctor leaves the pilot.
 
+**MD-R11 — Every physical ceremony is watermarked.** Take the maximum
+`sys_audit_logs.id` immediately BEFORE the ceremony and count only events strictly
+newer than it. Without a watermark an old login is indistinguishable from a new
+one, and a ceremony can be "proven" by evidence that predates it.
+
+**MD-R12 — Server-verified and operator-attested are different claims.** An
+installed Android PWA in standalone mode sends a user agent byte-identical to
+Chrome's. The server therefore CANNOT distinguish the two clients. What it can
+prove is that two independent assertions occurred: separate challenge, separate
+session invalidation, separate signature-counter increment. Which client produced
+each is operator testimony. Record the two separately and never promote testimony
+into a server fact. The server CAN distinguish two different tablets, because
+their user agents differ.
+
+**MD-R13 — A credential whose physical origin is uncertain is revoked.** The
+registration URL carries the device id, so registering from the wrong tablet, or
+against the wrong device id, produces a credential whose row and hardware may
+disagree. Android platform authenticators report AAGUID all-zeros with attestation
+`none` and a fresh counter of 0, so the database cannot tell them apart after the
+fact. Ask the operator which device they were holding; if the answer is anything
+other than certain, revoke. `device_bound` is worthless if the binding might name
+the wrong hardware. Before registering, confirm the page names the intended device.
+
+**MD-R14 — Cohort changes are host configuration, not a release.** Change only the
+cohort key, then rebuild as the application user:
+`sudo -u daengtisiams php artisan config:clear && config:cache`. Never edit the
+database, never add a second override, never touch `global_permitted`. A cohort
+change needs no deploy; a code change does, and that goes through
+`scripts/deploy-vps-runner.sh` executed ON the VPS.
+
 ## Two mutants that are equivalent, and stay
 
 Recorded so no future campaign re-derives them:
@@ -88,11 +118,20 @@ Recorded so no future campaign re-derives them:
   list returns FAIL first. It stays so a suppressed or renamed finding cannot
   turn a scope covering the wrong doctors into a GO.
 
-## Status at the time of writing
+## Status
 
-The mechanism shipped INERT. Production sets only the singular key, the two
-sources are unioned, and the live cohort is still `[18]` — drg Karmila alone.
-The multi-doctor pilot itself is BLOCKED: the fleet holds exactly one active
-enrolled device, at one branch, and only the Android Clinic App can create the
-cryptographically-verified identity a new one needs. Do not read the presence
-of the cohort mechanism as permission to use it.
+**The pilot is LIVE.** Cohort `[9, 15, 18]`: drg Karmila (device 3, SPN4), drg Nisa
+(device 5, LDK2), drg Fiitri (device 6, ATG3). Three doctors, three branches, three
+active devices, each with exactly one usable device-bound credential, each proven
+by physical Chrome and installed-PWA ceremonies with live signature-counter
+movement.
+
+`GLOBAL_ENFORCEMENT_ACTIVE=false`. The ceiling is 5 and raising it is a reviewed
+source change. This GO authorises these three doctors and nothing else — not a
+fourth doctor, not a new device, not fleet-wide enforcement.
+
+Note for anyone running the preparation audit: `android:phase4a-pilot-readiness`
+reports FAIL on `enforcement_inactive` and will keep doing so for as long as any
+pilot is live. That command judges the PREPARATION sprint, which was required to
+ship enforcement off. The gate that judges a running pilot is
+`android:phase4a-pilot-scope`.

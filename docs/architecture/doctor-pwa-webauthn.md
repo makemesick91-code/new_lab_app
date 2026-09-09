@@ -944,7 +944,29 @@ key and the cohort key are unioned, so deploying the mechanism resolves to
 exactly `[18]` — the same doctor, the same denial, the same fourteen browsers.
 A rename would have made the deploy itself change who is enforced.
 
-At the time of writing the multi-doctor pilot is **BLOCKED, not live**: the
-fleet holds exactly one active enrolled device, at one branch, and only the
-Android Clinic App can create the cryptographically-verified identity a second
-one needs. The presence of the mechanism is not permission to use it.
+### The pilot went live
+
+The mechanism shipped inert, and was then used. Cohort `[9, 15, 18]`: drg Karmila
+on device 3 at SPN4, drg Nisa on device 5 at LDK2, drg Fiitri on device 6 at ATG3.
+Three doctors, three branches, three active devices, each with exactly one usable
+device-bound credential.
+
+Activation was a single added host line, `ANDROID_PILOT_ENFORCEMENT_DOCTOR_USER_IDS=9,15`,
+unioned with the untouched singular `=18`, then a config rebuild as the application
+user. No code was deployed, because the cohort is a host value.
+
+Every doctor was proven physically in Chrome and in the installed PWA, each login
+preceded by `DOCTOR_SESSION_DEVICE_INVALIDATED` and followed by a WebAuthn success
+with the authenticator's signature counter advancing. Counters are the load-bearing
+evidence: they come from the tablet, not from us.
+
+Two limits are recorded rather than smoothed over. The server cannot distinguish
+Chrome from an installed Android PWA, because their user agents are byte-identical;
+what it proves is two independent assertions, and which client made each is
+operator testimony. And `android:phase4a-pilot-readiness` reports FAIL on
+`enforcement_inactive` for as long as any pilot is live, because it audits the
+preparation sprint's "ship it off" contract. The gate for a running pilot is
+`android:phase4a-pilot-scope`.
+
+Full record: `docs/sprints/doctor-pwa-multi-doctor-pilot-1.md`. Rules: MD-R1…R14 in
+`.cursor/rules/151-doctor-pilot-enforcement-cohort.mdc`.

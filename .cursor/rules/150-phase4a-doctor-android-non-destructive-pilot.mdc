@@ -25,6 +25,12 @@ pilot, the enforcement flag, or the device model.
 | Device | logical label `PHASE4A_PILOT_TABLET_01` |
 | Devices / branches / doctors | 1 / 1 / 1 |
 
+> **SUPERSEDED for scope.** The table above records Phase 4A as it was prepared.
+> The pilot is now MULTI-DOCTOR and live: cohort `[9, 15, 18]` across SPN4, LDK2
+> and ATG3 on three active devices. Everything else on this page still holds —
+> non-destructive, no Device Owner, no kiosk, fleet-wide denial still refused.
+> Scope is governed by rule 151, not by this table.
+
 A hardware serial, IMEI, MAC or Android ID is never committed. The logical label
 is the only device reference in source control.
 
