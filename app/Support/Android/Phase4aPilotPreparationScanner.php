@@ -374,11 +374,25 @@ class Phase4aPilotPreparationScanner
         // would believe doctors were locked to devices when they are not. A
         // silent no-op in a security control has to be loud somewhere, and this
         // is where.
+        // One branch per outcome, in the same order the status is decided, so a
+        // row can never carry a message that argues with its own verdict. The
+        // narrowing that made a live pilot PASS originally left this chain
+        // alone, and the result was a PASS row telling operators to "ship it
+        // off" — which is exactly the self-contradicting governance text this
+        // sprint set out to remove.
         if ($armed && ! $this->scope->isUsable()) {
+            // FAIL. Enforcement that denies nobody, reading as protection.
             $detail = 'The enforcement flag is armed while the scope covers nobody ('
                 .implode(', ', $this->scope->invalidReasons()).'). No doctor is enforced; do not read the flag as protection.';
-        } elseif ($armed || ! $configuredOff) {
-            $detail = 'Doctor device enforcement is live. A preparation sprint must ship it off.';
+        } elseif (! $configuredOff) {
+            // FAIL. Browser denial configured outside a declared scope.
+            $detail = 'Doctor browser login is denied outside a declared pilot scope. Enforcement that is not scoped '
+                .'to named doctors is a clinic-wide lockout wearing a pilot label.';
+        } elseif ($armed) {
+            // PASS. The intended state of a live, owner-approved pilot.
+            $detail = 'Doctor device enforcement is live for a declared, bounded scope covering '
+                .count($this->scope->pilotDoctorUserIds()).' named doctor account(s). That is the intended state of an '
+                .'approved pilot, not a failure; `enforcement_posture` checks it against the declaration in source control.';
         } else {
             $detail = 'Doctor device enforcement is off: the flag is not armed and no browser denial is configured.';
         }
