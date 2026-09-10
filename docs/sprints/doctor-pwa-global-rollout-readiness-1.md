@@ -217,10 +217,34 @@ Rehearsals run in batches no larger than the source-controlled ceiling of five, 
 twelve doctors are at least three rotations, and the cohort returns to `9,15,18`
 afterwards.
 
-An open question for the owner sits underneath this: twelve doctors and three
-tablets. A shared clinic tablet's biometric attests that *the device* was
-unlocked, not which clinician was present, so device sharing at scale is a policy
-decision rather than a provisioning detail.
+### The tablet policy, decided as a candidate and gated
+
+Twelve doctors and three tablets. A shared clinic tablet's biometric attests that
+*the device* was unlocked, not which clinician was present, so this had to be an
+owner decision rather than a provisioning detail.
+
+**Decided candidate: per-branch tablets with a per-doctor Android profile** — and
+explicitly a candidate, not a proven implementation. Nothing is provisioned under
+it until a real-device feasibility gate passes on actual clinic hardware:
+`docs/sprints/doctor-pwa-tablet-policy-feasibility-gate.md`.
+
+**Sharing one profile across doctors is not an available fallback.** If any
+isolation invariant fails, the fallback is one clinic device per doctor. Hardware
+cost is not a reason to weaken the binding.
+
+The schema already decides most of the outcome, which is why the gate is targeted
+rather than exploratory. `mst_doctor_devices.public_key_fingerprint` is UNIQUE and
+enrolment resolves a device by it, so **if each Android profile generates its own
+Keystore key**, two profiles on one tablet become two separate device rows — and
+`deviceProofDenyReason()` scopes credential lookup to one device row, so a
+credential from Profile A already cannot keep a session alive on Profile B. If
+Android instead shares one key across profiles, both collapse to a single device
+row and every one of those guarantees goes at once. That single question is the
+load-bearing test, and the gate says to run it first and stop if it fails.
+
+One constraint falls straight out of the schema: `UNIQUE(branch_id, device_name)`
+means two profile-devices at one branch need distinct names, so a naming
+convention has to exist before anyone enrols.
 
 ## 9. What this does not authorise
 

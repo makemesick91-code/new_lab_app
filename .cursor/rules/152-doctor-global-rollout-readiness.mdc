@@ -140,6 +140,30 @@ Salvaged from the closed `PHASE4A-DOCTOR-ANDROID-PILOT-ACTIVATION-1` pull
 request. The rest of that branch was already upstream, superseded, or could no
 longer operate on a cohort — see the sprint doc before reopening it.
 
+## Tablet policy
+
+The candidate is **per-branch tablets with a per-doctor Android profile**, and it
+is a CANDIDATE until a real-device feasibility gate passes:
+`docs/sprints/doctor-pwa-tablet-policy-feasibility-gate.md`. Provision nobody
+under it before that.
+
+**Sharing one Android profile between doctors is never the fallback.** On failure
+the answer is one clinic device per doctor. Reducing hardware cost is not a reason
+to weaken the binding: a shared profile makes the device biometric attest that
+*someone* unlocked the tablet while the server records a specific clinician, which
+is the attribution failure this programme exists to prevent.
+
+The whole policy rests on one physical fact — whether each Android profile
+generates its own Keystore key. `mst_doctor_devices.public_key_fingerprint` is
+UNIQUE and enrolment resolves by it, so distinct keys give two device rows and the
+existing per-device credential scoping does the isolation for free; a shared key
+collapses both profiles into one device row and the policy fails outright. Test
+that first. `UNIQUE(branch_id, device_name)` also means profile-devices at one
+branch need distinct names before anyone enrols.
+
+`GLOBAL_ENFORCEMENT_ACTIVE` stays false for the entire feasibility run. Measuring
+a fleet enforces nobody.
+
 ## Traps
 
 - A new suite under `tests/Feature/Deploy/` matches NO token in the critical
