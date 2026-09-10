@@ -183,6 +183,29 @@ return [
         // carrying BOTH an Android keystore key and a WebAuthn credential.
         'tests/Feature/DoctorDeviceWebAuthn/DoctorPwaWebAuthnProofBindingTest.php',
 
+        // DOCTOR-PWA-GLOBAL-ROLLOUT-READINESS-1 — the fleet readiness engine.
+        // Selected by the `DoctorDevice` token through its namespace, and
+        // declared here so that coverage is a decision rather than a side
+        // effect of where the file happens to live.
+        'tests/Feature/DoctorDevice/DoctorGlobalRolloutReadinessTest.php',
+
+        // The structural read-only proof. It is the one suite that fails if a
+        // future edit gives the readiness engine the ability to act, so losing
+        // it silently would be losing the guarantee, not just a test.
+        'tests/Feature/DoctorDevice/DoctorGlobalRolloutReadinessNonMutationTest.php',
+
+        // The enforcement posture. It holds both halves of the governance fix:
+        // that a live bounded pilot stopped being reported as a failure, and
+        // that the flag armed over nobody still is.
+        'tests/Feature/DoctorDevice/EnforcementPostureGovernanceTest.php',
+
+        // The runtime refusal of a forbidden console command. This one needed a
+        // new workflow token: `Tests\Feature\Deploy\ForbiddenConsoleCommandGuardTest`
+        // contains no existing alternative, so before `ForbiddenConsoleCommand`
+        // was added to the critical filter it would have been declared mandatory
+        // and never actually run.
+        'tests/Feature/Deploy/ForbiddenConsoleCommandGuardTest.php',
+
         // MONITORING-LOG-SOURCE-RESILIENCE-1 — the monitor reads where the
         // application writes; a missing or unreadable source fails closed.
         'tests/Unit/Services/Monitoring/MonitoringLogSourceResilienceTest.php',

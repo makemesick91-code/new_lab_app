@@ -1159,6 +1159,33 @@ return [
         'doctor_browser_login_denied' => false,
 
         /*
+        | DOCTOR-PWA-GLOBAL-ROLLOUT-READINESS-1 — the DECLARED enforcement
+        | posture, and the reason it lives here rather than beside the host
+        | values it audits.
+        |
+        | Enforcement was reported as a boolean, and a boolean cannot tell an
+        | owner-approved three-doctor pilot apart from a clinic-wide lockout.
+        | The readiness gate therefore failed on a live pilot — the exact
+        | outcome the programme exists to reach — and printed NOT READY.
+        |
+        | Four postures, one of which may be declared here:
+        |
+        |   off                       nobody is enforced
+        |   bounded_pilot             a named, ceilinged cohort is enforced
+        |   global_rollout_readiness  the bounded pilot still runs, and the
+        |                             fleet is being MEASURED for a widening
+        |                             that has not been applied
+        |   global                    Phase 5; always a failure from here
+        |
+        | This is a declaration, so it must be reachable only by someone who
+        | reviewed the change — the same argument that keeps `global_permitted`
+        | and `pilot_cohort_maximum` in this file. A posture the host could
+        | supply would not audit the host values; it would just be a second
+        | copy of them, agreeing with itself.
+        */
+        'expected_posture' => 'bounded_pilot',
+
+        /*
         | REVISED by REVISION-DOCTOR-AUTO-DEVICE-APPROVAL-APP-ONLY-LOGIN-1.
         |
         | Phase 2 ruled that "the flag is created by the phase that needs one",

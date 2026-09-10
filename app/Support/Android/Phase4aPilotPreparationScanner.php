@@ -25,6 +25,59 @@ use App\Services\Foundation\FeatureFlagService;
  */
 class Phase4aPilotPreparationScanner
 {
+    /**
+     * Enforcement is not a boolean, and reporting it as one is what made this
+     * gate wrong. DOCTOR-PWA-GLOBAL-ROLLOUT-READINESS-1 names the four states
+     * the programme actually passes through, so "armed" stops meaning both
+     * "an owner-approved pilot is running" and "the fleet is locked out".
+     */
+    public const POSTURE_OFF = 'off';
+
+    /** A named, ceilinged cohort is enforced. Every other doctor keeps browser login. */
+    public const POSTURE_BOUNDED_PILOT = 'bounded_pilot';
+
+    /** The bounded pilot still runs, and the fleet is being measured for a widening that has NOT happened. */
+    public const POSTURE_GLOBAL_ROLLOUT_READINESS = 'global_rollout_readiness';
+
+    /** Phase 5. Never reachable from this phase. */
+    public const POSTURE_GLOBAL = 'global';
+
+    /** Armed over a scope that resolves to nobody — a state, not a declaration. */
+    public const POSTURE_INDETERMINATE = 'indeterminate';
+
+    /**
+     * Declarable postures. `indeterminate` is deliberately absent: it is
+     * something a deployment can be observed in, never something a reviewer
+     * may sign off on.
+     *
+     * @var list<string>
+     */
+    public const POSTURES = [
+        self::POSTURE_OFF,
+        self::POSTURE_BOUNDED_PILOT,
+        self::POSTURE_GLOBAL_ROLLOUT_READINESS,
+        self::POSTURE_GLOBAL,
+    ];
+
+    /**
+     * How much is enforced, ordered. Used to compare a deployment against the
+     * declared ceiling.
+     *
+     * `global_rollout_readiness` sits at the SAME strength as `bounded_pilot`
+     * and not above it, which is the whole point of the posture: measuring the
+     * fleet for a widening enforces nobody new. If readiness ever became a
+     * stronger rung than the pilot it describes, it would be an activation.
+     *
+     * @var array<string,int>
+     */
+    public const POSTURE_STRENGTH = [
+        self::POSTURE_OFF => 0,
+        self::POSTURE_BOUNDED_PILOT => 1,
+        self::POSTURE_GLOBAL_ROLLOUT_READINESS => 1,
+        self::POSTURE_GLOBAL => 2,
+        self::POSTURE_INDETERMINATE => 2,
+    ];
+
     public function __construct(
         private readonly FeatureFlagService $flags,
         private readonly AndroidDoctorEnforcementScope $scope,
@@ -75,6 +128,19 @@ class Phase4aPilotPreparationScanner
                 'enforcement_scope_mode' => $this->scope->mode(),
                 'enforcement_scope_usable' => $this->scope->isUsable(),
                 'enforcement_flag_armed' => $this->flags->enabled(DoctorAppLoginGate::ENFORCEMENT_FLAG),
+
+                // Derived, never asserted — same contract as
+                // `phase4a_pilot_preparation` above. The declared counterpart is
+                // config, so a reader can see both halves of the comparison the
+                // `enforcement_posture` check makes.
+                'enforcement_posture' => $this->observedPosture(),
+                'enforcement_posture_declared' => (string) config('android_release.enforcement.expected_posture'),
+
+                // Measured from the resolved scope. The activation-boundary
+                // block below carries a `global_enforcement_active` claim too,
+                // but that one is a hardcoded record of what a past sprint did
+                // not do; this one asks the running system.
+                'global_enforcement_active_live' => $this->globalEnforcementActiveLive(),
 
                 // Every one of these is a thing this sprint did not do.
                 'apk_distributed' => $boundary['apk_distributed'] ?? null,
@@ -317,13 +383,180 @@ class Phase4aPilotPreparationScanner
             $detail = 'Doctor device enforcement is off: the flag is not armed and no browser denial is configured.';
         }
 
+        // DOCTOR-PWA-GLOBAL-ROLLOUT-READINESS-1 — the status is deliberately
+        // NARROWER than it was, and narrower than the detail above.
+        //
+        // The original predicate failed on `$armed` alone. That was correct for
+        // a preparation sprint, whose whole claim was that it shipped nothing
+        // armed. It stopped being correct the moment an owner-approved pilot
+        // went live: a correctly configured, bounded, three-doctor pilot made
+        // this gate exit non-zero and print NOT READY. A gate that reddens on
+        // the outcome the programme was built to reach teaches operators to
+        // ignore it, and an ignored gate protects nothing.
+        //
+        // The genuinely unsafe state is narrower, and it is already computed
+        // for the detail immediately above: the flag armed while the scope
+        // covers nobody. That denies no doctor anything, so it cannot lock a
+        // clinic out, but it reads as protection while providing none. Browser
+        // denial configured outside a declared scope stays a failure for
+        // exactly the reason it always was.
+        //
+        // What replaces the dropped breadth is not nothing: `enforcement_posture`
+        // below asserts that the enforcement state actually observed is the one
+        // a reviewer declared in source control.
+        $armedOverNobody = $armed && ! $this->scope->isUsable();
+
         $checks[] = $this->check(
             'enforcement_inactive',
-            ($armed || ! $configuredOff) ? 'FAIL' : 'PASS',
+            ($armedOverNobody || ! $configuredOff) ? 'FAIL' : 'PASS',
             $detail,
         );
 
+        $checks[] = $this->postureCheck();
+        $checks[] = $this->liveGlobalEnforcementCheck();
+
         return $checks;
+    }
+
+    /**
+     * Which enforcement posture is this deployment actually in?
+     *
+     * Derived from what the scope and the flag really say, never from what
+     * anyone declared. The declaration is the thing this is compared against.
+     */
+    public function observedPosture(): string
+    {
+        $armed = $this->flags->enabled(DoctorAppLoginGate::ENFORCEMENT_FLAG);
+
+        if ($this->scope->isUnscopedMode() && $this->scope->globalPermitted()) {
+            return self::POSTURE_GLOBAL;
+        }
+
+        if (! $armed) {
+            return self::POSTURE_OFF;
+        }
+
+        if ($this->scope->isPilotMode() && $this->scope->isUsable()) {
+            return self::POSTURE_BOUNDED_PILOT;
+        }
+
+        // Armed, but over nobody, or in a mode whose scope does not resolve.
+        // `enforcement_inactive` already fails this; naming it here keeps the
+        // posture vocabulary total rather than quietly defaulting to `off`.
+        return self::POSTURE_INDETERMINATE;
+    }
+
+    /**
+     * Does the observed posture match the one a reviewer declared in source?
+     *
+     * The declaration lives in config/android_release.php and nowhere a host
+     * can reach, for the same reason `global_permitted` and
+     * `pilot_cohort_maximum` do: a declaration a host can edit is not a
+     * declaration, it is a second copy of the value being audited.
+     */
+    private function postureCheck(): array
+    {
+        $observed = $this->observedPosture();
+        $declared = (string) config('android_release.enforcement.expected_posture');
+
+        if (! in_array($declared, self::POSTURES, true)) {
+            return $this->check(
+                'enforcement_posture',
+                'FAIL',
+                'No recognised enforcement posture is declared (found "'.$declared.'"). '
+                .'An undeclared posture cannot be contradicted, so it audits nothing.',
+            );
+        }
+
+        // Phase 5, and only Phase 5, may declare this.
+        if ($declared === self::POSTURE_GLOBAL || $observed === self::POSTURE_GLOBAL) {
+            return $this->check(
+                'enforcement_posture',
+                'FAIL',
+                'Fleet-wide enforcement is in play (declared "'.$declared.'", observed "'.$observed.'"). '
+                .'That is a Phase 5 decision and must not be reachable from this phase.',
+            );
+        }
+
+        if ($observed === self::POSTURE_INDETERMINATE) {
+            return $this->check(
+                'enforcement_posture',
+                'FAIL',
+                'The enforcement flag is armed over a scope that resolves to nobody, so this deployment is in no '
+                .'declarable posture at all. Declared "'.$declared.'".',
+            );
+        }
+
+        // The declaration is a CEILING, not an equality.
+        //
+        // A deployment quieter than the reviewed intent is safe and ordinary:
+        // the same source runs on a developer machine with enforcement off, in
+        // CI with no scope at all, and on production with the pilot armed. All
+        // three are the same reviewed code, and demanding they report the same
+        // posture would either redden CI or force the declaration down to the
+        // weakest deployment — which would stop it auditing production.
+        //
+        // What must never happen is the opposite: a deployment enforcing MORE
+        // than anyone reviewed. That is the drift worth failing on, and it is
+        // the only direction that can lock a clinic out.
+        if (self::POSTURE_STRENGTH[$observed] > self::POSTURE_STRENGTH[$declared]) {
+            return $this->check(
+                'enforcement_posture',
+                'FAIL',
+                'This deployment enforces MORE than source control declares: declared "'.$declared.'", '
+                .'observed "'.$observed.'". A widening nobody reviewed is exactly the drift this check exists for.',
+            );
+        }
+
+        if ($observed === $declared) {
+            return $this->check(
+                'enforcement_posture',
+                'PASS',
+                'The enforcement posture observed is the one declared in source control: "'.$declared.'".',
+            );
+        }
+
+        return $this->check(
+            'enforcement_posture',
+            'PASS',
+            'This deployment enforces less than the declared ceiling: declared "'.$declared.'", observed '
+            .'"'.$observed.'". Quieter than the reviewed intent is safe; the check exists to catch the reverse.',
+        );
+    }
+
+    /**
+     * Is fleet-wide enforcement live RIGHT NOW?
+     *
+     * The activation boundary carries a `global_enforcement_active` claim too,
+     * but that block is a historical record of what one preparation sprint did
+     * not do, and it is a hardcoded false. A safety assertion that is true
+     * because somebody typed `false` is not an assertion, and the activation
+     * checklist reads this line before arming anything. So this one is
+     * measured: it asks the scope.
+     */
+    private function liveGlobalEnforcementCheck(): array
+    {
+        $live = $this->globalEnforcementActiveLive();
+
+        return $this->check(
+            'global_enforcement_not_active',
+            $live ? 'FAIL' : 'PASS',
+            $live
+                ? 'Fleet-wide doctor enforcement is LIVE: the scope is unscoped and global is permitted. '
+                .'Every doctor account is enforced, which is a Phase 5 state.'
+                : 'Fleet-wide doctor enforcement is not live, measured from the resolved scope rather than '
+                .'read from a recorded claim.',
+        );
+    }
+
+    /**
+     * Measured, never asserted. See liveGlobalEnforcementCheck().
+     */
+    public function globalEnforcementActiveLive(): bool
+    {
+        return $this->scope->isUnscopedMode()
+            && $this->scope->globalPermitted()
+            && $this->flags->enabled(DoctorAppLoginGate::ENFORCEMENT_FLAG);
     }
 
     // -----------------------------------------------------------------------

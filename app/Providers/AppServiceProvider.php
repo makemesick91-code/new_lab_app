@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Exceptions\ForbiddenProductionCommandException;
 use App\Modules\Prescription\Gateways\CloudApiWhatsAppGateway;
 use App\Modules\Prescription\Gateways\DisabledWhatsAppGateway;
 use App\Modules\Prescription\Gateways\FakeWhatsAppGateway;
@@ -13,6 +14,7 @@ use App\Support\Android\ApksignerFingerprintResolver;
 use App\Support\Android\KotlinSourceScanner;
 use App\Support\Android\Phase4aPilotPreparationScanner;
 use App\Support\Android\SignerFingerprintResolver;
+use App\Support\Deploy\ForbiddenConsoleCommandGuard;
 use App\Support\Deploy\ProductionShellCommandGuard;
 use App\Support\DeveloperConsole\SensitiveValueMasker;
 use App\Support\Devflow\CanonicalBaseRefResolver;
@@ -20,8 +22,10 @@ use App\Support\Devflow\DevflowScanner;
 use App\Support\Devflow\GitChangeInspector;
 use App\Support\Devflow\SharedFoundationScanner;
 use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Console\Events\CommandStarting;
 use Illuminate\Http\Client\Factory as HttpFactory;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 
@@ -115,6 +119,31 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->registerDoctorAppLoginRateLimiters();
+        $this->refuseForbiddenConsoleCommands();
+    }
+
+    /**
+     * DOCTOR-PWA-GLOBAL-ROLLOUT-READINESS-1 — refuse a forbidden console
+     * command at the moment it is typed.
+     *
+     * `ProductionShellCommandGuard` scans the tracked executable scripts, and
+     * it does that well. It cannot see an invocation that was never written to
+     * a file — an operator typing into an interactive session. `CommandStarting`
+     * is the one place every invocation passes through regardless of how it
+     * started, so the runtime half of the control sits here.
+     *
+     * The guard is resolved per invocation rather than captured, so a config
+     * change takes effect without a rebuilt container.
+     */
+    private function refuseForbiddenConsoleCommands(): void
+    {
+        Event::listen(function (CommandStarting $event): void {
+            $guard = $this->app->make(ForbiddenConsoleCommandGuard::class);
+
+            if ($guard->shouldBlock($event->command, (string) $this->app->environment())) {
+                throw new ForbiddenProductionCommandException($guard->reason((string) $event->command));
+            }
+        });
     }
 
     /**
