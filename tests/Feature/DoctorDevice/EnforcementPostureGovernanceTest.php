@@ -113,6 +113,40 @@ it('still fails the flag armed over a scope that covers nobody', function () {
     expect(postureScan()['status'])->toBe('FAIL');
 });
 
+it('never lets a row carry a message that argues with its own verdict', function () {
+    // Found on production immediately after deploy: the narrowing made a live
+    // pilot PASS, but the detail chain still said "A preparation sprint must
+    // ship it off". The verdict was right and the sentence under it told the
+    // operator the opposite, which is the self-contradicting governance text
+    // this whole sprint set out to remove.
+    //
+    // Asserted as a property rather than as one string: every branch of the
+    // chain is checked against the status it ships with.
+    postureDeclare(Phase4aPilotPreparationScanner::POSTURE_BOUNDED_PILOT);
+
+    // A live, bounded, owner-approved pilot: PASS, and the text must say so.
+    postureArm(true);
+    postureCohort(['doctor_user_ids' => '9,15,18']);
+    $live = postureCheckNamed('enforcement_inactive');
+    expect($live['status'])->toBe('PASS');
+    expect($live['detail'])->not->toContain('must ship it off');
+    expect($live['detail'])->toContain('intended state');
+    expect($live['detail'])->toContain('3 named doctor account');
+
+    // Armed over nobody: FAIL, and the text must name that specific danger.
+    postureCohort(['doctor_user_id' => null, 'doctor_user_ids' => '']);
+    $overNobody = postureCheckNamed('enforcement_inactive');
+    expect($overNobody['status'])->toBe('FAIL');
+    expect($overNobody['detail'])->toContain('covers nobody');
+
+    // Off: PASS, and the text must not imply anything is running.
+    postureArm(false);
+    $off = postureCheckNamed('enforcement_inactive');
+    expect($off['status'])->toBe('PASS');
+    expect($off['detail'])->toContain('is off');
+    expect($off['detail'])->not->toContain('live');
+});
+
 it('keeps the check id the rest of the codebase asserts by', function () {
     // Ten-plus documents and a sibling suite address this check by name. A
     // rename would silently stop all of them asserting anything.
