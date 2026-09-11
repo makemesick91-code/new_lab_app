@@ -1,0 +1,156 @@
+---
+description: A doctor's clinical branch is a row somebody approved, never something inferred. Every doctor starts UNSET and UNSET preserves pre-sprint behaviour exactly — there is no backfill and none may be added, because production has no authoritative per-doctor branch to backfill from. HOME_LOCKED_BRANCH and TEMPORARY_BRANCH_COVER are two concepts and a cover never rewrites the home lock. Authority is derived from current timestamps on every protected request, so no scheduler is in the correctness path; cover activation, cover expiry and an approved transfer are one event — the session is invalidated and branch context is re-derived on the next login, never switched underneath an open session. Cover periods are half-open [starts_at, ends_at), so adjacency is ALLOWED, and non-overlap is per doctor and is enforced by the service under row locks because no index can express a range predicate. Maker-checker is an ACTOR rule enforced inside the approval transaction, so Gate::before cannot bypass it. Narrowing is an INTERSECTION applied to the list scope and the write chokepoint only; per-record reads and the legacy archive stay cross-branch. A branch operation never revokes a device, an authorization or a credential.
+globs:
+  - "app/Modules/DoctorAccess/**"
+  - "app/Modules/RmeOnlineContext/Services/RmeWorkingBranchScope.php"
+  - "app/Modules/ClinicVisit/Services/ClinicVisitService.php"
+  - "config/doctor_access.php"
+  - "database/migrations/*doctor_branch*"
+  - "database/migrations/*doctor_session_leases*"
+  - "tests/Feature/DoctorAccess/**"
+alwaysApply: false
+---
+
+# Doctor branch lock and temporary cover
+
+`DOCTOR-ACCESS-PR-B-BRANCH-LOCK-COVER`, the second of three children of
+`DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1`. Full rules: `DBL-R001..R025` in
+`docs/architecture/doctor-branch-lock-and-cover.md`. Operations:
+`docs/runbooks/doctor-branch-lock-operations.md`.
+
+Flag `doctor.branch_lock`, risk `critical`, committed **OFF**. It does not resolve unless
+`doctor.single_active_session` is also on — see the dependency below.
+
+## The one sentence
+
+**THE SERVER DECIDES, THE DOCTOR NEVER DOES, AND NOBODY GUESSES.**
+
+## Durable contract
+
+- **UNSET is a first-class answer, not missing data.** No lock row means "behave exactly as
+  this system did before this capability existed". **There is no backfill migration and none
+  may be added.** Never infer a branch from the doctor code, the tablet's branch, the last
+  login, a room or history — a recent branch may be *displayed* as a non-authoritative
+  suggestion and never auto-written.
+- **Null is an answer, never an error.** A null user, a non-doctor, an exempt account, an
+  unlinked doctor, an UNSET doctor and a degraded lock all resolve to null, and every one
+  means do not narrow.
+- **The branch lock arms only alongside the session lease and an observable session store.**
+  Enforced in `enabled()`, not by the flag registry: nothing reads a flag's `dependencies`
+  array, so that declaration is decorative. An armed lock over a disarmed lease engine would
+  leave an expired cover granting authority with nothing left to invalidate.
+- **There is exactly ONE resolver and it is pure.** `DoctorEffectiveBranchResolver` takes a
+  `User` and nothing else — no request, no device id, no branch argument — issues at most
+  three bounded reads and performs **zero writes**. It must never audit: it runs on every
+  protected request, so a row per page view. The reason travels on the returned value object.
+  A second implementation of "is a cover active" is the worst available outcome, which is why
+  the SQL predicate lives in one repository method and the PHP predicate on one model, pinned
+  equal by test.
+- **HOME_LOCKED_BRANCH and TEMPORARY_BRANCH_COVER are two concepts.** A cover never rewrites
+  `mst_doctor_branch_locks`; the home branch is retained and returned to. Anything that wrote
+  the cover target into the lock would destroy what the doctor reverts to.
+- **Authority is derived from current timestamps on every request.** No `is_active` column,
+  no `EXPIRED` status, no `expireStale()`, no scheduler in the correctness path. A late
+  housekeeping job can leave a row uncollected; it can never leave an expired cover in force.
+- **Cover periods are half-open `[starts_at, ends_at)`, so ADJACENCY IS ALLOWED.** 08:00–12:00
+  then 12:00–16:00 do not overlap. Prove the acceptance, not only the refusal — an over-strict
+  comparison passes every refusal test and then rejects the most ordinary pair of covers an
+  approver files. Overlap is **two** comparisons; a test filed in chronological order pins
+  only one of them, so file a reverse-order pair as well.
+- **Non-overlap is per DOCTOR.** Two doctors may hold covers over the same instants, including
+  for the same target branch.
+- **No index can express overlap** — a unique index compares values, overlap is a range
+  predicate; measured, not assumed. The invariant rests on
+  `DoctorBranchCoverApprovalService::approve()` in this order: lock the cover row, lock the
+  doctor row, **lock the home-lock row (the serialisation point)**, then evaluate overlap,
+  then write. Evaluating earlier lets two approvers each read clean and each commit.
+- **A cover requires a home lock.** `source_home_branch_id` is NOT NULL, an UNSET doctor has
+  no row to serialise on, and expiry would otherwise silently widen an UNSET doctor back to
+  every RME branch — a widening on a timer.
+- **A permanent transfer is refused while a cover is CURRENT.** A future-dated cover does not
+  block and is surfaced to the approver.
+- **Maker-checker is an ACTOR rule, enforced in the service inside the transaction.**
+  `request.created_by` may never equal the approving actor. Do not encode "Super Admin is the
+  maker" or "Supervisor RME is the checker" — either tier may be either party. The check
+  cannot live in a policy: the single global `Gate::before` returns true for a Super Admin
+  before any policy method runs. A requester who later gains or changes role still cannot
+  approve their own request.
+- **A rejection requires a written reason**; an approval note stays optional. Enforced in the
+  service so an HTTP caller and a console caller cannot diverge; the FormRequest mirrors it
+  only for a better message.
+- **An approval is an event, not a credential.** The lock is written inside the approval
+  transaction; there is no token to replay at a second endpoint, because there is no second
+  endpoint.
+- **Every binding is re-derived under the lock at decision time**: request type from the live
+  lock, a transfer's source still where the request said, destination still active and RME,
+  target inside the doctor's practice branches, presence read live.
+- **There is no day boundary and no EXPIRED status on a lock request.** The sibling
+  `trx_branch_change_requests` has one because that row belongs to a clinical date. A
+  permanent lock has no day; its freshness boundary is the stale-source guard. Do not
+  "restore" a state that was never missing.
+- **An approved change invalidates the session; a branch never switches inside an open one.**
+  Activation, expiry and transfer are one event: the value recorded on the lease at claim time
+  no longer matches the value derived now. The deny arm fires only when **both** sides have an
+  answer, so disarming logs nobody out and arming mass-evicts nobody.
+- **A branch operation never revokes an identity.** Device, `DoctorDeviceAuthorization` and
+  WebAuthn credential all survive an approval, a rejection and an expiry. **Identity
+  revocation is not a branch rollback**; the undo is a transfer back.
+- **Two hooks, and narrowing is an INTERSECTION.** `RmeWorkingBranchScope::resolve()` (the
+  list scope) and `ClinicVisitService::resolveBranchId()` (the write chokepoint), each asking
+  the resolver once. `array_intersect` makes the hook structurally incapable of granting a
+  branch the pre-sprint rules withheld; a locked branch that is not an active RME branch
+  yields an **empty** set, not an unreadable one.
+- **Per-record reads stay cross-branch on purpose.** `RmeWorkingBranchScope::allows()`,
+  `ClinicVisitPolicy` and `DoctorClinicalBranchResolver` are NOT narrowed — a patient's record
+  book anchors on their earliest visit, so narrowing would hide a patient's history from the
+  doctor treating them. Do not "align" them with the list scope; the docblocks say so.
+- **The tablet's branch and the request's `branch_id` decide nothing.** Both the
+  online-context start and visit creation re-assert server-side; a crafted value is refused at
+  the service boundary, not merely hidden in the view.
+- **A degraded lock must be VISIBLE.** A locked branch that loses `is_active` or
+  `is_rme_enabled` degrades to UNSET, which is correct and not the same as visible. The
+  approver queue lists it with the retained home branch, the reason **code** and a sentence,
+  and puts each row to the resolver rather than re-implementing the predicate.
+
+## Two traps that are silent in both directions
+
+- **Instants must cross the SQL boundary in the frame the COLUMNS store.**
+  `Connection::prepareBindings()` formats a `DateTimeInterface` using the timezone the object
+  carries. Hand a cover predicate a clinical-zone (WITA) reading of the right instant and the
+  binding lands eight hours from the column, so `starts_at <= at < ends_at` matches nothing,
+  the caller sees "no active cover" and every guard built on it returns normally. That is
+  exactly how the transfer-through-active-cover guard came to be dead code. Normalise at the
+  one repository boundary; it converts a frame, never an instant.
+- **Adding a foreign-key column re-creates a partial index WITHOUT its predicate.** SQLite
+  rebuilds the table and Laravel re-creates indexes from introspection, flattening
+  `UNIQUE(user_id) WHERE released_at IS NULL` into a plain unique on `user_id` — which breaks
+  every doctor's second login after any logout, **on SQLite only, invisible to a green
+  PostgreSQL gate**. Re-assert the index with its predicate in both `up()` and `down()`, and
+  run the migration BOTH ways.
+
+## Test traps that make a green test assert nothing
+
+- `daArmDoctorAccess()` arms **two** flags and the session driver. Arming `doctor.branch_lock`
+  alone leaves the resolver disabled and every answer null, so the test proves legacy
+  behaviour while claiming to prove the lock.
+- `firstOrNew(['doctor_id' => …])` mass-assigns its search key through the constructor and
+  these models have an empty `$fillable` by design, so it throws before `forceFill()`. Look
+  the row up, then build a bare model. Measured as 57 of 95 failures in one run.
+- `status` and the decision stamps are not fillable, so a cover built with `create()` alone
+  stays PENDING — the resolver then returns the home branch and the test silently proves
+  nothing.
+- Cover fixtures are INSTANT pairs, never clinical dates. Operator input parses in WITA while
+  the app timezone is UTC, so build operator strings from `ClinicalClock::now()` and directly
+  written rows from `now()`.
+- A boundary test must share ONE instant between the two rows. Deriving the two ends from two
+  separate `now()` reads makes a "shared" boundary two instants apart, and the case then
+  passes under either comparison operator.
+- Concurrency is not provable locally: `lockForUpdate` compiles to an empty string on SQLite.
+  Only the PostgreSQL critical gate exercises it, which is why `DoctorAccess` is a required
+  critical-gate filter token.
+
+## Scope boundary
+
+The bulk device-authorization command is **PR-C**. Global doctor WebAuthn enforcement stays
+**false** and this capability never reads its flag. The parent GO tag
+`doctor-access-single-session-branch-lock-1-go` is created by no child.
