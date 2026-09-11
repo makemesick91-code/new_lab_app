@@ -14,8 +14,18 @@ requires that one to be armed first — see step 1.
 
 1. **Arm the session lease first.** `doctor.branch_lock` refuses to resolve unless
    `doctor.single_active_session` is also on and the session store is observable
-   (DBL-R002). Arming this flag alone changes nothing at all, which is worse than an
-   error: the screens appear and every answer is still UNSET.
+   (DBL-R002).
+
+   **What arming this flag alone actually looks like: every one of these screens returns
+   404.** `assertCapabilityArmed()` is the first statement of all twelve controller actions
+   and it is `abort_unless($resolver->enabled(), 404)`, so with the lease flag off the
+   approver queue and both filing forms are simply not there. That is the symptom to expect,
+   and it is a *good* symptom — a hard 404 is far easier to diagnose than a surface that
+   renders while answering UNSET to everything.
+
+   So if an operator reports "the branch-lock pages are 404 and I definitely enabled the
+   flag", the answer is almost always this: the other flag is off, or the session driver is
+   not `database`.
 2. Confirm the permissions exist in the deployed database. They are seeded, not created by
    the deploy:
    ```

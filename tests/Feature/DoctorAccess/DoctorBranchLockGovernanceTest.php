@@ -56,7 +56,13 @@ use function Pest\Laravel\get;
 require_once __DIR__.'/helpers.php';
 
 /**
- * The four permissions this pull request introduces.
+ * The four permissions THE SURFACE READS — of which this pull request ADDS THREE.
+ *
+ * `release_doctor_session_leases` is PR-A's. It is read by this controller and by both
+ * policies, so it belongs in this list and in the assertion below, but PR-B does not add it:
+ * it appears in this diff only as an unchanged context line, and PR-A's manifest already
+ * claims it. The distinction is the difference between "what must be seeded for these routes
+ * to work" (four) and "what this pull request is accountable for" (three).
  *
  * Written out ONCE, and every test below either derives its subject from the
  * source or checks itself against this list — never both from the same place, so
@@ -113,9 +119,10 @@ it('seeds every permission the controller and both policies actually read', func
         expect(PermissionSeeder::PERMISSIONS)->toContain($permission);
     }
 
-    // And the four this pull request introduces are all of them, in both
-    // directions: a fifth permission read here without being seeded, or one of
-    // these four renamed in the seeder only, both fail.
+    // And those four are ALL of them, in both directions: a fifth permission read
+    // here without being seeded, or one of these four renamed in the seeder only,
+    // both fail. "All of them" is about what the surface READS — three of the four
+    // are added by this pull request and the fourth is inherited from PR-A.
     $expected = dblgPermissions();
     sort($expected);
 

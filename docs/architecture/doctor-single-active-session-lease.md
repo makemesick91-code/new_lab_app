@@ -127,12 +127,25 @@ they were logged out.
 
 ### LEASE-R011 — Revalidation answers only what a lease can be wrong about on its own
 
-Two conditions, and deliberately no invented third: the lease behind the token is **gone**
-(released at logout, or cleared by an operator), or it belongs to a **different account**
-(the session was restored over another user's).
+**AMENDED BY PR-B: there are now THREE conditions, and the third was not an invention.**
 
-Everything else about a session's continued validity is somebody else's revalidation —
-the device middleware answers for the tablet.
+As PR-A shipped it, two: the lease behind the token is **gone** (released at logout, or
+cleared by an operator), or it belongs to a **different account** (the session was restored
+over another user's).
+
+PR-B adds `DENY_BRANCH_CONTEXT_CHANGED`. It belongs here rather than anywhere else for a
+specific reason: it is a fact **recorded on the lease row itself** — the effective branch and
+cover the session was established under — so it is exactly "what a lease can be wrong about on
+its own", which is what this rule is named for. Nothing else in the request can answer it,
+because nothing else remembers what the session was established under.
+
+The boundary the rule was drawing still holds and is worth restating in its stronger form:
+
+> Revalidation answers only questions the LEASE ROW can answer. Whether the tablet is still
+> trusted is the device middleware's question and must never be asked here.
+
+A fourth condition that needed to read a device, a request or a policy would still be an
+invention, and would still belong somewhere else.
 
 ### LEASE-R012 — Eviction frees the clinic room before it tears the session down
 
@@ -141,14 +154,29 @@ release would race the doctor's own next request, which refreshes presence, and 
 leave an evicted doctor's consultation room marked occupied — blocking the clinician
 taking over.
 
-### LEASE-R013 — Eviction releases no lease row, and that is not an omission
+### LEASE-R013 — Eviction writes only when the lease is THIS session's to end
 
-Both reasons that can reach `evict()` describe a lease that is **already not this
-session's to end**: a MISSING one has nothing left to release, and a MISMATCHED one
-belongs to somebody else and must never be written to from the session that merely
-carries its token.
+**AMENDED BY PR-B, and the original wording is now wrong rather than merely incomplete.**
 
-The lookup still runs, so the eviction is audited against the lease it was about.
+As PR-A shipped it this rule said "eviction releases no lease row", justified by enumerating
+the only two reasons that could reach `evict()`: a MISSING lease has nothing left to release,
+and a MISMATCHED one belongs to somebody else and must never be written to from the session
+that merely carries its token. Both of those describe a lease that is **already not this
+session's to end**, and for both of them writing nothing is still correct.
+
+PR-B added a **third** reason, `DENY_BRANCH_CONTEXT_CHANGED`, and it is different in kind: the
+lease **is** this session's, it is live, and the session is being ended because the branch it
+was established under is no longer the branch that is effective. So `evict()` releases it, with
+`RELEASE_EFFECTIVE_BRANCH_CHANGED`, and leaving it unreleased would strand an active lease
+behind a session that no longer exists — the doctor's own next login would then be refused by
+their own dead lease.
+
+The invariant that actually held all along, and now says so:
+
+> `evict()` writes to the lease row **if and only if** the lease belongs to the session being
+> ended. Two of the three reasons mean it does not, so two of them write nothing.
+
+The lookup runs in every case, so the eviction is audited against the lease it was about.
 
 ### LEASE-R014 — FORCE LOGOUT is the only escape hatch, and it ends a login session and nothing else
 
@@ -282,16 +310,24 @@ device middleware. It revalidates the lease and nothing else.
 
 ---
 
-## 5. The PR-B seam
+## 5. The PR-B seam — CROSSED. PR-B has merged and deployed.
 
-`trx_doctor_session_leases` ships **without** `effective_branch_id` and **without**
-`effective_cover_id`. PR-B adds both in a later additive migration, together with the
-resolver that fills them.
+`trx_doctor_session_leases` now **has** `effective_branch_id` and `effective_cover_id`, added
+by PR-B's fourth additive migration together with the resolver that fills them. The sentence
+this section used to open with — that the table ships without them — was true of PR-A alone and
+is false on this tree.
 
-Leases claimed between the two deploys therefore carry **nulls**, and PR-B's comparison
-tolerates a null — so **nobody is evicted by the PR-B deploy, and no backfill may be
-added.** Inventing an effective branch for a session that was established before the
-concept existed would be a fabricated clinical fact.
+What remains permanently true, and is the part that matters:
+
+Leases claimed between the two deploys carry **nulls**, and the comparison tolerates a null —
+so **nobody was evicted by the PR-B deploy, and no backfill may be added.** Inventing an
+effective branch for a session that was established before the concept existed would be a
+fabricated clinical fact. Production confirmed it: zero leases carry a branch, because the
+table was empty and the capability is off.
+
+Two rules above were amended by PR-B rather than left to rot: **LEASE-R011** (revalidation now
+answers three conditions, not two) and **LEASE-R013** (eviction writes to the lease row when
+the lease is this session's to end, which PR-B's third reason is). Each says so in place.
 
 ---
 

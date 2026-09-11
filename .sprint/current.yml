@@ -42,11 +42,22 @@ frontend_change: false          # no JS, no CSS, no Vite entry, no asset build.
                                 # cover: it gates the frontend build, and nothing
                                 # here needs npm run build.
 security_impact: true           # it decides what a doctor may read and write, it
-                                # can end somebody else's session, it adds four
+                                # can end somebody else's session, it adds THREE
                                 # permissions and a critical flag, and its
                                 # maker-checker invariant is the thing standing
                                 # between one account and both sides of an
-                                # approval
+                                # approval.
+                                #
+                                # THREE, corrected from four. The surface READS
+                                # four — the controller and both policies check
+                                # view_/manage_/approve_doctor_branch_locks plus
+                                # release_doctor_session_leases — but the fourth
+                                # is PR-A's and appears in this diff only as a
+                                # context line. PR-A's manifest already claims
+                                # it, so counting it here made the two sibling
+                                # manifests total five where the estate gained
+                                # four. Keeping the attribution straight is the
+                                # whole point of splitting a sprint three ways.
 branch_isolation_impact: true   # THE POINT of this pull request. It narrows the
                                 # RME list scope and the visit write path to a
                                 # server-derived branch, as an INTERSECTION with
