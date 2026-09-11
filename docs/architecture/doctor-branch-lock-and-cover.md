@@ -66,7 +66,11 @@ an expired cover granting authority with nothing left to invalidate.
 ### DBL-R003 — There is exactly one resolver, and it is pure
 
 `DoctorEffectiveBranchResolver` takes a `User` and nothing else: no request, no device id,
-no branch argument. It performs at most three bounded reads and **zero writes**. In
+no branch argument. It performs at most three bounded reads and **zero writes**, and fewer
+than three for an UNSET doctor: with no cover and no lock it returns before reading the
+branch table, because nothing that table could say would change an UNSET verdict and
+`BranchService::rmeEnabledIds()` is not cached. That is the whole fleet on the day this
+arms. In
 particular it never audits, because it runs on every protected request of every doctor and
 auditing a standing condition here would insert a row per page view; the reason travels on
 the returned value object instead.

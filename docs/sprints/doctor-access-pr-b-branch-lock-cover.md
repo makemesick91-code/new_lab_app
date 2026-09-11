@@ -79,7 +79,25 @@ for the resolved group. Three things about it are worth keeping:
 
 ## 3. Tests
 
-64 new cases. 123 passed / 2886 assertions across `tests/Feature/DoctorAccess`.
+65 new cases. 124 passed / 2898 assertions across `tests/Feature/DoctorAccess`.
+
+Wide regression on this tree, every suite the changed files can reach:
+
+| suite | result |
+|---|---|
+| `tests/Feature/DoctorAccess` | 124 passed |
+| `tests/Feature/RME` | 1480 passed |
+| `tests/Feature/Branch` | 140 passed |
+| `tests/Feature/Deploy` | 131 passed |
+| `tests/Feature/AccessControl` | 99 passed, 9 skipped |
+| `tests/Feature/Auth` | 55 passed |
+| `tests/Feature/Navigation` | 15 passed |
+| `--filter=Sidebar\|OnlineContext\|BranchContext\|RolePermissionHardening` | 217 passed, 9 skipped |
+
+`tests/Feature/Deploy` is in that list deliberately. PR-A's runbook shipped a forbidden
+production REPL instruction that only `ProductionShellCommandGuardTest` catches, and the
+regression that missed it had omitted this directory — so PR-A was reported green when CI
+would have failed.
 
 | file | cases | what it defends |
 |---|---|---|
@@ -111,7 +129,7 @@ Measured, not reasoned about. The case now files a second pair in **reverse** or
 puts the other comparison in the deciding position, and both relaxations are confirmed to fail
 it.
 
-### Mutation battery — 13 applied, 13 killed, 0 survived
+### Mutation battery — 15 applied, 15 killed, 0 survived
 
 Each applied by copy and reverted by copy, each verified to have actually changed the file
 before its result was banked.
@@ -131,8 +149,10 @@ before its result was banked.
 | identity revoked as part of a branch change | the device trail |
 | rejection reason made optional again | the reason case |
 | lease partial index flattened | two lease cases |
+| three exempt route names removed | a doctor filing their own request |
+| the UNSET short-circuit removed | the UNSET budget test |
 
-`MUTATIONS_APPLIED=13  MUTATIONS_KILLED=13  MUTATIONS_SURVIVED_ACTIONABLE=0`
+`MUTATIONS_APPLIED=15  MUTATIONS_KILLED=15  MUTATIONS_SURVIVED_ACTIONABLE=0`
 
 ---
 
@@ -154,6 +174,20 @@ unchanged ceiling, the whole capability at a ceiling of 12, and the **increment*
 so a resolver regression cannot hide in the headroom. Every branch table is pinned to at most
 one read per request, which is real rather than trivially true: the resolver does not memoise,
 so a second consumer shows up immediately.
+
+### An UNSET doctor was paying for an answer that could not change
+
+The resolver read `mst_branches` before checking whether there was anything to check, and
+`rmeEnabledIds()` is not cached. With no cover and no lock the verdict is UNSET whatever that
+table says, so the read was one wasted query per protected request — paid by the **entire
+fleet**, because every doctor is UNSET the day this arms, and by nobody who benefits.
+Short-circuited, and pinned by its own test at zero added branch reads against the locked
+case's at-most-one.
+
+The first version of that pin was wrong in a way worth recording: it was a second leg of the
+locked test, and two logins in one test are one browser re-authenticating, so no second lease
+was claimed and it failed on its own precondition. The suite's own trap list says exactly
+that. The absolute claim that replaced it needs no second session to be true.
 
 ### The flag-absence pin is inverted, not removed
 
