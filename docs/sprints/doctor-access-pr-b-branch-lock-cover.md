@@ -473,3 +473,125 @@ One correction to my own analysis along the way: a first `comm`-based diff repor
 `Front Office` and `Tester RME` would be stripped. That was wrong. Those roles are absent from
 `ROLE_PERMISSIONS`, so `syncPermissions()` never runs for them and their grants are untouched.
 An exact per-role diff replaced the flawed one before anything was written.
+
+---
+
+## 10. Production ceremony, 2026-09-12 — foreign-tablet proof PASS, flags LEFT ARMED
+
+Window 05:30–07:00 WITA, operator present throughout. Every step below is production evidence,
+captured against anchors taken before the operator touched anything.
+
+### FOREIGN_TABLET_PROOF = PASS (owner-accepted)
+
+```
+DEVICE_PHYSICAL_BRANCH      ATG3   device 6 PILOT_TABLET_05_ATG3
+HOME_LOCKED_BRANCH          SPN4
+EFFECTIVE_CLINICAL_BRANCH   SPN4   working context SPN4 / Ruangan A
+ATG3 != SPN4                DEVICE_BRANCH_IS_BRANCH_AUTHORITY = NO
+lease 5  ACTIVE  effective_branch_id = 5 (SPN4)  — the lease recorded the LOCK, not the tablet
+```
+
+The strongest form of the proof arrived by accident: earlier the same night, **while still UNSET,
+she freely chose ATG3 — the tablet's own branch — and took a room there.** After the lock she
+could only be at SPN4 from that same tablet. Before and after on one device.
+
+### The authorization prerequisite, and the gate refusing first
+
+The owner chose to authorize Karmila on the ATG3 tablet. The audit shows the per-pair boundary
+actually refusing before approval, which is better evidence than a first-try success:
+
+```
+664 AUTHORIZATION_PENDING       auth 6  by 18   22:12:14
+666 APP_LOGIN_AUTHORIZATION_REJECTED  auth 6  by 18  22:12:14   ← denied, no authorization yet
+667 AUTHORIZATION_APPROVED      auth 6  by  1   22:12:30        ← canonical approval
+669 APP_LOGIN_AUTHORIZATION_SUCCESS   auth 6  by 18  22:12:42   ← then permitted
+```
+
+`EXPECTED_NEW_AUTHORIZATIONS=1`, `EXPECTED_NEW_CREDENTIALS=0` — she reused device 6's existing
+device-bound credential, because a credential proves the DEVICE and not the clinician.
+
+### The permanent assignment
+
+```
+request 1  doctor 21  initial_assignment  UNSET -> SPN4  approved
+           maker=1 (Super Admin)  checker=11 (Supervisor RME)   maker != checker
+           requested 22:44:16   applied 22:49:44
+lock       doctor 21 -> SPN4, established_via=initial_assignment, by user 11
+```
+
+**`markOffline()` observed, not argued.** Her context flipped to `offline` with the room
+**VACATED** at exactly 22:49:44, the approval instant. Ruangan A was genuinely occupied first,
+which is why the side effect was visible at all.
+
+### PR-A's core rule, witnessed on production for the first time
+
+```
+677 DOCTOR_SESSION_LEASE_DENIED  users 18  22:45:31
+```
+
+She held lease 2, attempted a second login, and was **DENIED**. Refused, not evicted — the first
+session kept working until she logged out of it herself.
+
+### WHAT WAS NOT CAPTURED, and will not be recorded as a pass
+
+**`OLD_SESSION_NEXT_PROTECTED_REQUEST=DENIED` is MISSING.** There is no lease release at
+22:49:44. By the time the approval landed she had no active lease: lease 2 had been released by
+her own logout at 22:45:48, and leases 3 and 4 were claimed then device-invalidated at 22:46 and
+22:47. The approval therefore had nothing to invalidate. She was staged with a live lease at
+06:24 and it was gone by 06:49.
+
+This is the vacuity trap this sprint has been fighting all along, and it caught the ceremony.
+Recoverable at the **cover approval**, which releases a lease the same way — provided the subject
+is leased and online at that moment.
+
+**Also not run:** temporary cover, cover expiry, the stale-cover session check, the non-empty
+operational-list proof, the archive cross-branch read, and the optional permanent transfer.
+
+### A REQUIREMENTS DISAGREEMENT, not a defect
+
+The operator, on seeing the PASS, said a doctor should only be able to log in on a tablet
+matching their branch. That is the opposite of the authorised design, in three places: the
+founding owner decision ("a doctor may authenticate from ANY approved trusted clinic tablet
+regardless of which branch owns it"), DBL-R021, and the ceremony script's own §23/§24 where an
+effective branch of ATG3 would have been the FAIL.
+
+No code was changed. The owner accepted the result as PASS and the tablet-matching expectation is
+recorded here as a **separate future decision**, not a bug. Worth noting it is a defensible
+stronger posture — a misplaced tablet could then reach nothing — traded against clinical
+flexibility, and a naive implementation would lock out a doctor working under a cover.
+
+### FLAGS LEFT ARMED BY OWNER DECISION
+
+The owner's own script said `CEREMONY_LEASE_FLAG_FINAL_STATE=false` and conditioned arming on the
+rollback operator remaining present for the entire armed interval. At the end of the window the
+owner instructed: **do not disarm.** Recorded truthfully rather than to the template:
+
+```
+CEREMONY_LEASE_FLAG_ARMED=YES
+CEREMONY_LEASE_FLAG_SCOPE=ALL_DOCTOR_ROLE_ACCOUNTS
+CEREMONY_LEASE_FLAG_FINAL_STATE=true        <-- LEFT ARMED, contrary to the earlier instruction
+BRANCH_LOCK_FLAG_FINAL_STATE=true
+GLOBAL_ENFORCEMENT_ACTIVE=false             <-- untouched
+```
+
+What that means in production, stated plainly: one session per doctor is now enforced for **all
+15 Doctor-role accounts**, and a second concurrent login is denied — as audit 677 demonstrates.
+**drg Karmila is now a live branch-narrowed clinician**: her lists, her writes and her branch
+selection resolve to SPN4 only. The other 14 doctors remain UNSET and therefore unnarrowed.
+
+Rollback stays one line each, and both keys were absent beforehand so removal restores the prior
+state exactly: drop `FEATURE_DOCTOR_SINGLE_ACTIVE_SESSION` / `FEATURE_DOCTOR_BRANCH_LOCK`,
+`config:cache` as `daengtisiams`, reload php8.3-fpm.
+
+### Closing state
+
+```
+identity   devices=5  authz=6  creds=5  revocations_today=0
+log        1406217 bytes, 152 errors — BYTE-IDENTICAL to the pre-deploy anchor across the whole ceremony
+health     /login=200
+Karmila    online at SPN4, Ruangan A — left operationally usable
+```
+
+`PR_B_STATUS = MERGED / DEPLOYED / FOREIGN-TABLET PROOF PASS / CEREMONY INCOMPLETE`
+`PR_C_SAFE_TO_START = NO`
+
