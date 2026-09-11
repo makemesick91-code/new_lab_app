@@ -412,3 +412,64 @@ group read demonstrably works on this host. A read-only artisan command that rep
 resolved group would make this directly observable and is worth a follow-up.
 
 `FULL_SUITE_EXECUTED=NO`. `FULL_SUITE_RESULT=SKIPPED`. `FULL_SUITE_CLAIMED_PASS=NO`.
+
+---
+
+## 9. A deploy step that had never run — found after the deploy was called OK
+
+**The four permissions were absent from the production database, and PR-A's was absent too.**
+Discovered while pre-flighting the operator ceremony, hours after both deploys were recorded
+green.
+
+`scripts/deploy-vps.sh` runs migrations but **not seeders** — by design, because seeding is a
+named post-deploy step in every sprint's deploy note. PR-B's note says it. PR-A's note says it.
+Neither had been executed. The newest permission in the table was `id 161` from an earlier
+sprint; `release_doctor_session_leases` (PR-A, deployed that morning) and PR-B's three were
+simply not there.
+
+**What that would have cost.** Every PR-B route is gated on
+`permission:view_doctor_branch_locks|approve_…|manage_…`. With the permissions absent, the
+Spatie route middleware refuses **Supervisor RME** outright; only Super Admin passes, through
+the single global `Gate::before`. Maker-checker needs two distinct accounts, so the ceremony
+would have been **impossible** — and the operator would have found out mid-window, with a 403
+that looks like a bug in the feature.
+
+**Why the test suite did not catch it, which is the part worth keeping.**
+`DoctorBranchLockGovernanceTest` has a case for exactly this — ruling C6, "no surface may be
+gated on a permission nobody seeded". It asserts the permission is in
+`PermissionSeeder::PERMISSIONS` **and** present in the database after calling the seeder. Both
+assertions are true and always were. The gap is that the test proves the seeder **contains** the
+permission; nothing proves the seeder **ran on production**. A green C6 test and a broken
+production are perfectly compatible.
+
+**The repair, with its blast radius computed before it was applied.** `RoleSeeder` uses
+`syncPermissions()`, which resets each managed role to the seeder's list, so running it blind on
+a live clinical system could revoke manual grant drift. So the delta was computed first — the
+seeder's expected grants by reflection against a read-only dump of production's 444 existing
+grants:
+
+```
+roles the seeder manages            17
+roles NOT managed (left untouched)  Front Office, Tester RME
+WOULD-GRANT                          8   (4 permissions x Super Admin + Supervisor RME)
+WOULD-REVOKE                         0
+```
+
+Purely additive. Then, in order: a fresh canonical backup
+(`auto_backup_20260911-154650.sql`), `PermissionSeeder`, `RoleSeeder`, `permission:cache-reset`
+— every command as `daengtisiams`.
+
+**The result matched the prediction exactly.** Permissions `162..165` created; both approver
+roles hold all four; grants 444 → 452, exactly +8; `Front Office` still 5 and `Tester RME`
+still 6, nothing revoked; no Doctor-role grant. The log did not grow by a byte, both flags are
+still off, all four branch tables are still empty, and `/login`, `/health/live` and
+`/health/ready` are still 200.
+
+**The capability is still inert.** `assertCapabilityArmed()` 404s every action while the flags
+are off, so nothing became reachable. What changed is that when the operator does arm it,
+Supervisor RME can act — which was not true before.
+
+One correction to my own analysis along the way: a first `comm`-based diff reported that
+`Front Office` and `Tester RME` would be stripped. That was wrong. Those roles are absent from
+`ROLE_PERMISSIONS`, so `syncPermissions()` never runs for them and their grants are untouched.
+An exact per-role diff replaced the flawed one before anything was written.
