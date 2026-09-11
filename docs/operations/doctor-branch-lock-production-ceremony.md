@@ -139,6 +139,78 @@ branches; patients 24, 27, 31 and 34 at two. Any of them demonstrates the archiv
 
 ---
 
+## WINDOW 2026-09-12 05:30-06:30 WITA — VERDICT: DO_NOT_ARM / CEREMONY=DEFERRED
+
+Every precondition a machine can check **PASSES**. Re-run at 05:26 WITA, inside the window:
+
+| owner-required value | measured | expected | |
+|---|---|---|---|
+| `DOCTOR_SESSIONS_ACTIVE` | **0** | 0 | PASS |
+| `UNRELEASED_LEASES` | **0** | 0 | PASS |
+| `TODAY_ACTIVE_CLINICAL_WORK` | **0 visits today** | none | PASS |
+| `GLOBAL_ENFORCEMENT_ACTIVE` | **false** | false | PASS |
+| `PILOT_COHORT` | **[9,15,18]** | [9,15,18] | PASS |
+| `LOG_WATERMARK` | **1406217 bytes** | anchored | captured |
+
+**Device 5 passes every eligibility check the owner demanded before mutation:**
+`PILOT_TABLET_04_LDK2`, branch_id 2 (LDK2), status **active**, identity
+**cryptographically_verified**, enrollment **verified**, **not revoked**, holds a public key.
+
+### Why the ceremony is still deferred — two blockers, neither machine-closable
+
+**1. THE HARD PRECONDITION IS UNCONFIRMED.** The owner made it absolute: an operator holding
+`release_doctor_session_leases` must be *actively present for the entire window* and able to
+observe and roll back all 15 doctor accounts. No such confirmation has been received. The owner
+wrote the consequence themselves: *if that person is not present, DO_NOT_ARM, CEREMONY=DEFERRED.*
+
+**2. THE DEVICE PREREQUISITE CANNOT BE STARTED WITHOUT THE PHYSICAL TABLET AND THE DOCTOR.**
+There is **no authorization row for (doctor 21, device 5)** — zero. So there is nothing to
+approve: the `doctor-device-authorizations.approve` route acts on an existing pending row, and
+that row is created by **drg Karmila attempting login or enrolment on the LDK2 tablet itself**,
+then approved within the 15-minute enrolment TTL.
+
+The whole surface is **HTTP/UI only** — `doctor-device-authorizations.{index,show,approve,reject,
+revoke}` and `doctor-device-enrollments.{approve,reject}`. There is no artisan command, so it
+cannot be driven from a shell. *(Device 5 already carries 2 WebAuthn credentials, 1 of them
+active. A credential binds to the DEVICE, not the clinician, so a new credential may not be
+needed — but the per-pair `DoctorDeviceAuthorization` is the explicit audit boundary and it is
+what is missing.)*
+
+**Arming now would be actively harmful.** One-session-per-doctor would go live fleet-wide for all
+15 accounts inside a one-hour window in which nobody can proceed past the first prerequisite, and
+the window would expire with the flag armed and unwatched. That is exactly the outcome the
+owner's decision forbids.
+
+### The exact sequence, for the operator, in order
+
+Nothing below is optional and nothing below can be reordered.
+
+1. **Confirm you are present** and hold `release_doctor_session_leases`, for the whole window.
+2. **Re-run the six pre-arming values** (section 7 of the runbook has the queries). Expect the
+   table above. If materially different, STOP.
+3. **drg Karmila, physically at the LDK2 tablet (device 5)**, attempts login through the Clinic
+   App. She is browser-denied by the enforcement cohort, so it must be the app.
+4. **Approve the resulting authorization/enrolment request** at
+   `doctor-device-authorizations.approve`, within the 15-minute TTL. Capture the before/after
+   device row, authorization rows, credential rows, timestamps and audit rows — and attribute the
+   new rows **to this ceremony**, not to identity drift.
+5. **Arm `doctor.single_active_session`** only now, with step 1 still true. Fleet-wide for all 15
+   Doctor-role accounts — not "UNSET doctors unaffected".
+6. **Initial assignment** drg Karmila UNSET → SPN4, maker-checker, canonical workflow, no SQL.
+   Remember it also calls `markOffline()` and frees her room; it is not "session only".
+7. **Foreign-tablet proof** on device 5 at LDK2: require
+   `DEVICE_PHYSICAL_BRANCH=LDK2 != HOME_LOCKED_BRANCH=SPN4` **and**
+   `EFFECTIVE_CLINICAL_BRANCH=SPN4`. If the effective branch comes back LDK2 → **STOP, PR-B
+   NO-GO**.
+8. **Operational lists** with the documented historical date range, never the Today view. An
+   empty list is a **FAILURE**.
+9. **Cover**, then **expiry**, per the corrected steps G–N.
+10. **Disarm `doctor.single_active_session`** before the window ends.
+11. **Leave the clinician usable**: correct branch, signed in if operationally required, room
+    state correct. Do not leave a real clinician logged out and roomless because a proof ended.
+
+---
+
 ## 0b. Pre-arming safety gate — measured 2026-09-12, and it is CLEAN
 
 The owner made arming conditional on provable preconditions. Measured on production:
