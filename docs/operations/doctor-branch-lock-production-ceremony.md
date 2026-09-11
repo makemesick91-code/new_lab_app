@@ -47,6 +47,57 @@ decision, because it is one.
 
 ---
 
+## OWNER DECISION, 2026-09-12 — and ONE PART OF IT IS NOT EXECUTABLE TODAY
+
+**Subject and destination, an explicit owner operational assignment** — not inferred from device
+branch, prior login, visit history or doctor code:
+
+| | |
+|---|---|
+| subject | drg Karmila, user 18, doctor 21 |
+| permanent home branch | SPN4, Cabang Sunu (branch id 5) |
+| reversible to UNSET? | **NO.** Owner accepts this. Later change only via permanent transfer. |
+
+Verified against production: Karmila is active, linked, holds **no** existing lock, and SPN4 is in
+her practice pivot (`ATG3,LDK2,SPN4,TLK1`) and is active and RME-enabled. **Step B is executable.**
+
+**Lease flag:** `AUTHORIZE_CEREMONY_ARMING=true`, `doctor.single_active_session=true` for a
+CONTROLLED WINDOW ONLY, affecting all 15 Doctor-role accounts, to be returned to `false`
+afterwards. `CEREMONY_LEASE_FLAG_FINAL_STATE=false`. This is **not** a fleet rollout and must
+never be recorded as one.
+
+### THE FOREIGN-TABLET PROOF CANNOT BE PERFORMED WITH THIS SUBJECT
+
+The owner requires `DEVICE_PHYSICAL_BRANCH != SPN4` while
+`EFFECTIVE_CLINICAL_BRANCH = SPN4`, and suggested the LDK2 tablet. Measured on production, that
+is impossible today:
+
+- **Karmila's only ACTIVE authorization is device 3, `PHASE4A_PILOT_TABLET_02`, which sits at
+  SPN4.** Her other two (devices 1 and 4, both SPN4) are revoked and rejected.
+- **The LDK2 tablet, device 5 `PILOT_TABLET_04_LDK2`, is authorized to drg Nisa — not Karmila.**
+- **She cannot browser-login anywhere.** `DoctorAppLoginGate::denyBrowserSessionReason()` denies
+  any in-scope doctor without a device-bound session, and Karmila is in the enforcement cohort
+  `[9,15,18]`. A browser has no device binding, so there is no browser fallback for her.
+
+So her only usable tablet is at SPN4, which is also her assigned home branch — the one
+configuration in which this proof is vacuous, because device branch and home branch coincide.
+
+**Three ways forward. This needs an owner choice; do not improvise one.**
+
+1. **Authorize Karmila on the LDK2 tablet** (a new `DoctorDeviceAuthorization` for doctor 21 on
+   device 5). Gives the clean proof — device at LDK2, home at SPN4. It is a production identity
+   write, it is exactly what PR-C automates, and it is not authorized by the current decision.
+2. **Use a different subject for the foreign-tablet step only** — drg Nisa is already authorized on
+   the LDK2 tablet, so locking her to a branch other than LDK2 would demonstrate the property.
+   Splits the ceremony across two doctors and needs owner approval.
+3. **Run steps A, B and everything that does not need a foreign tablet, and record the foreign-
+   tablet proof as BLOCKED** pending option 1. The device-independence property is already proven
+   by automated test (`DoctorHomeBranchLockTest` CASE 3: the same doctor on another branch's tablet
+   still sees only their own branch), but that is a test, not the physical evidence the owner
+   asked for. **Do not record option 3 as a pass.**
+
+---
+
 ## 0. Pre-flight — measured on production 2026-09-11, confirm before you start
 
 Everything below was read read-only from production. **Re-check the counts if a day has
@@ -85,6 +136,35 @@ ceremony**. There is no third account to fall back on.
 
 **Patients with cross-branch visit history, for step F:** patient 28 has visits at three
 branches; patients 24, 27, 31 and 34 at two. Any of them demonstrates the archive read.
+
+---
+
+## 0b. Pre-arming safety gate — measured 2026-09-12, and it is CLEAN
+
+The owner made arming conditional on provable preconditions. Measured on production:
+
+| precondition | measured | verdict |
+|---|---|---|
+| doctors currently logged in | `doctor_role_sessions=0` of 72 server sessions (all guest) | **PASS** — no incumbent to collide with |
+| clinical work in progress | 7 non-terminal visits, but latest visit anywhere is **2026-09-07** | **PASS** — stale, nothing today |
+| lease baseline | `unreleased_leases=0`, `lease_rows_total=0` | **PASS** — clean slate |
+| online-context flags | users 9, 15, 18 flagged online, `last_seen_at` 2026-09-09 | stale flags, **not** active work |
+| `GLOBAL_ENFORCEMENT_ACTIVE` | `false` | **PASS** |
+| pilot cohort | `9,15,18`, size 3, `SCOPE_VERDICT=GO` | **PASS**, unchanged |
+| log watermark | `storage/logs/laravel.log` = **1406217 bytes**, 152 error lines | anchored on a byte offset |
+| flag rollback | set the override back to `false` + clear config cache; no data touched | available |
+
+**Arming with zero doctor sessions is the safest possible moment** — one-session-per-doctor
+cannot deny anybody when nobody holds a session.
+
+**The gate that is NOT met is organisational, and it is the operator's to close:** a declared
+ceremony/maintenance window, with a person present who holds
+`release_doctor_session_leases` and can watch all 15 accounts. Arming without the ceremony
+following immediately would leave a fleet-wide flag live and unwatched, which is the exact thing
+the owner's decision forbids.
+
+**So: `DO_NOT_ARM` until an operator is present.** The technical state is clean and re-checkable
+with the queries in section 7 of the runbook; only the human window is missing.
 
 ---
 
