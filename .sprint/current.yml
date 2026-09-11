@@ -1,37 +1,60 @@
-### Active sprint manifest — DOCTOR-PWA-GLOBAL-ROLLOUT-READINESS-1
+### Active sprint manifest — DOCTOR-ACCESS-PR-A-SINGLE-SESSION-FOUNDATION
 ### Validated by: php artisan sprint:manifest-check
 
-id: DOCTOR-PWA-GLOBAL-ROLLOUT-READINESS-1
-type: SECURITY_FIX
-module: DoctorDevice
-title: "Measure whether fleet-wide doctor enforcement could be switched on without stranding a clinician: a read-only per-doctor readiness engine over the whole fleet, a preparation gate that stopped failing the live pilot it was describing, a global line that is measured rather than recorded, and the one still-safe control salvaged from the closed PHASE4A activation pull request"
+id: DOCTOR-ACCESS-PR-A-SINGLE-SESSION-FOUNDATION
+type: FOUNDATION_SPRINT
+module: DoctorAccess
+title: "One authenticated session per doctor, and nothing else: a lease claimed on the framework Login event rather than in a controller, a race-safe claim whose cardinality invariant lives in a partial unique index, per-request revalidation, dead-lease recovery that never becomes an idle timer, and an audited force-logout escape hatch that ends a login session without revoking a device, an authorization or a credential. The first of three children of DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1; the parent GO is NOT created here."
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-runtime_change: true            # a new artisan command, a new module service and
-                                # repository, a narrowed check in the preparation
-                                # scanner, and a CommandStarting listener. All of it
-                                # read-only or refusing; none of it on a clinical path.
-schema_change: false            # no migration, no column, no data touched
-frontend_change: false          # no JS, no CSS, no Blade
-security_impact: true           # it changes a security gate's verdict, adds a runtime
-                                # console refusal, and reports the enforcement posture
-                                # that decides whether a doctor keeps browser login
-branch_isolation_impact: false  # branch is read from the device row for reporting only;
-                                # nothing here sets, consults or trusts a request branch
+# FOUNDATION_SPRINT, and deliberately not something lighter. This is
+# cross-module foundation work: it appends global middleware to the `web`
+# group, listens on a framework authentication event, adds a permission and a
+# critical flag, and changes the login, logout and account-deletion paths. Audit
+# level 3, the full foundation audit and the full-required test profile all
+# apply, which is the accurate label rather than a downgrade — a SECURITY_FIX
+# label would buy a narrower audit for a diff that touches authentication for
+# every doctor in the fleet.
+
+runtime_change: true            # a new module (model, repository, three services,
+                                # middleware, listener), a new artisan command, a
+                                # new global middleware entry, a new Login
+                                # listener, and release calls added to the logout
+                                # and account-deletion paths. All of it inert
+                                # while the flag is off.
+schema_change: true             # ONE additive migration: trx_doctor_session_leases,
+                                # with a partial unique index on (user_id) WHERE
+                                # released_at IS NULL. No alter, no drop, no
+                                # backfill, nothing existing touched.
+frontend_change: false          # no JS, no CSS, no Blade. The refusal renders
+                                # through the EXISTING login view's `email`
+                                # error-bag key; no view file is added or edited.
+security_impact: true           # it can REFUSE a doctor's login, it adds a
+                                # permission that ends somebody else's session,
+                                # and it changes what an authenticated session
+                                # means on every protected request
+branch_isolation_impact: false  # no branch is read, written, compared or trusted
+                                # anywhere in this diff. The branch lock and the
+                                # effective-branch resolver are PR-B, and the
+                                # lease table ships WITHOUT effective_branch_id.
 ledger_impact: false            # no inventory ledger / billing / payment behaviour
 
-deploy_required: true           # the readiness command and the console guard only exist
-                                # on the deployment that carries them, and the whole
-                                # point of the engine is to be run against production
-browser_required: false         # nothing here has a UI surface, and nothing here can be
-                                # proven by a ceremony: it MEASURES provisioning rather
-                                # than performing any. The twelve doctors who are not
-                                # ready need physical ceremonies, and this sprint
-                                # deliberately claims none of them.
+deploy_required: true           # the migration, the middleware and the command only
+                                # exist on the deployment that carries them
+browser_required: true          # the refusal has to be READ on a clinic tablet, and
+                                # the remember-me anti-loop mechanism is a Set-Cookie
+                                # the test client does not honour: a browser that
+                                # ignored it would loop, and only a browser can show
+                                # that it does not. Arming the flag is a supervised
+                                # window on real hardware with a doctor present —
+                                # never a deploy step.
 
-go_tag: doctor-pwa-global-rollout-readiness-1-go
+go_tag: doctor-access-pr-a-single-session-foundation-go
 
 test_profiles:
+  - focused
+  - cross_module_regression
+  - full_required
   - security
 
 # Carried forward. `.sprint/current.yml` is a ROLLING file, so these inherited

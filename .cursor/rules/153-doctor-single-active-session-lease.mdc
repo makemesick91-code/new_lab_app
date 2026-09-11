@@ -1,0 +1,105 @@
+---
+description: One authenticated session per doctor is enforced by REFUSING the second login, never by evicting the first. The invariant lives in a partial unique index, the claim hangs off the framework Login event because a remember-me cookie reaches no controller, and a session carrying no lease token is never touched. A lease is reclaimable only when the incumbent's server-side session row is GONE — never on an idle timer — and the engine disarms rather than guess when it cannot observe the sessions table. The deny path never calls Auth::logout, because remember_token is shared by every session of the account. The only escape hatch is an audited force logout that ends a login session and nothing else: it revokes no device, no authorization and no WebAuthn credential, refuses a self-release, and takes effect on the victim's NEXT request rather than in place.
+globs:
+  - "app/Modules/DoctorAccess/**"
+  - "app/Console/Commands/DoctorSession*.php"
+  - "config/doctor_access.php"
+  - "database/migrations/*doctor_session_leases*"
+  - "tests/Feature/DoctorAccess/**"
+alwaysApply: false
+---
+
+# Doctor single active session — the lease
+
+`DOCTOR-ACCESS-PR-A-SINGLE-SESSION-FOUNDATION`, the first of three children of
+`DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1`. Full rules: `LEASE-R001..R024` in
+`docs/architecture/doctor-single-active-session-lease.md`. Operations:
+`docs/runbooks/doctor-session-lease-operations.md`.
+
+Flag `doctor.single_active_session`, risk `critical`, committed **OFF**.
+
+## The one sentence
+
+**REFUSED, NOT EVICTED.** The second login is denied; the first is untouched. The
+clinician already seeing patients keeps working.
+
+## Durable contract
+
+- **The cardinality invariant is a partial unique index**, `(user_id) WHERE released_at IS
+  NULL`. Not an application convention — two logins racing for a free lease cannot both
+  win by interleaving a check. Released rows are **retained**; they are the trail.
+- **The claim hangs off `Illuminate\Auth\Events\Login`, never a controller.** A remember-me
+  recaller cookie re-authenticates through no controller at all, so a claim placed in a
+  login controller is bypassed by exactly the path a returning tablet uses.
+- **A session carrying no lease token is never touched, and nothing may create a lease for
+  it.** `actingAs()` fires `Authenticated`, not `Login`, so ~3554 existing test sessions
+  hold no token; treating "authenticated doctor with no lease" as a denial evicts all of
+  them.
+- **There is no idle reclaim.** A lease is reclaimable when the incumbent's server-side
+  `sessions` row is **GONE**. `last_seen_at` is display and diagnostics. Reclaiming on a
+  timer is eviction by the back door.
+- **The liveness window belongs to the session store and is never widened.** It is the same
+  predicate `DatabaseSessionHandler::expired()` applies. Liveness is keyed on `user_id`, so
+  **one** surviving session row keeps the incumbent alive.
+- **The engine disarms rather than guess.** `enabled()` is the flag **AND**
+  `IncumbentSessionProbe::observable()`. On a non-`database` driver every incumbent would
+  read DEAD and the rule would degrade to newest-login-wins — fail-open. Assuming the
+  incumbent is alive instead would deny every doctor login — fail-closed. Inert means inert
+  in both directions.
+- **The deny path never calls `Auth::logout()`.** `users.remember_token` is one column
+  shared by every session of the account; `logout()` cycles it, `logoutCurrentDevice()`
+  does not. This is why the device module's `invalidate()` is not reusable here.
+- **A denial creates no row.** It is audited against the `users` entity.
+- **Eviction frees the clinic room BEFORE tearing the session down**, and releases no lease
+  row — both reasons that reach `evict()` describe a lease that is already not this
+  session's to end.
+- **Revalidation answers two conditions only**: the lease is gone, or it belongs to another
+  account. Do not invent a third; the device middleware answers for the tablet.
+- **Force logout ends a LOGIN SESSION and nothing else.** No device, no
+  `DoctorDeviceAuthorization`, no WebAuthn credential — and none of those tables is
+  written. WebAuthn revocation is irreversible, so the doctor logs back in; they do not
+  re-enrol. It needs a named **active** actor holding `release_doctor_session_leases` and a
+  written reason bounded by `config('doctor_access.reason')` (no `env()` in that file). It
+  is dry-run by default and the preview runs the real guard and the real lock.
+- **A self-release is refused for every holder**, inside the transaction after the doctor
+  row is locked — a policy clause would not run for a Super Admin.
+- **A release is DATA.** Nothing is evicted in place; the victim's session ends on its
+  **next request**, which for an idle tablet can be minutes. Say so; never imply otherwise.
+- **Finding nothing to release is an outcome, not an error.** `session_released = false`,
+  exit 0, idempotent.
+- **The persisted token is a `sha256` digest.** The plaintext lives in session data only.
+- **This capability never reads `doctor.trusted_device_enforcement`.** The two are
+  independent switches.
+
+## Scope boundary — do not cross it here
+
+The branch lock, temporary cover, the effective-branch resolver, operational-list narrowing
+and the bulk device-authorization command are **PR-B and PR-C**. They are absent from this
+base on purpose.
+
+`trx_doctor_session_leases` ships **without** `effective_branch_id` and `effective_cover_id`.
+PR-B adds them additively; leases claimed between the two deploys carry **nulls** that
+PR-B's comparison tolerates, so nobody is evicted by that deploy. **No backfill may be
+added** — inventing an effective branch for a session established before the concept
+existed would be a fabricated clinical fact.
+
+## Test traps that make a green test assert nothing
+
+- `daArmDoctorAccess()` arms the flag **and** the session driver. The flag alone leaves the
+  engine inert, because `phpunit.xml` pins `SESSION_DRIVER=array`.
+- The flag key contains a dot, so `config()->set('feature_flags.flags.doctor.…')` builds a
+  structure nothing reads. Rewrite the whole `flags` array, and write **both** `default`
+  and `env_value` — a captured `env_value` wins.
+- Only a real `POST /login` reaches the claim. `actingAs()` never claims a lease.
+- Two `daLoginPost()` calls in one test are **one browser re-authenticating**: the in-memory
+  session store survives between requests. Flush the session and forget the guards and the
+  `auth.driver` singleton to get a second browser.
+- `expectsOutputToContain()` consumes one writeln per call, so a command emitting one
+  multi-line JSON payload satisfies only the first. Drive the command with
+  `Artisan::call()` + `Artisan::output()` and `--json`.
+- The audit actor column is `performed_by`, not `user_id`.
+- A "revokes nothing" assertion needs real live rows to be non-vacuous; counting zero
+  unchanged rows passes for an implementation that revoked everything.
+- Concurrency is **not** provable locally: `RefreshDatabase` gives one connection and
+  `lockForUpdate` compiles to an empty string on SQLite. Only the PostgreSQL critical gate
+  exercises the lock, which is why `DoctorAccess` is a required critical-gate filter token.
