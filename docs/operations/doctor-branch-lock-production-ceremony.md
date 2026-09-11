@@ -26,6 +26,47 @@ first approval is what changes a real clinician's day.
 
 ---
 
+## 0. Pre-flight — measured on production 2026-09-11, confirm before you start
+
+Everything below was read read-only from production. **Re-check the counts if a day has
+passed**; if any row has moved, the step that depends on it may no longer work.
+
+**RME branches, with how many visits each holds.** The visit count matters for step E: locking
+a doctor to a branch with two visits proves very little, so prefer LDK2 or TLK1.
+
+| branch | visits |
+|---|---|
+| LDK2 Cabang Landak | 17 |
+| ATG3 Cabang Antang | 11 |
+| TLK1 Cabang Telkomas | 9 |
+| SPN4 Cabang Sunu | 2 |
+
+Active clinic rooms exist at all four (TLK1 4, LDK2 3, ATG3 2, SPN4 2), so steps K and N can
+select a room wherever you go.
+
+**Candidate subjects — 12 doctors, all active, all linked, none in the enforcement pilot, and
+every one already pivoted to all four RME branches** (so any branch is a legal destination;
+see the practice-pivot warning in step B):
+
+doctor 15 drg Irwan · 16 drg Fahira · 18 drg Ramadhan · 22 drg Windi · 23 drg Nurmilah ·
+24 drg Aisyah · 25 drg Ilmiah · 26 drg Ega · 27 drg Syifa · 28 drg Yudya · 29 drg Syahrul ·
+30 drg Wahyuni
+
+**The two approver accounts, and there are exactly two:**
+
+| user id | name | role |
+|---|---|---|
+| 1 | IT Support | Super Admin |
+| 11 | Jene Monika | Supervisor RME |
+
+Maker-checker needs two different user ids, so **both people must be available for the whole
+ceremony**. There is no third account to fall back on.
+
+**Patients with cross-branch visit history, for step F:** patient 28 has visits at three
+branches; patients 24, 27, 31 and 34 at two. Any of them demonstrates the archive read.
+
+---
+
 ## A. Choose the subject
 
 Owner picks **one** real doctor. Record their `mst_doctors.id`, their user id, and their
@@ -51,12 +92,29 @@ session that may belong to a clinician with a patient in the chair.
 Evidence: the request id, the two distinct user ids, the `DOCTOR_BRANCH_LOCK_REQUESTED` and
 `DOCTOR_BRANCH_LOCK_APPROVED` audit rows, and the resulting `home_branch_id`.
 
-## C. Log in from a tablet that belongs to a DIFFERENT branch
+## C. Log in from a tablet that sits at a DIFFERENT branch
 
-The doctor logs in on an approved, active, cryptographically verified clinic tablet whose
-`branch_id` is **not** their locked home branch.
+The doctor logs in **through the browser** on a tablet physically located at a branch that is
+**not** their locked home branch.
 
-Evidence: the tablet's identifier and its owning branch, and that login succeeded.
+**Do not look for a "trusted device" here, and do not try to use one.** An earlier draft of this
+step asked for an approved, cryptographically verified tablet, and that was wrong in a way worth
+stating: **none of the 12 candidate subjects holds a device authorization at all** — only users
+9, 15 and 18 do, and those are the three this ceremony avoids. Device trust and branch authority
+are independent (DBL-R021), and a non-pilot doctor needs no device authorization because
+enforcement is scoped to the pilot cohort. So browser login on any tablet is the correct and
+only available path, and it exercises the rule properly: the tablet contributes nothing.
+
+What matters is only that the tablet is **physically at another branch**, because that is the
+thing an operator can see and the thing a clinician would intuitively expect to determine their
+branch.
+
+Evidence: which tablet, where it physically sits, and that login succeeded.
+
+*(If the owner instead wants the DEVICE path exercised, that means picking a pilot doctor — 9,
+15 or 18 — whose browser login is denied, so they must use the Android app. That mixes this
+ceremony with the enforcement pilot and evicts a doctor already under observation. Do it only on
+an explicit owner instruction, and record that it was requested.)*
 
 ## D. Prove the tablet does not decide the branch
 
@@ -73,17 +131,24 @@ Required: `DEVICE_BRANCH != LOCKED_HOME_BRANCH` **and**
 
 ## E. Operational lists show the effective branch only
 
-On that same session, open Daftar Kunjungan, the patient queue, and the room worklist.
+**Look at the lists BEFORE you arm the flag, and write down what you see.** Production holds 39
+visits across the four RME branches, so an unlocked doctor sees rows from all of them. Without
+that "before", a narrowed list is just a short list and proves nothing — which is why this step
+now asks for the contrast rather than for a single observation.
 
-Required: every row belongs to the locked home branch. Not "mostly" — if one row from another
-branch appears, stop and report it.
+Then, on the locked session, open Daftar Kunjungan, the patient queue, and the room worklist.
 
-Evidence: a screenshot or a written note per list, naming the branch of the rows shown.
+Required: every row belongs to the locked home branch, and the rows from other branches that
+were there before are gone. Not "mostly" — if one row from another branch appears, stop and
+report it.
+
+Evidence: what each list showed before, and what it shows after, naming branches.
 
 ## F. The archive is still cross-branch — this is a REQUIRED PASS, not a leak
 
 Open the Rekam Medis and the odontogram of a patient whose earliest visit was at a **different**
-branch.
+branch. Patient 28 spans three branches; 24, 27, 31 and 34 span two. Pick one whose earliest
+visit is NOT at the locked home branch, or the step proves nothing.
 
 Required: it opens and is readable. A doctor must be able to read the history of the patient in
 front of them. If this is blocked, that is a FAILURE of the ceremony, not a security win.
@@ -174,16 +239,31 @@ lock has no approver and no audit row, and the next person cannot tell it from a
 
 ---
 
-## Identity accounting — record before and after the whole ceremony
+## Identity accounting — compare against these exact values, not against blanks
 
-```
-DEVICES_BEFORE=        DEVICES_AFTER=
-AUTHORIZATIONS_BEFORE= AUTHORIZATIONS_AFTER=
-CREDENTIALS_BEFORE=    CREDENTIALS_AFTER=
-```
+**Equal counts are the weak form of this check.** A revoke-and-recreate leaves the count
+identical, so compare the per-row state. This is production as measured on 2026-09-11, before
+the ceremony:
 
-Required: all three unchanged. A branch decision ends a login session and nothing else. If any
-count moved, stop and report it — that is the invariant DBL-R017 exists for.
+| table | rows | detail |
+|---|---|---|
+| `mst_doctor_devices` | 5 | ids 1,3,4 at SPN4; 5 at LDK2; 6 at ATG3. 1 and 4 already revoked. |
+| `mst_doctor_device_authorizations` | 5 | id 1 revoked 2026-09-07, id 3 rejected, ids 2/4/5 active |
+| `trx_doctor_device_webauthn_credentials` | 5 | ids 1 and 4 already revoked (2026-09-08, 2026-09-09) |
+
+**Required after the ceremony: identical, row for row.** No new revocation, no new row, no
+status change. Every revocation above predates the ceremony, so **any `revoked_at` carrying
+today's date is a failure** — that is the single clearest signal, and it is easier to check than
+a count.
+
+A branch decision ends a login session and nothing else. If anything here moved, stop and
+report it; that is the invariant DBL-R017 exists for.
+
+*Reading it needs VPS shell access:* `php artisan db:show --counts` gives the totals, and the
+per-row detail needs the read-only queries in section 7 of
+`docs/runbooks/doctor-branch-lock-operations.md`. **Run every artisan command as the runtime
+user** (`runuser -u daengtisiams -- php artisan …`); as root it writes root-owned cache files,
+which has broken production login before.
 
 ## If anything fails
 
