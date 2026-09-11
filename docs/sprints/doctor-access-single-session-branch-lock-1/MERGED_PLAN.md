@@ -819,3 +819,29 @@ WHEN I RUN THE SUITES I MUST CONFIRM, by reading the test bodies and not the nam
    second login got no lease; reclaim asserts the first lease IS released with the reclaim reason and the
    second login holds the only active lease.
 If a suite proves denial without a live session row, the test is wrong even though it is green.
+
+# Z. OWNER DECISION O8 — ONE FULL SUITE, AT THE END ONLY (2026-09-11)
+
+Verbatim intent: run the Full Suite ONLY after everything is finished. Do NOT run a Full Suite before
+all three pull requests are complete.
+
+CONSEQUENCES, to be honoured by every child PR:
+- No child PR runs a Full Suite. PR-A, PR-B and PR-C are each gated on their OWN suites, the wide
+  regression, the governance gates and CI, and nothing more.
+- Each child manifest must therefore continue to OMIT `full_required` from `test_profiles`, and must keep
+  saying plainly that the omission is not a claim the full suite ran. That is now an owner instruction as
+  well as the standing repository CI policy.
+- ONE Full Suite runs after PR-C is merged, deployed and verified, and it gates the PARENT GO tag
+  `doctor-access-single-session-branch-lock-1-go`. No child tag depends on it.
+
+THE EXPOSURE, STATED RATHER THAN BURIED: production receives PR-A and PR-B before any Full Suite has run.
+That is a deliberate owner choice and it is consistent with existing practice here — the repository's
+standing CI policy already defers the Full Suite gate, and every prior foundation sprint shipped the same
+way. Each child deploy is still covered by its own suites, by the ~2442-test wide regression across RME,
+DoctorDevice, DoctorDeviceWebAuthn, Auth, AccessControl, MasterData and DoctorAccess, by ten governance
+gates, and by the CI critical gate's large filtered selection. So this is not an unguarded deploy; it is a
+deploy guarded by everything except the final exhaustive pass.
+
+REVISED TIME: roughly 15 to 22 hours of working time remaining, of which 3 to 6 is the single closing
+Full Suite. Wall-clock is longer, because the three deploys are strictly sequential and PR-B's ceremony
+needs a person at three tablets.

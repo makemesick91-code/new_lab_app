@@ -308,3 +308,92 @@ disarms itself (LEASE-R007) and arming the flag changes nothing.
   `release_doctor_session_leases` through its policy; the service does not assert it. The
   **self-release refusal is different** — it lives inside the service's transaction and
   PR-B inherits it for free.
+
+## 8. Production evidence, 2026-09-11
+
+Recorded after the deploy, not inferred from it.
+
+### Merge and deploy identity
+
+| | |
+|---|---|
+| `PR_A_CANDIDATE_SHA` | `819a42d2eabb1767b36af08397f2bd713791bded` |
+| `PR_A_MERGE_SHA` | `80afaad1f01fab7cc027c7a68c3a06a60ef5cf2d` |
+| Candidate tree | `88333b58618604fbc0f7f27b0f273154d8e7970e` |
+| Merge tree | identical to the candidate tree — the squash changed no content |
+| `PRODUCTION_HEAD` | `80afaad1…` — equals the merge SHA |
+| `PRODUCTION_TREE` | `88333b58…` — equals the merge tree |
+| `DEPLOY_HOST` | `srv1730088` |
+| `DEPLOY_EXECUTION_LOCATION` | VPS, never the workstation |
+| `DEPLOY_SCRIPT` | `scripts/deploy-vps-runner.sh`, pid 1473545, detached |
+| `DEPLOY_EXIT_CODE` | 0 |
+| `DEPLOY_STATUS` | `DEPLOY RUNNER OK` / `DEPLOY OK: 20260911-111127` |
+| `DEPLOY_HEAD_TARGET_MATCH` | YES |
+
+### The schema, and the invariant actually present on PostgreSQL
+
+`MIGRATION_APPLIED=YES` (batch 70), `MIGRATIONS_PENDING=0`. The cardinality guard is live with
+its predicate intact, read back from `pg_indexes`:
+
+```
+CREATE UNIQUE INDEX trx_doctor_session_leases_active_uq
+  ON public.trx_doctor_session_leases USING btree (user_id) WHERE (released_at IS NULL)
+```
+
+### Inert, which is the point of this deploy
+
+Production runs the **database** session driver, so the engine is observable there. The flag
+default is therefore the only thing holding enforcement off — not a second accidental safety net,
+which is why this was verified rather than assumed.
+
+- `SINGLE_SESSION_FEATURE_FLAG=false` — `enabled=false default=false via=default`, no environment override present
+- `SINGLE_SESSION_ENGINE_EFFECTIVE=false`
+- `SESSION_STORE_OBSERVABLE=YES` (driver `database`, `sessions` table present)
+- `ACTIVE_LEASE_ROWS_CREATED_BY_NORMAL_EXISTING_TRAFFIC=0` — total lease rows 0, active 0
+- `UNEXPECTED_ACTIVE_DOCTOR_LEASES=0`
+- `MIDDLEWARE_DUPLICATED=NO` — one import and one registration, first in the web group, ahead of the presence-touch middleware
+
+### Pilot untouched, global still off
+
+`DECLARED_COHORT=[9,15,18]`, `RESOLVED_COHORT=[9,15,18]`, `COVERED_COHORT=[9,15,18]`, cohort
+`all_ready=true`. Fleet unchanged at 15 target / 3 ready / 12 not ready; devices 5 total, 3 active,
+2 revoked, 3 usable credentials. `GLOBAL_ENFORCEMENT_ACTIVE=false`,
+`global_scope_permitted=false`, posture `bounded_pilot`, scope `pilot`.
+`EXISTING_AUTH_SECURITY_PRESERVED=YES` — no device, authorization, credential or branch changed.
+
+### Health and the error delta
+
+`/login`, `/health/live` and `/health/ready` all 200 over the canonical domain. `APP_DEBUG=false`,
+maintenance off, `FAILED_JOBS=0`, queue worker active.
+
+`PRE_DEPLOY_ERROR_COUNT=0`, `POST_DEPLOY_ERROR_COUNT=0`, `ERROR_COUNT_DELTA=0`,
+`NEW_SINGLE_SESSION_ERRORS=0`, `NEW_AUTH_ERRORS=0`. This is a true zero and not a coincidental
+total: the log is byte-identical across the deploy (1406217 bytes, 9114 lines), its last entry
+predates the deploy by two days, and it contains no mention of the lease engine at all.
+
+### Two pre-existing conditions, neither caused by this deploy
+
+1. The automated smoke returns **WATCH** on one check: a probe to `http://127.0.0.1/login` gets 404.
+   The identical warning appears in all six preceding deploy logs back to 2026-09-08. The canonical
+   entry point is healthy — the domain returns 200 — and the probe uses loopback, which is not the
+   canonical entry point. A smoke-probe weakness, not a production fault, and out of scope here.
+2. The newest log entry, `2026-09-09 23:00 pilot.ERROR: Writing to directory …`, predates this
+   deploy.
+
+### Known gap, assigned to PR-B
+
+**No automated test asserts the middleware is registered exactly once.** Registration was proven on
+the deployed tree by source plus tree-identity with the tested candidate, and a throwaway probe
+asserted it during development, but that probe was deleted and the shipped suite only mentions the
+ordering in comments. `route:list` structurally cannot see a group-appended middleware, and a REPL is
+forbidden on production, so there is no canonical runtime reporting mechanism to lean on. PR-B edits
+this middleware anyway and must add the assertion, resolving the web middleware group through the
+HTTP kernel and asserting exactly one occurrence.
+
+### Full Suite, recorded permanently
+
+`FULL_SUITE_EXECUTED=NO`. `FULL_SUITE_RESULT=SKIPPED`. `FULL_SUITE_CLAIMED_PASS=NO`.
+
+One Full Suite runs after all three children are merged, deployed and production-verified, on the
+final immutable tree, and it gates the parent tag alone. This child skip must never be read as a
+parent pass.

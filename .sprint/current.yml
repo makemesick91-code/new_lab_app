@@ -54,8 +54,24 @@ go_tag: doctor-access-pr-a-single-session-foundation-go
 test_profiles:
   - focused
   - cross_module_regression
-  - full_required
   - security
+
+# `full_required` IS DELIBERATELY ABSENT, and its absence is not a claim.
+#
+# The Full Suite gate was SKIPPED for this child pull request, by owner
+# instruction: one Full Suite runs after all three children are merged, deployed
+# and production-verified, and it gates the PARENT tag only. Listing the profile
+# here would assert a gate that did not run, which is precisely the "child skip
+# silently becomes a parent pass" the owner forbade.
+#
+# Recorded permanently rather than inferred:
+#   FULL_SUITE_EXECUTED=NO
+#   FULL_SUITE_RESULT=SKIPPED
+#   FULL_SUITE_CLAIMED_PASS=NO
+#
+# What DID run on this candidate: the NSF-R011 critical gate (3707 passed, 0
+# failed, 16609 assertions), the selective module gate, NSF-9, NSF-10, the
+# quality gate and the Android gate — seven required gates, all green.
 
 # Carried forward. `.sprint/current.yml` is a ROLLING file, so these inherited
 # facts have to be restated by every sprint after closure — dropping one is
