@@ -36,6 +36,8 @@ use App\Modules\Doctor\Interfaces\DoctorRepositoryInterface;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\Doctor\Policies\DoctorPolicy;
 use App\Modules\Doctor\Repositories\DoctorRepository;
+use App\Modules\DoctorAccess\Interfaces\DoctorSessionLeaseRepositoryInterface;
+use App\Modules\DoctorAccess\Repositories\DoctorSessionLeaseRepository;
 use App\Modules\DoctorDevice\Interfaces\DoctorDeviceAuthorizationRepositoryInterface;
 use App\Modules\DoctorDevice\Interfaces\DoctorDeviceRepositoryInterface;
 use App\Modules\DoctorDevice\Interfaces\DoctorDeviceRolloutReadinessRepositoryInterface;
@@ -302,6 +304,12 @@ class RepositoryServiceProvider extends ServiceProvider
         PaymentMethodRepositoryInterface::class => PaymentMethodRepository::class,
         WaReminderTemplateRepositoryInterface::class => WaReminderTemplateRepository::class,
         DoctorRepositoryInterface::class => DoctorRepository::class,
+        // DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1 — the one-active-session
+        // lease. Bound here and nowhere else: this array is PRIVATE and is
+        // applied by the loop below, and there is no AuthServiceProvider in this
+        // codebase, so a stock-Laravel copy onto another class would register
+        // nothing.
+        DoctorSessionLeaseRepositoryInterface::class => DoctorSessionLeaseRepository::class,
         PatientRepositoryInterface::class => PatientRepository::class,
         LabServiceRepositoryInterface::class => LabServiceRepository::class,
         TechnicianRepositoryInterface::class => TechnicianRepository::class,
