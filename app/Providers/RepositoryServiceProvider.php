@@ -36,7 +36,17 @@ use App\Modules\Doctor\Interfaces\DoctorRepositoryInterface;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\Doctor\Policies\DoctorPolicy;
 use App\Modules\Doctor\Repositories\DoctorRepository;
+use App\Modules\DoctorAccess\Interfaces\DoctorBranchCoverRepositoryInterface;
+use App\Modules\DoctorAccess\Interfaces\DoctorBranchLockRepositoryInterface;
+use App\Modules\DoctorAccess\Interfaces\DoctorBranchLockRequestRepositoryInterface;
 use App\Modules\DoctorAccess\Interfaces\DoctorSessionLeaseRepositoryInterface;
+use App\Modules\DoctorAccess\Models\DoctorBranchCover;
+use App\Modules\DoctorAccess\Models\DoctorBranchLockRequest;
+use App\Modules\DoctorAccess\Policies\DoctorBranchCoverPolicy;
+use App\Modules\DoctorAccess\Policies\DoctorBranchLockRequestPolicy;
+use App\Modules\DoctorAccess\Repositories\DoctorBranchCoverRepository;
+use App\Modules\DoctorAccess\Repositories\DoctorBranchLockRepository;
+use App\Modules\DoctorAccess\Repositories\DoctorBranchLockRequestRepository;
 use App\Modules\DoctorAccess\Repositories\DoctorSessionLeaseRepository;
 use App\Modules\DoctorDevice\Interfaces\DoctorDeviceAuthorizationRepositoryInterface;
 use App\Modules\DoctorDevice\Interfaces\DoctorDeviceRepositoryInterface;
@@ -304,11 +314,14 @@ class RepositoryServiceProvider extends ServiceProvider
         PaymentMethodRepositoryInterface::class => PaymentMethodRepository::class,
         WaReminderTemplateRepositoryInterface::class => WaReminderTemplateRepository::class,
         DoctorRepositoryInterface::class => DoctorRepository::class,
-        // DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1 — the one-active-session
-        // lease. Bound here and nowhere else: this array is PRIVATE and is
-        // applied by the loop below, and there is no AuthServiceProvider in this
-        // codebase, so a stock-Laravel copy onto another class would register
-        // nothing.
+        // DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1 — home lock, approved
+        // temporary cover, and the one-active-session lease. Bound here and
+        // nowhere else: this array is PRIVATE and is applied by the loop below,
+        // and there is no AuthServiceProvider in this codebase, so a
+        // stock-Laravel copy onto another class would register nothing.
+        DoctorBranchLockRepositoryInterface::class => DoctorBranchLockRepository::class,
+        DoctorBranchLockRequestRepositoryInterface::class => DoctorBranchLockRequestRepository::class,
+        DoctorBranchCoverRepositoryInterface::class => DoctorBranchCoverRepository::class,
         DoctorSessionLeaseRepositoryInterface::class => DoctorSessionLeaseRepository::class,
         PatientRepositoryInterface::class => PatientRepository::class,
         LabServiceRepositoryInterface::class => LabServiceRepository::class,
@@ -515,6 +528,18 @@ class RepositoryServiceProvider extends ServiceProvider
         LegacyRmeMigrationWave::class => LegacyRmeMigrationWavePolicy::class,
         // FEATURE-DAILY-BRANCH-CONTEXT-LOCK-1
         BranchChangeRequest::class => BranchChangeRequestPolicy::class,
+        // DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1 — the two approval
+        // workflows that may move a doctor's effective branch.
+        //
+        // NEITHER POLICY DECLARES A before() HOOK, on purpose. The single global
+        // Gate::before below already short-circuits every ability for a Super
+        // Admin; a second, policy-level one would shadow it and become an
+        // easily-missed bypass. It also means every clause in these two classes
+        // is skipped for a Super Admin, which is exactly why the self-approval
+        // comparisons that must hold for everyone live inside the approval
+        // services' transactions and not here.
+        DoctorBranchLockRequest::class => DoctorBranchLockRequestPolicy::class,
+        DoctorBranchCover::class => DoctorBranchCoverPolicy::class,
     ];
 
     public function register(): void

@@ -18,10 +18,15 @@ use Illuminate\Support\Facades\Schema;
  * that table is never written, so every incumbent would read DEAD, every
  * second login would reclaim the lease, and the single-session rule would
  * silently degrade to newest-login-wins — a fail-OPEN dressed as enforcement.
- * The capability therefore DISARMS rather than pretends:
- * DoctorSessionLeaseService::enabled() requires {@see self::observable()} as
- * well as its flag, so a deployment that cannot see an incumbent enforces
- * nothing instead of enforcing a rule it cannot evaluate.
+ * The capability therefore DISARMS rather than pretends: both
+ * DoctorSessionLeaseService::enabled() and
+ * DoctorEffectiveBranchResolver::enabled() require {@see self::observable()}.
+ *
+ * The branch resolver requires it too, and that is not belt-and-braces. Cover
+ * expiry is enforced by the lease middleware comparing the branch the session
+ * was established under against the branch that is effective now. If the lease
+ * engine disarmed while the branch lock stayed armed, an EXPIRED cover would
+ * keep granting authority with nothing left to invalidate the session.
  */
 class IncumbentSessionProbe
 {

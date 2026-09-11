@@ -7,6 +7,7 @@ use App\Modules\Branch\Interfaces\BranchRepositoryInterface;
 use App\Modules\Branch\Services\BranchService;
 use App\Modules\ClinicRoom\Models\ClinicRoom;
 use App\Modules\Doctor\Models\Doctor;
+use App\Modules\DoctorAccess\Services\DoctorEffectiveBranchResolver;
 use App\Modules\RmeOnlineContext\Interfaces\UserOnlineContextRepositoryInterface;
 use App\Modules\RmeOnlineContext\Models\UserOnlineContext;
 use Carbon\Carbon;
@@ -279,6 +280,18 @@ class UserOnlineContextService
                 'branch_id' => 'Cabang yang dipilih tidak termasuk Cabang Praktik yang Diizinkan.',
             ]);
         }
+
+        // DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1 — a locked doctor may only
+        // go online at their effective branch. Ordered AFTER the practice-branch
+        // eligibility assert on purpose, exactly as the daily-branch-context
+        // guard below is: the lock can then never become a path to a branch the
+        // doctor was not entitled to work in, only a narrowing of one they were.
+        //
+        // A disabled <select> is not a security boundary. The selector renders
+        // one option for a locked doctor; THIS is what refuses a crafted POST.
+        // Resolved through the container, not the constructor: the resolver
+        // depends on this service, so injecting it would close a cycle.
+        $this->assertWithinDoctorEffectiveBranch($user, $branchId);
 
         $this->assertRmeBranch($branchId);
         $this->assertActiveRoomInBranch($clinicRoomId, $branchId);
@@ -570,6 +583,34 @@ class UserOnlineContextService
                 'branch_id' => 'Cabang yang dipilih harus cabang RME aktif.',
             ]);
         }
+    }
+
+    /**
+     * DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1 — the server-side half of the
+     * doctor branch selector.
+     *
+     * ONE question, to the ONE authority. Null means every non-locking state —
+     * capability off, non-doctor, exempt governance account, unlinked doctor,
+     * UNSET doctor, retired locked branch — and every one of them keeps the
+     * free branch choice this system had before the sprint (owner decision O1).
+     */
+    private function assertWithinDoctorEffectiveBranch(User $user, int $branchId): void
+    {
+        $effectiveBranchId = app(DoctorEffectiveBranchResolver::class)->branchIdFor($user);
+
+        if ($effectiveBranchId === null || $effectiveBranchId === $branchId) {
+            return;
+        }
+
+        $branchName = $this->branches->find($effectiveBranchId)?->name
+            ?? 'cabang yang terkunci untuk Anda';
+
+        throw ValidationException::withMessages([
+            'branch_id' => 'Cabang klinis Anda terkunci di '.$branchName.'. '
+                .'Anda hanya dapat online di cabang tersebut. '
+                .'Ajukan perpindahan cabang atau cover sementara untuk mendapatkan '
+                .'persetujuan Super Admin atau Supervisor RME.',
+        ]);
     }
 
     private function assertActiveRoomInBranch(int $roomId, int $branchId): void

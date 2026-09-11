@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Modules\DoctorAccess\Listeners;
 
 use App\Models\User;
+use App\Modules\DoctorAccess\Services\DoctorEffectiveBranchResolver;
 use App\Modules\DoctorAccess\Services\DoctorSessionLeaseService;
 use Illuminate\Auth\Events\Login;
 
@@ -55,6 +56,7 @@ final class ClaimDoctorSessionLease
 {
     public function __construct(
         private readonly DoctorSessionLeaseService $leases,
+        private readonly DoctorEffectiveBranchResolver $branches,
     ) {}
 
     public function handle(Login $event): void
@@ -83,6 +85,17 @@ final class ClaimDoctorSessionLease
             return;
         }
 
-        $this->leases->claimOrDeny($user, $request);
+        // EFFECTIVE_CLINICAL_BRANCH AT CLAIM TIME. Null is an ordinary answer —
+        // the branch lock may be disarmed, the account unlinked, the lock
+        // UNSET, or the locked branch no longer usable — and a null claim is
+        // never compared against later, so it can never evict anyone.
+        $effective = $this->branches->resolve($user);
+
+        $this->leases->claimOrDeny(
+            $user,
+            $request,
+            $effective->branchId(),
+            $effective->coverId(),
+        );
     }
 }
