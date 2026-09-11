@@ -92,14 +92,22 @@ const SUPERVISOR_RME_PERMISSIONS = [
     // Doctor, Kasir and Admin Klinik, which this exact-list pin does not cover.
     'view_rme_consents',
     'manage_rme_consents',
-    // DOCTOR-ACCESS-PR-A-SINGLE-SESSION-FOUNDATION — FORCE LOGOUT. One active
-    // session per doctor means a lease can get stuck behind a tablet nobody can
-    // reach, and the escape hatch belongs to somebody on the RME side who can be
-    // told about it. It ends a LOGIN SESSION only: no device, no authorization
-    // and no WebAuthn credential is revoked, which is why it is a grant of its
-    // own rather than part of the device-authorization pair above. A SELF-RELEASE
-    // IS STILL REFUSED FOR THIS HOLDER — that refusal lives inside the release
-    // transaction, not in this grant.
+    // DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1 — doctor home-branch
+    // assignment/transfer and temporary branch cover, plus the manual session
+    // release that ends a login session and nothing else.
+    //
+    // OWNER DECISION, 2026-09-11: `manage_doctor_branch_locks` IS in this list.
+    // Super Admin and Supervisor RME may BOTH file a cover and BOTH approve one,
+    // so this tier holds `manage_` and `approve_` together on purpose. That is
+    // NOT a maker-checker regression: the separation is ACTOR-based, enforced
+    // inside the approval transaction as `requester_user_id !== approver id`
+    // (DoctorBranchLockApprovalService::lockPendingRequest() and
+    // DoctorBranchCoverApprovalService::lockPendingCover()), and it therefore
+    // also binds a Super Admin, for whom the single global Gate::before skips
+    // every permission check this list describes.
+    'view_doctor_branch_locks',
+    'manage_doctor_branch_locks',
+    'approve_doctor_branch_locks',
     'release_doctor_session_leases',
 ];
 

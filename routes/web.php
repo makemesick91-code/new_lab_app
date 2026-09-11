@@ -18,6 +18,7 @@ use App\Modules\Consent\Controllers\RmeVisitConsentController;
 use App\Modules\Delivery\Controllers\DeliveryController;
 use App\Modules\Doctor\Controllers\DoctorAccountLinkController;
 use App\Modules\Doctor\Controllers\DoctorController;
+use App\Modules\DoctorAccess\Controllers\DoctorBranchLockController;
 use App\Modules\DoctorDevice\Controllers\DoctorDeviceAuthorizationController;
 use App\Modules\DoctorDevice\Controllers\DoctorDeviceController;
 use App\Modules\DoctorDevice\Controllers\DoctorDeviceLoginController;
@@ -664,6 +665,92 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
         Route::post('branch-change-requests/{branchChangeRequest}/reject', [BranchChangeRequestController::class, 'reject'])
             ->name('branch-change-requests.reject')
             ->whereNumber('branchChangeRequest');
+    });
+
+    /*
+     | DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1 — a doctor's permanent home
+     | branch, temporary branch cover, and the approver's lease-release action.
+     |
+     | Placed here, immediately after the FEATURE-DAILY-BRANCH-CONTEXT-LOCK-1
+     | block, for two reasons:
+     |
+     |  (a) BEFORE the `permission:view_clinic_visits|manage_clinic_visits`
+     |      group opened below, because a doctor filing an assignment request
+     |      may hold none of the workspace permissions — bouncing them off a
+     |      permission they do not need would make the request surface
+     |      unreachable for exactly the people it exists for;
+     |  (b) authorization is per action through DoctorBranchLockRequestPolicy
+     |      and DoctorBranchCoverPolicy, and every approver action additionally
+     |      sits behind an explicit `permission:` gate, so the route boundary
+     |      and the sidebar read one definition.
+     |
+     | ORDERING TRAP, the same one CLAUDE.md records for
+     | `inventory.purchase-requests.workflow`: the literal-segment routes
+     | (`doctor-branch-locks/new`, `doctor-branch-locks/requests/…`) are
+     | declared BEFORE `doctor-branch-locks/{doctor}/release-session`, and that
+     | `{doctor}` segment carries whereNumber, so the literal `requests` can
+     | never be captured as a doctor id.
+     |
+     | These are `permission:` middlewares (the Spatie alias registered at
+     | bootstrap/app.php), not `can:` gates: this sprint introduces permissions,
+     | so there is nothing to define in RepositoryServiceProvider's $gates.
+     */
+    Route::get('doctor-branch-locks/new', [DoctorBranchLockController::class, 'create'])
+        ->name('doctor-branch-locks.create');
+    Route::post('doctor-branch-locks', [DoctorBranchLockController::class, 'store'])
+        ->name('doctor-branch-locks.store');
+    Route::post('doctor-branch-locks/requests/{doctorBranchLockRequest}/cancel', [DoctorBranchLockController::class, 'cancel'])
+        ->name('doctor-branch-locks.cancel')
+        ->whereNumber('doctorBranchLockRequest');
+
+    // The queue is READ authority: an operator who may see the standing state —
+    // including a lock that has silently stopped applying — need not be able to
+    // decide anything.
+    Route::middleware('permission:view_doctor_branch_locks|approve_doctor_branch_locks|manage_doctor_branch_locks')->group(function () {
+        Route::get('doctor-branch-locks', [DoctorBranchLockController::class, 'index'])
+            ->name('doctor-branch-locks.index');
+    });
+
+    // Filing on another doctor's behalf, and filing cover at all. Deliberately
+    // separate from `approve_`: maker and checker are different permissions.
+    Route::middleware('permission:manage_doctor_branch_locks')->group(function () {
+        Route::get('doctor-branch-covers/new', [DoctorBranchLockController::class, 'coverCreate'])
+            ->name('doctor-branch-covers.create');
+        Route::post('doctor-branch-covers', [DoctorBranchLockController::class, 'coverStore'])
+            ->name('doctor-branch-covers.store');
+    });
+
+    Route::middleware('permission:approve_doctor_branch_locks')->group(function () {
+        Route::post('doctor-branch-locks/requests/{doctorBranchLockRequest}/approve', [DoctorBranchLockController::class, 'approve'])
+            ->name('doctor-branch-locks.approve')
+            ->whereNumber('doctorBranchLockRequest');
+        Route::post('doctor-branch-locks/requests/{doctorBranchLockRequest}/reject', [DoctorBranchLockController::class, 'reject'])
+            ->name('doctor-branch-locks.reject')
+            ->whereNumber('doctorBranchLockRequest');
+        Route::post('doctor-branch-covers/{doctorBranchCover}/approve', [DoctorBranchLockController::class, 'coverApprove'])
+            ->name('doctor-branch-covers.approve')
+            ->whereNumber('doctorBranchCover');
+        Route::post('doctor-branch-covers/{doctorBranchCover}/reject', [DoctorBranchLockController::class, 'coverReject'])
+            ->name('doctor-branch-covers.reject')
+            ->whereNumber('doctorBranchCover');
+    });
+
+    // Withdrawing a cover is open to an approver at any time, and to the row's
+    // own requester while it is still pending — DoctorBranchCoverPolicy::cancel
+    // is the boundary; this middleware only keeps unrelated roles off the URL.
+    Route::middleware('permission:approve_doctor_branch_locks|manage_doctor_branch_locks')->group(function () {
+        Route::post('doctor-branch-covers/{doctorBranchCover}/cancel', [DoctorBranchLockController::class, 'coverCancel'])
+            ->name('doctor-branch-covers.cancel')
+            ->whereNumber('doctorBranchCover');
+    });
+
+    // Ruling P17 — ends a login session and NOTHING else. No device, no
+    // authorization and no WebAuthn credential is touched, so it carries its
+    // own permission rather than riding on the approval one.
+    Route::middleware('permission:release_doctor_session_leases')->group(function () {
+        Route::post('doctor-branch-locks/{doctor}/release-session', [DoctorBranchLockController::class, 'releaseSession'])
+            ->name('doctor-branch-locks.release-session')
+            ->whereNumber('doctor');
     });
 
     Route::middleware('permission:view_clinic_visits|manage_clinic_visits')->group(function () {

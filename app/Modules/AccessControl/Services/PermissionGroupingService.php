@@ -75,15 +75,18 @@ class PermissionGroupingService
                 'publish_legacy_odontogram_imports',
                 'void_legacy_odontogram_records',
                 'view_legacy_odontogram_archive',
-                // DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1 — force logout: an
-                // operator ends a doctor's stuck login session.
+                // DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1 — doctor home
+                // branch, temporary cover, and the approver's lease release.
                 //
                 // Classified under RME, NOT under Access Control, deliberately:
-                // the doctors it is about are an RME population and the sole
-                // grantee is an RME role. Listing it beside `manage users` /
-                // `manage roles` / `manage permissions` would invite the
-                // inference that Access Control admins should hold it, which
-                // this sprint refuses.
+                // the routes, views and sidebar entry all live on the RME
+                // surface and the sole grantee is an RME role. Listing doctor
+                // branch authority beside `manage users` / `manage roles` /
+                // `manage permissions` would invite the inference that Access
+                // Control admins should hold it, which this sprint refuses.
+                'view_doctor_branch_locks',
+                'manage_doctor_branch_locks',
+                'approve_doctor_branch_locks',
                 'release_doctor_session_leases',
             ],
         ],
@@ -270,6 +273,9 @@ class PermissionGroupingService
         'view_legacy_rme_migration_operations' => 'Lihat operasi migrasi arsip RME lama (gelombang, kuota, backlog, rekonsiliasi).',
         'manage_legacy_rme_migration_operations' => 'Kelola gelombang migrasi arsip RME lama: cabang, operator, kuota, jeda dan penyelesaian.',
         'approve_legacy_rme_migration_wave' => 'Setujui gelombang migrasi arsip RME lama.',
+        'view_doctor_branch_locks' => 'Lihat cabang tetap dokter, cover cabang sementara, dan antrean pengajuannya.',
+        'manage_doctor_branch_locks' => 'Ajukan penetapan/perpindahan cabang tetap dokter dan ajukan cover cabang sementara (mengajukan, bukan menyetujui).',
+        'approve_doctor_branch_locks' => 'Setujui penetapan dan perpindahan cabang tetap dokter, serta cover cabang sementara.',
         'release_doctor_session_leases' => 'Akhiri sesi login aktif dokter secara manual (tidak mencabut perangkat, otorisasi, maupun kredensial).',
         'manage_lab_orders' => 'Kelola order laboratorium (penuh).',
         'view_lab_orders' => 'Lihat order laboratorium.',
