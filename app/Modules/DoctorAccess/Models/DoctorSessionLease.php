@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Modules\DoctorAccess\Models;
 
 use App\Models\User;
+use App\Modules\Branch\Models\Branch;
 use App\Modules\Doctor\Models\Doctor;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -12,10 +13,11 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
  * DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1 — the claim that says 'this
- * doctor currently holds this session'.
+ * doctor currently holds this session', and the branch it was established
+ * under.
  *
  * Before this row existed there was nothing outside the owning request that
- * could answer that question: the whole session binding is six session-
+ * could answer either question: the whole session binding is six session-
  * payload keys (DoctorDeviceSessionService.php:163-179), all of them inside
  * the session they describe.
  *
@@ -44,17 +46,26 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  *    would therefore partially break the session it just refused to evict.
  *    logoutCurrentDevice() (:680) does not cycle it.
  *
- * THIS MODEL CARRIES NO BRANCH, AND THAT IS THE SCOPE OF THIS PULL REQUEST
- * RATHER THAN AN OVERSIGHT. Binding a session to the branch it was established
- * under needs a resolver that can answer what that branch IS, and that
- * resolver — with the home lock and the temporary cover it reads — ships
- * separately. Every column, cast and relation here has a writer in this pull
- * request; nothing is reserved for later.
+ * THE EFFECTIVE BRANCH IS PART OF THE CLAIM. Section Q: every protected
+ * request recomputes EFFECTIVE_CLINICAL_BRANCH from current timestamps and
+ * compares it with what the session was established under. Cover started,
+ * cover expired, transfer approved — one comparison, three behaviours, no
+ * scheduler, and no way for a branch to change silently mid-session.
  */
 class DoctorSessionLease extends Model
 {
     /** The doctor logged out. The ordinary release. */
     public const RELEASE_LOGOUT = 'logout';
+
+    /**
+     * EFFECTIVE_CLINICAL_BRANCH no longer matches what this session was
+     * established under — a cover started, a cover ended, or a transfer
+     * landed. Section Q makes all three the same event.
+     */
+    public const RELEASE_EFFECTIVE_BRANCH_CHANGED = 'effective_branch_changed';
+
+    /** Released inside an approved permanent transfer's transaction. */
+    public const RELEASE_BRANCH_TRANSFER_APPROVED = 'branch_transfer_approved';
 
     /**
      * The incumbent's `sessions` row was gone, so the lease was reclaimed by
@@ -73,6 +84,8 @@ class DoctorSessionLease extends Model
 
     public const RELEASE_REASONS = [
         self::RELEASE_LOGOUT,
+        self::RELEASE_EFFECTIVE_BRANCH_CHANGED,
+        self::RELEASE_BRANCH_TRANSFER_APPROVED,
         self::RELEASE_DEAD_SESSION_RECLAIMED,
         self::RELEASE_ADMIN,
         self::RELEASE_DEVICE_INVALIDATED,
@@ -96,6 +109,8 @@ class DoctorSessionLease extends Model
         return [
             'user_id' => 'integer',
             'doctor_id' => 'integer',
+            'effective_branch_id' => 'integer',
+            'effective_cover_id' => 'integer',
             'released_by_user_id' => 'integer',
             'claimed_at' => 'datetime',
             'last_seen_at' => 'datetime',
@@ -111,6 +126,16 @@ class DoctorSessionLease extends Model
     public function doctor(): BelongsTo
     {
         return $this->belongsTo(Doctor::class, 'doctor_id');
+    }
+
+    public function effectiveBranch(): BelongsTo
+    {
+        return $this->belongsTo(Branch::class, 'effective_branch_id');
+    }
+
+    public function effectiveCover(): BelongsTo
+    {
+        return $this->belongsTo(DoctorBranchCover::class, 'effective_cover_id');
     }
 
     public function releasedBy(): BelongsTo
@@ -138,5 +163,28 @@ class DoctorSessionLease extends Model
     public function matchesTokenHash(string $candidateHash): bool
     {
         return hash_equals((string) $this->session_token_hash, $candidateHash);
+    }
+
+    /**
+     * Does the recomputed effective branch still match what this session was
+     * established under?
+     *
+     * COMPARED IN PHP, NEVER IN SQL. A doctor with no home lock and no cover
+     * has a NULL effective branch, and that is the compatibility state owner
+     * decision O1 requires — but `NULL = NULL` is UNKNOWN in SQL, so pushing
+     * this comparison into a query would evict every UNSET doctor on their
+     * next request. Here NULL === NULL is a match and they are left alone.
+     *
+     * The cover reference is part of the comparison, not decoration: without
+     * it a cover expiring onto the same branch as home, or one cover replacing
+     * another at the same target, would compare equal and the session would
+     * survive — while section Q says expiry MUST invalidate.
+     */
+    public function establishedUnder(?int $branchId, ?int $coverId): bool
+    {
+        $leaseBranch = $this->effective_branch_id === null ? null : (int) $this->effective_branch_id;
+        $leaseCover = $this->effective_cover_id === null ? null : (int) $this->effective_cover_id;
+
+        return $leaseBranch === $branchId && $leaseCover === $coverId;
     }
 }

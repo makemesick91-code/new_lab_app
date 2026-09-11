@@ -186,14 +186,28 @@ class PermissionSeeder extends Seeder
         // the global Gate::before, as with every permission.
         'view_doctor_device_authorizations',
         'manage_doctor_device_authorizations',
-        // DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1 — FORCE LOGOUT. Kept
-        // contiguous with the doctor-device family above because they are the
-        // same estate: who a clinician is, and on what device.
+        // DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1 — a doctor's permanent home
+        // branch, temporary branch cover, and the approver's lease-release
+        // action. Kept contiguous with the doctor-device family above because
+        // they are the same estate: who a clinician is, where they may work,
+        // and on what device.
         //
-        // A SEPARATE GRANT, and separate on purpose (ruling P17). It ends a
-        // LOGIN SESSION and nothing else — no device, no authorization and no
-        // WebAuthn credential is touched — so it can be audited and withdrawn
-        // on its own, without disturbing who may manage a tablet.
+        // FOUR permissions, not one, because filing and deciding must be
+        // separate grants: `manage_` files a request or a cover, `approve_`
+        // decides it. RoleSeeder gives Supervisor RME the second and
+        // deliberately NOT the first, so the approver of a branch move is never
+        // also the person who proposed it. The policies enforce the same split
+        // (DoctorBranchLockRequestPolicy::create vs ::decide) and the approval
+        // services re-enforce it inside the transaction, because Gate::before
+        // returns true for Super Admin before any policy method runs.
+        //
+        // `release_doctor_session_leases` is separate again (ruling P17): it
+        // ends a LOGIN SESSION and nothing else — no device, no authorization
+        // and no WebAuthn credential is touched — so it is granted to exactly
+        // the approver tier while staying separately auditable.
+        'view_doctor_branch_locks',
+        'manage_doctor_branch_locks',
+        'approve_doctor_branch_locks',
         'release_doctor_session_leases',
         // SATUSEHAT-1 — Readiness foundation & controlled submission filter.
         // Separate view/review/send + mapping/settings governance permissions.

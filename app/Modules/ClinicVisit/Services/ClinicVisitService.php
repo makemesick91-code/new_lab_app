@@ -9,6 +9,8 @@ use App\Modules\ClinicRoom\Models\ClinicRoom;
 use App\Modules\ClinicVisit\Interfaces\ClinicVisitRepositoryInterface;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Consent\Services\RmeVisitConsentService;
+use App\Modules\DoctorAccess\Services\DoctorEffectiveBranchResolver;
+use App\Modules\LabOrder\Services\AuditLogService;
 use App\Modules\Patient\Services\PatientService;
 use App\Modules\RME\Services\DoctorPatientScopeService;
 use App\Modules\RME\Services\DoctorRoomScopeService;
@@ -26,6 +28,19 @@ use Illuminate\Validation\ValidationException;
 
 class ClinicVisitService
 {
+    /**
+     * DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1 (open item V2) — the audit
+     * vocabulary for a refused out-of-lock visit write.
+     *
+     * `sys_audit_logs.entity_type` is varchar(150) and `action` is varchar(100);
+     * both values below are well inside those widths. `entity_id` is NULL on
+     * purpose: the refusal happened precisely because no visit was created, so
+     * there is no row to point at.
+     */
+    public const AUDIT_ENTITY_TYPE = 'trx_clinic_visits';
+
+    public const ACTION_EFFECTIVE_BRANCH_WRITE_REFUSED = 'DOCTOR_EFFECTIVE_BRANCH_WRITE_REFUSED';
+
     public function __construct(
         private readonly ClinicVisitRepositoryInterface $visits,
         private readonly BranchContext $branchContext,
@@ -108,11 +123,21 @@ class ClinicVisitService
      * branch filter selector so a context-bound role is never offered a branch
      * it cannot read.
      *
+     * DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1 (open item V3) — resolved
+     * through `operationalBranchIdsFor()`, NOT `branchIdsFor()`. The lists behind
+     * this selector already narrow to a locked doctor's effective branch, so
+     * offering the other RME branches here offered a choice that did nothing:
+     * pick one and `narrow()` discards it and returns the locked branch's data
+     * anyway. Never a boundary hole, but exactly the kind of UI that teaches an
+     * operator the lock is unreliable. This call site NARROWS only — the
+     * operational method is an intersection with the legacy answer — so it can
+     * never offer a branch the pre-sprint rules withheld.
+     *
      * @return Collection<int, Branch>
      */
     public function selectableRmeBranches(): Collection
     {
-        $allowed = $this->workingBranchScope->branchIdsFor(Auth::user());
+        $allowed = $this->workingBranchScope->operationalBranchIdsFor(Auth::user());
 
         return $this->branches->listRmeEnabled()
             ->filter(fn (Branch $branch) => in_array((int) $branch->id, $allowed, true))
@@ -234,12 +259,22 @@ class ClinicVisitService
 
     public function create(array $data): ClinicVisit
     {
-        return DB::transaction(function () use ($data) {
-            // RME "Klinik" = "Cabang RME". The visit branch follows the selected
-            // RME-enabled branch (Sprint 23 Phase 23.9.1). For new patients the
-            // patient and the visit share the same branch. The BranchContext
-            // fallback only applies to legacy callers that submit no branch.
-            $branchId = $this->resolveBranchId($data);
+        // RME "Klinik" = "Cabang RME". The visit branch follows the selected
+        // RME-enabled branch (Sprint 23 Phase 23.9.1). For new patients the
+        // patient and the visit share the same branch. The BranchContext
+        // fallback only applies to legacy callers that submit no branch.
+        //
+        // DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1 (open item V2) — RESOLVED
+        // AND ASSERTED BEFORE THE TRANSACTION OPENS, deliberately. This is a
+        // validation-only read path, and on refusal
+        // assertWithinDoctorEffectiveBranch() writes an audit row and then
+        // throws. Inside the transaction the ValidationException would roll that
+        // trail back along with everything else, and the refusal would leave no
+        // record at all — which is the defect V2 names. There is no caller-side
+        // transaction around create(); the controller calls it directly.
+        $branchId = $this->resolveBranchId($data);
+
+        return DB::transaction(function () use ($data, $branchId) {
             $data['branch_id'] = $branchId;
 
             $data = $this->resolvePatient($data);
@@ -390,6 +425,15 @@ class ClinicVisitService
      * Never falls back to BranchContext/MAIN — RME visits must belong to an
      * active RME-enabled branch (Sprint 23 Phase 23.10 hardening).
      *
+     * DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1 — THE WRITE CHOKEPOINT.
+     * Narrowing what a locked doctor SEES does not constrain what they WRITE.
+     * Both branch inputs converge here — the existing-patient `branch_id` and
+     * the new-patient `new_patient.branch_id` — so without this assertion a
+     * locked doctor could POST a forged branch and create a visit, and in
+     * new-patient mode a PATIENT, at any active RME branch. The assertion is
+     * placed after the RME-branch check so the two refusals stay distinct: a
+     * non-RME branch is a bad request, a wrong RME branch is a lock refusal.
+     *
      * @param  array<string, mixed>  $data
      */
     private function resolveBranchId(array $data): int
@@ -416,7 +460,98 @@ class ClinicVisitService
             ]);
         }
 
+        $this->assertWithinDoctorEffectiveBranch($branchId);
+
         return $branchId;
+    }
+
+    /**
+     * DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1 — refuse a visit written
+     * outside a locked doctor's effective branch.
+     *
+     * ONE question, to the ONE authority, and null is an answer rather than an
+     * error: a null user, a non-doctor, a governance account, an unlinked
+     * doctor, an UNSET doctor and a doctor whose locked branch has been retired
+     * all resolve to null and write exactly as they did before this sprint
+     * (owner decision O1). Only HOME and an active COVER refuse anything.
+     *
+     * Resolved through the container rather than the constructor: this service
+     * is constructed on paths where the branch-lock module has no business
+     * being touched, the resolver is a no-op read behind two feature flags, and
+     * a tenth constructor dependency would be paid by every caller.
+     *
+     * IT AUDITS THE REFUSAL, ONCE PER ATTEMPT (open item V2). The resolver's own
+     * docblock promises exactly this, and until now the promise was false: the
+     * refusal happened silently, so a locked doctor posting another branch's id
+     * left no trail whatsoever. A locked doctor submitting a branch they are not
+     * committed to is a security-relevant event, and it belongs in
+     * `sys_audit_logs` next to the lock decision that created the constraint.
+     *
+     * The audit write is reached only on the refusal path, so a legitimate visit
+     * pays nothing. It is deliberately NOT in the resolver, which runs on every
+     * protected request and must stay pure.
+     */
+    private function assertWithinDoctorEffectiveBranch(int $branchId): void
+    {
+        $effectiveBranchId = app(DoctorEffectiveBranchResolver::class)->branchIdFor(Auth::user());
+
+        if ($effectiveBranchId === null || $effectiveBranchId === $branchId) {
+            return;
+        }
+
+        $this->auditEffectiveBranchWriteRefusal($effectiveBranchId, $branchId);
+
+        // Names the branch the doctor is already committed to — their own
+        // locked branch, not a leak — and says what to do about it, in the
+        // voice of DailyBranchContextService::lockedMessage().
+        $branchName = $this->branches->find($effectiveBranchId)?->name
+            ?? 'cabang yang terkunci untuk Anda';
+
+        throw ValidationException::withMessages([
+            'branch_id' => 'Cabang klinis Anda terkunci di '.$branchName.'. '
+                .'Kunjungan hanya dapat dibuat untuk cabang tersebut. '
+                .'Ajukan perpindahan cabang atau cover sementara untuk mendapatkan '
+                .'persetujuan Super Admin atau Supervisor RME.',
+        ]);
+    }
+
+    /**
+     * The trail for a refused out-of-lock visit write (open item V2).
+     *
+     * IDS AND REASON CODES ONLY. No patient name, no RM number, no KTP/NIK, no
+     * complaint, no clinical field and no device or session identifier — the two
+     * branch ids and the acting user are the whole story, and every one of them
+     * is already visible to anyone who can read the lock decision itself. The
+     * payload deliberately carries NOTHING from `$data`, so a future field added
+     * to the registration form cannot leak through here.
+     *
+     * `AuditLogService` is resolved from the container for the same reason the
+     * resolver above is: this is a refusal-only path and must not add a
+     * constructor dependency paid by every caller of this service.
+     *
+     * Audit failure must never become the reason a refusal turns into a 500 — the
+     * refusal itself is the security outcome and it is delivered by the caller's
+     * ValidationException regardless.
+     */
+    private function auditEffectiveBranchWriteRefusal(int $effectiveBranchId, int $attemptedBranchId): void
+    {
+        try {
+            app(AuditLogService::class)->log(
+                self::AUDIT_ENTITY_TYPE,
+                null,
+                self::ACTION_EFFECTIVE_BRANCH_WRITE_REFUSED,
+                null,
+                [
+                    'user_id' => (int) (Auth::id() ?? 0),
+                    'effective_branch_id' => $effectiveBranchId,
+                    'attempted_branch_id' => $attemptedBranchId,
+                    'reason' => 'branch_outside_doctor_effective_branch',
+                    'surface' => 'clinic_visit_create',
+                ],
+            );
+        } catch (\Throwable) {
+            // Intentionally swallowed. See the docblock.
+        }
     }
 
     /**

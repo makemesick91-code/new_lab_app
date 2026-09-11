@@ -25,8 +25,8 @@ use Throwable;
 /**
  * DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1 — the claim, deny, renew and
  * release engine. Every lease decision lives here and nowhere else, so a
- * console command, a listener and a middleware cannot disagree about what "one
- * active session" means.
+ * console command, a listener, a middleware and an approver surface cannot
+ * disagree about what "one active session" means.
  *
  * REFUSED, NOT EVICTED. The second login is denied; the first is untouched.
  * That single sentence constrains almost everything below:
@@ -77,6 +77,9 @@ class DoctorSessionLeaseService
 
     /** The token resolves to a lease belonging to a different account. */
     public const DENY_LEASE_MISMATCH = 'lease_user_mismatch';
+
+    /** A cover started, a cover ended, or a transfer landed mid-session. */
+    public const DENY_BRANCH_CONTEXT_CHANGED = 'branch_context_changed';
 
     /**
      * LEASE EVENTS GET THEIR OWN AUDIT ACTIONS.
@@ -201,8 +204,12 @@ class DoctorSessionLeaseService
      *
      * @throws ValidationException when the login is refused.
      */
-    public function claimOrDeny(User $user, Request $request): void
-    {
+    public function claimOrDeny(
+        User $user,
+        Request $request,
+        ?int $effectiveBranchId = null,
+        ?int $effectiveCoverId = null,
+    ): void {
         if (! $request->hasSession()) {
             return;
         }
@@ -226,6 +233,8 @@ class DoctorSessionLeaseService
             // digest is persisted, so the table is not a bearer-credential
             // store.
             'session_token_hash' => hash('sha256', $token),
+            'effective_branch_id' => $effectiveBranchId,
+            'effective_cover_id' => $effectiveCoverId,
             'claimed_at' => now(),
             'last_seen_at' => now(),
         ];
@@ -294,7 +303,7 @@ class DoctorSessionLeaseService
                 $userId,
                 self::ACTION_DENIED,
                 null,
-                $verdict->toAuditArray(),
+                $verdict->toAuditArray() + ['effective_branch_id' => $effectiveBranchId],
                 $user,
             );
 
@@ -318,7 +327,7 @@ class DoctorSessionLeaseService
             (int) $lease->id,
             $verdict->isReclaim() ? self::ACTION_RECLAIMED : self::ACTION_CLAIMED,
             null,
-            $verdict->toAuditArray(),
+            $verdict->toAuditArray() + ['effective_branch_id' => $effectiveBranchId],
             $user,
         );
     }
@@ -342,16 +351,30 @@ class DoctorSessionLeaseService
      * STEP ONE IS THE WHOLE COMPATIBILITY STORY: a session with no token passes
      * through unconditionally, and no lease is ever created here.
      *
-     * THE REMAINING TWO STEPS ARE THE ONLY THINGS A LEASE CAN BE WRONG ABOUT ON
-     * ITS OWN. The lease behind the token is GONE — released at logout, or
-     * cleared by an operator — or it belongs to a DIFFERENT account, which means
-     * the session was restored over another user's. Everything else about a
-     * session's continued validity is somebody else's revalidation: the device
-     * middleware answers for the tablet, and there is deliberately no third
-     * condition invented here.
+     * STEP FOUR IS THE MECHANISM SECTION Q ASKS FOR — cover activation, cover
+     * expiry and an approved permanent transfer all become one comparison, with
+     * no scheduler anywhere in the correctness path. Its guards are the
+     * delicate part:
+     *
+     *  - When the resolver declines to answer (the capability is off, the
+     *    account is unlinked, the lock is UNSET, or the locked branch has lost
+     *    is_active/is_rme_enabled) it returns null, and null must never evict.
+     *    Otherwise disarming the branch-lock flag would log out every doctor.
+     *  - When the LEASE carries no branch, the session was established before
+     *    the capability could answer, and arming the flag must not mass-evict
+     *    the doctors already working.
+     *  - Only when BOTH sides have an answer are they compared, and then the
+     *    COVER identity is compared too. Without that, a cover expiring onto
+     *    the same branch as home — or one cover replacing another at the same
+     *    target — would compare equal and the session would survive, while
+     *    section Q says expiry MUST invalidate.
      */
-    public function revalidate(Request $request, User $user): ?string
-    {
+    public function revalidate(
+        Request $request,
+        User $user,
+        ?int $effectiveBranchIdNow = null,
+        ?int $effectiveCoverIdNow = null,
+    ): ?string {
         $token = $this->sessionToken($request);
 
         if ($token === null) {
@@ -368,6 +391,14 @@ class DoctorSessionLeaseService
             return self::DENY_LEASE_MISMATCH;
         }
 
+        $leaseBranchId = $lease->effective_branch_id === null ? null : (int) $lease->effective_branch_id;
+
+        if ($effectiveBranchIdNow !== null
+            && $leaseBranchId !== null
+            && ! $lease->establishedUnder($effectiveBranchIdNow, $effectiveCoverIdNow)) {
+            return self::DENY_BRANCH_CONTEXT_CHANGED;
+        }
+
         $this->renewIfDue($lease, $request);
 
         return null;
@@ -376,24 +407,23 @@ class DoctorSessionLeaseService
     /**
      * Evict the session in front of us and record why.
      *
-     * IT RELEASES NO LEASE ROW, AND THAT IS NOT AN OMISSION. Both reasons that
-     * can reach here describe a lease that is ALREADY not this session's to
-     * end: a MISSING one has nothing left to release, and a MISMATCHED one
-     * belongs to somebody else and must never be written to from the session
-     * that merely carries its token. So this method tears down a session and
-     * records why; the lease lifecycle is closed by whoever closed it.
-     *
-     * The lookup still runs, because an eviction audited against the lease it
-     * was about is worth far more to whoever has to explain it than one audited
-     * against a bare user id.
+     * The lease row is released only when it belongs to THIS user and the
+     * reason is a branch-context change — the one eviction that ends a lease
+     * cleanly rather than finding it already broken. A mismatched lease belongs
+     * to somebody else and is never written to from here; a missing one has
+     * nothing left to release.
      */
     public function evict(Request $request, User $user, string $reason): void
     {
         $lease = $this->currentLease($request);
 
         if ($lease !== null && (int) $lease->user_id !== (int) $user->id) {
-            // Somebody else's lease. Named in the trail, never written to.
+            // Somebody else's lease. Never written to from here.
             $lease = null;
+        }
+
+        if ($lease !== null && $reason === self::DENY_BRANCH_CONTEXT_CHANGED) {
+            $this->leases->release($lease, DoctorSessionLease::RELEASE_EFFECTIVE_BRANCH_CHANGED);
         }
 
         $this->auditLogs->log(
@@ -472,7 +502,8 @@ class DoctorSessionLeaseService
     }
 
     /**
-     * An operator clears somebody else's stuck lease.
+     * An approver clears a stuck lease, or an approval releases one as part of
+     * its own transaction.
      *
      * THIS IS DATA, NOT AN IN-PROCESS LOGOUT. The victim keeps working until
      * their browser makes another request, at which point the middleware finds
@@ -482,9 +513,8 @@ class DoctorSessionLeaseService
      * and this method does not invent one.
      *
      * The audit is written INSIDE the transaction, unlike the denial path,
-     * because the caller composes this into a wider transaction of its own —
-     * DoctorSessionReleaseService frees the clinic room in the same one — and
-     * wants the release and its record to commit or roll back together with it.
+     * because a caller composing this into an approval wants the release and
+     * its record to commit or roll back together.
      */
     public function releaseFor(int $userId, string $reason, ?User $actor = null): ?DoctorSessionLease
     {
@@ -528,6 +558,8 @@ class DoctorSessionLeaseService
         return match ($reason) {
             self::DENY_ACTIVE_SESSION_ELSEWHERE,
             self::DENY_LOST_CLAIM_RACE => $this->activeElsewhereMessage($incumbent),
+            self::DENY_BRANCH_CONTEXT_CHANGED => 'Cabang kerja Anda telah berubah. '
+                .'Silakan masuk kembali untuk melanjutkan.',
             default => 'Sesi Anda sudah tidak berlaku. Silakan masuk kembali.',
         };
     }

@@ -1,55 +1,71 @@
-### Active sprint manifest — DOCTOR-ACCESS-PR-A-SINGLE-SESSION-FOUNDATION
+### Active sprint manifest — DOCTOR-ACCESS-PR-B-BRANCH-LOCK-COVER
 ### Validated by: php artisan sprint:manifest-check
 
-id: DOCTOR-ACCESS-PR-A-SINGLE-SESSION-FOUNDATION
+id: DOCTOR-ACCESS-PR-B-BRANCH-LOCK-COVER
 type: FOUNDATION_SPRINT
 module: DoctorAccess
-title: "One authenticated session per doctor, and nothing else: a lease claimed on the framework Login event rather than in a controller, a race-safe claim whose cardinality invariant lives in a partial unique index, per-request revalidation, dead-lease recovery that never becomes an idle timer, and an audited force-logout escape hatch that ends a login session without revoking a device, an authorization or a credential. The first of three children of DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1; the parent GO is NOT created here."
+title: "One server-authoritative branch per doctor, derived on every request rather than stored as a verdict: a home lock nobody may guess and every doctor starts without, a temporary cover that never rewrites it, half-open cover periods whose non-overlap invariant is a service holding three row locks because no index can express a range predicate, maker-checker enforced inside the approval transaction so the Super Admin bypass cannot reach past it, and session invalidation as the one mechanism behind cover activation, cover expiry and an approved transfer alike. The second of three children of DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1; the parent GO is NOT created here."
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-# FOUNDATION_SPRINT, and deliberately not something lighter. This is
-# cross-module foundation work: it appends global middleware to the `web`
-# group, listens on a framework authentication event, adds a permission and a
-# critical flag, and changes the login, logout and account-deletion paths. Audit
-# level 3, the full foundation audit and the full-required test profile all
-# apply, which is the accurate label rather than a downgrade — a SECURITY_FIX
-# label would buy a narrower audit for a diff that touches authentication for
-# every doctor in the fleet.
+# FOUNDATION_SPRINT, the same type PR-A carried, and for the same reason. This is
+# cross-module foundation work: it hooks the RME list scope, the visit-creation
+# write path, the online-context selector and the report filter, and it changes
+# what an authenticated session means for every doctor. Audit level 3, the full
+# foundation audit and the full-required test profile all apply. A SECURITY_FIX
+# label would forbid exactly the cross-module breadth this work IS, and
+# MODULE_SPRINT would buy audit level 2 — a downgrade. Neither is available and
+# neither was taken.
 
-runtime_change: true            # a new module (model, repository, three services,
-                                # middleware, listener), a new artisan command, a
-                                # new global middleware entry, a new Login
-                                # listener, and release calls added to the logout
-                                # and account-deletion paths. All of it inert
-                                # while the flag is off.
-schema_change: true             # ONE additive migration: trx_doctor_session_leases,
-                                # with a partial unique index on (user_id) WHERE
-                                # released_at IS NULL. No alter, no drop, no
-                                # backfill, nothing existing touched.
-frontend_change: false          # no JS, no CSS, no Blade. The refusal renders
-                                # through the EXISTING login view's `email`
-                                # error-bag key; no view file is added or edited.
-security_impact: true           # it can REFUSE a doctor's login, it adds a
-                                # permission that ends somebody else's session,
-                                # and it changes what an authenticated session
-                                # means on every protected request
-branch_isolation_impact: false  # no branch is read, written, compared or trusted
-                                # anywhere in this diff. The branch lock and the
-                                # effective-branch resolver are PR-B, and the
-                                # lease table ships WITHOUT effective_branch_id.
+runtime_change: true            # a resolver, two approval services, three models,
+                                # three repositories, a controller, five form
+                                # requests, two policies, and edits to the lease
+                                # middleware, the claim listener, the lease
+                                # service and model, the RME branch scope, visit
+                                # creation, the online-context selector and the
+                                # report filter. All inert while the flag is off.
+schema_change: true             # FOUR additive migrations: mst_doctor_branch_locks,
+                                # trx_doctor_branch_lock_requests,
+                                # trx_doctor_branch_covers, and two nullable FK
+                                # columns plus an index on
+                                # trx_doctor_session_leases. No alter of an
+                                # existing column, no drop, NO BACKFILL — and the
+                                # fourth re-asserts PR-A's partial unique index
+                                # with its predicate in both up() and down(),
+                                # because adding an FK column makes SQLite rebuild
+                                # the table and Laravel re-creates its indexes
+                                # from introspection without the WHERE clause.
+frontend_change: false          # no JS, no CSS, no Vite entry, no asset build.
+                                # Blade views ARE added — the approver queue, two
+                                # filing forms and two components — but they are
+                                # server-rendered templates using existing x-ui
+                                # components, which this manifest key does not
+                                # cover: it gates the frontend build, and nothing
+                                # here needs npm run build.
+security_impact: true           # it decides what a doctor may read and write, it
+                                # can end somebody else's session, it adds four
+                                # permissions and a critical flag, and its
+                                # maker-checker invariant is the thing standing
+                                # between one account and both sides of an
+                                # approval
+branch_isolation_impact: true   # THE POINT of this pull request. It narrows the
+                                # RME list scope and the visit write path to a
+                                # server-derived branch, as an INTERSECTION with
+                                # the existing authorised scope, and it
+                                # deliberately leaves per-record reads and the
+                                # legacy archive cross-branch.
 ledger_impact: false            # no inventory ledger / billing / payment behaviour
 
-deploy_required: true           # the migration, the middleware and the command only
+deploy_required: true           # the four migrations and the twelve routes only
                                 # exist on the deployment that carries them
-browser_required: true          # the refusal has to be READ on a clinic tablet, and
-                                # the remember-me anti-loop mechanism is a Set-Cookie
-                                # the test client does not honour: a browser that
-                                # ignored it would loop, and only a browser can show
-                                # that it does not. Arming the flag is a supervised
-                                # window on real hardware with a doctor present —
-                                # never a deploy step.
+browser_required: true          # an approver has to READ, on a real screen, what
+                                # approving will do to a doctor who is online; the
+                                # degraded-lock row has to be legible to whoever
+                                # must act on it; and an evicted doctor has to see
+                                # a sentence they can act on rather than a blank
+                                # login form. Arming the flag is a supervised
+                                # window on real hardware — never a deploy step.
 
-go_tag: doctor-access-pr-a-single-session-foundation-go
+go_tag: doctor-access-pr-b-branch-lock-cover-go
 
 test_profiles:
   - focused
@@ -58,20 +74,18 @@ test_profiles:
 
 # `full_required` IS DELIBERATELY ABSENT, and its absence is not a claim.
 #
-# The Full Suite gate was SKIPPED for this child pull request, by owner
+# The Full Suite gate is SKIPPED for this child pull request, by owner
 # instruction: one Full Suite runs after all three children are merged, deployed
 # and production-verified, and it gates the PARENT tag only. Listing the profile
 # here would assert a gate that did not run, which is precisely the "child skip
-# silently becomes a parent pass" the owner forbade.
+# silently becomes a parent pass" the owner forbade — and it is not cosmetic,
+# because SprintTestPlanner treats the profile's presence as a reason to demand a
+# full suite.
 #
 # Recorded permanently rather than inferred:
 #   FULL_SUITE_EXECUTED=NO
 #   FULL_SUITE_RESULT=SKIPPED
 #   FULL_SUITE_CLAIMED_PASS=NO
-#
-# What DID run on this candidate: the NSF-R011 critical gate (3707 passed, 0
-# failed, 16609 assertions), the selective module gate, NSF-9, NSF-10, the
-# quality gate and the Android gate — seven required gates, all green.
 
 # Carried forward. `.sprint/current.yml` is a ROLLING file, so these inherited
 # facts have to be restated by every sprint after closure — dropping one is
@@ -83,3 +97,9 @@ inherits_phase: feature-doctor-trusted-android-device-lock-1-phase-3-5-readiness
 inherits_parent_go: doctor-pwa-webauthn-1-go
 inherits_capability_go: doctor-pwa-multi-doctor-pilot-1-capability-go
 inherits_pilot_go: doctor-pwa-multi-doctor-pilot-1-go
+
+# Carried forward from PR-A, which is the runtime authority this builds on:
+#   merge 80afaad1f01fab7cc027c7a68c3a06a60ef5cf2d, deployed on srv1730088 and
+#   production-verified inert. Its evidence commit 0e16c920 is on the base and
+#   rides along with this deploy, which is this repository's established pattern.
+inherits_sibling_go: doctor-access-pr-a-single-session-foundation-go

@@ -37,6 +37,7 @@ declare(strict_types=1);
  */
 
 use App\Modules\AccessControl\Services\PermissionGroupingService;
+use App\Modules\DoctorAccess\Services\DoctorEffectiveBranchResolver;
 use App\Modules\DoctorAccess\Services\DoctorSessionLeaseService;
 use App\Modules\DoctorAccess\Support\IncumbentSessionProbe;
 use App\Modules\DoctorDevice\Services\DoctorAppLoginGate;
@@ -245,14 +246,24 @@ it('registers the single active session flag OFF, critical, and fully described'
     // risky-enabled flags on a committed checkout.
     expect($flags->riskyEnabledFlags())->not->toContain(DoctorSessionLeaseService::FLAG);
 
-    // ONE FLAG. PR-A registers a single switch, and the branch lock's own flag
-    // belongs to the pull request that ships the resolver reading it — a flag
-    // registered ahead of its runtime is a switch that promises something
-    // nothing implements.
+    // PR-A registered ONE switch and this assertion pinned the absence of the
+    // branch lock's own flag, on the rule that a flag registered ahead of its
+    // runtime promises something nothing implements. PR-B ships that runtime, so
+    // the flag is now registered and the pin is INVERTED rather than deleted: the
+    // absence claim was always about the ordering, and the ordering still holds.
+    //
+    // What remains load-bearing is that the two are SEPARATE keys. One key
+    // serving both capabilities would make the dependency unexpressible — the
+    // branch resolver requires the lease engine, because cover-expiry
+    // invalidation lives in the lease middleware, and a single switch could not
+    // arm the lock over a disarmed engine to be refused.
     $registered = array_keys((array) config('feature_flags.flags'));
 
     expect($registered)->toContain(DoctorSessionLeaseService::FLAG)
-        ->not->toContain('doctor.branch_lock');
+        ->toContain(DoctorEffectiveBranchResolver::FLAG_BRANCH_LOCK);
+
+    expect(DoctorSessionLeaseService::FLAG)
+        ->not->toBe(DoctorEffectiveBranchResolver::FLAG_BRANCH_LOCK);
 });
 
 /*

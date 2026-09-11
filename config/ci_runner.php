@@ -261,6 +261,29 @@ return [
         'tests/Feature/DoctorAccess/DoctorSessionForceLogoutTest.php',
         'tests/Feature/DoctorAccess/DoctorSessionLeaseGovernanceTest.php',
 
+        // DOCTOR-ACCESS PR-B — the same reasoning, applied to the branch lock.
+        // Declared for the same reason as the three above: the token is what must
+        // never be dropped, and these are the only proof that a locked doctor's
+        // lists and writes narrow to ONE branch while a doctor with no lock keeps
+        // pre-sprint behaviour byte for byte; that cover periods are half-open, so
+        // adjacency is ALLOWED and non-overlap is per doctor; that one account can
+        // never be both maker and checker even holding the Super Admin bypass; and
+        // that a branch decision ends a login session without revoking a device,
+        // an authorization or a credential.
+        //
+        // The registration suite is declared separately below rather than here,
+        // because what it defends is PR-A's middleware and not the branch lock.
+        'tests/Feature/DoctorAccess/DoctorHomeBranchLockTest.php',
+        'tests/Feature/DoctorAccess/DoctorBranchApprovalTest.php',
+        'tests/Feature/DoctorAccess/DoctorBranchLockGovernanceTest.php',
+
+        // DOCTOR-ACCESS PR-B, first obligation — the single-session middleware is
+        // registered EXACTLY ONCE, in the web group, ahead of the presence touch,
+        // and on no route. `route:list` structurally cannot see a group-appended
+        // middleware and a production REPL is forbidden, so this suite is the only
+        // mechanism that can answer the question at all.
+        'tests/Feature/DoctorAccess/DoctorSessionLeaseMiddlewareRegistrationTest.php',
+
         // STORAGE-PUBLIC-CLINICAL-EVIDENCE-1 — clinical evidence stays off any
         // publicly served disk and is readable only through an authenticated,
         // policy-gated route.

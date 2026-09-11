@@ -276,6 +276,33 @@
                 </div>
             @endcan
 
+            {{-- DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1 — a doctor's permanent
+                 home branch and temporary branch cover.
+
+                 A SEPARATE, INDEPENDENTLY GATED BLOCK, deliberately not folded
+                 into the group above: the daily working-branch gate and the
+                 doctor branch-lock permissions are different authorities and
+                 must never leak into one another.
+
+                 Each entry is gated by the permission its own route group
+                 enforces, so the menu and the server-side boundary read one
+                 definition. The sidebar is NOT the boundary: a direct GET is
+                 refused by the route middleware, and every action 404s while
+                 the capability flags are off. --}}
+            @canany(['view_doctor_branch_locks', 'approve_doctor_branch_locks', 'manage_doctor_branch_locks'])
+                <div>
+                    <p class="menu-group-title pt-2">Kunci Cabang Dokter</p>
+                    <div class="mt-1 space-y-1">
+                        <a href="{{ route('rme.doctor-branch-locks.index') }}"
+                           class="menu-subitem {{ request()->routeIs('rme.doctor-branch-locks.*') ? $linkActive : $linkIdle }}">Persetujuan Cabang Dokter</a>
+                        @can('manage_doctor_branch_locks')
+                            <a href="{{ route('rme.doctor-branch-covers.create') }}"
+                               class="menu-subitem {{ request()->routeIs('rme.doctor-branch-covers.*') ? $linkActive : $linkIdle }}">Cover Cabang Sementara</a>
+                        @endcan
+                    </div>
+                </div>
+            @endcanany
+
             {{-- SATUSEHAT-1 — controlled submission filter + mapping/identifier governance.
                  FIX-08: the whole group is Super Admin only, using the same
                  `satusehat.access` gate the route group enforces. --}}

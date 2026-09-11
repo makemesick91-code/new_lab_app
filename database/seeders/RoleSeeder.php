@@ -496,23 +496,42 @@ class RoleSeeder extends Seeder
             'review_legacy_odontogram_imports',
             'publish_legacy_odontogram_imports',
 
-            // DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1 — FORCE LOGOUT.
+            // DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1 — the branch-cover and
+            // home-branch tier for a doctor's permanent home branch and for
+            // temporary branch cover.
             //
-            // It ends a LOGIN SESSION only: no device, no
-            // DoctorDeviceAuthorization and no WebAuthn credential is revoked
-            // (ruling P17). One active session per doctor means a lease can get
-            // stuck behind a tablet nobody can reach, and the escape hatch has
-            // to belong to somebody on the RME side who can be told about it —
-            // not to whoever happens to hold the database.
+            // OWNER DECISION, 2026-09-11: `manage_doctor_branch_locks` IS
+            // GRANTED HERE. Super Admin and Supervisor RME may BOTH file a
+            // temporary branch cover, and both may approve one. The earlier
+            // shape — withholding `manage_` so that only Super Admin could file
+            // — made the maker tier a single-occupant tier and coupled the
+            // workflow to how the estate happens to be staffed today.
             //
-            // A SELF-RELEASE IS REFUSED FOR EVERY HOLDER, and that refusal is
-            // NOT this grant's doing: it is enforced inside the release
-            // transaction, after the doctor row is locked, because the single
-            // global Gate::before returns true for a Super Admin before any
-            // permission check here or in any policy runs.
+            // SEPARATION OF DUTIES IS THEREFORE ACTOR-BASED, NEVER ROLE-BASED.
+            // The invariant is `requester_user_id !== approving user id`, and it
+            // is enforced inside the approval transaction after the doctor row
+            // is locked (DoctorBranchLockApprovalService::lockPendingRequest()
+            // and DoctorBranchCoverApprovalService::lockPendingCover()) — NOT by
+            // which permissions this seeder hands out, and NOT only in a policy,
+            // because the single global Gate::before returns true for a Super
+            // Admin before any policy method runs, so for that actor every
+            // permission check here and in the policies is skipped entirely.
+            //
+            // Nothing here says "Super Admin is the maker" or "Supervisor RME is
+            // the checker". Either tier may be either party on any given row,
+            // provided the two parties are two different accounts.
+            //
+            // `release_doctor_session_leases` ends a LOGIN SESSION only: no
+            // device, no DoctorDeviceAuthorization and no WebAuthn credential is
+            // revoked (ruling P17). It rides with the approver tier by intent,
+            // but stays a separate grant so it can be audited and withdrawn on
+            // its own.
             //
             // Super Admin needs no entry: it is synced from the full permission
-            // list via '*' below. No other role gets this.
+            // list via '*' below. No other role gets any of these four.
+            'view_doctor_branch_locks',
+            'manage_doctor_branch_locks',
+            'approve_doctor_branch_locks',
             'release_doctor_session_leases',
         ],
         // Sprint 23 Phase 23.5 — Dedicated separated RME report viewers

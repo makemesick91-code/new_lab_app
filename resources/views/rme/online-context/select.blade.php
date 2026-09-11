@@ -28,6 +28,21 @@
                         <p>Hubungi admin klinik untuk menghubungkan akun login Anda dengan data dokter di pengaturan master data.</p>
                     </div>
                 </x-ui.card>
+            @elseif ($doctorEffectiveBranchId && $doctorAllowedBranches->isEmpty())
+                {{-- DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1 — locked to a branch that is
+                     not one of this doctor's practice branches. Ordered before the generic
+                     "no practice branch" card so the doctor is told what is actually wrong. --}}
+                <x-ui.card>
+                    <div class="space-y-2 text-sm text-warning-700">
+                        <p class="font-medium">Cabang klinis Anda terkunci di luar Cabang Praktik</p>
+                        <p>
+                            Cabang klinis Anda saat ini terkunci di
+                            <span class="font-medium">{{ $doctorEffectiveBranch?->name ?? 'cabang lain' }}</span>,
+                            yang belum termasuk Cabang Praktik yang Diizinkan pada data master dokter Anda.
+                        </p>
+                        <p>Hubungi Super Admin atau Supervisor RME untuk menyelaraskan penguncian cabang dengan Cabang Praktik Anda.</p>
+                    </div>
+                </x-ui.card>
             @elseif ($doctorAllowedBranches->isEmpty())
                 <x-ui.card>
                     <div class="space-y-2 text-sm text-warning-700">
@@ -43,6 +58,17 @@
                         <div>
                             <p class="text-sm text-ink-soft">Dokter: <span class="font-medium text-navy">{{ $linkedDoctor->name }}</span></p>
                         </div>
+                        @if ($doctorEffectiveBranchId)
+                            {{-- DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1 — a locked doctor sees
+                                 the one branch they may work from, and is told why. The dropdown
+                                 below is already narrowed to it; the refusal itself lives in
+                                 UserOnlineContextService::startDoctorSession(). --}}
+                            <x-ui.alert variant="info">
+                                Cabang klinis Anda terkunci di
+                                <span class="font-medium">{{ $doctorEffectiveBranch?->name ?? 'cabang yang ditetapkan' }}</span>.
+                                Perubahan cabang memerlukan persetujuan Super Admin atau Supervisor RME.
+                            </x-ui.alert>
+                        @endif
                         <div>
                             <label for="doctor_branch_id" class="block text-sm font-medium text-navy">Cabang Praktik <span class="text-danger">*</span></label>
                             <select id="doctor_branch_id" name="branch_id" required x-model="branchId" @change="syncRooms()"

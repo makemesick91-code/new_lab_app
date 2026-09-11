@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Modules\DoctorAccess\Middleware;
 
+use App\Modules\DoctorAccess\Services\DoctorEffectiveBranchResolver;
 use App\Modules\DoctorAccess\Services\DoctorSessionLeaseService;
 use App\Modules\RmeOnlineContext\Services\UserOnlineContextService;
 use Closure;
@@ -12,16 +13,8 @@ use Symfony\Component\HttpFoundation\Response;
 
 /**
  * DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1 — per-request lease
- * revalidation, and the next-request eviction primitive an out-of-band release
- * relies on.
- *
- * IT REVALIDATES THE LEASE AND NOTHING ELSE. The token in the session must
- * still resolve to a live lease, and that lease must still belong to this
- * account. A session whose lease was released — at logout, or by an operator
- * clearing a stuck one — is torn down on its next request, which is what turns
- * a row update into an actual eviction. No other property of the session is
- * re-derived here; the device middleware answers for the tablet, and this one
- * deliberately invents no third condition.
+ * revalidation, and the next-request eviction primitive the approval workflows
+ * consume.
  *
  * THE PASS-THROUGH LINE IS THE WHOLE COMPATIBILITY STORY. A session that
  * carries no lease token is let through unconditionally and NEVER has a lease
@@ -46,11 +39,20 @@ use Symfony\Component\HttpFoundation\Response;
  *
  * It cannot be PREPENDED: group prepends land before StartSession, so a
  * prepended middleware has neither a session nor an authenticated user.
+ *
+ * WHY THE BRANCH IS RECOMPUTED HERE, ON EVERY REQUEST. Section Q requires that
+ * cover activation, cover expiry and an approved permanent transfer each
+ * invalidate the doctor's session, and that authorization be derivable from
+ * current timestamps rather than from a scheduler having run. Recomputing the
+ * effective branch and comparing it with the value the lease was established
+ * under makes all three the same event, with no cron in the correctness path
+ * and no way for a branch to change silently mid-session.
  */
 class EnsureDoctorSessionLease
 {
     public function __construct(
         private readonly DoctorSessionLeaseService $leases,
+        private readonly DoctorEffectiveBranchResolver $branches,
         private readonly UserOnlineContextService $onlineContexts,
     ) {}
 
@@ -86,7 +88,14 @@ class EnsureDoctorSessionLease
             return $next($request);
         }
 
-        $reason = $this->leases->revalidate($request, $user);
+        $effective = $this->branches->resolve($user);
+
+        $reason = $this->leases->revalidate(
+            $request,
+            $user,
+            $effective->branchId(),
+            $effective->coverId(),
+        );
 
         if ($reason === null) {
             return $next($request);
@@ -113,8 +122,8 @@ class EnsureDoctorSessionLease
      * Does this session claim to hold a lease at all?
      *
      * CLAIM, not proof. A token whose lease has since been released — by an
-     * operator clearing a stuck lease — still answers true here, and
-     * revalidation is what turns it into an eviction.
+     * approver clearing a stuck lease, or by an approved transfer — still
+     * answers true here, and revalidation is what turns it into an eviction.
      * That distinction is the whole point: a session with NO token is left
      * alone forever, a session with a token is answerable for it.
      */

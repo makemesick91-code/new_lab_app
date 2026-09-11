@@ -44,6 +44,34 @@ class EnsureRmeOnlineContext
         'rme.branch-change-requests.index',
         'rme.branch-change-requests.approve',
         'rme.branch-change-requests.reject',
+
+        // DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1 — a doctor whose home
+        // branch is still UNSET, or who has just been evicted by an approval,
+        // must be able to reach the request surface. Without this exemption
+        // this middleware bounces them to rme.online-context.select, which is
+        // the very screen the lock is about to constrain — a dead end.
+        //
+        // The approver routes are exempted for the same reason the block above
+        // exempts its own: a Supervisor RME normally falls through the early
+        // return below, but an approver who ALSO holds Admin Klinik would
+        // otherwise be redirected away from the queue.
+        //
+        // Exempting widens nothing. DoctorBranchLockRequestPolicy and
+        // DoctorBranchCoverPolicy still decide who may file and who may decide,
+        // every approver action sits behind its own `permission:` middleware,
+        // and every action 404s while the capability flags are off.
+        'rme.doctor-branch-locks.create',
+        'rme.doctor-branch-locks.store',
+        'rme.doctor-branch-locks.cancel',
+        'rme.doctor-branch-locks.index',
+        'rme.doctor-branch-locks.approve',
+        'rme.doctor-branch-locks.reject',
+        'rme.doctor-branch-locks.release-session',
+        'rme.doctor-branch-covers.create',
+        'rme.doctor-branch-covers.store',
+        'rme.doctor-branch-covers.approve',
+        'rme.doctor-branch-covers.reject',
+        'rme.doctor-branch-covers.cancel',
     ];
 
     public function __construct(

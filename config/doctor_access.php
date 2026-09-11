@@ -10,29 +10,73 @@ declare(strict_types=1);
 | NAMED AFTER THE MODULE, not after one capability inside it. The bounds below
 | are read by App\Modules\DoctorAccess and by the console surface that drives
 | it, and a file named for a single capability would have to be either renamed
-| or duplicated the first time a second one needed the same bound.
+| or duplicated the first time a second one needed the same bound. That
+| prediction has already come true once: the cover bounds below arrived with the
+| branch-lock capability and reuse the same `reason` block rather than standing
+| up a second file to say the same two numbers.
 |
 | NO env() CALL ANYWHERE IN THIS FILE, on purpose. A bound an operator can move
 | from the environment of the machine they are already on is not a bound. There
 | is also nothing risky here to declare, so this file never interacts with the
-| FLAG-RISKY-DEFAULT-OFF gate — the flag that arms the capability lives in
-| config/feature_flags.php and is read only through FeatureFlagService.
+| FLAG-RISKY-DEFAULT-OFF gate — the flags that arm these capabilities live in
+| config/feature_flags.php and are read only through FeatureFlagService.
 |
 */
 
 return [
 
+    'cover' => [
+
+        /*
+         * THESE ARE THE BOUNDS THAT MAKE ONE APPROVAL PERMISSION SAFE.
+         *
+         * `approve_doctor_branch_locks` decides initial assignment, permanent
+         * transfer AND temporary cover. Splitting cover into its own permission
+         * would look like least privilege and would actually be a privilege
+         * escalation by duration: an unbounded cover, renewed, relocates a
+         * doctor permanently through the weaker gate without the transfer
+         * workflow ever running. `max_days` is the bound that closes that, so it
+         * is load-bearing and not decoration.
+         *
+         * IT IS VALIDATED TWICE: once when the cover is filed, and AGAIN inside
+         * the approval transaction. A request filed while the bound was 365 must
+         * not become approvable after an operator lowers it to 90 — the second
+         * read is what makes lowering the bound take effect on work already in
+         * the queue.
+         */
+
+        /*
+         * The longest temporary cover an approver may grant, in days.
+         *
+         * Measured on the [starts_at, ends_at) interval itself, not on the
+         * distance from now, so a cover scheduled far ahead is bounded by its
+         * own length rather than by when somebody got round to filing it.
+         */
+        'max_days' => 90,
+
+        /*
+         * The shortest cover worth granting, in minutes.
+         *
+         * A zero-length or near-zero-length window would be approved, would
+         * release the doctor's session, and would then expire before they
+         * finished logging back in — an eviction with no authority behind it.
+         */
+        'min_minutes' => 30,
+    ],
+
     'reason' => [
 
         /*
          * Every decision that ends somebody else's login session carries a
-         * written reason.
+         * written reason, and so does every branch request, decision and
+         * cancellation.
          *
          * A SESSION NOBODY CAN EXPLAIN ENDING IS NOT AN OPERATIONAL ACTION, it
          * is an unexplained logout — and a doctor mid-consultation who is
          * logged out deserves a trail that says who did it and why. These two
-         * numbers are quoted directly in the console command's own refusals, so
-         * the operator is told the same bound the server enforces.
+         * numbers are quoted directly in the console command's own refusals and
+         * in the branch FormRequest messages, so the operator is told the same
+         * bound the server enforces.
          *
          * `min_length` is a real floor rather than a non-empty check: 'x' and
          * 'asdf' pass a non-empty check and explain nothing. `max_length`
