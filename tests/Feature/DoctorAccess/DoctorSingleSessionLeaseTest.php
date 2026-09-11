@@ -76,6 +76,7 @@ declare(strict_types=1);
 */
 
 use App\Models\User;
+use App\Modules\DoctorAccess\Models\DoctorBranchLock;
 use App\Modules\DoctorAccess\Models\DoctorSessionLease;
 use App\Modules\DoctorAccess\Services\DoctorEffectiveBranchResolver;
 use App\Modules\DoctorAccess\Services\DoctorSessionLeaseService;
@@ -1121,4 +1122,84 @@ test('U2: the whole armed capability costs at most 12 added queries, and every t
     foreach ($doctorAccessStatements as $sql) {
         expect(strtolower($sql))->toContain('where');
     }
+});
+
+test('U2b: an UNSET doctor never pays the branch-health read, which is the whole fleet on day one', function () {
+    /*
+     * THE SAVING U2 CANNOT MEASURE, AND WHY IT IS ITS OWN TEST.
+     *
+     * The resolver returns before reading the branch table when a doctor has no
+     * cover and no home lock, because nothing that table could say would change
+     * an UNSET verdict — and `BranchService::rmeEnabledIds()` is NOT cached, so
+     * reading it is one wasted query on every protected request. That matters
+     * more than it sounds: EVERY doctor in the fleet is UNSET the moment this
+     * capability is armed, so the wasted read would be paid by the entire
+     * population and by nobody who benefits from it.
+     *
+     * SEPARATE TEST, NOT A SECOND LEG OF U2 — MEASURED, having written it the
+     * wrong way first. Two daLoginPost() calls in one test are ONE BROWSER
+     * re-authenticating: the in-memory session store survives between requests,
+     * so the second login lands in a session that already carries the first
+     * doctor's lease token and no new lease is claimed. The assertion then fails
+     * for a reason that has nothing to do with the property under test.
+     *
+     * So this measures the ABSOLUTE claim instead of a comparison, which is
+     * stronger anyway: an UNSET doctor's armed request adds ZERO reads of
+     * `mst_branches`. Its sibling above pins the locked case at AT MOST one, and
+     * the pair expresses the saving without either test needing two sessions.
+     */
+    daArmDoctorAccess();
+    $branch = daBranch();
+    ['user' => $user, 'doctor' => $doctor] = daDoctorAccount([$branch]);
+
+    // No home lock and no cover. Asserted rather than assumed, because a fixture
+    // that quietly granted one would make this test measure the locked path and
+    // pass for the wrong reason.
+    expect(DoctorBranchLock::query()->where('doctor_id', (int) $doctor->id)->exists())->toBeFalse()
+        ->and(app(DoctorEffectiveBranchResolver::class)->branchIdFor($user))->toBeNull();
+
+    daLoginPost($user);
+    expect(daCurrentLease($user))->not->toBeNull();
+
+    /** @var array<int, string> $captured */
+    $captured = [];
+    $collecting = false;
+
+    DB::listen(function ($query) use (&$captured, &$collecting): void {
+        if ($collecting) {
+            $captured[] = (string) $query->sql;
+        }
+    });
+
+    $this->get('/profile')->assertOk();   // warm the one-off costs
+
+    daDisarmFlags();
+    $collecting = true;
+    $this->get('/profile')->assertOk();
+    $collecting = false;
+    $baseline = $captured;
+    $captured = [];
+
+    daArmFlags(true, true);
+    expect(app(DoctorEffectiveBranchResolver::class)->enabled())->toBeTrue();
+    $collecting = true;
+    $this->get('/profile')->assertOk();
+    $collecting = false;
+    $armed = $captured;
+
+    $countMatching = fn (array $statements, string $table): int => count(array_filter(
+        $statements,
+        fn (string $sql): bool => str_contains($sql, $table),
+    ));
+
+    // The engine really ran: the lock and cover tables ARE read, exactly once
+    // each, which is what makes the branch-table assertion below non-vacuous.
+    expect($countMatching($armed, 'mst_doctor_branch_locks'))->toBe(1)
+        ->and($countMatching($armed, 'trx_doctor_branch_covers'))->toBe(1)
+        ->and($countMatching($armed, 'trx_doctor_session_leases'))->toBeGreaterThanOrEqual(1);
+
+    // THE SAVING. Zero ADDED reads of the branch table — stated as a delta
+    // because mst_branches is shared with the rest of the application and the
+    // request pays for whatever else reads it.
+    expect($countMatching($armed, 'mst_branches') - $countMatching($baseline, 'mst_branches'))->toBe(0);
 });

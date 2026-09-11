@@ -164,6 +164,17 @@ class DoctorEffectiveBranchResolver
 
         $cover = $this->covers->activeApprovedForDoctor($doctorId, $at);
         $homeBranchId = $this->locks->lockedBranchIdFor($doctorId);
+
+        // UNSET SHORT-CIRCUIT, and it is a real saving rather than a tidy-up.
+        // With no cover and no lock the verdict is UNSET whatever the branch
+        // table says, so reading it would be a query per protected request for
+        // an answer that cannot change the outcome — and EVERY doctor in the
+        // fleet is UNSET the moment this capability is armed, which is exactly
+        // the population that would pay it. `rmeEnabledIds()` is not cached.
+        if ($cover === null && $homeBranchId === null) {
+            return DoctorEffectiveBranch::notSet();
+        }
+
         $rmeBranchIds = $this->branches->rmeEnabledIds();
 
         if ($cover !== null) {
@@ -185,10 +196,8 @@ class DoctorEffectiveBranchResolver
             );
         }
 
-        if ($homeBranchId === null) {
-            return DoctorEffectiveBranch::notSet();
-        }
-
+        // A home branch is present here by construction: the pair being null was
+        // answered above, and the cover arm returns in every case.
         if (in_array($homeBranchId, $rmeBranchIds, true)) {
             return DoctorEffectiveBranch::home($homeBranchId);
         }
