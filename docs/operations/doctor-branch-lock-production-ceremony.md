@@ -153,38 +153,60 @@ visit is NOT at the locked home branch, or the step proves nothing.
 Required: it opens and is readable. A doctor must be able to read the history of the patient in
 front of them. If this is blocked, that is a FAILURE of the ceremony, not a security win.
 
-## G. Create a time-boxed temporary cover
+## G. Create a time-boxed temporary cover — TWO covers, sequenced, and here is why
 
-Person 1 (or 2 — but see H) files at `/rme/doctor-branch-covers/new`: the subject doctor, a
-target branch, a start and an end on the **clinic wall clock**, and a reason.
+**An earlier draft of this ceremony prescribed ONE cover with a 5-minute tail and it would have
+failed.** The reasoning was that a short tail lets expiry be observed without a long wait. What
+it actually did was give the whole rest of the ceremony — approval, eviction, re-login, room
+selection — five minutes of wall clock, because `assertUsableAt()` runs **again inside the
+approval transaction against a later clock**
+(`DoctorBranchCoverApprovalService.php:263-270`), and `ends_at > now` must still hold when the
+approver clicks. Overrun before the click aborts with *"Periode cover sudah berakhir. Ajukan
+periode baru."* and burns the clinical window. Overrun after it silently guts steps K and M.
 
-**The minimum cover duration is 30 minutes** (`doctor_access.cover.min_minutes`), and the
-maximum is 90 days. A period "a few minutes long" is REFUSED at both filing and approval, so do
-not plan one — you would only be testing the bound.
+Worse, the failure is **indistinguishable from a real defect**: once the period passes, the
+resolver falls through to `DoctorEffectiveBranch::home()`, so selecting the cover branch is
+refused with the ordinary home-lock message. Nothing says "expired". An operator would record a
+FAIL on a step where the code behaved perfectly.
 
-So plan the window deliberately: **start the cover about 30 minutes in the past and end it
-about 5 minutes from now.** That satisfies the 30-minute minimum, is active the moment it is
-approved, and expires inside the ceremony window so steps L, M and N can be observed without
-waiting half an hour. Backdating the start is legitimate — the only rule is that the period
-must not already be over, which `assertUsableAt()` checks against the clock at both filing and
-approval.
+So the ceremony uses **two covers**, and they do not collide: `approvedForDoctorQuery()` filters
+`whereNull('cancelled_at')`, so a cancelled cover neither counts as active nor blocks the next
+one.
+
+**Bounds, both real:** minimum 30 minutes, maximum 90 days, measured on the INTERVAL. A
+backdated start is legitimate — the only clock rule is that the period must not already be over.
+So a long tail costs nothing except the wait.
+
+**The datetime-local field carries no seconds.** A window typed on a whole minute can be up to
+59 seconds shorter than you intended. Never size a window so that a minute matters.
+
+### G1 — Cover A, the comfortable one
+
+File at `/rme/doctor-branch-covers/new`: the subject doctor, a target branch that is NOT their
+home branch, and a period of **start ≈ 30 minutes ago, end ≈ 45 minutes from now**.
+
+That satisfies the 30-minute floor with ~75 minutes of interval, is active the moment it is
+approved, and leaves the approval, the eviction and the re-login entirely unhurried. Steps H
+through K run against this cover.
 
 The period is half-open, so a cover ending at 15:00 does not cover 15:00.
 
 ## H. Maker and checker are different user ids
 
-Required before approving: `requester_user_id != reviewer_user_id`.
+Required before approving: `requester_user_id != reviewer_user_id`. On production there are
+exactly two eligible accounts — user 1 (Super Admin) and user 11 (Supervisor RME) — so one files
+and the other decides, in either order.
 
 **Do not create a self-approval on production to test the refusal.** The negative cases are
 already proven by automated test, including that `Gate::before` does not bypass the invariant.
 Recording the two distinct ids is the whole of the production evidence needed here.
 
-## I. Approve the cover
+## I. Approve cover A
 
 Person 2 approves from the queue.
 
-Evidence: `DOCTOR_BRANCH_COVER_REQUESTED` and `DOCTOR_BRANCH_COVER_APPROVED` audit rows, the
-two user ids, and the stored period.
+Evidence: `DOCTOR_BRANCH_COVER_REQUESTED` and `DOCTOR_BRANCH_COVER_APPROVED` audit rows, the two
+user ids, and the stored period.
 
 ## J. The previous session is invalidated
 
@@ -197,27 +219,70 @@ Evidence: what the doctor actually saw, in their words.
 
 ## K. A fresh login uses the cover branch
 
+**Before asking the doctor to log in, check cover A is still current.** With a 45-minute tail it
+will be, but check anyway, because if it has closed the next paragraph's expected outcome
+inverts and you would be recording a FAIL against correct behaviour.
+
 The doctor logs in again and selects their working context.
 
-Required: the cover branch is what they get; the home branch is refused while the cover runs.
+Required: the cover branch is what they get, and the **home** branch is refused while the cover
+runs. Repeat the step-E list check here: the lists should now show the COVER branch's rows, not
+the home branch's — which is the clearest single demonstration that the effective branch, not the
+home lock, drives what a doctor sees.
 
-## L. Expiry is enforced from server time
+## K2. While cover A is still live: a permanent transfer is REFUSED
 
-Wait for the period to pass. **Run no command.** There is no expiry job and nothing to trigger;
-if you find yourself looking for one, that is the point of this step.
+Do this now, because it is the only moment in the ceremony when a cover is current. It was
+previously bundled into step O, which after the resequencing happens when both covers are
+already finished — so the check would have been unreachable.
 
-## M. A stale cover session cannot continue
+Person 1 files a permanent **transfer** for the same doctor to any other branch. Person 2 opens
+it in the queue and attempts to approve.
 
-If the doctor still has a session open from step K, have them tap anything after the period
-ends.
+Required: the approval is **refused** because a cover is active (DBL-R010). The refusal is
+evaluated from current timestamps under the locks the approval already holds, so it is not
+advisory.
 
-Required: that session stops working, the same way as step J.
+Then **cancel that transfer request** (the requester may withdraw their own while it is pending),
+so it is not left sitting in the queue. This step is read-only in effect: nothing about the
+doctor's branch changes.
+
+Evidence: the refusal message, and that the request ended cancelled rather than approved.
+
+## L. Cancel cover A, then file cover B — the short one, for expiry
+
+Person 2 cancels cover A from the queue, **with a reason**. That is the documented approver
+escape hatch, and it also frees the doctor for the next cover.
+
+Then file **cover B**: same doctor, a target branch that is not home, **start ≈ 30 minutes ago,
+end ≈ 8 minutes from now**. Approve it immediately.
+
+Eight minutes is deliberate: the approval only has to land inside the window, and eight minutes
+is comfortable for that while still being a short wait. Do not shorten it to save time — that is
+the mistake this section exists to prevent.
+
+Confirm the doctor's session is invalidated again by cover B's approval, the same way as step J.
+
+**Then have the doctor log in once more and go online at cover B's branch.** Step M needs a live
+session established UNDER cover B in order to have anything to invalidate when the window
+closes — without this, M has no session to test and would pass vacuously.
+
+## M. Expiry is enforced from server time, and a stale session cannot continue
+
+**Wait for cover B's end to pass. Run no command.** There is no expiry job and nothing to
+trigger; if you find yourself looking for one, that is the point of this step.
+
+Then have the doctor tap anything on the session they hold from cover B.
+
+Required: that session stops working, exactly as in step J — with no scheduler having run, no
+command issued, and nothing but the clock having changed.
 
 ## N. A fresh login returns to the home branch
 
 The doctor logs in again.
 
-Required: the **home** branch, not the cover branch. The home lock was never rewritten.
+Required: the **home** branch, not either cover branch. The home lock was never rewritten by
+either cover.
 
 Evidence: `home_branch_id` unchanged from step B.
 
@@ -227,8 +292,9 @@ Skip this step unless the owner says otherwise in writing. If approved, file and
 transfer the same maker/checker way, and confirm the session is invalidated and a fresh login
 lands on the new branch.
 
-Also confirm: a transfer is **refused** while a cover is current. If you still have a live
-cover, try it and record the refusal.
+The transfer-during-active-cover refusal is **not** checked here — it is step K2, which runs
+while cover A is still live. By this point both covers are finished, so there is nothing to
+refuse against.
 
 ## P. Restore, through the workflow
 
