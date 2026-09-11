@@ -15,8 +15,29 @@ Supervisor RME; nothing requires a particular order.
 
 Confirm with the owner which doctor is the test subject (step A) before arming anything.
 
-**Arming is not the risky step.** While every doctor is UNSET the capability is inert. The
-first approval is what changes a real clinician's day.
+### Two things to understand before you agree to run this
+
+**1. ARMING IS NOT FREE, and an earlier draft of this document said it was.** It said "arming is
+not the risky step" because an UNSET doctor gets no branch narrowing. That is true of
+`doctor.branch_lock` and **false of the other flag you must arm first.**
+`DoctorSessionLeaseService::subjectTo()` is `$user->hasRole('Doctor')` — it is scoped by ROLE,
+not by lock — so arming `doctor.single_active_session` makes one-session-per-doctor enforcement
+live for **all 15 doctor accounts immediately**. Any doctor already logged in somewhere who then
+logs in elsewhere is DENIED. On a clinic day that can refuse a real clinician's login, and it has
+nothing to do with the branch lock or with UNSET.
+
+So the arming step is a supervised window with somebody reachable who holds
+`release_doctor_session_leases`, exactly as the lease runbook says — not a preamble.
+
+**2. STEP B IS A ONE-WAY DOOR.** There is **no path back to UNSET**: no shipped surface deletes a
+lock row, and the twelve controller actions contain no unset or clear. Once you approve an initial
+assignment, that clinician is permanently branch-locked, and the only movement afterwards is a
+**transfer to another branch**. Step P can undo a transfer; nothing can undo the assignment.
+
+That changes what "test" means here. **Get explicit owner agreement that the subject doctor may
+stay locked for good, to a branch of the owner's choosing — not a branch picked for testing
+convenience.** Choose the destination in step B as if it were a real, permanent operational
+decision, because it is one.
 
 | surface | URL |
 |---|---|
@@ -131,18 +152,38 @@ Required: `DEVICE_BRANCH != LOCKED_HOME_BRANCH` **and**
 
 ## E. Operational lists show the effective branch only
 
-**Look at the lists BEFORE you arm the flag, and write down what you see.** Production holds 39
-visits across the four RME branches, so an unlocked doctor sees rows from all of them. Without
-that "before", a narrowed list is just a short list and proves nothing — which is why this step
-now asks for the contrast rather than for a single observation.
+**SET AN EXPLICIT DATE RANGE FIRST, or this step proves nothing at all.** Production has **zero
+visits dated today** at every RME branch — the most recent visit anywhere is 2026-09-07. If
+Daftar Kunjungan opens on its default "today" view the list is EMPTY whether or not the doctor is
+locked, and "every row belongs to the locked branch" is then vacuously true. An earlier draft of
+this step would have recorded a PASS for an observation that demonstrated nothing.
+
+So widen the date filter to cover real data — **2026-08-01 to 2026-09-11** contains all 39 visits
+— and **write down the row counts**, not an impression:
+
+| branch | visits in that range |
+|---|---|
+| LDK2 | 17 |
+| ATG3 | 11 |
+| TLK1 | 9 |
+| SPN4 | 2 |
+| **all four** | **39** |
+
+**Look BEFORE you arm the flags.** An unlocked doctor should see rows from all four branches,
+approaching 39. Then, locked, they should see only their home branch's count. If the home branch
+is LDK2 the expectation is a fall from ~39 to 17 — a number you can state, not a shape you can
+squint at.
+
+**An empty list is a FAILED step, not a passed one.** If either observation is empty, the date
+filter is wrong; fix it before drawing any conclusion.
 
 Then, on the locked session, open Daftar Kunjungan, the patient queue, and the room worklist.
 
-Required: every row belongs to the locked home branch, and the rows from other branches that
-were there before are gone. Not "mostly" — if one row from another branch appears, stop and
-report it.
+Required: every row belongs to the locked home branch, the count matches that branch's figure
+above, and the other branches' rows that were there before are gone. Not "mostly" — if one row
+from another branch appears, stop and report it.
 
-Evidence: what each list showed before, and what it shows after, naming branches.
+Evidence: the row COUNT before and after, per list, with the date range you used.
 
 ## F. The archive is still cross-branch — this is a REQUIRED PASS, not a leak
 
@@ -322,8 +363,24 @@ status change. Every revocation above predates the ceremony, so **any `revoked_a
 today's date is a failure** — that is the single clearest signal, and it is easier to check than
 a count.
 
-A branch decision ends a login session and nothing else. If anything here moved, stop and
+A branch decision touches **no identity row**. If anything in the table above moved, stop and
 report it; that is the invariant DBL-R017 exists for.
+
+**It is not true that it "ends a login session and nothing else", and an earlier draft said so.**
+Every approval also calls `markOffline()`, which **vacates the doctor's clinic room** — nulls
+`clinic_room_id` on their online context — deliberately, so an evicted doctor does not leave a
+consultation room marked occupied and blocking the clinician taking over. That is correct
+behaviour and it is a second effect, so the accurate sentence is: a branch decision ends a login
+session and frees the room, and touches no device, authorization or credential.
+
+## Put the doctor back — the ceremony does not end itself
+
+After step N the subject doctor is **logged out and holds no clinic room**, because the last
+approval evicted them and freed it. Nothing in steps A–P brings them back.
+
+So finish deliberately: have the doctor log in, go online at their home branch, and take a room —
+and confirm they can. If this is skipped, a real clinician arrives to an account that is signed
+out with no room, on a branch they did not choose, and no record explains why.
 
 *Reading it needs VPS shell access:* `php artisan db:show --counts` gives the totals, and the
 per-row detail needs the read-only queries in section 7 of
@@ -331,9 +388,27 @@ per-row detail needs the read-only queries in section 7 of
 user** (`runuser -u daengtisiams -- php artisan …`); as root it writes root-owned cache files,
 which has broken production login before.
 
-## If anything fails
+## If anything fails — and read this BEFORE you need it
 
-Disarm `FEATURE_DOCTOR_BRANCH_LOCK` and clear the config cache. Nobody is logged out by
-disarming, no data is touched, and lock rows stay as they are. Then diagnose.
+**Order matters, because disarming takes away the tools.** `assertCapabilityArmed()` 404s all
+twelve actions while the branch flag is off — including **cancel** and **reject**. So if a step
+failed leaving a PENDING request or an unwanted cover behind, **cancel or reject it FIRST, while
+the surface still answers.** Disarm second. Get that order wrong and the pending row is stranded:
+no screen can reach it, and the pending partial-unique index then refuses a second request for
+that doctor until somebody re-arms to clear it.
+
+1. **First**, cancel or reject anything pending, through the queue.
+2. **Then** disarm `FEATURE_DOCTOR_BRANCH_LOCK` and clear the config cache. Nobody is logged out
+   by that, no data is touched, and lock rows stay as they are.
+3. **Decide about the second flag separately.** Disarming the branch lock leaves
+   `FEATURE_DOCTOR_SINGLE_ACTIVE_SESSION` armed, and that one is fleet-wide for every Doctor-role
+   account (see "Two things to understand", point 1). If you armed it for this ceremony and the
+   ceremony is over, disarm it too — otherwise one-session-per-doctor stays live estate-wide on a
+   posture nobody reviewed.
+4. **Put the doctor back** — see the section above. A failed ceremony still leaves them logged
+   out and roomless.
+
+Remember that any lock already approved **cannot be undone**, only transferred. Disarming hides
+it; it does not remove it.
 
 Do not attempt a fix by editing a lock row, a cover row, or a lease row directly.
