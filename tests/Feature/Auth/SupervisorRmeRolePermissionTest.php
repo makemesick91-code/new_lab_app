@@ -92,6 +92,15 @@ const SUPERVISOR_RME_PERMISSIONS = [
     // Doctor, Kasir and Admin Klinik, which this exact-list pin does not cover.
     'view_rme_consents',
     'manage_rme_consents',
+    // DOCTOR-ACCESS-PR-A-SINGLE-SESSION-FOUNDATION — FORCE LOGOUT. One active
+    // session per doctor means a lease can get stuck behind a tablet nobody can
+    // reach, and the escape hatch belongs to somebody on the RME side who can be
+    // told about it. It ends a LOGIN SESSION only: no device, no authorization
+    // and no WebAuthn credential is revoked, which is why it is a grant of its
+    // own rather than part of the device-authorization pair above. A SELF-RELEASE
+    // IS STILL REFUSED FOR THIS HOLDER — that refusal lives inside the release
+    // transaction, not in this grant.
+    'release_doctor_session_leases',
 ];
 
 it('creates the Supervisor RME role after seeding', function () {

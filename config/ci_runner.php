@@ -138,6 +138,14 @@ return [
      */
     'critical_gate_required_filters' => [
         'Cicd',
+
+        // DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1 — the only place the
+        // partial unique index behind "one active doctor session" is exercised
+        // on PostgreSQL. The local suite runs SQLite, where lockForUpdate()
+        // compiles to an empty string and the racing INSERT is never actually
+        // contended, so without this token the cardinality invariant is proven
+        // nowhere.
+        'DoctorAccess',
     ],
 
     /*
@@ -238,6 +246,20 @@ return [
         // is never reported as a malformed one, and no read fault is permitted
         // to become more permissive than the flattened state it replaced.
         'tests/Feature/Foundation/RestoreDrillEvidenceReadStateTest.php',
+
+        // DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1 — declared explicitly even
+        // though the `DoctorAccess` token selects the whole directory, because
+        // the token is what must never be dropped: these three suites are the
+        // only proof that a second doctor login is REFUSED, that the FIRST
+        // session survives the refusal, that a dead incumbent is reclaimed
+        // while an idle one is not, and that force logout ends a session
+        // without touching a device, an authorization or a credential.
+        // helpers.php is deliberately absent — it is a fixture file, not a
+        // suite, and the registry reconciliation fails on a declared path that
+        // no token selects.
+        'tests/Feature/DoctorAccess/DoctorSingleSessionLeaseTest.php',
+        'tests/Feature/DoctorAccess/DoctorSessionForceLogoutTest.php',
+        'tests/Feature/DoctorAccess/DoctorSessionLeaseGovernanceTest.php',
 
         // STORAGE-PUBLIC-CLINICAL-EVIDENCE-1 — clinical evidence stays off any
         // publicly served disk and is readable only through an authenticated,
