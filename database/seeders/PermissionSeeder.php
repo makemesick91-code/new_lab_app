@@ -186,6 +186,15 @@ class PermissionSeeder extends Seeder
         // the global Gate::before, as with every permission.
         'view_doctor_device_authorizations',
         'manage_doctor_device_authorizations',
+        // DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1 — FORCE LOGOUT. Kept
+        // contiguous with the doctor-device family above because they are the
+        // same estate: who a clinician is, and on what device.
+        //
+        // A SEPARATE GRANT, and separate on purpose (ruling P17). It ends a
+        // LOGIN SESSION and nothing else — no device, no authorization and no
+        // WebAuthn credential is touched — so it can be audited and withdrawn
+        // on its own, without disturbing who may manage a tablet.
+        'release_doctor_session_leases',
         // SATUSEHAT-1 — Readiness foundation & controlled submission filter.
         // Separate view/review/send + mapping/settings governance permissions.
         // send is intentionally very restricted (no auto-send exists yet).

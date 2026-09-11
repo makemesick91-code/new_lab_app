@@ -75,6 +75,16 @@ class PermissionGroupingService
                 'publish_legacy_odontogram_imports',
                 'void_legacy_odontogram_records',
                 'view_legacy_odontogram_archive',
+                // DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1 — force logout: an
+                // operator ends a doctor's stuck login session.
+                //
+                // Classified under RME, NOT under Access Control, deliberately:
+                // the doctors it is about are an RME population and the sole
+                // grantee is an RME role. Listing it beside `manage users` /
+                // `manage roles` / `manage permissions` would invite the
+                // inference that Access Control admins should hold it, which
+                // this sprint refuses.
+                'release_doctor_session_leases',
             ],
         ],
         [
@@ -260,6 +270,7 @@ class PermissionGroupingService
         'view_legacy_rme_migration_operations' => 'Lihat operasi migrasi arsip RME lama (gelombang, kuota, backlog, rekonsiliasi).',
         'manage_legacy_rme_migration_operations' => 'Kelola gelombang migrasi arsip RME lama: cabang, operator, kuota, jeda dan penyelesaian.',
         'approve_legacy_rme_migration_wave' => 'Setujui gelombang migrasi arsip RME lama.',
+        'release_doctor_session_leases' => 'Akhiri sesi login aktif dokter secara manual (tidak mencabut perangkat, otorisasi, maupun kredensial).',
         'manage_lab_orders' => 'Kelola order laboratorium (penuh).',
         'view_lab_orders' => 'Lihat order laboratorium.',
         'create_lab_orders' => 'Buat order laboratorium baru.',
