@@ -77,6 +77,7 @@ declare(strict_types=1);
 
 use App\Models\User;
 use App\Modules\DoctorAccess\Models\DoctorSessionLease;
+use App\Modules\DoctorAccess\Services\DoctorEffectiveBranchResolver;
 use App\Modules\DoctorAccess\Services\DoctorSessionLeaseService;
 use App\Modules\LabOrder\Models\AuditLog;
 use Illuminate\Contracts\Auth\Guard as GuardContract;
@@ -954,21 +955,37 @@ test('a released lease row is retained and does not block the next claim', funct
 |--------------------------------------------------------------------------
 */
 
-test('U2: an armed doctor request holding a lease costs at most 6 added queries and at most 2 on the lease table', function () {
+test('U2: the whole armed capability costs at most 12 added queries, and every table it touches is bounded', function () {
     /*
      * FINDING U2 — MEASURED, NOT ASSERTED AS "no regression".
      *
-     * The per-request cost is paid ONLY by a doctor, ONLY when the flag is armed
-     * and the driver is observable, and ONLY for a session that actually holds a
-     * lease token. The budget below is the enumeration of every read the code
-     * performs on that path, and it is measured as a DELTA against the same
-     * request with the flag off — the pre-sprint behaviour — so framework and
-     * view cost cancels out on both sides.
+     * PR-A's version of this test measured the LEASE ENGINE ALONE and pinned a
+     * ceiling of 6 against a measured 3. That measurement was correct and is
+     * kept below as its own leg, but as a statement about what production pays
+     * it was an UNDERSTATEMENT, and PR-B is where that has to be said plainly:
+     * the shipped capability arms TWO flags, and PR-A's test re-armed only the
+     * lease flag after its disarm, so the branch resolver never ran inside the
+     * measurement it published. Re-pinned here against what is actually armed.
      *
-     * THE ENUMERATION:
-     *   EnsureDoctorSessionLease  1  schema probe, `sessions` observability
-     *   revalidate                1  trx_doctor_session_leases (by token hash)
-     *   renewIfDue                0-1 UPDATE trx_doctor_session_leases
+     * The cost is paid ONLY by a doctor, ONLY when both flags are armed and the
+     * driver is observable, and ONLY for a session that holds a lease token.
+     * Measured as a DELTA against the same request with both flags off — the
+     * pre-sprint behaviour — so framework and view cost cancels on both sides.
+     *
+     * THE ENUMERATION, in the order the request performs it:
+     *   EnsureDoctorSessionLease   1   schema probe, `sessions` observability
+     *   DoctorEffectiveBranchResolver
+     *     doctor identity          1   mst_doctors by user_id
+     *     active cover             1   trx_doctor_branch_covers, by doctor + instant
+     *     home lock                1   mst_doctor_branch_locks, by doctor
+     *     branch health            1   mst_branches, active + RME-enabled
+     *   revalidate                 1   trx_doctor_session_leases by token hash
+     *   renewIfDue                 0-1 UPDATE trx_doctor_session_leases
+     *
+     * MEASURED DELTAS ON SQLITE: 3 for the lease engine alone, 8 for the whole
+     * capability. Both legs are asserted, and the INCREMENT between them is
+     * asserted too, because that increment is exactly what PR-B adds and is the
+     * number a future consumer would inflate.
      *
      * ONE HONEST DISTORTION, stated because it inflates the figure here rather
      * than hiding it: the test client forwards no session cookie, so the session
@@ -977,26 +994,26 @@ test('U2: an armed doctor request holding a lease costs at most 6 added queries 
      * on re-authentication and roughly every five minutes, not per request. The
      * lease-table budget is therefore 1..2 here and effectively 1 in production.
      *
-     * THE MEASURED DELTA ON SQLITE IS 3 — the schema probe, the lease SELECT and
-     * the drifting-session UPDATE, exactly the enumeration above. The assertion
-     * is a CEILING of 6 rather than an equality because the one-off costs around
-     * it (permission cache warm-up, schema lookups) are engine- and
-     * order-dependent, and a figure that has to be re-pinned on every engine
-     * stops being read. The headroom is stated here so nobody mistakes 6 for the
-     * measurement. The per-table figure below is the real budget, and it is what
-     * an N+1 in a future consumer would break. `toBeGreaterThan(0)` guards
-     * against the whole measurement silently becoming vacuous if the engine
-     * stops running at all.
+     * The assertion is a CEILING of 12 rather than an equality because the
+     * one-off costs around it (permission cache warm-up, schema lookups) are
+     * engine- and order-dependent, and a figure that has to be re-pinned on
+     * every engine stops being read. The headroom is stated here so nobody
+     * mistakes 12 for the measurement. The per-table figures below are the real
+     * budget. `toBeGreaterThan(0)` guards against the whole measurement silently
+     * becoming vacuous if the engine stops running at all.
      *
-     * THE DOCTOR-TABLE DELTA IS PART OF THE BUDGET, not decoration. The claim
-     * resolves the doctor identity once; the per-request path must resolve it
-     * ZERO additional times, and a future consumer that reached for the doctor
-     * record on every protected request would show up here as a delta of one or
-     * more.
+     * THE DOCTOR-TABLE DELTA IS PART OF THE BUDGET, not decoration. The resolver
+     * resolves the doctor identity EXACTLY ONCE per request; a future consumer
+     * that reached for the doctor record per row would show up here immediately.
      */
     daArmDoctorAccess();
     $branch = daBranch();
-    ['user' => $user] = daDoctorAccount([$branch]);
+    ['user' => $user, 'doctor' => $doctor] = daDoctorAccount([$branch]);
+
+    // A real home lock, because a doctor with no lock short-circuits the
+    // resolver before it reads the cover and branch tables — measuring THAT
+    // would publish a budget no locked doctor actually pays.
+    daGrantHomeLock($doctor, $branch);
 
     daLoginPost($user);
     expect(daCurrentLease($user))->not->toBeNull();
@@ -1011,11 +1028,11 @@ test('U2: an armed doctor request holding a lease costs at most 6 added queries 
         }
     });
 
-    // Warm the one-off costs so neither measurement pays them alone.
+    // Warm the one-off costs so no measurement pays them alone.
     $this->get('/profile')->assertOk();
 
     // BASELINE: the pre-sprint request. The driver stays observable; only the
-    // flag goes, so the middleware returns on its first line.
+    // flags go, so the middleware returns on its first line.
     daDisarmFlags();
     $collecting = true;
     $this->get('/profile')->assertOk();
@@ -1023,9 +1040,19 @@ test('U2: an armed doctor request holding a lease costs at most 6 added queries 
     $baseline = $captured;
     $captured = [];
 
-    // ARMED: the same request, with the capability live.
+    // LEG 1 — the lease engine alone, which is what PR-A shipped and measured.
     daArmSingleActiveSession(true);
     expect(app(DoctorSessionLeaseService::class)->enabled())->toBeTrue();
+    $collecting = true;
+    $this->get('/profile')->assertOk();
+    $collecting = false;
+    $leaseOnly = $captured;
+    $captured = [];
+
+    // LEG 2 — the whole capability, which is what PR-B ships and what a doctor
+    // on production will pay once both flags are armed.
+    daArmBranchLock(true);
+    expect(app(DoctorEffectiveBranchResolver::class)->enabled())->toBeTrue();
     $collecting = true;
     $this->get('/profile')->assertOk();
     $collecting = false;
@@ -1038,30 +1065,55 @@ test('U2: an armed doctor request holding a lease costs at most 6 added queries 
         ));
     };
 
-    $delta = count($armed) - count($baseline);
+    $leaseDelta = count($leaseOnly) - count($baseline);
+    $armedDelta = count($armed) - count($baseline);
 
-    expect($delta)->toBeGreaterThan(0);         // the engine really ran
-    expect($delta)->toBeLessThanOrEqual(6);     // the ceiling
+    expect($leaseDelta)->toBeGreaterThan(0)      // the lease engine really ran
+        ->toBeLessThanOrEqual(6);                // PR-A's ceiling, unchanged
 
-    // THE REAL BUDGET, per table.
+    expect($armedDelta)->toBeGreaterThan($leaseDelta)   // the resolver really ran too
+        ->toBeLessThanOrEqual(12);                      // the whole-capability ceiling
+
+    // THE INCREMENT PR-B ADDS. Four reads and nothing more: identity, cover,
+    // lock, branch health. Pinned separately from the totals so a regression in
+    // the resolver cannot hide inside the ceiling's headroom.
+    expect($armedDelta - $leaseDelta)->toBeLessThanOrEqual(6);
+
+    // THE REAL BUDGET, per table. Each of the branch tables is read AT MOST ONCE
+    // per request; more than one means the resolver is being constructed or
+    // consulted repeatedly within a single request.
     expect($countMatching($armed, 'trx_doctor_session_leases'))
         ->toBeGreaterThanOrEqual(1)
         ->toBeLessThanOrEqual(2);
 
-    // mst_doctors is shared with the rest of the application, so the budget is
-    // stated as the ADDED lookup rather than an absolute count: the per-request
-    // path performs no identity read at all, and must never perform one per row.
-    expect($countMatching($armed, 'mst_doctors') - $countMatching($baseline, 'mst_doctors'))
+    expect($countMatching($armed, 'mst_doctor_branch_locks'))->toBe(1);
+    expect($countMatching($armed, 'trx_doctor_branch_covers'))->toBe(1);
+
+    // mst_doctors and mst_branches are shared with the rest of the application,
+    // so their budgets are stated as the ADDED lookup rather than an absolute
+    // count.
+    expect($countMatching($armed, 'mst_doctors') - $countMatching($baseline, 'mst_doctors'))->toBe(1);
+    expect($countMatching($armed, 'mst_branches') - $countMatching($baseline, 'mst_branches'))
         ->toBeLessThanOrEqual(1);
 
-    // The pre-sprint request pays NONE of it — that is what "off means off" is.
+    // The pre-sprint request pays NONE of it — that is what "off means off" is,
+    // and it is asserted for every table the capability owns, not just the lease.
     expect($countMatching($baseline, 'trx_doctor_session_leases'))->toBe(0);
+    expect($countMatching($baseline, 'mst_doctor_branch_locks'))->toBe(0);
+    expect($countMatching($baseline, 'trx_doctor_branch_covers'))->toBe(0);
+
+    // And the LEASE-ONLY leg pays none of the BRANCH cost, which is what makes
+    // the two flags independently disarmable rather than one switch in disguise.
+    expect($countMatching($leaseOnly, 'mst_doctor_branch_locks'))->toBe(0);
+    expect($countMatching($leaseOnly, 'trx_doctor_branch_covers'))->toBe(0);
 
     // Every one of those reads is bounded. An unqualified statement against a
-    // trx_ table on a per-request path is the regression this catches.
+    // per-request path is the regression this catches.
     $doctorAccessStatements = array_filter(
         $armed,
-        fn (string $sql): bool => str_contains($sql, 'trx_doctor_session_leases'),
+        fn (string $sql): bool => str_contains($sql, 'trx_doctor_session_leases')
+            || str_contains($sql, 'mst_doctor_branch_locks')
+            || str_contains($sql, 'trx_doctor_branch_covers'),
     );
 
     expect($doctorAccessStatements)->not->toBeEmpty();

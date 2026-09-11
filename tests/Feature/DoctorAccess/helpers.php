@@ -20,25 +20,35 @@ declare(strict_types=1);
 | named on the line above the function. None of them are conveniences.
 |
 | ------------------------------------------------------------------------------
-| THE PR-A BOUNDARY, STATED HERE BECAUSE IT IS WHY SOME FAMILIAR HELPERS ARE
-| ABSENT.
+| THE PR-B BOUNDARY. PR-A's note said the branch-lock fixtures would arrive in
+| the same commit as the tables they write to; they are below.
 | ------------------------------------------------------------------------------
 |
-| This pull request ships the SESSION LEASE and nothing else. There is no branch
-| lock, no temporary cover and no effective-branch resolver, so there is no
-| home-lock fixture, no cover fixture, and no second flag to arm. A helper that
-| built a row for a table this pull request does not create would not merely be
-| unused — it would not load. The branch-lock fixtures arrive in PR-B, in the
-| same commit as the tables they write to.
+| PR-A shipped the SESSION LEASE and had exactly one flag. PR-B adds the HOME
+| LOCK, the TEMPORARY COVER and the EFFECTIVE-BRANCH RESOLVER, and with them a
+| SECOND flag whose coupling to the first is real but undeclared: the resolver
+| requires BOTH flags AND an observable session store. Arming only
+| `doctor.branch_lock` leaves the resolver disabled, and a test that does so
+| proves the OFF path while claiming to prove the lock. daArmDoctorAccess() is
+| the one call that makes the whole capability live and is what nearly every
+| armed test wants.
+|
+| The bulk device-authorization fixtures still do not exist here; they arrive in
+| PR-C with the command they support.
 */
 
 use App\Models\User;
 use App\Modules\Branch\Models\Branch;
 use App\Modules\Doctor\Models\Doctor;
+use App\Modules\DoctorAccess\Models\DoctorBranchCover;
+use App\Modules\DoctorAccess\Models\DoctorBranchLock;
 use App\Modules\DoctorAccess\Models\DoctorSessionLease;
+use App\Modules\DoctorAccess\Services\DoctorEffectiveBranchResolver;
 use App\Modules\DoctorAccess\Services\DoctorSessionLeaseService;
+use Carbon\CarbonInterface;
 use Database\Seeders\PermissionSeeder;
 use Database\Seeders\RoleSeeder;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
 use Spatie\Permission\Models\Role;
@@ -82,20 +92,46 @@ if (! function_exists('daArmSingleActiveSession')) {
     }
 }
 
+if (! function_exists('daArmBranchLock')) {
+    /**
+     * TRAP: `doctor.branch_lock` defaults FALSE and its registry `dependencies` entry is DECORATIVE —
+     * nothing reads it. Arming this flag alone still leaves DoctorEffectiveBranchResolver::enabled() false,
+     * because that method requires the lease flag and the session-store probe as well. Use this directly
+     * only when the test is specifically proving the dependency refusal.
+     */
+    function daArmBranchLock(bool $enabled = true): void
+    {
+        daSetFlag(DoctorEffectiveBranchResolver::FLAG_BRANCH_LOCK, $enabled);
+    }
+}
+
+if (! function_exists('daArmFlags')) {
+    /**
+     * TRAP: the two flags are independent switches with a real but undeclared runtime coupling, so a test
+     * that needs the branch lock to actually resolve must arm both — this is the only call that makes
+     * DoctorEffectiveBranchResolver::enabled() capable of returning true.
+     */
+    function daArmFlags(bool $singleActiveSession = true, bool $branchLock = true): void
+    {
+        daArmSingleActiveSession($singleActiveSession);
+        daArmBranchLock($branchLock);
+    }
+}
+
 if (! function_exists('daArmDoctorAccess')) {
     /**
-     * TRAP: arming the flag is not enough — the lease engine ALSO requires
+     * TRAP: arming the flags is not enough — the lease engine and the branch resolver BOTH also require
      * IncumbentSessionProbe::observable(), and phpunit.xml pins SESSION_DRIVER=array, so the capability is
      * inert on a default test run. This is the one call that makes the whole capability live, and every
      * armed test below starts with it.
      *
-     * ONE FLAG, not two. PR-A has exactly one switch; the branch lock's second flag arrives with the
-     * branch lock, and a helper that armed a flag this pull request does not register would throw from
-     * daSetFlag() rather than quietly pass.
+     * TWO FLAGS now, where PR-A had one. A branch-lock test that calls only daArmSingleActiveSession()
+     * leaves the resolver disabled and its every answer null, which the runtime treats as UNSET — so the
+     * test would pass by proving legacy behaviour.
      */
     function daArmDoctorAccess(): void
     {
-        daArmSingleActiveSession(true);
+        daArmFlags(true, true);
         daObservableSessionStore();
     }
 }
@@ -104,14 +140,15 @@ if (! function_exists('daDisarmFlags')) {
     /**
      * TRAP: config is restored between tests, but a test that arms mid-way then asserts the OFF behaviour
      * in the same test needs an explicit disarm rather than a fresh test — the query-budget test measures
-     * exactly that, an armed request against a disarmed one in a single process.
+     * exactly that, an armed request against a disarmed one in a single process. BOTH flags must go: either
+     * one left on keeps part of the capability live.
      *
      * The session driver is deliberately LEFT OBSERVABLE. Disarming through the driver instead would prove
-     * the probe rather than the flag, and the budget measurement needs the flag to be the only difference.
+     * the probe rather than the flags, and the budget measurement needs the flags to be the only difference.
      */
     function daDisarmFlags(): void
     {
-        daArmSingleActiveSession(false);
+        daArmFlags(false, false);
     }
 }
 
@@ -305,6 +342,107 @@ if (! function_exists('daDoctorUser')) {
     function daDoctorUser(array $practiceBranches = []): User
     {
         return daDoctorAccount($practiceBranches)['user'];
+    }
+}
+
+/*
+|--------------------------------------------------------------------------
+| Home lock and temporary cover
+|--------------------------------------------------------------------------
+*/
+
+if (! function_exists('daGrantHomeLock')) {
+    /**
+     * TRAP: firstOrNew(['doctor_id' => …]) MASS ASSIGNS its search attributes through the constructor, and
+     * this model's $fillable is deliberately empty, so it throws before the forceFill() below is ever
+     * reached — measured, and it was 57 of 95 failures in one run. Look the row up and build a bare model.
+     *
+     * This grants the lock DIRECTLY, bypassing DoctorBranchLockApprovalService on purpose: a resolver or
+     * list test must not depend on the approval path passing, and the approval path has its own suite.
+     *
+     * NOTE: the target branch is NOT validated against the practice pivot here — that is exactly the
+     * approval service's job. Pass a branch outside the pivot deliberately to build the stranded-doctor
+     * case the approver queue has to surface.
+     */
+    function daGrantHomeLock(
+        Doctor $doctor,
+        Branch|int $homeBranch,
+        ?User $establishedBy = null,
+        string $establishedVia = DoctorBranchLock::VIA_INITIAL_ASSIGNMENT,
+    ): DoctorBranchLock {
+        $branchId = $homeBranch instanceof Branch ? (int) $homeBranch->id : $homeBranch;
+
+        $lock = DoctorBranchLock::query()
+            ->where('doctor_id', (int) $doctor->id)
+            ->first() ?? new DoctorBranchLock;
+
+        $lock->forceFill([
+            'doctor_id' => (int) $doctor->id,
+            'home_branch_id' => $branchId,
+            'established_via' => $establishedVia,
+            'established_at' => now(),
+            'established_by_user_id' => $establishedBy?->id,
+        ])->save();
+
+        return $lock->refresh();
+    }
+}
+
+if (! function_exists('daApprovedCover')) {
+    /**
+     * TRAP four ways. (1) `status` and the decision stamps are NOT in $fillable, so an approved cover cannot
+     * be built with create() alone — forceFill() is required, and a cover left PENDING is not approved, so
+     * the resolver returns the home branch and the test silently proves nothing. (2)
+     * `source_home_branch_id` is NOT NULL; it defaults here to the doctor's live home lock so the row is not
+     * stale by construction. (3) The period is an INSTANT PAIR and half-open [starts_at, ends_at) — pass
+     * instants relative to now(), never a clinical date, and remember a cover whose ends_at equals the
+     * instant under test does NOT cover it. (4) requester and decider default to two DIFFERENT accounts,
+     * because maker == checker is forbidden; pass the same user for both only when deliberately building an
+     * illegal historical row.
+     *
+     * NOTE: this writes the row directly, so the configured cover bounds are NOT applied. A period outside
+     * them is representable here but would be refused by DoctorBranchCoverApprovalService, so do not use
+     * such a period to describe production state.
+     */
+    function daApprovedCover(
+        Doctor $doctor,
+        Branch|int $targetBranch,
+        CarbonInterface|string $startsAt,
+        CarbonInterface|string $endsAt,
+        ?User $requester = null,
+        ?User $decidedBy = null,
+        Branch|int|null $sourceHomeBranch = null,
+    ): DoctorBranchCover {
+        $targetBranchId = $targetBranch instanceof Branch ? (int) $targetBranch->id : $targetBranch;
+
+        $sourceHomeBranchId = match (true) {
+            $sourceHomeBranch instanceof Branch => (int) $sourceHomeBranch->id,
+            is_int($sourceHomeBranch) => $sourceHomeBranch,
+            default => (int) (DoctorBranchLock::query()
+                ->where('doctor_id', (int) $doctor->id)
+                ->value('home_branch_id') ?? $targetBranchId),
+        };
+
+        $requester ??= User::factory()->create();
+        $decidedBy ??= User::factory()->create();
+
+        $cover = new DoctorBranchCover;
+
+        $cover->forceFill([
+            'doctor_id' => (int) $doctor->id,
+            'requester_user_id' => (int) $requester->id,
+            'source_home_branch_id' => $sourceHomeBranchId,
+            'target_branch_id' => $targetBranchId,
+            'starts_at' => $startsAt instanceof CarbonInterface ? $startsAt : Carbon::parse($startsAt),
+            'ends_at' => $endsAt instanceof CarbonInterface ? $endsAt : Carbon::parse($endsAt),
+            'reason' => 'Fixture cover for the DoctorAccess suite.',
+            'requested_at' => now(),
+            'status' => DoctorBranchCover::STATUS_APPROVED,
+            'decided_by_user_id' => (int) $decidedBy->id,
+            'decided_at' => now(),
+        ])->save();
+
+        return $cover->refresh();
     }
 }
 
