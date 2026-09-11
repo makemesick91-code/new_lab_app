@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
+use App\Modules\DoctorAccess\Models\DoctorSessionLease;
+use App\Modules\DoctorAccess\Services\DoctorSessionLeaseService;
 use App\Modules\DoctorDevice\Services\DoctorAppLoginGate;
 use App\Modules\DoctorDevice\Services\DoctorDeviceSessionService;
 use App\Modules\RmeOnlineContext\Services\UserOnlineContextService;
@@ -80,6 +82,28 @@ class AuthenticatedSessionController extends Controller
 
             $sessions = app(DoctorDeviceSessionService::class);
 
+            /*
+             * DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1 — hand the lease back
+             * before the privileged session is torn down.
+             *
+             * The lease was claimed during authenticate() above, on the Login
+             * event. The session that holds it is about to be invalidated, so
+             * without this the doctor walks away holding a lease bound to a
+             * session that no longer exists. It would self-heal — the ceremony
+             * session is recorded against no user, so the next login sees a
+             * dead incumbent and reclaims it — but that is a four-step
+             * inference, and one honest RELEASED row is worth more than a
+             * RECLAIMED one that has to be explained.
+             *
+             * A no-op for every session that never claimed a lease, which is
+             * every non-doctor and every doctor while the capability is off.
+             */
+            app(DoctorSessionLeaseService::class)->releaseCurrent(
+                $request,
+                $user,
+                DoctorSessionLease::RELEASE_DEVICE_INVALIDATED,
+            );
+
             $sessions->invalidate($request, $user, $denial);
 
             if ($mayAssert) {
@@ -113,6 +137,17 @@ class AuthenticatedSessionController extends Controller
         if ($user !== null) {
             app(UserOnlineContextService::class)->markOffline($user);
         }
+
+        // DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1 — release the lease while
+        // the user and the session token are both still readable. Placed after
+        // markOffline so the two teardowns happen in the same order the lease
+        // middleware uses, and before logout() because logout() is what makes
+        // the user unreadable. A no-op for a session that holds no lease.
+        app(DoctorSessionLeaseService::class)->releaseCurrent(
+            $request,
+            $user,
+            DoctorSessionLease::RELEASE_LOGOUT,
+        );
 
         Auth::guard('web')->logout();
 

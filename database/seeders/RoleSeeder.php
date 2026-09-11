@@ -495,6 +495,25 @@ class RoleSeeder extends Seeder
             'view_legacy_odontogram_imports',
             'review_legacy_odontogram_imports',
             'publish_legacy_odontogram_imports',
+
+            // DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1 — FORCE LOGOUT.
+            //
+            // It ends a LOGIN SESSION only: no device, no
+            // DoctorDeviceAuthorization and no WebAuthn credential is revoked
+            // (ruling P17). One active session per doctor means a lease can get
+            // stuck behind a tablet nobody can reach, and the escape hatch has
+            // to belong to somebody on the RME side who can be told about it —
+            // not to whoever happens to hold the database.
+            //
+            // A SELF-RELEASE IS REFUSED FOR EVERY HOLDER, and that refusal is
+            // NOT this grant's doing: it is enforced inside the release
+            // transaction, after the doctor row is locked, because the single
+            // global Gate::before returns true for a Super Admin before any
+            // permission check here or in any policy runs.
+            //
+            // Super Admin needs no entry: it is synced from the full permission
+            // list via '*' below. No other role gets this.
+            'release_doctor_session_leases',
         ],
         // Sprint 23 Phase 23.5 — Dedicated separated RME report viewers
         'Laporan Pasien RME' => [

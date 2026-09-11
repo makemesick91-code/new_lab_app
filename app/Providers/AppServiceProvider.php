@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use App\Exceptions\ForbiddenProductionCommandException;
+use App\Modules\DoctorAccess\Listeners\ClaimDoctorSessionLease;
 use App\Modules\Prescription\Gateways\CloudApiWhatsAppGateway;
 use App\Modules\Prescription\Gateways\DisabledWhatsAppGateway;
 use App\Modules\Prescription\Gateways\FakeWhatsAppGateway;
@@ -21,6 +22,7 @@ use App\Support\Devflow\CanonicalBaseRefResolver;
 use App\Support\Devflow\DevflowScanner;
 use App\Support\Devflow\GitChangeInspector;
 use App\Support\Devflow\SharedFoundationScanner;
+use Illuminate\Auth\Events\Login;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Console\Events\CommandStarting;
 use Illuminate\Http\Client\Factory as HttpFactory;
@@ -120,6 +122,31 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->registerDoctorAppLoginRateLimiters();
         $this->refuseForbiddenConsoleCommands();
+        $this->registerDoctorSessionLeaseListener();
+    }
+
+    /**
+     * DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1 — claim the doctor session
+     * lease on every production authentication entry.
+     *
+     * WHY THE REGISTRATION IS EXPLICIT AND MUST STAY THAT WAY. This application
+     * never calls withEvents() while building the framework, which is the only
+     * thing that registers the framework's event service provider and turns on
+     * listener discovery. A listener placed in a conventional directory and
+     * left to be discovered would silently never run — and a session-lease
+     * claim that silently never runs looks exactly like a capability that is
+     * switched off. Event::listen() in boot() is the established pattern here;
+     * the console-command guard above uses it too.
+     *
+     * WHY THE Login EVENT IS THE CLAIM SITE is argued in full on the listener:
+     * it is the only hook that also covers the remember-me recaller path, which
+     * mints an authenticated session through no controller at all, and it is
+     * the hook that setUser() — and therefore the test suite's actingAs() —
+     * does NOT fire.
+     */
+    private function registerDoctorSessionLeaseListener(): void
+    {
+        Event::listen(Login::class, ClaimDoctorSessionLease::class);
     }
 
     /**

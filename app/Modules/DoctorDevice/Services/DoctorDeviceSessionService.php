@@ -3,6 +3,7 @@
 namespace App\Modules\DoctorDevice\Services;
 
 use App\Models\User;
+use App\Modules\DoctorAccess\Services\DoctorSessionLeaseService;
 use App\Modules\DoctorDevice\Models\DoctorDevice;
 use App\Modules\DoctorDevice\Models\DoctorDeviceAuthorization;
 use App\Modules\DoctorDevice\Models\DoctorDeviceLoginTicket;
@@ -58,6 +59,10 @@ class DoctorDeviceSessionService
         }
 
         $hash = $this->logins->hashTicket($token);
+
+        // DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1 — refuse BEFORE the ticket
+        // is spent, never after. See the method note below.
+        $this->assertSessionLeaseAvailable($hash);
 
         /** @var array{ticket: DoctorDeviceLoginTicket, claimed: bool}|null $claim */
         $claim = DB::transaction(function () use ($hash) {
@@ -204,6 +209,57 @@ class DoctorDeviceSessionService
             $request->session()->invalidate();
             $request->session()->regenerateToken();
         }
+    }
+
+    /**
+     * DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1 — check that a lease is
+     * available BEFORE the one-time ticket is consumed.
+     *
+     * The claim itself happens later, on the Login event, and it is the only
+     * authority: it re-evaluates this same question under a row lock. But by
+     * then the ticket has already been marked consumed, and a ticket is
+     * single-use — so a doctor refused at that point would ALSO have lost their
+     * way back in and would have to authenticate from scratch on the tablet.
+     * Refusing here leaves `consumed_at` NULL, so the ticket survives the
+     * refusal and can be redeemed once the other session is closed.
+     *
+     * This is advisory and racy on purpose, and being racy costs nothing: a
+     * pre-check that says yes and then loses the race simply produces the
+     * ordinary denial one step later, which is the behaviour without it.
+     *
+     * A no-op while the capability is off, on a session driver whose liveness
+     * cannot be observed, and for any account the rule does not apply to. The
+     * refusal deliberately reuses this class's own generic message: telling a
+     * caller holding a ticket exactly why it was refused would also tell an
+     * attacker holding a stolen one.
+     */
+    private function assertSessionLeaseAvailable(string $hash): void
+    {
+        $leases = app(DoctorSessionLeaseService::class);
+
+        if (! $leases->enabled()) {
+            return;
+        }
+
+        $ticket = DoctorDeviceLoginTicket::query()->where('token_hash', $hash)->first();
+
+        if ($ticket === null || $ticket->user_id === null) {
+            // No ticket, or none that names an account. The redemption path
+            // below denies it on its own terms.
+            return;
+        }
+
+        $user = User::query()->find((int) $ticket->user_id);
+
+        if ($user === null || ! $leases->subjectTo($user)) {
+            return;
+        }
+
+        if ($leases->availableFor($user)) {
+            return;
+        }
+
+        $this->deny($ticket, 'active_session_elsewhere');
     }
 
     private function deny(?DoctorDeviceLoginTicket $ticket, string $reason): never
