@@ -4,7 +4,14 @@
 **Flag:** `doctor.single_active_session` (`FEATURE_DOCTOR_SINGLE_ACTIVE_SESSION`), risk `critical`, committed **OFF**.
 **Rules:** `docs/architecture/doctor-single-active-session-lease.md` (LEASE-R001..R024).
 **Scope of this runbook:** the **lease** only. The branch lock and temporary cover are a
-separate capability with their own runbook, added by PR-B.
+separate capability with their own runbook, now shipped:
+`docs/runbooks/doctor-branch-lock-operations.md`.
+
+**One thing PR-B changed that matters when you read section 3:** a third eviction reason
+exists, `branch_context_changed`, and unlike the other two it DOES release the lease row
+(reason `effective_branch_changed`). See LEASE-R013, which was amended rather than left to
+rot. If you are diagnosing a released lease and cannot find a logout or an operator action,
+an approved branch change or an expired cover is the third possibility.
 
 ---
 

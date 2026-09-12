@@ -50,11 +50,20 @@ clinician already seeing patients keeps working.
   shared by every session of the account; `logout()` cycles it, `logoutCurrentDevice()`
   does not. This is why the device module's `invalidate()` is not reusable here.
 - **A denial creates no row.** It is audited against the `users` entity.
-- **Eviction frees the clinic room BEFORE tearing the session down**, and releases no lease
-  row — both reasons that reach `evict()` describe a lease that is already not this
-  session's to end.
-- **Revalidation answers two conditions only**: the lease is gone, or it belongs to another
-  account. Do not invent a third; the device middleware answers for the tablet.
+- **Eviction frees the clinic room BEFORE tearing the session down**, and writes to the lease
+  row **only when the lease is this session's to end**. MISSING and MISMATCHED are not — a
+  missing lease has nothing to release and a mismatched one belongs to somebody else — so for
+  those two it writes nothing. PR-B's third reason, `DENY_BRANCH_CONTEXT_CHANGED`, IS this
+  session's live lease, so it is released with `RELEASE_EFFECTIVE_BRANCH_CHANGED`; leaving it
+  would strand an active lease and the doctor's own next login would be refused by it.
+  *(Amended: PR-A's "releases no lease row" was true of PR-A's two reasons and is false on the
+  merged tree.)*
+- **Revalidation answers only what the LEASE ROW can answer** — three conditions on the
+  merged tree: the lease is gone, it belongs to another account, or (PR-B) the effective
+  branch/cover recorded on it at claim time is no longer the one in force. That third one is
+  not an invention: it is a fact stored on the lease row, which is precisely this rule's
+  subject. Whether the TABLET is still trusted remains the device middleware's question and
+  must never be asked here. *(Amended: PR-A's "two conditions only, do not invent a third".)*
 - **Force logout ends a LOGIN SESSION and nothing else.** No device, no
   `DoctorDeviceAuthorization`, no WebAuthn credential — and none of those tables is
   written. WebAuthn revocation is irreversible, so the doctor logs back in; they do not
@@ -71,17 +80,19 @@ clinician already seeing patients keeps working.
 - **This capability never reads `doctor.trusted_device_enforcement`.** The two are
   independent switches.
 
-## Scope boundary — do not cross it here
+## Scope boundary — PARTLY SUPERSEDED, read this before trusting the sentence above
 
-The branch lock, temporary cover, the effective-branch resolver, operational-list narrowing
-and the bulk device-authorization command are **PR-B and PR-C**. They are absent from this
-base on purpose.
+**PR-B HAS MERGED AND DEPLOYED.** The branch lock, temporary cover, the effective-branch
+resolver and operational-list narrowing are PRESENT on this tree; their rules are
+`DBL-R001..R025` in `docs/architecture/doctor-branch-lock-and-cover.md`, mirrored in
+`.cursor/rules/154-doctor-branch-lock-and-cover.mdc`. Only the **bulk device-authorization
+command** is still absent, and that is PR-C.
 
-`trx_doctor_session_leases` ships **without** `effective_branch_id` and `effective_cover_id`.
-PR-B adds them additively; leases claimed between the two deploys carry **nulls** that
-PR-B's comparison tolerates, so nobody is evicted by that deploy. **No backfill may be
-added** — inventing an effective branch for a session established before the concept
-existed would be a fabricated clinical fact.
+`trx_doctor_session_leases` now HAS `effective_branch_id` and `effective_cover_id`, added by
+PR-B's fourth migration. What remains permanently true, and is the part to keep: leases claimed
+between the two deploys carry **nulls**, PR-B's comparison tolerates a null so nobody was
+evicted by that deploy, and **no backfill may be added** — inventing an effective branch for a
+session established before the concept existed would be a fabricated clinical fact.
 
 ## Test traps that make a green test assert nothing
 
