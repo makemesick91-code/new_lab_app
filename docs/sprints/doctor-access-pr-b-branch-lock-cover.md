@@ -595,3 +595,456 @@ Karmila    online at SPN4, Ruangan A — left operationally usable
 `PR_B_STATUS = MERGED / DEPLOYED / FOREIGN-TABLET PROOF PASS / CEREMONY INCOMPLETE`
 `PR_C_SAFE_TO_START = NO`
 
+> **SUPERSEDED by section 12.** State as of section 10. Final status is in section 12.
+
+---
+
+## 11. Safe disarm, 2026-09-12 08:37 WITA — single-session OFF, branch lock KEPT
+
+Owner decision after the window: disarm `doctor.single_active_session`, keep
+`doctor.branch_lock` armed. Executed in the prescribed order.
+
+**Pre-disarm capture, 08:36:27.** Zero pending rows of any kind
+(`PENDING_INITIAL_ASSIGNMENTS=0 PENDING_TRANSFERS=0 PENDING_COVERS=0`), so nothing could be
+stranded behind a disabled surface and the branch workflow never had to be touched.
+
+The env key was set explicitly to `false` rather than removed, so the file records a deliberate
+disarm rather than an absence. `doctor.branch_lock=true` was not touched. Config cache rebuilt as
+`daengtisiams` (`config.php` owner verified), php-fpm reloaded.
+
+### Post-disarm hard gates — all pass, read from effective runtime
+
+```
+DOCTOR_SINGLE_ACTIVE_SESSION_CONFIG=false   DOCTOR_SINGLE_ACTIVE_SESSION_EFFECTIVE=false
+DOCTOR_BRANCH_LOCK_CONFIG=true              DOCTOR_BRANCH_LOCK_EFFECTIVE=true
+GLOBAL_ENFORCEMENT_ACTIVE=false             PILOT_COHORT=[9,15,18]  SCOPE_VERDICT=GO
+KARMILA_HOME_LOCKED_BRANCH=SPN4             context SPN4, room 17, online, 1 session
+LOCKS_TOTAL=1  DOCTORS_UNSET=14             LOCKS_CREATED_SINCE_DISARM=0
+devices=5  authz=6  creds=5                 revocations_today=0
+LOG_BYTES_NOW=1406217  BYTES_SINCE_ANCHOR=0  ERRORS=152
+NEW_SINGLE_SESSION_ERRORS=0   NEW_BRANCH_LOCK_ERRORS=0
+/login=200  /health/ready=200
+```
+
+Karmila was **not** logged out by the disarm, her lock is untouched at SPN4, and the other 14
+doctors remain UNSET — so branch-lock arming alone narrows nobody, which is the point.
+
+### ONE THING THE NEXT WINDOW MUST KNOW, or it will be wasted
+
+**Lease 5 is still UNRELEASED.** That is PR-A's documented rollback behaviour — existing rows stay
+as they are and are harmless while nothing claims one — not a leak. But it has a sharp consequence
+for step 4 of the next ceremony sequence ("fresh-login Karmila so a new active lease definitely
+exists"):
+
+> The moment `doctor.single_active_session` is re-armed, lease 5 becomes a live incumbent again,
+> because `IncumbentSessionProbe` will find Karmila's surviving `sessions` row and read it as
+> alive. A "fresh login" attempted at that point is a SECOND login and will be **DENIED** —
+> correctly, and confusingly.
+
+So the next window must run in this order: **re-arm, then have her LOG OUT** (which releases lease
+5 with reason `logout`), **then log in** — and only that login produces the fresh lease the cover
+approval needs to invalidate. Logging in before logging out will produce a denial that looks like a
+defect and is not one.
+
+### Remaining PR-B gates, unchanged
+
+`SESSION_INVALIDATION_VERIFIED` · `TEMP_COVER_VERIFIED` · `COVER_EXPIRY_VERIFIED` ·
+`STALE_COVER_SESSION_DENIED` · `RUANG_PERAWATAN_NARROWING` · `ARCHIVE_CROSS_BRANCH_READ`
+
+```
+PR_B_STATUS = MERGED / DEPLOYED / FOREIGN-TABLET PROOF PASS / CEREMONY INCOMPLETE
+PR_C_SAFE_TO_START = NO
+```
+
+> **SUPERSEDED — this is the state as of section 11, not the outcome.** Section 12 below closes
+> all six remaining gates and section 13 carries the per-actor evidence. The final status is
+> `MERGED / DEPLOYED / PRODUCTION VERIFIED / CLEAN`; read it there, not here.
+>
+> This block is kept rather than rewritten because it records what was true when it was written,
+> and a status that was once NO is worth being able to see. But it is the FIRST `PR_B_STATUS`
+> line in the file, so anyone scanning for one finds the stale answer — which is exactly how a
+> superseded status becomes a believed one.
+
+---
+
+## 12. PR-B PRODUCTION CEREMONY CLOSED — all six remaining gates PASS, 2026-09-12
+
+Window 10:04–11:32 WITA, operator present, drg Karmila (user 18 / doctor 21) on
+`PILOT_TABLET_05_ATG3` (device 6, authorization 6), a tablet whose physical branch is **ATG3**
+while her permanent home lock is **SPN4**. Production head `1010d9fb`, exact match, throughout.
+
+**Every claim below is server-side evidence.** Where the operator reported "all step done" without
+answering the specific question asked, the outcome was taken from the database and from the nginx
+access log instead. Two such reports turned out to be partly untrue (a room list never reported, a
+self-approval attempt not yet made at that point), which is why nothing here rests on them.
+
+### The six gates
+
+| gate | verdict | the evidence, not the assertion |
+|---|---|---|
+| SESSION_INVALIDATION_VERIFIED | **PASS** | 11:06:21 `GET /rme/medical-records` → 302, referer the odontogram page she was reading; audit 699 `DOCTOR_SESSION_LEASE_EVICTED` on `users:18`, `{"reason":"lease_missing"}` |
+| TEMP_COVER_VERIFIED | **PASS** | lease 7 claimed 11:07:18 with `effective_branch_id=3`, `effective_cover_id=1`; home lock still SPN4 |
+| COVER_EXPIRY_VERIFIED | **PASS** | at 11:29:07, 247s past `ends_at`, the cover row still `approved` with `updated_at == decided_at` — **nothing rewrote it** — yet effective covers = 0 and effective branch = SPN4 |
+| STALE_COVER_SESSION_DENIED | **PASS** | 11:26:36 → 302 then `/login` 200; audit 703 `DOCTOR_SESSION_LEASE_EVICTED` on `trx_doctor_session_leases:7`, `{"reason":"branch_context_changed"}` |
+| RUANG_PERAWATAN_NARROWING | **PASS** | home: selector offered only Cabang Sunu, server granted room 17 SPN-A. cover: only Cabang Antang, server granted room 12 ATG-A |
+| ARCHIVE_CROSS_BRANCH_READ | **PASS** | from an SPN4 session: visit 23 (LDK2) → 302 → visit 9 (ATG3) 200, `handwritings/9/image` 200 twice, `visits/23/odontogram` 200, zero denial audits |
+
+### The round trip, on one tablet that belongs to ATG3
+
+```
+lease 5 | 06:51:47 WITA | SPN4 | cover -  | released admin_release            (operator, user 11)
+lease 6 | 10:38:03 WITA | SPN4 | cover -  | released effective_branch_changed (cover approval)
+lease 7 | 11:07:18 WITA | ATG3 | cover 1  | released effective_branch_changed (cover expiry)
+lease 8 | 11:30:19 WITA | SPN4 | cover -  | ACTIVE
+```
+
+SPN4 → ATG3 → SPN4, and `mst_doctor_branch_locks.home_branch_id` never moved off 5.
+
+### Two different eviction reasons, which is what proves two different mechanisms
+
+The invalidation gate and the stale-cover gate are easy to conflate, and a single reason code
+appearing twice would not have distinguished them. They produced different codes AND different
+audit shapes, each matching its documented path:
+
+- **approval** had already released the lease, so the next request found none: reason
+  `lease_missing`, audit keyed on `users:18`, because a missing lease has nothing to write to;
+- **expiry** left the lease in place and made its recorded `(branch, cover)` unreconcilable with
+  the resolver's answer: reason `branch_context_changed`, audit keyed on the lease row itself,
+  which is also released with `effective_branch_changed`.
+
+### Maker-checker, observed rather than asserted
+
+`approve_doctor_branch_locks` is held by both tiers, so the only thing separating maker from
+checker is an actor-id comparison inside the locked transaction, which a Super Admin's global gate
+bypass cannot reach. Observed on production:
+
+```
+03:03:06 UTC  POST /rme/doctor-branch-covers/1/approve  -> refused  (cover still undecided)
+03:03:26 UTC  POST /logout
+03:03:32 UTC  POST /login                                          (different account)
+03:03:47 UTC  POST /rme/doctor-branch-covers/1/approve  -> approved by user 11
+```
+
+Maker user 1, checker user 11, `requester_user_id <> decided_by_user_id`. The refusal wrote
+nothing. Audit 698's payload also records `online_impact_acknowledged: true` and
+`doctor_online_at_decision: true`: she was online, and the approval carried the acknowledgement the
+subject guard re-reads inside the transaction.
+
+### Three corrections this ceremony forced
+
+1. **The cover form takes WITA, not UTC.** Storage is UTC, but the input string is parsed in the
+   clinical timezone. Proven by the row itself: typed 10:25/11:25 clinic time, stored 02:25/03:25.
+   An instruction given in UTC would have dated the window eight hours away and the cover would
+   never have come into force.
+2. **Ruang Perawatan is NOT the room-set proof surface for a doctor.** On
+   `/rme/treatment-room-worklist` the room selector is not rendered at all for a room-scoped
+   doctor, and the room list that page builds is scoped to *every* RME-enabled branch rather than
+   to the effective branch. The narrowed, doctor-visible surface is the **working-context
+   selector**, which intersects her practice branches with the effective branch and is re-asserted
+   server-side. §4's corrected surface contract is right that the evidence is the room set; it is
+   the page that was wrong.
+3. **"16 rooms" was a row count including inactive rooms.** Active rooms: SPN4 two, ATG3 two,
+   eleven across the four RME branches. Because home and cover both have exactly two and all four
+   are named *Ruangan A* / *Ruangan B*, **a count or a name proves nothing** — the evidence has to
+   be the room codes SPN-A/SPN-B against ATG-A/ATG-B, or the granted room id.
+
+### Anti-vacuity preconditions asserted before each gate was scored
+
+Every gate in this sprint has a way to pass for the wrong reason, and each was closed first:
+
+- the post-arm lease was proven claimed **after** the flag was armed, so §24 could not pass on a
+  token-less pre-arm session;
+- lease 7 was proven claimed **strictly inside** the cover window and to carry both the cover id
+  and the target branch, so §30 could not pass on a session that never held cover authority;
+- SPN4 and ATG3 were both confirmed `is_active` and `is_rme_enabled` before and after, because a
+  degraded branch makes the resolver decline to answer and a declined answer never evicts — which
+  would have looked like a clean 200;
+- ATG3 was confirmed present in `mst_doctor_branches` for doctor 21 **before** the cover was filed;
+  had it not been, the approval would have left her unable to go online anywhere;
+- she holds four active RME practice branches, so narrowing to one is a real exclusion rather than
+  an artefact of having only one.
+
+### Final state
+
+```
+DOCTOR_SINGLE_ACTIVE_SESSION_FINAL = false   (config AND effective, via env)
+DOCTOR_BRANCH_LOCK_FINAL           = true
+GLOBAL_ENFORCEMENT_ACTIVE          = false
+PILOT_COHORT                       = 9,15,18   SCOPE_VERDICT=GO
+KARMILA_HOME_LOCKED_BRANCH         = SPN4      final context SPN4 / SPN-A / online
+OTHER_DOCTORS_LOCK_STATE           = UNSET     28 of 29 doctor records, 14 of 15 Doctor accounts
+devices / authorizations / credentials = 5 / 6 / 5, authorization 6 active, 0 revocations
+PENDING initial assignments / transfers / covers = 0 / 0 / 0
+/login /health/live /health/ready /health/lb = 200
+APP_ENV pilot, APP_DEBUG false, maintenance OFF, migrations pending 0, failed jobs 0
+audit 690 -> 706, sixteen rows, every one attributable
+production log BYTE-IDENTICAL at 1406217 with 152 errors across the entire ceremony
+```
+
+**Zero new errors, zero unexpected identity mutations, zero stranded rows.**
+
+### Lease 8 is unreleased and inert — and the re-arm trap applies again
+
+Same as the previous window: with the flag off nothing claims or checks a lease, so lease 8 simply
+sits there. It is PR-A's documented rollback behaviour, not a leak. But she is **online right now**
+with a live session, so if `doctor.single_active_session` is ever re-armed, lease 8 becomes a live
+incumbent and her next login is a SECOND login and will be correctly DENIED. Any future re-arm must
+be followed by a logout, or by the audited release, **before** a fresh login.
+
+### The production tree object, stated properly
+
+Owner correction, 2026-09-12: an earlier handoff summary of mine put a BRANCH NAME in the
+`PRODUCTION_TREE` field. A ref name is not a tree object. **The repository record above was already
+correct** — section 8 has carried `tree 99ed382d` since the merge — so the defect was in my
+reporting line, not in the evidence. Resolved again, deliberately by three independent routes and
+from both authorities:
+
+```
+PRODUCTION_HEAD  = 1010d9fb14f5ee4563bd27db423631ebe655a5dc   type commit
+PRODUCTION_TREE  = 99ed382d281045fb870df15190198c107528385d   type tree
+
+on production (srv1730088)          git rev-parse HEAD^{tree}        -> 99ed382d2810...
+on production, from the literal SHA git rev-parse <sha>^{tree}       -> 99ed382d2810...
+on production, commit object header git cat-file commit HEAD | head  -> tree 99ed382d2810...
+in the repository, from the SHA     git rev-parse <sha>^{tree}       -> 99ed382d2810...
+object type verified                git cat-file -t <tree sha>       -> tree
+
+PRODUCTION_HEAD_MATCH     = YES
+PRODUCTION_TREE_VALID_SHA = YES
+production tracked dirty files = 0
+```
+
+### Permanent operational warning — lease 8 and any future re-arm
+
+Lease 8 is **unreleased but inert** while `doctor.single_active_session` is false, and drg Karmila
+is online at SPN4 in room 17. Her session is deliberately **not** being force-logged-out, and
+lease 8 is deliberately **not** being released, because neither would serve a clinical purpose and
+housekeeping is not a reason to end a clinician's session.
+
+The consequence, which must be carried into any future window:
+
+> If `doctor.single_active_session` is re-armed while that session still survives, lease 8 becomes
+> an incumbent lease again. Therefore before any subsequent fresh Karmila login after a re-arm,
+> **either** (A) a normal logout followed by verifying the lease retired, **or** (B) the canonical
+> audited release or force logout, must occur first. Otherwise the new login is correctly treated
+> as a second concurrent login and is denied.
+
+That denial would be PR-A behaving exactly as specified. It is not a leak and not a defect.
+
+```
+PR_B_STATUS = MERGED / DEPLOYED / PRODUCTION VERIFIED / CLEAN
+PR_C_SAFE_TO_START = YES  (owner-granted on cleanup completion; PR-C still must not start
+                           automatically and requires an explicit owner instruction)
+FULL_SUITE_CHILD_RESULT = SKIPPED
+PARENT_FULL_SUITE_OBLIGATION = OPEN
+PARENT_GO_TAGGED = NO
+```
+
+### Cleanup, verified 2026-09-12 11:46 WITA
+
+```
+PR_B_WORKTREE_REMOVED = YES   33 registered worktrees -> 32, directory absent, nothing to prune
+PR_B_SCRATCH_REMOVED  = YES
+LEFTOVER_PR_B_PROCESSES = 0
+LEFTOVER_DEBUG_FILES    = 0
+LEFTOVER_SECRET_FILES   = 0
+SPRINT_CREATED_SECRET_BACKUPS_LEFT = 0
+UNRELATED_CHECKOUT_PRESERVED = YES
+  branch ci-evidence/cicd-ctrl-3-db-guard-matrix, HEAD b18188c2, 0 staged,
+  same two dirty paths with identical sha256 and byte size, shared stash untouched at 1 entry
+branch pr-b-evidence preserved, local == origin == 49dcca1a
+```
+
+The worktree's local artifacts were inspected before deletion rather than assumed disposable:
+`.env` was `APP_ENV=local` on a sqlite file inside the worktree with only a locally generated
+`APP_KEY` and no reference to production; `local.sqlite` held 148 tables and **zero** rows in
+patients, visits, medical records and doctors; the two clinical directories held fourteen files
+totalling about 1 KB, every one a 10x10 pixel test PNG. No real clinical data and no production
+credential was destroyed. One further leftover, a 674 KB PR-B source diff sitting world-readable in
+the system temp directory since 2026-09-11, was found by the sweep and removed; it contained no
+secret and no identifier and is reproducible from git.
+
+Production was re-verified after cleanup and had not moved: both flags as required, home lock SPN4,
+Karmila online at SPN4 room SPN-A, identity 5/6/5 with authorization 6 active and zero revocations,
+audit still at 706, and the log still byte-identical at 1406217 bytes with 152 errors. **No cleanup
+operation mutated production state.**
+
+---
+
+## 13. Primary raw evidence, preserved in the repository
+
+Captured read-only from production so that the ceremony's scratch files hold nothing unique and can
+be destroyed without losing evidence. Client addresses are masked to the /24; the distinction that
+matters is only **which actor** made the request.
+
+### Audit trail, rows 690 to 706, with payloads
+
+```
+690 | 00:10:59Z | DOCTOR_APP_LOGIN_AUTHORIZATION_REJECTED | trx_doctor_device_login_tickets:13 | by=18 | {"reason": "active_session_elsewhere"}
+691 | 02:35:01Z | DOCTOR_SESSION_LEASE_REVOKED | trx_doctor_session_leases:5 | by=11 | {"reason": "admin_release", "outcome": "revoked", "user_id": 18}
+692 | 02:35:01Z | DOCTOR_SESSION_RELEASED_BY_APPROVER | mst_doctors:21 | by=11 | {"reason": "Akhiri sesi pra-arming untuk gate ceremony PR-B", "user_id": 18, "doctor_id": 21, "devices_touched": false, "session_released": true, "doctor_online_at_decision": false, "webauthn_credentials_touched": false}
+693 | 02:37:53Z | DOCTOR_DEVICE_LOGIN_REQUESTED | mst_doctor_device_authorizations:6 | by=18 | {"status": "active", "doctor_id": 21, "device_status": "active", "doctor_device_id": 6}
+694 | 02:38:03Z | DOCTOR_SESSION_LEASE_CLAIMED | trx_doctor_session_leases:6 | by=18 | {"reason": null, "outcome": "granted", "lease_id": 6, "incumbent_lease_id": null, "effective_branch_id": 5}
+695 | 02:38:03Z | DOCTOR_APP_LOGIN_AUTHORIZATION_SUCCESS | mst_doctor_device_authorizations:6 | by=18 | {"doctor_id": 21, "doctor_device_id": 6}
+696 | 02:52:50Z | DOCTOR_BRANCH_COVER_REQUESTED | trx_doctor_branch_covers:1 | by=1 | {"status": "pending", "ends_at": "2026-09-12T03:25:00+00:00", "cover_id": 1, "doctor_id": 21, "starts_at": "2026-09-12T02:25:00+00:00", "decided_at": null, "cancelled_at": null, "target_branch_id": 3, "requester_user_id": 1, "decided_by_user_id": null, "cancelled_by_user_id": null, "source_home_branch_id": 5}
+697 | 03:03:47Z | DOCTOR_SESSION_LEASE_REVOKED | trx_doctor_session_leases:6 | by=11 | {"reason": "effective_branch_changed", "outcome": "revoked", "user_id": 18}
+698 | 03:03:47Z | DOCTOR_BRANCH_COVER_APPROVED | trx_doctor_branch_covers:1 | by=11 | {"status": "approved", "ends_at": "2026-09-12T03:25:00+00:00", "cover_id": 1, "doctor_id": 21, "starts_at": "2026-09-12T02:25:00+00:00", "decided_at": "2026-09-12T03:03:47+00:00", "cancelled_at": null, "session_released": true, "target_branch_id": 3, "requester_user_id": 1, "state_at_decision": "active", "decided_by_user_id": 11, "live_home_branch_id": 5, "cancelled_by_user_id": null, "source_home_branch_id": 5, "doctor_online_at_decision": true, "online_impact_acknowledged": true}
+699 | 03:06:21Z | DOCTOR_SESSION_LEASE_EVICTED | users:18 | by=18 | {"reason": "lease_missing", "outcome": "evicted"}
+700 | 03:07:17Z | DOCTOR_DEVICE_LOGIN_REQUESTED | mst_doctor_device_authorizations:6 | by=18 | {"status": "active", "doctor_id": 21, "device_status": "active", "doctor_device_id": 6}
+701 | 03:07:18Z | DOCTOR_SESSION_LEASE_CLAIMED | trx_doctor_session_leases:7 | by=18 | {"reason": null, "outcome": "granted", "lease_id": 7, "incumbent_lease_id": null, "effective_branch_id": 3}
+702 | 03:07:18Z | DOCTOR_APP_LOGIN_AUTHORIZATION_SUCCESS | mst_doctor_device_authorizations:6 | by=18 | {"doctor_id": 21, "doctor_device_id": 6}
+703 | 03:26:36Z | DOCTOR_SESSION_LEASE_EVICTED | trx_doctor_session_leases:7 | by=18 | {"reason": "branch_context_changed", "outcome": "evicted"}
+704 | 03:30:18Z | DOCTOR_DEVICE_LOGIN_REQUESTED | mst_doctor_device_authorizations:6 | by=18 | {"status": "active", "doctor_id": 21, "device_status": "active", "doctor_device_id": 6}
+705 | 03:30:19Z | DOCTOR_SESSION_LEASE_CLAIMED | trx_doctor_session_leases:8 | by=18 | {"reason": null, "outcome": "granted", "lease_id": 8, "incumbent_lease_id": null, "effective_branch_id": 5}
+706 | 03:30:19Z | DOCTOR_APP_LOGIN_AUTHORIZATION_SUCCESS | mst_doctor_device_authorizations:6 | by=18 | {"doctor_id": 21, "doctor_device_id": 6}
+```
+
+**Row 690 corrects something I said during the ceremony.** I described that 08:10:59 WITA rejection
+as a device-login ticket being refused. It is not. Its payload reads
+`{"reason": "active_session_elsewhere"}` — it is **PR-A's single-session denial**, fired while the
+flag was still armed from the previous window and lease 5 was the live incumbent. The HTTP trace
+agrees: the login was refused, she was bounced, and her existing session still answered 200. So the
+refuse-never-evict rule was observed on production one more time than this record previously
+claimed, and my explanation of the mechanism was wrong.
+
+### Every lease this account has ever held
+
+```
+1 | claimed 22:18Z | released 22:18Z | reason device_invalidated | by - | effbr - | cover -
+2 | claimed 22:22Z | released 22:45Z | reason logout | by - | effbr - | cover -
+3 | claimed 22:46Z | released 22:46Z | reason device_invalidated | by - | effbr - | cover -
+4 | claimed 22:47Z | released 22:47Z | reason device_invalidated | by - | effbr - | cover -
+5 | claimed 22:51Z | released 02:35Z | reason admin_release | by 11 | effbr 5 | cover -
+6 | claimed 02:38Z | released 03:03Z | reason effective_branch_changed | by 11 | effbr 5 | cover -
+7 | claimed 03:07Z | released 03:26Z | reason effective_branch_changed | by - | effbr 3 | cover 1
+8 | claimed 03:30Z | released - | reason ACTIVE | by - | effbr 5 | cover -
+```
+
+### The cover row, as stored
+
+```
+id 1 | doctor 21 | requester 1 | decided_by 11 | source 5 -> target 3 | starts 2026-09-12 02:25:00Z | ends 2026-09-12 03:25:00Z | status approved | decided 2026-09-12 03:03:47 | cancelled NULL | updated 2026-09-12 03:03:47
+```
+
+`starts_at` and `ends_at` are UTC in storage and were typed as 10:25 and 11:25 clinic time.
+`updated_at` equals `decided_at`, which is the evidence that **nothing rewrote the row** after the
+decision, and therefore that expiry was evaluated live rather than by a scheduled job.
+
+### Active room inventory, the four RME branches
+
+```
+TLK1 | 1 | RM-LDKB | Ruang Landak B | inactive
+TLK1 | 2 | RM-LDKC | Ruang Landak C | inactive
+TLK1 | 3 | RM-TND | Ruang Tindakan | active
+TLK1 | 4 | RM-LDKA | Ruang Landak A | inactive
+TLK1 | 5 | RM-STR | Ruang Sterilisasi | active
+TLK1 | 6 | TKM-A | Ruangan A | active
+TLK1 | 7 | TKM-B | Ruangan B | active
+TLK1 | 8 | TKM-C | Ruangan C | inactive
+LDK2 | 9 | LDK-A | Ruangan A | active
+LDK2 | 10 | LDK-B | Ruangan B | active
+LDK2 | 11 | LDK-C | Ruangan C | active
+ATG3 | 12 | ATG-A | Ruangan A | active
+ATG3 | 13 | ATG-B | Ruangan B | active
+ATG3 | 14 | ATG-C | Ruangan C | inactive
+SPN4 | 17 | SPN-A | Ruangan A | active
+SPN4 | 18 | SPN-B | Ruangan B | active
+```
+
+Eleven active rooms across the four RME branches, not sixteen. Both SPN4 and ATG3 have exactly two,
+and all four of those are named *Ruangan A* and *Ruangan B*, which is why only the room code or the
+granted room id can serve as narrowing evidence.
+
+### HTTP evidence, with actor attribution
+
+```
+02:26:53Z | operator | GET /dashboard -> 302
+02:26:53Z | operator | GET /login -> 200
+02:31:34Z | operator | POST /login -> 302
+02:31:34Z | operator | GET /dashboard -> 200
+02:34:30Z | operator | GET /rme/doctor-branch-locks -> 200
+02:35:01Z | operator | POST /rme/doctor-branch-locks/21/release-session -> 302
+02:35:01Z | operator | GET /rme/doctor-branch-locks -> 200
+02:37:53Z | tablet   | POST /device-api/v1/doctor/challenge -> 200
+02:37:53Z | tablet   | POST /device-api/v1/doctor/login -> 200
+02:38:03Z | tablet   | GET /device-login/045b8ae8bf88240ad514da7194caf842b8550a3fe0362a45ba50c72c98e06451 -> 302
+02:38:09Z | tablet   | GET /rme/online-context/select -> 200
+02:42:24Z | tablet   | POST /rme/online-context/doctor -> 302
+02:42:25Z | tablet   | GET /dashboard -> 200
+02:42:40Z | tablet   | GET /rme/medical-records -> 200
+02:43:01Z | operator | GET /rme/visits/23/medical-record -> 302
+02:43:02Z | operator | GET /rme/visits/9/medical-record -> 200
+02:43:02Z | operator | GET /rme/handwritings/9/image -> 200
+02:43:02Z | operator | GET /rme/handwritings/9/image -> 200
+02:43:23Z | tablet   | GET /rme/visits/23/medical-record -> 302
+02:43:24Z | tablet   | GET /rme/visits/9/medical-record -> 200
+02:43:40Z | tablet   | GET /rme/visits/23/medical-record -> 302
+02:43:48Z | tablet   | GET /rme/visits/23/medical-record -> 302
+02:43:51Z | tablet   | GET /rme/visits/9/medical-record -> 200
+02:43:51Z | tablet   | GET /rme/visits/23/medical-record -> 302
+02:43:52Z | tablet   | GET /rme/visits/23/medical-record -> 302
+02:43:52Z | tablet   | GET /rme/visits/9/medical-record -> 200
+02:43:55Z | tablet   | GET /rme/visits/9/medical-record -> 200
+02:43:58Z | operator | GET /dashboard -> 200
+02:43:59Z | tablet   | GET /rme/handwritings/9/image -> 200
+02:44:00Z | tablet   | GET /rme/handwritings/9/image -> 200
+02:44:07Z | tablet   | GET /rme/visits/23/odontogram -> 200
+02:50:47Z | operator | GET /dashboard -> 200
+02:50:50Z | operator | POST /logout -> 302
+02:50:50Z | operator | GET / -> 302
+02:50:50Z | operator | GET /login -> 200
+02:50:54Z | operator | POST /login -> 302
+02:50:54Z | operator | GET /dashboard -> 200
+02:51:02Z | operator | GET /rme/doctor-branch-covers/new -> 200
+02:52:50Z | operator | POST /rme/doctor-branch-covers -> 302
+02:52:50Z | operator | GET /rme/doctor-branch-covers/new -> 200
+02:56:52Z | operator | GET /rme/doctor-branch-covers/new -> 200
+02:56:59Z | operator | GET /rme/doctor-branch-covers/new -> 200
+02:57:39Z | operator | GET /rme/doctor-branch-covers -> 405
+03:02:58Z | operator | GET /rme/doctor-branch-locks -> 200
+03:03:06Z | operator | POST /rme/doctor-branch-covers/1/approve -> 302
+03:03:06Z | operator | GET /rme/doctor-branch-locks -> 200
+03:03:26Z | operator | POST /logout -> 302
+03:03:26Z | operator | GET / -> 302
+03:03:26Z | operator | GET /login -> 200
+03:03:32Z | operator | POST /login -> 302
+03:03:33Z | operator | GET /dashboard -> 200
+03:03:42Z | operator | GET /rme/doctor-branch-locks -> 200
+03:03:47Z | operator | POST /rme/doctor-branch-covers/1/approve -> 302
+03:03:48Z | operator | GET /rme/doctor-branch-locks -> 200
+03:06:21Z | tablet   | GET /rme/medical-records -> 302
+03:06:24Z | tablet   | GET /rme/medical-records -> 302
+03:06:24Z | tablet   | GET /login -> 200
+03:07:16Z | tablet   | POST /device-api/v1/doctor/challenge -> 200
+03:07:17Z | tablet   | POST /device-api/v1/doctor/login -> 200
+03:07:18Z | tablet   | GET /device-login/3f2622ecd9756ab1bb84645fe9e05fcaa28d08744f53769f2bfde68e5c174a74 -> 302
+03:07:30Z | tablet   | GET /rme/medical-records -> 302
+03:07:31Z | tablet   | GET /rme/online-context/select -> 200
+03:07:54Z | tablet   | POST /rme/online-context/doctor -> 302
+03:07:55Z | tablet   | GET /dashboard -> 200
+03:13:11Z | tablet   | GET /rme/medical-records -> 200
+03:13:14Z | tablet   | GET /rme/treatment-room-worklist -> 200
+03:13:15Z | tablet   | GET /rme/reports/doctor-performance -> 200
+03:13:23Z | tablet   | GET /dashboard -> 200
+03:26:36Z | tablet   | GET /rme/medical-records -> 302
+03:26:37Z | tablet   | GET /login -> 200
+03:30:18Z | tablet   | POST /device-api/v1/doctor/challenge -> 200
+03:30:18Z | tablet   | POST /device-api/v1/doctor/login -> 200
+03:30:19Z | tablet   | GET /device-login/30ced9e0e1bba454b7d05bc6df22fee3770f04020e5add442cb66c87b9d3d77b -> 302
+03:30:19Z | tablet   | GET /rme/online-context/select -> 200
+03:30:29Z | tablet   | POST /rme/online-context/doctor -> 302
+03:30:29Z | tablet   | GET /dashboard -> 200
+```
+
+**Gate 6 rests on the `tablet` lines only, and this matters.** The operator's browser also opened
+patient 28's record at 02:43:01Z, but that browser was signed in as the Supervisor RME, a
+**governance actor** whose archive scope is the whole RME branch set. A cross-branch read by a
+governance actor proves nothing about a doctor's scope. The evidence for
+`ARCHIVE_CROSS_BRANCH_READ` is the tablet's own sequence at 02:43:23Z through 02:44:07Z, made by
+drg Karmila's session while her effective branch was SPN4: visit 23 at LDK2 redirecting to the
+canonical sheet at ATG3, the handwriting image served twice, and the LDK2 odontogram opening
+directly.
+
+The two `POST /rme/online-context/doctor` lines are the branch narrowing being accepted
+server-side, once per phase. The two bounces at 03:06:21Z and 03:26:36Z are the two evictions, and
+they are the only 302s on protected paths in the whole window.
