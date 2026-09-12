@@ -212,7 +212,15 @@ it('never creates a duplicate row when the pair appears between the plan and the
     // mst_dd_authorizations_pair_unique is an unconditional UNIQUE.
     expect($rows)->toHaveCount(1)
         ->and($rows->first()->status)->toBe(DoctorDeviceAuthorization::STATUS_ACTIVE)
-        ->and($result['refused'])->toBe(0);
+        ->and($result['refused'])->toBe(0)
+        // AND the counter tells the truth about which of the two happened. The
+        // plan said "create"; what actually occurred was an adoption of the
+        // doctor's own request. This is the only path where those two disagree,
+        // so it is the only place the distinction can be pinned.
+        ->and($result['created'])->toBe(0)
+        ->and($result['approved_existing'])->toBe(1)
+        ->and($result['outcomes'][0]['outcome'])
+        ->toBe(DoctorDeviceBulkAuthorizationOutcome::APPLIED_APPROVED_EXISTING);
 });
 
 it('adopts an orphan PENDING row left by a crash between the two transactions', function (): void {
