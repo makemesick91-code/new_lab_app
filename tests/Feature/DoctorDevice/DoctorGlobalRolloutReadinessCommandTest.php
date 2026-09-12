@@ -152,7 +152,7 @@ it('passes under strict only when every target doctor is ready', function () {
     $result = grrCmdRun(['--strict' => true]);
 
     expect($result['exit'])->toBe(0);
-    expect($result['output'])->toContain('READINESS_VERDICT='.DoctorGlobalRolloutReadinessService::VERDICT_GLOBAL_READY);
+    expect($result['output'])->toContain('READINESS_VERDICT='.DoctorGlobalRolloutReadinessService::VERDICT_TRUSTED_PATHS_COMPLETE);
 });
 
 // ---------------------------------------------------------------------------
