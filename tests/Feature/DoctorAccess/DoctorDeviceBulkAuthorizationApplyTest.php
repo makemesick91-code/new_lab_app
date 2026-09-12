@@ -153,6 +153,12 @@ it('refuses when a doctor is deactivated after the plan was built', function ():
     $result = $service->apply($plan, daSupervisorRme(), 'Mencoba provisioning saat dokter dinonaktifkan.');
 
     expect($result['refused'])->toBe(1)
+        // The CODE, not just the count. Without this the guard could be deleted
+        // outright: approve() has its own doctor check, it throws, and the catch
+        // converts that into a refusal too — so the count alone cannot tell
+        // "our lock caught it" from "we fell through to somebody else's".
+        ->and($result['outcomes'][0]['outcome'])
+        ->toBe(DoctorDeviceBulkAuthorizationOutcome::REFUSED_DOCTOR_INACTIVE)
         ->and(dbaActiveMatrix())->toBe([]);
 });
 

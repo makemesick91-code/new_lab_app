@@ -105,7 +105,11 @@ it('leaves a REJECTED pair alone and preserves every refusal stamp', function ()
     $branch = daBranch('Cabang Rejected');
     $account = daDoctorAccount([$branch]);
     $device = dbaTrustedDevice([], $branch);
-    $rejected = dbaAuthorization($account['doctor'], $device, DoctorDeviceAuthorization::STATUS_REJECTED);
+    // A rejection an approver has ALREADY FORGIVEN, so reopenIfPermitted()
+    // would really flip it to PENDING if anything routed it through
+    // resolveOrRequest(). A plain rejected row has no allowance, is inert
+    // whatever touches it, and would make this snapshot prove nothing.
+    $rejected = dbaForgivenRejection($account['doctor'], $device);
 
     $before = (array) DB::table('mst_doctor_device_authorizations')->where('id', $rejected->id)->first();
 

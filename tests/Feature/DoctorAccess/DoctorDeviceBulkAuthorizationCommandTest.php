@@ -399,6 +399,13 @@ it('never prompts, because a prompt auto-answers when nobody is at the terminal'
         ->and($executable)->not->toContain('confirmToProceed')
         ->and($executable)->not->toContain('->ask(')
         ->and($executable)->not->toContain('->choice(')
+        // laravel/prompts is INSTALLED, and its prompts are free functions, not
+        // methods — so banning only `->confirm(` would leave the whole package
+        // as an open door with the test still green.
+        ->and($executable)->not->toContain('Laravel\\Prompts')
+        ->and($executable)->not->toContain('confirm(')
+        ->and($executable)->not->toContain('ConfirmationQuestion')
+        ->and($executable)->not->toContain('askQuestion(')
         // And the gate it uses instead is really there.
         ->and($executable)->toContain('--confirm-plan')
         ->and($executable)->toContain('hash_equals');

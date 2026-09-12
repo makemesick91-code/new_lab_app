@@ -25,17 +25,30 @@ uses(RefreshDatabase::class);
 | estate — the premises the behavioural tests silently rest on.
 */
 
-/** Every PHP file that makes up PR-C's own writable surface. */
+/**
+ * Every PHP file that makes up PR-C's own writable surface.
+ *
+ * DISCOVERED, NOT LISTED. A hand-maintained array is a scan with a hole in it:
+ * a future file named DoctorDeviceBulkAuthorizationWriter.php would silently
+ * skip every check below while looking exactly like it was covered. Globbing
+ * means a new file joins the scans by existing.
+ *
+ * @return list<string>
+ */
 function dbaSourceFiles(): array
 {
-    return [
-        app_path('Modules/DoctorAccess/Services/DoctorDeviceBulkAuthorizationService.php'),
-        app_path('Modules/DoctorAccess/Support/DoctorDeviceBulkAuthorizationPlan.php'),
-        app_path('Modules/DoctorAccess/Support/DoctorDeviceBulkAuthorizationPair.php'),
-        app_path('Modules/DoctorAccess/Support/DoctorDeviceBulkAuthorizationOutcome.php'),
-        app_path('Modules/DoctorAccess/Support/DoctorDeviceBulkAuthorizationRefusal.php'),
-        app_path('Console/Commands/DoctorDeviceBulkAuthorizeCommand.php'),
-    ];
+    $files = array_merge(
+        glob(app_path('Modules/DoctorAccess/Services/DoctorDeviceBulkAuthorization*.php')) ?: [],
+        glob(app_path('Modules/DoctorAccess/Support/DoctorDeviceBulkAuthorization*.php')) ?: [],
+        glob(app_path('Console/Commands/DoctorDeviceBulkAuthorize*.php')) ?: [],
+    );
+
+    sort($files);
+
+    // A scan over an empty list passes everything. Assert it found the surface.
+    expect(count($files))->toBeGreaterThanOrEqual(6, 'PR-C source discovery found nothing to scan');
+
+    return $files;
 }
 
 /** One file's executable tokens, with every comment stripped. */
@@ -196,6 +209,42 @@ it('installs no observer or listener that would authorize anyone automatically',
     }
 
     expect($callers)->toBe(['DoctorDeviceBulkAuthorizeCommand.php']);
+
+    // THE SIGNATURE, not just the class. Scanning for the service name misses
+    // every automation that goes through Artisan instead — and the one place
+    // this estate already schedules commands, routes/console.php, is outside
+    // app/ entirely. Two live Schedule::command() entries sit in that file, so
+    // this is a path somebody has already walked.
+    $automationSites = array_merge(
+        [base_path('routes/console.php')],
+        glob(base_path('routes/*.php')) ?: [],
+        glob(app_path('Jobs/**/*.php')) ?: [],
+    );
+
+    foreach (array_unique($automationSites) as $path) {
+        if (! is_file($path)) {
+            continue;
+        }
+
+        expect(str_contains(dbaExecutable($path), 'doctor:device-bulk-authorize'))
+            ->toBeFalse(basename($path).' automates the bulk provisioner');
+    }
+
+    // Nothing inside app/ may drive it through Artisan either.
+    $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator(app_path()));
+
+    foreach ($iterator as $file) {
+        if (! $file->isFile() || $file->getExtension() !== 'php') {
+            continue;
+        }
+
+        if ($file->getFilename() === 'DoctorDeviceBulkAuthorizeCommand.php') {
+            continue;
+        }
+
+        expect(str_contains(dbaExecutable($file->getPathname()), 'doctor:device-bulk-authorize'))
+            ->toBeFalse($file->getFilename().' invokes the bulk provisioner by signature');
+    }
 });
 
 it('gates on exactly one permission, and that permission is already seeded', function (): void {

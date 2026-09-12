@@ -679,6 +679,39 @@ if (! function_exists('dbaAuthorization')) {
     }
 }
 
+if (! function_exists('dbaForgivenRejection')) {
+    /**
+     * A REJECTED pair an approver has already forgiven.
+     *
+     * TRAP, and the reason this exists: the plain rejected fixture leaves
+     * `re_request_allowed_at` NULL, so isReRequestAllowed() is false and
+     * reopenIfPermitted() is a guaranteed no-op on it. A test built on that row
+     * cannot tell "the code never called resolveOrRequest()" apart from "it did,
+     * and the row happened to be inert" — which is exactly the naive
+     * call-it-for-every-pair loop the design forbids. This row WOULD flip to
+     * PENDING if touched, so a snapshot comparison against it means something.
+     *
+     * The allowance must point at THIS rejection: isReRequestAllowed() compares
+     * re_request_allowed_for_rejected_at to rejected_at for equality, not for
+     * ordering.
+     */
+    function dbaForgivenRejection(Doctor $doctor, DoctorDevice $device): DoctorDeviceAuthorization
+    {
+        $row = dbaAuthorization($doctor, $device, DoctorDeviceAuthorization::STATUS_REJECTED);
+
+        $row->forceFill([
+            're_request_allowed_at' => now(),
+            're_request_allowed_for_rejected_at' => $row->rejected_at,
+        ])->save();
+
+        expect($row->fresh()->isReRequestAllowed())->toBeTrue(
+            'the fixture must be reopenable, or the test it feeds proves nothing',
+        );
+
+        return $row->fresh();
+    }
+}
+
 if (! function_exists('dbaRun')) {
     /**
      * Invoke the command and return its raw output.
