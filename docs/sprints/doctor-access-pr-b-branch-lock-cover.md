@@ -780,11 +780,54 @@ with a live session, so if `doctor.single_active_session` is ever re-armed, leas
 incumbent and her next login is a SECOND login and will be correctly DENIED. Any future re-arm must
 be followed by a logout, or by the audited release, **before** a fresh login.
 
+### The production tree object, stated properly
+
+Owner correction, 2026-09-12: an earlier handoff summary of mine put a BRANCH NAME in the
+`PRODUCTION_TREE` field. A ref name is not a tree object. **The repository record above was already
+correct** — section 8 has carried `tree 99ed382d` since the merge — so the defect was in my
+reporting line, not in the evidence. Resolved again, deliberately by three independent routes and
+from both authorities:
+
 ```
-PR_B_STATUS = MERGED / DEPLOYED / PRODUCTION VERIFIED / CLEAN
+PRODUCTION_HEAD  = 1010d9fb14f5ee4563bd27db423631ebe655a5dc   type commit
+PRODUCTION_TREE  = 99ed382d281045fb870df15190198c107528385d   type tree
+
+on production (srv1730088)          git rev-parse HEAD^{tree}        -> 99ed382d2810...
+on production, from the literal SHA git rev-parse <sha>^{tree}       -> 99ed382d2810...
+on production, commit object header git cat-file commit HEAD | head  -> tree 99ed382d2810...
+in the repository, from the SHA     git rev-parse <sha>^{tree}       -> 99ed382d2810...
+object type verified                git cat-file -t <tree sha>       -> tree
+
+PRODUCTION_HEAD_MATCH     = YES
+PRODUCTION_TREE_VALID_SHA = YES
+production tracked dirty files = 0
+```
+
+### Permanent operational warning — lease 8 and any future re-arm
+
+Lease 8 is **unreleased but inert** while `doctor.single_active_session` is false, and drg Karmila
+is online at SPN4 in room 17. Her session is deliberately **not** being force-logged-out, and
+lease 8 is deliberately **not** being released, because neither would serve a clinical purpose and
+housekeeping is not a reason to end a clinician's session.
+
+The consequence, which must be carried into any future window:
+
+> If `doctor.single_active_session` is re-armed while that session still survives, lease 8 becomes
+> an incumbent lease again. Therefore before any subsequent fresh Karmila login after a re-arm,
+> **either** (A) a normal logout followed by verifying the lease retired, **or** (B) the canonical
+> audited release or force logout, must occur first. Otherwise the new login is correctly treated
+> as a second concurrent login and is denied.
+
+That denial would be PR-A behaving exactly as specified. It is not a leak and not a defect.
+
+```
+PR_B_STATUS = MERGED / DEPLOYED / PRODUCTION VERIFIED / CLEANUP PENDING
 PR_C_SAFE_TO_START = NO   (owner authorization required; not granted by this ceremony)
 FULL_SUITE_CHILD_RESULT = SKIPPED
 PARENT_FULL_SUITE_OBLIGATION = OPEN
 PARENT_GO_TAGGED = NO
 ```
+
+Functional production verification is complete; the worktree and scratch cleanup is not, so the
+status deliberately does not say CLEAN yet.
 
