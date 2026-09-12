@@ -302,7 +302,54 @@ EFFECTIVE_CLINICAL_BRANCH= <what the doctor's session resolves to>
 Required: `DEVICE_BRANCH != LOCKED_HOME_BRANCH` **and**
 `EFFECTIVE_CLINICAL_BRANCH == LOCKED_HOME_BRANCH`.
 
-## E. Operational lists show the effective branch only
+## E. CORRECTED — which surfaces a DOCTOR actually has, and which one narrows
+
+**An earlier draft of this step named Daftar Kunjungan and the patient queue. Neither is a
+Doctor surface.** The sidebar hides both from the Doctor role by an explicit role guard:
+
+```blade
+@unless($user?->hasRole('Doctor') || $user?->hasRole('Kasir'))
+    <a href="{{ route('rme.visits.index') }}">Kunjungan</a>
+    <a href="{{ route('rme.patient-queue.index') }}">Antrian Pasien</a>
+@endunless
+```
+
+The permission would allow the URL — a doctor holds `view_clinic_visits` — which is why the
+mistake looked plausible. But a ceremony must test the screens the subject actually works in.
+
+**`RmeWorkingBranchScope::resolve()`, the narrowed path, is reached by exactly six methods:**
+
+| method | surface | in a doctor's menu? |
+|---|---|---|
+| `paginate` | Daftar Kunjungan | no |
+| `registeredQueue` | Antrian Pasien | no |
+| `roomWorklist` | **Ruang Perawatan** | **yes** |
+| `visitsTodayCount` / `waitingCount` / `inProgressCount` | dashboard widgets | yes |
+
+So for a doctor the one narrowed surface in her own menu is **Ruang Perawatan**. Rekam Medis is
+deliberately outside it, per DBL-R020: per-record and archive reads stay cross-branch.
+
+### The test, with the room count as the evidence
+
+| branch | rooms | roomed visits |
+|---|---|---|
+| **SPN4** | **2** — Ruangan A, Ruangan B | 1 |
+| ATG3 | 3 | 6 |
+| LDK2 | 3 | 7 |
+| TLK1 | 8 | 19 |
+
+Locked to SPN4 she must see **2 rooms**; unlocked she would see **16**. That contrast holds even
+with no visit rows, which matters because SPN4's only roomed visit is `cashier_pending` — a
+status a treatment worklist may legitimately exclude. **Count the rooms, not the patients.**
+
+Any room from ATG3, LDK2 or TLK1 appearing is a narrowing failure: stop.
+
+### Rekam Medis — a required PASS, not a leak
+
+Open **patient 28**, whose history spans three branches. It must open. A doctor has to be able to
+read the history of the patient in front of her.
+
+## E-old. Operational lists show the effective branch only
 
 **SET AN EXPLICIT DATE RANGE FIRST, or this step proves nothing at all.** Production has **zero
 visits dated today** at every RME branch — the most recent visit anywhere is 2026-09-07. If
