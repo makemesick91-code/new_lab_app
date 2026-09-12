@@ -103,7 +103,13 @@ A rejection **requires a written reason** (DBL-R012). An approval note is option
 
 ### What an approval does, and what it does not
 
-Does: writes the lock, ends the doctor's login session, writes an audit row.
+Does: writes the lock, ends the doctor's login session, **frees the doctor's clinic room**,
+writes an audit row.
+
+The room is the part people are surprised by. Approval calls `markOffline()`, which nulls
+`clinic_room_id` on the doctor's online context, so the consultation room is not left marked
+occupied against a clinician who needs it. The doctor does not get it back by logging in — they
+re-select it, so say so when you tell them they have been logged out.
 
 Does **not**: touch the device, the device authorization or the WebAuthn credential
 (DBL-R017). If you are reaching for a device revocation to undo a branch change, stop — the

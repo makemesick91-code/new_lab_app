@@ -193,8 +193,19 @@ therefore logs nobody out, and arming it never mass-evicts doctors already worki
 ### DBL-R017 — A branch operation never revokes an identity
 
 Device, device authorization and WebAuthn credential all survive an approval, a rejection
-and an expiry. **Identity revocation is not a branch rollback.** Ending a login session is
-the whole of the blast radius.
+and an expiry. **Identity revocation is not a branch rollback.**
+
+The blast radius is **the login session AND the clinic room**. Every approval calls
+`markOffline()`, which nulls `clinic_room_id` on the doctor's online context — deliberately,
+so an evicted doctor does not leave a consultation room marked occupied and blocking the
+clinician taking over. `DoctorAccessSubjectGuard::endWorkingSession()` frees the room BEFORE
+releasing the lease, per LEASE-R012.
+
+An earlier draft of this rule said "ending a login session is the whole of the blast radius",
+which is wrong, and it was corrected in the production ceremony record before it was corrected
+here. The accurate sentence: **a branch decision ends a login session and frees the room, and
+touches no device, authorization or credential.** An approver who is not told about the room
+is surprised by it at the worst moment.
 
 ### DBL-R018 — The lock narrows the LIST scope and the WRITE chokepoint, and nothing else
 

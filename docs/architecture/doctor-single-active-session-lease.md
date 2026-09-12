@@ -322,8 +322,16 @@ What remains permanently true, and is the part that matters:
 Leases claimed between the two deploys carry **nulls**, and the comparison tolerates a null —
 so **nobody was evicted by the PR-B deploy, and no backfill may be added.** Inventing an
 effective branch for a session that was established before the concept existed would be a
-fabricated clinical fact. Production confirmed it: zero leases carry a branch, because the
-table was empty and the capability is off.
+fabricated clinical fact.
+
+Production, re-measured at parent closure: **8 leases, of which 4 carry an effective branch**
+(ids 5, 6, 7, 8) and the four claimed before the PR-B deploy carry nulls. Lease 8 is still
+unreleased. `doctor.branch_lock` is ON and `doctor.single_active_session` is OFF, so the
+comparison is not currently on any request path. The rule above is what matters and it holds:
+the nulls were tolerated, nobody was evicted by the deploy, and no backfill was added. An
+earlier version of this paragraph claimed the table was empty and the capability off — both
+were true when it was written and neither is true now, which is why a confirmation sentence
+should never be written in the present tense without a date.
 
 Two rules above were amended by PR-B rather than left to rot: **LEASE-R011** (revalidation now
 answers three conditions, not two) and **LEASE-R013** (eviction writes to the lease row when
