@@ -336,6 +336,7 @@ final class DoctorDeviceBulkAuthorizationService
     private function applyPair(DoctorDeviceBulkAuthorizationPair $pair, User $actor): string
     {
         $authorization = null;
+        $created = false;
 
         if ($pair->needsCreate()) {
             // T1. Top level. See the note on apply().
@@ -362,6 +363,12 @@ final class DoctorDeviceBulkAuthorizationService
                 $actor,
                 DoctorDeviceAuthorization::SOURCE_ADMIN,
             );
+
+            // What HAPPENED, not what the plan predicted. resolveOrRequest()
+            // returns the existing row when a doctor's own login created the
+            // pair between the preview and here, and reporting that as a create
+            // would inflate a counter the evidence pack is read for.
+            $created = (bool) $authorization->wasRecentlyCreated;
         } else {
             $authorization = DoctorDeviceAuthorization::query()->find($pair->authorizationId);
         }
@@ -383,7 +390,7 @@ final class DoctorDeviceBulkAuthorizationService
 
         // T2.
         try {
-            return DB::transaction(function () use ($pair, $authorization, $actor): string {
+            return DB::transaction(function () use ($authorization, $pair, $actor, $created): string {
                 // LOCK ORDER: authorization, then device. It matches approve()'s
                 // own order exactly, and that is the point rather than a detail.
                 // Taking the device first would invert the order against every
@@ -413,7 +420,7 @@ final class DoctorDeviceBulkAuthorizationService
 
                 $this->authorizations->approve($locked, $actor);
 
-                return $pair->needsCreate()
+                return $created
                     ? DoctorDeviceBulkAuthorizationOutcome::APPLIED_CREATED
                     : DoctorDeviceBulkAuthorizationOutcome::APPLIED_APPROVED_EXISTING;
             });

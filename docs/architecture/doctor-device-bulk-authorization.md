@@ -219,6 +219,18 @@ The operator can tell: a refused pair is reported with its bucket, so
 `bucket=create` beside a `refused_*` outcome is exactly the case that left an
 inbox row behind.
 
+### What the tests can and cannot prove about the locks
+
+The suite runs on SQLite, where `lockForUpdate()` is a no-op. So the tests prove
+the ORDER the locks are requested in and the re-assertion that follows them; they
+do not exercise real row contention, and no test here should be read as proving
+the lock itself under concurrency. The contention behaviour is a PostgreSQL
+property, argued from the code and the index rather than demonstrated locally.
+
+What IS demonstrated locally is the part that matters most for safety: the guard
+refuses, and the device row is unchanged, when the estate drifts between the plan
+and the write.
+
 ### Lock order
 
 The authorization row is locked **first**, then the device, then the doctor —

@@ -180,7 +180,13 @@ final class DoctorDeviceBulkAuthorizeCommand extends Command
                     'created' => 0,
                     'approved_existing' => 0,
                     'refused' => 0,
-                    'message' => 'Tidak ada otorisasi yang perlu dibuat. Matriks sudah lengkap.',
+                    // An EMPTY matrix and a CLOSED one are different facts, and
+                    // an operator reading "sudah lengkap" about an estate with
+                    // no eligible tablet would believe a fleet was provisioned.
+                    'message' => $plan->matrixSize() === 0
+                        ? 'Tidak ada pasangan yang memenuhi syarat: matriks kosong, bukan lengkap. '
+                            .'Periksa daftar pengecualian dokter dan perangkat di atas.'
+                        : 'Tidak ada otorisasi yang perlu dibuat. Matriks sudah lengkap.',
                     'actor_user_id' => (int) $actor->id,
                 ],
                 $plan,
