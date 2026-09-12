@@ -9,6 +9,7 @@ use Database\Seeders\RoleSeeder;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
 use Spatie\Permission\Models\Permission;
 
 require_once __DIR__.'/helpers.php';
@@ -314,12 +315,28 @@ it('keeps the pair unique index unconditional, which is what makes duplicates im
     // row exist beside a revoked one, and "exactly one active authorization per
     // pair" would become an application promise instead of a database fact.
     // This asserts the index refuses a second row at ANY status.
-    $second = fn () => DoctorDeviceAuthorization::factory()->create([
+    //
+    // WRAPPED IN A TRANSACTION, and that is load-bearing rather than tidy.
+    // PostgreSQL aborts the ENTIRE transaction on a failed statement, so a bare
+    // violating insert poisons the surrounding RefreshDatabase transaction and
+    // every later query in the test dies with SQLSTATE[25P02] instead of
+    // answering. SQLite does not, so a green local run proves nothing here.
+    // Laravel's nested transaction is a SAVEPOINT: rolling back to it on the
+    // exception restores a usable connection on both engines.
+    $second = fn () => DB::transaction(fn () => DoctorDeviceAuthorization::factory()->create([
         'doctor_id' => $account['doctor']->id,
         'doctor_device_id' => $device->id,
-    ]);
+    ]));
 
     expect($second)->toThrow(QueryException::class);
 
-    expect(DoctorDevice::query()->count())->toBe(1);
+    // The connection still answers, and the estate is exactly as it was: one
+    // authorization for the pair, still REVOKED, and the device untouched.
+    expect(DoctorDeviceAuthorization::query()
+        ->where('doctor_id', $account['doctor']->id)
+        ->where('doctor_device_id', $device->id)
+        ->count())->toBe(1)
+        ->and(DoctorDeviceAuthorization::query()->first()->status)
+        ->toBe(DoctorDeviceAuthorization::STATUS_REVOKED)
+        ->and(DoctorDevice::query()->count())->toBe(1);
 });
