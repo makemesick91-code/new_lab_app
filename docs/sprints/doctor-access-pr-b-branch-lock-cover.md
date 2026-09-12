@@ -595,3 +595,62 @@ Karmila    online at SPN4, Ruangan A — left operationally usable
 `PR_B_STATUS = MERGED / DEPLOYED / FOREIGN-TABLET PROOF PASS / CEREMONY INCOMPLETE`
 `PR_C_SAFE_TO_START = NO`
 
+---
+
+## 11. Safe disarm, 2026-09-12 08:37 WITA — single-session OFF, branch lock KEPT
+
+Owner decision after the window: disarm `doctor.single_active_session`, keep
+`doctor.branch_lock` armed. Executed in the prescribed order.
+
+**Pre-disarm capture, 08:36:27.** Zero pending rows of any kind
+(`PENDING_INITIAL_ASSIGNMENTS=0 PENDING_TRANSFERS=0 PENDING_COVERS=0`), so nothing could be
+stranded behind a disabled surface and the branch workflow never had to be touched.
+
+The env key was set explicitly to `false` rather than removed, so the file records a deliberate
+disarm rather than an absence. `doctor.branch_lock=true` was not touched. Config cache rebuilt as
+`daengtisiams` (`config.php` owner verified), php-fpm reloaded.
+
+### Post-disarm hard gates — all pass, read from effective runtime
+
+```
+DOCTOR_SINGLE_ACTIVE_SESSION_CONFIG=false   DOCTOR_SINGLE_ACTIVE_SESSION_EFFECTIVE=false
+DOCTOR_BRANCH_LOCK_CONFIG=true              DOCTOR_BRANCH_LOCK_EFFECTIVE=true
+GLOBAL_ENFORCEMENT_ACTIVE=false             PILOT_COHORT=[9,15,18]  SCOPE_VERDICT=GO
+KARMILA_HOME_LOCKED_BRANCH=SPN4             context SPN4, room 17, online, 1 session
+LOCKS_TOTAL=1  DOCTORS_UNSET=14             LOCKS_CREATED_SINCE_DISARM=0
+devices=5  authz=6  creds=5                 revocations_today=0
+LOG_BYTES_NOW=1406217  BYTES_SINCE_ANCHOR=0  ERRORS=152
+NEW_SINGLE_SESSION_ERRORS=0   NEW_BRANCH_LOCK_ERRORS=0
+/login=200  /health/ready=200
+```
+
+Karmila was **not** logged out by the disarm, her lock is untouched at SPN4, and the other 14
+doctors remain UNSET — so branch-lock arming alone narrows nobody, which is the point.
+
+### ONE THING THE NEXT WINDOW MUST KNOW, or it will be wasted
+
+**Lease 5 is still UNRELEASED.** That is PR-A's documented rollback behaviour — existing rows stay
+as they are and are harmless while nothing claims one — not a leak. But it has a sharp consequence
+for step 4 of the next ceremony sequence ("fresh-login Karmila so a new active lease definitely
+exists"):
+
+> The moment `doctor.single_active_session` is re-armed, lease 5 becomes a live incumbent again,
+> because `IncumbentSessionProbe` will find Karmila's surviving `sessions` row and read it as
+> alive. A "fresh login" attempted at that point is a SECOND login and will be **DENIED** —
+> correctly, and confusingly.
+
+So the next window must run in this order: **re-arm, then have her LOG OUT** (which releases lease
+5 with reason `logout`), **then log in** — and only that login produces the fresh lease the cover
+approval needs to invalidate. Logging in before logging out will produce a denial that looks like a
+defect and is not one.
+
+### Remaining PR-B gates, unchanged
+
+`SESSION_INVALIDATION_VERIFIED` · `TEMP_COVER_VERIFIED` · `COVER_EXPIRY_VERIFIED` ·
+`STALE_COVER_SESSION_DENIED` · `RUANG_PERAWATAN_NARROWING` · `ARCHIVE_CROSS_BRANCH_READ`
+
+```
+PR_B_STATUS = MERGED / DEPLOYED / FOREIGN-TABLET PROOF PASS / CEREMONY INCOMPLETE
+PR_C_SAFE_TO_START = NO
+```
+

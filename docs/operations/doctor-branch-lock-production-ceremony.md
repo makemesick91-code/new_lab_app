@@ -349,7 +349,15 @@ Any room from ATG3, LDK2 or TLK1 appearing is a narrowing failure: stop.
 Open **patient 28**, whose history spans three branches. It must open. A doctor has to be able to
 read the history of the patient in front of her.
 
-## E-old. Operational lists show the effective branch only
+## E-old. SUPERSEDED for a Doctor subject — kept only for an Admin Klinik subject
+
+**Do not run this step against a doctor.** Owner ruling, 2026-09-12: Daftar Kunjungan and Antrian
+Pasien are **not** Doctor-role branch-narrowing proof surfaces — the sidebar hides both from the
+Doctor role, so a doctor's narrowing is proven in section E on **Ruang Perawatan**, evaluated on
+the visible ROOM SET (SPN4 = 2 rooms against 16 across all four branches) and never on
+patient-row count. This section survives because both lists ARE narrowed surfaces for an Admin
+Klinik or Supervisor RME subject, where the row-count method below is the right one.
+
 
 **SET AN EXPLICIT DATE RANGE FIRST, or this step proves nothing at all.** Production has **zero
 visits dated today** at every RME branch — the most recent visit anywhere is 2026-09-07. If
