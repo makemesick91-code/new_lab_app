@@ -201,6 +201,7 @@ final class DoctorDeviceBulkAuthorizeCommand extends Command
             'approved_existing' => $result['approved_existing'],
             'skipped_already_active' => $result['skipped'],
             'refused' => $result['refused'],
+            'orphan_pending_rows_left' => $result['orphan_pending'],
             'reason' => $reason,
             'actor_user_id' => (int) $actor->id,
             'outcomes' => $result['outcomes'],
@@ -490,6 +491,10 @@ final class DoctorDeviceBulkAuthorizeCommand extends Command
             $this->line('APPLIED_CREATED='.($payload['created'] ?? 0));
             $this->line('APPLIED_APPROVED_EXISTING='.($payload['approved_existing'] ?? 0));
             $this->line('REFUSED='.($payload['refused'] ?? 0));
+            // A refused create leaves the PENDING row T1 already committed,
+            // waiting in the approval inbox. Silence here would grow somebody
+            // else's queue without saying so.
+            $this->line('ORPHAN_PENDING_ROWS_LEFT='.($payload['orphan_pending_rows_left'] ?? 0));
         }
 
         foreach ($plan->actionable() as $pair) {

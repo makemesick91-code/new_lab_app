@@ -301,3 +301,64 @@ it('closes the whole matrix for a multi-doctor multi-device estate', function ()
         ->and(dbaActiveMatrix())->toHaveCount(6)
         ->and($service->plan()->unreachable())->toBe(0);
 });
+
+it('counts the PENDING row a refused create leaves in the approval inbox', function (): void {
+    $branch = daBranch('Cabang Yatim');
+    daDoctorAccount([$branch]);
+    $device = dbaTrustedDevice([], $branch);
+
+    $service = dbaApplyService();
+    $plan = $service->plan();
+
+    // Drift after the plan, so T1 commits its PENDING row and T2 refuses.
+    $device->forceFill(['status' => DoctorDevice::STATUS_PENDING_APPROVAL])->save();
+
+    $result = $service->apply($plan, daSupervisorRme(), 'Provisioning yang gagal di tengah jalan.');
+
+    // The row really is there, and the run says so rather than leaving an
+    // operator to discover it in somebody else's queue.
+    expect($result['refused'])->toBe(1)
+        ->and($result['orphan_pending'])->toBe(1)
+        ->and($result['outcomes'][0]['left_pending_row'])->toBeTrue()
+        ->and(DoctorDeviceAuthorization::query()
+            ->where('status', DoctorDeviceAuthorization::STATUS_PENDING)->count())->toBe(1);
+});
+
+it('leaves no orphan row when a refusal happens before anything is created', function (): void {
+    $branch = daBranch('Cabang Adopsi Gagal');
+    $account = daDoctorAccount([$branch]);
+    $device = dbaTrustedDevice([], $branch);
+    dbaAuthorization($account['doctor'], $device, DoctorDeviceAuthorization::STATUS_PENDING);
+
+    $service = dbaApplyService();
+    $plan = $service->plan();
+
+    $device->forceFill(['status' => DoctorDevice::STATUS_PENDING_APPROVAL])->save();
+
+    $result = $service->apply($plan, daSupervisorRme(), 'Adopsi yang ditolak karena perangkat berubah.');
+
+    // The pending row pre-existed; this run did not add it, so counting it as
+    // an orphan this run created would be a false confession.
+    expect($result['refused'])->toBe(1)
+        ->and($result['orphan_pending'])->toBe(0)
+        ->and($result['outcomes'][0]['left_pending_row'])->toBeFalse();
+});
+
+it('reports an unknown authorization status as unknown, not as a revocation', function (): void {
+    $branch = daBranch('Cabang Asing');
+    $account = daDoctorAccount([$branch]);
+    $device = dbaTrustedDevice([], $branch);
+    $row = dbaAuthorization($account['doctor'], $device, DoctorDeviceAuthorization::STATUS_PENDING);
+
+    // A status this vocabulary has not been taught — what a future migration
+    // adding a fifth lifecycle state would produce.
+    DB::table('mst_doctor_device_authorizations')->where('id', $row->id)->update(['status' => 'quarantined']);
+
+    $plan = dbaApplyService()->plan();
+
+    expect($plan->countIn(DoctorDeviceBulkAuthorizationOutcome::BUCKET_BLOCKED_UNKNOWN_STATUS))->toBe(1)
+        // Folding it into REVOKED would report a revocation that never happened.
+        ->and($plan->countIn(DoctorDeviceBulkAuthorizationOutcome::BUCKET_BLOCKED_REVOKED))->toBe(0)
+        ->and($plan->blocked())->toBe(1)
+        ->and($plan->actionable())->toBe([]);
+});

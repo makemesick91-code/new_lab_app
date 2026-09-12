@@ -276,7 +276,7 @@ final class DoctorDeviceBulkAuthorizationService
      * produces, it is visible in the approval inbox, and the next run
      * classifies it as bucket C and approves it.
      *
-     * @return array{outcomes: list<array<string, mixed>>, created: int, approved_existing: int, skipped: int, refused: int}
+     * @return array{outcomes: list<array<string, mixed>>, created: int, approved_existing: int, skipped: int, refused: int, orphan_pending: int}
      */
     public function apply(DoctorDeviceBulkAuthorizationPlan $plan, User $actor, string $reason): array
     {
@@ -285,11 +285,15 @@ final class DoctorDeviceBulkAuthorizationService
         $approvedExisting = 0;
         $skipped = 0;
         $refused = 0;
+        $orphanPending = 0;
 
         foreach ($plan->actionable() as $pair) {
-            $result = $this->applyPair($pair, $actor);
+            [$result, $leftPendingRow] = $this->applyPair($pair, $actor);
 
-            $outcomes[] = $pair->toArray() + ['outcome' => $result];
+            $outcomes[] = $pair->toArray() + [
+                'outcome' => $result,
+                'left_pending_row' => $leftPendingRow,
+            ];
 
             match (true) {
                 $result === DoctorDeviceBulkAuthorizationOutcome::APPLIED_CREATED => $created++,
@@ -297,6 +301,10 @@ final class DoctorDeviceBulkAuthorizationService
                 $result === DoctorDeviceBulkAuthorizationOutcome::SKIPPED_ALREADY_ACTIVE => $skipped++,
                 default => $refused++,
             };
+
+            if ($leftPendingRow) {
+                $orphanPending++;
+            }
         }
 
         // ONE run-level audit row, written through the canonical shared writer
@@ -319,6 +327,7 @@ final class DoctorDeviceBulkAuthorizationService
                 'approved_existing' => $approvedExisting,
                 'skipped_already_active' => $skipped,
                 'refused' => $refused,
+                'orphan_pending' => $orphanPending,
                 'final_expected' => $plan->finalExpectedActive(),
             ],
             $actor,
@@ -330,10 +339,15 @@ final class DoctorDeviceBulkAuthorizationService
             'approved_existing' => $approvedExisting,
             'skipped' => $skipped,
             'refused' => $refused,
+            'orphan_pending' => $orphanPending,
         ];
     }
 
-    private function applyPair(DoctorDeviceBulkAuthorizationPair $pair, User $actor): string
+    /**
+     * @return array{0: string, 1: bool} the outcome, and whether this pair left
+     *                                   a PENDING row in the human approval inbox
+     */
+    private function applyPair(DoctorDeviceBulkAuthorizationPair $pair, User $actor): array
     {
         $authorization = null;
         $created = false;
@@ -346,11 +360,11 @@ final class DoctorDeviceBulkAuthorizationService
             // Named apart, because an operator reading "doctor inactive" about a
             // deleted DEVICE would look in the wrong place.
             if ($device === null) {
-                return DoctorDeviceBulkAuthorizationOutcome::REFUSED_DEVICE_NOT_ACTIVE;
+                return [DoctorDeviceBulkAuthorizationOutcome::REFUSED_DEVICE_NOT_ACTIVE, $created];
             }
 
             if ($doctor === null) {
-                return DoctorDeviceBulkAuthorizationOutcome::REFUSED_DOCTOR_INACTIVE;
+                return [DoctorDeviceBulkAuthorizationOutcome::REFUSED_DOCTOR_INACTIVE, $created];
             }
 
             // SOURCE_ADMIN, not SOURCE_APP_LOGIN. PR-C is the first consumer of
@@ -374,23 +388,23 @@ final class DoctorDeviceBulkAuthorizationService
         }
 
         if ($authorization === null) {
-            return DoctorDeviceBulkAuthorizationOutcome::REFUSED_RACED_TO_NON_PENDING;
+            return [DoctorDeviceBulkAuthorizationOutcome::REFUSED_RACED_TO_NON_PENDING, $created];
         }
 
         if ($authorization->status === DoctorDeviceAuthorization::STATUS_ACTIVE) {
-            return DoctorDeviceBulkAuthorizationOutcome::SKIPPED_ALREADY_ACTIVE;
+            return [DoctorDeviceBulkAuthorizationOutcome::SKIPPED_ALREADY_ACTIVE, $created];
         }
 
         if ($authorization->status !== DoctorDeviceAuthorization::STATUS_PENDING) {
             // A concurrent operator rejected or revoked the pair between the
             // plan and here. They win: this run reports the loss rather than
             // overriding a human decision.
-            return DoctorDeviceBulkAuthorizationOutcome::REFUSED_RACED_TO_NON_PENDING;
+            return [DoctorDeviceBulkAuthorizationOutcome::REFUSED_RACED_TO_NON_PENDING, $created];
         }
 
         // T2.
         try {
-            return DB::transaction(function () use ($authorization, $pair, $actor, $created): string {
+            $outcome = DB::transaction(function () use ($authorization, $pair, $actor, $created): string {
                 // LOCK ORDER: authorization, then device. It matches approve()'s
                 // own order exactly, and that is the point rather than a detail.
                 // Taking the device first would invert the order against every
@@ -404,6 +418,9 @@ final class DoctorDeviceBulkAuthorizationService
                     return DoctorDeviceBulkAuthorizationOutcome::REFUSED_RACED_TO_NON_PENDING;
                 }
 
+                // Re-read UNDER the lock. The pre-read that chose this path was
+                // unlocked, so a row another operator approved or revoked in
+                // between would otherwise be acted on from a stale status.
                 if ($locked->status === DoctorDeviceAuthorization::STATUS_ACTIVE) {
                     return DoctorDeviceBulkAuthorizationOutcome::SKIPPED_ALREADY_ACTIVE;
                 }
@@ -428,8 +445,17 @@ final class DoctorDeviceBulkAuthorizationService
             // approve() re-validates under its own lock and refuses in prose.
             // Anything it rejects that our guard did not catch is drift we do
             // not have a more precise word for.
-            return DoctorDeviceBulkAuthorizationOutcome::REFUSED_RACED_TO_NON_PENDING;
+            return [DoctorDeviceBulkAuthorizationOutcome::REFUSED_RACED_TO_NON_PENDING, $created];
         }
+
+        // A bucket-B pair whose T2 did not apply leaves the PENDING row T1
+        // already committed, sitting in the human approval inbox. Counting it is
+        // the difference between an honest partial run and one that quietly
+        // grows somebody else's queue.
+        $applied = $outcome === DoctorDeviceBulkAuthorizationOutcome::APPLIED_CREATED
+            || $outcome === DoctorDeviceBulkAuthorizationOutcome::APPLIED_APPROVED_EXISTING;
+
+        return [$outcome, $created && ! $applied];
     }
 
     /**
@@ -541,7 +567,12 @@ final class DoctorDeviceBulkAuthorizationService
             DoctorDeviceAuthorization::STATUS_ACTIVE => DoctorDeviceBulkAuthorizationOutcome::BUCKET_ALREADY_ACTIVE,
             DoctorDeviceAuthorization::STATUS_PENDING => DoctorDeviceBulkAuthorizationOutcome::BUCKET_ADOPT_PENDING,
             DoctorDeviceAuthorization::STATUS_REJECTED => DoctorDeviceBulkAuthorizationOutcome::BUCKET_BLOCKED_REJECTED,
-            default => DoctorDeviceBulkAuthorizationOutcome::BUCKET_BLOCKED_REVOKED,
+            DoctorDeviceAuthorization::STATUS_REVOKED => DoctorDeviceBulkAuthorizationOutcome::BUCKET_BLOCKED_REVOKED,
+            // Named rather than folded into REVOKED. A `default` arm here would
+            // report a revocation that never happened, and a status this
+            // vocabulary has not been taught is exactly the thing an operator
+            // needs to see rather than have translated.
+            default => DoctorDeviceBulkAuthorizationOutcome::BUCKET_BLOCKED_UNKNOWN_STATUS,
         };
     }
 }

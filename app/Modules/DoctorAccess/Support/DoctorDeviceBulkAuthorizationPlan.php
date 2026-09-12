@@ -124,7 +124,8 @@ final class DoctorDeviceBulkAuthorizationPlan
     public function blocked(): int
     {
         return $this->countIn(DoctorDeviceBulkAuthorizationOutcome::BUCKET_BLOCKED_REJECTED)
-            + $this->countIn(DoctorDeviceBulkAuthorizationOutcome::BUCKET_BLOCKED_REVOKED);
+            + $this->countIn(DoctorDeviceBulkAuthorizationOutcome::BUCKET_BLOCKED_REVOKED)
+            + $this->countIn(DoctorDeviceBulkAuthorizationOutcome::BUCKET_BLOCKED_UNKNOWN_STATUS);
     }
 
     /**
@@ -213,6 +214,7 @@ final class DoctorDeviceBulkAuthorizationPlan
             'blocked' => $this->blocked(),
             'blocked_rejected' => $this->countIn(DoctorDeviceBulkAuthorizationOutcome::BUCKET_BLOCKED_REJECTED),
             'blocked_revoked' => $this->countIn(DoctorDeviceBulkAuthorizationOutcome::BUCKET_BLOCKED_REVOKED),
+            'blocked_unknown_status' => $this->countIn(DoctorDeviceBulkAuthorizationOutcome::BUCKET_BLOCKED_UNKNOWN_STATUS),
             'unreachable' => $this->unreachable(),
             'excluded_doctors' => count($this->excludedDoctors),
             'excluded_devices' => count($this->excludedDevices),

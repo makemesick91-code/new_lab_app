@@ -67,6 +67,17 @@ final class DoctorDeviceBulkAuthorizationOutcome
      */
     public const BUCKET_BLOCKED_REVOKED = 'blocked_revoked';
 
+    /**
+     * A row whose status this vocabulary does not know.
+     *
+     * Unreachable today — the lifecycle has exactly four statuses — and that is
+     * precisely why it exists. The alternative is a `default` arm folding an
+     * unknown status into "revoked", which would report a revocation that never
+     * happened and hide a schema change behind a plausible word. Blocked either
+     * way; only the report differs, and the report is the whole point.
+     */
+    public const BUCKET_BLOCKED_UNKNOWN_STATUS = 'blocked_unknown_status';
+
     /** F: the doctor failed an eligibility predicate, so none of their pairs exist. */
     public const BUCKET_INELIGIBLE_DOCTOR = 'ineligible_doctor';
 
