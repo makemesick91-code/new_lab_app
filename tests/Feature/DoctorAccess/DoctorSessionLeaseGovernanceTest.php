@@ -82,6 +82,13 @@ function glgSourceFiles(): array
     }
 
     $files[] = app_path('Console/Commands/DoctorSessionForceLogoutCommand.php');
+
+    // PR-C. Commands live flat in app/Console/Commands, outside the recursive
+    // Modules/DoctorAccess walk above, so a console surface that writes
+    // authorizations would otherwise escape every scan in this file — including
+    // the one that proves no surface arms enforcement.
+    $files[] = app_path('Console/Commands/DoctorDeviceBulkAuthorizeCommand.php');
+
     $files[] = config_path('doctor_access.php');
 
     sort($files);
