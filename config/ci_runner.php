@@ -207,6 +207,21 @@ return [
         // that the flag armed over nobody still is.
         'tests/Feature/DoctorDevice/EnforcementPostureGovernanceTest.php',
 
+        // DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1 PR-C — bulk device
+        // authorization. The `DoctorAccess` token selects all four through
+        // their namespace; declared here so that coverage is a decision rather
+        // than a side effect of where the files happen to live.
+        'tests/Feature/DoctorAccess/DoctorDeviceBulkAuthorizationPlanTest.php',
+        'tests/Feature/DoctorAccess/DoctorDeviceBulkAuthorizationApplyTest.php',
+        'tests/Feature/DoctorAccess/DoctorDeviceBulkAuthorizationCommandTest.php',
+
+        // The structural half, and the one worth naming separately: it is what
+        // fails if a future sprint gives a device an active -> pending_approval
+        // transition, which is the premise that lets a bulk provisioner reuse
+        // an approval path capable of admitting hardware. Losing it silently
+        // would be losing the guarantee, not just a test.
+        'tests/Feature/DoctorAccess/DoctorDeviceBulkAuthorizationGovernanceTest.php',
+
         // The runtime refusal of a forbidden console command. This one needed a
         // new workflow token: `Tests\Feature\Deploy\ForbiddenConsoleCommandGuardTest`
         // contains no existing alternative, so before `ForbiddenConsoleCommand`

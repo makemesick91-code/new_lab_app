@@ -85,4 +85,25 @@ return [
         'min_length' => 10,
         'max_length' => 1000,
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Bulk device authorization (PR-C)
+    |--------------------------------------------------------------------------
+    |
+    | Ceilings for the fleet-wide provisioning tool. They exist so that the tool
+    | REFUSES rather than degrades: a bulk writer that quietly handles an estate
+    | larger than the one it was reviewed against is exactly the blast radius
+    | the dry-run default and the plan digest exist to bound. Refusing sends an
+    | operator to look at why the estate grew; paginating or sampling would turn
+    | the bound into a suggestion.
+    |
+    | Literal integers, no env(), for the reason stated at the top of this file.
+    | The pilot today is 15 doctors x 3 devices = 45 pairs; these leave room for
+    | the estate to grow without being numbers nobody would notice exceeding.
+    */
+    'bulk_authorization' => [
+        'max_estate_devices' => 500,
+        'max_pairs' => 10000,
+    ],
 ];

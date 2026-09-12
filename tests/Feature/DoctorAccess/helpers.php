@@ -33,8 +33,11 @@ declare(strict_types=1);
 | the one call that makes the whole capability live and is what nearly every
 | armed test wants.
 |
-| The bulk device-authorization fixtures still do not exist here; they arrive in
-| PR-C with the command they support.
+| PR-C adds the BULK DEVICE-AUTHORIZATION fixtures below, under a dba* prefix.
+| The prefix is not decoration: this directory's fixtures live in the GLOBAL
+| namespace alongside roughly a hundred others from sibling suites, several of
+| them unguarded, so a name collision is a fatal redeclare rather than a
+| shadowed helper.
 */
 
 use App\Models\User;
@@ -45,11 +48,15 @@ use App\Modules\DoctorAccess\Models\DoctorBranchLock;
 use App\Modules\DoctorAccess\Models\DoctorSessionLease;
 use App\Modules\DoctorAccess\Services\DoctorEffectiveBranchResolver;
 use App\Modules\DoctorAccess\Services\DoctorSessionLeaseService;
+use App\Modules\DoctorDevice\Models\DoctorDevice;
+use App\Modules\DoctorDevice\Models\DoctorDeviceAuthorization;
 use Carbon\CarbonInterface;
 use Database\Seeders\PermissionSeeder;
 use Database\Seeders\RoleSeeder;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
 use Spatie\Permission\Models\Role;
 
@@ -586,5 +593,177 @@ if (! function_exists('daAssertActiveLeaseCount')) {
     function daAssertActiveLeaseCount(int $expected, User|int|null $user = null): void
     {
         expect(daActiveLeaseCount($user))->toBe($expected);
+    }
+}
+
+/*
+|--------------------------------------------------------------------------
+| Bulk device authorization (PR-C)
+|--------------------------------------------------------------------------
+*/
+
+if (! function_exists('dbaTrustedDevice')) {
+    /**
+     * A device that PR-C considers ELIGIBLE.
+     *
+     * TRAP: DoctorDeviceFactory defaults `identity_state` to IDENTITY_UNVERIFIED, and an
+     * unverified device is refused by DoctorDeviceAuthorizationService::approve() outright.
+     * A test that took the factory default would build a fixture the whole feature declines
+     * to act on and would then "prove" the exclusion it never meant to write.
+     *
+     * @param  array<string, mixed>  $attributes
+     */
+    function dbaTrustedDevice(array $attributes = [], ?Branch $branch = null): DoctorDevice
+    {
+        $branch ??= daBranch('Cabang Perangkat');
+
+        return DoctorDevice::factory()->create(array_merge([
+            'branch_id' => $branch->id,
+            'status' => DoctorDevice::STATUS_ACTIVE,
+            'identity_state' => DoctorDevice::IDENTITY_CRYPTOGRAPHICALLY_VERIFIED,
+            'enrollment_status' => DoctorDevice::ENROLLMENT_VERIFIED,
+            'public_key_fingerprint' => hash('sha256', (string) Str::uuid()),
+        ], $attributes));
+    }
+}
+
+if (! function_exists('dbaUnverifiedDevice')) {
+    /** Active, admitted hardware that has never proved possession of a key. */
+    function dbaUnverifiedDevice(?Branch $branch = null): DoctorDevice
+    {
+        return dbaTrustedDevice([
+            'identity_state' => DoctorDevice::IDENTITY_UNVERIFIED,
+            'public_key_fingerprint' => null,
+        ], $branch);
+    }
+}
+
+if (! function_exists('dbaPendingApprovalDevice')) {
+    /**
+     * Hardware that registered itself at a doctor's first login and that no human has
+     * admitted. THE device state PR-C must never promote: approve() would flip it to
+     * ACTIVE and write a DOCTOR_DEVICE_ADMITTED audit row.
+     */
+    function dbaPendingApprovalDevice(?Branch $branch = null): DoctorDevice
+    {
+        return dbaTrustedDevice(['status' => DoctorDevice::STATUS_PENDING_APPROVAL], $branch);
+    }
+}
+
+if (! function_exists('dbaAuthorization')) {
+    /**
+     * An authorization row in an exact state, for an exact pair.
+     *
+     * Built through the factory rather than the service on purpose: these fixtures describe
+     * an estate the run FINDS, not one it created, and driving them through the lifecycle
+     * would make the fixture depend on the code under test.
+     */
+    function dbaAuthorization(
+        Doctor $doctor,
+        DoctorDevice $device,
+        string $status = DoctorDeviceAuthorization::STATUS_ACTIVE,
+    ): DoctorDeviceAuthorization {
+        $factory = DoctorDeviceAuthorization::factory();
+
+        $factory = match ($status) {
+            DoctorDeviceAuthorization::STATUS_ACTIVE => $factory->active(),
+            DoctorDeviceAuthorization::STATUS_REJECTED => $factory->rejected(),
+            DoctorDeviceAuthorization::STATUS_REVOKED => $factory->revoked(),
+            default => $factory,
+        };
+
+        return $factory->create([
+            'doctor_id' => $doctor->id,
+            'doctor_device_id' => $device->id,
+        ]);
+    }
+}
+
+if (! function_exists('dbaRun')) {
+    /**
+     * Invoke the command and return its raw output.
+     *
+     * TRAP: expectsOutputToContain() consumes ONE writeln per expectation, so a suite that
+     * used it would silently assert only the first of many printed counters. Artisan::call()
+     * plus Artisan::output() reads the whole buffer and lets a test assert on all of it.
+     *
+     * @param  array<string, mixed>  $options
+     * @return array{exit: int, output: string}
+     */
+    function dbaRun(array $options = []): array
+    {
+        $exit = Artisan::call('doctor:device-bulk-authorize', $options);
+
+        return ['exit' => $exit, 'output' => Artisan::output()];
+    }
+}
+
+if (! function_exists('dbaDigest')) {
+    /** The plan digest the dry run printed, which --apply demands back verbatim. */
+    function dbaDigest(string $output): string
+    {
+        expect($output)->toMatch('/PLAN_DIGEST=[0-9a-f]{12}/');
+
+        preg_match('/PLAN_DIGEST=([0-9a-f]{12})/', $output, $matches);
+
+        return $matches[1];
+    }
+}
+
+if (! function_exists('dbaCounter')) {
+    /** One printed counter, as an int. Fails loudly rather than defaulting to zero. */
+    function dbaCounter(string $output, string $key): int
+    {
+        expect($output)->toMatch('/'.preg_quote($key, '/').'=\d+/');
+
+        preg_match('/'.preg_quote($key, '/').'=(\d+)/', $output, $matches);
+
+        return (int) $matches[1];
+    }
+}
+
+if (! function_exists('dbaDeviceSnapshot')) {
+    /**
+     * Every column of every device row, ordered.
+     *
+     * The non-mutation proof is a SNAPSHOT COMPARISON rather than a count: a run that
+     * flipped one device from pending_approval to active would leave the count identical
+     * and only the column values would betray it.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    function dbaDeviceSnapshot(): array
+    {
+        return DB::table('mst_doctor_devices')->orderBy('id')->get()
+            ->map(fn ($row): array => (array) $row)->all();
+    }
+}
+
+if (! function_exists('dbaAuditCount')) {
+    /** How many audit rows carry one action. */
+    function dbaAuditCount(string $action): int
+    {
+        return (int) DB::table('sys_audit_logs')->where('action', $action)->count();
+    }
+}
+
+if (! function_exists('dbaActiveMatrix')) {
+    /**
+     * Every ACTIVE (doctor, device) pair, as sorted "doctorId:deviceId" strings.
+     *
+     * @return list<string>
+     */
+    function dbaActiveMatrix(): array
+    {
+        $pairs = DB::table('mst_doctor_device_authorizations')
+            ->where('status', DoctorDeviceAuthorization::STATUS_ACTIVE)
+            ->orderBy('doctor_id')->orderBy('doctor_device_id')
+            ->get()
+            ->map(fn ($row): string => $row->doctor_id.':'.$row->doctor_device_id)
+            ->all();
+
+        sort($pairs);
+
+        return $pairs;
     }
 }
