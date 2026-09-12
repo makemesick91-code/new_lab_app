@@ -821,15 +821,42 @@ The consequence, which must be carried into any future window:
 That denial would be PR-A behaving exactly as specified. It is not a leak and not a defect.
 
 ```
-PR_B_STATUS = MERGED / DEPLOYED / PRODUCTION VERIFIED / CLEANUP PENDING
-PR_C_SAFE_TO_START = NO   (owner authorization required; not granted by this ceremony)
+PR_B_STATUS = MERGED / DEPLOYED / PRODUCTION VERIFIED / CLEAN
+PR_C_SAFE_TO_START = YES  (owner-granted on cleanup completion; PR-C still must not start
+                           automatically and requires an explicit owner instruction)
 FULL_SUITE_CHILD_RESULT = SKIPPED
 PARENT_FULL_SUITE_OBLIGATION = OPEN
 PARENT_GO_TAGGED = NO
 ```
 
-Functional production verification is complete; the worktree and scratch cleanup is not, so the
-status deliberately does not say CLEAN yet.
+### Cleanup, verified 2026-09-12 11:46 WITA
+
+```
+PR_B_WORKTREE_REMOVED = YES   33 registered worktrees -> 32, directory absent, nothing to prune
+PR_B_SCRATCH_REMOVED  = YES
+LEFTOVER_PR_B_PROCESSES = 0
+LEFTOVER_DEBUG_FILES    = 0
+LEFTOVER_SECRET_FILES   = 0
+SPRINT_CREATED_SECRET_BACKUPS_LEFT = 0
+UNRELATED_CHECKOUT_PRESERVED = YES
+  branch ci-evidence/cicd-ctrl-3-db-guard-matrix, HEAD b18188c2, 0 staged,
+  same two dirty paths with identical sha256 and byte size, shared stash untouched at 1 entry
+branch pr-b-evidence preserved, local == origin == 49dcca1a
+```
+
+The worktree's local artifacts were inspected before deletion rather than assumed disposable:
+`.env` was `APP_ENV=local` on a sqlite file inside the worktree with only a locally generated
+`APP_KEY` and no reference to production; `local.sqlite` held 148 tables and **zero** rows in
+patients, visits, medical records and doctors; the two clinical directories held fourteen files
+totalling about 1 KB, every one a 10x10 pixel test PNG. No real clinical data and no production
+credential was destroyed. One further leftover, a 674 KB PR-B source diff sitting world-readable in
+the system temp directory since 2026-09-11, was found by the sweep and removed; it contained no
+secret and no identifier and is reproducible from git.
+
+Production was re-verified after cleanup and had not moved: both flags as required, home lock SPN4,
+Karmila online at SPN4 room SPN-A, identity 5/6/5 with authorization 6 active and zero revocations,
+audit still at 706, and the log still byte-identical at 1406217 bytes with 152 errors. **No cleanup
+operation mutated production state.**
 
 ---
 
