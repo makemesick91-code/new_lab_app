@@ -831,3 +831,182 @@ PARENT_GO_TAGGED = NO
 Functional production verification is complete; the worktree and scratch cleanup is not, so the
 status deliberately does not say CLEAN yet.
 
+---
+
+## 13. Primary raw evidence, preserved in the repository
+
+Captured read-only from production so that the ceremony's scratch files hold nothing unique and can
+be destroyed without losing evidence. Client addresses are masked to the /24; the distinction that
+matters is only **which actor** made the request.
+
+### Audit trail, rows 690 to 706, with payloads
+
+```
+690 | 00:10:59Z | DOCTOR_APP_LOGIN_AUTHORIZATION_REJECTED | trx_doctor_device_login_tickets:13 | by=18 | {"reason": "active_session_elsewhere"}
+691 | 02:35:01Z | DOCTOR_SESSION_LEASE_REVOKED | trx_doctor_session_leases:5 | by=11 | {"reason": "admin_release", "outcome": "revoked", "user_id": 18}
+692 | 02:35:01Z | DOCTOR_SESSION_RELEASED_BY_APPROVER | mst_doctors:21 | by=11 | {"reason": "Akhiri sesi pra-arming untuk gate ceremony PR-B", "user_id": 18, "doctor_id": 21, "devices_touched": false, "session_released": true, "doctor_online_at_decision": false, "webauthn_credentials_touched": false}
+693 | 02:37:53Z | DOCTOR_DEVICE_LOGIN_REQUESTED | mst_doctor_device_authorizations:6 | by=18 | {"status": "active", "doctor_id": 21, "device_status": "active", "doctor_device_id": 6}
+694 | 02:38:03Z | DOCTOR_SESSION_LEASE_CLAIMED | trx_doctor_session_leases:6 | by=18 | {"reason": null, "outcome": "granted", "lease_id": 6, "incumbent_lease_id": null, "effective_branch_id": 5}
+695 | 02:38:03Z | DOCTOR_APP_LOGIN_AUTHORIZATION_SUCCESS | mst_doctor_device_authorizations:6 | by=18 | {"doctor_id": 21, "doctor_device_id": 6}
+696 | 02:52:50Z | DOCTOR_BRANCH_COVER_REQUESTED | trx_doctor_branch_covers:1 | by=1 | {"status": "pending", "ends_at": "2026-09-12T03:25:00+00:00", "cover_id": 1, "doctor_id": 21, "starts_at": "2026-09-12T02:25:00+00:00", "decided_at": null, "cancelled_at": null, "target_branch_id": 3, "requester_user_id": 1, "decided_by_user_id": null, "cancelled_by_user_id": null, "source_home_branch_id": 5}
+697 | 03:03:47Z | DOCTOR_SESSION_LEASE_REVOKED | trx_doctor_session_leases:6 | by=11 | {"reason": "effective_branch_changed", "outcome": "revoked", "user_id": 18}
+698 | 03:03:47Z | DOCTOR_BRANCH_COVER_APPROVED | trx_doctor_branch_covers:1 | by=11 | {"status": "approved", "ends_at": "2026-09-12T03:25:00+00:00", "cover_id": 1, "doctor_id": 21, "starts_at": "2026-09-12T02:25:00+00:00", "decided_at": "2026-09-12T03:03:47+00:00", "cancelled_at": null, "session_released": true, "target_branch_id": 3, "requester_user_id": 1, "state_at_decision": "active", "decided_by_user_id": 11, "live_home_branch_id": 5, "cancelled_by_user_id": null, "source_home_branch_id": 5, "doctor_online_at_decision": true, "online_impact_acknowledged": true}
+699 | 03:06:21Z | DOCTOR_SESSION_LEASE_EVICTED | users:18 | by=18 | {"reason": "lease_missing", "outcome": "evicted"}
+700 | 03:07:17Z | DOCTOR_DEVICE_LOGIN_REQUESTED | mst_doctor_device_authorizations:6 | by=18 | {"status": "active", "doctor_id": 21, "device_status": "active", "doctor_device_id": 6}
+701 | 03:07:18Z | DOCTOR_SESSION_LEASE_CLAIMED | trx_doctor_session_leases:7 | by=18 | {"reason": null, "outcome": "granted", "lease_id": 7, "incumbent_lease_id": null, "effective_branch_id": 3}
+702 | 03:07:18Z | DOCTOR_APP_LOGIN_AUTHORIZATION_SUCCESS | mst_doctor_device_authorizations:6 | by=18 | {"doctor_id": 21, "doctor_device_id": 6}
+703 | 03:26:36Z | DOCTOR_SESSION_LEASE_EVICTED | trx_doctor_session_leases:7 | by=18 | {"reason": "branch_context_changed", "outcome": "evicted"}
+704 | 03:30:18Z | DOCTOR_DEVICE_LOGIN_REQUESTED | mst_doctor_device_authorizations:6 | by=18 | {"status": "active", "doctor_id": 21, "device_status": "active", "doctor_device_id": 6}
+705 | 03:30:19Z | DOCTOR_SESSION_LEASE_CLAIMED | trx_doctor_session_leases:8 | by=18 | {"reason": null, "outcome": "granted", "lease_id": 8, "incumbent_lease_id": null, "effective_branch_id": 5}
+706 | 03:30:19Z | DOCTOR_APP_LOGIN_AUTHORIZATION_SUCCESS | mst_doctor_device_authorizations:6 | by=18 | {"doctor_id": 21, "doctor_device_id": 6}
+```
+
+**Row 690 corrects something I said during the ceremony.** I described that 08:10:59 WITA rejection
+as a device-login ticket being refused. It is not. Its payload reads
+`{"reason": "active_session_elsewhere"}` — it is **PR-A's single-session denial**, fired while the
+flag was still armed from the previous window and lease 5 was the live incumbent. The HTTP trace
+agrees: the login was refused, she was bounced, and her existing session still answered 200. So the
+refuse-never-evict rule was observed on production one more time than this record previously
+claimed, and my explanation of the mechanism was wrong.
+
+### Every lease this account has ever held
+
+```
+1 | claimed 22:18Z | released 22:18Z | reason device_invalidated | by - | effbr - | cover -
+2 | claimed 22:22Z | released 22:45Z | reason logout | by - | effbr - | cover -
+3 | claimed 22:46Z | released 22:46Z | reason device_invalidated | by - | effbr - | cover -
+4 | claimed 22:47Z | released 22:47Z | reason device_invalidated | by - | effbr - | cover -
+5 | claimed 22:51Z | released 02:35Z | reason admin_release | by 11 | effbr 5 | cover -
+6 | claimed 02:38Z | released 03:03Z | reason effective_branch_changed | by 11 | effbr 5 | cover -
+7 | claimed 03:07Z | released 03:26Z | reason effective_branch_changed | by - | effbr 3 | cover 1
+8 | claimed 03:30Z | released - | reason ACTIVE | by - | effbr 5 | cover -
+```
+
+### The cover row, as stored
+
+```
+id 1 | doctor 21 | requester 1 | decided_by 11 | source 5 -> target 3 | starts 2026-09-12 02:25:00Z | ends 2026-09-12 03:25:00Z | status approved | decided 2026-09-12 03:03:47 | cancelled NULL | updated 2026-09-12 03:03:47
+```
+
+`starts_at` and `ends_at` are UTC in storage and were typed as 10:25 and 11:25 clinic time.
+`updated_at` equals `decided_at`, which is the evidence that **nothing rewrote the row** after the
+decision, and therefore that expiry was evaluated live rather than by a scheduled job.
+
+### Active room inventory, the four RME branches
+
+```
+TLK1 | 1 | RM-LDKB | Ruang Landak B | inactive
+TLK1 | 2 | RM-LDKC | Ruang Landak C | inactive
+TLK1 | 3 | RM-TND | Ruang Tindakan | active
+TLK1 | 4 | RM-LDKA | Ruang Landak A | inactive
+TLK1 | 5 | RM-STR | Ruang Sterilisasi | active
+TLK1 | 6 | TKM-A | Ruangan A | active
+TLK1 | 7 | TKM-B | Ruangan B | active
+TLK1 | 8 | TKM-C | Ruangan C | inactive
+LDK2 | 9 | LDK-A | Ruangan A | active
+LDK2 | 10 | LDK-B | Ruangan B | active
+LDK2 | 11 | LDK-C | Ruangan C | active
+ATG3 | 12 | ATG-A | Ruangan A | active
+ATG3 | 13 | ATG-B | Ruangan B | active
+ATG3 | 14 | ATG-C | Ruangan C | inactive
+SPN4 | 17 | SPN-A | Ruangan A | active
+SPN4 | 18 | SPN-B | Ruangan B | active
+```
+
+Eleven active rooms across the four RME branches, not sixteen. Both SPN4 and ATG3 have exactly two,
+and all four of those are named *Ruangan A* and *Ruangan B*, which is why only the room code or the
+granted room id can serve as narrowing evidence.
+
+### HTTP evidence, with actor attribution
+
+```
+02:26:53Z | operator | GET /dashboard -> 302
+02:26:53Z | operator | GET /login -> 200
+02:31:34Z | operator | POST /login -> 302
+02:31:34Z | operator | GET /dashboard -> 200
+02:34:30Z | operator | GET /rme/doctor-branch-locks -> 200
+02:35:01Z | operator | POST /rme/doctor-branch-locks/21/release-session -> 302
+02:35:01Z | operator | GET /rme/doctor-branch-locks -> 200
+02:37:53Z | tablet   | POST /device-api/v1/doctor/challenge -> 200
+02:37:53Z | tablet   | POST /device-api/v1/doctor/login -> 200
+02:38:03Z | tablet   | GET /device-login/045b8ae8bf88240ad514da7194caf842b8550a3fe0362a45ba50c72c98e06451 -> 302
+02:38:09Z | tablet   | GET /rme/online-context/select -> 200
+02:42:24Z | tablet   | POST /rme/online-context/doctor -> 302
+02:42:25Z | tablet   | GET /dashboard -> 200
+02:42:40Z | tablet   | GET /rme/medical-records -> 200
+02:43:01Z | operator | GET /rme/visits/23/medical-record -> 302
+02:43:02Z | operator | GET /rme/visits/9/medical-record -> 200
+02:43:02Z | operator | GET /rme/handwritings/9/image -> 200
+02:43:02Z | operator | GET /rme/handwritings/9/image -> 200
+02:43:23Z | tablet   | GET /rme/visits/23/medical-record -> 302
+02:43:24Z | tablet   | GET /rme/visits/9/medical-record -> 200
+02:43:40Z | tablet   | GET /rme/visits/23/medical-record -> 302
+02:43:48Z | tablet   | GET /rme/visits/23/medical-record -> 302
+02:43:51Z | tablet   | GET /rme/visits/9/medical-record -> 200
+02:43:51Z | tablet   | GET /rme/visits/23/medical-record -> 302
+02:43:52Z | tablet   | GET /rme/visits/23/medical-record -> 302
+02:43:52Z | tablet   | GET /rme/visits/9/medical-record -> 200
+02:43:55Z | tablet   | GET /rme/visits/9/medical-record -> 200
+02:43:58Z | operator | GET /dashboard -> 200
+02:43:59Z | tablet   | GET /rme/handwritings/9/image -> 200
+02:44:00Z | tablet   | GET /rme/handwritings/9/image -> 200
+02:44:07Z | tablet   | GET /rme/visits/23/odontogram -> 200
+02:50:47Z | operator | GET /dashboard -> 200
+02:50:50Z | operator | POST /logout -> 302
+02:50:50Z | operator | GET / -> 302
+02:50:50Z | operator | GET /login -> 200
+02:50:54Z | operator | POST /login -> 302
+02:50:54Z | operator | GET /dashboard -> 200
+02:51:02Z | operator | GET /rme/doctor-branch-covers/new -> 200
+02:52:50Z | operator | POST /rme/doctor-branch-covers -> 302
+02:52:50Z | operator | GET /rme/doctor-branch-covers/new -> 200
+02:56:52Z | operator | GET /rme/doctor-branch-covers/new -> 200
+02:56:59Z | operator | GET /rme/doctor-branch-covers/new -> 200
+02:57:39Z | operator | GET /rme/doctor-branch-covers -> 405
+03:02:58Z | operator | GET /rme/doctor-branch-locks -> 200
+03:03:06Z | operator | POST /rme/doctor-branch-covers/1/approve -> 302
+03:03:06Z | operator | GET /rme/doctor-branch-locks -> 200
+03:03:26Z | operator | POST /logout -> 302
+03:03:26Z | operator | GET / -> 302
+03:03:26Z | operator | GET /login -> 200
+03:03:32Z | operator | POST /login -> 302
+03:03:33Z | operator | GET /dashboard -> 200
+03:03:42Z | operator | GET /rme/doctor-branch-locks -> 200
+03:03:47Z | operator | POST /rme/doctor-branch-covers/1/approve -> 302
+03:03:48Z | operator | GET /rme/doctor-branch-locks -> 200
+03:06:21Z | tablet   | GET /rme/medical-records -> 302
+03:06:24Z | tablet   | GET /rme/medical-records -> 302
+03:06:24Z | tablet   | GET /login -> 200
+03:07:16Z | tablet   | POST /device-api/v1/doctor/challenge -> 200
+03:07:17Z | tablet   | POST /device-api/v1/doctor/login -> 200
+03:07:18Z | tablet   | GET /device-login/3f2622ecd9756ab1bb84645fe9e05fcaa28d08744f53769f2bfde68e5c174a74 -> 302
+03:07:30Z | tablet   | GET /rme/medical-records -> 302
+03:07:31Z | tablet   | GET /rme/online-context/select -> 200
+03:07:54Z | tablet   | POST /rme/online-context/doctor -> 302
+03:07:55Z | tablet   | GET /dashboard -> 200
+03:13:11Z | tablet   | GET /rme/medical-records -> 200
+03:13:14Z | tablet   | GET /rme/treatment-room-worklist -> 200
+03:13:15Z | tablet   | GET /rme/reports/doctor-performance -> 200
+03:13:23Z | tablet   | GET /dashboard -> 200
+03:26:36Z | tablet   | GET /rme/medical-records -> 302
+03:26:37Z | tablet   | GET /login -> 200
+03:30:18Z | tablet   | POST /device-api/v1/doctor/challenge -> 200
+03:30:18Z | tablet   | POST /device-api/v1/doctor/login -> 200
+03:30:19Z | tablet   | GET /device-login/30ced9e0e1bba454b7d05bc6df22fee3770f04020e5add442cb66c87b9d3d77b -> 302
+03:30:19Z | tablet   | GET /rme/online-context/select -> 200
+03:30:29Z | tablet   | POST /rme/online-context/doctor -> 302
+03:30:29Z | tablet   | GET /dashboard -> 200
+```
+
+**Gate 6 rests on the `tablet` lines only, and this matters.** The operator's browser also opened
+patient 28's record at 02:43:01Z, but that browser was signed in as the Supervisor RME, a
+**governance actor** whose archive scope is the whole RME branch set. A cross-branch read by a
+governance actor proves nothing about a doctor's scope. The evidence for
+`ARCHIVE_CROSS_BRANCH_READ` is the tablet's own sequence at 02:43:23Z through 02:44:07Z, made by
+drg Karmila's session while her effective branch was SPN4: visit 23 at LDK2 redirecting to the
+canonical sheet at ATG3, the handwriting image served twice, and the LDK2 odontogram opening
+directly.
+
+The two `POST /rme/online-context/doctor` lines are the branch narrowing being accepted
+server-side, once per phase. The two bounces at 03:06:21Z and 03:26:36Z are the two evictions, and
+they are the only 302s on protected paths in the whole window.
