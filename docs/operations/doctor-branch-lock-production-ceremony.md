@@ -349,6 +349,22 @@ Any room from ATG3, LDK2 or TLK1 appearing is a narrowing failure: stop.
 Open **patient 28**, whose history spans three branches. It must open. A doctor has to be able to
 read the history of the patient in front of her.
 
+## E-CORRECTED AGAIN, 2026-09-12 — the room set is NOT on Ruang Perawatan
+
+**Executed and closed. The room-set evidence does not live on `/rme/treatment-room-worklist`.**
+For a room-scoped doctor that page does not render the room selector at all, and the room list it
+does build is scoped to every RME-enabled branch rather than to the effective branch, so observing
+it would have produced a vacuous pass. The doctor-visible narrowed surface is the **working-context
+selector**, which intersects the doctor's practice branches with the effective branch and is
+re-asserted server-side on submit. Proven both ways on 2026-09-12: locked to SPN4 it offered only
+Cabang Sunu and granted room 17 SPN-A; under an approved cover to ATG3 the same screen on the same
+tablet offered only Cabang Antang and granted room 12 ATG-A.
+
+Also correct the counts: **active** rooms are SPN4 two, ATG3 two, eleven across the four RME
+branches. The old figure of sixteen was a row count including inactive rooms. Since home and cover
+both have exactly two active rooms and all four are named *Ruangan A* / *Ruangan B*, count and name
+are both useless as evidence — use the room codes or the granted room id.
+
 ## E-old. SUPERSEDED for a Doctor subject — kept only for an Admin Klinik subject
 
 **Do not run this step against a doctor.** Owner ruling, 2026-09-12: Daftar Kunjungan and Antrian

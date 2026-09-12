@@ -654,3 +654,137 @@ PR_B_STATUS = MERGED / DEPLOYED / FOREIGN-TABLET PROOF PASS / CEREMONY INCOMPLET
 PR_C_SAFE_TO_START = NO
 ```
 
+---
+
+## 12. PR-B PRODUCTION CEREMONY CLOSED — all six remaining gates PASS, 2026-09-12
+
+Window 10:04–11:32 WITA, operator present, drg Karmila (user 18 / doctor 21) on
+`PILOT_TABLET_05_ATG3` (device 6, authorization 6), a tablet whose physical branch is **ATG3**
+while her permanent home lock is **SPN4**. Production head `1010d9fb`, exact match, throughout.
+
+**Every claim below is server-side evidence.** Where the operator reported "all step done" without
+answering the specific question asked, the outcome was taken from the database and from the nginx
+access log instead. Two such reports turned out to be partly untrue (a room list never reported, a
+self-approval attempt not yet made at that point), which is why nothing here rests on them.
+
+### The six gates
+
+| gate | verdict | the evidence, not the assertion |
+|---|---|---|
+| SESSION_INVALIDATION_VERIFIED | **PASS** | 11:06:21 `GET /rme/medical-records` → 302, referer the odontogram page she was reading; audit 699 `DOCTOR_SESSION_LEASE_EVICTED` on `users:18`, `{"reason":"lease_missing"}` |
+| TEMP_COVER_VERIFIED | **PASS** | lease 7 claimed 11:07:18 with `effective_branch_id=3`, `effective_cover_id=1`; home lock still SPN4 |
+| COVER_EXPIRY_VERIFIED | **PASS** | at 11:29:07, 247s past `ends_at`, the cover row still `approved` with `updated_at == decided_at` — **nothing rewrote it** — yet effective covers = 0 and effective branch = SPN4 |
+| STALE_COVER_SESSION_DENIED | **PASS** | 11:26:36 → 302 then `/login` 200; audit 703 `DOCTOR_SESSION_LEASE_EVICTED` on `trx_doctor_session_leases:7`, `{"reason":"branch_context_changed"}` |
+| RUANG_PERAWATAN_NARROWING | **PASS** | home: selector offered only Cabang Sunu, server granted room 17 SPN-A. cover: only Cabang Antang, server granted room 12 ATG-A |
+| ARCHIVE_CROSS_BRANCH_READ | **PASS** | from an SPN4 session: visit 23 (LDK2) → 302 → visit 9 (ATG3) 200, `handwritings/9/image` 200 twice, `visits/23/odontogram` 200, zero denial audits |
+
+### The round trip, on one tablet that belongs to ATG3
+
+```
+lease 5 | 06:51:47 WITA | SPN4 | cover -  | released admin_release            (operator, user 11)
+lease 6 | 10:38:03 WITA | SPN4 | cover -  | released effective_branch_changed (cover approval)
+lease 7 | 11:07:18 WITA | ATG3 | cover 1  | released effective_branch_changed (cover expiry)
+lease 8 | 11:30:19 WITA | SPN4 | cover -  | ACTIVE
+```
+
+SPN4 → ATG3 → SPN4, and `mst_doctor_branch_locks.home_branch_id` never moved off 5.
+
+### Two different eviction reasons, which is what proves two different mechanisms
+
+The invalidation gate and the stale-cover gate are easy to conflate, and a single reason code
+appearing twice would not have distinguished them. They produced different codes AND different
+audit shapes, each matching its documented path:
+
+- **approval** had already released the lease, so the next request found none: reason
+  `lease_missing`, audit keyed on `users:18`, because a missing lease has nothing to write to;
+- **expiry** left the lease in place and made its recorded `(branch, cover)` unreconcilable with
+  the resolver's answer: reason `branch_context_changed`, audit keyed on the lease row itself,
+  which is also released with `effective_branch_changed`.
+
+### Maker-checker, observed rather than asserted
+
+`approve_doctor_branch_locks` is held by both tiers, so the only thing separating maker from
+checker is an actor-id comparison inside the locked transaction, which a Super Admin's global gate
+bypass cannot reach. Observed on production:
+
+```
+03:03:06 UTC  POST /rme/doctor-branch-covers/1/approve  -> refused  (cover still undecided)
+03:03:26 UTC  POST /logout
+03:03:32 UTC  POST /login                                          (different account)
+03:03:47 UTC  POST /rme/doctor-branch-covers/1/approve  -> approved by user 11
+```
+
+Maker user 1, checker user 11, `requester_user_id <> decided_by_user_id`. The refusal wrote
+nothing. Audit 698's payload also records `online_impact_acknowledged: true` and
+`doctor_online_at_decision: true`: she was online, and the approval carried the acknowledgement the
+subject guard re-reads inside the transaction.
+
+### Three corrections this ceremony forced
+
+1. **The cover form takes WITA, not UTC.** Storage is UTC, but the input string is parsed in the
+   clinical timezone. Proven by the row itself: typed 10:25/11:25 clinic time, stored 02:25/03:25.
+   An instruction given in UTC would have dated the window eight hours away and the cover would
+   never have come into force.
+2. **Ruang Perawatan is NOT the room-set proof surface for a doctor.** On
+   `/rme/treatment-room-worklist` the room selector is not rendered at all for a room-scoped
+   doctor, and the room list that page builds is scoped to *every* RME-enabled branch rather than
+   to the effective branch. The narrowed, doctor-visible surface is the **working-context
+   selector**, which intersects her practice branches with the effective branch and is re-asserted
+   server-side. §4's corrected surface contract is right that the evidence is the room set; it is
+   the page that was wrong.
+3. **"16 rooms" was a row count including inactive rooms.** Active rooms: SPN4 two, ATG3 two,
+   eleven across the four RME branches. Because home and cover both have exactly two and all four
+   are named *Ruangan A* / *Ruangan B*, **a count or a name proves nothing** — the evidence has to
+   be the room codes SPN-A/SPN-B against ATG-A/ATG-B, or the granted room id.
+
+### Anti-vacuity preconditions asserted before each gate was scored
+
+Every gate in this sprint has a way to pass for the wrong reason, and each was closed first:
+
+- the post-arm lease was proven claimed **after** the flag was armed, so §24 could not pass on a
+  token-less pre-arm session;
+- lease 7 was proven claimed **strictly inside** the cover window and to carry both the cover id
+  and the target branch, so §30 could not pass on a session that never held cover authority;
+- SPN4 and ATG3 were both confirmed `is_active` and `is_rme_enabled` before and after, because a
+  degraded branch makes the resolver decline to answer and a declined answer never evicts — which
+  would have looked like a clean 200;
+- ATG3 was confirmed present in `mst_doctor_branches` for doctor 21 **before** the cover was filed;
+  had it not been, the approval would have left her unable to go online anywhere;
+- she holds four active RME practice branches, so narrowing to one is a real exclusion rather than
+  an artefact of having only one.
+
+### Final state
+
+```
+DOCTOR_SINGLE_ACTIVE_SESSION_FINAL = false   (config AND effective, via env)
+DOCTOR_BRANCH_LOCK_FINAL           = true
+GLOBAL_ENFORCEMENT_ACTIVE          = false
+PILOT_COHORT                       = 9,15,18   SCOPE_VERDICT=GO
+KARMILA_HOME_LOCKED_BRANCH         = SPN4      final context SPN4 / SPN-A / online
+OTHER_DOCTORS_LOCK_STATE           = UNSET     28 of 29 doctor records, 14 of 15 Doctor accounts
+devices / authorizations / credentials = 5 / 6 / 5, authorization 6 active, 0 revocations
+PENDING initial assignments / transfers / covers = 0 / 0 / 0
+/login /health/live /health/ready /health/lb = 200
+APP_ENV pilot, APP_DEBUG false, maintenance OFF, migrations pending 0, failed jobs 0
+audit 690 -> 706, sixteen rows, every one attributable
+production log BYTE-IDENTICAL at 1406217 with 152 errors across the entire ceremony
+```
+
+**Zero new errors, zero unexpected identity mutations, zero stranded rows.**
+
+### Lease 8 is unreleased and inert — and the re-arm trap applies again
+
+Same as the previous window: with the flag off nothing claims or checks a lease, so lease 8 simply
+sits there. It is PR-A's documented rollback behaviour, not a leak. But she is **online right now**
+with a live session, so if `doctor.single_active_session` is ever re-armed, lease 8 becomes a live
+incumbent and her next login is a SECOND login and will be correctly DENIED. Any future re-arm must
+be followed by a logout, or by the audited release, **before** a fresh login.
+
+```
+PR_B_STATUS = MERGED / DEPLOYED / PRODUCTION VERIFIED / CLEAN
+PR_C_SAFE_TO_START = NO   (owner authorization required; not granted by this ceremony)
+FULL_SUITE_CHILD_RESULT = SKIPPED
+PARENT_FULL_SUITE_OBLIGATION = OPEN
+PARENT_GO_TAGGED = NO
+```
+
