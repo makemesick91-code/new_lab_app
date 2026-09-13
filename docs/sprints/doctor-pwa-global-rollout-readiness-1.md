@@ -150,6 +150,14 @@ exits 1 either way; PARTIAL exits 0 unless `--strict`; GLOBAL_READY exits 0. The
 asymmetry is deliberate: a staged rollout is PARTIAL for its whole duration, and a
 gate that reddens that long is a gate somebody removes from the deploy chain.
 
+> **Amended 2026-09-13 by `DOCTOR-ACCESS-FLEET-ROLLOUT-READINESS-1`.** That top
+> verdict is now emitted as **`TRUSTED_PATHS_COMPLETE`**, not `GLOBAL_READY`. Exit
+> codes are unchanged. The old name claimed more than this engine measures — it has
+> no home-branch check and no evidence anyone ever logged in — and a bulk
+> authorization run moved it from PARTIAL to its top value without a clinician
+> touching a tablet. Fleet readiness is `doctor:fleet-readiness` (rule 156).
+
+
 **The console refusal.** `ForbiddenConsoleCommandGuard` at `CommandStarting`,
 salvaged from the closed PHASE4A activation pull request — see §7.
 

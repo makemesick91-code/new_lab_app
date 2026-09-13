@@ -49,6 +49,19 @@ exited non-zero on production because it was written for a sprint whose claim wa
    credentials measures hardware. Three credentials and fifteen doctors is a
    consistent and completely unready fleet.
 
+   *Amended by `DOCTOR-ACCESS-FLEET-ROLLOUT-READINESS-1` (2026-09-13).* The
+   principle stands and is now proven three ways over: the credentials table has
+   no doctor column by design, and three adversarial verifiers failed to refute
+   it. **The illustration no longer holds against this engine's own verdict.**
+   Once every doctor held an authorization on a tablet that already had a
+   credential, GR-R4 was satisfied for all fifteen and this engine reported them
+   all complete — three credentials, fifteen doctors, and a green gate. That is
+   not a bug in GR-R4; it is the boundary of what this engine measures. The
+   unreadiness the sentence describes is real and is now measured by
+   `doctor:fleet-readiness` (rule 156), which adds the home branch and a login
+   that actually happened. Read the illustration as a statement about the FLEET,
+   not as a prediction about this verdict.
+
 6. **GR-R6 — device sharing never implies authorization.** Two doctors may share
    one tablet through two explicit active authorizations and no other way.
 
