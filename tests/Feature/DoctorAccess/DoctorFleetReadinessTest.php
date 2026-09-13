@@ -560,8 +560,11 @@ it('refuses to count a login on a tablet that has since been revoked', function 
     fleetLock($doctor, fleetBranch('SPN4'));
 
     // The only login this doctor has ever performed was on the tablet that was
-    // later revoked. Production carries exactly this shape: user 18 holds
-    // thirteen success rows naming device 1, which is revoked.
+    // later revoked. Production carries this shape — measured 2026-09-13, user
+    // 18 held 4 of its 23 success rows on revoked device 1 — and carries the
+    // mirror of it too: the other 19 are on tablets that still qualify, so the
+    // gate has to discard without disqualifying the doctor. The fixture here is
+    // the pure case; the mixed one is DoctorFleetReadinessEstateSnapshotTest's.
     fleetProof($user, $revoked, $doctor);
 
     $revoked->forceFill(['status' => DoctorDevice::STATUS_REVOKED, 'revoked_at' => now()])->save();
