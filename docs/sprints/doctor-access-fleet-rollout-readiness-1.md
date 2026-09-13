@@ -221,3 +221,90 @@ the fixture, with a documented ceiling of 24 and the reasoning for the headroom.
 
 Durable rules: `.cursor/rules/156-doctor-fleet-rollout-readiness.mdc`
 (**FR-R1..FR-R16**).
+
+---
+
+## 9. Shipped, deployed, and the ceremony that followed
+
+**Merged** PR #407 squash → `1172ba61d2a61e65afbb2626293023215dd9d54c`, candidate
+`5b72ab1c`; both trees `95f28a69` — the squash changed no content.
+
+**CI run `34728754423` all required gates green.** Verified from the job log
+rather than the check mark: `NSF-R011 Critical Test Gate` — **1 risky, 3927
+passed, 21539 assertions, 0 failed** (47m42s). Selective module gate: Lab 638,
+UI 777, Permission 486. NSF-9 and NSF-10 green. `NSF-R011 Full Suite Gate:
+skipped` — see §11.
+
+**Deployed** on `srv1730088` via `scripts/deploy-vps-runner.sh start`, detached,
+pid 1539836. `exit=0`, `DEPLOY OK`, `DEPLOY_HEAD_TARGET_MATCH=YES`. Production
+HEAD `1172ba61`, tree `95f28a69` — equal to the merge. `Nothing to migrate.`
+env pilot, debug off, maintenance off.
+
+One deploy smoke warning, and it is not this sprint's: `SMOKE-HTTP-HEALTH`
+probes `http://127.0.0.1/login` and got 404, because a co-tenant app answers the
+bare loopback on this shared VPS. Over the canonical domain
+`https://daengtisia.online`, `/login`, `/health/live` and `/health/ready` all
+return **200**.
+
+### The assignment ceremony
+
+Dry run reproduced the owner matrix exactly: **14 PENDING_ASSIGNMENT, 0 refused,
+0 transfers, 0 online**. Plan digest `2526e8f932bdf29d5bd5704868e2d838`, confirmed
+by the owner, then applied with maker `1` (IT Support) and checker `11` (Jene
+Monika, Supervisor RME).
+
+**All 14 ASSIGNED.** Reconciled independently from the database, not from the
+tool's own output:
+
+```
+eligible_doctors 15 | locked_doctors 15 | unset_doctors 0      <- hard gate PASSED
+home branches      LDK2 3 | SPN4 10 | TLK1 2                    <- exactly the matrix
+requests           15 x initial_assignment / approved
+                   maker 1, checker 11, maker_ne_checker = true
+audit              15 x DOCTOR_BRANCH_LOCK_REQUESTED
+                   15 x DOCTOR_BRANCH_LOCK_APPROVED             <- per doctor, never one bulk row
+untouched          devices 5 | active authorizations 45 | usable credentials 3 | covers 1
+```
+
+A second dry run returns **`ALREADY_SATISFIED=14`, 0 pending** — idempotent.
+
+**Zero error delta, anchored on a byte offset rather than a count:** the
+production log was 1406217 bytes / 163 ERROR lines before the deploy and
+1406217 bytes / 163 ERROR lines after the deploy *and* after all fourteen
+assignments. Content cannot forge that. 0 failed jobs.
+
+**Posture unmoved:** `doctor.single_active_session=false`,
+`doctor.branch_lock=true`, cohort `[9,15,18]`,
+`GLOBAL_ENFORCEMENT_ACTIVE=false`, `SCOPE_VERDICT=GO`.
+
+## 10. Where readiness actually stands
+
+```
+ELIGIBLE_DOCTORS                        15
+LOCKED_DOCTORS                          15      UNSET 0          PASSED
+AUTHORIZATION target/active/missing/dup 45/45/0/0                PASSED
+TRUSTED_DEVICES_WITH_READINESS_PROOF    3 / 3                    PASSED
+REAL_DEVICE_READY_DOCTORS               3 / 15   NOT READY 12    BLOCKED
+FLEET_READY_DOCTORS                     3        (users 9,15,18)
+FLEET_READINESS                         PARTIAL
+```
+
+Three of the four hard gates are closed. **One blocker remains, and it is
+physical**: twelve clinicians have never logged in on a tablet. Proving them is
+not a terminal operation — a doctor OUTSIDE the enforcement cohort cannot
+produce a proof at all, because the gate simply lets them in by browser. Each
+must be rotated through the bounded cohort (**hard cap 5**), log in at a tablet,
+and be rotated out; a failed ceremony locks that doctor out until removed.
+
+**`READINESS_STATUS = BLOCKED`. `GO_TAGGED = NO`.** The tag is not created, and
+nothing here authorises activation.
+
+## 11. Full Suite
+
+`FULL_SUITE_EXECUTED=NO` · `FULL_SUITE_RESULT=SKIPPED` · `FULL_SUITE_CLAIMED_PASS=NO`.
+
+The CICD-CTRL-1 classifier escalates this change set to `run_full_suite=required`,
+and the CI gate reported `skipped` — because the global temporary Full-Suite
+policy is **ACTIVE** and the gate requires `full_suite_authorized == 'true'`,
+which only an explicit two-input dispatch sets. That is a governance decision
+reserved to the owner, and a skip must never be read as a pass.
