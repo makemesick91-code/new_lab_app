@@ -180,13 +180,40 @@ PROOF_ROW_ID= PROOF_TIMESTAMP=
 EFFECTIVE_BRANCH=
 ```
 
-Required: `EFFECTIVE_BRANCH == HOME_BRANCH`, unless a legitimate active temporary
-cover exists.
+**CORRECTED 2026-09-13 BY WAVE 1 — `EFFECTIVE_BRANCH == HOME_BRANCH` IS NOT A
+VALID LIVE GATE IN THIS SPRINT, AND THE ORIGINAL REQUIREMENT WAS CONTRADICTORY.**
 
-**Cross-branch is expected, not a fault.** Do not require
+`DoctorEffectiveBranchResolver::enabled()` returns true only when
+`doctor.branch_lock` AND `doctor.single_active_session` are BOTH armed and the
+session probe is observable. The two arm and disarm together on purpose — an
+expired cover would otherwise keep granting authority with nothing left to
+invalidate the session. Production runs `single_active_session=false`, which this
+sprint is required to preserve, so **the branch-lock capability is disarmed at
+runtime and nothing narrows a doctor's working branch.**
+
+Wave 1 proved it on production rather than on paper: drg Fahira, home-locked to
+TLK1, logged in on the SPN4 tablet and her working context became **SPN4**. Her
+lock row was untouched (TLK1, `transfer_count` 0). Nothing failed — there was
+simply no enforcement to observe.
+
+So a campaign ceremony asserts, and records:
+
+```
+DEVICE_PHYSICAL_BRANCH   captured  (expected != HOME — cross-branch is the normal case)
+HOME_LOCKED_BRANCH       captured  and must be UNCHANGED by the ceremony
+EFFECTIVE_BRANCH         captured as OBSERVED, never asserted equal to HOME
+```
+
+**Cross-branch is expected, not a fault.** Never require
 `DEVICE_PHYSICAL_BRANCH == HOME_BRANCH`; device branch is not doctor branch
-authority. A TLK1 doctor on an SPN4/LDK2/ATG3 tablet is exactly the evidence
-worth keeping.
+authority. What the ceremony DOES assert is that the login did not rewrite the
+home lock.
+
+The live assertion `DEVICE_BRANCH != HOME AND EFFECTIVE_BRANCH == HOME` is
+**deferred to `DOCTOR-ACCESS-GLOBAL-ACTIVATION-1`**, where
+`single_active_session` is actually armed under an activation window — and that
+sprint must handle the lease re-arm invariant first, including Karmila's
+surviving lease 8 if it still exists.
 
 Verify the proof landed and qualifies:
 
@@ -319,3 +346,111 @@ recording `FLEET_READINESS_GO=YES` with `GLOBAL_ACTIVATION_AUTHORIZED=NO`.
 
 **Stop at readiness GO.** `DOCTOR-ACCESS-GLOBAL-ACTIVATION-1` does not start
 automatically.
+
+---
+
+## 11. WAVE 1 — drg Fahira, 2026-09-13. Executed, rolled back, protocol corrected
+
+**`WAVE_1_ORIGINAL_PROTOCOL_RESULT = FAIL / ROLLED BACK`**
+Reason: `CROSS_BRANCH_LIVE_ASSERTION_UNREACHABLE_WITH_SINGLE_SESSION_FALSE`.
+
+This is recorded as a failure of the **protocol**, not of the doctor, the tablet
+or the login — and it is not rewritten to look like a pass.
+
+**The device-readiness evidence is valid and is preserved:**
+
+```
+FAHIRA_DEVICE_LOGIN_PROOF = PASS
+  audit 819  DOCTOR_APP_LOGIN_AUTHORIZATION_SUCCESS
+             performed_by 14 · doctor_id 16 · doctor_device_id 3
+             2026-09-13 10:07:05 UTC = 18:07:05 WITA
+  audit 818  DOCTOR_DEVICE_LOGIN_REQUESTED — the attempt, correctly NOT counted
+  device 3   PHASE4A_PILOT_TABLET_02 (SPN4) — active, cryptographically_verified,
+             not revoked: ELIGIBLE AT PROOF TIME
+  authz 10   ACTIVE; last_authorized_login_at written 10:07
+
+FAHIRA_REAL_DEVICE_READY = YES
+REAL_DEVICE_READY = 4 / 15        (was 3)
+```
+
+**What was observed instead of the asserted invariant:** her working context
+became **SPN4** at 10:08, one minute after the proof, while her HOME lock stayed
+**TLK1** with `transfer_count` 0. The lock was not rewritten; it was simply inert.
+
+**Cohort discipline held throughout:**
+
+```
+COHORT  [9,15,18] -> [9,14,15,18] -> [9,15,18]     BEFORE == AFTER
+BROWSER_DENIED   3 -> 4 -> 3        BROWSER_ALLOWED 12 -> 11 -> 12
+enrolled ~10:06 UTC · rolled back 10:09:04 UTC — about three minutes,
+never left trapped, rollback run BEFORE any diagnosis
+```
+
+**Post-ceremony, by canonical logout only — no SQL, no forced state:**
+
+```
+FAHIRA_ONLINE = false · FAHIRA_ROOM = none (SPN-A released) · offline_at 10:13 UTC
+live sessions 0 · open leases 0 · active visits 0
+TEMPORARY_COHORT_MEMBERSHIP = false · COHORT = [9,15,18]
+```
+
+**Reconciliation — zero unexplained mutation:**
+
+```
+locks 15 -> 15 · Fahira home TLK1 -> TLK1 · authz 47/45 -> 47/45
+devices 5/3 -> 5/3 · credentials 5/3 -> 5/3 · open leases 1 -> 1 (Karmila's, untouched)
+audit 817 -> 819: exactly two rows, both Fahira's, both expected
+log 1406217 bytes / 163 ERROR — byte-identical · health 200/200/200
+UNEXPECTED branch / authorization / credential / device / flag changes = 0
+```
+
+---
+
+## 12. The corrected readiness gate (authoritative for Wave 2+)
+
+Real-device readiness for `DOCTOR-ACCESS-FLEET-ROLLOUT-READINESS-1` means **all**
+of:
+
+- the doctor has a `HOME_LOCKED_BRANCH`;
+- the doctor has an ACTIVE authorization to the selected tablet;
+- the selected tablet is currently eligible;
+- the doctor enters the temporary trusted-device enforcement cohort;
+- a real physical tablet login succeeds;
+- a server-side success proof exists;
+- the proof is tied to that currently eligible tablet;
+- the doctor is removed from the temporary cohort afterwards;
+- the final cohort returns to `[9,15,18]`;
+- no unexplained production mutation or error.
+
+It does **NOT** require live effective-branch narrowing while
+`single_active_session=false`.
+
+`ARM_SINGLE_ACTIVE_SESSION_FOR_READINESS = NO`. The lease engine is not
+temporarily activated for any wave, and Karmila's lease 8 is **not** released
+merely to make a ceremony possible.
+
+### Branch authority — classified separately, and honestly
+
+```
+BRANCH_LOCK_CAPABILITY_PROVEN            = YES
+  · the PR-B production ceremony
+  · current automated regression
+  · 15/15 HOME locks stored
+  · source verification: the resolver is DELIBERATELY coupled to single-session arming
+
+FLEET_LIVE_BRANCH_LOCK_ACTIVATION_PROVEN = NO
+  · global/fleet activation has not happened
+```
+
+Never collapse those two lines into one. A stored lock is a capability; a
+narrowed queue is an activation, and only one of them is true today.
+
+### Wave 2+ — device readiness only
+
+Authorized, but **never started automatically**: clinicians and tablets must be
+physically ready first. At most **two** campaign doctors per wave, cohort size
+**≤ 5**. Per doctor, in order: precheck → human presence → tablet confirmation →
+rollback readiness → temporary cohort add → config refresh → verify cohort →
+physical tablet login → server proof → remove → config refresh → verify baseline
+cohort → health/audit reconciliation. **A failed login rolls back first and is
+diagnosed second.**

@@ -56,6 +56,11 @@ So the verdict is now `TRUSTED_PATHS_COMPLETE`, and a second gate,
    `mst_doctors`/lock branch state with `mst_doctor_devices.branch_id` would
    deprovision a working clinician.
 
+   *Amended 2026-09-13 by Wave 1.* This is a statement about AUTHORITY, not a
+   promise that the server is currently narrowing anything — see FR-R21..FR-R26.
+   Do not read it as "effective branch will equal home branch"; that holds only
+   when the resolver is armed, and today it is not.
+
 6. **FR-R6 — a device proof identifies the TABLET, not the clinician.** The
    credential has no doctor column and deliberately never will (GR-R5); the
    doctor is identified by the password step that precedes the assertion. A
@@ -156,3 +161,41 @@ So the verdict is now `TRUSTED_PATHS_COMPLETE`, and a second gate,
     two gates ever disagree, the fleet gate is the answer and the provisioning
     gate is an input to it. Do not add a second engine that decides what a
     trusted path is; compose rule 152's.
+
+21. **FR-R21 — a stored lock is not an armed lock.** `mst_doctor_branch_locks`
+    rows can exist, be complete and be correct while nothing in production
+    enforces them. Fifteen locks were written on 2026-09-13 and narrowed nobody's
+    queue, because the capability was disarmed. Never report "locked" as though
+    it meant "narrowed".
+
+22. **FR-R22 — `doctor.branch_lock=true` alone does NOT mean the resolver is
+    active.** `DoctorEffectiveBranchResolver::enabled()` is the complete arming
+    predicate: `branch_lock` **AND** `single_active_session` **AND** an
+    observable session probe. The two flags arm and disarm together on purpose —
+    an expired cover would otherwise keep granting authority with nothing left
+    to invalidate the session. Read `enabled()`, never one flag.
+
+23. **FR-R23 — readiness proof and activation proof are different claims.**
+    Readiness asks "could this clinician work under enforcement". Activation asks
+    "is enforcement doing anything". A sprint may complete the first while the
+    second is untrue for the entire fleet, and the evidence must say so in two
+    separate lines that are never collapsed into one.
+
+24. **FR-R24 — real-device readiness is provable WITHOUT arming
+    single-session.** The device login path is independent of the branch
+    resolver. So a readiness campaign never arms `single_active_session`, never
+    temporarily activates the lease engine, and never releases a surviving lease
+    merely to make a ceremony possible.
+
+25. **FR-R25 — the live effective-branch assertion belongs to ACTIVATION.**
+    `DEVICE_BRANCH != HOME AND EFFECTIVE_BRANCH == HOME` can only be observed
+    when the resolver is armed, so it is asserted in
+    `DOCTOR-ACCESS-GLOBAL-ACTIVATION-1` under an activation window — and that
+    sprint handles the lease re-arm invariant first. A readiness ceremony
+    CAPTURES the effective branch as observed; it never asserts it equals home.
+
+26. **FR-R26 — a ceremony must not rewrite the home lock, and that IS
+    assertable.** What a readiness login must prove about branch authority is
+    the negative: the doctor's lock row is unchanged afterwards
+    (`home_branch_id` and `transfer_count` identical). Wave 1 proved exactly
+    that while the positive invariant was unobservable.

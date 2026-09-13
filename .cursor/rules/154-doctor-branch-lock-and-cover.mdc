@@ -95,6 +95,14 @@ Flag `doctor.branch_lock`, risk `critical`, committed **OFF**. It does not resol
 - **A branch operation never revokes an identity.** Device, `DoctorDeviceAuthorization` and
   WebAuthn credential all survive an approval, a rejection and an expiry. **Identity
   revocation is not a branch rollback**; the undo is a transfer back.
+- **AMENDED 2026-09-13 (Wave 1): every narrowing statement in this rule describes
+  an ARMED capability.** `DoctorEffectiveBranchResolver::enabled()` also requires
+  `doctor.single_active_session`, and production runs it false — so the locks are
+  stored and inert, and nothing below is narrowing anything today. Proven on
+  production: a TLK1-locked doctor logged in at an SPN4 tablet and her working
+  context became SPN4, with her lock row untouched. Read `enabled()`, never
+  `branch_lock` alone. See rule 156 FR-R21..FR-R26.
+
 - **Two hooks, and narrowing is an INTERSECTION.** `RmeWorkingBranchScope::resolve()` (the
   list scope) and `ClinicVisitService::resolveBranchId()` (the write chokepoint), each asking
   the resolver once. `array_intersect` makes the hook structurally incapable of granting a

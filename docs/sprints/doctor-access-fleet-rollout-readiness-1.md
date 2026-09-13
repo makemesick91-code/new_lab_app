@@ -128,7 +128,15 @@ shown the evidence and every conflict in it. Nothing was inferred.
 `drg Fiitri` was flagged explicitly before the decision was confirmed: all three
 of her visits, her only online context and her proven tablet are ATG3, and a
 home lock narrows her operational lists to the locked branch. The owner
-confirmed TLK1 with that consequence stated. **Recorded as an explicit owner
+confirmed TLK1 with that consequence stated.
+
+> **Corrected 2026-09-13 by Wave 1.** That consequence was stated as though it
+> were live, and it is not. `DoctorEffectiveBranchResolver::enabled()` also
+> requires `doctor.single_active_session`, which is false, so **no lock is
+> narrowing anything today** — Fiitri's queue is not restricted to TLK1 and will
+> not be until the resolver is armed in a future activation sprint. The decision
+> itself stands; the warning I gave was premature about timing, not about the
+> eventual effect. **Recorded as an explicit owner
 decision taken against the observed signal**, recoverable by permanent transfer
 or temporary cover, both of which exist.
 
@@ -220,7 +228,7 @@ the fixture, with a documented ceiling of 24 and the reasoning for the headroom.
   the switch.
 
 Durable rules: `.cursor/rules/156-doctor-fleet-rollout-readiness.mdc`
-(**FR-R1..FR-R20**).
+(**FR-R1..FR-R26**).
 
 ---
 
