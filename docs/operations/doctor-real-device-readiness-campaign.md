@@ -12,14 +12,31 @@ single-session activation, browser-policy weakening, or skipping rollback.
 
 ## 0. Why this cannot be done from a terminal
 
-A doctor **outside** the enforcement cohort produces no proof at all:
-`DoctorAppLoginGate::denyBrowserSessionReason()` returns null for them, the
-browser login simply succeeds, and no device ceremony ever happens. So proof
-requires putting the doctor **inside** the cohort — which denies their browser
-login until they are taken out again.
+A readiness proof requires a clinician physically logging in on a trusted
+tablet. That is the only part that cannot be automated, and it must never be
+fabricated.
 
-That is the whole risk of this campaign. **Enrolment is a lockout** for as long
-as it lasts. Never enrol a doctor who is not already standing at a tablet.
+> ### CORRECTED 2026-09-13 — this section previously stated the opposite of the truth
+>
+> It read: *"A doctor outside the enforcement cohort produces no proof at all…
+> So proof requires putting the doctor inside the cohort — which denies their
+> browser login until they are taken out again."*
+>
+> **That was false, and Waves 1–3 were built on it.** The gate governs the
+> BROWSER path only. The Android app posts directly to
+> `/device-api/v1/doctor/challenge` and `/device-api/v1/doctor/login`, which
+> never consult the enforcement scope — an eligible device plus an active
+> `DoctorDeviceAuthorization` is sufficient.
+>
+> Proven on production: drg Ramadhan (user 12) produced audit 828
+> `DOCTOR_APP_LOGIN_AUTHORIZATION_SUCCESS` on tablet 3 at 10:57:08 while the
+> cohort was `[9,15,18]` and he was not in it.
+>
+> **Cost of the error:** five doctors were enrolled across Waves 1–3 for no
+> benefit, each carrying a browser lockout window. Their successful proofs stay
+> valid — the defect was the protocol, not the evidence.
+>
+> `TEMPORARY_COHORT_ENROLMENT_REQUIRED_FOR_TABLET_READINESS = NO`
 
 ---
 
@@ -454,3 +471,86 @@ rollback readiness → temporary cohort add → config refresh → verify cohort
 physical tablet login → server proof → remove → config refresh → verify baseline
 cohort → health/audit reconciliation. **A failed login rolls back first and is
 diagnosed second.**
+
+---
+
+## 13. THE CANONICAL CEREMONY (authoritative for Wave 4+)
+
+**The cohort does not move.** `COHORT_BEFORE == COHORT_DURING == COHORT_AFTER ==
+[9,15,18]`. A cohort change during a normal readiness ceremony is an
+**unexpected mutation**.
+
+```
+physical doctor present
+  -> eligible tablet ready
+  -> machine precheck
+  -> DIRECT Android tablet login          (no enrolment, no config change)
+  -> server-side success proof
+  -> verify proof tied to a currently eligible device
+  -> verify active DoctorDeviceAuthorization
+  -> verify HOME lock unchanged
+  -> canonical logout
+  -> health / audit reconciliation
+```
+
+### Machine precheck per doctor
+
+Doctor present · operator and tablet ready · `active_visit=0` · `room=none` ·
+`online=false` · `HOME_LOCKED_BRANCH` set · selected tablet currently eligible ·
+active `DoctorDeviceAuthorization` to that tablet.
+
+**No open-lease condition** — `single_active_session` is false, so the lease
+engine is inert and nothing in the device-login path consults it. Do not invent
+coupling that the source does not have.
+
+### Capture per doctor
+
+`DOCTOR_ID` · `USER_ID` · `HOME_BRANCH` · `DEVICE_ID` · `DEVICE_BRANCH` ·
+`DEVICE_ELIGIBLE_AT_PROOF_TIME` · `AUTHORIZATION_ID` · `AUTHORIZATION_ACTIVE` ·
+`LOGIN_RESULT` · success audit id + timestamp · readiness proof id · observed
+effective branch · HOME lock before/after.
+
+The observed effective branch is **informational** while the resolver is
+disarmed. Do **not** require `EFFECTIVE_BRANCH == HOME`. **Do** require
+`HOME_LOCKED_BRANCH_AFTER == HOME_LOCKED_BRANCH_BEFORE`.
+
+### PASS
+
+Real physical tablet login success · server-side success evidence · device
+currently eligible · authorization active · HOME lock unchanged · canonical
+logout completed · health pass · no unexplained mutation or error.
+`REAL_DEVICE_READY` increments **only** on this.
+
+### FAIL — no rollback needed any more
+
+Because nobody is enrolled, a failed login needs no cohort rollback:
+
+1. confirm the cohort is still `[9,15,18]`;
+2. confirm health;
+3. capture the server-side rejection reason;
+4. leave the doctor outside enforcement scope;
+5. diagnose afterwards.
+
+Do not mutate the cohort, do not revoke the authorization, do not touch the
+tablet unless evidence actually points at the tablet.
+
+### `invalid_credentials` does not mean the password is broken
+
+It means **that request** did not authenticate — a typo, a wrong email, a stale
+remembered credential, or an outdated stored password are indistinguishable.
+Record `SUBMITTED_CREDENTIALS_REJECTED=YES`, never `STORED_PASSWORD_BROKEN=YES`
+without independent proof.
+
+drg Ramadhan is the production proof: rejected at 10:41, **succeeded at 10:57**,
+`users.updated_at` still 2026-06-29 — same account, no reset, nothing changed.
+
+So do **not** reset a password after one rejection. Allow a fresh deliberate
+entry first, respect the authentication rate limits, and use
+`settings/users/<id>/edit` only when an authorized human has determined that
+remediation is genuinely required.
+
+### Browser credential pre-check
+
+`BROWSER_CREDENTIAL_PRECHECK_REQUIRED = NO`. It proves less than the tablet
+login, adds an authentication event, and guarded a lockout that no longer
+exists. Optional diagnostic after repeated failures only — never a gate.

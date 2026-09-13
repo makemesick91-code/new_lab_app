@@ -108,6 +108,16 @@ browser and no ceremony occurs. Obtaining proof for the remaining 12 means
 rotating them through the bounded cohort (hard cap 5), which temporarily
 device-enforces them — with a real lockout if a ceremony fails.
 
+> **SUPERSEDED 2026-09-13 — THE CLAIM IN THIS PARAGRAPH IS FALSE.** It holds for
+> the BROWSER path only. The Android app posts directly to
+> `/device-api/v1/doctor/challenge` and `/device-api/v1/doctor/login`, which never
+> consult the enforcement scope — an eligible device plus an active
+> `DoctorDeviceAuthorization` is sufficient. **No rotation is required, and none
+> should be performed.** Proven on production by drg Ramadhan: audit 828
+> `DOCTOR_APP_LOGIN_AUTHORIZATION_SUCCESS` at 10:57:08 while the cohort was
+> `[9,15,18]` and he was not in it. Kept rather than deleted because Waves 1–3
+> were built on it and unnecessarily enrolled five doctors. See rule 156 FR-R19.
+
 ---
 
 ## 5. Owner decisions
@@ -303,6 +313,10 @@ not a terminal operation — a doctor OUTSIDE the enforcement cohort cannot
 produce a proof at all, because the gate simply lets them in by browser. Each
 must be rotated through the bounded cohort (**hard cap 5**), log in at a tablet,
 and be rotated out; a failed ceremony locks that doctor out until removed.
+
+> **SUPERSEDED 2026-09-13 — no rotation is required.** The tablet login works
+> outside the cohort; only the clinician's physical presence is actually needed.
+> See rule 156 FR-R19.
 
 **`READINESS_STATUS = BLOCKED`. `GO_TAGGED = NO`.** The tag is not created, and
 nothing here authorises activation.
