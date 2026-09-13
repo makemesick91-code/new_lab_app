@@ -72,55 +72,87 @@ So the verdict is now `TRUSTED_PATHS_COMPLETE`, and a second gate,
    `DOCTOR_DEVICE_LOGIN_REQUESTED` in particular looks like one and is written
    on attempts that were then refused.
 
-8. **FR-R8 — absence of evidence is NOT a pass.** No home branch, no
+8. **FR-R8 — a proof counts ONLY on hardware the doctor can still use.** The
+   proven device ids must intersect the tablets that doctor currently holds an
+   ACTIVE authorization on, itself already restricted to eligible hardware. A
+   revoked tablet, a tablet they are no longer authorized on, and a legacy row
+   carrying no device id each contribute NOTHING.
+
+   An adversarial review found this open: the login gate was the only gate in
+   the engine not scoped to the estate, so a proof SURVIVED its tablet being
+   revoked — and that is live data, not a hypothesis (user 18 holds thirteen
+   success rows naming device 1, which is revoked). "Has walked a trusted path"
+   has to mean a path that is still trusted, or it is a claim about history
+   rather than about readiness. Report the raw count beside it: "logged in only
+   on hardware we no longer trust" and "never logged in" are different facts and
+   an operator needs to tell them apart.
+
+9. **FR-R9 — real-device readiness needs a PHYSICAL ceremony per eligible
+   doctor, and it cannot be manufactured.** No SQL, no administrative shortcut,
+   no inserted success row, no inferred pass. A doctor with no proof is NOT
+   READY and stays so until a clinician stands at a tablet and authenticates.
+
+10. **FR-R10 — a temporary cohort campaign is NOT activation.** Rotating a
+    doctor into the bounded enforcement cohort to capture a readiness proof is a
+    time-boxed measurement, never a rollout. The cohort returns to its baseline
+    when the proof is captured; it is never permanently expanded by a readiness
+    sprint; and the hard cap is a cap, not a target.
+
+11. **FR-R11 — enrolment is a lockout, so it fails closed and rolls back.** A
+    doctor inside the cohort cannot use a browser. Never enrol one who is not
+    already at a tablet. A failed ceremony stops the wave, removes that doctor
+    immediately, and is never left overnight with the doctor trapped. The
+    failure is recorded; the proof is not.
+
+12. **FR-R12 — absence of evidence is NOT a pass.** No home branch, no
    authorization, no credential, no login on record, an unverified or revoked
    device, a broken path: every one of them is NOT READY. An empty fleet is
    NO-GO, never READY — "zero doctors, zero blockers" is arithmetically a pass
    and operationally a broken query, and this programme has shipped that bug
    before.
 
-9. **FR-R9 — the matrix must be reconciled independently.** Completeness is
+13. **FR-R13 — the matrix must be reconciled independently.** Completeness is
    computed from the estate, never taken from the tool that writes the rows. A
    tool that both writes the matrix and reports it complete agrees with itself.
    An authorization on an ineligible tablet never closes a gap.
 
-10. **FR-R10 — a new doctor or a new tablet reopens the matrix.** Fleet
+14. **FR-R14 — a new doctor or a new tablet reopens the matrix.** Fleet
     readiness requires an authorization on EVERY eligible tablet, so trusting a
     fourth tablet must make every doctor incomplete until explicitly and
     auditably reconciled. Readiness is never inherited by new hardware.
 
-11. **FR-R11 — the readiness engine cannot act.** No write, no process, no HTTP,
+15. **FR-R15 — the readiness engine cannot act.** No write, no process, no HTTP,
     no request read, no flag, no cohort change — enforced by a source scan
     rather than by intention. It is exactly the tool somebody later "improves"
     by having it fix what it found, and the moment it can, its output stops
     being evidence and becomes a description of its own side effects.
 
-12. **FR-R12 — readiness GO is not activation GO.** It authorises a later sprint
+16. **FR-R16 — readiness GO is not activation GO.** It authorises a later sprint
     to DECIDE. `doctor.single_active_session` stays false and
     `GLOBAL_ENFORCEMENT_ACTIVE` stays false through a readiness sprint, and no
     readiness verdict is permission to move either. This restates GR-R1/GR-R2
     because it is the rule most likely to be read past.
 
-13. **FR-R13 — the branch-lock surface is armed, not always present.** It 404s
+17. **FR-R17 — the branch-lock surface is armed, not always present.** It 404s
     unless `doctor.branch_lock` AND `doctor.single_active_session` are both on
     and the session probe is observable. There is no Artisan fallback, so an
     assignment ceremony needs a supervised arm/disarm window — and the window
     must end with `single_active_session` back to false.
 
-14. **FR-R14 — release surviving leases before re-arming.** An unreleased lease
+18. **FR-R18 — release surviving leases before re-arming.** An unreleased lease
     becomes an incumbent the moment single-session is re-armed, so the next
     fresh login is correctly DENIED as a second session. Log the doctor out, or
     take the canonical audited release, BEFORE arming. A denial there is the
     engine working, not a defect.
 
-15. **FR-R15 — a doctor outside the enforcement cohort cannot produce a device
+19. **FR-R19 — a doctor outside the enforcement cohort cannot produce a device
     proof.** The gate returns no denial for them, so they log straight in by
     browser and no ceremony occurs. Obtaining proof therefore means rotating the
     doctor through the bounded cohort — which temporarily device-enforces them,
     with a real lockout if the ceremony fails. That is an owner decision every
     time, never a convenience taken to finish a report.
 
-16. **FR-R16 — the fleet gate is the one an activation decision reads.** If the
+20. **FR-R20 — the fleet gate is the one an activation decision reads.** If the
     two gates ever disagree, the fleet gate is the answer and the provisioning
     gate is an input to it. Do not add a second engine that decides what a
     trusted path is; compose rule 152's.

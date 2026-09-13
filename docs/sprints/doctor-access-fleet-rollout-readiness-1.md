@@ -220,7 +220,7 @@ the fixture, with a documented ceiling of 24 and the reasoning for the headroom.
   the switch.
 
 Durable rules: `.cursor/rules/156-doctor-fleet-rollout-readiness.mdc`
-(**FR-R1..FR-R16**).
+(**FR-R1..FR-R20**).
 
 ---
 
