@@ -1,0 +1,126 @@
+---
+description: Fleet readiness is not provisioning. A doctor is fleet-ready only with an approved home branch, an authorization on every eligible tablet, and a device login that actually happened — and absence of evidence is never a pass. A device proof identifies the tablet, never the clinician. Readiness GO authorises a later decision and never the switch.
+globs:
+  - "app/Modules/DoctorAccess/**"
+  - "app/Modules/DoctorDevice/**"
+  - "app/Console/Commands/Doctor*.php"
+  - "tests/Feature/DoctorAccess/**"
+  - "tests/Feature/DoctorDevice/**"
+alwaysApply: false
+---
+
+# Fleet rollout readiness
+
+`DOCTOR-ACCESS-FLEET-ROLLOUT-READINESS-1`. Read this with rules 151, 152, 153,
+154 and 155, which it extends rather than replaces. Rule 152 owns the
+five-condition trusted path; this one owns what a path does not tell you.
+
+## What changed
+
+`doctor:rollout-readiness` measures PROVISIONING and was named as though it
+measured readiness. On 2026-09-12 a bulk authorization run wrote 45 correct rows
+and its verdict moved from `PARTIAL` to its top value, while twelve clinicians
+who had never once logged in on a tablet were exactly as unready as the day
+before. Nothing was miscounted — GR-R4 held for all fifteen. The name was the
+defect, and `GLOBAL_READY` is the string an activation sprint greps for.
+
+So the verdict is now `TRUSTED_PATHS_COMPLETE`, and a second gate,
+`doctor:fleet-readiness`, answers the fleet question.
+
+## The rules
+
+1. **FR-R1 — provisioning is not readiness.** An authorization row is a
+   hypothesis. Readiness is the hypothesis plus a home branch plus a login that
+   happened. Never report one as the other, and never name a provisioning
+   verdict as though it covered the fleet.
+
+2. **FR-R2 — 45 authorization rows are 45 rows.** They are not 45 proven login
+   combinations, and no evidence artifact, doc, or commit message may imply they
+   are. The count of rows and the count of walked paths are separate numbers.
+
+3. **FR-R3 — every eligible doctor needs an explicit HOME branch.** UNSET is a
+   legitimate running state (owner decision O1) and a disqualifying readiness
+   state. There is no fleet readiness while one eligible doctor is UNSET.
+
+4. **FR-R4 — no home branch is ever inferred.** Not from last login, device,
+   device branch, doctor code, room, visits, roster, frequency, recent activity,
+   authorization rows or pilot scope. Those may be DISPLAYED as explicitly
+   labelled non-authoritative suggestions and never written. On this estate the
+   signals actively contradict each other — the doctor code disagrees with
+   observed practice for at least three live clinicians — which is why the rule
+   is absolute rather than cautious.
+
+5. **FR-R5 — the tablet's branch is not the doctor's branch.** A doctor home-
+   locked to one branch holding an active authorization on a tablet at another
+   is the CORRECT shape, not a defect. Any tool that intersects
+   `mst_doctors`/lock branch state with `mst_doctor_devices.branch_id` would
+   deprovision a working clinician.
+
+6. **FR-R6 — a device proof identifies the TABLET, not the clinician.** The
+   credential has no doctor column and deliberately never will (GR-R5); the
+   doctor is identified by the password step that precedes the assertion. A
+   proof means "this ACCOUNT reached a clinical session through this TABLET",
+   and readiness evidence must say so in those words. Never write, or let a
+   report imply, that a biometric attested which human was present.
+
+7. **FR-R7 — proof comes from the audit trail, keyed on the actor.** The two
+   success actions only, `performed_by` = the doctor's user. Not
+   `last_authorized_login_at`, which is written on the Android path alone and
+   under-reports every PWA doctor. Not `last_used_at` on the credential, which
+   has no doctor to attribute to and on a shared tablet would let one doctor's
+   login mark another ready. Attempt and refusal actions are not logins —
+   `DOCTOR_DEVICE_LOGIN_REQUESTED` in particular looks like one and is written
+   on attempts that were then refused.
+
+8. **FR-R8 — absence of evidence is NOT a pass.** No home branch, no
+   authorization, no credential, no login on record, an unverified or revoked
+   device, a broken path: every one of them is NOT READY. An empty fleet is
+   NO-GO, never READY — "zero doctors, zero blockers" is arithmetically a pass
+   and operationally a broken query, and this programme has shipped that bug
+   before.
+
+9. **FR-R9 — the matrix must be reconciled independently.** Completeness is
+   computed from the estate, never taken from the tool that writes the rows. A
+   tool that both writes the matrix and reports it complete agrees with itself.
+   An authorization on an ineligible tablet never closes a gap.
+
+10. **FR-R10 — a new doctor or a new tablet reopens the matrix.** Fleet
+    readiness requires an authorization on EVERY eligible tablet, so trusting a
+    fourth tablet must make every doctor incomplete until explicitly and
+    auditably reconciled. Readiness is never inherited by new hardware.
+
+11. **FR-R11 — the readiness engine cannot act.** No write, no process, no HTTP,
+    no request read, no flag, no cohort change — enforced by a source scan
+    rather than by intention. It is exactly the tool somebody later "improves"
+    by having it fix what it found, and the moment it can, its output stops
+    being evidence and becomes a description of its own side effects.
+
+12. **FR-R12 — readiness GO is not activation GO.** It authorises a later sprint
+    to DECIDE. `doctor.single_active_session` stays false and
+    `GLOBAL_ENFORCEMENT_ACTIVE` stays false through a readiness sprint, and no
+    readiness verdict is permission to move either. This restates GR-R1/GR-R2
+    because it is the rule most likely to be read past.
+
+13. **FR-R13 — the branch-lock surface is armed, not always present.** It 404s
+    unless `doctor.branch_lock` AND `doctor.single_active_session` are both on
+    and the session probe is observable. There is no Artisan fallback, so an
+    assignment ceremony needs a supervised arm/disarm window — and the window
+    must end with `single_active_session` back to false.
+
+14. **FR-R14 — release surviving leases before re-arming.** An unreleased lease
+    becomes an incumbent the moment single-session is re-armed, so the next
+    fresh login is correctly DENIED as a second session. Log the doctor out, or
+    take the canonical audited release, BEFORE arming. A denial there is the
+    engine working, not a defect.
+
+15. **FR-R15 — a doctor outside the enforcement cohort cannot produce a device
+    proof.** The gate returns no denial for them, so they log straight in by
+    browser and no ceremony occurs. Obtaining proof therefore means rotating the
+    doctor through the bounded cohort — which temporarily device-enforces them,
+    with a real lockout if the ceremony fails. That is an owner decision every
+    time, never a convenience taken to finish a report.
+
+16. **FR-R16 — the fleet gate is the one an activation decision reads.** If the
+    two gates ever disagree, the fleet gate is the answer and the provisioning
+    gate is an input to it. Do not add a second engine that decides what a
+    trusted path is; compose rule 152's.

@@ -37,8 +37,26 @@ use Illuminate\Support\Collection;
  */
 class DoctorGlobalRolloutReadinessService
 {
-    /** Every target doctor has a complete trusted path. */
-    public const VERDICT_GLOBAL_READY = 'GLOBAL_READY';
+    /**
+     * Every target doctor has a complete trusted path — PROVISIONING, and
+     * nothing beyond it.
+     *
+     * RENAMED FROM `GLOBAL_READY` by DOCTOR-ACCESS-FLEET-ROLLOUT-READINESS-1,
+     * because the old name claimed more than this engine measures and the gap
+     * became visible the moment it mattered. On 2026-09-12 a bulk
+     * authorization run wrote 45 correct rows; this verdict went from PARTIAL
+     * to its top value while twelve clinicians who had never logged in on a
+     * tablet were unchanged. Nothing here was miscounted — GR-R4 was satisfied
+     * for all fifteen — but a string reading GLOBAL_READY is the string an
+     * activation sprint greps for, and rules GR-R1 and GR-R2 say plainly that
+     * no readiness verdict is permission to switch enforcement on.
+     *
+     * The fleet question — home branch, whole-estate authorization, and a login
+     * that actually happened — belongs to DoctorFleetReadinessService and its
+     * `doctor:fleet-readiness` command. This engine stays exactly as strict as
+     * it was and stops over-claiming in its name.
+     */
+    public const VERDICT_TRUSTED_PATHS_COMPLETE = 'TRUSTED_PATHS_COMPLETE';
 
     /** Some do, some do not. The ordinary state of a rollout in progress. */
     public const VERDICT_PARTIAL = 'PARTIAL';
@@ -568,7 +586,7 @@ class DoctorGlobalRolloutReadinessService
         }
 
         return count($ready) === count($doctors)
-            ? self::VERDICT_GLOBAL_READY
+            ? self::VERDICT_TRUSTED_PATHS_COMPLETE
             : self::VERDICT_PARTIAL;
     }
 }
