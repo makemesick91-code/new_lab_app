@@ -69,6 +69,26 @@ class DoctorFleetReadinessService
      */
     public function build(): array
     {
+        /*
+         * ONE BUILD, ONE ESTATE SNAPSHOT — cleared HERE and nowhere else.
+         *
+         * Several gates below ask which tablets are eligible: eligibleDeviceIds()
+         * resolves the authorization target, activeAuthorizationPairs() drops a
+         * grant on an ineligible device, deviceCoverage() builds the estate
+         * table. They have to be answering about the SAME hardware, or one
+         * report can claim a complete 15x3 matrix while its own coverage table
+         * lists four eligible tablets — two answers to one question, which is
+         * the exact failure mode this engine was written to avoid.
+         *
+         * The memo was previously reset inside activeAuthorizationPairs(), which
+         * runs BETWEEN two of those readers, so a single report loaded the
+         * estate twice and could mix two moments. Resetting at the top of
+         * build() keeps the per-build freshness that reset was reaching for —
+         * a second build() still sees new hardware — without splitting one
+         * report across two snapshots.
+         */
+        $this->deviceEstate = null;
+
         $provisioning = $this->provisioning->build();
 
         /** @var list<array<string,mixed>> $provisionedDoctors */
@@ -224,7 +244,9 @@ class DoctorFleetReadinessService
          * authorization on an ineligible device, deviceCoverage() re-filters. A
          * bare row count would be the one piece of evidence that SURVIVES the
          * tablet becoming untrusted, and on this estate that is not theoretical:
-         * user 18 holds thirteen success rows naming device 1, which is revoked.
+         * a doctor's proof rows are spread across tablets whose trust has since
+         * diverged, so some of that history is evidence of readiness and some is
+         * only evidence of the past.
          *
          * So the qualifying set is the proven devices intersected with the ones
          * this doctor currently holds an ACTIVE authorization on — itself already
@@ -233,6 +255,19 @@ class DoctorFleetReadinessService
          * all each contribute nothing. "Has walked a trusted path" has to mean a
          * path that is still trusted, or it is a claim about history rather than
          * about readiness.
+         *
+         * HISTORICAL EVIDENCE, measured on the pilot estate 2026-09-13 (a
+         * snapshot, not an invariant — do not assert these numbers in a test):
+         * user 18 held 23 success rows across three tablets — 13 on device 3 and
+         * 6 on device 6, both still active, verified and authorized, and 4 on
+         * device 1, which is revoked. Four rows are correctly discarded and the
+         * doctor is still READY on the other two tablets, which is the shape
+         * this gate has to get right in both directions.
+         *
+         * An earlier revision of this comment claimed the thirteen rows were on
+         * revoked device 1. They were on device 3, the tablet that still
+         * qualifies — the example argued for the opposite of the rule it was
+         * illustrating. The gate itself was, and is, correct.
          */
         $qualifyingDeviceIds = array_values(array_intersect($provenDeviceIds, $authorizedDeviceIds));
 
@@ -309,10 +344,13 @@ class DoctorFleetReadinessService
         // Reset, not accumulate: build() may legitimately be called twice on
         // one instance (a command that prints text AND json), and a running
         // total would report the second call as twice as broken.
+        //
+        // The estate memo is NOT cleared here. It used to be, and that is what
+        // made one report read the hardware twice — this method runs after
+        // eligibleDeviceIds() and before deviceCoverage(). Per-build freshness
+        // now lives at the top of build(), which is the only place it can live
+        // without tearing a single report across two snapshots.
         $this->duplicateActivePairs = 0;
-        // Cleared with it, so a second build() cannot mix a cached hardware list
-        // against freshly-read locks, authorizations and audit evidence.
-        $this->deviceEstate = null;
 
         if ($doctorIds === [] || $eligibleDeviceIds === []) {
             return [];
@@ -354,17 +392,33 @@ class DoctorFleetReadinessService
     /**
      * Excess ACTIVE rows for a (doctor, device) pair already counted once.
      *
-     * A unique index does not exist for this pair, so a duplicate is
-     * representable and must be reported rather than silently deduplicated —
-     * two ACTIVE grants for one pair is an approval-trail defect even though it
-     * changes nothing about what the doctor can reach.
+     * DEFENCE IN DEPTH, not the primary guard. An earlier revision of this
+     * comment said no unique index existed for the pair; one does —
+     * `mst_dd_authorizations_pair_unique` is a FULL unique on
+     * (doctor_id, doctor_device_id), so on a healthy schema this is
+     * structurally zero. It is still counted rather than silently deduplicated,
+     * because two ACTIVE grants for one pair would be an approval-trail defect
+     * this report should surface rather than absorb, and because a tally that
+     * only matters once an index is dropped is exactly the tally worth keeping.
      */
     private int $duplicateActivePairs = 0;
 
     /**
-     * The hardware estate is read TWICE per report — once to resolve which
-     * tablets are eligible, once to build the coverage table. That is one
-     * question, so it is one query; the query-budget test pins it.
+     * The hardware estate is READ by two consumers per report —
+     * eligibleDeviceIds() and deviceCoverage() — and LOADED exactly once, at
+     * the top of build(). That is one question, so it is one answer.
+     *
+     * A third gate depends on it at one remove: activeAuthorizationPairs()
+     * drops a grant on an ineligible device using the list eligibleDeviceIds()
+     * derived, which it is passed rather than re-reading. That is why the
+     * inconsistency the old placement allowed showed up between the
+     * authorization matrix and the coverage table specifically.
+     *
+     * The scope is one build, not the service lifetime: build() clears this
+     * before it starts, so a second report on the same instance sees hardware
+     * that changed in between. Both halves are pinned by test, and by a test
+     * that counts LOADS rather than queries — the query budget is a ceiling and
+     * a constancy check, and neither can tell one load from two.
      *
      * @var Collection<int, DoctorDevice>|null
      */
