@@ -39,6 +39,7 @@ use App\Modules\Doctor\Repositories\DoctorRepository;
 use App\Modules\DoctorAccess\Interfaces\DoctorBranchCoverRepositoryInterface;
 use App\Modules\DoctorAccess\Interfaces\DoctorBranchLockRepositoryInterface;
 use App\Modules\DoctorAccess\Interfaces\DoctorBranchLockRequestRepositoryInterface;
+use App\Modules\DoctorAccess\Interfaces\DoctorFleetReadinessRepositoryInterface;
 use App\Modules\DoctorAccess\Interfaces\DoctorSessionLeaseRepositoryInterface;
 use App\Modules\DoctorAccess\Models\DoctorBranchCover;
 use App\Modules\DoctorAccess\Models\DoctorBranchLockRequest;
@@ -47,6 +48,7 @@ use App\Modules\DoctorAccess\Policies\DoctorBranchLockRequestPolicy;
 use App\Modules\DoctorAccess\Repositories\DoctorBranchCoverRepository;
 use App\Modules\DoctorAccess\Repositories\DoctorBranchLockRepository;
 use App\Modules\DoctorAccess\Repositories\DoctorBranchLockRequestRepository;
+use App\Modules\DoctorAccess\Repositories\DoctorFleetReadinessRepository;
 use App\Modules\DoctorAccess\Repositories\DoctorSessionLeaseRepository;
 use App\Modules\DoctorDevice\Interfaces\DoctorDeviceAuthorizationRepositoryInterface;
 use App\Modules\DoctorDevice\Interfaces\DoctorDeviceRepositoryInterface;
@@ -320,6 +322,7 @@ class RepositoryServiceProvider extends ServiceProvider
         // and there is no AuthServiceProvider in this codebase, so a
         // stock-Laravel copy onto another class would register nothing.
         DoctorBranchLockRepositoryInterface::class => DoctorBranchLockRepository::class,
+        DoctorFleetReadinessRepositoryInterface::class => DoctorFleetReadinessRepository::class,
         DoctorBranchLockRequestRepositoryInterface::class => DoctorBranchLockRequestRepository::class,
         DoctorBranchCoverRepositoryInterface::class => DoctorBranchCoverRepository::class,
         DoctorSessionLeaseRepositoryInterface::class => DoctorSessionLeaseRepository::class,

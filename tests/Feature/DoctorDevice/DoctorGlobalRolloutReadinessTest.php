@@ -471,7 +471,7 @@ it('reports GLOBAL_READY only when every single target doctor is ready', functio
     grrReadyDoctor('drg A');
     grrReadyDoctor('drg B');
 
-    expect(grrReadiness()['verdict'])->toBe(DoctorGlobalRolloutReadinessService::VERDICT_GLOBAL_READY);
+    expect(grrReadiness()['verdict'])->toBe(DoctorGlobalRolloutReadinessService::VERDICT_TRUSTED_PATHS_COMPLETE);
 
     // One more unprovisioned doctor is all it takes.
     grrDoctor('drg C');

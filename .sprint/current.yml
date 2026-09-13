@@ -1,102 +1,84 @@
-### Active sprint manifest — DOCTOR-ACCESS-PR-C-BULK-DEVICE-AUTHORIZATION
+### Active sprint manifest — DOCTOR-ACCESS-FLEET-ROLLOUT-READINESS-1
 ### Validated by: php artisan sprint:manifest-check
 
-id: DOCTOR-ACCESS-PR-C-BULK-DEVICE-AUTHORIZATION
+id: DOCTOR-ACCESS-FLEET-ROLLOUT-READINESS-1
 type: FOUNDATION_SPRINT
 module: DoctorAccess
-title: "Every eligible doctor explicitly authorized on every eligible trusted clinic tablet, as one reviewed action instead of a grid of clicks: a reconciliation that classifies each matrix cell from a single bounded read, a dry run that is the default and writes nothing at all, an approval token bound to the exact row delta rather than to a moment, and a write path that reuses the canonical approval service under a row lock that makes its device-admission branch provably unreachable. The third of three children of DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1; the parent GO is NOT created here."
+title: "Fleet readiness measured as the thing it actually is, and a governed way to reach it: a gate that separates a PROVISIONED trusted path from one a clinician has actually walked, adds the home branch and the whole-estate authorization the provisioning engine never asked about, and fails closed on absence of evidence rather than reading silence as a pass; plus a thin CLI adapter that drives an explicit owner-approved home-branch matrix through the canonical approval service, dry-run by default and bound to the exact row delta. Ends at READINESS. It performs no global activation and creates no activation authority."
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-# FOUNDATION_SPRINT, the same type both siblings carried, and for a reason that
-# is about audit depth rather than size. This writes a security boundary at fleet
-# scale: audit level 3 and the full foundation audit apply. SECURITY_FIX would
-# set allow_refactor: false and forbid the module-wide breadth this legitimately
-# has; MODULE_SPRINT would buy audit level 2, which is a downgrade. `security_impact`
-# does not require the SECURITY_FIX type — the validator only warns in the
-# reverse direction.
+# FOUNDATION_SPRINT, the same type all three siblings carried, and for the same
+# reason: audit depth, not size. This writes a clinician's permanent branch at
+# fleet scale and renames the verdict a future activation sprint will read, so
+# audit level 3 and the full foundation audit both apply. SECURITY_FIX would set
+# allow_refactor: false and forbid the two-module breadth this legitimately has
+# (DoctorAccess for the new engine and adapter, DoctorDevice for the narrowed
+# verdict). MODULE_SPRINT would buy audit level 2, which is a downgrade.
+# `security_impact` does not require the SECURITY_FIX type — the validator only
+# warns in the reverse direction.
 
-runtime_change: true            # one service, four support value objects, one
-                                # console command and two config bounds. No
-                                # controller, no route, no policy, no migration:
-                                # the write path is the existing authorization
-                                # lifecycle service, called rather than copied.
-schema_change: false            # NO migration. mst_doctor_device_authorizations
-                                # already carries every column this needs, and its
-                                # unconditional UNIQUE(doctor_id, doctor_device_id)
-                                # is what makes "exactly one active authorization
-                                # per pair" a database fact rather than an
-                                # application promise.
+runtime_change: true            # two services, two support value objects, one
+                                # repository behind a new interface, and two
+                                # console commands. No controller, no route, no
+                                # policy, no migration: the readiness engine
+                                # COMPOSES the provisioning engine and the
+                                # assignment adapter CALLS the canonical approval
+                                # service rather than copying either.
+
+schema_change: false            # NO migration. Every fact this sprint reads
+                                # already exists — mst_doctor_branch_locks for the
+                                # home branch, the two success actions in
+                                # sys_audit_logs (both `action` and `performed_by`
+                                # indexed) for a login that happened, and
+                                # mst_doctor_device_authorizations for the matrix.
+                                # Readiness reports on state; it never creates it.
+
 frontend_change: false          # no JS, no CSS, no Vite entry, no Blade view.
-                                # Console surface only.
-security_impact: true           # it grants a doctor the right to authenticate
-                                # from a tablet, at fleet scale, in one command.
-                                # Declaring false here would be the quiet
-                                # contradiction the manifest exists to catch.
-branch_isolation_impact: true   # DELIBERATELY true, and deliberately in the
-                                # direction that widens rather than narrows: a
-                                # doctor's home branch is NOT an input to device
-                                # eligibility, so this authorizes doctors onto
-                                # tablets in branches they are not locked to.
-                                # That independence is the product rule and
-                                # production already depends on it, but a sprint
-                                # that authorizes cross-branch device access
-                                # while declaring no branch-isolation impact
-                                # would be hiding the thing most worth reviewing.
-ledger_impact: false            # no inventory ledger / billing / payment behaviour
+                                # Console surface only, and a test asserts the
+                                # fleet report registers no route at all — a
+                                # readiness gate reachable over HTTP is a gate
+                                # somebody can ask for a widened answer from.
 
-deploy_required: true           # the command only exists on the deployment that
-                                # carries it
+security_impact: true           # the assignment adapter writes a permanent branch
+                                # under maker/checker separation, and the renamed
+                                # verdict is the signal an activation decision
+                                # reads. Both are security boundaries even though
+                                # neither adds a permission.
+
+branch_isolation_impact: true   # DELIBERATELY true. A home branch lock narrows a
+                                # doctor's operational lists to that branch, so
+                                # assigning fourteen of them changes what fourteen
+                                # clinicians can see. The adapter performs INITIAL
+                                # ASSIGNMENT only; a doctor already locked
+                                # elsewhere is classified TRANSFER_REQUIRED and
+                                # stopped, never silently moved.
+
+ledger_impact: false            # no inventory ledger, billing, payment, invoice
+                                # or receivable behaviour is reachable from either
+                                # command.
+
+deploy_required: true           # both commands only exist on the deployment that
+                                # carries them, and the fleet readiness figure this
+                                # sprint reports must be read from production
+                                # rather than from a fixture.
+
 browser_required: false         # there is no screen. The operator surface is a
-                                # dry run they read and a digest they hand back,
-                                # and the approval gate is deliberately NOT a
-                                # terminal prompt: a prompt auto-answers with its
-                                # default when nobody is at the terminal.
+                                # console command on the VPS, and the real-device
+                                # readiness ceremony that follows is performed by
+                                # clinicians at tablets, not by a browser test.
 
-go_tag: doctor-access-pr-c-bulk-device-authorization-go
+go_tag: doctor-access-fleet-rollout-readiness-1-go
 
 test_profiles:
   - focused
   - cross_module_regression
   - security
 
-# `full_required` IS DELIBERATELY ABSENT, and its absence is not a claim.
-#
-# The Full Suite gate is SKIPPED for this child pull request, by owner
-# instruction: one Full Suite runs after all three children are merged, deployed
-# and production-verified, and it gates the PARENT tag only. Listing the profile
-# here would assert a gate that did not run, which is precisely the "child skip
-# silently becomes a parent pass" the owner forbade — and it is not cosmetic,
-# because SprintTestPlanner treats the profile's presence as a reason to demand a
-# full suite.
-#
-# Recorded permanently rather than inferred:
-#   FULL_SUITE_EXECUTED=NO
-#   FULL_SUITE_RESULT=SKIPPED
-#   FULL_SUITE_CLAIMED_PASS=NO
-
-# NO SEEDER STEP, on purpose, and worth stating where a deploy checklist is read.
-# This sprint mints no permission: it gates on `manage_doctor_device_authorizations`,
-# which already exists, is already seeded and is already the write authority an
-# operator uses to approve these same rows one at a time. Both sibling pull
-# requests shipped with their new permission absent on the host, and a green
-# seeder test is not a seeded host. PR-C cannot repeat that, because there is
-# nothing to seed.
-
-# Carried forward. `.sprint/current.yml` is a ROLLING file, so these inherited
-# facts have to be restated by every sprint after closure — dropping one is
-# precisely the quiet contradiction LegacyRmeProgramClosureContractTest exists
-# to catch.
+# Everything this sprint stands on, and does not move.
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
 inherits_hold: FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1/FIX-02
-inherits_phase: feature-doctor-trusted-android-device-lock-1-phase-3-5-readiness-go
-inherits_parent_go: doctor-pwa-webauthn-1-go
-inherits_capability_go: doctor-pwa-multi-doctor-pilot-1-capability-go
+inherits_parent_go: doctor-access-single-session-branch-lock-1-go
 inherits_pilot_go: doctor-pwa-multi-doctor-pilot-1-go
-
-# Carried forward from BOTH siblings, which are the runtime authority this builds
-# on. PR-A: merge 80afaad1f01fab7cc027c7a68c3a06a60ef5cf2d. PR-B: merge
-# 1010d9fb14f5ee4563bd27db423631ebe655a5dc, tree 99ed382d, deployed on srv1730088
-# and production-verified with all seven gates PASS. PR-C is based on PR-B's
-# merge commit, so both ride this deploy.
-inherits_sibling_go: doctor-access-pr-a-single-session-foundation-go
+inherits_sibling_a_go: doctor-access-pr-a-single-session-foundation-go
 inherits_sibling_b_go: doctor-access-pr-b-branch-lock-cover-go
+inherits_sibling_c_go: doctor-access-pr-c-bulk-device-authorization-go

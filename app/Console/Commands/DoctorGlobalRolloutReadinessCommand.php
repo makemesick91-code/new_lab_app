@@ -55,7 +55,7 @@ class DoctorGlobalRolloutReadinessCommand extends Command
             return 1;
         }
 
-        if ($this->option('strict') && $report['verdict'] !== DoctorGlobalRolloutReadinessService::VERDICT_GLOBAL_READY) {
+        if ($this->option('strict') && $report['verdict'] !== DoctorGlobalRolloutReadinessService::VERDICT_TRUSTED_PATHS_COMPLETE) {
             return 1;
         }
 
@@ -145,6 +145,19 @@ class DoctorGlobalRolloutReadinessCommand extends Command
 
         $this->newLine();
         $this->line('READINESS_VERDICT='.$report['verdict']);
+
+        /*
+         * Printed every time, not only when the verdict is the top one.
+         *
+         * This command measures PROVISIONING: a doctor counts once a trusted
+         * path exists for them. It does not ask whether they have a home branch
+         * or whether they have ever actually logged in — and a bulk
+         * authorization run can therefore move this number a long way without a
+         * single clinician touching a tablet. `doctor:fleet-readiness` is the
+         * gate that asks those questions.
+         */
+        $this->comment('Measures PROVISIONING only — not home branch, and not whether any doctor has ever logged in.');
+        $this->comment('Fleet readiness (and the gate an activation decision should read): php artisan doctor:fleet-readiness');
     }
 
     /**
