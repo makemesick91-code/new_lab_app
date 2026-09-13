@@ -458,3 +458,111 @@ it('contains no raw SQL write and no flag mutation in its source', function () {
         }
     }
 });
+
+// ---------------------------------------------------------------------------
+// Adversarial review regressions — every one of these was a real defect
+// ---------------------------------------------------------------------------
+
+it('refuses to execute a plan whose world moved, rather than performing a transfer', function () {
+    $wanted = bulkAssignBranch('SPN4');
+    $other = bulkAssignBranch('LDK2');
+    [, $doctor] = bulkAssignDoctor('drg Raced', $wanted, $other);
+
+    $service = app(DoctorBranchLockBulkAssignmentService::class);
+    $plan = $service->plan([[(int) $doctor->id, 'SPN4']]);
+
+    expect($plan['rows'][0]['classification'])->toBe(Outcome::PENDING_ASSIGNMENT);
+
+    // Somebody locks the doctor through the approval screen between the dry run
+    // and the write. The frozen plan still says PENDING_ASSIGNMENT.
+    bulkAssignLock($doctor, $other);
+
+    $outcome = $service->apply($plan, bulkAssignMaker(), bulkAssignChecker(), 'fleet readiness');
+
+    // Acting on the stale string would have filed an initial_assignment that the
+    // approval service re-derives as a TRANSFER and executes — the one operation
+    // this tool documents that it never performs.
+    expect($outcome['refused'] ?? null)->toBe('plan_is_stale');
+    expect(DB::table('trx_doctor_branch_lock_requests')->count())->toBe(0);
+    expect((int) DB::table('mst_doctor_branch_locks')->where('doctor_id', $doctor->id)->value('home_branch_id'))
+        ->toBe((int) $other->id);
+});
+
+it('refuses BOTH occurrences of a duplicated doctor, never first-wins', function () {
+    $a = bulkAssignBranch('SPN4');
+    $b = bulkAssignBranch('LDK2');
+    [, $doctor] = bulkAssignDoctor('drg Contradicted', $a, $b);
+
+    $service = app(DoctorBranchLockBulkAssignmentService::class);
+    $plan = $service->plan([[(int) $doctor->id, 'SPN4'], [(int) $doctor->id, 'LDK2']]);
+
+    expect($plan['summary'][Outcome::PENDING_ASSIGNMENT] ?? 0)->toBe(0);
+    expect($plan['summary'][Outcome::REFUSED] ?? 0)->toBe(2);
+
+    $service->apply($plan, bulkAssignMaker(), bulkAssignChecker(), 'fleet readiness');
+
+    // Writing the first and refusing the second would be this tool deciding
+    // which of two contradictory owner instructions is the real one.
+    expect(DB::table('mst_doctor_branch_locks')->count())->toBe(0);
+});
+
+it('refuses a JSON matrix file that is a list, so array position cannot become a doctor id', function () {
+    $branch = bulkAssignBranch('SPN4');
+    bulkAssignDoctor('drg Listed', $branch);
+
+    $path = sys_get_temp_dir().'/fleet-matrix-'.bin2hex(random_bytes(6)).'.json';
+    file_put_contents($path, json_encode(['SPN4', 'SPN4']));
+
+    try {
+        $result = bulkAssignRun([
+            '--maker' => bulkAssignMaker()->id,
+            '--checker' => bulkAssignChecker()->id,
+            '--matrix-file' => $path,
+        ]);
+
+        expect($result['exit'])->toBe(1);
+        expect($result['output'])->toContain('bukan daftar');
+        expect(DB::table('mst_doctor_branch_locks')->count())->toBe(0);
+    } finally {
+        @unlink($path);
+    }
+});
+
+it('refuses an empty matrix segment instead of silently dropping it', function () {
+    $branch = bulkAssignBranch('SPN4');
+    [, $doctor] = bulkAssignDoctor('drg Blanked', $branch);
+
+    $result = bulkAssignRun([
+        '--maker' => bulkAssignMaker()->id,
+        '--checker' => bulkAssignChecker()->id,
+        '--matrix' => $doctor->id.'=SPN4,,',
+    ]);
+
+    // A blanked position vanishing without a row shows the operator a clean plan
+    // for a matrix that is not the one they approved.
+    expect($result['exit'])->toBe(1);
+    expect($result['output'])->toContain('Entri matriks kosong');
+});
+
+it('leaves no orphan PENDING request behind when an approval refuses', function () {
+    $branch = bulkAssignBranch('SPN4');
+    [, $doctor] = bulkAssignDoctor('drg Orphan', $branch);
+
+    $maker = bulkAssignMaker();
+
+    // A checker who is the subject doctor's own account is refused by the
+    // service at approval time, AFTER the request has been filed.
+    $service = app(DoctorBranchLockBulkAssignmentService::class);
+    $plan = $service->plan([[(int) $doctor->id, 'SPN4']]);
+    $subjectChecker = User::query()->whereKey($doctor->user_id)->first();
+    $subjectChecker->givePermissionTo('approve_doctor_branch_locks');
+
+    $outcome = $service->apply($plan, $maker, $subjectChecker, 'fleet readiness');
+
+    expect($outcome['rows'][0]['classification'])->toBe(Outcome::FAILED);
+    expect(DB::table('mst_doctor_branch_locks')->count())->toBe(0);
+
+    // One PENDING row per doctor is all the schema allows, so an orphan would
+    // block the correct request somebody files next.
+    expect(DB::table('trx_doctor_branch_lock_requests')->where('status', 'pending')->count())->toBe(0);
+});

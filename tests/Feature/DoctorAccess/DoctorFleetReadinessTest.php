@@ -421,8 +421,21 @@ it('withdraws readiness when the path under an existing proof is revoked', funct
 
     $row = fleetRowFor(fleetReadiness(), $user);
 
-    expect($row['real_device_login_proven'])->toBeTrue();
+    /*
+     * TWO blockers now, and the second one is the point.
+     *
+     * This assertion originally read `real_device_login_proven === true` — the
+     * row survives, only the path underneath fails. An adversarial review showed
+     * that is not enough: `pathFor()` returns on the FIRST complete
+     * authorization, so a doctor with a SECOND live tablet keeps
+     * PATH_INCOMPLETE off while their only proof still names the revoked one.
+     * The proof itself has to stop qualifying, which is what the sibling test
+     * `refuses to count a login on a tablet that has since been revoked` pins.
+     */
+    expect($row['real_device_login_count'])->toBe(1);
+    expect($row['real_device_login_proven'])->toBeFalse();
     expect($row['blockers'])->toContain(DoctorFleetReadinessVerdict::BLOCKER_PATH_INCOMPLETE);
+    expect($row['blockers'])->toContain(DoctorFleetReadinessVerdict::BLOCKER_LOGIN_NOT_PROVEN);
     expect($row['state'])->toBe(DoctorFleetReadinessVerdict::STATE_NOT_READY);
 });
 
@@ -531,4 +544,105 @@ it('never marks an inactive doctor record ready', function () {
 
     expect($row['blockers'])->toContain(DoctorFleetReadinessVerdict::BLOCKER_PATH_INCOMPLETE);
     expect($row['state'])->toBe(DoctorFleetReadinessVerdict::STATE_NOT_READY);
+});
+
+// ---------------------------------------------------------------------------
+// Adversarial review regressions — every one of these was a real defect
+// ---------------------------------------------------------------------------
+
+it('refuses to count a login on a tablet that has since been revoked', function () {
+    $live = fleetDevice();
+    $revoked = fleetDevice();
+
+    [$user, $doctor] = fleetDoctor('drg Stale');
+    fleetAuthorize($doctor, $live);
+    fleetAuthorize($doctor, $revoked);
+    fleetLock($doctor, fleetBranch('SPN4'));
+
+    // The only login this doctor has ever performed was on the tablet that was
+    // later revoked. Production carries exactly this shape: user 18 holds
+    // thirteen success rows naming device 1, which is revoked.
+    fleetProof($user, $revoked, $doctor);
+
+    $revoked->forceFill(['status' => DoctorDevice::STATUS_REVOKED, 'revoked_at' => now()])->save();
+
+    $row = fleetRowFor(fleetReadiness(), $user);
+
+    expect($row['real_device_login_count'])->toBe(1);
+    expect($row['qualifying_device_ids'])->toBe([]);
+    expect($row['real_device_login_proven'])->toBeFalse();
+    expect($row['blockers'])->toContain(DoctorFleetReadinessVerdict::BLOCKER_LOGIN_NOT_PROVEN);
+});
+
+it('refuses to count a login on a tablet the doctor is no longer authorized on', function () {
+    $kept = fleetDevice();
+    $lost = fleetDevice();
+
+    [$user, $doctor] = fleetDoctor('drg Dropped');
+    fleetAuthorize($doctor, $kept);
+    $dropped = fleetAuthorize($doctor, $lost);
+    fleetLock($doctor, fleetBranch('SPN4'));
+    fleetProof($user, $lost, $doctor);
+
+    $dropped->forceFill(['status' => 'revoked', 'revoked_at' => now()])->save();
+
+    $row = fleetRowFor(fleetReadiness(), $user);
+
+    // Both tablets are still trusted hardware; this doctor may only use one.
+    expect($row['authorized_device_ids'])->toBe([(int) $kept->id]);
+    expect($row['real_device_login_proven'])->toBeFalse();
+});
+
+it('refuses to count a legacy proof row that names no device at all', function () {
+    $device = fleetDevice();
+    [$user, $doctor] = fleetDoctor('drg Legacy');
+    fleetAuthorize($doctor, $device);
+    fleetLock($doctor, fleetBranch('SPN4'));
+
+    // The repository anticipates rows predating the doctor_device_id key.
+    AuditLog::query()->create([
+        'entity_type' => 'trx_doctor_device_webauthn_credentials',
+        'entity_id' => 1,
+        'action' => DoctorFleetReadinessRepositoryInterface::PROOF_ACTIONS[1],
+        'new_values' => ['doctor_id' => (int) $doctor->id],
+        'performed_by' => $user->id,
+        'performed_at' => now(),
+    ]);
+
+    $row = fleetRowFor(fleetReadiness(), $user);
+
+    expect($row['real_device_login_count'])->toBe(1);
+    expect($row['real_device_login_proven'])->toBeFalse();
+    expect($row['blockers'])->toContain(DoctorFleetReadinessVerdict::BLOCKER_LOGIN_NOT_PROVEN);
+});
+
+it('does not call a doctor locked when the branch the lock names has been deleted', function () {
+    $branch = fleetBranch('GONE');
+    [$user] = fleetReadyDoctor('drg Orphaned', $branch);
+
+    $branch->delete();
+
+    $report = fleetReadiness();
+    $row = fleetRowFor($report, $user);
+
+    expect($row['home_branch_locked'])->toBeFalse();
+    expect($row['blockers'])->toContain(DoctorFleetReadinessVerdict::BLOCKER_HOME_BRANCH_UNSET);
+    // The two counters must agree: reporting a doctor as locked AND bucketing
+    // them under UNSET is two answers to one question.
+    expect($report['unset_doctor_count'])->toBe(1);
+    expect($report['home_branch_matrix'])->toBe(['UNSET' => 1]);
+});
+
+it('never marks a doctor ready on an estate holding no eligible tablet', function () {
+    [$user, $doctor] = fleetDoctor('drg NoEstate');
+    fleetLock($doctor, fleetBranch('SPN4'));
+
+    $report = fleetReadiness();
+    $row = fleetRowFor($report, $user);
+
+    // array_diff([], []) is empty, so a naive guard would read this as a
+    // complete matrix and let the per-doctor state pass on its own.
+    expect($row['blockers'])->toContain(DoctorFleetReadinessVerdict::BLOCKER_AUTHORIZATION_GAP);
+    expect($row['state'])->toBe(DoctorFleetReadinessVerdict::STATE_NOT_READY);
+    expect($report['fleet_ready_doctor_user_ids'])->toBe([]);
 });

@@ -186,7 +186,7 @@ class DoctorFleetReadinessService
          * NOTHING_TO_MEASURE finding and the NO-GO verdict carry that case;
          * this blocker stays silent rather than claiming a row is complete.
          */
-        if ($missingDeviceIds !== []) {
+        if ($missingDeviceIds !== [] || $eligibleDeviceIds === []) {
             $blockers[] = DoctorFleetReadinessVerdict::BLOCKER_AUTHORIZATION_GAP;
         }
 
@@ -198,13 +198,45 @@ class DoctorFleetReadinessService
          */
         $lock = $doctorId === null ? null : $locks->get($doctorId);
 
-        if (! $lock instanceof DoctorBranchLock) {
+        /*
+         * THE BRANCH THE LOCK NAMES MUST STILL EXIST. `mst_branches` is
+         * soft-deleted and the foreign key does not notice a soft delete, so a
+         * lock can outlive its branch. Testing only for the ROW would report
+         * such a doctor as locked with a null branch code — and the same report
+         * would then count them as locked while bucketing them under UNSET in
+         * the branch matrix, which is two answers to one question.
+         */
+        $lockedBranch = $lock?->homeBranch;
+        $isLocked = $lock instanceof DoctorBranchLock && $lockedBranch !== null;
+
+        if (! $isLocked) {
             $blockers[] = DoctorFleetReadinessVerdict::BLOCKER_HOME_BRANCH_UNSET;
         }
 
         $evidence = $proof->get($userId);
+        $provenDeviceIds = is_array($evidence) ? $evidence['device_ids'] : [];
 
-        if (! is_array($evidence) || ($evidence['count'] ?? 0) < 1) {
+        /*
+         * A PROOF ONLY COUNTS ON HARDWARE THE DOCTOR CAN STILL USE.
+         *
+         * Every other gate in this file re-asks the estate which tablets count —
+         * eligibleDeviceIds() filters, activeAuthorizationPairs() drops an
+         * authorization on an ineligible device, deviceCoverage() re-filters. A
+         * bare row count would be the one piece of evidence that SURVIVES the
+         * tablet becoming untrusted, and on this estate that is not theoretical:
+         * user 18 holds thirteen success rows naming device 1, which is revoked.
+         *
+         * So the qualifying set is the proven devices intersected with the ones
+         * this doctor currently holds an ACTIVE authorization on — itself already
+         * restricted to eligible hardware. A revoked tablet, a tablet the doctor
+         * is no longer authorized on, and a legacy row carrying no device id at
+         * all each contribute nothing. "Has walked a trusted path" has to mean a
+         * path that is still trusted, or it is a claim about history rather than
+         * about readiness.
+         */
+        $qualifyingDeviceIds = array_values(array_intersect($provenDeviceIds, $authorizedDeviceIds));
+
+        if ($qualifyingDeviceIds === []) {
             $blockers[] = DoctorFleetReadinessVerdict::BLOCKER_LOGIN_NOT_PROVEN;
         }
 
@@ -214,13 +246,17 @@ class DoctorFleetReadinessService
             'doctor_id' => $doctorId,
             'doctor_code' => $row['doctor_code'] ?? null,
             'doctor_name' => $row['doctor_name'] ?? null,
-            'home_branch_locked' => $lock instanceof DoctorBranchLock,
-            'home_branch_id' => $lock instanceof DoctorBranchLock ? (int) $lock->home_branch_id : null,
-            'home_branch_code' => $lock?->homeBranch?->code === null ? null : (string) $lock->homeBranch->code,
+            'home_branch_locked' => $isLocked,
+            'home_branch_id' => $isLocked ? (int) $lock->home_branch_id : null,
+            'home_branch_code' => $isLocked && $lockedBranch->code !== null ? (string) $lockedBranch->code : null,
             'trusted_path_state' => $row['state'] ?? DoctorGlobalRolloutReadinessService::STATE_NOT_READY,
             'trusted_path_reasons' => $row['reasons'] ?? [],
-            'real_device_login_proven' => is_array($evidence) && ($evidence['count'] ?? 0) >= 1,
+            'real_device_login_proven' => $qualifyingDeviceIds !== [],
             'real_device_login_count' => is_array($evidence) ? (int) $evidence['count'] : 0,
+            // Reported beside the raw count on purpose: a doctor whose logins all
+            // name untrusted hardware should be legible as exactly that, rather
+            // than as somebody who never logged in at all.
+            'qualifying_device_ids' => $qualifyingDeviceIds,
             'real_device_login_last_at' => is_array($evidence) ? $evidence['last_at'] : null,
             'real_device_login_paths' => is_array($evidence) ? $evidence['actions'] : [],
             'proven_device_ids' => is_array($evidence) ? $evidence['device_ids'] : [],
@@ -274,6 +310,9 @@ class DoctorFleetReadinessService
         // one instance (a command that prints text AND json), and a running
         // total would report the second call as twice as broken.
         $this->duplicateActivePairs = 0;
+        // Cleared with it, so a second build() cannot mix a cached hardware list
+        // against freshly-read locks, authorizations and audit evidence.
+        $this->deviceEstate = null;
 
         if ($doctorIds === [] || $eligibleDeviceIds === []) {
             return [];

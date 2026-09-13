@@ -82,6 +82,35 @@ class DoctorBranchLockBulkAssignmentService
             $rows[] = $row;
         }
 
+        /*
+         * A DUPLICATE REFUSES EVERY OCCURRENCE, NOT JUST THE SECOND.
+         *
+         * Marking only the later one leaves the first PENDING_ASSIGNMENT and
+         * writable — which is first-wins, i.e. this tool deciding which of two
+         * contradictory owner instructions is the real one. It is not entitled
+         * to. Both rows are refused and the operator re-states the matrix.
+         */
+        $duplicated = [];
+
+        foreach ($rows as $row) {
+            if ($row['refusal_reason'] === Outcome::REASON_DUPLICATE_DOCTOR && is_int($row['doctor_id'])) {
+                $duplicated[$row['doctor_id']] = true;
+            }
+        }
+
+        if ($duplicated !== []) {
+            $rows = array_map(function (array $row) use ($duplicated): array {
+                if (! is_int($row['doctor_id']) || ! isset($duplicated[$row['doctor_id']])) {
+                    return $row;
+                }
+
+                return array_merge($row, [
+                    'classification' => Outcome::REFUSED,
+                    'refusal_reason' => Outcome::REASON_DUPLICATE_DOCTOR,
+                ]);
+            }, $rows);
+        }
+
         return [
             'rows' => $rows,
             'summary' => $this->summarise($rows),
@@ -234,7 +263,37 @@ class DoctorBranchLockBulkAssignmentService
         $acknowledged = array_flip($acknowledgedOnlineDoctorIds);
         $rows = [];
 
-        foreach ($plan['rows'] as $row) {
+        /*
+         * RE-CLASSIFIED AGAINST LIVE STATE, ROW BY ROW, IMMEDIATELY BEFORE THE
+         * WRITE — the plan is a preview, never an instruction.
+         *
+         * A classification computed minutes ago is a statement about the estate
+         * as it was. If a lock lands between the dry run and this row's turn —
+         * from the approval screen, a concurrent run, or an earlier row of this
+         * same batch — then acting on the frozen string would file an
+         * `initial_assignment` that the approval service correctly re-derives as
+         * a TRANSFER and executes. The tool would have performed the one
+         * operation it documents that it never performs.
+         *
+         * The digest cannot close this on its own: it is computed at plan time
+         * and proves only that the operator saw THAT delta. So the live check
+         * happens here, per row, and a row whose world moved is refused rather
+         * than written.
+         */
+        $live = $this->plan(array_map(
+            static fn (array $row): array => [$row['doctor_id'], $row['branch_code']],
+            $plan['rows'],
+        ));
+
+        if (! hash_equals($plan['digest'] ?? '', $live['digest'])) {
+            return [
+                'rows' => $live['rows'],
+                'summary' => $this->summarise($live['rows']),
+                'refused' => 'plan_is_stale',
+            ];
+        }
+
+        foreach ($live['rows'] as $row) {
             if ($row['classification'] !== Outcome::PENDING_ASSIGNMENT) {
                 $rows[] = $row;
 
@@ -289,12 +348,25 @@ class DoctorBranchLockBulkAssignmentService
             ]);
         } catch (ValidationException $e) {
             /*
-             * The request may already have been filed when the APPROVAL is what
-             * refused. It is left PENDING on purpose: it is a real, audited
-             * proposal an approver can still decide through the screen, and
-             * silently withdrawing it would erase the evidence of what was
-             * attempted.
+             * If the REQUEST succeeded and the APPROVAL is what refused, the
+             * pending row must not be left behind. `trx_doctor_branch_lock_req`
+             * permits exactly one PENDING request per doctor, so an orphan here
+             * would block the correct request somebody files next — a failed
+             * batch row would quietly lock the doctor out of the workflow.
+             *
+             * Withdrawn through the canonical `cancel()`, which writes its own
+             * audit row, so the attempt stays visible in the trail rather than
+             * being erased. A cancel that itself fails is swallowed: the
+             * original refusal is the one worth reporting.
              */
+            if (isset($request)) {
+                try {
+                    $this->approvals->cancel((int) $request->id, $maker);
+                } catch (ValidationException) {
+                    // Reported as FAILED below either way.
+                }
+            }
+
             return array_merge($row, [
                 'classification' => Outcome::FAILED,
                 'refusal_reason' => implode(' ', array_merge(...array_values($e->errors()))),

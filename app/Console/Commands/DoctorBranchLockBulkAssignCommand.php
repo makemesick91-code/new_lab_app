@@ -166,6 +166,18 @@ final class DoctorBranchLockBulkAssignCommand extends Command
                 return 'Berkas matriks bukan objek JSON yang sah: '.$file;
             }
 
+            /*
+             * A JSON *LIST* IS NOT A MATRIX, AND `is_array` CANNOT TELL.
+             * `json_decode(..., true)` renders both an object and a list as a
+             * PHP array; for a list the keys are 0,1,2… and the normaliser below
+             * passes integer keys through untouched — so ARRAY POSITION WOULD
+             * BECOME DOCTOR ID and `["SPN4","LDK2"]` would silently mean
+             * "doctor 0 and doctor 1". Refused by shape before it can be read.
+             */
+            if (array_is_list($decoded) && $decoded !== []) {
+                return 'Berkas matriks harus berupa objek {"doctor_id": "KODE_CABANG"}, bukan daftar: '.$file;
+            }
+
             $matrix = [];
 
             foreach ($decoded as $doctorId => $branchCode) {
@@ -190,7 +202,10 @@ final class DoctorBranchLockBulkAssignCommand extends Command
             $pair = trim($pair);
 
             if ($pair === '') {
-                continue;
+                // Refused, not skipped. A blanked position disappearing without
+                // a row would show the operator a clean plan for a matrix that
+                // is not the one they approved.
+                return 'Entri matriks kosong. Hapus koma berlebih, atau sebutkan doctor_id=KODE_CABANG.';
             }
 
             if (! str_contains($pair, '=')) {
