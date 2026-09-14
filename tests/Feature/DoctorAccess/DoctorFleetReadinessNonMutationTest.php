@@ -299,6 +299,21 @@ it('reads the whole fleet in a fixed number of queries however many doctors ther
      * being read, which is how a budget stops meaning anything. An N+1 does not
      * hide under this ceiling anyway: it would scale with the fleet and the
      * assertion above catches it first.
+     *
+     * NEITHER ASSERTION IN THIS TEST CAN PROVE "ONE ESTATE READ", AND FOR A
+     * WHILE THIS COMMENT SAID IT DID.
+     *
+     * The engine really was reading the estate twice per report: the memo was
+     * cleared mid-build, so eligibleDeviceIds() and deviceCoverage() answered
+     * from two different moments. CONSTANCY missed it because a second read is
+     * a CONSTANT — it moves both measurements together. The CEILING missed it
+     * because one extra query fits in exactly the headroom described above,
+     * which is the headroom's job.
+     *
+     * A duplicate read is invisible to a budget by construction. Counting LOADS
+     * at the loader is the only thing that sees it, and that is what
+     * DoctorFleetReadinessEstateSnapshotTest does. Keep both: this one guards
+     * SCALE, that one guards SNAPSHOT INTEGRITY, and neither substitutes.
      */
     expect($small)->toBeLessThanOrEqual(24);
 });

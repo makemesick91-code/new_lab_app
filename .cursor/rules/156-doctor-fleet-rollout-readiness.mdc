@@ -85,8 +85,10 @@ So the verdict is now `TRUSTED_PATHS_COMPLETE`, and a second gate,
 
    An adversarial review found this open: the login gate was the only gate in
    the engine not scoped to the estate, so a proof SURVIVED its tablet being
-   revoked — and that is live data, not a hypothesis (user 18 holds thirteen
-   success rows naming device 1, which is revoked). "Has walked a trusted path"
+   revoked — and that is live data, not a hypothesis (measured on the pilot
+   estate 2026-09-13, user 18 held 23 success rows across three tablets, 4 of
+   them on revoked device 1; the other 19 still qualify, so the gate has to
+   discard those 4 WITHOUT disqualifying the doctor). "Has walked a trusted path"
    has to mean a path that is still trusted, or it is a claim about history
    rather than about readiness. Report the raw count beside it: "logged in only
    on hardware we no longer trust" and "never logged in" are different facts and
@@ -248,8 +250,114 @@ So the verdict is now `TRUSTED_PATHS_COMPLETE`, and a second gate,
     only as an OPTIONAL diagnostic after repeated failures, never as a gate.
 
 29. **FR-R29 — during a Wave 4+ readiness ceremony the cohort does not move.**
-    `COHORT_BEFORE == COHORT_DURING == COHORT_AFTER == [9,15,18]`. A cohort
-    change during a normal readiness ceremony is an UNEXPECTED MUTATION and must
-    be reported as one. A failed login therefore needs no rollback — confirm the
-    cohort is still baseline, confirm health, capture the server-side reason, and
-    leave the doctor outside enforcement scope while diagnosing.
+    `COHORT_BEFORE == COHORT_DURING == COHORT_AFTER`. A cohort change during a
+    normal readiness ceremony is an UNEXPECTED MUTATION and must be reported as
+    one. A failed login therefore needs no rollback — confirm the cohort is
+    unchanged, confirm health, capture the server-side reason, and leave the
+    doctor outside enforcement scope while diagnosing.
+
+    The INVARIANT is the equality, not a literal. Read the value at ceremony
+    start and compare against what you read — see FR-R34.
+
+30. **FR-R30 — one readiness report, one device-estate snapshot.** Every gate in
+    `DoctorFleetReadinessService` that asks which tablets are eligible — the
+    authorization target, the pair filter, the coverage table — answers from ONE
+    load. A report whose matrix and whose coverage table describe different
+    moments is two answers to one question, and it is the report an activation
+    sprint reads.
+
+31. **FR-R31 — that memo is scoped to one build, never to the service.** A
+    second `build()` on the same instance re-reads the estate. Fixing a double
+    read by caching forever is a worse defect than the one being fixed: a
+    long-lived process would then report the hardware it saw first, for as long
+    as it lives.
+
+32. **FR-R32 — a query budget cannot pin "exactly one read", and must not claim
+    to.** A ceiling has headroom by design and a constancy check compares two
+    numbers that a constant moves together, so a DUPLICATE read is invisible to
+    both. Counting loads at the loader is the only assertion that sees it. Keep
+    the budget for SCALE and the load count for SNAPSHOT INTEGRITY; neither
+    substitutes for the other, and a comment claiming a property no assertion
+    holds is worse than no comment.
+
+33. **FR-R33 — REPORTING COROLLARY of FR-R22 and FR-R21; it adds no predicate
+    of its own.** FR-R22 already states the complete arming predicate for the
+    branch lock — `branch_lock` AND `single_active_session` AND an observable
+    session probe — and it is the one to quote. **Do not restate an arming
+    predicate here or anywhere else; a second copy will eventually be the
+    shorter one, and the shorter one is wrong.**
+
+    What this rule adds is the REPORTING obligation: wherever a flag and its
+    effective state can differ, print both, as two lines. On the pilot at the
+    time of writing (2026-09-13 WITA — a snapshot, re-read it) that is
+    `BRANCH_LOCK_FLAG=true` / `BRANCH_LOCK_EFFECTIVE=false`. Never one line that
+    implies a locked fleet.
+
+34. **FR-R34 — the browser enforcement scope is mutable host configuration, not
+    a database invariant and not a constant.** It has moved before and it may
+    move again. State it as `CURRENT_BROWSER_ENFORCEMENT_SCOPE=<value read now>`
+    and never as a value that "has never moved". Distinguish
+    `SCOPED_BROWSER_DEVICE_ENFORCEMENT_ACTIVE` from
+    `GLOBAL_FLEET_ENFORCEMENT_ACTIVE` — on the pilot at the time of writing
+    (2026-09-13 WITA, a snapshot) those were YES and NO respectively.
+    Collapsing the two into one "enforcement" line reads as "no enforcement
+    exists", which is false.
+
+35. **FR-R35 — a broken measurement must fail loudly, never quietly pass.** A
+    query watcher, probe or audit read that ERRORS is an UNKNOWN result. It is
+    never "no new proof", never "no rows", never a green tick. This programme
+    has already shipped one gate that read silence as success.
+
+36. **FR-R36 — `sys_audit_logs.entity_id` is not a doctor id.** On a device
+    proof it names the AUTHORIZATION. The id spaces COLLIDE — on the pilot at
+    the time of writing (2026-09-13 WITA, a snapshot) user 18 was doctor 21 — so
+    an attribution taken from the wrong column is wrong silently and plausibly.
+    Attribute through `performed_by` and the canonical payload, as
+    `DoctorFleetReadinessRepository` does.
+
+37. **FR-R37 — every production figure quoted in a rule, comment or report is
+    MEASURED, labelled with its date, and labelled as a snapshot.** A remembered
+    number becomes an asserted one. The proof-count example in FR-R8 was wrong
+    in both halves for exactly that reason: it put thirteen rows on a revoked
+    tablet when the thirteen were on the tablet that still qualified, so the
+    example argued against the rule it illustrated.
+
+    **The line is the ASSERTION, not the file.** A production count may appear
+    in prose or in a comment — including a comment inside a test file, where it
+    explains why a fixture has the shape it has — provided it is dated and
+    labelled. It may never appear in an `expect()`, a fixture value or any other
+    executable assertion: that pins somebody's environment rather than the
+    behaviour, and it fails on every checkout configured differently. State the
+    invariant in the assertion; keep the number beside it, dated.
+
+    This rule also binds the artifacts that introduce it. An argued-from number
+    in a sprint's own doc, PR body or test header is exactly the failure it
+    names — and this sprint shipped one (a "four loads, three of which" figure
+    that was pre-fix arithmetic; measured, it is three and two) before an
+    adversarial re-read caught it.
+
+38. **FR-R38 — timestamps carry their timezone.** Production application and
+    system times are reported in WITA (UTC+08:00) and labelled as such. An
+    unlabelled clinical or operational timestamp is ambiguous evidence.
+
+39. **FR-R39 — a test that DELIBERATELY violates a database constraint must
+    contain the violation in a savepoint, and a local SQLite pass does not
+    clear it.** PostgreSQL aborts the whole transaction on any failed statement
+    (`SQLSTATE 25P02`), and under `RefreshDatabase` the test body is already
+    inside one — so a bare violating insert poisons every later query in that
+    test, including the call under test. SQLite does not behave that way, so the
+    test goes green locally and red only in CI on `postgres:16`.
+
+    Wrap it: a nested `DB::transaction()` compiles to
+    `SAVEPOINT` / `ROLLBACK TO SAVEPOINT`, and rolling back to a savepoint taken
+    before the failing statement returns the connection to a usable state. Then
+    assert the connection still works afterwards — that assertion is the one
+    SQLite would never have earned you.
+
+    More generally: **the canonical test driver is `postgres:16`, and SQLite is
+    a convenience.** Any test whose subject is transactional behaviour, locking,
+    a constraint, or a partial index must be verified on PostgreSQL before it is
+    trusted — `lockForUpdate()` compiles to an empty string on SQLite, and a
+    partial unique index can be silently flattened by a table rebuild. This
+    sprint shipped exactly this defect, passed it locally, and had it caught by
+    CI after 68 minutes.
