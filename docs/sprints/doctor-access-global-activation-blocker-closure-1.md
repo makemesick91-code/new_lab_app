@@ -122,3 +122,75 @@ Closing B1–B6 authorises nothing. The owner's decision stands:
 **PROVISION_ESTATE_SPARE_CAPACITY_FIRST.**
 
 Durable rules: `.cursor/rules/157-doctor-access-governance-phase.mdc`.
+
+---
+
+## The two activation domains, and why they are not one switch
+
+No magnitudes here, so this is a diagram rather than a chart. The thing worth seeing is
+that the two halves have **opposite shapes**: one is a single host variable that applies to
+everybody at once, the other is structurally capped and needs a reviewed source change.
+
+```mermaid
+flowchart TB
+    subgraph A["HALF A — session lease + branch lock"]
+        A1["FEATURE_DOCTOR_SINGLE_ACTIVE_SESSION<br/><i>one host variable</i>"]
+        A2["DoctorSessionLeaseService::enabled()<br/>flag AND session probe observable"]
+        A3["DoctorEffectiveBranchResolver::enabled()<br/>branch_lock AND single_session AND probe"]
+        A4["subjectTo() — Doctor role minus exempt<br/><b>NO cohort mechanism exists</b>"]
+        A5(["ALL eligible doctors, simultaneously"])
+        A1 --> A2 --> A4 --> A5
+        A1 --> A3 --> A4
+    end
+
+    subgraph B["HALF B — browser / device enforcement"]
+        B1["FEATURE_DOCTOR_TRUSTED_DEVICE_ENFORCEMENT<br/><i>host variable</i>"]
+        B2["AndroidDoctorEnforcementScope::coversUser()"]
+        B3{"scope mode"}
+        B4(["pilot — named cohort,<br/>capped by pilot_cohort_maximum"])
+        B5["unscoped"]
+        B6{"global_permitted<br/><i>source-controlled false</i>"}
+        B7(["fleet-wide enforcement"])
+        B1 --> B2 --> B3
+        B3 -->|pilot| B4
+        B3 -->|unscoped| B5 --> B6
+        B6 -->|false| B8(["covers NOBODY — fails narrow"])
+        B6 -->|true, reviewed change| B7
+    end
+
+    A -.->|independent| B
+```
+
+**Half A has no staged rollout.** Arming it is fleet-wide the moment the config cache is
+rebuilt. Half B cannot reach fleet-wide from a host at all: the cohort is capped, and
+`global_permitted` is not reachable from the environment.
+
+### Proof sources stay distinct
+
+Both paths prove a doctor reached a clinical session. They are **not** interchangeable
+evidence, and the readiness engine keeps them separable rather than collapsing them.
+
+```mermaid
+flowchart LR
+    AK["Android Clinic App<br/>ticket redemption"] -->|DOCTOR_APP_LOGIN_AUTHORIZATION_SUCCESS| AUD[("sys_audit_logs")]
+    WA["Browser / PWA<br/>WebAuthn assertion"] -->|DOCTOR_DEVICE_WEBAUTHN_LOGIN_SUCCESS| AUD
+    AUD --> PA["PROOF_ACTIONS<br/><i>exactly these two</i>"]
+    PA --> RD["real_device_login_paths<br/><b>source type preserved</b>"]
+    AK -.->|"writes last_authorized_login_at"| COL["mst_doctor_device_authorizations<br/><i>ZERO readers — not a readiness input</i>"]
+    WA -.->|"never writes it"| COL
+    REJ["attempts · rejections<br/>DEVICE_PROOF_REJECTED · LOGIN_REQUESTED"] -.->|excluded| PA
+```
+
+An Android proof is **not** evidence the browser path works for that doctor, and vice
+versa. Merging them into one boolean would erase the distinction an activation depends on.
+
+### Rollback
+
+| Domain | Rollback | Data effect |
+|---|---|---|
+| Half A | set the flag false **+ rebuild config cache** | none — lease/lock/cover rows all survive; re-arming needs no cleanup |
+| Half B | restore the captured cohort **+ rebuild config cache** | none — devices, authorizations, credentials untouched |
+| Branch lock | falls to ineffective automatically with Half A | none |
+
+An environment edit **alone** rolls nothing back: production runs cached configuration, and
+Laravel skips the environment file entirely when it is cached.
