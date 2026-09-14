@@ -361,3 +361,75 @@ So the verdict is now `TRUSTED_PATHS_COMPLETE`, and a second gate,
     partial unique index can be silently flattened by a table rebuild. This
     sprint shipped exactly this defect, passed it locally, and had it caught by
     CI after 68 minutes.
+
+40. **FR-R40 — the clinic app reports an AUTHENTICATION failure as a CONNECTIVITY
+    failure.** A tablet showing *"tidak dapat menghubungi server"* may mean the
+    request reached the server and was rejected. On 2026-09-14 two such screens
+    corresponded to `DOCTOR_APP_LOGIN_DEVICE_PROOF_REJECTED` with
+    `reason: invalid_credentials` (audit 843, 844) — the network was fine.
+
+    Never diagnose a failed ceremony from the screen. Read the server: the
+    failure classes are distinct (`invalid_credentials`, authorization rejected,
+    device proof rejected, challenge failure, rate-limit, genuinely no request at
+    all) and collapsing them sends an operator to check wifi for a typo. This is
+    a UX defect in the app, not in the gate; fixing it is a separate sprint.
+
+41. **FR-R41 — a failed authentication writes `performed_by = NULL`, so an empty
+    per-user audit query does NOT mean the request never arrived.** It means
+    nobody was authenticated to attribute it to. Absence in that query separates
+    neither "rejected" from "never sent" nor either from "query wrong".
+
+    To find a rejection, query the ACTION, not the user. This session printed the
+    wrong inference out loud before catching it, which is exactly how a
+    misdiagnosis becomes evidence.
+
+42. **FR-R42 — reconcile on SECURITY-RELEVANT fields, never on `updated_at`.** A
+    successful login legitimately touches `last_authorized_login_at` on the
+    authorization and `last_seen_at` / `last_verified_at` on the device. A
+    reconciliation predicated on `updated_at > T` therefore reports those as
+    "unexpected changes" and trains the reader to wave real ones through.
+
+    Measure what the name claims: `status`, `doctor_id`, `doctor_device_id`,
+    `revoked_*`, `approved_*`, `identity_state`, credential revocations, cohort
+    and flags. Bookkeeping touches on exactly the rows the ceremony used are the
+    expected consequence of the thing being tested, and should be stated as such
+    rather than counted as drift.
+
+43. **FR-R43 — CLOSURE. Fleet readiness reached 15/15 on 2026-09-14 (WITA) and
+    the programme is CLOSED at GO.** Every eligible doctor is home-branch locked,
+    authorized across the whole eligible estate, and has walked a trusted path
+    once on currently eligible hardware, reconciled against independent SQL.
+
+    That is CAPABILITY EVIDENCE. At closure `single_active_session=false`,
+    the branch-lock resolver is INERT, the browser enforcement scope is unchanged
+    at its pilot value, and global fleet enforcement is OFF. **Readiness GO
+    authorises a later activation DECISION and nothing else.** Do not read this
+    closure as permission to arm anything.
+
+44. **FR-R44 — 15/15 does NOT model DEVICE-BRANCH INTERSECTION, and an
+    activation sprint must not read it as if it does.** At closure the eligible
+    tablets sat at SPN4, LDK2 and ATG3. **TLK1 held no trusted tablet at all**,
+    yet two doctors were home-locked to TLK1 and counted READY on another
+    branch's hardware; four doctors in total had every qualifying proof on a
+    tablet outside their HOME branch.
+
+    That is consistent with the readiness definition — a proof means "this
+    account reached a clinical session through this tablet", and cross-branch is
+    legitimate while the branch-lock resolver is inert. But
+    `config/android_release.php` carries `device_branch_intersection_verified`
+    as a pilot acceptance check. **If that is ever armed, those proofs stop
+    demonstrating anything about the doctor's actual workplace**, and the fleet
+    is not 15/15 against the stricter question. Measure the intersection before
+    arming it; do not assume readiness already covered it.
+
+45. **FR-R45 — a FAILED device login is unattributable in the audit trail.**
+    `DOCTOR_APP_LOGIN_DEVICE_PROOF_REJECTED` carries `performed_by IS NULL` and
+    `entity_id IS NULL`; the payload is only `{"reason": "..."}`. The sole
+    identifying data are the request IP and user-agent.
+
+    Two consequences. **Operationally:** find rejections by ACTION and time
+    window, never by user (FR-R41). **Security:** a repeated credential-guessing
+    run against the device-login endpoint leaves no account fingerprint in
+    `sys_audit_logs`, so per-account lockout/alerting cannot be built on that
+    table as it stands. Recorded here as a known gap for a security sprint; it
+    was NOT changed during readiness closure.
