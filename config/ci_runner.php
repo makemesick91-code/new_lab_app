@@ -207,6 +207,19 @@ return [
         // that the flag armed over nobody still is.
         'tests/Feature/DoctorDevice/EnforcementPostureGovernanceTest.php',
 
+        // DOCTOR-ACCESS-GLOBAL-ACTIVATION-BLOCKER-CLOSURE-1 (B2) — the
+        // governance-phase matrix. It is the only suite that fails if a future
+        // edit lets a Phase-4A-scoped check report PASS on a phase it never
+        // evaluated, or lets the phase declaration weaken a check INSIDE
+        // phase_4a. Both are silent failures without it.
+        'tests/Feature/DoctorAccess/DoctorAccessGovernancePhaseTest.php',
+
+        // (B1) — rollback, performed rather than described. Declared here for
+        // the same reason: the `DoctorAccess` token already selects it, and a
+        // rollback proof that can be dropped by a filename change is not a
+        // proof anybody should rely on during an incident.
+        'tests/Feature/DoctorAccess/DoctorAccessEnforcementRollbackTest.php',
+
         // DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1 PR-C — bulk device
         // authorization. The `DoctorAccess` token selects all four through
         // their namespace; declared here so that coverage is a decision rather
