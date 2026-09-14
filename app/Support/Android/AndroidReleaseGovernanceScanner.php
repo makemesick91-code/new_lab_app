@@ -130,6 +130,18 @@ class AndroidReleaseGovernanceScanner
                 'passed' => count(array_filter($checks, fn (array $c): bool => $c['status'] === 'PASS')),
                 'watch' => count($watch),
                 'failed' => count($failed),
+
+                // B2: counted on its own, never folded into `passed`. A check
+                // that was not evaluated contributing to a pass count is the
+                // false green this scanner exists to prevent.
+                'not_applicable' => count(array_filter(
+                    $checks,
+                    fn (array $c): bool => $c['status'] === Phase4aPilotPreparationScanner::STATUS_NOT_APPLICABLE,
+                )),
+                'governance_phase' => (string) config(
+                    'android_release.enforcement.governance_phase',
+                    Phase4aPilotPreparationScanner::PHASE_4A,
+                ),
                 // Deliberately reported, never inferred. Phase 3.5 ended with
                 // no production key in existence, and saying otherwise would
                 // be the single most damaging thing this command could print.
@@ -2127,14 +2139,29 @@ class AndroidReleaseGovernanceScanner
         $unlocks = (array) ($preflight['unlocks'] ?? []);
         $claimed = array_keys(array_filter($unlocks, fn ($v): bool => $v !== false));
 
-        $contained = $unlocks !== []
+        // B2: the condition splits into a half that never stops mattering and a
+        // half that is true only inside Phase 4A.
+        //
+        // The preflight's own containment — it claimed no unlock, planted no
+        // unauthorised trust anchor, created no production device identity,
+        // committed no keyinfo probe — is a permanent fact about what that
+        // preflight did. It is asserted in every phase.
+        //
+        // The ladder clauses below it describe where the PROGRAMME is, not what
+        // the preflight did. An honest Phase 5 sets all three, so keeping them
+        // in the condition would make this row fail for a reason that has
+        // nothing to do with the preflight it is named after.
+        $preflightContained = $unlocks !== []
             && $claimed === []
             && $this->noUnauthorisedTrustAnchor()
             && ($evidence['production_device_identity_created'] ?? null) === false
-            && ($evidence['keyinfo_probe_committed'] ?? null) === false
-            && config('android_release.enforcement.owner_signoff.pilot_activated') === false
+            && ($evidence['keyinfo_probe_committed'] ?? null) === false;
+
+        $ladderStillOff = config('android_release.enforcement.owner_signoff.pilot_activated') === false
             && config('android_release.enforcement.current_stage') === 'off'
             && config('android_release.enforcement.active') === false;
+
+        $contained = $preflightContained && ($this->inPhase4a() ? $ladderStillOff : true);
 
         $checks[] = $this->check(
             'preflight_unlocks_nothing',
@@ -2240,7 +2267,13 @@ class AndroidReleaseGovernanceScanner
 
         // A pilot with no named rollback owner is not a pilot, it is a launch.
         $recorded = ($signoff['phase_4a_pilot_authorized'] ?? null) === true
-            && ($signoff['pilot_activated'] ?? null) === false
+            // B2: "recorded as authorized rather than activated" is a
+            // Phase-4A-exclusive clause. The pilot authority itself — a named
+            // doctor, a named branch, a named rollback owner, a rung that is on
+            // the ladder and is not the global one — stays asserted in every
+            // phase, because it is a permanent record of what the owner signed.
+            // Only the not-yet-activated half retires when the programme moves.
+            && ($this->inPhase4a() ? ($signoff['pilot_activated'] ?? null) === false : true)
             && $named === []
             && $scope !== ''
             && $stages !== []
@@ -2271,12 +2304,17 @@ class AndroidReleaseGovernanceScanner
         // declares the scope it bounds, and has to agree with the bound it
         // duplicates. If the two ever drift, the ambiguity is back and this
         // check is what notices.
+        // B2: the BOUND declarations — global bounded to phase 5, the retained
+        // authority agreeing with it, the pilot rung bounded elsewhere — are
+        // permanent and stay asserted in every phase. Only "the ladder position
+        // in force is off" retires, because an honest Phase 5 moves it and a
+        // check reddening on that would be reddening on the intended state.
         $bounded = $globalBound === 5
             && $retained === $globalBound
             && $retainedScope === $globalStage
             && $globalStage !== ''
             && $pilotBound !== $globalBound
-            && config('android_release.enforcement.current_stage') === 'off';
+            && ($this->inPhase4a() ? config('android_release.enforcement.current_stage') === 'off' : true);
 
         $checks[] = $this->check(
             'global_enforcement_deferred',
@@ -2432,6 +2470,43 @@ class AndroidReleaseGovernanceScanner
             'missing' => $missing,
             'malformed' => $malformed,
         ];
+    }
+
+    /**
+     * DOCTOR-ACCESS-GLOBAL-ACTIVATION-BLOCKER-CLOSURE-1 (B2) — is the
+     * Phase-4A-exclusive half of this scanner in force?
+     *
+     * The vocabulary is deliberately NOT redefined here. It is read from
+     * {@see Phase4aPilotPreparationScanner}, which owns it, so the two scanners
+     * can never drift into disagreeing about which phase the programme is in.
+     */
+    private function inPhase4a(): bool
+    {
+        $declared = (string) config(
+            'android_release.enforcement.governance_phase',
+            Phase4aPilotPreparationScanner::PHASE_4A,
+        );
+
+        // Unrecognised resolves to phase_4a, so a typo tightens the audit.
+        if (! in_array($declared, Phase4aPilotPreparationScanner::GOVERNANCE_PHASES, true)) {
+            return true;
+        }
+
+        return $declared === Phase4aPilotPreparationScanner::PHASE_4A;
+    }
+
+    /**
+     * A check this phase does not evaluate. Never PASS — see the sibling
+     * scanner's STATUS_NOT_APPLICABLE docblock for why that distinction is
+     * load-bearing.
+     */
+    private function notApplicable(string $id, string $detail): array
+    {
+        return $this->check(
+            $id,
+            Phase4aPilotPreparationScanner::STATUS_NOT_APPLICABLE,
+            $detail,
+        );
     }
 
     private function check(string $id, string $status, string $detail, ?string $reason = null): array

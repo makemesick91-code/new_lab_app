@@ -78,6 +78,62 @@ class Phase4aPilotPreparationScanner
         self::POSTURE_INDETERMINATE => 2,
     ];
 
+    /**
+     * DOCTOR-ACCESS-GLOBAL-ACTIVATION-BLOCKER-CLOSURE-1 (B2) — which governance
+     * phase this deployment is being audited AGAINST.
+     *
+     * THE DEFECT THIS EXISTS TO FIX. Four checks in this scanner are correct
+     * for Phase 4A and only for Phase 4A: they assert that fleet-wide
+     * enforcement is neither permitted, declared, nor live. A Phase 5 that
+     * honestly grants the permission and arms the fleet would therefore make
+     * this scanner FAIL on the exact state the programme was built to reach —
+     * a gate reddening on its own success teaches operators to ignore it, and
+     * an ignored gate protects nothing. That is the same argument
+     * DOCTOR-PWA-GLOBAL-ROLLOUT-READINESS-1 already made about
+     * `enforcement_inactive`, applied to the four siblings it left behind.
+     *
+     * WHAT THIS IS NOT. It is not a way to switch a safety check off. In
+     * `phase_4a` every affected check behaves byte-identically to before this
+     * key existed, so nothing currently green moves. Outside `phase_4a` they
+     * report {@see self::STATUS_NOT_APPLICABLE} — visible in the report,
+     * counted separately, and never PASS. A check that was not evaluated
+     * reporting PASS is precisely the false green this family of gates exists
+     * to prevent.
+     *
+     * WHY IT LIVES IN SOURCE CONTROL. Same reason as `global_permitted` and
+     * `expected_posture`: a phase a host could edit would not audit the host
+     * values, it would just be a second copy of them agreeing with itself.
+     * Moving the programme to a later phase costs a reviewed change.
+     *
+     * UNRECOGNISED VALUES FAIL TOWARDS THE STRICTEST PHASE. An unreadable or
+     * misspelled declaration resolves to `phase_4a`, so a typo tightens the
+     * audit rather than silently disabling four checks.
+     */
+    public const PHASE_4A = 'phase_4a';
+
+    /** Prerequisites are being assembled for a widening that has NOT been applied. */
+    public const PHASE_GLOBAL_ACTIVATION_TARGET = 'global_activation_target';
+
+    /** Phase 5 is live: fleet-wide enforcement is the expected, approved state. */
+    public const PHASE_GLOBAL_ACTIVATED = 'global_activated';
+
+    /** @var list<string> */
+    public const GOVERNANCE_PHASES = [
+        self::PHASE_4A,
+        self::PHASE_GLOBAL_ACTIVATION_TARGET,
+        self::PHASE_GLOBAL_ACTIVATED,
+    ];
+
+    /**
+     * A check that does not apply to the declared phase.
+     *
+     * Deliberately a FOURTH token beside PASS/WATCH/FAIL rather than a reuse of
+     * PASS. {@see self::scan()} counts it on its own and excludes it from
+     * `passed`, so a reader can never mistake "not evaluated" for "evaluated
+     * and satisfied".
+     */
+    public const STATUS_NOT_APPLICABLE = 'NOT_APPLICABLE';
+
     public function __construct(
         private readonly FeatureFlagService $flags,
         private readonly AndroidDoctorEnforcementScope $scope,
@@ -102,6 +158,17 @@ class Phase4aPilotPreparationScanner
 
         $failed = array_values(array_filter($checks, fn (array $c): bool => $c['status'] === 'FAIL'));
         $watch = array_values(array_filter($checks, fn (array $c): bool => $c['status'] === 'WATCH'));
+
+        // NOT_APPLICABLE is neither a pass nor a failure, so it moves the
+        // verdict in no direction at all. It is counted on its own below rather
+        // than folded into `passed`, because a check that was never evaluated
+        // contributing to a pass count is the false green this scanner exists
+        // to prevent.
+        $notApplicable = array_values(array_filter(
+            $checks,
+            fn (array $c): bool => $c['status'] === self::STATUS_NOT_APPLICABLE,
+        ));
+
         $status = $failed !== [] ? 'FAIL' : ($watch !== [] ? 'WATCH' : 'GO');
         $boundary = $this->boundary();
 
@@ -113,6 +180,11 @@ class Phase4aPilotPreparationScanner
                 'passed' => count(array_filter($checks, fn (array $c): bool => $c['status'] === 'PASS')),
                 'watch' => count($watch),
                 'failed' => count($failed),
+                'not_applicable' => count($notApplicable),
+
+                // The phase every scoped check was judged against. Printed so a
+                // reader never has to infer why a row says NOT_APPLICABLE.
+                'governance_phase' => $this->governancePhase(),
 
                 // Derived from the verdict, never asserted independently. A
                 // summary field that can disagree with the checks under it is
@@ -353,13 +425,23 @@ class Phase4aPilotPreparationScanner
         // During Phase 4A it must not be permitted, whatever the mode says.
         $globalPermitted = $this->scope->globalPermitted();
 
-        $checks[] = $this->check(
-            'global_scope_not_permitted_in_phase_4a',
-            $globalPermitted ? 'FAIL' : 'PASS',
-            $globalPermitted
-                ? 'Fleet-wide doctor enforcement is permitted. That is a Phase 5 decision and must not ship armed in Phase 4A.'
-                : 'Fleet-wide doctor enforcement is not permitted; only a declared pilot scope can enforce.',
-        );
+        // B2: phase-scoped, not weakened. Inside Phase 4A the rule is unchanged
+        // — a permission grant is a FAIL even though granting alone enforces
+        // nobody, because the grant is the reviewed decision this phase forbids.
+        // Outside Phase 4A the grant is the intended state, and a check that
+        // reddened on it would be reddening on the programme's own success.
+        $checks[] = $this->inPhase4a()
+            ? $this->check(
+                'global_scope_not_permitted_in_phase_4a',
+                $globalPermitted ? 'FAIL' : 'PASS',
+                $globalPermitted
+                    ? 'Fleet-wide doctor enforcement is permitted. That is a Phase 5 decision and must not ship armed in Phase 4A.'
+                    : 'Fleet-wide doctor enforcement is not permitted; only a declared pilot scope can enforce.',
+            )
+            : $this->notApplicable(
+                'global_scope_not_permitted_in_phase_4a',
+                'Fleet-wide doctor enforcement is '.($globalPermitted ? 'permitted' : 'not permitted').'.',
+            );
 
         $armed = $this->flags->enabled(DoctorAppLoginGate::ENFORCEMENT_FLAG);
         $configuredOff = config('android_release.enforcement.active') === false
@@ -420,14 +502,40 @@ class Phase4aPilotPreparationScanner
         // a reviewer declared in source control.
         $armedOverNobody = $armed && ! $this->scope->isUsable();
 
-        $checks[] = $this->check(
-            'enforcement_inactive',
-            ($armedOverNobody || ! $configuredOff) ? 'FAIL' : 'PASS',
-            $detail,
-        );
+        // B2: this check has two halves with different lifetimes, and they are
+        // scoped separately rather than skipped together.
+        //
+        //   `! $configuredOff` is Phase-4A-exclusive. An honest Phase 5
+        //   declares enforcement active, so failing on it after Phase 4A would
+        //   redden on the intended state.
+        //
+        //   `$armedOverNobody` NEVER becomes acceptable. A flag armed over a
+        //   scope covering nobody reads as protection while providing none, in
+        //   every phase. It stays evaluated, and stays a FAIL.
+        //
+        // So outside Phase 4A the row reports the surviving half when it is
+        // violated, and NOT_APPLICABLE only when the sole remaining reason to
+        // fail is the phase-scoped one.
+        if ($this->inPhase4a()) {
+            $checks[] = $this->check(
+                'enforcement_inactive',
+                ($armedOverNobody || ! $configuredOff) ? 'FAIL' : 'PASS',
+                $detail,
+            );
+        } elseif ($armedOverNobody) {
+            $checks[] = $this->check(
+                'enforcement_inactive',
+                'FAIL',
+                $detail.' The enforcement flag is armed over a scope that covers nobody. That is unsafe in '
+                .'every phase, so this half of the check is never skipped.',
+            );
+        } else {
+            $checks[] = $this->notApplicable('enforcement_inactive', $detail);
+        }
 
         $checks[] = $this->postureCheck();
         $checks[] = $this->liveGlobalEnforcementCheck();
+        $checks[] = $this->globalPrerequisiteCheck();
 
         return $checks;
     }
@@ -438,6 +546,50 @@ class Phase4aPilotPreparationScanner
      * Derived from what the scope and the flag really say, never from what
      * anyone declared. The declaration is the thing this is compared against.
      */
+    /**
+     * The governance phase declared in source control.
+     *
+     * Fails towards the strictest phase: anything unrecognised — a typo, a
+     * removed key, a host that somehow injected a value — resolves to
+     * {@see self::PHASE_4A}, where every phase-scoped check is fully evaluated.
+     * A misdeclaration can therefore only tighten this audit, never disable it.
+     */
+    public function governancePhase(): string
+    {
+        $declared = (string) config('android_release.enforcement.governance_phase', self::PHASE_4A);
+
+        return in_array($declared, self::GOVERNANCE_PHASES, true)
+            ? $declared
+            : self::PHASE_4A;
+    }
+
+    /**
+     * Are the Phase-4A-exclusive checks in force?
+     *
+     * The four checks this gates assert that fleet-wide enforcement is not
+     * permitted, not declared and not live. Every one of them is correct while
+     * the programme is in Phase 4A and contradicts the intended state after it.
+     */
+    public function inPhase4a(): bool
+    {
+        return $this->governancePhase() === self::PHASE_4A;
+    }
+
+    /**
+     * A check that this phase does not evaluate.
+     *
+     * Never PASS. See {@see self::STATUS_NOT_APPLICABLE}.
+     */
+    private function notApplicable(string $id, string $detail): array
+    {
+        return $this->check(
+            $id,
+            self::STATUS_NOT_APPLICABLE,
+            $detail.' Not evaluated: this check is scoped to '.self::PHASE_4A
+            .' and the declared governance phase is "'.$this->governancePhase().'".',
+        );
+    }
+
     public function observedPosture(): string
     {
         $armed = $this->flags->enabled(DoctorAppLoginGate::ENFORCEMENT_FLAG);
@@ -483,7 +635,16 @@ class Phase4aPilotPreparationScanner
         }
 
         // Phase 5, and only Phase 5, may declare this.
-        if ($declared === self::POSTURE_GLOBAL || $observed === self::POSTURE_GLOBAL) {
+        //
+        // B2: the refusal is scoped to Phase 4A rather than removed. Outside it
+        // the special case simply stops firing and control falls through to the
+        // ceiling comparison below, which already handles `global` correctly
+        // without any change: POSTURE_STRENGTH gives it 2, so a deployment
+        // observed at `global` against a declared `global` is equal and passes,
+        // while one observed at `global` against a quieter declaration is still
+        // caught as the widening-nobody-reviewed drift. Nothing about the
+        // ceiling is relaxed; it is merely allowed to apply.
+        if ($this->inPhase4a() && ($declared === self::POSTURE_GLOBAL || $observed === self::POSTURE_GLOBAL)) {
             return $this->check(
                 'enforcement_posture',
                 'FAIL',
@@ -552,6 +713,29 @@ class Phase4aPilotPreparationScanner
     {
         $live = $this->globalEnforcementActiveLive();
 
+        // B2: the assertion INVERTS at the last phase rather than switching off.
+        //
+        // In `phase_4a` and `global_activation_target` the widening has not been
+        // approved to apply, so live fleet-wide enforcement is a failure — the
+        // rule this check has always carried, unchanged.
+        //
+        // In `global_activated` the same measurement answers the opposite
+        // question: fleet-wide enforcement is the approved state, so its ABSENCE
+        // is the anomaly worth reporting. A deployment that declares Phase 5 and
+        // then quietly enforces nobody is degraded, and reporting that as a pass
+        // would hide an activation that silently failed to take.
+        if ($this->governancePhase() === self::PHASE_GLOBAL_ACTIVATED) {
+            return $this->check(
+                'global_enforcement_active',
+                $live ? 'PASS' : 'FAIL',
+                $live
+                    ? 'Fleet-wide doctor enforcement is live, which is the declared state for this phase. '
+                    .'Measured from the resolved scope rather than read from a recorded claim.'
+                    : 'This deployment declares fleet-wide enforcement but does not have it: the resolved scope '
+                    .'is not unscoped-and-permitted-and-armed. The declared activation is not in force.',
+            );
+        }
+
         return $this->check(
             'global_enforcement_not_active',
             $live ? 'FAIL' : 'PASS',
@@ -560,6 +744,63 @@ class Phase4aPilotPreparationScanner
                 .'Every doctor account is enforced, which is a Phase 5 state.'
                 : 'Fleet-wide doctor enforcement is not live, measured from the resolved scope rather than '
                 .'read from a recorded claim.',
+        );
+    }
+
+    /**
+     * B2 — the Phase-4A prohibition is replaced by a Phase-5 PRECONDITION, not
+     * by nothing.
+     *
+     * `global_prerequisites` has been declared in config since Phase 3.5 and
+     * read by no code: five strings with a string-membership test attached.
+     * Scoping the prohibition away without putting something in its place would
+     * leave the later phases asserting strictly less than Phase 4A did, which
+     * is the direction this programme must never move in.
+     *
+     * So outside Phase 4A every declared prerequisite must carry an explicit
+     * recorded attestation. The attestations live in source control beside the
+     * list, so recording one costs a reviewed change — the same price as
+     * granting `global_permitted`. A prerequisite with no attestation, or one
+     * attested anything other than exactly `true`, fails.
+     *
+     * This asserts that somebody SIGNED for each prerequisite. It cannot and
+     * does not measure the world: "a spare device is available at every branch"
+     * is a fact about a room, not about a database.
+     */
+    private function globalPrerequisiteCheck(): array
+    {
+        if ($this->inPhase4a()) {
+            return $this->notApplicable(
+                'global_prerequisites_attested',
+                'Global activation prerequisites are a Phase 5 precondition.',
+            );
+        }
+
+        $declared = (array) config('android_release.enforcement.global_prerequisites', []);
+        $attested = (array) config('android_release.enforcement.global_prerequisites_attested', []);
+
+        if ($declared === []) {
+            return $this->check(
+                'global_prerequisites_attested',
+                'FAIL',
+                'No global activation prerequisites are declared, so nothing can be attested. An empty '
+                .'precondition list is not a satisfied one.',
+            );
+        }
+
+        $missing = array_values(array_filter(
+            $declared,
+            fn ($name): bool => ($attested[(string) $name] ?? null) !== true,
+        ));
+
+        return $this->check(
+            'global_prerequisites_attested',
+            $missing === [] ? 'PASS' : 'FAIL',
+            $missing === []
+                ? 'Every declared global activation prerequisite carries a recorded attestation ('
+                .count($declared).' of '.count($declared).').'
+                : 'Global activation prerequisites are not attested: '.implode(', ', array_map('strval', $missing))
+                .'. Each must be recorded true in source control before fleet-wide enforcement is permitted.',
         );
     }
 

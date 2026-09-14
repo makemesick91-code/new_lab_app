@@ -1186,6 +1186,45 @@ return [
         'expected_posture' => 'bounded_pilot',
 
         /*
+        | DOCTOR-ACCESS-GLOBAL-ACTIVATION-BLOCKER-CLOSURE-1 (B2) — which
+        | governance phase the preparation scanner audits AGAINST.
+        |
+        | Four checks in Phase4aPilotPreparationScanner assert that fleet-wide
+        | enforcement is neither permitted, declared, nor live. All four are
+        | correct for Phase 4A and contradict the state a Phase 5 is built to
+        | reach: an honest activation would make the scanner FAIL on its own
+        | intended outcome, and a gate that reddens on success is a gate
+        | operators learn to ignore.
+        |
+        | Declaring the phase resolves that without weakening anything. At
+        | `phase_4a` every affected check behaves byte-identically to before
+        | this key existed. Later phases mark the Phase-4A-exclusive half
+        | NOT_APPLICABLE — visible, counted separately, never PASS — while the
+        | halves that never stop mattering keep evaluating: a flag armed over a
+        | scope covering nobody is still a FAIL in every phase, and
+        | `global_enforcement_not_active` inverts at `global_activated` so a
+        | declared activation that failed to take is reported rather than hidden.
+        |
+        | It lives HERE, in the file that reads no environment, for the same
+        | reason `global_permitted` and `expected_posture` do: a phase a host
+        | could edit would not audit the host values, it would just be a second
+        | copy of them agreeing with itself. Moving the programme forward costs
+        | a reviewed change, exactly like granting the permission does.
+        |
+        | An unrecognised value resolves to `phase_4a`, so a typo tightens the
+        | audit rather than silently disabling four checks.
+        |
+        |   phase_4a                  the bounded pilot; fleet-wide is forbidden
+        |   global_activation_target  prerequisites assembling; NOT yet applied
+        |   global_activated          Phase 5 live; fleet-wide is expected
+        |
+        | THIS IS NOT AN ACTIVATION SWITCH. It changes which questions are
+        | asked, never who is enforced. Enforcement still needs
+        | `global_permitted`, the scope mode, and the flag.
+        */
+        'governance_phase' => 'phase_4a',
+
+        /*
         | REVISED by REVISION-DOCTOR-AUTO-DEVICE-APPROVAL-APP-ONLY-LOGIN-1.
         |
         | Phase 2 ruled that "the flag is created by the phase that needs one",
@@ -1287,6 +1326,43 @@ return [
             'spare_device_available_per_branch',
             'device_loss_runbook_rehearsed',
             'rollback_to_browser_login_proven',
+        ],
+
+        /*
+        | DOCTOR-ACCESS-GLOBAL-ACTIVATION-BLOCKER-CLOSURE-1 (B2) — who signed
+        | for each prerequisite above.
+        |
+        | The list has existed since Phase 3.5 and was read by no code: five
+        | strings with a string-membership test attached. B2 scopes the
+        | Phase-4A prohibition on fleet-wide enforcement to Phase 4A, and a
+        | prohibition that retires with nothing in its place would leave the
+        | later phases asserting strictly less than this one does. So the
+        | prohibition is replaced by a PRECONDITION: outside `phase_4a` every
+        | declared prerequisite must be attested `true` here, or
+        | `global_prerequisites_attested` FAILS.
+        |
+        | All false as shipped, and deliberately so. Declaring a later
+        | governance phase therefore cannot pass this gate on its own — someone
+        | has to record each attestation in a reviewed change, at the same price
+        | as granting `global_permitted`.
+        |
+        | WHAT AN ATTESTATION IS. A signature, not a measurement. "A spare
+        | device is available at every branch" is a fact about a room; no query
+        | can establish it. What this block proves is that a named reviewer
+        | asserted it, in source control, before the fleet was widened — and
+        | that none of the five was quietly skipped.
+        |
+        | As of DOCTOR-ACCESS-GLOBAL-ACTIVATION-1 Phase 0, at least two of these
+        | are known FALSE in the estate: no branch holds a spare tablet, and
+        | Cabang Telkomas holds none at all. Attesting them today would be
+        | recording something untrue.
+        */
+        'global_prerequisites_attested' => [
+            'real_device_pilot_passed' => false,
+            'every_enforced_doctor_has_an_active_device' => false,
+            'spare_device_available_per_branch' => false,
+            'device_loss_runbook_rehearsed' => false,
+            'rollback_to_browser_login_proven' => false,
         ],
 
         /*
