@@ -16,7 +16,7 @@
  * duration, and a gate that reddens for weeks is a gate somebody removes from
  * the chain. So the exit codes are asymmetric and the asymmetry is asserted
  * here rather than assumed: NOT_READY always fails, PARTIAL fails only when
- * --strict was asked for, and GLOBAL_READY never fails.
+ * --strict was asked for, and TRUSTED_PATHS_COMPLETE never fails.
  *
  * The second trap is Pest's own: expectsOutputToContain consumes ONE writeln
  * per expectation, so a multi-token assertion against a single line silently

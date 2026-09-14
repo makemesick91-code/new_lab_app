@@ -467,7 +467,7 @@ it('reports NOT_READY when nobody is provisioned and PARTIAL once somebody is', 
     expect(grrReadiness()['verdict'])->toBe(DoctorGlobalRolloutReadinessService::VERDICT_PARTIAL);
 });
 
-it('reports GLOBAL_READY only when every single target doctor is ready', function () {
+it('reports TRUSTED_PATHS_COMPLETE only when every single target doctor is ready', function () {
     grrReadyDoctor('drg A');
     grrReadyDoctor('drg B');
 

@@ -1,79 +1,80 @@
-### Active sprint manifest — FIX-READINESS-ESTATE-SNAPSHOT-INTEGRITY
+### Active sprint manifest — DOCTOR-ACCESS-GLOBAL-ACTIVATION-BLOCKER-CLOSURE-1
 ### Validated by: php artisan sprint:manifest-check
 
-id: FIX-READINESS-ESTATE-SNAPSHOT-INTEGRITY
-type: RUNTIME_FIX
+id: DOCTOR-ACCESS-GLOBAL-ACTIVATION-BLOCKER-CLOSURE-1
+type: SECURITY_FIX
 module: DoctorAccess
-title: "One readiness report reads the device estate once. DoctorFleetReadinessService cleared its estate memo inside activeAuthorizationPairs(), which runs between two of the three gates that consume it, so a single build() loaded the hardware twice and could compute its authorization matrix against one moment and its coverage table against another. The reset moves to the top of build(), keeping the per-build freshness it was reaching for without tearing one report across two snapshots. Also corrects the proof-count example that named the wrong device, the duplicate-pair comment that denied an index that exists, and the one branch-registry line that still asserted a deprecated code. No gate weakened, no flag touched, no cohort moved, no Wave started."
+title: "Close the six activation blockers B1-B6 without performing any activation. B2 was the real one and was undercounted: seven source sites, not three, assert that fleet-wide doctor enforcement is neither permitted, declared nor live, so an honest Phase 5 would have made the gate FAIL on the outcome the programme exists to reach. The phase is now declared in source control and those checks report a distinct NOT_APPLICABLE outside phase_4a — never PASS, counted separately, still visible — while the halves that never stop mattering keep evaluating, and the prohibition is replaced by a Phase-5 precondition rather than by nothing: global_prerequisites, read by no code since Phase 3.5, now gates on recorded attestations that ship all false. B5 was re-diagnosed as ALREADY CLOSED and pinned instead of rebuilt. B1 performs each rollback rather than describing it. B3, B4 and B6 are documentation and terminology. No flag armed, no cohort widened, no lease touched."
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-# RUNTIME_FIX, not FOUNDATION_SPRINT. The parent readiness sprint carried
-# FOUNDATION_SPRINT because it wrote a clinician's permanent home branch at fleet
-# scale and named the verdict an activation sprint reads. This moves one
-# assignment inside one private method of one read-only service. Claiming the
-# parent's type to inherit its audit depth would be manufacturing scope; the
-# honest depth here is a runtime correctness fix with a regression suite and a
-# mutation pass, which is exactly what RUNTIME_FIX asks for.
+# SECURITY_FIX rather than RUNTIME_FIX, chosen up rather than down.
 #
-# Not SECURITY_FIX either: no policy, permission, middleware or authorization
-# path is touched, and the qualifying-proof gate is preserved verbatim — only
-# the prose around it was wrong.
+# Nothing here adds, removes or relaxes a permission, policy or middleware, and
+# the enforcement decision itself is byte-identical. But what changed is the
+# semantics of the gates that VERIFY doctor enforcement, and a verification
+# semantics change that gets it wrong either hides a fleet-wide lockout or
+# teaches operators to ignore the thing that would have caught one. That earns
+# audit level 3, the security regression profile and the full required gate.
+#
+# Not FOUNDATION_SPRINT: no new foundation, no schema, no module boundary moved.
+# Not DOCS_ONLY despite four of six blockers resolving to prose — two scanners
+# and two config files carry real runtime change.
 
-runtime_change: true            # one statement moved in
-                                # DoctorFleetReadinessService::build(). No new
-                                # class, no signature change, no controller, no
-                                # route, no policy, no command. The report's
-                                # output is unchanged on a stable estate; what
-                                # changes is that it can no longer be computed
-                                # from two.
+runtime_change: true            # Phase4aPilotPreparationScanner gains a phase
+                                # vocabulary, a NOT_APPLICABLE status and a
+                                # prerequisite gate; AndroidReleaseGovernanceScanner
+                                # gains the same phase read and scopes three
+                                # composite conditions. No controller, route,
+                                # policy, middleware, command or model.
 
-schema_change: false            # NO migration. This sprint reads the same tables
-                                # the engine already read and writes none of
-                                # them. A test asserts two builds leave
-                                # sys_audit_logs, mst_doctor_devices and
-                                # mst_doctor_device_authorizations untouched.
+schema_change: false            # NO migration. Every table this sprint reasons
+                                # about is read by tests only, and the rollback
+                                # suite asserts row counts across devices,
+                                # authorizations, credentials, leases, locks,
+                                # covers and audit logs are unchanged by an arm
+                                # and disarm cycle.
 
 frontend_change: false          # no JS, no CSS, no Vite entry, no Blade view.
-                                # The readiness engine still registers no route
-                                # at all, which the sibling non-mutation suite
-                                # continues to pin.
+                                # These scanners register no route at all.
 
-security_impact: false          # no permission, policy, middleware or gate is
-                                # added, removed or relaxed. The qualifying-proof
-                                # rule (a proof counts only on hardware the
-                                # doctor can still use) is preserved exactly; the
-                                # mutation pass proves a test fails the moment it
-                                # is weakened. The enforcement cohort and every
-                                # doctor feature flag are untouched.
+security_impact: true           # the gates that verify doctor browser/device
+                                # enforcement changed shape. The enforcement
+                                # itself did not: global_permitted is still a
+                                # source-controlled false, the cohort is still
+                                # [9,15,18], and doctor.single_active_session is
+                                # still off. Pinned by a 23-case phase matrix
+                                # asserting that phase_4a behaviour is unchanged
+                                # and that a skipped check never reads as PASS.
 
 branch_isolation_impact: false  # no branch scope is read, written or widened.
-                                # The engine reports on home-branch locks; it has
-                                # never assigned one and still cannot.
+                                # The branch-lock runbook is corrected; the
+                                # resolver is not touched.
 
 ledger_impact: false            # no inventory ledger, billing, payment, invoice
-                                # or receivable path is reachable from this
-                                # service.
+                                # or receivable path is reachable from here.
 
-deploy_required: true           # the fix only exists on the deployment that
-                                # carries it, and the readiness figure has to be
-                                # re-read from production afterwards and
-                                # reconciled against direct SQL — a report
-                                # agreeing with itself is not evidence.
+deploy_required: true           # the scanners only report the new semantics on
+                                # the deployment that carries them, and the
+                                # post-deploy assertion this sprint owes is that
+                                # production STILL reports the pre-activation
+                                # posture after the change lands.
 
-browser_required: false         # there is no screen. The operator surface is
-                                # `php artisan doctor:fleet-readiness` on the VPS.
+browser_required: false         # the operator surface is
+                                # `php artisan android:phase4a-pilot-readiness`
+                                # and `android:release-readiness` on the VPS.
 
-go_tag: fix-readiness-estate-snapshot-integrity-go
+go_tag: doctor-access-global-activation-blocker-closure-1-go
 
 test_profiles:
   - focused
-  - cross_module_regression
+  - security_regression
+  - full_required
 
-# Everything this sprint stands on, and does not move. Fleet readiness stays
-# PARTIAL at 9/15; this fix creates no activation authority and authorizes no
-# Wave.
+# What this sprint stands on and does not move. The parent programme remains
+# DEFERRED behind the owner's PROVISION_ESTATE_SPARE_CAPACITY_FIRST decision;
+# closing B1-B6 authorises no activation and creates none.
 inherits_parent_readiness: DOCTOR-ACCESS-FLEET-ROLLOUT-READINESS-1
-inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
-inherits_hold: FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1/FIX-02
-inherits_parent_go: doctor-access-single-session-branch-lock-1-go
+inherits_parent_programme: DOCTOR-ACCESS-GLOBAL-ACTIVATION-1
+inherits_parent_go: doctor-access-fleet-rollout-readiness-1-go
 inherits_pilot_go: doctor-pwa-multi-doctor-pilot-1-go
+defers_to: DOCTOR-ACCESS-TRUSTED-DEVICE-ESTATE-RESILIENCE-1
