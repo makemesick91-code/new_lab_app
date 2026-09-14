@@ -82,10 +82,17 @@ class DoctorFleetReadinessService
          *
          * The memo was previously reset inside activeAuthorizationPairs(), which
          * runs BETWEEN two of those readers, so a single report loaded the
-         * estate twice and could mix two moments. Resetting at the top of
-         * build() keeps the per-build freshness that reset was reaching for —
-         * a second build() still sees new hardware — without splitting one
-         * report across two snapshots.
+         * estate twice and could mix two moments.
+         *
+         * That placement ALSO defeated the freshness it was written for, which
+         * is the less obvious half. deviceCoverage() ran last and re-populated
+         * the memo, so build() returned with it FULL — and build #2's
+         * eligibleDeviceIds() then hit `??=` and was served build #1's
+         * coverage-time snapshot. The eligible list restricts
+         * $authorizedDeviceIds, which the qualifying-proof rule intersects, so
+         * a second report on one instance judged proofs against stale hardware.
+         * Resetting here does not preserve per-build freshness; it achieves it
+         * for the first time, and stops one report spanning two snapshots.
          */
         $this->deviceEstate = null;
 

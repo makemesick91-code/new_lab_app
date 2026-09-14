@@ -33,11 +33,19 @@
  * WHY THE SPY IS INJECTED RATHER THAN BOUND IN THE CONTAINER
  *
  * DoctorGlobalRolloutReadinessService — which this engine COMPOSES — takes the
- * same repository and calls deviceEstate() twice itself, with no memo of its
- * own. A container-wide bind would therefore count four loads, three of which
- * belong to a different engine, and "exactly one" would be unassertable. The
- * spy is handed to the service under test and to nothing else, so the number
- * this file reports is that service's own.
+ * same repository and loads the estate TWICE itself, unmemoised
+ * (DoctorGlobalRolloutReadinessService.php:417 and :471). A container-wide bind
+ * would therefore count THREE loads per report, two of which belong to a
+ * different engine, and "exactly one" would be unassertable.
+ *
+ * So the property this file pins is precise and narrow: ONE build of
+ * DoctorFleetReadinessService loads the estate once THROUGH ITS OWN
+ * DEPENDENCY. The composed engine's two reads are real, are out of this
+ * sprint's scope, and are not claimed to be fixed — they feed only values the
+ * fleet report discards (its `branches` and `devices` blocks are dropped; it
+ * carries forward verdict, counts, blocking_reasons, findings and runtime,
+ * none of which read the estate). The spy is handed to the service under test
+ * and to nothing else, so the number this file reports is that service's own.
  *
  * WHAT A PASS HERE DOES NOT PROVE
  *
@@ -529,6 +537,62 @@ it('still refuses a proof on a tablet that is ineligible in the one snapshot it 
     expect($row['real_device_login_proven'])->toBeFalse();
     expect($row['blockers'])->toContain(DoctorFleetReadinessVerdict::BLOCKER_LOGIN_NOT_PROVEN);
     expect($row['state'])->toBe(DoctorFleetReadinessVerdict::STATE_NOT_READY);
+});
+
+it('discards the proofs on a revoked tablet without disqualifying the doctor', function () {
+    /*
+     * THE PRODUCTION SHAPE, AND THE DIRECTION NOTHING ELSE ASSERTED.
+     *
+     * Every other proof test in both suites gives its doctor proofs on ONE
+     * tablet, so they only ever exercise "all proofs qualify" or "no proof
+     * qualifies". The estate this engine actually reports on is mixed: measured
+     * 2026-09-13, user 18 held 23 rows across three tablets — 19 on hardware
+     * that still qualifies and 4 on revoked device 1 — and stays READY.
+     *
+     * A gate that discarded the revoked rows by disqualifying the doctor would
+     * pass every single-device test and be wrong on the only estate that
+     * matters. The service comment calls this "the shape this gate has to get
+     * right in both directions"; this is the other direction.
+     */
+    [$user, $doctor] = snapshotDoctor('drg Mixed Proof');
+    $keeps = snapshotDevice();
+    $revoked = snapshotDevice();
+
+    snapshotLock($doctor, snapshotBranch('MXP1'));
+    snapshotAuthorize($doctor, $keeps);
+    snapshotAuthorize($doctor, $revoked);
+
+    // Two proofs on the tablet that will be revoked, one on the tablet that
+    // survives — so the DISCARDED rows outnumber the qualifying one, and a gate
+    // that counted rows rather than hardware would reach the wrong answer.
+    snapshotProof($user, $revoked, $doctor);
+    snapshotProof($user, $revoked, $doctor);
+    snapshotProof($user, $keeps, $doctor);
+
+    $revoked->forceFill(['status' => DoctorDevice::STATUS_REVOKED])->save();
+
+    [$service, $spy] = snapshotServiceWithSpy();
+
+    $report = $service->build();
+    $row = snapshotRowFor($report, $user);
+
+    expect($spy->deviceEstateLoads)->toBe(1);
+
+    // The raw count still reports all three: "logged in only on hardware we no
+    // longer trust" and "never logged in" must stay distinguishable.
+    expect($row['real_device_login_count'])->toBe(3);
+    expect($row['proven_device_ids'])->toContain((int) $revoked->id, (int) $keeps->id);
+
+    // But only the surviving tablet qualifies, and the doctor is still READY.
+    expect($row['qualifying_device_ids'])->toBe([(int) $keeps->id]);
+    expect($row['real_device_login_proven'])->toBeTrue();
+    expect($row['blockers'])->not->toContain(DoctorFleetReadinessVerdict::BLOCKER_LOGIN_NOT_PROVEN);
+
+    // The revoked tablet also leaves the eligible estate, so the matrix narrows
+    // with it rather than reporting a gap the doctor cannot close.
+    expect($report['devices']['eligible_count'])->toBe(1);
+    expect($row['unauthorized_eligible_device_ids'])->toBe([]);
+    expect($row['state'])->toBe(DoctorFleetReadinessVerdict::STATE_READY);
 });
 
 it('still counts the authorization matrix against the whole eligible estate', function () {

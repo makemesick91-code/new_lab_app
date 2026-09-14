@@ -280,21 +280,28 @@ So the verdict is now `TRUSTED_PATHS_COMPLETE`, and a second gate,
     substitutes for the other, and a comment claiming a property no assertion
     holds is worse than no comment.
 
-33. **FR-R33 — a configuration flag is not enforcement.** Report the FLAG and
-    the EFFECTIVE state separately whenever the two can differ. `doctor.branch_lock`
-    is true on the pilot today and the branch-lock resolver is nevertheless
-    INERT, because `DoctorEffectiveBranchResolver::enabled()` also requires
-    `doctor.single_active_session`, which is false. Write
-    `BRANCH_LOCK_FLAG=true` / `BRANCH_LOCK_EFFECTIVE=false`, never one line that
+33. **FR-R33 — REPORTING COROLLARY of FR-R22 and FR-R21; it adds no predicate
+    of its own.** FR-R22 already states the complete arming predicate for the
+    branch lock — `branch_lock` AND `single_active_session` AND an observable
+    session probe — and it is the one to quote. **Do not restate an arming
+    predicate here or anywhere else; a second copy will eventually be the
+    shorter one, and the shorter one is wrong.**
+
+    What this rule adds is the REPORTING obligation: wherever a flag and its
+    effective state can differ, print both, as two lines. On the pilot at the
+    time of writing (2026-09-13 WITA — a snapshot, re-read it) that is
+    `BRANCH_LOCK_FLAG=true` / `BRANCH_LOCK_EFFECTIVE=false`. Never one line that
     implies a locked fleet.
 
 34. **FR-R34 — the browser enforcement scope is mutable host configuration, not
     a database invariant and not a constant.** It has moved before and it may
     move again. State it as `CURRENT_BROWSER_ENFORCEMENT_SCOPE=<value read now>`
     and never as a value that "has never moved". Distinguish
-    `SCOPED_BROWSER_DEVICE_ENFORCEMENT_ACTIVE` (yes today, for the doctors in
-    that scope) from `GLOBAL_FLEET_ENFORCEMENT_ACTIVE` (no). Collapsing the two
-    into one "enforcement" line reads as "no enforcement exists", which is false.
+    `SCOPED_BROWSER_DEVICE_ENFORCEMENT_ACTIVE` from
+    `GLOBAL_FLEET_ENFORCEMENT_ACTIVE` — on the pilot at the time of writing
+    (2026-09-13 WITA, a snapshot) those were YES and NO respectively.
+    Collapsing the two into one "enforcement" line reads as "no enforcement
+    exists", which is false.
 
 35. **FR-R35 — a broken measurement must fail loudly, never quietly pass.** A
     query watcher, probe or audit read that ERRORS is an UNKNOWN result. It is
@@ -302,19 +309,32 @@ So the verdict is now `TRUSTED_PATHS_COMPLETE`, and a second gate,
     has already shipped one gate that read silence as success.
 
 36. **FR-R36 — `sys_audit_logs.entity_id` is not a doctor id.** On a device
-    proof it names the AUTHORIZATION. The id spaces collide in production — user
-    18 is doctor 21 — so an attribution taken from the wrong column is wrong
-    silently and plausibly. Attribute through `performed_by` and the canonical
-    payload, as `DoctorFleetReadinessRepository` does.
+    proof it names the AUTHORIZATION. The id spaces COLLIDE — on the pilot at
+    the time of writing (2026-09-13 WITA, a snapshot) user 18 was doctor 21 — so
+    an attribution taken from the wrong column is wrong silently and plausibly.
+    Attribute through `performed_by` and the canonical payload, as
+    `DoctorFleetReadinessRepository` does.
 
 37. **FR-R37 — every production figure quoted in a rule, comment or report is
     MEASURED, labelled with its date, and labelled as a snapshot.** A remembered
     number becomes an asserted one. The proof-count example in FR-R8 was wrong
     in both halves for exactly that reason: it put thirteen rows on a revoked
     tablet when the thirteen were on the tablet that still qualified, so the
-    example argued against the rule it illustrated. Never assert a volatile
-    production count in a TEST; state the invariant there and keep the number in
-    prose, dated.
+    example argued against the rule it illustrated.
+
+    **The line is the ASSERTION, not the file.** A production count may appear
+    in prose or in a comment — including a comment inside a test file, where it
+    explains why a fixture has the shape it has — provided it is dated and
+    labelled. It may never appear in an `expect()`, a fixture value or any other
+    executable assertion: that pins somebody's environment rather than the
+    behaviour, and it fails on every checkout configured differently. State the
+    invariant in the assertion; keep the number beside it, dated.
+
+    This rule also binds the artifacts that introduce it. An argued-from number
+    in a sprint's own doc, PR body or test header is exactly the failure it
+    names — and this sprint shipped one (a "four loads, three of which" figure
+    that was pre-fix arithmetic; measured, it is three and two) before an
+    adversarial re-read caught it.
 
 38. **FR-R38 — timestamps carry their timezone.** Production application and
     system times are reported in WITA (UTC+08:00) and labelled as such. An

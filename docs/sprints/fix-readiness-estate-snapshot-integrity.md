@@ -1,8 +1,10 @@
 # FIX-READINESS-ESTATE-SNAPSHOT-INTEGRITY
 
 One runtime integrity defect in `DoctorFleetReadinessService`, plus the stale
-numeric evidence and the one registry line that an adversarial re-read of the
-programme's own state block turned up.
+numeric evidence and the registry lines that an adversarial re-read of the
+programme's own state block turned up — and three corrections that a second
+adversarial pass turned up **in this sprint's own artifacts**, recorded here
+rather than quietly fixed.
 
 **This sprint does not start Wave 5, does not authorize global activation, does
 not move the browser enforcement scope and does not change a single feature
@@ -37,7 +39,14 @@ matrix printed beside a coverage table listing four eligible tablets. Two
 answers to one question, in the report an activation sprint is meant to read.
 
 The reset's *intent* was right — a second `build()` on one instance must not
-serve a stale estate. Only its placement was wrong.
+serve a stale estate. Its placement defeated that intent as well, which is the
+less obvious half: `deviceCoverage()` ran last and re-populated the memo, so
+`build()` returned with it FULL, and build #2's `eligibleDeviceIds()` hit `??=`
+and was served build #1's coverage-time snapshot. That stale list restricts
+`$authorizedDeviceIds`, which the qualifying-proof rule intersects — so a second
+report on one instance judged proofs against stale hardware. **Per-build
+freshness was not being preserved here; it is being achieved for the first
+time.**
 
 ### The flow, before and after
 
@@ -112,14 +121,20 @@ correct where it is — it resets immediately before the loop that accumulates i
 
 ## 3. The regression suite
 
-New: `tests/Feature/DoctorAccess/DoctorFleetReadinessEstateSnapshotTest.php` (8).
+New: `tests/Feature/DoctorAccess/DoctorFleetReadinessEstateSnapshotTest.php` (9).
 
 It counts **loads, at the loader**, through a spy that implements
 `DoctorDeviceRolloutReadinessRepositoryInterface` and can replay a scripted
 sequence of snapshots. The spy is **injected into the service under test**, not
 bound in the container: `DoctorGlobalRolloutReadinessService`, which this engine
-composes, calls `deviceEstate()` twice itself with no memo, so a container-wide
-bind would count four loads and "exactly one" would be unassertable.
+composes, loads the estate twice itself unmemoised (`:417`, `:471`), so a
+container-wide bind would count **three** loads per report — two of them the
+other engine's — and "exactly one" would be unassertable.
+
+The property pinned here is correspondingly narrow: **one build of
+`DoctorFleetReadinessService` loads the estate once through its own
+dependency.** The composed engine's two reads are real, out of scope, and not
+claimed to be fixed; they feed only values this report discards.
 
 | # | property |
 |---|---|
@@ -129,8 +144,9 @@ bind would count four loads and "exactly one" would be unassertable.
 | 4 | a second build reloads, and reflects hardware that changed in between |
 | 5 | the duplicate-pair tally stays per-report; the DB keeps it at zero |
 | 6 | a proof on a tablet ineligible in that snapshot still disqualifies |
-| 7 | the matrix still counts against the whole eligible estate |
-| 8 | two builds write nothing |
+| 7 | **the mixed shape** — revoked-tablet proofs are discarded WITHOUT disqualifying a doctor who also has a qualifying one |
+| 8 | the matrix still counts against the whole eligible estate |
+| 9 | two builds write nothing |
 
 The mixed-snapshot probe is deterministic — the script is indexed by call
 number, never by timing — so a regression fails on every run, on every machine.
@@ -198,21 +214,29 @@ rather than an index name, so it stays portable across PostgreSQL and SQLite.
 
 ### 4.3 Branch code registry
 
-The premise that the registry was stale is **mostly not true**, and this is
-recorded rather than papered over:
+The premise that the registry was stale is **partly** true — narrower than
+stated, but wider than my first pass claimed, and an adversarial re-read caught
+me understating it.
+
+Already correct, and untouched here:
 
 - `BranchCodeAlias::TELKOMAS_CANONICAL = 'TLK1'`, `SUNU_CANONICAL = 'SPN4'` —
-  the code authority is correct.
+  the code authority, which is what actually resolves a branch.
 - Dedicated rules `92-telkomas-branch-code-canonical` and
-  `136-sunu-branch-code-canonical` exist and are correct.
-- CLAUDE.md's registry sentence already carried both `[SUPERSEDED]` annotations.
+  `136-sunu-branch-code-canonical`.
 
-One real residual: rule `73`'s registry **list** still asserted
-`**SUN4 = Cabang Sunu**`, retracted only by a footnote below it — while the
-Telkomas entry in the *same list* had been fixed inline. That shape is how a
-reader quotes the wrong code. Both the rule-73 list and the CLAUDE.md sentence
-now name `TLK1` and `SPN4` directly, with the deprecated codes named as
-historical aliases.
+**Two** residuals, not one, and they are the same defect in two files. Both
+rule `73`'s registry **list** and CLAUDE.md's single "Registry kode cabang
+canonical" sentence asserted the deprecated codes and retracted them only in a
+`[SUPERSEDED]` footnote further down the same paragraph — while, in rule 73, the
+Telkomas entry in that *same list* had already been fixed inline. A list that
+states a deprecated code and takes it back underneath is how a reader quotes the
+wrong one.
+
+I first wrote that the CLAUDE.md sentence "was already correct" and that rule 73
+was the lone residual. That was false and falsified by my own diff, which
+rewrites that exact sentence. Both now name `TLK1` and `SPN4` directly, with the
+deprecated codes labelled historical aliases.
 
 Historical records — sprint names (`RME-BRANCH-SUN4`), migration descriptions,
 issued room codes (`TKM-A`), and the immutable incident id
@@ -258,6 +282,39 @@ GLOBAL_PERMITTED=false       GLOBAL_ACTIVATION_AUTHORIZED=NO
 
 Scoped enforcement is genuinely live for three doctors. "Global enforcement is
 off" must never be read as "no enforcement exists" (FR-R34).
+
+## 6b. What an adversarial pass found in THIS sprint's own artifacts
+
+Two verifiers were asked to refute the claims above rather than confirm them.
+Three landed, and all three are the defect class this sprint exists to correct —
+so they are recorded, not quietly patched.
+
+**(1) A number I argued from was remembered, not measured.** The test header and
+this doc said a container-wide spy "would count four loads, three of which belong
+to a different engine". Measured: the provisioning engine loads the estate twice
+(`:417`, `:471`) and this one once, so post-fix that is **three** and **two**.
+Four was the *pre-fix* total. This is precisely what FR-R37 forbids, shipped in
+the artifact that introduces FR-R37 — which is why FR-R37 now binds a sprint's
+own doc, PR body and test headers explicitly.
+
+**(2) A cross-reference claimed coverage that did not exist.** A comment added to
+`DoctorFleetReadinessTest` said the mixed proof shape was covered "in
+DoctorFleetReadinessEstateSnapshotTest". It was not — every fixture in both
+suites gave its doctor proofs on a single tablet, so only "all qualify" and "none
+qualify" were exercised. The mixed shape is the *production* shape, and the
+direction that matters — discard the revoked rows **without** disqualifying the
+doctor — was asserted nowhere. Rather than delete the claim, test 7 now makes it
+true.
+
+**(3) I understated the registry finding and contradicted my own diff.** See 4.3.
+
+A fourth observation was accepted without a code change: FR-R33 as first written
+restated FR-R22's arming predicate and did so **less completely**, omitting the
+session probe. Two copies of a predicate eventually disagree and the shorter one
+is the wrong one, so FR-R33 is now explicitly a reporting corollary that quotes
+no predicate of its own.
+
+---
 
 ## 7. What this sprint did not prove
 
