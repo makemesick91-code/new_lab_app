@@ -121,7 +121,8 @@ correct where it is — it resets immediately before the loop that accumulates i
 
 ## 3. The regression suite
 
-New: `tests/Feature/DoctorAccess/DoctorFleetReadinessEstateSnapshotTest.php` (9).
+New: `tests/Feature/DoctorAccess/DoctorFleetReadinessEstateSnapshotTest.php` (9),
+verified on both SQLite and `postgres:16`.
 
 It counts **loads, at the loader**, through a spy that implements
 `DoctorDeviceRolloutReadinessRepositoryInterface` and can replay a scripted
@@ -313,6 +314,49 @@ restated FR-R22's arming predicate and did so **less completely**, omitting the
 session probe. Two copies of a predicate eventually disagree and the shorter one
 is the wrong one, so FR-R33 is now explicitly a reporting corollary that quotes
 no predicate of its own.
+
+---
+
+## 6c. CI caught a defect SQLite could not
+
+The first CI run on the corrected candidate **failed**, and the failure was
+mine. `NSF-R011 Critical Test Gate`, `1 failed, 1 risky, 3935 passed` — one test,
+and it was the duplicate-pair test added in this sprint.
+
+```
+SQLSTATE[25P02]: In failed sql transaction:
+ERROR: current transaction is aborted, commands ignored until end of transaction block
+```
+
+The test asserted the unique index by **actually violating it**. PostgreSQL
+aborts the entire transaction on any failed statement, and under
+`RefreshDatabase` the test body is already inside one — so the deliberate
+violation poisoned it and every subsequent query died, `build()` included.
+SQLite simply does not behave that way, so the test was green locally nine times
+out of nine.
+
+The fix contains the violation in a nested `DB::transaction()`, which compiles to
+`SAVEPOINT` / `ROLLBACK TO SAVEPOINT`; rolling back to a savepoint taken before
+the failing statement returns the connection to a usable state. The rejection is
+still exercised against the real constraint, and a new assertion checks the
+connection survives — the half SQLite would never have earned.
+
+**Verified on the canonical driver, not assumed.** A throwaway `postgres:16`
+container (the exact CI image — the local host runs PG 18, which is the wrong
+version to trust) ran the suite: **9 passed / 50 assertions**. A negative control
+reverting to the bare violation reproduced `25P02` on that same container, so
+the savepoint is demonstrably what fixes it rather than a coincidence.
+
+This is recorded as **FR-R39**, and it generalises: the canonical test driver is
+`postgres:16` and SQLite is a convenience. Anything whose subject is
+transactional behaviour, locking, a constraint or a partial index is not trusted
+until PostgreSQL has seen it — `lockForUpdate()` compiles to an empty string on
+SQLite, and a partial unique index can be silently flattened by a table rebuild.
+
+One further thing this run settled: the **62 pre-existing Vite-manifest failures
+CLAUDE.md attributes to the critical gate are gone.** The gate is now genuinely
+green apart from what a change introduces, so "pre-existing" is no longer
+available as an explanation and was not used as one.
 
 ---
 

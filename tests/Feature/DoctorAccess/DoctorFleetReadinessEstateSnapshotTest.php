@@ -68,8 +68,9 @@ use App\Modules\DoctorDevice\Models\DoctorDeviceAuthorization;
 use App\Modules\DoctorDevice\Models\DoctorDeviceWebAuthnCredential;
 use App\Modules\DoctorDevice\Services\DoctorGlobalRolloutReadinessService;
 use App\Modules\LabOrder\Models\AuditLog;
-use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 beforeEach(function (): void {
@@ -484,12 +485,33 @@ it('keeps the duplicate-pair tally per report, and the database keeps it at zero
      * such index existed, which is why the tally was described as load-bearing.
      * It is defence in depth, and this is what actually holds the line.
      *
-     * Asserting the REJECTION rather than the index name keeps this portable
-     * and makes the failure legible: if somebody drops that index, this test
-     * turns red and the counter below stops being decorative.
+     * Asserting the REJECTION rather than the index name keeps this honest: if
+     * somebody drops that index, this test turns red and the counter below
+     * stops being decorative.
+     *
+     * THE VIOLATION MUST BE CONTAINED IN A SAVEPOINT, AND THAT IS NOT OPTIONAL.
+     *
+     * PostgreSQL aborts the WHOLE transaction on any failed statement —
+     * SQLSTATE 25P02, "current transaction is aborted, commands ignored until
+     * end of transaction block". Under RefreshDatabase this test body already
+     * runs inside one transaction, so a bare violating insert poisons it and
+     * every later query here dies, build() included. SQLite does not behave
+     * that way and hides the entire problem locally: an earlier revision of
+     * this test passed on SQLite and failed in CI on postgres:16 for precisely
+     * that reason.
+     *
+     * A nested DB::transaction() compiles to SAVEPOINT / ROLLBACK TO SAVEPOINT,
+     * and rolling back to a savepoint taken BEFORE the failing statement
+     * returns the transaction to a usable state. The rejection is therefore
+     * still exercised against the real constraint, and the connection survives
+     * it on both drivers.
      */
-    expect(fn () => snapshotAuthorize($doctor, $device))
-        ->toThrow(UniqueConstraintViolationException::class);
+    expect(fn () => DB::transaction(fn () => snapshotAuthorize($doctor, $device)))
+        ->toThrow(QueryException::class);
+
+    // The connection is still usable — the half SQLite would never have told
+    // us about, and the reason the assertion above is wrapped rather than bare.
+    expect(DoctorDeviceAuthorization::query()->count())->toBe(1);
 
     [$service, $spy] = snapshotServiceWithSpy();
 
