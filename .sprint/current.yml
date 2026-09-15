@@ -1,69 +1,76 @@
-### Active sprint manifest — DOCTOR-ACCESS-GLOBAL-ACTIVATION-BLOCKER-CLOSURE-1
+### Active sprint manifest — DOCTOR-ACCESS-TRUSTED-DEVICE-ESTATE-RESILIENCE-1
 ### Validated by: php artisan sprint:manifest-check
 
-id: DOCTOR-ACCESS-GLOBAL-ACTIVATION-BLOCKER-CLOSURE-1
+id: DOCTOR-ACCESS-TRUSTED-DEVICE-ESTATE-RESILIENCE-1
 type: SECURITY_FIX
 module: DoctorAccess
-title: "Close the six activation blockers B1-B6 without performing any activation. B2 was the real one and was undercounted: seven source sites, not three, assert that fleet-wide doctor enforcement is neither permitted, declared nor live, so an honest Phase 5 would have made the gate FAIL on the outcome the programme exists to reach. The phase is now declared in source control and those checks report a distinct NOT_APPLICABLE outside phase_4a — never PASS, counted separately, still visible — while the halves that never stop mattering keep evaluating, and the prohibition is replaced by a Phase-5 precondition rather than by nothing: global_prerequisites, read by no code since Phase 3.5, now gates on recorded attestations that ship all false. B5 was re-diagnosed as ALREADY CLOSED and pinned instead of rebuilt. B1 performs each rollback rather than describing it. B3, B4 and B6 are documentation and terminology. No flag armed, no cohort widened, no lease touched."
+title: "Measure the estate resilience prerequisite that has never had an implementation. `spare_device_available_per_branch` has gated global doctor enforcement since Phase 3.5 as a string in a list plus a hand-signed boolean, and the scanner that reads it asserts only that somebody signed — so nothing in the system could tell the signer whether what they were signing was true. This sprint adds the read-only engine that measures the measurable half: per-branch eligible hardware, spare headroom against the runbook's stations+1 formula, credential coverage, an authorization matrix recomputed from the CURRENT estate, and a failure-domain view of losing one tablet. An input the system does not hold produces UNVERIFIED, never PASS. The measured verdict is FAIL: no branch holds a second eligible tablet and one branch homing two doctors holds none at all. Nothing was attested, no hardware was provisioned, no flag armed, no cohort widened, no lease touched."
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-# SECURITY_FIX rather than RUNTIME_FIX, chosen up rather than down.
+# SECURITY_FIX rather than MODULE_SPRINT, chosen up rather than down.
 #
-# Nothing here adds, removes or relaxes a permission, policy or middleware, and
-# the enforcement decision itself is byte-identical. But what changed is the
-# semantics of the gates that VERIFY doctor enforcement, and a verification
-# semantics change that gets it wrong either hides a fleet-wide lockout or
-# teaches operators to ignore the thing that would have caught one. That earns
-# audit level 3, the security regression profile and the full required gate.
+# In shape this is a module sprint: one read-only service, one console command,
+# one config key, one test file. It changes no permission, policy, middleware,
+# route or enforcement decision, and every existing gate is byte-identical.
 #
-# Not FOUNDATION_SPRINT: no new foundation, no schema, no module boundary moved.
-# Not DOCS_ONLY despite four of six blockers resolving to prose — two scanners
-# and two config files carry real runtime change.
+# But the artifact is a GATE that a later activation decision will read, and the
+# sibling sprint's reasoning applies unchanged: a verification that gets it wrong
+# either hides a fleet-wide lockout or teaches operators to ignore the thing that
+# would have caught one. That earns audit level 3 and the full required gate.
 
-runtime_change: true            # Phase4aPilotPreparationScanner gains a phase
-                                # vocabulary, a NOT_APPLICABLE status and a
-                                # prerequisite gate; AndroidReleaseGovernanceScanner
-                                # gains the same phase read and scopes three
-                                # composite conditions. No controller, route,
-                                # policy, middleware, command or model.
+runtime_change: true            # DoctorEstateResilienceService (read-only),
+                                # DoctorEstateResilienceVerdict, the
+                                # doctor:estate-resilience command, and one new
+                                # config key that ships EMPTY. No controller,
+                                # route, policy, middleware, model or migration.
+                                # A bulk credential repository was written and
+                                # then DELETED as redundant — the device estate
+                                # read already eager-loads credentials.
 
-schema_change: false            # NO migration. Every table this sprint reasons
-                                # about is read by tests only, and the rollback
-                                # suite asserts row counts across devices,
-                                # authorizations, credentials, leases, locks,
-                                # covers and audit logs are unchanged by an arm
-                                # and disarm cycle.
+schema_change: false            # NO migration. The engine reads
+                                # mst_doctor_devices, mst_doctor_branch_locks,
+                                # mst_doctor_device_authorizations and
+                                # trx_doctor_device_webauthn_credentials, and a
+                                # named test asserts row counts across all of
+                                # them are unchanged by two consecutive builds.
 
 frontend_change: false          # no JS, no CSS, no Vite entry, no Blade view.
-                                # These scanners register no route at all.
+                                # The command registers no route.
 
-security_impact: true           # the gates that verify doctor browser/device
-                                # enforcement changed shape. The enforcement
-                                # itself did not: global_permitted is still a
-                                # source-controlled false, the cohort is still
-                                # [9,15,18], and doctor.single_active_session is
-                                # still off. Pinned by a 23-case phase matrix
-                                # asserting that phase_4a behaviour is unchanged
-                                # and that a skipped check never reads as PASS.
+security_impact: true           # the estate gate feeding a Phase-5 prerequisite
+                                # is new. The enforcement itself is untouched:
+                                # global_permitted is still a source-controlled
+                                # false, the cohort is still [9,15,18],
+                                # doctor.single_active_session is still off, and
+                                # the report carries authorizes_activation as a
+                                # literal false pinned by test.
 
-branch_isolation_impact: false  # no branch scope is read, written or widened.
-                                # The branch-lock runbook is corrected; the
-                                # resolver is not touched.
+branch_isolation_impact: false  # per-branch device counts are OPERATIONAL
+                                # RESILIENCE and explicitly not an access
+                                # boundary. No branch scope is read for
+                                # authorization, written or widened; a named test
+                                # asserts a doctor is not required to be
+                                # authorized on hardware at their own branch.
 
 ledger_impact: false            # no inventory ledger, billing, payment, invoice
                                 # or receivable path is reachable from here.
 
-deploy_required: true           # the scanners only report the new semantics on
-                                # the deployment that carries them, and the
-                                # post-deploy assertion this sprint owes is that
-                                # production STILL reports the pre-activation
-                                # posture after the change lands.
+deploy_required: true           # the command only exists on the deployment that
+                                # carries it, and the measured estate this sprint
+                                # reports must be re-derived on production from
+                                # the deployed engine rather than from a local
+                                # transcription.
 
 browser_required: false         # the operator surface is
-                                # `php artisan android:phase4a-pilot-readiness`
-                                # and `android:release-readiness` on the VPS.
+                                # `php artisan doctor:estate-resilience` on the
+                                # VPS.
 
-go_tag: doctor-access-global-activation-blocker-closure-1-go
+# NOT CREATED BY THIS SPRINT. Named so a future reader knows which tag would
+# carry this work; the measured verdict is FAIL, the hard GO gate
+# SPARE_DEVICE_AVAILABLE_PER_BRANCH=PASS is unmet, and GO_TAGGED=NO. Closing it
+# needs four more eligible tablets against the one-to-two the owner has in hand.
+go_tag: doctor-access-trusted-device-estate-resilience-1-go
+go_tag_created: false
 
 test_profiles:
   - focused
@@ -71,39 +78,18 @@ test_profiles:
   - full_required
 
 # What this sprint stands on and does not move. The parent programme remains
-# DEFERRED behind the owner's PROVISION_ESTATE_SPARE_CAPACITY_FIRST decision;
-# closing B1-B6 authorises no activation and creates none.
+# DEFERRED behind the owner's PROVISION_ESTATE_SPARE_CAPACITY_FIRST decision,
+# and this sprint measures that decision's prerequisite rather than satisfying
+# it. Measuring a gate authorises no activation.
 inherits_parent_readiness: DOCTOR-ACCESS-FLEET-ROLLOUT-READINESS-1
 inherits_parent_programme: DOCTOR-ACCESS-GLOBAL-ACTIVATION-1
-inherits_parent_go: doctor-access-fleet-rollout-readiness-1-go
+inherits_parent_go: doctor-access-global-activation-blocker-closure-1-go
 inherits_pilot_go: doctor-pwa-multi-doctor-pilot-1-go
-defers_to: DOCTOR-ACCESS-TRUSTED-DEVICE-ESTATE-RESILIENCE-1
 
-# Restored after CI caught its absence. LegacyRmeProgramClosureContractTest
-# asserts every post-closure sprint names the closure it inherits, precisely
-# because that is the fact a later sprint is most likely to drop quietly while
-# rewriting this rolling file — which is exactly what happened here. The fix is
-# to state the inheritance, never to relax the expectation.
+# Restored deliberately, not copied. LegacyRmeProgramClosureContractTest asserts
+# every post-closure sprint names the closure it inherits, precisely because that
+# is the fact a later sprint is most likely to drop quietly while rewriting this
+# rolling file — which has already happened once. State the inheritance, never
+# relax the expectation.
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
 inherits_hold: FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1/FIX-02
-
-# DECLARED SCOPE DEVIATION, owner-approved 2026-09-15.
-#
-# This sprint also carries a one-step CI-infrastructure fix that is NOT part of
-# B1-B6: `.github/workflows/foundation-evidence-gates.yml` pins the Android SDK
-# setup to `packages: platform-tools`, because the action's default includes the
-# legacy `tools` package that Google has withdrawn. sdkmanager exited 1 during
-# SETUP, before gradle ran and before any repository code compiled.
-#
-# It is recorded rather than folded in silently. The evidence that it is not
-# this sprint's doing: the last green run of that job and the first red one
-# share a byte-identical workflow file and a byte-identical `android/` tree
-# object, so nothing in the repository changed between them. The owner chose to
-# fix it here because a gate red for an external reason blocks every PR in the
-# repository, not only the one that noticed.
-#
-# No app code, no gate weakened, no toolchain version decided here.
-scope_deviation: ci_android_sdk_setup_fix
-scope_deviation_approved_by: owner
-scope_deviation_files:
-  - .github/workflows/foundation-evidence-gates.yml
