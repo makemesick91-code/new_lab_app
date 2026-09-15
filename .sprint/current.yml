@@ -86,3 +86,24 @@ defers_to: DOCTOR-ACCESS-TRUSTED-DEVICE-ESTATE-RESILIENCE-1
 # to state the inheritance, never to relax the expectation.
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
 inherits_hold: FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1/FIX-02
+
+# DECLARED SCOPE DEVIATION, owner-approved 2026-09-15.
+#
+# This sprint also carries a one-step CI-infrastructure fix that is NOT part of
+# B1-B6: `.github/workflows/foundation-evidence-gates.yml` pins the Android SDK
+# setup to `packages: platform-tools`, because the action's default includes the
+# legacy `tools` package that Google has withdrawn. sdkmanager exited 1 during
+# SETUP, before gradle ran and before any repository code compiled.
+#
+# It is recorded rather than folded in silently. The evidence that it is not
+# this sprint's doing: the last green run of that job and the first red one
+# share a byte-identical workflow file and a byte-identical `android/` tree
+# object, so nothing in the repository changed between them. The owner chose to
+# fix it here because a gate red for an external reason blocks every PR in the
+# repository, not only the one that noticed.
+#
+# No app code, no gate weakened, no toolchain version decided here.
+scope_deviation: ci_android_sdk_setup_fix
+scope_deviation_approved_by: owner
+scope_deviation_files:
+  - .github/workflows/foundation-evidence-gates.yml

@@ -194,3 +194,33 @@ versa. Merging them into one boolean would erase the distinction an activation d
 
 An environment edit **alone** rolls nothing back: production runs cached configuration, and
 Laravel skips the environment file entirely when it is cached.
+
+---
+
+## Declared scope deviation — the Android SDK gate
+
+Owner-approved 2026-09-15, and recorded rather than folded in quietly.
+
+`Phase 3 Android Clinic App Gate` began failing in its **Set up Android SDK** step —
+`Failed to find package 'tools'`, `sdkmanager` exit 1 — before gradle ran and before any
+repository code was compiled. The action's default `packages` is `tools platform-tools`,
+and the legacy `tools` package has been withdrawn from the Android SDK repository.
+
+**It was not caused by this sprint, and that is provable rather than argued:**
+
+| | last green run | first red run |
+|---|---|---|
+| when | 2026-09-14T13:12Z | 2026-09-14T23:38Z |
+| workflow file SHA256 | `e822337f…` | `e822337f…` |
+| `android/` tree object | `e3dea1fb…` | `e3dea1fb…` |
+
+Same workflow, same action, same Android source. The only variable is wall-clock time.
+
+The fix is one input — `packages: platform-tools`, the half of the default that still
+exists — so no toolchain version is decided here and no gate is weakened; build-tools and
+platforms continue to be resolved by the Android Gradle Plugin from the pinned versions in
+`android/daengtisia-clinic`.
+
+It is carried in this PR because a gate that is red for an external reason blocks **every**
+PR in the repository, not only the one that happened to notice. The alternative considered
+was a separate CI sprint; the owner chose to unblock the repository now.
