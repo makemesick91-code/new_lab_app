@@ -554,8 +554,32 @@ it('cannot be shown a duplicate active pair, because the schema refuses one', fu
      * will not store. A sibling service's comment once claimed no such index
      * existed; it does.
      */
-    expect(fn () => dbaAuthorization($doctor, $device))
+    /*
+     * WRAPPED IN A NESTED TRANSACTION, WHICH IS A SAVEPOINT.
+     *
+     * PostgreSQL aborts the ENTIRE transaction the moment any statement raises,
+     * and every later statement returns 25P02 until a rollback. RefreshDatabase
+     * wraps each test in one transaction, so a bare deliberate violation is
+     * green on SQLite and poisons the connection on PG — which is exactly what
+     * happened here: this test passed locally and failed CI with
+     * `1 failed, 4013 passed`. A test that PROVES a constraint exists has to
+     * violate it, so every such test needs this wrapper.
+     */
+    expect(fn () => DB::transaction(fn () => dbaAuthorization($doctor, $device)))
         ->toThrow(UniqueConstraintViolationException::class);
+
+    /*
+     * Assertions that mean something after the savepoint: the ORIGINAL grant
+     * must still be there, still ACTIVE, and still the only one. A filler count
+     * here is the tell that nobody thought about what survives the violation.
+     */
+    $rows = DoctorDeviceAuthorization::query()
+        ->where('doctor_id', $doctor->id)
+        ->where('doctor_device_id', $device->id)
+        ->get();
+
+    expect($rows)->toHaveCount(1)
+        ->and($rows->first()->status)->toBe(DoctorDeviceAuthorization::STATUS_ACTIVE);
 
     $gate = esrGate(esrReport(), 'authorization_coverage');
 
