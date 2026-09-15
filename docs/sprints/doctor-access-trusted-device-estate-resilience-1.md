@@ -204,8 +204,9 @@ human act with a human's name on it — the owner's choice, recorded.
 ## 6b. What an adversarial review found, and what it changed
 
 Two reviewers were asked to refute this sprint's claims rather than approve
-them. They returned **seven** defects that survived scrutiny, six of them in
-code this sprint wrote. All are fixed and pinned by named tests.
+them. They returned **eight** defects that survived scrutiny — the seven below,
+all in code this sprint wrote, plus one in its documentation. All are fixed and
+pinned by named tests.
 
 | Finding | Fix |
 |---|---|
@@ -217,7 +218,7 @@ code this sprint wrote. All are fixed and pinned by named tests.
 | **Two discarded signals** — a branch whose code will not resolve (so its station count can never be declared, that map being keyed by code) and doctors with no home lock at all | both reported as findings |
 | **A misleading field.** `device_bound_credential_count` read like "this tablet can be logged into" but omits the `user_verified` and `backup_eligible` halves of admissibility | renamed `unrevoked_credentials_reporting_device_bound` |
 
-The seventh was in the documentation rather than the code, and is recorded in
+The eighth was in the documentation rather than the code, and is recorded in
 §1: the claim that no database table could supply the station count.
 
 **A third round then reviewed the FIXES, and found five more.** The most
@@ -232,7 +233,7 @@ sitting one gate away from the one that was fixed:
 | **The monotonicity guard test was vacuous** — it asserted the gate, and the branch it added is excluded from that gate's population, so it would have stayed green if the row itself flipped PASS→FAIL | the test now asserts the row too, and a second test pins the honest scope: the monotonicity is about the SPARE requirement, and an eligible tablet nobody can log into still reddens its row and the credential gate |
 | **An orphan-lock finding could name a branch id appearing nowhere else** in the report | the detail says so |
 
-Three rounds, twelve defects, eleven of them in code written here. Every fix is
+Three rounds, thirteen defects, twelve of them in code written here. Every fix is
 pinned by a named test; the suite is **36 tests / 117 assertions**.
 
 ## 7. Why this sprint is NO-GO
