@@ -35,26 +35,61 @@ requires that one to be armed first — see step 1.
    ```
    The four are `view_doctor_branch_locks`, `manage_doctor_branch_locks`,
    `approve_doctor_branch_locks`, `release_doctor_session_leases`.
-3. Confirm that **every doctor is still UNSET**, which is the state this ships in. If any
-   doctor already holds a lock row, somebody assigned one — find out who before arming.
+3. **Record the current split, and check its provenance.** `php artisan doctor:fleet-readiness`
+   prints `LOCKED_DOCTORS` and `UNSET_DOCTORS`.
+
+   Neither number is a precondition. This step originally read "confirm every doctor is
+   still UNSET, which is the state this ships in" — true when it was written and
+   unexecutable now: DOCTOR-ACCESS-FLEET-ROLLOUT-READINESS-1 provisioned the whole fleet,
+   production stands at 15 locked and 0 unset, and there is deliberately no path back to
+   UNSET.
+
+   What IS a precondition is that every lock row got there through the approval workflow:
+   each row's `established_via` is `initial_assignment` or `transfer`,
+   `established_by_user_id` names a real approver, and each has a matching
+   `DOCTOR_BRANCH_LOCK_APPROVED` row in `sys_audit_logs`. **A lock row with no matching
+   audit row was written by hand — find out who before arming.** That is the question the
+   original step was really asking, in a form that survives a provisioned fleet.
 
 ---
 
 ## 2. Arming the flag
 
-**Nothing happens to a doctor who has no lock row.** That is the entire safety property of
-this capability: arming it while the fleet is UNSET is inert, and arming it is therefore
-NOT the risky step. The risky step is the first approval.
+**Arming is not free, and this section used to say it was.**
 
-1. Set the override in the deployed environment file and clear the config cache.
-2. Confirm the capability is live rather than inert, using a doctor who is still UNSET:
+The original text read: "arming it while the fleet is UNSET is inert, and arming it is
+therefore NOT the risky step." Both halves have since stopped being true.
+
+- **`doctor.branch_lock` is inert only while a doctor has no lock row.** The fleet is now
+  provisioned — 15 locked, 0 unset — so arming narrows **every locked doctor** on their
+  next request. The property that made arming safe was the UNSET fleet, and that fleet is
+  gone.
+- **`doctor.single_active_session` was never lock-scoped at all.**
+  `DoctorSessionLeaseService::subjectTo()` is role-scoped (`hasRole('Doctor')` minus
+  exempt), and `DoctorEffectiveBranchResolver::enabled()` requires it, so arming the lease
+  flag is live for every Doctor account at once. There is no cohort mechanism for this
+  half and none is planned.
+
+So arm inside a **supervised window**, on real hardware, with somebody holding
+`release_doctor_session_leases` reachable. Never in a deploy.
+
+1. Set the override in the deployed environment file and **rebuild the config cache** —
+   production runs cached configuration, and Laravel skips the environment file entirely
+   when it is cached, so an edit alone changes nothing.
+2. Verify against a **locked** doctor — there is no UNSET doctor left to use, and the old
+   observables were the INERT signature anyway:
    - the approver queue renders and lists no degraded locks;
-   - the doctor's branch selector still offers **every** RME branch they practise at;
-   - a visit written by that doctor at any of those branches still succeeds.
+   - that doctor's branch selector offers **only their home branch**, plus any branch an
+     approved, currently-active cover names;
+   - starting an online context at a branch outside that set is **refused server-side**.
 
-   All three are the pre-sprint behaviour, and seeing them is how you know arming did not
-   quietly narrow somebody.
-3. If any doctor's list narrowed, **disarm first and diagnose afterwards.**
+   Prefer the refused context start over writing a visit: it proves the same boundary and
+   leaves nothing behind. A refused visit write records a
+   `DOCTOR_EFFECTIVE_BRANCH_WRITE_REFUSED` audit row.
+3. If a doctor's list did **not** narrow, the capability is inert — check
+   `doctor.single_active_session`, which `branch_lock` depends on, and the session driver,
+   which must be `database`.
+4. If anything else surprises you, **disarm first and diagnose afterwards.**
 
 ### Rollback
 

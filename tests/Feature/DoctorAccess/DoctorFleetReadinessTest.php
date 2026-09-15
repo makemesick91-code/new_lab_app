@@ -369,6 +369,13 @@ it('never counts an attempt or a refusal as a successful login', function (strin
     'DOCTOR_APP_LOGIN_AUTHORIZATION_REJECTED',
     'DOCTOR_DEVICE_WEBAUTHN_LOGIN_REJECTED',
     'DOCTOR_DEVICE_PROOF_VERIFIED',
+
+    // Added by DOCTOR-ACCESS-GLOBAL-ACTIVATION-BLOCKER-CLOSURE-1 (B5). It
+    // exists in production — seven rows, every one with performed_by NULL —
+    // and was the only real refusal action this dataset did not name. It was
+    // already excluded by the whitelist mechanism; now it is pinned as
+    // excluded, so a future widening of PROOF_ACTIONS has to argue with a test.
+    'DOCTOR_APP_LOGIN_DEVICE_PROOF_REJECTED',
 ]);
 
 it('never credits one doctor\'s login to another sharing the same tablet', function () {
@@ -654,4 +661,88 @@ it('never marks a doctor ready on an estate holding no eligible tablet', functio
     expect($row['blockers'])->toContain(DoctorFleetReadinessVerdict::BLOCKER_AUTHORIZATION_GAP);
     expect($row['state'])->toBe(DoctorFleetReadinessVerdict::STATE_NOT_READY);
     expect($report['fleet_ready_doctor_user_ids'])->toBe([]);
+});
+
+// ---------------------------------------------------------------------------
+// DOCTOR-ACCESS-GLOBAL-ACTIVATION-BLOCKER-CLOSURE-1 (B5)
+//
+// B5 was raised as "readiness cannot see a WebAuthn login". It could: this
+// engine reads the audit trail over both success actions, and the production
+// figures reconcile exactly against it (user 9: 1 Android + 3 WebAuthn = 4;
+// user 15: 1 + 2 = 3; user 18: 13 + 10 = 23). The diagnosis came from reading
+// a docblock that REJECTS `last_authorized_login_at` as if it endorsed it.
+//
+// So there is no runtime defect to fix, and building an observability layer
+// here would be work against a defect that does not exist. What was genuinely
+// missing is the pinning: the correct behaviour was load-bearing and unguarded.
+// These tests make it unguardable-without-failing.
+// ---------------------------------------------------------------------------
+
+it('whitelists exactly the two success actions and nothing else', function () {
+    // A third member added here would silently widen what counts as a proven
+    // login for the entire fleet. It has to argue with this test first.
+    expect(DoctorFleetReadinessRepositoryInterface::PROOF_ACTIONS)->toBe([
+        'DOCTOR_APP_LOGIN_AUTHORIZATION_SUCCESS',
+        'DOCTOR_DEVICE_WEBAUTHN_LOGIN_SUCCESS',
+    ]);
+});
+
+it('proves a doctor who has only ever logged in through the browser', function () {
+    // The state production does not contain, so only a test can hold it: no
+    // Android redemption at all. If readiness were keyed on the Android-only
+    // column this doctor would read unproven forever.
+    [$user, $doctor] = fleetDoctor('drg WebAuthnOnly');
+    $device = fleetDevice();
+    fleetAuthorize($doctor, $device);
+    fleetLock($doctor, fleetBranch('SPN4'));
+    fleetProof($user, $device, $doctor, 'DOCTOR_DEVICE_WEBAUTHN_LOGIN_SUCCESS');
+
+    $row = fleetRowFor(fleetReadiness(), $user);
+
+    expect($row['real_device_login_proven'])->toBeTrue();
+    expect($row['real_device_login_paths'])->toBe(['DOCTOR_DEVICE_WEBAUTHN_LOGIN_SUCCESS']);
+    expect($row['state'])->toBe(DoctorFleetReadinessVerdict::STATE_READY);
+});
+
+it('keeps the two login paths distinguishable rather than collapsing them to a boolean', function () {
+    [$user, $doctor] = fleetDoctor('drg BothPaths');
+    $device = fleetDevice();
+    fleetAuthorize($doctor, $device);
+    fleetLock($doctor, fleetBranch('SPN4'));
+    fleetProof($user, $device, $doctor, 'DOCTOR_APP_LOGIN_AUTHORIZATION_SUCCESS');
+    fleetProof($user, $device, $doctor, 'DOCTOR_DEVICE_WEBAUTHN_LOGIN_SUCCESS');
+
+    $row = fleetRowFor(fleetReadiness(), $user);
+
+    // Which hardware path a doctor actually exercised is an operational fact —
+    // an Android proof is not evidence the browser path works for them, and
+    // vice versa. Merging them into one flag would erase that.
+    expect($row['real_device_login_count'])->toBe(2);
+    expect($row['real_device_login_paths'])->toBe([
+        'DOCTOR_APP_LOGIN_AUTHORIZATION_SUCCESS',
+        'DOCTOR_DEVICE_WEBAUTHN_LOGIN_SUCCESS',
+    ]);
+});
+
+it('does not read last_authorized_login_at, in either direction', function () {
+    // The column has exactly one writer (the Android ticket path) and zero
+    // readers. Both halves are pinned here: stamping it cannot manufacture a
+    // proof, and clearing it cannot destroy one.
+    $home = fleetBranch('SPN4');
+
+    [$unproven, $unprovenDoctor] = fleetDoctor('drg StampedButUnproven');
+    $device = fleetDevice();
+    $authorization = fleetAuthorize($unprovenDoctor, $device);
+    fleetLock($unprovenDoctor, $home);
+    $authorization->forceFill(['last_authorized_login_at' => now()])->save();
+
+    expect(fleetRowFor(fleetReadiness(), $unproven)['real_device_login_proven'])->toBeFalse();
+
+    [$proven, $provenDoctor] = fleetDoctor('drg NullButProven');
+    $provenAuthorization = fleetAuthorize($provenDoctor, $device);
+    fleetLock($provenDoctor, $home);
+    fleetProof($proven, $device, $provenDoctor, 'DOCTOR_DEVICE_WEBAUTHN_LOGIN_SUCCESS');
+    $provenAuthorization->forceFill(['last_authorized_login_at' => null])->save();
+
+    expect(fleetRowFor(fleetReadiness(), $proven)['real_device_login_proven'])->toBeTrue();
 });

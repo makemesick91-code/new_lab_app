@@ -60,7 +60,17 @@ workstation does **not** hold the signing key.
 - [ ] **A4.** Confirm the tablet has **not** been factory reset for this pilot.
 - [ ] **A5.** Confirm no global doctor enforcement is active on production:
       `php artisan android:phase4a-pilot-readiness` must print
-      `GLOBAL_ENFORCEMENT_ACTIVE=false`.
+      `GLOBAL_ENFORCEMENT_ACTIVE_LIVE=false`, with the `global_enforcement_not_active`
+      check PASS and `Decision:` not FAIL (the command exits non-zero on FAIL).
+
+      Read the **LIVE** line, not `GLOBAL_ENFORCEMENT_ACTIVE` in the "Activation
+      boundary" block below it. That line — like `DEVICE_ENROLLED` and
+      `PILOT_ACTIVATED` beside it, both of which are now factually wrong on
+      production — is a hardcoded record of what one past preparation sprint did
+      not do (`config/android_release.php`, `phase_4a.activation_boundary`). It
+      cannot report live state, and a safety assertion that is true because
+      somebody typed `false` is not an assertion. The LIVE line is measured from
+      the resolved scope.
 - [ ] **A6.** Confirm filename: `DaengtisiaMS-Clinic-v0.3.0-phase3-production.apk`.
 - [ ] **A7.** Verify the artifact digest. It must equal, in full:
       `ab3e30df111ca3cfb6aa5efeb37dde1b3624e822c88134065c2c314a2fd10a03`
