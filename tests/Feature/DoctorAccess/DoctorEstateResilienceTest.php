@@ -228,7 +228,7 @@ it('fails a branch holding exactly one eligible device under every station count
     $report = esrReport();
 
     expect(esrBranchRow($report, 'ONE1')['verdict'])->toBe(DoctorEstateResilienceVerdict::FAIL)
-        ->and(esrGate($report, 'spare_device_available_per_branch')['verdict'])
+        ->and(esrGate($report, DoctorEstateResilienceVerdict::GATE_SPARE_DEVICE)['verdict'])
         ->toBe(DoctorEstateResilienceVerdict::FAIL)
         ->and($report['verdict'])->toBe(DoctorEstateResilienceVerdict::FAIL);
 });
@@ -266,7 +266,7 @@ it('passes only once the station count is recorded and the estate clears it', fu
     $report = esrReport();
 
     expect(esrBranchRow($report, 'DEC1')['verdict'])->toBe(DoctorEstateResilienceVerdict::PASS)
-        ->and(esrGate($report, 'spare_device_available_per_branch')['verdict'])
+        ->and(esrGate($report, DoctorEstateResilienceVerdict::GATE_SPARE_DEVICE)['verdict'])
         ->toBe(DoctorEstateResilienceVerdict::PASS)
         ->and($report['required_capacity']['missing_input_state'])->toBe('DECLARED');
 });
@@ -370,14 +370,48 @@ it('does not make an unstaffed branch worse by standing a tablet in it', functio
         'identity_state' => DoctorDevice::IDENTITY_CRYPTOGRAPHICALLY_VERIFIED,
     ]);
 
-    $before = esrGate(esrReport(), 'spare_device_available_per_branch')['verdict'];
+    $before = esrReport();
 
     // Now stand a working tablet in the unstaffed branch.
     esrDevice($empty);
 
-    expect($before)->toBe(DoctorEstateResilienceVerdict::PASS)
-        ->and(esrGate(esrReport(), 'spare_device_available_per_branch')['verdict'])
-        ->toBe(DoctorEstateResilienceVerdict::PASS);
+    $after = esrReport();
+
+    // The row itself must not degrade either — the earlier guard asserted only
+    // the GATE, and EMP1 is excluded from that gate's population under both
+    // readings, so it would have stayed green if the row flipped PASS -> FAIL.
+    expect(esrGate($before, DoctorEstateResilienceVerdict::GATE_SPARE_DEVICE)['verdict'])
+        ->toBe(DoctorEstateResilienceVerdict::PASS)
+        ->and(esrGate($after, DoctorEstateResilienceVerdict::GATE_SPARE_DEVICE)['verdict'])
+        ->toBe(DoctorEstateResilienceVerdict::PASS)
+        ->and(esrBranchRow($after, 'EMP1')['verdict'])->toBe(DoctorEstateResilienceVerdict::PASS);
+});
+
+it('reddens an unstaffed branch whose tablet carries no credential, without touching the spare gate', function (): void {
+    /*
+     * The monotonicity above is scoped to the SPARE requirement, not to the row.
+     * An eligible device nobody can log into is a defect wherever it sits, so
+     * the row and device_credential_coverage both go red — and the spare gate,
+     * whose population excludes unstaffed branches, does not.
+     */
+    $staffed = esrBranch('STF2');
+    [, $doctor] = esrDoctor($staffed);
+    dbaAuthorization($doctor, esrDevice($staffed));
+    dbaAuthorization($doctor, esrDevice($staffed));
+    config()->set('android_release.enforcement.concurrent_doctor_stations_per_branch', ['STF2' => 1]);
+
+    $idle = esrBranch('IDL2');
+    esrDevice($idle, [], withCredential: false);
+
+    $report = esrReport();
+
+    expect(esrBranchRow($report, 'IDL2')['verdict'])->toBe(DoctorEstateResilienceVerdict::FAIL)
+        ->and(esrBranchRow($report, 'IDL2')['gaps'])
+        ->toContain(DoctorEstateResilienceVerdict::GAP_DEVICE_WITHOUT_CREDENTIAL)
+        ->and(esrGate($report, DoctorEstateResilienceVerdict::GATE_SPARE_DEVICE)['verdict'])
+        ->toBe(DoctorEstateResilienceVerdict::PASS)
+        ->and(esrGate($report, 'device_credential_coverage')['verdict'])
+        ->toBe(DoctorEstateResilienceVerdict::FAIL);
 });
 
 /*
@@ -398,6 +432,71 @@ it('fails an eligible device carrying no unrevoked credential', function (): voi
 
     expect($gate['verdict'])->toBe(DoctorEstateResilienceVerdict::FAIL)
         ->and($gate['eligible_devices_without_credential'])->toBe([(int) $bare->id]);
+});
+
+it('never prints a gate detail that contradicts its own verdict', function (): void {
+    /*
+     * device_credential_coverage printed "Every eligible device carries at least
+     * one UNREVOKED credential" on a FAIL, contradicted by the device list
+     * beside it. That is the same defect that forced a sibling gate's rename
+     * one round earlier, surviving in an untouched gate because only the
+     * sibling was being looked at. Asserted across EVERY gate, so the next one
+     * cannot repeat it.
+     */
+    $branch = esrBranch('DTL1');
+    esrDoctor($branch);
+    $bare = esrDevice($branch, [], withCredential: false);
+
+    foreach (esrReport()['gates'] as $gate) {
+        if ($gate['verdict'] === DoctorEstateResilienceVerdict::PASS) {
+            continue;
+        }
+
+        expect($gate['detail'])
+            ->not->toContain('Every eligible device carries')
+            ->not->toContain('Every branch that homes a doctor holds')
+            ->not->toContain('resolved an identical');
+    }
+
+    expect(esrGate(esrReport(), 'device_credential_coverage')['detail'])
+        ->toContain('cannot be logged into')
+        ->and($bare->id)->toBeGreaterThan(0);
+});
+
+it('names the branches behind an UNVERIFIED spare gate, not only the failing ones', function (): void {
+    $branch = esrBranch('UNV1');
+    [, $doctor] = esrDoctor($branch);
+    dbaAuthorization($doctor, esrDevice($branch));
+    dbaAuthorization($doctor, esrDevice($branch));
+
+    $gate = esrGate(esrReport(), DoctorEstateResilienceVerdict::GATE_SPARE_DEVICE);
+
+    // An UNVERIFIED verdict used to name no branch at all: branches_failing
+    // matches FAIL only, so the reader got a verdict they could not act on.
+    expect($gate['verdict'])->toBe(DoctorEstateResilienceVerdict::UNVERIFIED)
+        ->and($gate['branches_failing'])->toBe([])
+        ->and($gate['branches_unverified'])->toBe(['UNV1'])
+        ->and($gate['detail'])->toContain('undecidable');
+});
+
+it('reads the attestation from the same gate key the gate publishes', function (): void {
+    $branch = esrBranch('KEY1');
+    esrDoctor($branch);
+    esrDevice($branch);
+
+    $report = esrReport();
+
+    /*
+     * Producer and consumer were two copies of one string literal, and this
+     * sprint had already renamed a sibling gate. A rename would have dropped
+     * attestation() to its UNVERIFIED default in silence, and the contradiction
+     * test would have stayed green because UNVERIFIED is also !== PASS. Pinned
+     * as an equality against the live gate rather than against a literal.
+     */
+    expect($report['attestation']['prerequisite'])
+        ->toBe(DoctorEstateResilienceVerdict::GATE_SPARE_DEVICE)
+        ->and($report['attestation']['measured'])
+        ->toBe(esrGate($report, DoctorEstateResilienceVerdict::GATE_SPARE_DEVICE)['verdict']);
 });
 
 it('passes credential coverage when every eligible device carries one', function (): void {
@@ -678,7 +777,7 @@ it('fails the spare gate when no branch homes a doctor, rather than passing over
 
     $report = esrReport();
 
-    expect(esrGate($report, 'spare_device_available_per_branch')['verdict'])
+    expect(esrGate($report, DoctorEstateResilienceVerdict::GATE_SPARE_DEVICE)['verdict'])
         ->toBe(DoctorEstateResilienceVerdict::FAIL)
         ->and($report['attestation']['measured'])->toBe(DoctorEstateResilienceVerdict::FAIL)
         ->and($report['attestation']['contradiction'])->toBeTrue()

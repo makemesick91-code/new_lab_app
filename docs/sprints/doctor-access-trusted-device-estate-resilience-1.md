@@ -220,6 +220,21 @@ code this sprint wrote. All are fixed and pinned by named tests.
 The seventh was in the documentation rather than the code, and is recorded in
 §1: the claim that no database table could supply the station count.
 
+**A third round then reviewed the FIXES, and found five more.** The most
+valuable is the same defect class the second round was convened to eliminate,
+sitting one gate away from the one that was fixed:
+
+| Finding | Fix |
+|---|---|
+| **`device_credential_coverage` printed its PASS text on a FAIL** — "Every eligible device carries at least one UNREVOKED credential", directly contradicted by the list of credential-less devices beside it. Untouched sibling of the gate whose message had just been narrowed | the detail now follows the verdict, and a test asserts it across **every** gate so the next one cannot repeat it |
+| **The spare gate's detail named only one of its three FAIL causes** — a branch with four spares and one credential-less tablet was listed under a message about spares. An UNVERIFIED verdict also named **no branch at all**, because the list filtered on FAIL | `spareGateDetail()` names the causes actually found; `branches_unverified` added beside `branches_failing` |
+| **The attestation coupling was a duplicated string literal** with no test pinning it. Renaming the gate — exactly what the previous round did to a sibling — would have dropped `attestation()` to its UNVERIFIED default in silence, and the contradiction test would have stayed green because UNVERIFIED is also `!== PASS` | one `GATE_SPARE_DEVICE` constant; the test asserts equality against the **live gate**, not a literal |
+| **The monotonicity guard test was vacuous** — it asserted the gate, and the branch it added is excluded from that gate's population, so it would have stayed green if the row itself flipped PASS→FAIL | the test now asserts the row too, and a second test pins the honest scope: the monotonicity is about the SPARE requirement, and an eligible tablet nobody can log into still reddens its row and the credential gate |
+| **An orphan-lock finding could name a branch id appearing nowhere else** in the report | the detail says so |
+
+Three rounds, twelve defects, eleven of them in code written here. Every fix is
+pinned by a named test; the suite is **36 tests / 117 assertions**.
+
 ## 7. Why this sprint is NO-GO
 
 The owner reported **1–2 tablets in hand**. Closing

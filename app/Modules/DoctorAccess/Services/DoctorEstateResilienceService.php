@@ -96,19 +96,19 @@ class DoctorEstateResilienceService
 
         return [
             'verdict' => DoctorEstateResilienceVerdict::worst(
-                array_map(static fn (array $gate): string => $gate['verdict'], $gates),
+                array_map(static fn (array $gate): string => (string) $gate['verdict'], $gates),
             ),
             'branch_scope' => DoctorEstateResilienceVerdict::BRANCH_SCOPE,
             'gates' => $gates,
             'branches' => $branches,
             'devices' => $this->deviceDetail($estate),
             'estate_totals' => $this->estateTotals($estate, $eligibleIds),
-            'authorization_matrix' => $fleetReport['authorization_matrix'],
+            'authorization_matrix' => $fleetReport['authorization_matrix'] ?? [],
             'failure_domain' => $this->failureDomain($branches),
             'required_capacity' => $this->requiredCapacity($branches),
             'attestation' => $this->attestation($gates),
             'findings' => $this->findings($branches, $estate, $snapshot, $fleetReport),
-            'runtime' => $fleetReport['runtime'],
+            'runtime' => $fleetReport['runtime'] ?? [],
 
             /*
              * Printed with the verdict, never buried in --json. A PASS here
@@ -291,11 +291,18 @@ class DoctorEstateResilienceService
          * This clause is not tidiness. Without it the verdicts contradict
          * themselves: a branch with zero devices and zero home doctors PASSED
          * while a branch with ONE device and zero home doctors FAILED, so
-         * standing a tablet in an unstaffed room made the gate worse. Worse, it
-         * would have held `spare_device_available_per_branch` at FAIL forever —
-         * after every staffed branch was fully provisioned — over a branch that
-         * cannot strand anyone. Caught while charting the measured estate, where
-         * the two rows sat next to each other.
+         * standing a tablet in an unstaffed room made the SPARE verdict worse.
+         * Worse, it would have held `spare_device_available_per_branch` at FAIL
+         * forever — after every staffed branch was fully provisioned — over a
+         * branch that cannot strand anyone. Caught while charting the measured
+         * estate, where the two rows sat next to each other.
+         *
+         * THE MONOTONICITY IS SCOPED TO THE SPARE REQUIREMENT, not to the row.
+         * An unstaffed branch whose tablet carries no unrevoked credential still
+         * reports FAIL through the credential gap collected above, and should:
+         * an eligible device nobody can log into is a defect wherever it sits.
+         * That row is excluded from the spare gate's population, so it reddens
+         * the row and `device_credential_coverage` — never the spare gate.
          *
          * It also keeps the gate consistent with `requiredCapacity()`, which has
          * counted only branches homing doctors from the start.
@@ -411,7 +418,7 @@ class DoctorEstateResilienceService
             }
         }
 
-        $matrix = $fleetReport['authorization_matrix'];
+        $matrix = $fleetReport['authorization_matrix'] ?? [];
 
         $gates = [];
 
@@ -456,13 +463,15 @@ class DoctorEstateResilienceService
         );
 
         $gates[] = [
-            'gate' => 'spare_device_available_per_branch',
+            'gate' => DoctorEstateResilienceVerdict::GATE_SPARE_DEVICE,
             'verdict' => DoctorEstateResilienceVerdict::worst($staffedVerdicts),
-            'detail' => ($withHomeDoctors === []
-                ? 'No branch homes a doctor, so there is no clinic day to protect and nothing to measure. '
-                    .'An empty population is not a satisfied one. '
-                : 'Measured over branches that home doctors, against the lower bound (one concurrent station '
-                    .'needs two eligible devices). ')
+            /*
+             * Names the cause it actually found. The old text said "measured
+             * against the lower bound" whatever went wrong, so a branch with
+             * four spares and one credential-less tablet was listed under a
+             * message about spares.
+             */
+            'detail' => $this->spareGateDetail($withHomeDoctors)
                 .'This is the config prerequisite of the same name, which until this sprint had no '
                 .'implementation anywhere — only a declaration and a hand-signed boolean.',
             'branches_failing' => array_values(array_map(
@@ -470,6 +479,19 @@ class DoctorEstateResilienceService
                 array_filter(
                     $withHomeDoctors,
                     static fn (array $b): bool => $b['verdict'] === DoctorEstateResilienceVerdict::FAIL,
+                ),
+            )),
+
+            /*
+             * Listed separately because an UNVERIFIED gate used to name no
+             * branch at all — the filter above matches FAIL only, so the reader
+             * got a verdict they could not act on.
+             */
+            'branches_unverified' => array_values(array_map(
+                static fn (array $b): string => (string) ($b['branch_code'] ?? $b['branch_id']),
+                array_filter(
+                    $withHomeDoctors,
+                    static fn (array $b): bool => $b['verdict'] === DoctorEstateResilienceVerdict::UNVERIFIED,
                 ),
             )),
         ];
@@ -482,33 +504,48 @@ class DoctorEstateResilienceService
                     ? DoctorEstateResilienceVerdict::PASS
                     : DoctorEstateResilienceVerdict::FAIL),
             /*
-             * Says exactly what it asserts. UNREVOKED is the model's own
+             * THE DETAIL FOLLOWS THE VERDICT.
+             *
+             * This string was unconditional, so a FAILing gate printed "Every
+             * eligible device carries at least one UNREVOKED credential" —
+             * flatly contradicted by the list of devices printed beside it. It
+             * is the same defect this sprint renamed a sibling gate to fix, one
+             * gate away, and it survived that round because only the sibling
+             * was being looked at.
+             *
+             * Says exactly what it asserts, too. UNREVOKED is the model's own
              * `isUsable()`; whether a credential is ADMISSIBLE additionally
              * requires user verification and device binding, and that policy
              * belongs to the login gate and the provisioning engine. It is
              * deliberately not restated here — a second copy of a security
              * decision is a second thing that can drift.
              */
-            'detail' => 'Every eligible device carries at least one UNREVOKED credential. Admissibility '
-                .'(user-verified, device-bound) is the login gate\'s decision and is not re-implemented here; '
-                .'doctor:rollout-readiness reports it.',
+            'detail' => ($eligibleIds === []
+                ? 'No eligible device exists, so there is nothing to carry a credential. An empty population '
+                    .'is not a satisfied one. '
+                : ($withoutCredential === []
+                    ? 'Every eligible device carries at least one UNREVOKED credential. '
+                    : count($withoutCredential).' eligible device(s) carry NO unrevoked credential and cannot '
+                        .'be logged into. '))
+                .'Admissibility (user-verified, device-bound) is the login gate\'s decision and is not '
+                .'re-implemented here; doctor:rollout-readiness reports it.',
             'eligible_devices_without_credential' => $withoutCredential,
         ];
 
         $gates[] = [
             'gate' => 'authorization_coverage',
-            'verdict' => ((int) $matrix['target_pairs'] > 0
-                && (int) $matrix['missing_pairs'] === 0
-                && (int) $matrix['duplicate_active_pairs'] === 0)
+            'verdict' => ((int) ($matrix['target_pairs'] ?? 0) > 0
+                && (int) ($matrix['missing_pairs'] ?? 0) === 0
+                && (int) ($matrix['duplicate_active_pairs'] ?? 0) === 0)
                 ? DoctorEstateResilienceVerdict::PASS
                 : DoctorEstateResilienceVerdict::FAIL,
             'detail' => 'Recalculated by the fleet engine against the CURRENT eligible estate, not carried '
                 .'over. Growing the estate raises the target, so a new tablet makes this gate red until every '
                 .'doctor is authorized on it.',
-            'target_pairs' => (int) $matrix['target_pairs'],
-            'active_pairs' => (int) $matrix['active_pairs'],
-            'missing_pairs' => (int) $matrix['missing_pairs'],
-            'duplicate_active_pairs' => (int) $matrix['duplicate_active_pairs'],
+            'target_pairs' => (int) ($matrix['target_pairs'] ?? 0),
+            'active_pairs' => (int) ($matrix['active_pairs'] ?? 0),
+            'missing_pairs' => (int) ($matrix['missing_pairs'] ?? 0),
+            'duplicate_active_pairs' => (int) ($matrix['duplicate_active_pairs'] ?? 0),
         ];
 
         /*
@@ -539,6 +576,51 @@ class DoctorEstateResilienceService
         ];
 
         return $gates;
+    }
+
+    /**
+     * Names the cause the spare gate actually found, rather than restating the
+     * lower bound whatever went wrong.
+     *
+     * @param  list<array<string,mixed>>  $staffed
+     */
+    private function spareGateDetail(array $staffed): string
+    {
+        if ($staffed === []) {
+            return 'No branch homes a doctor, so there is no clinic day to protect and nothing to measure. '
+                .'An empty population is not a satisfied one. ';
+        }
+
+        $causes = [];
+
+        foreach ($staffed as $branch) {
+            foreach ($branch['gaps'] as $gap) {
+                $causes[(string) $gap] = true;
+            }
+        }
+
+        if ($causes === []) {
+            return 'Every branch that homes a doctor holds a spare against its recorded station count. ';
+        }
+
+        $named = [
+            DoctorEstateResilienceVerdict::GAP_NO_LOCAL_DEVICE => 'a staffed branch holds no eligible device',
+            DoctorEstateResilienceVerdict::GAP_NO_SPARE => 'a staffed branch holds no spare',
+            DoctorEstateResilienceVerdict::GAP_DEVICE_WITHOUT_CREDENTIAL => 'an eligible device carries no '
+                .'unrevoked credential',
+            DoctorEstateResilienceVerdict::GAP_STATION_COUNT_UNDECLARED => 'a branch holds two or more devices '
+                .'but its concurrent station count is unrecorded, so whether that is a spare is undecidable',
+        ];
+
+        $found = [];
+
+        foreach ($named as $gap => $text) {
+            if (isset($causes[$gap])) {
+                $found[] = $text;
+            }
+        }
+
+        return 'Measured over branches that home doctors: '.implode('; ', $found).'. ';
     }
 
     /**
@@ -673,7 +755,7 @@ class DoctorEstateResilienceService
         $measured = DoctorEstateResilienceVerdict::UNVERIFIED;
 
         foreach ($gates as $gate) {
-            if ($gate['gate'] === 'spare_device_available_per_branch') {
+            if ($gate['gate'] === DoctorEstateResilienceVerdict::GATE_SPARE_DEVICE) {
                 $measured = (string) $gate['verdict'];
             }
         }
@@ -681,7 +763,7 @@ class DoctorEstateResilienceService
         $attested = config('android_release.enforcement.global_prerequisites_attested.spare_device_available_per_branch');
 
         return [
-            'prerequisite' => 'spare_device_available_per_branch',
+            'prerequisite' => DoctorEstateResilienceVerdict::GATE_SPARE_DEVICE,
             'measured' => $measured,
             'attested' => $attested === true,
             'contradiction' => $attested === true && $measured !== DoctorEstateResilienceVerdict::PASS,
@@ -719,7 +801,9 @@ class DoctorEstateResilienceService
                 'finding' => 'home_lock_names_a_doctor_that_no_longer_exists',
                 'branch_ids' => $this->orphanHomeLockBranchIds,
                 'detail' => 'Soft-deleted doctors still hold home lock rows. They are NOT counted as home '
-                    .'doctors here, so they neither strand a branch nor inflate its requirement.',
+                    .'doctors here, so they neither strand a branch nor inflate its requirement. A branch '
+                    .'reachable ONLY through such locks holds no hardware and no live doctor, so it has no '
+                    .'row in the table above — the id here may be the only place it appears.',
             ];
         }
 

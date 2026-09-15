@@ -28,8 +28,12 @@ namespace App\Modules\DoctorAccess\Support;
  *
  *     devices per branch = concurrent Doctor stations + 1 spare
  *
- * `concurrent Doctor stations (peak, not average)` is an operational count that
- * exists in no table. An engine that silently assumed a number for it would be
+ * `concurrent Doctor stations (peak, not average)` is an operational count
+ * nobody has recorded. `mst_clinic_rooms` holds a branch-scoped treatment-room
+ * inventory and is the nearest candidate, but a room is not a staffed station in
+ * either direction — three rooms with one doctor on shift is one station, one
+ * room with two chairs is two — so it is REPORTED as advisory and decides
+ * nothing. An engine that silently assumed a number for this would be
  * manufacturing the input to its own gate. So when the station count decides
  * the answer, this engine says UNVERIFIED and names the missing input.
  *
@@ -76,6 +80,17 @@ final class DoctorEstateResilienceVerdict
      * station count >= 1: one to work on, one spare.
      */
     public const MINIMUM_DEVICES_FOR_ANY_SPARE = 2;
+
+    /**
+     * The gate key the attestation cross-check reads.
+     *
+     * A constant because the producer and the consumer used to be two copies of
+     * the same string literal, and this sprint had already renamed one sibling
+     * gate. A rename would have made `attestation()` fall through to its
+     * UNVERIFIED default in silence — and the contradiction test would have
+     * stayed green, because UNVERIFIED is also `!== PASS`.
+     */
+    public const GATE_SPARE_DEVICE = 'spare_device_available_per_branch';
 
     /** No eligible device at a branch that has home doctors. */
     public const GAP_NO_LOCAL_DEVICE = 'no_local_eligible_device';
