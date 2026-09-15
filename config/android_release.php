@@ -1366,6 +1366,36 @@ return [
         ],
 
         /*
+        | DOCTOR-ACCESS-TRUSTED-DEVICE-ESTATE-RESILIENCE-1 — the operational
+        | input that `spare_device_available_per_branch` has always needed and
+        | never had anywhere to live.
+        |
+        | The device-loss runbook sizes capacity as
+        |
+        |     devices per branch = concurrent Doctor stations + 1 spare
+        |
+        | and `concurrent Doctor stations (peak, not average)` is a fact about a
+        | room. No table holds it, no query can derive it, and until this sprint
+        | there was nowhere to record it either — so the prerequisite above was
+        | signable but never checkable.
+        |
+        | SHIPS EMPTY, and deliberately so. An undeclared branch is reported
+        | UNVERIFIED by `doctor:estate-resilience`, never PASS: the engine will
+        | not invent the number that decides its own gate. What it CAN decide
+        | without this map is the lower bound — any station count >= 1 needs at
+        | least two eligible devices — so a branch holding 0 or 1 still FAILS
+        | outright, and only a branch holding 2 or more waits on this entry.
+        |
+        | Keyed by branch CODE. Recording one costs a reviewed change, the same
+        | price as an attestation, because it is the same kind of claim: a
+        | statement about a room made by somebody who has stood in it.
+        |
+        | Example, once counted:  'TLK1' => 1,  'SPN4' => 2,
+        */
+        'concurrent_doctor_stations_per_branch' => [
+        ],
+
+        /*
         | WHO enforcement applies to.
         |
         | PHASE4A-DOCTOR-ANDROID-PILOT-PREPARATION-1. `stages` above has listed
