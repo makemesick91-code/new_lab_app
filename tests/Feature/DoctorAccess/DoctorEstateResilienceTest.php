@@ -40,6 +40,7 @@ use App\Modules\DoctorDevice\Models\DoctorDeviceAuthorization;
 use App\Modules\DoctorDevice\Models\DoctorDeviceWebAuthnCredential;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -773,4 +774,53 @@ it('reports null rather than zero for a branch with no configured rooms', functi
     // A branch nobody has configured rooms for and a branch measured as having
     // none are different facts, and the report must not flatten them.
     expect(esrBranchRow(esrReport(), 'NORM')['active_treatment_rooms'])->toBeNull();
+});
+
+/*
+|--------------------------------------------------------------------------
+| The command surface
+|--------------------------------------------------------------------------
+*/
+
+it('renders the human report and exits 0 on a measured FAIL', function (): void {
+    $branch = esrBranch('CMD1');
+    esrDoctor($branch);
+    esrDevice($branch);
+
+    /*
+     * A measured FAIL exits 0 without --strict on purpose. The estate is short
+     * of hardware today and will be until tablets are bought, and a gate that
+     * reddens a deploy chain for months gets deleted rather than fixed.
+     */
+    $this->artisan('doctor:estate-resilience')
+        ->assertExitCode(0)
+        ->expectsOutputToContain('ESTATE_RESILIENCE=FAIL');
+});
+
+it('exits non-zero under --strict while the estate is short', function (): void {
+    $branch = esrBranch('CMD2');
+    esrDoctor($branch);
+    esrDevice($branch);
+
+    $this->artisan('doctor:estate-resilience --strict')->assertExitCode(1);
+});
+
+it('exits non-zero with nothing to measure, with or without --strict', function (): void {
+    // A broken query must never read as a clean estate.
+    $this->artisan('doctor:estate-resilience')->assertExitCode(1);
+});
+
+it('emits parseable JSON carrying the verdict and the activation disclaimer', function (): void {
+    $branch = esrBranch('CMD3');
+    [, $doctor] = esrDoctor($branch);
+    dbaAuthorization($doctor, esrDevice($branch));
+
+    Artisan::call('doctor:estate-resilience', ['--json' => true]);
+    $payload = json_decode(Artisan::output(), true, 512, JSON_THROW_ON_ERROR);
+
+    expect($payload['verdict'])->toBe(DoctorEstateResilienceVerdict::FAIL)
+        ->and($payload['authorizes_activation'])->toBeFalse()
+        ->and($payload['branch_scope'])->toBe(DoctorEstateResilienceVerdict::BRANCH_SCOPE)
+        // The one line an operator reading only the tail must still see.
+        ->and($payload['resilience_semantics'])->toContain('not an access boundary');
 });
