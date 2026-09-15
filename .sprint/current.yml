@@ -78,3 +78,11 @@ inherits_parent_programme: DOCTOR-ACCESS-GLOBAL-ACTIVATION-1
 inherits_parent_go: doctor-access-fleet-rollout-readiness-1-go
 inherits_pilot_go: doctor-pwa-multi-doctor-pilot-1-go
 defers_to: DOCTOR-ACCESS-TRUSTED-DEVICE-ESTATE-RESILIENCE-1
+
+# Restored after CI caught its absence. LegacyRmeProgramClosureContractTest
+# asserts every post-closure sprint names the closure it inherits, precisely
+# because that is the fact a later sprint is most likely to drop quietly while
+# rewriting this rolling file — which is exactly what happened here. The fix is
+# to state the inheritance, never to relax the expectation.
+inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
+inherits_hold: FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1/FIX-02
