@@ -1026,3 +1026,104 @@ Lease, session, cover, presence and clinical-work inventories were read with bou
 read-only `SELECT`s against `asia_dental_lab_pilot` (PostgreSQL 16.15).
 
 **`php artisan tinker` was not used** — it pins the monitoring log to WATCH for 24 hours.
+
+---
+
+## 28. POST-GO — activation window OPENED and HELD (2026-09-17 WITA)
+
+**This section records events AFTER the Phase-0 GO tag.** The tag's claim of
+"zero mutations" is accurate for the recheck itself and up to the moment of
+tagging. It is **no longer true of production as of 07:44 WITA** — one audited
+mutation was made under explicit owner approval, recorded here.
+
+### 28.1 Owner decision
+
+```
+APPROVE_DOCTOR_GLOBAL_ACTIVATION_APPLY = YES     (2026-09-17, owner)
+```
+
+Scope of that approval: **Half A only.** Half B remained blocked throughout and
+was not touched — no attestation was signed, `global_permitted` was not changed,
+and the governance phase stayed `phase_4a`.
+
+### 28.2 Window opened — clinical hard gate measured GREEN at 07:34 WITA (Thu)
+
+| # | Condition | Measured |
+|---|---|---|
+| 1 | live doctor sessions (`last_activity` within `SESSION_LIFETIME`) | **0** |
+| 2 | doctors holding a `clinic_room_id` with `offline_at IS NULL` | **0** |
+| 3 | visits `in_progress` | **0** |
+| 4 | visits dated today (WITA) | **0** |
+| 5 | unreleased leases backed by a live session | **0** (lease 8 `live_now=0`) |
+| 6 | approved covers overlapping the window | **0** |
+
+### 28.3 Rollback baseline captured, then deliberately discarded
+
+`android:phase4a-pilot-scope`, `foundation:feature-flags`,
+`doctor:estate-resilience` and `doctor:fleet-readiness` were captured to JSON and
+sha256-hashed; log watermark `1407663` bytes; audit watermark id `882` / 860 rows.
+
+Pre-activation scope recorded as `pilot`, cohort `[9, 15, 18]`, branch `SPN4`,
+`declared_pilot_doctor_user_id = null` (expected — the cohort has more than one
+member). Flags: `single_active_session` false, `branch_lock` true,
+`trusted_device_enforcement` true, `pwa_webauthn_device_login` true.
+
+**That capture has since been deleted on purpose.** It predates the lease release
+in §28.4 and is therefore stale. A future window must capture its own baseline —
+restoring a remembered one is exactly what rule **AW-R10** forbids.
+
+### 28.4 THE ONE MUTATION — lease 8 released under audit
+
+```
+php artisan doctor:session-force-logout --doctor=21 --actor=1 \
+    --reason="Pelepasan lease usang sebelum cutover Half A: sesi user 18 sudah
+              tidak ada sejak 2026-09-12, lease 8 tidak pernah dilepas." --apply
+```
+
+Dry run inspected first: `doctor_online=no`, `holds_active_lease=yes`,
+`lease_id=8`, `claimed_at=2026-09-12 03:30:19`. Applied: `released=yes`.
+
+Re-checked afterwards by dry-running the same command: `holds_active_lease=no`,
+`lease_id=—`. **All 8 leases are now released; 0 blocking incumbents remain.**
+
+The command also freed drg Karmila's clinic room and marked her presence offline,
+which closed the second orphan (`trx_user_online_contexts` id 10). **No device, no
+authorization and no WebAuthn credential was touched.**
+
+### 28.5 Half A was NOT armed — the window was HELD
+
+Two blockers stopped the cutover, and the owner chose to hold rather than force
+either:
+
+1. **The perishable gate became unverifiable.** The read-only SQL path used to
+   measure the six conditions was withdrawn by the environment's permission
+   layer, and no artisan report covers conditions 1–4 or 6. Arming narrows every
+   doctor's branch **immediately**, so a stale gate reading is not an acceptable
+   basis for the flip (**AW-R9**).
+2. **No window was ever scheduled.** The approval settled *what*, not *when*. It
+   was 07:47 on a Thursday with clinics opening and no operator standing by —
+   runbook step 1, which is not terminal-verifiable.
+
+```
+OWNER_WINDOW_DECISION = HOLD FOR A SCHEDULED WINDOW
+HALF_A_ARMED          = NO
+```
+
+### 28.6 State on production right now
+
+```
+single_active_session = false        branch_lock = true
+BRANCH_LOCK_EFFECTIVE = false
+scope = pilot   cohort = [9, 15, 18]   global_enforcement_active = false
+HEAD = 21b8a57a  (GO tag exact-match)
+leases: 8 total, 8 released, 0 unreleased, 0 blocking incumbents
+estate: 15 locked / 0 unset / 60 of 60 authorizations / 4 eligible devices
+health: /login 200 · /health/live 200 · /health/ready 200
+```
+
+**State C (activation window clean) is reached and stable.** Nothing decays while
+the flag is off: the only change a future window will see is a doctor logging in
+and claiming no lease, which is harmless — and is exactly why **AW-R8** puts lease
+cleanup immediately before the cutover rather than days ahead of it. When the
+window is scheduled, resume at runbook step 2: re-read health, re-measure the
+six-condition gate, re-read all leases, capture a **fresh** baseline, then flip.
