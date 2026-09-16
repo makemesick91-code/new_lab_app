@@ -111,8 +111,9 @@ class DoctorEstateResilienceCommand extends Command
         $this->comment('* Rooms = ACTIVE treatment rooms, the Level-3 ADVISORY reference only: a room inventory '
             .'is not a peak concurrent station count and it decides no Level-3 verdict. "Dr rooms" is the '
             .'separate LEVEL 2 denominator — active rooms a doctor and a patient meet in. Devices column is '
-            .'total/eligible; "Usable" is eligible AND carrying an unrevoked credential, which is what Level 1 '
-            .'counts.');
+            .'total/eligible; "Usable" is eligible AND carrying a credential the LOGIN GATE WOULD ADMIT '
+            .'(unrevoked and passing the device-binding policy), which is what Level 1 counts — a stricter '
+            .'test than device_credential_coverage, which asks only for an unrevoked credential.');
         $this->line('TOTAL_DEVICE_ESTATE='.$report['estate_totals']['total_devices']);
         $this->line('ELIGIBLE_TRUSTED_DEVICES='.$report['estate_totals']['eligible_devices']);
         $this->line('ELIGIBLE_DEVICE_IDS='.$this->csv($report['estate_totals']['eligible_device_ids']));
