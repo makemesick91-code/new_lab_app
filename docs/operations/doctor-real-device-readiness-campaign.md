@@ -1,8 +1,22 @@
 # Doctor real-device readiness campaign — the 12 remaining ceremonies
 
+> ### CAMPAIGN COMPLETE — measured 2026-09-17
+>
+> **`REAL_DEVICE_READY = 15/15`.** All twelve remaining ceremonies were carried
+> out on 2026-09-13/14; the last proof is dated 2026-09-14 07:56:51. Fifteen
+> distinct users hold a proof across `DOCTOR_APP_LOGIN_AUTHORIZATION_SUCCESS` and
+> `DOCTOR_DEVICE_WEBAUTHN_LOGIN_SUCCESS`.
+>
+> Two figures below are frozen at the date they were written and are no longer
+> current: the estate now holds **4** eligible devices (`[3,5,6,7]`, not three)
+> and the authorization target is **60** (not 45). Read the live numbers from
+> `doctor:estate-resilience --json`; never quote a remembered one.
+>
+> The **procedure** below remains canonical for any future ceremony.
+
 `DOCTOR-ACCESS-FLEET-ROLLOUT-READINESS-1`. Owner-authorized 2026-09-13
-(`AUTHORIZE_12_DOCTOR_ROTATIONS=YES`), **held for scheduling** — no doctor has
-been enrolled.
+(`AUTHORIZE_12_DOCTOR_ROTATIONS=YES`), **held for scheduling** at the time of
+writing — no doctor had been enrolled then.
 
 This authorization is for **bounded readiness rotations only**. It does not
 authorize global enforcement, permanent cohort expansion, permanent
@@ -65,7 +79,7 @@ online, 0 occupying a clinical room):
 |---|---|---|---|
 | LDK2 | 15 drg Irwan | 28 | |
 | LDK2 | 18 drg Ramadhan | 12 | |
-| TLK1 | 16 drg Fahira | 14 | **no tablet exists at TLK1 — any tablet is cross-branch** |
+| TLK1 | 16 drg Fahira | 14 | **[SUPERSEDED 2026-09-17]** True when written. TLK1 now holds eligible device **7** (`PILOT_TABLET_04_TLK1`), provisioned 2026-09-16 — a TLK1 login is no longer necessarily cross-branch. |
 | SPN4 | 22 drg Windi | 19 | |
 | SPN4 | 23 drg Nurmilah | 20 | |
 | SPN4 | 24 drg Aisyah | 21 | |
