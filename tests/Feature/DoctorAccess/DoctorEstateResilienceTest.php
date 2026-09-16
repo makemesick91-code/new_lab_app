@@ -1900,3 +1900,39 @@ it('fails the activation preflight exit code while a staffed branch holds nothin
 
     $this->artisan('doctor:estate-resilience --activation-preflight')->assertExitCode(1);
 });
+
+it('does not describe level 1 as counting a merely unrevoked credential', function (): void {
+    /*
+     * THE MESSAGE HAS TO FOLLOW THE PREDICATE, NOT THE PREDICATE IT REPLACED.
+     *
+     * Level 1 was narrowed from "unrevoked" to "the login gate would admit",
+     * and two strings kept the old claim — the gate's own detail and the
+     * command's column footnote. Both were read off the PRODUCTION report after
+     * deploy, which is where a reader would have believed them. This is the
+     * exact defect class rule 158 already records twice (a PASS message
+     * outliving a narrowed verdict), reproduced by the sprint that cites it.
+     *
+     * device_credential_coverage keeps saying "unrevoked", because that IS its
+     * predicate; the two gates must read differently.
+     */
+    $bare = esrBranch('MSG1');
+    esrDoctor($bare);
+
+    // A second, stocked branch so device_credential_coverage has a population
+    // and prints its own predicate rather than its empty-population message.
+    $stocked = esrBranch('MSG2');
+    esrDoctor($stocked, 'drg Message');
+    esrDevice($stocked);
+
+    $report = esrReport();
+    $level1 = esrGate($report, DoctorEstateResilienceVerdict::GATE_ACTIVATION_TEST_COVERAGE)['detail'];
+
+    expect($level1)->toContain('login gate would admit')
+        ->and($level1)->not->toContain('carries an unrevoked credential')
+        ->and(esrGate($report, 'device_credential_coverage')['detail'])
+        ->toContain('UNREVOKED credential');
+
+    $this->artisan('doctor:estate-resilience')
+        ->expectsOutputToContain('LOGIN GATE WOULD ADMIT')
+        ->assertExitCode(0);
+});

@@ -443,9 +443,10 @@ class DoctorEstateResilienceService
     /**
      * LEVEL 1 for one branch — can this branch be TESTED at all?
      *
-     * `>= 1` device that is eligible AND carries an unrevoked credential. Not
-     * `>= 1` eligible device: see `locally_usable_device_count` above for the
-     * hole that closes.
+     * `>= 1` device that is eligible AND carries a credential the LOGIN GATE
+     * WOULD ADMIT. Not `>= 1` eligible device, and not merely `>= 1` unrevoked
+     * credential either — see `locally_usable_device_count` above for both
+     * holes that closes.
      *
      * An unstaffed branch is NOT_APPLICABLE, which is neither a shortfall nor a
      * satisfied requirement — it is removed from the population entirely by
@@ -822,7 +823,8 @@ class DoctorEstateResilienceService
                 : ($level1Short === []
                     ? 'Every staffed branch holds at least one trusted device that can be logged into. '
                     : 'Staffed branches with NO locally usable trusted device: '.implode(', ', $level1Short)
-                        .'. A tablet counts here only if it is eligible AND carries an unrevoked credential. '))
+                        .'. A tablet counts here only if it is eligible AND carries a credential the login '
+                        .'gate would admit — unrevoked AND passing the device-binding policy. '))
                 .(! $unsetKnown
                     ? 'The fleet engine did not report how many doctors belong to no branch, so the '
                         .'completeness of this population is unknown and it cannot be passed. '
