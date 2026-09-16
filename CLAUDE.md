@@ -2818,3 +2818,28 @@ Branch `revision/doctor-trusted-device-estate-capacity-policy-1` (base `feature/
 **Measured on production before the change** (deployed engine at `a6b50ad7`): TLK1 2 home doctors/0 eligible, LDK2 3/1, SPN4 10/1, ATG3 0/1 (homes nobody), `ESTATE_RESILIENCE=FAIL`, `MINIMUM_ADDITIONAL_DEVICES=4`, authorization 45/45/0/0. Under the separated levels the same estate reads **Level 1 FAIL at TLK1 only** — one branch, one tablet.
 
 **Nothing was attested, no device registered/moved/revoked, no authorization written, no flag armed, no cohort widened, no lease touched.** `GLOBAL_ACTIVATION_APPLY_AUTHORIZED=NO`. A policy-revision GO does **not** mean `ACTIVATION_TEST_COVERAGE=PASS`. Next: `DOCTOR-ACCESS-TRUSTED-DEVICE-ESTATE-PROVISIONING-1` — one eligible, credentialled, authorized tablet for TLK1, then re-measure. ATG3 already holds an eligible tablet and homes nobody; whether that unit moves or a new one is bought is a provisioning decision.
+
+## DOCTOR-ACCESS-TRUSTED-DEVICE-ESTATE-PROVISIONING-1 (2026-09-16)
+
+Branch `feature/doctor-access-trusted-device-estate-provisioning-1` (base = production HEAD `a2caf476`, tag `revision-doctor-trusted-device-estate-capacity-policy-1-go`). **Physical provisioning sprint.** Rules: `.cursor/rules/159-…mdc` **ECP-R19..ECP-R26**. Ceremony: `docs/sprints/doctor-access-trusted-device-estate-provisioning-1-ceremony.md`.
+
+**Closed the Level-1 gap**: TLK1 was the only staffed branch holding no trusted device. One tablet provisioned → **ACTIVATION_TEST_COVERAGE = PASS** (TLK1/LDK2/SPN4 PASS, ATG3 NOT_APPLICABLE), independently reconciled against the fleet engine. **Level 2 = PARTIAL, Level 3 = FAIL — both unsigned and reported as such.** No flag armed, no cohort widened, no lease touched, `authorizes_activation=false`.
+
+**Three ceremony corrections, all caught by adversarial review BEFORE hardware was touched and each verified against deployed source:**
+- **WebAuthn does NOT make a device eligible.** `isEligible()` = `isActive() && isCryptographicallyVerified()`; `cryptographically_verified` is written in exactly 3 places (`DoctorAppLoginService:411,:447`, `DoctorDeviceProofService:169`), all Android-keystore challenge-response, and `DoctorDeviceWebAuthnRegistrationService` never touches `identity_state`. Register+approve+enrol-credential leaves the device **ineligible and silent**. The keystore proof creates eligibility; the credential makes it *login-admissible*. Different steps, both required.
+- **A stock tablet's passkey is REFUSED.** `require_device_bound` defaults true; Google-synced passkeys are BE=1 → 422 at registration. Fix the tablet's passkey provider; **never** flip `WEBAUTHN_REQUIRE_DEVICE_BOUND`.
+- **Bind `branch_id` at admin approval.** Bare app-login derives the branch from the *doctor's* lowest-id RME branch, and because admin rows have a null `public_key_fingerprint` (which app login matches on) it creates a **duplicate** device at the wrong branch.
+
+**Measured outcome:** estate 5→6 devices, eligible 3→4 (ids 3,5,6,7), revoked 2 unchanged. Authorization target **45→60** (15 linked doctors × 4 eligible devices, derived — never hardcoded), 15 pairs created via `doctor:device-bulk-authorize --apply --confirm-plan=<digest> --reason=…`, final **60/60, missing 0, duplicate 0**. Level 2 improved FAIL→PARTIAL because no staffed branch sits at zero.
+
+**The attestation was signed, and only that one.** `activation_test_prerequisites_attested.trusted_device_activation_test_coverage` → `true`, **after** production measured PASS and after independent reconciliation. `spare_device_available_per_branch` stays `false` (still measured FAIL). A signature that later contradicts its measurement fails `attestation_does_not_contradict_measurement`, so a degraded estate turns the signature into a **failing gate** — pinned by a new test.
+
+**Gotchas:**
+- `doctor:device-bulk-authorize` is **digest-bound single-actor, NOT maker/checker** — one operator plans and applies. Its controls are the fail-closed digest, a required `--reason` (10–1000 chars), an in-service eligibility re-check, and refusal to touch credentials/locks/leases/cohorts/flags. Its dry-run "0 mutations" counters are **literals in the payload**, not measurements of the apply path.
+- Credential registration is `settings/doctor-devices/{id}/webauthn` (`view_doctor_devices|manage_doctor_devices`) and must be performed **in a browser on the tablet** — the authenticator is whichever device the browser runs on.
+- Credential is **device-scoped** (`doctor_device_id`, no doctor column): **one** enrolment serves all doctors. Never enrol per doctor.
+- The enrolment approval can **create the device row inline** (`device_name` + `branch_id`) — added because the first device on a deployment was otherwise unapprovable.
+- Once a real signature ships, tests must **pin** the attestation state they exercise; three did not and started testing config instead of behaviour.
+- Provisioning ≠ readiness: the new device has no proven per-doctor login and lands in fleet `without_readiness_proof_ids`. Not a gate this sprint must pass; no 15-doctor ceremony required.
+
+`GLOBAL_ACTIVATION_APPLY_AUTHORIZED=NO`. **Next: return to `DOCTOR-ACCESS-GLOBAL-ACTIVATION-1` for a PHASE-0 DELTA RECHECK only — arm nothing.**

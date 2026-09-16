@@ -1395,8 +1395,34 @@ return [
             'trusted_device_activation_test_coverage',
         ],
 
+        /*
+        | SIGNED by DOCTOR-ACCESS-TRUSTED-DEVICE-ESTATE-PROVISIONING-1
+        | (2026-09-16), AFTER the measurement turned true and not before.
+        |
+        | TLK1 held no trusted device, which was the whole Level-1 gap. It was
+        | provisioned physically: a tablet completed the Android keystore
+        | challenge-response (identity_state = cryptographically_verified),
+        | was approved into a TLK1 device row, and enrolled ONE device-bound
+        | WebAuthn credential. The eligible estate grew 3 -> 4, which moved the
+        | authorization target 45 -> 60, and the 15 new pairs were provisioned
+        | through the canonical digest-bound command.
+        |
+        | Measured at the moment of signing, and independently reconciled
+        | against the fleet-readiness engine:
+        |
+        |   TLK1 PASS · LDK2 PASS · SPN4 PASS · ATG3 NOT_APPLICABLE
+        |   ACTIVATION_TEST_COVERAGE = PASS
+        |   authorization 60/60, missing 0, duplicate 0
+        |
+        | ONLY Level 1 is signed here. Level 2 (room capacity) is PARTIAL and
+        | Level 3 (spare_device_available_per_branch) is FAIL, both unsigned
+        | and reported as such. A signature that ever contradicts the
+        | measurement fails `attestation_does_not_contradict_measurement`, so
+        | if this estate degrades this entry becomes a FAILING gate rather than
+        | a quiet lie.
+        */
         'activation_test_prerequisites_attested' => [
-            'trusted_device_activation_test_coverage' => false,
+            'trusted_device_activation_test_coverage' => true,
         ],
 
         /*

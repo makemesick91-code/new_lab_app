@@ -179,3 +179,95 @@ fact.
 `authorizes_activation` is a literal `false`. These levels authorise no flag, no
 cohort change and no lease. A Level-1 PASS means the estate no longer blocks the
 **owner** from deciding to begin controlled activation testing.
+
+---
+
+## Provisioning rules — added by `DOCTOR-ACCESS-TRUSTED-DEVICE-ESTATE-PROVISIONING-1`
+
+Learned by provisioning TLK1's first trusted device. An adversarial review
+caught every one of the first three **before** any hardware was touched; each
+was verified against the deployed source rather than taken on trust.
+
+### ECP-R19 — A WebAuthn credential does NOT make a device eligible
+
+`isEligible()` is `isActive() && isCryptographicallyVerified()`.
+`identity_state = cryptographically_verified` is written in exactly three
+places — `DoctorAppLoginService:411`, `:447`, `DoctorDeviceProofService:169` —
+all Android-keystore challenge-response. `DoctorDeviceWebAuthnRegistrationService`
+never touches `identity_state`.
+
+A tablet that is registered, approved and carrying a green credential is
+**still not eligible**, and nothing on any screen says so. The keystore proof
+is what creates eligibility; the credential is what makes the device
+*login-admissible*. Both are required, and they are **different steps**.
+
+### ECP-R20 — A stock tablet's passkey is refused, and that is the gate working
+
+`require_device_bound` defaults **true**, and `verdict()` returns `device_bound`
+only when `backupEligible === false`. A tablet using Google Password Manager
+mints **synced (BE=1)** passkeys, which are refused at registration with a 422.
+
+Fix the tablet — screen-lock-only passkey provider, or passkey sync off for that
+account. **Never** set `WEBAUTHN_REQUIRE_DEVICE_BOUND=false` to force a pass:
+that converts a measured security property into a fiction, and the whole
+"approved physical device" guarantee collapses with it.
+
+### ECP-R21 — Bind the branch at ADMIN APPROVAL, never by app-login
+
+Admin enrolment approval takes `branch_id` from the operator. Bare Clinic App
+auto-registration derives it from the signing **doctor's** lowest-id active RME
+branch. Worse, an admin-created row has a null `public_key_fingerprint` and app
+login looks devices up *by fingerprint*, so it will not find that row and will
+create a **second, duplicate** device at the doctor-derived branch.
+
+Drive the canonical flow: app requests enrolment → admin approves **into a row
+whose `branch_id` is chosen explicitly** → assert the branch before continuing.
+
+### ECP-R22 — Reused hardware needs a wiped keystore; revocation is not reversible
+
+`public_key_fingerprint` is globally unique and there is no un-revoke path. A
+previously revoked tablet whose keystore alias survived is denied **permanently**
+and the operator sees no explanation. Factory reset or wipe the Clinic App's
+data so a fresh alias yields a fresh identity. `(branch_id, device_name)` is
+unique too — check the name is free at the target branch.
+
+### ECP-R23 — Growing the estate reddens `authorization_coverage` until it is closed
+
+The target is `linked doctors × eligible devices`, so a new eligible device
+raises the denominator immediately. Between "device becomes eligible" and
+"bulk-authorize completes", the composed activation measurement is FAIL even
+while Level 1 itself is PASS.
+
+Sequence eligibility → authorize → measure as one window, and **report Level 1
+and the composed prerequisite together**. Level 1 PASS beside a red composed
+measurement is not success.
+
+### ECP-R24 — `doctor:device-bulk-authorize` is digest-bound single-actor, not maker/checker
+
+The same operator runs the dry run, copies the digest and applies it. There is
+no second approver. The real controls are: a mandatory read-back that fails
+closed if the estate moved, a required audit `--reason` (10–1000 chars), an
+eligibility re-check inside the service, and refusal to touch credentials,
+branch locks, leases, cohorts or flags. Describe it accurately — calling it
+maker/checker overstates the control.
+
+### ECP-R25 — Sign a prerequisite only after its measurement turns true, and only that one
+
+The Level-1 attestation was signed **after** production measured PASS and after
+the figure was independently reconciled against a second engine. Level 2
+(PARTIAL) and Level 3 (FAIL) remain unsigned.
+
+A signature that later contradicts its measurement fails
+`attestation_does_not_contradict_measurement`, so a signed prerequisite whose
+estate degrades becomes a **failing gate**, not a quiet lie. Tests must pin the
+attestation state they exercise rather than inherit the shipped value — once a
+real signature ships, a test that leans on the default is testing config, not
+behaviour.
+
+### ECP-R26 — Provisioning coverage is not readiness, and says so
+
+The new device carries no per-doctor proven login, so it lands in
+fleet-readiness `without_readiness_proof_ids`. That gate is **not** one a
+provisioning sprint must pass — Level 1 reads only `staffed` and the count of
+locally usable devices — but the number moves, and the sprint reports it rather
+than being surprised by it. No 15-doctor login ceremony is required.

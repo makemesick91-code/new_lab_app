@@ -1428,6 +1428,15 @@ it('emits no gate verdict outside the three-word vocabulary', function (): void 
 */
 
 it('fails the activation prerequisite while level 1 is measured false', function (): void {
+    // Pinned UNSIGNED so this isolates the MEASURED-false path. The shipped
+    // config now carries a real signature (the estate was provisioned), and a
+    // test that leaned on the shipped value would be testing config, not
+    // behaviour — and would flip meaning the next time the estate moves.
+    config()->set(
+        DoctorEstateResilienceVerdict::CONFIG_ACTIVATION_TEST_ATTESTED,
+        [DoctorEstateResilienceVerdict::GATE_ACTIVATION_TEST_COVERAGE => false],
+    );
+
     $branch = esrBranch('PRQ1');
     esrDoctor($branch);
 
@@ -1439,6 +1448,13 @@ it('fails the activation prerequisite while level 1 is measured false', function
 });
 
 it('holds the activation prerequisite at UNVERIFIED when measured true but unsigned', function (): void {
+    // "Unsigned" is the subject of this test, so it is set here rather than
+    // inherited from a config that now ships signed.
+    config()->set(
+        DoctorEstateResilienceVerdict::CONFIG_ACTIVATION_TEST_ATTESTED,
+        [DoctorEstateResilienceVerdict::GATE_ACTIVATION_TEST_COVERAGE => false],
+    );
+
     $branch = esrBranch('PRQ2');
     [, $doctor] = esrDoctor($branch);
     dbaAuthorization($doctor, esrDevice($branch));
@@ -1536,6 +1552,12 @@ it('fails a gate when a signature stands against a measurement', function (): vo
 });
 
 it('passes the contradiction gate on an estate where nothing is signed, and says why', function (): void {
+    // An estate where NOTHING is signed is the subject here; pin it.
+    config()->set(
+        DoctorEstateResilienceVerdict::CONFIG_ACTIVATION_TEST_ATTESTED,
+        [DoctorEstateResilienceVerdict::GATE_ACTIVATION_TEST_COVERAGE => false],
+    );
+
     $branch = esrBranch('ATT3');
     esrDoctor($branch);
 
@@ -1622,15 +1644,44 @@ it('declares the activation prerequisite in a list the phase scanner actually re
     expect($after['activation_test_prerequisites_declared']['status'])->toBe('FAIL');
 });
 
-it('ships both estate attestations unsigned', function (): void {
+it('signs only the estate prerequisite whose measurement turned true', function (): void {
     /*
-     * A measured falsehood may never be recorded as an attested truth. Both
-     * slots ship false and this revision signs neither.
+     * A measured falsehood may never be recorded as an attested truth — the
+     * rule has not moved. What moved is the MEASUREMENT.
+     *
+     * DOCTOR-ACCESS-TRUSTED-DEVICE-ESTATE-PROVISIONING-1 provisioned TLK1's
+     * first trusted device, Level 1 measured PASS on production, and the owner
+     * signed THAT and nothing else. `spare_device_available_per_branch` is
+     * still measured FAIL and is therefore still unsigned — signing it would
+     * be recording something untrue, and the contradiction gate would say so.
      */
     expect(config(DoctorEstateResilienceVerdict::CONFIG_ACTIVATION_TEST_ATTESTED))
-        ->toBe([DoctorEstateResilienceVerdict::GATE_ACTIVATION_TEST_COVERAGE => false])
+        ->toBe([DoctorEstateResilienceVerdict::GATE_ACTIVATION_TEST_COVERAGE => true])
         ->and(config('android_release.enforcement.global_prerequisites_attested.spare_device_available_per_branch'))
         ->toBeFalse();
+});
+
+it('turns the signed prerequisite into a FAILING gate the moment the estate degrades', function (): void {
+    /*
+     * THE SAFETY NET BEHIND SIGNING A REAL MEASUREMENT.
+     *
+     * The signature now shipped is true today. If the estate later loses the
+     * coverage it attests — a device revoked, a credential withdrawn, a branch
+     * newly staffed with nothing in it — the signature must not go on standing.
+     * It becomes a contradiction, and a contradiction fails a gate.
+     */
+    $branch = esrBranch('DEG1');
+    esrDoctor($branch);
+
+    // Staffed, no device: Level 1 is measured FAIL beneath a shipped `true`.
+    $report = esrReport();
+    $record = $report['attestation']['prerequisites'][DoctorEstateResilienceVerdict::GATE_ACTIVATION_TEST_COVERAGE];
+
+    expect($record['attested'])->toBeTrue()
+        ->and($record['measured'])->toBe(DoctorEstateResilienceVerdict::FAIL)
+        ->and($record['contradiction'])->toBeTrue()
+        ->and(esrGate($report, DoctorEstateResilienceVerdict::GATE_ATTESTATION_NO_CONTRADICTION)['verdict'])
+        ->toBe(DoctorEstateResilienceVerdict::FAIL);
 });
 
 it('prints all three capacity levels separately from the aggregate', function (): void {
