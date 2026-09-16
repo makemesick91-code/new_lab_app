@@ -4,13 +4,19 @@ declare(strict_types=1);
 
 namespace App\Modules\DoctorAccess\Interfaces;
 
+use Carbon\CarbonInterface;
 use Illuminate\Support\Collection;
 
 /**
- * DOCTOR-ACCESS-TRUSTED-DEVICE-ESTATE-RESILIENCE-1 — the one read this sprint
- * adds: how many ACTIVE treatment rooms each branch runs.
+ * The read-only estate reads the resilience and capacity engines need.
  *
- * WHY THIS EXISTS AT ALL, AND WHY IT IS ADVISORY.
+ * DOCTOR-ACCESS-TRUSTED-DEVICE-ESTATE-RESILIENCE-1 added the first:
+ * `activeTreatmentRoomCountsByBranch()`, advisory by design and explained at
+ * length below. REVISION-DOCTOR-TRUSTED-DEVICE-ESTATE-CAPACITY-POLICY-1 added
+ * the room PROFILE and the active-cover read, each documented on its own
+ * method. Every one is a read; see the closing note.
+ *
+ * WHY THE FIRST READ EXISTS AT ALL, AND WHY IT IS ADVISORY.
  *
  * An adversarial review of this sprint refuted a claim it had made in its own
  * documentation. The sprint asserted that "concurrent Doctor stations" — the
@@ -57,4 +63,74 @@ interface DoctorEstateResilienceRepositoryInterface
      * @return Collection<int, int>
      */
     public function activeTreatmentRoomCountsByBranch(): Collection;
+
+    /**
+     * REVISION-DOCTOR-TRUSTED-DEVICE-ESTATE-CAPACITY-POLICY-1 — the room
+     * denominator Level 2 divides by, and the wider set it must be compared
+     * against.
+     *
+     * WHY THIS IS NOT THE ADVISORY COUNT ABOVE, AND WHY IT DECIDES SOMETHING.
+     *
+     * The method above is advisory because it was offered as a stand-in for
+     * `concurrent Doctor stations`, which it is not. Level 2 asks a DIFFERENT
+     * question the owner has now defined outright — one eligible trusted device
+     * per ACTIVE DOCTOR ROOM — and a room is precisely the unit that question
+     * counts in. So rooms decide Level 2 and go on deciding nothing at Level 3.
+     *
+     * TWO COUNTS, BECAUSE THE TWO ROOM-SETS IN THIS CODEBASE DISAGREE.
+     *
+     *   `doctor_facing`  active rooms typed `treatment_room` or
+     *                    `consultation_room` — the rooms where a doctor and a
+     *                    patient meet. An x-ray, sterilization or lab room
+     *                    needs no Doctor tablet, and counting one would inflate
+     *                    the requirement with hardware nobody would use.
+     *
+     *   `assignable`     every active room at the branch, whatever its type.
+     *                    This is the set `ClinicVisitService::
+     *                    activeRoomsForBranch()` actually offers the room gate:
+     *                    its docblock says "active treatment rooms" and its
+     *                    query filters branch and status with NO type clause,
+     *                    so a doctor CAN today be placed in a sterilization
+     *                    room.
+     *
+     * Both are returned so the divergence is reported rather than inherited.
+     * Choosing `assignable` alone would size the estate for rooms no doctor
+     * works in; choosing `doctor_facing` alone would silently adopt a type
+     * filter the assignment path does not enforce.
+     *
+     * A branch with no active rooms at all is ABSENT from the map, exactly as
+     * above: never configured and measured-as-none are different facts, and
+     * only the caller knows which it holds. Level 2 must branch on absence
+     * before any arithmetic — `(int) null === 0` would make `eligible >= rooms`
+     * true for a branch holding nothing.
+     *
+     * @return Collection<int, array{doctor_facing:int, assignable:int}>
+     */
+    public function activeDoctorRoomProfileByBranch(): Collection;
+
+    /**
+     * Branch ids hosting a doctor under an APPROVED, currently-running branch
+     * cover.
+     *
+     * WHY THE STAFFED POPULATION CANNOT BE HOME LOCKS ALONE. A cover grants a
+     * doctor time-boxed authority to work away from home, and
+     * `DoctorBranchLock::isLockedTo()` says outright that an active cover does
+     * not change the home answer. So a branch running a covering doctor has
+     * `home_doctor_count = 0` and a doctor in it — and a capacity level keyed
+     * on home locks alone would report NOT_APPLICABLE for a branch that is
+     * seeing patients on no tablet.
+     *
+     * Judged by the row and the instant, through the model's own
+     * `coversInstant()`, so an expired cover cannot linger because a job was
+     * late. Read-only, like everything on this interface.
+     *
+     * Returns branch id => branch CODE (null when the branch is soft-deleted),
+     * not bare ids. A branch reachable ONLY through a cover holds no device and
+     * homes no doctor, so nothing else in the report can resolve its code — and
+     * a matrix row with a null code raises a finding that names soft-deletion
+     * as the cause. Carrying the code here keeps that finding truthful.
+     *
+     * @return array<int, string|null>
+     */
+    public function activeCoverTargetBranches(CarbonInterface $at): array;
 }

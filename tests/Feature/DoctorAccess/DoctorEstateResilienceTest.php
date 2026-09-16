@@ -33,11 +33,15 @@ use App\Models\User;
 use App\Modules\Branch\Models\Branch;
 use App\Modules\ClinicRoom\Models\ClinicRoom;
 use App\Modules\Doctor\Models\Doctor;
+use App\Modules\DoctorAccess\Models\DoctorBranchCover;
 use App\Modules\DoctorAccess\Services\DoctorEstateResilienceService;
+use App\Modules\DoctorAccess\Services\DoctorFleetReadinessService;
+use App\Modules\DoctorAccess\Support\DoctorEstateCapacityLevel;
 use App\Modules\DoctorAccess\Support\DoctorEstateResilienceVerdict;
 use App\Modules\DoctorDevice\Models\DoctorDevice;
 use App\Modules\DoctorDevice\Models\DoctorDeviceAuthorization;
 use App\Modules\DoctorDevice\Models\DoctorDeviceWebAuthnCredential;
+use App\Support\Android\Phase4aPilotPreparationScanner;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
@@ -682,7 +686,7 @@ it('fails rather than passes when there is nothing to measure', function (): voi
 |--------------------------------------------------------------------------
 */
 
-it('reports a contradiction between what is signed and what is measured, and gates nothing on it', function (): void {
+it('reports a contradiction between what is signed and what is measured, and never overwrites either', function (): void {
     $branch = esrBranch('ATT1');
     esrDoctor($branch);
     esrDevice($branch);
@@ -695,11 +699,22 @@ it('reports a contradiction between what is signed and what is measured, and gat
         ->and($report['attestation']['measured'])->toBe(DoctorEstateResilienceVerdict::FAIL)
         ->and($report['attestation']['contradiction'])->toBeTrue();
 
-    // The owner chose measurement over coupling: a signature cannot rescue the
-    // measurement, and the measurement does not overwrite the signature.
+    /*
+     * A signature cannot rescue the measurement, and the measurement does not
+     * overwrite the signature — the engine still writes nothing.
+     *
+     * WHAT REVISION-DOCTOR-TRUSTED-DEVICE-ESTATE-CAPACITY-POLICY-1 NARROWED.
+     * The original title of this test said the contradiction "gates nothing on
+     * it", and that is no longer true: a signature standing against a
+     * measurement now fails a gate of its own. The absence of a signature still
+     * gates nothing, which is the half the owner chose measurement-over-
+     * coupling for.
+     */
     expect(config('android_release.enforcement.global_prerequisites_attested.spare_device_available_per_branch'))
         ->toBeTrue()
-        ->and($report['verdict'])->toBe(DoctorEstateResilienceVerdict::FAIL);
+        ->and($report['verdict'])->toBe(DoctorEstateResilienceVerdict::FAIL)
+        ->and(esrGate($report, DoctorEstateResilienceVerdict::GATE_ATTESTATION_NO_CONTRADICTION)['verdict'])
+        ->toBe(DoctorEstateResilienceVerdict::FAIL);
 });
 
 /*
@@ -852,7 +867,7 @@ it('reports a doctor who belongs to no branch instead of discarding the signal',
 |--------------------------------------------------------------------------
 */
 
-it('reports active treatment rooms without letting them decide any verdict', function (): void {
+it('reports active treatment rooms without letting them decide a level 3 verdict', function (): void {
     $branch = esrBranch('ROOM');
     [, $doctor] = esrDoctor($branch);
     dbaAuthorization($doctor, esrDevice($branch));
@@ -863,6 +878,11 @@ it('reports active treatment rooms without letting them decide any verdict', fun
     // report PASS. It must not: a room inventory is not a peak concurrent
     // staffed station count, and substituting one for the other is the same
     // failure as guessing, only with a more plausible number.
+    //
+    // REVISION-1 gave LEVEL 2 a room-based denominator of its own, which is a
+    // different question the owner defined outright. Rooms decide Level 2 and
+    // still decide nothing here, so this assertion is narrowed to Level 3
+    // rather than deleted — the trap it guards is unchanged.
     ClinicRoom::factory()->create([
         'branch_id' => $branch->id,
         'type' => ClinicRoom::TYPE_TREATMENT_ROOM,
@@ -946,4 +966,937 @@ it('emits parseable JSON carrying the verdict and the activation disclaimer', fu
         ->and($payload['branch_scope'])->toBe(DoctorEstateResilienceVerdict::BRANCH_SCOPE)
         // The one line an operator reading only the tail must still see.
         ->and($payload['resilience_semantics'])->toContain('not an access boundary');
+});
+
+/*
+|--------------------------------------------------------------------------
+| REVISION-DOCTOR-TRUSTED-DEVICE-ESTATE-CAPACITY-POLICY-1
+|
+| THREE REQUIREMENTS THAT WERE ONE GATE.
+|
+| Every assertion below guards one property: separating the levels must never
+| turn a measured falsehood into a PASS. Lowering what ACTIVATION TESTING
+| requires does not lower what HIGH AVAILABILITY requires, and the three
+| statuses must be free to disagree — because on the production estate they do.
+|--------------------------------------------------------------------------
+*/
+
+function esrLevel(array $report, string $code, string $level): string
+{
+    return (string) esrBranchRow($report, $code)['capacity_levels'][$level];
+}
+
+function esrFleetLevel(array $report, int $level): string
+{
+    foreach ($report['capacity_policy']['levels'] as $row) {
+        if ((int) $row['level'] === $level) {
+            return (string) $row['status'];
+        }
+    }
+
+    throw new RuntimeException("level {$level} absent from report");
+}
+
+function esrRoom(Branch $branch, string $type, string $status = ClinicRoom::STATUS_ACTIVE): ClinicRoom
+{
+    return ClinicRoom::factory()->create([
+        'branch_id' => $branch->id,
+        'type' => $type,
+        'status' => $status,
+    ]);
+}
+
+/*
+| Level 1 — activation test coverage
+*/
+
+it('fails level 1 for a staffed branch holding no eligible device', function (): void {
+    $branch = esrBranch('L1A');
+    esrDoctor($branch);
+
+    $report = esrReport();
+
+    expect(esrLevel($report, 'L1A', DoctorEstateCapacityLevel::ACTIVATION_TEST_COVERAGE))
+        ->toBe(DoctorEstateCapacityLevel::FAIL)
+        ->and(esrFleetLevel($report, 1))->toBe(DoctorEstateCapacityLevel::FAIL);
+});
+
+it('passes level 1 for a staffed branch holding one usable device', function (): void {
+    $branch = esrBranch('L1B');
+    esrDoctor($branch);
+    esrDevice($branch);
+
+    expect(esrFleetLevel(esrReport(), 1))->toBe(DoctorEstateCapacityLevel::PASS);
+});
+
+it('passes level 1 only when EVERY staffed branch is covered', function (): void {
+    $a = esrBranch('L1C');
+    $b = esrBranch('L1D');
+    esrDoctor($a, 'drg One');
+    esrDoctor($b, 'drg Two');
+    esrDevice($a);
+
+    // A holds a tablet, B does not. One covered branch is not a covered fleet.
+    expect(esrFleetLevel(esrReport(), 1))->toBe(DoctorEstateCapacityLevel::FAIL)
+        ->and(esrLevel(esrReport(), 'L1C', DoctorEstateCapacityLevel::ACTIVATION_TEST_COVERAGE))
+        ->toBe(DoctorEstateCapacityLevel::PASS)
+        ->and(esrLevel(esrReport(), 'L1D', DoctorEstateCapacityLevel::ACTIVATION_TEST_COVERAGE))
+        ->toBe(DoctorEstateCapacityLevel::FAIL);
+
+    esrDevice($b);
+
+    expect(esrFleetLevel(esrReport(), 1))->toBe(DoctorEstateCapacityLevel::PASS);
+});
+
+it('counts an eligible tablet nobody can log into as NO coverage at all', function (): void {
+    /*
+     * THE HOLE AN ADVERSARIAL REVIEW FOUND BEFORE THIS SHIPPED.
+     *
+     * Level 1's first draft counted ELIGIBLE devices — active and
+     * cryptographically verified — which says nothing about credentials. A
+     * branch receiving one tablet whose only credential is revoked would have
+     * turned the activation-testing prerequisite GREEN at a branch where no
+     * doctor can sign in. device_credential_coverage FAILs beside it, but a
+     * reader told to watch one field would not have been looking there.
+     */
+    $branch = esrBranch('L1E');
+    esrDoctor($branch);
+    $device = esrDevice($branch, [], withCredential: false);
+    esrCredential($device, revoked: true);
+
+    $report = esrReport();
+    $row = esrBranchRow($report, 'L1E');
+
+    expect($row['eligible_device_count'])->toBe(1)
+        ->and($row['locally_usable_device_count'])->toBe(0)
+        ->and(esrLevel($report, 'L1E', DoctorEstateCapacityLevel::ACTIVATION_TEST_COVERAGE))
+        ->toBe(DoctorEstateCapacityLevel::FAIL);
+});
+
+it('counts neither a revoked nor an inactive tablet toward level 1', function (): void {
+    $branch = esrBranch('L1F');
+    esrDoctor($branch);
+    esrDevice($branch, ['status' => DoctorDevice::STATUS_REVOKED]);
+    esrDevice($branch, ['status' => DoctorDevice::STATUS_DISABLED]);
+
+    expect(esrFleetLevel(esrReport(), 1))->toBe(DoctorEstateCapacityLevel::FAIL);
+});
+
+it('holds an unstaffed branch outside every level rather than passing it', function (): void {
+    /*
+     * NOT_APPLICABLE IS NOT A PASS. The previous sprint shipped a gate that
+     * took the worst over ALL branches and reported PASS on an estate made only
+     * of unstaffed ones, holding zero usable tablets. Here the row is removed
+     * from the population instead of ranked, so the population arrives empty
+     * and an empty population FAILS.
+     */
+    $idle = esrBranch('L1G');
+    esrDevice($idle);
+
+    $report = esrReport();
+
+    expect(esrLevel($report, 'L1G', DoctorEstateCapacityLevel::ACTIVATION_TEST_COVERAGE))
+        ->toBe(DoctorEstateCapacityLevel::NOT_APPLICABLE)
+        ->and(esrLevel($report, 'L1G', DoctorEstateCapacityLevel::ROOM_CAPACITY))
+        ->toBe(DoctorEstateCapacityLevel::NOT_APPLICABLE)
+        ->and(esrLevel($report, 'L1G', DoctorEstateCapacityLevel::FAILURE_RESILIENCE))
+        ->toBe(DoctorEstateCapacityLevel::NOT_APPLICABLE)
+        ->and(esrFleetLevel($report, 1))->toBe(DoctorEstateCapacityLevel::FAIL)
+        ->and(esrFleetLevel($report, 2))->toBe(DoctorEstateCapacityLevel::FAIL)
+        ->and(esrFleetLevel($report, 3))->toBe(DoctorEstateCapacityLevel::FAIL);
+});
+
+it('does not let a tablet at another branch cover a staffed branch locally', function (): void {
+    /*
+     * Cross-branch authentication is valid and PROVEN — that is not what this
+     * asserts. Level 1 is LOCAL OPERATIONAL COVERAGE: can this room open in the
+     * morning? A tablet two cities away cannot answer yes.
+     */
+    $bare = esrBranch('L1H');
+    $stocked = esrBranch('L1I');
+    esrDoctor($bare);
+    esrDoctor($stocked, 'drg Elsewhere');
+    esrDevice($stocked);
+
+    expect(esrLevel(esrReport(), 'L1H', DoctorEstateCapacityLevel::ACTIVATION_TEST_COVERAGE))
+        ->toBe(DoctorEstateCapacityLevel::FAIL);
+});
+
+it('refuses to pass level 1 while a doctor belongs to no branch at all', function (): void {
+    /*
+     * THE POPULATION IS SHRINKABLE, AND SHRINKING IT USED TO TURN THE GATE
+     * GREEN. An UNSET doctor is invisible to every per-branch count, so an
+     * approved transfer moving the last locked doctor off a tablet-less branch
+     * would have flipped this gate FAIL -> PASS with no hardware bought. The
+     * count is published on the gate and any doctor outside it holds the
+     * verdict at UNVERIFIED.
+     */
+    $branch = esrBranch('L1J');
+    esrDoctor($branch);
+    esrDevice($branch);
+
+    $unhomed = User::factory()->create(['name' => 'drg Unhomed']);
+    $unhomed->assignRole('Doctor');
+    Doctor::factory()->create(['user_id' => $unhomed->id, 'name' => 'drg Unhomed', 'is_active' => true]);
+
+    $gate = esrGate(esrReport(), DoctorEstateResilienceVerdict::GATE_ACTIVATION_TEST_COVERAGE);
+
+    expect($gate['doctors_without_home_branch'])->toBe(1)
+        ->and($gate['verdict'])->toBe(DoctorEstateResilienceVerdict::UNVERIFIED);
+});
+
+it('treats a branch hosting an active cover as staffed', function (): void {
+    /*
+     * A cover grants a doctor time-boxed authority to work away from home and
+     * deliberately does NOT move their home lock, so the covered branch counts
+     * zero home doctors while a doctor stands in it. Keyed on home locks alone,
+     * every level would have answered NOT_APPLICABLE for a branch seeing
+     * patients on no tablet.
+     */
+    $home = esrBranch('L1K');
+    $covered = esrBranch('L1L');
+    [, $doctor] = esrDoctor($home);
+    esrDevice($home);
+
+    /*
+     * Before the cover exists the branch is not in the universe at all: it
+     * holds no device and homes no doctor, so nothing can reach it. That is
+     * correct, and it is exactly why a covered branch has to be added by the
+     * cover read — otherwise the branch seeing patients on no tablet is the one
+     * branch the report cannot show.
+     */
+    $codes = array_map(
+        static fn (array $row): ?string => $row['branch_code'],
+        esrReport()['branches'],
+    );
+
+    expect($codes)->not->toContain('L1L');
+
+    /*
+     * `status` is deliberately NOT fillable — a doctor must never self-approve
+     * a cover — so the approved state is set after the requester-contributed
+     * create, exactly as the approval service does it.
+     */
+    $cover = DoctorBranchCover::query()->create([
+        'doctor_id' => $doctor->id,
+        'requester_user_id' => User::factory()->create()->id,
+        'source_home_branch_id' => $home->id,
+        'target_branch_id' => $covered->id,
+        'reason' => 'Cover for capacity level test',
+        'starts_at' => now()->subHour(),
+        'ends_at' => now()->addHour(),
+        'requested_at' => now()->subHours(2),
+    ]);
+
+    $cover->forceFill(['status' => DoctorBranchCover::STATUS_APPROVED])->save();
+
+    $report = esrReport();
+
+    expect(esrBranchRow($report, 'L1L')['staffed'])->toBeTrue()
+        ->and(esrLevel($report, 'L1L', DoctorEstateCapacityLevel::ACTIVATION_TEST_COVERAGE))
+        ->toBe(DoctorEstateCapacityLevel::FAIL);
+});
+
+/*
+| Level 2 — normal production room capacity
+*/
+
+it('reports level 2 PARTIAL when a staffed branch runs more doctor rooms than tablets', function (): void {
+    $branch = esrBranch('L2A');
+    esrDoctor($branch);
+    esrDevice($branch);
+    esrRoom($branch, ClinicRoom::TYPE_TREATMENT_ROOM);
+    esrRoom($branch, ClinicRoom::TYPE_TREATMENT_ROOM);
+
+    $report = esrReport();
+
+    expect(esrBranchRow($report, 'L2A')['active_doctor_rooms'])->toBe(2)
+        ->and(esrLevel($report, 'L2A', DoctorEstateCapacityLevel::ROOM_CAPACITY))
+        ->toBe(DoctorEstateCapacityLevel::PARTIAL)
+        ->and(esrFleetLevel($report, 2))->toBe(DoctorEstateCapacityLevel::PARTIAL);
+});
+
+it('reports level 2 PASS when tablets meet the room count', function (): void {
+    $branch = esrBranch('L2B');
+    esrDoctor($branch);
+    esrDevice($branch);
+    esrDevice($branch);
+    esrRoom($branch, ClinicRoom::TYPE_TREATMENT_ROOM);
+    esrRoom($branch, ClinicRoom::TYPE_CONSULTATION_ROOM);
+
+    // A consultation room is a room a doctor and a patient meet in, so it
+    // counts toward the denominator exactly as a treatment room does.
+    $report = esrReport();
+
+    expect(esrBranchRow($report, 'L2B')['active_doctor_rooms'])->toBe(2)
+        ->and(esrLevel($report, 'L2B', DoctorEstateCapacityLevel::ROOM_CAPACITY))
+        ->toBe(DoctorEstateCapacityLevel::PASS);
+});
+
+it('excludes inactive, soft-deleted and non-doctor rooms from the level 2 denominator', function (): void {
+    $branch = esrBranch('L2C');
+    esrDoctor($branch);
+    esrDevice($branch);
+
+    esrRoom($branch, ClinicRoom::TYPE_TREATMENT_ROOM);
+    esrRoom($branch, ClinicRoom::TYPE_TREATMENT_ROOM, ClinicRoom::STATUS_INACTIVE);
+    esrRoom($branch, ClinicRoom::TYPE_TREATMENT_ROOM, ClinicRoom::STATUS_MAINTENANCE);
+    esrRoom($branch, ClinicRoom::TYPE_XRAY_ROOM);
+    esrRoom($branch, ClinicRoom::TYPE_STERILIZATION_ROOM);
+    esrRoom($branch, ClinicRoom::TYPE_TREATMENT_ROOM)->delete();
+
+    $report = esrReport();
+    $row = esrBranchRow($report, 'L2C');
+
+    // One doctor-facing room survives every exclusion; the x-ray and
+    // sterilization rooms are ASSIGNABLE (the room gate offers them, since its
+    // query has no type clause) and are reported as such without inflating the
+    // tablet requirement.
+    expect($row['active_doctor_rooms'])->toBe(1)
+        ->and($row['active_assignable_rooms'])->toBe(3)
+        ->and(esrLevel($report, 'L2C', DoctorEstateCapacityLevel::ROOM_CAPACITY))
+        ->toBe(DoctorEstateCapacityLevel::PASS);
+});
+
+it('reports level 2 UNVERIFIED rather than PASS for a branch with no configured rooms', function (): void {
+    /*
+     * `(int) null === 0` would make `eligible >= rooms` true for a branch
+     * holding NOTHING, so the room profile is carried as an explicit known flag
+     * and branched on before any arithmetic.
+     */
+    $branch = esrBranch('L2D');
+    esrDoctor($branch);
+
+    $report = esrReport();
+
+    expect(esrBranchRow($report, 'L2D')['room_profile_known'])->toBeFalse()
+        ->and(esrBranchRow($report, 'L2D')['active_doctor_rooms'])->toBeNull()
+        ->and(esrLevel($report, 'L2D', DoctorEstateCapacityLevel::ROOM_CAPACITY))
+        ->toBe(DoctorEstateCapacityLevel::UNVERIFIED);
+});
+
+it('reports level 2 UNVERIFIED when a staffed branch runs active rooms but none a doctor works in', function (): void {
+    $branch = esrBranch('L2E');
+    esrDoctor($branch);
+    esrDevice($branch);
+    esrRoom($branch, ClinicRoom::TYPE_LAB_ROOM);
+
+    // Dividing by zero doctor rooms would make ANY tablet count sufficient,
+    // including none. Somebody is working somewhere; which room is not a
+    // question this engine can answer.
+    expect(esrLevel(esrReport(), 'L2E', DoctorEstateCapacityLevel::ROOM_CAPACITY))
+        ->toBe(DoctorEstateCapacityLevel::UNVERIFIED);
+});
+
+it('keeps level 2 out of the gate array and out of the aggregate verdict', function (): void {
+    /*
+     * LEVEL 2 IS A TARGET, NOT A BLOCKER. If it were a gate, every fixture
+     * without a ClinicRoom would drag the aggregate to UNVERIFIED and the
+     * --strict exit code — which CI and the runbooks read — would be pinned
+     * non-zero by an incremental hardware rollout.
+     */
+    $branch = esrBranch('L2F');
+    [, $doctor] = esrDoctor($branch);
+    dbaAuthorization($doctor, esrDevice($branch));
+    dbaAuthorization($doctor, esrDevice($branch));
+    esrRoom($branch, ClinicRoom::TYPE_TREATMENT_ROOM);
+    esrRoom($branch, ClinicRoom::TYPE_TREATMENT_ROOM);
+    esrRoom($branch, ClinicRoom::TYPE_TREATMENT_ROOM);
+
+    config()->set('android_release.enforcement.concurrent_doctor_stations_per_branch', ['L2F' => 1]);
+
+    $report = esrReport();
+    $gateKeys = array_map(static fn (array $g): string => (string) $g['gate'], $report['gates']);
+
+    expect(esrFleetLevel($report, 2))->toBe(DoctorEstateCapacityLevel::PARTIAL)
+        ->and($gateKeys)->not->toContain(DoctorEstateCapacityLevel::ROOM_CAPACITY)
+        ->and($report['verdict'])->toBe(DoctorEstateResilienceVerdict::PASS);
+});
+
+/*
+| Independence — the three levels must be free to disagree
+*/
+
+it('reports a passing level 1 beside a failing level 3 without either moving the other', function (): void {
+    /*
+     * THE WHOLE POINT OF THE REVISION, IN ONE ASSERTION. One tablet at a
+     * staffed branch is enough to TEST on and is not enough to survive losing
+     * it. Both statements are true at once, and collapsing them is what told
+     * the owner to buy four tablets when one would unblock testing.
+     */
+    $branch = esrBranch('IND1');
+    esrDoctor($branch);
+    esrDevice($branch);
+
+    $report = esrReport();
+
+    expect(esrFleetLevel($report, 1))->toBe(DoctorEstateCapacityLevel::PASS)
+        ->and(esrFleetLevel($report, 3))->toBe(DoctorEstateCapacityLevel::FAIL)
+        ->and(esrGate($report, DoctorEstateResilienceVerdict::GATE_SPARE_DEVICE)['verdict'])
+        ->toBe(DoctorEstateResilienceVerdict::FAIL)
+        ->and($report['verdict'])->toBe(DoctorEstateResilienceVerdict::FAIL);
+});
+
+it('never lets the aggregate verdict read greener than the high availability gate', function (): void {
+    /*
+     * ESTATE_RESILIENCE is cited by a runbook, a closure record and a test, and
+     * it currently means "worst of every gate" — never greener than Level 3.
+     * Adding levels beside it must not quietly redefine it to the weaker
+     * question, which is exactly how a reader gets a green on a FAILing estate.
+     */
+    $branch = esrBranch('AGG1');
+    esrDoctor($branch);
+    esrDevice($branch);
+
+    $report = esrReport();
+    $spare = esrGate($report, DoctorEstateResilienceVerdict::GATE_SPARE_DEVICE)['verdict'];
+
+    if ($spare !== DoctorEstateResilienceVerdict::PASS) {
+        expect($report['verdict'])->not->toBe(DoctorEstateResilienceVerdict::PASS);
+    }
+
+    expect($report['verdict_semantics'])->toContain(DoctorEstateResilienceVerdict::GATE_SPARE_DEVICE);
+});
+
+it('never reports level 1 greener than the legacy local coverage gate', function (): void {
+    /*
+     * The two are NOT aliases and must never be treated as one: the legacy gate
+     * counts ELIGIBLE devices, Level 1 counts devices that can be LOGGED INTO.
+     * Level 1 is therefore the stricter of the two, and a future edit that
+     * inverted that ordering would make the activation prerequisite the weaker
+     * of a pair of near-identically named gates.
+     */
+    $branch = esrBranch('ORD1');
+    esrDoctor($branch);
+    $device = esrDevice($branch, [], withCredential: false);
+    esrCredential($device, revoked: true);
+
+    $report = esrReport();
+
+    expect(esrGate($report, 'local_trusted_device_coverage')['verdict'])
+        ->toBe(DoctorEstateResilienceVerdict::PASS)
+        ->and(esrGate($report, DoctorEstateResilienceVerdict::GATE_ACTIVATION_TEST_COVERAGE)['verdict'])
+        ->toBe(DoctorEstateResilienceVerdict::FAIL);
+});
+
+it('never marks a branch level 1 PASS while its own gaps say it holds no usable device', function (): void {
+    $bare = esrBranch('CON1');
+    esrDoctor($bare);
+
+    $credentialless = esrBranch('CON2');
+    esrDoctor($credentialless, 'drg Cred');
+    $device = esrDevice($credentialless, [], withCredential: false);
+    esrCredential($device, revoked: true);
+
+    foreach (esrReport()['branches'] as $row) {
+        $blocking = array_intersect($row['gaps'], [
+            DoctorEstateResilienceVerdict::GAP_NO_LOCAL_DEVICE,
+            DoctorEstateResilienceVerdict::GAP_DEVICE_WITHOUT_CREDENTIAL,
+        ]);
+
+        if ($blocking !== []) {
+            expect($row['capacity_levels'][DoctorEstateCapacityLevel::ACTIVATION_TEST_COVERAGE])
+                ->not->toBe(DoctorEstateCapacityLevel::PASS);
+        }
+    }
+});
+
+it('emits no gate verdict outside the three-word vocabulary', function (): void {
+    /*
+     * worst() fails closed on anything it does not recognise, so a PARTIAL or a
+     * NOT_APPLICABLE leaking into a gate array would turn the aggregate FAIL
+     * for a reason no reader could trace. The five-word capacity vocabulary
+     * stops at the level block by construction; this pins it.
+     */
+    $branch = esrBranch('VOC1');
+    esrDoctor($branch);
+    esrDevice($branch);
+    esrRoom($branch, ClinicRoom::TYPE_TREATMENT_ROOM);
+    esrRoom($branch, ClinicRoom::TYPE_TREATMENT_ROOM);
+
+    foreach (esrReport()['gates'] as $gate) {
+        expect($gate['verdict'])->toBeIn([
+            DoctorEstateResilienceVerdict::PASS,
+            DoctorEstateResilienceVerdict::FAIL,
+            DoctorEstateResilienceVerdict::UNVERIFIED,
+        ]);
+    }
+});
+
+/*
+| The activation-testing prerequisite, and the attestation that may not beat it
+*/
+
+it('fails the activation prerequisite while level 1 is measured false', function (): void {
+    $branch = esrBranch('PRQ1');
+    esrDoctor($branch);
+
+    $report = esrReport();
+
+    expect($report['activation_test_prerequisite']['measured'])->toBe(DoctorEstateResilienceVerdict::FAIL)
+        ->and($report['activation_test_prerequisite']['attested'])->toBeFalse()
+        ->and($report['activation_test_prerequisite']['status'])->toBe(DoctorEstateResilienceVerdict::FAIL);
+});
+
+it('holds the activation prerequisite at UNVERIFIED when measured true but unsigned', function (): void {
+    $branch = esrBranch('PRQ2');
+    [, $doctor] = esrDoctor($branch);
+    dbaAuthorization($doctor, esrDevice($branch));
+
+    $report = esrReport();
+
+    expect($report['activation_test_prerequisite']['measured'])->toBe(DoctorEstateResilienceVerdict::PASS)
+        ->and($report['activation_test_prerequisite']['attested'])->toBeFalse()
+        ->and($report['activation_test_prerequisite']['status'])->toBe(DoctorEstateResilienceVerdict::UNVERIFIED);
+});
+
+it('satisfies the activation prerequisite only when measured true AND signed', function (): void {
+    $branch = esrBranch('PRQ3');
+    [, $doctor] = esrDoctor($branch);
+    dbaAuthorization($doctor, esrDevice($branch));
+
+    config()->set(
+        DoctorEstateResilienceVerdict::CONFIG_ACTIVATION_TEST_ATTESTED,
+        [DoctorEstateResilienceVerdict::GATE_ACTIVATION_TEST_COVERAGE => true],
+    );
+
+    expect(esrReport()['activation_test_prerequisite']['status'])
+        ->toBe(DoctorEstateResilienceVerdict::PASS);
+});
+
+it('does not let a failing high availability level block the activation prerequisite', function (): void {
+    /*
+     * THE OWNER'S POLICY CHANGE, PINNED. One tablet at every staffed branch is
+     * enough to begin controlled activation TESTING. The estate still fails
+     * one-device-loss survival, that failure is still reported, and it no
+     * longer stands in the way of the lower bar.
+     */
+    $branch = esrBranch('PRQ4');
+    [, $doctor] = esrDoctor($branch);
+    dbaAuthorization($doctor, esrDevice($branch));
+
+    config()->set(
+        DoctorEstateResilienceVerdict::CONFIG_ACTIVATION_TEST_ATTESTED,
+        [DoctorEstateResilienceVerdict::GATE_ACTIVATION_TEST_COVERAGE => true],
+    );
+
+    $report = esrReport();
+
+    expect(esrFleetLevel($report, 3))->toBe(DoctorEstateCapacityLevel::FAIL)
+        ->and($report['activation_test_prerequisite']['status'])->toBe(DoctorEstateResilienceVerdict::PASS)
+        ->and($report['verdict'])->toBe(DoctorEstateResilienceVerdict::FAIL);
+});
+
+it('requires an unauthorized tablet to close the authorization gap before the prerequisite passes', function (): void {
+    /*
+     * Level 1 asks whether a branch holds a tablet somebody COULD log into. It
+     * does not ask whether any doctor is authorized on it, and an unauthorized
+     * tablet is a tablet nobody can use — so the prerequisite is the worst of
+     * three gates rather than Level 1 alone.
+     */
+    $branch = esrBranch('PRQ5');
+    esrDoctor($branch);
+    esrDevice($branch);
+
+    config()->set(
+        DoctorEstateResilienceVerdict::CONFIG_ACTIVATION_TEST_ATTESTED,
+        [DoctorEstateResilienceVerdict::GATE_ACTIVATION_TEST_COVERAGE => true],
+    );
+
+    $report = esrReport();
+
+    expect(esrFleetLevel($report, 1))->toBe(DoctorEstateCapacityLevel::PASS)
+        ->and(esrGate($report, 'authorization_coverage')['verdict'])->toBe(DoctorEstateResilienceVerdict::FAIL)
+        ->and($report['activation_test_prerequisite']['status'])->toBe(DoctorEstateResilienceVerdict::FAIL);
+});
+
+it('fails a gate when a signature stands against a measurement', function (): void {
+    /*
+     * NEVER TRUST AN ATTESTATION OVER A MEASUREMENT. The previous sprint chose
+     * measurement over coupling and reported a contradiction without failing
+     * anything; this revision narrows that in ONE direction only — a recorded
+     * `true` may no longer sit beside a measured falsehood and be reported as
+     * agreement. An ABSENT signature still fails nothing.
+     */
+    $branch = esrBranch('ATT2');
+    esrDoctor($branch);
+
+    config()->set(
+        DoctorEstateResilienceVerdict::CONFIG_ACTIVATION_TEST_ATTESTED,
+        [DoctorEstateResilienceVerdict::GATE_ACTIVATION_TEST_COVERAGE => true],
+    );
+
+    $report = esrReport();
+    $gate = esrGate($report, DoctorEstateResilienceVerdict::GATE_ATTESTATION_NO_CONTRADICTION);
+
+    expect($gate['verdict'])->toBe(DoctorEstateResilienceVerdict::FAIL)
+        ->and($gate['contradicting_prerequisites'])
+        ->toContain(DoctorEstateResilienceVerdict::GATE_ACTIVATION_TEST_COVERAGE)
+        ->and($report['verdict'])->toBe(DoctorEstateResilienceVerdict::FAIL);
+});
+
+it('passes the contradiction gate on an estate where nothing is signed, and says why', function (): void {
+    $branch = esrBranch('ATT3');
+    esrDoctor($branch);
+
+    $gate = esrGate(esrReport(), DoctorEstateResilienceVerdict::GATE_ATTESTATION_NO_CONTRADICTION);
+
+    // A green row here must never read as "the prerequisites are satisfied".
+    expect($gate['verdict'])->toBe(DoctorEstateResilienceVerdict::PASS)
+        ->and($gate['detail'])->toContain('No estate prerequisite is attested')
+        ->and($gate['detail'])->toContain('NOT a statement');
+});
+
+it('flags a declared prerequisite whose signature slot has gone missing', function (): void {
+    $branch = esrBranch('ATT4');
+    esrDoctor($branch);
+    esrDevice($branch);
+
+    // The list still declares it; the signature block no longer has a slot for
+    // it. That reads identically to "nobody has signed yet" and is in fact
+    // "the list and the signatures have drifted apart".
+    config()->set(DoctorEstateResilienceVerdict::CONFIG_ACTIVATION_TEST_ATTESTED, []);
+
+    $report = esrReport();
+
+    expect($report['attestation']['prerequisites'][DoctorEstateResilienceVerdict::GATE_ACTIVATION_TEST_COVERAGE]['signature_slot_missing'])
+        ->toBeTrue()
+        ->and(esrGate($report, DoctorEstateResilienceVerdict::GATE_ATTESTATION_NO_CONTRADICTION)['verdict'])
+        ->toBe(DoctorEstateResilienceVerdict::FAIL);
+});
+
+it('keeps the spare prerequisite reading the spare gate, not the new one', function (): void {
+    /*
+     * `attestation.measured` is the SHIPPED shape and is cited by a test and by
+     * the command. Adding a second prerequisite must not quietly repoint the
+     * top-level fields at the weaker question.
+     */
+    $branch = esrBranch('ATT5');
+    [, $doctor] = esrDoctor($branch);
+    dbaAuthorization($doctor, esrDevice($branch));
+
+    $report = esrReport();
+
+    expect($report['attestation']['prerequisite'])->toBe(DoctorEstateResilienceVerdict::GATE_SPARE_DEVICE)
+        ->and($report['attestation']['measured'])->toBe(DoctorEstateResilienceVerdict::FAIL)
+        ->and(esrFleetLevel($report, 1))->toBe(DoctorEstateCapacityLevel::PASS);
+});
+
+/*
+| Governance surface and the command
+*/
+
+it('declares the activation prerequisite in a list the phase scanner actually reads', function (): void {
+    /*
+     * A DECLARED-BUT-UNREAD LIST IS THE DEFECT THIS REVISION EXISTS TO AVOID
+     * REPEATING. `global_prerequisites` sat in config for two phases as five
+     * strings nothing consumed. The new list is asserted by the Phase-4A
+     * scanner AND measured by this engine, so neither surface is silent.
+     */
+    $declared = (array) config(DoctorEstateResilienceVerdict::CONFIG_ACTIVATION_TEST_PREREQUISITES);
+
+    expect($declared)->toContain(DoctorEstateResilienceVerdict::GATE_ACTIVATION_TEST_COVERAGE);
+
+    $checks = collect(app(Phase4aPilotPreparationScanner::class)->scan()['checks'])
+        ->keyBy('id');
+
+    /*
+     * The scanner asserts the list's INTEGRITY, not its satisfaction. A first
+     * draft asserted every entry was signed `true` and turned this scanner red
+     * for months over hardware that has not arrived — reddening the BOUNDED
+     * PHASE-4A PILOT scanner because a LATER rung is short of tablets, which is
+     * the same conflation this revision exists to end. Whether the prerequisite
+     * is TRUE is measured by doctor:estate-resilience.
+     */
+    expect($checks->keys()->all())->toContain('activation_test_prerequisites_declared')
+        ->and($checks['activation_test_prerequisites_declared']['status'])->toBe('PASS')
+        ->and($checks['activation_test_prerequisites_declared']['detail'])
+        ->toContain('NOT a statement that the prerequisite is satisfied');
+
+    // Drift — declared with no signature slot — is what this check CAN catch.
+    config()->set(DoctorEstateResilienceVerdict::CONFIG_ACTIVATION_TEST_ATTESTED, []);
+
+    $after = collect(app(Phase4aPilotPreparationScanner::class)->scan()['checks'])
+        ->keyBy('id');
+
+    expect($after['activation_test_prerequisites_declared']['status'])->toBe('FAIL');
+});
+
+it('ships both estate attestations unsigned', function (): void {
+    /*
+     * A measured falsehood may never be recorded as an attested truth. Both
+     * slots ship false and this revision signs neither.
+     */
+    expect(config(DoctorEstateResilienceVerdict::CONFIG_ACTIVATION_TEST_ATTESTED))
+        ->toBe([DoctorEstateResilienceVerdict::GATE_ACTIVATION_TEST_COVERAGE => false])
+        ->and(config('android_release.enforcement.global_prerequisites_attested.spare_device_available_per_branch'))
+        ->toBeFalse();
+});
+
+it('prints all three capacity levels separately from the aggregate', function (): void {
+    $branch = esrBranch('CMD2');
+    esrDoctor($branch);
+    esrDevice($branch);
+    esrRoom($branch, ClinicRoom::TYPE_TREATMENT_ROOM);
+    esrRoom($branch, ClinicRoom::TYPE_TREATMENT_ROOM);
+
+    $this->artisan('doctor:estate-resilience')
+        ->expectsOutputToContain('LEVEL 1  '.strtoupper(DoctorEstateCapacityLevel::ACTIVATION_TEST_COVERAGE).'=PASS')
+        ->expectsOutputToContain('LEVEL 2  '.strtoupper(DoctorEstateCapacityLevel::ROOM_CAPACITY).'=PARTIAL')
+        ->expectsOutputToContain('LEVEL 3  '.strtoupper(DoctorEstateResilienceVerdict::GATE_SPARE_DEVICE).'=FAIL')
+        ->expectsOutputToContain('OVERALL_ACTIVATION_TEST_PREREQUISITE=')
+        ->expectsOutputToContain('ESTATE_RESILIENCE=FAIL')
+        ->assertExitCode(0);
+});
+
+it('writes nothing while measuring three levels', function (): void {
+    $branch = esrBranch('RDO2');
+    [, $doctor] = esrDoctor($branch);
+    dbaAuthorization($doctor, esrDevice($branch));
+    esrRoom($branch, ClinicRoom::TYPE_TREATMENT_ROOM);
+
+    $before = [
+        'devices' => DB::table('mst_doctor_devices')->count(),
+        'authorizations' => DB::table('mst_doctor_device_authorizations')->count(),
+        'credentials' => DB::table('trx_doctor_device_webauthn_credentials')->count(),
+        'locks' => DB::table('mst_doctor_branch_locks')->count(),
+        'covers' => DB::table('trx_doctor_branch_covers')->count(),
+        'rooms' => DB::table('mst_clinic_rooms')->count(),
+    ];
+
+    esrReport();
+    esrReport();
+
+    expect([
+        'devices' => DB::table('mst_doctor_devices')->count(),
+        'authorizations' => DB::table('mst_doctor_device_authorizations')->count(),
+        'credentials' => DB::table('trx_doctor_device_webauthn_credentials')->count(),
+        'locks' => DB::table('mst_doctor_branch_locks')->count(),
+        'covers' => DB::table('trx_doctor_branch_covers')->count(),
+        'rooms' => DB::table('mst_clinic_rooms')->count(),
+    ])->toBe($before);
+});
+
+/*
+|--------------------------------------------------------------------------
+| Defects a final adversarial review found in the code above, before merge
+|--------------------------------------------------------------------------
+*/
+
+it('counts a credential the login gate would refuse as no level 1 coverage', function (): void {
+    /*
+     * LEVEL 1 SAID "CAN BE LOGGED INTO" AND MEASURED "NOT REVOKED".
+     *
+     * `DoctorAppLoginGate` admits a credential only when
+     * `WebAuthnDeviceBinding::isAcceptable($verdict)` holds. A credential that
+     * is never revoked but whose device-binding verdict the gate refuses is
+     * usable by the weaker predicate and DENIED at every login — so a branch
+     * holding only that tablet reported activation-test coverage PASS while no
+     * doctor could sign in on it. The engine was already computing the stricter
+     * count and throwing it away.
+     *
+     * The two predicates stay DIFFERENT on purpose: device_credential_coverage
+     * keeps its shipped "unrevoked" meaning and passes here.
+     */
+    config()->set('webauthn.device_binding.require_device_bound', true);
+
+    $branch = esrBranch('ADM1');
+    esrDoctor($branch);
+    $device = esrDevice($branch, [], withCredential: false);
+
+    DoctorDeviceWebAuthnCredential::query()->create([
+        'uuid' => (string) Str::uuid(),
+        'doctor_device_id' => $device->id,
+        'credential_id' => 'cred-'.Str::random(20),
+        'public_key' => 'pk-'.Str::random(24),
+        'signature_counter' => 1,
+        'user_verified' => true,
+        'backup_eligible' => true,
+        'backup_state' => true,
+        'device_bound_verdict' => DoctorDeviceWebAuthnCredential::VERDICT_BACKUP_ELIGIBLE,
+        'attestation_format' => 'none',
+        'registered_at' => now(),
+        'revoked_at' => null,
+    ]);
+
+    $report = esrReport();
+    $row = esrBranchRow($report, 'ADM1');
+
+    expect($row['eligible_device_count'])->toBe(1)
+        ->and($row['eligible_devices_without_credential'])->toBe([])
+        ->and($row['eligible_devices_without_admissible_credential'])->toBe([$device->id])
+        ->and($row['locally_usable_device_count'])->toBe(0)
+        ->and(esrLevel($report, 'ADM1', DoctorEstateCapacityLevel::ACTIVATION_TEST_COVERAGE))
+        ->toBe(DoctorEstateCapacityLevel::FAIL)
+        ->and(esrGate($report, 'device_credential_coverage')['verdict'])
+        ->toBe(DoctorEstateResilienceVerdict::PASS);
+});
+
+it('follows the binding policy rather than restating it', function (): void {
+    // One implementation, two callers. Relaxing the policy relaxes the login
+    // gate and this count together, because both ask the same helper.
+    config()->set('webauthn.device_binding.require_device_bound', false);
+
+    $branch = esrBranch('ADM2');
+    esrDoctor($branch);
+    $device = esrDevice($branch, [], withCredential: false);
+
+    DoctorDeviceWebAuthnCredential::query()->create([
+        'uuid' => (string) Str::uuid(),
+        'doctor_device_id' => $device->id,
+        'credential_id' => 'cred-'.Str::random(20),
+        'public_key' => 'pk-'.Str::random(24),
+        'signature_counter' => 1,
+        'user_verified' => true,
+        'backup_eligible' => true,
+        'backup_state' => true,
+        'device_bound_verdict' => DoctorDeviceWebAuthnCredential::VERDICT_BACKUP_ELIGIBLE,
+        'attestation_format' => 'none',
+        'registered_at' => now(),
+        'revoked_at' => null,
+    ]);
+
+    expect(esrLevel(esrReport(), 'ADM2', DoctorEstateCapacityLevel::ACTIVATION_TEST_COVERAGE))
+        ->toBe(DoctorEstateCapacityLevel::PASS);
+});
+
+it('reports one level 1 answer, not a guarded gate beside an unguarded table', function (): void {
+    /*
+     * The gate applied the incomplete-population guard and the capacity block
+     * did not, so one report printed UNVERIFIED in the gate list and PASS in
+     * the capacity table three lines below it, with
+     * `minimum_additional_branches_to_cover: 0` beside the PASS. The capacity
+     * block is the surface an operator is told to act on, so the disagreeing
+     * half was the actionable one.
+     */
+    $branch = esrBranch('AGR1');
+    esrDoctor($branch);
+    esrDevice($branch);
+
+    $unhomed = User::factory()->create(['name' => 'drg Unhomed Two']);
+    $unhomed->assignRole('Doctor');
+    Doctor::factory()->create(['user_id' => $unhomed->id, 'name' => 'drg Unhomed Two', 'is_active' => true]);
+
+    $report = esrReport();
+    $gate = esrGate($report, DoctorEstateResilienceVerdict::GATE_ACTIVATION_TEST_COVERAGE);
+
+    expect($gate['verdict'])->toBe(DoctorEstateResilienceVerdict::UNVERIFIED)
+        ->and(esrFleetLevel($report, 1))->toBe(DoctorEstateCapacityLevel::UNVERIFIED)
+        ->and($report['capacity_policy']['levels'][0]['status_before_population_guard'])
+        ->toBe(DoctorEstateCapacityLevel::PASS)
+        ->and($report['capacity_policy']['levels'][0]['doctors_without_home_branch'])->toBe(1);
+});
+
+it('cannot be passed while the fleet engine does not say how complete the population is', function (): void {
+    /*
+     * `?? 0` read "the key is gone" as "there is no hole", which PERMITS the
+     * pass — the green direction. This module's own constant docblock records
+     * the last time a silent fallthrough like that went unnoticed for a sprint.
+     */
+    $branch = esrBranch('UNK1');
+    esrDoctor($branch);
+    esrDevice($branch);
+
+    $real = app(DoctorFleetReadinessService::class)->build();
+    unset($real['unset_doctor_count']);
+
+    $fleet = Mockery::mock(DoctorFleetReadinessService::class);
+    $fleet->shouldReceive('build')->andReturn($real);
+    app()->instance(DoctorFleetReadinessService::class, $fleet);
+
+    $report = app(DoctorEstateResilienceService::class)->build();
+    $gate = esrGate($report, DoctorEstateResilienceVerdict::GATE_ACTIVATION_TEST_COVERAGE);
+
+    expect($gate['verdict'])->toBe(DoctorEstateResilienceVerdict::UNVERIFIED)
+        ->and($gate['doctors_without_home_branch'])->toBeNull()
+        ->and($gate['population_complete'])->toBeFalse()
+        ->and($gate['detail'])->toContain('did not report how many doctors belong to no branch');
+});
+
+it('compares a signature against the composed prerequisite it names, not one third of it', function (): void {
+    /*
+     * The attestation cross-check read the single Level-1 gate while the
+     * prerequisite of the IDENTICAL key composed three gates, so a signature
+     * standing beside a FAILING prerequisite printed "Each agrees with what
+     * this engine measured". One key, two measurements, in one report.
+     */
+    $branch = esrBranch('CMP1');
+    esrDoctor($branch);
+    esrDevice($branch);
+
+    config()->set(
+        DoctorEstateResilienceVerdict::CONFIG_ACTIVATION_TEST_ATTESTED,
+        [DoctorEstateResilienceVerdict::GATE_ACTIVATION_TEST_COVERAGE => true],
+    );
+
+    $report = esrReport();
+    $record = $report['attestation']['prerequisites'][DoctorEstateResilienceVerdict::GATE_ACTIVATION_TEST_COVERAGE];
+
+    expect(esrFleetLevel($report, 1))->toBe(DoctorEstateCapacityLevel::PASS)
+        ->and(esrGate($report, 'authorization_coverage')['verdict'])->toBe(DoctorEstateResilienceVerdict::FAIL)
+        ->and($report['activation_test_prerequisite']['status'])->toBe(DoctorEstateResilienceVerdict::FAIL)
+        ->and($record['measured'])->toBe(DoctorEstateResilienceVerdict::FAIL)
+        ->and($record['contradiction'])->toBeTrue()
+        ->and(esrGate($report, DoctorEstateResilienceVerdict::GATE_ATTESTATION_NO_CONTRADICTION)['verdict'])
+        ->toBe(DoctorEstateResilienceVerdict::FAIL);
+});
+
+it('reports an active room a doctor could be placed in that level 2 did not size', function (): void {
+    /*
+     * The repository returns two room counts and says the point of returning
+     * them together is that the disagreement gets reported. It was computed and
+     * read by nothing. The divergence is real: the room-assignment gate offers
+     * every ACTIVE room whatever its type.
+     */
+    $branch = esrBranch('DIV1');
+    esrDoctor($branch);
+    esrDevice($branch);
+    esrRoom($branch, ClinicRoom::TYPE_TREATMENT_ROOM);
+    esrRoom($branch, ClinicRoom::TYPE_STERILIZATION_ROOM);
+
+    $findings = array_column(esrReport()['findings'], 'finding');
+
+    expect($findings)->toContain('assignable_room_a_doctor_could_be_placed_in_is_not_counted_by_level_2');
+});
+
+it('does not raise the room divergence when every active room is doctor facing', function (): void {
+    $branch = esrBranch('DIV2');
+    esrDoctor($branch);
+    esrDevice($branch);
+    esrRoom($branch, ClinicRoom::TYPE_TREATMENT_ROOM);
+    esrRoom($branch, ClinicRoom::TYPE_CONSULTATION_ROOM);
+
+    $findings = array_column(esrReport()['findings'], 'finding');
+
+    expect($findings)->not->toContain('assignable_room_a_doctor_could_be_placed_in_is_not_counted_by_level_2');
+});
+
+it('gives the activation question its own exit code, because --strict asks a harder one', function (): void {
+    /*
+     * `--strict` keys on the aggregate, which is never greener than high
+     * availability. An activation preflight wired to it would exit 1 even once
+     * every staffed branch holds a usable, authorized tablet — the conflation
+     * this revision exists to end, relocated into an exit code.
+     */
+    $branch = esrBranch('PRE1');
+    [, $doctor] = esrDoctor($branch);
+    dbaAuthorization($doctor, esrDevice($branch));
+
+    config()->set(
+        DoctorEstateResilienceVerdict::CONFIG_ACTIVATION_TEST_ATTESTED,
+        [DoctorEstateResilienceVerdict::GATE_ACTIVATION_TEST_COVERAGE => true],
+    );
+
+    // The estate still fails one-device-loss survival, and says so.
+    $this->artisan('doctor:estate-resilience --strict')->assertExitCode(1);
+
+    // The activation question is satisfied, and has an exit code that says so.
+    $this->artisan('doctor:estate-resilience --activation-preflight')->assertExitCode(0);
+});
+
+it('fails the activation preflight exit code while a staffed branch holds nothing', function (): void {
+    $branch = esrBranch('PRE2');
+    esrDoctor($branch);
+
+    $this->artisan('doctor:estate-resilience --activation-preflight')->assertExitCode(1);
 });

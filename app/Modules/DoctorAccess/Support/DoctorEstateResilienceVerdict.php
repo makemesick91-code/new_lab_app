@@ -16,12 +16,17 @@ namespace App\Modules\DoctorAccess\Support;
  *   DoctorEstateResilienceService       — "does the HARDWARE survive losing a
  *                                         tablet?" (this sprint)
  *
- * The first two are satisfied today: 45/45 authorizations, 15/15 doctors with a
- * proven login. Neither of them looks at whether a branch owns a second tablet,
- * and both would keep saying READY on the morning the only tablet at a branch
- * is dropped down a stairwell. That is the question this engine exists for, and
- * it is the reason `spare_device_available_per_branch` is a prerequisite of
- * global activation rather than a footnote.
+ * Neither of the first two looks at whether a branch owns a second tablet, and
+ * both would keep saying READY on the morning the only tablet at a branch is
+ * dropped down a stairwell. That is the question this engine exists for, and it
+ * is the reason `spare_device_available_per_branch` is a prerequisite of global
+ * activation rather than a footnote.
+ *
+ * No authorization or doctor tally is quoted here on purpose. The live figures
+ * are in the report's own `authorization_matrix`, recomputed against the
+ * CURRENT estate every build; a docblock that names a count goes stale the hour
+ * a tablet is added, and rule 158 already forbids carrying a stale `45/45`
+ * forward because that is exactly how a new tablet becomes invisible.
  *
  * WHY THERE IS AN `UNVERIFIED` AND NOT JUST PASS/FAIL. The only definition of
  * "spare" the codebase owns is prose in the device-loss runbook:
@@ -33,7 +38,10 @@ namespace App\Modules\DoctorAccess\Support;
  * inventory and is the nearest candidate, but a room is not a staffed station in
  * either direction — three rooms with one doctor on shift is one station, one
  * room with two chairs is two — so it is REPORTED as advisory and decides
- * nothing. An engine that silently assumed a number for this would be
+ * nothing HERE. (REVISION-DOCTOR-TRUSTED-DEVICE-ESTATE-CAPACITY-POLICY-1 gave
+ * rooms a decision of their own at LEVEL 2, which is a different question with a
+ * different room set; the station count below is still never substituted.)
+ * An engine that silently assumed a number for this would be
  * manufacturing the input to its own gate. So when the station count decides
  * the answer, this engine says UNVERIFIED and names the missing input.
  *
@@ -92,6 +100,38 @@ final class DoctorEstateResilienceVerdict
      */
     public const GATE_SPARE_DEVICE = 'spare_device_available_per_branch';
 
+    /**
+     * REVISION-DOCTOR-TRUSTED-DEVICE-ESTATE-CAPACITY-POLICY-1.
+     *
+     * The gate the ACTIVATION-TESTING prerequisite reads — Level 1, and a
+     * different question from the one above. Held here beside its sibling for
+     * the same reason the sibling is held here: the producer and the consumer
+     * must not be two copies of a string literal.
+     */
+    public const GATE_ACTIVATION_TEST_COVERAGE = DoctorEstateCapacityLevel::ACTIVATION_TEST_COVERAGE;
+
+    /**
+     * The gate that FAILS when a signature contradicts a measurement.
+     *
+     * Named for exactly what it decides. `attestation_consistency` would have
+     * read as "the attestations are in order", which it does not check — an
+     * estate where nothing at all is signed satisfies this gate.
+     */
+    public const GATE_ATTESTATION_NO_CONTRADICTION = 'attestation_does_not_contradict_measurement';
+
+    /**
+     * Where the ACTIVATION-TESTING prerequisite list and its signatures live.
+     *
+     * Config paths, not gate keys, and deliberately separate from
+     * `global_prerequisites`: that list is the Phase-5 precondition for
+     * fleet-wide enforcement and is NOT weakened by this revision.
+     */
+    public const CONFIG_ACTIVATION_TEST_PREREQUISITES = 'android_release.enforcement.activation_test_prerequisites';
+
+    public const CONFIG_ACTIVATION_TEST_ATTESTED = 'android_release.enforcement.activation_test_prerequisites_attested';
+
+    public const CONFIG_GLOBAL_PREREQUISITES_ATTESTED = 'android_release.enforcement.global_prerequisites_attested';
+
     /** No eligible device at a branch that has home doctors. */
     public const GAP_NO_LOCAL_DEVICE = 'no_local_eligible_device';
 
@@ -100,6 +140,28 @@ final class DoctorEstateResilienceVerdict
 
     /** An eligible device with no usable credential cannot be logged into. */
     public const GAP_DEVICE_WITHOUT_CREDENTIAL = 'eligible_device_without_usable_credential';
+
+    /**
+     * REVISION-DOCTOR-TRUSTED-DEVICE-ESTATE-CAPACITY-POLICY-1 — Level 1's own
+     * gap, and NOT a synonym of {@see self::GAP_NO_LOCAL_DEVICE}.
+     *
+     * A staffed branch holding one eligible tablet whose only credential is
+     * revoked has a local eligible device and cannot be tested on it. Level 1
+     * counts devices that can be LOGGED INTO, so this gap fires where the older
+     * one does not, and an adversarial review found exactly that hole: a
+     * credential-less tablet at TLK1 would have turned the activation-testing
+     * prerequisite green at a branch where no doctor can sign in.
+     */
+    public const GAP_NO_LOCALLY_USABLE_DEVICE = 'no_locally_usable_trusted_device';
+
+    /**
+     * The staffed population is incomplete, so no verdict over it is safe.
+     *
+     * Raised when a doctor belongs to no branch: an UNSET doctor is invisible
+     * to every per-branch count, so a shrinking population could otherwise turn
+     * Level 1 green with no hardware bought.
+     */
+    public const GAP_POPULATION_INCOMPLETE = 'staffed_population_incomplete';
 
     /**
      * Two or more eligible devices, so whether that is enough depends on the

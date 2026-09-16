@@ -63,7 +63,11 @@ COUNT(*) WHERE branch_id = ? AND type = 'treatment_room'
 is a real, existing candidate. It was not considered and then rejected — it was
 simply missed.
 
-**It is now read, reported, and deliberately not used to decide anything.** A
+**It is now read, reported, and deliberately not used to decide anything.**
+*(Scoped later by `REVISION-DOCTOR-TRUSTED-DEVICE-ESTATE-CAPACITY-POLICY-1`: it
+still decides nothing at Level 3, which is this sprint's subject. Rooms do decide
+**Level 2**, a separate question introduced there, over a wider room set and as a
+lower bound.)* A
 treatment room is an *inventory of rooms*; the formula asks for *peak concurrent
 staffed stations*, and the two differ in both directions — three rooms with one
 doctor on shift is one station, one room fitted with two chairs is two.
@@ -139,7 +143,8 @@ per-doctor ceremonies were **not** performed and are not required.
 
 A read-only measurement engine, because the owner chose measurement over a
 signature on a hope — and explicitly chose **not** to couple the attestation to
-it.
+it. (Narrowed later for contradictions only; see the note under "The
+attestation is observed, never enforced" below.)
 
 | Artifact | Purpose |
 |---|---|
@@ -147,7 +152,7 @@ it.
 | `App\Modules\DoctorAccess\Support\DoctorEstateResilienceVerdict` | `PASS` / `FAIL` / `UNVERIFIED`, and the named branch scope |
 | `doctor:estate-resilience` (`--json`, `--strict`) | the operator surface |
 | `config/android_release.php` `enforcement.concurrent_doctor_stations_per_branch` | **ships empty** — a home for the input the gate always needed |
-| `DoctorEstateResilienceRepositoryInterface` (+ repository) | one read-only query: active treatment rooms per branch, advisory only |
+| `DoctorEstateResilienceRepositoryInterface` (+ repository) | one read-only query: active treatment rooms per branch, advisory only *(the capacity-policy revision later added two more reads — a room PROFILE that decides Level 2, and active branch covers — leaving this one advisory)* |
 
 **No migration. No route. No permission. No policy.** One read-only repository,
 for the treatment-room count only — a bulk *credential* repository was also
@@ -178,6 +183,16 @@ statement about a room, made by somebody who has stood in it.
 The report prints `MEASURED` beside `ATTESTED` and raises a finding when they
 contradict. It **does not** gate, block or write the attestation. Signing stays a
 human act with a human's name on it — the owner's choice, recorded.
+
+> **SUPERSEDED IN PART by `REVISION-DOCTOR-TRUSTED-DEVICE-ESTATE-CAPACITY-POLICY-1`
+> (2026-09-16), in one direction only.** A CONTRADICTION — a signature recorded
+> `true` beside a measurement that is not PASS — now fails a gate of its own,
+> `attestation_does_not_contradict_measurement`. The engine still writes no
+> attestation, still cannot be satisfied by one, and still fails nothing when a
+> signature is merely ABSENT: that is the half of the owner's choice this
+> paragraph was written for, and it stands. What changed is that a recorded
+> `true` may no longer sit beside a measured falsehood and be reported as
+> agreement. See rule 159, ECP-R14.
 
 ## 6. Gates, as measured on the estate above
 
