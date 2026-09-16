@@ -1,0 +1,146 @@
+---
+description: Phase-0 delta recheck findings for doctor global activation. A recheck GO is never the owner's APPLY approval. Half A is fleet-wide and non-staged, but its two effects land at different moments — branch narrowing is immediate for everyone, lease enforcement begins at each doctor's next login. The lease population is wider than the branch-lock population. Half B's unscoped mode IS implemented; what blocks it is a committed value, a phase move, and five attestations of which four can never be contradicted. Lease cleanup belongs inside the activation window, not days before it.
+globs:
+  - "app/Modules/DoctorAccess/**"
+  - "app/Modules/DoctorDevice/**"
+  - "app/Support/Android/**"
+  - "config/android_release.php"
+  - "config/doctor_device_enforcement.php"
+  - "config/feature_flags.php"
+  - "docs/runbooks/android-phase4a-pilot-activation-checklist.md"
+  - "docs/runbooks/doctor-session-lease-operations.md"
+  - "docs/runbooks/doctor-branch-lock-operations.md"
+  - "tests/Feature/DoctorAccess/**"
+alwaysApply: false
+---
+
+# Doctor global activation — the activation window
+
+Extends rules 153, 154, 156 and **157**, which it does not replace. Rule 157 owns
+the governance phase and the attested precondition; this one owns what the
+Phase-0 delta recheck measured about **entering an activation window**.
+
+## AW-R1 — a recheck GO is not an APPLY approval
+
+`doctor-access-global-activation-phase0-delta-recheck-1-go` means the prerequisites
+reconcile, the mechanics are re-derived and the window plan is executable. It means
+**`GLOBAL_ACTIVATION_APPLY_AUTHORIZED = NO`**. The next step is a separate human
+decision — `APPROVE_DOCTOR_GLOBAL_ACTIVATION_APPLY=YES/NO`. Never fold the owner's
+approval into a tag, and never report `GLOBAL_ACTIVATION_GO=YES` or
+`GLOBAL_ENFORCEMENT_GO=YES` from a readiness sprint.
+
+## AW-R2 — Half A is fleet-wide and non-staged
+
+`FEATURE_DOCTOR_SINGLE_ACTIVE_SESSION=true` is a **cutover**, not a pilot, a wave
+or gradual enablement. `DoctorSessionLeaseService::subjectTo()` is
+`$user->hasRole('Doctor')` and nothing else; the listener is registered
+unconditionally and the middleware sits in the **global `web` group**. There is no
+cohort, no cap and no staged mechanism — do not describe one unless source grows one.
+
+## AW-R3 — but its two effects land at different moments
+
+This is the correction an adversarial review earned, and the activation plan
+depends on it.
+
+- **Branch narrowing is immediate and fleet-wide.** `RmeWorkingBranchScope` and
+  `ClinicVisitService` call `branchIdFor()` on every request, so the instant
+  `enabled()` flips, an already-logged-in doctor's lists narrow to their home
+  branch and cross-branch writes are refused.
+- **Lease enforcement begins at each doctor's NEXT login.** A session holding no
+  lease token passes through `EnsureDoctorSessionLease` forever, and leases mint
+  only on the `Login` event.
+
+So arming Half A **narrows every doctor's branch at once and evicts nobody.** Do
+not plan the window as a mass logout, and do not try to prove second-login denial
+on a session that predates the flip.
+
+## AW-R4 — the lease population is WIDER than the branch-lock population
+
+`DoctorEffectiveBranchResolver` gates on `hasRole('Doctor')` **AND NOT exempt**
+(Owner / Super Admin / Supervisor RME). `subjectTo()` carries no exemption. A
+governance account holding the Doctor role **is** subject to the session lease
+while being exempt from the branch lock. Check both populations separately.
+
+## AW-R5 — scoped enforcement is not global, and a big cohort is still `pilot`
+
+`MODE_PILOT` covers `in_array($userId, cohort)`; `MODE_UNSCOPED` covers everyone.
+Fleet-wide is live only when **unscoped mode AND `globalPermitted()` AND the flag
+armed** are all true. A cohort naming many doctors satisfies none of them.
+
+Enumeration fails **closed**: a cohort larger than `pilot_cohort_maximum` resolves
+to `ids => []`, so it covers **NOBODY, not everybody**, and trips
+`pilot_cohort_exceeds_reviewed_maximum`.
+
+## AW-R6 — `global_permitted` is unreachable from a host, but not tamper-evident
+
+It is **not reachable from an environment variable, a database row, or a runtime
+write** — `config/doctor_device_enforcement.php` has no such key and there is no
+`config()->set` anywhere in the application.
+
+State it that way and no stronger. `globalPermitted()` reads `config()`, which
+resolves from the **deployed file or the config cache**, not from git, and the
+auditor reads the same value — so a host-side edit arms global enforcement and the
+gate reports it consistently. **There is no drift detection against the committed
+value.** "Requires a reviewed source-control change" is a deployment-integrity
+property, not a code-enforced one.
+
+## AW-R7 — four of five global prerequisites cannot be contradicted
+
+`global_prerequisites_attested` is consumed by `Phase4aPilotPreparationScanner`,
+which reads **only the attestation** and no measurement. The contradiction detector
+lives in a different engine (`DoctorEstateResilienceVerdict`, surfaced by
+`doctor:estate-resilience`) and covers exactly one of the five.
+
+So signing `spare_device_available_per_branch => true` would **PASS the phase gate**
+despite the measured FAIL, and `rollback_to_browser_login_proven` has **no producer
+anywhere under `app/`** — nothing can contradict it at all. Extending measurement
+and contradiction detection to the remaining prerequisites is a prerequisite of
+Half B, not a nicety.
+
+## AW-R8 — lease cleanup belongs INSIDE the window
+
+A stale unreleased lease is dead only while its user has no live session row —
+`IncumbentSessionProbe::isLive()` keys on `sessions.user_id`, not on the lease's
+recorded `session_id`. A login taken **while the flag is off** writes a session row
+and claims no lease, so arming afterwards turns that lease into a live incumbent
+that refuses the next login.
+
+Therefore: release stale leases **immediately before the cutover**, never days
+earlier — a lease released today is replaced the moment that doctor logs in again.
+Use `doctor:session-force-logout` (dry run first); it carries no flag guard, which
+is precisely what makes cleanup possible before Half A arms.
+
+## AW-R9 — `online = false` is not proof of a clean window
+
+The presence table can hold an open row for a session that no longer exists. The
+clinical hard gate is all of: zero live doctor sessions in `sessions` within
+`SESSION_LIFETIME`; zero doctors holding a `clinic_room_id` with `offline_at IS NULL`;
+zero visits `in_progress`; zero visits dated today (or each explicitly accepted);
+`isLive()` false for every unreleased lease; and no approved cover overlapping the
+window. Measure it within minutes of the cutover, never hours.
+
+## AW-R10 — capture the scope, restore the capture
+
+The pilot cohort is the **union of two host variables** — a singular
+`..._DOCTOR_USER_ID` and a plural `..._DOCTOR_USER_IDS`. A rollback restoring only
+one restores the wrong cohort. Capture with `android:phase4a-pilot-scope --json`,
+which reports the resolved union, and restore **that**, never a remembered constant.
+
+Know one reporting subtlety before an incident: `declared_pilot_doctor_user_id`
+reads `null` whenever the resolved cohort has more than one member. That is by
+design and is **not** a sign the singular variable is unset.
+
+## AW-R11 — fetch before you judge ancestry
+
+A stale local branch ref will report every prerequisite GO tag as *not* an ancestor
+of the base branch, which is false. Fetch first and resolve against `origin/…` or
+against the production head itself.
+
+## AW-R12 — flags off does not mean nothing writes
+
+True of the per-request and per-login hot path, which returns before any query.
+**False of the subsystem**: `DoctorSessionReleaseService`, `DoctorBranchLockApprovalService`
+and `DoctorBranchLockBulkAssignmentService` all write locks, lease releases,
+presence rows and `sys_audit_logs` rows with both flags off, by design and through
+governed CLI commands. Do not claim blanket write-inertness; claim it about the
+request path, which is where it is true.

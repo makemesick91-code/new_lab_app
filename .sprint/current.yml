@@ -1,78 +1,70 @@
-# Active sprint manifest — DOCTOR-ACCESS-TRUSTED-DEVICE-ESTATE-PROVISIONING-1
+# Active sprint manifest — DOCTOR-ACCESS-GLOBAL-ACTIVATION-PHASE0-DELTA-RECHECK-1
 # Validated by: php artisan sprint:manifest-check
 
-id: DOCTOR-ACCESS-TRUSTED-DEVICE-ESTATE-PROVISIONING-1
-type: SECURITY_FIX
+id: DOCTOR-ACCESS-GLOBAL-ACTIVATION-PHASE0-DELTA-RECHECK-1
+type: DOCS_ONLY
 module: DoctorAccess
-title: "Provision the minimum physical trusted-device estate for controlled activation testing: one tablet at TLK1, the only staffed branch holding none. The ceremony was corrected before any hardware was touched — an adversarial review found that WebAuthn enrolment does NOT make a device eligible (only the Android keystore challenge-response writes cryptographically_verified), that a stock tablet's Google-synced passkey is REFUSED at registration because it is BE=1, and that bare app-login auto-registration derives the branch from the DOCTOR rather than the tablet and would have created a duplicate row at the wrong branch. Provisioned through the canonical flow: keystore proof, admin approval bound explicitly to TLK1, ONE device-scoped device-bound credential. The eligible estate grew 3 to 4, which moved the authorization target 45 to 60, and the 15 new pairs were created through the digest-bound command. Level 1 measured PASS and independently reconciled against the fleet engine; the owner then signed that prerequisite and nothing else. Level 2 is PARTIAL, Level 3 is FAIL, both unsigned. No flag armed, no cohort widened, no session lease touched, no activation."
+title: "Phase-0 delta recheck of DOCTOR-ACCESS-GLOBAL-ACTIVATION-1: re-read production from scratch after four GO'd prerequisites and prove the programme is ready for an explicit owner APPLY decision. Read-only against production — zero mutations, no lease released, no flag armed, no cohort widened, no attestation signed. The estate did not degrade (15 doctors, 4 eligible devices [3,5,6,7], 60/60 authorizations, Level 1 PASS and attested, device 7 clean). Two adversarial corrections were earned and are now durable rules: Half A is fleet-wide in population but its effects split — branch narrowing is immediate for every doctor while lease enforcement begins at each doctor's next login, so arming narrows everyone and evicts nobody; and the lease population is wider than the branch-lock population because subjectTo() carries no governance-account exemption. Half B is implemented (MODE_UNSCOPED works) but blocked on a committed value, a phase move, and five attestations of which four can never be contradicted by any measurement. The one unreleased lease is a stale orphan whose cleanup is planned for inside the activation window, not before it."
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-# SECURITY_FIX, chosen up rather than down.
+# DOCS_ONLY, and chosen honestly rather than up.
 #
-# The code change is small — one config value flipped from false to true, plus
-# the tests that pin it. But that value is a SIGNATURE on a security
-# prerequisite of global doctor enforcement, and the sprint that sets it also
-# mutated the production trusted-device estate: a new trusted device and 15 new
-# doctor-device authorizations. A wrong signature here is a false green on the
-# gate a later activation decision reads.
+# Every changed file is Markdown or an .mdc rule. There is no PHP, no config
+# value, no migration, no route, no test and no asset in this diff. The sprint is
+# inert by CONSTRUCTION, not by review — there is nothing in it that could arm
+# anything, which is the property a Phase-0 recheck is supposed to have.
+#
+# The security-relevant content is documentary: it records that Half A is one
+# host variable from a fleet-wide cutover and that Half B is blocked. Recording
+# that changes no behaviour. The sprint that ACTS on it is a different sprint
+# with a different classification.
 
-runtime_change: false           # no application code changed. One config value
-                                # (activation_test_prerequisites_attested) moved
-                                # false -> true after the measurement turned
-                                # true, and three tests were repointed to pin
-                                # the state they test rather than inherit the
-                                # shipped default.
+runtime_change: false           # no application code. The only executable files
+                                # touched are zero.
 
-schema_change: false            # NO migration. The production writes were made
-                                # through canonical application paths — device
-                                # enrolment/approval, one WebAuthn credential,
-                                # and doctor:device-bulk-authorize. No raw SQL.
+schema_change: false            # NO migration. Production was read with bounded
+                                # read-only SELECTs and read-only artisan
+                                # reports; nothing was written.
 
 frontend_change: false          # no JS, CSS, Vite entry or Blade view.
 
-security_impact: true           # a governed attestation on an estate
-                                # prerequisite of global doctor enforcement was
-                                # SIGNED, and 15 doctor-device authorizations
-                                # were created on production. Enforcement itself
-                                # is untouched: single_active_session still
-                                # false, branch lock still inert, cohort
-                                # unchanged, global_permitted still a
+security_impact: false          # no permission, policy, gate, flag, cohort,
+                                # attestation or credential changed. The
+                                # activation posture is byte-identical to the
+                                # base: single_active_session false, branch lock
+                                # inert, cohort [9,15,18], global_permitted a
                                 # source-controlled false, authorizes_activation
-                                # still a literal false.
+                                # a literal false.
 
-branch_isolation_impact: false  # the new device's branch is OPERATIONAL
-                                # topology, not an access boundary. It was bound
-                                # explicitly to TLK1 by an admin at approval
-                                # precisely so it could not be derived from
-                                # whichever doctor signed in first.
+branch_isolation_impact: false  # BranchContext, the effective-branch resolver
+                                # and every narrowing consumer are untouched.
 
 ledger_impact: false            # no inventory ledger, billing, payment, invoice
                                 # or receivable path is reachable from here.
 
-deploy_required: true           # the signed attestation only takes effect on
-                                # the deployment that carries it, and production
-                                # runs cached configuration.
+deploy_required: true           # the canonical rules and runbooks this sprint
+                                # writes are repository governance authority, and
+                                # this project deploys that authority rather than
+                                # leaving it only on a branch. Nothing in the
+                                # deploy changes runtime behaviour.
 
-browser_required: true          # the credential enrolment is a WebAuthn
-                                # registration performed in a browser ON THE
-                                # TABLET — the authenticator is whatever device
-                                # the browser runs on, so it cannot be done from
-                                # a laptop.
+browser_required: false         # every measurement was taken from the CLI and
+                                # from read-only HTTP health probes.
 
-# NOT CREATED until every hard gate passes. A GO here means the ESTATE was
-# provisioned and Level 1 is measured PASS and signed. It does NOT mean Level 2
-# or Level 3 pass, and it authorises no activation.
-go_tag: doctor-access-trusted-device-estate-provisioning-1-go
+# A GO here means the delta recheck is complete and truthful. It is NOT the
+# owner's APPLY approval, and the tag must never be read as one.
+#   PHASE0_DELTA_RECHECK_GO            = the claim
+#   GLOBAL_ACTIVATION_APPLY_AUTHORIZED = NO
+#   ACTIVATION_OCCURRED                = NO
+go_tag: doctor-access-global-activation-phase0-delta-recheck-1-go
 go_tag_created: false
 
 test_profiles:
   - focused
-  - security_regression
-  - full_required
 
 inherits_parent_programme: DOCTOR-ACCESS-GLOBAL-ACTIVATION-1
-inherits_parent_sprint: REVISION-DOCTOR-TRUSTED-DEVICE-ESTATE-CAPACITY-POLICY-1
-inherits_parent_go: revision-doctor-trusted-device-estate-capacity-policy-1-go
+inherits_parent_sprint: DOCTOR-ACCESS-TRUSTED-DEVICE-ESTATE-PROVISIONING-1
+inherits_parent_go: doctor-access-trusted-device-estate-provisioning-1-go
 inherits_pilot_go: doctor-pwa-multi-doctor-pilot-1-go
 
 # Restored deliberately, not copied. LegacyRmeProgramClosureContractTest asserts

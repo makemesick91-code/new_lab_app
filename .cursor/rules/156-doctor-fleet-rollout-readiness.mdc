@@ -34,9 +34,15 @@ So the verdict is now `TRUSTED_PATHS_COMPLETE`, and a second gate,
    happened. Never report one as the other, and never name a provisioning
    verdict as though it covered the fleet.
 
-2. **FR-R2 — 45 authorization rows are 45 rows.** They are not 45 proven login
+2. **FR-R2 — N authorization rows are N rows.** They are not N proven login
    combinations, and no evidence artifact, doc, or commit message may imply they
    are. The count of rows and the count of walked paths are separate numbers.
+
+   **The number is derived and it moves.** It was 45 when this rule was written
+   (15 doctors × 3 eligible devices); `DOCTOR-ACCESS-TRUSTED-DEVICE-ESTATE-PROVISIONING-1`
+   made it **60** (15 × 4, ids `[3,5,6,7]`). Never hardcode the target and never
+   quote a remembered one — read `authorization_matrix.target_pairs` from
+   `doctor:estate-resilience --json`, which derives it from the live estate.
 
 3. **FR-R3 — every eligible doctor needs an explicit HOME branch.** UNSET is a
    legitimate running state (owner decision O1) and a disqualifying readiness
