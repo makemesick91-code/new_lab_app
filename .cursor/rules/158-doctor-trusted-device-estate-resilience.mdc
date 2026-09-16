@@ -97,6 +97,15 @@ it decides nothing: a room inventory is not peak concurrent staffed stations
 (three rooms with one doctor on shift is one station; one room with two chairs is
 two). Do not promote it to the input without measuring the difference.
 
+**NARROWED by `REVISION-DOCTOR-TRUSTED-DEVICE-ESTATE-CAPACITY-POLICY-1`.** "It
+decides nothing" is true of THIS rule's subject — the station count, and so
+Level 3 — and is no longer true unqualified. Rooms now decide **LEVEL 2**, a
+different question the owner defined outright (one device per active Doctor
+room), measured over a wider room set (`treatment_room` **+**
+`consultation_room`) and reported as a lower bound because no table records
+chairs per room. Level 3's input is still `concurrent_doctor_stations_per_branch`
+and is still never substituted. See rule 159, ECP-R9 and ECP-R11.
+
 The count has a home: `android_release.enforcement.concurrent_doctor_stations_per_branch`,
 keyed by branch code, **shipping empty**. A declared value below one is treated
 as undeclared rather than honoured, so a typo cannot manufacture headroom. An
@@ -104,9 +113,18 @@ empty estate FAILS rather than passing.
 
 ## ER-R7 — An attestation is a signature, not a measurement, and this engine does not sign
 
-`doctor:estate-resilience` reports MEASURED beside ATTESTED and raises a finding
-when they contradict. It does not gate on the attestation, does not write it, and
-cannot be satisfied by it. Equally, a signature cannot rescue a measured FAIL.
+`doctor:estate-resilience` reports MEASURED beside ATTESTED. It does not write an
+attestation, cannot be satisfied by one, and does not fail because one is
+ABSENT. Equally, a signature cannot rescue a measured FAIL.
+
+**NARROWED by `REVISION-DOCTOR-TRUSTED-DEVICE-ESTATE-CAPACITY-POLICY-1`, in one
+direction only.** A contradiction — a signature recorded `true` beside a
+measurement that is not PASS — no longer merely raises a finding: it fails
+`attestation_does_not_contradict_measurement`. Nothing is trusted more than
+before; the point is that a recorded `true` may no longer sit beside a measured
+falsehood and be reported as agreement. The half of this rule the owner chose
+measurement-over-coupling for — an unsigned prerequisite fails nothing here —
+stands unchanged. See rule 159, ECP-R14.
 
 **Never attest a prerequisite because a sprint intends to satisfy it.** Attest
 only after the measured condition is true, and cite the evidence.
@@ -166,7 +184,8 @@ worst over every branch let an estate of only unstaffed branches report
 `spare_device_available_per_branch` as PASS while holding no usable tablet, and
 the attestation cross-check reads its verdict from that gate — so a signed
 `true` came back as "no contradiction". The spare requirement's population is
-branches that home doctors.
+branches that home doctors — WIDENED by rule 159's ECP-R6 to branches that home
+doctors **or** host an active cover, which can only add FAILs.
 
 ## ER-R14 — Count live doctors, never lock rows
 

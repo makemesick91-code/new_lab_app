@@ -2784,3 +2784,37 @@ Child sprint of `DOCTOR-ACCESS-GLOBAL-ACTIVATION-1`, whose Phase 0 completed rea
 **B6 — `GLOBAL_READY` residuals.** Two leftovers renamed to `TRUSTED_PATHS_COMPLETE`; the two `Service.php` lines that **record** the rename preserved, along with all quoted historical production output. Do not blanket-sed this string.
 
 **`GLOBAL_ACTIVATION_APPLY_AUTHORIZED=NO` still.** Closing B1–B6 authorises nothing. Next: `DOCTOR-ACCESS-TRUSTED-DEVICE-ESTATE-RESILIENCE-1` (hardware track).
+
+## REVISION-DOCTOR-TRUSTED-DEVICE-ESTATE-CAPACITY-POLICY-1 (2026-09-16)
+
+Branch `revision/doctor-trusted-device-estate-capacity-policy-1` (base `feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report`, HEAD before this sprint = production HEAD `a6b50ad7` / tree `37b56187`, untagged — the parent closed NO-GO). **Policy / scanner / governance revision. Read-only. No migration, route, permission, policy, hardware, attestation or activation.** Rules: `.cursor/rules/159-doctor-trusted-device-estate-capacity-policy.mdc` (**ECP-R1..ECP-R18**), extending rule 158 rather than overturning it.
+
+**What was conflated.** `DOCTOR-ACCESS-TRUSTED-DEVICE-ESTATE-RESILIENCE-1` measured `spare_device_available_per_branch` correctly under the runbook's `concurrent Doctor stations + 1 spare` and reported FAIL — **that verdict stands**. It was answering three owner questions with one word, so "can we begin activation testing at all?" was answered with "does every branch survive losing a tablet?", and the actionable sentence (*one tablet at TLK1*) arrived as a four-tablet bill.
+
+**Three nested levels, measured from ONE snapshot, free to disagree:**
+
+| Level | Signal | Requirement | Gates activation testing? |
+|---|---|---|---|
+| 1 | `trusted_device_activation_test_coverage` | `>= 1` device that can be **logged into**, per staffed branch | **yes** |
+| 2 | `trusted_device_room_capacity` | `>= 1` device per active Doctor room | no — production target |
+| 3 | `spare_device_available_per_branch` | `stations + 1` | no — high availability |
+
+**A premise in the brief was wrong and is corrected in the record.** `spare_device_available_per_branch` blocks nothing in code today: `governance_phase` is `phase_4a` and `Phase4aPilotPreparationScanner::globalPrerequisiteCheck()` returns NOT_APPLICABLE for that phase — the list is a **Phase-5** precondition for fleet-wide enforcement. What defers activation is the owner's `PROVISION_ESTATE_SPARE_CAPACITY_FIRST` decision. This sprint makes the level that decision should key on measurable and read by two surfaces; it re-points no existing code gate, and `authorizes_activation` stays a literal `false`.
+
+**Shipped:** `DoctorEstateCapacityLevel` (five-word vocabulary `PASS`/`PARTIAL`/`FAIL`/`UNVERIFIED`/`NOT_APPLICABLE` + worst-of + narrowing to the three-word gate vocabulary); per-branch level statuses, a Level-1 gate and `attestation_does_not_contradict_measurement` in `DoctorEstateResilienceService`; `activeDoctorRoomProfileByBranch()` (one query, two counts) and `activeCoverTargetBranches()` on the read-only estate repository; an `activation_test_prerequisites_declared` check in `Phase4aPilotPreparationScanner` evaluated **inside** Phase 4A; `activation_test_prerequisites` + `…_attested` in `config/android_release.php`, both shipping `false`.
+
+**Gotchas worth carrying:**
+- **Level 1 counts devices somebody can LOG INTO**, not `eligible` ones. A branch holding one eligible tablet with a revoked credential has zero Level-1 coverage. Derived by subtracting the already-collected `eligible_devices_without_credential` list — never a second eligibility predicate.
+- **The activation prerequisite is worst(Level 1, `device_credential_coverage`, `authorization_coverage`).** A tablet nobody is authorized on is a tablet nobody can use.
+- **STAFFED = home locks OR an approved, currently-running `DoctorBranchCover`.** A cover deliberately does not move a home lock, so a covered branch counted zero home doctors while a doctor stood in it; it is added to the branch universe, not merely flagged. `DoctorBranchCover.status` is **not fillable** (no self-approval) — fixtures must `forceFill` it, and the column is `requester_user_id` with a required `requested_at`.
+- **A shrinking population may not turn a level green.** Moving the last locked doctor off a tablet-less branch would flip Level 1 FAIL→PASS with no hardware bought; any UNSET doctor holds the gate at UNVERIFIED.
+- **Level 2 is NOT in the gate array.** As a gate, every fixture without a `ClinicRoom` would drag the aggregate to UNVERIFIED and pin `--strict` non-zero for the whole rollout. `PARTIAL`/`NOT_APPLICABLE` never reach `worst()`, which fails closed on unknown vocabulary.
+- **ACTIVE DOCTOR ROOM = active, non-deleted, `treatment_room` or `consultation_room`.** `ClinicVisitService::activeRoomsForBranch()` says "treatment rooms" in its docblock and filters **branch + status with no type clause**, so a doctor can be placed in a sterilization room; the wider assignable count is reported beside the denominator so the divergence is visible rather than inherited. A branch absent from the room map is UNVERIFIED — `(int) null === 0` would make `eligible >= rooms` true for a branch holding nothing.
+- **`ESTATE_RESILIENCE` keeps its shipped meaning** (worst of every gate, never greener than Level 3) and is *not* the activation signal; `verdict_semantics` says so in the payload.
+- **Attestation narrowed in ONE direction.** A signature contradicting a measurement now fails a gate; an ABSENT signature still fails nothing. Rule 158's ER-R7 and the parent sprint doc carry scoped supersession notes rather than rewrites.
+- **The scanner check asserts the list's INTEGRITY, not its satisfaction** — every declared prerequisite has a boolean signature slot. A first draft asserted every entry was signed `true` and turned `android:phase4a-pilot-readiness` red for months over hardware that has not arrived: that scanner's subject is the **bounded Phase-4A pilot**, which is live and prepared, and reddening it because a *later* rung is short of tablets is the same conflation this sprint exists to end. Caught by running the suite, not by reading it. Whether the prerequisite is TRUE is measured by `doctor:estate-resilience`, which fails on a contradicting signature. (`DoctorGlobalRolloutReadinessService` consumes only `observedPosture()`/`globalEnforcementActiveLive()`, never `scan()`, so nothing rippled there.) The `govAttestAll()` test helper now signs **both** lists.
+- Scanner check rows are keyed `id`, not `check`, and `scan()` returns `['status','checks','summary']`.
+
+**Measured on production before the change** (deployed engine at `a6b50ad7`): TLK1 2 home doctors/0 eligible, LDK2 3/1, SPN4 10/1, ATG3 0/1 (homes nobody), `ESTATE_RESILIENCE=FAIL`, `MINIMUM_ADDITIONAL_DEVICES=4`, authorization 45/45/0/0. Under the separated levels the same estate reads **Level 1 FAIL at TLK1 only** — one branch, one tablet.
+
+**Nothing was attested, no device registered/moved/revoked, no authorization written, no flag armed, no cohort widened, no lease touched.** `GLOBAL_ACTIVATION_APPLY_AUTHORIZED=NO`. A policy-revision GO does **not** mean `ACTIVATION_TEST_COVERAGE=PASS`. Next: `DOCTOR-ACCESS-TRUSTED-DEVICE-ESTATE-PROVISIONING-1` — one eligible, credentialled, authorized tablet for TLK1, then re-measure. ATG3 already holds an eligible tablet and homes nobody; whether that unit moves or a new one is bought is a provisioning decision.

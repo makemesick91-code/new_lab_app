@@ -78,12 +78,27 @@ function govGlobalLive(bool $live): void
 /** Record an attestation against every declared global prerequisite. */
 function govAttestAll(bool $attested): void
 {
-    $declared = (array) config('android_release.enforcement.global_prerequisites', []);
+    /*
+     * BOTH prerequisite lists, because "attest everything" has to keep meaning
+     * everything. REVISION-DOCTOR-TRUSTED-DEVICE-ESTATE-CAPACITY-POLICY-1 added
+     * `activation_test_prerequisites` — the estate bar for controlled
+     * activation TESTING, which unlike its Phase-5 sibling is evaluated INSIDE
+     * phase_4a. A helper that signed only the older list would leave a genuine
+     * FAIL standing in every scan it set up, and the tests that use it to prove
+     * something ELSE about the verdict would start failing for a reason they do
+     * not name.
+     */
+    foreach ([
+        'android_release.enforcement.global_prerequisites' => 'android_release.enforcement.global_prerequisites_attested',
+        'android_release.enforcement.activation_test_prerequisites' => 'android_release.enforcement.activation_test_prerequisites_attested',
+    ] as $declaredPath => $attestedPath) {
+        $declared = (array) config($declaredPath, []);
 
-    config()->set(
-        'android_release.enforcement.global_prerequisites_attested',
-        array_fill_keys(array_map('strval', $declared), $attested),
-    );
+        config()->set(
+            $attestedPath,
+            array_fill_keys(array_map('strval', $declared), $attested),
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------

@@ -1366,9 +1366,47 @@ return [
         ],
 
         /*
+        | REVISION-DOCTOR-TRUSTED-DEVICE-ESTATE-CAPACITY-POLICY-1 — the estate
+        | prerequisite of controlled activation TESTING, which is a different
+        | and LOWER bar than the Phase-5 list above.
+        |
+        | WHY A SECOND LIST RATHER THAN AN EDIT TO THE FIRST. The list above
+        | gates FLEET-WIDE enforcement and contains
+        | `spare_device_available_per_branch` — survive losing a tablet. That
+        | requirement is NOT weakened here and stays exactly where it is. What
+        | the owner separated is the question beneath it: before anyone can even
+        | TEST activation, every staffed branch needs one trusted device that
+        | can be logged into. Two bars, two lists, and satisfying the lower one
+        | satisfies nothing above it.
+        |
+        | READ BY CODE, unlike its predecessor's first two phases. The
+        | Phase-4A scanner asserts every entry here carries a signature, and
+        | `doctor:estate-resilience` MEASURES the same entry and fails on any
+        | contradiction between the two. A declared-but-unread list is the exact
+        | defect the block above records; shipping a third one would repeat it.
+        |
+        | ATTESTED FALSE AS SHIPPED, and it must stay false until the estate
+        | measures PASS. The measured verdict today is FAIL — Cabang Telkomas
+        | staffs two doctors and holds no tablet — so signing this now would
+        | record something untrue, and the engine would report the
+        | contradiction rather than the signature.
+        */
+        'activation_test_prerequisites' => [
+            'trusted_device_activation_test_coverage',
+        ],
+
+        'activation_test_prerequisites_attested' => [
+            'trusted_device_activation_test_coverage' => false,
+        ],
+
+        /*
         | DOCTOR-ACCESS-TRUSTED-DEVICE-ESTATE-RESILIENCE-1 — the operational
         | input that `spare_device_available_per_branch` has always needed and
         | never had anywhere to live.
+        |
+        | STILL LEVEL 3's INPUT ONLY. The capacity-policy revision gave Level 2
+        | a room-based denominator of its own; it did NOT repurpose this map,
+        | and a room is still not a peak concurrent station.
         |
         | The device-loss runbook sizes capacity as
         |

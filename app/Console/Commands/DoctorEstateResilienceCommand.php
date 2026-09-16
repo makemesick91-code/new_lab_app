@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Modules\DoctorAccess\Services\DoctorEstateResilienceService;
+use App\Modules\DoctorAccess\Support\DoctorEstateCapacityLevel;
 use App\Modules\DoctorAccess\Support\DoctorEstateResilienceVerdict;
 use Illuminate\Console\Command;
 
@@ -23,7 +24,8 @@ class DoctorEstateResilienceCommand extends Command
 {
     protected $signature = 'doctor:estate-resilience
         {--json : Output the report as JSON}
-        {--strict : Exit non-zero unless every estate gate PASSES}';
+        {--strict : Exit non-zero unless every estate gate PASSES (the FULL-MATURITY question, never greener than high availability)}
+        {--activation-preflight : Exit non-zero unless the ACTIVATION-TESTING prerequisite is satisfied (Level 1 + credential + authorization coverage, and signed)}';
 
     protected $description = 'Trusted device estate resilience: per-branch capacity, spare headroom, credential and authorization coverage';
 
@@ -57,6 +59,21 @@ class DoctorEstateResilienceCommand extends Command
             return 1;
         }
 
+        /*
+         * THE ACTIVATION QUESTION HAS ITS OWN EXIT CODE, because `--strict`
+         * asks a different and STRICTLY HARDER one.
+         *
+         * `--strict` keys on the aggregate, which is never greener than high
+         * availability. An activation preflight wired to it would exit 1 even
+         * once every staffed branch holds a usable, authorized tablet — the
+         * exact conflation this revision exists to end, relocated into an exit
+         * code where it is harder to see. Two questions, two flags.
+         */
+        if ($this->option('activation-preflight')
+            && $report['activation_test_prerequisite']['status'] !== DoctorEstateResilienceVerdict::PASS) {
+            return 1;
+        }
+
         return 0;
     }
 
@@ -65,27 +82,37 @@ class DoctorEstateResilienceCommand extends Command
      */
     private function render(array $report): void
     {
-        $this->info('Doctor trusted device estate resilience — DOCTOR-ACCESS-TRUSTED-DEVICE-ESTATE-RESILIENCE-1');
+        $this->info('Doctor trusted device estate resilience and capacity — '
+            .'REVISION-DOCTOR-TRUSTED-DEVICE-ESTATE-CAPACITY-POLICY-1');
         $this->newLine();
 
+        $l1 = DoctorEstateCapacityLevel::ACTIVATION_TEST_COVERAGE;
+        $l2 = DoctorEstateCapacityLevel::ROOM_CAPACITY;
+        $l3 = DoctorEstateCapacityLevel::FAILURE_RESILIENCE;
+
         $this->table(
-            ['Branch', 'Home doctors', 'Rooms*', 'Devices', 'Eligible', 'Spare@1', 'Survives loss', 'Verdict'],
+            ['Branch', 'Staffed', 'Home drs', 'Rooms*', 'Dr rooms', 'Devices', 'Usable', 'L1 test', 'L2 rooms', 'L3 HA'],
             array_map(static fn (array $row): array => [
                 (string) ($row['branch_code'] ?? $row['branch_id']),
+                $row['staffed'] ? ($row['hosts_active_cover'] ? 'yes+cover' : 'yes') : 'no',
                 (string) $row['home_doctor_count'],
                 $row['active_treatment_rooms'] === null ? '-' : (string) $row['active_treatment_rooms'],
-                (string) $row['total_device_count'],
-                (string) $row['eligible_device_count'],
-                (string) $row['spare_devices_at_one_station'],
-                $row['serviceable_after_one_device_loss'] ? 'yes' : 'NO',
-                (string) $row['verdict'],
+                $row['active_doctor_rooms'] === null ? '-' : (string) $row['active_doctor_rooms'],
+                (string) $row['total_device_count'].'/'.(string) $row['eligible_device_count'],
+                (string) $row['locally_usable_device_count'],
+                (string) $row['capacity_levels'][$l1],
+                (string) $row['capacity_levels'][$l2],
+                (string) $row['capacity_levels'][$l3],
             ], $report['branches']),
         );
 
         $this->newLine();
         $this->line('BRANCH_SCOPE='.$report['branch_scope']);
-        $this->comment('* Rooms = ACTIVE treatment rooms. ADVISORY reference for sizing only — a room inventory is '
-            .'not a peak concurrent station count, and it decides no verdict below.');
+        $this->comment('* Rooms = ACTIVE treatment rooms, the Level-3 ADVISORY reference only: a room inventory '
+            .'is not a peak concurrent station count and it decides no Level-3 verdict. "Dr rooms" is the '
+            .'separate LEVEL 2 denominator — active rooms a doctor and a patient meet in. Devices column is '
+            .'total/eligible; "Usable" is eligible AND carrying an unrevoked credential, which is what Level 1 '
+            .'counts.');
         $this->line('TOTAL_DEVICE_ESTATE='.$report['estate_totals']['total_devices']);
         $this->line('ELIGIBLE_TRUSTED_DEVICES='.$report['estate_totals']['eligible_devices']);
         $this->line('ELIGIBLE_DEVICE_IDS='.$this->csv($report['estate_totals']['eligible_device_ids']));
@@ -126,11 +153,20 @@ class DoctorEstateResilienceCommand extends Command
 
         $attestation = $report['attestation'];
         $this->newLine();
-        $this->line('-- Attestation cross-check (informational, gates nothing) --');
-        $this->line('  MEASURED='.$attestation['measured'].'  ATTESTED='.$this->bool($attestation['attested']));
+        $this->line('-- Attestation cross-check (an absent signature fails nothing; a contradicting one does) --');
 
-        if ($attestation['contradiction']) {
-            $this->error('  CONTRADICTION: signed true, measured otherwise.');
+        foreach ($attestation['prerequisites'] as $row) {
+            $this->line('  '.$row['prerequisite']
+                .'  MEASURED='.$row['measured']
+                .'  ATTESTED='.$this->bool((bool) $row['attested']));
+
+            if ($row['contradiction']) {
+                $this->error('    CONTRADICTION: signed true, measured otherwise.');
+            }
+
+            if ($row['signature_slot_missing']) {
+                $this->error('    DRIFT: declared as a prerequisite with no signature slot at all.');
+            }
         }
 
         foreach ($report['findings'] as $finding) {
@@ -149,8 +185,51 @@ class DoctorEstateResilienceCommand extends Command
         $this->line('GLOBAL_ENFORCEMENT_ACTIVE='.$this->bool((bool) ($report['runtime']['global_enforcement_active'] ?? false)));
         $this->line('AUTHORIZES_ACTIVATION='.$this->bool((bool) $report['authorizes_activation']));
 
+        /*
+         * THE THREE LEVELS, PRINTED SEPARATELY AND BEFORE THE AGGREGATE.
+         *
+         * One line reading ESTATE_RESILIENCE=FAIL is what sent the owner a
+         * four-tablet bill when the actionable sentence was "one tablet at
+         * TLK1". These are printed in full, in order, with the aggregate after
+         * them and labelled as what it is.
+         */
+        $this->newLine();
+        $policy = $report['capacity_policy'];
+        $this->line('-- Capacity levels (nested; a lower level satisfies nothing above it) --');
+        $this->line('  STAFFED_BRANCHES='.$this->csvStrings($policy['staffed_branch_codes']));
+
+        foreach ($policy['levels'] as $level) {
+            $this->newLine();
+            $this->line('  LEVEL '.$level['level'].'  '.strtoupper((string) $level['signal']).'='.$level['status']);
+            $this->line('    requires: '.$level['requirement']);
+            $this->line('    gates activation testing: '.$this->bool((bool) $level['gates_activation_testing']));
+
+            if (($level['branches_failing'] ?? []) !== []) {
+                $this->line('    FAIL at: '.$this->csvStrings($level['branches_failing']));
+            }
+
+            if (($level['branches_partial'] ?? []) !== []) {
+                $this->line('    PARTIAL at: '.$this->csvStrings($level['branches_partial']));
+            }
+
+            if (($level['branches_unverified'] ?? []) !== []) {
+                $this->line('    UNVERIFIED at: '.$this->csvStrings($level['branches_unverified']));
+            }
+        }
+
+        $prerequisite = $report['activation_test_prerequisite'];
+        $this->newLine();
+        $this->line('OVERALL_ACTIVATION_TEST_PREREQUISITE='.$prerequisite['status']);
+        $this->line('  MEASURED='.$prerequisite['measured'].'  ATTESTED='.$this->bool((bool) $prerequisite['attested']));
+        $this->line('  composed from: '.$this->csvStrings($prerequisite['composed_from']));
+
+        if ($prerequisite['contradiction']) {
+            $this->error('  CONTRADICTION: signed true, measured otherwise.');
+        }
+
         $this->newLine();
         $this->line('ESTATE_RESILIENCE='.$report['verdict']);
+        $this->comment('  '.$report['verdict_semantics']);
 
         $this->newLine();
         $this->comment($report['resilience_semantics']);

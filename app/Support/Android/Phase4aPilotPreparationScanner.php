@@ -536,6 +536,7 @@ class Phase4aPilotPreparationScanner
         $checks[] = $this->postureCheck();
         $checks[] = $this->liveGlobalEnforcementCheck();
         $checks[] = $this->globalPrerequisiteCheck();
+        $checks[] = $this->activationTestPrerequisiteCheck();
 
         return $checks;
     }
@@ -767,6 +768,92 @@ class Phase4aPilotPreparationScanner
      * does not measure the world: "a spare device is available at every branch"
      * is a fact about a room, not about a database.
      */
+    /**
+     * REVISION-DOCTOR-TRUSTED-DEVICE-ESTATE-CAPACITY-POLICY-1 — the ESTATE
+     * prerequisite of controlled activation TESTING.
+     *
+     * WHY THIS IS NOT PHASE-SCOPED AWAY LIKE ITS SIBLING. The check above is
+     * NOT_APPLICABLE inside Phase 4A because fleet-wide enforcement is a Phase-5
+     * question. Activation TESTING is the opposite: it is the 4A-era activity
+     * itself, so a list that went quiet exactly when the testing happens would
+     * be read by nobody at the only moment it matters.
+     *
+     * WHAT IT ASSERTS, AND WHY IT IS INTEGRITY AND NOT SATISFACTION.
+     *
+     * A first draft of this check asserted that every declared activation-test
+     * prerequisite was signed `true`, mirroring its sibling — and running the
+     * suite showed why that is wrong. The prerequisite is unmet today and will
+     * be until a tablet reaches TLK1, so the check turned this scanner red for
+     * MONTHS over a question it is not asking. THIS SCANNER'S SUBJECT IS THE
+     * BOUNDED PHASE-4A PILOT, which is live and prepared; whether a LATER rung
+     * has enough hardware is a different question, and reddening one because of
+     * the other is precisely the conflation the capacity-policy revision
+     * exists to end. A gate that is red for months gets deleted rather than
+     * fixed.
+     *
+     * So this asserts the list's INTEGRITY: every declared prerequisite has a
+     * signature slot, and every slot holds a boolean. That catches the failure
+     * this scanner CAN catch — the list and its signature block drifting apart,
+     * which reads identically to "nobody has signed yet" and is not that.
+     *
+     * WHETHER THE PREREQUISITE IS TRUE has an owner, and it is not this file:
+     * `doctor:estate-resilience` measures Level 1, composes it with credential
+     * and authorization coverage, and FAILS a gate of its own if a signature
+     * here contradicts what the estate holds. That is the surface an activation
+     * preflight runs. Two surfaces, one list, neither of them silent — and the
+     * list is no longer the declared-but-unread kind the block above it
+     * records.
+     *
+     * NO QUERY, deliberately: this scanner must stay safe to run with no
+     * database.
+     *
+     * An EMPTY list fails. "Nothing declared" is a broken precondition, not a
+     * satisfied one — the same reading the sibling takes.
+     */
+    private function activationTestPrerequisiteCheck(): array
+    {
+        $declared = (array) config('android_release.enforcement.activation_test_prerequisites', []);
+        $attested = (array) config('android_release.enforcement.activation_test_prerequisites_attested', []);
+
+        if ($declared === []) {
+            return $this->check(
+                'activation_test_prerequisites_declared',
+                'FAIL',
+                'No activation-testing prerequisite is declared, so nothing can be measured or signed. An '
+                .'empty precondition list is not a satisfied one.',
+            );
+        }
+
+        $drifted = [];
+
+        foreach ($declared as $name) {
+            $key = (string) $name;
+
+            if (! array_key_exists($key, $attested) || ! is_bool($attested[$key])) {
+                $drifted[] = $key;
+            }
+        }
+
+        $signed = count(array_filter(
+            $declared,
+            fn ($name): bool => ($attested[(string) $name] ?? null) === true,
+        ));
+
+        return $this->check(
+            'activation_test_prerequisites_declared',
+            $drifted === [] ? 'PASS' : 'FAIL',
+            $drifted === []
+                ? 'The activation-testing prerequisite list and its signature block agree: '
+                    .count($declared).' declared, each with a recorded boolean ('.$signed.' signed true). '
+                    .'This asserts the list is INTACT and is NOT a statement that the prerequisite is '
+                    .'satisfied — run doctor:estate-resilience for that, which measures Level 1 and fails '
+                    .'if a signature here contradicts the estate.'
+                : 'Declared activation-testing prerequisite(s) with no recorded boolean signature slot: '
+                    .implode(', ', $drifted).'. The list and the signature block have drifted apart, which '
+                    .'reads identically to "nobody has signed yet" and is not that.',
+        );
+    }
+
     private function globalPrerequisiteCheck(): array
     {
         if ($this->inPhase4a()) {
