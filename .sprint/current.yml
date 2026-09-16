@@ -1,95 +1,68 @@
-# Active sprint manifest — REVISION-DOCTOR-TRUSTED-DEVICE-ESTATE-CAPACITY-POLICY-1
+# Active sprint manifest — DOCTOR-ACCESS-TRUSTED-DEVICE-ESTATE-PROVISIONING-1
 # Validated by: php artisan sprint:manifest-check
 
-id: REVISION-DOCTOR-TRUSTED-DEVICE-ESTATE-CAPACITY-POLICY-1
+id: DOCTOR-ACCESS-TRUSTED-DEVICE-ESTATE-PROVISIONING-1
 type: SECURITY_FIX
 module: DoctorAccess
-title: "Separate three trusted-device estate requirements that had been collapsed into one gate. `spare_device_available_per_branch` was measured correctly by the parent sprint and reported FAIL, and that verdict stands — but it was answering three different owner questions at once, so `can we begin activation testing at all?` was being answered with `does every branch survive losing a tablet?`. This revision names LEVEL 1 (>= 1 trusted device that can be logged into, per staffed branch — the only level that gates controlled activation TESTING), LEVEL 2 (>= 1 device per active Doctor room — the normal-production target, reported and never a blocker) and LEVEL 3 (stations + 1, unchanged in key, formula and answer). All three are measured from one estate snapshot, are free to disagree, and a lower level satisfies nothing above it. A signature that contradicts a measurement now fails a gate; an absent signature still fails nothing. Nothing was attested, no hardware provisioned, no flag armed, no cohort widened, no lease touched, and the measured Level 1 remains FAIL at one branch."
+title: "Provision the minimum physical trusted-device estate for controlled activation testing: one tablet at TLK1, the only staffed branch holding none. The ceremony was corrected before any hardware was touched — an adversarial review found that WebAuthn enrolment does NOT make a device eligible (only the Android keystore challenge-response writes cryptographically_verified), that a stock tablet's Google-synced passkey is REFUSED at registration because it is BE=1, and that bare app-login auto-registration derives the branch from the DOCTOR rather than the tablet and would have created a duplicate row at the wrong branch. Provisioned through the canonical flow: keystore proof, admin approval bound explicitly to TLK1, ONE device-scoped device-bound credential. The eligible estate grew 3 to 4, which moved the authorization target 45 to 60, and the 15 new pairs were created through the digest-bound command. Level 1 measured PASS and independently reconciled against the fleet engine; the owner then signed that prerequisite and nothing else. Level 2 is PARTIAL, Level 3 is FAIL, both unsigned. No flag armed, no cohort widened, no session lease touched, no activation."
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-# SECURITY_FIX rather than MODULE_SPRINT, chosen up rather than down, and for
-# the same reason the parent sprint chose it.
+# SECURITY_FIX, chosen up rather than down.
 #
-# In shape this is a read-only policy/scanner revision: one new support class,
-# additions to one service, two repository reads, one scanner check, two config
-# keys and one test file. It changes no permission, policy, middleware, route or
-# enforcement decision.
-#
-# But the artifact is the GATE a later activation decision reads, and this
-# revision LOWERS what one reading of it requires. A separation that gets it
-# wrong converts a measured falsehood into a PASS, which is the single failure
-# this family of engines exists to prevent. That earns audit level 3 and the
-# full required gate.
+# The code change is small — one config value flipped from false to true, plus
+# the tests that pin it. But that value is a SIGNATURE on a security
+# prerequisite of global doctor enforcement, and the sprint that sets it also
+# mutated the production trusted-device estate: a new trusted device and 15 new
+# doctor-device authorizations. A wrong signature here is a false green on the
+# gate a later activation decision reads.
 
-runtime_change: true            # DoctorEstateCapacityLevel (new, read-only),
-                                # DoctorEstateResilienceService / Verdict /
-                                # Repository / Interface, the
-                                # doctor:estate-resilience command, one new
-                                # Phase4aPilotPreparationScanner check, and two
-                                # config keys that ship attested FALSE. No
-                                # controller, route, policy, middleware, model
-                                # or migration.
+runtime_change: false           # no application code changed. One config value
+                                # (activation_test_prerequisites_attested) moved
+                                # false -> true after the measurement turned
+                                # true, and three tests were repointed to pin
+                                # the state they test rather than inherit the
+                                # shipped default.
 
-schema_change: false            # NO migration. The two new reads are SELECTs
-                                # against mst_clinic_rooms and
-                                # trx_doctor_branch_covers, both long-existing;
-                                # a named test asserts row counts across
-                                # devices, authorizations, credentials, locks,
-                                # covers and rooms are unchanged by two
-                                # consecutive builds.
+schema_change: false            # NO migration. The production writes were made
+                                # through canonical application paths — device
+                                # enrolment/approval, one WebAuthn credential,
+                                # and doctor:device-bulk-authorize. No raw SQL.
 
-frontend_change: false          # no JS, no CSS, no Vite entry, no Blade view.
-                                # The command registers no route.
+frontend_change: false          # no JS, CSS, Vite entry or Blade view.
 
-security_impact: true           # the level that gates controlled activation
-                                # testing is newly separated and deliberately
-                                # LOWER than the gate it was folded into. The
-                                # enforcement itself is untouched:
-                                # global_permitted is still a source-controlled
-                                # false, doctor.single_active_session is still
-                                # off, branch lock stays inert, the cohort is
-                                # unchanged, and the report carries
-                                # authorizes_activation as a literal false
-                                # pinned by test. `global_prerequisites` — the
-                                # Phase-5 precondition — is NOT weakened.
+security_impact: true           # a governed attestation on an estate
+                                # prerequisite of global doctor enforcement was
+                                # SIGNED, and 15 doctor-device authorizations
+                                # were created on production. Enforcement itself
+                                # is untouched: single_active_session still
+                                # false, branch lock still inert, cohort
+                                # unchanged, global_permitted still a
+                                # source-controlled false, authorizes_activation
+                                # still a literal false.
 
-branch_isolation_impact: false  # per-branch device counts remain OPERATIONAL
-                                # RESILIENCE and explicitly not an access
-                                # boundary. Cross-branch trusted-device use
-                                # stays valid; a named test asserts a tablet at
-                                # another branch does not cover a staffed branch
-                                # locally, and none of that is an authorization
-                                # decision.
+branch_isolation_impact: false  # the new device's branch is OPERATIONAL
+                                # topology, not an access boundary. It was bound
+                                # explicitly to TLK1 by an admin at approval
+                                # precisely so it could not be derived from
+                                # whichever doctor signed in first.
 
 ledger_impact: false            # no inventory ledger, billing, payment, invoice
                                 # or receivable path is reachable from here.
 
-deploy_required: true           # the separated levels only exist on the
-                                # deployment that carries them, and the measured
-                                # production status of each must be re-derived
-                                # from the deployed engine rather than from a
-                                # local transcription.
+deploy_required: true           # the signed attestation only takes effect on
+                                # the deployment that carries it, and production
+                                # runs cached configuration.
 
-browser_required: false         # the operator surface is
-                                # `php artisan doctor:estate-resilience` on the
-                                # VPS.
+browser_required: true          # the credential enrolment is a WebAuthn
+                                # registration performed in a browser ON THE
+                                # TABLET — the authenticator is whatever device
+                                # the browser runs on, so it cannot be done from
+                                # a laptop.
 
-# Inherited closure, restored deliberately rather than copied.
-# LegacyRmeProgramClosureContractTest asserts every post-closure sprint names the
-# closure it inherits, precisely because that is the fact a later sprint is most
-# likely to drop quietly while rewriting this rolling file — which has already
-# happened once. State the inheritance, never relax the expectation.
-#
-# What this sprint stands on and does not move. The parent programme remains
-# DEFERRED behind the owner's PROVISION_ESTATE_SPARE_CAPACITY_FIRST decision.
-# This revision changes which capacity LEVEL that decision keys on; it does not
-# satisfy the decision, and measuring a gate authorises no activation.
-
-# NOT CREATED BY THIS SPRINT until every hard gate passes. Named so a future
-# reader knows which tag would carry this work. A GO here means the POLICY
-# REVISION is correctly implemented, deployed and verified — it does NOT mean
-# ACTIVATION_TEST_COVERAGE=PASS, which is measured FAIL at one staffed branch.
-go_tag: revision-doctor-trusted-device-estate-capacity-policy-1-go
+# NOT CREATED until every hard gate passes. A GO here means the ESTATE was
+# provisioned and Level 1 is measured PASS and signed. It does NOT mean Level 2
+# or Level 3 pass, and it authorises no activation.
+go_tag: doctor-access-trusted-device-estate-provisioning-1-go
 go_tag_created: false
 
 test_profiles:
@@ -97,11 +70,12 @@ test_profiles:
   - security_regression
   - full_required
 
-inherits_parent_readiness: DOCTOR-ACCESS-FLEET-ROLLOUT-READINESS-1
 inherits_parent_programme: DOCTOR-ACCESS-GLOBAL-ACTIVATION-1
-inherits_parent_sprint: DOCTOR-ACCESS-TRUSTED-DEVICE-ESTATE-RESILIENCE-1
-inherits_parent_go: doctor-access-global-activation-blocker-closure-1-go
+inherits_parent_sprint: REVISION-DOCTOR-TRUSTED-DEVICE-ESTATE-CAPACITY-POLICY-1
+inherits_parent_go: revision-doctor-trusted-device-estate-capacity-policy-1-go
 inherits_pilot_go: doctor-pwa-multi-doctor-pilot-1-go
 
+# Restored deliberately, not copied. LegacyRmeProgramClosureContractTest asserts
+# every post-closure sprint names the closure it inherits.
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
 inherits_hold: FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1/FIX-02
