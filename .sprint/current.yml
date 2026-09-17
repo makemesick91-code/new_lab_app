@@ -1,70 +1,75 @@
-# Active sprint manifest — DOCTOR-ACCESS-GLOBAL-ACTIVATION-PHASE0-DELTA-RECHECK-1
+# Active sprint manifest — DOCTOR-ACCESS-GLOBAL-ACTIVATION-1 / HALF-A FLEET CUTOVER
 # Validated by: php artisan sprint:manifest-check
 
-id: DOCTOR-ACCESS-GLOBAL-ACTIVATION-PHASE0-DELTA-RECHECK-1
+id: DOCTOR-ACCESS-GLOBAL-ACTIVATION-1-HALF-A-CUTOVER
 type: DOCS_ONLY
 module: DoctorAccess
-title: "Phase-0 delta recheck of DOCTOR-ACCESS-GLOBAL-ACTIVATION-1: re-read production from scratch after four GO'd prerequisites and prove the programme is ready for an explicit owner APPLY decision. Read-only against production — zero mutations, no lease released, no flag armed, no cohort widened, no attestation signed. The estate did not degrade (15 doctors, 4 eligible devices [3,5,6,7], 60/60 authorizations, Level 1 PASS and attested, device 7 clean). Two adversarial corrections were earned and are now durable rules: Half A is fleet-wide in population but its effects split — branch narrowing is immediate for every doctor while lease enforcement begins at each doctor's next login, so arming narrows everyone and evicts nobody; and the lease population is wider than the branch-lock population because subjectTo() carries no governance-account exemption. Half B is implemented (MODE_UNSCOPED works) but blocked on a committed value, a phase move, and five attestations of which four can never be contradicted by any measurement. The one unreleased lease is a stale orphan whose cleanup is planned for inside the activation window, not before it."
+title: "Half-A fleet cutover executed on production: FEATURE_DOCTOR_SINGLE_ACTIVE_SESSION armed true for all 15 Doctor subjects at once, which also makes DoctorEffectiveBranchResolver effective. Four human gates passed first (window, primary operator, rollback operator, explicit fleet-cutover approval), the six-condition clinical gate was re-measured fresh at 22:15:59 WITA rather than reusing the morning reading, and a new baseline was captured after the lease release and immediately before mutation. One key, one line, verified by line-count and diff. Four live proofs all passed: a post-cutover lease bound to the exact session, a cross-branch branch-lock proof (tablet physically at ATG3, effective branch resolved TLK1), a second concurrent login DENIED with active_session_elsewhere, and the first session NOT evicted. Canonical logout left zero orphans; home-lock and device-estate hashes are byte-identical to baseline. Half B untouched throughout."
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-# DOCS_ONLY, and chosen honestly rather than up.
+# DOCS_ONLY, and the classification is honest rather than modest.
 #
-# Every changed file is Markdown or an .mdc rule. There is no PHP, no config
-# value, no migration, no route, no test and no asset in this diff. The sprint is
-# inert by CONSTRUCTION, not by review — there is nothing in it that could arm
-# anything, which is the property a Phase-0 recheck is supposed to have.
+# The production CHANGE was a configuration-only activation: one environment
+# value plus a config-cache rebuild on the host. No commit changed the runtime —
+# production still runs 21b8a57a / tree 44fc27ee, the Phase-0 GO tag, exact match.
 #
-# The security-relevant content is documentary: it records that Half A is one
-# host variable from a fleet-wide cutover and that Half B is blocked. Recording
-# that changes no behaviour. The sprint that ACTS on it is a different sprint
-# with a different classification.
+# What this repository diff contains is the RECORD of that ceremony plus the
+# durable rules it earned: a sprint evidence document, four rule files, a runbook
+# status banner and this manifest. Every changed file is Markdown or .mdc.
+#
+# Classifying it higher would be theatre; classifying the ACTIVATION as docs
+# would be a lie. They are different objects and the distinction is stated in the
+# evidence document rather than hidden in a type field.
 
-runtime_change: false           # no application code. The only executable files
-                                # touched are zero.
+runtime_change: false           # no application code, no config file in the repo.
+                                # The activated value lives in the host
+                                # environment file, which is not in version
+                                # control and was changed on the host.
 
-schema_change: false            # NO migration. Production was read with bounded
-                                # read-only SELECTs and read-only artisan
-                                # reports; nothing was written.
+schema_change: false            # NO migration. Production reads were bounded
+                                # read-only SELECTs; the only writes were made by
+                                # canonical audited application paths.
 
 frontend_change: false          # no JS, CSS, Vite entry or Blade view.
 
-security_impact: false          # no permission, policy, gate, flag, cohort,
-                                # attestation or credential changed. The
-                                # activation posture is byte-identical to the
-                                # base: single_active_session false, branch lock
-                                # inert, cohort [9,15,18], global_permitted a
-                                # source-controlled false, authorizes_activation
-                                # a literal false.
+security_impact: false          # no permission, policy, gate, role or credential
+                                # changed in this diff. The ENFORCEMENT posture
+                                # changed on the host, and that is recorded here
+                                # rather than enacted here — re-reading this diff
+                                # arms nothing.
 
-branch_isolation_impact: false  # BranchContext, the effective-branch resolver
-                                # and every narrowing consumer are untouched.
+branch_isolation_impact: false  # BranchContext and the effective-branch resolver
+                                # are untouched in source. Their runtime EFFECT is
+                                # now live because the flag is on; the code that
+                                # decides is byte-identical.
 
 ledger_impact: false            # no inventory ledger, billing, payment, invoice
                                 # or receivable path is reachable from here.
 
-deploy_required: true           # the canonical rules and runbooks this sprint
-                                # writes are repository governance authority, and
-                                # this project deploys that authority rather than
-                                # leaving it only on a branch. Nothing in the
-                                # deploy changes runtime behaviour.
+deploy_required: true           # the rules and runbook status this sprint writes
+                                # are repository governance authority, and this
+                                # project deploys that authority. The deploy
+                                # changes no runtime behaviour — Half A is already
+                                # live from the host configuration.
 
-browser_required: false         # every measurement was taken from the CLI and
-                                # from read-only HTTP health probes.
+browser_required: false         # the live proof was performed by a clinician on a
+                                # tablet; every verification here was CLI and
+                                # read-only HTTP health probes.
 
-# A GO here means the delta recheck is complete and truthful. It is NOT the
-# owner's APPLY approval, and the tag must never be read as one.
-#   PHASE0_DELTA_RECHECK_GO            = the claim
-#   GLOBAL_ACTIVATION_APPLY_AUTHORIZED = NO
-#   ACTIVATION_OCCURRED                = NO
-go_tag: doctor-access-global-activation-phase0-delta-recheck-1-go
+# Created only after the stabilization window closes clean. A GO here means Half A
+# is live AND proven AND stable. It authorises NOTHING about Half B.
+#   HALF_A_GO                       = the claim
+#   HALF_B_AUTHORIZED               = NO
+#   GLOBAL_FLEET_ENFORCEMENT_ACTIVE = false
+go_tag: doctor-access-global-activation-half-a-1-go
 go_tag_created: false
 
 test_profiles:
   - focused
 
 inherits_parent_programme: DOCTOR-ACCESS-GLOBAL-ACTIVATION-1
-inherits_parent_sprint: DOCTOR-ACCESS-TRUSTED-DEVICE-ESTATE-PROVISIONING-1
-inherits_parent_go: doctor-access-trusted-device-estate-provisioning-1-go
+inherits_parent_sprint: DOCTOR-ACCESS-GLOBAL-ACTIVATION-PHASE0-DELTA-RECHECK-1
+inherits_parent_go: doctor-access-global-activation-phase0-delta-recheck-1-go
 inherits_pilot_go: doctor-pwa-multi-doctor-pilot-1-go
 
 # Restored deliberately, not copied. LegacyRmeProgramClosureContractTest asserts

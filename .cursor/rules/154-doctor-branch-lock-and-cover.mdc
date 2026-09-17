@@ -95,13 +95,33 @@ Flag `doctor.branch_lock`, risk `critical`, committed **OFF**. It does not resol
 - **A branch operation never revokes an identity.** Device, `DoctorDeviceAuthorization` and
   WebAuthn credential all survive an approval, a rejection and an expiry. **Identity
   revocation is not a branch rollback**; the undo is a transfer back.
-- **AMENDED 2026-09-13 (Wave 1): every narrowing statement in this rule describes
-  an ARMED capability.** `DoctorEffectiveBranchResolver::enabled()` also requires
-  `doctor.single_active_session`, and production runs it false — so the locks are
-  stored and inert, and nothing below is narrowing anything today. Proven on
-  production: a TLK1-locked doctor logged in at an SPN4 tablet and her working
-  context became SPN4, with her lock row untouched. Read `enabled()`, never
-  `branch_lock` alone. See rule 156 FR-R21..FR-R26.
+- **CURRENT 2026-09-17 (late) — THE LOCKS ARE STORED AND INERT, BY OWNER DECISION.**
+  `doctor.branch_lock` is **false** on production, so
+  `DoctorEffectiveBranchResolver::enabled()` returns false and **nothing in this
+  rule is narrowing anything today.** The 15 home lock rows are retained in full;
+  they simply do not resolve.
+
+  This is a deliberate business-model choice, not a rollback of a failure: **a
+  doctor may work at any branch, provided they log in on a registered device of
+  that branch.** Under that model a home lock that pins a doctor to one branch is
+  the wrong instrument, so the capability is disarmed while the data is kept.
+
+  **It was live for roughly forty minutes and the proof is worth keeping.** Between
+  22:19 and 22:5x WITA on 2026-09-17, with both flags on, a TLK1-locked doctor
+  logged in on a tablet physically at **ATG3** and her effective branch resolved to
+  **TLK1**, no cover in play — the exact mirror of the 2026-09-13 experiment that
+  produced SPN4 while the resolver was disarmed. So the capability is **proven to
+  work**; it is switched off because the business does not want that behaviour,
+  not because it failed.
+
+  Re-arming is one flag plus a config cache rebuild, and needs no re-entry of any
+  lock. Before re-arming, re-check the home-branch matrix against where doctors
+  actually work (rule 160 AW-R16).
+
+  Always read `enabled()`, never `branch_lock` alone: the predicate is
+  `branch_lock AND single_active_session AND sessionProbe->observable()`. Today the
+  first is false and the second is true — the inverse of the 2026-09-13 situation,
+  and the same inert outcome. See rule 156 FR-R21..FR-R26 and rule 160.
 
 - **Two hooks, and narrowing is an INTERSECTION.** `RmeWorkingBranchScope::resolve()` (the
   list scope) and `ClinicVisitService::resolveBranchId()` (the write chokepoint), each asking

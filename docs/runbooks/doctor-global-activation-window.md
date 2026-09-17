@@ -7,6 +7,35 @@
 > owner records `APPROVE_DOCTOR_GLOBAL_ACTIVATION_APPLY=YES`. Until then
 > `GLOBAL_ACTIVATION_APPLY_AUTHORIZED = NO`.
 
+> ## EXECUTED — SINGLE SESSION LIVE, BRANCH LOCK OFF (2026-09-17)
+>
+> This runbook was followed end to end. Final production posture:
+> `single_active_session=true`, `branch_lock=false`, `BRANCH_LOCK_EFFECTIVE=false`.
+> Branch lock was armed at 22:19, proven at 22:26, and disarmed ~22:5x once the
+> owner stated the business model — *a doctor may work at any branch provided they
+> log in on a registered device of that branch.* All 15 home locks are retained.
+> Evidence: `docs/sprints/doctor-access-global-activation-half-a-cutover.md` §12b.
+>
+> Sections 1–8 below remain the canonical procedure. Three things changed in
+> meaning:
+>
+> - **§6 now has two independent switches, not one.** `single_active_session`
+>   arms the lease engine; `branch_lock` arms the narrowing. They are separable,
+>   and today they are separated. §0's table describes what happens when *both*
+>   are on.
+> - **§8's rollback is no longer hypothetical** — it is the live incident path for
+>   the lease engine, and the rollback operator must be reachable whenever
+>   `single_active_session` is on.
+> - **The HTTP force-logout surface is 404 on production.** It gates on the
+>   *branch-lock* predicate, not the lease flag, so disarming `branch_lock` closed
+>   it again. Never infer the lease flag from whether that route answers.
+>   `doctor:session-force-logout` carries no flag guard and is the canonical tool
+>   in every posture.
+>
+> **Half B is still blocked and untouched.** Section 0's description of it stands
+> unchanged — and note that the "registered device" half of the business model is
+> exactly Half B, so today it binds only the 3-doctor cohort.
+
 ---
 
 ## 0. What you are about to arm
