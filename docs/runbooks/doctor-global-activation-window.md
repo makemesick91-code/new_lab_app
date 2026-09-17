@@ -202,22 +202,48 @@ Expected immediately after: `doctor.single_active_session = true`,
 `doctor.branch_lock = true`, and the branch resolver `enabled()` now true — so every
 locked doctor's lists are narrowed **at once**, while no open session is evicted.
 
+> ### ⚠ THIS SECTION AND §7 WERE WRITTEN WHILE `branch_lock` WAS TRUE. IT IS NOW FALSE.
+>
+> The owner disarmed `FEATURE_DOCTOR_BRANCH_LOCK` after the Half-A cutover — the
+> capability was proven and then switched off as the wrong instrument for the
+> business model (*a doctor may work at ANY branch, provided they log in on a
+> registered device of that branch*). All 15 home locks are retained and inert.
+>
+> **So on today's posture, arming `single_active_session` narrows NOTHING.**
+> `DoctorEffectiveBranchResolver::enabled()` is `branch_lock AND
+> single_active_session AND probe` — the first is false. The steps below stay
+> correct **only if branch_lock is deliberately re-armed first**, which is its
+> own decision and not part of a Half-A window.
+>
+> Read the live values before following either section:
+> `runuser -u daengtisiams -- php artisan foundation:feature-flags --json`.
+
 ---
 
 ## 7. Half A verification
 
-1. **Branch narrowing** — a locked doctor's branch selector offers only their home
-   branch plus an active cover. Verify against a **locked** doctor; there is no UNSET
-   doctor left to use.
-2. **Cross-branch write refusal** — a visit create outside the effective branch is
-   refused, and `ClinicVisitService::auditEffectiveBranchWriteRefusal()` writes one
+> Steps 1, 2 and 4 depend on the branch resolver being armed — see the notice in
+> §6. With `branch_lock` false they are **expected to show no narrowing**, and an
+> operator who treats that as a failure will chase a defect that is not there.
+> Step 3 is the one that rides `single_active_session` alone and holds in every
+> posture.
+
+1. **Branch narrowing** *(requires `branch_lock` armed)* — a locked doctor's branch
+   selector offers only their home branch plus an active cover. Verify against a
+   **locked** doctor; there is no UNSET doctor left to use.
+2. **Cross-branch write refusal** *(requires `branch_lock` armed)* — a visit create
+   outside the effective branch is refused, and
+   `ClinicVisitService::auditEffectiveBranchWriteRefusal()` writes one
    audit row per attempt.
 3. **Second-login denial** — log in as one doctor, then attempt a second session
    elsewhere. Expect `DENY_ACTIVE_SESSION_ELSEWHERE`. **The first session is never
    evicted.** Use a doctor who logged in *after* the cutover — a pre-cutover session
    holds no lease token and will not demonstrate this.
-4. **HTTP force-logout is now reachable** — the `release-session` route stops 404ing
-   the moment the resolver arms.
+4. **HTTP force-logout is now reachable** *(requires `branch_lock` armed)* — the
+   `release-session` route stops 404ing the moment the resolver arms. It gates on
+   the **branch-lock** predicate, not the lease flag, so with `branch_lock` false
+   it stays 404 and **SSH recovery via `doctor:session-force-logout` is the only
+   route**. That command carries no flag guard and is canonical in every posture.
 
 ---
 
@@ -227,10 +253,15 @@ locked doctor's lists are narrowed **at once**, while no open session is evicted
 
 ```
 single_active_session = false
-branch_lock flag      = true    (unchanged)
+branch_lock flag      = unchanged, whatever it was  (FALSE on today's posture)
 branch_lock_effective = false
 HOME locks · covers · authorizations · credentials · audit history — all preserved
 ```
+
+Written as "unchanged" rather than as a value, deliberately: this block used to
+say `branch_lock flag = true`, which stopped being true the night the owner
+disarmed it. A rollback restores the **captured** posture, never a remembered
+constant — capture both flags before the window and put those back.
 
 The claim listener and per-request revalidation both return immediately: no login is
 refused and **no open session is torn down**. Lease rows are untouched; a stale lease

@@ -201,11 +201,39 @@ a deploy chain.
 
 ## 5. Evidence
 
-### Tests — `DoctorHalfBEnforcementReadinessTest`, 33 passed / 104 assertions
+### Tests — `DoctorHalfBEnforcementReadinessTest`, 47 passed / 155 assertions
 
 Contradiction coverage is proven **per prerequisite**, not in aggregate: the
 dataset runs all five, and each must measure not-PASS, contradict, and turn the
 verdict BLOCKED.
+
+### The controlled matrix, measured rather than assumed
+
+`PRE_LIVE_OPERATIONAL_OBSERVATION = NOT_APPLICABLE_PRE_LIVE`, so the matrix is
+executed rather than observed. Two of the deny codes it asks about were asserted
+by name **nowhere** in the suite before this sprint — "covered by the
+regression" was a belief.
+
+| # | Path | Result |
+|---|---|---|
+| A | eligible doctor + authorized eligible device, global posture | **ALLOW** |
+| B | authorization no longer active | **DENY** `authorization_not_active` |
+| C | device revoked | **DENY** `device_not_usable` |
+| D | session proof unknown / unacceptable binding | **DENY** `session_proof_unknown` |
+| E | Doctor browser login under simulated global mode | **DENY** `no_device_session` |
+| F | non-Doctor account | **UNAFFECTED** (role predicate, never reached) |
+| G | rollback simulated | **PASS** — browser restored to the subject |
+| H | rollback target not coherent | **FAIL** — refuses to rehearse against it |
+| I | prerequisite degrades after attestation | **FAIL** — contradiction, exit 1 |
+| J | armed over nobody | **FAIL** — existing `enforcement_inactive`, unchanged |
+
+**Writing A–D found two fixture traps, and both had made a test pass for the
+wrong reason** — which is the argument for measuring them:
+`DoctorDeviceAuthorizationFactory` defaults to `STATUS_PENDING` while
+`isActive()` compares against `STATUS_ACTIVE` alone, so the default row is
+*already* inactive and the "revoked" case passed without anything being revoked;
+and an Android keystore proof requires `public_key` itself, not just
+`public_key_fingerprint`.
 
 ### Adversarial review found four defects, two of them false greens
 
@@ -301,10 +329,10 @@ PRE_LIVE_OPERATIONAL_OBSERVATION = NOT_APPLICABLE_PRE_LIVE
 ```
 
 and **`NOT_APPLICABLE_PRE_LIVE` is neither PASS nor real-world operational
-proof.** It is replaced by the controlled matrix in §5, which exercises the
-authorized/unauthorized/revoked/invalid-binding paths, the browser denial under
-a simulated global posture, the non-Doctor invariant, the rollback, and
-prerequisite degradation after attestation.
+proof.** It is replaced by the controlled matrix in §5 — ten paths, all
+executed — and the distinction is kept in the reporting rather than blurred:
+this sprint reports `PRE_LIVE_CONTROLLED_ACCEPTANCE=PASS`, and does **not**
+report production operational proof, because none was available to have.
 
 ---
 
