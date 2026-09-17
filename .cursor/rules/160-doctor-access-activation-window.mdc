@@ -1,5 +1,5 @@
 ---
-description: Phase-0 delta recheck findings for doctor global activation. A recheck GO is never the owner's APPLY approval. Half A is fleet-wide and non-staged, but its two effects land at different moments — branch narrowing is immediate for everyone, lease enforcement begins at each doctor's next login. The lease population is wider than the branch-lock population. Half B's unscoped mode IS implemented; what blocks it is a committed value, a phase move, and five attestations of which four can never be contradicted. Lease cleanup belongs inside the activation window, not days before it.
+description: CURRENT POSTURE 2026-09-17 — doctor.single_active_session TRUE (lease engine live, all 15 doctors), doctor.branch_lock FALSE (disarmed by owner decision), so BRANCH_LOCK_EFFECTIVE is false and nothing narrows. The business model is: a doctor may work at ANY branch provided they log in on a registered device of that branch. Branch lock was proven to work during a ~40 minute window and is off because the business does not want it, not because it failed; all 15 home locks are retained. The two halves of Half A ride different flags and are separable. Proven live: a second login is DENIED with active_session_elsewhere and the first session is never evicted. The client's refusal text is not the server's reason, and a rejection row carries performed_by NULL. Only 3 of 15 doctors are device-bound today — the fleet-wide device requirement is Half B, still blocked.
 globs:
   - "app/Modules/DoctorAccess/**"
   - "app/Modules/DoctorDevice/**"
@@ -18,7 +18,33 @@ alwaysApply: false
 
 Extends rules 153, 154, 156 and **157**, which it does not replace. Rule 157 owns
 the governance phase and the attested precondition; this one owns what the
-Phase-0 delta recheck measured about **entering an activation window**.
+Phase-0 delta recheck measured about **entering an activation window**, and what
+the Half-A cutover proved when one was finally entered.
+
+> ## STATUS — SINGLE SESSION LIVE, BRANCH LOCK OFF (2026-09-17)
+>
+> ```
+> single_active_session = TRUE       <- lease engine live, all 15 doctors
+> branch_lock           = FALSE      <- disarmed by owner decision, 22:5x WITA
+> BRANCH_LOCK_EFFECTIVE = FALSE      <- no branch narrowing
+> session probe observable = TRUE
+> HALF B = INACTIVE   scope pilot [9,15,18] · global_permitted false
+> ```
+>
+> **The business model is: a doctor may work at ANY branch, provided they log in
+> on a registered device of that branch.** A home lock pinning a doctor to one
+> branch is the wrong instrument for that model, so the capability is off while
+> all 15 lock rows are retained.
+>
+> Branch lock WAS live for ~40 minutes that night and was **proven to work**
+> (AW-R14). It is off because the business does not want that behaviour — not
+> because it failed. Re-arming is one flag plus a cache rebuild.
+>
+> **Half of the stated model is not yet enforced.** "Must log in on a registered
+> device" currently binds only the 3-doctor cohort `[9,15,18]`; the other 12 can
+> still log in by browser with no device. Making it fleet-wide **is Half B**,
+> which remains blocked (AW-R5..AW-R7). Do not describe the model as fully
+> enforced.
 
 ## AW-R1 — a recheck GO is not an APPLY approval
 
@@ -37,22 +63,26 @@ or gradual enablement. `DoctorSessionLeaseService::subjectTo()` is
 unconditionally and the middleware sits in the **global `web` group**. There is no
 cohort, no cap and no staged mechanism — do not describe one unless source grows one.
 
-## AW-R3 — but its two effects land at different moments
+## AW-R3 — the two effects land at different moments, and ride different flags
 
-This is the correction an adversarial review earned, and the activation plan
-depends on it.
+This is the correction an adversarial review earned, sharpened by the night the
+two flags were finally set independently.
 
-- **Branch narrowing is immediate and fleet-wide.** `RmeWorkingBranchScope` and
-  `ClinicVisitService` call `branchIdFor()` on every request, so the instant
-  `enabled()` flips, an already-logged-in doctor's lists narrow to their home
-  branch and cross-branch writes are refused.
-- **Lease enforcement begins at each doctor's NEXT login.** A session holding no
-  lease token passes through `EnsureDoctorSessionLease` forever, and leases mint
-  only on the `Login` event.
+- **Branch narrowing is immediate and fleet-wide — but only when BOTH flags are
+  on.** `RmeWorkingBranchScope` and `ClinicVisitService` call `branchIdFor()` on
+  every request, so the instant `DoctorEffectiveBranchResolver::enabled()` flips
+  true, an already-logged-in doctor's lists narrow and cross-branch writes are
+  refused. With `branch_lock` false that predicate is false and **nothing
+  narrows**, however live the lease engine is.
+- **Lease enforcement begins at each doctor's NEXT login, and rides
+  `single_active_session` alone.** A session holding no lease token passes through
+  `EnsureDoctorSessionLease` forever, and leases mint only on the `Login` event.
+  `DoctorSessionLeaseService::enabled()` does **not** consult `branch_lock`.
 
-So arming Half A **narrows every doctor's branch at once and evicts nobody.** Do
-not plan the window as a mass logout, and do not try to prove second-login denial
-on a session that predates the flip.
+So the two halves of "Half A" are separable in production, and today they are
+separated: **single session ON, branch narrowing OFF.** Never state one from the
+other. Arming the lease evicts nobody; arming the branch lock narrows everybody at
+once and still evicts nobody.
 
 ## AW-R4 — the lease population is WIDER than the branch-lock population
 
@@ -144,3 +174,76 @@ and `DoctorBranchLockBulkAssignmentService` all write locks, lease releases,
 presence rows and `sys_audit_logs` rows with both flags off, by design and through
 governed CLI commands. Do not claim blanket write-inertness; claim it about the
 request path, which is where it is true.
+
+## AW-R13 — deny-the-second, never evict-the-first (proven live)
+
+Proven on production 2026-09-17, not argued. With a doctor holding a live session,
+a **fully valid** second authorization on an **active** device
+(`{"status":"active","doctor_id":20,"device_status":"active","doctor_device_id":3}`)
+was refused with `{"reason": "active_session_elsewhere"}` — and her first session
+and lease were **untouched**.
+
+Never "fix" a lockout by making the second login evict the first. The clinician
+already seeing patients keeps working; the person arriving second is told where
+the live session is.
+
+## AW-R14 — what branch lock does WHEN ARMED (proven live, now disarmed)
+
+Same ceremony: a doctor locked to **TLK1** logged in on a tablet sitting
+physically at **ATG3**, with no cover, and her effective branch resolved to
+**TLK1**. The lease recorded `effective_branch_id = 1 (TLK1)`.
+
+**Read this as a proof of the capability, not as current behaviour.**
+`branch_lock` was set false the same night, so today the resolver is inert and a
+doctor's working context follows where they log in — the model the owner chose:
+*work at any branch, on a registered device of that branch.*
+
+The durable half of this rule is the distinction, which holds in both postures:
+**a device's branch is operational topology, never an access grant.** When branch
+lock is armed, authority is the home lock or an approved running cover and nothing
+else. When it is disarmed, nothing narrows at all — the device does not *grant* a
+branch either, it simply stops being contradicted. Cross-branch trusted-device use
+is valid in both.
+
+## AW-R15 — the client's words are not the server's reason
+
+The Clinic App reported **"sesi perangkat tidak dapat dibuat"**. That string names
+no cause, and reading it as a device or transport fault would have been wrong: the
+server had recorded `active_session_elsewhere`.
+
+Always resolve a refusal from `sys_audit_logs`, the login ticket and the
+challenge record, correlated by time window. And note the shape of the evidence —
+the rejection row carried **`performed_by = NULL`** while the preceding request
+row carried the user id, so a per-user audit query alone would have missed the
+refusal entirely. Compare with the same trap recorded at rule 156 for
+"tidak dapat menghubungi server".
+
+## AW-R16 — arming makes a wrong home lock visible immediately
+
+A home lock that disagrees with where a doctor actually works is inert and
+invisible until the branch lock arms, and narrowing from that instant. The
+2026-09-17 proof subject is the live example: locked to TLK1 while every observed
+signal — her visits, her online context, her proven tablet — is ATG3.
+
+**How it was actually resolved is the lesson.** The available fixes were a governed
+transfer, an approved cover, or disarming the capability. The owner chose the
+third, because the mismatch was not one doctor's data being wrong — it was the
+*model* being wrong: the business wants doctors to work at any branch on a
+registered device, which no amount of per-doctor transfers expresses.
+
+So: when arming surfaces a contradiction, ask whether the data is wrong or the
+model is, **before** writing transfers. And re-check the home-branch matrix against
+real working location before any future re-arm, never after the first narrowed
+clinic.
+
+## AW-R17 — a model is not enforced until every subject is covered
+
+The stated model has two halves: *work at any branch*, and *only on a registered
+device of that branch*. On 2026-09-17 the first became true for all 15 doctors and
+the second binds only the 3-doctor cohort `[9,15,18]` — the other 12 can still log
+in by browser with no device at all.
+
+Making the device requirement fleet-wide **is Half B**, which is blocked on real
+hardware and on attestations that are untrue today. Never report a half-enforced
+model as enforced, and never close the gap by signing an attestation to make a
+gate green.

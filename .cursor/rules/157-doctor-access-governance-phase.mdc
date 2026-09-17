@@ -106,6 +106,17 @@ re-arming needs no cleanup.
   surface 404s while `single_active_session` is off; `doctor:session-force-logout`
   is not flag-gated.
 
+  **That surface is 404 on production right now, and the reason is worth reading
+  carefully.** `single_active_session` is true since the 2026-09-17 cutover — but
+  the controller gates on `DoctorEffectiveBranchResolver::enabled()`, which also
+  requires `doctor.branch_lock`, and that was deliberately set **false** later the
+  same night. So the surface is closed for a *different* reason than before, while
+  looking identical from outside.
+
+  Never infer `single_active_session` from whether that route answers. It gates on
+  the branch-lock predicate, not the lease flag. `doctor:session-force-logout`
+  carries no flag guard at all and remains the canonical tool in every posture.
+
 ## Branch lock at a provisioned fleet
 
 The old runbook safety property — "arming while the fleet is UNSET is inert" —
