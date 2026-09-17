@@ -330,10 +330,53 @@ it('keeps a skipped check out of the verdict in both directions', function () {
 
     $scan = govScanner()->scan();
 
-    // NOT_APPLICABLE rows are present and the verdict is not FAIL because of
-    // them — a skipped check moves the verdict in no direction at all.
     expect($scan['summary']['not_applicable'])->toBeGreaterThan(0);
-    expect($scan['status'])->not->toBe('FAIL');
+
+    /*
+     * RESTATED BY DOCTOR-ACCESS-GLOBAL-DEVICE-ENFORCEMENT-READINESS-1, and
+     * restated rather than relaxed.
+     *
+     * This test's subject is NOT_APPLICABLE: a skipped check moves the verdict
+     * in no direction at all. It used to express that as "the verdict is not
+     * FAIL", which only held because `govAttestAll(true)` cleared the one gate
+     * that would otherwise have failed — the signature-only
+     * `global_prerequisites_attested`.
+     *
+     * Signing all five is no longer free. The contradiction check now measures
+     * what was signed, and in this fixture nothing supports any of it, so the
+     * scan FAILS — correctly, and for a reason that has nothing to do with
+     * skipped checks. Asserting `not FAIL` here would have meant asserting that
+     * five false signatures are acceptable, which is the exact false green that
+     * sprint closed.
+     *
+     * So the property is now expressed directly: recompute the verdict over the
+     * rows that were actually evaluated, and require it to be identical. That is
+     * what "moves the verdict in no direction" means, and it holds whatever the
+     * attestation state is.
+     */
+    $evaluated = collect($scan['checks'])
+        ->reject(fn (array $c): bool => $c['status'] === Phase4aPilotPreparationScanner::STATUS_NOT_APPLICABLE);
+
+    $withoutSkipped = $evaluated->contains(fn (array $c): bool => $c['status'] === 'FAIL')
+        ? 'FAIL'
+        : ($evaluated->contains(fn (array $c): bool => $c['status'] === 'WATCH') ? 'WATCH' : 'GO');
+
+    expect($scan['status'])->toBe($withoutSkipped);
+});
+
+it('fails a later phase that signs every prerequisite without measuring any of them', function () {
+    govPhase(Phase4aPilotPreparationScanner::PHASE_GLOBAL_ACTIVATION_TARGET);
+    govGlobalLive(false);
+    govAttestAll(true);
+
+    $checks = collect(govScanner()->scan()['checks'])->keyBy('id');
+
+    // The companion to the restatement above, and the reason it was needed.
+    // `global_prerequisites_attested` passes on five signatures alone — that is
+    // its documented contract. The contradiction row is what makes signing them
+    // cost something.
+    expect($checks['global_prerequisites_attested']['status'])->toBe('PASS');
+    expect($checks['global_prerequisite_attestations_do_not_contradict_measurement']['status'])->toBe('FAIL');
 });
 
 // ---------------------------------------------------------------------------

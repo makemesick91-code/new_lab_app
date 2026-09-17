@@ -122,10 +122,27 @@ lives in a different engine (`DoctorEstateResilienceVerdict`, surfaced by
 `doctor:estate-resilience`) and covers exactly one of the five.
 
 So signing `spare_device_available_per_branch => true` would **PASS the phase gate**
-despite the measured FAIL, and `rollback_to_browser_login_proven` has **no producer
-anywhere under `app/`** — nothing can contradict it at all. Extending measurement
+despite the measured FAIL, and `rollback_to_browser_login_proven` had **no producer
+anywhere under `app/`** — nothing could contradict it at all. Extending measurement
 and contradiction detection to the remaining prerequisites is a prerequisite of
 Half B, not a nicety.
+
+> **CLOSED by `DOCTOR-ACCESS-GLOBAL-DEVICE-ENFORCEMENT-READINESS-1` — see rule 161.**
+>
+> The paragraph above describes the state up to `4fec066c` and is kept because it
+> records *why* the work was done. What is true now:
+>
+> - All five prerequisites have a producer. `rollback_to_browser_login_proven` is
+>   measured by an executed in-process rehearsal
+>   (`DoctorHalfBRollbackProofService`), not by a boolean.
+> - `globalPrerequisiteCheck()` still reads only signatures — that remains its
+>   documented contract — but a **second, always-evaluated** scanner row,
+>   `global_prerequisite_attestations_do_not_contradict_measurement`, FAILS when a
+>   signature stands against a measurement. Signing the phase gate green is no
+>   longer possible without being detected.
+> - Unchanged: `spare_device_available_per_branch` still MEASURES FAIL and still
+>   needs four more tablets. Half B is still blocked, and now it is blocked on a
+>   measurement rather than on a promise.
 
 ## AW-R8 — lease cleanup belongs INSIDE the window
 
