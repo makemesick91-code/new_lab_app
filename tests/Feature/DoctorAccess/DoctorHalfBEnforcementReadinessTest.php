@@ -27,6 +27,7 @@
  */
 
 use App\Models\User;
+use App\Modules\Branch\Models\Branch;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\DoctorAccess\Services\DoctorEffectiveBranchResolver;
 use App\Modules\DoctorAccess\Services\DoctorEstateResilienceService;
@@ -39,12 +40,17 @@ use App\Modules\DoctorDevice\Models\DoctorDevice;
 use App\Modules\DoctorDevice\Models\DoctorDeviceAuthorization;
 use App\Modules\DoctorDevice\Models\DoctorDeviceWebAuthnCredential;
 use App\Modules\DoctorDevice\Services\DoctorAppLoginGate;
+use App\Modules\DoctorDevice\Support\DoctorSessionProof;
 use App\Services\Foundation\FeatureFlagService;
 use App\Support\Android\AndroidDoctorEnforcementScope;
 use App\Support\Android\Phase4aPilotPreparationScanner;
 use Illuminate\Contracts\Filesystem\Factory as FilesystemFactory;
+use Illuminate\Http\Request;
+use Illuminate\Session\ArraySessionHandler;
+use Illuminate\Session\Store;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 uses()->group('DoctorAccess', 'DoctorDevice', 'Security');
 
@@ -720,6 +726,130 @@ it('evaluates the contradiction check in phase 4a, where its signature-only sibl
     expect($checks['global_prerequisites_attested']['status'])
         ->toBe(Phase4aPilotPreparationScanner::STATUS_NOT_APPLICABLE);
     expect($checks['global_prerequisite_attestations_do_not_contradict_measurement']['status'])->toBe('PASS');
+});
+
+// ---------------------------------------------------------------------------
+// D2. THE CONTROLLED DEVICE MATRIX, UNDER A SIMULATED GLOBAL POSTURE
+//
+// This sprint changes none of the device gate. These exist because the Half-B
+// acceptance matrix asks for these paths BY NAME, and two of the deny codes it
+// asks about — DENY_AUTHORIZATION_NOT_ACTIVE and DENY_DEVICE_NOT_USABLE — were
+// asserted by name nowhere in the suite. "Covered by the regression" was a
+// belief; these make it a measurement.
+// ---------------------------------------------------------------------------
+
+/** A doctor holding a real session on a real device, under global enforcement. */
+function hbEnforcedSession(array $deviceAttributes = [], bool $authorizationActive = true): array
+{
+    $user = hbDoctor('drg Matrix');
+    $doctor = Doctor::query()->where('user_id', $user->id)->firstOrFail();
+
+    $branch = Branch::factory()->create([
+        'is_active' => true,
+        'is_rme_enabled' => true,
+    ]);
+
+    $device = DoctorDevice::factory()->create(array_merge([
+        'branch_id' => $branch->id,
+        'status' => DoctorDevice::STATUS_ACTIVE,
+        'identity_state' => DoctorDevice::IDENTITY_CRYPTOGRAPHICALLY_VERIFIED,
+        'enrollment_status' => DoctorDevice::ENROLLMENT_VERIFIED,
+        'public_key_fingerprint' => hash('sha256', (string) Str::uuid()),
+
+        // TRAP: an Android keystore proof requires `public_key` itself, not
+        // just the fingerprint — `deviceProofDenyReason()` checks
+        // `isCryptographicallyVerified() && public_key !== null`. A fixture
+        // carrying only the fingerprint builds a device the gate correctly
+        // refuses, and would then "prove" a denial it never meant to write.
+        'public_key' => 'pk-'.Str::random(32),
+    ], $deviceAttributes));
+
+    /*
+     * TRAP, and it made the first draft of these tests lie.
+     *
+     * `DoctorDeviceAuthorizationFactory` defaults to STATUS_PENDING, and
+     * `isActive()` is a comparison against STATUS_ACTIVE alone. So the default
+     * row is already inactive: the "authorization revoked" case below passed
+     * without anything being revoked, and the "admitted" case could not pass at
+     * all. `->active()` is required, and the inactive variant has to move the
+     * STATUS — setting a `revoked_at` timestamp changes nothing the gate reads.
+     */
+    $authorization = DoctorDeviceAuthorization::factory()->active()->create([
+        'doctor_id' => $doctor->id,
+        'doctor_device_id' => $device->id,
+    ]);
+
+    if (! $authorizationActive) {
+        $authorization->forceFill([
+            'status' => DoctorDeviceAuthorization::STATUS_REVOKED,
+            'revoked_at' => now(),
+        ])->save();
+    }
+
+    // Global posture: every doctor is in scope and enforcement is armed.
+    config()->set('doctor_device_enforcement.scope.mode', AndroidDoctorEnforcementScope::MODE_UNSCOPED);
+    config()->set('android_release.enforcement.scope.global_permitted', true);
+
+    $flags = (array) config('feature_flags.flags');
+    $flags[DoctorAppLoginGate::ENFORCEMENT_FLAG]['default'] = true;
+    $flags[DoctorAppLoginGate::ENFORCEMENT_FLAG]['env_value'] = true;
+    config()->set('feature_flags.flags', $flags);
+
+    $request = Request::create('/dashboard', 'GET');
+    $request->setLaravelSession(new Store('hb', new ArraySessionHandler(1)));
+    $request->session()->put(DoctorAppLoginGate::SESSION_DEVICE_ID, (int) $device->id);
+    $request->session()->put(DoctorAppLoginGate::SESSION_AUTHORIZATION_ID, (int) $authorization->id);
+    $request->session()->put(DoctorAppLoginGate::SESSION_DOCTOR_ID, (int) $doctor->id);
+    $request->session()->put(
+        DoctorAppLoginGate::SESSION_PROOF_TYPE,
+        DoctorSessionProof::TYPE_ANDROID_KEYSTORE,
+    );
+
+    return [$user, $request, $device, $authorization];
+}
+
+it('admits an eligible doctor on an authorized, eligible device even under global enforcement', function () {
+    seedAccessControl();
+
+    [$user, $request] = hbEnforcedSession();
+
+    // Matrix A. Half B denies a BROWSER, not a trusted device. A doctor on
+    // approved hardware keeps working — that is the whole point of the widening.
+    expect(app(DoctorAppLoginGate::class)->denySessionReason($user, $request))->toBeNull();
+});
+
+it('denies a doctor whose authorization is no longer active', function () {
+    seedAccessControl();
+
+    [$user, $request] = hbEnforcedSession(authorizationActive: false);
+
+    // Matrix B.
+    expect(app(DoctorAppLoginGate::class)->denySessionReason($user, $request))
+        ->toBe(DoctorAppLoginGate::DENY_AUTHORIZATION_NOT_ACTIVE);
+});
+
+it('denies a doctor on a device that has been revoked', function () {
+    seedAccessControl();
+
+    [$user, $request, $device] = hbEnforcedSession();
+    $device->forceFill(['status' => DoctorDevice::STATUS_REVOKED])->save();
+
+    // Matrix C. Revoking the tablet ends the session it was carrying — a proof
+    // must not survive its hardware.
+    expect(app(DoctorAppLoginGate::class)->denySessionReason($user, $request))
+        ->toBe(DoctorAppLoginGate::DENY_DEVICE_NOT_USABLE);
+});
+
+it('denies a session whose proof cannot say how it was earned', function () {
+    seedAccessControl();
+
+    [$user, $request] = hbEnforcedSession();
+    $request->session()->forget(DoctorAppLoginGate::SESSION_PROOF_TYPE);
+
+    // Matrix D. The permissive reading of an unknown binding is refused: a
+    // session that cannot name its proof is not interpreted, it is denied.
+    expect(app(DoctorAppLoginGate::class)->denySessionReason($user, $request))
+        ->toBe(DoctorAppLoginGate::DENY_SESSION_PROOF_UNKNOWN);
 });
 
 // ---------------------------------------------------------------------------
