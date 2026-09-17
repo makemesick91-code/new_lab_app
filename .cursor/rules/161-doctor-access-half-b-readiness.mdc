@@ -158,6 +158,72 @@ is PASS + signed. Level 2 is reported and gates nothing. Level 3 is
 `spare_device_available_per_branch`, which IS one of the five. Rule 159 owns the
 levels; this rule owns the list.
 
+## HB-R19 — A cross-check must name a key some engine actually publishes
+
+The first snapshot cross-check compared `authorization_matrix.doctor_count` and
+`estate_totals.eligible_doctor_count`. **Neither exists.** It hit its `-1`
+sentinel on every real build, returned `agrees => true`, and made its own
+demotion unreachable and its finding un-emittable — a documented mechanism that
+never ran. Before shipping a comparison, print both sides once and confirm they
+are not both the fallback.
+
+## HB-R20 — A missing invariant is UNVERIFIED, never agreement
+
+The same defect failed **open**: absence of evidence was reported as evidence of
+agreement. Every "we could not compare" branch in this family resolves to
+UNVERIFIED.
+
+## HB-R21 — Derive the checked set from the UNION, never from one list
+
+Both engines filtered the DECLARED list to find signatures, so deleting a name
+from `global_prerequisites` while leaving its `true` beside it removed it from
+the detector built to catch exactly that. Iterate declared ∪ attested; an
+attested name nobody declares is a finding. A signature that is not a boolean
+(`1`, `'true'`) is also a finding — code reads "unsigned", a human reads
+"signed", and neither reading is safe.
+
+## HB-R22 — Measure the baseline before you move anything
+
+`denyBrowserSessionReason()` returns `null` on its first line when enforcement
+is off, so "admitted after rollback" collapsed to *did the boolean we just wrote
+read back as false*. Without a starting state, a subject refused for an
+unrelated reason is indistinguishable from a broken rollback. Measure the
+subject first, and assert the **exact** deny code afterwards — `!== null` is
+satisfied by any refusal at all.
+
+## HB-R23 — Never report a property you did not measure, and do not fix it with a projection
+
+`'mutations' => 0` was a hardcoded literal asserting the one property a reader
+most wants evidence for. Deriving it from the restoration step looked like the
+fix; mutation testing showed it still could not fail independently of that step.
+It was **removed**. A redundant projection of an already-reported fact adds a
+surface that can drift and no way to catch the drift.
+
+## HB-R24 — State the half a measurement does not cover
+
+The rehearsal reaches the gate through the config repository — resolution step 1
+in `FeatureFlagService::resolveOverride()`, strictly above the runtime `env()`
+read — so it does **not** exercise the environment file or the config cache. A
+deployment whose env-based rollback was inert would still pass it. That limit
+lives in the payload, not only in a docblock, and the other half is the
+runbook's (HB-R16).
+
+## HB-R25 — The rehearsal's safety rests on three checked facts, not on intuition
+
+Moving `config()` on a live system is safe here only because there is no Octane,
+because neither the readiness service nor the scanner that consults it is
+reachable from any route or controller, and because an Artisan process serves no
+concurrent request. **If any of those changes, re-review before running it on
+production** — the second is one controller away from being false.
+
+## HB-R26 — A source-text guard cannot see a transitive mutation
+
+`Phase4aPilotPreparationScanner`'s "inert by construction" test greps the
+scanner's own source for forbidden calls. Once a signature exists, the scan
+reaches a service that moves enforcement config one `app()` hop away, which that
+guard structurally cannot see. The posture-unchanged-after-`scan()` assertion is
+what actually holds the guarantee.
+
 ---
 
 ## The commands

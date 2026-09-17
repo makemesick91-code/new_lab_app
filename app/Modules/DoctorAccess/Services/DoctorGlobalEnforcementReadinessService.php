@@ -89,6 +89,12 @@ class DoctorGlobalEnforcementReadinessService
     /** A declared prerequisite that nothing in this engine measures. */
     public const FINDING_NO_PRODUCER = 'declared_prerequisite_has_no_producer';
 
+    /** A signature for a name that appears in no declared prerequisite list. */
+    public const FINDING_SIGNATURE_ORPHANED = 'attestation_recorded_for_undeclared_prerequisite';
+
+    /** A signature that is not a boolean, and so reads differently to code and to a human. */
+    public const FINDING_SIGNATURE_MALFORMED = 'attestation_is_not_a_boolean';
+
     public function __construct(
         private readonly DoctorFleetReadinessService $fleet,
         private readonly DoctorEstateResilienceService $estate,
@@ -544,10 +550,32 @@ class DoctorGlobalEnforcementReadinessService
     {
         $declared = (array) config(Prerequisite::CONFIG_DECLARED, []);
         $signed = (array) config(Prerequisite::CONFIG_ATTESTED, []);
+
+        /*
+         * THE UNION, NOT THE DECLARED LIST.
+         *
+         * Iterating only `global_prerequisites` left an orphan signature
+         * invisible: delete a name from the declared list, leave its `true`
+         * beside it, and nothing checked it — the contradiction engine did not
+         * know it existed, and the signature-only sibling only notices a
+         * *fully* empty declared list and is NOT_APPLICABLE in phase_4a anyway.
+         * So the one edit that removes a prerequisite from oversight also
+         * removed it from the detector built to catch exactly that.
+         *
+         * An attested name that nobody declared is therefore carried here, and
+         * it is a finding rather than a quiet pass.
+         */
+        $names = array_values(array_unique(array_merge(
+            array_map('strval', $declared),
+            array_map('strval', array_keys($signed)),
+        )));
+
+        $declaredNames = array_map('strval', $declared);
         $rows = [];
 
-        foreach ($declared as $name) {
+        foreach ($names as $name) {
             $key = (string) $name;
+            $isDeclared = in_array($key, $declaredNames, true);
             $hasProducer = array_key_exists($key, $measurements);
 
             $measured = $hasProducer
@@ -567,24 +595,49 @@ class DoctorGlobalEnforcementReadinessService
                 $measured = Prerequisite::UNVERIFIED;
             }
 
-            $attested = ($signed[$key] ?? null) === true;
+            $rawSignature = $signed[$key] ?? null;
+            $attested = $rawSignature === true;
+
+            /*
+             * A SIGNATURE MUST BE A BOOLEAN, and `=== true` alone would drop a
+             * `1` or a `'true'` on the floor — read as "unsigned" by this
+             * engine and as "signed" by a human reading the file. Neither
+             * reading is safe, so a non-boolean value is carried as its own
+             * finding rather than silently ignored.
+             */
+            $malformedSignature = $rawSignature !== null && ! is_bool($rawSignature);
 
             $rows[$key] = [
                 'prerequisite' => $key,
                 'measured' => $measured,
                 'attested' => $attested,
                 'signature_recorded' => array_key_exists($key, $signed),
+                'signature_malformed' => $malformedSignature,
+                'declared' => $isDeclared,
                 'has_producer' => $hasProducer,
 
                 // The single expression of the rule, asked rather than
                 // re-derived. See Prerequisite::contradicts().
                 'contradiction' => Prerequisite::contradicts($attested, $measured),
 
-                'signature_slot_missing' => ! array_key_exists($key, $signed),
-                'blocks_activation' => $measured !== Prerequisite::PASS,
-                'applicable' => true,
-                'evidence' => $hasProducer ? $measurements[$key]['detail'] : 'No producer measures this '
-                    .'prerequisite, so nothing can contradict a signature recorded against it.',
+                // Only a DECLARED prerequisite can have a missing slot. An
+                // undeclared one has the opposite problem and gets its own row.
+                'signature_slot_missing' => $isDeclared && ! array_key_exists($key, $signed),
+
+                // A signature for something nobody declares. Reported, never
+                // treated as satisfied.
+                'signature_orphaned' => ! $isDeclared,
+
+                // An orphan signature blocks nothing by itself — there is no
+                // declared prerequisite for it to block. It is a governance
+                // defect, which is what the finding and the verdict say.
+                'blocks_activation' => $isDeclared && $measured !== Prerequisite::PASS,
+                'applicable' => $isDeclared,
+                'evidence' => $hasProducer ? $measurements[$key]['detail'] : ($isDeclared
+                    ? 'No producer measures this prerequisite, so nothing can contradict a signature '
+                    .'recorded against it.'
+                    : 'This name carries a signature in '.Prerequisite::CONFIG_ATTESTED.' but appears in no '
+                    .'declared prerequisite list, so nothing measures it and nothing requires it.'),
                 'context' => $hasProducer ? ($measurements[$key]['context'] ?? []) : [],
             ];
         }
@@ -615,28 +668,48 @@ class DoctorGlobalEnforcementReadinessService
             ];
         }
 
-        $fleetDoctors = (int) ($fleetReport['eligible_doctor_count'] ?? -1);
-        $estateDoctors = (int) ($estateReport['authorization_matrix']['doctor_count']
-            ?? $estateReport['estate_totals']['eligible_doctor_count']
-            ?? -1);
+        /*
+         * THE INVARIANT IS THE AUTHORIZATION MATRIX, and it is chosen because
+         * BOTH engines publish it from a fleet run — the fleet report from its
+         * own, the estate report by carrying through the fleet run it performs
+         * internally. Comparing them therefore compares the two snapshots
+         * directly, which is the thing that can differ.
+         *
+         * A FIRST VERSION OF THIS METHOD COMPARED KEYS THAT DO NOT EXIST
+         * (`authorization_matrix.doctor_count`, `estate_totals.eligible_doctor_count`),
+         * fell through to a `-1` sentinel on every real build, and returned
+         * `agrees => true`. The demotion below was unreachable, the finding
+         * could never be emitted, and the docblock described a mechanism that
+         * did not run. Worse, it failed OPEN: a missing invariant was reported
+         * as agreement. An adversarial review found it; no test covered it.
+         *
+         * So the absence of the invariant is now UNVERIFIED, not agreement.
+         */
+        $fleetMatrix = $fleetReport['authorization_matrix'] ?? null;
+        $estateMatrix = $estateReport['authorization_matrix'] ?? null;
 
-        if ($estateDoctors < 0) {
+        if (! is_array($fleetMatrix) || $fleetMatrix === []
+            || ! is_array($estateMatrix) || $estateMatrix === []) {
             return [
-                'agrees' => true,
-                'detail' => 'The estate engine publishes no comparable doctor count, so the two snapshots are '
-                    .'not cross-checked on that invariant.',
-                'fleet_eligible_doctors' => $fleetDoctors,
+                'agrees' => false,
+                'detail' => 'Neither engine published a comparable authorization matrix, so the two snapshots '
+                    .'cannot be cross-checked. An invariant that is absent is not an invariant that agrees.',
+                'invariant' => 'authorization_matrix',
             ];
         }
 
+        $agrees = $fleetMatrix == $estateMatrix;
+
         return [
-            'agrees' => $fleetDoctors === $estateDoctors,
-            'detail' => $fleetDoctors === $estateDoctors
-                ? 'Both engines measured the same eligible doctor population ('.$fleetDoctors.').'
-                : 'The engines disagree on the eligible doctor population (fleet '.$fleetDoctors.', estate '
-                .$estateDoctors.'). Every measurement drawn from them is demoted to UNVERIFIED.',
-            'fleet_eligible_doctors' => $fleetDoctors,
-            'estate_eligible_doctors' => $estateDoctors,
+            'agrees' => $agrees,
+            'detail' => $agrees
+                ? 'Both engines published the same authorization matrix, so the estate report and the fleet '
+                .'report describe the same moment.'
+                : 'The engines published different authorization matrices, so this report would otherwise mix '
+                .'two snapshots. Every measurement drawn from them is demoted to UNVERIFIED.',
+            'invariant' => 'authorization_matrix',
+            'fleet_authorization_matrix' => $fleetMatrix,
+            'estate_authorization_matrix' => $estateMatrix,
         ];
     }
 
@@ -676,12 +749,32 @@ class DoctorGlobalEnforcementReadinessService
                 ];
             }
 
-            if ($row['has_producer'] === false) {
+            if ($row['has_producer'] === false && $row['declared'] === true) {
                 $findings[] = [
                     'finding' => self::FINDING_NO_PRODUCER,
                     'prerequisite' => $row['prerequisite'],
                     'detail' => 'Nothing measures this prerequisite, so a signature recorded against it can '
                         .'never be contradicted.',
+                ];
+            }
+
+            if ($row['signature_orphaned'] === true) {
+                $findings[] = [
+                    'finding' => self::FINDING_SIGNATURE_ORPHANED,
+                    'prerequisite' => $row['prerequisite'],
+                    'detail' => 'Signed in '.Prerequisite::CONFIG_ATTESTED.' but declared in '
+                        .Prerequisite::CONFIG_DECLARED.' nowhere. Deleting a name from the declared list while '
+                        .'leaving its signature beside it is the one edit that removes a prerequisite from '
+                        .'oversight, and it must never be the quiet option.',
+                ];
+            }
+
+            if ($row['signature_malformed'] === true) {
+                $findings[] = [
+                    'finding' => self::FINDING_SIGNATURE_MALFORMED,
+                    'prerequisite' => $row['prerequisite'],
+                    'detail' => 'The recorded signature is not a boolean. Code compares it with === true and '
+                        .'reads "unsigned"; a human reading the file reads "signed". Neither reading is safe.',
                 ];
             }
         }
@@ -700,7 +793,10 @@ class DoctorGlobalEnforcementReadinessService
         }
 
         foreach ($prerequisites as $row) {
-            if ($row['contradiction'] === true || $row['has_producer'] === false) {
+            if ($row['contradiction'] === true
+                || $row['signature_orphaned'] === true
+                || $row['signature_malformed'] === true
+                || ($row['declared'] === true && $row['has_producer'] === false)) {
                 return self::VERDICT_BLOCKED;
             }
         }

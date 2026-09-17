@@ -207,7 +207,45 @@ Contradiction coverage is proven **per prerequisite**, not in aggregate: the
 dataset runs all five, and each must measure not-PASS, contradict, and turn the
 verdict BLOCKED.
 
-### Mutation — 7 applied, **0 survivors**
+### Adversarial review found four defects, two of them false greens
+
+Two reviewers were asked to **refute**, not approve. Everything below was found
+by them and fixed before merge. They are recorded because three of the four are
+the same failure shape this sprint exists to remove — *a mechanism that reads as
+a check and cannot fail*.
+
+| # | Defect | Why it mattered |
+|---|---|---|
+| 1 | **The snapshot cross-check was dead, and failed OPEN.** It compared `authorization_matrix.doctor_count` and `estate_totals.eligible_doctor_count` — **neither of which any engine publishes** — so it hit a `-1` sentinel on every real build and returned `agrees => true`. The demotion was unreachable and the finding could never be emitted. | A documented mechanism that does not run, whose fallback reports *absence of evidence* as *agreement*. Now keyed to `authorization_matrix`, which both engines genuinely publish (the fleet from its own run, the estate from the fleet run it performs internally — so comparing them compares the two snapshots), and a missing invariant is now UNVERIFIED. |
+| 2 | **An orphan signature was invisible.** Both engines derived "what is signed" by filtering the *declared* list. Delete a name from `global_prerequisites`, leave its `true` beside it, and nothing checked it — and the signature-only sibling only notices a *fully* empty list and is NOT_APPLICABLE in `phase_4a` anyway. | The single edit that removes a prerequisite from oversight also removed it from the detector built to catch exactly that. Now iterates the **union** of declared ∪ attested. |
+| 3 | **Two rollback steps were tautologies, with no baseline.** `denyBrowserSessionReason()` returns `null` on its first line when the flag is off, so "admitted after rollback" reduced to *did the boolean we just wrote read back as false*. The deny step asserted only `!== null`. Nothing measured the subject's state **before** the move. | Added `captured_posture_admits_the_subject` as a real baseline, and the deny step now asserts the exact code `DENY_NO_DEVICE_SESSION` — anything else means something other than the scope widening is denying them. |
+| 4 | **The flag restore was lossy.** It wrote the resolved boolean into both `default` and `env_value`, so an entry whose `env_value` was `null` (no override) came back as `false` (an override recorded as off). Same resolved value, different fact — and `capture()` compared only the collapsed boolean, so the restore step could never fail for it. | Captures and restores the whole entry; an entry that did not exist is removed rather than written as `false`. |
+
+Two smaller ones, same spirit: a throw was recorded as a failing
+`rollback_restores_browser_login` even when it happened before any rollback was
+attempted (now its own step id, so one evidence array can no longer carry the
+same id twice with two statuses); and `'mutations' => 0` was a **hardcoded
+literal asserting the property a reader most wants evidence for** — the exact
+pattern this class replaces. It was first derived from the restoration step,
+then **removed**, because mutation testing showed a derived projection of an
+already-reported step cannot be made to fail independently of it.
+
+**Two overclaims were also corrected rather than defended.** The rehearsal
+reaches the gate through the config repository, which is resolution step 1 —
+strictly above the runtime `env()` read — so it does **not** exercise the
+environment file or the config cache. It never claimed to in code, but the
+docblock said "proves the rollback CHAIN", which is more than it measures. The
+payload now states the limit, and the runbook owns the other half.
+
+And one claim the reviewers **could not** refute, which is worth recording
+because it is the load-bearing safety argument: the rehearsal moves process-local
+config, and no concurrent request can observe it — there is no Octane, neither
+this service nor the scanner that consults it is reachable from any route or
+controller, and an Artisan process serves no HTTP request. All three were checked
+against this deployment. Fact two is one controller away from being false, so the
+class says so.
+
+### Mutation — 11 applied across two rounds, **0 survivors**
 
 | Mutation | First run | After |
 |---|---|---|
@@ -218,18 +256,29 @@ verdict BLOCKED.
 | future-date guard removed | KILLED (1) | KILLED |
 | scanner check removed | KILLED (3) | KILLED |
 | no-producer no longer blocks | KILLED (6) | KILLED |
+| flag restore back to the lossy form | — | KILLED |
+| union → declared-only (orphan hole) | KILLED | KILLED |
+| missing invariant → "agrees" | **SURVIVED** | KILLED |
+| malformed signature ignored | KILLED | KILLED |
+| deny reason not asserted | **SURVIVED** | KILLED |
 
-**Both survivors were real gaps in the tests, and both are worth recording.**
+**Four survivors across the two rounds, every one a real gap in the tests.**
 
 1. `worst([])` was never exercised. That is the exact "empty population" defect
    that let a sibling gate report PASS while the estate held zero usable
    tablets.
 2. The `finally` restore **is only load-bearing on the throw path.** On the
    happy path the posture is restored mid-rehearsal, so the suite stayed green
-   with the `finally` deleted. A test that forces the gate to throw now pins it.
-   Found by mutation, not by reading.
+   with the `finally` deleted.
+3. The snapshot **fail-closed branch was never entered**, because both engines
+   always publish the invariant in a normal build. A test that drives them with
+   no invariant at all now pins the direction.
+4. The **exact deny code** was never contradicted, because the real gate always
+   returns the expected one. A gate double returning a different reason now
+   pins it.
 
-Sources verified byte-identical to their pre-mutation copies afterwards.
+Every one of the four was invisible to a green suite. Sources verified
+byte-identical to their pre-mutation copies afterwards.
 
 ---
 

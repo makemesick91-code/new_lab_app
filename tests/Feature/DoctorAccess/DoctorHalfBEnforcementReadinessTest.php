@@ -29,6 +29,8 @@
 use App\Models\User;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\DoctorAccess\Services\DoctorEffectiveBranchResolver;
+use App\Modules\DoctorAccess\Services\DoctorEstateResilienceService;
+use App\Modules\DoctorAccess\Services\DoctorFleetReadinessService;
 use App\Modules\DoctorAccess\Services\DoctorGlobalEnforcementReadinessService;
 use App\Modules\DoctorAccess\Services\DoctorHalfBRollbackProofService;
 use App\Modules\DoctorAccess\Support\DoctorGlobalEnforcementPrerequisite as Prerequisite;
@@ -40,6 +42,7 @@ use App\Modules\DoctorDevice\Services\DoctorAppLoginGate;
 use App\Services\Foundation\FeatureFlagService;
 use App\Support\Android\AndroidDoctorEnforcementScope;
 use App\Support\Android\Phase4aPilotPreparationScanner;
+use Illuminate\Contracts\Filesystem\Factory as FilesystemFactory;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 
@@ -224,6 +227,36 @@ it('restores the captured posture even when the rehearsal throws midway', functi
     // global enforcement simulated in its own config.
     expect($service->capture())->toEqual($before);
     expect(config('android_release.enforcement.scope.global_permitted'))->toBeFalse();
+    expect($proof['measured'])->toBe(Prerequisite::FAIL);
+});
+
+it('fails the global-denial step when something other than the scope widening refuses the subject', function () {
+    seedAccessControl();
+
+    $inCohort = hbDoctor('drg In Cohort');
+    hbDoctor('drg Outside Cohort');
+    hbPilotCohort([$inCohort->id]);
+
+    // Admitted at baseline, then refused under the global posture for a reason
+    // that is NOT the absence of a device session. Half B denies a browser
+    // specifically with DENY_NO_DEVICE_SESSION; anything else means something
+    // else is doing the denying and the rehearsal is not observing Half B.
+    $gate = Mockery::mock(DoctorAppLoginGate::class);
+    $gate->shouldReceive('denyBrowserSessionReason')->once()->andReturn(null);
+    $gate->shouldReceive('denyBrowserSessionReason')->once()->andReturn('some_unrelated_reason');
+    $gate->shouldReceive('denyBrowserSessionReason')->andReturn(null);
+
+    $proof = (new DoctorHalfBRollbackProofService(
+        app(DoctorDeviceRolloutReadinessRepositoryInterface::class),
+        $gate,
+        app(AndroidDoctorEnforcementScope::class),
+        app(FeatureFlagService::class),
+    ))->prove();
+
+    $steps = collect($proof['steps'])->keyBy('step');
+
+    expect($steps[DoctorHalfBRollbackProofService::STEP_BASELINE_ADMITS]['status'])->toBe(Prerequisite::PASS);
+    expect($steps[DoctorHalfBRollbackProofService::STEP_GLOBAL_DENIES]['status'])->toBe(Prerequisite::FAIL);
     expect($proof['measured'])->toBe(Prerequisite::FAIL);
 });
 
@@ -429,6 +462,104 @@ it('reports a declared prerequisite whose signature slot has drifted away', func
         ->toContain(DoctorGlobalEnforcementReadinessService::FINDING_SIGNATURE_SLOT_MISSING);
 });
 
+it('catches a signature left behind after its prerequisite was removed from the declared list', function () {
+    seedAccessControl();
+
+    // THE ONE EDIT THAT REMOVES A PREREQUISITE FROM OVERSIGHT.
+    // Iterating only the declared list made this invisible: the name is gone,
+    // the signature remains, and the engine built to catch a false signature
+    // did not know it existed. The signature-only sibling does not backstop it
+    // either — it notices only a FULLY empty list, and is NOT_APPLICABLE in
+    // phase_4a regardless.
+    $declared = array_values(array_filter(
+        (array) config(Prerequisite::CONFIG_DECLARED),
+        static fn ($name): bool => (string) $name !== Prerequisite::SPARE_DEVICE_PER_BRANCH,
+    ));
+
+    config()->set(Prerequisite::CONFIG_DECLARED, $declared);
+    hbAttest([Prerequisite::SPARE_DEVICE_PER_BRANCH => true]);
+
+    $report = hbReport();
+
+    expect($report['prerequisites'])->toHaveKey(Prerequisite::SPARE_DEVICE_PER_BRANCH);
+    expect(hbRow($report, Prerequisite::SPARE_DEVICE_PER_BRANCH)['signature_orphaned'])->toBeTrue();
+    expect(collect($report['findings'])->pluck('finding'))
+        ->toContain(DoctorGlobalEnforcementReadinessService::FINDING_SIGNATURE_ORPHANED);
+    expect($report['verdict'])->toBe(DoctorGlobalEnforcementReadinessService::VERDICT_BLOCKED);
+});
+
+it('refuses a signature that is not a boolean instead of silently reading it as unsigned', function (mixed $value) {
+    seedAccessControl();
+
+    // Code compares with === true and reads "unsigned"; a human reading the
+    // file reads "signed". Neither reading is safe, so it is a finding.
+    hbAttest([Prerequisite::ROLLBACK_TO_BROWSER_LOGIN_PROVEN => $value]);
+
+    $report = hbReport();
+
+    expect(hbRow($report, Prerequisite::ROLLBACK_TO_BROWSER_LOGIN_PROVEN)['signature_malformed'])->toBeTrue();
+    expect(collect($report['findings'])->pluck('finding'))
+        ->toContain(DoctorGlobalEnforcementReadinessService::FINDING_SIGNATURE_MALFORMED);
+    expect($report['verdict'])->toBe(DoctorGlobalEnforcementReadinessService::VERDICT_BLOCKED);
+})->with([1, '1', 'true', 'yes']);
+
+it('cross-checks the two engine snapshots against an invariant that actually exists', function () {
+    seedAccessControl();
+
+    $report = hbReport();
+
+    // THE MECHANISM MUST NOT BE DEAD. A first version compared
+    // `authorization_matrix.doctor_count` and `estate_totals.eligible_doctor_count`
+    // — neither of which any engine publishes — so it fell through to a
+    // sentinel and returned "agrees" on every build. The demotion was
+    // unreachable and the finding could never be emitted. Asserting the
+    // invariant resolves is what keeps it alive.
+    expect($report['snapshot_agreement']['invariant'])->toBe('authorization_matrix');
+    expect($report['snapshot_agreement'])->toHaveKey('fleet_authorization_matrix');
+    expect($report['snapshot_agreement']['fleet_authorization_matrix'])->toBeArray();
+    expect($report['snapshot_agreement']['agrees'])->toBeTrue();
+});
+
+it('treats a missing cross-check invariant as UNVERIFIED, not as agreement', function () {
+    seedAccessControl();
+
+    // Engines that publish no comparable invariant. The first version of this
+    // mechanism read keys no engine emits, fell through to a sentinel, and
+    // returned "agrees" — so the demotion below was unreachable on every real
+    // build and the absence of evidence was reported as evidence of agreement.
+    $fleet = Mockery::mock(DoctorFleetReadinessService::class);
+    $fleet->shouldReceive('build')->andReturn(['doctors' => [], 'provisioning' => []]);
+
+    $estate = Mockery::mock(DoctorEstateResilienceService::class);
+    $estate->shouldReceive('build')->andReturn(['gates' => []]);
+
+    $report = (new DoctorGlobalEnforcementReadinessService(
+        $fleet,
+        $estate,
+        app(DoctorHalfBRollbackProofService::class),
+        app(AndroidDoctorEnforcementScope::class),
+        app(FeatureFlagService::class),
+        app(Phase4aPilotPreparationScanner::class),
+        app(FilesystemFactory::class),
+    ))->build();
+
+    expect($report['snapshot_agreement']['agrees'])->toBeFalse();
+    expect(collect($report['findings'])->pluck('finding'))
+        ->toContain(DoctorGlobalEnforcementReadinessService::FINDING_SNAPSHOT_DISAGREEMENT);
+
+    // And the demotion actually fires: every measurement drawn from those two
+    // engines is UNVERIFIED rather than whatever they happened to return.
+    foreach ([
+        Prerequisite::REAL_DEVICE_PILOT_PASSED,
+        Prerequisite::EVERY_DOCTOR_HAS_ACTIVE_DEVICE,
+        Prerequisite::SPARE_DEVICE_PER_BRANCH,
+    ] as $key) {
+        expect(hbRow($report, $key)['measured'])->toBe(Prerequisite::UNVERIFIED);
+    }
+
+    expect($report['verdict'])->toBe(DoctorGlobalEnforcementReadinessService::VERDICT_UNVERIFIED);
+});
+
 // ---------------------------------------------------------------------------
 // C. THE DEVICE-LOSS REHEARSAL EVIDENCE
 // ---------------------------------------------------------------------------
@@ -540,6 +671,40 @@ it('fails the scanner when a signature stands against a measurement', function (
     $checks = collect(app(Phase4aPilotPreparationScanner::class)->scan()['checks'])->keyBy('id');
 
     expect($checks['global_prerequisite_attestations_do_not_contradict_measurement']['status'])->toBe('FAIL');
+});
+
+it('leaves the enforcement posture exactly as it found it, even when the scan runs the rehearsal', function () {
+    seedAccessControl();
+
+    $inCohort = hbDoctor('drg In Cohort');
+    hbDoctor('drg Outside Cohort');
+    hbPilotCohort([$inCohort->id]);
+
+    // A SIGNATURE, so the scan takes the branch that reaches the rehearsal.
+    hbAttest([Prerequisite::ROLLBACK_TO_BROWSER_LOGIN_PROVEN => true]);
+
+    $before = [
+        'mode' => config('doctor_device_enforcement.scope.mode'),
+        'cohort' => config('doctor_device_enforcement.scope.pilot.doctor_user_ids'),
+        'global_permitted' => config('android_release.enforcement.scope.global_permitted'),
+        'flag_entry' => hbFlagEntry(),
+    ];
+
+    app(Phase4aPilotPreparationScanner::class)->scan();
+
+    /*
+     * THE SCANNER'S "INERT BY CONSTRUCTION" GUARANTEE, ASSERTED BEHAVIOURALLY.
+     *
+     * Its existing guard reads the scanner's own SOURCE TEXT for forbidden
+     * calls, so it cannot see a mutation that happens one `app()` hop away —
+     * and once a signature exists, this scan does reach a service that moves
+     * enforcement config. The bound is the rehearsal's `finally`; this is the
+     * test that proves the bound holds from the scanner's side.
+     */
+    expect(config('doctor_device_enforcement.scope.mode'))->toBe($before['mode']);
+    expect(config('doctor_device_enforcement.scope.pilot.doctor_user_ids'))->toBe($before['cohort']);
+    expect(config('android_release.enforcement.scope.global_permitted'))->toBe($before['global_permitted']);
+    expect(hbFlagEntry())->toEqual($before['flag_entry']);
 });
 
 it('evaluates the contradiction check in phase 4a, where its signature-only sibling is not applicable', function () {

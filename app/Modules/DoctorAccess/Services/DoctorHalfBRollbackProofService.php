@@ -45,15 +45,33 @@ use Throwable;
  * The rehearsal therefore:
  *
  *   1. CAPTURES the live pre-activation posture — mode, cohort, global
- *      permission, the enforcement flag and the governance phase.
- *   2. Moves the in-process config to the ACTIVATED posture and asks the real
- *      {@see DoctorAppLoginGate} whether a real doctor who is NOT in today's
- *      cohort may hold a browser session. Under Half B they may not.
- *   3. Restores the CAPTURED posture and asks again. The rollback is proven
- *      when the same doctor, on the same deployment, is admitted again.
- *   4. Confirms the global denial is no longer effective from the resolved
+ *      permission and the enforcement flag entry.
+ *   2. Measures the BASELINE: the subject holds a browser session right now,
+ *      under the posture the deployment is actually running.
+ *   3. Moves the in-process config to the ACTIVATED posture and asks the real
+ *      {@see DoctorAppLoginGate} whether that doctor may still hold one. Under
+ *      Half B they may not, and the exact deny code is asserted.
+ *   4. Restores the CAPTURED posture and asks again. The rollback is proven
+ *      when the same doctor, on the same deployment, returns to the state
+ *      measured in step 2.
+ *   5. Confirms the global denial is no longer effective from the resolved
  *      scope rather than from the value that was written back.
- *   5. Confirms the captured values are back, key for key.
+ *   6. Confirms the captured values are back, key for key.
+ *
+ * WHAT THIS MEASURES, AND THE HALF IT DOES NOT.
+ *
+ * It drives the real gate, so it measures that the enforcement DECISION
+ * reverses when the captured scope and flag go back. It reaches that gate
+ * through this process's config repository, which is resolution step 1 in
+ * {@see FeatureFlagService::resolveOverride()} — strictly above the runtime
+ * `env()` read at step 2. So it does NOT exercise the environment file or the
+ * config cache, and a deployment whose env-based rollback was inert would
+ * still pass here.
+ *
+ * That half is real and it is the runbook's: production runs cached config, so
+ * an environment edit alone realizes nothing and the rebuild is a required
+ * step. This class does not claim to cover it, and the report's `semantics`
+ * field says so in the payload rather than only here.
  *
  * WHAT IT NEVER DOES. It writes no file, no row and no audit entry; it runs no
  * `config:cache`; it changes no environment value; and every override it makes
@@ -110,6 +128,20 @@ class DoctorHalfBRollbackProofService
     public const STEP_POSTURE_CAPTURED = 'pre_activation_posture_captured';
 
     public const STEP_SUBJECT_RESOLVED = 'rollback_subject_resolved';
+
+    /**
+     * The subject is admitted BEFORE anything moves.
+     *
+     * Without it the rehearsal had no baseline: a subject refused for some
+     * reason that has nothing to do with Half B produced a FAILING
+     * {@see self::STEP_ROLLBACK_RESTORES}, indistinguishable from a genuinely
+     * broken rollback. Measuring the starting state separates "this subject
+     * cannot be used" from "the rollback did not work".
+     */
+    public const STEP_BASELINE_ADMITS = 'captured_posture_admits_the_subject';
+
+    /** A throw, recorded under its own id rather than blamed on a step that never ran. */
+    public const STEP_REHEARSAL_COMPLETED = 'rehearsal_ran_to_completion';
 
     public const STEP_GLOBAL_DENIES = 'global_posture_denies_browser_login';
 
@@ -181,25 +213,74 @@ class DoctorHalfBRollbackProofService
         );
 
         /*
-         * FROM HERE THE PROCESS CONFIG IS MOVED. Everything below runs inside
-         * the try, and the finally restores the captured values whether the
-         * rehearsal passed, failed or threw. There is no early return between
-         * the move and the restore.
+         * THE BASELINE, MEASURED BEFORE ANYTHING MOVES.
+         *
+         * Without it there was no starting state to compare against, and a
+         * subject refused for some reason unrelated to Half B produced a
+         * FAILING rollback step indistinguishable from a genuinely broken
+         * rollback. It is also what stops the "admitted again" step being a
+         * statement about one boolean: the claim is that the subject returns to
+         * the state they were measured in, not merely that a flag reads false.
+         */
+        /*
+         * THE BASELINE PROBE IS INSIDE THE TRY, even though it runs before
+         * anything moves.
+         *
+         * It was briefly outside it, which put a real gate call — the one thing
+         * here that can throw — on a path with no `finally` behind it. Nothing
+         * had moved yet, so nothing would have been left armed; but "the
+         * exception happens to land before the mutation" is a property of the
+         * current line order, not a guarantee, and this class is not the place
+         * to rely on one. The restore is idempotent, so running it after a
+         * baseline-only failure costs nothing.
          */
         try {
+            $baseline = $this->browserDenyReason($subject);
+
+            $steps[] = $this->step(
+                self::STEP_BASELINE_ADMITS,
+                $baseline === null ? Prerequisite::PASS : Prerequisite::UNVERIFIED,
+                $baseline === null
+                    ? 'Under the captured posture this doctor holds a browser session, so there is a starting '
+                    .'state for the rollback to return them to.'
+                    : 'Under the captured posture this doctor is ALREADY refused a browser session ('.$baseline
+                    .'), for a reason that has nothing to do with widening the scope. No rollback can be '
+                    .'measured against them, so this is UNVERIFIED rather than a failure of the rollback.',
+            );
+
+            /*
+             * FROM HERE THE PROCESS CONFIG IS MOVED. The finally restores the
+             * captured values whether the rehearsal passed, failed or threw,
+             * and there is no early return between the move and the restore.
+             */
             $this->applyGlobalPosture();
 
             $deniedUnderGlobal = $this->browserDenyReason($subject);
 
+            /*
+             * THE REASON IS ASSERTED, not merely the fact of a refusal.
+             *
+             * `!== null` would be satisfied by a denial arising from anything
+             * at all. Half B's denial of a browser is specifically the ABSENCE
+             * of a server-verified device session, so that is the code this
+             * step requires; any other refusal means something else denied
+             * them and the rehearsal has not observed what it claims to.
+             */
+            $expected = DoctorAppLoginGate::DENY_NO_DEVICE_SESSION;
+
             $steps[] = $this->step(
                 self::STEP_GLOBAL_DENIES,
-                $deniedUnderGlobal !== null ? Prerequisite::PASS : Prerequisite::FAIL,
-                $deniedUnderGlobal !== null
-                    ? 'Under the activated posture the gate refuses this doctor a browser session ('
-                    .$deniedUnderGlobal.'), which is the state a rollback has to be able to undo.'
-                    : 'Under the activated posture the gate still ADMITS this doctor to a browser session. '
-                    .'Half B would not take effect, so there is no denial for a rollback to reverse and this '
-                    .'rehearsal proves nothing.',
+                $deniedUnderGlobal === $expected ? Prerequisite::PASS : Prerequisite::FAIL,
+                $deniedUnderGlobal === $expected
+                    ? 'Under the activated posture the gate refuses this doctor a browser session with '
+                    .$expected.', which is the state a rollback has to be able to undo.'
+                    : ($deniedUnderGlobal === null
+                        ? 'Under the activated posture the gate still ADMITS this doctor to a browser session. '
+                        .'Half B would not take effect, so there is no denial for a rollback to reverse and '
+                        .'this rehearsal proves nothing.'
+                        : 'Under the activated posture this doctor is refused with "'.$deniedUnderGlobal
+                        .'" rather than '.$expected.'. Something other than the scope widening is denying '
+                        .'them, so this rehearsal is not observing Half B.'),
             );
 
             $this->restore($captured);
@@ -228,10 +309,19 @@ class DoctorHalfBRollbackProofService
                     .'never from the value that was written back.',
             );
         } catch (Throwable $e) {
+            /*
+             * ITS OWN STEP ID. Recording a throw as a failing
+             * STEP_ROLLBACK_RESTORES blamed a step that may never have run —
+             * a throw inside applyGlobalPosture() happens before any rollback
+             * is attempted — and, when the throw came after that step had
+             * already been appended, produced the same id twice with two
+             * different statuses in one evidence array.
+             */
             $steps[] = $this->step(
-                self::STEP_ROLLBACK_RESTORES,
+                self::STEP_REHEARSAL_COMPLETED,
                 Prerequisite::FAIL,
-                'The rollback rehearsal threw and could not complete: '.$e->getMessage(),
+                'The rollback rehearsal threw and could not complete: '.$e->getMessage()
+                .' The captured posture was restored regardless.',
             );
         } finally {
             $this->restore($captured);
@@ -241,8 +331,8 @@ class DoctorHalfBRollbackProofService
 
         $steps[] = $this->step(
             self::STEP_CONFIG_RESTORED,
-            $restored == $captured ? Prerequisite::PASS : Prerequisite::FAIL,
-            $restored == $captured
+            $restored === $captured ? Prerequisite::PASS : Prerequisite::FAIL,
+            $restored === $captured
                 ? 'Every posture key this rehearsal moved holds its captured value again.'
                 : 'The process configuration did NOT return to its captured values. This rehearsal must be '
                 .'treated as having disturbed the runtime posture and the deployment re-verified.',
@@ -416,10 +506,25 @@ class DoctorHalfBRollbackProofService
                 'global_permitted' => $captured['global_permitted'],
                 'enforcement_flag_armed' => $captured['enforcement_flag_armed'],
             ],
-            'mutations' => 0,
+            /*
+             * THERE IS DELIBERATELY NO `mutations => 0` FIELD HERE.
+             *
+             * It existed, as a hardcoded literal asserting the one property a
+             * reader most wants evidence for — exactly the pattern this class
+             * was built to replace. The obvious repair was to derive it from
+             * {@see self::STEP_CONFIG_RESTORED}, and mutation testing showed
+             * why that is still not good enough: a derived projection of a step
+             * that is already reported cannot be made to fail independently of
+             * that step, so it adds a surface that can drift and no way to
+             * catch the drift. The step is the evidence; read it there.
+             */
             'semantics' => 'This is a REHEARSAL against the live posture, executed in this process and undone '
-                .'before it returns. It proves the rollback CHAIN works on this deployment. It does not arm, '
-                .'disarm or authorize anything, and a PASS here authorizes no activation.',
+                .'before it returns. It proves that the enforcement DECISION reverses when the captured scope '
+                .'and flag are put back: the gate is driven for real, but through this process\'s config '
+                .'repository. It does NOT exercise the environment file or the config cache, which is the '
+                .'other half of the operational rollback and is covered by the runbook, so a PASS here is not '
+                .'a claim that an environment edit alone would take effect — it would not. It arms, disarms '
+                .'and authorizes nothing.',
         ];
     }
 }
