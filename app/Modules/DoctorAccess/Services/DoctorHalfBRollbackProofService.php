@@ -62,6 +62,28 @@ use Throwable;
  * database access it makes is reading the doctor accounts it needs a subject
  * from.
  *
+ * WHY "PROCESS-LOCAL" IS ACTUALLY SAFE HERE, VERIFIED RATHER THAN ASSUMED.
+ *
+ * The obvious objection to moving `config()` on a live system is that a
+ * concurrent request in the same worker would observe the simulated GLOBAL
+ * posture and be DENIED. Three facts close it, and all three were checked
+ * against this deployment rather than taken on trust:
+ *
+ *   1. There is no Octane — `laravel/octane` is absent from `composer.json` and
+ *      there is no `config/octane.php`. Under PHP-FPM the config repository is
+ *      rebuilt per request and shared with nothing.
+ *   2. Neither this service nor the scanner that consults it is reachable from
+ *      any route or controller (grep across `routes/`, `app/Http/` and every
+ *      module's `Controllers/`: zero references). The rehearsal only ever runs
+ *      in an Artisan process.
+ *   3. An Artisan process serves no HTTP request, so there is no concurrent
+ *      request in it to mislead.
+ *
+ * IF ANY OF THOSE THREE CHANGES — Octane is adopted, or this engine is exposed
+ * over HTTP — THIS CLASS MUST BE RE-REVIEWED BEFORE IT IS RUN ON PRODUCTION.
+ * That is not a theoretical caveat: fact 2 is one controller away from being
+ * false.
+ *
  * WHY IT USES A REAL DOCTOR. A synthetic user would prove that the gate denies
  * a synthetic user. The question the prerequisite asks is whether THIS
  * deployment's doctors get their browser back, so the subject is one of them,
@@ -241,11 +263,29 @@ class DoctorHalfBRollbackProofService
      */
     public function capture(): array
     {
+        $flags = (array) config(self::CONFIG_FEATURE_FLAGS, []);
+
         return [
             'scope_mode' => config(self::CONFIG_SCOPE_MODE),
             'cohort_singular' => config(self::CONFIG_COHORT_SINGULAR),
             'cohort_plural' => config(self::CONFIG_COHORT_PLURAL),
             'global_permitted' => config(self::CONFIG_GLOBAL_PERMITTED),
+
+            /*
+             * THE WHOLE FLAG ENTRY, not the boolean it resolves to.
+             *
+             * An earlier form captured `flags->enabled()` and wrote that
+             * boolean back into both `default` and `env_value`. The RESOLVED
+             * value survived that round trip, so a capture-and-compare looked
+             * identical — and the stored shape did not: an entry whose
+             * `env_value` was null (no override recorded) came back as `false`
+             * (an override recorded as off). Those resolve the same today and
+             * are not the same fact, and a restore that quietly rewrites the
+             * fact it was restoring is the kind of thing this class exists to
+             * refuse. Capturing the array makes the restore exact and makes the
+             * comparison mean what it says.
+             */
+            'flag_entry' => $flags[DoctorAppLoginGate::ENFORCEMENT_FLAG] ?? null,
             'enforcement_flag_armed' => $this->flags->enabled(DoctorAppLoginGate::ENFORCEMENT_FLAG),
             'cohort' => $this->scope->pilotDoctorUserIds(),
             'resolved_mode' => $this->scope->mode(),
@@ -318,8 +358,17 @@ class DoctorHalfBRollbackProofService
         config()->set(self::CONFIG_GLOBAL_PERMITTED, $captured['global_permitted']);
 
         $flags = (array) config(self::CONFIG_FEATURE_FLAGS, []);
-        $flags[DoctorAppLoginGate::ENFORCEMENT_FLAG]['default'] = $captured['enforcement_flag_armed'];
-        $flags[DoctorAppLoginGate::ENFORCEMENT_FLAG]['env_value'] = $captured['enforcement_flag_armed'];
+
+        // The captured ENTRY goes back verbatim. An entry that did not exist is
+        // removed rather than written as `false` — absence and a recorded `off`
+        // are different facts, and restoring one as the other is a mutation
+        // dressed up as a restore.
+        if ($captured['flag_entry'] === null) {
+            unset($flags[DoctorAppLoginGate::ENFORCEMENT_FLAG]);
+        } else {
+            $flags[DoctorAppLoginGate::ENFORCEMENT_FLAG] = $captured['flag_entry'];
+        }
+
         config()->set(self::CONFIG_FEATURE_FLAGS, $flags);
     }
 

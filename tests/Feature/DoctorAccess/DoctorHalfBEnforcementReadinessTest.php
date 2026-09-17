@@ -91,6 +91,23 @@ function hbRow(array $report, string $prerequisite): array
     return $report['prerequisites'][$prerequisite];
 }
 
+/**
+ * A flag entry, fetched by ARRAY INDEX rather than by dot path.
+ *
+ * Flag keys contain dots — `doctor.trusted_device_enforcement` — so
+ * `config('feature_flags.flags.doctor.trusted_device_enforcement')` traverses
+ * into keys that do not exist and returns null. An assertion written that way
+ * compares null to null and passes no matter what the code does.
+ * `FeatureFlagService::definitions()` carries the same warning for the same
+ * reason.
+ *
+ * @return array<string,mixed>|null
+ */
+function hbFlagEntry(string $flag = DoctorAppLoginGate::ENFORCEMENT_FLAG): ?array
+{
+    return ((array) config('feature_flags.flags'))[$flag] ?? null;
+}
+
 /** Row counts for every foundation this engine must never touch. */
 function hbFoundationCounts(): array
 {
@@ -150,6 +167,32 @@ it('restores every posture key it moved, so the deployment is left exactly as it
     expect($service->capture())->toEqual($before);
     expect(hbFoundationCounts())->toEqual($countsBefore);
     expect(config('android_release.enforcement.scope.global_permitted'))->toBeFalse();
+});
+
+it('restores the raw feature flag entry, not the boolean it happens to resolve to', function () {
+    seedAccessControl();
+
+    $inCohort = hbDoctor('drg In Cohort');
+    hbDoctor('drg Outside Cohort');
+    hbPilotCohort([$inCohort->id]);
+
+    // An entry with NO recorded override. "No override" and "an override
+    // recorded as off" resolve identically and are different facts.
+    $flags = (array) config('feature_flags.flags');
+    $flags[DoctorAppLoginGate::ENFORCEMENT_FLAG]['default'] = false;
+    $flags[DoctorAppLoginGate::ENFORCEMENT_FLAG]['env_value'] = null;
+    config()->set('feature_flags.flags', $flags);
+
+    $entryBefore = hbFlagEntry();
+
+    app(DoctorHalfBRollbackProofService::class)->prove();
+
+    // An earlier form wrote the RESOLVED boolean back into both `default` and
+    // `env_value`, so a null override came back as `false`. The resolved value
+    // survived, so a value-level comparison saw nothing wrong — the restore was
+    // quietly rewriting the fact it was restoring.
+    expect(hbFlagEntry())->toEqual($entryBefore);
+    expect(hbFlagEntry()['env_value'])->toBeNull();
 });
 
 it('restores the captured posture even when the rehearsal throws midway', function () {
@@ -540,14 +583,23 @@ it('never arms half b and never disturbs half a', function () {
     hbPilotCohort([$inCohort->id]);
 
     $singleSession = app(DoctorAppLoginGate::class);
+
+    // Fetched by array index. Written as a dot path — which is how this test
+    // first shipped — both sides read null and the loop below asserted nothing
+    // at all. Flag keys contain dots; `config()` cannot address them.
     $flags = [
-        DoctorEffectiveBranchResolver::FLAG_SINGLE_ACTIVE_SESSION => config(
-            'feature_flags.flags.'.DoctorEffectiveBranchResolver::FLAG_SINGLE_ACTIVE_SESSION,
+        DoctorEffectiveBranchResolver::FLAG_SINGLE_ACTIVE_SESSION => hbFlagEntry(
+            DoctorEffectiveBranchResolver::FLAG_SINGLE_ACTIVE_SESSION,
         ),
-        DoctorEffectiveBranchResolver::FLAG_BRANCH_LOCK => config(
-            'feature_flags.flags.'.DoctorEffectiveBranchResolver::FLAG_BRANCH_LOCK,
+        DoctorEffectiveBranchResolver::FLAG_BRANCH_LOCK => hbFlagEntry(
+            DoctorEffectiveBranchResolver::FLAG_BRANCH_LOCK,
         ),
     ];
+
+    // The fixture has to actually contain them, or the comparison is vacuous.
+    foreach ($flags as $key => $before) {
+        expect($before)->not->toBeNull("flag {$key} absent from the fixture");
+    }
 
     hbReport();
 
@@ -555,7 +607,7 @@ it('never arms half b and never disturbs half a', function () {
     // must never move. Half B stays unarmed: global_permitted is a
     // source-controlled false and nothing here can reach it.
     foreach ($flags as $key => $before) {
-        expect(config('feature_flags.flags.'.$key))->toEqual($before);
+        expect(hbFlagEntry($key))->toEqual($before);
     }
 
     expect(config('android_release.enforcement.scope.global_permitted'))->toBeFalse();
