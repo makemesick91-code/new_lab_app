@@ -202,22 +202,48 @@ Expected immediately after: `doctor.single_active_session = true`,
 `doctor.branch_lock = true`, and the branch resolver `enabled()` now true — so every
 locked doctor's lists are narrowed **at once**, while no open session is evicted.
 
+> ### ⚠ THIS SECTION AND §7 WERE WRITTEN WHILE `branch_lock` WAS TRUE. IT IS NOW FALSE.
+>
+> The owner disarmed `FEATURE_DOCTOR_BRANCH_LOCK` after the Half-A cutover — the
+> capability was proven and then switched off as the wrong instrument for the
+> business model (*a doctor may work at ANY branch, provided they log in on a
+> registered device of that branch*). All 15 home locks are retained and inert.
+>
+> **So on today's posture, arming `single_active_session` narrows NOTHING.**
+> `DoctorEffectiveBranchResolver::enabled()` is `branch_lock AND
+> single_active_session AND probe` — the first is false. The steps below stay
+> correct **only if branch_lock is deliberately re-armed first**, which is its
+> own decision and not part of a Half-A window.
+>
+> Read the live values before following either section:
+> `runuser -u daengtisiams -- php artisan foundation:feature-flags --json`.
+
 ---
 
 ## 7. Half A verification
 
-1. **Branch narrowing** — a locked doctor's branch selector offers only their home
-   branch plus an active cover. Verify against a **locked** doctor; there is no UNSET
-   doctor left to use.
-2. **Cross-branch write refusal** — a visit create outside the effective branch is
-   refused, and `ClinicVisitService::auditEffectiveBranchWriteRefusal()` writes one
+> Steps 1, 2 and 4 depend on the branch resolver being armed — see the notice in
+> §6. With `branch_lock` false they are **expected to show no narrowing**, and an
+> operator who treats that as a failure will chase a defect that is not there.
+> Step 3 is the one that rides `single_active_session` alone and holds in every
+> posture.
+
+1. **Branch narrowing** *(requires `branch_lock` armed)* — a locked doctor's branch
+   selector offers only their home branch plus an active cover. Verify against a
+   **locked** doctor; there is no UNSET doctor left to use.
+2. **Cross-branch write refusal** *(requires `branch_lock` armed)* — a visit create
+   outside the effective branch is refused, and
+   `ClinicVisitService::auditEffectiveBranchWriteRefusal()` writes one
    audit row per attempt.
 3. **Second-login denial** — log in as one doctor, then attempt a second session
    elsewhere. Expect `DENY_ACTIVE_SESSION_ELSEWHERE`. **The first session is never
    evicted.** Use a doctor who logged in *after* the cutover — a pre-cutover session
    holds no lease token and will not demonstrate this.
-4. **HTTP force-logout is now reachable** — the `release-session` route stops 404ing
-   the moment the resolver arms.
+4. **HTTP force-logout is now reachable** *(requires `branch_lock` armed)* — the
+   `release-session` route stops 404ing the moment the resolver arms. It gates on
+   the **branch-lock** predicate, not the lease flag, so with `branch_lock` false
+   it stays 404 and **SSH recovery via `doctor:session-force-logout` is the only
+   route**. That command carries no flag guard and is canonical in every posture.
 
 ---
 
@@ -227,10 +253,15 @@ locked doctor's lists are narrowed **at once**, while no open session is evicted
 
 ```
 single_active_session = false
-branch_lock flag      = true    (unchanged)
+branch_lock flag      = unchanged, whatever it was  (FALSE on today's posture)
 branch_lock_effective = false
 HOME locks · covers · authorizations · credentials · audit history — all preserved
 ```
+
+Written as "unchanged" rather than as a value, deliberately: this block used to
+say `branch_lock flag = true`, which stopped being true the night the owner
+disarmed it. A rollback restores the **captured** posture, never a remembered
+constant — capture both flags before the window and put those back.
 
 The claim listener and per-request revalidation both return immediately: no login is
 refused and **no open session is torn down**. Lease rows are untouched; a stale lease
@@ -250,7 +281,71 @@ a lease with a manual `UPDATE`.
 
 - It will not arm Half B. That is blocked on hardware, a reviewed source change and
   attestations that are untrue today.
-- It will not attest a prerequisite to make a gate green. Four of the five global
-  prerequisites have nothing able to contradict them, which is exactly why signing
-  one casually is unsafe.
+- It will not attest a prerequisite to make a gate green. **Superseded detail
+  (DOCTOR-ACCESS-GLOBAL-DEVICE-ENFORCEMENT-READINESS-1):** the reason has
+  changed and the conclusion has not. All five global prerequisites now have a
+  producer and a signature that contradicts a measurement FAILS — so signing one
+  casually is no longer merely unsafe, it is *detected*. It is still not this
+  runbook's to do.
 - It will not write to production to make a document true.
+
+---
+
+## 10. Half B — what a future window must satisfy first
+
+Half B is **fleet-wide doctor device/browser enforcement**, and it is a separate
+programme from the Half-A cutover above. Half-A approval authorises nothing here.
+
+### Read the gate before proposing a window
+
+```bash
+# read-only, safe on production, arms nothing
+php artisan doctor:half-b-readiness --json
+
+# the machinery: are the five prerequisites measured, and does any
+# signature stand against a measurement?  (exit 1 if not READY)
+php artisan doctor:half-b-readiness --strict
+
+# the world: may the fleet actually be enforced?  (exit 2 if not)
+php artisan doctor:half-b-readiness --activation-preflight
+```
+
+**The two verdicts are different questions.** `HALF_B_READINESS` is the
+readiness of the *instruments*. `ACTIVATION_PREREQUISITES` is the readiness of
+the *world*. A green machinery verdict beside a red world verdict is the
+expected state: the instruments are honest and they are saying do not activate.
+
+### The three things that arm Half B, none of which a host can reach
+
+| | Where | Today |
+|---|---|---|
+| `global_permitted` | `config/android_release.php` — source-controlled, no env key | `false` |
+| `governance_phase` | same file | `phase_4a` |
+| the enforcement flag | `doctor.trusted_device_enforcement` | armed over the pilot cohort only |
+
+### The five prerequisites, and who can close them
+
+| Prerequisite | Closed by |
+|---|---|
+| `real_device_pilot_passed` | measured — cohort × device-login proof |
+| `every_enforced_doctor_has_an_active_device` | measured — provisioning verdict |
+| `spare_device_available_per_branch` | **four more tablets.** Not a code change. |
+| `device_loss_runbook_rehearsed` | **an actual rehearsal**, recorded at the configured evidence path |
+| `rollback_to_browser_login_proven` | measured — the in-process rehearsal |
+
+### Rules that bind any Half-B window
+
+- **A signature never overrides a measurement.** Do not sign a prerequisite to
+  make a gate green; it will be contradicted and it will fail.
+- **UNVERIFIED contradicts a `true` signature exactly as FAIL does.** "Nobody
+  measured it" is not evidence that it holds.
+- **The rollback restores the CAPTURED posture**, never a remembered constant.
+  The cohort is the union of two host variables and has moved inside a day.
+- **Production runs cached config.** An environment edit alone realizes nothing,
+  for arming *or* for rollback. Rebuild as `daengtisiams` in
+  `/var/www/asia-dental-lab-v2`:
+  `php artisan optimize:clear ; php artisan config:cache ; php artisan route:cache ; php artisan view:cache`
+  then verify with `foundation:feature-flags --json` and
+  `android:phase4a-pilot-scope --json`.
+- **`HALF_B_READINESS_GO` is not `HALF_B_APPLY_AUTHORIZED`.** The second needs
+  the owner, separately, in their own words.

@@ -1,75 +1,68 @@
-# Active sprint manifest — DOCTOR-ACCESS-GLOBAL-ACTIVATION-1 / HALF-A FLEET CUTOVER
+# Active sprint manifest — DOCTOR-ACCESS-GLOBAL-DEVICE-ENFORCEMENT-READINESS-1
 # Validated by: php artisan sprint:manifest-check
 
-id: DOCTOR-ACCESS-GLOBAL-ACTIVATION-1-HALF-A-CUTOVER
-type: DOCS_ONLY
+id: DOCTOR-ACCESS-GLOBAL-DEVICE-ENFORCEMENT-READINESS-1
+type: FOUNDATION_SPRINT
 module: DoctorAccess
-title: "Half-A fleet cutover executed on production: FEATURE_DOCTOR_SINGLE_ACTIVE_SESSION armed true for all 15 Doctor subjects at once, which also makes DoctorEffectiveBranchResolver effective. Four human gates passed first (window, primary operator, rollback operator, explicit fleet-cutover approval), the six-condition clinical gate was re-measured fresh at 22:15:59 WITA rather than reusing the morning reading, and a new baseline was captured after the lease release and immediately before mutation. One key, one line, verified by line-count and diff. Four live proofs all passed: a post-cutover lease bound to the exact session, a cross-branch branch-lock proof (tablet physically at ATG3, effective branch resolved TLK1), a second concurrent login DENIED with active_session_elsewhere, and the first session NOT evicted. Canonical logout left zero orphans; home-lock and device-estate hashes are byte-identical to baseline. Half B untouched throughout."
+title: "Half-B readiness: give the five declared global doctor-enforcement prerequisites a producer, so a signature can be contradicted by a measurement. Closes the false green in Phase4aPilotPreparationScanner::globalPrerequisiteCheck(), which compared two config lists and read no measurement, so attested-true beside measured-false returned PASS. Adds a real rollback producer that executes an in-process rehearsal — deny an out-of-cohort doctor under the activated posture, restore the CAPTURED posture, prove the same doctor is admitted again — replacing a prerequisite that had zero occurrences under app/. Half B is NOT activated: global_permitted stays a source-controlled false, governance_phase stays phase_4a, no attestation is signed."
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-# DOCS_ONLY, and the classification is honest rather than modest.
+# FOUNDATION_SPRINT, and the classification is the honest one.
 #
-# The production CHANGE was a configuration-only activation: one environment
-# value plus a config-cache rebuild on the host. No commit changed the runtime —
-# production still runs 21b8a57a / tree 44fc27ee, the Phase-0 GO tag, exact match.
-#
-# What this repository diff contains is the RECORD of that ceremony plus the
-# durable rules it earned: a sprint evidence document, four rule files, a runbook
-# status banner and this manifest. Every changed file is Markdown or .mdc.
-#
-# Classifying it higher would be theatre; classifying the ACTIVATION as docs
-# would be a lie. They are different objects and the distinction is stated in the
-# evidence document rather than hidden in a type field.
+# This ships real runtime code — two services, a console command, a new scanner
+# check and a config file — but it ships no feature. Every line exists to make an
+# existing governance gate capable of being WRONG, which is the property it has
+# lacked since Phase 3.5.
 
-runtime_change: false           # no application code, no config file in the repo.
-                                # The activated value lives in the host
-                                # environment file, which is not in version
-                                # control and was changed on the host.
+runtime_change: true            # two services, one command, one scanner check,
+                                # one config file. All read-only at runtime.
 
-schema_change: false            # NO migration. Production reads were bounded
-                                # read-only SELECTs; the only writes were made by
-                                # canonical audited application paths.
+schema_change: false            # NO migration, no table, no column, no index.
 
 frontend_change: false          # no JS, CSS, Vite entry or Blade view.
 
-security_impact: false          # no permission, policy, gate, role or credential
-                                # changed in this diff. The ENFORCEMENT posture
-                                # changed on the host, and that is recorded here
-                                # rather than enacted here — re-reading this diff
-                                # arms nothing.
+security_impact: true           # it changes what a SECURITY gate will accept.
+                                # No permission, policy, role, middleware or
+                                # credential is touched, and nothing here can arm
+                                # enforcement — but a gate that previously passed
+                                # on a false signature now fails, and calling that
+                                # anything less than security-impacting would be
+                                # the same understatement this sprint exists to
+                                # correct.
 
-branch_isolation_impact: false  # BranchContext and the effective-branch resolver
-                                # are untouched in source. Their runtime EFFECT is
-                                # now live because the flag is on; the code that
-                                # decides is byte-identical.
+branch_isolation_impact: false  # BranchContext, the effective-branch resolver and
+                                # every branch-scoped query are untouched. The
+                                # rollback rehearsal reads the enforcement scope
+                                # and never a branch scope.
 
 ledger_impact: false            # no inventory ledger, billing, payment, invoice
                                 # or receivable path is reachable from here.
 
-deploy_required: true           # the rules and runbook status this sprint writes
-                                # are repository governance authority, and this
-                                # project deploys that authority. The deploy
-                                # changes no runtime behaviour — Half A is already
-                                # live from the host configuration.
+deploy_required: true           # the readiness gate has to exist ON the
+                                # deployment it measures. A producer that lives
+                                # only on a branch is the paper prerequisite this
+                                # sprint is replacing.
 
-browser_required: false         # the live proof was performed by a clinician on a
-                                # tablet; every verification here was CLI and
-                                # read-only HTTP health probes.
+browser_required: false         # every verification is CLI and read-only HTTP
+                                # health probes. No clinician, no tablet, no
+                                # ceremony — deliberately: this sprint provisions
+                                # nothing and enrols nobody.
 
-# Created only after the stabilization window closes clean. A GO here means Half A
-# is live AND proven AND stable. It authorises NOTHING about Half B.
-#   HALF_A_GO                       = the claim
-#   HALF_B_AUTHORIZED               = NO
+# A GO here means the INSTRUMENTS are honest and Half B may be *planned*.
+# It does not mean the fleet may be enforced, and it is not an approval.
+#   HALF_B_READINESS_GO             = the claim
+#   HALF_B_ACTIVE                   = NO
+#   HALF_B_APPLY_AUTHORIZED         = NO
 #   GLOBAL_FLEET_ENFORCEMENT_ACTIVE = false
-go_tag: doctor-access-global-activation-half-a-1-go
+go_tag: doctor-access-global-device-enforcement-readiness-1-go
 go_tag_created: false
 
 test_profiles:
   - focused
 
 inherits_parent_programme: DOCTOR-ACCESS-GLOBAL-ACTIVATION-1
-inherits_parent_sprint: DOCTOR-ACCESS-GLOBAL-ACTIVATION-PHASE0-DELTA-RECHECK-1
-inherits_parent_go: doctor-access-global-activation-phase0-delta-recheck-1-go
+inherits_parent_sprint: DOCTOR-ACCESS-GLOBAL-ACTIVATION-1-HALF-A-CUTOVER
+inherits_parent_go: doctor-access-global-activation-half-a-1-go
 inherits_pilot_go: doctor-pwa-multi-doctor-pilot-1-go
 
 # Restored deliberately, not copied. LegacyRmeProgramClosureContractTest asserts

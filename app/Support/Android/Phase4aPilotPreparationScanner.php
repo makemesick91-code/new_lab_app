@@ -2,8 +2,10 @@
 
 namespace App\Support\Android;
 
+use App\Modules\DoctorAccess\Services\DoctorGlobalEnforcementReadinessService;
 use App\Modules\DoctorDevice\Services\DoctorAppLoginGate;
 use App\Services\Foundation\FeatureFlagService;
+use Throwable;
 
 /**
  * PHASE4A-DOCTOR-ANDROID-PILOT-PREPARATION-1 — is the next sprint allowed to
@@ -536,6 +538,7 @@ class Phase4aPilotPreparationScanner
         $checks[] = $this->postureCheck();
         $checks[] = $this->liveGlobalEnforcementCheck();
         $checks[] = $this->globalPrerequisiteCheck();
+        $checks[] = $this->globalPrerequisiteContradictionCheck();
         $checks[] = $this->activationTestPrerequisiteCheck();
 
         return $checks;
@@ -888,6 +891,96 @@ class Phase4aPilotPreparationScanner
                 .count($declared).' of '.count($declared).').'
                 : 'Global activation prerequisites are not attested: '.implode(', ', array_map('strval', $missing))
                 .'. Each must be recorded true in source control before fleet-wide enforcement is permitted.',
+        );
+    }
+
+    /**
+     * DOCTOR-ACCESS-GLOBAL-DEVICE-ENFORCEMENT-READINESS-1 — the half
+     * {@see self::globalPrerequisiteCheck()} cannot ask.
+     *
+     * THE HOLE THIS CLOSES. Its sibling above compares two lists in config and
+     * asserts that each declared prerequisite carries a signature. It reads no
+     * measurement, by design and by its own docblock — so
+     *
+     *     attested true + measured false  ===>  PASS
+     *
+     * and the single artifact standing between this deployment and a
+     * fleet-wide clinical lockout could be satisfied by typing `true` five
+     * times. Two of the five were known FALSE in the estate when the
+     * attestation block shipped.
+     *
+     * WHY IT IS NOT PHASE-SCOPED. Its sibling is a Phase-5 precondition and
+     * correctly goes quiet inside Phase 4A. A false signature is not a
+     * Phase-5 event: it is recorded NOW, in a reviewed change, months before
+     * the phase moves, and the moment to catch it is the moment it lands. So
+     * this check is evaluated in every phase.
+     *
+     * WHY IT COSTS NOTHING TODAY. It measures only when there is a signature
+     * to contradict. With nothing attested — this deployment, and every
+     * deployment until somebody signs — it answers from config alone and
+     * touches no database. That matters: this scanner runs in CI and in the
+     * release-evidence chain, and a governance gate that acquires a database
+     * dependency acquires the ability to redden for reasons that have nothing
+     * to do with governance.
+     *
+     * WHY IT FAILS CLOSED. Once a signature EXISTS, an unreadable measurement
+     * is a FAIL, not a pass and not a skip. A signature that cannot be checked
+     * is exactly the signature that must not be trusted.
+     *
+     * The readiness engine is resolved from the container rather than injected
+     * because it depends on THIS class — the same constructor cycle
+     * {@see DoctorAppLoginGate::deviceCredentialLoginAvailable()} avoids the
+     * same way, and for the same reason: a needless price for a call that only
+     * happens once somebody has signed something.
+     *
+     * @return array<string,mixed>
+     */
+    private function globalPrerequisiteContradictionCheck(): array
+    {
+        $id = 'global_prerequisite_attestations_do_not_contradict_measurement';
+
+        $declared = (array) config('android_release.enforcement.global_prerequisites', []);
+        $attested = (array) config('android_release.enforcement.global_prerequisites_attested', []);
+
+        $signed = array_values(array_filter(
+            $declared,
+            fn ($name): bool => ($attested[(string) $name] ?? null) === true,
+        ));
+
+        if ($signed === []) {
+            return $this->check(
+                $id,
+                'PASS',
+                'No global activation prerequisite is attested true, so no signature stands against a '
+                .'measurement. This row is NOT a statement that the prerequisites are satisfied — nothing is '
+                .'signed, and nothing needed measuring. Read `doctor:half-b-readiness` for what the estate '
+                .'actually measures.',
+            );
+        }
+
+        try {
+            $report = app(DoctorGlobalEnforcementReadinessService::class)->build();
+        } catch (Throwable $e) {
+            return $this->check(
+                $id,
+                'FAIL',
+                count($signed).' global activation prerequisite(s) are attested true and the measurement could '
+                .'not be read to check them ('.$e->getMessage().'). An unverifiable signature is not a '
+                .'trustworthy one.',
+            );
+        }
+
+        $contradicting = (array) ($report['contradicting_prerequisites'] ?? []);
+
+        return $this->check(
+            $id,
+            $contradicting === [] ? 'PASS' : 'FAIL',
+            $contradicting === []
+                ? 'Every attested global activation prerequisite ('.implode(', ', array_map('strval', $signed))
+                .') agrees with what this deployment measures.'
+                : 'Signature(s) stand against a measurement: '.implode(', ', array_map('strval', $contradicting))
+                .'. A signature never overrides a measurement, and a prerequisite recorded true while the '
+                .'estate measures otherwise records something untrue about a clinical-scale action.',
         );
     }
 
