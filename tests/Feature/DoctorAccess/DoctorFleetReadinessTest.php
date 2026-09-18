@@ -305,15 +305,33 @@ it('never lets an authorization on a revoked tablet close a matrix gap', functio
     expect($row['authorized_device_ids'])->toBe([(int) $live->id]);
 });
 
-it('excludes a device whose identity was never cryptographically verified', function () {
+it('excludes a device that has proved its identity by neither protocol', function () {
     fleetReadyDoctor();
-    fleetDevice(['identity_state' => DoctorDevice::IDENTITY_UNVERIFIED]);
+    $noProof = fleetDevice(['identity_state' => DoctorDevice::IDENTITY_UNVERIFIED]);
+
+    // fleetDevice() always mints a device-bound credential, which under the
+    // Stage 2 identity policy is itself an accepted proof. Revoke it so this
+    // tablet has proved itself by NEITHER protocol, which is the exclusion the
+    // test is actually about.
+    DoctorDeviceWebAuthnCredential::query()
+        ->where('doctor_device_id', $noProof->id)
+        ->update(['revoked_at' => now()]);
 
     $report = fleetReadiness();
 
     expect($report['devices']['estate_count'])->toBe(2);
     expect($report['devices']['eligible_count'])->toBe(1);
     expect($report['verdict'])->toBe(DoctorFleetReadinessVerdict::READY);
+});
+
+it('counts a pwa-only device as eligible hardware', function () {
+    fleetReadyDoctor();
+    fleetDevice(['identity_state' => DoctorDevice::IDENTITY_UNVERIFIED]);
+
+    $report = fleetReadiness();
+
+    expect($report['devices']['estate_count'])->toBe(2);
+    expect($report['devices']['eligible_count'])->toBe(2);
 });
 
 // ---------------------------------------------------------------------------

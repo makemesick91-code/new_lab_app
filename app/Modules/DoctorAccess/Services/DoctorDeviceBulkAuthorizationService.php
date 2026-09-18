@@ -15,6 +15,7 @@ use App\Modules\DoctorDevice\Interfaces\DoctorDeviceRolloutReadinessRepositoryIn
 use App\Modules\DoctorDevice\Models\DoctorDevice;
 use App\Modules\DoctorDevice\Models\DoctorDeviceAuthorization;
 use App\Modules\DoctorDevice\Services\DoctorDeviceAuthorizationService;
+use App\Modules\DoctorDevice\Services\DoctorDeviceIdentityProofPolicy;
 use App\Modules\DoctorDevice\Services\DoctorGlobalRolloutReadinessService;
 use App\Modules\LabOrder\Services\AuditLogService;
 use Illuminate\Support\Facades\DB;
@@ -83,6 +84,7 @@ final class DoctorDeviceBulkAuthorizationService
         // lives here; every state change still goes through the service above.
         private readonly DoctorDeviceAuthorizationRepositoryInterface $authorizationRows,
         private readonly AuditLogService $auditLogs,
+        private readonly DoctorDeviceIdentityProofPolicy $identityProof,
     ) {}
 
     /**
@@ -483,7 +485,7 @@ final class DoctorDeviceBulkAuthorizationService
             return DoctorDeviceBulkAuthorizationOutcome::REFUSED_DEVICE_NOT_ACTIVE;
         }
 
-        if (! $device->isCryptographicallyVerified()) {
+        if (! $this->identityProof->acceptable($device)) {
             return DoctorDeviceBulkAuthorizationOutcome::REFUSED_DEVICE_IDENTITY_UNVERIFIED;
         }
 
@@ -516,11 +518,14 @@ final class DoctorDeviceBulkAuthorizationService
     /**
      * Device eligibility.
      *
-     * The bar is set by approve(), not by preference: it hard-throws on a
-     * device that is not cryptographically verified, so a WebAuthn-only tablet
-     * — legitimately active with no keystore key — cannot be bulk-authorized
-     * even though it can log a doctor in. That is a real limitation and the
-     * report says so rather than hiding it.
+     * The bar is set by approve(), not by preference. Until
+     * REVISION-DOCTOR-PWA-WEBAUTHN-ONLY-ACCESS-1 that bar was the Android
+     * keystore flag, so a WebAuthn-only tablet — legitimately active, with a
+     * device-bound credential and no keystore key — could log a doctor in but
+     * could never be bulk-authorized. Stage 1 replaced approve()'s gate with
+     * DoctorDeviceIdentityProofPolicy, which accepts either proof of the same
+     * fact, and this engine now asks that same policy. The limitation is gone,
+     * and this preview no longer understates the estate.
      *
      * `enrollment_status` is deliberately NOT read: isEnrollmentVerified() has
      * zero call sites in the estate, so treating it as a trust input would
@@ -544,7 +549,7 @@ final class DoctorDeviceBulkAuthorizationService
             return DoctorGlobalRolloutReadinessService::REASON_DEVICE_NOT_ACTIVE;
         }
 
-        if (! $device->isCryptographicallyVerified()) {
+        if (! $this->identityProof->acceptable($device)) {
             return DoctorGlobalRolloutReadinessService::REASON_DEVICE_IDENTITY_UNVERIFIED;
         }
 

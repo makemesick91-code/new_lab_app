@@ -244,8 +244,37 @@ it('refuses a doctor whose only device is revoked, and revocation stays terminal
     expect($report['devices']['revoked'])->toBe(1);
 });
 
-it('refuses a device whose identity was never cryptographically verified', function () {
-    [$user, $doctor] = grrDoctor('drg Unverified');
+/*
+ * REVISION-DOCTOR-PWA-WEBAUTHN-ONLY-ACCESS-1 Stage 2.
+ *
+ * This pair of tests used to be one test asserting that an unverified device
+ * was refused even when it carried a device-bound credential. That was the
+ * DEFECT, not the rule: the Android keystore flag is written only by the
+ * Android enrolment protocol, so the old assertion made a PWA-only tablet
+ * permanently unprovisionable and would have frozen the estate the moment the
+ * Android path retired. Identity is now asked of
+ * DoctorDeviceIdentityProofPolicy, which accepts either proof of the same
+ * fact, so the refusal case is a device that has proved itself by NEITHER.
+ */
+it('refuses a device that has proved its identity by neither protocol', function () {
+    [$user, $doctor] = grrDoctor('drg NoProof');
+    $device = grrDevice(['identity_state' => DoctorDevice::IDENTITY_UNVERIFIED]);
+    // Present but unacceptable: `unknown` means the authenticator never said
+    // the key is confined to this hardware, and silence is not a pass.
+    grrCredential($device, ['device_bound_verdict' => DoctorDeviceWebAuthnCredential::VERDICT_UNKNOWN]);
+
+    DoctorDeviceAuthorization::factory()->active()->create([
+        'doctor_id' => $doctor->id,
+        'doctor_device_id' => $device->id,
+    ]);
+
+    $row = grrRowFor(grrReadiness(), $user);
+
+    expect($row['reasons'])->toContain(DoctorGlobalRolloutReadinessService::REASON_DEVICE_IDENTITY_UNVERIFIED);
+});
+
+it('reads a pwa-only device as ready when it holds a device-bound credential', function () {
+    [$user, $doctor] = grrDoctor('drg PwaOnly');
     $device = grrDevice(['identity_state' => DoctorDevice::IDENTITY_UNVERIFIED]);
     grrCredential($device);
 
@@ -256,7 +285,9 @@ it('refuses a device whose identity was never cryptographically verified', funct
 
     $row = grrRowFor(grrReadiness(), $user);
 
-    expect($row['reasons'])->toContain(DoctorGlobalRolloutReadinessService::REASON_DEVICE_IDENTITY_UNVERIFIED);
+    expect($row['state'])->toBe(DoctorGlobalRolloutReadinessService::STATE_READY);
+    expect($row['reasons'])->not->toContain(DoctorGlobalRolloutReadinessService::REASON_DEVICE_IDENTITY_UNVERIFIED);
+    expect($row['path']['device_id'])->toBe((int) $device->id);
 });
 
 it('refuses a device that carries no credential at all', function () {
@@ -409,8 +440,10 @@ it('refuses a stored verdict that has drifted from the flags it was derived from
 it('is satisfied by one working path even when another is broken', function () {
     [$user, $doctor] = grrDoctor('drg TwoDevices');
 
+    // Broken under the CURRENT rule: no keystore proof and a credential the
+    // binding policy refuses, so neither protocol has proved this hardware.
     $broken = grrDevice(['identity_state' => DoctorDevice::IDENTITY_UNVERIFIED]);
-    grrCredential($broken);
+    grrCredential($broken, ['device_bound_verdict' => DoctorDeviceWebAuthnCredential::VERDICT_UNKNOWN]);
     DoctorDeviceAuthorization::factory()->active()->create([
         'doctor_id' => $doctor->id,
         'doctor_device_id' => $broken->id,

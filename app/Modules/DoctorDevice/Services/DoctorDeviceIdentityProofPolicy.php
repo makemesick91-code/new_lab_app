@@ -130,6 +130,22 @@ final class DoctorDeviceIdentityProofPolicy
      * proved itself, and a tablet legitimately serves several doctors. Using a
      * doctor-scoped lookup here would make identity depend on who happens to
      * be authorized, which would then make authorization depend on itself.
+     *
+     * READS THE LOADED RELATION WHEN THERE IS ONE, AND THAT IS NOT AN
+     * OPTIMISATION.
+     *
+     * The readiness, fleet and estate engines load the whole device estate
+     * exactly once per report and assert that they did — several tests pin the
+     * query count, and one pins that two consumers share a single load. A
+     * repository call here would issue one query PER DEVICE, so it would both
+     * re-introduce an N+1 into the reports and break those pins. Asking the
+     * relation the caller already eager-loaded keeps the report at one load.
+     *
+     * The two sources are not interchangeable in what they contain: the
+     * repository pre-filters revoked credentials, the relation does not. So the
+     * revoked check is applied HERE, to whichever collection arrives, rather
+     * than being left to the query — otherwise a revoked credential would
+     * count as proof in exactly the eager-loaded path the reports use.
      */
     private function hasAcceptableWebAuthnProof(DoctorDevice $device): bool
     {
@@ -139,9 +155,20 @@ final class DoctorDeviceIdentityProofPolicy
             return false;
         }
 
-        return $this->credentials
-            ->usableForDevice($deviceId)
-            ->contains(static fn (DoctorDeviceWebAuthnCredential $credential): bool => $credential->isUsable()
-                && $credential->isDeviceBound());
+        $credentials = $device->relationLoaded('webAuthnCredentials')
+            ? $device->getRelation('webAuthnCredentials')
+            : $this->credentials->usableForDevice($deviceId);
+
+        foreach ($credentials as $credential) {
+            if (! $credential instanceof DoctorDeviceWebAuthnCredential) {
+                continue;
+            }
+
+            if ($credential->isUsable() && $credential->isDeviceBound()) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

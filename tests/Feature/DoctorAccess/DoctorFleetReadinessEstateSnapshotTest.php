@@ -66,6 +66,7 @@ use App\Modules\DoctorDevice\Interfaces\DoctorDeviceRolloutReadinessRepositoryIn
 use App\Modules\DoctorDevice\Models\DoctorDevice;
 use App\Modules\DoctorDevice\Models\DoctorDeviceAuthorization;
 use App\Modules\DoctorDevice\Models\DoctorDeviceWebAuthnCredential;
+use App\Modules\DoctorDevice\Services\DoctorDeviceIdentityProofPolicy;
 use App\Modules\DoctorDevice\Services\DoctorGlobalRolloutReadinessService;
 use App\Modules\LabOrder\Models\AuditLog;
 use Illuminate\Database\QueryException;
@@ -282,6 +283,7 @@ function snapshotServiceWithSpy(array $script = []): array
         app(DoctorBranchLockRepositoryInterface::class),
         app(DoctorFleetReadinessRepositoryInterface::class),
         $spy,
+        app(DoctorDeviceIdentityProofPolicy::class),
     );
 
     return [$service, $spy];

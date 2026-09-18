@@ -177,12 +177,15 @@ function esrBranchRow(array $report, string $code): array
 |--------------------------------------------------------------------------
 */
 
-it('counts only active, cryptographically verified hardware as eligible', function (): void {
+it('counts only active hardware holding an accepted identity proof as eligible', function (): void {
     $branch = esrBranch('ELG1');
     esrDoctor($branch);
 
     $eligible = esrDevice($branch);
-    $unverified = esrDevice($branch, ['identity_state' => DoctorDevice::IDENTITY_UNVERIFIED]);
+    // No keystore proof AND no credential — proved by neither protocol.
+    // REVISION-DOCTOR-PWA-WEBAUTHN-ONLY-ACCESS-1: this used to carry a
+    // device-bound credential and was still excluded, which was the defect.
+    $unverified = esrDevice($branch, ['identity_state' => DoctorDevice::IDENTITY_UNVERIFIED], withCredential: false);
     $pending = esrDevice($branch, ['status' => DoctorDevice::STATUS_PENDING_APPROVAL]);
     $disabled = esrDevice($branch, ['status' => DoctorDevice::STATUS_DISABLED]);
 
@@ -195,6 +198,23 @@ it('counts only active, cryptographically verified hardware as eligible', functi
     // an absent row are different facts to an operator counting tablets.
     $ids = array_column($report['devices'], 'device_id');
     expect($ids)->toContain((int) $unverified->id, (int) $pending->id, (int) $disabled->id);
+});
+
+it('counts a pwa-only device toward capacity, which is what a spare can now be', function (): void {
+    $branch = esrBranch('ELG2');
+    esrDoctor($branch);
+
+    $keystore = esrDevice($branch);
+    $pwaOnly = esrDevice($branch, ['identity_state' => DoctorDevice::IDENTITY_UNVERIFIED]);
+
+    $report = esrReport();
+
+    // The whole point of Stage 2: until the identity predicate accepted a
+    // device-bound WebAuthn credential, no WebAuthn-only tablet could ever
+    // count here — so no quantity of new hardware could satisfy
+    // spare_device_available_per_branch.
+    expect($report['estate_totals']['eligible_device_ids'])
+        ->toContain((int) $keystore->id, (int) $pwaOnly->id);
 });
 
 it('never counts a revoked device toward capacity, however recently it worked', function (): void {
