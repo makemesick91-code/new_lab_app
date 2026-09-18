@@ -147,27 +147,150 @@ function encodeAssertion(credential) {
  * form post, so the result travels with the page's CSRF token and normal
  * validation rather than through a bespoke JSON channel.
  */
-export async function register(optionsUrl) {
-    const options = decodeCreationOptions(await postJson(optionsUrl));
-    const credential = await navigator.credentials.create({ publicKey: options });
 
-    if (!credential) {
-        throw new Error('ceremony_cancelled');
+
+/*
+ * BUGFIX-DOCTOR-PWA-WEBAUTHN-VERIFY-DEVICE-NO-FEEDBACK-2
+ *
+ * WHY THERE IS A TIMEOUT AT ALL.
+ *
+ * `navigator.credentials.get()` is not guaranteed to settle. On a real clinic
+ * tablet it was observed to neither resolve nor reject: the awaiting caller
+ * hung, its catch never ran, no message rendered, and the button stayed
+ * disabled. From the clinician's side the control simply did nothing, five
+ * times across three client configurations, and every fact about the failure
+ * had to be recovered from nginx and Postgres afterwards.
+ *
+ * A ceremony that can hang forever therefore needs an abort, or the UI has no
+ * lower bound on how long it can lie about being busy. The WebAuthn
+ * `timeout` member is only a hint to the browser; AbortController is the part
+ * that actually ends the wait.
+ */
+const CEREMONY_TIMEOUT_MS = 60000;
+
+/**
+ * A failure carrying a stable `reason` the UI can map to human wording.
+ *
+ * The reason is a CODE, never a sentence: the caller owns the wording, and a
+ * code can be quoted by an operator in an incident report without describing
+ * the clinic's device estate to whoever is reading over their shoulder.
+ */
+function ceremonyError(reason, cause) {
+    const error = new Error(reason);
+    error.reason = reason;
+
+    if (cause !== undefined) {
+        error.cause = cause;
     }
 
-    return encodeAttestation(credential);
+    return error;
+}
+
+/**
+ * Map a DOMException from the authenticator onto one of our reason codes.
+ *
+ * `NotAllowedError` DELIBERATELY COVERS TWO CASES and we do not pretend
+ * otherwise: the WebAuthn spec returns it both when no matching credential
+ * exists and when the user dismissed the prompt, precisely so that a page
+ * cannot probe which credentials a device holds. Reporting "no credential
+ * registered" on that code would be inventing a distinction the browser
+ * refuses to make, so the wording for it has to cover both.
+ */
+function assertionReasonFor(exception, timedOut) {
+    if (timedOut) {
+        return 'timeout';
+    }
+
+    const name = exception && exception.name ? exception.name : '';
+
+    switch (name) {
+        case 'NotAllowedError':
+            return 'no_credential_or_denied';
+        case 'AbortError':
+            return 'ceremony_cancelled';
+        case 'SecurityError':
+            return 'origin_not_trusted';
+        case 'InvalidStateError':
+            return 'device_state_invalid';
+        case 'NotSupportedError':
+        case 'ConstraintError':
+            return 'unsupported';
+        default:
+            return 'unexpected';
+    }
+}
+
+/** Fetch options, mapping transport and server failures onto reason codes. */
+async function ceremonyOptions(optionsUrl, decode) {
+    try {
+        return decode(await postJson(optionsUrl));
+    } catch (exception) {
+        if (exception && typeof exception.status === 'number') {
+            const error = ceremonyError(
+                exception.status === 419 ? 'session_expired' : 'options_rejected',
+                exception,
+            );
+            error.status = exception.status;
+
+            throw error;
+        }
+
+        throw ceremonyError('network_unavailable', exception);
+    }
+}
+
+/**
+ * Run one WebAuthn ceremony with a bounded wait.
+ *
+ * Every exit path produces either a credential or an Error carrying a
+ * `reason`. There is no path that resolves to nothing, because "resolved to
+ * nothing" is what produced a silent button.
+ */
+async function runCeremony({ optionsUrl, decode, invoke, encode }) {
+    const options = await ceremonyOptions(optionsUrl, decode);
+
+    const controller = new AbortController();
+    let timedOut = false;
+
+    const timer = setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+    }, CEREMONY_TIMEOUT_MS);
+
+    let credential;
+
+    try {
+        credential = await invoke(options, controller.signal);
+    } catch (exception) {
+        throw ceremonyError(assertionReasonFor(exception, timedOut), exception);
+    } finally {
+        clearTimeout(timer);
+    }
+
+    if (!credential) {
+        throw ceremonyError('ceremony_cancelled');
+    }
+
+    return encode(credential);
+}
+
+export async function register(optionsUrl) {
+    return runCeremony({
+        optionsUrl,
+        decode: decodeCreationOptions,
+        invoke: (publicKey, signal) => navigator.credentials.create({ publicKey, signal }),
+        encode: encodeAttestation,
+    });
 }
 
 /** Prove this browser is running on an approved clinic device. */
 export async function assert(optionsUrl) {
-    const options = decodeRequestOptions(await postJson(optionsUrl));
-    const credential = await navigator.credentials.get({ publicKey: options });
-
-    if (!credential) {
-        throw new Error('ceremony_cancelled');
-    }
-
-    return encodeAssertion(credential);
+    return runCeremony({
+        optionsUrl,
+        decode: decodeRequestOptions,
+        invoke: (publicKey, signal) => navigator.credentials.get({ publicKey, signal }),
+        encode: encodeAssertion,
+    });
 }
 
 export default { isSupported, register, assert };

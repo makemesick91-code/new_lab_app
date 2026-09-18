@@ -1,56 +1,61 @@
-# REVISION-DOCTOR-PWA-WEBAUTHN-ONLY-ACCESS-1
+# BUGFIX-DOCTOR-PWA-WEBAUTHN-VERIFY-DEVICE-NO-FEEDBACK-2
 #
-# Collapses three doctor authentication paths into one: the PWA with a WebAuthn
-# trusted-device assertion becomes the sole supported doctor channel.
+# Child of REVISION-DOCTOR-PWA-WEBAUTHN-ONLY-ACCESS-1, opened by a defect the
+# Stage 3 rehearsal found on real hardware.
 #
-# Staged per the authoritative stage order. Stage 1 (this manifest's current
-# scope) creates the canonical trusted-device identity proof and migrates the
-# authorization gate onto it. It RETIRES NOTHING — Android authentication,
-# enforcement scope and every feature flag are untouched, because retiring the
-# Android path before this predicate exists would make new PWA-only tablets
-# permanently unprovisionable.
+# On the SPN4 pilot tablet the Verify Device control produced NO visible
+# reaction — five attempts across three client configurations. Every fact about
+# the failure had to be recovered afterwards from nginx and Postgres, because
+# the page reported nothing at all.
+#
+# Root cause, evidenced: `navigator.credentials.get()` was awaited with no
+# abort, so a ceremony that never settles left the catch unreached, no message
+# rendered and the button disabled. A second defect sat beside it: every
+# failure that DID reject collapsed into one sentence, so nobody could tell a
+# missing credential from an untrusted origin from an expired session.
+#
+# This sprint RETIRES NOTHING, moves no flag, widens no scope and starts no
+# Stage 4. It makes a failing ceremony say what failed.
 
-id: REVISION-DOCTOR-PWA-WEBAUTHN-ONLY-ACCESS-1
-type: SECURITY_FIX
+id: BUGFIX-DOCTOR-PWA-WEBAUTHN-VERIFY-DEVICE-NO-FEEDBACK-2
+type: RUNTIME_FIX
 module: DoctorDevice
-title: "PWA-only doctor access: canonical trusted-device identity proof (Stage 1)"
+title: "Verify Device must never fail silently: bounded ceremony + typed failure feedback"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-# Impact flags — declared against the CURRENT diff (Stage 2b, break-glass).
+# Impact flags — declared against the CURRENT diff.
 #
-# security_impact is TRUE twice over. Stage 1 changed the predicate gating
-# DoctorDeviceAuthorization creation, and Stage 2b adds a path by which a
-# doctor may hold a session with NO trusted device at all. The second is a
-# genuine new way in, which is why it carries its own permission, a hard time
-# bound, a written reason, revocation and an audit row at every transition.
+# frontend_change is TRUE: the fix lives in resources/js and one Blade view.
+#
+# security_impact is TRUE, and deliberately so even though this WIDENS nothing.
+# The diff sits inside the doctor authentication path, so it is reviewed as a
+# security change regardless of its direction. Nothing here weakens the
+# WebAuthn requirement, the device binding, user verification,
+# DoctorDeviceAuthorization, the single-session gate or pilot enforcement: a
+# ceremony that fails still fails, it simply now says why.
 runtime_change: true
-schema_change: true
-frontend_change: false
+schema_change: false
+frontend_change: true
 security_impact: true
 branch_isolation_impact: false
 ledger_impact: false
 
-# STAGE 2b IS THE FIRST DEPLOY-COUPLED CHANGE IN THIS SPRINT.
+# Deploy is required: the defect is in code the CLINICIAN's browser runs, so it
+# is not fixed anywhere until the built bundle is served from production. The
+# proof of the fix is likewise a real-device observation, not a test run.
 #
-# Stages 1 and 2a were inert: they changed which predicate decides eligibility,
-# and nothing about that is observable until enforcement widens at Stage 4.
-# Break-glass is different. DoctorAppLoginGate now reads
-# `trx_doctor_break_glass_grants` at BOTH decision points, on every request of
-# every doctor currently inside the enforcement scope. The code and its
-# migration therefore have to land together — deploying the code without the
-# table would break the three pilot doctors who are enforced today.
-#
-# `scripts/deploy-vps.sh` runs `migrate --force` before rebuilding caches, so a
-# normal deploy satisfies this. It is declared here so nobody merges it
-# expecting the same inertness the earlier stages had.
+# NOTE for whoever deploys: public/build is gitignored and rebuilt on the VPS,
+# so the corrected bundle only exists after `npm run build` runs there. A stale
+# service worker or cached asset would keep serving the silent version.
 deploy_required: true
 browser_required: false
 
 test_profiles: []
 
-# Withheld until the final gate passes on a verified deployed runtime. Stage 1
-# alone can never earn it.
-go_tag: revision-doctor-pwa-webauthn-only-access-1-go
+# This child tag means ONLY that the silent-failure defect is closed on a
+# verified deployed runtime. It authorizes no stage move, and it is emphatically
+# not the parent programme's GO.
+go_tag: bugfix-doctor-pwa-webauthn-verify-device-no-feedback-2-go
 go_tag_created: false
 
 # ---------------------------------------------------------------------------
