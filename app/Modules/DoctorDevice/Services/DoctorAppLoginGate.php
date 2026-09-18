@@ -4,6 +4,7 @@ namespace App\Modules\DoctorDevice\Services;
 
 use App\Models\User;
 use App\Modules\Doctor\Services\DoctorIdentityResolver;
+use App\Modules\DoctorAccess\Services\DoctorBreakGlassService;
 use App\Modules\DoctorDevice\Interfaces\DoctorDeviceAuthorizationRepositoryInterface;
 use App\Modules\DoctorDevice\Interfaces\DoctorDeviceWebAuthnCredentialRepositoryInterface;
 use App\Modules\DoctorDevice\Models\DoctorDevice;
@@ -96,6 +97,7 @@ class DoctorAppLoginGate
         private readonly DoctorIdentityResolver $doctors,
         private readonly DoctorDeviceAuthorizationRepositoryInterface $authorizations,
         private readonly AndroidDoctorEnforcementScope $scope,
+        private readonly DoctorBreakGlassService $breakGlass,
     ) {}
 
     /**
@@ -179,6 +181,31 @@ class DoctorAppLoginGate
         // writes one. So under enforcement this is the branch that denies an
         // ordinary Chrome/Firefox/Edge login — from the ABSENCE of a
         // server-verified device session, not from sniffing the client.
+        /*
+         * REVISION-DOCTOR-PWA-WEBAUTHN-ONLY-ACCESS-1 Stage 2 — break-glass.
+         *
+         * Asked HERE, inside the gate, because the login controller is allowed
+         * exactly one authority about devices and this is it. A controller
+         * reaching for the grant table itself is how the auth path grows a
+         * second, quietly-diverging copy of the rule.
+         *
+         * Placed AFTER the scope narrowing and BEFORE the device-session
+         * demand, because a break-glass session has no device binding at all —
+         * that is the entire point. It admits one named account whose window is
+         * open; every other doctor falls through to the same denial as before,
+         * so this widens nothing for anybody else and disables no flag.
+         */
+        $grant = $this->breakGlass->activeFor($user);
+
+        if ($grant !== null) {
+            // Stamped on the admitting LOGIN only, not on every later request:
+            // "first used" should mean the emergency window carried a session,
+            // and a per-request write would be a surprise write on a read path.
+            $this->breakGlass->markUsed($grant);
+
+            return null;
+        }
+
         if (! $request->hasSession() || $request->session()->get(self::SESSION_DEVICE_ID) === null) {
             return self::DENY_NO_DEVICE_SESSION;
         }
@@ -229,6 +256,19 @@ class DoctorAppLoginGate
         // login only: enforcement that applied at sign-in and then stopped
         // being re-evaluated is enforcement a session outlives.
         if (! $this->inEnforcementScope($user)) {
+            return null;
+        }
+
+        /*
+         * Re-asked on EVERY protected request, for the same reason the device
+         * and the authorization are: a check made only at login lets a session
+         * outlive the trust it was built on. Revoking a grant at minute three
+         * of a twelve-hour window has to end the session that is open right
+         * now, and expiry has to close it without anything having to run.
+         *
+         * No write on this path — see the login branch.
+         */
+        if ($this->breakGlass->activeFor($user) !== null) {
             return null;
         }
 

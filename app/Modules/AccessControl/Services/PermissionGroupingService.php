@@ -88,6 +88,7 @@ class PermissionGroupingService
                 'manage_doctor_branch_locks',
                 'approve_doctor_branch_locks',
                 'release_doctor_session_leases',
+                'grant_doctor_break_glass_access',
             ],
         ],
         [
@@ -277,6 +278,7 @@ class PermissionGroupingService
         'manage_doctor_branch_locks' => 'Ajukan penetapan/perpindahan cabang tetap dokter dan ajukan cover cabang sementara (mengajukan, bukan menyetujui).',
         'approve_doctor_branch_locks' => 'Setujui penetapan dan perpindahan cabang tetap dokter, serta cover cabang sementara.',
         'release_doctor_session_leases' => 'Akhiri sesi login aktif dokter secara manual (tidak mencabut perangkat, otorisasi, maupun kredensial).',
+        'grant_doctor_break_glass_access' => 'Berikan atau cabut akses darurat sementara bagi satu dokter saat perangkat tepercaya tidak tersedia (berbatas waktu, wajib beralasan, dan teraudit).',
         'manage_lab_orders' => 'Kelola order laboratorium (penuh).',
         'view_lab_orders' => 'Lihat order laboratorium.',
         'create_lab_orders' => 'Buat order laboratorium baru.',

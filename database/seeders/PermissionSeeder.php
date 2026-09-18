@@ -209,6 +209,12 @@ class PermissionSeeder extends Seeder
         'manage_doctor_branch_locks',
         'approve_doctor_branch_locks',
         'release_doctor_session_leases',
+        // REVISION-DOCTOR-PWA-WEBAUTHN-ONLY-ACCESS-1 Stage 2. Deliberately its
+        // OWN permission and not folded into manage_doctor_device_authorizations:
+        // admitting a doctor with NO device proof is a strictly stronger act than
+        // authorizing a device, and reusing that permission would have silently
+        // granted the bypass to everyone who already holds it.
+        'grant_doctor_break_glass_access',
         // SATUSEHAT-1 — Readiness foundation & controlled submission filter.
         // Separate view/review/send + mapping/settings governance permissions.
         // send is intentionally very restricted (no auto-send exists yet).

@@ -39,6 +39,7 @@ use App\Modules\Doctor\Repositories\DoctorRepository;
 use App\Modules\DoctorAccess\Interfaces\DoctorBranchCoverRepositoryInterface;
 use App\Modules\DoctorAccess\Interfaces\DoctorBranchLockRepositoryInterface;
 use App\Modules\DoctorAccess\Interfaces\DoctorBranchLockRequestRepositoryInterface;
+use App\Modules\DoctorAccess\Interfaces\DoctorBreakGlassGrantRepositoryInterface;
 use App\Modules\DoctorAccess\Interfaces\DoctorEstateResilienceRepositoryInterface;
 use App\Modules\DoctorAccess\Interfaces\DoctorFleetReadinessRepositoryInterface;
 use App\Modules\DoctorAccess\Interfaces\DoctorSessionLeaseRepositoryInterface;
@@ -49,6 +50,7 @@ use App\Modules\DoctorAccess\Policies\DoctorBranchLockRequestPolicy;
 use App\Modules\DoctorAccess\Repositories\DoctorBranchCoverRepository;
 use App\Modules\DoctorAccess\Repositories\DoctorBranchLockRepository;
 use App\Modules\DoctorAccess\Repositories\DoctorBranchLockRequestRepository;
+use App\Modules\DoctorAccess\Repositories\DoctorBreakGlassGrantRepository;
 use App\Modules\DoctorAccess\Repositories\DoctorEstateResilienceRepository;
 use App\Modules\DoctorAccess\Repositories\DoctorFleetReadinessRepository;
 use App\Modules\DoctorAccess\Repositories\DoctorSessionLeaseRepository;
@@ -308,6 +310,8 @@ class RepositoryServiceProvider extends ServiceProvider
         ClinicRoomRepositoryInterface::class => ClinicRoomRepository::class,
         DoctorDeviceRepositoryInterface::class => DoctorDeviceRepository::class,
         DoctorDeviceAuthorizationRepositoryInterface::class => DoctorDeviceAuthorizationRepository::class,
+        // REVISION-DOCTOR-PWA-WEBAUTHN-ONLY-ACCESS-1 Stage 2 — break-glass
+        DoctorBreakGlassGrantRepositoryInterface::class => DoctorBreakGlassGrantRepository::class,
         DoctorDeviceWebAuthnCredentialRepositoryInterface::class => DoctorDeviceWebAuthnCredentialRepository::class,
         DoctorDeviceRolloutReadinessRepositoryInterface::class => DoctorDeviceRolloutReadinessRepository::class,
         // Sprint 20 — RME: Clinic Visit Queue

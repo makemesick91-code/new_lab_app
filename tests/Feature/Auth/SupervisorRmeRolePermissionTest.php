@@ -109,6 +109,11 @@ const SUPERVISOR_RME_PERMISSIONS = [
     'manage_doctor_branch_locks',
     'approve_doctor_branch_locks',
     'release_doctor_session_leases',
+    // REVISION-DOCTOR-PWA-WEBAUTHN-ONLY-ACCESS-1 Stage 2 — break-glass. Its own
+    // permission rather than a reuse of manage_doctor_device_authorizations,
+    // because admitting a doctor with NO device proof is a strictly stronger
+    // act than authorizing a device.
+    'grant_doctor_break_glass_access',
 ];
 
 it('creates the Supervisor RME role after seeding', function () {
