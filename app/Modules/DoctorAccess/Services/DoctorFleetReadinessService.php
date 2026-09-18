@@ -10,6 +10,7 @@ use App\Modules\DoctorAccess\Models\DoctorBranchLock;
 use App\Modules\DoctorAccess\Support\DoctorFleetReadinessVerdict;
 use App\Modules\DoctorDevice\Interfaces\DoctorDeviceRolloutReadinessRepositoryInterface;
 use App\Modules\DoctorDevice\Models\DoctorDevice;
+use App\Modules\DoctorDevice\Services\DoctorDeviceIdentityProofPolicy;
 use App\Modules\DoctorDevice\Services\DoctorGlobalRolloutReadinessService;
 use Illuminate\Support\Collection;
 
@@ -62,6 +63,7 @@ class DoctorFleetReadinessService
         private readonly DoctorBranchLockRepositoryInterface $locks,
         private readonly DoctorFleetReadinessRepositoryInterface $evidence,
         private readonly DoctorDeviceRolloutReadinessRepositoryInterface $estate,
+        private readonly DoctorDeviceIdentityProofPolicy $identityProof,
     ) {}
 
     /**
@@ -315,16 +317,17 @@ class DoctorFleetReadinessService
     /**
      * The eligible trusted tablets, ascending.
      *
-     * ELIGIBLE is asked of the model — active AND cryptographically verified —
-     * exactly as the provisioning engine asks it, so the two cannot drift into
-     * disagreeing about which hardware counts.
+     * ELIGIBLE is asked of ONE POLICY — active AND holding an accepted identity
+     * proof, Android keystore or device-bound WebAuthn — exactly as the
+     * provisioning engine asks it, so the two cannot drift into disagreeing
+     * about which hardware counts.
      *
      * @return list<int>
      */
     private function eligibleDeviceIds(): array
     {
         $ids = $this->deviceEstate()
-            ->filter(fn (DoctorDevice $device): bool => $device->isActive() && $device->isCryptographicallyVerified())
+            ->filter(fn (DoctorDevice $device): bool => $device->isActive() && $this->identityProof->acceptable($device))
             ->map(fn (DoctorDevice $device): int => (int) $device->id)
             ->values()
             ->all();
@@ -463,7 +466,7 @@ class DoctorFleetReadinessService
         $estate = $this->deviceEstate();
 
         $eligible = $estate
-            ->filter(fn (DoctorDevice $device): bool => $device->isActive() && $device->isCryptographicallyVerified())
+            ->filter(fn (DoctorDevice $device): bool => $device->isActive() && $this->identityProof->acceptable($device))
             ->values();
 
         $rows = $eligible

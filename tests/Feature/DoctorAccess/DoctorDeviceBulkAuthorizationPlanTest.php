@@ -6,9 +6,11 @@ use App\Modules\DoctorAccess\Services\DoctorDeviceBulkAuthorizationService;
 use App\Modules\DoctorAccess\Support\DoctorDeviceBulkAuthorizationOutcome;
 use App\Modules\DoctorDevice\Models\DoctorDevice;
 use App\Modules\DoctorDevice\Models\DoctorDeviceAuthorization;
+use App\Modules\DoctorDevice\Models\DoctorDeviceWebAuthnCredential;
 use App\Modules\DoctorDevice\Services\DoctorGlobalRolloutReadinessService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 require_once __DIR__.'/helpers.php';
 
@@ -171,15 +173,44 @@ it('excludes a disabled device and a revoked device, each with its own reason', 
 it('excludes a device that has never proved possession of its key', function (): void {
     $branch = daBranch('Cabang Unverified');
     daDoctorAccount([$branch]);
+    // dbaUnverifiedDevice() mints no credential, so this tablet has proved
+    // itself by neither protocol.
     dbaUnverifiedDevice($branch);
 
     $plan = dbaService()->plan();
 
     expect($plan->eligibleDeviceCount())->toBe(0)
         ->and($plan->excludedDevices[0]['reason'])
-        // The bar is set by approve(), which hard-throws on this. Proposing a
-        // write that is certain to be refused would be a lie in the preview.
+        // The bar is set by approve(). Since
+        // REVISION-DOCTOR-PWA-WEBAUTHN-ONLY-ACCESS-1 Stage 1 that bar is
+        // DoctorDeviceIdentityProofPolicy rather than the Android keystore
+        // flag, so what is refused here is the absence of BOTH proofs.
+        // Proposing a write that is certain to be refused would be a lie in
+        // the preview.
         ->toBe(DoctorGlobalRolloutReadinessService::REASON_DEVICE_IDENTITY_UNVERIFIED);
+});
+
+it('includes a pwa-only device, which the android-flag bar used to hide', function (): void {
+    $branch = daBranch('Cabang PWA Only');
+    daDoctorAccount([$branch]);
+
+    $device = dbaUnverifiedDevice($branch);
+    DoctorDeviceWebAuthnCredential::query()->create([
+        'uuid' => (string) Str::uuid(),
+        'doctor_device_id' => $device->id,
+        'credential_id' => 'cred-'.Str::random(20),
+        'public_key' => 'pk-'.Str::random(24),
+        'user_verified' => true,
+        'device_bound_verdict' => DoctorDeviceWebAuthnCredential::VERDICT_DEVICE_BOUND,
+        'registered_at' => now(),
+    ]);
+
+    $plan = dbaService()->plan();
+
+    // Before Stage 2 this preview reported the tablet as excluded for an
+    // unverified identity even though approve() would now admit it — the
+    // report understated the estate.
+    expect($plan->eligibleDeviceCount())->toBe(1);
 });
 
 it('excludes a doctor whose USER ACCOUNT is switched off even though the doctor record is active', function (): void {

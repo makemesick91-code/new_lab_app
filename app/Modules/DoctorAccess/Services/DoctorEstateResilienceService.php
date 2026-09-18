@@ -12,6 +12,7 @@ use App\Modules\DoctorAccess\Support\DoctorEstateResilienceVerdict;
 use App\Modules\DoctorDevice\Interfaces\DoctorDeviceRolloutReadinessRepositoryInterface;
 use App\Modules\DoctorDevice\Models\DoctorDevice;
 use App\Modules\DoctorDevice\Models\DoctorDeviceWebAuthnCredential;
+use App\Modules\DoctorDevice\Services\DoctorDeviceIdentityProofPolicy;
 use App\Modules\DoctorDevice\Support\WebAuthnDeviceBinding;
 use Illuminate\Support\Collection;
 
@@ -71,6 +72,7 @@ class DoctorEstateResilienceService
         private readonly DoctorBranchLockRepositoryInterface $locks,
         private readonly DoctorFleetReadinessService $fleet,
         private readonly DoctorEstateResilienceRepositoryInterface $rooms,
+        private readonly DoctorDeviceIdentityProofPolicy $identityProof,
     ) {}
 
     /**
@@ -1660,14 +1662,20 @@ class DoctorEstateResilienceService
     }
 
     /**
-     * ELIGIBLE is asked of the MODEL — active AND cryptographically verified —
-     * exactly as the provisioning and fleet engines ask it. Restating it as a
-     * status string here is how three engines end up disagreeing about which
-     * hardware counts.
+     * ELIGIBLE is asked of ONE POLICY — active AND holding an accepted identity
+     * proof — exactly as the provisioning and fleet engines ask it. Restating
+     * it here is how three engines end up disagreeing about which hardware
+     * counts.
+     *
+     * REVISION-DOCTOR-PWA-WEBAUTHN-ONLY-ACCESS-1: the identity half used to be
+     * `isCryptographicallyVerified()`, the Android keystore flag. That made a
+     * PWA-only tablet permanently ineligible, which mattered most HERE —
+     * `spare_device_available_per_branch` is computed from this predicate, so
+     * no quantity of new WebAuthn-only hardware could ever have satisfied it.
      */
     private function isEligible(DoctorDevice $device): bool
     {
-        return $device->isActive() && $device->isCryptographicallyVerified();
+        return $device->isActive() && $this->identityProof->acceptable($device);
     }
 
     /**

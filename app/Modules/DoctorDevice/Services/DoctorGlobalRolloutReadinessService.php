@@ -100,6 +100,7 @@ class DoctorGlobalRolloutReadinessService
         private readonly AndroidDoctorEnforcementScope $scope,
         private readonly Phase4aPilotPreparationScanner $posture,
         private readonly FeatureFlagService $flags,
+        private readonly DoctorDeviceIdentityProofPolicy $identityProof,
     ) {}
 
     /**
@@ -249,7 +250,7 @@ class DoctorGlobalRolloutReadinessService
             return ['complete' => false, 'reasons' => [self::REASON_DEVICE_NOT_ACTIVE], 'path' => null];
         }
 
-        if (! $device->isCryptographicallyVerified()) {
+        if (! $this->identityProof->acceptable($device)) {
             return ['complete' => false, 'reasons' => [self::REASON_DEVICE_IDENTITY_UNVERIFIED], 'path' => null];
         }
 
@@ -450,7 +451,7 @@ class DoctorGlobalRolloutReadinessService
 
     private function deviceCouldCarryADoctor(DoctorDevice $device): bool
     {
-        if (! $device->isActive() || ! $device->isCryptographicallyVerified()) {
+        if (! $device->isActive() || ! $this->identityProof->acceptable($device)) {
             return false;
         }
 
