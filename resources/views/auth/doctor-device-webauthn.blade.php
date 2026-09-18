@@ -67,7 +67,7 @@
                     error.classList.add('hidden');
 
                     if (!window.doctorDeviceWebAuthn?.isSupported()) {
-                        error.textContent = 'Browser ini tidak mendukung verifikasi perangkat.';
+                        error.textContent = 'Browser ini tidak mendukung verifikasi perangkat. (kode: unsupported)';
                         error.classList.remove('hidden');
                         return;
                     }
@@ -92,13 +92,46 @@
                         form.dataset.webauthnReady = '1';
                         form.submit();
                     } catch (e) {
-                        // Distinguish only what is useful to the person holding
-                        // the tablet. Anything more precise would describe the
-                        // clinic's device estate to whoever is looking.
-                        error.textContent = e && e.status === 419
-                            ? 'Sesi login telah berakhir. Silakan masuk kembali.'
-                            : 'Verifikasi perangkat dibatalkan atau gagal.';
+                        /*
+                         * BUGFIX-DOCTOR-PWA-WEBAUTHN-VERIFY-DEVICE-NO-FEEDBACK-2
+                         *
+                         * Every failure now says something DIFFERENT and
+                         * something ACTIONABLE. The previous single message
+                         * collapsed a missing credential, an untrusted origin,
+                         * an expired session and a hung authenticator into one
+                         * sentence, so an operator could never tell which had
+                         * happened — and when the ceremony hung instead of
+                         * rejecting, this block never ran at all.
+                         *
+                         * The reason CODE is appended deliberately. It is the
+                         * one thing an operator can quote in an incident report
+                         * without describing the clinic's device estate, and its
+                         * absence is why the last incident had to be diagnosed
+                         * from nginx logs.
+                         */
+                        const reasons = {
+                            timeout: 'Verifikasi perangkat tidak selesai dalam 60 detik. Coba lagi, atau gunakan perangkat tepercaya lain.',
+                            no_credential_or_denied: 'Perangkat ini belum memiliki kredensial dokter yang terdaftar, atau verifikasi dibatalkan. Daftarkan perangkat ini lebih dahulu bila memang belum terdaftar.',
+                            ceremony_cancelled: 'Verifikasi perangkat dibatalkan.',
+                            origin_not_trusted: 'Alamat halaman ini tidak dipercaya untuk verifikasi perangkat. Buka aplikasi dari alamat resmi klinik.',
+                            device_state_invalid: 'Perangkat ini sedang tidak dapat dipakai untuk verifikasi.',
+                            unsupported: 'Browser ini tidak mendukung verifikasi perangkat.',
+                            session_expired: 'Sesi login telah berakhir. Silakan masuk kembali.',
+                            options_rejected: 'Server menolak permintaan verifikasi. Hubungi admin bila berulang.',
+                            network_unavailable: 'Tidak dapat menghubungi server. Periksa koneksi lalu coba lagi.',
+                        };
+
+                        const reason = e && e.reason
+                            ? e.reason
+                            : (e && e.status === 419 ? 'session_expired' : 'unexpected');
+
+                        error.textContent = (reasons[reason] || 'Verifikasi perangkat gagal.')
+                            + ' (kode: ' + reason + ')';
                         error.classList.remove('hidden');
+
+                        // Always recoverable. A disabled button with no message
+                        // is the exact state that made this look like a dead
+                        // control rather than a failed ceremony.
                         button.disabled = false;
                     }
                 };
