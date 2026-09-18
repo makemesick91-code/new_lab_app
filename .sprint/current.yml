@@ -16,23 +16,34 @@ module: DoctorDevice
 title: "PWA-only doctor access: canonical trusted-device identity proof (Stage 1)"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-# Impact flags — declared against the actual Stage 1 diff.
+# Impact flags — declared against the CURRENT diff (Stage 2b, break-glass).
 #
-# security_impact is TRUE: the diff changes the predicate that gates creating a
-# DoctorDeviceAuthorization, which is an authorization decision even though it
-# widens nothing (the policy is stricter than the login binding policy, never
-# looser, and the revoked/disabled/branch checks all still run first).
+# security_impact is TRUE twice over. Stage 1 changed the predicate gating
+# DoctorDeviceAuthorization creation, and Stage 2b adds a path by which a
+# doctor may hold a session with NO trusted device at all. The second is a
+# genuine new way in, which is why it carries its own permission, a hard time
+# bound, a written reason, revocation and an audit row at every transition.
 runtime_change: true
-schema_change: false
+schema_change: true
 frontend_change: false
 security_impact: true
 branch_isolation_impact: false
 ledger_impact: false
 
-# Stage 1 is deliberately NOT deployed. It is inert in production until the
-# remaining consumers migrate (Stage 2) and the controlled acceptance run
-# passes (Stage 3); deploying it alone would add a code path nothing exercises.
-deploy_required: false
+# STAGE 2b IS THE FIRST DEPLOY-COUPLED CHANGE IN THIS SPRINT.
+#
+# Stages 1 and 2a were inert: they changed which predicate decides eligibility,
+# and nothing about that is observable until enforcement widens at Stage 4.
+# Break-glass is different. DoctorAppLoginGate now reads
+# `trx_doctor_break_glass_grants` at BOTH decision points, on every request of
+# every doctor currently inside the enforcement scope. The code and its
+# migration therefore have to land together — deploying the code without the
+# table would break the three pilot doctors who are enforced today.
+#
+# `scripts/deploy-vps.sh` runs `migrate --force` before rebuilding caches, so a
+# normal deploy satisfies this. It is declared here so nobody merges it
+# expecting the same inertness the earlier stages had.
+deploy_required: true
 browser_required: false
 
 test_profiles: []

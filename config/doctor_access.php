@@ -64,6 +64,57 @@ return [
         'min_minutes' => 30,
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Break-glass emergency access
+    |--------------------------------------------------------------------------
+    |
+    | REVISION-DOCTOR-PWA-WEBAUTHN-ONLY-ACCESS-1 Stage 2.
+    |
+    | WHY THIS EXISTS AT ALL. Making the PWA the sole doctor channel removes the
+    | fallback that browser password login used to be. Today a doctor whose
+    | tablet dies falls back to a password; under PWA-only they do not, and the
+    | measured estate holds no spare at any staffed branch. Break-glass is the
+    | bounded replacement for that fallback, and it is deliberately NOT the old
+    | one: it admits ONE named account for a bounded window, rather than
+    | reopening password login for the fleet.
+    |
+    | THE BOUND IS THE WHOLE SAFETY ARGUMENT. An unbounded emergency grant is
+    | not an emergency measure, it is a permanent second way in that nobody
+    | remembers creating. `max_hours` is what keeps "emergency" true, and it is
+    | validated twice — when the grant is filed and AGAIN inside the granting
+    | transaction — so a grant filed while the bound was wider cannot be
+    | committed after an operator narrows it.
+    |
+    | NO env() CALL HERE, matching the rest of this file: a bound an operator
+    | can move from the environment of the machine they are already on is not a
+    | bound.
+    |
+    | The written reason reuses the `reason` block below rather than declaring
+    | its own two numbers, for the same stated purpose: an emergency nobody can
+    | explain is not an operational action.
+    */
+
+    'break_glass' => [
+
+        /*
+         * The longest emergency window an approver may grant, in hours.
+         *
+         * Measured on the window itself, not on distance from now. One clinical
+         * day is the deliberate ceiling: long enough to finish a list and get
+         * hardware replaced, short enough that it cannot quietly become the way
+         * a doctor works.
+         */
+        'max_hours' => 12,
+
+        /*
+         * The shortest window worth granting, in minutes. A zero-length grant
+         * would be approved, audited, and useless — which reads as a working
+         * emergency path right up until somebody needs one.
+         */
+        'min_minutes' => 15,
+    ],
+
     'reason' => [
 
         /*

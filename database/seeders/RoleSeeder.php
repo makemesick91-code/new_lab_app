@@ -533,6 +533,10 @@ class RoleSeeder extends Seeder
             'manage_doctor_branch_locks',
             'approve_doctor_branch_locks',
             'release_doctor_session_leases',
+            // Break-glass: the same role that already decides doctor access and may
+            // end a doctor's session. Owner is deliberately NOT given it — an
+            // emergency path nobody reachable can operate is not an emergency path.
+            'grant_doctor_break_glass_access',
         ],
         // Sprint 23 Phase 23.5 — Dedicated separated RME report viewers
         'Laporan Pasien RME' => [

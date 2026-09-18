@@ -19,6 +19,7 @@ use App\Modules\Delivery\Controllers\DeliveryController;
 use App\Modules\Doctor\Controllers\DoctorAccountLinkController;
 use App\Modules\Doctor\Controllers\DoctorController;
 use App\Modules\DoctorAccess\Controllers\DoctorBranchLockController;
+use App\Modules\DoctorAccess\Controllers\DoctorBreakGlassController;
 use App\Modules\DoctorDevice\Controllers\DoctorDeviceAuthorizationController;
 use App\Modules\DoctorDevice\Controllers\DoctorDeviceController;
 use App\Modules\DoctorDevice\Controllers\DoctorDeviceLoginController;
@@ -751,6 +752,30 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
         Route::post('doctor-branch-locks/{doctor}/release-session', [DoctorBranchLockController::class, 'releaseSession'])
             ->name('doctor-branch-locks.release-session')
             ->whereNumber('doctor');
+    });
+
+    /*
+     * REVISION-DOCTOR-PWA-WEBAUTHN-ONLY-ACCESS-1 Stage 2 — break-glass.
+     *
+     * Its OWN permission, not folded into the device-authorization one:
+     * admitting a doctor with no device proof is a strictly stronger act than
+     * authorizing a device, so reusing that permission would have handed the
+     * bypass to everyone who already holds it.
+     *
+     * The middleware keeps unrelated roles off the URL; the SERVICE is the
+     * boundary and re-checks the same permission, so a caller that never
+     * reaches a controller cannot file a grant either.
+     */
+    Route::middleware('permission:grant_doctor_break_glass_access')->group(function () {
+        Route::get('doctor-break-glass', [DoctorBreakGlassController::class, 'index'])
+            ->name('doctor-break-glass.index');
+
+        Route::post('doctor-break-glass', [DoctorBreakGlassController::class, 'store'])
+            ->name('doctor-break-glass.store');
+
+        Route::post('doctor-break-glass/{grant}/revoke', [DoctorBreakGlassController::class, 'revoke'])
+            ->name('doctor-break-glass.revoke')
+            ->whereNumber('grant');
     });
 
     Route::middleware('permission:view_clinic_visits|manage_clinic_visits')->group(function () {
