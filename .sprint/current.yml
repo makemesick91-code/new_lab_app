@@ -40,3 +40,39 @@ test_profiles: []
 # Withheld until the final gate passes on a verified deployed runtime. Stage 1
 # alone can never earn it.
 go_tag: revision-doctor-pwa-webauthn-only-access-1-go
+go_tag_created: false
+
+# ---------------------------------------------------------------------------
+# WHAT THIS SPRINT INHERITS
+#
+# `.sprint/current.yml` is a ROLLING file, so these are re-stated for this
+# sprint rather than carried over. Two of them are asserted by contract tests,
+# and dropping them is the failure mode a new sprint hits most easily: the
+# previous manifest carried the same note ("Restored deliberately, not
+# copied") because it hit it too.
+# ---------------------------------------------------------------------------
+
+# The live doctor-access posture this revision starts from: single active
+# session ON, branch lock OFF, enforcement scoped to a 3-doctor pilot.
+inherits_parent_programme: DOCTOR-ACCESS-GLOBAL-ACTIVATION-1
+inherits_parent_sprint: DOCTOR-ACCESS-GLOBAL-ACTIVATION-1-HALF-A-CUTOVER
+inherits_parent_go: doctor-access-global-activation-half-a-1-go
+inherits_pilot_go: doctor-pwa-multi-doctor-pilot-1-go
+
+# The base this branch was cut from, and production HEAD at Phase 0.
+inherits_readiness_go: doctor-access-global-device-enforcement-readiness-1-go
+
+# Asserted by LegacyRmeProgramClosureContractTest: every post-closure sprint
+# must name the closure it inherits, because that is the fact a later sprint is
+# most likely to contradict quietly. Re-stated, not relaxed.
+inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
+
+# Still open, and this sprint does not touch it.
+inherits_hold: FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1/FIX-02
+
+# Phase 0 decision: the Half-B ACTIVATION DESIGN is superseded by the PWA-only
+# product decision. Its readiness machinery and GO tag stand untouched, and
+# four of its five prerequisites are inherited rather than discarded — two
+# tighten under PWA-only, and `rollback_to_browser_login_proven` is invalidated
+# as a strategy because this revision removes its target.
+supersedes_activation_design_of: DOCTOR-ACCESS-GLOBAL-DEVICE-ENFORCEMENT-READINESS-1
