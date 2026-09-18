@@ -1,71 +1,42 @@
-# Active sprint manifest — DOCTOR-ACCESS-GLOBAL-DEVICE-ENFORCEMENT-READINESS-1
-# Validated by: php artisan sprint:manifest-check
+# REVISION-DOCTOR-PWA-WEBAUTHN-ONLY-ACCESS-1
+#
+# Collapses three doctor authentication paths into one: the PWA with a WebAuthn
+# trusted-device assertion becomes the sole supported doctor channel.
+#
+# Staged per the authoritative stage order. Stage 1 (this manifest's current
+# scope) creates the canonical trusted-device identity proof and migrates the
+# authorization gate onto it. It RETIRES NOTHING — Android authentication,
+# enforcement scope and every feature flag are untouched, because retiring the
+# Android path before this predicate exists would make new PWA-only tablets
+# permanently unprovisionable.
 
-id: DOCTOR-ACCESS-GLOBAL-DEVICE-ENFORCEMENT-READINESS-1
-type: FOUNDATION_SPRINT
-module: DoctorAccess
-title: "Half-B readiness: give the five declared global doctor-enforcement prerequisites a producer, so a signature can be contradicted by a measurement. Closes the false green in Phase4aPilotPreparationScanner::globalPrerequisiteCheck(), which compared two config lists and read no measurement, so attested-true beside measured-false returned PASS. Adds a real rollback producer that executes an in-process rehearsal — deny an out-of-cohort doctor under the activated posture, restore the CAPTURED posture, prove the same doctor is admitted again — replacing a prerequisite that had zero occurrences under app/. Half B is NOT activated: global_permitted stays a source-controlled false, governance_phase stays phase_4a, no attestation is signed."
+id: REVISION-DOCTOR-PWA-WEBAUTHN-ONLY-ACCESS-1
+type: SECURITY_FIX
+module: DoctorDevice
+title: "PWA-only doctor access: canonical trusted-device identity proof (Stage 1)"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-# FOUNDATION_SPRINT, and the classification is the honest one.
+# Impact flags — declared against the actual Stage 1 diff.
 #
-# This ships real runtime code — two services, a console command, a new scanner
-# check and a config file — but it ships no feature. Every line exists to make an
-# existing governance gate capable of being WRONG, which is the property it has
-# lacked since Phase 3.5.
+# security_impact is TRUE: the diff changes the predicate that gates creating a
+# DoctorDeviceAuthorization, which is an authorization decision even though it
+# widens nothing (the policy is stricter than the login binding policy, never
+# looser, and the revoked/disabled/branch checks all still run first).
+runtime_change: true
+schema_change: false
+frontend_change: false
+security_impact: true
+branch_isolation_impact: false
+ledger_impact: false
 
-runtime_change: true            # two services, one command, one scanner check,
-                                # one config file. All read-only at runtime.
+# Stage 1 is deliberately NOT deployed. It is inert in production until the
+# remaining consumers migrate (Stage 2) and the controlled acceptance run
+# passes (Stage 3); deploying it alone would add a code path nothing exercises.
+deploy_required: false
+browser_required: false
 
-schema_change: false            # NO migration, no table, no column, no index.
+test_profiles: []
 
-frontend_change: false          # no JS, CSS, Vite entry or Blade view.
-
-security_impact: true           # it changes what a SECURITY gate will accept.
-                                # No permission, policy, role, middleware or
-                                # credential is touched, and nothing here can arm
-                                # enforcement — but a gate that previously passed
-                                # on a false signature now fails, and calling that
-                                # anything less than security-impacting would be
-                                # the same understatement this sprint exists to
-                                # correct.
-
-branch_isolation_impact: false  # BranchContext, the effective-branch resolver and
-                                # every branch-scoped query are untouched. The
-                                # rollback rehearsal reads the enforcement scope
-                                # and never a branch scope.
-
-ledger_impact: false            # no inventory ledger, billing, payment, invoice
-                                # or receivable path is reachable from here.
-
-deploy_required: true           # the readiness gate has to exist ON the
-                                # deployment it measures. A producer that lives
-                                # only on a branch is the paper prerequisite this
-                                # sprint is replacing.
-
-browser_required: false         # every verification is CLI and read-only HTTP
-                                # health probes. No clinician, no tablet, no
-                                # ceremony — deliberately: this sprint provisions
-                                # nothing and enrols nobody.
-
-# A GO here means the INSTRUMENTS are honest and Half B may be *planned*.
-# It does not mean the fleet may be enforced, and it is not an approval.
-#   HALF_B_READINESS_GO             = the claim
-#   HALF_B_ACTIVE                   = NO
-#   HALF_B_APPLY_AUTHORIZED         = NO
-#   GLOBAL_FLEET_ENFORCEMENT_ACTIVE = false
-go_tag: doctor-access-global-device-enforcement-readiness-1-go
-go_tag_created: false
-
-test_profiles:
-  - focused
-
-inherits_parent_programme: DOCTOR-ACCESS-GLOBAL-ACTIVATION-1
-inherits_parent_sprint: DOCTOR-ACCESS-GLOBAL-ACTIVATION-1-HALF-A-CUTOVER
-inherits_parent_go: doctor-access-global-activation-half-a-1-go
-inherits_pilot_go: doctor-pwa-multi-doctor-pilot-1-go
-
-# Restored deliberately, not copied. LegacyRmeProgramClosureContractTest asserts
-# every post-closure sprint names the closure it inherits.
-inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
-inherits_hold: FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1/FIX-02
+# Withheld until the final gate passes on a verified deployed runtime. Stage 1
+# alone can never earn it.
+go_tag: revision-doctor-pwa-webauthn-only-access-1-go
