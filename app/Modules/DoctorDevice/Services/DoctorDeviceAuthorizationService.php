@@ -48,6 +48,7 @@ class DoctorDeviceAuthorizationService
     public function __construct(
         private readonly DoctorDeviceAuthorizationRepositoryInterface $authorizations,
         private readonly AuditLogService $auditLogs,
+        private readonly DoctorDeviceIdentityProofPolicy $identityProof,
     ) {}
 
     /**
@@ -201,9 +202,23 @@ class DoctorDeviceAuthorizationService
                 ]);
             }
 
-            if (! $device->isCryptographicallyVerified()) {
+            /*
+             * REVISION-DOCTOR-PWA-WEBAUTHN-ONLY-ACCESS-1 Stage 1.
+             *
+             * This used to read `isCryptographicallyVerified()` directly, which
+             * is written ONLY by the Android keystore challenge-response. That
+             * made this gate - the one that creates the authorization every
+             * doctor login ultimately requires - impossible to satisfy for a
+             * tablet enrolled through the PWA, and would have made new devices
+             * permanently unprovisionable the moment the Android path retired.
+             *
+             * The policy accepts either proof of the same fact. It is stricter
+             * than the login binding policy and never looser, so it cannot
+             * widen what counts as trusted.
+             */
+            if (! $this->identityProof->acceptable($device)) {
                 throw ValidationException::withMessages([
-                    'device' => 'Perangkat belum membuktikan identitas kunci kriptografinya.',
+                    'device' => $this->identityProof->refusalReason(),
                 ]);
             }
 
