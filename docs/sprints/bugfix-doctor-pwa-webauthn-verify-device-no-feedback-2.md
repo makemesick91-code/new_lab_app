@@ -143,18 +143,32 @@ would lock out every enforced doctor — which makes "retirement last" a hard
 dependency rather than a sequencing preference, and gives Stage 5 a new
 prerequisite.
 
-## 7. Still open after this sprint
+## 7. Still open — AS WRITTEN BEFORE THE CEREMONY
+
+> **READ §36 FIRST — it supersedes the first bullet below.** This section was
+> written while the real-device ceremony had not yet run. It is kept verbatim
+> because the sequence matters: the fix was designed and shipped *without*
+> knowing whether the assertion would succeed. §36 records what the hardware
+> then did. Where the two disagree, **§36 is current truth.**
 
 - **Defect B — why the assertion rejects on a tablet holding a valid passkey.**
   **UNVERIFIED.** This fix is the instrument that will name it: the next attempt
   reports a reason code instead of nothing.
+  > **SUPERSEDED BY §36 (2026-09-19).** The assertion **succeeded** on the SPN4
+  > tablet at `00:53:04 UTC / 08:53 WITA`. Defect B is **RESOLVED**; its root
+  > cause remains **UNVERIFIED** — an abort signal cannot make a failing
+  > assertion succeed, so what fixed it is not established. Stale cached client
+  > code is a hypothesis, not a diagnosis.
 - **Readiness truth gap.** `webauthn:readiness` reports
   `CREDENTIALS_USABLE / VERDICT=ARMED` from database rows alone. It cannot see
   whether the authenticator still holds the key, so it reported ARMED while the
   leg had been dead for ten days. Worth its own sprint.
+  > **STILL OPEN.** Carried forward as its own programme,
+  > `FIX-DOCTOR-WEBAUTHN-READINESS-LIVE-PROOF-1`.
 - **Unexplained UA anomaly.** Page loads carried an Android UA while the
   options POST carried a desktop one, same IP, ~1s apart, before desktop-site
   mode was corrected. Recorded as **UNVERIFIED**.
+  > **STILL OPEN**, cause unattributed.
 
 ---
 

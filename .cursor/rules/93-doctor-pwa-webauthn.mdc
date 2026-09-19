@@ -303,3 +303,83 @@ proof" silently answered "this session's proof is still good".*
     is over until a fresh conforming credential is enrolled — the session dies
     on the next protected request by design (rule 67), and that is the intended
     behaviour, not an incident to work around.
+
+## Verify Device must never fail silently — BUGFIX-...-VERIFY-DEVICE-NO-FEEDBACK-2
+
+*Stage 3 of `REVISION-DOCTOR-PWA-WEBAUTHN-ONLY-ACCESS-1` found the Verify Device
+control producing no visible reaction on the SPN4 pilot tablet — five attempts,
+three client configurations, on a tablet holding a valid device-bound credential.
+Every fact had to be recovered from nginx and Postgres afterwards, because the
+page said nothing at all.*
+
+74. **A silent WebAuthn failure is a defect in its own right.** Any ceremony a
+    clinician can start must end in either success or a visible, deterministic
+    message. Denying correctly while showing nothing is still a defect: server
+    denial and UX feedback are two separate requirements, and passing one does
+    not discharge the other.
+75. **Every browser-side ceremony is bounded.** `navigator.credentials.get()`
+    and `.create()` take an `AbortController` signal with an explicit timeout.
+    The WebAuthn `timeout` member is a *hint to the browser*, not a guarantee;
+    the abort is what ends the wait. An unbounded `await` on an external
+    authenticator has no upper limit on how long the UI can lie about being
+    busy — that was this defect.
+76. **Failure types stay distinct where the browser distinguishes them, and are
+    honestly merged where it refuses to.** `NotAllowedError` covers both a
+    missing credential and a dismissed prompt *by design*, so a page cannot
+    probe which credentials a device holds. Never claim to tell them apart.
+    Every reason the module can emit must have wording in the view — a code
+    without wording reaches a clinician as a bare failure, which is this defect
+    reintroduced, and a test pins the producer/consumer pair.
+
+## Android and WebAuthn are independent proofs
+
+77. **Android Keystore proof and WebAuthn proof are separate mechanisms with no
+    shared code path.** `DoctorAppLoginService` contains **0** WebAuthn
+    references; `DoctorDeviceWebAuthnLoginService` contains **0** Keystore
+    references. They share only the gate and the session binding.
+78. **Android working is NOT evidence that the PWA works.** "The pilot is live"
+    was true and irrelevant for ten days while the browser leg was dead. Never
+    infer one leg's health from the other's, in a report, a readiness verdict,
+    a test or a status claim.
+79. **Android retirement is blocked** until a successful real-hardware WebAuthn
+    assertion AND a resulting doctor PWA session are proven on an approved
+    device. Android is currently the only proven working doctor authentication
+    path; retiring it first would lock out every enforced doctor. This is a hard
+    dependency, not a sequencing preference.
+
+## Readiness must not be confused with configuration
+
+80. **`webauthn:readiness` VERDICT=ARMED means configured, never proven live.**
+    It is a feature flag plus a row count. Row presence is not proof: a
+    credential row cannot tell you the authenticator still holds the key, that
+    the browser can start a ceremony, or that any assertion has ever succeeded.
+    Never quote `ARMED` as evidence that the PWA login path works.
+81. **A readiness gate must name the leg it measures.** A metric that counts
+    Android logins says nothing about a sprint that activated the browser. If a
+    gate cannot see the activated path, it is not a gate for that path.
+
+## Time
+
+82. **Application time authority is UTC.** Every stored timestamp, audit row and
+    comparison is UTC.
+83. **Clinic-local operational timestamps must be explicitly labelled WITA
+    (UTC+8).** An unlabelled timestamp that could be read as local time is a
+    reporting defect, not a style preference.
+
+## Scope discipline for this revision
+
+84. **The posture below is measured truth, and stays until re-measured.** No
+    document, attestation or scanner change may move any of these without a
+    fresh measurement of the world:
+    - `single_active_session = true`
+    - `branch_lock = false` (and therefore `BRANCH_LOCK_EFFECTIVE = false`)
+    - enforcement scope `pilot`, cohort `[9, 15, 18]`, `global_permitted = false`
+    - `spare_device_available_per_branch = FAIL` — the owner's pre-live risk
+      acceptance sits **beside** that measurement, never on top of it
+    - `device_loss_runbook_rehearsed = PASS` (Stage 3, attested)
+    - `ANDROID_DOCTOR_AUTH = RETAINED`
+    - Stage 4 remains unauthorized while a prerequisite measures FAIL
+85. **Controlled pre-live evidence is not real-world operational proof.** A
+    rehearsal on a withheld tablet, a synthetic drill, or a ceremony run by the
+    engineer who built the path are all evidence — of a narrower claim than
+    real-world operation. Record which one you have.
