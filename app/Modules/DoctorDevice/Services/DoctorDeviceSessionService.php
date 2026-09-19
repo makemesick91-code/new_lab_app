@@ -3,6 +3,7 @@
 namespace App\Modules\DoctorDevice\Services;
 
 use App\Models\User;
+use App\Modules\DoctorAccess\Models\DoctorSessionLease;
 use App\Modules\DoctorAccess\Services\DoctorSessionLeaseService;
 use App\Modules\DoctorDevice\Models\DoctorDevice;
 use App\Modules\DoctorDevice\Models\DoctorDeviceAuthorization;
@@ -202,6 +203,31 @@ class DoctorDeviceSessionService
                 $user,
             );
         }
+
+        // FIX-BREAK-GLASS-EXPIRY-LEASE-RELEASE / D3 — release the lease HERE,
+        // not in each caller.
+        //
+        // Logging a doctor out without releasing their lease is a lockout under
+        // `doctor.single_active_session`: the lease is the incumbent, so the
+        // doctor cannot log back in by ANY path until somebody clears it by
+        // hand. `AuthenticatedSessionController` already did this before
+        // calling us, but the per-request middleware path did not — so every
+        // MID-SESSION denial stranded a lease. That covers an expired or
+        // revoked break-glass grant, a revoked device and a deactivated
+        // authorization alike.
+        //
+        // There is no Logout listener in this application (only Login is
+        // wired), so `Auth::logout()` below releases nothing on its own.
+        //
+        // ORDER MATTERS: this must run BEFORE the session is invalidated,
+        // because releaseCurrent() resolves the lease from the session's own
+        // lease token. Idempotent — it forgets the token first, so the
+        // controller's existing call and this one cannot double-release.
+        app(DoctorSessionLeaseService::class)->releaseCurrent(
+            $request,
+            $user,
+            DoctorSessionLease::RELEASE_DEVICE_INVALIDATED,
+        );
 
         Auth::guard('web')->logout();
 
