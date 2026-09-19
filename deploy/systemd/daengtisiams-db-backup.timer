@@ -1,0 +1,28 @@
+[Unit]
+# Daily schedule for daengtisiams-db-backup.service (ENT-12).
+#
+# The host clock is UTC; the clinics operate in WITA (UTC+8). 19:00 UTC is
+# 03:00 WITA — after the last clinic closes and before the first opens, so a
+# dump never competes with clinical traffic. It is also 30 minutes before the
+# existing weekly daengtisiams-pilot-snapshot.timer (Sat 19:30 UTC), so the two
+# never overlap.
+Description=Daily DaengtisiaMS database backup (ENT-12)
+
+[Timer]
+OnCalendar=*-*-* 19:00:00
+
+# Persistent=true is the point of using a timer rather than cron: if the host
+# was down or rebooting at 19:00, systemd runs the missed backup as soon as it
+# is up again instead of silently skipping a day.
+Persistent=true
+
+# Small spread so a backup never starts at the exact same instant as any other
+# scheduled work on this shared host.
+RandomizedDelaySec=300
+
+# Never run two dumps at once if one is still going.
+AccuracySec=1min
+Unit=daengtisiams-db-backup.service
+
+[Install]
+WantedBy=timers.target

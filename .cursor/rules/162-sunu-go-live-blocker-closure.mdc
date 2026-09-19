@@ -1,0 +1,88 @@
+---
+description: Billing requires a finalized clinical record; revoking break-glass must release its lease; a backup is ready only when scheduled, observed and restored.
+globs:
+  - "app/Modules/RmeInvoice/**"
+  - "app/Modules/DoctorAccess/**"
+  - "scripts/restore_postgres.sh"
+  - "scripts/restore-rehearsal.sh"
+  - "scripts/backup-vps.sh"
+  - "deploy/systemd/**"
+alwaysApply: false
+---
+
+# FIX-SUNU-GO-LIVE-BLOCKERS-1 — durable rules
+
+Four rules, each earned by a defect found while gating the Cabang Sunu go-live.
+
+## SGL-R1 — Billing eligibility is decided by the clinical record, and ABSENT is not VALID
+
+A visit is billable only when the canonical clinical completion state says so:
+`cashier_pending` **and** a medical record that exists **and** is `final`.
+
+The defect this replaces read `if ($medicalRecord && $record->status !== FINAL)`.
+It judged a record that existed and skipped the gate entirely when there was
+none, so a visit with no clinical record at all was billed with a null
+`medical_record_id`. Reaching `cashier_pending` does not itself write a record,
+so this was reachable through the ordinary workflow.
+
+- A guard that only fires when the thing exists is not a guard. Fail closed on
+  null.
+- A visit being visible in the cashier queue is not evidence that it is
+  billable. UI presence is never the authority.
+- Never re-widen this to "a final record exists somewhere" — it must be THIS
+  visit's record.
+
+## SGL-R2 — Revoking emergency access must not leave the doctor locked out
+
+Revoking a break-glass grant denies the next request, but under
+`doctor.single_active_session` the lease that the emergency session created is
+an INCUMBENT: while it is open the doctor cannot log in by any path.
+
+Revocation must release the lease its own grant created, in the SAME
+transaction, so "grant revoked but lease still held" is unrepresentable.
+
+Scope it, because logging out a session the grant never created is a worse bug:
+
+- a grant never used (`first_used_at IS NULL`) carried no session — release nothing;
+- a lease claimed BEFORE `granted_at` belongs to a different, legitimate login — leave it;
+- an actor revoking their own grant is skipped, not refused: revocation must never become impossible.
+
+Compose `DoctorSessionReleaseService`. Never mutate the lease directly — the
+room freeing and the approver audit row belong to that service.
+
+## SGL-R3 — A backup is ready only when scheduled, observed, verified and RESTORED
+
+All four, or it is not ready:
+
+1. a scheduled production execution exists (an OS-level timer, observed to fire);
+2. the artifact is actually created;
+3. the artifact passes integrity verification;
+4. the **documented** restore procedure is exercised successfully against a disposable database.
+
+`foundation:backup-verify` checks existence, location and size. It never
+restores anything, so it can never establish (4). "A backup job exists" and
+"cron is installed" are both disqualified as evidence.
+
+## SGL-R4 — The restore procedure must work for the operator, not just for whoever knew the trick
+
+These dumps are plain-text `pg_dump > file`. Therefore:
+
+- restore with `psql -v ON_ERROR_STOP=1`, never `pg_restore` (archive formats only);
+- dumps are `0640 daengtisiams`, so the `postgres` superuser cannot open the
+  path — stream the file from its owner on **stdin**;
+- the dump contains a superuser-only `CREATE EXTENSION`, and pre-creating the
+  extension does NOT help: the following `COMMENT ON EXTENSION` requires
+  ownership. Restore as the superuser. Never grant the app role superuser;
+- defaults must come from the app environment, never hardcoded to a database
+  that does not exist here;
+- refuse a production target unless explicitly forced, and never print success
+  on a failed restore — inspect `PIPESTATUS`, not the tail of a pipeline.
+
+A working command that only lives in someone's head is not a fixed procedure.
+
+## What this sprint did NOT do
+
+Branch lock stays `false` and doctors remain cross-branch **by accepted design**
+— that is not a branch-isolation pass, and must never be written up as one.
+Front-office roles (Admin Klinik, Perawat, Kasir) remain server-side
+branch-scoped and fail closed.

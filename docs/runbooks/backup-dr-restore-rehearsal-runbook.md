@@ -21,6 +21,15 @@ objectives: RTO 60 minutes, RPO 1440 minutes, retention 14 days.
 - `ssh daengtisiams-vps` at `/var/www/asia-dental-lab-v2`.
 - A distinct scratch database name for rehearsal (must differ from production).
 - Sufficient disk under `storage/app/backups/`.
+- **Root (or the local PostgreSQL superuser OS account) for any restore.** Backups
+  are plain-text `pg_dump` output that replays
+  `CREATE EXTENSION ... pg_stat_statements` and `COMMENT ON EXTENSION`, both of
+  which are superuser-only. The application role is deliberately not a superuser
+  and must never be granted it; pre-creating the extension as superuser does *not*
+  work around this (the `COMMENT ON EXTENSION` still fails with "must be owner of
+  extension"). Both restore scripts therefore run `psql` as the superuser over the
+  peer socket and stream the dump in on stdin — backups are mode 0640 owned by the
+  runtime user, so the superuser OS account cannot open the file but can read a pipe.
 
 ## Safe Commands
 
@@ -34,15 +43,53 @@ php artisan foundation:backup-dr-check
 `scripts/backup-vps.sh` runs `pg_dump` → `foundation:backup-verify` → prunes dumps
 older than the retention window while keeping a minimum floor.
 
-Restore rehearsal (manual, non-production scratch DB only):
+Scheduled daily backup (systemd timer — install once, post-deploy, as root):
+
+```
+install -m 0644 deploy/systemd/daengtisiams-db-backup.service /etc/systemd/system/
+install -m 0644 deploy/systemd/daengtisiams-db-backup.timer   /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now daengtisiams-db-backup.timer
+```
+
+Verify the SCHEDULER (not just the script) actually produces a backup:
+
+```
+systemctl list-timers daengtisiams-db-backup.timer --all
+systemctl start daengtisiams-db-backup.service     # one-shot run through the unit
+systemctl is-failed daengtisiams-db-backup.service # expect: inactive
+journalctl -u daengtisiams-db-backup.service -n 40 --no-pager
+ls -lt storage/app/backups/deploy/auto_backup_*.sql | head -3
+```
+
+The backup runs the script directly rather than through Laravel's scheduler: a
+backup must not depend on the application booting, and nothing on this host
+invokes `schedule:run`, so anything registered in the Laravel scheduler is a
+silent no-op. Never move the backup behind `schedule:run` without first installing
+a scheduler invoker and proving it runs.
+
+Restore rehearsal (manual, non-production scratch DB only — run as root):
 
 ```
 bash scripts/restore-rehearsal.sh
 ```
 
 The rehearsal restores the latest verified backup into a **scratch** database
-(guarded to differ from production), verifies the restored table count, drops only
-the scratch database, and writes non-sensitive `restore-rehearsal.json` evidence.
+(guarded to differ from production), verifies the restored table/patient/visit/
+payment counts, drops only the scratch database, and writes non-sensitive
+`restore-rehearsal.json` evidence.
+
+Restore a backup into a scratch copy for inspection (safe, the common case):
+
+```
+bash scripts/restore_postgres.sh \
+  --file storage/app/backups/deploy/<dump>.sql \
+  --target asia_dental_lab_pilot_scratch --create
+```
+
+Restoring into the production database is refused unless `--force-production` is
+given **and** the operator types the database name to confirm. A restore that
+fails exits non-zero and never prints success.
 
 ## Forbidden Commands
 
