@@ -348,7 +348,71 @@ Android proof (two independent clauses, and the Android writer uses a different
 `--strict` semantics; and the absence of any scope mutation — the diff writes
 nothing and enables nothing.
 
-## 12. Durable rules
+## 12. Deployed, measured — and one defect the deploy itself found
+
+Deployed to production **2026-09-19**, `PRODUCTION_HEAD=088427fa` /
+`PRODUCTION_TREE=3bcce9da`, exact-matching the merge. Health over the canonical
+domain: `/login` `/health/live` `/health/ready` all **200**; migrations pending
+**0**; `APP_ENV=pilot`, `APP_DEBUG=false`.
+
+*(The NSF-9 smoke logged one warning — `/login` 404 on `http://127.0.0.1`. That
+is the plain-IP probe landing on the co-tenant vhost that shares this VPS; with
+a `Host:` header it is a 301 to HTTPS and 200 over TLS. A probe artifact, not a
+fault.)*
+
+**The engine's first production measurement matched the prediction locked
+before the merge, device for device:**
+
+```
+device 3   2026-09-19 00:53:04 UTC / 08:53:04 WITA   0.18 d   PASS
+device 5   2026-09-09 14:49:04 UTC / 22:49:04 WITA   9.60 d   STALE
+device 6   2026-09-09 14:55:33 UTC / 22:55:33 WITA   9.60 d   STALE
+device 7   never                                       —      NEVER_PROVEN
+
+verdict              ARMED          (configuration — unchanged)
+live_assertion_proof NEVER_PROVEN   (liveness)
+scope_coverage       1/4 active devices with a fresh WebAuthn assertion
+effective_readiness  NOT_READY
+```
+
+The prediction was derived by hand from production SQL **before** the engine
+existed to confirm it, so the reconciliation is a genuine cross-check rather
+than the scanner agreeing with itself. `READINESS_SCANNER` and
+`INDEPENDENT_RECONCILIATION` **MATCH**.
+
+### The defect the first measurement exposed
+
+That same output carried `unverified_reason: live_proof_report_failed` beside
+four correctly measured devices. Nothing had failed.
+
+```php
+$report['unverified_reason'] = $proof['unverified_reason'] ?? 'live_proof_report_failed';
+```
+
+The service returns `null` there on the **success** path, and `??` treats null
+as absent — so every healthy run claimed its own failure. In a report whose
+entire purpose is to stop asserting what it cannot support, that is the defect
+class this sprint exists to remove, shipped by the sprint itself.
+
+**Why the suite missed it.** Every test exercised the *service*. Nothing
+asserted the shape the *command* emits — which is the thing an operator
+actually reads. A defect living purely in the key mapping was invisible to a
+green suite, to 16 killed mutants, and to two adversarial reviewers who were
+pointed at the engine.
+
+Fixed by making the null-vs-absent question unaskable: the payload is read only
+when `$proof !== null`, in one branch, so no key can silently substitute a
+fallback for a legitimate null. The sibling keys had survived only by luck —
+they happen to map null to null. Three command-level tests now pin the emitted
+shape (success ⇒ `unverified_reason` null; an engine-reported reason passed
+through verbatim rather than overwritten; `--require-live-proof` exiting
+non-zero while the estate is unproven), and the fix is mutation-checked:
+restoring `??` fails the suite.
+
+**The lesson worth keeping:** testing the engine is not testing the report. The
+operator reads the command.
+
+## 13. Durable rules
 
 1. **WEBAUTHN-READINESS-LIVE-PROOF-INVARIANT.** Doctor WebAuthn readiness must
    not be reported READY solely because configuration is armed or

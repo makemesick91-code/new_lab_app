@@ -164,23 +164,49 @@ class DoctorDeviceWebAuthnReadinessCommand extends Command
         }
 
         $report['webauthn_configured'] = $failure === null && $report['webauthn_login_armed'];
-        $report['live_assertion_proof'] = $proof['live_assertion_proof'] ?? DoctorWebAuthnLiveProofService::PROOF_UNVERIFIED;
-        $report['proof_freshness'] = $proof['proof_freshness'] ?? DoctorWebAuthnLiveProofService::FRESHNESS_UNVERIFIED;
-        $report['proof_freshness_window_days'] = $proof['freshness_window_days'] ?? null;
-        $report['proof_source'] = $proof['proof_source'] ?? null;
-        $report['last_qualifying_proof_utc'] = $proof['last_qualifying_proof_utc'] ?? null;
-        $report['last_qualifying_proof_local'] = $proof['last_qualifying_proof_local'] ?? null;
-        $report['proof_population'] = $proof['population'] ?? 0;
-        $report['scope_coverage'] = $proof['scope_coverage'] ?? null;
-        $report['effective_readiness'] = $proof['effective_readiness'] ?? DoctorWebAuthnLiveProofService::READINESS_UNVERIFIED;
-        $report['unverified_reason'] = $proof['unverified_reason'] ?? 'live_proof_report_failed';
 
         /*
-         * Per-device detail is JSON-only, and carries device IDS rather than
-         * names — the estate privacy contract this command has always held, and
-         * which a sibling test enforces by scanning the encoded report.
+         * `??` IS THE WRONG OPERATOR HERE, AND IT SHIPPED ONCE.
+         *
+         * The service returns `unverified_reason => null` on the SUCCESS path,
+         * and `??` treats null as absent — so the first deployed build printed
+         * `unverified_reason=live_proof_report_failed` on every healthy run,
+         * beside four correctly measured devices. A report whose whole purpose
+         * is to stop claiming things it cannot support was claiming its own
+         * failure. Caught on the first production measurement.
+         *
+         * The distinction that matters is "did the call happen at all", which
+         * is `$proof === null` and nothing else. Reading the keys only when
+         * there IS a payload makes the null-vs-absent question unaskable rather
+         * than answered correctly by luck, which is how the sibling keys here
+         * survived — they map null to null and so hid the bug.
          */
-        $report['devices'] = $proof['devices'] ?? [];
+        if ($proof === null) {
+            $report['live_assertion_proof'] = DoctorWebAuthnLiveProofService::PROOF_UNVERIFIED;
+            $report['proof_freshness'] = DoctorWebAuthnLiveProofService::FRESHNESS_UNVERIFIED;
+            $report['proof_freshness_window_days'] = null;
+            $report['proof_source'] = null;
+            $report['last_qualifying_proof_utc'] = null;
+            $report['last_qualifying_proof_local'] = null;
+            $report['proof_population'] = 0;
+            $report['scope_coverage'] = null;
+            $report['effective_readiness'] = DoctorWebAuthnLiveProofService::READINESS_UNVERIFIED;
+            $report['unverified_reason'] = 'live_proof_report_failed';
+            $report['devices'] = [];
+        } else {
+            $report['live_assertion_proof'] = $proof['live_assertion_proof'];
+            $report['proof_freshness'] = $proof['proof_freshness'];
+            $report['proof_freshness_window_days'] = $proof['freshness_window_days'];
+            $report['proof_source'] = $proof['proof_source'];
+            $report['last_qualifying_proof_utc'] = $proof['last_qualifying_proof_utc'];
+            $report['last_qualifying_proof_local'] = $proof['last_qualifying_proof_local'];
+            $report['proof_population'] = $proof['population'];
+            $report['scope_coverage'] = $proof['scope_coverage'];
+            $report['effective_readiness'] = $proof['effective_readiness'];
+            // Null here is the NORMAL, healthy answer: nothing was unverifiable.
+            $report['unverified_reason'] = $proof['unverified_reason'];
+            $report['devices'] = $proof['devices'];
+        }
 
         if ($this->option('json')) {
             $this->line(json_encode($report, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
