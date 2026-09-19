@@ -58,6 +58,7 @@ use App\Modules\DoctorDevice\Interfaces\DoctorDeviceAuthorizationRepositoryInter
 use App\Modules\DoctorDevice\Interfaces\DoctorDeviceRepositoryInterface;
 use App\Modules\DoctorDevice\Interfaces\DoctorDeviceRolloutReadinessRepositoryInterface;
 use App\Modules\DoctorDevice\Interfaces\DoctorDeviceWebAuthnCredentialRepositoryInterface;
+use App\Modules\DoctorDevice\Interfaces\DoctorWebAuthnLiveProofRepositoryInterface;
 use App\Modules\DoctorDevice\Models\DoctorDevice;
 use App\Modules\DoctorDevice\Models\DoctorDeviceAuthorization;
 use App\Modules\DoctorDevice\Policies\DoctorDeviceAuthorizationPolicy;
@@ -66,6 +67,7 @@ use App\Modules\DoctorDevice\Repositories\DoctorDeviceAuthorizationRepository;
 use App\Modules\DoctorDevice\Repositories\DoctorDeviceRepository;
 use App\Modules\DoctorDevice\Repositories\DoctorDeviceRolloutReadinessRepository;
 use App\Modules\DoctorDevice\Repositories\DoctorDeviceWebAuthnCredentialRepository;
+use App\Modules\DoctorDevice\Repositories\DoctorWebAuthnLiveProofRepository;
 use App\Modules\Inventory\Interfaces\GoodsReceiptRepositoryInterface;
 use App\Modules\Inventory\Interfaces\InventoryActivityLogRepositoryInterface;
 use App\Modules\Inventory\Interfaces\InventoryAnalyticsRepositoryInterface;
@@ -313,6 +315,7 @@ class RepositoryServiceProvider extends ServiceProvider
         // REVISION-DOCTOR-PWA-WEBAUTHN-ONLY-ACCESS-1 Stage 2 — break-glass
         DoctorBreakGlassGrantRepositoryInterface::class => DoctorBreakGlassGrantRepository::class,
         DoctorDeviceWebAuthnCredentialRepositoryInterface::class => DoctorDeviceWebAuthnCredentialRepository::class,
+        DoctorWebAuthnLiveProofRepositoryInterface::class => DoctorWebAuthnLiveProofRepository::class,
         DoctorDeviceRolloutReadinessRepositoryInterface::class => DoctorDeviceRolloutReadinessRepository::class,
         // Sprint 20 — RME: Clinic Visit Queue
         ClinicVisitRepositoryInterface::class => ClinicVisitRepository::class,
