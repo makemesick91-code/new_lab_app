@@ -324,7 +324,20 @@ doctor's name.
 | `CONFIGURED_NO_CREDENTIALS` | expected before the first tablet is enrolled |
 | `READY_NOT_ARMED` | credentials exist, the flag is off |
 | `ARMED_WITHOUT_CREDENTIALS` | the flag is on and nothing could use it |
-| `ARMED` | live |
+| `ARMED` | the flag is on and at least one un-revoked credential row exists |
+
+> **`ARMED` is a configuration verdict, not a liveness verdict.** It is computed
+> from a feature flag and a `COUNT(*)` over `doctor_device_webauthn_credentials`.
+> It cannot see whether the authenticator still holds the private key, whether
+> the browser can start a ceremony, or whether any assertion has ever succeeded.
+>
+> This is not a hypothetical. Between **2026-09-09 and 2026-09-19** the browser
+> leg produced **no successful assertion at all** while this command reported
+> `ARMED` every day, because the rows it counts never changed. The Android path
+> kept working throughout, which is why nobody noticed: see rule 77 below.
+>
+> An earlier revision of this table read "`ARMED` | live". That word was wrong
+> and is the documented form of the defect. Treat `ARMED` as *could* be live.
 
 `--strict` fails only on an unusable relying party. "No credentials yet" is a
 state, not a fault — exiting non-zero on it would train an operator to ignore
