@@ -113,12 +113,19 @@
 # Exit codes: 0 success · 1 restore/verification failure · 2 usage or refusal.
 set -euo pipefail
 
-APP_DIR="${APP_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+# The checkout this script physically lives in. Deliberately NOT overridable:
+# it is what makes the production guard below meaningful.
+CANONICAL_APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+CANONICAL_ENV_FILE="${CANONICAL_APP_DIR}/.env"
+
+APP_DIR="${APP_DIR:-$CANONICAL_APP_DIR}"
 ENV_FILE="${ENV_FILE:-${APP_DIR}/.env}"
 PG_SUPERUSER_ACCOUNT="${PG_SUPERUSER_ACCOUNT:-postgres}"
 
 die() {
-    echo "FATAL: $*" >&2
+    # $1 is the message, $2 the exit code. Print only $1 — "$*" leaked the
+    # exit code into the operator-facing text.
+    echo "FATAL: $1" >&2
     exit "${2:-1}"
 }
 
@@ -129,10 +136,14 @@ usage() {
 # Read a single key from the application environment file WITHOUT sourcing it.
 # Sourcing would execute arbitrary content and clobber shell state; this only
 # ever reads the one key asked for and strips surrounding quotes.
+# $2 is the file to read, defaulting to $ENV_FILE. Passed explicitly rather
+# than via a `ENV_FILE=… env_value …` prefix: in bash a variable assignment
+# preceding a FUNCTION call persists after the call returns, so that idiom
+# would silently repoint $ENV_FILE for the rest of the script.
 env_value() {
-    local key="$1" value
-    [ -r "$ENV_FILE" ] || return 1
-    value="$(sed -n "s/^[[:space:]]*${key}=//p" "$ENV_FILE" | head -n 1)" || return 1
+    local key="$1" file="${2:-$ENV_FILE}" value
+    [ -r "$file" ] || return 1
+    value="$(sed -n "s/^[[:space:]]*${key}=//p" "$file" | head -n 1)" || return 1
     value="${value%$'\r'}"
     value="${value#\"}"
     value="${value%\"}"
@@ -186,7 +197,28 @@ cd "$APP_DIR"
 PRODUCTION_DB="$(env_value DB_DATABASE || true)"
 [ -n "$PRODUCTION_DB" ] || die "could not read DB_DATABASE from ${ENV_FILE} (is it readable by $(id -un)?)" 2
 
+# SECOND, UNOVERRIDABLE production name, read from the checkout this script
+# lives in rather than from $ENV_FILE.
+#
+# WHY: $ENV_FILE and $APP_DIR are honoured from the caller's environment so the
+# script can be pointed at another deployment. That also meant the caller
+# DEFINED what counted as production — `ENV_FILE=/tmp/fake.env … --target
+# asia_dental_lab_pilot` skipped the guard entirely and proceeded toward the
+# live database. The guard must not be satisfiable by the person it is meant to
+# stop, so the real deployment's name is always consulted as well.
+CANONICAL_PRODUCTION_DB=""
+if [ -r "$CANONICAL_ENV_FILE" ]; then
+    CANONICAL_PRODUCTION_DB="$(env_value DB_DATABASE "$CANONICAL_ENV_FILE" || true)"
+fi
+
 TARGET_DB="${TARGET_DB:-$PRODUCTION_DB}"
+
+# A database name reaches psql inside a single-quoted SQL literal below, and an
+# operator-supplied flag must not be able to close that quote. Restrict it to
+# what PostgreSQL identifiers actually need.
+case "$TARGET_DB" in
+    *[!A-Za-z0-9_]*) die "invalid --target '${TARGET_DB}': use only letters, digits and underscore" 2 ;;
+esac
 if [ -z "$TARGET_OWNER" ]; then
     TARGET_OWNER="$(env_value DB_USERNAME || true)"
 fi
@@ -195,7 +227,7 @@ fi
 # ---------------------------------------------------------------------------
 # Production guard
 # ---------------------------------------------------------------------------
-if [ "$TARGET_DB" = "$PRODUCTION_DB" ]; then
+if [ "$TARGET_DB" = "$PRODUCTION_DB" ] || { [ -n "$CANONICAL_PRODUCTION_DB" ] && [ "$TARGET_DB" = "$CANONICAL_PRODUCTION_DB" ]; }; then
     if [ "$FORCE_PRODUCTION" -ne 1 ]; then
         cat >&2 <<GUARD
 REFUSED: '${TARGET_DB}' is the PRODUCTION database for this deployment.

@@ -221,6 +221,33 @@ it('does not touch another doctor while revoking this one', function () {
         ->and((int) $survivor->id)->toBe((int) $secondLease->id);
 });
 
+// ─── Revocation must never become impossible ────────────────────────────────
+
+it('still revokes, and still frees the lease, for a doctor account with no linked record', function () {
+    $approver = bgrApprover();
+    bgrArmUnscopedEnforcement();
+
+    // A Doctor-ROLE account with no `mst_doctors` row. The lease engine keys on
+    // user_id, so such an account really does claim a lease and really can be
+    // stranded by one — but the approver release surface resolves its subject
+    // through mst_doctors and refuses outright.
+    $user = User::factory()->create(['name' => 'drg Unlinked']);
+    $user->assignRole('Doctor');
+
+    $grant = bgrService()->grant($user, $approver, 'Tablet rusak, dokter belum tertaut', 2);
+    expect($grant->doctor_id)->toBeNull();
+
+    daLoginPost($user);
+    expect(daCurrentLease($user))->not->toBeNull('fixture failed: unlinked account claimed no lease');
+
+    bgrService()->revoke($grant->fresh(), $approver, 'Perangkat pengganti sudah tersedia');
+
+    // Letting the refusal propagate would roll the revocation back and leave a
+    // LIVE, UNREVOKABLE emergency grant — strictly worse than the stale lease.
+    expect($grant->fresh()->isRevoked())->toBeTrue('the grant could not be revoked at all')
+        ->and(daCurrentLease($user))->toBeNull('the lease survived via the fallback path');
+});
+
 // ─── Idempotency ─────────────────────────────────────────────────────────────
 
 it('is idempotent when revoked twice', function () {

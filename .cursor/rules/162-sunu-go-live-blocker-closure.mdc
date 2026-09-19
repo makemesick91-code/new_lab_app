@@ -48,7 +48,19 @@ Scope it, because logging out a session the grant never created is a worse bug:
 - an actor revoking their own grant is skipped, not refused: revocation must never become impossible.
 
 Compose `DoctorSessionReleaseService`. Never mutate the lease directly — the
-room freeing and the approver audit row belong to that service.
+room freeing and the approver audit row belong to that service. When that
+surface refuses (a Doctor-role account with no linked `mst_doctors` row cannot
+be resolved by it), fall back to the `user_id`-keyed
+`DoctorSessionLeaseService::releaseFor()` — never let the refusal propagate,
+because rolling the revocation back leaves a LIVE, UNREVOKABLE grant, which is
+strictly worse than the stale lease.
+
+**KNOWN GAP — expiry is not covered.** A grant that is left to EXPIRE never
+runs `revoke()`, so nothing releases its lease and the original lockout
+recurs. There is no expiry→release coupling anywhere and no scheduler to add
+one to (`schedule:run` is never invoked — see SGL-R3). Until that is closed:
+end an emergency window by **revoking it explicitly**, not by letting it lapse,
+and use `doctor:session-force-logout` if a lease is already stranded.
 
 ## SGL-R3 — A backup is ready only when scheduled, observed, verified and RESTORED
 

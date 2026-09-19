@@ -80,6 +80,31 @@ be worse than the bug:
 | No open lease | no-op, revocation still succeeds |
 | Revoked twice | idempotent; the first revocation is the one that happened |
 
+### B6 — what adversarial review changed, and what it did not close
+
+An independent review REFUTED the first implementation and the fixes below came
+from it, all measured rather than argued:
+
+- **Regression I introduced.** With a Doctor-role account that has no linked
+  `mst_doctors` row, `releaseForDoctor()` throws, the nested savepoint unwinds,
+  and the whole revocation rolls back — leaving a **live, unrevokable emergency
+  grant** *and* the lease. That is strictly worse than the bug being fixed and
+  violates this sprint's own rule that revocation must never become impossible.
+  Now: the refusal is caught and the release falls back to the `user_id`-keyed
+  `DoctorSessionLeaseService::releaseFor()`, which is the column the lease is
+  actually keyed on. Regression-tested.
+- **Second-precision boundary.** `claimed_at` and `granted_at` are both
+  `timestamp(0)`. The comparison stays strict `lt` deliberately: a lease claimed
+  in the same second as the grant is the emergency one, and `lte` would skip the
+  very lease this exists to release.
+
+**KNOWN GAP, recorded not closed: expiry releases nothing.** A grant left to
+EXPIRE never reaches `revoke()`, so the lease survives and the original lockout
+recurs. No expiry→release coupling exists, and there is no running scheduler to
+hang one on (B3). Operational mitigation: end an emergency window by revoking
+it explicitly, and use `doctor:session-force-logout` for an already-stranded
+lease.
+
 ## B2 — both documented restore procedures were broken
 
 The backups were always sound; nothing written down could restore them.
@@ -112,6 +137,15 @@ databases dropped via `trap`; none left behind.
 Note: `storage/release-evidence/latest/restore-rehearsal.json` does not exist
 on production — the ENT-12 DR drill had never successfully completed on this
 host, which is consistent with the defects above.
+
+Two further defects found by review and fixed, both **measured**: the
+production guard was bypassable by pointing `ENV_FILE` or `APP_DIR` at a file
+that named a different database (the caller defined what counted as
+production), and `--target` was interpolated unquoted into a `pg_database`
+probe, executing arbitrary SQL as the superuser. The canonical production name
+is now read from the checkout the script lives in and cannot be overridden, and
+target names are restricted to `[A-Za-z0-9_]`. Verified: both bypass routes and
+the injection now exit 2.
 
 ## B3 — there was no scheduled database backup at all
 

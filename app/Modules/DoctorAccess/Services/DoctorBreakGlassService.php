@@ -9,6 +9,7 @@ use App\Modules\Doctor\Services\DoctorIdentityResolver;
 use App\Modules\DoctorAccess\Interfaces\DoctorBreakGlassGrantRepositoryInterface;
 use App\Modules\DoctorAccess\Interfaces\DoctorSessionLeaseRepositoryInterface;
 use App\Modules\DoctorAccess\Models\DoctorBreakGlassGrant;
+use App\Modules\DoctorAccess\Models\DoctorSessionLease;
 use App\Modules\LabOrder\Services\AuditLogService;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -63,6 +64,7 @@ class DoctorBreakGlassService
         private readonly AuditLogService $auditLogs,
         private readonly DoctorSessionLeaseRepositoryInterface $leases,
         private readonly DoctorSessionReleaseService $sessionReleases,
+        private readonly DoctorSessionLeaseService $sessionLeases,
     ) {}
 
     /**
@@ -229,11 +231,38 @@ class DoctorBreakGlassService
             return false;
         }
 
+        // Strict `lt` on purpose. These columns are second-precision, so a
+        // lease claimed in the same second as the grant is treated as the
+        // emergency one — which it almost always is, the login following the
+        // grant immediately. Using `lte` here would skip the very lease this
+        // method exists to release.
         if ($lease->claimed_at === null || $lease->claimed_at->lt($grant->granted_at)) {
             return false;
         }
 
-        return $this->sessionReleases->releaseForDoctor((int) $grant->doctor_id, $actor, $reason);
+        // Preferred surface: it frees the clinic room and writes the approver
+        // audit row. It resolves the subject through `mst_doctors`, so it can
+        // refuse for reasons that have nothing to do with this revocation.
+        if ($grant->doctor_id !== null) {
+            try {
+                return $this->sessionReleases->releaseForDoctor((int) $grant->doctor_id, $actor, $reason);
+            } catch (ValidationException) {
+                // Fall through deliberately. REVOCATION MUST NEVER BECOME
+                // IMPOSSIBLE: letting this propagate would roll the whole
+                // transaction back and leave a LIVE, UNREVOKABLE emergency
+                // grant — strictly worse than the stale lease being fixed.
+            }
+        }
+
+        // Fallback keyed on `user_id`, which is what the lease is actually
+        // keyed on. This covers a Doctor-role account with no linked
+        // `mst_doctors` row: such an account still claims a lease, so it can
+        // still be stranded by one, and it must still be releasable.
+        return $this->sessionLeases->releaseFor(
+            (int) $grant->user_id,
+            DoctorSessionLease::RELEASE_ADMIN,
+            $actor,
+        ) !== null;
     }
 
     /**

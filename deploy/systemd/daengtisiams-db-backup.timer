@@ -20,7 +20,10 @@ Persistent=true
 # scheduled work on this shared host.
 RandomizedDelaySec=300
 
-# Never run two dumps at once if one is still going.
+# Firing precision only. This does NOT prevent overlap — that comes free from
+# systemd, which will not re-run a service whose previous activation is still
+# running. Loosening the accuracy simply lets systemd batch this wake-up with
+# other timers instead of holding a precise-to-the-microsecond alarm.
 AccuracySec=1min
 Unit=daengtisiams-db-backup.service
 
