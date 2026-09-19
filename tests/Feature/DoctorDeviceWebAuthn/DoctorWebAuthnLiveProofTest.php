@@ -24,6 +24,7 @@ use App\Modules\LabOrder\Models\AuditLog;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
@@ -680,4 +681,71 @@ it('mirrors the deployment binding policy when device binding is NOT required', 
 
     expect(lpReport()['effective_readiness'])
         ->toBe(DoctorWebAuthnLiveProofService::READINESS_NOT_READY);
+});
+
+// ---------------------------------------------------------------------------
+// Found by the FIRST PRODUCTION MEASUREMENT: the command's own key mapping
+// ---------------------------------------------------------------------------
+
+it('does not claim the live-proof report failed when it succeeded', function () {
+    /*
+     * THE BUG THIS PINS, AND WHY THE SUITE MISSED IT.
+     *
+     * The command mapped `$proof['unverified_reason'] ?? 'live_proof_report_failed'`.
+     * The service returns null there on the SUCCESS path, and `??` treats null
+     * as absent — so the first deployed build printed
+     * `unverified_reason=live_proof_report_failed` on every healthy run, beside
+     * four correctly measured devices. The report's entire purpose is to stop
+     * asserting things it cannot support, and it was asserting its own failure.
+     *
+     * Every existing test exercised the SERVICE. Nothing asserted the shape the
+     * COMMAND emits, which is the thing an operator actually reads — so a
+     * defect living purely in the key mapping was invisible to a green suite.
+     */
+    $device = lpDevice();
+    lpWebAuthnProof(lpCredential($device), $device, '2026-09-19 00:53:04');
+
+    $exit = Artisan::call('webauthn:readiness', ['--json' => true]);
+    $json = json_decode(Artisan::output(), true);
+
+    expect($exit)->toBe(0)
+        // A healthy report says nothing was unverifiable.
+        ->and($json['unverified_reason'])->toBeNull()
+        // And it is a real measurement, not an empty fallback.
+        ->and($json['live_assertion_proof'])->toBe(DoctorWebAuthnLiveProofService::PROOF_PASS)
+        ->and($json['proof_population'])->toBe(1)
+        ->and($json['devices'])->toHaveCount(1);
+});
+
+it('surfaces the ENGINE\'s own unverified reason rather than substituting its own', function () {
+    /*
+     * The mirror of the bug above. When the engine legitimately cannot measure,
+     * the command must report WHY the engine said so — not overwrite it with a
+     * generic "the report failed", which would describe a different fault and
+     * send an operator looking in the wrong place.
+     *
+     * No devices exist here, so the engine returns its own
+     * `no_active_devices_to_measure`.
+     */
+    $exit = Artisan::call('webauthn:readiness', ['--json' => true]);
+    $json = json_decode(Artisan::output(), true);
+
+    expect($exit)->toBe(0)
+        ->and($json['unverified_reason'])->toBe('no_active_devices_to_measure')
+        ->and($json['effective_readiness'])->toBe(DoctorWebAuthnLiveProofService::READINESS_UNVERIFIED)
+        ->and($json['devices'])->toBe([]);
+});
+
+it('exits non-zero under --require-live-proof while the estate is unproven', function () {
+    // Production's actual shape: one fresh tablet, one never proven.
+    $fresh = lpDevice();
+    lpWebAuthnProof(lpCredential($fresh), $fresh, '2026-09-19 00:53:04');
+    lpCredential(lpDevice());
+
+    // The default invocation still answers the OLD question and stays 0, so a
+    // caller that asked about the relying party is not broken by liveness.
+    expect(Artisan::call('webauthn:readiness'))->toBe(0);
+
+    // Opting in to liveness fails, because 1 of 2 is not ready.
+    expect(Artisan::call('webauthn:readiness', ['--require-live-proof' => true]))->toBe(1);
 });
