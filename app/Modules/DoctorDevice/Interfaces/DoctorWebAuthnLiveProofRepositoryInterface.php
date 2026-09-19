@@ -54,7 +54,7 @@ interface DoctorWebAuthnLiveProofRepositoryInterface
     public const WEBAUTHN_PROOF_ACTION = 'DOCTOR_DEVICE_WEBAUTHN_LOGIN_SUCCESS';
 
     /**
-     * Latest qualifying assertion per CREDENTIAL, for the given credential ids.
+     * Latest qualifying assertion per CREDENTIAL, **per device**.
      *
      * Keyed by credential id. A credential with no qualifying assertion is
      * ABSENT rather than present with a null, so the caller cannot read "never
@@ -62,19 +62,26 @@ interface DoctorWebAuthnLiveProofRepositoryInterface
      *
      * Each value is:
      *   [
-     *     'last_at'    => string,   // ISO-8601 UTC
-     *     'count'      => int,      // qualifying assertions on record
-     *     'device_ids' => list<int> // devices this credential signed on
+     *     'count'             => int,                 // qualifying assertions
+     *     'last_at_by_device' => array<int, string>,  // device id => ISO-8601 UTC
      *   ]
      *
-     * `device_ids` exists so the caller can refuse a proof whose recorded
-     * device is not the device the credential now belongs to. A credential is
-     * bound to one device, so that list should hold exactly one id; if it ever
-     * holds another, the correct response is to distrust the proof rather than
-     * to average it away.
+     * THE TIMESTAMP IS KEYED BY DEVICE, AND THAT IS THE WHOLE POINT.
      *
-     * @param  list<int>  $credentialIds
-     * @return Collection<int, array{last_at:string,count:int,device_ids:list<int>}>
+     * An earlier shape returned a single `last_at` (the max across every row)
+     * beside a flat `device_ids` union, leaving the caller to check membership.
+     * Adversarial review broke it: a credential whose history spans two devices
+     * — because a device swap, a data fix or a migration re-pointed
+     * `doctor_device_id` — passed the membership test for BOTH devices and then
+     * used the newest timestamp from EITHER. Device 3 could report a fresh
+     * proof off an assertion performed on device 7, while its own newest
+     * assertion was months old. The check that was supposed to catch a
+     * re-pointed row was the thing that failed open on it.
+     *
+     * Keying by device makes that shape unrepresentable rather than merely
+     * checked: device 3 can only ever read device 3's own latest assertion. A
+     * row whose payload carries no usable `doctor_device_id` contributes to no
+     * device at all, so it can never invent a key either.
      */
     public function latestWebAuthnProofForCredentials(array $credentialIds): Collection;
 }

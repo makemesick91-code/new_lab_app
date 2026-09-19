@@ -6,6 +6,7 @@ namespace App\Modules\DoctorDevice\Repositories;
 
 use App\Modules\DoctorDevice\Interfaces\DoctorWebAuthnLiveProofRepositoryInterface;
 use App\Modules\LabOrder\Models\AuditLog;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
 
 /**
@@ -24,7 +25,7 @@ class DoctorWebAuthnLiveProofRepository implements DoctorWebAuthnLiveProofReposi
      * grows.
      *
      * @param  list<int>  $credentialIds
-     * @return Collection<int, array{last_at:string,count:int,device_ids:list<int>}>
+     * @return Collection<int, array{count:int,last_at_by_device:array<int,string>}>
      */
     public function latestWebAuthnProofForCredentials(array $credentialIds): Collection
     {
@@ -44,36 +45,39 @@ class DoctorWebAuthnLiveProofRepository implements DoctorWebAuthnLiveProofReposi
             ->get()
             ->groupBy(fn (AuditLog $row): int => (int) $row->entity_id)
             ->map(fn (Collection $rows): array => $this->summarise($rows))
-            // A credential whose rows carried no readable timestamp must be
-            // ABSENT, not present with a null — the caller distinguishes
-            // "never proven" from "proven at an unreadable time" and cannot do
-            // that if both arrive as a null.
-            ->reject(fn (array $summary): bool => $summary['last_at'] === '');
+            // A credential none of whose rows yielded a usable (device,
+            // timestamp) pair must be ABSENT, not present with an empty map —
+            // the caller distinguishes "never proven" from "proven at an
+            // unreadable time" and cannot do that if both arrive the same way.
+            ->reject(fn (array $summary): bool => $summary['last_at_by_device'] === []);
     }
 
     /**
      * @param  Collection<int, AuditLog>  $rows
-     * @return array{last_at:string,count:int,device_ids:list<int>}
+     * @return array{count:int,last_at_by_device:array<int,string>}
      */
     private function summarise(Collection $rows): array
     {
-        $deviceIds = [];
-        $latest = null;
+        /** @var array<int, CarbonImmutable> $latestByDevice */
+        $latestByDevice = [];
 
         foreach ($rows as $row) {
             /*
              * new_values is an `array` cast over jsonb. Decoded in PHP rather
              * than extracted in SQL on purpose: `->>` and json_extract are
              * spelled differently on PostgreSQL and SQLite, and the production
-             * gate runs on one while the local suite runs on the other. A row
-             * whose payload is missing or malformed contributes no device id
-             * rather than crashing the report.
+             * gate runs on one while the local suite runs on the other.
              */
             $payload = $row->new_values;
 
-            if (is_array($payload) && isset($payload['doctor_device_id'])) {
-                $deviceIds[] = (int) $payload['doctor_device_id'];
+            if (! is_array($payload) || ! isset($payload['doctor_device_id'])) {
+                // A row that does not say which device it happened on cannot
+                // prove any device. It is dropped rather than folded into a
+                // neighbour's timestamp — that fold was the defect.
+                continue;
             }
+
+            $deviceId = (int) $payload['doctor_device_id'];
 
             /*
              * `performed_at` is the business timestamp and `created_at` the
@@ -86,20 +90,21 @@ class DoctorWebAuthnLiveProofRepository implements DoctorWebAuthnLiveProofReposi
                 continue;
             }
 
-            $candidate = $at->utc();
+            $candidate = $at->toImmutable()->utc();
 
-            if ($latest === null || $candidate->greaterThan($latest)) {
-                $latest = $candidate;
+            if (! isset($latestByDevice[$deviceId]) || $candidate->greaterThan($latestByDevice[$deviceId])) {
+                $latestByDevice[$deviceId] = $candidate;
             }
         }
 
-        $deviceIds = array_values(array_unique($deviceIds));
-        sort($deviceIds);
+        ksort($latestByDevice);
 
         return [
-            'last_at' => $latest?->toIso8601String() ?? '',
             'count' => $rows->count(),
-            'device_ids' => $deviceIds,
+            'last_at_by_device' => array_map(
+                static fn ($at): string => $at->toIso8601String(),
+                $latestByDevice,
+            ),
         ];
     }
 }

@@ -35,8 +35,8 @@ use Throwable;
  *
  *   - the device is ACTIVE                     (a revoked tablet proves nothing)
  *   - the credential is un-revoked             (a withdrawn key proves nothing)
- *   - its device-binding verdict is acceptable (a policy tightened since the
- *                                               assertion invalidates it)
+ *   - its device-binding verdict is acceptable UNDER THE DEPLOYMENT'S OWN
+ *     POLICY, re-evaluated now rather than at assertion time
  *   - the assertion was recorded AGAINST that credential and that device
  *   - the assertion was a WEBAUTHN assertion
  *
@@ -81,6 +81,14 @@ final class DoctorWebAuthnLiveProofService
     public const FRESHNESS_NEVER_PROVEN = 'NEVER_PROVEN';
 
     public const FRESHNESS_UNVERIFIED = 'UNVERIFIED';
+
+    /**
+     * How far ahead of now a proof may be dated before it is disbelieved.
+     *
+     * Absorbs ordinary clock skew between the writing host and this process; it
+     * is not a grace period for a genuinely future-dated row.
+     */
+    private const FUTURE_PROOF_TOLERANCE_MINUTES = 5;
 
     public function __construct(
         private readonly DoctorWebAuthnLiveProofRepositoryInterface $proofs,
@@ -167,12 +175,24 @@ final class DoctorWebAuthnLiveProofService
             return $this->unverified($window, 'proof_query_failed');
         }
 
-        $rows = $devices
-            ->map(fn (DoctorDevice $device): array => $this->describeDevice($device, $proofs, $now, $window))
-            ->values()
-            ->all();
+        /*
+         * The description and roll-up are guarded too. Two try blocks covering
+         * only the queries left the pure-PHP half uncovered, and the class
+         * docblock's promise that EVERY failure resolves to UNVERIFIED was
+         * therefore false — adversarial review found a config-reachable throw
+         * in this half. A readiness engine that can throw is a readiness engine
+         * whose caller decides what its silence means.
+         */
+        try {
+            $rows = $devices
+                ->map(fn (DoctorDevice $device): array => $this->describeDevice($device, $proofs, $now, $window))
+                ->values()
+                ->all();
 
-        return $this->rollUp($rows, $window, $now);
+            return $this->rollUp($rows, $window, $now);
+        } catch (Throwable) {
+            return $this->unverified($window, 'proof_evaluation_failed');
+        }
     }
 
     /**
@@ -207,11 +227,34 @@ final class DoctorWebAuthnLiveProofService
      *                          two success rows.
      *
      *   binding acceptable   — re-evaluated against TODAY's policy, not the one
-     *                          in force when the credential was stored. A
-     *                          credential admitted under a loose policy must
-     *                          stop counting when the policy tightens, which is
-     *                          the same rule the per-request revalidation path
-     *                          already enforces for live sessions.
+     *                          in force when the credential was stored, using
+     *                          the SAME predicate the login path uses.
+     *
+     *                          That delegation cuts both ways and the honest
+     *                          statement of it is: this engine mirrors the
+     *                          deployment's admission policy, it does not hold
+     *                          a floor beneath it. Tighten
+     *                          `require_device_bound` and a credential admitted
+     *                          under the loose policy stops counting, matching
+     *                          the per-request revalidation path. RELAX it to
+     *                          false and `isAcceptable()` returns true for
+     *                          `backup_eligible`, `unknown` and an empty
+     *                          verdict alike — so a syncable credential's
+     *                          assertion becomes valid live proof.
+     *
+     *                          That is deliberate, not an oversight: if the
+     *                          deployment would let that credential log a
+     *                          doctor in, then its successful assertion IS
+     *                          evidence the browser leg works, and a readiness
+     *                          gate that reported NOT_READY while logins
+     *                          succeeded would be lying in the other direction.
+     *                          The earlier wording here claimed an unacceptable
+     *                          verdict could never stay green, which was true
+     *                          only in the tightening direction; adversarial
+     *                          review caught the overclaim. Production runs
+     *                          `require_device_bound = true`, and a test pins
+     *                          the relaxed behaviour so it is a recorded
+     *                          decision rather than a surprise.
      *
      * The relation is unfiltered, so the filtering happens here rather than
      * being assumed.
@@ -229,7 +272,7 @@ final class DoctorWebAuthnLiveProofService
     }
 
     /**
-     * @param  Collection<int, array{last_at:string,count:int,device_ids:list<int>}>  $proofs
+     * @param  Collection<int, array{count:int,last_at_by_device:array<int,string>}>  $proofs
      * @return array<string,mixed>
      */
     private function describeDevice(
@@ -289,21 +332,46 @@ final class DoctorWebAuthnLiveProofService
             }
 
             /*
-             * WRONG-DEVICE CORRELATION.
+             * DEVICE CORRELATION, STRUCTURAL RATHER THAN CHECKED.
              *
-             * The assertion recorded the device it was performed on. If that is
-             * not this device, the proof belongs to somewhere else and must not
-             * be borrowed. A credential is bound to one device, so this should
-             * never fire — which is exactly why it is asserted rather than
-             * assumed: the cheap check is the one that catches the migration
-             * that quietly re-pointed a row.
+             * The repository keys each credential's timestamps BY DEVICE, so
+             * reading this device's key can only ever return an assertion
+             * performed on this device. There is deliberately no membership
+             * test here any more: the previous shape offered a single "newest
+             * across every device" timestamp beside a flat device list, and a
+             * membership test passed while the timestamp came from a different
+             * tablet. Adversarial review broke exactly that, on the abnormal
+             * shape (a credential re-pointed to another device) the check
+             * existed to catch.
+             *
+             * A missing key is a device this credential has never proved, which
+             * is simply not a qualifying assertion.
              */
-            if (! in_array($deviceId, $proof['device_ids'], true)) {
+            $at = $proof['last_at_by_device'][$deviceId] ?? null;
+
+            if ($at === null) {
                 continue;
             }
 
+            /*
+             * A BLANK STRING IS NOT A TIMESTAMP, AND CARBON DISAGREES.
+             *
+             * `CarbonImmutable::parse('')` returns NOW — it does not throw. So
+             * a repository that handed back an empty value would mark every
+             * device freshly proven, and the catch below would never fire. The
+             * shipped repository cannot produce that, but this service depends
+             * on the INTERFACE, not on that class, and a fail-closed guarantee
+             * that rests on a collaborator's good behaviour is not one.
+             */
+            if (! is_string($at) || trim($at) === '') {
+                $row['live_assertion_proof'] = self::PROOF_UNVERIFIED;
+                $row['reason'] = 'proof_timestamp_unparseable';
+
+                return $row;
+            }
+
             try {
-                $at = CarbonImmutable::parse($proof['last_at'])->utc();
+                $at = CarbonImmutable::parse($at)->utc();
             } catch (Throwable) {
                 // A proof we cannot date cannot be aged, and an undateable
                 // proof must not be treated as a fresh one.
@@ -339,6 +407,26 @@ final class DoctorWebAuthnLiveProofService
             return $row;
         }
 
+        /*
+         * BOUNDED AT BOTH ENDS.
+         *
+         * The original comparison was one-sided, so an assertion dated in the
+         * future — writer-host clock skew, or a backfilled audit row — read
+         * FRESH forever and could never age out. A proof that claims to have
+         * happened after the measurement is not fresh evidence, it is evidence
+         * something is wrong with the clock or the row, and the honest answer
+         * to that is UNVERIFIED rather than a pass.
+         *
+         * A small tolerance absorbs ordinary skew between the writer and this
+         * process without admitting a genuinely future-dated row.
+         */
+        if ($latest->greaterThan($now->addMinutes(self::FUTURE_PROOF_TOLERANCE_MINUTES))) {
+            $row['live_assertion_proof'] = self::PROOF_UNVERIFIED;
+            $row['reason'] = 'proof_dated_in_the_future';
+
+            return $row;
+        }
+
         $fresh = $latest->greaterThanOrEqualTo($now->subDays($window));
 
         $row['live_assertion_proof'] = $fresh ? self::PROOF_PASS : self::PROOF_STALE;
@@ -365,6 +453,19 @@ final class DoctorWebAuthnLiveProofService
         $statuses = array_map(static fn (array $r): string => (string) $r['live_assertion_proof'], $rows);
 
         $proof = match (true) {
+            /*
+             * THE EMPTY ARM IS LOAD-BEARING, NOT DEFENSIVE.
+             *
+             * Without it every `in_array` below is false and the match falls to
+             * `default => PASS`: this function would answer READY to a
+             * population of nobody. `report()` guards against reaching here
+             * empty, but a guard in a DIFFERENT method is exactly how a false
+             * green survives a refactor — and worst-of over an empty set
+             * reporting PASS is the defect this whole programme exists to
+             * remove, rebuilt one level down. Adversarial review found it by
+             * calling rollUp([]) directly.
+             */
+            $statuses === [] => self::PROOF_UNVERIFIED,
             in_array(self::PROOF_UNVERIFIED, $statuses, true) => self::PROOF_UNVERIFIED,
             in_array(self::PROOF_NEVER_PROVEN, $statuses, true) => self::PROOF_NEVER_PROVEN,
             in_array(self::PROOF_STALE, $statuses, true) => self::PROOF_STALE,
@@ -458,6 +559,21 @@ final class DoctorWebAuthnLiveProofService
         $tz = (string) config('doctor_webauthn_live_proof.display_timezone', 'Asia/Makassar');
         $label = (string) config('doctor_webauthn_live_proof.display_timezone_label', 'WITA (UTC+8)');
 
-        return $at->setTimezone($tz)->toDateTimeString().' '.$label;
+        /*
+         * A DISPLAY STRING MUST NEVER TAKE DOWN A MEASUREMENT.
+         *
+         * `setTimezone()` throws on an unknown zone, and this value comes from
+         * the environment — `Asia/Makasar` with one `s` is a plausible typo.
+         * Before this guard that typo threw straight out of report(), past both
+         * try blocks, and the only thing containing it was the command's own
+         * catch: any other caller would have taken the exception. A convenience
+         * rendering is not worth a failed readiness report, so a bad zone
+         * degrades to the UTC value it was derived from, labelled honestly.
+         */
+        try {
+            return $at->setTimezone($tz)->toDateTimeString().' '.$label;
+        } catch (Throwable) {
+            return $at->toDateTimeString().' UTC (display timezone unusable)';
+        }
     }
 }

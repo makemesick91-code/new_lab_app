@@ -213,7 +213,7 @@ run is genuine and not a silent SQLite fallback: **98 passed / 427 assertions**.
 The repository decodes `new_values` in PHP precisely because `->>` and
 `json_extract` are spelled differently across the two engines.
 
-**Mutation: 11 applied, 11 killed, 0 survivors, 0 phantoms.**
+**Mutation: 16 applied, 16 killed, 0 survivors, 0 phantoms.**
 
 | # | Mutation | Result |
 |---|---|---|
@@ -228,6 +228,11 @@ The repository decodes `new_values` in PHP precisely because `->>` and
 | M9 | missing freshness policy treated as fresh | KILLED |
 | M10 | STALE rolled up as pass | KILLED |
 | M11 | UNVERIFIED rolled up as ready | KILLED |
+| M12 | empty roll-up arm removed (answers READY to nobody) | KILLED |
+| M13 | unusable display timezone throws out of the report | KILLED |
+| M14 | future-dated proof accepted as fresh | KILLED |
+| M15 | blank timestamp read as "now" | KILLED |
+| M16 | repository folds a device-less row into a neighbour | KILLED |
 
 Two things are worth recording about how that number was reached, because both
 are ways a mutation run can lie.
@@ -262,7 +267,88 @@ defensive rather than reachable through the repository. It is exercised through
 a stub, and the test says so instead of implying the database can produce a row
 it cannot.
 
-## 11. Durable rules
+## 11. Adversarial review — four real defects, all fixed before merge
+
+Two independent reviewers were asked to **refute** the sprint's claims rather
+than confirm them. They refuted three, and raised a fourth as a latent hole.
+Every one was a genuine fail-open, and the first draft of this engine shipped
+none of the protections below.
+
+**D1 — a device could borrow a fresher assertion performed on another device.**
+The repository returned one `last_at` per credential (the max across every row)
+beside a flat `device_ids` union, and the service checked *membership*. A
+credential whose history spans two devices therefore passed the membership test
+for **both**, and then used whichever timestamp was newest. Device 3 could
+report `PASS` off an assertion performed on device 7 while its own newest
+assertion was months old.
+
+It is reachable only when a credential's `doctor_device_id` changed over its
+life — a device swap, a data fix, or exactly the *"migration that quietly
+re-pointed a row"* the correlation check was written to catch. **The check built
+for the abnormal case failed open precisely on it**, and this document's own
+interface contract said that shape must be distrusted "rather than averaged
+away". The code averaged it away.
+
+Fixed structurally rather than with another check: the repository now keys
+timestamps **by device** (`last_at_by_device`), so device 3 can only ever read
+device 3's own latest assertion. The borrow is unrepresentable, not merely
+detected. The membership test is gone.
+
+**D2 — `rollUp([])` answered READY.** With an empty status list every `in_array`
+is false and the match fell to `default => PASS`. `report()` guards against
+reaching it empty, but **a guard in a different method is how a false green
+survives a refactor** — and this is the empty-population defect the programme
+already shipped once, rebuilt one level down. There is now an explicit
+`$statuses === []` arm returning UNVERIFIED, and a test that calls `rollUp`
+directly so the arm holds on its own rather than because the caller happened not
+to exercise it.
+
+**D3 — the "every failure resolves to UNVERIFIED" promise was false.** Only the
+two queries were guarded; the per-device description and roll-up were not, and
+`local()` throws on an unknown timezone read from the environment
+(`Asia/Makasar`, one `s`, is a plausible typo). That threw straight out of
+`report()`. The command's own catch masked it, so any *other* caller would have
+taken the exception. `local()` now degrades to a labelled UTC string, and the
+evaluation half is inside a guard resolving to `proof_evaluation_failed`.
+
+**D4 — the binding guarantee was env-conditional, and the tests could not see
+it.** With `WEBAUTHN_REQUIRE_DEVICE_BOUND=false`, `isAcceptable()` returns true
+for `backup_eligible`, `unknown` and an empty verdict alike, so a syncable
+credential's assertion counts as live proof. Both tests asserting otherwise pin
+the config to `true` in `beforeEach` — they assert the **policy**, not the
+engine. This is the single-proof-fixture shape: two tests named for a property
+passing while the property is conditional.
+
+The delegation itself is kept and is deliberate — if the deployment would let
+that credential log a doctor in, then its successful assertion *is* evidence the
+browser leg works, and reporting NOT_READY while logins succeed would be lying
+in the other direction. What was wrong was the **claim**: the docblock said an
+unacceptable verdict could never stay green, which held only in the tightening
+direction. The wording now states both directions, and a test exercises the
+relaxed policy so it is a recorded decision rather than a surprise. Production
+runs the policy at `true`.
+
+**Two further hardenings raised as caveats rather than defects.**
+`CarbonImmutable::parse('')` returns **now** rather than throwing, so a
+contract-violating repository handing back a blank value would have marked every
+device freshly proven — the service depends on the *interface*, and a
+fail-closed guarantee resting on a collaborator's good behaviour is not one. And
+the freshness comparison was one-sided, so an assertion dated in the future
+(clock skew, or a backfilled row) read FRESH forever and could never age out.
+Both are now closed, with a five-minute skew tolerance that absorbs ordinary
+drift without admitting a genuinely future-dated row.
+
+**What the reviewers could not break:** the single-writer guarantee on
+`DOCTOR_DEVICE_WEBAUTHN_LOGIN_SUCCESS` (the deny path writes a different
+action); the exclusion of `last_used_at` (no executable read anywhere); revoked
+credentials (excluded twice over — the id never even reaches the query);
+inactive devices (closed status domain, no soft deletes, no global scopes);
+Android proof (two independent clauses, and the Android writer uses a different
+`entity_type`); one tablet dominating the estate; the unchanged `verdict` and
+`--strict` semantics; and the absence of any scope mutation — the diff writes
+nothing and enables nothing.
+
+## 12. Durable rules
 
 1. **WEBAUTHN-READINESS-LIVE-PROOF-INVARIANT.** Doctor WebAuthn readiness must
    not be reported READY solely because configuration is armed or

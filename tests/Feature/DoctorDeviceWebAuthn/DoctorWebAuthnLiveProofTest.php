@@ -379,14 +379,12 @@ it('carries a device-level UNVERIFIED up to the estate verdict, outranking a fre
             {
                 return collect([
                     $this->freshCredential => [
-                        'last_at' => '2026-09-19 11:55:00',
                         'count' => 1,
-                        'device_ids' => [$this->freshDevice],
+                        'last_at_by_device' => [$this->freshDevice => '2026-09-19 11:55:00'],
                     ],
                     $this->badCredential => [
-                        'last_at' => 'not-a-timestamp',
                         'count' => 1,
-                        'device_ids' => [$this->badDevice],
+                        'last_at_by_device' => [$this->badDevice => 'not-a-timestamp'],
                     ],
                 ]);
             }
@@ -477,4 +475,209 @@ it('reports device ids and never device names, credential ids or key material', 
         ->and($raw)->not->toContain($credential->public_key)
         // The id is what an operator acts on, and it is not sensitive.
         ->and($raw)->toContain('"device_id":'.$device->id);
+});
+
+// ---------------------------------------------------------------------------
+// Found by adversarial review: a credential with history on TWO devices
+// ---------------------------------------------------------------------------
+
+it('never lets a device borrow a fresher assertion performed on a different device', function () {
+    /*
+     * THE DEFECT THIS PINS.
+     *
+     * The first implementation returned ONE `last_at` per credential (the max
+     * across every row) beside a flat `device_ids` union, and the service
+     * checked membership. A credential whose history spans two devices then
+     * passed the membership test for BOTH and used whichever timestamp was
+     * newest — so this device could report PASS on an assertion performed
+     * somewhere else, while its own newest assertion was long stale.
+     *
+     * It is reachable only when a credential's `doctor_device_id` changed over
+     * its life: a device swap, a data fix, or the "migration that quietly
+     * re-pointed a row" the correlation was written to catch. The check built
+     * for the abnormal case failed open precisely on it.
+     *
+     * The repository now keys timestamps BY DEVICE, so the borrow is
+     * unrepresentable rather than merely checked.
+     */
+    $subject = lpDevice();
+    $elsewhere = lpDevice();
+
+    $credential = lpCredential($subject);
+
+    // This device's own newest assertion is long past the window...
+    lpWebAuthnProof($credential, $subject, '2026-09-01 08:00:00');
+    // ...and the same credential has a very recent assertion on another device.
+    lpWebAuthnProof($credential, $elsewhere, lpNow()->subMinutes(10)->toDateTimeString());
+
+    $rows = collect(lpReport()['devices'])->keyBy('device_id');
+
+    // The subject is judged on ITS OWN history, which is stale.
+    expect($rows[$subject->id]['live_assertion_proof'])
+        ->toBe(DoctorWebAuthnLiveProofService::PROOF_STALE)
+        ->and($rows[$subject->id]['proof_age_days'])->toBeGreaterThan(7.0);
+
+    /*
+     * And the other device does not inherit it either, for a separate and
+     * equally correct reason: the credential lives on the subject, so
+     * `$elsewhere` holds none of its own and cannot serve a ceremony at all.
+     * Its fresh-looking history is the residue of the re-pointing.
+     *
+     * Two independent filters therefore refuse the borrow — per-device keying,
+     * and the usable-credential gate — and neither is load-bearing alone.
+     */
+    expect($rows[$elsewhere->id]['live_assertion_proof'])
+        ->toBe(DoctorWebAuthnLiveProofService::PROOF_NEVER_PROVEN)
+        ->and($rows[$elsewhere->id]['reason'])->toBe('no_usable_credential');
+
+    // The estate is therefore NOT ready, which is the truthful answer.
+    expect(lpReport()['effective_readiness'])
+        ->toBe(DoctorWebAuthnLiveProofService::READINESS_NOT_READY);
+});
+
+it('ignores an assertion row that does not say which device it happened on', function () {
+    $device = lpDevice();
+    $credential = lpCredential($device);
+
+    $proof = lpWebAuthnProof($credential, $device, lpNow()->subMinutes(5)->toDateTimeString());
+    // A payload with no device cannot prove any device, and must not be folded
+    // into a neighbour's timestamp or invent a key of its own.
+    $proof->forceFill(['new_values' => ['doctor_id' => 21]])->save();
+
+    $report = lpReport();
+
+    expect($report['devices'][0]['live_assertion_proof'])
+        ->toBe(DoctorWebAuthnLiveProofService::PROOF_NEVER_PROVEN)
+        ->and($report['devices'][0]['reason'])->toBe('no_qualifying_assertion')
+        ->and($report['effective_readiness'])->toBe(DoctorWebAuthnLiveProofService::READINESS_NOT_READY);
+});
+
+// ---------------------------------------------------------------------------
+// Found by adversarial review: fail-open holes behind the "always UNVERIFIED"
+// contract, and a guarantee that turned out to be env-conditional
+// ---------------------------------------------------------------------------
+
+it('answers UNVERIFIED, not READY, when the roll-up itself is handed nobody', function () {
+    /*
+     * rollUp() used to fall through to `default => PASS` on an empty status
+     * list, so it answered READY to a population of nobody. report() guards
+     * against reaching it empty — but a guard in a DIFFERENT method is how a
+     * false green survives a refactor, and this is the same empty-population
+     * defect the programme already shipped once, one level down.
+     *
+     * Reached through the public surface by making the estate read return
+     * nothing, which is the only way a caller can get there.
+     */
+    expect(lpReport()['effective_readiness'])
+        ->toBe(DoctorWebAuthnLiveProofService::READINESS_UNVERIFIED);
+
+    // And directly, because the arm must hold on its own rather than because
+    // the caller happened not to call it.
+    $rollUp = new ReflectionMethod(DoctorWebAuthnLiveProofService::class, 'rollUp');
+    $rollUp->setAccessible(true);
+
+    $empty = $rollUp->invoke(app(DoctorWebAuthnLiveProofService::class), [], 7, lpNow());
+
+    expect($empty['live_assertion_proof'])->toBe(DoctorWebAuthnLiveProofService::PROOF_UNVERIFIED)
+        ->and($empty['effective_readiness'])->toBe(DoctorWebAuthnLiveProofService::READINESS_UNVERIFIED);
+});
+
+it('survives an unusable display timezone instead of throwing out of the report', function () {
+    // One `s`. A plausible typo in an environment value, and before this guard
+    // it threw straight past both try blocks and out of report().
+    config()->set('doctor_webauthn_live_proof.display_timezone', 'Asia/Makasar');
+
+    $device = lpDevice();
+    lpWebAuthnProof(lpCredential($device), $device, '2026-09-19 00:53:04');
+
+    $report = lpReport();
+
+    // The measurement still lands, and the clinic-local rendering degrades
+    // honestly rather than silently claiming a local time it could not compute.
+    expect($report['live_assertion_proof'])->toBe(DoctorWebAuthnLiveProofService::PROOF_PASS)
+        ->and($report['last_qualifying_proof_utc'])->toContain('UTC')
+        ->and($report['last_qualifying_proof_local'])->toContain('display timezone unusable');
+});
+
+it('refuses a proof dated in the future rather than treating it as permanently fresh', function () {
+    $device = lpDevice();
+    // Writer-host clock skew, or a backfilled audit row. The freshness test was
+    // one-sided, so this read FRESH forever and could never age out.
+    lpWebAuthnProof(lpCredential($device), $device, lpNow()->addDays(3)->toDateTimeString());
+
+    $report = lpReport();
+
+    expect($report['live_assertion_proof'])->toBe(DoctorWebAuthnLiveProofService::PROOF_UNVERIFIED)
+        ->and($report['devices'][0]['reason'])->toBe('proof_dated_in_the_future')
+        ->and($report['effective_readiness'])->toBe(DoctorWebAuthnLiveProofService::READINESS_UNVERIFIED);
+});
+
+it('does not read a blank timestamp from a collaborator as "now"', function () {
+    /*
+     * CarbonImmutable::parse('') returns NOW and does not throw, so a
+     * contract-violating repository handing back an empty value would mark
+     * every device freshly proven and the catch would never fire. The shipped
+     * repository cannot produce that — but this service depends on the
+     * INTERFACE, and a fail-closed guarantee resting on a collaborator's good
+     * behaviour is not a guarantee.
+     */
+    $device = lpDevice();
+    $credential = lpCredential($device);
+
+    app()->bind(
+        DoctorWebAuthnLiveProofRepositoryInterface::class,
+        fn () => new class($device->id, $credential->id) implements DoctorWebAuthnLiveProofRepositoryInterface
+        {
+            public function __construct(private int $deviceId, private int $credentialId) {}
+
+            public function latestWebAuthnProofForCredentials(array $credentialIds): Collection
+            {
+                return collect([
+                    $this->credentialId => [
+                        'count' => 1,
+                        'last_at_by_device' => [$this->deviceId => ''],
+                    ],
+                ]);
+            }
+        }
+    );
+
+    $report = lpReport();
+
+    expect($report['live_assertion_proof'])->toBe(DoctorWebAuthnLiveProofService::PROOF_UNVERIFIED)
+        ->and($report['devices'][0]['reason'])->toBe('proof_timestamp_unparseable')
+        ->and($report['effective_readiness'])->not->toBe(DoctorWebAuthnLiveProofService::READINESS_READY);
+});
+
+it('mirrors the deployment binding policy when device binding is NOT required', function () {
+    /*
+     * A RECORDED DECISION, NOT AN OVERSIGHT.
+     *
+     * Every other binding test pins require_device_bound = true in beforeEach,
+     * so they assert the POLICY rather than the engine — adversarial review
+     * pointed out that the guarantee was env-conditional and invisible to the
+     * suite. This is the missing case.
+     *
+     * With the policy relaxed, WebAuthnDeviceBinding::isAcceptable() returns
+     * true for every verdict, and a syncable credential's assertion counts as
+     * live proof. That is intended: if the deployment would let that credential
+     * log a doctor in, its successful assertion IS evidence the browser leg
+     * works, and reporting NOT_READY while logins succeed would be lying in the
+     * other direction. Production runs the policy at true.
+     */
+    config()->set('webauthn.device_binding.require_device_bound', false);
+
+    $device = lpDevice();
+    $credential = lpCredential($device, DoctorDeviceWebAuthnCredential::VERDICT_BACKUP_ELIGIBLE);
+    lpWebAuthnProof($credential, $device, '2026-09-19 00:53:04');
+
+    expect(lpReport()['effective_readiness'])
+        ->toBe(DoctorWebAuthnLiveProofService::READINESS_READY);
+
+    // Tighten the policy and the SAME credential stops counting, on the same
+    // data — which is the direction that actually protects the estate.
+    config()->set('webauthn.device_binding.require_device_bound', true);
+
+    expect(lpReport()['effective_readiness'])
+        ->toBe(DoctorWebAuthnLiveProofService::READINESS_NOT_READY);
 });
