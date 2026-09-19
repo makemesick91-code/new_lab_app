@@ -1,42 +1,44 @@
-# FIX-DOCTOR-WEBAUTHN-READINESS-LIVE-PROOF-1
+# FIX-SUNU-GO-LIVE-BLOCKERS-1
 #
-# Child of REVISION-DOCTOR-PWA-WEBAUTHN-ONLY-ACCESS-1, opened by a truth gap the
-# verify-device bugfix left behind.
+# Closes the blockers found by DAENGTISIAMS-SUNU-GO-LIVE-READINESS-1 while
+# gating the Cabang Sunu (SPN4) go-live.
 #
-# `webauthn:readiness` reported VERDICT=ARMED every day from 2026-09-09 to
-# 2026-09-19 while the browser leg produced no successful assertion at all. It
-# was never wrong about what it measured: a feature flag and a COUNT(*) over the
-# credential table, neither of which can change when a ceremony stops working.
-# The Android Keystore path kept working throughout, which is why nobody
-# noticed — the two proofs share no code path.
+# Two runtime correctness fixes and two operations fixes, all of them earned by
+# a defect observed on production rather than inferred from reading:
 #
-# This sprint adds the dimension that was missing. Readiness now incorporates
-# current server-side evidence of a successfully verified WebAuthn assertion,
-# correlated to a currently-eligible device and credential, inside an
-# owner-decided freshness window.
+#   B5  a visit with NO medical record could be invoiced — the finalization
+#       guard only fired when a record existed. SPN4 visit 52 sat in exactly
+#       that state, billable, for twelve days.
+#   B6  revoking a break-glass grant left its session lease open, and under
+#       single_active_session an open lease locks the doctor out of EVERY path.
+#       The 2026-09-18 drill left one open for ~18 hours.
+#   B2  both documented restore procedures would have failed — pg_restore
+#       against plain-text dumps, and a rehearsal the app role cannot run.
+#   B3  no scheduled database backup existed at all, and schedule:run is never
+#       invoked, so a Laravel-scheduled one would silently no-op.
 #
-# It RETIRES NOTHING, moves no flag, widens no scope and starts no Stage 4.
-# Production is EXPECTED to report NOT_READY after this ships, and that is the
-# correct outcome rather than a regression.
+# It arms no flag, widens no scope, retires nothing and starts no stage.
 
-id: FIX-DOCTOR-WEBAUTHN-READINESS-LIVE-PROOF-1
+id: FIX-SUNU-GO-LIVE-BLOCKERS-1
 type: RUNTIME_FIX
-module: DoctorDevice
-title: "WebAuthn readiness must prove a live assertion, not merely a flag and a row count"
+module: RmeInvoice,DoctorAccess
+title: "Billing needs a finalized record; break-glass revoke must free its lease; backups must be scheduled and restorable"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
 # Impact flags — declared against the CURRENT diff, verified against the BASE
-# ref rather than against the working tree.
+# ref rather than the working tree.
 #
-# security_impact is TRUE and deliberately so even though this WIDENS nothing.
-# The diff changes how a security posture is REPORTED, and a readiness engine
-# that lies is a security problem whichever direction it lies in. Nothing here
-# touches the WebAuthn requirement, the device binding, user verification,
-# DoctorDeviceAuthorization, the single-session gate or pilot enforcement.
+# security_impact is TRUE: B6 changes what happens when emergency access is
+# revoked, and B5 changes who may create a financial record. Neither widens
+# access — B5 refuses strictly more than before, and B6 ends a session that
+# revocation had already decided should end.
 #
-# frontend_change is FALSE: no JS, CSS or Vite input is touched.
-# schema_change is FALSE: the audit trail already holds the evidence, so no
-# table, column, migration or event stream was added.
+# ledger_impact is FALSE in the inventory sense (no stock movement is touched),
+# but B5 does gate INVOICE creation, which is called out here rather than left
+# for a reviewer to discover.
+#
+# schema_change FALSE: no table, column or migration. frontend_change FALSE: no
+# JS, CSS or Vite input.
 runtime_change: true
 schema_change: false
 frontend_change: false
@@ -44,53 +46,59 @@ security_impact: true
 branch_isolation_impact: false
 ledger_impact: false
 
-# Deploy is required: the defect is in a command an operator runs ON
-# production, and the fix is only real once the deployed runtime computes the
-# new dimension. The proof of the fix is a production measurement, not a test
-# run — and that measurement is expected to be red.
+# Deploy is required: the go-live depends on the fixed billing gate being the
+# one that runs, and the owner sequenced the Sunu payment UAT AFTER this deploy
+# so the staff test exercises the fixed build rather than the old one.
 deploy_required: true
 browser_required: false
 
 test_profiles: []
 
-# This child tag means ONLY that the readiness ENGINE tells the truth. It is
-# emphatically not a statement that the estate is ready, and it authorizes no
-# stage move.
-go_tag: fix-doctor-webauthn-readiness-live-proof-1-go
+go_tag: fix-sunu-go-live-blockers-1-go
 go_tag_created: false
 
 # ---------------------------------------------------------------------------
 # WHAT THIS SPRINT INHERITS
 #
 # `.sprint/current.yml` is a ROLLING file, so these are re-stated for this
-# sprint rather than carried over. Dropping one is the failure mode a new sprint
-# hits most easily, and it is not cosmetic: `inherits_closure` below is asserted
-# by LegacyRmeProgramClosureContractTest, and omitting it has already cost this
-# programme a full CI cycle.
+# sprint rather than carried over. Dropping one is the failure mode a new
+# sprint hits most easily, and `inherits_closure` is asserted by
+# LegacyRmeProgramClosureContractTest.
 # ---------------------------------------------------------------------------
 
-# The live doctor-access posture this revision starts from: single active
-# session ON, branch lock OFF, enforcement scoped to a 3-doctor pilot.
+# The live doctor-access posture this sprint starts from and does NOT move:
+# single active session ON, branch lock OFF, enforcement scoped to a 3-doctor
+# pilot, global scope not permitted.
 inherits_parent_programme: DOCTOR-ACCESS-GLOBAL-ACTIVATION-1
 inherits_parent_sprint: DOCTOR-ACCESS-GLOBAL-ACTIVATION-1-HALF-A-CUTOVER
 inherits_parent_go: doctor-access-global-activation-half-a-1-go
 inherits_pilot_go: doctor-pwa-multi-doctor-pilot-1-go
-
-# The base this branch was cut from.
 inherits_readiness_go: doctor-access-global-device-enforcement-readiness-1-go
 
-# The immediate parent: the verify-device fix and its real-device closure, whose
-# §7 recorded this readiness truth gap as the work to be carried forward.
-inherits_child_go: bugfix-doctor-pwa-webauthn-verify-device-no-feedback-2-go
+# The base this branch was cut from — the exact deployed production runtime.
+inherits_child_go: fix-doctor-webauthn-readiness-live-proof-1-go
 
-# Asserted by LegacyRmeProgramClosureContractTest: every post-closure sprint
-# must name the closure it inherits, because that is the fact a later sprint is
-# most likely to contradict quietly. Re-stated, not relaxed.
+# Asserted by LegacyRmeProgramClosureContractTest.
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
 
 # Still open, and this sprint does not touch it.
 inherits_hold: FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1/FIX-02
 
-# Phase 0 decision, unchanged: the Half-B ACTIVATION DESIGN is superseded by the
-# PWA-only product decision. Its readiness machinery and GO tag stand untouched.
+# The Half-B ACTIVATION DESIGN remains superseded by the PWA-only product
+# decision; its readiness machinery and GO tag stand untouched.
 supersedes_activation_design_of: DOCTOR-ACCESS-GLOBAL-DEVICE-ENFORCEMENT-READINESS-1
+
+# ---------------------------------------------------------------------------
+# OWNER DECISIONS RECORDED BY THIS SPRINT
+# ---------------------------------------------------------------------------
+#
+# B4: Cabang Sunu goes live with doctor.branch_lock=false. Doctors may work
+# across branches by design; Admin Klinik / Perawat / Kasir remain server-side
+# branch restricted. ACCEPTED_DESIGN — explicitly NOT a branch-isolation pass
+# for doctors, and it must never be written up as one.
+#
+# B1: the Sunu payment UAT runs AFTER this deploy, performed by clinic staff
+# through the real UI. It is a human gate; no invoice or payment row is created
+# by this sprint.
+#
+# Visit 52 is left untouched. No medical record was fabricated to clear it.

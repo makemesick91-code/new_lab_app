@@ -150,8 +150,22 @@ class RmeInvoiceService
                 ]);
             }
 
+            // Sprint 20's billing rule is "Cashier billing requires finalized
+            // RME + cashier_pending visit", and this is where it is enforced.
+            //
+            // FIX-SUNU-GO-LIVE-BLOCKERS-1 / B5 — this read `if ($medicalRecord
+            // && ...)`, which gated a record that EXISTS but skipped the gate
+            // entirely when there was none. A visit carrying no clinical record
+            // at all was therefore billable, and the invoice was written with a
+            // null medical_record_id: a charge with nothing clinical behind it.
+            // Reaching `cashier_pending` does not by itself write a record, so
+            // this was reachable through the ordinary workflow, not only by
+            // misuse — SPN4 visit 52 sat in exactly that state.
+            //
+            // ABSENT IS NOT THE SAME AS VALID. Fail closed on null: a missing
+            // record is a stronger reason to refuse than an unfinalized one.
             $medicalRecord = $visit->medicalRecord;
-            if ($medicalRecord && $medicalRecord->status !== MedicalRecord::STATUS_FINAL) {
+            if ($medicalRecord === null || $medicalRecord->status !== MedicalRecord::STATUS_FINAL) {
                 throw ValidationException::withMessages([
                     'clinic_visit_id' => 'RME belum difinalisasi oleh dokter.',
                 ]);
@@ -176,7 +190,9 @@ class RmeInvoiceService
                 'branch_id' => $branchId,
                 'clinic_visit_id' => $visit->id,
                 'patient_id' => $visit->patient_id,
-                'medical_record_id' => $medicalRecord?->id,
+                // Non-null by the guard above: an invoice can no longer exist
+                // without the finalized record it bills for.
+                'medical_record_id' => $medicalRecord->id,
                 'cashier_id' => $cashier->id,
                 'invoice_number' => $invoiceNumber,
                 'status' => RmeInvoice::STATUS_UNPAID,

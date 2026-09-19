@@ -7,7 +7,9 @@ namespace App\Modules\DoctorAccess\Services;
 use App\Models\User;
 use App\Modules\Doctor\Services\DoctorIdentityResolver;
 use App\Modules\DoctorAccess\Interfaces\DoctorBreakGlassGrantRepositoryInterface;
+use App\Modules\DoctorAccess\Interfaces\DoctorSessionLeaseRepositoryInterface;
 use App\Modules\DoctorAccess\Models\DoctorBreakGlassGrant;
+use App\Modules\DoctorAccess\Models\DoctorSessionLease;
 use App\Modules\LabOrder\Services\AuditLogService;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -60,6 +62,9 @@ class DoctorBreakGlassService
         private readonly DoctorBreakGlassGrantRepositoryInterface $grants,
         private readonly DoctorIdentityResolver $doctors,
         private readonly AuditLogService $auditLogs,
+        private readonly DoctorSessionLeaseRepositoryInterface $leases,
+        private readonly DoctorSessionReleaseService $sessionReleases,
+        private readonly DoctorSessionLeaseService $sessionLeases,
     ) {}
 
     /**
@@ -167,14 +172,97 @@ class DoctorBreakGlassService
                 'revoked_reason' => $reason,
             ]);
 
+            // FIX-SUNU-GO-LIVE-BLOCKERS-1 / B6 — ending the grant is only half
+            // of ending the access. Revocation denies the NEXT request, but the
+            // session lease the emergency window created stayed open, and under
+            // `doctor.single_active_session` an open lease is an incumbent: the
+            // doctor could no longer log in by ANY path until somebody released
+            // it by hand. The 2026-09-18 production drill left exactly that —
+            // a lease open for ~18 hours after a 72-second grant.
+            //
+            // Inside the SAME transaction on purpose: "grant revoked but lease
+            // still held" is the precise partial state this must never produce.
+            $leaseReleased = $this->releaseEmergencyLease($locked, $actor, $reason);
+
             $this->auditLogs->log(self::ENTITY, (int) $updated->id, self::ACTION_REVOKED, $before, [
                 'state' => $updated->state(),
                 'revoked_by' => $updated->revoked_by,
                 'reason' => $updated->revoked_reason,
+                // Stated either way so the trail distinguishes "nothing to
+                // release" from "release skipped", instead of staying silent.
+                'session_lease_released' => $leaseReleased,
             ], $actor);
 
             return $updated;
         });
+    }
+
+    /**
+     * Release the session lease THIS emergency window created — and nothing else.
+     *
+     * Scoped deliberately, because the destructive mistake here is logging out
+     * a session the grant never produced:
+     *
+     *  - a grant that was never used carried no session, so there is nothing of
+     *    its making to release;
+     *  - a lease claimed BEFORE the window opened belongs to a different,
+     *    legitimate login and is left alone;
+     *  - the actor revoking their own grant is skipped rather than refused,
+     *    because the canonical release service rejects self-release and
+     *    revocation must never become impossible. They can log out normally.
+     *
+     * Composes {@see DoctorSessionReleaseService} rather than touching the
+     * lease directly, so the room is freed and the approver audit row is
+     * written by the one service that owns that behaviour.
+     */
+    private function releaseEmergencyLease(DoctorBreakGlassGrant $grant, User $actor, string $reason): bool
+    {
+        if ($grant->first_used_at === null) {
+            return false;
+        }
+
+        if ((int) $grant->user_id === (int) $actor->id) {
+            return false;
+        }
+
+        $lease = $this->leases->activeForUser((int) $grant->user_id);
+
+        if ($lease === null) {
+            return false;
+        }
+
+        // Strict `lt` on purpose. These columns are second-precision, so a
+        // lease claimed in the same second as the grant is treated as the
+        // emergency one — which it almost always is, the login following the
+        // grant immediately. Using `lte` here would skip the very lease this
+        // method exists to release.
+        if ($lease->claimed_at === null || $lease->claimed_at->lt($grant->granted_at)) {
+            return false;
+        }
+
+        // Preferred surface: it frees the clinic room and writes the approver
+        // audit row. It resolves the subject through `mst_doctors`, so it can
+        // refuse for reasons that have nothing to do with this revocation.
+        if ($grant->doctor_id !== null) {
+            try {
+                return $this->sessionReleases->releaseForDoctor((int) $grant->doctor_id, $actor, $reason);
+            } catch (ValidationException) {
+                // Fall through deliberately. REVOCATION MUST NEVER BECOME
+                // IMPOSSIBLE: letting this propagate would roll the whole
+                // transaction back and leave a LIVE, UNREVOKABLE emergency
+                // grant — strictly worse than the stale lease being fixed.
+            }
+        }
+
+        // Fallback keyed on `user_id`, which is what the lease is actually
+        // keyed on. This covers a Doctor-role account with no linked
+        // `mst_doctors` row: such an account still claims a lease, so it can
+        // still be stranded by one, and it must still be releasable.
+        return $this->sessionLeases->releaseFor(
+            (int) $grant->user_id,
+            DoctorSessionLease::RELEASE_ADMIN,
+            $actor,
+        ) !== null;
     }
 
     /**
