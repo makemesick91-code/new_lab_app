@@ -378,6 +378,86 @@ it('completes a doctor login from an approved device and binds the session', fun
         ->and(session(DoctorAppLoginGate::SESSION_DOCTOR_ID))->toBe($fixture['doctor']->id);
 });
 
+it('stamps the authorization it used on a successful webauthn login', function () {
+    // D8. Until this sprint `last_authorized_login_at` had a single writer,
+    // reached only from ANDROID ticket redemption, so a doctor who logged in
+    // through the PWA left it NULL forever. Measured on production: across 62
+    // authorizations and 16 WebAuthn logins, stamps falling within +/-5s of a
+    // WebAuthn login numbered ZERO.
+    $fixture = waClinicFixture();
+    ['authenticator' => $authenticator] = waEnroll($fixture['device']);
+    waFlags(enforcement: true, webauthn: true);
+
+    $authorization = DoctorDeviceAuthorization::query()
+        ->where('doctor_id', $fixture['doctor']->id)
+        ->where('doctor_device_id', $fixture['device']->id)
+        ->firstOrFail();
+
+    expect($authorization->last_authorized_login_at)->toBeNull('fixture is vacuous: already stamped');
+
+    $step = waReachAssertionStep($fixture, $authenticator);
+
+    post(route('doctor-device-webauthn.store'), [
+        'credential' => $authenticator->assertion($step['challenge'], (string) $fixture['device']->uuid),
+    ])->assertRedirect();
+
+    expect($authorization->fresh()->last_authorized_login_at)->not->toBeNull(
+        'a successful WebAuthn login did not stamp the authorization it used',
+    );
+});
+
+it('does not stamp any other authorization on the same device', function () {
+    $fixture = waClinicFixture();
+    ['authenticator' => $authenticator] = waEnroll($fixture['device']);
+    waFlags(enforcement: true, webauthn: true);
+
+    // A SECOND doctor authorized on the very same tablet. Only the row the
+    // login actually resolved may move.
+    $otherUser = User::factory()->create(['name' => 'drg Lain']);
+    $otherUser->assignRole('Doctor');
+    $otherDoctor = Doctor::factory()->create(['user_id' => $otherUser->id, 'is_active' => true]);
+    $bystander = DoctorDeviceAuthorization::factory()->active()->create([
+        'doctor_id' => $otherDoctor->id,
+        'doctor_device_id' => $fixture['device']->id,
+    ]);
+
+    $step = waReachAssertionStep($fixture, $authenticator);
+
+    post(route('doctor-device-webauthn.store'), [
+        'credential' => $authenticator->assertion($step['challenge'], (string) $fixture['device']->uuid),
+    ])->assertRedirect();
+
+    expect($bystander->fresh()->last_authorized_login_at)->toBeNull(
+        'a bystander authorization on the same device was stamped',
+    );
+});
+
+it('does not stamp the authorization when the assertion is forged', function () {
+    $fixture = waClinicFixture();
+    ['authenticator' => $authenticator] = waEnroll($fixture['device']);
+    waFlags(enforcement: true, webauthn: true);
+
+    $authorization = DoctorDeviceAuthorization::query()
+        ->where('doctor_id', $fixture['doctor']->id)
+        ->where('doctor_device_id', $fixture['device']->id)
+        ->firstOrFail();
+
+    $step = waReachAssertionStep($fixture, $authenticator);
+
+    post(route('doctor-device-webauthn.store'), [
+        'credential' => $authenticator->assertion(
+            $step['challenge'],
+            (string) $fixture['device']->uuid,
+            forgeSignature: true,
+        ),
+    ])->assertSessionHasErrors('credential');
+
+    // A timestamp claiming a login succeeded is worse than no timestamp.
+    expect($authorization->fresh()->last_authorized_login_at)->toBeNull(
+        'a refused assertion stamped the authorization anyway',
+    );
+});
+
 it('refuses a forged signature', function () {
     $fixture = waClinicFixture();
     ['authenticator' => $authenticator] = waEnroll($fixture['device']);
@@ -808,13 +888,16 @@ it('reports a usable relying party without naming a single device or credential'
     $fixture = waClinicFixture();
     ['credential' => $credential] = waEnroll($fixture['device']);
 
-    $this->artisan('webauthn:readiness')
+    // D7: --report-only, because this test is about the RELYING PARTY, not
+    // liveness. The default now fails closed on an unproven estate, and this
+    // fixture has no assertion behind its credential.
+    $this->artisan('webauthn:readiness', ['--report-only' => true])
         ->expectsOutputToContain('RELYING_PARTY_ID='.WA_RP_ID)
         ->assertExitCode(0);
 
     $json = json_decode(
         (string) tap(new BufferedOutput, function ($out) {
-            Artisan::call('webauthn:readiness', ['--json' => true], $out);
+            Artisan::call('webauthn:readiness', ['--json' => true, '--report-only' => true], $out);
         })->fetch(),
         true,
     );
@@ -845,7 +928,8 @@ it('fails under --strict when the relying party could not run a ceremony', funct
     config()->set('webauthn.relying_party.id', 'clinic.example.test');
     config()->set('webauthn.relying_party.allowed_origins', 'http://clinic.example.test');
 
-    $this->artisan('webauthn:readiness')->assertExitCode(0);
+    // D7: report-only isolates the relying-party dimension this test owns.
+    $this->artisan('webauthn:readiness', ['--report-only' => true])->assertExitCode(0);
     $this->artisan('webauthn:readiness', ['--strict' => true])->assertExitCode(1);
 });
 
@@ -858,7 +942,10 @@ it('reports a missing schema as unavailable rather than as zero credentials', fu
     Schema::drop('trx_doctor_device_webauthn_credentials');
 
     $output = new BufferedOutput;
-    $exit = Artisan::call('webauthn:readiness', ['--json' => true], $output);
+    // D7: report-only — a dropped table is a SCHEMA answer, and this test
+    // asserts the command degrades gracefully rather than that the estate is
+    // live.
+    $exit = Artisan::call('webauthn:readiness', ['--json' => true, '--report-only' => true], $output);
 
     $json = json_decode($output->fetch(), true);
 

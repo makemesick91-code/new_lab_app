@@ -30,7 +30,7 @@ Capture the starting posture, so you can prove you returned to it:
 
 ```
 php artisan doctor:rollout-readiness
-php artisan webauthn:readiness
+php artisan webauthn:readiness --report-only   # capturing starting posture, not gating
 php artisan doctor:half-b-readiness
 ```
 

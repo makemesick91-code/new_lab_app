@@ -42,7 +42,7 @@
             </div>
             <div>
                 <label class="block text-sm font-medium text-gray-700">Tanggal Daftar</label>
-                <input type="date" name="registered_at" data-rm-date value="{{ old('registered_at', optional($patient?->registered_at)->format('Y-m-d') ?: now()->format('Y-m-d')) }}" class="mt-1 block w-full rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500" />
+                <input type="date" name="registered_at" data-rm-date value="{{ old('registered_at', optional($patient?->registered_at)->format('Y-m-d') ?: app(\App\Support\Clinical\ClinicalClock::class)->todayString()) }}" class="mt-1 block w-full rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500" />
                 @error('registered_at')<p class="mt-1 text-xs text-rose-600">{{ $message }}</p>@enderror
             </div>
             <div>

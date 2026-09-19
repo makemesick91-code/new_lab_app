@@ -94,6 +94,7 @@ class DoctorDeviceWebAuthnLoginService
         private readonly DoctorIdentityResolver $doctors,
         private readonly FeatureFlagService $flags,
         private readonly AuditLogService $auditLogs,
+        private readonly DoctorDeviceAuthorizationService $authorizations,
     ) {}
 
     public function enabled(): bool
@@ -363,6 +364,26 @@ class DoctorDeviceWebAuthnLoginService
         $this->forgetPending($request);
 
         $device->forceFill(['last_seen_at' => now()])->save();
+
+        // D8 — stamp the authorization this login actually used.
+        //
+        // Until now `last_authorized_login_at` had exactly one writer,
+        // `DoctorDeviceAuthorizationService::markAuthorizedLogin()`, reached
+        // only from ANDROID ticket redemption. A doctor who logged in through
+        // the PWA left the column untouched forever, so the row said the
+        // tablet was last used hours or days earlier than it was. Measured on
+        // production: across 62 authorizations and 16 WebAuthn logins, the
+        // number of stamps falling within ±5s of a WebAuthn login was ZERO.
+        //
+        // Placed AFTER the session is established and the binding written, so
+        // a failed assertion, a refused binding or a rolled-back login cannot
+        // leave a timestamp claiming a login succeeded. It stamps the exact
+        // authorization resolved for THIS device and doctor — never a sibling.
+        //
+        // This does NOT make the column a readiness input. Fleet readiness
+        // still reads `sys_audit_logs`, because an audit row survives the
+        // device being revoked and this column does not.
+        $this->authorizations->markAuthorizedLogin($authorization);
 
         $this->auditLogs->log(
             'trx_doctor_device_webauthn_credentials',

@@ -66,7 +66,8 @@ class DoctorDeviceWebAuthnReadinessCommand extends Command
     protected $signature = 'webauthn:readiness
         {--json : Emit the report as JSON}
         {--strict : Exit non-zero when the relying party could not run a ceremony}
-        {--require-live-proof : ALSO exit non-zero unless every active device has a fresh, server-verified WebAuthn assertion}';
+        {--require-live-proof : Retained alias for the default gate behaviour; liveness is now checked unless --report-only is passed}
+        {--report-only : Print the report and ALWAYS exit 0. For a human reading state, never for a gate}';
 
     protected $description = 'Report whether the WebAuthn relying party is usable and whether doctor device credential login is armed. Read-only, no secrets.';
 
@@ -262,13 +263,31 @@ class DoctorDeviceWebAuthnReadinessCommand extends Command
         }
 
         /*
-         * Liveness is opt-in, and it fails on anything that is not a pass —
-         * STALE, NEVER_PROVEN and UNVERIFIED all mean nobody has shown the leg
-         * works. Treating UNVERIFIED as success here would rebuild the defect
-         * one level up.
+         * D7 — LIVENESS IS NOW THE DEFAULT, AND SILENCE IS NOT SUCCESS.
+         *
+         * Liveness used to be opt-in behind --require-live-proof, and an audit
+         * of every call site found that NOTHING passed it: not one script, CI
+         * workflow, evidence map, deploy step or runbook line, and none of the
+         * four real production invocations on record. So the dimension this
+         * command exists to report could never fail anything — `NOT_READY`
+         * printed in the body while the process exited 0.
+         *
+         * The property that has to hold is "a caller cannot accidentally
+         * believe NOT_READY is green", and an opt-in flag cannot deliver it:
+         * the accident IS forgetting the flag. So the default fails closed and
+         * a human who only wants to LOOK asks for that explicitly.
+         *
+         * --require-live-proof is kept as a no-op alias so existing runbooks
+         * and muscle memory keep working and keep meaning the same thing.
+         *
+         * STALE, NEVER_PROVEN and UNVERIFIED all fail. Treating UNVERIFIED as
+         * success would rebuild the original defect one level up.
          */
-        if ($this->option('require-live-proof')
-            && $report['effective_readiness'] !== DoctorWebAuthnLiveProofService::READINESS_READY) {
+        if ($this->option('report-only')) {
+            return self::SUCCESS;
+        }
+
+        if ($report['effective_readiness'] !== DoctorWebAuthnLiveProofService::READINESS_READY) {
             return self::FAILURE;
         }
 
