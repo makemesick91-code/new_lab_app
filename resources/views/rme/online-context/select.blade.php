@@ -114,6 +114,12 @@
                 // scope and never has a daily context, so it is unaffected.
                 $dailyLocked = ($dailyContext ?? null) !== null && ($lockedBranch ?? null) !== null;
                 $selectableBranches = $dailyLocked ? collect([$lockedBranch]) : $rmeBranches;
+
+                // D5 — only a LOCKED role making its FIRST choice of the day is
+                // committing anything, so only that case is asked to confirm.
+                // Perawat never locks, and a day already locked has nothing
+                // left to commit.
+                $needsBranchConfirmation = ($requiresAdmin || $requiresKasir) && ! $dailyLocked;
             @endphp
 
             @if ($dailyLocked)
@@ -127,7 +133,16 @@
             <x-ui.card>
                 <form method="POST"
                     action="{{ $branchContextAction }}"
-                    class="space-y-5">
+                    class="space-y-5"
+                    @if ($needsBranchConfirmation)
+                        x-data="{
+                            branchId: '{{ old('branch_id', '') }}',
+                            confirming: false,
+                            names: {{ Js::from($selectableBranches->mapWithKeys(fn ($b) => [(string) $b->id => $b->code.' — '.$b->name])) }},
+                            get chosenName() { return this.names[String(this.branchId)] ?? ''; },
+                        }"
+                    @endif
+                >
                     @csrf
                     <div>
                         <label for="admin_branch_id" class="block text-sm font-medium text-navy">
@@ -138,6 +153,7 @@
                             @endif
                         </label>
                         <select id="admin_branch_id" name="branch_id" required
+                            @if ($needsBranchConfirmation) x-model="branchId" @change="confirming = false" @endif
                             class="mt-1 block w-full rounded-lg border-hairline bg-surface text-sm text-navy focus:border-brand-500 focus:ring-brand-500">
                             @unless ($dailyLocked)
                                 <option value="">- Pilih cabang RME -</option>
@@ -150,16 +166,60 @@
                         </select>
                         @error('branch_id')<p class="mt-1 text-xs text-danger">{{ $message }}</p>@enderror
                     </div>
+                    @if ($needsBranchConfirmation)
+                        {{-- D5 — the first branch of the clinical day is a commitment.
+                             The operator sees the branch NAME before it is written, and
+                             the server refuses a submit whose confirmation does not
+                             match the selection. --}}
+                        @error(\App\Modules\RmeOnlineContext\Services\DailyBranchContextService::CONFIRMATION_FIELD)
+                            <p class="text-xs text-danger">{{ $message }}</p>
+                        @enderror
+
+                        <div x-show="confirming" x-cloak
+                            class="rounded-lg border border-warning bg-warning-soft p-4 text-sm text-navy">
+                            <p>
+                                Anda akan menggunakan <strong x-text="chosenName"></strong>
+                                untuk hari operasional ini.
+                            </p>
+                            <p class="mt-1 text-ink-soft">
+                                Pilihan cabang akan <strong>dikunci</strong> setelah dikonfirmasi.
+                                Mengubahnya memerlukan persetujuan Super Admin.
+                            </p>
+                            <input type="hidden"
+                                name="{{ \App\Modules\RmeOnlineContext\Services\DailyBranchContextService::CONFIRMATION_FIELD }}"
+                                :value="branchId">
+                        </div>
+                    @endif
+
                     <div class="flex items-center justify-between gap-3 border-t border-hairline pt-4">
                         @if ($dailyLocked)
                             <a href="{{ route('rme.branch-change-requests.create') }}"
                                 class="text-sm font-medium text-brand-700 underline hover:text-brand-800">
                                 Ajukan Pindah Cabang
                             </a>
+                        @elseif ($needsBranchConfirmation)
+                            <button type="button" x-show="confirming" x-cloak
+                                @click="confirming = false"
+                                class="text-sm font-medium text-brand-700 underline hover:text-brand-800">
+                                Kembali / Ubah Pilihan
+                            </button>
+                            <span x-show="!confirming"></span>
                         @else
                             <span></span>
                         @endif
-                        <x-ui.button type="submit" variant="primary">Mulai Bertugas</x-ui.button>
+
+                        @if ($needsBranchConfirmation)
+                            <x-ui.button type="button" variant="primary"
+                                x-show="!confirming"
+                                ::disabled="!branchId"
+                                @click="confirming = true">Lanjut</x-ui.button>
+                            <x-ui.button type="submit" variant="primary"
+                                x-show="confirming" x-cloak>
+                                Konfirmasi &amp; Mulai Bertugas
+                            </x-ui.button>
+                        @else
+                            <x-ui.button type="submit" variant="primary">Mulai Bertugas</x-ui.button>
+                        @endif
                     </div>
                 </form>
             </x-ui.card>

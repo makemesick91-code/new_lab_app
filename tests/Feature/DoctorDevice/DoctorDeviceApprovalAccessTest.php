@@ -185,7 +185,7 @@ it('denies at the policy, not only at the route middleware', function () {
 // ---------------------------------------------------------------------------
 
 it('does not hand supervisor rme the device registry or any enforcement authority', function () {
-    approvalFixture();
+    $f = approvalFixture();
     $supervisor = approvalActor('Supervisor RME');
 
     // Approving doctor access is not the same authority as administering the
@@ -193,8 +193,33 @@ it('does not hand supervisor rme the device registry or any enforcement authorit
     expect($supervisor->can('view_doctor_devices'))->toBeFalse()
         ->and($supervisor->can('manage_doctor_devices'))->toBeFalse();
 
-    actingAs($supervisor)->withoutMiddleware(EnsureRmeOnlineContext::class)
-        ->get(route('settings.doctor-devices.index'))->assertForbidden();
+    $actor = actingAs($supervisor)->withoutMiddleware(EnsureRmeOnlineContext::class);
+
+    /*
+     * D11 CHANGED ONE LINE OF THIS TEST, AND DELIBERATELY.
+     *
+     * The registry INDEX used to be asserted 403 here. Supervisor RME now
+     * holds `register_doctor_devices` so a replacement tablet does not wait on
+     * a Super Admin, and filing without being able to read the list would mean
+     * filing blind into the duplicate-name check in
+     * DoctorDeviceService::register(). So the list is now 200.
+     *
+     * The authority this test exists to protect is UNCHANGED, and is asserted
+     * more precisely than a blanket 403 ever did: the two management
+     * permissions above are still absent, and every decision that actually
+     * trusts hardware is still refused below. Reading the estate is not
+     * administering it.
+     */
+    $actor->get(route('settings.doctor-devices.index'))->assertOk();
+
+    $device = $f['device'];
+
+    // The trust decisions, each still closed.
+    $actor->post(route('settings.doctor-devices.approve-registration', $device))->assertForbidden();
+    $actor->get(route('settings.doctor-devices.webauthn.create', $device))->assertForbidden();
+    $actor->get(route('settings.doctor-devices.edit', $device))->assertForbidden();
+    $actor->post(route('settings.doctor-devices.disable', $device), ['reason' => 'x'])->assertForbidden();
+    $actor->post(route('settings.doctor-devices.revoke', $device), ['reason' => 'x'])->assertForbidden();
 });
 
 // ---------------------------------------------------------------------------

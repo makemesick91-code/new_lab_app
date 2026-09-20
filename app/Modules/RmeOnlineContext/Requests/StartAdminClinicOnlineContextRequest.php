@@ -2,11 +2,16 @@
 
 namespace App\Modules\RmeOnlineContext\Requests;
 
+use App\Modules\RmeOnlineContext\Requests\Concerns\ConfirmsFirstDailyBranchSelection;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
 class StartAdminClinicOnlineContextRequest extends FormRequest
 {
+    // D5 — the first branch choice of the clinical day is a commitment;
+    // it must be confirmed before the lock is written.
+    use ConfirmsFirstDailyBranchSelection;
+
     public function authorize(): bool
     {
         return true;

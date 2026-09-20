@@ -301,9 +301,19 @@ Those are the hard gates for a GO tag, and they require the physical device.
 **Before anybody stands at a tablet**
 
 ```
-php artisan webauthn:readiness           # human-readable
-php artisan webauthn:readiness --json
-php artisan webauthn:readiness --strict  # non-zero only if a ceremony is impossible
+php artisan webauthn:readiness                # GATE: non-zero unless the estate is live
+php artisan webauthn:readiness --json         # same gate, machine-readable
+php artisan webauthn:readiness --report-only  # LOOK only: prints the report, always exits 0
+php artisan webauthn:readiness --strict       # additionally fail if a ceremony is impossible
+
+> **D7 — the default gates, and `--strict` alone never did.** Liveness used to
+> sit behind `--require-live-proof`, and an audit of every call site found that
+> nothing passed it — not one script, workflow, evidence map, deploy step or
+> runbook line, and none of the four real production invocations. `NOT_READY`
+> printed in the body while the process exited 0. The default now fails closed;
+> `--report-only` is the explicit way to look without gating. `--strict` still
+> answers only "could a ceremony run at all", which is a relying-party question,
+> not a liveness one.
 ```
 
 A relying party misconfiguration does not fail on the server — it fails inside

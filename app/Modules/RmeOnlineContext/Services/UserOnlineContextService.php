@@ -10,6 +10,7 @@ use App\Modules\Doctor\Models\Doctor;
 use App\Modules\DoctorAccess\Services\DoctorEffectiveBranchResolver;
 use App\Modules\RmeOnlineContext\Interfaces\UserOnlineContextRepositoryInterface;
 use App\Modules\RmeOnlineContext\Models\UserOnlineContext;
+use App\Support\AccessControl\FrontOfficeRole;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Validation\ValidationException;
@@ -31,9 +32,21 @@ class UserOnlineContextService
         return $user->hasRole('Doctor') && ! $this->isExemptFromContext($user);
     }
 
+    /**
+     * D2 — Front Office is resolved through this SAME context, deliberately.
+     *
+     * `admin_clinic` is already inside
+     * `DailyBranchContextService::LOCKED_ROLE_CONTEXTS`, so reusing it is what
+     * keeps the daily branch lock engaging for the merged role. A context of
+     * its own would have had to be taught to the lock, to
+     * `resolveActiveBranchForAdmin()` and to the selector, and a miss in any
+     * one of those fails OPEN — no lock, and a fallback to `users.branch_id`,
+     * which is NULL for three of the four migrated users.
+     */
     public function requiresAdminClinicContext(User $user): bool
     {
-        return $user->hasRole('Admin Klinik') && ! $this->isExemptFromContext($user);
+        return $user->hasAnyRole(FrontOfficeRole::ADMIN_CLINIC_CONTEXT)
+            && ! $this->isExemptFromContext($user);
     }
 
     /**

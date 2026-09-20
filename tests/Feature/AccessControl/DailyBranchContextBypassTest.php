@@ -1,5 +1,20 @@
 <?php
 
+/*
+ * D5 NOTE — the `confirmed_branch_id` token on every online-context POST below.
+ *
+ * `ConfirmsFirstDailyBranchSelection` gates the FIRST branch selection of a
+ * clinical day: committing a day to the wrong branch costs a Super Admin
+ * approval to undo, so the operator is asked before the write rather than
+ * after. The guard steps aside once a lock exists, which is why the token is
+ * harmless on the follow-up POSTs that these tests expect to be REFUSED by the
+ * lock itself — those still assert on `branch_id`, not on the token.
+ *
+ * Without the token the first POST fails validation, no lock is ever written,
+ * and every assertion about the lock below passes or fails for the wrong
+ * reason. The token is what keeps these tests testing the lock.
+ */
+
 declare(strict_types=1);
 
 /*
@@ -19,6 +34,7 @@ use App\Modules\Branch\Services\BranchContext;
 use App\Modules\RmeOnlineContext\Models\BranchChangeRequest;
 use App\Modules\RmeOnlineContext\Models\DailyBranchContext;
 use App\Modules\RmeOnlineContext\Models\UserOnlineContext;
+use App\Modules\RmeOnlineContext\Services\DailyBranchContextService;
 use App\Modules\RmeOnlineContext\Services\UserOnlineContextService;
 use Carbon\Carbon;
 
@@ -44,7 +60,7 @@ it('keeps the lock across a logout and a fresh login', function () {
     $user = userInRole('Kasir');
 
     $this->actingAs($user)
-        ->post(route('rme.online-context.kasir'), ['branch_id' => $a->id])
+        ->post(route('rme.online-context.kasir'), ['branch_id' => $a->id, DailyBranchContextService::CONFIRMATION_FIELD => $a->id])
         ->assertRedirect();
 
     $this->post(route('logout'));
@@ -52,7 +68,7 @@ it('keeps the lock across a logout and a fresh login', function () {
     // A brand new authenticated session. Nothing of the old one survives —
     // except the authority, which was never in the session.
     $this->actingAs($user->fresh())
-        ->post(route('rme.online-context.kasir'), ['branch_id' => $b->id])
+        ->post(route('rme.online-context.kasir'), ['branch_id' => $b->id, DailyBranchContextService::CONFIRMATION_FIELD => $b->id])
         ->assertSessionHasErrors('branch_id');
 
     expect((int) dbcDaily()->lockedBranchIdFor($user))->toBe((int) $a->id);
@@ -63,14 +79,14 @@ it('keeps the lock when the operator goes offline and comes back', function () {
     $b = dbcBranch('BBB');
     $user = userInRole('Kasir');
 
-    $this->actingAs($user)->post(route('rme.online-context.kasir'), ['branch_id' => $a->id]);
+    $this->actingAs($user)->post(route('rme.online-context.kasir'), ['branch_id' => $a->id, DailyBranchContextService::CONFIRMATION_FIELD => $a->id]);
     $this->post(route('rme.online-context.offline'))->assertRedirect();
 
-    $this->post(route('rme.online-context.kasir'), ['branch_id' => $b->id])
+    $this->post(route('rme.online-context.kasir'), ['branch_id' => $b->id, DailyBranchContextService::CONFIRMATION_FIELD => $b->id])
         ->assertSessionHasErrors('branch_id');
 
     // Going offline and back on at the SAME branch is of course fine.
-    $this->post(route('rme.online-context.kasir'), ['branch_id' => $a->id])
+    $this->post(route('rme.online-context.kasir'), ['branch_id' => $a->id, DailyBranchContextService::CONFIRMATION_FIELD => $a->id])
         ->assertSessionHasNoErrors();
 });
 
@@ -86,12 +102,12 @@ it('refuses a second session trying a different branch', function () {
     $user = userInRole('Kasir');
 
     // Session A commits the day.
-    $this->actingAs($user)->post(route('rme.online-context.kasir'), ['branch_id' => $a->id]);
+    $this->actingAs($user)->post(route('rme.online-context.kasir'), ['branch_id' => $a->id, DailyBranchContextService::CONFIRMATION_FIELD => $a->id]);
 
     // Session B — a different browser, a different device. Same authority.
     $this->flushSession();
     $this->actingAs($user->fresh())
-        ->post(route('rme.online-context.kasir'), ['branch_id' => $b->id])
+        ->post(route('rme.online-context.kasir'), ['branch_id' => $b->id, DailyBranchContextService::CONFIRMATION_FIELD => $b->id])
         ->assertSessionHasErrors('branch_id');
 
     expect(DailyBranchContext::query()->where('user_id', $user->id)->count())->toBe(1);
@@ -218,7 +234,7 @@ it('refuses a raw POST at the context endpoint even though the UI hides the opti
     $b = dbcBranch('BBB');
     $user = userInRole('Kasir');
 
-    $this->actingAs($user)->post(route('rme.online-context.kasir'), ['branch_id' => $a->id]);
+    $this->actingAs($user)->post(route('rme.online-context.kasir'), ['branch_id' => $a->id, DailyBranchContextService::CONFIRMATION_FIELD => $a->id]);
 
     // Go offline so the selector renders rather than redirecting an operator
     // who already has a satisfied context straight to the dashboard.
@@ -233,7 +249,7 @@ it('refuses a raw POST at the context endpoint even though the UI hides the opti
 
     // ...and posting the branch it never offered is still refused server-side.
     // The hidden option is a courtesy; this is the boundary.
-    $this->post(route('rme.online-context.kasir'), ['branch_id' => $b->id])
+    $this->post(route('rme.online-context.kasir'), ['branch_id' => $b->id, DailyBranchContextService::CONFIRMATION_FIELD => $b->id])
         ->assertSessionHasErrors('branch_id');
 
     expect((int) dbcDaily()->lockedBranchIdFor($user))->toBe((int) $a->id);
@@ -244,9 +260,9 @@ it('refuses an admin klinik raw POST at its own context endpoint', function () {
     $b = dbcBranch('BBB');
     $user = userInRole('Admin Klinik');
 
-    $this->actingAs($user)->post(route('rme.online-context.admin-clinic'), ['branch_id' => $a->id]);
+    $this->actingAs($user)->post(route('rme.online-context.admin-clinic'), ['branch_id' => $a->id, DailyBranchContextService::CONFIRMATION_FIELD => $a->id]);
 
-    $this->post(route('rme.online-context.admin-clinic'), ['branch_id' => $b->id])
+    $this->post(route('rme.online-context.admin-clinic'), ['branch_id' => $b->id, DailyBranchContextService::CONFIRMATION_FIELD => $b->id])
         ->assertSessionHasErrors('branch_id');
 
     expect((int) dbcDaily()->lockedBranchIdFor($user))->toBe((int) $a->id);

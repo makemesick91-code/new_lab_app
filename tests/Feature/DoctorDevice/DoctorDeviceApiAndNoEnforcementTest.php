@@ -21,6 +21,8 @@ use App\Modules\DoctorDevice\Support\DeviceProofMessage;
 use App\Modules\RmeOnlineContext\Middleware\EnsureRmeOnlineContext;
 use App\Services\Foundation\FeatureFlagService;
 use Database\Factories\DoctorDeviceEnrollmentFactory;
+use Illuminate\Contracts\Http\Kernel;
+use Illuminate\Routing\Route;
 
 use function Pest\Laravel\actingAs;
 use function Pest\Laravel\getJson;
@@ -243,6 +245,77 @@ it('still leaves the doctor login path untouched while enforcement is off', func
         ->toBeFalse();
 });
 
+/**
+ * Resolve a route's middleware into CLASS names.
+ *
+ * D9. The previous version of the check below called `gatherMiddleware()`,
+ * which returns the route's middleware as WRITTEN — group and alias NAMES like
+ * `web` and `auth`, never classes. `EnsureDoctorDeviceSession` is registered
+ * into the `web` GROUP, so `str_contains($entry, 'DoctorDevice')` matched
+ * nothing, the inner assertion never ran, and the test passed with ZERO
+ * assertions for its entire life. It could not have failed if a second device
+ * middleware had been added — it failed OPEN.
+ *
+ * `Router::gatherRouteMiddleware()` is the framework's own resolution (public
+ * in Laravel 12), expanding groups and aliases to the classes that actually
+ * run.
+ *
+ * @return list<string>
+ */
+function ddaResolvedMiddleware(Route $route): array
+{
+    return array_values(array_filter(
+        app('router')->gatherRouteMiddleware($route),
+        'is_string',
+    ));
+}
+
+/**
+ * The governance check itself, extracted so the adversarial test below can run
+ * the SAME logic against a deliberately broken registration.
+ *
+ * @return array{routes: int, sightings: int, offenders: list<string>}
+ */
+function ddaAuditDeviceMiddleware(string $allowed): array
+{
+    // TRAP, and the reason the first rewrite still read zero: the router's
+    // `web` GROUP is only populated once the HTTP kernel has been resolved.
+    // In a console/test context it is empty, so every route resolves to its
+    // bare route middleware and the group append is invisible. The project
+    // already hits this in ObservabilityReadinessService.
+    app(Kernel::class);
+
+    $routes = 0;
+    $sightings = 0;
+    $offenders = [];
+
+    foreach (app('router')->getRoutes() as $route) {
+        $uri = $route->uri();
+
+        if (str_starts_with($uri, 'device-api')) {
+            continue; // the device channel itself is allowed to be device-aware
+        }
+
+        $routes++;
+
+        foreach (ddaResolvedMiddleware($route) as $entry) {
+            if (! str_contains($entry, 'DoctorDevice')
+                && ! str_contains($entry, 'device.proof')
+                && ! str_contains($entry, 'trusted.device')) {
+                continue;
+            }
+
+            $sightings++;
+
+            if ($entry !== $allowed) {
+                $offenders[] = $uri.' => '.$entry;
+            }
+        }
+    }
+
+    return ['routes' => $routes, 'sightings' => $sightings, 'offenders' => array_values(array_unique($offenders))];
+}
+
 it('gates web routes behind device trust only through a middleware that is off by default', function () {
     // PHASE 3 asserted that no web route carried ANY device middleware. The
     // session/device binding this revision adds has to be on the web stack —
@@ -250,31 +323,41 @@ it('gates web routes behind device trust only through a middleware that is off b
     // protected routes is a list somebody eventually forgets to extend.
     //
     // So the contract becomes: exactly ONE device middleware may appear, it is
-    // the binding check, and it is a no-op while enforcement is off. The
-    // second assertion is the one with teeth, and it is behavioural rather
-    // than structural — see the "does not require a device binding on any
-    // protected doctor request" case in DoctorDeviceEnforcementGateTest.
+    // the binding check, and it is a no-op while enforcement is off.
     $allowed = EnsureDoctorDeviceSession::class;
 
-    foreach (app('router')->getRoutes() as $route) {
-        $middleware = $route->gatherMiddleware();
-        $uri = $route->uri();
+    $audit = ddaAuditDeviceMiddleware($allowed);
 
-        if (str_starts_with($uri, 'device-api')) {
-            continue; // the device channel itself is allowed to be device-aware
-        }
+    // NON-VACUITY, asserted first. A governance test that can pass while
+    // observing nothing is the defect this replaces.
+    expect($audit['routes'])->toBeGreaterThan(0, 'no routes were examined');
+    expect($audit['sightings'])->toBeGreaterThan(
+        0,
+        'no device middleware was observed on any web route — the resolution is broken again, not the estate',
+    );
 
-        foreach ($middleware as $entry) {
-            if (! is_string($entry)) {
-                continue;
-            }
+    expect($audit['offenders'])->toBe([], 'unexpected device middleware: '.implode(', ', $audit['offenders']));
+});
 
-            if (str_contains($entry, 'DoctorDevice') || str_contains($entry, 'device.proof')
-                || str_contains($entry, 'trusted.device')) {
-                expect($entry)->toBe($allowed, "unexpected device middleware on {$uri}");
-            }
-        }
-    }
+it('fails when a second conflicting device middleware is registered', function () {
+    // The negative case the old test could never express. If this passes while
+    // a duplicate is present, the check above is decorative.
+    $conflicting = 'App\\Modules\\DoctorDevice\\Middleware\\PretendExtraDoctorDeviceGate';
+
+    // ORDER MATTERS: resolving the HTTP kernel re-applies the configured
+    // middleware groups, which would discard a push made before it. Bring the
+    // kernel up first, then inject the conflict.
+    app(Kernel::class);
+
+    app('router')->pushMiddlewareToGroup('web', $conflicting);
+
+    // Re-register a route so the group change is reflected in a gathered route.
+    app('router')->get('/dda-conflict-probe', fn () => 'ok')->middleware('web');
+
+    $audit = ddaAuditDeviceMiddleware(EnsureDoctorDeviceSession::class);
+
+    expect($audit['sightings'])->toBeGreaterThan(0)
+        ->and($audit['offenders'])->not->toBe([], 'a duplicate device middleware went undetected');
 });
 
 it('lets a doctor log in normally with devices enrolled and verified', function () {

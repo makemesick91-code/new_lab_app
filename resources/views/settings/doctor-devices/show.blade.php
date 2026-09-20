@@ -48,6 +48,18 @@
             </x-ui.alert>
         @endif
 
+        {{-- D11 — a filed tablet is paperwork, not a device in service. Say so
+             plainly: the login gate refuses it, so nobody should be waiting at
+             a chair expecting it to work. --}}
+        @if ($device->isPendingApproval())
+            <x-ui.alert variant="warning" class="mt-4">
+                <strong>Menunggu persetujuan.</strong> Perangkat ini sudah terdaftar tetapi
+                <strong>belum dapat dipakai login</strong> oleh dokter mana pun.
+                Super Admin harus menyetujui pendaftaran, lalu kredensial perangkat harus didaftarkan
+                di tablet ini sebelum perangkat dapat digunakan.
+            </x-ui.alert>
+        @endif
+
         @if ($device->isRevoked())
             <x-ui.alert variant="danger" class="mt-4">
                 <strong>Perangkat dicabut permanen.</strong> {{ $device->revoked_reason }}
@@ -65,12 +77,25 @@
             <div class="mt-4 flex flex-wrap items-start gap-3">
                 <x-ui.button variant="secondary" size="sm" :href="route('settings.doctor-devices.edit', $device)">Ubah Data</x-ui.button>
 
+                {{-- THREE states, not two. Before D11 nothing ever created a
+                     PENDING_APPROVAL row, so the old `@else` branch offered
+                     "Aktifkan Kembali" for it — and the service refuses that
+                     (reactivate undoes a DISABLE and nothing else), so the
+                     button could only ever error. Filing makes that status
+                     reachable, so it gets its own action. --}}
                 @if ($device->isActive())
                     <form method="POST" action="{{ route('settings.doctor-devices.disable', $device) }}" class="flex items-end gap-2">
                         @csrf
                         <x-ui.input name="reason" label="Alasan nonaktif" required placeholder="Alasan" />
                         <x-ui.button type="submit" variant="warning" size="sm">Nonaktifkan</x-ui.button>
                     </form>
+                @elseif ($device->isPendingApproval())
+                    @can('approveRegistration', $device)
+                        <form method="POST" action="{{ route('settings.doctor-devices.approve-registration', $device) }}">
+                            @csrf
+                            <x-ui.button type="submit" variant="success" size="sm">Setujui Pendaftaran</x-ui.button>
+                        </form>
+                    @endcan
                 @else
                     <form method="POST" action="{{ route('settings.doctor-devices.reactivate', $device) }}">
                         @csrf

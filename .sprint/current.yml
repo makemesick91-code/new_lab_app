@@ -1,104 +1,53 @@
-# FIX-SUNU-GO-LIVE-BLOCKERS-1
+# DAENGTISIAMS-SUNU-FINAL-RELEASE-CANDIDATE-1
 #
-# Closes the blockers found by DAENGTISIAMS-SUNU-GO-LIVE-READINESS-1 while
-# gating the Cabang Sunu (SPN4) go-live.
+# The final pre-go-live integration for Cabang Sunu (SPN4). Twelve items, D1-D12,
+# built after the owner postponed the dated go-live in favour of doing the whole
+# candidate properly and running ONE authoritative Full Suite at the end.
 #
-# Two runtime correctness fixes and two operations fixes, all of them earned by
-# a defect observed on production rather than inferred from reading:
+# Five of the twelve framings were corrected by measurement before any code was
+# written — D3 and D4 were already implemented, D6's ghost command had no caller
+# at all, and D12's sidebar coverage was already complete. Those items are
+# recorded as complete-with-no-code-change rather than padded with work.
 #
-#   B5  a visit with NO medical record could be invoiced — the finalization
-#       guard only fired when a record existed. SPN4 visit 52 sat in exactly
-#       that state, billable, for twelve days.
-#   B6  revoking a break-glass grant left its session lease open, and under
-#       single_active_session an open lease locks the doctor out of EVERY path.
-#       The 2026-09-18 drill left one open for ~18 hours.
-#   B2  both documented restore procedures would have failed — pg_restore
-#       against plain-text dumps, and a rehearsal the app role cannot run.
-#   B3  no scheduled database backup existed at all, and schedule:run is never
-#       invoked, so a Laravel-scheduled one would silently no-op.
+# It arms no flag, widens no enforcement scope, retires nothing, starts no stage,
+# and mutates no production state. The Front Office migration is governed,
+# dry-run by default, and has NOT been applied.
 #
-# It arms no flag, widens no scope, retires nothing and starts no stage.
+#   D1  logging a doctor out releases their session lease        (committed 8cf9471a)
+#   D2  Admin Klinik + Kasir merge into Front Office
+#   D3  registration date defaults to the clinical day           (committed 33d93b83)
+#   D4  adversarial tests; the second gate already existed       (no new runtime)
+#   D5  confirm the branch before the clinical day locks to it
+#   D6  ghost command investigated: NO CALLER, NO CODE CHANGE
+#   D7  WebAuthn readiness fails closed by default               (committed 33d93b83)
+#   D8  WebAuthn login stamps the authorization it used          (committed 33d93b83)
+#   D9  middleware governance test made non-vacuous              (committed 33d93b83)
+#   D10 pilot cohort ceiling raised to carry one branch, not the fleet
+#   D11 delegated device registration, trust decision unmoved
+#   D12 sidebar coverage turned into a mutation-proven guarantee
 
-id: FIX-SUNU-GO-LIVE-BLOCKERS-1
-type: RUNTIME_FIX
-module: RmeInvoice,DoctorAccess
-title: "Billing needs a finalized record; break-glass revoke must free its lease; backups must be scheduled and restorable"
+id: DAENGTISIAMS-SUNU-FINAL-RELEASE-CANDIDATE-1
+type: MODULE_SPRINT
+module: DoctorDevice,RmeOnlineContext,ClinicVisit,AccessControl
+title: "Sunu final release candidate: Front Office merge, delegated device registration, daily-branch confirmation, cohort ceiling, sidebar guarantee"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
-
-# Impact flags — declared against the CURRENT diff, verified against the BASE
-# ref rather than the working tree.
-#
-# security_impact is TRUE: B6 changes what happens when emergency access is
-# revoked, and B5 changes who may create a financial record. Neither widens
-# access — B5 refuses strictly more than before, and B6 ends a session that
-# revocation had already decided should end.
-#
-# ledger_impact is FALSE in the inventory sense (no stock movement is touched),
-# but B5 does gate INVOICE creation, which is called out here rather than left
-# for a reviewer to discover.
-#
-# schema_change FALSE: no table, column or migration. frontend_change FALSE: no
-# JS, CSS or Vite input.
 runtime_change: true
 schema_change: false
 frontend_change: false
 security_impact: true
-branch_isolation_impact: false
+branch_isolation_impact: true
 ledger_impact: false
-
-# Deploy is required: the go-live depends on the fixed billing gate being the
-# one that runs, and the owner sequenced the Sunu payment UAT AFTER this deploy
-# so the staff test exercises the fixed build rather than the old one.
 deploy_required: true
 browser_required: false
-
 test_profiles: []
-
-go_tag: fix-sunu-go-live-blockers-1-go
+go_tag: daengtisiams-sunu-go-live-final-1-go
 go_tag_created: false
-
-# ---------------------------------------------------------------------------
-# WHAT THIS SPRINT INHERITS
-#
-# `.sprint/current.yml` is a ROLLING file, so these are re-stated for this
-# sprint rather than carried over. Dropping one is the failure mode a new
-# sprint hits most easily, and `inherits_closure` is asserted by
-# LegacyRmeProgramClosureContractTest.
-# ---------------------------------------------------------------------------
-
-# The live doctor-access posture this sprint starts from and does NOT move:
-# single active session ON, branch lock OFF, enforcement scoped to a 3-doctor
-# pilot, global scope not permitted.
 inherits_parent_programme: DOCTOR-ACCESS-GLOBAL-ACTIVATION-1
 inherits_parent_sprint: DOCTOR-ACCESS-GLOBAL-ACTIVATION-1-HALF-A-CUTOVER
 inherits_parent_go: doctor-access-global-activation-half-a-1-go
 inherits_pilot_go: doctor-pwa-multi-doctor-pilot-1-go
 inherits_readiness_go: doctor-access-global-device-enforcement-readiness-1-go
-
-# The base this branch was cut from — the exact deployed production runtime.
 inherits_child_go: fix-doctor-webauthn-readiness-live-proof-1-go
-
-# Asserted by LegacyRmeProgramClosureContractTest.
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
-
-# Still open, and this sprint does not touch it.
 inherits_hold: FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1/FIX-02
-
-# The Half-B ACTIVATION DESIGN remains superseded by the PWA-only product
-# decision; its readiness machinery and GO tag stand untouched.
-supersedes_activation_design_of: DOCTOR-ACCESS-GLOBAL-DEVICE-ENFORCEMENT-READINESS-1
-
-# ---------------------------------------------------------------------------
-# OWNER DECISIONS RECORDED BY THIS SPRINT
-# ---------------------------------------------------------------------------
-#
-# B4: Cabang Sunu goes live with doctor.branch_lock=false. Doctors may work
-# across branches by design; Admin Klinik / Perawat / Kasir remain server-side
-# branch restricted. ACCEPTED_DESIGN — explicitly NOT a branch-isolation pass
-# for doctors, and it must never be written up as one.
-#
-# B1: the Sunu payment UAT runs AFTER this deploy, performed by clinic staff
-# through the real UI. It is a human gate; no invoice or payment row is created
-# by this sprint.
-#
-# Visit 52 is left untouched. No medical record was fabricated to clear it.
+supersedes: FIX-SUNU-GO-LIVE-BLOCKERS-1

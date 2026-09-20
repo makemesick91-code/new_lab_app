@@ -459,10 +459,36 @@ Route::middleware('auth')->prefix('settings')->name('settings.')->group(function
     | global Gate::before. There is deliberately NO destroy route — trust is
     | withdrawn with `revoke`, never by deleting security history.
     */
-    Route::middleware('permission:view_doctor_devices|manage_doctor_devices')->group(function () {
+    /*
+    | DAENGTISIAMS-SUNU-FINAL-RELEASE-CANDIDATE-1 / D11 — the registration half,
+    | opened to the filing authority (`register_doctor_devices`, Supervisor RME).
+    |
+    | Split into its own group rather than widening the management group below,
+    | so the filer cannot even REACH credential enrolment, the lifecycle
+    | actions, the Android pairing approval or the metadata editor. The
+    | policies would refuse them anyway; this makes the route layer say so too,
+    | instead of leaving a single permission list as the only thing standing
+    | between a filer and the trust decisions.
+    |
+    | Filing produces a PENDING_APPROVAL row, which `DoctorAppLoginGate`
+    | refuses at its first check, so nothing here admits a device to service.
+    */
+    Route::middleware('permission:view_doctor_devices|manage_doctor_devices|register_doctor_devices')->group(function () {
         Route::resource('doctor-devices', DoctorDeviceController::class)
-            ->except(['destroy'])
+            ->only(['index', 'create', 'store', 'show'])
             ->parameters(['doctor-devices' => 'doctorDevice']);
+    });
+
+    Route::middleware('permission:view_doctor_devices|manage_doctor_devices')->group(function () {
+        // Metadata editing stays with management: renaming or re-branching a
+        // trusted tablet is a change to a device already in service.
+        Route::resource('doctor-devices', DoctorDeviceController::class)
+            ->only(['edit', 'update'])
+            ->parameters(['doctor-devices' => 'doctorDevice']);
+
+        // D11 — the second party's admission of a filed tablet.
+        Route::post('doctor-devices/{doctorDevice}/approve-registration', [DoctorDeviceController::class, 'approveRegistration'])
+            ->name('doctor-devices.approve-registration');
 
         Route::post('doctor-devices/{doctorDevice}/disable', [DoctorDeviceController::class, 'disable'])
             ->name('doctor-devices.disable');

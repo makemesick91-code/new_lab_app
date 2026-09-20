@@ -33,6 +33,19 @@ const SUPERVISOR_RME_PERMISSIONS = [
     // physical device estate, and this exact-list pin is what keeps them apart.
     'view_doctor_device_authorizations',
     'manage_doctor_device_authorizations',
+    // DAENGTISIAMS-SUNU-FINAL-RELEASE-CANDIDATE-1 / D11 — the FILING authority,
+    // so a replacement tablet no longer waits on a Super Admin to be typed in.
+    //
+    // The split described immediately above SURVIVES this addition, and that is
+    // the whole reason it is a third permission instead of a widening of the
+    // two named there. What this grants is the right to file a tablet as
+    // PENDING_APPROVAL — a status the login gate refuses at its first check
+    // (`if (! $device->isActive())` in DoctorAppLoginGate::deviceProofDenyReason).
+    // Admitting that tablet, enrolling its credential, editing it, disabling,
+    // reactivating, revoking it, and approving an Android pairing code ALL
+    // remain `manage_doctor_devices`, which is still absent from this list.
+    // Two parties are therefore still required before any tablet is trusted.
+    'register_doctor_devices',
     // SATUSEHAT-1 — RME operational owner of the controlled submission filter
     // + mapping/identifier governance. (The exact-list pin below was stale
     // since SATUSEHAT-1; repinned in SATUSEHAT-4A.)

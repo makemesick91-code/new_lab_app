@@ -708,6 +708,8 @@ it('does not claim the live-proof report failed when it succeeded', function () 
     $exit = Artisan::call('webauthn:readiness', ['--json' => true]);
     $json = json_decode(Artisan::output(), true);
 
+    // D7: the default now gates on liveness, and this estate IS ready, so 0
+    // here is a measurement rather than the old unconditional success.
     expect($exit)->toBe(0)
         // A healthy report says nothing was unverifiable.
         ->and($json['unverified_reason'])->toBeNull()
@@ -730,7 +732,9 @@ it('surfaces the ENGINE\'s own unverified reason rather than substituting its ow
     $exit = Artisan::call('webauthn:readiness', ['--json' => true]);
     $json = json_decode(Artisan::output(), true);
 
-    expect($exit)->toBe(0)
+    // D7: UNVERIFIED is not success. The default exits non-zero; the report is
+    // still printed in full, which is the point of separating the two.
+    expect($exit)->toBe(1)
         ->and($json['unverified_reason'])->toBe('no_active_devices_to_measure')
         ->and($json['effective_readiness'])->toBe(DoctorWebAuthnLiveProofService::READINESS_UNVERIFIED)
         ->and($json['devices'])->toBe([]);
@@ -742,10 +746,29 @@ it('exits non-zero under --require-live-proof while the estate is unproven', fun
     lpWebAuthnProof(lpCredential($fresh), $fresh, '2026-09-19 00:53:04');
     lpCredential(lpDevice());
 
-    // The default invocation still answers the OLD question and stays 0, so a
-    // caller that asked about the relying party is not broken by liveness.
-    expect(Artisan::call('webauthn:readiness'))->toBe(0);
+    // D7 — THE DEFAULT NOW FAILS CLOSED. Every call site audited passed no
+    // flag at all, including the four real production invocations, so an
+    // opt-in liveness check could never fail anything. The accident was
+    // forgetting the flag, so forgetting it is now the safe direction.
+    expect(Artisan::call('webauthn:readiness'))->toBe(1);
 
-    // Opting in to liveness fails, because 1 of 2 is not ready.
+    // Retained as a no-op alias so existing runbooks keep meaning the same.
     expect(Artisan::call('webauthn:readiness', ['--require-live-proof' => true]))->toBe(1);
+
+    // A human who only wants to LOOK must say so explicitly.
+    expect(Artisan::call('webauthn:readiness', ['--report-only' => true]))->toBe(0);
+});
+
+it('keeps --report-only honest: it prints the same unready report it refuses to fail on', function () {
+    $fresh = lpDevice();
+    lpWebAuthnProof(lpCredential($fresh), $fresh, '2026-09-19 00:53:04');
+    lpCredential(lpDevice());
+
+    $exit = Artisan::call('webauthn:readiness', ['--json' => true, '--report-only' => true]);
+    $json = json_decode(Artisan::output(), true);
+
+    // Exit 0 by request, but the body must still say NOT_READY — report-only
+    // suppresses the exit code, never the finding.
+    expect($exit)->toBe(0)
+        ->and($json['effective_readiness'])->not->toBe(DoctorWebAuthnLiveProofService::READINESS_READY);
 });
