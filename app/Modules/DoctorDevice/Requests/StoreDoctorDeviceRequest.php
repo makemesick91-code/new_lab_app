@@ -12,9 +12,18 @@ use Illuminate\Foundation\Http\FormRequest;
  */
 class StoreDoctorDeviceRequest extends FormRequest
 {
+    /**
+     * D11 — FILING a tablet, not trusting one.
+     *
+     * Deliberately `register` and not `create`: `create` is shared with
+     * ApproveDoctorDeviceEnrollmentRequest, which binds an Android public key
+     * and produces an immediately ACTIVE device. This form produces a
+     * PENDING_APPROVAL row that can log nobody in, so it takes the weaker
+     * authority that Supervisor RME holds.
+     */
     public function authorize(): bool
     {
-        return $this->user()?->can('create', DoctorDevice::class) ?? false;
+        return $this->user()?->can('register', DoctorDevice::class) ?? false;
     }
 
     /**

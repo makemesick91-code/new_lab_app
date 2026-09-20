@@ -67,8 +67,19 @@ class DoctorDeviceService
     }
 
     /**
-     * Register a clinic device. Always ACTIVE + `unverified`: a hand-entered
-     * row is a database record, never a proven device.
+     * Register a clinic device. Always `unverified`: a hand-entered row is a
+     * database record, never a proven device.
+     *
+     * D11 — the STATUS now depends on who filed it, and is derived from the
+     * actor's own authority rather than from anything they submitted (rule 1
+     * of this service: status is never a payload):
+     *
+     *   management authority  -> ACTIVE, exactly as before this change.
+     *   filing authority only -> PENDING_APPROVAL, awaiting a second party.
+     *
+     * Super Admin passes the `can()` check through the global Gate::before,
+     * so the pre-existing behaviour is untouched for every operator who had
+     * this screen before D11.
      *
      * @param  array<string, mixed>  $data
      */
@@ -97,7 +108,9 @@ class DoctorDeviceService
 
             // Lifecycle columns are set here, never from the payload.
             $device = $this->devices->update($device, [
-                'status' => DoctorDevice::STATUS_ACTIVE,
+                'status' => $actor->can('manage_doctor_devices')
+                    ? DoctorDevice::STATUS_ACTIVE
+                    : DoctorDevice::STATUS_PENDING_APPROVAL,
                 'identity_state' => DoctorDevice::IDENTITY_UNVERIFIED,
                 'public_key_fingerprint' => null,
                 'registered_at' => now(),
@@ -231,6 +244,54 @@ class DoctorDeviceService
             $this->audit($updated, 'DOCTOR_DEVICE_REACTIVATED',
                 ['status' => DoctorDevice::STATUS_DISABLED],
                 ['status' => $updated->status],
+                $actor);
+
+            return $updated;
+        });
+    }
+
+    /**
+     * D11 — admit a FILED tablet into service. The second party's decision.
+     *
+     * This is the named front door for PENDING_APPROVAL, and the only one.
+     * `reactivate` above deliberately refuses that status so it cannot become
+     * a side entrance; this method exists so the refusal there does not leave
+     * a filed tablet stranded with no legitimate way in.
+     *
+     * Narrow on purpose:
+     *
+     *  - ONLY `pending_approval` is admitted. A disabled device is
+     *    `reactivate`'s business and a revoked one is nobody's, so neither can
+     *    be laundered into ACTIVE through this path.
+     *  - It moves the STATUS only. `identity_state` stays `unverified` and
+     *    `public_key_fingerprint` stays null: approving the paperwork is not
+     *    proving the hardware, and the tablet must still enrol a credential
+     *    before anyone can sign in on it.
+     *  - Idempotent for an already-active row, so a double-click does not
+     *    raise at an operator who got what they asked for.
+     */
+    public function approveRegistration(DoctorDevice $device, User $actor): DoctorDevice
+    {
+        return DB::transaction(function () use ($device, $actor) {
+            $locked = $this->lock($device);
+
+            if ($locked->isActive()) {
+                return $locked;
+            }
+
+            if (! $locked->isPendingApproval()) {
+                throw ValidationException::withMessages([
+                    'status' => 'Hanya perangkat berstatus MENUNGGU PERSETUJUAN yang dapat disetujui.',
+                ]);
+            }
+
+            $updated = $this->devices->update($locked, [
+                'status' => DoctorDevice::STATUS_ACTIVE,
+            ]);
+
+            $this->audit($updated, 'DOCTOR_DEVICE_REGISTRATION_APPROVED',
+                ['status' => DoctorDevice::STATUS_PENDING_APPROVAL],
+                ['status' => $updated->status, 'identity_state' => $updated->identity_state],
                 $actor);
 
             return $updated;

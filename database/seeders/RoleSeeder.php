@@ -425,6 +425,17 @@ class RoleSeeder extends Seeder
             // -> Device Dokter.
             'view_doctor_device_authorizations',
             'manage_doctor_device_authorizations',
+            // DAENGTISIAMS-SUNU-FINAL-RELEASE-CANDIDATE-1 / D11 — Supervisor RME
+            // may now FILE a new tablet, so a replacement device no longer
+            // waits on a Super Admin to be typed into the registry.
+            //
+            // This does NOT undo the split described above. The filed row is
+            // PENDING_APPROVAL and cannot log anyone in; enrolling its
+            // credential and approving it into service both remain
+            // `manage_doctor_devices`, which this role still does not hold.
+            // Two parties are still required before a tablet is trusted:
+            // Supervisor RME files it, Super Admin approves it.
+            'register_doctor_devices',
             // SATUSEHAT-1 — RME operational owner of the controlled submission
             // filter + mapping/identifier governance (view/review/send/manage).
             'view_satusehat_submissions',

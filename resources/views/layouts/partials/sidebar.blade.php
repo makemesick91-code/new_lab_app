@@ -873,7 +873,7 @@
                         {{-- FEATURE-DOCTOR-TRUSTED-ANDROID-DEVICE-LOCK-1 Phase 2.
                              Visibility follows the permission, but the sidebar is
                              never the boundary: the route itself is gated. --}}
-                        @canany(['view_doctor_devices', 'manage_doctor_devices'])
+                        @canany(['view_doctor_devices', 'manage_doctor_devices', 'register_doctor_devices'])
                             <a href="{{ route('settings.doctor-devices.index') }}"
                                class="menu-subitem {{ request()->routeIs('settings.doctor-devices.*') ? $linkActive : $linkIdle }}">Device Dokter</a>
                         @endcanany

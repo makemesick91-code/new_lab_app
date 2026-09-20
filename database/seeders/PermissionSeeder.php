@@ -176,6 +176,21 @@ class PermissionSeeder extends Seeder
         // the global Gate::before, exactly like view_developer_console.
         'view_doctor_devices',
         'manage_doctor_devices',
+        // DAENGTISIAMS-SUNU-FINAL-RELEASE-CANDIDATE-1 / D11 — open the
+        // new-device registration workflow without opening the trust decision.
+        //
+        // A THIRD authority, deliberately weaker than `manage_doctor_devices`:
+        // it may FILE a new tablet into the registry and read the list, and
+        // nothing else. It cannot enrol a WebAuthn credential, cannot approve
+        // a filed device into service, cannot disable, reactivate or revoke.
+        //
+        // Safe because a filed row lands PENDING_APPROVAL, and the login gate
+        // opens with a strict allowlist (`if (! $device->isActive())` in
+        // DoctorAppLoginGate::deviceProofDenyReason), so a pending row is
+        // refused at the first check for BOTH the Android-keystore and the
+        // WebAuthn proof. Filing a device therefore grants no access to
+        // anyone; only a Super Admin's approval does.
+        'register_doctor_devices',
         // REVISION-DOCTOR-AUTO-DEVICE-APPROVAL-APP-ONLY-LOGIN-1 —
         // Approval → Approval Device Dokter.
         //
