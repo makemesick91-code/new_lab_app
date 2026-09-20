@@ -66,6 +66,15 @@ class DailyBranchContextService
      *
      * @var array<int, string>
      */
+    /**
+     * D5 — the field carrying "the operator saw this branch name and agreed".
+     *
+     * Lives here rather than on the FormRequest trait that enforces it: PHP
+     * forbids reading a constant through a trait name, and the field is part
+     * of the daily-lock contract, not of one request class.
+     */
+    public const CONFIRMATION_FIELD = 'confirmed_branch_id';
+
     public const LOCKED_ROLE_CONTEXTS = [
         UserOnlineContext::ROLE_ADMIN_CLINIC,
         UserOnlineContext::ROLE_KASIR,
