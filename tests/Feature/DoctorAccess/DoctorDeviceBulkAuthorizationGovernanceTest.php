@@ -104,7 +104,40 @@ it('promotes no device anywhere in the estate, which is the premise the guard re
         // The old-value side of the DOCTOR_DEVICE_ADMITTED audit payload — the
         // branch PR-C's guard keeps unreachable.
         'Modules/DoctorDevice/Services/DoctorDeviceAuthorizationService.php',
+        // DAENGTISIAMS-SUNU-FINAL-RELEASE-CANDIDATE-1 / D11 — a SECOND BIRTH
+        // SITE, not a transition, so the premise above survives verbatim.
+        //
+        // Delegated registration lets Supervisor RME file a tablet, and a
+        // filed tablet is born PENDING_APPROVAL. The constant appears twice in
+        // that service and neither is an UPDATE into the state:
+        //   register()            — the birth, chosen from the ACTOR's
+        //                           authority, never from the payload
+        //   approveRegistration() — the old-value side of its audit payload,
+        //                           exactly like the entry above it
+        // There is no active -> pending_approval edge anywhere, which is the
+        // thing this test actually protects. The assertion below enforces that
+        // rather than trusting this comment.
+        //
+        // PR-C is unaffected for an independent reason: it skips any device
+        // failing `$device->isActive()`, so a filed tablet is never a subject
+        // of bulk authorization at all.
+        'Modules/DoctorDevice/Services/DoctorDeviceService.php',
     ], 'A new writer of pending_approval falsifies the premise that lets PR-C reuse approve().');
+
+    // NON-WEAKENING GUARD. Adding a file to the allowlist above would, on its
+    // own, let that file later grow the very transition the premise forbids.
+    // So the birth-only property is asserted directly on the new entrant:
+    // the service may move a device INTO active, never back into pending.
+    $service = dbaExecutable(app_path('Modules/DoctorDevice/Services/DoctorDeviceService.php'));
+
+    expect(preg_match('/STATUS_ACTIVE\s*,?\s*\]?\s*=>\s*DoctorDevice::STATUS_PENDING_APPROVAL/', $service))
+        ->toBe(0, 'DoctorDeviceService gained an active -> pending_approval transition');
+
+    // approveRegistration() must only ever promote, so the only status it
+    // assigns is ACTIVE; pending_approval appears there solely as an audit
+    // old-value. If that inverts, the premise is gone.
+    expect(str_contains($service, "'status' => DoctorDevice::STATUS_PENDING_APPROVAL,"))
+        ->toBeFalse('a lifecycle method assigns pending_approval as a status update');
 });
 
 it('owns no state transition of its own: every write goes through the lifecycle service', function (): void {

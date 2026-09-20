@@ -369,8 +369,23 @@ it('leaves global doctor enforcement off and writes no pilot cohort of its own',
     // out of a host's reach.
     expect(config('android_release.enforcement.scope.global_permitted'))->toBeFalse()
         ->and(config('android_release.enforcement.scope.default_mode'))->toBe('pilot')
-        ->and(config('android_release.enforcement.scope.pilot_cohort_maximum'))->toBe(5)
+        // D10 raised this 5 -> 12 so one branch's doctors fit inside a pilot:
+        // SPN4 has ten home-locked doctors. It stays a REVIEWED SOURCE CHANGE,
+        // which is precisely the mechanism this assertion protects — the value
+        // moved through a diff, never through a host.
+        //
+        // The number is pinned AND the property behind it is asserted below,
+        // so a future bump that reached the fleet would redden even if someone
+        // updated this literal to match.
+        ->and(config('android_release.enforcement.scope.pilot_cohort_maximum'))->toBe(12)
         ->and(app(AndroidDoctorEnforcementScope::class)->globalPermitted())->toBeFalse();
+
+    // THE PROPERTY THE CEILING EXISTS FOR, asserted independently of its value:
+    // a cohort may carry the largest branch, and must NOT be able to carry the
+    // fleet. Fifteen Doctor-role accounts are in service, so listing everyone
+    // has to remain a refusal that only `global_permitted` can lift.
+    expect(config('android_release.enforcement.scope.pilot_cohort_maximum'))
+        ->toBeLessThan(15, 'the ceiling now reaches the whole fleet, so a host value could widen enforcement without review');
 
     /*
      * DELIBERATELY NOT ASSERTED: the resolved scope mode, the cohort ids, and
