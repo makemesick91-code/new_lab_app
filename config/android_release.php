@@ -1523,10 +1523,29 @@ return [
             // source-control change that goes through review.
             //
             // A cohort larger than this covers NOBODY rather than everybody,
-            // and says why. Five is the fleet the pilot was scoped for — three
-            // doctors with room for two — and it is deliberately far below the
-            // fifteen Doctor-role accounts in service.
-            'pilot_cohort_maximum' => 5,
+            // and says why.
+            //
+            // RAISED 5 -> 12 by DAENGTISIAMS-SUNU-FINAL-RELEASE-CANDIDATE-1 /
+            // D10, deliberately and through review, to make ONE BRANCH
+            // enforceable at a time.
+            //
+            // The owner's requirement was "PWA-only for all doctors, Sunu
+            // first, the other branches to follow". That cannot be expressed
+            // as a branch scope at the gate: DoctorAppLoginGate documents that
+            // `inEnforcementScope()` is "decided from the user id alone. No
+            // query", and resolving a doctor's home branch would put a
+            // database read on every doctor request. So a branch cohort is
+            // expressed the way every other cohort is — as a list of user ids
+            // — and the only thing that had to change was the ceiling.
+            //
+            // TWELVE, not fifteen. Cabang Sunu is the largest branch at ten
+            // home-locked doctors (LDK2 has three, TLK1 two), so twelve
+            // carries the biggest branch with headroom while staying BELOW the
+            // fifteen Doctor-role accounts in service. That gap is the point:
+            // listing every doctor still exceeds the ceiling and therefore
+            // still covers nobody, so fleet-wide enforcement remains reachable
+            // only through `global_permitted`, which no host value can touch.
+            'pilot_cohort_maximum' => 12,
         ],
     ],
 
