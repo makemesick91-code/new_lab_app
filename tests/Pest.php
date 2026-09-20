@@ -86,6 +86,7 @@ use App\Modules\Technician\Models\Technician;
 use App\Modules\Technician\Services\TechnicianAssignmentEligibility;
 use App\Services\Foundation\FeatureFlagService;
 use App\Services\Monitoring\PilotPerformanceSnapshotDiskProbe;
+use App\Support\AccessControl\FrontOfficeRole;
 use App\Support\Clinical\ClinicalClock;
 use Database\Seeders\PermissionSeeder;
 use Database\Seeders\RoleSeeder;
@@ -589,6 +590,29 @@ function rmeMakeKasirActive(User $user, Branch $branch): void
 
     app(UserOnlineContextService::class)
         ->startKasirSession($user, (int) $branch->id);
+}
+
+/**
+ * DAENGTISIAMS-SUNU-FINAL-RELEASE-CANDIDATE-1 / D2 — activate a Front Office
+ * online context.
+ *
+ * Deliberately NOT `rmeMakeAdminClinicActive()`: that helper force-assigns the
+ * legacy `Admin Klinik` role, and a Front Office user who also holds it is a
+ * DIFFERENT user — six menu guards key on that exact role name, so the fixture
+ * would hide the cashier screens from the very role created to work them and
+ * the test would be measuring the legacy role instead of the merged one.
+ *
+ * Front Office rides the ADMIN CLINIC session on purpose; see
+ * App\Support\AccessControl\FrontOfficeRole::ADMIN_CLINIC_CONTEXT.
+ */
+function rmeMakeFrontOfficeActive(User $user, Branch $branch): void
+{
+    if (! $user->hasRole(FrontOfficeRole::NAME)) {
+        $user->assignRole(FrontOfficeRole::NAME);
+    }
+
+    app(UserOnlineContextService::class)
+        ->startAdminClinicSession($user, (int) $branch->id);
 }
 
 function rmeAdminClinicUser(Branch $branch): User

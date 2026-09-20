@@ -349,6 +349,56 @@ class RoleSeeder extends Seeder
             // Sprint 23 Phase 23.5 — Kasir may view RME payment reports only
             'view_rme_payment_reports',
         ],
+        /*
+        | DAENGTISIAMS-SUNU-FINAL-RELEASE-CANDIDATE-1 / D2 — the merged front desk.
+        |
+        | Cabang Sunu staffs ONE person who both registers patients and takes
+        | payment. This role is the measured UNION of `Admin Klinik` (20) and
+        | `Kasir` (6) above: 21 distinct permissions, the 5 they already shared
+        | counted once. Nothing here is invented — every entry appears in one of
+        | those two lists, and `Sprint66FrontOfficeRoleTest` re-derives the union
+        | from them so the three lists can never drift apart silently.
+        |
+        | The role already exists in production as id 10 with a stale 5-permission
+        | subset and no users, created 2026-06-10 and never added to this seeder.
+        | Seeding by NAME adopts that row rather than creating a second one, which
+        | is what "reuse role id 10" means in practice.
+        |
+        | `Admin Klinik` and `Kasir` are deliberately LEFT INTACT above. They are
+        | the rollback path, and deleting a Spatie role orphans the historical
+        | `model_has_roles` rows that record who held what. Inactive means no user
+        | holds them — see App\Support\AccessControl\FrontOfficeRole::LEGACY.
+        |
+        | Front Office is resolved through the ADMIN CLINIC online context, so the
+        | daily branch lock keeps engaging. See FrontOfficeRole for why that is
+        | load-bearing rather than an implementation detail.
+        */
+        'Front Office' => [
+            // --- shared by both legacy roles -------------------------------
+            'view dashboard',
+            'view_clinic_visits',
+            'manage_rme_billing',
+            'view_rme_consents',
+            'manage_rme_consents',
+            // --- from Admin Klinik -----------------------------------------
+            'manage patients',
+            'manage_clinic_visits',
+            'view_branch_dashboard',
+            'view_clinic_master_data',
+            'view_rme_patient_reports',
+            'create_lab_branch_requests',
+            'create_legacy_rme_imports',
+            'view_legacy_rme_imports',
+            'create_legacy_odontogram_imports',
+            'view_legacy_odontogram_imports',
+            'view_satusehat_readiness',
+            'manage_satusehat_remediation',
+            'view_satusehat_branch_readiness',
+            'manage_satusehat_branch_remediation',
+            'view_satusehat_multi_branch_readiness',
+            // --- from Kasir --------------------------------------------------
+            'view_rme_payment_reports',
+        ],
         'Perawat' => [
             'view dashboard',
             'manage patients',

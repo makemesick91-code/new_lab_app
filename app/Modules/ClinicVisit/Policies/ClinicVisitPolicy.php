@@ -7,6 +7,7 @@ use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\RME\Services\DoctorPatientScopeService;
 use App\Modules\RME\Services\DoctorRoomScopeService;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
+use App\Support\AccessControl\FrontOfficeRole;
 use Illuminate\Auth\Access\Response;
 
 class ClinicVisitPolicy
@@ -156,7 +157,11 @@ class ClinicVisitPolicy
      */
     private function isFrontOfficeOnly(User $user): bool
     {
-        return $user->hasRole('Admin Klinik')
+        // D2 — this method was named for the tier a sprint before the tier had
+        // a role of its own. `Front Office` now joins `Admin Klinik` in it, so
+        // the merged role keeps exactly the visit authority its holders have
+        // today rather than widening on the way across.
+        return $user->hasAnyRole(FrontOfficeRole::VISIT_FRONT_DESK_ONLY)
             && ! $user->hasAnyRole(['Doctor', 'Perawat', 'Supervisor RME', 'Super Admin']);
     }
 
