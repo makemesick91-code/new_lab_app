@@ -26,6 +26,7 @@ use App\Modules\DoctorDevice\Controllers\DoctorDeviceLoginController;
 use App\Modules\DoctorDevice\Controllers\DoctorDeviceRegistrationWorkflowController;
 use App\Modules\DoctorDevice\Controllers\DoctorDeviceWebAuthnController;
 use App\Modules\DoctorDevice\Controllers\DoctorDeviceWebAuthnLoginController;
+use App\Modules\FrontOfficeDevice\Controllers\FrontOfficeDeviceWebAuthnLoginController;
 use App\Modules\Inventory\Controllers\GoodsReceiptController;
 use App\Modules\Inventory\Controllers\InventoryActivityLogController;
 use App\Modules\Inventory\Controllers\InventoryAlertController;
@@ -1936,6 +1937,36 @@ Route::middleware('web')->group(function () {
             ->name('doctor-device-webauthn.options');
         Route::post('doctor-device-webauthn', [DoctorDeviceWebAuthnLoginController::class, 'store'])
             ->name('doctor-device-webauthn.store');
+    });
+});
+
+/*
+| REVISION-FRONT-OFFICE-BRANCH-DEVICE-LOCK-1 — the front-desk equivalent.
+|
+| Same shape and the same reasoning as the doctor ceremony above: unauthenticated
+| because the denied login destroyed the session, holding only a short-lived
+| marker that names the account whose password was already accepted. The marker
+| is not a credential — completing the ceremony needs a private key held by an
+| APPROVED device whose `branch_id` equals the branch the account is pinned to,
+| and all of that is re-asserted server-side before a session exists.
+|
+| Reachable at all only when `front_office.branch_device_lock` is on AND the
+| account is one of the armed ids. With the flag off these routes exist but
+| refuse, and every Front Office login behaves exactly as it does today.
+|
+| Throttled on the same clinic-shaped reasoning recorded above: tablets sit
+| behind one NAT address, so a per-IP limit is really a per-clinic limit. One
+| login costs two requests. It is a rate limit, not a lockout.
+*/
+Route::middleware('web')->group(function () {
+    Route::get('front-office-device-webauthn', [FrontOfficeDeviceWebAuthnLoginController::class, 'show'])
+        ->name('front-office-device-webauthn.show');
+
+    Route::middleware('throttle:30,1')->group(function () {
+        Route::post('front-office-device-webauthn/options', [FrontOfficeDeviceWebAuthnLoginController::class, 'options'])
+            ->name('front-office-device-webauthn.options');
+        Route::post('front-office-device-webauthn', [FrontOfficeDeviceWebAuthnLoginController::class, 'store'])
+            ->name('front-office-device-webauthn.store');
     });
 });
 
