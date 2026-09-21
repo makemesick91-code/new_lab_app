@@ -44,12 +44,106 @@ use Illuminate\Support\Str;
  * real view SURVIVED. A guard that cannot fail for the case it exists to catch
  * is worse than no guard, because it reads as coverage.
  */
-function d12HasSidebarShell(string $src): bool
+/**
+ * Blade comments are NOT code, and this scanner must not read them as code.
+ *
+ * Found by mutation, 2026-09-21: the workflow shell's own docblock says
+ * "Wraps the canonical <x-settings-shell>", and with the shell then DELETED
+ * from that component the page still matched — a comment describing the shell
+ * stood in for the shell itself, and every page composed on that wrapper would
+ * have been permanently exempt from the check. The mutation is what exposed it;
+ * the property looked held right up until it was attacked.
+ *
+ * Applies to the direct match too, not only the recursion: any view whose
+ * comment happens to mention a shell had the same hole.
+ */
+function d12StripBladeComments(string $src): string
+{
+    return (string) preg_replace('/\{\{--.*?--\}\}/s', '', $src);
+}
+
+function d12OpensSidebarShellDirectly(string $src): bool
 {
     return (bool) preg_match(
         '/<(?!\/)\s*x-(?:app-layout|settings-shell)\b|@extends\([\'"]layouts\.sidebar[\'"]\)/',
-        $src,
+        d12StripBladeComments($src),
     );
+}
+
+/**
+ * Resolve an anonymous Blade component tag to its source file.
+ *
+ * `x-foo.bar` lives at `resources/views/components/foo/bar.blade.php`, with
+ * `.../bar/index.blade.php` as Blade's documented alternative. Class-based
+ * components (x-app-layout) have no file here, which is fine: they are matched
+ * by the direct regex above.
+ */
+function d12ComponentPath(string $tag): ?string
+{
+    $base = base_path('resources/views/components/').str_replace('.', '/', $tag);
+
+    foreach ([$base.'.blade.php', $base.'/index.blade.php'] as $candidate) {
+        if (is_file($candidate)) {
+            return $candidate;
+        }
+    }
+
+    return null;
+}
+
+/**
+ * OPENS one of the shells that carries the sidebar — directly, or THROUGH a
+ * component that does.
+ *
+ * The `<` and the negative lookahead for `/` are load-bearing. The first cut of
+ * this helper matched the bare name, which also matches the CLOSING
+ * `</x-settings-shell>` tag — so a page whose opening shell had been deleted
+ * still looked shelled, and a mutation test that stripped the shell from a
+ * real view SURVIVED. A guard that cannot fail for the case it exists to catch
+ * is worse than no guard, because it reads as coverage.
+ *
+ * WHY IT NOW FOLLOWS THE CHAIN. A page is allowed to open a purpose-built
+ * wrapper that itself opens `x-settings-shell` — that is composition, not a
+ * missing sidebar, and DOCTOR-DEVICE-GUIDED-REGISTRATION-WORKFLOW-1 has nine
+ * pages sharing one workflow shell exactly that way. A scanner that cannot see
+ * one level of indirection would have forced nine copies of the shell into
+ * nine views to satisfy it, which is worse code for no extra safety.
+ *
+ * THE GUARANTEE IS UNCHANGED, and that is the point: the recursion resolves
+ * the wrapper's own source, so deleting the shell from the wrapper makes every
+ * page that depends on it fail — which is precisely the mutation this file
+ * exists to catch, now covering composed pages too. Bounded by a visited set
+ * and a depth cap so a component cycle cannot hang the suite.
+ *
+ * @param  array<string, true>  $seen
+ */
+function d12HasSidebarShell(string $src, array $seen = [], int $depth = 0): bool
+{
+    if (d12OpensSidebarShellDirectly($src)) {
+        return true;
+    }
+
+    if ($depth >= 5) {
+        return false;
+    }
+
+    preg_match_all('/<(?!\/)\s*x-([a-zA-Z0-9_.\-]+)/', d12StripBladeComments($src), $m);
+
+    foreach (array_unique($m[1]) as $tag) {
+        $path = d12ComponentPath($tag);
+
+        if ($path === null || isset($seen[$path])) {
+            continue;
+        }
+
+        $seen[$path] = true;
+
+        if (d12HasSidebarShell((string) file_get_contents($path), $seen, $depth + 1)) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 /** Genuinely a logged-out screen: no authenticated user to build a menu for. */

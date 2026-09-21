@@ -12,6 +12,7 @@ use App\Modules\DoctorDevice\Requests\StoreDoctorDeviceRequest;
 use App\Modules\DoctorDevice\Requests\UpdateDoctorDeviceRequest;
 use App\Modules\DoctorDevice\Services\DoctorDeviceEnrollmentService;
 use App\Modules\DoctorDevice\Services\DoctorDeviceService;
+use App\Modules\DoctorDevice\Support\ReturnsToRegistrationWorkflow;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -26,6 +27,7 @@ use Illuminate\View\View;
 class DoctorDeviceController extends Controller
 {
     use AuthorizesRequests;
+    use ReturnsToRegistrationWorkflow;
 
     public function __construct(
         private readonly DoctorDeviceService $devices,
@@ -78,7 +80,7 @@ class DoctorDeviceController extends Controller
         // is not: a PENDING_APPROVAL row is refused by the login gate until a
         // Super Admin approves it and a credential is enrolled on it.
         return redirect()
-            ->route('settings.doctor-devices.show', $device)
+            ->route($this->workflowReturnRoute($request, $device, 'show') ?? 'settings.doctor-devices.show', $device)
             ->with('status', $device->isPendingApproval()
                 ? 'Perangkat terdaftar dan menunggu persetujuan Super Admin. Perangkat belum dapat dipakai login.'
                 : 'Perangkat berhasil didaftarkan.');
@@ -108,7 +110,7 @@ class DoctorDeviceController extends Controller
         $this->devices->updateMetadata($doctorDevice, $request->validated(), $request->user());
 
         return redirect()
-            ->route('settings.doctor-devices.show', $doctorDevice)
+            ->route($this->workflowReturnRoute($request, $doctorDevice, 'device') ?? 'settings.doctor-devices.show', $doctorDevice)
             ->with('status', 'Data perangkat diperbarui.');
     }
 
@@ -146,7 +148,7 @@ class DoctorDeviceController extends Controller
         $this->devices->approveRegistration($doctorDevice, $request->user());
 
         return redirect()
-            ->route('settings.doctor-devices.show', $doctorDevice)
+            ->route($this->workflowReturnRoute($request, $doctorDevice, 'approval') ?? 'settings.doctor-devices.show', $doctorDevice)
             ->with('status', 'Pendaftaran perangkat disetujui. Perangkat masih harus mendaftarkan kredensial sebelum dapat dipakai login.');
     }
 
