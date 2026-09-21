@@ -32,8 +32,10 @@ use App\Modules\DoctorDevice\Interfaces\DoctorWebAuthnLiveProofRepositoryInterfa
 use App\Modules\DoctorDevice\Models\DoctorDevice;
 use App\Modules\DoctorDevice\Models\DoctorDeviceAuthorization;
 use App\Modules\DoctorDevice\Models\DoctorDeviceWebAuthnCredential;
+use App\Modules\DoctorDevice\Services\DoctorAppLoginGate;
 use App\Modules\DoctorDevice\Services\DoctorDeviceRegistrationReadinessService as Readiness;
 use App\Modules\DoctorDevice\Services\DoctorDeviceWebAuthnLoginService;
+use App\Modules\DoctorDevice\Services\DoctorGlobalRolloutReadinessService;
 use App\Modules\LabOrder\Models\AuditLog;
 use App\Modules\RmeOnlineContext\Middleware\EnsureRmeOnlineContext;
 use Carbon\CarbonImmutable;
@@ -488,4 +490,84 @@ it('builds the estate proof report exactly once for a whole board of devices', f
         ->assertOk();
 
     expect($counter->calls)->toBe(1);
+});
+
+// ---------------------------------------------------------------------------
+// GLOBAL SERVICE DISABLED != DEVICE DEFECT
+//
+// The canonical readiness decision for this sprint, pinned as TWO assertions
+// because it is two rules that must move together:
+//
+//   (a) a globally disabled login capability must not be reported as a fault
+//       of the device — the operator must not be sent to re-enrol a healthy
+//       tablet for a reason that has nothing to do with it;
+//   (b) a device must not be declared clinically READY while that capability
+//       is globally disabled — UNVERIFIED is not a pass.
+//
+// Dropping (a) reintroduces the false device defect. Dropping (b) reintroduces
+// a screen promising a tablet works when no doctor can log in on it.
+// ---------------------------------------------------------------------------
+
+function rrDisableWebAuthnLogin(): void
+{
+    $flags = config('feature_flags.flags', []);
+    $flags[DoctorDeviceWebAuthnLoginService::FLAG]['default'] = false;
+    $flags[DoctorDeviceWebAuthnLoginService::FLAG]['env_value'] = false;
+    config()->set('feature_flags.flags', $flags);
+}
+
+it('does not blame the device when the global WebAuthn login switch is off', function () {
+    $fixture = rrReadyTablet();
+
+    // Sanity: this exact tablet reads READY while the capability is armed, so
+    // anything that changes below is the switch and not the fixture.
+    expect(rrEvaluate($fixture['device'])['verdict'])->toBe(Readiness::READY);
+
+    rrDisableWebAuthnLogin();
+
+    $report = rrEvaluate($fixture['device']);
+
+    // (a) Every DEVICE-SPECIFIC gate still reports its own true state.
+    expect(rrGate($report, Readiness::GATE_DEVICE_ACTIVE))->toBe(Readiness::GATE_PASS)
+        ->and(rrGate($report, Readiness::GATE_DEVICE_NOT_REVOKED))->toBe(Readiness::GATE_PASS)
+        ->and(rrGate($report, Readiness::GATE_APPROVAL_ACTIVE))->toBe(Readiness::GATE_PASS)
+        ->and(rrGate($report, Readiness::GATE_WEBAUTHN_CREDENTIAL_ACTIVE))->toBe(Readiness::GATE_PASS)
+        ->and(rrGate($report, Readiness::GATE_USER_VERIFICATION_VALID))->toBe(Readiness::GATE_PASS)
+        ->and(rrGate($report, Readiness::GATE_CREDENTIAL_DEVICE_BOUND))->toBe(Readiness::GATE_PASS)
+        ->and(rrGate($report, Readiness::GATE_ACTIVE_DOCTOR_AUTHORIZATION))->toBe(Readiness::GATE_PASS);
+
+    // The gate-agreement check is UNVERIFIED — not FAIL, and explicitly NOT
+    // the "this device is mis-provisioned" finding.
+    expect(rrGate($report, Readiness::GATE_NO_INVALID_DEVICE_STATE))->toBe(Readiness::GATE_UNVERIFIED);
+
+    $agreement = collect($report['gates'])
+        ->firstWhere('key', Readiness::GATE_NO_INVALID_DEVICE_STATE);
+
+    // It carries the REAL global-disable reason, so the operator can tell a
+    // posture apart from a defect.
+    expect($agreement['reason'])->toBe(DoctorAppLoginGate::DENY_WEBAUTHN_LOGIN_DISABLED)
+        ->and($agreement['reason'])
+        ->not->toBe(DoctorGlobalRolloutReadinessService::FINDING_GATE_DISAGREES);
+});
+
+it('still refuses to declare the device clinically ready while the capability is off', function () {
+    $fixture = rrReadyTablet();
+    rrDisableWebAuthnLogin();
+
+    // (b) UNVERIFIED is not a pass. Fail-closed by design.
+    expect(rrEvaluate($fixture['device'])['verdict'])->toBe(Readiness::NOT_READY);
+
+    $operator = User::factory()->create();
+    $operator->assignRole('Super Admin');
+
+    test()->actingAs($operator->fresh())
+        ->withoutMiddleware(EnsureRmeOnlineContext::class)
+        ->get(route('settings.doctor-device-registration.complete', $fixture['device']))
+        ->assertRedirect(route('settings.doctor-device-registration.readiness', $fixture['device']));
+
+    test()->actingAs($operator->fresh())
+        ->withoutMiddleware(EnsureRmeOnlineContext::class)
+        ->get(route('settings.doctor-device-registration.readiness', $fixture['device']))
+        ->assertOk()
+        ->assertDontSee('READY FOR CLINICAL USE');
 });

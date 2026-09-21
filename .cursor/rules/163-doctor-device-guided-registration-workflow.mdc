@@ -1,0 +1,99 @@
+---
+description: Guided device registration workflow + device-scoped readiness rules (DOCTOR-DEVICE-GUIDED-REGISTRATION-WORKFLOW-1)
+globs:
+  - app/Modules/DoctorDevice/**
+  - resources/views/settings/doctor-device-registration/**
+  - resources/views/components/doctor-device-registration-shell.blade.php
+alwaysApply: false
+---
+
+# Pendaftaran Device Dokter — guided registration workflow
+
+Canonical rules locked by DOCTOR-DEVICE-GUIDED-REGISTRATION-WORKFLOW-1.
+
+## The workflow is a guide, never a second implementation
+
+1. Every step except step 4 MUST post to the mutation route that already owns
+   it (`settings.doctor-devices.store` / `.update` / `.approve-registration` /
+   `.webauthn.options` / `.webauthn.store` / `.webauthn.revoke`). Do NOT add a
+   convenience endpoint that duplicates a security-sensitive action.
+2. Step 4 (`settings.doctor-device-registration.doctors.store`) is the ONLY new
+   mutation. It calls `DoctorDeviceAuthorizationService::resolveOrRequest()`
+   with `SOURCE_ADMIN` and can therefore only ever produce a PENDING row.
+3. The workflow MUST NOT approve its own authorization request. Approval stays
+   in Approval Device Dokter behind `manage_doctor_device_authorizations`
+   (`DoctorDeviceAuthorizationPolicy::decide`).
+4. `DoctorDeviceAuthorizationPolicy::requestForDevice` deliberately shares
+   `manage_doctor_device_authorizations` with `decide`: a holder could already
+   approve any pending row, so filing one grants nothing new. The invariant is
+   enforced at the WRITE, not at the permission.
+5. Return-to-workflow is a BOOLEAN (`registration_workflow`), never a URL, a
+   path or a route name. Destinations are built from hardcoded route names.
+   Do NOT add a `redirect_to=` parameter to a device endpoint.
+
+## Two parties stay two parties
+
+6. `register_doctor_devices` files a tablet; `manage_doctor_devices` enrols its
+   credential and admits it into service. Do NOT widen either to make the
+   wizard single-operator.
+7. Where the current actor cannot act, render an explicit waiting state
+   ("Menunggu Super Admin" / "Menunggu Approval Device Dokter"). The waiting
+   state is presentation; every mutation re-authorizes server-side.
+8. Prerequisites are enforced at the WRITE. A hand-typed URL may render a page,
+   but the mutation MUST refuse (e.g. authorizing a doctor onto a tablet that
+   is not yet approved).
+
+## Derived state only
+
+9. There MUST NOT be a `wizard_status` column or any stored workflow status.
+   Every step is derived from existing security truth: the device row, its
+   credentials, its status, its authorizations, the live proof, the readiness
+   engine. A stored status drifts the moment a credential is revoked elsewhere.
+10. Step 5 MUST have no control that can record a pass, and no route that
+    could. The verdict comes from audit rows written by the login path itself,
+    attributed to the device the assertion was performed on.
+
+## Device-scoped readiness reuses fleet truth
+
+11. `DoctorDeviceRegistrationReadinessService` MUST consume the existing
+    `DoctorGlobalRolloutReadinessService::REASON_*` vocabulary,
+    `DoctorDeviceIdentityProofPolicy`, `DoctorDeviceCredentialUsabilityPolicy`
+    and `DoctorWebAuthnLiveProofService`. Do NOT re-derive readiness truth.
+12. Credential usability lives in ONE place
+    (`DoctorDeviceCredentialUsabilityPolicy`); the fleet engine delegates to it.
+13. Every gate is evaluated — no early return. Revoking a credential, a device
+    or an authorization must each fail its OWN gate and leave the others
+    passing, or the operator is sent to fix the wrong page.
+14. `UNVERIFIED` is NOT a pass. It means the gate could not be measured, and it
+    must never be rendered or counted as green.
+15. The estate-wide live-proof report is built ONCE per request. The board must
+    judge every row against one snapshot, not one snapshot per row.
+
+## GLOBAL SERVICE DISABLED != DEVICE DEFECT
+
+16. **A globally disabled login capability MUST NOT be reported as a fault of
+    the device.** When `DoctorAppLoginGate::deviceProofDenyReason()` returns
+    `DENY_WEBAUTHN_LOGIN_DISABLED`, the estate-wide master switch
+    (`doctor.pwa_webauthn_device_login`) is off and it refuses EVERY correctly
+    provisioned tablet. The checklist MUST report
+    `NO_INVALID_DEVICE_STATE = UNVERIFIED` carrying the real reason
+    `webauthn_login_disabled`, and MUST NOT report it as `FAIL`, as
+    `gate_refuses_a_provisioned_path`, or as a device/credential/authorization
+    defect. The device-specific gates (device active, approval, credential,
+    user verification, device binding, doctor authorization) MUST continue to
+    report their own true state.
+
+17. **A device MUST NOT be declared clinically READY while the required login
+    capability is globally disabled.** `UNVERIFIED` is not a pass, so the
+    verdict stays `NOT_READY` and step 7 stays blocked — no
+    "READY FOR CLINICAL USE", by design. Fail-closed is deliberate: a tablet is
+    not ready for clinical use if no doctor can log in on it.
+
+    These two rules are ONE decision, not a contradiction. Rule 16 governs the
+    REASON shown to the operator (do not send them to re-enrol a healthy
+    tablet); rule 17 governs the VERDICT (do not promise a tablet works when
+    the capability it needs is switched off). Changing either without the other
+    reintroduces exactly one of the two failure modes.
+
+18. Do NOT "fix" a NOT_READY board by turning a production flag on. The flag is
+    an estate posture decision with its own change process.
