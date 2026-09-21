@@ -44,4 +44,25 @@ class DoctorDeviceAuthorizationPolicy
     {
         return $user->can('manage_doctor_device_authorizations');
     }
+
+    /**
+     * DOCTOR-DEVICE-GUIDED-REGISTRATION-WORKFLOW-1 — FILE a request for a
+     * (doctor, device) pair from the registration workflow, instead of waiting
+     * for the doctor to produce one by attempting a login.
+     *
+     * Shares `manage_doctor_device_authorizations` with `decide` ON PURPOSE,
+     * and that is not the maker/checker split leaking. Everyone who holds this
+     * permission could already approve any pending row, including the ones the
+     * doctor's own login files — so filing one grants them nothing they did not
+     * have. The invariant that matters is enforced at the WRITE, not here: the
+     * workflow calls `resolveOrRequest()`, which can only ever produce a
+     * PENDING row, so the wizard cannot approve its own request no matter who
+     * is holding it. Approval stays in Approval Device Dokter, through `decide`.
+     *
+     * A separate permission here would have been a label, not a control.
+     */
+    public function requestForDevice(User $user): bool
+    {
+        return $user->can('manage_doctor_device_authorizations');
+    }
 }

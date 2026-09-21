@@ -101,6 +101,7 @@ class DoctorGlobalRolloutReadinessService
         private readonly Phase4aPilotPreparationScanner $posture,
         private readonly FeatureFlagService $flags,
         private readonly DoctorDeviceIdentityProofPolicy $identityProof,
+        private readonly DoctorDeviceCredentialUsabilityPolicy $credentialUsability,
     ) {}
 
     /**
@@ -297,37 +298,17 @@ class DoctorGlobalRolloutReadinessService
     /**
      * Why this credential cannot carry a doctor, or null if it can.
      *
-     * `backup_eligible` is NULLABLE on purpose — an authenticator that reported
-     * neither flag has told us nothing, and a null is an honest record of that.
-     * So the test is `=== false`, never `!== true`: an unstated property is not
-     * a measured one, and unknown must not be admitted.
-     *
-     * The device-bound verdict is then checked SEPARATELY even though it is
-     * derived from the same flag. The two agreeing is the normal case; the two
-     * disagreeing means a stored verdict has drifted from the flags it was
-     * derived from, which is the only route by which a syncable passkey could
-     * reach a clinical session. Collapsing them would remove the only place
-     * that drift is visible.
+     * DELEGATED, not reimplemented. The chain itself now lives in
+     * {@see DoctorDeviceCredentialUsabilityPolicy} because
+     * DOCTOR-DEVICE-GUIDED-REGISTRATION-WORKFLOW-1 needs the same answer per
+     * DEVICE, and a second copy of a security decision is a second copy that
+     * can drift. The reason constants stay here — this engine owns the
+     * vocabulary, the policy owns the chain — so nothing about what this method
+     * returns has changed.
      */
     private function credentialFailure(DoctorDeviceWebAuthnCredential $credential): ?string
     {
-        if ($credential->isRevoked()) {
-            return self::REASON_CREDENTIAL_REVOKED;
-        }
-
-        if ($credential->user_verified !== true) {
-            return self::REASON_CREDENTIAL_NOT_USER_VERIFIED;
-        }
-
-        if ($credential->backup_eligible !== false) {
-            return self::REASON_CREDENTIAL_NOT_DEVICE_BOUND;
-        }
-
-        if (! $credential->isDeviceBound()) {
-            return self::REASON_CREDENTIAL_NOT_DEVICE_BOUND;
-        }
-
-        return null;
+        return $this->credentialUsability->refusalReason($credential);
     }
 
     /**

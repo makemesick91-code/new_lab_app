@@ -128,7 +128,8 @@
             'settings.payment-methods.*',
             'settings.wa-reminder-templates.*',
             'settings.branches.*',
-            'settings.doctor-devices.*'
+            'settings.doctor-devices.*',
+            'settings.doctor-device-registration.*'
         ),
         'settings' => request()->routeIs('settings.users.*', 'settings.roles.*', 'settings.permissions.*'),
         // REVISION-DOCTOR-AUTO-DEVICE-APPROVAL-APP-ONLY-LOGIN-1
@@ -884,6 +885,13 @@
                         @canany(['view_doctor_devices', 'manage_doctor_devices', 'register_doctor_devices'])
                             <a href="{{ route('settings.doctor-devices.index') }}"
                                class="menu-subitem {{ request()->routeIs('settings.doctor-devices.*') ? $linkActive : $linkIdle }}">Device Dokter</a>
+                            {{-- DOCTOR-DEVICE-GUIDED-REGISTRATION-WORKFLOW-1 — the
+                                 guided path through the SAME registry above, for
+                                 bringing a new tablet into service. Sits here
+                                 rather than beside Approval Device Dokter, which
+                                 stays a top-level operational inbox on purpose. --}}
+                            <a href="{{ route('settings.doctor-device-registration.index') }}"
+                               class="menu-subitem {{ request()->routeIs('settings.doctor-device-registration.*') ? $linkActive : $linkIdle }}">Pendaftaran Device Dokter</a>
                         @endcanany
                     </div>
                 </div>

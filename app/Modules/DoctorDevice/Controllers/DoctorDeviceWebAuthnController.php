@@ -8,6 +8,7 @@ use App\Modules\DoctorDevice\Models\DoctorDeviceWebAuthnCredential;
 use App\Modules\DoctorDevice\Requests\DoctorDeviceWebAuthnRegistrationRequest;
 use App\Modules\DoctorDevice\Requests\DoctorDeviceWebAuthnRevokeRequest;
 use App\Modules\DoctorDevice\Services\DoctorDeviceWebAuthnRegistrationService;
+use App\Modules\DoctorDevice\Support\ReturnsToRegistrationWorkflow;
 use App\Modules\DoctorDevice\Support\WebAuthnCeremonyFactory;
 use App\Modules\DoctorDevice\Support\WebAuthnRelyingParty;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
@@ -30,6 +31,7 @@ use Illuminate\View\View;
 class DoctorDeviceWebAuthnController extends Controller
 {
     use AuthorizesRequests;
+    use ReturnsToRegistrationWorkflow;
 
     public function __construct(
         private readonly DoctorDeviceWebAuthnRegistrationService $registrations,
@@ -87,7 +89,7 @@ class DoctorDeviceWebAuthnController extends Controller
         );
 
         return redirect()
-            ->route('settings.doctor-devices.webauthn.create', $doctorDevice)
+            ->route($this->workflowReturnRoute($request, $doctorDevice, 'webauthn') ?? 'settings.doctor-devices.webauthn.create', $doctorDevice)
             ->with('success', 'Kredensial perangkat berhasil didaftarkan ('.$credential->device_bound_verdict.').');
     }
 
@@ -103,7 +105,7 @@ class DoctorDeviceWebAuthnController extends Controller
         $this->registrations->revoke($credential, $request->user(), $request->string('reason')->toString());
 
         return redirect()
-            ->route('settings.doctor-devices.webauthn.create', $doctorDevice)
+            ->route($this->workflowReturnRoute($request, $doctorDevice, 'webauthn') ?? 'settings.doctor-devices.webauthn.create', $doctorDevice)
             ->with('success', 'Kredensial dicabut. Pendaftaran ulang diperlukan untuk memakai perangkat ini lagi.');
     }
 }

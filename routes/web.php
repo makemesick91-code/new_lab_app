@@ -23,6 +23,7 @@ use App\Modules\DoctorAccess\Controllers\DoctorBreakGlassController;
 use App\Modules\DoctorDevice\Controllers\DoctorDeviceAuthorizationController;
 use App\Modules\DoctorDevice\Controllers\DoctorDeviceController;
 use App\Modules\DoctorDevice\Controllers\DoctorDeviceLoginController;
+use App\Modules\DoctorDevice\Controllers\DoctorDeviceRegistrationWorkflowController;
 use App\Modules\DoctorDevice\Controllers\DoctorDeviceWebAuthnController;
 use App\Modules\DoctorDevice\Controllers\DoctorDeviceWebAuthnLoginController;
 use App\Modules\Inventory\Controllers\GoodsReceiptController;
@@ -526,6 +527,56 @@ Route::middleware('auth')->prefix('settings')->name('settings.')->group(function
         Route::post('doctor-devices/{doctorDevice}/webauthn/{credential}/revoke', [DoctorDeviceWebAuthnController::class, 'revoke'])
             ->name('doctor-devices.webauthn.revoke');
     });
+
+    /*
+    |----------------------------------------------------------------------
+    | DOCTOR-DEVICE-GUIDED-REGISTRATION-WORKFLOW-1 — Pendaftaran Device Dokter
+    |----------------------------------------------------------------------
+    | A GUIDE over the registry above, not a second copy of it. Every step but
+    | one posts to the mutation route that already owns it — filing, metadata,
+    | credential enrolment, revocation and registration approval are all the
+    | existing endpoints, with their existing policies. Nothing here duplicates
+    | a security-sensitive action.
+    |
+    | The ONE new mutation is `doctors` (step 4): it files PENDING authorization
+    | requests with SOURCE_ADMIN so an operator no longer has to wait for a
+    | doctor to produce one by attempting a login. It cannot approve them —
+    | that stays in Approval Device Dokter behind
+    | `manage_doctor_device_authorizations`.
+    |
+    | The read group admits the FILING authority too, because the workflow is
+    | shared by both parties: Supervisor RME files a tablet, Super Admin enrols
+    | and admits it. A filer who opens step 2 or 3 sees "Menunggu Super Admin",
+    | and the underlying POSTs are unreachable to them at the route layer above
+    | as well as at the policy.
+    */
+    Route::middleware('permission:view_doctor_devices|manage_doctor_devices|register_doctor_devices')
+        ->prefix('doctor-device-registration')
+        ->name('doctor-device-registration.')
+        ->group(function () {
+            Route::get('/', [DoctorDeviceRegistrationWorkflowController::class, 'index'])->name('index');
+            Route::get('create', [DoctorDeviceRegistrationWorkflowController::class, 'create'])->name('create');
+
+            // `whereNumber` so `create` above is never captured as a device id.
+            Route::prefix('{registration}')->whereNumber('registration')->group(function () {
+                Route::get('/', [DoctorDeviceRegistrationWorkflowController::class, 'show'])->name('show');
+                Route::get('device', [DoctorDeviceRegistrationWorkflowController::class, 'device'])->name('device');
+                Route::get('webauthn', [DoctorDeviceRegistrationWorkflowController::class, 'webauthn'])->name('webauthn');
+                Route::get('approval', [DoctorDeviceRegistrationWorkflowController::class, 'approval'])->name('approval');
+                Route::get('doctors', [DoctorDeviceRegistrationWorkflowController::class, 'doctors'])->name('doctors');
+                Route::get('login-test', [DoctorDeviceRegistrationWorkflowController::class, 'loginTest'])->name('login-test');
+                Route::get('readiness', [DoctorDeviceRegistrationWorkflowController::class, 'readiness'])->name('readiness');
+                Route::get('complete', [DoctorDeviceRegistrationWorkflowController::class, 'complete'])->name('complete');
+                Route::get('history', [DoctorDeviceRegistrationWorkflowController::class, 'history'])->name('history');
+
+                // The only new mutation. Its own permission gate, because the
+                // read group above deliberately admits the filing authority and
+                // filing a tablet is not authorizing doctors onto one.
+                Route::post('doctors', [DoctorDeviceRegistrationWorkflowController::class, 'storeDoctors'])
+                    ->middleware('permission:manage_doctor_device_authorizations')
+                    ->name('doctors.store');
+            });
+        });
 
     Route::middleware('permission:view_clinic_master_data|manage_clinic_master_data')->group(function () {
         Route::resource('clinic-rooms', ClinicRoomController::class)
