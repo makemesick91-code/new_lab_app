@@ -1,0 +1,90 @@
+---
+description: Front Office branch-device login lock — exactly four approved accounts, never the role
+globs:
+  - "app/Modules/FrontOfficeDevice/**"
+  - "app/Support/AccessControl/FrontOfficeBranchDeviceCohort.php"
+  - "config/front_office_device_lock.php"
+  - "app/Http/Controllers/Auth/AuthenticatedSessionController.php"
+  - "app/Modules/RmeOnlineContext/Services/UserOnlineContextService.php"
+  - "app/Modules/Branch/Services/BranchContext.php"
+alwaysApply: false
+---
+
+# REVISION-FRONT-OFFICE-BRANCH-DEVICE-LOCK-1
+
+A branch-device login lock for **exactly four named Front Office accounts**. Ships INERT.
+
+## Scope is a cohort, never the role
+
+- Production holds **eight** `Front Office` accounts; the owner approved **four**. `hasRole('Front Office')` is the
+  wrong scope and would lock four live front-desk accounts.
+- Membership is `user_id:BRANCH_CODE` pairs in `config/front_office_device_lock.php`, supplied by the environment.
+  The committed cohort is **empty** — user ids are not portable between the repo and production.
+- `max_cohort_size` is **4**. A fifth armed id does not widen the lock; it fails **closed** for everyone armed.
+- `role_wide_permitted` is a source-controlled `false`. Never make it reachable from the environment.
+- An armed id whose account does not hold the `Front Office` role is `NOT_IN_SCOPE` — a typo must never device-lock a
+  doctor.
+
+## Canonical branch codes (verified against production)
+
+`TLK1` = Cabang Telkomas (1) · `LDK2` = Cabang Landak (2) · `ATG3` = Cabang Antang (3) · `SPN4` = Cabang Sunu (5)
+
+`TKM1` and `SUN4` are **stale** — do not use them. `MAIN` (4) is not RME-enabled and can never satisfy the lock.
+
+## Device authority — reuse, never re-invent
+
+- `mst_doctor_devices` is the **only** device registry (its own header calls it a clinic device registry) and
+  `branch_id` is the **only** device branch ownership. No second device table. Never generalize
+  `mst_doctor_device_authorizations` to all users for this requirement.
+- `trx_doctor_device_webauthn_credentials` has **no doctor column**: it is keyed by `doctor_device_id` and its
+  WebAuthn user handle is the device uuid. **The credential identifies the tablet, not the clinician.** That is what
+  makes a device-scoped lookup legitimate.
+- Candidate resolution is `required branch -> approved devices -> usableForDevice()`. The doctor path
+  (`usableForDoctor()`) is unchanged and must stay unchanged.
+- Enrolment already exists: `settings.doctor-devices.webauthn.*` registers a credential onto a **device**, authorized
+  by the `DoctorDevice` policy. No doctor record involved. Do not add an enrolment surface.
+- Approved = `isActive()` **and** `isCryptographicallyVerified()` **and** `isEnrollmentVerified()`.
+- Credentials must be **device-bound**, never a syncable passkey (`WebAuthnDeviceBinding::isAcceptable`).
+
+## One decision service
+
+`FrontOfficeBranchDeviceLockService::evaluate()` is the **only** place the lock is decided. Never scatter
+four-account conditions across controllers, middleware or views. Outcomes:
+`NOT_IN_SCOPE` · `ALLOW` · `DENY_UNKNOWN_DEVICE` · `DENY_DEVICE_NOT_APPROVED` · `DENY_DEVICE_BRANCH_MISMATCH` ·
+`DENY_ACCOUNT_BRANCH_INVALID` · `DENY_BRANCH_INACTIVE`
+
+## Never trust the request
+
+Device identity comes only from the server-side session binding written by a completed assertion. Never from a
+cookie, header, query string, hidden input, localStorage, or a submitted `branch_id`. A submitted `branch_id` is only
+ever the value being **checked**.
+
+## Enforcement is three-layer
+
+1. Login — one gate call in `AuthenticatedSessionController`; a denial **destroys the session**.
+2. Every request — `EnsureFrontOfficeDeviceSession` (global), so a revoked/disabled/re-branched device ends the
+   session on its next request.
+3. Branch mutation — refused in `UserOnlineContextService` (on the **mutation**, not the route) and pinned in
+   `BranchContext::forUser()` **ahead of** the online context, so a context row selected before arming cannot widen.
+
+Hiding the branch selector is presentation. It is never the boundary.
+
+## Fail closed
+
+Duplicated (even agreeing), off-policy, or oversized cohort entries **DENY** the armed account. A token naming no id
+puts nobody in scope. An absent id is `NOT_IN_SCOPE` and untouched — that is the design, not a fail-open.
+
+## Config and audit hygiene
+
+- `env()` only in config files; deterministic under `config:cache`.
+- Audit `FRONT_OFFICE_DEVICE_BRANCH_LOGIN_DENIED` with ids, codes and a reason code **only**. Never a password,
+  credential, token, cookie, session id or biometric value.
+
+## Activation
+
+Enforcement is `FEATURE_FRONT_OFFICE_BRANCH_DEVICE_LOCK`, default **false**. Arm **one account at a time** after that
+branch's tablet holds a device-bound credential. **Admin Sunu (29) is armed LAST** — it is the only one in live use.
+Never arm all four at a deploy. Never move a device's branch, revoke a real device, or create a credential to
+manufacture evidence.
+
+A GO authorizes these four accounts only — not the role, not future accounts, not other roles.

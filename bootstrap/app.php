@@ -10,6 +10,7 @@ use App\Http\Middleware\AttachRequestCorrelationContext;
 use App\Modules\ClinicVisit\Middleware\EnsureVisitRoomAssigned;
 use App\Modules\DoctorAccess\Middleware\EnsureDoctorSessionLease;
 use App\Modules\DoctorDevice\Middleware\EnsureDoctorDeviceSession;
+use App\Modules\FrontOfficeDevice\Middleware\EnsureFrontOfficeDeviceSession;
 use App\Modules\RmeOnlineContext\Middleware\EnsureRmeOnlineContext;
 use App\Modules\RmeOnlineContext\Middleware\TouchOnlineContextLastSeen;
 use Illuminate\Foundation\Application;
@@ -99,6 +100,24 @@ return Application::configure(basePath: dirname(__DIR__))
             // with independent audit actions, and whichever fires first tears
             // the session down.
             EnsureDoctorDeviceSession::class,
+
+            // REVISION-FRONT-OFFICE-BRANCH-DEVICE-LOCK-1 — the same idea for
+            // the four approved front-desk accounts: re-check that the session
+            // is still on an approved device that still belongs to the branch
+            // that account is pinned to.
+            //
+            // A NO-OP while the flag is off, and a no-op for every account
+            // outside the four-id cohort even when it is on — including the four
+            // OTHER Front Office accounts, which is the property this sprint
+            // exists to preserve.
+            //
+            // Global for the doctor gate's reason: a disabled tablet has to stop
+            // working everywhere, and an enumerated route list is a list
+            // somebody eventually forgets to extend. Placed after the doctor
+            // gate because the two are independent reasons with independent
+            // audit actions, and no account is ever in both cohorts — a Front
+            // Office clerk holds no doctor record.
+            EnsureFrontOfficeDeviceSession::class,
         ]);
 
         $middleware->alias([

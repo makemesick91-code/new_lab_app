@@ -5,6 +5,7 @@ namespace App\Modules\Branch\Services;
 use App\Models\User;
 use App\Modules\Branch\Interfaces\BranchRepositoryInterface;
 use App\Modules\Branch\Models\Branch;
+use App\Modules\FrontOfficeDevice\Services\FrontOfficeBranchDeviceLockService;
 use App\Modules\RmeOnlineContext\Services\UserOnlineContextService;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Schema;
@@ -64,6 +65,33 @@ class BranchContext
 
     public function forUser(User $user): ?int
     {
+        /*
+         * REVISION-FRONT-OFFICE-BRANCH-DEVICE-LOCK-1 — an armed front-desk
+         * account resolves to its pinned branch, FIRST and only.
+         *
+         * WHY THIS IS AHEAD OF THE ONLINE CONTEXT AND NOT BEHIND IT.
+         *
+         * Refusing a widening SELECTION is not sufficient on its own: an
+         * account armed today may already hold an online-context row selected
+         * before it was armed, pointing at a different branch. Resolving the
+         * context first would hand that account its old branch on the very
+         * login the lock just approved for a different one.
+         *
+         * This can only ever NARROW. It returns a single branch id — the one
+         * the cohort pins the account to, already checked active and
+         * RME-enabled — or NULL for everybody else, in which case the ordinary
+         * resolution below runs untouched. There is no input from the request
+         * anywhere in it.
+         *
+         * Resolved lazily, like the online-context lookup below it, to keep
+         * this resolver's dependency graph acyclic.
+         */
+        $pinned = app(FrontOfficeBranchDeviceLockService::class)->requiredBranchIdFor($user);
+
+        if ($pinned !== null) {
+            return $pinned;
+        }
+
         $branchId = $this->branchIdFromOnlineContext($user)
             ?? $this->branchIdFromUserColumn($user)
             ?? $this->branchIdFromUserRelation($user)

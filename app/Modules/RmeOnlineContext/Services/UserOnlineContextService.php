@@ -8,6 +8,7 @@ use App\Modules\Branch\Services\BranchService;
 use App\Modules\ClinicRoom\Models\ClinicRoom;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\DoctorAccess\Services\DoctorEffectiveBranchResolver;
+use App\Modules\FrontOfficeDevice\Services\FrontOfficeBranchDeviceLockService;
 use App\Modules\RmeOnlineContext\Interfaces\UserOnlineContextRepositoryInterface;
 use App\Modules\RmeOnlineContext\Models\UserOnlineContext;
 use App\Support\AccessControl\FrontOfficeRole;
@@ -307,6 +308,11 @@ class UserOnlineContextService
         $this->assertWithinDoctorEffectiveBranch($user, $branchId);
 
         $this->assertRmeBranch($branchId);
+
+        // REVISION-FRONT-OFFICE-BRANCH-DEVICE-LOCK-1 — refuse a widening
+        // selection for an armed front-desk account. A no-op for everyone else.
+        $this->assertFrontOfficeBranchLock($user, $branchId);
+
         $this->assertActiveRoomInBranch($clinicRoomId, $branchId);
         $this->assertRoomNotOccupiedByOtherDoctor($branchId, $clinicRoomId, (int) $user->id);
 
@@ -332,6 +338,10 @@ class UserOnlineContextService
         }
 
         $this->assertRmeBranch($branchId);
+
+        // REVISION-FRONT-OFFICE-BRANCH-DEVICE-LOCK-1 — refuse a widening
+        // selection for an armed front-desk account. A no-op for everyone else.
+        $this->assertFrontOfficeBranchLock($user, $branchId);
 
         // FEATURE-DAILY-BRANCH-CONTEXT-LOCK-1 — the day's branch is committed on
         // the FIRST selection. Ordered after the eligibility assert on purpose:
@@ -366,6 +376,10 @@ class UserOnlineContextService
 
         $this->assertRmeBranch($branchId);
 
+        // REVISION-FRONT-OFFICE-BRANCH-DEVICE-LOCK-1 — refuse a widening
+        // selection for an armed front-desk account. A no-op for everyone else.
+        $this->assertFrontOfficeBranchLock($user, $branchId);
+
         $now = now();
 
         return $this->contexts->upsertForUser((int) $user->id, [
@@ -388,6 +402,10 @@ class UserOnlineContextService
         }
 
         $this->assertRmeBranch($branchId);
+
+        // REVISION-FRONT-OFFICE-BRANCH-DEVICE-LOCK-1 — refuse a widening
+        // selection for an armed front-desk account. A no-op for everyone else.
+        $this->assertFrontOfficeBranchLock($user, $branchId);
 
         // FEATURE-DAILY-BRANCH-CONTEXT-LOCK-1 — see startAdminClinicSession().
         // The cashier's day is committed here, which is why a logout, a second
@@ -594,6 +612,50 @@ class UserOnlineContextService
         if (! $this->branchIsRmeEnabled($branchId)) {
             throw ValidationException::withMessages([
                 'branch_id' => 'Cabang yang dipilih harus cabang RME aktif.',
+            ]);
+        }
+    }
+
+    /**
+     * REVISION-FRONT-OFFICE-BRANCH-DEVICE-LOCK-1 — an armed front-desk account
+     * may only ever select the branch it is pinned to.
+     *
+     * PLACED ON THE MUTATION, NOT ON THE ROUTE.
+     *
+     * Hiding the selector is presentation, and presentation is not a security
+     * boundary: a crafted `POST online-context/admin-clinic` with another
+     * `branch_id` reaches this service directly. So the refusal lives where the
+     * write happens, which also means every current and future caller inherits
+     * it — no enumerated list of branch-changing endpoints to keep in step.
+     *
+     * The required branch is resolved SERVER-SIDE from the cohort mapping. The
+     * submitted `branch_id` is only ever the thing being CHECKED; it never
+     * becomes the thing that decides.
+     *
+     * A no-op while the flag is off, and a no-op for every account outside the
+     * four-id cohort — the other four Front Office accounts keep selecting
+     * branches exactly as they do today.
+     *
+     * Resolved lazily rather than constructor-injected: this service is itself
+     * resolved during branch resolution, and a lazy lookup keeps that graph
+     * acyclic.
+     */
+    private function assertFrontOfficeBranchLock(User $user, int $branchId): void
+    {
+        $lock = app(FrontOfficeBranchDeviceLockService::class);
+
+        if (! $lock->appliesTo($user)) {
+            return;
+        }
+
+        $requiredBranchId = $lock->requiredBranchIdFor($user);
+
+        // An armed account whose mapping is unusable selects NOTHING. It cannot
+        // reach here with a live session anyway — the login gate already denied
+        // it — but a service must not depend on a caller's good behaviour.
+        if ($requiredBranchId === null || $requiredBranchId !== $branchId) {
+            throw ValidationException::withMessages([
+                'branch_id' => 'Akun Front Office ini terkunci pada cabangnya sendiri dan tidak dapat memilih cabang lain.',
             ]);
         }
     }
