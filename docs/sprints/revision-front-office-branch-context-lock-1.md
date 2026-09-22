@@ -254,6 +254,26 @@ that state — 30/31/32 hold no daily context, and 29's context for today is
 already SPN4 — but the runbook pre-flight checks `trx_daily_branch_contexts`
 because the answer changes daily.
 
+## 5c. A runbook lint caught a prohibition written the wrong way
+
+First CI run failed with exactly one test: `ProductionShellCommandGuardTest`
+scans `docs/runbooks/*.md` for lines that INSTRUCT a forbidden command, and my
+pre-flight section carried
+
+    php artisan tinker --execute="..."   # DO NOT. Never run tinker on production.
+
+The guard exempts a prohibition only via this repository's `-- never` marker
+convention, not by prose — deliberately, because "the word never appearing
+somewhere on the line" is too weak a signal. My line started with `php artisan`
+and read as an instruction. Rewritten to the convention, so the prohibition
+survives and the scanner is satisfied.
+
+Worth recording because it is the third member of a family this codebase keeps
+hitting: the release-evidence scan banning an environment-file literal, the UI
+governance check scanning Blade comments, and now the runbook shell-command
+guard. **A governance scanner reads literals, not intent — quoting a forbidden
+thing in order to forbid it needs the repository's own marker.**
+
 ## 6. Evidence
 
 `tests/Feature/FrontOfficeDevice/FrontOfficeBranchContextLockTest.php` — 20 tests.

@@ -55,8 +55,11 @@ quieter desks.
 
 ## 3. Pre-flight (read-only)
 
-```bash
-php artisan tinker --execute="..."   # DO NOT. Never run tinker on production.
+Forbidden here, using this repository's do-not-do-this convention:
+
+```
+php artisan tinker                                     -- never
+editing a cohort or a context row by hand              -- never
 ```
 
 Use read-only SQL and the flag inspector instead:
