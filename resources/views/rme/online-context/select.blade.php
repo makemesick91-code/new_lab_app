@@ -113,7 +113,30 @@
                 // offers exactly one branch: the locked one. Perawat is out of
                 // scope and never has a daily context, so it is unaffected.
                 $dailyLocked = ($dailyContext ?? null) !== null && ($lockedBranch ?? null) !== null;
-                $selectableBranches = $dailyLocked ? collect([$lockedBranch]) : $rmeBranches;
+
+                // REVISION-FRONT-OFFICE-BRANCH-CONTEXT-LOCK-1 — an armed
+                // front-desk account is pinned, and the pin OUTRANKS the daily
+                // lock in this list. It has to: an account armed AFTER it had
+                // already committed a different branch today would otherwise be
+                // offered that other branch and refused on submit — the dead end
+                // the daily-lock exemptions exist to avoid. The controller has
+                // already narrowed $rmeBranches to the pin, so this is the second
+                // of two presentation guards, and neither is the boundary.
+                $frontOfficePinned = ($frontOfficePinnedBranch ?? null) !== null;
+
+                // An armed account whose mapping is UNDECIDABLE has no pinned
+                // branch and the server refuses EVERY branch for it. It must win
+                // over $dailyLocked too: otherwise it is offered the day's
+                // branch, which is refused on submit — a silent dead end where
+                // the contract promises a loud refusal.
+                $frontOfficeBlocked = ($frontOfficePinMisconfigured ?? false) === true;
+
+                $selectableBranches = match (true) {
+                    $frontOfficePinned => collect([$frontOfficePinnedBranch]),
+                    $frontOfficeBlocked => collect(),
+                    $dailyLocked => collect([$lockedBranch]),
+                    default => $rmeBranches,
+                };
 
                 // D5 — only a LOCKED role making its FIRST choice of the day is
                 // committing anything, so only that case is asked to confirm.
@@ -122,7 +145,17 @@
                 $needsBranchConfirmation = ($requiresAdmin || $requiresKasir) && ! $dailyLocked;
             @endphp
 
-            @if ($dailyLocked)
+            @if ($frontOfficeBlocked)
+                <x-ui.alert variant="danger">
+                    Konfigurasi penguncian cabang untuk akun ini tidak dapat dibaca,
+                    sehingga tidak ada cabang yang dapat dipilih. Hubungi Super Admin.
+                </x-ui.alert>
+            @elseif ($frontOfficePinned)
+                <x-ui.alert variant="info">
+                    Cabang terkunci: <strong>{{ $frontOfficePinnedBranch->name }}</strong>.
+                    Akun Front Office ini hanya dapat bekerja di cabangnya sendiri.
+                </x-ui.alert>
+            @elseif ($dailyLocked)
                 <x-ui.alert variant="warning">
                     Cabang kerja Anda hari ini terkunci di
                     <strong>{{ $lockedBranch->name }}</strong>.
