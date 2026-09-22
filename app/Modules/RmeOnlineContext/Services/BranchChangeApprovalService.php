@@ -12,6 +12,7 @@ use App\Modules\RmeOnlineContext\Interfaces\DailyBranchContextRepositoryInterfac
 use App\Modules\RmeOnlineContext\Interfaces\UserOnlineContextRepositoryInterface;
 use App\Modules\RmeOnlineContext\Models\BranchChangeRequest;
 use App\Modules\RmeOnlineContext\Models\DailyBranchContext;
+use App\Support\AccessControl\FrontOfficeBranchPinResolver;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -97,6 +98,7 @@ class BranchChangeApprovalService
         }
 
         $this->assertEligibleDestination($destinationBranchId);
+        $this->assertFrontOfficePinAllows($requester, $destinationBranchId);
 
         try {
             // Wrapped in a nested transaction — a SAVEPOINT — for the same
@@ -172,6 +174,18 @@ class BranchChangeApprovalService
             // An approval never confers access to a branch the user could not
             // otherwise work in, and never resurrects a deactivated one.
             $this->assertEligibleDestination((int) $request->destination_branch_id);
+
+            // withTrashed(): a guard that silently skips when the subject cannot
+            // be loaded is a fail-open shape, and User uses SoftDeletes.
+            $requester = User::withTrashed()->find((int) $request->requester_user_id);
+
+            if ($requester === null) {
+                throw ValidationException::withMessages([
+                    'request' => 'Pemohon tidak ditemukan. Permintaan tidak dapat disetujui.',
+                ]);
+            }
+
+            $this->assertFrontOfficePinAllows($requester, (int) $request->destination_branch_id);
 
             $before = $this->auditPayload($request) + [
                 'context_current_branch_id' => (int) $context->current_branch_id,
@@ -350,6 +364,36 @@ class BranchChangeApprovalService
     /**
      * @throws ValidationException
      */
+    /**
+     * REVISION-FRONT-OFFICE-BRANCH-CONTEXT-LOCK-1 — an approval must not move a
+     * pinned front-desk account off its branch.
+     *
+     * This service is the ONLY writer of an online context's `branch_id` outside
+     * the four `start*Session()` methods, so it is the only path that could put
+     * an armed account's context row on a branch its pin forbids. The branch
+     * chokepoint already refuses to resolve such a row, so the account would not
+     * actually gain the wider branch — it would simply end up with no working
+     * context and no explanation. Refusing here instead makes the reason
+     * visible, at request time and again at approval, since a request may have
+     * been filed before the account was armed.
+     *
+     * A no-op for every account outside the cohort and while both flags are off.
+     */
+    private function assertFrontOfficePinAllows(User $user, int $branchId): void
+    {
+        $pin = app(FrontOfficeBranchPinResolver::class);
+
+        if (! $pin->appliesTo($user)) {
+            return;
+        }
+
+        if ($pin->requiredBranchIdFor($user) !== $branchId) {
+            throw ValidationException::withMessages([
+                'destination_branch_id' => 'Akun Front Office ini terkunci pada cabangnya sendiri dan tidak dapat dipindahkan ke cabang lain.',
+            ]);
+        }
+    }
+
     private function assertEligibleDestination(int $branchId): void
     {
         $branch = $this->branches->findById($branchId);

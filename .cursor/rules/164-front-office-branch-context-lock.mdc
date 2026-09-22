@@ -1,0 +1,161 @@
+---
+description: Front Office branch-context lock — four approved accounts pinned to one branch each, with NO device requirement
+globs:
+  - "app/Support/AccessControl/FrontOfficeBranchPinResolver.php"
+  - "app/Support/AccessControl/FrontOfficeBranchDeviceCohort.php"
+  - "app/Modules/Branch/Services/BranchContext.php"
+  - "app/Modules/RmeOnlineContext/Services/UserOnlineContextService.php"
+  - "app/Modules/RmeOnlineContext/Controllers/OnlineContextController.php"
+  - "config/front_office_device_lock.php"
+  - "config/feature_flags.php"
+alwaysApply: false
+---
+
+# REVISION-FRONT-OFFICE-BRANCH-CONTEXT-LOCK-1
+
+## The two named invariants
+
+    BRANCH CONTEXT LOCK != DEVICE PROOF REQUIREMENT
+    DEVICE LOCK IMPLIES BRANCH PIN
+
+They are separate security layers with different blast radii and MUST be armable
+independently. Conflating them is the exact defect this revision removed.
+
+    branchPinApplies(user)    = in cohort AND (context_lock ON OR device_lock ON)
+    deviceProofRequired(user) = in cohort AND device_lock ON
+
+## Predicate ownership — do not cross the streams
+
+| Question | Ask ONLY | Flag |
+|---|---|---|
+| Is this account's branch pinned? | `FrontOfficeBranchPinResolver` | either |
+| Must this account prove a device? | `FrontOfficeBranchDeviceLockService` | device only |
+
+`BranchContext::forUser()` and `UserOnlineContextService::assertFrontOfficeBranchLock()`
+ask the PIN resolver. The login controller, `EnsureFrontOfficeDeviceSession` and the
+WebAuthn controller ask the DEVICE service. Those two sets must never swap: the
+separation is structural, which is why the branch-context path references no
+device symbol at all.
+
+Turning on `front_office.branch_context_lock` alone MUST NOT cause a credential
+lookup, an assertion ceremony, a device-cookie requirement, or a login denial for
+a missing credential. There is a test that proves the branch-context path issues
+no query against `mst_doctor_devices`, `trx_doctor_device_webauthn_credentials`
+or `mst_doctor_device_authorizations`.
+
+Arming the device flag still pins the branch. Do not "simplify" the `OR` in
+`pinningEnabled()` to read only the context flag — that silently retracts a
+promise the already-GO device capability made.
+
+## The pin must reach EVERY branch authority
+
+`BranchContext::forUser()` is NOT the only authority on a working branch.
+`resolveActiveBranchForAdmin()` (the branch a NEW CLINIC VISIT is registered at)
+and `RmeWorkingBranchScope` read `activeContextBranchId()` directly. Pinning only
+`BranchContext` produced a split brain that shipped undetected in the device-lock
+sprint: the pin read as narrowing while visits were still created on the wider
+branch.
+
+The pin therefore lives in `activeContextBranchId()` — the one chokepoint they
+share. Do not add a new branch reader that bypasses it, and do not "simplify" the
+narrowing out of it.
+
+**A conflict resolves to NULL, never to the pin.** Returning the pin would
+resurrect a context the daily branch lock already decided and grant a same-day
+branch move. Null is safe for registration: `StoreClinicVisitRequest::authorize()`
+refuses when it is null rather than trusting a form `branch_id`.
+
+`BranchChangeApprovalService` is the only other writer of a context `branch_id`;
+it refuses to move a pinned account, at request and at approval.
+
+## Scope is the cohort, never the role
+
+`FrontOfficeBranchDeviceCohort` is the ONLY user-to-branch source of truth: one
+env key, ceiling of four, allowlist `TLK1 LDK2 ATG3 SPN4`. Do not add a second
+cohort, a second config, a `users.branch_id` backfill, or a
+`hasRole('Front Office')` shortcut — production carries EIGHT Front Office
+accounts and only FOUR are approved.
+
+The four out-of-scope accounts are unchanged because they are ABSENT from the
+cohort. Never add an allowlist exception naming them; that inverts the rule.
+
+`users.branch_id` is NOT an enforcement boundary — it sits BELOW the online
+context in `BranchContext`, so setting it cannot stop a branch switch.
+
+## Fail closed means "no branch", not "no pin"
+
+An account that is ARMED but UNDECIDABLE (duplicate entry, off-policy branch
+code, oversized cohort, or a pinned branch that lost `is_active` /
+`is_rme_enabled`) resolves to **NULL**, not to the ordinary fallback chain.
+
+The device layer could treat this as "do not pin" because such an account had
+already been denied login. The branch-context layer never denies a login, so
+falling through would hand the account its online context, its `users.branch_id`
+or MAIN — every one WIDER than intended. That is fail OPEN and is forbidden.
+
+A token naming no user id at all (`abc:SPN4`) is a config error and puts NOBODY
+in scope — it must not fail anybody closed.
+
+## The refusal lives where the WRITE happens, not only on the route
+
+`StoreClinicVisitRequest::authorize()` returns `true` for everyone EXCEPT a pinned
+account whose working branch is null. Do not "simplify" that back to `return true`.
+
+Why it is needed: `applyAdminClinicBranchContext()` early-returns when the working
+branch is null, leaving the form's own `branch_id` to validate against ANY
+RME-enabled branch. `EnsureRmeOnlineContext` does intercept first — but a route
+guard must not be the only thing between a crafted POST and the write.
+
+**Do not read `isAdminClinicRegistration()` as an authorization gate.** It is a
+private helper deciding whether to APPLY the context branch. It contains a
+`resolveActiveBranchForAdmin(...) !== null` that looks exactly like an authorize
+check and is not one. Misreading it produced a false safety claim in a shipped
+docblock during this sprint.
+
+## resolveActiveBranchForAdmin() is NOT the working branch
+
+It answers for the admin_clinic and perawat contexts only, and returns null for a
+doctor or kasir context even when the working branch resolves fine. Never use it to
+decide whether an operator HAS a working branch — that is `activeContextBranchId()`,
+which is also the pin-narrowed, daily-lock-aware one. Using the former in
+`StoreClinicVisitRequest::authorize()` produced a false 403 for a dual-role cohort
+account online at its own pinned branch.
+
+Swapping it for `activeContextBranchId()` in `authorize()` ALONE is also wrong:
+`applyAdminClinicBranchContext()` still early-returns for such a context, so the
+form's `branch_id` survives. Both the authorize check and
+`applyFrontOfficePinnedBranchContext()` are required — and the forced value must be
+`activeContextBranchId()`, never `requiredBranchIdFor()`, which would bypass the
+daily lock.
+
+## Both halves of a narrowing must be applied
+
+A controller that computes a restriction and a blade that recomputes its own list
+is one fix, half-applied. The selector's misconfigured case must outrank
+`$dailyLocked`, and an empty branch list needs a visible refusal — not an empty
+`<select>`.
+
+## UI is not the boundary
+
+A one-option selector refuses nothing. The server-side assert in
+`UserOnlineContextService` and the pin in `BranchContext::forUser()` are the
+boundary; the selector narrowing exists only so an operator is not offered a
+choice that would fail on submit.
+
+## The pin does not outrank the daily branch lock
+
+`FEATURE-DAILY-BRANCH-CONTEXT-LOCK-1` and the pin are two INDEPENDENT narrowing
+rules. The pin must never become a way around the daily lock — that would hand an
+armed account a same-day branch move the daily lock requires approval for.
+
+Consequence: arming an account mid-day, when it has ALREADY committed today to a
+different branch, leaves it unable to select anything until the clinical day
+rolls over. That is a runbook pre-flight check, not something to "fix" by letting
+the pin win. There is a test pinning this.
+
+## Activation
+
+Both flags ship OFF with an EMPTY committed cohort. Arming is a supervised
+per-account ceremony, never a deploy. Because the two layers SHARE the cohort,
+arming an account for branch context and later arming the device flag will
+additionally demand WebAuthn from that same account — plan that deliberately.

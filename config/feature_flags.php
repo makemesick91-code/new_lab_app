@@ -467,6 +467,25 @@ $registry = [
             'rollback_action' => 'Set the environment override to false and clear the config cache. The decision service returns not-in-scope immediately, so no Front Office login is refused, no session is torn down in place, and the branch context guard stops pinning - an armed account denied a moment ago can log in now, and the online-context selector behaves exactly as it did before this sprint. It ALSO invalidates existing device-bound Front Office sessions on their next protected request, which is the intended direction: the session simply stops being device-checked. NO DATA IS TOUCHED. Registered devices, their branch ownership and every WebAuthn credential stay exactly as they are, so re-enabling needs no re-enrolment and no re-approval. Nothing needs migrating back, because the flag only ever gated a decision - it never wrote one. To roll back a SINGLE account instead of the capability, remove that one pair from FRONT_OFFICE_BRANCH_DEVICE_LOCK_COHORT and clear the config cache; the remaining armed accounts are unaffected.',
         ],
 
+        // --- REVISION-FRONT-OFFICE-BRANCH-CONTEXT-LOCK-1 —
+        //     the SAME four named front-desk accounts, pinned to one branch each,
+        //     WITHOUT any device or WebAuthn requirement. Ships OFF and arms per
+        //     account. Independent of front_office.branch_device_lock: either
+        //     flag pins, only the device flag demands proof. ---
+
+        'front_office.branch_context_lock' => [
+            'name' => 'Front Office Branch Context Lock',
+            'description' => 'ENFORCEMENT switch for the four-account Front Office BRANCH CONTEXT lock, and NOTHING ELSE. For an ARMED account the effective branch context is pinned to the one branch its cohort entry names: the resolver returns that branch ahead of the online context, the four online-context selection guards refuse any other branch, and the selector offers only the pinned one. THE NAMED INVARIANT IS THAT THIS IS NOT A DEVICE REQUIREMENT: BRANCH CONTEXT LOCK != DEVICE PROOF REQUIREMENT. Turning this flag on cannot cause a credential lookup, a WebAuthn assertion ceremony, a device-cookie requirement, or a login denial for a missing credential - none of those are reachable from this flag at all, because the login controller, the device session middleware and the WebAuthn controller do not reference the branch-pin resolver. That is what makes this safe to arm for a front desk holding no registered credential, which is the whole reason it exists separately from front_office.branch_device_lock. The converse invariant also holds and is deliberate: DEVICE LOCK IMPLIES BRANCH PIN, so arming front_office.branch_device_lock pins branches whether or not this flag is on - the already-GO device capability promised that and this flag must not retract it by omission. SCOPE IS THE COHORT, NOT THE ROLE, and it is the SAME cohort the device layer reads (FrontOfficeBranchDeviceCohort) - one user-to-branch source of truth, one ceiling of four, one branch allowlist. Production carries EIGHT Front Office accounts and the owner approved FOUR; the committed cohort is EMPTY, so this flag being on pins NOBODY until an (account, branch) pair is armed in the environment. The other four accounts stay unchanged because they are ABSENT from the cohort, not because anything names them. A fifth armed id exceeds max_cohort_size and fails CLOSED for everyone armed. An armed account whose mapping is undecidable resolves to NO branch rather than falling through to a wider one. Arming an account here and LATER arming the device flag will additionally demand WebAuthn from that same account - the two layers share the cohort, so that is a supervised ceremony, not a deploy.',
+            'default' => false,
+            'env_key' => 'FEATURE_FRONT_OFFICE_BRANCH_CONTEXT_LOCK',
+            'owner' => 'rme',
+            'risk_level' => 'critical',
+            'rollout_status' => 'implemented',
+            'review_target' => 'REVISION-FRONT-OFFICE-BRANCH-CONTEXT-LOCK-1',
+            'dependencies' => [],
+            'rollback_action' => 'Set the environment override to false and clear the config cache. The branch-pin resolver stops pinning, so every Front Office account resolves its branch through the ordinary online-context tiers exactly as it did before, and the selector offers the full RME branch list again. No session is invalidated and no login is affected, because this flag never gated a login. NOTE: if front_office.branch_device_lock is ALSO on, branches stay pinned by that layer - DEVICE LOCK IMPLIES BRANCH PIN - so a full unpin requires both flags off.',
+        ],
+
         // --- FIX-04b — legacy ODONTOGRAM chart archive (runtime shipped, stays OFF) ---
 
         'rme.legacy_odontogram_archive' => [

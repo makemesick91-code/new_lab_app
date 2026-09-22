@@ -13,6 +13,7 @@ use App\Modules\RmeOnlineContext\Requests\StartPerawatOnlineContextRequest;
 use App\Modules\RmeOnlineContext\Services\DailyBranchContextService;
 use App\Modules\RmeOnlineContext\Services\DoctorUserResolver;
 use App\Modules\RmeOnlineContext\Services\UserOnlineContextService;
+use App\Support\AccessControl\FrontOfficeBranchPinResolver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -27,6 +28,7 @@ class OnlineContextController extends Controller
         private readonly DoctorUserResolver $doctorResolver,
         private readonly DailyBranchContextService $dailyBranchContext,
         private readonly DoctorEffectiveBranchResolver $doctorBranches,
+        private readonly FrontOfficeBranchPinResolver $frontOfficePin,
     ) {}
 
     public function select(Request $request): View|RedirectResponse
@@ -92,6 +94,44 @@ class OnlineContextController extends Controller
         $lockedBranchId = $dailyContext ? (int) $dailyContext->current_branch_id : null;
         $rmeBranches = $this->branches->listRmeEnabled();
 
+        /*
+         * REVISION-FRONT-OFFICE-BRANCH-CONTEXT-LOCK-1 — an armed front-desk
+         * account is offered ONE branch: the one it is pinned to.
+         *
+         * PRESENTATION ONLY. A one-option <select> refuses nothing — a crafted
+         * POST is refused by UserOnlineContextService::startAdminClinicSession()
+         * (and its Kasir / Doctor / Perawat siblings) through the SAME resolver,
+         * and the effective branch is pinned again in BranchContext::forUser().
+         * This exists so the operator is not offered a choice that would only
+         * fail on submit.
+         *
+         * Resolved from the FULL list before it is narrowed, so the pinned
+         * branch is still found when the narrowing below removes every other
+         * one. NULL for every account that is not armed, which leaves this
+         * screen exactly as it was.
+         */
+        $frontOfficePinnedBranchId = $this->frontOfficePin->requiredBranchIdFor($user);
+        $frontOfficePinnedBranch = $frontOfficePinnedBranchId !== null
+            ? $rmeBranches->firstWhere('id', $frontOfficePinnedBranchId)
+            : null;
+
+        /*
+         * An armed account whose mapping is UNDECIDABLE has no pinned branch,
+         * and must NOT fall through to the full list: the server refuses every
+         * branch for it, so offering all of them is a silent dead end where the
+         * contract promises a loud refusal. It is handed an EMPTY list, which
+         * the view renders as "no selectable branch".
+         */
+        $frontOfficePinMisconfigured = $this->frontOfficePin->isMisconfiguredFor($user);
+
+        $selectableRmeBranches = match (true) {
+            $frontOfficePinnedBranchId !== null => $rmeBranches
+                ->filter(fn ($branch) => (int) $branch->id === $frontOfficePinnedBranchId)
+                ->values(),
+            $frontOfficePinMisconfigured => $rmeBranches->take(0),
+            default => $rmeBranches,
+        };
+
         return view('rme.online-context.select', [
             'requiresDoctor' => $requiresDoctor,
             'requiresAdmin' => $requiresAdmin,
@@ -103,7 +143,10 @@ class OnlineContextController extends Controller
             'doctorEffectiveBranch' => $doctorEffectiveBranchId
                 ? $rmeBranches->firstWhere('id', $doctorEffectiveBranchId)
                 : null,
-            'rmeBranches' => $rmeBranches,
+            'rmeBranches' => $selectableRmeBranches,
+            'frontOfficePinnedBranchId' => $frontOfficePinnedBranchId,
+            'frontOfficePinnedBranch' => $frontOfficePinnedBranch,
+            'frontOfficePinMisconfigured' => $frontOfficePinMisconfigured,
             'roomsByBranch' => $this->visits->activeRoomsByRmeBranch(),
             'currentContext' => $this->onlineContext->currentContextFor($user),
             'dailyContext' => $dailyContext,

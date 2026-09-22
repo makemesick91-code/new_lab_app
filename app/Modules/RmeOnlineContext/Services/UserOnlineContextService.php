@@ -8,9 +8,9 @@ use App\Modules\Branch\Services\BranchService;
 use App\Modules\ClinicRoom\Models\ClinicRoom;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\DoctorAccess\Services\DoctorEffectiveBranchResolver;
-use App\Modules\FrontOfficeDevice\Services\FrontOfficeBranchDeviceLockService;
 use App\Modules\RmeOnlineContext\Interfaces\UserOnlineContextRepositoryInterface;
 use App\Modules\RmeOnlineContext\Models\UserOnlineContext;
+use App\Support\AccessControl\FrontOfficeBranchPinResolver;
 use App\Support\AccessControl\FrontOfficeRole;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
@@ -77,6 +77,27 @@ class UserOnlineContextService
 
     public function hasSatisfiedContext(User $user): bool
     {
+        /*
+         * REVISION-FRONT-OFFICE-BRANCH-CONTEXT-LOCK-1 — an armed account whose
+         * live context row points somewhere other than its pin has NO satisfied
+         * context, so the middleware returns it to the selector instead of
+         * letting it carry a context that resolves to nothing.
+         *
+         * Without this the account keeps satisfying the gate on the strength of
+         * a row the branch chokepoint has already refused: never bounced,
+         * never able to re-select, and 403'd on the first registration attempt
+         * with nothing on screen explaining why.
+         *
+         * Narrowing only: `appliesTo()` is false for every account outside the
+         * cohort and while both flags are off, and this method is unreachable
+         * for a user whose role needs no context at all.
+         */
+        $pin = app(FrontOfficeBranchPinResolver::class);
+
+        if ($pin->appliesTo($user) && $this->activeContextBranchId($user) === null) {
+            return false;
+        }
+
         if ($this->requiresDoctorContext($user)) {
             return $this->isDoctorOnline($user);
         }
@@ -252,11 +273,70 @@ class UserOnlineContextService
                 // turn a deactivated branch into a route back to whatever that
                 // row happens to say — the precise bypass the override exists
                 // to close.
-                return $this->branchIsRmeEnabled($lockedBranchId) ? $lockedBranchId : null;
+                return $this->branchIsRmeEnabled($lockedBranchId)
+                    ? $this->narrowToFrontOfficePin($user, $lockedBranchId)
+                    : null;
             }
         }
 
-        return (int) $context->branch_id;
+        return $this->narrowToFrontOfficePin($user, (int) $context->branch_id);
+    }
+
+    /**
+     * REVISION-FRONT-OFFICE-BRANCH-CONTEXT-LOCK-1 — the pin, applied at the ONE
+     * chokepoint every branch read shares.
+     *
+     * WHY IT IS HERE AND NOT ONLY IN BranchContext::forUser().
+     *
+     * `BranchContext` is not the only authority on an operator's working branch.
+     * `resolveActiveBranchForAdmin()` (which decides the branch a NEW CLINIC
+     * VISIT is registered at) and `RmeWorkingBranchScope` both read
+     * `activeContextBranchId()` directly. Pinning only `BranchContext` therefore
+     * produced a split brain: an armed account holding an online-context row
+     * selected BEFORE it was armed resolved to its pinned branch everywhere
+     * `BranchContext` was consulted, while registration and the workspace list
+     * still followed the stale row — so the pin read as "narrowing" while
+     * clinical records were still being created on the wider branch.
+     *
+     * A CONFLICT RESOLVES TO NULL, NOT TO THE PIN.
+     *
+     * Returning the pin here would look tidier and would be wrong twice over.
+     * It would resurrect a working context the daily branch lock had already
+     * decided (the override above runs first), handing an armed account a
+     * same-day branch move that `FEATURE-DAILY-BRANCH-CONTEXT-LOCK-1` requires
+     * Super Admin approval for. And "no working context" is the state this
+     * service already models for exactly this situation: the operator is sent
+     * back to the selector, which offers only the pinned branch, and the
+     * selection guard re-asserts both rules on the way in.
+     *
+     * NULL IS NOT SELF-EVIDENTLY SAFE FOR REGISTRATION, SO IT IS MADE SAFE.
+     *
+     * `StoreClinicVisitRequest::applyAdminClinicBranchContext()` early-returns
+     * on null, leaving the form's own `branch_id` intact to validate against ANY
+     * RME-enabled branch — wider than the stale-branch bug this narrowing fixes.
+     * Two guards close that, and BOTH are required:
+     *
+     *   1. `hasSatisfiedContext()` is pin-aware, so `EnsureRmeOnlineContext`
+     *      returns the operator to the selector before any of it is reached.
+     *   2. `StoreClinicVisitRequest::authorize()` refuses a pinned account whose
+     *      working branch is null — because a route guard is not where a write
+     *      should be refused, and exemption lists grow.
+     *
+     * Do not remove either as redundant.
+     *
+     * An armed account whose mapping is UNDECIDABLE has no pinned branch, so the
+     * comparison below is against null and every branch is refused — the same
+     * fail-closed answer `BranchContext` and the selection guard give.
+     */
+    private function narrowToFrontOfficePin(User $user, int $branchId): ?int
+    {
+        $pin = app(FrontOfficeBranchPinResolver::class);
+
+        if (! $pin->appliesTo($user)) {
+            return $branchId;
+        }
+
+        return $pin->requiredBranchIdFor($user) === $branchId ? $branchId : null;
     }
 
     public function startDoctorSession(User $user, int $branchId, int $clinicRoomId): UserOnlineContext
@@ -309,8 +389,10 @@ class UserOnlineContextService
 
         $this->assertRmeBranch($branchId);
 
-        // REVISION-FRONT-OFFICE-BRANCH-DEVICE-LOCK-1 — refuse a widening
+        // REVISION-FRONT-OFFICE-BRANCH-CONTEXT-LOCK-1 — refuse a widening
         // selection for an armed front-desk account. A no-op for everyone else.
+        // Decided by the BRANCH-PIN predicate, never by the device predicate:
+        // pinning must hold with WebAuthn enforcement switched off.
         $this->assertFrontOfficeBranchLock($user, $branchId);
 
         $this->assertActiveRoomInBranch($clinicRoomId, $branchId);
@@ -339,8 +421,10 @@ class UserOnlineContextService
 
         $this->assertRmeBranch($branchId);
 
-        // REVISION-FRONT-OFFICE-BRANCH-DEVICE-LOCK-1 — refuse a widening
+        // REVISION-FRONT-OFFICE-BRANCH-CONTEXT-LOCK-1 — refuse a widening
         // selection for an armed front-desk account. A no-op for everyone else.
+        // Decided by the BRANCH-PIN predicate, never by the device predicate:
+        // pinning must hold with WebAuthn enforcement switched off.
         $this->assertFrontOfficeBranchLock($user, $branchId);
 
         // FEATURE-DAILY-BRANCH-CONTEXT-LOCK-1 — the day's branch is committed on
@@ -376,8 +460,10 @@ class UserOnlineContextService
 
         $this->assertRmeBranch($branchId);
 
-        // REVISION-FRONT-OFFICE-BRANCH-DEVICE-LOCK-1 — refuse a widening
+        // REVISION-FRONT-OFFICE-BRANCH-CONTEXT-LOCK-1 — refuse a widening
         // selection for an armed front-desk account. A no-op for everyone else.
+        // Decided by the BRANCH-PIN predicate, never by the device predicate:
+        // pinning must hold with WebAuthn enforcement switched off.
         $this->assertFrontOfficeBranchLock($user, $branchId);
 
         $now = now();
@@ -403,8 +489,10 @@ class UserOnlineContextService
 
         $this->assertRmeBranch($branchId);
 
-        // REVISION-FRONT-OFFICE-BRANCH-DEVICE-LOCK-1 — refuse a widening
+        // REVISION-FRONT-OFFICE-BRANCH-CONTEXT-LOCK-1 — refuse a widening
         // selection for an armed front-desk account. A no-op for everyone else.
+        // Decided by the BRANCH-PIN predicate, never by the device predicate:
+        // pinning must hold with WebAuthn enforcement switched off.
         $this->assertFrontOfficeBranchLock($user, $branchId);
 
         // FEATURE-DAILY-BRANCH-CONTEXT-LOCK-1 — see startAdminClinicSession().
@@ -642,17 +730,23 @@ class UserOnlineContextService
      */
     private function assertFrontOfficeBranchLock(User $user, int $branchId): void
     {
-        $lock = app(FrontOfficeBranchDeviceLockService::class);
+        $pin = app(FrontOfficeBranchPinResolver::class);
 
-        if (! $lock->appliesTo($user)) {
+        if (! $pin->appliesTo($user)) {
             return;
         }
 
-        $requiredBranchId = $lock->requiredBranchIdFor($user);
+        $requiredBranchId = $pin->requiredBranchIdFor($user);
 
-        // An armed account whose mapping is unusable selects NOTHING. It cannot
-        // reach here with a live session anyway — the login gate already denied
-        // it — but a service must not depend on a caller's good behaviour.
+        /*
+         * An armed account whose mapping is unusable selects NOTHING.
+         *
+         * Under the device layer such an account had already been denied login,
+         * so this was belt-and-braces. Under the branch-context layer it is the
+         * ENFORCEMENT: this layer never denies a login, so a misconfigured armed
+         * account reaches here with a live session and must be refused a branch
+         * here. Identical to the fail-closed NULL in BranchContext::forUser().
+         */
         if ($requiredBranchId === null || $requiredBranchId !== $branchId) {
             throw ValidationException::withMessages([
                 'branch_id' => 'Akun Front Office ini terkunci pada cabangnya sendiri dan tidak dapat memilih cabang lain.',
