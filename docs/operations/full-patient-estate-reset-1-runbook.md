@@ -3,7 +3,8 @@
 **Type:** one-time, owner-authorized production data reset
 **Audience:** a human operator with production database access
 **Authorized by:** project owner — scope correction and decisions, 2026-09-23 / 2026-09-24
-**Manifest measured:** 2026-09-23, re-measured 2026-09-24 (WITA), read-only — **no drift**
+**Manifest measured:** 2026-09-23, re-measured 2026-09-24 (WITA), read-only
+**Revision:** 2 — one frozen value corrected (see section 3), owner re-authorized
 **Status:** documentation only — awaiting human execution
 
 ---
@@ -96,11 +97,30 @@ psql -h 127.0.0.1 -p 5432 -U "$DBU" -d asia_dental_lab_pilot -c "SELECT current_
 
 ## 3. Frozen manifest
 
-Re-measured 2026-09-24 — **no drift** from the 2026-09-23 measurement.
+Re-measured 2026-09-24. **One frozen value was wrong and is corrected here.** The
+correction history is deliberately retained rather than rewritten.
+
+> **CORRECTION — `trx_lab_case_candidates` was 3, is 11. Total was 777, is 785.**
+>
+> Root cause: *the Sunu-scoped candidate count was mistakenly carried into the later
+> all-patient manifest.* It was first measured with a `WHERE patient_id IN (…)` clause
+> covering only the five Sunu candidates, and that scoped result was reused as a global
+> count once scope expanded to all 50 patients. Every other table came from an unscoped
+> `COUNT(*)`; this one alone did not.
+>
+> **This is a count correction, not a scope expansion.** All 11 rows were created
+> between 2026-06-11 and 2026-09-19 — the newest predates the freeze — so no production
+> data changed. All 11 belong to patients already inside the authorized 50-patient
+> estate. No new patient, branch, table or ownership class enters scope.
+>
+> **785 is the authoritative total. 777 must not be retained anywhere as an active
+> execution control.** The other 50 tables re-measured exactly.
+>
+> The re-measure gate is what caught this. It is the reason the gate exists.
 
 ```
 EXPECTED_PATIENT_COUNT         = 50
-EXPECTED_TOTAL_DB_ROWS         = 777   across 51 tables
+EXPECTED_TOTAL_DB_ROWS         = 785   across 51 tables
 EXPECTED_TABLE_COUNT           = 51
 EXPECTED_NOTIFICATION_ROWS     = 24    scoped by proof
 EXPECTED_DELETED_FILE_COUNT    = 146
@@ -139,12 +159,12 @@ order-independent and auditable.
 | 19 | trx_satusehat_submission_items | 0 | 44 | trx_odontogram_legacy_records | 1 |
 | 20 | trx_satusehat_data_quality_issues | 0 | 45 | stg_odontogram_legacy_import_pages | 1 |
 | 21 | trx_satusehat_candidates | 14 | 46 | stg_odontogram_legacy_imports | 1 |
-| 22 | trx_lab_case_candidates | 3 | 47 | mst_patient_documents | 0 |
+| 22 | trx_lab_case_candidates | 11 | 47 | mst_patient_documents | 0 |
 | 23 | trx_rme_payments | 41 | 48 | mst_patients | 50 |
 | 24 | trx_rme_receivable_follow_ups | 1 | 49 | stg_legacy_patient_imports | 31 |
 | 25 | trx_rme_invoice_items | 39 | 50 | stg_legacy_patient_import_batches | 11 |
 
-**TOTAL = 777** — 753 patient-domain rows plus 24 scoped notifications, across 51 tables.
+**TOTAL = 785** — 761 patient-domain rows plus 24 scoped notifications, across 51 tables.
 
 Ordering notes:
 
@@ -281,13 +301,13 @@ The destructive script is a single `BEGIN` … `COMMIT` transaction that:
 5. deletes the 24 notifications by scoped predicate and asserts the count;
 6. for each of the 50 remaining tables in order: prechecks the row count against the
    frozen manifest, deletes, and asserts the deleted count matches;
-7. asserts the running total is exactly 777;
+7. asserts the running total is exactly 785;
 8. asserts every one of those tables — and `notifications` — is empty;
 9. asserts preserved audit evidence still reads **43**, aborting if it does not;
 10. prints a protected-domain drift table that must come back empty.
 
 Run it with `ROLLBACK` appended and `ON_ERROR_STOP=1`. It must report all guards passed,
-`TOTAL ROWS DELETED: 777`, patient domain empty, audit evidence preserved at 43, an
+`TOTAL ROWS DELETED: 785`, patient domain empty, audit evidence preserved at 43, an
 empty drift table, and `ROLLBACK`.
 
 Any mismatch aborts the whole transaction. A partially deleted estate is not reachable.
@@ -396,7 +416,7 @@ verified archive is taken first and the file phase runs only after a successful 
 
 ```
 EXPECTED_PATIENT_COUNT         = 50
-EXPECTED_TOTAL_DB_ROWS         = 777
+EXPECTED_TOTAL_DB_ROWS         = 785
 EXPECTED_TABLE_COUNT           = 51
 EXPECTED_NOTIFICATION_ROWS     = 24
 EXPECTED_DELETED_FILE_COUNT    = 146
