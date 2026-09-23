@@ -4,7 +4,7 @@
 id: FULL-PATIENT-ESTATE-RESET-1
 type: DOCS_ONLY
 module: Operations
-title: "A sanitized operator runbook for the owner-authorized one-time removal of the pre-go-live fictional patient estate: 50 patients and every patient-owned dependency, executed by a human against production under a fail-closed transaction, with the pre-existing unreferenced storage orphans explicitly excluded"
+title: "A sanitized operator runbook for the owner-authorized one-time removal of the pre-go-live fictional patient estate: 50 patients and 777 patient-owned rows across 51 tables, executed by a human against production under a fail-closed transaction, with in-app notification residue scoped in by proof, SATUSEHAT audit evidence asserted as preserved, and the pre-existing unreferenced storage orphans explicitly excluded"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
 runtime_change: false           # documentation only. No application source, no command,

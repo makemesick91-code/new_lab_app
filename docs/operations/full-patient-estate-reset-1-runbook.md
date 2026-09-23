@@ -2,8 +2,8 @@
 
 **Type:** one-time, owner-authorized production data reset
 **Audience:** a human operator with production database access
-**Authorized by:** project owner — scope correction and DECISION 1 / DECISION 2, 2026-09-23
-**Manifest measured:** 2026-09-23 (WITA), read-only
+**Authorized by:** project owner — scope correction and decisions, 2026-09-23 / 2026-09-24
+**Manifest measured:** 2026-09-23, re-measured 2026-09-24 (WITA), read-only — **no drift**
 **Status:** documentation only — awaiting human execution
 
 ---
@@ -20,7 +20,23 @@ the next patient created is the first real one.
 This document is **documentation only**. The SQL below is printed for a human to run
 deliberately. It must never be wired into a deploy hook, migration, seeder, CI job,
 scheduled task or application startup path. Automating it is out of scope and not
-authorized.
+authorized. **Merging the pull request that adds this document must never execute the
+wipe** — the document is inert by construction.
+
+### What is removed, and what is deliberately kept
+
+**Removed:** the 50 patients and every patient-owned dependency, including 24 in-app
+lab-workflow notifications whose payloads carry patient identifiers and deep-link to
+lab orders being deleted. Notification selection is **scoped by proof** — see section 3
+— and never a blanket table delete, so unrelated user notifications are untouched.
+
+**Kept:** `PRESERVED_SATUSEHAT_AUDIT_ROWS = 43`. These are audit evidence, carry no
+foreign-key obligation, and must not be deleted or rewritten to make the database look
+empty. **Their survival is not a failure of "patient domain empty"** — the audit domain
+is intentionally retained. Any future anonymization or retention cleanup of audit
+evidence is a separate owner-approved workstream.
+
+Also kept: 12 pre-existing unreferenced storage orphans (section 5).
 
 ### Not in scope — never modify while running this
 
@@ -80,19 +96,28 @@ psql -h 127.0.0.1 -p 5432 -U "$DBU" -d asia_dental_lab_pilot -c "SELECT current_
 
 ## 3. Frozen manifest
 
+Re-measured 2026-09-24 — **no drift** from the 2026-09-23 measurement.
+
 ```
-EXPECTED_PATIENT_COUNT        = 50
-EXPECTED_TOTAL_DB_ROWS        = 753   across 50 tables
-EXPECTED_DELETED_FILE_COUNT   = 146
-EXPECTED_ABSENT_FILE_REFS     = 20    (rows whose file is already gone — not a failure)
-PRE_EXISTING_STORAGE_ORPHANS  = 12    EXCLUDED — never deleted
-ARCHIVE_FILE_COUNT            = 158
+EXPECTED_PATIENT_COUNT         = 50
+EXPECTED_TOTAL_DB_ROWS         = 777   across 51 tables
+EXPECTED_TABLE_COUNT           = 51
+EXPECTED_NOTIFICATION_ROWS     = 24    scoped by proof
+EXPECTED_DELETED_FILE_COUNT    = 146
+EXPECTED_ABSENT_FILE_REFS      = 20    (rows whose file is already gone — not a failure)
+PRE_EXISTING_STORAGE_ORPHANS   = 12    EXCLUDED — never deleted
+PRESERVED_SATUSEHAT_AUDIT_ROWS = 43    PRESERVED — never deleted
+ARCHIVE_FILE_COUNT             = 158
 ```
 
-Per table, in mandatory delete order:
+Per table, in mandatory delete order. Notifications are deleted **first**, while the
+lab estate still exists, because the selection predicate resolves against it; the
+script snapshots the in-scope lab order ids up front so the predicate is
+order-independent and auditable.
 
 | # | Table | Rows | # | Table | Rows |
 |---|---|---|---|---|---|
+| 0 | notifications (**scoped**) | 24 | | | |
 | 1 | sys_attachments | 21 | 26 | trx_rme_invoices | 32 |
 | 2 | trx_lab_work_logs | 10 | 27 | trx_lab_orders | 13 |
 | 3 | trx_lab_qc_checklists | 45 | 28 | trx_rme_prescription_whatsapp_deliveries | 0 |
@@ -119,7 +144,7 @@ Per table, in mandatory delete order:
 | 24 | trx_rme_receivable_follow_ups | 1 | 49 | stg_legacy_patient_imports | 31 |
 | 25 | trx_rme_invoice_items | 39 | 50 | stg_legacy_patient_import_batches | 11 |
 
-**TOTAL = 753.**
+**TOTAL = 777** — 753 patient-domain rows plus 24 scoped notifications, across 51 tables.
 
 Ordering notes:
 
@@ -142,8 +167,17 @@ Ordering notes:
 | Import staging | any import outside the selected batches? | none |
 | Import staging | any empty or mixed batch? | none |
 | Import staging | every batch has one canonical file? | yes — 11 batches, 11 distinct paths, 11 files, no extras |
+| Notifications | any row of an unrelated type? | none — 24 rows, one type, all lab-workflow |
+| Notifications | any row missing a lab-order payload key? | none |
+| Notifications | any row resolving outside the frozen lab estate? | none — all 24 resolve in |
 
 Every one of these is **re-asserted inside the transaction** and aborts it on breach.
+
+The notification predicate deletes only rows resolving into the lab-order snapshot. If
+the total is not exactly 24, or any row lacks the payload key, or any row resolves
+outside the estate, the transaction aborts and the operator returns to the owner. An
+unrelated user notification arriving between the freeze and execution must never be
+swept up — which is why this is a scoped predicate and not a table-wide delete.
 
 ---
 
@@ -241,15 +275,20 @@ The destructive script is a single `BEGIN` … `COMMIT` transaction that:
 1. asserts the database name;
 2. asserts the patient count is exactly **50** — any other number aborts with
    *return to owner*, and the number is never silently adapted;
-3. re-asserts every ownership proof from section 3;
-4. for each of the 50 tables in order: prechecks the row count against the frozen
-   manifest, deletes, and asserts the deleted count matches;
-5. asserts the running total is exactly 753;
-6. asserts every one of the 50 tables is empty;
-7. prints a protected-domain drift table that must come back empty.
+3. snapshots the in-scope lab order ids into a temp table, before anything is deleted;
+4. re-asserts every ownership proof from section 3, including the three notification
+   checks;
+5. deletes the 24 notifications by scoped predicate and asserts the count;
+6. for each of the 50 remaining tables in order: prechecks the row count against the
+   frozen manifest, deletes, and asserts the deleted count matches;
+7. asserts the running total is exactly 777;
+8. asserts every one of those tables — and `notifications` — is empty;
+9. asserts preserved audit evidence still reads **43**, aborting if it does not;
+10. prints a protected-domain drift table that must come back empty.
 
 Run it with `ROLLBACK` appended and `ON_ERROR_STOP=1`. It must report all guards passed,
-`TOTAL ROWS DELETED: 753`, patient domain empty, an empty drift table, and `ROLLBACK`.
+`TOTAL ROWS DELETED: 777`, patient domain empty, audit evidence preserved at 43, an
+empty drift table, and `ROLLBACK`.
 
 Any mismatch aborts the whole transaction. A partially deleted estate is not reachable.
 
@@ -269,7 +308,12 @@ Re-run the same script with `COMMIT` appended instead of `ROLLBACK`.
 **Database** — all must be `0`: patients, visits, medical records, odontograms,
 consents, prescriptions, lab orders, RME invoices, RME payments, SATUSEHAT candidates,
 legacy RME records, legacy odontogram records, attachments, staging imports, staging
-batches.
+batches, **notifications**.
+
+**Preserved — these must NOT be zero:** the SATUSEHAT audit table must read **43** and
+the system audit table must be unchanged. `PRESERVED_SATUSEHAT_AUDIT_ROWS = 43` is a
+success criterion, not leftover residue. A run that emptied it would be a **failure**,
+not a cleaner result.
 
 **Referential integrity** — revalidate every foreign key; PostgreSQL reports any that
 would not hold:
@@ -304,11 +348,13 @@ remaining, **12 orphans still present**.
 **Protected domain** — counts identical before and after for users, doctors, branches,
 rooms, permissions, role and model role assignments, doctor devices, WebAuthn
 credentials, device authorizations, doctor-branch links, migrations, and both audit
-tables.
+tables. `notifications` is deliberately **not** in this set — 24 of its rows are in
+scope, and it must read 0 afterwards.
 
 Audit logs are preserved. `sys_audit_logs` and the SATUSEHAT audit table have no foreign
 key into the patient domain, so references to removed patients simply become historical.
-No foreign-key treatment is needed and none is authorized.
+No foreign-key treatment is needed and none is authorized. Do not delete or rewrite
+audit rows to make the database appear empty.
 
 **Health** — `/login`, `/health/live`, `/health/ready` and `/health/lb` return 200; zero
 pending migrations; PHP-FPM and nginx active; no new application errors; application SHA
@@ -346,7 +392,27 @@ verified archive is taken first and the file phase runs only after a successful 
 
 ---
 
-## 10. Final status
+## 10. Pre-execution freeze — must be reported before the destructive step
+
+```
+EXPECTED_PATIENT_COUNT         = 50
+EXPECTED_TOTAL_DB_ROWS         = 777
+EXPECTED_TABLE_COUNT           = 51
+EXPECTED_NOTIFICATION_ROWS     = 24
+EXPECTED_DELETED_FILE_COUNT    = 146
+EXPECTED_ABSENT_FILE_REFS      = 20
+PRE_EXISTING_STORAGE_ORPHANS   = 12
+PRESERVED_SATUSEHAT_AUDIT_ROWS = 43
+```
+
+Plus, captured at freeze time: fresh database backup timestamp and checksum; backup
+readability; file archive equality; production application SHA; database identity.
+
+**Every value is re-measured at freeze time. None is carried forward by arithmetic.**
+
+---
+
+## 11. Final status
 
 On success:
 
@@ -354,8 +420,9 @@ On success:
 FULL-PATIENT-ESTATE-RESET-1
 COMPLETE / 50 FICTIONAL PATIENTS REMOVED /
 PATIENT DOMAIN EMPTY /
-KNOWN PATIENT FILES REMOVED /
-PRE-EXISTING UNREFERENCED ORPHANS PRESERVED /
+PATIENT NOTIFICATION RESIDUE REMOVED /
+AUDIT EVIDENCE PRESERVED /
+PRE-EXISTING STORAGE ORPHANS PRESERVED /
 NON-PATIENT DOMAIN UNCHANGED /
 READY FOR FIRST REAL PATIENT
 ```
@@ -369,14 +436,18 @@ NO-GO / <exact reason>
 
 ---
 
-## Appendix — open items for the owner
+## Appendix — decision log and remaining item
 
-1. **In-app notifications (24 rows, all lab-workflow).** Owned by users, so outside the
-   patient estate by ownership, and therefore **not** in the 753. Their payloads embed
-   patient names and deep-link to lab orders that will no longer exist, leaving dead
-   links carrying patient identifiers in a freshly opened system. Recommend purging them
-   as a follow-up; requires an explicit decision.
-2. **SATUSEHAT audit rows (43).** Preserved under the audit-log rule. No foreign key, so
-   nothing breaks; noted only because they reference a now-empty estate.
-3. **Pre-existing storage orphans (12).** Excluded by owner decision. Recommend a
-   separate orphan-storage audit after go-live.
+**Resolved by the owner on 2026-09-24:**
+
+- **In-app notifications — INCLUDED, scoped.** 24 lab-workflow rows, proven to reference
+  only lab orders inside the frozen manifest. Deleted by scoped predicate with a
+  fail-closed count assertion; unrelated user notifications are never touched.
+- **SATUSEHAT audit rows — PRESERVED.** 43 rows retained as audit evidence. Their
+  survival is asserted by the transaction, not merely tolerated.
+
+**Remaining open item:**
+
+- **Pre-existing storage orphans (12).** Unreferenced handwriting files with no
+  ownership path into the authorized estate. Excluded by owner decision; not a reset
+  failure. Recommend a separate orphan-storage audit after go-live.
