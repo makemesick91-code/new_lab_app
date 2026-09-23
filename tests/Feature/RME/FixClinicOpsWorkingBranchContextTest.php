@@ -1,5 +1,20 @@
 <?php
 
+/*
+ * D5 NOTE — the `confirmed_branch_id` token on every online-context POST below.
+ *
+ * `ConfirmsFirstDailyBranchSelection` gates the FIRST branch selection of a
+ * clinical day: committing a day to the wrong branch costs a Super Admin
+ * approval to undo, so the operator is asked before the write rather than
+ * after. The guard steps aside once a lock exists, which is why the token is
+ * harmless on the follow-up POSTs that these tests expect to be REFUSED by the
+ * lock itself — those still assert on `branch_id`, not on the token.
+ *
+ * Without the token the first POST fails validation, no lock is ever written,
+ * and every assertion about the lock below passes or fails for the wrong
+ * reason. The token is what keeps these tests testing the lock.
+ */
+
 /**
  * FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1 — FIX-03 / FIX-04 / FIX-06 / FIX-09.
  *
@@ -16,6 +31,7 @@ use App\Modules\Patient\Models\Patient;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Services\RmePaymentService;
 use App\Modules\RmeOnlineContext\Services\BranchChangeApprovalService;
+use App\Modules\RmeOnlineContext\Services\DailyBranchContextService;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
 use App\Modules\Treatment\Models\Treatment;
 use App\Support\Clinical\ClinicalClock;
@@ -243,7 +259,7 @@ it('lets a Kasir start a working branch context', function () {
     $kasir = userInRole('Kasir');
 
     $this->actingAs($kasir)
-        ->post(route('rme.online-context.kasir'), ['branch_id' => $this->tkm->id])
+        ->post(route('rme.online-context.kasir'), ['branch_id' => $this->tkm->id, DailyBranchContextService::CONFIRMATION_FIELD => $this->tkm->id])
         ->assertRedirect();
 
     expect(app(RmeWorkingBranchScope::class)->activeBranchId($kasir->refresh()))->toBe((int) $this->tkm->id);
@@ -257,7 +273,7 @@ it('refuses a Kasir working context on a non-RME branch', function () {
     ]);
 
     $this->actingAs($kasir)
-        ->post(route('rme.online-context.kasir'), ['branch_id' => $nonRme->id])
+        ->post(route('rme.online-context.kasir'), ['branch_id' => $nonRme->id, DailyBranchContextService::CONFIRMATION_FIELD => $nonRme->id])
         ->assertSessionHasErrors('branch_id');
 
     expect(app(RmeWorkingBranchScope::class)->activeBranchId($kasir->refresh()))->toBeNull();

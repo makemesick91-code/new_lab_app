@@ -1,0 +1,83 @@
+---
+description: A DoctorDeviceAuthorization stays an EXPLICIT per-doctor grant on top of a trusted device — a trusted tablet never means "any doctor may use it". Device eligibility is independent of the doctor's branch authority, so a doctor home-locked to one branch is still authorized onto a tablet in another; production depends on this. Bulk provisioning is DRY RUN BY DEFAULT and a preview writes nothing at all, not even an audit row. Applying requires a plan digest the operator copied out of that preview, never a terminal prompt, because a prompt auto-answers when nobody is at the terminal. Every write goes through DoctorDeviceAuthorizationService::resolveOrRequest() and approve(); nothing else may write an authorization status. REJECTED and REVOKED pairs are reported and left exactly as the human who decided them left them, and resolveOrRequest() is never called on an existing row because it can re-open a refusal. Eligible devices are ACTIVE and cryptographically verified, re-asserted under a row lock at write time so approve()'s device-admission branch is unreachable. No observer, listener or login hook may authorize anyone automatically. Future doctors and future tablets require an explicit audited run.
+globs:
+  - "app/Modules/DoctorAccess/Services/DoctorDeviceBulkAuthorizationService.php"
+  - "app/Modules/DoctorAccess/Support/DoctorDeviceBulkAuthorization*.php"
+  - "app/Console/Commands/DoctorDeviceBulkAuthorizeCommand.php"
+  - "app/Modules/DoctorDevice/Services/DoctorDeviceAuthorizationService.php"
+  - "app/Modules/DoctorDevice/Models/DoctorDevice.php"
+  - "app/Modules/DoctorDevice/Models/DoctorDeviceAuthorization.php"
+  - "config/doctor_access.php"
+  - "tests/Feature/DoctorAccess/DoctorDeviceBulkAuthorization*.php"
+alwaysApply: false
+---
+
+# Bulk device authorization — DBA-R001..DBA-R012
+
+Architecture: `docs/architecture/doctor-device-bulk-authorization.md`.
+Sprint: `docs/sprints/doctor-access-pr-c-bulk-device-authorization.md`.
+
+**DBA-R001 — the authorization is a real boundary.** Trust stays three-layered:
+a trusted physical device, PLUS an explicit `DoctorDeviceAuthorization` for that
+doctor, PLUS a device-bound cryptographic proof at login. "The tablet is trusted,
+so anyone may use it" is not an available simplification.
+
+**DBA-R002 — device eligibility is independent of the doctor's branch.** Never
+intersect `mst_doctors` branch state with `mst_doctor_devices.branch_id`. Branch
+is reported so an operator can see where a tablet lives; it is never a filter.
+On production drg Karmila is home-locked to SPN4 and holds an ACTIVE
+authorization on an ATG3 tablet.
+
+**DBA-R003 — exactly one ACTIVE authorization per eligible pair.** Guaranteed by
+`mst_dd_authorizations_pair_unique`, an UNCONDITIONAL unique index on
+`(doctor_id, doctor_device_id)`. Do not make it partial: that would turn a
+database fact into an application promise.
+
+**DBA-R004 — dry run is the default and writes nothing.** No authorization row,
+no device row, no audit row — not even a "previewed" one. A preview that logged
+its own execution makes "the tool was run" indistinguishable from "the tool
+changed something", which is the first thing an incident review must separate.
+
+**DBA-R005 — applying requires the plan digest, not a prompt.** `--apply` takes
+`--confirm-plan=<digest>` and refuses without an exact match. Never use a
+terminal prompt: it auto-answers with its default under SSH, a deploy script or
+CI, which at fleet scale is an unreviewed write. Consent binds to the row delta,
+so estate drift between preview and apply fails closed.
+
+**DBA-R006 — this tool owns no state transition.** Every write goes through
+`DoctorDeviceAuthorizationService::resolveOrRequest()` and `approve()`. No direct
+model write, no second writer of `STATUS_ACTIVE`.
+
+**DBA-R007 — never call `resolveOrRequest()` on an existing row.** It routes one
+into `reopenIfPermitted()`, which can transition REJECTED to PENDING and write an
+audit row. Classify from a pre-read and short-circuit instead.
+
+**DBA-R008 — REJECTED and REVOKED are left exactly as they are.** No revoke, no
+reject, no `allowReRequest()`. Those are deliberate human acts with their own
+routes, mandatory reasons and audit events. Blocked pairs are reported and
+excluded from the expected total, never folded into it.
+
+**DBA-R009 — eligibility is re-asserted under a row lock before approving.** An
+eligible device is ACTIVE and cryptographically verified. Asserting that at plan
+time is a stale read; asserting it while holding the lock `approve()` re-acquires
+is what makes its `pending_approval` device-admission branch unreachable. Lock
+the doctor row too — `approve()` locks the device but reads the doctor unlocked.
+
+**DBA-R010 — `resolveOrRequest()` runs top-level, never nested.** Its recovery
+path SELECTs inside `catch (QueryException)`. On PostgreSQL a failed statement
+aborts the transaction, so that only works because the failing transaction is
+top-level and has already rolled back. SQLite hides this completely, so a green
+local test proves nothing about it.
+
+**DBA-R011 — nothing authorizes automatically.** No observer, no listener, no
+login hook, no scheduler. A new doctor or a newly admitted tablet does not
+acquire the matrix; an operator previews, reads the delta and approves it. This
+is governance, not missing automation.
+
+**DBA-R012 — the tool mutates authorizations and their audit trail, nothing
+else.** Never a device row, a device branch, a public key, a cryptographic
+status, a WebAuthn credential, a home lock, a cover, a session lease, the pilot
+cohort or a feature flag. Provisioning an authorization does not make anyone able
+to log in: a device-bound credential still has to be enrolled at the tablet under
+the doctor's own biometric, and the report says which pairs are still blocked on
+that rather than presenting partial provisioning as readiness.

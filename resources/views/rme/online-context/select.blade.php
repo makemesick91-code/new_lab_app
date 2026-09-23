@@ -28,6 +28,21 @@
                         <p>Hubungi admin klinik untuk menghubungkan akun login Anda dengan data dokter di pengaturan master data.</p>
                     </div>
                 </x-ui.card>
+            @elseif ($doctorEffectiveBranchId && $doctorAllowedBranches->isEmpty())
+                {{-- DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1 — locked to a branch that is
+                     not one of this doctor's practice branches. Ordered before the generic
+                     "no practice branch" card so the doctor is told what is actually wrong. --}}
+                <x-ui.card>
+                    <div class="space-y-2 text-sm text-warning-700">
+                        <p class="font-medium">Cabang klinis Anda terkunci di luar Cabang Praktik</p>
+                        <p>
+                            Cabang klinis Anda saat ini terkunci di
+                            <span class="font-medium">{{ $doctorEffectiveBranch?->name ?? 'cabang lain' }}</span>,
+                            yang belum termasuk Cabang Praktik yang Diizinkan pada data master dokter Anda.
+                        </p>
+                        <p>Hubungi Super Admin atau Supervisor RME untuk menyelaraskan penguncian cabang dengan Cabang Praktik Anda.</p>
+                    </div>
+                </x-ui.card>
             @elseif ($doctorAllowedBranches->isEmpty())
                 <x-ui.card>
                     <div class="space-y-2 text-sm text-warning-700">
@@ -43,6 +58,17 @@
                         <div>
                             <p class="text-sm text-ink-soft">Dokter: <span class="font-medium text-navy">{{ $linkedDoctor->name }}</span></p>
                         </div>
+                        @if ($doctorEffectiveBranchId)
+                            {{-- DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1 — a locked doctor sees
+                                 the one branch they may work from, and is told why. The dropdown
+                                 below is already narrowed to it; the refusal itself lives in
+                                 UserOnlineContextService::startDoctorSession(). --}}
+                            <x-ui.alert variant="info">
+                                Cabang klinis Anda terkunci di
+                                <span class="font-medium">{{ $doctorEffectiveBranch?->name ?? 'cabang yang ditetapkan' }}</span>.
+                                Perubahan cabang memerlukan persetujuan Super Admin atau Supervisor RME.
+                            </x-ui.alert>
+                        @endif
                         <div>
                             <label for="doctor_branch_id" class="block text-sm font-medium text-navy">Cabang Praktik <span class="text-danger">*</span></label>
                             <select id="doctor_branch_id" name="branch_id" required x-model="branchId" @change="syncRooms()"
@@ -87,10 +113,49 @@
                 // offers exactly one branch: the locked one. Perawat is out of
                 // scope and never has a daily context, so it is unaffected.
                 $dailyLocked = ($dailyContext ?? null) !== null && ($lockedBranch ?? null) !== null;
-                $selectableBranches = $dailyLocked ? collect([$lockedBranch]) : $rmeBranches;
+
+                // REVISION-FRONT-OFFICE-BRANCH-CONTEXT-LOCK-1 — an armed
+                // front-desk account is pinned, and the pin OUTRANKS the daily
+                // lock in this list. It has to: an account armed AFTER it had
+                // already committed a different branch today would otherwise be
+                // offered that other branch and refused on submit — the dead end
+                // the daily-lock exemptions exist to avoid. The controller has
+                // already narrowed $rmeBranches to the pin, so this is the second
+                // of two presentation guards, and neither is the boundary.
+                $frontOfficePinned = ($frontOfficePinnedBranch ?? null) !== null;
+
+                // An armed account whose mapping is UNDECIDABLE has no pinned
+                // branch and the server refuses EVERY branch for it. It must win
+                // over $dailyLocked too: otherwise it is offered the day's
+                // branch, which is refused on submit — a silent dead end where
+                // the contract promises a loud refusal.
+                $frontOfficeBlocked = ($frontOfficePinMisconfigured ?? false) === true;
+
+                $selectableBranches = match (true) {
+                    $frontOfficePinned => collect([$frontOfficePinnedBranch]),
+                    $frontOfficeBlocked => collect(),
+                    $dailyLocked => collect([$lockedBranch]),
+                    default => $rmeBranches,
+                };
+
+                // D5 — only a LOCKED role making its FIRST choice of the day is
+                // committing anything, so only that case is asked to confirm.
+                // Perawat never locks, and a day already locked has nothing
+                // left to commit.
+                $needsBranchConfirmation = ($requiresAdmin || $requiresKasir) && ! $dailyLocked;
             @endphp
 
-            @if ($dailyLocked)
+            @if ($frontOfficeBlocked)
+                <x-ui.alert variant="danger">
+                    Konfigurasi penguncian cabang untuk akun ini tidak dapat dibaca,
+                    sehingga tidak ada cabang yang dapat dipilih. Hubungi Super Admin.
+                </x-ui.alert>
+            @elseif ($frontOfficePinned)
+                <x-ui.alert variant="info">
+                    Cabang terkunci: <strong>{{ $frontOfficePinnedBranch->name }}</strong>.
+                    Akun Front Office ini hanya dapat bekerja di cabangnya sendiri.
+                </x-ui.alert>
+            @elseif ($dailyLocked)
                 <x-ui.alert variant="warning">
                     Cabang kerja Anda hari ini terkunci di
                     <strong>{{ $lockedBranch->name }}</strong>.
@@ -101,7 +166,16 @@
             <x-ui.card>
                 <form method="POST"
                     action="{{ $branchContextAction }}"
-                    class="space-y-5">
+                    class="space-y-5"
+                    @if ($needsBranchConfirmation)
+                        x-data="{
+                            branchId: '{{ old('branch_id', '') }}',
+                            confirming: false,
+                            names: {{ Js::from($selectableBranches->mapWithKeys(fn ($b) => [(string) $b->id => $b->code.' — '.$b->name])) }},
+                            get chosenName() { return this.names[String(this.branchId)] ?? ''; },
+                        }"
+                    @endif
+                >
                     @csrf
                     <div>
                         <label for="admin_branch_id" class="block text-sm font-medium text-navy">
@@ -112,6 +186,7 @@
                             @endif
                         </label>
                         <select id="admin_branch_id" name="branch_id" required
+                            @if ($needsBranchConfirmation) x-model="branchId" @change="confirming = false" @endif
                             class="mt-1 block w-full rounded-lg border-hairline bg-surface text-sm text-navy focus:border-brand-500 focus:ring-brand-500">
                             @unless ($dailyLocked)
                                 <option value="">- Pilih cabang RME -</option>
@@ -124,16 +199,60 @@
                         </select>
                         @error('branch_id')<p class="mt-1 text-xs text-danger">{{ $message }}</p>@enderror
                     </div>
+                    @if ($needsBranchConfirmation)
+                        {{-- D5 — the first branch of the clinical day is a commitment.
+                             The operator sees the branch NAME before it is written, and
+                             the server refuses a submit whose confirmation does not
+                             match the selection. --}}
+                        @error(\App\Modules\RmeOnlineContext\Services\DailyBranchContextService::CONFIRMATION_FIELD)
+                            <p class="text-xs text-danger">{{ $message }}</p>
+                        @enderror
+
+                        <div x-show="confirming" x-cloak
+                            class="rounded-lg border border-warning bg-warning-soft p-4 text-sm text-navy">
+                            <p>
+                                Anda akan menggunakan <strong x-text="chosenName"></strong>
+                                untuk hari operasional ini.
+                            </p>
+                            <p class="mt-1 text-ink-soft">
+                                Pilihan cabang akan <strong>dikunci</strong> setelah dikonfirmasi.
+                                Mengubahnya memerlukan persetujuan Super Admin.
+                            </p>
+                            <input type="hidden"
+                                name="{{ \App\Modules\RmeOnlineContext\Services\DailyBranchContextService::CONFIRMATION_FIELD }}"
+                                :value="branchId">
+                        </div>
+                    @endif
+
                     <div class="flex items-center justify-between gap-3 border-t border-hairline pt-4">
                         @if ($dailyLocked)
                             <a href="{{ route('rme.branch-change-requests.create') }}"
                                 class="text-sm font-medium text-brand-700 underline hover:text-brand-800">
                                 Ajukan Pindah Cabang
                             </a>
+                        @elseif ($needsBranchConfirmation)
+                            <button type="button" x-show="confirming" x-cloak
+                                @click="confirming = false"
+                                class="text-sm font-medium text-brand-700 underline hover:text-brand-800">
+                                Kembali / Ubah Pilihan
+                            </button>
+                            <span x-show="!confirming"></span>
                         @else
                             <span></span>
                         @endif
-                        <x-ui.button type="submit" variant="primary">Mulai Bertugas</x-ui.button>
+
+                        @if ($needsBranchConfirmation)
+                            <x-ui.button type="button" variant="primary"
+                                x-show="!confirming"
+                                ::disabled="!branchId"
+                                @click="confirming = true">Lanjut</x-ui.button>
+                            <x-ui.button type="submit" variant="primary"
+                                x-show="confirming" x-cloak>
+                                Konfirmasi &amp; Mulai Bertugas
+                            </x-ui.button>
+                        @else
+                            <x-ui.button type="submit" variant="primary">Mulai Bertugas</x-ui.button>
+                        @endif
                     </div>
                 </form>
             </x-ui.card>

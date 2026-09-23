@@ -10,13 +10,19 @@ alwaysApply: true
    Telkomas** (kode lama `TKM1` DEPRECATED — lihat rule
    `92-telkomas-branch-code-canonical.mdc`; diterima sebagai alias historis,
    tidak pernah lagi di-generate), LDK2 = Cabang Landak, ATG3 = Cabang Antang,
-   **SUN4 = Cabang Sunu**.
+   **SPN4 = Cabang Sunu** (kode lama `SUN4` DEPRECATED — lihat rule
+   `136-sunu-branch-code-canonical.mdc`; diterima sebagai alias historis, tidak
+   pernah lagi di-generate; `BranchCodeAlias::SUNU_CANONICAL` adalah otoritasnya
+   di kode).
    [SUPERSEDED 2026-09-02 by REVISION-SUNU-BRANCH-CODE-SUN4-TO-SPN4-1: Cabang
    Sunu's canonical code is now `SPN4`; `SUN4` is DEPRECATED — accepted as a
    historical alias, never generated again. See
    `136-sunu-branch-code-canonical.mdc`. The sprint NAME RME-BRANCH-SUN4 is a
-   historical identifier and is not renamed.]
-   SUN4 aktif + RME-enabled, BUKAN MAIN, tidak otomatis inventory-enabled.
+   historical identifier and is not renamed. The registry line above now names
+   SPN4 directly: a list that asserts the deprecated code and retracts it in a
+   footnote is two answers to one question, which is how a reader ends up
+   quoting the wrong one.]
+   SPN4 aktif + RME-enabled, BUKAN MAIN, tidak otomatis inventory-enabled.
    ID branch TIDAK BOLEH diasumsikan lintas environment — selalu resolve by `code`.
 2. **Penambahan cabang harus idempotent** via `Database\Seeders\RmeBranchSeeder`
    (`firstOrNew` by unique `code` termasuk soft-deleted; row existing tidak

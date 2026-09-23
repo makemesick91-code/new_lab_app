@@ -8,6 +8,7 @@ use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Patient\Services\PatientMedicalRecordNumberService;
 use App\Modules\Patient\Services\PatientSelectorSearchService;
 use App\Modules\RmeOnlineContext\Services\UserOnlineContextService;
+use App\Support\AccessControl\FrontOfficeBranchPinResolver;
 use App\Support\Clinical\ClinicalClock;
 use Carbon\Carbon;
 use Illuminate\Contracts\Validation\Validator;
@@ -19,7 +20,55 @@ class StoreClinicVisitRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return true;
+        /*
+         * REVISION-FRONT-OFFICE-BRANCH-CONTEXT-LOCK-1 — a pinned front-desk
+         * account with no resolvable working branch may not register a visit.
+         *
+         * WHY THIS IS HERE AND NOT LEFT TO THE MIDDLEWARE.
+         *
+         * When the working branch is null, `applyAdminClinicBranchContext()`
+         * early-returns and the form's OWN `branch_id` survives, validating
+         * against any RME-enabled branch. For a pinned account that is WIDER
+         * than the stale-branch bug this sprint fixed: it would let the operator
+         * name any branch rather than one.
+         *
+         * `EnsureRmeOnlineContext` does intercept first today, because
+         * `hasSatisfiedContext()` is pin-aware. But that makes the route the
+         * only thing standing between a crafted POST and the write, and this
+         * module's own rule is that the refusal belongs where the write happens
+         * — a FormRequest is reachable by any future route, and middleware
+         * exemption lists grow.
+         *
+         * Narrowing only: `appliesTo()` is false for every account outside the
+         * cohort and while both flags are off, so nobody else sees a change.
+         */
+        $user = $this->user();
+
+        if ($user === null) {
+            return true;
+        }
+
+        $pin = app(FrontOfficeBranchPinResolver::class);
+
+        if (! $pin->appliesTo($user)) {
+            return true;
+        }
+
+        /*
+         * `activeContextBranchId()`, NOT `resolveActiveBranchForAdmin()`.
+         *
+         * The latter answers for the admin_clinic and perawat contexts only, and
+         * returns null for a DOCTOR context even when the working branch is
+         * resolvable and equals the pin. A cohort account that also holds the
+         * Doctor role, online as a doctor at its own pinned branch, would
+         * otherwise be refused registration outright — a false 403, and a false
+         * 403 on visit registration is a clinical-scale outage.
+         *
+         * `activeContextBranchId()` is the pin-narrowed, daily-lock-aware
+         * chokepoint, so a non-null answer here already means "this operator has
+         * a working branch AND it is the pinned one".
+         */
+        return app(UserOnlineContextService::class)->activeContextBranchId($user) !== null;
     }
 
     protected function prepareForValidation(): void
@@ -44,6 +93,11 @@ class StoreClinicVisitRequest extends FormRequest
             ]);
         }
 
+        // BEFORE the admin-clinic merge: that helper answers for two role
+        // contexts only and early-returns for a doctor context, leaving the
+        // form's own branch_id intact. For a pinned account that is the last
+        // place a branch could come from the request.
+        $this->applyFrontOfficePinnedBranchContext();
         $this->applyAdminClinicBranchContext();
         $this->applyAdminClinicDoctorContext();
         $this->clearExistingPatientForNewRegistration();
@@ -75,6 +129,47 @@ class StoreClinicVisitRequest extends FormRequest
         }
 
         $this->merge(['doctor_id' => null]);
+    }
+
+    /**
+     * REVISION-FRONT-OFFICE-BRANCH-CONTEXT-LOCK-1 — a pinned account registers at
+     * its working branch, never at one the form names.
+     *
+     * The value is `activeContextBranchId()` and deliberately NOT
+     * `requiredBranchIdFor()`. The chokepoint applies the daily-branch-lock
+     * override BEFORE the pin, so its answer can never be a branch the day has
+     * not committed to; forcing the raw pin here would hand an armed account a
+     * same-day branch move that `FEATURE-DAILY-BRANCH-CONTEXT-LOCK-1` requires
+     * Super Admin approval for.
+     *
+     * A null is left to `authorize()` to refuse rather than merged as null.
+     */
+    private function applyFrontOfficePinnedBranchContext(): void
+    {
+        $user = $this->user();
+
+        if ($user === null || ! app(FrontOfficeBranchPinResolver::class)->appliesTo($user)) {
+            return;
+        }
+
+        $branchId = app(UserOnlineContextService::class)->activeContextBranchId($user);
+
+        if ($branchId === null) {
+            return;
+        }
+
+        if ($this->input('patient_mode') === 'new') {
+            $this->merge([
+                'new_patient' => array_merge($this->input('new_patient', []), [
+                    'branch_id' => $branchId,
+                ]),
+                'branch_id' => $branchId,
+            ]);
+
+            return;
+        }
+
+        $this->merge(['branch_id' => $branchId]);
     }
 
     private function isAdminClinicRegistration(): bool

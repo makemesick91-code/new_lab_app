@@ -349,6 +349,56 @@ class RoleSeeder extends Seeder
             // Sprint 23 Phase 23.5 — Kasir may view RME payment reports only
             'view_rme_payment_reports',
         ],
+        /*
+        | DAENGTISIAMS-SUNU-FINAL-RELEASE-CANDIDATE-1 / D2 — the merged front desk.
+        |
+        | Cabang Sunu staffs ONE person who both registers patients and takes
+        | payment. This role is the measured UNION of `Admin Klinik` (20) and
+        | `Kasir` (6) above: 21 distinct permissions, the 5 they already shared
+        | counted once. Nothing here is invented — every entry appears in one of
+        | those two lists, and `Sprint66FrontOfficeRoleTest` re-derives the union
+        | from them so the three lists can never drift apart silently.
+        |
+        | The role already exists in production as id 10 with a stale 5-permission
+        | subset and no users, created 2026-06-10 and never added to this seeder.
+        | Seeding by NAME adopts that row rather than creating a second one, which
+        | is what "reuse role id 10" means in practice.
+        |
+        | `Admin Klinik` and `Kasir` are deliberately LEFT INTACT above. They are
+        | the rollback path, and deleting a Spatie role orphans the historical
+        | `model_has_roles` rows that record who held what. Inactive means no user
+        | holds them — see App\Support\AccessControl\FrontOfficeRole::LEGACY.
+        |
+        | Front Office is resolved through the ADMIN CLINIC online context, so the
+        | daily branch lock keeps engaging. See FrontOfficeRole for why that is
+        | load-bearing rather than an implementation detail.
+        */
+        'Front Office' => [
+            // --- shared by both legacy roles -------------------------------
+            'view dashboard',
+            'view_clinic_visits',
+            'manage_rme_billing',
+            'view_rme_consents',
+            'manage_rme_consents',
+            // --- from Admin Klinik -----------------------------------------
+            'manage patients',
+            'manage_clinic_visits',
+            'view_branch_dashboard',
+            'view_clinic_master_data',
+            'view_rme_patient_reports',
+            'create_lab_branch_requests',
+            'create_legacy_rme_imports',
+            'view_legacy_rme_imports',
+            'create_legacy_odontogram_imports',
+            'view_legacy_odontogram_imports',
+            'view_satusehat_readiness',
+            'manage_satusehat_remediation',
+            'view_satusehat_branch_readiness',
+            'manage_satusehat_branch_remediation',
+            'view_satusehat_multi_branch_readiness',
+            // --- from Kasir --------------------------------------------------
+            'view_rme_payment_reports',
+        ],
         'Perawat' => [
             'view dashboard',
             'manage patients',
@@ -425,6 +475,17 @@ class RoleSeeder extends Seeder
             // -> Device Dokter.
             'view_doctor_device_authorizations',
             'manage_doctor_device_authorizations',
+            // DAENGTISIAMS-SUNU-FINAL-RELEASE-CANDIDATE-1 / D11 — Supervisor RME
+            // may now FILE a new tablet, so a replacement device no longer
+            // waits on a Super Admin to be typed into the registry.
+            //
+            // This does NOT undo the split described above. The filed row is
+            // PENDING_APPROVAL and cannot log anyone in; enrolling its
+            // credential and approving it into service both remain
+            // `manage_doctor_devices`, which this role still does not hold.
+            // Two parties are still required before a tablet is trusted:
+            // Supervisor RME files it, Super Admin approves it.
+            'register_doctor_devices',
             // SATUSEHAT-1 — RME operational owner of the controlled submission
             // filter + mapping/identifier governance (view/review/send/manage).
             'view_satusehat_submissions',
@@ -495,6 +556,48 @@ class RoleSeeder extends Seeder
             'view_legacy_odontogram_imports',
             'review_legacy_odontogram_imports',
             'publish_legacy_odontogram_imports',
+
+            // DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1 — the branch-cover and
+            // home-branch tier for a doctor's permanent home branch and for
+            // temporary branch cover.
+            //
+            // OWNER DECISION, 2026-09-11: `manage_doctor_branch_locks` IS
+            // GRANTED HERE. Super Admin and Supervisor RME may BOTH file a
+            // temporary branch cover, and both may approve one. The earlier
+            // shape — withholding `manage_` so that only Super Admin could file
+            // — made the maker tier a single-occupant tier and coupled the
+            // workflow to how the estate happens to be staffed today.
+            //
+            // SEPARATION OF DUTIES IS THEREFORE ACTOR-BASED, NEVER ROLE-BASED.
+            // The invariant is `requester_user_id !== approving user id`, and it
+            // is enforced inside the approval transaction after the doctor row
+            // is locked (DoctorBranchLockApprovalService::lockPendingRequest()
+            // and DoctorBranchCoverApprovalService::lockPendingCover()) — NOT by
+            // which permissions this seeder hands out, and NOT only in a policy,
+            // because the single global Gate::before returns true for a Super
+            // Admin before any policy method runs, so for that actor every
+            // permission check here and in the policies is skipped entirely.
+            //
+            // Nothing here says "Super Admin is the maker" or "Supervisor RME is
+            // the checker". Either tier may be either party on any given row,
+            // provided the two parties are two different accounts.
+            //
+            // `release_doctor_session_leases` ends a LOGIN SESSION only: no
+            // device, no DoctorDeviceAuthorization and no WebAuthn credential is
+            // revoked (ruling P17). It rides with the approver tier by intent,
+            // but stays a separate grant so it can be audited and withdrawn on
+            // its own.
+            //
+            // Super Admin needs no entry: it is synced from the full permission
+            // list via '*' below. No other role gets any of these four.
+            'view_doctor_branch_locks',
+            'manage_doctor_branch_locks',
+            'approve_doctor_branch_locks',
+            'release_doctor_session_leases',
+            // Break-glass: the same role that already decides doctor access and may
+            // end a doctor's session. Owner is deliberately NOT given it — an
+            // emergency path nobody reachable can operate is not an emergency path.
+            'grant_doctor_break_glass_access',
         ],
         // Sprint 23 Phase 23.5 — Dedicated separated RME report viewers
         'Laporan Pasien RME' => [

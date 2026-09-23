@@ -105,9 +105,13 @@ it('grants each archive permission to exactly the roles that were decided, and n
      *
      * @var array<string, list<string>>
      */
+    // D2 — `Front Office` joins the MAKER rows only (view + create). It is
+    // deliberately absent from review and publish below: the merged front desk
+    // inherits Admin Klinik's half of the maker-checker pair, never the
+    // checker's, so filing and certifying stay in different hands.
     $expected = [
-        'view_legacy_odontogram_imports' => ['Admin Klinik', 'Supervisor RME'],
-        'create_legacy_odontogram_imports' => ['Admin Klinik'],
+        'view_legacy_odontogram_imports' => ['Admin Klinik', 'Front Office', 'Supervisor RME'],
+        'create_legacy_odontogram_imports' => ['Admin Klinik', 'Front Office'],
         'review_legacy_odontogram_imports' => ['Supervisor RME'],
         'publish_legacy_odontogram_imports' => ['Supervisor RME'],
         'void_legacy_odontogram_records' => [],

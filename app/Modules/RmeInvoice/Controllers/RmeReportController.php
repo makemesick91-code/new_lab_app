@@ -443,6 +443,20 @@ class RmeReportController extends Controller
 
         // FIX-04/FIX-09 — a requested branch is honoured only when it is inside
         // the viewer's authorised scope; otherwise it is ignored (never widened).
+        //
+        // DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1 (open item V4) — DELIBERATE
+        // SILENT NARROWING, NOT A BUG. `allows()` is per-record authorization and
+        // is deliberately NOT narrowed by the doctor branch lock, so a LOCKED
+        // doctor who crafts `?branch_id=` for another RME branch passes this
+        // check and then receives THEIR OWN branch's data: the returned figures
+        // are scoped by reportScopeBranchIds(), which resolves through
+        // operationalBranchIdsFor() and intersects the request down to the locked
+        // branch. There is NO cross-branch leak — the requested branch simply has
+        // no effect. It is reported as narrowing rather than a 403 on purpose: a
+        // stale bookmark or a shared link then still renders the report the
+        // doctor is entitled to, instead of a dead end. Do not "fix" this by
+        // aligning allows() with operationalBranchIdsFor(); that method must keep
+        // letting a doctor open a record whose branch is not their locked one.
         if (! app(RmeWorkingBranchScope::class)->allows($request->user(), $requested)) {
             return null;
         }
@@ -483,9 +497,21 @@ class RmeReportController extends Controller
         return $value > 0 ? $value : null;
     }
 
+    /**
+     * The RME branches offered in the report filter.
+     *
+     * DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1 (open item V3) — resolved
+     * through `operationalBranchIdsFor()`, NOT `branchIdsFor()`. Every report
+     * query behind this selector is already scoped by
+     * {@see self::reportScopeBranchIds()}, which narrows a locked doctor to their
+     * effective branch, so listing the other RME branches here offered a choice
+     * that changed nothing about the numbers returned. This call site NARROWS
+     * only — the operational method is an intersection with the legacy answer —
+     * so it can never offer a branch the pre-sprint rules withheld.
+     */
     private function rmeBranches()
     {
-        $allowed = app(RmeWorkingBranchScope::class)->branchIdsFor(request()->user());
+        $allowed = app(RmeWorkingBranchScope::class)->operationalBranchIdsFor(request()->user());
 
         return Branch::query()
             ->whereIn('id', $allowed)

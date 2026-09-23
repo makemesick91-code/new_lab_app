@@ -1,0 +1,243 @@
+---
+description: HALF-B READINESS — the five global doctor-enforcement prerequisites now each have a PRODUCER, so a signature can be contradicted by a measurement. globalPrerequisiteCheck() reads only signatures and returned PASS for attested-true beside measured-false; that false green is closed by a second, always-evaluated check. rollback_to_browser_login_proven is now measured by an in-process rehearsal (deny an out-of-cohort doctor under the activated posture, restore the CAPTURED posture, prove admission returns) instead of having zero occurrences under app/. Half B is NOT active — global_permitted is a source-controlled false, governance_phase is phase_4a, no attestation is signed, and READINESS GO is not APPLY approval. Half B genuinely requires Level 3 (spare_device_available_per_branch) because it is a declared global prerequisite; that is a fact about hardware, not about code.
+globs:
+  - "app/Modules/DoctorAccess/**"
+  - "app/Modules/DoctorDevice/**"
+  - "app/Support/Android/**"
+  - "app/Console/Commands/DoctorHalfBReadinessCommand.php"
+  - "config/android_release.php"
+  - "config/doctor_device_enforcement.php"
+  - "config/doctor_global_enforcement_readiness.php"
+  - "tests/Feature/DoctorAccess/**"
+alwaysApply: false
+---
+
+# Half-B readiness — measuring what was only ever signed
+
+Extends rules 153, 154, 156, 157, 158, 159 and **160**, and replaces none of
+them. Rule 157 owns the governance phase. Rule 159 owns the three estate
+capacity levels. Rule 160 owns the activation window and the live Half-A
+posture. This one owns the **five global prerequisites** and the rule that
+governs all of them.
+
+> ## STATUS — READINESS ONLY, HALF B INACTIVE
+>
+> ```
+> single_active_session = TRUE     (Half A, live, all 15 doctors)
+> branch_lock           = FALSE    (owner decision; 15 home locks retained, inert)
+> HALF_B_ACTIVE         = NO       (pilot cohort; global_permitted source-false)
+> HALF_B_APPLY_AUTHORIZED = NO
+> governance_phase      = phase_4a
+> attestations signed   = 0 of 5
+> ```
+
+---
+
+## HB-R1 — A signature never overrides a measurement
+
+`attested true` beside a measurement that is not `PASS` is a **contradiction**
+and fails. This is expressed in exactly one place —
+`DoctorGlobalEnforcementPrerequisite::contradicts()` — and every consumer asks
+there rather than re-deriving it.
+
+## HB-R2 — UNVERIFIED contradicts a signature exactly as FAIL does
+
+"Nobody measured it" is not evidence that it holds. A prerequisite that cannot
+be measured is precisely the one a signature must not be allowed to settle.
+
+## HB-R3 — The ABSENCE of a signature fails nothing
+
+A gate that demanded signatures would be red for the whole of a rollout, and a
+gate that is red for months gets deleted rather than fixed. Only a
+*contradicting* signature fails.
+
+## HB-R4 — `globalPrerequisiteCheck()` reads signatures and nothing else
+
+That is its documented contract and it is not a defect **in that method**. The
+defect was that nothing else read a measurement, so
+`global_prerequisites_attested` could be satisfied by typing `true` five times.
+Do not "fix" it by making it measure — it is NOT_APPLICABLE inside `phase_4a`
+and a false signature lands months earlier. The contradiction check is a
+**separate, always-evaluated** row.
+
+## HB-R5 — The contradiction check costs nothing until somebody signs
+
+With nothing attested it answers from config alone and issues **zero database
+queries** (pinned by test). This scanner runs in CI and in the release-evidence
+chain; a governance gate that acquires a database dependency acquires the
+ability to redden for reasons that have nothing to do with governance.
+
+## HB-R6 — Once a signature exists, an unreadable measurement is a FAIL
+
+Fail closed. A signature that cannot be checked is exactly the signature that
+must not be trusted.
+
+## HB-R7 — Two verdicts, never folded into one
+
+`verdict` (HALF_B_READINESS) is the readiness of the **instruments**.
+`activation_prerequisites` is the readiness of the **world**. A green machinery
+verdict beside a red world verdict is the expected and correct state: the
+instruments are honest and they are saying do not activate. Collapsing them
+either reddens the machinery over a purchase order or lets a green headline
+imply the fleet is ready.
+
+## HB-R8 — Readiness GO is not APPLY approval
+
+`HALF_B_READINESS_GO=YES` means an activation window may be **planned**. It does
+not mean `HALF_B_ACTIVE`, `GLOBAL_FLEET_ENFORCEMENT_ACTIVE` or
+`HALF_B_APPLY_AUTHORIZED`. Those need the owner, separately, in their own words.
+
+## HB-R9 — Half B genuinely requires Level 3, and that is hardware not code
+
+`spare_device_available_per_branch` is literally element three of
+`android_release.enforcement.global_prerequisites`, so outside `phase_4a` it
+must be attested `true` for `global_prerequisites_attested` to pass — and by
+HB-R1 it may only be signed once it MEASURES `PASS`. It measures FAIL today.
+No sprint closes this by writing code. Do not remove the requirement, and do
+not sign it.
+
+## HB-R10 — The rollback restores the CAPTURED posture, never a remembered one
+
+The cohort is the union of two host variables, has no database representation,
+and moved inside a single day once already. `DoctorHalfBRollbackProofService`
+captures the live values and restores those. A rollback that restores a
+constant somebody wrote down restores whatever was true when they wrote it.
+
+## HB-R11 — The rollback subject is a doctor OUTSIDE the cohort
+
+A doctor already inside the pilot cohort is denied before AND after, so they
+demonstrate nothing about rolling a **widening** back. If no such doctor exists,
+the measurement is UNVERIFIED — never PASS.
+
+## HB-R12 — The rehearsal restores in a `finally`, and that is load-bearing
+
+On the happy path the posture is restored mid-rehearsal, so a test that only
+walks the happy path stays green with the `finally` deleted. This was found by
+mutation, not by reading. The throw path is where a missing restore leaves a
+production process running with global enforcement simulated in its own config.
+
+## HB-R13 — The rehearsal writes nothing and arms nothing
+
+No file, no row, no audit entry, no `config:cache`, no environment value. Every
+override lives in the process's own config repository for the length of one
+method. It is safe on production; its only database access is reading the doctor
+accounts it needs a subject from.
+
+## HB-R14 — An empty population is UNVERIFIED, never PASS
+
+`worst([])` returns UNVERIFIED and `worst()` fails closed on any status outside
+its allow-list. "Zero rows, zero problems" is arithmetically a pass and
+operationally a broken query, and this programme has already shipped one gate
+that reported PASS while the estate held zero usable tablets.
+
+## HB-R15 — Iterate the DECLARED list, never the measurement map
+
+A prerequisite somebody adds to config and nobody implements must surface as
+`declared_prerequisite_has_no_producer`, not vanish. That is exactly how this
+family of gates went unmeasured for five phases.
+
+## HB-R16 — Production runs cached config
+
+An environment edit alone realizes nothing. Both arming and rollback need a
+config-cache rebuild, as `daengtisiams`, in `/var/www/asia-dental-lab-v2`:
+`optimize:clear ; config:cache ; route:cache ; view:cache`. Verify with
+`foundation:feature-flags --json` and `android:phase4a-pilot-scope --json`.
+
+## HB-R17 — `device_loss_runbook_rehearsed` is evidenced, not queried
+
+No query establishes that a clinic rehearsed losing a tablet. Absent evidence is
+UNVERIFIED (the ordinary state of a rung nobody has reached), malformed or
+failed evidence is FAIL, an unfilled template is UNVERIFIED, and a rehearsal
+dated in the future is FAIL — the direction is checked explicitly because
+`diffInDays()` is absolute in some Carbon versions and signed in others.
+
+## HB-R18 — Do not confuse the three estate levels with the five prerequisites
+
+Level 1 (`trusted_device_activation_test_coverage`) gates activation TESTING and
+is PASS + signed. Level 2 is reported and gates nothing. Level 3 is
+`spare_device_available_per_branch`, which IS one of the five. Rule 159 owns the
+levels; this rule owns the list.
+
+## HB-R19 — A cross-check must name a key some engine actually publishes
+
+The first snapshot cross-check compared `authorization_matrix.doctor_count` and
+`estate_totals.eligible_doctor_count`. **Neither exists.** It hit its `-1`
+sentinel on every real build, returned `agrees => true`, and made its own
+demotion unreachable and its finding un-emittable — a documented mechanism that
+never ran. Before shipping a comparison, print both sides once and confirm they
+are not both the fallback.
+
+## HB-R20 — A missing invariant is UNVERIFIED, never agreement
+
+The same defect failed **open**: absence of evidence was reported as evidence of
+agreement. Every "we could not compare" branch in this family resolves to
+UNVERIFIED.
+
+## HB-R21 — Derive the checked set from the UNION, never from one list
+
+Both engines filtered the DECLARED list to find signatures, so deleting a name
+from `global_prerequisites` while leaving its `true` beside it removed it from
+the detector built to catch exactly that. Iterate declared ∪ attested; an
+attested name nobody declares is a finding. A signature that is not a boolean
+(`1`, `'true'`) is also a finding — code reads "unsigned", a human reads
+"signed", and neither reading is safe.
+
+## HB-R22 — Measure the baseline before you move anything
+
+`denyBrowserSessionReason()` returns `null` on its first line when enforcement
+is off, so "admitted after rollback" collapsed to *did the boolean we just wrote
+read back as false*. Without a starting state, a subject refused for an
+unrelated reason is indistinguishable from a broken rollback. Measure the
+subject first, and assert the **exact** deny code afterwards — `!== null` is
+satisfied by any refusal at all.
+
+## HB-R23 — Never report a property you did not measure, and do not fix it with a projection
+
+`'mutations' => 0` was a hardcoded literal asserting the one property a reader
+most wants evidence for. Deriving it from the restoration step looked like the
+fix; mutation testing showed it still could not fail independently of that step.
+It was **removed**. A redundant projection of an already-reported fact adds a
+surface that can drift and no way to catch the drift.
+
+## HB-R24 — State the half a measurement does not cover
+
+The rehearsal reaches the gate through the config repository — resolution step 1
+in `FeatureFlagService::resolveOverride()`, strictly above the runtime `env()`
+read — so it does **not** exercise the environment file or the config cache. A
+deployment whose env-based rollback was inert would still pass it. That limit
+lives in the payload, not only in a docblock, and the other half is the
+runbook's (HB-R16).
+
+## HB-R25 — The rehearsal's safety rests on three checked facts, not on intuition
+
+Moving `config()` on a live system is safe here only because there is no Octane,
+because neither the readiness service nor the scanner that consults it is
+reachable from any route or controller, and because an Artisan process serves no
+concurrent request. **If any of those changes, re-review before running it on
+production** — the second is one controller away from being false.
+
+## HB-R26 — A source-text guard cannot see a transitive mutation
+
+`Phase4aPilotPreparationScanner`'s "inert by construction" test greps the
+scanner's own source for forbidden calls. Once a signature exists, the scan
+reaches a service that moves enforcement config one `app()` hop away, which that
+guard structurally cannot see. The posture-unchanged-after-`scan()` assertion is
+what actually holds the guarantee.
+
+---
+
+## The commands
+
+| Command | Question |
+|---|---|
+| `doctor:half-b-readiness` | Are the five prerequisites measured, and does any signature contradict one? |
+| `doctor:half-b-readiness --strict` | …and is the machinery READY? (exit 1 otherwise) |
+| `doctor:half-b-readiness --activation-preflight` | …and may the fleet actually be enforced? (exit 2 otherwise) |
+| `doctor:estate-resilience` | Levels 1/2/3, and the hardware. |
+| `doctor:rollout-readiness` | Who is provisioned. |
+| `doctor:fleet-readiness` | Who has walked the path. |
+| `android:phase4a-pilot-readiness` | Is the bounded pilot prepared? |
+
+A **contradiction exits 1 whether or not `--strict` was asked for.** Every other
+condition describes a rollout in progress and exits 0, so the command is safe in
+a deploy chain.

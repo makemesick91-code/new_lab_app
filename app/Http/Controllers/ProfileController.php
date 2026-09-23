@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\ProfileUpdateRequest;
+use App\Modules\DoctorAccess\Models\DoctorSessionLease;
+use App\Modules\DoctorAccess\Services\DoctorSessionLeaseService;
 use App\Modules\RmeOnlineContext\Services\UserOnlineContextService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -52,6 +54,17 @@ class ProfileController extends Controller
         if ($user !== null) {
             app(UserOnlineContextService::class)->markOffline($user);
         }
+
+        // DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1 — release the lease before
+        // the account goes. The foreign key cascades on delete, so the row
+        // would disappear either way — but silently, taking the reason with it.
+        // Releasing first writes the audit record while there is still a lease
+        // to name. A no-op for a session that holds no lease.
+        app(DoctorSessionLeaseService::class)->releaseCurrent(
+            $request,
+            $user,
+            DoctorSessionLease::RELEASE_ACCOUNT_DELETED,
+        );
 
         Auth::logout();
 

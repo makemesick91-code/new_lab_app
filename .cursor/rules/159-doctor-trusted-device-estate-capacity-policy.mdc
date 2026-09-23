@@ -1,0 +1,273 @@
+---
+description: Doctor trusted-device estate CAPACITY policy — the three nested levels, which one gates activation testing, and why a measured falsehood can never be attested true
+globs:
+  - "app/Modules/DoctorAccess/Services/DoctorEstateResilienceService.php"
+  - "app/Modules/DoctorAccess/Support/DoctorEstateCapacityLevel.php"
+  - "app/Modules/DoctorAccess/Support/DoctorEstateResilienceVerdict.php"
+  - "app/Modules/DoctorAccess/Repositories/DoctorEstateResilienceRepository.php"
+  - "app/Modules/DoctorAccess/Interfaces/DoctorEstateResilienceRepositoryInterface.php"
+  - "app/Console/Commands/DoctorEstateResilienceCommand.php"
+  - "app/Support/Android/Phase4aPilotPreparationScanner.php"
+  - "config/android_release.php"
+alwaysApply: false
+---
+
+# Trusted device estate CAPACITY policy
+
+`REVISION-DOCTOR-TRUSTED-DEVICE-ESTATE-CAPACITY-POLICY-1`. Read with rule 158,
+which this **extends and does not overturn**. Rule 158 owns whether the hardware
+survives losing a tablet. This one owns the fact that surviving a loss is only
+one of three requirements, and that the other two had been borrowing its answer.
+
+## What was wrong, and it was not the measurement
+
+`DOCTOR-ACCESS-TRUSTED-DEVICE-ESTATE-RESILIENCE-1` measured
+`spare_device_available_per_branch` correctly under the only definition the
+codebase owned — `concurrent Doctor stations + 1 spare` — and reported FAIL.
+**That verdict stands.** What it could not do was tell three different questions
+apart, so "can we begin testing at all?" was answered with "does every branch
+survive losing a tablet?", and the owner was handed a four-tablet bill when the
+actionable sentence was *one tablet at TLK1*.
+
+---
+
+## ECP-R1 — Three levels, nested, never collapsed
+
+| Level | Signal | Requirement |
+|---|---|---|
+| 1 | `trusted_device_activation_test_coverage` | `>= 1` trusted device that can be **logged into**, at every staffed branch |
+| 2 | `trusted_device_room_capacity` | `>= 1` trusted device per **active Doctor room** |
+| 3 | `spare_device_available_per_branch` | `concurrent Doctor stations + 1 spare` — survives losing one |
+
+They are nested maturity levels, not synonyms. Satisfying a lower level
+satisfies nothing above it, and all three may hold different statuses at once —
+on the production estate today they do.
+
+## ECP-R2 — Only Level 1 gates controlled activation TESTING
+
+Level 2 is the normal-production target and Level 3 is high availability.
+Neither blocks the controlled activation-validation phase. Both remain visible,
+measured and honestly FAIL where the hardware says so.
+
+## ECP-R3 — Lowering the testing bar lowers nothing else
+
+A passing Level 1 beside a failing Level 3 is the expected reading of a
+partially provisioned estate. **Never** implement a level so that satisfying it
+turns a sibling green. A separation that quietly converts a measured falsehood
+into a PASS is worse than the conflation it replaced.
+
+## ECP-R4 — Level 1 counts devices somebody can LOG INTO
+
+`eligible` is `active AND cryptographically verified` and says nothing about
+credentials. A branch holding one eligible tablet whose only credential is
+revoked has **no** Level-1 coverage. Derive the count by subtracting the
+already-collected `eligible_devices_without_credential` list; never write a
+second eligibility predicate.
+
+## ECP-R5 — The activation prerequisite is more than Level 1
+
+`OVERALL_ACTIVATION_TEST_PREREQUISITE` is the worst of Level 1,
+`device_credential_coverage` and `authorization_coverage`. A tablet nobody is
+authorized on is a tablet nobody can use, and a field the owner is told to watch
+must not go green over one.
+
+## ECP-R6 — A STAFFED branch is home locks **or** an active cover
+
+`home_doctor_count > 0` **OR** an approved, currently-running
+`DoctorBranchCover` targets the branch. A cover deliberately does not move a
+home lock, so a branch running a covering doctor counts zero home doctors while
+a doctor stands in it. Keyed on locks alone, every level answers
+NOT_APPLICABLE for the one branch seeing patients on no tablet.
+
+## ECP-R7 — NOT_APPLICABLE is never a PASS, and an empty population FAILS
+
+An unstaffed branch is outside the population: it is **discarded**, not ranked.
+A population holding nothing else therefore arrives empty, and empty is FAIL.
+This is the false green rule 158 records catching — a gate reading PASS over an
+estate of unstaffed branches holding zero usable tablets.
+
+## ECP-R8 — A shrinking population may not turn a level green
+
+Moving the last locked doctor off a tablet-less branch makes it unstaffed and
+would otherwise flip Level 1 to PASS with no hardware bought. Publish
+`staffed_branch_count` and `doctors_without_home_branch` on the gate, and hold
+the verdict at UNVERIFIED while any doctor belongs to no branch.
+
+## ECP-R9 — ACTIVE DOCTOR ROOM is a typed, active, non-deleted room
+
+`mst_clinic_rooms` where `status = active`, not soft-deleted, of a type a doctor
+and a patient meet in (`treatment_room`, `consultation_room`). X-ray,
+sterilization and lab rooms need no Doctor tablet and must not inflate the
+requirement. Report the wider **assignable** count beside it — the room gate's
+`activeRoomsForBranch()` filters branch and status with no type clause, so a
+doctor *can* be placed in a room Level 2 did not count, and that divergence is
+reported rather than inherited.
+
+## ECP-R10 — A branch with no room profile is UNVERIFIED, never PASS
+
+"Nobody configured this branch's rooms" and "this branch has zero rooms" are
+different facts. Carry an explicit `room_profile_known` flag and branch on it
+**before any arithmetic**: `(int) null === 0` makes `eligible >= rooms` true for
+a branch holding nothing.
+
+## ECP-R11 — Rooms decide Level 2 and nothing else
+
+Level 3's input is `concurrent_doctor_stations_per_branch`, which ships empty and
+is never substituted. A room is not a peak concurrent station in either
+direction. Level 2 is itself a **lower bound**: a room with two chairs needs two
+tablets and no table records chairs, so a Level-2 PASS means "meets the
+one-device-per-room target", never "has enough tablets for peak concurrency".
+
+## ECP-R12 — Level 2 stays out of the gate array
+
+It is a target, not a blocker. As a gate it would drag the aggregate to
+UNVERIFIED for every branch with no configured rooms and pin the `--strict` exit
+code — which CI and the runbooks read — non-zero for the duration of an
+intentionally incremental hardware rollout.
+
+## ECP-R13 — `ESTATE_RESILIENCE` keeps its shipped meaning
+
+Worst of **every** gate, and therefore never greener than Level 3. It is not the
+activation-testing signal and must never be redefined to the weaker question — a
+runbook, a closure record and a test cite it. Read
+`ACTIVATION_TEST_COVERAGE` for Level 1.
+
+## ECP-R14 — A measured falsehood may never be attested true
+
+A signature that CONTRADICTS a measurement fails
+`attestation_does_not_contradict_measurement`. Measurement is never overridden
+by what somebody signed. The **absence** of a signature still fails nothing —
+that half of rule 158's ER-R7 stands, and only the contradicting half narrowed.
+
+## ECP-R15 — A declared prerequisite must be read by code
+
+`global_prerequisites` sat in config for two phases as five strings nothing
+consumed. Never ship a third declared-but-unread list.
+
+`activation_test_prerequisites` is read by two surfaces, each answering the
+question it owns:
+
+- **`Phase4aPilotPreparationScanner`** asserts the list's **INTEGRITY** — every
+  declared entry has a boolean signature slot. It does **not** assert that the
+  prerequisite is satisfied. Its subject is the bounded Phase-4A pilot, which is
+  live and prepared; reddening it because a *later* rung is short of tablets is
+  the conflation this whole rule set exists to end, and a gate that stays red
+  for months gets deleted rather than fixed.
+- **`doctor:estate-resilience`** measures Level 1, composes the prerequisite,
+  and fails on a contradicting signature. That is the surface an activation
+  preflight runs.
+
+A PASS from the integrity check must never be worded as a satisfied
+prerequisite, and its detail says so explicitly.
+
+## ECP-R16 — Physical branch is still not authorization authority
+
+Rule 158's ER-R1 is unchanged. Per-branch counts are LOCAL OPERATIONAL COVERAGE
+— can this room open in the morning? Cross-branch trusted-device use stays valid
+and proven, and no level may be read as an access boundary.
+
+## ECP-R17 — Changing the estate recomputes the authorization target
+
+Adding an eligible tablet raises `target_pairs`, so a new device reddens
+`authorization_coverage` until every doctor is authorized on it. No fixed
+historical figure (`45/45`, `60`, `105`) is authoritative after estate
+membership changes, and none may be embedded in code, config or docs as current
+fact.
+
+## ECP-R18 — Global activation remains separately owner-approved
+
+`authorizes_activation` is a literal `false`. These levels authorise no flag, no
+cohort change and no lease. A Level-1 PASS means the estate no longer blocks the
+**owner** from deciding to begin controlled activation testing.
+
+---
+
+## Provisioning rules — added by `DOCTOR-ACCESS-TRUSTED-DEVICE-ESTATE-PROVISIONING-1`
+
+Learned by provisioning TLK1's first trusted device. An adversarial review
+caught every one of the first three **before** any hardware was touched; each
+was verified against the deployed source rather than taken on trust.
+
+### ECP-R19 — A WebAuthn credential does NOT make a device eligible
+
+`isEligible()` is `isActive() && isCryptographicallyVerified()`.
+`identity_state = cryptographically_verified` is written in exactly three
+places — `DoctorAppLoginService:411`, `:447`, `DoctorDeviceProofService:169` —
+all Android-keystore challenge-response. `DoctorDeviceWebAuthnRegistrationService`
+never touches `identity_state`.
+
+A tablet that is registered, approved and carrying a green credential is
+**still not eligible**, and nothing on any screen says so. The keystore proof
+is what creates eligibility; the credential is what makes the device
+*login-admissible*. Both are required, and they are **different steps**.
+
+### ECP-R20 — A stock tablet's passkey is refused, and that is the gate working
+
+`require_device_bound` defaults **true**, and `verdict()` returns `device_bound`
+only when `backupEligible === false`. A tablet using Google Password Manager
+mints **synced (BE=1)** passkeys, which are refused at registration with a 422.
+
+Fix the tablet — screen-lock-only passkey provider, or passkey sync off for that
+account. **Never** set `WEBAUTHN_REQUIRE_DEVICE_BOUND=false` to force a pass:
+that converts a measured security property into a fiction, and the whole
+"approved physical device" guarantee collapses with it.
+
+### ECP-R21 — Bind the branch at ADMIN APPROVAL, never by app-login
+
+Admin enrolment approval takes `branch_id` from the operator. Bare Clinic App
+auto-registration derives it from the signing **doctor's** lowest-id active RME
+branch. Worse, an admin-created row has a null `public_key_fingerprint` and app
+login looks devices up *by fingerprint*, so it will not find that row and will
+create a **second, duplicate** device at the doctor-derived branch.
+
+Drive the canonical flow: app requests enrolment → admin approves **into a row
+whose `branch_id` is chosen explicitly** → assert the branch before continuing.
+
+### ECP-R22 — Reused hardware needs a wiped keystore; revocation is not reversible
+
+`public_key_fingerprint` is globally unique and there is no un-revoke path. A
+previously revoked tablet whose keystore alias survived is denied **permanently**
+and the operator sees no explanation. Factory reset or wipe the Clinic App's
+data so a fresh alias yields a fresh identity. `(branch_id, device_name)` is
+unique too — check the name is free at the target branch.
+
+### ECP-R23 — Growing the estate reddens `authorization_coverage` until it is closed
+
+The target is `linked doctors × eligible devices`, so a new eligible device
+raises the denominator immediately. Between "device becomes eligible" and
+"bulk-authorize completes", the composed activation measurement is FAIL even
+while Level 1 itself is PASS.
+
+Sequence eligibility → authorize → measure as one window, and **report Level 1
+and the composed prerequisite together**. Level 1 PASS beside a red composed
+measurement is not success.
+
+### ECP-R24 — `doctor:device-bulk-authorize` is digest-bound single-actor, not maker/checker
+
+The same operator runs the dry run, copies the digest and applies it. There is
+no second approver. The real controls are: a mandatory read-back that fails
+closed if the estate moved, a required audit `--reason` (10–1000 chars), an
+eligibility re-check inside the service, and refusal to touch credentials,
+branch locks, leases, cohorts or flags. Describe it accurately — calling it
+maker/checker overstates the control.
+
+### ECP-R25 — Sign a prerequisite only after its measurement turns true, and only that one
+
+The Level-1 attestation was signed **after** production measured PASS and after
+the figure was independently reconciled against a second engine. Level 2
+(PARTIAL) and Level 3 (FAIL) remain unsigned.
+
+A signature that later contradicts its measurement fails
+`attestation_does_not_contradict_measurement`, so a signed prerequisite whose
+estate degrades becomes a **failing gate**, not a quiet lie. Tests must pin the
+attestation state they exercise rather than inherit the shipped value — once a
+real signature ships, a test that leans on the default is testing config, not
+behaviour.
+
+### ECP-R26 — Provisioning coverage is not readiness, and says so
+
+The new device carries no per-doctor proven login, so it lands in
+fleet-readiness `without_readiness_proof_ids`. That gate is **not** one a
+provisioning sprint must pass — Level 1 reads only `staffed` and the count of
+locally usable devices — but the number moves, and the sprint reports it rather
+than being surprised by it. No 15-doctor login ceremony is required.

@@ -33,6 +33,19 @@ const SUPERVISOR_RME_PERMISSIONS = [
     // physical device estate, and this exact-list pin is what keeps them apart.
     'view_doctor_device_authorizations',
     'manage_doctor_device_authorizations',
+    // DAENGTISIAMS-SUNU-FINAL-RELEASE-CANDIDATE-1 / D11 — the FILING authority,
+    // so a replacement tablet no longer waits on a Super Admin to be typed in.
+    //
+    // The split described immediately above SURVIVES this addition, and that is
+    // the whole reason it is a third permission instead of a widening of the
+    // two named there. What this grants is the right to file a tablet as
+    // PENDING_APPROVAL — a status the login gate refuses at its first check
+    // (`if (! $device->isActive())` in DoctorAppLoginGate::deviceProofDenyReason).
+    // Admitting that tablet, enrolling its credential, editing it, disabling,
+    // reactivating, revoking it, and approving an Android pairing code ALL
+    // remain `manage_doctor_devices`, which is still absent from this list.
+    // Two parties are therefore still required before any tablet is trusted.
+    'register_doctor_devices',
     // SATUSEHAT-1 — RME operational owner of the controlled submission filter
     // + mapping/identifier governance. (The exact-list pin below was stale
     // since SATUSEHAT-1; repinned in SATUSEHAT-4A.)
@@ -92,6 +105,28 @@ const SUPERVISOR_RME_PERMISSIONS = [
     // Doctor, Kasir and Admin Klinik, which this exact-list pin does not cover.
     'view_rme_consents',
     'manage_rme_consents',
+    // DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1 — doctor home-branch
+    // assignment/transfer and temporary branch cover, plus the manual session
+    // release that ends a login session and nothing else.
+    //
+    // OWNER DECISION, 2026-09-11: `manage_doctor_branch_locks` IS in this list.
+    // Super Admin and Supervisor RME may BOTH file a cover and BOTH approve one,
+    // so this tier holds `manage_` and `approve_` together on purpose. That is
+    // NOT a maker-checker regression: the separation is ACTOR-based, enforced
+    // inside the approval transaction as `requester_user_id !== approver id`
+    // (DoctorBranchLockApprovalService::lockPendingRequest() and
+    // DoctorBranchCoverApprovalService::lockPendingCover()), and it therefore
+    // also binds a Super Admin, for whom the single global Gate::before skips
+    // every permission check this list describes.
+    'view_doctor_branch_locks',
+    'manage_doctor_branch_locks',
+    'approve_doctor_branch_locks',
+    'release_doctor_session_leases',
+    // REVISION-DOCTOR-PWA-WEBAUTHN-ONLY-ACCESS-1 Stage 2 — break-glass. Its own
+    // permission rather than a reuse of manage_doctor_device_authorizations,
+    // because admitting a doctor with NO device proof is a strictly stronger
+    // act than authorizing a device.
+    'grant_doctor_break_glass_access',
 ];
 
 it('creates the Supervisor RME role after seeding', function () {

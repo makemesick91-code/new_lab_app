@@ -84,7 +84,9 @@ use App\Modules\QualityControl\Services\QualityControlService;
 use App\Modules\RmeOnlineContext\Services\UserOnlineContextService;
 use App\Modules\Technician\Models\Technician;
 use App\Modules\Technician\Services\TechnicianAssignmentEligibility;
+use App\Services\Foundation\FeatureFlagService;
 use App\Services\Monitoring\PilotPerformanceSnapshotDiskProbe;
+use App\Support\AccessControl\FrontOfficeRole;
 use App\Support\Clinical\ClinicalClock;
 use Database\Seeders\PermissionSeeder;
 use Database\Seeders\RoleSeeder;
@@ -588,6 +590,29 @@ function rmeMakeKasirActive(User $user, Branch $branch): void
 
     app(UserOnlineContextService::class)
         ->startKasirSession($user, (int) $branch->id);
+}
+
+/**
+ * DAENGTISIAMS-SUNU-FINAL-RELEASE-CANDIDATE-1 / D2 — activate a Front Office
+ * online context.
+ *
+ * Deliberately NOT `rmeMakeAdminClinicActive()`: that helper force-assigns the
+ * legacy `Admin Klinik` role, and a Front Office user who also holds it is a
+ * DIFFERENT user — six menu guards key on that exact role name, so the fixture
+ * would hide the cashier screens from the very role created to work them and
+ * the test would be measuring the legacy role instead of the merged one.
+ *
+ * Front Office rides the ADMIN CLINIC session on purpose; see
+ * App\Support\AccessControl\FrontOfficeRole::ADMIN_CLINIC_CONTEXT.
+ */
+function rmeMakeFrontOfficeActive(User $user, Branch $branch): void
+{
+    if (! $user->hasRole(FrontOfficeRole::NAME)) {
+        $user->assignRole(FrontOfficeRole::NAME);
+    }
+
+    app(UserOnlineContextService::class)
+        ->startAdminClinicSession($user, (int) $branch->id);
 }
 
 function rmeAdminClinicUser(Branch $branch): User
@@ -1608,4 +1633,91 @@ function pilotSnapshotDiskProbe(?float $freeGb): PilotPerformanceSnapshotDiskPro
             return $this->freeGb === null ? null : $this->freeGb * 1024 * 1024 * 1024;
         }
     };
+}
+
+/**
+ * DOCTOR-ACCESS-GLOBAL-ACTIVATION-BLOCKER-CLOSURE-1 (B1) — moved here from
+ * tests/Feature/Foundation/FeatureFlagRuntimeOverrideTest.php so more than one
+ * suite can prove the cached-config contract without a second harness.
+ *
+ * A duplicate config-cache harness is the duplicate-calculator failure this
+ * codebase keeps legislating against: two harnesses can disagree, and the one
+ * that disagrees quietly is the one a rollback would be trusted to.
+ */
+/**
+ * Evaluate the real config file with an explicitly controlled environment.
+ *
+ * Every variable named in $env is restored to its prior state afterwards, so a
+ * test can never leak an override into the next one — these tests must assert
+ * the resolution contract, not the ambient state of the process.
+ *
+ * @param  array<string, string|null>  $env
+ * @return array<string, mixed>
+ */
+function ffBuildRegistry(array $env): array
+{
+    $restore = [];
+
+    foreach ($env as $key => $value) {
+        $restore[$key] = array_key_exists($key, $_ENV) ? $_ENV[$key] : null;
+
+        if ($value === null) {
+            unset($_ENV[$key], $_SERVER[$key]);
+            putenv($key);
+
+            continue;
+        }
+
+        $_ENV[$key] = $value;
+        $_SERVER[$key] = $value;
+        putenv("{$key}={$value}");
+    }
+
+    try {
+        return require config_path('feature_flags.php');
+    } finally {
+        foreach ($restore as $key => $value) {
+            if ($value === null) {
+                unset($_ENV[$key], $_SERVER[$key]);
+                putenv($key);
+
+                continue;
+            }
+
+            $_ENV[$key] = $value;
+            $_SERVER[$key] = $value;
+            putenv("{$key}={$value}");
+        }
+    }
+}
+
+/**
+ * Reproduce `config:cache`: var_export the built registry to a file, require it
+ * back, and install it as config — which is exactly what a cached production
+ * deployment resolves against. The environment is restored by ffBuildRegistry
+ * before resolution happens, so a runtime env() read contributes nothing here,
+ * just as it contributes nothing on a cached deployment.
+ *
+ * @param  array<string, string|null>  $env
+ */
+function ffCachedService(array $env): FeatureFlagService
+{
+    $registry = ffBuildRegistry($env);
+
+    // FIX-TEST-TEMPFILE-SIBLING-LEAKS-1 — one allocation, one artifact. The
+    // previous `.'.php'` derivation left the `tempnam()` file itself orphaned on
+    // every call. `require` dispatches on content, never on the extension, so
+    // the suffix bought nothing and cost one zero-byte orphan per invocation.
+    $path = tempnam(sys_get_temp_dir(), 'ffcache');
+    file_put_contents($path, '<?php return '.var_export($registry, true).';');
+
+    try {
+        $cached = require $path;
+    } finally {
+        @unlink($path);
+    }
+
+    config()->set('feature_flags.flags', $cached['flags']);
+
+    return app(FeatureFlagService::class);
 }

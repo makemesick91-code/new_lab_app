@@ -419,7 +419,7 @@ jobs:
           # also matches lowercase occurrences inside Pest test DESCRIPTIONS,
           # not only class names. That is deliberate here (wider is the safe
           # direction); do not prune it assuming class-name matching.
-          php artisan test --filter='FoundationGovernance|Nsf7|NsfGovernance|DmoGovernance|Dmo3|Dq31|Dq3SourceDocumentBatch|Dq2BatchGovernance|Dq1|RmeDoctorCashierCompletionGate|RmeRoomAssignmentGate|MedicalRecordFinalization|CashierBilling|RmePayment|PatientOutstandingReceivableCarryOver|PatientCentricRmWorkspace|RmeVisitConsent|RmeExamConsentOdontogramHistory|LegacyOdontogram|RmeReceiptOnePage|MedicalRecordPageActions|MedicalRecordPrintOdontogramSeparation|RmePrintPatientVisitDuplicate|Odontogram|RepositoryArtifactHygiene|LegacyRme|LegacyImportHub|ClinicalClock|PatientEarliestNativeRmeDateResolver|RuntimeIdentityIsolation|DeployHarden|FeatureFlag|Cicd|Devflow|PilotPerformanceSnapshot|MonitoringLogSource|RestoreDrill|ClinicalEvidence|DailyBranchContext|BranchChange|RmeReportTodayDefault|NewVisitPatientSearch|NewVisitGlobalPatientLookup|QueueProducerConsumerParity|TelkomasBranchCode|SunuBranchCode|SunuClinicRoom|DoctorAccountLink|RmePreConsentFirstPageUiGate|DoctorRoomScoped|DoctorDevice|DoctorPwaWebAuthn|ProductionShellCommandGuard|Pwa' \
+          php artisan test --filter='FoundationGovernance|Nsf7|NsfGovernance|DmoGovernance|Dmo3|Dq31|Dq3SourceDocumentBatch|Dq2BatchGovernance|Dq1|RmeDoctorCashierCompletionGate|RmeRoomAssignmentGate|MedicalRecordFinalization|CashierBilling|RmePayment|PatientOutstandingReceivableCarryOver|PatientCentricRmWorkspace|RmeVisitConsent|RmeExamConsentOdontogramHistory|LegacyOdontogram|RmeReceiptOnePage|MedicalRecordPageActions|MedicalRecordPrintOdontogramSeparation|RmePrintPatientVisitDuplicate|Odontogram|RepositoryArtifactHygiene|LegacyRme|LegacyImportHub|ClinicalClock|FrontOffice|PatientEarliestNativeRmeDateResolver|RuntimeIdentityIsolation|DeployHarden|FeatureFlag|Cicd|Devflow|PilotPerformanceSnapshot|MonitoringLogSource|RestoreDrill|ClinicalEvidence|DailyBranch|BranchChange|RmeReportTodayDefault|NewVisitPatientSearch|NewVisitGlobalPatientLookup|QueueProducerConsumerParity|TelkomasBranchCode|SunuBranchCode|SunuClinicRoom|DoctorAccountLink|RmePreConsentFirstPageUiGate|DoctorRoomScoped|DoctorDevice|DoctorAccess|DoctorPwaWebAuthn|ProductionShellCommandGuard|ForbiddenConsoleCommand|Pwa' \
             2>&1 | tee storage/ci-evidence/nsf-r011-critical-tests.log
           TEST_STATUS="${PIPESTATUS[0]}"
           set -e
@@ -687,7 +687,7 @@ jobs:
         shell: bash
         run: |
           set +e
-          bash scripts/ci/self-hosted-php.sh php artisan test --filter='FoundationGovernance|Nsf7|NsfGovernance|DmoGovernance|Dmo3|Dq31|Dq3SourceDocumentBatch|Dq2BatchGovernance|Dq1|RmeDoctorCashierCompletionGate|RmeRoomAssignmentGate|MedicalRecordFinalization|CashierBilling|RmePayment|PatientOutstandingReceivableCarryOver|PatientCentricRmWorkspace|RmeVisitConsent|RmeExamConsentOdontogramHistory|LegacyOdontogram|RmeReceiptOnePage|MedicalRecordPageActions|MedicalRecordPrintOdontogramSeparation|RmePrintPatientVisitDuplicate|Odontogram|RepositoryArtifactHygiene|LegacyRme|LegacyImportHub|ClinicalClock|PatientEarliestNativeRmeDateResolver|RuntimeIdentityIsolation|DeployHarden|FeatureFlag|Cicd|Devflow|PilotPerformanceSnapshot|MonitoringLogSource|RestoreDrill|ClinicalEvidence|DailyBranchContext|BranchChange|RmeReportTodayDefault|NewVisitPatientSearch|NewVisitGlobalPatientLookup|QueueProducerConsumerParity|TelkomasBranchCode|SunuBranchCode|SunuClinicRoom|DoctorAccountLink|RmePreConsentFirstPageUiGate|DoctorRoomScoped|DoctorDevice|DoctorPwaWebAuthn|ProductionShellCommandGuard|Pwa' \
+          bash scripts/ci/self-hosted-php.sh php artisan test --filter='FoundationGovernance|Nsf7|NsfGovernance|DmoGovernance|Dmo3|Dq31|Dq3SourceDocumentBatch|Dq2BatchGovernance|Dq1|RmeDoctorCashierCompletionGate|RmeRoomAssignmentGate|MedicalRecordFinalization|CashierBilling|RmePayment|PatientOutstandingReceivableCarryOver|PatientCentricRmWorkspace|RmeVisitConsent|RmeExamConsentOdontogramHistory|LegacyOdontogram|RmeReceiptOnePage|MedicalRecordPageActions|MedicalRecordPrintOdontogramSeparation|RmePrintPatientVisitDuplicate|Odontogram|RepositoryArtifactHygiene|LegacyRme|LegacyImportHub|ClinicalClock|FrontOffice|PatientEarliestNativeRmeDateResolver|RuntimeIdentityIsolation|DeployHarden|FeatureFlag|Cicd|Devflow|PilotPerformanceSnapshot|MonitoringLogSource|RestoreDrill|ClinicalEvidence|DailyBranch|BranchChange|RmeReportTodayDefault|NewVisitPatientSearch|NewVisitGlobalPatientLookup|QueueProducerConsumerParity|TelkomasBranchCode|SunuBranchCode|SunuClinicRoom|DoctorAccountLink|RmePreConsentFirstPageUiGate|DoctorRoomScoped|DoctorDevice|DoctorAccess|DoctorPwaWebAuthn|ProductionShellCommandGuard|ForbiddenConsoleCommand|Pwa' \
             2>&1 | tee storage/ci-evidence/nsf-r011-critical-tests.log
           TEST_STATUS="${PIPESTATUS[0]}"
           set -e
@@ -1468,6 +1468,29 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          # DOCTOR-ACCESS-GLOBAL-ACTIVATION-BLOCKER-CLOSURE-1, and NOT part of
+          # that sprint's subject matter — recorded here because a CI gate that
+          # is red for an external reason blocks every PR in the repository,
+          # not just the one that happened to notice.
+          #
+          # This action's `packages` default is `tools platform-tools`, and the
+          # legacy `tools` package has been withdrawn from the Android SDK
+          # repository. sdkmanager therefore exits 1 with "Failed to find
+          # package 'tools'" during SETUP — before gradle runs and before any
+          # repository code is compiled.
+          #
+          # Evidence that the cause is external: the last green run of this job
+          # (2026-09-14T13:12Z) and the first red one (2026-09-14T23:38Z) share
+          # a byte-identical workflow file and a byte-identical `android/` tree
+          # object. Nothing in the repository changed between them.
+          #
+          # `platform-tools` is the half of the default that still exists and is
+          # still wanted (adb). Everything else — build-tools, platforms — is
+          # resolved by the Android Gradle Plugin from the pinned versions in
+          # android/daengtisia-clinic, so nothing here decides a toolchain
+          # version and no gate is weakened.
+          packages: platform-tools
 
       - name: Android unit tests
         shell: bash

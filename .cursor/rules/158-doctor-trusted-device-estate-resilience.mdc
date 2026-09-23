@@ -1,0 +1,206 @@
+---
+description: Estate resilience is hardware capacity, not authorization. A device's branch says where the tablet lives and never which doctors may use it. A credential belongs to a tablet, so one enrolment covers every doctor authorized on it. A revoked device is never capacity. An input the system does not hold produces UNVERIFIED, never PASS — and an attestation is a signature, never a measurement.
+globs:
+  - "app/Modules/DoctorAccess/**"
+  - "app/Modules/DoctorDevice/**"
+  - "app/Console/Commands/Doctor*.php"
+  - "config/android_release.php"
+  - "tests/Feature/DoctorAccess/**"
+  - "tests/Feature/DoctorDevice/**"
+alwaysApply: false
+---
+
+# Trusted device estate resilience
+
+`DOCTOR-ACCESS-TRUSTED-DEVICE-ESTATE-RESILIENCE-1`. Read with rules 151–157,
+which this extends rather than replaces. Rule 152 owns the trusted PATH, rule 156
+owns whether the path has been WALKED. This one owns whether the HARDWARE
+survives losing a tablet.
+
+## The defect this sprint found
+
+`spare_device_available_per_branch` was a declared prerequisite of global doctor
+enforcement from Phase 3.5 and **had no implementation for its entire life** — a
+string in `android_release.enforcement.global_prerequisites` and a hand-signed
+boolean beside it. `Phase4aPilotPreparationScanner::globalPrerequisiteCheck()`
+asserts that somebody signed; it says so in its own docblock and it is right to.
+The consequence was that nothing in the system could tell the signer whether what
+they were signing was true.
+
+`doctor:estate-resilience` now measures the measurable half. It does not sign.
+
+---
+
+## ER-R1 — A device's branch is not an authorization authority
+
+`mst_doctor_devices.branch_id` says where the hardware physically lives. It has
+never decided which doctors may use it, and no code may start making it decide.
+Cross-branch trusted-device use is valid and PROVEN: every ceremony in the fleet
+readiness campaign ran on one tablet at SPN4, including for doctors homed
+elsewhere.
+
+Per-branch device counts are **operational resilience** — can this room keep
+working when its tablet breaks — and never an access boundary. Any report that
+prints them must say so on the same screen.
+
+## ER-R2 — Local device coverage is resilience, not authorization
+
+A branch that homes doctors and holds no eligible tablet has a **physical
+availability** gap. Its doctors are not locked out; they can authenticate on a
+tablet elsewhere. Never describe or fix this as an authorization problem, and
+never widen an authorization to close it.
+
+## ER-R3 — Credential scope is derived from source, never assumed
+
+`trx_doctor_device_webauthn_credentials` has `doctor_device_id` and **no doctor
+or user column**, and deliberately never will. The credential belongs to the
+TABLET; the clinician is identified by the password step.
+
+Therefore **one credential enrolment per tablet covers every doctor authorized on
+it.** Do not schedule one ceremony per doctor per tablet. Before relying on this
+in a future sprint, re-derive it from the login path rather than from this rule.
+
+## ER-R4 — A revoked device is never capacity
+
+Not eligible, not a spare, not credential coverage, and never able to close an
+authorization gap — however recently it worked and however many historical
+authorizations name it. A repaired unit **enrols as a new device**; the old row
+stays revoked forever. Eligibility is asked of the MODEL (`isActive()` and
+`isCryptographicallyVerified()`), never restated as a status string, so the three
+engines that ask it cannot drift into disagreeing about which hardware counts.
+
+## ER-R5 — Changing the eligible estate obliges an authorization reconciliation
+
+The authorization target is `eligible doctors x eligible trusted devices` and is
+recomputed from the CURRENT estate. Adding a tablet therefore **opens** a gap
+rather than closing one, and every doctor must be authorized on it before
+`authorization_coverage` returns to PASS. Never carry a previous matrix figure
+forward — a stale `45/45` is how a new tablet becomes invisible.
+
+## ER-R6 — An input the system does not hold produces UNVERIFIED, never PASS
+
+The only definition of *spare* the codebase owns is
+`devices per branch = concurrent Doctor stations + 1 spare`, and the station
+count is a fact about a room. `UNVERIFIED` is a first-class verdict beside
+PASS/FAIL: it never contributes to a passing tally and always names the missing
+input.
+
+What IS decidable without the count is the lower bound — any station count ≥ 1
+needs at least two eligible devices — so 0 or 1 eligible devices FAILS outright.
+Undecidability begins at two.
+
+**Treatment rooms are not the station count.** `mst_clinic_rooms` with
+`type = 'treatment_room'` is branch-scoped and populated, and it is the obvious
+candidate — an adversarial review found this sprint had wrongly claimed no
+candidate existed. It is read and REPORTED as an advisory sizing reference, and
+it decides nothing: a room inventory is not peak concurrent staffed stations
+(three rooms with one doctor on shift is one station; one room with two chairs is
+two). Do not promote it to the input without measuring the difference.
+
+**NARROWED by `REVISION-DOCTOR-TRUSTED-DEVICE-ESTATE-CAPACITY-POLICY-1`.** "It
+decides nothing" is true of THIS rule's subject — the station count, and so
+Level 3 — and is no longer true unqualified. Rooms now decide **LEVEL 2**, a
+different question the owner defined outright (one device per active Doctor
+room), measured over a wider room set (`treatment_room` **+**
+`consultation_room`) and reported as a lower bound because no table records
+chairs per room. Level 3's input is still `concurrent_doctor_stations_per_branch`
+and is still never substituted. See rule 159, ECP-R9 and ECP-R11.
+
+The count has a home: `android_release.enforcement.concurrent_doctor_stations_per_branch`,
+keyed by branch code, **shipping empty**. A declared value below one is treated
+as undeclared rather than honoured, so a typo cannot manufacture headroom. An
+empty estate FAILS rather than passing.
+
+## ER-R7 — An attestation is a signature, not a measurement, and this engine does not sign
+
+`doctor:estate-resilience` reports MEASURED beside ATTESTED. It does not write an
+attestation, cannot be satisfied by one, and does not fail because one is
+ABSENT. Equally, a signature cannot rescue a measured FAIL.
+
+**NARROWED by `REVISION-DOCTOR-TRUSTED-DEVICE-ESTATE-CAPACITY-POLICY-1`, in one
+direction only.** A contradiction — a signature recorded `true` beside a
+measurement that is not PASS — no longer merely raises a finding: it fails
+`attestation_does_not_contradict_measurement`. Nothing is trusted more than
+before; the point is that a recorded `true` may no longer sit beside a measured
+falsehood and be reported as agreement. The half of this rule the owner chose
+measurement-over-coupling for — an unsigned prerequisite fails nothing here —
+stands unchanged. See rule 159, ECP-R14.
+
+**Never attest a prerequisite because a sprint intends to satisfy it.** Attest
+only after the measured condition is true, and cite the evidence.
+
+## ER-R8 — Estate-resilience GO does not authorize global activation
+
+A PASS means the hardware survives one loss. It does not arm single-session, does
+not make branch lock effective, does not widen the pilot cohort, and does not
+permit fleet-wide enforcement. `authorizes_activation` is a literal `false` in the
+report and must stay one.
+
+Single-session must remain OFF and global enforcement OFF throughout any estate
+provisioning work.
+
+## ER-R9 — The report is read-only and stays that way
+
+No write method may be added to this engine or its reads. A resilience engine
+that can write is one that can manufacture its own capacity — the same reason
+rule 156 forbids it of the readiness engine.
+
+## ER-R10 — Compose the sibling engine, and name the agreement gate for exactly what it compares
+
+This engine composes the fleet engine rather than re-deriving the authorization
+matrix, because a second calculator is a second thing to keep in step. The price
+is two estate reads, so the report carries an `eligible_device_set_agreement`
+gate that compares the eligible device id lists and degrades to UNVERIFIED when
+they differ. The sibling engine has already shipped one mixed-snapshot bug; do
+not remove this gate to save a query.
+
+**And name it for exactly what it compares.** It was first called
+`estate_snapshot_agreement`, and its PASS text said the two engines had read the
+same hardware. They have not been shown to: each issues its own lock read and
+its own credential read, so a lock moved or a credential revoked between them
+produces a two-moment report with an identical device id list and a green gate.
+Narrowing a verdict obliges narrowing its MESSAGE too, or the old claim survives
+where operators actually read it.
+
+## ER-R11 — The branch universe is a union, and naming a branch code in a gate is forbidden
+
+Scope is every branch that **either** holds a registered Doctor device **or**
+homes a doctor. Today those two halves disagree — one branch holds a tablet and
+homes nobody, another homes two doctors and holds nothing — and either half alone
+would hide a real branch.
+
+Gates are generalised, never written against a branch code. A gate naming `TLK1`
+stops applying the day a branch is renamed, and this estate has already renamed a
+branch code once.
+
+## ER-R13 — Every aggregate verdict fails closed, and every population is named
+
+`worst()` returned PASS by fallthrough for any string outside its vocabulary —
+`'BANANA'`, `'pass'`, `null` — so a typo or a future fourth status would have
+read as satisfied. It is now an allow-list: anything unrecognised is FAIL.
+
+Name the POPULATION a gate measures, and make an empty one FAIL. Taking the
+worst over every branch let an estate of only unstaffed branches report
+`spare_device_available_per_branch` as PASS while holding no usable tablet, and
+the attestation cross-check reads its verdict from that gate — so a signed
+`true` came back as "no contradiction". The spare requirement's population is
+branches that home doctors — WIDENED by rule 159's ECP-R6 to branches that home
+doctors **or** host an active cover, which can only add FAILs.
+
+## ER-R14 — Count live doctors, never lock rows
+
+`Doctor` is soft-deleted and `mst_doctor_branch_locks` has a `restrictOnDelete`
+FK, so a retired doctor keeps their home lock forever. Counting rows sizes a
+branch for somebody who no longer practises and disagrees with every engine that
+resolves doctors through a soft-delete-scoped query — silently, because the
+device-set agreement gate does not compare doctors. Exclude them, and REPORT the
+orphan rows rather than swallowing them.
+
+## ER-R12 — Do not duplicate a security decision to measure it
+
+Credential **admissibility** (user-verified, backup-eligible, device-bound) is
+the login gate's decision and the provisioning engine's report. This engine
+answers the narrower question it can answer honestly — does the tablet carry an
+UNREVOKED credential — using the model's own predicates, and says which question
+it answered. Re-implementing the admissibility policy here would create a second
+copy that eventually disagrees with the gate it describes.

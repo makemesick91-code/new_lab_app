@@ -1159,6 +1159,72 @@ return [
         'doctor_browser_login_denied' => false,
 
         /*
+        | DOCTOR-PWA-GLOBAL-ROLLOUT-READINESS-1 — the DECLARED enforcement
+        | posture, and the reason it lives here rather than beside the host
+        | values it audits.
+        |
+        | Enforcement was reported as a boolean, and a boolean cannot tell an
+        | owner-approved three-doctor pilot apart from a clinic-wide lockout.
+        | The readiness gate therefore failed on a live pilot — the exact
+        | outcome the programme exists to reach — and printed NOT READY.
+        |
+        | Four postures, one of which may be declared here:
+        |
+        |   off                       nobody is enforced
+        |   bounded_pilot             a named, ceilinged cohort is enforced
+        |   global_rollout_readiness  the bounded pilot still runs, and the
+        |                             fleet is being MEASURED for a widening
+        |                             that has not been applied
+        |   global                    Phase 5; always a failure from here
+        |
+        | This is a declaration, so it must be reachable only by someone who
+        | reviewed the change — the same argument that keeps `global_permitted`
+        | and `pilot_cohort_maximum` in this file. A posture the host could
+        | supply would not audit the host values; it would just be a second
+        | copy of them, agreeing with itself.
+        */
+        'expected_posture' => 'bounded_pilot',
+
+        /*
+        | DOCTOR-ACCESS-GLOBAL-ACTIVATION-BLOCKER-CLOSURE-1 (B2) — which
+        | governance phase the preparation scanner audits AGAINST.
+        |
+        | Four checks in Phase4aPilotPreparationScanner assert that fleet-wide
+        | enforcement is neither permitted, declared, nor live. All four are
+        | correct for Phase 4A and contradict the state a Phase 5 is built to
+        | reach: an honest activation would make the scanner FAIL on its own
+        | intended outcome, and a gate that reddens on success is a gate
+        | operators learn to ignore.
+        |
+        | Declaring the phase resolves that without weakening anything. At
+        | `phase_4a` every affected check behaves byte-identically to before
+        | this key existed. Later phases mark the Phase-4A-exclusive half
+        | NOT_APPLICABLE — visible, counted separately, never PASS — while the
+        | halves that never stop mattering keep evaluating: a flag armed over a
+        | scope covering nobody is still a FAIL in every phase, and
+        | `global_enforcement_not_active` inverts at `global_activated` so a
+        | declared activation that failed to take is reported rather than hidden.
+        |
+        | It lives HERE, in the file that reads no environment, for the same
+        | reason `global_permitted` and `expected_posture` do: a phase a host
+        | could edit would not audit the host values, it would just be a second
+        | copy of them agreeing with itself. Moving the programme forward costs
+        | a reviewed change, exactly like granting the permission does.
+        |
+        | An unrecognised value resolves to `phase_4a`, so a typo tightens the
+        | audit rather than silently disabling four checks.
+        |
+        |   phase_4a                  the bounded pilot; fleet-wide is forbidden
+        |   global_activation_target  prerequisites assembling; NOT yet applied
+        |   global_activated          Phase 5 live; fleet-wide is expected
+        |
+        | THIS IS NOT AN ACTIVATION SWITCH. It changes which questions are
+        | asked, never who is enforced. Enforcement still needs
+        | `global_permitted`, the scope mode, and the flag.
+        */
+        'governance_phase' => 'phase_4a',
+
+        /*
         | REVISED by REVISION-DOCTOR-AUTO-DEVICE-APPROVAL-APP-ONLY-LOGIN-1.
         |
         | Phase 2 ruled that "the flag is created by the phase that needs one",
@@ -1263,6 +1329,137 @@ return [
         ],
 
         /*
+        | DOCTOR-ACCESS-GLOBAL-ACTIVATION-BLOCKER-CLOSURE-1 (B2) — who signed
+        | for each prerequisite above.
+        |
+        | The list has existed since Phase 3.5 and was read by no code: five
+        | strings with a string-membership test attached. B2 scopes the
+        | Phase-4A prohibition on fleet-wide enforcement to Phase 4A, and a
+        | prohibition that retires with nothing in its place would leave the
+        | later phases asserting strictly less than this one does. So the
+        | prohibition is replaced by a PRECONDITION: outside `phase_4a` every
+        | declared prerequisite must be attested `true` here, or
+        | `global_prerequisites_attested` FAILS.
+        |
+        | All false as shipped, and deliberately so. Declaring a later
+        | governance phase therefore cannot pass this gate on its own — someone
+        | has to record each attestation in a reviewed change, at the same price
+        | as granting `global_permitted`.
+        |
+        | WHAT AN ATTESTATION IS. A signature, not a measurement. "A spare
+        | device is available at every branch" is a fact about a room; no query
+        | can establish it. What this block proves is that a named reviewer
+        | asserted it, in source control, before the fleet was widened — and
+        | that none of the five was quietly skipped.
+        |
+        | As of DOCTOR-ACCESS-GLOBAL-ACTIVATION-1 Phase 0, at least two of these
+        | are known FALSE in the estate: no branch holds a spare tablet, and
+        | Cabang Telkomas holds none at all. Attesting them today would be
+        | recording something untrue.
+        */
+        'global_prerequisites_attested' => [
+            'real_device_pilot_passed' => false,
+            'every_enforced_doctor_has_an_active_device' => false,
+            'spare_device_available_per_branch' => false,
+            'device_loss_runbook_rehearsed' => false,
+            'rollback_to_browser_login_proven' => false,
+        ],
+
+        /*
+        | REVISION-DOCTOR-TRUSTED-DEVICE-ESTATE-CAPACITY-POLICY-1 — the estate
+        | prerequisite of controlled activation TESTING, which is a different
+        | and LOWER bar than the Phase-5 list above.
+        |
+        | WHY A SECOND LIST RATHER THAN AN EDIT TO THE FIRST. The list above
+        | gates FLEET-WIDE enforcement and contains
+        | `spare_device_available_per_branch` — survive losing a tablet. That
+        | requirement is NOT weakened here and stays exactly where it is. What
+        | the owner separated is the question beneath it: before anyone can even
+        | TEST activation, every staffed branch needs one trusted device that
+        | can be logged into. Two bars, two lists, and satisfying the lower one
+        | satisfies nothing above it.
+        |
+        | READ BY CODE, unlike its predecessor's first two phases. The
+        | Phase-4A scanner asserts every entry here carries a signature, and
+        | `doctor:estate-resilience` MEASURES the same entry and fails on any
+        | contradiction between the two. A declared-but-unread list is the exact
+        | defect the block above records; shipping a third one would repeat it.
+        |
+        | ATTESTED FALSE AS SHIPPED, and it must stay false until the estate
+        | measures PASS. The measured verdict today is FAIL — Cabang Telkomas
+        | staffs two doctors and holds no tablet — so signing this now would
+        | record something untrue, and the engine would report the
+        | contradiction rather than the signature.
+        */
+        'activation_test_prerequisites' => [
+            'trusted_device_activation_test_coverage',
+        ],
+
+        /*
+        | SIGNED by DOCTOR-ACCESS-TRUSTED-DEVICE-ESTATE-PROVISIONING-1
+        | (2026-09-16), AFTER the measurement turned true and not before.
+        |
+        | TLK1 held no trusted device, which was the whole Level-1 gap. It was
+        | provisioned physically: a tablet completed the Android keystore
+        | challenge-response (identity_state = cryptographically_verified),
+        | was approved into a TLK1 device row, and enrolled ONE device-bound
+        | WebAuthn credential. The eligible estate grew 3 -> 4, which moved the
+        | authorization target 45 -> 60, and the 15 new pairs were provisioned
+        | through the canonical digest-bound command.
+        |
+        | Measured at the moment of signing, and independently reconciled
+        | against the fleet-readiness engine:
+        |
+        |   TLK1 PASS · LDK2 PASS · SPN4 PASS · ATG3 NOT_APPLICABLE
+        |   ACTIVATION_TEST_COVERAGE = PASS
+        |   authorization 60/60, missing 0, duplicate 0
+        |
+        | ONLY Level 1 is signed here. Level 2 (room capacity) is PARTIAL and
+        | Level 3 (spare_device_available_per_branch) is FAIL, both unsigned
+        | and reported as such. A signature that ever contradicts the
+        | measurement fails `attestation_does_not_contradict_measurement`, so
+        | if this estate degrades this entry becomes a FAILING gate rather than
+        | a quiet lie.
+        */
+        'activation_test_prerequisites_attested' => [
+            'trusted_device_activation_test_coverage' => true,
+        ],
+
+        /*
+        | DOCTOR-ACCESS-TRUSTED-DEVICE-ESTATE-RESILIENCE-1 — the operational
+        | input that `spare_device_available_per_branch` has always needed and
+        | never had anywhere to live.
+        |
+        | STILL LEVEL 3's INPUT ONLY. The capacity-policy revision gave Level 2
+        | a room-based denominator of its own; it did NOT repurpose this map,
+        | and a room is still not a peak concurrent station.
+        |
+        | The device-loss runbook sizes capacity as
+        |
+        |     devices per branch = concurrent Doctor stations + 1 spare
+        |
+        | and `concurrent Doctor stations (peak, not average)` is a fact about a
+        | room. No table holds it, no query can derive it, and until this sprint
+        | there was nowhere to record it either — so the prerequisite above was
+        | signable but never checkable.
+        |
+        | SHIPS EMPTY, and deliberately so. An undeclared branch is reported
+        | UNVERIFIED by `doctor:estate-resilience`, never PASS: the engine will
+        | not invent the number that decides its own gate. What it CAN decide
+        | without this map is the lower bound — any station count >= 1 needs at
+        | least two eligible devices — so a branch holding 0 or 1 still FAILS
+        | outright, and only a branch holding 2 or more waits on this entry.
+        |
+        | Keyed by branch CODE. Recording one costs a reviewed change, the same
+        | price as an attestation, because it is the same kind of claim: a
+        | statement about a room made by somebody who has stood in it.
+        |
+        | Example, once counted:  'TLK1' => 1,  'SPN4' => 2,
+        */
+        'concurrent_doctor_stations_per_branch' => [
+        ],
+
+        /*
         | WHO enforcement applies to.
         |
         | PHASE4A-DOCTOR-ANDROID-PILOT-PREPARATION-1. `stages` above has listed
@@ -1306,6 +1503,49 @@ return [
             // variable somebody sets on a host at 2am during an incident.
             // Phase 5, once `global_prerequisites` above are met.
             'global_permitted' => false,
+
+            // DOCTOR-PWA-MULTI-DOCTOR-PILOT-1 — the largest cohort the word
+            // "pilot" is allowed to mean.
+            //
+            // The pilot cohort is an explicit list of user ids, which is the
+            // only expansion shape permitted: no wildcard, no role, no branch.
+            // But an explicit list can still be written out until it names
+            // every doctor in the fleet, and at that point "pilot" has become
+            // fleet-wide denial by enumeration while every guard that watches
+            // for fleet-wide denial still reads false. That is the one way the
+            // pilot boundary can be crossed without anybody deciding to cross
+            // it.
+            //
+            // So the ceiling lives HERE rather than beside the cohort, for the
+            // same reason `global_permitted` does: the runtime file is a host
+            // value an operator sets, and a bound that an operator can raise
+            // is not a bound. Widening the pilot past this number is a
+            // source-control change that goes through review.
+            //
+            // A cohort larger than this covers NOBODY rather than everybody,
+            // and says why.
+            //
+            // RAISED 5 -> 12 by DAENGTISIAMS-SUNU-FINAL-RELEASE-CANDIDATE-1 /
+            // D10, deliberately and through review, to make ONE BRANCH
+            // enforceable at a time.
+            //
+            // The owner's requirement was "PWA-only for all doctors, Sunu
+            // first, the other branches to follow". That cannot be expressed
+            // as a branch scope at the gate: DoctorAppLoginGate documents that
+            // `inEnforcementScope()` is "decided from the user id alone. No
+            // query", and resolving a doctor's home branch would put a
+            // database read on every doctor request. So a branch cohort is
+            // expressed the way every other cohort is — as a list of user ids
+            // — and the only thing that had to change was the ceiling.
+            //
+            // TWELVE, not fifteen. Cabang Sunu is the largest branch at ten
+            // home-locked doctors (LDK2 has three, TLK1 two), so twelve
+            // carries the biggest branch with headroom while staying BELOW the
+            // fifteen Doctor-role accounts in service. That gap is the point:
+            // listing every doctor still exceeds the ceiling and therefore
+            // still covers nobody, so fleet-wide enforcement remains reachable
+            // only through `global_permitted`, which no host value can touch.
+            'pilot_cohort_maximum' => 12,
         ],
     ],
 

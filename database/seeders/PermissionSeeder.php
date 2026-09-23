@@ -176,6 +176,21 @@ class PermissionSeeder extends Seeder
         // the global Gate::before, exactly like view_developer_console.
         'view_doctor_devices',
         'manage_doctor_devices',
+        // DAENGTISIAMS-SUNU-FINAL-RELEASE-CANDIDATE-1 / D11 — open the
+        // new-device registration workflow without opening the trust decision.
+        //
+        // A THIRD authority, deliberately weaker than `manage_doctor_devices`:
+        // it may FILE a new tablet into the registry and read the list, and
+        // nothing else. It cannot enrol a WebAuthn credential, cannot approve
+        // a filed device into service, cannot disable, reactivate or revoke.
+        //
+        // Safe because a filed row lands PENDING_APPROVAL, and the login gate
+        // opens with a strict allowlist (`if (! $device->isActive())` in
+        // DoctorAppLoginGate::deviceProofDenyReason), so a pending row is
+        // refused at the first check for BOTH the Android-keystore and the
+        // WebAuthn proof. Filing a device therefore grants no access to
+        // anyone; only a Super Admin's approval does.
+        'register_doctor_devices',
         // REVISION-DOCTOR-AUTO-DEVICE-APPROVAL-APP-ONLY-LOGIN-1 —
         // Approval → Approval Device Dokter.
         //
@@ -186,6 +201,35 @@ class PermissionSeeder extends Seeder
         // the global Gate::before, as with every permission.
         'view_doctor_device_authorizations',
         'manage_doctor_device_authorizations',
+        // DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1 — a doctor's permanent home
+        // branch, temporary branch cover, and the approver's lease-release
+        // action. Kept contiguous with the doctor-device family above because
+        // they are the same estate: who a clinician is, where they may work,
+        // and on what device.
+        //
+        // FOUR permissions, not one, because filing and deciding must be
+        // separate grants: `manage_` files a request or a cover, `approve_`
+        // decides it. RoleSeeder gives Supervisor RME the second and
+        // deliberately NOT the first, so the approver of a branch move is never
+        // also the person who proposed it. The policies enforce the same split
+        // (DoctorBranchLockRequestPolicy::create vs ::decide) and the approval
+        // services re-enforce it inside the transaction, because Gate::before
+        // returns true for Super Admin before any policy method runs.
+        //
+        // `release_doctor_session_leases` is separate again (ruling P17): it
+        // ends a LOGIN SESSION and nothing else — no device, no authorization
+        // and no WebAuthn credential is touched — so it is granted to exactly
+        // the approver tier while staying separately auditable.
+        'view_doctor_branch_locks',
+        'manage_doctor_branch_locks',
+        'approve_doctor_branch_locks',
+        'release_doctor_session_leases',
+        // REVISION-DOCTOR-PWA-WEBAUTHN-ONLY-ACCESS-1 Stage 2. Deliberately its
+        // OWN permission and not folded into manage_doctor_device_authorizations:
+        // admitting a doctor with NO device proof is a strictly stronger act than
+        // authorizing a device, and reusing that permission would have silently
+        // granted the bypass to everyone who already holds it.
+        'grant_doctor_break_glass_access',
         // SATUSEHAT-1 — Readiness foundation & controlled submission filter.
         // Separate view/review/send + mapping/settings governance permissions.
         // send is intentionally very restricted (no auto-send exists yet).

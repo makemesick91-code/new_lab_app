@@ -84,7 +84,7 @@
     ]);
 
     $showAdminGroup = $user && (
-        ($user->canAny(['manage doctors', 'manage patients', 'manage lab services', 'manage technicians', 'view_clinic_master_data', 'manage_clinic_master_data', 'view_branch_master_data', 'manage_branch_master_data']) && ! $user->hasRole('Admin Klinik'))
+        ($user->canAny(['manage doctors', 'manage patients', 'manage lab services', 'manage technicians', 'view_clinic_master_data', 'manage_clinic_master_data', 'view_branch_master_data', 'manage_branch_master_data']) && ! $user->hasAnyRole(\App\Support\AccessControl\FrontOfficeRole::MASTER_DATA_HIDDEN))
         || $user->canAny(['manage users', 'manage roles', 'manage permissions'])
         || (config('developer_console.enabled', true) && $user->can('view_developer_console'))
     );
@@ -128,7 +128,8 @@
             'settings.payment-methods.*',
             'settings.wa-reminder-templates.*',
             'settings.branches.*',
-            'settings.doctor-devices.*'
+            'settings.doctor-devices.*',
+            'settings.doctor-device-registration.*'
         ),
         'settings' => request()->routeIs('settings.users.*', 'settings.roles.*', 'settings.permissions.*'),
         // REVISION-DOCTOR-AUTO-DEVICE-APPROVAL-APP-ONLY-LOGIN-1
@@ -230,7 +231,15 @@
                                class="menu-subitem {{ request()->routeIs('rme.treatment-room-worklist.*') ? $linkActive : $linkIdle }}">Ruang Perawatan</a>
                         @endcan
                         @can('manage_rme_billing')
-                            @unless($user?->hasRole('Admin Klinik'))
+                            {{-- D2 — stays a bare `Admin Klinik` check ON PURPOSE.
+                                 Under the union rule (Front Office sees what
+                                 either legacy role saw) this menu was VISIBLE
+                                 to Kasir, so Front Office must keep seeing it.
+                                 Only the Master-Data guards take the shared
+                                 list; a blanket replace here would have hidden
+                                 the cashier screens from the very role created
+                                 to work them. --}}
+                            @unless($user?->hasRole(\App\Support\AccessControl\FrontOfficeRole::LEGACY_ADMIN_CLINIC))
                                 <a href="{{ route('rme.cashier.handoff') }}"
                                    class="menu-subitem {{ request()->routeIs('rme.cashier.handoff') ? $linkActive : $linkIdle }}">Sinkronisasi Dokter–Kasir</a>
                                 <a href="{{ route('rme.cashier.index') }}"
@@ -252,7 +261,7 @@
                                class="menu-subitem {{ request()->routeIs('rme.reports.doctor-performance') ? $linkActive : $linkIdle }}">Kinerja &amp; Pendapatan Dokter</a>
                         @endcanany
                         @canany(['view_rme_patient_reports', 'manage patients'])
-                            @unless($user?->hasRole('Admin Klinik'))
+                            @unless($user?->hasAnyRole(\App\Support\AccessControl\FrontOfficeRole::MASTER_DATA_HIDDEN))
                                 <a href="{{ route('rme.patients.audit') }}"
                                    class="menu-subitem {{ request()->routeIs('rme.patients.audit') ? $linkActive : $linkIdle }}">Audit Data Pasien</a>
                             @endunless
@@ -275,6 +284,33 @@
                     </div>
                 </div>
             @endcan
+
+            {{-- DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1 — a doctor's permanent
+                 home branch and temporary branch cover.
+
+                 A SEPARATE, INDEPENDENTLY GATED BLOCK, deliberately not folded
+                 into the group above: the daily working-branch gate and the
+                 doctor branch-lock permissions are different authorities and
+                 must never leak into one another.
+
+                 Each entry is gated by the permission its own route group
+                 enforces, so the menu and the server-side boundary read one
+                 definition. The sidebar is NOT the boundary: a direct GET is
+                 refused by the route middleware, and every action 404s while
+                 the capability flags are off. --}}
+            @canany(['view_doctor_branch_locks', 'approve_doctor_branch_locks', 'manage_doctor_branch_locks'])
+                <div>
+                    <p class="menu-group-title pt-2">Kunci Cabang Dokter</p>
+                    <div class="mt-1 space-y-1">
+                        <a href="{{ route('rme.doctor-branch-locks.index') }}"
+                           class="menu-subitem {{ request()->routeIs('rme.doctor-branch-locks.*') ? $linkActive : $linkIdle }}">Persetujuan Cabang Dokter</a>
+                        @can('manage_doctor_branch_locks')
+                            <a href="{{ route('rme.doctor-branch-covers.create') }}"
+                               class="menu-subitem {{ request()->routeIs('rme.doctor-branch-covers.*') ? $linkActive : $linkIdle }}">Cover Cabang Sementara</a>
+                        @endcan
+                    </div>
+                </div>
+            @endcanany
 
             {{-- SATUSEHAT-1 — controlled submission filter + mapping/identifier governance.
                  FIX-08: the whole group is Super Admin only, using the same
@@ -791,7 +827,7 @@
             @endif
 
             @canany(['manage doctors', 'manage_doctor_account_links', 'manage patients', 'manage lab services', 'manage technicians', 'view_clinic_master_data', 'manage_clinic_master_data', 'view_branch_master_data', 'manage_branch_master_data'])
-                @unless($user?->hasRole('Admin Klinik'))
+                @unless($user?->hasAnyRole(\App\Support\AccessControl\FrontOfficeRole::MASTER_DATA_HIDDEN))
                 <div class="pt-2">
                     <button type="button" @click="toggle('master-data')" class="{{ $groupToggle }}" :aria-expanded="isOpen('master-data')">
                         <span class="flex items-center gap-3">
@@ -846,9 +882,16 @@
                         {{-- FEATURE-DOCTOR-TRUSTED-ANDROID-DEVICE-LOCK-1 Phase 2.
                              Visibility follows the permission, but the sidebar is
                              never the boundary: the route itself is gated. --}}
-                        @canany(['view_doctor_devices', 'manage_doctor_devices'])
+                        @canany(['view_doctor_devices', 'manage_doctor_devices', 'register_doctor_devices'])
                             <a href="{{ route('settings.doctor-devices.index') }}"
                                class="menu-subitem {{ request()->routeIs('settings.doctor-devices.*') ? $linkActive : $linkIdle }}">Device Dokter</a>
+                            {{-- DOCTOR-DEVICE-GUIDED-REGISTRATION-WORKFLOW-1 — the
+                                 guided path through the SAME registry above, for
+                                 bringing a new tablet into service. Sits here
+                                 rather than beside Approval Device Dokter, which
+                                 stays a top-level operational inbox on purpose. --}}
+                            <a href="{{ route('settings.doctor-device-registration.index') }}"
+                               class="menu-subitem {{ request()->routeIs('settings.doctor-device-registration.*') ? $linkActive : $linkIdle }}">Pendaftaran Device Dokter</a>
                         @endcanany
                     </div>
                 </div>

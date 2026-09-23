@@ -5,6 +5,7 @@ namespace App\Modules\RmeOnlineContext\Controllers;
 use App\Http\Controllers\Controller;
 use App\Modules\Branch\Services\BranchService;
 use App\Modules\ClinicVisit\Services\ClinicVisitService;
+use App\Modules\DoctorAccess\Services\DoctorEffectiveBranchResolver;
 use App\Modules\RmeOnlineContext\Requests\StartAdminClinicOnlineContextRequest;
 use App\Modules\RmeOnlineContext\Requests\StartDoctorOnlineContextRequest;
 use App\Modules\RmeOnlineContext\Requests\StartKasirOnlineContextRequest;
@@ -12,6 +13,7 @@ use App\Modules\RmeOnlineContext\Requests\StartPerawatOnlineContextRequest;
 use App\Modules\RmeOnlineContext\Services\DailyBranchContextService;
 use App\Modules\RmeOnlineContext\Services\DoctorUserResolver;
 use App\Modules\RmeOnlineContext\Services\UserOnlineContextService;
+use App\Support\AccessControl\FrontOfficeBranchPinResolver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -25,6 +27,8 @@ class OnlineContextController extends Controller
         private readonly ClinicVisitService $visits,
         private readonly DoctorUserResolver $doctorResolver,
         private readonly DailyBranchContextService $dailyBranchContext,
+        private readonly DoctorEffectiveBranchResolver $doctorBranches,
+        private readonly FrontOfficeBranchPinResolver $frontOfficePin,
     ) {}
 
     public function select(Request $request): View|RedirectResponse
@@ -54,6 +58,33 @@ class OnlineContextController extends Controller
 
         $doctorAllowedBranches = $linkedDoctor?->branches ?? collect();
 
+        /*
+         * DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1 — a LOCKED doctor is not
+         * offered a free branch choice. Asked once, of the one authority; null
+         * covers every non-locking state (capability off, unlinked, UNSET,
+         * retired locked branch) and leaves the selector exactly as it was.
+         *
+         * Filtering the collection rather than replacing it makes the Alpine
+         * seed follow automatically: the room map below is derived from
+         * $doctorAllowedBranches, so the component can only ever be handed
+         * rooms of a branch this doctor may actually select. It is presentation
+         * only — UserOnlineContextService::startDoctorSession() re-asserts the
+         * same rule server-side, because a one-option dropdown refuses nothing.
+         *
+         * The intersection can leave it EMPTY, when the locked branch is not
+         * one of the doctor's practice branches. The view says so plainly
+         * instead of pretending the doctor has no practice branch at all.
+         */
+        $doctorEffectiveBranchId = $requiresDoctor
+            ? $this->doctorBranches->branchIdFor($user)
+            : null;
+
+        if ($doctorEffectiveBranchId !== null) {
+            $doctorAllowedBranches = $doctorAllowedBranches
+                ->filter(fn ($branch) => (int) $branch->id === $doctorEffectiveBranchId)
+                ->values();
+        }
+
         // FEATURE-DAILY-BRANCH-CONTEXT-LOCK-1 — a Kasir or Admin Klinik who has
         // already committed today sees the locked branch and the request route,
         // not a free dropdown that would only fail on submit. The selector is
@@ -63,6 +94,44 @@ class OnlineContextController extends Controller
         $lockedBranchId = $dailyContext ? (int) $dailyContext->current_branch_id : null;
         $rmeBranches = $this->branches->listRmeEnabled();
 
+        /*
+         * REVISION-FRONT-OFFICE-BRANCH-CONTEXT-LOCK-1 — an armed front-desk
+         * account is offered ONE branch: the one it is pinned to.
+         *
+         * PRESENTATION ONLY. A one-option <select> refuses nothing — a crafted
+         * POST is refused by UserOnlineContextService::startAdminClinicSession()
+         * (and its Kasir / Doctor / Perawat siblings) through the SAME resolver,
+         * and the effective branch is pinned again in BranchContext::forUser().
+         * This exists so the operator is not offered a choice that would only
+         * fail on submit.
+         *
+         * Resolved from the FULL list before it is narrowed, so the pinned
+         * branch is still found when the narrowing below removes every other
+         * one. NULL for every account that is not armed, which leaves this
+         * screen exactly as it was.
+         */
+        $frontOfficePinnedBranchId = $this->frontOfficePin->requiredBranchIdFor($user);
+        $frontOfficePinnedBranch = $frontOfficePinnedBranchId !== null
+            ? $rmeBranches->firstWhere('id', $frontOfficePinnedBranchId)
+            : null;
+
+        /*
+         * An armed account whose mapping is UNDECIDABLE has no pinned branch,
+         * and must NOT fall through to the full list: the server refuses every
+         * branch for it, so offering all of them is a silent dead end where the
+         * contract promises a loud refusal. It is handed an EMPTY list, which
+         * the view renders as "no selectable branch".
+         */
+        $frontOfficePinMisconfigured = $this->frontOfficePin->isMisconfiguredFor($user);
+
+        $selectableRmeBranches = match (true) {
+            $frontOfficePinnedBranchId !== null => $rmeBranches
+                ->filter(fn ($branch) => (int) $branch->id === $frontOfficePinnedBranchId)
+                ->values(),
+            $frontOfficePinMisconfigured => $rmeBranches->take(0),
+            default => $rmeBranches,
+        };
+
         return view('rme.online-context.select', [
             'requiresDoctor' => $requiresDoctor,
             'requiresAdmin' => $requiresAdmin,
@@ -70,7 +139,14 @@ class OnlineContextController extends Controller
             'requiresKasir' => $requiresKasir,
             'linkedDoctor' => $linkedDoctor,
             'doctorAllowedBranches' => $doctorAllowedBranches,
-            'rmeBranches' => $rmeBranches,
+            'doctorEffectiveBranchId' => $doctorEffectiveBranchId,
+            'doctorEffectiveBranch' => $doctorEffectiveBranchId
+                ? $rmeBranches->firstWhere('id', $doctorEffectiveBranchId)
+                : null,
+            'rmeBranches' => $selectableRmeBranches,
+            'frontOfficePinnedBranchId' => $frontOfficePinnedBranchId,
+            'frontOfficePinnedBranch' => $frontOfficePinnedBranch,
+            'frontOfficePinMisconfigured' => $frontOfficePinMisconfigured,
             'roomsByBranch' => $this->visits->activeRoomsByRmeBranch(),
             'currentContext' => $this->onlineContext->currentContextFor($user),
             'dailyContext' => $dailyContext,

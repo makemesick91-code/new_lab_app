@@ -1,0 +1,441 @@
+---
+description: Fleet readiness is not provisioning. A doctor is fleet-ready only with an approved home branch, an authorization on every eligible tablet, and a device login that actually happened — and absence of evidence is never a pass. A device proof identifies the tablet, never the clinician. Readiness GO authorises a later decision and never the switch.
+globs:
+  - "app/Modules/DoctorAccess/**"
+  - "app/Modules/DoctorDevice/**"
+  - "app/Console/Commands/Doctor*.php"
+  - "tests/Feature/DoctorAccess/**"
+  - "tests/Feature/DoctorDevice/**"
+alwaysApply: false
+---
+
+# Fleet rollout readiness
+
+`DOCTOR-ACCESS-FLEET-ROLLOUT-READINESS-1`. Read this with rules 151, 152, 153,
+154 and 155, which it extends rather than replaces. Rule 152 owns the
+five-condition trusted path; this one owns what a path does not tell you.
+
+## What changed
+
+`doctor:rollout-readiness` measures PROVISIONING and was named as though it
+measured readiness. On 2026-09-12 a bulk authorization run wrote 45 correct rows
+and its verdict moved from `PARTIAL` to its top value, while twelve clinicians
+who had never once logged in on a tablet were exactly as unready as the day
+before. Nothing was miscounted — GR-R4 held for all fifteen. The name was the
+defect, and `GLOBAL_READY` is the string an activation sprint greps for.
+
+So the verdict is now `TRUSTED_PATHS_COMPLETE`, and a second gate,
+`doctor:fleet-readiness`, answers the fleet question.
+
+## The rules
+
+1. **FR-R1 — provisioning is not readiness.** An authorization row is a
+   hypothesis. Readiness is the hypothesis plus a home branch plus a login that
+   happened. Never report one as the other, and never name a provisioning
+   verdict as though it covered the fleet.
+
+2. **FR-R2 — N authorization rows are N rows.** They are not N proven login
+   combinations, and no evidence artifact, doc, or commit message may imply they
+   are. The count of rows and the count of walked paths are separate numbers.
+
+   **The number is derived and it moves.** It was 45 when this rule was written
+   (15 doctors × 3 eligible devices); `DOCTOR-ACCESS-TRUSTED-DEVICE-ESTATE-PROVISIONING-1`
+   made it **60** (15 × 4, ids `[3,5,6,7]`). Never hardcode the target and never
+   quote a remembered one — read `authorization_matrix.target_pairs` from
+   `doctor:estate-resilience --json`, which derives it from the live estate.
+
+3. **FR-R3 — every eligible doctor needs an explicit HOME branch.** UNSET is a
+   legitimate running state (owner decision O1) and a disqualifying readiness
+   state. There is no fleet readiness while one eligible doctor is UNSET.
+
+4. **FR-R4 — no home branch is ever inferred.** Not from last login, device,
+   device branch, doctor code, room, visits, roster, frequency, recent activity,
+   authorization rows or pilot scope. Those may be DISPLAYED as explicitly
+   labelled non-authoritative suggestions and never written. On this estate the
+   signals actively contradict each other — the doctor code disagrees with
+   observed practice for at least three live clinicians — which is why the rule
+   is absolute rather than cautious.
+
+5. **FR-R5 — the tablet's branch is not the doctor's branch.** A doctor home-
+   locked to one branch holding an active authorization on a tablet at another
+   is the CORRECT shape, not a defect. Any tool that intersects
+   `mst_doctors`/lock branch state with `mst_doctor_devices.branch_id` would
+   deprovision a working clinician.
+
+   *Amended 2026-09-13 by Wave 1.* This is a statement about AUTHORITY, not a
+   promise that the server is currently narrowing anything — see FR-R21..FR-R26.
+   Do not read it as "effective branch will equal home branch"; that holds only
+   when the resolver is armed, and today it is not.
+
+6. **FR-R6 — a device proof identifies the TABLET, not the clinician.** The
+   credential has no doctor column and deliberately never will (GR-R5); the
+   doctor is identified by the password step that precedes the assertion. A
+   proof means "this ACCOUNT reached a clinical session through this TABLET",
+   and readiness evidence must say so in those words. Never write, or let a
+   report imply, that a biometric attested which human was present.
+
+7. **FR-R7 — proof comes from the audit trail, keyed on the actor.** The two
+   success actions only, `performed_by` = the doctor's user. Not
+   `last_authorized_login_at`, which is written on the Android path alone and
+   under-reports every PWA doctor. Not `last_used_at` on the credential, which
+   has no doctor to attribute to and on a shared tablet would let one doctor's
+   login mark another ready. Attempt and refusal actions are not logins —
+   `DOCTOR_DEVICE_LOGIN_REQUESTED` in particular looks like one and is written
+   on attempts that were then refused.
+
+8. **FR-R8 — a proof counts ONLY on hardware the doctor can still use.** The
+   proven device ids must intersect the tablets that doctor currently holds an
+   ACTIVE authorization on, itself already restricted to eligible hardware. A
+   revoked tablet, a tablet they are no longer authorized on, and a legacy row
+   carrying no device id each contribute NOTHING.
+
+   An adversarial review found this open: the login gate was the only gate in
+   the engine not scoped to the estate, so a proof SURVIVED its tablet being
+   revoked — and that is live data, not a hypothesis (measured on the pilot
+   estate 2026-09-13, user 18 held 23 success rows across three tablets, 4 of
+   them on revoked device 1; the other 19 still qualify, so the gate has to
+   discard those 4 WITHOUT disqualifying the doctor). "Has walked a trusted path"
+   has to mean a path that is still trusted, or it is a claim about history
+   rather than about readiness. Report the raw count beside it: "logged in only
+   on hardware we no longer trust" and "never logged in" are different facts and
+   an operator needs to tell them apart.
+
+9. **FR-R9 — real-device readiness needs a PHYSICAL ceremony per eligible
+   doctor, and it cannot be manufactured.** No SQL, no administrative shortcut,
+   no inserted success row, no inferred pass. A doctor with no proof is NOT
+   READY and stays so until a clinician stands at a tablet and authenticates.
+
+10. **FR-R10 — a temporary cohort campaign is NOT activation.** Rotating a
+    doctor into the bounded enforcement cohort to capture a readiness proof is a
+    time-boxed measurement, never a rollout. The cohort returns to its baseline
+    when the proof is captured; it is never permanently expanded by a readiness
+    sprint; and the hard cap is a cap, not a target.
+
+11. **FR-R11 — enrolment is a lockout, so it fails closed and rolls back.** A
+    doctor inside the cohort cannot use a browser. Never enrol one who is not
+    already at a tablet. A failed ceremony stops the wave, removes that doctor
+    immediately, and is never left overnight with the doctor trapped. The
+    failure is recorded; the proof is not.
+
+    *Amended 2026-09-13.* This still governs any enrolment that happens — but a
+    readiness ceremony no longer enrols anyone at all (FR-R19). Read this as the
+    rule for when enforcement scope is genuinely being changed, not as a step in
+    obtaining a device proof.
+
+12. **FR-R12 — absence of evidence is NOT a pass.** No home branch, no
+   authorization, no credential, no login on record, an unverified or revoked
+   device, a broken path: every one of them is NOT READY. An empty fleet is
+   NO-GO, never READY — "zero doctors, zero blockers" is arithmetically a pass
+   and operationally a broken query, and this programme has shipped that bug
+   before.
+
+13. **FR-R13 — the matrix must be reconciled independently.** Completeness is
+   computed from the estate, never taken from the tool that writes the rows. A
+   tool that both writes the matrix and reports it complete agrees with itself.
+   An authorization on an ineligible tablet never closes a gap.
+
+14. **FR-R14 — a new doctor or a new tablet reopens the matrix.** Fleet
+    readiness requires an authorization on EVERY eligible tablet, so trusting a
+    fourth tablet must make every doctor incomplete until explicitly and
+    auditably reconciled. Readiness is never inherited by new hardware.
+
+15. **FR-R15 — the readiness engine cannot act.** No write, no process, no HTTP,
+    no request read, no flag, no cohort change — enforced by a source scan
+    rather than by intention. It is exactly the tool somebody later "improves"
+    by having it fix what it found, and the moment it can, its output stops
+    being evidence and becomes a description of its own side effects.
+
+16. **FR-R16 — readiness GO is not activation GO.** It authorises a later sprint
+    to DECIDE. `doctor.single_active_session` stays false and
+    `GLOBAL_ENFORCEMENT_ACTIVE` stays false through a readiness sprint, and no
+    readiness verdict is permission to move either. This restates GR-R1/GR-R2
+    because it is the rule most likely to be read past.
+
+17. **FR-R17 — the branch-lock surface is armed, not always present.** It 404s
+    unless `doctor.branch_lock` AND `doctor.single_active_session` are both on
+    and the session probe is observable. There is no Artisan fallback, so an
+    assignment ceremony needs a supervised arm/disarm window — and the window
+    must end with `single_active_session` back to false.
+
+18. **FR-R18 — release surviving leases before re-arming.** An unreleased lease
+    becomes an incumbent the moment single-session is re-armed, so the next
+    fresh login is correctly DENIED as a second session. Log the doctor out, or
+    take the canonical audited release, BEFORE arming. A denial there is the
+    engine working, not a defect.
+
+19. **FR-R19 — real-device readiness is proven through the canonical Android
+    device-login channel, and does NOT require enforcement-cohort membership.**
+    The cohort controls BROWSER-login enforcement scope. It must never be used
+    merely to obtain Android device-login proof: an eligible device plus an
+    active `DoctorDeviceAuthorization` is sufficient.
+
+    **CORRECTED 2026-09-13 — THIS RULE PREVIOUSLY SAID THE OPPOSITE, AND IT WAS
+    FALSE.** It read: *"a doctor outside the enforcement cohort cannot produce a
+    device proof… obtaining proof therefore means rotating the doctor through the
+    bounded cohort."* That claim was wrong, and the correction is kept visible
+    rather than deleted because a campaign was built on it.
+
+    What is actually true is narrower: a non-cohort doctor logging in via the
+    BROWSER is not redirected into a device ceremony, because
+    `DoctorAppLoginGate::denyBrowserSessionReason()` returns null for them. The
+    Android app never uses that path — it posts directly to
+    `/device-api/v1/doctor/challenge` and `/device-api/v1/doctor/login`, which do
+    not consult the enforcement scope at all.
+
+    **Production evidence.** drg Ramadhan (user 12) logged in on tablet 3 at
+    10:57:08 and produced audit 828 `DOCTOR_APP_LOGIN_AUTHORIZATION_SUCCESS`
+    (doctor 18, device 3, authz 15). The cohort was `[9,15,18]`, he was not in
+    it, and the config cache had last been rebuilt at 10:43:50 with nothing
+    touching it since. The readiness engine accepted the proof.
+
+    **The cost of the error, recorded.** Waves 1–3 unnecessarily enrolled five
+    doctors (Fahira, Irwan, Windi, and the two failures Ramadhan and Nurmilah).
+    Enrolment DENIES the doctor's browser login until removal, so each carried a
+    real lockout window taken for no benefit. Their successful proofs remain
+    valid — the defect was in the protocol, not in the evidence it produced.
+
+20. **FR-R20 — the fleet gate is the one an activation decision reads.** If the
+    two gates ever disagree, the fleet gate is the answer and the provisioning
+    gate is an input to it. Do not add a second engine that decides what a
+    trusted path is; compose rule 152's.
+
+21. **FR-R21 — a stored lock is not an armed lock.** `mst_doctor_branch_locks`
+    rows can exist, be complete and be correct while nothing in production
+    enforces them. Fifteen locks were written on 2026-09-13 and narrowed nobody's
+    queue, because the capability was disarmed. Never report "locked" as though
+    it meant "narrowed".
+
+22. **FR-R22 — `doctor.branch_lock=true` alone does NOT mean the resolver is
+    active.** `DoctorEffectiveBranchResolver::enabled()` is the complete arming
+    predicate: `branch_lock` **AND** `single_active_session` **AND** an
+    observable session probe. The two flags arm and disarm together on purpose —
+    an expired cover would otherwise keep granting authority with nothing left
+    to invalidate the session. Read `enabled()`, never one flag.
+
+23. **FR-R23 — readiness proof and activation proof are different claims.**
+    Readiness asks "could this clinician work under enforcement". Activation asks
+    "is enforcement doing anything". A sprint may complete the first while the
+    second is untrue for the entire fleet, and the evidence must say so in two
+    separate lines that are never collapsed into one.
+
+24. **FR-R24 — real-device readiness is provable WITHOUT arming
+    single-session.** The device login path is independent of the branch
+    resolver. So a readiness campaign never arms `single_active_session`, never
+    temporarily activates the lease engine, and never releases a surviving lease
+    merely to make a ceremony possible.
+
+25. **FR-R25 — the live effective-branch assertion belongs to ACTIVATION.**
+    `DEVICE_BRANCH != HOME AND EFFECTIVE_BRANCH == HOME` can only be observed
+    when the resolver is armed, so it is asserted in
+    `DOCTOR-ACCESS-GLOBAL-ACTIVATION-1` under an activation window — and that
+    sprint handles the lease re-arm invariant first. A readiness ceremony
+    CAPTURES the effective branch as observed; it never asserts it equals home.
+
+26. **FR-R26 — a ceremony must not rewrite the home lock, and that IS
+    assertable.** What a readiness login must prove about branch authority is
+    the negative: the doctor's lock row is unchanged afterwards
+    (`home_branch_id` and `transfer_count` identical). Wave 1 proved exactly
+    that while the positive invariant was unobservable.
+
+27. **FR-R27 — `invalid_credentials` means THAT REQUEST failed, nothing more.**
+    It does not distinguish a mistyped password, a wrong email, a stale
+    remembered credential, or an actually outdated stored password. So
+    `INVALID_CREDENTIALS != PASSWORD_RESET_REQUIRED`, and one rejection is never
+    grounds to recommend a reset.
+
+    Production proof: drg Ramadhan's tablet login was rejected
+    `invalid_credentials` at 10:41, and a later attempt SUCCEEDED at 10:57 with
+    `users.updated_at` still reading 2026-06-29 — same account, no reset, no
+    change of any kind. Record `SUBMITTED_CREDENTIALS_REJECTED=YES`; never
+    `STORED_PASSWORD_BROKEN=YES` unless independently proven.
+
+28. **FR-R28 — no browser credential pre-check is required before a tablet
+    ceremony.** `BROWSER_CREDENTIAL_PRECHECK_REQUIRED=NO`. It proves strictly
+    less than the tablet login, adds an authentication event, and guards against
+    a lockout that no longer exists now that ceremonies do not enrol. It survives
+    only as an OPTIONAL diagnostic after repeated failures, never as a gate.
+
+29. **FR-R29 — during a Wave 4+ readiness ceremony the cohort does not move.**
+    `COHORT_BEFORE == COHORT_DURING == COHORT_AFTER`. A cohort change during a
+    normal readiness ceremony is an UNEXPECTED MUTATION and must be reported as
+    one. A failed login therefore needs no rollback — confirm the cohort is
+    unchanged, confirm health, capture the server-side reason, and leave the
+    doctor outside enforcement scope while diagnosing.
+
+    The INVARIANT is the equality, not a literal. Read the value at ceremony
+    start and compare against what you read — see FR-R34.
+
+30. **FR-R30 — one readiness report, one device-estate snapshot.** Every gate in
+    `DoctorFleetReadinessService` that asks which tablets are eligible — the
+    authorization target, the pair filter, the coverage table — answers from ONE
+    load. A report whose matrix and whose coverage table describe different
+    moments is two answers to one question, and it is the report an activation
+    sprint reads.
+
+31. **FR-R31 — that memo is scoped to one build, never to the service.** A
+    second `build()` on the same instance re-reads the estate. Fixing a double
+    read by caching forever is a worse defect than the one being fixed: a
+    long-lived process would then report the hardware it saw first, for as long
+    as it lives.
+
+32. **FR-R32 — a query budget cannot pin "exactly one read", and must not claim
+    to.** A ceiling has headroom by design and a constancy check compares two
+    numbers that a constant moves together, so a DUPLICATE read is invisible to
+    both. Counting loads at the loader is the only assertion that sees it. Keep
+    the budget for SCALE and the load count for SNAPSHOT INTEGRITY; neither
+    substitutes for the other, and a comment claiming a property no assertion
+    holds is worse than no comment.
+
+33. **FR-R33 — REPORTING COROLLARY of FR-R22 and FR-R21; it adds no predicate
+    of its own.** FR-R22 already states the complete arming predicate for the
+    branch lock — `branch_lock` AND `single_active_session` AND an observable
+    session probe — and it is the one to quote. **Do not restate an arming
+    predicate here or anywhere else; a second copy will eventually be the
+    shorter one, and the shorter one is wrong.**
+
+    What this rule adds is the REPORTING obligation: wherever a flag and its
+    effective state can differ, print both, as two lines. On the pilot at the
+    time of writing (2026-09-13 WITA — a snapshot, re-read it) that is
+    `BRANCH_LOCK_FLAG=true` / `BRANCH_LOCK_EFFECTIVE=false`. Never one line that
+    implies a locked fleet.
+
+34. **FR-R34 — the browser enforcement scope is mutable host configuration, not
+    a database invariant and not a constant.** It has moved before and it may
+    move again. State it as `CURRENT_BROWSER_ENFORCEMENT_SCOPE=<value read now>`
+    and never as a value that "has never moved". Distinguish
+    `SCOPED_BROWSER_DEVICE_ENFORCEMENT_ACTIVE` from
+    `GLOBAL_FLEET_ENFORCEMENT_ACTIVE` — on the pilot at the time of writing
+    (2026-09-13 WITA, a snapshot) those were YES and NO respectively.
+    Collapsing the two into one "enforcement" line reads as "no enforcement
+    exists", which is false.
+
+35. **FR-R35 — a broken measurement must fail loudly, never quietly pass.** A
+    query watcher, probe or audit read that ERRORS is an UNKNOWN result. It is
+    never "no new proof", never "no rows", never a green tick. This programme
+    has already shipped one gate that read silence as success.
+
+36. **FR-R36 — `sys_audit_logs.entity_id` is not a doctor id.** On a device
+    proof it names the AUTHORIZATION. The id spaces COLLIDE — on the pilot at
+    the time of writing (2026-09-13 WITA, a snapshot) user 18 was doctor 21 — so
+    an attribution taken from the wrong column is wrong silently and plausibly.
+    Attribute through `performed_by` and the canonical payload, as
+    `DoctorFleetReadinessRepository` does.
+
+37. **FR-R37 — every production figure quoted in a rule, comment or report is
+    MEASURED, labelled with its date, and labelled as a snapshot.** A remembered
+    number becomes an asserted one. The proof-count example in FR-R8 was wrong
+    in both halves for exactly that reason: it put thirteen rows on a revoked
+    tablet when the thirteen were on the tablet that still qualified, so the
+    example argued against the rule it illustrated.
+
+    **The line is the ASSERTION, not the file.** A production count may appear
+    in prose or in a comment — including a comment inside a test file, where it
+    explains why a fixture has the shape it has — provided it is dated and
+    labelled. It may never appear in an `expect()`, a fixture value or any other
+    executable assertion: that pins somebody's environment rather than the
+    behaviour, and it fails on every checkout configured differently. State the
+    invariant in the assertion; keep the number beside it, dated.
+
+    This rule also binds the artifacts that introduce it. An argued-from number
+    in a sprint's own doc, PR body or test header is exactly the failure it
+    names — and this sprint shipped one (a "four loads, three of which" figure
+    that was pre-fix arithmetic; measured, it is three and two) before an
+    adversarial re-read caught it.
+
+38. **FR-R38 — timestamps carry their timezone.** Production application and
+    system times are reported in WITA (UTC+08:00) and labelled as such. An
+    unlabelled clinical or operational timestamp is ambiguous evidence.
+
+39. **FR-R39 — a test that DELIBERATELY violates a database constraint must
+    contain the violation in a savepoint, and a local SQLite pass does not
+    clear it.** PostgreSQL aborts the whole transaction on any failed statement
+    (`SQLSTATE 25P02`), and under `RefreshDatabase` the test body is already
+    inside one — so a bare violating insert poisons every later query in that
+    test, including the call under test. SQLite does not behave that way, so the
+    test goes green locally and red only in CI on `postgres:16`.
+
+    Wrap it: a nested `DB::transaction()` compiles to
+    `SAVEPOINT` / `ROLLBACK TO SAVEPOINT`, and rolling back to a savepoint taken
+    before the failing statement returns the connection to a usable state. Then
+    assert the connection still works afterwards — that assertion is the one
+    SQLite would never have earned you.
+
+    More generally: **the canonical test driver is `postgres:16`, and SQLite is
+    a convenience.** Any test whose subject is transactional behaviour, locking,
+    a constraint, or a partial index must be verified on PostgreSQL before it is
+    trusted — `lockForUpdate()` compiles to an empty string on SQLite, and a
+    partial unique index can be silently flattened by a table rebuild. This
+    sprint shipped exactly this defect, passed it locally, and had it caught by
+    CI after 68 minutes.
+
+40. **FR-R40 — the clinic app reports an AUTHENTICATION failure as a CONNECTIVITY
+    failure.** A tablet showing *"tidak dapat menghubungi server"* may mean the
+    request reached the server and was rejected. On 2026-09-14 two such screens
+    corresponded to `DOCTOR_APP_LOGIN_DEVICE_PROOF_REJECTED` with
+    `reason: invalid_credentials` (audit 843, 844) — the network was fine.
+
+    Never diagnose a failed ceremony from the screen. Read the server: the
+    failure classes are distinct (`invalid_credentials`, authorization rejected,
+    device proof rejected, challenge failure, rate-limit, genuinely no request at
+    all) and collapsing them sends an operator to check wifi for a typo. This is
+    a UX defect in the app, not in the gate; fixing it is a separate sprint.
+
+41. **FR-R41 — a failed authentication writes `performed_by = NULL`, so an empty
+    per-user audit query does NOT mean the request never arrived.** It means
+    nobody was authenticated to attribute it to. Absence in that query separates
+    neither "rejected" from "never sent" nor either from "query wrong".
+
+    To find a rejection, query the ACTION, not the user. This session printed the
+    wrong inference out loud before catching it, which is exactly how a
+    misdiagnosis becomes evidence.
+
+42. **FR-R42 — reconcile on SECURITY-RELEVANT fields, never on `updated_at`.** A
+    successful login legitimately touches `last_authorized_login_at` on the
+    authorization and `last_seen_at` / `last_verified_at` on the device. A
+    reconciliation predicated on `updated_at > T` therefore reports those as
+    "unexpected changes" and trains the reader to wave real ones through.
+
+    Measure what the name claims: `status`, `doctor_id`, `doctor_device_id`,
+    `revoked_*`, `approved_*`, `identity_state`, credential revocations, cohort
+    and flags. Bookkeeping touches on exactly the rows the ceremony used are the
+    expected consequence of the thing being tested, and should be stated as such
+    rather than counted as drift.
+
+43. **FR-R43 — CLOSURE. Fleet readiness reached 15/15 on 2026-09-14 (WITA) and
+    the programme is CLOSED at GO.** Every eligible doctor is home-branch locked,
+    authorized across the whole eligible estate, and has walked a trusted path
+    once on currently eligible hardware, reconciled against independent SQL.
+
+    That is CAPABILITY EVIDENCE. At closure `single_active_session=false`,
+    the branch-lock resolver is INERT, the browser enforcement scope is unchanged
+    at its pilot value, and global fleet enforcement is OFF. **Readiness GO
+    authorises a later activation DECISION and nothing else.** Do not read this
+    closure as permission to arm anything.
+
+44. **FR-R44 — 15/15 does NOT model DEVICE-BRANCH INTERSECTION, and an
+    activation sprint must not read it as if it does.** At closure the eligible
+    tablets sat at SPN4, LDK2 and ATG3. **TLK1 held no trusted tablet at all**,
+    yet two doctors were home-locked to TLK1 and counted READY on another
+    branch's hardware; four doctors in total had every qualifying proof on a
+    tablet outside their HOME branch.
+
+    That is consistent with the readiness definition — a proof means "this
+    account reached a clinical session through this tablet", and cross-branch is
+    legitimate while the branch-lock resolver is inert. But
+    `config/android_release.php` carries `device_branch_intersection_verified`
+    as a pilot acceptance check. **If that is ever armed, those proofs stop
+    demonstrating anything about the doctor's actual workplace**, and the fleet
+    is not 15/15 against the stricter question. Measure the intersection before
+    arming it; do not assume readiness already covered it.
+
+45. **FR-R45 — a FAILED device login is unattributable in the audit trail.**
+    `DOCTOR_APP_LOGIN_DEVICE_PROOF_REJECTED` carries `performed_by IS NULL` and
+    `entity_id IS NULL`; the payload is only `{"reason": "..."}`. The sole
+    identifying data are the request IP and user-agent.
+
+    Two consequences. **Operationally:** find rejections by ACTION and time
+    window, never by user (FR-R41). **Security:** a repeated credential-guessing
+    run against the device-login endpoint leaves no account fingerprint in
+    `sys_audit_logs`, so per-account lockout/alerting cannot be built on that
+    table as it stands. Recorded here as a known gap for a security sprint; it
+    was NOT changed during readiness closure.

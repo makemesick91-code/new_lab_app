@@ -294,8 +294,148 @@ proof" silently answered "this session's proof is still good".*
 72. **A parent GO authorises the pilot only.** It is not fleet-wide authority,
     not a new device, not a new branch, not Phase 5. Expansion beyond the named
     pilot doctor requires its own stabilisation sprint and its own decision.
-73. **The active credential stays device-bound for the life of the pilot.** If
+73. **Every active credential stays device-bound for the life of the pilot.**
+    (Written when the pilot had one credential; there are now three, one per
+    active device — credential 2 on device 3, 3 on device 5, 5 on device 6. The
+    rule applies to each independently, and one failing verdict ends only that
+    doctor's access, not the pilot.) If
     the verdict on the live credential ever moves off `device_bound`, the pilot
     is over until a fresh conforming credential is enrolled — the session dies
     on the next protected request by design (rule 67), and that is the intended
     behaviour, not an incident to work around.
+
+## Verify Device must never fail silently — BUGFIX-...-VERIFY-DEVICE-NO-FEEDBACK-2
+
+*Stage 3 of `REVISION-DOCTOR-PWA-WEBAUTHN-ONLY-ACCESS-1` found the Verify Device
+control producing no visible reaction on the SPN4 pilot tablet — five attempts,
+three client configurations, on a tablet holding a valid device-bound credential.
+Every fact had to be recovered from nginx and Postgres afterwards, because the
+page said nothing at all.*
+
+74. **A silent WebAuthn failure is a defect in its own right.** Any ceremony a
+    clinician can start must end in either success or a visible, deterministic
+    message. Denying correctly while showing nothing is still a defect: server
+    denial and UX feedback are two separate requirements, and passing one does
+    not discharge the other.
+75. **Every browser-side ceremony is bounded.** `navigator.credentials.get()`
+    and `.create()` take an `AbortController` signal with an explicit timeout.
+    The WebAuthn `timeout` member is a *hint to the browser*, not a guarantee;
+    the abort is what ends the wait. An unbounded `await` on an external
+    authenticator has no upper limit on how long the UI can lie about being
+    busy — that was this defect.
+76. **Failure types stay distinct where the browser distinguishes them, and are
+    honestly merged where it refuses to.** `NotAllowedError` covers both a
+    missing credential and a dismissed prompt *by design*, so a page cannot
+    probe which credentials a device holds. Never claim to tell them apart.
+    Every reason the module can emit must have wording in the view — a code
+    without wording reaches a clinician as a bare failure, which is this defect
+    reintroduced, and a test pins the producer/consumer pair.
+
+## Android and WebAuthn are independent proofs
+
+77. **Android Keystore proof and WebAuthn proof are separate mechanisms with no
+    shared code path.** `DoctorAppLoginService` contains **0** WebAuthn
+    references; `DoctorDeviceWebAuthnLoginService` contains **0** Keystore
+    references. They share only the gate and the session binding.
+78. **Android working is NOT evidence that the PWA works.** "The pilot is live"
+    was true and irrelevant for ten days while the browser leg was dead. Never
+    infer one leg's health from the other's, in a report, a readiness verdict,
+    a test or a status claim.
+79. **Android retirement is blocked** until a successful real-hardware WebAuthn
+    assertion AND a resulting doctor PWA session are proven on an approved
+    device. Android is currently the only proven working doctor authentication
+    path; retiring it first would lock out every enforced doctor. This is a hard
+    dependency, not a sequencing preference.
+
+## Readiness must not be confused with configuration
+
+80. **`webauthn:readiness` VERDICT=ARMED means configured, never proven live.**
+    It is a feature flag plus a row count. Row presence is not proof: a
+    credential row cannot tell you the authenticator still holds the key, that
+    the browser can start a ceremony, or that any assertion has ever succeeded.
+    Never quote `ARMED` as evidence that the PWA login path works.
+81. **A readiness gate must name the leg it measures.** A metric that counts
+    Android logins says nothing about a sprint that activated the browser. If a
+    gate cannot see the activated path, it is not a gate for that path.
+
+## Time
+
+82. **Application time authority is UTC.** Every stored timestamp, audit row and
+    comparison is UTC.
+83. **Clinic-local operational timestamps must be explicitly labelled WITA
+    (UTC+8).** An unlabelled timestamp that could be read as local time is a
+    reporting defect, not a style preference.
+
+## Scope discipline for this revision
+
+84. **The posture below is measured truth, and stays until re-measured.** No
+    document, attestation or scanner change may move any of these without a
+    fresh measurement of the world:
+    - `single_active_session = true`
+    - `branch_lock = false` (and therefore `BRANCH_LOCK_EFFECTIVE = false`)
+    - enforcement scope `pilot`, cohort `[9, 15, 18]`, `global_permitted = false`
+    - `spare_device_available_per_branch = FAIL` — the owner's pre-live risk
+      acceptance sits **beside** that measurement, never on top of it
+    - `device_loss_runbook_rehearsed = PASS` (Stage 3, attested)
+    - `ANDROID_DOCTOR_AUTH = RETAINED`
+    - Stage 4 remains unauthorized while a prerequisite measures FAIL
+85. **Controlled pre-live evidence is not real-world operational proof.** A
+    rehearsal on a withheld tablet, a synthetic drill, or a ceremony run by the
+    engineer who built the path are all evidence — of a narrower claim than
+    real-world operation. Record which one you have.
+
+## Readiness must prove liveness — FIX-DOCTOR-WEBAUTHN-READINESS-LIVE-PROOF-1
+
+*`webauthn:readiness` reported VERDICT=ARMED every day from 2026-09-09 to
+2026-09-19 while the browser leg produced no successful assertion at all. It was
+not wrong about what it measured; it measured a feature flag and a COUNT(*), and
+neither can change when a ceremony stops working.*
+
+86. **WEBAUTHN-READINESS-LIVE-PROOF-INVARIANT.** Doctor WebAuthn readiness must
+    never be reported READY solely because configuration is armed or because
+    credential, device or binding rows exist. Readiness must incorporate current
+    server-side evidence of a **successfully verified WebAuthn assertion** for
+    the required current device scope. Row presence is not proof.
+87. **The proof source is `sys_audit_logs` action
+    `DOCTOR_DEVICE_WEBAUTHN_LOGIN_SUCCESS`**, which has exactly one writer and
+    is written only after `assertionValidator()->check()` returned, user
+    verification was satisfied, and a session was established. Never widen that
+    to an attempt, a request or a rejection.
+88. **Android keystore login success can never satisfy the WebAuthn live-proof
+    requirement.** `DOCTOR_APP_LOGIN_AUTHORIZATION_SUCCESS` is absent from the
+    live-proof repository by construction — one constant, one action — so this
+    holds without depending on review.
+89. **`last_used_at` is not a readiness input.** It has no doctor column by
+    design (on a shared tablet one doctor's login would mark another ready) and
+    it cannot distinguish a credential that signed from one since revoked. This
+    restates rules 156/157; do not reopen it.
+90. **A historical assertion outside the configured freshness window is STALE.**
+    STALE is its own state: never PASS (nobody has shown the leg works lately)
+    and never FAIL (the credential is valid and no doctor is locked out).
+91. **A proof is invalidated by the path underneath it, evaluated NOW.** A
+    revoked device, a revoked credential, or a binding that no longer satisfies
+    today's policy each void it however recent it was. The state at assertion
+    time is irrelevant — readiness is a statement about the present.
+92. **A proof belongs to the credential that signed it and the device it signed
+    on**, and is never borrowed sideways to prove another device.
+93. **Liveness scope is the DEVICE**, because WebAuthn credential scope is the
+    device. Doctor coverage is a separate authorization question and stays in
+    `DoctorFleetReadinessService`. Never demand fifteen human ceremonies to
+    satisfy a device-scoped invariant, and never build a second coverage engine.
+94. **The population is named, and an empty population is UNVERIFIED.** Worst-of
+    over an empty set is vacuously true; this codebase has already shipped a gate
+    that reported PASS over zero usable tablets that way.
+95. **Every failure mode is UNVERIFIED and never PASS** — a query that throws, a
+    timestamp that will not parse, a freshness policy nobody configured. Being
+    untold is not being reassured.
+96. **Configuration and liveness stay separate keys.** `verdict` answers "is it
+    switched on with rows behind it"; `effective_readiness` answers "has a
+    ceremony actually worked". Never fold them into one word — that word was
+    `ARMED` and it cost ten days.
+97. **Never widen the freshness window to make a red gate green.** The window is
+    owner-decided (7 days, calibrated against the real outage) and changing it to
+    recover a green status inverts the purpose of the gate.
+98. **A readiness-engine GO is not a world GO.** This gate going green means the
+    instrument is honest. Production reporting NOT_READY afterwards is the
+    expected, correct outcome when the estate is genuinely unproven — and is not
+    a reason to soften the engine.

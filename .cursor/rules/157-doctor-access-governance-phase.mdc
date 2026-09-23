@@ -1,0 +1,138 @@
+---
+description: A governance gate must not fail on the outcome its programme exists to reach. The doctor enforcement phase is declared in source control; Phase-4A-exclusive checks report NOT_APPLICABLE outside it and never PASS. The prohibition on fleet-wide enforcement is replaced by an attested precondition, not by nothing. Readiness observability already covers both login paths — do not rebuild it.
+globs:
+  - "app/Support/Android/**"
+  - "app/Modules/DoctorAccess/**"
+  - "app/Modules/DoctorDevice/**"
+  - "config/android_release.php"
+  - "config/doctor_device_enforcement.php"
+  - "tests/Feature/DoctorAccess/**"
+  - "tests/Feature/DoctorDevice/**"
+alwaysApply: false
+---
+
+# Doctor access governance phase
+
+DOCTOR-ACCESS-GLOBAL-ACTIVATION-BLOCKER-CLOSURE-1. These rules close B1–B6 of
+DOCTOR-ACCESS-GLOBAL-ACTIVATION-1. Closing them authorises no activation.
+
+## The phase
+
+`android_release.enforcement.governance_phase` is one of `phase_4a`,
+`global_activation_target`, `global_activated`. It lives in the file that reads
+no environment, for the same reason `global_permitted` and `expected_posture`
+do: **a declaration a host could edit would not audit the host values, it would
+just be a second copy of them agreeing with itself.** Moving the programme
+forward costs a reviewed change.
+
+An unrecognised value resolves to `phase_4a`. A typo must tighten the audit,
+never silently disable a check.
+
+**The phase changes which questions are asked, never who is enforced.**
+Enforcement still requires `global_permitted`, the scope mode, and the flag.
+
+## A skipped check is never a PASS
+
+`STATUS_NOT_APPLICABLE` is a fourth token beside PASS/WATCH/FAIL. It is counted
+separately, excluded from `passed`, and stays visible in the report. A check
+that was not evaluated contributing to a pass count is the false green this
+whole family of gates exists to prevent — and a skipped row that vanished from
+the report would be indistinguishable from one nobody wrote.
+
+## What phase scoping may and may not retire
+
+Scope the clause, not the check. A check whose condition has two halves keeps
+the half that never stops mattering:
+
+- **Armed over nobody is a FAIL in every phase.** A flag armed while the scope
+  covers nobody reads as protection while providing none.
+- **`global_enforcement_not_active` inverts at `global_activated`.** A
+  deployment that declares Phase 5 and then enforces nobody is degraded, and
+  reporting that as a pass would hide an activation that silently failed.
+- **The posture ceiling is untouched.** Outside `phase_4a` the POSTURE_GLOBAL
+  special case stops firing and control falls through to `POSTURE_STRENGTH`,
+  which already catches a deployment enforcing MORE than source declares. Never
+  weaken that comparison.
+- **The preflight's own containment is permanent.** What a preflight did is a
+  fact about that preflight; no phase declaration retires it.
+
+## The prohibition is replaced by a precondition
+
+`global_prerequisites` was declared since Phase 3.5 and read by no application
+code. Outside `phase_4a`, every declared prerequisite must be attested `true` in
+`global_prerequisites_attested` or the scan FAILs.
+
+They ship **all false**. Declaring a later phase cannot pass this gate on its
+own — each attestation costs a reviewed change, the same price as granting
+`global_permitted`.
+
+**An attestation is a signature, not a measurement.** "A spare device is
+available at every branch" is a fact about a room; no query establishes it. As
+of DOCTOR-ACCESS-GLOBAL-ACTIVATION-1 Phase 0 at least two are knowably FALSE —
+no branch holds a spare tablet, and Cabang Telkomas holds none at all. Attesting
+them today records something untrue.
+
+## Readiness observability — do not rebuild it
+
+`DoctorFleetReadinessRepository` reads `sys_audit_logs` over `PROOF_ACTIONS`,
+covering **both** the Android ticket path and the WebAuthn path. Production
+reconciles exactly against it.
+
+- **Never** add `last_authorized_login_at` as a readiness input. One writer
+  (Android ticket redemption), zero readers. A browser-only doctor reads NULL
+  forever.
+- **Never** use `trx_doctor_device_webauthn_credentials.last_used_at`. That
+  table has no doctor column by design; on a shared tablet it would let one
+  doctor's login mark another ready.
+- **Never** widen `PROOF_ACTIONS` to an attempt or a rejection.
+- **Never** redefine `REAL_DEVICE_READY` as "any successful login of any type" —
+  it would discard the intersection with currently-authorized devices.
+- Keep the two paths **distinguishable**. An Android proof is not evidence the
+  browser path works for that doctor, and vice versa.
+
+## Rollback
+
+Both halves roll back to a flag flip with **no data change**. Lock rows, cover
+rows, authorizations, credentials, leases and audit history all survive, and
+re-arming needs no cleanup.
+
+- **An environment edit alone changes nothing.** Production runs cached
+  configuration and Laravel skips the environment file entirely when cached.
+  Activation *and* rollback require a config cache rebuild.
+- **Capture the live cohort before any activation.** The pre-activation scope
+  exists only in the production environment file. Restore the value captured at
+  the window, never a value hardcoded in a runbook.
+- **Incident recovery is SSH-capable, not browser-only.** The HTTP force-logout
+  surface 404s while `single_active_session` is off; `doctor:session-force-logout`
+  is not flag-gated.
+
+  **That surface is 404 on production right now, and the reason is worth reading
+  carefully.** `single_active_session` is true since the 2026-09-17 cutover — but
+  the controller gates on `DoctorEffectiveBranchResolver::enabled()`, which also
+  requires `doctor.branch_lock`, and that was deliberately set **false** later the
+  same night. So the surface is closed for a *different* reason than before, while
+  looking identical from outside.
+
+  Never infer `single_active_session` from whether that route answers. It gates on
+  the branch-lock predicate, not the lease flag. `doctor:session-force-logout`
+  carries no flag guard at all and remains the canonical tool in every posture.
+
+## Branch lock at a provisioned fleet
+
+The old runbook safety property — "arming while the fleet is UNSET is inert" —
+is dead. The fleet is 15 locked, 0 unset, and there is deliberately no path back
+to UNSET.
+
+- Arming `branch_lock` now **narrows every locked doctor** on their next request.
+- `single_active_session` was never lock-scoped: `subjectTo()` is role-scoped, so
+  arming it is live for **every Doctor account at once**. There is no cohort
+  mechanism for that half and none is planned.
+- Verify with a **locked** doctor — their selector should offer only their home
+  branch plus an active cover — not with an UNSET doctor, who no longer exists.
+- Never write to production to make a runbook true.
+
+## Terminology
+
+The readiness verdict is `TRUSTED_PATHS_COMPLETE`. `GLOBAL_READY` survives only
+where it records the rename; it must never appear as a live verdict, test name
+or printed line. Do not rewrite quoted historical production output.

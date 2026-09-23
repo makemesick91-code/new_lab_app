@@ -18,11 +18,15 @@ use App\Modules\Consent\Controllers\RmeVisitConsentController;
 use App\Modules\Delivery\Controllers\DeliveryController;
 use App\Modules\Doctor\Controllers\DoctorAccountLinkController;
 use App\Modules\Doctor\Controllers\DoctorController;
+use App\Modules\DoctorAccess\Controllers\DoctorBranchLockController;
+use App\Modules\DoctorAccess\Controllers\DoctorBreakGlassController;
 use App\Modules\DoctorDevice\Controllers\DoctorDeviceAuthorizationController;
 use App\Modules\DoctorDevice\Controllers\DoctorDeviceController;
 use App\Modules\DoctorDevice\Controllers\DoctorDeviceLoginController;
+use App\Modules\DoctorDevice\Controllers\DoctorDeviceRegistrationWorkflowController;
 use App\Modules\DoctorDevice\Controllers\DoctorDeviceWebAuthnController;
 use App\Modules\DoctorDevice\Controllers\DoctorDeviceWebAuthnLoginController;
+use App\Modules\FrontOfficeDevice\Controllers\FrontOfficeDeviceWebAuthnLoginController;
 use App\Modules\Inventory\Controllers\GoodsReceiptController;
 use App\Modules\Inventory\Controllers\InventoryActivityLogController;
 use App\Modules\Inventory\Controllers\InventoryAlertController;
@@ -457,10 +461,36 @@ Route::middleware('auth')->prefix('settings')->name('settings.')->group(function
     | global Gate::before. There is deliberately NO destroy route — trust is
     | withdrawn with `revoke`, never by deleting security history.
     */
-    Route::middleware('permission:view_doctor_devices|manage_doctor_devices')->group(function () {
+    /*
+    | DAENGTISIAMS-SUNU-FINAL-RELEASE-CANDIDATE-1 / D11 — the registration half,
+    | opened to the filing authority (`register_doctor_devices`, Supervisor RME).
+    |
+    | Split into its own group rather than widening the management group below,
+    | so the filer cannot even REACH credential enrolment, the lifecycle
+    | actions, the Android pairing approval or the metadata editor. The
+    | policies would refuse them anyway; this makes the route layer say so too,
+    | instead of leaving a single permission list as the only thing standing
+    | between a filer and the trust decisions.
+    |
+    | Filing produces a PENDING_APPROVAL row, which `DoctorAppLoginGate`
+    | refuses at its first check, so nothing here admits a device to service.
+    */
+    Route::middleware('permission:view_doctor_devices|manage_doctor_devices|register_doctor_devices')->group(function () {
         Route::resource('doctor-devices', DoctorDeviceController::class)
-            ->except(['destroy'])
+            ->only(['index', 'create', 'store', 'show'])
             ->parameters(['doctor-devices' => 'doctorDevice']);
+    });
+
+    Route::middleware('permission:view_doctor_devices|manage_doctor_devices')->group(function () {
+        // Metadata editing stays with management: renaming or re-branching a
+        // trusted tablet is a change to a device already in service.
+        Route::resource('doctor-devices', DoctorDeviceController::class)
+            ->only(['edit', 'update'])
+            ->parameters(['doctor-devices' => 'doctorDevice']);
+
+        // D11 — the second party's admission of a filed tablet.
+        Route::post('doctor-devices/{doctorDevice}/approve-registration', [DoctorDeviceController::class, 'approveRegistration'])
+            ->name('doctor-devices.approve-registration');
 
         Route::post('doctor-devices/{doctorDevice}/disable', [DoctorDeviceController::class, 'disable'])
             ->name('doctor-devices.disable');
@@ -498,6 +528,56 @@ Route::middleware('auth')->prefix('settings')->name('settings.')->group(function
         Route::post('doctor-devices/{doctorDevice}/webauthn/{credential}/revoke', [DoctorDeviceWebAuthnController::class, 'revoke'])
             ->name('doctor-devices.webauthn.revoke');
     });
+
+    /*
+    |----------------------------------------------------------------------
+    | DOCTOR-DEVICE-GUIDED-REGISTRATION-WORKFLOW-1 — Pendaftaran Device Dokter
+    |----------------------------------------------------------------------
+    | A GUIDE over the registry above, not a second copy of it. Every step but
+    | one posts to the mutation route that already owns it — filing, metadata,
+    | credential enrolment, revocation and registration approval are all the
+    | existing endpoints, with their existing policies. Nothing here duplicates
+    | a security-sensitive action.
+    |
+    | The ONE new mutation is `doctors` (step 4): it files PENDING authorization
+    | requests with SOURCE_ADMIN so an operator no longer has to wait for a
+    | doctor to produce one by attempting a login. It cannot approve them —
+    | that stays in Approval Device Dokter behind
+    | `manage_doctor_device_authorizations`.
+    |
+    | The read group admits the FILING authority too, because the workflow is
+    | shared by both parties: Supervisor RME files a tablet, Super Admin enrols
+    | and admits it. A filer who opens step 2 or 3 sees "Menunggu Super Admin",
+    | and the underlying POSTs are unreachable to them at the route layer above
+    | as well as at the policy.
+    */
+    Route::middleware('permission:view_doctor_devices|manage_doctor_devices|register_doctor_devices')
+        ->prefix('doctor-device-registration')
+        ->name('doctor-device-registration.')
+        ->group(function () {
+            Route::get('/', [DoctorDeviceRegistrationWorkflowController::class, 'index'])->name('index');
+            Route::get('create', [DoctorDeviceRegistrationWorkflowController::class, 'create'])->name('create');
+
+            // `whereNumber` so `create` above is never captured as a device id.
+            Route::prefix('{registration}')->whereNumber('registration')->group(function () {
+                Route::get('/', [DoctorDeviceRegistrationWorkflowController::class, 'show'])->name('show');
+                Route::get('device', [DoctorDeviceRegistrationWorkflowController::class, 'device'])->name('device');
+                Route::get('webauthn', [DoctorDeviceRegistrationWorkflowController::class, 'webauthn'])->name('webauthn');
+                Route::get('approval', [DoctorDeviceRegistrationWorkflowController::class, 'approval'])->name('approval');
+                Route::get('doctors', [DoctorDeviceRegistrationWorkflowController::class, 'doctors'])->name('doctors');
+                Route::get('login-test', [DoctorDeviceRegistrationWorkflowController::class, 'loginTest'])->name('login-test');
+                Route::get('readiness', [DoctorDeviceRegistrationWorkflowController::class, 'readiness'])->name('readiness');
+                Route::get('complete', [DoctorDeviceRegistrationWorkflowController::class, 'complete'])->name('complete');
+                Route::get('history', [DoctorDeviceRegistrationWorkflowController::class, 'history'])->name('history');
+
+                // The only new mutation. Its own permission gate, because the
+                // read group above deliberately admits the filing authority and
+                // filing a tablet is not authorizing doctors onto one.
+                Route::post('doctors', [DoctorDeviceRegistrationWorkflowController::class, 'storeDoctors'])
+                    ->middleware('permission:manage_doctor_device_authorizations')
+                    ->name('doctors.store');
+            });
+        });
 
     Route::middleware('permission:view_clinic_master_data|manage_clinic_master_data')->group(function () {
         Route::resource('clinic-rooms', ClinicRoomController::class)
@@ -664,6 +744,116 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
         Route::post('branch-change-requests/{branchChangeRequest}/reject', [BranchChangeRequestController::class, 'reject'])
             ->name('branch-change-requests.reject')
             ->whereNumber('branchChangeRequest');
+    });
+
+    /*
+     | DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1 — a doctor's permanent home
+     | branch, temporary branch cover, and the approver's lease-release action.
+     |
+     | Placed here, immediately after the FEATURE-DAILY-BRANCH-CONTEXT-LOCK-1
+     | block, for two reasons:
+     |
+     |  (a) BEFORE the `permission:view_clinic_visits|manage_clinic_visits`
+     |      group opened below, because a doctor filing an assignment request
+     |      may hold none of the workspace permissions — bouncing them off a
+     |      permission they do not need would make the request surface
+     |      unreachable for exactly the people it exists for;
+     |  (b) authorization is per action through DoctorBranchLockRequestPolicy
+     |      and DoctorBranchCoverPolicy, and every approver action additionally
+     |      sits behind an explicit `permission:` gate, so the route boundary
+     |      and the sidebar read one definition.
+     |
+     | ORDERING TRAP, the same one CLAUDE.md records for
+     | `inventory.purchase-requests.workflow`: the literal-segment routes
+     | (`doctor-branch-locks/new`, `doctor-branch-locks/requests/…`) are
+     | declared BEFORE `doctor-branch-locks/{doctor}/release-session`, and that
+     | `{doctor}` segment carries whereNumber, so the literal `requests` can
+     | never be captured as a doctor id.
+     |
+     | These are `permission:` middlewares (the Spatie alias registered at
+     | bootstrap/app.php), not `can:` gates: this sprint introduces permissions,
+     | so there is nothing to define in RepositoryServiceProvider's $gates.
+     */
+    Route::get('doctor-branch-locks/new', [DoctorBranchLockController::class, 'create'])
+        ->name('doctor-branch-locks.create');
+    Route::post('doctor-branch-locks', [DoctorBranchLockController::class, 'store'])
+        ->name('doctor-branch-locks.store');
+    Route::post('doctor-branch-locks/requests/{doctorBranchLockRequest}/cancel', [DoctorBranchLockController::class, 'cancel'])
+        ->name('doctor-branch-locks.cancel')
+        ->whereNumber('doctorBranchLockRequest');
+
+    // The queue is READ authority: an operator who may see the standing state —
+    // including a lock that has silently stopped applying — need not be able to
+    // decide anything.
+    Route::middleware('permission:view_doctor_branch_locks|approve_doctor_branch_locks|manage_doctor_branch_locks')->group(function () {
+        Route::get('doctor-branch-locks', [DoctorBranchLockController::class, 'index'])
+            ->name('doctor-branch-locks.index');
+    });
+
+    // Filing on another doctor's behalf, and filing cover at all. Deliberately
+    // separate from `approve_`: maker and checker are different permissions.
+    Route::middleware('permission:manage_doctor_branch_locks')->group(function () {
+        Route::get('doctor-branch-covers/new', [DoctorBranchLockController::class, 'coverCreate'])
+            ->name('doctor-branch-covers.create');
+        Route::post('doctor-branch-covers', [DoctorBranchLockController::class, 'coverStore'])
+            ->name('doctor-branch-covers.store');
+    });
+
+    Route::middleware('permission:approve_doctor_branch_locks')->group(function () {
+        Route::post('doctor-branch-locks/requests/{doctorBranchLockRequest}/approve', [DoctorBranchLockController::class, 'approve'])
+            ->name('doctor-branch-locks.approve')
+            ->whereNumber('doctorBranchLockRequest');
+        Route::post('doctor-branch-locks/requests/{doctorBranchLockRequest}/reject', [DoctorBranchLockController::class, 'reject'])
+            ->name('doctor-branch-locks.reject')
+            ->whereNumber('doctorBranchLockRequest');
+        Route::post('doctor-branch-covers/{doctorBranchCover}/approve', [DoctorBranchLockController::class, 'coverApprove'])
+            ->name('doctor-branch-covers.approve')
+            ->whereNumber('doctorBranchCover');
+        Route::post('doctor-branch-covers/{doctorBranchCover}/reject', [DoctorBranchLockController::class, 'coverReject'])
+            ->name('doctor-branch-covers.reject')
+            ->whereNumber('doctorBranchCover');
+    });
+
+    // Withdrawing a cover is open to an approver at any time, and to the row's
+    // own requester while it is still pending — DoctorBranchCoverPolicy::cancel
+    // is the boundary; this middleware only keeps unrelated roles off the URL.
+    Route::middleware('permission:approve_doctor_branch_locks|manage_doctor_branch_locks')->group(function () {
+        Route::post('doctor-branch-covers/{doctorBranchCover}/cancel', [DoctorBranchLockController::class, 'coverCancel'])
+            ->name('doctor-branch-covers.cancel')
+            ->whereNumber('doctorBranchCover');
+    });
+
+    // Ruling P17 — ends a login session and NOTHING else. No device, no
+    // authorization and no WebAuthn credential is touched, so it carries its
+    // own permission rather than riding on the approval one.
+    Route::middleware('permission:release_doctor_session_leases')->group(function () {
+        Route::post('doctor-branch-locks/{doctor}/release-session', [DoctorBranchLockController::class, 'releaseSession'])
+            ->name('doctor-branch-locks.release-session')
+            ->whereNumber('doctor');
+    });
+
+    /*
+     * REVISION-DOCTOR-PWA-WEBAUTHN-ONLY-ACCESS-1 Stage 2 — break-glass.
+     *
+     * Its OWN permission, not folded into the device-authorization one:
+     * admitting a doctor with no device proof is a strictly stronger act than
+     * authorizing a device, so reusing that permission would have handed the
+     * bypass to everyone who already holds it.
+     *
+     * The middleware keeps unrelated roles off the URL; the SERVICE is the
+     * boundary and re-checks the same permission, so a caller that never
+     * reaches a controller cannot file a grant either.
+     */
+    Route::middleware('permission:grant_doctor_break_glass_access')->group(function () {
+        Route::get('doctor-break-glass', [DoctorBreakGlassController::class, 'index'])
+            ->name('doctor-break-glass.index');
+
+        Route::post('doctor-break-glass', [DoctorBreakGlassController::class, 'store'])
+            ->name('doctor-break-glass.store');
+
+        Route::post('doctor-break-glass/{grant}/revoke', [DoctorBreakGlassController::class, 'revoke'])
+            ->name('doctor-break-glass.revoke')
+            ->whereNumber('grant');
     });
 
     Route::middleware('permission:view_clinic_visits|manage_clinic_visits')->group(function () {
@@ -1747,6 +1937,36 @@ Route::middleware('web')->group(function () {
             ->name('doctor-device-webauthn.options');
         Route::post('doctor-device-webauthn', [DoctorDeviceWebAuthnLoginController::class, 'store'])
             ->name('doctor-device-webauthn.store');
+    });
+});
+
+/*
+| REVISION-FRONT-OFFICE-BRANCH-DEVICE-LOCK-1 — the front-desk equivalent.
+|
+| Same shape and the same reasoning as the doctor ceremony above: unauthenticated
+| because the denied login destroyed the session, holding only a short-lived
+| marker that names the account whose password was already accepted. The marker
+| is not a credential — completing the ceremony needs a private key held by an
+| APPROVED device whose `branch_id` equals the branch the account is pinned to,
+| and all of that is re-asserted server-side before a session exists.
+|
+| Reachable at all only when `front_office.branch_device_lock` is on AND the
+| account is one of the armed ids. With the flag off these routes exist but
+| refuse, and every Front Office login behaves exactly as it does today.
+|
+| Throttled on the same clinic-shaped reasoning recorded above: tablets sit
+| behind one NAT address, so a per-IP limit is really a per-clinic limit. One
+| login costs two requests. It is a rate limit, not a lockout.
+*/
+Route::middleware('web')->group(function () {
+    Route::get('front-office-device-webauthn', [FrontOfficeDeviceWebAuthnLoginController::class, 'show'])
+        ->name('front-office-device-webauthn.show');
+
+    Route::middleware('throttle:30,1')->group(function () {
+        Route::post('front-office-device-webauthn/options', [FrontOfficeDeviceWebAuthnLoginController::class, 'options'])
+            ->name('front-office-device-webauthn.options');
+        Route::post('front-office-device-webauthn', [FrontOfficeDeviceWebAuthnLoginController::class, 'store'])
+            ->name('front-office-device-webauthn.store');
     });
 });
 

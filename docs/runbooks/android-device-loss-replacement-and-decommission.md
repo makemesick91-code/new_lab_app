@@ -75,9 +75,25 @@ devices per branch = concurrent Doctor stations + 1 spare
 ```
 
 The `+1` is the whole policy. Without it, one broken tablet under enforcement is
-a branch that cannot see patients — which is precisely why enforcement stays off
-until `spare_device_available_per_branch` is satisfied
+a branch that cannot see patients — which is precisely why FLEET-WIDE
+enforcement stays off until `spare_device_available_per_branch` is satisfied
 (`config/android_release.enforcement.global_prerequisites`).
+
+**This sizing is LEVEL 3 and is NOT the bar for controlled activation testing.**
+`REVISION-DOCTOR-TRUSTED-DEVICE-ESTATE-CAPACITY-POLICY-1` separated three
+requirements that had been asked with one word:
+
+| Level | What it asks | Gates activation testing? |
+|---|---|---|
+| 1 `trusted_device_activation_test_coverage` | `>= 1` device that can be logged into, at every staffed branch | **yes** |
+| 2 `trusted_device_room_capacity` | `>= 1` device per active Doctor room | no — normal-production target |
+| 3 `spare_device_available_per_branch` | the `+1` above — survives losing one | no — high availability |
+
+Controlled activation TESTING is gated on Level 1
+(`config/android_release.enforcement.activation_test_prerequisites`). Level 3 is
+unchanged, still required before fleet-wide enforcement, and still FAIL today.
+`php artisan doctor:estate-resilience` prints all three separately; do not read
+`ESTATE_RESILIENCE` as any one of them — it is the worst of every gate.
 
 **Cold spare** (recommended for the pilot): provisioned, enrolled, `DISABLED` in
 the registry, charged monthly. Activation is one status change, and a disabled
@@ -99,6 +115,16 @@ Before enforcement is ever switched on, per branch:
 - [ ] concurrent Doctor stations counted (peak, not average)
 - [ ] one spare available
 - [ ] a named fallback for the day it all goes wrong
+
+Before controlled activation TESTING (the lower Level-1 bar), per staffed
+branch:
+
+- [ ] one device that is eligible **and** carries an unrevoked credential
+- [ ] at least one doctor authorized on it (`authorization_coverage` PASS)
+- [ ] `doctor:estate-resilience` prints `ACTIVATION_TEST_COVERAGE=PASS`
+- [ ] the prerequisite attested in
+      `activation_test_prerequisites_attested`, and **only after** the line
+      above measures PASS
 
 The fallback is **browser login**, which is why Phase 3.5 leaves
 `DOCTOR_BROWSER_LOGIN_DENIED = false`. Removing that door before spares exist is

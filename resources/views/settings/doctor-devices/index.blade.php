@@ -135,7 +135,9 @@
             @if ($hasFilters)
                 <x-ui.button variant="secondary" size="sm" :href="route('settings.doctor-devices.index')">Atur Ulang</x-ui.button>
             @endif
-            @can('create', \App\Modules\DoctorDevice\Models\DoctorDevice::class)
+            {{-- D11: `register`, not `create` — the filing authority is what
+                 opens this form, and `create` is management-only. --}}
+            @can('register', \App\Modules\DoctorDevice\Models\DoctorDevice::class)
                 <x-ui.button size="sm" :href="route('settings.doctor-devices.create')">Daftarkan Perangkat</x-ui.button>
             @endcan
         </x-slot:actions>

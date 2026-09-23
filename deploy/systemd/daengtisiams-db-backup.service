@@ -1,0 +1,60 @@
+[Unit]
+# DaengtisiaMS — daily PostgreSQL backup (ENT-12 Backup & Disaster Recovery).
+#
+# WHY THIS UNIT EXISTS (B3 — there was no scheduled database backup at all).
+# Before this unit, production took a database dump only as a side effect of a
+# deploy (scripts/deploy-vps.sh takes a pre-deploy snapshot). On a day with no
+# deploy there was NO backup: root and the runtime user both had an empty
+# crontab, /etc/cron.d contained nothing that ran a dump, and the only
+# application timer on the host — daengtisiams-pilot-snapshot.timer — runs
+# `php artisan pilot:performance-snapshot`, which contains no dump at all. A
+# performance snapshot is not a backup.
+#
+# This unit runs the already-verified ENT-12 backup path,
+# scripts/backup-vps.sh, which dumps the database into the NSF-10 allowed
+# backup directory, verifies the dump (php artisan foundation:backup-verify)
+# and prunes by BACKUP_DR_RETENTION_DAYS while never dropping below the
+# minimum retained count. It runs the script DIRECTLY rather than through
+# Laravel's scheduler: a backup must not depend on the application booting, and
+# nothing on this host invokes `schedule:run`, so anything registered in the
+# Laravel scheduler is currently a silent no-op. See
+# docs/runbooks/backup-dr-restore-rehearsal-runbook.md.
+Description=DaengtisiaMS daily database backup (ENT-12)
+Wants=network-online.target
+After=network-online.target postgresql.service
+
+[Service]
+Type=oneshot
+
+# INFRA-SEC-RUNTIME-1: the backup runs as the dedicated DaengtisiaMS runtime
+# identity, never root and never the shared www-data account. It reads the
+# application secret and writes clinical data dumps into a runtime-owned,
+# 0640 private directory; running it as root would leave root-owned files in
+# storage/ that PHP-FPM can no longer manage, which is exactly the failure
+# mode the deploy path had to be hardened against.
+# Must match DMS_RUNTIME_USER / DMS_RUNTIME_GROUP in deploy/runtime-identity.conf.
+User=daengtisiams
+Group=daengtisiams
+WorkingDirectory=/var/www/asia-dental-lab-v2
+
+# The script is fail-fast (set -euo pipefail) and verifies the dump it just
+# wrote, so a truncated, empty or unverifiable backup exits non-zero. Type=oneshot
+# with no Restart= means that non-zero status puts the unit into `failed` and
+# LEAVES it there — a silent retry loop would hide a broken backup.
+ExecStart=/usr/bin/bash /var/www/asia-dental-lab-v2/scripts/backup-vps.sh
+
+# Backups are I/O heavy and must never compete with clinical traffic.
+Nice=10
+IOSchedulingClass=idle
+
+# A dump that has not finished in 30 minutes is wrong, not slow. Failing is
+# better than overlapping the next scheduled run.
+TimeoutStartSec=1800
+
+# Non-sensitive stdout/stderr to the journal only (no PII, no secrets).
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=daengtisiams-db-backup
+
+[Install]
+WantedBy=multi-user.target

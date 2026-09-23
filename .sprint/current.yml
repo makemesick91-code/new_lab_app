@@ -1,39 +1,53 @@
-### Active sprint manifest — FULL-PATIENT-ESTATE-RESET-1
-### Validated by: php artisan sprint:manifest-check
+# DAENGTISIAMS-SUNU-FINAL-RELEASE-CANDIDATE-1
+#
+# The final pre-go-live integration for Cabang Sunu (SPN4). Twelve items, D1-D12,
+# built after the owner postponed the dated go-live in favour of doing the whole
+# candidate properly and running ONE authoritative Full Suite at the end.
+#
+# Five of the twelve framings were corrected by measurement before any code was
+# written — D3 and D4 were already implemented, D6's ghost command had no caller
+# at all, and D12's sidebar coverage was already complete. Those items are
+# recorded as complete-with-no-code-change rather than padded with work.
+#
+# It arms no flag, widens no enforcement scope, retires nothing, starts no stage,
+# and mutates no production state. The Front Office migration is governed,
+# dry-run by default, and has NOT been applied.
+#
+#   D1  logging a doctor out releases their session lease        (committed 8cf9471a)
+#   D2  Admin Klinik + Kasir merge into Front Office
+#   D3  registration date defaults to the clinical day           (committed 33d93b83)
+#   D4  adversarial tests; the second gate already existed       (no new runtime)
+#   D5  confirm the branch before the clinical day locks to it
+#   D6  ghost command investigated: NO CALLER, NO CODE CHANGE
+#   D7  WebAuthn readiness fails closed by default               (committed 33d93b83)
+#   D8  WebAuthn login stamps the authorization it used          (committed 33d93b83)
+#   D9  middleware governance test made non-vacuous              (committed 33d93b83)
+#   D10 pilot cohort ceiling raised to carry one branch, not the fleet
+#   D11 delegated device registration, trust decision unmoved
+#   D12 sidebar coverage turned into a mutation-proven guarantee
 
-id: FULL-PATIENT-ESTATE-RESET-1
-type: DOCS_ONLY
-module: Operations
-title: "A sanitized operator runbook for the owner-authorized one-time removal of the pre-go-live fictional patient estate: 50 patients and 777 patient-owned rows across 51 tables, executed by a human against production under a fail-closed transaction, with in-app notification residue scoped in by proof, SATUSEHAT audit evidence asserted as preserved, and the pre-existing unreferenced storage orphans explicitly excluded"
+id: DAENGTISIAMS-SUNU-FINAL-RELEASE-CANDIDATE-1
+type: MODULE_SPRINT
+module: DoctorDevice,RmeOnlineContext,ClinicVisit,AccessControl
+title: "Sunu final release candidate: Front Office merge, delegated device registration, daily-branch confirmation, cohort ceiling, sidebar guarantee"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
-
-runtime_change: false           # documentation only. No application source, no command,
-                                # no service, no observer, no job. The destructive SQL is
-                                # printed in a runbook for a human to paste; it is
-                                # deliberately NOT wired into a deploy hook, migration,
-                                # seeder, CI step or application startup path.
-schema_change: false            # no migration, no column, no index
-frontend_change: false          # no JS, no CSS, no Blade
-security_impact: false          # no permission, role, policy, gate or auth path changes.
-                                # The runbook forbids touching the Front Office branch and
-                                # device lock flags and the doctor device registry.
-branch_isolation_impact: false  # the wipe removes every branch's patient data by explicit
-                                # owner scope correction; no branch scoping rule changes
-ledger_impact: false            # no inventory ledger behaviour. Patient-owned lab billing
-                                # rows are removed as data, by proven exclusive ownership,
-                                # not by changing any billing rule.
-
-deploy_required: false          # nothing to deploy. The runbook is executed by an
-                                # operator over SSH against the production database.
-browser_required: false         # post-wipe empty-state verification is described in the
-                                # runbook for the operator, not performed by this change.
-
-notes: |
-  Authored because the Claude Code auto-mode classifier blocks destructive production
-  database operations from an agent session. The owner instructed that no bypass be
-  attempted and that an operator-ready runbook be produced instead. That instruction was
-  followed: no alternate shell, tunnel or database client was used.
-
-  The frozen manifest in the runbook was measured read-only against production on
-  2026-09-23 (WITA) and MUST be re-measured immediately before execution. The runbook
-  fails closed if the patient count is not exactly 50.
+runtime_change: true
+schema_change: false
+frontend_change: false
+security_impact: true
+branch_isolation_impact: true
+ledger_impact: false
+deploy_required: true
+browser_required: false
+test_profiles: []
+go_tag: daengtisiams-sunu-go-live-final-1-go
+go_tag_created: false
+inherits_parent_programme: DOCTOR-ACCESS-GLOBAL-ACTIVATION-1
+inherits_parent_sprint: DOCTOR-ACCESS-GLOBAL-ACTIVATION-1-HALF-A-CUTOVER
+inherits_parent_go: doctor-access-global-activation-half-a-1-go
+inherits_pilot_go: doctor-pwa-multi-doctor-pilot-1-go
+inherits_readiness_go: doctor-access-global-device-enforcement-readiness-1-go
+inherits_child_go: fix-doctor-webauthn-readiness-live-proof-1-go
+inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
+inherits_hold: FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1/FIX-02
+supersedes: FIX-SUNU-GO-LIVE-BLOCKERS-1

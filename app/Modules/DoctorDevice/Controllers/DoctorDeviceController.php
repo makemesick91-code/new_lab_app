@@ -12,6 +12,7 @@ use App\Modules\DoctorDevice\Requests\StoreDoctorDeviceRequest;
 use App\Modules\DoctorDevice\Requests\UpdateDoctorDeviceRequest;
 use App\Modules\DoctorDevice\Services\DoctorDeviceEnrollmentService;
 use App\Modules\DoctorDevice\Services\DoctorDeviceService;
+use App\Modules\DoctorDevice\Support\ReturnsToRegistrationWorkflow;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -26,6 +27,7 @@ use Illuminate\View\View;
 class DoctorDeviceController extends Controller
 {
     use AuthorizesRequests;
+    use ReturnsToRegistrationWorkflow;
 
     public function __construct(
         private readonly DoctorDeviceService $devices,
@@ -61,7 +63,9 @@ class DoctorDeviceController extends Controller
 
     public function create(): View
     {
-        $this->authorize('create', DoctorDevice::class);
+        // D11 — `register`, matching StoreDoctorDeviceRequest. Opening the
+        // form is the filing authority; `create` is the trust authority.
+        $this->authorize('register', DoctorDevice::class);
 
         return view('settings.doctor-devices.create', [
             'branches' => $this->branches->listRmeEnabled(),
@@ -72,9 +76,14 @@ class DoctorDeviceController extends Controller
     {
         $device = $this->devices->register($request->validated(), $request->user());
 
+        // The filer must not walk away believing the tablet is in service. It
+        // is not: a PENDING_APPROVAL row is refused by the login gate until a
+        // Super Admin approves it and a credential is enrolled on it.
         return redirect()
-            ->route('settings.doctor-devices.show', $device)
-            ->with('status', 'Perangkat berhasil didaftarkan.');
+            ->route($this->workflowReturnRoute($request, $device, 'show') ?? 'settings.doctor-devices.show', $device)
+            ->with('status', $device->isPendingApproval()
+                ? 'Perangkat terdaftar dan menunggu persetujuan Super Admin. Perangkat belum dapat dipakai login.'
+                : 'Perangkat berhasil didaftarkan.');
     }
 
     public function show(DoctorDevice $doctorDevice): View
@@ -101,7 +110,7 @@ class DoctorDeviceController extends Controller
         $this->devices->updateMetadata($doctorDevice, $request->validated(), $request->user());
 
         return redirect()
-            ->route('settings.doctor-devices.show', $doctorDevice)
+            ->route($this->workflowReturnRoute($request, $doctorDevice, 'device') ?? 'settings.doctor-devices.show', $doctorDevice)
             ->with('status', 'Data perangkat diperbarui.');
     }
 
@@ -123,6 +132,24 @@ class DoctorDeviceController extends Controller
         return redirect()
             ->route('settings.doctor-devices.show', $doctorDevice)
             ->with('status', 'Perangkat diaktifkan kembali.');
+    }
+
+    /**
+     * D11 — the second party admits a filed tablet into service.
+     *
+     * `manageLifecycle` is NOT reused here: it is the disable/reactivate/
+     * revoke authority, and a future widening of that operational set must
+     * not silently carry the admission decision with it.
+     */
+    public function approveRegistration(Request $request, DoctorDevice $doctorDevice): RedirectResponse
+    {
+        $this->authorize('approveRegistration', $doctorDevice);
+
+        $this->devices->approveRegistration($doctorDevice, $request->user());
+
+        return redirect()
+            ->route($this->workflowReturnRoute($request, $doctorDevice, 'approval') ?? 'settings.doctor-devices.show', $doctorDevice)
+            ->with('status', 'Pendaftaran perangkat disetujui. Perangkat masih harus mendaftarkan kredensial sebelum dapat dipakai login.');
     }
 
     public function revoke(DoctorDeviceReasonRequest $request, DoctorDevice $doctorDevice): RedirectResponse

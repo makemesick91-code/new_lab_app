@@ -2,8 +2,10 @@
 
 namespace App\Support\Android;
 
+use App\Modules\DoctorAccess\Services\DoctorGlobalEnforcementReadinessService;
 use App\Modules\DoctorDevice\Services\DoctorAppLoginGate;
 use App\Services\Foundation\FeatureFlagService;
+use Throwable;
 
 /**
  * PHASE4A-DOCTOR-ANDROID-PILOT-PREPARATION-1 — is the next sprint allowed to
@@ -25,6 +27,115 @@ use App\Services\Foundation\FeatureFlagService;
  */
 class Phase4aPilotPreparationScanner
 {
+    /**
+     * Enforcement is not a boolean, and reporting it as one is what made this
+     * gate wrong. DOCTOR-PWA-GLOBAL-ROLLOUT-READINESS-1 names the four states
+     * the programme actually passes through, so "armed" stops meaning both
+     * "an owner-approved pilot is running" and "the fleet is locked out".
+     */
+    public const POSTURE_OFF = 'off';
+
+    /** A named, ceilinged cohort is enforced. Every other doctor keeps browser login. */
+    public const POSTURE_BOUNDED_PILOT = 'bounded_pilot';
+
+    /** The bounded pilot still runs, and the fleet is being measured for a widening that has NOT happened. */
+    public const POSTURE_GLOBAL_ROLLOUT_READINESS = 'global_rollout_readiness';
+
+    /** Phase 5. Never reachable from this phase. */
+    public const POSTURE_GLOBAL = 'global';
+
+    /** Armed over a scope that resolves to nobody — a state, not a declaration. */
+    public const POSTURE_INDETERMINATE = 'indeterminate';
+
+    /**
+     * Declarable postures. `indeterminate` is deliberately absent: it is
+     * something a deployment can be observed in, never something a reviewer
+     * may sign off on.
+     *
+     * @var list<string>
+     */
+    public const POSTURES = [
+        self::POSTURE_OFF,
+        self::POSTURE_BOUNDED_PILOT,
+        self::POSTURE_GLOBAL_ROLLOUT_READINESS,
+        self::POSTURE_GLOBAL,
+    ];
+
+    /**
+     * How much is enforced, ordered. Used to compare a deployment against the
+     * declared ceiling.
+     *
+     * `global_rollout_readiness` sits at the SAME strength as `bounded_pilot`
+     * and not above it, which is the whole point of the posture: measuring the
+     * fleet for a widening enforces nobody new. If readiness ever became a
+     * stronger rung than the pilot it describes, it would be an activation.
+     *
+     * @var array<string,int>
+     */
+    public const POSTURE_STRENGTH = [
+        self::POSTURE_OFF => 0,
+        self::POSTURE_BOUNDED_PILOT => 1,
+        self::POSTURE_GLOBAL_ROLLOUT_READINESS => 1,
+        self::POSTURE_GLOBAL => 2,
+        self::POSTURE_INDETERMINATE => 2,
+    ];
+
+    /**
+     * DOCTOR-ACCESS-GLOBAL-ACTIVATION-BLOCKER-CLOSURE-1 (B2) — which governance
+     * phase this deployment is being audited AGAINST.
+     *
+     * THE DEFECT THIS EXISTS TO FIX. Four checks in this scanner are correct
+     * for Phase 4A and only for Phase 4A: they assert that fleet-wide
+     * enforcement is neither permitted, declared, nor live. A Phase 5 that
+     * honestly grants the permission and arms the fleet would therefore make
+     * this scanner FAIL on the exact state the programme was built to reach —
+     * a gate reddening on its own success teaches operators to ignore it, and
+     * an ignored gate protects nothing. That is the same argument
+     * DOCTOR-PWA-GLOBAL-ROLLOUT-READINESS-1 already made about
+     * `enforcement_inactive`, applied to the four siblings it left behind.
+     *
+     * WHAT THIS IS NOT. It is not a way to switch a safety check off. In
+     * `phase_4a` every affected check behaves byte-identically to before this
+     * key existed, so nothing currently green moves. Outside `phase_4a` they
+     * report {@see self::STATUS_NOT_APPLICABLE} — visible in the report,
+     * counted separately, and never PASS. A check that was not evaluated
+     * reporting PASS is precisely the false green this family of gates exists
+     * to prevent.
+     *
+     * WHY IT LIVES IN SOURCE CONTROL. Same reason as `global_permitted` and
+     * `expected_posture`: a phase a host could edit would not audit the host
+     * values, it would just be a second copy of them agreeing with itself.
+     * Moving the programme to a later phase costs a reviewed change.
+     *
+     * UNRECOGNISED VALUES FAIL TOWARDS THE STRICTEST PHASE. An unreadable or
+     * misspelled declaration resolves to `phase_4a`, so a typo tightens the
+     * audit rather than silently disabling four checks.
+     */
+    public const PHASE_4A = 'phase_4a';
+
+    /** Prerequisites are being assembled for a widening that has NOT been applied. */
+    public const PHASE_GLOBAL_ACTIVATION_TARGET = 'global_activation_target';
+
+    /** Phase 5 is live: fleet-wide enforcement is the expected, approved state. */
+    public const PHASE_GLOBAL_ACTIVATED = 'global_activated';
+
+    /** @var list<string> */
+    public const GOVERNANCE_PHASES = [
+        self::PHASE_4A,
+        self::PHASE_GLOBAL_ACTIVATION_TARGET,
+        self::PHASE_GLOBAL_ACTIVATED,
+    ];
+
+    /**
+     * A check that does not apply to the declared phase.
+     *
+     * Deliberately a FOURTH token beside PASS/WATCH/FAIL rather than a reuse of
+     * PASS. {@see self::scan()} counts it on its own and excludes it from
+     * `passed`, so a reader can never mistake "not evaluated" for "evaluated
+     * and satisfied".
+     */
+    public const STATUS_NOT_APPLICABLE = 'NOT_APPLICABLE';
+
     public function __construct(
         private readonly FeatureFlagService $flags,
         private readonly AndroidDoctorEnforcementScope $scope,
@@ -49,6 +160,17 @@ class Phase4aPilotPreparationScanner
 
         $failed = array_values(array_filter($checks, fn (array $c): bool => $c['status'] === 'FAIL'));
         $watch = array_values(array_filter($checks, fn (array $c): bool => $c['status'] === 'WATCH'));
+
+        // NOT_APPLICABLE is neither a pass nor a failure, so it moves the
+        // verdict in no direction at all. It is counted on its own below rather
+        // than folded into `passed`, because a check that was never evaluated
+        // contributing to a pass count is the false green this scanner exists
+        // to prevent.
+        $notApplicable = array_values(array_filter(
+            $checks,
+            fn (array $c): bool => $c['status'] === self::STATUS_NOT_APPLICABLE,
+        ));
+
         $status = $failed !== [] ? 'FAIL' : ($watch !== [] ? 'WATCH' : 'GO');
         $boundary = $this->boundary();
 
@@ -60,6 +182,11 @@ class Phase4aPilotPreparationScanner
                 'passed' => count(array_filter($checks, fn (array $c): bool => $c['status'] === 'PASS')),
                 'watch' => count($watch),
                 'failed' => count($failed),
+                'not_applicable' => count($notApplicable),
+
+                // The phase every scoped check was judged against. Printed so a
+                // reader never has to infer why a row says NOT_APPLICABLE.
+                'governance_phase' => $this->governancePhase(),
 
                 // Derived from the verdict, never asserted independently. A
                 // summary field that can disagree with the checks under it is
@@ -75,6 +202,19 @@ class Phase4aPilotPreparationScanner
                 'enforcement_scope_mode' => $this->scope->mode(),
                 'enforcement_scope_usable' => $this->scope->isUsable(),
                 'enforcement_flag_armed' => $this->flags->enabled(DoctorAppLoginGate::ENFORCEMENT_FLAG),
+
+                // Derived, never asserted — same contract as
+                // `phase4a_pilot_preparation` above. The declared counterpart is
+                // config, so a reader can see both halves of the comparison the
+                // `enforcement_posture` check makes.
+                'enforcement_posture' => $this->observedPosture(),
+                'enforcement_posture_declared' => (string) config('android_release.enforcement.expected_posture'),
+
+                // Measured from the resolved scope. The activation-boundary
+                // block below carries a `global_enforcement_active` claim too,
+                // but that one is a hardcoded record of what a past sprint did
+                // not do; this one asks the running system.
+                'global_enforcement_active_live' => $this->globalEnforcementActiveLive(),
 
                 // Every one of these is a thing this sprint did not do.
                 'apk_distributed' => $boundary['apk_distributed'] ?? null,
@@ -287,13 +427,23 @@ class Phase4aPilotPreparationScanner
         // During Phase 4A it must not be permitted, whatever the mode says.
         $globalPermitted = $this->scope->globalPermitted();
 
-        $checks[] = $this->check(
-            'global_scope_not_permitted_in_phase_4a',
-            $globalPermitted ? 'FAIL' : 'PASS',
-            $globalPermitted
-                ? 'Fleet-wide doctor enforcement is permitted. That is a Phase 5 decision and must not ship armed in Phase 4A.'
-                : 'Fleet-wide doctor enforcement is not permitted; only a declared pilot scope can enforce.',
-        );
+        // B2: phase-scoped, not weakened. Inside Phase 4A the rule is unchanged
+        // — a permission grant is a FAIL even though granting alone enforces
+        // nobody, because the grant is the reviewed decision this phase forbids.
+        // Outside Phase 4A the grant is the intended state, and a check that
+        // reddened on it would be reddening on the programme's own success.
+        $checks[] = $this->inPhase4a()
+            ? $this->check(
+                'global_scope_not_permitted_in_phase_4a',
+                $globalPermitted ? 'FAIL' : 'PASS',
+                $globalPermitted
+                    ? 'Fleet-wide doctor enforcement is permitted. That is a Phase 5 decision and must not ship armed in Phase 4A.'
+                    : 'Fleet-wide doctor enforcement is not permitted; only a declared pilot scope can enforce.',
+            )
+            : $this->notApplicable(
+                'global_scope_not_permitted_in_phase_4a',
+                'Fleet-wide doctor enforcement is '.($globalPermitted ? 'permitted' : 'not permitted').'.',
+            );
 
         $armed = $this->flags->enabled(DoctorAppLoginGate::ENFORCEMENT_FLAG);
         $configuredOff = config('android_release.enforcement.active') === false
@@ -308,22 +458,540 @@ class Phase4aPilotPreparationScanner
         // would believe doctors were locked to devices when they are not. A
         // silent no-op in a security control has to be loud somewhere, and this
         // is where.
+        // One branch per outcome, in the same order the status is decided, so a
+        // row can never carry a message that argues with its own verdict. The
+        // narrowing that made a live pilot PASS originally left this chain
+        // alone, and the result was a PASS row telling operators to "ship it
+        // off" — which is exactly the self-contradicting governance text this
+        // sprint set out to remove.
         if ($armed && ! $this->scope->isUsable()) {
+            // FAIL. Enforcement that denies nobody, reading as protection.
             $detail = 'The enforcement flag is armed while the scope covers nobody ('
                 .implode(', ', $this->scope->invalidReasons()).'). No doctor is enforced; do not read the flag as protection.';
-        } elseif ($armed || ! $configuredOff) {
-            $detail = 'Doctor device enforcement is live. A preparation sprint must ship it off.';
+        } elseif (! $configuredOff) {
+            // FAIL. Browser denial configured outside a declared scope.
+            $detail = 'Doctor browser login is denied outside a declared pilot scope. Enforcement that is not scoped '
+                .'to named doctors is a clinic-wide lockout wearing a pilot label.';
+        } elseif ($armed) {
+            // PASS. The intended state of a live, owner-approved pilot.
+            $detail = 'Doctor device enforcement is live for a declared, bounded scope covering '
+                .count($this->scope->pilotDoctorUserIds()).' named doctor account(s). That is the intended state of an '
+                .'approved pilot, not a failure; `enforcement_posture` checks it against the declaration in source control.';
         } else {
             $detail = 'Doctor device enforcement is off: the flag is not armed and no browser denial is configured.';
         }
 
-        $checks[] = $this->check(
-            'enforcement_inactive',
-            ($armed || ! $configuredOff) ? 'FAIL' : 'PASS',
-            $detail,
-        );
+        // DOCTOR-PWA-GLOBAL-ROLLOUT-READINESS-1 — the status is deliberately
+        // NARROWER than it was, and narrower than the detail above.
+        //
+        // The original predicate failed on `$armed` alone. That was correct for
+        // a preparation sprint, whose whole claim was that it shipped nothing
+        // armed. It stopped being correct the moment an owner-approved pilot
+        // went live: a correctly configured, bounded, three-doctor pilot made
+        // this gate exit non-zero and print NOT READY. A gate that reddens on
+        // the outcome the programme was built to reach teaches operators to
+        // ignore it, and an ignored gate protects nothing.
+        //
+        // The genuinely unsafe state is narrower, and it is already computed
+        // for the detail immediately above: the flag armed while the scope
+        // covers nobody. That denies no doctor anything, so it cannot lock a
+        // clinic out, but it reads as protection while providing none. Browser
+        // denial configured outside a declared scope stays a failure for
+        // exactly the reason it always was.
+        //
+        // What replaces the dropped breadth is not nothing: `enforcement_posture`
+        // below asserts that the enforcement state actually observed is the one
+        // a reviewer declared in source control.
+        $armedOverNobody = $armed && ! $this->scope->isUsable();
+
+        // B2: this check has two halves with different lifetimes, and they are
+        // scoped separately rather than skipped together.
+        //
+        //   `! $configuredOff` is Phase-4A-exclusive. An honest Phase 5
+        //   declares enforcement active, so failing on it after Phase 4A would
+        //   redden on the intended state.
+        //
+        //   `$armedOverNobody` NEVER becomes acceptable. A flag armed over a
+        //   scope covering nobody reads as protection while providing none, in
+        //   every phase. It stays evaluated, and stays a FAIL.
+        //
+        // So outside Phase 4A the row reports the surviving half when it is
+        // violated, and NOT_APPLICABLE only when the sole remaining reason to
+        // fail is the phase-scoped one.
+        if ($this->inPhase4a()) {
+            $checks[] = $this->check(
+                'enforcement_inactive',
+                ($armedOverNobody || ! $configuredOff) ? 'FAIL' : 'PASS',
+                $detail,
+            );
+        } elseif ($armedOverNobody) {
+            $checks[] = $this->check(
+                'enforcement_inactive',
+                'FAIL',
+                $detail.' The enforcement flag is armed over a scope that covers nobody. That is unsafe in '
+                .'every phase, so this half of the check is never skipped.',
+            );
+        } else {
+            $checks[] = $this->notApplicable('enforcement_inactive', $detail);
+        }
+
+        $checks[] = $this->postureCheck();
+        $checks[] = $this->liveGlobalEnforcementCheck();
+        $checks[] = $this->globalPrerequisiteCheck();
+        $checks[] = $this->globalPrerequisiteContradictionCheck();
+        $checks[] = $this->activationTestPrerequisiteCheck();
 
         return $checks;
+    }
+
+    /**
+     * Which enforcement posture is this deployment actually in?
+     *
+     * Derived from what the scope and the flag really say, never from what
+     * anyone declared. The declaration is the thing this is compared against.
+     */
+    /**
+     * The governance phase declared in source control.
+     *
+     * Fails towards the strictest phase: anything unrecognised — a typo, a
+     * removed key, a host that somehow injected a value — resolves to
+     * {@see self::PHASE_4A}, where every phase-scoped check is fully evaluated.
+     * A misdeclaration can therefore only tighten this audit, never disable it.
+     */
+    public function governancePhase(): string
+    {
+        $declared = (string) config('android_release.enforcement.governance_phase', self::PHASE_4A);
+
+        return in_array($declared, self::GOVERNANCE_PHASES, true)
+            ? $declared
+            : self::PHASE_4A;
+    }
+
+    /**
+     * Are the Phase-4A-exclusive checks in force?
+     *
+     * The four checks this gates assert that fleet-wide enforcement is not
+     * permitted, not declared and not live. Every one of them is correct while
+     * the programme is in Phase 4A and contradicts the intended state after it.
+     */
+    public function inPhase4a(): bool
+    {
+        return $this->governancePhase() === self::PHASE_4A;
+    }
+
+    /**
+     * A check that this phase does not evaluate.
+     *
+     * Never PASS. See {@see self::STATUS_NOT_APPLICABLE}.
+     */
+    private function notApplicable(string $id, string $detail): array
+    {
+        return $this->check(
+            $id,
+            self::STATUS_NOT_APPLICABLE,
+            $detail.' Not evaluated: this check is scoped to '.self::PHASE_4A
+            .' and the declared governance phase is "'.$this->governancePhase().'".',
+        );
+    }
+
+    public function observedPosture(): string
+    {
+        $armed = $this->flags->enabled(DoctorAppLoginGate::ENFORCEMENT_FLAG);
+
+        if ($this->scope->isUnscopedMode() && $this->scope->globalPermitted()) {
+            return self::POSTURE_GLOBAL;
+        }
+
+        if (! $armed) {
+            return self::POSTURE_OFF;
+        }
+
+        if ($this->scope->isPilotMode() && $this->scope->isUsable()) {
+            return self::POSTURE_BOUNDED_PILOT;
+        }
+
+        // Armed, but over nobody, or in a mode whose scope does not resolve.
+        // `enforcement_inactive` already fails this; naming it here keeps the
+        // posture vocabulary total rather than quietly defaulting to `off`.
+        return self::POSTURE_INDETERMINATE;
+    }
+
+    /**
+     * Does the observed posture match the one a reviewer declared in source?
+     *
+     * The declaration lives in config/android_release.php and nowhere a host
+     * can reach, for the same reason `global_permitted` and
+     * `pilot_cohort_maximum` do: a declaration a host can edit is not a
+     * declaration, it is a second copy of the value being audited.
+     */
+    private function postureCheck(): array
+    {
+        $observed = $this->observedPosture();
+        $declared = (string) config('android_release.enforcement.expected_posture');
+
+        if (! in_array($declared, self::POSTURES, true)) {
+            return $this->check(
+                'enforcement_posture',
+                'FAIL',
+                'No recognised enforcement posture is declared (found "'.$declared.'"). '
+                .'An undeclared posture cannot be contradicted, so it audits nothing.',
+            );
+        }
+
+        // Phase 5, and only Phase 5, may declare this.
+        //
+        // B2: the refusal is scoped to Phase 4A rather than removed. Outside it
+        // the special case simply stops firing and control falls through to the
+        // ceiling comparison below, which already handles `global` correctly
+        // without any change: POSTURE_STRENGTH gives it 2, so a deployment
+        // observed at `global` against a declared `global` is equal and passes,
+        // while one observed at `global` against a quieter declaration is still
+        // caught as the widening-nobody-reviewed drift. Nothing about the
+        // ceiling is relaxed; it is merely allowed to apply.
+        if ($this->inPhase4a() && ($declared === self::POSTURE_GLOBAL || $observed === self::POSTURE_GLOBAL)) {
+            return $this->check(
+                'enforcement_posture',
+                'FAIL',
+                'Fleet-wide enforcement is in play (declared "'.$declared.'", observed "'.$observed.'"). '
+                .'That is a Phase 5 decision and must not be reachable from this phase.',
+            );
+        }
+
+        if ($observed === self::POSTURE_INDETERMINATE) {
+            return $this->check(
+                'enforcement_posture',
+                'FAIL',
+                'The enforcement flag is armed over a scope that resolves to nobody, so this deployment is in no '
+                .'declarable posture at all. Declared "'.$declared.'".',
+            );
+        }
+
+        // The declaration is a CEILING, not an equality.
+        //
+        // A deployment quieter than the reviewed intent is safe and ordinary:
+        // the same source runs on a developer machine with enforcement off, in
+        // CI with no scope at all, and on production with the pilot armed. All
+        // three are the same reviewed code, and demanding they report the same
+        // posture would either redden CI or force the declaration down to the
+        // weakest deployment — which would stop it auditing production.
+        //
+        // What must never happen is the opposite: a deployment enforcing MORE
+        // than anyone reviewed. That is the drift worth failing on, and it is
+        // the only direction that can lock a clinic out.
+        if (self::POSTURE_STRENGTH[$observed] > self::POSTURE_STRENGTH[$declared]) {
+            return $this->check(
+                'enforcement_posture',
+                'FAIL',
+                'This deployment enforces MORE than source control declares: declared "'.$declared.'", '
+                .'observed "'.$observed.'". A widening nobody reviewed is exactly the drift this check exists for.',
+            );
+        }
+
+        if ($observed === $declared) {
+            return $this->check(
+                'enforcement_posture',
+                'PASS',
+                'The enforcement posture observed is the one declared in source control: "'.$declared.'".',
+            );
+        }
+
+        return $this->check(
+            'enforcement_posture',
+            'PASS',
+            'This deployment enforces less than the declared ceiling: declared "'.$declared.'", observed '
+            .'"'.$observed.'". Quieter than the reviewed intent is safe; the check exists to catch the reverse.',
+        );
+    }
+
+    /**
+     * Is fleet-wide enforcement live RIGHT NOW?
+     *
+     * The activation boundary carries a `global_enforcement_active` claim too,
+     * but that block is a historical record of what one preparation sprint did
+     * not do, and it is a hardcoded false. A safety assertion that is true
+     * because somebody typed `false` is not an assertion, and the activation
+     * checklist reads this line before arming anything. So this one is
+     * measured: it asks the scope.
+     */
+    private function liveGlobalEnforcementCheck(): array
+    {
+        $live = $this->globalEnforcementActiveLive();
+
+        // B2: the assertion INVERTS at the last phase rather than switching off.
+        //
+        // In `phase_4a` and `global_activation_target` the widening has not been
+        // approved to apply, so live fleet-wide enforcement is a failure — the
+        // rule this check has always carried, unchanged.
+        //
+        // In `global_activated` the same measurement answers the opposite
+        // question: fleet-wide enforcement is the approved state, so its ABSENCE
+        // is the anomaly worth reporting. A deployment that declares Phase 5 and
+        // then quietly enforces nobody is degraded, and reporting that as a pass
+        // would hide an activation that silently failed to take.
+        if ($this->governancePhase() === self::PHASE_GLOBAL_ACTIVATED) {
+            return $this->check(
+                'global_enforcement_active',
+                $live ? 'PASS' : 'FAIL',
+                $live
+                    ? 'Fleet-wide doctor enforcement is live, which is the declared state for this phase. '
+                    .'Measured from the resolved scope rather than read from a recorded claim.'
+                    : 'This deployment declares fleet-wide enforcement but does not have it: the resolved scope '
+                    .'is not unscoped-and-permitted-and-armed. The declared activation is not in force.',
+            );
+        }
+
+        return $this->check(
+            'global_enforcement_not_active',
+            $live ? 'FAIL' : 'PASS',
+            $live
+                ? 'Fleet-wide doctor enforcement is LIVE: the scope is unscoped and global is permitted. '
+                .'Every doctor account is enforced, which is a Phase 5 state.'
+                : 'Fleet-wide doctor enforcement is not live, measured from the resolved scope rather than '
+                .'read from a recorded claim.',
+        );
+    }
+
+    /**
+     * B2 — the Phase-4A prohibition is replaced by a Phase-5 PRECONDITION, not
+     * by nothing.
+     *
+     * `global_prerequisites` has been declared in config since Phase 3.5 and
+     * read by no code: five strings with a string-membership test attached.
+     * Scoping the prohibition away without putting something in its place would
+     * leave the later phases asserting strictly less than Phase 4A did, which
+     * is the direction this programme must never move in.
+     *
+     * So outside Phase 4A every declared prerequisite must carry an explicit
+     * recorded attestation. The attestations live in source control beside the
+     * list, so recording one costs a reviewed change — the same price as
+     * granting `global_permitted`. A prerequisite with no attestation, or one
+     * attested anything other than exactly `true`, fails.
+     *
+     * This asserts that somebody SIGNED for each prerequisite. It cannot and
+     * does not measure the world: "a spare device is available at every branch"
+     * is a fact about a room, not about a database.
+     */
+    /**
+     * REVISION-DOCTOR-TRUSTED-DEVICE-ESTATE-CAPACITY-POLICY-1 — the ESTATE
+     * prerequisite of controlled activation TESTING.
+     *
+     * WHY THIS IS NOT PHASE-SCOPED AWAY LIKE ITS SIBLING. The check above is
+     * NOT_APPLICABLE inside Phase 4A because fleet-wide enforcement is a Phase-5
+     * question. Activation TESTING is the opposite: it is the 4A-era activity
+     * itself, so a list that went quiet exactly when the testing happens would
+     * be read by nobody at the only moment it matters.
+     *
+     * WHAT IT ASSERTS, AND WHY IT IS INTEGRITY AND NOT SATISFACTION.
+     *
+     * A first draft of this check asserted that every declared activation-test
+     * prerequisite was signed `true`, mirroring its sibling — and running the
+     * suite showed why that is wrong. The prerequisite is unmet today and will
+     * be until a tablet reaches TLK1, so the check turned this scanner red for
+     * MONTHS over a question it is not asking. THIS SCANNER'S SUBJECT IS THE
+     * BOUNDED PHASE-4A PILOT, which is live and prepared; whether a LATER rung
+     * has enough hardware is a different question, and reddening one because of
+     * the other is precisely the conflation the capacity-policy revision
+     * exists to end. A gate that is red for months gets deleted rather than
+     * fixed.
+     *
+     * So this asserts the list's INTEGRITY: every declared prerequisite has a
+     * signature slot, and every slot holds a boolean. That catches the failure
+     * this scanner CAN catch — the list and its signature block drifting apart,
+     * which reads identically to "nobody has signed yet" and is not that.
+     *
+     * WHETHER THE PREREQUISITE IS TRUE has an owner, and it is not this file:
+     * `doctor:estate-resilience` measures Level 1, composes it with credential
+     * and authorization coverage, and FAILS a gate of its own if a signature
+     * here contradicts what the estate holds. That is the surface an activation
+     * preflight runs. Two surfaces, one list, neither of them silent — and the
+     * list is no longer the declared-but-unread kind the block above it
+     * records.
+     *
+     * NO QUERY, deliberately: this scanner must stay safe to run with no
+     * database.
+     *
+     * An EMPTY list fails. "Nothing declared" is a broken precondition, not a
+     * satisfied one — the same reading the sibling takes.
+     */
+    private function activationTestPrerequisiteCheck(): array
+    {
+        $declared = (array) config('android_release.enforcement.activation_test_prerequisites', []);
+        $attested = (array) config('android_release.enforcement.activation_test_prerequisites_attested', []);
+
+        if ($declared === []) {
+            return $this->check(
+                'activation_test_prerequisites_declared',
+                'FAIL',
+                'No activation-testing prerequisite is declared, so nothing can be measured or signed. An '
+                .'empty precondition list is not a satisfied one.',
+            );
+        }
+
+        $drifted = [];
+
+        foreach ($declared as $name) {
+            $key = (string) $name;
+
+            if (! array_key_exists($key, $attested) || ! is_bool($attested[$key])) {
+                $drifted[] = $key;
+            }
+        }
+
+        $signed = count(array_filter(
+            $declared,
+            fn ($name): bool => ($attested[(string) $name] ?? null) === true,
+        ));
+
+        return $this->check(
+            'activation_test_prerequisites_declared',
+            $drifted === [] ? 'PASS' : 'FAIL',
+            $drifted === []
+                ? 'The activation-testing prerequisite list and its signature block agree: '
+                    .count($declared).' declared, each with a recorded boolean ('.$signed.' signed true). '
+                    .'This asserts the list is INTACT and is NOT a statement that the prerequisite is '
+                    .'satisfied — run doctor:estate-resilience for that, which measures Level 1 and fails '
+                    .'if a signature here contradicts the estate.'
+                : 'Declared activation-testing prerequisite(s) with no recorded boolean signature slot: '
+                    .implode(', ', $drifted).'. The list and the signature block have drifted apart, which '
+                    .'reads identically to "nobody has signed yet" and is not that.',
+        );
+    }
+
+    private function globalPrerequisiteCheck(): array
+    {
+        if ($this->inPhase4a()) {
+            return $this->notApplicable(
+                'global_prerequisites_attested',
+                'Global activation prerequisites are a Phase 5 precondition.',
+            );
+        }
+
+        $declared = (array) config('android_release.enforcement.global_prerequisites', []);
+        $attested = (array) config('android_release.enforcement.global_prerequisites_attested', []);
+
+        if ($declared === []) {
+            return $this->check(
+                'global_prerequisites_attested',
+                'FAIL',
+                'No global activation prerequisites are declared, so nothing can be attested. An empty '
+                .'precondition list is not a satisfied one.',
+            );
+        }
+
+        $missing = array_values(array_filter(
+            $declared,
+            fn ($name): bool => ($attested[(string) $name] ?? null) !== true,
+        ));
+
+        return $this->check(
+            'global_prerequisites_attested',
+            $missing === [] ? 'PASS' : 'FAIL',
+            $missing === []
+                ? 'Every declared global activation prerequisite carries a recorded attestation ('
+                .count($declared).' of '.count($declared).').'
+                : 'Global activation prerequisites are not attested: '.implode(', ', array_map('strval', $missing))
+                .'. Each must be recorded true in source control before fleet-wide enforcement is permitted.',
+        );
+    }
+
+    /**
+     * DOCTOR-ACCESS-GLOBAL-DEVICE-ENFORCEMENT-READINESS-1 — the half
+     * {@see self::globalPrerequisiteCheck()} cannot ask.
+     *
+     * THE HOLE THIS CLOSES. Its sibling above compares two lists in config and
+     * asserts that each declared prerequisite carries a signature. It reads no
+     * measurement, by design and by its own docblock — so
+     *
+     *     attested true + measured false  ===>  PASS
+     *
+     * and the single artifact standing between this deployment and a
+     * fleet-wide clinical lockout could be satisfied by typing `true` five
+     * times. Two of the five were known FALSE in the estate when the
+     * attestation block shipped.
+     *
+     * WHY IT IS NOT PHASE-SCOPED. Its sibling is a Phase-5 precondition and
+     * correctly goes quiet inside Phase 4A. A false signature is not a
+     * Phase-5 event: it is recorded NOW, in a reviewed change, months before
+     * the phase moves, and the moment to catch it is the moment it lands. So
+     * this check is evaluated in every phase.
+     *
+     * WHY IT COSTS NOTHING TODAY. It measures only when there is a signature
+     * to contradict. With nothing attested — this deployment, and every
+     * deployment until somebody signs — it answers from config alone and
+     * touches no database. That matters: this scanner runs in CI and in the
+     * release-evidence chain, and a governance gate that acquires a database
+     * dependency acquires the ability to redden for reasons that have nothing
+     * to do with governance.
+     *
+     * WHY IT FAILS CLOSED. Once a signature EXISTS, an unreadable measurement
+     * is a FAIL, not a pass and not a skip. A signature that cannot be checked
+     * is exactly the signature that must not be trusted.
+     *
+     * The readiness engine is resolved from the container rather than injected
+     * because it depends on THIS class — the same constructor cycle
+     * {@see DoctorAppLoginGate::deviceCredentialLoginAvailable()} avoids the
+     * same way, and for the same reason: a needless price for a call that only
+     * happens once somebody has signed something.
+     *
+     * @return array<string,mixed>
+     */
+    private function globalPrerequisiteContradictionCheck(): array
+    {
+        $id = 'global_prerequisite_attestations_do_not_contradict_measurement';
+
+        $declared = (array) config('android_release.enforcement.global_prerequisites', []);
+        $attested = (array) config('android_release.enforcement.global_prerequisites_attested', []);
+
+        $signed = array_values(array_filter(
+            $declared,
+            fn ($name): bool => ($attested[(string) $name] ?? null) === true,
+        ));
+
+        if ($signed === []) {
+            return $this->check(
+                $id,
+                'PASS',
+                'No global activation prerequisite is attested true, so no signature stands against a '
+                .'measurement. This row is NOT a statement that the prerequisites are satisfied — nothing is '
+                .'signed, and nothing needed measuring. Read `doctor:half-b-readiness` for what the estate '
+                .'actually measures.',
+            );
+        }
+
+        try {
+            $report = app(DoctorGlobalEnforcementReadinessService::class)->build();
+        } catch (Throwable $e) {
+            return $this->check(
+                $id,
+                'FAIL',
+                count($signed).' global activation prerequisite(s) are attested true and the measurement could '
+                .'not be read to check them ('.$e->getMessage().'). An unverifiable signature is not a '
+                .'trustworthy one.',
+            );
+        }
+
+        $contradicting = (array) ($report['contradicting_prerequisites'] ?? []);
+
+        return $this->check(
+            $id,
+            $contradicting === [] ? 'PASS' : 'FAIL',
+            $contradicting === []
+                ? 'Every attested global activation prerequisite ('.implode(', ', array_map('strval', $signed))
+                .') agrees with what this deployment measures.'
+                : 'Signature(s) stand against a measurement: '.implode(', ', array_map('strval', $contradicting))
+                .'. A signature never overrides a measurement, and a prerequisite recorded true while the '
+                .'estate measures otherwise records something untrue about a clinical-scale action.',
+        );
+    }
+
+    /**
+     * Measured, never asserted. See liveGlobalEnforcementCheck().
+     */
+    public function globalEnforcementActiveLive(): bool
+    {
+        return $this->scope->isUnscopedMode()
+            && $this->scope->globalPermitted()
+            && $this->flags->enabled(DoctorAppLoginGate::ENFORCEMENT_FLAG);
     }
 
     // -----------------------------------------------------------------------

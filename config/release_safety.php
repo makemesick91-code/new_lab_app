@@ -119,6 +119,34 @@ return [
             'repl_programmatic' => '/\bPsy\\\\Shell\b/',
         ],
 
+        /*
+        | DOCTOR-PWA-GLOBAL-ROLLOUT-READINESS-1 — the half a file scan cannot
+        | reach.
+        |
+        | The pattern scan above covers the tracked scripts and it works. It
+        | caught nothing on the two occasions that mattered, because both were
+        | typed into an interactive session and existed in no file. A control
+        | over files has no reach over a keyboard.
+        |
+        | `ForbiddenConsoleCommandGuard` refuses these at `CommandStarting`,
+        | which every invocation passes through however it was started. Exact
+        | command names, matched exactly: a longer command that merely begins
+        | with the same letters is a different command, and refusing it would
+        | teach people to switch the guard off.
+        */
+        'blocked_console_commands' => [
+            'tinker',
+        ],
+
+        // Only these may run a blocked command. Everything else — production,
+        // pilot, staging, a typo, an unset value — is refused, because the cost
+        // of a false refusal is naming your environment and the cost of a false
+        // permit is an unaudited write path against clinical data.
+        'repl_allowed_environments' => [
+            'local',
+            'testing',
+        ],
+
         // Executable scripts only. Runbooks and rule files quote the forbidden
         // command in order to forbid it; scanning them would redden the very
         // documents that carry the prohibition.

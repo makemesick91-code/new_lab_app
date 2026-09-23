@@ -11,6 +11,7 @@ use App\Modules\LabOrder\Workflow\LabWorkflowState;
 use App\Modules\LabService\Models\LabService;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\RmeOnlineContext\Models\UserOnlineContext;
+use App\Modules\RmeOnlineContext\Services\DailyBranchContextService;
 use App\Modules\RmeOnlineContext\Services\UserOnlineContextService;
 use App\Modules\Treatment\Models\Treatment;
 use Database\Seeders\BranchSeeder;
@@ -278,8 +279,14 @@ it('now routes Kasir through the selector too, since it works from a chosen bran
 it('keeps admin klinik branch selection working and feeds BranchContext from its context', function () {
     $admin = User::factory()->create()->assignRole('Admin Klinik');
 
+    // D5 — the FIRST branch choice of a clinical day now carries a
+    // confirmation, because it locks the day and only a Super Admin can undo
+    // it. Admin Klinik is a locked role context, so the token is required.
     $this->actingAs($admin)
-        ->post(route('rme.online-context.admin-clinic'), ['branch_id' => test()->ldk2->id])
+        ->post(route('rme.online-context.admin-clinic'), [
+            'branch_id' => test()->ldk2->id,
+            DailyBranchContextService::CONFIRMATION_FIELD => test()->ldk2->id,
+        ])
         ->assertRedirect(route('dashboard'));
 
     expect(test()->onlineContext->isAdminClinicActive($admin->fresh()))->toBeTrue()

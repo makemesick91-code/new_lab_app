@@ -64,8 +64,19 @@ it('splits the legacy RME import permissions into a maker-checker pair and grant
     // the maker or `create` to the checker and collapsing the pair, which is
     // exactly the failure this split exists to prevent. `void` stays with
     // neither — it is a correction authority, not a migration one.
+    // DAENGTISIAMS-SUNU-FINAL-RELEASE-CANDIDATE-1 / D2 — `Front Office` merges
+    // Admin Klinik and Kasir, so it inherits Admin Klinik's MAKER half exactly:
+    // view + create, for both legacy archives, and nothing else. The pair is
+    // therefore intact rather than collapsed — the checker half (review,
+    // publish) stays with Supervisor RME and Front Office holds none of it, so
+    // the account that files a legacy document still cannot certify it.
+    //
+    // Listed as its own row rather than folded into Admin Klinik's precisely
+    // because the assertion is exact: if a later edit ever hands Front Office
+    // `publish`, this pin is what fails.
     $expected = [
         'Admin Klinik' => ['create_legacy_rme_imports', 'view_legacy_rme_imports'],
+        'Front Office' => ['create_legacy_rme_imports', 'view_legacy_rme_imports'],
         'Supervisor RME' => ['publish_legacy_rme_imports', 'review_legacy_rme_imports', 'view_legacy_rme_imports'],
     ];
 

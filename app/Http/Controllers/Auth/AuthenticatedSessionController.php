@@ -4,8 +4,14 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
+use App\Modules\DoctorAccess\Models\DoctorSessionLease;
+use App\Modules\DoctorAccess\Services\DoctorSessionLeaseService;
 use App\Modules\DoctorDevice\Services\DoctorAppLoginGate;
 use App\Modules\DoctorDevice\Services\DoctorDeviceSessionService;
+use App\Modules\FrontOfficeDevice\Services\FrontOfficeBranchDeviceLockService;
+use App\Modules\FrontOfficeDevice\Services\FrontOfficeDeviceSessionService;
+use App\Modules\FrontOfficeDevice\Services\FrontOfficeDeviceWebAuthnLoginService;
+use App\Modules\FrontOfficeDevice\Support\FrontOfficeDeviceLockDecision;
 use App\Modules\RmeOnlineContext\Services\UserOnlineContextService;
 use App\Services\Auth\PostAuthenticationRedirectService;
 use Illuminate\Http\RedirectResponse;
@@ -80,6 +86,28 @@ class AuthenticatedSessionController extends Controller
 
             $sessions = app(DoctorDeviceSessionService::class);
 
+            /*
+             * DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1 — hand the lease back
+             * before the privileged session is torn down.
+             *
+             * The lease was claimed during authenticate() above, on the Login
+             * event. The session that holds it is about to be invalidated, so
+             * without this the doctor walks away holding a lease bound to a
+             * session that no longer exists. It would self-heal — the ceremony
+             * session is recorded against no user, so the next login sees a
+             * dead incumbent and reclaims it — but that is a four-step
+             * inference, and one honest RELEASED row is worth more than a
+             * RECLAIMED one that has to be explained.
+             *
+             * A no-op for every session that never claimed a lease, which is
+             * every non-doctor and every doctor while the capability is off.
+             */
+            app(DoctorSessionLeaseService::class)->releaseCurrent(
+                $request,
+                $user,
+                DoctorSessionLease::RELEASE_DEVICE_INVALIDATED,
+            );
+
             $sessions->invalidate($request, $user, $denial);
 
             if ($mayAssert) {
@@ -90,6 +118,64 @@ class AuthenticatedSessionController extends Controller
 
             throw ValidationException::withMessages([
                 'email' => $gate->denialMessage($denial),
+            ]);
+        }
+
+        /*
+         * REVISION-FRONT-OFFICE-BRANCH-DEVICE-LOCK-1 — the front-desk lock,
+         * consulted in exactly ONE place, immediately after the doctor gate.
+         *
+         * ENFORCEMENT IS OFF IN PRODUCTION. With the flag off `evaluate()`
+         * returns NOT_IN_SCOPE before touching the database, so every Front
+         * Office account logs in exactly as it did before and an empty
+         * credential registry can lock nobody out.
+         *
+         * SCOPE IS THE COHORT, NOT THE ROLE. Four of production's eight Front
+         * Office accounts are approved; the other four reach this block and
+         * fall straight through it, which is what `NOT_IN_SCOPE` means.
+         *
+         * A denial here is NOT a hidden menu. The session is destroyed, exactly
+         * as the doctor path destroys it, because a front desk that can reach a
+         * patient list from a wrong-branch tablet is not locked.
+         */
+        $frontOffice = app(FrontOfficeBranchDeviceLockService::class);
+        $decision = $frontOffice->evaluate($request->user(), $request);
+
+        if ($decision->isDenial()) {
+            $user = $request->user();
+            $sessions = app(FrontOfficeDeviceSessionService::class);
+            $ceremony = app(FrontOfficeDeviceWebAuthnLoginService::class);
+
+            /*
+             * The only denial a trusted BROWSER can still answer is "no device
+             * bound yet", because a binding is written by a completed assertion
+             * and none has happened at this point in the request.
+             *
+             * `canAssert()` is checked BEFORE redirecting so that an armed
+             * account whose branch device holds no credential gets a clear
+             * refusal instead of a ceremony that cannot succeed. A wrong-branch
+             * or unapproved device is NOT offered the ceremony at all: it is
+             * already a decided denial, and offering it a retry would invite
+             * the operator to keep trying the wrong tablet.
+             */
+            $mayAssert = $decision->outcome === FrontOfficeDeviceLockDecision::DENY_UNKNOWN_DEVICE
+                && $user !== null
+                && $ceremony->canAssert($user);
+
+            $sessions->auditDenial($user, $decision);
+
+            // The privileged session is torn down BEFORE the pending marker is
+            // written, so an operator waiting at the sensor is NOT logged in.
+            $sessions->invalidate($request, $user);
+
+            if ($mayAssert) {
+                $ceremony->beginPending($request, $user);
+
+                return redirect()->route('front-office-device-webauthn.show');
+            }
+
+            throw ValidationException::withMessages([
+                'email' => $decision->message(),
             ]);
         }
 
@@ -113,6 +199,17 @@ class AuthenticatedSessionController extends Controller
         if ($user !== null) {
             app(UserOnlineContextService::class)->markOffline($user);
         }
+
+        // DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1 — release the lease while
+        // the user and the session token are both still readable. Placed after
+        // markOffline so the two teardowns happen in the same order the lease
+        // middleware uses, and before logout() because logout() is what makes
+        // the user unreadable. A no-op for a session that holds no lease.
+        app(DoctorSessionLeaseService::class)->releaseCurrent(
+            $request,
+            $user,
+            DoctorSessionLease::RELEASE_LOGOUT,
+        );
 
         Auth::guard('web')->logout();
 

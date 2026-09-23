@@ -125,7 +125,7 @@
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-ink">Tanggal Daftar</label>
-                        <input type="date" name="new_patient[registered_at]" data-rm-date value="{{ old('new_patient.registered_at', now()->format('Y-m-d')) }}" class="mt-1 block w-full rounded-lg border-hairline text-sm focus:border-brand-500 focus:ring-brand-500" />
+                        <input type="date" name="new_patient[registered_at]" data-rm-date value="{{ old('new_patient.registered_at', app(\App\Support\Clinical\ClinicalClock::class)->todayString()) }}" class="mt-1 block w-full rounded-lg border-hairline text-sm focus:border-brand-500 focus:ring-brand-500" />
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-ink">Nomor RM Manual</label>

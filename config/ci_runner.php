@@ -138,6 +138,14 @@ return [
      */
     'critical_gate_required_filters' => [
         'Cicd',
+
+        // DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1 — the only place the
+        // partial unique index behind "one active doctor session" is exercised
+        // on PostgreSQL. The local suite runs SQLite, where lockForUpdate()
+        // compiles to an empty string and the racing INSERT is never actually
+        // contended, so without this token the cardinality invariant is proven
+        // nowhere.
+        'DoctorAccess',
     ],
 
     /*
@@ -183,6 +191,57 @@ return [
         // carrying BOTH an Android keystore key and a WebAuthn credential.
         'tests/Feature/DoctorDeviceWebAuthn/DoctorPwaWebAuthnProofBindingTest.php',
 
+        // DOCTOR-PWA-GLOBAL-ROLLOUT-READINESS-1 — the fleet readiness engine.
+        // Selected by the `DoctorDevice` token through its namespace, and
+        // declared here so that coverage is a decision rather than a side
+        // effect of where the file happens to live.
+        'tests/Feature/DoctorDevice/DoctorGlobalRolloutReadinessTest.php',
+
+        // The structural read-only proof. It is the one suite that fails if a
+        // future edit gives the readiness engine the ability to act, so losing
+        // it silently would be losing the guarantee, not just a test.
+        'tests/Feature/DoctorDevice/DoctorGlobalRolloutReadinessNonMutationTest.php',
+
+        // The enforcement posture. It holds both halves of the governance fix:
+        // that a live bounded pilot stopped being reported as a failure, and
+        // that the flag armed over nobody still is.
+        'tests/Feature/DoctorDevice/EnforcementPostureGovernanceTest.php',
+
+        // DOCTOR-ACCESS-GLOBAL-ACTIVATION-BLOCKER-CLOSURE-1 (B2) — the
+        // governance-phase matrix. It is the only suite that fails if a future
+        // edit lets a Phase-4A-scoped check report PASS on a phase it never
+        // evaluated, or lets the phase declaration weaken a check INSIDE
+        // phase_4a. Both are silent failures without it.
+        'tests/Feature/DoctorAccess/DoctorAccessGovernancePhaseTest.php',
+
+        // (B1) — rollback, performed rather than described. Declared here for
+        // the same reason: the `DoctorAccess` token already selects it, and a
+        // rollback proof that can be dropped by a filename change is not a
+        // proof anybody should rely on during an incident.
+        'tests/Feature/DoctorAccess/DoctorAccessEnforcementRollbackTest.php',
+
+        // DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1 PR-C — bulk device
+        // authorization. The `DoctorAccess` token selects all four through
+        // their namespace; declared here so that coverage is a decision rather
+        // than a side effect of where the files happen to live.
+        'tests/Feature/DoctorAccess/DoctorDeviceBulkAuthorizationPlanTest.php',
+        'tests/Feature/DoctorAccess/DoctorDeviceBulkAuthorizationApplyTest.php',
+        'tests/Feature/DoctorAccess/DoctorDeviceBulkAuthorizationCommandTest.php',
+
+        // The structural half, and the one worth naming separately: it is what
+        // fails if a future sprint gives a device an active -> pending_approval
+        // transition, which is the premise that lets a bulk provisioner reuse
+        // an approval path capable of admitting hardware. Losing it silently
+        // would be losing the guarantee, not just a test.
+        'tests/Feature/DoctorAccess/DoctorDeviceBulkAuthorizationGovernanceTest.php',
+
+        // The runtime refusal of a forbidden console command. This one needed a
+        // new workflow token: `Tests\Feature\Deploy\ForbiddenConsoleCommandGuardTest`
+        // contains no existing alternative, so before `ForbiddenConsoleCommand`
+        // was added to the critical filter it would have been declared mandatory
+        // and never actually run.
+        'tests/Feature/Deploy/ForbiddenConsoleCommandGuardTest.php',
+
         // MONITORING-LOG-SOURCE-RESILIENCE-1 — the monitor reads where the
         // application writes; a missing or unreadable source fails closed.
         'tests/Unit/Services/Monitoring/MonitoringLogSourceResilienceTest.php',
@@ -215,6 +274,43 @@ return [
         // is never reported as a malformed one, and no read fault is permitted
         // to become more permissive than the flattened state it replaced.
         'tests/Feature/Foundation/RestoreDrillEvidenceReadStateTest.php',
+
+        // DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1 — declared explicitly even
+        // though the `DoctorAccess` token selects the whole directory, because
+        // the token is what must never be dropped: these three suites are the
+        // only proof that a second doctor login is REFUSED, that the FIRST
+        // session survives the refusal, that a dead incumbent is reclaimed
+        // while an idle one is not, and that force logout ends a session
+        // without touching a device, an authorization or a credential.
+        // helpers.php is deliberately absent — it is a fixture file, not a
+        // suite, and the registry reconciliation fails on a declared path that
+        // no token selects.
+        'tests/Feature/DoctorAccess/DoctorSingleSessionLeaseTest.php',
+        'tests/Feature/DoctorAccess/DoctorSessionForceLogoutTest.php',
+        'tests/Feature/DoctorAccess/DoctorSessionLeaseGovernanceTest.php',
+
+        // DOCTOR-ACCESS PR-B — the same reasoning, applied to the branch lock.
+        // Declared for the same reason as the three above: the token is what must
+        // never be dropped, and these are the only proof that a locked doctor's
+        // lists and writes narrow to ONE branch while a doctor with no lock keeps
+        // pre-sprint behaviour byte for byte; that cover periods are half-open, so
+        // adjacency is ALLOWED and non-overlap is per doctor; that one account can
+        // never be both maker and checker even holding the Super Admin bypass; and
+        // that a branch decision ends a login session without revoking a device,
+        // an authorization or a credential.
+        //
+        // The registration suite is declared separately below rather than here,
+        // because what it defends is PR-A's middleware and not the branch lock.
+        'tests/Feature/DoctorAccess/DoctorHomeBranchLockTest.php',
+        'tests/Feature/DoctorAccess/DoctorBranchApprovalTest.php',
+        'tests/Feature/DoctorAccess/DoctorBranchLockGovernanceTest.php',
+
+        // DOCTOR-ACCESS PR-B, first obligation — the single-session middleware is
+        // registered EXACTLY ONCE, in the web group, ahead of the presence touch,
+        // and on no route. `route:list` structurally cannot see a group-appended
+        // middleware and a production REPL is forbidden, so this suite is the only
+        // mechanism that can answer the question at all.
+        'tests/Feature/DoctorAccess/DoctorSessionLeaseMiddlewareRegistrationTest.php',
 
         // STORAGE-PUBLIC-CLINICAL-EVIDENCE-1 — clinical evidence stays off any
         // publicly served disk and is readable only through an authenticated,
