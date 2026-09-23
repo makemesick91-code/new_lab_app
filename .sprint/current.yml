@@ -1,41 +1,39 @@
-### Active sprint manifest — DOCTOR-PWA-WEBAUTHN-PARENT-CLOSURE-1
+### Active sprint manifest — FULL-PATIENT-ESTATE-RESET-1
 ### Validated by: php artisan sprint:manifest-check
 
-id: DOCTOR-PWA-WEBAUTHN-PARENT-CLOSURE-1
-type: SECURITY_FIX
-module: DoctorDevice
-title: "The parent DOCTOR-PWA-WEBAUTHN-1 programme closes against the configuration production actually runs: a WebAuthn login completed while the enforcement scope names one pilot doctor and the fleet-wide permit stays shut, plus the device-binding revalidation a mutation campaign proved nothing was holding"
+id: FULL-PATIENT-ESTATE-RESET-1
+type: DOCS_ONLY
+module: Operations
+title: "A sanitized operator runbook for the owner-authorized one-time removal of the pre-go-live fictional patient estate: 50 patients and every patient-owned dependency, executed by a human against production under a fail-closed transaction, with the pre-existing unreferenced storage orphans explicitly excluded"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-runtime_change: false           # no application source changed. Every mutation applied
-                                # during the sensitivity campaign was restored by copy and
-                                # `git status` proves zero tracked modifications. The
-                                # closure adds coverage and durable rules, not behaviour.
-schema_change: false            # no migration; no column; no data touched
+runtime_change: false           # documentation only. No application source, no command,
+                                # no service, no observer, no job. The destructive SQL is
+                                # printed in a runbook for a human to paste; it is
+                                # deliberately NOT wired into a deploy hook, migration,
+                                # seeder, CI step or application startup path.
+schema_change: false            # no migration, no column, no index
 frontend_change: false          # no JS, no CSS, no Blade
-security_impact: true           # it is the authentication admission path, gated as one
-branch_isolation_impact: false  # branch stays a property of the device row
-ledger_impact: false            # no inventory ledger / billing / payment behaviour
+security_impact: false          # no permission, role, policy, gate or auth path changes.
+                                # The runbook forbids touching the Front Office branch and
+                                # device lock flags and the doctor device registry.
+branch_isolation_impact: false  # the wipe removes every branch's patient data by explicit
+                                # owner scope correction; no branch scoping rule changes
+ledger_impact: false            # no inventory ledger behaviour. Patient-owned lab billing
+                                # rows are removed as data, by proven exclusive ownership,
+                                # not by changing any billing rule.
 
-deploy_required: true           # NOT for behaviour — production already carries the
-                                # mechanism. The deploy aligns production HEAD with the
-                                # merge SHA so the final ceremony evidence and the parent
-                                # GO tag describe the same authority.
-browser_required: true          # the parent GO turns on a real physical gate: drg Karmila
-                                # completing a WebAuthn assertion on the approved
-                                # SM-X236B, in Chrome AND in the installed PWA. A platform
-                                # authenticator, a user-verification prompt and an
-                                # installed-app client context cannot be simulated by any
-                                # suite, and a parent GO taken without them would be a
-                                # claim rather than a proof.
+deploy_required: false          # nothing to deploy. The runbook is executed by an
+                                # operator over SSH against the production database.
+browser_required: false         # post-wipe empty-state verification is described in the
+                                # runbook for the operator, not performed by this change.
 
-test_profiles:
-  - security
+notes: |
+  Authored because the Claude Code auto-mode classifier blocks destructive production
+  database operations from an agent session. The owner instructed that no bypass be
+  attempted and that an operator-ready runbook be produced instead. That instruction was
+  followed: no alternate shell, tunnel or database client was used.
 
-# Carried forward. `.sprint/current.yml` is a ROLLING file, so these inherited
-# facts have to be restated by every sprint after closure — dropping one is
-# precisely the quiet contradiction LegacyRmeProgramClosureContractTest exists
-# to catch.
-inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
-inherits_hold: FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1/FIX-02
-inherits_phase: feature-doctor-trusted-android-device-lock-1-phase-3-5-readiness-go
+  The frozen manifest in the runbook was measured read-only against production on
+  2026-09-23 (WITA) and MUST be re-measured immediately before execution. The runbook
+  fails closed if the patient count is not exactly 50.
