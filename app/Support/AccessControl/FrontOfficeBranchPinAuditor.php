@@ -9,6 +9,8 @@ use App\Modules\FrontOfficeDevice\Services\FrontOfficeBranchDeviceLockService;
 use App\Modules\RmeOnlineContext\Services\UserOnlineContextService;
 use App\Services\Foundation\FeatureFlagService;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
+use Throwable;
 
 /**
  * SUNU-GO-LIVE-READINESS-1 — read-only audit of the Front Office branch pin.
@@ -46,9 +48,13 @@ use Illuminate\Support\Carbon;
  * while registration still followed the stale row. A test proves that is closed
  * in the code; this proves it is closed on the host that is actually running.
  *
- * NOTHING IS WRITTEN. No flag is set, no cohort entry is added, no session is
- * touched, no context is started. The report is derived entirely from
- * configuration plus already-persisted rows.
+ * NOTHING IS PERSISTED. No flag is set, no cohort entry is added, no session is
+ * started. That is not free, and it is not true of a naive implementation:
+ * resolving the branch authorities reaches a lazy garbage collector that
+ * expires a stale session row, so the two calls are made inside a transaction
+ * that is always rolled back. See `resolveWithoutPersisting()` — the first
+ * version of this class shipped without it and expired a real front-desk
+ * session on production.
  *
  * PRIVACY. Staff account names only — the same operational labels the other
  * access-control audits print. No patient data is reachable from here at all.
@@ -88,8 +94,7 @@ class FrontOfficeBranchPinAuditor
             $applies = $this->pin->appliesTo($user);
             $misconfigured = $this->pin->isMisconfiguredFor($user);
 
-            $contextBranch = $this->branchContext->forUser($user);
-            $operationalBranch = $this->onlineContexts->resolveActiveBranchForAdmin($user);
+            [$contextBranch, $operationalBranch] = $this->resolveWithoutPersisting($user);
 
             /*
              * AGREEMENT IS ONLY MEANINGFUL FOR A PINNED ACCOUNT.
@@ -187,6 +192,55 @@ class FrontOfficeBranchPinAuditor
             'anomalies' => $anomalies,
             'decision' => $anomalies === [] ? 'GO' : 'FAIL',
         ];
+    }
+
+    /**
+     * The two branch authorities, resolved for real but guaranteed to leave
+     * NOTHING BEHIND.
+     *
+     * WHY THIS IS NOT A PLAIN CALL.
+     *
+     * `BranchContext::forUser()` and `resolveActiveBranchForAdmin()` both reach
+     * `UserOnlineContextService::currentContextFor()`, which LAZILY GARBAGE
+     * COLLECTS an expired session: it calls `markExpiredInactive()` and flips
+     * that row from `online` to `inactive`. That is a WRITE, performed by what
+     * is documented as a read-only audit.
+     *
+     * This was not caught by review or by the first version of the read-only
+     * test, whose fixture context was freshly created and therefore never
+     * expired. It was caught by running the command against production, where
+     * it silently expired a real front-desk session row. The write was benign —
+     * the row had already passed its TTL and the operator's next request would
+     * have done the same thing — but a tool whose entire purpose is to be safe
+     * to run against a live clinic cannot be "read-only except sometimes".
+     *
+     * The resolution still goes through the REAL authorities, because an
+     * auditor that reimplemented them would be measuring a copy and could
+     * disagree with what actually serves the operator. Instead the work happens
+     * inside a transaction that is ALWAYS rolled back, so any lazy write is
+     * discarded while the returned values remain the genuine ones.
+     *
+     * @return array{0: ?int, 1: ?int}
+     */
+    private function resolveWithoutPersisting(User $user): array
+    {
+        DB::beginTransaction();
+
+        try {
+            return [
+                $this->branchContext->forUser($user),
+                $this->onlineContexts->resolveActiveBranchForAdmin($user),
+            ];
+        } catch (Throwable $e) {
+            return [null, null];
+        } finally {
+            /*
+             * ROLLBACK ALWAYS — never commit, not even on the happy path. A
+             * `DB::transaction()` closure would COMMIT on success, which is the
+             * exact behaviour this exists to prevent.
+             */
+            DB::rollBack();
+        }
     }
 
     /**

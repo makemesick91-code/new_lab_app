@@ -309,6 +309,44 @@ it('exits 2 under --strict only when an anomaly remains', function () {
     $this->artisan('rbac:front-office-branch-pin-audit')->assertExitCode(0);
 });
 
+it('leaves an EXPIRED online context exactly as it found it', function () {
+    $sunu = fbpaBranch('SPN4');
+    $user = fbpaUser('fo-expired@example.test');
+    app(UserOnlineContextService::class)->startAdminClinicSession($user, $sunu->id);
+
+    /*
+     * THE CASE THE FIRST VERSION OF THIS SUITE MISSED.
+     *
+     * Every other fixture here creates a FRESH context, which is never expired,
+     * so the lazy garbage-collection branch inside `currentContextFor()` never
+     * ran and the "writes nothing" assertion passed against an auditor that
+     * did, in fact, write. It was caught only by running the command against
+     * production, where it flipped a real front-desk session from `online` to
+     * `inactive`.
+     *
+     * Age the row past its TTL so the expiry path is the one under test.
+     */
+    DB::table('trx_user_online_contexts')
+        ->where('user_id', $user->id)
+        ->update([
+            'last_seen_at' => now()->subDays(3),
+            'updated_at' => now()->subDays(3),
+        ]);
+
+    $before = DB::table('trx_user_online_contexts')->where('user_id', $user->id)->first();
+
+    fbpaCohort($user->id.':SPN4');
+    fbpaFlags(context: true, device: false);
+
+    $this->artisan('rbac:front-office-branch-pin-audit --json')->assertExitCode(0);
+
+    $after = DB::table('trx_user_online_contexts')->where('user_id', $user->id)->first();
+
+    expect($after->status)->toBe($before->status)
+        ->and($after->branch_id)->toBe($before->branch_id)
+        ->and($after->updated_at)->toBe($before->updated_at);
+});
+
 it('writes nothing at all', function () {
     $sunu = fbpaBranch('SPN4');
     $user = fbpaUser('fo-readonly@example.test');

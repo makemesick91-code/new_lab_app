@@ -42,9 +42,19 @@ hazard: a typo looks exactly like a working lock.
    the only supported way to establish who is armed on a running host. Do not
    answer the question by reading the environment string and reasoning about it,
    and never by opening a REPL on production.
-6. **The audit is READ-ONLY and has no arming flag.** Arming stays a supervised
-   ceremony (rule 164). A command that could arm a front desk from a shell would
-   make that ceremony optional.
+6. **The audit PERSISTS NOTHING and has no arming flag.** Arming stays a
+   supervised ceremony (rule 164). A command that could arm a front desk from a
+   shell would make that ceremony optional.
+6a. **"Read-only" is a property to be PROVEN, not assumed from the absence of a
+   `save()`.** Resolving the branch authorities reaches
+   `UserOnlineContextService::currentContextFor()`, which lazily calls
+   `markExpiredInactive()` on an expired session — a write, reached through code
+   that contains no write verb of its own. The first version of this auditor
+   shipped with a green "writes nothing" test and still expired a real
+   front-desk session row on production, because every fixture context was
+   FRESH and never took the expiry branch. Any future read-only tool that
+   touches these resolvers must resolve inside a rolled-back transaction, and
+   its test must include an AGED row, not only a fresh one.
 7. **It reports three independently resolved branches per account** — the pin,
    `BranchContext::forUser()` and `resolveActiveBranchForAdmin()` (the branch a
    NEW VISIT registers at) — and compares them. They have disagreed before; a
