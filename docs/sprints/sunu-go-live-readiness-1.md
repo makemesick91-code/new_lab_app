@@ -208,10 +208,10 @@ false findings. Reviewed surface: the auditor, the command, and the tests.
 
 - **No new HTTP surface.** A console command only; no route, no controller, no
   policy, no permission added or changed.
-- **No write path.** Proven statically (no write verb) and by mutation M7. The
-  auditor calls `BranchContext::forUser()` and
-  `resolveActiveBranchForAdmin()` for each account, and the query-listener test
-  proves neither persists a daily-context row as a side effect.
+- **Nothing is persisted — but the first version of this claim was WRONG.** See
+  "The read-only claim that failed on production" below. The auditor now
+  resolves the branch authorities inside a rolled-back transaction, covered by a
+  test using an AGED context row and by mutation M9.
 - **No privilege widening.** It reports; it cannot arm, disarm, repair or
   reconfigure. Rule 164's "arming is a supervised ceremony, never a deploy"
   stays intact.
@@ -224,3 +224,57 @@ false findings. Reviewed surface: the auditor, the command, and the tests.
   not a secret: the cohort config states in terms that only two non-secret
   values may live there, and no credential or key may.
 - **Findings: none CRITICAL, none HIGH, none MEDIUM.**
+
+---
+
+## The read-only claim that failed on production
+
+This is recorded in full because the corrective matters more than the feature.
+
+The auditor was documented as read-only, asserted as read-only by a test called
+`writes nothing at all`, and confirmed as read-only by mutation M7, which was
+killed. It was merged, deployed, and then run against the pilot for its
+pre-activation check — where it **wrote**:
+
+```
+before:  user 29 | admin_clinic | branch 5 | online   | 2026-09-24 02:20:29
+after:   user 29 | admin_clinic | branch 5 | inactive | 2026-09-24 05:12:51
+```
+
+The 05:12:51 stamp is the audit run itself.
+
+**Mechanism.** `BranchContext::forUser()` and `resolveActiveBranchForAdmin()`
+both reach `UserOnlineContextService::currentContextFor()`, which lazily garbage
+collects an expired session by calling `markExpiredInactive()`. The auditor
+contains no write verb; the write is three calls deep in code it merely reads
+through. A static scan for `->save(` could never have found it.
+
+**Why the test did not catch it.** Every fixture in the suite created a FRESH
+online context. `isExpired()` requires `last_seen_at` to be older than the
+inactivity window, so the expiry branch was never reached in any test. The
+assertion was true of the paths it exercised and false of the path production
+took. Mutation M7 had the same blind spot: it proved the test could detect a
+write I *added*, not one the call graph already contained.
+
+**Impact.** Small but not zero. The row had already passed its TTL and the
+operator's next request would have expired it identically; no branch assignment,
+permission, or clinical record changed. What was damaged was the guarantee — a
+tool whose whole purpose is to be safe against a live clinic cannot be
+"read-only except sometimes", and the surrounding documents asserted the
+stronger claim.
+
+**Fix.** `resolveWithoutPersisting()` performs both resolutions inside a
+transaction that is **always** rolled back — never `DB::transaction()`, whose
+closure commits on success. The real authorities are still used, because an
+auditor that reimplemented them would measure a copy and could disagree with
+what actually serves the operator. New test
+`leaves an EXPIRED online context exactly as it found it` ages the row past its
+TTL first; mutation **M9** (revert the fix) is KILLED by exactly that test.
+
+**The transferable lesson**, recorded as rule 165 item 6a: *read-only is a
+property to be proven, not inferred from the absence of a write verb, and a
+fixture that is always fresh cannot prove anything about stale-row handling.*
+
+The production row was left as it now stands. It was genuinely expired, the
+application would have made the same transition, and hand-editing a production
+row back to `online` to tidy the evidence would be falsifying state.
