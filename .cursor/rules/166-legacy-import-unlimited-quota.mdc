@@ -1,0 +1,110 @@
+---
+description: Legacy Import business quota is unlimited by default (NULL, never a sentinel); removing the count authorizes nobody, and every other legacy gate still refuses independently
+globs:
+alwaysApply: false
+---
+
+# LEGACY IMPORT — UNLIMITED BUSINESS QUOTA (REVISION-SUNU-LEGACY-IMPORT-UNLIMITED-ADMIN-ACCESS-1)
+
+## 1. There is no daily business quota
+
+The shipped default in `config/legacy_import_hub.php` is **NULL — no business
+ceiling** for all three import types (`legacy_patient`, `legacy_rme`,
+`legacy_odontogram`). The owner's decision: the complete legacy estate must be
+migratable without waiting for a daily counter to reset.
+
+Do **not** reintroduce a numeric default. Do not "restore" 100 because a test
+or a doc still mentions it.
+
+## 2. Unlimited is NULL, never a sentinel
+
+`LegacyImportDailyQuotaService` treats **NULL as "decline to limit"** and
+**0 as "admit nothing"**. That is the vocabulary; use it.
+
+Never express unlimited as `999999`, `PHP_INT_MAX` or any large number. A
+sentinel is still a ceiling: it refuses the day an estate exceeds it and it
+renders to the operator as a countdown.
+
+Consequence, and it is intended: with no ceiling the service **writes no quota
+bucket and counts nothing**, and the hub reports `limit = null` /
+`remaining_today = null`. Do not "fix" that by writing an uncounted bucket —
+a counter nobody reads is a drift source. Volume observability comes from the
+staging and record tables.
+
+## 3. Quota removal is NOT authorization
+
+Removing a count authorizes nobody. These remain independent gates and each
+must still be able to refuse on its own:
+
+feature flags · branch admission allowlist · wave approval · RM-derived branch
+authority · permissions and policies · duplicate detection · idempotency ·
+human review · publish and VOID controls · legacy RME eligibility and date
+rules · MIME/size/page/render caps · queue backpressure · worker concurrency ·
+free-disk floor · private storage · audit logging · DoctorPatientScope
+
+Never justify widening any of them with "the quota is unlimited now".
+
+## 4. Technical backpressure is not business quota
+
+Upload size, PDF page caps, render limits, queue depth and the free-disk floor
+are safety rails. They survive quota removal untouched. Technical batch
+chunking is fine **provided the operator can immediately continue** — a chunk
+must never behave as "N per day, come back tomorrow".
+
+## 5. Legacy upload access is already role-carried — grant nothing new
+
+`Front Office` already holds every permission the three importers require:
+`manage patients`, `view_/create_legacy_rme_imports`,
+`view_/create_legacy_odontogram_imports`. Admin Sunu (user 29) reaches all
+three surfaces through that role.
+
+Do **not** add a permission, widen a role, or attach a per-user grant to make a
+legacy surface render. If a surface is unreachable, the cause is a flag,
+admission, branch context or the runtime user — not a missing grant.
+
+Front Office holds **no** `review_*`, `publish_*` or `void_*` legacy
+permission. Uploading is not publishing; keep that separation.
+
+## 6. Branch stays server-resolved
+
+The import branch is resolved server-side (`BranchContext`, and for the
+archives the branch derived from the patient's Nomor RM). Never from a request
+field, hidden input, query string or cookie. Admin Sunu is SPN4-scoped and the
+global quota decision does not widen that.
+
+## 7. Sunu's canonical branch code is SPN4; SUN4 is a deprecated alias
+
+`LegacyRmeBranchAdmissionService` canonicalizes **both** the admitted and
+approved allowlists through `BranchCodeAlias`, so a deployment still declaring
+`SUN4` resolves to `SPN4` and is correctly admitted.
+
+A `SUN4` entry in the production allowlist is therefore **not** a fail-closed
+lockout. Verify with `legacy-rme:rollout-readiness` before reporting it as one.
+
+## 8. Run legacy readiness as the runtime user
+
+Legacy readiness commands must run as **`daengtisiams`** (the PHP-FPM pool
+user), not `www-data` and not root:
+
+```bash
+runuser -u daengtisiams -- php artisan legacy-rme:rollout-readiness --expect=on
+```
+
+Run as the wrong user, `private_disk_writable` reports **UNKNOWN** and the
+overall decision reads **NO_GO** for a reason that is not real. An UNKNOWN
+probe is a measurement failure, not a finding.
+
+## 9. Restoring a ceiling needs no deploy
+
+Declare an integer (`LEGACY_IMPORT_HUB_DAILY_LIMIT`, or a per-type override)
+and clear the config cache. `none` / `null` / `unlimited` remain accepted
+spellings of "no ceiling".
+
+## 10. Tests must declare a ceiling to exercise metering
+
+Since the default is absent, any test asserting counting, remaining capacity or
+refusal must call `lihLimit($type, N)` first. A metering test that relies on an
+inherited default is asserting a contract the product no longer has.
+
+The default contract itself is pinned by reading the **shipped config file**,
+not the runtime value — a test-set ceiling must not be able to satisfy it.

@@ -71,12 +71,15 @@ declare(strict_types=1);
 | capture rule: env() is read only while this file is built, so the value
 | survives `config:cache` and nothing reads the environment at runtime).
 |
-| Blank or unset yields the canonical default rather than NULL: unlike the
-| ROLL-4 wave quota, which is genuinely optional, the hub ceiling is the
-| contract. An operator who wants "no ceiling" must say so explicitly by
-| setting the value to `none`.
+| Blank or unset yields the canonical default, which since
+| REVISION-SUNU-LEGACY-IMPORT-UNLIMITED-ADMIN-ACCESS-1 is NULL: NO BUSINESS
+| CEILING. An operator who wants a ceiling must now declare one explicitly,
+| which is the inverse of the pre-revision contract and is deliberate.
+|
+| `none`, `null` and `unlimited` remain accepted spellings of "no ceiling" so
+| an existing declaration keeps meaning what it meant.
 */
-$legacyImportHubLimit = static function (mixed $value, int $default): ?int {
+$legacyImportHubLimit = static function (mixed $value, ?int $default): ?int {
     if ($value === null || $value === '' || $value === false) {
         return $default;
     }
@@ -88,7 +91,36 @@ $legacyImportHubLimit = static function (mixed $value, int $default): ?int {
     return max(0, (int) $value);
 };
 
-$legacyImportHubDefaultLimit = (int) env('LEGACY_IMPORT_HUB_DAILY_LIMIT', 100);
+/*
+| REVISION-SUNU-LEGACY-IMPORT-UNLIMITED-ADMIN-ACCESS-1 — THE CANONICAL DEFAULT
+| IS "NO BUSINESS QUOTA".
+|
+| The owner's decision is that the COMPLETE legacy estate must be migratable
+| without waiting for a daily counter to reset. A business ceiling that forces
+| an operator to stop at 100 records and return tomorrow is exactly the control
+| that decision removes, for every import type and every branch already
+| admitted through the governance that actually authorizes migration.
+|
+| NULL, NOT A LARGE NUMBER. `LegacyImportDailyQuotaService` already treats NULL
+| as "decline to limit" and 0 as "admit nothing", so unlimited is expressed in
+| the vocabulary the engine already speaks. A sentinel like 999999 would still
+| be a ceiling — one that lies about being absent and silently returns the day
+| an estate exceeds it.
+|
+| THIS IS A QUOTA DECISION, NOT AN AUTHORIZATION DECISION. Removing the ceiling
+| authorizes nobody. Capability flags, branch admission, wave approval, the
+| RM-derived branch, permissions, duplicate detection, human review, publish
+| and VOID controls are untouched and each still refuses independently. What is
+| removed is only the daily COUNT.
+|
+| Technical backpressure is deliberately NOT part of this: render capacity,
+| upload size, page caps, queue depth and free-disk floors are safety rails,
+| not business policy, and they all still hold.
+|
+| A ceiling can be restored at any time without a deploy by declaring
+| LEGACY_IMPORT_HUB_DAILY_LIMIT (or a per-type override) as an integer.
+*/
+$legacyImportHubDefaultLimit = $legacyImportHubLimit(env('LEGACY_IMPORT_HUB_DAILY_LIMIT'), null);
 
 return [
 
@@ -104,9 +136,16 @@ return [
     /*
     | The canonical daily ceiling per import type.
     |
+    | DEFAULT: NULL — no business ceiling, per
+    | REVISION-SUNU-LEGACY-IMPORT-UNLIMITED-ADMIN-ACCESS-1. Each type may still
+    | be given its own ceiling by declaring an integer override, and the three
+    | types remain independent: capping one never caps another.
+    |
     | The upper bound exists for the same reason ROLL-4's does: a ceiling that
     | anyone may set to 1,000,000 is decoration. A configured value above it is
     | clamped, and the clamp is reported by the hub rather than applied silently.
+    | It bounds a DECLARED ceiling only — it is not itself a ceiling, so it does
+    | not reintroduce one when no ceiling is declared.
     */
     'daily_limit' => [
         'legacy_patient' => $legacyImportHubLimit(env('LEGACY_IMPORT_PATIENT_DAILY_LIMIT'), $legacyImportHubDefaultLimit),
@@ -140,6 +179,15 @@ return [
         'types_counted_separately' => true,
         // The hub ceiling never widens an importer's own gates.
         'hub_ceiling_only_narrows' => true,
+        // REVISION-SUNU-LEGACY-IMPORT-UNLIMITED-ADMIN-ACCESS-1 — the shipped
+        // default declares NO business ceiling for any import type. Removing
+        // the count authorizes nothing: every other gate still refuses.
+        'business_quota_unlimited_by_default' => true,
+        // A ceiling of NULL is the absence of a limit, never a large number.
+        'unlimited_is_null_not_a_sentinel' => true,
+        // Technical backpressure is not business quota and is never removed
+        // with it.
+        'technical_backpressure_survives_quota_removal' => true,
     ],
 
     /*
