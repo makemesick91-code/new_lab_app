@@ -253,3 +253,66 @@ LEGACY_IMPORT_RME_DAILY_LIMIT=50         # or one type
 ```
 
 `none`, `null` and `unlimited` remain accepted spellings of "no ceiling".
+
+---
+
+## Shipped and deployed
+
+PR **#433** squash-merged as **`88cc0700161180f38b065ff35011fb790f97ac8a`** from
+candidate `68bc1077`. Annotated GO tag
+**`revision-sunu-legacy-import-unlimited-admin-access-1-go`** (tag object
+`ff97210e`) — local peeled == remote peeled == VPS HEAD == `88cc0700`, and
+`git describe --tags --exact-match HEAD` on the VPS returns the tag.
+
+**CI on the exact candidate SHA** (run `36014762128`): Classifier success
+(resolved `runtime_app`, so the critical gate genuinely ran), NSF-R012 Quality
+success, Phase 3 Android success, **NSF-R011 Critical success**, NSF-9 Release
+Safety & Smoke success, NSF-10 Release Evidence success. Zero failures. Three
+jobs skipped, each expected: the Selective Module gate (no Inventory/Lab/UI/
+Permission change), the mutually-exclusive runner variant of the critical gate,
+and the Full Suite gate under its standing deferral.
+
+**VPS pilot deployed** via `scripts/deploy-vps-runner.sh start` run **on**
+`srv1730088` (never locally). Authority was all three signals, not just one:
+`exit=0`, the `DEPLOY OK: 20260924-155032` marker, and
+`DEPLOY_HEAD_TARGET_MATCH=YES (88cc0700…)`. Pre-deploy backup
+`pre_auto_deploy_20260924-155032.sql` (1,227,159 bytes). `Nothing to migrate.`
+
+**Production verification**
+
+| Check | Result |
+|---|---|
+| Quota before → after | `100/100/100` → **`null/null/null`** |
+| Invariants | all three true at runtime |
+| Patient estate | **0** patients / visits / RME / odontograms / legacy records / staging — no fake data created |
+| `legacy-rme:rollout-readiness` (as `daengtisiams`) | **GO** — incl. `branch_admission`, `private_disk_writable`, `queue_contract`, `ingestion_capacity` |
+| Admitted branches at runtime | `TLK1, LDK2, ATG3, SPN4` — resolved from an environment that still declares the deprecated `SUN4`; MAIN never admitted |
+| User 29 permissions | the five required; **no** `publish_*`/`void_*`/`review_*` |
+| Health `/health/live`, `/health/ready`, `/login` | 200 / 200 / 200 |
+| Queue | worker active, 0 pending / 0 failed |
+| env / debug / maintenance | pilot / false / up |
+| New application log errors | **0** (`laravel.log` unchanged, last written 2026-09-22) |
+
+## A WATCH you will see, and must not "fix"
+
+`legacy-rme:ops-readiness` reports **WATCH** on `batch_size_policy`:
+
+> The batch declares no daily quota, so it is not quota-bounded.
+> → *Declare a daily quota.*
+
+**Do not act on that recommendation by reimposing the hub ceiling.** It would
+undo the owner's decision and stall the migration again.
+
+This WATCH is **pre-existing and unrelated to this revision**:
+`checkBatchSizePolicy()` reads `LegacyRmeMigrationQuotaService::waveDailyLimit()`,
+which reads the **ROLL-4 wave** row (`ops_rme_legacy_migration_waves.daily_quota`,
+NULL on WAVE-4 since it was activated on 2026-08-28) and falls back to
+`legacy_rme_operations.quota.default_wave_daily` (never declared). It **never
+reads `legacy_import_hub`**, so the hub ceiling this revision removed cannot
+affect it either way. Production confirms the wave has reported
+"no ceiling declared" independently of this change.
+
+If the owner wants a *wave-level* bound, that is a separate, deliberate ROLL-4
+decision — set `daily_quota` on the wave. It is not the business quota this
+revision removed, and setting one does not reinstate a per-branch daily
+business ceiling.
