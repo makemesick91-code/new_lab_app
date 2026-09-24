@@ -1,0 +1,85 @@
+---
+description: Cabang Sunu go-live readiness — zero patient estate, the first patient must be real, and the armed Front Office cohort is measured, never inferred
+globs:
+alwaysApply: false
+---
+
+# SUNU GO-LIVE READINESS (SUNU-GO-LIVE-READINESS-1)
+
+Companion to `164-front-office-branch-context-lock.mdc`, which owns the lock
+MECHANICS. This rule owns the go-live POSTURE and the instrument that measures
+it. Where the two touch, 164 wins on mechanics.
+
+## The first patient must be real
+
+FULL-PATIENT-ESTATE-RESET-1 removed the entire fictional pre-go-live estate.
+Measured read-only on the pilot 2026-09-24: `mst_patients` 0, visits 0, medical
+records 0, odontograms 0, consents 0, prescriptions 0, RME invoices 0, RME
+payments 0, lab orders 0, lab case candidates 0, legacy RME records 0, legacy
+patient staging 0, patient documents 0, SATUSEHAT candidates 0, patient-workflow
+notifications 0. Deliberately PRESERVED: `sys_audit_logs` and the 43
+`trx_satusehat_audit_logs` rows.
+
+1. **A zero patient estate is the expected state, not a fault.** Do not "repair"
+   it, re-seed it, or treat an empty list as a broken page.
+2. **The first patient registered after the reset must be a REAL clinical
+   patient.** Never manufacture one — not to demonstrate a workflow, not to
+   produce go-live evidence, not to make a report look complete.
+3. **Readiness is proven by tests, fixtures and read-only production
+   inspection.** A production fake patient, visit, RME, odontogram, invoice or
+   payment is never acceptable evidence, and its absence is never a gap in the
+   evidence.
+4. **If a patient exists when you expected zero, STOP and report it.** It may be
+   the first real one. It is never "leftover fictional data" to clean up.
+
+## Armed state is measured, never inferred
+
+The cohort lives in an environment string, so the armed set is invisible to the
+repository by design. That is a deliberate safety property and also a reporting
+hazard: a typo looks exactly like a working lock.
+
+5. **`php artisan rbac:front-office-branch-pin-audit` is the instrument.** It is
+   the only supported way to establish who is armed on a running host. Do not
+   answer the question by reading the environment string and reasoning about it,
+   and never by opening a REPL on production.
+6. **The audit is READ-ONLY and has no arming flag.** Arming stays a supervised
+   ceremony (rule 164). A command that could arm a front desk from a shell would
+   make that ceremony optional.
+7. **It reports three independently resolved branches per account** — the pin,
+   `BranchContext::forUser()` and `resolveActiveBranchForAdmin()` (the branch a
+   NEW VISIT registers at) — and compares them. They have disagreed before; a
+   test proves the split brain is closed in the code, this proves it is closed on
+   the host that is running.
+8. **`--strict` exits 2 on any anomaly** and is safe to depend on as a go-live or
+   deploy gate.
+
+## Cabang Sunu's armed posture
+
+9. **Sunu is `SPN4`** (branch id 5 on the pilot), active and RME-enabled, with
+   two ACTIVE rooms `SPN-A` / `SPN-B`. `SUN4` is a deprecated alias — see
+   `136-sunu-branch-code-canonical.mdc`.
+10. **Admin Sunu is armed as a COHORT OF ONE.** Admin Landak, Admin Antang and
+    Admin Telkomas are deliberately NOT armed by this workstream; their
+    activation is a separate ceremony each. Production carries eight Front Office
+    accounts and only the approved four may ever enter the cohort.
+11. **`front_office.branch_device_lock` stays OFF.** Sunu's front desk holds no
+    registered WebAuthn credential, and arming the device flag would deny that
+    desk its login. Branch context was armed precisely because it demands no
+    proof — do not "complete" the lock by turning the device flag on.
+12. **Arming Admin Sunu was safe because the pin AGREED with the live context.**
+    The account's online context and four consecutive daily branch contexts all
+    read SPN4 before arming, so the pin narrowed nothing in practice. Check that
+    agreement before arming any further account; a pin that contradicts a live
+    daily context is a fail-closed lockout, not a narrowing.
+
+## Audit the canonical checkout, not whichever one is open
+
+13. **Resolve and read the CANONICAL branch before reporting a defect.** During
+    this workstream two "defects" — a stale branch-code registry in the rules and
+    a phantom-branch hazard in `RmeBranchSeeder` — were both artifacts of
+    grepping the primary checkout while it sat on an unrelated older CI-evidence
+    branch. Both were already fixed on canonical. A finding measured against the
+    wrong tree is not a finding, and reporting one costs more than finding
+    nothing.
+14. **Production HEAD, canonical HEAD and the working checkout are three
+    different refs.** State which one every claim was measured against.
