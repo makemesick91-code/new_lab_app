@@ -591,6 +591,19 @@ return [
         'tests/Feature/LegacyImportHub/LegacyImportHubQuotaTest.php',
         'tests/Feature/LegacyImportHub/LegacyImportHubIntegrationTest.php',
 
+        // REVISION-SUNU-LEGACY-IMPORT-UNLIMITED-ADMIN-ACCESS-1 — the owner's
+        // decision that there is NO daily business quota, and the proof that
+        // removing the count did not remove a single other gate.
+        //
+        // DECLARED FOR THE SAME REASON AS THE TWO SUITES ABOVE. The failure
+        // this guards against is silent in both directions: a reintroduced
+        // ceiling would stall a live migration at 100 records with no error
+        // anyone reads as a regression, and a reading of "unlimited" as
+        // "ungated" would quietly widen admission, permissions or backpressure
+        // while every quota test stayed green. Selection is pinned here rather
+        // than resting on the `LegacyImportHub` filter token.
+        'tests/Feature/LegacyImportHub/SunuLegacyImportUnlimitedAccessTest.php',
+
         // BUGFIX-NEW-VISIT-PATIENT-SEARCH-RUNTIME-1 — the patient selector
         // behind "Kunjungan Baru", and the SQL-level guard on the fault that
         // took it down in production.

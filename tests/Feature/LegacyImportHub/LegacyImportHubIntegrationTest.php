@@ -40,6 +40,22 @@ require_once __DIR__.'/../LegacyOdontogram/helpers.php';
 beforeEach(function () {
     seedAccessControl();
     Bus::fake();
+
+    /*
+    | REVISION-SUNU-LEGACY-IMPORT-UNLIMITED-ADMIN-ACCESS-1 — declare a ceiling.
+    |
+    | The shipped default is now NO business ceiling, and an undeclared ceiling
+    | means the service deliberately counts nothing: a counter nobody reads is
+    | a drift source. These tests exist to prove each importer is WIRED to the
+    | counter, and that wiring is only observable while a ceiling exists.
+    |
+    | So the ceiling is declared here rather than inherited. That keeps the
+    | wiring under test without asserting a default the product no longer has,
+    | and a regression that unwires an importer still fails here.
+    */
+    foreach (LegacyImportType::all() as $legacyImportType) {
+        lihLimit($legacyImportType, 100);
+    }
 });
 
 /*

@@ -31,12 +31,42 @@ require_once __DIR__.'/helpers.php';
 |--------------------------------------------------------------------------
 */
 
-it('declares a ceiling of 100 for every import type', function () {
-    // The canonical number, read through the service rather than the config, so
-    // a clamp or a rename cannot pass this silently.
-    foreach (LegacyImportType::all() as $type) {
-        expect(lihQuota()->limitFor($type))->toBe(100);
+/*
+| REVISION-SUNU-LEGACY-IMPORT-UNLIMITED-ADMIN-ACCESS-1 — declare a ceiling.
+|
+| The shipped default is now NO business ceiling, and with no ceiling the
+| service deliberately counts nothing. Every metering test below is about how
+| the counter behaves WHILE a ceiling exists, so the ceiling is declared here
+| instead of inherited from a default the product no longer has.
+|
+| Tests that are about the ceiling's own edges (none declared, zero, clamped)
+| set their own value and override this.
+*/
+beforeEach(function () {
+    foreach (LegacyImportType::all() as $legacyImportType) {
+        lihLimit($legacyImportType, 100);
     }
+});
+
+it('ships no business ceiling for any import type', function () {
+    /*
+    | Read the SHIPPED config file rather than the runtime value: the beforeEach
+    | above rewrites the runtime ceiling, and a default contract asserted
+    | against a value the test itself just set would prove nothing.
+    |
+    | This is the pin for the owner's decision. Reintroducing a numeric default
+    | — including a large sentinel — fails here.
+    */
+    $shipped = require base_path('config/legacy_import_hub.php');
+
+    expect(array_keys($shipped['daily_limit']))->toBe(LegacyImportType::all());
+
+    foreach ($shipped['daily_limit'] as $type => $limit) {
+        expect($limit)->toBeNull("Import type {$type} must ship without a business ceiling.");
+    }
+
+    // The absence has to be NULL, not 0: zero admits nothing at all.
+    expect($shipped['daily_limit'])->not->toContain(0);
 });
 
 it('knows exactly three import types', function () {

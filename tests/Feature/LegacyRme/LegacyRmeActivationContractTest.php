@@ -241,10 +241,22 @@ it('never admits MAIN even when it is written into the allowlist and the approva
 |--------------------------------------------------------------------------
 */
 
-it('gives each branch of the activated wave its own daily ceiling of 100', function () {
+it('gives each branch of the activated wave its own daily ceiling', function () {
     activateWave();
 
     $quota = app(LegacyImportDailyQuotaService::class);
+
+    /*
+    | REVISION-SUNU-LEGACY-IMPORT-UNLIMITED-ADMIN-ACCESS-1 — the ceiling is
+    | declared here rather than inherited.
+    |
+    | The shipped default is now NO business ceiling, and this test is about
+    | ISOLATION — that branches hold separate buckets rather than drawing on a
+    | shared pool. That property only becomes observable while a ceiling
+    | exists, so one is declared. The number is arbitrary; the separation is
+    | the subject.
+    */
+    config()->set('legacy_import_hub.daily_limit.'.LegacyImportType::LEGACY_RME, 100);
     $ids = collect(ACTIVATION_BRANCHES)->mapWithKeys(
         fn (string $code): array => [$code => (int) Branch::query()->where('code', $code)->value('id')]
     );

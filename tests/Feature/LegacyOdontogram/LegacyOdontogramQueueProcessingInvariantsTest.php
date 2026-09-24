@@ -101,6 +101,16 @@ it('creates no native clinical, financial or downstream record while processing'
 });
 
 it('does not consume daily import quota a second time while processing', function () {
+    /*
+    | REVISION-SUNU-LEGACY-IMPORT-UNLIMITED-ADMIN-ACCESS-1 — declare a ceiling
+    | BEFORE the upload, because the upload is what spends the slot.
+    |
+    | With no ceiling nothing is metered, so a double-charge would be invisible
+    | rather than absent. Declaring one keeps this invariant genuinely under
+    | test: a worker that reserved again would still be caught here.
+    */
+    config()->set('legacy_import_hub.daily_limit.'.LegacyImportType::LEGACY_ODONTOGRAM, 100);
+
     [$import, $patient] = lodoQueuedImport();
 
     $quota = app(LegacyImportDailyQuotaService::class);

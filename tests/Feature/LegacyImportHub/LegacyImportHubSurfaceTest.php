@@ -192,6 +192,11 @@ it('reports the ceiling, what was used and what is left', function () {
     // enrols the branch exactly as a real activation does.
     $branch = legacyRmeBranch();
 
+    // REVISION-SUNU-LEGACY-IMPORT-UNLIMITED-ADMIN-ACCESS-1 — the shipped
+    // default declares no ceiling, so a ceiling is declared here to exercise
+    // the reporting path that only exists while one is set.
+    lihLimit(LegacyImportType::LEGACY_RME, 100);
+
     lihConsume(LegacyImportType::LEGACY_RME, (int) $branch->id, 7);
 
     $actor = lihOperator(['view_legacy_rme_imports', 'create_legacy_rme_imports']);
@@ -203,6 +208,35 @@ it('reports the ceiling, what was used and what is left', function () {
     expect($rme['limit'])->toBe(100);
     expect($rme['used_today'])->toBe(7);
     expect($rme['remaining_today'])->toBe(93);
+    expect($rme['status'])->toBe('aktif');
+});
+
+it('reports no ceiling and no remaining count when the quota is unlimited', function () {
+    /*
+    | REVISION-SUNU-LEGACY-IMPORT-UNLIMITED-ADMIN-ACCESS-1 — what the operator
+    | actually sees after the owner's decision.
+    |
+    | `remaining_today` is NULL, not 0 and not a large number: there is nothing
+    | left to count down. An operator reading this surface must not be shown a
+    | figure that looks like a ceiling, and must never be shown 0 — which on
+    | this surface means "exhausted" and would stop a migration that is in fact
+    | unrestricted.
+    */
+    $branch = legacyRmeBranch();
+
+    lihLimit(LegacyImportType::LEGACY_RME, null);
+
+    $actor = lihOperator(['view_legacy_rme_imports', 'create_legacy_rme_imports']);
+    $actor->forceFill(['branch_id' => $branch->id])->save();
+
+    $overview = app(LegacyImportHubService::class)->overview($actor->refresh());
+    $rme = collect($overview['types'])->firstWhere('type', LegacyImportType::LEGACY_RME);
+
+    expect($rme['limit'])->toBeNull();
+    expect($rme['remaining_today'])->toBeNull();
+
+    // Unlimited never presents as exhausted, which is the failure mode that
+    // would silently halt the migration.
     expect($rme['status'])->toBe('aktif');
 });
 
