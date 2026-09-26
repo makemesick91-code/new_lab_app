@@ -65,7 +65,9 @@ it('grants exactly the union of the two legacy roles, no more and no less', func
     // Derived from the other two lists on purpose: a permission added to
     // Admin Klinik or Kasir later must not silently skip the merged role.
     expect($frontOffice->all())->toBe($union->all())
-        ->and($union)->toHaveCount(21);
+        // REVISION-LEGACY-VISIT-BOUND-PREVERIFIED-INGESTION-1 added `verify_legacy_dates_at_ingestion` to Admin Klinik and Front Office;
+        // Admin Klinik 20 -> 21, Kasir unchanged, so the union is 21 -> 22.
+        ->and($union)->toHaveCount(22);
 
     // And the seeded role really carries them, not just the array.
     expect(Role::findByName(FrontOfficeRole::NAME)->permissions->pluck('name')->sort()->values()->all())
@@ -83,7 +85,7 @@ it('reuses the existing role row rather than creating a second one', function ()
 
     expect(Role::where('name', FrontOfficeRole::NAME)->count())->toBe(1)
         ->and(Role::where('name', FrontOfficeRole::NAME)->first()->id)->toBe($before->id)
-        ->and(Role::findByName(FrontOfficeRole::NAME)->permissions)->toHaveCount(21);
+        ->and(Role::findByName(FrontOfficeRole::NAME)->permissions)->toHaveCount(22);
 });
 
 // ─── The daily branch lock. The load-bearing property. ─────────────────────

@@ -1,0 +1,130 @@
+---
+description: Legacy visit-bound preverified ingestion — date attestation at a real visit, WITHOUT bypassing maker-checker
+globs:
+  - "app/Support/Legacy/**"
+  - "app/Modules/LegacyRme/**"
+  - "app/Modules/LegacyOdontogram/**"
+  - "app/Modules/LegacyImport/**"
+alwaysApply: false
+---
+
+# REVISION-LEGACY-VISIT-BOUND-PREVERIFIED-INGESTION-1
+
+## The one sentence
+
+**VISIT-PREVERIFIED MEANS *DATE* PREVERIFIED.**
+It does **NOT** mean SOD bypassed, and it does **NOT** mean self-published.
+
+Canonical durable rule:
+
+> Admin Klinik date attestation eliminates duplicate date verification, but does
+> not collapse maker-checker separation where LEGACY-RME-SOD-1 applies.
+
+## What the path does
+
+```
+REAL VISIT
+  → operator opens the visit
+  → uploads Legacy RME / Legacy Odontogram
+  → inspects the source document
+  → enters the historical date(s)
+  → explicitly attests the dates
+  → server validates every canonical constraint
+  → source SHA binds the attestation
+  → async render
+  → READY_FOR_REVIEW
+  → SEPARATE authorized checker reviews the rendered document
+      · dates shown READ-ONLY / pre-attested
+      · checker confirms document/patient/render integrity
+  → canonical publish
+```
+
+## Non-negotiable rules
+
+1. **A real visit is required.** No visit, no preverified ingestion. The route is
+   nested under `visits/{clinicVisit}` so a visitless variant does not exist.
+2. **Never create a visit** to enable a legacy import. No fake, placeholder,
+   migration-only or Rp0 visit. Ever.
+3. **Patient, branch and visit date come from the server**, resolved from the
+   visit row. A request-supplied `patient_id` is accepted only so a mismatch can
+   be *rejected*, never used as the answer.
+4. **`origin_branch_id` stays RM-derived** (FIX-ROLL2-1). The visit governs
+   identity, the date ceiling and access — it does **not** redefine archive
+   ownership, because that column is what row visibility and the policies key
+   off.
+5. **Dates are verified ONCE**, by the uploading operator, at the visit.
+6. **Explicit attestation is mandatory** — enforced in the FormRequest *and*
+   again in `LegacyVisitBindingService`, so a direct service call or a future CLI
+   is not a weaker door.
+7. **Legacy date must be STRICTLY earlier than the visit date** (`<`, never
+   `<=`). Same-day is **outside** preverified eligibility and uses the standard
+   review path.
+8. **The native-RME boundary remains.** Both bounds are evaluated
+   independently, so the more restrictive one wins.
+9. **The source SHA binds the attestation.** If the stored file's hash no longer
+   matches `verified_source_sha256`, the attestation is void.
+10. **The existing importer remains the truth.** The visit-bound path is an
+    orchestration/authorization layer; it must never reimplement patient
+    resolution, branch rules, duplicate detection, file safety, storage,
+    rendering or the date rules.
+11. **SOD is untouched.** `uploaded_by != acting_user_id` for review AND publish
+    stays armed. The uploader can never certify their own document.
+12. **No generic publish, no VOID.** The date-attestation cohort gains neither,
+    and no code path grants them.
+13. **No auto-publish, and no dormant SOD-bypass flag.** There is deliberately no
+    config switch that could disable the visit bound or the separation rule.
+14. **Finalization revalidates** the attestation under the row lock: complete
+    evidence, matching SHA, live non-cancelled visit, unchanged visit date.
+15. **Drift is refused, never self-healed.** A moved visit date is NOT adopted —
+    silently re-pointing a human's statement at facts they never saw turns
+    evidence into fiction.
+16. **Downstream dates are READ-ONLY.** The checker gets no editable date
+    control. A wrong date means reject / return for correction, then re-import —
+    never edit-then-publish.
+17. **No new native side effects.** No visit, medical record, odontogram,
+    invoice, payment, consent, lab order or SATUSEHAT candidate.
+18. **Backlog / mass migration stays separate** and keeps its own canonical
+    review flow. A manifest may never self-declare `VISIT_PREVERIFIED`.
+
+## Odontogram differs — audited, not assumed
+
+Legacy Odontogram has **no `SeparatePublisherGuard`**; `review()`/`publish()`
+never compare the actor with `uploaded_by`. Its duty separation is
+**permission-based**: `review_legacy_odontogram_imports` and
+`publish_legacy_odontogram_imports` are separate named permissions that the
+front-desk cohort holds **neither** of.
+
+**Do not add an identity SOD there for symmetry.** Preserve the canonical
+architecture and state the difference. (Consequence: for odontogram, maker-checker
+holds via the role split; only a Super Admin — who bypasses via `Gate::before` —
+could do both, which is pre-existing and not introduced here.)
+
+Odontogram also models **one date**, not a range: `verified_selected_date` only,
+no `verified_latest_date`. It has no source-RM binding service.
+
+## Permission
+
+`verify_legacy_dates_at_ingestion` — granted to **Admin Klinik** and
+**Front Office** only (exactly the roles that already hold
+`create_legacy_*_imports`). It grants the right to *attest dates*, nothing else.
+
+## Implementation anchors
+
+- `App\Support\Legacy\LegacyVerificationMode` — the vocabulary (`VISIT_PREVERIFIED`)
+- `App\Support\Legacy\LegacyVisitBindingService` — **THE** visit authority (read-only)
+- `App\Support\Legacy\LegacyVisitAttestation` — the resolved, server-built binding
+- `App\Support\Legacy\LegacyVisitBindingRefusal` — stable refusal codes
+- `resources/views/legacy/partials/preverified-date-evidence.blade.php` — read-only evidence
+- `tests/Feature/LegacyRme/VisitBoundPreverifiedIngestionTest.php`
+
+## Gotchas learned here
+
+- A nullsafe call on a variable **not imported into a closure's `use` clause**
+  silently yields null → the evidence vanished with no error. Compute attestation
+  columns **before** the transaction.
+- `x-ui.card` has **no `subtitle` slot**; passing one silently drops the content.
+- Staging route names are `settings.rme.legacy-imports.*` and
+  `settings.rme.legacy-odontograms.*` — `rme.legacy-odontograms.*` is the
+  **published record** viewer, not the staging import.
+- `users.branch_id` alone does **not** narrow `RmeWorkingBranchScope`; a real
+  online context does. A fixture that sets only the column is measuring nothing.

@@ -46,7 +46,9 @@ it('does not strip the legacy permission grants', function (string $legacy, int 
         "the {$legacy} permission grant changed — the owner decision is that it stays intact",
     );
 })->with([
-    [FrontOfficeRole::LEGACY_ADMIN_CLINIC, 20],
+    // REVISION-LEGACY-VISIT-BOUND-PREVERIFIED-INGESTION-1 added `verify_legacy_dates_at_ingestion` to Admin Klinik and Front Office,
+    // so Admin Klinik moved 20 -> 21. Kasir is deliberately unchanged.
+    [FrontOfficeRole::LEGACY_ADMIN_CLINIC, 21],
     [FrontOfficeRole::LEGACY_KASIR, 6],
 ]);
 

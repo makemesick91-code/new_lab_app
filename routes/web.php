@@ -71,6 +71,7 @@ use App\Modules\LabOrder\Controllers\LabWorkflowOperationalDashboardController;
 use App\Modules\LabOrder\Controllers\LabWorkflowRequestController;
 use App\Modules\LabService\Controllers\LabServiceController;
 use App\Modules\LegacyImport\Controllers\LegacyImportHubController;
+use App\Modules\LegacyImport\Controllers\VisitBoundLegacyIngestionController;
 use App\Modules\LegacyOdontogram\Controllers\LegacyOdontogramImportController;
 use App\Modules\LegacyOdontogram\Controllers\LegacyOdontogramRecordController;
 use App\Modules\LegacyRme\Controllers\LegacyRmeImportController;
@@ -900,6 +901,44 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
         Route::middleware('permission:manage_clinic_visits')
             ->patch('visits/{clinicVisit}/room', [ClinicVisitController::class, 'assignRoom'])
             ->name('visits.assign-room');
+
+        /*
+         | REVISION-LEGACY-VISIT-BOUND-PREVERIFIED-INGESTION-1 — Arsip Legacy,
+         | opened from a REAL VISIT (point-of-visit migration).
+         |
+         | Nested under `visits/{clinicVisit}` on purpose: the visit is not a
+         | filter the client may drop, it is the route itself. There is no
+         | variant of these endpoints that works without one, which is what
+         | makes "no real visit, no preverified ingestion" structural rather
+         | than a check someone could forget.
+         |
+         | THE NARROW PERMISSION IS ADDITIONAL, NOT ALTERNATIVE. These sit
+         | inside the surrounding `view_clinic_visits|manage_clinic_visits`
+         | group AND require `verify_legacy_dates_at_ingestion`, and the
+         | FormRequest separately requires `create` on the archive model. A
+         | holder of any one of the three still gets nothing.
+         |
+         | Deliberately absent: any review, publish, finalize or void action.
+         | LEGACY-RME-SOD-1 stays armed and the uploader never certifies their
+         | own document — the checker uses the existing archive screens.
+         */
+        Route::middleware('permission:verify_legacy_dates_at_ingestion')->group(function () {
+            Route::get('visits/{clinicVisit}/legacy-archive/rme', [VisitBoundLegacyIngestionController::class, 'createRme'])
+                ->name('visits.legacy-archive.rme.create')
+                ->whereNumber('clinicVisit');
+
+            Route::post('visits/{clinicVisit}/legacy-archive/rme', [VisitBoundLegacyIngestionController::class, 'storeRme'])
+                ->name('visits.legacy-archive.rme.store')
+                ->whereNumber('clinicVisit');
+
+            Route::get('visits/{clinicVisit}/legacy-archive/odontogram', [VisitBoundLegacyIngestionController::class, 'createOdontogram'])
+                ->name('visits.legacy-archive.odontogram.create')
+                ->whereNumber('clinicVisit');
+
+            Route::post('visits/{clinicVisit}/legacy-archive/odontogram', [VisitBoundLegacyIngestionController::class, 'storeOdontogram'])
+                ->name('visits.legacy-archive.odontogram.store')
+                ->whereNumber('clinicVisit');
+        });
 
         // Hotfix Sprint 60.8 — doctor examination requires an assigned treatment
         // room. The `visit.room` gate blocks RM input on a roomless active visit.

@@ -64,6 +64,8 @@ class PermissionGroupingService
                 'review_legacy_rme_imports',
                 'publish_legacy_rme_imports',
                 'void_legacy_rme_imports',
+                // REVISION-LEGACY-VISIT-BOUND-PREVERIFIED-INGESTION-1
+                'verify_legacy_dates_at_ingestion',
                 // LEGACY-RME-PDF-ROLL-4 — migration operations control plane
                 'view_legacy_rme_migration_operations',
                 'manage_legacy_rme_migration_operations',

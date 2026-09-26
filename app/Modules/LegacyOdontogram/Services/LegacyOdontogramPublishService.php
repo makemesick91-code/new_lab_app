@@ -15,6 +15,8 @@ use App\Modules\LegacyOdontogram\Support\LegacyOdontogramImportPageStatus;
 use App\Modules\LegacyOdontogram\Support\LegacyOdontogramImportStatus;
 use App\Modules\LegacyOdontogram\Support\LegacyOdontogramRecordStatus;
 use App\Modules\LegacyRme\Support\LegacyRmePdfFailure;
+use App\Support\Legacy\LegacyVisitBindingRefusal;
+use App\Support\Legacy\LegacyVisitBindingService;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -52,6 +54,7 @@ class LegacyOdontogramPublishService
         private readonly LegacyOdontogramImportRepositoryInterface $imports,
         private readonly LegacyOdontogramRecordRepositoryInterface $records,
         private readonly LegacyOdontogramDateRuleService $dateRules,
+        private readonly LegacyVisitBindingService $visitBinding,
         private readonly LegacyOdontogramBranchBindingService $branchBinding,
         private readonly LegacyOdontogramStorageService $storage,
         private readonly LegacyOdontogramAuditService $audit,
@@ -84,6 +87,7 @@ class LegacyOdontogramPublishService
             }
 
             $this->assertRenderedPagesUsable($locked, $this->imports->pagesFor($locked));
+            $this->assertVisitAttestationStillValid($locked);
 
             return $this->imports->update($locked, [
                 'status' => LegacyOdontogramImportStatus::REVIEWED,
@@ -161,7 +165,17 @@ class LegacyOdontogramPublishService
             }
 
             // Re-validated under the lock, never trusted from upload time.
-            $dateResult = $this->dateRules->evaluate($patient, $locked->selected_odontogram_date);
+            $this->assertVisitAttestationStillValid($locked);
+
+            // The visit ceiling is re-applied here too, so the bound the
+            // document was accepted under is the bound it is published under.
+            $dateResult = $this->dateRules->evaluate(
+                $patient,
+                $locked->selected_odontogram_date,
+                $locked->isVisitPreverified()
+                    ? $locked->verification_visit_date?->toDateString()
+                    : null,
+            );
 
             if ($dateResult->failed()) {
                 throw ValidationException::withMessages([
@@ -293,6 +307,51 @@ class LegacyOdontogramPublishService
     /**
      * @throws ValidationException
      */
+    /**
+     * REVISION-LEGACY-VISIT-BOUND-PREVERIFIED-INGESTION-1 — is the date
+     * attestation on this row STILL true, under the lock, right now?
+     *
+     * Identical reasoning to the RME archive: the human's statement was about
+     * the world at upload time, and finalization freezes it into permanent
+     * clinical evidence. A cancelled, deleted or rescheduled visit, or a
+     * source file whose hash has moved, voids the statement.
+     *
+     * IT NEVER SELF-HEALS — a moved visit date is refused, not adopted.
+     *
+     * Backlog rows (no preverified mode) pass straight through: there is no
+     * attestation to check and none may be invented.
+     *
+     * @throws ValidationException
+     */
+    private function assertVisitAttestationStillValid(LegacyOdontogramImport $locked): void
+    {
+        if (! $locked->isVisitPreverified()) {
+            return;
+        }
+
+        if (! $locked->hasCompleteVisitAttestation()) {
+            throw ValidationException::withMessages([
+                LegacyVisitBindingRefusal::FIELD => [
+                    'Bukti verifikasi tanggal pada dokumen ini tidak lengkap. '
+                    .'Batalkan dan impor ulang dokumen melalui proses koreksi.',
+                ],
+            ]);
+        }
+
+        if ((string) $locked->verified_source_sha256 !== (string) $locked->source_pdf_sha256) {
+            throw LegacyVisitBindingRefusal::sourceChanged()->toValidationException();
+        }
+
+        try {
+            $this->visitBinding->revalidate(
+                $locked->verification_visit_id !== null ? (int) $locked->verification_visit_id : null,
+                $locked->verification_visit_date?->toDateString(),
+            );
+        } catch (LegacyVisitBindingRefusal $refusal) {
+            throw $refusal->toValidationException();
+        }
+    }
+
     private function refuse(string $failureCode): never
     {
         throw ValidationException::withMessages([

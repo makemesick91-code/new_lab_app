@@ -284,6 +284,23 @@ class PermissionSeeder extends Seeder
         'publish_legacy_rme_imports',
         'void_legacy_rme_imports',
 
+        // REVISION-LEGACY-VISIT-BOUND-PREVERIFIED-INGESTION-1 — verify the
+        // historical DATES on a legacy document at the point of a real visit.
+        //
+        // NARROW ON PURPOSE. It grants exactly one new thing: the right to
+        // attest, at a real visit, that the dates entered match the source
+        // document — so the downstream checker never re-enters them. It does
+        // NOT grant review, publish or void, and it creates no path to any of
+        // them: LEGACY-RME-SOD-1 stays armed and the uploader still cannot
+        // certify their own document.
+        //
+        // Granted to the two front-desk roles that ALREADY hold
+        // create_legacy_*_imports (Admin Klinik, Front Office), so the cohort
+        // that can file a document is exactly the cohort that can attest its
+        // dates. No role gains the ability to file anything it could not file
+        // before.
+        'verify_legacy_dates_at_ingestion',
+
         // LEGACY-RME-PDF-1D — clinical READ of a published archive.
         //
         // A separate permission on purpose. The five above are the INTAKE side
