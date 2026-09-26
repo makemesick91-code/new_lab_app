@@ -35,6 +35,30 @@ beforeEach(function () {
     // A window must exist for STALE and PASS to be distinguishable at all.
     config()->set('doctor_webauthn_live_proof.freshness_window_days', 7);
     config()->set('webauthn.device_binding.require_device_bound', true);
+
+    /*
+     * FREEZE THE CLOCK TO THE FILE'S OWN REFERENCE NOW.
+     *
+     * Every fixture here dates its proofs from `lpNow()` (LP_NOW), but nothing
+     * froze the clock — so freshness was measured against the REAL wall clock
+     * while the fixtures stayed pinned to 2026-09-19. The tests that assert a
+     * READY/PASS outcome therefore had a shelf life: they were green while the
+     * real date was inside the 7-day window and began failing for everyone,
+     * on every branch, once it elapsed (base d0af0694 passed CI on 2026-09-24
+     * and the same commit fails on 2026-09-27).
+     *
+     * The tests asserting NOT-READY outcomes (revoked, stale, unverified) never
+     * noticed, because those verdicts are true at any distance — which is why a
+     * green suite hid it.
+     *
+     * Freezing here is what `lpNow()` was always for: it makes the whole file
+     * deterministic instead of quietly dependent on the day it is run.
+     */
+    CarbonImmutable::setTestNow(lpNow());
+});
+
+afterEach(function () {
+    CarbonImmutable::setTestNow();
 });
 
 function lpNow(): CarbonImmutable
