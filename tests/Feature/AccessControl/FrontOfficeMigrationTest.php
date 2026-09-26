@@ -52,7 +52,8 @@ it('reports both legacy roles as migratable candidates', function () {
     $report = $this->auditor->audit();
 
     expect($report['role_ready'])->toBeTrue()
-        ->and($report['expected_permission_count'])->toBe(21)
+        // REVISION-LEGACY-VISIT-BOUND-PREVERIFIED-INGESTION-1 added `verify_legacy_dates_at_ingestion` to Admin Klinik and Front Office (union 21 -> 22).
+        ->and($report['expected_permission_count'])->toBe(22)
         ->and($report['migratable'])->toBe(2)
         ->and($report['blocked'])->toBe(0);
 });
