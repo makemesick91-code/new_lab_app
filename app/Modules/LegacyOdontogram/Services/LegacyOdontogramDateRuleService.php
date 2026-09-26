@@ -96,12 +96,29 @@ class LegacyOdontogramDateRuleService
 
     public const CODE_LEGACY_DATE_INVALID = 'LEGACY_ODONTOGRAM_DATE_INVALID';
 
+    /**
+     * REVISION-LEGACY-VISIT-BOUND-PREVERIFIED-INGESTION-1 — the document is not
+     * historical RELATIVE TO THE VISIT it was filed at.
+     *
+     * An ADDITIONAL bound, never a replacement, applied only on the
+     * visit-bound path. Strictly earlier, so a same-day document is refused
+     * and goes through the standard review path instead.
+     *
+     * ONE DATE, NOT A RANGE. The legacy odontogram archive models a document
+     * as a single representative clinical date, so the ceiling is compared
+     * against that date. RME compares against its LATEST date because RME
+     * models a range; copying RME's two-date shape here would invent a field
+     * with no source of truth.
+     */
+    public const CODE_LEGACY_DATE_NOT_BEFORE_VISIT = 'LEGACY_ODONTOGRAM_DATE_NOT_BEFORE_VISIT';
+
     /** @var list<string> */
     public const CODES = [
         self::CODE_LEGACY_DATE_NOT_BEFORE_NATIVE_ODONTOGRAM,
         self::CODE_LEGACY_DATE_IN_FUTURE,
         self::CODE_LEGACY_DATE_BEFORE_PATIENT_BIRTH,
         self::CODE_LEGACY_DATE_INVALID,
+        self::CODE_LEGACY_DATE_NOT_BEFORE_VISIT,
     ];
 
     /** Field name used when a rule failure is surfaced as a validation error. */
@@ -119,9 +136,19 @@ class LegacyOdontogramDateRuleService
      * The earliest native odontogram date is always recomputed server-side here;
      * a caller-supplied snapshot is never an input to the decision, only
      * something the intake persists afterwards as evidence.
+     *
+     * `$visitDateCeiling` is the REVISION-LEGACY-VISIT-BOUND-PREVERIFIED-INGESTION-1
+     * bound and is OPTIONAL BY DESIGN: the backlog path passes null and keeps
+     * exactly the behaviour it has always had. It is supplied by the caller
+     * because LegacyVisitBindingService resolved it from the visit row; this
+     * service never reads a visit, and a client-supplied ceiling never reaches
+     * it.
      */
-    public function evaluate(Patient $patient, \DateTimeInterface|string|null $selectedDate): LegacyOdontogramDateRuleResult
-    {
+    public function evaluate(
+        Patient $patient,
+        \DateTimeInterface|string|null $selectedDate,
+        \DateTimeInterface|string|null $visitDateCeiling = null,
+    ): LegacyOdontogramDateRuleResult {
         $patientId = (int) $patient->getKey();
         $selected = $this->normalize($selectedDate);
 
@@ -172,6 +199,38 @@ class LegacyOdontogramDateRuleService
             );
         }
 
+        // REVISION-LEGACY-VISIT-BOUND-PREVERIFIED-INGESTION-1 — the visit bound.
+        //
+        // Evaluated INDEPENDENTLY of the native bound above, so the more
+        // restrictive of the two decides without either rule knowing about the
+        // other. Skipped when no ceiling was supplied, leaving the backlog path
+        // untouched. There is deliberately no config toggle: a switch able to
+        // disable this would be the dormant bypass this sprint must not add.
+        $visitCeiling = $visitDateCeiling !== null && $visitDateCeiling !== ''
+            ? $this->normalize($visitDateCeiling)
+            : null;
+
+        if ($visitDateCeiling !== null && $visitDateCeiling !== '' && $visitCeiling === null) {
+            return LegacyOdontogramDateRuleResult::fail(
+                self::CODE_LEGACY_DATE_INVALID,
+                'Tanggal kunjungan tidak valid sehingga batas historis dokumen tidak dapat ditentukan.',
+                $context,
+            );
+        }
+
+        if ($visitCeiling !== null && ! $selected->lessThan($visitCeiling)) {
+            return LegacyOdontogramDateRuleResult::fail(
+                self::CODE_LEGACY_DATE_NOT_BEFORE_VISIT,
+                sprintf(
+                    'Tanggal odontogram lama (%s) harus lebih awal dari tanggal kunjungan ini (%s). '
+                    .'Dokumen bertanggal sama dengan kunjungan harus melalui proses review Legacy standar.',
+                    $selected->format('d-m-Y'),
+                    $visitCeiling->format('d-m-Y'),
+                ),
+                $context + ['visit_date_ceiling' => $visitCeiling->toDateString()],
+            );
+        }
+
         if ($this->requireStrictlyBeforeToday() && ! $selected->lessThan($today)) {
             return LegacyOdontogramDateRuleResult::fail(
                 self::CODE_LEGACY_DATE_IN_FUTURE,
@@ -211,9 +270,13 @@ class LegacyOdontogramDateRuleService
      *
      * @throws ValidationException
      */
-    public function assert(Patient $patient, \DateTimeInterface|string|null $selectedDate, string $field = self::FIELD): LegacyOdontogramDateRuleResult
-    {
-        $result = $this->evaluate($patient, $selectedDate);
+    public function assert(
+        Patient $patient,
+        \DateTimeInterface|string|null $selectedDate,
+        string $field = self::FIELD,
+        \DateTimeInterface|string|null $visitDateCeiling = null,
+    ): LegacyOdontogramDateRuleResult {
+        $result = $this->evaluate($patient, $selectedDate, $visitDateCeiling);
 
         if ($result->failed()) {
             throw ValidationException::withMessages([

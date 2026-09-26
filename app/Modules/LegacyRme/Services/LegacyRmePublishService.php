@@ -20,6 +20,8 @@ use App\Modules\LegacyRme\Support\LegacyRmePublishRefusal;
 use App\Modules\LegacyRme\Support\LegacyRmeRecordStatus;
 use App\Modules\LegacyRme\Support\LegacyRmeSourceRmFailure;
 use App\Modules\LegacyRme\Support\SeparatePublisherGuard;
+use App\Support\Legacy\LegacyVisitBindingRefusal;
+use App\Support\Legacy\LegacyVisitBindingService;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -66,6 +68,7 @@ class LegacyRmePublishService
         private readonly LegacyRmeImportRepositoryInterface $imports,
         private readonly LegacyRmeRecordRepositoryInterface $records,
         private readonly LegacyRmeDateRuleService $dateRules,
+        private readonly LegacyVisitBindingService $visitBinding,
         private readonly LegacyRmeBranchResolver $branchResolver,
         private readonly LegacyRmeStorageService $storage,
         private readonly LegacyRmeAuditService $audit,
@@ -107,6 +110,70 @@ class LegacyRmePublishService
                 (string) $binding->code,
                 (string) $binding->message,
                 LegacyRmeSourceRmFailure::FIELD,
+            );
+        }
+    }
+
+    /**
+     * REVISION-LEGACY-VISIT-BOUND-PREVERIFIED-INGESTION-1 — is the date
+     * attestation on this row STILL true, under the lock, right now?
+     *
+     * WHY REVALIDATE A HUMAN STATEMENT. Because the statement was about the
+     * world as it was at upload time, and finalization freezes it into
+     * permanent clinical evidence. Between the two the visit can be cancelled,
+     * soft-deleted or rescheduled, and the stored file could differ from the
+     * bytes that were read. None of those make the human dishonest; all of
+     * them make their statement no longer applicable.
+     *
+     * IT NEVER SELF-HEALS. A moved visit date is refused, not adopted. Quietly
+     * re-pointing an attestation at a ceiling the human never saw would turn
+     * evidence into fiction — and it is exactly the silent mutation this
+     * sprint forbids. The operator cancels and re-imports through the
+     * canonical correction path.
+     *
+     * BACKLOG ROWS PASS STRAIGHT THROUGH. A row with no preverified mode has
+     * no attestation to check, and inventing one for it would be a lie about
+     * a document nobody re-read.
+     *
+     * @throws LegacyRmePublishRefusal
+     */
+    private function assertVisitAttestationStillValid(LegacyRmeImport $locked): void
+    {
+        if (! $locked->isVisitPreverified()) {
+            return;
+        }
+
+        if (! $locked->hasCompleteVisitAttestation()) {
+            throw LegacyRmePublishRefusal::dateRule(
+                LegacyVisitBindingRefusal::PREVERIFIED_REVALIDATION_FAILED,
+                'Bukti verifikasi tanggal pada dokumen ini tidak lengkap. '
+                .'Batalkan dan impor ulang dokumen melalui proses koreksi.',
+                LegacyVisitBindingRefusal::FIELD,
+            );
+        }
+
+        // The attestation is about ONE file. A hash that no longer matches
+        // means a human certified different bytes.
+        if ((string) $locked->verified_source_sha256 !== (string) $locked->source_pdf_sha256) {
+            $refusal = LegacyVisitBindingRefusal::sourceChanged();
+
+            throw LegacyRmePublishRefusal::dateRule(
+                $refusal->refusalCode,
+                $refusal->getMessage(),
+                $refusal->field,
+            );
+        }
+
+        try {
+            $this->visitBinding->revalidate(
+                $locked->verification_visit_id !== null ? (int) $locked->verification_visit_id : null,
+                $locked->verification_visit_date?->toDateString(),
+            );
+        } catch (LegacyVisitBindingRefusal $refusal) {
+            throw LegacyRmePublishRefusal::dateRule(
+                $refusal->refusalCode,
+                $refusal->getMessage(),
+                $refusal->field,
             );
         }
     }
@@ -191,6 +258,7 @@ class LegacyRmePublishService
             // operator must cancel and re-import instead of quietly re-affirming
             // a binding the master data has since contradicted.
             $this->assertSourcePatientBindingStillValid($locked);
+            $this->assertVisitAttestationStillValid($locked);
 
             // Re-reviewing an already reviewed import is a harmless no-op: the
             // operator simply pressed the button twice.
@@ -299,6 +367,7 @@ class LegacyRmePublishService
             // identity are the three facts a permanent record freezes, and all
             // three are re-derived here rather than trusted from staging time.
             $this->assertSourcePatientBindingStillValid($locked);
+            $this->assertVisitAttestationStillValid($locked);
 
             $pages = $this->imports->pagesFor($locked);
 
@@ -379,10 +448,15 @@ class LegacyRmePublishService
         // patient since. The cutoff is resolved fresh inside evaluate(), so a
         // document that now overlaps the native era is refused here rather than
         // becoming a permanent record.
+        // The visit ceiling is re-applied here too, so the bound the document
+        // was accepted under is the bound it is published under.
         $result = $this->dateRules->evaluate(
             $patient,
             $import->selected_rme_date?->toDateString(),
             $import->latest_rme_date?->toDateString(),
+            $import->isVisitPreverified()
+                ? $import->verification_visit_date?->toDateString()
+                : null,
         );
 
         if ($result->failed()) {

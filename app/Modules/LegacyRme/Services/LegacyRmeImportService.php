@@ -23,6 +23,8 @@ use App\Modules\LegacyRme\Support\LegacyRmePdfFailure;
 use App\Modules\LegacyRme\Support\LegacyRmeSourceRmBinding;
 use App\Modules\LegacyRme\Support\LegacyRmeSourceRmFailure;
 use App\Modules\Patient\Models\Patient;
+use App\Support\Legacy\LegacyVisitAttestation;
+use App\Support\Legacy\LegacyVisitBindingRefusal;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -99,8 +101,23 @@ class LegacyRmeImportService
         UploadedFile $document,
         User $actor,
         ?string $latestRmeDate = null,
+        ?LegacyVisitAttestation $attestation = null,
     ): LegacyRmeImport {
         $this->feature->assertMigrationEnabled();
+
+        // REVISION-LEGACY-VISIT-BOUND-PREVERIFIED-INGESTION-1 — the visit-bound
+        // path passes an attestation ALREADY RESOLVED by
+        // LegacyVisitBindingService; the backlog path passes null and every
+        // line below behaves exactly as it always has.
+        //
+        // THE PATIENT MUST BE THE VISIT'S PATIENT. The caller resolved the
+        // patient from the visit, so these can only disagree if a caller
+        // assembled the two from different sources — which is precisely the
+        // substitution this path exists to prevent. Refusing here means no
+        // surface (HTTP, CLI, direct call) can get it wrong quietly.
+        if ($attestation !== null && $attestation->patientId() !== (int) $patient->getKey()) {
+            throw LegacyVisitBindingRefusal::patientMismatch()->toValidationException();
+        }
 
         // SOURCE-RM-BINDING-1 — FIRST, and before anything is spent.
         //
@@ -112,11 +129,14 @@ class LegacyRmeImportService
 
         // 1A owns the date domain. Never re-derive a bound here. The whole
         // declared range is validated, not just the representative date.
+        // The visit ceiling is passed as an EXTRA bound on the preverified
+        // path; null on the backlog path leaves the rule set unchanged.
         $dateResult = $this->dateRules->assert(
             $patient,
             $selectedRmeDate,
             LegacyRmeDateRuleService::FIELD,
             $latestRmeDate,
+            $attestation?->visitDate,
         );
         $cutoff = $this->dateRules->snapshotCutoff($patient);
 
@@ -200,8 +220,16 @@ class LegacyRmeImportService
         }
 
         try {
+            // Computed BEFORE the transaction, deliberately. Resolving this
+            // inside the closure via `$attestation?->...` once silently yielded
+            // an empty array when the variable was not imported — a nullsafe
+            // call on an undefined variable is only a warning, so the evidence
+            // vanished without an error. A plain array captured here cannot
+            // fail that way.
+            $attestationColumns = $attestation?->evidenceColumns($sha256, $selectedRmeDate, $latestRmeDate) ?? [];
+
             $import = DB::transaction(function () use (
-                $uuid, $patient, $originBranchId, $selectedRmeDate, $latestRmeDate, $cutoff, $document, $path, $sha256, $actor, $operations, $branch, $binding
+                $uuid, $patient, $originBranchId, $selectedRmeDate, $latestRmeDate, $cutoff, $document, $path, $sha256, $actor, $operations, $branch, $binding, $attestationColumns
             ): LegacyRmeImport {
                 /*
                  * ROLL-4 — the AUTHORITATIVE quota reservation.
@@ -272,7 +300,15 @@ class LegacyRmeImportService
                     'status' => LegacyRmeImportStatus::UPLOADED,
                     'uploaded_by' => (int) $actor->getKey(),
                     'uploaded_at' => now(),
-                ]);
+                    // REVISION-LEGACY-VISIT-BOUND-PREVERIFIED-INGESTION-1 — the
+                    // date attestation, written ONCE here beside the values it
+                    // is about and never updated again. An empty array on the
+                    // backlog path leaves every column NULL, which is the true
+                    // statement "this did not come through a visit".
+                    //
+                    // The SHA is the one computed from the stored bytes above,
+                    // so the human's statement is bound to the exact file.
+                ] + $attestationColumns);
             });
         } catch (\Throwable $exception) {
             // The staging row never existed, so the stored bytes are an orphan.
@@ -295,7 +331,10 @@ class LegacyRmeImportService
             // established, not merely that an import happened.
             'source_rm_normalized' => $binding->normalizedSourceRm,
             'source_rm_resolution' => $binding->resolutionCode,
-        ], $actor);
+            // REVISION-LEGACY-VISIT-BOUND-PREVERIFIED-INGESTION-1 — who
+            // attested the dates, at which real visit, against which
+            // ceiling. PII-free by construction: ids and dates only.
+        ] + ($attestation?->auditContext() ?? []), $actor);
 
         $this->audit->logImportEvent(LegacyRmeAuditEvent::PDF_UPLOADED, $import, [
             'size_bytes' => (int) $document->getSize(),

@@ -6,8 +6,10 @@ namespace App\Modules\LegacyRme\Models;
 
 use App\Models\User;
 use App\Modules\Branch\Models\Branch;
+use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\LegacyRme\Support\LegacyRmeImportStatus;
 use App\Modules\Patient\Models\Patient;
+use App\Support\Legacy\LegacyVerificationMode;
 use Database\Factories\LegacyRmeImportFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -59,6 +61,18 @@ class LegacyRmeImport extends Model
     protected $table = 'stg_rme_legacy_imports';
 
     protected $fillable = [
+        // REVISION-LEGACY-VISIT-BOUND-PREVERIFIED-INGESTION-1 — the date
+        // attestation. Fillable for the SAME reason the source-RM evidence is:
+        // the intake service composes the row in one create() and nothing
+        // afterwards may rewrite these. They are evidence, not state.
+        'verification_mode',
+        'verification_visit_id',
+        'verification_visit_date',
+        'verified_by',
+        'verified_at',
+        'verified_selected_date',
+        'verified_latest_date',
+        'verified_source_sha256',
         'uuid',
         'patient_id',
         'origin_branch_id',
@@ -133,6 +147,12 @@ class LegacyRmeImport extends Model
             'selected_rme_date' => 'date',
             'latest_rme_date' => 'date',
             'earliest_native_rme_date_snapshot' => 'date',
+            'verification_visit_id' => 'integer',
+            'verification_visit_date' => 'date',
+            'verified_by' => 'integer',
+            'verified_at' => 'datetime',
+            'verified_selected_date' => 'date',
+            'verified_latest_date' => 'date',
             'size_bytes' => 'integer',
             'page_count' => 'integer',
             'dpi' => 'integer',
@@ -204,5 +224,56 @@ class LegacyRmeImport extends Model
     public function canTransitionTo(string $status): bool
     {
         return LegacyRmeImportStatus::canTransition($this->status, $status);
+    }
+
+    /**
+     * REVISION-LEGACY-VISIT-BOUND-PREVERIFIED-INGESTION-1 — did this document
+     * arrive through the visit-bound path with a human date attestation?
+     *
+     * Asked by the checker UI to decide whether to render the dates READ-ONLY,
+     * and by finalization to decide whether an attestation must be revalidated.
+     * Strict equality on the explicit mode — never inferred from a non-null
+     * visit id or reviewer, so a half-written row can never look preverified.
+     */
+    public function isVisitPreverified(): bool
+    {
+        return LegacyVerificationMode::isVisitPreverified($this->verification_mode);
+    }
+
+    /**
+     * The attestation is only trustworthy if EVERY part of it is present.
+     *
+     * A partially-populated row is refused rather than repaired: guessing a
+     * missing verifier or ceiling would manufacture evidence.
+     */
+    public function hasCompleteVisitAttestation(): bool
+    {
+        return $this->isVisitPreverified()
+            && $this->verification_visit_id !== null
+            && $this->verification_visit_date !== null
+            && $this->verified_by !== null
+            && $this->verified_at !== null
+            && $this->verified_selected_date !== null
+            && $this->verified_source_sha256 !== null
+            && $this->verified_source_sha256 !== '';
+    }
+
+    /**
+     * REVISION-LEGACY-VISIT-BOUND-PREVERIFIED-INGESTION-1 — who attested the
+     * dates, and the visit they attested at.
+     *
+     * Read-only provenance for the checker screen. Both are nullOnDelete, so a
+     * removed account or visit leaves the snapshot columns
+     * (`verification_visit_date`, `verified_selected_date`) intact and the
+     * evidence still readable — which is the point of copying them.
+     */
+    public function verifiedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'verified_by');
+    }
+
+    public function verificationVisit(): BelongsTo
+    {
+        return $this->belongsTo(ClinicVisit::class, 'verification_visit_id');
     }
 }

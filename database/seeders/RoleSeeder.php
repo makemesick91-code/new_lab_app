@@ -146,6 +146,10 @@ class RoleSeeder extends Seeder
             // workspace branch scope, and the date/duplicate rules.
             'view_legacy_rme_imports',
             'create_legacy_rme_imports',
+            // REVISION-LEGACY-VISIT-BOUND-PREVERIFIED-INGESTION-1 — may attest
+            // the historical dates once, at a real visit, so the checker does
+            // not re-enter them. Still NOT review/publish/void.
+            'verify_legacy_dates_at_ingestion',
 
             // FEATURE-LEGACY-IMPORT-HUB-1 — the legacy ODONTOGRAM archive, granted
             // to exactly the same duties as the legacy RME archive above.
@@ -391,6 +395,9 @@ class RoleSeeder extends Seeder
             'view_legacy_rme_imports',
             'create_legacy_odontogram_imports',
             'view_legacy_odontogram_imports',
+            // REVISION-LEGACY-VISIT-BOUND-PREVERIFIED-INGESTION-1 — same narrow
+            // date-attestation right as Admin Klinik; no review/publish/void.
+            'verify_legacy_dates_at_ingestion',
             'view_satusehat_readiness',
             'manage_satusehat_remediation',
             'view_satusehat_branch_readiness',

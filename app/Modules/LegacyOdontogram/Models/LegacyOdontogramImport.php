@@ -6,8 +6,10 @@ namespace App\Modules\LegacyOdontogram\Models;
 
 use App\Models\User;
 use App\Modules\Branch\Models\Branch;
+use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\LegacyOdontogram\Support\LegacyOdontogramImportStatus;
 use App\Modules\Patient\Models\Patient;
+use App\Support\Legacy\LegacyVerificationMode;
 use Database\Factories\LegacyOdontogramImportFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -67,6 +69,16 @@ class LegacyOdontogramImport extends Model
      * service passes only what the resolver returned.
      */
     protected $fillable = [
+        // REVISION-LEGACY-VISIT-BOUND-PREVERIFIED-INGESTION-1 — the date
+        // attestation. One date only: this archive models a document as a
+        // single representative clinical date.
+        'verification_mode',
+        'verification_visit_id',
+        'verification_visit_date',
+        'verified_by',
+        'verified_at',
+        'verified_selected_date',
+        'verified_source_sha256',
         'uuid',
         'patient_id',
         'origin_branch_id',
@@ -127,6 +139,11 @@ class LegacyOdontogramImport extends Model
             'origin_branch_id' => 'integer',
             'selected_odontogram_date' => 'date',
             'earliest_native_odontogram_date_snapshot' => 'date',
+            'verification_visit_id' => 'integer',
+            'verification_visit_date' => 'date',
+            'verified_by' => 'integer',
+            'verified_at' => 'datetime',
+            'verified_selected_date' => 'date',
             'size_bytes' => 'integer',
             'page_count' => 'integer',
             'dpi' => 'integer',
@@ -198,5 +215,56 @@ class LegacyOdontogramImport extends Model
     public function canTransitionTo(string $status): bool
     {
         return LegacyOdontogramImportStatus::canTransition($this->status, $status);
+    }
+
+    /**
+     * REVISION-LEGACY-VISIT-BOUND-PREVERIFIED-INGESTION-1 — did this document
+     * arrive through the visit-bound path with a human date attestation?
+     *
+     * Asked by the checker UI to decide whether to render the dates READ-ONLY,
+     * and by finalization to decide whether an attestation must be revalidated.
+     * Strict equality on the explicit mode — never inferred from a non-null
+     * visit id or reviewer, so a half-written row can never look preverified.
+     */
+    public function isVisitPreverified(): bool
+    {
+        return LegacyVerificationMode::isVisitPreverified($this->verification_mode);
+    }
+
+    /**
+     * The attestation is only trustworthy if EVERY part of it is present.
+     *
+     * A partially-populated row is refused rather than repaired: guessing a
+     * missing verifier or ceiling would manufacture evidence.
+     */
+    public function hasCompleteVisitAttestation(): bool
+    {
+        return $this->isVisitPreverified()
+            && $this->verification_visit_id !== null
+            && $this->verification_visit_date !== null
+            && $this->verified_by !== null
+            && $this->verified_at !== null
+            && $this->verified_selected_date !== null
+            && $this->verified_source_sha256 !== null
+            && $this->verified_source_sha256 !== '';
+    }
+
+    /**
+     * REVISION-LEGACY-VISIT-BOUND-PREVERIFIED-INGESTION-1 — who attested the
+     * dates, and the visit they attested at.
+     *
+     * Read-only provenance for the checker screen. Both are nullOnDelete, so a
+     * removed account or visit leaves the snapshot columns
+     * (`verification_visit_date`, `verified_selected_date`) intact and the
+     * evidence still readable — which is the point of copying them.
+     */
+    public function verifiedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'verified_by');
+    }
+
+    public function verificationVisit(): BelongsTo
+    {
+        return $this->belongsTo(ClinicVisit::class, 'verification_visit_id');
     }
 }

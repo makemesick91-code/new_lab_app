@@ -19,6 +19,8 @@ use App\Modules\LegacyRme\Support\LegacyRmeBranchResolution;
 use App\Modules\LegacyRme\Support\LegacyRmePdfException;
 use App\Modules\LegacyRme\Support\LegacyRmePdfFailure;
 use App\Modules\Patient\Models\Patient;
+use App\Support\Legacy\LegacyVisitAttestation;
+use App\Support\Legacy\LegacyVisitBindingRefusal;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -87,10 +89,30 @@ class LegacyOdontogramImportService
         string $selectedOdontogramDate,
         UploadedFile $document,
         User $actor,
+        ?LegacyVisitAttestation $attestation = null,
     ): LegacyOdontogramImport {
         $this->feature->assertMigrationEnabled();
 
-        $dateResult = $this->dateRules->assert($patient, $selectedOdontogramDate);
+        // REVISION-LEGACY-VISIT-BOUND-PREVERIFIED-INGESTION-1 — the visit-bound
+        // path passes an attestation ALREADY RESOLVED by
+        // LegacyVisitBindingService; the backlog path passes null and every
+        // line below behaves exactly as it always has.
+        //
+        // THE PATIENT MUST BE THE VISIT'S PATIENT — these can only disagree if
+        // a caller assembled the two from different sources, which is the
+        // substitution this path exists to prevent.
+        if ($attestation !== null && $attestation->patientId() !== (int) $patient->getKey()) {
+            throw LegacyVisitBindingRefusal::patientMismatch()->toValidationException();
+        }
+
+        // The visit ceiling is an EXTRA bound on the preverified path; null on
+        // the backlog path leaves the rule set unchanged.
+        $dateResult = $this->dateRules->assert(
+            $patient,
+            $selectedOdontogramDate,
+            LegacyOdontogramDateRuleService::FIELD,
+            $attestation?->visitDate,
+        );
         $cutoff = $this->dateRules->snapshotCutoff($patient);
 
         $branch = $this->resolveOriginBranch($patient, $actor);
@@ -149,8 +171,12 @@ class LegacyOdontogramImportService
         }
 
         try {
+            // Computed BEFORE the transaction — see the RME intake service
+            // for why a nullsafe call inside the closure is unsafe here.
+            $attestationColumns = $attestation?->evidenceColumns($sha256, $selectedOdontogramDate) ?? [];
+
             $import = DB::transaction(function () use (
-                $uuid, $patient, $branch, $selectedOdontogramDate, $cutoff, $document, $path, $sha256, $actor
+                $uuid, $patient, $branch, $selectedOdontogramDate, $cutoff, $document, $path, $sha256, $actor, $attestationColumns
             ): LegacyOdontogramImport {
                 /*
                  * FEATURE-LEGACY-IMPORT-HUB-1 — the AUTHORITATIVE reservation.
@@ -187,7 +213,11 @@ class LegacyOdontogramImportService
                     'status' => LegacyOdontogramImportStatus::UPLOADED,
                     'uploaded_by' => (int) $actor->getKey(),
                     'uploaded_at' => now(),
-                ]);
+                    // REVISION-LEGACY-VISIT-BOUND-PREVERIFIED-INGESTION-1 — the
+                    // date attestation, written ONCE beside the value it is
+                    // about and bound to the stored file's SHA. Empty on the
+                    // backlog path, leaving every column NULL.
+                ] + $attestationColumns);
             });
         } catch (\Throwable $exception) {
             // Compensate: the bytes are on disk but no row owns them.
@@ -204,7 +234,9 @@ class LegacyOdontogramImportService
             'earliest_native_odontogram_date' => $cutoff,
             'branch_code' => $branch->branchCode,
             'rule_code' => $dateResult->code,
-        ], $actor);
+            // Who attested the dates, at which real visit, against which
+            // ceiling. PII-free by construction: ids and dates only.
+        ] + ($attestation?->auditContext() ?? []), $actor);
 
         $this->audit->logImportEvent(LegacyOdontogramAuditEvent::PDF_UPLOADED, $import, [
             'size_bytes' => (int) $document->getSize(),

@@ -430,6 +430,56 @@
             'statusLabels' => $statusLabels,
         ])
 
+        {{--
+            REVISION-LEGACY-VISIT-BOUND-PREVERIFIED-INGESTION-1 — Arsip Legacy.
+
+            Point-of-visit migration: the patient is in front of the operator
+            WITH their old paper chart, so the historical dates can be read off
+            the document and verified once, here.
+
+            The card is hidden unless the operator actually holds the narrow
+            date-attestation permission AND the create right for that archive.
+            Visibility is a convenience, NOT the boundary — the routes carry the
+            same permissions and LegacyVisitBindingService re-checks the visit
+            server-side.
+
+            A cancelled visit cannot anchor an attestation, so the card is not
+            offered for one.
+        --}}
+        @canany(['verify_legacy_dates_at_ingestion'])
+            @if ($visit->status !== \App\Modules\ClinicVisit\Models\ClinicVisit::STATUS_CANCELLED)
+                <x-ui.card title="Arsip Legacy">
+                    <p class="text-sm text-gray-600">
+                        Unggah dokumen <strong>lama</strong> milik pasien ini dan verifikasi
+                        tanggalnya sekali di sini. Pemeriksa berikutnya tidak akan mengetik
+                        ulang tanggal tersebut.
+                    </p>
+
+                    <p class="mt-2 text-xs text-gray-500">
+                        Seluruh tanggal dokumen harus lebih awal dari tanggal kunjungan ini.
+                        Dokumen bertanggal sama dengan kunjungan menggunakan proses review
+                        Legacy standar.
+                    </p>
+
+                    <div class="mt-4 flex flex-wrap gap-3">
+                        @can('create', \App\Modules\LegacyRme\Models\LegacyRmeImport::class)
+                            <x-ui.button
+                                variant="secondary"
+                                :href="route('rme.visits.legacy-archive.rme.create', $visit)"
+                            >Unggah Arsip RME Lama</x-ui.button>
+                        @endcan
+
+                        @can('create', \App\Modules\LegacyOdontogram\Models\LegacyOdontogramImport::class)
+                            <x-ui.button
+                                variant="secondary"
+                                :href="route('rme.visits.legacy-archive.odontogram.create', $visit)"
+                            >Unggah Odontogram Lama</x-ui.button>
+                        @endcan
+                    </div>
+                </x-ui.card>
+            @endif
+        @endcanany
+
         {{-- LEGACY-RME-PDF-1C — renders nothing unless the patient has a
              published legacy archive this operator may see. --}}
         @include('rme.visits.partials.patient-rme-timeline', [

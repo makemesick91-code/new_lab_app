@@ -88,6 +88,15 @@
             </x-slot:actions>
         </x-ui.page-header>
 
+        {{-- REVISION-LEGACY-VISIT-BOUND-PREVERIFIED-INGESTION-1 — renders only
+             for documents that came through the visit-bound path. The checker
+             reads the attested dates here; there is deliberately no edit
+             control, and no date re-entry anywhere on this screen. --}}
+        @include('legacy.partials.preverified-date-evidence', [
+            'import' => $import,
+            'showLatest' => true,
+        ])
+
         @if (session('status'))
             <x-ui.alert variant="success">{{ session('status') }}</x-ui.alert>
         @endif

@@ -79,6 +79,23 @@ class LegacyRmeDateRuleService
 
     public const CODE_LEGACY_DATE_RANGE_INVALID = 'LEGACY_DATE_RANGE_INVALID';
 
+    /**
+     * REVISION-LEGACY-VISIT-BOUND-PREVERIFIED-INGESTION-1 — the document is not
+     * historical RELATIVE TO THE VISIT it was filed at.
+     *
+     * An ADDITIONAL bound, never a replacement. It applies only on the
+     * visit-bound path (the backlog path passes no ceiling and is unaffected),
+     * and it composes with the native-RME bound rather than overriding it: each
+     * is evaluated independently, so the more restrictive one decides.
+     *
+     * STRICTLY EARLIER, so a same-day document is REFUSED here on purpose. A
+     * document dated the same day as the visit is not self-evidently history —
+     * it may be this encounter's own paperwork — and deciding that is exactly
+     * the judgement the preverified path is not entitled to make on one
+     * person's say-so. Those documents go through the standard review path.
+     */
+    public const CODE_LEGACY_DATE_NOT_BEFORE_VISIT = 'LEGACY_DATE_NOT_BEFORE_VISIT';
+
     /** @var list<string> */
     public const CODES = [
         self::CODE_LEGACY_DATE_NOT_BEFORE_NATIVE_RME,
@@ -86,6 +103,7 @@ class LegacyRmeDateRuleService
         self::CODE_LEGACY_DATE_BEFORE_PATIENT_BIRTH,
         self::CODE_LEGACY_DATE_INVALID,
         self::CODE_LEGACY_DATE_RANGE_INVALID,
+        self::CODE_LEGACY_DATE_NOT_BEFORE_VISIT,
     ];
 
     /**
@@ -121,11 +139,21 @@ class LegacyRmeDateRuleService
      * single clinical date, so the range collapses to `[selected, selected]`.
      * The earliest native RME date is always recomputed server-side here; a
      * caller-supplied snapshot is never trusted as an input to the decision.
+     *
+     * `$visitDateCeiling` is the REVISION-LEGACY-VISIT-BOUND-PREVERIFIED-INGESTION-1
+     * bound and is OPTIONAL BY DESIGN: the backlog/mass migration path has no
+     * visit and passes null, which leaves its behaviour byte-for-byte what it
+     * has always been. When present it is an EXTRA bound evaluated alongside
+     * the native-RME one, never instead of it. It is supplied by the caller
+     * because it is resolved by LegacyVisitBindingService from the visit row
+     * itself — this service never reads a visit, and a client-supplied ceiling
+     * never reaches it.
      */
     public function evaluate(
         Patient $patient,
         CarbonImmutable|string|null $selectedDate,
         CarbonImmutable|string|null $latestDate = null,
+        CarbonImmutable|string|null $visitDateCeiling = null,
     ): LegacyRmeDateRuleResult {
         $patientId = (int) $patient->getKey();
         $selected = $this->normalize($selectedDate);
@@ -197,6 +225,43 @@ class LegacyRmeDateRuleService
             );
         }
 
+        // REVISION-LEGACY-VISIT-BOUND-PREVERIFIED-INGESTION-1 — the visit bound.
+        //
+        // Evaluated INDEPENDENTLY of the native-RME bound above, which is what
+        // makes "the more restrictive boundary wins" true without either rule
+        // having to know about the other. Skipped entirely when no ceiling was
+        // supplied, so the backlog path is untouched.
+        //
+        // NOTE the deliberate absence of a `require...()` toggle here. The
+        // native and today bounds carry config switches for historical reasons;
+        // this one does not, because a switch that could disable it would be
+        // precisely the "dormant bypass flag" this sprint was told not to add.
+        $visitCeiling = $visitDateCeiling !== null && $visitDateCeiling !== ''
+            ? $this->normalize($visitDateCeiling)
+            : null;
+
+        if ($visitDateCeiling !== null && $visitDateCeiling !== '' && $visitCeiling === null) {
+            return LegacyRmeDateRuleResult::fail(
+                self::CODE_LEGACY_DATE_INVALID,
+                'Tanggal kunjungan tidak valid sehingga batas historis dokumen tidak dapat ditentukan.',
+                $context,
+            );
+        }
+
+        if ($visitCeiling !== null && ! $latest->lessThan($visitCeiling)) {
+            return LegacyRmeDateRuleResult::fail(
+                self::CODE_LEGACY_DATE_NOT_BEFORE_VISIT,
+                sprintf(
+                    'Seluruh tanggal RME pada dokumen harus lebih awal dari tanggal kunjungan ini (%s). '
+                    .'Tanggal RME paling akhir pada dokumen adalah %s. '
+                    .'Dokumen bertanggal sama dengan kunjungan harus melalui proses review Legacy standar.',
+                    $visitCeiling->format('d-m-Y'),
+                    $latest->format('d-m-Y'),
+                ),
+                $context + ['visit_date_ceiling' => $visitCeiling->toDateString()],
+            );
+        }
+
         if ($this->requireStrictlyBeforeToday() && ! $latest->lessThan($today)) {
             return LegacyRmeDateRuleResult::fail(
                 self::CODE_LEGACY_DATE_IN_FUTURE,
@@ -242,8 +307,9 @@ class LegacyRmeDateRuleService
         CarbonImmutable|string|null $selectedDate,
         string $field = self::FIELD,
         CarbonImmutable|string|null $latestDate = null,
+        CarbonImmutable|string|null $visitDateCeiling = null,
     ): LegacyRmeDateRuleResult {
-        $result = $this->evaluate($patient, $selectedDate, $latestDate);
+        $result = $this->evaluate($patient, $selectedDate, $latestDate, $visitDateCeiling);
 
         if ($result->failed()) {
             throw ValidationException::withMessages([
@@ -267,6 +333,10 @@ class LegacyRmeDateRuleService
     {
         $isRangeRule = in_array((string) $result->code, [
             self::CODE_LEGACY_DATE_RANGE_INVALID,
+            // The visit bound is a range-wide rule for the same reason the
+            // native bound is: it is violated by the LATEST date, so that is
+            // the input the operator has to correct.
+            self::CODE_LEGACY_DATE_NOT_BEFORE_VISIT,
             self::CODE_LEGACY_DATE_NOT_BEFORE_NATIVE_RME,
             self::CODE_LEGACY_DATE_IN_FUTURE,
         ], true);
