@@ -220,6 +220,21 @@ it('gives each document type its own advisory lock namespace', function () {
         ->and($odoObject)->toBe(77);
 });
 
+it('accepts the largest addressable patient id rather than rejecting the boundary', function () {
+    // The companion of the refusal test below, and the reason it exists: mutation
+    // testing showed `$patientId > MAX_OBJID` could be weakened to `>=` without a
+    // single test noticing, because nothing asserted that the boundary value
+    // ITSELF is usable. Rejecting a valid id fails closed rather than dangerously,
+    // but it would still lock a real patient out of the archive.
+    [$classId, $objectId] = LegacyDocumentSlotLock::keyFor(
+        LegacyImportType::LEGACY_RME,
+        LegacyDocumentSlotLock::MAX_OBJID,
+    );
+
+    expect($objectId)->toBe(LegacyDocumentSlotLock::MAX_OBJID)
+        ->and($classId)->toBe(LegacyDocumentSlotLock::NAMESPACES[LegacyImportType::LEGACY_RME]);
+});
+
 it('refuses a lock key it cannot address rather than wrapping silently', function () {
     expect(fn () => LegacyDocumentSlotLock::keyFor('legacy_patient', 1))
         ->toThrow(LegacyDocumentSlotLockUnavailable::class)
@@ -314,6 +329,71 @@ it('reports WHY the RME slot is held, with a code a caller can branch on', funct
         // server will refuse is how a refusal becomes a support ticket.
         ->and($occupancy->message())->not->toContain('VOID')
         ->and($occupancy->message())->toContain('Selesaikan atau batalkan');
+});
+
+it('carries the full structure-only payload for each kind of refusal', function () {
+    /*
+     * The audit payload's SHAPE is the contract, not an implementation detail: an
+     * operator who is refused is helped from this trail, and a missing key means a
+     * support request that cannot be answered.
+     *
+     * Mutation testing found every one of these guards could be negated — and
+     * `patient_id` removed outright — without a test noticing, because the earlier
+     * assertions only looked for the reason code and the blocking id. These pin the
+     * whole shape, and pin that it stays PII-free.
+     */
+    $patient = lsadPatient();
+    $import = lsadStageRme($patient);
+
+    $active = lsadSlots()->occupancyFor(LegacyImportType::LEGACY_RME, (int) $patient->getKey());
+    $activeContext = $active->auditContext();
+
+    expect($activeContext)->toHaveKeys(['patient_id', 'slot_reason', 'blocking_import_id', 'blocking_status'])
+        ->and($activeContext['patient_id'])->toBe((int) $patient->getKey())
+        ->and($activeContext['slot_reason'])->toBe(LegacyDocumentSlotOccupancy::REASON_ACTIVE_IMPORT_EXISTS)
+        ->and($activeContext['blocking_import_id'])->toBe((int) $import->getKey())
+        ->and($activeContext['blocking_status'])->toBe(LegacyRmeImportStatus::QUEUED)
+        // An in-flight lifecycle has produced no archive, so there is no record id.
+        ->and($activeContext)->not->toHaveKey('blocking_record_id');
+
+    $record = lsadPublishedRmeRecord(lsadPatient());
+    $published = lsadSlots()->occupancyFor(LegacyImportType::LEGACY_RME, (int) $record->patient_id);
+    $publishedContext = $published->auditContext();
+
+    expect($publishedContext)->toHaveKeys(['patient_id', 'slot_reason', 'blocking_record_id', 'blocking_status'])
+        ->and($publishedContext['slot_reason'])->toBe(LegacyDocumentSlotOccupancy::REASON_ALREADY_PUBLISHED)
+        ->and($publishedContext['blocking_record_id'])->toBe((int) $record->getKey())
+        ->and($publishedContext['blocking_status'])->toBe('PUBLISHED')
+        // Populated from the record's own source import, so the trail can reach the
+        // staging row that produced the archive.
+        ->and($publishedContext['blocking_import_id'])->toBe((int) $record->source_import_id);
+
+    // Structure only, in both directions.
+    $payload = json_encode($activeContext + $publishedContext);
+
+    expect($payload)->not->toContain($patient->name)
+        ->and($payload)->not->toContain($patient->medical_record_number);
+});
+
+it('reports an available slot as null from the advisory preview and the occupancy as itself', function () {
+    // The advisory layer is not the gate, but it is what spares an operator a
+    // pointless upload — and mutation testing showed it could be made to always
+    // return null (never warning anyone) while every behavioural test still passed,
+    // because the authoritative assertion inside the transaction still refused.
+    // Layered defences hide each other's removal unless each layer is pinned.
+    $free = lsadPatient();
+
+    expect(lsadSlots()->previewForNewLifecycle(LegacyImportType::LEGACY_RME, (int) $free->getKey()))
+        ->toBeNull();
+
+    $taken = lsadPatient();
+    lsadStageRme($taken);
+
+    $preview = lsadSlots()->previewForNewLifecycle(LegacyImportType::LEGACY_RME, (int) $taken->getKey());
+
+    expect($preview)->not->toBeNull()
+        ->and($preview->occupied)->toBeTrue()
+        ->and($preview->reason)->toBe(LegacyDocumentSlotOccupancy::REASON_ACTIVE_IMPORT_EXISTS);
 });
 
 it('releases the RME slot when the staging row is cancelled', function () {
