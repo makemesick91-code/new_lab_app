@@ -139,6 +139,17 @@ return [
     'critical_gate_required_filters' => [
         'Cicd',
 
+        /*
+         * REVISION-LEGACY-PATIENT-STAGED-VERIFICATION-CANCEL-1 — the legacy
+         * PATIENT importer. `LegacyRme`, `LegacyOdontogram` and `LegacyImportHub`
+         * were all registered; `LegacyPatient` was not, so the only suite that
+         * proves an incorrect legacy patient cannot reach the canonical patient
+         * estate ran exclusively in the deferred Full Suite. The selective module
+         * gate does not reach it either — it branches on Inventory / Lab / Ui /
+         * Permission, and `run_rme_tests` is consumed by no job.
+         */
+        'LegacyPatient',
+
         // DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1 — the only place the
         // partial unique index behind "one active doctor session" is exercised
         // on PostgreSQL. The local suite runs SQLite, where lockForUpdate()
@@ -178,6 +189,20 @@ return [
      * not a reflex.
      */
     'critical_gate_mandatory_suites' => [
+        /*
+         * REVISION-LEGACY-PATIENT-STAGED-VERIFICATION-CANCEL-1. Both suites are
+         * selected by the `LegacyPatient` token above; declared here so the
+         * coverage reconciliation fails loudly if that token is ever dropped or a
+         * file renamed out from under it.
+         *
+         * The first holds the rule that a CSV upload cannot import a patient and
+         * that one ERROR row refuses the whole batch. The second is the Sprint
+         * 62.3 suite whose commit assertions that revision inverted — if it stops
+         * running, the inversion stops being pinned.
+         */
+        'tests/Feature/Patient/LegacyPatientStagedVerificationCancelTest.php',
+        'tests/Feature/Patient/LegacyPatientBatchImportTest.php',
+
         // DOCTOR-PWA-WEBAUTHN-1 — the browser device-credential login. A `|Pwa`
         // or `|DoctorDevice` token does not select it: --filter matches the test
         // IDENTITY, and this class is `DoctorPwaWebAuthnTest`, which contains

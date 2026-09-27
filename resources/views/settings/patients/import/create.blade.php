@@ -4,7 +4,7 @@
             <div>
                 <p class="text-xs font-semibold uppercase tracking-wide text-teal-700">Data Pasien</p>
                 <h2 class="mt-1 text-xl font-semibold text-gray-900">Impor Pasien Legacy (CSV)</h2>
-                <p class="mt-1 text-sm text-gray-500">Unggah file legacy. Setiap baris distaging, divalidasi, dan ditinjau sebelum <strong>Commit</strong>. Tidak ada data pasien yang ditulis sebelum Anda konfirmasi.</p>
+                <p class="mt-1 text-sm text-gray-500">Unggah berkas legacy. Setiap baris distaging dan diverifikasi lebih dulu — <strong>mengunggah bukan mengimpor</strong>. Tidak ada satu pasien pun yang dibuat sebelum Anda konfirmasi, dan selama masih ada baris ERROR seluruh batch ditolak.</p>
             </div>
             <div class="flex flex-wrap gap-2">
                 <a href="{{ route('settings.patients.import.template') }}" class="inline-flex items-center rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50">Unduh Template CSV</a>
@@ -46,7 +46,7 @@
                             <th class="px-3 py-2 font-medium">Valid</th>
                             <th class="px-3 py-2 font-medium">Warning</th>
                             <th class="px-3 py-2 font-medium">Error</th>
-                            <th class="px-3 py-2 font-medium">Commit</th>
+                            <th class="px-3 py-2 font-medium">Diimpor</th>
                             <th class="px-3 py-2"></th>
                         </tr>
                     </thead>
@@ -54,7 +54,21 @@
                         @forelse ($batches as $batch)
                             <tr>
                                 <td class="px-3 py-2 text-gray-900">{{ $batch->original_filename }}</td>
-                                <td class="px-3 py-2"><span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-semibold text-gray-700">{{ $batch->status }}</span></td>
+                                @php
+                                    $batchTone = match (true) {
+                                        $batch->isReviewRequired() => 'bg-rose-100 text-rose-800',
+                                        $batch->isReadyToImport() => 'bg-emerald-100 text-emerald-800',
+                                        $batch->isCommitted() => 'bg-teal-100 text-teal-800',
+                                        $batch->isCancelled() => 'bg-gray-200 text-gray-700',
+                                        default => 'bg-gray-100 text-gray-700',
+                                    };
+                                    $batchLabel = match (true) {
+                                        $batch->isReviewRequired() => 'perlu perbaikan',
+                                        $batch->isReadyToImport() => 'siap diimpor',
+                                        default => $batch->status,
+                                    };
+                                @endphp
+                                <td class="px-3 py-2"><span class="rounded-full px-2 py-0.5 text-xs font-semibold {{ $batchTone }}">{{ $batchLabel }}</span></td>
                                 <td class="px-3 py-2 tabular-nums">{{ $batch->total_rows }}</td>
                                 <td class="px-3 py-2 tabular-nums text-emerald-700">{{ $batch->valid_rows }}</td>
                                 <td class="px-3 py-2 tabular-nums text-amber-700">{{ $batch->warning_rows }}</td>

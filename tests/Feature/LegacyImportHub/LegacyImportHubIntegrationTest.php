@@ -22,6 +22,7 @@ use App\Modules\LegacyOdontogram\Models\LegacyOdontogramImport;
 use App\Modules\LegacyOdontogram\Services\LegacyOdontogramImportService;
 use App\Modules\LegacyRme\Models\LegacyRmeImport;
 use App\Modules\LegacyRme\Services\LegacyRmeImportService;
+use App\Modules\Patient\Exceptions\LegacyPatientImportBlockedException;
 use App\Modules\Patient\Models\LegacyPatientImportBatch;
 use App\Modules\Patient\Models\LegacyPatientImportRow;
 use App\Modules\Patient\Models\Patient;
@@ -238,6 +239,13 @@ describe('legacy patient', function () {
      *
      * Built directly rather than through a CSV upload: this suite is about what
      * COMMIT charges, and the parser has its own suite.
+     *
+     * REVISION-LEGACY-PATIENT-STAGED-VERIFICATION-CANCEL-1 — `raw_payload` must
+     * now carry the CANONICAL CSV column keys, not a convenient stand-in.
+     * Confirmation revalidates the whole batch from `raw_payload` against current
+     * database state, so a payload the parser would never have produced is
+     * correctly refused. The batch counters are set too, because the confirm gate
+     * reads a verdict rather than assuming one.
      */
     function lihPatientBatch(int $rows, int $branchId, string $branchCode = 'TLK1'): LegacyPatientImportBatch
     {
@@ -246,20 +254,36 @@ describe('legacy patient', function () {
             'original_filename' => 'legacy.csv',
             'status' => LegacyPatientImportBatch::STATUS_VALIDATED,
             'total_rows' => $rows,
+            'valid_rows' => $rows,
+            'warning_rows' => 0,
+            'error_rows' => 0,
             'uploaded_by' => null,
         ]);
 
         for ($i = 1; $i <= $rows; $i++) {
+            $manualRm = sprintf('%05d', $i);
+
             LegacyPatientImportRow::query()->create([
                 'batch_id' => $batch->id,
                 'row_number' => $i,
                 'status' => LegacyPatientImportRow::STATUS_VALID,
-                'raw_payload' => ['nama' => 'Pasien Legacy '.$i],
+                // The canonical keys, exactly as LegacyPatientImportService::COLUMNS
+                // names them — this is what revalidation reads.
+                'raw_payload' => [
+                    'branch' => $branchCode,
+                    'manual_rm_number' => $manualRm,
+                    'timestamp' => '2024-01-15',
+                    'name' => 'Pasien Legacy '.$i,
+                    'gender' => 'Laki-laki',
+                    'date_of_birth' => '1990-01-01',
+                ],
                 'normalized_payload' => [
                     'name' => 'Pasien Legacy '.$i,
-                    'medical_record_number' => sprintf('DG-%s-2024-%05d', $branchCode, $i),
+                    'medical_record_number' => sprintf('DG-%s-2024-%s', $branchCode, $manualRm),
                     'branch_id' => $branchId,
-                    'gender' => 'male',
+                    'manual_rm_number' => $manualRm,
+                    'registered_at' => '2024-01-15',
+                    'gender' => 'Male',
                     'date_of_birth' => '1990-01-01',
                 ],
                 'matched_branch_id' => $branchId,
@@ -328,12 +352,16 @@ describe('legacy patient', function () {
         $batch = lihPatientBatch(2, (int) $a->id);
 
         // Repoint the second row at another branch, the way a CSV with two
-        // `Cabang` values does.
+        // `Cabang` values does. `raw_payload` is repointed as well, because
+        // confirmation re-derives the branch from it rather than trusting the
+        // normalized copy.
         $second = LegacyPatientImportRow::query()->where('batch_id', $batch->id)->orderByDesc('row_number')->firstOrFail();
+        $raw = $second->raw_payload;
+        $raw['branch'] = 'LDK2';
         $payload = $second->normalized_payload;
         $payload['branch_id'] = (int) $b->id;
         $payload['medical_record_number'] = 'DG-LDK2-2024-00002';
-        $second->update(['normalized_payload' => $payload, 'matched_branch_id' => (int) $b->id]);
+        $second->update(['raw_payload' => $raw, 'normalized_payload' => $payload, 'matched_branch_id' => (int) $b->id]);
 
         app(LegacyPatientImportService::class)->commit($batch->refresh(), null);
 
@@ -341,21 +369,29 @@ describe('legacy patient', function () {
         expect(lihQuota()->consumedToday(LegacyImportType::LEGACY_PATIENT, (int) $b->id))->toBe(1);
     });
 
-    it('does not charge a row the RM re-check skips', function () {
+    it('charges nothing when a stale row refuses the whole batch', function () {
+        /*
+         * REVISION-LEGACY-PATIENT-STAGED-VERIFICATION-CANCEL-1 — this test used to
+         * be `does not charge a row the RM re-check skips` and expected 1 slot:
+         * the colliding row was skipped and its sibling imported. A partial import
+         * is no longer possible, so the charge is 0 rather than 1. The rule it
+         * pins is unchanged and now easier to state: a record that was never
+         * accepted is never charged.
+         */
         $branch = lihBranch();
         $batch = lihPatientBatch(2, (int) $branch->id);
 
-        // Someone else registered this RM between preview and commit. The row is
-        // skipped rather than overwritten, and a skipped row is not an accepted
-        // record.
+        // Someone else registered this RM between preview and commit.
         Patient::factory()->create([
             'branch_id' => $branch->id,
             'medical_record_number' => 'DG-TLK1-2024-00001',
         ]);
 
-        app(LegacyPatientImportService::class)->commit($batch, null);
+        expect(fn () => app(LegacyPatientImportService::class)->commit($batch, null))
+            ->toThrow(LegacyPatientImportBlockedException::class);
 
-        expect(lihQuota()->consumedToday(LegacyImportType::LEGACY_PATIENT, (int) $branch->id))->toBe(1);
+        expect(lihQuota()->consumedToday(LegacyImportType::LEGACY_PATIENT, (int) $branch->id))->toBe(0);
+        expect(Patient::query()->where('import_batch_id', $batch->id)->count())->toBe(0);
     });
 });
 

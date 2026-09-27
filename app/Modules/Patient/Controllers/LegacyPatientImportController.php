@@ -3,8 +3,11 @@
 namespace App\Modules\Patient\Controllers;
 
 use App\Http\Controllers\Controller;
+use App\Modules\Patient\Exceptions\LegacyPatientImportBlockedException;
 use App\Modules\Patient\Models\LegacyPatientImportBatch;
 use App\Modules\Patient\Models\LegacyPatientImportRow;
+use App\Modules\Patient\Requests\CancelLegacyPatientImportRequest;
+use App\Modules\Patient\Requests\ConfirmLegacyPatientImportRequest;
 use App\Modules\Patient\Requests\UploadLegacyPatientCsvRequest;
 use App\Modules\Patient\Services\LegacyPatientImportService;
 use Illuminate\Http\RedirectResponse;
@@ -19,6 +22,12 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  * Every action is gated by `permission:manage patients` (route group). KTP/NIK
  * is never rendered in full. No visit / medical record / invoice / consent row
  * is ever created by this controller.
+ *
+ * REVISION-LEGACY-PATIENT-STAGED-VERIFICATION-CANCEL-1 — uploading is staging,
+ * not importing. The confirm action is the only path that can create a patient,
+ * and it refuses the WHOLE batch when any row carries a blocking error. The
+ * decision lives in the service; this controller only carries the operator's
+ * intent in and the service's verdict out.
  */
 class LegacyPatientImportController extends Controller
 {
@@ -65,7 +74,7 @@ class LegacyPatientImportController extends Controller
 
         return redirect()
             ->route('settings.patients.import.show', $batch)
-            ->with('status', 'File legacy berhasil diunggah dan distaging. Tinjau sebelum commit.');
+            ->with('status', 'Berkas legacy diunggah dan diverifikasi ke staging. Belum ada pasien yang diimpor — tinjau hasil verifikasi, lalu konfirmasi.');
     }
 
     public function show(Request $request, LegacyPatientImportBatch $batch): View
@@ -109,19 +118,32 @@ class LegacyPatientImportController extends Controller
         ]);
     }
 
-    public function commit(Request $request, LegacyPatientImportBatch $batch): RedirectResponse
+    /**
+     * Confirm and import the batch — all of it, or none of it.
+     *
+     * The refusal path is not a 500. A blocked batch is an expected outcome of a
+     * correct workflow (the operator's file had errors, or the database moved
+     * while they were reading), so it redirects back to the verification they
+     * need to act on, carrying the reason.
+     */
+    public function commit(ConfirmLegacyPatientImportRequest $request, LegacyPatientImportBatch $batch): RedirectResponse
     {
-        if (! $batch->committable()) {
+        try {
+            $batch = $this->imports->commit($batch, $request->user()?->id);
+        } catch (LegacyPatientImportBlockedException $e) {
             return redirect()
                 ->route('settings.patients.import.show', $batch)
-                ->withErrors(['commit' => 'Batch tidak dapat di-commit (sudah diproses atau tidak ada baris valid).']);
+                ->with('import_blocked_reason', $e->reason)
+                ->with('import_blocked_findings', $e->findings)
+                ->withErrors(['commit' => $e->getMessage()]);
         }
-
-        $batch = $this->imports->commit($batch, $request->user()?->id);
 
         return redirect()
             ->route('settings.patients.import.show', $batch)
-            ->with('status', sprintf('%d pasien legacy berhasil diimpor.', $batch->committed_rows));
+            ->with('status', sprintf(
+                '%d pasien legacy berhasil diimpor. Seluruh baris yang disetujui masuk dalam satu transaksi.',
+                $batch->committed_rows,
+            ));
     }
 
     public function rollback(Request $request, LegacyPatientImportBatch $batch): RedirectResponse
@@ -139,10 +161,22 @@ class LegacyPatientImportController extends Controller
             ->with('status', 'Batch di-rollback. Pasien hasil impor di-soft-delete.');
     }
 
-    public function destroy(LegacyPatientImportBatch $batch): RedirectResponse
+    /**
+     * Cancel a staged batch.
+     *
+     * Reached through the existing DELETE route rather than a new one: this is
+     * the same operator action the route always carried, with honest semantics.
+     * The batch is no longer soft-deleted out of sight — it is marked cancelled
+     * and stays visible, with who cancelled it and when.
+     */
+    public function destroy(CancelLegacyPatientImportRequest $request, LegacyPatientImportBatch $batch): RedirectResponse
     {
         try {
-            $this->imports->discard($batch);
+            $this->imports->cancel(
+                $batch,
+                $request->user()?->id,
+                $request->input('cancel_reason'),
+            );
         } catch (RuntimeException $e) {
             return redirect()
                 ->route('settings.patients.import.show', $batch)
@@ -150,7 +184,7 @@ class LegacyPatientImportController extends Controller
         }
 
         return redirect()
-            ->route('settings.patients.import.index')
-            ->with('status', 'Batch staging dibuang. Data master pasien tidak tersentuh.');
+            ->route('settings.patients.import.show', $batch)
+            ->with('status', 'Batch dibatalkan. Tidak ada pasien yang diimpor dari batch ini dan data master pasien tidak tersentuh.');
     }
 }
