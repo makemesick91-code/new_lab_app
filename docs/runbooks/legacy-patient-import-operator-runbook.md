@@ -94,3 +94,47 @@ tidak dapat dipakai lagi. Batalkan dan unggah ulang berkasnya.
 * Tidak ada kuota harian. Seluruh estate legacy boleh diimpor.
 * Ukuran berkas maksimal 5 MB per unggahan (batas teknis, bukan kebijakan).
 * KTP/NIK selalu disamarkan di seluruh tampilan dan di laporan verifikasi.
+
+---
+
+## Rollback adalah pintu satu arah
+
+**Setelah Rollback, berkas yang sama tidak dapat diunggah ulang tanpa bantuan
+teknis.** Ini perilaku nyata yang terukur di produksi, bukan dugaan.
+
+Rollback **tidak** menghapus pasien sampai bersih — pasien itu ditandai terhapus
+(soft delete). Pemeriksaan duplikat tetap melihat pasien yang ditandai terhapus.
+Jadi setiap Nomor KTP dan setiap Nomor RM final yang sudah pernah dibuat batch itu
+**tetap dianggap terpakai**, walaupun di layar jumlah pasien terlihat 0.
+
+Gejalanya saat Anda mengunggah ulang berkas yang sama:
+
+* `Nomor KTP sudah terdaftar pada pasien lain.` — satu baris untuk setiap pasien
+  yang dulu berhasil diimpor;
+* `Nomor RM final <RM> sudah digunakan pasien lain.`;
+* dan pasien yang disebut itu **tidak muncul di mana pun** di aplikasi.
+
+Kejadian nyata 2026-09-27: satu batch berisi 1519 baris diimpor lalu di-rollback
+enam menit kemudian. Unggahan berikutnya atas data yang sama menghasilkan 1318
+konflik KTP dan 520 konflik RM. Unggahan berkas itu **sebelum** impor hanya
+menghasilkan 1 error sumber yang wajar.
+
+### Yang harus Anda lakukan
+
+* **Jangan** mengarang Nomor KTP atau mengubah Nomor RM Manual supaya lolos. Itu
+  memberi pasien identitas permanen yang salah.
+* **Jangan** menunggu konflik hilang sendiri. Tidak ada tombol di aplikasi yang
+  membebaskannya.
+* **Laporkan ke tim teknis** dengan menyebut nomor batch yang di-rollback.
+  Pembebasan identitas memerlukan pembersihan basis data yang diaudit: cadangan
+  lebih dulu, manifes dengan jumlah baris yang diharapkan, dan pembatalan otomatis
+  bila jumlah nyata tidak sama dengan jumlah yang diharapkan. Pembersihan hanya
+  boleh dilakukan bila pasien tersebut **belum** memiliki satu pun kunjungan,
+  rekam medis, tagihan, pembayaran, persetujuan, resep, atau order lab.
+
+### Cara menghindarinya
+
+* Pakai **Batalkan Batch** (sebelum konfirmasi) untuk semua koreksi rutin.
+  Pembatalan tidak pernah menyentuh data pasien, jadi selalu bisa diulang.
+* Perbaiki berkas sumber sampai **Error = 0** sebelum menekan konfirmasi.
+* Simpan Rollback hanya untuk kekeliruan impor yang benar-benar harus ditarik.
