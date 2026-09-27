@@ -226,6 +226,70 @@ Reviewed against the threat list for this change. No unresolved CRITICAL or HIGH
 | Duplicate amplification | **Prevented twice.** Validation blocks RM and KTP collisions including soft-deleted and in-file; the UNIQUE indexes stop anything that slips past. |
 | Fabricated identity | **Impossible by construction.** A blank KTP is stored as `null`. A sentinel would collide on the unique index and turn "no KTP" into a duplicate, which is how the absence of this bug is observable: three blank-KTP patients coexist. Tested. |
 
+## Shipped and deployed
+
+PR #436 squash-merged as `e65efb67d60b6b1c7dd7c75efd5dc2e705e34b4d`, tree
+identical to candidate `32a372c7`. GO tag
+`revision-legacy-patient-staged-verification-cancel-1-go` (annotated) at that
+commit; local, remote and VPS HEAD all agree, and `git describe --exact-match`
+on the VPS returns the tag.
+
+**CI on the exact candidate SHA** (run `36283622736`): Classifier, Quality,
+Critical (**4595 passed / 0 failed / 23883 assertions**), Selective Module, NSF-9
+and NSF-10 all success. The second Critical variant is `skipped` by CICD-CTRL-1
+design — exactly one runs, routing defaults to github-hosted — and the Full Suite
+gate is skipped under the standing deferred policy.
+
+The critical-gate log names both suites and the individual new tests, so their
+execution is proven rather than inferred. Worth recording: this gate is now
+genuinely clean at zero failures, which retires the "pre-existing 62-failure
+Vite-manifest baseline" still described in `CLAUDE.md`. Its duration also
+corrects a stale figure — ~87–89 minutes measured on the two most recent
+successful runs, including one on the base commit itself, not the ~21 minutes the
+ENT-era notes record.
+
+### Production impact, measured before the deploy
+
+The pilot held **7 staged batches, 9191 staged rows and zero imported patients**,
+on an empty patient estate. **Every one of the 7 already carried ERROR rows** —
+257, 272, 683, 52, 49, 44 and 1519 — so none of them was confirmable under the
+new rule, and the defect was live rather than hypothetical: confirming batch 15
+under the old rule would have imported **1227 patients and silently dropped 52**.
+
+Each batch's source file still exists and **every sha256 still matches**, so no
+batch is stranded in `failed` by the deploy and the operator's remedy — fix the
+source, cancel, re-upload — stays available for all seven.
+
+That check also corrected a path assumption worth writing down: the `local` disk
+root is `storage/app/private`, not `storage/app`. The hash comparison reads the
+same disk the upload writes to, verified rather than assumed.
+
+### Confirm cost at production scale
+
+A concern that measurement dismissed. On a 1519-row all-error batch — production's
+largest — a confirm refusal takes **0.47 s and 14 queries**, against 3.58 s for
+the original upload of the same file. Eloquent's `save()` issues nothing for a
+clean model, so rows whose verdict is unchanged cost no write, and the chunked
+prefetch keeps identity lookups flat. The per-row `UPDATE` storm I expected does
+not occur, so no optimisation was added and the candidate SHA was not churned for
+one.
+
+### Post-deploy verification
+
+| Check | Result |
+|---|---|
+| Deploy completion | `exit=0` **and** the `DEPLOY OK` marker — both, per the script's own contract |
+| VPS HEAD | `e65efb67` — exact match with the merge SHA |
+| Migration | `2026_09_27_100001` Ran (batch 74); 0 pending |
+| New columns | all 6 present; only `revalidation_attempts` NOT NULL, default 0 |
+| Patient estate | 0 live / 0 trashed / 0 from-import / 0 visits — no fake production data |
+| The 7 batches | untouched: still `validated`, same error counts, 0 committed, 0 revalidation attempts, none cancelled |
+| Health | `/login` `/health/live` `/health/ready` `/health/lb` all 200; every component `ok` |
+| Gated surfaces | `/settings/patients/import` and `/dashboard` 302 for a guest — no 500 |
+| Runtime | env pilot, debug off, maintenance off; php-fpm, nginx and the queue worker active |
+| Laravel log | **0 new bytes** since the pre-deploy boundary |
+| Deploy processes | none left behind (an apparent count of 2 was the `pgrep` pattern matching its own SSH command string) |
+
 ## Durable rules
 
 Recorded in `CLAUDE.md` and `.cursor/rules/92-legacy-patient-staged-verification-cancel.mdc`.
