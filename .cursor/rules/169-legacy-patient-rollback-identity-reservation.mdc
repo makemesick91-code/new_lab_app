@@ -1,0 +1,104 @@
+---
+description: DIAGNOSE-AND-CLEAN-LEGACY-PATIENT-NIK-CONFLICT-1 — a rolled-back Legacy Patient batch keeps reserving every NIK and composed RM it created; duplicate detection reads mst_patients withTrashed and never reads staging
+globs:
+  - app/Modules/Patient/Services/LegacyPatientImportService.php
+  - app/Modules/Patient/Services/PatientMedicalRecordNumberService.php
+  - app/Modules/Patient/Models/LegacyPatientImportBatch.php
+  - app/Modules/Patient/Models/LegacyPatientImportRow.php
+  - docs/runbooks/legacy-patient-import-operator-runbook.md
+alwaysApply: false
+---
+
+# Legacy Patient import — identity reservation after a rollback
+
+Measured on production 2026-09-27 while clearing a real
+`Nomor KTP sudah terdaftar pada pasien lain.` blockage. These are facts about the
+shipped code, not proposals.
+
+## What duplicate detection actually reads
+
+Both Legacy Patient duplicate checks read **`mst_patients` only, including
+soft-deleted rows**:
+
+* KTP — `Patient::withTrashed()->where('ktp_number', $ktp)->exists()`
+  → `Nomor KTP sudah terdaftar pada pasien lain.`
+* Composed RM — `PatientMedicalRecordNumberService::exists()`, which is also
+  `Patient::withTrashed()->where('medical_record_number', …)`
+  → `Nomor RM final <RM> sudah digunakan pasien lain.`
+
+Consequences that must never be re-litigated by guessing:
+
+1. **Staging never reserves an identity.** Neither check touches
+   `stg_legacy_patient_imports`. A validated, error, or cancelled batch holding
+   thousands of rows with the same NIK contributes **nothing** to duplicate
+   detection. Empirically confirmed: batch 25 produced 1 error while batches
+   12–24 held ~19 000 staging rows carrying the identical NIK set.
+2. **A row cannot collide with itself.** In-file duplicates are caught by the
+   `$seenRm` / `$seenKtp` accumulators, which are separate from the canonical
+   lookup. Self-collision is structurally impossible here.
+3. **A soft-deleted patient still owns its NIK and its RM.** That is deliberate —
+   a trashed patient may be restored, and a real patient's NIK must never be
+   silently reissued. Do not "fix" a blocked import by relaxing this to
+   `->whereNull('deleted_at')`.
+
+## The rollback → re-import deadlock
+
+`LegacyPatientImportService::rollback()` **soft-deletes** the patients it created
+(`->each->delete()` on a `SoftDeletes` model). `discard()` explicitly refuses a
+`committed` or `rolled_back` batch. There is therefore **no application path that
+releases the identity space after a rollback**.
+
+So after any commit → rollback cycle, re-uploading the same source file yields one
+error per previously-committed row, and the operator sees a duplicate message for
+data that appears nowhere in the UI (0 active patients). The measured instance:
+batch 26 committed 1519 patients then rolled back; the next upload of the same
+data produced **1318 KTP conflicts + 520 composed-RM conflicts**, while the
+pre-commit upload of that same file had produced exactly **1 genuine source
+error**.
+
+**Rollback is not idempotent with respect to re-import.** Treat it as a one-way
+door and tell operators so.
+
+## Rules
+
+* **Never weaken a duplicate check to unblock an import.** A canonical patient row
+  owning the NIK — trashed or not — is a true conflict. The validator is correct;
+  the stale data is the defect.
+* **Never delete patient data to hide a validator defect.** Prove ownership first.
+  Only classification *"stale import artifact"* justifies cleanup.
+* **Classify before deleting.** Ownership must be proven by provenance, not by a
+  name looking synthetic. Sufficient evidence: `import_batch_id` pointing at a
+  rolled-back batch, a creation window matching that batch's commit, a deletion
+  window matching its rollback, and **zero rows in every table with an FK to
+  `mst_patients`**.
+* **Enumerate dependents from the live schema, never from a remembered list.**
+  Query `information_schema` for FKs referencing `mst_patients`. At the time of
+  measurement there were 17 (15 `RESTRICT`, 1 `CASCADE`, 1 `SET NULL`).
+* **A real patient is never erased as a stale import artifact.** If any target is
+  active, or is `UNKNOWN` with clinical or financial activity, stop and report.
+* **Backup, manifest, exact counts.** Timestamped `pg_dump -Fc` validated with
+  `pg_restore -l`, plus the private source files; then a manifest with an expected
+  row count per table; then one transaction that aborts unless
+  `ACTUAL = EXPECTED`. No `migrate:fresh`, no `db:wipe`, no global
+  `TRUNCATE`/`CASCADE`, no sequence reset.
+* **Preserve the evidence.** Keep `sys_audit_logs`, the import batches, and their
+  staging rows. They record what happened and they do not block validation.
+  A dangling `stg_legacy_patient_imports.committed_patient_id` on a rolled-back
+  row is harmless — that column carries no FK.
+* **Blank NIK stays NULL.** Verified on the committed estate: 201 blank source
+  cells became 201 `NULL`s and **zero** empty strings. `NULL` never collides with
+  `NULL`. Never substitute `0`, `0000000000000000`, `9999999999999999`, or any
+  fabricated identity.
+* **NIK is a string.** `digitsOnly()` strips non-digits and is the only
+  normalization. Verified on real data: no scientific notation, no stored
+  non-digit, and a source cell of `/` correctly normalizes to blank rather than to
+  a bogus identity.
+
+## Open gap (not fixed by cleanup)
+
+Releasing the identity space after a rollback still requires direct database
+work. The product-level fix would be an audited "purge rolled-back batch"
+operation that hard-deletes import-created patients **only** when every
+FK-dependent table is empty for them — the same guard set this cleanup ran by
+hand. Until that exists, a post-rollback re-import is an operator-escalation
+path, not self-service.
