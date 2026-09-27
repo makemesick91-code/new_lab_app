@@ -38,6 +38,20 @@ interface LegacyOdontogramRecordRepositoryInterface
     public function findBySourceImportId(int $importId): ?LegacyOdontogramRecord;
 
     /**
+     * REVISION-LEGACY-SINGLE-ACTIVE-DOCUMENT-PER-PATIENT-1 — the patient's
+     * PUBLISHED legacy odontogram archive, across every branch, or null.
+     *
+     * A VOID record is not returned: it has released the slot, and
+     * void-then-reimport is the supported correction path (the duplicate check
+     * on the intake path already documents the same rule for checksums).
+     *
+     * Unscoped by branch on purpose: occupancy is a fact about the patient, not
+     * a view permission. The odontogram slot is evaluated entirely independently
+     * of the RME slot.
+     */
+    public function firstPublishedForPatientUnscoped(int $patientId): ?LegacyOdontogramRecord;
+
+    /**
      * @param  array<string, mixed>  $attributes
      */
     public function create(array $attributes): LegacyOdontogramRecord;

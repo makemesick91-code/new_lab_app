@@ -143,6 +143,32 @@
                 </dl>
             </x-ui.card>
 
+            @if ($slotOccupancy !== null && $slotOccupancy->occupied)
+                {{--
+                    REVISION-LEGACY-SINGLE-ACTIVE-DOCUMENT-PER-PATIENT-1. The patient
+                    already holds their one legacy ODONTOGRAM lifecycle, so the upload
+                    form is not offered — there is no reason to let an operator scan a
+                    chart the server will refuse.
+
+                    NOT A SECURITY BOUNDARY: store() re-decides under an advisory lock
+                    and answers a hand-crafted POST identically. The panel names the
+                    action that is actually open — VOID for a published chart, finish or
+                    cancel for one still in flight — and says explicitly that the
+                    patient's legacy RME archive is a separate, unaffected slot.
+                --}}
+                <x-ui.alert
+                    variant="{{ $slotOccupancy->reason === \App\Modules\LegacyImport\Support\LegacyDocumentSlotOccupancy::REASON_ALREADY_PUBLISHED ? 'danger' : 'warning' }}"
+                    title="{{ $slotOccupancy->reason === \App\Modules\LegacyImport\Support\LegacyDocumentSlotOccupancy::REASON_ALREADY_PUBLISHED ? 'Legacy Odontogram sudah tersedia' : 'Upload Legacy Odontogram sedang diproses' }}"
+                >
+                    {{ $slotOccupancy->message() }}
+
+                    <span class="block mt-1 text-ink-muted">
+                        Status arsip legacy odontogram pasien ini: {{ $slotOccupancy->shortStatus() }}.
+                        Arsip legacy RME pasien tidak terpengaruh dan dapat tetap diunggah terpisah.
+                    </span>
+                </x-ui.alert>
+            @else
+
             <form
                 method="POST"
                 action="{{ route('settings.rme.legacy-odontograms.store') }}"
@@ -220,6 +246,7 @@
                     </x-slot:actions>
                 </x-ui.card>
             </form>
+            @endif
         @elseif ($lookup->isIdle())
             <x-ui.empty-state
                 title="Belum ada pasien dipilih"

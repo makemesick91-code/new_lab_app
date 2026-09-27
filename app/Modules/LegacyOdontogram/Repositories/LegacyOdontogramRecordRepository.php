@@ -32,6 +32,25 @@ class LegacyOdontogramRecordRepository implements LegacyOdontogramRecordReposito
         return $this->scoped($branchIds, $includeUnscoped)->find($id);
     }
 
+    /**
+     * REVISION-LEGACY-SINGLE-ACTIVE-DOCUMENT-PER-PATIENT-1.
+     *
+     * PUBLISHED only — a VOID chart has released the slot, which is what makes
+     * void-then-reimport work — and unscoped by branch, because occupancy is a
+     * fact about the patient, not about the viewer (see the interface).
+     *
+     * Served by the existing `trx_odo_legacy_records_patient_status_idx` on
+     * (patient_id, status); no new index is required.
+     */
+    public function firstPublishedForPatientUnscoped(int $patientId): ?LegacyOdontogramRecord
+    {
+        return LegacyOdontogramRecord::query()
+            ->where('patient_id', $patientId)
+            ->where('status', LegacyOdontogramRecord::STATUS_PUBLISHED)
+            ->orderBy('id')
+            ->first();
+    }
+
     public function findBySourceImportId(int $importId): ?LegacyOdontogramRecord
     {
         return LegacyOdontogramRecord::query()->where('source_import_id', $importId)->first();

@@ -1,41 +1,55 @@
-# REVISION-LEGACY-PATIENT-STAGED-VERIFICATION-CANCEL-1
+# REVISION-LEGACY-SINGLE-ACTIVE-DOCUMENT-PER-PATIENT-1
 #
-# Staged verification and cancellation for the Legacy Patient importer.
+# One patient, one document type, one active lifecycle.
 #
-# THE RULE: uploading a legacy patient CSV is STAGING, not importing — and any
-# ERROR row refuses the WHOLE batch, never just the good rows.
+# THE RULE: per patient, per legacy document type, at most ONE active/non-VOID
+# logical lifecycle — and the RME slot and the ODONTOGRAM slot are INDEPENDENT.
 #
-# Sprint 62.3 had already built staging -> preview -> commit and wrote
-# `mst_patients` in exactly one place. The defect was the commit semantics: error
-# rows were EXCLUDED rather than blocking, so 500 rows with 3 errors imported 497
-# patients and nothing afterwards could say which 497. That was pinned by a
-# passing test called `commit skips error rows`.
+#   G1 a published archive blocks every NEW upload of the same type
+#   G2 an in-flight (non-terminal) import blocks every NEW upload of the same type
+#   G3 a canonical VOID releases the slot for a fresh correction import
+#   G4 retry/resume of the SAME lifecycle is never a new upload
+#   G5 RME never blocks odontogram, and odontogram never blocks RME
 #
-#   G1 one ERROR row now refuses the entire batch
-#   G2 confirmation revalidates the whole batch against current database state
-#   G3 the batch is sha256-bound to the source file the operator reviewed
-#   G4 confirmation is explicit; cancellation records who, when and why
+# Occupancy spans TWO tables per type (staging + archive), so it deliberately is
+# NOT a partial UNIQUE index — a unique index cannot read another table. The race
+# is closed by serializing the DECISION with a PostgreSQL advisory xact lock
+# keyed (document type, patient id). First advisory-lock use in the codebase.
 #
-# Scope is Legacy Patient ONLY. Legacy RME and Legacy Odontogram governance is
-# closed and is not reopened for symmetry.
+# NO MIGRATION. The (patient_id, status) indexes already exist on all four
+# tables. No permission, route or schema change.
 #
-# Two decisions stated rather than silently made:
-#   * operator-branch narrowing is OUT OF SCOPE — the canonical authority is the
-#     CSV `Cabang` column, and patient CRUD beside it is equally unscoped
-#   * no permission changed; Admin Sunu already held `manage patients`
+# Three decisions stated rather than silently made:
+#   * FAILED OCCUPIES the slot, because FAILED -> QUEUED is legal and a failed
+#     import is retryable, not abandoned;
+#   * occupancy is deliberately NOT branch-scoped — it answers "what is true
+#     about this patient", not "what may this operator see"; a narrower scope
+#     could only ever admit a second archive;
+#   * a soft-deleted staging row still OCCUPIES (withTrashed), so a delete can
+#     never become an unaudited release. CANCEL and VOID are the only releases.
 #
-# One honest negative: mutant M11 (the in-transaction header lock) SURVIVED the
-# automated suite. The UNIQUE indexes already prevent a duplicate patient; the
-# lock only corrects the loser's refusal reason, which is proven by a documented
-# two-process PostgreSQL procedure and not by a Pest test.
+# Two things the tests caught, recorded because the first reasoning was wrong:
+#   * the slot pre-check initially ran BEFORE exact-PDF duplicate detection and
+#     shadowed DUPLICATE_DETECTED for same-patient re-uploads. Moved to after it;
+#     cardinality supplements the checksum guard, it never replaces it.
+#   * one existing test asserted the opposite of the new invariant (it staged two
+#     imports for ONE patient to prove the guard keys on bytes, not filename).
+#     The property is now proven across two patients.
+#
+# One honest negative: the concurrency proof SKIPS off PostgreSQL. On SQLite the
+# advisory lock is a documented no-op, so the sequential suite proves the
+# decision and a separate PostgreSQL 16 suite proves the lock.
+#
+# Mass/bulk legacy upload does not exist in this codebase (verified, not assumed)
+# and was deliberately not built.
 
-id: REVISION-LEGACY-PATIENT-STAGED-VERIFICATION-CANCEL-1
+id: REVISION-LEGACY-SINGLE-ACTIVE-DOCUMENT-PER-PATIENT-1
 type: MODULE_SPRINT
-module: Patient,LegacyImport
-title: "Legacy Patient staged verification: one ERROR refuses the whole batch, confirm-time revalidation, source-hash binding, cancellation with evidence"
+module: LegacyImport,LegacyRme,LegacyOdontogram
+title: "One active legacy document per patient per type: published and in-flight both block a new upload, VOID releases, retry is not an upload, RME and odontogram slots independent"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 runtime_change: true
-schema_change: true
+schema_change: false
 frontend_change: false
 security_impact: true
 branch_isolation_impact: false
@@ -43,9 +57,9 @@ ledger_impact: false
 deploy_required: true
 browser_required: false
 test_profiles: []
-go_tag: revision-legacy-patient-staged-verification-cancel-1-go
+go_tag: revision-legacy-single-active-document-per-patient-1-go
 go_tag_created: false
-inherits_parent_go: revision-legacy-visit-bound-preverified-ingestion-1-go
+inherits_parent_go: revision-legacy-patient-staged-verification-cancel-1-go
 inherits_quota_decision: REVISION-SUNU-LEGACY-IMPORT-UNLIMITED-ADMIN-ACCESS-1
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
-revises: SPRINT-62.3-LEGACY-RME-PATIENT-BATCH-IMPORT
+revises: LEGACY-RME-PDF-1A,FIX-04B-LEGACY-ODONTOGRAM

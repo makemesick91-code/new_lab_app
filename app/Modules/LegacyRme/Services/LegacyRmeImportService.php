@@ -5,7 +5,10 @@ declare(strict_types=1);
 namespace App\Modules\LegacyRme\Services;
 
 use App\Models\User;
+use App\Modules\LegacyImport\Exceptions\LegacyDocumentSlotOccupied;
 use App\Modules\LegacyImport\Services\LegacyImportDailyQuotaService;
+use App\Modules\LegacyImport\Services\LegacySingleActiveDocumentService;
+use App\Modules\LegacyImport\Support\LegacyDocumentSlotOccupancy;
 use App\Modules\LegacyImport\Support\LegacyImportType;
 use App\Modules\LegacyRme\Interfaces\LegacyRmeImportRepositoryInterface;
 use App\Modules\LegacyRme\Interfaces\LegacyRmeMalwareScannerInterface;
@@ -82,6 +85,11 @@ class LegacyRmeImportService
         // COMPOSES with the ROLL-4 wave quota above; it never replaces it,
         // and it can only refuse.
         private readonly LegacyImportDailyQuotaService $hubQuota,
+        // REVISION-LEGACY-SINGLE-ACTIVE-DOCUMENT-PER-PATIENT-1 — at most one
+        // active/non-VOID legacy RME lifecycle per PATIENT. Independent of the
+        // quotas above, which bound branches and waves rather than patients,
+        // and independent of the patient's odontogram slot.
+        private readonly LegacySingleActiveDocumentService $slots,
     ) {}
 
     /**
@@ -210,6 +218,38 @@ class LegacyRmeImportService
             throw $exception->toValidationException();
         }
 
+        /*
+         * REVISION-LEGACY-SINGLE-ACTIVE-DOCUMENT-PER-PATIENT-1 — ADVISORY
+         * pre-check of the patient's single legacy RME slot. Never the gate: the
+         * authoritative assertion is taken under an advisory lock inside the
+         * transaction below, because another operator may claim the slot between
+         * here and there.
+         *
+         * PLACED LAST IN THE PRE-UPLOAD CHAIN, AND DELIBERATELY AFTER DUPLICATE
+         * DETECTION. Every refusal above keeps the precedence it already had —
+         * date rules, branch derivation, wave admission, ingestion capacity, the
+         * operations gate, the hub quota and, critically, the exact-PDF duplicate
+         * check. An earlier draft of this revision ran the slot check before the
+         * checksum comparison, which shadowed DUPLICATE_DETECTED for same-patient
+         * re-uploads and was caught by that suite: the same scanned document
+         * re-submitted for the same patient must still be reported as a
+         * duplicate, because that is what it is. Cardinality supplements the
+         * checksum guard; it never replaces it.
+         *
+         * Still before `putFile()`, so a refused intake leaves no file, no
+         * staging row and no queued job behind.
+         */
+        $slot = $this->slots->previewForNewLifecycle(
+            LegacyImportType::LEGACY_RME,
+            (int) $patient->getKey(),
+        );
+
+        if ($slot !== null) {
+            $this->auditSlotRefusal($slot, $actor);
+
+            throw ValidationException::withMessages(['document' => $slot->message()]);
+        }
+
         $uuid = (string) Str::uuid();
         $path = $this->storage->sourcePath((int) $patient->getKey(), $uuid);
 
@@ -259,6 +299,30 @@ class LegacyRmeImportService
                  * may refuse; neither can turn the other's refusal into an
                  * acceptance.
                  */
+                /*
+                 * REVISION-LEGACY-SINGLE-ACTIVE-DOCUMENT-PER-PATIENT-1 — the
+                 * AUTHORITATIVE one-document-per-patient gate.
+                 *
+                 * TAKEN FIRST, AHEAD OF BOTH QUOTA BUCKETS. It serializes on
+                 * (patient, LEGACY_RME) via a transaction-scoped advisory lock,
+                 * a key space disjoint from the branch-keyed buckets below, so
+                 * no cycle can form between the two lock classes. Three lock
+                 * orders now exist on this path and this is the single site that
+                 * takes all three, in this order.
+                 *
+                 * First because it is the most specific refusal and the cheapest
+                 * to decide: there is no reason to consume a branch's daily
+                 * allowance on an upload that a patient-level rule will reject.
+                 *
+                 * It throws LegacyDocumentSlotOccupied rather than a
+                 * ValidationException, so the compensating catch below still
+                 * removes the stored bytes before the operator is answered.
+                 */
+                $this->slots->assertAvailableForNewLifecycle(
+                    LegacyImportType::LEGACY_RME,
+                    (int) $patient->getKey(),
+                );
+
                 $this->hubQuota->reserve(
                     LegacyImportType::LEGACY_RME,
                     $originBranchId,
@@ -310,6 +374,22 @@ class LegacyRmeImportService
                     // so the human's statement is bound to the exact file.
                 ] + $attestationColumns);
             });
+        } catch (LegacyDocumentSlotOccupied $exception) {
+            /*
+             * REVISION-LEGACY-SINGLE-ACTIVE-DOCUMENT-PER-PATIENT-1 — the race
+             * loser: another operator claimed this patient's slot between the
+             * advisory pre-check and the locked assertion.
+             *
+             * Compensate exactly as any other intake failure does, then audit —
+             * and audit HERE, not inside the closure, because the transaction
+             * has now rolled back and an audit row written inside it would have
+             * rolled back with it, leaving a refusal with no trail.
+             */
+            $this->storage->deleteDirectory($this->storage->importDirectory((int) $patient->getKey(), $uuid));
+
+            $this->auditSlotRefusal($exception->occupancy, $actor);
+
+            throw $exception->toValidationException();
         } catch (\Throwable $exception) {
             // The staging row never existed, so the stored bytes are an orphan.
             $this->storage->deleteDirectory($this->storage->importDirectory((int) $patient->getKey(), $uuid));
@@ -405,6 +485,24 @@ class LegacyRmeImportService
      *
      * @throws ValidationException
      */
+    /**
+     * REVISION-LEGACY-SINGLE-ACTIVE-DOCUMENT-PER-PATIENT-1 — record a refused
+     * NEW upload.
+     *
+     * `null` for the import argument because no staging row exists (and must not
+     * be created) for a refused intake. The payload is the occupancy's own
+     * structure-only context, so this method cannot leak a name, a Nomor RM or
+     * any clinical content no matter what refused.
+     */
+    private function auditSlotRefusal(LegacyDocumentSlotOccupancy $occupancy, User $actor): void
+    {
+        $event = $occupancy->reason === LegacyDocumentSlotOccupancy::REASON_ALREADY_PUBLISHED
+            ? LegacyRmeAuditEvent::NEW_UPLOAD_BLOCKED_ALREADY_PUBLISHED
+            : LegacyRmeAuditEvent::NEW_UPLOAD_BLOCKED_ACTIVE_IMPORT;
+
+        $this->audit->logImportEvent($event, null, $occupancy->auditContext(), $actor);
+    }
+
     private function resolveOriginBranch(Patient $patient, ?int $submittedBranchId, User $actor): LegacyRmeBranchResolution
     {
         $resolution = $this->branchResolver->resolveForPatient($patient, $actor);

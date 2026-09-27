@@ -50,6 +50,25 @@ class LegacyRmeRecordRepository implements LegacyRmeRecordRepositoryInterface
     }
 
     /**
+     * REVISION-LEGACY-SINGLE-ACTIVE-DOCUMENT-PER-PATIENT-1.
+     *
+     * PUBLISHED only — a VOID record has released the slot — and unscoped by
+     * branch, because occupancy is a fact about the patient rather than a view
+     * permission (see the interface).
+     *
+     * Served by the existing `trx_rme_legacy_records_patient_status_index` on
+     * (patient_id, status); no new index is required.
+     */
+    public function firstPublishedForPatientUnscoped(int $patientId): ?LegacyRmeRecord
+    {
+        return LegacyRmeRecord::query()
+            ->where('patient_id', $patientId)
+            ->where('status', LegacyRmeRecord::STATUS_PUBLISHED)
+            ->orderBy('id')
+            ->first();
+    }
+
+    /**
      * @return Collection<int, LegacyRmeRecord>
      */
     public function findByPdfChecksum(string $sha256): Collection

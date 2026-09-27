@@ -108,6 +108,27 @@ class LegacyRmeImportRepository implements LegacyRmeImportRepositoryInterface
     }
 
     /**
+     * REVISION-LEGACY-SINGLE-ACTIVE-DOCUMENT-PER-PATIENT-1.
+     *
+     * No branch scope (see the interface for why), `withTrashed()` so a
+     * soft-deleted row cannot silently release the slot, and ordered oldest
+     * first so the refusal always names the same blocking lifecycle rather than
+     * an arbitrary one.
+     *
+     * Served by the existing `stg_rme_legacy_imports_patient_status_index`
+     * on (patient_id, status) — no new index is required.
+     */
+    public function firstSlotOccupyingForPatient(int $patientId): ?LegacyRmeImport
+    {
+        return LegacyRmeImport::query()
+            ->withTrashed()
+            ->where('patient_id', $patientId)
+            ->whereIn('status', LegacyRmeImportStatus::SLOT_OCCUPYING)
+            ->orderBy('id')
+            ->first();
+    }
+
+    /**
      * @param  array<string, mixed>  $attributes
      */
     public function update(LegacyRmeImport $import, array $attributes): LegacyRmeImport

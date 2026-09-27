@@ -362,27 +362,82 @@ it('still refuses a no-native patient once the branch has spent its daily import
      */
     config()->set('legacy_import_hub.daily_limit.legacy_odontogram', 1);
 
+    /*
+     * REVISION-LEGACY-SINGLE-ACTIVE-DOCUMENT-PER-PATIENT-1 — TWO patients, not
+     * one, and that is load-bearing.
+     *
+     * This test exists to prove the intake honours the hub quota (mutation M16:
+     * nulling the quota preview passed every other test). Staging the second
+     * document against the SAME patient would now be refused by the
+     * one-document-per-patient slot guard BEFORE the quota is consulted — so the
+     * quota could be disabled entirely and this test would still see a
+     * ValidationException. That is a false green, and it is exactly what M16
+     * was written to catch.
+     *
+     * The quota is branch-scoped, so a second patient in the same branch still
+     * exhausts a daily limit of 1 while leaving the slot guard with nothing to
+     * say. The quota is then the only thing that can refuse.
+     */
+    $first = lodoPatient(['date_of_birth' => '1990-01-01']);
+    $second = lodoPatient(['date_of_birth' => '1991-02-02']);
+    $actor = lodoOperator();
+
+    lodoStageImport($first, '2015-05-15', $actor);
+
+    expect(fn () => lodoStageImport($second, '2016-06-16', $actor))
+        ->toThrow(ValidationException::class);
+
+    expect(LegacyOdontogramImport::count())->toBe(1)
+        ->and(LegacyOdontogramImport::where('patient_id', $second->id)->count())->toBe(0);
+});
+
+/*
+ * REVISION-LEGACY-SINGLE-ACTIVE-DOCUMENT-PER-PATIENT-1 — A DELIBERATE REVERSAL,
+ * recorded here rather than quietly deleted.
+ *
+ * This test used to be `files several historical charts for the same no-native
+ * patient` and asserted THREE concurrent staged charts for one patient. That is
+ * now forbidden: a patient holds at most one active/non-VOID legacy odontogram
+ * lifecycle.
+ *
+ * WHAT THIS CHANGES FOR OPERATORS, stated plainly because it is a real
+ * operational consequence and not just a test edit: a patient with several years
+ * of paper charts can no longer have one staged archive per year in parallel.
+ * The supported routes are
+ *
+ *   * one document per patient covering the whole archive (the chart PDF is
+ *     already multi-page, and the RME sibling models exactly this with its
+ *     earliest/latest date range), or
+ *   * publish, then correct by a reasoned VOID plus a fresh import.
+ *
+ * What the ORIGINAL test was protecting is still protected and still asserted
+ * below: a patient with no native odontogram is a normal migration case and is
+ * not refused. Widened eligibility has not been narrowed — only the CARDINALITY
+ * changed.
+ */
+it('admits a no-native patient but holds them to one active chart at a time', function () {
     $patient = lodoPatient(['date_of_birth' => '1990-01-01']);
     $actor = lodoOperator();
 
-    lodoStageImport($patient, '2015-05-15', $actor);
+    // The widened eligibility this file exists to protect: no native odontogram
+    // is not a refusal.
+    $first = lodoStageImport($patient, '2021-03-01', $actor);
 
-    expect(fn () => lodoStageImport($patient, '2016-06-16', $actor))
+    expect($first->exists)->toBeTrue();
+
+    // A second, genuinely different paper chart for the same patient is now
+    // refused while the first lifecycle is live.
+    expect(fn () => lodoStageImport($patient, '2022-04-01', $actor))
         ->toThrow(ValidationException::class);
 
     expect(LegacyOdontogramImport::where('patient_id', $patient->id)->count())->toBe(1);
-});
 
-it('files several historical charts for the same no-native patient', function () {
-    $patient = lodoPatient(['date_of_birth' => '1990-01-01']);
-    $actor = lodoOperator();
+    // And the route forward is the canonical one: finish or abandon the first,
+    // then the next may begin.
+    $first->forceFill(['status' => LegacyOdontogramImportStatus::CANCELLED])->save();
 
-    // Distinct documents, distinct clinical dates — three real paper charts.
-    lodoStageImport($patient, '2021-03-01', $actor);
-    lodoStageImport($patient, '2022-04-01', $actor);
-    lodoStageImport($patient, '2023-05-01', $actor);
-
-    expect(LegacyOdontogramImport::where('patient_id', $patient->id)->count())->toBe(3);
+    expect(lodoStageImport($patient, '2022-04-01', $actor)->exists)->toBeTrue()
+        ->and(LegacyOdontogramImport::where('patient_id', $patient->id)->count())->toBe(2);
 });
 
 /*

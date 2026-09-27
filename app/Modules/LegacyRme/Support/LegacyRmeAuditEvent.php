@@ -48,6 +48,25 @@ final class LegacyRmeAuditEvent
 
     public const DUPLICATE_DETECTED = 'LEGACY_RME_DUPLICATE_DETECTED';
 
+    /*
+    |--------------------------------------------------------------------------
+    | REVISION-LEGACY-SINGLE-ACTIVE-DOCUMENT-PER-PATIENT-1
+    |--------------------------------------------------------------------------
+    |
+    | A NEW legacy RME upload was refused because the patient's single slot was
+    | already held. Two separate events rather than one with a discriminator,
+    | because the operator's next action differs and the trail should be
+    | greppable by that action: a published archive needs a VOID, an in-flight
+    | import needs finishing or cancelling.
+    |
+    | These are the DENIALS only. They are never written for a retry of an
+    | existing import, which is not a new upload.
+    */
+
+    public const NEW_UPLOAD_BLOCKED_ALREADY_PUBLISHED = 'LEGACY_RME_NEW_UPLOAD_BLOCKED_ALREADY_PUBLISHED';
+
+    public const NEW_UPLOAD_BLOCKED_ACTIVE_IMPORT = 'LEGACY_RME_NEW_UPLOAD_BLOCKED_ACTIVE_IMPORT';
+
     public const PUBLISHED = 'LEGACY_RME_PUBLISHED';
 
     public const VOIDED = 'LEGACY_RME_VOIDED';
@@ -166,6 +185,8 @@ final class LegacyRmeAuditEvent
         self::DATE_SELECTED,
         self::PUBLISH_REJECTED,
         self::DUPLICATE_DETECTED,
+        self::NEW_UPLOAD_BLOCKED_ALREADY_PUBLISHED,
+        self::NEW_UPLOAD_BLOCKED_ACTIVE_IMPORT,
         self::PUBLISHED,
         self::VOIDED,
         self::PDF_UPLOADED,
@@ -231,6 +252,14 @@ final class LegacyRmeAuditEvent
         'duplicate_record_id',
         'duplicate_patient_id',
         'variant',
+        // REVISION-LEGACY-SINGLE-ACTIVE-DOCUMENT-PER-PATIENT-1. Structure only:
+        // WHY the slot was held (ALREADY_PUBLISHED / ACTIVE_IMPORT_EXISTS) and
+        // WHICH row holds it, so a refused operator can be helped without the
+        // trail carrying a patient name, a Nomor RM or any clinical content.
+        'slot_reason',
+        'blocking_import_id',
+        'blocking_record_id',
+        'blocking_status',
         // LEGACY-RME-PDF-1D. The void REASON itself is deliberately absent: it
         // is operator free text that may name a patient, and this allow-list is
         // structure-only. Its permanent home is the record's own void_reason

@@ -172,19 +172,30 @@ it('accepts a patient with no native RME at all', function () {
 });
 
 it('stores the declared date range and collapses a single-date document', function () {
-    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01']);
+    /*
+     * REVISION-LEGACY-SINGLE-ACTIVE-DOCUMENT-PER-PATIENT-1 — two patients, one
+     * document each. This used to stage BOTH documents against one patient, which
+     * a patient may no longer hold.
+     *
+     * The property under test is unaffected: how the DECLARED date range is
+     * persisted (a two-date document keeps both ends, a single-date document
+     * collapses to the same value at both) has nothing to do with which patient
+     * the document belongs to.
+     */
+    $rangePatient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01']);
+    $singlePatient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01']);
 
     $multi = app(LegacyRmeImportService::class)->createFromUpload(
-        $patient,
+        $rangePatient,
         '2024-01-28',
-        $patient->medical_record_number,
+        $rangePatient->medical_record_number,
         null,
         legacyRmePdfUpload('multi.pdf'),
         superAdmin(),
         '2024-08-31',
     );
 
-    $single = lrmeUpload($patient, legacyRmePdfUpload('single.pdf', 2), '2015-01-01');
+    $single = lrmeUpload($singlePatient, legacyRmePdfUpload('single.pdf', 2), '2015-01-01');
 
     expect($multi->selected_rme_date?->toDateString())->toBe('2024-01-28')
         ->and($multi->latest_rme_date?->toDateString())->toBe('2024-08-31')

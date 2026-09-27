@@ -103,6 +103,30 @@ interface LegacyRmeImportRepositoryInterface
     public function findByPdfChecksum(string $sha256): Collection;
 
     /**
+     * REVISION-LEGACY-SINGLE-ACTIVE-DOCUMENT-PER-PATIENT-1 — the oldest staging
+     * row that still OCCUPIES this patient's single legacy RME slot, or null if
+     * none does.
+     *
+     * "Occupies" means `LegacyRmeImportStatus::SLOT_OCCUPYING` — every state
+     * that can still advance toward PUBLISHED, including the retryable FAILED.
+     *
+     * DELIBERATELY NOT BRANCH-SCOPED. Every other read on this interface takes
+     * a resolved branch id list, because those answer "what may this operator
+     * SEE". This one answers "what is clinically true about this patient", and a
+     * narrower scope could only ever return FEWER rows — which would let an
+     * operator at branch B file a second archive for a patient who already has
+     * one at branch A. Access control is enforced separately, by the policies;
+     * it is not this question.
+     *
+     * INCLUDES SOFT-DELETED ROWS. Nothing in this codebase soft-deletes an
+     * import — the canonical ways to release a slot are CANCEL (staging) and
+     * VOID (record), both audited. Counting trashed rows anyway means a manual
+     * or future `delete()` can never become a silent, unaudited bypass of the
+     * one-document invariant.
+     */
+    public function firstSlotOccupyingForPatient(int $patientId): ?LegacyRmeImport;
+
+    /**
      * Idempotent page upsert keyed on the UNIQUE(legacy_import_id, page_number)
      * constraint, so a retried job updates the existing row instead of adding a
      * duplicate page.

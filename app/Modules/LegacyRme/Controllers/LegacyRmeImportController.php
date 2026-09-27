@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Modules\LegacyRme\Controllers;
 
 use App\Http\Controllers\Controller;
+use App\Modules\LegacyImport\Services\LegacySingleActiveDocumentService;
+use App\Modules\LegacyImport\Support\LegacyImportType;
 use App\Modules\LegacyRme\Interfaces\LegacyRmeImportRepositoryInterface;
 use App\Modules\LegacyRme\Models\LegacyRmeImport;
 use App\Modules\LegacyRme\Models\LegacyRmeImportPage;
@@ -75,6 +77,11 @@ class LegacyRmeImportController extends Controller
         private readonly LegacyRmeBranchAdmissionService $admission,
         private readonly LegacyRmeImportLifecycleService $lifecycle,
         private readonly SeparatePublisherGuard $separation,
+        // REVISION-LEGACY-SINGLE-ACTIVE-DOCUMENT-PER-PATIENT-1 — read only here.
+        // The screen shows whether the patient's single legacy RME slot is
+        // already held; store() re-decides under a lock, and that call is the
+        // boundary.
+        private readonly LegacySingleActiveDocumentService $slots,
     ) {}
 
     public function index(Request $request): View
@@ -124,9 +131,21 @@ class LegacyRmeImportController extends Controller
 
         $branchResolution = null;
         $admissionDecision = null;
+        $slotOccupancy = null;
 
         if ($patient !== null) {
             $summary = $this->patients->summarize($patient);
+
+            // REVISION-LEGACY-SINGLE-ACTIVE-DOCUMENT-PER-PATIENT-1 — show whether
+            // this patient's single legacy RME slot is already held, so an
+            // operator learns it BEFORE preparing and scanning a document rather
+            // than after. Presentation only: store() re-decides under an advisory
+            // lock, and that call is the boundary. A hidden or disabled button is
+            // never the gate.
+            $slotOccupancy = $this->slots->occupancyFor(
+                LegacyImportType::LEGACY_RME,
+                (int) $patient->getKey(),
+            );
 
             // FIX-ROLL2-1: the branch is DERIVED from the patient's Nomor RM,
             // so the screen only ever DISPLAYS it. There is no branch picker to
@@ -149,6 +168,7 @@ class LegacyRmeImportController extends Controller
             'summary' => $summary,
             'branchResolution' => $branchResolution,
             'admissionDecision' => $admissionDecision,
+            'slotOccupancy' => $slotOccupancy,
             // A convenience bound for the date picker only, and only when the
             // patient actually HAS a native RME — a patient without one has no
             // upper bound beyond "before today", which the server enforces.

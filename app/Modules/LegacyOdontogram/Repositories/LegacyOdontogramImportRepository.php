@@ -64,6 +64,26 @@ class LegacyOdontogramImportRepository implements LegacyOdontogramImportReposito
         return LegacyOdontogramImport::query()->find($id);
     }
 
+    /**
+     * REVISION-LEGACY-SINGLE-ACTIVE-DOCUMENT-PER-PATIENT-1.
+     *
+     * No branch scope (see the interface), `withTrashed()` so a soft-deleted row
+     * cannot silently release the slot, and oldest first so the refusal always
+     * names the same blocking lifecycle.
+     *
+     * Served by the existing `stg_odo_legacy_imports_patient_status_idx` on
+     * (patient_id, status); no new index is required.
+     */
+    public function firstSlotOccupyingForPatient(int $patientId): ?LegacyOdontogramImport
+    {
+        return LegacyOdontogramImport::query()
+            ->withTrashed()
+            ->where('patient_id', $patientId)
+            ->whereIn('status', LegacyOdontogramImportStatus::SLOT_OCCUPYING)
+            ->orderBy('id')
+            ->first();
+    }
+
     public function lockForUpdate(int $id): ?LegacyOdontogramImport
     {
         return LegacyOdontogramImport::query()->lockForUpdate()->find($id);

@@ -53,6 +53,35 @@ final class LegacyOdontogramImportStatus
     ];
 
     /**
+     * REVISION-LEGACY-SINGLE-ACTIVE-DOCUMENT-PER-PATIENT-1 — the staging states
+     * that OCCUPY the patient's single legacy odontogram slot.
+     *
+     * Derived from THIS module's own transition map, not copied from the RME
+     * one. The two vocabularies happen to agree today; the odontogram slot is
+     * defined by odontogram semantics, and a future divergence in either state
+     * machine must not silently change the other's occupancy rule.
+     *
+     * Exactly `ALL` minus `TERMINAL`, pinned by a test. FAILED is included
+     * because FAILED leads to QUEUED here as well: a failed chart import is
+     * retryable, so it still owns the slot until it is retried or cancelled.
+     *
+     * PUBLISHED is absent — occupancy then belongs to the produced RECORD, whose
+     * VOID is what releases the slot for a correction import. CANCELLED is
+     * absent because it is terminal and produced no archive.
+     *
+     * @var list<string>
+     */
+    public const SLOT_OCCUPYING = [
+        self::DRAFT,
+        self::UPLOADED,
+        self::QUEUED,
+        self::PROCESSING,
+        self::READY_FOR_REVIEW,
+        self::REVIEWED,
+        self::FAILED,
+    ];
+
+    /**
      * PUBLISHED is reachable ONLY from REVIEWED: a human review is a hard
      * precondition of turning a staged chart into immutable clinical evidence,
      * and PUBLISHED itself leads nowhere — a published record is corrected by

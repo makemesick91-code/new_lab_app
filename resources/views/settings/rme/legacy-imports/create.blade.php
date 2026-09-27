@@ -148,6 +148,32 @@
                             Data pasien tidak perlu diubah.
                         </span>
                     </x-ui.alert>
+                @elseif ($slotOccupancy !== null && $slotOccupancy->occupied)
+                    {{--
+                        REVISION-LEGACY-SINGLE-ACTIVE-DOCUMENT-PER-PATIENT-1. The
+                        patient already holds their one legacy RME lifecycle, so the
+                        upload form is not offered at all — an operator should not be
+                        able to prepare and scan a document the server will refuse.
+
+                        NOT A SECURITY BOUNDARY. store() re-decides under an advisory
+                        lock and refuses regardless of what this screen rendered; a
+                        hand-crafted POST gets the same answer. This panel exists to
+                        save the operator the work, and to name the action that is
+                        actually open to them — which differs: a published archive is
+                        corrected by a reasoned VOID, an in-flight import by finishing
+                        or cancelling it.
+                    --}}
+                    <x-ui.alert
+                        variant="{{ $slotOccupancy->reason === \App\Modules\LegacyImport\Support\LegacyDocumentSlotOccupancy::REASON_ALREADY_PUBLISHED ? 'danger' : 'warning' }}"
+                        title="{{ $slotOccupancy->reason === \App\Modules\LegacyImport\Support\LegacyDocumentSlotOccupancy::REASON_ALREADY_PUBLISHED ? 'Legacy RME sudah tersedia' : 'Upload Legacy RME sedang diproses' }}"
+                    >
+                        {{ $slotOccupancy->message() }}
+
+                        <span class="block mt-1 text-ink-muted">
+                            Status arsip legacy RME pasien ini: {{ $slotOccupancy->shortStatus() }}.
+                            Arsip legacy odontogram pasien tidak terpengaruh dan dapat tetap diunggah terpisah.
+                        </span>
+                    </x-ui.alert>
                 @else
                     @if ($summary['has_native_rme'])
                         <x-ui.alert variant="warning" title="Tanggal ditentukan manual">
