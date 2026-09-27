@@ -38,6 +38,20 @@ interface LegacyRmeRecordRepositoryInterface
     public function findBySourceImportId(int $importId): ?LegacyRmeRecord;
 
     /**
+     * REVISION-LEGACY-SINGLE-ACTIVE-DOCUMENT-PER-PATIENT-1 — the patient's
+     * PUBLISHED legacy RME archive, across every branch, or null.
+     *
+     * A VOID record is not returned: void-then-reimport is the supported
+     * correction, so a voided archive releases the slot rather than sealing the
+     * patient out of it forever.
+     *
+     * Deliberately unscoped by branch, for the same reason as
+     * LegacyRmeImportRepositoryInterface::firstSlotOccupyingForPatient() — this
+     * is a question about the patient, not about the viewer.
+     */
+    public function firstPublishedForPatientUnscoped(int $patientId): ?LegacyRmeRecord;
+
+    /**
      * Records sharing a source PDF checksum. Duplicate handling is a service
      * decision; the repository only reports the collision.
      *

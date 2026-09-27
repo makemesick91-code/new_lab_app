@@ -71,14 +71,27 @@ it('blocks the identical pdf even under a different filename', function () {
         ->toThrow(ValidationException::class);
 });
 
+/*
+ * REVISION-LEGACY-SINGLE-ACTIVE-DOCUMENT-PER-PATIENT-1 — this test used to stage
+ * BOTH documents against ONE patient, which that revision makes impossible: a
+ * patient may hold at most one active legacy RME lifecycle at a time, so the
+ * second upload is now refused by the slot guard before the checksum is even
+ * compared.
+ *
+ * The property under test is unchanged and still worth proving — the duplicate
+ * guard keys on the BYTES, never on the filename — so it is proven across two
+ * patients, where the cardinality rule does not apply. The same-patient form of
+ * this scenario is covered by the slot suite instead.
+ */
 it('allows the same filename when the bytes differ', function () {
-    $patient = lrmeDupPatient();
+    $first = lrmeDupPatient();
+    $second = lrmeDupPatient();
 
-    lrmeDupUpload($patient, UploadedFile::fake()->createWithContent('arsip.pdf', legacyRmePdfBytes(1)));
-    $second = lrmeDupUpload($patient, UploadedFile::fake()->createWithContent('arsip.pdf', legacyRmePdfBytes(3)), '2020-06-01');
+    lrmeDupUpload($first, UploadedFile::fake()->createWithContent('arsip.pdf', legacyRmePdfBytes(1)));
+    $secondImport = lrmeDupUpload($second, UploadedFile::fake()->createWithContent('arsip.pdf', legacyRmePdfBytes(3)), '2020-06-01');
 
     expect(LegacyRmeImport::count())->toBe(2)
-        ->and($second->source_pdf_sha256)->not->toBe(LegacyRmeImport::first()->source_pdf_sha256);
+        ->and($secondImport->source_pdf_sha256)->not->toBe(LegacyRmeImport::first()->source_pdf_sha256);
 });
 
 it('blocks the identical pdf when it is already staged for a different patient', function () {

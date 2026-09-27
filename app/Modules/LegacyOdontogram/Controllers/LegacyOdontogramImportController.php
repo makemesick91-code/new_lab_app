@@ -6,6 +6,8 @@ namespace App\Modules\LegacyOdontogram\Controllers;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Modules\LegacyImport\Services\LegacySingleActiveDocumentService;
+use App\Modules\LegacyImport\Support\LegacyImportType;
 use App\Modules\LegacyOdontogram\Interfaces\LegacyOdontogramImportRepositoryInterface;
 use App\Modules\LegacyOdontogram\Interfaces\LegacyOdontogramPatientRepositoryInterface;
 use App\Modules\LegacyOdontogram\Models\LegacyOdontogramImport;
@@ -69,6 +71,10 @@ class LegacyOdontogramImportController extends Controller
         // Streaming a staged page emits full-resolution clinical bytes; the read
         // is audited, so this is a dependency of the controller, not an extra.
         private readonly LegacyOdontogramAuditService $audit,
+        // REVISION-LEGACY-SINGLE-ACTIVE-DOCUMENT-PER-PATIENT-1 — read only here.
+        // Shows whether the patient's single legacy odontogram slot is already
+        // held; store() re-decides under a lock, and that call is the boundary.
+        private readonly LegacySingleActiveDocumentService $slots,
     ) {}
 
     public function index(Request $request): View
@@ -109,6 +115,7 @@ class LegacyOdontogramImportController extends Controller
 
         $branchResolution = null;
         $earliestNative = null;
+        $slotOccupancy = null;
 
         if ($lookup->isFound()) {
             // Re-read the row for the two DERIVED facts below. They are shown so
@@ -120,6 +127,16 @@ class LegacyOdontogramImportController extends Controller
             if ($patient !== null) {
                 $branchResolution = $this->branchBinding->resolveForPatient($patient, $request->user());
                 $earliestNative = $this->dateRules->snapshotCutoff($patient);
+
+                // REVISION-LEGACY-SINGLE-ACTIVE-DOCUMENT-PER-PATIENT-1 — whether
+                // this patient's single legacy ODONTOGRAM slot is already held,
+                // shown before the operator prepares a scan. Guidance, never the
+                // decision: store() re-decides under an advisory lock. Evaluated
+                // independently of the patient's legacy RME slot.
+                $slotOccupancy = $this->slots->occupancyFor(
+                    LegacyImportType::LEGACY_ODONTOGRAM,
+                    (int) $patient->getKey(),
+                );
             }
         }
 
@@ -134,6 +151,7 @@ class LegacyOdontogramImportController extends Controller
                 : $request->medicalRecordNumber(),
             'branchResolution' => $branchResolution,
             'earliestNativeOdontogramDate' => $earliestNative,
+            'slotOccupancy' => $slotOccupancy,
         ]);
     }
 

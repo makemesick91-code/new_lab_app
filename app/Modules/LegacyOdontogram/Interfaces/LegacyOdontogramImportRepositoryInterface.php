@@ -46,6 +46,26 @@ interface LegacyOdontogramImportRepositoryInterface
     public function lockForUpdate(int $id): ?LegacyOdontogramImport;
 
     /**
+     * REVISION-LEGACY-SINGLE-ACTIVE-DOCUMENT-PER-PATIENT-1 — the oldest staging
+     * row that still OCCUPIES this patient's single legacy odontogram slot, or
+     * null if none does.
+     *
+     * "Occupies" means `LegacyOdontogramImportStatus::SLOT_OCCUPYING`: every
+     * state that can still advance toward PUBLISHED, including the retryable
+     * FAILED.
+     *
+     * DELIBERATELY UNSCOPED BY BRANCH, unlike every read above it. Those answer
+     * "what may this operator see"; this answers "what is clinically true about
+     * this patient". A narrower scope could only return fewer rows, which would
+     * let an operator at one branch open a second chart lifecycle for a patient
+     * who already has one elsewhere. Authorization stays with the policies.
+     *
+     * INCLUDES SOFT-DELETED ROWS, so a `delete()` can never silently release a
+     * clinical slot that only CANCEL or VOID is supposed to release.
+     */
+    public function firstSlotOccupyingForPatient(int $patientId): ?LegacyOdontogramImport;
+
+    /**
      * @param  array<string, mixed>  $attributes
      */
     public function create(array $attributes): LegacyOdontogramImport;

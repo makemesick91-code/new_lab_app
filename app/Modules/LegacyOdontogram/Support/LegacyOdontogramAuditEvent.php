@@ -57,10 +57,30 @@ final class LegacyOdontogramAuditEvent
 
     public const RECORD_PAGE_VIEWED = 'LEGACY_ODONTOGRAM_RECORD_PAGE_VIEWED';
 
+    /*
+    |--------------------------------------------------------------------------
+    | REVISION-LEGACY-SINGLE-ACTIVE-DOCUMENT-PER-PATIENT-1
+    |--------------------------------------------------------------------------
+    |
+    | A NEW legacy odontogram upload was refused because the patient's single
+    | odontogram slot was already held. Two events, because the operator's next
+    | action differs: a published chart needs a VOID, an in-flight import needs
+    | finishing or cancelling.
+    |
+    | Independent of the RME slot's events by design — a refusal here says
+    | nothing about the patient's RME archive.
+    */
+
+    public const NEW_UPLOAD_BLOCKED_ALREADY_PUBLISHED = 'LEGACY_ODONTOGRAM_NEW_UPLOAD_BLOCKED_ALREADY_PUBLISHED';
+
+    public const NEW_UPLOAD_BLOCKED_ACTIVE_IMPORT = 'LEGACY_ODONTOGRAM_NEW_UPLOAD_BLOCKED_ACTIVE_IMPORT';
+
     /** @var list<string> */
     public const ACTIONS = [
         self::IMPORT_CREATED,
         self::IMPORT_BRANCH_REJECTED,
+        self::NEW_UPLOAD_BLOCKED_ALREADY_PUBLISHED,
+        self::NEW_UPLOAD_BLOCKED_ACTIVE_IMPORT,
         self::PDF_UPLOADED,
         self::PROCESSING_QUEUED,
         self::PROCESSING_COMPLETED,
@@ -102,6 +122,13 @@ final class LegacyOdontogramAuditEvent
         'mime_type',
         'dpi',
         'void_reason_length',
+        // REVISION-LEGACY-SINGLE-ACTIVE-DOCUMENT-PER-PATIENT-1. Structure only:
+        // WHY the odontogram slot was held and WHICH row holds it. Ids and a
+        // stable code — never a name, a Nomor RM or chart content.
+        'slot_reason',
+        'blocking_import_id',
+        'blocking_record_id',
+        'blocking_status',
     ];
 
     private function __construct() {}

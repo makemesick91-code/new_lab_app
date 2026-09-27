@@ -1,0 +1,135 @@
+---
+description: REVISION-LEGACY-SINGLE-ACTIVE-DOCUMENT-PER-PATIENT-1 — a patient may hold at most ONE active/non-VOID legacy RME lifecycle and at most ONE active/non-VOID legacy odontogram lifecycle; the two slots are independent; occupancy spans the staging AND archive tables and is serialized by a PostgreSQL advisory xact lock
+globs:
+  - app/Modules/LegacyImport/Services/LegacySingleActiveDocumentService.php
+  - app/Modules/LegacyImport/Support/LegacyDocumentSlotLock.php
+  - app/Modules/LegacyImport/Support/LegacyDocumentSlotOccupancy.php
+  - app/Modules/LegacyImport/Exceptions/LegacyDocumentSlotOccupied.php
+  - app/Modules/LegacyRme/Services/LegacyRmeImportService.php
+  - app/Modules/LegacyRme/Support/LegacyRmeImportStatus.php
+  - app/Modules/LegacyOdontogram/Services/LegacyOdontogramImportService.php
+  - app/Modules/LegacyOdontogram/Support/LegacyOdontogramImportStatus.php
+  - docs/runbooks/legacy-single-active-document-operator-runbook.md
+alwaysApply: false
+---
+
+# One active legacy document per patient, per type
+
+## The invariant
+
+Per patient, per document type, **at most one active / non-VOID logical legacy
+lifecycle**:
+
+* `LEGACY_RME` — at most one;
+* `LEGACY_ODONTOGRAM` — at most one;
+* **the two slots are INDEPENDENT.** A published legacy RME never blocks a first
+  legacy odontogram, and vice versa. There is no patient-wide
+  `has_any_legacy_document` flag anywhere, and adding one would fuse the slots.
+
+## What occupies a slot, and what releases it
+
+Occupancy spans TWO tables per type — the staging row and the archive record:
+
+| State | Slot |
+|---|---|
+| archive record `PUBLISHED` | **OCCUPIED** |
+| archive record `VOID` | RELEASED (the correction path) |
+| staging row in `SLOT_OCCUPYING` | **OCCUPIED** |
+| staging row `CANCELLED` | RELEASED (terminal, produced no archive) |
+| staging row `PUBLISHED` + record `VOID` | RELEASED |
+
+`SLOT_OCCUPYING` is exactly `ALL` minus `TERMINAL` on each module's own
+`…ImportStatus`, pinned by a test so the two can never drift.
+
+**`FAILED` OCCUPIES THE SLOT.** Read the transition map: `FAILED → QUEUED`. A
+failed import is retryable, not abandoned, so a second upload beside it would
+create two competing lifecycles. The operator retries it or cancels it.
+
+**The last row is the subtle one.** A staging row keeps its historical
+`PUBLISHED` status forever; that is history and must not be rewritten. So
+occupancy is decided by the RECORD first. If the staging row alone held the slot,
+a voided archive could never be replaced and void-then-reimport would be
+permanently dead.
+
+## Where it is enforced
+
+`LegacySingleActiveDocumentService` is the single eligibility truth:
+
+* `occupancyFor()` — read-only, lock-free; safe for a UI panel.
+* `previewForNewLifecycle()` — advisory, before bytes are stored. Never the gate.
+* `assertAvailableForNewLifecycle()` — **the gate.** Must run inside the intake
+  transaction; refuses outright if `DB::transactionLevel() < 1`, because a
+  transaction-scoped advisory lock taken outside a transaction is released
+  immediately and guards nothing.
+
+Only `createFromUpload()` creates a new lifecycle, on both modules, and both HTTP
+callers (backlog and visit-bound) funnel through it. Guarding the service
+therefore guards every path.
+
+**RETRY IS NOT A NEW UPLOAD.** Retry/resume/re-render goes through
+`queue($import, …, isRetry: true)` and must never reach the slot guard. A guard
+that broke queue retries or worker recovery would be a regression.
+
+## Race safety
+
+The invariant spans two tables, so **no single partial UNIQUE index can express
+it** — a unique index cannot read another table. The race is closed by
+serializing the DECISION with `pg_advisory_xact_lock(classid, objid)`:
+
+* `classid` = a fixed namespace per document type (`LegacyDocumentSlotLock::NAMESPACES`);
+* `objid` = `patient_id`, identity-mapped, never hashed (a hash collision would
+  silently serialize two unrelated patients).
+
+Two integers, not one, so `LEGACY_RME` and `LEGACY_ODONTOGRAM` can never contend
+for the same patient — that is the independence rule enforced at the lock level.
+Transaction-scoped, never session-scoped: a session lock on a pooled connection
+could strand a patient's slot for the life of the worker.
+
+On non-PostgreSQL drivers the lock is a documented no-op. The concurrency proof
+lives in `LegacySingleActiveDocumentConcurrencyTest` and **SKIPS** off
+PostgreSQL rather than passing silently.
+
+## Ordering rules that must not change
+
+1. The slot pre-check runs **after** exact-PDF duplicate detection. An earlier
+   draft ran it first and shadowed `DUPLICATE_DETECTED` for same-patient
+   re-uploads — caught by `LegacyRmeExactDuplicateDetectionTest`. Cardinality
+   **supplements** the checksum guard; it never replaces it. Re-submitting the
+   same scan for the same patient is still reported as a duplicate.
+2. Every other pre-upload refusal keeps the precedence it already had (date
+   rules, branch derivation, wave admission, ingestion capacity, operations gate,
+   hub quota).
+3. Inside the transaction the slot lock is taken **FIRST**, ahead of the
+   branch-keyed hub and wave quota buckets. Patient-keyed and branch-keyed locks
+   are disjoint key spaces and every site takes them in this order, so no cycle
+   can form.
+
+## Never
+
+* **Never auto-VOID** on upload, and never auto-delete, supersede or silently
+  replace a published archive. A refused upload returns a refusal.
+* **Never hard-delete** published history to permit a replacement.
+* **Never let a soft delete release a slot.** Occupancy counts trashed staging
+  rows (`withTrashed()`); the canonical releases are CANCEL and VOID, both
+  audited. Nothing in the application soft-deletes an import.
+* **Never widen** publish or VOID authority to unblock a slot.
+* **Never treat the UI as the boundary.** A hidden or absent upload form is a
+  courtesy; `store()` re-decides under the lock and answers a hand-crafted POST
+  identically.
+* **Never branch on the refusal message.** Branch on
+  `LegacyDocumentSlotOccupancy::REASON_*` / `code()`.
+* **Never tell an operator to VOID an in-flight import** — VOID is not a legal
+  transition from any staging state.
+
+## Scope
+
+Occupancy is **not branch-scoped**, deliberately diverging from every other read
+on those repositories. Those answer "what may this operator see"; this answers
+"what is clinically true about this patient". A narrower scope could only return
+fewer rows and would let an operator at one branch file a second archive for a
+patient who already has one elsewhere. Authorization stays with the policies.
+
+## Not in scope
+
+There is no mass/bulk legacy upload in this codebase — verified, not assumed.
+Do not build one as part of this invariant.

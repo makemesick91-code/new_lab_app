@@ -5,7 +5,10 @@ declare(strict_types=1);
 namespace App\Modules\LegacyOdontogram\Services;
 
 use App\Models\User;
+use App\Modules\LegacyImport\Exceptions\LegacyDocumentSlotOccupied;
 use App\Modules\LegacyImport\Services\LegacyImportDailyQuotaService;
+use App\Modules\LegacyImport\Services\LegacySingleActiveDocumentService;
+use App\Modules\LegacyImport\Support\LegacyDocumentSlotOccupancy;
 use App\Modules\LegacyImport\Support\LegacyImportType;
 use App\Modules\LegacyOdontogram\Interfaces\LegacyOdontogramImportRepositoryInterface;
 use App\Modules\LegacyOdontogram\Interfaces\LegacyOdontogramRecordRepositoryInterface;
@@ -79,6 +82,11 @@ class LegacyOdontogramImportService
         // Odontogram had no quota at all before this; it now shares the same
         // counter and the same vocabulary as its two siblings.
         private readonly LegacyImportDailyQuotaService $hubQuota,
+        // REVISION-LEGACY-SINGLE-ACTIVE-DOCUMENT-PER-PATIENT-1 — at most one
+        // active/non-VOID legacy ODONTOGRAM lifecycle per patient. Evaluated
+        // entirely independently of the patient's RME slot: a published legacy
+        // RME must never stand in the way of a first legacy chart.
+        private readonly LegacySingleActiveDocumentService $slots,
     ) {}
 
     /**
@@ -161,6 +169,30 @@ class LegacyOdontogramImportService
          */
         $this->assertNotDuplicate((int) $patient->getKey(), $sha256);
 
+        /*
+         * REVISION-LEGACY-SINGLE-ACTIVE-DOCUMENT-PER-PATIENT-1 — ADVISORY
+         * pre-check of the patient's single legacy ODONTOGRAM slot. Never the
+         * gate: the authoritative assertion is taken under an advisory lock
+         * inside the transaction below.
+         *
+         * AFTER the duplicate check, matching the RME intake path: re-submitting
+         * the same scanned chart for the same patient must still be reported as a
+         * duplicate rather than as an occupied slot. Cardinality supplements the
+         * checksum guard and never replaces it.
+         *
+         * Still before the bytes are stored, so a refusal leaves nothing behind.
+         */
+        $slot = $this->slots->previewForNewLifecycle(
+            LegacyImportType::LEGACY_ODONTOGRAM,
+            (int) $patient->getKey(),
+        );
+
+        if ($slot !== null) {
+            $this->auditSlotRefusal($slot, $actor);
+
+            throw ValidationException::withMessages(['document' => $slot->message()]);
+        }
+
         $uuid = (string) Str::uuid();
         $path = $this->storage->sourcePath((int) $patient->getKey(), $uuid);
 
@@ -193,6 +225,24 @@ class LegacyOdontogramImportService
                  * the patient's Nomor RM; nothing the request supplied reaches
                  * it.
                  */
+                /*
+                 * REVISION-LEGACY-SINGLE-ACTIVE-DOCUMENT-PER-PATIENT-1 — the
+                 * AUTHORITATIVE one-chart-per-patient gate.
+                 *
+                 * TAKEN FIRST, ahead of the branch-keyed quota bucket below.
+                 * Patient-keyed and branch-keyed locks are disjoint key spaces,
+                 * and every site that takes both takes them in this order, so no
+                 * cycle can form.
+                 *
+                 * Throws LegacyDocumentSlotOccupied so the compensating catch
+                 * below still removes the stored bytes before the operator is
+                 * answered.
+                 */
+                $this->slots->assertAvailableForNewLifecycle(
+                    LegacyImportType::LEGACY_ODONTOGRAM,
+                    (int) $patient->getKey(),
+                );
+
                 $this->hubQuota->reserve(LegacyImportType::LEGACY_ODONTOGRAM, $branch->branchId);
 
                 return $this->imports->create([
@@ -219,6 +269,22 @@ class LegacyOdontogramImportService
                     // backlog path, leaving every column NULL.
                 ] + $attestationColumns);
             });
+        } catch (LegacyDocumentSlotOccupied $exception) {
+            /*
+             * REVISION-LEGACY-SINGLE-ACTIVE-DOCUMENT-PER-PATIENT-1 — the race
+             * loser: another operator claimed this patient's odontogram slot
+             * between the advisory pre-check and the locked assertion.
+             *
+             * Compensate first, then audit — the transaction has rolled back, so
+             * an audit row written inside it would have rolled back with it.
+             */
+            $this->storage->deleteDirectory(
+                $this->storage->importDirectory((int) $patient->getKey(), $uuid),
+            );
+
+            $this->auditSlotRefusal($exception->occupancy, $actor);
+
+            throw $exception->toValidationException();
         } catch (\Throwable $exception) {
             // Compensate: the bytes are on disk but no row owns them.
             $this->storage->deleteDirectory(
@@ -281,6 +347,23 @@ class LegacyOdontogramImportService
     /**
      * @throws ValidationException
      */
+    /**
+     * REVISION-LEGACY-SINGLE-ACTIVE-DOCUMENT-PER-PATIENT-1 — record a refused
+     * NEW chart upload.
+     *
+     * `null` for the import argument because a refused intake creates no staging
+     * row. The payload is the occupancy's own structure-only context, so this
+     * cannot leak a name, a Nomor RM or chart content.
+     */
+    private function auditSlotRefusal(LegacyDocumentSlotOccupancy $occupancy, User $actor): void
+    {
+        $event = $occupancy->reason === LegacyDocumentSlotOccupancy::REASON_ALREADY_PUBLISHED
+            ? LegacyOdontogramAuditEvent::NEW_UPLOAD_BLOCKED_ALREADY_PUBLISHED
+            : LegacyOdontogramAuditEvent::NEW_UPLOAD_BLOCKED_ACTIVE_IMPORT;
+
+        $this->audit->logImportEvent($event, null, $occupancy->auditContext(), $actor);
+    }
+
     private function resolveOriginBranch(Patient $patient, User $actor): LegacyRmeBranchResolution
     {
         $resolution = $this->branchBinding->resolveForPatient($patient, $actor);

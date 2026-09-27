@@ -52,6 +52,36 @@ function lodoPublishFor(Patient $patient, string $date): LegacyOdontogramRecord
     return app(LegacyOdontogramPublishService::class)->publish($import->refresh(), [], $actor);
 }
 
+/**
+ * REVISION-LEGACY-SINGLE-ACTIVE-DOCUMENT-PER-PATIENT-1 — an ADDITIONAL published
+ * record for a patient who already has one, built directly rather than through
+ * intake.
+ *
+ * Deliberate, and the reason is the point of this file. These tests pin the
+ * READER contract of `publishedRecordsFor()`: its ordering, its eager loading and
+ * what it excludes. The reader is NOT where the one-document-per-patient
+ * invariant is enforced — the intake service is — and the reader must keep
+ * returning correct, correctly-ordered, eager-loaded results for whatever rows
+ * the table actually holds.
+ *
+ * Driving a SECOND concurrently-published record for one patient through the
+ * guarded intake is now impossible by design, so these rows are created directly.
+ * Testing a reader in isolation from the writer's admission rules is the honest
+ * way to keep that contract pinned; asserting the reader only against
+ * intake-reachable states would silently stop testing the ordering it exists for.
+ */
+function lodoPublishedRecordRow(Patient $patient, string $date, int $pages = 2): LegacyOdontogramRecord
+{
+    return LegacyOdontogramRecord::factory()->create([
+        'patient_id' => $patient->id,
+        'branch_id' => lodoBranch()->id,
+        'source_branch_code' => 'TLK1',
+        'odontogram_date' => $date,
+        'page_count' => $pages,
+        'source_pdf_sha256' => hash('sha256', $patient->id.'|'.$date),
+    ]);
+}
+
 it('exposes exactly the signature the caller depends on', function () {
     $method = new ReflectionMethod(LegacyOdontogramPatientHistoryService::class, 'publishedRecordsFor');
     $parameters = $method->getParameters();
@@ -69,8 +99,12 @@ it('returns published records oldest clinical date first with the fields the cal
     $patient = lodoPatient();
     lodoNativeOdontogram($patient, '2022-03-10');
 
+    // The first goes through the real pipeline; the second is a direct row (see
+    // lodoPublishedRecordRow) because a patient can no longer hold two concurrent
+    // published archives via intake. Inserted out of date order on purpose — the
+    // ordering under test must come from the query, not from insertion order.
     lodoPublishFor($patient, '2020-05-01');
-    lodoPublishFor($patient, '2018-02-03');
+    lodoPublishedRecordRow($patient, '2018-02-03');
 
     $records = app(LegacyOdontogramPatientHistoryService::class)
         ->publishedRecordsFor(lodoOperator(), (int) $patient->id);
@@ -93,12 +127,17 @@ it('eager-loads the branch so rendering a list is not N+1', function () {
     $patient = lodoPatient();
     lodoNativeOdontogram($patient, '2022-03-10');
 
+    // Three published records for one patient: one real, two direct rows. N+1 is
+    // only observable across several rows, so the reader's eager loading cannot be
+    // pinned from a single-record fixture.
     lodoPublishFor($patient, '2018-02-03');
-    lodoPublishFor($patient, '2019-02-03');
-    lodoPublishFor($patient, '2020-02-03');
+    lodoPublishedRecordRow($patient, '2019-02-03');
+    lodoPublishedRecordRow($patient, '2020-02-03');
 
     $records = app(LegacyOdontogramPatientHistoryService::class)
         ->publishedRecordsFor(lodoOperator(), (int) $patient->id);
+
+    expect($records)->toHaveCount(3);
 
     DB::enableQueryLog();
     DB::flushQueryLog();
@@ -124,11 +163,18 @@ it('excludes staged work in progress and VOIDed records', function () {
     );
 
     // A staged, un-published import for the same patient.
+    //
+    // Reachable ONLY because the void above released the patient's slot — which is
+    // itself the correction path working. Under
+    // REVISION-LEGACY-SINGLE-ACTIVE-DOCUMENT-PER-PATIENT-1 this staging row could
+    // not coexist with a live published archive, so the "kept" record below is a
+    // direct row; the reader must still exclude both the VOID record and every
+    // staging row regardless of how they came to be.
     $staged = lodoStageImport($patient, '2019-01-01', lodoOperator());
 
     expect($staged->status)->toBe(LegacyOdontogramImportStatus::QUEUED);
 
-    $kept = lodoPublishFor($patient, '2020-05-01');
+    $kept = lodoPublishedRecordRow($patient, '2020-05-01');
 
     $records = app(LegacyOdontogramPatientHistoryService::class)
         ->publishedRecordsFor(lodoOperator(), (int) $patient->id);

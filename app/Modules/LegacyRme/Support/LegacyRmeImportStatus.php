@@ -60,6 +60,39 @@ final class LegacyRmeImportStatus
     ];
 
     /**
+     * REVISION-LEGACY-SINGLE-ACTIVE-DOCUMENT-PER-PATIENT-1 — the staging states
+     * that OCCUPY the patient's single legacy RME slot.
+     *
+     * Exactly the non-terminal states: every one of them can still advance
+     * toward PUBLISHED, so a second parallel upload would create two competing
+     * lifecycles for one patient. This is `ALL` minus `TERMINAL`, and a test
+     * pins that identity so the two can never drift apart.
+     *
+     * FAILED IS IN THIS LIST, ON PURPOSE. Look at the transition map: FAILED
+     * leads to QUEUED. A failed import is RETRYABLE, not abandoned, so it still
+     * owns the slot — the operator retries it, or cancels it, and only then may
+     * a new upload begin.
+     *
+     * PUBLISHED is absent because once a staging row publishes, occupancy is
+     * decided by the RECORD it produced: PUBLISHED record occupies, VOID record
+     * releases. A historical PUBLISHED staging row must never keep the slot
+     * after its record has been voided, or void-then-reimport would be dead.
+     *
+     * CANCELLED is absent because it is terminal and produced no archive.
+     *
+     * @var list<string>
+     */
+    public const SLOT_OCCUPYING = [
+        self::DRAFT,
+        self::UPLOADED,
+        self::QUEUED,
+        self::PROCESSING,
+        self::READY_FOR_REVIEW,
+        self::REVIEWED,
+        self::FAILED,
+    ];
+
+    /**
      * Allowed staging transitions. The publish runtime lands in a follow-up
      * sprint; the map is declared now so the lifecycle can never drift.
      *
