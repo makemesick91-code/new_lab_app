@@ -40,6 +40,15 @@ Consequences that must never be re-litigated by guessing:
    a trashed patient may be restored, and a real patient's NIK must never be
    silently reissued. Do not "fix" a blocked import by relaxing this to
    `->whereNull('deleted_at')`.
+4. **The reservation is enforced at two layers, not one.** `mst_patients` carries
+   **non-partial** unique indexes `mst_patients_ktp_number_unique` and
+   `mst_patients_medical_record_number_unique` — neither has a
+   `WHERE deleted_at IS NULL` clause, so a trashed row still occupies the index
+   slot. Relaxing the application check to `->whereNull('deleted_at')` would not
+   unblock anything: it would convert a clear, per-row validation error into an
+   `SQLSTATE 23505` unique violation at commit time, on PostgreSQL aborting the
+   whole import transaction. Cleanup was the only correct path, not the convenient
+   one.
 
 ## The rollback → re-import deadlock
 

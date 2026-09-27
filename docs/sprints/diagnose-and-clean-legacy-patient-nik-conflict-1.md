@@ -93,6 +93,21 @@ re-import**.
 reporting it is correct behaviour. The defect is the orphaned data plus a missing
 purge capability, not the validator.
 
+**Relaxing the check was never an option.** `mst_patients` carries **non-partial**
+unique indexes on both columns:
+
+```
+mst_patients_ktp_number_unique             btree (ktp_number)
+mst_patients_medical_record_number_unique  btree (medical_record_number)
+```
+
+Neither excludes soft-deleted rows, so the reservation is enforced at the database
+layer as well as the application layer. Changing the validator to
+`->whereNull('deleted_at')` would have turned these 1838 validation messages
+(across 1406 error rows) into an `SQLSTATE 23505` unique violation at commit — and
+on PostgreSQL that aborts the entire import transaction. Cleanup was the only
+correct path.
+
 ## Causes ruled out with evidence
 
 | Candidate | Verdict | Evidence |
