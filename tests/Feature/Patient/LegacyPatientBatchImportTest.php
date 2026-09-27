@@ -9,10 +9,17 @@
  * commit creates patients only (no visit/RM); commit lock re-check skips a race
  * duplicate; idempotent re-commit; rollback soft-deletes (guarded by downstream
  * visits); authorization via `manage patients`.
+ *
+ * REVISION-LEGACY-PATIENT-STAGED-VERIFICATION-CANCEL-1 revised three of the
+ * commit assertions below. They are not relaxed — they are inverted, because the
+ * behaviour they pinned (import the good rows, leave the bad ones) is the
+ * behaviour that revision removes. The full contract is pinned in
+ * LegacyPatientStagedVerificationCancelTest.
  */
 
 use App\Modules\Branch\Models\Branch;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
+use App\Modules\Patient\Exceptions\LegacyPatientImportBlockedException;
 use App\Modules\Patient\Models\LegacyPatientImportBatch;
 use App\Modules\Patient\Models\LegacyPatientImportRow;
 use App\Modules\Patient\Models\Patient;
@@ -253,7 +260,7 @@ it('commit creates patients only, with import_batch_id and composed RM, and no v
     $batch = stage(legacyCsv([validRow()]));
 
     $this->actingAs(userWith(['manage patients']))
-        ->post(route('settings.patients.import.commit', $batch))
+        ->post(route('settings.patients.import.commit', $batch), ['acknowledged' => '1'])
         ->assertRedirect();
 
     $patient = Patient::first();
@@ -268,26 +275,42 @@ it('commit creates patients only, with import_batch_id and composed RM, and no v
         ->and(LegacyPatientImportRow::first()->committed_patient_id)->toBe($patient->id);
 });
 
-it('commit skips error rows', function () {
+it('refuses the whole batch when any row carries an error, importing nothing', function () {
+    // REVISION-LEGACY-PATIENT-STAGED-VERIFICATION-CANCEL-1 — this test used to
+    // assert the opposite ("commit skips error rows", 1 patient). One good row
+    // and one bad row now import ZERO patients: a partly imported file cannot be
+    // reconciled against the file the operator still holds.
     $batch = stage(legacyCsv([
         validRow(['manual_rm_number' => '0070', 'name' => 'Good']),
         validRow(['name' => '', 'manual_rm_number' => '0071']),
     ]));
 
-    $this->service->commit($batch, null);
-    expect(Patient::count())->toBe(1);
+    expect(fn () => $this->service->commit($batch, null))
+        ->toThrow(LegacyPatientImportBlockedException::class);
+
+    expect(Patient::count())->toBe(0)
+        ->and($batch->refresh()->status)->toBe('validated')
+        ->and($batch->committed_rows)->toBe(0);
 });
 
-it('skips a row that became a duplicate between preview and commit (lock re-check)', function () {
-    $batch = stage(legacyCsv([validRow()]));
+it('refuses the batch when a row became a duplicate between preview and commit', function () {
+    // REVISION-LEGACY-PATIENT-STAGED-VERIFICATION-CANCEL-1 — this test used to
+    // assert the row was marked `skipped` while its siblings imported. The
+    // confirm-time revalidation now catches the collision and refuses the batch,
+    // so the operator is told the file is stale instead of discovering later that
+    // part of it landed.
+    $batch = stage(legacyCsv([validRow(), validRow(['manual_rm_number' => '0002', 'name' => 'Sibling'])]));
 
     // Simulate a concurrent registration of the same RM after preview.
     Patient::factory()->create(['medical_record_number' => 'DG-TLK1-2024-0001']);
 
-    $this->service->commit($batch, null);
+    expect(fn () => $this->service->commit($batch, null))
+        ->toThrow(LegacyPatientImportBlockedException::class);
 
-    expect(Patient::where('medical_record_number', 'DG-TLK1-2024-0001')->count())->toBe(1)
-        ->and(LegacyPatientImportRow::first()->status)->toBe('skipped');
+    // Only the concurrently registered patient exists: the sibling row did NOT import.
+    expect(Patient::count())->toBe(1)
+        ->and(Patient::where('import_batch_id', $batch->id)->count())->toBe(0)
+        ->and(LegacyPatientImportRow::where('generated_medical_record_number', 'DG-TLK1-2024-0001')->first()->status)->toBe('error');
 });
 
 it('is idempotent: re-committing a committed batch does not duplicate patients', function () {
@@ -326,12 +349,17 @@ it('refuses rollback when an imported patient already has a downstream visit', f
     expect(Patient::count())->toBe(1);
 });
 
-it('discards a pre-commit batch without touching mst_patients', function () {
+it('cancels a pre-commit batch without touching mst_patients and keeps the evidence', function () {
+    // REVISION-LEGACY-PATIENT-STAGED-VERIFICATION-CANCEL-1 — discard() used to
+    // soft-delete the batch, which removed the record that a file had been
+    // uploaded, reviewed and rejected. It now cancels: the batch stays, the
+    // patient estate is still untouched.
     $batch = stage(legacyCsv([validRow()]));
 
     $this->service->discard($batch);
 
-    expect(LegacyPatientImportBatch::count())->toBe(0)
+    expect(LegacyPatientImportBatch::count())->toBe(1)
+        ->and($batch->refresh()->status)->toBe('cancelled')
         ->and(Patient::count())->toBe(0);
 });
 

@@ -1,0 +1,100 @@
+---
+description: Legacy Patient import — uploading is staging, not importing; one ERROR refuses the whole batch
+globs:
+  - "app/Modules/Patient/Services/LegacyPatientImportService.php"
+  - "app/Modules/Patient/Controllers/LegacyPatientImportController.php"
+  - "app/Modules/Patient/Models/LegacyPatientImportBatch.php"
+  - "app/Modules/Patient/Models/LegacyPatientImportRow.php"
+  - "app/Modules/Patient/Requests/*LegacyPatient*.php"
+  - "resources/views/settings/patients/import/**"
+alwaysApply: false
+---
+
+# REVISION-LEGACY-PATIENT-STAGED-VERIFICATION-CANCEL-1
+
+## The one sentence
+
+**UPLOADING A LEGACY PATIENT CSV IS STAGING. IT IS NOT IMPORTING.**
+
+And: **ANY ERROR ROW REFUSES THE WHOLE BATCH.** Never the good rows only.
+
+## Scope
+
+Legacy **Patient** only. Legacy RME and Legacy Odontogram governance is closed and
+is not reopened for symmetry.
+
+## The canonical lifecycle
+
+```
+upload -> store privately + sha256 -> stage -> validate the WHOLE batch -> review
+    ERROR > 0  -> REVIEW_REQUIRED; import refused; batch may be cancelled
+    ERROR = 0  -> READY_TO_IMPORT; operator explicitly confirms
+               -> server revalidates against CURRENT database state
+               -> every approved row commits, or none does
+```
+
+## Durable rules
+
+1. Upload, validation, preview, the verification report and cancellation create
+   **zero** canonical patients. `mst_patients` is written in exactly one place:
+   `LegacyPatientImportService::commit()`.
+2. **One ERROR row refuses the entire batch.** 497 valid + 3 error imports **0**
+   patients. Never import the valid subset — a partly imported file cannot be
+   reconciled against the file the operator still holds.
+3. WARNING is not ERROR. A warning-only batch may be confirmed; warnings survive
+   the import as evidence and are never silently promoted or demoted.
+4. Confirmation is explicit. The request carries an acknowledgement; it is not a
+   JavaScript dialog. It is not a security control — the state gates are.
+5. **Confirmation always revalidates first, and decides on that.** The stored
+   counters are a snapshot of a past moment and are never the gate. This also
+   runs for a batch that already showed errors, so a conflict that disappears
+   lets the batch through rather than forcing a re-upload of a correct file.
+6. **Revalidation persists its verdict OUTSIDE the insert transaction.** Inside
+   it, the throw that refuses the import unwinds the evidence the operator needs.
+7. Revalidation re-runs the **full** rule set, with identity conflicts prefetched
+   in chunked `whereIn` lookups. Round trips are bounded by chunks, not rows.
+   Never scan the patient estate.
+8. `revalidate()` touches **only** a batch still awaiting review, re-read from the
+   database rather than from the instance passed in. A stale caller must not be
+   able to rewind a committed batch's status — rollback keys off `isCommitted()`,
+   so that would strand real patients.
+9. The batch is sha256-bound to its source file. A changed or missing file refuses
+   the import and moves the batch to `failed`. What cannot be re-proven is not
+   imported.
+10. The import is one transaction: all approved rows, or none. Technical chunking
+    of parsing is not partial business commitment.
+11. A batch may be cancelled **before** commitment only. Cancellation records who,
+    when and optionally why, keeps the staging rows and their verdicts, and creates
+    or deletes **no** patient. There is no "cancel and delete the patients it
+    created" — after commitment the path is `rollback()`, which refuses when an
+    imported patient already has a visit or medical record.
+12. **Blank KTP/NIK is valid and is stored as `null`.** Never `0000000000000000`,
+    never `9999999999999999`, never a `TMP-` sentinel, never a derived 16 digits.
+    A sentinel would collide on the unique index and turn "no KTP" into a duplicate.
+13. A supplied KTP is still validated, and duplicate protection (RM and KTP,
+    including soft-deleted and in-file) stays mandatory. A possible duplicate with
+    no KTP surfaces as a warning for a human to judge — never an automatic merge
+    and never a silent second patient.
+14. Branch authority is **server-resolved from the CSV `Cabang` column** against
+    active + RME-enabled branches with MAIN excluded. There is no request-supplied
+    branch field; adding one changes nothing. Do not invent a new branch authority
+    here — patient CRUD sits beside this under the same unscoped `manage patients`
+    permission, and narrowing one without the other is a divergence, not a fix.
+15. No daily business quota. `NULL` means no ceiling and is not a large number.
+    Technical limits (file size, parser bounds) are safety rails, not policy.
+16. Exported verification reports neutralise spreadsheet formula injection and
+    never carry a full KTP.
+17. Audit payloads carry counts, statuses and ids. Never a patient name, never a
+    KTP/NIK, never the original filename — operators name files after people.
+18. No visit, medical record, invoice, payment, consent, odontogram, lab order or
+    SATUSEHAT candidate is ever created by this importer.
+19. No production fake patient is ever created to verify this workflow.
+
+## Known coverage gap, stated on purpose
+
+The in-transaction header row lock changes the losing concurrent confirmation's
+refusal from `revalidation_failed` to `not_ready`. It does **not** change the
+patient estate — the UNIQUE indexes on `medical_record_number` and `ktp_number`
+already guarantee that. The difference exists only in the genuinely concurrent
+window and is proven by a documented two-process PostgreSQL procedure, **not** by
+the automated suite. Do not add an in-process test that appears to kill it.
