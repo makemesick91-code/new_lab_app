@@ -93,6 +93,7 @@ use Database\Seeders\RoleSeeder;
 use Illuminate\Http\Testing\File;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\Models\Role;
 
 /**
@@ -1720,4 +1721,148 @@ function ffCachedService(array $env): FeatureFlagService
     config()->set('feature_flags.flags', $cached['flags']);
 
     return app(FeatureFlagService::class);
+}
+
+/*
+|--------------------------------------------------------------------------
+| FEATURE-LEGACY-RME-ODONTOGRAM-MASS-UPLOAD-1 helpers
+|--------------------------------------------------------------------------
+|
+| Building a real ZIP is the only honest way to test package intake. A mocked
+| archive would prove nothing about Zip Slip, symlink entries, compression
+| ratios or byte caps, which are exactly the properties that matter.
+|
+| Every archive is allocated through tempArtifactFile(), so the global
+| afterEach drain removes it and the leak tests stay delta-clean.
+*/
+
+/**
+ * Build a mass-upload archive.
+ *
+ * @param  array<string, string>  $documents  entry name => file bytes
+ * @param  list<array<string, string|null>>  $manifestRows  manifest data rows
+ * @param  array<string, mixed>  $options
+ *                                         - omit_manifest: bool         do not write manifest.csv at all
+ *                                         - manifest_raw: string        write this exact manifest body
+ *                                         - manifest_headers: list      override the header row
+ *                                         - symlinks: list<string>      mark these entries as unix symlinks
+ *                                         - corrupt: bool               truncate the archive after writing
+ */
+function legacyMassUploadZip(
+    array $documents,
+    array $manifestRows = [],
+    string $importType = 'legacy_rme',
+    array $options = [],
+): UploadedFile {
+    $path = tempArtifactFile('lmuzip');
+
+    $zip = new ZipArchive;
+
+    if ($zip->open($path, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
+        throw new RuntimeException('Could not create test archive.');
+    }
+
+    if (! ($options['omit_manifest'] ?? false)) {
+        if (isset($options['manifest_raw']) && is_string($options['manifest_raw'])) {
+            $manifest = $options['manifest_raw'];
+        } else {
+            $headers = $options['manifest_headers'] ?? ($importType === 'legacy_odontogram'
+                ? ['medical_record_number', 'file_name', 'document_date']
+                : ['medical_record_number', 'file_name', 'rme_date_earliest', 'rme_date_latest']);
+
+            $lines = [implode(',', $headers)];
+
+            foreach ($manifestRows as $row) {
+                $cells = [];
+
+                foreach ($headers as $header) {
+                    $cells[] = (string) ($row[$header] ?? '');
+                }
+
+                $lines[] = implode(',', $cells);
+            }
+
+            $manifest = implode("\n", $lines)."\n";
+        }
+
+        $zip->addFromString('manifest.csv', $manifest);
+    }
+
+    foreach ($documents as $name => $bytes) {
+        $zip->addFromString((string) $name, (string) $bytes);
+    }
+
+    foreach ((array) ($options['symlinks'] ?? []) as $entry) {
+        // 0120777 is S_IFLNK plus permissions, in the high 16 bits where
+        // ZipArchive keeps the unix mode.
+        $zip->setExternalAttributesName((string) $entry, ZipArchive::OPSYS_UNIX, (0120777 << 16));
+    }
+
+    $zip->close();
+
+    if ($options['corrupt'] ?? false) {
+        // Lop off the end so the central directory is unreadable.
+        $bytes = (string) file_get_contents($path);
+        file_put_contents($path, substr($bytes, 0, max(1, intdiv(strlen($bytes), 2))));
+    }
+
+    return new UploadedFile(
+        $path,
+        'arsip-legacy.zip',
+        'application/zip',
+        null,
+        true,
+    );
+}
+
+/**
+ * One manifest row for the RME surface.
+ *
+ * @return array<string, string|null>
+ */
+function legacyMassUploadRmeRow(
+    string $medicalRecordNumber,
+    string $fileName,
+    string $earliest,
+    ?string $latest = null,
+): array {
+    return [
+        'medical_record_number' => $medicalRecordNumber,
+        'file_name' => $fileName,
+        'rme_date_earliest' => $earliest,
+        'rme_date_latest' => $latest,
+    ];
+}
+
+/**
+ * One manifest row for the odontogram surface.
+ *
+ * @return array<string, string|null>
+ */
+function legacyMassUploadOdontogramRow(
+    string $medicalRecordNumber,
+    string $fileName,
+    string $documentDate,
+): array {
+    return [
+        'medical_record_number' => $medicalRecordNumber,
+        'file_name' => $fileName,
+        'document_date' => $documentDate,
+    ];
+}
+
+/**
+ * Point the mass-upload workspace at a faked private disk.
+ *
+ * Returns the disk name so a test can assert on what was written. Storage::fake
+ * gives a real local disk under a temp root, so path(), streams and directory
+ * deletion all behave as they do in production.
+ */
+function legacyMassUploadFakeDisk(): string
+{
+    Storage::fake('legacy_mass_upload_private');
+
+    config()->set('legacy_mass_upload.workspace.disk', 'legacy_mass_upload_private');
+
+    return 'legacy_mass_upload_private';
 }

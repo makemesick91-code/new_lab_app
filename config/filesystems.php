@@ -87,6 +87,27 @@ return [
         // Clinical archive pages must only ever be reachable through the
         // policy-gated streaming route, so they get their own root that no
         // framework route can address.
+        // FEATURE-LEGACY-RME-ODONTOGRAM-MASS-UPLOAD-1 — mass intake workspace.
+        //
+        // Holds the uploaded ZIP and its extracted clinical documents while a
+        // batch is being validated, reviewed and dispatched. Its own disk, kept
+        // apart from the two archive disks, because everything here is
+        // TRANSIENT: it is removed on completion, on package rejection and on
+        // cancel. The archive copies the canonical single-item services create
+        // live on legacy_rme_private / legacy_odontogram_private and are never
+        // touched by mass-upload cleanup.
+        //
+        // serve => false and visibility => private: a scanned record must never
+        // be reachable by URL.
+        'legacy_mass_upload_private' => [
+            'driver' => 'local',
+            'root' => storage_path('app/legacy-mass-upload-private'),
+            'serve' => false,
+            'visibility' => 'private',
+            'throw' => true,
+            'report' => false,
+        ],
+
         'legacy_rme_private' => [
             'driver' => 'local',
             'root' => storage_path('app/legacy-rme-private'),
