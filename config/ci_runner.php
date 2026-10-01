@@ -190,6 +190,35 @@ return [
      */
     'critical_gate_mandatory_suites' => [
         /*
+         * FEATURE-LEGACY-RME-ODONTOGRAM-MASS-UPLOAD-1 — bulk legacy intake.
+         *
+         * Selected by the `LegacyMassUpload` token, which had to be added for
+         * them: `LegacyRme` does NOT match `LegacyMassUploadRmeTest`, because
+         * --filter matches the test IDENTITY and the substring there is
+         * `LegacyMassUploadRme`. Without the new token these 88 tests would
+         * have matched no gate at all and run only by accident.
+         *
+         * Declared here because each holds a property that cannot be recovered
+         * from anywhere else:
+         *
+         *   Package  — Zip Slip, absolute paths, backslash smuggling, symlink
+         *              entries, archive bombs, and the refusal of nik/ktp/
+         *              branch_id/patient_id manifest columns.
+         *   Rme      — a blocked row is never attempted, a stale preflight
+         *              becomes BLOCKED rather than a duplicate lifecycle, one
+         *              patient twice in a manifest yields one document, and an
+         *              unadmitted branch is refused.
+         *   Odontogram — the wrong-patient binding gate this sprint ADDED to a
+         *              path that previously had none. Losing it would silently
+         *              return mass odontogram to having no wrong-patient
+         *              defence at all, which is the exposure SOURCE-RM-BINDING-1
+         *              closed on the RME side after a real production incident.
+         */
+        'tests/Feature/LegacyMassUpload/LegacyMassUploadPackageTest.php',
+        'tests/Feature/LegacyMassUpload/LegacyMassUploadRmeTest.php',
+        'tests/Feature/LegacyMassUpload/LegacyMassUploadOdontogramTest.php',
+
+        /*
          * REVISION-LEGACY-PATIENT-STAGED-VERIFICATION-CANCEL-1. Both suites are
          * selected by the `LegacyPatient` token above; declared here so the
          * coverage reconciliation fails loudly if that token is ever dropped or a

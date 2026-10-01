@@ -72,6 +72,8 @@ use App\Modules\LabOrder\Controllers\LabWorkflowRequestController;
 use App\Modules\LabService\Controllers\LabServiceController;
 use App\Modules\LegacyImport\Controllers\LegacyImportHubController;
 use App\Modules\LegacyImport\Controllers\VisitBoundLegacyIngestionController;
+use App\Modules\LegacyImport\MassUpload\Controllers\LegacyOdontogramMassUploadController;
+use App\Modules\LegacyImport\MassUpload\Controllers\LegacyRmeMassUploadController;
 use App\Modules\LegacyOdontogram\Controllers\LegacyOdontogramImportController;
 use App\Modules\LegacyOdontogram\Controllers\LegacyOdontogramRecordController;
 use App\Modules\LegacyRme\Controllers\LegacyRmeImportController;
@@ -388,6 +390,84 @@ Route::middleware('auth')->prefix('settings')->name('settings.')->group(function
     // The static `waves` segment is declared before the numeric `{wave}` routes
     // so it is never captured as an id. The controller independently re-checks
     // the feature flag (404 while the capability is off) and the policy.
+    /*
+    |----------------------------------------------------------------------
+    | FEATURE-LEGACY-RME-ODONTOGRAM-MASS-UPLOAD-1
+    |----------------------------------------------------------------------
+    |
+    | Mass Upload Legacy RME and Mass Upload Legacy Odontogram.
+    |
+    | ADDITIVE. The single-upload surfaces above are untouched and remain the
+    | right tool for a one-patient correction, a VOID replacement, a retry or a
+    | small manual migration (§2).
+    |
+    | PERMISSIONS ARE REUSED, NOT WIDENED. Mass upload is the same act in bulk,
+    | so it requires the same `create_legacy_*_imports` permission as creating
+    | one document by hand. No mass-specific permission exists, because a role
+    | grant to make a menu appear is how privilege creeps. Nothing here grants
+    | review, publish or VOID — those stay on the individual document (§4, §32).
+    |
+    | THE ROUTE NAMES ARE DELIBERATELY DISJOINT from the single-upload ones.
+    | The sidebar marks itself active with routeIs('...legacy-imports.*'), so
+    | naming these `legacy-imports.mass.*` would light up the SINGLE upload menu
+    | item while an operator was on a mass page (§35). `legacy-mass-imports` and
+    | `legacy-mass-odontograms` share no prefix with their siblings.
+    |
+    | Static segments (`create`, `manifest-template`) are declared before the
+    | `{batch}` routes so they are never captured as a batch uuid.
+    */
+    Route::prefix('rme/legacy-mass-imports')->name('rme.legacy-mass-imports.')->group(function () {
+        Route::get('/', [LegacyRmeMassUploadController::class, 'index'])
+            ->name('index')
+            ->middleware('permission:create_legacy_rme_imports');
+
+        Route::get('create', [LegacyRmeMassUploadController::class, 'create'])
+            ->name('create')
+            ->middleware('permission:create_legacy_rme_imports');
+
+        Route::get('manifest-template', [LegacyRmeMassUploadController::class, 'manifestTemplate'])
+            ->name('manifest-template')
+            ->middleware('permission:create_legacy_rme_imports');
+
+        Route::post('/', [LegacyRmeMassUploadController::class, 'store'])
+            ->name('store')
+            ->middleware('permission:create_legacy_rme_imports');
+
+        Route::middleware('permission:create_legacy_rme_imports')->group(function () {
+            Route::get('{batch}', [LegacyRmeMassUploadController::class, 'show'])->name('show');
+            Route::get('{batch}/report', [LegacyRmeMassUploadController::class, 'report'])->name('report');
+            Route::post('{batch}/confirm', [LegacyRmeMassUploadController::class, 'confirm'])->name('confirm');
+            Route::post('{batch}/dispatch', [LegacyRmeMassUploadController::class, 'dispatchItems'])->name('dispatch');
+            Route::post('{batch}/cancel', [LegacyRmeMassUploadController::class, 'cancel'])->name('cancel');
+        });
+    });
+
+    Route::prefix('rme/legacy-mass-odontograms')->name('rme.legacy-mass-odontograms.')->group(function () {
+        Route::get('/', [LegacyOdontogramMassUploadController::class, 'index'])
+            ->name('index')
+            ->middleware('permission:create_legacy_odontogram_imports');
+
+        Route::get('create', [LegacyOdontogramMassUploadController::class, 'create'])
+            ->name('create')
+            ->middleware('permission:create_legacy_odontogram_imports');
+
+        Route::get('manifest-template', [LegacyOdontogramMassUploadController::class, 'manifestTemplate'])
+            ->name('manifest-template')
+            ->middleware('permission:create_legacy_odontogram_imports');
+
+        Route::post('/', [LegacyOdontogramMassUploadController::class, 'store'])
+            ->name('store')
+            ->middleware('permission:create_legacy_odontogram_imports');
+
+        Route::middleware('permission:create_legacy_odontogram_imports')->group(function () {
+            Route::get('{batch}', [LegacyOdontogramMassUploadController::class, 'show'])->name('show');
+            Route::get('{batch}/report', [LegacyOdontogramMassUploadController::class, 'report'])->name('report');
+            Route::post('{batch}/confirm', [LegacyOdontogramMassUploadController::class, 'confirm'])->name('confirm');
+            Route::post('{batch}/dispatch', [LegacyOdontogramMassUploadController::class, 'dispatchItems'])->name('dispatch');
+            Route::post('{batch}/cancel', [LegacyOdontogramMassUploadController::class, 'cancel'])->name('cancel');
+        });
+    });
+
     Route::prefix('rme/migration-operations')->name('rme.migration-operations.')->group(function () {
         Route::get('/', [LegacyRmeMigrationOperationsController::class, 'index'])
             ->name('index')

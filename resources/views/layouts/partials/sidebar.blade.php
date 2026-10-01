@@ -944,6 +944,32 @@
                                    class="menu-subitem {{ request()->routeIs('settings.rme.legacy-odontograms.*') ? $linkActive : $linkIdle }}">Upload Legacy Odontogram</a>
                             @endif
                         @endcanany
+
+                        {{-- FEATURE-LEGACY-RME-ODONTOGRAM-MASS-UPLOAD-1 — bulk intake.
+                             ADDITIVE: the single-upload entries above stay exactly as they
+                             were and remain the right tool for one-patient corrections,
+                             VOID replacements, retries and small manual migrations (§2).
+
+                             Gated on the SAME upload permission and the SAME feature guard
+                             as the single surface — mass upload must never be reachable
+                             where single upload is not (§4, §37). No mass-specific
+                             permission exists, so this menu grants nothing new.
+
+                             The active check uses the mass route prefix, which shares no
+                             prefix with the single-upload names above — that is why these
+                             two menus never light up together (§35). --}}
+                        @can('create_legacy_rme_imports')
+                            @if (app(\App\Modules\LegacyRme\Support\LegacyRmeFeatureGuard::class)->migrationEnabled())
+                                <a href="{{ route('settings.rme.legacy-mass-imports.index') }}"
+                                   class="menu-subitem {{ request()->routeIs('settings.rme.legacy-mass-imports.*') ? $linkActive : $linkIdle }}">Mass Upload Legacy RME</a>
+                            @endif
+                        @endcan
+                        @can('create_legacy_odontogram_imports')
+                            @if (app(\App\Modules\LegacyOdontogram\Services\LegacyOdontogramFeatureGuard::class)->migrationEnabled())
+                                <a href="{{ route('settings.rme.legacy-mass-odontograms.index') }}"
+                                   class="menu-subitem {{ request()->routeIs('settings.rme.legacy-mass-odontograms.*') ? $linkActive : $linkIdle }}">Mass Upload Legacy Odontogram</a>
+                            @endif
+                        @endcan
                     </div>
                 </div>
             @endcanany

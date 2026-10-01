@@ -1,0 +1,170 @@
+---
+description: Mass Upload Legacy RME & Odontogram — orchestration-only rules. Apply when touching app/Modules/LegacyImport/MassUpload, its routes/views, or the legacy import sidebar.
+globs:
+  - "app/Modules/LegacyImport/MassUpload/**"
+  - "resources/views/settings/rme/legacy-mass-*/**"
+  - "tests/Feature/LegacyMassUpload/**"
+  - "config/legacy_mass_upload.php"
+alwaysApply: false
+---
+
+# FEATURE-LEGACY-RME-ODONTOGRAM-MASS-UPLOAD-1 — durable rules
+
+## 1. Mass upload is ORCHESTRATION over single-item truth
+
+Every clinical decision belongs to the canonical single-item service. Mass upload
+owns batching, package safety, preflight reporting and bounded dispatch — nothing
+else.
+
+Never reimplement inside `MassUpload/`: date bounds, branch resolution or
+admission, patient resolution, the single-active-document rule, source validation,
+SOD, publish, VOID, or history. If a rule needs to exist in both places, it
+belongs in the canonical service and is *read* here.
+
+Lifecycles are created **only** by `LegacyRmeImportService::createFromUpload()` /
+`LegacyOdontogramImportService::createFromUpload()`.
+
+## 2. MASS UPLOAD ≠ MASS PUBLISH
+
+Mass upload may ingest, validate, stage, enqueue, process and prepare review. It
+must never publish. Maker–checker, the separate publisher, and VOID authority are
+untouched. A mass uploader must not gain `publish_*`, `review_*` or `void_*`.
+
+## 3. No new permission, ever
+
+Mass RME reuses `create_legacy_rme_imports`. Mass odontogram reuses
+`create_legacy_odontogram_imports`. A `mass_upload_*` permission is forbidden —
+a role grant added to make a menu appear is how privilege creeps. A test asserts
+no permission name contains `mass_upload` or `legacy_mass`.
+
+## 4. No second locking system
+
+§15's "re-read occupancy under a lock" already happens inside
+`createFromUpload()`, which takes the PostgreSQL advisory lock. The mass layer
+must take **no** patient lock: two lock orders over the same rows is how
+deadlocks are built.
+
+Consequence, proven by mutation testing: removing *both* mass-layer idempotency
+guards still produces no duplicate, because the canonical slot guard refuses it.
+Those guards exist to prevent the pointless **attempt** (stored file to
+compensate, refusal audit, wasted render capacity) — not the duplicate. Assert
+them against the audit trail, not against a duplicate count.
+
+## 5. A stale preflight is a BLOCKED item, not an error
+
+Preflight is a forecast. Between preflight and creation a single upload may
+publish, so `createFromUpload()` re-decides and refuses. Record that as BLOCKED
+with the precise occupancy reason — resolve it by asking
+`previewForNewLifecycle()` again, never by parsing a validation message.
+
+## 6. Blocked items never enqueue
+
+Only statuses in `LegacyMassUploadItemStatus::dispatchable()` are ever created.
+BLOCKED is not among them and a confirmation cannot promote it. The confirm form
+carries no row selection by design.
+
+## 7. RME and Odontogram are independent — and asymmetric
+
+Separate slots, separate advisory-lock keys, separate manifests. A published
+legacy RME must never block a first legacy chart.
+
+Do **not** invent symmetry. RME has a source-RM binding, a date RANGE and an
+origin branch; odontogram has a single date and no wave/admission service. Mirror
+neither onto the other.
+
+## 8. The odontogram wrong-patient gate is load-bearing
+
+`LegacyOdontogramImportService` takes no `sourceRm`, so single odontogram upload's
+only wrong-patient defence is a human checkbox — which mass upload removes. The
+mass odontogram adapter therefore asserts the manifest RM against the resolved
+patient via `LegacyRmeSourcePatientBindingService::bind()`, at **preflight and
+again on the write path**, and hard-blocks any mismatch.
+
+The write-path assertion is NOT redundant: unlike every other gate it is not
+re-evaluated inside the canonical call. Removing it is a wrong-patient
+regression, not a cleanup.
+
+## 9. The manifest is never trusted for identity or authorization
+
+Link patients by **medical record number**, resolved server-side, exactly one
+match or the row is blocked. `nik`, `ktp`, `patient_id` and `branch_id` are
+refused **by column name** — the first is privacy, the latter two are spoofing
+surfaces. Branch always comes from the patient and `BranchContext`.
+
+A partial RM must be refused (`SOURCE_RM_INVALID`), because patient lookup falls
+back to a suffix match across all branches and at bulk scale that is a
+wrong-patient generator.
+
+## 10. One patient, one row, one document per manifest
+
+A patient appearing twice is blocked (`DUPLICATE_MANIFEST_PATIENT`) — only
+preflight can see this, since at that point neither occurrence has created
+anything. Multi-year paper archives are merged into ONE document with
+earliest/latest dates, never submitted as several lifecycles.
+
+## 11. Package safety fails CLOSED and structurally
+
+`ZipArchive::extractTo()` is forbidden. Stream each entry to a filename **we**
+generate; the archive's name is only ever a manifest key. That makes Zip Slip
+impossible rather than merely sanitised.
+
+Still reject unsafe archives (traversal, absolute paths, backslashes, symlinks,
+duplicate leaf names, bombs, non-PDF bytes). Check the decompressed total twice —
+a crafted central directory can understate its payload.
+
+## 12. Human date verification, no OCR authority
+
+Dates come from the operator's manifest. Nothing reads a date out of a PDF.
+
+## 13. No new queue, no new daily business quota
+
+Mass upload reuses the existing consumed queues (`legacy-rme-documents`,
+`legacy-odontogram-documents`) via the canonical jobs. Do not add a third.
+
+The hub daily quota is currently `null` (unlimited) and mass upload adds no cap
+of its own — it honours `preview()`/`remainingToday()` so a future declared limit
+surfaces in preflight. Technical backpressure (chunked dispatch) is not a quota.
+
+## 14. Cancellation is a staging operation only
+
+Cancel is available only before any lifecycle exists. Withdrawing a real document
+is VOID, on that document, under its own authority. Cancel must never become a
+clinical delete.
+
+## 15. Private storage, deterministic cleanup
+
+ZIP, manifest and extracted PDFs live on `legacy_mass_upload_private`. Never a
+public disk, never the webroot. The workspace is removed on success, on package
+rejection, on cancel and on exception — but never a document the canonical
+service already owns, which is source evidence under clinical retention.
+
+## 16. Reports and audit carry no identity
+
+The downloadable report and every audit payload may carry row numbers, the
+operator's own RM, reason codes, digests and counts. Never a patient name, NIK,
+date of birth, clinical content, absolute path or exception text. CSV cells are
+escaped against formula injection.
+
+## 17. Route names stay disjoint from single upload
+
+`settings.rme.legacy-mass-imports.*` and
+`settings.rme.legacy-mass-odontograms.*`. Naming them under
+`legacy-imports.*` would make the SINGLE upload sidebar entry light up on mass
+pages, because that entry matches `routeIs('settings.rme.legacy-imports.*')`.
+
+## 18. Sidebar is not a boundary
+
+Menu entries are gated by the same permission AND the same feature guard as their
+single-upload siblings. Every route is independently gated server-side, and a
+batch of the wrong type 404s on the other surface.
+
+## 19. Single upload is never removed
+
+It remains the right tool for one-patient corrections, VOID replacement, retry
+and small manual migrations.
+
+## 20. CI: the gate is a name allowlist
+
+`LegacyRme` does **not** match `LegacyMassUploadRmeTest`. The `LegacyMassUpload`
+token must stay in both critical-gate variants, and the three mandatory suites
+stay declared in `config/ci_runner.php` `critical_gate_mandatory_suites`.

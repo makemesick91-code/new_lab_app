@@ -172,6 +172,8 @@ use App\Modules\LabService\Models\LabService;
 use App\Modules\LabService\Policies\LabServicePolicy;
 use App\Modules\LabService\Repositories\LabServiceRepository;
 use App\Modules\LegacyImport\Interfaces\LegacyImportDailyQuotaRepositoryInterface;
+use App\Modules\LegacyImport\MassUpload\Models\LegacyMassUploadBatch;
+use App\Modules\LegacyImport\MassUpload\Policies\LegacyMassUploadBatchPolicy;
 use App\Modules\LegacyImport\Repositories\LegacyImportDailyQuotaRepository;
 use App\Modules\LegacyOdontogram\Interfaces\LegacyOdontogramImportRepositoryInterface;
 use App\Modules\LegacyOdontogram\Interfaces\LegacyOdontogramNativeReferenceRepositoryInterface;
@@ -535,6 +537,10 @@ class RepositoryServiceProvider extends ServiceProvider
         // LEGACY-RME-PDF-1A — legacy (historical) RME PDF archive
         LegacyRmeImport::class => LegacyRmeImportPolicy::class,
         LegacyRmeRecord::class => LegacyRmeRecordPolicy::class,
+        // FEATURE-LEGACY-RME-ODONTOGRAM-MASS-UPLOAD-1 — one policy for both
+        // mass surfaces; it picks the upload permission from the row's own
+        // import_type and introduces no new permission of its own.
+        LegacyMassUploadBatch::class => LegacyMassUploadBatchPolicy::class,
         LegacyOdontogramImport::class => LegacyOdontogramImportPolicy::class,
         LegacyOdontogramRecord::class => LegacyOdontogramRecordPolicy::class,
         // LEGACY-RME-PDF-ROLL-4 — migration operations control plane
