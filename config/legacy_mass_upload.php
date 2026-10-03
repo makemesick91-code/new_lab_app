@@ -85,6 +85,39 @@ return [
     | NIK/KTP is deliberately absent and must never be added. The patient link
     | is the medical record number, resolved server-side.
     */
+    /*
+    |----------------------------------------------------------------------
+    | Intake request budget — TECHNICAL ONLY
+    |----------------------------------------------------------------------
+    |
+    | BUGFIX-MASS-UPLOAD-REQUEST-ENTITY-TOO-LARGE-1.
+    |
+    | Wall-clock budget the package-intake request grants ITSELF, applied at
+    | runtime in the controller. It exists because receiving a package the size
+    | of package.max_bytes and then walking up to max_entries entries cannot
+    | finish inside the pool's 30s default.
+    |
+    | This is deliberately NOT a pool-wide php_admin_value: every other request
+    | on the pool keeps the 30s ceiling, so a slow page or a runaway query is
+    | still cut off. max_execution_time is PHP_INI_ALL, so one route can raise
+    | it for itself; upload_max_filesize, post_max_size and max_input_time are
+    | PHP_INI_PERDIR and cannot be, which is why those stay in
+    | deploy/php-fpm/daengtisiams.conf.
+    |
+    | Bounded on purpose. 0 (unlimited) is not an accepted value — an intake
+    | request that cannot finish within this budget should fail and be retried,
+    | not occupy one of the five pool workers indefinitely.
+    |
+    | Applied RAISE-ONLY. set_time_limit() replaces the limit rather than
+    | extending it, so the controller returns early when the ambient
+    | max_execution_time is 0 (unlimited, which is the CLI default) or already at
+    | least this generous. Applying it unconditionally once killed the whole
+    | CI test process after exactly this many seconds.
+    */
+    'intake' => [
+        'max_execution_seconds' => (int) env('LEGACY_MASS_UPLOAD_INTAKE_MAX_SECONDS', 900),
+    ],
+
     'manifest' => [
         'legacy_rme' => [
             'required_headers' => [

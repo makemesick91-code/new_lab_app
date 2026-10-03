@@ -127,6 +127,8 @@ abstract class LegacyMassUploadController extends Controller
     {
         $this->authorizeType('createOfType');
 
+        $this->grantIntakeExecutionBudget();
+
         try {
             $batch = $this->batches->store(
                 $request->package(),
@@ -254,6 +256,57 @@ abstract class LegacyMassUploadController extends Controller
         abort_unless($batch->import_type === $this->importType(), 404);
 
         $this->authorize($ability, $batch);
+    }
+
+    /**
+     * RAISE — never lower — this request's wall-clock budget for package intake.
+     *
+     * BUGFIX-MASS-UPLOAD-REQUEST-ENTITY-TOO-LARGE-1. Receiving a package the
+     * size of package.max_bytes and then walking its entries cannot finish
+     * inside the pool's 30s default, but relaxing max_execution_time pool-wide
+     * would remove that ceiling from every other request too. max_execution_time
+     * is PHP_INI_ALL, so this route adjusts it for itself and nothing else.
+     *
+     * WHY THE TWO GUARDS BELOW EXIST
+     * set_time_limit() does not "extend" a limit — it REPLACES it and restarts
+     * the counter. Calling it unconditionally therefore shortens the budget
+     * wherever the ambient limit is already longer, and the worst case is an
+     * ambient limit of 0, which means NO limit: imposing 900s there converts an
+     * unbounded process into one that dies after 900 seconds.
+     *
+     * That is not hypothetical. The first version of this method called
+     * set_time_limit() unconditionally, and because the CLI SAPI defaults
+     * max_execution_time to 0, a single test POSTing to this route armed a
+     * 900-second kill timer on the whole Pest process; CI died with
+     * "Maximum execution time of 900 seconds exceeded" long after the upload
+     * test itself had passed. Every local suite finished inside 900s, so none
+     * of them could show it.
+     *
+     * Bounded and never unlimited in the other direction either: a non-positive
+     * configured value is ignored rather than passed through, because 0 would
+     * let a failed intake hold one of the five pool workers indefinitely.
+     */
+    private function grantIntakeExecutionBudget(): void
+    {
+        $seconds = (int) config('legacy_mass_upload.intake.max_execution_seconds', 900);
+
+        if ($seconds <= 0) {
+            return;
+        }
+
+        $current = (int) ini_get('max_execution_time');
+
+        // 0 means unlimited. Never trade an unbounded budget for a bounded one.
+        if ($current === 0) {
+            return;
+        }
+
+        // Already at least as generous as we would ask for.
+        if ($current >= $seconds) {
+            return;
+        }
+
+        @set_time_limit($seconds);
     }
 
     private function dispatchMessage(LegacyMassUploadBatch $batch): string
