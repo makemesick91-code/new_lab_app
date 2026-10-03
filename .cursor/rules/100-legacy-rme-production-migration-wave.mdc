@@ -282,3 +282,55 @@ false "this feature has no sidebar entry".
   or an explicit SHA, never whichever worktree the shell happens to be in.
 - A grep that returns **zero** hits for something you know exists is evidence the
   tree is wrong, not that the feature is missing. Re-check before reporting.
+
+## Three independent layers — diagnose by the message, not by intuition (2026-10-03)
+
+A legacy RME upload is governed by three gates that look alike from the outside and
+fail for unrelated reasons. `FIX-LEGACY-WAVE4-SPN4-ADMIN-SUNU-ADMISSION-1` was a
+gap in layer 3 while layers 1 and 2 were already correct.
+
+1. **RBAC** — `create_legacy_rme_imports`. Answers *"may this person migrate?"*
+   Route middleware; a miss is a 403, never a worded refusal.
+2. **Branch scope** — `LegacyRmeWorkspaceScope` over `BranchContext`. Answers
+   *"may this account reach this branch at all?"* A miss is
+   `CODE_BRANCH_OUT_OF_SCOPE`.
+3. **Wave operator assignment** — `ops_rme_legacy_wave_operators`. Answers *"may
+   this person migrate THIS branch in THIS wave?"* A miss is
+   `CODE_OPERATOR_NOT_ASSIGNED`, surfaced to mass upload as `DOMAIN_REFUSED`.
+
+**The refusal text names the failing layer, so read it before changing anything.**
+"belum ditugaskan" is layer 3 only — it proves layers 1 and 2 already passed, so
+granting a permission or repointing a branch would be the wrong repair. Fix it with
+`legacy-rme:wave-admin assign` (dry-run, then `--apply`), one row per
+(wave, user, branch). Never a controller hard-code, never a role grant, never a
+bypass. `stg_legacy_mass_upload_items.reason_code` + `reason_message` is the
+authoritative record of which layer refused a real batch.
+
+### An armed Front Office pin supersedes `users.branch_id` — a NULL there is correct
+
+When `FEATURE_FRONT_OFFICE_BRANCH_CONTEXT_LOCK=true` and the account appears in
+`FRONT_OFFICE_BRANCH_DEVICE_LOCK_COHORT` (e.g. `29:SPN4`),
+`FrontOfficeBranchPinResolver` resolves **first and only**, ahead of the online
+context and ahead of `users.branch_id`. So an armed FO operator with
+`users.branch_id = NULL` is already correctly branch-bound, and "repairing" the
+column is redundant — it changes nothing for an armed account and misleads the next
+reader about where the pin lives. Read the cohort before concluding a NULL is a gap.
+
+### Odontogram has no wave gate — an RME denial says nothing about it
+
+`LegacyOdontogramMassUploadAdapter` and `LegacyOdontogramImportService` consult **no**
+wave/admission service, by deliberate design; only the RME path does. A wave
+operator assignment therefore neither unblocks nor restricts legacy odontogram
+intake, which is governed by RBAC, branch binding, date rules,
+single-active-document and `LegacyImportDailyQuotaService`. Do not "align" them by
+adding an admission check to the odontogram path, and do not report an RME-path fix
+as an odontogram fix.
+
+### A lapsed batch window is a WATCH, never a write refusal
+
+`LegacyRmeBatchWindowRule` states it outright: the window is not compared against
+today, and a lapsed window is a readiness finding (`batch_window`), not a reason to
+refuse the write. So clearing an admission gap can leave `ops-readiness` at
+**WATCH / "Ready for a routine batch: NO"** while uploads nonetheless succeed.
+Extending or closing a lapsed window is an owner approval — surface it, never
+silently extend it, and never read "the upload works" as "the window is fine".
