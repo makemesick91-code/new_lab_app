@@ -567,6 +567,124 @@ class LegacyRmeWaveGovernanceService
     }
 
     /**
+     * Move an approved batch's END date later, leaving everything else alone.
+     *
+     * WHY THIS EXISTS AT ALL. `createWave()` was the only writer of
+     * `planned_end_date`, and it `create()`s against a UNIQUE code — so once a
+     * batch was registered its window was immutable, and the only way to react
+     * to a lapsed approval was to cancel and re-register under a new code. That
+     * discards the branch enrollments and operator assignments with it, which is
+     * a destructive answer to an administrative question. The `batch_window`
+     * readiness check tells an operator to "record a fresh approval extending
+     * it" — and until now nothing could.
+     *
+     * EXTEND MEANS EXTEND. A new end date EARLIER than the current one is
+     * refused. Shortening a window retroactively de-approves work that was
+     * already accepted inside it, and the lifecycle already has honest verbs for
+     * stopping a batch early: `drain` (stop taking new documents, finish what is
+     * in flight) and `complete`/`cancelWave`. Letting this method move the date
+     * backwards would make those verbs optional and the audit trail ambiguous.
+     *
+     * THE EXPIRY IS NOT REMOVABLE. A null end date is refused even though
+     * `normalize()` would tolerate it when the policy flag is off: an approval
+     * that never expires is one nobody revisits, which is the whole reason the
+     * window exists. Extending to a concrete later date is always available.
+     *
+     * The START date is never touched — it is read back off the locked row and
+     * fed through the same validator purely so a reversed window is impossible.
+     * Status, quota, approval reference, branch enrollments and operator
+     * assignments are all left exactly as they were: this method writes one
+     * column.
+     *
+     * AUTHORIZATION IS THE APPROVER'S, NOT THE MANAGER'S. Callers gate this on
+     * the `approve` ability rather than `update`, because lengthening an
+     * approval window IS an approval act. That keeps the separation the rollout
+     * was built around: whoever runs the migration cannot quietly grant their
+     * own batch more time.
+     *
+     * @throws ValidationException
+     */
+    public function extendBatchWindow(
+        User $actor,
+        LegacyRmeMigrationWave $wave,
+        ?string $plannedEndDate,
+        string $reason,
+    ): LegacyRmeMigrationWave {
+        $reason = trim($reason);
+
+        if ($reason === '') {
+            throw ValidationException::withMessages([
+                'reason' => 'Alasan perpanjangan wajib diisi. Perpanjangan persetujuan harus menyebutkan dasarnya.',
+            ]);
+        }
+
+        if (trim((string) $plannedEndDate) === '') {
+            throw ValidationException::withMessages([
+                LegacyRmeBatchWindowRule::FIELD_END => 'Tanggal berakhir batch yang baru wajib diisi. Perpanjangan tidak boleh menghapus masa berlaku persetujuan.',
+            ]);
+        }
+
+        return DB::transaction(function () use ($actor, $wave, $plannedEndDate, $reason): LegacyRmeMigrationWave {
+            /** @var LegacyRmeMigrationWave $locked */
+            $locked = LegacyRmeMigrationWave::query()->lockForUpdate()->findOrFail($wave->getKey());
+
+            // Re-asserted INSIDE the lock, exactly as transition() does. The
+            // policy check ran against a row read before the transaction; a
+            // concurrent cancel or complete could have landed since.
+            if ($locked->isTerminal()) {
+                throw ValidationException::withMessages([
+                    'status' => sprintf('Gelombang %s sudah ditutup, sehingga masa berlakunya tidak dapat diperpanjang.', $locked->code),
+                ]);
+            }
+
+            $before = $locked->planned_end_date?->toDateString();
+
+            // The start date comes off the LOCKED row, never from the caller —
+            // this operation has no business changing it, and routing both ends
+            // through the one validator keeps a reversed window impossible.
+            $window = $this->batchWindow->normalize(
+                $locked->planned_start_date?->toDateString(),
+                $plannedEndDate,
+                // Required regardless of the registration-time policy flag: the
+                // guard above has already refused an empty end date, so this
+                // only stops a deployment with the flag off from quietly
+                // dropping the start date it was given.
+                true,
+            );
+
+            $after = $window[LegacyRmeBatchWindowRule::FIELD_END];
+
+            // Read back under the lock, so two operators racing cannot both
+            // extend from the same stale value — the second sees the first's
+            // write and is refused if it would move the date backwards.
+            if ($before !== null && $after !== null && $after < $before) {
+                throw ValidationException::withMessages([
+                    LegacyRmeBatchWindowRule::FIELD_END => sprintf(
+                        'Tanggal berakhir baru (%s) lebih awal dari yang berlaku (%s). Gunakan drain atau complete untuk menutup batch lebih cepat.',
+                        $after,
+                        $before,
+                    ),
+                ]);
+            }
+
+            $locked->planned_end_date = $after;
+            $locked->save();
+
+            $this->audit->logImportEvent(LegacyRmeAuditEvent::WAVE_WINDOW_EXTENDED, null, [
+                'wave' => $locked->code,
+                'status' => $locked->status,
+                'planned_start_date' => $locked->planned_start_date?->toDateString(),
+                'planned_end_date_before' => $before,
+                'planned_end_date_after' => $after,
+                // Bounded by safePayload(); operational text, never clinical.
+                'extension_reason' => $reason,
+            ], $actor);
+
+            return $locked->refresh();
+        });
+    }
+
+    /**
      * The shared transition mechanism: lock, re-assert, mutate, audit.
      *
      * @param  callable(LegacyRmeMigrationWave): array<string, mixed>  $mutate
