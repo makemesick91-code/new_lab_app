@@ -296,3 +296,130 @@ sudo php-fpm8.3 -tt 2>&1 | grep -iE 'upload_max|post_max' # 500M / 512M
 Then upload the previously failing package to **preflight only**. It must reach
 the review screen. Do **not** confirm or dispatch: that would publish clinical
 records.
+
+---
+
+## 9. Deploy evidence (2026-10-03)
+
+**Merged** PR #441 squash-merged as `db96df67c3b1081192ea67f59ec27041288f98a7`.
+**GO tag** `bugfix-mass-upload-request-entity-too-large-1-go` @ `db96df67` (annotated).
+
+**CI** run `37122250633` **success** on the exact merged tree SHA
+`14dd6001fbb4b3cc4f75ca2a6d32e77560d54c99`: CICD-CTRL Gate Classifier, NSF-R012
+Quality, CICD-CTRL Selective Module, **NSF-R011 Critical Test Gate (93 min)**,
+NSF-9 Release Safety & Automated Smoke, NSF-10 Release Evidence — all pass.
+NSF-R011 Full Suite skipped per the standing policy; the second
+`NSF-R011 Critical Test Gate` row is the inactive CICD-CTRL-3 variant
+(`CI_RUNNER_MODE=github-hosted`), not a bypass.
+
+The earlier run `37117726124` on `5636c944` failed — see §7, the
+`set_time_limit()` defect. That failure was this sprint's own and is recorded
+rather than attributed elsewhere.
+
+**Deployed** on the VPS via `bash scripts/deploy-vps-runner.sh start` (detached,
+SSH-safe). VPS was at `0de6c1c4` before.
+
+```
+exit=0
+DEPLOY OK: 20261003-140054
+DEPLOY_HEAD_TARGET_MATCH=YES (db96df67c3b1081192ea67f59ec27041288f98a7)
+DEPLOY_SNAPSHOT_CLEANED=YES
+```
+
+Automated smoke 6 passed / 1 warning / 0 errors. The warning is
+`SMOKE-HTTP-HEALTH: http://127.0.0.1/login returned 404` — the nginx
+"Unknown HTTP hosts → deny" `default_server` block answering a localhost `Host`
+header. Not a regression; the canonical domain returns 200 (below).
+
+### Host steps (one-time; the deploy script performs neither)
+
+**1. FPM pool.** Backed up to
+`/etc/php/8.3/fpm/pool.d/daengtisiams.conf.pre-413-fix.20261003-141022`, then
+installed with `install -o root -g root -m 0644` from the repo file — the
+provisioning script's isolated pool step, deliberately **not** a full
+`provision-runtime-identity.sh --apply`, which would also recreate users, rebind
+nginx's `fastcgi_pass` and restart the queue worker. `php-fpm8.3 -t` passed
+before `systemctl reload php8.3-fpm`. Installed file `sha256` matches the repo.
+
+**2. nginx.** Backed up to
+`/etc/nginx/sites-available/asia-dental-lab.pre-413-fix.20261003-141109`, then
+the include was added after the single `pwa-manifest-mime.conf` anchor, inside
+the canonical 443 block. `nginx -t` **passed** before `systemctl reload nginx`
+(reload, not restart).
+
+### Effective limits on production, read from the runtime
+
+```
+$ sudo php-fpm8.3 -tt | grep -iE 'upload_max|post_max|max_input_time|memory_limit'
+php_admin_value[memory_limit]       = 256M
+php_admin_value[max_input_time]     = 900
+php_admin_value[post_max_size]      = 512M
+php_admin_value[upload_max_filesize] = 500M
+                                      # max_execution_time absent -> stays 30
+
+$ sudo nginx -T | grep -E '^[[:space:]]*client_max_body_size'
+client_max_body_size 512m;
+```
+
+Application limits survived `config:cache`: `intake.max_execution_seconds = 900`,
+`package.max_bytes = 524288000`, and every archive-safety ceiling unchanged —
+`max_entries 1200`, `total_uncompressed_max_bytes 2147483648`,
+`max_compression_ratio 120`, `document_max_bytes 20971520`,
+`manifest_max_bytes 5242880`.
+
+### Behavioural proof the 413 is gone
+
+A 2 MiB body — larger than the old 1 MiB ceiling — posted to the canonical host:
+
+```
+POST https://daengtisia.online/  -> HTTP 405  (sent 2097152 bytes)
+```
+
+nginx accepted the **whole** body and Laravel answered. An hour earlier the same
+request was a 413. `POST /` is unrouted, so nothing was created.
+
+**Honest limit of the probes:** the companion probe against the co-tenant
+`default_server` returned `404` with `size_upload=0` — it short-circuits before
+reading a body, so its ceiling was never exercised and that probe proves nothing
+about leakage. Non-leakage is established **structurally** instead: the include
+is referenced exactly once in the site file, there is exactly **one** non-comment
+`client_max_body_size` directive in the entire live configuration, and a
+brace-depth walk places it inside `server_name daengtisia.online`. The `http`
+level, the `www` block, the port-80 redirect block and the co-tenant
+`default_server` all keep nginx's 1 MiB default.
+
+### Surfaces and logs
+
+| Surface | Result |
+|---|---|
+| `https://daengtisia.online/login` | 200 |
+| `/health/live`, `/health/ready`, `/health/lb` | 200 |
+| `/settings/rme/legacy-mass-imports` (+ `/create`) | 302 auth redirect |
+| `/settings/rme/legacy-mass-odontograms` | 302 |
+| `/settings/rme/legacy-imports` (single item) | 302 |
+| `/dashboard` | 302 |
+
+`env=pilot`, debug OFF, maintenance OFF. Queue worker active, `queue:failed`
+empty. HEAD `db96df67` is an exact `git describe --exact-match` match for the GO
+tag. **No Laravel log file for today → zero application errors**, and **no new
+`too large body` entry in the nginx error log since the ceiling went live** — the
+most recent one remains the original 10:22:28 operator failure this sprint fixed.
+
+### Drift posture
+
+Both ceilings are repository-managed. A future `deploy-vps.sh` run reloads nginx,
+so a change to `deploy/nginx/upload-body-size.conf` takes effect without another
+hand edit; a future `provision-runtime-identity.sh --apply` reinstalls the pool
+from the repo file, which now carries the ceilings. The only manual step that
+cannot be re-derived is the one-line `include` in the host's server block, which
+is why that file documents itself.
+
+### Not done, and why
+
+The operator's original failing package was not re-uploaded: it is their file and
+is not available here. Re-uploading a *fabricated* clinical archive to production
+would create staging records and prove nothing about their data, so the
+verification above is limited to the runtime ceilings and a non-clinical body
+probe. When the operator retries, the package should be taken only as far as the
+**preflight / review** screen — confirming or dispatching would create clinical
+records.
