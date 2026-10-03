@@ -153,6 +153,14 @@ Headroom checked rather than assumed: 89 GB free on `/` (which also carries
 `/tmp`, where PHP buffers uploads), 7.0 GiB RAM available, `pm.max_children = 5`
 — so the raised `memory_limit` caps this pool at ~1.25 GiB.
 
+The raised `memory_limit` is **not** for the package body. The intake path was
+read rather than assumed about, and it is streamed end to end:
+`hash_file('sha256', ...)` over the upload, `$disk->put($path, $stream)` into the
+private workspace, and extraction via `ZipArchive::getStream()` consumed in
+256 KiB `fread` chunks, with magic-byte validation reading 5 bytes. A package the
+size of the ceiling is therefore never held in memory. The headroom is for the
+ZipArchive central directory of up to 1200 entries plus framework overhead.
+
 ## 5. Config as code — no hidden drift
 
 `deploy/php-fpm/daengtisiams.conf` was already repo-managed and matched
