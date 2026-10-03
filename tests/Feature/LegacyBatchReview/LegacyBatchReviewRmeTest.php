@@ -16,6 +16,7 @@
  * and §24 all reduce to that.
  */
 
+use App\Modules\Branch\Models\Branch;
 use App\Modules\LabOrder\Models\AuditLog;
 use App\Modules\LegacyImport\BatchReview\Models\LegacyBatchReviewItemDecision;
 use App\Modules\LegacyImport\BatchReview\Models\LegacyReviewTriage;
@@ -23,6 +24,7 @@ use App\Modules\LegacyImport\BatchReview\Requests\RecordLegacyBatchReviewDecisio
 use App\Modules\LegacyImport\BatchReview\Requests\SubmitLegacyBatchReviewRequest;
 use App\Modules\LegacyImport\BatchReview\Services\LegacyBatchReviewAuditService;
 use App\Modules\LegacyImport\BatchReview\Services\LegacyBatchReviewSessionService;
+use App\Modules\LegacyImport\BatchReview\Services\LegacyBatchReviewWorkspaceService;
 use App\Modules\LegacyImport\BatchReview\Services\LegacyReviewTriageService;
 use App\Modules\LegacyImport\BatchReview\Support\LegacyBatchReviewDecision;
 use App\Modules\LegacyImport\BatchReview\Support\LegacyBatchReviewReason;
@@ -539,7 +541,7 @@ it('costs the same number of queries for one queued document as for six', functi
     // that catches that class of mistake coming back — an absolute ceiling
     // would not, because a duplicate read is still a constant.
     $reviewer = superAdmin();
-    $workspace = app(App\Modules\LegacyImport\BatchReview\Services\LegacyBatchReviewWorkspaceService::class);
+    $workspace = app(LegacyBatchReviewWorkspaceService::class);
 
     lbrRmeReady(superAdmin());
     $session = lbrOpenSession(lbrRmeAdapter(), $reviewer);
@@ -571,4 +573,106 @@ it('costs the same number of queries for one queued document as for six', functi
     $withSix = $count();
 
     expect($withSix)->toBe($withOne);
+});
+
+/*
+|--------------------------------------------------------------------------
+| Branch scope is server-resolved, and it is a real boundary
+|--------------------------------------------------------------------------
+*/
+
+it('drops a document whose branch is no longer RME-enabled out of the queue and out of reach', function () {
+    // `review_legacy_rme_imports` is itself one of the workspace scope's
+    // GOVERNANCE_PERMISSIONS, so a reviewer legitimately spans every
+    // RME-ENABLED branch — asserting a narrower restriction would be asserting
+    // a fiction. The boundary that IS real, and that this pins, is the edge of
+    // that set: a branch that stops being RME-enabled takes its documents out
+    // of scope, and the scope is recomputed server-side on every request rather
+    // than trusted from the session row it was opened with.
+    $reviewer = superAdmin();
+    $import = lbrRmeReady(superAdmin());
+
+    $session = lbrOpenSession(lbrRmeAdapter(), $reviewer);
+
+    // In scope to begin with.
+    expect(lbrRmeAdapter()->findInScope($reviewer, (int) $import->getKey()))->not->toBeNull();
+
+    Branch::query()
+        ->whereKey($import->origin_branch_id)
+        ->update(['is_rme_enabled' => false]);
+
+    // Out of scope now — resolved as ABSENCE, which is what the HTTP layer
+    // turns into a 404 so an actor cannot probe which ids exist elsewhere.
+    expect(lbrRmeAdapter()->findInScope($reviewer, (int) $import->getKey()))->toBeNull();
+
+    // And an attestation naming it is refused rather than recorded.
+    expect(fn () => app(LegacyBatchReviewSessionService::class)->recordDecision(
+        $session, lbrRmeAdapter(), $reviewer,
+        (int) $import->getKey(), LegacyBatchReviewDecision::REVIEWED,
+    ))->toThrow(ValidationException::class);
+
+    expect(LegacyBatchReviewItemDecision::count())->toBe(0);
+});
+
+it('refuses to abandon a session the actor does not own, at the service level', function () {
+    // The controller already pins uuid + type + owner in SQL, so this is a
+    // defence-in-depth backstop for a future non-HTTP caller — an ops CLI or a
+    // cleanup job, a precedent this codebase already has. Without it, abandon()
+    // was the one public mutator that contradicted this class's own documented
+    // claim to re-assert ownership independently of the HTTP layer.
+    $owner = superAdmin();
+    $intruder = superAdmin();
+
+    $session = lbrOpenSession(lbrRmeAdapter(), $owner);
+
+    expect(fn () => app(LegacyBatchReviewSessionService::class)
+        ->abandon($session, lbrRmeAdapter(), $intruder))
+        ->toThrow(AuthorizationException::class);
+
+    expect($session->refresh()->status)->toBe(LegacyBatchReviewSessionStatus::OPEN);
+
+    // The owner still can.
+    app(LegacyBatchReviewSessionService::class)->abandon($session, lbrRmeAdapter(), $owner);
+
+    expect($session->refresh()->status)->toBe(LegacyBatchReviewSessionStatus::ABANDONED);
+});
+
+it('still records the attestation and its audit row when a self-clear is refused', function () {
+    // Reachable when review authority is revoked MID-SESSION: the reviewer
+    // blocked the item while authorized, then changes their mind after losing
+    // the grant. The attestation is already committed by then, so letting the
+    // refused self-clear propagate would strand a persisted decision with stale
+    // counters and no ITEM_DECIDED audit row at all — the exact gap
+    // ITEM_REFUSED exists to close elsewhere.
+    $uploader = superAdmin();
+    $import = lbrRmeReady($uploader);
+
+    $blocker = superAdmin();
+    $session = lbrOpenSession(lbrRmeAdapter(), $blocker);
+    $service = app(LegacyBatchReviewSessionService::class);
+
+    $service->recordDecision(
+        $session, lbrRmeAdapter(), $blocker, (int) $import->getKey(),
+        LegacyBatchReviewDecision::BLOCKED, LegacyBatchReviewReason::TRIAGE_ILLEGIBLE,
+    );
+
+    // Revoke the reviewer's authority, keeping only read access, so the
+    // self-clear's authorization check now fails.
+    $blocker->syncRoles([]);
+    $blocker->syncPermissions(['view_legacy_rme_imports']);
+    $blocker->forgetCachedPermissions();
+
+    $decision = $service->recordDecision(
+        $session, lbrRmeAdapter(), $blocker, (int) $import->getKey(),
+        LegacyBatchReviewDecision::REVIEWED,
+    );
+
+    // The attestation landed, with its counters and audit row.
+    expect($decision->decision)->toBe(LegacyBatchReviewDecision::REVIEWED);
+    expect($session->refresh()->marked_reviewed)->toBe(1);
+    expect(AuditLog::where('action', LegacyBatchReviewAuditService::ITEM_DECIDED)->count())->toBeGreaterThan(0);
+
+    // And it FAILED CLOSED: the block survives, so submit will refuse the item
+    // rather than reviewing something still withheld.
+    expect(LegacyReviewTriage::sole()->isBlocking())->toBeTrue();
 });

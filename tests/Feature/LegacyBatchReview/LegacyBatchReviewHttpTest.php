@@ -21,6 +21,7 @@
  * taken from the URL, the form or a session column.
  */
 
+use App\Modules\LegacyImport\BatchReview\Controllers\LegacyBatchReviewController;
 use App\Modules\LegacyImport\BatchReview\Models\LegacyBatchReviewItemDecision;
 use App\Modules\LegacyImport\BatchReview\Models\LegacyBatchReviewSession;
 use App\Modules\LegacyImport\BatchReview\Support\LegacyBatchReviewDecision;
@@ -255,4 +256,42 @@ it('never renders a patient identity number in the workspace', function () {
 
     // The medical record number is the identifier a legacy workspace shows.
     $response->assertSee($import->patient->medical_record_number);
+});
+
+/*
+|--------------------------------------------------------------------------
+| Hardening found by the security review
+|--------------------------------------------------------------------------
+*/
+
+it('clamps a request-supplied page size instead of honouring it', function () {
+    // `per_page` is request-controlled and no view sends it, so an unbounded
+    // value would let one authenticated request hydrate the whole in-scope
+    // archive with three eager-loaded relations. The ceiling is well above any
+    // usable screenful, so it bounds abuse without slowing an operator down.
+    $reviewer = superAdmin();
+
+    foreach (range(1, 3) as $ignored) {
+        lbrRmeReady(superAdmin());
+    }
+
+    $this->actingAs($reviewer)
+        ->get(route('settings.rme.legacy-review-imports.index', ['per_page' => 500000]))
+        ->assertOk();
+
+    // Proven at the boundary rather than by reading the controller: the
+    // paginator reports the clamped size, not the requested one.
+    $paginator = $this->actingAs($reviewer)
+        ->get(route('settings.rme.legacy-review-imports.index', ['per_page' => 500000]))
+        ->viewData('paginator');
+
+    expect($paginator->perPage())
+        ->toBe(LegacyBatchReviewController::MAX_PER_PAGE);
+
+    // A sane request is still honoured verbatim.
+    $small = $this->actingAs($reviewer)
+        ->get(route('settings.rme.legacy-review-imports.index', ['per_page' => 2]))
+        ->viewData('paginator');
+
+    expect($small->perPage())->toBe(2);
 });

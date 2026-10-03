@@ -187,6 +187,126 @@ only (on the decision row plus a batch-scoped event) and does not retrofit the s
 
 ---
 
+## What PR1 ships
+
+### New bounded context `App\Modules\LegacyImport\BatchReview`
+
+Sibling to `MassUpload` inside the same module, reusing `LegacyImportType` and the
+existing workspace scopes. Architecture follows the enterprise baseline:
+Controller (thin) → FormRequest → Service → canonical module service.
+
+| Layer | Files |
+|---|---|
+| Support | `LegacyBatchReviewDecision`, `LegacyReviewTriageStatus`, `LegacyBatchReviewSubmitStatus`, `LegacyBatchReviewSessionStatus`, `LegacyBatchReviewReason`, `LegacyBatchReviewItemSummary`, `LegacyBatchReviewApplyOutcome`, `LegacyBatchReviewRefusalClassifier` |
+| Models | `LegacyBatchReviewSession`, `LegacyBatchReviewItemDecision`, `LegacyReviewTriage` |
+| Adapters | `LegacyBatchReviewAdapter` (interface) + `LegacyRmeBatchReviewAdapter`, `LegacyOdontogramBatchReviewAdapter` |
+| Services | `LegacyBatchReviewSessionService`, `LegacyReviewTriageService`, `LegacyBatchReviewWorkspaceService`, `LegacyBatchReviewAuditService` |
+| HTTP | `LegacyBatchReviewController` (abstract) + two type-fixing subclasses, 3 FormRequests, 14 routes |
+| Views | `settings/rme/legacy-batch-review/{index,show}.blade.php` |
+
+### Migration (additive only)
+
+`2026_10_04_100001_create_legacy_batch_review_tables` creates
+`stg_legacy_batch_review_sessions`, `stg_legacy_batch_review_decisions` and
+`stg_legacy_review_triage`. No column dropped, no existing table altered, no
+backfill. `migrate` only — never `migrate:fresh` / `db:wipe`.
+
+The stickiness invariant is a database constraint, not a convention: two unique
+indexes over the nullable import foreign keys. Both PostgreSQL and SQLite treat
+NULLs as DISTINCT, so the RME index ignores every odontogram row and vice versa
+while still pinning at most one triage row per real import.
+
+### Routes and sidebar
+
+`settings.rme.legacy-review-imports.*` and
+`settings.rme.legacy-review-odontograms.*` — names deliberately sharing no
+prefix with either `legacy-imports.*` or `legacy-mass-imports.*`, so being on a
+batch review page never lights up a sibling menu item. Sessions are addressed by
+UUID, constrained to the uuid character class at the route level.
+
+Two sidebar entries under the existing "Import Data Legacy" group, each gated by
+the review permission plus that archive's migration guard. The group's own
+`@canany` was extended with both review permissions — without that, a
+review-only actor could not have seen the menu at all. Batch Publish entries
+ship in PR2.
+
+### One deliberate change outside the new module
+
+`LegacyRmeAuditEvent` gains `CHANNEL_BATCH` in its channel allowlist. The
+allowlist is enforced (`withChannel()` silently drops an unknown value), and the
+file's own documentation says the channel exists so an auditor can tell *which
+surface* asked. Recording a batch submit as `HTTP` would make 70 canonical
+reviews indistinguishable from 70 individual browser actions — the first
+question an audit of a batch migration asks. Verified that no test pins
+`CHANNELS` to a fixed count.
+
+---
+
+## Verification
+
+| Check | Result |
+|---|---|
+| `tests/Feature/LegacyBatchReview` (SQLite) | **39 passed**, 4 skipped (PostgreSQL-only) |
+| Same suite on **real PostgreSQL 16.15** | **43 passed** — including the 4 database invariants |
+| Migration on PostgreSQL 16 | applies cleanly |
+| `tests/Feature/LegacyRme` + `LegacyOdontogram` + `LegacyMassUpload` + `LegacyImportHub` + `LegacyBatchReview` | see closure section |
+| `SidebarPermissionVisibility\|RolePermissionHardening\|PilotRouteAuthorization\|RoleManagement\|AdminLabLabOnly` | **58 passed** |
+| `sprint:manifest-check` | GO |
+| `sprint:scope-audit --strict` | GO — 2 modules (LegacyImport, LegacyRme) |
+| `architecture:ui-governance-check --strict` | GO |
+| `foundation:security-compliance-check` | GO (9/9, incl. the Blade KTP/NIK view scan) |
+| `foundation:ci-runtime-control-check --strict` | GO |
+| CICD-CTRL-1 classifier on the real commit | `unknown_high_risk`, `run_critical_tests=true`, `run_full_suite=required` |
+| `pint --dirty` | clean (7 files auto-fixed) |
+| `git diff --check` | clean |
+
+### Four defects found and fixed during implementation
+
+Recorded because each is a trap the next sprint can repeat.
+
+1. **An empty regex alternative matched everything.** The refusal-message
+   scrubber's pattern ended `...|\$|#i`, whose trailing empty alternative matches
+   any string — so *every* canonical Indonesian refusal message would have been
+   replaced by the generic fallback, destroying the precise "a different
+   reviewer must do this one" guidance. Now proven by a direct probe: operator
+   prose survives verbatim while paths, SQL and PDO errors are scrubbed.
+
+2. **A REVIEWED attestation cleared triage unconditionally.** That demanded
+   triage authority merely to attest a document, so an actor barred by separation
+   of duties was refused at *attestation* time instead of at submit — losing the
+   refusal classification the batch report depends on. Worse, it let any reviewer
+   clear a colleague's block just by marking the item reviewed. Now a REVIEWED
+   decision releases only triage raised in that same session.
+
+3. **Three component-contract bugs in the views.** `x-ui.card` has no `header`
+   slot (it has `title`/`description`/`actions`) and `x-ui.table` has no `head`
+   slot. Caught by compiling the templates rather than by reading them.
+
+4. **Two N+1 queries in the queue listing.** `canReview()` / `canClearTriage()`
+   were resolved per row — and `BranchService::rmeEnabledIds()` is not memoized,
+   so a 25-row page issued roughly fifty extra branch queries for values the
+   views never rendered. `summarize()` also counted pages per row when
+   `page_count` is already a column. The queue is now flat at 10 queries
+   regardless of page size, pinned by a constancy test.
+
+### Two measurement traps hit while testing
+
+Both are now documented in the mirror rule so the next sprint does not pay for
+them again.
+
+- **PostgreSQL aborts the whole transaction on any failed statement.** The
+  intentional unique-violation assertion left the transaction in `SQLSTATE 25P02`,
+  so the *next* assertion failed for an unrelated reason. Containing the
+  violation in a `DB::transaction()` savepoint fixes it. SQLite hides this
+  completely by tolerating the failed statement.
+- **A cold-cache query count is not comparable to a warm one.** The first
+  `queue()` call carries one extra `model_has_permissions` query while Spatie
+  warms its permission cache. Measured, not assumed — the query shapes were
+  dumped and compared. The constancy test now discards a warm-up sample.
+
+---
+
 ## Status
 
-PR1 implementation in progress. No GO tag exists for either PR yet.
+PR1 implemented and tested. Security review, mutation testing, CI, deployment
+and production verification pending. **No GO tag exists for either PR yet.**

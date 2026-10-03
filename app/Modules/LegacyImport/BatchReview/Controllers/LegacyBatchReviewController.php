@@ -43,6 +43,9 @@ use Illuminate\View\View;
  */
 abstract class LegacyBatchReviewController extends Controller
 {
+    /** Upper bound on a request-supplied page size. */
+    public const MAX_PER_PAGE = 100;
+
     public function __construct(
         protected readonly LegacyBatchReviewWorkspaceService $workspace,
         protected readonly LegacyBatchReviewSessionService $sessions,
@@ -68,7 +71,7 @@ abstract class LegacyBatchReviewController extends Controller
             $adapter,
             $actor,
             ['patient' => $request->query('patient')],
-            (int) $request->integer('per_page', 25),
+            $this->perPage($request),
             $session,
         );
 
@@ -114,7 +117,7 @@ abstract class LegacyBatchReviewController extends Controller
             $adapter,
             $actor,
             ['patient' => $request->query('patient')],
-            (int) $request->integer('per_page', 25),
+            $this->perPage($request),
             $reviewSession,
         );
 
@@ -244,7 +247,7 @@ abstract class LegacyBatchReviewController extends Controller
 
         $reviewSession = $this->resolveOwnSession($request, $session);
 
-        $this->sessions->abandon($reviewSession, $request->user());
+        $this->sessions->abandon($reviewSession, $this->adapter(), $request->user());
 
         return redirect()
             ->route($this->routePrefix().'.index')
@@ -272,6 +275,23 @@ abstract class LegacyBatchReviewController extends Controller
             $summary['applied'],
             $summary['refused'],
         );
+    }
+
+    /**
+     * Page size, CLAMPED.
+     *
+     * `per_page` is request-controlled and no view sends it, so without a bound
+     * an authenticated reviewer could ask for the whole in-scope archive in one
+     * request — hydrating every row with three eager-loaded relations and
+     * building two whereIn overlays over N ids. That would also defeat the
+     * workspace service's own flat-query-cost design.
+     *
+     * The ceiling is deliberately well above any usable screenful, so it bounds
+     * abuse without constraining an operator working quickly.
+     */
+    protected function perPage(Request $request): int
+    {
+        return max(1, min((int) $request->integer('per_page', 25), self::MAX_PER_PAGE));
     }
 
     /**

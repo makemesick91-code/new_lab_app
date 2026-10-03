@@ -160,6 +160,16 @@ class LegacyBatchReviewSessionService
         // Raised BEFORE the decision row is written: if triage is refused
         // (unauthorized, or an unacceptable reason) the attestation must not
         // land either, or the two records would disagree.
+        //
+        // These are two transactions, not one, and the ORDER is the safety
+        // choice. They are deliberately not merged: the triage audit row is
+        // written after its own commit, which is the codebase's standing rule
+        // precisely so an audit row cannot describe work a later rollback
+        // undid. The residual risk is therefore a triage row whose decision row
+        // failed to insert — which leaves the document WITHHELD without an
+        // attestation. That is the conservative direction: an extra block is
+        // recoverable by an authorized reviewer clearing it, whereas a missing
+        // block would let a document the reviewer rejected reach publishing.
         if ($triaging) {
             $this->triage->raise(
                 $adapter,
@@ -250,7 +260,23 @@ class LegacyBatchReviewSessionService
                 && $existingTriage->isBlocking()
                 && (int) $existingTriage->raised_in_session_id === (int) $session->getKey()
             ) {
-                $this->triage->clear($adapter, $import, $actor);
+                try {
+                    $this->triage->clear($adapter, $import, $actor);
+                } catch (AuthorizationException) {
+                    // NON-FATAL, deliberately. The attestation above is already
+                    // committed, and the counter refresh plus the ITEM_DECIDED
+                    // audit row still have to happen — letting this propagate
+                    // would strand a persisted decision with stale counts and
+                    // NO audit row at all, which is the exact gap ITEM_REFUSED
+                    // was added to close elsewhere.
+                    //
+                    // Reachable when the actor's review authority or branch
+                    // scope is revoked mid-session, after they raised the block
+                    // but before they changed their mind. Failing closed here
+                    // is correct: the block SURVIVES, and submit() then refuses
+                    // the item with REFUSAL_TRIAGE_BLOCKING rather than
+                    // reviewing something still withheld.
+                }
             }
         }
 
@@ -410,9 +436,22 @@ class LegacyBatchReviewSessionService
         return $summary;
     }
 
-    /** Close a session without submitting. Decisions are kept as evidence. */
-    public function abandon(LegacyBatchReviewSession $session, User $actor): LegacyBatchReviewSession
-    {
+    /**
+     * Close a session without submitting. Decisions are kept as evidence.
+     *
+     * Asserts ownership like its siblings. It is not reachable past the
+     * controller's own uuid+type+owner lookup today, but this class documents
+     * that the service re-asserts ownership "not only the HTTP layer" — and a
+     * future non-HTTP caller (an ops CLI or a cleanup job; the precedent
+     * exists) would otherwise inherit no backstop here.
+     */
+    public function abandon(
+        LegacyBatchReviewSession $session,
+        LegacyBatchReviewAdapter $adapter,
+        User $actor,
+    ): LegacyBatchReviewSession {
+        $this->assertSessionOwnership($session, $adapter, $actor);
+
         if (! $session->canTransitionTo(LegacyBatchReviewSessionStatus::ABANDONED)) {
             throw ValidationException::withMessages([
                 'status' => 'Sesi tinjauan tidak dapat ditinggalkan pada status ini.',
@@ -468,10 +507,30 @@ class LegacyBatchReviewSessionService
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            // The row lock plus the transition guard is what makes a
-            // double-clicked Submit harmless: the second request finds the
-            // session already SUBMITTING and the per-decision submit_status
-            // stops it redoing applied work.
+            // WHAT THIS LOCK DOES AND DOES NOT DO, stated precisely.
+            //
+            // It serializes the STATUS TRANSITION, and the transition guard
+            // rejects a pass against a terminal session. It does NOT serialize
+            // the pass itself: the lock is released on commit, before the
+            // pending set is read, and SUBMITTING -> SUBMITTING is permitted on
+            // purpose so an interrupted pass can resume.
+            //
+            // So two simultaneous passes (a double-clicked Submit, or two tabs)
+            // can both read the same pending set. What keeps that SAFE is not
+            // this lock but the canonical review itself, which re-locks the
+            // import and returns the already-REVIEWED row as a no-op — plus
+            // finalize(), which recomputes the counters from the database
+            // rather than from the loop. No double clinical write and no
+            // inflated counts are possible.
+            //
+            // The residual cost is cosmetic and bounded: a raced item can emit
+            // a second IMPORT_REVIEWED audit row, because the canonical service
+            // writes that unconditionally after its transaction. That is
+            // pre-existing behaviour, equally reachable by double-clicking the
+            // single-item page; this surface makes it reachable at batch scale.
+            // Claiming rows under this lock would fix it but needs an in-flight
+            // state with crash recovery, which belongs with PR2's concurrency
+            // work rather than being half-built here.
             if (! $locked->canTransitionTo(LegacyBatchReviewSessionStatus::SUBMITTING)) {
                 throw ValidationException::withMessages([
                     'status' => 'Sesi tinjauan tidak dapat dikirim pada status ini.',
