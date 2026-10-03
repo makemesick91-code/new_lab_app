@@ -334,3 +334,21 @@ refuse the write. So clearing an admission gap can leave `ops-readiness` at
 **WATCH / "Ready for a routine batch: NO"** while uploads nonetheless succeed.
 Extending or closing a lapsed window is an owner approval — surface it, never
 silently extend it, and never read "the upload works" as "the window is fine".
+
+**There IS now a canonical mechanism** (FIX-LEGACY-WAVE4-WINDOW-EXTENSION-1):
+`LegacyRmeWaveGovernanceService::extendBatchWindow()` and
+`legacy-rme:wave-admin extend --wave= --planned-end-date= --reason= --actor=`
+(dry-run by default, `--apply` to write). Until that sprint there was none —
+`planned_end_date` had a single writer, `createWave()` — so earlier notes
+describing cancel-and-re-register as the only route are superseded. Never edit
+the column by hand; the CLI is the audited path.
+
+It only ever moves the end date LATER. Shortening is refused and points at
+`drain`/`complete`, the expiry cannot be removed, an expiry-less wave cannot be
+given an already-lapsed window, and the start date is read off the locked row.
+
+**`extend` requires the APPROVER's ability, not the manager's**, and inherits
+BOTH of `approve()`'s extra guards: the `require_separate_approver` rule and
+`bindingMatches()`. On the pilot `LEGACY_RME_REQUIRE_SEPARATE_APPROVER=true` and
+WAVE-4 has `created_by=1`, so user 1 is REFUSED and the extension must be
+performed by the separate approver (user 11). Verified live.
