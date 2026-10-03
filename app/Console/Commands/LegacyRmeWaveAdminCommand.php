@@ -40,7 +40,7 @@ use Illuminate\Validation\ValidationException;
 class LegacyRmeWaveAdminCommand extends Command
 {
     protected $signature = 'legacy-rme:wave-admin
-        {action : register|approve|activate|pause|resume|drain|cancel|complete|assign|revoke|branch-quota|branch-pause|branch-resume|branch-drain|branch-complete}
+        {action : register|approve|activate|pause|resume|drain|cancel|complete|extend|assign|revoke|branch-quota|branch-pause|branch-resume|branch-drain|branch-complete}
         {--wave= : Wave code, e.g. WAVE-2}
         {--actor= : Id or email of the user the action is attributed to}
         {--name= : Wave name (register)}
@@ -98,6 +98,7 @@ class LegacyRmeWaveAdminCommand extends Command
                 'drain' => $this->waveAction(fn (LegacyRmeMigrationWave $w) => $governance->drain($actor, $w, $this->reason())),
                 'cancel' => $this->waveAction(fn (LegacyRmeMigrationWave $w) => $governance->cancelWave($actor, $w, $this->reason())),
                 'complete' => $this->waveAction(fn (LegacyRmeMigrationWave $w) => $governance->completeWave($actor, $w, $this->reason())),
+                'extend' => $this->extendWindow($governance, $actor),
                 'assign' => $this->assign($governance, $actor),
                 'revoke' => $this->revoke($governance, $actor),
                 'branch-quota' => $this->branchQuota($governance, $actor),
@@ -160,6 +161,37 @@ class LegacyRmeWaveAdminCommand extends Command
         $wave = $callback($this->requireWave());
 
         return ['wave' => $wave->code, 'status' => $wave->status];
+    }
+
+    /**
+     * Extend the approved batch window. The service owns every rule; this only
+     * resolves the wave and hands over what the operator typed.
+     *
+     * @return array<string, mixed>
+     */
+    private function extendWindow(LegacyRmeWaveGovernanceService $governance, User $actor): array
+    {
+        $wave = $this->requireWave();
+
+        $updated = $governance->extendBatchWindow(
+            $actor,
+            $wave,
+            $this->optionalString('planned-end-date'),
+            $this->reason(),
+        );
+
+        // Deliberately NOT reporting a "before" value here. The only one
+        // available to this method is the pre-lock, in-memory value, which two
+        // concurrent runs can make wrong; the audit row carries the
+        // authoritative before/after pair read under the lock. The dry run
+        // (current_planned_end_date -> planned_end_date) is where an operator
+        // sees the move before committing to it.
+        return [
+            'wave' => $updated->code,
+            'status' => $updated->status,
+            'planned_start_date' => $updated->planned_start_date?->toDateString(),
+            'planned_end_date' => $updated->planned_end_date?->toDateString(),
+        ];
     }
 
     /**
@@ -293,6 +325,11 @@ class LegacyRmeWaveAdminCommand extends Command
             'planned_start_date' => $this->optionalString('planned-start-date'),
             'planned_end_date' => $this->optionalString('planned-end-date'),
             'batch_window_required' => LegacyRmeBatchWindowRule::requiredByPolicy(),
+            // So an `extend` dry run shows current -> proposed rather than just
+            // the value typed. A dry run that cannot show what would change is
+            // not much of a safeguard.
+            'current_planned_start_date' => $wave?->planned_start_date?->toDateString(),
+            'current_planned_end_date' => $wave?->planned_end_date?->toDateString(),
         ];
     }
 
@@ -385,7 +422,11 @@ class LegacyRmeWaveAdminCommand extends Command
      */
     private function authorizeActor(User $actor, string $action): void
     {
-        $ability = $action === 'approve' ? 'approve' : 'update';
+        // `extend` joins `approve` on the approver's ability, not the
+        // manager's: lengthening an approved window IS an approval. Gating it
+        // on `update` would let whoever runs the rollout grant their own batch
+        // more time, which is the separation this split exists to protect.
+        $ability = in_array($action, ['approve', 'extend'], true) ? 'approve' : 'update';
 
         // `update`/`approve` are per-wave abilities. For `register` there is no
         // wave yet, so the class-level `create` ability is the right question.

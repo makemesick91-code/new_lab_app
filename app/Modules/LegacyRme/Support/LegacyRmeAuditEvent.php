@@ -179,6 +179,20 @@ final class LegacyRmeAuditEvent
 
     public const WAVE_QUOTA_CHANGED = 'LEGACY_RME_WAVE_QUOTA_CHANGED';
 
+    /*
+    | FIX-LEGACY-WAVE4-WINDOW-EXTENSION-1 — the approved window moved.
+    |
+    | Its own event rather than a reuse of WAVE_TRANSITIONED, because no status
+    | changes: an extension re-approves an ACTIVE batch for longer. Folding it
+    | into the transition event would make "the batch changed state" mean two
+    | different things and leave an auditor unable to tell them apart.
+    |
+    | Carries the before AND after end date. "Extended to the 31st" is not an
+    | auditable fact on its own — what it was extended FROM is the half that
+    | makes the decision reviewable afterwards.
+    */
+    public const WAVE_WINDOW_EXTENDED = 'LEGACY_RME_WAVE_WINDOW_EXTENDED';
+
     /** @var list<string> */
     public const ACTIONS = [
         self::IMPORT_CREATED,
@@ -216,6 +230,7 @@ final class LegacyRmeAuditEvent
         self::WAVE_OPERATOR_ASSIGNED,
         self::WAVE_OPERATOR_REVOKED,
         self::WAVE_QUOTA_CHANGED,
+        self::WAVE_WINDOW_EXTENDED,
     ];
 
     /**
@@ -282,6 +297,10 @@ final class LegacyRmeAuditEvent
         // be attributed to the stage that authorized it; `pending_jobs` is an
         // infrastructure depth, never anything about a patient or a document.
         'wave',
+        'planned_start_date',
+        'planned_end_date_before',
+        'planned_end_date_after',
+        'extension_reason',
         'pending_jobs',
         // LEGACY-RME-PDF-ROLL-4. Still structure only. `operator_user_id` is the
         // id of the user an assignment covers — the trail already records the
