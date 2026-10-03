@@ -5,6 +5,8 @@ globs:
   - "resources/views/settings/rme/legacy-mass-*/**"
   - "tests/Feature/LegacyMassUpload/**"
   - "config/legacy_mass_upload.php"
+  - "deploy/nginx/**"
+  - "deploy/php-fpm/**"
 alwaysApply: false
 ---
 
@@ -168,3 +170,77 @@ and small manual migrations.
 `LegacyRme` does **not** match `LegacyMassUploadRmeTest`. The `LegacyMassUpload`
 token must stay in both critical-gate variants, and the three mandatory suites
 stay declared in `config/ci_runner.php` `critical_gate_mandatory_suites`.
+
+## 21. The APPLICATION package limit is canonical; the runtime sits above it
+
+BUGFIX-MASS-UPLOAD-REQUEST-ENTITY-TOO-LARGE-1.
+
+`config/legacy_mass_upload.php` → `package.max_bytes` is the ONLY authority on
+how large a package may be. nginx and PHP-FPM exist to let a package the
+application would accept actually arrive, and to let a package the application
+would refuse arrive anyway so the operator reads a reason instead of a status
+code.
+
+Every transport ceiling must therefore sit at or ABOVE `package.max_bytes`:
+
+    nginx  client_max_body_size      >= package.max_bytes   (and > it, for
+                                        multipart overhead)
+    FPM    upload_max_filesize       >= package.max_bytes
+    FPM    post_max_size             >  upload_max_filesize
+
+Pin `client_max_body_size` to the SAME value as `post_max_size`, so nginx is
+always the outer bound. If PHP is the one that refuses an oversize POST it
+discards `$_POST` entirely, the CSRF token goes with it, and the operator is
+told "Page Expired" (419) — a message about sessions for a problem about size.
+
+A 413 is always an infrastructure defect, never a product decision. Diagnose it
+by naming the layer: `nginx -T | grep -c client_max_body_size` returning 0 means
+the COMPILED DEFAULT of 1 MiB is in force, which is what refused a 2 860 825-byte
+package in production on 2026-10-03 — and, with the same default, a 1 189 484-byte
+single-item legacy import and a 5 333 569-byte lab workflow request before it.
+The request never reaches PHP or Laravel, so no application log and no
+application test can see it.
+
+Never fix only nginx. The pool inherits php.ini, and stock php.ini is
+`upload_max_filesize = 2M` / `post_max_size = 8M`; raising nginx alone moves the
+failure one layer down, where PHP silently drops the file and Laravel reports the
+misleading "Paket arsip ZIP wajib diunggah."
+
+## 22. Transport ceilings are bounded, and independent of archive safety
+
+`client_max_body_size 0` (unlimited) is forbidden. So is `memory_limit = -1`.
+These are clinical documents; an unbounded archive upload is a disk-exhaustion
+and worker-exhaustion surface.
+
+Raising a TRANSPORT ceiling must never raise an ARCHIVE-SAFETY ceiling. They are
+separate controls and are asserted separately: `document_max_bytes` (20 MiB),
+`manifest_max_bytes` (5 MiB), `max_entries` (1200),
+`total_uncompressed_max_bytes` (2 GiB), `max_compression_ratio` (120.0). The bomb
+guard, the decompressed-total guard, the per-item guard and the Zip Slip,
+symlink and magic-byte guards are unaffected by anything in this section.
+
+Scope the relaxation as narrowly as the mechanism allows. `max_execution_time` is
+`PHP_INI_ALL`, so the intake route raises it for ITSELF
+(`legacy_mass_upload.intake.max_execution_seconds`) and every other request on
+the pool keeps the 30s ceiling. `upload_max_filesize`, `post_max_size` and
+`max_input_time` are `PHP_INI_PERDIR` and cannot be set per route, which is the
+only reason they live at pool level. A configured intake budget of 0 means
+"no limit" to PHP and is ignored rather than honoured.
+
+## 23. Runtime limits are config-as-code, not a hand edit in /etc
+
+`deploy/php-fpm/daengtisiams.conf` is the version-controlled source of the
+production pool and is expected to match it byte-for-byte — verify with
+`sha256sum`. Declare the ceilings there, with `php_admin_value`, so they survive
+a php.ini change and are reviewable. Do not rely on inheriting php.ini: this
+project's php.ini was never tuned, and the pool header asserted the opposite for
+months.
+
+Production nginx is NOT deployed from this repository, so
+`deploy/nginx/upload-body-size.conf` is the version-controlled record and must
+carry its own one-time apply and verify instructions (the
+`deploy/nginx/pwa-manifest-mime.conf` pattern). Scope it to the DaengtisiaMS
+`server` block by `include`, never to `http` — the catch-all `default_server`,
+the redirect blocks and any co-tenant virtual host on this shared VPS keep
+nginx's 1 MiB default. A one-off manual VPS tweak that a future deploy can erase
+is not a fix.

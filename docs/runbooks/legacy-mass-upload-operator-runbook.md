@@ -257,3 +257,92 @@ Fakta yang perlu diketahui saat menangani insiden:
 - Tidak menambah izin atau memperluas akses cabang.
 - Tidak menghapus atau menggantikan Upload Legacy satu-satu.
 - Tidak memberlakukan kuota harian baru.
+
+---
+
+## 9. "Request Entity Too Large" (HTTP 413)
+
+BUGFIX-MASS-UPLOAD-REQUEST-ENTITY-TOO-LARGE-1.
+
+### Apa artinya
+
+Pesan ini **bukan** keputusan aplikasi. Aplikasi menolak paket yang terlalu
+besar dengan pesan yang bisa ditindaklanjuti:
+
+> Ukuran paket arsip melebihi batas yang diizinkan.
+
+Jika yang muncul justru `413 Request Entity Too Large`, permintaan **belum
+pernah sampai ke aplikasi** — satu lapis runtime (nginx atau PHP-FPM)
+menolaknya lebih dulu. Karena itu tidak ada catatan di log aplikasi, dan
+melaporkannya sebagai bug Mass Upload akan menyesatkan.
+
+Batas yang berlaku setelah perbaikan ini:
+
+| Ukuran paket | Hasil |
+|---|---|
+| ≤ 500 MiB | diterima; preflight berjalan |
+| 500–512 MiB | sampai ke aplikasi → "Ukuran paket arsip melebihi batas yang diizinkan." |
+| > 512 MiB | ditolak nginx dengan 413 |
+
+### Cara mendiagnosis — sebutkan lapisannya, jangan menduga
+
+Jalankan di VPS, berurutan. Hentikan di lapisan pertama yang gagal.
+
+**1. Ukuran paket yang sebenarnya ditolak** (angkanya ada di log nginx, jadi
+tidak perlu menebak):
+
+```
+sudo grep "too large body" /var/log/nginx/error.log | tail -5
+```
+
+Barisnya memuat jumlah byte, rute, dan host. Contoh kegagalan yang memicu
+perbaikan ini: `2860825 bytes` pada
+`POST /settings/rme/legacy-mass-imports`.
+
+**2. Batas nginx yang berlaku:**
+
+```
+sudo nginx -T | grep -c client_max_body_size
+```
+
+- `0` → direktifnya **tidak dideklarasikan di mana pun**, sehingga nginx memakai
+  **default bawaan 1 MiB**. Ini penyebab aslinya. Pasang kembali
+  `include /var/www/asia-dental-lab-v2/deploy/nginx/upload-body-size.conf;`
+  di dalam blok `server` DaengtisiaMS, lalu
+  `sudo nginx -t && sudo systemctl reload nginx`.
+- `1` atau lebih → periksa nilainya; harus `512m`.
+
+**3. Batas PHP-FPM yang berlaku** (gunakan konfigurasi FPM, **bukan** `php -i`
+dari CLI — CLI di host ini adalah PHP 8.5 sedangkan aplikasi berjalan di pool
+PHP 8.3, jadi nilai CLI tidak mewakili apa pun):
+
+```
+sudo php-fpm8.3 -tt 2>&1 | grep -iE 'upload_max_filesize|post_max_size'
+```
+
+Harus `upload_max_filesize = 500M` dan `post_max_size = 512M`. Jika kosong, pool
+sedang mewarisi php.ini bawaan distribusi (`2M` / `8M`) — pasang ulang
+`deploy/php-fpm/daengtisiams.conf` dan reload `php8.3-fpm`.
+
+### Yang TIDAK boleh dilakukan
+
+- **Jangan** menyetel `client_max_body_size 0` atau membuang batas PHP. Ini
+  dokumen klinis; unggahan arsip tanpa batas adalah celah habisnya disk dan
+  habisnya worker.
+- **Jangan** menaikkan batas aplikasi (`package.max_bytes`) hanya karena runtime
+  mengizinkan lebih besar. Batas aplikasi adalah acuan; runtime mengikutinya.
+- **Jangan** hanya memperbaiki nginx. Pool mewarisi php.ini, dan php.ini bawaan
+  hanya `upload_max_filesize = 2M`. Menaikkan nginx saja memindahkan kegagalan
+  satu lapis ke bawah, di mana PHP membuang berkasnya secara diam-diam dan
+  aplikasi menampilkan pesan yang menyesatkan: "Paket arsip ZIP wajib diunggah."
+- **Jangan** menyunting php.ini atau berkas nginx langsung di VPS sebagai
+  perbaikan permanen. Sumber yang dikelola ada di repositori
+  (`deploy/php-fpm/daengtisiams.conf` dan
+  `deploy/nginx/upload-body-size.conf`); suntingan manual bisa terhapus oleh
+  deploy berikutnya.
+
+### Setelah batas diperbaiki
+
+Unggah ulang paket yang sebelumnya gagal **hanya sampai tahap preflight /
+tinjauan**. Jangan menekan konfirmasi atau mulai proses sampai hasil tinjauan
+dibaca — konfirmasi akan membuat dokumen klinis.

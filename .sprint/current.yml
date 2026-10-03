@@ -1,52 +1,76 @@
-# REVISION-LEGACY-SINGLE-ACTIVE-DOCUMENT-PER-PATIENT-1
+# BUGFIX-MASS-UPLOAD-REQUEST-ENTITY-TOO-LARGE-1
 #
-# One patient, one document type, one active lifecycle.
+# Mass Upload returned a bare `413 Request Entity Too Large`.
 #
-# THE RULE: per patient, per legacy document type, at most ONE active/non-VOID
-# logical lifecycle — and the RME slot and the ODONTOGRAM slot are INDEPENDENT.
+# ROOT CAUSE — measured, not inferred. Production nginx error log, today:
 #
-#   G1 a published archive blocks every NEW upload of the same type
-#   G2 an in-flight (non-terminal) import blocks every NEW upload of the same type
-#   G3 a canonical VOID releases the slot for a fresh correction import
-#   G4 retry/resume of the SAME lifecycle is never a new upload
-#   G5 RME never blocks odontogram, and odontogram never blocks RME
+#   2026/10/03 10:22:28 [error] client intended to send too large body:
+#   2860825 bytes, server: daengtisia.online,
+#   request: "POST /settings/rme/legacy-mass-imports HTTP/1.1"   -> 413, 192 bytes
 #
-# Occupancy spans TWO tables per type (staging + archive), so it deliberately is
-# NOT a partial UNIQUE index — a unique index cannot read another table. The race
-# is closed by serializing the DECISION with a PostgreSQL advisory xact lock
-# keyed (document type, patient id). First advisory-lock use in the codebase.
+# `client_max_body_size` appeared NOWHERE in the production nginx configuration
+# (`nginx -T | grep -c client_max_body_size` = 0), so every upload was bounded by
+# the nginx COMPILED DEFAULT of 1 MiB. The request never reached PHP or Laravel,
+# which is why no application log and no application test could show it.
 #
-# NO MIGRATION. The (patient_id, status) indexes already exist on all four
-# tables. No permission, route or schema change.
+# The application's own ceiling is 500 MiB. Two runtime layers sat below it:
 #
-# Three decisions stated rather than silently made:
-#   * FAILED OCCUPIES the slot, because FAILED -> QUEUED is legal and a failed
-#     import is retryable, not abandoned;
-#   * occupancy is deliberately NOT branch-scoped — it answers "what is true
-#     about this patient", not "what may this operator see"; a narrower scope
-#     could only ever admit a second archive;
-#   * a soft-deleted staging row still OCCUPIES (withTrashed), so a delete can
-#     never become an unaudited release. CANCEL and VOID are the only releases.
+#   nginx client_max_body_size   1 MiB  (compiled default)   <- rejected first
+#   PHP-FPM upload_max_filesize  2M     (stock php.ini)      <- would reject next
+#   PHP-FPM post_max_size        8M     (stock php.ini)
+#   application package.max_bytes 500 MiB                    <- the authority
 #
-# Two things the tests caught, recorded because the first reasoning was wrong:
-#   * the slot pre-check initially ran BEFORE exact-PDF duplicate detection and
-#     shadowed DUPLICATE_DETECTED for same-patient re-uploads. Moved to after it;
-#     cardinality supplements the checksum guard, it never replaces it.
-#   * one existing test asserted the opposite of the new invariant (it staged two
-#     imports for ONE patient to prove the guard keys on bytes, not filename).
-#     The property is now proven across two patients.
+# Fixing only nginx would have moved the failure one layer down, where PHP
+# silently discards the file and Laravel reports the misleading "Paket arsip ZIP
+# wajib diunggah." Both layers had to move.
 #
-# One honest negative: the concurrency proof SKIPS off PostgreSQL. On SQLite the
-# advisory lock is a documented no-op, so the sequential suite proves the
-# decision and a separate PostgreSQL 16 suite proves the lock.
+# NOT A MASS-UPLOAD BUG. The same 1 MiB default had already refused two other
+# clinical upload paths in production — the SINGLE-item legacy import
+# (1 189 484 bytes, 2026-09-02) and the lab workflow request (5 333 569 bytes,
+# 2026-07-10). One shared infrastructure gap, three visible symptoms.
 #
-# Mass/bulk legacy upload does not exist in this codebase (verified, not assumed)
-# and was deliberately not built.
+# THE APPLICATION REMAINS THE AUTHORITY. Infrastructure is raised to sit just
+# ABOVE package.max_bytes, never to replace it, so an oversize package reaches
+# Laravel and earns the application's own reasoned refusal:
+#
+#   <= 500 MiB   accepted
+#   500-512 MiB  reaches Laravel -> "Ukuran paket arsip melebihi batas yang
+#                diizinkan."
+#   >  512 MiB   nginx 413 (bounded, honest)
+#
+# nginx is pinned to the SAME 512 MiB as post_max_size so nginx is always the
+# outer bound; otherwise PHP would strip $_POST, lose the CSRF token, and the
+# operator would be told "Page Expired" (419) instead of anything about size.
+#
+# NOTHING IS UNLIMITED. `client_max_body_size 0` is forbidden and asserted
+# against. Every archive-safety ceiling is untouched and asserted untouched:
+# document_max_bytes 20 MiB, manifest_max_bytes 5 MiB, max_entries 1200,
+# total_uncompressed_max_bytes 2 GiB, max_compression_ratio 120.0. Those are
+# INDEPENDENT controls; raising a transport ceiling must not raise any of them.
+#
+# max_execution_time is deliberately NOT relaxed pool-wide — every other request
+# keeps the 30s ceiling. The intake route raises it for ITSELF at runtime
+# (PHP_INI_ALL). upload_max_filesize / post_max_size / max_input_time are
+# PHP_INI_PERDIR and cannot be scoped per route, which is why those three must
+# live at pool level.
+#
+# CONFIG AS CODE. deploy/php-fpm/daengtisiams.conf was already repo-managed and
+# matched production byte-for-byte (sha256 identical), so the ceilings go there
+# rather than into a hand-edited php.ini. Its header previously claimed php.ini
+# carried "the limits which the Legacy RME PDF upload path depends on" — that was
+# never true, and the claim is corrected rather than left to mislead the next
+# reader. nginx is not deployed from this repository, so
+# deploy/nginx/upload-body-size.conf is the version-controlled record and carries
+# its own one-time apply + verify instructions, matching the existing
+# deploy/nginx/pwa-manifest-mime.conf pattern.
+#
+# NO migration. NO permission, role, route or schema change. No clinical
+# behaviour, no publish path, no branch isolation, no ledger.
 
-id: REVISION-LEGACY-SINGLE-ACTIVE-DOCUMENT-PER-PATIENT-1
-type: MODULE_SPRINT
-module: LegacyImport,LegacyRme,LegacyOdontogram
-title: "One active legacy document per patient per type: published and in-flight both block a new upload, VOID releases, retry is not an upload, RME and odontogram slots independent"
+id: BUGFIX-MASS-UPLOAD-REQUEST-ENTITY-TOO-LARGE-1
+type: RUNTIME_FIX
+module: LegacyImport
+title: "Mass Upload 413: nginx had no client_max_body_size (1 MiB compiled default) and the FPM pool inherited stock php.ini 2M/8M, both below the application's canonical 500 MiB package ceiling; align bounded runtime limits above the application limit so Laravel returns its own refusal"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 runtime_change: true
 schema_change: false
@@ -57,9 +81,8 @@ ledger_impact: false
 deploy_required: true
 browser_required: false
 test_profiles: []
-go_tag: revision-legacy-single-active-document-per-patient-1-go
+go_tag: bugfix-mass-upload-request-entity-too-large-1-go
 go_tag_created: false
-inherits_parent_go: revision-legacy-patient-staged-verification-cancel-1-go
-inherits_quota_decision: REVISION-SUNU-LEGACY-IMPORT-UNLIMITED-ADMIN-ACCESS-1
+inherits_parent_go: feature-legacy-rme-odontogram-mass-upload-1-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
-revises: LEGACY-RME-PDF-1A,FIX-04B-LEGACY-ODONTOGRAM
+revises: FEATURE-LEGACY-RME-ODONTOGRAM-MASS-UPLOAD-1

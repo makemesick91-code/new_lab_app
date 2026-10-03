@@ -127,6 +127,8 @@ abstract class LegacyMassUploadController extends Controller
     {
         $this->authorizeType('createOfType');
 
+        $this->grantIntakeExecutionBudget();
+
         try {
             $batch = $this->batches->store(
                 $request->package(),
@@ -254,6 +256,30 @@ abstract class LegacyMassUploadController extends Controller
         abort_unless($batch->import_type === $this->importType(), 404);
 
         $this->authorize($ability, $batch);
+    }
+
+    /**
+     * Raise THIS request's wall-clock budget for package intake only.
+     *
+     * BUGFIX-MASS-UPLOAD-REQUEST-ENTITY-TOO-LARGE-1. Receiving a package the
+     * size of package.max_bytes and then walking its entries cannot finish
+     * inside the pool's 30s default, but relaxing max_execution_time pool-wide
+     * would remove that ceiling from every other request too. max_execution_time
+     * is PHP_INI_ALL, so this route raises it for itself and nothing else.
+     *
+     * Bounded and never unlimited: a non-positive configured value is ignored
+     * rather than treated as 0, because 0 means "no limit" to PHP and would let
+     * a failed intake hold one of the five pool workers indefinitely.
+     */
+    private function grantIntakeExecutionBudget(): void
+    {
+        $seconds = (int) config('legacy_mass_upload.intake.max_execution_seconds', 900);
+
+        if ($seconds <= 0) {
+            return;
+        }
+
+        @set_time_limit($seconds);
     }
 
     private function dispatchMessage(LegacyMassUploadBatch $batch): string
