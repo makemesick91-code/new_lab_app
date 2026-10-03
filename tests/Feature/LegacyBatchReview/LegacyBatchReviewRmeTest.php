@@ -36,11 +36,13 @@ use App\Modules\LegacyImport\Support\LegacyImportType;
 use App\Modules\LegacyRme\Models\LegacyRmeRecord;
 use App\Modules\LegacyRme\Support\LegacyRmeAuditEvent;
 use App\Modules\LegacyRme\Support\LegacyRmeImportStatus;
+use App\Modules\LegacyRme\Support\SeparatePublisherGuard;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 
+require_once __DIR__.'/../LegacyOdontogram/helpers.php';
 require_once __DIR__.'/helpers.php';
 
 beforeEach(function () {
@@ -429,14 +431,66 @@ it('refuses to let another reviewer drive someone else\'s session', function () 
 });
 
 it('refuses to drive an RME session through the odontogram adapter', function () {
+    // BOTH capabilities are enabled on purpose. An earlier version of this test
+    // left the odontogram flag off, so removing the import-type guard still
+    // threw — from the MIGRATION check, not the type check. It passed for the
+    // wrong reason and a mutation run caught it. With both flags on and one
+    // actor owning the session, the type guard is the only thing left that can
+    // refuse, so a kill here is unambiguous.
+    lodoFlag(true);
+
     $reviewer = superAdmin();
     $session = lbrOpenSession(lbrRmeAdapter(), $reviewer);
 
+    expect(lbrRmeAdapter()->migrationEnabled())->toBeTrue()
+        ->and(lbrOdontogramAdapter()->migrationEnabled())->toBeTrue()
+        ->and((int) $session->opened_by)->toBe((int) $reviewer->getKey());
+
     // A type confusion here would write an id into the wrong foreign key and
-    // call the wrong module's service.
+    // drive the wrong module's canonical service.
     expect(fn () => app(LegacyBatchReviewSessionService::class)->submit(
         $session, lbrOdontogramAdapter(), $reviewer,
     ))->toThrow(AuthorizationException::class);
+
+    expect(fn () => app(LegacyBatchReviewSessionService::class)->recordDecision(
+        $session, lbrOdontogramAdapter(), $reviewer, 1, LegacyBatchReviewDecision::REVIEWED,
+    ))->toThrow(AuthorizationException::class);
+
+    // Nothing was written into either column.
+    expect(LegacyBatchReviewItemDecision::count())->toBe(0);
+});
+
+it('excludes triaged decisions from the pending-submit counter', function () {
+    // The submit query filters on decision AND submit_status, so a triaged row
+    // marked PENDING would still never be carried to the canonical path — the
+    // two filters are deliberately redundant. What the submit_status DOES drive
+    // is the operator's "menunggu dikirim" count and the submit button it gates,
+    // so this pins the visible half of that redundancy.
+    $reviewer = superAdmin();
+    $reviewed = lbrRmeReady(superAdmin());
+    $blocked = lbrRmeReady(superAdmin());
+
+    $session = lbrOpenSession(lbrRmeAdapter(), $reviewer);
+    $service = app(LegacyBatchReviewSessionService::class);
+
+    $service->recordDecision(
+        $session, lbrRmeAdapter(), $reviewer,
+        (int) $reviewed->getKey(), LegacyBatchReviewDecision::REVIEWED,
+    );
+    $service->recordDecision(
+        $session, lbrRmeAdapter(), $reviewer, (int) $blocked->getKey(),
+        LegacyBatchReviewDecision::BLOCKED, LegacyBatchReviewReason::TRIAGE_ILLEGIBLE,
+    );
+
+    $counters = app(LegacyBatchReviewWorkspaceService::class)
+        ->counters(lbrRmeAdapter(), $session->refresh(), 2);
+
+    expect($counters['pending_submit'])->toBe(1)
+        ->and($counters['marked_reviewed'])->toBe(1)
+        ->and($counters['marked_blocked'])->toBe(1);
+
+    // And the submit pass itself only ever attempts the reviewed one.
+    expect($service->submit($session->refresh(), lbrRmeAdapter(), $reviewer)['attempted'])->toBe(1);
 });
 
 /*
@@ -638,41 +692,62 @@ it('refuses to abandon a session the actor does not own, at the service level', 
 });
 
 it('still records the attestation and its audit row when a self-clear is refused', function () {
-    // Reachable when review authority is revoked MID-SESSION: the reviewer
-    // blocked the item while authorized, then changes their mind after losing
-    // the grant. The attestation is already committed by then, so letting the
-    // refused self-clear propagate would strand a persisted decision with stale
-    // counters and no ITEM_DECIDED audit row at all — the exact gap
-    // ITEM_REFUSED exists to close elsewhere.
+    // REACHING THIS PATH TOOK A CORRECTION WORTH RECORDING. The obvious setup —
+    // revoke the reviewer's permission mid-session — does NOT reach the
+    // self-clear at all: `review_legacy_rme_imports` is itself one of the
+    // workspace scope's GOVERNANCE_PERMISSIONS, so losing it also collapses the
+    // actor's branch scope, and the scope gate refuses the attestation first
+    // with "Dokumen tidak tersedia pada cakupan cabang Anda". Correct behaviour,
+    // but it proves nothing about the self-clear.
+    //
+    // The separation requirement is config-driven and documented as such
+    // (SeparatePublisherGuard::CONFIG_KEY / LEGACY_RME_REQUIRE_SEPARATE_PUBLISHER),
+    // so toggling it mid-session is a realistic operator action that changes
+    // triage authority while leaving scope fully intact — which is exactly the
+    // condition needed.
+    config()->set(SeparatePublisherGuard::CONFIG_KEY, false);
+
+    // With separation off, the uploader may legitimately review and triage
+    // their own document, so they can raise the block.
     $uploader = superAdmin();
     $import = lbrRmeReady($uploader);
 
-    $blocker = superAdmin();
-    $session = lbrOpenSession(lbrRmeAdapter(), $blocker);
+    $session = lbrOpenSession(lbrRmeAdapter(), $uploader);
     $service = app(LegacyBatchReviewSessionService::class);
 
     $service->recordDecision(
-        $session, lbrRmeAdapter(), $blocker, (int) $import->getKey(),
+        $session, lbrRmeAdapter(), $uploader, (int) $import->getKey(),
         LegacyBatchReviewDecision::BLOCKED, LegacyBatchReviewReason::TRIAGE_ILLEGIBLE,
     );
 
-    // Revoke the reviewer's authority, keeping only read access, so the
-    // self-clear's authorization check now fails.
-    $blocker->syncRoles([]);
-    $blocker->syncPermissions(['view_legacy_rme_imports']);
-    $blocker->forgetCachedPermissions();
+    expect(LegacyReviewTriage::sole()->isBlocking())->toBeTrue();
+
+    // Separation is now required. The uploader keeps the permission (so scope
+    // is untouched) but loses triage authority over their own document.
+    config()->set(SeparatePublisherGuard::CONFIG_KEY, true);
+
+    expect(lbrRmeAdapter()->canClearTriage($uploader, $import->refresh()))->toBeFalse();
 
     $decision = $service->recordDecision(
-        $session, lbrRmeAdapter(), $blocker, (int) $import->getKey(),
+        $session, lbrRmeAdapter(), $uploader, (int) $import->getKey(),
         LegacyBatchReviewDecision::REVIEWED,
     );
 
-    // The attestation landed, with its counters and audit row.
-    expect($decision->decision)->toBe(LegacyBatchReviewDecision::REVIEWED);
+    // The attestation landed, WITH its counters and its audit row — the refused
+    // self-clear did not strand it.
+    expect($decision->decision)->toBe(LegacyBatchReviewDecision::REVIEWED)
+        ->and($decision->submit_status)->toBe(LegacyBatchReviewSubmitStatus::PENDING);
     expect($session->refresh()->marked_reviewed)->toBe(1);
-    expect(AuditLog::where('action', LegacyBatchReviewAuditService::ITEM_DECIDED)->count())->toBeGreaterThan(0);
+    expect(AuditLog::where('action', LegacyBatchReviewAuditService::ITEM_DECIDED)->count())
+        ->toBeGreaterThan(0);
 
-    // And it FAILED CLOSED: the block survives, so submit will refuse the item
+    // And it FAILED CLOSED: the block survives, so submit refuses the item
     // rather than reviewing something still withheld.
     expect(LegacyReviewTriage::sole()->isBlocking())->toBeTrue();
+
+    $summary = $service->submit($session->refresh(), lbrRmeAdapter(), $uploader);
+
+    expect($summary['applied'])->toBe(0)
+        ->and($summary['refused'])->toBe(1);
+    expect($import->refresh()->status)->toBe(LegacyRmeImportStatus::READY_FOR_REVIEW);
 });
