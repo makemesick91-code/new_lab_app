@@ -13,6 +13,7 @@ use App\Modules\LegacyRme\Support\LegacyRmeAuditEvent;
 use App\Modules\LegacyRme\Support\LegacyRmeBatchWindowRule;
 use App\Modules\LegacyRme\Support\LegacyRmeWaveBranchStatus;
 use App\Modules\LegacyRme\Support\LegacyRmeWaveStatus;
+use App\Support\Clinical\ClinicalClock;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -45,6 +46,7 @@ class LegacyRmeWaveGovernanceService
         private readonly LegacyRmeAuditService $audit,
         private readonly BranchService $branches,
         private readonly LegacyRmeBatchWindowRule $batchWindow,
+        private readonly ClinicalClock $clock,
     ) {}
 
     /**
@@ -176,13 +178,7 @@ class LegacyRmeWaveGovernanceService
     public function approve(User $actor, LegacyRmeMigrationWave $wave): LegacyRmeMigrationWave
     {
         return $this->transition($actor, $wave, LegacyRmeWaveStatus::APPROVED, null, function (LegacyRmeMigrationWave $locked) use ($actor): array {
-            if ((bool) config('legacy_rme_operations.require_separate_approver', false)
-                && $locked->created_by !== null
-                && (int) $locked->created_by === (int) $actor->getKey()) {
-                throw ValidationException::withMessages([
-                    'wave' => 'Gelombang migrasi harus disetujui oleh pengguna yang berbeda dari pembuatnya.',
-                ]);
-            }
+            $this->assertSeparateApprover($actor, $locked);
 
             // Re-verify the mirror at the moment of approval: approving a record
             // that already disagrees with the deployment's approval would put a
@@ -610,13 +606,10 @@ class LegacyRmeWaveGovernanceService
         ?string $plannedEndDate,
         string $reason,
     ): LegacyRmeMigrationWave {
-        $reason = trim($reason);
-
-        if ($reason === '') {
-            throw ValidationException::withMessages([
-                'reason' => 'Alasan perpanjangan wajib diisi. Perpanjangan persetujuan harus menyebutkan dasarnya.',
-            ]);
-        }
+        // The module's shared floor, not a looser local one. Every other
+        // reasoned action (pause, drain, cancel, complete) goes through this;
+        // the strictest action in the lifecycle must not have the loosest rule.
+        $reason = $this->assertReason($reason);
 
         if (trim((string) $plannedEndDate) === '') {
             throw ValidationException::withMessages([
@@ -637,19 +630,38 @@ class LegacyRmeWaveGovernanceService
                 ]);
             }
 
+            // The same two guards `approve()` applies, because this is the same
+            // kind of act. Without them `extend` would be the WEAK side of the
+            // maker/checker split it claims to join: the creator of a wave could
+            // grant it more time even where the deployment forbids them from
+            // approving it, and a wave whose recorded approval has drifted from
+            // the deployment could be re-approved for longer — the exact drift
+            // bindingMatches() exists to catch, and which `approve`, `activate`
+            // and `resume` all refuse.
+            $this->assertSeparateApprover($actor, $locked);
+
+            if (! $this->binding->bindingMatches($locked)) {
+                throw ValidationException::withMessages([
+                    'wave' => 'Catatan gelombang tidak lagi cocok dengan persetujuan pada deployment ini.',
+                ]);
+            }
+
             $before = $locked->planned_end_date?->toDateString();
 
             // The start date comes off the LOCKED row, never from the caller —
             // this operation has no business changing it, and routing both ends
             // through the one validator keeps a reversed window impossible.
+            // `required` tracks whether the row HAS a start date, rather than
+            // being pinned true. A wave registered before the window rule
+            // existed legitimately carries a null start, and normalize(…, true)
+            // throws on that — which would have made this action permanently
+            // impossible for exactly the population the rule's docblock says is
+            // preserved, while blaming a field the caller cannot supply.
+            // The end date is already guaranteed non-empty by the guard above.
             $window = $this->batchWindow->normalize(
                 $locked->planned_start_date?->toDateString(),
                 $plannedEndDate,
-                // Required regardless of the registration-time policy flag: the
-                // guard above has already refused an empty end date, so this
-                // only stops a deployment with the flag off from quietly
-                // dropping the start date it was given.
-                true,
+                $locked->planned_start_date !== null,
             );
 
             $after = $window[LegacyRmeBatchWindowRule::FIELD_END];
@@ -657,6 +669,18 @@ class LegacyRmeWaveGovernanceService
             // Read back under the lock, so two operators racing cannot both
             // extend from the same stale value — the second sees the first's
             // write and is refused if it would move the date backwards.
+            // With no current expiry there is nothing to shorten, so the
+            // monotonic guard below cannot fire — but a method called `extend`
+            // must still not write a window that is already over.
+            if ($before === null && $after !== null && $after < $this->clock->today()->toDateString()) {
+                throw ValidationException::withMessages([
+                    LegacyRmeBatchWindowRule::FIELD_END => sprintf(
+                        'Tanggal berakhir baru (%s) sudah lewat. Perpanjangan harus menetapkan masa berlaku yang belum berakhir.',
+                        $after,
+                    ),
+                ]);
+            }
+
             if ($before !== null && $after !== null && $after < $before) {
                 throw ValidationException::withMessages([
                     LegacyRmeBatchWindowRule::FIELD_END => sprintf(
@@ -767,6 +791,27 @@ class LegacyRmeWaveGovernanceService
     /**
      * @throws ValidationException
      */
+    /**
+     * Approver-is-not-creator, where the deployment asks for it.
+     *
+     * Shared by `approve()` and `extendBatchWindow()` rather than inlined
+     * twice: both are approval acts, and a rule enforced at one of two call
+     * sites is a rule with a hole in it. Production runs with
+     * LEGACY_RME_REQUIRE_SEPARATE_APPROVER=true, so this is live, not latent.
+     *
+     * @throws ValidationException
+     */
+    private function assertSeparateApprover(User $actor, LegacyRmeMigrationWave $locked): void
+    {
+        if ((bool) config('legacy_rme_operations.require_separate_approver', false)
+            && $locked->created_by !== null
+            && (int) $locked->created_by === (int) $actor->getKey()) {
+            throw ValidationException::withMessages([
+                'wave' => 'Gelombang migrasi harus disetujui oleh pengguna yang berbeda dari pembuatnya.',
+            ]);
+        }
+    }
+
     private function assertReason(string $reason): string
     {
         $reason = trim($reason);

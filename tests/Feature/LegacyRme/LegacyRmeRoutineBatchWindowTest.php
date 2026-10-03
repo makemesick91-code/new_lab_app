@@ -595,7 +595,7 @@ it('leaves assignments, enrollment and quota exactly as they were', function () 
     $branchBefore = $wave->branches()->where('branch_code', 'TLK1')->firstOrFail();
     $assignmentsBefore = DB::table('ops_rme_legacy_wave_operators')->orderBy('id')->get()->toArray();
 
-    windowGovernance()->extendBatchWindow(windowApprover(), $wave, '2026-10-31', 'owner approval');
+    windowGovernance()->extendBatchWindow(windowApprover(), $wave, '2026-10-31', 'owner approval recorded');
 
     $after = $wave->refresh();
     $branchAfter = $after->branches()->where('branch_code', 'TLK1')->firstOrFail();
@@ -620,7 +620,7 @@ it('refuses to shorten a window, and names the verb that does close a batch earl
     $thrown = null;
 
     try {
-        windowGovernance()->extendBatchWindow(windowApprover(), $wave, '2026-08-25', 'shrink it');
+        windowGovernance()->extendBatchWindow(windowApprover(), $wave, '2026-08-25', 'shrink it, please');
     } catch (ValidationException $e) {
         $thrown = $e;
     }
@@ -636,7 +636,7 @@ it('accepts an idempotent re-extension to the same date', function () {
     // be safe for an operator who is unsure whether the first attempt landed.
     $wave = windowActiveWave('EXT-SAME', '2026-08-19', '2026-09-30');
 
-    $updated = windowGovernance()->extendBatchWindow(windowApprover(), $wave, '2026-09-30', 'same date again');
+    $updated = windowGovernance()->extendBatchWindow(windowApprover(), $wave, '2026-09-30', 'same date again, confirming');
 
     expect($updated->planned_end_date->toDateString())->toBe('2026-09-30');
 });
@@ -646,7 +646,7 @@ it('rejects a malformed date rather than reinterpreting it', function () {
     $wave = windowActiveWave('EXT-BADDATE', '2026-08-19', '2026-08-20');
 
     foreach (['31-10-2026', 'next friday', '2026-13-45', 'tomorrow'] as $bad) {
-        expect(fn () => windowGovernance()->extendBatchWindow(windowApprover(), $wave->refresh(), $bad, 'owner approval'))
+        expect(fn () => windowGovernance()->extendBatchWindow(windowApprover(), $wave->refresh(), $bad, 'owner approval recorded'))
             ->toThrow(ValidationException::class);
     }
 
@@ -657,7 +657,7 @@ it('refuses to remove the expiry altogether', function () {
     $wave = windowActiveWave('EXT-NOEXPIRY', '2026-08-19', '2026-08-20');
 
     foreach ([null, '', '   '] as $empty) {
-        expect(fn () => windowGovernance()->extendBatchWindow(windowApprover(), $wave->refresh(), $empty, 'owner approval'))
+        expect(fn () => windowGovernance()->extendBatchWindow(windowApprover(), $wave->refresh(), $empty, 'owner approval recorded'))
             ->toThrow(ValidationException::class);
     }
 
@@ -667,7 +667,10 @@ it('refuses to remove the expiry altogether', function () {
 it('requires a reason, because an extension has to say what it rests on', function () {
     $wave = windowActiveWave('EXT-NOREASON', '2026-08-19', '2026-08-20');
 
-    foreach (['', '   '] as $blank) {
+    // Blank AND too-short: the shared assertReason() floor
+    // (min_reason_length, 10) applies here exactly as it does to pause, drain,
+    // cancel and complete. "ok" is not an audit trail.
+    foreach (['', '   ', 'x', 'too short'] as $blank) {
         expect(fn () => windowGovernance()->extendBatchWindow(windowApprover(), $wave->refresh(), '2026-09-30', $blank))
             ->toThrow(ValidationException::class);
     }
@@ -679,7 +682,7 @@ it('refuses to extend a closed batch rather than reopening it', function () {
     $wave = windowActiveWave('EXT-CLOSED', '2026-08-19', '2026-08-20');
     windowGovernance()->cancelWave(windowOperator(), $wave, 'closed for the test');
 
-    expect(fn () => windowGovernance()->extendBatchWindow(windowApprover(), $wave->refresh(), '2026-09-30', 'reopen me'))
+    expect(fn () => windowGovernance()->extendBatchWindow(windowApprover(), $wave->refresh(), '2026-09-30', 'reopen me if you can'))
         ->toThrow(ValidationException::class);
 
     expect($wave->refresh()->planned_end_date->toDateString())->toBe('2026-08-20');
@@ -699,9 +702,9 @@ it('serializes competing extensions by re-reading the row under the lock', funct
     $wave = windowActiveWave('EXT-RACE', '2026-08-19', '2026-08-20');
     $stale = LegacyRmeMigrationWave::query()->findOrFail($wave->getKey());
 
-    windowGovernance()->extendBatchWindow(windowApprover(), $stale, '2026-10-31', 'first writer');
+    windowGovernance()->extendBatchWindow(windowApprover(), $stale, '2026-10-31', 'first writer extending');
 
-    expect(fn () => windowGovernance()->extendBatchWindow(windowApprover(), $stale, '2026-09-30', 'second writer'))
+    expect(fn () => windowGovernance()->extendBatchWindow(windowApprover(), $stale, '2026-09-30', 'second writer extending'))
         ->toThrow(ValidationException::class);
 
     expect($wave->refresh()->planned_end_date->toDateString())->toBe('2026-10-31');
@@ -748,7 +751,7 @@ it('is genuinely read-only without --apply', function () {
         'action' => 'extend',
         '--wave' => 'EXT-DRY',
         '--planned-end-date' => '2026-10-31',
-        '--reason' => 'owner approval',
+        '--reason' => 'owner approval recorded',
         '--actor' => (string) windowApprover()->getKey(),
         '--json' => true,
     ]);
@@ -782,10 +785,110 @@ it('extends through the CLI when the approver applies it', function () {
 
     expect($exit)->toBe(0)
         ->and($payload['applied'])->toBeTrue()
-        ->and($payload['planned_end_date_before'])->toBe('2026-08-20')
-        ->and($payload['planned_end_date_after'])->toBe('2026-10-31')
-        ->and($payload['status'])->toBe(LegacyRmeWaveStatus::ACTIVE);
+        ->and($payload['planned_end_date'])->toBe('2026-10-31')
+        ->and($payload['status'])->toBe(LegacyRmeWaveStatus::ACTIVE)
+        // The CLI reports no "before": the only value available to it is the
+        // pre-lock one. The authoritative pair lives in the audit row, read
+        // under the lock.
+        ->and($payload)->not->toHaveKey('planned_end_date_before');
+
+    $payload = json_decode((string) DB::table('sys_audit_logs')
+        ->where('action', LegacyRmeAuditEvent::WAVE_WINDOW_EXTENDED)
+        ->value('new_values'), true);
+
+    expect($payload['planned_end_date_before'])->toBe('2026-08-20')
+        ->and($payload['planned_end_date_after'])->toBe('2026-10-31');
 
     expect($wave->refresh()->planned_end_date->toDateString())->toBe('2026-10-31')
         ->and($wave->refresh()->planned_start_date->toDateString())->toBe('2026-08-19');
+});
+
+it('applies the separate-approver rule, so a creator cannot extend their own batch', function () {
+    // Production runs with LEGACY_RME_REQUIRE_SEPARATE_APPROVER=true, and
+    // `approve()` has always enforced it. An `extend` that skipped it would be
+    // the WEAK side of the maker/checker split rather than the strict side:
+    // the wave's creator could grant their own batch more time precisely where
+    // the deployment forbids them from approving it.
+    config()->set('legacy_rme_operations.require_separate_approver', true);
+
+    // One account that both creates AND holds the approver ability.
+    $both = userWith([
+        'manage_legacy_rme_migration_operations',
+        'approve_legacy_rme_migration_wave',
+        'view_legacy_rme_migration_operations',
+    ]);
+
+    $wave = windowGovernance()->createWave(
+        actor: $both,
+        code: 'EXT-SELF',
+        name: 'Batch sendiri',
+        branchCodes: ['TLK1'],
+        dailyQuota: null,
+        perBranchDailyQuota: null,
+        plannedStartDate: '2026-08-19',
+        plannedEndDate: '2026-08-20',
+    );
+    windowGovernance()->approve(windowApprover(), $wave);
+    windowGovernance()->activate(windowOperator(), $wave->refresh());
+
+    expect(fn () => windowGovernance()->extendBatchWindow($both, $wave->refresh(), '2026-10-31', 'extending my own batch'))
+        ->toThrow(ValidationException::class);
+
+    // A different approver may.
+    $updated = windowGovernance()->extendBatchWindow(windowApprover(), $wave->refresh(), '2026-10-31', 'extending someone elses batch');
+
+    expect($updated->planned_end_date->toDateString())->toBe('2026-10-31');
+});
+
+it('refuses to extend a wave whose recorded approval has drifted from the deployment', function () {
+    // `approve`, `activate` and `resume` all refuse a drifted record. An
+    // `extend` that did not would re-approve an unbound scope for longer —
+    // exactly the drift bindingMatches() exists to catch.
+    $wave = windowActiveWave('EXT-DRIFT', '2026-08-19', '2026-08-20');
+
+    legacyRmeApproveWave('ROUTINE-APPROVAL-MOVED-ON', ['TLK1']);
+
+    expect(fn () => windowGovernance()->extendBatchWindow(windowApprover(), $wave->refresh(), '2026-10-31', 'extending a drifted batch'))
+        ->toThrow(ValidationException::class);
+
+    expect($wave->refresh()->planned_end_date->toDateString())->toBe('2026-08-20');
+});
+
+it('extends a legacy wave that carries no start date instead of blaming that field', function () {
+    // A wave registered before the window rule existed legitimately has a null
+    // start. normalize(…, required: true) throws on that, which would have made
+    // this action permanently impossible for that population while reporting a
+    // field the caller cannot even supply.
+    legacyRmeMigrationWave(['TLK1'], 'EXT-NOSTART');
+    $wave = LegacyRmeMigrationWave::query()->where('code', 'EXT-NOSTART')->firstOrFail();
+    $wave->forceFill([
+        'planned_start_date' => null,
+        'planned_end_date' => '2026-09-30',
+        'status' => LegacyRmeWaveStatus::ACTIVE,
+    ])->save();
+
+    $updated = windowGovernance()->extendBatchWindow(windowApprover(), $wave, '2026-10-31', 'extending a legacy batch');
+
+    expect($updated->planned_end_date->toDateString())->toBe('2026-10-31')
+        ->and($updated->planned_start_date)->toBeNull();
+});
+
+it('will not hand an expiry-less wave a window that is already over', function () {
+    // With no current end date the monotonic guard cannot fire, so without this
+    // a method called `extend` would happily write a lapsed window.
+    legacyRmeMigrationWave(['TLK1'], 'EXT-NOEND');
+    $wave = LegacyRmeMigrationWave::query()->where('code', 'EXT-NOEND')->firstOrFail();
+    $wave->forceFill([
+        'planned_start_date' => '2019-01-01',
+        'planned_end_date' => null,
+        'status' => LegacyRmeWaveStatus::ACTIVE,
+    ])->save();
+
+    expect(fn () => windowGovernance()->extendBatchWindow(windowApprover(), $wave, '2020-01-01', 'setting a lapsed window'))
+        ->toThrow(ValidationException::class);
+
+    // A future date is accepted, which is what setting a first expiry means.
+    $updated = windowGovernance()->extendBatchWindow(windowApprover(), $wave->refresh(), '2099-01-01', 'setting a real window');
+
+    expect($updated->planned_end_date->toDateString())->toBe('2099-01-01');
 });

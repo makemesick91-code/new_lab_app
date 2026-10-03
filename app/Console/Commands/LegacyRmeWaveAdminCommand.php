@@ -173,8 +173,6 @@ class LegacyRmeWaveAdminCommand extends Command
     {
         $wave = $this->requireWave();
 
-        $before = $wave->planned_end_date?->toDateString();
-
         $updated = $governance->extendBatchWindow(
             $actor,
             $wave,
@@ -182,12 +180,17 @@ class LegacyRmeWaveAdminCommand extends Command
             $this->reason(),
         );
 
+        // Deliberately NOT reporting a "before" value here. The only one
+        // available to this method is the pre-lock, in-memory value, which two
+        // concurrent runs can make wrong; the audit row carries the
+        // authoritative before/after pair read under the lock. The dry run
+        // (current_planned_end_date -> planned_end_date) is where an operator
+        // sees the move before committing to it.
         return [
             'wave' => $updated->code,
             'status' => $updated->status,
             'planned_start_date' => $updated->planned_start_date?->toDateString(),
-            'planned_end_date_before' => $before,
-            'planned_end_date_after' => $updated->planned_end_date?->toDateString(),
+            'planned_end_date' => $updated->planned_end_date?->toDateString(),
         ];
     }
 
