@@ -1,0 +1,180 @@
+---
+description: FEATURE-LEGACY-BATCH-REVIEW-PUBLISH-1 — batch review and batch publish rules for the legacy RME / odontogram archives
+globs:
+  - "app/Modules/LegacyImport/BatchReview/**"
+  - "database/migrations/*legacy_batch_review*"
+  - "tests/Feature/LegacyBatchReview/**"
+  - "resources/views/settings/rme/legacy-batch-review/**"
+alwaysApply: false
+---
+
+# Legacy batch review & batch publish
+
+Shipped as **2 PRs split by risk, not by document type**. Review is non-final;
+publish is the dangerous, final half. PR2 starts only after PR1 is merged,
+deployed, production-verified and GO-tagged. Do not combine them to save
+delivery cycles.
+
+- **PR1 — batch review** (both archives). Workspace, prev/next navigation,
+  per-item Reviewed / Blocked / Needs Attention, sticky triage, audit, sidebar,
+  authorization, tests. **Adds no batch publishing.**
+- **PR2 — batch publish** (both archives). Selection of REVIEWED items,
+  per-item publish-time revalidation, SOD, single-active guard, patient
+  binding, date/native boundary, PostgreSQL concurrency, idempotency, partial
+  success, resume after interruption.
+
+## 1. Human review stays per item. There is no "Review All".
+
+The workspace speeds up reaching and inspecting a document; it never
+substitutes for inspection. Enforced structurally, not by UI convention:
+
+- `LegacyBatchReviewDecision` has **no** "all" value.
+- `RecordLegacyBatchReviewDecisionRequest` names exactly **one** `import_id` —
+  no `import_ids`, no `all`, no `select_all`.
+- `SubmitLegacyBatchReviewRequest` carries **no item list**; the server submits
+  the decision rows it already recorded, never what a client claims.
+- `submit()` can only act on existing decision rows, so an item nobody attested
+  is untouched.
+
+Browser-open is **not** proof of clinical review. `first_viewed_at` /
+`pages_viewed` are supporting evidence read by **no gate** — a precondition the
+system can satisfy on the operator's behalf proves nothing. The actor's
+attestation is the authoritative signal.
+
+## 2. Item-level truth, never one opaque batch flag
+
+Every decision is its own row carrying session, import type, import id,
+patient, source SHA-256, decision, reason code, actor and timestamp. There is
+no `batch_reviewed = true` column. The canonical `reviewed_by` / `reviewed_at`
+on the staging row, written only by the canonical review service under its own
+row lock, remains the clinical record of review.
+
+## 3. The two archives are asymmetric. Use the adapter; never a type branch.
+
+Identical nine-state machines (`DRAFT`..`CANCELLED`), but
+**intentional-but-independent** — the odontogram vocabulary is derived from its
+own transition map, not copied. Enforcement differs:
+
+| | Legacy RME | Legacy Odontogram |
+|---|---|---|
+| Canonical write path | `LegacyRmeImportLifecycleService::perform()` (shared with the ops CLI) | none; the controller composes gates and calls `LegacyOdontogramPublishService` |
+| Separation of duties | **ENFORCED** on review *and* publish | **NONE** anywhere in the module |
+| Date rules | includes `PATIENT_HAS_NO_NATIVE_RME`; compares a date RANGE | native is OPTIONAL; single date |
+
+Never enforce RME's separation rule on odontogram (the batch surface would be
+silently stricter than the canonical page it mirrors), and never drop it from
+RME (a clinical control would vanish silently). Both directions are pinned by
+tests. If odontogram should gain separation, that belongs in the odontogram
+module, applied to both surfaces, in its own sprint.
+
+## 4. "Block" is a sticky, non-destructive SECOND AXIS
+
+```
+canonical import status = READY_FOR_REVIEW   (never written by triage)
+review_triage_status    = BLOCKED            (stg_legacy_review_triage)
+```
+
+and **not** `canonical import status = CANCELLED`. No new clinical lifecycle
+state is invented. Blocking:
+
+- calls no canonical service and writes no canonical column;
+- **never** releases the patient's single-active-document slot — that slot is
+  held by the canonical staging row's status, and
+  `LegacySingleActiveDocumentService` does not consult the triage table;
+- requires a `reason_code` from the closed `LegacyBatchReviewReason::triageCodes()`
+  list (a crafted code is refused);
+- may be cleared or changed later by an authorized reviewer.
+
+Cancellation remains a separate, explicit, terminal act through the existing
+single-item flow.
+
+**Clearing is a review-authority act**, routed through the adapter so it reuses
+canonical policy truth per type: on RME an uploader barred from reviewing their
+own document cannot clear a block on it; on odontogram a review-permission
+holder can. A `CLEARED` row is retained rather than deleted so "who released
+this" stays answerable.
+
+A REVIEWED attestation clears only triage **raised in that same session**. It
+must never clear a colleague's block — that would let any reviewer override
+another's judgement just by marking an item reviewed.
+
+## 5. Partial success is the design. Never one outer transaction.
+
+One import is one transaction: the canonical review service opens its own,
+takes its own row lock, and writes its audit row **after** commit. Wrapping N of
+those in one outer transaction would roll back already-successful reviews and
+make the post-commit audit rows lie.
+
+`submit()` therefore **loops** the canonical per-import call. 74 attested, 2
+refused ⇒ 72 reviewed and 2 refused, never 0. A refusal is caught, classified to
+a stable `REFUSAL_*` code with the canonical message carried verbatim, written
+onto that decision row, and the loop continues.
+
+Resumability: only `PENDING`/`REFUSED` rows are re-attempted, so an interrupted
+pass redoes nothing. A submit with nothing retryable is a harmless no-op
+returned **before** the status transition, while `SUBMITTED` stays terminal.
+
+## 6. No permission widening
+
+Reuses `review_legacy_rme_imports` and `review_legacy_odontogram_imports`
+verbatim. **Never** create a batch-specific ability — a role grant whose only
+job is to reveal a menu is how privilege creeps. Batch surfaces are aggregate
+orchestration over existing authorization: route `permission:` middleware, then
+the canonical gate chain per item.
+
+Branch scope comes from `LegacyRmeWorkspaceScope` / `LegacyOdontogramWorkspaceScope`
+(deliberately separate membership) and **never** from the request. Note
+`review_legacy_*_imports` is itself a governance permission, so a reviewer
+legitimately spans every RME-enabled branch — that is canonical design, and the
+scope is still re-resolved server-side on every request.
+
+A session is reachable only by the reviewer who opened it, only through its own
+archive's route group, addressed by UUID constrained at the route level.
+Out-of-scope resolves to **absence (404)**, never 403, so an actor cannot probe
+which archive ids exist in a branch they cannot see.
+
+## 7. Audit carries counts and references, never clinical payloads
+
+`LEGACY_BATCH_REVIEW_SESSION_OPENED` / `ITEM_DECIDED` / `ITEM_REFUSED` /
+`SUBMITTED` / `SESSION_ABANDONED`, plus `LEGACY_REVIEW_TRIAGE_RAISED` /
+`CHANGED` / `CLEARED`. Payloads pass an **allowlist** (not a denylist) and are
+masked and bounded. `reason_note` is deliberately **absent** from the allowlist
+— it is operator prose that may name a patient, so it lives on the decision row
+behind authorization, never in a permanent audit payload.
+
+The per-item canonical `IMPORT_REVIEWED` event stays authoritative and now
+carries `LegacyRmeAuditEvent::CHANNEL_BATCH`, so an auditor can tell a batch
+submit from 70 individual browser actions. `ITEM_REFUSED` fills a real
+pre-existing gap: the canonical single-item review writes no refusal event. It
+is scoped to the batch path and does not retrofit the single-item page.
+
+## 8. PR2's selection contract
+
+A batch publish may select an item only when **all three** hold:
+
+```
+canonical status = REVIEWED
+AND no active blocking triage annotation
+AND every current publish-time guard passes
+```
+
+No `BLOCKED` and no `NEEDS_ATTENTION` item may be selected or published. Consult
+`LegacyReviewTriageService::blockingFor()` — one indexed row, not a ranking over
+history.
+
+## 9. Testing notes
+
+- Database invariants (unique triage row per import) rely on NULL-distinct
+  unique indexes and are proven against **real PostgreSQL 16**, skipped on
+  SQLite — asserting them on SQLite would prove nothing about production.
+- PostgreSQL **aborts the whole transaction** on any failed statement, so an
+  intentional unique violation must be contained in a `DB::transaction()`
+  savepoint or every later assertion fails with `SQLSTATE 25P02`. SQLite hides
+  this entirely.
+- `superAdmin()` mints a **fresh** account per call. A test needing the same
+  actor twice must hold one variable, or the session-ownership guard fires
+  instead of the rule under test.
+- Audit payloads land in `AuditLog::new_values`, not `metadata`.
+- Legacy odontogram fixtures live in `tests/Feature/LegacyOdontogram/helpers.php`
+  and must not be replaced by the RME ones — `legacyRmeBranch()` also admits a
+  migration wave and rewrites that module's rollout config.

@@ -34,10 +34,26 @@ final class LegacyRmeAuditEvent
 
     public const CHANNEL_CLI = 'CLI';
 
+    /*
+    | FEATURE-LEGACY-BATCH-REVIEW-PUBLISH-1 — a batch review workspace submit.
+    |
+    | Added for the same reason CLI was: so an auditor can tell WHICH SURFACE
+    | asked, without a second parallel audit event. A batch submit is still an
+    | HTTP request, but recording it as HTTP would make 70 canonical reviews
+    | indistinguishable from 70 individual browser actions — which is precisely
+    | the question an audit of a batch migration asks first.
+    |
+    | Like the other two, this is STRUCTURE ONLY and never an authorization
+    | input. The batch surface calls the same lifecycle service through the same
+    | six gates; the channel changes nothing about what is permitted.
+    */
+    public const CHANNEL_BATCH = 'BATCH';
+
     /** @var list<string> */
     public const CHANNELS = [
         self::CHANNEL_HTTP,
         self::CHANNEL_CLI,
+        self::CHANNEL_BATCH,
     ];
 
     public const IMPORT_CREATED = 'LEGACY_RME_IMPORT_CREATED';

@@ -1,76 +1,107 @@
-# FIX-LEGACY-WAVE4-WINDOW-EXTENSION-1
+# FEATURE-LEGACY-BATCH-REVIEW-PUBLISH-1 — PR1 of 2 (BATCH REVIEW)
 #
-# A migration batch's approved window was immutable once registered.
+# Reviewing and publishing legacy archives one document at a time is
+# operationally too slow. This feature makes both batch-oriented — but they are
+# NOT equivalent, and the owner split them across two PRs by RISK rather than by
+# document type: review is non-final, publish is the dangerous, final half.
 #
-# ROOT CAUSE — measured against the deployed tree, not inferred. WAVE-4's
-# approval window ran 2026-08-28 -> 2026-09-30. On 2026-10-04,
-# `legacy-rme:ops-readiness` reported:
+# PR1 (this manifest) ships BATCH REVIEW for both Legacy RME and Legacy
+# Odontogram and changes nothing whatsoever about publishing. PR2 starts only
+# after PR1 is merged, deployed, production-verified and GO-tagged.
 #
-#   WATCH  batch_window  The batch is past its planned end date.
-#   -> Close the batch out, or record a fresh approval extending it.
-#      Do not keep migrating against a lapsed window.
+# THE PRODUCT RULE PR1 PROTECTS
+# -----------------------------
+# There is no "Review All". The workspace speeds up REACHING and INSPECTING each
+# document; it never substitutes for inspection. That is enforced structurally,
+# not by UI convention: the decision vocabulary has no "all" value, the request
+# that records an attestation names exactly one import, the submit request
+# carries no item list at all, and submit() can only act on decision rows that
+# already exist. An item nobody attested is untouched.
 #
-# The remediation it printed was impossible to carry out. `planned_end_date` had
-# exactly one writer in the whole codebase — `createWave()`, which `create()`s
-# against a UNIQUE `code`. There was no window setter on
-# LegacyRmeWaveGovernanceService, no `extend` CLI action, and no HTTP route.
-# Verified across all three surfaces, not assumed.
+# Browser-open is deliberately NOT treated as proof of clinical review. View
+# telemetry is recorded as supporting evidence and read by no gate — a
+# precondition the system can satisfy on the operator's behalf would prove
+# nothing.
 #
-# So the only route the design offered was cancel-and-re-register under a new
-# code, which discards the batch's branch enrollments and operator assignments —
-# a destructive answer to an administrative question, and one the owner
-# explicitly ruled out ("DO NOT CLOSE IT. WAVE-4 remains ACTIVE").
+# WHAT THE AUDIT FOUND, AND WHY THERE ARE TWO ADAPTERS
+# ----------------------------------------------------
+# Both lifecycles were read before any code was written. They share an identical
+# nine-state machine (DRAFT..CANCELLED, same TRANSITIONS, same SLOT_OCCUPYING)
+# but that agreement is intentional-but-independent — the odontogram module
+# documents that its map is "derived from THIS module's own transition map, not
+# copied from the RME one".
 #
-# This is the same shape as the already-documented gap for the wave-level quota.
-# The capability is built once, canonically, rather than repaired by hand each
-# time a window lapses.
+# Their ENFORCEMENT differs sharply:
 #
-# EXTEND MEANS EXTEND. A new end date earlier than the current one is refused:
-# shortening retroactively de-approves work already accepted inside the window,
-# and the lifecycle already has honest verbs for stopping early (`drain`,
-# `complete`, `cancel`). A null end date is refused too — an approval that never
-# expires is one nobody revisits, which is why the window exists at all.
+#   RME        routes every write through LegacyRmeImportLifecycleService
+#              ::perform(), shared verbatim with the ops CLI, running six
+#              numbered gates INCLUDING separation of duties on review.
+#   Odontogram has no lifecycle service and NO separation guard at all (a grep
+#              for `separation` across the module returns zero hits), so an
+#              uploader reviewing their own chart is permitted behaviour today.
 #
-# AUTHORIZATION IS THE APPROVER'S, NOT THE MANAGER'S. `extend` is gated on the
-# `approve` ability alongside `approve` itself, not on `update`. Lengthening an
-# approval window IS an approval act, and gating it on `update` would let
-# whoever runs the rollout quietly grant their own batch more time. That is the
-# separation the maker/checker split exists to protect, so the new action joins
-# the stricter side of it.
+# So batch review ships TWO adapter implementations, never one method with a
+# type branch. Enforcing RME's rule on odontogram would make the batch surface
+# silently stricter than the canonical page it mirrors; dropping it from RME
+# would silently remove a clinical control. Both directions are pinned by tests.
 #
-# The START date is read back off the locked row and never taken from the
-# caller. Status, quota (both levels), approval reference, approved branch set,
-# branch enrollments and operator assignments are all asserted untouched.
+# BLOCK IS A STICKY, NON-DESTRUCTIVE SECOND AXIS
+# ----------------------------------------------
+#   canonical import status = READY_FOR_REVIEW   (never written by triage)
+#   review_triage_status    = BLOCKED            (new, additive, operational)
 #
-# WRITES ONE COLUMN, UNDER A LOCK. DB::transaction + lockForUpdate, with the
-# terminal-status check and the current end date BOTH re-read inside the lock —
-# so two operators racing cannot extend from the same stale value. A dedicated
-# WAVE_WINDOW_EXTENDED audit event carries actor, wave, status, start, and the
-# end date BEFORE and AFTER, plus a bounded reason. Before-and-after is the half
-# that makes the decision reviewable; "extended to the 31st" alone is not an
-# auditable fact.
+# and explicitly NOT `canonical import status = CANCELLED`. No new clinical
+# lifecycle state is invented, because the existing schema does not require one.
+# Blocking calls no canonical service, writes no canonical column, and never
+# releases the patient's single-active-document slot — that slot is held by the
+# canonical staging row's own status, and LegacySingleActiveDocumentService does
+# not consult the triage table at all. Cancellation remains a separate, explicit,
+# terminal act through the existing single-item flow.
 #
-# NO migration. NO permission, role, route or schema change. No clinical
-# behaviour, no publish/review/VOID path, no branch isolation, no ledger, no
-# single-active-document rule, no patient/RM binding, no date rule, no quota or
-# batch-size policy.
+# Clearing a block is itself a review-authority act, routed through the adapter
+# so it reuses the canonical policy truth per type: on RME an uploader barred
+# from reviewing their own document is equally barred from clearing a block on
+# it; on odontogram, where no separation guard exists, a review-permission
+# holder may.
+#
+# PARTIAL SUCCESS IS THE DESIGN, NOT AN ERROR PATH
+# ------------------------------------------------
+# One import is one transaction and the canonical layer is built that way — the
+# review service opens its own transaction, takes its own row lock, and writes
+# its audit row AFTER commit. Wrapping N of those in one outer transaction would
+# roll back reviews that had already succeeded and would make the post-commit
+# audit rows lie. So submit() LOOPS the canonical per-import call: 74 attested,
+# 2 refused by the domain => 72 reviewed and 2 refused, never 0.
+#
+# NO PERMISSION WIDENING. Reuses `review_legacy_rme_imports` and
+# `review_legacy_odontogram_imports` verbatim. No batch-specific ability exists,
+# because a role grant whose only job is to reveal a menu is how privilege
+# creeps. Nothing here grants create, publish or VOID.
+#
+# schema_change: true — three ADDITIVE staging tables, no column dropped, no
+# existing table altered, no backfill. `migrate` only; never migrate:fresh or
+# db:wipe. Nothing in them is clinical: deleting every row would lose the
+# operator work-queue and change not one patient's archive.
+#
+# security_impact: true — a new authorization surface (session ownership, triage
+# clearing, cross-archive IDOR) even though every clinical gate is inherited
+# rather than re-expressed.
 
-id: FIX-LEGACY-WAVE4-WINDOW-EXTENSION-1
-type: RUNTIME_FIX
-module: LegacyRme
-title: "A registered migration batch's approved window was immutable — createWave() was the only writer of planned_end_date, so the lapsed-window remediation ops-readiness prints could not be carried out; add the canonical extendBatchWindow() service method and `wave-admin extend` action, gated on the approver's ability"
+id: FEATURE-LEGACY-BATCH-REVIEW-PUBLISH-1-PR1
+type: MODULE_SPRINT
+module: LegacyImport
+title: "Batch review workspace for Legacy RME and Legacy Odontogram: efficient per-item human review with prev/next navigation and keyboard shortcuts, sticky non-destructive triage (Blocked / Needs Attention) that never touches the canonical lifecycle or the single-active-document slot, bulk submit of individually-attested decisions through the canonical per-item review path with partial success and resumability — no Review All, no permission widening, publish path untouched"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 runtime_change: true
-schema_change: false
-frontend_change: false
+schema_change: true
+frontend_change: true
 security_impact: true
-branch_isolation_impact: false
+branch_isolation_impact: true
 ledger_impact: false
 deploy_required: true
 browser_required: false
 test_profiles: []
-go_tag: fix-legacy-wave4-window-extension-1-go
+go_tag: feature-legacy-batch-review-publish-1-pr1-go
 go_tag_created: false
-inherits_parent_go: bugfix-mass-upload-request-entity-too-large-1-go
+inherits_parent_go: fix-legacy-wave4-window-extension-1-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
-revises: LEGACY-RME-PDF-ROLL-4
