@@ -289,6 +289,102 @@ it('bounds the intake execution budget and never treats it as unlimited', functi
 
 /*
 |--------------------------------------------------------------------------
+| The intake budget RAISES; it must never shorten or impose a limit
+|--------------------------------------------------------------------------
+|
+| set_time_limit() REPLACES the limit and restarts the counter — it does not
+| extend it. The first version of the intake budget called it unconditionally,
+| and because the CLI SAPI defaults max_execution_time to 0 (unlimited), one
+| test POSTing to this route armed a 900-second kill timer on the entire Pest
+| process. CI died with "Maximum execution time of 900 seconds exceeded" long
+| after the upload test itself had passed, while every local suite finished
+| inside 900s and showed nothing.
+*/
+
+it('leaves an unlimited ambient time budget untouched', function (): void {
+    $uploader = lmuLimitUploader();
+    $patient = lmuLimitPatient();
+
+    $zip = legacyMassUploadZip(
+        documents: ['a.pdf' => legacyRmePdfBytes(1)],
+        manifestRows: [
+            legacyMassUploadRmeRow($patient->medical_record_number, 'a.pdf', '2018-01-02'),
+        ],
+    );
+
+    // 0 is what the CLI SAPI uses and what a long-lived process relies on.
+    $restore = (int) ini_get('max_execution_time');
+    ini_set('max_execution_time', '0');
+
+    try {
+        $this->actingAs($uploader)
+            ->post(route('settings.rme.legacy-mass-imports.store'), ['package' => $zip])
+            ->assertRedirect();
+
+        // The exact regression: intake must NOT convert an unbounded process
+        // into one that dies after the configured budget.
+        expect((int) ini_get('max_execution_time'))->toBe(0);
+    } finally {
+        ini_set('max_execution_time', (string) $restore);
+    }
+});
+
+it('never shortens an ambient budget that is already more generous', function (): void {
+    $uploader = lmuLimitUploader();
+    $patient = lmuLimitPatient();
+
+    $zip = legacyMassUploadZip(
+        documents: ['a.pdf' => legacyRmePdfBytes(1)],
+        manifestRows: [
+            legacyMassUploadRmeRow($patient->medical_record_number, 'a.pdf', '2018-01-02'),
+        ],
+    );
+
+    $generous = ((int) config('legacy_mass_upload.intake.max_execution_seconds')) + 600;
+
+    $restore = (int) ini_get('max_execution_time');
+    ini_set('max_execution_time', (string) $generous);
+
+    try {
+        $this->actingAs($uploader)
+            ->post(route('settings.rme.legacy-mass-imports.store'), ['package' => $zip])
+            ->assertRedirect();
+
+        expect((int) ini_get('max_execution_time'))->toBe($generous);
+    } finally {
+        ini_set('max_execution_time', (string) $restore);
+    }
+});
+
+it('raises a shorter ambient budget up to the configured intake budget', function (): void {
+    $uploader = lmuLimitUploader();
+    $patient = lmuLimitPatient();
+
+    $zip = legacyMassUploadZip(
+        documents: ['a.pdf' => legacyRmePdfBytes(1)],
+        manifestRows: [
+            legacyMassUploadRmeRow($patient->medical_record_number, 'a.pdf', '2018-01-02'),
+        ],
+    );
+
+    // The real production case: the pool's 30s default is too short for intake.
+    $restore = (int) ini_get('max_execution_time');
+    ini_set('max_execution_time', '30');
+
+    try {
+        $this->actingAs($uploader)
+            ->post(route('settings.rme.legacy-mass-imports.store'), ['package' => $zip])
+            ->assertRedirect();
+
+        expect((int) ini_get('max_execution_time'))
+            ->toBe((int) config('legacy_mass_upload.intake.max_execution_seconds'));
+    } finally {
+        ini_set('max_execution_time', (string) $restore);
+    }
+});
+
+/*
+|--------------------------------------------------------------------------
 | The application stays the authority
 |--------------------------------------------------------------------------
 */

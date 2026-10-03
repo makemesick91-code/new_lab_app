@@ -64,6 +64,26 @@ The same 1 MiB default had already refused two other clinical upload paths:
 One shared infrastructure gap, three visible symptoms. The fix is scoped to the
 DaengtisiaMS `server` block, so it closes all three.
 
+### Ruled out: there is no third party in front of nginx
+
+A CDN or load balancer would impose its own body cap (Cloudflare's free tier caps
+uploads at 100 MB, which would silently defeat a 512 MiB ceiling), so this was
+checked rather than assumed:
+
+```
+$ getent hosts daengtisia.online
+145.79.13.224   daengtisia.online          # the VPS's own public IP
+
+$ curl -sSI https://daengtisia.online/login | grep -iE '^(HTTP|server|via|cf-|x-cache)'
+HTTP/1.1 200 OK
+Server: nginx/1.24.0 (Ubuntu)
+```
+
+No `Via`, no `CF-*`, no `X-Cache`, and the A record is the origin itself. LB-1
+independently reports `single_vps_ready` with `LB_TRUSTED_PROXIES` empty. The
+request path is exactly **nginx → PHP-FPM → Laravel**, so nginx is the outermost
+HTTP layer and there is no fourth ceiling above the 512 MiB one.
+
 ### A second layer was also below the application
 
 | Layer | Limit | Failed package (2 860 825 B) | Verdict |
@@ -215,6 +235,33 @@ comment must not satisfy an assertion that it is set.
 With the two runtime records reverted to their exact pre-fix production state
 (nginx directive absent, pool ceilings back to inherited php.ini), **6 of the 18
 fail**. The suite detects the real defect rather than describing it.
+
+### A defect CI caught that no local run could
+
+The first version of `grantIntakeExecutionBudget()` called
+`@set_time_limit(900)` unconditionally. `set_time_limit()` does **not** extend a
+budget — it REPLACES it and restarts the counter — and the **CLI SAPI defaults
+`max_execution_time` to 0, meaning unlimited**. So one feature test POSTing to
+the intake route armed a 900-second kill timer on the entire Pest process, and
+the critical gate died with:
+
+```
+PHP Fatal error: Maximum execution time of 900 seconds exceeded
+Pest\Exceptions\FatalException
+runner=github-hosted   critical_test_exit_status=1
+```
+
+The fatal landed in an unrelated suite long after the Mass Upload tests had
+passed, which is what made it look like someone else's problem. It was not: 900
+is this sprint's number.
+
+No local run could have shown it. The targeted suites took 11s and 50s, and the
+full legacy regression took 731s — all inside the 900s the bug itself installed.
+
+The method now **raises only**: it reads `ini_get('max_execution_time')` and
+returns early when the ambient limit is `0` (unlimited) or already at least as
+generous. Three tests pin this, and reverting to the unconditional call fails two
+of them.
 
 ### Two assumptions the tests corrected
 

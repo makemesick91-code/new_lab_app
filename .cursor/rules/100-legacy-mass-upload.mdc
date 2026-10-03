@@ -220,12 +220,28 @@ guard, the decompressed-total guard, the per-item guard and the Zip Slip,
 symlink and magic-byte guards are unaffected by anything in this section.
 
 Scope the relaxation as narrowly as the mechanism allows. `max_execution_time` is
-`PHP_INI_ALL`, so the intake route raises it for ITSELF
+`PHP_INI_ALL`, so the intake route adjusts it for ITSELF
 (`legacy_mass_upload.intake.max_execution_seconds`) and every other request on
 the pool keeps the 30s ceiling. `upload_max_filesize`, `post_max_size` and
 `max_input_time` are `PHP_INI_PERDIR` and cannot be set per route, which is the
 only reason they live at pool level. A configured intake budget of 0 means
 "no limit" to PHP and is ignored rather than honoured.
+
+**`set_time_limit()` RAISES ONLY — it never lowers, and never imposes a limit
+where there is none.** `set_time_limit()` does not extend a budget; it REPLACES
+it and restarts the counter. So read `ini_get('max_execution_time')` first and
+return early when it is `0` (unlimited) or already at least as generous.
+
+This is not hypothetical. The first version of the intake budget called
+`set_time_limit(900)` unconditionally, and because the **CLI SAPI defaults
+`max_execution_time` to 0**, one feature test POSTing to the route armed a
+900-second kill timer on the entire Pest process. CI died with
+`Pest\Exceptions\FatalException: Maximum execution time of 900 seconds
+exceeded` — in an unrelated suite, long after the upload test had passed. Every
+local suite finished inside 900s (the longest was 731s), so nothing local could
+show it. Any new `set_time_limit()` anywhere in this codebase must carry the same
+two guards, and a long-lived process (`queue:work`, `artisan test`, a scheduler
+tick) is exactly what they protect.
 
 ## 23. Runtime limits are config-as-code, not a hand edit in /etc
 

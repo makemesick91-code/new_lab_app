@@ -107,6 +107,12 @@ return [
     | Bounded on purpose. 0 (unlimited) is not an accepted value — an intake
     | request that cannot finish within this budget should fail and be retried,
     | not occupy one of the five pool workers indefinitely.
+    |
+    | Applied RAISE-ONLY. set_time_limit() replaces the limit rather than
+    | extending it, so the controller returns early when the ambient
+    | max_execution_time is 0 (unlimited, which is the CLI default) or already at
+    | least this generous. Applying it unconditionally once killed the whole
+    | CI test process after exactly this many seconds.
     */
     'intake' => [
         'max_execution_seconds' => (int) env('LEGACY_MASS_UPLOAD_INTAKE_MAX_SECONDS', 900),
