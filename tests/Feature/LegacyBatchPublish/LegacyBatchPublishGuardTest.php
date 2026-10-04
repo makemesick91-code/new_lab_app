@@ -167,10 +167,20 @@ it('refuses a document whose source medical record number no longer matches the 
     // binding is the only thing that can refuse.
     $import = lbpRmeReviewed();
 
+    // DERIVED from the patient's own record number rather than hardcoded. A
+    // fixed literal could, in a full-suite run where the shared fixture
+    // sequence has advanced, coincide with this patient's real number — and
+    // the binding would then still match, quietly turning this into a test of
+    // nothing.
+    $drifted = (string) $import->patient->medical_record_number.'-X';
+
     $import->forceFill([
-        'source_rm_raw' => 'DG-TLK1-2024-0001',
-        'source_rm_normalized' => 'DGTLK120240001',
+        'source_rm_raw' => $drifted,
+        'source_rm_normalized' => preg_replace('/[^A-Z0-9]/', '', mb_strtoupper($drifted)),
     ])->save();
+
+    expect($import->refresh()->source_rm_normalized)
+        ->not->toBe($import->patient->medical_record_number);
 
     $item = lbpGuardAttempt($import->refresh());
 

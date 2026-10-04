@@ -201,3 +201,55 @@ it('never voids or deletes an odontogram archive while publishing', function () 
     expect(LegacyOdontogramRecord::where('status', LegacyOdontogramRecordStatus::PUBLISHED)->count())->toBe(2);
     expect(LegacyOdontogramImport::count())->toBe(2);
 });
+
+/*
+|--------------------------------------------------------------------------
+| The fixture collision a full-suite CI run exposed
+|--------------------------------------------------------------------------
+*/
+
+it('creates patients through both shared fixtures interleaved without colliding', function () {
+    // THE BUG THIS PINS, and it reproduces the CI failure deterministically.
+    //
+    // `legacyRmeArchivablePatient()` (tests/Pest.php) and `lodoPatient()`
+    // (tests/Feature/LegacyOdontogram/helpers.php) both minted
+    // sprintf('DG-%s-2024-%04d', $branchCode, $sequence) from their OWN
+    // independent `static $sequence`, both starting at the same place. In a
+    // fresh process the first call to each produced the SAME number, so any
+    // test creating patients through both collided on
+    // mst_patients_medical_record_number_unique.
+    //
+    // It was masked because the counters are process-global: by the time a mixed
+    // test ran, earlier tests had usually knocked them out of step. A full-suite
+    // CI run hit the aligned case. This loop forces it every time.
+    //
+    // BEFORE the fix this test fails on the FIRST pair. It passes only because
+    // the three generators now occupy disjoint blocks.
+    legacyRmeArchiveFlag(true);
+    Storage::fake('legacy_rme_private');
+
+    $numbers = [];
+
+    foreach (range(1, 12) as $ignored) {
+        $numbers[] = (string) legacyRmeArchivablePatient()->medical_record_number;
+        $numbers[] = (string) lodoPatient()->medical_record_number;
+    }
+
+    $numbers[] = (string) lbpOdontogramReviewed()->patient->medical_record_number;
+
+    // No duplicates at all — the property, not merely the absence of a crash.
+    expect(count(array_unique($numbers)))->toBe(count($numbers));
+
+    // And the blocks really are disjoint, so no amount of advancing can make
+    // them meet.
+    $rme = collect($numbers)->filter(fn (string $n): bool => (int) substr($n, -4) < 3000);
+    $odo = collect($numbers)->filter(fn (string $n): bool => (int) substr($n, -4) >= 3000 && (int) substr($n, -4) < 7000);
+    $batch = collect($numbers)->filter(fn (string $n): bool => (int) substr($n, -4) >= 7000);
+
+    expect($rme)->not->toBeEmpty()
+        ->and($odo)->not->toBeEmpty()
+        ->and($batch)->not->toBeEmpty()
+        ->and($rme->intersect($odo))->toBeEmpty()
+        ->and($odo->intersect($batch))->toBeEmpty()
+        ->and($rme->intersect($batch))->toBeEmpty();
+});

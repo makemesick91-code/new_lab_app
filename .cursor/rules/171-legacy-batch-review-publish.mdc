@@ -254,3 +254,35 @@ which would trade many brief transactions for one long-held one. No queue was in
   equivalent — removing the canonical assertion, or both layers, is killed.
 - Assert item STATUS as well as reason code. The selection path and publish path use different
   writers, so a reason-code-only assertion let a "mark refused item published" mutant survive.
+
+## Test-fixture gotcha: two patient helpers, one medical-record namespace
+
+`legacyRmeArchivablePatient()` (tests/Pest.php) and `lodoPatient()`
+(tests/Feature/LegacyOdontogram/helpers.php) both mint
+`sprintf('DG-%s-2024-%04d', $branchCode, $sequence)` from their OWN independent
+`static $sequence`. Identical format, identical namespace, separate counters.
+
+Before the fix, both started at the same value, so **in a fresh process the first
+call to each produced the SAME number** and any test creating patients through
+both collided on `mst_patients_medical_record_number_unique`. It was masked
+because the counters are process-global: by the time a mixed test ran, earlier
+tests had usually knocked them out of step. A full-suite CI run hit the aligned
+case; a fresh-process interleaved loop reproduces it every time.
+
+Blocks are now **disjoint by construction** — keep them that way when adding a
+patient fixture:
+
+```
+legacyRmeArchivablePatient()        1+
+lodoPatient()                    3000+
+lbpDisjointMedicalRecordNumber() 7000+   (batch publish fixtures)
+```
+
+Guarded by `LegacyBatchPublishOdontogramTest` → "creates patients through both
+shared fixtures interleaved without colliding", which was verified to FAIL (with
+the original `UniqueConstraintViolationException`) when the offset is reverted.
+
+**Never hardcode a `DG-...` medical record number in an assertion fixture.** A
+fixed literal can coincide with a real fixture patient's number once the shared
+sequence has advanced — which silently turns a negative test into a test of
+nothing. Derive it from the patient under test instead.

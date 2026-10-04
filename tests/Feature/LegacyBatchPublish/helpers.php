@@ -24,6 +24,7 @@ use App\Modules\LegacyImport\BatchPublish\Services\LegacyBatchPublishRunService;
 use App\Modules\LegacyImport\BatchReview\Models\LegacyReviewTriage;
 use App\Modules\LegacyImport\BatchReview\Services\LegacyBatchReviewSessionService;
 use App\Modules\LegacyOdontogram\Models\LegacyOdontogramImport;
+use App\Modules\LegacyOdontogram\Services\LegacyOdontogramProcessingService;
 use App\Modules\LegacyOdontogram\Services\LegacyOdontogramPublishService;
 use App\Modules\LegacyRme\Models\LegacyRmeImport;
 use App\Modules\LegacyRme\Services\LegacyRmePublishService;
@@ -70,6 +71,38 @@ if (! function_exists('lbpRmeReviewed')) {
     }
 }
 
+if (! function_exists('lbpDisjointMedicalRecordNumber')) {
+    /**
+     * A medical record number from a block the shared fixtures cannot reach.
+     *
+     * THE COLLISION THIS AVOIDS, found by a full-suite CI run rather than by
+     * reading the code. `legacyRmeArchivablePatient()` (tests/Pest.php) and
+     * `lodoPatient()` (tests/Feature/LegacyOdontogram/helpers.php) both mint
+     * `sprintf('DG-%s-2024-%04d', $branchCode, $sequence)` from their OWN
+     * independent `static $sequence`. Identical format, identical namespace,
+     * separate counters — so any test that creates patients through BOTH
+     * helpers collides on `mst_patients_medical_record_number_unique` whenever
+     * the two counters happen to hold the same value.
+     *
+     * Running only the batch suites locally kept the counters far enough apart
+     * to pass; across 4795 tests they aligned and the insert failed. The
+     * probability was always there — a cross-archive test merely made it
+     * reachable.
+     *
+     * Fixing the shared generators would be the root fix, but they are used by
+     * many suites and some assert on the exact strings, so this sprint does not
+     * reshape them. Starting at 9000 is disjoint by construction: both
+     * sequences count up from 1 within a single process and never approach it.
+     */
+    function lbpDisjointMedicalRecordNumber(string $branchCode = 'TLK1'): string
+    {
+        static $sequence = 7000;
+        $sequence++;
+
+        return sprintf('DG-%s-2024-%04d', $branchCode, $sequence);
+    }
+}
+
 if (! function_exists('lbpOdontogramReviewed')) {
     /**
      * A legacy odontogram import that is genuinely REVIEWED.
@@ -81,9 +114,21 @@ if (! function_exists('lbpOdontogramReviewed')) {
     function lbpOdontogramReviewed(?User $uploader = null, ?User $reviewer = null, string $legacyDate = '2020-05-01'): LegacyOdontogramImport
     {
         $uploader ??= superAdmin();
-        $import = lbrOdontogramReady($uploader, $legacyDate);
 
-        app(LegacyOdontogramPublishService::class)->review($import, $reviewer ?? superAdmin());
+        // The patient is created HERE with a disjoint medical record number,
+        // rather than through lbrOdontogramReady(), because that helper routes
+        // to lodoPatient() which has no way to override the colliding sequence.
+        $patient = lodoPatient([
+            'date_of_birth' => '1990-01-01',
+            'medical_record_number' => lbpDisjointMedicalRecordNumber(),
+        ]);
+        lodoNativeOdontogram($patient, '2022-03-10');
+
+        $import = lodoStageImport($patient, $legacyDate, $uploader, 1);
+        app(LegacyOdontogramProcessingService::class)
+            ->process($import->getKey());
+
+        app(LegacyOdontogramPublishService::class)->review($import->refresh(), $reviewer ?? superAdmin());
 
         return $import->refresh();
     }

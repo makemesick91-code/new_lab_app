@@ -181,6 +181,42 @@ what §20 asks for. Bounding the work is the right lever.
    about guard *ordering* rather than about the one-archive-per-patient rule. It now asserts the
    invariant.
 
+### The CI failure, and the bug behind it
+
+The first CI run on `0a3abb0f` **failed: 1 test failed, 4795 passed** over 86 minutes. The failure
+was mine, and diagnosing it found a bug larger than the symptom.
+
+**Symptom.** `UniqueConstraintViolationException` —
+`duplicate key ... (medical_record_number)=(DG-TLK1-2024-0001)` inside a cross-archive odontogram
+fixture.
+
+**Root cause.** `legacyRmeArchivablePatient()` (tests/Pest.php) and `lodoPatient()`
+(tests/Feature/LegacyOdontogram/helpers.php) both mint
+`sprintf('DG-%s-2024-%04d', $branchCode, $sequence)` from their **own independent**
+`static $sequence`, both starting at the same value. In a fresh process the first call to each
+produces the **identical** number, so any test creating patients through both collides.
+
+It had been masked because the counters are process-global: by the time a mixed test runs, earlier
+tests have usually knocked them out of step. "Usually" was the whole problem — a full-suite run hit
+the aligned case. Running only the batch suites locally never did.
+
+**What was done, and what was rejected.** The first instinct was a PR2-local workaround — give this
+sprint's fixtures a high block and move on. That was rejected because it would leave PR1's own
+mixed tests still relying on luck. Nothing asserts the exact values these helpers emit (verified),
+so the root fix was safe: three disjoint blocks, `legacyRmeArchivablePatient` `1+`, `lodoPatient`
+`3000+`, `lbpDisjointMedicalRecordNumber` `7000+`.
+
+**The guard was verified in both directions**, because a regression test that only passes proves
+nothing: with the fix it passes; with the offset reverted it fails with exactly the
+`UniqueConstraintViolationException` CI produced.
+
+A second latent flake of my own was fixed alongside it: the patient-binding test hardcoded a
+drifted record number that could, once the shared sequence had advanced, coincide with its own
+patient's real number — silently turning a negative test into a test of nothing. It now derives the
+drifted value from the patient under test.
+
+Regression after the root fix: the ~10 suites that use the changed helper pass **320/320**.
+
 ### What the security review found, and what I did
 
 No CRITICAL, HIGH or MEDIUM. Five LOW, each verified against the code before being acted on:
