@@ -1,91 +1,81 @@
-# FEATURE-LEGACY-BATCH-REVIEW-PUBLISH-1 — PR2 of 2 (BATCH PUBLISH)
+# BUGFIX-LEGACY-BATCH-REVIEW-DECISION-NOT-SUBMITTED-1
 #
-# The owner split this feature across two PRs by RISK rather than by document
-# type: review is non-final, publish is the dangerous, final half. PR1 shipped
-# batch review and GO'd at 01b28aeb. PR2 (this manifest) ships batch publish for
-# both Legacy RME and Legacy Odontogram.
+# Production Batch Review answered every press of "Tandai Ditinjau" with
+# "keputusan tinjauan wajib diisi." The operator had made a decision; the server
+# said none arrived. The server was correct — the browser sent decision=''.
 #
-# THE SELECTION CONTRACT, CONSUMED FROM PR1 VERBATIM
-# -------------------------------------------------
-#   canonical status = REVIEWED
-#   AND no active blocking triage annotation
-#   AND every current publish-time guard passes
+# ROOT CAUSE: Alpine writes an x-model / :value binding to the DOM inside a
+# reactive effect, flushed on the MICROTASK QUEUE (scheduler -> queueJob ->
+# queueMicrotask(flushJobs)). The inline component assigned this.decision and
+# then called form.submit() in the SAME TICK, so the hidden input still held ''
+# when the browser serialized the form.
 #
-# No BLOCKED or NEEDS_ATTENTION document is selectable or publishable, and
-# nothing in the BatchPublish module clears a triage annotation — clearing stays
-# a review-authority act in PR1's flow. Selection is a hint; the server
-# re-validates every document immediately before publishing it, so a document
-# that went stale between selection and publish is refused with a reason code
-# rather than published on a stale decision.
+#   EXPECTED_FIELD: decision (flat, top level, beside import_id)
+#   ACTUAL_FIELD:   decision — correct name, present
+#   ACTUAL_VALUE:   '' at the serialization instant
+#   VALIDATION_WEAKENED: NO
 #
-# NO OUTER TRANSACTION — ONE DOCUMENT, ONE TRANSACTION
-# ----------------------------------------------------
-# The canonical publish opens its own transaction, takes its own row lock,
-# re-validates every rule, writes the archive record and its pages, and writes
-# its audit row AFTER commit. Wrapping N of those in one outer transaction would
-# roll back publications that had already succeeded, make the post-commit audit
-# rows describe records a rollback destroyed, and hold locks across hundreds of
-# documents. So a pass LOOPS the canonical per-document call and partial success
-# is the design: 100 selected / 97 eligible / 3 stale => 97 published and 3
-# refused with reasons, never 0 and never silently skipped. Only PENDING items
-# are attempted, so an interrupted pass resumes without duplicating.
+# Only the REVIEWED path broke, which matches the report exactly: BLOCKED and
+# NEEDS_ATTENTION reveal the reason panel instead of submitting, so the microtask
+# queue flushes long before confirmTriage() submits in a later tick.
 #
-# EXACTLY-ONCE IS THE CANONICAL LAYER'S PROPERTY, NOT THIS ORCHESTRATOR'S
-# ----------------------------------------------------------------------
-# It comes from UNIQUE(source_import_id) + lockForUpdate + the
-# findBySourceImportId() early return. It is NOT the run lock's: that lock
-# serializes only the status transition and is released on commit, and
-# PUBLISHING -> PUBLISHING is permitted so a resumed pass can re-enter — which
-# makes the run status structurally incapable of serializing two passes. A test
-# asserts that attribution directly, because claiming session-level locking
-# would misdescribe where the safety actually lives.
+# THE FIX: the component moves to resources/js/legacy-batch-review.js (a plain
+# factory registered through Alpine.data(), following patient-combobox.js and
+# doctor-device-webauthn.js) and the single submission path writes the field
+# SYNCHRONOUSLY in the same block as form.submit(). This is not a setTimeout or
+# $nextTick workaround — there is no race left to lose. The :value binding stays
+# for coherent rendering; x-ref="decisionField" is what the submit path writes.
 #
-# TWO ADAPTERS, NEVER A TYPE BRANCH
-# ---------------------------------
-# RME routes through LegacyRmeImportLifecycleService::perform(..., PUBLISH, ...)
-# and so inherits separation of duties plus the source-patient binding re-check.
-# Odontogram has neither anywhere in its module — pre-existing canonical
-# behaviour, identical on its own single-item page. Making odontogram weaker, or
-# silently stricter than the page it mirrors, needs an explicit owner decision.
-# Both directions are pinned by tests and by mutation.
+# WHAT IT MUST NOT DO, AND DOES NOT: no default REVIEWED for an untouched
+# document; no bulk vocabulary (no ALL / markAll / reviewAll / selectAll
+# anywhere client-side); per-item identity preserved — one attestation is one
+# request naming one server-rendered import_id. Review authorization,
+# separation of duties, patient binding, branch scope, the single-active-document
+# guard, date rules, triage behaviour and every publish rule are untouched.
 #
-# NO PERMISSION WIDENING. Reuses publish_legacy_rme_imports and
-# publish_legacy_odontogram_imports verbatim. No batch-publish super-permission
-# exists, and no seeder runs post-deploy, because PR2 adds no ability.
+# THE BRIEF'S MULTI-ITEM FRAMING, CORRECTED: the real contract is flat and
+# singular, and the FormRequest says so in its own docblock. Converting it to
+# decisions[<item>][decision] would have WEAKENED PR1's structural guarantee
+# that there can be no Review All.
 #
-# BOUNDED EXECUTION, NO QUEUE INTRODUCED. MAX_SELECTION=100 (matched to
-# MAX_PER_PAGE — all one page can render), MAX_OUTSTANDING=500 cumulative per
-# run, MAX_PUBLISH_PASS=50. The per-item write deliberately stays in its own
-# short single-row transaction rather than being batched into one, which would
-# trade many brief transactions for one long-held one.
+# CI GAP FOUND AND CLOSED: measured with the workflow's own filter, the critical
+# gate selected 24 of the 119 batch tests. Not zero — which is worse, because
+# partial selection reads like coverage. The matches were accidental (the
+# unrelated `Odontogram` token, plus Pest descriptions containing the word);
+# LegacyBatchPublishGuardTest and LegacyBatchReviewDatabaseInvariantTest ran
+# nowhere. `LegacyRme` does not match `LegacyBatchReviewRmeTest` — --filter
+# matches the test identity and the substring is `LegacyBatchReviewRme`. Fixed by
+# adding LegacyBatchReview|LegacyBatchPublish to BOTH filter variants (asserted
+# byte-identical) and declaring all nine files in ci_runner's
+# critical_gate_mandatory_suites. Selection: 4800 -> 4895 (+95).
 #
-# schema_change: true — two ADDITIVE staging tables, no column dropped, no
-# existing table altered, no backfill. `migrate` only; never migrate:fresh or
-# db:wipe. Nothing in them is clinical: the archives they orchestrate live in
-# trx_rme_legacy_records / trx_odontogram_legacy_records.
+# frontend_change: true — one Blade view and the JS bundle. npm run build is
+# required; there is no migration, route, permission, policy or schema change.
 #
-# security_impact: true — a new surface that triggers irreversible clinical
-# publication, even though every clinical gate is inherited from the canonical
-# per-document path rather than re-expressed here.
+# browser_required: false, and the residual is stated rather than hidden. The
+# local dev database is unseeded (0 branches / 0 users / 0 patients), is behind
+# on migrations (168 applied), and the legacy capability resolves
+# migrationEnabled()=false locally, so a Dusk path would mean migrating and fully
+# seeding the dev estate plus a served process with flag overrides. The ordering
+# property is instead proven against the REAL factory with a form double that
+# captures the field at the serialization instant, and the rendered markup is
+# asserted separately per archive. Nothing in CI runs this page in a browser
+# engine, so an Alpine initialization failure here specifically would not be
+# caught; a sprint with a seeded estate should add the Dusk test.
 
-id: FEATURE-LEGACY-BATCH-REVIEW-PUBLISH-1-PR2
-type: MODULE_SPRINT
+id: BUGFIX-LEGACY-BATCH-REVIEW-DECISION-NOT-SUBMITTED-1
+type: RUNTIME_FIX
 module: LegacyImport
-title: "Batch publish for Legacy RME and Legacy Odontogram: selection restricted to REVIEWED documents with no active blocking triage, per-document publish-time revalidation through the canonical publish path (SOD, patient binding, branch scope, date and native-boundary rules, single-active guard), one document per transaction with partial success and resume-after-interruption, exactly-once inherited from the canonical UNIQUE(source_import_id) layer rather than claimed for the orchestrator — no outer transaction, no queue, no permission widening"
+title: "Legacy Batch Review decision submission: the decision is written into the serialized field synchronously instead of relying on Alpine's microtask flush, so Tandai Ditinjau reaches the server as decision=REVIEWED; one encoding shared by mouse, keyboard and triage confirmation; server-side required validation preserved verbatim; verified separately for RME and Odontogram; the critical gate now actually selects the batch review and publish suites"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 runtime_change: true
-schema_change: true
+schema_change: false
 frontend_change: true
-security_impact: true
-branch_isolation_impact: true
+security_impact: false
+branch_isolation_impact: false
 ledger_impact: false
 deploy_required: true
 browser_required: false
 test_profiles: []
-go_tag: feature-legacy-batch-review-publish-1-pr2-go
-go_tag_created: true
-go_commit: ac9acd9f16914650feea14242003ff8c6962ce27
-merged_pr: 448
-ci_verified_sha: 915fc096368fb750f9db26b810e1e1a78ff4be66
-inherits_parent_go: feature-legacy-batch-review-publish-1-pr1-go
+inherits_parent_go: feature-legacy-batch-review-publish-1-pr2-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1

@@ -2,6 +2,7 @@ import './bootstrap';
 
 import Alpine from 'alpinejs';
 import { createPatientCombobox } from './patient-combobox';
+import { createLegacyBatchReview } from './legacy-batch-review';
 import { bootPwa } from './pwa';
 import doctorDeviceWebAuthn from './doctor-device-webauthn';
 
@@ -529,6 +530,14 @@ Alpine.data('adlmsSidebar', (routeOpen = {}) => ({
 // module so its stale-response and "typed text is not a selection" rules can
 // be unit-tested outside a browser (tests/js/patient-combobox.test.mjs).
 Alpine.data('patientCombobox', (config = {}) => createPatientCombobox(config));
+
+// BUGFIX-LEGACY-BATCH-REVIEW-DECISION-NOT-SUBMITTED-1 — the Legacy Batch Review
+// reviewer layer (RME + Odontogram share one view). It lives in its own module
+// because the rule it owns is submit-time form serialization ordering: Alpine
+// flushes bindings on the microtask queue, so the decision must be written to
+// the field synchronously before `form.submit()`. Unit-tested outside a browser
+// (tests/js/legacy-batch-review.test.mjs).
+Alpine.data('legacyBatchReview', (config = {}) => createLegacyBatchReview(config));
 
 Alpine.start();
 
