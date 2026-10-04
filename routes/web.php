@@ -70,6 +70,8 @@ use App\Modules\LabOrder\Controllers\LabWorkflowEvidenceController;
 use App\Modules\LabOrder\Controllers\LabWorkflowOperationalDashboardController;
 use App\Modules\LabOrder\Controllers\LabWorkflowRequestController;
 use App\Modules\LabService\Controllers\LabServiceController;
+use App\Modules\LegacyImport\BatchPublish\Controllers\LegacyOdontogramBatchPublishController;
+use App\Modules\LegacyImport\BatchPublish\Controllers\LegacyRmeBatchPublishController;
 use App\Modules\LegacyImport\BatchReview\Controllers\LegacyOdontogramBatchReviewController;
 use App\Modules\LegacyImport\BatchReview\Controllers\LegacyRmeBatchReviewController;
 use App\Modules\LegacyImport\Controllers\LegacyImportHubController;
@@ -528,6 +530,63 @@ Route::middleware('auth')->prefix('settings')->name('settings.')->group(function
                 ->name('submit')->where('session', '[0-9a-fA-F\-]{36}');
             Route::post('{session}/abandon', [LegacyOdontogramBatchReviewController::class, 'abandon'])
                 ->name('abandon')->where('session', '[0-9a-fA-F\-]{36}');
+        });
+
+    /*
+    |--------------------------------------------------------------------------
+    | FEATURE-LEGACY-BATCH-REVIEW-PUBLISH-1 (PR2) — batch publish workspace
+    |--------------------------------------------------------------------------
+    |
+    | ADDITIVE. The single-item publish action on each archive above is
+    | untouched and remains the right tool for one document or a correction.
+    |
+    | PERMISSIONS ARE REUSED, NOT WIDENED (§13). Batch publish is the same act
+    | in bulk, so it requires the same `publish_legacy_*_imports` permission as
+    | publishing one document by hand. There is deliberately no batch-publish
+    | super-permission: a grant that exists only to make a menu appear is how
+    | privilege creeps. Nothing here grants create, review or VOID.
+    |
+    | THE ROUTE NAMES ARE DELIBERATELY DISJOINT from all three sibling families.
+    | The sidebar marks itself active with routeIs('...legacy-imports.*'),
+    | '...legacy-mass-imports.*' and '...legacy-review-imports.*', so
+    | `legacy-publish-imports` and `legacy-publish-odontograms` share a prefix
+    | with none of them — being on a batch publish page must not light up the
+    | upload, mass-upload or review menu item.
+    |
+    | A run is addressed by UUID, never a numeric id, and the segment is
+    | constrained to the uuid character class so the handle an operator pastes
+    | around is not a guessable sequence.
+    */
+    Route::prefix('rme/legacy-publish-imports')->name('rme.legacy-publish-imports.')
+        ->middleware('permission:publish_legacy_rme_imports')
+        ->group(function () {
+            Route::get('/', [LegacyRmeBatchPublishController::class, 'index'])->name('index');
+            Route::post('/', [LegacyRmeBatchPublishController::class, 'store'])->name('store');
+
+            Route::get('{run}', [LegacyRmeBatchPublishController::class, 'show'])
+                ->name('show')->where('run', '[0-9a-fA-F\-]{36}');
+            Route::post('{run}/select', [LegacyRmeBatchPublishController::class, 'select'])
+                ->name('select')->where('run', '[0-9a-fA-F\-]{36}');
+            Route::post('{run}/publish', [LegacyRmeBatchPublishController::class, 'publish'])
+                ->name('publish')->where('run', '[0-9a-fA-F\-]{36}');
+            Route::post('{run}/abandon', [LegacyRmeBatchPublishController::class, 'abandon'])
+                ->name('abandon')->where('run', '[0-9a-fA-F\-]{36}');
+        });
+
+    Route::prefix('rme/legacy-publish-odontograms')->name('rme.legacy-publish-odontograms.')
+        ->middleware('permission:publish_legacy_odontogram_imports')
+        ->group(function () {
+            Route::get('/', [LegacyOdontogramBatchPublishController::class, 'index'])->name('index');
+            Route::post('/', [LegacyOdontogramBatchPublishController::class, 'store'])->name('store');
+
+            Route::get('{run}', [LegacyOdontogramBatchPublishController::class, 'show'])
+                ->name('show')->where('run', '[0-9a-fA-F\-]{36}');
+            Route::post('{run}/select', [LegacyOdontogramBatchPublishController::class, 'select'])
+                ->name('select')->where('run', '[0-9a-fA-F\-]{36}');
+            Route::post('{run}/publish', [LegacyOdontogramBatchPublishController::class, 'publish'])
+                ->name('publish')->where('run', '[0-9a-fA-F\-]{36}');
+            Route::post('{run}/abandon', [LegacyOdontogramBatchPublishController::class, 'abandon'])
+                ->name('abandon')->where('run', '[0-9a-fA-F\-]{36}');
         });
 
     Route::prefix('rme/migration-operations')->name('rme.migration-operations.')->group(function () {
