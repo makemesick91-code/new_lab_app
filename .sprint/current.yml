@@ -102,6 +102,9 @@ deploy_required: true
 browser_required: false
 test_profiles: []
 go_tag: feature-legacy-batch-review-publish-1-pr1-go
-go_tag_created: false
+go_tag_created: true
+go_commit: 01b28aebc6cc02320152e99f40d629f065f2ed37
+merged_pr: 445
+ci_verified_sha: 3757097fb81da65f6579de58d8688e1c84d8dfe5
 inherits_parent_go: fix-legacy-wave4-window-extension-1-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
