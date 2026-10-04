@@ -70,6 +70,8 @@ use App\Modules\LabOrder\Controllers\LabWorkflowEvidenceController;
 use App\Modules\LabOrder\Controllers\LabWorkflowOperationalDashboardController;
 use App\Modules\LabOrder\Controllers\LabWorkflowRequestController;
 use App\Modules\LabService\Controllers\LabServiceController;
+use App\Modules\LegacyImport\BatchReview\Controllers\LegacyOdontogramBatchReviewController;
+use App\Modules\LegacyImport\BatchReview\Controllers\LegacyRmeBatchReviewController;
 use App\Modules\LegacyImport\Controllers\LegacyImportHubController;
 use App\Modules\LegacyImport\Controllers\VisitBoundLegacyIngestionController;
 use App\Modules\LegacyImport\MassUpload\Controllers\LegacyOdontogramMassUploadController;
@@ -467,6 +469,66 @@ Route::middleware('auth')->prefix('settings')->name('settings.')->group(function
             Route::post('{batch}/cancel', [LegacyOdontogramMassUploadController::class, 'cancel'])->name('cancel');
         });
     });
+
+    /*
+    |--------------------------------------------------------------------------
+    | FEATURE-LEGACY-BATCH-REVIEW-PUBLISH-1 (PR1) — batch review workspace
+    |--------------------------------------------------------------------------
+    |
+    | ADDITIVE. The single-item review action on each archive above is untouched
+    | and remains the right tool for one document, a re-check or a correction.
+    |
+    | PERMISSIONS ARE REUSED, NOT WIDENED. Batch review is the same act in bulk,
+    | so it requires the same `review_legacy_*_imports` permission as reviewing
+    | one document by hand. There is no batch-specific permission, because a
+    | role grant that exists only to make a menu appear is how privilege creeps.
+    | Nothing here grants create, publish or VOID.
+    |
+    | THE ROUTE NAMES ARE DELIBERATELY DISJOINT from both sibling families. The
+    | sidebar marks itself active with routeIs('...legacy-imports.*') and
+    | routeIs('...legacy-odontograms.*'), so `legacy-review-imports` and
+    | `legacy-review-odontograms` share no prefix with either — being on a batch
+    | review page must not light up the single-upload menu item.
+    |
+    | A session is addressed by UUID, never by numeric id, so the handle an
+    | operator pastes around is not a guessable sequence. The session segment is
+    | constrained to the uuid character class for the same reason.
+    */
+    Route::prefix('rme/legacy-review-imports')->name('rme.legacy-review-imports.')
+        ->middleware('permission:review_legacy_rme_imports')
+        ->group(function () {
+            Route::get('/', [LegacyRmeBatchReviewController::class, 'index'])->name('index');
+            Route::post('/', [LegacyRmeBatchReviewController::class, 'store'])->name('store');
+
+            Route::get('{session}', [LegacyRmeBatchReviewController::class, 'show'])
+                ->name('show')->where('session', '[0-9a-fA-F\-]{36}');
+            Route::post('{session}/decide', [LegacyRmeBatchReviewController::class, 'decide'])
+                ->name('decide')->where('session', '[0-9a-fA-F\-]{36}');
+            Route::post('{session}/clear-triage', [LegacyRmeBatchReviewController::class, 'clearTriage'])
+                ->name('clear-triage')->where('session', '[0-9a-fA-F\-]{36}');
+            Route::post('{session}/submit', [LegacyRmeBatchReviewController::class, 'submit'])
+                ->name('submit')->where('session', '[0-9a-fA-F\-]{36}');
+            Route::post('{session}/abandon', [LegacyRmeBatchReviewController::class, 'abandon'])
+                ->name('abandon')->where('session', '[0-9a-fA-F\-]{36}');
+        });
+
+    Route::prefix('rme/legacy-review-odontograms')->name('rme.legacy-review-odontograms.')
+        ->middleware('permission:review_legacy_odontogram_imports')
+        ->group(function () {
+            Route::get('/', [LegacyOdontogramBatchReviewController::class, 'index'])->name('index');
+            Route::post('/', [LegacyOdontogramBatchReviewController::class, 'store'])->name('store');
+
+            Route::get('{session}', [LegacyOdontogramBatchReviewController::class, 'show'])
+                ->name('show')->where('session', '[0-9a-fA-F\-]{36}');
+            Route::post('{session}/decide', [LegacyOdontogramBatchReviewController::class, 'decide'])
+                ->name('decide')->where('session', '[0-9a-fA-F\-]{36}');
+            Route::post('{session}/clear-triage', [LegacyOdontogramBatchReviewController::class, 'clearTriage'])
+                ->name('clear-triage')->where('session', '[0-9a-fA-F\-]{36}');
+            Route::post('{session}/submit', [LegacyOdontogramBatchReviewController::class, 'submit'])
+                ->name('submit')->where('session', '[0-9a-fA-F\-]{36}');
+            Route::post('{session}/abandon', [LegacyOdontogramBatchReviewController::class, 'abandon'])
+                ->name('abandon')->where('session', '[0-9a-fA-F\-]{36}');
+        });
 
     Route::prefix('rme/migration-operations')->name('rme.migration-operations.')->group(function () {
         Route::get('/', [LegacyRmeMigrationOperationsController::class, 'index'])
