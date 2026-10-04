@@ -48,7 +48,12 @@ it('does not strip the legacy permission grants', function (string $legacy, int 
 })->with([
     // REVISION-LEGACY-VISIT-BOUND-PREVERIFIED-INGESTION-1 added `verify_legacy_dates_at_ingestion` to Admin Klinik and Front Office,
     // so Admin Klinik moved 20 -> 21. Kasir is deliberately unchanged.
-    [FrontOfficeRole::LEGACY_ADMIN_CLINIC, 21],
+    //
+    // FEATURE-LEGACY-PATIENT-DOCUMENT-COMPLETENESS-1 added the read-only
+    // `view_legacy_patient_archive_completeness`, so Admin Klinik moved
+    // 21 -> 22. Kasir is again deliberately unchanged — the completeness
+    // report is a clinic-admin duty, not a cashier one.
+    [FrontOfficeRole::LEGACY_ADMIN_CLINIC, 22],
     [FrontOfficeRole::LEGACY_KASIR, 6],
 ]);
 

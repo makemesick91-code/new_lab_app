@@ -74,6 +74,7 @@ use App\Modules\LegacyImport\BatchPublish\Controllers\LegacyOdontogramBatchPubli
 use App\Modules\LegacyImport\BatchPublish\Controllers\LegacyRmeBatchPublishController;
 use App\Modules\LegacyImport\BatchReview\Controllers\LegacyOdontogramBatchReviewController;
 use App\Modules\LegacyImport\BatchReview\Controllers\LegacyRmeBatchReviewController;
+use App\Modules\LegacyImport\Completeness\Controllers\LegacyPatientArchiveCompletenessController;
 use App\Modules\LegacyImport\Controllers\LegacyImportHubController;
 use App\Modules\LegacyImport\Controllers\VisitBoundLegacyIngestionController;
 use App\Modules\LegacyImport\MassUpload\Controllers\LegacyOdontogramMassUploadController;
@@ -278,6 +279,38 @@ Route::middleware('auth')->prefix('settings')->name('settings.')->group(function
     Route::get('legacy-imports', [LegacyImportHubController::class, 'index'])
         ->name('legacy-imports.index')
         ->middleware('permission:manage patients|view_legacy_rme_imports|create_legacy_rme_imports|view_legacy_odontogram_imports|create_legacy_odontogram_imports');
+
+    // FEATURE-LEGACY-PATIENT-DOCUMENT-COMPLETENESS-1 — Kelengkapan Arsip Pasien
+    // Legacy.
+    //
+    // ONE read-only GET, and that is the whole module. There is no store,
+    // update, destroy, review, publish, void or cancel route anywhere in it:
+    // the page monitors legacy lifecycles and has no authority over any of
+    // them. A test asserts that this remains the only route it registers.
+    //
+    // A DEDICATED PERMISSION, NOT A REUSED ONE. The intake permissions
+    // (`view_legacy_*_imports`) are held by every branch upload operator, so
+    // reusing one would decide this page's audience as a side effect of who may
+    // upload. `view_legacy_patient_archive_completeness` grants reading this
+    // report and nothing else — notably no upload, review, publish, void or
+    // wave governance — and it is deliberately absent from every
+    // GOVERNANCE_PERMISSIONS list so granting it can never widen a branch
+    // scope.
+    //
+    // THE NAME SHARES NO PREFIX WITH ITS SIBLINGS, ON PURPOSE. The hub's
+    // sidebar entry marks itself active with
+    // `routeIs('settings.legacy-imports.*')`, so naming this page
+    // `settings.legacy-imports.patient-completeness` would highlight BOTH menu
+    // entries whenever an operator was on this one — the same active-state
+    // collision the mass-upload sprint had to avoid for `legacy-imports.mass.*`.
+    // `settings.legacy-patient-completeness.*` cannot collide with any of them.
+    //
+    // A sibling path rather than a nested one also matches how "Upload Legacy
+    // Pasien" already sits in this nav group under `settings.patients.import.*`:
+    // the group is a menu, not a URL hierarchy.
+    Route::get('legacy-patient-completeness', [LegacyPatientArchiveCompletenessController::class, 'index'])
+        ->name('legacy-patient-completeness.index')
+        ->middleware('permission:view_legacy_patient_archive_completeness');
 
     // LEGACY-RME-PDF-1B — Impor Arsip RME Lama (historical PDF archive).
     //

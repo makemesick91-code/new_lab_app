@@ -909,7 +909,7 @@
                  permission middleware, every controller re-checks the flag, and every
                  policy adds the per-row branch scope. Hiding a link is a courtesy to
                  the operator, never a control. --}}
-            @canany(['manage patients', 'view_legacy_rme_imports', 'create_legacy_rme_imports', 'view_legacy_odontogram_imports', 'create_legacy_odontogram_imports', 'review_legacy_rme_imports', 'review_legacy_odontogram_imports', 'publish_legacy_rme_imports', 'publish_legacy_odontogram_imports'])
+            @canany(['manage patients', 'view_legacy_rme_imports', 'create_legacy_rme_imports', 'view_legacy_odontogram_imports', 'create_legacy_odontogram_imports', 'review_legacy_rme_imports', 'review_legacy_odontogram_imports', 'publish_legacy_rme_imports', 'publish_legacy_odontogram_imports', 'view_legacy_patient_archive_completeness'])
                 <div class="pt-2">
                     <button type="button" @click="toggle('legacy-imports')" class="{{ $groupToggle }}" :aria-expanded="isOpen('legacy-imports')">
                         <span class="flex items-center gap-3">
@@ -1024,6 +1024,32 @@
                             @if (app(\App\Modules\LegacyOdontogram\Services\LegacyOdontogramFeatureGuard::class)->migrationEnabled())
                                 <a href="{{ route('settings.rme.legacy-publish-odontograms.index') }}"
                                    class="menu-subitem {{ request()->routeIs('settings.rme.legacy-publish-odontograms.*') ? $linkActive : $linkIdle }}">Batch Publish Legacy Odontogram</a>
+                            @endif
+                        @endcan
+
+                        {{-- FEATURE-LEGACY-PATIENT-DOCUMENT-COMPLETENESS-1 — the backlog monitor.
+
+                             Last in the group on purpose: the entries above are the work
+                             (upload, review, publish) and this one answers "what is still
+                             outstanding?" across all of it.
+
+                             Gated by its OWN read permission and by nothing else. In
+                             particular it is NOT wrapped in a `migrationEnabled()` check
+                             like its siblings: those guard INTAKE, whose resting state is
+                             OFF, and a backlog monitor that vanished whenever intake was
+                             closed would be unavailable exactly when an operator wants to
+                             plan the next wave. Reading what has already been published is
+                             a different concern from being allowed to publish more.
+
+                             The route name shares no prefix with any sibling, so this is
+                             the only entry that lights up while an operator is on it.
+                             Sidebar visibility is a convenience; the route's own
+                             `permission:` middleware and the controller re-check are the
+                             boundary. --}}
+                        @can('view_legacy_patient_archive_completeness')
+                            @if (config('legacy_import_hub.enabled', true))
+                                <a href="{{ route('settings.legacy-patient-completeness.index') }}"
+                                   class="menu-subitem {{ request()->routeIs('settings.legacy-patient-completeness.*') ? $linkActive : $linkIdle }}">Kelengkapan Arsip Pasien Legacy</a>
                             @endif
                         @endcan
                     </div>

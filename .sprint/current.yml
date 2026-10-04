@@ -1,81 +1,109 @@
-# BUGFIX-LEGACY-BATCH-REVIEW-DECISION-NOT-SUBMITTED-1
+# FEATURE-LEGACY-PATIENT-DOCUMENT-COMPLETENESS-1
 #
-# Production Batch Review answered every press of "Tandai Ditinjau" with
-# "keputusan tinjauan wajib diisi." The operator had made a decision; the server
-# said none arrived. The server was correct — the browser sent decision=''.
+# "Kelengkapan Arsip Pasien Legacy" — a read-only monitor over the legacy
+# archive: which legacy-IMPORTED patients do not yet hold both a published
+# legacy RME and a published legacy odontogram. The backlog was otherwise
+# invisible; an operator had to open each patient to find out.
 #
-# ROOT CAUSE: Alpine writes an x-model / :value binding to the DOM inside a
-# reactive effect, flushed on the MICROTASK QUEUE (scheduler -> queueJob ->
-# queueMicrotask(flushJobs)). The inline component assigned this.decision and
-# then called form.submit() in the SAME TICK, so the hidden input still held ''
-# when the browser serialized the form.
+# PROVENANCE, MEASURED NOT GUESSED: mst_patients.import_batch_id (nullable,
+# indexed FK to stg_legacy_patient_import_batches, Sprint 62.3). It is the ONLY
+# canonical marker, it is never derived from created_at / the RM format / a
+# missing NIK / the branch / the absence of native RME, and it is applied in the
+# repository's single base query so no filter, parameter or crafted request can
+# switch it off. A natively registered patient is out of scope BY CONSTRUCTION.
 #
-#   EXPECTED_FIELD: decision (flat, top level, beside import_id)
-#   ACTUAL_FIELD:   decision — correct name, present
-#   ACTUAL_VALUE:   '' at the serialization instant
-#   VALIDATION_WEAKENED: NO
+#   Patient::isLegacyWithoutBranch() EXISTS AND MEANS SOMETHING ELSE
+#   (branch_id IS NULL, Sprint 23.10). Using it here would have listed native
+#   branchless patients and missed every imported one that has a branch.
 #
-# Only the REVIEWED path broke, which matches the report exactly: BLOCKED and
-# NEEDS_ATTENTION reveal the reason panel instead of submitting, so the microtask
-# queue flushes long before confirmTriage() submits in a later tick.
+# COMPLETENESS IS DERIVED FROM THE REAL STATE MACHINES, in the same
+# record-before-staging order LegacySingleActiveDocumentService::occupancyFor()
+# uses, and the agreement is asserted against that REAL service rather than
+# against a restatement of its rules:
 #
-# THE FIX: the component moves to resources/js/legacy-batch-review.js (a plain
-# factory registered through Alpine.data(), following patient-combobox.js and
-# doctor-device-webauthn.js) and the single submission path writes the field
-# SYNCHRONOUSLY in the same block as form.submit(). This is not a setTimeout or
-# $nextTick workaround — there is no race left to lose. The :value binding stays
-# for coherent rendering; x-ref="decisionField" is what the submit path writes.
+#   published record        -> PUBLISHED   (the only complete state)
+#   else slot-occupying row -> IN_PROGRESS (incl. FAILED, which is retryable)
+#   else void record        -> VOID        (slot released; correction needed)
+#   else                    -> MISSING
 #
-# WHAT IT MUST NOT DO, AND DOES NOT: no default REVIEWED for an untouched
-# document; no bulk vocabulary (no ALL / markAll / reviewAll / selectAll
-# anywhere client-side); per-item identity preserved — one attestation is one
-# request naming one server-rendered import_id. Review authorization,
-# separation of duties, patient binding, branch scope, the single-active-document
-# guard, date rules, triage behaviour and every publish rule are untouched.
+# IN_PROGRESS != MISSING, and that is the point. A live lifecycle still owns the
+# patient's slot, so a second upload would be refused; reporting it as "Belum
+# Ada — upload" is the duplicate-upload encouragement the owner forbade. The
+# staging aggregates therefore apply NO deleted_at filter, matching
+# firstSlotOccupyingForPatient()'s withTrashed(): a soft delete never releases a
+# slot, only an audited CANCEL or VOID does.
 #
-# THE BRIEF'S MULTI-ITEM FRAMING, CORRECTED: the real contract is flat and
-# singular, and the FormRequest says so in its own docblock. Converting it to
-# decisions[<item>][decision] would have WEAKENED PR1's structural guarantee
-# that there can be no Review All.
+# THE §13 ROLE MISMATCH, RESOLVED AND REPORTED. The owner asked for Super Admin
+# / Supervisor RME / Admin Klinik. Measured on production: there are ZERO Admin
+# Klinik accounts — all four branch clinic admins (29 Admin Sunu, 30 Landak,
+# 31 Antang, 32 Telkomas) carry `Front Office`, alongside four generic
+# front-desk accounts (7, 8, 16, 17). And `Front Office` is DEFINED as the exact
+# union of the two legacy roles it merged, with FrontOfficeRoleTest deriving
+# that union from their arrays precisely so "a permission added to Admin Klinik
+# later must not silently skip the merged role".
 #
-# CI GAP FOUND AND CLOSED: measured with the workflow's own filter, the critical
-# gate selected 24 of the 119 batch tests. Not zero — which is worse, because
-# partial selection reads like coverage. The matches were accidental (the
-# unrelated `Odontogram` token, plus Pest descriptions containing the word);
-# LegacyBatchPublishGuardTest and LegacyBatchReviewDatabaseInvariantTest ran
-# nowhere. `LegacyRme` does not match `LegacyBatchReviewRmeTest` — --filter
-# matches the test identity and the substring is `LegacyBatchReviewRme`. Fixed by
-# adding LegacyBatchReview|LegacyBatchPublish to BOTH filter variants (asserted
-# byte-identical) and declaring all nine files in ci_runner's
-# critical_gate_mandatory_suites. Selection: 4800 -> 4895 (+95).
+# So granting Admin Klinik alone would have broken a tested invariant AND
+# reached nobody. Both roles are granted. The measured consequence is stated
+# rather than glossed: the four generic front-desk accounts gain the page too.
+# They already hold `manage patients`, `view_rme_patient_reports` and both
+# legacy intake view permissions, so the report discloses no patient field they
+# cannot already reach, and it stays pinned to their own branch. The reversal, if
+# the owner prefers it, is to drop the Front Office line and provision real
+# Admin Klinik accounts.
 #
-# frontend_change: true — one Blade view and the JS bundle. npm run build is
-# required; there is no migration, route, permission, policy or schema change.
+# BRANCH SCOPE IS BORROWED, NOT INVENTED: LegacyImportHubService::
+# GOVERNANCE_PERMISSIONS, referenced rather than copied — already defined as the
+# union of the two archives' own governance sets for the sibling page in this
+# same module and nav group, and held in this system only by Supervisor RME
+# (plus Super Admin via the single global Gate::before). Everyone else resolves
+# to their own BranchContext branch, and an unresolvable scope yields an EMPTY
+# list that the repository turns into "no rows" rather than "no filter".
 #
-# browser_required: false, and the residual is stated rather than hidden. The
-# local dev database is unseeded (0 branches / 0 users / 0 patients), is behind
-# on migrations (168 applied), and the legacy capability resolves
-# migrationEnabled()=false locally, so a Dusk path would mean migrating and fully
-# seeding the dev estate plus a served process with flag overrides. The ordering
-# property is instead proven against the REAL factory with a form double that
-# captures the field at the serialization instant, and the rendered markup is
-# asserted separately per archive. Nothing in CI runs this page in a browser
-# engine, so an Alpine initialization failure here specifically would not be
-# caught; a sprint with a seeded estate should add the Dusk test.
+#   LegacyOdontogramWorkspaceScope WAS REJECTED: its governance set includes
+#   create_legacy_odontogram_imports, which Admin Klinik and Front Office both
+#   hold, so reusing it would have promoted every branch intake operator to
+#   estate-wide visibility — the exact opposite of the requirement.
+#
+#   RmeWorkingBranchScope WAS REJECTED: it is the clinic-OPERATIONS authority and
+#   fails closed to empty for a context-bound role with no active online context.
+#   The legacy archive's own established authority is the BranchContext-based
+#   workspace scope, which is also what resolves the Front Office branch pin.
+#
+# READ-ONLY, STRUCTURALLY: the repository interface exposes no create, update,
+# delete, upsert or transition method; the module registers exactly ONE route and
+# it is a GET; a test asserts the page writes no row and creates no clinic visit,
+# medical record, odontogram, invoice, payment, lab order or SATUSEHAT candidate.
+#
+# NO MIGRATION, NO INDEX. §17 says not to add an index until a plan proves one is
+# needed, and the plan proves none is: EXPLAIN ANALYZE on the real production
+# estate (1519 legacy patients) runs in 0.552 ms / 14 shared buffer hits, with an
+# Index Scan on mst_patients_medical_record_number_unique feeding the ORDER BY so
+# LIMIT 25 reads 27 rows — no Seq Scan on mst_patients, no sort of 1519 rows.
+#
+# QUERY SHAPE: four GROUPED aggregates LEFT JOINed, bounded by the number of
+# DOCUMENTS rather than patients. Correlated EXISTS was rejected because the
+# filter runs over the whole scope before pagination, so its cost would grow with
+# the patient count — the dimension projected to grow fastest. The SQL is
+# portable on purpose (max(case when …) rather than bool_or / FILTER), and the
+# whole suite is verified on PostgreSQL 16.15, production's exact version.
+#
+# frontend_change: false — one new Blade view built from existing x-ui components
+# and one sidebar entry. No JS, no CSS, no asset rebuild.
 
-id: BUGFIX-LEGACY-BATCH-REVIEW-DECISION-NOT-SUBMITTED-1
-type: RUNTIME_FIX
+id: FEATURE-LEGACY-PATIENT-DOCUMENT-COMPLETENESS-1
+type: MODULE_SPRINT
 module: LegacyImport
-title: "Legacy Batch Review decision submission: the decision is written into the serialized field synchronously instead of relying on Alpine's microtask flush, so Tandai Ditinjau reaches the server as decision=REVIEWED; one encoding shared by mouse, keyboard and triage confirmation; server-side required validation preserved verbatim; verified separately for RME and Odontogram; the critical gate now actually selects the batch review and publish suites"
+title: "Kelengkapan Arsip Pasien Legacy: a read-only, branch-scoped monitor of legacy-imported patients whose legacy RME and/or legacy odontogram archive is not yet complete; provenance is mst_patients.import_batch_id so natively registered patients can never appear; per-document state is derived from the real staging and record state machines in the same record-before-staging order the single-active-document guard uses, so in-progress is never reported as missing and the page never invites an upload the server would refuse; set-based SQL with a constant query count; no migration and no index"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 runtime_change: true
 schema_change: false
-frontend_change: true
-security_impact: false
-branch_isolation_impact: false
+frontend_change: false
+security_impact: true
+branch_isolation_impact: true
 ledger_impact: false
 deploy_required: true
 browser_required: false
 test_profiles: []
-inherits_parent_go: feature-legacy-batch-review-publish-1-pr2-go
+go_tag: feature-legacy-patient-document-completeness-1-go
+inherits_parent_go: bugfix-legacy-batch-review-decision-not-submitted-1-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1

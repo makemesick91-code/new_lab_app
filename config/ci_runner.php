@@ -239,6 +239,35 @@ return [
          * hence this declaration — the token is what makes them run, this list is
          * what makes a dropped token fail loudly instead of silently.
          */
+        /*
+         * FEATURE-LEGACY-PATIENT-DOCUMENT-COMPLETENESS-1 — the legacy archive
+         * completeness report.
+         *
+         * NO NEW TOKEN WAS NEEDED, AND THAT IS EXACTLY WHY THESE ARE DECLARED.
+         * The existing `LegacyPatient` token already selects all three suites,
+         * but only because `LegacyPatientArchiveCompletenessTest` happens to
+         * contain `LegacyPatient` as a contiguous substring. That is coverage
+         * resting on a filename coincidence — rename the class and the three
+         * suites run nowhere, silently. Declaring them here makes the coverage
+         * reconciliation fail loudly instead.
+         *
+         * Each holds a property that cannot be recovered elsewhere:
+         *
+         *   (base)  — the provenance predicate. Only legacy-IMPORTED patients
+         *             appear; a natively registered patient never does, however
+         *             old their Nomor RM looks. Also the agreement with the real
+         *             single-active-document guard, which is what stops the page
+         *             inviting an upload the server would refuse.
+         *   Access  — branch isolation (Admin Klinik pinned, crafted branch_id
+         *             dropped, unresolvable scope fails closed to nothing) and
+         *             the PII boundary on the rendered row.
+         *   Query   — the absence of an N+1 over a 1500-patient estate, proven
+         *             by measuring the same page at two very different sizes.
+         */
+        'tests/Feature/LegacyCompleteness/LegacyPatientArchiveCompletenessTest.php',
+        'tests/Feature/LegacyCompleteness/LegacyPatientArchiveCompletenessAccessTest.php',
+        'tests/Feature/LegacyCompleteness/LegacyPatientArchiveCompletenessQueryTest.php',
+
         'tests/Feature/LegacyBatchReview/LegacyBatchReviewRmeTest.php',
         'tests/Feature/LegacyBatchReview/LegacyBatchReviewOdontogramTest.php',
         'tests/Feature/LegacyBatchReview/LegacyBatchReviewHttpTest.php',

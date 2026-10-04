@@ -99,6 +99,10 @@ const SUPERVISOR_RME_PERMISSIONS = [
     'view_legacy_odontogram_imports',
     'review_legacy_odontogram_imports',
     'publish_legacy_odontogram_imports',
+    // FEATURE-LEGACY-PATIENT-DOCUMENT-COMPLETENESS-1 — read-only legacy archive
+    // completeness report. Grants no upload, review, publish or void, and is
+    // absent from every GOVERNANCE_PERMISSIONS list so it widens no scope.
+    'view_legacy_patient_archive_completeness',
     // FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-01 — capture and read the signed
     // PERSETUJUAN TINDAKAN MEDIS that gates RME payment. Supervisor RME holds the
     // full RME operational surface, so it holds both; the same pair also goes to
