@@ -259,3 +259,117 @@ and reviewer:
   `bootstrap/app.php`, or it dies on `Illuminate\Foundation\Application not found`.
 - `LegacyRmeFeatureGuard` lives in `App\Modules\LegacyRme\Support`, not
   `\Services`.
+
+---
+
+## 11. Shipped and deployed (2026-10-04)
+
+**PR #450** squash-merged as `dd053c22641206c8e3f40ca79049a50133dd1882`.
+**GO tag** `bugfix-legacy-batch-review-decision-not-submitted-1-go` (annotated,
+object `4fed0780`) @ `dd053c22` — local peel == remote peel == VPS HEAD, and
+`git describe --tags --exact-match HEAD` on the VPS resolves to the tag.
+
+### Tree integrity
+
+| | |
+|---|---|
+| CI candidate tree | `35cd291e9f19d4389f619b62bbe6f696415cd4cc` |
+| Merge commit tree | `35cd291e9f19d4389f619b62bbe6f696415cd4cc` |
+| Deployed tree | `35cd291e9f19d4389f619b62bbe6f696415cd4cc` |
+
+One tree from CI through production — the squash changed no content.
+
+### CI (run `37195685930`, exact SHA `417c0370`)
+
+Every required gate `success`: CICD-CTRL Gate Classifier, NSF-R012 Quality,
+NSF-R011 Critical Test Gate, CICD-CTRL Selective Module Gate, NSF-9 Release
+Safety & Automated Smoke, NSF-10 Release Evidence, Phase 3 Android Clinic App.
+
+Read from the **log**, not the check mark:
+
+```
+Tests:    4895 passed (25696 assertions)
+```
+
+`Failed asserting` = 0, `⨯` glyph = 0, no `N failed` segment. **4895 is exactly
+the post-token selection count measured locally**, which is the independent
+confirmation that the token fix took effect in CI. `LegacyBatchPublishGuardTest`
+— which previously ran nowhere — appears in the log.
+
+The sibling `NSF-R011 Critical Test Gate: skipped` is the inactive CICD-CTRL-3
+runner variant (exactly one of the two runs, by design); verified mid-run that
+one was genuinely `in_progress` so there was no false-green risk.
+
+**`NSF-R011 Full Suite Gate: skipped`** per the standing GLOBAL TEMPORARY
+FULL-SUITE POLICY and the owner's explicit instruction. The classifier marked it
+`required` as a *risk signal*, which is not an authorization. **SKIPPED IS NOT
+PASS** — no full-suite evidence is claimed and no CI was weakened to avoid the
+runtime.
+
+### Deploy
+
+Run **on** the VPS via `bash scripts/deploy-vps-runner.sh start`:
+`exit=0`, `DEPLOY OK: 20261004-122354`,
+`DEPLOY_HEAD_TARGET_MATCH=YES (dd053c22)`, `immutable-exec rc=0`,
+`DEPLOY_SNAPSHOT_CLEANED=YES`. `PENDING_MIGRATIONS=0` (this fix adds none).
+
+The single smoke warning is the **known pre-existing** co-tenant nginx shadow:
+`SMOKE-HTTP-HEALTH` probes `http://127.0.0.1/login` and another application on
+this shared VPS answers the bare loopback with 404. Not a regression — the
+canonical domain returns 200.
+
+### Production verification — nothing published
+
+**The decisive frontend check.** This is a browser fix, so the question is
+whether the fix reached the bundle the browser downloads:
+
+| | before deploy | after deploy |
+|---|---|---|
+| `app.js` bundle | `assets/app-CsockFtp.js` | `assets/app-eXeBP3E3.js` |
+| `decisionField` occurrences | **0** | **1** |
+
+`legacyBatchReview` and `NEEDS_ATTENTION` are also present. The deployed hash
+matches the local build byte-for-byte, which is a free determinism check.
+
+The deployed Blade carries the fix too: `x-ref="decisionField"` = 1,
+`@keydown.window="onKey($event)"` = 1, old `x-model="decision"` = **0**, inline
+`function legacyBatchReview` = **0**.
+
+HTTP over `https://daengtisia.online` (never the bare IP): `/login`,
+`/health/live`, `/health/ready`, `/health/lb` all **200**. Both archives' review
+surfaces return **302** for a guest — `settings/rme/legacy-review-imports` and
+`settings/rme/legacy-review-odontograms` — no 500.
+
+**Zero clinical side effects.** Nothing was reviewed, attested or published:
+
+| table | count |
+|---|---|
+| `trx_rme_legacy_records` | 9 (unchanged) |
+| `trx_odontogram_legacy_records` | 1 (unchanged) |
+| `stg_legacy_batch_review_decisions` | **0** |
+| `stg_legacy_review_triage` | **0** |
+| `stg_legacy_batch_publish_runs` / `_items` | **0** / **0** |
+
+The application log is **byte-identical** to the pre-deploy baseline —
+**1,428,095 bytes / 160 `.ERROR` lines** before and after. Zero new log bytes,
+zero new errors. `queue:failed` empty. Production tree clean.
+
+Verification was read-only throughout and **no `php artisan tinker` was run on
+production** (it writes `ERROR` records and pins the monitor to WATCH for 24h).
+
+### What the operator can now do
+
+19 staged legacy RME imports and 1 odontogram import were sitting at
+`READY_FOR_REVIEW` with 1 open review session. **Tandai Ditinjau** now records a
+decision instead of answering "keputusan tinjauan wajib diisi." Publishing is
+unchanged and still requires every canonical gate.
+
+### Cleanup
+
+Only task-created resources were removed: the `lbrdec-pg16` PostgreSQL 16
+container and the `legacy-batch-review-decision-fix` worktree (44 → 43). The
+other four `*-pg16` containers, the 43 unrelated worktrees, and **both stashes**
+— including `stash@{0}` (CICD-CTRL-3 runner decommission docs) — are untouched.
+No task-created process remains (verified from a `ps` snapshot with the
+self-matching line excluded, because a bare `pgrep` matches its own command
+line).
