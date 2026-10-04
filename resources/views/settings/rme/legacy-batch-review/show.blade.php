@@ -180,7 +180,14 @@
                             <form method="POST" action="{{ route($routePrefix.'.decide', $session->uuid) }}" x-ref="form">
                                 @csrf
                                 <input type="hidden" name="import_id" value="{{ $focus['import_id'] }}">
-                                <input type="hidden" name="decision" x-model="decision">
+                                {{-- BUGFIX-LEGACY-BATCH-REVIEW-DECISION-NOT-SUBMITTED-1.
+                                     `x-ref` is load-bearing: submitDecision() writes this
+                                     field synchronously before submitting, because Alpine
+                                     flushes `:value` on the microtask queue and a
+                                     declarative binding is still stale at the instant the
+                                     browser serializes the form. The binding stays for
+                                     coherent rendering; it is NOT what the server reads. --}}
+                                <input type="hidden" name="decision" x-ref="decisionField" :value="decision">
                                 <input type="hidden" name="next_import_id" value="{{ $nextImportId ?? '' }}">
                                 <input type="hidden" name="pages_viewed" value="{{ count($focus['page_numbers']) }}">
 
@@ -268,83 +275,4 @@
         </div>
     </div>
 
-    @push('scripts')
-        <script>
-            // Thin keyboard/reason layer over the same form a mouse submits.
-            // It cannot express anything the visible buttons cannot, and it
-            // never bypasses the server-side reason requirement.
-            function legacyBatchReview(config) {
-                return {
-                    decision: '',
-                    reasonCode: '',
-                    needsReason: false,
-                    mutable: config.mutable,
-
-                    mark(decision) {
-                        if (! this.mutable) {
-                            return;
-                        }
-
-                        this.decision = decision;
-
-                        if (decision === 'REVIEWED') {
-                            this.needsReason = false;
-                            this.$refs.form.submit();
-
-                            return;
-                        }
-
-                        // Withholding requires a reason, so reveal the panel
-                        // instead of submitting. The server enforces this too.
-                        this.needsReason = true;
-                    },
-
-                    confirmTriage() {
-                        if (this.reasonCode === '') {
-                            return;
-                        }
-
-                        this.$refs.form.submit();
-                    },
-
-                    cancelTriage() {
-                        this.needsReason = false;
-                        this.decision = '';
-                        this.reasonCode = '';
-                    },
-
-                    onKey(event) {
-                        // Never hijack typing in the reason note or a filter.
-                        const tag = (event.target.tagName || '').toLowerCase();
-
-                        if (tag === 'input' || tag === 'textarea' || tag === 'select') {
-                            return;
-                        }
-
-                        if (event.metaKey || event.ctrlKey || event.altKey) {
-                            return;
-                        }
-
-                        const key = event.key.toLowerCase();
-
-                        if (key === 'r') { event.preventDefault(); this.mark('REVIEWED'); return; }
-                        if (key === 'b') { event.preventDefault(); this.mark('BLOCKED'); return; }
-                        if (key === 'p') { event.preventDefault(); this.mark('NEEDS_ATTENTION'); return; }
-
-                        if (event.key === 'ArrowLeft' && this.$refs.prev) {
-                            event.preventDefault();
-                            this.$refs.prev.click();
-
-                            return;
-                        }
-
-                        if (event.key === 'ArrowRight' && this.$refs.next) {
-                            event.preventDefault();
-                            this.$refs.next.click();
-                        }
-                    },
-                };
-            }
-        </script>
-    @endpush
 </x-settings-shell>

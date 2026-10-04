@@ -219,6 +219,37 @@ return [
         'tests/Feature/LegacyMassUpload/LegacyMassUploadOdontogramTest.php',
 
         /*
+         * FEATURE-LEGACY-BATCH-REVIEW-PUBLISH-1 (PR1 review + PR2 publish), and
+         * the decision-submission contract that BUGFIX-LEGACY-BATCH-REVIEW-
+         * DECISION-NOT-SUBMITTED-1 added.
+         *
+         * MEASURED, NOT ASSUMED: before this registration the critical filter
+         * selected 24 of the 119 tests these files hold. Not zero — which is
+         * worse, because partial selection reads like coverage. The matches were
+         * accidental: the unrelated `Odontogram` token swept both odontogram
+         * files wholesale and caught individual tests elsewhere whose Pest
+         * DESCRIPTION happened to contain the word. `LegacyBatchPublishGuardTest`
+         * (the publish selection contract) and `LegacyBatchReviewDatabaseInvariant
+         * Test` ran NOWHERE at all, and only 1 of 22 `LegacyBatchReviewRmeTest`
+         * tests ran.
+         *
+         * `LegacyRme` does not match `LegacyBatchReviewRmeTest`: --filter matches
+         * the test identity and the contiguous substring there is
+         * `LegacyBatchReviewRme`. Hence the two new tokens in the workflow, and
+         * hence this declaration — the token is what makes them run, this list is
+         * what makes a dropped token fail loudly instead of silently.
+         */
+        'tests/Feature/LegacyBatchReview/LegacyBatchReviewRmeTest.php',
+        'tests/Feature/LegacyBatchReview/LegacyBatchReviewOdontogramTest.php',
+        'tests/Feature/LegacyBatchReview/LegacyBatchReviewHttpTest.php',
+        'tests/Feature/LegacyBatchReview/LegacyBatchReviewDatabaseInvariantTest.php',
+        'tests/Feature/LegacyBatchReview/LegacyBatchReviewSubmissionContractTest.php',
+        'tests/Feature/LegacyBatchPublish/LegacyBatchPublishRmeTest.php',
+        'tests/Feature/LegacyBatchPublish/LegacyBatchPublishOdontogramTest.php',
+        'tests/Feature/LegacyBatchPublish/LegacyBatchPublishHttpTest.php',
+        'tests/Feature/LegacyBatchPublish/LegacyBatchPublishGuardTest.php',
+
+        /*
          * REVISION-LEGACY-PATIENT-STAGED-VERIFICATION-CANCEL-1. Both suites are
          * selected by the `LegacyPatient` token above; declared here so the
          * coverage reconciliation fails loudly if that token is ever dropped or a

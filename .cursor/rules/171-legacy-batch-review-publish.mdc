@@ -286,3 +286,78 @@ the original `UniqueConstraintViolationException`) when the offset is reverted.
 fixed literal can coincide with a real fixture patient's number once the shared
 sequence has advanced — which silently turns a negative test into a test of
 nothing. Derive it from the patient under test instead.
+
+---
+
+## BUGFIX-LEGACY-BATCH-REVIEW-DECISION-NOT-SUBMITTED-1 — the submission contract
+
+**A declarative binding is never trusted at the instant of submission.**
+
+Alpine writes an `x-model` / `:value` binding to the DOM inside a reactive effect,
+and effects are flushed on the **microtask queue**
+(`alpinejs/dist/module.cjs.js`: `scheduler → queueJob → queueMicrotask(flushJobs)`,
+with the write inside `effect(() => ... el._x_forceModelUpdate(value))`). Code
+that assigns the bound property and then submits in the **same tick** serializes
+the *previous* value:
+
+```js
+this.decision = decision;   // queues the DOM write
+this.$refs.form.submit();   // runs NOW — the field is still ''
+```
+
+That shipped. Production answered "keputusan tinjauan wajib diisi." for every
+**Tandai Ditinjau**, and the server was correct: the browser sent `decision=''`.
+
+Rules that follow:
+
+1. **Write the value into the field synchronously, in the same block as
+   `form.submit()`.** Never `setTimeout`, never `$nextTick`, never a retry —
+   those manage a race instead of removing it.
+2. **`x-ref="decisionField"` on the hidden input is load-bearing.** The
+   `:value` binding stays for coherent rendering only; it is not what the server
+   reads. If the ref is missing, `submitDecision()` refuses rather than
+   submitting something unverifiable.
+3. **Every decision control is an explicit `type="button"`.** A `<button>` with
+   no type defaults to submit and would post natively before any value is
+   written. Verify by anchoring on `x-on:click="mark('<DECISION>')"`, never on
+   the visible label — `Tahan` also labels the clear-triage control, which is
+   legitimately a native submit for its own form.
+4. **One encoding, one path.** Mouse, keyboard `R`/`B`/`P`, and triage
+   confirmation all reach the server through `submitDecision()`. Two encodings
+   means the untested one breaks.
+5. **The client never invents a decision.** An empty or unknown value is refused
+   client-side, and the server's `required` + `Rule::in` stays the authority.
+   Nothing may silently become `REVIEWED`.
+6. **The payload is flat and singular** — `decision` + a server-rendered
+   `import_id`. Do **not** "improve" it into `decisions[<item>][decision]`: the
+   singular shape is what structurally forbids a Review All, and an untouched
+   document must have no decision row at all.
+7. **The reviewer component lives in `resources/js/legacy-batch-review.js`.** It
+   was inline, and that is how the defect shipped green — submit-time
+   serialization ordering is invisible to a PHP feature test (they POST a payload
+   that already carries a decision) and invisible to the eye (the button looks
+   like it worked; the page just returns a validation error). Do **not** move it
+   back inline.
+
+### CI selection — measured, not assumed
+
+`--filter` matches the test **identity**, so `LegacyRme` does **not** match
+`LegacyBatchReviewRmeTest` (the contiguous substring is `LegacyBatchReviewRme`).
+Before this bugfix the critical gate selected **24 of 119** batch tests — not
+zero, which is worse, because partial selection reads like coverage. The matches
+were accidental, via the unrelated `Odontogram` token and Pest *descriptions*
+containing the word; `LegacyBatchPublishGuardTest` and
+`LegacyBatchReviewDatabaseInvariantTest` ran nowhere.
+
+`LegacyBatchReview|LegacyBatchPublish` now appears in **both** filter variants
+(which must stay byte-identical) and all nine files are declared in
+`config/ci_runner.php` `critical_gate_mandatory_suites`.
+
+### Known residual
+
+**No browser-engine test exists for this page.** The ordering property is proven
+against the real factory with a form double that captures the field at the
+serialization instant, and the rendered markup is asserted per archive — but
+nothing in CI runs this page in Chrome, so an Alpine *initialization* failure
+here specifically would not be caught. A sprint with a seeded local estate should
+add the click-and-keyboard Dusk test for both archives.
