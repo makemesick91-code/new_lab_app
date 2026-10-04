@@ -1,96 +1,77 @@
-# FEATURE-LEGACY-BATCH-REVIEW-PUBLISH-1 — PR1 of 2 (BATCH REVIEW)
+# FEATURE-LEGACY-BATCH-REVIEW-PUBLISH-1 — PR2 of 2 (BATCH PUBLISH)
 #
-# Reviewing and publishing legacy archives one document at a time is
-# operationally too slow. This feature makes both batch-oriented — but they are
-# NOT equivalent, and the owner split them across two PRs by RISK rather than by
-# document type: review is non-final, publish is the dangerous, final half.
+# The owner split this feature across two PRs by RISK rather than by document
+# type: review is non-final, publish is the dangerous, final half. PR1 shipped
+# batch review and GO'd at 01b28aeb. PR2 (this manifest) ships batch publish for
+# both Legacy RME and Legacy Odontogram.
 #
-# PR1 (this manifest) ships BATCH REVIEW for both Legacy RME and Legacy
-# Odontogram and changes nothing whatsoever about publishing. PR2 starts only
-# after PR1 is merged, deployed, production-verified and GO-tagged.
+# THE SELECTION CONTRACT, CONSUMED FROM PR1 VERBATIM
+# -------------------------------------------------
+#   canonical status = REVIEWED
+#   AND no active blocking triage annotation
+#   AND every current publish-time guard passes
 #
-# THE PRODUCT RULE PR1 PROTECTS
-# -----------------------------
-# There is no "Review All". The workspace speeds up REACHING and INSPECTING each
-# document; it never substitutes for inspection. That is enforced structurally,
-# not by UI convention: the decision vocabulary has no "all" value, the request
-# that records an attestation names exactly one import, the submit request
-# carries no item list at all, and submit() can only act on decision rows that
-# already exist. An item nobody attested is untouched.
+# No BLOCKED or NEEDS_ATTENTION document is selectable or publishable, and
+# nothing in the BatchPublish module clears a triage annotation — clearing stays
+# a review-authority act in PR1's flow. Selection is a hint; the server
+# re-validates every document immediately before publishing it, so a document
+# that went stale between selection and publish is refused with a reason code
+# rather than published on a stale decision.
 #
-# Browser-open is deliberately NOT treated as proof of clinical review. View
-# telemetry is recorded as supporting evidence and read by no gate — a
-# precondition the system can satisfy on the operator's behalf would prove
-# nothing.
-#
-# WHAT THE AUDIT FOUND, AND WHY THERE ARE TWO ADAPTERS
+# NO OUTER TRANSACTION — ONE DOCUMENT, ONE TRANSACTION
 # ----------------------------------------------------
-# Both lifecycles were read before any code was written. They share an identical
-# nine-state machine (DRAFT..CANCELLED, same TRANSITIONS, same SLOT_OCCUPYING)
-# but that agreement is intentional-but-independent — the odontogram module
-# documents that its map is "derived from THIS module's own transition map, not
-# copied from the RME one".
-#
-# Their ENFORCEMENT differs sharply:
-#
-#   RME        routes every write through LegacyRmeImportLifecycleService
-#              ::perform(), shared verbatim with the ops CLI, running six
-#              numbered gates INCLUDING separation of duties on review.
-#   Odontogram has no lifecycle service and NO separation guard at all (a grep
-#              for `separation` across the module returns zero hits), so an
-#              uploader reviewing their own chart is permitted behaviour today.
-#
-# So batch review ships TWO adapter implementations, never one method with a
-# type branch. Enforcing RME's rule on odontogram would make the batch surface
-# silently stricter than the canonical page it mirrors; dropping it from RME
-# would silently remove a clinical control. Both directions are pinned by tests.
-#
-# BLOCK IS A STICKY, NON-DESTRUCTIVE SECOND AXIS
-# ----------------------------------------------
-#   canonical import status = READY_FOR_REVIEW   (never written by triage)
-#   review_triage_status    = BLOCKED            (new, additive, operational)
-#
-# and explicitly NOT `canonical import status = CANCELLED`. No new clinical
-# lifecycle state is invented, because the existing schema does not require one.
-# Blocking calls no canonical service, writes no canonical column, and never
-# releases the patient's single-active-document slot — that slot is held by the
-# canonical staging row's own status, and LegacySingleActiveDocumentService does
-# not consult the triage table at all. Cancellation remains a separate, explicit,
-# terminal act through the existing single-item flow.
-#
-# Clearing a block is itself a review-authority act, routed through the adapter
-# so it reuses the canonical policy truth per type: on RME an uploader barred
-# from reviewing their own document is equally barred from clearing a block on
-# it; on odontogram, where no separation guard exists, a review-permission
-# holder may.
-#
-# PARTIAL SUCCESS IS THE DESIGN, NOT AN ERROR PATH
-# ------------------------------------------------
-# One import is one transaction and the canonical layer is built that way — the
-# review service opens its own transaction, takes its own row lock, and writes
+# The canonical publish opens its own transaction, takes its own row lock,
+# re-validates every rule, writes the archive record and its pages, and writes
 # its audit row AFTER commit. Wrapping N of those in one outer transaction would
-# roll back reviews that had already succeeded and would make the post-commit
-# audit rows lie. So submit() LOOPS the canonical per-import call: 74 attested,
-# 2 refused by the domain => 72 reviewed and 2 refused, never 0.
+# roll back publications that had already succeeded, make the post-commit audit
+# rows describe records a rollback destroyed, and hold locks across hundreds of
+# documents. So a pass LOOPS the canonical per-document call and partial success
+# is the design: 100 selected / 97 eligible / 3 stale => 97 published and 3
+# refused with reasons, never 0 and never silently skipped. Only PENDING items
+# are attempted, so an interrupted pass resumes without duplicating.
 #
-# NO PERMISSION WIDENING. Reuses `review_legacy_rme_imports` and
-# `review_legacy_odontogram_imports` verbatim. No batch-specific ability exists,
-# because a role grant whose only job is to reveal a menu is how privilege
-# creeps. Nothing here grants create, publish or VOID.
+# EXACTLY-ONCE IS THE CANONICAL LAYER'S PROPERTY, NOT THIS ORCHESTRATOR'S
+# ----------------------------------------------------------------------
+# It comes from UNIQUE(source_import_id) + lockForUpdate + the
+# findBySourceImportId() early return. It is NOT the run lock's: that lock
+# serializes only the status transition and is released on commit, and
+# PUBLISHING -> PUBLISHING is permitted so a resumed pass can re-enter — which
+# makes the run status structurally incapable of serializing two passes. A test
+# asserts that attribution directly, because claiming session-level locking
+# would misdescribe where the safety actually lives.
 #
-# schema_change: true — three ADDITIVE staging tables, no column dropped, no
+# TWO ADAPTERS, NEVER A TYPE BRANCH
+# ---------------------------------
+# RME routes through LegacyRmeImportLifecycleService::perform(..., PUBLISH, ...)
+# and so inherits separation of duties plus the source-patient binding re-check.
+# Odontogram has neither anywhere in its module — pre-existing canonical
+# behaviour, identical on its own single-item page. Making odontogram weaker, or
+# silently stricter than the page it mirrors, needs an explicit owner decision.
+# Both directions are pinned by tests and by mutation.
+#
+# NO PERMISSION WIDENING. Reuses publish_legacy_rme_imports and
+# publish_legacy_odontogram_imports verbatim. No batch-publish super-permission
+# exists, and no seeder runs post-deploy, because PR2 adds no ability.
+#
+# BOUNDED EXECUTION, NO QUEUE INTRODUCED. MAX_SELECTION=100 (matched to
+# MAX_PER_PAGE — all one page can render), MAX_OUTSTANDING=500 cumulative per
+# run, MAX_PUBLISH_PASS=50. The per-item write deliberately stays in its own
+# short single-row transaction rather than being batched into one, which would
+# trade many brief transactions for one long-held one.
+#
+# schema_change: true — two ADDITIVE staging tables, no column dropped, no
 # existing table altered, no backfill. `migrate` only; never migrate:fresh or
-# db:wipe. Nothing in them is clinical: deleting every row would lose the
-# operator work-queue and change not one patient's archive.
+# db:wipe. Nothing in them is clinical: the archives they orchestrate live in
+# trx_rme_legacy_records / trx_odontogram_legacy_records.
 #
-# security_impact: true — a new authorization surface (session ownership, triage
-# clearing, cross-archive IDOR) even though every clinical gate is inherited
-# rather than re-expressed.
+# security_impact: true — a new surface that triggers irreversible clinical
+# publication, even though every clinical gate is inherited from the canonical
+# per-document path rather than re-expressed here.
 
-id: FEATURE-LEGACY-BATCH-REVIEW-PUBLISH-1-PR1
+id: FEATURE-LEGACY-BATCH-REVIEW-PUBLISH-1-PR2
 type: MODULE_SPRINT
 module: LegacyImport
-title: "Batch review workspace for Legacy RME and Legacy Odontogram: efficient per-item human review with prev/next navigation and keyboard shortcuts, sticky non-destructive triage (Blocked / Needs Attention) that never touches the canonical lifecycle or the single-active-document slot, bulk submit of individually-attested decisions through the canonical per-item review path with partial success and resumability — no Review All, no permission widening, publish path untouched"
+title: "Batch publish for Legacy RME and Legacy Odontogram: selection restricted to REVIEWED documents with no active blocking triage, per-document publish-time revalidation through the canonical publish path (SOD, patient binding, branch scope, date and native-boundary rules, single-active guard), one document per transaction with partial success and resume-after-interruption, exactly-once inherited from the canonical UNIQUE(source_import_id) layer rather than claimed for the orchestrator — no outer transaction, no queue, no permission widening"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 runtime_change: true
 schema_change: true
@@ -101,10 +82,10 @@ ledger_impact: false
 deploy_required: true
 browser_required: false
 test_profiles: []
-go_tag: feature-legacy-batch-review-publish-1-pr1-go
+go_tag: feature-legacy-batch-review-publish-1-pr2-go
 go_tag_created: true
-go_commit: 01b28aebc6cc02320152e99f40d629f065f2ed37
-merged_pr: 445
-ci_verified_sha: 3757097fb81da65f6579de58d8688e1c84d8dfe5
-inherits_parent_go: fix-legacy-wave4-window-extension-1-go
+go_commit: ac9acd9f16914650feea14242003ff8c6962ce27
+merged_pr: 448
+ci_verified_sha: 915fc096368fb750f9db26b810e1e1a78ff4be66
+inherits_parent_go: feature-legacy-batch-review-publish-1-pr1-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1

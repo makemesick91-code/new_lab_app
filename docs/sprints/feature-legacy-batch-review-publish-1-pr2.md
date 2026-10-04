@@ -252,7 +252,96 @@ Two of fourteen survived the first run, both weak assertions of mine:
 
 ---
 
+## Shipped
+
+PR #448 squash-merged as `ac9acd9f16914650feea14242003ff8c6962ce27`.
+
+CI was green on the **exact** candidate SHA `915fc096` — CI head = PR head = local HEAD, so the
+green run describes the code that merged and not an earlier push.
+
+**NSF-R011 Full Suite was SKIPPED on `pull_request`** under the standing temporary deferral policy,
+even though the CICD-CTRL-1 classifier marked it required. **SKIPPED is not PASS.** No Full Suite
+evidence is claimed for this PR. The substitute evidence is the local regression and the real
+PostgreSQL 16 runs recorded under *Verification* above — not a full-suite run. CI was not weakened
+to avoid the runtime.
+
+GO tag `feature-legacy-batch-review-publish-1-pr2-go` @ `ac9acd9f` (annotated, no force), verified
+equal at all four points:
+
+| point | value |
+| --- | --- |
+| local tag peel | `ac9acd9f1691…` |
+| remote tag peel | `ac9acd9f1691…` |
+| VPS `HEAD` | `ac9acd9f1691…` |
+| `git describe --exact-match HEAD` on VPS | `feature-legacy-batch-review-publish-1-pr2-go` |
+
+## Production deployment
+
+Deployed with `scripts/deploy-vps-runner.sh start`, run **on** the VPS (detached; the runner is
+designed to execute there, and driving it over a foreground SSH session is what the evidence-capture
+timeout trap is about).
+
+- backup taken **before** migrate, per the standing rule
+- migration `2026_10_04_200001_create_legacy_batch_publish_tables` → `[77] Ran`
+- `migrate --force` only — never `migrate:fresh`, never `db:wipe`
+- route count 701 → 713 (+12, the batch-publish routes)
+- `DEPLOY OK`, `exit=0`, `DEPLOY_HEAD_TARGET_MATCH=YES`
+- no seeder step: PR2 adds no permission and no new ability
+
+The single deploy smoke warning is the **known pre-existing nginx co-tenant shadow** —
+`http://127.0.0.1/login` returns 404 because a co-tenant app answers the bare loopback; the
+canonical entry point `https://daengtisia.online/login` returns 200. Unrelated to this PR.
+
+## Production verification
+
+Read-only. **No clinical document was published, and no fake patient, RME or odontogram was created
+to exercise the publish path.** The publish path is proven by the test and mutation evidence above;
+production is proven by structure, wiring and read-only state.
+
+| # | check | result |
+| --- | --- | --- |
+| 1 | VPS `HEAD` | `ac9acd9f`, exact-match |
+| 2 | env / debug / maintenance | pilot / OFF / OFF |
+| 3 | migration | `[77] Ran` |
+| 4 | `stg_legacy_batch_publish_runs` + `_items` | both PRESENT |
+| 5 | batch-publish routes | 12 |
+| 6 | batch-publish super-permission | **0 — none exists** |
+| 7 | 3 services + both adapters | all resolve from the container |
+| 8 | RME `SeparatePublisherGuard` | `enabled=true`, guards `review,publish` |
+| 9 | Odontogram separation guard | **0 files — asymmetry preserved** |
+| 10 | PR1 `LegacyReviewTriageService` | wired; `blockingFor()` consumable |
+| 11 | bounds | `MAX_SELECTION=100` `MAX_OUTSTANDING=500` `MAX_PUBLISH_PASS=50` `MAX_PER_PAGE=100` |
+| 12 | new table row counts | `0` / `0` — the deploy created nothing |
+| 13 | canonical archives | unchanged: 9 RME, 1 odontogram published |
+| 14 | audit channels | `HTTP,CLI,BATCH` |
+| 15 | PostgreSQL | 16.15 |
+| 16 | `https://daengtisia.online` `/login` `/health/live` `/health/ready` | 200 / 200 / 200 |
+| 17 | new surfaces, guest | both 302 — no 500 |
+| 18 | PR1 review surfaces | both 302, unaffected |
+| 19 | sibling canonical surfaces | `legacy-imports`, `legacy-mass-imports`, `legacy-odontograms` all 302 |
+| 20 | php8.3-fpm + nginx | active; `queue:failed` empty |
+| 21 | deploy-caused log errors | **0** |
+
+On #21, the honest detail: `laravel.log` holds exactly one entry dated today, a
+`The "--columns" option does not exist` CLI typo at **01:27:06** — six hours *before* the 07:30:16
+deploy, from the PR1 verification window. The file's mtime is still 01:27:06, so the PR2 deploy
+wrote no log entry at all.
+
+## Deployment posture
+
+Gated by the **existing** legacy migration capability guard, not a new flag — that guard already
+gates every legacy upload, review, publish and VOID path, and the owner declined a second
+OFF-by-default flag after PR1's GO. Those flags are enabled in production, so the batch publish
+workspace is live for anyone **already** holding `publish_legacy_rme_imports` or
+`publish_legacy_odontogram_imports`. Nobody gains a permission, and every document still passes the
+complete canonical gate chain one document at a time.
+
 ## Status
 
-PR2 implemented, tested, security-reviewed and mutation-tested. **No GO tag exists for PR2 yet** —
-it is created only after merge, VPS deployment and production verification.
+**GO.** PR2 merged, deployed, production-verified and GO-tagged at `ac9acd9f`.
+
+**FEATURE-LEGACY-BATCH-REVIEW-PUBLISH-1 is COMPLETE** — PR1 (batch review, `01b28aeb`) and PR2
+(batch publish, `ac9acd9f`), both deployed and both GO-tagged. The operator flow is now: mass upload
+→ preflight → process → batch review workspace → human review per item → submit reviewed in bulk →
+batch publish → server re-validates each item → publish the eligible ones → report partial failures
+with reason codes.
