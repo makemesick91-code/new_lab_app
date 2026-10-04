@@ -79,8 +79,31 @@ class LegacyBatchPublishRunService
      */
     public const MAX_PUBLISH_PASS = 50;
 
-    /** Upper bound on one selection, so a single request cannot be unbounded. */
-    public const MAX_SELECTION = 500;
+    /**
+     * Upper bound on one selection request — §19, §20.
+     *
+     * Matched to MAX_PER_PAGE, because the workspace can only ever render that
+     * many checkboxes: a larger value is unreachable from the UI and only
+     * widens what a crafted request can cost. Each selected id costs a scope
+     * lookup plus a full re-evaluation (triage, already-published, patient,
+     * date rules, branch resolver, source binding), so this is the knob that
+     * actually bounds the work.
+     *
+     * The per-item write stays in its OWN short single-row transaction rather
+     * than being batched into one. Batching would trade many brief transactions
+     * for one long-held one, which is the opposite of what §20 asks for.
+     */
+    public const MAX_SELECTION = 100;
+
+    /**
+     * Upper bound on a run's CUMULATIVE outstanding set.
+     *
+     * MAX_SELECTION bounds one request; without this, N successive requests
+     * would accumulate N x MAX_SELECTION pending items in one run. The publish
+     * pass is separately capped so no single request ever walks them all, but an
+     * unbounded queue is still unbounded state.
+     */
+    public const MAX_OUTSTANDING = 500;
 
     public function __construct(
         private readonly LegacyReviewTriageService $triage,
@@ -136,7 +159,7 @@ class LegacyBatchPublishRunService
      * bookkeeping row pointing at nothing, and the operator is still told.
      *
      * @param  list<int>  $importIds
-     * @return array{selected:int, eligible:int, refused:int, unavailable:int}
+     * @return array{selected:int, eligible:int, refused:int, already:int, unavailable:int}
      */
     public function select(
         LegacyBatchPublishRun $run,
@@ -155,14 +178,30 @@ class LegacyBatchPublishRunService
         if (count($importIds) > self::MAX_SELECTION) {
             throw ValidationException::withMessages([
                 'import_ids' => sprintf(
-                    'Maksimal %d dokumen per sesi publikasi.',
+                    'Maksimal %d dokumen per pengiriman pilihan.',
                     self::MAX_SELECTION
+                ),
+            ]);
+        }
+
+        // The cumulative bound. One request is capped above; this stops a run
+        // accumulating an unbounded queue across many requests.
+        $outstanding = $run->attemptableItems()->count();
+
+        if ($outstanding + count($importIds) > self::MAX_OUTSTANDING) {
+            throw ValidationException::withMessages([
+                'import_ids' => sprintf(
+                    'Sesi ini sudah menampung %d dokumen menunggu publikasi (maksimal %d). '
+                    .'Publikasikan dahulu sebelum menambah.',
+                    $outstanding,
+                    self::MAX_OUTSTANDING
                 ),
             ]);
         }
 
         $eligible = 0;
         $refused = 0;
+        $already = 0;
         $unavailable = 0;
 
         foreach ($importIds as $importId) {
@@ -191,6 +230,23 @@ class LegacyBatchPublishRunService
                 continue;
             }
 
+            // A benign verdict means the document is ALREADY in the archive —
+            // "nothing was wrong, there was simply nothing to do". Recorded the
+            // same way publish() records it, so the two paths agree and the
+            // operator is not told a problem was found when none was.
+            if ($verdict->isBenign() && $verdict->existingRecordId !== null) {
+                $this->recordItem(
+                    $run, $adapter, $importId,
+                    $adapter->patientId($import), $adapter->sourceChecksum($import),
+                    LegacyBatchPublishItemStatus::PUBLISHED,
+                    $verdict->reasonCode, $verdict->reasonMessage,
+                    $verdict->existingRecordId,
+                );
+                $already++;
+
+                continue;
+            }
+
             $this->recordItem(
                 $run, $adapter, $importId,
                 $adapter->patientId($import), $adapter->sourceChecksum($import),
@@ -207,6 +263,7 @@ class LegacyBatchPublishRunService
             'selected' => count($importIds),
             'eligible' => $eligible,
             'refused' => $refused,
+            'already' => $already,
             'unavailable' => $unavailable,
         ];
     }
@@ -507,6 +564,40 @@ class LegacyBatchPublishRunService
         });
     }
 
+    /**
+     * Decide whether THIS attempt row may claim authorship of a publication.
+     *
+     * The canonical layer guarantees one RECORD. It does not stop two attempt
+     * rows in different runs both believing they created it: two interleaved
+     * passes can each observe "no record yet" before either canonical
+     * transaction commits, and both would then write created_record = true for
+     * one publication — inflating the audit trail and the operator's
+     * "published" count even though the archive is correct.
+     *
+     * So authorship is arbitrated against the attempt table itself: at most one
+     * row across ALL runs may hold created_record for a given import. A loser
+     * is still PUBLISHED (the document IS filed) but records
+     * ALREADY_PUBLISHED, which is the truth from its point of view.
+     */
+    private function mayClaimCreation(
+        LegacyBatchPublishAdapter $adapter,
+        LegacyBatchPublishItem $item,
+        bool $canonicalCreated,
+    ): bool {
+        if (! $canonicalCreated) {
+            return false;
+        }
+
+        $foreignKey = $adapter->importForeignKey();
+
+        return ! LegacyBatchPublishItem::query()
+            ->where('import_type', $item->import_type)
+            ->where($foreignKey, $item->getAttribute($foreignKey))
+            ->whereKeyNot($item->getKey())
+            ->where('created_record', true)
+            ->exists();
+    }
+
     private function markItemPublished(
         LegacyBatchPublishItem $item,
         LegacyBatchPublishAdapter $adapter,
@@ -514,6 +605,8 @@ class LegacyBatchPublishRunService
         bool $created,
         User $actor,
     ): void {
+        $created = $this->mayClaimCreation($adapter, $item, $created);
+
         $item->fill([
             'status' => LegacyBatchPublishItemStatus::PUBLISHED,
             $adapter->recordForeignKey() => $recordId,
@@ -599,6 +692,17 @@ class LegacyBatchPublishRunService
             : ($run->refused_count > 0
                 ? LegacyBatchPublishRunStatus::COMPLETED_WITH_REFUSALS
                 : LegacyBatchPublishRunStatus::COMPLETED);
+
+        // GUARDED, like every other status write. Without this, a run the
+        // operator ABANDONED mid-pass could be resurrected: abandon() legally
+        // moves PUBLISHING -> ABANDONED, but an in-flight pass holding its item
+        // set in memory would finish and then write COMPLETED over a status the
+        // transition map declares terminal. Nothing is published twice and
+        // nothing is un-published either way — but a terminated run must not
+        // report itself as completed.
+        if (! LegacyBatchPublishRunStatus::canTransition($run->status, $target)) {
+            return $run;
+        }
 
         $run->fill([
             'status' => $target,

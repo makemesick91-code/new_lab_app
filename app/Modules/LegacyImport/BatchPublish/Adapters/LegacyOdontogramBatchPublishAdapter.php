@@ -227,6 +227,17 @@ class LegacyOdontogramBatchPublishAdapter implements LegacyBatchPublishAdapter
 
     public function applyPublish(User $actor, int $importId, array $attributes = []): LegacyBatchPublishOutcome
     {
+        // OBSERVED BEFORE THE CALL, and that is a real limitation rather than a
+        // preference. The canonical odontogram publish computes a `created`
+        // boolean inside its transaction and then DISCARDS it — publish()
+        // returns only the record — so unlike RME there is no canonical signal
+        // to read. Two interleaved passes could both observe "no record yet"
+        // here, which is why the run service arbitrates authorship against the
+        // attempt table rather than trusting this answer.
+        //
+        // Surfacing that boolean from the canonical service would be the clean
+        // fix; it belongs in the odontogram module, applied to both surfaces,
+        // not bolted on here.
         $before = $this->publishedRecordId($importId);
 
         // GATE 1 — feature capability, as a boolean rather than letting the

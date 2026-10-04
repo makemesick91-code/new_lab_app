@@ -17,6 +17,7 @@
  */
 
 use App\Modules\LabOrder\Models\AuditLog;
+use App\Modules\LegacyImport\BatchPublish\Controllers\LegacyBatchPublishController;
 use App\Modules\LegacyImport\BatchPublish\Models\LegacyBatchPublishItem;
 use App\Modules\LegacyImport\BatchPublish\Services\LegacyBatchPublishAuditService;
 use App\Modules\LegacyImport\BatchPublish\Services\LegacyBatchPublishRunService;
@@ -204,8 +205,16 @@ it('refuses a document whose review was undone between selection and publish', f
     expect($publish['published'])->toBe(0)
         ->and($publish['refused'])->toBe(1);
 
-    expect(LegacyBatchPublishItem::sole()->reason_code)
-        ->toBe(LegacyBatchPublishReason::NOT_REVIEWED);
+    // The item's STATUS is asserted, not only its reason code. The publish path
+    // writes refusals through markItemRefused(), a different writer from the
+    // selection path, and a mutation run showed that checking only the reason
+    // code let a mutant mark a refused item PUBLISHED and survive.
+    $item = LegacyBatchPublishItem::sole();
+    expect($item->status)->toBe(LegacyBatchPublishItemStatus::REFUSED)
+        ->and($item->reason_code)->toBe(LegacyBatchPublishReason::NOT_REVIEWED)
+        ->and($item->recordId())->toBeNull()
+        ->and($item->created_record)->toBeFalse();
+
     expect(LegacyRmeRecord::count())->toBe(0);
 });
 
@@ -293,8 +302,13 @@ it('refuses a document blocked AFTER it was selected', function () {
 
     expect($publish['published'])->toBe(0)
         ->and($publish['refused'])->toBe(1);
-    expect(LegacyBatchPublishItem::sole()->reason_code)
-        ->toBe(LegacyBatchPublishReason::TRIAGE_BLOCKED);
+
+    // Status asserted alongside the reason, for the same reason as above.
+    $item = LegacyBatchPublishItem::sole();
+    expect($item->status)->toBe(LegacyBatchPublishItemStatus::REFUSED)
+        ->and($item->reason_code)->toBe(LegacyBatchPublishReason::TRIAGE_BLOCKED)
+        ->and($item->recordId())->toBeNull();
+
     expect(LegacyRmeRecord::count())->toBe(0);
 });
 
@@ -529,6 +543,136 @@ it('bounds a selection so one request cannot be unbounded', function () {
     expect(fn () => app(LegacyBatchPublishRunService::class)
         ->select($run, lbpRmeAdapter(), $publisher, $tooMany))
         ->toThrow(ValidationException::class);
+
+    expect(LegacyBatchPublishItem::count())->toBe(0);
+});
+
+/*
+|--------------------------------------------------------------------------
+| Hardening found by the adversarial security review
+|--------------------------------------------------------------------------
+*/
+
+it('lets only one attempt row claim authorship of a single publication', function () {
+    // The canonical layer guarantees one RECORD, but not that two runs racing it
+    // both stop believing they created it. Two interleaved passes can each
+    // observe "no record yet" before either canonical transaction commits, and
+    // would then both write created_record = true for ONE publication —
+    // inflating the audit trail and the operator's published count while the
+    // archive itself stayed correct.
+    //
+    // Authorship is therefore arbitrated against the attempt table: at most one
+    // row across ALL runs may hold it.
+    $import = lbpRmeReviewed();
+    $importId = (int) $import->getKey();
+
+    $publisherA = superAdmin();
+    $publisherB = superAdmin();
+
+    $runA = lbpOpenRun(lbpRmeAdapter(), $publisherA);
+    $runB = lbpOpenRun(lbpRmeAdapter(), $publisherB);
+    $service = app(LegacyBatchPublishRunService::class);
+
+    $service->select($runA, lbpRmeAdapter(), $publisherA, [$importId]);
+    $service->select($runB, lbpRmeAdapter(), $publisherB, [$importId]);
+
+    $service->publish($runA->refresh(), lbpRmeAdapter(), $publisherA);
+    $service->publish($runB->refresh(), lbpRmeAdapter(), $publisherB);
+
+    // One record, and EXACTLY ONE attempt row claiming to have created it.
+    expect(LegacyRmeRecord::where('source_import_id', $importId)->count())->toBe(1);
+    expect(
+        LegacyBatchPublishItem::where('rme_legacy_import_id', $importId)
+            ->where('created_record', true)
+            ->count()
+    )->toBe(1);
+
+    // Both rows agree the document IS published.
+    expect(
+        LegacyBatchPublishItem::where('rme_legacy_import_id', $importId)
+            ->where('status', LegacyBatchPublishItemStatus::PUBLISHED)
+            ->count()
+    )->toBe(2);
+});
+
+it('records an already-published document as published, not as a refusal, at selection time', function () {
+    // publish() treated a benign ALREADY_PUBLISHED verdict as "nothing to do",
+    // but select() sent it down the generic refused path — so the operator was
+    // told "N ditolak setelah pemeriksaan ulang" for a condition the reason
+    // vocabulary itself declares benign. The two paths now agree.
+    $import = lbpRmeReviewed();
+
+    app(LegacyRmePublishService::class)
+        ->publish($import, [], superAdmin());
+
+    $publisher = superAdmin();
+    $run = lbpOpenRun(lbpRmeAdapter(), $publisher);
+
+    $summary = app(LegacyBatchPublishRunService::class)
+        ->select($run, lbpRmeAdapter(), $publisher, [(int) $import->getKey()]);
+
+    expect($summary['already'])->toBe(1)
+        ->and($summary['refused'])->toBe(0)
+        ->and($summary['eligible'])->toBe(0);
+
+    $item = LegacyBatchPublishItem::sole();
+    expect($item->status)->toBe(LegacyBatchPublishItemStatus::PUBLISHED)
+        ->and($item->created_record)->toBeFalse()
+        ->and($item->reason_code)->toBe(LegacyBatchPublishReason::ALREADY_PUBLISHED);
+
+    // Still exactly one archive record.
+    expect(LegacyRmeRecord::count())->toBe(1);
+});
+
+it('refuses to resurrect a run the operator abandoned mid-pass', function () {
+    // finalize() wrote the run status without consulting the transition map, so
+    // an in-flight pass could finish after abandon() and overwrite a TERMINAL
+    // status with COMPLETED — reporting a terminated run as completed.
+    $publisher = superAdmin();
+    $imports = collect(range(1, 2))->map(fn (): object => lbpRmeReviewed());
+
+    $run = lbpOpenRun(lbpRmeAdapter(), $publisher);
+    $service = app(LegacyBatchPublishRunService::class);
+
+    $service->select($run, lbpRmeAdapter(), $publisher, $imports->map(fn ($i): int => (int) $i->getKey())->all());
+
+    // Publish one, leaving the run mid-pass.
+    $service->publish($run->refresh(), lbpRmeAdapter(), $publisher, [], 1);
+    expect($run->refresh()->status)->toBe(LegacyBatchPublishRunStatus::PUBLISHING);
+
+    // The operator abandons it.
+    $service->abandon($run->refresh(), lbpRmeAdapter(), $publisher);
+    expect($run->refresh()->status)->toBe(LegacyBatchPublishRunStatus::ABANDONED);
+
+    // A further pass must not move it out of a terminal state.
+    $service->publish($run->refresh(), lbpRmeAdapter(), $publisher);
+
+    expect($run->refresh()->status)->toBe(LegacyBatchPublishRunStatus::ABANDONED);
+
+    // And the already-published document stays published — abandoning never
+    // un-publishes anything.
+    expect(LegacyRmeRecord::count())->toBe(1);
+});
+
+it('bounds a run\'s cumulative outstanding set across several selections', function () {
+    // MAX_SELECTION bounds ONE request. Without a cumulative bound, N requests
+    // would accumulate N x MAX_SELECTION pending items in a single run.
+    $publisher = superAdmin();
+    $run = lbpOpenRun(lbpRmeAdapter(), $publisher);
+    $service = app(LegacyBatchPublishRunService::class);
+
+    // Per-request bound, matched to what one page can actually render.
+    expect(LegacyBatchPublishRunService::MAX_SELECTION)
+        ->toBe(LegacyBatchPublishController::MAX_PER_PAGE);
+
+    expect(fn () => $service->select(
+        $run, lbpRmeAdapter(), $publisher,
+        range(1, LegacyBatchPublishRunService::MAX_SELECTION + 1)
+    ))->toThrow(ValidationException::class);
+
+    // And the cumulative bound exists and is larger than one request.
+    expect(LegacyBatchPublishRunService::MAX_OUTSTANDING)
+        ->toBeGreaterThan(LegacyBatchPublishRunService::MAX_SELECTION);
 
     expect(LegacyBatchPublishItem::count())->toBe(0);
 });

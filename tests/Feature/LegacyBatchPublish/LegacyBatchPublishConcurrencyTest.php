@@ -27,12 +27,26 @@
  * A pass means the batch surface inherits it; it does not mean this sprint
  * invented it.
  *
- * HOW TRUE CONCURRENCY IS ACHIEVED HERE
- * -------------------------------------
- * RefreshDatabase wraps each test in a transaction, so a second connection
- * cannot see the fixtures. These tests therefore manage their own data and use
- * SEPARATE PDO connections driving real concurrent transactions, rather than
- * pretending two sequential calls are concurrent.
+ * WHAT THESE TESTS DO AND DO NOT EXERCISE — stated precisely
+ * ----------------------------------------------------------
+ * They drive SEQUENTIAL calls against a real PostgreSQL 16 server. They do NOT
+ * open two connections and interleave two transactions, because RefreshDatabase
+ * wraps each test in a transaction a second connection could not see the
+ * fixtures through.
+ *
+ * So what is actually proven here is: the canonical idempotency chain holds
+ * under REPLAY and under INTERLEAVED ORDERINGS of whole operations (batch then
+ * single, single then batch, batch then batch, five repeats), and the
+ * `UNIQUE(source_import_id)` constraint is live in the schema and does reject a
+ * duplicate. That is the mechanism exactly-once rests on, asserted against the
+ * production engine.
+ *
+ * What is NOT proven here is two transactions physically in flight at the same
+ * instant. The database constraint is what makes that case safe, and the
+ * duplicate-insert test asserts the constraint directly rather than inferring
+ * it — but an earlier version of this docblock claimed separate PDO connections
+ * were used, which was simply false, and §8 asks for honest attribution rather
+ * than a flattering description of the method.
  */
 
 use App\Modules\LegacyImport\BatchPublish\Services\LegacyBatchPublishRunService;

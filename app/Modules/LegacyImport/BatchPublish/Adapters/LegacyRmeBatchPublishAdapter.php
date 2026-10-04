@@ -273,10 +273,6 @@ class LegacyRmeBatchPublishAdapter implements LegacyBatchPublishAdapter
 
     public function applyPublish(User $actor, int $importId, array $attributes = []): LegacyBatchPublishOutcome
     {
-        // Observed BEFORE the call so an idempotent result can be reported as
-        // ALREADY_PUBLISHED rather than as a fresh publication.
-        $before = $this->publishedRecordId($importId);
-
         try {
             $outcome = $this->lifecycle->perform(
                 $actor,
@@ -297,11 +293,20 @@ class LegacyRmeBatchPublishAdapter implements LegacyBatchPublishAdapter
                 );
             }
 
-            // created:false — the record already existed, so exactly one
-            // publication exists and this attempt was the idempotent one.
-            return $before !== null
-                ? LegacyBatchPublishOutcome::alreadyPublished($recordId)
-                : LegacyBatchPublishOutcome::created($recordId);
+            // The CANONICAL layer's own signal, not a re-derivation. perform()
+            // computes `changed` from the import's status either side of the
+            // publish, so an idempotent call (the record already existed, the
+            // status did not move) reports changed:false. An earlier version
+            // read the records table BEFORE the call instead, which two
+            // interleaved passes could both observe as empty — so both would
+            // have claimed authorship of one publication.
+            //
+            // The run service additionally arbitrates authorship against the
+            // attempt table, so even a wrong answer here cannot inflate the
+            // operator's published count.
+            return $outcome->changed
+                ? LegacyBatchPublishOutcome::created($recordId)
+                : LegacyBatchPublishOutcome::alreadyPublished($recordId);
         } catch (Throwable $exception) {
             return LegacyBatchPublishRefusalClassifier::classify($exception);
         }

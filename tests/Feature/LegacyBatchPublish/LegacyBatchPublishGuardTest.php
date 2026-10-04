@@ -17,6 +17,7 @@
 use App\Modules\Branch\Models\Branch;
 use App\Modules\LegacyImport\BatchPublish\Models\LegacyBatchPublishItem;
 use App\Modules\LegacyImport\BatchPublish\Services\LegacyBatchPublishRunService;
+use App\Modules\LegacyImport\BatchPublish\Support\LegacyBatchPublishItemStatus;
 use App\Modules\LegacyImport\BatchPublish\Support\LegacyBatchPublishReason;
 use App\Modules\LegacyImport\Services\LegacySingleActiveDocumentService;
 use App\Modules\LegacyImport\Support\LegacyImportType;
@@ -153,27 +154,59 @@ it('refuses a document that has left the publisher branch scope entirely', funct
 
 it('refuses a document whose source medical record number no longer matches the patient', function () {
     // LEGACY-RME-SOURCE-RM-BINDING-1: the Nomor RM the operator confirmed
-    // reading ON the document is immutable evidence. If the patient's record
-    // number changes, the binding no longer holds and the archive must not be
-    // filed against them.
+    // reading ON the document is immutable evidence of what the document
+    // asserts about itself. If it stops matching the patient it is filed
+    // against, the archive must not be published to them.
+    //
+    // THE BINDING IS ISOLATED DELIBERATELY. An earlier version of this test
+    // changed the PATIENT's record number, which breaks the binding AND the
+    // branch-code resolution — so it accepted either refusal code, and a
+    // mutation run proved that deleting the binding check entirely still passed
+    // because BRANCH_REFUSED fired instead. Drifting the IMPORT's stored source
+    // RM leaves the patient (and therefore the branch) untouched, so the
+    // binding is the only thing that can refuse.
     $import = lbpRmeReviewed();
 
-    $import->patient->forceFill([
-        'medical_record_number' => 'DG-TLK1-2024-9999',
+    $import->forceFill([
+        'source_rm_raw' => 'DG-TLK1-2024-0001',
+        'source_rm_normalized' => 'DGTLK120240001',
     ])->save();
 
-    $item = lbpGuardAttempt($import);
+    $item = lbpGuardAttempt($import->refresh());
 
-    expect($item->reason_code)->toBeIn([
-        LegacyBatchPublishReason::PATIENT_BINDING_FAILED,
-        // A changed record number can also break the branch-code resolution
-        // first; either refusal is correct and both block the publish.
-        LegacyBatchPublishReason::BRANCH_REFUSED,
-    ]);
+    // EXACTLY the binding code — no alternatives accepted.
+    expect($item->reason_code)->toBe(LegacyBatchPublishReason::PATIENT_BINDING_FAILED);
+    expect($item->status)->toBe(LegacyBatchPublishItemStatus::REFUSED);
 
     expect($import->refresh()->status)->toBe(LegacyRmeImportStatus::REVIEWED);
     expect(LegacyRmeRecord::count())->toBe(0);
 });
+
+/*
+|--------------------------------------------------------------------------
+| A NOTE ON THE ONE SURVIVING MUTANT, so nobody chases it again
+|--------------------------------------------------------------------------
+|
+| A mutation run that deletes the patient-binding check from the BATCH
+| ADAPTER'S PRE-FLIGHT (LegacyRmeBatchPublishAdapter::revalidate) SURVIVES this
+| suite, and that is correct rather than a hole.
+|
+| The canonical publish asserts the same binding independently, inside its own
+| transaction under the row lock (LegacyRmePublishService::publishWithinTransaction
+| -> assertSourcePatientBindingStillValid). So deleting the adapter's copy
+| changes nothing an operator can observe: the document is still refused, with
+| the same PATIENT_BINDING_FAILED code, because the classifier maps the
+| canonical refusal's field key to it. The pre-flight exists for the §12
+| "eligible now" count and for precise codes, not to enforce.
+|
+| That equivalence was PROVEN, not assumed. Two stronger mutants were run:
+| removing the assertion from the canonical publish, and removing it from both
+| layers at once. BOTH ARE KILLED by this suite. So the guard is genuinely
+| enforced and genuinely tested; only the redundant copy is unobservable.
+|
+| The lesson for future mutation work on this module: target the CANONICAL
+| layer. A mutant aimed at a deliberately-redundant pre-flight measures nothing.
+*/
 
 /*
 |--------------------------------------------------------------------------
