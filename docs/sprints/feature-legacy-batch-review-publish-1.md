@@ -306,7 +306,117 @@ them again.
 
 ---
 
+### Mutation testing — 9 mutants, 9 killed, 0 survivors
+
+The harness restores **by copy** rather than `git checkout --` (which eats
+untracked work), clears compiled Blade between runs, and reports NOT-APPLIED
+separately from KILLED so a moved target cannot bank a phantom kill.
+
+| Mutant | Result |
+|---|---|
+| M1 remove separation of duties from triage-clear | KILLED |
+| M2 remove separation of duties from the **canonical** guard | KILLED — proves the batch path inherits it rather than keeping a copy |
+| M3 mark applied without calling the canonical service | KILLED |
+| M4 skip the triage re-check at submit | KILLED |
+| M5 remove the session-ownership guard | KILLED |
+| M6 remove the import-type guard | KILLED *(after strengthening — see below)* |
+| M7 accept an arbitrary triage reason | KILLED |
+| M8 remove branch scope from document resolution | KILLED |
+| M9 carry triaged items to the canonical path | KILLED *(after strengthening)* |
+
+The first run left **two survivors**, and they needed opposite responses:
+
+- **M6 was a real test weakness on a real safety property.** The
+  cross-archive-confusion test left the odontogram capability flag off, so
+  deleting the type guard still threw — from the *migration* check, not the type
+  check. It passed for the wrong reason and proved nothing about the one bug the
+  adapter design exists to prevent. Strengthened to enable both capabilities,
+  assert the preconditions that leave the type guard as the only possible
+  refusal, cover `recordDecision` as well as `submit`, and assert nothing was
+  written into either foreign key column.
+- **M9 was near-equivalent, not a hole.** `submit()` filters on `decision` AND
+  `submit_status`, so a triaged row marked `PENDING` is still excluded by the
+  decision filter — the two filters are deliberately redundant. What the status
+  does drive is the operator's pending-submit counter and the submit button it
+  gates, so the new test pins that visible half instead of pretending the submit
+  path was reachable.
+
+### Security review — no CRITICAL, no HIGH, no MEDIUM
+
+An adversarial review covered batch IDOR, item IDOR, branch/permission/status
+spoofing, mass assignment, stale review/TOCTOU, triage-clear bypass, replay,
+CSRF, PII leakage, audit integrity, injection and error-message leakage. Each
+finding was verified against the code before being acted on.
+
+Three LOW findings fixed:
+
+1. **Unclamped `per_page`** — a net-new request-controlled page size with no
+   bound at any layer, which no view even sends. One request could have
+   hydrated the whole in-scope archive. Now clamped, proven at the HTTP boundary
+   by asserting the paginator's reported size.
+2. **`abandon()` had no ownership backstop** — the only public mutator that did
+   not re-assert, which falsified this class's own documented claim and would
+   have left a future non-HTTP caller unguarded.
+3. **The self-clear could strand a committed attestation** with stale counters
+   and no `ITEM_DECIDED` audit row. Now non-fatal and fails closed.
+
+Two informational findings documented rather than changed: `recordDecision`
+deliberately does not consult `canReview` (keeping the attestation is what
+preserves the refusal classification), and the models' `$fillable` is
+permissive but unreachable because the services never receive a `Request`.
+
+One overstated comment corrected. The session row lock serializes the status
+*transition*, not the pass — it is released on commit before the pending set is
+read. What makes a double-clicked submit safe is the canonical review's own
+idempotency plus `finalize()` recomputing counters from the database. The
+residual cost is a possible duplicate `IMPORT_REVIEWED` audit row, pre-existing
+behaviour equally reachable from the single-item page; claiming rows would fix
+it but needs an in-flight state with crash recovery, which belongs with PR2's
+concurrency work rather than being half-built here.
+
+### Reachability correction found by running with exclusive access
+
+The self-clear-refused test originally revoked the reviewer's permission
+mid-session. That does **not** reach the self-clear: `review_legacy_rme_imports`
+is itself one of the workspace scope's `GOVERNANCE_PERMISSIONS`, so losing it
+also collapses branch scope and the scope gate refuses first — correct
+behaviour that proves nothing. The test now toggles the config-driven separation
+requirement, which changes triage authority while leaving scope intact, and
+asserts the whole fail-closed chain through to submit refusing the still-blocked
+item.
+
+A related measurement lesson: the suite must be run with **exclusive** access.
+A concurrent run in the same worktree shares `Storage::fake`'s disk and produced
+five spurious failures, and a `pgrep` waiting on the test process matched its own
+waiter's command line — so a finished run looked like it was still going.
+
+---
+
+## Shipped
+
+- **PR #445** squash-merged into the base branch as **`01b28aeb`**.
+- CI **green on the exact candidate SHA `3757097f`** (CI head, PR head and local
+  HEAD all identical): NSF-R012 Quality, CICD-CTRL Classifier, CICD-CTRL
+  Selective Module, NSF-R011 Critical Test, NSF-9 Release Safety & Smoke, NSF-10
+  Release Evidence, Phase 3 Android Clinic App — all success.
+- **NSF-R011 Full Suite: skipped**, per the standing deferred-full-suite policy
+  recorded in CLAUDE.md, not anything this PR changed. The classifier did ask for
+  `run_full_suite=required`. The substitute evidence is the local 1440-test
+  legacy regression plus 58 permission tests — **not** a full-suite run, and this
+  document does not claim otherwise.
+
+## Deployment posture
+
+The batch review surfaces are gated by the **existing** legacy migration
+capability guard rather than a new flag. That is architecturally consistent —
+the same guard already gates every legacy upload, review, publish and void path,
+and a second flag would fragment the gate. Those flags are **enabled in
+production**, so the workspace becomes live on deploy for anyone already holding
+the review permission. Review is non-final, grants nobody a new permission, and
+every item still passes the full canonical gate chain.
+
 ## Status
 
-PR1 implemented and tested. Security review, mutation testing, CI, deployment
-and production verification pending. **No GO tag exists for either PR yet.**
+PR1 merged and deployed. **No GO tag exists for either PR yet** — PR1's tag is
+created only after production verification passes, and PR2 does not start until
+then.
