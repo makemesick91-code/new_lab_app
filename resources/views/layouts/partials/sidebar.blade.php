@@ -909,7 +909,7 @@
                  permission middleware, every controller re-checks the flag, and every
                  policy adds the per-row branch scope. Hiding a link is a courtesy to
                  the operator, never a control. --}}
-            @canany(['manage patients', 'view_legacy_rme_imports', 'create_legacy_rme_imports', 'view_legacy_odontogram_imports', 'create_legacy_odontogram_imports', 'review_legacy_rme_imports', 'review_legacy_odontogram_imports'])
+            @canany(['manage patients', 'view_legacy_rme_imports', 'create_legacy_rme_imports', 'view_legacy_odontogram_imports', 'create_legacy_odontogram_imports', 'review_legacy_rme_imports', 'review_legacy_odontogram_imports', 'publish_legacy_rme_imports', 'publish_legacy_odontogram_imports'])
                 <div class="pt-2">
                     <button type="button" @click="toggle('legacy-imports')" class="{{ $groupToggle }}" :aria-expanded="isOpen('legacy-imports')">
                         <span class="flex items-center gap-3">
@@ -996,6 +996,34 @@
                             @if (app(\App\Modules\LegacyOdontogram\Services\LegacyOdontogramFeatureGuard::class)->migrationEnabled())
                                 <a href="{{ route('settings.rme.legacy-review-odontograms.index') }}"
                                    class="menu-subitem {{ request()->routeIs('settings.rme.legacy-review-odontograms.*') ? $linkActive : $linkIdle }}">Batch Review Legacy Odontogram</a>
+                            @endif
+                        @endcan
+
+                        {{-- FEATURE-LEGACY-BATCH-REVIEW-PUBLISH-1 (PR2) — batch publish.
+
+                             Gated by the PUBLISH permission, not the review or create one:
+                             publishing in bulk is the same act as publishing one document,
+                             so it reuses `publish_legacy_*_imports` exactly. There is no
+                             batch-publish super-permission, because a grant whose only job
+                             is to reveal a menu is how privilege creeps (§13).
+
+                             These sit BELOW the review entries on purpose — the operator
+                             flow is review, then publish, and publish is the irreversible
+                             half.
+
+                             The active check uses the publish route prefix, which shares a
+                             prefix with neither the single-upload, the mass-upload nor the
+                             review names, so no two of these menus ever light up together. --}}
+                        @can('publish_legacy_rme_imports')
+                            @if (app(\App\Modules\LegacyRme\Support\LegacyRmeFeatureGuard::class)->migrationEnabled())
+                                <a href="{{ route('settings.rme.legacy-publish-imports.index') }}"
+                                   class="menu-subitem {{ request()->routeIs('settings.rme.legacy-publish-imports.*') ? $linkActive : $linkIdle }}">Batch Publish Legacy RME</a>
+                            @endif
+                        @endcan
+                        @can('publish_legacy_odontogram_imports')
+                            @if (app(\App\Modules\LegacyOdontogram\Services\LegacyOdontogramFeatureGuard::class)->migrationEnabled())
+                                <a href="{{ route('settings.rme.legacy-publish-odontograms.index') }}"
+                                   class="menu-subitem {{ request()->routeIs('settings.rme.legacy-publish-odontograms.*') ? $linkActive : $linkIdle }}">Batch Publish Legacy Odontogram</a>
                             @endif
                         @endcan
                     </div>

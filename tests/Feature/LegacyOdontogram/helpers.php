@@ -82,7 +82,29 @@ if (! function_exists('lodoPatient')) {
     {
         $branch = lodoBranch($branchCode);
 
-        static $sequence = 0;
+        // OFFSET INTO A DISJOINT BLOCK — this is a bug fix, not a style choice.
+        //
+        // This helper and `legacyRmeArchivablePatient()` in tests/Pest.php both
+        // mint sprintf('DG-%s-2024-%04d', $branchCode, $sequence) from their OWN
+        // independent `static $sequence`. Identical format, identical namespace,
+        // separate counters starting at the same place — so in a fresh process
+        // the first call to each produces the SAME number and any test creating
+        // patients through both collides on
+        // mst_patients_medical_record_number_unique.
+        //
+        // It was masked because the counters are process-global: by the time a
+        // mixed test runs, earlier tests have usually knocked them out of step.
+        // "Usually" is the whole problem. A full-suite CI run hit the aligned
+        // case, and a fresh-process interleaved loop reproduces it every time.
+        //
+        // Blocks are now disjoint by construction:
+        //   legacyRmeArchivablePatient()        1+
+        //   lodoPatient()                    3000+   (here)
+        //   lbpDisjointMedicalRecordNumber() 7000+   (batch publish fixtures)
+        //
+        // Nothing asserts the exact values these helpers emit, so the offset is
+        // behaviour-neutral for every existing caller.
+        static $sequence = 3000;
         $sequence++;
 
         return Patient::factory()->create($attributes + [

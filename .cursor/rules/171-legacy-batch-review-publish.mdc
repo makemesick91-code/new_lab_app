@@ -178,3 +178,111 @@ history.
 - Legacy odontogram fixtures live in `tests/Feature/LegacyOdontogram/helpers.php`
   and must not be replaced by the RME ones — `legacyRmeBranch()` also admits a
   migration wave and rewrites that module's rollout config.
+
+---
+
+# PR2 — batch publish (shipped)
+
+Publishing is the irreversible half. PR2 ships batch publish for both archives and consumes PR1's
+selection contract verbatim.
+
+## The selection contract
+
+```
+canonical status = REVIEWED
+AND no active blocking triage annotation
+AND every current publish-time guard passes
+```
+
+No `BLOCKED` / `NEEDS_ATTENTION` document is selectable or publishable. **Nothing in the
+BatchPublish module clears a triage annotation** — grep it: every `clear` hit is a comment.
+Clearing stays a review-authority act in PR1's flow.
+
+## No outer transaction, ever
+
+One document is one transaction. A pass LOOPS the canonical per-document call. Wrapping N in one
+outer transaction would roll back successful publications, make post-commit audit rows describe
+destroyed records, and hold locks across hundreds of documents. 100 selected / 97 eligible / 3
+stale ⇒ 97 published, 3 refused with reasons — never 0, never silently skipped.
+
+## Exactly-once is the CANONICAL layer's, not the orchestrator's
+
+`UNIQUE(source_import_id)` + `lockForUpdate` + the `findBySourceImportId()` early-return. The run's
+row lock serializes only the STATUS TRANSITION and is released on commit;
+`PUBLISHING → PUBLISHING` is permitted so a resumed pass can re-enter, which makes the run status
+structurally incapable of serializing two passes. **Never attribute exactly-once to the run lock.**
+
+Authorship is separately arbitrated against the attempt table: at most one row across all runs may
+hold `created_record` for one import, so a run of 100 that finds 3 already filed cannot read as 103.
+
+## Re-validate per document, immediately before its own publish
+
+Triage first (absolute), then the archive-specific `revalidate()`, which **reuses** the canonical
+date-rule / branch-resolver / source-binding services rather than reimplementing them. It is
+ADVISORY — it exists for the honest "eligible now" count and for precise codes (native-boundary vs
+other date failures, which a canonical `ValidationException` cannot carry). The canonical publish
+re-runs everything under its own lock.
+
+## Asymmetry, again
+
+RME enforces separation of duties at publish and re-checks the source-patient binding. Odontogram
+does neither — no separation guard exists anywhere in that module, and it has no source-RM binding
+re-check. Both are pre-existing canonical behaviour, identical on the single-item pages. Do not
+make odontogram weaker OR silently stricter without an explicit owner decision.
+
+## Bounded execution; no new queue
+
+`MAX_SELECTION = 100` (matched to `MAX_PER_PAGE` — all a page can render),
+`MAX_OUTSTANDING = 500` (cumulative per run), `MAX_PUBLISH_PASS = 50`, `MAX_PER_PAGE = 100`.
+The per-item write stays in its OWN short single-row transaction — do NOT batch them into one,
+which would trade many brief transactions for one long-held one. No queue was introduced.
+
+## Gotchas recorded
+
+- The clinical date columns cast to `Illuminate\Support\Carbon`; the RME date-rule service accepts
+  only `CarbonImmutable|string|null`. Pass `?->toDateString()`, as the canonical service does.
+- **`view:cache` succeeding does not mean a view renders.** Escaped quotes in a Blade attribute
+  (`[data-selectable=\'1\']`) compiled to invalid PHP and 500'd at render while `view:cache`
+  reported success. Render the page in a test.
+- An id resolving to **no in-scope document** cannot be recorded as a refusal row — the item
+  table's FKs correctly refuse a row pointing at a non-existent import. Count it and report it in
+  the operator summary instead.
+- Guard the run status write with the transition map. An unguarded `finalize()` let an in-flight
+  pass resurrect an ABANDONED run to COMPLETED.
+- **Mutation: target the CANONICAL layer.** A mutant removing a deliberately-redundant pre-flight
+  copy survives and measures nothing. The patient-binding pre-flight mutant is a *proven*
+  equivalent — removing the canonical assertion, or both layers, is killed.
+- Assert item STATUS as well as reason code. The selection path and publish path use different
+  writers, so a reason-code-only assertion let a "mark refused item published" mutant survive.
+
+## Test-fixture gotcha: two patient helpers, one medical-record namespace
+
+`legacyRmeArchivablePatient()` (tests/Pest.php) and `lodoPatient()`
+(tests/Feature/LegacyOdontogram/helpers.php) both mint
+`sprintf('DG-%s-2024-%04d', $branchCode, $sequence)` from their OWN independent
+`static $sequence`. Identical format, identical namespace, separate counters.
+
+Before the fix, both started at the same value, so **in a fresh process the first
+call to each produced the SAME number** and any test creating patients through
+both collided on `mst_patients_medical_record_number_unique`. It was masked
+because the counters are process-global: by the time a mixed test ran, earlier
+tests had usually knocked them out of step. A full-suite CI run hit the aligned
+case; a fresh-process interleaved loop reproduces it every time.
+
+Blocks are now **disjoint by construction** — keep them that way when adding a
+patient fixture:
+
+```
+legacyRmeArchivablePatient()        1+
+lodoPatient()                    3000+
+lbpDisjointMedicalRecordNumber() 7000+   (batch publish fixtures)
+```
+
+Guarded by `LegacyBatchPublishOdontogramTest` → "creates patients through both
+shared fixtures interleaved without colliding", which was verified to FAIL (with
+the original `UniqueConstraintViolationException`) when the offset is reverted.
+
+**Never hardcode a `DG-...` medical record number in an assertion fixture.** A
+fixed literal can coincide with a real fixture patient's number once the shared
+sequence has advanced — which silently turns a negative test into a test of
+nothing. Derive it from the patient under test instead.
