@@ -324,7 +324,10 @@ Rules that follow:
    legitimately a native submit for its own form.
 4. **One encoding, one path.** Mouse, keyboard `R`/`B`/`P`, and triage
    confirmation all reach the server through `submitDecision()`. Two encodings
-   means the untested one breaks.
+   means the untested one breaks. The keyboard must also be proven **wired** —
+   assert `@keydown.window="onKey($event)"` in the rendered view, because
+   dropping that one attribute kills the whole shortcut path while every JS
+   test still passes.
 5. **The client never invents a decision.** An empty or unknown value is refused
    client-side, and the server's `required` + `Rule::in` stays the authority.
    Nothing may silently become `REVIEWED`.

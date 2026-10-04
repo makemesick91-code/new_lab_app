@@ -169,7 +169,7 @@ file complete.
 | Check | Result |
 |---|---|
 | `npm run test:js` | **65 passed** |
-| `LegacyBatchReviewSubmissionContractTest` | **9 passed / 62 assertions** |
+| `LegacyBatchReviewSubmissionContractTest` | **9 passed / 66 assertions** |
 | `LegacyBatchReview` + `LegacyBatchPublish` (SQLite) | **107 passed / 12 skipped** |
 | Same, **PostgreSQL 16.15** (production major.minor) | **119 passed / 504 assertions** |
 | DB driver asserted, not assumed | `driver=pgsql`, `PostgreSQL 16.15` |
@@ -194,7 +194,7 @@ A component that writes the value after submitting — or that relies on Alpine'
 microtask flush, which is what shipped — fails here. No PHP feature test can see
 this: they POST a payload that already carries a decision.
 
-### Mutation testing — 6 applied, 6 killed
+### Mutation testing — 7 applied, 7 killed
 
 | Mutation | Result |
 |---|---|
@@ -204,6 +204,7 @@ this: they POST a payload that already carries a decision.
 | M4 drop `x-ref="decisionField"` from the Blade | **killed** (2) |
 | M5 REVIEWED button becomes a native submit | **killed** (2) |
 | M6 `app.js` stops registering the component | **killed** (1) |
+| M7 drop `@keydown.window="onKey($event)"` from the Blade | **killed** (2) |
 
 All files restored byte-identical (revert by copy — `git checkout --` cannot
 restore untracked files).
@@ -223,7 +224,7 @@ submit-time **ordering** property, and the JS suite captures the field at the
 exact serialization instant that broke; the PHP contract suite proves the
 rendered view wires that factory (`x-ref="decisionField"`, `x-ref="form"`,
 `name="decision"`, `name="import_id"`, `type="button"` controls) **separately for
-each archive**; and M4/M5/M6 kill the three ways that wiring could rot.
+each archive**; and M4/M5/M6/M7 kill the four ways that wiring could rot.
 
 Stated plainly: **nothing in CI executes this page in a browser engine**, so an
 Alpine *initialization* failure on this page specifically would not be caught by

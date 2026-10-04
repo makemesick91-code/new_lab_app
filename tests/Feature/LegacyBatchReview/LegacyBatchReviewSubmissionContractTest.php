@@ -114,6 +114,12 @@ it('renders the RME decision field with the ref the submit path writes to', func
     // And the document this attestation is about, rendered server-side.
     $response->assertSee('name="import_id"', false);
     $response->assertSee('value="'.$import->getKey().'"', false);
+
+    // The keyboard layer must be WIRED, not merely implemented. The shortcuts
+    // live in the module and are proven there; if this binding is dropped the
+    // whole keyboard path dies silently and every JS test still passes.
+    $response->assertSee('x-data="legacyBatchReview(', false);
+    $response->assertSee('@keydown.window="onKey($event)"', false);
 });
 
 it('renders the RME decision controls as type="button" so none submits before the value is written', function () {
@@ -150,6 +156,9 @@ it('renders the odontogram decision field with the ref the submit path writes to
     $response->assertSee('x-ref="form"', false);
     $response->assertSee('name="import_id"', false);
     $response->assertSee('value="'.$import->getKey().'"', false);
+
+    $response->assertSee('x-data="legacyBatchReview(', false);
+    $response->assertSee('@keydown.window="onKey($event)"', false);
 });
 
 it('renders the odontogram decision controls as type="button" too', function () {
