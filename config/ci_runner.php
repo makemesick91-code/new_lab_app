@@ -190,6 +190,20 @@ return [
      */
     'critical_gate_mandatory_suites' => [
         /*
+         * FEATURE-RME-MEDICAL-RECORDS-UNIFIED-NATIVE-LEGACY-1 — the unified
+         * medical-record read index now folds PUBLISHED legacy archives into a
+         * page every clinical role opens. Its suite pins the non-widening
+         * property: a legacy archive is listed only under its OWN read
+         * permission + branch scope + doctor clinical scope, a branch-scoped
+         * actor cannot discover another branch through the union, VOID and
+         * staging rows never qualify, and pagination happens after the union.
+         *
+         * Selected by the `UnifiedMedicalRecord` token. Before it was added the
+         * critical filter matched exactly 1 of its tests — and only because
+         * one test DESCRIPTION happened to contain "legacy_odontogram".
+         */
+        'tests/Feature/RME/UnifiedMedicalRecordIndexTest.php',
+        /*
          * FEATURE-LEGACY-RME-ODONTOGRAM-MASS-UPLOAD-1 — bulk legacy intake.
          *
          * Selected by the `LegacyMassUpload` token, which had to be added for

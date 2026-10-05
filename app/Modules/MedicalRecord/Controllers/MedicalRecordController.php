@@ -19,6 +19,8 @@ use App\Modules\MedicalRecord\Services\MedicalRecordService;
 use App\Modules\MedicalRecord\Services\PatientRmWorkspaceResolver;
 use App\Modules\MedicalRecord\Services\RmeWorkspaceDocumentPresenter;
 use App\Modules\MedicalRecord\Services\RmeWorkspacePageSequencer;
+use App\Modules\MedicalRecord\Services\UnifiedMedicalRecordIndexService;
+use App\Modules\MedicalRecord\Support\UnifiedMedicalRecordSource;
 use App\Modules\Patient\Services\CrossBranchPatientLookupService;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
@@ -51,23 +53,69 @@ class MedicalRecordController extends Controller
         private readonly RmeWorkspacePageSequencer $workspacePages,
     ) {}
 
-    public function index(Request $request, CrossBranchPatientLookupService $rmLookup): View
-    {
+    /**
+     * FEATURE-RME-MEDICAL-RECORDS-UNIFIED-NATIVE-LEGACY-1 — a unified,
+     * patient-centric clinical read index: one row per patient holding a
+     * native medical record OR a PUBLISHED legacy RME OR a PUBLISHED legacy
+     * odontogram the actor may read. Read-only.
+     */
+    public function index(
+        Request $request,
+        CrossBranchPatientLookupService $rmLookup,
+        UnifiedMedicalRecordIndexService $unified,
+    ): View {
         $this->authorize('viewAny', MedicalRecord::class);
+
+        $status = $request->string('status')->toString() ?: null;
 
         $filters = [
             'search' => $request->string('search')->toString() ?: null,
-            'status' => $request->string('status')->toString() ?: null,
-            'visit_date_from' => $request->string('visit_date_from')->toString() ?: null,
-            'visit_date_to' => $request->string('visit_date_to')->toString() ?: null,
+            'status' => in_array($status, MedicalRecord::STATUSES, true) ? $status : null,
+            'visit_date_from' => $this->dateFilter($request->string('visit_date_from')->toString()),
+            'visit_date_to' => $this->dateFilter($request->string('visit_date_to')->toString()),
+            'source' => UnifiedMedicalRecordSource::normalize($request->string('source')->toString() ?: null),
         ];
 
+        $result = $unified->index($request->user(), $filters);
+
         return view('rme.visits.medical-record.index', [
-            'medicalRecords' => $this->service->paginate($filters),
+            'patients' => $result['patients'],
+            'summary' => $result['summary'],
+            'latestNative' => $result['latestNative'],
+            'scope' => $result['scope'],
             'filters' => $filters,
             'statuses' => MedicalRecord::STATUSES,
+            'sources' => UnifiedMedicalRecordSource::LABELS,
             'rmLookup' => $rmLookup->lookupByMedicalRecordNumberAcrossBranches($request->string('rm_lookup')->toString()),
         ]);
+    }
+
+    /**
+     * Patient-keyed, read-only medical-record workspace. Works for a patient
+     * with ZERO native records: it never assumes a medical record, a visit or
+     * a native sheet exists, and never fabricates one. A patient outside the
+     * actor's index answers 404, exactly like a patient that does not exist.
+     */
+    public function patient(Request $request, int $patientId, UnifiedMedicalRecordIndexService $unified): View
+    {
+        $this->authorize('viewAny', MedicalRecord::class);
+
+        $workspace = $unified->patientWorkspace($request->user(), $patientId);
+        abort_if($workspace === null, 404);
+
+        return view('rme.visits.medical-record.patient', $workspace);
+    }
+
+    /** A strict Y-m-d calendar date, or null — never an unparsed string in SQL. */
+    private function dateFilter(string $value): ?string
+    {
+        if ($value === '' || preg_match('/^\d{4}-\d{2}-\d{2}$/D', $value) !== 1) {
+            return null;
+        }
+
+        [$y, $m, $d] = array_map('intval', explode('-', $value));
+
+        return checkdate($m, $d, $y) ? $value : null;
     }
 
     public function show(Request $request, ClinicVisit $clinicVisit, PatientRmWorkspaceResolver $workspace): View|RedirectResponse
