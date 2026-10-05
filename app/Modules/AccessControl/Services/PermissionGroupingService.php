@@ -77,6 +77,9 @@ class PermissionGroupingService
                 'publish_legacy_odontogram_imports',
                 'void_legacy_odontogram_records',
                 'view_legacy_odontogram_archive',
+                // FEATURE-LEGACY-PATIENT-DOCUMENT-COMPLETENESS-1 — read-only
+                // legacy archive completeness report
+                'view_legacy_patient_archive_completeness',
                 // DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1 — doctor home
                 // branch, temporary cover, and the approver's lease release.
                 //

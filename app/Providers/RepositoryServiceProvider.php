@@ -171,6 +171,8 @@ use App\Modules\LabService\Interfaces\LabServiceRepositoryInterface;
 use App\Modules\LabService\Models\LabService;
 use App\Modules\LabService\Policies\LabServicePolicy;
 use App\Modules\LabService\Repositories\LabServiceRepository;
+use App\Modules\LegacyImport\Completeness\Interfaces\LegacyPatientArchiveCompletenessRepositoryInterface;
+use App\Modules\LegacyImport\Completeness\Repositories\LegacyPatientArchiveCompletenessRepository;
 use App\Modules\LegacyImport\Interfaces\LegacyImportDailyQuotaRepositoryInterface;
 use App\Modules\LegacyImport\MassUpload\Models\LegacyMassUploadBatch;
 use App\Modules\LegacyImport\MassUpload\Policies\LegacyMassUploadBatchPolicy;
@@ -421,6 +423,10 @@ class RepositoryServiceProvider extends ServiceProvider
         // ledger. One binding, shared by all three importers, so the
         // ceiling cannot be enforced by three slightly different counters.
         LegacyImportDailyQuotaRepositoryInterface::class => LegacyImportDailyQuotaRepository::class,
+        // FEATURE-LEGACY-PATIENT-DOCUMENT-COMPLETENESS-1 — the read-only
+        // completeness report. The interface exposes no write method, so the
+        // monitor cannot mutate a legacy lifecycle even by accident.
+        LegacyPatientArchiveCompletenessRepositoryInterface::class => LegacyPatientArchiveCompletenessRepository::class,
         // LEGACY-RME-PDF-1B — PDF inspection, rendering and optional scanning.
         // Bound as interfaces so a test can swap in a deterministic fake and the
         // suite never depends on Poppler being installed.

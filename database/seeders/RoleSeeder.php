@@ -168,6 +168,15 @@ class RoleSeeder extends Seeder
             // rules.
             'view_legacy_odontogram_imports',
             'create_legacy_odontogram_imports',
+            // FEATURE-LEGACY-PATIENT-DOCUMENT-COMPLETENESS-1 — read the legacy
+            // archive completeness report for this account's own branch.
+            //
+            // The clinic admin is the operator who has to work the migration
+            // backlog, so they are the page's primary audience. Reading it
+            // widens nothing: the permission appears in no
+            // GOVERNANCE_PERMISSIONS list, so this role stays pinned to its own
+            // resolved BranchContext branch and sees no other clinic's patients.
+            'view_legacy_patient_archive_completeness',
         ],
         'Technician' => [
             'view dashboard',
@@ -398,6 +407,29 @@ class RoleSeeder extends Seeder
             // REVISION-LEGACY-VISIT-BOUND-PREVERIFIED-INGESTION-1 — same narrow
             // date-attestation right as Admin Klinik; no review/publish/void.
             'verify_legacy_dates_at_ingestion',
+            // FEATURE-LEGACY-PATIENT-DOCUMENT-COMPLETENESS-1 — read the legacy
+            // archive completeness report, branch-scoped like everything else
+            // this role does.
+            //
+            // GRANTED HERE BECAUSE THIS ROLE *IS* ADMIN KLINIK. Front Office is
+            // defined as the exact union of the two legacy roles it merged
+            // (FrontOfficeRole::LEGACY_ADMIN_CLINIC and LEGACY_KASIR), and
+            // FrontOfficeRoleTest derives that union from their arrays
+            // specifically so "a permission added to Admin Klinik later must
+            // not silently skip the merged role". Production carries ZERO
+            // Admin Klinik accounts — all four branch clinic admins hold this
+            // role — so granting Admin Klinik alone would both break the tested
+            // invariant and reach nobody.
+            //
+            // The measured consequence, stated rather than glossed: the four
+            // generic front-desk accounts that also hold this role gain the
+            // page too. They already hold `manage patients`,
+            // `view_rme_patient_reports` and the two legacy intake view
+            // permissions, so the report discloses no patient field they cannot
+            // already reach — and it stays pinned to their own branch. If the
+            // owner would rather restrict it, the reversal is to drop this line
+            // and provision real Admin Klinik accounts.
+            'view_legacy_patient_archive_completeness',
             'view_satusehat_readiness',
             'manage_satusehat_remediation',
             'view_satusehat_branch_readiness',
@@ -563,6 +595,17 @@ class RoleSeeder extends Seeder
             'view_legacy_odontogram_imports',
             'review_legacy_odontogram_imports',
             'publish_legacy_odontogram_imports',
+
+            // FEATURE-LEGACY-PATIENT-DOCUMENT-COMPLETENESS-1 — read the legacy
+            // archive completeness report across every RME branch.
+            //
+            // This role is the archive's checker tier, so it already holds
+            // review + publish for both capabilities — which is exactly what
+            // puts it in LegacyImportHubService::GOVERNANCE_PERMISSIONS and
+            // therefore gives it the estate-wide view on this page. The
+            // completeness permission itself contributes nothing to that scope;
+            // it only opens the report.
+            'view_legacy_patient_archive_completeness',
 
             // DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1 — the branch-cover and
             // home-branch tier for a doctor's permanent home branch and for

@@ -361,6 +361,22 @@ class PermissionSeeder extends Seeder
         // so its holder stays pinned to their own branches instead of widening
         // to every RME branch.
         'view_legacy_odontogram_archive',
+
+        // FEATURE-LEGACY-PATIENT-DOCUMENT-COMPLETENESS-1 — READ the legacy
+        // archive completeness report (Kelengkapan Arsip Pasien Legacy).
+        //
+        // A DEDICATED READ PERMISSION, NOT A REUSED INTAKE ONE. Every branch
+        // upload operator holds `view_legacy_*_imports`, so reusing one of
+        // those would have decided this page's audience as a side effect of who
+        // may upload. This grants reading one report and nothing else: no
+        // upload, no review, no publish, no void, no wave governance and no
+        // cross-branch management.
+        //
+        // It is deliberately ABSENT from every GOVERNANCE_PERMISSIONS list, so
+        // granting it can never widen a holder's branch scope — the same reason
+        // `view_legacy_odontogram_archive` above is kept out of the odontogram
+        // workspace scope's governance set.
+        'view_legacy_patient_archive_completeness',
     ];
 
     public function run(): void

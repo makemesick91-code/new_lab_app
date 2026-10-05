@@ -1,0 +1,306 @@
+---
+description: Legacy patient archive completeness — provenance, derived state, read-only scope
+globs:
+  - "app/Modules/LegacyImport/Completeness/**"
+  - "resources/views/settings/legacy-patient-completeness/**"
+  - "tests/Feature/LegacyCompleteness/**"
+alwaysApply: false
+---
+
+# FEATURE-LEGACY-PATIENT-DOCUMENT-COMPLETENESS-1 — Kelengkapan Arsip Pasien Legacy
+
+A read-only monitor over the legacy archive. It reports which **legacy-imported**
+patients do not yet hold both a published legacy RME and a published legacy
+odontogram. It decides nothing and mutates nothing.
+
+Reads with, never against: rule 90 (legacy RME archive), rule 168 (legacy patient
+staged import), rule 170 (single active document per patient), rule 171 (batch
+review/publish), and the Front Office branch rules.
+
+---
+
+## LPC-R1 — Provenance is `mst_patients.import_batch_id`, and nothing else
+
+A patient belongs on this page **only** when `import_batch_id IS NOT NULL` —
+the canonical marker written by `LegacyPatientImportService::commit()`.
+
+**Never** infer legacy provenance from `created_at`, an old-looking Nomor RM
+year, the medical-record-number format, the branch, a missing NIK/KTP, the
+absence of a native RME, the presence of a legacy document, or an operator's
+guess. Every one of those lists natively registered patients.
+
+**`Patient::isLegacyWithoutBranch()` MEANS SOMETHING ELSE** — `branch_id IS NULL`
+(Sprint 23.10). It is not a provenance predicate. Using it here lists native
+branchless patients and misses every imported patient that has a branch.
+
+The predicate lives in the repository's single base query, so no filter,
+parameter or crafted request can switch it off. Native exclusion is structural,
+not a property of the default filter.
+
+## LPC-R2 — Native patients never appear, under any filter
+
+Including the `complete` audit filter. If a native patient ever shows up, the
+provenance predicate has been bypassed — that is a defect, not a filter choice.
+
+## LPC-R3 — Per-document state is derived, in the occupancy order
+
+```
+published record        -> PUBLISHED   (the only complete state)
+else slot-occupying row -> IN_PROGRESS
+else void record        -> VOID
+else                    -> MISSING
+```
+
+The archive is consulted **before** the staging table, matching
+`LegacySingleActiveDocumentService::occupancyFor()`. Reverse that order and a
+void-then-republished record reads as in-progress forever, because a staging row
+keeps its historical `PUBLISHED` status permanently.
+
+Assert the agreement against the **real** service, never against a copy of its
+rules — a copy passes while production drifts.
+
+## LPC-R4 — IN_PROGRESS is not MISSING, and the distinction is load-bearing
+
+A slot-occupying staging row still owns the patient's slot, so a new upload
+would be refused by the single-active-document guard. Reporting it as
+"Belum Ada — upload" sends an operator to an action the server rejects.
+
+`FAILED` is **IN_PROGRESS**: `FAILED -> QUEUED` is a legal transition, so the
+import is retryable and still holds the slot. `CANCELLED` is terminal and
+produced no archive, so it is MISSING.
+
+## LPC-R5 — A soft-deleted staging row still occupies the slot
+
+The staging aggregates and the representative-status lookups apply **no**
+`deleted_at` filter, matching `firstSlotOccupyingForPatient()`'s `withTrashed()`.
+A soft delete never releases a document slot; only an audited CANCEL or VOID
+does. Filtering trashed rows out would show "Belum Ada" for a slot the server
+still refuses to re-fill.
+
+Go through `DB::table()` rather than the Eloquent models so there is no global
+soft-delete scope to forget to disable.
+
+## LPC-R6 — The two slots are independent
+
+A published RME never substitutes for a missing odontogram, or the reverse.
+There is deliberately **no** patient-wide "has any legacy document" predicate
+anywhere — that shortcut is how the two slots get fused.
+
+Completeness is per PATIENT; state is per DOCUMENT. They are different
+questions: a patient with a published RME and no odontogram has a PUBLISHED
+document state and an INCOMPLETE verdict.
+
+## LPC-R7 — A soft-deleted patient is not a migration target
+
+Excluded in the base query, not by a filter, so no caller can ask for one.
+An **inactive** patient is still listed: "inactive" is an operational flag about
+the patient, not a statement that their historical archive no longer needs
+filing.
+
+## LPC-R8 — "Needs an upload" is MISSING **or** VOID
+
+Both leave the slot free, so both are the same next action. The filter keys on
+availability; the STATUS COLUMN is what tells the operator that one is a
+correction and the other a first filing. Filter on availability, display the
+reason — never merge the two.
+
+## LPC-R9 — The page is read-only, structurally
+
+The repository interface exposes no `create`, `update`, `delete`, `upsert`,
+`insert`, `transition`, `publish`, `void` or `cancel`, and must never gain one.
+The module registers exactly **one** route and it is a `GET`. The page creates
+no patient, import, archive record, clinic visit, medical record, odontogram,
+invoice, payment, lab order or SATUSEHAT candidate; it reviews, publishes, voids
+and cancels nothing; it assigns no wave and changes no branch.
+
+## LPC-R10 — Authorization is a dedicated read permission
+
+`view_legacy_patient_archive_completeness`. Granted to **Supervisor RME**,
+**Admin Klinik** and **Front Office** (Super Admin via the single global
+`Gate::before`). Doctor, Kasir, Perawat, Owner, Admin Lab, Technician, Admin
+Warehouse, Finance and Kepala Cabang are denied.
+
+Never reuse an intake permission (`view_legacy_*_imports`) for this page: every
+branch upload operator holds one, so reuse would decide the audience as a side
+effect of who may upload.
+
+The permission must stay **absent** from every `GOVERNANCE_PERMISSIONS` list, so
+granting it can never widen a holder's branch scope.
+
+## LPC-R11 — Front Office IS the clinic admin identity in this system
+
+`Front Office` is defined as the exact union of the two legacy roles it merged
+(`FrontOfficeRole::LEGACY_ADMIN_CLINIC` ∪ `LEGACY_KASIR`), and
+`FrontOfficeRoleTest` derives that union from their arrays **specifically so a
+permission added to Admin Klinik cannot silently skip the merged role**.
+Production holds **zero** Admin Klinik accounts.
+
+So a permission intended for the clinic admin must be granted to **both** roles.
+Granting Admin Klinik alone breaks a tested invariant and reaches nobody.
+
+The measured consequence is stated, never hidden: four generic front-desk
+accounts share that role and gain the page too. They already hold
+`manage patients`, `view_rme_patient_reports` and both legacy intake view
+permissions, so no new patient field is disclosed, and they stay branch-pinned.
+
+## LPC-R12 — Branch scope is borrowed, resolved server-side, and fails closed
+
+Governance tier = `LegacyImportHubService::GOVERNANCE_PERMISSIONS`, **referenced
+rather than copied**: one definition shared with the sibling hub page. Everyone
+else resolves to their own `BranchContext` branch, and only when it is an active
+RME branch. Unresolvable, MAIN, or a non-RME branch all yield an **empty** list,
+which the repository turns into an impossible predicate — never "no filter".
+
+**Do not reuse `LegacyOdontogramWorkspaceScope`**: its governance set includes
+`create_legacy_odontogram_imports`, which Admin Klinik and Front Office hold, so
+it would promote every branch intake operator to estate-wide visibility.
+
+**Do not reuse `RmeWorkingBranchScope`**: that is the clinic-operations authority
+and fails closed to empty without an active online context. The legacy archive's
+own authority is the BranchContext-based workspace scope.
+
+## LPC-R13 — A requested branch can only narrow
+
+The authorized set is resolved first, then intersected with any requested branch.
+A branch the actor may not read is **dropped**, so a crafted `?branch_id=` leaves
+the scope unchanged. The FormRequest's `exists` rule is a usability check, not a
+security one. A branch filter never widens a scope and never leaks another branch
+through any status filter, search term or page.
+
+All counters respect the actor's scope. A branch-pinned actor never sees an
+estate-wide number, and the branch filter only ever offers branches inside their
+scope.
+
+## LPC-R14 — A provenance-less legacy patient is governance-only
+
+`branch_id IN (…)` is never true for `NULL`, so a branchless legacy patient is
+invisible to a pinned actor for free. The governance tier sees it, matching how
+`LegacyRmeWorkspaceScope` treats provenance-less archive rows.
+
+## LPC-R15 — PII boundary
+
+The row object carries the Nomor RM, the patient name, the branch, the two
+document states, the verdict, the archive dates and the batch id. **Nothing
+else.** No KTP/NIK, no address, no phone or WhatsApp number, no e-mail, no date
+of birth, no occupation, no clinical content, no document title or description,
+no storage path and no checksum.
+
+The property set is pinned by a test, so a new field cannot reach the template
+unreviewed. The row DTO is the disclosure boundary: a Blade template must not be
+able to reach a column the report did not intend to publish.
+
+## LPC-R16 — No invented statuses
+
+Every label maps onto a value the backend actually holds. A label with no state
+behind it makes an operator wait for a transition that can never happen.
+
+## LPC-R17 — Set-based, constant query count
+
+Four grouped aggregates LEFT JOINed, bounded by the number of DOCUMENTS rather
+than patients. Correlated EXISTS is rejected: the filter runs over the whole
+scope before pagination, so its cost would grow with the patient count.
+
+The property to assert is **constancy**, not a ceiling — a per-row lookup added
+to a 3-row fixture fits inside almost any headroom. Measure the same page at two
+very different sizes.
+
+Pagination is mandatory and the order is deterministic (Nomor RM, then id), so no
+row repeats or is skipped between pages.
+
+## LPC-R18 — Portable SQL, verified on PostgreSQL
+
+`max(case when … then 1 else 0 end)` rather than `bool_or`;
+`max(case when … then date end)` rather than `FILTER (WHERE …)`;
+never `whereJsonLength` on a `jsonb` object. A report whose query only works on
+one engine is a report nobody can test. Verify on PostgreSQL 16, production's
+major version — a green SQLite run cannot prove it.
+
+## LPC-R19 — LIKE escaping uses `!`, never a backslash
+
+A backslash inside the single-quoted `ESCAPE` literal makes PDO's placeholder
+rewriter treat the closing quote as escaped on `pdo_pgsql` through PHP 8.3; the
+literal runs on, swallows the following placeholders, and every search returns
+`SQLSTATE[HY093] Invalid parameter number`. That defect took patient search down
+in production once already.
+
+## LPC-R20 — Add an index only when a plan proves one is needed
+
+Measured on the real production estate (1519 legacy patients): 0.552 ms
+execution, 14 shared buffer hits, an Index Scan on
+`mst_patients_medical_record_number_unique` feeding the ORDER BY so `LIMIT 25`
+reads 27 rows — no `Seq Scan on mst_patients`. **No index was added.**
+
+That plan is measured at today's document volume (19 RME + 1 odontogram
+records). The patient-side scaling is index-driven; the document-side aggregates
+would move to index-based group aggregates using the existing
+`(patient_id, status)` indexes as volume grows.
+
+## LPC-R21 — Row actions, if ever added, create no bypass
+
+A link to an existing canonical flow is permitted only when the actor already
+holds that permission, the state is eligible, wave/admission applies and the
+single-active guard allows it. This sprint shipped **no** row action: a purely
+read-only page was the explicitly acceptable scope, and it removes any chance of
+pointing an operator at a refused upload.
+
+## LPC-R22 — The sidebar is a convenience, never the boundary
+
+The entry is gated by the same read permission the route is, and the group's
+`@canany` admits that permission so a read-only grantee is not left with an
+invisible group. It is deliberately **not** wrapped in a `migrationEnabled()`
+check like its siblings: those guard intake, whose resting state is OFF, and a
+backlog monitor that vanished whenever intake was closed would be unavailable
+exactly when an operator wants to plan the next wave.
+
+Reading what has already been published is a different concern from being
+allowed to publish more.
+
+The route name shares no prefix with any sibling, so exactly one entry lights up.
+`settings.legacy-imports.*` is the hub's matcher — a child name under it would
+highlight two entries at once.
+
+## LPC-R23 — Assert the controller's re-check with the middleware lifted
+
+Every denial test is answered by the route's `permission:` middleware, which runs
+first, so none of them can see the controller's own `abort_unless` disappear.
+Lift the middleware to make the second layer observable. A route file is edited
+far more often than a controller, and a middleware list that silently loses an
+entry must not silently open a page over patient data.
+
+## LPC-R24 — One scope definition, consumed and never restated
+
+`scopedPatients()` is the only place the soft-delete exclusion, the provenance
+predicate and the branch scope are expressed. The listing, the counters, the
+branch filter **and** the per-page lookups all build on it.
+
+A second, hand-restated copy is the defect even while it agrees. The branch
+filter originally restated the three predicates and had **already** drifted: it
+applied a bare `whereIn` with no unscoped arm, so a governance actor saw a
+branchless legacy patient in the rows with no corresponding branch option — two
+definitions of "a legacy patient in my scope" on one page. The direction was
+narrower, so nothing leaked; what it cost was the guarantee, because the next
+edit to the provenance predicate would have reached one surface and silently
+missed the other.
+
+Row-set assertions cannot see this. The predicates are therefore counted at the
+source — each exactly once, with `applyBranchScope()` called from exactly one
+place — so a restatement fails loudly instead of agreeing quietly.
+
+## LPC-R25 — The per-page lookups authorise; they do not trust their caller
+
+`slotOccupyingRmeStatuses()`, `slotOccupyingOdontogramStatuses()` and
+`reviewBlockedPatientIds()` receive explicit patient ids. **The ids narrow to a
+page; the query authorises.** Both the branch scope and the provenance
+predicate are re-applied inside each one, as a sub-select over the same
+`scopedPatients()` definition.
+
+Today the only caller derives those ids from the already-scoped paginator, so
+this narrows nothing — which is exactly why its absence was invisible, and
+exactly why it is cheap to add. What it buys: a future row action, drilldown or
+AJAX refresh that takes patient ids from a request cannot read another branch's
+legacy staging status or reviewer holds, and the interface's own promise
+("every query here is unconditionally restricted") is structurally true rather
+than a property of who happens to call it.
+
+An interface docblock asserting a control the code does not have is worse than
+no docblock: it tells the next author the check already exists.
