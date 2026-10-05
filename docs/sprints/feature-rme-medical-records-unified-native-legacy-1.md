@@ -180,3 +180,39 @@ Independent adversarial review of the diff: **no CRITICAL, no HIGH.**
 
 NONE. Asserted by test (visit, medical record, legacy record and patient counts
 unchanged across a render) and by construction (no write path).
+
+## Shipped + production deployed (2026-10-06)
+
+- PR #454 squash-merged as `4f69d8d7`; merge tree `3b6992d4` == the CI-tested
+  candidate tree (`42b19cb5`).
+- CI run `37339963672` success on the exact candidate. Gates passed: Classifier,
+  Quality, Critical (5,040 passed, 0 failed, exit 0, new suite present in the
+  log), Selective Module, NSF-9, NSF-10, Android. The second Critical row is
+  the inactive runner variant. The Full Suite was **skipped by the standing
+  deferral policy — not executed, not claimed.**
+- The 81 local `--filter=Doctor` WebAuthn failures (`Undefined array key
+  "challenge"`) were proven environmental: identical failure set on a pristine
+  base worktree, and they all pass in CI (fresh local env has no HTTPS app URL).
+- VPS deploy via `scripts/deploy-vps-runner.sh start` on the host: `exit=0`,
+  `DEPLOY OK`, `DEPLOY_HEAD_TARGET_MATCH=YES`, `Nothing to migrate.`; production
+  HEAD/tree == merge. No deploy process left behind.
+- GO tag `feature-rme-medical-records-unified-native-legacy-1-go` @ `4f69d8d7`
+  (exact match on VPS).
+- Production verification (read-only):
+  - `/login`, `/health/live` and `/health/ready` return 200.
+  - Guest requests to the index and the workspace return 302 (no 500).
+  - Both routes are registered.
+  - `laravel.log` is byte-identical (1,430,025 B), so the deploy logged zero
+    new errors.
+  - Pilot environment, debug OFF, maintenance OFF.
+- Production unified counts, computed independently in a `READ ONLY`
+  transaction over the live RME branch set (TLK1, LDK2, ATG3, SPN4):
+
+  | Native-only | Legacy-RME-only | Legacy-Odonto-only | Legacy RME + Odonto | Native + Legacy | Unified total |
+  |---|---|---|---|---|---|
+  | 0 | 18 | 0 | 1 | 0 | **19** |
+
+  These agree with the 19 rows the application's own generated SQL returned
+  under EXPLAIN ANALYZE. All archives originate at SPN4; 0 VOID, 0 native.
+- **Not done:** authenticated page rendering on production was not exercised —
+  no user was impersonated. Clinical mutation: NONE.
