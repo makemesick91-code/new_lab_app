@@ -1100,6 +1100,13 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
         Route::get('medical-records', [MedicalRecordController::class, 'index'])
             ->name('medical-records.index');
 
+        // FEATURE-RME-MEDICAL-RECORDS-UNIFIED-NATIVE-LEGACY-1 — patient-keyed,
+        // read-only workspace. Keyed by patient id (never a medical record id)
+        // so a patient with only a published legacy archive can be opened.
+        Route::get('medical-records/patients/{patientId}', [MedicalRecordController::class, 'patient'])
+            ->name('medical-records.patients.show')
+            ->whereNumber('patientId');
+
         // Sprint 58.6 — Doctor/Perawat treatment room worklist (room-assigned patients only).
         Route::middleware('permission:view_treatment_worklist')
             ->get('treatment-room-worklist', [ClinicVisitController::class, 'roomWorklist'])

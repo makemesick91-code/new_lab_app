@@ -142,7 +142,10 @@ class DoctorPatientScopeService
                 $sub->selectRaw('1')
                     ->from('trx_clinic_visits as v')
                     ->whereColumn('v.patient_id', 'trx_medical_records.patient_id')
-                    ->where('v.doctor_id', $doctorId);
+                    ->where('v.doctor_id', $doctorId)
+                    // Match doctorHasPatientAccess(): a soft-deleted visit is
+                    // no clinical relationship (ClinicVisit uses SoftDeletes).
+                    ->whereNull('v.deleted_at');
             });
         });
     }
@@ -330,7 +333,10 @@ class DoctorPatientScopeService
                 $sub->selectRaw('1')
                     ->from('trx_clinic_visits as v')
                     ->whereColumn('v.patient_id', 'mst_patients.id')
-                    ->where('v.doctor_id', $doctorId);
+                    ->where('v.doctor_id', $doctorId)
+                    // Match doctorHasPatientAccess(): a soft-deleted visit is
+                    // no clinical relationship (ClinicVisit uses SoftDeletes).
+                    ->whereNull('v.deleted_at');
             });
         });
     }

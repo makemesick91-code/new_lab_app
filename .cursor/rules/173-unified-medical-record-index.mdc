@@ -1,0 +1,70 @@
+---
+description: Unified medical-record index — native + published legacy, patient-centric, non-widening read model
+globs:
+  - "app/Modules/MedicalRecord/Repositories/UnifiedMedicalRecordIndexRepository.php"
+  - "app/Modules/MedicalRecord/Services/UnifiedMedicalRecordIndexService.php"
+  - "app/Modules/MedicalRecord/Support/UnifiedMedicalRecord*.php"
+  - "resources/views/rme/visits/medical-record/index.blade.php"
+  - "resources/views/rme/visits/medical-record/patient.blade.php"
+  - "tests/Feature/RME/UnifiedMedicalRecordIndexTest.php"
+alwaysApply: false
+---
+
+# Unified medical-record index (FEATURE-RME-MEDICAL-RECORDS-UNIFIED-NATIVE-LEGACY-1)
+
+1. **`/rme/medical-records` is a unified clinical READ index**, one row per
+   patient. A patient qualifies when they hold at least one record the actor
+   may read: a native medical record, a PUBLISHED legacy RME, or a PUBLISHED
+   legacy odontogram. Native existence is NOT required for the legacy legs.
+2. **Native and legacy stay separate storage/domain models.** The index only
+   reads them. Never convert a legacy archive into a `MedicalRecord`, never
+   create a `ClinicVisit` to make a patient openable, never copy a legacy PDF
+   into a native table.
+3. **Only effective archives are clinical-visible**: record status
+   `PUBLISHED`. VOID never qualifies; a VOID record replaced by a fresh
+   PUBLISHED import qualifies through the replacement. Staging (`stg_*`)
+   tables are never read by the index.
+4. **Non-widening by construction.** Each source carries its OWN canonical
+   envelope, composed — never re-derived:
+   - native → `BranchService::rmeEnabledIds()` (unchanged from the record list
+     this page used to be);
+   - legacy RME → `LegacyRmeRecordPolicy::READ_PERMISSIONS` +
+     `LegacyRmeWorkspaceScope` (branch set + governance-only NULL rows);
+   - legacy odontogram → `LegacyOdontogramRecordPolicy::READ_PERMISSIONS` +
+     `LegacyOdontogramWorkspaceScope`;
+   - all three → `DoctorPatientScopeService::applyPatientScopeForUser`
+     (patient-keyed — same branch alone never grants a doctor anything).
+   One legacy permission never reveals the other archive type. A request
+   `branch_id` is never read. If a canonical scope changes, the index follows
+   because it calls that scope — do not copy its logic here.
+5. **A permission check must not hide behind a branch check.** Tests prove the
+   legacy legs refuse on the permission ALONE, with an actor whose branch scope
+   would cover the record (mutation M4 survived until that case existed).
+6. **Pagination happens after the union**: count over the eligibility predicate
+   alone, then one page of ids ordered by a single sort key (latest record in
+   scope across READABLE sources, id tie-break), then indicators for those ids
+   only. Never paginate native and append legacy. Query count is constant.
+7. **Native-only filters** (`status`, visit dates) describe native records;
+   setting either narrows to patients with a matching native record. Unknown
+   `source` values normalise to `all`; unparseable dates are dropped, never
+   passed to SQL.
+8. **Patient workspace** `rme.medical-records.patients.show` is keyed by
+   patient id, works with ZERO native records, and answers 404 for a patient
+   outside the actor's index — exactly like a missing one. Legacy lists come
+   from the canonical history services; archives open in their own private
+   viewers, which re-authorize every request. The workspace adds no print
+   shortcut and never exposes a storage path.
+9. **Never render a full NIK** on either page.
+10. **CI**: the suite is selected by the `UnifiedMedicalRecord` token in BOTH
+    critical-gate variants and declared in
+    `config/ci_runner.php` → `critical_gate_mandatory_suites`. Before the token,
+    the filter matched 1 of 30 tests by coincidence.
+11. This page serves a DIFFERENT purpose from "Kelengkapan Arsip Pasien
+    Legacy" (rule 172): eligibility here is possession of a readable clinical
+    record, NOT legacy-patient provenance (`import_batch_id`). Do not reuse the
+    completeness page's provenance predicate here.
+12. **A doctor relationship never counts a soft-deleted visit.** The SQL
+    doctor scopes in `DoctorPatientScopeService` must stay identical to the
+    canonical `doctorHasPatientAccess()`; if one changes, change both in the
+    same commit. An empty legacy branch set matches nothing, exactly like the
+    legacy record repositories' `scoped()`.
