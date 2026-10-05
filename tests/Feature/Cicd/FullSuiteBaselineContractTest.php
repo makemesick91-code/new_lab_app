@@ -130,6 +130,78 @@ it('leaves no raw response-body assertion against a dynamic value', function () 
     );
 });
 
+it('escapes a dynamic value asserted against a response body held in a variable', function () {
+    /*
+     * THE GAP THIS CLOSES, AND WHY THE SIBLING CHECK ABOVE COULD NOT SEE IT.
+     *
+     * That check matches the CHAINED shape, `->getContent())->toContain($x)`,
+     * where the assertion hangs directly off the body call. It is blind to the
+     * ordinary two-step form:
+     *
+     *     $html = $this->get(...)->assertOk()->getContent();
+     *     expect($html)->toContain($operator->name);
+     *
+     * which is how a seed-dependent failure reached CI on run 37241632923:
+     * faker produced `Nat D'Amore`, Blade emitted the escaped `&#039;`, and the
+     * raw comparison failed — on that seed only, so it passed locally and in
+     * every earlier run.
+     *
+     * Restricting the scan to variables genuinely assigned from a response body
+     * is what keeps the negated PII assertions in scope elsewhere OUT of scope
+     * here: those compare an audit `$payload` or a serialized array, where JSON
+     * encoding does not escape an apostrophe at all, so wrapping them in `e()`
+     * would be wrong rather than safer.
+     *
+     * Only POSITIVE calls are flagged. A negated assertion against a body is a
+     * different contract with the opposite failure mode — it can pass vacuously
+     * — and conflating the two would hide one behind the other.
+     */
+    $offenders = [];
+
+    foreach (baselineTestSources() as $relative => $contents) {
+        preg_match_all('/\$(\w+)\s*=\s*[^;]*?->(?:getContent|content)\(\)\s*;/s', $contents, $assigned);
+
+        $bodies = array_values(array_unique($assigned[1]));
+
+        if ($bodies === []) {
+            continue;
+        }
+
+        foreach ($bodies as $body) {
+            preg_match_all('/expect\(\$'.preg_quote($body, '/').'\)(.*?);/s', $contents, $chains);
+
+            foreach ($chains[1] as $chain) {
+                preg_match_all('/(not->)?toContain\(([^;]*?)\)/s', $chain, $calls, PREG_SET_ORDER);
+
+                foreach ($calls as $call) {
+                    if (($call[1] ?? '') !== '') {
+                        continue;
+                    }
+
+                    $argument = $call[2];
+
+                    $readsProperty = preg_match(
+                        '/\$\w+(?:->\w+)*->(?:name|description|title|address|notes)\b/',
+                        $argument
+                    ) === 1;
+
+                    // `e(` as a call, not as the tail of another identifier.
+                    $isEscaped = preg_match('/(?<!\w)e\(/', $argument) === 1;
+
+                    if ($readsProperty && ! $isEscaped) {
+                        $offenders[] = $relative.': '.trim($argument);
+                    }
+                }
+            }
+        }
+    }
+
+    expect($offenders)->toBe(
+        [],
+        'These tests compare a dynamic text property against a rendered response body held in a variable. Wrap it in e(), or assert with assertSee(), which escapes the way Blade does.'
+    );
+});
+
 it('escapes the dynamic half of every unescaped assertSee', function () {
     /*
      * `assertSee($value, false)` switches escaping off. That is legitimate when

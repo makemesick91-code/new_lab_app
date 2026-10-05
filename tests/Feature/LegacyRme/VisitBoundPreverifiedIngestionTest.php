@@ -352,6 +352,19 @@ it('still enforces the native RME boundary on the visit-bound path', function ()
 
 it('shows the checker the attested dates as read-only evidence, with no date input', function () {
     $operator = vbpOperator();
+
+    // A DETERMINISTIC NAME, AND DELIBERATELY ONE WITH AN APOSTROPHE.
+    //
+    // This assertion used to read the faker-generated name straight out of the
+    // rendered HTML, which made it pass or fail on the seed: Blade escapes `'`
+    // to `&#039;`, so a generated `Nat D'Amore` is simply not in the markup and
+    // the test failed in CI while passing locally. Pinning a name that MUST be
+    // escaped means the escaping path is exercised on every run rather than on
+    // the minority of seeds that happen to produce such a name, so a template
+    // that stopped escaping — or an assertion that went back to comparing the
+    // raw value — is caught immediately instead of intermittently.
+    $operator->forceFill(['name' => "Nat D'Amore"])->save();
+
     $import = vbpPreverifiedImport($operator);
     app(LegacyRmeImportProcessingService::class)->process($import->getKey());
 
@@ -365,7 +378,10 @@ it('shows the checker the attested dates as read-only evidence, with no date inp
     expect($html)
         ->toContain('Telah diverifikasi Admin Klinik saat upload')
         ->toContain('01-05-2020')
-        ->toContain($operator->name);
+        // Escaped exactly as the template emits it. Comparing the raw value
+        // against rendered HTML is the broken contract tests/Pest.php warns
+        // about.
+        ->toContain(e($operator->name));
 
     // THE POINT: no editable date control anywhere on the checker's screen.
     expect($html)

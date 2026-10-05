@@ -359,6 +359,47 @@ reasoning recorded inline:
 - `FrontOfficeMigrationTest` — `expected_permission_count` 22 → 23
 - `SupervisorRmeRolePermissionTest` — exact list +1
 
+### A latent seed-dependent defect this sprint exposed in another sprint's test
+
+CI run `37241632923` on candidate `a8e763d1` failed the Critical gate with
+**1 failed / 5006 passed**. The single failure was
+`LegacyRme\VisitBoundPreverifiedIngestionTest > it shows the checker the attested
+dates as read-only evidence` — not one of this sprint's suites, not one of the 8
+pre-existing `FrontOfficeDevice` failures, and **green locally** in this sprint's
+own whole-legacy run of the same filter.
+
+**Cause.** The test compared `$operator->name` — a faker-generated value —
+against **rendered HTML** with a raw `toContain`. CI drew `Nat D'Amore`; Blade
+emits `&#039;`, so the raw string is not in the markup. This is the class
+`CICD-BASELINE-REVERIFY-1` closed for `Oswaldo O'Kon`. **This sprint did not
+break it:** adding test files shifted faker's sequence enough to expose it, which
+is the mechanism that sprint documented.
+
+**Fixed deterministically, not by re-running for a kinder seed.** The operator's
+name is pinned to `Nat D'Amore` so the escaping path is exercised on *every* run
+rather than on the minority of seeds that produce such a name, and the assertion
+compares `e($operator->name)`. Reverting the `e()` now fails every run with the
+exact CI message (mutation-verified; file restored byte-identical).
+
+**The durable half — the guard that should have caught it.**
+`FullSuiteBaselineContractTest` exists for exactly this shape and still missed
+it: its regex `(?:getContent|content)\(\)\)?->toContain\(` matches only the
+**chained** form, while this test assigns `getContent()` to `$html` and asserts
+in a **later statement**. A new check scans variables genuinely assigned from a
+response body. That scoping is deliberate — it keeps the sibling **negated** PII
+assertions against audit `$payload`s out of scope, because JSON encoding does
+not escape an apostrophe and wrapping those in `e()` would be wrong rather than
+safer. Only **positive** calls are flagged; a negated body assertion has the
+opposite failure mode (it can pass vacuously) and conflating the two would hide
+one behind the other.
+
+Reintroducing the raw comparison makes the new guard fail and name the offending
+file and expression. A repo-wide sweep confirmed this was the **only** positive
+HTML-body occurrence, so the fix is one assertion plus one detector rather than a
+ten-file sweep.
+
+---
+
 ### Pre-existing failure, NOT from this sprint
 
 `tests/Feature/FrontOfficeDevice` fails **8 of 110** locally with `Undefined
