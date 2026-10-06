@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use Spatie\Permission\Middleware\PermissionMiddleware;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 /*
@@ -470,7 +471,7 @@ it('cuts a single-line DETAIL tail from any exception, not only QueryException (
 });
 
 it('refuses a console page from the FormRequest layer even if the route middleware is bypassed (M6)', function () {
-    $this->withoutMiddleware(Spatie\Permission\Middleware\PermissionMiddleware::class)
+    $this->withoutMiddleware(PermissionMiddleware::class)
         ->actingAs(userWith([]))
         ->get(route('developer-console.errors'))
         ->assertForbidden();
