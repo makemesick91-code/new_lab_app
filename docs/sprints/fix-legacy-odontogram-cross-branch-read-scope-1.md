@@ -112,3 +112,26 @@ No CRITICAL / HIGH / MEDIUM. Three LOW:
 ## Durable rules
 
 `.cursor/rules/174-legacy-odontogram-read-scope.mdc`.
+
+## Shipped + deployed (2026-10-06)
+
+PR #456 squash-merged as `c74f282f` (merge tree `efbac4d7` == CI-validated
+candidate `e47aa4a7` tree). CI run `37469095407` green on the exact candidate:
+Classifier, NSF-R012 Quality, NSF-R011 Critical (5061 passed, exit 0 — all 21
+tests of the new suite present in the job log), Selective Module, NSF-9, NSF-10,
+Android gate. NSF-R011 Full Suite **skipped** by the standing temporary policy —
+skipped is not passed. Deployed on `srv1730088` via `scripts/deploy-vps-runner.sh`
+run on the VPS: `exit=0`, `DEPLOY OK: 20261006-150818`,
+`DEPLOY_HEAD_TARGET_MATCH=YES`, nothing to migrate. GO tag
+`fix-legacy-odontogram-cross-branch-read-scope-1-go` @ `c74f282f`, exact match
+at VPS HEAD.
+
+Production, read-only: deployed governance set is review/publish/void; from the
+live role matrix Super Admin + Supervisor RME stay estate-wide and Admin Klinik
++ Front Office are branch-pinned. `laravel.log` byte size and ERROR count
+unchanged (0 new errors). Every clinical count unchanged (patients 1519,
+visits/medical records/odontograms/invoices/payments/SATUSEHAT 0, legacy
+odontogram 1/1, legacy RME 19). Health 200 ×4 over the domain; gated surfaces
+302; `/storage/` 403. An authenticated per-role browser walk-through was NOT
+performed (no owner-approved credentials); the per-role behaviour is proven by
+the CI suite and derived from deployed code + the live permission matrix.
