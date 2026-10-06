@@ -45,3 +45,14 @@ serta disk & backup status — semuanya dengan masking PII/secret.
 - Test: `tests/Feature/Architecture/Ent7DeveloperAssistanceConsoleTest.php`,
   `tests/Feature/Foundation/DeveloperConsoleGovernanceCommandTest.php`,
   `tests/Feature/DeveloperConsole/DeveloperConsoleTest.php`.
+
+## FEATURE-DEV-CONSOLE-OBSERVABILITY-1 extension
+
+The console is now the **DaengtisiaMS Observability Console**
+(`docs/architecture/observability-console.md`). Every ENT7-DC rule above still
+holds and is re-asserted by tests: all `developer-console.*` routes are GET/HEAD
+only, gated by `permission:view_developer_console` (Super Admin only), and every
+page view writes `VIEW_DEVELOPER_CONSOLE`. `developer-console.index` now renders
+the Overview; the original ENT-7 diagnostic panels moved to
+`developer-console.diagnostics`. Telemetry text is redacted by
+`TelemetryRedactor`, which composes the ENT-7 `SensitiveValueMasker`.

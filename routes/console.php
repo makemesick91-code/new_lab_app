@@ -26,3 +26,19 @@ Schedule::command('inventory:analytics-summary:prune')
     ->monthlyOn(1, '02:30')
     ->withoutOverlapping()
     ->name('inventory-analytics-summary-prune');
+
+/*
+|--------------------------------------------------------------------------
+| FEATURE-DEV-CONSOLE-OBSERVABILITY-1 — telemetry retention
+|--------------------------------------------------------------------------
+|
+| Registered for deployments whose scheduler runs. Production's scheduler is
+| not invoked, so retention there is enforced by the bounded per-request
+| lottery in ObservabilityTelemetryRetention — this entry is a backstop, not
+| the mechanism.
+|
+*/
+Schedule::command('observability:prune')
+    ->hourly()
+    ->withoutOverlapping()
+    ->name('observability-telemetry-prune');

@@ -190,6 +190,18 @@ return [
      */
     'critical_gate_mandatory_suites' => [
         /*
+         * FEATURE-DEV-CONSOLE-OBSERVABILITY-1 — request telemetry runs on EVERY
+         * request (global middleware). Its suites pin that telemetry never
+         * stores a raw NIK/phone/password/token/binding, never breaks or slows
+         * a request (writes only in terminate()), never records itself, stays
+         * bounded (guest cap + retention), and that every console page is
+         * Super-Admin-only and GET-only. A regression here is silent — a leak
+         * renders a 200. Selected by the `ObservabilityConsole` and
+         * `ObservabilityTelemetry` tokens; declared so a rename cannot drop them.
+         */
+        'tests/Feature/Observability/ObservabilityConsoleTest.php',
+        'tests/Feature/Observability/ObservabilityTelemetryTest.php',
+        /*
          * FEATURE-RME-MEDICAL-RECORDS-UNIFIED-NATIVE-LEGACY-1 — the unified
          * medical-record read index now folds PUBLISHED legacy archives into a
          * page every clinical role opens. Its suite pins the non-widening

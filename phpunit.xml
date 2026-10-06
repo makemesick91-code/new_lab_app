@@ -29,5 +29,9 @@
         <env name="QUEUE_CONNECTION" value="sync"/>
         <env name="SESSION_DRIVER" value="array"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
+        <!-- FEATURE-DEV-CONSOLE-OBSERVABILITY-1: request telemetry off by default so
+             query-budget suites measure the application, not the telemetry. The
+             observability suite turns it on explicitly. -->
+        <env name="OBSERVABILITY_TELEMETRY_ENABLED" value="false"/>
     </php>
 </phpunit>

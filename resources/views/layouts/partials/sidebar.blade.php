@@ -132,6 +132,7 @@
             'settings.doctor-device-registration.*'
         ),
         'settings' => request()->routeIs('settings.users.*', 'settings.roles.*', 'settings.permissions.*'),
+        'dev_console' => request()->routeIs('developer-console.*'),
         // REVISION-DOCTOR-AUTO-DEVICE-APPROVAL-APP-ONLY-LOGIN-1
         'approval' => request()->routeIs('doctor-device-authorizations.*'),
     ];
@@ -1147,16 +1148,33 @@
                 </div>
             @endcanany
 
-            {{-- ENT-7 — Developer Assistance Console (read-only, audited) --}}
+            {{-- ENT-7 / FEATURE-DEV-CONSOLE-OBSERVABILITY-1 — Observability Console
+                 (read-only, audited). Visibility here is UX only: every route is
+                 independently gated by permission:view_developer_console. --}}
             @if (config('developer_console.enabled', true))
                 @can('view_developer_console')
-                    <a href="{{ route('developer-console.index') }}"
-                       class="menu-item {{ request()->routeIs('developer-console.*') ? 'menu-item-active' : 'menu-item-inactive' }}">
-                        <svg class="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" d="M8 9l3 3-3 3m5 0h3M4 5h16a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V6a1 1 0 011-1z" />
-                        </svg>
-                        <span>Developer Console</span>
-                    </a>
+                    <div class="pt-2">
+                        <button type="button" @click="toggle('dev_console')" class="{{ $groupToggle }}" :aria-expanded="isOpen('dev_console')">
+                            <span class="flex items-center gap-3">
+                                <svg class="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" d="M8 9l3 3-3 3m5 0h3M4 5h16a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V6a1 1 0 011-1z" />
+                                </svg>
+                                <span>Dev Console</span>
+                            </span>
+                            <svg class="h-4 w-4 shrink-0 text-ink-muted transition-transform duration-150" :class="{ 'rotate-180': isOpen('dev_console') }" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+                                <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.94a.75.75 0 111.08 1.04l-4.24 4.5a.75.75 0 01-1.08 0l-4.24-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" />
+                            </svg>
+                        </button>
+                        <div data-sidebar-panel="dev_console" x-show="isOpen('dev_console')" class="mt-1 space-y-0.5 pl-8">
+                            <a href="{{ route('developer-console.index') }}" class="menu-subitem {{ request()->routeIs('developer-console.index') ? $linkActive : $linkIdle }}">Overview</a>
+                            <a href="{{ route('developer-console.live-users') }}" class="menu-subitem {{ request()->routeIs('developer-console.live-users') ? $linkActive : $linkIdle }}">Live Users</a>
+                            <a href="{{ route('developer-console.errors') }}" class="menu-subitem {{ request()->routeIs('developer-console.errors*') ? $linkActive : $linkIdle }}">Errors</a>
+                            <a href="{{ route('developer-console.slow-requests') }}" class="menu-subitem {{ request()->routeIs('developer-console.slow-requests') ? $linkActive : $linkIdle }}">Slow Requests</a>
+                            <a href="{{ route('developer-console.slow-queries') }}" class="menu-subitem {{ request()->routeIs('developer-console.slow-queries') ? $linkActive : $linkIdle }}">Slow Queries</a>
+                            <a href="{{ route('developer-console.cache') }}" class="menu-subitem {{ request()->routeIs('developer-console.cache') ? $linkActive : $linkIdle }}">Cache / Redis</a>
+                            <a href="{{ route('developer-console.diagnostics') }}" class="menu-subitem {{ request()->routeIs('developer-console.diagnostics') ? $linkActive : $linkIdle }}">Diagnostik</a>
+                        </div>
+                    </div>
                 @endcan
             @endif
         </div>
