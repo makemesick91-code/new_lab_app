@@ -47,12 +47,14 @@ use Illuminate\Contracts\Pagination\LengthAwarePaginator;
  * module and this same nav group. Two copies of that list would drift, and the
  * one that drifts is the one that widens somebody.
  *
- * WHY NOT LegacyOdontogramWorkspaceScope. Its governance set INCLUDES
- * `create_legacy_odontogram_imports`, which Admin Klinik and Front Office both
- * hold — so reusing it would promote every branch intake operator to
- * estate-wide visibility, which is the precise opposite of the requirement that
- * Admin Klinik stay branch-scoped. The hub's set contains only review, publish
- * and void, which in this system no intake role holds.
+ * WHY NOT LegacyOdontogramWorkspaceScope. When this page was written, that
+ * scope's governance set INCLUDED `create_legacy_odontogram_imports`, which
+ * Admin Klinik and Front Office both hold — so every intake operator read every
+ * branch's odontogram archive. FIX-LEGACY-ODONTOGRAM-CROSS-BRANCH-READ-SCOPE-1
+ * removed it, and the two sets now agree; this page still borrows the hub's
+ * union rather than one archive's set, because it reports on BOTH archives.
+ * The hub's set contains only review, publish and void, which in this system no
+ * intake role holds.
  *
  * WHY NOT RmeWorkingBranchScope. That is the CLINIC-OPERATIONS authority (visit
  * list, queue, cashier) and it fails closed to empty for a context-bound role

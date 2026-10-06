@@ -126,6 +126,15 @@ class LegacyOdontogramImportController extends Controller
 
             if ($patient !== null) {
                 $branchResolution = $this->branchBinding->resolveForPatient($patient, $request->user());
+            }
+
+            // FIX-LEGACY-ODONTOGRAM-CROSS-BRANCH-READ-SCOPE-1 — the two facts
+            // below describe the patient's ARCHIVE (whether one exists, and the
+            // native date that bounds it). Patient lookup is global, so for a
+            // patient whose archive belongs to another branch they would hand a
+            // branch-scoped operator exactly the cross-branch knowledge the read
+            // scope withholds. Shown only when the operator may file here.
+            if ($patient !== null && ! $branchResolution->failed()) {
                 $earliestNative = $this->dateRules->snapshotCutoff($patient);
 
                 // REVISION-LEGACY-SINGLE-ACTIVE-DOCUMENT-PER-PATIENT-1 — whether

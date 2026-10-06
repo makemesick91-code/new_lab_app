@@ -35,6 +35,23 @@ class LegacyOdontogramWorkspaceScope
      * Holding any of these means the operator governs the odontogram archive
      * across the whole RME branch set rather than a single clinic.
      *
+     * UPLOAD AUTHORITY != GLOBAL READ AUTHORITY
+     * (FIX-LEGACY-ODONTOGRAM-CROSS-BRANCH-READ-SCOPE-1). This set used to
+     * contain `create_legacy_odontogram_imports`, which every branch intake
+     * operator (Admin Klinik, Front Office) holds — so the right to FILE a chart
+     * for one's own clinic silently became the right to READ every clinic's
+     * published archive, through every surface that consumes this scope: the
+     * record viewer and its private bytes, the patient history, the unified
+     * medical-record index and the staging-import viewer. It is now exactly the
+     * legacy RME archive's governance set — review, publish, void — duties no
+     * intake role holds. Do NOT add an intake or read permission back here.
+     *
+     * Intake is therefore pinned too, which is what
+     * LegacyOdontogramBranchBindingService always documented ("a scoped operator
+     * may not archive another branch's history — and could not read the row
+     * afterwards anyway"). On the pilot no branch-scoped operator had ever filed
+     * a foreign-branch chart, so no real upload changed.
+     *
      * The read-only permission `view_legacy_odontogram_archive` is deliberately
      * ABSENT: a clinical reader stays pinned to their own branches, so granting
      * a doctor read access can never widen them to every branch's archive.
@@ -42,7 +59,6 @@ class LegacyOdontogramWorkspaceScope
      * @var list<string>
      */
     public const GOVERNANCE_PERMISSIONS = [
-        'create_legacy_odontogram_imports',
         'review_legacy_odontogram_imports',
         'publish_legacy_odontogram_imports',
         'void_legacy_odontogram_records',

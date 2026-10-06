@@ -175,6 +175,10 @@ Independent adversarial review of the diff: **no CRITICAL, no HIGH.**
   The index faithfully inherits that canonical breadth and makes it browsable.
   It does not widen past the viewer; changing it is an owner decision about the
   odontogram archive scope, out of this sprint.
+  **[CLOSED by FIX-LEGACY-ODONTOGRAM-CROSS-BRANCH-READ-SCOPE-1 —
+  `docs/sprints/fix-legacy-odontogram-cross-branch-read-scope-1.md`. The owner
+  decided; `create_legacy_odontogram_imports` left the governance set and the
+  index inherits the narrower scope with no change of its own.]**
 
 ## Clinical mutation
 

@@ -204,6 +204,17 @@ return [
          */
         'tests/Feature/RME/UnifiedMedicalRecordIndexTest.php',
         /*
+         * FIX-LEGACY-ODONTOGRAM-CROSS-BRANCH-READ-SCOPE-1 — upload authority is
+         * not global read authority. Pins that a branch intake operator (Admin
+         * Klinik, Front Office) reads ONLY their own branch's published
+         * odontogram archive through every door: record viewer, private bytes,
+         * staging-import viewer, patient history and the unified index. The
+         * regression this guards is silent — a widened scope produces a 200,
+         * not an error. Selected by the existing `LegacyOdontogram` token;
+         * declared so a rename cannot drop it.
+         */
+        'tests/Feature/LegacyOdontogram/LegacyOdontogramCrossBranchReadScopeTest.php',
+        /*
          * FEATURE-LEGACY-RME-ODONTOGRAM-MASS-UPLOAD-1 — bulk legacy intake.
          *
          * Selected by the `LegacyMassUpload` token, which had to be added for
