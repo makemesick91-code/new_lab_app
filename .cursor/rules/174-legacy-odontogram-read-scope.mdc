@@ -1,0 +1,42 @@
+---
+description: Legacy Odontogram read scope — upload authority is not global read authority
+globs:
+  - "app/Modules/LegacyOdontogram/**"
+  - "app/Modules/MedicalRecord/Services/UnifiedMedicalRecordIndexService.php"
+  - "app/Modules/LegacyImport/**"
+  - "tests/Feature/LegacyOdontogram/**"
+alwaysApply: false
+---
+
+# Legacy Odontogram read scope (FIX-LEGACY-ODONTOGRAM-CROSS-BRANCH-READ-SCOPE-1)
+
+`UPLOAD AUTHORITY != GLOBAL READ AUTHORITY`
+
+1. `LegacyOdontogramWorkspaceScope::GOVERNANCE_PERMISSIONS` is exactly
+   `review_legacy_odontogram_imports`, `publish_legacy_odontogram_imports`,
+   `void_legacy_odontogram_records` — the same duties as the legacy RME
+   archive's governance set. **Never** add `create_legacy_odontogram_imports`,
+   `view_legacy_odontogram_imports` or `view_legacy_odontogram_archive` to it:
+   every read surface consumes that one list, so one wrong entry widens all of
+   them at once. A test pins parity with `LegacyRmeWorkspaceScope`.
+2. Branch-scoped operational actors (Admin Klinik, Front Office) read and file
+   ONLY for their own effective branch, resolved server-side by
+   `BranchContext::forUser()` (online context / Front Office pin). A request
+   `branch_id` is never an authority.
+3. Review/publish/void holders (Supervisor RME) and Super Admin keep the
+   estate-wide RME branch set. Owner holds no legacy odontogram permission and
+   reads nothing here.
+4. Doctors stay non-widening: practice branches AND a real treating relationship
+   via `DoctorPatientScopeService`. Same branch alone grants nothing. A
+   soft-deleted visit never establishes a treating relationship.
+5. An empty allowed branch set matches NOTHING — in the repository `scoped()`
+   (`whereRaw('1 = 0')`) and in the unified index (`legacyOdontogramVisible()`).
+6. One scope, every door: record viewer + private source/pages, staging-import
+   viewer (by import id), patient history, unified medical-record index, batch
+   adapters. If the viewer refuses a record, no list may show it, and vice versa.
+7. Out-of-scope is **404**, never 403 (anti-enumeration). An in-scope doctor
+   without a treating relationship is 403 (existing convention).
+8. The private viewer is the final enforcement boundary; lists are a courtesy.
+9. No write semantics changed except the one the binding service always
+   documented: a branch-scoped operator may not file another branch's history.
+   On the pilot no such upload had ever happened.

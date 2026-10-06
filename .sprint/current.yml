@@ -1,46 +1,29 @@
-# FEATURE-RME-MEDICAL-RECORDS-UNIFIED-NATIVE-LEGACY-1
+# FIX-LEGACY-ODONTOGRAM-CROSS-BRANCH-READ-SCOPE-1
 #
-# /rme/medical-records becomes a UNIFIED, PATIENT-CENTRIC clinical READ index:
-# one row per patient holding a native medical record OR a PUBLISHED legacy
-# RME OR a PUBLISHED legacy odontogram the actor may read. Before this sprint
-# the page listed one row per NATIVE medical record only; production holds 0
-# native records after the estate reset, so it showed nobody, while 19 legacy
-# RME archives and 1 legacy odontogram were reachable only through a visit.
+# UPLOAD AUTHORITY != GLOBAL READ AUTHORITY.
 #
-# READ MODEL ONLY. Native and legacy storage stay separate. Nothing creates a
-# visit, a medical record, or copies a legacy PDF into a native table.
+# LegacyOdontogramWorkspaceScope::GOVERNANCE_PERMISSIONS contained
+# `create_legacy_odontogram_imports`. Every branch intake operator (Admin Klinik,
+# Front Office) holds it, so each resolved to the WHOLE RME branch set and could
+# list, open and stream every branch's published odontogram archive — through the
+# record viewer, its private bytes, the staging-import viewer, the patient history
+# and the unified medical-record index, because all of them consume that one scope.
 #
-# NON-WIDENING BY CONSTRUCTION: each source carries its OWN canonical envelope,
-# composed from the existing authorities rather than re-derived:
-#   native  : BranchService::rmeEnabledIds() — unchanged from the old list;
-#   legacy  : LegacyRmeRecordPolicy::READ_PERMISSIONS + LegacyRmeWorkspaceScope;
-#   odonto  : LegacyOdontogramRecordPolicy::READ_PERMISSIONS + LegacyOdontogramWorkspaceScope;
-#   all     : DoctorPatientScopeService::applyPatientScopeForUser (patient-keyed,
-#             the same predicate all three canonical readers apply).
-# Inclusion is therefore never wider than what the canonical viewer of that
-# source would let the same actor open. Request branch_id is never read.
+# FIX: one membership change. The set is now review/publish/void — exact parity
+# with LegacyRmeWorkspaceScope — so every door narrows together and list and
+# viewer cannot disagree. Intake is pinned too, which the binding service always
+# documented; on the pilot no branch-scoped operator had ever filed a foreign
+# chart, so no real upload changed.
 #
-# ELIGIBILITY: PUBLISHED only. VOID never qualifies; a VOID record replaced by a
-# fresh PUBLISHED import qualifies through the replacement. Staging tables are
-# never read. Soft-deleted patients never appear.
-#
-# PAGINATION AFTER THE UNION: count over the eligibility predicate alone, then
-# a page of ids ordered by one sort key (latest record in scope across readable
-# sources, id tie-break), then indicators for those ids only. Constant query
-# count. Measured on production (19 eligible): every query < 1 ms. Synthetic
-# 50k patients / 120k native / 20k legacy on PG16: page 0.61 s, count 0.28 s.
-# No index added — every leg already has a patient_id-leading index.
-#
-# NEW SURFACE: GET rme/medical-records/patients/{patientId} — patient-keyed,
-# read-only workspace that works with ZERO native records; legacy archives open
-# in their own canonical private viewers. 404 for a patient outside the index.
-#
-# frontend_change: false — Blade views from existing x-ui components only.
+# Not changed: review, publish, batch review/publish, VOID, mass upload, date
+# rules, patient binding, single-active-document, wave admission, quota, SOD.
+# Doctor scope unchanged (practice branch + treating relationship; soft-deleted
+# visits excluded). No migration, no permission, no route, no clinical data.
 
-id: FEATURE-RME-MEDICAL-RECORDS-UNIFIED-NATIVE-LEGACY-1
-type: MODULE_SPRINT
-module: MedicalRecord
-title: "Unified medical-record index: /rme/medical-records lists one row per patient holding a native medical record or a PUBLISHED legacy RME or legacy odontogram the actor may read, each source under its own canonical permission and branch scope plus the doctor patient scope; pagination after the union; a patient-keyed read-only workspace for patients with zero native records; no clinical mutation, no migration, no index"
+id: FIX-LEGACY-ODONTOGRAM-CROSS-BRANCH-READ-SCOPE-1
+type: SECURITY_FIX
+module: LegacyOdontogram
+title: "Legacy Odontogram read scope: remove the upload permission from the archive's governance tier so branch intake operators read only their own branch's published odontogram archive through every surface (viewer, private bytes, staging viewer, patient history, unified index); governance and doctor scope unchanged; no migration, no permission change, no clinical mutation"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 runtime_change: true
 schema_change: false
@@ -51,6 +34,6 @@ ledger_impact: false
 deploy_required: true
 browser_required: false
 test_profiles: []
-go_tag: feature-rme-medical-records-unified-native-legacy-1-go
-inherits_parent_go: feature-legacy-patient-document-completeness-1-go
+go_tag: fix-legacy-odontogram-cross-branch-read-scope-1-go
+inherits_parent_go: feature-rme-medical-records-unified-native-legacy-1-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1

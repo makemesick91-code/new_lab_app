@@ -127,7 +127,10 @@
                     </div>
                     <div>
                         <dt class="text-xs uppercase tracking-wide text-ink-muted">Odontogram Pertama di Sistem</dt>
-                        @if ($earliestNativeOdontogramDate !== null)
+                        @if ($branchResolution === null || ! $branchResolution->resolved)
+                            <dd class="mt-1 text-ink-muted">—</dd>
+                            <dd class="text-xs text-ink-muted">Ditampilkan setelah cabang arsip dapat ditentukan.</dd>
+                        @elseif ($earliestNativeOdontogramDate !== null)
                             <dd class="mt-1 font-semibold text-navy">
                                 {{ \Illuminate\Support\Carbon::parse($earliestNativeOdontogramDate)->format('d-m-Y') }}
                             </dd>

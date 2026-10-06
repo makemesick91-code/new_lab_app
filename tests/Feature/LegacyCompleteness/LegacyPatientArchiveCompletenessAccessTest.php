@@ -403,18 +403,19 @@ it('borrows the hub governance set rather than defining its own', function (): v
         ->and($this->service->governsEveryBranch($admin))->toBeFalse();
 });
 
-it('does not reuse the odontogram workspace governance set', function (): void {
-    // THE TRAP THIS AVOIDS. LegacyOdontogramWorkspaceScope::GOVERNANCE_PERMISSIONS
-    // includes `create_legacy_odontogram_imports`, which Admin Klinik holds —
-    // so reusing that scope would promote every branch intake operator to
-    // estate-wide visibility, the exact opposite of the requirement that Admin
-    // Klinik stay branch-scoped.
+it('keeps an intake operator out of every governance set, including the odontogram one', function (): void {
+    // This test used to pin the TRAP itself: it asserted that
+    // LegacyOdontogramWorkspaceScope::GOVERNANCE_PERMISSIONS CONTAINED
+    // `create_legacy_odontogram_imports`, and that this page stayed safe only
+    // because it did not consult that list. The list was the defect — every
+    // other odontogram surface DID consult it, so an Admin Klinik could read
+    // every branch's published archive (FIX-LEGACY-ODONTOGRAM-CROSS-BRANCH-
+    // READ-SCOPE-1). The set is now review/publish/void, so an intake operator
+    // governs nothing on either page.
     $admin = lcaUser('Admin Klinik', $this->spn4);
 
-    expect(LegacyOdontogramWorkspaceScope::GOVERNANCE_PERMISSIONS)->toContain('create_legacy_odontogram_imports')
-        ->and($admin->canAny(LegacyOdontogramWorkspaceScope::GOVERNANCE_PERMISSIONS))->toBeTrue()
-        // …and yet this page keeps them pinned, because it does not consult
-        // that list.
+    expect(LegacyOdontogramWorkspaceScope::GOVERNANCE_PERMISSIONS)->not->toContain('create_legacy_odontogram_imports')
+        ->and($admin->canAny(LegacyOdontogramWorkspaceScope::GOVERNANCE_PERMISSIONS))->toBeFalse()
         ->and($this->service->governsEveryBranch($admin))->toBeFalse()
         ->and($this->service->authorizedBranchIds($admin))->toBe([$this->spn4->id]);
 });
