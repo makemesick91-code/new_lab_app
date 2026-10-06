@@ -90,6 +90,7 @@ use App\Modules\MedicalRecord\Controllers\MedicalRecordController;
 use App\Modules\MedicalRecord\Controllers\MedicalRecordDiagnosisController;
 use App\Modules\MedicalRecord\Controllers\MedicalRecordHandwritingController;
 use App\Modules\MedicalRecord\Controllers\MedicalRecordHandwritingImageController;
+use App\Modules\Observability\Controllers\ObservabilityConsoleController;
 use App\Modules\Odontogram\Controllers\OdontogramController;
 use App\Modules\Patient\Controllers\LegacyPatientImportController;
 use App\Modules\Patient\Controllers\PatientAuditController;
@@ -2092,9 +2093,28 @@ Route::middleware('auth')->prefix('inventory')->name('inventory.')->group(functi
 | the console must never expose a mutating route (ENT7-DC001).
 */
 if (config('developer_console.enabled', true)) {
+    /*
+    | FEATURE-DEV-CONSOLE-OBSERVABILITY-1 — the console is now the DaengtisiaMS
+    | Observability Console. Same gate (auth + view_developer_console, Super
+    | Admin only), still GET only. `developer-console.index` stays the entry
+    | route name (ENT-7 governance looks it up) and now renders Overview; the
+    | ENT-7 diagnostic panels moved to `developer-console.diagnostics`.
+    */
     Route::middleware(['auth', 'permission:view_developer_console'])
-        ->get('/dev-console', [DeveloperConsoleController::class, 'index'])
-        ->name('developer-console.index');
+        ->prefix('dev-console')
+        ->name('developer-console.')
+        ->group(function () {
+            Route::get('/', [ObservabilityConsoleController::class, 'overview'])->name('index');
+            Route::get('/live-users', [ObservabilityConsoleController::class, 'liveUsers'])->name('live-users');
+            Route::get('/errors', [ObservabilityConsoleController::class, 'errors'])->name('errors');
+            Route::get('/errors/{event}', [ObservabilityConsoleController::class, 'errorShow'])
+                ->whereUuid('event')
+                ->name('errors.show');
+            Route::get('/slow-requests', [ObservabilityConsoleController::class, 'slowRequests'])->name('slow-requests');
+            Route::get('/slow-queries', [ObservabilityConsoleController::class, 'slowQueries'])->name('slow-queries');
+            Route::get('/cache', [ObservabilityConsoleController::class, 'cache'])->name('cache');
+            Route::get('/diagnostics', [DeveloperConsoleController::class, 'index'])->name('diagnostics');
+        });
 
     // UIX-1 component catalog — dev-only, read-only, same Super-Admin/permission gate.
     Route::middleware(['auth', 'permission:view_developer_console'])

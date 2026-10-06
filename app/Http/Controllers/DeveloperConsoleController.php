@@ -17,7 +17,7 @@ class DeveloperConsoleController extends Controller
     {
         $this->console->recordAccess($request->user(), $request->ip());
 
-        return view('dev-console.index', [
+        return view('dev-console.diagnostics', [
             'sections' => $this->console->overview(),
         ]);
     }

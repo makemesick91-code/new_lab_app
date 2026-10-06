@@ -11,6 +11,9 @@ use App\Modules\ClinicVisit\Middleware\EnsureVisitRoomAssigned;
 use App\Modules\DoctorAccess\Middleware\EnsureDoctorSessionLease;
 use App\Modules\DoctorDevice\Middleware\EnsureDoctorDeviceSession;
 use App\Modules\FrontOfficeDevice\Middleware\EnsureFrontOfficeDeviceSession;
+use App\Modules\Observability\Middleware\RecordRequestTelemetry;
+use App\Modules\Observability\Services\RequestTelemetryRecorder;
+use App\Modules\Observability\Support\TelemetryCollector;
 use App\Modules\RmeOnlineContext\Middleware\EnsureRmeOnlineContext;
 use App\Modules\RmeOnlineContext\Middleware\TouchOnlineContextLastSeen;
 use Illuminate\Foundation\Application;
@@ -19,6 +22,7 @@ use Illuminate\Foundation\Configuration\Middleware;
 use Spatie\Permission\Middleware\PermissionMiddleware;
 use Spatie\Permission\Middleware\RoleMiddleware;
 use Spatie\Permission\Middleware\RoleOrPermissionMiddleware;
+use Symfony\Component\ErrorHandler\Error\FatalError;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -54,6 +58,14 @@ return Application::configure(basePath: dirname(__DIR__))
 
         // OBS-1 — attach request/correlation id + safe log context as early
         // as possible, and set the response header as late as possible.
+        // FEATURE-DEV-CONSOLE-OBSERVABILITY-1 — request telemetry for the
+        // Observability Console. GLOBAL, not in the web group, so a 404 for a
+        // path that matches no route is still observed. handle() only measures
+        // and arms an in-memory collector; every write happens in terminate(),
+        // after the response has been sent. Inert when
+        // observability_console.enabled is false.
+        $middleware->prepend(RecordRequestTelemetry::class);
+
         $middleware->web(prepend: [
             AttachRequestCorrelationContext::class,
         ]);
@@ -144,4 +156,21 @@ return Application::configure(basePath: dirname(__DIR__))
         $exceptions->dontReport([
             ForbiddenProductionCommandException::class,
         ]);
+
+        // FEATURE-DEV-CONSOLE-OBSERVABILITY-1 — every rendered exception passes
+        // through this hook, including the ones never reported (404, 403,
+        // validation). It only NOTES the exception for this request's telemetry
+        // and returns the response untouched.
+        $exceptions->respond(function ($response, Throwable $e) {
+            app(TelemetryCollector::class)->noteException($e);
+
+            return $response;
+        });
+
+        // A PHP fatal (e.g. "Maximum execution time exceeded") ends the request
+        // before terminate() runs, so it is recorded when reported. Returning
+        // nothing lets the default logging continue.
+        $exceptions->report(function (FatalError $e) {
+            app(RequestTelemetryRecorder::class)->recordFatal($e);
+        });
     })->create();

@@ -1,0 +1,47 @@
+---
+description: Observability Console — request telemetry, redaction, retention, access (FEATURE-DEV-CONSOLE-OBSERVABILITY-1)
+globs:
+  - "app/Modules/Observability/**"
+  - "app/Http/Controllers/DeveloperConsoleController.php"
+  - "app/Support/DeveloperConsole/**"
+  - "config/observability_console.php"
+  - "resources/views/dev-console/**"
+  - "routes/web.php"
+  - "bootstrap/app.php"
+  - "tests/Feature/Observability/**"
+alwaysApply: true
+---
+
+# Observability Console (FEATURE-DEV-CONSOLE-OBSERVABILITY-1)
+
+Authority: `docs/architecture/observability-console.md`. Extends ENT-7 (developer
+console) and OBS-1 (request id); replaces neither.
+
+1. **Never log raw passwords, tokens, cookies, KTP/NIK, clinical notes, SOAP, raw RME
+   payload, odontogram payload, or sensitive request bodies into observability
+   telemetry.** Request bodies, query strings and SQL bindings are never read.
+2. **New modules/routes must remain compatible with request correlation and
+   observability instrumentation unless explicitly excluded** — add an exclusion only
+   in `config/observability_console.php` `exclude`, with a reason (health probes,
+   polling).
+3. **Observability must remain bounded-retention and must not materially degrade
+   production request performance.** Writes happen only in `terminate()` (after the
+   response is sent); every console read is windowed, limited or paginated; no new
+   daemon; retention is the per-request lottery plus `observability:prune`.
+4. All text reaching `sys_obs_*` passes `TelemetryRedactor` (route templates, redacted
+   messages, argument-free relative traces, normalized SQL). Never copy its rules.
+5. Telemetry never throws, never `report()`s from inside a request, and writes only to
+   `sys_obs_*`. Never call `BranchContext::forUser()` from telemetry — it can write.
+6. Console routes stay `developer-console.*`, GET-only, `permission:view_developer_console`
+   (Super Admin only), audited via `DeveloperConsoleService::recordAccess`.
+   `developer-console.index` keeps its name (ENT-7 governance looks it up).
+7. Thresholds live only in `config/observability_console.php`.
+8. Say the scope: app cache hit rate ≠ Redis **server** hit rate; branch beside an event
+   is an observation, not authority; the app sees PHP timeouts only — never claim to
+   detect nginx 499/502/504 or client RTO.
+9. Redis is probed only when used as cache/session/queue backend; otherwise
+   `NOT_IN_USE`. Surface only allow-listed INFO counters; on failure report the
+   exception class, never its message.
+10. Tests: phpunit.xml sets `OBSERVABILITY_TELEMETRY_ENABLED=false`; observability
+    suites enable it explicitly. Never re-enable it suite-wide — query-budget tests
+    would measure telemetry instead of the app.

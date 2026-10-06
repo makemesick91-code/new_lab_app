@@ -1,39 +1,33 @@
-# FIX-LEGACY-ODONTOGRAM-CROSS-BRANCH-READ-SCOPE-1
+# FEATURE-DEV-CONSOLE-OBSERVABILITY-1
 #
-# UPLOAD AUTHORITY != GLOBAL READ AUTHORITY.
+# /dev-console becomes the DaengtisiaMS Observability Console: Overview (system
+# health, KPIs, 24h trends), Live Users (presence + recent activity), Errors
+# (4xx/5xx + sanitized exception detail), Slow Requests (honest timeout
+# visibility), Slow Queries (normalized SQL, per-fingerprint aggregation) and
+# Cache / Redis (app hit rate vs Redis SERVER hit rate). The ENT-7 diagnostic
+# panels move to /dev-console/diagnostics.
 #
-# LegacyOdontogramWorkspaceScope::GOVERNANCE_PERMISSIONS contained
-# `create_legacy_odontogram_imports`. Every branch intake operator (Admin Klinik,
-# Front Office) holds it, so each resolved to the WHOLE RME branch set and could
-# list, open and stream every branch's published odontogram archive — through the
-# record viewer, its private bytes, the staging-import viewer, the patient history
-# and the unified medical-record index, because all of them consume that one scope.
-#
-# FIX: one membership change. The set is now review/publish/void — exact parity
-# with LegacyRmeWorkspaceScope — so every door narrows together and list and
-# viewer cannot disagree. Intake is pinned too, which the binding service always
-# documented; on the pilot no branch-scoped operator had ever filed a foreign
-# chart, so no real upload changed.
-#
-# Not changed: review, publish, batch review/publish, VOID, mass upload, date
-# rules, patient binding, single-active-document, wave admission, quota, SOD.
-# Doctor scope unchanged (practice branch + treating relationship; soft-deleted
-# visits excluded). No migration, no permission, no route, no clinical data.
+# Telemetry: one global middleware arms an in-memory collector; every write
+# happens in terminate() after the response is sent. Additive migration (two
+# sys_obs_* tables), bounded retention (lottery prune + observability:prune),
+# centralized redaction, OBS-1 request-id correlation. Same gate as ENT-7
+# (view_developer_console, Super Admin only), GET only, audited. No new
+# permission, no clinical/ledger/payment change, no new dependency.
 
-id: FIX-LEGACY-ODONTOGRAM-CROSS-BRANCH-READ-SCOPE-1
-type: SECURITY_FIX
-module: LegacyOdontogram
-title: "Legacy Odontogram read scope: remove the upload permission from the archive's governance tier so branch intake operators read only their own branch's published odontogram archive through every surface (viewer, private bytes, staging viewer, patient history, unified index); governance and doctor scope unchanged; no migration, no permission change, no clinical mutation"
+id: FEATURE-DEV-CONSOLE-OBSERVABILITY-1
+type: FOUNDATION_SPRINT
+module: Observability
+title: "Observability Console: request telemetry (presence, errors, slow requests, slow queries, cache) behind the ENT-7 developer console gate; post-response writes, bounded retention, centralized redaction, OBS-1 correlation; additive migration; no permission change; no clinical mutation"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 runtime_change: true
-schema_change: false
-frontend_change: false
+schema_change: true
+frontend_change: true
 security_impact: true
-branch_isolation_impact: true
+branch_isolation_impact: false
 ledger_impact: false
 deploy_required: true
 browser_required: false
 test_profiles: []
-go_tag: fix-legacy-odontogram-cross-branch-read-scope-1-go
-inherits_parent_go: feature-rme-medical-records-unified-native-legacy-1-go
+go_tag: feature-dev-console-observability-1-go
+inherits_parent_go: fix-legacy-odontogram-cross-branch-read-scope-1-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
