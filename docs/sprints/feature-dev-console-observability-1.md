@@ -95,6 +95,36 @@ variants. The suite-wide default is `OBSERVABILITY_TELEMETRY_ENABLED=false`
   because a redundant sibling layer masked them — DETAIL cut, FormRequest authorize,
   SQL string-literal normalization — each now pinned in isolation).
 
-## Closure evidence
+## Closure evidence (2026-10-07 WITA)
 
-Recorded after CI, merge, deploy and production verification.
+- **PR #458** squash-merged as `8400080aa8cc112d0d89d471b33748c55d05308f`; merge tree
+  `322fb5b4` is byte-identical to the CI-validated candidate `f440b74a`.
+- **CI run 37502250830** (exact candidate): CICD-CTRL Classifier, NSF-R012 Quality,
+  NSF-R011 Critical (**5142 passed / 26620 assertions, exit 0**, Observability suites
+  included), CICD-CTRL Selective Module, NSF-9, NSF-10, Phase 3 Android gate — all pass.
+  NSF-R011 Full Suite **skipped** under the standing temporary policy (not a pass).
+  An earlier run failed only on Pint (three appended tests) and was fixed in `f440b74a`.
+- **Deploy** on `srv1730088` (`/var/www/asia-dental-lab-v2`, as root) via
+  `bash scripts/deploy-vps-runner.sh start`: `exit=0`, `DEPLOY OK: 20261006-191629`,
+  `DEPLOY_HEAD_TARGET_MATCH=YES`, snapshot cleaned. Pre-deploy backup
+  `pre_auto_deploy_20261006-191629.sql` (31,603,432 B) taken **before** migrate and
+  verified 9/9 GO; migration `2026_10_06_100001` Ran (batch 78). Pre-deploy HEAD
+  `c74f282f`; post-deploy HEAD/tree `8400080a`/`322fb5b4`, tracked tree clean.
+  The one smoke WARNING is the known co-tenant nginx shadow on bare `127.0.0.1`.
+- **Production verification** over `https://daengtisia.online`: `/login`,
+  `/health/live`, `/health/ready`, `/health/lb` 200; every `/dev-console/*` route 302
+  for guests (no 500); `/storage/*` 403. Synthetic guest probes recorded correctly
+  (read-only SELECT): a 404 for `/obs-smoke-probe-<ts>/12345` stored as `/{x}/{x}` with
+  the message rebuilt from the template (raw-path leak count **0**); seven
+  unauthenticated console hits stored as **401** (response 302). Health/login/nginx-403
+  probes correctly produced no rows. `laravel.log` byte-identical before/after
+  (1,430,279 B, 161 ERROR) — **zero new errors**; php8.3-fpm, nginx, queue worker
+  active; no failed jobs; env pilot, debug OFF, maintenance OFF.
+- **Not exercised in production (stated, not claimed):** an authenticated Super Admin
+  page render (no credential is available to the operator of this change, and creating
+  a session for a real account was deliberately not done) — covered by the console
+  suite on the identical tree in CI; slow-request/slow-query capture (no safe way to
+  induce one on production) — covered by tests incl. PostgreSQL 16.15; Redis — production
+  uses file/database backends, so the page reports `NOT_IN_USE`.
+- **GO tag** `feature-dev-console-observability-1-go` (annotated, object `9b17b861`) →
+  `8400080a`; exact match at the VPS HEAD.
