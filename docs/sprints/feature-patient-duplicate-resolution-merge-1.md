@@ -42,4 +42,23 @@ A security review and an adversarial data-integrity review ran on the implementa
 
 ## Evidence
 
-Filled in at closure (tests, CI run, deploy, production verification).
+**Status: GO** — tag `feature-patient-duplicate-resolution-merge-1-go` → `df9bb48a` (PR #460, squash). Merge tree `6f075915` is identical to the CI-tested candidate `504ac147`.
+
+| Gate | Result |
+|---|---|
+| PatientMerge suite | 74 passed — SQLite and PostgreSQL 16.15 (incl. PG-only concurrency) |
+| Local regression | 3312 tests across Patient, RME, Legacy*, AccessControl, Auth, ClinicVisit, MedicalRecord, PatientMerge; the only 4 failures were the Front Office permission-count pins (23 → 25), repinned with the reason; `FrontOffice\|Permission\|SupervisorRme\|Sidebar\|DoctorDeviceWebAuthn` reran green (781) |
+| CI run `37576227912` | all required gates green; NSF-R011 Critical **5216 passed / 0 failed**; Selective Module, NSF-9, NSF-10, Quality, Android gate green. Full Suite **skipped** by standing policy (not a pass) |
+| Governance | pint, `git diff --check`, `view:cache`, `sprint:manifest-check`, `sprint:scope-audit`, `foundation:devflow-check --strict`, `foundation:shared-service-audit --strict`, ci-runtime-control, security-compliance, ui-governance, roadmap — all GO |
+
+**Production (`srv1730088`, `/var/www/asia-dental-lab-v2`, 2026-10-07 UTC):**
+
+- Pre-deploy backup `auto_backup_20261007-072856.sql` (31.6 MB, backup-verify 9/9 GO). It was written `0644`; tightened to `0640` immediately (the deploy also re-hardens backups). **Follow-up:** `scripts/backup-vps.sh` itself should create dumps `0640`.
+- `scripts/deploy-vps-runner.sh start` run ON the VPS: `exit=0`, `DEPLOY OK: 20261007-072916`, `DEPLOY_HEAD_TARGET_MATCH=YES`, snapshot cleaned; HEAD/tree == merge; tracked tree clean.
+- Migrations `2026_10_07_100001` and `2026_10_07_100002` ran (batch 79).
+- `PermissionSeeder` → `RoleSeeder` → `permission:cache-reset` as `daengtisiams`. Verified matrix: view + request → Admin Klinik, Front Office, Supervisor RME, Super Admin; approve → Supervisor RME, Super Admin.
+- Smoke over `https://daengtisia.online`: `/login` + `/health/{live,ready,lb}` 200; all seven Duplikasi Pasien pages 302 (auth); non-UUID case id 404; `/storage/*` 403; 18 `patient-merge` routes registered.
+- Read-only DB check: 0 merge cases, 0 aliases, 0 merged patients, 1519 patients — **no real patient was merged**.
+- `laravel.log` byte-identical across the deploy (1434927 bytes) → 0 new errors; no failed jobs; php8.3-fpm / nginx / queue worker active; env pilot, debug OFF, maintenance OFF; Legacy RME rollout readiness GO.
+
+**Not exercised in production (by design):** an end-to-end merge on real data. Merge behaviour is proven by the automated suites on SQLite and PostgreSQL 16; a first production merge should be a genuine, owner-confirmed duplicate pair.
