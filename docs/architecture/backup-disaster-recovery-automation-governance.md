@@ -84,3 +84,27 @@ floor so pruning never drops below the recoverable minimum.
   abort if the target equals the production database.
 - No secret / PII / KTP / NIK is written to any DR evidence artifact.
 - Never `migrate:fresh` / `db:wipe` on the VPS; `migrate --force` only.
+
+## Private dump creation (SECURITY-FIX-DEPLOY-BACKUP-FILE-PERMISSIONS-1)
+
+A database dump is private **from the instant its file exists** — not merely
+after a `chmod`.
+
+- Every dump writer (`scripts/deploy-vps.sh`, `scripts/rollback-vps.sh`,
+  `scripts/backup-vps.sh`, `scripts/backup_postgres.sh`) creates its dump through
+  `scripts/lib/private-db-dump.sh`: `umask 077` scoped to the dump subshell, an
+  exclusive (`noclobber`) create of `<dest>.partial`, removal of the partial on
+  failure or empty output, then publication **unchanged at 0600** by atomic
+  rename (no path-based chmod after the write). The deploy normalization later
+  sets the tree to 0640 for the runtime group.
+- Backup directories are **2750**; a directory carrying a default ACL is refused
+  because a default ACL overrides the umask.
+- The deploy/rollback storage normalization prunes `storage/app/backups` from
+  the 2775/0664 widening and sets the tree to 2750/0640 directly.
+- Root cause of the original defect: `pg_dump ... > "$BACKUP"` let the shell
+  create the inode under the caller's umask (022 => 0644) before the dump began,
+  and the later `chmod 0640` only shortened the window. The scheduled ENT-12
+  path (systemd, default UMask 0022) had no `chmod` at all.
+- Regression: `tests/Feature/Deploy/PrivateDatabaseDumpCreationTest.php`
+  observes the mode at creation time, under hostile umasks 022 and 000.
+- Durable rule: `.cursor/rules/176-private-database-dump-creation.mdc`.

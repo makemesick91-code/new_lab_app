@@ -142,7 +142,15 @@ echo "Target ref:   ${TARGET_REF}"
 git status -sb
 
 echo "== Backup DB before rollback =="
-mkdir -p storage/app/backups/rollback
+# SECURITY-FIX-DEPLOY-BACKUP-FILE-PERMISSIONS-1: the dump is created PRIVATE
+# (0600 under a scoped `umask 077`) and published unchanged once complete —
+# never `pg_dump > file` followed by a chmod. The helper comes from the
+# immutable snapshot of the CURRENT code, so rolling back to a ref that predates
+# this fix still writes its pre-rollback dump privately.
+# shellcheck source=lib/private-db-dump.sh
+source "${DEPLOY_TOOLS_DIR}/scripts/lib/private-db-dump.sh"
+dms_prepare_private_backup_dir storage/app/backups
+dms_prepare_private_backup_dir storage/app/backups/rollback
 
 set -a
 source .env
@@ -150,18 +158,13 @@ set +a
 
 BACKUP="storage/app/backups/rollback/pre_rollback_${STAMP}.sql"
 
-PGPASSWORD="${DB_PASSWORD}" pg_dump \
+PGPASSWORD="${DB_PASSWORD}" dms_write_private_dump "$BACKUP" pg_dump \
   -h "${DB_HOST:-127.0.0.1}" \
   -p "${DB_PORT:-5432}" \
   -U "${DB_USERNAME}" \
-  -d "${DB_DATABASE}" \
-  > "$BACKUP"
+  -d "${DB_DATABASE}"
 
 test -s "$BACKUP"
-
-# INFRA-SEC-ENV-1: the dump holds the entire clinical database and pg_dump would
-# otherwise leave it world-readable under the default umask.
-chmod 0640 "$BACKUP"
 
 echo "Backup written: ${BACKUP}"
 
@@ -226,8 +229,15 @@ echo "== Permissions =="
 # Ownership follows the dedicated runtime identity resolved before the checkout,
 # never a hardcoded shared account.
 chown -R "${RUNTIME_USER}:${RUNTIME_GROUP}" storage bootstrap/cache
-find storage bootstrap/cache -type d -exec chmod 2775 {} \;
-find storage bootstrap/cache -type f -exec chmod 0664 {} \;
+# SECURITY-FIX-DEPLOY-BACKUP-FILE-PERMISSIONS-1: the backup tree is pruned from
+# the widening and set straight to its private modes (dirs 2750, files 0640),
+# so no database dump is ever 0664 inside a 2775 directory, even briefly.
+find storage bootstrap/cache -path storage/app/backups -prune -o -type d -exec chmod 2775 {} \;
+find storage bootstrap/cache -path storage/app/backups -prune -o -type f -exec chmod 0664 {} \;
+if [ -d storage/app/backups ]; then
+  find storage/app/backups -type d -exec chmod 2750 {} +
+  find storage/app/backups -type f -exec chmod 0640 {} +
+fi
 
 # INFRA-SEC-RUNTIME-1: the normalization above makes the whole storage tree
 # world-readable (2775/0664). Private clinical storage must not inherit that, so

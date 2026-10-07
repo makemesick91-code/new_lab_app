@@ -1,35 +1,29 @@
-# FEATURE-PATIENT-DUPLICATE-RESOLUTION-MERGE-1
+# SECURITY-FIX-DEPLOY-BACKUP-FILE-PERMISSIONS-1
 #
-# Duplikasi Pasien: one person who was registered as several patient rows is
-# resolved to ONE canonical patient with ONE active Nomor RM, and every clinical,
-# financial and legacy record is kept — ownership moves, nothing is deleted.
-#
-# Manual patient selection + bounded candidate detection (never auto-merge);
-# field-by-field identity reconciliation with structured provenance (canonical
-# patient choice is separate from the final identity values); maker-checker
-# approval that runs the merge in ONE atomic transaction with row locks,
-# live-schema registry check and a proven conservation check; old Nomor RM kept
-# as a searchable alias; merged source is a read-only pointer that receives no
-# new activity; Merge Reversal Review (safe only when provable, otherwise
-# supervised reconciliation); light registration duplicate prevention.
-# Additive migrations (3 tables + nullable merge columns on mst_patients);
-# three new permissions; KTP/NIK masked everywhere, full pre-merge identity only
-# encrypted at rest.
+# Database dumps are private FROM THE INSTANT OF CREATION. Every dump writer
+# (deploy, rollback, scheduled ENT-12 backup, manual helper) now goes through
+# scripts/lib/private-db-dump.sh: umask 077 scoped to the dump subshell, an
+# exclusive noclobber create of <dest>.partial, partial removed on failure or
+# empty output, published at 0640 by atomic rename; backup directories 2750,
+# default ACL refused. The deploy/rollback storage normalization prunes the
+# backup tree from its 2775/0664 widening. Replaces `pg_dump > file; chmod`,
+# which left the inode 0644 for the whole dump (the scheduled path never chmod'd
+# at all). No migration, no permission, no route, no application logic change.
 
-id: FEATURE-PATIENT-DUPLICATE-RESOLUTION-MERGE-1
-type: FOUNDATION_SPRINT
-module: PatientMerge
-title: "Patient duplicate resolution & merge: manual selection, candidate detection, field-level identity reconciliation with provenance, maker-checker atomic merge with conservation proof, RM alias, merged-source guard, reversal review, registration duplicate prevention; additive migrations; 3 permissions; NIK masked"
+id: SECURITY-FIX-DEPLOY-BACKUP-FILE-PERMISSIONS-1
+type: SECURITY_FIX
+module: Deploy
+title: "Database dumps private from creation: shared private-dump helper (scoped umask 077, exclusive partial create, atomic publish at 0640), 2750 backup dirs, backup tree pruned from storage widening; creation-time regression test"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
-runtime_change: true
-schema_change: true
-frontend_change: true
+runtime_change: false
+schema_change: false
+frontend_change: false
 security_impact: true
-branch_isolation_impact: true
+branch_isolation_impact: false
 ledger_impact: false
 deploy_required: true
 browser_required: false
 test_profiles: []
-go_tag: feature-patient-duplicate-resolution-merge-1-go
+go_tag: security-fix-deploy-backup-file-permissions-1-go
 inherits_parent_go: feature-dev-console-observability-1-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
