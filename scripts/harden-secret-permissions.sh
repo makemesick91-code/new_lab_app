@@ -65,9 +65,11 @@ PUBLIC_ENV_FILE=".env.example"
 
 # Database dumps produced by the deploy/backup automation contain the ENTIRE
 # clinical database (patients, national identity numbers, medical records,
-# invoices). `pg_dump > file` creates them under the deploy user's umask (022 =>
-# 0644) and the runtime-ownership pass then normalises every storage file to
-# 0664 — both world-readable. They are hardened by stripping the "other" bits
+# invoices). Since SECURITY-FIX-DEPLOY-BACKUP-FILE-PERMISSIONS-1 they are
+# CREATED private by scripts/lib/private-db-dump.sh (0600 while written and when
+# published; the deploy normalization sets 0640) and the runtime-ownership pass prunes the backup tree instead
+# of widening it to 0664. This pass is now defence in depth for dumps written by
+# older code or out of band. They are hardened by stripping the "other" bits
 # ONLY: owner and group are left exactly as they are, so root (backup verify,
 # restore, evidence capture) and the runtime user (developer-console backup
 # listing) keep the access they already had, and only unrelated local accounts

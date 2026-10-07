@@ -1,0 +1,58 @@
+---
+description: Database dumps are private from the instant of creation — never redirect-then-chmod
+globs: scripts/**/*.sh, deploy/**, tests/Feature/Deploy/**
+alwaysApply: false
+---
+
+# 176 — Private database dump creation (SECURITY-FIX-DEPLOY-BACKUP-FILE-PERMISSIONS-1)
+
+A database dump contains the entire clinical database. It is HIGHLY SENSITIVE.
+
+## Non-negotiable rules
+
+1. **Database backup files must be private from the moment of creation.**
+   Post-creation `chmod` is NOT an acceptable primary security mechanism — the
+   shell creates a redirect target (and `pg_dump -f` creates its file) under the
+   caller's umask BEFORE a byte is written, so `pg_dump > file; chmod 0640 file`
+   leaves the inode 0644 for the whole dump.
+2. **Every dump is written through `scripts/lib/private-db-dump.sh`**
+   (`dms_write_private_dump <dest> pg_dump ...`). It applies `umask 077` in a
+   subshell scoped to the dump only (the umask never leaks to the rest of the
+   deploy), writes `<dest>.partial` with bash `noclobber` (O_EXCL — refuses a
+   pre-planted file or symlink), removes the partial on failure or empty output,
+   then publishes it **unchanged at 0600** by atomic rename. There is
+   deliberately NO chmod after the write: deploy runs as root inside a
+   runtime-owned directory, where a path-based chmod could be redirected through
+   a swapped-in symlink. Never re-implement this inline. Modes are literals in
+   the helper, never variables — callers source the environment file around it.
+3. **Backup directories are 2750** (`dms_prepare_private_backup_dir`): no access
+   for "other", not even traverse. A directory carrying a DEFAULT ACL is refused,
+   because a default ACL replaces the umask in the kernel's create-mode calculation.
+4. **No deployment or backup helper may create a database dump with
+   world-readable permissions, even transiently** — including temporary files,
+   partial files and compressed variants.
+5. **The storage-wide 2775/0664 normalization must PRUNE `storage/app/backups`**
+   (`-path storage/app/backups -prune`) and set the tree to 2750/0640 directly.
+   Widening and re-restricting afterwards is the same redirect-then-chmod window
+   applied to every dump on the host at once.
+6. **Changes to backup/deploy dump logic require permission-mode regression
+   tests** that observe the mode AT CREATION (the probe stats its own stdout via
+   `/proc/$BASHPID/fd/1` while running) — a final-mode assertion cannot see the
+   defect. Suite: `tests/Feature/Deploy/PrivateDatabaseDumpCreationTest.php`.
+7. **Production backup contents and credentials never appear in logs or
+   deployment evidence.** Verify a backup with metadata (size, owner, mode) and
+   the existing `foundation:backup-verify` gate — never `cat`, `head` or `grep`
+   a dump. The password reaches pg_dump only as `PGPASSWORD` in that one
+   command's environment, never as an argument.
+
+## Approved modes
+
+| Object | Mode | Owner |
+|---|---|---|
+| Dump while being written | 0600 | creator (root in deploy, runtime user in the scheduled backup) |
+| Dump as published by the helper | 0600 | creator |
+| Dump after deploy normalization | 0640 | runtime user : runtime group |
+| Backup directory | 2750 | runtime user : runtime group |
+
+The runtime group contains only the dedicated runtime identity; "other" — which
+includes the co-tenant shared web account — has no access at any point.

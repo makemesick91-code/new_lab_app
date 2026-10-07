@@ -488,6 +488,13 @@ return [
         // for weeks precisely because nothing in CI asserted it. A control that
         // exists but is never selected by the gate is not a control.
         'tests/Feature/Storage/ClinicalEvidencePrivacyTest.php',
+        /*
+         * SECURITY-FIX-DEPLOY-BACKUP-FILE-PERMISSIONS-1 — database dumps must be
+         * private from the instant of creation. This suite observes the mode AT
+         * CREATION; a rename that dropped it from the gate would let the
+         * redirect-then-chmod window return silently.
+         */
+        'tests/Feature/Deploy/PrivateDatabaseDumpCreationTest.php',
 
         // FEATURE-DOCTOR-TRUSTED-ANDROID-DEVICE-LOCK-1 Phase 1 — a Doctor is
         // confined to the ACTIVE patients of the treatment room they are online

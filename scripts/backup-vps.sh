@@ -36,15 +36,21 @@ BACKUP_DR_RETENTION_DAYS="${BACKUP_DR_RETENTION_DAYS:-14}"
 MIN_RETAINED="${BACKUP_DR_MIN_RETAINED:-3}"
 
 echo "== Automated DB backup (ENT-12) =="
-mkdir -p "$BACKUP_DIR"
+# SECURITY-FIX-DEPLOY-BACKUP-FILE-PERMISSIONS-1: this path runs under systemd as
+# the runtime user with the default UMask (0022) and previously wrote
+# `pg_dump > file` with NO chmod at all, so every scheduled dump was born — and
+# stayed — 0644. The helper creates it 0600 under a scoped `umask 077` and
+# publishes it unchanged at 0600 once complete.
+# shellcheck source=lib/private-db-dump.sh
+source "${APP_DIR}/scripts/lib/private-db-dump.sh"
+dms_prepare_private_backup_dir "$BACKUP_DIR"
 BACKUP="${BACKUP_DIR}/auto_backup_${STAMP}.sql"
 
-PGPASSWORD="${DB_PASSWORD}" pg_dump \
+PGPASSWORD="${DB_PASSWORD}" dms_write_private_dump "$BACKUP" pg_dump \
   -h "${DB_HOST:-127.0.0.1}" \
   -p "${DB_PORT:-5432}" \
   -U "${DB_USERNAME}" \
-  -d "${DB_DATABASE}" \
-  > "$BACKUP"
+  -d "${DB_DATABASE}"
 
 test -s "$BACKUP"
 echo "Backup written: ${BACKUP}"

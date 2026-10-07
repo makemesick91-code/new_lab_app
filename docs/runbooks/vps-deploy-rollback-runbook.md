@@ -106,6 +106,10 @@ Never run these during deploy or rollback on the pilot/production VPS:
 ## Evidence
 
 - Pre-deploy backup filename + size (e.g. `pre_auto_deploy_<ts>.sql`).
+- Pre-deploy backup owner/group/mode (expected `0640`, directory `2750`, no
+  default ACL) — metadata only; never print or grep dump contents. The dump is
+  created 0600 by `scripts/lib/private-db-dump.sh` and set to 0640 by the
+  deploy's backup-tree normalization (rule 176).
 - Release-evidence VPS profile all GO (`release:evidence-check --profile=vps`).
 - Automated smoke result and the deployed GO tag exact-match at VPS HEAD.
 - DEPLOY-HARDEN-1 immutable-execution proof, printed by the run and kept in

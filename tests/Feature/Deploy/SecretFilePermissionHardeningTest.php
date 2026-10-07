@@ -339,16 +339,23 @@ test('an already-tightened 0600 dump is left alone', function () {
     removeFixtureDir($dir);
 });
 
-test('the deploy and rollback scripts tighten a dump the moment it is created', function () {
+// SUPERSEDED by SECURITY-FIX-DEPLOY-BACKUP-FILE-PERMISSIONS-1. This used to
+// assert `pg_dump > "$BACKUP"` followed by `chmod 0640 "$BACKUP"` — the
+// redirect-then-chmod pattern that left the inode 0644 for the whole dump. The
+// intent ("a dump is never left world-readable") is kept and made stronger: the
+// dump is now CREATED private by the shared helper, and the creation-time mode
+// is asserted behaviourally in PrivateDatabaseDumpCreationTest.
+test('the deploy and rollback scripts create a dump private instead of tightening it afterwards', function () {
     foreach (['scripts/deploy-vps.sh', 'scripts/rollback-vps.sh'] as $path) {
         $script = file_get_contents(base_path($path));
 
-        $dumpAt = strpos($script, 'pg_dump');
-        $chmodAt = strpos($script, 'chmod 0640 "$BACKUP"');
+        $helperAt = strpos($script, 'lib/private-db-dump.sh');
+        $dumpAt = strpos($script, 'dms_write_private_dump "$BACKUP" pg_dump');
 
-        expect($chmodAt)->not->toBeFalse()
+        expect($helperAt)->not->toBeFalse()
             ->and($dumpAt)->not->toBeFalse()
-            ->and($dumpAt)->toBeLessThan($chmodAt);
+            ->and($helperAt)->toBeLessThan($dumpAt)
+            ->and($script)->not->toContain('chmod 0640 "$BACKUP"');
     }
 });
 

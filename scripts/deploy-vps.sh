@@ -138,9 +138,23 @@ normalize_runtime_ownership() {
   # Only the runtime-writable paths are touched; the application source tree
   # stays deploy/root owned so the runtime can never rewrite its own code.
   chown -R "${RUNTIME_USER}:${RUNTIME_GROUP}" storage bootstrap/cache
-  find storage bootstrap/cache -type d -exec chmod 2775 {} \;
-  find storage bootstrap/cache -type f -exec chmod 0664 {} \;
+  # SECURITY-FIX-DEPLOY-BACKUP-FILE-PERMISSIONS-1: the backup tree is PRUNED
+  # from the 2775/0664 widening below. Widening it first and re-restricting it
+  # afterwards (restrict_private_paths) still left every database dump 0664
+  # inside a 2775 directory for the duration of the find — a deploy-wide window
+  # on every dump on the host. The tree is set to its private modes directly.
+  find storage bootstrap/cache -path storage/app/backups -prune -o -type d -exec chmod 2775 {} \;
+  find storage bootstrap/cache -path storage/app/backups -prune -o -type f -exec chmod 0664 {} \;
+  restrict_backup_tree
   restrict_private_paths
+}
+
+# Database dumps: directories 2750, files 0640 — never group-write, never any
+# access for "other". Matches scripts/lib/private-db-dump.sh.
+restrict_backup_tree() {
+  [ -d storage/app/backups ] || return 0
+  find storage/app/backups -type d -exec chmod 2750 {} +
+  find storage/app/backups -type f -exec chmod 0640 {} +
 }
 
 # INFRA-SEC-RUNTIME-1: the normalization above deliberately makes the whole
@@ -216,7 +230,15 @@ if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
 fi
 
 echo "== Backup DB =="
-mkdir -p storage/app/backups/deploy
+# SECURITY-FIX-DEPLOY-BACKUP-FILE-PERMISSIONS-1: the dump is created PRIVATE.
+# The helper wraps pg_dump in a `umask 077` subshell, so the redirect creates
+# the file 0600 before a single byte is written, and it is published unchanged
+# at 0600 once complete (restrict_backup_tree later sets 0640). The previous `pg_dump > file; chmod 0640` left the inode 0644
+# for the entire dump. The helper is read from the immutable snapshot.
+# shellcheck source=lib/private-db-dump.sh
+source "${DEPLOY_TOOLS_DIR}/scripts/lib/private-db-dump.sh"
+dms_prepare_private_backup_dir storage/app/backups
+dms_prepare_private_backup_dir storage/app/backups/deploy
 
 set -a
 source .env
@@ -224,19 +246,13 @@ set +a
 
 BACKUP="storage/app/backups/deploy/pre_auto_deploy_${STAMP}.sql"
 
-PGPASSWORD="${DB_PASSWORD}" pg_dump \
+PGPASSWORD="${DB_PASSWORD}" dms_write_private_dump "$BACKUP" pg_dump \
   -h "${DB_HOST:-127.0.0.1}" \
   -p "${DB_PORT:-5432}" \
   -U "${DB_USERNAME}" \
-  -d "${DB_DATABASE}" \
-  > "$BACKUP"
+  -d "${DB_DATABASE}"
 
 test -s "$BACKUP"
-
-# INFRA-SEC-ENV-1: `pg_dump > file` creates the dump under the deploy user's
-# umask (022 => world-readable), and this dump contains the ENTIRE clinical
-# database. Close that window immediately, not at the end of the deploy.
-chmod 0640 "$BACKUP"
 
 echo "== Advance checkout to the pinned target =="
 # Fast-forward the approved branch to the EXACT pinned commit instead of pulling
