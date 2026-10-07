@@ -98,6 +98,9 @@
             {{-- Mode: pasien baru --}}
             <div class="mt-3 hidden" data-mode-panel="new">
                 <p class="mb-2 text-xs text-ink-soft">Nomor RM final dibentuk otomatis: <span class="font-mono">DG-{KODE_CABANG}-{TAHUN_DAFTAR}-{NOMOR_RM_MANUAL}</span>. Nomor RM manual diisi oleh admin.</p>
+                <div class="mb-3">
+                    @include('patient-merge.partials.registration-duplicates', ['reasonField' => 'new_patient[duplicate_override_reason]', 'useRoute' => 'rme.visits.create', 'useParam' => 'patient_id'])
+                </div>
                 <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <div>
                         <label class="block text-sm font-medium text-ink">Nama Pasien</label>

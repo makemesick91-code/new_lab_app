@@ -7,6 +7,7 @@ use App\Modules\Branch\Services\BranchService;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Patient\Services\PatientMedicalRecordNumberService;
 use App\Modules\Patient\Services\PatientSelectorSearchService;
+use App\Modules\PatientMerge\Services\PatientRegistrationDuplicateCheck;
 use App\Modules\RmeOnlineContext\Services\UserOnlineContextService;
 use App\Support\AccessControl\FrontOfficeBranchPinResolver;
 use App\Support\Clinical\ClinicalClock;
@@ -271,6 +272,9 @@ class StoreClinicVisitRequest extends FormRequest
             'new_patient.email' => ['nullable', 'email', 'max:150'],
             'new_patient.occupation' => ['nullable', 'string', 'max:150'],
             'new_patient.address' => ['nullable', 'string', 'max:1000'],
+            // FEATURE-PATIENT-DUPLICATE-RESOLUTION-MERGE-1 — required only when
+            // a strong duplicate of the new patient is found.
+            'new_patient.duplicate_override_reason' => ['nullable', 'string', 'max:1000'],
 
             // Sprint 61.1.1 — optional temp token for a KTP scan captured in the
             // RME "Pasien Baru" panel; promoted to a PatientDocument after the
@@ -304,6 +308,15 @@ class StoreClinicVisitRequest extends FormRequest
             $this->validateExistingPatientSelectable($validator);
             $this->validateFollowUpVisit($validator);
             $this->validateOnlineDoctor($validator);
+
+            if ($this->input('patient_mode') === 'new' && $validator->errors()->isEmpty()) {
+                app(PatientRegistrationDuplicateCheck::class)->validate(
+                    $validator,
+                    (array) $this->input('new_patient', []),
+                    $this->input('new_patient.duplicate_override_reason'),
+                    'new_patient.duplicate_override_reason',
+                );
+            }
         });
     }
 

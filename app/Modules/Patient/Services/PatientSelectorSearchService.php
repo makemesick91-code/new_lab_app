@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Modules\Branch\Services\BranchService;
 use App\Modules\Patient\Interfaces\PatientRepositoryInterface;
 use App\Modules\Patient\Models\Patient;
+use App\Modules\PatientMerge\Services\PatientRmAliasService;
 use App\Modules\RME\Services\DoctorPatientScopeService;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
 use Illuminate\Database\Eloquent\Builder;
@@ -90,6 +91,7 @@ class PatientSelectorSearchService
         private readonly RmeWorkingBranchScope $workingScope,
         private readonly DoctorPatientScopeService $doctorScope,
         private readonly BranchService $branches,
+        private readonly PatientRmAliasService $rmAliases,
     ) {}
 
     /**
@@ -119,12 +121,28 @@ class PatientSelectorSearchService
             ];
         }
 
+        $branchIds = $this->authorizedBranchIds($user);
         $patients = $this->patients->searchSelectable(
-            $this->authorizedBranchIds($user),
+            $branchIds,
             $term,
             self::RESULT_LIMIT,
             $this->doctorScopeFor($user),
         );
+
+        // FEATURE-PATIENT-DUPLICATE-RESOLUTION-MERGE-1 — an old Nomor RM from a
+        // merged patient's card finds the patient it was merged INTO. The
+        // canonical patient passes the SAME authorization as any other result
+        // (findSelectable with the same scope); the merged row itself is never
+        // offered.
+        $alias = $this->rmAliases->findAlias($term);
+
+        if ($alias !== null && ! $patients->contains('id', (int) $alias->canonical_patient_id)) {
+            $canonical = $this->patients->findSelectable($branchIds, (int) $alias->canonical_patient_id, $this->doctorScopeFor($user));
+
+            if ($canonical !== null) {
+                $patients = $patients->prepend($canonical)->take(self::RESULT_LIMIT)->values();
+            }
+        }
 
         return [
             'query' => $term,

@@ -22,6 +22,7 @@ use App\Modules\LegacyRme\Support\LegacyRmeBranchResolution;
 use App\Modules\LegacyRme\Support\LegacyRmePdfException;
 use App\Modules\LegacyRme\Support\LegacyRmePdfFailure;
 use App\Modules\Patient\Models\Patient;
+use App\Modules\PatientMerge\Services\PatientMergeGuard;
 use App\Support\Legacy\LegacyVisitAttestation;
 use App\Support\Legacy\LegacyVisitBindingRefusal;
 use Illuminate\Http\UploadedFile;
@@ -87,6 +88,9 @@ class LegacyOdontogramImportService
         // entirely independently of the patient's RME slot: a published legacy
         // RME must never stand in the way of a first legacy chart.
         private readonly LegacySingleActiveDocumentService $slots,
+        // FEATURE-PATIENT-DUPLICATE-RESOLUTION-MERGE-1 — a merged patient
+        // receives no new archive; the operator files it on the canonical one.
+        private readonly PatientMergeGuard $mergeGuard,
     ) {}
 
     /**
@@ -100,6 +104,7 @@ class LegacyOdontogramImportService
         ?LegacyVisitAttestation $attestation = null,
     ): LegacyOdontogramImport {
         $this->feature->assertMigrationEnabled();
+        $this->mergeGuard->assertNotMerged($patient, 'patient_id');
 
         // REVISION-LEGACY-VISIT-BOUND-PREVERIFIED-INGESTION-1 — the visit-bound
         // path passes an attestation ALREADY RESOLVED by
@@ -242,6 +247,12 @@ class LegacyOdontogramImportService
                     LegacyImportType::LEGACY_ODONTOGRAM,
                     (int) $patient->getKey(),
                 );
+
+                // FEATURE-PATIENT-DUPLICATE-RESOLUTION-MERGE-1 — re-read the
+                // patient under FOR SHARE, AFTER the slot lock (the order the
+                // merge also uses). The pre-transaction check read a model that
+                // a concurrent merge may since have emptied.
+                $this->mergeGuard->assertNotMergedLocked((int) $patient->getKey());
 
                 $this->hubQuota->reserve(LegacyImportType::LEGACY_ODONTOGRAM, $branch->branchId);
 

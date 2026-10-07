@@ -377,6 +377,16 @@ class PermissionSeeder extends Seeder
         // `view_legacy_odontogram_archive` above is kept out of the odontogram
         // workspace scope's governance set.
         'view_legacy_patient_archive_completeness',
+
+        // FEATURE-PATIENT-DUPLICATE-RESOLUTION-MERGE-1 — duplicate patient
+        // resolution. Three tiers so separation of duties has something to
+        // enforce: an operator may REQUEST a merge, only a reviewer may APPROVE
+        // it, and the service additionally refuses an approver who filed the
+        // case (Super Admin passes every policy through Gate::before, so that
+        // rule cannot live in a policy).
+        'view_patient_duplicate_resolution',
+        'request_patient_merge',
+        'approve_patient_merge',
     ];
 
     public function run(): void

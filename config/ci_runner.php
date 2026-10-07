@@ -190,6 +190,21 @@ return [
      */
     'critical_gate_mandatory_suites' => [
         /*
+         * FEATURE-PATIENT-DUPLICATE-RESOLUTION-MERGE-1 — a patient merge moves a
+         * person's entire clinical and financial history. These suites pin that
+         * nothing is deleted, that a failed merge changes NOTHING (atomicity +
+         * conservation), that an unregistered patient foreign key refuses the
+         * merge, that a KTP held by a third patient is never taken, that the
+         * requester can never approve, that NIK never renders, and that a
+         * merged patient receives no new activity. Selected by the
+         * `PatientMerge` token, added to BOTH critical-gate variants.
+         */
+        'tests/Feature/PatientMerge/PatientMergeWorkflowTest.php',
+        'tests/Feature/PatientMerge/PatientMergeSafetyTest.php',
+        'tests/Feature/PatientMerge/PatientMergeAccessTest.php',
+        'tests/Feature/PatientMerge/PatientMergeGuardAndSearchTest.php',
+        'tests/Feature/PatientMerge/PatientMergeHardeningTest.php',
+        /*
          * FEATURE-DEV-CONSOLE-OBSERVABILITY-1 — request telemetry runs on EVERY
          * request (global middleware). Its suites pin that telemetry never
          * stores a raw NIK/phone/password/token/binding, never breaks or slows

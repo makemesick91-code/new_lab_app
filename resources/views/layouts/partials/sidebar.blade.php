@@ -135,6 +135,8 @@
         'dev_console' => request()->routeIs('developer-console.*'),
         // REVISION-DOCTOR-AUTO-DEVICE-APPROVAL-APP-ONLY-LOGIN-1
         'approval' => request()->routeIs('doctor-device-authorizations.*'),
+        // FEATURE-PATIENT-DUPLICATE-RESOLUTION-MERGE-1
+        'patient_merge' => request()->routeIs('patient-merge.*'),
     ];
 
     $linkActive = 'menu-subitem-active';
@@ -1052,6 +1054,49 @@
                                 <a href="{{ route('settings.legacy-patient-completeness.index') }}"
                                    class="menu-subitem {{ request()->routeIs('settings.legacy-patient-completeness.*') ? $linkActive : $linkIdle }}">Kelengkapan Arsip Pasien Legacy</a>
                             @endif
+                        @endcan
+                    </div>
+                </div>
+            @endcanany
+
+            {{-- FEATURE-PATIENT-DUPLICATE-RESOLUTION-MERGE-1 — DUPLIKASI PASIEN.
+
+                 One dedicated parent for duplicate patient resolution. Each entry
+                 is gated by the permission its route requires; the routes and the
+                 case policy enforce the same rules server-side, so hiding a link is
+                 a courtesy, never the boundary. Route names share the
+                 `patient-merge.` prefix with nothing else, so no other menu lights
+                 up while an operator is here. --}}
+            @canany(['view_patient_duplicate_resolution', 'request_patient_merge', 'approve_patient_merge'])
+                <div class="pt-2">
+                    <button type="button" @click="toggle('patient_merge')" class="{{ $groupToggle }}" :aria-expanded="isOpen('patient_merge')">
+                        <span class="flex items-center gap-3">
+                            <svg class="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" d="M8 7a3 3 0 106 0 3 3 0 00-6 0zM3 20a6 6 0 0112 0M16 11l2 2 4-4" />
+                            </svg>
+                            <span>Duplikasi Pasien</span>
+                        </span>
+                        <svg class="h-4 w-4 shrink-0 text-ink-muted transition-transform duration-150" :class="{ 'rotate-180': isOpen('patient_merge') }" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+                            <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.94a.75.75 0 111.08 1.04l-4.24 4.5a.75.75 0 01-1.08 0l-4.24-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" />
+                        </svg>
+                    </button>
+                    <div data-sidebar-panel="patient_merge" x-show="isOpen('patient_merge')" class="mt-1 space-y-0.5 pl-8">
+                        @can('view_patient_duplicate_resolution')
+                            <a href="{{ route('patient-merge.dashboard') }}" class="menu-subitem {{ request()->routeIs('patient-merge.dashboard') ? $linkActive : $linkIdle }}">Dashboard</a>
+                            <a href="{{ route('patient-merge.candidates.index') }}" class="menu-subitem {{ request()->routeIs('patient-merge.candidates.*') ? $linkActive : $linkIdle }}">Deteksi Duplikat</a>
+                        @endcan
+                        @can('request_patient_merge')
+                            <a href="{{ route('patient-merge.manual.create') }}" class="menu-subitem {{ request()->routeIs('patient-merge.manual.*') ? $linkActive : $linkIdle }}">Pilih Pasien Manual</a>
+                        @endcan
+                        @can('view_patient_duplicate_resolution')
+                            <a href="{{ route('patient-merge.cases.index') }}" class="menu-subitem {{ request()->routeIs('patient-merge.cases.*') ? $linkActive : $linkIdle }}">Pengajuan Merge</a>
+                        @endcan
+                        @can('approve_patient_merge')
+                            <a href="{{ route('patient-merge.review.index') }}" class="menu-subitem {{ request()->routeIs('patient-merge.review.*') ? $linkActive : $linkIdle }}">Review &amp; Approval</a>
+                        @endcan
+                        @can('view_patient_duplicate_resolution')
+                            <a href="{{ route('patient-merge.history.index') }}" class="menu-subitem {{ request()->routeIs('patient-merge.history.*') ? $linkActive : $linkIdle }}">Riwayat Merge</a>
+                            <a href="{{ route('patient-merge.aliases.index') }}" class="menu-subitem {{ request()->routeIs('patient-merge.aliases.*') ? $linkActive : $linkIdle }}">RM Alias</a>
                         @endcan
                     </div>
                 </div>

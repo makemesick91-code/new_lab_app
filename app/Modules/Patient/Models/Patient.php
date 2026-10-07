@@ -49,12 +49,34 @@ class Patient extends Model
             'date_of_birth' => 'date',
             'registered_at' => 'date',
             'is_active' => 'boolean',
+            'merged_into_patient_id' => 'integer',
+            'merged_at' => 'datetime',
+            'merged_by' => 'integer',
+            'merge_case_id' => 'integer',
         ];
     }
 
     public function branch(): BelongsTo
     {
         return $this->belongsTo(Branch::class, 'branch_id');
+    }
+
+    /**
+     * FEATURE-PATIENT-DUPLICATE-RESOLUTION-MERGE-1 — a merged patient is a
+     * read-only record of a person who now lives under another patient row.
+     *
+     * The merge columns are deliberately NOT fillable: only the merge (and its
+     * supervised reversal) may write them, through forceFill, so no ordinary
+     * patient form can merge or un-merge anybody by posting a field.
+     */
+    public function isMerged(): bool
+    {
+        return $this->merged_into_patient_id !== null;
+    }
+
+    public function mergedInto(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'merged_into_patient_id');
     }
 
     /**

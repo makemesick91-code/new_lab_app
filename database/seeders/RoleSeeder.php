@@ -106,6 +106,9 @@ class RoleSeeder extends Seeder
             'view dashboard',
             'view_branch_dashboard',
             'manage patients',
+            // FEATURE-PATIENT-DUPLICATE-RESOLUTION-MERGE-1 — duplicate patient resolution.
+            'view_patient_duplicate_resolution',
+            'request_patient_merge',
             // LAB-WORKFLOW-V2 Phase 2 — Cabang lab pickup request
             'create_lab_branch_requests',
             'view_clinic_master_data',
@@ -395,6 +398,9 @@ class RoleSeeder extends Seeder
             'manage_rme_consents',
             // --- from Admin Klinik -----------------------------------------
             'manage patients',
+            // FEATURE-PATIENT-DUPLICATE-RESOLUTION-MERGE-1 — duplicate patient resolution.
+            'view_patient_duplicate_resolution',
+            'request_patient_merge',
             'manage_clinic_visits',
             'view_branch_dashboard',
             'view_clinic_master_data',
@@ -485,6 +491,10 @@ class RoleSeeder extends Seeder
             'view dashboard',
             // Patient registration/edit + KTP scan documents (RME entry point)
             'manage patients',
+            // FEATURE-PATIENT-DUPLICATE-RESOLUTION-MERGE-1 — duplicate patient resolution.
+            'view_patient_duplicate_resolution',
+            'request_patient_merge',
+            'approve_patient_merge',
             // Clinic visit queue, RM, odontogram, print bundle, room assignment
             'view_clinic_visits',
             'manage_clinic_visits',

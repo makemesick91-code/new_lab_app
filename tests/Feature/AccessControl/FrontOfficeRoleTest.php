@@ -75,7 +75,10 @@ it('grants exactly the union of the two legacy roles, no more and no less', func
         // This test is exactly why that permission could not be given to Admin
         // Klinik alone: production holds no Admin Klinik account, and the merged
         // role is the clinic admin identity in practice.
-        ->and($union)->toHaveCount(23);
+        //
+        // FEATURE-PATIENT-DUPLICATE-RESOLUTION-MERGE-1 added `view_patient_duplicate_resolution` and `request_patient_merge` to Admin Klinik and Front Office;
+        // Admin Klinik 22 -> 24, Kasir unchanged, union 23 -> 25.
+        ->and($union)->toHaveCount(25);
 
     // And the seeded role really carries them, not just the array.
     expect(Role::findByName(FrontOfficeRole::NAME)->permissions->pluck('name')->sort()->values()->all())
@@ -93,7 +96,7 @@ it('reuses the existing role row rather than creating a second one', function ()
 
     expect(Role::where('name', FrontOfficeRole::NAME)->count())->toBe(1)
         ->and(Role::where('name', FrontOfficeRole::NAME)->first()->id)->toBe($before->id)
-        ->and(Role::findByName(FrontOfficeRole::NAME)->permissions)->toHaveCount(23);
+        ->and(Role::findByName(FrontOfficeRole::NAME)->permissions)->toHaveCount(25);
 });
 
 // ─── The daily branch lock. The load-bearing property. ─────────────────────
