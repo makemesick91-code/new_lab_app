@@ -225,6 +225,16 @@ use App\Modules\Patient\Interfaces\PatientRepositoryInterface;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\Patient\Policies\PatientPolicy;
 use App\Modules\Patient\Repositories\PatientRepository;
+use App\Modules\PatientMerge\Interfaces\PatientDuplicateCandidateRepositoryInterface;
+use App\Modules\PatientMerge\Interfaces\PatientMergeCaseRepositoryInterface;
+use App\Modules\PatientMerge\Interfaces\PatientMergeOwnershipRepositoryInterface;
+use App\Modules\PatientMerge\Interfaces\PatientRmAliasRepositoryInterface;
+use App\Modules\PatientMerge\Models\PatientMergeCase;
+use App\Modules\PatientMerge\Policies\PatientMergeCasePolicy;
+use App\Modules\PatientMerge\Repositories\PatientDuplicateCandidateRepository;
+use App\Modules\PatientMerge\Repositories\PatientMergeCaseRepository;
+use App\Modules\PatientMerge\Repositories\PatientMergeOwnershipRepository;
+use App\Modules\PatientMerge\Repositories\PatientRmAliasRepository;
 use App\Modules\PaymentMethod\Interfaces\PaymentMethodRepositoryInterface;
 use App\Modules\PaymentMethod\Models\PaymentMethod;
 use App\Modules\PaymentMethod\Policies\PaymentMethodPolicy;
@@ -343,6 +353,11 @@ class RepositoryServiceProvider extends ServiceProvider
         DoctorBranchCoverRepositoryInterface::class => DoctorBranchCoverRepository::class,
         DoctorSessionLeaseRepositoryInterface::class => DoctorSessionLeaseRepository::class,
         PatientRepositoryInterface::class => PatientRepository::class,
+        // FEATURE-PATIENT-DUPLICATE-RESOLUTION-MERGE-1
+        PatientMergeCaseRepositoryInterface::class => PatientMergeCaseRepository::class,
+        PatientRmAliasRepositoryInterface::class => PatientRmAliasRepository::class,
+        PatientMergeOwnershipRepositoryInterface::class => PatientMergeOwnershipRepository::class,
+        PatientDuplicateCandidateRepositoryInterface::class => PatientDuplicateCandidateRepository::class,
         LabServiceRepositoryInterface::class => LabServiceRepository::class,
         TechnicianRepositoryInterface::class => TechnicianRepository::class,
         LabOrderRepositoryInterface::class => LabOrderRepository::class,
@@ -514,6 +529,7 @@ class RepositoryServiceProvider extends ServiceProvider
         WaReminderTemplate::class => WaReminderTemplatePolicy::class,
         Doctor::class => DoctorPolicy::class,
         Patient::class => PatientPolicy::class,
+        PatientMergeCase::class => PatientMergeCasePolicy::class,
         LabService::class => LabServicePolicy::class,
         Technician::class => TechnicianPolicy::class,
         LabOrder::class => LabOrderPolicy::class,

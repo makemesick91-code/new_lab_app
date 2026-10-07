@@ -21,6 +21,7 @@ use App\Modules\MedicalRecord\Services\RmeWorkspaceDocumentPresenter;
 use App\Modules\MedicalRecord\Services\RmeWorkspacePageSequencer;
 use App\Modules\MedicalRecord\Services\UnifiedMedicalRecordIndexService;
 use App\Modules\MedicalRecord\Support\UnifiedMedicalRecordSource;
+use App\Modules\Patient\Interfaces\PatientRepositoryInterface;
 use App\Modules\Patient\Services\CrossBranchPatientLookupService;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
@@ -96,9 +97,24 @@ class MedicalRecordController extends Controller
      * a native sheet exists, and never fabricates one. A patient outside the
      * actor's index answers 404, exactly like a patient that does not exist.
      */
-    public function patient(Request $request, int $patientId, UnifiedMedicalRecordIndexService $unified): View
+    public function patient(Request $request, int $patientId, UnifiedMedicalRecordIndexService $unified, PatientRepositoryInterface $patients): View|RedirectResponse
     {
         $this->authorize('viewAny', MedicalRecord::class);
+
+        // FEATURE-PATIENT-DUPLICATE-RESOLUTION-MERGE-1 — a merged patient's
+        // records now live under the canonical patient; open that workspace.
+        // The canonical workspace applies its own authorization unchanged.
+        $mergedInto = $patients->findById($patientId)?->merged_into_patient_id;
+
+        if ($mergedInto !== null) {
+            // Redirect ONLY when the actor may open the canonical workspace;
+            // otherwise answer exactly as for an unknown patient, so the
+            // redirect cannot reveal that the patient exists or where it went.
+            abort_if($unified->patientWorkspace($request->user(), (int) $mergedInto) === null, 404);
+
+            return redirect()->route('rme.medical-records.patients.show', $mergedInto)
+                ->with('status', 'Pasien ini telah digabungkan. Anda dialihkan ke rekam medis pasien hasil penggabungan.');
+        }
 
         $workspace = $unified->patientWorkspace($request->user(), $patientId);
         abort_if($workspace === null, 404);

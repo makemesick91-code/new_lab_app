@@ -1,0 +1,39 @@
+---
+description: Patient duplicate resolution & merge — durable rules (FEATURE-PATIENT-DUPLICATE-RESOLUTION-MERGE-1)
+globs:
+  - app/Modules/PatientMerge/**
+  - app/Modules/Patient/**
+  - app/Modules/ClinicVisit/Services/ClinicVisitService.php
+  - resources/views/patient-merge/**
+alwaysApply: false
+---
+
+# Patient Duplicate Resolution & Merge — durable rules
+
+Canonical doc: `docs/architecture/patient-duplicate-resolution-merge.md`.
+
+1. **Patient merge never deletes clinical history.** It reassigns OWNERSHIP. No RME, odontogram, visit, invoice, payment, document, legacy record or clinical history is deleted, merged in content, renumbered or re-posted.
+2. **Merged RM remains searchable as a canonical patient alias.** The source keeps its Nomor RM on its own row (so it is never reissued) and `mst_patient_rm_aliases` resolves it; a reversal revokes, never deletes, an alias.
+3. **Identity fields are reconciled individually**; canonical patient selection does not automatically define final identity values. Every final field records its source (patient_a / patient_b / manual / matched / empty) in structured storage; manual values need validation AND a reason.
+4. **No patient merge may proceed with an unresolved critical identity conflict** (name, NIK, DOB, gender). Critical fields can never be emptied.
+5. **No automatic patient merge.** Detection scores rank candidates for a human; there is no code path from a score to a merge.
+6. **Patient merge must be atomic** — one transaction, case + patients locked, every blocker and the identity fingerprint re-checked under the locks, conservation proven over the two locked patients (canonical_after == A + B, source_after == 0, every reassign moved exactly the ids it read) or the whole merge rolls back. Never assert whole-table totals: a concurrent write for an unrelated patient would refuse a correct merge.
+7. **Merged source patient cannot receive new clinical activity** — enforced in services (visit registration re-reads the patient FOR SHARE; patient edit/activate/delete; legacy RME/odontogram intake), never only by hiding a button. A merged patient is never deleted.
+8. **Cross-branch duplicate resolution uses explicit privileged scope** (`approve_patient_merge`) and preserves the original visit, billing and legacy branch history.
+9. **KTP/NIK stays masked in merge UI and audit output.** Full pre-merge identity exists only in the encrypted snapshot. A final NIK held by any third patient (Patient C) fails closed and the message never names that patient.
+10. **Merge reversal after new downstream activity requires supervised reconciliation.** A reversal is automatic only when provably safe and is executed by a different reviewer than the one who opened it.
+11. **Maker-checker lives in the service**, not the policy — Super Admin passes every policy through `Gate::before`. Every AUTHOR (requester, submitter, anyone who resolved a field) is refused approval and rejection; only the requester may resolve, submit or withdraw a draft (a reviewer sends a case back by rejecting it). The reversal requester can never execute it.
+12. **The registry is checked against the live schema.** A new table with a foreign key to `mst_patients` MUST be added to `PatientOwnedRecordRegistry` (REASSIGN or PRESERVE with a reason) or every merge refuses (`OWNERSHIP_REGISTRY_INCOMPLETE`).
+13. **The single-active legacy document rule is never broken by a merge** — two active archives of one type, or an in-flight legacy import, block the merge until resolved through the archive's own flow.
+14. **Branch scope = `RmeWorkingBranchScope`**; out-of-scope patients read as not found; both patients of a case must be in scope for every action; request `branch_id` only narrows.
+15. **Registration duplicate prevention is light** — strong matches only; continuing requires a reason and is audited. A shared birthday alone never blocks.
+16. Never use `UPDATE … SET patient_id` across tables outside the registry; never touch financial amounts, statuses, numbers or timestamps during a merge.
+17. **A live encounter blocks a merge** (`ACTIVE_ENCOUNTER`: a registered / waiting / in_progress / cashier_pending visit on either patient). This is also what keeps writers that read `patient_id` from a route-bound visit (invoice, RME draft, consent, prescription) from racing a merge onto the source.
+18. **Lock order: legacy slot advisory locks FIRST, then patient rows.** The merge takes `LegacySingleActiveDocumentService::lockSlot()` for both archive types and both patients (sorted) before `lockPatients()`; legacy intake takes the slot lock, then re-reads the patient `FOR SHARE`. Inverting either order forms a cycle.
+19. **Non-FK patient references are blockers, not silent leftovers.** A source holding an active SATUSEHAT patient identifier (`mst_satusehat_entity_identifiers`, no FK) blocks the merge (`SATUSEHAT_IDENTIFIER_PRESENT`) until reconciled under supervision. Any new non-FK patient reference must be added the same way — the live-schema FK check cannot see it.
+20. **The legacy date rule holds on the combined timeline.** A published legacy archive not strictly older than the other patient's earliest native record of that type blocks the merge (`LEGACY_DATE_RULE_VIOLATION`).
+21. **Values are re-derived at submission.** A/B/matched resolutions are refreshed from the locked rows when the case is submitted; the identity fingerprint then binds them to what the reviewer approves.
+22. **Reversal is SAFE only when nothing happened since**: no new row on the canonical patient (id above the merge's high-water mark, recorded inside the merge transaction), no moved row changed after the merge, no child row (odontogram, handwriting, diagnoses) written onto anything it owns, no row attached to a moved visit/invoice/record that the merge did not move, neither patient deleted, and the canonical identity unchanged since the merge (`final_identity_hash`). Anything else is SUPERVISED.
+23. **Merge involvement protects a patient from batch rollback.** `LegacyPatientImportService::rollback()` refuses a batch containing a merged patient, a participant of a non-terminal / completed case, or an alias owner.
+24. **Registration duplicate warnings disclose the minimum outside scope**: a match outside the actor's branch scope shows name, Nomor RM and branch only (the New Visit identity-lookup minimum) — never birth date, phone or an NIK fragment.
+25. **A merged-patient redirect never leaks.** It redirects only when the actor may open the canonical workspace; otherwise it answers exactly as for an unknown patient.

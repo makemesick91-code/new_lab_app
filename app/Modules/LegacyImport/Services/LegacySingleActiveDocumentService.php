@@ -162,6 +162,25 @@ class LegacySingleActiveDocumentService
     }
 
     /**
+     * Serialize on a patient's document slot WITHOUT deciding anything — for a
+     * caller (the patient merge) that changes which patient owns an archive
+     * and therefore must not interleave with an intake deciding occupancy.
+     *
+     * Same lock, same key, same transaction-scoped lifetime as the intake
+     * gate. A caller must take it BEFORE any patient row lock, the order the
+     * intake path uses (advisory lock, then the patient row), or the two can
+     * form a cycle.
+     */
+    public function lockSlot(string $type, int $patientId): void
+    {
+        if (DB::transactionLevel() < 1) {
+            throw LegacyDocumentSlotLockUnavailable::outsideTransaction();
+        }
+
+        $this->acquireSlotLock($type, $patientId);
+    }
+
+    /**
      * Take the transaction-scoped advisory lock on PostgreSQL.
      *
      * The key is validated first, so an unsupported type or an out-of-range

@@ -142,3 +142,11 @@ The combobox already renders `name — RM · branch label` and needs no redesign
 for this rule. Keep the debounce at 300 ms, keep the monotonic request sequence
 and AbortController stale-response protection, and keep `patient_id` settable
 only by selecting a returned result.
+
+## Merged patients (FEATURE-PATIENT-DUPLICATE-RESOLUTION-MERGE-1)
+
+A patient merged into another is NEVER returned by the selector and never
+passes the submit-time re-authorization (`merged_into_patient_id IS NULL` in
+the shared selectable query). Typing a merged patient's old Nomor RM returns
+the CANONICAL patient through `mst_patient_rm_aliases`, and that canonical
+patient passes exactly the same scope as any other result. See rule 172.

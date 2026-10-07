@@ -914,6 +914,13 @@ class LegacyPatientImportService
             throw new RuntimeException('Rollback ditolak: sebagian pasien sudah memiliki kunjungan/rekam medis. Tangani manual.');
         }
 
+        // A merged patient (or one a merge case still involves) carries another
+        // person's history or is a pointer to it. Soft-deleting it would hide
+        // moved records and break a later reversal.
+        if ($this->hasMergeInvolvement($patientIds)) {
+            throw new RuntimeException('Rollback ditolak: sebagian pasien terlibat dalam penggabungan data pasien (Duplikasi Pasien). Tangani manual.');
+        }
+
         DB::transaction(function () use ($batch, $patientIds, $rolledBackBy): void {
             Patient::query()
                 ->where('import_batch_id', $batch->id)
@@ -1327,6 +1334,32 @@ class LegacyPatientImportService
         }
 
         return false;
+    }
+
+    /**
+     * @param  array<int, int>  $patientIds
+     */
+    private function hasMergeInvolvement(array $patientIds): bool
+    {
+        if ($patientIds === [] || ! Schema::hasTable('trx_patient_merge_cases')) {
+            return false;
+        }
+
+        if (DB::table('mst_patients')->whereIn('id', $patientIds)->whereNotNull('merged_into_patient_id')->exists()) {
+            return true;
+        }
+
+        if (DB::table('trx_patient_merge_cases')
+            ->whereNotIn('status', ['rejected', 'cancelled', 'reversed'])
+            ->where(fn ($q) => $q->whereIn('patient_a_id', $patientIds)->orWhereIn('patient_b_id', $patientIds))
+            ->exists()) {
+            return true;
+        }
+
+        return DB::table('mst_patient_rm_aliases')
+            ->whereNull('revoked_at')
+            ->where(fn ($q) => $q->whereIn('canonical_patient_id', $patientIds)->orWhereIn('source_patient_id', $patientIds))
+            ->exists();
     }
 
     /**

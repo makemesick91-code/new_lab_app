@@ -1,33 +1,35 @@
-# FEATURE-DEV-CONSOLE-OBSERVABILITY-1
+# FEATURE-PATIENT-DUPLICATE-RESOLUTION-MERGE-1
 #
-# /dev-console becomes the DaengtisiaMS Observability Console: Overview (system
-# health, KPIs, 24h trends), Live Users (presence + recent activity), Errors
-# (4xx/5xx + sanitized exception detail), Slow Requests (honest timeout
-# visibility), Slow Queries (normalized SQL, per-fingerprint aggregation) and
-# Cache / Redis (app hit rate vs Redis SERVER hit rate). The ENT-7 diagnostic
-# panels move to /dev-console/diagnostics.
+# Duplikasi Pasien: one person who was registered as several patient rows is
+# resolved to ONE canonical patient with ONE active Nomor RM, and every clinical,
+# financial and legacy record is kept — ownership moves, nothing is deleted.
 #
-# Telemetry: one global middleware arms an in-memory collector; every write
-# happens in terminate() after the response is sent. Additive migration (two
-# sys_obs_* tables), bounded retention (lottery prune + observability:prune),
-# centralized redaction, OBS-1 request-id correlation. Same gate as ENT-7
-# (view_developer_console, Super Admin only), GET only, audited. No new
-# permission, no clinical/ledger/payment change, no new dependency.
+# Manual patient selection + bounded candidate detection (never auto-merge);
+# field-by-field identity reconciliation with structured provenance (canonical
+# patient choice is separate from the final identity values); maker-checker
+# approval that runs the merge in ONE atomic transaction with row locks,
+# live-schema registry check and a proven conservation check; old Nomor RM kept
+# as a searchable alias; merged source is a read-only pointer that receives no
+# new activity; Merge Reversal Review (safe only when provable, otherwise
+# supervised reconciliation); light registration duplicate prevention.
+# Additive migrations (3 tables + nullable merge columns on mst_patients);
+# three new permissions; KTP/NIK masked everywhere, full pre-merge identity only
+# encrypted at rest.
 
-id: FEATURE-DEV-CONSOLE-OBSERVABILITY-1
+id: FEATURE-PATIENT-DUPLICATE-RESOLUTION-MERGE-1
 type: FOUNDATION_SPRINT
-module: Observability
-title: "Observability Console: request telemetry (presence, errors, slow requests, slow queries, cache) behind the ENT-7 developer console gate; post-response writes, bounded retention, centralized redaction, OBS-1 correlation; additive migration; no permission change; no clinical mutation"
+module: PatientMerge
+title: "Patient duplicate resolution & merge: manual selection, candidate detection, field-level identity reconciliation with provenance, maker-checker atomic merge with conservation proof, RM alias, merged-source guard, reversal review, registration duplicate prevention; additive migrations; 3 permissions; NIK masked"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 runtime_change: true
 schema_change: true
 frontend_change: true
 security_impact: true
-branch_isolation_impact: false
+branch_isolation_impact: true
 ledger_impact: false
 deploy_required: true
 browser_required: false
 test_profiles: []
-go_tag: feature-dev-console-observability-1-go
-inherits_parent_go: fix-legacy-odontogram-cross-branch-read-scope-1-go
+go_tag: feature-patient-duplicate-resolution-merge-1-go
+inherits_parent_go: feature-dev-console-observability-1-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1

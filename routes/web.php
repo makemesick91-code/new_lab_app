@@ -96,6 +96,10 @@ use App\Modules\Patient\Controllers\LegacyPatientImportController;
 use App\Modules\Patient\Controllers\PatientAuditController;
 use App\Modules\Patient\Controllers\PatientController;
 use App\Modules\Patient\Controllers\PatientDocumentController;
+use App\Modules\PatientMerge\Controllers\PatientMergeCaseController;
+use App\Modules\PatientMerge\Controllers\PatientMergeHistoryController;
+use App\Modules\PatientMerge\Controllers\PatientMergeOverviewController;
+use App\Modules\PatientMerge\Controllers\PatientMergeReviewController;
 use App\Modules\PaymentMethod\Controllers\PaymentMethodController;
 use App\Modules\Prescription\Controllers\RmePrescriptionCanvasController;
 use App\Modules\Prescription\Controllers\RmePrescriptionController;
@@ -1372,6 +1376,59 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
         ->name('patients.audit')->middleware('permission:view_rme_patient_reports|manage patients');
     Route::get('patients/audit/export', [PatientAuditController::class, 'export'])
         ->name('patients.audit.export')->middleware('permission:view_rme_patient_reports|manage patients');
+});
+
+/*
+|--------------------------------------------------------------------------
+| FEATURE-PATIENT-DUPLICATE-RESOLUTION-MERGE-1 — Duplikasi Pasien
+|--------------------------------------------------------------------------
+|
+| Its own group and its own prefix (`patient-merge.*`), so no other menu
+| lights up while an operator is here. Three permission tiers:
+|   view_patient_duplicate_resolution — read pages
+|   request_patient_merge             — select patients, reconcile, submit
+|   approve_patient_merge             — review, approve-and-merge, reversal
+|
+| THE SIDEBAR IS NOT THE BOUNDARY. Every route carries permission middleware,
+| every case action re-authorizes through PatientMergeCasePolicy (which also
+| requires both patients to be in the actor's branch scope), and the merge
+| service re-checks maker-checker and every blocker under row locks. Cases
+| are addressed by UUID so case ids cannot be enumerated.
+*/
+Route::middleware('auth')->prefix('rme/patient-merge')->name('patient-merge.')->group(function () {
+    Route::middleware('permission:view_patient_duplicate_resolution')->group(function () {
+        Route::get('/', [PatientMergeOverviewController::class, 'dashboard'])->name('dashboard');
+        Route::get('candidates', [PatientMergeOverviewController::class, 'candidates'])->name('candidates.index');
+        Route::get('aliases', [PatientMergeOverviewController::class, 'aliases'])->name('aliases.index');
+        Route::get('history', [PatientMergeHistoryController::class, 'index'])->name('history.index');
+        Route::get('cases', [PatientMergeCaseController::class, 'index'])->name('cases.index');
+    });
+
+    Route::middleware('permission:request_patient_merge')->group(function () {
+        // Static segments are declared before the {patientMergeCase} wildcard.
+        Route::get('manual', [PatientMergeCaseController::class, 'manual'])->whereUuid('patientMergeCase')->name('manual.create');
+        Route::post('cases', [PatientMergeCaseController::class, 'store'])->name('cases.store');
+        Route::put('cases/{patientMergeCase}/resolution', [PatientMergeCaseController::class, 'resolve'])->whereUuid('patientMergeCase')->name('cases.resolve');
+        Route::post('cases/{patientMergeCase}/submit', [PatientMergeCaseController::class, 'submit'])->whereUuid('patientMergeCase')->name('cases.submit');
+        Route::post('cases/{patientMergeCase}/withdraw', [PatientMergeCaseController::class, 'withdraw'])->whereUuid('patientMergeCase')->name('cases.withdraw');
+    });
+
+    Route::middleware('permission:request_patient_merge|approve_patient_merge')
+        ->post('cases/{patientMergeCase}/cancel', [PatientMergeCaseController::class, 'cancel'])
+        ->whereUuid('patientMergeCase')->name('cases.cancel');
+
+    Route::middleware('permission:approve_patient_merge')->group(function () {
+        Route::get('review', [PatientMergeReviewController::class, 'index'])->name('review.index');
+        Route::post('cases/{patientMergeCase}/approve', [PatientMergeReviewController::class, 'approve'])->whereUuid('patientMergeCase')->name('cases.approve');
+        Route::post('cases/{patientMergeCase}/reject', [PatientMergeReviewController::class, 'reject'])->whereUuid('patientMergeCase')->name('cases.reject');
+        Route::post('cases/{patientMergeCase}/reversal', [PatientMergeHistoryController::class, 'requestReversal'])->whereUuid('patientMergeCase')->name('cases.reversal.request');
+        Route::post('cases/{patientMergeCase}/reversal/execute', [PatientMergeHistoryController::class, 'executeReversal'])->whereUuid('patientMergeCase')->name('cases.reversal.execute');
+        Route::post('cases/{patientMergeCase}/reversal/dismiss', [PatientMergeHistoryController::class, 'dismissReversal'])->whereUuid('patientMergeCase')->name('cases.reversal.dismiss');
+    });
+
+    Route::middleware('permission:view_patient_duplicate_resolution')
+        ->get('cases/{patientMergeCase}', [PatientMergeCaseController::class, 'show'])
+        ->whereUuid('patientMergeCase')->name('cases.show');
 });
 
 // SATUSEHAT-1 — Controlled submission filter/review + mapping/identifier

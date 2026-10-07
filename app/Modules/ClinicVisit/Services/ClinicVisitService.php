@@ -12,6 +12,7 @@ use App\Modules\Consent\Services\RmeVisitConsentService;
 use App\Modules\DoctorAccess\Services\DoctorEffectiveBranchResolver;
 use App\Modules\LabOrder\Services\AuditLogService;
 use App\Modules\Patient\Services\PatientService;
+use App\Modules\PatientMerge\Services\PatientMergeGuard;
 use App\Modules\RME\Services\DoctorPatientScopeService;
 use App\Modules\RME\Services\DoctorRoomScopeService;
 use App\Modules\RME\Services\PatientDoctorAssignmentService;
@@ -52,6 +53,8 @@ class ClinicVisitService
         private readonly PatientDoctorAssignmentService $patientDoctorAssignments,
         private readonly RmeWorkingBranchScope $workingBranchScope,
         private readonly ClinicalClock $clock,
+        // FEATURE-PATIENT-DUPLICATE-RESOLUTION-MERGE-1
+        private readonly PatientMergeGuard $mergeGuard,
     ) {}
 
     /**
@@ -278,6 +281,12 @@ class ClinicVisitService
             $data['branch_id'] = $branchId;
 
             $data = $this->resolvePatient($data);
+
+            // FEATURE-PATIENT-DUPLICATE-RESOLUTION-MERGE-1 — no new visit on a
+            // merged patient. Re-read under FOR SHARE so a registration racing
+            // a merge queues behind the merge's row lock and then sees the
+            // committed merged state, instead of landing on the emptied row.
+            $this->mergeGuard->assertNotMergedLocked((int) $data['patient_id']);
 
             unset($data['branch_id']);
 

@@ -5,6 +5,7 @@ namespace App\Modules\Patient\Services;
 use App\Modules\Branch\Interfaces\BranchRepositoryInterface;
 use App\Modules\Patient\Interfaces\PatientRepositoryInterface;
 use App\Modules\Patient\Models\Patient;
+use App\Modules\PatientMerge\Services\PatientMergeGuard;
 use App\Support\Clinical\ClinicalClock;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
@@ -22,6 +23,9 @@ class PatientService
         private readonly BranchRepositoryInterface $branches,
         // FIX-03 — the clinical calendar authority for the registration day.
         private readonly ClinicalClock $clock,
+        // FEATURE-PATIENT-DUPLICATE-RESOLUTION-MERGE-1 — a merged patient is
+        // read-only; identity edits go to the canonical patient.
+        private readonly PatientMergeGuard $mergeGuard,
     ) {}
 
     public function list(array $filters = [], int $perPage = 10): LengthAwarePaginator
@@ -62,7 +66,12 @@ class PatientService
 
     public function update(Patient $patient, array $data): Patient
     {
+        $this->mergeGuard->assertNotMerged($patient, 'name');
+
         return DB::transaction(function () use ($patient, $data) {
+            // Re-checked under the row lock: the model above may predate a
+            // merge that committed while this request was in flight.
+            $this->mergeGuard->assertNotMergedLocked((int) $patient->id, 'name');
             $data = $this->applyMedicalRecordNumber($data, $patient);
 
             return $this->patients->update($patient, $data);
@@ -146,12 +155,26 @@ class PatientService
 
     public function delete(Patient $patient): bool
     {
-        return DB::transaction(fn () => $this->patients->delete($patient));
+        // A merged source patient is evidence of the merge and keeps its
+        // Nomor RM reserved; it is never deleted.
+        $this->mergeGuard->assertNotMerged($patient, 'patient');
+
+        return DB::transaction(function () use ($patient): bool {
+            $this->mergeGuard->assertNotMergedLocked((int) $patient->id, 'patient');
+
+            return $this->patients->delete($patient);
+        });
     }
 
     public function activate(Patient $patient): Patient
     {
-        return $this->patients->setActiveStatus($patient, true);
+        $this->mergeGuard->assertNotMerged($patient, 'patient');
+
+        return DB::transaction(function () use ($patient): Patient {
+            $this->mergeGuard->assertNotMergedLocked((int) $patient->id, 'patient');
+
+            return $this->patients->setActiveStatus($patient, true);
+        });
     }
 
     public function deactivate(Patient $patient): Patient

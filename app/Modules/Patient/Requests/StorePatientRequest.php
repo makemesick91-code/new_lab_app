@@ -4,6 +4,7 @@ namespace App\Modules\Patient\Requests;
 
 use App\Modules\Branch\Interfaces\BranchRepositoryInterface;
 use App\Modules\Patient\Services\PatientMedicalRecordNumberService;
+use App\Modules\PatientMerge\Services\PatientRegistrationDuplicateCheck;
 use App\Support\Clinical\ClinicalClock;
 use Carbon\Carbon;
 use Illuminate\Contracts\Validation\Validator;
@@ -47,6 +48,9 @@ class StorePatientRequest extends FormRequest
             // Sprint 61.1 — opaque token for a KTP scan parked via the scanner
             // workflow. Attached to the patient after creation (controller).
             'ktp_scan_token' => ['nullable', 'string', 'max:64'],
+            // FEATURE-PATIENT-DUPLICATE-RESOLUTION-MERGE-1 — required only when
+            // a strong duplicate is found (see withValidator).
+            'duplicate_override_reason' => ['nullable', 'string', 'max:1000'],
         ];
     }
 
@@ -72,6 +76,15 @@ class StorePatientRequest extends FormRequest
     {
         $validator->after(function (Validator $validator) {
             $this->validateComposedNumberUniqueness($validator);
+
+            if ($validator->errors()->isEmpty()) {
+                app(PatientRegistrationDuplicateCheck::class)->validate(
+                    $validator,
+                    $this->only(['name', 'date_of_birth', 'phone', 'whatsapp_number']),
+                    $this->input('duplicate_override_reason'),
+                    'duplicate_override_reason',
+                );
+            }
         });
     }
 

@@ -53,7 +53,8 @@ it('does not strip the legacy permission grants', function (string $legacy, int 
     // `view_legacy_patient_archive_completeness`, so Admin Klinik moved
     // 21 -> 22. Kasir is again deliberately unchanged — the completeness
     // report is a clinic-admin duty, not a cashier one.
-    [FrontOfficeRole::LEGACY_ADMIN_CLINIC, 22],
+    // FEATURE-PATIENT-DUPLICATE-RESOLUTION-MERGE-1 added `view_patient_duplicate_resolution` and `request_patient_merge` to Admin Klinik and Front Office (22 -> 24).
+    [FrontOfficeRole::LEGACY_ADMIN_CLINIC, 24],
     [FrontOfficeRole::LEGACY_KASIR, 6],
 ]);
 

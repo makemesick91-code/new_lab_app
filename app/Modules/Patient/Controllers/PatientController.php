@@ -63,7 +63,7 @@ class PatientController extends Controller
 
         $data = $request->validated();
         $ktpScanToken = $data['ktp_scan_token'] ?? null;
-        unset($data['ktp_scan_token']);
+        unset($data['ktp_scan_token'], $data['duplicate_override_reason']);
 
         $patient = $this->patientService->create($data);
 
@@ -77,9 +77,16 @@ class PatientController extends Controller
         return redirect()->route('settings.patients.index')->with('status', 'Pasien berhasil dibuat.');
     }
 
-    public function edit(Patient $patient): View
+    public function edit(Patient $patient): View|RedirectResponse
     {
         $this->authorize('update', $patient);
+
+        // FEATURE-PATIENT-DUPLICATE-RESOLUTION-MERGE-1 — a merged patient is a
+        // read-only pointer; its identity is maintained on the canonical row.
+        if ($patient->isMerged()) {
+            return redirect()->route('settings.patients.edit', $patient->merged_into_patient_id)
+                ->with('status', 'Pasien '.$patient->medical_record_number.' telah digabungkan. Anda dialihkan ke pasien hasil penggabungan.');
+        }
 
         return view('settings.patients.edit', [
             'patient' => $patient,

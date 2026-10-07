@@ -52,7 +52,7 @@ class PatientRepository implements PatientRepositoryInterface
         $doctorId = $filters['doctor_id'] ?? null;
 
         return Patient::query()
-            ->with(['clinic', 'doctor'])
+            ->with(['clinic', 'doctor', 'mergedInto:id,medical_record_number,name'])
             ->when($search, function ($query, $search) {
                 $term = '%'.mb_strtolower($search).'%';
                 // REVISION-TELKOMAS-BRANCH-CODE-TKM1-TO-TLK1-1 — a full Nomor RM
@@ -166,6 +166,10 @@ class PatientRepository implements PatientRepositoryInterface
         $query = Patient::query()
             ->select(['id', 'name', 'medical_record_number', 'branch_id'])
             ->with('branch:id,code,name')
+            // FEATURE-PATIENT-DUPLICATE-RESOLUTION-MERGE-1 — a merged patient
+            // is never selectable for new activity; its old Nomor RM resolves
+            // to the canonical patient through the RM alias instead.
+            ->whereNull('merged_into_patient_id')
             ->where(function (Builder $scoped) use ($branchIds): void {
                 $scoped->whereIn('branch_id', $branchIds)
                     ->orWhereNull('branch_id');

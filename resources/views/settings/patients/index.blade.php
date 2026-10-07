@@ -43,7 +43,10 @@
                                 <td class="px-3 py-2 text-gray-600">{{ $patient->clinic?->name ?? '—' }}</td>
                                 <td class="px-3 py-2 text-gray-600">{{ $patient->doctor?->name ?? '—' }}</td>
                                 <td class="px-3 py-2">
-                                    @if ($patient->is_active)
+                                    @if ($patient->isMerged())
+                                        {{-- FEATURE-PATIENT-DUPLICATE-RESOLUTION-MERGE-1 — read-only pointer. --}}
+                                        <span class="inline-flex items-center rounded-full bg-warning-100 px-2 py-0.5 text-xs font-medium text-warning-700">Digabungkan ke {{ $patient->mergedInto?->medical_record_number ?? '—' }}</span>
+                                    @elseif ($patient->is_active)
                                         <span class="inline-flex items-center rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">Aktif</span>
                                     @else
                                         <span class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">Nonaktif</span>
@@ -51,6 +54,11 @@
                                 </td>
                                 <td class="px-3 py-2">
                                     <div class="flex items-center justify-end gap-2">
+                                        @if ($patient->isMerged())
+                                            @if ($patient->mergedInto)
+                                                <a href="{{ route('settings.patients.edit', $patient->mergedInto) }}" class="text-indigo-600 hover:text-indigo-500">Buka pasien canonical</a>
+                                            @endif
+                                        @else
                                         <a href="{{ route('settings.patients.edit', $patient) }}" class="text-indigo-600 hover:text-indigo-500">Ubah</a>
                                         @if ($patient->is_active)
                                             <form method="POST" action="{{ route('settings.patients.deactivate', $patient) }}">@csrf @method('PATCH')<button class="text-amber-600 hover:text-amber-500">Nonaktifkan</button></form>
@@ -58,6 +66,7 @@
                                             <form method="POST" action="{{ route('settings.patients.activate', $patient) }}">@csrf @method('PATCH')<button class="text-green-600 hover:text-green-500">Aktifkan</button></form>
                                         @endif
                                         <form method="POST" action="{{ route('settings.patients.destroy', $patient) }}" onsubmit="return confirm('Hapus pasien ini?');">@csrf @method('DELETE')<button class="text-red-600 hover:text-red-500">Hapus</button></form>
+                                        @endif
                                     </div>
                                 </td>
                             </tr>

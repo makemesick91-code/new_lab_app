@@ -16,6 +16,10 @@ beforeEach(function () {
 const SUPERVISOR_RME_PERMISSIONS = [
     'view dashboard',
     'manage patients',
+    // FEATURE-PATIENT-DUPLICATE-RESOLUTION-MERGE-1 — reviewer of patient merges.
+    'view_patient_duplicate_resolution',
+    'request_patient_merge',
+    'approve_patient_merge',
     'view_clinic_visits',
     'manage_clinic_visits',
     'complete_rme_examination',

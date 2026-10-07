@@ -133,3 +133,11 @@ patient who already has one elsewhere. Authorization stays with the policies.
 
 There is no mass/bulk legacy upload in this codebase — verified, not assumed.
 Do not build one as part of this invariant.
+
+## Patient merge (FEATURE-PATIENT-DUPLICATE-RESOLUTION-MERGE-1)
+
+A patient merge never breaks this invariant: if both patients hold an occupied
+slot of the same type, or either holds an in-flight import, the merge is
+BLOCKED (`LEGACY_SLOT_CONFLICT` / `LEGACY_IMPORT_IN_FLIGHT`) until the operator
+resolves it through the archive's own flow (VOID / publish / cancel). The merge
+never voids, cancels or deletes an archive on the operator's behalf. Rule 172.
