@@ -168,6 +168,22 @@ it('gives the device manager the enrolment control on the same page', function (
         ->assertSee('doctorDeviceWebAuthn', false);
 });
 
+it('surfaces the ceremony reason code instead of one generic failure sentence', function (string $route) {
+    // BUGFIX-DOCTOR-DEVICE-WEBAUTHN-REGISTRATION-ERROR-REASON-1: a failed
+    // enrolment never reaches the server, so the code shown on the tablet is
+    // the only diagnostic there is. Both enrolment surfaces must ship it.
+    regwfActingAs(regwfUser('Super Admin'))
+        ->get(route($route, $this->device))
+        ->assertOk()
+        ->assertSee("' (kode: ' + reason + browserError + ')'", false)
+        ->assertSee('no_credential_or_denied', false)
+        ->assertSee('unsupported', false)
+        ->assertDontSee('Pendaftaran dibatalkan atau gagal pada perangkat ini.', false);
+})->with([
+    'guided workflow' => 'settings.doctor-device-registration.webauthn',
+    'device master' => 'settings.doctor-devices.webauthn.create',
+]);
+
 it('offers approval only to the authority that owns the trust decision', function () {
     regwfActingAs(regwfUser('Supervisor RME'))
         ->get(route('settings.doctor-device-registration.approval', $this->device))

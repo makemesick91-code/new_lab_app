@@ -182,7 +182,36 @@
                         form.dataset.webauthnReady = '1';
                         form.submit();
                     } catch (e) {
-                        error.textContent = 'Pendaftaran dibatalkan atau gagal pada perangkat ini.';
+                        /*
+                         * BUGFIX-DOCTOR-DEVICE-WEBAUTHN-REGISTRATION-ERROR-REASON-1
+                         *
+                         * register() already computes a stable reason code, and
+                         * this block used to throw it away behind one sentence,
+                         * so a tablet that could not create a credential was
+                         * undiagnosable: the server never receives the failure.
+                         * The browser's own exception name is appended too — a
+                         * DOMException name (NotAllowedError, NotSupportedError,
+                         * ...) carries no patient or device detail.
+                         */
+                        const reasons = {
+                            timeout: 'Pendaftaran tidak selesai dalam 60 detik. Coba lagi dan selesaikan prompt kunci layar.',
+                            no_credential_or_denied: 'Pendaftaran ditolak atau dibatalkan di perangkat ini. Pastikan kunci layar (PIN/sidik jari) aktif dan selesaikan prompt verifikasi.',
+                            ceremony_cancelled: 'Pendaftaran dibatalkan.',
+                            origin_not_trusted: 'Alamat halaman ini tidak dipercaya untuk pendaftaran perangkat. Buka dari alamat resmi klinik.',
+                            device_state_invalid: 'Perangkat ini sudah memiliki kredensial untuk device ini, atau sedang tidak dapat dipakai.',
+                            unsupported: 'Perangkat atau browser ini tidak dapat membuat kredensial bawaan (platform authenticator).',
+                            session_expired: 'Sesi login telah berakhir. Silakan masuk kembali.',
+                            options_rejected: 'Server menolak permintaan pendaftaran. Hubungi admin bila berulang.',
+                            network_unavailable: 'Tidak dapat menghubungi server. Periksa koneksi lalu coba lagi.',
+                        };
+
+                        const reason = e && e.reason
+                            ? e.reason
+                            : (e && e.status === 419 ? 'session_expired' : 'unexpected');
+                        const browserError = e && e.cause && e.cause.name ? ' / ' + e.cause.name : '';
+
+                        error.textContent = (reasons[reason] || 'Pendaftaran gagal pada perangkat ini.')
+                            + ' (kode: ' + reason + browserError + ')';
                         error.classList.remove('hidden');
                         button.disabled = false;
                     }
