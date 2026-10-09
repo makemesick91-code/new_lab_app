@@ -1,6 +1,6 @@
 # PHASE-1-PATIENT-KTP-CAMERA-OCR-SUPERVISED-PILOT
 
-Status: **ENGINEERING READINESS — the physical pilot has NOT been run.**
+Status: **ENGINEERING READINESS GO — DEPLOYED INERT. The physical pilot has NOT been run.**
 Base: `feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report` @ `aa627cdb`
 (= `revision-registration-ktp-camera-ocr-1-go`, verified as the live production HEAD before work began).
 Rule: `.cursor/rules/178-ktp-camera-ocr-supervised-pilot.mdc` (extends 177).
@@ -92,3 +92,28 @@ influence, no session-key spoofing path, no type juggling, no PII leak found.
 D1–D7 in the protocol: pilot branch, operator ids, tablet ids, period, device
 requirement decision, acceptance thresholds, consent wording. Then the
 supervised captures. `REAL_DEVICE_PILOT = PENDING PHYSICAL EXECUTION`.
+
+## Release evidence
+
+| | |
+|---|---|
+| PR | #465, squash-merged as `87930fcd807615dfda1bbd6de74c42c98c16ac8a` |
+| Tree | `5e536e58` — identical to the CI-tested candidate `d99d52e9` |
+| CI | run `37950370237` success on `d99d52e9`; NSF-R011 Critical **5358 passed / 0 failed** (27619 assertions), `PatientKtpCameraOcrPilotTest` executed by name; Quality, Selective Module, NSF-9, NSF-10, Android gate success |
+| Full Suite | **SKIPPED** under the active temporary Full-Suite policy — not a pass |
+| Deploy | `scripts/deploy-vps-runner.sh start` run ON `srv1730088`: `exit=0`, `DEPLOY OK: 20261009-172149`, `DEPLOY_HEAD_TARGET_MATCH=YES`, snapshot cleaned; no pending migrations |
+| Backup | `pre_auto_deploy_20261009-172149.sql`, 32 MB, `0640 daengtisiams` |
+| Production | `/login` + `/health/{live,ready,lb}` 200 over `https://daengtisia.online`; registration pages 302 for guests (no 500); guest parse POST 419 |
+| Pilot posture | `patient:ktp-ocr-pilot-status --strict` → `INERT`, exit 0; flag `enabled=false via=default`; probe of a real front-desk account → `feature_disabled` |
+| Errors | 0 since deploy. One pre-deploy `pilot.ERROR` at 2026-10-09 17:21:34 UTC was self-inflicted (the status command probed before it existed); it is not an application error and ages out of the 24h monitoring window |
+| GO tag | `phase-1-patient-ktp-camera-ocr-pilot-readiness-go` (object `93ffd76c`) → `87930fcd`, exact-match at VPS HEAD |
+
+The tag name deliberately says **readiness**. `phase-1-patient-ktp-camera-ocr-supervised-pilot-go`
+is reserved for after the supervised physical pilot passes the protocol's acceptance criteria.
+
+```
+ENGINEERING_RELEASE_GO=YES
+PILOT_ACTIVATION_GO=NO        (owner decisions D1–D7 outstanding)
+REAL_DEVICE_PILOT_GO=NO       (PENDING PHYSICAL EXECUTION)
+WIDER_ROLLOUT_GO=NO
+```
