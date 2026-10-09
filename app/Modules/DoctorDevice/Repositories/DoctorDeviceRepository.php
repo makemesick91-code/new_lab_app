@@ -58,6 +58,11 @@ class DoctorDeviceRepository implements DoctorDeviceRepositoryInterface
         return DoctorDevice::query()->lockForUpdate()->find($id);
     }
 
+    public function findById(int $id): ?DoctorDevice
+    {
+        return DoctorDevice::query()->find($id);
+    }
+
     public function existsWithNameInBranch(int $branchId, string $deviceName, ?int $exceptId = null): bool
     {
         return DoctorDevice::query()

@@ -25,5 +25,11 @@ interface DoctorDeviceRepositoryInterface
 
     public function findForUpdate(int $id): ?DoctorDevice;
 
+    /**
+     * Plain read, no lock. For read-only eligibility checks (the KTP OCR pilot
+     * gate) that must not take a row lock outside a transaction.
+     */
+    public function findById(int $id): ?DoctorDevice;
+
     public function existsWithNameInBranch(int $branchId, string $deviceName, ?int $exceptId = null): bool;
 }

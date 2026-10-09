@@ -36,10 +36,7 @@ afterEach(fn () => Carbon::setTestNow());
 /** The flag key contains a dot, so the whole registry array is rewritten. */
 function ktpOcrFlag(bool $on): void
 {
-    $flags = config('feature_flags.flags');
-    $flags['patient.ktp_camera_ocr']['default'] = $on;
-    $flags['patient.ktp_camera_ocr']['env_value'] = null;
-    config(['feature_flags.flags' => $flags]);
+    ktpPilotFlag($on);
 }
 
 /** Lines exactly as tesseract.js read a synthetic (fictional) KTP photo. */
@@ -76,9 +73,14 @@ function ktpParse(array $lines, float $threshold = 75.0): array
     return app(KtpOcrParser::class)->parse($lines, $threshold);
 }
 
+/**
+ * PHASE-1-PATIENT-KTP-CAMERA-OCR-SUPERVISED-PILOT — OCR is reachable only for a
+ * pilot operator (flag AND server-side scope), so the authorized actor is a
+ * real one: Admin Klinik, working at the pilot branch, named in the cohort.
+ */
 function ktpOcrActor(): User
 {
-    return userWith(['manage patients']);
+    return ktpPilotOperator();
 }
 
 /** A PNG whose HEADER declares $w x $h (no pixel data needed to trip the guard). */
@@ -289,9 +291,10 @@ it('requires authentication for the parse endpoint', function () {
 });
 
 it('answers 404 when the capability is switched off', function () {
+    $actor = ktpOcrActor();
     ktpOcrFlag(false);
 
-    $this->actingAs(ktpOcrActor())
+    $this->actingAs($actor)
         ->postJson(route('settings.patients.ktp-scan.parse-ocr'), ['lines' => ktpOcrLines()])
         ->assertNotFound();
 });
@@ -544,6 +547,10 @@ describe('RME visit "Pasien Baru" flow', function () {
     });
 
     it('renders the camera + OCR controls with the new_patient field prefix', function () {
+        // Only a pilot operator sees the OCR controls (PHASE-1 pilot gate).
+        // MAIN is never a pilot branch, so the operator works at a real one.
+        $this->actor = ktpPilotOperator(ktpPilotBranch());
+
         $this->actingAs($this->actor)
             ->get(route('rme.visits.create'))
             ->assertOk()
@@ -571,9 +578,10 @@ it('shows camera capture, OCR and manual fallback when enabled', function () {
 });
 
 it('keeps only the existing scanner + manual flow when switched off', function () {
+    $actor = ktpOcrActor();
     ktpOcrFlag(false);
 
-    $this->actingAs(ktpOcrActor())
+    $this->actingAs($actor)
         ->get(route('settings.patients.create'))
         ->assertOk()
         ->assertSee('Cek Scanner')

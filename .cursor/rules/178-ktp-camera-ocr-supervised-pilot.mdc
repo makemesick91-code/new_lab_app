@@ -1,0 +1,60 @@
+---
+description: PHASE-1-PATIENT-KTP-CAMERA-OCR-SUPERVISED-PILOT — server-side pilot gate for KTP camera OCR
+globs: app/Modules/Patient/**, config/patient_ktp_ocr_pilot.php, resources/views/settings/patients/_ktp-scan.blade.php, app/Console/Commands/PatientKtpOcrPilotStatusCommand.php
+alwaysApply: false
+---
+
+# KTP camera OCR — supervised pilot gate
+
+Sprint doc: `docs/sprints/phase-1-patient-ktp-camera-ocr-supervised-pilot.md`.
+Protocol: `docs/runbooks/ktp-camera-ocr-supervised-pilot-protocol.md`.
+Extends rule 177 (OCR is a suggestion) — this rule decides WHO may get one.
+
+1. **Two gates, both required.** The global flag `patient.ktp_camera_ocr` AND
+   `KtpCameraOcrPilotGate` eligibility. The flag alone enables NOBODY.
+2. **One decider.** `App\Modules\Patient\Services\KtpCameraOcrPilotGate` is the
+   only reader of `config/patient_ktp_ocr_pilot.php`. The parse endpoint and the
+   Blade camera UI both call it; neither re-derives any part. Hiding the camera
+   button is not the boundary — the parse endpoint answers 404 for the same verdict.
+3. **No "everyone" mode exists.** An empty or invalid cohort covers nobody.
+   Widening beyond the pilot is a separate owner decision AND a code change —
+   never an environment edit.
+4. **Branch is server-resolved.** Eligibility uses
+   `RmeWorkingBranchScope::activeBranchId()` (the selected working branch of a
+   context-bound operator). A request `branch_id`, a tablet's branch or
+   `users.branch_id` are never the authority. A governance role spanning every
+   branch is ambiguous for a one-branch pilot and is refused.
+5. **Exactly one branch, never MAIN**, active and RME-enabled; ceilings
+   (`max_operators` 5, `max_branches` 1, `max_devices` 3, `max_period_days` 31)
+   are committed in the config file and never read from the environment.
+6. **Pilot period is inclusive, on the clinical calendar** (`ClinicalClock`,
+   Asia/Makassar), strict `Y-m-d` round-trip — a rolled-over date is invalid.
+7. **Device requirement fails safe ON.** Unset/blank/misspelled = required.
+   `env()` turns the string "false" into boolean false — check the boolean
+   BEFORE any string cast or an explicit owner "false" reads as unset.
+8. **A device is bound only by the front-office trusted-device lock**, and the
+   gate has NO device definition of its own: it requires
+   `FrontOfficeBranchDeviceLockService::evaluate()` to ALLOW the request
+   (enforcement on, account in that cohort, device active + key-proven +
+   enrolment verified, at the account's branch — re-read every request), then
+   narrows to the pilot allowlist and branch. With that lock OFF a
+   device-requiring pilot is `ARMED_UNREACHABLE`, and an already-bound session
+   stops getting OCR. Waiving the device requirement is a recorded owner decision.
+9. **The gate writes, logs and audits nothing of its own.** Resolving the
+   working branch can lazily retire an EXPIRED online context (canonical
+   `UserOnlineContextService` behaviour; it only ever narrows). `posture()` and
+   the status command write nothing at all. Do not claim "zero writes" for the
+   request path.
+10. **Measure, never infer.** `php artisan patient:ktp-ocr-pilot-status --json`
+    (read-only; `--strict` exits 2 when the flag is on but the scope is unusable).
+    It has no `--arm`. Never use `tinker` on production to check posture.
+11. **Code deployment is not feature activation.** Activation = environment
+    values + config cache rebuilt as `daengtisiams`, done in a supervised window.
+12. **A physical pilot result is never fabricated.** Real-KTP accuracy and tablet
+    behaviour are MEASURED by operators under consent, or reported as
+    `PENDING PHYSICAL EXECUTION`. Pilot evidence is aggregated and carries no
+    full NIK, name, address or KTP image.
+13. **KTP images and OCR text never go to an unapproved third-party service**
+    (no external OCR, analytics, chart tool or AI model).
+14. **Wider rollout needs clinical pilot evidence** and a separate explicit
+    authorization; a readiness GO tag is not that authorization.

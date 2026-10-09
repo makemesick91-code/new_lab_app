@@ -13,7 +13,8 @@
      Logic: resources/js/ktp-camera-ocr.js. No inline script. --}}
 @php
     $scannerAgentUrl = config('scanner.agent_url');
-    $ktpOcrEnabled = app(\App\Services\Foundation\FeatureFlagService::class)->enabled('patient.ktp_camera_ocr');
+    // PHASE-1 pilot: the capability flag AND server-verified pilot eligibility.
+    $ktpOcrEnabled = app(\App\Modules\Patient\Services\KtpCameraOcrPilotGate::class)->allows(auth()->user(), request());
     $ktpFieldPrefix = $ktpFieldPrefix ?? '';
     $ktpOcrApplied = old('ktp_ocr_applied') === '1';
 @endphp
