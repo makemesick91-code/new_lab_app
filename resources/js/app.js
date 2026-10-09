@@ -4,6 +4,7 @@ import Alpine from 'alpinejs';
 import { createPatientCombobox } from './patient-combobox';
 import { createLegacyBatchReview } from './legacy-batch-review';
 import { bootPwa } from './pwa';
+import { bootKtpScan } from './ktp-camera-ocr';
 import doctorDeviceWebAuthn from './doctor-device-webauthn';
 
 window.Alpine = Alpine;
@@ -540,6 +541,15 @@ Alpine.data('patientCombobox', (config = {}) => createPatientCombobox(config));
 Alpine.data('legacyBatchReview', (config = {}) => createLegacyBatchReview(config));
 
 Alpine.start();
+
+// REVISION-REGISTRATION-KTP-CAMERA-OCR-1 — KTP capture panels (scanner agent,
+// camera, manual) on the registration forms. tesseract.js itself is loaded
+// lazily on first OCR, so it is never part of the main bundle.
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', bootKtpScan);
+} else {
+    bootKtpScan();
+}
 
 // PWA-FOUNDATION-1 — register the service worker after the page has loaded.
 // Additive only: a failed registration never blocks or changes the app.

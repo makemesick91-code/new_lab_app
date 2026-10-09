@@ -38,7 +38,7 @@ class KtpScanService
      *
      * @return array{token: string, mime_type: string, original_size: int, compressed_file_size: int, width: ?int, height: ?int}
      */
-    public function storeTempFromBase64(string $base64, ?string $declaredMime, ?string $originalFilename, int $userId): array
+    public function storeTempFromBase64(string $base64, ?string $declaredMime, ?string $originalFilename, int $userId, ?string $replacesToken = null): array
     {
         $binary = $this->decodeBase64($base64);
 
@@ -50,6 +50,17 @@ class KtpScanService
         $info = @getimagesizefromstring($binary);
         if ($info === false) {
             throw new RuntimeException('Berkas hasil scan bukan gambar yang valid.');
+        }
+
+        // REVISION-REGISTRATION-KTP-CAMERA-OCR-1 — decompression-bomb guard.
+        // Read from the header only, BEFORE GD decodes the pixels (a small file
+        // can declare an enormous canvas and exhaust worker memory).
+        $width = (int) ($info[0] ?? 0);
+        $height = (int) ($info[1] ?? 0);
+        $maxDimension = (int) config('scanner.ktp.max_dimension', 12000);
+        $maxPixels = (int) config('scanner.ktp.max_pixels', 40_000_000);
+        if ($width < 1 || $height < 1 || $width > $maxDimension || $height > $maxDimension || $width * $height > $maxPixels) {
+            throw new RuntimeException('Dimensi gambar KTP tidak valid.');
         }
 
         $detectedMime = $info['mime'] ?? $declaredMime;
@@ -74,6 +85,13 @@ class KtpScanService
             'file_path' => $path,
             'created_at' => now()->toIso8601String(),
         ], JSON_THROW_ON_ERROR));
+
+        // A retake supersedes the previous capture: drop that temp image so a
+        // registration session never accumulates duplicate identity images.
+        // Scoped to THIS user's temp folder by construction (metaPath).
+        if (is_string($replacesToken) && $replacesToken !== '') {
+            $this->discardTemp($replacesToken, $userId);
+        }
 
         return [
             'token' => $token,
@@ -135,6 +153,36 @@ class KtpScanService
         $disk->delete([$tempPath, $metaPath]);
 
         return $document;
+    }
+
+    /**
+     * Delete a not-yet-attached temp scan owned by $userId. A token that is
+     * unknown, already promoted, or belongs to another user is a silent no-op:
+     * the path is always rebuilt inside the caller's own temp folder from a
+     * sanitized token, so a crafted value cannot reach any other file.
+     */
+    public function discardTemp(string $token, int $userId): void
+    {
+        $token = $this->sanitizeToken($token);
+        if ($token === '') {
+            return;
+        }
+
+        $disk = Storage::disk(self::DISK);
+        $metaPath = $this->metaPath($userId, $token);
+        if (! $disk->exists($metaPath)) {
+            return;
+        }
+
+        $meta = json_decode((string) $disk->get($metaPath), true);
+        $tempPath = is_array($meta) ? ($meta['file_path'] ?? null) : null;
+        $ownPrefix = self::TEMP_DIR.'/'.$userId.'/'.$token.'.';
+
+        $paths = [$metaPath];
+        if (is_string($tempPath) && str_starts_with($tempPath, $ownPrefix)) {
+            $paths[] = $tempPath;
+        }
+        $disk->delete($paths);
     }
 
     /**

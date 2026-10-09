@@ -48,6 +48,12 @@ class StorePatientRequest extends FormRequest
             // Sprint 61.1 — opaque token for a KTP scan parked via the scanner
             // workflow. Attached to the patient after creation (controller).
             'ktp_scan_token' => ['nullable', 'string', 'max:64'],
+            // REVISION-REGISTRATION-KTP-CAMERA-OCR-1 — when OCR suggestions were
+            // applied to this form, the operator must confirm they checked them
+            // against the physical KTP. Every value is still validated by the
+            // rules above exactly as manual entry; this adds the human check.
+            'ktp_ocr_applied' => ['nullable', 'in:0,1'],
+            'ktp_ocr_verified' => ['exclude_unless:ktp_ocr_applied,1', 'accepted'],
             // FEATURE-PATIENT-DUPLICATE-RESOLUTION-MERGE-1 — required only when
             // a strong duplicate is found (see withValidator).
             'duplicate_override_reason' => ['nullable', 'string', 'max:1000'],
@@ -66,6 +72,8 @@ class StorePatientRequest extends FormRequest
     {
         return [
             'manual_rm_number.regex' => 'Nomor RM manual hanya boleh berisi angka.',
+            'ktp_ocr_verified.accepted' => 'Konfirmasi bahwa data hasil baca KTP sudah dicocokkan dengan KTP asli sebelum menyimpan.',
+            'ktp_ocr_verified.required' => 'Konfirmasi bahwa data hasil baca KTP sudah dicocokkan dengan KTP asli sebelum menyimpan.',
             'branch_id.required_with' => 'Cabang RME wajib dipilih saat mengisi Nomor RM manual.',
             'manual_rm_number.required_with' => 'Nomor RM manual wajib diisi saat memilih Cabang RME.',
             'ktp_number.unique' => 'Nomor KTP sudah terdaftar pada pasien lain.',

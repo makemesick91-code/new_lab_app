@@ -278,7 +278,7 @@ class ClinicVisitController extends Controller
         // Sprint 61.1.1 — the KTP scan token is a UI-only attachment hint; strip
         // it before it reaches visit/patient creation.
         $ktpScanToken = $data['ktp_scan_token'] ?? null;
-        unset($data['ktp_scan_token']);
+        unset($data['ktp_scan_token'], $data['ktp_ocr_applied'], $data['ktp_ocr_verified']);
 
         $isNewPatient = ($data['patient_mode'] ?? 'existing') === 'new';
 

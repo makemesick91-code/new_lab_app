@@ -121,6 +121,7 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->registerDoctorAppLoginRateLimiters();
+        $this->registerKtpScanRateLimiter();
         $this->refuseForbiddenConsoleCommands();
         $this->registerDoctorSessionLeaseListener();
     }
@@ -170,6 +171,21 @@ class AppServiceProvider extends ServiceProvider
             if ($guard->shouldBlock($event->command, (string) $this->app->environment())) {
                 throw new ForbiddenProductionCommandException($guard->reason((string) $event->command));
             }
+        });
+    }
+
+    /**
+     * REVISION-REGISTRATION-KTP-CAMERA-OCR-1 — bounds the KTP temp upload and the
+     * OCR parse endpoint per authenticated user AND per route, so a burst of
+     * OCR retries cannot exhaust the upload budget (or the reverse). A real
+     * capture is one upload + one parse; retakes stay well inside the limit.
+     */
+    private function registerKtpScanRateLimiter(): void
+    {
+        RateLimiter::for('ktp-scan', function (Request $request) {
+            $actor = $request->user()?->getAuthIdentifier() ?? $request->ip();
+
+            return Limit::perMinute(20)->by('ktp-scan|'.$actor.'|'.($request->route()?->getName() ?? $request->path()));
         });
     }
 

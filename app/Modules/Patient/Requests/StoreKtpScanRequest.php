@@ -31,6 +31,9 @@ class StoreKtpScanRequest extends FormRequest
             'image_base64' => ['required', 'string', 'max:'.($maxKb * 1024 * 2)],
             'mime_type' => ['nullable', 'string', 'in:image/jpeg,image/png,image/webp'],
             'filename' => ['nullable', 'string', 'max:255'],
+            // REVISION-REGISTRATION-KTP-CAMERA-OCR-1 — a retake names the temp
+            // token it supersedes so the earlier image is discarded.
+            'replaces_token' => ['nullable', 'string', 'uuid'],
         ];
     }
 }

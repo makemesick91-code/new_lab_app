@@ -1,0 +1,40 @@
+---
+description: REVISION-REGISTRATION-KTP-CAMERA-OCR-1 — KTP camera capture + OCR during patient registration
+globs: app/Modules/Patient/**, resources/js/ktp-camera-ocr.js, resources/views/settings/patients/_ktp-scan.blade.php, vite.config.js, config/scanner.php
+alwaysApply: false
+---
+
+# KTP camera capture + OCR suggestions
+
+Sprint doc: `docs/sprints/revision-registration-ktp-camera-ocr-1.md`. Flag
+`patient.ktp_camera_ocr` (default OFF).
+
+1. **OCR output is a SUGGESTION, never data.** Nothing from OCR is written to a
+   patient record without the operator ticking it, and the registration request
+   refuses applied OCR values unless `ktp_ocr_verified` is accepted.
+2. **OCR must not invent data.** Missing → null; invalid → null and not offered;
+   below threshold / unknown confidence / glyph-corrected → offered but never
+   pre-ticked; a label read twice differently → ambiguous, null.
+3. **The NIK only cross-checks.** Never derive the birth date or gender from the
+   NIK; a disagreement demotes both sides.
+4. **Confident is not correct.** Measured: a lost space in a name came back as a
+   confident read. Do not auto-apply "ok" values or remove the operator check.
+5. **Only existing `mst_patients` columns are offered.** Fields without a column
+   (birth place, religion, marital status) are display-only. Adding a column is
+   a separate, explicit schema decision.
+6. **OCR runs in the browser with SELF-HOSTED tesseract.js.** Worker, core and
+   model come from `public/build/ocr/…` (copied by `vite.config.js`). Never let
+   tesseract.js fall back to its CDN defaults; never send the image to an
+   external OCR service without owner approval.
+7. **The parse endpoint stores, logs and audits nothing**, answers `no-store`,
+   and performs NO patient lookup — duplicates are detected at submit by
+   `PatientRegistrationDuplicateCheck` (branch-scoped). Do not add a NIK
+   existence check to it (it would become an enumeration oracle).
+8. **OCR text is untrusted.** Bounded server-side; written to the DOM only via
+   `.value` / `.textContent`.
+9. **Image hardening:** the decompression-bomb guard reads the header BEFORE GD
+   decodes; temp paths are rebuilt inside the caller's own folder; a retake
+   discards only the same user's superseded temp image.
+10. **Rate limit** `ktp-scan`: per user AND per route — keep the two budgets separate.
+11. Real-KTP accuracy and tablet latency are unmeasured until a supervised
+    device trial; do not claim production readiness from synthetic results.

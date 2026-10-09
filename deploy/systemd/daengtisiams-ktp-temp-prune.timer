@@ -1,0 +1,18 @@
+[Unit]
+# Daily schedule for daengtisiams-ktp-temp-prune.service.
+#
+# Host clock is UTC; clinics operate in WITA (UTC+8). 19:45 UTC is 03:45 WITA:
+# outside clinic hours, 45 minutes after daengtisiams-db-backup.timer (19:00)
+# so the two never compete, and clear of the weekly pilot snapshot (Sat 19:30).
+Description=Daily prune of stale temporary KTP scans
+
+[Timer]
+OnCalendar=*-*-* 19:45:00
+# Run a missed prune after downtime instead of silently skipping a day.
+Persistent=true
+RandomizedDelaySec=300
+AccuracySec=1min
+Unit=daengtisiams-ktp-temp-prune.service
+
+[Install]
+WantedBy=timers.target

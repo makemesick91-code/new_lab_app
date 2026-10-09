@@ -810,6 +810,16 @@ return [
         // branch, so a leak here is worth more to an attacker than it was.
         'tests/Feature/RME/NewVisitGlobalPatientLookupTest.php',
 
+        // REVISION-REGISTRATION-KTP-CAMERA-OCR-1 — KTP camera capture + OCR
+        // suggestions. Pins that OCR can never invent identity data (missing =
+        // null, invalid = not offered, NIK never used to fill the birth date),
+        // that applied OCR values need an explicit operator confirmation, that
+        // the parse endpoint stores/logs nothing and is no duplicate oracle,
+        // and the upload hardening (header-checked decompression bomb, per-user
+        // temp isolation, retake discard). The `PatientKtp` token also selects
+        // the Sprint 61.1 KTP suites, which no critical token reached before.
+        'tests/Feature/RME/PatientKtpCameraOcrTest.php',
+
         // FEATURE-DAILY-BRANCH-CONTEXT-LOCK-1 — the daily working-branch lock
         // for Kasir and Admin Klinik, and the Super Admin approval that is the
         // only way past it.

@@ -1,0 +1,47 @@
+[Unit]
+# DaengtisiaMS — daily prune of STALE temporary KTP scan uploads
+# (REVISION-REGISTRATION-KTP-CAMERA-OCR-1, operating Sprint 61.3's command).
+#
+# WHY THIS UNIT EXISTS. A KTP image captured during registration is parked as a
+# temporary file (tmp/patient-ktp-scans/{user}/{token}) until the patient is
+# saved. An abandoned registration leaves that identity image behind. Sprint
+# 61.3 shipped `patient-documents:prune-temp` to remove them, but nothing on
+# this host invokes Laravel's `schedule:run`, so a schedule registered in the
+# application would be a silent no-op. This unit runs the command directly.
+#
+# WHAT IT CAN TOUCH. PatientDocumentTempPruneService only ever acts under the
+# configured temp root and re-checks every path against it before deleting;
+# final patient documents (patient-documents/) are structurally out of reach.
+# Age comes from the upload's own meta sidecar, and the retention
+# (patient_documents.temp_ttl_hours, 24h) is far longer than the 60-minute
+# token lifetime, so an in-progress registration can never lose its image.
+Description=DaengtisiaMS daily prune of stale temporary KTP scans
+After=network-online.target
+
+[Service]
+Type=oneshot
+
+# INFRA-SEC-RUNTIME-1: run as the dedicated runtime identity, never root —
+# a root-run artisan command can leave root-owned files in storage/.
+# Must match DMS_RUNTIME_USER / DMS_RUNTIME_GROUP in deploy/runtime-identity.conf.
+User=daengtisiams
+Group=daengtisiams
+WorkingDirectory=/var/www/asia-dental-lab-v2
+
+# Pinned to PHP 8.3, the version the application's FPM pool runs. On this
+# shared host /usr/bin/php resolves to another tenant's newer PHP.
+# --force is what makes this a prune rather than a report; the command is
+# dry-run by default.
+ExecStart=/usr/bin/php8.3 /var/www/asia-dental-lab-v2/artisan patient-documents:prune-temp --force --json
+
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=600
+
+# Output carries counts and byte totals only — no file names, no patient data.
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=daengtisiams-ktp-temp-prune
+
+[Install]
+WantedBy=multi-user.target

@@ -306,6 +306,19 @@ $registry = [
             'dependencies' => [],
             'rollback_action' => 'Set env override to false; new orders revert to the legacy Lab pipeline and existing V2 orders stay readable (no data migration required).',
         ],
+        'patient.ktp_camera_ocr' => [
+            'name' => 'KTP Camera Capture & OCR',
+            'description' => 'REVISION-REGISTRATION-KTP-CAMERA-OCR-1 — camera capture of an Indonesian KTP during patient registration plus browser-side, self-hosted OCR (tesseract.js) that SUGGESTS registration values. Nothing is saved from OCR without operator review and an explicit confirmation; the registration is validated exactly like manual entry. The image is stored through the existing private KTP document flow.',
+            'default' => false,
+            'env_key' => 'FEATURE_PATIENT_KTP_CAMERA_OCR',
+            'env_value' => env('FEATURE_PATIENT_KTP_CAMERA_OCR'),
+            'owner' => 'patient-registration',
+            'risk_level' => 'medium',
+            'rollout_status' => 'implemented',
+            'review_target' => 'REVISION-REGISTRATION-KTP-CAMERA-OCR-1',
+            'dependencies' => [],
+            'rollback_action' => 'Set the env override to false and rebuild the config cache; the camera/OCR controls disappear and the existing scanner-agent + manual-upload KTP flow is unchanged. No data is created by OCR, so nothing needs migrating back.',
+        ],
 
         // --- SATUSEHAT integration (readiness foundation; external send stays off) ---
 
