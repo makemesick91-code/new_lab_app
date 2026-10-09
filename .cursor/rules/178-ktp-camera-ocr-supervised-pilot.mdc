@@ -58,3 +58,13 @@ Extends rule 177 (OCR is a suggestion) — this rule decides WHO may get one.
     (no external OCR, analytics, chart tool or AI model).
 14. **Wider rollout needs clinical pilot evidence** and a separate explicit
     authorization; a readiness GO tag is not that authorization.
+15. **A device waiver is scoped to this gate.** `REQUIRE_BOUND_DEVICE=false` skips
+    the gate's device clause — its only reader of `front_office.branch_device_lock`
+    — so it can never weaken that lock, doctor devices, sessions or WebAuthn. Do
+    not "complete" a waived pilot by arming the front-office device lock or adding
+    device ids. Record the waiver and its reason with the activation.
+16. **`ARMED` describes configuration, not today's eligibility.** The verdict does
+    not read the pilot period: after `ends_on` it still says `ARMED` while every
+    decision is `outside_pilot_period`. Ask `--user=<id>` for eligibility, and at
+    period end disarm the flag or record a fresh owner decision extending it.
+    First activation: `docs/operations/ktp-camera-ocr-pilot-activation-spn4-2026-10-10.md`.
