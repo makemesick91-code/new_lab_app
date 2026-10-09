@@ -13,6 +13,9 @@ it happen; a cell that was not measured is written `NOT TESTED`, never guessed.
 None of these are inferred from earlier pilots (the doctor-device pilot at
 Cabang Sunu does **not** approve this one).
 
+Filled-in record for the first pilot (SPN4, 2026-10-10..16, D7 still open):
+`docs/operations/ktp-camera-ocr-pilot-activation-spn4-2026-10-10.md`.
+
 | # | Decision | Value | Recorded by / date |
 |---|---|---|---|
 | D1 | Pilot branch (exactly one, never MAIN) | | |
