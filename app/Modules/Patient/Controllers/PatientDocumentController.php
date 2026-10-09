@@ -5,7 +5,9 @@ namespace App\Modules\Patient\Controllers;
 use App\Http\Controllers\Controller;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\Patient\Models\PatientDocument;
+use App\Modules\Patient\Requests\ParseKtpOcrRequest;
 use App\Modules\Patient\Requests\StoreKtpScanRequest;
+use App\Modules\Patient\Services\KtpOcrParser;
 use App\Modules\Patient\Services\KtpScanService;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\JsonResponse;
@@ -26,7 +28,10 @@ class PatientDocumentController extends Controller
 {
     use AuthorizesRequests;
 
-    public function __construct(private readonly KtpScanService $ktpScans) {}
+    public function __construct(
+        private readonly KtpScanService $ktpScans,
+        private readonly KtpOcrParser $ocrParser,
+    ) {}
 
     /**
      * Accept a scanned KTP image (base64) and park it under a temp token so it
@@ -42,6 +47,7 @@ class PatientDocumentController extends Controller
                 $request->input('mime_type'),
                 $request->input('filename'),
                 (int) $request->user()->id,
+                $request->input('replaces_token'),
             );
         } catch (RuntimeException $e) {
             return response()->json(['ok' => false, 'message' => $e->getMessage()], 422);
@@ -55,6 +61,29 @@ class PatientDocumentController extends Controller
             'width' => $result['width'],
             'height' => $result['height'],
         ]);
+    }
+
+    /**
+     * REVISION-REGISTRATION-KTP-CAMERA-OCR-1 — turn OCR text lines (read in the
+     * operator's browser) into validated, flagged registration SUGGESTIONS.
+     *
+     * Writes nothing and logs nothing: the lines can contain a full NIK, so the
+     * response is marked no-store and no part of the payload is audited.
+     * Duplicate detection is deliberately NOT done here — the registration
+     * submit already runs the canonical, branch-scoped duplicate check.
+     */
+    public function parseOcr(ParseKtpOcrRequest $request): JsonResponse
+    {
+        $this->authorize('create', Patient::class);
+
+        $result = $this->ocrParser->parse(
+            array_values((array) $request->validated('lines', [])),
+            (float) config('scanner.ocr.confidence_threshold', 75.0),
+        );
+
+        return response()
+            ->json(['ok' => true] + $result)
+            ->header('Cache-Control', 'no-store, private');
     }
 
     /**

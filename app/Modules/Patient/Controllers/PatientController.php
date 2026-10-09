@@ -63,7 +63,7 @@ class PatientController extends Controller
 
         $data = $request->validated();
         $ktpScanToken = $data['ktp_scan_token'] ?? null;
-        unset($data['ktp_scan_token'], $data['duplicate_override_reason']);
+        unset($data['ktp_scan_token'], $data['duplicate_override_reason'], $data['ktp_ocr_applied'], $data['ktp_ocr_verified']);
 
         $patient = $this->patientService->create($data);
 

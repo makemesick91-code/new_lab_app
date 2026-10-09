@@ -190,7 +190,7 @@
                     {{-- Sprint 61.1.1 — reuse the Sprint 61.1 direct KTP scanner section
                          inside the RME "Pasien Baru" panel. The hidden ktp_scan_token is
                          only attached when this new-patient form is submitted. --}}
-                    @include('settings.patients._ktp-scan')
+                    @include('settings.patients._ktp-scan', ['ktpFieldPrefix' => 'new_patient'])
                     <div class="sm:col-span-2">
                         <label class="block text-sm font-medium text-ink">Nomor RM Final (Preview)</label>
                         <input type="text" data-rm-preview readonly placeholder="DG-{KODE_CABANG}-{TAHUN_DAFTAR}-{NOMOR_RM_MANUAL}" class="mt-1 block w-full rounded-lg border-hairline bg-navy-50 font-mono text-sm text-ink" />

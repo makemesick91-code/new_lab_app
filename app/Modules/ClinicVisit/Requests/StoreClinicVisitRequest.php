@@ -280,6 +280,14 @@ class StoreClinicVisitRequest extends FormRequest
             // RME "Pasien Baru" panel; promoted to a PatientDocument after the
             // patient is created. Missing/expired token never blocks creation.
             'ktp_scan_token' => ['nullable', 'string', 'max:64'],
+            // REVISION-REGISTRATION-KTP-CAMERA-OCR-1 — required only when OCR
+            // suggestions were applied to a NEW patient (the scan panel lives in
+            // the new-patient panel; an existing-patient visit never needs it).
+            'ktp_ocr_applied' => ['nullable', 'in:0,1'],
+            'ktp_ocr_verified' => [
+                Rule::excludeIf(! $isNew || (string) $this->input('ktp_ocr_applied') !== '1'),
+                'accepted',
+            ],
         ];
     }
 
@@ -287,6 +295,8 @@ class StoreClinicVisitRequest extends FormRequest
     {
         return [
             'new_patient.manual_rm_number.regex' => 'Nomor RM manual hanya boleh berisi angka.',
+            'ktp_ocr_verified.accepted' => 'Konfirmasi bahwa data hasil baca KTP sudah dicocokkan dengan KTP asli sebelum menyimpan.',
+            'ktp_ocr_verified.required' => 'Konfirmasi bahwa data hasil baca KTP sudah dicocokkan dengan KTP asli sebelum menyimpan.',
             'new_patient.name.required' => 'Nama pasien baru wajib diisi.',
             'new_patient.branch_id.required' => 'Cabang RME pasien baru wajib dipilih.',
             'new_patient.branch_id.same' => 'Cabang RME pasien baru harus sama dengan Klinik/Cabang kunjungan.',

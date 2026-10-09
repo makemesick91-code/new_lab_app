@@ -262,7 +262,13 @@ Route::middleware('auth')->prefix('settings')->name('settings.')->group(function
         // Sprint 61.1 — Direct KTP Scanner Capture & Compression.
         // Temp upload (patient may not exist yet) + private document access.
         Route::post('patients/ktp-scan/upload-temp', [PatientDocumentController::class, 'uploadTemp'])
+            ->middleware('throttle:ktp-scan')
             ->name('patients.ktp-scan.upload-temp');
+        // REVISION-REGISTRATION-KTP-CAMERA-OCR-1 — parse OCR text read in the
+        // browser into validated suggestions. Writes nothing.
+        Route::post('patients/ktp-scan/parse-ocr', [PatientDocumentController::class, 'parseOcr'])
+            ->middleware('throttle:ktp-scan')
+            ->name('patients.ktp-scan.parse-ocr');
         Route::get('patients/{patient}/documents/{document}', [PatientDocumentController::class, 'show'])
             ->name('patients.documents.show');
         Route::delete('patients/{patient}/documents/{document}', [PatientDocumentController::class, 'destroy'])

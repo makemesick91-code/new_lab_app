@@ -46,6 +46,28 @@ return [
         'max_width' => 1600,
         'quality' => 82,
         'temp_token_ttl_minutes' => 60,
+        // REVISION-REGISTRATION-KTP-CAMERA-OCR-1 — decompression-bomb guard,
+        // checked from the image HEADER before GD ever decodes the pixels.
+        'max_pixels' => 40_000_000,
+        'max_dimension' => 12000,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | KTP OCR (REVISION-REGISTRATION-KTP-CAMERA-OCR-1)
+    |--------------------------------------------------------------------------
+    |
+    | OCR runs in the operator's browser with a self-hosted tesseract.js build
+    | (no CDN, no external OCR service). The browser sends back only the text
+    | lines it read; the server parses and validates them into SUGGESTIONS.
+    | These bounds cap that request. Values below the confidence threshold are
+    | offered but never pre-selected.
+    |
+    */
+    'ocr' => [
+        'confidence_threshold' => 75.0,
+        'max_lines' => 60,
+        'max_line_length' => 200,
     ],
 
 ];
