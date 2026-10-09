@@ -1,32 +1,33 @@
-# REVISION-REGISTRATION-KTP-CAMERA-OCR-1
+# PHASE-1-PATIENT-KTP-CAMERA-OCR-SUPERVISED-PILOT
 #
-# Device-camera capture of an Indonesian KTP during patient registration plus
-# browser-side, self-hosted OCR (tesseract.js 7, no CDN, no external OCR
-# service) that SUGGESTS registration values. The server parses and validates
-# the OCR text (KtpOcrParser, pure PHP, no DB/IO/logging); nothing is saved
-# from OCR without operator review and an explicit "checked against the
-# physical KTP" confirmation, and every value is validated exactly like manual
-# entry. Behind `patient.ktp_camera_ocr` (FEATURE_PATIENT_KTP_CAMERA_OCR),
-# default OFF and kept OFF in production until a supervised real-KTP / clinic
-# tablet pilot. Also: decompression-bomb guard + retake discard on the KTP temp
-# upload, a per-user/per-route `ktp-scan` rate limit, and a systemd timer that
-# finally runs `patient-documents:prune-temp` on production (the Laravel
-# scheduler never fires there). No migration, no permission, no role change.
+# Confines KTP camera OCR (REVISION-REGISTRATION-KTP-CAMERA-OCR-1) to a
+# supervised pilot. The global flag `patient.ktp_camera_ocr` alone now enables
+# NOBODY: eligibility additionally needs the server-side pilot scope
+# (config/patient_ktp_ocr_pilot.php) — explicit operator cohort, exactly one
+# approved RME branch resolved server-side (RmeWorkingBranchScope), an
+# inclusive clinical-calendar period, and (fail-safe ON) an approved tablet
+# bound through the front-office trusted-device lock. Decided only by
+# KtpCameraOcrPilotGate; the parse endpoint answers 404 and the camera UI is
+# hidden for every denial while manual registration is unchanged. Adds the
+# read-only `patient:ktp-ocr-pilot-status` command and a supervised pilot
+# protocol. Deploys INERT (flag off, cohort empty). The physical real-KTP /
+# tablet pilot is NOT part of this release and is not claimed.
+# No migration, no permission, no role change.
 
-id: REVISION-REGISTRATION-KTP-CAMERA-OCR-1
+id: PHASE-1-PATIENT-KTP-CAMERA-OCR-SUPERVISED-PILOT
 type: MODULE_SPRINT
 module: Patient
-title: "KTP camera capture + browser OCR suggestions behind a default-OFF flag; header-checked image bomb guard, retake discard, ktp-scan rate limit; daily stale-temp-scan prune timer"
+title: "Server-side supervised pilot gate for KTP camera OCR (cohort, single branch, period, bound tablet); read-only pilot status command; deploys inert"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 runtime_change: true
 schema_change: false
 frontend_change: true
 security_impact: true
-branch_isolation_impact: false
+branch_isolation_impact: true
 ledger_impact: false
 deploy_required: true
 browser_required: false
 test_profiles: []
-go_tag: revision-registration-ktp-camera-ocr-1-go
-inherits_parent_go: feature-patient-duplicate-resolution-merge-1-go
+go_tag: phase-1-patient-ktp-camera-ocr-pilot-readiness-go
+inherits_parent_go: revision-registration-ktp-camera-ocr-1-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1

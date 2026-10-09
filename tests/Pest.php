@@ -1866,3 +1866,81 @@ function legacyMassUploadFakeDisk(): string
 
     return 'legacy_mass_upload_private';
 }
+
+/*
+|--------------------------------------------------------------------------
+| PHASE-1-PATIENT-KTP-CAMERA-OCR-SUPERVISED-PILOT fixtures
+|--------------------------------------------------------------------------
+|
+| KTP camera OCR is gated by the flag AND a server-side pilot scope. These
+| helpers build what production actually has: a branch-context-bound operator
+| at one approved RME branch, inside a pilot period, named in the cohort.
+*/
+
+/** Arm or disarm the capability flag (the key contains a dot). */
+function ktpPilotFlag(bool $on): void
+{
+    $flags = config('feature_flags.flags');
+    $flags['patient.ktp_camera_ocr']['default'] = $on;
+    $flags['patient.ktp_camera_ocr']['env_value'] = null;
+    config(['feature_flags.flags' => $flags]);
+}
+
+/** An active, RME-enabled pilot branch (never MAIN). */
+function ktpPilotBranch(string $code = 'KTPP'): Branch
+{
+    $existing = Branch::query()->where('code', $code)->first();
+    if ($existing !== null) {
+        return $existing;
+    }
+
+    return Branch::factory()->create([
+        'code' => $code,
+        'name' => 'Cabang Pilot '.$code,
+        'is_active' => true,
+        'is_rme_enabled' => true,
+    ]);
+}
+
+/**
+ * Write the pilot scope. Period defaults to a window around the frozen test
+ * clock (2026-10-09). Device requirement OFF by default here; device tests
+ * switch it on explicitly.
+ *
+ * @param  array<string, mixed>  $overrides
+ */
+function ktpPilotScope(array $overrides = []): void
+{
+    config(['patient_ktp_ocr_pilot' => array_merge([
+        'operator_user_ids' => '',
+        'branch_codes' => '',
+        'device_ids' => '',
+        'starts_on' => '2026-10-01',
+        'ends_on' => '2026-10-31',
+        'require_bound_device' => false,
+        'max_operators' => 5,
+        'max_branches' => 1,
+        'max_devices' => 3,
+        'max_period_days' => 31,
+    ], $overrides)]);
+}
+
+/**
+ * A pilot operator: Admin Klinik with a selected working branch, named in the
+ * cohort, flag on. Returns the user; the branch is created if not given.
+ */
+function ktpPilotOperator(?Branch $branch = null, array $scope = []): User
+{
+    $branch ??= ktpPilotBranch();
+    $user = User::factory()->create();
+    rmeMakeAdminClinicActive($user, $branch);
+
+    $existing = (string) (config('patient_ktp_ocr_pilot.operator_user_ids') ?? '');
+    ktpPilotScope(array_merge([
+        'operator_user_ids' => trim($existing.','.$user->id, ','),
+        'branch_codes' => $branch->code,
+    ], $scope));
+    ktpPilotFlag(true);
+
+    return $user;
+}

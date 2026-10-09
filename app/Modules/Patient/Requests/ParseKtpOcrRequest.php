@@ -3,8 +3,8 @@
 namespace App\Modules\Patient\Requests;
 
 use App\Modules\Patient\Models\Patient;
+use App\Modules\Patient\Services\KtpCameraOcrPilotGate;
 use App\Modules\Patient\Services\KtpOcrParser;
-use App\Services\Foundation\FeatureFlagService;
 use Illuminate\Foundation\Http\FormRequest;
 
 /**
@@ -22,8 +22,13 @@ class ParseKtpOcrRequest extends FormRequest
 
     protected function prepareForValidation(): void
     {
-        // A switched-off capability answers as if the endpoint did not exist.
-        abort_unless(app(FeatureFlagService::class)->enabled('patient.ktp_camera_ocr'), 404);
+        // A switched-off capability — or an operator outside the supervised
+        // pilot (PHASE-1-PATIENT-KTP-CAMERA-OCR-SUPERVISED-PILOT) — answers as if
+        // the endpoint did not exist. The gate resolves the branch server-side.
+        abort_unless(
+            app(KtpCameraOcrPilotGate::class)->allows($this->user(), $this),
+            404,
+        );
     }
 
     /**

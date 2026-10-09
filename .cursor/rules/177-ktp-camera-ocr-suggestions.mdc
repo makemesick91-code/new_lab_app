@@ -38,3 +38,5 @@ Sprint doc: `docs/sprints/revision-registration-ktp-camera-ocr-1.md`. Flag
 10. **Rate limit** `ktp-scan`: per user AND per route — keep the two budgets separate.
 11. Real-KTP accuracy and tablet latency are unmeasured until a supervised
     device trial; do not claim production readiness from synthetic results.
+12. **Who may use it is decided by rule 178** (PHASE-1 supervised pilot): the
+    flag alone enables nobody; `KtpCameraOcrPilotGate` is the single decider.

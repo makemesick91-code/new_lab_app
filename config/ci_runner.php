@@ -820,6 +820,15 @@ return [
         // the Sprint 61.1 KTP suites, which no critical token reached before.
         'tests/Feature/RME/PatientKtpCameraOcrTest.php',
 
+        // PHASE-1-PATIENT-KTP-CAMERA-OCR-SUPERVISED-PILOT — the server-side pilot
+        // gate. Pins that the global flag alone enables NOBODY (no "everyone"
+        // mode), that eligibility needs the explicit cohort + the single approved
+        // branch resolved server-side + the pilot period + an approved bound
+        // tablet, and that every denial hides both the parse endpoint and the
+        // camera UI while manual registration keeps working. Selected by the
+        // existing `PatientKtp` token; declared here so a rename cannot drop it.
+        'tests/Feature/RME/PatientKtpCameraOcrPilotTest.php',
+
         // FEATURE-DAILY-BRANCH-CONTEXT-LOCK-1 — the daily working-branch lock
         // for Kasir and Admin Klinik, and the Super Admin approval that is the
         // only way past it.
