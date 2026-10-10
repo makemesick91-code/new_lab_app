@@ -142,6 +142,22 @@ A first version of the consent walk-through counted parse requests with a patter
 match the server's log format, so its "zero after a no" result was vacuous. It was caught because
 the yes-path count also read zero, fixed, and the whole walk-through re-run.
 
+## 5a. Shipped and deployed (2026-10-10)
+
+| Step | Evidence |
+|---|---|
+| PR | #469, squash-merged as `dfa3326c80812a84f1d9c30156667834f71aea23`; merged tree `fdddcc5e` == the CI-tested tree |
+| CI | run `38039774239` on head `408b01db`: Classifier, NSF-R012 Quality, NSF-R011 Critical (**5418 passed / 27858 assertions, exit 0, 0 failures**, consent suite present), Selective Module, NSF-9, NSF-10, Android gate — all success. NSF-R011 Full Suite **skipped** by the standing deferral policy (not a pass) |
+| Local regression | `tests/Feature/RME` + `tests/Feature/Patient` + `tests/Feature/FrontOfficeDevice`: 1863 passed / 8 failed — all 8 are FrontOffice WebAuthn ceremony tests (`Undefined array key "challenge"`), reproduced **identically on the untouched base `e1dc3a7d`** (local PHP 8.5.4; CI runs 8.3); none touches this change |
+| Deploy | `deploy-vps-runner.sh start` run on the VPS at 19:07 WITA: `exit=0`, `DEPLOY OK: 20261010-110734`, `DEPLOY_HEAD_TARGET_MATCH=YES`; no migration |
+| Production | HEAD `dfa3326c` / tree `fdddcc5e`; pilot `ARMED`, `errors=[]`, operator `[29]` @ SPN4, 2026-10-10..16, device waiver unchanged, `--strict` exit 0; `consent = {version: D7-2026-10-10, usable: true, paragraphs: 5}`; user 29 `no_working_branch` (offline at 19:18), users 7 / 30 / 1 / 11 `operator_not_in_pilot`; consent and measurement strings present in the shipped JS bundles |
+| Health | `/login`, `/health/live`, `/health/ready`, `/health/lb` 200 over `https://daengtisia.online`; guest parse POST 419, guest patient create 302; php-fpm, nginx, queue worker active |
+| Side effects | application log **byte-identical** (1,437,201 bytes / 162 `ERROR`) across deploy and verification; one smoke warning is the known co-tenant shadow on `http://127.0.0.1/login` (the domain answers 200) |
+| Tag | `phase-3-patient-ktp-roi-ocr-consent-readiness-go` (tag object `e95d3c3c`) → `dfa3326c`, exact match at production HEAD — **engineering readiness only**. `phase-1-patient-ktp-camera-ocr-supervised-pilot-go` stays reserved and does not exist |
+
+This evidence commit is documentation only and is not deployed; production stays on the tagged
+runtime `dfa3326c`.
+
 ## 6. Outstanding — needs people on site
 
 1. **Owner:** clinic privacy notice + withdrawal procedure (§3). Until then `PRIVACY_REVIEW = PENDING`.
