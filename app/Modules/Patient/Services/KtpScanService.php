@@ -4,9 +4,12 @@ namespace App\Modules\Patient\Services;
 
 use App\Modules\Patient\Models\Patient;
 use App\Modules\Patient\Models\PatientDocument;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use RuntimeException;
+use Throwable;
 
 /**
  * Sprint 61.1 — Direct KTP Scanner Capture & Compression.
@@ -27,6 +30,14 @@ use RuntimeException;
  */
 class KtpScanService
 {
+    /**
+     * AUDIT-PATIENT-KTP-ARCHIVE-PERSISTENCE-1 — shown when a registration
+     * carried a KTP photo that did NOT become the patient's archived document.
+     * The patient is saved either way; the operator must never believe a KTP
+     * was archived when it was not.
+     */
+    public const NOT_ATTACHED_WARNING = 'Pasien tersimpan, tetapi foto KTP TIDAK ikut tersimpan di arsip pasien (foto sudah tidak berlaku atau gagal disimpan).';
+
     private const DISK = 'local';
 
     private const TEMP_DIR = 'tmp/patient-ktp-scans';
@@ -82,6 +93,8 @@ class KtpScanService
             'original_filename' => $originalFilename,
             'original_size' => $originalSize,
             'compressed_file_size' => strlen($compressed['binary']),
+            // Identity: the archive must hold exactly these bytes (checked on attach).
+            'checksum' => hash('sha256', $compressed['binary']),
             'file_path' => $path,
             'created_at' => now()->toIso8601String(),
         ], JSON_THROW_ON_ERROR));
@@ -105,8 +118,17 @@ class KtpScanService
 
     /**
      * Promote a temp KTP scan into the patient's private document folder and
-     * record the PatientDocument row. Idempotent-safe: a missing/invalid token
-     * simply returns null (patient creation must not fail because of it).
+     * record the PatientDocument row. A missing/invalid token, or any failure
+     * on the way, returns null (patient creation must not fail because of it)
+     * and the caller tells the operator — see {@see NOT_ATTACHED_WARNING}.
+     *
+     * AUDIT-PATIENT-KTP-ARCHIVE-PERSISTENCE-1 — the local disk does not throw
+     * (`throw => false`), so every step is verified instead of assumed: the
+     * temp bytes are non-empty and match the checksum recorded at upload, the
+     * archive file reads back identical, and a document row that cannot be
+     * written takes its archive file away again (a transaction cannot roll
+     * back a file). The temp photo is only released once the archive and its
+     * record both exist, so a failure never loses the confirmed image.
      */
     public function attachTempToPatient(Patient $patient, string $token, int $userId): ?PatientDocument
     {
@@ -123,36 +145,81 @@ class KtpScanService
         }
 
         $meta = json_decode((string) $disk->get($metaPath), true);
+        $meta = is_array($meta) ? $meta : [];
         $tempPath = $meta['file_path'] ?? null;
+        $ownPrefix = self::TEMP_DIR.'/'.$userId.'/'.$token.'.';
 
-        if (! is_string($tempPath) || ! $disk->exists($tempPath)) {
+        if (! is_string($tempPath) || ! str_starts_with($tempPath, $ownPrefix) || ! $disk->exists($tempPath)) {
             $disk->delete($metaPath);
 
             return null;
         }
 
-        $binary = (string) $disk->get($tempPath);
+        $binary = $disk->get($tempPath);
+        if (! is_string($binary) || $binary === '') {
+            return $this->notAttached('temp_unreadable', $patient, $userId);
+        }
+
+        $checksum = hash('sha256', $binary);
+        $expected = $meta['checksum'] ?? null;
+        if (is_string($expected) && $expected !== '' && ! hash_equals($expected, $checksum)) {
+            return $this->notAttached('temp_checksum_mismatch', $patient, $userId);
+        }
+
         $mime = $meta['mime_type'] ?? 'application/octet-stream';
         $ext = $this->extensionForMime($mime);
-
         $finalPath = self::DOC_DIR.'/'.$patient->id.'/ktp-'.now()->format('Ymd-His').'-'.Str::random(8).'.'.$ext;
-        $disk->put($finalPath, $binary);
 
-        $document = $patient->documents()->create([
-            'document_type' => PatientDocument::TYPE_KTP,
-            'file_path' => $finalPath,
-            'original_filename' => $meta['original_filename'] ?? null,
-            'mime_type' => $mime,
-            'file_size' => $meta['original_size'] ?? strlen($binary),
-            'compressed_file_size' => strlen($binary),
-            'checksum' => hash('sha256', $binary),
-            'uploaded_by' => $userId,
-        ]);
+        // `throw => false` only silences UnableToWriteFile; a directory that
+        // cannot be created still throws, so both outcomes are handled here.
+        try {
+            $written = $disk->put($finalPath, $binary) === true ? $disk->get($finalPath) : null;
+        } catch (Throwable) {
+            $written = null;
+        }
+        if (! is_string($written) || ! hash_equals($checksum, hash('sha256', $written))) {
+            $disk->delete($finalPath);
+
+            return $this->notAttached('archive_write_failed', $patient, $userId);
+        }
+
+        try {
+            // Nested transaction = savepoint, so a failed insert never poisons
+            // an enclosing PostgreSQL transaction.
+            $document = DB::transaction(fn () => $patient->documents()->create([
+                'document_type' => PatientDocument::TYPE_KTP,
+                'file_path' => $finalPath,
+                'original_filename' => $meta['original_filename'] ?? null,
+                'mime_type' => $mime,
+                'file_size' => $meta['original_size'] ?? strlen($binary),
+                'compressed_file_size' => strlen($binary),
+                'checksum' => $checksum,
+                'uploaded_by' => $userId,
+            ]));
+        } catch (Throwable) {
+            $disk->delete($finalPath);
+
+            return $this->notAttached('document_record_failed', $patient, $userId);
+        }
 
         // Invalidate the temp token + file once promoted.
         $disk->delete([$tempPath, $metaPath]);
 
         return $document;
+    }
+
+    /**
+     * Ids and a reason code only — never a path, a name or a KTP number.
+     */
+    private function notAttached(string $reason, Patient $patient, int $userId): null
+    {
+        Log::warning('patient_ktp_document_not_attached', [
+            'reason' => $reason,
+            'patient_id' => $patient->id,
+            'user_id' => $userId,
+        ]);
+
+        return null;
     }
 
     /**

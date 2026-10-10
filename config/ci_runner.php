@@ -859,6 +859,17 @@ return [
         // declared so a rename cannot drop it.
         'tests/Feature/RME/PatientKtpLiveFieldOverlayTest.php',
 
+        // AUDIT-PATIENT-KTP-ARCHIVE-PERSISTENCE-1 — the KTP photo becomes the
+        // patient's archive (same bytes, right patient, readable after the
+        // session) or the operator is told it did not; filesystem/database
+        // consistency (empty temp, checksum identity, read-back, row
+        // compensation) and private serving. The browser half (a cleared or
+        // replaced photo never stays attached) is pinned by
+        // tests/js/ktp-camera-ocr-token.test.mjs (run by the quality gate).
+        // Selected by the existing `PatientKtp` token; declared so a rename
+        // cannot drop it.
+        'tests/Feature/RME/PatientKtpArchivePersistenceTest.php',
+
         // FEATURE-DAILY-BRANCH-CONTEXT-LOCK-1 — the daily working-branch lock
         // for Kasir and Admin Klinik, and the Super Admin approval that is the
         // only way past it.

@@ -101,10 +101,16 @@ class PatientDocumentController extends Controller
         $disk = Storage::disk($this->ktpScans->disk());
         abort_unless($disk->exists($document->file_path), 404);
 
+        // An identity image: never kept in a shared front-desk browser cache,
+        // never sniffed into another type (AUDIT-PATIENT-KTP-ARCHIVE-PERSISTENCE-1).
         return $disk->response(
             $document->file_path,
             $document->original_filename ?: 'ktp-scan',
-            ['Content-Type' => $document->mime_type],
+            [
+                'Content-Type' => $document->mime_type,
+                'Cache-Control' => 'private, no-store',
+                'X-Content-Type-Options' => 'nosniff',
+            ],
         );
     }
 

@@ -313,6 +313,30 @@ async function compressImage(source) {
     return canvasToBlob(canvas, CLIENT_LIMITS.jpegQuality);
 }
 
+/**
+ * AUDIT-PATIENT-KTP-ARCHIVE-PERSISTENCE-1 — the hidden `ktp_scan_token` is the
+ * ONLY thing the server attaches to the patient on save, so it must always name
+ * the photo the operator sees as saved. A cleared or replaced preview detaches
+ * the token from the form (it is never filed under the patient being saved —
+ * possibly a different KTP holder) and remembers it as superseded, so the next
+ * upload still tells the server to discard that temp image.
+ */
+export function createKtpTokenBinding(input) {
+    let superseded = '';
+
+    return {
+        attach(token) {
+            input.value = token || '';
+            superseded = '';
+        },
+        detach() {
+            if (input.value) superseded = input.value;
+            input.value = '';
+        },
+        replaces: () => input.value || superseded || null,
+    };
+}
+
 export function initKtpScan(root) {
     const $ = (sel) => root.querySelector(sel);
     const ds = root.dataset;
@@ -325,6 +349,8 @@ export function initKtpScan(root) {
 
     const statusEl = $('[data-ktp-status]');
     const tokenEl = $('[data-ktp-token]');
+    const tokens = createKtpTokenBinding(tokenEl);
+    const carriedNote = $('[data-ktp-carried]');
     const previewWrap = $('[data-ktp-preview-wrap]');
     const previewImg = $('[data-ktp-preview]');
     const confirmBar = $('[data-ktp-confirm-bar]');
@@ -354,6 +380,10 @@ export function initKtpScan(root) {
     const field = (name) => form?.querySelector(`[name="${CSS.escape(formInputName(prefix, name))}"]`) ?? null;
 
     const showPreview = (dataUrl, needsConfirm) => {
+        // A different image on screen detaches the saved one: what is shown is
+        // what gets attached, never an earlier photo behind it.
+        tokens.detach();
+        carriedNote?.classList.add('hidden');
         previewImg.src = dataUrl;
         previewWrap.classList.remove('hidden');
         confirmBar?.classList.toggle('hidden', !needsConfirm);
@@ -384,8 +414,10 @@ export function initKtpScan(root) {
     };
 
     const clearAll = ({ keepConsent = false } = {}) => {
-        // The temp image stays referenced by the token until a new upload
-        // replaces it (server discards the superseded one) or it is pruned.
+        // The cleared photo leaves the form: it is never attached on save. Its
+        // temp image is discarded by the next upload (replaces_token) or pruned.
+        tokens.detach();
+        carriedNote?.classList.add('hidden');
         previewImg.removeAttribute('src');
         previewWrap.classList.add('hidden');
         confirmBar?.classList.add('hidden');
@@ -429,12 +461,12 @@ export function initKtpScan(root) {
                 image_base64: base64.includes(',') ? base64.split(',').pop() : base64,
                 mime_type: mime || null,
                 filename: filename || null,
-                replaces_token: tokenEl.value || null,
+                replaces_token: tokens.replaces(),
             }),
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok || !data.ok) throw new Error(data.message || 'Upload gagal');
-        tokenEl.value = data.token;
+        tokens.attach(data.token);
         return data;
     };
 
@@ -770,7 +802,12 @@ export function initKtpScan(root) {
     clearBtn?.addEventListener('click', () => {
         if (blockedWhileBusy()) return;
         clearAll();
+        setStatus('Foto KTP dihapus dari formulir ini dan tidak akan dilampirkan saat pasien disimpan.', 'info');
     });
+
+    // A photo carried over from a failed submit is attached on save; the
+    // operator can still withdraw it before saving.
+    if (tokenEl.value && clearBtn) clearBtn.disabled = false;
 
     window.addEventListener('pagehide', () => {
         stopCamera();
