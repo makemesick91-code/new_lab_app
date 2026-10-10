@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\User;
 use App\Modules\Patient\Services\KtpCameraOcrPilotGate;
+use App\Modules\Patient\Support\KtpOcrConsent;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 
@@ -18,6 +19,11 @@ use Illuminate\Support\Facades\DB;
  * --user evaluates one operator. Resolving a working branch can lazily expire a
  * stale online-context row, so that probe runs inside a transaction that is
  * ALWAYS rolled back — the command writes nothing.
+ *
+ * PHASE-3-PATIENT-KTP-ROI-OCR-CLINICAL-PILOT-1 — also reports which consent
+ * wording (decision D7) is deployed: its version and whether it is usable, never
+ * the text itself. With the flag on, unusable wording means OCR can run for
+ * nobody, so --strict treats it as an unusable configuration.
  *
  * Exit codes: 0 = consistent; 2 = --strict and the configuration is unusable
  * while the flag is on, or contains errors.
@@ -40,6 +46,7 @@ class PatientKtpOcrPilotStatusCommand extends Command
             'verdict' => $verdict,
             'posture' => $posture,
             'everyone_mode_exists' => false,
+            'consent' => KtpOcrConsent::summary(),
             'user_decision' => $this->option('user') !== null ? $this->evaluate($gate, (string) $this->option('user')) : null,
         ];
 
@@ -55,13 +62,17 @@ class PatientKtpOcrPilotStatusCommand extends Command
             $this->line('DEVICES=['.implode(',', $posture['device_ids']).']');
             $this->line('FRONT_OFFICE_DEVICE_LOCK_ENABLED='.($posture['front_office_device_lock_enabled'] ? 'true' : 'false'));
             $this->line('ERRORS=['.implode(',', $posture['errors']).']');
+            $this->line('CONSENT_VERSION='.($report['consent']['version'] !== '' ? $report['consent']['version'] : 'NONE'));
+            $this->line('CONSENT_USABLE='.($report['consent']['usable'] ? 'true' : 'false'));
             if ($report['user_decision'] !== null) {
                 $this->line('USER_DECISION='.$report['user_decision']['reason']);
             }
             $this->line('Read-only. This command never arms the pilot.');
         }
 
-        $unusable = $posture['errors'] !== [] || $verdict === 'ARMED_UNREACHABLE';
+        $unusable = $posture['errors'] !== []
+            || $verdict === 'ARMED_UNREACHABLE'
+            || ($posture['flag_enabled'] && ! $report['consent']['usable']);
 
         return ($this->option('strict') && $unusable && $verdict !== 'INERT') ? 2 : self::SUCCESS;
     }

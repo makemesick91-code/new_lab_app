@@ -10,7 +10,7 @@ Nothing here touches a database, a real card or the network.
 | `run_benchmark.mjs` | Reads each scene with the shipped whole-card OCR (`--mode=baseline`) or the hybrid field-box OCR (`--mode=hybrid`), parses through the real server code, scores against ground truth. |
 | `parse_bridge.php` | Runs `KtpOcrSuggestionService` (or the plain parser on an older checkout) from the local application container. |
 | `summarize.mjs` | Turns a baseline run and a hybrid run into counts and timings only (no OCR text). |
-| `browser_e2e.php` | Local WebDriver walk-through of the operator screen. Refuses any non-local base URL. |
+| `browser_e2e.php` | Local WebDriver walk-through of the operator screen. Refuses any non-local base URL. Since PHASE-3 it answers the D7 consent panel for the fictional card (and checks that clearing the photo asks again). |
 | `png.mjs` | Minimal PNG encoder for the Node harness. |
 
 ## Reproduce

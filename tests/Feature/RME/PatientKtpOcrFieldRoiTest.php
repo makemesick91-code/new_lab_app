@@ -336,6 +336,7 @@ it('accepts the hybrid payload, stores nothing and caches nothing', function () 
 
     $response = $this->actingAs(ktpPilotOperator())
         ->postJson(route('settings.patients.ktp-scan.parse-ocr'), [
+            ...ktpConsent(),
             'lines' => roiDocLines(['occupation' => ['text' => 'Pekerjaan : KARYAWAN SWASTA 03-05-2019', 'confidence' => 95]]),
             'fields' => roiFields(),
         ])
@@ -355,8 +356,10 @@ it('accepts the hybrid payload, stores nothing and caches nothing', function () 
 
 it('bounds the untrusted field payload', function (array $fields) {
     $this->actingAs(ktpPilotOperator())
-        ->postJson(route('settings.patients.ktp-scan.parse-ocr'), ['lines' => roiDocLines(), 'fields' => $fields])
-        ->assertStatus(422);
+        ->postJson(route('settings.patients.ktp-scan.parse-ocr'), ['lines' => roiDocLines(), 'fields' => $fields] + ktpConsent())
+        ->assertStatus(422)
+        // The refusal is about the payload, never a missing consent (PHASE-3, D7).
+        ->assertJsonMissingValidationErrors(['consent', 'consent_version']);
 })->with([
     'unknown field' => [['patient_id' => ['text' => '1', 'confidence' => 90]]],
     'text too long' => [['name' => ['text' => str_repeat('A', 201), 'confidence' => 90]]],
@@ -371,7 +374,7 @@ it('keeps the field read behind the pilot gate', function () {
     ktpPilotFlag(false);
 
     $this->actingAs($operator)
-        ->postJson(route('settings.patients.ktp-scan.parse-ocr'), ['lines' => roiDocLines(), 'fields' => roiFields()])
+        ->postJson(route('settings.patients.ktp-scan.parse-ocr'), ['lines' => roiDocLines(), 'fields' => roiFields()] + ktpConsent())
         ->assertNotFound();
 });
 
@@ -381,7 +384,7 @@ it('refuses the field read to an operator outside the pilot', function () {
     rmeMakeAdminClinicActive($outsider, ktpPilotBranch());
 
     $this->actingAs($outsider)
-        ->postJson(route('settings.patients.ktp-scan.parse-ocr'), ['lines' => roiDocLines(), 'fields' => roiFields()])
+        ->postJson(route('settings.patients.ktp-scan.parse-ocr'), ['lines' => roiDocLines(), 'fields' => roiFields()] + ktpConsent())
         ->assertNotFound();
 });
 
@@ -393,6 +396,7 @@ it('refuses the field read to a cohort operator working at another branch', func
 
     $this->actingAs($operator)
         ->postJson(route('settings.patients.ktp-scan.parse-ocr'), [
+            ...ktpConsent(),
             'branch_id' => $pilotBranch->id, // never trusted
             'lines' => roiDocLines(),
             'fields' => roiFields(),

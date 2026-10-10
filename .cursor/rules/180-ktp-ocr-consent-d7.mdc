@@ -1,0 +1,61 @@
+---
+description: PHASE-3-PATIENT-KTP-ROI-OCR-CLINICAL-PILOT-1 — consent before KTP camera OCR (pilot decision D7)
+globs: app/Modules/Patient/**, config/patient_ktp_ocr_consent.php, resources/views/settings/patients/_ktp-scan.blade.php, resources/js/ktp-camera-ocr.js, resources/js/ktp-roi-ui.js, tools/ktp-ocr-pilot/**
+alwaysApply: false
+---
+
+# KTP OCR — consent first (D7)
+
+Sprint doc: `docs/sprints/phase-3-patient-ktp-roi-ocr-clinical-pilot-1.md`.
+Protocol: `docs/runbooks/ktp-camera-ocr-supervised-pilot-protocol.md` (§0 D7, §3, §4, Appendix A).
+Extends rules 177 (OCR is a suggestion), 178 (who may use it) and 179 (how it reads).
+
+1. **The approved wording is canonical.** `config/patient_ktp_ocr_consent.php`
+   holds the D7 text verbatim with a `version` (`D7-2026-10-10`). It is read only
+   by `App\Modules\Patient\Support\KtpOcrConsent`. Never paraphrase, shorten or
+   translate it in a view, a printout or a message.
+2. **Changing the wording is a new owner approval AND a code change** with a new
+   `version` — never an environment edit. The file reads no `env()` (tested).
+3. **Consent before capture and before processing.** The camera does not open,
+   and OCR does not read an image from ANY source (camera, scanner agent, manual
+   file), until the KTP holder's explicit "yes" is recorded on the page. No answer
+   is not a yes; a "no" is an answer — OCR does not ask again on its own; only the
+   operator pressing the camera button again (the holder changed their mind)
+   asks anew. A new photo cancels an unanswered question.
+4. **The server boundary is the parse endpoint.** `ParseKtpOcrRequest` refuses OCR
+   text without `consent` accepted and the CURRENT `consent_version` (422). The
+   pilot gate still runs first, so an operator outside the pilot gets the same 404
+   with or without a consent field — consent is never an oracle.
+5. **Unusable wording fails closed.** A missing version/title or a broken
+   paragraph makes the wording unusable: no partial text, no "agree" button, an
+   empty accepted-version list (every parse refused), and the status command's
+   `--strict` exits 2 while the flag is on.
+6. **Declining keeps manual registration complete.** The scanner/manual document
+   upload and typed registration need no consent field and are unchanged. A
+   declined photo is stored as a plain document, with no OCR request sent.
+7. **No consent record is invented.** The KTP holder's written consent stays on
+   the clinic's paper form (protocol Appendix A). The application stores no consent
+   row, writes no audit row for it, and must NOT borrow `trx_rme_visit_consents`
+   (that is treatment consent with a different purpose and lifecycle). The page's
+   answer lives in that page only; clearing the photo resets it ("Ulangi" keeps it).
+8. **An operator statement is not the holder's signature.** The on-screen answer is
+   the operator attesting that consent was given; it never replaces the written form.
+9. **Measure without identifiers.** The screen's "Catatan pilot" line carries counts
+   and field KEYS only (card found, corners adjusted, boxes moved, retries per field,
+   first read time), is shown on screen only and never sent. The capture sheet and
+   `tools/ktp-ocr-pilot/summarize.mjs` reject anything identifier-shaped (6+ digit
+   runs, e-mail addresses, dates outside the date column) by row and column, never
+   echoing the value. Keep the sheet off chat, e-mail and AI/MCP services.
+10. **Privacy review is a precondition the owner owns.** D7 delegates retention,
+    data-subject rights and the privacy contact to the clinic privacy policy
+    (UU 27/2022 Pasal 21(1) d, f, g). Until that policy is available to the KTP
+    holder, record `PRIVACY_REVIEW=PENDING`; never write a policy on the clinic's
+    behalf and present it as approved.
+11. **Never claim the device pilot passed from synthetic or browser-only runs.**
+    `REAL_CAMERA_TEST` and `REAL_KTP_TEST` are MEASURED on site under consent, or
+    `PENDING`. The summariser reports `PENDING` below 30 consented captures, `NO_GO`
+    on any confident wrong NIK, and `METRICS_PASS` at most — clinical GO is the
+    owner's decision on the full protocol §5 list.
+12. **The pilot period is not extended by this rule or by any release.** The
+    2026-10-16 end date stands; at period end disarm or record a fresh owner decision
+    (rule 178 §16).

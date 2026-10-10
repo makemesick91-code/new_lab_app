@@ -17,6 +17,8 @@
     $ktpOcrEnabled = app(\App\Modules\Patient\Services\KtpCameraOcrPilotGate::class)->allows(auth()->user(), request());
     $ktpFieldPrefix = $ktpFieldPrefix ?? '';
     $ktpOcrApplied = old('ktp_ocr_applied') === '1';
+    // PHASE-3 pilot (decision D7): the approved consent wording, rendered verbatim.
+    $ktpOcrConsentUsable = \App\Modules\Patient\Support\KtpOcrConsent::isUsable();
 @endphp
 <div class="sm:col-span-2 rounded-lg border border-indigo-100 bg-indigo-50/40 p-4"
      data-ktp-scan
@@ -26,6 +28,7 @@
      data-upload-url="{{ route('settings.patients.ktp-scan.upload-temp') }}"
      data-parse-url="{{ $ktpOcrEnabled ? route('settings.patients.ktp-scan.parse-ocr') : '' }}"
      data-ocr-enabled="{{ $ktpOcrEnabled ? '1' : '0' }}"
+     data-ocr-consent-version="{{ $ktpOcrEnabled && $ktpOcrConsentUsable ? \App\Modules\Patient\Support\KtpOcrConsent::version() : '' }}"
      data-ocr-build-base="{{ parse_url(asset('build'), PHP_URL_PATH) ?: '/build' }}"
      data-field-prefix="{{ $ktpFieldPrefix }}"
      data-csrf="{{ csrf_token() }}">
@@ -74,6 +77,43 @@
     </p>
 
     @if ($ktpOcrEnabled)
+        {{-- PHASE-3-PATIENT-KTP-ROI-OCR-CLINICAL-PILOT-1 — consent first (decision D7).
+             Shown before the camera opens, and before OCR runs on an image from
+             any source. The wording comes from config/patient_ktp_ocr_consent.php
+             via KtpOcrConsent and is never paraphrased here. The answer lives only
+             in this page: nothing is stored. The parse endpoint refuses OCR text
+             sent without it. Declining keeps manual registration unchanged. --}}
+        <div class="mt-3 hidden rounded-md border border-amber-300 bg-white p-4" data-ktp-consent
+             role="region" aria-label="Persetujuan pemindaian KTP">
+            @if ($ktpOcrConsentUsable)
+                <p class="text-sm font-semibold text-gray-900" data-ktp-consent-title>{{ \App\Modules\Patient\Support\KtpOcrConsent::title() }}</p>
+                <div class="mt-2 space-y-2 text-sm text-gray-800" data-ktp-consent-text>
+                    @foreach (\App\Modules\Patient\Support\KtpOcrConsent::paragraphs() as $ktpConsentParagraph)
+                        <p>{{ $ktpConsentParagraph }}</p>
+                    @endforeach
+                </div>
+                <p class="mt-3 text-xs text-gray-500">
+                    Bacakan atau perlihatkan teks di atas kepada pemilik KTP dan pastikan formulir persetujuan tertulis sudah ditandatangani.
+                    Pembacaan otomatis bersifat pilihan: bila pemilik KTP tidak setuju, lanjutkan pendaftaran secara manual seperti biasa.
+                    <span class="whitespace-nowrap">(Versi teks: {{ \App\Modules\Patient\Support\KtpOcrConsent::version() }})</span>
+                </p>
+                <div class="mt-3 flex flex-wrap gap-2">
+                    <button type="button" data-ktp-consent-accept
+                        class="inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500">
+                        Pemilik KTP Setuju
+                    </button>
+                    <button type="button" data-ktp-consent-decline
+                        class="inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                        Tidak Setuju — Isi Manual
+                    </button>
+                </div>
+            @else
+                <p class="text-sm text-rose-700" data-ktp-consent-unavailable>
+                    Teks persetujuan pemindaian KTP belum tersedia, sehingga pembacaan otomatis tidak dapat digunakan. Lanjutkan pendaftaran secara manual.
+                </p>
+            @endif
+        </div>
+
         {{-- Camera: the guide frame is the crop the capture keeps (ID-1 ratio). --}}
         <div class="mt-3 hidden" data-ktp-camera>
             <div class="relative mx-auto w-full max-w-xl overflow-hidden rounded-lg bg-black">
@@ -113,6 +153,10 @@
                 isian yang sudah Anda isi tidak diganti kecuali Anda mencentangnya. BACA ULANG tidak mengubah nilai yang sudah Anda terima.
             </p>
             <p class="mb-2 text-xs text-indigo-700" data-ktp-roi-boundary></p>
+            {{-- PHASE-3 pilot measurement aid: counts only (no KTP value, no field
+                 text), shown on this screen and never sent anywhere. The operator
+                 copies it into the protocol §4 sheet. --}}
+            <p class="mb-2 text-[11px] text-gray-500" data-ktp-roi-metrics></p>
 
             {{-- The card is shown large (boxes must be big enough to grab by
                  touch); the field rows sit below it. --}}

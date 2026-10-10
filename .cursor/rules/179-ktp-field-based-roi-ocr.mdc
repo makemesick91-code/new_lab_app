@@ -106,3 +106,8 @@ These numbers are fixtures for regression, not a claim about real cards.
   the label itself.
 - A photo-caption column bleeds into the occupation and address lines of a
   whole-card read; that is the main reason the field boxes exist.
+
+**Consent (rule 180):** a field read never starts before the KTP holder's "yes"
+to the D7 wording; the parse request carries that attestation. The screen's
+"Catatan pilot" line counts box moves, corner re-reads and per-field BACA ULANG
+presses without any value — use it to fill the protocol §4 sheet.

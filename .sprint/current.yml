@@ -1,22 +1,22 @@
-# REVISION-PATIENT-KTP-OCR-FIELD-BASED-ROI-1
+# PHASE-3-PATIENT-KTP-ROI-OCR-CLINICAL-PILOT-1
 #
-# Hybrid field-based KTP OCR. The browser finds the card, straightens it,
-# reads each patient field in its own box from a versioned normalized template
-# (ektp-v1) with a field-specific character set, and still runs the previous
-# whole-card read. The server parses both and reconciles field by field: agreement
-# confirms, disagreement is shown to the operator with both values and neither
-# pre-selected, never settled by confidence. Operators can move/resize boxes,
-# set card corners and re-read a field; a re-read never overwrites an accepted
-# or typed value. A request without field reads gets the previous payload byte
-# for byte. Pilot gate, flag, branch isolation, private storage, NIK masking,
-# CSRF, rate limit, confirmation and duplicate check unchanged.
-# Synthetic benchmark only — real-KTP accuracy is PENDING (pilot decision D7).
+# Pilot decision D7 approved by the owner (2026-10-10). The approved KTP-holder
+# consent wording is held verbatim and versioned in config (no env), shown before
+# the camera opens and before OCR reads an image from ANY source, and required by
+# the OCR parse endpoint (consent accepted + current wording version; the pilot
+# gate's 404 still runs first). Declining keeps manual registration unchanged.
+# No consent record is invented (written consent stays on the clinic's paper
+# form; trx_rme_visit_consents is not borrowed). Adds an identifier-free on-screen
+# measurement line and an offline capture-sheet summariser for the step-16
+# metrics. Privacy review PENDING (clinic privacy policy not available). Real
+# camera / real KTP tests PENDING physical execution. Pilot scope, period
+# (ends 2026-10-16) and device waiver unchanged. The pilot GO tag stays reserved.
 # No migration, no permission, no route, no patient column, no pilot/env change.
 
-id: REVISION-PATIENT-KTP-OCR-FIELD-BASED-ROI-1
+id: PHASE-3-PATIENT-KTP-ROI-OCR-CLINICAL-PILOT-1
 type: MODULE_SPRINT
 module: Patient
-title: "Hybrid field-based (ROI) KTP OCR with server-side reconciliation and operator box/field verification"
+title: "D7 consent before KTP camera OCR, privacy review and supervised pilot readiness"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 runtime_change: true
 schema_change: false
@@ -27,6 +27,7 @@ ledger_impact: false
 deploy_required: true
 browser_required: false
 test_profiles: []
-go_tag: revision-patient-ktp-ocr-field-based-roi-1-go
-inherits_parent_go: phase-1-patient-ktp-camera-ocr-pilot-readiness-go
+go_tag: phase-3-patient-ktp-roi-ocr-consent-readiness-go
+reserved_pilot_go_tag: phase-1-patient-ktp-camera-ocr-supervised-pilot-go
+inherits_parent_go: revision-patient-ktp-ocr-field-based-roi-1-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1

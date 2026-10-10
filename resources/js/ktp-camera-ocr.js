@@ -218,6 +218,30 @@ export function cameraErrorMessage(error, secure = true) {
     }
 }
 
+/* ----------------------------------------------------------- consent -- */
+
+/**
+ * PHASE-3-PATIENT-KTP-ROI-OCR-CLINICAL-PILOT-1 — the KTP holder's answer to
+ * the approved consent wording (pilot decision D7) for THIS page only. It is
+ * never stored, sent anywhere except as the parse request's attestation, or
+ * carried to another registration.
+ */
+export const CONSENT = Object.freeze({ ACCEPTED: 'accepted', DECLINED: 'declined' });
+
+/**
+ * OCR may run only after an explicit "yes" to an approved wording. No answer
+ * yet (null) is not a yes, a "no" is not a yes, and a page that carries no
+ * wording version cannot produce a yes at all.
+ */
+export function consentAllowsOcr(consent, version) {
+    return consent === CONSENT.ACCEPTED && typeof version === 'string' && version.trim() !== '';
+}
+
+/** The attestation the parse endpoint requires, or null when there is none. */
+export function consentPayload(consent, version) {
+    return consentAllowsOcr(consent, version) ? { consent: true, consent_version: version.trim() } : null;
+}
+
 /* ------------------------------------------------------------------ DOM -- */
 
 /* global __DMS_OCR_ASSET_DIR__ */
@@ -278,6 +302,8 @@ export function initKtpScan(root) {
     const csrf = ds.csrf;
     const prefix = ds.fieldPrefix || '';
     const ocrEnabled = ds.ocrEnabled === '1';
+    // D7: the wording version rendered on this page ('' when none is usable).
+    const consentVersion = (ds.ocrConsentVersion || '').trim();
     const form = root.closest('form');
 
     const statusEl = $('[data-ktp-status]');
@@ -287,6 +313,7 @@ export function initKtpScan(root) {
     const confirmBar = $('[data-ktp-confirm-bar]');
     const clearBtn = $('[data-ktp-clear]');
     const scanBtn = $('[data-ktp-scan-btn]');
+    const consentPanel = $('[data-ktp-consent]');
 
     let pendingBlob = null; // captured/selected, not yet confirmed
     let ocrSession = null; // field-based OCR session for the confirmed image
@@ -295,6 +322,8 @@ export function initKtpScan(root) {
     let videoDevices = [];
     let deviceIndex = -1;
     let busy = false;
+    let consent = null; // D7: null (not asked) | CONSENT.ACCEPTED | CONSENT.DECLINED — this page only
+    let consentNext = null; // what a "yes" continues with: { camera: true } or { blob }
 
     const setStatus = (msg, tone) => {
         statusEl.textContent = msg;
@@ -316,12 +345,16 @@ export function initKtpScan(root) {
         ocrRun++;
         ocrSession?.destroy();
         ocrSession = null;
+        // D7: an unanswered question belongs to the photo it was asked for; a
+        // new photo cancels it and is asked about again once confirmed.
+        consentNext = null;
+        consentPanel?.classList.add('hidden');
         $('[data-ktp-ocr-results]')?.classList.add('hidden');
         const body = $('[data-ktp-ocr-rows]');
         if (body) body.replaceChildren();
     };
 
-    const clearAll = () => {
+    const clearAll = ({ keepConsent = false } = {}) => {
         // The temp image stays referenced by the token until a new upload
         // replaces it (server discards the superseded one) or it is pruned.
         previewImg.removeAttribute('src');
@@ -329,7 +362,20 @@ export function initKtpScan(root) {
         confirmBar?.classList.add('hidden');
         pendingBlob = null;
         clearBtn.disabled = true;
-        resetResults();
+        resetResults(); // also cancels an unanswered consent question
+        // Clearing the photo may mean a different KTP holder, so the answer is
+        // asked again — except on a retake of the same card ("Ulangi").
+        if (!keepConsent) consent = null;
+    };
+
+    // D7 — ask before the camera opens and before OCR reads an image from any
+    // source. The question is answered by the KTP holder, recorded by the
+    // operator on this page only.
+    const askConsent = (next) => {
+        consentNext = next;
+        consentPanel?.classList.remove('hidden');
+        consentPanel?.scrollIntoView?.({ block: 'nearest' });
+        setStatus('Minta persetujuan pemilik KTP sebelum KTP dibaca otomatis.', 'info');
     };
 
     const upload = async (base64, mime, filename) => {
@@ -354,6 +400,16 @@ export function initKtpScan(root) {
 
     const runOcr = async (blob) => {
         if (!ocrEnabled) return;
+        if (!consentAllowsOcr(consent, consentVersion)) {
+            // A "no" is an answer: the image stays a plain document upload, as
+            // for every operator outside the pilot. No answer yet: ask first.
+            if (consent === CONSENT.DECLINED) {
+                setStatus('Foto KTP tersimpan. Pembacaan otomatis tidak dijalankan karena pemilik KTP tidak setuju — isi data secara manual.', 'info');
+            } else {
+                askConsent({ blob });
+            }
+            return;
+        }
         resetResults();
         setStatus('Menyiapkan pembaca KTP… (diproses di perangkat ini)', 'info');
         const run = ocrRun;
@@ -368,6 +424,7 @@ export function initKtpScan(root) {
                 assetConfig: ocrAssetConfig(ds.ocrBuildBase, OCR_ASSET_DIR),
                 setStatus,
                 formValue: (name) => field(name)?.value ?? '',
+                consent: consentPayload(consent, consentVersion),
             });
             await ocrSession.read(blob);
         } catch {
@@ -420,8 +477,8 @@ export function initKtpScan(root) {
     });
 
     $('[data-ktp-retake]')?.addEventListener('click', () => {
-        clearAll();
-        if (root.dataset.lastSource === 'camera') openCamera();
+        clearAll({ keepConsent: true });
+        if (root.dataset.lastSource === 'camera' && consentAllowsOcr(consent, consentVersion)) openCamera();
     });
 
     /* ---- camera ---- */
@@ -461,7 +518,32 @@ export function initKtpScan(root) {
         }
     };
 
-    $('[data-ktp-camera-open]')?.addEventListener('click', () => openCamera());
+    $('[data-ktp-camera-open]')?.addEventListener('click', () => {
+        // Asked again after an earlier "no": opening the camera needs a fresh "yes".
+        if (consentAllowsOcr(consent, consentVersion)) openCamera();
+        else askConsent({ camera: true });
+    });
+
+    /* ---- consent (D7) ---- */
+
+    $('[data-ktp-consent-accept]')?.addEventListener('click', () => {
+        if (!consentVersion) return; // no approved wording on this page: never a yes
+        consent = CONSENT.ACCEPTED;
+        consentPanel?.classList.add('hidden');
+        const next = consentNext;
+        consentNext = null;
+        if (next?.camera) openCamera();
+        else if (next?.blob) runOcr(next.blob);
+        else setStatus('Persetujuan pemilik KTP dicatat untuk pendaftaran ini.', 'ok');
+    });
+
+    $('[data-ktp-consent-decline]')?.addEventListener('click', () => {
+        consent = CONSENT.DECLINED;
+        consentNext = null;
+        consentPanel?.classList.add('hidden');
+        stopCamera();
+        setStatus('Pemilik KTP tidak menyetujui pembacaan otomatis. Lanjutkan pendaftaran secara manual.', 'info');
+    });
     $('[data-ktp-camera-close]')?.addEventListener('click', () => { stopCamera(); setStatus('Kamera ditutup.', 'info'); });
     switchBtn?.addEventListener('click', () => {
         if (videoDevices.length < 2) return;
@@ -546,7 +628,7 @@ export function initKtpScan(root) {
         }
     });
 
-    clearBtn?.addEventListener('click', clearAll);
+    clearBtn?.addEventListener('click', () => clearAll());
 
     window.addEventListener('pagehide', () => {
         stopCamera();

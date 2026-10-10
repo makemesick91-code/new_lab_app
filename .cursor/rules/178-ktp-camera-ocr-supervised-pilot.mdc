@@ -73,3 +73,8 @@ Extends rule 177 (OCR is a suggestion) — this rule decides WHO may get one.
     scope keys and the device waiver are untouched. While the pilot is armed, a
     deploy changes the read the pilot operator sees on their next scan; record
     that in the pilot evidence rather than re-arming or extending anything.
+18. **Eligibility is not consent.** Passing this gate makes OCR *available*; each
+    capture still needs the KTP holder's explicit consent to the D7 wording first
+    (rule 180). The gate runs before the consent check, so a non-pilot operator
+    gets the same 404 whatever it sends. Real captures were blocked on D7 until
+    the owner approved it on 2026-10-10.
