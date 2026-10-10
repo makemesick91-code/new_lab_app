@@ -114,13 +114,27 @@
             @endif
         </div>
 
-        {{-- Camera: the guide frame is the crop the capture keeps (ID-1 ratio). --}}
+        {{-- Camera. The static guide frame is the fallback crop (ID-1 ratio).
+             REVISION-PATIENT-KTP-LIVE-FIELD-OVERLAY-OCR-1: once the camera is open
+             (which needs the D7 "yes") a live overlay draws the card outline and the
+             field boxes over the video and replaces the static guide. The overlay is
+             a separate SVG layer — it is never part of the captured photo. --}}
         <div class="mt-3 hidden" data-ktp-camera>
-            <div class="relative mx-auto w-full max-w-xl overflow-hidden rounded-lg bg-black">
-                <video data-ktp-video class="block w-full" autoplay playsinline muted></video>
-                <div class="pointer-events-none absolute inset-0 flex items-center justify-center">
+            <div class="relative mx-auto w-full max-w-xl overflow-hidden rounded-lg bg-black" data-ktp-live-stage>
+                <video data-ktp-video class="block max-h-[70vh] w-full object-contain" autoplay playsinline muted></video>
+                <div class="pointer-events-none absolute inset-0 flex items-center justify-center" data-ktp-camera-guide>
                     <div class="w-[90%] rounded-xl border-4 border-white/90 shadow-[0_0_0_9999px_rgba(0,0,0,0.45)]" style="aspect-ratio: 85.6 / 53.98;"></div>
                 </div>
+                <svg data-ktp-live-overlay class="pointer-events-none absolute left-0 top-0 hidden" aria-hidden="true" focusable="false"></svg>
+            </div>
+            <div class="mt-2 hidden flex flex-col items-center gap-1" data-ktp-live-panel role="status" aria-live="polite">
+                <p class="text-sm font-medium">
+                    <span data-ktp-live-level="red" class="hidden inline-flex items-center gap-1.5 rounded-full bg-danger-50 px-2.5 py-0.5 text-danger-700"><span class="h-2.5 w-2.5 rounded-full bg-danger" aria-hidden="true"></span>MERAH — KTP belum terdeteksi</span>
+                    <span data-ktp-live-level="yellow" class="hidden inline-flex items-center gap-1.5 rounded-full bg-warning-50 px-2.5 py-0.5 text-warning-700"><span class="h-2.5 w-2.5 rounded-full bg-warning" aria-hidden="true"></span>KUNING — KTP terdeteksi, kualitas belum cukup</span>
+                    <span data-ktp-live-level="green" class="hidden inline-flex items-center gap-1.5 rounded-full bg-success-50 px-2.5 py-0.5 text-success-700"><span class="h-2.5 w-2.5 rounded-full bg-success" aria-hidden="true"></span>HIJAU — posisi dan gambar tampak baik</span>
+                </p>
+                <p class="text-center text-xs text-gray-700" data-ktp-live-guidance></p>
+                <p class="text-center text-[11px] text-gray-500">Hijau bukan jaminan hasil baca benar — tetap cocokkan setiap isian dengan KTP asli.</p>
             </div>
             <p class="mt-1 text-center text-xs text-gray-500">Letakkan KTP di dalam bingkai, hindari pantulan cahaya, pastikan teks tajam.</p>
             <div class="mt-2 flex flex-wrap justify-center gap-2">

@@ -46,3 +46,7 @@ Sprint doc: `docs/sprints/revision-registration-ktp-camera-ocr-1.md`. Flag
 13. **Nothing is read before the KTP holder agrees — rule 180** (PHASE-3, decision
     D7): the camera and OCR on any image source wait for an explicit "yes" to the
     approved wording, and the parse endpoint refuses text sent without it.
+14. **How the card is lined up BEFORE capture is governed by rule 181**
+    (REVISION-PATIENT-KTP-LIVE-FIELD-OVERLAY-OCR-1): a live field overlay on the
+    preview, after the D7 "yes" only; OCR still runs once, after capture, and
+    everything above about what may be offered and applied still holds.

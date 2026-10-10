@@ -71,9 +71,10 @@ test('the camera never opens without a yes, and a retake keeps the same answer',
     assert.ok(retake.length > 0 && retake.length < 400, 'the retake handler was located');
     assert.match(retake, /clearAll\(\{ keepConsent: true \}\)/);
     assert.match(retake, /consentAllowsOcr\(consent, consentVersion\)\) openCamera\(\)/);
-    // Clearing the photo may mean a different person: the answer is reset.
-    assert.match(src, /clearBtn\?\.addEventListener\('click', \(\) => clearAll\(\)\)/);
-    assert.match(src, /if \(!keepConsent\) consent = null;/);
+    // Clearing the photo may mean a different person: the answer is reset, and
+    // a camera opened under the old answer closes with it (live overlay release).
+    assert.match(src, /clearBtn\?\.addEventListener\('click', \(\) => \{\s*if \(blockedWhileBusy\(\)\) return;\s*clearAll\(\);\s*\}\)/);
+    assert.match(src, /if \(!keepConsent\) \{\s*consent = null;\s*stopCamera\(\);\s*\}/);
 });
 
 test('a new photo cancels an unanswered consent question', () => {
@@ -84,7 +85,9 @@ test('a new photo cancels an unanswered consent question', () => {
     // runOcr reaches resetResults only AFTER its consent gate, so the reset can
     // never swallow the question it is about to ask.
     const runOcr = src.slice(src.indexOf('const runOcr = async'), src.indexOf("$('[data-ktp-apply]')"));
-    assert.ok(runOcr.indexOf('askConsent({ blob })') < runOcr.indexOf('resetResults()'));
+    const ask = runOcr.indexOf('askConsent({ blob');
+    assert.ok(ask > 0, 'runOcr asks the consent question'); // -1 would pass the next line vacuously
+    assert.ok(ask < runOcr.indexOf('resetResults()'));
 });
 
 test('"agree" refuses to record a yes when the page carries no wording version', () => {

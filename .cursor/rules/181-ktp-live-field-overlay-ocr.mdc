@@ -1,0 +1,127 @@
+---
+description: REVISION-PATIENT-KTP-LIVE-FIELD-OVERLAY-OCR-1 — live field overlay on the KTP camera preview, capture-confirmed geometry, field read after capture
+globs: resources/js/ktp-live-*.js, resources/js/ktp-camera-ocr.js, resources/js/ktp-roi-ui.js, resources/js/ktp-roi-ocr.js, resources/views/settings/patients/_ktp-scan.blade.php, tools/ktp-ocr-benchmark/**
+alwaysApply: false
+---
+
+# KTP live field overlay
+
+Sprint doc: `docs/sprints/revision-patient-ktp-live-field-overlay-ocr-1.md`.
+Extends rules 177 (OCR is a suggestion), 178 (who may use it), 179 (how a value
+is read) and 180 (consent first). None of them is relaxed; where this rule is
+silent, they govern.
+
+## What it is
+
+While the camera is open, `resources/js/ktp-live-camera.js` (lazy chunk) reads a
+DOWNSCALED copy of the preview a few times a second, finds the card with the
+shipped detector, and draws the card outline and the template's field boxes over
+the video as an SVG layer, with a RED / YELLOW / GREEN indicator and plain
+instructions. The geometry, quality and capture rules are pure functions in
+`resources/js/ktp-live-overlay.js` (node-tested); the analysis runs in
+`resources/js/ktp-live-tracker.worker.js` when the browser has module workers,
+otherwise on the main thread. OCR still runs once, after the photo is taken.
+
+## Foundations
+
+1. **D7 consent before ANY camera processing.** The camera opens only after the
+   KTP holder's "yes" (rule 180 §3), and the live module is imported only after
+   the camera opened. Every analysis tick re-asks `liveTrackingAllowed()` (OCR on
+   the page + accepted consent + usable wording, defined once in
+   `ktp-camera-ocr.js`); a "no", a closed camera or a cleared page ends tracking
+   before the next frame is read. Clearing the photo resets consent AND closes
+   the camera opened under it, and `capture()` refuses once tracking ended.
+2. **Live tracking never runs before consent** — not on a static illustration,
+   not "in the background", not to warm anything up.
+3. **One coordinate model.** Field boxes are the versioned template
+   (`KTP_TEMPLATE` via `templateBoxes`), normalized 0..1 on the card; the live
+   overlay maps them through the card homography. Never keep a second ROI
+   coordinate system, and never hard-code pixel boxes for the preview.
+4. **The overlay follows verified geometry only.** A detected quad is validated
+   before a homography is built from it (`assessGeometry`): four finite points,
+   convex and in `[tl, tr, br, bl]` order as given (a bow-tie is refused, never
+   repaired), inside the frame bounds, a well-defined homography over the whole
+   card, card-shaped (a portrait-held card is its own reason), perspective under
+   the rejection bound.
+5. **Invalid geometry fails safe.** No card means RED with a neutral hint frame —
+   never a guessed outline. The mapping onto the screen is computed from the
+   video's layout box in CSS pixels (`clientWidth/Height`), honouring
+   `object-fit` and a mirroring CSS transform; device pixel ratio and page zoom
+   do not move it.
+6. **The overlay is never part of the photo.** It is a separate SVG layer; the
+   capture draws only the video frame into its canvases. Do not draw, serialize
+   or composite the overlay into an image.
+7. **OCR runs after capture, never on every frame.** The preview analysis is
+   bounded: never two at once, at most every `minIntervalMs`, slower when the
+   device is slower (`cpuBudget`), and a worker that stops answering is dropped
+   for the main-thread path.
+8. **Capture geometry comes from the captured pixels.** The live corners, frozen
+   when the button is pressed, are only COMPARED with a detection on the captured
+   frame (`confirmCaptureGeometry`). A capture where the card is not found passes
+   NO corners on (`unconfirmed`): the read detects the edge itself or the
+   operator sets the corners. Stale live geometry is never used.
+9. **The existing ROI OCR is reused** (rule 179) — the field read takes the
+   capture-confirmed corners as `boundary.reason = 'live'`, distinct from an
+   operator corner edit (`manual`). Boxes stay editable, BACA ULANG stays per
+   field, the corner editor stays available.
+10. **Whole-document OCR remains** the companion read and the fallback
+    (rule 179 §1); a field pipeline failure still falls back to it.
+11. **The photo keeps the card's original pixels.** Only a `confirmed` capture
+    (the live card and the card found on the captured pixels agree) is cropped,
+    to the card's bounding box plus a margin; any other outcome keeps the whole
+    frame, so one wrong detection never cuts the stored document. Nothing is
+    warped. A lossless copy is read by OCR; the uploaded document is the JPEG it
+    always was. A pending lossless copy and corner hint belong to one photo:
+    a new photo, a manual file or a scan discards them, and the confirm handler
+    takes the photo (upload, lossless copy, hint) as ONE object before its first
+    `await` — while an upload and read are in flight, no other photo, camera or
+    scan may start.
+12. **Operator verification stays mandatory.** GREEN means geometry and image
+    look suitable, never that the read is right (rule 177 §4). The screen says so.
+13. **OCR results stay suggestions** and are applied only by explicit selection
+    ("Terapkan"), never over a value silently; registration is never submitted
+    automatically.
+14. **NIK masking, private KTP storage and branch isolation** are unchanged. The
+    overlay draws only the template's own field labels — never OCR text — and
+    its statistics are counts and timings only (no corners, pixels or text).
+15. **The pilot gate stays the single decider** (rule 178). The overlay markup is
+    inside the camera block, which only a pilot-eligible operator receives. A
+    release never arms the flag, widens the cohort or extends the period.
+16. **Scanner and manual upload remain** complete, consent-free paths for
+    registration without OCR (rule 180 §6).
+17. **No automatic clinical rollout.** Engineering GO is not a real-device,
+    real-card or clinical result. Fake-camera and synthetic-frame runs are
+    browser-only evidence; real-device and real-KTP results are measured on site
+    under consent, or reported `PENDING`.
+18. **No network, no storage.** The live code makes no request, uses no
+    browser storage and sends nothing to any third party; the worker returns
+    numbers only.
+19. **Thresholds are calibrated, not invented.** The quality limits in
+    `LIVE_LIMITS` were set from the synthetic frames of
+    `tools/ktp-ocr-benchmark/generate_live_frames.py`; change them only from
+    measured pilot data, and record the measurement.
+20. **Tailwind only compiles classes it finds in Blade.** Indicator variants are
+    pre-rendered in the view; SVG colours are design-token hex values set as
+    attributes in JS. Never add a Tailwind class only in JS.
+
+## Release discipline
+
+- Production deployment runs `scripts/deploy-vps-runner.sh` ON the VPS, never
+  locally; a started deploy is not a finished one (`exit=0` + `DEPLOY OK`).
+- A GO tag needs the evidence first and is never moved.
+- Cleanup removes only task-owned processes, worktrees and files.
+
+## Gotchas
+
+- `npm run build` emits the worker as a self-contained IIFE constructed with
+  `{ type: 'module' }`; an IIFE is valid module code. A browser without module
+  workers throws on construction, which the overlay turns into the main-thread
+  path. Do not "fix" a browser test by removing `window.Worker` altogether —
+  tesseract.js needs a classic worker and OCR would fail for a reason no real
+  browser has.
+- With a live hint the pilot metric `card_found` means "found by the
+  capture-time detection on the photo" — still a detection on the stored pixels,
+  never assumed from the preview.
+- Measuring burn-in by colour must use a colour the card does not contain: the
+  fictional card has red elements, so the GREEN stroke colour is the probe, and
+  the measure is paired with a control that draws the outline in and must see it.

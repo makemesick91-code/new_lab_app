@@ -59,3 +59,7 @@ Extends rules 177 (OCR is a suggestion), 178 (who may use it) and 179 (how it re
 12. **The pilot period is not extended by this rule or by any release.** The
     2026-10-16 end date stands; at period end disarm or record a fresh owner decision
     (rule 178 §16).
+13. **The live field overlay is image processing too** (rule 181): it starts only
+    once the camera is open — which already needs the "yes" — re-checks the answer
+    on every analysis, and stops at once when the camera closes or the answer is
+    withdrawn. No frame is analysed before the "yes", ever.

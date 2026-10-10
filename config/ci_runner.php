@@ -849,6 +849,16 @@ return [
         // rename cannot drop it.
         'tests/Feature/RME/PatientKtpOcrConsentTest.php',
 
+        // REVISION-PATIENT-KTP-LIVE-FIELD-OVERLAY-OCR-1 — live field overlay on
+        // the camera preview. Pins that the overlay markup is rendered only
+        // inside the pilot-gated camera block and after the D7 consent panel,
+        // carries no script, URL or server-side state, and that the release adds
+        // no route (the parse endpoint still refuses text without consent). The
+        // browser logic is pinned by tests/js/ktp-live-overlay.test.mjs (run by
+        // the quality gate). Selected by the existing `PatientKtp` token;
+        // declared so a rename cannot drop it.
+        'tests/Feature/RME/PatientKtpLiveFieldOverlayTest.php',
+
         // FEATURE-DAILY-BRANCH-CONTEXT-LOCK-1 — the daily working-branch lock
         // for Kasir and Admin Klinik, and the Super Admin approval that is the
         // only way past it.

@@ -1,0 +1,356 @@
+{
+ "release": "REVISION-PATIENT-KTP-LIVE-FIELD-OVERLAY-OCR-1",
+ "kind": "SYNTHETIC \u2014 48 fictional machine-made camera frames (8 identities x 6 conditions); not real-card accuracy",
+ "corpus_generator": "tools/ktp-ocr-benchmark/generate_live_frames.py --seed 11",
+ "methods_compared": {
+  "baseline": "A: whole-card OCR on the previous release capture of the frame",
+  "hybrid": "B: field-based ROI OCR (auto card detection) on the previous release capture",
+  "live": "C: live-aligned \u2014 capture check on the captured pixels, card crop, lossless field read with capture-confirmed corners"
+ },
+ "corpus": "48 fictional synthetic KTP frames",
+ "methods": {
+  "baseline": {
+   "exact": 212,
+   "wrong": 69,
+   "missing": 7,
+   "conflict": 0,
+   "wrongPreselected": 40,
+   "preselected": 195,
+   "preselectedCorrect": 155,
+   "perField": {
+    "ktp_number": {
+     "correct": 40,
+     "wrong": 2,
+     "missing": 6,
+     "conflict": 0,
+     "fhc": 1
+    },
+    "name": {
+     "correct": 42,
+     "wrong": 6,
+     "missing": 0,
+     "conflict": 0,
+     "fhc": 3
+    },
+    "date_of_birth": {
+     "correct": 47,
+     "wrong": 0,
+     "missing": 1,
+     "conflict": 0,
+     "fhc": 0
+    },
+    "gender": {
+     "correct": 48,
+     "wrong": 0,
+     "missing": 0,
+     "conflict": 0,
+     "fhc": 0
+    },
+    "address": {
+     "correct": 29,
+     "wrong": 19,
+     "missing": 0,
+     "conflict": 0,
+     "fhc": 7
+    },
+    "occupation": {
+     "correct": 6,
+     "wrong": 42,
+     "missing": 0,
+     "conflict": 0,
+     "fhc": 29
+    }
+   }
+  },
+  "field_only": {
+   "exact": 277,
+   "wrong": 11,
+   "missing": 0,
+   "conflict": 0,
+   "wrongPreselected": 8,
+   "preselected": 278,
+   "preselectedCorrect": 270,
+   "perField": {
+    "ktp_number": {
+     "correct": 48,
+     "wrong": 0,
+     "missing": 0,
+     "conflict": 0,
+     "fhc": 0
+    },
+    "name": {
+     "correct": 47,
+     "wrong": 1,
+     "missing": 0,
+     "conflict": 0,
+     "fhc": 1
+    },
+    "date_of_birth": {
+     "correct": 48,
+     "wrong": 0,
+     "missing": 0,
+     "conflict": 0,
+     "fhc": 0
+    },
+    "gender": {
+     "correct": 48,
+     "wrong": 0,
+     "missing": 0,
+     "conflict": 0,
+     "fhc": 0
+    },
+    "address": {
+     "correct": 39,
+     "wrong": 9,
+     "missing": 0,
+     "conflict": 0,
+     "fhc": 7
+    },
+    "occupation": {
+     "correct": 47,
+     "wrong": 1,
+     "missing": 0,
+     "conflict": 0,
+     "fhc": 0
+    }
+   }
+  },
+  "hybrid": {
+   "exact": 231,
+   "wrong": 6,
+   "missing": 0,
+   "conflict": 51,
+   "wrongPreselected": 6,
+   "preselected": 233,
+   "preselectedCorrect": 227,
+   "perField": {
+    "ktp_number": {
+     "correct": 48,
+     "wrong": 0,
+     "missing": 0,
+     "conflict": 0,
+     "fhc": 0
+    },
+    "name": {
+     "correct": 42,
+     "wrong": 0,
+     "missing": 0,
+     "conflict": 6,
+     "fhc": 0
+    },
+    "date_of_birth": {
+     "correct": 48,
+     "wrong": 0,
+     "missing": 0,
+     "conflict": 0,
+     "fhc": 0
+    },
+    "gender": {
+     "correct": 48,
+     "wrong": 0,
+     "missing": 0,
+     "conflict": 0,
+     "fhc": 0
+    },
+    "address": {
+     "correct": 38,
+     "wrong": 6,
+     "missing": 0,
+     "conflict": 4,
+     "fhc": 6
+    },
+    "occupation": {
+     "correct": 7,
+     "wrong": 0,
+     "missing": 0,
+     "conflict": 41,
+     "fhc": 0
+    }
+   }
+  },
+  "live": {
+   "exact": 231,
+   "wrong": 7,
+   "missing": 0,
+   "conflict": 50,
+   "wrongPreselected": 7,
+   "preselected": 236,
+   "preselectedCorrect": 229,
+   "perField": {
+    "ktp_number": {
+     "correct": 48,
+     "wrong": 0,
+     "missing": 0,
+     "conflict": 0,
+     "fhc": 0
+    },
+    "name": {
+     "correct": 43,
+     "wrong": 0,
+     "missing": 0,
+     "conflict": 5,
+     "fhc": 0
+    },
+    "date_of_birth": {
+     "correct": 48,
+     "wrong": 0,
+     "missing": 0,
+     "conflict": 0,
+     "fhc": 0
+    },
+    "gender": {
+     "correct": 48,
+     "wrong": 0,
+     "missing": 0,
+     "conflict": 0,
+     "fhc": 0
+    },
+    "address": {
+     "correct": 38,
+     "wrong": 7,
+     "missing": 0,
+     "conflict": 3,
+     "fhc": 7
+    },
+    "occupation": {
+     "correct": 6,
+     "wrong": 0,
+     "missing": 0,
+     "conflict": 42,
+     "fhc": 0
+    }
+   }
+  },
+  "live_field_only": {
+   "exact": 275,
+   "wrong": 12,
+   "missing": 1,
+   "conflict": 0,
+   "wrongPreselected": 11,
+   "preselected": 277,
+   "preselectedCorrect": 266,
+   "perField": {
+    "ktp_number": {
+     "correct": 48,
+     "wrong": 0,
+     "missing": 0,
+     "conflict": 0,
+     "fhc": 0
+    },
+    "name": {
+     "correct": 47,
+     "wrong": 1,
+     "missing": 0,
+     "conflict": 0,
+     "fhc": 1
+    },
+    "date_of_birth": {
+     "correct": 48,
+     "wrong": 0,
+     "missing": 0,
+     "conflict": 0,
+     "fhc": 0
+    },
+    "gender": {
+     "correct": 47,
+     "wrong": 0,
+     "missing": 1,
+     "conflict": 0,
+     "fhc": 0
+    },
+    "address": {
+     "correct": 39,
+     "wrong": 9,
+     "missing": 0,
+     "conflict": 0,
+     "fhc": 8
+    },
+    "occupation": {
+     "correct": 46,
+     "wrong": 2,
+     "missing": 0,
+     "conflict": 0,
+     "fhc": 2
+    }
+   }
+  }
+ },
+ "conflicts": {
+  "total": 51,
+  "fieldReadIsTrue": 46
+ },
+ "latencyMs": {
+  "baseline": {
+   "median": 869,
+   "p90": 1112,
+   "max": 1275
+  },
+  "hybrid": {
+   "median": 1732,
+   "p90": 2053,
+   "max": 2357
+  },
+  "live": {
+   "median": 1835,
+   "p90": 2213,
+   "max": 2461
+  }
+ },
+ "stagesMs": {
+  "boundary": {
+   "median": 39,
+   "max": 103
+  },
+  "normalize": {
+   "median": 51,
+   "max": 85
+  },
+  "document": {
+   "median": 1194,
+   "max": 1601
+  },
+  "fields": {
+   "median": 433,
+   "max": 887
+  }
+ },
+ "byScene": {
+  "frame_clear": {
+   "baseline": 37,
+   "hybrid": 39,
+   "live": 38
+  },
+  "frame_rotated": {
+   "baseline": 28,
+   "hybrid": 40,
+   "live": 40
+  },
+  "frame_perspective": {
+   "baseline": 37,
+   "hybrid": 39,
+   "live": 39
+  },
+  "frame_dim_blur": {
+   "baseline": 38,
+   "hybrid": 38,
+   "live": 38
+  },
+  "frame_glare": {
+   "baseline": 34,
+   "hybrid": 36,
+   "live": 37
+  },
+  "frame_720p": {
+   "baseline": 38,
+   "hybrid": 39,
+   "live": 39
+  }
+ },
+ "liveCapture": {
+  "confirmed": 48
+ },
+ "livePreviewLevel": {
+  "green": 24,
+  "yellow": 24
+ }
+}

@@ -34,6 +34,7 @@ import {
     ROI_LIMITS,
 } from './ktp-roi-ocr.js';
 import { toOcrLines, STATUS_LABELS } from './ktp-camera-ocr.js';
+import { hintToPixelCorners } from './ktp-live-overlay.js';
 
 /**
  * Rows of the verification table. `form` rows can be applied to the patient
@@ -771,6 +772,8 @@ export function createKtpOcrSession(deps) {
             boundaryMsg.textContent = 'Mode baca utuh: kotak isian tidak tersedia untuk foto ini.';
         } else if (boundary?.reason === 'manual') {
             boundaryMsg.textContent = 'Sudut KTP diatur manual.';
+        } else if (boundary?.reason === 'live') {
+            boundaryMsg.textContent = 'Tepi KTP dari bingkai kamera terkonfirmasi pada foto dan diluruskan. Geser kotak bila ada isian yang terpotong, lalu BACA ULANG.';
         } else if (boundary?.found) {
             boundaryMsg.textContent = 'Tepi KTP terdeteksi dan diluruskan. Geser kotak bila ada isian yang terpotong, lalu BACA ULANG.';
         } else {
@@ -791,12 +794,26 @@ export function createKtpOcrSession(deps) {
                 state.image = await guard(blobToImage(blob));
                 state.rows = null;
             }
+            // Corners confirmed on the captured pixels by the live overlay
+            // (normalized to that photo). A hint that does not form a usable
+            // card on THIS image is dropped and the edge is detected as before.
+            let corners = options.corners;
+            let cornerSource = null;
+            if (!corners && blob && options.cornerHint) {
+                const live = hintToPixelCorners(options.cornerHint, state.image.width, state.image.height);
+                if (live) {
+                    corners = live;
+                    cornerSource = 'live';
+                }
+            }
             state.mode = 'hybrid';
             let out;
             try {
                 out = await runFieldOcr(state.image, {
                     recognize,
-                    corners: options.corners,
+                    corners,
+                    cornerSource,
+                    cornerConfidence: typeof options.cornerHint?.confidence === 'number' ? options.cornerHint.confidence : undefined,
                     yieldToUi,
                     onStage: (s) => deps.setStatus({
                         boundary: 'Mendeteksi tepi KTP…',
