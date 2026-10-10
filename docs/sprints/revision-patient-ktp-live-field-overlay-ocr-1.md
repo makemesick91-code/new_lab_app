@@ -162,3 +162,20 @@ still a detection on the stored pixels, never assumed.
 ## 10. Status
 
 Engineering only. Real-device, real-card and clinical results are owner/pilot evidence, not this release's.
+
+## 11. Release evidence (2026-10-10)
+
+| Item | Value |
+|---|---|
+| PR | #471, squash-merged as `6c4f3608135dab694ede6dccd6defd9284579750` |
+| Tree | `e68385be119669774e5d496d4ea3087fbf97d391`, identical to the CI-tested candidate `f6523958` |
+| CI | run `38056384975`: classifier, NSF-R012 quality (JS 199/199), NSF-R011 critical (5,425 passed, incl. `PatientKtpLiveFieldOverlayTest`), selective module, Android, NSF-9, NSF-10 all green. Full Suite **skipped** by the standing temporary policy, not passed. |
+| Deploy | `scripts/deploy-vps-runner.sh` executed ON the VPS: `exit=0`, `DEPLOY OK: 20261010-154422`, `DEPLOY_HEAD_TARGET_MATCH=YES` |
+| Backup | `pre_auto_deploy_20261010-154422.sql` (32,120,983 bytes) taken before migrate; nothing to migrate |
+| Production | `https://daengtisia.online`: `/login`, `/health/live`, `/health/ready`, `/health/lb` 200; `/storage/*` 403; the three live-overlay assets served (200); `app.js` loads `ktp-live-camera.js` only as a dynamic import; env pilot, debug and maintenance off; queue worker active, no failed jobs; no application error logged since the deploy |
+| Pilot posture | unchanged: ARMED for operator 29 at SPN4, 2026-10-10 to 2026-10-16, no device lock, consent `D7-2026-10-10` usable |
+| GO tag | `revision-patient-ktp-live-field-overlay-ocr-1-go` (annotated) on `6c4f3608` |
+
+Real-device test, real-KTP accuracy and clinical pilot results remain **PENDING**; this tag is an engineering
+release only. The deploy smoke's `http://127.0.0.1/login` 404 is the known co-tenant nginx shadow; the canonical
+domain answers 200.
