@@ -5,12 +5,14 @@ namespace App\Modules\Patient\Requests;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\Patient\Services\KtpCameraOcrPilotGate;
 use App\Modules\Patient\Services\KtpOcrParser;
+use App\Modules\Patient\Services\KtpOcrSuggestionService;
 use Illuminate\Foundation\Http\FormRequest;
 
 /**
  * REVISION-REGISTRATION-KTP-CAMERA-OCR-1 — bounds the OCR text the browser
  * sends back. The text is untrusted input: it is length-capped here, parsed by
- * {@see KtpOcrParser}, and never persisted.
+ * {@see KtpOcrParser} (reconciled by {@see KtpOcrSuggestionService} when a
+ * per-field read is sent too), and never persisted.
  * Authorization mirrors patient creation, exactly like the KTP temp upload.
  */
 class ParseKtpOcrRequest extends FormRequest
@@ -44,6 +46,13 @@ class ParseKtpOcrRequest extends FormRequest
             'lines.*' => ['array:text,confidence'],
             'lines.*.text' => ['present', 'nullable', 'string', 'max:'.$maxLength],
             'lines.*.confidence' => ['nullable', 'numeric', 'between:0,100'],
+            // REVISION-PATIENT-KTP-OCR-FIELD-BASED-ROI-1 — the optional per-field
+            // read. Only known field regions; text and confidence only; the
+            // label each value is parsed under is chosen by the server.
+            'fields' => ['sometimes', 'nullable', 'array:'.implode(',', array_keys(KtpOcrSuggestionService::FIELD_LABELS))],
+            'fields.*' => ['array:text,confidence'],
+            'fields.*.text' => ['present', 'nullable', 'string', 'max:'.$maxLength],
+            'fields.*.confidence' => ['nullable', 'numeric', 'between:0,100'],
         ];
     }
 }

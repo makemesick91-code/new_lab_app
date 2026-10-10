@@ -829,6 +829,16 @@ return [
         // existing `PatientKtp` token; declared here so a rename cannot drop it.
         'tests/Feature/RME/PatientKtpCameraOcrPilotTest.php',
 
+        // REVISION-PATIENT-KTP-OCR-FIELD-BASED-ROI-1 — the server side of the
+        // hybrid read. Pins that two disagreeing reads are never resolved by
+        // OCR confidence (value null, both listed, nothing pre-selected), that
+        // an invalid field read is never offered, that a field read cannot
+        // address another field (the server chooses each label), that the NIK
+        // cross-check still runs on the reconciled values, and that the field
+        // payload is bounded and stays behind the pilot gate. Selected by the
+        // existing `PatientKtp` token; declared so a rename cannot drop it.
+        'tests/Feature/RME/PatientKtpOcrFieldRoiTest.php',
+
         // FEATURE-DAILY-BRANCH-CONTEXT-LOCK-1 — the daily working-branch lock
         // for Kasir and Admin Klinik, and the Super Admin approval that is the
         // only way past it.
