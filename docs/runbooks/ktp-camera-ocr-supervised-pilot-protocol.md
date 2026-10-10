@@ -104,6 +104,29 @@ camera light turns off after capture · recovery after denying permission once.
   multi-line address · uncommon occupation.
 - Never photograph a KTP outside the registration screen; never forward it by chat or email.
 
+### 3.3 Live field overlay (since REVISION-PATIENT-KTP-LIVE-FIELD-OVERLAY-OCR-1)
+
+After the "yes", the camera preview shows the card outline and one box per KTP
+field drawn over the video, plus an indicator. Line the physical card up with the
+boxes before pressing **Ambil Foto**:
+
+| Indicator | Meaning | What to do |
+|---|---|---|
+| **MERAH** | No card found yet. A dashed frame shows where to put it. | Hold the card flat (landscape), fully visible, filling the dashed frame. |
+| **KUNING** | Card found, but something can be improved. | Follow the instruction under the indicator (move closer, straighten, reduce glare, add light, hold still). |
+| **HIJAU** | Card position and image look suitable. | Hold still and press **Ambil Foto**. |
+
+- **HIJAU is not a promise that the read is right.** Every suggestion is still
+  checked against the physical card before it is applied (§3.2).
+- A photo can be taken in any colour. After the photo, the screen says whether the
+  card edge was **confirmed on the photo itself**. If it says *tidak terkonfirmasi*,
+  the whole frame was kept: after the read, use **Atur Sudut KTP** if a box does
+  not fit, or take the photo again.
+- The overlay is drawn on the screen only; it is never part of the stored photo.
+- The §4 sheet's columns are unchanged. Optionally note the colour shown when the
+  photo was taken and whether the capture said *terkonfirmasi* in the `notes` cell,
+  e.g. `overlay=hijau; tepi=terkonfirmasi` — words only, never a value from the card.
+
 ## 4. What to record per capture (no identifiers)
 
 One row per capture. **Never** write the NIK, name, address or birth date — only outcomes.

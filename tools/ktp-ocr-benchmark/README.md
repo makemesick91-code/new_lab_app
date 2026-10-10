@@ -12,6 +12,9 @@ Nothing here touches a database, a real card or the network.
 | `summarize.mjs` | Turns a baseline run and a hybrid run into counts and timings only (no OCR text). |
 | `browser_e2e.php` | Local WebDriver walk-through of the operator screen. Refuses any non-local base URL. Since PHASE-3 it answers the D7 consent panel for the fictional card (and checks that clearing the photo asks again). |
 | `png.mjs` | Minimal PNG encoder for the Node harness. |
+| `generate_live_frames.py` | REVISION-PATIENT-KTP-LIVE-FIELD-OVERLAY-OCR-1: full fictional CAMERA FRAMES (1080p/720p, six conditions) plus the previous release's capture of the same frame, so baseline / hybrid / live are measured on identical pixels; `--y4m` writes fake-camera clips for Chrome. |
+| `run_benchmark.mjs --mode=live` | Runs the shipped live path on the full frame: preview analysis, capture check on the captured pixels, card crop, field read on the lossless crop with the capture-confirmed corners. |
+| `live_overlay_e2e_setup.php` / `live_overlay_e2e.php` | Local WebDriver walk-through of the live overlay with Chrome's fake camera fed a fictional card (consent paths, on-screen alignment, letterbox, mirror, burn-in control, capture/retake cycles, no-module-worker fallback). The setup refuses anything but a new local SQLite file outside the repository. |
 
 ## Reproduce
 
@@ -20,6 +23,14 @@ python3 tools/ktp-ocr-benchmark/generate_synthetic_ktp.py /tmp/ktp-corpus --seed
 node tools/ktp-ocr-benchmark/run_benchmark.mjs /tmp/ktp-corpus /tmp/baseline.json --mode=baseline
 node tools/ktp-ocr-benchmark/run_benchmark.mjs /tmp/ktp-corpus /tmp/hybrid.json --mode=hybrid
 node tools/ktp-ocr-benchmark/summarize.mjs /tmp/baseline.json /tmp/hybrid.json /tmp/summary.json
+```
+
+Live overlay (three methods on identical frames):
+
+```bash
+python3 tools/ktp-ocr-benchmark/generate_live_frames.py /tmp/ktp-live --seed 11 --y4m
+for m in baseline hybrid live; do node tools/ktp-ocr-benchmark/run_benchmark.mjs /tmp/ktp-live /tmp/$m.json --mode=$m; done
+node tools/ktp-ocr-benchmark/summarize.mjs /tmp/baseline.json /tmp/hybrid.json /tmp/live-summary.json /tmp/live.json
 ```
 
 Write the corpus and the raw runs outside the repository. The raw runs carry the

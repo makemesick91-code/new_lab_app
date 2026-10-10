@@ -111,3 +111,9 @@ These numbers are fixtures for regression, not a claim about real cards.
 to the D7 wording; the parse request carries that attestation. The screen's
 "Catatan pilot" line counts box moves, corner re-reads and per-field BACA ULANG
 presses without any value — use it to fill the protocol §4 sheet.
+
+**Live overlay (rule 181):** the same template boxes are drawn over the camera
+preview, and a camera capture whose card is confirmed ON THE CAPTURED PIXELS
+reaches this read with those corners as `boundary.reason = 'live'` (an operator
+corner edit stays `manual`). An unconfirmed capture passes no corners — the read
+detects the edge itself, exactly as before.

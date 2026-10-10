@@ -91,3 +91,7 @@ android/**/*.p12
 android/**/*.pfx
 android/**/keystore.properties
 android/**/signing.properties
+
+# Python bytecode (benchmark generators)
+__pycache__/
+*.pyc

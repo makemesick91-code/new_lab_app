@@ -237,6 +237,15 @@ export function consentAllowsOcr(consent, version) {
     return consent === CONSENT.ACCEPTED && typeof version === 'string' && version.trim() !== '';
 }
 
+/**
+ * REVISION-PATIENT-KTP-LIVE-FIELD-OVERLAY-OCR-1 — the live preview analysis is
+ * image processing of the KTP, so it needs the same "yes" as OCR (rule 180 §3):
+ * OCR on this page, an answer, and a usable approved wording.
+ */
+export function liveTrackingAllowed({ ocrEnabled, consent, consentVersion } = {}) {
+    return ocrEnabled === true && consentAllowsOcr(consent, consentVersion);
+}
+
 /** The attestation the parse endpoint requires, or null when there is none. */
 export function consentPayload(consent, version) {
     return consentAllowsOcr(consent, version) ? { consent: true, consent_version: version.trim() } : null;
@@ -250,6 +259,14 @@ const OCR_ASSET_DIR = typeof __DMS_OCR_ASSET_DIR__ !== 'undefined' ? __DMS_OCR_A
 function canvasToBlob(canvas, quality) {
     return new Promise((resolve, reject) => {
         canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('encode'))), 'image/jpeg', quality);
+    });
+}
+
+// The live capture keeps a lossless copy for the field read, so small NIK
+// digits are not first damaged by JPEG (the uploaded document stays a JPEG).
+function canvasToPngBlob(canvas) {
+    return new Promise((resolve, reject) => {
+        canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('encode'))), 'image/png');
     });
 }
 
@@ -323,7 +340,11 @@ export function initKtpScan(root) {
     let deviceIndex = -1;
     let busy = false;
     let consent = null; // D7: null (not asked) | CONSENT.ACCEPTED | CONSENT.DECLINED — this page only
-    let consentNext = null; // what a "yes" continues with: { camera: true } or { blob }
+    let consentNext = null; // what a "yes" continues with: { camera: true } or { blob, cornerHint }
+    let liveOverlay = null; // live field overlay on the preview (only while the camera is open)
+    let liveAttempt = 0; // bumped on every camera close, so a late-loading overlay never starts
+    let pendingOcrBlob = null; // lossless copy of a live capture, read instead of the JPEG
+    let pendingCornerHint = null; // corners confirmed on the captured pixels (never live-only)
 
     const setStatus = (msg, tone) => {
         statusEl.textContent = msg;
@@ -354,18 +375,39 @@ export function initKtpScan(root) {
         if (body) body.replaceChildren();
     };
 
+    // A new photo or a different source always replaces the live capture's
+    // lossless copy and corner hint — they belong to one photo only.
+    const discardPending = () => {
+        pendingBlob = null;
+        pendingOcrBlob = null;
+        pendingCornerHint = null;
+    };
+
     const clearAll = ({ keepConsent = false } = {}) => {
         // The temp image stays referenced by the token until a new upload
         // replaces it (server discards the superseded one) or it is pruned.
         previewImg.removeAttribute('src');
         previewWrap.classList.add('hidden');
         confirmBar?.classList.add('hidden');
-        pendingBlob = null;
+        discardPending();
         clearBtn.disabled = true;
         resetResults(); // also cancels an unanswered consent question
         // Clearing the photo may mean a different KTP holder, so the answer is
-        // asked again — except on a retake of the same card ("Ulangi").
-        if (!keepConsent) consent = null;
+        // asked again — except on a retake of the same card ("Ulangi"). The
+        // camera was opened under the old answer, so it closes with it.
+        if (!keepConsent) {
+            consent = null;
+            stopCamera();
+        }
+    };
+
+    // While a photo is being uploaded and read, no other photo may start: the
+    // read must belong to the photo that was uploaded.
+    const blockedWhileBusy = () => {
+        if (!busy) return false;
+        setStatus('Tunggu sampai foto selesai diunggah dan dibaca.', 'info');
+
+        return true;
     };
 
     // D7 — ask before the camera opens and before OCR reads an image from any
@@ -398,7 +440,7 @@ export function initKtpScan(root) {
 
     /* ---- OCR ---- */
 
-    const runOcr = async (blob) => {
+    const runOcr = async (blob, cornerHint = null) => {
         if (!ocrEnabled) return;
         if (!consentAllowsOcr(consent, consentVersion)) {
             // A "no" is an answer: the image stays a plain document upload, as
@@ -406,7 +448,7 @@ export function initKtpScan(root) {
             if (consent === CONSENT.DECLINED) {
                 setStatus('Foto KTP tersimpan. Pembacaan otomatis tidak dijalankan karena pemilik KTP tidak setuju — isi data secara manual.', 'info');
             } else {
-                askConsent({ blob });
+                askConsent({ blob, cornerHint });
             }
             return;
         }
@@ -426,7 +468,7 @@ export function initKtpScan(root) {
                 formValue: (name) => field(name)?.value ?? '',
                 consent: consentPayload(consent, consentVersion),
             });
-            await ocrSession.read(blob);
+            await ocrSession.read(blob, { cornerHint });
         } catch {
             if (run === ocrRun) setStatus('OCR gagal. Foto KTP tetap tersimpan; isi data secara manual.', 'error');
         }
@@ -458,16 +500,21 @@ export function initKtpScan(root) {
     $('[data-ktp-confirm]')?.addEventListener('click', async () => {
         if (!pendingBlob || busy) return;
         busy = true;
+        // One photo, taken as a whole NOW: the upload, the lossless copy and the
+        // corner hint must all be the same picture (rule 181 §11).
+        const photo = { blob: pendingBlob, ocrBlob: pendingOcrBlob, hint: pendingCornerHint };
         confirmBar.classList.add('hidden');
         setStatus('Mengompres dan mengunggah foto…', 'info');
         try {
-            const compressed = await compressImage(pendingBlob);
+            const compressed = await compressImage(photo.blob);
             const dataUrl = await blobToDataUrl(compressed);
             previewImg.src = dataUrl;
             await upload(dataUrl, 'image/jpeg', 'ktp-kamera.jpg');
-            pendingBlob = null;
+            const ocrSource = photo.ocrBlob ?? compressed;
+            const cornerHint = photo.ocrBlob ? photo.hint : null;
+            if (pendingBlob === photo.blob) discardPending();
             setStatus('Foto KTP tersimpan.', 'ok');
-            await runOcr(compressed);
+            await runOcr(ocrSource, cornerHint);
         } catch (e) {
             confirmBar.classList.remove('hidden');
             setStatus(e?.message && !e.message.startsWith('encode') ? e.message : 'Upload gagal. Coba lagi.', 'error');
@@ -477,6 +524,7 @@ export function initKtpScan(root) {
     });
 
     $('[data-ktp-retake]')?.addEventListener('click', () => {
+        if (blockedWhileBusy()) return;
         clearAll({ keepConsent: true });
         if (root.dataset.lastSource === 'camera' && consentAllowsOcr(consent, consentVersion)) openCamera();
     });
@@ -487,7 +535,43 @@ export function initKtpScan(root) {
     const video = $('[data-ktp-video]');
     const switchBtn = $('[data-ktp-camera-switch]');
 
+    const stopLiveOverlay = () => {
+        liveAttempt++;
+        liveOverlay?.destroy();
+        liveOverlay = null;
+    };
+
+    // Loaded only here, after the camera opened — which itself needed the D7
+    // "yes". If the module cannot load or start, the static guide frame and the
+    // previous capture stay in use.
+    const startLiveOverlay = async (openedAt) => {
+        stopLiveOverlay(); // at most one overlay, ever
+        const attempt = ++liveAttempt;
+        const allowed = () => stream !== null && liveTrackingAllowed({ ocrEnabled, consent, consentVersion });
+        if (!allowed() || !root.querySelector('[data-ktp-live-overlay]')) return;
+        try {
+            const { createLiveOverlay } = await import('./ktp-live-camera.js');
+            if (attempt !== liveAttempt || !allowed()) return; // closed or declined while loading
+            const overlay = createLiveOverlay({
+                root,
+                video,
+                isAllowed: allowed,
+                startedAt: openedAt,
+                onStopped: () => {
+                    if (liveOverlay === overlay) liveOverlay = null;
+                },
+            });
+            if (overlay.start() && attempt === liveAttempt) liveOverlay = overlay;
+            else overlay.destroy();
+        } catch {
+            liveOverlay = null;
+        }
+    };
+
+    let cameraAttempt = 0;
     const stopCamera = () => {
+        cameraAttempt++; // a camera still being opened is closed when it arrives
+        stopLiveOverlay();
         stream?.getTracks().forEach((t) => t.stop());
         stream = null;
         if (video) video.srcObject = null;
@@ -501,17 +585,28 @@ export function initKtpScan(root) {
             return;
         }
         stopCamera();
+        const attempt = cameraAttempt;
         setStatus('Membuka kamera…', 'info');
+        const openedAt = performance.now();
         try {
-            stream = await navigator.mediaDevices.getUserMedia(cameraConstraints(deviceId));
+            const opened = await navigator.mediaDevices.getUserMedia(cameraConstraints(deviceId));
+            if (attempt !== cameraAttempt) {
+                // Closed, declined or re-opened while the browser was opening it.
+                opened.getTracks().forEach((t) => t.stop());
+
+                return;
+            }
+            stream = opened;
             video.srcObject = stream;
             await video.play().catch(() => {});
             cameraWrap.classList.remove('hidden');
             videoDevices = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'videoinput');
+            if (attempt !== cameraAttempt) return;
             const activeId = stream.getVideoTracks()[0]?.getSettings?.().deviceId;
             deviceIndex = Math.max(0, videoDevices.findIndex((d) => d.deviceId === activeId));
             switchBtn.classList.toggle('hidden', videoDevices.length < 2);
             setStatus('Posisikan KTP di dalam bingkai, lalu tekan Ambil Foto.', 'info');
+            startLiveOverlay(openedAt);
         } catch (e) {
             stopCamera();
             setStatus(cameraErrorMessage(e, true), 'error');
@@ -519,6 +614,7 @@ export function initKtpScan(root) {
     };
 
     $('[data-ktp-camera-open]')?.addEventListener('click', () => {
+        if (blockedWhileBusy()) return;
         // Asked again after an earlier "no": opening the camera needs a fresh "yes".
         if (consentAllowsOcr(consent, consentVersion)) openCamera();
         else askConsent({ camera: true });
@@ -533,7 +629,7 @@ export function initKtpScan(root) {
         const next = consentNext;
         consentNext = null;
         if (next?.camera) openCamera();
-        else if (next?.blob) runOcr(next.blob);
+        else if (next?.blob) runOcr(next.blob, next.cornerHint ?? null);
         else setStatus('Persetujuan pemilik KTP dicatat untuk pendaftaran ini.', 'ok');
     });
 
@@ -546,27 +642,66 @@ export function initKtpScan(root) {
     });
     $('[data-ktp-camera-close]')?.addEventListener('click', () => { stopCamera(); setStatus('Kamera ditutup.', 'info'); });
     switchBtn?.addEventListener('click', () => {
-        if (videoDevices.length < 2) return;
+        if (videoDevices.length < 2 || blockedWhileBusy()) return;
         deviceIndex = (deviceIndex + 1) % videoDevices.length;
         openCamera(videoDevices[deviceIndex].deviceId);
     });
 
-    $('[data-ktp-capture]')?.addEventListener('click', async () => {
-        if (!stream || !video.videoWidth) return;
+    const CAPTURE_MESSAGES = {
+        confirmed: 'Tepi KTP terkonfirmasi pada foto. Periksa foto: pastikan semua teks KTP terbaca jelas.',
+        moved: 'KTP bergeser saat foto diambil, jadi seluruh bingkai disimpan; tepi kartu dideteksi ulang pada foto. Periksa foto sebelum dipakai.',
+        capture_only: 'Tepi KTP terdeteksi pada foto; seluruh bingkai disimpan. Periksa foto: pastikan semua teks KTP terbaca jelas.',
+        unconfirmed: 'Tepi KTP tidak terkonfirmasi pada foto, jadi seluruh bingkai disimpan. Setelah dibaca, gunakan "Atur Sudut KTP" bila kotak tidak pas, atau ambil ulang.',
+    };
+
+    const guideCapture = () => {
+        // Previous behaviour, kept when the live overlay is unavailable.
         const crop = guideCropRect(video.videoWidth, video.videoHeight);
         const canvas = document.createElement('canvas');
         canvas.width = crop.width;
         canvas.height = crop.height;
         canvas.getContext('2d').drawImage(video, crop.x, crop.y, crop.width, crop.height, 0, 0, crop.width, crop.height);
-        stopCamera(); // release the camera as soon as the frame is taken
+
+        return canvas;
+    };
+
+    let capturing = false;
+    $('[data-ktp-capture]')?.addEventListener('click', async () => {
+        if (!stream || !video.videoWidth || capturing || blockedWhileBusy()) return;
+        capturing = true;
+        let shot = null;
+        let canvas = null;
         try {
+            if (liveOverlay) {
+                try {
+                    shot = await liveOverlay.capture();
+                    canvas = shot.canvas;
+                } catch {
+                    shot = null;
+                }
+            }
+            if (!canvas) canvas = guideCapture();
+            stopCamera(); // release the camera as soon as the frame is taken
+            discardPending();
             pendingBlob = await canvasToBlob(canvas, 0.95);
+            if (shot) {
+                pendingOcrBlob = await canvasToPngBlob(canvas);
+                pendingCornerHint = shot.hint ?? null;
+            }
             root.dataset.lastSource = 'camera';
             resetResults();
             showPreview(await blobToDataUrl(pendingBlob), true);
-            setStatus('Periksa foto: pastikan semua teks KTP terbaca jelas.', 'info');
+            setStatus(CAPTURE_MESSAGES[shot?.status] ?? 'Periksa foto: pastikan semua teks KTP terbaca jelas.', 'info');
         } catch {
+            stopCamera();
+            discardPending();
             setStatus('Gagal mengambil foto. Coba lagi.', 'error');
+        } finally {
+            if (canvas) {
+                canvas.width = 0;
+                canvas.height = 0;
+            }
+            capturing = false;
         }
     });
 
@@ -575,11 +710,13 @@ export function initKtpScan(root) {
     $('[data-ktp-manual]')?.addEventListener('change', async (event) => {
         const file = event.target.files?.[0];
         event.target.value = '';
+        if (blockedWhileBusy()) return;
         const error = validateSourceFile(file);
         if (error) {
             setStatus(error, 'error');
             return;
         }
+        discardPending();
         pendingBlob = file;
         root.dataset.lastSource = 'file';
         resetResults();
@@ -603,6 +740,7 @@ export function initKtpScan(root) {
     });
 
     scanBtn?.addEventListener('click', async () => {
+        if (blockedWhileBusy()) return;
         setStatus('Memindai KTP…', 'info');
         try {
             const res = await fetch(ds.scanUrl, {
@@ -618,6 +756,7 @@ export function initKtpScan(root) {
             const mime = data.mime_type || 'image/jpeg';
             const raw = data.base64.includes(',') ? data.base64.split(',').pop() : data.base64;
             const dataUrl = `data:${mime};base64,${raw}`;
+            discardPending();
             resetResults();
             showPreview(dataUrl, false);
             await upload(raw, mime, data.filename);
@@ -628,7 +767,10 @@ export function initKtpScan(root) {
         }
     });
 
-    clearBtn?.addEventListener('click', () => clearAll());
+    clearBtn?.addEventListener('click', () => {
+        if (blockedWhileBusy()) return;
+        clearAll();
+    });
 
     window.addEventListener('pagehide', () => {
         stopCamera();

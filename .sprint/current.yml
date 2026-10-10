@@ -1,22 +1,22 @@
-# PHASE-3-PATIENT-KTP-ROI-OCR-CLINICAL-PILOT-1
+# REVISION-PATIENT-KTP-LIVE-FIELD-OVERLAY-OCR-1
 #
-# Pilot decision D7 approved by the owner (2026-10-10). The approved KTP-holder
-# consent wording is held verbatim and versioned in config (no env), shown before
-# the camera opens and before OCR reads an image from ANY source, and required by
-# the OCR parse endpoint (consent accepted + current wording version; the pilot
-# gate's 404 still runs first). Declining keeps manual registration unchanged.
-# No consent record is invented (written consent stays on the clinic's paper
-# form; trx_rme_visit_consents is not borrowed). Adds an identifier-free on-screen
-# measurement line and an offline capture-sheet summariser for the step-16
-# metrics. Privacy review PENDING (clinic privacy policy not available). Real
-# camera / real KTP tests PENDING physical execution. Pilot scope, period
-# (ends 2026-10-16) and device waiver unchanged. The pilot GO tag stays reserved.
-# No migration, no permission, no route, no patient column, no pilot/env change.
+# Live field overlay on the KTP camera preview. Once the camera is open (which
+# already needs the KTP holder's D7 "yes"), a bounded analysis — a module worker
+# where the browser has one, else the main thread — finds the card with the
+# shipped detector and draws the card outline and the versioned template's field
+# boxes over the video (SVG layer, never part of the photo), with a RED / YELLOW /
+# GREEN indicator and plain instructions. OCR still runs once, after capture. The
+# capture checks the card ON THE CAPTURED PIXELS (live corners are only compared),
+# crops to the card, reads a lossless copy and hands the confirmed corners to the
+# existing field read as boundary.reason = 'live'; an unconfirmed capture passes
+# no corners. No migration, no permission, no route, no patient column, no
+# pilot/env change; the pilot scope, period (ends 2026-10-16) and device waiver
+# are unchanged. Real-device and real-KTP results PENDING physical execution.
 
-id: PHASE-3-PATIENT-KTP-ROI-OCR-CLINICAL-PILOT-1
+id: REVISION-PATIENT-KTP-LIVE-FIELD-OVERLAY-OCR-1
 type: MODULE_SPRINT
 module: Patient
-title: "D7 consent before KTP camera OCR, privacy review and supervised pilot readiness"
+title: "Live KTP field overlay on the camera preview with capture-confirmed geometry"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 runtime_change: true
 schema_change: false
@@ -25,9 +25,9 @@ security_impact: true
 branch_isolation_impact: false
 ledger_impact: false
 deploy_required: true
-browser_required: false
+browser_required: true
 test_profiles: []
-go_tag: phase-3-patient-ktp-roi-ocr-consent-readiness-go
+go_tag: revision-patient-ktp-live-field-overlay-ocr-1-go
 reserved_pilot_go_tag: phase-1-patient-ktp-camera-ocr-supervised-pilot-go
-inherits_parent_go: revision-patient-ktp-ocr-field-based-roi-1-go
+inherits_parent_go: phase-3-patient-ktp-roi-ocr-consent-readiness-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1

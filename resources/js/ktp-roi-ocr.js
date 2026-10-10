@@ -963,7 +963,7 @@ export function padGray(gray, pad = 12, value = 255) {
  * 0.5x..3x.
  */
 export const TARGET_CAP_HEIGHT = 24;
-const CAP_RATIO = 0.52;
+export const CAP_RATIO = 0.52;
 
 export function fieldVariants(card, box) {
     const crop = cropGray(card, box);
@@ -1107,7 +1107,16 @@ export async function runFieldOcr(image, deps) {
     stage('boundary');
     let boundary;
     if (deps.corners && validCorners(deps.corners, image.width, image.height)) {
-        boundary = { found: true, confidence: 1, corners: orderCorners(deps.corners), reason: 'manual' };
+        // 'live': found on the captured pixels by the live overlay's capture
+        // check (REVISION-PATIENT-KTP-LIVE-FIELD-OVERLAY-OCR-1). Anything else
+        // supplied here is the operator's corner edit.
+        const live = deps.cornerSource === 'live';
+        boundary = {
+            found: true,
+            confidence: live && typeof deps.cornerConfidence === 'number' ? deps.cornerConfidence : 1,
+            corners: orderCorners(deps.corners),
+            reason: live ? 'live' : 'manual',
+        };
     } else {
         boundary = detectCardQuad(image);
     }
