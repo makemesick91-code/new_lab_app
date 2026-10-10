@@ -220,6 +220,56 @@ export function keyboardBoxChange(box, key, shift, step = 0.004) {
 
 /* ------------------------------------------------------------------ DOM -- */
 
+/*
+ * PHASE-3-PATIENT-KTP-ROI-OCR-CLINICAL-PILOT-1 — pilot measurement aid.
+ * Counts what the operator did with ONE captured image, so the protocol §4
+ * sheet holds MEASURED values instead of a tally kept from memory. Only counts
+ * and field KEYS — never a value, a field's text or a confidence. Shown on this
+ * screen only: nothing here is logged, stored or sent.
+ */
+export function newPilotMetrics() {
+    return { cardFound: null, cornerRereads: 0, boxesMoved: [], retryPresses: 0, retriesByField: {}, firstReadSeconds: null };
+}
+
+export function recordBoxMoved(metrics, key) {
+    if (!metrics.boxesMoved.includes(key)) metrics.boxesMoved.push(key);
+
+    return metrics;
+}
+
+/** One press of BACA ULANG (one box or all of them). */
+export function recordRetry(metrics, keys) {
+    metrics.retryPresses += 1;
+    for (const key of keys) metrics.retriesByField[key] = (metrics.retriesByField[key] ?? 0) + 1;
+
+    return metrics;
+}
+
+/** The first completed read of this image — later re-reads never overwrite it. */
+export function recordFirstRead(metrics, { seconds, boundary, hybrid }) {
+    if (metrics.firstReadSeconds !== null) return metrics;
+    metrics.firstReadSeconds = Number.isFinite(seconds) && seconds >= 0 ? seconds : null;
+    // Whole-card fallback has no card detection: unknown, never a guessed yes/no.
+    metrics.cardFound = hybrid && boundary ? Boolean(boundary.found) : null;
+
+    return metrics;
+}
+
+/** One line in the protocol §4 column vocabulary (copied by the operator). */
+export function formatPilotMetrics(metrics, fieldOrder = ROI_FIELD_KEYS) {
+    const yesNo = (v) => (v === null ? 'unknown' : v ? 'yes' : 'no');
+    const byField = fieldOrder
+        .filter((key) => (metrics.retriesByField[key] ?? 0) > 0)
+        .map((key) => `${key}:${metrics.retriesByField[key]}`)
+        .join(',') || 'none';
+    const seconds = metrics.firstReadSeconds === null ? 'unknown' : metrics.firstReadSeconds.toFixed(1);
+
+    return 'Catatan pilot (tanpa data pribadi): '
+        + `card_found=${yesNo(metrics.cardFound)}; corners_adjusted=${yesNo(metrics.cornerRereads > 0)}; `
+        + `boxes_moved=${metrics.boxesMoved.length}; retries=${metrics.retryPresses}; `
+        + `retries_by_field=${byField}; ocr_seconds=${seconds}`;
+}
+
 const HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
 const HANDLE_POS = {
     nw: ['0%', '0%'], n: ['50%', '0%'], ne: ['100%', '0%'], e: ['100%', '50%'],
@@ -322,7 +372,9 @@ export function createSessionGuard() {
 
 /**
  * One OCR session per confirmed image. `deps`:
- *   root, parseUrl, csrf, assetConfig, setStatus(msg, tone), formValue(field)
+ *   root, parseUrl, csrf, assetConfig, setStatus(msg, tone), formValue(field),
+ *   consent — the D7 attestation `{ consent, consent_version }` sent with every
+ *   parse request (PHASE-3); without it the server refuses the text.
  */
 export function createKtpOcrSession(deps) {
     const { root } = deps;
@@ -333,6 +385,11 @@ export function createKtpOcrSession(deps) {
     const cardCanvas = $('[data-ktp-roi-card]');
     const overlay = $('[data-ktp-roi-overlay]');
     const boundaryMsg = $('[data-ktp-roi-boundary]');
+    const metricsEl = $('[data-ktp-roi-metrics]');
+    const metrics = newPilotMetrics();
+    const renderMetrics = () => {
+        if (metricsEl) metricsEl.textContent = formatPilotMetrics(metrics);
+    };
     const cornerEditor = $('[data-ktp-roi-corner-editor]');
     const sourceCanvas = $('[data-ktp-roi-source]');
     const cornerOverlay = $('[data-ktp-roi-corner-overlay]');
@@ -416,7 +473,7 @@ export function createKtpOcrSession(deps) {
     );
 
     const parse = async () => {
-        const body = { lines: state.lines };
+        const body = { lines: state.lines, ...(deps.consent ?? {}) };
         if (state.mode === 'hybrid') body.fields = fieldPayload();
         const res = await guard(fetch(deps.parseUrl, {
             method: 'POST',
@@ -426,6 +483,11 @@ export function createKtpOcrSession(deps) {
         }));
         const parsed = await guard(res.json().catch(() => ({})));
         if (res.status === 429) throw new Error('Terlalu banyak percobaan. Tunggu sebentar lalu coba lagi.');
+        if (res.status === 422) {
+            // D7: a missing or outdated consent is the operator's to fix — say so.
+            const message = parsed?.errors?.consent?.[0] ?? parsed?.errors?.consent_version?.[0];
+            if (message) throw Object.assign(new Error(message), { userFacing: true });
+        }
         if (!res.ok || !parsed.ok) throw new Error('Hasil baca KTP tidak dapat diproses.');
         state.parsed = parsed;
         state.rows = buildRowModel(parsed, state.rows, formValues());
@@ -503,6 +565,8 @@ export function createKtpOcrSession(deps) {
     };
 
     const markBoxMoved = (key) => {
+        recordBoxMoved(metrics, key);
+        renderMetrics();
         drawThumb(key);
         const btn = tbody?.querySelector(`button[data-ktp-roi-retry="${key}"]`);
         btn?.classList.add('ring-2', 'ring-amber-400');
@@ -763,7 +827,10 @@ export function createKtpOcrSession(deps) {
             renderBoxes();
             renderRows();
             describeBoundary(out.boundary);
-            const secs = ((performance.now() - startedAt) / 1000).toFixed(1);
+            const elapsed = (performance.now() - startedAt) / 1000;
+            const secs = elapsed.toFixed(1);
+            recordFirstRead(metrics, { seconds: elapsed, boundary: out.boundary, hybrid: state.mode === 'hybrid' });
+            renderMetrics();
             const msg = {
                 success: `Teks KTP terbaca (${secs} dtk). Periksa tiap isian lalu terapkan ke formulir.`,
                 partial: `Sebagian data terbaca (${secs} dtk). Periksa, pilih bila ada yang berbeda, lengkapi sisanya.`,
@@ -772,7 +839,7 @@ export function createKtpOcrSession(deps) {
             deps.setStatus(msg, parsed.outcome === 'failed' ? 'error' : 'ok');
         } catch (e) {
             if (life.closed) return;
-            deps.setStatus(e?.message?.startsWith('Terlalu') ? e.message : 'OCR gagal. Foto KTP tetap tersimpan; isi data secara manual.', 'error');
+            deps.setStatus(e?.userFacing || e?.message?.startsWith('Terlalu') ? e.message : 'OCR gagal. Foto KTP tetap tersimpan; isi data secara manual.', 'error');
         } finally {
             if (!life.closed) setBusy(false);
         }
@@ -780,6 +847,8 @@ export function createKtpOcrSession(deps) {
 
     const retryFields = async (keys, label) => {
         if (state.busy || !state.card || !state.boxes) return;
+        recordRetry(metrics, keys);
+        renderMetrics();
         setBusy(true);
         deps.setStatus(`Membaca ulang ${label}…`, 'info');
         try {
@@ -793,7 +862,7 @@ export function createKtpOcrSession(deps) {
             deps.setStatus(`${label} dibaca ulang. Nilai yang sudah Anda terima tidak diubah.`, 'ok');
         } catch (e) {
             if (life.closed) return;
-            deps.setStatus(e?.message?.startsWith('Terlalu') ? e.message : `Baca ulang ${label} gagal.`, 'error');
+            deps.setStatus(e?.userFacing || e?.message?.startsWith('Terlalu') ? e.message : `Baca ulang ${label} gagal.`, 'error');
         } finally {
             if (!life.closed) setBusy(false);
         }
@@ -879,6 +948,8 @@ export function createKtpOcrSession(deps) {
             return;
         }
         cornerEditor.classList.add('hidden');
+        metrics.cornerRereads += 1;
+        renderMetrics();
         // A full re-read on the operator's request: new geometry, new boxes.
         await read(null, { corners: orderCorners(state.draftCorners) });
     };
@@ -923,6 +994,7 @@ export function createKtpOcrSession(deps) {
                 }
             }
             if (boundaryMsg) boundaryMsg.textContent = '';
+            if (metricsEl) metricsEl.textContent = '';
         },
     };
 }

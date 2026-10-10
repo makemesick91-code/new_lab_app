@@ -43,3 +43,6 @@ Sprint doc: `docs/sprints/revision-registration-ktp-camera-ocr-1.md`. Flag
 12. **How a value is READ is now governed by rule 179** (hybrid field-based OCR,
     REVISION-PATIENT-KTP-OCR-FIELD-BASED-ROI-1). Everything above about what may
     be offered and applied still holds.
+13. **Nothing is read before the KTP holder agrees — rule 180** (PHASE-3, decision
+    D7): the camera and OCR on any image source wait for an explicit "yes" to the
+    approved wording, and the parse endpoint refuses text sent without it.

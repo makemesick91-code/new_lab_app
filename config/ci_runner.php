@@ -839,6 +839,16 @@ return [
         // existing `PatientKtp` token; declared so a rename cannot drop it.
         'tests/Feature/RME/PatientKtpOcrFieldRoiTest.php',
 
+        // PHASE-3-PATIENT-KTP-ROI-OCR-CLINICAL-PILOT-1 — consent before KTP OCR
+        // (pilot decision D7). Pins the approved wording verbatim and versioned
+        // (never from the environment, never a partial text), that the parse
+        // endpoint refuses OCR text without the KTP holder's consent for the
+        // CURRENT wording while the pilot gate still answers 404 first, that a
+        // declining holder keeps manual registration, and that no consent record
+        // is invented. Selected by the existing `PatientKtp` token; declared so a
+        // rename cannot drop it.
+        'tests/Feature/RME/PatientKtpOcrConsentTest.php',
+
         // FEATURE-DAILY-BRANCH-CONTEXT-LOCK-1 — the daily working-branch lock
         // for Kasir and Admin Klinik, and the Super Admin approval that is the
         // only way past it.

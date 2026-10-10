@@ -15,6 +15,13 @@ CLINICAL_PILOT_COMPLETION   = NO
 WIDER_ROLLOUT               = NO-GO
 ```
 
+> **Forward note — PHASE-3-PATIENT-KTP-ROI-OCR-CLINICAL-PILOT-1 (same day).** The owner approved the
+> D7 consent wording on 2026-10-10. It is held verbatim in `config/patient_ktp_ocr_consent.php`
+> (version `D7-2026-10-10`), shown on screen before the camera opens and printed as protocol
+> Appendix A; the parse endpoint now refuses OCR text without it. The D7 row below is kept as the
+> record of this activation, when it was still open. Pilot scope, period (ends 2026-10-16) and the
+> device waiver are unchanged. Evidence: `docs/sprints/phase-3-patient-ktp-roi-ocr-clinical-pilot-1.md`.
+
 ## 1. Owner decisions (protocol §0)
 
 | # | Decision | Value | Source |

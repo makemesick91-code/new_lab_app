@@ -76,6 +76,7 @@ use App\Modules\LegacyRme\Support\LegacyRmeWaveBranchStatus;
 use App\Modules\LegacyRme\Support\LegacyRmeWaveStatus;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\Patient\Models\Patient;
+use App\Modules\Patient\Support\KtpOcrConsent;
 use App\Modules\Production\Models\LabOrderAssignment;
 use App\Modules\Production\Services\AssignmentService;
 use App\Modules\Production\Services\ProductionWorkflowService;
@@ -1929,6 +1930,17 @@ function ktpPilotScope(array $overrides = []): void
  * A pilot operator: Admin Klinik with a selected working branch, named in the
  * cohort, flag on. Returns the user; the branch is created if not given.
  */
+/**
+ * PHASE-3-PATIENT-KTP-ROI-OCR-CLINICAL-PILOT-1 — the D7 consent attestation the
+ * OCR parse endpoint requires (`consent` accepted + the CURRENT wording version).
+ * Read from the canonical wording, never hard-coded, so a wording change cannot
+ * leave a stale version passing in tests.
+ */
+function ktpConsent(): array
+{
+    return ['consent' => true, 'consent_version' => KtpOcrConsent::version()];
+}
+
 function ktpPilotOperator(?Branch $branch = null, array $scope = []): User
 {
     $branch ??= ktpPilotBranch();

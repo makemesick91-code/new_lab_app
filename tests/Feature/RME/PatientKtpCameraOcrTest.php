@@ -267,7 +267,7 @@ it('parses OCR text for an authorized operator and stores nothing', function () 
     $audits = AuditLog::count();
 
     $response = $this->actingAs(ktpOcrActor())
-        ->postJson(route('settings.patients.ktp-scan.parse-ocr'), ['lines' => ktpOcrLines()])
+        ->postJson(route('settings.patients.ktp-scan.parse-ocr'), ['lines' => ktpOcrLines()] + ktpConsent())
         ->assertOk()
         ->assertJsonPath('ok', true)
         ->assertJsonPath('outcome', 'success')
@@ -281,12 +281,12 @@ it('parses OCR text for an authorized operator and stores nothing', function () 
 
 it('denies the parse endpoint to users who cannot register patients', function () {
     $this->actingAs(userWith(['view_clinic_visits']))
-        ->postJson(route('settings.patients.ktp-scan.parse-ocr'), ['lines' => ktpOcrLines()])
+        ->postJson(route('settings.patients.ktp-scan.parse-ocr'), ['lines' => ktpOcrLines()] + ktpConsent())
         ->assertForbidden();
 });
 
 it('requires authentication for the parse endpoint', function () {
-    $this->postJson(route('settings.patients.ktp-scan.parse-ocr'), ['lines' => ktpOcrLines()])
+    $this->postJson(route('settings.patients.ktp-scan.parse-ocr'), ['lines' => ktpOcrLines()] + ktpConsent())
         ->assertUnauthorized();
 });
 
@@ -295,14 +295,16 @@ it('answers 404 when the capability is switched off', function () {
     ktpOcrFlag(false);
 
     $this->actingAs($actor)
-        ->postJson(route('settings.patients.ktp-scan.parse-ocr'), ['lines' => ktpOcrLines()])
+        ->postJson(route('settings.patients.ktp-scan.parse-ocr'), ['lines' => ktpOcrLines()] + ktpConsent())
         ->assertNotFound();
 });
 
 it('bounds the untrusted OCR payload', function (array $payload) {
     $this->actingAs(ktpOcrActor())
-        ->postJson(route('settings.patients.ktp-scan.parse-ocr'), $payload)
-        ->assertStatus(422);
+        ->postJson(route('settings.patients.ktp-scan.parse-ocr'), $payload + ktpConsent())
+        ->assertStatus(422)
+        // The refusal is about the payload, never a missing consent (PHASE-3, D7).
+        ->assertJsonMissingValidationErrors(['consent', 'consent_version']);
 })->with([
     'no lines key' => [[]],
     'too many lines' => [['lines' => array_fill(0, 61, ['text' => 'a', 'confidence' => 90])]],
@@ -317,17 +319,17 @@ it('rate-limits the parse endpoint per user', function () {
 
     for ($i = 0; $i < 20; $i++) {
         $this->actingAs($actor)
-            ->postJson(route('settings.patients.ktp-scan.parse-ocr'), ['lines' => ktpOcrLines()])
+            ->postJson(route('settings.patients.ktp-scan.parse-ocr'), ['lines' => ktpOcrLines()] + ktpConsent())
             ->assertOk();
     }
 
     $this->actingAs($actor)
-        ->postJson(route('settings.patients.ktp-scan.parse-ocr'), ['lines' => ktpOcrLines()])
+        ->postJson(route('settings.patients.ktp-scan.parse-ocr'), ['lines' => ktpOcrLines()] + ktpConsent())
         ->assertStatus(429);
 
     // A different operator is unaffected.
     $this->actingAs(ktpOcrActor())
-        ->postJson(route('settings.patients.ktp-scan.parse-ocr'), ['lines' => ktpOcrLines()])
+        ->postJson(route('settings.patients.ktp-scan.parse-ocr'), ['lines' => ktpOcrLines()] + ktpConsent())
         ->assertOk();
 });
 
@@ -341,7 +343,7 @@ it('is not a duplicate-patient oracle, even across branches', function () {
     ]);
 
     $withExisting = $this->actingAs(ktpOcrActor())
-        ->postJson(route('settings.patients.ktp-scan.parse-ocr'), ['lines' => ktpOcrLines()])
+        ->postJson(route('settings.patients.ktp-scan.parse-ocr'), ['lines' => ktpOcrLines()] + ktpConsent())
         ->assertOk();
 
     expect($withExisting->getContent())->not->toContain('Pasien Cabang Lain Fiktif')

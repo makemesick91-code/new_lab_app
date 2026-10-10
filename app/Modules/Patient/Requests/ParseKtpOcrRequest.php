@@ -6,7 +6,9 @@ use App\Modules\Patient\Models\Patient;
 use App\Modules\Patient\Services\KtpCameraOcrPilotGate;
 use App\Modules\Patient\Services\KtpOcrParser;
 use App\Modules\Patient\Services\KtpOcrSuggestionService;
+use App\Modules\Patient\Support\KtpOcrConsent;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 /**
  * REVISION-REGISTRATION-KTP-CAMERA-OCR-1 — bounds the OCR text the browser
@@ -14,6 +16,13 @@ use Illuminate\Foundation\Http\FormRequest;
  * {@see KtpOcrParser} (reconciled by {@see KtpOcrSuggestionService} when a
  * per-field read is sent too), and never persisted.
  * Authorization mirrors patient creation, exactly like the KTP temp upload.
+ *
+ * PHASE-3-PATIENT-KTP-ROI-OCR-CLINICAL-PILOT-1 — OCR processing requires the
+ * KTP holder's consent (pilot decision D7). The request must carry `consent`
+ * accepted AND the `consent_version` of the wording currently on screen
+ * ({@see KtpOcrConsent}); anything else is refused before the text is parsed.
+ * The pilot gate still runs first, so an operator outside the pilot gets the
+ * same 404 with or without a consent field.
  */
 class ParseKtpOcrRequest extends FormRequest
 {
@@ -53,6 +62,24 @@ class ParseKtpOcrRequest extends FormRequest
             'fields.*' => ['array:text,confidence'],
             'fields.*.text' => ['present', 'nullable', 'string', 'max:'.$maxLength],
             'fields.*.confidence' => ['nullable', 'numeric', 'between:0,100'],
+            // D7 — the operator states that the KTP holder agreed to the
+            // approved wording. An outdated or unknown wording is refused.
+            'consent' => ['accepted'],
+            'consent_version' => ['required', 'string', 'max:64', Rule::in(KtpOcrConsent::acceptableVersions())],
+        ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function messages(): array
+    {
+        return [
+            'consent.accepted' => 'Pembacaan otomatis memerlukan persetujuan pemilik KTP.',
+            'consent_version.required' => 'Pembacaan otomatis memerlukan persetujuan pemilik KTP.',
+            'consent_version.in' => 'Teks persetujuan sudah berubah. Muat ulang halaman lalu minta persetujuan kembali.',
+            'consent_version.string' => 'Teks persetujuan sudah berubah. Muat ulang halaman lalu minta persetujuan kembali.',
+            'consent_version.max' => 'Teks persetujuan sudah berubah. Muat ulang halaman lalu minta persetujuan kembali.',
         ];
     }
 }

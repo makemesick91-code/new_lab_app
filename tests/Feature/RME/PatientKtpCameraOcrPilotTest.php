@@ -43,6 +43,7 @@ function pilotParse(User $user, array $session = [])
     return test()->actingAs($user)
         ->withSession($session)
         ->postJson(route('settings.patients.ktp-scan.parse-ocr'), [
+            ...ktpConsent(),
             'lines' => [['text' => 'NIK : 7371015708900003', 'confidence' => 92]],
         ]);
 }
@@ -185,6 +186,7 @@ it('never trusts a branch_id supplied in the request', function () {
 
     $this->actingAs($operator)
         ->postJson(route('settings.patients.ktp-scan.parse-ocr'), [
+            ...ktpConsent(),
             'branch_id' => $pilotBranch->id,
             'lines' => [['text' => 'NIK : 7371015708900003', 'confidence' => 92]],
         ])

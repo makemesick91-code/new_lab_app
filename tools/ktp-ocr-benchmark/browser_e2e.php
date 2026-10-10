@@ -73,8 +73,13 @@ try {
     $driver->findElement(WebDriverBy::cssSelector('[data-ktp-manual]'))->sendKeys(realpath($image));
     $driver->wait(10)->until(WebDriverExpectedCondition::visibilityOfElementLocated(WebDriverBy::cssSelector('[data-ktp-confirm]')));
 
-    $started = microtime(true);
     $driver->findElement(WebDriverBy::cssSelector('[data-ktp-confirm]'))->click();
+    // PHASE-3 (decision D7): OCR never starts before the KTP holder's answer.
+    // The fictional card has no holder; this local walk-through records a yes.
+    $driver->wait(15)->until(WebDriverExpectedCondition::visibilityOfElementLocated(WebDriverBy::cssSelector('[data-ktp-consent-accept]')));
+    $check('consent asked before OCR', count($driver->findElements(WebDriverBy::cssSelector('tr[data-ktp-roi-row]'))) === 0);
+    $started = microtime(true);
+    $driver->findElement(WebDriverBy::cssSelector('[data-ktp-consent-accept]'))->click();
     $status = fn () => $driver->findElement(WebDriverBy::cssSelector('[data-ktp-status]'))->getText();
     $driver->wait(90, 200)->until(fn () => str_contains($status(), 'dtk') || str_contains($status(), 'gagal') || str_contains($status(), 'tidak dapat'));
     $facts['read_seconds_wall'] = round(microtime(true) - $started, 2);
@@ -212,6 +217,13 @@ try {
     $clear->click();
     usleep(300000);
     $uploadAndConfirm();
+    // PHASE-3 (D7): clearing the photo may mean a different KTP holder, so the
+    // answer is asked again before the next read.
+    $driver->wait(15)->until(WebDriverExpectedCondition::visibilityOfElementLocated(WebDriverBy::cssSelector('[data-ktp-consent-accept]')));
+    $check('clearing the photo asks for consent again', true);
+    $accept = $driver->findElement(WebDriverBy::cssSelector('[data-ktp-consent-accept]'));
+    $scroll($accept);
+    $accept->click();
     $driver->wait(90, 200)->until(fn () => str_contains($status(), 'dtk') || str_contains($status(), 'gagal') || str_contains($status(), 'tidak dapat'));
     $check('a read cancelled mid-way does not block the next one', str_contains($status(), 'dtk'), $status());
 
