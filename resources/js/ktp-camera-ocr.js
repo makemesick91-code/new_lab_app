@@ -323,13 +323,27 @@ async function compressImage(source) {
  */
 export function createKtpTokenBinding(input) {
     let superseded = '';
+    let generation = 0;
 
     return {
-        attach(token) {
+        // Bumped by every detach: an upload started before it is stale.
+        generation: () => generation,
+        attach(token, issuedAt = generation) {
+            if (issuedAt !== generation) {
+                // The photo was cleared or replaced while it was uploading: never
+                // attach it. The request already discarded the previous
+                // superseded image, so this one is what the next upload discards.
+                if (token) superseded = token;
+
+                return false;
+            }
             input.value = token || '';
             superseded = '';
+
+            return true;
         },
         detach() {
+            generation++;
             if (input.value) superseded = input.value;
             input.value = '';
         },
@@ -452,7 +466,9 @@ export function initKtpScan(root) {
         setStatus('Minta persetujuan pemilik KTP sebelum KTP dibaca otomatis.', 'info');
     };
 
+    // Resolves to null when the photo was cleared or replaced while uploading.
     const upload = async (base64, mime, filename) => {
+        const issuedAt = tokens.generation();
         const res = await fetch(ds.uploadUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-CSRF-TOKEN': csrf },
@@ -466,8 +482,7 @@ export function initKtpScan(root) {
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok || !data.ok) throw new Error(data.message || 'Upload gagal');
-        tokens.attach(data.token);
-        return data;
+        return tokens.attach(data.token, issuedAt) ? data : null;
     };
 
     /* ---- OCR ---- */
@@ -541,7 +556,7 @@ export function initKtpScan(root) {
             const compressed = await compressImage(photo.blob);
             const dataUrl = await blobToDataUrl(compressed);
             previewImg.src = dataUrl;
-            await upload(dataUrl, 'image/jpeg', 'ktp-kamera.jpg');
+            if (!(await upload(dataUrl, 'image/jpeg', 'ktp-kamera.jpg'))) return;
             const ocrSource = photo.ocrBlob ?? compressed;
             const cornerHint = photo.ocrBlob ? photo.hint : null;
             if (pendingBlob === photo.blob) discardPending();
@@ -773,6 +788,9 @@ export function initKtpScan(root) {
 
     scanBtn?.addEventListener('click', async () => {
         if (blockedWhileBusy()) return;
+        // Like the confirm flow: no other photo may start, nor this one be
+        // cleared, until the scan is uploaded — the token must stay this scan's.
+        busy = true;
         setStatus('Memindai KTP…', 'info');
         try {
             const res = await fetch(ds.scanUrl, {
@@ -791,11 +809,13 @@ export function initKtpScan(root) {
             discardPending();
             resetResults();
             showPreview(dataUrl, false);
-            await upload(raw, mime, data.filename);
+            if (!(await upload(raw, mime, data.filename))) return;
             setStatus('Scan berhasil', 'ok');
             if (ocrEnabled) await runOcr(await (await fetch(dataUrl)).blob());
         } catch {
             setStatus('Upload gagal', 'error');
+        } finally {
+            busy = false;
         }
     });
 
@@ -808,6 +828,24 @@ export function initKtpScan(root) {
     // A photo carried over from a failed submit is attached on save; the
     // operator can still withdraw it before saving.
     if (tokenEl.value && clearBtn) clearBtn.disabled = false;
+
+    // Never save while a photo is on screen that will NOT be archived (not yet
+    // confirmed, upload failed, or still uploading). A hidden section — the
+    // visit form's "Pasien Baru" panel in existing-patient mode — is not part
+    // of this save and never blocks it.
+    form?.addEventListener('submit', (event) => {
+        if (root.offsetParent === null) return;
+        const unsaved = !previewWrap.classList.contains('hidden') && !tokenEl.value;
+        if (!busy && !unsaved) return;
+        event.preventDefault();
+        setStatus(
+            busy
+                ? 'Tunggu sampai foto KTP selesai diunggah sebelum menyimpan.'
+                : 'Foto KTP di layar belum tersimpan. Tekan "Gunakan Foto Ini", atau "Hapus Preview" bila tidak dilampirkan, lalu simpan lagi.',
+            'error',
+        );
+        statusEl.scrollIntoView?.({ block: 'center' });
+    });
 
     window.addEventListener('pagehide', () => {
         stopCamera();

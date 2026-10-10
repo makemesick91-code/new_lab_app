@@ -4,6 +4,7 @@ namespace App\Modules\Patient\Services;
 
 use App\Modules\Patient\Models\Patient;
 use App\Modules\Patient\Models\PatientDocument;
+use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -144,26 +145,40 @@ class KtpScanService
             return null;
         }
 
-        $meta = json_decode((string) $disk->get($metaPath), true);
+        // Claim the photo first: renaming its meta succeeds for exactly ONE
+        // request, so a token submitted twice at the same time (double-click
+        // on Save) is archived at most once. Every failure puts the claim back
+        // so the confirmed image is never lost.
+        $claimPath = self::TEMP_DIR.'/'.$userId.'/'.$token.'.claim-'.Str::lower(Str::random(12)).'.json';
+        if (! $this->moveQuietly($disk, $metaPath, $claimPath)) {
+            return null;
+        }
+        $release = function (string $reason) use ($disk, $claimPath, $metaPath, $patient, $userId): null {
+            $this->moveQuietly($disk, $claimPath, $metaPath);
+
+            return $this->notAttached($reason, $patient, $userId);
+        };
+
+        $meta = json_decode((string) $disk->get($claimPath), true);
         $meta = is_array($meta) ? $meta : [];
         $tempPath = $meta['file_path'] ?? null;
         $ownPrefix = self::TEMP_DIR.'/'.$userId.'/'.$token.'.';
 
         if (! is_string($tempPath) || ! str_starts_with($tempPath, $ownPrefix) || ! $disk->exists($tempPath)) {
-            $disk->delete($metaPath);
+            $disk->delete($claimPath);
 
             return null;
         }
 
         $binary = $disk->get($tempPath);
         if (! is_string($binary) || $binary === '') {
-            return $this->notAttached('temp_unreadable', $patient, $userId);
+            return $release('temp_unreadable');
         }
 
         $checksum = hash('sha256', $binary);
         $expected = $meta['checksum'] ?? null;
         if (is_string($expected) && $expected !== '' && ! hash_equals($expected, $checksum)) {
-            return $this->notAttached('temp_checksum_mismatch', $patient, $userId);
+            return $release('temp_checksum_mismatch');
         }
 
         $mime = $meta['mime_type'] ?? 'application/octet-stream';
@@ -180,7 +195,7 @@ class KtpScanService
         if (! is_string($written) || ! hash_equals($checksum, hash('sha256', $written))) {
             $disk->delete($finalPath);
 
-            return $this->notAttached('archive_write_failed', $patient, $userId);
+            return $release('archive_write_failed');
         }
 
         try {
@@ -199,13 +214,23 @@ class KtpScanService
         } catch (Throwable) {
             $disk->delete($finalPath);
 
-            return $this->notAttached('document_record_failed', $patient, $userId);
+            return $release('document_record_failed');
         }
 
         // Invalidate the temp token + file once promoted.
-        $disk->delete([$tempPath, $metaPath]);
+        $disk->delete([$tempPath, $claimPath]);
 
         return $document;
+    }
+
+    /** A rename that reports failure instead of throwing (the local disk can still throw). */
+    private function moveQuietly(Filesystem $disk, string $from, string $to): bool
+    {
+        try {
+            return $disk->move($from, $to) === true;
+        } catch (Throwable) {
+            return false;
+        }
     }
 
     /**

@@ -59,7 +59,8 @@ function fakeEl(extra = {}) {
     );
 }
 
-function mount({ token = '', carried = false } = {}) {
+function mount({ token = '', carried = false, hidden = false } = {}) {
+    const form = fakeEl();
     const els = {
         '[data-ktp-status]': fakeEl(),
         '[data-ktp-token]': fakeEl({ value: token }),
@@ -83,16 +84,25 @@ function mount({ token = '', carried = false } = {}) {
             fieldPrefix: '',
             ocrConsentVersion: '',
         },
-        closest: () => null,
+        closest: () => form,
         querySelector: (sel) => els[sel] ?? null,
+        // null = display:none (the visit form's hidden "Pasien Baru" panel).
+        offsetParent: hidden ? null : {},
     });
 
     initKtpScan(root);
 
-    return { els, token: els['[data-ktp-token]'] };
+    return { els, form, token: els['[data-ktp-token]'] };
 }
 
-function stubFetch({ uploadOk = true, newToken = 'tok-new' } = {}) {
+async function submitBlocked(form) {
+    let blocked = false;
+    await form.fire('submit', { preventDefault: () => (blocked = true) });
+
+    return blocked;
+}
+
+function stubFetch({ uploadOk = true, newToken = 'tok-new', uploadGate = null } = {}) {
     const calls = [];
     globalThis.fetch = async (url, init = {}) => {
         calls.push({ url, body: init.body ? JSON.parse(init.body) : null });
@@ -100,6 +110,7 @@ function stubFetch({ uploadOk = true, newToken = 'tok-new' } = {}) {
             return { ok: true, json: async () => ({ ok: true, base64: 'QUJD', mime_type: 'image/jpeg', filename: 'scan.jpg' }) };
         }
         if (url === '/upload-temp') {
+            if (uploadGate) await uploadGate;
             return uploadOk
                 ? { ok: true, json: async () => ({ ok: true, token: newToken }) }
                 : { ok: false, json: async () => ({ ok: false, message: 'Upload gagal' }) };
@@ -196,4 +207,70 @@ test('after clearing, the next upload still discards the cleared temp image', as
     const upload = calls.find((c) => c.url === '/upload-temp');
     assert.equal(upload.body.replaces_token, 'tok-A');
     assert.equal(token.value, 'tok-C');
+});
+
+/* ---- review follow-up: late uploads and saving a photo that is not stored ---- */
+
+test('an upload that resolves after its photo was cleared is never attached', () => {
+    const input = { value: '' };
+    const tokens = createKtpTokenBinding(input);
+    const issuedAt = tokens.generation();
+
+    tokens.detach(); // cleared while uploading
+    assert.equal(tokens.attach('tok-late', issuedAt), false);
+    assert.equal(input.value, '', 'a photo the operator removed must not come back on its own');
+    assert.equal(tokens.replaces(), 'tok-late', 'the late image is discarded by the next upload');
+});
+
+test('a scan cannot be cleared while it uploads, so the attached photo is the one on screen', async () => {
+    const { els, token } = mount({ token: '' });
+    let release;
+    stubFetch({ newToken: 'tok-scan', uploadGate: new Promise((r) => (release = r)) });
+
+    const scanning = els['[data-ktp-scan-btn]'].fire('click');
+    await new Promise((r) => setImmediate(r));
+    await els['[data-ktp-clear]'].fire('click'); // refused while busy
+    release();
+    await scanning;
+
+    assert.equal(token.value, 'tok-scan');
+    assert.equal(els['[data-ktp-preview-wrap]'].classList.contains('hidden'), false, 'the scan that is attached is still on screen');
+});
+
+test('saving is blocked while an unconfirmed photo is on screen', async () => {
+    const { els, form } = mount({ token: 'tok-A' });
+    const file = new Blob([new Uint8Array([1, 2, 3])], { type: 'image/jpeg' });
+    await els['[data-ktp-manual]'].fire('change', { target: { files: [file], value: 'x' } });
+
+    assert.equal(await submitBlocked(form), true, 'a visible photo that will not be archived must not be saved silently');
+    assert.match(els['[data-ktp-status]'].textContent, /belum tersimpan/);
+});
+
+test('saving is blocked while a photo is still uploading', async () => {
+    const { els, form } = mount();
+    let release;
+    stubFetch({ uploadGate: new Promise((r) => (release = r)) });
+
+    const scanning = els['[data-ktp-scan-btn]'].fire('click');
+    await new Promise((r) => setImmediate(r));
+    assert.equal(await submitBlocked(form), true);
+    release();
+    await scanning;
+    assert.equal(await submitBlocked(form), false, 'once stored, the photo on screen is the one archived');
+});
+
+test('saving is allowed with no photo, or after "Hapus Preview"', async () => {
+    const { els, form } = mount({ token: 'tok-A', carried: true });
+    assert.equal(await submitBlocked(form), false, 'a carried, stored photo may be saved');
+
+    await els['[data-ktp-clear]'].fire('click');
+    assert.equal(await submitBlocked(form), false, 'no photo on screen, nothing to protect');
+});
+
+test('a hidden KTP section never blocks the save', async () => {
+    const { els, form } = mount({ hidden: true });
+    const file = new Blob([new Uint8Array([1, 2, 3])], { type: 'image/jpeg' });
+    await els['[data-ktp-manual]'].fire('change', { target: { files: [file], value: 'x' } });
+
+    assert.equal(await submitBlocked(form), false, 'an existing-patient visit is not held up by the new-patient panel');
 });

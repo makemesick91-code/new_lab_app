@@ -240,8 +240,9 @@ it('removes the archived file again when its document record cannot be written',
     expect($patient->documents()->count())->toBe(0)
         // No file without its record …
         ->and(kapPatientFiles($patient))->toBeEmpty()
-        // … and the confirmed photo is not lost either.
-        ->and(Storage::disk('local')->exists($tempPath))->toBeTrue();
+        // … and the confirmed photo is not lost either: the claim is put back.
+        ->and(Storage::disk('local')->exists($tempPath))->toBeTrue()
+        ->and(Storage::disk('local')->exists("tmp/patient-ktp-scans/{$actor->id}/{$token}.json"))->toBeTrue();
 });
 
 it('records no document when the archive file cannot be written', function () {
@@ -278,6 +279,31 @@ it('archives a photo at most once, however often its token is submitted', functi
 
     expect(PatientDocument::count())->toBe(1)
         ->and(Patient::where('name', 'Pasien Kedua')->sole()->documents()->count())->toBe(0);
+});
+
+it('archives a token once even when a second request arrives mid-archive', function () {
+    $actor = userWith(['manage patients']);
+    $token = kapUpload($actor, kapPngA())['token'];
+    $other = Patient::factory()->create();
+
+    // While the first request is inserting its document row, a concurrent
+    // request (a double-clicked Save) tries to archive the same token.
+    $armed = true;
+    $concurrent = 'not-run';
+    PatientDocument::creating(function () use (&$armed, &$concurrent, $other, $token, $actor) {
+        if (! $armed) {
+            return;
+        }
+        $armed = false;
+        $concurrent = app(KtpScanService::class)->attachTempToPatient($other, $token, $actor->id);
+    });
+
+    kapRegisterMasterData($actor, 'Pasien Klik Ganda', $token)->assertSessionMissing('warning');
+
+    expect($concurrent)->toBeNull()
+        ->and(PatientDocument::count())->toBe(1)
+        ->and($other->documents()->count())->toBe(0)
+        ->and(kapPatientFiles($other))->toBeEmpty();
 });
 
 // --- 6. Retrieval security ------------------------------------------------------

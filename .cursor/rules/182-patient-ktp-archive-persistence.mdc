@@ -33,7 +33,11 @@ edit page "Lihat KTP" → PatientDocumentController::show()`.
    in the hidden field while the preview shows something else** — that files an
    earlier, possibly different person's KTP under the patient being saved (the
    regression REVISION-REGISTRATION-KTP-CAMERA-OCR-1 introduced and this sprint
-   closed).
+   closed). Two corollaries: an upload that resolves AFTER its photo was cleared
+   or replaced is never attached (the binding's generation counter); and the
+   form refuses to save while a photo is on screen that will not be archived
+   (unconfirmed, failed or still uploading) — a hidden KTP section never blocks
+   the save. The scanner upload holds `busy` exactly like the confirm flow.
 3. **Temp uploads are finalized only by an authorized registration path**, and
    only from the submitting operator's own temp folder (path rebuilt from the
    user id + sanitized token; a meta pointing outside it is refused). Another
@@ -62,8 +66,10 @@ edit page "Lihat KTP" → PatientDocumentController::show()`.
    operator believe a KTP was archived when it was not.
 9. **OCR retries never create documents.** Whole-document, field ROI, live
    overlay, per-field BACA ULANG and manual correction all run in the browser
-   and write nothing; only the registration submit archives, at most once per
-   token (the token is consumed on success).
+   and write nothing; only the registration submit archives, **at most once per
+   token** — the attach first CLAIMS the photo by renaming its meta (atomic: one
+   request wins, so a double-clicked Save cannot archive it twice), and every
+   failure puts the claim back so the confirmed image is never lost.
 10. **Retrieval is authorized server-side** by `PatientPolicy::view` (`manage
     patients`) plus a patient-ownership 404. Patient master data is **not
     branch-scoped** by an existing product decision, so any `manage patients`
@@ -91,6 +97,15 @@ edit page "Lihat KTP" → PatientDocumentController::show()`.
 19. **Cleanup leaves zero task-owned processes, worktrees or scratch files.**
 
 ## Known gaps (recorded, not built)
+
+- The warning is a toast that auto-dismisses after 4 seconds beside the green
+  success toast; a persistent banner would be stronger (global UI component).
+- In the visit form, a photo taken in the "Pasien Baru" panel and then switched
+  to existing-patient mode is dropped without a warning (it was never meant for
+  that patient, so dropping is correct; only the silence is a gap).
+- A temp uploaded before this release has no checksum in its meta, so the
+  identity check is skipped for it (bounded: temps live ≤ 24h). Nothing fsyncs;
+  the read-back proves the bytes reached the OS, not the platter.
 
 - No way to attach or replace a KTP on an EXISTING patient (the edit page can
   only view/delete). An unarchived photo therefore has no in-app remedy yet.

@@ -42,12 +42,18 @@ several KTP rows; the edit page shows the latest.
 | F5 | **File without record.** A failed row insert propagated as a 500 and left an orphan archive file (no compensation; a transaction cannot roll back a file). | MEDIUM | Sprint 61.1 | **Fixed** |
 | F6 | **Identity unverified.** Nothing tied the archived bytes to the bytes the operator confirmed. | LOW | Sprint 61.1 | **Fixed** (sha256 in temp meta, checked on attach; archive read back) |
 | F7 | Document stream sent `Cache-Control: no-cache, private` (cacheable on a shared front-desk browser) and no `nosniff`. | LOW | Sprint 61.1 | **Fixed** (`private, no-store` + `nosniff`) |
+| F8 | **Late scanner upload re-attached a cleared photo.** The scanner path never set `busy`, so "Hapus Preview" during its upload succeeded and the upload then re-filled the token (and re-ran OCR for a photo no longer on screen). Found by the adversarial review of the first fix. | MEDIUM | camera OCR revision (pre-existing) | **Fixed** (scanner holds `busy`; binding refuses a stale result via a generation counter) |
+| F9 | **Photo on screen, nothing archived, no warning.** Saving with an unconfirmed photo, a failed upload or an upload in flight archived nothing and the server could not warn about a token it never received. | MEDIUM | pre-existing, partly by F1's fix | **Fixed** (form refuses to save until the photo is stored or cleared; hidden section exempt) |
+| F10 | **Concurrent double submit** could archive one token twice (both requests passed the meta checks before either deleted it). | LOW | Sprint 61.1 | **Fixed** (atomic claim by rename; restored on every failure) |
 | G1 | KTP retrieval is gated by `manage patients`, which is **not branch-scoped** (patient master data is global by an existing product decision; the edit page already shows the full KTP number to the same roles). | — | design | **Open owner decision**, not changed |
 | G2 | No way to attach/replace a KTP on an existing patient (edit page: view/delete only). | — | design | **Next sprint**, not built |
 
 Defects F1–F5 were reproduced against the unfixed code before any fix: 3 JS
 wiring tests failed on their assertions, and 9 of 13 PHP tests failed (missing
 warning on every silent-drop path, a 500 on insert failure, `no-cache, private`).
+F8–F10 came from an independent adversarial review of the first fix commit and
+were reproduced against that commit: 4 new JS tests failed there, and the
+mid-archive race test archived the same photo twice.
 
 ## 3. Corrective change
 
@@ -66,6 +72,10 @@ warning on every silent-drop path, a 500 on insert failure, `no-cache, private`)
   `KtpScanService::NOT_ATTACHED_WARNING` when a submitted token was not archived.
 - `PatientDocumentController::show` — `Cache-Control: private, no-store`,
   `X-Content-Type-Options: nosniff`.
+- Review follow-ups: the scanner upload holds `busy`; the binding refuses an
+  upload that resolves after its photo was detached; the form refuses to save
+  while a photo is on screen that will not be archived; the attach claims the
+  photo by an atomic rename of its meta and restores it on every failure.
 
 No migration, no permission, no route, no pilot/env change. D7 consent, the pilot
 gate, OCR behaviour and the scanner/manual fallbacks are unchanged.
@@ -79,9 +89,9 @@ gate, OCR behaviour and the scanner/manual fallbacks are unchanged.
 | 3 | Validation error after capture | PASS | carried-token notice; withdrawable (JS test) |
 | 4 | Browser refresh after upload | PASS (by design) | token lost with the page; temp pruned ≤ 24h; nothing archived |
 | 5 | Session expiry before submit | NOT TESTED | 419 loses input; temp pruned ≤ 24h |
-| 6 | Network disconnect during upload | PASS | upload error keeps no token attached (JS test, failed scan) |
+| 6 | Network disconnect during upload | PASS | upload error keeps no token attached and the save is refused until the photo is stored or cleared (JS tests) |
 | 7 | Duplicate patient rejection | PASS | existing `still blocks a duplicate NIK` + token carried |
-| 8 | Multiple registration clicks | PASS | token consumed once; second save warned, 1 document total |
+| 8 | Multiple registration clicks | PASS | sequential: second save warned, 1 document; concurrent: atomic claim (mid-archive race test) |
 | 9 | OCR retry duplicates files | PASS | OCR writes nothing (rule 177); only submit archives |
 | 10 | Retake during upload | PASS | `blockedWhileBusy`; retake archives the retake, discards the first |
 | 11 | Temp pruned too early | PASS | prune 24h ≫ token use; existing "keeps a live registration scan" test |
@@ -110,9 +120,16 @@ read-only transaction. No path, name, KTP number or image was read or printed.
 
 ## 6. Tests
 
-New: `tests/Feature/RME/PatientKtpArchivePersistenceTest.php` (14) and
-`tests/js/ktp-camera-ocr-token.test.mjs` (7, driving the real `initKtpScan()`
+New: `tests/Feature/RME/PatientKtpArchivePersistenceTest.php` (15) and
+`tests/js/ktp-camera-ocr-token.test.mjs` (13, driving the real `initKtpScan()`
 through a fake DOM). One existing source-shape assertion
 (`tests/js/ktp-ocr-consent.test.mjs`, "Hapus" handler) was narrowed to the
 property it protects (plain `clearAll()` first, consent reset) because the handler
-now also sets a status line. Mutation: 12/12 killed.
+now also sets a status line. Mutation: 18/18 killed (worktree diff identical
+before and after). Regression: 491 PHP tests (KTP, patient, visit, merge, CI
+suite-coverage) 0 failed; JS 212/212.
+
+Residual LOWs (recorded in rule 182 "Known gaps"): the warning toast
+auto-dismisses after 4 s; a photo taken in the visit form's new-patient panel is
+dropped silently when the operator switches to an existing patient; temps
+uploaded before this release carry no checksum; nothing fsyncs.
