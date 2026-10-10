@@ -101,22 +101,69 @@
     </div>
 
     @if ($ktpOcrEnabled)
+        {{-- REVISION-PATIENT-KTP-OCR-FIELD-BASED-ROI-1 — field-based read.
+             The card is deskewed and every field is read from its own box;
+             boxes and corners are editable; each row can be read again.
+             Rows, boxes and the corner editor are drawn by
+             resources/js/ktp-roi-ui.js (DOM APIs only, no HTML from OCR). --}}
         <div class="mt-3 hidden rounded-md border border-gray-200 bg-white p-3" data-ktp-ocr-results>
             <p class="text-sm font-semibold text-gray-800">Hasil baca KTP (saran)</p>
-            <p class="mb-2 text-xs text-gray-500">Hanya isian yang dicentang yang diterapkan. Status "Perlu dicek" tidak dicentang otomatis; isian yang sudah Anda isi tidak diganti kecuali Anda mencentangnya.</p>
-            <div class="overflow-x-auto">
-                <table class="min-w-full text-sm">
-                    <thead class="text-left text-xs text-gray-500">
-                        <tr><th class="px-2 py-1">Terapkan</th><th class="px-2 py-1">Isian</th><th class="px-2 py-1">Nilai terbaca</th><th class="px-2 py-1">Status</th></tr>
-                    </thead>
-                    <tbody data-ktp-ocr-rows></tbody>
-                </table>
+            <p class="mb-2 text-xs text-gray-500">
+                Hanya isian yang dicentang yang diterapkan. Status "Perlu dicek" dan "Berbeda — pilih" tidak dicentang otomatis;
+                isian yang sudah Anda isi tidak diganti kecuali Anda mencentangnya. BACA ULANG tidak mengubah nilai yang sudah Anda terima.
+            </p>
+            <p class="mb-2 text-xs text-indigo-700" data-ktp-roi-boundary></p>
+
+            {{-- The card is shown large (boxes must be big enough to grab by
+                 touch); the field rows sit below it. --}}
+            <div class="space-y-3">
+                <div class="max-w-3xl">
+                    <div class="relative hidden select-none" data-ktp-roi-stage>
+                        <canvas data-ktp-roi-card class="block h-auto w-full rounded-md border border-gray-200 bg-white" aria-label="KTP yang sudah diluruskan"></canvas>
+                        <div class="absolute inset-0" data-ktp-roi-overlay></div>
+                    </div>
+                    <div class="mt-2 flex flex-wrap gap-2">
+                        <button type="button" data-ktp-roi-corners-open data-ktp-roi-action="corners"
+                            class="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">Atur Sudut KTP</button>
+                        <button type="button" data-ktp-roi-reset-boxes data-ktp-roi-action="reset"
+                            class="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">Kembalikan Posisi Kotak</button>
+                        <button type="button" data-ktp-roi-retry-all data-ktp-roi-action="retry-all"
+                            class="inline-flex items-center rounded-md border border-indigo-300 bg-white px-3 py-1.5 text-xs font-medium text-indigo-700 hover:bg-indigo-50 disabled:opacity-50">Baca Ulang Semua Kotak</button>
+                    </div>
+                    <p class="mt-1 text-[11px] text-gray-500">Seret kotak untuk memindah, tarik titik tepinya untuk mengubah ukuran (atau pilih kotak lalu gunakan tombol panah / Shift+panah).</p>
+
+                    <div class="mt-3 hidden rounded-md border border-amber-200 bg-amber-50/50 p-2" data-ktp-roi-corner-editor>
+                        <p class="mb-1 text-xs font-medium text-amber-900">Atur sudut KTP pada foto asli</p>
+                        <div class="relative select-none">
+                            <canvas data-ktp-roi-source class="block h-auto w-full rounded border border-gray-200" aria-label="Foto KTP asli"></canvas>
+                            <div class="absolute inset-0" data-ktp-roi-corner-overlay></div>
+                        </div>
+                        <div class="mt-2 flex flex-wrap gap-2">
+                            <button type="button" data-ktp-roi-corners-apply data-ktp-roi-action="corners-apply"
+                                class="inline-flex items-center rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-500 disabled:opacity-50">Terapkan Sudut &amp; Baca Ulang</button>
+                            <button type="button" data-ktp-roi-corners-cancel data-ktp-roi-action="corners-cancel"
+                                class="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 disabled:opacity-50">Batal</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="min-w-full text-sm">
+                        <thead class="text-left text-xs text-gray-500">
+                            <tr>
+                                <th class="px-2 py-1">Potongan</th>
+                                <th class="px-2 py-1">Isian</th>
+                                <th class="px-2 py-1">Nilai terbaca</th>
+                                <th class="px-2 py-1">Status</th>
+                                <th class="px-2 py-1">Aksi</th>
+                                <th class="px-2 py-1">Terapkan</th>
+                            </tr>
+                        </thead>
+                        <tbody data-ktp-ocr-rows></tbody>
+                    </table>
+                </div>
             </div>
-            <div class="mt-2 hidden" data-ktp-ocr-info-wrap>
-                <p class="text-xs font-medium text-gray-600">Data lain yang terbaca (tidak disimpan — tidak ada isiannya di formulir):</p>
-                <ul class="ml-4 list-disc text-xs text-gray-600" data-ktp-ocr-info></ul>
-            </div>
-            <button type="button" data-ktp-apply class="mt-3 inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500">Terapkan ke Formulir</button>
+            <button type="button" data-ktp-apply data-ktp-roi-action="apply" class="mt-3 inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500">Terapkan ke Formulir</button>
         </div>
     @endif
 

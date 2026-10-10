@@ -1,33 +1,32 @@
-# PHASE-1-PATIENT-KTP-CAMERA-OCR-SUPERVISED-PILOT
+# REVISION-PATIENT-KTP-OCR-FIELD-BASED-ROI-1
 #
-# Confines KTP camera OCR (REVISION-REGISTRATION-KTP-CAMERA-OCR-1) to a
-# supervised pilot. The global flag `patient.ktp_camera_ocr` alone now enables
-# NOBODY: eligibility additionally needs the server-side pilot scope
-# (config/patient_ktp_ocr_pilot.php) — explicit operator cohort, exactly one
-# approved RME branch resolved server-side (RmeWorkingBranchScope), an
-# inclusive clinical-calendar period, and (fail-safe ON) an approved tablet
-# bound through the front-office trusted-device lock. Decided only by
-# KtpCameraOcrPilotGate; the parse endpoint answers 404 and the camera UI is
-# hidden for every denial while manual registration is unchanged. Adds the
-# read-only `patient:ktp-ocr-pilot-status` command and a supervised pilot
-# protocol. Deploys INERT (flag off, cohort empty). The physical real-KTP /
-# tablet pilot is NOT part of this release and is not claimed.
-# No migration, no permission, no role change.
+# Hybrid field-based KTP OCR. The browser finds the card, straightens it,
+# reads each patient field in its own box from a versioned normalized template
+# (ektp-v1) with a field-specific character set, and still runs the previous
+# whole-card read. The server parses both and reconciles field by field: agreement
+# confirms, disagreement is shown to the operator with both values and neither
+# pre-selected, never settled by confidence. Operators can move/resize boxes,
+# set card corners and re-read a field; a re-read never overwrites an accepted
+# or typed value. A request without field reads gets the previous payload byte
+# for byte. Pilot gate, flag, branch isolation, private storage, NIK masking,
+# CSRF, rate limit, confirmation and duplicate check unchanged.
+# Synthetic benchmark only — real-KTP accuracy is PENDING (pilot decision D7).
+# No migration, no permission, no route, no patient column, no pilot/env change.
 
-id: PHASE-1-PATIENT-KTP-CAMERA-OCR-SUPERVISED-PILOT
+id: REVISION-PATIENT-KTP-OCR-FIELD-BASED-ROI-1
 type: MODULE_SPRINT
 module: Patient
-title: "Server-side supervised pilot gate for KTP camera OCR (cohort, single branch, period, bound tablet); read-only pilot status command; deploys inert"
+title: "Hybrid field-based (ROI) KTP OCR with server-side reconciliation and operator box/field verification"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 runtime_change: true
 schema_change: false
 frontend_change: true
 security_impact: true
-branch_isolation_impact: true
+branch_isolation_impact: false
 ledger_impact: false
 deploy_required: true
 browser_required: false
 test_profiles: []
-go_tag: phase-1-patient-ktp-camera-ocr-pilot-readiness-go
-inherits_parent_go: revision-registration-ktp-camera-ocr-1-go
+go_tag: revision-patient-ktp-ocr-field-based-roi-1-go
+inherits_parent_go: phase-1-patient-ktp-camera-ocr-pilot-readiness-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1

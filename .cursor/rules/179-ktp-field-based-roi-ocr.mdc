@@ -1,0 +1,108 @@
+---
+description: REVISION-PATIENT-KTP-OCR-FIELD-BASED-ROI-1 — hybrid field-based (ROI) KTP OCR, reconciliation and operator verification
+globs: app/Modules/Patient/Services/KtpOcr*.php, app/Modules/Patient/Requests/ParseKtpOcrRequest.php, app/Modules/Patient/Controllers/PatientDocumentController.php, resources/js/ktp-*.js, resources/views/settings/patients/_ktp-scan.blade.php, tools/ktp-ocr-benchmark/**
+alwaysApply: false
+---
+
+# Hybrid field-based KTP OCR
+
+Sprint doc: `docs/sprints/revision-patient-ktp-ocr-field-based-roi-1.md`.
+Extends rule 177 (suggestions) and rule 178 (pilot gate); neither is relaxed.
+Where this rule and 177 disagree on how a value is READ, this rule wins; on
+what may be APPLIED, 177 still governs.
+
+## What the hybrid read is
+
+`resources/js/ktp-roi-ocr.js` (pure, DOM-free) finds the card, straightens it
+to a fixed size, places a box per field from a versioned template, and reads
+each box with a field-specific engine setup. The whole-card read from the
+previous release still runs on the same straightened card. The server
+(`KtpOcrSuggestionService`) parses both and reconciles them field by field.
+`resources/js/ktp-roi-ui.js` is the operator surface (lazy chunk).
+
+## Foundations
+
+1. **Hybrid, not replacement.** Both the whole-card read and the field-box read
+   run. Neither may be removed to save time without a measured benchmark that
+   shows the remaining one is at least as safe on wrong pre-filled values.
+2. **A card that cannot be found is not guessed.** Boundary detection falls back
+   to the full image (`boundary.found = false`) and tells the operator; it never
+   invents a crop. The operator may set the four corners by hand.
+3. **Coordinates are normalized** (0..1) on the straightened card, never pixels
+   of a particular camera. Boxes are always clamped inside the card and keep a
+   minimum size (`ROI_LIMITS.minBoxSize`).
+4. **The template is versioned** (`KTP_TEMPLATE.version`, now `ektp-v1`). A
+   change to box positions is a new version, re-benchmarked, never an edit in
+   place. Label anchoring may move a row; it may not invent one.
+5. **Boxes are editable** by mouse, touch and keyboard (arrows move,
+   Shift+arrows resize), with no page scroll while dragging, and can be reset
+   to the auto-anchored position.
+6. **Preprocessing is bounded and deterministic**: at most two passes per field
+   (enhanced, binarized), cap height normalized; no unbounded retry loop.
+7. **Each field has its own character set.** The NIK reads digits only and must
+   be exactly 16 digits; it is never padded, completed, inferred from the birth
+   date or chosen from a near match. Dates must be real calendar dates. Gender
+   is normalized to the canonical values.
+8. **Disagreement is surfaced, never resolved by confidence.** When the two
+   reads differ, the field is `conflict`: both values are shown, neither is
+   pre-selected, and the operator picks or types. Agreement may confirm a
+   glyph-corrected value; it never turns an invalid value into a valid one.
+   A read that disagreed with itself — the whole-card read seeing a label
+   twice, or a field's two image passes differing — cannot be pre-selected on
+   its own. A NIK in conflict is still cross-checked, against every candidate.
+9. **A retry ("Baca Ulang") never overwrites** a value the operator accepted or
+   typed. The new read is offered beside it and needs the operator to take it.
+   An untouched row takes the new read UNSELECTED — a tick the system set on an
+   earlier read is not an acceptance.
+10. **The server owns parsing and labels.** The browser sends text and
+    confidence only (`lines`, optional `fields`); the server chooses field
+    labels, validates, cross-checks the NIK and builds suggestions. A box read
+    is filed only under its own field. A request without `fields` returns the
+    previous response shape (values differ only where a misread RT/RW label is
+    now recognised).
+11. **The parse endpoint still stores, logs and audits nothing** and performs no
+    patient lookup (rule 177 §7). Bounded payload: known field keys only,
+    bounded text length, confidence 0..100.
+12. **Only existing `mst_patients` columns are applied.** Birth place, religion
+    and marital status stay display-only. No new column or migration without an
+    explicit schema decision.
+13. **Every existing control stays**: authentication, RBAC, branch isolation,
+    the pilot gate (rule 178), the feature flag, private storage, NIK masking,
+    CSRF, the `ktp-scan` rate limit, the explicit `ktp_ocr_verified`
+    confirmation and the submit-time duplicate check.
+14. **KTP images never leave the browser for OCR.** Self-hosted tesseract.js
+    only; no external OCR, AI or MCP service, no CDN fallback.
+15. **No KTP data in logs, telemetry, test fixtures, benchmarks or charts.** The
+    benchmark corpus is fictional and machine-made
+    (`tools/ktp-ocr-benchmark/generate_synthetic_ktp.py`); reports carry counts
+    and timings only.
+16. **OCR text is untrusted.** DOM writes use `.value` / `.textContent` only;
+    the UI makes exactly one request, to the parse URL the page hands it.
+17. **Resources are bounded**: source pixels capped from the image header
+    before decoding, one worker per page, worker terminated after idle, crops
+    released after use. A session can be closed at any point: every step is
+    raced against its lifetime, so closing never leaves the page waiting.
+18. **Confident is not correct** (rule 177 §4). Do not auto-apply, do not remove
+    the operator check, do not rank alternatives by confidence.
+19. **Synthetic results are not real-card accuracy.** Real-KTP accuracy is
+    `PENDING` until the supervised pilot (runbook §3–§6) runs with recorded
+    consent (decision D7). A code release never widens the pilot scope or arms
+    the flag; `PATIENT_KTP_OCR_PILOT_*` keys change only by owner decision.
+
+## Measured on the synthetic corpus (48 cards × 6 fields = 288 reads)
+
+Whole-card read (previous release): 216 correct, 39 wrong values pre-filled.
+Hybrid: 237 correct, 49 left for the operator to choose, 2 wrong pre-filled;
+pre-filled precision 99.1%. Node median read time 1.72 s (was 0.90 s).
+These numbers are fixtures for regression, not a claim about real cards.
+
+## Gotchas
+
+- `recognize(image, options)` options are per call and restored by
+  tesseract.js; pass `null` for the whole-card read so field whitelists never
+  leak into it.
+- An unrecognised label line (e.g. `RTIRW`) loses a whole field in the
+  whole-card read; the field-box read recovers it because the server attaches
+  the label itself.
+- A photo-caption column bleeds into the occupation and address lines of a
+  whole-card read; that is the main reason the field boxes exist.

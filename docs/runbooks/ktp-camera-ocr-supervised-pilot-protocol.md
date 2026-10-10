@@ -2,6 +2,10 @@
 
 Task: `PHASE-1-PATIENT-KTP-CAMERA-OCR-SUPERVISED-PILOT` · Rule 178 · Rule 177.
 
+Since `REVISION-PATIENT-KTP-OCR-FIELD-BASED-ROI-1` (rule 179) the screen reads each field in its own
+box as well as the whole card, and shows **Berbeda — pilih** when the two disagree. §4 records those
+outcomes too.
+
 This protocol is for a **supervised, consented, single-branch** trial. Nothing
 in it is performed automatically. Every result is recorded by a person who saw
 it happen; a cell that was not measured is written `NOT TESTED`, never guessed.
@@ -76,7 +80,8 @@ One row per capture. **Never** write the NIK, name, address or birth date — on
 
 ```
 capture_no,date,device_label,condition,ocr_seconds,camera_ok,ocr_completed,
-nik,name,birth_date,gender,address,occupation,registration_completed,notes
+nik,name,birth_date,gender,address,occupation,registration_completed,
+card_found,corners_adjusted,boxes_moved,retries,notes
 ```
 
 Field cells take exactly one of:
@@ -84,7 +89,13 @@ Field cells take exactly one of:
 `corrected` (applied, then the operator fixed it) ·
 `missing` (no suggestion) ·
 `wrong_high_conf` (offered as confident and wrong — **always note this**) ·
-`not_applied` (offered, operator chose not to use it).
+`not_applied` (offered, operator chose not to use it) ·
+`choice_correct` (shown as *Berbeda — pilih*, one of the two values was right and the operator picked it) ·
+`choice_neither` (shown as *Berbeda — pilih*, neither value was right; operator typed it).
+
+Per capture also record, without identifiers: `card_found` (`yes`/`no` — whether the screen found
+the card edges itself), `corners_adjusted` (`yes`/`no`), `boxes_moved` (number of field boxes the
+operator moved or resized), `retries` (number of *Baca Ulang* presses).
 
 `notes` must not contain personal data.
 

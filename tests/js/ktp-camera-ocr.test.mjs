@@ -71,12 +71,21 @@ test('OCR assets are always same-origin — never the tesseract.js CDN defaults'
 test('the bundled module passes explicit local paths to createWorker', () => {
     // Claims about CODE: strip comments first, or the module's own explanation
     // ("never innerHTML") would trip the guard it documents.
-    const src = readFileSync(new URL('../../resources/js/ktp-camera-ocr.js', import.meta.url), 'utf8')
+    const code = (file) => readFileSync(new URL(`../../resources/js/${file}`, import.meta.url), 'utf8')
         .replace(/\/\*[\s\S]*?\*\//g, '')
         .replace(/(^|[^:'"`])\/\/.*$/gm, '$1');
-    assert.match(src, /createWorker\('ind', 1\s*, config\)/);
-    assert.doesNotMatch(src, /jsdelivr|unpkg|cdnjs/, 'no CDN reference in the module');
-    assert.doesNotMatch(src, /innerHTML/, 'OCR text is never written as HTML');
+    // REVISION-PATIENT-KTP-OCR-FIELD-BASED-ROI-1 moved the worker into the
+    // lazily loaded OCR session; the page still builds the same-origin config
+    // and hands it over, and the session uses nothing else.
+    const page = code('ktp-camera-ocr.js');
+    const session = code('ktp-roi-ui.js');
+    assert.match(page, /assetConfig: ocrAssetConfig\(ds\.ocrBuildBase, OCR_ASSET_DIR\)/);
+    assert.match(session, /createWorker\('ind', 1\s*, deps\.assetConfig\)/);
+    assert.equal((session.match(/createWorker\(/g) ?? []).length, 1, 'one worker construction, always with the local config');
+    for (const [name, src] of [['ktp-camera-ocr.js', page], ['ktp-roi-ui.js', session], ['ktp-roi-ocr.js', code('ktp-roi-ocr.js')]]) {
+        assert.doesNotMatch(src, /jsdelivr|unpkg|cdnjs/, `no CDN reference in ${name}`);
+        assert.doesNotMatch(src, /innerHTML/, `OCR text is never written as HTML in ${name}`);
+    }
 });
 
 test('OCR lines are flattened, trimmed, clamped and bounded', () => {

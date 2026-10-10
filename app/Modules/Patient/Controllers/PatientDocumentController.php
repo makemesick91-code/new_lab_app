@@ -7,7 +7,7 @@ use App\Modules\Patient\Models\Patient;
 use App\Modules\Patient\Models\PatientDocument;
 use App\Modules\Patient\Requests\ParseKtpOcrRequest;
 use App\Modules\Patient\Requests\StoreKtpScanRequest;
-use App\Modules\Patient\Services\KtpOcrParser;
+use App\Modules\Patient\Services\KtpOcrSuggestionService;
 use App\Modules\Patient\Services\KtpScanService;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\JsonResponse;
@@ -30,7 +30,7 @@ class PatientDocumentController extends Controller
 
     public function __construct(
         private readonly KtpScanService $ktpScans,
-        private readonly KtpOcrParser $ocrParser,
+        private readonly KtpOcrSuggestionService $ocrSuggestions,
     ) {}
 
     /**
@@ -76,8 +76,12 @@ class PatientDocumentController extends Controller
     {
         $this->authorize('create', Patient::class);
 
-        $result = $this->ocrParser->parse(
+        // `fields` (REVISION-PATIENT-KTP-OCR-FIELD-BASED-ROI-1) is the optional
+        // per-field read; without it the result is the original single read.
+        $fields = $request->validated('fields');
+        $result = $this->ocrSuggestions->suggest(
             array_values((array) $request->validated('lines', [])),
+            is_array($fields) ? $fields : null,
             (float) config('scanner.ocr.confidence_threshold', 75.0),
         );
 

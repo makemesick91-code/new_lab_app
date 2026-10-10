@@ -68,3 +68,8 @@ Extends rule 177 (OCR is a suggestion) — this rule decides WHO may get one.
     decision is `outside_pilot_period`. Ask `--user=<id>` for eligibility, and at
     period end disarm the flag or record a fresh owner decision extending it.
     First activation: `docs/operations/ktp-camera-ocr-pilot-activation-spn4-2026-10-10.md`.
+17. **A code release does not change the pilot.** REVISION-PATIENT-KTP-OCR-FIELD-BASED-ROI-1
+    (rule 179) changed how the card is read, not who may read it: the gate, its
+    scope keys and the device waiver are untouched. While the pilot is armed, a
+    deploy changes the read the pilot operator sees on their next scan; record
+    that in the pilot evidence rather than re-arming or extending anything.

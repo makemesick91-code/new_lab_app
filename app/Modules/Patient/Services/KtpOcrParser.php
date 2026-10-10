@@ -41,6 +41,13 @@ class KtpOcrParser
 
     public const STATUS_AMBIGUOUS = 'ambiguous';
 
+    /**
+     * REVISION-PATIENT-KTP-OCR-FIELD-BASED-ROI-1 — two independent reads of the
+     * same field produced two different valid values. The value is null and both
+     * candidates are listed under `alternatives`; nothing is pre-selected.
+     */
+    public const STATUS_CONFLICT = 'conflict';
+
     public const OUTCOME_SUCCESS = 'success';
 
     public const OUTCOME_PARTIAL = 'partial';
@@ -69,13 +76,15 @@ class KtpOcrParser
     ];
 
     /** Label patterns, anchored at the start of a normalized line. */
-    private const LABELS = [
+    public const LABELS = [
         'nik' => '/^N[I1L|!]K\b/',
         'name' => '/^NAMA\b/',
         'birth_place_date' => '/^(?:TEMP\S*|TGL)\s*[\/.]?\s*\S*\s*LAH[I1L]R\b|^TEMPAT\b/',
         'gender' => '/^JEN[I1L]S\s*KELAM[I1L]N\b|^KELAM[I1L]N\b/',
         'address' => '/^ALAMAT\b/',
-        'rt_rw' => '/^RT\s*[\/.]?\s*RW\b/',
+        // The slash is often read as I, 1, L or | ("RTIRW") — measured on the
+        // ROI benchmark; tolerated like the NIK label's I/1/L.
+        'rt_rw' => '/^RT\s*[\/.I1L|!]?\s*RW\b/',
         'village' => '/^KEL\S*\s*[\/.]?\s*DESA\b|^DESA\b|^KELURAHAN\b/',
         'district' => '/^KECAMATAN\b/',
         'religion' => '/^AGAMA\b/',
@@ -113,6 +122,19 @@ class KtpOcrParser
      */
     public function parse(array $lines, float $threshold): array
     {
+        return $this->finalize($this->parseFields($lines, $threshold), $threshold);
+    }
+
+    /**
+     * Read and validate every field from labelled lines, WITHOUT the NIK
+     * cross-check. Used directly when several reads are reconciled before the
+     * cross-check runs once on the result ({@see KtpOcrSuggestionService}).
+     *
+     * @param  list<array{text: string, confidence: float|int|null}>  $lines
+     * @return array<string, array{value: ?string, status: string, confidence: ?float, reasons: list<string>}>
+     */
+    public function parseFields(array $lines, float $threshold): array
+    {
         $found = $this->collectLabelledValues($lines);
 
         $fields = array_fill_keys(self::FIELDS, null);
@@ -128,10 +150,26 @@ class KtpOcrParser
         $fields['marital_status'] = $this->parseEnum($found['marital_status'] ?? null, $threshold, array_combine(self::MARITAL, self::MARITAL));
         $fields['occupation'] = $this->parseFreeText($found['occupation'] ?? null, $threshold, 150);
 
+        return $fields;
+    }
+
+    /**
+     * Cross-check, build the form suggestions and decide the outcome.
+     *
+     * A field in conflict counts as recognized (the operator has candidates to
+     * choose from) but never as a clean read.
+     *
+     * @param  array<string, array>  $fields
+     */
+    public function finalize(array $fields, float $threshold): array
+    {
         $this->crossCheckNik($fields);
 
         $form = $this->buildFormSuggestions($fields);
-        $recognized = count(array_filter($form, fn (array $f): bool => $f['value'] !== null));
+        $recognized = count(array_filter(
+            $form,
+            fn (array $f): bool => $f['value'] !== null || ($f['alternatives'] ?? []) !== [],
+        ));
 
         $okCount = count(array_filter($form, fn (array $f): bool => $f['status'] === self::STATUS_OK));
         $outcome = match (true) {
@@ -189,6 +227,22 @@ class KtpOcrParser
         }
 
         return $found;
+    }
+
+    /**
+     * The field whose label a line starts with, by the same first-match rule
+     * {@see collectLabelledValues()} applies, or null when no label matches.
+     */
+    public function labelKeyOf(string $text): ?string
+    {
+        $normalized = $this->normalize($text);
+        foreach (self::LABELS as $key => $pattern) {
+            if (preg_match($pattern, $normalized) === 1) {
+                return $key;
+            }
+        }
+
+        return null;
     }
 
     private function normalize(string $text): string
@@ -399,31 +453,80 @@ class KtpOcrParser
      */
     private function crossCheckNik(array &$fields): void
     {
-        $nik = $fields['nik']['value'] ?? null;
-        if ($nik === null) {
+        // A field in conflict has no single value, but each of its candidates
+        // is still a validated read. Checking against every candidate keeps a
+        // disagreement from switching the cross-check off: a birth date or
+        // gender that contradicts EVERY NIK candidate is still demoted.
+        $niks = $this->candidates($fields['nik'] ?? null);
+        if ($niks === []) {
             return;
         }
 
-        $day = (int) substr($nik, 6, 2);
-        $isFemale = $day > 40;
-        $day = $isFemale ? $day - 40 : $day;
-        $month = (int) substr($nik, 8, 2);
-        $yy = substr($nik, 10, 2);
+        $encoded = array_map(function (string $nik): array {
+            $day = (int) substr($nik, 6, 2);
+            $isFemale = $day > 40;
 
-        $dob = $fields['date_of_birth']['value'] ?? null;
-        if ($dob !== null) {
-            [$y, $m, $d] = array_map('intval', explode('-', $dob));
-            if ($d !== $day || $m !== $month || substr((string) $y, -2) !== $yy) {
+            return [
+                'day' => $isFemale ? $day - 40 : $day,
+                'month' => (int) substr($nik, 8, 2),
+                'yy' => substr($nik, 10, 2),
+                'female' => $isFemale,
+            ];
+        }, $niks);
+
+        $dobs = $this->candidates($fields['date_of_birth'] ?? null);
+        if ($dobs !== []) {
+            $consistent = false;
+            foreach ($encoded as $n) {
+                foreach ($dobs as $dob) {
+                    [$y, $m, $d] = array_map('intval', explode('-', $dob));
+                    if ($d === $n['day'] && $m === $n['month'] && substr((string) $y, -2) === $n['yy']) {
+                        $consistent = true;
+                    }
+                }
+            }
+            if (! $consistent) {
                 $this->demote($fields['nik'], 'nik_birth_date_mismatch');
                 $this->demote($fields['date_of_birth'], 'nik_birth_date_mismatch');
             }
         }
 
-        $gender = $fields['gender']['value'] ?? null;
-        if ($gender !== null && ($gender === 'Female') !== $isFemale) {
-            $this->demote($fields['nik'], 'nik_gender_mismatch');
-            $this->demote($fields['gender'], 'nik_gender_mismatch');
+        $genders = $this->candidates($fields['gender'] ?? null);
+        if ($genders !== []) {
+            $consistent = false;
+            foreach ($encoded as $n) {
+                foreach ($genders as $gender) {
+                    if (($gender === 'Female') === $n['female']) {
+                        $consistent = true;
+                    }
+                }
+            }
+            if (! $consistent) {
+                $this->demote($fields['nik'], 'nik_gender_mismatch');
+                $this->demote($fields['gender'], 'nik_gender_mismatch');
+            }
         }
+    }
+
+    /**
+     * The validated values a field holds: its value, or — when it is in
+     * conflict — each alternative's value.
+     *
+     * @return list<string>
+     */
+    private function candidates(?array $field): array
+    {
+        if ($field === null) {
+            return [];
+        }
+        if ($field['value'] !== null) {
+            return [$field['value']];
+        }
+
+        return array_values(array_filter(
+            array_map(fn (array $a): mixed => $a['value'] ?? null, $field['alternatives'] ?? []),
+            fn (mixed $v): bool => is_string($v) && $v !== '',
+        ));
     }
 
     /**
@@ -443,6 +546,13 @@ class KtpOcrParser
                 // operator to opt in after looking at the card.
                 'suggest' => $field['value'] !== null && $field['status'] === self::STATUS_OK,
             ];
+            // Reconciled reads only (field-based ROI): which reads agreed, and —
+            // for a conflict — the candidates the operator chooses between.
+            foreach (['agreement', 'alternatives'] as $extra) {
+                if (array_key_exists($extra, $field)) {
+                    $form[$formField][$extra] = $field[$extra];
+                }
+            }
         }
 
         return $form;
@@ -457,6 +567,12 @@ class KtpOcrParser
      */
     private function composeAddress(array $fields): array
     {
+        $parts = ['address', 'rt_rw', 'village', 'district'];
+        $conflicts = array_filter($parts, fn (string $k): bool => ($fields[$k]['status'] ?? null) === self::STATUS_CONFLICT);
+        if ($conflicts !== []) {
+            return $this->composeConflictingAddress($fields, $conflicts);
+        }
+
         $street = $fields['address'];
         if ($street['value'] === null) {
             return $street;
@@ -483,7 +599,49 @@ class KtpOcrParser
             return $this->result(null, self::STATUS_INVALID, $street['confidence'], ['address_too_long']);
         }
 
-        return $this->result($value, $worst, $street['confidence'], array_values(array_unique($reasons)));
+        $composed = $this->result($value, $worst, $street['confidence'], array_values(array_unique($reasons)));
+        if (array_key_exists('agreement', $street)) {
+            $composed['agreement'] = $street['agreement'];
+        }
+
+        return $composed;
+    }
+
+    /**
+     * A component of the address block was read two different ways. The
+     * address is offered as two complete alternatives — one built with each
+     * read's value for the disputed parts — and nothing is pre-selected.
+     *
+     * @param  array<string, array>  $fields
+     * @param  array<int, string>  $conflicts
+     */
+    private function composeConflictingAddress(array $fields, array $conflicts): array
+    {
+        $alternatives = [];
+        foreach (['field', 'document'] as $source) {
+            $variant = $fields;
+            foreach ($conflicts as $key) {
+                $candidate = collect($fields[$key]['alternatives'] ?? [])->firstWhere('source', $source);
+                $variant[$key] = $candidate === null
+                    ? $this->result(null, self::STATUS_MISSING, null, [])
+                    : $this->result($candidate['value'], $candidate['status'], $candidate['confidence'] ?? null, []);
+            }
+            $composed = $this->composeAddress($variant);
+            if ($composed['value'] !== null) {
+                $alternatives[] = [
+                    'source' => $source,
+                    'value' => $composed['value'],
+                    'status' => $composed['status'],
+                    'confidence' => $composed['confidence'],
+                ];
+            }
+        }
+
+        $result = $this->result(null, self::STATUS_CONFLICT, null, ['ocr_methods_disagree']);
+        $result['agreement'] = 'conflict';
+        $result['alternatives'] = $alternatives;
+
+        return $result;
     }
 
     private function guardHit(?array $hit): ?array

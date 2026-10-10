@@ -1,0 +1,224 @@
+{
+ "corpus": "48 fictional synthetic KTP scenes",
+ "methods": {
+  "baseline": {
+   "exact": 216,
+   "wrong": 54,
+   "missing": 18,
+   "conflict": 0,
+   "wrongPreselected": 39,
+   "preselected": 213,
+   "preselectedCorrect": 174,
+   "perField": {
+    "ktp_number": {
+     "correct": 32,
+     "wrong": 0,
+     "missing": 16,
+     "conflict": 0,
+     "fhc": 0
+    },
+    "name": {
+     "correct": 43,
+     "wrong": 5,
+     "missing": 0,
+     "conflict": 0,
+     "fhc": 2
+    },
+    "date_of_birth": {
+     "correct": 46,
+     "wrong": 0,
+     "missing": 2,
+     "conflict": 0,
+     "fhc": 0
+    },
+    "gender": {
+     "correct": 48,
+     "wrong": 0,
+     "missing": 0,
+     "conflict": 0,
+     "fhc": 0
+    },
+    "address": {
+     "correct": 36,
+     "wrong": 12,
+     "missing": 0,
+     "conflict": 0,
+     "fhc": 7
+    },
+    "occupation": {
+     "correct": 11,
+     "wrong": 37,
+     "missing": 0,
+     "conflict": 0,
+     "fhc": 30
+    }
+   }
+  },
+  "field_only": {
+   "exact": 276,
+   "wrong": 11,
+   "missing": 1,
+   "conflict": 0,
+   "wrongPreselected": 5,
+   "preselected": 273,
+   "preselectedCorrect": 268,
+   "perField": {
+    "ktp_number": {
+     "correct": 47,
+     "wrong": 1,
+     "missing": 0,
+     "conflict": 0,
+     "fhc": 0
+    },
+    "name": {
+     "correct": 48,
+     "wrong": 0,
+     "missing": 0,
+     "conflict": 0,
+     "fhc": 0
+    },
+    "date_of_birth": {
+     "correct": 48,
+     "wrong": 0,
+     "missing": 0,
+     "conflict": 0,
+     "fhc": 0
+    },
+    "gender": {
+     "correct": 47,
+     "wrong": 0,
+     "missing": 1,
+     "conflict": 0,
+     "fhc": 0
+    },
+    "address": {
+     "correct": 38,
+     "wrong": 10,
+     "missing": 0,
+     "conflict": 0,
+     "fhc": 5
+    },
+    "occupation": {
+     "correct": 48,
+     "wrong": 0,
+     "missing": 0,
+     "conflict": 0,
+     "fhc": 0
+    }
+   }
+  },
+  "hybrid": {
+   "exact": 237,
+   "wrong": 2,
+   "missing": 0,
+   "conflict": 49,
+   "wrongPreselected": 2,
+   "preselected": 235,
+   "preselectedCorrect": 233,
+   "perField": {
+    "ktp_number": {
+     "correct": 47,
+     "wrong": 0,
+     "missing": 0,
+     "conflict": 1,
+     "fhc": 0
+    },
+    "name": {
+     "correct": 46,
+     "wrong": 0,
+     "missing": 0,
+     "conflict": 2,
+     "fhc": 0
+    },
+    "date_of_birth": {
+     "correct": 48,
+     "wrong": 0,
+     "missing": 0,
+     "conflict": 0,
+     "fhc": 0
+    },
+    "gender": {
+     "correct": 48,
+     "wrong": 0,
+     "missing": 0,
+     "conflict": 0,
+     "fhc": 0
+    },
+    "address": {
+     "correct": 36,
+     "wrong": 2,
+     "missing": 0,
+     "conflict": 10,
+     "fhc": 2
+    },
+    "occupation": {
+     "correct": 12,
+     "wrong": 0,
+     "missing": 0,
+     "conflict": 36,
+     "fhc": 0
+    }
+   }
+  }
+ },
+ "conflicts": {
+  "total": 49,
+  "fieldReadIsTrue": 40
+ },
+ "latencyMs": {
+  "baseline": {
+   "median": 901,
+   "p90": 1052,
+   "max": 1192
+  },
+  "hybrid": {
+   "median": 1719,
+   "p90": 2039,
+   "max": 2346
+  }
+ },
+ "stagesMs": {
+  "boundary": {
+   "median": 47,
+   "max": 99
+  },
+  "normalize": {
+   "median": 49,
+   "max": 104
+  },
+  "document": {
+   "median": 1189,
+   "max": 1573
+  },
+  "fields": {
+   "median": 433,
+   "max": 769
+  }
+ },
+ "byScene": {
+  "scan_flat": {
+   "baseline": 32,
+   "hybrid": 41
+  },
+  "camera_framed": {
+   "baseline": 36,
+   "hybrid": 41
+  },
+  "camera_rotated": {
+   "baseline": 31,
+   "hybrid": 39
+  },
+  "camera_perspective": {
+   "baseline": 40,
+   "hybrid": 41
+  },
+  "camera_dim_blur": {
+   "baseline": 42,
+   "hybrid": 37
+  },
+  "camera_glare": {
+   "baseline": 35,
+   "hybrid": 38
+  }
+ }
+}

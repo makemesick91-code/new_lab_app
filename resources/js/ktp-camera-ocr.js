@@ -16,6 +16,11 @@
  *  - Nothing is applied to the form without an explicit operator action, and
  *    a filled field is never silently overwritten.
  *
+ * REVISION-PATIENT-KTP-OCR-FIELD-BASED-ROI-1 — the read itself is now the
+ * field-based pipeline (ktp-roi-ocr.js) with its verification UI
+ * (ktp-roi-ui.js), both loaded lazily on first use. The whole-card read is
+ * kept inside it and is the fallback when the field step cannot run.
+ *
  * The pure helpers are exported for tests/js/ktp-camera-ocr.test.mjs.
  */
 
@@ -284,6 +289,8 @@ export function initKtpScan(root) {
     const scanBtn = $('[data-ktp-scan-btn]');
 
     let pendingBlob = null; // captured/selected, not yet confirmed
+    let ocrSession = null; // field-based OCR session for the confirmed image
+    let ocrRun = 0; // bumped on every reset, so a run that outlived its photo stops
     let stream = null;
     let videoDevices = [];
     let deviceIndex = -1;
@@ -304,11 +311,14 @@ export function initKtpScan(root) {
     };
 
     const resetResults = () => {
+        // Ends the OCR session: its worker is terminated and every pixel
+        // buffer of the KTP held for box editing is released.
+        ocrRun++;
+        ocrSession?.destroy();
+        ocrSession = null;
         $('[data-ktp-ocr-results]')?.classList.add('hidden');
         const body = $('[data-ktp-ocr-rows]');
         if (body) body.replaceChildren();
-        const info = $('[data-ktp-ocr-info]');
-        if (info) info.replaceChildren();
     };
 
     const clearAll = () => {
@@ -345,94 +355,32 @@ export function initKtpScan(root) {
     const runOcr = async (blob) => {
         if (!ocrEnabled) return;
         resetResults();
-        setStatus('Membaca teks KTP… (diproses di perangkat ini)', 'info');
-        const startedAt = performance.now();
-        let worker = null;
+        setStatus('Menyiapkan pembaca KTP… (diproses di perangkat ini)', 'info');
+        const run = ocrRun;
         try {
-            const { createWorker } = await import('tesseract.js');
-            const config = ocrAssetConfig(ds.ocrBuildBase, OCR_ASSET_DIR);
-            worker = await createWorker('ind', 1 /* LSTM only */, config);
-            const { data } = await worker.recognize(blob, {}, { blocks: true });
-            const lines = toOcrLines(data);
-
-            const res = await fetch(ds.parseUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-CSRF-TOKEN': csrf },
-                body: JSON.stringify({ lines }),
+            const { createKtpOcrSession } = await import('./ktp-roi-ui.js');
+            // The photo was cleared or replaced while the reader loaded.
+            if (run !== ocrRun) return;
+            ocrSession = createKtpOcrSession({
+                root,
+                parseUrl: ds.parseUrl,
+                csrf,
+                assetConfig: ocrAssetConfig(ds.ocrBuildBase, OCR_ASSET_DIR),
+                setStatus,
+                formValue: (name) => field(name)?.value ?? '',
             });
-            const parsed = await res.json().catch(() => ({}));
-            if (res.status === 429) throw new Error('Terlalu banyak percobaan. Tunggu sebentar lalu coba lagi.');
-            if (!res.ok || !parsed.ok) throw new Error('Hasil baca KTP tidak dapat diproses.');
-
-            renderResults(parsed);
-            const secs = ((performance.now() - startedAt) / 1000).toFixed(1);
-            const msg = {
-                success: `Teks KTP terbaca (${secs} dtk). Periksa lalu terapkan ke formulir.`,
-                partial: `Sebagian data terbaca (${secs} dtk). Lengkapi sisanya secara manual.`,
-                failed: 'Teks KTP tidak dapat dibaca. Isi data secara manual atau ambil ulang foto yang lebih jelas.',
-            }[parsed.outcome];
-            setStatus(msg, parsed.outcome === 'failed' ? 'error' : 'ok');
-        } catch (e) {
-            setStatus(e?.message?.startsWith('Terlalu') ? e.message : 'OCR gagal. Foto KTP tetap tersimpan; isi data secara manual.', 'error');
-        } finally {
-            if (worker) await worker.terminate().catch(() => {});
+            await ocrSession.read(blob);
+        } catch {
+            if (run === ocrRun) setStatus('OCR gagal. Foto KTP tetap tersimpan; isi data secara manual.', 'error');
         }
-    };
-
-    const td = (text, cls = '') => {
-        const cell = document.createElement('td');
-        cell.className = 'px-2 py-1 align-top ' + cls;
-        cell.textContent = text; // never innerHTML: OCR text is untrusted
-        return cell;
-    };
-
-    const currentValues = () => Object.fromEntries(FORM_FIELDS.map((f) => [f, field(f)?.value ?? '']));
-
-    const renderResults = (parsed) => {
-        const rows = $('[data-ktp-ocr-rows]');
-        const selections = initialSelections(parsed.form, currentValues());
-        for (const name of FORM_FIELDS) {
-            const s = parsed.form[name];
-            const sel = selections[name];
-            const tr = document.createElement('tr');
-            const box = document.createElement('input');
-            box.type = 'checkbox';
-            box.className = 'rounded border-gray-300';
-            box.dataset.ktpApplyField = name;
-            box.checked = sel.checked;
-            box.disabled = !sel.available;
-            const boxCell = document.createElement('td');
-            boxCell.className = 'px-2 py-1 align-top';
-            boxCell.appendChild(box);
-            tr.append(
-                boxCell,
-                td(FIELD_LABELS[name]),
-                td(s.value ?? '—', 'font-mono'),
-                td((STATUS_LABELS[s.status] ?? s.status) + (sel.replaces ? ' · mengganti isian' : ''),
-                    s.status === 'ok' ? 'text-emerald-700' : 'text-amber-700'),
-            );
-            rows.appendChild(tr);
-        }
-
-        const info = $('[data-ktp-ocr-info]');
-        for (const name of INFO_ONLY_FIELDS) {
-            const f = parsed.fields?.[name];
-            if (!f || f.value === null) continue;
-            const li = document.createElement('li');
-            li.textContent = `${FIELD_LABELS[name]}: ${f.value}`;
-            info.appendChild(li);
-        }
-        $('[data-ktp-ocr-info-wrap]')?.classList.toggle('hidden', info.childElementCount === 0);
-        $('[data-ktp-ocr-results]').classList.remove('hidden');
     };
 
     $('[data-ktp-apply]')?.addEventListener('click', () => {
         let applied = 0;
-        for (const box of root.querySelectorAll('[data-ktp-apply-field]:checked')) {
-            const input = field(box.dataset.ktpApplyField);
-            const value = box.closest('tr').children[2].textContent;
-            if (!input || value === '—') continue;
-            input.value = value;
+        for (const [name, value] of Object.entries(ocrSession?.selections() ?? {})) {
+            const input = field(name);
+            if (!input) continue;
+            input.value = value; // never innerHTML: OCR text is untrusted
             input.dispatchEvent(new Event('input', { bubbles: true }));
             input.dispatchEvent(new Event('change', { bubbles: true }));
             applied++;
@@ -600,7 +548,10 @@ export function initKtpScan(root) {
 
     clearBtn?.addEventListener('click', clearAll);
 
-    window.addEventListener('pagehide', stopCamera);
+    window.addEventListener('pagehide', () => {
+        stopCamera();
+        resetResults();
+    });
 }
 
 export function bootKtpScan() {
