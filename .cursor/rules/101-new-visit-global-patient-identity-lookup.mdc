@@ -19,6 +19,12 @@ Supersedes section 3 of
 `.cursor/rules/100-new-visit-patient-search-combobox.mdc` (branch-scoped New
 Visit lookup). Everything else in rule 100 remains in force.
 
+Restated as an owner product decision by rule 184
+(GOVERNANCE-PATIENT-KTP-NEW-PATIENT-ONLY-1): Master Data Pasien is global by
+design, a cross-branch patient is reused (never duplicated) and is never asked
+to recapture a KTP photo — while the KTP image itself stays branch-isolated
+(rule 183).
+
 ## 0. The distinction everything below serves
 
 ```

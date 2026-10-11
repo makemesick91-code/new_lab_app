@@ -12,6 +12,11 @@ Extends rule 182 (KTP archive persistence; its §10 is superseded by this rule)
 and rules 177–181 (KTP OCR, pilot, field read, D7 consent, live overlay). None
 of them is relaxed.
 
+Extended by rule 184 (GOVERNANCE-PATIENT-KTP-NEW-PATIENT-ONLY-1): patient
+identity is global, KTP capture is new-patient-only, no existing/legacy/
+cross-branch patient is ever asked for a KTP photo, and global patient search
+never implies global access to the images this rule isolates.
+
 ## The decision (one place: `PatientDocumentAccessService::decide()`)
 
 1. No `manage patients` → deny (`no_permission`).

@@ -12,6 +12,11 @@ alwaysApply: false
 
 Canonical doc: `docs/architecture/patient-duplicate-resolution-merge.md`.
 
+Rule 184 (GOVERNANCE-PATIENT-KTP-NEW-PATIENT-ONLY-1): a merge moves KTP
+documents with the patient and must keep each document's
+`captured_branch_id` — the re-point is a query-builder write that bypasses the
+model's write-once guard, so only the regression test protects it.
+
 1. **Patient merge never deletes clinical history.** It reassigns OWNERSHIP. No RME, odontogram, visit, invoice, payment, document, legacy record or clinical history is deleted, merged in content, renumbered or re-posted.
 2. **Merged RM remains searchable as a canonical patient alias.** The source keeps its Nomor RM on its own row (so it is never reissued) and `mst_patient_rm_aliases` resolves it; a reversal revokes, never deletes, an alias.
 3. **Identity fields are reconciled individually**; canonical patient selection does not automatically define final identity values. Every final field records its source (patient_a / patient_b / manual / matched / empty) in structured storage; manual values need validation AND a reason.

@@ -882,6 +882,19 @@ return [
         // existing `PatientKtp` token; declared so a rename cannot drop it.
         'tests/Feature/RME/PatientKtpArchiveBranchIsolationTest.php',
 
+        // GOVERNANCE-PATIENT-KTP-NEW-PATIENT-ONLY-1 — owner decisions (rule 184):
+        // KTP capture exists only on the two new-patient registration surfaces;
+        // an existing, repeat-visit or legacy-imported patient is registered with
+        // no KTP photo, scan or OCR; one global patient identity is reused across
+        // branches while the stored image keeps its capture branch through a
+        // cross-branch visit and a merge. Every likely regression here is silent
+        // (a `required` slips onto the token, a capture section lands on the
+        // edit page, a merge rewrites provenance) and blocks a clinic visit or
+        // widens an identity-card read, so it must never leave the critical gate.
+        // Selected by the existing `PatientKtp` token; declared so a rename
+        // cannot drop it.
+        'tests/Feature/RME/PatientKtpNewPatientOnlyGovernanceTest.php',
+
         // FEATURE-DAILY-BRANCH-CONTEXT-LOCK-1 — the daily working-branch lock
         // for Kasir and Admin Klinik, and the Super Admin approval that is the
         // only way past it.

@@ -9,6 +9,10 @@ alwaysApply: false
 Sprint doc: `docs/sprints/phase-3-patient-ktp-roi-ocr-clinical-pilot-1.md`.
 Protocol: `docs/runbooks/ktp-camera-ocr-supervised-pilot-protocol.md` (§0 D7, §3, §4, Appendix A).
 Extends rules 177 (OCR is a suggestion), 178 (who may use it) and 179 (how it reads).
+Rule 184 scopes it: D7 applies where camera/OCR processing is actually used —
+which is new-patient registration only. It is never a requirement placed on an
+existing, repeat-visit, legacy or cross-branch patient, and no legacy patient is
+ever treated as having consented.
 
 1. **The approved wording is canonical.** `config/patient_ktp_ocr_consent.php`
    holds the D7 text verbatim with a `version` (`D7-2026-10-10`). It is read only

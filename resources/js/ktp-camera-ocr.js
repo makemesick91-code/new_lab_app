@@ -536,9 +536,11 @@ export function initKtpScan(root) {
             return;
         }
         $('[data-ktp-ocr-applied]').value = '1';
-        const verify = $('[data-ktp-ocr-verify-wrap]');
-        verify.classList.remove('hidden');
-        verify.querySelector('input[type=checkbox]').required = true;
+        // The attestation is enforced by the submit guard below, NOT by a native
+        // `required`: browsers validate display:none controls too, so a required
+        // box in the hidden "Pasien Baru" panel silently refused an
+        // existing-patient visit (GOVERNANCE-PATIENT-KTP-NEW-PATIENT-ONLY-1).
+        $('[data-ktp-ocr-verify-wrap]').classList.remove('hidden');
         setStatus(`${applied} isian diterapkan. Cocokkan dengan KTP asli, lalu centang konfirmasi sebelum menyimpan.`, 'ok');
     });
 
@@ -830,14 +832,30 @@ export function initKtpScan(root) {
     if (tokenEl.value && clearBtn) clearBtn.disabled = false;
 
     // Never save while a photo is on screen that will NOT be archived (not yet
-    // confirmed, upload failed, or still uploading). A hidden section — the
-    // visit form's "Pasien Baru" panel in existing-patient mode — is not part
-    // of this save and never blocks it.
+    // confirmed, upload failed, or still uploading), nor with applied OCR
+    // values the operator has not attested against the card. A hidden section
+    // — the visit form's "Pasien Baru" panel in existing-patient mode — is not
+    // part of this save and never blocks it (rule 184: an existing patient is
+    // never held up by KTP state). The server still enforces the attestation
+    // for a new patient; this guard only spares the round trip.
     form?.addEventListener('submit', (event) => {
         if (root.offsetParent === null) return;
         const unsaved = !previewWrap.classList.contains('hidden') && !tokenEl.value;
-        if (!busy && !unsaved) return;
+        const attestBox = $('[data-ktp-ocr-verify-wrap]')?.querySelector('input[type=checkbox]');
+        const unattested = $('[data-ktp-ocr-applied]')?.value === '1' && attestBox != null && !attestBox.checked;
+        if (!busy && !unsaved && !unattested) return;
         event.preventDefault();
+        if (!busy && !unsaved) {
+            setStatus('Konfirmasi bahwa data hasil baca KTP sudah dicocokkan dengan KTP asli sebelum menyimpan.', 'error');
+            // Browser form-state restore (back/reload) can bring the hidden
+            // "applied" flag back while the box re-renders hidden: never ask the
+            // operator to tick a box they cannot see.
+            $('[data-ktp-ocr-verify-wrap]')?.classList.remove('hidden');
+            attestBox.focus?.();
+            attestBox.scrollIntoView?.({ block: 'center' });
+
+            return;
+        }
         setStatus(
             busy
                 ? 'Tunggu sampai foto KTP selesai diunggah sebelum menyimpan.'
