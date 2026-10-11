@@ -221,9 +221,13 @@ use App\Modules\Odontogram\Interfaces\OdontogramRepositoryInterface;
 use App\Modules\Odontogram\Models\Odontogram;
 use App\Modules\Odontogram\Policies\OdontogramPolicy;
 use App\Modules\Odontogram\Repositories\OdontogramRepository;
+use App\Modules\Patient\Interfaces\PatientDocumentProvenanceRepositoryInterface;
 use App\Modules\Patient\Interfaces\PatientRepositoryInterface;
 use App\Modules\Patient\Models\Patient;
+use App\Modules\Patient\Models\PatientDocument;
+use App\Modules\Patient\Policies\PatientDocumentPolicy;
 use App\Modules\Patient\Policies\PatientPolicy;
+use App\Modules\Patient\Repositories\PatientDocumentProvenanceRepository;
 use App\Modules\Patient\Repositories\PatientRepository;
 use App\Modules\PatientMerge\Interfaces\PatientDuplicateCandidateRepositoryInterface;
 use App\Modules\PatientMerge\Interfaces\PatientMergeCaseRepositoryInterface;
@@ -353,6 +357,8 @@ class RepositoryServiceProvider extends ServiceProvider
         DoctorBranchCoverRepositoryInterface::class => DoctorBranchCoverRepository::class,
         DoctorSessionLeaseRepositoryInterface::class => DoctorSessionLeaseRepository::class,
         PatientRepositoryInterface::class => PatientRepository::class,
+        // SECURITY-PATIENT-KTP-ARCHIVE-BRANCH-ISOLATION-1 — capture-branch backfill
+        PatientDocumentProvenanceRepositoryInterface::class => PatientDocumentProvenanceRepository::class,
         // FEATURE-PATIENT-DUPLICATE-RESOLUTION-MERGE-1
         PatientMergeCaseRepositoryInterface::class => PatientMergeCaseRepository::class,
         PatientRmAliasRepositoryInterface::class => PatientRmAliasRepository::class,
@@ -529,6 +535,7 @@ class RepositoryServiceProvider extends ServiceProvider
         WaReminderTemplate::class => WaReminderTemplatePolicy::class,
         Doctor::class => DoctorPolicy::class,
         Patient::class => PatientPolicy::class,
+        PatientDocument::class => PatientDocumentPolicy::class,
         PatientMergeCase::class => PatientMergeCasePolicy::class,
         LabService::class => LabServicePolicy::class,
         Technician::class => TechnicianPolicy::class,

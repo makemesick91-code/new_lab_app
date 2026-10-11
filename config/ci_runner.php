@@ -870,6 +870,18 @@ return [
         // cannot drop it.
         'tests/Feature/RME/PatientKtpArchivePersistenceTest.php',
 
+        // SECURITY-PATIENT-KTP-ARCHIVE-BRANCH-ISOLATION-1 — a stored KTP card
+        // is served only to an operator whose server-resolved working branch is
+        // the branch it was captured at, or to an explicitly privileged account;
+        // a refusal is a 404 identical to a missing document, provenance is
+        // write-once on the document, unknown provenance fails closed, and the
+        // evidence backfill writes nothing on a dry run. Its likely regression
+        // is silent (a future change reads the patient's editable branch again,
+        // or drops the per-document check from the controller) and returns a
+        // 200, so it must never drop out of the critical gate. Selected by the
+        // existing `PatientKtp` token; declared so a rename cannot drop it.
+        'tests/Feature/RME/PatientKtpArchiveBranchIsolationTest.php',
+
         // FEATURE-DAILY-BRANCH-CONTEXT-LOCK-1 — the daily working-branch lock
         // for Kasir and Admin Klinik, and the Super Admin approval that is the
         // only way past it.

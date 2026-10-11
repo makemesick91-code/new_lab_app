@@ -76,6 +76,13 @@ edit page "Lihat KTP" → PatientDocumentController::show()`.
     holder can open any patient's KTP. Whether KTP images should be
     branch-scoped is an **open owner decision** — never claim branch isolation
     for KTP retrieval until it is implemented and tested.
+    **SUPERSEDED 2026-10-11 by SECURITY-PATIENT-KTP-ARCHIVE-BRANCH-ISOLATION-1
+    (rule 183).** The owner decided, and it is now implemented and tested:
+    `manage patients` admits the request, and the per-document decision is
+    `PatientDocumentAccessService` — capture branch == the operator's
+    server-resolved working branch, or an explicit cross-branch privilege
+    (Super Admin; `view_cross_branch_patient_ktp_documents`, granted to no
+    role). Patient master data itself stays unscoped; only the KTP archive is.
 11. **D7 consent remains mandatory for KTP OCR** (rule 180). It gates reading the
     card, not keeping the document: a declined holder's photo is still archived
     as a plain identity document, exactly like a scanner or manual upload.
@@ -89,6 +96,8 @@ edit page "Lihat KTP" → PatientDocumentController::show()`.
     the camera/OCR pilot. Never make the camera mandatory.
 15. **No schema change** was needed or made; do not add columns to "fix"
     persistence that the existing table already records.
+    (Still true for PERSISTENCE. Rule 183 added `captured_branch_id` for ACCESS
+    provenance — a different question the table could not answer.)
 16. **Production evidence is aggregate only** — counts, sizes, statuses,
     timestamps. Never print a path, a name, a KTP number or the image.
     `php artisan patient-documents:audit --json` is the canonical read-only probe.

@@ -130,8 +130,16 @@ class KtpScanService
      * written takes its archive file away again (a transaction cannot roll
      * back a file). The temp photo is only released once the archive and its
      * record both exist, so a failure never loses the confirmed image.
+     *
+     * SECURITY-PATIENT-KTP-ARCHIVE-BRANCH-ISOLATION-1 — `$capturedBranchId` is
+     * the branch the card was captured at, resolved by the caller on the server
+     * ({@see PatientDocumentCaptureBranchResolver}). It is written once and is
+     * the sole input to the per-branch read decision. NULL is allowed and means
+     * "provenance unknown": the card is then readable only by a privileged
+     * account, never by a branch-scoped one (fail closed), so a caller that
+     * forgets to pass it can only under-share.
      */
-    public function attachTempToPatient(Patient $patient, string $token, int $userId): ?PatientDocument
+    public function attachTempToPatient(Patient $patient, string $token, int $userId, ?int $capturedBranchId = null): ?PatientDocument
     {
         $token = $this->sanitizeToken($token);
         if ($token === '') {
@@ -210,6 +218,7 @@ class KtpScanService
                 'compressed_file_size' => strlen($binary),
                 'checksum' => $checksum,
                 'uploaded_by' => $userId,
+                'captured_branch_id' => $capturedBranchId,
             ]));
         } catch (Throwable) {
             $disk->delete($finalPath);

@@ -4,6 +4,7 @@ namespace App\Providers;
 
 use App\Exceptions\ForbiddenProductionCommandException;
 use App\Modules\DoctorAccess\Listeners\ClaimDoctorSessionLease;
+use App\Modules\Patient\Services\PatientDocumentAccessService;
 use App\Modules\Prescription\Gateways\CloudApiWhatsAppGateway;
 use App\Modules\Prescription\Gateways\DisabledWhatsAppGateway;
 use App\Modules\Prescription\Gateways\FakeWhatsAppGateway;
@@ -122,6 +123,7 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->registerDoctorAppLoginRateLimiters();
         $this->registerKtpScanRateLimiter();
+        $this->registerPatientDocumentRateLimiter();
         $this->refuseForbiddenConsoleCommands();
         $this->registerDoctorSessionLeaseListener();
     }
@@ -186,6 +188,23 @@ class AppServiceProvider extends ServiceProvider
             $actor = $request->user()?->getAuthIdentifier() ?? $request->ip();
 
             return Limit::perMinute(20)->by('ktp-scan|'.$actor.'|'.($request->route()?->getName() ?? $request->path()));
+        });
+    }
+
+    /**
+     * SECURITY-PATIENT-KTP-ARCHIVE-BRANCH-ISOLATION-1 — per account, per
+     * document route. Every request to a stored identity document is audited
+     * (granted or denied), so an unthrottled loop of forged ids would turn the
+     * audit trail into a write amplifier. A real operator opens a card a handful
+     * of times; the limit is far above that.
+     */
+    private function registerPatientDocumentRateLimiter(): void
+    {
+        RateLimiter::for(PatientDocumentAccessService::RATE_LIMITER, function (Request $request) {
+            $actor = $request->user()?->getAuthIdentifier() ?? $request->ip();
+
+            return Limit::perMinute(PatientDocumentAccessService::REQUESTS_PER_MINUTE)
+                ->by('patient-document|'.$actor.'|'.($request->route()?->getName() ?? $request->path()));
         });
     }
 
