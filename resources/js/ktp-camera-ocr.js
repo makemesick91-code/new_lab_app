@@ -847,6 +847,10 @@ export function initKtpScan(root) {
         event.preventDefault();
         if (!busy && !unsaved) {
             setStatus('Konfirmasi bahwa data hasil baca KTP sudah dicocokkan dengan KTP asli sebelum menyimpan.', 'error');
+            // Browser form-state restore (back/reload) can bring the hidden
+            // "applied" flag back while the box re-renders hidden: never ask the
+            // operator to tick a box they cannot see.
+            $('[data-ktp-ocr-verify-wrap]')?.classList.remove('hidden');
             attestBox.focus?.();
             attestBox.scrollIntoView?.({ block: 'center' });
 

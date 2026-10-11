@@ -328,6 +328,19 @@ test('the attestation is never a native required constraint', () => {
     const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 
     assert.doesNotMatch(code, /\.required\s*=/);
+    assert.doesNotMatch(code, /\[\s*['"]required['"]\s*\]\s*=/);
+    assert.doesNotMatch(code, /\brequired\s*:\s*true/);
     assert.doesNotMatch(code, /setAttribute\(\s*['"]required/);
     assert.doesNotMatch(code, /toggleAttribute\(\s*['"]required/);
+});
+
+test('a block on an unattested OCR always shows the box it asks the operator to tick', async () => {
+    // Back/reload form-state restore can bring the hidden "applied" flag back
+    // while the attestation box re-renders hidden.
+    const { form, els, attestBox } = mount({ ocrApplied: true, attested: false });
+    els['[data-ktp-ocr-verify-wrap]'].classList.add('hidden');
+
+    assert.equal(await submitBlocked(form), true);
+    assert.equal(els['[data-ktp-ocr-verify-wrap]'].classList.contains('hidden'), false, 'the box is visible');
+    assert.equal(attestBox.focused, true);
 });

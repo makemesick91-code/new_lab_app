@@ -9,7 +9,7 @@ alwaysApply: false
 Sprint doc: `docs/sprints/governance-patient-ktp-new-patient-only-1.md`.
 Regression suite: `tests/Feature/RME/PatientKtpNewPatientOnlyGovernanceTest.php`
 (declared in `config/ci_runner.php` `critical_gate_mandatory_suites`, selected by
-the `PatientKtp` token) and `tests/js/ktp-camera-ocr-token.test.mjs`; 16/16
+the `PatientKtp` token) and `tests/js/ktp-camera-ocr-token.test.mjs`; 17/17
 mutants killed when written.
 
 These are **owner product decisions** (recorded 2026-10-11), not engineering
