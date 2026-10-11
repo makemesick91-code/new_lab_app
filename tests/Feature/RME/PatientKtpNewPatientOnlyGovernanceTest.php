@@ -110,6 +110,62 @@ function kgovCaptureRoots(string $html): array
     return array_map(fn (array $match): int => $match[1], $matches[0]);
 }
 
+/** Parse rendered HTML into an XPath over the real element tree. */
+function kgovXPath(string $html): DOMXPath
+{
+    $dom = new DOMDocument;
+    $previous = libxml_use_internal_errors(true);
+    $dom->loadHTML($html, LIBXML_NOERROR | LIBXML_NOWARNING);
+    libxml_clear_errors();
+    libxml_use_internal_errors($previous);
+
+    return new DOMXPath($dom);
+}
+
+/** The value of a PHP array entry whose key starts at $offset, up to its top-level comma. */
+function kgovRuleValue(string $source, int $offset): string
+{
+    $start = strpos($source, '=>', $offset) + 2;
+    $depth = 0;
+
+    for ($i = $start, $n = strlen($source); $i < $n; $i++) {
+        $char = $source[$i];
+        if ($char === '[' || $char === '(') {
+            $depth++;
+        } elseif ($char === ']' || $char === ')') {
+            if ($depth === 0) {
+                break;
+            }
+            $depth--;
+        } elseif ($char === ',' && $depth === 0) {
+            break;
+        }
+    }
+
+    return substr($source, $start, $i - $start);
+}
+
+/** The body of a class method, by brace depth (null when absent). */
+function kgovMethodBody(string $source, string $method): ?string
+{
+    if (! preg_match('/function\s+'.$method.'\s*\([^)]*\)[^{]*\{/', $source, $match, PREG_OFFSET_CAPTURE)) {
+        return null;
+    }
+
+    $start = $match[0][1] + strlen($match[0][0]);
+    $depth = 1;
+
+    for ($i = $start, $n = strlen($source); $i < $n && $depth > 0; $i++) {
+        $depth += match ($source[$i]) {
+            '{' => 1,
+            '}' => -1,
+            default => 0,
+        };
+    }
+
+    return substr($source, $start, $i - $start - 1);
+}
+
 // --- 1. KTP capture lives on the new-patient registration surfaces only ---------
 
 it('offers KTP capture on the Master Data new-patient page', function () {
@@ -128,21 +184,24 @@ it('offers KTP capture on the visit page only inside the new-patient panel', fun
         ->assertOk()
         ->getContent();
 
-    $roots = kgovCaptureRoots($html);
-    $existingPanel = strpos($html, 'data-mode-panel="existing"');
-    $newPanel = strpos($html, 'data-mode-panel="new"');
+    // Decided by the real element tree, not string positions: the ONE capture
+    // root must have exactly one mode-panel ancestor and it must be "new". A
+    // section moved into the existing panel, or out of both panels (visible to
+    // existing-patient visits), fails here.
+    $xpath = kgovXPath($html);
+    $roots = $xpath->query('//*[@data-ktp-scan]');
 
-    // Exactly one capture section; the existing-patient panel comes first and
-    // closes before the new-patient panel opens, so a capture root after the
-    // new panel's opening tag is the new panel's — never the existing one's.
-    expect($roots)->toHaveCount(1)
-        ->and($existingPanel)->toBeInt()
-        ->and($newPanel)->toBeInt()
-        ->and($existingPanel)->toBeLessThan($newPanel)
-        ->and($roots[0])->toBeGreaterThan($newPanel);
+    expect($roots->length)->toBe(1);
+
+    $panels = [];
+    foreach ($xpath->query('ancestor::*[@data-mode-panel]', $roots->item(0)) as $ancestor) {
+        $panels[] = $ancestor->getAttribute('data-mode-panel');
+    }
+
+    expect($panels)->toBe(['new']);
 });
 
-it('offers no KTP capture, prompt or requirement on an existing patient page', function () {
+it('offers no KTP capture section, consent prompt or attestation on an existing patient page', function () {
     $patient = Patient::factory()->create(['branch_id' => $this->branchA->id, 'medical_record_number' => 'DG-SPN4-2026-80001']);
 
     $html = $this->actingAs($this->registrar)
@@ -152,7 +211,34 @@ it('offers no KTP capture, prompt or requirement on an existing patient page', f
 
     expect(kgovCaptureRoots($html))->toBe([])
         ->and($html)->not->toContain('name="ktp_scan_token"')
-        ->and($html)->not->toContain('data-ktp-consent');
+        ->and($html)->not->toContain('data-ktp-consent')
+        ->and($html)->not->toContain('data-ktp-ocr-verify-wrap')
+        ->and($html)->not->toContain('Scan KTP')
+        ->and($html)->not->toContain('Unggah KTP')
+        ->and($html)->not->toContain('Foto KTP wajib');
+});
+
+it('never renders the OCR attestation as a native required control, even after a failed submit', function () {
+    // The box sits in the visit form's "Pasien Baru" panel. Browsers validate
+    // display:none controls, so a native `required` here refused an
+    // existing-patient visit once OCR had been applied and the operator then
+    // switched to "Pasien Terdaftar". old() replays that state after a failed submit.
+    $html = $this->actingAs($this->registrar)
+        ->withSession(['_old_input' => ['ktp_ocr_applied' => '1', 'patient_mode' => 'existing']])
+        ->get(route('rme.visits.create'))
+        ->assertOk()
+        ->getContent();
+
+    $xpath = kgovXPath($html);
+    $box = $xpath->query('//input[@name="ktp_ocr_verified"]');
+    $wrap = $xpath->query('//*[@data-ktp-ocr-verify-wrap]');
+
+    // Control: the replayed state is honoured (the attestation is shown) ...
+    expect($box->length)->toBe(1)
+        ->and($wrap->length)->toBe(1)
+        ->and(preg_split('/\s+/', $wrap->item(0)->getAttribute('class')))->not->toContain('hidden')
+        // ... and still never becomes a browser-enforced constraint.
+        ->and($box->item(0)->hasAttribute('required'))->toBeFalse();
 });
 
 // --- 2. Existing, repeat and legacy patients need no KTP photo ------------------
@@ -197,31 +283,58 @@ it('never holds an existing-patient visit on OCR flags left behind by the new-pa
     expect(ClinicVisit::where('patient_id', $patient->id)->count())->toBe(1);
 });
 
-it('declares no server-side rule that requires a KTP photo, scan or document', function () {
-    $files = array_merge(
-        glob(app_path('Modules/*/Requests/*.php')) ?: [],
-        glob(app_path('Http/Requests/*.php')) ?: [],
-        glob(app_path('Http/Requests/**/*.php')) ?: [],
-    );
+it('declares no server-side rule that requires any KTP field for a registration or visit', function () {
+    // The two capture ENDPOINTS validate the photo the operator chose to send;
+    // they are reached only when a capture actually happens, never as a
+    // precondition of registering a patient or a visit. Pinned below so the
+    // exclusion list cannot grow silently.
+    $captureEndpoints = ['StoreKtpScanRequest.php', 'ParseKtpOcrRequest.php'];
 
-    $declared = 0;
+    $files = [];
+    foreach (new RecursiveIteratorIterator(new RecursiveDirectoryIterator(app_path(), FilesystemIterator::SKIP_DOTS)) as $file) {
+        if ($file->getExtension() === 'php' && str_contains($file->getPathname(), DIRECTORY_SEPARATOR.'Requests'.DIRECTORY_SEPARATOR)) {
+            $files[] = $file->getPathname();
+        }
+    }
+
+    $declared = [];
     $offenders = [];
+    $excluded = [];
 
     foreach ($files as $file) {
-        $source = (string) file_get_contents($file);
-        preg_match_all("/'([a-z_.*]*ktp_(?:scan_token|photo|image|document)[a-z_.*]*)'\s*=>\s*(\[[^\]]*\]|'[^']*')/", $source, $rules, PREG_SET_ORDER);
+        $rules = kgovMethodBody((string) file_get_contents($file), 'rules');
+        if ($rules === null) {
+            continue;
+        }
 
-        foreach ($rules as [, $field, $rule]) {
-            $declared++;
-            if (str_contains($rule, "'required") || str_contains($rule, 'required|') || preg_match("/^'required/", $rule)) {
-                $offenders[] = basename($file).': '.$field;
+        preg_match_all('/([\'"])([^\'"]*ktp[^\'"]*)\1\s*=>/i', $rules, $keys, PREG_OFFSET_CAPTURE | PREG_SET_ORDER);
+
+        foreach ($keys as $key) {
+            if (in_array(basename($file), $captureEndpoints, true)) {
+                $excluded[basename($file)] = true;
+
+                continue;
+            }
+
+            $field = basename($file).': '.$key[2][0];
+            $declared[] = $field;
+
+            // required, required_if/with/unless, Rule::requiredIf(...), pipe
+            // strings, or `present` — any of them would make a KTP field a
+            // precondition of saving.
+            if (preg_match('/required|present/i', kgovRuleValue($rules, $key[0][1]))) {
+                $offenders[] = $field;
             }
         }
     }
 
-    // Non-vacuous: both registration requests declare the token today.
-    expect($declared)->toBeGreaterThanOrEqual(2)
-        ->and($offenders)->toBe([]);
+    // Non-vacuous: today the token, typed NIK and OCR flags are declared on both
+    // registration requests and the patient update request.
+    expect(count($declared))->toBeGreaterThanOrEqual(8)
+        ->and($declared)->toContain('StoreClinicVisitRequest.php: ktp_scan_token')
+        ->and($declared)->toContain('StorePatientRequest.php: ktp_scan_token')
+        ->and($offenders)->toBe([])
+        ->and(array_keys($excluded))->each->toBeIn($captureEndpoints);
 });
 
 // --- 3. One global identity across branches; the image stays at its capture branch

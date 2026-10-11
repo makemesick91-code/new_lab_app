@@ -1,12 +1,12 @@
 # GOVERNANCE-PATIENT-KTP-NEW-PATIENT-ONLY-1 — Patient identity is global; KTP photo capture is new-patient-only
 
-**Status:** classification **B** — runtime already compliant; governance documentation gap closed.
+**Status:** classification **C** — server side already compliant; ONE client-side violation found by independent review and fixed minimally; governance gap closed.
 **Date:** 2026-10-11 (WITA, UTC+08:00)
 **Branch:** `governance/patient-ktp-new-patient-only-1`
 **Base:** `feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report` @ `3fb2bdd7`
-**Production runtime (unchanged by this sprint):** `4034557e` (tree `2a413e76`), tag `security-patient-ktp-archive-branch-isolation-1-go`
+**Production runtime before this sprint:** `4034557e` (tree `2a413e76`), tag `security-patient-ktp-archive-branch-isolation-1-go`
 **Durable rule:** `.cursor/rules/184-patient-global-identity-new-patient-only-ktp.mdc`
-**Regression suite:** `tests/Feature/RME/PatientKtpNewPatientOnlyGovernanceTest.php`
+**Regression suites:** `tests/Feature/RME/PatientKtpNewPatientOnlyGovernanceTest.php`, `tests/js/ktp-camera-ocr-token.test.mjs` (attestation cases)
 
 ## 1. Owner product decisions (binding)
 
@@ -43,7 +43,7 @@
 | J. Camera OCR pilot gate | `KtpCameraOcrPilotGate::allows()` decides camera + parse endpoint | camera hidden when denied |
 | K. D7 consent | `ParseKtpOcrRequest` refuses OCR text without the current consent version | consent panel precedes the camera |
 
-The client save guard returns early for a hidden KTP section (`root.offsetParent === null`), so a stray new-panel photo can never hold an existing-patient visit — already pinned by `tests/js/ktp-camera-ocr-token.test.mjs` ("a hidden KTP section never blocks the save"). No `patient_type` column exists or is needed: classification comes from workflow context (`patient_mode`) and import provenance, never from whether an image exists.
+The client save guard returns early for a hidden KTP section (`root.offsetParent === null`), so a stray new-panel **photo** can never hold an existing-patient visit — pinned by `tests/js/ktp-camera-ocr-token.test.mjs` ("a hidden KTP section never blocks the save"). **That guard did not cover the OCR attestation, see §4.** No `patient_type` column exists or is needed: classification comes from workflow context (`patient_mode`) and import provenance, never from whether an image exists.
 
 ### Production evidence (read-only transaction, aggregates only, 2026-10-11)
 
@@ -61,7 +61,19 @@ The policy is already how production behaves: almost every visit to date was for
 
 ## 4. Classification
 
-**B — governance documentation gap.** No runtime defect was found. The gaps were: no durable rule recording the owner decisions; rule 182 and the CLAUDE.md archive record described "attach a KTP to an existing patient" as pending work ("next sprint"), which reads as a missing requirement; and several owner rules had no regression test (legacy visit, edit page offers no capture, cross-branch reuse with the archive kept and refused at another branch, merge keeping provenance, completeness ignoring the archive).
+**C — minor runtime inconsistency (client side), plus a governance documentation gap.**
+
+My first reading was **B** (no runtime defect). The independent adversarial review refuted it, and the finding was verified against the source before acting:
+
+- `resources/js/ktp-camera-ocr.js` set `required = true` on the `ktp_ocr_verified` box when OCR values were applied, and nothing ever cleared it; after a failed submit, Blade re-rendered it with `@required` from `old('ktp_ocr_applied')`.
+- The box lives in the visit form's `data-mode-panel="new"`. Switching to **Pasien Terdaftar** only adds `hidden`; the form has no `novalidate`.
+- Browsers apply constraint validation to `display:none` controls (they are not barred), and refuse the submit with a console-only "An invalid form control … is not focusable". The existing JS submit guard never runs.
+
+**Reachable path:** an OCR operator (today: the armed pilot, user 29 @ SPN4) starts a new registration, scans and applies the KTP, the duplicate check shows the patient already exists, they switch to *Pasien Terdaftar* and press Save — and nothing happens. That violates owner rule 13 (a repeat visit is never held up by KTP state) and contradicted the existing test's claim that "a hidden KTP section never blocks the save". The server was never at fault (`StoreClinicVisitRequest` excludes the attestation unless the patient is new), which is why HTTP tests could not see it.
+
+**Minimal fix:** the attestation moved from a native `required` into the existing submit guard in `ktp-camera-ocr.js`, which already skips a hidden section; the Blade `required` attribute was dropped. For a visible section the operator is still stopped (same message as the server, focus moved to the box); the server's `accepted` rule for a new patient is unchanged and authoritative.
+
+**Governance gaps also closed:** no durable rule recorded the owner decisions; rule 182 and the CLAUDE.md archive record described "attach a KTP to an existing patient" as pending work ("next sprint"); several owner rules had no regression test.
 
 ## 5. Governance compliance matrix
 
@@ -87,20 +99,26 @@ The policy is already how production behaves: almost every visit to date was for
 | 18 | Duplicate-patient rejection | duplicate NIK refused | exact message on both flows | PASS | `RmePatientFormatConsentTest` › rejects duplicate ktp through rme visit new patient flow… |
 | 19 | Repeated Save submission | archived at most once | at most once, even mid-archive | PASS | `PatientKtpArchivePersistenceTest` › archives a photo at most once…; …even when a second request arrives mid-archive |
 | 20 | Camera retake / preview clearing | form names the photo on screen | retake archived, cleared photo detached | PASS | `PatientKtpArchivePersistenceTest` › archives the retake…; `tests/js/ktp-camera-ocr-token.test.mjs` |
+| 21 | OCR applied in the new panel, then *Pasien Terdaftar* | existing-patient visit saves | **FAIL before this sprint** (silent browser refusal); saves after the fix | PASS (after fix) | `ktp-camera-ocr-token.test.mjs` › applied but unattested OCR never blocks the save of a hidden KTP section; › the attestation is never a native required constraint; new suite › never renders the OCR attestation as a native required control… |
 
 ## 6. Changes
 
-- **Added** `tests/Feature/RME/PatientKtpNewPatientOnlyGovernanceTest.php` — 10 tests, 55 assertions, fictional data and a synthetic 10×10 PNG only.
+- **Fixed** `resources/js/ktp-camera-ocr.js` — the OCR attestation is enforced by the submit guard (skips a hidden section) instead of a native `required`.
+- **Fixed** `resources/views/settings/patients/_ktp-scan.blade.php` — the attestation box is never rendered `required`.
+- **Added** `tests/Feature/RME/PatientKtpNewPatientOnlyGovernanceTest.php` — 11 tests, 63 assertions, fictional data and a synthetic 10×10 PNG only.
+- **Extended** `tests/js/ktp-camera-ocr-token.test.mjs` — 5 attestation tests driving the real `initKtpScan()`.
 - **Declared** it in `config/ci_runner.php` `critical_gate_mandatory_suites` (read only by CI governance, not by any request path).
 - **Added** rule 184; **cross-referenced** it from rules 101, 172, 180, 182 (its "known gap" reframed, not deleted) and 183.
 - **CLAUDE.md**: the "(next sprint)" archive note annotated as CLARIFIED; this sprint's record appended.
-- **No** change to `app/`, `routes/`, `resources/`, `database/`, `bootstrap/` or `scripts/`.
+- **No** change to `app/`, `routes/`, `database/`, `bootstrap/` or `scripts/`; no migration, permission or policy.
 
 ## 7. Verification
 
-- New suite 10/10 under the CI environment (empty environment file + CI's public test key).
-- **Mutation 9/9 KILLED, 0 not-applied**, each reverted by file copy and verified by SHA-256: capture added to the edit page; `required` token on the visit request; on the Master Data request; attestation demanded of an existing patient; capture moved into the existing-patient panel; visit refused for a patient without an archive; cross-branch read allowed; merge dropping `captured_branch_id`; completeness scoring the archive.
-- The critical-gate filter selects all 10 tests (`pest --list-tests`); `CriticalGateSuiteCoverageTest` 14/14.
+- New PHP suite 11/11 (63 assertions) under the CI environment (empty environment file + CI's public test key); JS suite 217/217; `npm run build` passes.
+- **Mutation 16/16 KILLED, 0 not-applied**, each reverted by file copy and verified by SHA-256: capture added to the edit page; `required` token on the visit request; on the Master Data request; attestation demanded of an existing patient; capture moved into the existing-patient panel; capture moved **outside both** panels; visit refused for a patient without an archive; cross-branch read allowed; merge dropping `captured_branch_id`; completeness scoring the archive; Blade re-rendering the attestation `required`; JS setting native `required`; JS guard ignoring an unattested OCR; JS attestation evaluated before the hidden exemption; `Rule::requiredIf` on the Master Data token; pipe-string `required` on the patient-update NIK.
+- **Honest limit:** node cannot emulate browser constraint validation, so the behavioural "hidden section" JS test passes on the old code too. The guard against *this* defect class is the comment-stripped source assertion (no native `required` in the module) plus the Blade render assertion — both proven by mutants M10/M11.
+- The visit-page test decides by the real element tree (`DOMDocument` ancestry: the capture root's only `data-mode-panel` ancestor is `new`), not string positions.
+- The critical-gate filter selects the suite (`pest --list-tests`); `CriticalGateSuiteCoverageTest` 14/14.
 
 ## 8. Findings recorded, deliberately not changed
 
@@ -108,7 +126,8 @@ The policy is already how production behaves: almost every visit to date was for
 2. **Typed NIK number in the Sprint 61.0 audit.** `PatientDataCompletenessService` scores `ktp_number` (the typed identity number) as an *optional* field; a patient without it shows as "incomplete" on that read-only audit page. That is the number, not the KTP image; it blocks nothing, and it is not touched here. Whether it should count is an owner question.
 3. **Privacy notice and retention** remain owner-PENDING (rule 180). Nothing was written on the clinic's behalf.
 4. Rule 182's other residual LOWs (auto-dismissing warning toast, silent drop of a new-panel photo after switching to existing mode, pre-release temps without checksum) are unchanged.
+5. Independent-review LOWs addressed in this sprint: the rule scan now reads every Request recursively, each KTP-keyed entry to its top-level comma (pipe strings, `Rule::requiredIf`, double quotes), with the two capture endpoints named and pinned as the only exclusions; the scan cannot see `withValidator()`/`Validator::make()` and rule 184 says so; the edit-page test now also refuses prompt text; rule 184 #2 is scoped to identity lookup/visibility and #15 to the KTP photo/archive.
 
 ## 9. Deployment decision
 
-`DEPLOYMENT_REQUIRED = NO`. Nothing that production executes changed. The GO tag for this sprint names the merge commit and is an evidence/governance tag; production keeps running `4034557e`, and this sprint does not claim otherwise.
+`DEPLOYMENT_REQUIRED = YES`. One JS module and one Blade partial changed (asset rebuild); no migration, no seeder, no permission. Deployed with `scripts/deploy-vps-runner.sh` **on the VPS**; the GO tag targets the verified production runtime commit after deployment.

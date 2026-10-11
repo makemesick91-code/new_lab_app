@@ -6,32 +6,33 @@
 # never asked for a KTP photo, scan or OCR; the stored KTP image stays
 # branch-isolated (rule 183) through a cross-branch visit and a merge.
 #
-# Audit-first: the runtime was found ALREADY COMPLIANT (classification B —
-# governance documentation gap). This change set carries NO runtime behaviour:
-# one regression suite (mutation-proven, 9/9 killed), its declaration in the
-# CI critical-gate mandatory registry, rule 184 plus cross-references, the
-# CLAUDE.md record and the sprint doc. No migration, no route, no permission,
-# no policy, no view, no JS. Production stays on the unchanged runtime
-# 4034557e (security-patient-ktp-archive-branch-isolation-1-go); closure is
-# evidence-only, without a deploy.
+# Audit-first. The server side was already compliant; an independent review
+# found ONE client-side violation (classification C): the OCR attestation box
+# was a native `required`, and browsers validate display:none controls, so
+# applying OCR in the "Pasien Baru" panel and then switching to "Pasien
+# Terdaftar" silently refused the existing-patient visit. Fixed minimally: the
+# attestation moved into the ktp-camera-ocr.js submit guard (which skips a
+# hidden section) and the Blade `required` attribute was dropped; the server's
+# `accepted` rule for a NEW patient is unchanged and authoritative.
 #
-# TYPE: MODULE_SPRINT (Patient), not DOCS_ONLY — a PHP test and a CI config
-# entry are not Markdown, and the strongest gate profile is wanted for a suite
-# that guards an identity-card isolation rule. security_impact stays true for
-# the same reason (default-strong), although no policy or middleware changes.
+# Runtime change = one JS module + one Blade partial (asset rebuild). No
+# migration, route, permission, policy or PHP runtime change. Deploy required.
+#
+# TYPE: MODULE_SPRINT (Patient). security_impact stays true (default-strong):
+# the suite guards an identity-card isolation rule.
 
 id: GOVERNANCE-PATIENT-KTP-NEW-PATIENT-ONLY-1
 type: MODULE_SPRINT
 module: Patient
 title: "Patient global identity and new-patient-only KTP governance"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
-runtime_change: false
+runtime_change: true
 schema_change: false
-frontend_change: false
+frontend_change: true
 security_impact: true
 branch_isolation_impact: false
 ledger_impact: false
-deploy_required: false
+deploy_required: true
 browser_required: false
 test_profiles: []
 go_tag: governance-patient-ktp-new-patient-only-1-go

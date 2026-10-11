@@ -225,10 +225,14 @@
         </div>
     @endif
 
-    {{-- Shown once OCR values were applied; the server requires it then. --}}
+    {{-- Shown once OCR values were applied; the server requires it then for a
+         NEW patient. Deliberately not a native required control: this section
+         sits in the visit form's "Pasien Baru" panel, browsers validate hidden
+         controls too, and an existing-patient visit must never be refused by
+         it (rule 184). The submit guard in ktp-camera-ocr.js asks instead. --}}
     <div class="mt-3 {{ $ktpOcrApplied ? '' : 'hidden' }} rounded-md border border-amber-200 bg-amber-50 p-3" data-ktp-ocr-verify-wrap>
         <label class="flex items-start gap-2 text-sm text-amber-900">
-            <input type="checkbox" name="ktp_ocr_verified" value="1" class="mt-0.5 rounded border-gray-300" @checked(old('ktp_ocr_verified')) @required($ktpOcrApplied) />
+            <input type="checkbox" name="ktp_ocr_verified" value="1" class="mt-0.5 rounded border-gray-300" @checked(old('ktp_ocr_verified')) />
             <span>Saya sudah mencocokkan data hasil baca KTP dengan KTP asli pasien.</span>
         </label>
         @error('ktp_ocr_verified')<p class="mt-1 text-xs text-rose-600">{{ $message }}</p>@enderror

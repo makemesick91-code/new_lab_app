@@ -9,7 +9,8 @@ alwaysApply: false
 Sprint doc: `docs/sprints/governance-patient-ktp-new-patient-only-1.md`.
 Regression suite: `tests/Feature/RME/PatientKtpNewPatientOnlyGovernanceTest.php`
 (declared in `config/ci_runner.php` `critical_gate_mandatory_suites`, selected by
-the `PatientKtp` token; 9/9 mutants killed when written).
+the `PatientKtp` token) and `tests/js/ktp-camera-ocr-token.test.mjs`; 16/16
+mutants killed when written.
 
 These are **owner product decisions** (recorded 2026-10-11), not engineering
 preferences. They extend — and relax none of — rule 101 (global patient identity
@@ -18,14 +19,21 @@ supervised pilot, field read, D7 consent, live overlay), rule 182 (KTP archive
 persistence) and rule 183 (KTP archive branch isolation). Where this rule and an
 older note disagree about what is *required* of a patient, this rule wins.
 
-The audit that produced it (2026-10-11) found the runtime **already compliant**;
-this rule makes the behaviour durable. It introduced no runtime change.
+The audit that produced it (2026-10-11) found the server side compliant and ONE
+client-side violation of rule 13: the OCR attestation box was a native
+`required`, so applying OCR in the "Pasien Baru" panel and then switching to
+"Pasien Terdaftar" silently refused the existing-patient visit. That was fixed
+in the same sprint (classification C); everything else was already compliant.
 
 ## Patient identity is global
 
 1. **Master Data Pasien is global.** It is intentionally not branch-scoped.
-2. Global patient visibility is an **intentional clinical requirement**, not a
-   security defect. Do not "fix" it in a security review.
+2. Global patient **identity lookup and visibility** is an intentional clinical
+   requirement, not by itself a security defect — do not branch-scope it in a
+   security review. This does NOT dismiss real findings about what a
+   cross-branch operator can read or change (e.g. the typed NIK on the patient
+   edit form, cross-branch edits of master data); those stay legitimate
+   findings and need an owner decision.
 3. Do **not** add branch filtering to global patient lookup, canonical patient
    identity, patient search or the patient master-data repositories without an
    explicit, separate owner approval. Existing role/permission checks still apply.
@@ -49,21 +57,34 @@ this rule makes the behaviour durable. It introduced no runtime change.
 9. New patient registration keeps the **manual workflow** — typed data entry with
    no photo at all is a complete registration.
 10. A missing KTP photo **never blocks registration.** `ktp_scan_token` is
-    `nullable` on both registration requests and no FormRequest may declare a
-    `required*` rule for a KTP token, photo, image or document (pinned by a
-    source scan in the regression suite).
+    `nullable` on both registration requests, and no `rules()` method of any
+    Request under `app/` may make a KTP-keyed field `required*` or `present`
+    (pinned by a source scan that reads every entry to its top-level comma, so
+    pipe strings and `Rule::requiredIf(...)` are seen). Only the two capture
+    endpoints (`StoreKtpScanRequest`, `ParseKtpOcrRequest`) are excluded — they
+    run only when a capture actually happens. The scan does not see rules added
+    in `withValidator()`/`after()` or ad-hoc `Validator::make()`; never add a
+    KTP requirement there either.
 
 ## Existing, repeat-visit, legacy and cross-branch patients
 
 11. **Existing patients are not required** to upload or recapture a KTP photo.
 12. **Legacy-imported patients** (`mst_patients.import_batch_id IS NOT NULL`) are
     not required to upload or recapture a KTP photo, and receive normal care.
-13. **Repeat visits** require no KTP scan and no OCR. An OCR flag that leaks from
-    a hidden new-patient panel never refuses an existing-patient visit
-    (`StoreClinicVisitRequest` excludes the attestation unless the patient is new).
+13. **Repeat visits** require no KTP scan and no OCR. KTP state left behind in
+    the hidden "Pasien Baru" panel never refuses an existing-patient visit — on
+    the server (`StoreClinicVisitRequest` excludes the attestation unless the
+    patient is new) **and in the browser**: no KTP control is ever a native
+    `required`, because browsers validate `display:none` controls too and the
+    refusal is silent (a console-only "not focusable"). Client-side KTP checks
+    live in the `ktp-camera-ocr.js` submit guard, which skips a hidden section.
+    This was a real defect found and fixed in this sprint (the OCR attestation
+    box).
 14. A **cross-branch visit** requires no KTP recapture.
-15. **No mass legacy KTP backfill**, no KTP upload campaign, no KTP completion
-    popup, no KTP completion score, no KTP-related visit blocker.
+15. **No mass legacy KTP backfill**, no KTP upload campaign, no KTP-photo
+    completion popup, no KTP-photo/archive completion score, no KTP-related
+    visit blocker. (The Sprint 61.0 audit's "KTP" column is the typed NIK
+    number, not the photo — see the distinction under rule 16.)
 16. The **absence of a KTP archive does not mean the patient identity is
     invalid** or the record incomplete. A patient's classification comes from
     workflow context (new-patient registration vs existing selection) and import
