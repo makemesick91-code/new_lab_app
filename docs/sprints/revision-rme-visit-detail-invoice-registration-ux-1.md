@@ -265,3 +265,31 @@ to **both** critical-gate variants (still byte-identical) — now 30/30, 24/24,
 * `ClinicVisitController::patientVisitOptions` (feeds the prior-visit picker)
   still lacks a branch check (known residual from an earlier sprint); the
   server-side derivation + validation, not the picker, is the authority.
+
+---
+
+## Release evidence (2026-10-12)
+
+| Item | Evidence |
+|---|---|
+| PR | #479, squash-merged as `a8685125720c7a97889ced568b663b7aa8363b91` |
+| Tree identity | merge tree `e0250a4b` == CI-validated candidate `ad1b5a3c` tree |
+| Required CI | run `38156671515` on `ad1b5a3c`: Classifier, NSF-R012 Quality, NSF-R011 Critical, Selective Module, NSF-9, NSF-10, Android gate — all success |
+| Critical gate content | `5567 passed (28589 assertions)`, `critical_test_exit_status=0`, warning contract satisfied; `RmeInvoiceRedesignTest`, `VisitTypeServerDerivationTest`, `VisitDetailClinicalSectionOrderTest`, `DoctorMultiDeviceAccessTest` all PASS |
+| Full Suite | **SKIPPED** — deferred by the active temporary policy (post-merge run `38166058854`: `full_suite_authorized=false`, `TEMPORARY_FULL_SUITE_POLICY_ACTIVE`). Not a pass. |
+| Local regression | RME 1836, Ui 176, PatientMerge 72 (+2 skipped), Patient 74, AccessControl 128 (+9 skipped), Cicd 272, Pilot 74, DoctorAccess 477 — 0 failed |
+| Deploy | `scripts/deploy-vps-runner.sh start` on the VPS: `exit=0`, `DEPLOY OK: 20261011-185922`, `DEPLOY_HEAD_TARGET_MATCH=YES`, backup `pre_auto_deploy_20261011-185922.sql` first, `Nothing to migrate.`, asset build ran, runtime isolation 70 GO / 0 FAIL |
+| Production health | `https://daengtisia.online` `/login`, `/health/live`, `/health/ready`, `/health/lb` 200; all ready components ok; guest `/rme/visits/create`, `/rme/visits`, `/rme/cashier`, `/dashboard` 302 |
+| Deployed code | card order Odontogram (365) → Rekam Medis (381) → Resep (410); 0 `visit_type` inputs; prior-visit picker present; 5 pairing guards; invoice config cached |
+| Real invoices | read-only render of all 5 PAID invoices through the deployed controller path inside a rolled-back transaction: each 1 page, A4 landscape 842×595, reconciles, settled, correctly paired; 0 write statements |
+| Data | unchanged vs pre-deploy baseline (visits 6 new + 1 control; invoices 5 PAID + 1 UNPAID); no record created or modified |
+| Logs / jobs | `laravel.log` 1,437,201 B / 162 ERROR before and after (0 new); failed jobs 0, pending 0 |
+| Posture | env pilot, debug OFF, maintenance OFF; php8.3-fpm, nginx, queue worker active |
+| GO tag | `revision-rme-visit-detail-invoice-registration-ux-1-go` (annotated) → `a8685125`, exact match at VPS HEAD |
+| Graph | graphify rebuilt on the merged tree: 37,798 nodes / 54,843 edges |
+
+**Local-only false alarm, recorded:** `DoctorMultiDeviceAccessTest` failed 8/8
+locally because the worktree's copied `vendor/` lacked
+`paragonie/constant_time_encoding` (required by the lock). It failed identically
+on the untouched base commit; `composer install` made the directory 477/477
+green and it passes in CI. Not a code defect.
