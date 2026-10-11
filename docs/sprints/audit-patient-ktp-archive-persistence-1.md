@@ -133,3 +133,32 @@ Residual LOWs (recorded in rule 182 "Known gaps"): the warning toast
 auto-dismisses after 4 s; a photo taken in the visit form's new-patient panel is
 dropped silently when the operator switches to an existing patient; temps
 uploaded before this release carry no checksum; nothing fsyncs.
+
+## 7. Release evidence (2026-10-11)
+
+| Gate | Evidence |
+|---|---|
+| Candidate CI | PR #473, candidate `66ed17dd`, run `38094500097` success: quality gate JS 212/212; critical gate 5,440 passed / 27,987 assertions, exit 0 (PostgreSQL 16), `PatientKtpArchivePersistenceTest` selected |
+| Merge | squash `bbf200d0`, tree `4af46d7d` == candidate tree, parent `a97d0c64` |
+| Post-merge CI | run `38100148950` success on `bbf200d0`: critical 5,440 passed, exit 0 |
+| Full Suite | **SKIPPED** — `full_suite_authorized=false`, `TEMPORARY_FULL_SUITE_POLICY_ACTIVE`; job never executed. Not a pass. |
+| Deploy | `scripts/deploy-vps-runner.sh start` executed ON the VPS: `exit=0`, `DEPLOY OK: 20261011-005705`, `DEPLOY_HEAD_TARGET_MATCH=YES (bbf200d0)`, snapshot cleaned, runtime isolation 70 GO / 0 FAIL, `Nothing to migrate.` |
+| Backup | `pre_auto_deploy_20261011-005705.sql`, 32,168,303 bytes, mode 640 `daengtisiams`, NSF-10 backup-verify 9/9 GO |
+| Deploy smoke | 6/6 command smoke GO; the `http://127.0.0.1/login` probe WATCH is the known co-tenant loopback shadow (verified over the domain instead) |
+| Production | HEAD/tree `bbf200d0`/`4af46d7d`, clean tracked tree; `https://daengtisia.online` `/login` `/health/live` `/health/ready` `/health/lb` 200; `/storage/...` 403; guest document route 302 → login; manifest `app-a1MlZPYA.js` served 200 and contains the clear message, the submit guard and the generation guard; php8.3-fpm / nginx / postgresql / queue worker active; 0 failed jobs; debug OFF, maintenance OFF; `laravel.log` byte-identical before and after (1,437,201 bytes, 162 ERROR) — 0 new errors |
+| Document store after deploy | 1 record, 1 file, 0 missing / orphan / checksum / duplicate |
+| Pilot | unchanged: ARMED, operator 29, SPN4, 2026-10-10..16, consent `D7-2026-10-10` usable |
+| GO tag | `audit-patient-ktp-archive-persistence-1-go`, tag object `fa61fed0`, target `bbf200d0` (exact match at VPS HEAD) |
+
+**Abandoned temp captures (observed, not touched).** One operator folder holds
+four unattached temp captures from the pilot day (2026-10-10 00:00, 00:04, 12:15,
+21:51 UTC). The audit's `stale_temp_files_count` moved from 0 to 2 during this
+session only because the two oldest crossed the 24h line. They are within design
+retention; `daengtisiams-ktp-temp-prune.timer` deletes each on the first daily run
+after it is 24h old. No production file was deleted by hand and no image was
+opened.
+
+**Not exercised on production:** an authenticated KTP retrieval (needs an
+operator session; proven by the feature suite, including a read from a fresh
+session by a different authorized user) and the browser flows on a real device
+(proven by the DOM-level JS suite).
