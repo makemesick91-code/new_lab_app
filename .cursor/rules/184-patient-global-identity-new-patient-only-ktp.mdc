@@ -1,0 +1,147 @@
+---
+description: GOVERNANCE-PATIENT-KTP-NEW-PATIENT-ONLY-1 — patient identity is global; KTP photo capture belongs to NEW patient registration only; existing, repeat-visit, legacy and cross-branch patients are never asked for a KTP photo; the stored KTP image stays branch-isolated
+globs: app/Modules/Patient/**, app/Modules/ClinicVisit/Controllers/ClinicVisitController.php, app/Modules/ClinicVisit/Requests/StoreClinicVisitRequest.php, app/Modules/PatientMerge/**, app/Modules/LegacyImport/**, resources/views/settings/patients/**, resources/views/rme/visits/_form.blade.php, resources/js/ktp-*.js
+alwaysApply: false
+---
+
+# Patient global identity and new-patient-only KTP governance
+
+Sprint doc: `docs/sprints/governance-patient-ktp-new-patient-only-1.md`.
+Regression suite: `tests/Feature/RME/PatientKtpNewPatientOnlyGovernanceTest.php`
+(declared in `config/ci_runner.php` `critical_gate_mandatory_suites`, selected by
+the `PatientKtp` token; 9/9 mutants killed when written).
+
+These are **owner product decisions** (recorded 2026-10-11), not engineering
+preferences. They extend — and relax none of — rule 101 (global patient identity
+lookup), rule 172 (patient duplicate resolution / merge), rules 177–181 (KTP OCR,
+supervised pilot, field read, D7 consent, live overlay), rule 182 (KTP archive
+persistence) and rule 183 (KTP archive branch isolation). Where this rule and an
+older note disagree about what is *required* of a patient, this rule wins.
+
+The audit that produced it (2026-10-11) found the runtime **already compliant**;
+this rule makes the behaviour durable. It introduced no runtime change.
+
+## Patient identity is global
+
+1. **Master Data Pasien is global.** It is intentionally not branch-scoped.
+2. Global patient visibility is an **intentional clinical requirement**, not a
+   security defect. Do not "fix" it in a security review.
+3. Do **not** add branch filtering to global patient lookup, canonical patient
+   identity, patient search or the patient master-data repositories without an
+   explicit, separate owner approval. Existing role/permission checks still apply.
+4. The **same patient identity is reused across branches.** A patient registered
+   at branch A who attends branch B is selected, not recreated (rule 101: the
+   visit branch comes from the operator's work context, never from the patient).
+5. Never create a branch-specific duplicate patient — not on a cross-branch
+   visit, not to "own" a record at a branch, not to attach a document.
+
+## KTP photo capture is a NEW-patient registration capability
+
+6. KTP camera capture exists for **new patient registration** — exactly two
+   surfaces: Master Data → Tambah Pasien, and Kunjungan → Daftar Kunjungan Baru →
+   Pasien Baru (the partial `settings.patients._ktp-scan` is included only there).
+   It is never offered on an existing patient's page.
+7. Camera OCR is **optional** and stays behind its existing gates
+   (`KtpCameraOcrPilotGate`, rule 178; D7 consent, rule 180). No code release
+   widens or re-arms the pilot.
+8. Scanner-agent capture and manual KTP file upload remain available where they
+   are authorized today. No new capture permission is granted by this rule.
+9. New patient registration keeps the **manual workflow** — typed data entry with
+   no photo at all is a complete registration.
+10. A missing KTP photo **never blocks registration.** `ktp_scan_token` is
+    `nullable` on both registration requests and no FormRequest may declare a
+    `required*` rule for a KTP token, photo, image or document (pinned by a
+    source scan in the regression suite).
+
+## Existing, repeat-visit, legacy and cross-branch patients
+
+11. **Existing patients are not required** to upload or recapture a KTP photo.
+12. **Legacy-imported patients** (`mst_patients.import_batch_id IS NOT NULL`) are
+    not required to upload or recapture a KTP photo, and receive normal care.
+13. **Repeat visits** require no KTP scan and no OCR. An OCR flag that leaks from
+    a hidden new-patient panel never refuses an existing-patient visit
+    (`StoreClinicVisitRequest` excludes the attestation unless the patient is new).
+14. A **cross-branch visit** requires no KTP recapture.
+15. **No mass legacy KTP backfill**, no KTP upload campaign, no KTP completion
+    popup, no KTP completion score, no KTP-related visit blocker.
+16. The **absence of a KTP archive does not mean the patient identity is
+    invalid** or the record incomplete. A patient's classification comes from
+    workflow context (new-patient registration vs existing selection) and import
+    provenance — never from whether a KTP image exists. Never classify a legacy
+    patient as "new" for lacking a native visit, nor an existing patient as "new"
+    for lacking a KTP image. No `patient_type` column exists or is needed.
+
+   Distinction worth keeping: the Sprint 61.0 data-quality audit
+   (`PatientDataCompletenessService`) scores the **typed NIK number**
+   (`ktp_number`) as an *optional* field. That is the identity number, not the
+   KTP image; it is informational, blocks nothing, and never reads the document
+   archive (pinned). Changing whether the typed number counts is a separate
+   owner decision.
+
+## Existing archives and branch isolation
+
+17. **Existing valid KTP archives are preserved** — never deleted, detached,
+    rewritten, re-homed or copied to another branch to implement a policy.
+18. KTP archive images remain **branch-isolated** (rule 183).
+19. **Global patient search does not grant global KTP image access.** Seeing a
+    patient everywhere and reading their card everywhere are different rights.
+20. `PatientDocumentAccessService::decide()` remains the single KTP
+    authorization source of truth; a refusal stays a 404 identical to a missing
+    document; Super Admin and an explicit per-account grant remain the only
+    cross-branch readers; Supervisor RME reads nothing without that grant.
+21. `mst_patient_documents.captured_branch_id` is **server-owned and immutable**
+    under current governance. It survives a cross-branch visit and a patient
+    merge (the merge re-points `patient_id` only, via the query builder — the
+    model's write-once guard does NOT protect that path; the regression test
+    does). Never hand-edit it.
+
+## Consent D7
+
+22. D7 consent (`D7-2026-10-10`, rule 180) remains mandatory **where camera/OCR
+    processing is actually used**. Its wording changes only through a new owner
+    approval and a new version.
+23. **Declining D7 never removes the manual pathway** — a declined photo is a
+    plain upload with zero OCR requests, and typed registration is complete.
+24. **Never fabricate consent**, and never treat a legacy or pre-existing
+    patient as having consented to OCR. D7 does not by itself authorize
+    indefinite document retention; the clinic privacy notice and retention
+    policy remain owner-PENDING (rule 180) — never write them on the clinic's
+    behalf.
+
+## Permissions, storage, privacy
+
+25. No automatic permission grant for reading old KTP documents. Cross-branch
+    reading stays a direct, audited, per-account grant (rule 183).
+26. No silent reassignment of patient document ownership.
+27. KTP images stay on **private storage**, served only through the policy-gated
+    stream with `Cache-Control: private, no-store`; never a public URL, never a
+    `temporaryUrl()`.
+28. A full NIK never appears in logs, audit payloads, reports, evidence or test
+    fixtures (fictional NIKs only in tests).
+29. **PatientMerge preserves the canonical global identity**: one person → one
+    canonical patient; documents move with the patient and keep their capture
+    branch.
+
+## Change discipline
+
+30. Any change to patient registration, visit registration, patient merge or the
+    KTP archive must re-run the new-, existing-, legacy- and cross-branch-patient
+    cases (this rule's regression suite plus rules 101/182/183 suites).
+31. Deployment scripts (`scripts/deploy-vps-runner.sh`) execute **on the VPS**,
+    never on a workstation. A governance/docs/test-only change is closed without
+    a deploy; never redeploy an unchanged runtime to satisfy a checklist.
+32. A GO tag requires verified evidence. A docs/rules/tests-only GO tag names an
+    undeployed commit and must say so; it never implies production runs it.
+33. Cleanup leaves zero task-owned processes, worktrees, CI runs, locks or
+    scratch files; never delete unrelated work, backups, evidence or patient data.
+
+## What this rule does NOT authorize
+
+- No attach-KTP-to-existing-patient feature is planned or required (rule 182's
+  "known gap" is reframed by rule 11: it is not a gap in a requirement). If one
+  is ever built it must be strictly optional, never prompted, never scored, never
+  a visit precondition, and must keep rules 17–21.
+- No branch-scoping of patient master data (an explicit owner decision would be
+  needed; rule 3).
+- No widening of the KTP camera pilot, no new consent records, no retention
+  period.

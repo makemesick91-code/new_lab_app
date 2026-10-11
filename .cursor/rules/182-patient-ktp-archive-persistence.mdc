@@ -118,6 +118,11 @@ edit page "Lihat KTP" → PatientDocumentController::show()`.
 
 - No way to attach or replace a KTP on an EXISTING patient (the edit page can
   only view/delete). An unarchived photo therefore has no in-app remedy yet.
+  **[CLARIFIED 2026-10-11 by rule 184 / GOVERNANCE-PATIENT-KTP-NEW-PATIENT-ONLY-1 —
+  owner decision: existing and legacy patients are NOT required to provide a KTP
+  photo, so this is not a gap in a requirement and no such feature is planned.
+  If one is ever built it must be optional, never prompted, never scored and
+  never a visit precondition.]**
 - The edit page shows only the latest KTP (`ktpDocument` = latest of many).
 - `scanner.ktp.temp_token_ttl_minutes` (60) is configuration only; the effective
   bound on a temp token is the 24h prune.

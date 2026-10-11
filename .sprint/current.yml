@@ -1,39 +1,39 @@
-# SECURITY-PATIENT-KTP-ARCHIVE-BRANCH-ISOLATION-1
+# GOVERNANCE-PATIENT-KTP-NEW-PATIENT-ONLY-1
 #
-# A stored KTP card is served only to an operator whose server-resolved working
-# branch is the branch it was captured at, or to an explicitly privileged
-# account (Super Admin; one Supervisor RME only by a governed per-account
-# grant). `manage patients` alone used to open every patient's card at every
-# branch. Provenance lives on the document (one additive, write-once column),
-# because the patient's branch and Nomor RM are both editable through the
-# unscoped master-data form. Refusals are 404s; access is audited without
-# identity data; unknown provenance fails closed. Patient master data itself is
-# unchanged and stays unscoped (owner decision, recorded as a known limit).
+# Owner product decisions recorded as durable governance (rule 184): Master
+# Data Pasien is global; KTP photo capture belongs to NEW patient registration
+# only; existing, repeat-visit, legacy-imported and cross-branch patients are
+# never asked for a KTP photo, scan or OCR; the stored KTP image stays
+# branch-isolated (rule 183) through a cross-branch visit and a merge.
 #
-# TYPE: FOUNDATION_SPRINT, not SECURITY_FIX. The SECURITY_FIX profile's scope
-# heuristic refuses >10 changed code files ("looks like a refactor"); this
-# change carries 18, of which 10 are NEW cohesive units (policy, access
-# service, decision, capture resolver, evidence backfill, governed grant), it
-# spans three modules (Patient, ClinicVisit, AccessControl) and adds a
-# governance permission. FOUNDATION_SPRINT describes that and keeps the SAME
-# audit strength (audit_level 3, full_foundation_audit). The scope-audit NO-GO
-# under SECURITY_FIX was evaluated, not waived: no split could satisfy it (the
-# core decision path alone is ~13 files). security_impact stays true.
+# Audit-first: the runtime was found ALREADY COMPLIANT (classification B —
+# governance documentation gap). This change set carries NO runtime behaviour:
+# one regression suite (mutation-proven, 9/9 killed), its declaration in the
+# CI critical-gate mandatory registry, rule 184 plus cross-references, the
+# CLAUDE.md record and the sprint doc. No migration, no route, no permission,
+# no policy, no view, no JS. Production stays on the unchanged runtime
+# 4034557e (security-patient-ktp-archive-branch-isolation-1-go); closure is
+# evidence-only, without a deploy.
+#
+# TYPE: MODULE_SPRINT (Patient), not DOCS_ONLY — a PHP test and a CI config
+# entry are not Markdown, and the strongest gate profile is wanted for a suite
+# that guards an identity-card isolation rule. security_impact stays true for
+# the same reason (default-strong), although no policy or middleware changes.
 
-id: SECURITY-PATIENT-KTP-ARCHIVE-BRANCH-ISOLATION-1
-type: FOUNDATION_SPRINT
+id: GOVERNANCE-PATIENT-KTP-NEW-PATIENT-ONLY-1
+type: MODULE_SPRINT
 module: Patient
-title: "Patient KTP archive branch isolation"
+title: "Patient global identity and new-patient-only KTP governance"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
-runtime_change: true
-schema_change: true
-frontend_change: true
+runtime_change: false
+schema_change: false
+frontend_change: false
 security_impact: true
-branch_isolation_impact: true
+branch_isolation_impact: false
 ledger_impact: false
-deploy_required: true
+deploy_required: false
 browser_required: false
 test_profiles: []
-go_tag: security-patient-ktp-archive-branch-isolation-1-go
-inherits_parent_go: audit-patient-ktp-archive-persistence-1-go
+go_tag: governance-patient-ktp-new-patient-only-1-go
+inherits_parent_go: security-patient-ktp-archive-branch-isolation-1-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
