@@ -154,5 +154,22 @@ encoded the old open contract (a role-less `manage patients` reader opening any
 card) and were re-anchored on an explicitly privileged reader with an inline
 note; one gained an assertion that the visit flow records the visit branch.
 
-Evidence for CI, merge, deploy and production verification is recorded in the
-follow-up evidence commit.
+## Release evidence (2026-10-11)
+
+| Gate | Evidence |
+|---|---|
+| Candidate | `6bbbbd3d` (tree `2a413e76`) |
+| CI | run `38115667690` **success**: CICD-CTRL Classifier, NSF-R012 Quality, NSF-R011 Critical (**PostgreSQL**, 5494 passed / 28207 assertions / 0 failed, `PatientKtpArchiveBranchIsolationTest` PASS), Selective Module, NSF-9, NSF-10, Android. The second Critical row is the mutually-exclusive runner variant (skipped by design). |
+| Full Suite | **SKIPPED** — global temporary Full-Suite policy ACTIVE; not claimed as passed. |
+| Merge | PR #475 squash → `4034557e`; **merge tree `2a413e76` == candidate tree**. |
+| Post-merge push run | `38122879578` **cancelled by GitHub per-ref concurrency** when the scheduled run on the same ref started at 08:30Z (not task-initiated). Tree equivalence with the green candidate is the verification. |
+| Deploy | `bash scripts/deploy-vps-runner.sh start` **on the VPS** (`srv1730088`): `exit=0`, `DEPLOY OK: 20261011-075350`, `DEPLOY_TARGET_PINNED=4034557e`, `DEPLOY_HEAD_TARGET_MATCH=YES`, backup `pre_auto_deploy_20261011-075350.sql` (backup-verify evidence present), migration `2026_10_11_100001` DONE (54 ms), runtime isolation 70 GO / 0 FAIL, secret permissions GO, snapshot cleaned. |
+| Post-deploy | `PermissionSeeder` + `permission:cache-reset` as `daengtisiams`: permission present, held by **0 roles / 0 accounts**. Backfill dry run 1 scanned / 1 resolvable → `--apply --actor=1` → 1 applied (card = SPN4); idempotent re-run scans 0; audit row actor 1, evidence codes only, no 16-digit run, no path. |
+| Production | over `https://daengtisia.online`: `/login` `/health/live` `/health/ready` `/health/lb` 200; `/storage/…` 403; document route (guest) 302 → login; `/settings/patients/DG-SPN4-…/documents/1` **404** (no 500 — `whereNumber` live); CSRF-less DELETE 419. Server: nginx / php8.3-fpm / PostgreSQL / queue worker active; KTP temp-prune timer active; 0 failed jobs; 0 pending migrations; pilot, debug OFF, maintenance OFF; `patient-documents:audit` clean (1 active doc, 0 missing/mismatch); KTP camera-OCR pilot flag unchanged; Supervisor RME account holds no cross-branch grant; **laravel.log byte-identical to the pre-deploy baseline (1,437,201 bytes / 162 ERROR) → 0 new errors**. |
+| GO tag | `security-patient-ktp-archive-branch-isolation-1-go` (object `211ef185`) → `4034557e`; exact-match at VPS HEAD. |
+
+**Not claimed:** an authenticated end-to-end KTP request on production (no
+operator credentials are used by this release process). The authorization
+behaviour is proven by the 54-test suite on SQLite and PostgreSQL 16.15 and by
+the CI critical gate on PostgreSQL; production verification covers the
+deployed code, schema, permission, provenance data and route posture.
