@@ -132,3 +132,24 @@ My first reading was **B** (no runtime defect). The independent adversarial revi
 ## 9. Deployment decision
 
 `DEPLOYMENT_REQUIRED = YES`. One JS module and one Blade partial changed (asset rebuild); no migration, no seeder, no permission. Deployed with `scripts/deploy-vps-runner.sh` **on the VPS**; the GO tag targets the verified production runtime commit after deployment.
+
+## 10. Shipped, deployed and verified (2026-10-11 WITA)
+
+| Item | Evidence |
+|---|---|
+| PR | #477, squash-merged as `042078f7` (tree `137cc0f2` == CI-tested candidate `6877c637`, parent `3fb2bdd7`) |
+| PR CI | run `38132468556` on `6877c637` — every required gate success; critical **5,505 passed / 0 failed** (28,272 assertions) incl. the new suite; JS **218/218** in the quality gate; classifier `unknown_high_risk` |
+| Post-merge CI | push run `38138907490` on `042078f7` — success; critical 5,505 passed / 0 failed |
+| Full Suite | **SKIPPED** (PR: `FULL_SUITE_NOT_ENABLED_FOR_EVENT`; push: `TEMPORARY_FULL_SUITE_POLICY_ACTIVE`) — not a pass |
+| Deploy | `scripts/deploy-vps-runner.sh` **on the VPS**: `exit=0`, `DEPLOY OK: 20261011-122128`, `DEPLOY_HEAD_TARGET_MATCH=YES`, target pinned, snapshot trusted and cleaned; nothing to migrate; assets rebuilt (`app-BfCKqrV8.js`, 121.62 kB) |
+| Backup | `pre_auto_deploy_20261011-122128.sql` (32,193,790 bytes, `0640 daengtisiams`, valid pg_dump header), backup-verify GO |
+| Runtime diff vs previous production `4034557e` | exactly `config/ci_runner.php`, `resources/js/ktp-camera-ocr.js`, `resources/views/settings/patients/_ktp-scan.blade.php` |
+| Production | `https://daengtisia.online`: `/login`, `/health/live`, `/health/ready`, `/health/lb` 200; `/storage/*` 403; patient create / visit create / KTP document routes 302 for a guest (no 500). Served bundle `app-BfCKqrV8.js` contains the new attestation guard and **0** native `required` assignments; the deployed partial has 0 `@required` |
+| Unchanged posture | KTP camera OCR pilot `ARMED`, consent `D7-2026-10-10` usable; 0 failed jobs; postgresql / nginx / php8.3-fpm / queue worker active; environment pilot, debug OFF, maintenance OFF |
+| Log delta | `laravel.log` byte-identical before and after (1,437,201 bytes, 162 ERROR lines) — **0 new errors** |
+| GO tag | `governance-patient-ktp-new-patient-only-1-go` → `042078f7` (the deployed runtime); local / remote / VPS exact match |
+| Graphify | rebuilt on tree `137cc0f2` (AST): 37,709 nodes / 54,741 edges / 3,828 communities; promoted to the canonical cache |
+
+**Not claimed:** an authenticated end-to-end browser session on production (no operator credentials or real KTP were used). The fix is proven by the mutation-tested suites, the served bundle and the deployed partial; the operator-facing path (apply OCR → switch to *Pasien Terdaftar* → save) should be exercised once by the pilot operator on site.
+
+This section is recorded in a docs-only evidence commit after the GO tag; that commit is not deployed and is not the tag target.
