@@ -78,6 +78,21 @@ class RmeInvoice extends Model
         return $this->belongsTo(ClinicVisit::class);
     }
 
+    /**
+     * True when this invoice was raised for the given visit.
+     *
+     * The cashier routes bind {clinicVisit} and {rmeInvoice} independently and
+     * the policy authorizes the INVOICE only. Without this check a valid invoice
+     * could be paired with any visit id in the URL, printing one patient's name,
+     * RM and phone beside another patient's money. Every route that takes both
+     * must refuse an unpaired request (404).
+     */
+    public function belongsToVisit(ClinicVisit $visit): bool
+    {
+        return $this->clinic_visit_id !== null
+            && (int) $this->clinic_visit_id === (int) $visit->getKey();
+    }
+
     public function patient(): BelongsTo
     {
         return $this->belongsTo(Patient::class);

@@ -966,6 +966,25 @@ return [
         // exactly the check that would notice. A rename must move that
         // coverage, never quietly delete it.
         'tests/Feature/Pwa/PwaServiceWorkerCachePolicyTest.php',
+
+        // REVISION-RME-VISIT-DETAIL-INVOICE-REGISTRATION-UX-1. The printed RME
+        // invoice is a financial document handed to the patient: every amount
+        // must be the stored canonical value, the document must refuse to look
+        // settled when it does not reconcile, and a cashier route must refuse an
+        // invoice paired with a visit it was not raised for (otherwise one
+        // patient's name, RM and phone print beside another patient's money).
+        // Every one of those regressions is silent — a wrong number on paper, or
+        // a page that renders when it should 404. Selected by the
+        // `RmeInvoiceRedesign` token; declared so a rename cannot drop it.
+        'tests/Feature/RME/RmeInvoiceRedesignTest.php',
+
+        // Same sprint. The visit type is derived on the server and any
+        // client-submitted value is ignored; an explicitly selected but invalid
+        // prior visit is rejected, never downgraded to "Baru". A regression here
+        // is a tampered request that silently changes control-chain billing.
+        // Selected by the `VisitTypeServerDerivation` token; declared so a rename
+        // cannot drop it.
+        'tests/Feature/RME/VisitTypeServerDerivationTest.php',
     ],
 
     /*

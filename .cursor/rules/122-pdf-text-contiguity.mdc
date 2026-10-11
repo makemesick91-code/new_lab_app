@@ -29,8 +29,8 @@ that was completely correct.
    Read the field out of its own column instead:
 
    ```php
-   expect(pdfLayoutFieldValue($text, 'Nama Pasien'))->toBe($visit->patient->name);
-   expect(pdfLayoutColumnText($text, 'TINDAKAN', 'QTY'))->toContain(pdfNormalizeText($item->description));
+   expect(pdfLayoutFieldValue($text, 'Nama'))->toBe($visit->patient->name);
+   expect(pdfLayoutColumnText($text, 'Jenis Perawatan', 'Qty'))->toContain(pdfNormalizeText($item->description));
    expect(pdfLayoutFullWidthText($text))->toContain(pdfNormalizeText($branch->name));
    ```
 
@@ -57,6 +57,20 @@ that was completely correct.
 
 6. Every new negative control must prove a **wrong** or **partially rendered** value still
    fails. A wrap-tolerant assertion that cannot fail is worse than the brittle one.
+
+7. **Two-column pages interleave rows** (REVISION-RME-VISIT-DETAIL-INVOICE-REGISTRATION-UX-1).
+   When a labelled block sits BESIDE another block, each of its lines can be followed by a
+   line holding only the OTHER column's text, and a wrapped tail may sit after it.
+   `pdfLayoutFieldValue()` therefore continues a value only with a segment that starts in
+   the value's own column (±2), skips lines that belong only to another column, and still
+   closes the cell on a blank line or when the label column fills. It can only ever return
+   less than the old reader, never more.
+
+8. **Columns are placed per page.** `pdftotext -layout` re-bases each page's text grid on
+   that page's own leftmost text, so a table that continues onto a page without the block
+   beside it moves left in the text. `pdfLayoutColumnText()` measures its band on every
+   page from that page's own repeated heading and joins the pages. Never assume a band
+   measured on page 1 applies to page 2.
 
 ## Full Suite
 

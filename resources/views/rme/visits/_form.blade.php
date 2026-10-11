@@ -4,7 +4,6 @@
     $rmeBranches = $rmeBranches ?? collect();
     $patientMode = old('patient_mode', 'existing');
     $prefill = $prefill ?? [];
-    $visitType = old('visit_type', $prefill['visit_type'] ?? \App\Modules\ClinicVisit\Models\ClinicVisit::VISIT_TYPE_NEW);
     $prefillFollowUpId = old('follow_up_of_visit_id', $prefill['follow_up_of_visit_id'] ?? null);
     $prefillPatientId = old('patient_id', $prefill['patient_id'] ?? $visit?->patient_id);
     $prefillBranchId = old('branch_id', $prefill['branch_id'] ?? $visit?->branch_id);
@@ -39,29 +38,31 @@
     </div>
 
     @if (! $visit)
-        <div class="sm:col-span-2">
-            <label class="block text-sm font-medium text-ink">Jenis Kunjungan <span class="text-danger">*</span></label>
-            <select name="visit_type" required data-visit-type class="mt-1 block w-full rounded-lg border-hairline text-sm focus:border-brand-500 focus:ring-brand-500">
-                @foreach ([
-                    \App\Modules\ClinicVisit\Models\ClinicVisit::VISIT_TYPE_NEW => 'Baru',
-                    \App\Modules\ClinicVisit\Models\ClinicVisit::VISIT_TYPE_CONTROL => 'Kontrol',
-                    \App\Modules\ClinicVisit\Models\ClinicVisit::VISIT_TYPE_CONTINUED_TREATMENT => 'Lanjutan Tindakan',
-                    \App\Modules\ClinicVisit\Models\ClinicVisit::VISIT_TYPE_EMERGENCY => 'Emergency',
-                ] as $typeValue => $typeLabel)
-                    <option value="{{ $typeValue }}" @selected($visitType === $typeValue)>{{ $typeLabel }}</option>
-                @endforeach
-            </select>
-            @error('visit_type')<p class="mt-1 text-xs text-danger-700">{{ $message }}</p>@enderror
-        </div>
-
-        <div class="sm:col-span-2 hidden" data-follow-up-panel>
-            <label class="block text-sm font-medium text-ink">Kunjungan Sebelumnya <span class="text-danger">*</span></label>
+        {{-- REVISION-RME-VISIT-DETAIL-INVOICE-REGISTRATION-UX-1 — "Jenis
+             Kunjungan" is no longer an operator choice. The server derives it
+             (StoreClinicVisitRequest): Kontrol when a prior visit is selected
+             below, Baru otherwise. The prior-visit picker is the only input that
+             can make a visit Kontrol, it is optional, and it exists only for a
+             registered patient — a new patient has no prior visit to follow. --}}
+        <div class="sm:col-span-2 {{ $patientMode === 'existing' ? '' : 'hidden' }}" data-follow-up-panel>
+            <label class="block text-sm font-medium text-ink">Kunjungan Sebelumnya (Kontrol) <span class="text-ink-muted">(opsional)</span></label>
             <select name="follow_up_of_visit_id" data-follow-up-select class="mt-1 block w-full rounded-lg border-hairline text-sm focus:border-brand-500 focus:ring-brand-500">
-                <option value="">- Pilih kunjungan sebelumnya -</option>
+                <option value="">- Bukan kunjungan kontrol (Kunjungan Baru) -</option>
             </select>
             <p class="mt-1 text-xs text-ink-soft" data-follow-up-hint>Pilih pasien terdaftar terlebih dahulu untuk melihat riwayat kunjungan.</p>
+            <p class="mt-1 text-xs text-ink-muted">Pilih kunjungan sebelumnya hanya jika kunjungan ini adalah kontrol. Jika dikosongkan, kunjungan dicatat sebagai Kunjungan Baru.</p>
             @error('follow_up_of_visit_id')<p class="mt-1 text-xs text-danger-700">{{ $message }}</p>@enderror
         </div>
+
+        {{-- The derived type can still be refused (e.g. a prior visit submitted
+             with a new-patient registration). Its message is rendered here, in a
+             place that is always visible, because there is no longer a type
+             field to hang it on. --}}
+        @error('visit_type')
+            <div class="sm:col-span-2">
+                <p class="rounded-lg border border-danger-100 bg-danger-50 px-3 py-2 text-xs text-danger-700">{{ $message }}</p>
+            </div>
+        @enderror
     @endif
 
     @if (! $visit)
@@ -277,7 +278,6 @@
         const dateEl = block.querySelector('[data-rm-date]');
         const manual = block.querySelector('[data-rm-manual]');
         const preview = block.querySelector('[data-rm-preview]');
-        const visitTypeSelect = document.querySelector('[data-visit-type]');
         const followUpPanel = document.querySelector('[data-follow-up-panel]');
         const followUpSelect = document.querySelector('[data-follow-up-select]');
         const followUpHint = document.querySelector('[data-follow-up-hint]');
@@ -285,7 +285,10 @@
         const prefillFollowUpId = @json($prefillFollowUpId);
         const patientOptionsUrl = @json(route('rme.visits.patient-options'));
 
-        const followUpTypes = ['control', 'continued_treatment'];
+        // REVISION-RME-VISIT-DETAIL-INVOICE-REGISTRATION-UX-1 — there is no visit
+        // type select any more; the prior-visit picker alone decides Kontrol, and
+        // the server re-derives it on store regardless of what is submitted here.
+        const emptyFollowUpOption = '<option value="">- Bukan kunjungan kontrol (Kunjungan Baru) -</option>';
 
         const applyMode = function (mode) {
             modeInput.value = mode;
@@ -301,27 +304,21 @@
                 window.dispatchEvent(new CustomEvent('patient-selector-reset'));
             }
 
-            syncVisitTypeOptions();
-            syncFollowUpPanel();
-        };
-
-        const syncVisitTypeOptions = function () {
-            if (!visitTypeSelect) return;
-            const isNewPatient = modeInput.value === 'new';
-            Array.from(visitTypeSelect.options).forEach((option) => {
-                if (followUpTypes.includes(option.value)) {
-                    option.disabled = isNewPatient;
-                }
-            });
-            if (isNewPatient && followUpTypes.includes(visitTypeSelect.value)) {
-                visitTypeSelect.value = 'new';
+            // A new patient has no prior visit. Clear the picker so a stale
+            // selection cannot ride along with the hidden panel; if one did, the
+            // server would refuse it rather than register a Kontrol.
+            if (mode !== 'existing' && followUpSelect) {
+                followUpSelect.innerHTML = emptyFollowUpOption;
+                followUpSelect.value = '';
             }
+
+            syncFollowUpPanel();
         };
 
         const renderFollowUpOptions = function (visits) {
             if (!followUpSelect) return;
             const current = followUpSelect.value || String(prefillFollowUpId || '');
-            followUpSelect.innerHTML = '<option value="">- Pilih kunjungan sebelumnya -</option>';
+            followUpSelect.innerHTML = emptyFollowUpOption;
             visits.forEach((visit) => {
                 const option = document.createElement('option');
                 option.value = String(visit.id);
@@ -338,7 +335,7 @@
             if (!followUpSelect || !patientSelect) return;
             const patientId = patientSelect.value;
             if (!patientId) {
-                followUpSelect.innerHTML = '<option value="">- Pilih kunjungan sebelumnya -</option>';
+                followUpSelect.innerHTML = emptyFollowUpOption;
                 if (followUpHint) {
                     followUpHint.textContent = 'Pilih pasien terdaftar terlebih dahulu untuk melihat riwayat kunjungan.';
                 }
@@ -358,7 +355,7 @@
                 renderFollowUpOptions(data.visits || []);
                 if (followUpHint) {
                     followUpHint.textContent = (data.visits || []).length
-                        ? 'Pilih kunjungan sebelumnya yang akan dijadikan acuan kontrol.'
+                        ? 'Pilih kunjungan sebelumnya hanya jika kunjungan ini adalah kontrol.'
                         : 'Tidak ada riwayat kunjungan sebelumnya.';
                 }
             } catch (e) {
@@ -369,8 +366,8 @@
         };
 
         const syncFollowUpPanel = function () {
-            if (!visitTypeSelect || !followUpPanel) return;
-            const show = followUpTypes.includes(visitTypeSelect.value) && modeInput.value === 'existing';
+            if (!followUpPanel) return;
+            const show = modeInput.value === 'existing';
             followUpPanel.classList.toggle('hidden', !show);
             if (show) {
                 loadFollowUpOptions();
@@ -378,9 +375,8 @@
         };
 
         radios.forEach(r => r.addEventListener('change', () => applyMode(r.value)));
-        visitTypeSelect?.addEventListener('change', syncFollowUpPanel);
         patientSelect?.addEventListener('change', () => {
-            if (followUpTypes.includes(visitTypeSelect?.value || '')) {
+            if (modeInput.value === 'existing') {
                 loadFollowUpOptions();
             }
         });
@@ -402,10 +398,10 @@
 
         applyMode(modeInput.value || 'existing');
         recompute();
+        // Loads the prior visits of a prefilled/selected registered patient, so a
+        // "Buat Kontrol" link (or a re-rendered form after a validation error)
+        // lands with its prior visit already selected.
         syncFollowUpPanel();
-        if (prefillFollowUpId && followUpTypes.includes(visitTypeSelect?.value || '')) {
-            loadFollowUpOptions();
-        }
 
         const visitBranchSelect = document.querySelector('[data-visit-branch]');
         const newPatientBranchSelect = document.querySelector('[data-rm-branch]');
