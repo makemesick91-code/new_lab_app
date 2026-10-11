@@ -10,6 +10,7 @@ use App\Modules\Patient\Models\Patient;
 use App\Modules\Patient\Requests\StorePatientRequest;
 use App\Modules\Patient\Requests\UpdatePatientRequest;
 use App\Modules\Patient\Services\KtpScanService;
+use App\Modules\Patient\Services\PatientDocumentCaptureBranchResolver;
 use App\Modules\Patient\Services\PatientService;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
@@ -26,6 +27,7 @@ class PatientController extends Controller
         private readonly DoctorService $doctorService,
         private readonly BranchService $branchService,
         private readonly KtpScanService $ktpScans,
+        private readonly PatientDocumentCaptureBranchResolver $captureBranches,
     ) {}
 
     public function index(Request $request): View
@@ -74,7 +76,12 @@ class PatientController extends Controller
         // scan, but a photo that was NOT archived is reported, never silent
         // (AUDIT-PATIENT-KTP-ARCHIVE-PERSISTENCE-1).
         if (is_string($ktpScanToken) && $ktpScanToken !== ''
-            && $this->ktpScans->attachTempToPatient($patient, $ktpScanToken, (int) $request->user()->id) === null) {
+            && $this->ktpScans->attachTempToPatient(
+                $patient,
+                $ktpScanToken,
+                (int) $request->user()->id,
+                $this->captureBranches->forMasterDataRegistration($request->user(), $patient),
+            ) === null) {
             $redirect->with('warning', KtpScanService::NOT_ATTACHED_WARNING);
         }
 

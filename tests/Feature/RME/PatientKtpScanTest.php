@@ -14,6 +14,7 @@ use App\Modules\Clinic\Models\Clinic;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\Patient\Models\PatientDocument;
+use App\Modules\Patient\Services\PatientDocumentAccessService;
 use Database\Seeders\BranchSeeder;
 use Illuminate\Support\Facades\Storage;
 
@@ -174,7 +175,10 @@ it('does not render the full KTP number when serving the scan', function () {
     $patient = Patient::factory()->create(['ktp_number' => '7371010101900099']);
     $document = makeKtpDocument($patient);
 
-    $response = $this->actingAs(userWith(['manage patients']))
+    // SECURITY-PATIENT-KTP-ARCHIVE-BRANCH-ISOLATION-1: `manage patients` alone no
+    // longer opens a stored card (rule 183); a reader with no working branch must
+    // hold the explicit cross-branch permission. Intent of this test unchanged.
+    $response = $this->actingAs(userWith(['manage patients', PatientDocumentAccessService::CROSS_BRANCH_PERMISSION]))
         ->get(route('settings.patients.documents.show', [$patient, $document]));
 
     $response->assertOk();
@@ -214,7 +218,10 @@ it('soft-deletes the document and removes private access on delete', function ()
 
     expect(Storage::disk('local')->exists($document->file_path))->toBeTrue();
 
-    $this->actingAs(userWith(['manage patients']))
+    // SECURITY-PATIENT-KTP-ARCHIVE-BRANCH-ISOLATION-1: `manage patients` alone no
+    // longer opens a stored card (rule 183); a reader with no working branch must
+    // hold the explicit cross-branch permission. Intent of this test unchanged.
+    $this->actingAs(userWith(['manage patients', PatientDocumentAccessService::CROSS_BRANCH_PERMISSION]))
         ->delete(route('settings.patients.documents.destroy', [$patient, $document]))
         ->assertRedirect(route('settings.patients.edit', $patient));
 
@@ -223,7 +230,7 @@ it('soft-deletes the document and removes private access on delete', function ()
     expect(Storage::disk('local')->exists($document->file_path))->toBeFalse();
 
     // No longer viewable.
-    $this->actingAs(userWith(['manage patients']))
+    $this->actingAs(userWith(['manage patients', PatientDocumentAccessService::CROSS_BRANCH_PERMISSION]))
         ->get(route('settings.patients.documents.show', [$patient, $document]))
         ->assertNotFound();
 });

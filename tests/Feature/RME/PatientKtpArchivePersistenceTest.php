@@ -18,6 +18,7 @@ use App\Modules\Doctor\Models\Doctor;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\Patient\Models\PatientDocument;
 use App\Modules\Patient\Services\KtpScanService;
+use App\Modules\Patient\Services\PatientDocumentAccessService;
 use App\Modules\Treatment\Models\Treatment;
 use Carbon\Carbon;
 use Database\Seeders\BranchSeeder;
@@ -114,7 +115,10 @@ it('archives the camera photo as the patient\'s private KTP document, readable a
         ->and(Storage::disk('local')->allFiles('tmp/patient-ktp-scans'))->toBeEmpty();
 
     // A different authorized user, in a fresh session, still reads it back.
-    $reader = userWith(['manage patients']);
+    // SECURITY-PATIENT-KTP-ARCHIVE-BRANCH-ISOLATION-1: `manage patients` alone no
+    // longer opens a stored card (rule 183); a reader with no working branch must
+    // hold the explicit cross-branch permission. Intent of this test unchanged.
+    $reader = userWith(['manage patients', PatientDocumentAccessService::CROSS_BRANCH_PERMISSION]);
     $response = $this->actingAs($reader)
         ->get(route('settings.patients.documents.show', [$patient, $document]))
         ->assertOk();
@@ -309,7 +313,10 @@ it('archives a token once even when a second request arrives mid-archive', funct
 // --- 6. Retrieval security ------------------------------------------------------
 
 it('serves the archive privately and only through its own patient', function () {
-    $actor = userWith(['manage patients']);
+    // SECURITY-PATIENT-KTP-ARCHIVE-BRANCH-ISOLATION-1: `manage patients` alone no
+    // longer opens a stored card (rule 183); a reader with no working branch must
+    // hold the explicit cross-branch permission. Intent of this test unchanged.
+    $actor = userWith(['manage patients', PatientDocumentAccessService::CROSS_BRANCH_PERMISSION]);
     $token = kapUpload($actor, kapPngA())['token'];
     kapRegisterMasterData($actor, 'Pasien Privat', $token);
     $patient = Patient::where('name', 'Pasien Privat')->sole();
@@ -371,8 +378,13 @@ describe('visit registration', function () {
         $patient = Patient::where('name', 'Pasien Kunjungan Kamera')->sole();
         $document = $patient->documents()->sole();
         expect(Storage::disk('local')->get($document->file_path))->toBe($confirmed);
+        // The visit flow records the visit's branch as the capture branch.
+        expect($document->captured_branch_id)->toBe($this->branch->id);
 
-        $this->actingAs(userWith(['manage patients']))
+        // SECURITY-PATIENT-KTP-ARCHIVE-BRANCH-ISOLATION-1: `manage patients` alone no
+        // longer opens a stored card (rule 183); a reader with no working branch must
+        // hold the explicit cross-branch permission. Intent of this test unchanged.
+        $this->actingAs(userWith(['manage patients', PatientDocumentAccessService::CROSS_BRANCH_PERMISSION]))
             ->get(route('settings.patients.documents.show', [$patient, $document]))
             ->assertOk();
     });

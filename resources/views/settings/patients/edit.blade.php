@@ -12,8 +12,12 @@
 
     {{-- Sprint 61.1 — stored KTP scan (private document). Kept outside the
          update form to avoid nested forms. --}}
+    {{-- SECURITY-PATIENT-KTP-ARCHIVE-BRANCH-ISOLATION-1 — shown only to an
+         account the per-branch document policy admits, so another branch does
+         not even learn a card exists. A courtesy: the routes refuse on their own. --}}
     @php($ktpDocument = $patient->ktpDocument)
     @if ($ktpDocument)
+    @can('view', $ktpDocument)
         <div class="mt-6 bg-white shadow-sm sm:rounded-lg">
             <div class="p-6">
                 <p class="text-xs font-semibold uppercase tracking-wide text-indigo-700 mb-2">Dokumen KTP Tersimpan</p>
@@ -34,5 +38,6 @@
                 <p class="mt-2 text-xs text-gray-400">Dokumen identitas privat. Tidak ditampilkan di laporan/cetak dan tidak diekspor.</p>
             </div>
         </div>
+    @endcan
     @endif
 </x-settings-shell>

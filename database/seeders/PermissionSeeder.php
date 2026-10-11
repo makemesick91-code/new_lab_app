@@ -23,6 +23,12 @@ class PermissionSeeder extends Seeder
         'manage clinics',
         'manage doctors',
         'manage patients',
+        // SECURITY-PATIENT-KTP-ARCHIVE-BRANCH-ISOLATION-1 — read a stored KTP
+        // card captured at ANY branch. Granted to NO role: Super Admin holds it
+        // through '*', anyone else (e.g. one Supervisor RME account) only by an
+        // explicit per-account assignment. Without it, KTP access is confined to
+        // the operator's server-resolved working branch.
+        'view_cross_branch_patient_ktp_documents',
         'manage lab services',
         'manage technicians',
         // Sprint 3 — Lab Order (underscore convention per sprint_3_technical_design.md)

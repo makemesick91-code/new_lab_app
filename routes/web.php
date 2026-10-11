@@ -269,9 +269,21 @@ Route::middleware('auth')->prefix('settings')->name('settings.')->group(function
         Route::post('patients/ktp-scan/parse-ocr', [PatientDocumentController::class, 'parseOcr'])
             ->middleware('throttle:ktp-scan')
             ->name('patients.ktp-scan.parse-ocr');
+        // SECURITY-PATIENT-KTP-ARCHIVE-BRANCH-ISOLATION-1 — `manage patients`
+        // admits the request; the per-document, per-branch decision is made in
+        // the controller by PatientDocumentAccessService (404 when refused).
+        // Throttled so a denied-request loop cannot flood the audit trail.
+        // Both keys are numeric-only: on PostgreSQL a non-numeric `{patient}`
+        // (e.g. a Nomor RM) would reach `where id = '…'` and fail the bigint
+        // cast with a 500 that writes the RM into the error log; constrained,
+        // it never matches and answers 404 like any other unknown document.
         Route::get('patients/{patient}/documents/{document}', [PatientDocumentController::class, 'show'])
+            ->whereNumber(['patient', 'document'])
+            ->middleware('throttle:patient-document')
             ->name('patients.documents.show');
         Route::delete('patients/{patient}/documents/{document}', [PatientDocumentController::class, 'destroy'])
+            ->whereNumber(['patient', 'document'])
+            ->middleware('throttle:patient-document')
             ->name('patients.documents.destroy');
     });
 

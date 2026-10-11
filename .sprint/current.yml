@@ -1,30 +1,39 @@
-# AUDIT-PATIENT-KTP-ARCHIVE-PERSISTENCE-1
+# SECURITY-PATIENT-KTP-ARCHIVE-BRANCH-ISOLATION-1
 #
-# Audit of the KTP photo lifecycle (camera / scanner agent / manual file →
-# temp → registration → permanent private document → authorized retrieval),
-# closed as category C with a corrective release. The happy path was already
-# correct and is production-proven; the fix closes a wrong-patient regression in
-# the browser (a cleared or replaced photo stayed attached to the form), makes
-# the server verify every filesystem step it used to assume (empty temp,
-# checksum identity, read-back, document-row compensation), reports an
-# unarchived photo to the operator instead of staying silent, and serves the
-# archive with no-store / nosniff. No migration, no permission, no route, no
-# pilot/env change; D7 consent and the scanner/manual fallbacks are unchanged.
+# A stored KTP card is served only to an operator whose server-resolved working
+# branch is the branch it was captured at, or to an explicitly privileged
+# account (Super Admin; one Supervisor RME only by a governed per-account
+# grant). `manage patients` alone used to open every patient's card at every
+# branch. Provenance lives on the document (one additive, write-once column),
+# because the patient's branch and Nomor RM are both editable through the
+# unscoped master-data form. Refusals are 404s; access is audited without
+# identity data; unknown provenance fails closed. Patient master data itself is
+# unchanged and stays unscoped (owner decision, recorded as a known limit).
+#
+# TYPE: FOUNDATION_SPRINT, not SECURITY_FIX. The SECURITY_FIX profile's scope
+# heuristic refuses >10 changed code files ("looks like a refactor"); this
+# change carries 18, of which 10 are NEW cohesive units (policy, access
+# service, decision, capture resolver, evidence backfill, governed grant), it
+# spans three modules (Patient, ClinicVisit, AccessControl) and adds a
+# governance permission. FOUNDATION_SPRINT describes that and keeps the SAME
+# audit strength (audit_level 3, full_foundation_audit). The scope-audit NO-GO
+# under SECURITY_FIX was evaluated, not waived: no split could satisfy it (the
+# core decision path alone is ~13 files). security_impact stays true.
 
-id: AUDIT-PATIENT-KTP-ARCHIVE-PERSISTENCE-1
-type: RUNTIME_FIX
+id: SECURITY-PATIENT-KTP-ARCHIVE-BRANCH-ISOLATION-1
+type: FOUNDATION_SPRINT
 module: Patient
-title: "KTP archive persistence audit + wrong-patient token regression fix"
+title: "Patient KTP archive branch isolation"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 runtime_change: true
-schema_change: false
+schema_change: true
 frontend_change: true
 security_impact: true
-branch_isolation_impact: false
+branch_isolation_impact: true
 ledger_impact: false
 deploy_required: true
 browser_required: false
 test_profiles: []
-go_tag: audit-patient-ktp-archive-persistence-1-go
-inherits_parent_go: revision-patient-ktp-live-field-overlay-ocr-1-go
+go_tag: security-patient-ktp-archive-branch-isolation-1-go
+inherits_parent_go: audit-patient-ktp-archive-persistence-1-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1

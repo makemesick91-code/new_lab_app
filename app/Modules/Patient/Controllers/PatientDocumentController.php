@@ -9,9 +9,11 @@ use App\Modules\Patient\Requests\ParseKtpOcrRequest;
 use App\Modules\Patient\Requests\StoreKtpScanRequest;
 use App\Modules\Patient\Services\KtpOcrSuggestionService;
 use App\Modules\Patient\Services\KtpScanService;
+use App\Modules\Patient\Services\PatientDocumentAccessService;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use RuntimeException;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -23,6 +25,14 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  * gated by the patient management ability (manage patients) so doctors and
  * cashiers cannot upload, view or delete identity scans. Files are served only
  * through {@see show()} from the private disk — never via a public URL.
+ *
+ * SECURITY-PATIENT-KTP-ARCHIVE-BRANCH-ISOLATION-1 — `manage patients` is the
+ * entry ticket, not the authorization. Reading or deleting a stored card is
+ * decided per document by {@see PatientDocumentAccessService} (capture branch
+ * vs. the operator's server-resolved working branch, or an explicit
+ * cross-branch privilege), audited, and refused with a 404 that is identical to
+ * a missing document. There is one file endpoint, so "preview" and "download"
+ * cannot drift apart.
  */
 class PatientDocumentController extends Controller
 {
@@ -31,6 +41,7 @@ class PatientDocumentController extends Controller
     public function __construct(
         private readonly KtpScanService $ktpScans,
         private readonly KtpOcrSuggestionService $ocrSuggestions,
+        private readonly PatientDocumentAccessService $documentAccess,
     ) {}
 
     /**
@@ -93,13 +104,15 @@ class PatientDocumentController extends Controller
     /**
      * Stream a stored KTP document inline from the private disk.
      */
-    public function show(Patient $patient, PatientDocument $document): StreamedResponse
+    public function show(Request $request, Patient $patient, PatientDocument $document): StreamedResponse
     {
         $this->authorize('view', $patient);
         $this->ensureBelongsTo($patient, $document);
+        $decision = $this->documentAccess->authorize($request->user(), $document, PatientDocumentAccessService::OPERATION_VIEW);
 
         $disk = Storage::disk($this->ktpScans->disk());
         abort_unless($disk->exists($document->file_path), 404);
+        $this->documentAccess->recordViewed($request->user(), $document, $decision);
 
         // An identity image: never kept in a shared front-desk browser cache,
         // never sniffed into another type (AUDIT-PATIENT-KTP-ARCHIVE-PERSISTENCE-1).
@@ -117,12 +130,14 @@ class PatientDocumentController extends Controller
     /**
      * Soft-delete a KTP document and remove the underlying private file.
      */
-    public function destroy(Patient $patient, PatientDocument $document): RedirectResponse
+    public function destroy(Request $request, Patient $patient, PatientDocument $document): RedirectResponse
     {
         $this->authorize('update', $patient);
         $this->ensureBelongsTo($patient, $document);
+        $decision = $this->documentAccess->authorize($request->user(), $document, PatientDocumentAccessService::OPERATION_DELETE);
 
         $this->ktpScans->deleteDocument($document);
+        $this->documentAccess->recordDeleted($request->user(), $document, $decision);
 
         return redirect()
             ->route('settings.patients.edit', $patient)

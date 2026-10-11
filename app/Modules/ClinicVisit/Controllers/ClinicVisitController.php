@@ -18,6 +18,7 @@ use App\Modules\MedicalRecord\Services\MedicalRecordService;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\Patient\Services\CrossBranchPatientLookupService;
 use App\Modules\Patient\Services\KtpScanService;
+use App\Modules\Patient\Services\PatientDocumentCaptureBranchResolver;
 use App\Modules\Patient\Services\PatientSelectorSearchService;
 use App\Modules\RME\Services\DoctorPatientScopeService;
 use App\Modules\RME\Services\DoctorRoomScopeService;
@@ -46,6 +47,7 @@ class ClinicVisitController extends Controller
         private readonly DoctorPatientScopeService $doctorScope,
         private readonly DoctorRoomScopeService $doctorRoomScope,
         private readonly LegacyRmePatientHistoryService $legacyHistory,
+        private readonly PatientDocumentCaptureBranchResolver $captureBranches,
     ) {}
 
     public function index(Request $request, CrossBranchPatientLookupService $rmLookup): View
@@ -301,7 +303,12 @@ class ClinicVisitController extends Controller
         if ($isNewPatient && is_string($ktpScanToken) && $ktpScanToken !== '') {
             $patient = $visit->patient;
             $document = $patient !== null
-                ? $this->ktpScans->attachTempToPatient($patient, $ktpScanToken, (int) $request->user()->id)
+                ? $this->ktpScans->attachTempToPatient(
+                    $patient,
+                    $ktpScanToken,
+                    (int) $request->user()->id,
+                    $this->captureBranches->forVisitRegistration($visit),
+                )
                 : null;
 
             if ($document === null) {

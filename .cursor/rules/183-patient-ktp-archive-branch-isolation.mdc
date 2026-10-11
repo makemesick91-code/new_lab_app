@@ -1,0 +1,133 @@
+---
+description: SECURITY-PATIENT-KTP-ARCHIVE-BRANCH-ISOLATION-1 — a stored KTP card is served only to the branch it was captured at, or to an explicitly privileged account
+globs: app/Modules/Patient/Controllers/PatientDocumentController.php, app/Modules/Patient/Services/PatientDocumentAccessService.php, app/Modules/Patient/Policies/PatientDocumentPolicy.php, app/Modules/Patient/Services/PatientDocumentCaptureBranchResolver.php, app/Modules/Patient/Services/PatientDocumentCaptureBranchBackfillService.php, app/Modules/Patient/Models/PatientDocument.php, app/Modules/Patient/Services/KtpScanService.php, resources/views/settings/patients/edit.blade.php
+alwaysApply: false
+---
+
+# Patient KTP archive branch isolation
+
+Sprint doc: `docs/sprints/security-patient-ktp-archive-branch-isolation-1.md`.
+Runbook: `docs/runbooks/patient-ktp-archive-access-runbook.md`.
+Extends rule 182 (KTP archive persistence; its §10 is superseded by this rule)
+and rules 177–181 (KTP OCR, pilot, field read, D7 consent, live overlay). None
+of them is relaxed.
+
+## The decision (one place: `PatientDocumentAccessService::decide()`)
+
+1. No `manage patients` → deny (`no_permission`).
+2. Super Admin, or a **direct per-account** grant of
+   `view_cross_branch_patient_ktp_documents` → allow (`privileged`). The
+   permission is granted to **no role**, and a grant that reaches an account
+   only through a ROLE (e.g. ticked in the role editor) is **ignored** — the
+   owner rule is "explicit, per account".
+3. No server-resolved working branch → deny (`no_working_branch`). Only the
+   context-bound roles have one (`RmeWorkingBranchScope::activeBranchId()`:
+   Admin Klinik / Front Office, Perawat, Kasir).
+4. Working branch ≠ the operator's **daily-committed** branch
+   (`DailyBranchContextService::lockedBranchIdFor()`) → deny
+   (`uncommitted_working_branch`). A Perawat has no daily lock by design and
+   can re-select its branch at will, so it never reads a stored card.
+5. Document provenance unknown → deny (`unknown_provenance`).
+6. Working branch ≠ capture branch → deny (`branch_mismatch`).
+7. Otherwise → allow (`same_branch`).
+
+A denial is **404**, identical to a missing document.
+
+## Foundations
+
+1. **KTP archive access requires explicit server-side authorization**, evaluated
+   fresh on every request. `manage patients` is the entry ticket, not the
+   authorization.
+2. **Admin Klinik and Front Office are branch-scoped** to the branch they are
+   committed to for the clinical day (online context + daily branch lock;
+   moving mid-day needs Super Admin approval; the Front Office pin, where armed,
+   fixes it outright). **Perawat reads no stored card**: its working branch is
+   self-selected and never committed, which is ambiguous authority for an
+   identity document. Kasir holds no `manage patients` and is refused first.
+3. **Super Admin's cross-branch access is the existing privilege** (`'*'` +
+   `Gate::before`). No hardcoded user id, no role name from the request.
+4. **Supervisor RME gets nothing from the role name.** Cross-branch KTP reading
+   requires a DIRECT grant of `view_cross_branch_patient_ktp_documents` via
+   `rbac:patient-ktp-cross-branch-access` (Super Admin actor, Supervisor RME
+   target only, reason audited by length). It is not context-bound, so without
+   the grant it reads no KTP at all. Never grant the permission to a role — it
+   is ignored there, and `status` reports `role_level_grant_ignored`.
+5. **Patient visibility ≠ document visibility.** Finding the patient in the
+   global New-Visit lookup (rule 101), seeing them in a list, or having treated
+   them never opens a KTP captured at another branch.
+6. **A multi-branch patient needs a document-specific decision.** Visits at a
+   branch do not widen access to a card captured elsewhere.
+7. **Provenance lives on the DOCUMENT** (`mst_patient_documents.captured_branch_id`),
+   never on the patient. The patient's `branch_id` AND Nomor RM are both
+   editable through the unscoped master-data update form, so deriving access
+   from either lets an operator re-home a patient and then read the card.
+8. **Provenance is written by the server at archive time** and is **write-once**:
+   visit flow → the visit's branch; Master Data → the context-bound operator's
+   working branch (where the card was), else the patient's validated branch
+   for a non-branch-scoped governance account. The model refuses to change a
+   recorded value. A merge moves `patient_id`, never the capture branch.
+9. **Unknown provenance fails closed.** NULL is readable only by a privileged
+   account. Legacy patients are never treated as belonging to every branch.
+10. **A request `branch_id` (query, body, header, browser state) is never
+    trusted.** The branch comes from the canonical working-branch authority.
+11. **Direct links cannot bypass the policy.** Knowing a document id, a patient
+    id or a Nomor RM grants nothing; the file is served only through
+    `settings.patients.documents.show`. Both route keys are `whereNumber` — on PostgreSQL a
+    non-numeric `{patient}` otherwise fails the bigint cast with a 500 that
+    writes the RM into the error log (SQLite hides this; verify on PG 16).
+12. **Preview and download are one endpoint**, so they cannot drift. Delete uses
+    the same decision (a narrowing, not a new write capability).
+13. **Private storage is mandatory** (`local` disk, `Cache-Control: private,
+    no-store`, `nosniff`, nginx denies `/storage/`). Never `Storage::url()` a KTP.
+14. **NIK masking is unchanged**; nothing here renders or logs a NIK.
+15. **Access audit is minimal**: `sys_audit_logs` rows `PATIENT_DOCUMENT_VIEWED`,
+    `…_VIEWED_PRIVILEGED`, `…_ACCESS_DENIED`, `…_DELETED`,
+    `…_CAPTURE_BRANCH_BACKFILLED` carry actor, document id, branch ids, reason
+    code — never NIK, name, address, image, OCR text or storage path. The
+    routes are throttled (`patient-document`, 30/min/account/route) so a denied
+    loop cannot flood the trail. The policy itself never audits (it also gates
+    whether to SHOW a link).
+16. **Ownership is never silently reassigned.** The evidence backfill
+    (`patient-documents:backfill-capture-branch`, dry run by default; `--apply`
+    needs a named Super Admin `--actor`) records a capture branch only for a
+    card archived at registration whose server-pinned **registration visit**
+    sits at the same branch as the patient branch and the Nomor RM branch. The
+    visit is the anchor because the patient branch and RM are editable through
+    the unscoped form; a Master Data card (no visit) stays unknown. It never
+    touches a patient.
+17. **Camera OCR stays under its pilot policies (rules 178–181); D7 consent is
+    preserved.** Nothing in the capture path changed except the provenance value.
+18. **No unnecessary schema change**: one additive nullable column + index,
+    justified by rule 7. Never `migrate:fresh`/`db:wipe`.
+19. **The patient edit page shows the KTP panel only via `@can('view', $doc)`** —
+    a courtesy; the routes refuse on their own.
+20. **Deploy with `deploy-vps-runner.sh` on the VPS**, never locally; run
+    `PermissionSeeder` before relying on the permission; verify read-only.
+21. **GO tags need real CI, deploy and verification evidence**; a skipped Full
+    Suite is SKIPPED, never PASS.
+22. **Cleanup leaves zero task-owned processes, worktrees or scratch files.**
+
+## Known limits (recorded, not built)
+
+- **The first working-branch selection of a clinical day is self-chosen** by an
+  unpinned Front Office / Admin Klinik account (production: the pinned cohort
+  is hard-bound; other front-desk accounts are not). Such an operator can
+  commit to any RME branch at the start of a day and read that branch's cards
+  that day — the same authority that scopes all of their operational data
+  (queue, visits, cashier). A per-person binding needs the Front Office pin or
+  an owner-assigned branch for every front-desk account — an owner decision.
+- Write-once is enforced by the model's `updating` event. Query-builder writes
+  and `saveQuietly()` bypass it; no production path writes `captured_branch_id`
+  that way (verified), and there is no database-level trigger.
+- Pre-existing: the `local` disk has `serve => true`, so Laravel's signed
+  ServeFile route could serve a KTP if a future change ever minted a
+  `temporaryUrl()` for one. Never do that; a dedicated `serve => false` disk is
+  the structural fix (needs a file move — separate sprint).
+
+- Patient master data is still unscoped: another branch's `manage patients`
+  holder can open the patient edit form and read the typed NIK field there.
+  Only the KTP **image** archive is branch-isolated. Scoping patient master
+  data is a separate owner decision.
+- The policy uses the operator's current working branch; an operator whose
+  approved branch moved mid-day loses access to the old branch's cards on the
+  next request (intended).
