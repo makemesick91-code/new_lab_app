@@ -184,7 +184,9 @@ class ClinicVisitController extends Controller
 
         $prefill = [
             'patient_id' => $request->integer('patient_id') ?: null,
-            'visit_type' => $request->string('visit_type')->toString() ?: ClinicVisit::VISIT_TYPE_NEW,
+            // The visit type is not prefilled: it is derived server-side on store
+            // from whether a prior visit is selected (StoreClinicVisitRequest).
+            // "Buat Kontrol" still links here with the prior visit preselected.
             'follow_up_of_visit_id' => $request->integer('follow_up_of_visit_id') ?: null,
             'branch_id' => $selectedBranchId,
         ];

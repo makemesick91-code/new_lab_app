@@ -354,6 +354,28 @@
              independently authorised server-side as well. Since FIX-04, "Cetak RME"
              lives on the Rekam Medis page rather than here. --}}
         @if ($canOperateVisit)
+        {{-- REVISION-RME-VISIT-DETAIL-INVOICE-REGISTRATION-UX-1 — the clinical
+             cards render in examination order: Odontogram, then Rekam Medis,
+             then Resep. The order lives in the SOURCE, not in CSS `order`, so
+             keyboard focus and screen-reader reading order follow what is on
+             screen. Presentation only: each card keeps its own guard, room gate
+             and route; no workflow state or permission changed. --}}
+        {{-- Odontogram --}}
+        @can('create', [\App\Modules\Odontogram\Models\Odontogram::class, $visit])
+            <x-ui.card title="Odontogram">
+                @if ($visit->requiresRoomBeforeExam())
+                    <p class="text-sm text-warning-700">
+                        Pemeriksaan terkunci — pasien belum ditempatkan ke ruangan perawatan.
+                    </p>
+                @else
+                    <x-ui.button variant="primary" :href="route('rme.visits.odontogram.show', $visit)">
+                        Buka Odontogram
+                    </x-ui.button>
+                    <p class="mt-2 text-xs text-gray-500">Placeholder — Odontogram interaktif akan tersedia di Sprint berikutnya.</p>
+                @endif
+            </x-ui.card>
+        @endcan
+
         {{-- Rekam Medis --}}
         @php $medicalRecord = $visit->medicalRecord; @endphp
         <x-ui.card title="Rekam Medis">
@@ -382,22 +404,6 @@
                 @endif
             @endif
         </x-ui.card>
-
-        {{-- Odontogram --}}
-        @can('create', [\App\Modules\Odontogram\Models\Odontogram::class, $visit])
-            <x-ui.card title="Odontogram">
-                @if ($visit->requiresRoomBeforeExam())
-                    <p class="text-sm text-warning-700">
-                        Pemeriksaan terkunci — pasien belum ditempatkan ke ruangan perawatan.
-                    </p>
-                @else
-                    <x-ui.button variant="primary" :href="route('rme.visits.odontogram.show', $visit)">
-                        Buka Odontogram
-                    </x-ui.button>
-                    <p class="mt-2 text-xs text-gray-500">Placeholder — Odontogram interaktif akan tersedia di Sprint berikutnya.</p>
-                @endif
-            </x-ui.card>
-        @endcan
 
         {{-- Resep Dokter --}}
         @can('viewForVisit', [\App\Modules\Prescription\Models\RmePrescription::class, $visit])

@@ -21,8 +21,11 @@ class RmeCreateSmokeTest extends DuskTestCase
                 ->assertPresent('select[name="branch_id"]')
                 ->assertPresent('@patient-search')
                 ->assertPresent('@patient-select')
-                ->assertPresent('select[name="visit_type"]')
-                ->assertSee('Jenis Kunjungan')
+                // REVISION-RME-VISIT-DETAIL-INVOICE-REGISTRATION-UX-1 — the visit
+                // type is server-derived; only the optional prior-visit picker remains.
+                ->assertMissing('select[name="visit_type"]')
+                ->assertDontSee('Jenis Kunjungan')
+                ->assertSee('Kunjungan Sebelumnya (Kontrol)')
                 ->assertSee('Kontrol');
 
             $this->assertRmePageHealthy($browser);

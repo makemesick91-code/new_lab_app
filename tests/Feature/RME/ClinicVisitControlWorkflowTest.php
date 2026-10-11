@@ -115,7 +115,16 @@ it('creates control visit for existing patient without duplicating patient', fun
         ->and(Odontogram::where('clinic_visit_id', $parent->id)->count())->toBe(1);
 });
 
-it('rejects control visit without follow_up_of_visit_id', function () {
+// REVISION-RME-VISIT-DETAIL-INVOICE-REGISTRATION-UX-1 — SUPERSEDED contract.
+// This used to assert that posting visit_type=control without a prior visit is
+// rejected. The visit type is now server-derived (owner decision 2026-10-12):
+// a client-submitted visit_type is ignored, and Kontrol requires an explicitly
+// selected prior visit. So the same request now registers a Baru visit — the
+// client cannot claim Kontrol, and without a prior visit there is nothing to
+// reject. An explicitly selected but INVALID prior visit is still rejected
+// (see the different-patient and non-RME-branch tests below, and
+// VisitTypeServerDerivationTest).
+it('ignores a client visit_type=control without a prior visit and registers Baru', function () {
     $this->actingAs($this->manager)
         ->post(route('rme.visits.store'), [
             'branch_id' => $this->rmeBranch->id,
@@ -124,7 +133,12 @@ it('rejects control visit without follow_up_of_visit_id', function () {
             'initial_treatment_id' => $this->treatment->id,
             'visit_type' => ClinicVisit::VISIT_TYPE_CONTROL,
         ])
-        ->assertSessionHasErrors('follow_up_of_visit_id');
+        ->assertRedirect()
+        ->assertSessionHasNoErrors();
+
+    $visit = ClinicVisit::query()->where('patient_id', $this->patient->id)->latest('id')->first();
+    expect($visit->visit_type)->toBe(ClinicVisit::VISIT_TYPE_NEW)
+        ->and($visit->follow_up_of_visit_id)->toBeNull();
 });
 
 it('rejects follow_up_of_visit_id from different patient', function () {
@@ -185,12 +199,16 @@ it('rejects follow_up visit from non-rme branch', function () {
         ->assertSessionHasErrors('follow_up_of_visit_id');
 });
 
-it('shows visit type select on create page', function () {
+// REVISION-RME-VISIT-DETAIL-INVOICE-REGISTRATION-UX-1 — SUPERSEDED: the create
+// page used to show a "Jenis Kunjungan" select. It is gone; the optional
+// prior-visit picker is the only input that can make a visit Kontrol.
+it('shows the prior-visit Kontrol picker instead of a visit type select on create page', function () {
     $this->actingAs($this->manager)
         ->get(route('rme.visits.create'))
         ->assertOk()
-        ->assertSee('Jenis Kunjungan')
-        ->assertSee('Kontrol');
+        ->assertDontSee('Jenis Kunjungan')
+        ->assertDontSee('name="visit_type"', false)
+        ->assertSee('Kunjungan Sebelumnya (Kontrol)');
 });
 
 it('prefills control visit create form from query parameters', function () {
@@ -204,7 +222,11 @@ it('prefills control visit create form from query parameters', function () {
             'branch_id' => $this->rmeBranch->id,
         ]))
         ->assertOk()
-        ->assertSee('value="control"', false)
+        // REVISION-RME-VISIT-DETAIL-INVOICE-REGISTRATION-UX-1 — there is no
+        // visit type option to preselect any more; the prior visit is what is
+        // prefilled, and the server derives Kontrol from it on store.
+        ->assertDontSee('value="control"', false)
+        ->assertSee('const prefillFollowUpId = '.$parent->id, false)
         ->assertSee((string) $this->patient->id, false);
 });
 

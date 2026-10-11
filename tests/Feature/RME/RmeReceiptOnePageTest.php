@@ -50,7 +50,12 @@ beforeEach(function () {
  */
 function receiptWrappingPatientName(): string
 {
-    return 'Alexandria Catherine Santoso';
+    // REVISION-RME-VISIT-DETAIL-INVOICE-REGISTRATION-UX-1 — the landscape invoice
+    // gives the "Nama" cell more room than the old portrait receipt, so the old
+    // 28-character fixture stopped wrapping. Lengthened (still apostrophe-free)
+    // so the wrap is exercised on every run, exactly as the coverage pin below
+    // demands.
+    return 'Alexandria Catherine Kusumawardhani Santoso';
 }
 
 function receiptVisit(): ClinicVisit
@@ -224,9 +229,9 @@ it('keeps every financial value on the one-page receipt', function () {
     expect($text)->toContain($invoice->invoice_number);
 
     // Every item, with its own money, must be readable. The description is read
-    // out of the TINDAKAN column: a long one wraps, and the layout splits it
+    // out of the "Jenis Perawatan" column: a long one wraps, and the layout splits it
     // AROUND its own qty/price line, so it is not one contiguous substring.
-    $treatments = pdfLayoutColumnText($text, 'TINDAKAN', 'QTY');
+    $treatments = pdfLayoutColumnText($text, 'Jenis Perawatan', 'Qty');
 
     foreach ($invoice->items as $item) {
         expect($treatments)->toContain(pdfNormalizeText($item->description));
@@ -235,19 +240,22 @@ it('keeps every financial value on the one-page receipt', function () {
 
     // Totals and payment.
     expect($text)->toContain(number_format($invoice->grand_total, 0, ',', '.'));
-    expect($text)->toContain('Total Tagihan');
-    expect($text)->toContain('Jumlah Dibayar');
+    // REVISION-RME-VISIT-DETAIL-INVOICE-REGISTRATION-UX-1 — the redesigned
+    // invoice labels its totals after the clinic's form.
+    expect($text)->toContain('Total Biaya');
+    expect($text)->toContain('Pembayaran');
+    expect($text)->toContain('Sisa Pembayaran');
     expect($text)->toContain('LUNAS');
 
     /*
      * Identity of the transaction. The patient name is read out of its own
      * layout cell and compared for EQUALITY, which is strictly stronger than
-     * the substring search it replaces: the neighbouring "No. Rekam Medis"
-     * column is outside the band, so it can no longer satisfy the assertion,
-     * and a partially rendered name no longer passes either.
+     * a substring search: the neighbouring treatment table is outside the
+     * band, so it can no longer satisfy the assertion, and a partially
+     * rendered name no longer passes either.
      */
-    expect(pdfLayoutFieldValue($text, 'Nama Pasien'))->toBe($visit->patient->name);
-    expect(pdfLayoutFieldValue($text, 'No. Rekam Medis'))->toBe($visit->patient->medical_record_number);
+    expect(pdfLayoutFieldValue($text, 'Nama'))->toBe($visit->patient->name);
+    expect(pdfLayoutFieldValue($text, 'No. RM'))->toBe($visit->patient->medical_record_number);
     expect($text)->toContain($visit->visit_number);
     /*
      * The clinic name is CSS-uppercased in the header, so compare
@@ -289,7 +297,7 @@ it('never truncates an unusually long receipt — it continues instead', functio
     expect(pdfPageCount($bytes))->toBeGreaterThan(1);
 
     // ...and every single row survives, including the last one and the total.
-    $treatments = pdfLayoutColumnText($text, 'TINDAKAN', 'QTY');
+    $treatments = pdfLayoutColumnText($text, 'Jenis Perawatan', 'Qty');
 
     foreach ($invoice->items as $item) {
         expect($treatments)->toContain(pdfNormalizeText($item->description));
@@ -387,7 +395,7 @@ it('reads every patient-name shape out of its own layout cell', function (string
     [$visit, $text] = receiptTextForPatientName($name);
 
     // The contract: the field holds exactly this name, wrapped or not.
-    expect(pdfLayoutFieldValue($text, 'Nama Pasien'))->toBe($name);
+    expect(pdfLayoutFieldValue($text, 'Nama'))->toBe($name);
 
     /*
      * And the coverage claim itself is pinned. If a long fixture stops wrapping
@@ -408,8 +416,8 @@ it('reads every patient-name shape out of its own layout cell', function (string
     'short apostrophe' => ["O'Brien", false],
     // Long AND apostrophe-free: fails identically to the faker name that
     // reddened the Full Suite, which is what proves length is the cause.
-    'long plain' => ['Alexandria Catherine Santoso', true],
-    'long apostrophe' => ["Miss Marcella O'Conner DVM", true],
+    'long plain' => ['Alexandria Catherine Kusumawardhani Santoso', true],
+    'long apostrophe' => ["Miss Marcella O'Conner Kusumawardhani DVM", true],
 ]);
 
 it('rejects a wrong or partially rendered patient name', function () {
@@ -420,18 +428,18 @@ it('rejects a wrong or partially rendered patient name', function () {
     $name = receiptWrappingPatientName();
     [, $text] = receiptTextForPatientName($name);
 
-    $field = pdfLayoutFieldValue($text, 'Nama Pasien');
+    $field = pdfLayoutFieldValue($text, 'Nama');
 
     // A different patient must not satisfy it.
     expect($field)->not->toBe('Bambang Wijaya');
 
     // Neither must a name that lost its wrapped tail — the exact failure mode a
     // merely "wrap-tolerant" assertion would let through.
-    expect($field)->not->toBe('Alexandria Catherine');
+    expect($field)->not->toBe('Alexandria Catherine Kusumawardhani');
 
     // Nor a token soup: the words are all present in the document, and that is
     // deliberately not enough.
-    expect($field)->not->toBe('Catherine Alexandria Santoso');
+    expect($field)->not->toBe('Catherine Alexandria Kusumawardhani Santoso');
 });
 
 it('keeps the patient name out of the neighbouring medical-record column', function () {
@@ -440,17 +448,19 @@ it('keeps the patient name out of the neighbouring medical-record column', funct
     }
 
     /*
-     * The wrapped name and the medical-record number share the same physical
-     * lines. Reading either field must not drag the other in — which is what a
-     * whole-page whitespace-stripping comparison would have done.
+     * Reading either identity field must not drag the other (or the treatment
+     * table beside them) in — which is what a whole-page whitespace-stripping
+     * comparison would have done. On the landscape invoice the RM number is the
+     * row above the wrapped name and the treatment table shares their lines.
      */
     [$visit, $text] = receiptTextForPatientName(receiptWrappingPatientName());
 
     $mrn = $visit->patient->medical_record_number;
 
-    expect(pdfLayoutFieldValue($text, 'No. Rekam Medis'))->toBe($mrn);
-    expect(pdfLayoutFieldValue($text, 'Nama Pasien'))->not->toContain($mrn);
-    expect(pdfLayoutFieldValue($text, 'No. Rekam Medis'))->not->toBe('MRN-NOTTHISONE');
+    expect(pdfLayoutFieldValue($text, 'No. RM'))->toBe($mrn);
+    expect(pdfLayoutFieldValue($text, 'Nama'))->not->toContain($mrn);
+    expect(pdfLayoutFieldValue($text, 'Nama'))->not->toContain('Konsultasi');
+    expect(pdfLayoutFieldValue($text, 'No. RM'))->not->toBe('MRN-NOTTHISONE');
 });
 
 it('reads a treatment description that the layout split around its own money row', function () {
@@ -461,7 +471,7 @@ it('reads a treatment description that the layout split around its own money row
     /*
      * The item table wraps differently from the identity grid: the tail of a
      * long description lands BELOW its own qty/price line, so "join the next
-     * line" cannot rebuild it. The TINDAKAN column band can.
+     * line" cannot rebuild it. The "Jenis Perawatan" column band can.
      */
     $long = 'Perawatan Saluran Akar Gigi Molar Pertama Rahang Bawah Kanan Kunjungan Kedua';
 
@@ -471,7 +481,7 @@ it('reads a treatment description that the layout split around its own money row
     ]);
 
     $text = pdfExtractText(receiptPdfBytes($visit, $invoice));
-    $treatments = pdfLayoutColumnText($text, 'TINDAKAN', 'QTY');
+    $treatments = pdfLayoutColumnText($text, 'Jenis Perawatan', 'Qty');
 
     // Not contiguous in the raw extraction...
     expect(str_contains($text, $long))->toBeFalse(

@@ -1509,6 +1509,39 @@ function pdfLayoutFieldValue(string $text, string $label): ?string
                     break;
                 }
 
+                if ($width === null) {
+                    /*
+                     * REVISION-RME-VISIT-DETAIL-INVOICE-REGISTRATION-UX-1 — with
+                     * no neighbour on the label's row the band had no right edge,
+                     * so on a TWO-COLUMN page (the landscape invoice puts the
+                     * addressee block beside the treatment table) the next line's
+                     * right-hand column text was swallowed as a "continuation".
+                     * A wrapped value can only continue as a segment that STARTS
+                     * in the value's own column (±2 for the text grid); a segment
+                     * that starts further right belongs to another column, and
+                     * the cell is closed. Strictly narrower than before: it can
+                     * only ever return less, never more.
+                     */
+                    $continuation = pdfLayoutSegments($lines[$next])[0] ?? null;
+
+                    // A blank line closes the cell, exactly as before.
+                    if ($continuation === null) {
+                        break;
+                    }
+
+                    // The other column printed a line here while the value
+                    // column stayed empty (the rows of the two columns
+                    // interleave): it is not part of this cell, and it does
+                    // not end it either.
+                    if ($continuation['col'] > $valueStart + 2) {
+                        continue;
+                    }
+
+                    $fragments[] = $continuation['text'];
+
+                    continue;
+                }
+
                 $slice = trim(mb_substr($lines[$next], $valueStart, $width));
 
                 if ($slice === '') {
@@ -1563,6 +1596,29 @@ function pdfLayoutFullWidthText(string $text): string
  */
 function pdfLayoutColumnText(string $text, string $fromHeading, ?string $toHeading = null): ?string
 {
+    /*
+     * REVISION-RME-VISIT-DETAIL-INVOICE-REGISTRATION-UX-1 — `pdftotext -layout`
+     * places columns PER PAGE (each page's text grid starts at its own leftmost
+     * text). A table that continues onto a page without the block beside it
+     * therefore moves left in the text, and a band measured on page 1 reads
+     * nothing useful on page 2. So the band is measured on every page from that
+     * page's own (repeated) heading, and the pages are joined. On a single page,
+     * or pages that share one grid, this is identical to measuring once.
+     */
+    if (str_contains($text, "\f")) {
+        $parts = [];
+
+        foreach (explode("\f", $text) as $page) {
+            $part = pdfLayoutColumnText($page, $fromHeading, $toHeading);
+
+            if ($part !== null && $part !== '') {
+                $parts[] = $part;
+            }
+        }
+
+        return $parts === [] ? null : pdfNormalizeText(implode(' ', $parts));
+    }
+
     $lines = preg_split('/\R/u', $text) ?: [];
     $fromHeading = pdfNormalizeText($fromHeading);
     $toHeading = $toHeading === null ? null : pdfNormalizeText($toHeading);

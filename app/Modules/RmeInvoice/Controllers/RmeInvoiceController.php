@@ -520,6 +520,7 @@ SQL;
     public function show(ClinicVisit $clinicVisit, RmeInvoice $rmeInvoice): View
     {
         $this->authorize('view', $rmeInvoice);
+        abort_unless($rmeInvoice->belongsToVisit($clinicVisit), 404);
 
         $invoice = $rmeInvoice->load([
             'items.treatment',

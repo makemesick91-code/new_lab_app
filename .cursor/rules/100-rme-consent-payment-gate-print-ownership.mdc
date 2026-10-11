@@ -170,6 +170,11 @@ Pendaftaran -> Antrian -> Input Ruangan -> Dokter "Mulai Pemeriksaan" (in_progre
   read the page count with poppler `pdfinfo` — and pair it with a content
   assertion, because a page count alone can be satisfied by deleting rows.
 - The kwitansi is a *pelunasan* document: both receipt routes are `PAID`-only.
+- **REVISION-RME-VISIT-DETAIL-INVOICE-REGISTRATION-UX-1** — the document is now the
+  clinic's landscape **INVOICE** form (A4 **landscape**, same paper rotated) rendered by
+  ONE shared partial (`rme.cashier.receipt.partials.invoice-document`) for both the
+  browser print and the dompdf PDF. Every rule above still holds; the one-page proof
+  now covers 1/2/5/10-treatment invoices. See rule 185 for the document's own rules.
 
 ## 11. Testing
 

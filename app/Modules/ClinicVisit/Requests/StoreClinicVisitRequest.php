@@ -80,9 +80,25 @@ class StoreClinicVisitRequest extends FormRequest
             $this->merge(['patient_mode' => 'existing']);
         }
 
-        if (! $this->filled('visit_type')) {
-            $this->merge(['visit_type' => ClinicVisit::VISIT_TYPE_NEW]);
-        }
+        // REVISION-RME-VISIT-DETAIL-INVOICE-REGISTRATION-UX-1 — the visit type is
+        // SERVER-DERIVED, never chosen by the operator and never read from the
+        // request. Owner decision: a visit is Kontrol only when a prior visit was
+        // explicitly selected; otherwise it is Baru. Whatever `visit_type` the
+        // client sent is overwritten here, so a hidden or tampered input cannot
+        // classify a visit (and therefore cannot steer it into, or out of, the
+        // control-chain billing path).
+        //
+        // The derivation is deliberately on PRESENCE, not on validity: an
+        // explicitly selected prior visit that turns out to be invalid,
+        // cross-patient or outside the RME branches still derives Kontrol, so
+        // validateFollowUpVisit() REJECTS it rather than the request being
+        // silently downgraded to Baru. Patient history alone never makes a
+        // visit Kontrol.
+        $this->merge([
+            'visit_type' => $this->filled('follow_up_of_visit_id')
+                ? ClinicVisit::VISIT_TYPE_CONTROL
+                : ClinicVisit::VISIT_TYPE_NEW,
+        ]);
 
         if ($this->has('new_patient.ktp_number')) {
             $ktp = trim((string) $this->input('new_patient.ktp_number'));

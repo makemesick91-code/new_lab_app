@@ -9,7 +9,10 @@ use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Requests\CreateRmePaymentRequest;
 use App\Modules\RmeInvoice\Services\RmeControlReceivableService;
 use App\Modules\RmeInvoice\Services\RmePaymentService;
+use App\Modules\RmeInvoice\Support\RmeInvoiceDocument;
+use App\Support\Clinical\ClinicalClock;
 use Barryvdh\DomPDF\Facade\Pdf;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -29,6 +32,7 @@ class RmePaymentController extends Controller
     public function create(Request $request, ClinicVisit $clinicVisit, RmeInvoice $rmeInvoice): View|RedirectResponse
     {
         $this->authorize('pay', $rmeInvoice);
+        abort_unless($rmeInvoice->belongsToVisit($clinicVisit), 404);
 
         if (! $rmeInvoice->isPayable()) {
             return redirect()
@@ -59,6 +63,7 @@ class RmePaymentController extends Controller
     public function store(CreateRmePaymentRequest $request, ClinicVisit $clinicVisit, RmeInvoice $rmeInvoice): RedirectResponse
     {
         $this->authorize('pay', $rmeInvoice);
+        abort_unless($rmeInvoice->belongsToVisit($clinicVisit), 404);
 
         $validated = $request->validated();
         $payableSummary = $this->carryOver->getControlPayableSummary($rmeInvoice);
@@ -137,6 +142,7 @@ class RmePaymentController extends Controller
     public function receipt(Request $request, ClinicVisit $clinicVisit, RmeInvoice $rmeInvoice): View|RedirectResponse
     {
         $this->authorize('viewReceipt', $rmeInvoice);
+        abort_unless($rmeInvoice->belongsToVisit($clinicVisit), 404);
 
         if (! $rmeInvoice->isPaid()) {
             return redirect()
@@ -161,6 +167,7 @@ class RmePaymentController extends Controller
     public function receiptPdf(Request $request, ClinicVisit $clinicVisit, RmeInvoice $rmeInvoice): Response|RedirectResponse
     {
         $this->authorize('viewReceipt', $rmeInvoice);
+        abort_unless($rmeInvoice->belongsToVisit($clinicVisit), 404);
 
         if (! $rmeInvoice->isPaid()) {
             return redirect()
@@ -171,8 +178,11 @@ class RmePaymentController extends Controller
         $data = $this->resolveReceiptData($clinicVisit, $rmeInvoice);
         $filename = 'kwitansi-'.($rmeInvoice->invoice_number ?? $rmeInvoice->id).'.pdf';
 
+        // REVISION-RME-VISIT-DETAIL-INVOICE-REGISTRATION-UX-1 — the invoice follows
+        // the clinic's printed landscape form. Same A4 paper, rotated: no cashier
+        // hardware assumption changes.
         return Pdf::loadView('rme.cashier.receipt.pdf', $data)
-            ->setPaper('a4')
+            ->setPaper('a4', 'landscape')
             ->download($filename);
     }
 
@@ -181,7 +191,11 @@ class RmePaymentController extends Controller
      */
     private function resolveReceiptData(ClinicVisit $clinicVisit, RmeInvoice $rmeInvoice): array
     {
-        $payment = $this->service->paymentsForInvoice($rmeInvoice)->first();
+        // Newest first (RmePaymentRepository::forInvoice orders by paid_at desc),
+        // so $payment is the settling payment and its date is the payment date.
+        $clock = app(ClinicalClock::class);
+        $payments = $this->service->paymentsForInvoice($rmeInvoice);
+        $payment = $payments->first();
         $allocation = session('payment_allocation');
         $batchPayments = collect();
 
@@ -220,6 +234,17 @@ class RmePaymentController extends Controller
         return [
             'visit' => $clinicVisit->load(['patient', 'doctor', 'initialTreatment']),
             'invoice' => $invoice,
+            // Every amount the invoice document prints, read from stored
+            // canonical fields and reconciled against them.
+            'document' => RmeInvoiceDocument::fromInvoice($invoice, $payments),
+            'invoiceTerms' => config('rme_invoice'),
+            // Printed dates are clinic dates. The application clock is UTC, so a
+            // payment taken between 00:00 and 07:59 WITA would otherwise print
+            // the previous day on a financial document.
+            'paidAtClinical' => $payment?->paid_at !== null
+                ? CarbonImmutable::instance($payment->paid_at)->setTimezone($clock->timezone())
+                : null,
+            'printedAtClinical' => $clock->now(),
             'payment' => $payment,
             'labCaseCandidates' => $invoice->labCaseCandidates,
             'allocatedToParent' => $allocatedToParent,

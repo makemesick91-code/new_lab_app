@@ -1,0 +1,98 @@
+---
+description: REVISION-RME-VISIT-DETAIL-INVOICE-REGISTRATION-UX-1 — visit detail order Odontogram → Rekam Medis → Resep; the RME invoice is the clinic's landscape INVOICE form, fed only by canonical billing data; "Jenis Kunjungan" is server-derived (Kontrol only from an explicitly selected prior visit) and never an operator choice
+globs: resources/views/rme/visits/show.blade.php, resources/views/rme/visits/_form.blade.php, resources/views/rme/cashier/receipt/**, app/Modules/RmeInvoice/Support/RmeInvoiceDocument.php, app/Modules/RmeInvoice/Controllers/RmePaymentController.php, app/Modules/ClinicVisit/Requests/StoreClinicVisitRequest.php, app/Modules/ClinicVisit/Controllers/ClinicVisitController.php, config/rme_invoice.php, resources/views/components/brand/daengtisia-logo.blade.php
+alwaysApply: false
+---
+
+# RME visit detail, invoice and registration UX
+
+Owner-approved on 2026-10-12. Presentation and derivation rules — no schema change.
+
+## A. Visit detail order
+
+1. The clinical cards on Detail Kunjungan render **Odontogram → Rekam Medis → Resep**.
+2. The order lives in the Blade **source**. Never fake it with CSS `order-*`/`order:` —
+   keyboard focus and screen-reader reading order must follow what is on screen.
+3. This is a **presentation-order** rule. It changes no workflow state, no permission, no
+   room gate, no consent rule and no route. Each card keeps its own `@can` guard.
+4. Front-office-only accounts still see none of the three cards (FIX-07 unchanged).
+
+## B. The RME invoice document
+
+5. The printed invoice follows the clinic's own **INVOICE** form: Daengtisia wordmark,
+   NOMOR / TANGGAL PEMBAYARAN, turquoise INVOICE block, "Ditujukan Kepada", yellow-headed
+   Jenis Perawatan / Qty / Diskon / Biaya table, payment summary, refund terms, bank
+   details, Admin acknowledgement. Brand colours are taken from the official logo.
+6. **One template, two renderers.** `rme.cashier.receipt.partials.invoice-document` is
+   included by the browser receipt AND the dompdf PDF. Never fork it. It is table-based,
+   scoped under `.dmsinv`, and dompdf-safe (no flex/grid).
+7. **Every amount comes from `RmeInvoiceDocument`**, which reads stored canonical fields in
+   exact integer cents: Biaya = qty × unit_price (gross line), Diskon = item.discount,
+   Jumlah = invoice.subtotal, Diskon total = invoice.discount_total, Total Biaya =
+   invoice.grand_total, Pembayaran = `paidAmount()`, Sisa = `remainingAmount()`.
+   Nothing in Blade computes money. Never recompute from rendered text.
+8. The document **reconciles itself** (lines vs stored totals, paid + remaining vs total).
+   A mismatch prints a visible warning and the stamp is never LUNAS. It never "fixes" the
+   stored values — nothing is written back.
+9. **Never hard-code sample invoice data.** No sample number (`07997`), no sample branch
+   (Landak Baru), no sample address or phone. The invoice number is the invoice's.
+10. Branch identity is the **invoice's own branch** (the transaction), never the cashier's
+    current context. A missing address/phone prints nothing — never a guess.
+11. A remaining balance is printed in red and stamped **DIBAYAR SEBAGIAN** — never LUNAS.
+    The receipt routes stay `PAID`-only (unchanged); the document is still truthful if
+    that rule is ever widened.
+12. Refund terms and bank details come from `config/rme_invoice.php`, **owner-approved and
+    source-controlled** (no `env()`): changing an account or a refund rule is a reviewed
+    commit, never a host edit. An empty block prints nothing. This config describes what
+    is PRINTED; it implements no refund and changes no billing behaviour.
+13. Page: **A4 landscape** (same paper, rotated). One page for a real-world invoice (proven
+    for 1/2/5/10 treatments with dompdf + `pdfinfo`); a longer invoice continues with the
+    table header repeated, never truncated (rule 100 §10).
+14. The treatment table is a **top-level** block beside an out-of-flow addressee block.
+    Never nest it in a two-cell row (dompdf cannot split such a row — page 1 empties) and
+    never float the addressee (a dompdf float intrudes into the next page's rows).
+15. The logo is the official mark (`variant="wordmark"` is a tight crop of the same art),
+    embedded as a data URI in the PDF — no remote fetch from a printed document.
+16. Authorization, branch scope, PAID-only and the print/PDF routes are unchanged; no
+    public receipt URL exists.
+16a. **The visit in the URL must be the invoice's visit.** The cashier routes bind
+    `{clinicVisit}` and `{rmeInvoice}` independently and the policy authorizes the invoice
+    only, while the document prints the visit's patient name, RM and phone. Every route that
+    takes both (`rme.cashier.show`, `payment.create`, `payment.store`, `receipt.show`,
+    `receipt.pdf`) refuses an unpaired request with **404** via
+    `RmeInvoice::belongsToVisit()`, after the policy check. Add the same guard to any new
+    route with that shape.
+16b. **Printed dates are clinic dates.** The application clock is UTC, so a raw
+    `paid_at->format()` prints the previous day for a payment taken 00:00–07:59 WITA. The
+    controller passes `paidAtClinical` / `printedAtClinical` resolved through `ClinicalClock`;
+    the template never formats a raw instant or calls `now()`.
+
+## C. "Jenis Kunjungan" is server-derived
+
+17. `/rme/visits/create` shows **no** visit type field. The optional
+    "Kunjungan Sebelumnya (Kontrol)" picker for registered patients is the only input
+    that can make a visit Kontrol.
+18. `StoreClinicVisitRequest::prepareForValidation()` derives the type and **overwrites any
+    client-submitted `visit_type`**: Kontrol when a prior visit is explicitly selected,
+    Baru otherwise. Never trust a hidden `visit_type` input.
+19. Derivation is on **presence**, not validity: an explicitly selected prior visit that is
+    invalid, cross-patient, soft-deleted or outside the RME branches is **rejected** by the
+    existing control-chain validation — never silently downgraded to Baru.
+20. **Patient history alone never makes a visit Kontrol.** The operator must select it.
+21. Control-chain billing, piutang carry-over, payment allocation and invoice semantics are
+    unchanged: a derived Kontrol + parent visit enters `RmeControlReceivableService`
+    exactly as before.
+22. "Buat Kontrol" on visit detail keeps its existing authorization (`$canOperateVisit` +
+    `create`). Do not widen Front Office permissions to reach it.
+23. `continued_treatment` and `emergency` stay in the model, the database and history —
+    they are simply no longer creatable from this form. Never delete or rewrite historical
+    visit types.
+24. New and existing patient workflows keep working; Master Data Pasien stays global; KTP
+    stays new-patient-only (rule 184); legacy patients need no KTP photo; KTP archives stay
+    branch-isolated (rule 183); D7 consent stays in force (rule 180).
+
+## Release
+
+25. `scripts/deploy-vps-runner.sh` runs **on the VPS**, never locally; GO requires real
+    evidence (exit 0 + DEPLOY OK + runtime SHA + production verification).
+26. Cleanup must leave zero unfinished task-owned processes, worktrees and stale locks.
