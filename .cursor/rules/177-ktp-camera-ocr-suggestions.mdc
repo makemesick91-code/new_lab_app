@@ -34,7 +34,9 @@ Sprint doc: `docs/sprints/revision-registration-ktp-camera-ocr-1.md`. Flag
    `.value` / `.textContent`.
 9. **Image hardening:** the decompression-bomb guard reads the header BEFORE GD
    decodes; temp paths are rebuilt inside the caller's own folder; a retake
-   discards only the same user's superseded temp image.
+   discards only the same user's superseded temp image. A cleared or replaced
+   photo is also DETACHED from the form so it is never archived under the
+   patient being saved (rule 182 §2, AUDIT-PATIENT-KTP-ARCHIVE-PERSISTENCE-1).
 10. **Rate limit** `ktp-scan`: per user AND per route — keep the two budgets separate.
 11. Real-KTP accuracy and tablet latency are unmeasured until a supervised
     device trial; do not claim production readiness from synthetic results.

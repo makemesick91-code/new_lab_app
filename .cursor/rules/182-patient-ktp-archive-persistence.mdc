@@ -1,0 +1,114 @@
+---
+description: AUDIT-PATIENT-KTP-ARCHIVE-PERSISTENCE-1 — a KTP photo is archived as the patient's private document (same bytes, right patient) or the operator is told it was not
+globs: app/Modules/Patient/Services/KtpScanService.php, app/Modules/Patient/Controllers/PatientController.php, app/Modules/Patient/Controllers/PatientDocumentController.php, app/Modules/ClinicVisit/Controllers/ClinicVisitController.php, app/Modules/Patient/Models/PatientDocument.php, resources/js/ktp-camera-ocr.js, resources/views/settings/patients/_ktp-scan.blade.php
+alwaysApply: false
+---
+
+# KTP archive persistence
+
+Sprint doc: `docs/sprints/audit-patient-ktp-archive-persistence-1.md`.
+Extends rules 177–181 (KTP camera OCR, pilot, field read, D7 consent, live
+overlay). None of them is relaxed; where this rule is silent, they govern.
+
+## The lifecycle (verified 2026-10-11)
+
+`capture / scan / file → operator confirms → POST upload-temp → private temp
+(tmp/patient-ktp-scans/{user}/{token}.{ext} + .json meta with checksum) →
+hidden ktp_scan_token → registration submit (Master Data → Tambah Pasien, or
+Kunjungan → Pasien Baru) → patient row → KtpScanService::attachTempToPatient()
+→ patient-documents/{patient}/ktp-*.{ext} + mst_patient_documents row → patient
+edit page "Lihat KTP" → PatientDocumentController::show()`.
+
+## Foundations
+
+1. **Capture is not archive.** A photo in the browser, a temp upload and an OCR
+   read are all pre-archive. Only a `mst_patient_documents` row whose file exists
+   on the private disk is an archived KTP. Never report "persisted" from an OCR
+   or upload success.
+2. **The form token names the photo the operator SEES as saved.** Clearing the
+   preview ("Hapus Preview"), a retake, a new scan, a new unconfirmed capture or
+   a newly chosen file detaches the token from the form (`createKtpTokenBinding`).
+   A detached photo is never attached on save; it is passed as `replaces_token`
+   on the next upload so the server discards it. **Never leave a previous token
+   in the hidden field while the preview shows something else** — that files an
+   earlier, possibly different person's KTP under the patient being saved (the
+   regression REVISION-REGISTRATION-KTP-CAMERA-OCR-1 introduced and this sprint
+   closed). Two corollaries: an upload that resolves AFTER its photo was cleared
+   or replaced is never attached (the binding's generation counter); and the
+   form refuses to save while a photo is on screen that will not be archived
+   (unconfirmed, failed or still uploading) — a hidden KTP section never blocks
+   the save. The scanner upload holds `busy` exactly like the confirm flow.
+3. **Temp uploads are finalized only by an authorized registration path**, and
+   only from the submitting operator's own temp folder (path rebuilt from the
+   user id + sanitized token; a meta pointing outside it is refused). Another
+   operator's token is never attached, and is left untouched.
+4. **`PatientDocument` / `mst_patient_documents` + the private `local` disk is
+   the only KTP document store.** Do not add a second store, table or disk.
+5. **Files stay private.** `storage/app/private`, served only through
+   `settings.patients.documents.show` with `Cache-Control: private, no-store`
+   and `X-Content-Type-Options: nosniff`. The framework's local-disk file route
+   refuses unsigned requests and nginx denies `/storage/`. Never `Storage::url()`
+   a KTP.
+6. **Identity is verified, not assumed.** The upload records the sha256 of the
+   stored temp bytes; attach refuses a temp whose bytes no longer match, refuses
+   an empty file, and reads the archive back and compares before writing the
+   row. The archived bytes are exactly the bytes the operator confirmed.
+7. **The local disk does not throw — so every step is checked.** `throw => false`
+   turns failed writes and reads into `false`/`null`, while a directory that
+   cannot be created still throws. Handle both. A filesystem write cannot be
+   rolled back by a transaction: if the document row cannot be written, the
+   archive file is deleted again (compensation), and the temp is released only
+   after the file AND its row exist. Insert the row in a nested transaction
+   (savepoint) so a failure never poisons an enclosing PostgreSQL transaction.
+8. **Registration never fails because of the photo — and never hides it either.**
+   A submitted token that did not become an archived document flashes
+   `KtpScanService::NOT_ATTACHED_WARNING` on both surfaces. Never let the
+   operator believe a KTP was archived when it was not.
+9. **OCR retries never create documents.** Whole-document, field ROI, live
+   overlay, per-field BACA ULANG and manual correction all run in the browser
+   and write nothing; only the registration submit archives, **at most once per
+   token** — the attach first CLAIMS the photo by renaming its meta (atomic: one
+   request wins, so a double-clicked Save cannot archive it twice), and every
+   failure puts the claim back so the confirmed image is never lost.
+10. **Retrieval is authorized server-side** by `PatientPolicy::view` (`manage
+    patients`) plus a patient-ownership 404. Patient master data is **not
+    branch-scoped** by an existing product decision, so any `manage patients`
+    holder can open any patient's KTP. Whether KTP images should be
+    branch-scoped is an **open owner decision** — never claim branch isolation
+    for KTP retrieval until it is implemented and tested.
+11. **D7 consent remains mandatory for KTP OCR** (rule 180). It gates reading the
+    card, not keeping the document: a declined holder's photo is still archived
+    as a plain identity document, exactly like a scanner or manual upload.
+12. **OCR consent is not a retention period.** No retention/expiry policy for
+    archived KTP images exists yet; do not infer one from D7.
+13. **Temp cleanup never removes permanent files.** `patient-documents:prune-temp`
+    touches only `tmp/patient-ktp-scans` and runs daily via
+    `daengtisiams-ktp-temp-prune.timer` as `daengtisiams` (not the Laravel
+    scheduler, which does not fire in production).
+14. **Scanner agent and manual file remain first-class sources**, with or without
+    the camera/OCR pilot. Never make the camera mandatory.
+15. **No schema change** was needed or made; do not add columns to "fix"
+    persistence that the existing table already records.
+16. **Production evidence is aggregate only** — counts, sizes, statuses,
+    timestamps. Never print a path, a name, a KTP number or the image.
+    `php artisan patient-documents:audit --json` is the canonical read-only probe.
+17. **GO tags need verified evidence**; a skipped Full Suite is SKIPPED, never PASS.
+18. **The deploy runner runs on the VPS**, never locally.
+19. **Cleanup leaves zero task-owned processes, worktrees or scratch files.**
+
+## Known gaps (recorded, not built)
+
+- The warning is a toast that auto-dismisses after 4 seconds beside the green
+  success toast; a persistent banner would be stronger (global UI component).
+- In the visit form, a photo taken in the "Pasien Baru" panel and then switched
+  to existing-patient mode is dropped without a warning (it was never meant for
+  that patient, so dropping is correct; only the silence is a gap).
+- A temp uploaded before this release has no checksum in its meta, so the
+  identity check is skipped for it (bounded: temps live ≤ 24h). Nothing fsyncs;
+  the read-back proves the bytes reached the OS, not the platter.
+
+- No way to attach or replace a KTP on an EXISTING patient (the edit page can
+  only view/delete). An unarchived photo therefore has no in-app remedy yet.
+- The edit page shows only the latest KTP (`ktpDocument` = latest of many).
+- `scanner.ktp.temp_token_ttl_minutes` (60) is configuration only; the effective
+  bound on a temp token is the 24h prune.

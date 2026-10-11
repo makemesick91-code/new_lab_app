@@ -46,7 +46,7 @@
     <input type="hidden" name="ktp_ocr_applied" data-ktp-ocr-applied value="{{ $ktpOcrApplied ? '1' : '0' }}" />
 
     @if (old('ktp_scan_token'))
-        <p class="mb-2 text-xs text-emerald-700">Foto KTP dari percobaan sebelumnya masih tersimpan dan akan dilampirkan saat pasien disimpan.</p>
+        <p class="mb-2 text-xs text-emerald-700" data-ktp-carried>Foto KTP dari percobaan sebelumnya masih tersimpan dan akan dilampirkan saat pasien disimpan. Tekan "Hapus Preview" bila foto itu tidak boleh dilampirkan.</p>
     @endif
 
     <div class="flex flex-wrap items-center gap-2">

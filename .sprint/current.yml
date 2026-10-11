@@ -1,22 +1,20 @@
-# REVISION-PATIENT-KTP-LIVE-FIELD-OVERLAY-OCR-1
+# AUDIT-PATIENT-KTP-ARCHIVE-PERSISTENCE-1
 #
-# Live field overlay on the KTP camera preview. Once the camera is open (which
-# already needs the KTP holder's D7 "yes"), a bounded analysis — a module worker
-# where the browser has one, else the main thread — finds the card with the
-# shipped detector and draws the card outline and the versioned template's field
-# boxes over the video (SVG layer, never part of the photo), with a RED / YELLOW /
-# GREEN indicator and plain instructions. OCR still runs once, after capture. The
-# capture checks the card ON THE CAPTURED PIXELS (live corners are only compared),
-# crops to the card, reads a lossless copy and hands the confirmed corners to the
-# existing field read as boundary.reason = 'live'; an unconfirmed capture passes
-# no corners. No migration, no permission, no route, no patient column, no
-# pilot/env change; the pilot scope, period (ends 2026-10-16) and device waiver
-# are unchanged. Real-device and real-KTP results PENDING physical execution.
+# Audit of the KTP photo lifecycle (camera / scanner agent / manual file →
+# temp → registration → permanent private document → authorized retrieval),
+# closed as category C with a corrective release. The happy path was already
+# correct and is production-proven; the fix closes a wrong-patient regression in
+# the browser (a cleared or replaced photo stayed attached to the form), makes
+# the server verify every filesystem step it used to assume (empty temp,
+# checksum identity, read-back, document-row compensation), reports an
+# unarchived photo to the operator instead of staying silent, and serves the
+# archive with no-store / nosniff. No migration, no permission, no route, no
+# pilot/env change; D7 consent and the scanner/manual fallbacks are unchanged.
 
-id: REVISION-PATIENT-KTP-LIVE-FIELD-OVERLAY-OCR-1
-type: MODULE_SPRINT
+id: AUDIT-PATIENT-KTP-ARCHIVE-PERSISTENCE-1
+type: RUNTIME_FIX
 module: Patient
-title: "Live KTP field overlay on the camera preview with capture-confirmed geometry"
+title: "KTP archive persistence audit + wrong-patient token regression fix"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 runtime_change: true
 schema_change: false
@@ -25,9 +23,8 @@ security_impact: true
 branch_isolation_impact: false
 ledger_impact: false
 deploy_required: true
-browser_required: true
+browser_required: false
 test_profiles: []
-go_tag: revision-patient-ktp-live-field-overlay-ocr-1-go
-reserved_pilot_go_tag: phase-1-patient-ktp-camera-ocr-supervised-pilot-go
-inherits_parent_go: phase-3-patient-ktp-roi-ocr-consent-readiness-go
+go_tag: audit-patient-ktp-archive-persistence-1-go
+inherits_parent_go: revision-patient-ktp-live-field-overlay-ocr-1-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1

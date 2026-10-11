@@ -294,14 +294,22 @@ class ClinicVisitController extends Controller
         // patient's private document folder. Only for the new-patient flow; an
         // existing-patient visit never attaches. A missing/expired token is a
         // no-op so registration never fails because of the scan.
+        // A photo that was NOT archived is reported, never silent
+        // (AUDIT-PATIENT-KTP-ARCHIVE-PERSISTENCE-1).
+        $redirect = redirect()->route('rme.visits.show', $visit)->with('status', 'Kunjungan berhasil didaftarkan.');
+
         if ($isNewPatient && is_string($ktpScanToken) && $ktpScanToken !== '') {
             $patient = $visit->patient;
-            if ($patient !== null) {
-                $this->ktpScans->attachTempToPatient($patient, $ktpScanToken, (int) $request->user()->id);
+            $document = $patient !== null
+                ? $this->ktpScans->attachTempToPatient($patient, $ktpScanToken, (int) $request->user()->id)
+                : null;
+
+            if ($document === null) {
+                $redirect->with('warning', KtpScanService::NOT_ATTACHED_WARNING);
             }
         }
 
-        return redirect()->route('rme.visits.show', $visit)->with('status', 'Kunjungan berhasil didaftarkan.');
+        return $redirect;
     }
 
     public function show(ClinicVisit $clinicVisit): View

@@ -73,7 +73,10 @@ test('the camera never opens without a yes, and a retake keeps the same answer',
     assert.match(retake, /consentAllowsOcr\(consent, consentVersion\)\) openCamera\(\)/);
     // Clearing the photo may mean a different person: the answer is reset, and
     // a camera opened under the old answer closes with it (live overlay release).
-    assert.match(src, /clearBtn\?\.addEventListener\('click', \(\) => \{\s*if \(blockedWhileBusy\(\)\) return;\s*clearAll\(\);\s*\}\)/);
+    // The handler's first act after the busy guard is a plain clearAll() (no
+    // keepConsent). AUDIT-PATIENT-KTP-ARCHIVE-PERSISTENCE-1 adds a status line
+    // after it ("not attached") — the consent property pinned here is unchanged.
+    assert.match(src, /clearBtn\?\.addEventListener\('click', \(\) => \{\s*if \(blockedWhileBusy\(\)\) return;\s*clearAll\(\);/);
     assert.match(src, /if \(!keepConsent\) \{\s*consent = null;\s*stopCamera\(\);\s*\}/);
 });
 

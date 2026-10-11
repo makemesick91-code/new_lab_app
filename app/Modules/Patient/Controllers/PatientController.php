@@ -67,14 +67,18 @@ class PatientController extends Controller
 
         $patient = $this->patientService->create($data);
 
+        $redirect = redirect()->route('settings.patients.index')->with('status', 'Pasien berhasil dibuat.');
+
         // Sprint 61.1 — promote a scanned KTP (if any) into the patient's
-        // private document folder. A missing/expired token is a no-op so
-        // registration never fails because of the scan.
-        if (is_string($ktpScanToken) && $ktpScanToken !== '') {
-            $this->ktpScans->attachTempToPatient($patient, $ktpScanToken, (int) $request->user()->id);
+        // private document folder. Registration never fails because of the
+        // scan, but a photo that was NOT archived is reported, never silent
+        // (AUDIT-PATIENT-KTP-ARCHIVE-PERSISTENCE-1).
+        if (is_string($ktpScanToken) && $ktpScanToken !== ''
+            && $this->ktpScans->attachTempToPatient($patient, $ktpScanToken, (int) $request->user()->id) === null) {
+            $redirect->with('warning', KtpScanService::NOT_ATTACHED_WARNING);
         }
 
-        return redirect()->route('settings.patients.index')->with('status', 'Pasien berhasil dibuat.');
+        return $redirect;
     }
 
     public function edit(Patient $patient): View|RedirectResponse
