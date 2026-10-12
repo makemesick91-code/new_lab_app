@@ -2,7 +2,7 @@
 
 namespace App\Modules\ClinicOversight\Interfaces;
 
-use App\Modules\ClinicOversight\Support\ClinicalDayWindow;
+use App\Modules\ClinicOversight\Support\ClinicalDateRange;
 
 /**
  * FEATURE-FINANCE-KLINIK-DATA-ANALYST-ROLES-1 — read-only KPI aggregations for
@@ -10,18 +10,23 @@ use App\Modules\ClinicOversight\Support\ClinicalDayWindow;
  * branch set as its first argument and returns nothing for an empty set (fail
  * closed). Each KPI is ONE grouped aggregation, never one query per branch.
  *
+ * REVISION-OVERSIGHT-DASHBOARD-DATE-RANGE-1 (rule 187): the four period KPIs
+ * take an inclusive ClinicalDateRange (a single day is the range D..D). The
+ * receivables method deliberately takes NO range at all — Piutang is the
+ * current balance, so it cannot be date-filtered by any caller.
+ *
  * Per-branch results are keyed by branch id. Branches with no activity are
  * simply absent; the service fills zeros.
  */
 interface OversightKpiRepositoryInterface
 {
     /**
-     * Distinct checked-in patients per branch for the clinic day.
+     * Distinct checked-in patients per branch over the clinic-date range.
      *
      * @param  list<int>  $branchIds
      * @return array<int, int>
      */
-    public function checkedInPatientsByBranch(array $branchIds, ClinicalDayWindow $day): array;
+    public function checkedInPatientsByBranch(array $branchIds, ClinicalDateRange $range): array;
 
     /**
      * Distinct checked-in patients across ALL the given branches — NOT the sum
@@ -29,7 +34,7 @@ interface OversightKpiRepositoryInterface
      *
      * @param  list<int>  $branchIds
      */
-    public function checkedInPatientsTotal(array $branchIds, ClinicalDayWindow $day): int;
+    public function checkedInPatientsTotal(array $branchIds, ClinicalDateRange $range): int;
 
     /**
      * Cashier transactions (distinct payment batches) per INVOICE branch.
@@ -37,7 +42,7 @@ interface OversightKpiRepositoryInterface
      * @param  list<int>  $branchIds
      * @return array<int, int>
      */
-    public function transactionsByBranch(array $branchIds, ClinicalDayWindow $day): array;
+    public function transactionsByBranch(array $branchIds, ClinicalDateRange $range): array;
 
     /**
      * Distinct payment batches across all the given branches. A batch that
@@ -45,7 +50,7 @@ interface OversightKpiRepositoryInterface
      *
      * @param  list<int>  $branchIds
      */
-    public function transactionsTotal(array $branchIds, ClinicalDayWindow $day): int;
+    public function transactionsTotal(array $branchIds, ClinicalDateRange $range): int;
 
     /**
      * Actual received revenue in integer CENTS per invoice branch.
@@ -53,7 +58,7 @@ interface OversightKpiRepositoryInterface
      * @param  list<int>  $branchIds
      * @return array<int, int>
      */
-    public function revenueCentsByBranch(array $branchIds, ClinicalDayWindow $day): array;
+    public function revenueCentsByBranch(array $branchIds, ClinicalDateRange $range): array;
 
     /**
      * Current active receivables per invoice branch:
@@ -65,10 +70,10 @@ interface OversightKpiRepositoryInterface
     public function activeReceivablesByBranch(array $branchIds): array;
 
     /**
-     * Visits cancelled during the clinic day (by cancelled_at), per branch.
+     * Visits cancelled during the range (by cancelled_at), per branch.
      *
      * @param  list<int>  $branchIds
      * @return array<int, int>
      */
-    public function cancelledVisitsByBranch(array $branchIds, ClinicalDayWindow $day): array;
+    public function cancelledVisitsByBranch(array $branchIds, ClinicalDateRange $range): array;
 }

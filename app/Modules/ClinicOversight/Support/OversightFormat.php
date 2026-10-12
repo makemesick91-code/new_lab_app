@@ -26,6 +26,17 @@ final class OversightFormat
     }
 
     /**
+     * A clinic calendar date (strict `Y-m-d`) as Indonesian `dd/mm/yyyy`.
+     * Pure string reshaping: a calendar date is never timezone-converted.
+     */
+    public static function clinicalDate(string $ymd): string
+    {
+        return preg_match('/^(\d{4})-(\d{2})-(\d{2})$/D', $ymd, $m) === 1
+            ? $m[3].'/'.$m[2].'/'.$m[1]
+            : $ymd;
+    }
+
+    /**
      * A stored UTC instant on the CLINIC wall clock (WITA). Null-safe.
      */
     public static function clinicalTime(DateTimeInterface|string|null $instant, string $format = 'H:i'): ?string

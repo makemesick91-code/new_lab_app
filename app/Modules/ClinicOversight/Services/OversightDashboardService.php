@@ -5,7 +5,7 @@ namespace App\Modules\ClinicOversight\Services;
 use App\Models\User;
 use App\Modules\Branch\Models\Branch;
 use App\Modules\ClinicOversight\Interfaces\OversightKpiRepositoryInterface;
-use App\Modules\ClinicOversight\Support\ClinicalDayWindow;
+use App\Modules\ClinicOversight\Support\ClinicalDateRange;
 use App\Modules\ClinicOversight\Support\ClinicOversightScope;
 use App\Support\Clinical\ClinicalClock;
 
@@ -21,10 +21,19 @@ use App\Support\Clinical\ClinicalClock;
  * The all-branch TOTAL is not always the arithmetic sum of the branch rows,
  * and the payload says so: a patient seen at two branches is one patient, and
  * one cashier batch that settled invoices at two branches is one transaction.
+ *
+ * REVISION-OVERSIGHT-DASHBOARD-DATE-RANGE-1 (rule 187): the period KPIs run
+ * over an inclusive WITA date range (a single day is D..D, numerically
+ * identical to the original single-day dashboard). Piutang is NOT a period
+ * KPI: it is the current balance whatever range is selected
+ * (`receivable_basis = current_balance`). METRIC_VERSION 2 = the payload
+ * carries start_date / end_date / day_count instead of a single `date`.
  */
 class OversightDashboardService
 {
-    public const METRIC_VERSION = 1;
+    public const METRIC_VERSION = 2;
+
+    public const RECEIVABLE_BASIS = 'current_balance';
 
     public function __construct(
         private readonly OversightKpiRepositoryInterface $kpis,
@@ -35,19 +44,20 @@ class OversightDashboardService
     /**
      * @return array<string, mixed>
      */
-    public function build(User $user, ?string $requestedDate, mixed $requestedBranch): array
+    public function build(User $user, ?ClinicalDateRange $range, mixed $requestedBranch): array
     {
-        $day = ClinicalDayWindow::resolve($requestedDate, $this->clock);
+        $range ??= ClinicalDateRange::today($this->clock);
+        $today = $this->clock->todayString();
 
         $authorizedBranches = $this->scope->branchesFor($user, ClinicOversightScope::PERMISSION_DASHBOARD);
         $authorizedIds = $authorizedBranches->pluck('id')->map(fn ($id) => (int) $id)->all();
         $selectedIds = $this->scope->narrow($authorizedIds, $requestedBranch);
 
-        $patients = $this->kpis->checkedInPatientsByBranch($selectedIds, $day);
-        $transactions = $this->kpis->transactionsByBranch($selectedIds, $day);
-        $revenue = $this->kpis->revenueCentsByBranch($selectedIds, $day);
-        $receivables = $this->kpis->activeReceivablesByBranch($selectedIds);
-        $cancellations = $this->kpis->cancelledVisitsByBranch($selectedIds, $day);
+        $patients = $this->kpis->checkedInPatientsByBranch($selectedIds, $range);
+        $transactions = $this->kpis->transactionsByBranch($selectedIds, $range);
+        $revenue = $this->kpis->revenueCentsByBranch($selectedIds, $range);
+        $receivables = $this->kpis->activeReceivablesByBranch($selectedIds); // current balance — no range, by design
+        $cancellations = $this->kpis->cancelledVisitsByBranch($selectedIds, $range);
 
         $rows = [];
         foreach ($authorizedBranches as $branch) {
@@ -71,9 +81,9 @@ class OversightDashboardService
         }
 
         $totals = [
-            'patients' => $this->kpis->checkedInPatientsTotal($selectedIds, $day),
+            'patients' => $this->kpis->checkedInPatientsTotal($selectedIds, $range),
             'patients_branch_sum' => array_sum(array_column($rows, 'patients')),
-            'transactions' => $this->kpis->transactionsTotal($selectedIds, $day),
+            'transactions' => $this->kpis->transactionsTotal($selectedIds, $range),
             'transactions_branch_sum' => array_sum(array_column($rows, 'transactions')),
             'revenue_cents' => array_sum(array_column($rows, 'revenue_cents')),
             'receivable_cents' => array_sum(array_column($rows, 'receivable_cents')),
@@ -83,8 +93,13 @@ class OversightDashboardService
 
         return [
             'metric_version' => self::METRIC_VERSION,
-            'date' => $day->date,
-            'is_today' => $day->date === $this->clock->todayString(),
+            'start_date' => $range->startDate,
+            'end_date' => $range->endDate,
+            'day_count' => $range->dayCount,
+            'is_single_day' => $range->isSingleDay(),
+            'is_today' => $range->isSingleDay() && $range->startDate === $today,
+            'includes_today' => $range->contains($today),
+            'receivable_basis' => self::RECEIVABLE_BASIS,
             'timezone' => $this->clock->timezone(),
             'generated_at' => $this->clock->now()->format('Y-m-d H:i:s'),
             'selected_branch_id' => count($selectedIds) === 1 && $requestedBranch !== null && $requestedBranch !== ''

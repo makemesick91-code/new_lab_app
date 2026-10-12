@@ -3,7 +3,7 @@
 namespace App\Modules\ClinicOversight\Repositories;
 
 use App\Modules\ClinicOversight\Interfaces\OversightKpiRepositoryInterface;
-use App\Modules\ClinicOversight\Support\ClinicalDayWindow;
+use App\Modules\ClinicOversight\Support\ClinicalDateRange;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use Illuminate\Database\Query\Builder;
@@ -35,13 +35,13 @@ class OversightKpiRepository implements OversightKpiRepositoryInterface
      */
     private const BATCH_IDENTITY_SQL = "COALESCE(CAST(p.payment_batch_uuid AS TEXT), 'payment:' || CAST(p.id AS TEXT))";
 
-    public function checkedInPatientsByBranch(array $branchIds, ClinicalDayWindow $day): array
+    public function checkedInPatientsByBranch(array $branchIds, ClinicalDateRange $range): array
     {
         if ($branchIds === []) {
             return [];
         }
 
-        return $this->checkedInVisits($branchIds, $day)
+        return $this->checkedInVisits($branchIds, $range)
             ->selectRaw('v.branch_id AS branch_id, COUNT(DISTINCT v.patient_id) AS total')
             ->groupBy('v.branch_id')
             ->pluck('total', 'branch_id')
@@ -49,24 +49,24 @@ class OversightKpiRepository implements OversightKpiRepositoryInterface
             ->all();
     }
 
-    public function checkedInPatientsTotal(array $branchIds, ClinicalDayWindow $day): int
+    public function checkedInPatientsTotal(array $branchIds, ClinicalDateRange $range): int
     {
         if ($branchIds === []) {
             return 0;
         }
 
-        return (int) $this->checkedInVisits($branchIds, $day)
+        return (int) $this->checkedInVisits($branchIds, $range)
             ->selectRaw('COUNT(DISTINCT v.patient_id) AS total')
             ->value('total');
     }
 
-    public function transactionsByBranch(array $branchIds, ClinicalDayWindow $day): array
+    public function transactionsByBranch(array $branchIds, ClinicalDateRange $range): array
     {
         if ($branchIds === []) {
             return [];
         }
 
-        return $this->paymentsOfDay($branchIds, $day)
+        return $this->paymentsInRange($branchIds, $range)
             ->selectRaw('i.branch_id AS branch_id, COUNT(DISTINCT '.self::BATCH_IDENTITY_SQL.') AS total')
             ->groupBy('i.branch_id')
             ->pluck('total', 'branch_id')
@@ -74,24 +74,24 @@ class OversightKpiRepository implements OversightKpiRepositoryInterface
             ->all();
     }
 
-    public function transactionsTotal(array $branchIds, ClinicalDayWindow $day): int
+    public function transactionsTotal(array $branchIds, ClinicalDateRange $range): int
     {
         if ($branchIds === []) {
             return 0;
         }
 
-        return (int) $this->paymentsOfDay($branchIds, $day)
+        return (int) $this->paymentsInRange($branchIds, $range)
             ->selectRaw('COUNT(DISTINCT '.self::BATCH_IDENTITY_SQL.') AS total')
             ->value('total');
     }
 
-    public function revenueCentsByBranch(array $branchIds, ClinicalDayWindow $day): array
+    public function revenueCentsByBranch(array $branchIds, ClinicalDateRange $range): array
     {
         if ($branchIds === []) {
             return [];
         }
 
-        return $this->paymentsOfDay($branchIds, $day)
+        return $this->paymentsInRange($branchIds, $range)
             ->selectRaw('i.branch_id AS branch_id, COALESCE(SUM(p.amount), 0) AS total')
             ->groupBy('i.branch_id')
             ->pluck('total', 'branch_id')
@@ -136,7 +136,7 @@ class OversightKpiRepository implements OversightKpiRepositoryInterface
         return $out;
     }
 
-    public function cancelledVisitsByBranch(array $branchIds, ClinicalDayWindow $day): array
+    public function cancelledVisitsByBranch(array $branchIds, ClinicalDateRange $range): array
     {
         if ($branchIds === []) {
             return [];
@@ -146,11 +146,11 @@ class OversightKpiRepository implements OversightKpiRepositoryInterface
             ->whereNull('v.deleted_at')
             ->whereIn('v.branch_id', $branchIds)
             ->where('v.status', ClinicVisit::STATUS_CANCELLED)
-            // The CANCELLATION instant decides the day — not visit_date (an old
-            // or future visit cancelled today counts today) and never
-            // updated_at (any later edit would move it).
-            ->where('v.cancelled_at', '>=', $day->startUtcString())
-            ->where('v.cancelled_at', '<', $day->endUtcString())
+            // The CANCELLATION instant decides the period — not visit_date (an
+            // old or future visit cancelled in the range counts in the range)
+            // and never updated_at (any later edit would move it).
+            ->where('v.cancelled_at', '>=', $range->startUtcString())
+            ->where('v.cancelled_at', '<', $range->endExclusiveUtcString())
             ->selectRaw('v.branch_id AS branch_id, COUNT(*) AS total')
             ->groupBy('v.branch_id')
             ->pluck('total', 'branch_id')
@@ -159,38 +159,41 @@ class OversightKpiRepository implements OversightKpiRepositoryInterface
     }
 
     /**
-     * Visits that genuinely ARRIVED on the clinic day: checked in (the only
-     * arrival marker the workflow writes), not cancelled, not deleted.
+     * Visits that genuinely ARRIVED in the clinic-date range: checked in (the
+     * only arrival marker the workflow writes), not cancelled, not deleted.
+     * visit_date is a DATE column: compared as [start_date, end_date + 1).
      *
      * @param  list<int>  $branchIds
      */
-    private function checkedInVisits(array $branchIds, ClinicalDayWindow $day): Builder
+    private function checkedInVisits(array $branchIds, ClinicalDateRange $range): Builder
     {
         return DB::table('trx_clinic_visits as v')
             ->whereNull('v.deleted_at')
             ->whereIn('v.branch_id', $branchIds)
-            ->where('v.visit_date', '>=', $day->date)
-            ->where('v.visit_date', '<', $day->nextDate())
+            ->where('v.visit_date', '>=', $range->startDate)
+            ->where('v.visit_date', '<', $range->endExclusiveDate())
             ->whereNotNull('v.check_in_at')
             ->where('v.status', '!=', ClinicVisit::STATUS_CANCELLED);
     }
 
     /**
-     * RME payments made during the clinic day, attributed to the INVOICE's
-     * branch (never the cashier's or the session's). RME only — the lab
-     * billing tables (`trx_payments`) are never read here.
+     * RME payments made during the range, attributed to the INVOICE's branch
+     * (never the cashier's or the session's). RME only — the lab billing
+     * tables (`trx_payments`) are never read here. paid_at holds UTC instants:
+     * compared as the half-open [startUtc, endExclusiveUtc), no function on
+     * the column, so the (branch_id, paid_at) index stays usable.
      *
      * @param  list<int>  $branchIds
      */
-    private function paymentsOfDay(array $branchIds, ClinicalDayWindow $day): Builder
+    private function paymentsInRange(array $branchIds, ClinicalDateRange $range): Builder
     {
         return DB::table('trx_rme_payments as p')
             ->join('trx_rme_invoices as i', 'i.id', '=', 'p.rme_invoice_id')
             ->whereNull('p.deleted_at')
             ->whereNull('i.deleted_at')
             ->whereIn('i.branch_id', $branchIds)
-            ->where('p.paid_at', '>=', $day->startUtcString())
-            ->where('p.paid_at', '<', $day->endUtcString());
+            ->where('p.paid_at', '>=', $range->startUtcString())
+            ->where('p.paid_at', '<', $range->endExclusiveUtcString());
     }
 
     /** Decimal money (string|float|int|null) to exact integer cents. */

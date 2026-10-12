@@ -78,6 +78,12 @@ so the whole surface is **read-only by construction**, not by convention.
 
 ## 5. KPI definitions (clinic day = WITA via ClinicalClock)
 
+> **Extended by rule 187 (REVISION-OVERSIGHT-DASHBOARD-DATE-RANGE-1).** The
+> dashboard now runs over an INCLUSIVE WITA date range `start_date..end_date`;
+> wherever this section says "the day", read "the selected range" (a single day
+> is the range `D..D`, numerically identical). The formulas below are
+> unchanged. Piutang (19) is still NOT date-filtered for any range.
+
 15. **Clinic day** = the Asia/Makassar calendar day from `ClinicalClock`, never
     UTC `now()`/`today()`. DATE columns compare as `[D, D+1)`; UTC timestamp
     columns compare as the half-open UTC range of that day, with no function

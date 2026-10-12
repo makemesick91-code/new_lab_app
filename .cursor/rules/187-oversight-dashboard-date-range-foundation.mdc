@@ -1,0 +1,134 @@
+---
+description: REVISION-OVERSIGHT-DASHBOARD-DATE-RANGE-1 — the Finance & Data Analyst dashboard (/oversight/dashboard) runs over an INCLUSIVE WITA date range (start_date..end_date); exclusive UTC upper bound; one compatibility rule; Piutang stays the current balance; export/print/refresh carry the same range
+globs: app/Modules/ClinicOversight/**, resources/views/oversight/dashboard/**, tests/Feature/ClinicOversight/**
+alwaysApply: false
+---
+
+# Oversight dashboard date range (rule 187)
+
+Extends rule 186. Rule 186 §5 defines every KPI over "the clinic day"; this
+rule widens the four PERIOD KPIs from one day to an inclusive range of days.
+A one-day range (`start_date == end_date`) is numerically identical to the
+rule-186 single-day dashboard. Nothing here changes a KPI formula, a role, a
+permission, the branch scope or the read-only posture of rule 186.
+
+## 1. The range
+
+1. Parameters: `start_date`, `end_date`, strict `YYYY-MM-DD`, both **inclusive**
+   clinic (Asia/Makassar, WITA) calendar dates read through `ClinicalClock` —
+   never UTC `now()`/`today()`, never a browser/device/request timezone.
+2. One value object, `App\Modules\ClinicOversight\Support\ClinicalDateRange`,
+   built from two strict `ClinicalDayWindow` values so the WITA→UTC conversion
+   and the strict `Y-m-d` round-trip parse live in exactly one place:
+   - `startUtc` = `start_date 00:00:00 WITA` in UTC (inclusive);
+   - `endExclusiveUtc` = **the day after** `end_date` `00:00:00 WITA` in UTC
+     (exclusive).
+   Example: `2026-10-12..2026-10-30` = UTC `[2026-10-11 16:00:00, 2026-10-30 16:00:00)`.
+3. TIMESTAMP columns (`paid_at`, `cancelled_at`) compare as
+   `col >= startUtc AND col < endExclusiveUtc`. **Never `23:59:59`** as an end
+   workaround, never `whereDate()`, never a function or timezone conversion on
+   the column (index-friendly). DATE columns (`visit_date`) compare as
+   `[start_date, end_date + 1 day)`.
+4. Default (no date parameter): `start_date = end_date =` the clinical today.
+   **Reset** returns both dates to today and keeps the selected (authorized)
+   branch.
+
+## 2. The one compatibility rule
+
+5. `OversightDashboardFilterRequest` (dashboard only — other oversight surfaces
+   keep `OversightFilterRequest`):
+   - no `start_date` / `end_date` / `date` → today WITA;
+   - `start_date` AND `end_date` → that range;
+   - **only one of the two → REJECTED** (never guessed);
+   - legacy `date` alone → that single day (old links/bookmarks keep meaning);
+     `date` mixed with `start_date`/`end_date` → REJECTED.
+6. **A reversed range is REJECTED, never exchanged.**
+7. Bounds: dates within `2000-01-01..2099-12-31` (keeps every bound literal a
+   valid four-digit-year PostgreSQL timestamp — year 0 / five-digit years would
+   be a 500); span at most **`ClinicalDateRange::MAX_DAYS` = 366 inclusive days**
+   (a full year incl. a leap day — the resource bound). The value object
+   enforces the same limits defensively; `dateRange()` FAILS CLOSED (validation
+   error) rather than falling back to today for a request that asked for
+   something else.
+7a. The dashboard request validates ONLY `branch_id` and the date keys. The
+    parent's list-page keys (`visit_date_from/to`, `status`, `search`, …) are
+    deliberately NOT inherited: the dashboard ignores them, an unvalidated key
+    never reaches `filters()`, and the parent's field-reference rule would
+    otherwise make `visit_date_from[]=…` a 500 on this surface too.
+8. Order and span are checked in `withValidator()` once both dates are valid
+   strings — **never with the field-reference rule `after_or_equal:start_date`**,
+   which hands the OTHER field's raw value to `DateTime` and turns
+   `start_date[]=…` into a TypeError (HTTP 500).
+9. A refused filter on the page redirects to the dashboard itself (never
+   `url()->previous()`, which could be the same invalid URL and loop), carrying
+   only a shape-valid `branch_id`; the JSON feed answers 422. Route permission
+   middleware runs BEFORE validation, so a caller without access gets 403, never
+   a 422 that answers for the dates.
+
+## 3. KPIs over the range (formulas are rule 186 §5, unchanged)
+
+10. **Jumlah Pasien** — DISTINCT `patient_id` over the whole range (a patient
+    who came three times is one); checked-in, not cancelled, not soft-deleted.
+    The all-branch total is distinct PEOPLE across branches AND dates — never
+    the sum of the branch rows (payload carries both).
+11. **Jumlah Transaksi** — DISTINCT cashier batches (`payment_batch_uuid`,
+    NULL → `'payment:'||id`) with `paid_at` in the range; a carry-over batch
+    that also settles an old receivable is still one transaction. Per invoice
+    branch; once overall.
+12. **Jumlah Omzet** — `SUM(trx_rme_payments.amount)` by `paid_at` in the range,
+    invoice-branch attribution; an old visit's invoice paid inside the range
+    counts in the range. Never lab `trx_payments`.
+13. **PIUTANG AKTIF PER SAAT INI** — **NOT a period KPI.** The current
+    outstanding balance, identical for every range. The repository method takes
+    **no range parameter at all**, so no caller can date-filter it; the payload
+    states `receivable_basis = current_balance`; the page, print and CSV label it
+    "saldo saat ini, tidak mengikuti periode tanggal".
+14. **Jumlah Pasien Cancel** — `cancelled_at` in the range; never `updated_at`,
+    never `visit_date`; a no-show is not a cancellation.
+
+## 4. Payload, refresh, export
+
+15. `METRIC_VERSION = 2`: payload carries `start_date`, `end_date`,
+    `day_count`, `is_single_day`, `is_today` (single day that is today),
+    `includes_today`, `receivable_basis` — the single `date` key is gone. Bump
+    the version again on any future contract change.
+16. Auto-refresh (60 s, paused while the tab is hidden, re-authorized every
+    call) uses the page's OWN filter (`start_date`, `end_date`, legacy `date`,
+    `branch_id` only — anything else on the URL is dropped). An explicit range
+    stays pinned across refreshes; the default (no dates) keeps following the
+    clinical today. Only the newest request may write the cards
+    (`requestSeq` guard) — an older response resolving late is discarded.
+    When the default view rolls over at WITA midnight, the component announces
+    the moved range (`oversight-range-moved`) so the pickers follow and
+    "Terapkan Filter" can never silently pin yesterday; an explicit range never
+    moves, so a user's unsubmitted edit is never overwritten.
+17. CSV and print use the same request rule and range: every CSV row carries
+    `Tanggal Mulai (WITA)` / `Tanggal Akhir (WITA)`; file name
+    `dashboard-finance-data-analyst-{start}_sd_{end}.csv` (a one-day range keeps
+    the original `…-{date}.csv`); print states the period and day count and its
+    back link keeps the range. Audit metadata uses the existing allowlisted keys
+    `date_from` / `date_to` (no allowlist widening).
+
+## 5. Unchanged (do not "fix" here)
+
+18. Branch: `branch_id` only NARROWS the server-resolved `ClinicOversightScope`
+    set; a date range never widens authorization; a forged branch yields empty.
+19. RBAC: `view_finance_analytics_dashboard` (+ `export_oversight_data` for
+    CSV/print) — Finance Klinik and Data Analyst; the lab `Finance` role and all
+    operational roles stay denied. No permission, role or migration added.
+20. Read-only: every statement is a SELECT; no cache; no write path.
+21. Performance: one grouped aggregation per KPI, query count independent of
+    branch count AND range length; existing indexes
+    (`trx_clinic_visits(branch_id, visit_date, status)`,
+    `trx_rme_payments(branch_id, paid_at)`) — no index added for this revision.
+
+## 6. Regression requirements
+
+22. `tests/Feature/ClinicOversight/ClinicOversightDashboardDateRangeTest.php`
+    (mandatory critical-gate suite) pins every clause above, including the WITA
+    midnight boundaries on both ends, end-date inclusivity, cross-branch and
+    cross-date patient dedup, carry-over batches, the current-balance Piutang,
+    the compatibility rule, the 366-day bound, refresh/reset/export/print
+    consistency and RBAC. `ClinicOversightDashboardKpiTest.php` is the
+    single-day regression and must keep passing unchanged except for the
+    service signature (a date `D` is the range `D..D`).

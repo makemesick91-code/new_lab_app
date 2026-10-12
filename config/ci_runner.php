@@ -360,6 +360,12 @@ return [
         'tests/Feature/ClinicOversight/ClinicOversightClinicalRecordTest.php',
         'tests/Feature/ClinicOversight/ClinicOversightMonitoringTest.php',
         'tests/Feature/ClinicOversight/ClinicOversightGuardLayerTest.php',
+        // REVISION-OVERSIGHT-DASHBOARD-DATE-RANGE-1 (rule 187) — the inclusive
+        // WITA range, exclusive UTC upper bound, the one compatibility rule,
+        // current-balance Piutang and export/print/refresh range consistency.
+        // Selected by the existing `ClinicOversight` token; declared here so a
+        // rename cannot silently drop it from the critical gate.
+        'tests/Feature/ClinicOversight/ClinicOversightDashboardDateRangeTest.php',
 
         // DOCTOR-PWA-WEBAUTHN-1 — the browser device-credential login. A `|Pwa`
         // or `|DoctorDevice` token does not select it: --filter matches the test
