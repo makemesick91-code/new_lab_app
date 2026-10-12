@@ -66,8 +66,8 @@ it('counts a cashier batch once, falls back to the payment id for an un-batched 
     $b1 = covInvoice(covVisit($this->branchB, covPatient()), RmeInvoice::STATUS_PAID, '70000');
 
     covPayment($a1, '100000.00', '2026-10-09 17:00:00');            // 01:00 WITA, no batch
-    covPayment($a2, '50000.00', '2026-10-10 02:00:00', 'bat-1');      // one batch across two branches
-    covPayment($b1, '70000.00', '2026-10-10 02:00:00', 'bat-1');
+    covPayment($a2, '50000.00', '2026-10-10 02:00:00', 'b9f3c2a0-1d4e-4f6a-9b2c-0e1f2a3b4c5d'); // one batch across two branches (payment_batch_uuid is a PG uuid column)
+    covPayment($b1, '70000.00', '2026-10-10 02:00:00', 'b9f3c2a0-1d4e-4f6a-9b2c-0e1f2a3b4c5d');
     covPayment($a1, '30000.00', '2026-10-10 15:59:59');             // 23:59:59 WITA — inside
     covPayment($a1, '20000.00', '2026-10-09 16:00:00');             // 00:00:00 WITA — inside (start inclusive)
     covPayment($a1, '444444.00', '2026-10-09 15:59:59');            // 23:59:59 WITA the day BEFORE — outside

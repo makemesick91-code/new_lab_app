@@ -179,6 +179,14 @@ thumbnails are deliberately exempt, following the LEGACY-RME-PDF-1C convention.
 | LegacyRme, LegacyOdontogram, LegacyImportHub, LegacyMassUpload, LegacyBatchReview, LegacyBatchPublish, LegacyCompleteness, DoctorDevice, DoctorAccess | 2819 passed, 34 skipped |
 | Inventory, Delivery, Reporting, Invoice, Satusehat | 1782 passed |
 
+**PostgreSQL.** The first authoritative CI run (38224411065) failed on exactly
+one test out of 5,631. A KPI fixture used the batch id `'bat-1'`, but
+`trx_rme_payments.payment_batch_uuid` is a PostgreSQL `uuid` column, so
+PostgreSQL rejected the insert (`22P02`) while SQLite accepted it. The fixture
+now uses a real UUID; production batches are always UUIDs. The whole
+`ClinicOversight` suite was then re-run on a throwaway PostgreSQL 16.15
+container: 64 passed, with the driver confirmed from 161 migrated tables.
+
 **Gates:**
 
 * `pint --test` passes;
