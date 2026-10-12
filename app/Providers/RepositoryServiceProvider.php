@@ -16,6 +16,13 @@ use App\Modules\Clinic\Interfaces\ClinicRepositoryInterface;
 use App\Modules\Clinic\Models\Clinic;
 use App\Modules\Clinic\Policies\ClinicPolicy;
 use App\Modules\Clinic\Repositories\ClinicRepository;
+use App\Modules\ClinicOversight\Interfaces\OversightClinicalRecordRepositoryInterface;
+use App\Modules\ClinicOversight\Interfaces\OversightKpiRepositoryInterface;
+use App\Modules\ClinicOversight\Interfaces\OversightMonitoringRepositoryInterface;
+use App\Modules\ClinicOversight\Policies\ClinicOversightPolicy;
+use App\Modules\ClinicOversight\Repositories\OversightClinicalRecordRepository;
+use App\Modules\ClinicOversight\Repositories\OversightKpiRepository;
+use App\Modules\ClinicOversight\Repositories\OversightMonitoringRepository;
 use App\Modules\ClinicRoom\Interfaces\ClinicRoomRepositoryInterface;
 use App\Modules\ClinicRoom\Models\ClinicRoom;
 use App\Modules\ClinicRoom\Policies\ClinicRoomPolicy;
@@ -416,6 +423,10 @@ class RepositoryServiceProvider extends ServiceProvider
         // Sprint 20 Phase 1.2.2
         MedicalRecordRepositoryInterface::class => MedicalRecordRepository::class,
         UnifiedMedicalRecordIndexRepositoryInterface::class => UnifiedMedicalRecordIndexRepository::class,
+        // FEATURE-FINANCE-KLINIK-DATA-ANALYST-ROLES-1 — read-only oversight module
+        OversightKpiRepositoryInterface::class => OversightKpiRepository::class,
+        OversightMonitoringRepositoryInterface::class => OversightMonitoringRepository::class,
+        OversightClinicalRecordRepositoryInterface::class => OversightClinicalRecordRepository::class,
         // SATUSEHAT-4A — structured diagnosis master
         ClinicalDiagnosisRepositoryInterface::class => ClinicalDiagnosisRepository::class,
         // Sprint 20 Phase 1.3.1
@@ -466,6 +477,16 @@ class RepositoryServiceProvider extends ServiceProvider
      * @var array<string, array{0: class-string, 1: string}>
      */
     private array $gates = [
+        // FEATURE-FINANCE-KLINIK-DATA-ANALYST-ROLES-1 (rule 186) — READ-only
+        // oversight abilities. There is deliberately no write ability here.
+        'clinic-oversight.view-dashboard' => [ClinicOversightPolicy::class, 'viewDashboard'],
+        'clinic-oversight.view-clinical-records' => [ClinicOversightPolicy::class, 'viewClinicalRecords'],
+        'clinic-oversight.view-monitoring' => [ClinicOversightPolicy::class, 'viewMonitoring'],
+        'clinic-oversight.view-visit' => [ClinicOversightPolicy::class, 'viewVisit'],
+        'clinic-oversight.view-medical-record' => [ClinicOversightPolicy::class, 'viewMedicalRecord'],
+        'clinic-oversight.view-legacy-rme' => [ClinicOversightPolicy::class, 'viewLegacyRme'],
+        'clinic-oversight.view-legacy-odontogram' => [ClinicOversightPolicy::class, 'viewLegacyOdontogram'],
+        'clinic-oversight.export' => [ClinicOversightPolicy::class, 'export'],
         'production.viewAny' => [ProductionPolicy::class, 'viewAny'],
         'production.view' => [ProductionPolicy::class, 'view'],
         'production.start' => [ProductionPolicy::class, 'start'],

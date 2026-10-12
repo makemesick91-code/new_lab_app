@@ -668,6 +668,34 @@ class RoleSeeder extends Seeder
             'view dashboard',
             'view_rme_payment_reports',
         ],
+        // FEATURE-FINANCE-KLINIK-DATA-ANALYST-ROLES-1 (rule 186) — two
+        // INDEPENDENT read-only oversight roles. They start with an identical
+        // permission set (OVERSIGHT_INITIAL_PERMISSIONS) but are separate role
+        // records, so each can later diverge without touching the other.
+        //
+        // `Finance Klinik` is NOT the existing `Finance` role above: that one
+        // belongs to LABORATORY billing and holds write permissions; it is
+        // deliberately left exactly as it was.
+        //
+        // Neither role holds `view dashboard` (the Owner/branch dashboard),
+        // `view_clinic_visits`, `manage_*`, `view_rme_consents` or any KTP /
+        // legacy-governance permission. Everything they reach goes through the
+        // dedicated GET-only oversight module and its own branch scope.
+        'Finance Klinik' => self::OVERSIGHT_INITIAL_PERMISSIONS,
+        'Data Analyst' => self::OVERSIGHT_INITIAL_PERMISSIONS,
+    ];
+
+    /**
+     * FEATURE-FINANCE-KLINIK-DATA-ANALYST-ROLES-1 — the initial (identical)
+     * permission set of the two oversight roles. A shared starting point only:
+     * RoleSeeder assigns it to two separate role rows, so a later change to one
+     * role's permissions never reaches the other.
+     */
+    public const OVERSIGHT_INITIAL_PERMISSIONS = [
+        'view_finance_analytics_dashboard',
+        'view_clinical_records_readonly',
+        'view_operational_monitoring',
+        'export_oversight_data',
     ];
 
     /**

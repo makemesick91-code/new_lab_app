@@ -344,6 +344,23 @@ return [
         'tests/Feature/Patient/LegacyPatientStagedVerificationCancelTest.php',
         'tests/Feature/Patient/LegacyPatientBatchImportTest.php',
 
+        /*
+         * FEATURE-FINANCE-KLINIK-DATA-ANALYST-ROLES-1 (rule 186). Two read-only
+         * roles see every RME branch, identified clinical records and money, so
+         * the suites pinning "GET-only", "out-of-scope id is a 404", "MAIN and a
+         * forged branch filter widen nothing", "no KTP/consent", "no write on
+         * GET", "Finance (lab) is unchanged" and the five KPI definitions must
+         * run on every change. No pre-existing token selects them (the class
+         * identities all begin with `ClinicOversight`), hence the new
+         * `ClinicOversight` token in BOTH critical-gate variants.
+         */
+        'tests/Feature/ClinicOversight/ClinicOversightRolePermissionTest.php',
+        'tests/Feature/ClinicOversight/ClinicOversightDashboardKpiTest.php',
+        'tests/Feature/ClinicOversight/ClinicOversightAccessSecurityTest.php',
+        'tests/Feature/ClinicOversight/ClinicOversightClinicalRecordTest.php',
+        'tests/Feature/ClinicOversight/ClinicOversightMonitoringTest.php',
+        'tests/Feature/ClinicOversight/ClinicOversightGuardLayerTest.php',
+
         // DOCTOR-PWA-WEBAUTHN-1 — the browser device-credential login. A `|Pwa`
         // or `|DoctorDevice` token does not select it: --filter matches the test
         // IDENTITY, and this class is `DoctorPwaWebAuthnTest`, which contains

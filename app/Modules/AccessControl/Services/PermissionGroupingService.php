@@ -98,6 +98,14 @@ class PermissionGroupingService
                 'approve_doctor_branch_locks',
                 'release_doctor_session_leases',
                 'grant_doctor_break_glass_access',
+                // FEATURE-FINANCE-KLINIK-DATA-ANALYST-ROLES-1 (rule 186) — the
+                // read-only cross-branch oversight surface (Finance Klinik /
+                // Data Analyst). Classified under RME because every record it
+                // reads is clinic/RME data; none of them grants a mutation.
+                'view_finance_analytics_dashboard',
+                'view_clinical_records_readonly',
+                'view_operational_monitoring',
+                'export_oversight_data',
             ],
         ],
         [
@@ -264,6 +272,10 @@ class PermissionGroupingService
      */
     private const DESCRIPTIONS = [
         'view dashboard' => 'Akses halaman dashboard utama.',
+        'view_finance_analytics_dashboard' => 'Lihat Dashboard Finance & Data Analyst (KPI lintas cabang, hanya baca).',
+        'view_clinical_records_readonly' => 'Baca RME native & arsip legacy (RME/odontogram) di semua cabang RME — tanpa ubah data.',
+        'view_operational_monitoring' => 'Pantau ruangan dental, pasien per ruangan, perawatan ditagihkan, dan antrian — hanya baca.',
+        'export_oversight_data' => 'Cetak/PDF/ekspor data yang sudah boleh dilihat pada modul pengawasan (tanpa mutasi).',
         'view_dashboard' => 'Akses dashboard operasional cabang.',
         'manage users' => 'Kelola akun pengguna sistem.',
         'manage roles' => 'Kelola role dan penugasan permission.',

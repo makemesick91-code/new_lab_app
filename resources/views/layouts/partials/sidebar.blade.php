@@ -137,6 +137,10 @@
         'approval' => request()->routeIs('doctor-device-authorizations.*'),
         // FEATURE-PATIENT-DUPLICATE-RESOLUTION-MERGE-1
         'patient_merge' => request()->routeIs('patient-merge.*'),
+        // FEATURE-FINANCE-KLINIK-DATA-ANALYST-ROLES-1 — read-only oversight groups
+        'oversight-rme' => request()->routeIs('oversight.rme.*', 'oversight.legacy.*'),
+        'oversight-dental' => request()->routeIs('oversight.monitoring.rooms', 'oversight.monitoring.room-patients*', 'oversight.monitoring.room-treatments*'),
+        'oversight-queue' => request()->routeIs('oversight.monitoring.queue*'),
     ];
 
     $linkActive = 'menu-subitem-active';
@@ -199,6 +203,84 @@
                     <span class="ml-auto rounded-full bg-brand-500 px-2 py-0.5 text-xs font-semibold text-white">{{ $unreadNotificationCount > 99 ? '99+' : $unreadNotificationCount }}</span>
                 @endif
             </a>
+
+            {{-- FEATURE-FINANCE-KLINIK-DATA-ANALYST-ROLES-1 (rule 186) — the read-only
+                 oversight navigation of the Finance Klinik / Data Analyst roles. Each
+                 entry is gated by its own oversight permission; the routes, gates and
+                 branch scope are the boundary, never this menu. --}}
+            @canany(['view_finance_analytics_dashboard', 'view_clinical_records_readonly', 'view_operational_monitoring'])
+                <div class="pt-2" data-sidebar-section="oversight">
+                    <p class="menu-group-title">Finance &amp; Data Analyst</p>
+                    @can('view_finance_analytics_dashboard')
+                        <a href="{{ route('oversight.dashboard') }}"
+                           class="menu-item {{ request()->routeIs('oversight.dashboard*') ? 'menu-item-active' : 'menu-item-inactive' }}">
+                            <svg class="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" d="M4 19V5m0 14h16M8 15v-4m4 4V8m4 7v-6" />
+                            </svg>
+                            <span>Dashboard Finance &amp; Data Analyst</span>
+                        </a>
+                    @endcan
+                    @can('view_clinical_records_readonly')
+                        <button type="button" @click="toggle('oversight-rme')" class="{{ $groupToggle }}" :aria-expanded="isOpen('oversight-rme')">
+                            <span class="flex items-center gap-3">
+                                <svg class="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                </svg>
+                                <span>Rekam Medis Elektronik</span>
+                            </span>
+                        <svg class="h-4 w-4 shrink-0 text-ink-muted transition-transform duration-150" :class="{ 'rotate-180': isOpen('oversight-rme') }" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+                            <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.94a.75.75 0 111.08 1.04l-4.24 4.5a.75.75 0 01-1.08 0l-4.24-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" />
+                        </svg>
+                        </button>
+                        <div data-sidebar-panel="oversight-rme" x-show="isOpen('oversight-rme')" class="mt-1 space-y-0.5 pl-8">
+                            <a href="{{ route('oversight.rme.index') }}"
+                               class="menu-subitem {{ request()->routeIs('oversight.rme.index') ? $linkActive : $linkIdle }}">Semua RME</a>
+                            <a href="{{ route('oversight.rme.lookup') }}"
+                               class="menu-subitem {{ (request()->routeIs('oversight.rme.lookup') && request('mode') !== 'patient') || request()->routeIs('oversight.rme.visits.*') ? $linkActive : $linkIdle }}">Detail RME</a>
+                            <a href="{{ route('oversight.rme.lookup', ['mode' => 'patient']) }}"
+                               class="menu-subitem {{ (request()->routeIs('oversight.rme.lookup') && request('mode') === 'patient') || request()->routeIs('oversight.rme.patients.*', 'oversight.legacy.*') ? $linkActive : $linkIdle }}">Riwayat RME Pasien</a>
+                        </div>
+                    @endcan
+                    @can('view_operational_monitoring')
+                        <button type="button" @click="toggle('oversight-dental')" class="{{ $groupToggle }}" :aria-expanded="isOpen('oversight-dental')">
+                            <span class="flex items-center gap-3">
+                                <svg class="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" d="M3 21h18M5 21V7l7-4 7 4v14M9 21v-6h6v6" />
+                                </svg>
+                                <span>Monitoring Dental</span>
+                            </span>
+                        <svg class="h-4 w-4 shrink-0 text-ink-muted transition-transform duration-150" :class="{ 'rotate-180': isOpen('oversight-dental') }" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+                            <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.94a.75.75 0 111.08 1.04l-4.24 4.5a.75.75 0 01-1.08 0l-4.24-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" />
+                        </svg>
+                        </button>
+                        <div data-sidebar-panel="oversight-dental" x-show="isOpen('oversight-dental')" class="mt-1 space-y-0.5 pl-8">
+                            <a href="{{ route('oversight.monitoring.rooms') }}"
+                               class="menu-subitem {{ request()->routeIs('oversight.monitoring.rooms') ? $linkActive : $linkIdle }}">Ruangan Dental Aktif</a>
+                            <a href="{{ route('oversight.monitoring.room-patients') }}"
+                               class="menu-subitem {{ request()->routeIs('oversight.monitoring.room-patients*') ? $linkActive : $linkIdle }}">Pasien per Ruangan</a>
+                            <a href="{{ route('oversight.monitoring.room-treatments') }}"
+                               class="menu-subitem {{ request()->routeIs('oversight.monitoring.room-treatments*') ? $linkActive : $linkIdle }}">Jenis Perawatan per Dental</a>
+                        </div>
+                        <button type="button" @click="toggle('oversight-queue')" class="{{ $groupToggle }}" :aria-expanded="isOpen('oversight-queue')">
+                            <span class="flex items-center gap-3">
+                                <svg class="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" d="M4 6h16M4 12h16M4 18h10" />
+                                </svg>
+                                <span>Monitoring Antrian</span>
+                            </span>
+                        <svg class="h-4 w-4 shrink-0 text-ink-muted transition-transform duration-150" :class="{ 'rotate-180': isOpen('oversight-queue') }" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+                            <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.94a.75.75 0 111.08 1.04l-4.24 4.5a.75.75 0 01-1.08 0l-4.24-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" />
+                        </svg>
+                        </button>
+                        <div data-sidebar-panel="oversight-queue" x-show="isOpen('oversight-queue')" class="mt-1 space-y-0.5 pl-8">
+                            <a href="{{ route('oversight.monitoring.queue') }}"
+                               class="menu-subitem {{ request()->routeIs('oversight.monitoring.queue') ? $linkActive : $linkIdle }}">Semua Cabang</a>
+                            <a href="{{ route('oversight.monitoring.queue.branches') }}"
+                               class="menu-subitem {{ request()->routeIs('oversight.monitoring.queue.branches') ? $linkActive : $linkIdle }}">Antrian per Cabang</a>
+                        </div>
+                    @endcan
+                </div>
+            @endcanany
 
             @canany(['view_clinic_visits', 'manage_clinic_visits'])
                 <div class="pt-2">
