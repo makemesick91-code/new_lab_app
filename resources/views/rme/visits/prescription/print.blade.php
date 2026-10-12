@@ -106,7 +106,7 @@
 
     <div class="print-actions">
         <button class="btn-print" type="button" onclick="window.print()">Cetak / Simpan PDF</button>
-        <a href="{{ route('rme.visits.prescription.show', $clinicVisit) }}" class="btn-close">&larr; Kembali</a>
+        <a href="{{ $printBackUrl ?? route('rme.visits.prescription.show', $clinicVisit) }}" class="btn-close">&larr; Kembali</a>
     </div>
 
     <div class="header">

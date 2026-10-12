@@ -226,8 +226,8 @@
 
     <div class="print-actions">
         <button class="btn-print" type="button" onclick="window.print()">&#128438; Cetak / Simpan PDF</button>
-        <a href="{{ route('rme.visits.pdf', $visit) }}" class="btn-pdf">Unduh PDF</a>
-        <a href="{{ route('rme.visits.show', $visit) }}" class="btn-close">&larr; Kembali</a>
+        <a href="{{ $printPdfUrl ?? route('rme.visits.pdf', $visit) }}" class="btn-pdf">Unduh PDF</a>
+        <a href="{{ $printBackUrl ?? route('rme.visits.show', $visit) }}" class="btn-close">&larr; Kembali</a>
     </div>
 
     <div class="header">

@@ -1,0 +1,166 @@
+---
+description: FEATURE-FINANCE-KLINIK-DATA-ANALYST-ROLES-1 — two independent READ-ONLY cross-branch oversight roles (Finance Klinik, Data Analyst); dedicated GET-only oversight module with its own explicit branch scope; KPI definitions (WITA); native + PUBLISHED legacy RME read/print/PDF/export; dental room, billed-treatment and queue monitoring
+globs: app/Modules/ClinicOversight/**, resources/views/oversight/**, routes/web.php, database/seeders/PermissionSeeder.php, database/seeders/RoleSeeder.php, app/Services/Auth/PostAuthenticationRedirectService.php, resources/views/layouts/partials/sidebar.blade.php, app/Modules/ClinicVisit/Services/ClinicVisitPrintDataBuilder.php, tests/Feature/ClinicOversight/**
+alwaysApply: false
+---
+
+# Finance Klinik & Data Analyst — read-only oversight foundation (rule 186)
+
+Owner-approved 2026-10-12 (decisions D1–D12). The roles see more than any
+operational role — every RME branch, identified clinical records and money —
+so the whole surface is **read-only by construction**, not by convention.
+
+## 1. Roles
+
+1. **Exact names:** `Finance Klinik` and `Data Analyst` (Spatie, guard `web`).
+2. **They are NOT the existing `Finance` role.** `Finance` belongs to LABORATORY
+   billing and holds write permissions. It is never renamed, deleted, replaced,
+   widened or narrowed by this feature, and gains no oversight permission.
+3. **Two independent role records.** Both start from
+   `RoleSeeder::OVERSIGHT_INITIAL_PERMISSIONS` (identical), but a change to one
+   never reaches the other. Divergence is made in `RoleSeeder::ROLE_PERMISSIONS`
+   (the seeder is the source of truth — a UI edit is reverted by the next seed).
+4. **Nobody is auto-assigned.** No seeder, migration or deploy assigns either
+   role to a user; assignment is an explicit owner act.
+5. Do not combine either role with an operational clinical role (Doctor, Admin
+   Klinik, Front Office, Kasir, Perawat) on one account: the oversight scope is
+   cross-branch by design and would sit beside a branch-bound operational one.
+
+## 2. Permission matrix (the only four)
+
+| Permission | Grants |
+|---|---|
+| `view_finance_analytics_dashboard` | Dashboard Finance & Data Analyst + its JSON feed |
+| `view_clinical_records_readonly` | native RME + PUBLISHED legacy RME/odontogram, every RME branch |
+| `view_operational_monitoring` | dental rooms, patients/billed treatments per room, queues |
+| `export_oversight_data` | print / PDF / CSV of an area the holder may already VIEW |
+
+6. **Export is never an area.** Every print/PDF/CSV route requires the area's
+   view permission AND `export_oversight_data` (route middleware + the
+   `clinic-oversight.export` gate).
+7. **Never granted:** `view dashboard`, `view_owner_dashboard`, `view_clinic_visits`,
+   `manage_clinic_visits`, `manage_rme_billing`, `manage patients`,
+   `view_rme_consents`, `manage_rme_consents`, `view_cross_branch_patient_ktp_documents`,
+   any `manage_*`/`create_*`/`void_*` permission, or any legacy
+   `view_legacy_*_imports` / `review_*` / `publish_*` / `void_*` permission.
+8. **The oversight permissions are used by NOTHING outside `ClinicOversight`.**
+   No existing route, policy or branch scope reads them, and they are absent
+   from `LegacyRmeWorkspaceScope::GOVERNANCE_PERMISSIONS` and
+   `LegacyOdontogramWorkspaceScope::GOVERNANCE_PERMISSIONS` (rules 173/174).
+
+## 3. Why a dedicated module (do not "simplify" it away)
+
+9. **Reusing `view_clinic_visits` is forbidden for these roles.** Measured on
+   2026-10-12: (a) `RmeWorkingBranchScope` gives every non-context-bound role
+   "all RME branches" by IMPLICIT fall-through — never rely on it; (b) the
+   operational `rme.prescriptions.print` **writes** `printed_at` on a GET;
+   (c) the `visit.room` middleware redirects roomless pre-exam visits; (d) the
+   visit page links consent surfaces. The oversight module reuses the
+   operational PRESENTATION (print templates, formatters, the unified index
+   repository) but never the operational controllers.
+10. **Legacy archives** are read through the legacy record repositories'
+    branch-scoped readers with the OVERSIGHT branch set, and streamed through
+    the same private-disk storage services. Never widen the legacy workspace
+    scopes for read-only roles.
+
+## 4. Branch authority
+
+11. `ClinicOversightScope` is the ONE branch authority of the module:
+    eligible = active AND RME-enabled AND **not MAIN** (excluded by code, not
+    only by data). A user without the area's permission gets the EMPTY set.
+12. A request `branch_id` may only **narrow**: `narrow()` intersects it with
+    the server set; a forged / MAIN / inactive / non-RME id yields NO branch,
+    never the whole set.
+13. Every record id is resolved THROUGH the scope first: out of scope = **404**
+    (never a 403 that confirms existence). Rows with no branch are never read.
+14. Doctor restrictions, trusted devices, branch locks, covers and staff branch
+    pins are untouched — the oversight scope is consulted only by this module.
+
+## 5. KPI definitions (clinic day = WITA via ClinicalClock)
+
+15. **Clinic day** = the Asia/Makassar calendar day from `ClinicalClock`, never
+    UTC `now()`/`today()`. DATE columns compare as `[D, D+1)`; UTC timestamp
+    columns compare as the half-open UTC range of that day, with no function
+    applied to the column (index-friendly).
+16. **Jumlah Pasien** = DISTINCT `patient_id` of `trx_clinic_visits` on the day
+    with `check_in_at IS NOT NULL`, status ≠ cancelled, not soft-deleted, per
+    branch. The all-branch total is distinct PEOPLE across branches — not the
+    sum of the branch rows (the payload carries both).
+17. **Jumlah Transaksi** = distinct cashier BATCHES of `trx_rme_payments`
+    (`payment_batch_uuid`; a NULL batch — every single-invoice payment and every
+    pre-batch row — falls back to `'payment:'||id`, one per payment, never one
+    shared NULL bucket). Per branch: once per invoice branch in the batch;
+    total: once overall.
+18. **Jumlah Omzet** = `SUM(trx_rme_payments.amount)` by `paid_at` in the day,
+    attributed to the **invoice** branch (never the cashier's/session's), soft-
+    deleted payments excluded. Never `grand_total`; never `trx_payments` (lab).
+19. **Piutang** = label **PIUTANG AKTIF PER SAAT INI**: invoices UNPAID/PARTIAL,
+    `grand_total > 0`, outstanding `grand_total − SUM(valid payments) > 0`
+    (overpaid excluded), per invoice branch, amount + invoice count. **Not
+    date-filtered.** No mutable remaining column.
+20. **Pasien Cancel** = visits with status cancelled whose `cancelled_at` falls
+    in the day (an old or future visit cancelled today counts today). Never
+    `updated_at`, never visit_date; a no-show is not a cancellation.
+21. Money is carried as exact integer cents. No cache: an uncached answer cannot
+    leak one viewer's scope to another. Polling = 60 s, paused while the tab is
+    hidden, re-authorized server-side on every call.
+
+## 6. Clinical read, print, PDF, export
+
+22. Native RME = the patient RM book (all sheets, handwriting via the oversight
+    image routes), visit detail (sheet, notes, structured diagnoses, odontogram,
+    prescription, invoice summary), the shared native print/PDF
+    (`ClinicVisitPrintDataBuilder` — ONE builder for operational and oversight),
+    the standalone odontogram print and a prescription print that does **not**
+    stamp `printed_at`. Legacy = PUBLISHED only; VOID / non-published / MAIN /
+    branchless → 404 on every surface, asserted in the controller (Super Admin
+    passes every gate).
+23. **Never exposed:** KTP images, full NIK, patient documents, consent records,
+    storage paths. Exports carry no NIK column; every CSV cell passes the
+    formula-injection guard; download names are generic (no patient name/RM).
+24. **Audit:** opening an identified record, streaming a clinical file and every
+    extraction (print/PDF/CSV) writes `sys_audit_logs` entity `clinic_oversight`
+    through `OversightAuditService`, with an allow-listed, PII-free payload (ids,
+    codes, counts, formats — never name, phone, RM number, NIK or content).
+    Native handwritten RM images are audited PER IMAGE (`OVERSIGHT_NATIVE_RME_
+    FILE_STREAMED`), only once the image is known to exist: the image routes
+    can be requested directly, bypassing the page that embeds them, so a page
+    audit alone would hide a bulk cross-branch extraction. Legacy THUMBNAILS
+    are deliberately exempt (existing LEGACY-RME-PDF-1C convention); full
+    pages, source PDFs, prints and PDFs are audited.
+    **Defence in depth must be tested per layer**: route middleware, the
+    controller `authorize()`, the empty-without-permission scope and the
+    controller re-assertions that hold even for a Super Admin each have their
+    own test (`ClinicOversightGuardLayerTest`) — a mutation run proved a layer
+    covered only by the layer in front of it can be deleted with every
+    behavioural test green.
+
+## 7. Monitoring semantics
+
+25. **Dental room** = `treatment_room` or `consultation_room`. The active-room
+    board lists ACTIVE rooms only; patient/treatment lists keep a visit in a
+    since-deactivated dental room (labelled). Room attribution = the room
+    CURRENTLY stored on the visit (no movement history exists — never claim
+    one). Doctor = the visit's doctor; no permanent doctor-room binding. Nothing
+    calls `UserOnlineContextService` (it can write presence rows).
+    **Billed treatments** = items of issued invoices (UNPAID/PARTIAL/PAID),
+    labelled **JENIS PERAWATAN DITAGIHKAN** — billing evidence, not proof a
+    procedure was completed; DRAFT/VOID excluded; `treatment_id IS NULL` →
+    "Lainnya / Item Tidak Terklasifikasi", never dropped.
+    **Queue** = visits of the clinic date; stale unfinished visits of earlier
+    dates are counted SEPARATELY, never mixed into today's queue.
+
+## 8. Invariants, tests, release
+
+26. The module has **no POST/PUT/PATCH/DELETE route** (pinned by a test), GET
+    pages write no business row (pinned by row-count tests), and both roles are
+    refused every existing clinical/financial mutation endpoint. Landing: a user
+    without `view dashboard`/`view_owner_dashboard` lands on the first oversight
+    area they may read; no existing role's landing changes. The sidebar is never
+    the boundary. Suites: `tests/Feature/ClinicOversight/*` (critical gate token
+    `ClinicOversight`, declared in `ci_runner.critical_gate_mandatory_suites`).
+    Deploy: `PermissionSeeder` → `RoleSeeder` → `permission:cache-reset`; no
+    migration. Pre-existing findings F-01 (implicit all-branch fall-through for
+    non-context roles on the operational RME surface) and F-06 (room/doctor
+    validation in a visit update path) are NOT fixed here and are NOT used by
+    this module — they belong to a separate security hardening sprint.

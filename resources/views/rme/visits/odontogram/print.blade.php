@@ -70,7 +70,7 @@
     {{-- Print / Close actions (hidden on print) --}}
     <div class="print-actions">
         <button class="btn-print" onclick="window.print()">&#128438; Cetak / Simpan PDF</button>
-        <a href="{{ route('rme.visits.odontogram.show', $clinicVisit) }}" class="btn-close">&larr; Kembali</a>
+        <a href="{{ $printBackUrl ?? route('rme.visits.odontogram.show', $clinicVisit) }}" class="btn-close">&larr; Kembali</a>
     </div>
 
     @php

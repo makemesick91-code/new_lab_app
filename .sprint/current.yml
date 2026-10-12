@@ -1,38 +1,40 @@
-# REVISION-RME-VISIT-DETAIL-INVOICE-REGISTRATION-UX-1
+# FEATURE-FINANCE-KLINIK-DATA-ANALYST-ROLES-1
 #
-# Three owner-authorised revisions in one governed release (rule 185):
+# Two INDEPENDENT read-only cross-branch oversight roles — "Finance Klinik"
+# and "Data Analyst" — with identical initial permissions (rule 186):
 #
-#   A. Visit detail renders the clinical cards Odontogram -> Rekam Medis ->
-#      Resep, in SOURCE order (focus and reading order follow the screen).
-#   B. The RME payment invoice follows the clinic's printed landscape INVOICE
-#      form, rendered by ONE shared partial for the browser print and the
-#      dompdf PDF. Every amount comes from RmeInvoiceDocument (stored canonical
-#      fields, exact integer cents, self-reconciling). Refund terms and the
-#      bank account are owner-approved and source-controlled
-#      (config/rme_invoice.php, no env()).
-#   C. "Jenis Kunjungan" is no longer an operator choice: the server derives
-#      Kontrol only from an explicitly selected prior visit, otherwise Baru,
-#      and ignores any client visit_type. An invalid selected prior visit is
-#      rejected, never downgraded. Control-chain billing is unchanged.
+#   - Dashboard Finance & Data Analyst: Jumlah Pasien, Jumlah Transaksi,
+#     Jumlah Omzet, PIUTANG AKTIF PER SAAT INI, Pasien Cancel, per RME branch,
+#     clinic day = WITA via ClinicalClock, 60 s polling paused when hidden.
+#   - Native RME + PUBLISHED legacy RME / odontogram: read, print, PDF, export.
+#   - Monitoring Dental (active rooms, patients per room, JENIS PERAWATAN
+#     DITAGIHKAN per room) and Monitoring Antrian (all branches, per branch).
 #
-# No migration, permission, route or schema change. Blade + one presenter +
-# one request derivation + one config + one cropped brand asset. The new Blade
-# uses Tailwind utilities, so the deploy's asset build is required.
+# A dedicated GET-only module (app/Modules/ClinicOversight) with its own
+# explicit branch authority: active + RME-enabled, MAIN excluded, a request
+# branch_id only narrows, an out-of-scope id is a 404. No existing route,
+# policy, branch scope or legacy governance set is widened. The lab "Finance"
+# role is unchanged. Nobody is assigned the new roles.
+#
+# Four new permissions, two new roles, no migration, no schema change.
+# Deploy: PermissionSeeder -> RoleSeeder -> permission:cache-reset.
+# F-01 / F-06 are pre-existing findings for a separate sprint — not fixed,
+# not used.
 
-id: REVISION-RME-VISIT-DETAIL-INVOICE-REGISTRATION-UX-1
-type: MODULE_SPRINT
-module: RME
-title: "RME visit detail order, landscape invoice redesign, server-derived visit type"
+id: FEATURE-FINANCE-KLINIK-DATA-ANALYST-ROLES-1
+type: FOUNDATION_SPRINT
+module: ClinicOversight
+title: "Finance Klinik & Data Analyst read-only oversight roles, dashboard, clinical read, monitoring"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 runtime_change: true
 schema_change: false
 frontend_change: true
 security_impact: true
-branch_isolation_impact: false
+branch_isolation_impact: true
 ledger_impact: false
 deploy_required: true
 browser_required: false
 test_profiles: []
-go_tag: revision-rme-visit-detail-invoice-registration-ux-1-go
-inherits_parent_go: governance-patient-ktp-new-patient-only-1-go
+go_tag: feature-finance-klinik-data-analyst-roles-1-go
+inherits_parent_go: revision-rme-visit-detail-invoice-registration-ux-1-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1

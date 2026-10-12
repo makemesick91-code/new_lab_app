@@ -393,6 +393,30 @@ class PermissionSeeder extends Seeder
         'view_patient_duplicate_resolution',
         'request_patient_merge',
         'approve_patient_merge',
+
+        // FEATURE-FINANCE-KLINIK-DATA-ANALYST-ROLES-1 (rule 186) — the
+        // read-only cross-branch OVERSIGHT surface used by the Finance Klinik
+        // and Data Analyst roles. Four cohesive permissions, so the two roles
+        // can later diverge along a real boundary (e.g. a Data Analyst kept on
+        // the dashboard but withdrawn from identified clinical records):
+        //
+        //   view_finance_analytics_dashboard — the five-KPI dashboard + JSON feed
+        //   view_clinical_records_readonly   — native + PUBLISHED legacy RME and
+        //                                      odontogram, every RME branch
+        //   view_operational_monitoring      — dental rooms, patients/billed
+        //                                      treatments per room, queues
+        //   export_oversight_data            — print / PDF / CSV of whatever
+        //                                      the holder may already VIEW
+        //
+        // These are READ permissions of the oversight module ONLY. They grant
+        // no mutation anywhere, they are NOT reused by any existing route or
+        // policy, and they are deliberately absent from every legacy
+        // GOVERNANCE_PERMISSIONS list (rules 173/174) — the oversight module
+        // carries its own branch scope instead of widening a shared one.
+        'view_finance_analytics_dashboard',
+        'view_clinical_records_readonly',
+        'view_operational_monitoring',
+        'export_oversight_data',
     ];
 
     public function run(): void

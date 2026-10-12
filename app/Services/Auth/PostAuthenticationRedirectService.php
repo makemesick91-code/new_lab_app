@@ -98,6 +98,23 @@ class PostAuthenticationRedirectService
             return route('lab-v2-orders.index', absolute: false);
         }
 
+        // FEATURE-FINANCE-KLINIK-DATA-ANALYST-ROLES-1 — the read-only oversight
+        // roles (Finance Klinik, Data Analyst) hold no `view dashboard`, so the
+        // generic dashboard would answer 403. Land them on the first oversight
+        // area they may read. Gated on NOT holding a generic dashboard
+        // permission, so no existing user's landing page changes.
+        if (! $user->canAny(['view dashboard', 'view_owner_dashboard'])) {
+            foreach ([
+                'view_finance_analytics_dashboard' => 'oversight.dashboard',
+                'view_clinical_records_readonly' => 'oversight.rme.index',
+                'view_operational_monitoring' => 'oversight.monitoring.rooms',
+            ] as $permission => $routeName) {
+                if ($user->can($permission) && Route::has($routeName)) {
+                    return route($routeName, absolute: false);
+                }
+            }
+        }
+
         return route('dashboard', absolute: false);
     }
 

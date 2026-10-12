@@ -12,6 +12,10 @@ use App\Modules\AccessControl\Controllers\PermissionController;
 use App\Modules\AccessControl\Controllers\RoleController;
 use App\Modules\Branch\Controllers\BranchController;
 use App\Modules\Clinic\Controllers\ClinicController;
+use App\Modules\ClinicOversight\Controllers\OversightClinicalRecordController;
+use App\Modules\ClinicOversight\Controllers\OversightDashboardController;
+use App\Modules\ClinicOversight\Controllers\OversightLegacyArchiveController;
+use App\Modules\ClinicOversight\Controllers\OversightMonitoringController;
 use App\Modules\ClinicRoom\Controllers\ClinicRoomController;
 use App\Modules\ClinicVisit\Controllers\ClinicVisitController;
 use App\Modules\Consent\Controllers\RmeVisitConsentController;
@@ -2361,5 +2365,93 @@ Route::middleware('throttle:10,1')
     ->get('device-login/{ticket}', [DoctorDeviceLoginController::class, 'redeem'])
     ->where('ticket', '[a-f0-9]{64}')
     ->name('doctor-device-login.redeem');
+
+/*
+|--------------------------------------------------------------------------
+| FEATURE-FINANCE-KLINIK-DATA-ANALYST-ROLES-1 (rule 186) — read-only oversight
+|--------------------------------------------------------------------------
+| The Finance Klinik and Data Analyst roles' whole surface. GET ONLY: there is
+| no POST/PUT/PATCH/DELETE route under this prefix, and a test pins that.
+|
+| Three layers, none of them the sidebar:
+|   1. route middleware — the area's named oversight permission (and
+|      export_oversight_data on every print/PDF/CSV route);
+|   2. the controller — the named `clinic-oversight.*` gate;
+|   3. ClinicOversightScope — every record id is resolved through the
+|      server-resolved branch set, so an out-of-scope id is a 404.
+| No existing route, policy or branch scope is widened for these roles.
+*/
+Route::middleware('auth')->prefix('oversight')->name('oversight.')->group(function () {
+    Route::middleware('permission:view_finance_analytics_dashboard')->group(function () {
+        Route::get('dashboard', [OversightDashboardController::class, 'index'])->name('dashboard');
+        Route::get('dashboard/metrics', [OversightDashboardController::class, 'metrics'])->name('dashboard.metrics');
+        Route::middleware('permission:export_oversight_data')->group(function () {
+            Route::get('dashboard/export', [OversightDashboardController::class, 'export'])->name('dashboard.export');
+            Route::get('dashboard/print', [OversightDashboardController::class, 'print'])->name('dashboard.print');
+        });
+    });
+
+    Route::middleware('permission:view_clinical_records_readonly')->group(function () {
+        Route::get('rme', [OversightClinicalRecordController::class, 'index'])->name('rme.index');
+        Route::get('rme/lookup', [OversightClinicalRecordController::class, 'lookup'])->name('rme.lookup');
+        Route::get('rme/patients/{patient}', [OversightClinicalRecordController::class, 'patient'])
+            ->whereNumber('patient')->name('rme.patients.show');
+        Route::get('rme/visits/{visit}', [OversightClinicalRecordController::class, 'visit'])
+            ->whereNumber('visit')->name('rme.visits.show');
+        Route::get('rme/handwritings/{handwriting}/image', [OversightClinicalRecordController::class, 'handwritingImage'])
+            ->whereNumber('handwriting')->name('rme.handwritings.image');
+        Route::get('rme/handwriting-pages/{handwritingPage}/image', [OversightClinicalRecordController::class, 'handwritingPageImage'])
+            ->whereNumber('handwritingPage')->name('rme.handwriting-pages.image');
+
+        Route::get('legacy-rme/{record}', [OversightLegacyArchiveController::class, 'rmeShow'])
+            ->whereNumber('record')->name('legacy.rme.show');
+        Route::get('legacy-rme/{record}/pages/{page}', [OversightLegacyArchiveController::class, 'rmePage'])
+            ->whereNumber(['record', 'page'])->name('legacy.rme.pages.show');
+        Route::get('legacy-odontogram/{record}', [OversightLegacyArchiveController::class, 'odontogramShow'])
+            ->whereNumber('record')->name('legacy.odontogram.show');
+        Route::get('legacy-odontogram/{record}/pages/{page}', [OversightLegacyArchiveController::class, 'odontogramPage'])
+            ->whereNumber(['record', 'page'])->name('legacy.odontogram.pages.show');
+
+        Route::middleware('permission:export_oversight_data')->group(function () {
+            Route::get('rme/export', [OversightClinicalRecordController::class, 'export'])->name('rme.export');
+            Route::get('rme/visits/{visit}/print', [OversightClinicalRecordController::class, 'print'])
+                ->whereNumber('visit')->name('rme.visits.print');
+            Route::get('rme/visits/{visit}/pdf', [OversightClinicalRecordController::class, 'pdf'])
+                ->whereNumber('visit')->name('rme.visits.pdf');
+            Route::get('rme/visits/{visit}/odontogram/print', [OversightClinicalRecordController::class, 'odontogramPrint'])
+                ->whereNumber('visit')->name('rme.visits.odontogram.print');
+            Route::get('rme/visits/{visit}/prescription/print', [OversightClinicalRecordController::class, 'prescriptionPrint'])
+                ->whereNumber('visit')->name('rme.visits.prescription.print');
+
+            Route::get('legacy-rme/{record}/source', [OversightLegacyArchiveController::class, 'rmeSource'])
+                ->whereNumber('record')->name('legacy.rme.source');
+            Route::get('legacy-rme/{record}/print', [OversightLegacyArchiveController::class, 'rmePrint'])
+                ->whereNumber('record')->name('legacy.rme.print');
+            Route::get('legacy-rme/{record}/pdf', [OversightLegacyArchiveController::class, 'rmePdf'])
+                ->whereNumber('record')->name('legacy.rme.pdf');
+            Route::get('legacy-odontogram/{record}/source', [OversightLegacyArchiveController::class, 'odontogramSource'])
+                ->whereNumber('record')->name('legacy.odontogram.source');
+            Route::get('legacy-odontogram/{record}/print', [OversightLegacyArchiveController::class, 'odontogramPrint'])
+                ->whereNumber('record')->name('legacy.odontogram.print');
+        });
+    });
+
+    Route::middleware('permission:view_operational_monitoring')->prefix('monitoring')->name('monitoring.')->group(function () {
+        Route::get('rooms', [OversightMonitoringController::class, 'rooms'])->name('rooms');
+        Route::get('room-patients', [OversightMonitoringController::class, 'roomPatients'])->name('room-patients');
+        Route::get('room-treatments', [OversightMonitoringController::class, 'roomTreatments'])->name('room-treatments');
+        Route::get('queue', [OversightMonitoringController::class, 'queue'])->name('queue');
+        Route::get('queue/branches', [OversightMonitoringController::class, 'queueByBranch'])->name('queue.branches');
+
+        Route::middleware('permission:export_oversight_data')->group(function () {
+            Route::get('room-patients/export', [OversightMonitoringController::class, 'roomPatientsExport'])->name('room-patients.export');
+            Route::get('room-patients/print', [OversightMonitoringController::class, 'roomPatientsPrint'])->name('room-patients.print');
+            Route::get('room-treatments/export', [OversightMonitoringController::class, 'roomTreatmentsExport'])->name('room-treatments.export');
+            Route::get('room-treatments/print', [OversightMonitoringController::class, 'roomTreatmentsPrint'])->name('room-treatments.print');
+            Route::get('queue/export', [OversightMonitoringController::class, 'queueExport'])->name('queue.export');
+            Route::get('queue/print', [OversightMonitoringController::class, 'queuePrint'])->name('queue.print');
+        });
+    });
+});
 
 require __DIR__.'/auth.php';

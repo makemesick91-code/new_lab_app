@@ -11,6 +11,7 @@ use App\Modules\ClinicVisit\Requests\PatientSearchRequest;
 use App\Modules\ClinicVisit\Requests\StoreClinicVisitRequest;
 use App\Modules\ClinicVisit\Requests\TransitionStatusRequest;
 use App\Modules\ClinicVisit\Requests\UpdateClinicVisitRequest;
+use App\Modules\ClinicVisit\Services\ClinicVisitPrintDataBuilder;
 use App\Modules\ClinicVisit\Services\ClinicVisitService;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\LegacyRme\Services\LegacyRmePatientHistoryService;
@@ -431,40 +432,9 @@ class ClinicVisitController extends Controller
      */
     private function resolvePrintViewData(ClinicVisit $clinicVisit): array
     {
-        $clinicVisit->load([
-            'patient',
-            'doctor',
-            'branch',
-            'clinic',
-            'initialTreatment',
-            'medicalRecord.handwriting',
-            'medicalRecord.finalizedBy',
-        ]);
-
-        $paidInvoice = RmeInvoice::query()
-            ->where('clinic_visit_id', $clinicVisit->id)
-            ->where('status', RmeInvoice::STATUS_PAID)
-            ->with([
-                'items',
-                'payments.paymentMethod',
-                'labCaseCandidates.convertedLabOrder',
-                'labCaseCandidates.treatment',
-            ])
-            ->first();
-
-        $payment = $paidInvoice?->payments->first();
-
-        // FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-05 — the RME print bundle no
-        // longer composes the odontogram, so it no longer builds the Sprint 63.1
-        // structured odontogram view-model. The formatter itself is unchanged and
-        // is still the single source of truth for the standalone odontogram print
-        // (OdontogramController@print), which is untouched.
-        return [
-            'visit' => $clinicVisit,
-            'paidInvoice' => $paidInvoice,
-            'payment' => $payment,
-            'labCaseCandidates' => $paidInvoice?->labCaseCandidates ?? collect(),
-        ];
+        // FEATURE-FINANCE-KLINIK-DATA-ANALYST-ROLES-1 — the builder is shared with
+        // the read-only oversight print so the two cannot drift apart.
+        return app(ClinicVisitPrintDataBuilder::class)->build($clinicVisit);
     }
 
     /**
