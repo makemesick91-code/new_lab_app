@@ -94,3 +94,49 @@ Three LOW findings:
   valid PostgreSQL timestamp literal. The dashboard now refuses any date outside
   2000-01-01..2099-12-31. (The monitoring surfaces compare only the DATE column
   `visit_date`, so they are not affected and are unchanged.)
+
+## Shipped — evidence (2026-10-13)
+
+| Item | Value |
+|---|---|
+| Candidate | `fa0760d2` (tree `faedd63a`) |
+| PR | #482, squash-merged as **`3b1e03e0`** — merge tree `faedd63a` = candidate tree |
+| CI (PR, exact candidate SHA) | run `38321079967` **success**: Classifier, Quality (Pint + JS 223/223), Selective Module, Android, **Critical 5662 passed / 30023 assertions, exit 0, warning contract 0**, NSF-9, NSF-10 |
+| Full Suite | **SKIPPED** — GLOBAL TEMPORARY FULL-SUITE POLICY active (`.github/ci-policy/full-suite-policy.json`); not a pass |
+| Deploy | `scripts/deploy-vps-runner.sh start` executed **on the VPS**: `exit=0`, `DEPLOY OK: 20261013-013100`, `DEPLOY_HEAD_TARGET_MATCH=YES (3b1e03e0)`, snapshot trusted + cleaned |
+| Backup | `pre_auto_deploy_20261013-013100.sql`, 32,194,697 bytes, verify 9/9 GO, mode 0640 |
+| Migrations | none (`Nothing to migrate.`) |
+| Runtime isolation | 70 GO / 0 FAIL / 0 SKIP |
+| Smoke | 6 passed + 1 known warning (co-tenant loopback `127.0.0.1/login` 404; verified over the canonical domain) |
+| GO tag | `revision-oversight-dashboard-date-range-1-go` (object `b6b045e9`) → `3b1e03e0`, exact-match at VPS HEAD |
+
+### Production verification (read-only)
+
+The DEPLOYED service was run on production with the database session forced
+read-only, and compared with an independent SQL reconciliation that shares no
+code with the application (PostgreSQL `AT TIME ZONE` bounds, `BETWEEN` on the
+DATE column):
+
+| Range (WITA) | Patients | Transactions | Revenue | Piutang | Cancel | Match |
+|---|---|---|---|---|---|---|
+| 2026-10-12 .. 2026-10-30 | 0 | 0 | Rp 0 | Rp 0 | 0 | yes |
+| 2026-10-01 .. 2026-10-13 | 3 | 7 | Rp 3,548,000 | Rp 0 | 0 | yes |
+| 2026-10-11 .. 2026-10-11 | 2 | 3 | Rp 1,650,000 | Rp 0 | 0 | yes |
+| default | today = 2026-10-13 | | | | | yes |
+
+The last production payment (2026-10-11 15:27 UTC = 23:27 WITA on Oct 11) is
+counted on Oct 11 and excluded from the range starting Oct 12 — a real
+midnight-boundary case. All 14 request-rule cases (range, single, none, legacy
+`date`, reversed, only-one, mixed, 366/367 days, bad format, year 0, array,
+ignored list keys) behaved as specified. The real dashboard and print views
+rendered the two inputs, presets, Reset, period label, current-balance Piutang
+wording and a refresh URL carrying both dates; no 16-digit identity number on
+the page. Row counts identical before/after; `laravel.log` byte-identical
+(1,437,201 bytes / 162 ERROR); no failed jobs; pilot, debug OFF, maintenance
+OFF. Guests: page/print/export 302, feed 401 (including an invalid range and
+the array case) — never 500. RBAC unchanged: both permissions held only by
+Finance Klinik, Data Analyst, Super Admin; 0 direct grants.
+
+**Limit:** no Finance Klinik / Data Analyst session was used (none created on
+purpose); the page was verified by rendering the deployed views in-process for
+a Super Admin actor, and the HTTP auth boundary by guest requests.
