@@ -1,40 +1,36 @@
-# FEATURE-FINANCE-KLINIK-DATA-ANALYST-ROLES-1
+# REVISION-OVERSIGHT-DASHBOARD-DATE-RANGE-1
 #
-# Two INDEPENDENT read-only cross-branch oversight roles — "Finance Klinik"
-# and "Data Analyst" — with identical initial permissions (rule 186):
+# The Finance & Data Analyst dashboard (/oversight/dashboard) moves from one
+# clinic date to an INCLUSIVE WITA date range (start_date..end_date), rule 187:
 #
-#   - Dashboard Finance & Data Analyst: Jumlah Pasien, Jumlah Transaksi,
-#     Jumlah Omzet, PIUTANG AKTIF PER SAAT INI, Pasien Cancel, per RME branch,
-#     clinic day = WITA via ClinicalClock, 60 s polling paused when hidden.
-#   - Native RME + PUBLISHED legacy RME / odontogram: read, print, PDF, export.
-#   - Monitoring Dental (active rooms, patients per room, JENIS PERAWATAN
-#     DITAGIHKAN per room) and Monitoring Antrian (all branches, per branch).
+#   - ClinicalDateRange value object: [start 00:00 WITA, end+1 00:00 WITA) in
+#     UTC; DATE columns as [start, end+1). Never 23:59:59, never whereDate().
+#   - One compatibility rule: none -> today; both -> range; one -> rejected;
+#     legacy `date` -> that day; reversed -> rejected, never swapped; max 366
+#     inclusive days; dates within 2000-01-01..2099-12-31.
+#   - Patients / transactions / revenue / cancellations over the range
+#     (formulas of rule 186 unchanged). PIUTANG AKTIF PER SAAT INI stays the
+#     current balance — its repository method takes no range at all.
+#   - Refresh feed, CSV and print carry the same range; audit uses the
+#     allowlisted date_from/date_to keys. METRIC_VERSION 1 -> 2.
 #
-# A dedicated GET-only module (app/Modules/ClinicOversight) with its own
-# explicit branch authority: active + RME-enabled, MAIN excluded, a request
-# branch_id only narrows, an out-of-scope id is a 404. No existing route,
-# policy, branch scope or legacy governance set is widened. The lab "Finance"
-# role is unchanged. Nobody is assigned the new roles.
-#
-# Four new permissions, two new roles, no migration, no schema change.
-# Deploy: PermissionSeeder -> RoleSeeder -> permission:cache-reset.
-# F-01 / F-06 are pre-existing findings for a separate sprint — not fixed,
-# not used.
+# No migration, no schema change, no permission, role or route change.
+# Rule 186 roles, branch scope and read-only posture are untouched.
 
-id: FEATURE-FINANCE-KLINIK-DATA-ANALYST-ROLES-1
-type: FOUNDATION_SPRINT
+id: REVISION-OVERSIGHT-DASHBOARD-DATE-RANGE-1
+type: MODULE_SPRINT
 module: ClinicOversight
-title: "Finance Klinik & Data Analyst read-only oversight roles, dashboard, clinical read, monitoring"
+title: "Oversight dashboard inclusive WITA date range (start_date..end_date)"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 runtime_change: true
 schema_change: false
 frontend_change: true
 security_impact: true
-branch_isolation_impact: true
+branch_isolation_impact: false
 ledger_impact: false
 deploy_required: true
 browser_required: false
 test_profiles: []
-go_tag: feature-finance-klinik-data-analyst-roles-1-go
-inherits_parent_go: revision-rme-visit-detail-invoice-registration-ux-1-go
+go_tag: revision-oversight-dashboard-date-range-1-go
+inherits_parent_go: feature-finance-klinik-data-analyst-roles-1-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1

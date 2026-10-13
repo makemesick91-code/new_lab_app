@@ -10,9 +10,11 @@
 */
 
 use App\Modules\ClinicOversight\Services\OversightDashboardService;
+use App\Modules\ClinicOversight\Support\ClinicalDateRange;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Invoice\Models\Payment;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
+use App\Support\Clinical\ClinicalClock;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -28,9 +30,16 @@ beforeEach(function () {
 
 afterEach(fn () => Carbon::setTestNow());
 
+/**
+ * REVISION-OVERSIGHT-DASHBOARD-DATE-RANGE-1 (rule 187): the service now takes
+ * a ClinicalDateRange. A single date D is the one-day range D..D, so every
+ * assertion below is unchanged — this suite is the single-day regression.
+ */
 function covBuild(?string $date = '2026-10-10', mixed $branch = null): array
 {
-    return app(OversightDashboardService::class)->build(test()->viewer, $date, $branch);
+    $range = $date === null ? null : ClinicalDateRange::singleDay($date, app(ClinicalClock::class));
+
+    return app(OversightDashboardService::class)->build(test()->viewer, $range, $branch);
 }
 
 function covRow(array $payload, $branch): ?array
@@ -152,7 +161,8 @@ it('defaults to the clinical (WITA) today, not the UTC date', function () {
     // 2026-10-10 17:00 UTC is already 2026-10-11 01:00 in Makassar.
     Carbon::setTestNow('2026-10-10 17:00:00');
 
-    expect(covBuild(null)['date'])->toBe('2026-10-11')
+    expect(covBuild(null)['start_date'])->toBe('2026-10-11')
+        ->and(covBuild(null)['end_date'])->toBe('2026-10-11')
         ->and(covBuild(null)['is_today'])->toBeTrue();
 });
 
@@ -195,10 +205,12 @@ it('answers every KPI with a bounded number of grouped queries, independent of b
 
 it('serves the polling feed as JSON to an oversight role and refuses other roles', function () {
     covActingAs($this->viewer);
+    // The legacy single `date` parameter still means that one day (rule 187).
     $this->getJson(route('oversight.dashboard.metrics', ['date' => $this->day]))
         ->assertOk()
-        ->assertJsonPath('date', $this->day)
-        ->assertJsonPath('metric_version', 1)
+        ->assertJsonPath('start_date', $this->day)
+        ->assertJsonPath('end_date', $this->day)
+        ->assertJsonPath('metric_version', 2)
         ->assertHeader('Cache-Control', 'no-store, private');
 
     covActingAs(covUser('Kasir'));
