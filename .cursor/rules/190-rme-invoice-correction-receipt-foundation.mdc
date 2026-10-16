@@ -1,0 +1,109 @@
+---
+description: FEATURE-RME-INVOICE-CORRECTION-RECEIPT-FOUNDATION-1 — RME invoice correction foundation (pre-payment, maker-checker, frozen original/revised document versions, STALE on payment) shipped behind the default-OFF `rme.invoice_correction` flag, plus the read-only BILLING CORRECTION oversight area. Post-payment correction, refund, reversal, patient credit and Rp0 adjustment are NOT implemented. Labels — CURRENT_PRODUCTION_BEHAVIOR / IMPLEMENTED_THIS_RELEASE / PROPOSED / PENDING_OWNER_DECISION.
+globs: app/Modules/RmeInvoice/**, app/Modules/ClinicOversight/**, resources/views/rme/invoice-corrections/**, resources/views/rme/cashier/**, resources/views/oversight/billing-corrections/**, database/migrations/2026_10_17_*, config/feature_flags.php, database/seeders/PermissionSeeder.php, database/seeders/RoleSeeder.php, tests/Feature/RmeInvoiceCorrection/**
+alwaysApply: false
+---
+
+# RME invoice correction & receipt versioning — foundation (rule 190)
+
+Evidence: `docs/sprints/feature-rme-invoice-correction-receipt-foundation-1.md`.
+Builds on rule 188 (audit) and rule 189 (Phase 0 prerequisites). Where this rule and
+those disagree about what EXISTS, this rule is newer.
+
+Labels: **CURRENT_PRODUCTION_BEHAVIOR** (true on production after this release),
+**IMPLEMENTED_THIS_RELEASE** (code exists, may be dormant behind the flag),
+**PROPOSED** (design only — never cite as behaviour), **PENDING_OWNER_DECISION**.
+
+## 1. What production does after this release — CURRENT_PRODUCTION_BEHAVIOR
+1. The flag `rme.invoice_correction` (env `FEATURE_RME_INVOICE_CORRECTION`, risk
+   `critical`) ships **OFF**. With it off, every correction mutation route answers
+   **404** (including through its FormRequest, so a malformed POST cannot reveal the
+   endpoint), and every service mutation refuses independently.
+2. The three operational permissions — `request_rme_invoice_correction`,
+   `approve_rme_invoice_correction`, `apply_rme_invoice_correction` — are seeded and
+   granted to **NO role** (Super Admin holds them only through its wildcard). Turning
+   the flag on therefore still enables nobody until an owner grants a role.
+3. Invoice pages, receipts, payments and reports are **byte-identical** to before
+   while the flag is off and nothing was corrected: the cashier correction panel
+   runs no query in that state.
+4. The read-only oversight area **Billing Correction** (Daftar Pasien Koreksi,
+   Riwayat & Detail Koreksi) exists for `Finance Klinik` and `Data Analyst` via the
+   fifth oversight permission `view_billing_correction_oversight` (rule 186 §2). It
+   shows history; with no correction ever made it is empty.
+
+## 2. Correction model — IMPLEMENTED_THIS_RELEASE
+5. **Only PRE-PAYMENT corrections exist.** An invoice that is not `UNPAID`, has any
+   payment row, belongs to a cancelled visit, or produced a lab case candidate (D23)
+   is refused with a stable `[CODE]`. Post-payment is a declared type that is NOT
+   enabled (`RmeInvoiceCorrectionType::ENABLED`).
+6. Lifecycle `SUBMITTED → APPROVED → APPLIED`, plus `REJECTED`, `CANCELLED`, `STALE`
+   (all terminal). Only `SUBMITTED`/`APPROVED` are active, and **at most one active
+   correction per invoice** — enforced by a partial unique index
+   (`trx_rme_inv_corr_one_active_uq`) and the invoice row lock.
+7. **Maker ≠ checker is enforced in the SERVICE under the row lock**, never only in
+   the policy: `Gate::before` lets Super Admin pass every policy, so the policy
+   cannot stop a Super Admin approving their own request. Refused attempts are
+   audited as `RME_INVOICE_CORRECTION_REFUSED` after rollback.
+8. **Lock order: invoice row first, then the correction row** — the same lock every
+   payment path takes. Apply re-reads the invoice under that lock and marks the
+   correction **STALE** (persisted, then refused) when a payment landed, the status,
+   version or content changed, or lab candidates appeared. Never move the staleness
+   checks before the lock: PostgreSQL concurrency test 1 kills that mutant.
+9. Totals are **recomputed server-side in integer cents**. Submitted totals, branch,
+   patient, visit and invoice ids are never trusted. The applied total must equal
+   the approved total or the whole apply rolls back (`LogicException`).
+10. **No Rp0 bypass.** A correction can never create a zero line or a zero/negative
+    invoice total. A pre-existing zero line kept unchanged is not new.
+11. Price authority (D21) is NOT invented: a changed line uses the same active
+    treatment / doctor / non-negative / discount-≤-gross rules as invoice creation.
+11a. An existing item's treatment may be changed to another ACTIVE treatment but
+    never cleared, and an existing item's **doctor is never re-attributed** (doctor
+    income attribution is undecided policy). The form always offers an item's current
+    treatment, even if deactivated, so an untouched line can never become a change.
+11b. The approver (cashier detail, oversight detail and print) always sees original
+    → proposed treatment AND doctor on every line, with a treatment change marked —
+    approval is never blind to a non-money change.
+11c. Overflow is refused before multiplying; an invoice whose total is already
+    negative is refused with a stable code (never pushed into a CHECK constraint).
+12. Reviewed content of a correction, its lines and events is **immutable** at the
+    model layer; deletes are refused. Only lifecycle columns move.
+
+## 3. Receipts and document versions — IMPLEMENTED_THIS_RELEASE
+13. On first apply the original invoice document is frozen as **v0 ORIGINAL**
+    (snapshot schema v1 + SHA-256); every apply then freezes **vN REVISION** linked to
+    its correction. `trx_rme_invoice_document_versions` rows are immutable.
+14. A frozen version is rendered **only from its snapshot**, never from live rows.
+15. Snapshots carry no patient name, Nomor RM or KTP/NIK — identity stays on the
+    patient record. Audit payloads carry ids, codes, cents and `reason_length` only.
+16. A revised invoice's printed document shows "Versi Dokumen: Revisi ke-N". Because
+    only UNPAID invoices are correctable, **no issued receipt is ever invalidated**.
+
+## 4. Oversight — IMPLEMENTED_THIS_RELEASE
+17. Billing Correction routes are **GET-only**, gated by
+    `view_billing_correction_oversight`; print/PDF/CSV additionally need
+    `export_oversight_data`. Out of oversight branch scope answers **404**.
+18. The oversight roles gain **no** correction mutation permission, and the
+    laboratory `Finance` role gains nothing.
+
+## 4a. Known residual — PENDING_OWNER_DECISION (D10)
+18a. A payment form is not bound to the invoice `correction_version`: if a correction
+    is applied while a cashier has the payment page open, the payment settles against
+    the corrected total. The correction side is safe (a payment that lands first makes
+    it STALE); binding the payment to the version changes the payment path and
+    depends on D10. It cannot happen while the flag is OFF.
+
+## 5. Not implemented — PENDING_OWNER_DECISION
+19. Never report as active: post-payment correction, refund, payment reversal,
+    patient credit balance, retroactive revenue adjustment, Rp0 adjustment, financial
+    settlement. Owner decisions D1–D27 were all **PENDING** at release; the feature
+    stays OFF until D1 (approval authority), D10 (pending correction vs payment),
+    D21 (price authority) and D7 (receipt versioning policy) are decided.
+20. Enabling the flag is a separate, owner-approved operational act — never a side
+    effect of a deploy, a seeder or another sprint.
+
+## 6. Regression requirements
+21. Suites `tests/Feature/RmeInvoiceCorrection/*` are declared in
+    `config/ci_runner.php` `critical_gate_mandatory_suites` and selected by the
+    `RmeInvoiceCorrection` token in BOTH critical-gate variants.
+22. The concurrency suite needs PostgreSQL row locks and uses a child PHP process to
+    hold the competing transaction; it skips on SQLite and executes in CI (PG 16).

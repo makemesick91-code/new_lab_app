@@ -32,7 +32,7 @@ it('creates Finance Klinik and Data Analyst as two separate web-guard roles', fu
         ->and(Role::where('name', 'Data Analyst')->count())->toBe(1);
 });
 
-it('gives both roles an identical initial permission set of exactly the four oversight permissions', function () {
+it('gives both roles an identical initial permission set of exactly the five oversight permissions', function () {
     $expected = ClinicOversightScope::ALL_PERMISSIONS;
     sort($expected);
 
@@ -94,7 +94,9 @@ it('grants the oversight roles no mutation, consent, KTP, dashboard or legacy-go
                 expect($user->can($permission))->toBeFalse("{$roleName} must not hold {$permission}");
             }
         }
-        // Every effective permission is one of the four oversight permissions.
+        // Every effective permission is one of the five oversight permissions (the
+        // fifth — view_billing_correction_oversight — added by
+        // FEATURE-RME-INVOICE-CORRECTION-RECEIPT-FOUNDATION-1).
         expect($user->getAllPermissions()->pluck('name')->diff(ClinicOversightScope::ALL_PERMISSIONS)->all())->toBe([]);
     }
 });
@@ -114,7 +116,7 @@ it('seeds idempotently and assigns the roles to nobody', function () {
     $this->seed([PermissionSeeder::class, RoleSeeder::class]);
 
     expect(Role::whereIn('name', covRoles())->count())->toBe($before)
-        ->and(Permission::whereIn('name', ClinicOversightScope::ALL_PERMISSIONS)->count())->toBe(4)
+        ->and(Permission::whereIn('name', ClinicOversightScope::ALL_PERMISSIONS)->count())->toBe(5)
         ->and(User::role(covRoles())->count())->toBe(0);
 });
 

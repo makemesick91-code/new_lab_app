@@ -8,6 +8,12 @@ alwaysApply: false
 
 Full evidence: `docs/AUDIT-RME-BILLING-CORRECTION-PAYMENT-REFUND-FOUNDATION-1.md` (every claim cites file:line).
 
+> **Forward reference (2026-10-17):** `FEATURE-RME-INVOICE-CORRECTION-RECEIPT-FOUNDATION-1` (rule 190) shipped a
+> PRE-PAYMENT correction workflow behind the default-OFF flag `rme.invoice_correction`. Lines below that say no
+> correction table/route/permission exists, or that invoices are immutable by ABSENCE of a mutation path, describe the
+> state before that release; while the flag is off they remain behaviourally true. Rule 190 is authoritative for what
+> now exists.
+
 **This rule activates nothing.** No correction, refund, Rp0 adjustment, permission, route or table exists for it.
 `FEATURE-RME-BILLING-CORRECTION-PAYMENT-ADJUSTMENT-1` is not started. An audit GO is never a feature GO — never report
 billing correction as active until its own implementation has shipped, deployed and been verified.

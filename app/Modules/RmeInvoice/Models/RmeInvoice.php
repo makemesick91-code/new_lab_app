@@ -65,6 +65,10 @@ class RmeInvoice extends Model
             'subtotal' => 'decimal:2',
             'discount_total' => 'decimal:2',
             'grand_total' => 'decimal:2',
+            // FEATURE-RME-INVOICE-CORRECTION-RECEIPT-FOUNDATION-1 — deliberately
+            // NOT fillable: only RmeInvoiceCorrectionService::apply() moves it,
+            // through the repository, under the invoice row lock.
+            'correction_version' => 'integer',
         ];
     }
 
@@ -132,6 +136,30 @@ class RmeInvoice extends Model
     public function latestFollowUp(): HasOne
     {
         return $this->hasOne(RmeReceivableFollowUp::class, 'rme_invoice_id')->latestOfMany();
+    }
+
+    /**
+     * FEATURE-RME-INVOICE-CORRECTION-RECEIPT-FOUNDATION-1 — correction requests
+     * filed against this invoice (any status).
+     */
+    public function corrections(): HasMany
+    {
+        return $this->hasMany(RmeInvoiceCorrection::class, 'rme_invoice_id');
+    }
+
+    /**
+     * Frozen document versions (v0 = original, vN = revision N). Empty until the
+     * first correction is applied.
+     */
+    public function documentVersions(): HasMany
+    {
+        return $this->hasMany(RmeInvoiceDocumentVersion::class, 'rme_invoice_id')->orderBy('version_number');
+    }
+
+    /** True once at least one correction has been applied to this document. */
+    public function isRevised(): bool
+    {
+        return (int) ($this->correction_version ?? 0) > 0;
     }
 
     public function recalculateTotals(): void

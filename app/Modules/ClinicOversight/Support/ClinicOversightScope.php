@@ -44,11 +44,19 @@ class ClinicOversightScope
 
     public const PERMISSION_EXPORT = 'export_oversight_data';
 
-    /** The three VIEW areas. Export is never an area of its own. */
+    /**
+     * FEATURE-RME-INVOICE-CORRECTION-RECEIPT-FOUNDATION-1 (rule 190) — the fifth
+     * READ area: the BILLING CORRECTION list / history / detail (owner-approved
+     * scope, audit §16). Read, print and export only.
+     */
+    public const PERMISSION_BILLING_CORRECTION = 'view_billing_correction_oversight';
+
+    /** The VIEW areas. Export is never an area of its own. */
     public const VIEW_PERMISSIONS = [
         self::PERMISSION_DASHBOARD,
         self::PERMISSION_CLINICAL,
         self::PERMISSION_MONITORING,
+        self::PERMISSION_BILLING_CORRECTION,
     ];
 
     /** Every oversight permission (view areas + export). */
@@ -57,6 +65,7 @@ class ClinicOversightScope
         self::PERMISSION_CLINICAL,
         self::PERMISSION_MONITORING,
         self::PERMISSION_EXPORT,
+        self::PERMISSION_BILLING_CORRECTION,
     ];
 
     /** @var Collection<int, Branch>|null */

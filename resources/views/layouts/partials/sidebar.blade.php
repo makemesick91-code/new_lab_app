@@ -73,6 +73,13 @@
     // Each boolean mirrors the exact union of its section's child @can/@canany guards,
     // so a section label renders only when at least one of its links is visible. This
     // is navigation clarity only — server-side route middleware/policy stays authoritative.
+    // FEATURE-RME-INVOICE-CORRECTION-RECEIPT-FOUNDATION-1 — the operational
+    // correction links appear only while the mutation capability is ON (flag
+    // `rme.invoice_correction`, default OFF). Courtesy only: the routes, policy
+    // and service refuse on their own.
+    $invoiceCorrectionEnabled = $user !== null
+        && app(\App\Modules\RmeInvoice\Support\RmeInvoiceCorrectionFeatureGuard::class)->enabled();
+
     $showLabGroup = $user && (
         $user->canAny(['view_lab_orders', 'manage_lab_orders', 'view_production', 'manage_production', 'view_quality_control', 'manage_quality_control', 'view_delivery', 'manage_delivery', 'create_lab_branch_requests', 'manage_lab_pickups'])
         || $user->hasRole('Courier')
@@ -141,6 +148,8 @@
         'oversight-rme' => request()->routeIs('oversight.rme.*', 'oversight.legacy.*'),
         'oversight-dental' => request()->routeIs('oversight.monitoring.rooms', 'oversight.monitoring.room-patients*', 'oversight.monitoring.room-treatments*'),
         'oversight-queue' => request()->routeIs('oversight.monitoring.queue*'),
+        // FEATURE-RME-INVOICE-CORRECTION-RECEIPT-FOUNDATION-1 — BILLING CORRECTION (read-only)
+        'oversight-billing-correction' => request()->routeIs('oversight.billing-corrections.*'),
     ];
 
     $linkActive = 'menu-subitem-active';
@@ -208,7 +217,7 @@
                  oversight navigation of the Finance Klinik / Data Analyst roles. Each
                  entry is gated by its own oversight permission; the routes, gates and
                  branch scope are the boundary, never this menu. --}}
-            @canany(['view_finance_analytics_dashboard', 'view_clinical_records_readonly', 'view_operational_monitoring'])
+            @canany(['view_finance_analytics_dashboard', 'view_clinical_records_readonly', 'view_operational_monitoring', 'view_billing_correction_oversight'])
                 <div class="pt-2" data-sidebar-section="oversight">
                     <p class="menu-group-title">Finance &amp; Data Analyst</p>
                     @can('view_finance_analytics_dashboard')
@@ -279,6 +288,27 @@
                                class="menu-subitem {{ request()->routeIs('oversight.monitoring.queue.branches') ? $linkActive : $linkIdle }}">Antrian per Cabang</a>
                         </div>
                     @endcan
+                    {{-- FEATURE-RME-INVOICE-CORRECTION-RECEIPT-FOUNDATION-1 — BILLING CORRECTION
+                         (owner-approved scope): read-only list / history / detail. --}}
+                    @can('view_billing_correction_oversight')
+                        <button type="button" @click="toggle('oversight-billing-correction')" class="{{ $groupToggle }}" :aria-expanded="isOpen('oversight-billing-correction')" data-sidebar-group="oversight-billing-correction">
+                            <span class="flex items-center gap-3">
+                                <svg class="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 14l2 2 4-4m5 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                </svg>
+                                <span>Billing Correction</span>
+                            </span>
+                            <svg class="h-4 w-4 shrink-0 text-ink-muted transition-transform duration-150" :class="{ 'rotate-180': isOpen('oversight-billing-correction') }" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+                                <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"/>
+                            </svg>
+                        </button>
+                        <div data-sidebar-panel="oversight-billing-correction" x-show="isOpen('oversight-billing-correction')" class="mt-1 space-y-0.5 pl-8">
+                            <a href="{{ route('oversight.billing-corrections.patients') }}"
+                               class="menu-subitem {{ request()->routeIs('oversight.billing-corrections.patients') ? $linkActive : $linkIdle }}">Daftar Pasien Koreksi</a>
+                            <a href="{{ route('oversight.billing-corrections.index') }}"
+                               class="menu-subitem {{ request()->routeIs('oversight.billing-corrections.index', 'oversight.billing-corrections.show*') ? $linkActive : $linkIdle }}">Riwayat &amp; Detail Koreksi</a>
+                        </div>
+                    @endcan
                 </div>
             @endcanany
 
@@ -333,6 +363,16 @@
                                    class="menu-subitem {{ request()->routeIs('rme.cashier.receivables') ? $linkActive : $linkIdle }}">Piutang RME</a>
                             @endunless
                         @endcan
+                        @if ($invoiceCorrectionEnabled)
+                            @canany(['request_rme_invoice_correction', 'approve_rme_invoice_correction', 'apply_rme_invoice_correction'])
+                                <a href="{{ route('rme.invoice-corrections.index') }}" data-sidebar-link="invoice-corrections"
+                                   class="menu-subitem {{ request()->routeIs('rme.invoice-corrections.index', 'rme.invoice-corrections.show', 'rme.invoice-corrections.create', 'rme.invoice-corrections.document-versions.*') ? $linkActive : $linkIdle }}">Koreksi Tagihan</a>
+                            @endcanany
+                            @can('approve_rme_invoice_correction')
+                                <a href="{{ route('rme.invoice-corrections.approvals') }}" data-sidebar-link="invoice-correction-approvals"
+                                   class="menu-subitem {{ request()->routeIs('rme.invoice-corrections.approvals') ? $linkActive : $linkIdle }}">Persetujuan Koreksi</a>
+                            @endcan
+                        @endif
                         @can('view_rme_patient_reports')
                             <a href="{{ route('rme.reports.patients') }}"
                                class="menu-subitem {{ request()->routeIs('rme.reports.patients') ? $linkActive : $linkIdle }}">Laporan Pasien RME</a>

@@ -513,6 +513,21 @@ $registry = [
             'dependencies' => [],
             'rollback_action' => 'Set the environment override to false and clear the config cache; every legacy odontogram upload/processing/retry/review/publish/void path is refused again, so no new evidence can enter or leave the archive. Nothing is deleted - the schema, staged rows, published records and their files on the private disk all stay exactly as they are. This rollback stops MUTATIONS, it does not hide already-published evidence: an authorized clinical reader keeps reading a published archive, which is deliberate so a rollback never removes a patient clinical history from the doctor treating them. To contain a READ incident, revoke view_legacy_odontogram_archive from the affected actors and/or VOID the offending record, which stops its bytes streaming immediately while preserving it as auditable evidence.',
         ],
+
+        // --- FEATURE-RME-INVOICE-CORRECTION-RECEIPT-FOUNDATION-1 (rule 190) ---
+
+        'rme.invoice_correction' => [
+            'name' => 'RME Invoice Correction (pre-payment)',
+            'description' => 'MUTATION capability for RME invoice corrections: a cashier submits a correction of an UNPAID invoice that has no payment (original document snapshotted and fingerprinted), a DIFFERENT account approves or rejects it (maker != checker enforced in the service under the invoice row lock, including for Super Admin), and an authorized actor applies it atomically - invoice items and totals recomputed server-side, the original and revised documents frozen as immutable versions. Post-payment correction, refund, payment reversal, patient credit and Rp0 adjustment are NOT implemented and are refused regardless of this flag. While this flag is off every submit/approve/reject/cancel/apply path is refused server-side and the mutation routes answer 404. THIS FLAG DOES NOT GATE READING existing correction records, their history or frozen document versions: financial history must survive an emergency stop. Stays OFF until the owner decides D1 (approval authority), D10 (pending correction vs payment), D21 (price authority) and D7 (receipt versioning policy).',
+            'default' => false,
+            'env_key' => 'FEATURE_RME_INVOICE_CORRECTION',
+            'owner' => 'rme',
+            'risk_level' => 'critical',
+            'rollout_status' => 'implemented',
+            'review_target' => 'FEATURE-RME-INVOICE-CORRECTION-RECEIPT-FOUNDATION-1',
+            'dependencies' => [],
+            'rollback_action' => 'Set the environment override to false and rebuild the config cache as the runtime user; every correction submit/approve/reject/cancel/apply path is refused again and the mutation routes answer 404. Nothing is deleted or reverted: applied corrections stay applied, and their frozen original/revised document versions, events and audit rows remain readable to permission holders and to the read-only oversight roles. An applied correction is never rolled back by dropping a table - the schema must stay, because the frozen original is the only true copy of the pre-correction document.',
+        ],
     ],
 ];
 

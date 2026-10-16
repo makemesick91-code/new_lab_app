@@ -417,6 +417,26 @@ class PermissionSeeder extends Seeder
         'view_clinical_records_readonly',
         'view_operational_monitoring',
         'export_oversight_data',
+
+        // FEATURE-RME-INVOICE-CORRECTION-RECEIPT-FOUNDATION-1 (rule 190) — RME
+        // invoice correction. Three SEPARATE operational capabilities so the
+        // owner's authority decision (D1) can be expressed exactly. NONE of
+        // them is granted to any role here (Super Admin holds them through
+        // RoleSeeder's '*'); `manage_rme_billing` grants none of them, and
+        // holding `approve` never lets an account decide its own request
+        // (enforced in the service, under the invoice row lock).
+        //
+        //   request_rme_invoice_correction — file / withdraw one's own request
+        //   approve_rme_invoice_correction — approve or reject another's request
+        //   apply_rme_invoice_correction   — apply an APPROVED correction
+        //
+        // `view_billing_correction_oversight` is the fifth READ area of the
+        // oversight module (BILLING CORRECTION group, rule 186/188 approved
+        // scope) — read/print/export only, never a mutation.
+        'request_rme_invoice_correction',
+        'approve_rme_invoice_correction',
+        'apply_rme_invoice_correction',
+        'view_billing_correction_oversight',
     ];
 
     public function run(): void

@@ -3,6 +3,8 @@
 namespace App\Modules\RmeInvoice\Support;
 
 use App\Modules\RmeInvoice\Models\RmeInvoice;
+use App\Modules\RmeInvoice\Models\RmeInvoiceCorrection;
+use App\Modules\RmeInvoice\Models\RmeInvoiceDocumentVersion;
 use App\Modules\RmeInvoice\Models\RmePayment;
 
 /**
@@ -78,6 +80,105 @@ final class RmeFinancialAuditEvent
             'invoice_paid_before' => self::money($paidBefore),
             'invoice_paid_after' => self::money($paidBefore + $amount),
             'reference_recorded' => filled($payment->reference_number),
+        ];
+    }
+
+    // ─── FEATURE-RME-INVOICE-CORRECTION-RECEIPT-FOUNDATION-1 ─────────────────
+    //
+    // Correction and document-version events follow the same contract as the
+    // two above: written inside the transaction that writes the fact (so a
+    // rolled-back transition leaves no row), PII-free payloads. A REFUSED
+    // attempt (self-approval, out-of-scope actor) is written AFTER the
+    // transaction rolled back, because it records an attempt, not a fact.
+
+    public const ENTITY_CORRECTION = 'trx_rme_invoice_corrections';
+
+    public const ENTITY_DOCUMENT_VERSION = 'trx_rme_invoice_document_versions';
+
+    public const ACTION_CORRECTION_SUBMITTED = 'RME_INVOICE_CORRECTION_SUBMITTED';
+
+    public const ACTION_CORRECTION_APPROVED = 'RME_INVOICE_CORRECTION_APPROVED';
+
+    public const ACTION_CORRECTION_REJECTED = 'RME_INVOICE_CORRECTION_REJECTED';
+
+    public const ACTION_CORRECTION_CANCELLED = 'RME_INVOICE_CORRECTION_CANCELLED';
+
+    public const ACTION_CORRECTION_STALE = 'RME_INVOICE_CORRECTION_STALE';
+
+    public const ACTION_CORRECTION_APPLIED = 'RME_INVOICE_CORRECTION_APPLIED';
+
+    public const ACTION_CORRECTION_REFUSED = 'RME_INVOICE_CORRECTION_REFUSED';
+
+    public const ACTION_DOCUMENT_VERSION_ISSUED = 'RME_INVOICE_DOCUMENT_VERSION_ISSUED';
+
+    /** status => audit action for a transition INTO that status. */
+    public const CORRECTION_ACTIONS = [
+        'SUBMITTED' => self::ACTION_CORRECTION_SUBMITTED,
+        'APPROVED' => self::ACTION_CORRECTION_APPROVED,
+        'REJECTED' => self::ACTION_CORRECTION_REJECTED,
+        'CANCELLED' => self::ACTION_CORRECTION_CANCELLED,
+        'STALE' => self::ACTION_CORRECTION_STALE,
+        'APPLIED' => self::ACTION_CORRECTION_APPLIED,
+    ];
+
+    /**
+     * Ids, numbers, amounts, statuses, counts and stable codes. The free-text
+     * reason / decision note / cancel reason are represented by their LENGTH
+     * only — a cashier may write a patient's name in them.
+     *
+     * @param  array<string, int|float|string|bool|null>  $extra
+     * @return array<string, mixed>
+     */
+    public static function correctionPayload(RmeInvoiceCorrection $correction, ?string $fromStatus, array $extra = []): array
+    {
+        $allowedExtra = array_intersect_key($extra, array_flip([
+            'code',
+            'line_count',
+            'invoice_version_before',
+            'invoice_version_after',
+            'grand_total_before',
+            'grand_total_after',
+            'note_length',
+            'document_version_original_id',
+            'document_version_revision_id',
+            'latest_version_matched_live_state',
+        ]));
+
+        return array_merge([
+            'correction_id' => (int) $correction->id,
+            'correction_number' => $correction->correction_number,
+            'correction_type' => (string) $correction->correction_type,
+            'rme_invoice_id' => (int) $correction->rme_invoice_id,
+            'branch_id' => (int) $correction->branch_id,
+            'clinic_visit_id' => (int) $correction->clinic_visit_id,
+            'patient_id' => (int) $correction->patient_id,
+            'from_status' => $fromStatus,
+            'to_status' => (string) $correction->status,
+            'requested_by' => (int) $correction->requested_by,
+            'original_grand_total' => self::money($correction->original_grand_total),
+            'proposed_grand_total' => self::money($correction->proposed_grand_total),
+            'difference_amount' => self::money($correction->difference_amount),
+            'paid_total_at_request' => self::money($correction->paid_total_at_request),
+            'reason_length' => mb_strlen((string) $correction->reason),
+        ], $allowedExtra);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public static function documentVersionPayload(RmeInvoiceDocumentVersion $version): array
+    {
+        return [
+            'document_version_id' => (int) $version->id,
+            'rme_invoice_id' => (int) $version->rme_invoice_id,
+            'branch_id' => (int) $version->branch_id,
+            'version_number' => (int) $version->version_number,
+            'version_kind' => (string) $version->version_kind,
+            'document_reference' => (string) $version->document_reference,
+            'source_correction_id' => $version->source_correction_id !== null ? (int) $version->source_correction_id : null,
+            'capture_basis' => (string) $version->capture_basis,
+            'snapshot_schema_version' => (int) $version->snapshot_schema_version,
+            'snapshot_sha256' => (string) $version->snapshot_sha256,
         ];
     }
 

@@ -8,6 +8,7 @@ use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\LegacyOdontogram\Models\LegacyOdontogramRecord;
 use App\Modules\LegacyRme\Models\LegacyRmeRecord;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
+use App\Modules\RmeInvoice\Models\RmeInvoiceCorrection;
 
 /**
  * FEATURE-FINANCE-KLINIK-DATA-ANALYST-ROLES-1 — record-level authorization of
@@ -41,6 +42,20 @@ class ClinicOversightPolicy
     public function viewMonitoring(User $user): bool
     {
         return $this->scope->holds($user, ClinicOversightScope::PERMISSION_MONITORING);
+    }
+
+    public function viewBillingCorrections(User $user): bool
+    {
+        return $this->scope->holds($user, ClinicOversightScope::PERMISSION_BILLING_CORRECTION);
+    }
+
+    /**
+     * One correction, only inside the oversight branch set. Branch = the
+     * corrected invoice's branch, copied onto the correction at submission.
+     */
+    public function viewBillingCorrection(User $user, RmeInvoiceCorrection $correction): bool
+    {
+        return $this->scope->allowsBranch($user, ClinicOversightScope::PERMISSION_BILLING_CORRECTION, $this->int($correction->branch_id));
     }
 
     public function viewVisit(User $user, ClinicVisit $visit): bool

@@ -32,6 +32,10 @@ final class PatientOwnedRecordRegistry
         'trx_medical_records' => ['column' => 'patient_id', 'label' => 'RME', 'group' => 'medical_records'],
         'trx_rme_invoices' => ['column' => 'patient_id', 'label' => 'Invoice', 'group' => 'invoices'],
         'trx_rme_payments' => ['column' => 'patient_id', 'label' => 'Pembayaran', 'group' => 'payments'],
+        // FEATURE-RME-INVOICE-CORRECTION-RECEIPT-FOUNDATION-1 — a correction
+        // belongs to its invoice's patient; merge re-points it (the frozen
+        // snapshots keep the historical patient_id they were captured with).
+        'trx_rme_invoice_corrections' => ['column' => 'patient_id', 'label' => 'Koreksi Tagihan', 'group' => 'invoices'],
         'trx_rme_prescriptions' => ['column' => 'patient_id', 'label' => 'Resep', 'group' => 'prescriptions'],
         'trx_rme_prescription_whatsapp_deliveries' => ['column' => 'patient_id', 'label' => 'Pengiriman Resep WhatsApp', 'group' => 'prescriptions'],
         'trx_rme_visit_consents' => ['column' => 'patient_id', 'label' => 'Persetujuan Tindakan', 'group' => 'consents'],

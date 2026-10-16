@@ -1,32 +1,38 @@
-# FEATURE-RME-BILLING-REFUND-1 — Phase 0 financial safety prerequisites
+# FEATURE-RME-INVOICE-CORRECTION-RECEIPT-FOUNDATION-1
 #
-# The owner asked for Billing Refund first. The decision gate (audit §26) found
-# every refund-defining decision still open (D4, D5, D6, D7, D8, D9, D12, D18 —
-# none recorded) AND a structural dependency: every payment path caps the amount
-# at the remaining balance, so no overpayment can exist today and every refund
-# scenario the printed policy describes needs invoice correction (Phase C) first.
-# Refund execution is therefore NOT built and NOT activated.
-#
-# What ships: the four Phase 0 prerequisites that need no owner decision —
-# financial audit log (BCF-02), duplicate-invoice race guard (BCF-08), paid_at
-# upper bound (BCF-03, upper bound only), payment immutability guard (BCF-09).
-# Price authority (BCF-01/D21) stays open. Plus the verified refund technical
-# design and decision register. No migration, permission, route or UI change.
+# Foundation for RME invoice correction and receipt versioning, shipped PARTIAL
+# and dormant. Every owner decision D1–D27 was still PENDING, so nothing that
+# needs one is invented:
+#   - PRE-PAYMENT correction only (UNPAID invoice, no payment, no lab candidate):
+#     submit → approve (maker != checker, enforced in the service under the
+#     invoice row lock, Super Admin included) → apply (atomic, totals recomputed
+#     server-side in cents, original frozen as v0, revision as vN). A payment
+#     that lands first makes the correction STALE.
+#   - all mutation behind the default-OFF, critical flag `rme.invoice_correction`
+#     (routes 404 while off), and the three operational permissions are granted
+#     to NO role — turning the flag on still enables nobody until the owner
+#     grants a role (D1).
+#   - read-only BILLING CORRECTION oversight for Finance Klinik / Data Analyst via
+#     the fifth oversight permission `view_billing_correction_oversight`.
+#   - NOT implemented: post-payment correction, refund, reversal, patient credit,
+#     Rp0 adjustment, retroactive revenue adjustment.
+# Five additive migrations (four new tables + one defaulted column). No data
+# migration, no change to lab billing tables or to any existing payment row.
 
-id: FEATURE-RME-BILLING-REFUND-1
+id: FEATURE-RME-INVOICE-CORRECTION-RECEIPT-FOUNDATION-1
 type: FOUNDATION_SPRINT
 module: RmeInvoice
-title: "RME billing refund — Phase 0 financial safety prerequisites (refund execution not built: owner decisions open)"
+title: "RME invoice correction & receipt versioning — pre-payment foundation, default OFF (owner decisions pending)"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 runtime_change: true
-schema_change: false
-frontend_change: false
+schema_change: true
+frontend_change: true
 security_impact: true
-branch_isolation_impact: false
+branch_isolation_impact: true
 ledger_impact: true
 deploy_required: true
 browser_required: false
-test_profiles: [rme, cashier, billing]
-go_tag: feature-rme-billing-refund-1-phase-0-financial-prerequisites-go
-inherits_parent_go: audit-rme-billing-correction-payment-refund-foundation-1-go
+test_profiles: [rme, cashier, billing, oversight]
+go_tag: feature-rme-invoice-correction-receipt-foundation-1-prepayment-foundation-go
+inherits_parent_go: feature-rme-billing-refund-1-phase-0-financial-prerequisites-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1

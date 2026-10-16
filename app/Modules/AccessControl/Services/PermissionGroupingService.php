@@ -106,6 +106,14 @@ class PermissionGroupingService
                 'view_clinical_records_readonly',
                 'view_operational_monitoring',
                 'export_oversight_data',
+                // FEATURE-RME-INVOICE-CORRECTION-RECEIPT-FOUNDATION-1 (rule 190) —
+                // RME invoice correction: three separate operational
+                // capabilities (D1 decides who holds them; no role does yet)
+                // plus the read-only oversight area of the two oversight roles.
+                'request_rme_invoice_correction',
+                'approve_rme_invoice_correction',
+                'apply_rme_invoice_correction',
+                'view_billing_correction_oversight',
             ],
         ],
         [
@@ -276,6 +284,10 @@ class PermissionGroupingService
         'view_clinical_records_readonly' => 'Baca RME native & arsip legacy (RME/odontogram) di semua cabang RME — tanpa ubah data.',
         'view_operational_monitoring' => 'Pantau ruangan dental, pasien per ruangan, perawatan ditagihkan, dan antrian — hanya baca.',
         'export_oversight_data' => 'Cetak/PDF/ekspor data yang sudah boleh dilihat pada modul pengawasan (tanpa mutasi).',
+        'request_rme_invoice_correction' => 'Ajukan koreksi tagihan RME yang belum dibayar dan tarik pengajuan sendiri (tidak dapat menyetujui atau menerapkan).',
+        'approve_rme_invoice_correction' => 'Setujui atau tolak pengajuan koreksi tagihan RME milik akun lain (tidak pernah pengajuan sendiri).',
+        'apply_rme_invoice_correction' => 'Terapkan koreksi tagihan RME yang sudah disetujui; dokumen asli dibekukan sebagai versi v0.',
+        'view_billing_correction_oversight' => 'Lihat daftar dan riwayat koreksi tagihan di semua cabang RME — hanya baca, tanpa mengajukan/menyetujui.',
         'view_dashboard' => 'Akses dashboard operasional cabang.',
         'manage users' => 'Kelola akun pengguna sistem.',
         'manage roles' => 'Kelola role dan penugasan permission.',

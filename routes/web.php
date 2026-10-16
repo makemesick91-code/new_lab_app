@@ -12,6 +12,7 @@ use App\Modules\AccessControl\Controllers\PermissionController;
 use App\Modules\AccessControl\Controllers\RoleController;
 use App\Modules\Branch\Controllers\BranchController;
 use App\Modules\Clinic\Controllers\ClinicController;
+use App\Modules\ClinicOversight\Controllers\OversightBillingCorrectionController;
 use App\Modules\ClinicOversight\Controllers\OversightClinicalRecordController;
 use App\Modules\ClinicOversight\Controllers\OversightDashboardController;
 use App\Modules\ClinicOversight\Controllers\OversightLegacyArchiveController;
@@ -120,6 +121,7 @@ use App\Modules\Reporting\Controllers\ReportController;
 use App\Modules\RmeDashboard\Controllers\RmeDashboardController;
 use App\Modules\RmeInvoice\Controllers\DoctorPerformanceReportController;
 use App\Modules\RmeInvoice\Controllers\RmeInvoiceController;
+use App\Modules\RmeInvoice\Controllers\RmeInvoiceCorrectionController;
 use App\Modules\RmeInvoice\Controllers\RmePaymentController;
 use App\Modules\RmeInvoice\Controllers\RmeReceivableFollowUpController;
 use App\Modules\RmeInvoice\Controllers\RmeReportController;
@@ -1369,6 +1371,49 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
         Route::get('cashier/{clinicVisit}/billing/{rmeInvoice}/receipt/pdf', [RmePaymentController::class, 'receiptPdf'])->name('cashier.receipt.pdf');
     });
 
+    /*
+    | FEATURE-RME-INVOICE-CORRECTION-RECEIPT-FOUNDATION-1 (rule 190) — RME invoice
+    | corrections. Three layers, each refusing on its own:
+    |   1. route middleware — the operational correction permissions (NOT
+    |      manage_rme_billing: the cashier permission grants none of this);
+    |   2. the controller — the RmeInvoiceCorrectionPolicy ability, and a 404
+    |      on every MUTATION route while `rme.invoice_correction` is off;
+    |   3. the service — flag, permission, branch scope, maker != checker,
+    |      fingerprint re-verification, all under the invoice row lock.
+    | Read routes (list, detail, frozen document version) are NOT flag-gated:
+    | an emergency stop must never hide financial history.
+    */
+    Route::middleware('permission:request_rme_invoice_correction|approve_rme_invoice_correction|apply_rme_invoice_correction')->group(function () {
+        Route::get('invoice-corrections', [RmeInvoiceCorrectionController::class, 'index'])->name('invoice-corrections.index');
+        Route::get('invoice-corrections/approvals', [RmeInvoiceCorrectionController::class, 'approvals'])
+            ->middleware('permission:approve_rme_invoice_correction')
+            ->name('invoice-corrections.approvals');
+        Route::get('invoice-corrections/{correction}', [RmeInvoiceCorrectionController::class, 'show'])
+            ->whereNumber('correction')->name('invoice-corrections.show');
+        Route::get('invoice-corrections/document-versions/{version}', [RmeInvoiceCorrectionController::class, 'documentVersion'])
+            ->whereNumber('version')->name('invoice-corrections.document-versions.show');
+
+        Route::middleware('permission:request_rme_invoice_correction')->group(function () {
+            Route::get('cashier/{clinicVisit}/billing/{rmeInvoice}/corrections/create', [RmeInvoiceCorrectionController::class, 'create'])
+                ->name('invoice-corrections.create');
+            Route::post('cashier/{clinicVisit}/billing/{rmeInvoice}/corrections', [RmeInvoiceCorrectionController::class, 'store'])
+                ->name('invoice-corrections.store');
+            Route::post('invoice-corrections/{correction}/cancel', [RmeInvoiceCorrectionController::class, 'cancel'])
+                ->whereNumber('correction')->name('invoice-corrections.cancel');
+        });
+
+        Route::middleware('permission:approve_rme_invoice_correction')->group(function () {
+            Route::post('invoice-corrections/{correction}/approve', [RmeInvoiceCorrectionController::class, 'approve'])
+                ->whereNumber('correction')->name('invoice-corrections.approve');
+            Route::post('invoice-corrections/{correction}/reject', [RmeInvoiceCorrectionController::class, 'reject'])
+                ->whereNumber('correction')->name('invoice-corrections.reject');
+        });
+
+        Route::post('invoice-corrections/{correction}/apply', [RmeInvoiceCorrectionController::class, 'apply'])
+            ->middleware('permission:apply_rme_invoice_correction')
+            ->whereNumber('correction')->name('invoice-corrections.apply');
+    });
+
     // Sprint 23 Phase 23.5 — Separated RME reports (branch-aware, RME is multi-branch)
     Route::get('reports/patients', [RmeReportController::class, 'patients'])
         ->name('reports.patients')->middleware('permission:view_rme_patient_reports');
@@ -2433,6 +2478,23 @@ Route::middleware('auth')->prefix('oversight')->name('oversight.')->group(functi
                 ->whereNumber('record')->name('legacy.odontogram.source');
             Route::get('legacy-odontogram/{record}/print', [OversightLegacyArchiveController::class, 'odontogramPrint'])
                 ->whereNumber('record')->name('legacy.odontogram.print');
+        });
+    });
+
+    // FEATURE-RME-INVOICE-CORRECTION-RECEIPT-FOUNDATION-1 (rule 190) — BILLING
+    // CORRECTION oversight: GET-only, read/print/PDF/CSV, no mutation.
+    Route::middleware('permission:view_billing_correction_oversight')->prefix('billing-corrections')->name('billing-corrections.')->group(function () {
+        Route::get('/', [OversightBillingCorrectionController::class, 'index'])->name('index');
+        Route::get('patients', [OversightBillingCorrectionController::class, 'patients'])->name('patients');
+        Route::get('{correction}', [OversightBillingCorrectionController::class, 'show'])
+            ->whereNumber('correction')->name('show');
+        Route::middleware('permission:export_oversight_data')->group(function () {
+            Route::get('export', [OversightBillingCorrectionController::class, 'export'])->name('export');
+            Route::get('print', [OversightBillingCorrectionController::class, 'print'])->name('print');
+            Route::get('{correction}/print', [OversightBillingCorrectionController::class, 'showPrint'])
+                ->whereNumber('correction')->name('show.print');
+            Route::get('{correction}/pdf', [OversightBillingCorrectionController::class, 'showPdf'])
+                ->whereNumber('correction')->name('show.pdf');
         });
     });
 

@@ -5,6 +5,7 @@ namespace App\Modules\RmeInvoice\Repositories;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\RmeInvoice\Interfaces\RmeInvoiceRepositoryInterface;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
+use App\Modules\RmeInvoice\Models\RmeInvoiceItem;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
 
@@ -139,5 +140,39 @@ class RmeInvoiceRepository implements RmeInvoiceRepositoryInterface
             ->with(['items.treatment', 'patient', 'clinicVisit.doctor', 'cashier', 'medicalRecord'])
             ->where('branch_id', $branchId)
             ->find($id);
+    }
+
+    public function findForUpdate(int $id): ?RmeInvoice
+    {
+        return RmeInvoice::query()->lockForUpdate()->find($id);
+    }
+
+    public function createItem(array $data): RmeInvoiceItem
+    {
+        return RmeInvoiceItem::create($data);
+    }
+
+    public function updateItem(RmeInvoiceItem $item, array $data): RmeInvoiceItem
+    {
+        $item->update($data);
+
+        return $item;
+    }
+
+    public function deleteItem(RmeInvoiceItem $item): void
+    {
+        $item->delete();
+    }
+
+    public function applyCorrectionTotals(RmeInvoice $invoice, array $data): RmeInvoice
+    {
+        $invoice->forceFill([
+            'subtotal' => $data['subtotal'],
+            'discount_total' => $data['discount_total'],
+            'grand_total' => $data['grand_total'],
+            'correction_version' => (int) $data['correction_version'],
+        ])->save();
+
+        return $invoice->refresh();
     }
 }
