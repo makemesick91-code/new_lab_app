@@ -1,36 +1,28 @@
-# REVISION-OVERSIGHT-DASHBOARD-DATE-RANGE-1
+# AUDIT-RME-BILLING-CORRECTION-PAYMENT-REFUND-FOUNDATION-1
 #
-# The Finance & Data Analyst dashboard (/oversight/dashboard) moves from one
-# clinic date to an INCLUSIVE WITA date range (start_date..end_date), rule 187:
+# Read-only financial foundation audit of RME billing, payments, receipts,
+# refunds (none exist), approvals and Rp0 eligibility, preparing the future
+# FEATURE-RME-BILLING-CORRECTION-PAYMENT-ADJUSTMENT-1 (not started, not active).
 #
-#   - ClinicalDateRange value object: [start 00:00 WITA, end+1 00:00 WITA) in
-#     UTC; DATE columns as [start, end+1). Never 23:59:59, never whereDate().
-#   - One compatibility rule: none -> today; both -> range; one -> rejected;
-#     legacy `date` -> that day; reversed -> rejected, never swapped; max 366
-#     inclusive days; dates within 2000-01-01..2099-12-31.
-#   - Patients / transactions / revenue / cancellations over the range
-#     (formulas of rule 186 unchanged). PIUTANG AKTIF PER SAAT INI stays the
-#     current balance — its repository method takes no range at all.
-#   - Refresh feed, CSV and print carry the same range; audit uses the
-#     allowlisted date_from/date_to keys. METRIC_VERSION 1 -> 2.
-#
-# No migration, no schema change, no permission, role or route change.
-# Rule 186 roles, branch scope and read-only posture are untouched.
+# Artefacts: docs/AUDIT-RME-BILLING-CORRECTION-PAYMENT-REFUND-FOUNDATION-1.md,
+# rule 188, CLAUDE.md section + three superseded Sprint 20 lines, one note in
+# docs/ai-knowledge/12. No runtime, migration, permission, route or data change.
+# Production was read only inside BEGIN TRANSACTION READ ONLY.
 
-id: REVISION-OVERSIGHT-DASHBOARD-DATE-RANGE-1
-type: MODULE_SPRINT
-module: ClinicOversight
-title: "Oversight dashboard inclusive WITA date range (start_date..end_date)"
+id: AUDIT-RME-BILLING-CORRECTION-PAYMENT-REFUND-FOUNDATION-1
+type: DOCS_ONLY
+module: RmeInvoice
+title: "RME billing correction / payment / refund foundation audit (read-only, rule 188)"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
-runtime_change: true
+runtime_change: false
 schema_change: false
-frontend_change: true
-security_impact: true
+frontend_change: false
+security_impact: false
 branch_isolation_impact: false
 ledger_impact: false
-deploy_required: true
+deploy_required: false
 browser_required: false
 test_profiles: []
-go_tag: revision-oversight-dashboard-date-range-1-go
-inherits_parent_go: feature-finance-klinik-data-analyst-roles-1-go
+go_tag: audit-rme-billing-correction-payment-refund-foundation-1-go
+inherits_parent_go: revision-oversight-dashboard-date-range-1-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
