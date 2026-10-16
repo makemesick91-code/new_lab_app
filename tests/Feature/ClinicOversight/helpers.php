@@ -119,6 +119,33 @@ if (! function_exists('covBranch')) {
         ]);
     }
 
+    /**
+     * Rewrite a payment row underneath the application, for proving the KPIs stay
+     * correct against rows the application itself can no longer produce.
+     *
+     * FEATURE-RME-BILLING-REFUND-1 / Phase 0 (rule 189 §6) — `RmePayment` refuses
+     * any Eloquent update (except patient_id) and any delete, because a
+     * re-branched, re-amounted or deleted row would silently rewrite balances and
+     * revenue. Such rows can still arise underneath the application (raw SQL),
+     * which is exactly why the KPIs must stay correct against them. So these
+     * fixtures write the columns the way such a row actually appears — directly,
+     * bypassing model events — and the KPI assertions stay under test.
+     *
+     * @param  array<string, mixed>  $columns
+     */
+    function covWritePaymentRowDirectly(RmePayment $payment, array $columns): RmePayment
+    {
+        RmePayment::query()->withTrashed()->whereKey($payment->getKey())->toBase()->update($columns);
+
+        return $payment;
+    }
+
+    /** A soft-deleted payment row — proves the KPIs EXCLUDE soft-deleted rows. */
+    function covSoftDeletePayment(RmePayment $payment): void
+    {
+        covWritePaymentRowDirectly($payment, ['deleted_at' => now()]);
+    }
+
     function covCashier(): User
     {
         return User::query()->where('email', 'cov-cashier@example.test')->first()

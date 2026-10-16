@@ -32,12 +32,14 @@ never be cited as production behaviour), **PENDING_OWNER_DECISION** (see audit �
 ## 3. Payment lifecycle — CURRENT
 - Payments are append-only de facto: `RmePaymentRepository` has only `create/forInvoice/latestPaymentNumberForMonth`.
   Every payment path locks the invoice row (`lockForUpdate`) and caps `amount` at the remaining balance.
-- `paid_at` is client-supplied (`required|date`, no bounds) and decides the revenue period. Treat it as an existing
-  defect (audit BCF-03), never as a trustworthy authority for new financial logic.
+- `paid_at` is client-supplied and decides the revenue period. **[UPDATED by rule 189 §5]** it is now refused when in
+  the future (`> now + 60 s`, all three payment paths); backdating is still unbounded (D24), so it is still never a
+  trustworthy authority for new financial logic.
 - Any payment > 0 (full or partial) completes a `cashier_pending` visit; the balance stays receivable.
 - **Payments must never be updated, re-amounted, re-batched, re-branched or soft-deleted to effect a correction.** The
   schema permits soft delete and `paidAmount()` excludes soft-deleted rows — so a soft delete silently rewrites balances
-  and revenue. Corrections go through their own records.
+  and revenue. Corrections go through their own records. **[UPDATED by rule 189 §6]** the `RmePayment` model now refuses
+  update (except `patient_id`) and soft/force delete at the application layer; raw SQL is still not stopped.
 
 ## 4. Carry-over and payment batches — CURRENT
 - `payment_batch_uuid` is minted once per cashier action only by the control/visit allocation paths; plain `pay()`
@@ -68,7 +70,9 @@ never be cited as production behaviour), **PENDING_OWNER_DECISION** (see audit �
   service transaction under the row lock (PatientMergeCase pattern), never only in a policy.
 
 ## 8. Audit requirements — CURRENT
-- `app/Modules/RmeInvoice` writes **nothing** to `sys_audit_logs` (invoice creation and payments are unaudited — BCF-02).
+- **[SUPERSEDED by rule 189 §3]** invoice creation (`RME_INVOICE_CREATED`) and payment recording
+  (`RME_PAYMENT_RECORDED`) are now audited, PII-free, inside the fact's transaction. Before Phase 0 the module wrote
+  nothing to `sys_audit_logs` (BCF-02).
 - `sys_audit_logs` has `old_values/new_values` jsonb, `performed_by`, `performed_at`, no `updated_at`; append-only by
   convention, not DB-enforced.
 - PROPOSED: every correction/refund/receipt-supersession event is audited with ids, amounts and statuses only — no patient
@@ -133,10 +137,10 @@ never be cited as production behaviour), **PENDING_OWNER_DECISION** (see audit �
 - Doctor performance reads `grand_total` and item `subtotal`; corrections must be reflected and traceable there.
 
 ## 17. Known architecture gaps — CURRENT
-BCF-01 cashier-set pricing / uncapped discount (HIGH); BCF-02 no financial audit log (HIGH); BCF-03 unbounded client
-`paid_at` (MEDIUM); BCF-04 overpayment hidden by clamp (MEDIUM, latent); BCF-05 Rp0 zombie UNPAID / stuck visit (MEDIUM);
-BCF-06 live-rendered receipts; BCF-07 MAX+1 numbering without lock; BCF-08 duplicate-invoice race (HYPOTHESIS);
-BCF-09 soft-deletable payments; BCF-10 `recalculateTotals` bug; BCF-11 lab candidates keyed on items; BCF-12 F-01;
+BCF-01 cashier-set pricing / uncapped discount (HIGH, still open — D21); BCF-02 no financial audit log (**CLOSED, rule 189**);
+BCF-03 unbounded client `paid_at` (MEDIUM — future bound **CLOSED**, backdating open D24); BCF-04 overpayment hidden by clamp (MEDIUM, latent); BCF-05 Rp0 zombie UNPAID / stuck visit (MEDIUM);
+BCF-06 live-rendered receipts; BCF-07 MAX+1 numbering without lock; BCF-08 duplicate-invoice race (**CONFIRMED and
+CLOSED**, rule 189 §4); BCF-09 soft-deletable payments (application-layer guard, rule 189 §6); BCF-10 `recalculateTotals` bug; BCF-11 lab candidates keyed on items; BCF-12 F-01;
 BCF-13 patient merge re-points financial rows (new tables must join `PatientOwnedRecordRegistry`); BCF-14 printed refund
 terms without implementation.
 
@@ -145,8 +149,9 @@ D1–D20 from the audit brief plus D21 (price authority), D22 (Rp0 completion pa
 `requires_lab` items). Never convert an audit recommendation into an approved decision.
 
 ## 19. Implementation prerequisites
-- Phase 0 before any correction work: financial audit log (BCF-02), server price authority + discount cap (BCF-01, D21),
-  bounded `paid_at` (BCF-03), invoice-per-visit race guard (BCF-08).
+- Phase 0 before any correction work: financial audit log (BCF-02 — **done**), server price authority + discount cap
+  (BCF-01, D21 — **open**), bounded `paid_at` (BCF-03 — future bound **done**, backdating D24 open), invoice-per-visit
+  race guard (BCF-08 — **done**). See rule 189.
 - Receipt snapshot (Phase E) before post-payment correction (Phase C). Refund (Phase D) only after D4–D6, D18.
 - Additive migrations only (`migrate --force`), never `migrate:fresh`/`db:wipe`; payments table untouched.
 

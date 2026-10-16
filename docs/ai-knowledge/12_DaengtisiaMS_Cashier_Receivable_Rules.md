@@ -6,7 +6,7 @@ Aturan invoice RME, pembayaran, status piutang, consent gate, aging, export, dan
 ## Ringkasan
 Billing RME terpisah dari invoice lab (`trx_rme_invoices` vs `trx_invoices`). Status invoice: DRAFT/UNPAID/PARTIAL/PAID/VOID. Pembayaran >0 menyelesaikan visit; sisa tagihan tetap piutang.
 
-> **Fondasi koreksi/refund (AUDIT-RME-BILLING-CORRECTION-PAYMENT-REFUND-FOUNDATION-1, rule 188):** invoice lahir `UNPAID`; tidak ada jalur yang menulis `DRAFT`/`VOID`; tidak ada edit/void/koreksi/refund di aplikasi (imutabel karena ketiadaan jalur). Invoice Rp0 tidak pernah menjadi `PAID`. Harga item diketik kasir (tarif tidak dibaca). Modul billing tidak menulis audit log. Fitur koreksi belum ada dan belum aktif — lihat `docs/AUDIT-RME-BILLING-CORRECTION-PAYMENT-REFUND-FOUNDATION-1.md`.
+> **Fondasi koreksi/refund (AUDIT-RME-BILLING-CORRECTION-PAYMENT-REFUND-FOUNDATION-1, rule 188):** invoice lahir `UNPAID`; tidak ada jalur yang menulis `DRAFT`/`VOID`; tidak ada edit/void/koreksi/refund di aplikasi (imutabel karena ketiadaan jalur). Invoice Rp0 tidak pernah menjadi `PAID`. Harga item diketik kasir (tarif tidak dibaca). Pembuatan invoice dan pencatatan pembayaran **diaudit** sejak FEATURE-RME-BILLING-REFUND-1 Fase 0 (rule 189); `paid_at` tidak boleh di masa depan; pembayaran tidak dapat diubah/dihapus lewat aplikasi; refund **belum ada**. Fitur koreksi belum ada dan belum aktif — lihat `docs/AUDIT-RME-BILLING-CORRECTION-PAYMENT-REFUND-FOUNDATION-1.md`.
 
 ## Konteks DaengtisiaMS
 Modul kasir adalah gate akhir pipeline RME setelah pemeriksaan dokter dan consent.

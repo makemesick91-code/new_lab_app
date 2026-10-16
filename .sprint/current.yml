@@ -1,28 +1,32 @@
-# AUDIT-RME-BILLING-CORRECTION-PAYMENT-REFUND-FOUNDATION-1
+# FEATURE-RME-BILLING-REFUND-1 — Phase 0 financial safety prerequisites
 #
-# Read-only financial foundation audit of RME billing, payments, receipts,
-# refunds (none exist), approvals and Rp0 eligibility, preparing the future
-# FEATURE-RME-BILLING-CORRECTION-PAYMENT-ADJUSTMENT-1 (not started, not active).
+# The owner asked for Billing Refund first. The decision gate (audit §26) found
+# every refund-defining decision still open (D4, D5, D6, D7, D8, D9, D12, D18 —
+# none recorded) AND a structural dependency: every payment path caps the amount
+# at the remaining balance, so no overpayment can exist today and every refund
+# scenario the printed policy describes needs invoice correction (Phase C) first.
+# Refund execution is therefore NOT built and NOT activated.
 #
-# Artefacts: docs/AUDIT-RME-BILLING-CORRECTION-PAYMENT-REFUND-FOUNDATION-1.md,
-# rule 188, CLAUDE.md section + three superseded Sprint 20 lines, one note in
-# docs/ai-knowledge/12. No runtime, migration, permission, route or data change.
-# Production was read only inside BEGIN TRANSACTION READ ONLY.
+# What ships: the four Phase 0 prerequisites that need no owner decision —
+# financial audit log (BCF-02), duplicate-invoice race guard (BCF-08), paid_at
+# upper bound (BCF-03, upper bound only), payment immutability guard (BCF-09).
+# Price authority (BCF-01/D21) stays open. Plus the verified refund technical
+# design and decision register. No migration, permission, route or UI change.
 
-id: AUDIT-RME-BILLING-CORRECTION-PAYMENT-REFUND-FOUNDATION-1
-type: DOCS_ONLY
+id: FEATURE-RME-BILLING-REFUND-1
+type: FOUNDATION_SPRINT
 module: RmeInvoice
-title: "RME billing correction / payment / refund foundation audit (read-only, rule 188)"
+title: "RME billing refund — Phase 0 financial safety prerequisites (refund execution not built: owner decisions open)"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
-runtime_change: false
+runtime_change: true
 schema_change: false
 frontend_change: false
-security_impact: false
+security_impact: true
 branch_isolation_impact: false
-ledger_impact: false
-deploy_required: false
+ledger_impact: true
+deploy_required: true
 browser_required: false
-test_profiles: []
-go_tag: audit-rme-billing-correction-payment-refund-foundation-1-go
-inherits_parent_go: revision-oversight-dashboard-date-range-1-go
+test_profiles: [rme, cashier, billing]
+go_tag: feature-rme-billing-refund-1-phase-0-financial-prerequisites-go
+inherits_parent_go: audit-rme-billing-correction-payment-refund-foundation-1-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1

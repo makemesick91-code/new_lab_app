@@ -6,11 +6,14 @@ use App\Models\User;
 use App\Modules\Branch\Services\BranchService;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\ClinicVisit\Services\ClinicVisitService;
+use App\Modules\LabOrder\Services\AuditLogService;
 use App\Modules\RmeInvoice\Interfaces\RmeInvoiceRepositoryInterface;
 use App\Modules\RmeInvoice\Interfaces\RmePaymentRepositoryInterface;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Models\RmePayment;
+use App\Modules\RmeInvoice\Support\RmeFinancialAuditEvent;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -28,13 +31,86 @@ class RmePaymentService
         private readonly BranchService $branches,
         private readonly RmeControlReceivableService $carryOver,
         private readonly RmeWorkingBranchScope $workingBranchScope,
+        private readonly AuditLogService $auditLogs,
     ) {}
+
+    /**
+     * FEATURE-RME-BILLING-REFUND-1 / Phase 0 (audit BCF-03) — a payment records
+     * money that HAS been received, so its `paid_at` can never lie in the future.
+     *
+     * `paid_at` decides the revenue period (rule 186/187 KPI 3) and which payment
+     * a receipt names as the settling one, and until now it was accepted from the
+     * client with no bound at all — a future date moved revenue into a period
+     * that had not happened yet.
+     *
+     * DELIBERATELY NARROW. This is an upper bound and nothing more:
+     *   - The input is interpreted exactly as before (application timezone), so
+     *     no existing or future value changes meaning. Production measurement
+     *     before this change: all 7 payments carried a `paid_at` within five
+     *     minutes of their own creation, i.e. cashiers keep the default.
+     *   - It does NOT bound backdating. Recording a payment at the time the money
+     *     was actually received, earlier than the invoice row, can be legitimate,
+     *     and how far back is allowed is an owner policy decision — not invented here.
+     *   - A 60-second allowance absorbs the minute granularity of the
+     *     datetime-local field and ordinary clock skew. It is not a backdating
+     *     window and must never be widened into one.
+     *
+     * Enforced here, in the service, because all three payment paths funnel
+     * through it; a request rule alone would leave any other caller unbounded.
+     */
+    private const PAID_AT_FUTURE_TOLERANCE_SECONDS = 60;
+
+    private function normalizePaidAt(mixed $value): CarbonImmutable
+    {
+        // Blank is refused, never defaulted: parsing '' yields "now", which
+        // would silently invent a receipt time nobody entered.
+        if (! is_string($value) && ! $value instanceof \DateTimeInterface) {
+            throw ValidationException::withMessages([
+                'paid_at' => 'Waktu pembayaran wajib diisi.',
+            ]);
+        }
+        if (is_string($value) && trim($value) === '') {
+            throw ValidationException::withMessages([
+                'paid_at' => 'Waktu pembayaran wajib diisi.',
+            ]);
+        }
+
+        try {
+            // Normalized to the application timezone BEFORE comparing and
+            // storing. Eloquent persists the wall clock of whatever offset the
+            // value carries, so an offset-bearing string such as
+            // "…T22:00+14:00" is the instant "now" yet would be stored as 22:00
+            // in the application timezone — 14 hours in the future. Converting
+            // first makes the stored value and the checked value the same
+            // instant. Values without an offset (everything the cashier form
+            // sends) are unaffected: they already are application-timezone
+            // wall clock.
+            $paidAt = ($value instanceof \DateTimeInterface
+                ? CarbonImmutable::instance($value)
+                : CarbonImmutable::parse($value)
+            )->setTimezone(config('app.timezone'));
+        } catch (\Throwable) {
+            throw ValidationException::withMessages([
+                'paid_at' => 'Waktu pembayaran tidak valid.',
+            ]);
+        }
+
+        if ($paidAt->greaterThan(CarbonImmutable::now()->addSeconds(self::PAID_AT_FUTURE_TOLERANCE_SECONDS))) {
+            throw ValidationException::withMessages([
+                'paid_at' => 'Waktu pembayaran tidak boleh di masa depan. Gunakan waktu yang terisi otomatis pada formulir.',
+            ]);
+        }
+
+        return $paidAt;
+    }
 
     /**
      * @param  array{payment_method_id?: int|null, amount: numeric, paid_at: string, reference_number?: string|null, notes?: string|null}  $data
      */
     public function pay(RmeInvoice $invoice, User $cashier, array $data): RmePayment
     {
+        $data['paid_at'] = $this->normalizePaidAt($data['paid_at'] ?? null);
+
         $payment = DB::transaction(function () use ($invoice, $cashier, $data) {
             $invoice = RmeInvoice::query()->lockForUpdate()->findOrFail($invoice->id);
 
@@ -71,6 +147,8 @@ class RmePaymentService
      */
     public function allocateControlPayment(RmeInvoice $controlInvoice, User $cashier, array $data): RmeControlPaymentResult
     {
+        $data['paid_at'] = $this->normalizePaidAt($data['paid_at'] ?? null);
+
         $summary = $this->carryOver->getControlPayableSummary($controlInvoice);
 
         if (! $summary['has_carry_over']) {
@@ -213,6 +291,8 @@ class RmePaymentService
      */
     public function allocateVisitPayment(RmeInvoice $currentInvoice, User $cashier, array $data, array $selectedReceivableIds): RmeControlPaymentResult
     {
+        $data['paid_at'] = $this->normalizePaidAt($data['paid_at'] ?? null);
+
         $summary = $this->carryOver->getVisitPayableSummary($currentInvoice, $selectedReceivableIds);
 
         if ($summary['selected_remaining'] <= 0) {
@@ -371,7 +451,12 @@ class RmePaymentService
         ?string $paymentBatchUuid = null,
         ?string $notes = null,
     ): RmePayment {
-        return $this->payments->create([
+        // Read under the invoice lock every caller already holds, so the
+        // before/after figures in the audit row describe this exact insert.
+        $paidBefore = round((float) $invoice->paidAmount(), 2);
+        $grandTotal = round((float) $invoice->grand_total, 2);
+
+        $payment = $this->payments->create([
             'branch_id' => $invoice->branch_id,
             'rme_invoice_id' => $invoice->id,
             'clinic_visit_id' => $visit->id,
@@ -385,6 +470,22 @@ class RmePaymentService
             'notes' => $notes ?? ($data['notes'] ?? null),
             'payment_batch_uuid' => $paymentBatchUuid,
         ]);
+
+        // Phase 0 (audit BCF-02) — this is the ONLY function that inserts an RME
+        // payment, so auditing here covers pay(), control allocation and visit
+        // allocation alike: one row per payment row, each carrying its batch
+        // uuid so a multi-invoice / cross-branch batch stays reconstructable.
+        // Inside the caller's transaction: payment and audit row commit together.
+        $this->auditLogs->log(
+            RmeFinancialAuditEvent::ENTITY_PAYMENT,
+            (int) $payment->id,
+            RmeFinancialAuditEvent::ACTION_PAYMENT_RECORDED,
+            null,
+            RmeFinancialAuditEvent::paymentRecordedPayload($payment, $paidBefore, $grandTotal),
+            $cashier,
+        );
+
+        return $payment;
     }
 
     private function assertInvoicePayable(RmeInvoice $invoice): void

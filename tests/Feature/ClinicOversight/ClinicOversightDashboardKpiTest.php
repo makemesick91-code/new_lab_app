@@ -81,10 +81,10 @@ it('counts a cashier batch once, falls back to the payment id for an un-batched 
     covPayment($a1, '20000.00', '2026-10-09 16:00:00');             // 00:00:00 WITA — inside (start inclusive)
     covPayment($a1, '444444.00', '2026-10-09 15:59:59');            // 23:59:59 WITA the day BEFORE — outside
     covPayment($a1, '999999.00', '2026-10-10 16:00:00');            // 00:00 next day — outside (end exclusive)
-    covPayment($a1, '888888.00', '2026-10-10 03:00:00')->delete();  // soft-deleted — not money received
+    covSoftDeletePayment(covPayment($a1, '888888.00', '2026-10-10 03:00:00'));  // soft-deleted — not money received
 
     // A payment row whose own branch_id disagrees is still attributed to its INVOICE branch.
-    covPayment($a2, '10000.00', '2026-10-10 04:00:00')->forceFill(['branch_id' => $this->branchB->id])->save();
+    covWritePaymentRowDirectly(covPayment($a2, '10000.00', '2026-10-10 04:00:00'), ['branch_id' => $this->branchB->id]);
 
     $payload = covBuild();
 
@@ -119,7 +119,7 @@ it('computes current active receivables from UNPAID/PARTIAL balances, undated', 
     $over = covInvoice($visit($this->branchA), RmeInvoice::STATUS_PARTIAL, '100000');
     covPayment($over, '120000.00', '2025-01-01 03:00:00');
     $softPaid = covInvoice($visit($this->branchA), RmeInvoice::STATUS_PARTIAL, '100000');
-    covPayment($softPaid, '100000.00', '2025-01-01 03:00:00')->delete();
+    covSoftDeletePayment(covPayment($softPaid, '100000.00', '2025-01-01 03:00:00'));
     covPayment($softPaid, '40000.00', '2025-01-01 03:00:00');
     covInvoice($visit($this->branchB), RmeInvoice::STATUS_UNPAID, '80000');
     covInvoice($visit($this->branchA), RmeInvoice::STATUS_UNPAID, '90000')->delete(); // soft-deleted invoice

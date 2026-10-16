@@ -1,0 +1,92 @@
+---
+description: FEATURE-RME-BILLING-REFUND-1 — Phase 0 financial safety prerequisites (IMPLEMENTED) for RME billing — financial audit log, duplicate-invoice race guard, paid_at upper bound, payment immutability — plus the refund design status (PROPOSED, not built) and the decision gate. Supersedes the matching CURRENT lines of rule 188.
+globs: app/Modules/RmeInvoice/**, resources/views/rme/cashier/**, tests/Feature/RME/*Payment*, tests/Feature/RME/*Cashier*, tests/Feature/RME/*Refund*, tests/Feature/RME/*Receivable*
+alwaysApply: false
+---
+
+# RME billing refund — Phase 0 prerequisites and refund gate (rule 189)
+
+Evidence: `docs/sprints/feature-rme-billing-refund-1.md`. Design: `docs/architecture/rme-billing-refund-technical-design.md`.
+Rule 188 remains the foundation audit; where 188 describes a CURRENT gap that Phase 0 closed, this rule wins.
+
+Labels as in rule 188: **IMPLEMENTED** (shipped by this sprint), **PROPOSED** (design only), **PENDING_OWNER_DECISION**.
+
+## 1. Refund is NOT implemented — IMPLEMENTED status
+- No refund table, model, route, permission, service, UI, document or report exists. Never report refund as active.
+- `feature-rme-billing-refund-1-go` is reserved for the operational refund feature. Phase 0 shipped under
+  `feature-rme-billing-refund-1-phase-0-financial-prerequisites-go`. Never tag scaffolding or prerequisites as the
+  completed refund feature.
+- Printed refund terms (`config/rme_invoice.php`) are still text, not system behaviour.
+
+## 2. Why refund cannot be built first — structural, verified
+- Every payment path caps the amount at the remaining balance and invoice totals never change after creation, so
+  `Σ payments ≤ grand_total` for every invoice. The ledger-derived refundable amount is therefore 0 everywhere.
+- A refund CONSUMES an overpayment; only an invoice correction (Phase C) PRODUCES one. Refund after price reduction or
+  clinical cancellation needs Phase C (+ Phase E receipt snapshot) first.
+- A payment-entry error is a **reversal** (no money moves, receivable reappears) — never model it as a refund (D26).
+- Never manufacture a refundable balance from input, invoice totals or printed policy to unblock refund.
+
+## 3. Financial audit log — IMPLEMENTED (audit BCF-02)
+- `RME_INVOICE_CREATED` (entity `trx_rme_invoices`) is written by `RmeInvoiceService::create()`;
+  `RME_PAYMENT_RECORDED` (entity `trx_rme_payments`) by `RmePaymentService::recordPayment()` — the ONLY payment writer,
+  so `pay()`, control allocation and visit allocation are all covered, one row per payment row, carrying the batch uuid.
+- Vocabulary and payloads live once in `App\Modules\RmeInvoice\Support\RmeFinancialAuditEvent`. Add new financial
+  events there; never inline action strings.
+- Written via `AuditLogService` INSIDE the fact's transaction: a committed invoice/payment always has its row; a refused
+  or rolled-back one has none. Do not move the write after commit.
+- Payloads: ids, numbers, amounts, statuses, counts, batch uuid, `reference_recorded` boolean. NEVER patient name,
+  KTP/NIK, RM number, item description, invoice/payment notes or the payment reference text.
+
+## 4. Invoice creation is serialized per visit — IMPLEMENTED (audit BCF-08)
+- `RmeInvoiceService::create()` locks the visit row first and every gate (RME branch, `cashier_pending`, final
+  medical record, one active invoice) reads the LOCKED row, never the caller's instance.
+- Lock strength is `FOR NO KEY UPDATE` (`->lock('for no key update')`), deliberately NOT `lockForUpdate()`. Two creates
+  still conflict, but `FOR UPDATE` would also conflict with the `FOR KEY SHARE` every foreign-key INSERT takes on its
+  parent row — the diagnosis writer (locks the medical record, inserts against the visit) and invoice creation (locks
+  the visit, inserts against the record) would then deadlock (40P01). Never "upgrade" this to `lockForUpdate()`.
+- Proof requires PostgreSQL (`RmeBillingRefundPhase0InvoiceRaceConcurrencyTest`): the race test (no lock lets a
+  duplicate through) AND the FK-writer test (`FOR UPDATE` blocks a key-share holder) pin the lock strength from both
+  sides. A probe's own lock strength interacts with FK share locks — pick it deliberately and prove the test can fail
+  by mutation; an earlier probe that took `FOR UPDATE` passed with the fix removed.
+
+## 5. `paid_at` upper bound — IMPLEMENTED (audit BCF-03, upper bound only)
+- `RmePaymentService::normalizePaidAt()` runs at the top of all three payment paths. It refuses blank (never defaults
+  to "now"), refuses unparseable, converts the value to the application timezone, then refuses `> now + 60 s`
+  (`paid_at` field error). The 60 s absorbs datetime-local minute granularity and clock skew; it is not a backdating
+  window — never widen it into one.
+- The conversion is load-bearing: Eloquent stores the WALL CLOCK of whatever offset a value carries, so
+  `…T22:00+14:00` (= "now") would otherwise pass an instant check and be stored 14 h in the future. Values without an
+  offset — everything the cashier form sends — are stored exactly as before.
+- Backdating is NOT bounded — D24 (owner). Display/entry timezone of the field — D27 (owner).
+- Enforce in the service, never only in a FormRequest: a request rule leaves every other caller unbounded.
+
+## 6. Payment immutability — IMPLEMENTED at the application layer (audit BCF-09, rule 188 §3)
+- `RmePayment` model: `updating` refuses any change except `patient_id` / `updated_at`
+  (`RmePayment::MUTABLE_ATTRIBUTES`); `deleting` refuses soft and force delete.
+- `patient_id` stays mutable for patient merge (which writes through the query builder anyway).
+- LIMIT: raw SQL and query-builder mass updates bypass model events. Never treat this guard as a DB constraint, and
+  never add a code path that re-amounts, re-dates, re-points, re-batches or deletes a payment through either.
+- Corrections and refunds are always their own records.
+- A test that needs a payment row the application can no longer produce (soft-deleted, re-branched) writes the columns
+  through the query builder (`covWritePaymentRowDirectly()` / `covSoftDeletePayment()` in
+  `tests/Feature/ClinicOversight/helpers.php`) — the way such a row actually arises. Never relax the guard for a fixture.
+
+## 7. Refund design — PROPOSED (not a rule of production behaviour)
+- Refund rows reference ONE invoice (= its branch, D13) and allocate against that invoice's original payments
+  (allocation table; payment rows untouched). Refundable = `max(0, Σ payments − grand_total) − committed refunds`,
+  derived under the invoice row lock.
+- States: REQUESTED → APPROVED / REJECTED / CANCELLED; APPROVED → SETTLEMENT_PENDING → SETTLED / SETTLEMENT_FAILED
+  (→ retry). APPROVED never means money returned; only SETTLED reduces cash.
+- Maker ≠ checker inside the transaction under the row lock (Gate::before bypasses policies for Super Admin).
+  Approval and settlement are separate permissions (D18). Oversight via `ClinicOversightScope`, GET-only.
+- Reporting Model C (gross unchanged; settled refunds by `settled_at` WITA; net = gross − settled) only after D8/D9.
+
+## 8. Decision gate — PENDING_OWNER_DECISION
+- Refund execution needs D4, D5, D6, D7, D8, D9, D12, D18 + D2, D10, D13, D16, D21 and the new D24–D27 (sprint doc §4).
+- A brief's "recommended defaults" are proposals. Never convert a recommendation into an approved money-moving policy.
+- Decision codes are per register: the KTP-OCR "D7" is unrelated to receipt-versioning D7.
+
+## 9. Regression requirements
+- Keep green: `RmeBillingRefundPhase0FinancialPrerequisitesTest`, `RmeBillingRefundPhase0InvoiceRaceConcurrencyTest`
+  (declared in `critical_gate_mandatory_suites`, token `RmeBillingRefund` in BOTH critical variants), plus rule 188 §20.
+- Any new financial writer must emit an audit event through `RmeFinancialAuditEvent` in the same transaction.
