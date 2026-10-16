@@ -48,15 +48,33 @@ Extends rule 190; where they disagree about what EXISTS, this rule is newer.
    completion) and is audited `RME_PAYMENT_REFUSED_INVOICE_VERSION` AFTER the
    rollback (it records an attempt). Payload: ids, invoice number, branch, reason
    code, payment path, expected/current version, status — never the typed amount,
-   a note or a reference number.
-9. The FormRequest repeats the comparison for the paid invoice WITHOUT a lock, only
-   so the cashier sees the version message instead of a misleading "amount exceeds
-   the remaining balance". It is never the authority.
+   a note or a reference number. `RmePaymentService::recordVersionRefusal()` is the
+   ONLY writer; it must run at transaction level 0 and, if the audit write fails,
+   logs (codes/ids only) and still lets the refusal happen — an audit outage never
+   turns a refusal into a 500 or a payment.
+9. The FormRequest repeats the comparison WITHOUT a lock, for every invoice the
+   payment would settle (paid invoice + carry-over parents / selected receivables),
+   BEFORE the amount cap — so a stale page reads "tagihan telah dikoreksi", never a
+   misleading "amount exceeds the remaining balance". It audits its refusals
+   through the same writer (that is where the commonest case is caught). It is
+   never the authority.
+9a. **Authorize before validation.** `CreateRmePaymentRequest::authorize()` runs the
+   `pay` policy (branch scope) and `belongsToVisit` BEFORE any validation hook,
+   because those hooks read an invoice's balance and version: running them for
+   another branch's cashier answered "this invoice was corrected". The controller
+   keeps both checks as a second layer.
+9b. After a version refusal the re-rendered page restores neither the typed amount
+   nor the receivable selection: the total changed, so the cashier re-enters them
+   against the bill now shown. A reflexive resubmit can otherwise record a smaller
+   amount than the new total as a partial payment.
 10. **This is not D10.** A SUBMITTED/APPROVED correction changes nothing the cashier
     sees; a payment against it is still accepted and the correction then goes STALE.
     Whether a pending correction should block payment is D10, still PENDING.
 11. No new lock: the version is read from rows the payment already locks, in the
     existing order (paid invoice first, then parents/receivables in summary order).
+    Pre-existing residual, NOT introduced here: two concurrent batches for one
+    patient that lock the same invoices in opposite orders (visit A collecting B
+    while B collects A) can deadlock (PostgreSQL 40P01 → 500, nothing written).
 12. Tests that are not about binding use `rmeFreshPaymentForm($invoice, $data)`
     (tests/Pest.php): the versions a page rendered NOW would carry. A stale-form test
     must build `invoice_versions` explicitly — the helper never overwrites one.

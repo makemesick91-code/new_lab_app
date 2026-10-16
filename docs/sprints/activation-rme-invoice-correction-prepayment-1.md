@@ -88,15 +88,20 @@ and `RmeInvoiceCorrectionService` (community 107) share no edge; the payment pat
   `invoice_versions[<id>] = <correction_version>` for the paid invoice, every control
   carry-over parent and every selectable receivable — from the current rows, never `old()` —
   and shows an `invoice_versions` error banner.
-- `CreateRmePaymentRequest` requires `invoice_versions`, validates whole ids and whole
-  non-negative versions, requires the paid invoice's key, and compares the paid invoice's
-  version early (no lock) so the cashier sees "tagihan telah dikoreksi" rather than "amount
-  exceeds the remaining balance".
+- `CreateRmePaymentRequest` authorizes FIRST (`pay` policy + `belongsToVisit`, the same two
+  checks the controller keeps), then requires `invoice_versions`, validates whole ids and whole
+  non-negative versions, and compares — without a lock, before the amount cap — every invoice
+  the payment would settle (paid invoice + carry-over parents / selected receivables), so the
+  cashier sees "tagihan telah dikoreksi" rather than "amount exceeds the remaining balance".
+  These early refusals are audited through the service's single writer.
+- After a version refusal the page restores neither the typed amount nor the receivable
+  selection.
 - `RmePaymentService::assertFormVersion()` is the authority: called on the LOCKED row of every
   invoice a batch would settle (paid invoice, each parent, each selected receivable).
   `settleUnderVersionBinding()` wraps all three transactions: a conflict rolls the whole batch
-  back, writes `RME_PAYMENT_REFUSED_INVOICE_VERSION` after the rollback, and surfaces
-  `[INVOICE_VERSION_MISSING]` / `[INVOICE_VERSION_CHANGED]` on `invoice_versions`.
+  back, writes `RME_PAYMENT_REFUSED_INVOICE_VERSION` after the rollback through
+  `recordVersionRefusal()` (which logs and still refuses if the audit write fails), and
+  surfaces `[INVOICE_VERSION_MISSING]` / `[INVOICE_VERSION_CHANGED]` on `invoice_versions`.
 - `RmeInvoiceVersionConflict` (Support) carries the reason, invoice id, expected and current
   version; `RmeFinancialAuditEvent::paymentVersionRefusedPayload()` is PII-free.
 
@@ -130,6 +135,10 @@ SUBMITTED correction does not block (D10 untouched); binding holds with the flag
 batch refused as a whole for a stale or undeclared receivable; visit batch accepted when every
 version is current; control batch refused for a stale parent and accepted after reload.
 
+Total after the security fixes: 35 tests in that file (adds stale control / current invoice in
+a batch, audited HTTP refusal, version-before-amount for parents and receivables, no stale
+amount after a refusal, cross-branch cashier refused before validation, audit outage).
+
 Extended: `RmeInvoiceCorrectionConcurrencyTest.php` (+2, PostgreSQL only) — correction first ⇒
 stale form waits and is refused, reloaded form waits and is accepted.
 
@@ -137,7 +146,27 @@ Updated: 139 payment call sites in 23 existing test files now declare the versio
 rendered page would carry, through `rmeFreshPaymentForm()` in `tests/Pest.php`. No assertion
 was weakened; the helper never overwrites an explicit `invoice_versions`.
 
-## 7. Remaining limitations
+## 7. Independent security review
+
+An adversarial reviewer (separate agent, read-only) attacked the first candidate `cb09dd26`.
+No CRITICAL or HIGH finding. Every finding was fixed before merge:
+
+| # | Severity | Finding | Fix |
+|---|---|---|---|
+| F1 | MEDIUM | The commonest refusal (stale page for the paid invoice) was caught by the FormRequest and never audited | early refusals audited through the service's single writer |
+| F2 | LOW | A corrected carry-over parent / receivable still produced the misleading amount error | early check covers every invoice the payment settles, before the amount cap |
+| F3 | LOW | After a refusal the page re-filled the stale amount; a reflexive resubmit could record a too-small partial payment | amount and receivable selection not restored after a version refusal |
+| F4 | LOW | `authorize()` returned true, so another branch's cashier could learn whether an invoice was corrected | policy + `belongsToVisit` run in `authorize()` before validation |
+| F5 | LOW | An audit-write failure would surface as a 500 | audit failure is logged and the refusal still happens; precondition documented (transaction level 0) |
+| F6 | info | Opposite lock orders across two concurrent multi-invoice batches can deadlock | pre-existing, not introduced here; recorded as a residual in rule 191 §11 |
+
+Claims the reviewer tried and failed to break: every payment row is preceded by a version
+check on the same locked row; no TOCTOU; no type juggling (`"1e0"`, `"1.0"`, `"+1"`, floats,
+bools, arrays) passes; other validation errors keep their behaviour; no lock-order change;
+Blade output is cast and escaped; the audit payload is PII-free; the controller is the only
+caller; nothing else changes an UNPAID invoice's totals without a version bump.
+
+## 8. Remaining limitations
 
 - Activation not performed: D1, D7, D10, D21 PENDING (owner).
 - D21 also needs per-branch tariffs (only TLK1 has any).

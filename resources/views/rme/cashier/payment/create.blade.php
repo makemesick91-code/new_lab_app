@@ -22,7 +22,12 @@
         $totalPayable = $payableSummary['total_payable'] ?? $remainingAmount;
         $hasCarryOver = ($payableSummary['has_carry_over'] ?? false) && $carryOverInvoices->isNotEmpty();
         $maxAmount = $hasCarryOver ? $totalPayable : $remainingAmount;
-        $defaultAmount = old('amount', $maxAmount);
+        // Rule 191: after a version refusal the page shows a DIFFERENT total, so the
+        // amount and receivable selection typed against the old total are not
+        // restored. The cashier re-reads the bill and enters them again.
+        $versionRefused = isset($errors) && $errors->has('invoice_versions');
+        $defaultAmount = $versionRefused ? $maxAmount : old('amount', $maxAmount);
+        $restoredReceivableIds = $versionRefused ? [] : (old('selected_receivable_ids', []) ?: []);
 
         // Sprint 62.2 — patient-level outstanding receivables (ordinary new visit).
         $outstandingReceivables = $outstandingReceivables ?? collect();
@@ -255,7 +260,7 @@
                                         <tr>
                                             <td class="px-3 py-2">
                                                 <input type="checkbox" name="selected_receivable_ids[]" value="{{ $receivable->id }}"
-                                                    @checked(in_array($receivable->id, old('selected_receivable_ids', []) ?: []))
+                                                    @checked(in_array($receivable->id, $restoredReceivableIds))
                                                     x-on:change="toggle({{ $receivable->id }}, {{ (float) $receivable->remainingAmount() }}, $event.target.checked)"
                                                     class="rounded border-hairline text-brand-600 focus:ring-brand-500">
                                             </td>

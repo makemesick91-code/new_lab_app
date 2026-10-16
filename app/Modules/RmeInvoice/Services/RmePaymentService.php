@@ -566,21 +566,51 @@ class RmePaymentService
         try {
             return DB::transaction($work);
         } catch (RmeInvoiceVersionConflict $conflict) {
-            $invoice = RmeInvoice::query()->find($conflict->invoiceId);
-
-            if ($invoice instanceof RmeInvoice) {
-                $this->auditLogs->log(
-                    RmeFinancialAuditEvent::ENTITY_INVOICE,
-                    (int) $invoice->id,
-                    RmeFinancialAuditEvent::ACTION_PAYMENT_REFUSED_INVOICE_VERSION,
-                    null,
-                    RmeFinancialAuditEvent::paymentVersionRefusedPayload($invoice, $conflict, $paymentPath),
-                    $cashier,
-                );
-            }
+            $this->recordVersionRefusal($conflict, $paymentPath, $cashier);
 
             throw ValidationException::withMessages([
                 'invoice_versions' => $conflict->operatorMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Rule 191 — the single writer of RME_PAYMENT_REFUSED_INVOICE_VERSION, shared
+     * by the authoritative under-lock check above and the payment FormRequest's
+     * early check, so the commonest refusal (a stale page for the invoice being
+     * paid, caught before the service runs) is audited too.
+     *
+     * PRECONDITION: called at transaction level 0. The only caller of the payment
+     * service is the payment controller, so the rollback that precedes this is a
+     * real one, not a savepoint inside an outer transaction that would later roll
+     * the audit row back with it.
+     *
+     * Never masks the refusal: if the audit write itself fails, the failure is
+     * logged (codes and ids only) and the caller still refuses the payment.
+     */
+    public function recordVersionRefusal(RmeInvoiceVersionConflict $conflict, string $paymentPath, User $cashier): void
+    {
+        try {
+            $invoice = RmeInvoice::query()->find($conflict->invoiceId);
+
+            if (! $invoice instanceof RmeInvoice) {
+                return;
+            }
+
+            $this->auditLogs->log(
+                RmeFinancialAuditEvent::ENTITY_INVOICE,
+                (int) $invoice->id,
+                RmeFinancialAuditEvent::ACTION_PAYMENT_REFUSED_INVOICE_VERSION,
+                null,
+                RmeFinancialAuditEvent::paymentVersionRefusedPayload($invoice, $conflict, $paymentPath),
+                $cashier,
+            );
+        } catch (\Throwable $e) {
+            Log::error('RME payment version refusal could not be audited.', [
+                'invoice_id' => $conflict->invoiceId,
+                'reason' => $conflict->reasonCode,
+                'payment_path' => $paymentPath,
+                'exception' => $e::class,
             ]);
         }
     }
