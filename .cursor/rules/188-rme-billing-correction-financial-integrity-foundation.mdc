@@ -1,0 +1,159 @@
+---
+description: AUDIT-RME-BILLING-CORRECTION-PAYMENT-REFUND-FOUNDATION-1 — verified RME billing/payment/receipt foundation and the safety invariants any future billing correction, refund or Rp0 adjustment must satisfy. CURRENT = verified production behaviour; APPROVED_SCOPE = owner-requested, not built; PROPOSED = audit design, not a rule of production behaviour; PENDING_OWNER_DECISION = undecided.
+globs: app/Modules/RmeInvoice/**, app/Modules/ClinicOversight/**, resources/views/rme/cashier/**, config/rme_invoice.php, database/migrations/*rme_invoice*, database/migrations/*rme_payment*, tests/Feature/RME/*Cashier*, tests/Feature/RME/*Payment*, tests/Feature/RME/*Receivable*
+alwaysApply: false
+---
+
+# RME billing correction — financial integrity foundation (rule 188)
+
+Full evidence: `docs/AUDIT-RME-BILLING-CORRECTION-PAYMENT-REFUND-FOUNDATION-1.md` (every claim cites file:line).
+
+**This rule activates nothing.** No correction, refund, Rp0 adjustment, permission, route or table exists for it.
+`FEATURE-RME-BILLING-CORRECTION-PAYMENT-ADJUSTMENT-1` is not started. An audit GO is never a feature GO — never report
+billing correction as active until its own implementation has shipped, deployed and been verified.
+
+Labels: **CURRENT** (verified), **APPROVED_SCOPE** (owner-requested, not built), **PROPOSED** (design only — must
+never be cited as production behaviour), **PENDING_OWNER_DECISION** (see audit §26, D1–D23).
+
+## 1. Billing source of truth — CURRENT
+- RME billing = `trx_rme_invoices`, `trx_rme_invoice_items`, `trx_rme_payments` (module `app/Modules/RmeInvoice`).
+- Lab billing (`trx_invoices`, `trx_payments`, `app/Modules/Invoice`) is a **separate domain**. Never mix them; a
+  correction to one never touches the other (rule 186 #18).
+- `invoice_number` and `payment_number` are DB-unique. "No. Kwitansi" printed = `payment_number` of the newest payment.
+
+## 2. Invoice lifecycle — CURRENT
+- Statuses `DRAFT/UNPAID/PARTIAL/PAID/VOID` exist as constants, but **creation writes `UNPAID` directly** and **no
+  application path writes `DRAFT` or `VOID`** (they are only read/filtered). Do not assume either is reachable.
+- Totals are committed inside `RmeInvoiceService::create()`; afterwards only `status` is rewritten, derived from
+  `SUM(payments.amount)`. There is no edit, delete or void endpoint. Invoices are immutable by ABSENCE of a mutation
+  path, not by a designed control.
+- `RmeInvoice::recalculateTotals()` double-subtracts discount and is unused — never call it from new code without fixing it.
+
+## 3. Payment lifecycle — CURRENT
+- Payments are append-only de facto: `RmePaymentRepository` has only `create/forInvoice/latestPaymentNumberForMonth`.
+  Every payment path locks the invoice row (`lockForUpdate`) and caps `amount` at the remaining balance.
+- `paid_at` is client-supplied (`required|date`, no bounds) and decides the revenue period. Treat it as an existing
+  defect (audit BCF-03), never as a trustworthy authority for new financial logic.
+- Any payment > 0 (full or partial) completes a `cashier_pending` visit; the balance stays receivable.
+- **Payments must never be updated, re-amounted, re-batched, re-branched or soft-deleted to effect a correction.** The
+  schema permits soft delete and `paidAmount()` excludes soft-deleted rows — so a soft delete silently rewrites balances
+  and revenue. Corrections go through their own records.
+
+## 4. Carry-over and payment batches — CURRENT
+- `payment_batch_uuid` is minted once per cashier action only by the control/visit allocation paths; plain `pay()`
+  writes NULL. Oversight counts `COALESCE(uuid, 'payment:'||id)` per INVOICE branch.
+- A batch may span several invoices and branches (`payment.branch_id` = invoice branch).
+- PROPOSED invariant: a correction targets exactly ONE invoice; it never edits another invoice's payments, never moves an
+  allocation between invoices, never changes `payment_batch_uuid`.
+
+## 5. Receipt behaviour — CURRENT
+- Receipts (`rme.cashier.receipt.show/.pdf`) are rendered live from current rows on every request, PAID invoices only.
+  No snapshot, version, superseded status, stored PDF or print/view audit exists.
+- Consequence: once corrections exist, reprinting a pre-correction receipt would silently show corrected values.
+- PROPOSED: the correction record stores an immutable original-document snapshot; the original receipt renders from it
+  marked superseded, the live receipt is marked revised with the correction reference. No receipt-version table unless
+  a later audit proves the snapshot insufficient.
+
+## 6. Refund capability — CURRENT: none
+- No refund table, status, permission, route, service or report exists.
+- `config/rme_invoice.php` `refund_terms` is owner-approved PRINTED text (Kawat Gigi ≤ 2×24 jam; payout at month end)
+  that the system does not implement. Never treat printed terms as system behaviour.
+- PROPOSED invariant: refund approval ≠ money returned. Only a recorded settlement reduces cash. Refund amount is derived
+  server-side from the ledger, never from input.
+
+## 7. Approval capability — CURRENT
+- RME billing has **no approval workflow**. The codebase has no generic approval engine; approvals are domain-specific
+  (PatientMergeCase, DoctorBranchLock/Cover, BranchChangeRequest, LegacyRme publish, SATUSEHAT change control).
+- `Gate::before` grants Super Admin every ability before any policy runs, so maker≠checker MUST be enforced inside the
+  service transaction under the row lock (PatientMergeCase pattern), never only in a policy.
+
+## 8. Audit requirements — CURRENT
+- `app/Modules/RmeInvoice` writes **nothing** to `sys_audit_logs` (invoice creation and payments are unaudited — BCF-02).
+- `sys_audit_logs` has `old_values/new_values` jsonb, `performed_by`, `performed_at`, no `updated_at`; append-only by
+  convention, not DB-enforced.
+- PROPOSED: every correction/refund/receipt-supersession event is audited with ids, amounts and statuses only — no patient
+  name, KTP/NIK or clinical text in the payload.
+
+## 9. Financial immutability — invariants for any future work
+- Never overwrite an original payment. Never delete or hard-edit historical financial rows.
+- Never represent an overpayment as a negative receivable (it would corrupt oversight receivable sums and aging).
+- `remainingAmount()` clamps at 0 and therefore hides overpayment (BCF-04): a correction that lowers `grand_total` below
+  the paid total must surface an explicit overpayment/refund obligation, never silently report PAID.
+- Status is always re-derived from the ledger inside the locking transaction.
+
+## 10. Correction safety invariants — PROPOSED
+- One active (submitted/approved) correction per invoice (partial unique index).
+- Original snapshot captured at submission; approval re-verifies under lock that the invoice still matches (else STALE).
+- Approval never mutates data; application is atomic and idempotent (re-applying is a no-op).
+- Lock order: invoice row first, then correction row — the same row every payment path locks.
+- Whether a pending correction blocks payment is D10 (recommended: yes).
+
+## 11. Maker–checker separation — PROPOSED
+- The maker can never approve their own request, including a Super Admin; the checker needs an explicit permission.
+- Rejection requires a reason. Approval and financial settlement use separate permissions (D18).
+- Front Office = Admin Klinik + Kasir permissions, so separation must be per ACCOUNT. Measure per-branch staffing before
+  arming (an enforced but unstaffable control is a stop-the-line finding).
+
+## 12. Rp0 eligibility — APPROVED_SCOPE + PROPOSED
+- APPROVED_SCOPE: Rp0 adjustment only for **KONTROL** or **KONSULTASI DOKTER**.
+- CURRENT sources of truth: Kontrol = server-derived `visit_type` from a validated `follow_up_of_visit_id`
+  (`StoreClinicVisitRequest`, rule 185 #17-#21); Konsultasi = treatment `TRT-CONS` / category code `consultation` (data
+  only — no flag column).
+- CURRENT defect: the cashier types `unit_price`/`discount` freely (tariffs never read; discount uncapped) — an Rp0 or
+  negative line needs no approval today (BCF-01). Any Rp0 approval workflow is bypassable until this is closed.
+- PROPOSED: Rp0 per ITEM (D11); eligibility from `treatment_id` + category, never from `description` or client
+  `visit_type`; unrelated treatments and carried-over receivables are never zeroed; an Rp0 outcome never fabricates a
+  Rp0 payment row (D22).
+- CURRENT: an Rp0 invoice can never become PAID and stays UNPAID forever (production invoice #36); it is counted as
+  "unpaid" by the Owner/RME dashboards (BCF-05).
+
+## 13. Cross-branch financial authorization — CURRENT
+- Cashier/policy scope = `RmeWorkingBranchScope` (context-bound roles pinned to their working branch; non-context roles
+  fall through to every RME branch — F-01).
+- Oversight scope = `ClinicOversightScope` (active, RME-enabled, not MAIN; requested `branch_id` only narrows; out of
+  scope = 404). Any correction oversight surface MUST use `ClinicOversightScope`, never `RmeWorkingBranchScope`.
+- A correction and its refund belong to the corrected invoice's branch.
+
+## 14. Finance Klinik / Data Analyst scope — CURRENT + APPROVED_SCOPE
+- CURRENT: exactly the four oversight permissions (rule 186); no `manage_rme_billing`, no write permission.
+- APPROVED_SCOPE: sidebar group **BILLING CORRECTION** (Daftar Pasien Koreksi; Riwayat & Detail Koreksi) for both roles,
+  identical initial access, independently assignable permissions; read/print/PDF/export only.
+- PROPOSED: new `view_billing_correction_oversight` + existing `export_oversight_data`; GET-only routes under
+  `/oversight/billing-corrections`. That implementation sprint must amend rule 186's "exactly four" statement. Never grant
+  `manage_rme_billing` to make oversight data visible.
+
+## 15. Oversight dashboard preservation — CURRENT
+- Rule 186/187 KPI formulas stay unchanged: patients, transactions (batch identity), revenue
+  (`SUM(trx_rme_payments.amount)` by `paid_at`, invoice branch, never `grand_total`), current receivables, cancellations
+  by `cancelled_at`. Corrections must not change patient or cancellation counts.
+
+## 16. Reporting reconciliation — PROPOSED, PENDING_OWNER_DECISION (D8/D9)
+- Recommended Model C: gross collections unchanged, refunds reported separately by settlement date, net = gross − settled
+  refunds, per invoice branch. Never restate a closed period silently.
+- Doctor performance reads `grand_total` and item `subtotal`; corrections must be reflected and traceable there.
+
+## 17. Known architecture gaps — CURRENT
+BCF-01 cashier-set pricing / uncapped discount (HIGH); BCF-02 no financial audit log (HIGH); BCF-03 unbounded client
+`paid_at` (MEDIUM); BCF-04 overpayment hidden by clamp (MEDIUM, latent); BCF-05 Rp0 zombie UNPAID / stuck visit (MEDIUM);
+BCF-06 live-rendered receipts; BCF-07 MAX+1 numbering without lock; BCF-08 duplicate-invoice race (HYPOTHESIS);
+BCF-09 soft-deletable payments; BCF-10 `recalculateTotals` bug; BCF-11 lab candidates keyed on items; BCF-12 F-01;
+BCF-13 patient merge re-points financial rows (new tables must join `PatientOwnedRecordRegistry`); BCF-14 printed refund
+terms without implementation.
+
+## 18. Open owner decisions — PENDING_OWNER_DECISION
+D1–D20 from the audit brief plus D21 (price authority), D22 (Rp0 completion path / zombie #36), D23 (correction of
+`requires_lab` items). Never convert an audit recommendation into an approved decision.
+
+## 19. Implementation prerequisites
+- Phase 0 before any correction work: financial audit log (BCF-02), server price authority + discount cap (BCF-01, D21),
+  bounded `paid_at` (BCF-03), invoice-per-visit race guard (BCF-08).
+- Receipt snapshot (Phase E) before post-payment correction (Phase C). Refund (Phase D) only after D4–D6, D18.
+- Additive migrations only (`migrate --force`), never `migrate:fresh`/`db:wipe`; payments table untouched.
+
+## 20. Regression requirements
+- Lock/constraint/concurrency tests run on PostgreSQL 16 (SQLite compiles `lockForUpdate` to nothing and does not abort
+  the transaction on error).
+- Existing suites stay green: CashierBilling, RmePayment, PatientOutstandingReceivableCarryOver,
+  RmeDoctorCashierCompletionGate, RmeControlVisitReceivableCarryOverPayment, RmeReceiptOnePage, RmeReportTodayDefault,
+  ClinicOversight/*.
+- The 50-case matrix in audit §22 is the minimum for the feature.
