@@ -124,7 +124,9 @@ New decisions found by this sprint (register continues the audit's numbering):
   merge still works).
 * `tests/Feature/RME/RmeBillingRefundPhase0InvoiceRaceConcurrencyTest.php` — PostgreSQL 16 two-session race proof
   (skips elsewhere, stated).
-* Mutation: 14 mutants, 13 killed, 1 equivalent (a redundant `refresh()` the repository already performs — removed).
+* Mutation: **18 mutants, 17 killed, 1 equivalent** (a redundant `refresh()` the repository already performs — removed).
+  Post-review mutants: lock removed (killed by the race test), `lockForUpdate()` restored (killed by the FK-writer test),
+  timezone conversion removed (killed — reproduces the stored-14-h-ahead bypass), blank check removed (killed).
   The PostgreSQL race test first **survived** the lock-removal mutant: the probe's explicit `FOR UPDATE` blocked the
   broken code's INSERT through the foreign-key `FOR KEY SHARE`, so it passed for the wrong reason. The probe now
   models the pre-fix request (insert only); the mutant is killed.
@@ -143,9 +145,11 @@ New decisions found by this sprint (register continues the audit's numbering):
 | INFO | `*Quietly` / `withoutEvents` / builder updates bypass the model guard | stated limit (rule 189 §6) |
 | — | No existing write path broken; no deadlock beyond the above; no PII; no other entry point; no authorization/branch regression | confirmed |
 
-Regression consequence: three ClinicOversight KPI tests soft-deleted payments through Eloquent to prove KPIs exclude
-them. The guard now refuses that, by design; the fixtures write `deleted_at` directly (`covSoftDeletePayment()`) and
-the exclusion assertions are unchanged.
+Regression consequence: four fixture sites in two ClinicOversight KPI test files rewrote payments through Eloquent —
+three soft-deletes (to prove KPIs exclude soft-deleted rows) and one re-branch (to prove attribution follows the invoice
+branch). The guard now refuses both, by design. The fixtures write the columns directly
+(`covWritePaymentRowDirectly()` / `covSoftDeletePayment()`) — the way such rows actually arise — and every assertion
+is unchanged.
 
 ## 6. Release evidence
 

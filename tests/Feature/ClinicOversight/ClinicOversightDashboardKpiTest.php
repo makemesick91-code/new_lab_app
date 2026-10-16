@@ -84,7 +84,7 @@ it('counts a cashier batch once, falls back to the payment id for an un-batched 
     covSoftDeletePayment(covPayment($a1, '888888.00', '2026-10-10 03:00:00'));  // soft-deleted — not money received
 
     // A payment row whose own branch_id disagrees is still attributed to its INVOICE branch.
-    covPayment($a2, '10000.00', '2026-10-10 04:00:00')->forceFill(['branch_id' => $this->branchB->id])->save();
+    covWritePaymentRowDirectly(covPayment($a2, '10000.00', '2026-10-10 04:00:00'), ['branch_id' => $this->branchB->id]);
 
     $payload = covBuild();
 

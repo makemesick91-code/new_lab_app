@@ -120,18 +120,30 @@ if (! function_exists('covBranch')) {
     }
 
     /**
-     * A soft-deleted payment row, for proving the KPIs EXCLUDE soft-deleted rows.
+     * Rewrite a payment row underneath the application, for proving the KPIs stay
+     * correct against rows the application itself can no longer produce.
      *
-     * FEATURE-RME-BILLING-REFUND-1 / Phase 0 (rule 189 §6) — the application can
-     * no longer soft-delete a payment: `RmePayment` refuses it, because a deleted
-     * row would silently rewrite balances and revenue. A soft-deleted row can
-     * still arise underneath the application (raw SQL), which is exactly why the
-     * KPIs must keep excluding it. So the fixture writes `deleted_at` the way such
-     * a row actually appears — directly — and the exclusion stays under test.
+     * FEATURE-RME-BILLING-REFUND-1 / Phase 0 (rule 189 §6) — `RmePayment` refuses
+     * any Eloquent update (except patient_id) and any delete, because a
+     * re-branched, re-amounted or deleted row would silently rewrite balances and
+     * revenue. Such rows can still arise underneath the application (raw SQL),
+     * which is exactly why the KPIs must stay correct against them. So these
+     * fixtures write the columns the way such a row actually appears — directly,
+     * bypassing model events — and the KPI assertions stay under test.
+     *
+     * @param  array<string, mixed>  $columns
      */
+    function covWritePaymentRowDirectly(RmePayment $payment, array $columns): RmePayment
+    {
+        RmePayment::query()->withTrashed()->whereKey($payment->getKey())->toBase()->update($columns);
+
+        return $payment;
+    }
+
+    /** A soft-deleted payment row — proves the KPIs EXCLUDE soft-deleted rows. */
     function covSoftDeletePayment(RmePayment $payment): void
     {
-        RmePayment::query()->whereKey($payment->getKey())->toBase()->update(['deleted_at' => now()]);
+        covWritePaymentRowDirectly($payment, ['deleted_at' => now()]);
     }
 
     function covCashier(): User

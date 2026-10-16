@@ -67,8 +67,9 @@ Labels as in rule 188: **IMPLEMENTED** (shipped by this sprint), **PROPOSED** (d
 - LIMIT: raw SQL and query-builder mass updates bypass model events. Never treat this guard as a DB constraint, and
   never add a code path that re-amounts, re-dates, re-points, re-batches or deletes a payment through either.
 - Corrections and refunds are always their own records.
-- A test that needs a soft-deleted payment (e.g. to prove KPIs exclude it) writes `deleted_at` through the query
-  builder (`covSoftDeletePayment()` in `tests/Feature/ClinicOversight/helpers.php`) — the way such a row actually arises.
+- A test that needs a payment row the application can no longer produce (soft-deleted, re-branched) writes the columns
+  through the query builder (`covWritePaymentRowDirectly()` / `covSoftDeletePayment()` in
+  `tests/Feature/ClinicOversight/helpers.php`) — the way such a row actually arises. Never relax the guard for a fixture.
 
 ## 7. Refund design — PROPOSED (not a rule of production behaviour)
 - Refund rows reference ONE invoice (= its branch, D13) and allocate against that invoice's original payments
