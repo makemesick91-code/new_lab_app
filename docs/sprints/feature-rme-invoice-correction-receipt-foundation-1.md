@@ -131,3 +131,19 @@ verification: **NOT APPLICABLE / UNAVAILABLE** — nothing to verify.
 3. Set `FEATURE_RME_INVOICE_CORRECTION=true`, rebuild the config cache as the runtime user.
 4. Rollback: set it false and rebuild the cache. Nothing is deleted; applied corrections and their frozen
    documents stay readable.
+
+## 8. Shipped + production evidence (2026-10-17 WITA)
+
+| Item | Evidence |
+|---|---|
+| PR | #487, squash-merged as `03fe25b1f308bf1a0c6623d9741b40dd52d799b4`; merge tree `46e37c51` == CI candidate tree (`f992757e`) |
+| CI | run `38920201982` success — Classifier, NSF-R012 Quality, Android gate, NSF-R011 Critical (**5770 passed, 0 failed**, exit status 0; the PostgreSQL concurrency suite executed 3/3), Selective Module, NSF-9, NSF-10. **Full Suite: SKIPPED** by the active temporary policy — not a pass |
+| Deploy | `scripts/deploy-vps-runner.sh start` run ON the VPS: `exit=0`, `DEPLOY OK: 20261016-172451`, `DEPLOY_HEAD_TARGET_MATCH=YES`, runtime isolation 70 GO / 0 FAIL; all 5 migrations DONE (201 → 206) |
+| Seeders | PermissionSeeder → RoleSeeder → `permission:cache-reset` as `daengtisiams`. Permissions 177 → 181. Role grants 502 → 508: Finance Klinik +1, Data Analyst +1, Super Admin +4 — exactly the delta measured read-only beforehand; **0 removals** (`Tester RME` is not seeder-managed and was untouched) |
+| Flag | `rme.invoice_correction` enabled=false, resolved from the default, env override captured (cache-safe), risk critical |
+| Routes | 10 operational (`rme.invoice-corrections.*`) + 7 oversight; guest requests 302, `/login` and `/health/{live,ready,lb}` 200 over `https://daengtisia.online` |
+| Data | RME invoices 6 / items 7 / payments 7 and Σ Rp 3.548.000 / Rp 3.548.000 **unchanged**; lab `trx_invoices`/`trx_payments` 0/0 unchanged; correction tables all empty; `correction_version` 0 on every invoice; partial unique index and 4 CHECK constraints present |
+| Runtime | env pilot, debug OFF, maintenance OFF; php8.3-fpm, nginx, queue worker active; 0 failed jobs; `laravel.log` byte-identical (1,437,201 B / 162 ERROR before and after) |
+| Tag | annotated `feature-rme-invoice-correction-receipt-foundation-1-prepayment-foundation-go` (object `44e00813`) → `03fe25b1`, exact match at VPS HEAD. **SCOPED** — not `feature-rme-invoice-correction-receipt-foundation-1-go` |
+
+This evidence commit is documentation only and is deliberately not deployed; the runtime authority stays `03fe25b1`.
