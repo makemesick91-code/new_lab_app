@@ -153,4 +153,22 @@ is unchanged.
 
 ## 6. Release evidence
 
-Appended after CI, merge, deploy and production verification.
+| Item | Evidence |
+|---|---|
+| PR | #485, squash-merged as **`90eba2fa`**; merge tree `2f11e614` == CI-validated candidate `1f25576f` tree (identical) |
+| CI | run `38872873708` on `1f25576f`: Classifier, NSF-R012 Quality, NSF-R011 Critical, Selective Module, NSF-9 Release Safety & Smoke, NSF-10 Release Evidence, Android gate — all **success**. Critical job log: **5696 passed, 0 failed, 0 skipped**, `critical_test_exit_status=0`; both Phase 0 suites executed (CI runs PostgreSQL 16, so the race proofs ran for real) |
+| Full Suite | **SKIPPED** — temporary Full-Suite policy ACTIVE; never claimed passed |
+| Deploy | `bash scripts/deploy-vps-runner.sh start` **on the VPS**: status `exit=0`, `DEPLOY OK: 20261016-104115`, `DEPLOY_HEAD_TARGET_MATCH=YES (90eba2fa)`, lock acquired, snapshot cleaned |
+| Backup | `pre_auto_deploy_20261016-104115.sql` (32 MB), `backup-verify` decision **GO** |
+| Migrations | `Nothing to migrate.` (none in this release) |
+| Runtime isolation | 70 GO / 0 FAIL / 0 SKIP |
+| Smoke | 6 passed / 1 warning — `SMOKE-HTTP-HEALTH` on `http://127.0.0.1/login` → 404 is the known co-tenant loopback shadow; the canonical domain answers 200 |
+| Production HTTP (`https://daengtisia.online`) | `/login` `/health/live` `/health/lb` 200; `/health/ready` 200 with database, cache, queue, storage, object_storage all `ok`; `/rme/cashier`, `/rme/cashier/receivables`, `/dashboard` → 302 login (no 500) |
+| Production code | payment guard, `for no key update` lock, `normalizePaidAt()` on 3 paths, `RmeFinancialAuditEvent` present; **0 refund routes** |
+| Production data (read-only, sentinel on, ROLLBACK) | 0 refund permissions; Finance Klinik and Data Analyst each still exactly `export_oversight_data`, `view_clinical_records_readonly`, `view_finance_analytics_dashboard`, `view_operational_monitoring`, no `manage_rme_billing`; payments 7 / invoices 6 (unchanged), 0 soft-deleted, 0 future-dated; 0 visits with > 1 active invoice; PostgreSQL 16.15 |
+| Log | 0 application `ERROR` entries on 2026-10-16 |
+| Tag | annotated `feature-rme-billing-refund-1-phase-0-financial-prerequisites-go` → `90eba2fa`, exact match at VPS HEAD. `feature-rme-billing-refund-1-go` **not created** (reserved) |
+
+**Not verifiable without a real cashier transaction:** the first production `RME_INVOICE_CREATED` /
+`RME_PAYMENT_RECORDED` rows (0 so far — no cashier activity since deploy). They appear on the next real invoice/payment;
+no transaction was fabricated to produce them. Behaviour is proven by the automated suites on SQLite and PostgreSQL 16.
