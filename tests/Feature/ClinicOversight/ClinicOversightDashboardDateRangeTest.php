@@ -292,7 +292,7 @@ it('counts payment batches once over the range at the exact WITA midnight bounda
     covPayment($a1, '50000.00', '2026-10-30 15:59:59');             // 2026-10-30 23:59:59 WITA — IN (end date inclusive)
     covPayment($a1, '999999.00', '2026-10-30 16:00:00');            // 2026-10-31 00:00 WITA — OUT (exclusive upper bound)
     covPayment($a1, '888888.00', '2026-10-11 15:59:59');            // 2026-10-11 23:59:59 WITA — OUT
-    covPayment($a1, '777777.00', '2026-10-20 03:00:00')->delete();  // soft-deleted — not money received
+    covSoftDeletePayment(covPayment($a1, '777777.00', '2026-10-20 03:00:00'));  // soft-deleted — not money received
 
     $x = 'aa000000-0000-4000-8000-000000000001';
     covPayment($a2, '40000.00', '2026-10-20 03:00:00', $x);         // one batch across two branches

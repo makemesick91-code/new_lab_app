@@ -6,10 +6,12 @@ use App\Models\User;
 use App\Modules\Branch\Services\BranchContext;
 use App\Modules\Branch\Services\BranchService;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
+use App\Modules\LabOrder\Services\AuditLogService;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\RmeInvoice\Interfaces\RmeInvoiceRepositoryInterface;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Models\RmeInvoiceItem;
+use App\Modules\RmeInvoice\Support\RmeFinancialAuditEvent;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
@@ -26,6 +28,7 @@ class RmeInvoiceService
         private readonly BranchService $branches,
         private readonly CashierHandoffStatusService $handoffStatus,
         private readonly RmeWorkingBranchScope $workingBranchScope,
+        private readonly AuditLogService $auditLogs,
     ) {}
 
     /**
@@ -130,6 +133,29 @@ class RmeInvoiceService
     public function create(ClinicVisit $visit, User $cashier, array $data): RmeInvoice
     {
         return DB::transaction(function () use ($visit, $cashier, $data) {
+            // FEATURE-RME-BILLING-REFUND-1 / Phase 0 (audit BCF-08) — serialize
+            // invoice creation per VISIT. The one-active-invoice check below was
+            // a check-then-insert with nothing locked, so two concurrent submits
+            // for the same visit could both observe "no active invoice" and both
+            // insert. Locking the visit row makes the second request wait until
+            // the first commits; it then re-reads under the lock and is refused.
+            //
+            // Every gate below reads the LOCKED row, never the instance the
+            // caller passed in — a status read from a stale model is exactly the
+            // race the lock exists to close.
+            //
+            // Lock strength is FOR NO KEY UPDATE, deliberately not FOR UPDATE.
+            // Two creates for the same visit still conflict (NO KEY UPDATE vs NO
+            // KEY UPDATE), so the race is closed. But FOR UPDATE would also
+            // conflict with the FOR KEY SHARE that every foreign-key INSERT takes
+            // on its parent row — and the medical-record diagnosis writer locks
+            // the record then inserts against this visit, while this method locks
+            // the visit then inserts an invoice against that record: with FOR
+            // UPDATE the two can deadlock (40P01). NO KEY UPDATE does not conflict
+            // with FOR KEY SHARE, so no FK insert anywhere is blocked by it.
+            // SQLite compiles any lock clause to nothing.
+            $visit = ClinicVisit::query()->lock('for no key update')->findOrFail($visit->id);
+
             // The invoice branch always follows the visit's own "Cabang RME"
             // branch — never a BranchContext/MAIN fallback. The visit must belong
             // to an active RME-enabled branch (Sprint 23 Phase 23.10).
@@ -250,6 +276,18 @@ class RmeInvoiceService
                 'discount_total' => $discountTotal,
                 'grand_total' => $grandTotal,
             ]);
+
+            // Phase 0 (audit BCF-02) — the invoice and its audit row commit or
+            // roll back together. The repository's update() refreshes this same
+            // instance, so the totals logged are the persisted ones.
+            $this->auditLogs->log(
+                RmeFinancialAuditEvent::ENTITY_INVOICE,
+                (int) $invoice->id,
+                RmeFinancialAuditEvent::ACTION_INVOICE_CREATED,
+                null,
+                RmeFinancialAuditEvent::invoiceCreatedPayload($invoice, count($items)),
+                $cashier,
+            );
 
             return $invoice->load('items.treatment');
         });

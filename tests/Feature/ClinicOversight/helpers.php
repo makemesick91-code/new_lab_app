@@ -119,6 +119,21 @@ if (! function_exists('covBranch')) {
         ]);
     }
 
+    /**
+     * A soft-deleted payment row, for proving the KPIs EXCLUDE soft-deleted rows.
+     *
+     * FEATURE-RME-BILLING-REFUND-1 / Phase 0 (rule 189 §6) — the application can
+     * no longer soft-delete a payment: `RmePayment` refuses it, because a deleted
+     * row would silently rewrite balances and revenue. A soft-deleted row can
+     * still arise underneath the application (raw SQL), which is exactly why the
+     * KPIs must keep excluding it. So the fixture writes `deleted_at` the way such
+     * a row actually appears — directly — and the exclusion stays under test.
+     */
+    function covSoftDeletePayment(RmePayment $payment): void
+    {
+        RmePayment::query()->whereKey($payment->getKey())->toBase()->update(['deleted_at' => now()]);
+    }
+
     function covCashier(): User
     {
         return User::query()->where('email', 'cov-cashier@example.test')->first()

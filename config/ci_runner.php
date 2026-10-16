@@ -1008,6 +1008,21 @@ return [
         // Selected by the `VisitTypeServerDerivation` token; declared so a rename
         // cannot drop it.
         'tests/Feature/RME/VisitTypeServerDerivationTest.php',
+
+        // FEATURE-RME-BILLING-REFUND-1 / Phase 0. A refund is only as trustworthy
+        // as the ledger it refunds against. These suites pin that invoice
+        // creation and payment recording are audited (PII-free, committed with
+        // the fact), that a visit cannot get two active invoices under real
+        // concurrency (PostgreSQL row locks — the race suite skips on SQLite and
+        // runs here), that paid_at can never lie in the future on any of the
+        // three payment paths, and that a recorded payment cannot be re-amounted,
+        // re-dated, re-pointed or deleted through the application. Every one of
+        // those regressions is silent: an unaudited payment, a duplicate invoice
+        // or a rewritten ledger renders a 200. Selected by the `RmeBillingRefund`
+        // token, added to BOTH critical-gate variants; declared so a rename
+        // cannot drop them.
+        'tests/Feature/RME/RmeBillingRefundPhase0FinancialPrerequisitesTest.php',
+        'tests/Feature/RME/RmeBillingRefundPhase0InvoiceRaceConcurrencyTest.php',
     ],
 
     /*
