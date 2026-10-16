@@ -696,6 +696,11 @@ class RoleSeeder extends Seeder
         'view_clinical_records_readonly',
         'view_operational_monitoring',
         'export_oversight_data',
+        // FEATURE-RME-INVOICE-CORRECTION-RECEIPT-FOUNDATION-1 (rule 190) — the
+        // BILLING CORRECTION oversight area (owner-approved scope, audit §16):
+        // read the correction list and history, print/export through the
+        // existing export_oversight_data. No correction mutation of any kind.
+        'view_billing_correction_oversight',
     ];
 
     /**

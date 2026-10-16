@@ -245,5 +245,7 @@
 
         <x-rme.lab-workflow-panel :invoice="$invoice" :candidates="$labCaseCandidates" />
 
+        @include('rme.cashier.partials.invoice-correction-panel', ['panel' => $correctionPanel, 'visit' => $visit, 'invoice' => $invoice])
+
     </div>
 </x-settings-shell>

@@ -109,6 +109,8 @@ it('puts the export permission AND the area permission on every output route, an
         'oversight.rme' => ClinicOversightScope::PERMISSION_CLINICAL,
         'oversight.legacy' => ClinicOversightScope::PERMISSION_CLINICAL,
         'oversight.monitoring' => ClinicOversightScope::PERMISSION_MONITORING,
+        // FEATURE-RME-INVOICE-CORRECTION-RECEIPT-FOUNDATION-1: the fifth area.
+        'oversight.billing-corrections' => ClinicOversightScope::PERMISSION_BILLING_CORRECTION,
     ];
 
     $routes = collect(Route::getRoutes()->getRoutes())
@@ -133,7 +135,9 @@ it('puts the export permission AND the area permission on every output route, an
         }
     }
 
-    expect($outputs)->toBe(18);
+    // 18 before FEATURE-RME-INVOICE-CORRECTION-RECEIPT-FOUNDATION-1, which added four
+    // Billing Correction outputs (list export + list print + detail print + detail PDF).
+    expect($outputs)->toBe(22);
 });
 
 it('404s a VOID legacy archive even for a Super Admin, who passes every gate', function () {

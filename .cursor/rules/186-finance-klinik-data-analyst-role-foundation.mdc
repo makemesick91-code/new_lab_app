@@ -26,7 +26,7 @@ so the whole surface is **read-only by construction**, not by convention.
    Klinik, Front Office, Kasir, Perawat) on one account: the oversight scope is
    cross-branch by design and would sit beside a branch-bound operational one.
 
-## 2. Permission matrix (the only four)
+## 2. Permission matrix (five — the fifth added by rule 190)
 
 | Permission | Grants |
 |---|---|
@@ -34,6 +34,7 @@ so the whole surface is **read-only by construction**, not by convention.
 | `view_clinical_records_readonly` | native RME + PUBLISHED legacy RME/odontogram, every RME branch |
 | `view_operational_monitoring` | dental rooms, patients/billed treatments per room, queues |
 | `export_oversight_data` | print / PDF / CSV of an area the holder may already VIEW |
+| `view_billing_correction_oversight` | Billing Correction: RME invoice-correction history + frozen document references, read-only (FEATURE-RME-INVOICE-CORRECTION-RECEIPT-FOUNDATION-1, rule 190) |
 
 6. **Export is never an area.** Every print/PDF/CSV route requires the area's
    view permission AND `export_oversight_data` (route middleware + the

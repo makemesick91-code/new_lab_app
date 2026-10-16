@@ -11,6 +11,10 @@ Rule 188 remains the foundation audit; where 188 describes a CURRENT gap that Ph
 
 Labels as in rule 188: **IMPLEMENTED** (shipped by this sprint), **PROPOSED** (design only), **PENDING_OWNER_DECISION**.
 
+> **Forward reference (2026-10-17):** Phase C's prerequisite — an invoice correction — now exists as a PRE-PAYMENT,
+> default-OFF foundation (rule 190). It cannot produce an overpayment (it refuses any invoice with a payment), so refund
+> remains structurally blocked exactly as §2 says.
+
 ## 1. Refund is NOT implemented — IMPLEMENTED status
 - No refund table, model, route, permission, service, UI, document or report exists. Never report refund as active.
 - `feature-rme-billing-refund-1-go` is reserved for the operational refund feature. Phase 0 shipped under

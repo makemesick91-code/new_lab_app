@@ -12,6 +12,7 @@ use App\Modules\RmeInvoice\Models\RmeReceivableFollowUp;
 use App\Modules\RmeInvoice\Requests\CreateRmeInvoiceRequest;
 use App\Modules\RmeInvoice\Services\CashierHandoffStatusService;
 use App\Modules\RmeInvoice\Services\RmeControlReceivableService;
+use App\Modules\RmeInvoice\Services\RmeInvoiceCorrectionService;
 use App\Modules\RmeInvoice\Services\RmeInvoiceService;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
 use App\Modules\Treatment\Services\TreatmentService;
@@ -34,6 +35,7 @@ class RmeInvoiceController extends Controller
         private readonly TreatmentService $treatments,
         private readonly ClinicVisitService $visits,
         private readonly RmeControlReceivableService $carryOver,
+        private readonly RmeInvoiceCorrectionService $corrections,
     ) {}
 
     /** @return array<int, string> */
@@ -537,6 +539,9 @@ SQL;
             'invoice' => $invoice,
             'labCaseCandidates' => $invoice->labCaseCandidates,
             'payableSummary' => $this->carryOver->getControlPayableSummary($rmeInvoice),
+            // FEATURE-RME-INVOICE-CORRECTION-RECEIPT-FOUNDATION-1 — no query while
+            // the capability is off and the invoice was never revised.
+            'correctionPanel' => $this->corrections->panelFor($invoice, request()->user()),
         ]);
     }
 }

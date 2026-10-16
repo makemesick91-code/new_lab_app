@@ -152,6 +152,18 @@
                         <td class="k">No. Kunjungan</td>
                         <td>{{ $visit->visit_number }}</td>
                     </tr>
+                    {{-- FEATURE-RME-INVOICE-CORRECTION-RECEIPT-FOUNDATION-1 — a corrected
+                         document says so. Rendered only when a correction has been
+                         APPLIED (correction_version > 0); for every other invoice this
+                         partial prints exactly what it printed before. The original is
+                         frozen as document version v0 and is never re-rendered from
+                         live rows. --}}
+                    @if ($invoice->isRevised())
+                        <tr>
+                            <td class="k">Versi Dokumen</td>
+                            <td data-invoice-document-revision>Revisi ke-{{ (int) $invoice->correction_version }} (asli tersimpan v0)</td>
+                        </tr>
+                    @endif
                 </table>
             </td>
             <td style="width: 29%;">

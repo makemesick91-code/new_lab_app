@@ -16,10 +16,12 @@ use App\Modules\Clinic\Interfaces\ClinicRepositoryInterface;
 use App\Modules\Clinic\Models\Clinic;
 use App\Modules\Clinic\Policies\ClinicPolicy;
 use App\Modules\Clinic\Repositories\ClinicRepository;
+use App\Modules\ClinicOversight\Interfaces\OversightBillingCorrectionRepositoryInterface;
 use App\Modules\ClinicOversight\Interfaces\OversightClinicalRecordRepositoryInterface;
 use App\Modules\ClinicOversight\Interfaces\OversightKpiRepositoryInterface;
 use App\Modules\ClinicOversight\Interfaces\OversightMonitoringRepositoryInterface;
 use App\Modules\ClinicOversight\Policies\ClinicOversightPolicy;
+use App\Modules\ClinicOversight\Repositories\OversightBillingCorrectionRepository;
 use App\Modules\ClinicOversight\Repositories\OversightClinicalRecordRepository;
 use App\Modules\ClinicOversight\Repositories\OversightKpiRepository;
 use App\Modules\ClinicOversight\Repositories\OversightMonitoringRepository;
@@ -277,10 +279,15 @@ use App\Modules\QualityControl\Repositories\RemakeRequestRepository;
 use App\Modules\Reporting\Interfaces\ReportingRepositoryInterface;
 use App\Modules\Reporting\Policies\ReportingPolicy;
 use App\Modules\Reporting\Repositories\ReportingRepository;
+use App\Modules\RmeInvoice\Interfaces\RmeInvoiceCorrectionRepositoryInterface;
 use App\Modules\RmeInvoice\Interfaces\RmeInvoiceRepositoryInterface;
 use App\Modules\RmeInvoice\Interfaces\RmePaymentRepositoryInterface;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
+use App\Modules\RmeInvoice\Models\RmeInvoiceCorrection;
+use App\Modules\RmeInvoice\Models\RmeInvoiceDocumentVersion;
+use App\Modules\RmeInvoice\Policies\RmeInvoiceCorrectionPolicy;
 use App\Modules\RmeInvoice\Policies\RmeInvoicePolicy;
+use App\Modules\RmeInvoice\Repositories\RmeInvoiceCorrectionRepository;
 use App\Modules\RmeInvoice\Repositories\RmeInvoiceRepository;
 use App\Modules\RmeInvoice\Repositories\RmePaymentRepository;
 use App\Modules\RmeOnlineContext\Interfaces\BranchChangeRequestRepositoryInterface;
@@ -442,6 +449,9 @@ class RepositoryServiceProvider extends ServiceProvider
         RmeInvoiceRepositoryInterface::class => RmeInvoiceRepository::class,
         // Sprint 20 Phase 1.11 — RME Payment
         RmePaymentRepositoryInterface::class => RmePaymentRepository::class,
+        // FEATURE-RME-INVOICE-CORRECTION-RECEIPT-FOUNDATION-1 — invoice corrections + frozen document versions
+        RmeInvoiceCorrectionRepositoryInterface::class => RmeInvoiceCorrectionRepository::class,
+        OversightBillingCorrectionRepositoryInterface::class => OversightBillingCorrectionRepository::class,
         // LEGACY-RME-PDF-1A — legacy (historical) RME PDF archive
         LegacyRmeImportRepositoryInterface::class => LegacyRmeImportRepository::class,
         LegacyRmeRecordRepositoryInterface::class => LegacyRmeRecordRepository::class,
@@ -487,6 +497,9 @@ class RepositoryServiceProvider extends ServiceProvider
         'clinic-oversight.view-legacy-rme' => [ClinicOversightPolicy::class, 'viewLegacyRme'],
         'clinic-oversight.view-legacy-odontogram' => [ClinicOversightPolicy::class, 'viewLegacyOdontogram'],
         'clinic-oversight.export' => [ClinicOversightPolicy::class, 'export'],
+        // FEATURE-RME-INVOICE-CORRECTION-RECEIPT-FOUNDATION-1 — read-only BILLING CORRECTION area
+        'clinic-oversight.view-billing-corrections' => [ClinicOversightPolicy::class, 'viewBillingCorrections'],
+        'clinic-oversight.view-billing-correction' => [ClinicOversightPolicy::class, 'viewBillingCorrection'],
         'production.viewAny' => [ProductionPolicy::class, 'viewAny'],
         'production.view' => [ProductionPolicy::class, 'view'],
         'production.start' => [ProductionPolicy::class, 'start'],
@@ -549,6 +562,9 @@ class RepositoryServiceProvider extends ServiceProvider
         RmeVisitConsent::class => RmeVisitConsentPolicy::class,
         // Sprint 20 Phase 1.10 — RME Cashier Billing
         RmeInvoice::class => RmeInvoicePolicy::class,
+        // FEATURE-RME-INVOICE-CORRECTION-RECEIPT-FOUNDATION-1 (rule 190)
+        RmeInvoiceCorrection::class => RmeInvoiceCorrectionPolicy::class,
+        RmeInvoiceDocumentVersion::class => RmeInvoiceCorrectionPolicy::class,
         TreatmentCategory::class => TreatmentCategoryPolicy::class,
         Treatment::class => TreatmentPolicy::class,
         Tariff::class => TariffPolicy::class,

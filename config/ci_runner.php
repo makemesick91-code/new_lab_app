@@ -367,6 +367,19 @@ return [
         // rename cannot silently drop it from the critical gate.
         'tests/Feature/ClinicOversight/ClinicOversightDashboardDateRangeTest.php',
 
+        // FEATURE-RME-INVOICE-CORRECTION-RECEIPT-FOUNDATION-1 (rule 190) — invoice
+        // corrections: maker != checker under the invoice row lock (incl. Super
+        // Admin), the default-OFF capability flag, STALE on payment, frozen
+        // original/revised document versions, and the read-only oversight area.
+        // Selected by the new `RmeInvoiceCorrection` token in BOTH critical-gate
+        // variants; declared here so a rename cannot silently drop them. The
+        // concurrency suite needs PostgreSQL row locks: it skips loudly on SQLite
+        // and EXECUTES in CI, whose critical gate runs PostgreSQL 16.
+        'tests/Feature/RmeInvoiceCorrection/RmeInvoiceCorrectionLifecycleTest.php',
+        'tests/Feature/RmeInvoiceCorrection/RmeInvoiceCorrectionAccessTest.php',
+        'tests/Feature/RmeInvoiceCorrection/RmeInvoiceCorrectionGovernanceTest.php',
+        'tests/Feature/RmeInvoiceCorrection/RmeInvoiceCorrectionConcurrencyTest.php',
+
         // DOCTOR-PWA-WEBAUTHN-1 — the browser device-credential login. A `|Pwa`
         // or `|DoctorDevice` token does not select it: --filter matches the test
         // IDENTITY, and this class is `DoctorPwaWebAuthnTest`, which contains
