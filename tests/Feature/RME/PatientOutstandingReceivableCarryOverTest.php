@@ -112,11 +112,11 @@ it('shows no outstanding card when the patient has no prior receivables', functi
 it('excludes paid/void and the current invoice but includes partial receivables', function () {
     $paidVisit = porVisit($this->patient, $this->rmeBranch, $this->doctor, now()->subDays(9)->toDateString());
     $paidInvoice = porInvoice($paidVisit, 150000);
-    app(RmePaymentService::class)->pay($paidInvoice, $this->cashier, porPaymentPayload(150000));
+    app(RmePaymentService::class)->pay($paidInvoice, $this->cashier, rmeFreshPaymentForm($paidInvoice, porPaymentPayload(150000)));
 
     $partialVisit = porVisit($this->patient, $this->rmeBranch, $this->doctor, now()->subDays(7)->toDateString());
     $partialInvoice = porInvoice($partialVisit, 200000);
-    app(RmePaymentService::class)->pay($partialInvoice, $this->cashier, porPaymentPayload(50000));
+    app(RmePaymentService::class)->pay($partialInvoice, $this->cashier, rmeFreshPaymentForm($partialInvoice, porPaymentPayload(50000)));
 
     $current = porVisit($this->patient, $this->rmeBranch, $this->doctor);
     $currentInvoice = porInvoice($current, 100000);
@@ -187,7 +187,7 @@ it('allocates FIFO to selected prior receivable first, then current invoice', fu
     $result = app(RmePaymentService::class)->allocateVisitPayment(
         $currentInvoice,
         $this->cashier,
-        porPaymentPayload(250000),
+        rmeFreshPaymentForm($currentInvoice, porPaymentPayload(250000)),
         [$priorInvoice->id],
     );
 
@@ -209,7 +209,7 @@ it('records one payment per invoice id sharing a payment batch uuid without infl
     $result = app(RmePaymentService::class)->allocateVisitPayment(
         $currentInvoice,
         $this->cashier,
-        porPaymentPayload(300000),
+        rmeFreshPaymentForm($currentInvoice, porPaymentPayload(300000)),
         [$priorInvoice->id],
     );
 
@@ -234,7 +234,7 @@ it('full payment clears both invoices and completes the current visit', function
     app(RmePaymentService::class)->allocateVisitPayment(
         $currentInvoice,
         $this->cashier,
-        porPaymentPayload(300000),
+        rmeFreshPaymentForm($currentInvoice, porPaymentPayload(300000)),
         [$priorInvoice->id],
     );
 
@@ -253,7 +253,7 @@ it('partial payment of only the prior receivable completes the current visit and
     app(RmePaymentService::class)->allocateVisitPayment(
         $currentInvoice,
         $this->cashier,
-        porPaymentPayload(80000),
+        rmeFreshPaymentForm($currentInvoice, porPaymentPayload(80000)),
         [$priorInvoice->id],
     );
 
@@ -275,7 +275,7 @@ it('zero-grand-total current visit can still collect a selected prior receivable
     app(RmePaymentService::class)->allocateVisitPayment(
         $currentInvoice,
         $this->cashier,
-        porPaymentPayload(200000),
+        rmeFreshPaymentForm($currentInvoice, porPaymentPayload(200000)),
         [$priorInvoice->id],
     );
 
@@ -294,7 +294,7 @@ it('rejects an amount greater than the total payable', function () {
     expect(fn () => app(RmePaymentService::class)->allocateVisitPayment(
         $currentInvoice,
         $this->cashier,
-        porPaymentPayload(350000),
+        rmeFreshPaymentForm($currentInvoice, porPaymentPayload(350000)),
         [$priorInvoice->id],
     ))->toThrow(ValidationException::class);
 
@@ -315,7 +315,7 @@ it('drops a forged receivable id belonging to another patient', function () {
     expect(fn () => app(RmePaymentService::class)->allocateVisitPayment(
         $currentInvoice,
         $this->cashier,
-        porPaymentPayload(100000),
+        rmeFreshPaymentForm($currentInvoice, porPaymentPayload(100000)),
         [$otherInvoice->id],
     ))->toThrow(ValidationException::class);
 
@@ -326,7 +326,7 @@ it('drops a forged receivable id belonging to another patient', function () {
 it('drops a forged paid or non-rme-branch receivable id from the selection', function () {
     $paidVisit = porVisit($this->patient, $this->rmeBranch, $this->doctor, now()->subDays(8)->toDateString());
     $paidInvoice = porInvoice($paidVisit, 150000);
-    app(RmePaymentService::class)->pay($paidInvoice, $this->cashier, porPaymentPayload(150000));
+    app(RmePaymentService::class)->pay($paidInvoice, $this->cashier, rmeFreshPaymentForm($paidInvoice, porPaymentPayload(150000)));
 
     $nonRmeVisit = porVisit($this->patient, $this->nonRmeBranch, $this->doctor, now()->subDays(6)->toDateString());
     $nonRmeInvoice = RmeInvoice::factory()->unpaid()->create([
@@ -359,7 +359,7 @@ it('collects a selected prior receivable through the cashier store endpoint', fu
     $this->actingAs($this->cashier)
         ->post(
             route('rme.cashier.payment.store', [$current, $currentInvoice]),
-            porPaymentPayload(300000, ['selected_receivable_ids' => [$priorInvoice->id]]),
+            rmeFreshPaymentForm($currentInvoice, porPaymentPayload(300000, ['selected_receivable_ids' => [$priorInvoice->id]])),
         )
         ->assertRedirect(route('rme.cashier.receipt.show', [$current, $currentInvoice->fresh()]));
 
@@ -377,7 +377,7 @@ it('behaves like the normal plain payment flow when no receivable is selected', 
     $this->actingAs($this->cashier)
         ->post(
             route('rme.cashier.payment.store', [$current, $currentInvoice]),
-            porPaymentPayload(100000),
+            rmeFreshPaymentForm($currentInvoice, porPaymentPayload(100000)),
         )
         ->assertRedirect(route('rme.cashier.receipt.show', [$current, $currentInvoice->fresh()]));
 
@@ -413,7 +413,7 @@ it('settles a carry-over payment even when the current visit has no signed conse
     app(RmePaymentService::class)->allocateVisitPayment(
         $currentInvoice,
         $this->cashier,
-        porPaymentPayload(300000),
+        rmeFreshPaymentForm($currentInvoice, porPaymentPayload(300000)),
         [$priorInvoice->id],
     );
 
@@ -456,7 +456,7 @@ it('reduces the owner KPI active receivable by exactly the collected amount', fu
     app(RmePaymentService::class)->allocateVisitPayment(
         $currentInvoice,
         $this->cashier,
-        porPaymentPayload(200000),
+        rmeFreshPaymentForm($currentInvoice, porPaymentPayload(200000)),
         [$priorInvoice->id],
     );
 
@@ -476,7 +476,7 @@ it('drops a paid-down prior receivable from the receivable report', function () 
     app(RmePaymentService::class)->allocateVisitPayment(
         $currentInvoice,
         $this->cashier,
-        porPaymentPayload(200000),
+        rmeFreshPaymentForm($currentInvoice, porPaymentPayload(200000)),
         [$priorInvoice->id],
     );
 

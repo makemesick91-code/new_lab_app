@@ -182,6 +182,36 @@ final class RmeFinancialAuditEvent
         ];
     }
 
+    // ─── ACTIVATION-RME-INVOICE-CORRECTION-PREPAYMENT-1 (rule 191) ──────────
+    //
+    // A payment refused because the form did not carry the CURRENT version of
+    // an invoice it would settle. Like ACTION_CORRECTION_REFUSED it records an
+    // ATTEMPT, so it is written AFTER the payment transaction rolled back —
+    // never inside it, where the rollback would erase it.
+
+    public const ACTION_PAYMENT_REFUSED_INVOICE_VERSION = 'RME_PAYMENT_REFUSED_INVOICE_VERSION';
+
+    /**
+     * Ids, codes and version numbers only. Never the amount typed into the
+     * stale form, a payment note or a reference number: the note may name a
+     * patient and the reference may carry bank-account detail.
+     *
+     * @return array<string, mixed>
+     */
+    public static function paymentVersionRefusedPayload(RmeInvoice $invoice, RmeInvoiceVersionConflict $conflict, string $paymentPath): array
+    {
+        return [
+            'invoice_id' => (int) $invoice->id,
+            'invoice_number' => (string) $invoice->invoice_number,
+            'branch_id' => (int) $invoice->branch_id,
+            'reason' => $conflict->reasonCode,
+            'payment_path' => $paymentPath,
+            'expected_version' => $conflict->expectedVersion,
+            'current_version' => $conflict->currentVersion,
+            'invoice_status' => (string) $invoice->status,
+        ];
+    }
+
     private static function money(mixed $value): float
     {
         return round((float) $value, 2);

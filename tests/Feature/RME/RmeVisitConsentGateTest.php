@@ -128,7 +128,7 @@ it('lets a payment settle even though no consent has been signed', function () {
     $visit = consentVisit(status: ClinicVisit::STATUS_CASHIER_PENDING);
     $invoice = consentInvoiceFor($visit);
 
-    app(RmePaymentService::class)->pay($invoice, $this->cashier, payDataFor(200000));
+    app(RmePaymentService::class)->pay($invoice, $this->cashier, rmeFreshPaymentForm($invoice, payDataFor(200000)));
 
     expect($invoice->refresh()->status)->toBe(RmeInvoice::STATUS_PAID)
         ->and($visit->refresh()->status)->toBe(ClinicVisit::STATUS_COMPLETED);
@@ -159,7 +159,7 @@ it('keeps partial payment behaviour intact without any consent', function () {
     $visit = consentVisit(status: ClinicVisit::STATUS_CASHIER_PENDING);
     $invoice = consentInvoiceFor($visit);
 
-    app(RmePaymentService::class)->pay($invoice, $this->cashier, payDataFor(50000));
+    app(RmePaymentService::class)->pay($invoice, $this->cashier, rmeFreshPaymentForm($invoice, payDataFor(50000)));
 
     expect($invoice->refresh()->status)->toBe(RmeInvoice::STATUS_PARTIAL)
         ->and($visit->refresh()->status)->toBe(ClinicVisit::STATUS_COMPLETED);
@@ -173,7 +173,7 @@ it('does not let a voided consent block a payment', function () {
     // The examination finishes, then the cashier takes payment.
     $visit->forceFill(['status' => ClinicVisit::STATUS_CASHIER_PENDING])->save();
     $invoice = consentInvoiceFor($visit->refresh());
-    app(RmePaymentService::class)->pay($invoice, $this->cashier, payDataFor(200000));
+    app(RmePaymentService::class)->pay($invoice, $this->cashier, rmeFreshPaymentForm($invoice, payDataFor(200000)));
 
     expect($invoice->refresh()->status)->toBe(RmeInvoice::STATUS_PAID);
 });
@@ -185,10 +185,10 @@ it('still collects an instalment on a visit that was completed before this sprin
     $visit = consentVisit(status: ClinicVisit::STATUS_CASHIER_PENDING);
     $invoice = consentInvoiceFor($visit);
 
-    app(RmePaymentService::class)->pay($invoice, $this->cashier, payDataFor(50000));
+    app(RmePaymentService::class)->pay($invoice, $this->cashier, rmeFreshPaymentForm($invoice, payDataFor(50000)));
     expect($visit->refresh()->status)->toBe(ClinicVisit::STATUS_COMPLETED);
 
-    app(RmePaymentService::class)->pay($invoice->refresh(), $this->cashier, payDataFor(150000));
+    app(RmePaymentService::class)->pay($invoice->refresh(), $this->cashier, rmeFreshPaymentForm($invoice->refresh(), payDataFor(150000)));
 
     expect($invoice->refresh()->status)->toBe(RmeInvoice::STATUS_PAID);
 });
@@ -296,7 +296,7 @@ it('accepts a consent whose documentation answer is TIDAK and still opens RME au
     // ...nor the cashier, once the doctor has finished.
     $visit->forceFill(['status' => ClinicVisit::STATUS_CASHIER_PENDING])->save();
     $invoice = consentInvoiceFor($visit->refresh());
-    $payment = app(RmePaymentService::class)->pay($invoice->refresh(), $this->cashier, payDataFor(200000));
+    $payment = app(RmePaymentService::class)->pay($invoice->refresh(), $this->cashier, rmeFreshPaymentForm($invoice->refresh(), payDataFor(200000)));
     expect($payment->amount)->toEqual(200000.0);
 });
 
@@ -450,7 +450,7 @@ it('treats a legacy cashier attestation as history but not as a payment gate', f
     expect($visit->hasSignedConsentDocument())->toBeFalse();
 
     $invoice = consentInvoiceFor($visit);
-    app(RmePaymentService::class)->pay($invoice, $this->cashier, payDataFor(200000));
+    app(RmePaymentService::class)->pay($invoice, $this->cashier, rmeFreshPaymentForm($invoice, payDataFor(200000)));
     expect($invoice->refresh()->status)->toBe(RmeInvoice::STATUS_PAID);
 
     $live = consentVisit(status: ClinicVisit::STATUS_IN_PROGRESS);

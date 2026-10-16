@@ -90,7 +90,7 @@ it('paid rme invoice with no requires_lab items creates no lab case candidates',
         labItemPayload(['treatment_id' => $treatment->id, 'unit_price' => 500000]),
     ]);
 
-    app(RmePaymentService::class)->pay($invoice, $this->cashier, labPaymentPayload($invoice));
+    app(RmePaymentService::class)->pay($invoice, $this->cashier, rmeFreshPaymentForm($invoice, labPaymentPayload($invoice)));
 
     expect(LabCaseCandidate::where('rme_invoice_id', $invoice->id)->count())->toBe(0);
 });
@@ -105,7 +105,7 @@ it('paid rme invoice with one requires_lab item creates one lab case candidate',
         labItemPayload(['treatment_id' => $treatment->id, 'unit_price' => 500000]),
     ]);
 
-    app(RmePaymentService::class)->pay($invoice, $this->cashier, labPaymentPayload($invoice));
+    app(RmePaymentService::class)->pay($invoice, $this->cashier, rmeFreshPaymentForm($invoice, labPaymentPayload($invoice)));
 
     expect(LabCaseCandidate::where('rme_invoice_id', $invoice->id)->count())->toBe(1);
 });
@@ -124,7 +124,7 @@ it('paid rme invoice with mixed items creates one candidate per lab-eligible ite
         labItemPayload(['treatment_id' => $nonLabTreatment->id, 'unit_price' => 100000, 'description' => 'Scaling']),
     ]);
 
-    app(RmePaymentService::class)->pay($invoice, $this->cashier, labPaymentPayload($invoice));
+    app(RmePaymentService::class)->pay($invoice, $this->cashier, rmeFreshPaymentForm($invoice, labPaymentPayload($invoice)));
 
     expect(LabCaseCandidate::where('rme_invoice_id', $invoice->id)->count())->toBe(2);
 });
@@ -162,7 +162,7 @@ it('paying the same invoice via payment service does not duplicate candidates', 
         labItemPayload(['treatment_id' => $treatment->id, 'unit_price' => 500000]),
     ]);
 
-    app(RmePaymentService::class)->pay($invoice, $this->cashier, labPaymentPayload($invoice));
+    app(RmePaymentService::class)->pay($invoice, $this->cashier, rmeFreshPaymentForm($invoice, labPaymentPayload($invoice)));
 
     // Call generation again on the already-PAID invoice
     app(RmeLabIntegrationService::class)->generateForPaidInvoice($invoice->fresh(), $this->cashier);
@@ -185,7 +185,7 @@ it('candidate stores all required source references and correct status', functio
         ]),
     ]);
 
-    app(RmePaymentService::class)->pay($invoice, $this->cashier, labPaymentPayload($invoice));
+    app(RmePaymentService::class)->pay($invoice, $this->cashier, rmeFreshPaymentForm($invoice, labPaymentPayload($invoice)));
 
     $item = RmeInvoiceItem::where('rme_invoice_id', $invoice->id)->first();
     $candidate = LabCaseCandidate::where('rme_invoice_item_id', $item->id)->firstOrFail();
@@ -212,7 +212,7 @@ it('generated candidates carry the source invoice branch_id', function () {
         labItemPayload(['treatment_id' => $treatment->id, 'unit_price' => 500000]),
     ]);
 
-    app(RmePaymentService::class)->pay($invoice, $this->cashier, labPaymentPayload($invoice));
+    app(RmePaymentService::class)->pay($invoice, $this->cashier, rmeFreshPaymentForm($invoice, labPaymentPayload($invoice)));
 
     $candidate = LabCaseCandidate::where('rme_invoice_id', $invoice->id)->firstOrFail();
 
@@ -267,7 +267,7 @@ it('rme payment with lab items still does not create lab-order payment records',
         labItemPayload(['treatment_id' => $treatment->id, 'unit_price' => 500000]),
     ]);
 
-    app(RmePaymentService::class)->pay($invoice, $this->cashier, labPaymentPayload($invoice));
+    app(RmePaymentService::class)->pay($invoice, $this->cashier, rmeFreshPaymentForm($invoice, labPaymentPayload($invoice)));
 
     expect(DB::table('trx_payments')->count())->toBe($beforeCount);
 });
@@ -287,7 +287,7 @@ it('rme partial payment marks invoice partial and does not generate lab candidat
     app(RmePaymentService::class)->pay(
         $invoice,
         $this->cashier,
-        labPaymentPayload($invoice, ['amount' => $partial]),
+        rmeFreshPaymentForm($invoice, labPaymentPayload($invoice, ['amount' => $partial])),
     );
 
     expect($invoice->fresh()->status)->toBe(RmeInvoice::STATUS_PARTIAL)
@@ -306,7 +306,7 @@ it('no real lab order is created during phase 21.2 candidate generation', functi
         labItemPayload(['treatment_id' => $treatment->id, 'unit_price' => 500000]),
     ]);
 
-    app(RmePaymentService::class)->pay($invoice, $this->cashier, labPaymentPayload($invoice));
+    app(RmePaymentService::class)->pay($invoice, $this->cashier, rmeFreshPaymentForm($invoice, labPaymentPayload($invoice)));
 
     expect(LabOrder::count())->toBe($beforeCount);
 });

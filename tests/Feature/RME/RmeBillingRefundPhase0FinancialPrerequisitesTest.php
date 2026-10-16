@@ -179,10 +179,10 @@ it('audits a recorded payment with before/after ledger figures', function () {
     $visit = rf0Visit();
     $invoice = rf0Invoice($visit, 500000);
 
-    $payment = app(RmePaymentService::class)->pay($invoice, test()->cashier, rf0Payment(200000, [
+    $payment = app(RmePaymentService::class)->pay($invoice, test()->cashier, rmeFreshPaymentForm($invoice, rf0Payment(200000, [
         'reference_number' => 'TRF-REK-1234567890',
         'notes' => 'Dibayar oleh Pasien Rahasia Refund',
-    ]));
+    ])));
 
     $rows = rf0AuditRows(RmeFinancialAuditEvent::ACTION_PAYMENT_RECORDED);
     expect($rows)->toHaveCount(1);
@@ -216,7 +216,7 @@ it('audits every payment row of a carry-over batch under one batch uuid', functi
     $result = app(RmePaymentService::class)->allocateVisitPayment(
         $currentInvoice,
         test()->cashier,
-        rf0Payment(250000),
+        rmeFreshPaymentForm($currentInvoice, rf0Payment(250000)),
         [$priorInvoice->id],
     );
 
@@ -234,7 +234,7 @@ it('writes no payment audit row when the payment is refused', function () {
     $visit = rf0Visit();
     $invoice = rf0Invoice($visit, 100000);
 
-    expect(fn () => app(RmePaymentService::class)->pay($invoice, test()->cashier, rf0Payment(150000)))
+    expect(fn () => app(RmePaymentService::class)->pay($invoice, test()->cashier, rmeFreshPaymentForm($invoice, rf0Payment(150000))))
         ->toThrow(ValidationException::class);
 
     expect(rf0AuditRows(RmeFinancialAuditEvent::ACTION_PAYMENT_RECORDED))->toHaveCount(0)
@@ -255,9 +255,9 @@ it('refuses a paid_at in the future on every payment path', function (string $pa
     $service = app(RmePaymentService::class);
 
     $call = match ($path) {
-        'pay' => fn () => $service->pay($currentInvoice, test()->cashier, $future),
-        'visit-batch' => fn () => $service->allocateVisitPayment($currentInvoice, test()->cashier, $future, [$priorInvoice->id]),
-        'control-batch' => fn () => $service->allocateControlPayment($currentInvoice, test()->cashier, $future),
+        'pay' => fn () => $service->pay($currentInvoice, test()->cashier, rmeFreshPaymentForm($currentInvoice, $future)),
+        'visit-batch' => fn () => $service->allocateVisitPayment($currentInvoice, test()->cashier, rmeFreshPaymentForm($currentInvoice, $future), [$priorInvoice->id]),
+        'control-batch' => fn () => $service->allocateControlPayment($currentInvoice, test()->cashier, rmeFreshPaymentForm($currentInvoice, $future)),
     };
 
     try {
@@ -277,7 +277,7 @@ it('control allocation still succeeds with a valid paid_at (positive control for
     $control = rf0Visit(null, ['visit_type' => ClinicVisit::VISIT_TYPE_CONTROL, 'follow_up_of_visit_id' => $prior->id]);
     $controlInvoice = rf0Invoice($control, 50000);
 
-    $result = app(RmePaymentService::class)->allocateControlPayment($controlInvoice, test()->cashier, rf0Payment(150000));
+    $result = app(RmePaymentService::class)->allocateControlPayment($controlInvoice, test()->cashier, rmeFreshPaymentForm($controlInvoice, rf0Payment(150000)));
 
     expect($result->allocatedToParent)->toEqual(100000.0)
         ->and($result->allocatedToControl)->toEqual(50000.0)
@@ -288,9 +288,9 @@ it('accepts the current minute — the datetime-local field and clock skew are t
     $visit = rf0Visit();
     $invoice = rf0Invoice($visit, 100000);
 
-    $payment = app(RmePaymentService::class)->pay($invoice, test()->cashier, rf0Payment(100000, [
+    $payment = app(RmePaymentService::class)->pay($invoice, test()->cashier, rmeFreshPaymentForm($invoice, rf0Payment(100000, [
         'paid_at' => now()->addSeconds(30)->format('Y-m-d H:i:s'),
-    ]));
+    ])));
 
     expect($payment->exists)->toBeTrue();
 });
@@ -299,9 +299,9 @@ it('does not bound backdating — that is an owner policy decision, not invented
     $visit = rf0Visit(now()->subDays(10)->toDateString());
     $invoice = rf0Invoice($visit, 100000);
 
-    $payment = app(RmePaymentService::class)->pay($invoice, test()->cashier, rf0Payment(100000, [
+    $payment = app(RmePaymentService::class)->pay($invoice, test()->cashier, rmeFreshPaymentForm($invoice, rf0Payment(100000, [
         'paid_at' => now()->subDays(9)->format('Y-m-d H:i:s'),
-    ]));
+    ])));
 
     expect($payment->paid_at->toDateString())->toBe(now()->subDays(9)->toDateString());
 });
@@ -311,7 +311,7 @@ it('keeps the existing interpretation of paid_at (application timezone)', functi
     $invoice = rf0Invoice($visit, 100000);
     $submitted = now()->subHour()->format('Y-m-d H:i:s');
 
-    $payment = app(RmePaymentService::class)->pay($invoice, test()->cashier, rf0Payment(100000, ['paid_at' => $submitted]));
+    $payment = app(RmePaymentService::class)->pay($invoice, test()->cashier, rmeFreshPaymentForm($invoice, rf0Payment(100000, ['paid_at' => $submitted])));
 
     expect($payment->fresh()->paid_at->format('Y-m-d H:i:s'))->toBe($submitted);
 });
@@ -321,7 +321,7 @@ it('refuses an unparseable paid_at', function () {
     $invoice = rf0Invoice($visit, 100000);
 
     try {
-        app(RmePaymentService::class)->pay($invoice, test()->cashier, rf0Payment(100000, ['paid_at' => 'bukan-tanggal']));
+        app(RmePaymentService::class)->pay($invoice, test()->cashier, rmeFreshPaymentForm($invoice, rf0Payment(100000, ['paid_at' => 'bukan-tanggal'])));
         $this->fail('An unparseable paid_at was accepted.');
     } catch (ValidationException $e) {
         expect($e->errors())->toHaveKey('paid_at');
@@ -333,7 +333,7 @@ it('refuses a blank paid_at instead of inventing "now"', function (mixed $blank)
     $invoice = rf0Invoice($visit, 100000);
 
     try {
-        app(RmePaymentService::class)->pay($invoice, test()->cashier, rf0Payment(100000, ['paid_at' => $blank]));
+        app(RmePaymentService::class)->pay($invoice, test()->cashier, rmeFreshPaymentForm($invoice, rf0Payment(100000, ['paid_at' => $blank])));
         $this->fail('A blank paid_at was accepted.');
     } catch (ValidationException $e) {
         expect($e->errors())->toHaveKey('paid_at');
@@ -351,9 +351,9 @@ it('stores an offset-bearing paid_at as its true instant, closing the offset byp
     $invoice = rf0Invoice($visit, 100000);
     $now = now()->startOfSecond();
 
-    $payment = app(RmePaymentService::class)->pay($invoice, test()->cashier, rf0Payment(100000, [
+    $payment = app(RmePaymentService::class)->pay($invoice, test()->cashier, rmeFreshPaymentForm($invoice, rf0Payment(100000, [
         'paid_at' => $now->copy()->setTimezone('+14:00')->format('Y-m-d\TH:i:sP'),
-    ]));
+    ])));
 
     $stored = Carbon\Carbon::parse(DB::table('trx_rme_payments')->where('id', $payment->id)->value('paid_at'), config('app.timezone'));
 
@@ -365,9 +365,9 @@ it('refuses a future instant even when it is written with a negative offset', fu
     $invoice = rf0Invoice($visit, 100000);
 
     try {
-        app(RmePaymentService::class)->pay($invoice, test()->cashier, rf0Payment(100000, [
+        app(RmePaymentService::class)->pay($invoice, test()->cashier, rmeFreshPaymentForm($invoice, rf0Payment(100000, [
             'paid_at' => now()->addHours(3)->setTimezone('-10:00')->format('Y-m-d\TH:i:sP'),
-        ]));
+        ])));
         $this->fail('A future instant written with an offset was accepted.');
     } catch (ValidationException $e) {
         expect($e->errors())->toHaveKey('paid_at');
@@ -381,10 +381,10 @@ it('surfaces the future paid_at refusal as a field error on the cashier form', f
 
     $this->actingAs($cashier)
         ->from(route('rme.cashier.payment.create', [$visit, $invoice]))
-        ->post(route('rme.cashier.payment.store', [$visit, $invoice]), [
+        ->post(route('rme.cashier.payment.store', [$visit, $invoice]), rmeFreshPaymentForm($invoice, [
             'amount' => 100000,
             'paid_at' => now()->addDay()->format('Y-m-d\TH:i'),
-        ])
+        ]))
         ->assertSessionHasErrors('paid_at');
 
     expect(RmePayment::count())->toBe(0);
@@ -395,7 +395,7 @@ it('surfaces the future paid_at refusal as a field error on the cashier form', f
 it('refuses to re-amount, re-date, re-point or re-batch a recorded payment', function (string $column, mixed $value) {
     $visit = rf0Visit();
     $invoice = rf0Invoice($visit, 100000);
-    $payment = app(RmePaymentService::class)->pay($invoice, test()->cashier, rf0Payment(60000));
+    $payment = app(RmePaymentService::class)->pay($invoice, test()->cashier, rmeFreshPaymentForm($invoice, rf0Payment(60000)));
 
     expect(fn () => $payment->update([$column => $value]))->toThrow(LogicException::class);
 
@@ -413,7 +413,7 @@ it('refuses to re-amount, re-date, re-point or re-batch a recorded payment', fun
 it('refuses to soft-delete or force-delete a recorded payment', function (string $method) {
     $visit = rf0Visit();
     $invoice = rf0Invoice($visit, 100000);
-    $payment = app(RmePaymentService::class)->pay($invoice, test()->cashier, rf0Payment(100000));
+    $payment = app(RmePaymentService::class)->pay($invoice, test()->cashier, rmeFreshPaymentForm($invoice, rf0Payment(100000)));
 
     expect(fn () => $payment->{$method}())->toThrow(LogicException::class);
 
@@ -424,7 +424,7 @@ it('refuses to soft-delete or force-delete a recorded payment', function (string
 it('still lets patient merge re-point payment ownership', function () {
     $visit = rf0Visit();
     $invoice = rf0Invoice($visit, 100000);
-    $payment = app(RmePaymentService::class)->pay($invoice, test()->cashier, rf0Payment(100000));
+    $payment = app(RmePaymentService::class)->pay($invoice, test()->cashier, rmeFreshPaymentForm($invoice, rf0Payment(100000)));
     $survivor = Patient::factory()->create();
 
     // The merge executor writes through the query builder (no model events) …

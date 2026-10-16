@@ -173,10 +173,10 @@ if (! function_exists('ricFlag')) {
         $cashier ??= test()->cashier;
         test()->actingAs($cashier);
 
-        app(RmePaymentService::class)->pay($invoice->fresh(), $cashier, [
+        app(RmePaymentService::class)->pay($invoice->fresh(), $cashier, rmeFreshPaymentForm($invoice->fresh(), [
             'amount' => $amount,
             'paid_at' => now()->format('Y-m-d H:i:s'),
-        ]);
+        ]));
     }
 
     /** @return Collection<int, AuditLog> */

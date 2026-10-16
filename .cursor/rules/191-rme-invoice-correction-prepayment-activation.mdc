@@ -1,0 +1,98 @@
+---
+description: ACTIVATION-RME-INVOICE-CORRECTION-PREPAYMENT-1 — activation contract for the pre-payment RME invoice correction (rule 190). Owner decisions D1/D7/D10/D21 were still PENDING, so the capability stays OFF and no operational role holds a correction permission. What shipped is the one prerequisite that needs no decision — every payment is bound to the invoice correction_version the cashier saw. Labels — IMPLEMENTED / ACTIVE_IN_PRODUCTION / FEATURE_FLAG_OFF / PENDING_OWNER_DECISION / FUTURE_SCOPE.
+globs: app/Modules/RmeInvoice/**, resources/views/rme/cashier/**, resources/views/rme/invoice-corrections/**, config/feature_flags.php, database/seeders/RoleSeeder.php, database/seeders/PermissionSeeder.php, tests/Feature/RmeInvoiceCorrection/**, tests/Feature/RME/**
+alwaysApply: false
+---
+
+# RME invoice correction — pre-payment activation contract (rule 191)
+
+Evidence: `docs/sprints/activation-rme-invoice-correction-prepayment-1.md`.
+Extends rule 190; where they disagree about what EXISTS, this rule is newer.
+
+## 1. Activation is four separate facts — never one (ALL labels)
+1. **Code deployed ≠ routes registered ≠ flag ON ≠ feature verified.** The
+   correction capability is operationally active only when ALL of: owner
+   decisions D1, D7, D10, D21 recorded with authoritative evidence; the D21 price
+   authority enforced; an operational role granted the three permissions
+   through `RoleSeeder`; the flag ON through the environment + config cache
+   rebuilt as the runtime user; and an authenticated maker/checker pilot proven.
+2. Status at this release: **FEATURE_FLAG_OFF**, `ACTIVATION_SCOPE=NONE`. No GO
+   tag named `activation-rme-invoice-correction-prepayment-1-go` may exist
+   while the flag is OFF or any of the four decisions is PENDING.
+
+## 2. Owner decisions — PENDING_OWNER_DECISION
+3. D1 (pre-payment approval authority), D7 (receipt versioning policy), D10
+   (does a PENDING correction block payment), D21 (price authority) are still
+   **PENDING**. The audit register's "Rekomendasi" column and any brief's
+   "proposed policies" are PROPOSALS, never approvals. Decision codes are per
+   register — the KTP-OCR "D7 APPROVED" is a different decision.
+4. Never self-approve a financial business decision. Never enable the flag, grant
+   a correction permission to an operational role, or run a real correction until
+   the owner decides — that is the fail-closed answer, not a blocker to route around.
+
+## 3. Payment ↔ invoice version binding — IMPLEMENTED, ACTIVE_IN_PRODUCTION
+5. Every payment path (`pay`, `allocateControlPayment`, `allocateVisitPayment`)
+   must settle the invoice version the cashier SAW. The form carries
+   `invoice_versions[<invoice id>] = <correction_version>` for EVERY invoice it
+   displays (the paid invoice, control carry-over parents, selectable receivables),
+   rendered from the CURRENT rows — never from `old()`.
+6. **Enforced in the SERVICE, under the invoice row lock** (`assertFormVersion()`),
+   for every invoice the batch would settle. A missing or non-whole version is
+   `[INVOICE_VERSION_MISSING]`; a different version is `[INVOICE_VERSION_CHANGED]`.
+   Programmatic callers are bound too — a request rule alone would leave them unbound.
+7. The comparison MUST read the LOCKED row. Correction apply takes the same lock
+   first, so: correction commits first ⇒ the stale form is refused; payment commits
+   first ⇒ the correction goes STALE (rule 190 §8). Moving the check before the lock
+   lets a correction commit in between — the PostgreSQL race test kills that mutant.
+8. A conflict rolls the WHOLE batch back (no payment, no status change, no visit
+   completion) and is audited `RME_PAYMENT_REFUSED_INVOICE_VERSION` AFTER the
+   rollback (it records an attempt). Payload: ids, invoice number, branch, reason
+   code, payment path, expected/current version, status — never the typed amount,
+   a note or a reference number.
+9. The FormRequest repeats the comparison for the paid invoice WITHOUT a lock, only
+   so the cashier sees the version message instead of a misleading "amount exceeds
+   the remaining balance". It is never the authority.
+10. **This is not D10.** A SUBMITTED/APPROVED correction changes nothing the cashier
+    sees; a payment against it is still accepted and the correction then goes STALE.
+    Whether a pending correction should block payment is D10, still PENDING.
+11. No new lock: the version is read from rows the payment already locks, in the
+    existing order (paid invoice first, then parents/receivables in summary order).
+12. Tests that are not about binding use `rmeFreshPaymentForm($invoice, $data)`
+    (tests/Pest.php): the versions a page rendered NOW would carry. A stale-form test
+    must build `invoice_versions` explicitly — the helper never overwrites one.
+
+## 4. Price & discount authority (D21) — PENDING_OWNER_DECISION, BLOCKED
+13. Cashiers still type item prices and discounts freely (audit BCF-01). Rp0 is
+    still refused by the correction proposal (no zero line, no zero/negative total).
+14. Measured 2026-10-17 (production, read-only): tariffs exist ONLY for TLK1
+    (11 treatments); SPN4 — the only branch that has billed — has none, and all 7
+    production invoice items are `NO_TARIFF`. A tariff-based price authority would
+    therefore refuse every Sunu invoice today. D21 needs an owner decision AND
+    tariff data for every billing branch before it can be enforced. Never invent a
+    percentage limit, a default tariff, or a "same as TLK1" fallback.
+
+## 5. Permissions — FEATURE_FLAG_OFF, NOT GRANTED
+15. `request_rme_invoice_correction`, `approve_rme_invoice_correction`,
+    `apply_rme_invoice_correction` are held ONLY by Super Admin (via `'*'`). No
+    operational role (Kasir, Admin Klinik, Front Office, Supervisor RME) gets them
+    before D1. A grant goes through `RoleSeeder` only — measure the production
+    delta first (seed a scratch DB, diff `role_has_permissions`).
+16. Maker ≠ checker stays a SERVICE rule under the row lock, per ACCOUNT — a user
+    holding several roles still cannot approve their own request, and `Gate::before`
+    means a policy can never be the guarantee.
+
+## 6. Oversight, documents, scope — unchanged (rule 190)
+17. Finance Klinik and Data Analyst stay READ-ONLY. Frozen v0/vN document versions,
+    STALE-on-payment, one active correction per invoice, branch scope and the D23
+    lab-candidate refusal are unchanged.
+18. FUTURE_SCOPE, never reported active: post-payment correction, refund, reversal,
+    patient credit, Rp0 adjustment, settlement, pending-correction payment block (D10).
+
+## 7. Rollback & evidence
+19. Rollback of this release is a code rollback only: no migration, no seeder, no
+    flag. The binding refuses nothing a freshly rendered page submits; a page opened
+    before the deploy is refused once with "muat ulang halaman" — never a data loss.
+20. When activation is finally attempted it needs, in order: recorded decisions →
+    D21 enforcement + tariffs per billing branch → RoleSeeder grant → flag via
+    environment + config cache as `daengtisiams` → authenticated pilot with two
+    distinct real accounts → financial reconciliation. A missing step is NO_GO.

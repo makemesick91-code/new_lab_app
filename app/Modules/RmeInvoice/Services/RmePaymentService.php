@@ -12,8 +12,10 @@ use App\Modules\RmeInvoice\Interfaces\RmePaymentRepositoryInterface;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Models\RmePayment;
 use App\Modules\RmeInvoice\Support\RmeFinancialAuditEvent;
+use App\Modules\RmeInvoice\Support\RmeInvoiceVersionConflict;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
 use Carbon\CarbonImmutable;
+use Closure;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -111,10 +113,11 @@ class RmePaymentService
     {
         $data['paid_at'] = $this->normalizePaidAt($data['paid_at'] ?? null);
 
-        $payment = DB::transaction(function () use ($invoice, $cashier, $data) {
+        $payment = $this->settleUnderVersionBinding(RmeInvoiceVersionConflict::PATH_SINGLE, $cashier, function () use ($invoice, $cashier, $data) {
             $invoice = RmeInvoice::query()->lockForUpdate()->findOrFail($invoice->id);
 
             $this->assertInvoicePayable($invoice);
+            $this->assertFormVersion($invoice, $data);
 
             $amount = $this->normalizeAmount($data['amount']);
             $remainingBefore = $this->remainingForInvoice($invoice);
@@ -169,9 +172,10 @@ class RmePaymentService
         $controlVisit = $this->requireVisit($controlInvoice);
         $batchUuid = (string) Str::uuid();
 
-        $result = DB::transaction(function () use ($controlInvoice, $controlVisit, $cashier, $data, $amount, $summary, $batchUuid) {
+        $result = $this->settleUnderVersionBinding(RmeInvoiceVersionConflict::PATH_CONTROL, $cashier, function () use ($controlInvoice, $controlVisit, $cashier, $data, $amount, $summary, $batchUuid) {
             $controlInvoice = RmeInvoice::query()->lockForUpdate()->findOrFail($controlInvoice->id);
             $this->assertInvoicePayable($controlInvoice);
+            $this->assertFormVersion($controlInvoice, $data);
 
             $remainingPayment = $amount;
             $allocatedToParent = 0.0;
@@ -187,6 +191,8 @@ class RmePaymentService
                 if (! $parentInvoice->isPayable()) {
                     continue;
                 }
+
+                $this->assertFormVersion($parentInvoice, $data);
 
                 $parentVisit = $this->requireVisit($parentInvoice);
                 $parentRemaining = $this->remainingForInvoice($parentInvoice);
@@ -313,9 +319,10 @@ class RmePaymentService
         $currentVisit = $this->requireVisit($currentInvoice);
         $batchUuid = (string) Str::uuid();
 
-        $result = DB::transaction(function () use ($currentInvoice, $currentVisit, $cashier, $data, $amount, $summary, $batchUuid) {
+        $result = $this->settleUnderVersionBinding(RmeInvoiceVersionConflict::PATH_VISIT, $cashier, function () use ($currentInvoice, $currentVisit, $cashier, $data, $amount, $summary, $batchUuid) {
             $currentInvoice = RmeInvoice::query()->lockForUpdate()->findOrFail($currentInvoice->id);
             $this->assertInvoicePayable($currentInvoice);
+            $this->assertFormVersion($currentInvoice, $data);
 
             $remainingPayment = $amount;
             $allocatedToParent = 0.0;
@@ -336,6 +343,8 @@ class RmePaymentService
                 if (! in_array((int) $receivable->branch_id, $this->branches->rmeEnabledIds(), true)) {
                     continue;
                 }
+
+                $this->assertFormVersion($receivable, $data);
 
                 $receivableVisit = $this->requireVisit($receivable);
                 $receivableRemaining = $this->remainingForInvoice($receivable);
@@ -486,6 +495,94 @@ class RmePaymentService
         );
 
         return $payment;
+    }
+
+    /**
+     * ACTIVATION-RME-INVOICE-CORRECTION-PREPAYMENT-1 (rule 191) — a payment
+     * settles the invoice version the cashier SAW, never a later one.
+     *
+     * An applied correction rewrites an UNPAID invoice's items and totals and
+     * bumps `correction_version`. Without this check a cashier who opened the
+     * payment page before the correction could submit it afterwards and settle
+     * the corrected total while looking at the original one. The form therefore
+     * carries `invoice_versions[<id>] = <version>` for every invoice it shows,
+     * and every invoice this payment will settle must appear there with its
+     * CURRENT version.
+     *
+     * MUST BE CALLED ON THE LOCKED ROW. Correction apply takes the same invoice
+     * row lock first, so under the lock "the version I read" is the version
+     * that commits: a correction that wins the race is seen here and refused; a
+     * payment that wins makes the correction STALE on its side. Reading the
+     * version before the lock would let a correction commit in between and the
+     * payment then settle a total nobody displayed.
+     *
+     * NOT owner decision D10. This does not refuse a payment because a
+     * correction is merely SUBMITTED or APPROVED — those change nothing the
+     * cashier sees. Only an APPLIED change (a version bump) is bound, which is
+     * required whatever D10 decides.
+     *
+     * Enforced here, in the service, because all three payment paths funnel
+     * through it; a request rule alone would leave any other caller unbound.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    private function assertFormVersion(RmeInvoice $locked, array $data): void
+    {
+        $current = (int) ($locked->correction_version ?? 0);
+        $declared = is_array($data['invoice_versions'] ?? null) ? $data['invoice_versions'] : [];
+        $id = (int) $locked->id;
+
+        if (! array_key_exists($id, $declared)) {
+            throw new RmeInvoiceVersionConflict(RmeInvoiceVersionConflict::MISSING, $id, null, $current);
+        }
+
+        $expected = $declared[$id];
+
+        // Strictly a whole, non-negative number. Anything else is not a version
+        // the server ever rendered, so it cannot describe what the cashier saw.
+        if (! (is_int($expected) || (is_string($expected) && ctype_digit($expected)))) {
+            throw new RmeInvoiceVersionConflict(RmeInvoiceVersionConflict::MISSING, $id, null, $current);
+        }
+
+        if ((int) $expected !== $current) {
+            throw new RmeInvoiceVersionConflict(RmeInvoiceVersionConflict::CHANGED, $id, (int) $expected, $current);
+        }
+    }
+
+    /**
+     * Runs one payment batch in a transaction. A version conflict raised under
+     * the lock rolls the WHOLE batch back — no payment, no status change, no
+     * visit completion — and is then audited and surfaced as a validation
+     * error. The audit row is written after the rollback because it records an
+     * attempt, which the rollback would otherwise erase.
+     *
+     * @template T
+     *
+     * @param  Closure(): T  $work
+     * @return T
+     */
+    private function settleUnderVersionBinding(string $paymentPath, User $cashier, Closure $work): mixed
+    {
+        try {
+            return DB::transaction($work);
+        } catch (RmeInvoiceVersionConflict $conflict) {
+            $invoice = RmeInvoice::query()->find($conflict->invoiceId);
+
+            if ($invoice instanceof RmeInvoice) {
+                $this->auditLogs->log(
+                    RmeFinancialAuditEvent::ENTITY_INVOICE,
+                    (int) $invoice->id,
+                    RmeFinancialAuditEvent::ACTION_PAYMENT_REFUSED_INVOICE_VERSION,
+                    null,
+                    RmeFinancialAuditEvent::paymentVersionRefusedPayload($invoice, $conflict, $paymentPath),
+                    $cashier,
+                );
+            }
+
+            throw ValidationException::withMessages([
+                'invoice_versions' => $conflict->operatorMessage(),
+            ]);
+        }
     }
 
     private function assertInvoicePayable(RmeInvoice $invoice): void

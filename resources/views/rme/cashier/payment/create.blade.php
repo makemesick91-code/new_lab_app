@@ -207,6 +207,28 @@
                 }">
                 @csrf
 
+                {{--
+                    ACTIVATION-RME-INVOICE-CORRECTION-PREPAYMENT-1 (rule 191): the
+                    correction version of EVERY invoice this page displays. The payment
+                    service refuses to settle an invoice whose version is not the one
+                    listed here. Read from the current rows on every render and never
+                    from old(), so a page re-rendered after a refusal carries the
+                    version it now shows.
+                --}}
+                <input type="hidden" name="invoice_versions[{{ $invoice->id }}]" value="{{ (int) $invoice->correction_version }}">
+                @foreach ($carryOverInvoices as $versionedInvoice)
+                    <input type="hidden" name="invoice_versions[{{ $versionedInvoice->id }}]" value="{{ (int) $versionedInvoice->correction_version }}">
+                @endforeach
+                @foreach ($outstandingReceivables as $versionedInvoice)
+                    <input type="hidden" name="invoice_versions[{{ $versionedInvoice->id }}]" value="{{ (int) $versionedInvoice->correction_version }}">
+                @endforeach
+
+                @error('invoice_versions')
+                    <div class="rounded-md border border-danger bg-danger-50 p-3 text-sm text-danger-700" role="alert" data-payment-invoice-version-error>
+                        {{ $message }}
+                    </div>
+                @enderror
+
                 @if ($showSelectableReceivables)
                     {{-- Sprint 62.2 — patient outstanding receivables (opt-in collection) --}}
                     <div class="rounded-md border border-warning-100 bg-warning-50 p-4 space-y-3">

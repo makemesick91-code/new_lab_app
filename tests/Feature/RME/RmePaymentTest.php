@@ -120,7 +120,7 @@ it('service rejects payment for invoice without items', function () {
     expect(fn () => app(RmePaymentService::class)->pay(
         $invoice,
         $this->cashier,
-        pmtPaymentPayload($invoice, ['amount' => 100000]),
+        rmeFreshPaymentForm($invoice, pmtPaymentPayload($invoice, ['amount' => 100000])),
     ))->toThrow(ValidationException::class);
 });
 
@@ -137,7 +137,7 @@ it('service rejects payment for invoice not in UNPAID status', function () {
     expect(fn () => app(RmePaymentService::class)->pay(
         $invoice,
         $this->cashier,
-        pmtPaymentPayload($invoice),
+        rmeFreshPaymentForm($invoice, pmtPaymentPayload($invoice)),
     ))->toThrow(ValidationException::class);
 });
 
@@ -151,7 +151,7 @@ it('service rejects payment with zero amount', function () {
     expect(fn () => app(RmePaymentService::class)->pay(
         $invoice,
         $this->cashier,
-        pmtPaymentPayload($invoice, ['amount' => 0]),
+        rmeFreshPaymentForm($invoice, pmtPaymentPayload($invoice, ['amount' => 0])),
     ))->toThrow(ValidationException::class);
 });
 
@@ -165,7 +165,7 @@ it('service rejects payment with negative amount', function () {
     expect(fn () => app(RmePaymentService::class)->pay(
         $invoice,
         $this->cashier,
-        pmtPaymentPayload($invoice, ['amount' => -100]),
+        rmeFreshPaymentForm($invoice, pmtPaymentPayload($invoice, ['amount' => -100])),
     ))->toThrow(ValidationException::class);
 });
 
@@ -181,7 +181,7 @@ it('partial payment marks invoice partial and completes the visit', function () 
     app(RmePaymentService::class)->pay(
         $invoice,
         $this->cashier,
-        pmtPaymentPayload($invoice, ['amount' => $partial]),
+        rmeFreshPaymentForm($invoice, pmtPaymentPayload($invoice, ['amount' => $partial])),
     );
 
     expect($invoice->fresh()->status)->toBe(RmeInvoice::STATUS_PARTIAL)
@@ -202,7 +202,7 @@ it('full payment creates rme payment record', function () {
     app(RmePaymentService::class)->pay(
         $invoice,
         $this->cashier,
-        pmtPaymentPayload($invoice),
+        rmeFreshPaymentForm($invoice, pmtPaymentPayload($invoice)),
     );
 
     expect(RmePayment::where('rme_invoice_id', $invoice->id)->exists())->toBeTrue();
@@ -218,7 +218,7 @@ it('full payment sets invoice status to PAID', function () {
     app(RmePaymentService::class)->pay(
         $invoice,
         $this->cashier,
-        pmtPaymentPayload($invoice),
+        rmeFreshPaymentForm($invoice, pmtPaymentPayload($invoice)),
     );
 
     expect($invoice->fresh()->status)->toBe(RmeInvoice::STATUS_PAID);
@@ -234,7 +234,7 @@ it('full payment transitions clinic visit to COMPLETED', function () {
     app(RmePaymentService::class)->pay(
         $invoice,
         $this->cashier,
-        pmtPaymentPayload($invoice),
+        rmeFreshPaymentForm($invoice, pmtPaymentPayload($invoice)),
     );
 
     expect($visit->fresh()->status)->toBe(ClinicVisit::STATUS_COMPLETED);
@@ -251,7 +251,7 @@ it('payment stores selected payment method', function () {
     app(RmePaymentService::class)->pay(
         $invoice,
         $this->cashier,
-        pmtPaymentPayload($invoice, ['payment_method_id' => $method->id]),
+        rmeFreshPaymentForm($invoice, pmtPaymentPayload($invoice, ['payment_method_id' => $method->id])),
     );
 
     $payment = RmePayment::where('rme_invoice_id', $invoice->id)->first();
@@ -268,7 +268,7 @@ it('receipt page is accessible after full payment', function () {
     app(RmePaymentService::class)->pay(
         $invoice,
         $this->cashier,
-        pmtPaymentPayload($invoice),
+        rmeFreshPaymentForm($invoice, pmtPaymentPayload($invoice)),
     );
 
     $this->get(route('rme.cashier.receipt.show', [$visit, $invoice->fresh()]))
@@ -286,7 +286,7 @@ it('receipt shows patient, invoice number, items, total, method, cashier, paid_a
     app(RmePaymentService::class)->pay(
         $invoice,
         $this->cashier,
-        pmtPaymentPayload($invoice, ['payment_method_id' => $method->id]),
+        rmeFreshPaymentForm($invoice, pmtPaymentPayload($invoice, ['payment_method_id' => $method->id])),
     );
 
     $this->get(route('rme.cashier.receipt.show', [$visit, $invoice->fresh()]))
@@ -311,7 +311,7 @@ it('rme payment does not create lab-order payment records', function () {
     app(RmePaymentService::class)->pay(
         $invoice,
         $this->cashier,
-        pmtPaymentPayload($invoice),
+        rmeFreshPaymentForm($invoice, pmtPaymentPayload($invoice)),
     );
 
     expect(DB::table('trx_payments')->count())->toBe($beforeCount);
@@ -329,7 +329,7 @@ it('initial treatment on visit is unchanged after rme payment', function () {
     app(RmePaymentService::class)->pay(
         $invoice,
         $this->cashier,
-        pmtPaymentPayload($invoice),
+        rmeFreshPaymentForm($invoice, pmtPaymentPayload($invoice)),
     );
 
     expect($visit->fresh()->initial_treatment_id)->toBe($initialTreatmentBefore);
@@ -356,7 +356,7 @@ it('cashier cannot pay invoice from a non-RME branch', function () {
     expect(fn () => app(RmePaymentService::class)->pay(
         $invoice,
         $this->cashier,
-        pmtPaymentPayload($invoice),
+        rmeFreshPaymentForm($invoice, pmtPaymentPayload($invoice)),
     ))->toThrow(ValidationException::class);
 });
 
@@ -368,7 +368,7 @@ it('second payment can fully pay a partial rme invoice', function () {
     app(RmePaymentService::class)->pay(
         $invoice,
         $this->cashier,
-        pmtPaymentPayload($invoice, ['amount' => 200000]),
+        rmeFreshPaymentForm($invoice, pmtPaymentPayload($invoice, ['amount' => 200000])),
     );
 
     $partialInvoice = $invoice->fresh();
@@ -381,7 +381,7 @@ it('second payment can fully pay a partial rme invoice', function () {
     app(RmePaymentService::class)->pay(
         $partialInvoice,
         $this->cashier,
-        pmtPaymentPayload($partialInvoice, ['amount' => $partialInvoice->remainingAmount()]),
+        rmeFreshPaymentForm($partialInvoice, pmtPaymentPayload($partialInvoice, ['amount' => $partialInvoice->remainingAmount()])),
     );
 
     expect($invoice->fresh()->status)->toBe(RmeInvoice::STATUS_PAID)
@@ -398,7 +398,7 @@ it('service rejects payment greater than remaining rme invoice balance', functio
     app(RmePaymentService::class)->pay(
         $invoice,
         $this->cashier,
-        pmtPaymentPayload($invoice, ['amount' => 200000]),
+        rmeFreshPaymentForm($invoice, pmtPaymentPayload($invoice, ['amount' => 200000])),
     );
 
     $partialInvoice = $invoice->fresh();
@@ -406,7 +406,7 @@ it('service rejects payment greater than remaining rme invoice balance', functio
     expect(fn () => app(RmePaymentService::class)->pay(
         $partialInvoice,
         $this->cashier,
-        pmtPaymentPayload($partialInvoice, ['amount' => $partialInvoice->remainingAmount() + 1]),
+        rmeFreshPaymentForm($partialInvoice, pmtPaymentPayload($partialInvoice, ['amount' => $partialInvoice->remainingAmount() + 1])),
     ))->toThrow(ValidationException::class);
 });
 
@@ -418,7 +418,7 @@ it('authorized cashier can open payment form for partial rme invoice', function 
     app(RmePaymentService::class)->pay(
         $invoice,
         $this->cashier,
-        pmtPaymentPayload($invoice, ['amount' => 200000]),
+        rmeFreshPaymentForm($invoice, pmtPaymentPayload($invoice, ['amount' => 200000])),
     );
 
     $partialInvoice = $invoice->fresh();

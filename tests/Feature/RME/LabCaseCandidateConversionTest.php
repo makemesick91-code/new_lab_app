@@ -279,12 +279,12 @@ it('rme payment still does not auto-create lab order only explicit conversion do
     // signed PERSETUJUAN TINDAKAN MEDIS. This suite is not about consent.
     rmeSignedConsentFor($invoice->clinicVisit);
 
-    app(RmePaymentService::class)->pay($invoice->fresh(), $this->converter, [
+    app(RmePaymentService::class)->pay($invoice->fresh(), $this->converter, rmeFreshPaymentForm($invoice->fresh(), [
         'amount' => $invoice->grand_total,
         'paid_at' => now()->format('Y-m-d H:i:s'),
         'consent_signed_by_patient' => true,
         'consent_signed_by_doctor' => true,
-    ]);
+    ]));
 
     expect(LabOrder::count())->toBe($beforeOrders);
 

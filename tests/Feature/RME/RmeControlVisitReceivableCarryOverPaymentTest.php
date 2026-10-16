@@ -149,7 +149,7 @@ it('control visit with unpaid parent invoice shows carry-over balance', function
 it('control visit with partial parent invoice shows remaining balance', function () {
     ['parent' => $parent, 'parentInvoice' => $parentInvoice, 'control' => $control, 'controlInvoice' => $controlInvoice] = covScenario();
 
-    app(RmePaymentService::class)->pay($parentInvoice, $this->cashier, covPaymentPayload(100000));
+    app(RmePaymentService::class)->pay($parentInvoice, $this->cashier, rmeFreshPaymentForm($parentInvoice, covPaymentPayload(100000)));
 
     $summary = app(RmeControlReceivableService::class)->getControlPayableSummary($controlInvoice->fresh());
 
@@ -165,7 +165,7 @@ it('control visit with partial parent invoice shows remaining balance', function
 it('control visit with paid parent invoice shows zero carry-over', function () {
     ['parentInvoice' => $parentInvoice, 'controlInvoice' => $controlInvoice] = covScenario();
 
-    app(RmePaymentService::class)->pay($parentInvoice, $this->cashier, covPaymentPayload(300000));
+    app(RmePaymentService::class)->pay($parentInvoice, $this->cashier, rmeFreshPaymentForm($parentInvoice, covPaymentPayload(300000)));
 
     $summary = app(RmeControlReceivableService::class)->getControlPayableSummary($controlInvoice->fresh());
 
@@ -232,7 +232,7 @@ it('payment smaller than parent outstanding reduces parent invoice only', functi
     $result = app(RmePaymentService::class)->allocateControlPayment(
         $controlInvoice,
         $this->cashier,
-        covPaymentPayload(250000),
+        rmeFreshPaymentForm($controlInvoice, covPaymentPayload(250000)),
     );
 
     expect($result->allocatedToParent)->toBe(250000.0)
@@ -251,7 +251,7 @@ it('payment equal to parent outstanding pays parent and leaves control unchanged
     app(RmePaymentService::class)->allocateControlPayment(
         $controlInvoice,
         $this->cashier,
-        covPaymentPayload(300000),
+        rmeFreshPaymentForm($controlInvoice, covPaymentPayload(300000)),
     );
 
     expect($parentInvoice->fresh()->status)->toBe(RmeInvoice::STATUS_PAID)
@@ -265,7 +265,7 @@ it('payment greater than parent outstanding pays parent first and applies remain
     app(RmePaymentService::class)->allocateControlPayment(
         $controlInvoice,
         $this->cashier,
-        covPaymentPayload(350000),
+        rmeFreshPaymentForm($controlInvoice, covPaymentPayload(350000)),
     );
 
     expect($parentInvoice->fresh()->status)->toBe(RmeInvoice::STATUS_PAID)
@@ -279,7 +279,7 @@ it('payment equal to total payable pays both parent and control invoice', functi
     app(RmePaymentService::class)->allocateControlPayment(
         $controlInvoice,
         $this->cashier,
-        covPaymentPayload(400000),
+        rmeFreshPaymentForm($controlInvoice, covPaymentPayload(400000)),
     );
 
     expect($parentInvoice->fresh()->status)->toBe(RmeInvoice::STATUS_PAID)
@@ -294,7 +294,7 @@ it('payment greater than total payable is rejected', function () {
     expect(fn () => app(RmePaymentService::class)->allocateControlPayment(
         $controlInvoice,
         $this->cashier,
-        covPaymentPayload(450000),
+        rmeFreshPaymentForm($controlInvoice, covPaymentPayload(450000)),
     ))->toThrow(ValidationException::class);
 });
 
@@ -302,7 +302,7 @@ it('payment with no carry-over uses normal existing flow', function () {
     $visit = covParentVisit($this->patient, $this->rmeBranch, $this->doctor);
     $invoice = covCreateInvoice($visit, $this->cashier, 200000);
 
-    app(RmePaymentService::class)->pay($invoice, $this->cashier, covPaymentPayload(200000));
+    app(RmePaymentService::class)->pay($invoice, $this->cashier, rmeFreshPaymentForm($invoice, covPaymentPayload(200000)));
 
     expect($invoice->fresh()->status)->toBe(RmeInvoice::STATUS_PAID)
         ->and(RmePayment::where('rme_invoice_id', $invoice->id)->count())->toBe(1);
@@ -326,7 +326,7 @@ it('does not create duplicate patient or mutate old rme records during carry-ove
     app(RmePaymentService::class)->allocateControlPayment(
         $controlInvoice,
         $this->cashier,
-        covPaymentPayload(250000),
+        rmeFreshPaymentForm($controlInvoice, covPaymentPayload(250000)),
     );
 
     expect(Patient::count())->toBe($patientCount)
@@ -342,7 +342,7 @@ it('report piutang excludes fully paid parent after allocation', function () {
     app(RmePaymentService::class)->allocateControlPayment(
         $controlInvoice,
         $this->cashier,
-        covPaymentPayload(300000),
+        rmeFreshPaymentForm($controlInvoice, covPaymentPayload(300000)),
     );
 
     $this->actingAs($this->cashier)
@@ -358,7 +358,7 @@ it('partial balances remain visible in receivable report', function () {
     app(RmePaymentService::class)->allocateControlPayment(
         $controlInvoice,
         $this->cashier,
-        covPaymentPayload(250000),
+        rmeFreshPaymentForm($controlInvoice, covPaymentPayload(250000)),
     );
 
     $this->actingAs($this->cashier)
@@ -384,7 +384,7 @@ it('receipt shows payment allocation parent and control after full payable payme
     ['control' => $control, 'controlInvoice' => $controlInvoice] = covScenario();
 
     $this->actingAs($this->cashier)
-        ->post(route('rme.cashier.payment.store', [$control, $controlInvoice]), covPaymentPayload(400000))
+        ->post(route('rme.cashier.payment.store', [$control, $controlInvoice]), rmeFreshPaymentForm($controlInvoice, covPaymentPayload(400000)))
         ->assertRedirect(route('rme.cashier.receipt.show', [$control, $controlInvoice->fresh()]));
 
     $this->get(route('rme.cashier.receipt.show', [$control, $controlInvoice->fresh()]))
@@ -399,7 +399,7 @@ it('no carry-over case keeps normal receipt layout', function () {
     $invoice = covCreateInvoice($visit, $this->cashier, 150000);
 
     $this->actingAs($this->cashier)
-        ->post(route('rme.cashier.payment.store', [$visit, $invoice]), covPaymentPayload(150000))
+        ->post(route('rme.cashier.payment.store', [$visit, $invoice]), rmeFreshPaymentForm($invoice, covPaymentPayload(150000)))
         ->assertRedirect(route('rme.cashier.receipt.show', [$visit, $invoice->fresh()]));
 
     $this->get(route('rme.cashier.receipt.show', [$visit, $invoice->fresh()]))
@@ -415,7 +415,7 @@ it('split payment does not create duplicate lab candidate', function () {
     app(RmePaymentService::class)->allocateControlPayment(
         $controlInvoice,
         $this->cashier,
-        covPaymentPayload(400000),
+        rmeFreshPaymentForm($controlInvoice, covPaymentPayload(400000)),
     );
 
     $controlItemId = $controlInvoice->fresh()->items->first()->id;
@@ -428,10 +428,10 @@ it('parent invoice full payment via control remains idempotent for lab candidate
 
     $service = app(RmePaymentService::class);
     // First the cashier settles the parent receivable via the control screen…
-    $service->allocateControlPayment($controlInvoice, $this->cashier, covPaymentPayload(300000));
+    $service->allocateControlPayment($controlInvoice, $this->cashier, rmeFreshPaymentForm($controlInvoice, covPaymentPayload(300000)));
     // …then pays the remaining control balance. With no carry-over left, this
     // mirrors the controller routing into the normal pay() flow.
-    $service->pay($controlInvoice->fresh(), $this->cashier, covPaymentPayload(100000));
+    $service->pay($controlInvoice->fresh(), $this->cashier, rmeFreshPaymentForm($controlInvoice->fresh(), covPaymentPayload(100000)));
 
     $parentItemId = $parentInvoice->fresh()->items->first()->id;
 
@@ -453,7 +453,7 @@ it('supports chained parent carry-over fifo from oldest to newest', function () 
     app(RmePaymentService::class)->allocateControlPayment(
         $controlInvoice,
         $this->cashier,
-        covPaymentPayload(150000),
+        rmeFreshPaymentForm($controlInvoice, covPaymentPayload(150000)),
     );
 
     expect($grandparentInvoice->fresh()->status)->toBe(RmeInvoice::STATUS_PAID)
@@ -467,7 +467,7 @@ it('rejects http payment above total payable for control carry-over', function (
 
     $this->actingAs($this->cashier)
         ->from(route('rme.cashier.payment.create', [$control, $controlInvoice]))
-        ->post(route('rme.cashier.payment.store', [$control, $controlInvoice]), covPaymentPayload(500000))
+        ->post(route('rme.cashier.payment.store', [$control, $controlInvoice]), rmeFreshPaymentForm($controlInvoice, covPaymentPayload(500000)))
         ->assertSessionHasErrors('amount');
 });
 
@@ -477,7 +477,7 @@ it('stores payment batch uuid for grouped carry-over payments', function () {
     $result = app(RmePaymentService::class)->allocateControlPayment(
         $controlInvoice,
         $this->cashier,
-        covPaymentPayload(350000),
+        rmeFreshPaymentForm($controlInvoice, covPaymentPayload(350000)),
     );
 
     $batchPayments = RmePayment::where('payment_batch_uuid', $result->paymentBatchUuid)->get();
@@ -494,7 +494,7 @@ it('does not create zero-amount payments during allocation', function () {
     app(RmePaymentService::class)->allocateControlPayment(
         $controlInvoice,
         $this->cashier,
-        covPaymentPayload(300000),
+        rmeFreshPaymentForm($controlInvoice, covPaymentPayload(300000)),
     );
 
     expect(RmePayment::count())->toBe($beforeCount + 1);
@@ -508,7 +508,7 @@ it('parent invoice items remain unchanged after carry-over payment', function ()
     app(RmePaymentService::class)->allocateControlPayment(
         $controlInvoice,
         $this->cashier,
-        covPaymentPayload(250000),
+        rmeFreshPaymentForm($controlInvoice, covPaymentPayload(250000)),
     );
 
     expect($parentInvoice->fresh()->items()->get(['description', 'qty', 'unit_price', 'subtotal'])->toArray())
@@ -523,7 +523,7 @@ it('control invoice items remain unchanged after carry-over payment', function (
     app(RmePaymentService::class)->allocateControlPayment(
         $controlInvoice,
         $this->cashier,
-        covPaymentPayload(350000),
+        rmeFreshPaymentForm($controlInvoice, covPaymentPayload(350000)),
     );
 
     expect($controlInvoice->fresh()->items()->get(['description', 'qty', 'unit_price', 'subtotal'])->toArray())
@@ -543,7 +543,7 @@ it('completes a free control visit after a partial parent receivable payment', f
     $result = app(RmePaymentService::class)->allocateControlPayment(
         $controlInvoice,
         $this->cashier,
-        covPaymentPayload(50000),
+        rmeFreshPaymentForm($controlInvoice, covPaymentPayload(50000)),
     );
 
     expect($parentInvoice->fresh()->status)->toBe(RmeInvoice::STATUS_PARTIAL)
@@ -565,7 +565,7 @@ it('completes a free control visit even though the parent invoice stays PARTIAL'
     app(RmePaymentService::class)->allocateControlPayment(
         $controlInvoice,
         $this->cashier,
-        covPaymentPayload(50000),
+        rmeFreshPaymentForm($controlInvoice, covPaymentPayload(50000)),
     );
 
     expect($parentInvoice->fresh()->isPaid())->toBeFalse()
@@ -579,7 +579,7 @@ it('keeps a control visit cashier_pending when additional treatment is not fully
     app(RmePaymentService::class)->allocateControlPayment(
         $controlInvoice,
         $this->cashier,
-        covPaymentPayload(350000),
+        rmeFreshPaymentForm($controlInvoice, covPaymentPayload(350000)),
     );
 
     expect($parentInvoice->fresh()->status)->toBe(RmeInvoice::STATUS_PAID)
@@ -594,7 +594,7 @@ it('completes a control visit with additional treatment once its invoice is paid
     app(RmePaymentService::class)->allocateControlPayment(
         $controlInvoice,
         $this->cashier,
-        covPaymentPayload(400000),
+        rmeFreshPaymentForm($controlInvoice, covPaymentPayload(400000)),
     );
 
     expect($parentInvoice->fresh()->status)->toBe(RmeInvoice::STATUS_PAID)
@@ -617,7 +617,7 @@ it('completes a normal non-control visit on partial payment, balance stays piuta
     $visit = covParentVisit($this->patient, $this->rmeBranch, $this->doctor);
     $invoice = covCreateInvoice($visit, $this->cashier, 200000);
 
-    app(RmePaymentService::class)->pay($invoice, $this->cashier, covPaymentPayload(120000));
+    app(RmePaymentService::class)->pay($invoice, $this->cashier, rmeFreshPaymentForm($invoice, covPaymentPayload(120000)));
 
     expect($invoice->fresh()->status)->toBe(RmeInvoice::STATUS_PARTIAL)
         ->and($invoice->fresh()->remainingAmount())->toBe(80000.0)
@@ -630,7 +630,7 @@ it('does not let an unpaid parent receivable block control visit completion', fu
     app(RmePaymentService::class)->allocateControlPayment(
         $controlInvoice,
         $this->cashier,
-        covPaymentPayload(50000),
+        rmeFreshPaymentForm($controlInvoice, covPaymentPayload(50000)),
     );
 
     // Parent still owes 250k, yet the control visit is done.
@@ -647,7 +647,7 @@ it('does not list a completed free control zero invoice as an active receivable'
     app(RmePaymentService::class)->allocateControlPayment(
         $controlInvoice,
         $this->cashier,
-        covPaymentPayload(50000),
+        rmeFreshPaymentForm($controlInvoice, covPaymentPayload(50000)),
     );
 
     // Free control invoice is Rp0 with a still-UNPAID status, but it is not a receivable.
@@ -667,7 +667,7 @@ it('keeps a parent invoice with positive remaining visible in receivables', func
     app(RmePaymentService::class)->allocateControlPayment(
         $controlInvoice,
         $this->cashier,
-        covPaymentPayload(120000),
+        rmeFreshPaymentForm($controlInvoice, covPaymentPayload(120000)),
     );
 
     // Parent still owes 180k → stays listed; control Rp0 invoice stays hidden.

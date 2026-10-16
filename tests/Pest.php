@@ -82,6 +82,7 @@ use App\Modules\Production\Services\AssignmentService;
 use App\Modules\Production\Services\ProductionWorkflowService;
 use App\Modules\QualityControl\Models\QualityControl;
 use App\Modules\QualityControl\Services\QualityControlService;
+use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeOnlineContext\Services\UserOnlineContextService;
 use App\Modules\Technician\Models\Technician;
 use App\Modules\Technician\Services\TechnicianAssignmentEligibility;
@@ -1038,6 +1039,39 @@ function rmeConsentedOdontogramVisit(array $attributes = []): ClinicVisit
     return rmeActiveConsentedEncounter(
         ClinicVisit::factory()->create($attributes + ['status' => ClinicVisit::STATUS_IN_PROGRESS]),
     );
+}
+
+/**
+ * ACTIVATION-RME-INVOICE-CORRECTION-PREPAYMENT-1 (rule 191) — a payment payload as
+ * a payment page rendered RIGHT NOW would submit it.
+ *
+ * Every RME payment must now declare, per invoice it settles, the
+ * `correction_version` the cashier saw (`invoice_versions[<id>] = <version>`);
+ * the payment service refuses one that is missing or no longer current. A page
+ * rendered now shows the CURRENT version of the paid invoice and of the patient's
+ * other invoices it may list, so this adds exactly that — read from the database
+ * at call time.
+ *
+ * For tests whose subject is payment mechanics, not version binding. A test about
+ * a STALE form must build `invoice_versions` explicitly (an explicit key is never
+ * overwritten here) — see RmeInvoiceCorrectionPaymentVersionBindingTest.
+ *
+ * @param  array<string, mixed>  $data
+ * @return array<string, mixed>
+ */
+function rmeFreshPaymentForm(RmeInvoice $invoice, array $data): array
+{
+    if (array_key_exists('invoice_versions', $data)) {
+        return $data;
+    }
+
+    $data['invoice_versions'] = RmeInvoice::query()
+        ->where('patient_id', $invoice->patient_id)
+        ->pluck('correction_version', 'id')
+        ->map(fn ($version) => (int) $version)
+        ->all();
+
+    return $data;
 }
 
 /**

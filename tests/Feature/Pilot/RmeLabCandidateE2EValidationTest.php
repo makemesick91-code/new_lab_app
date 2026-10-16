@@ -155,7 +155,7 @@ function e2ePaidLabInvoiceFlow(
         ['items' => [e2eItemPayload(array_merge(['treatment_id' => $treatment->id], $itemOverrides))]],
     );
 
-    app(RmePaymentService::class)->pay($invoice->fresh(), $kasir, e2ePaymentPayload($invoice->fresh()));
+    app(RmePaymentService::class)->pay($invoice->fresh(), $kasir, rmeFreshPaymentForm($invoice->fresh(), e2ePaymentPayload($invoice->fresh())));
 
     return [$visit->fresh(), $record->fresh(), $invoice->fresh(), $treatment];
 }
@@ -289,7 +289,7 @@ it('paid rme invoice without lab-required treatment does not create lab case can
         ])]],
     );
 
-    app(RmePaymentService::class)->pay($invoice->fresh(), $this->kasir, e2ePaymentPayload($invoice->fresh()));
+    app(RmePaymentService::class)->pay($invoice->fresh(), $this->kasir, rmeFreshPaymentForm($invoice->fresh(), e2ePaymentPayload($invoice->fresh())));
 
     expect(LabCaseCandidate::where('rme_invoice_id', $invoice->id)->count())->toBe(0);
 });
@@ -312,7 +312,7 @@ it('partial rme payment marks invoice partial and does not create lab case candi
     app(RmePaymentService::class)->pay(
         $invoice->fresh(),
         $this->kasir,
-        e2ePaymentPayload($invoice->fresh(), ['amount' => $partial]),
+        rmeFreshPaymentForm($invoice->fresh(), e2ePaymentPayload($invoice->fresh(), ['amount' => $partial])),
     );
 
     expect(LabCaseCandidate::where('rme_invoice_id', $invoice->id)->count())->toBe(0)

@@ -86,6 +86,14 @@ Labels: **CURRENT_PRODUCTION_BEHAVIOR** (true on production after this release),
     laboratory `Finance` role gains nothing.
 
 ## 4a. Known residual — PENDING_OWNER_DECISION (D10)
+
+> **SUPERSEDED IN PART by rule 191 (ACTIVATION-RME-INVOICE-CORRECTION-PREPAYMENT-1).**
+> The residual below is CLOSED: every payment path now binds the form to each
+> settled invoice's `correction_version` under the invoice row lock. The reasoning
+> that it "depends on D10" was too broad — D10 asks whether a PENDING correction
+> blocks payment; binding to an APPLIED change is required under either answer.
+> D10 itself is still PENDING. Text kept as the record of what was true at release.
+
 18a. A payment form is not bound to the invoice `correction_version`: if a correction
     is applied while a cashier has the payment page open, the payment settles against
     the corrected total. The correction side is safe (a payment that lands first makes

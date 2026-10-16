@@ -201,7 +201,7 @@ it('refuses a cashier payment on an invoice from another branch', function () {
     // can settle another branch's invoice even if it reached the payment path.
     $this->actingAs($kasir);
     expect(fn () => app(RmePaymentService::class)
-        ->pay($foreignInvoice, $kasir, ['amount' => 100000, 'paid_at' => now()->toDateString()]))
+        ->pay($foreignInvoice, $kasir, rmeFreshPaymentForm($foreignInvoice, ['amount' => 100000, 'paid_at' => now()->toDateString()])))
         ->toThrow(ValidationException::class);
 
     expect($foreignInvoice->refresh()->status)->toBe(RmeInvoice::STATUS_UNPAID)

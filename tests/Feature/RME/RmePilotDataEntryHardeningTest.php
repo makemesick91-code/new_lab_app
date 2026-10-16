@@ -349,12 +349,12 @@ it('creates an invoice and full payment for an RME-branch visit end to end', fun
     expect($invoice->branch_id)->toBe($this->atg3->id)
         ->and($invoice->grand_total)->toEqual(250000.0);
 
-    $payment = app(RmePaymentService::class)->pay($invoice->fresh(), $this->cashier, [
+    $payment = app(RmePaymentService::class)->pay($invoice->fresh(), $this->cashier, rmeFreshPaymentForm($invoice->fresh(), [
         'amount' => 250000,
         'paid_at' => now()->toDateTimeString(),
         'consent_signed_by_patient' => true,
         'consent_signed_by_doctor' => true,
-    ]);
+    ]));
 
     expect($payment->branch_id)->toBe($this->atg3->id)
         ->and($invoice->fresh()->status)->toBe(RmeInvoice::STATUS_PAID)
@@ -377,12 +377,12 @@ it('generates a lab candidate carrying the RME branch context after payment', fu
         ]],
     ]);
 
-    app(RmePaymentService::class)->pay($invoice->fresh(), $this->cashier, [
+    app(RmePaymentService::class)->pay($invoice->fresh(), $this->cashier, rmeFreshPaymentForm($invoice->fresh(), [
         'amount' => 500000,
         'paid_at' => now()->toDateTimeString(),
         'consent_signed_by_patient' => true,
         'consent_signed_by_doctor' => true,
-    ]);
+    ]));
 
     $candidate = LabCaseCandidate::where('rme_invoice_id', $invoice->id)->first();
     expect($candidate)->not->toBeNull()
