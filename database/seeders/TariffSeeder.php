@@ -8,9 +8,17 @@ use App\Modules\Treatment\Models\Treatment;
 use Illuminate\Database\Seeder;
 
 /**
- * Sprint 19 Phase 3 — default treatment tariffs for the active/default (MAIN) branch.
+ * Sprint 19 Phase 3 — default treatment tariffs for the branch BranchContext
+ * resolves when the seeder runs.
  * Idempotent: updateOrCreate keyed by (branch_id, treatment_id, effective_date).
  * Pricing master data only — creates no billing/invoice/payment/RME records.
+ *
+ * DEVELOPMENT DEFAULTS, NOT AN OFFICIAL TARIFF LIST (FEATURE-RME-BRANCH-TARIFF-
+ * PROVISIONING-1, rule 193). These prices were never approved by the owner
+ * (D21h). Production TLK1's 11 tariffs are exactly these values, created in one
+ * second on 2026-06-10 with no audit row; they carry no approval provenance and
+ * read UNVERIFIED in rme:tariff-authority-readiness. Never run this seeder to
+ * "provision" a branch, and never copy these values to another branch.
  */
 class TariffSeeder extends Seeder
 {

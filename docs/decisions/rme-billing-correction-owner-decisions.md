@@ -141,6 +141,17 @@ invented; until each is decided the code takes the fail-closed default shown.
 | D21h | Official tariff data for every billing branch (owner-supplied price list) | No tariff is invented, copied from another branch or derived from a historical invoice. |
 | D21i | Which date selects the tariff in force: the billing (invoice) date or the date the treatment was rendered (visit date) | The **invoice's clinical date** (WITA), used identically at invoice creation and at correction, so the two can never disagree. A visit billed late is priced at the tariff in force on the day it is billed. |
 
+**D21h status note (FEATURE-RME-BRANCH-TARIFF-PROVISIONING-1, 2026-10-17) — a
+finding, not a decision.** No owner-supplied price list was found anywhere, so
+D21h stays PENDING and no tariff was imported. The 11 tariffs production TLK1
+already holds are the Sprint 19 `TariffSeeder` development defaults (identical
+values, created in one second, no audit trail) — **they are not D21h data**.
+Tariffs now carry approval provenance (rule 193): a tariff counts as approved
+only when it arrived through the import with an owner-approval reference. When
+the owner supplies the list, TLK1's seeded rows are either approved as-is (ATTEST,
+price untouched) or replaced; `TRT-SC99` needs a price per branch (its name is
+not a price) and `TRT-FREESC` waits for D21g.
+
 ## Pending decisions (unchanged)
 
 D2, D3, D4, D5, D6, D8, D9, D11, D12, D13, D14, D15, D16, D17, D18, D20, D22, D23,

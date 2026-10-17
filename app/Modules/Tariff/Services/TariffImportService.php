@@ -11,6 +11,7 @@ use App\Modules\LabOrder\Services\AuditLogService;
 use App\Modules\Tariff\Interfaces\TariffRepositoryInterface;
 use App\Modules\Tariff\Models\Tariff;
 use App\Modules\Tariff\Support\TariffAuditEvent;
+use App\Modules\Tariff\Support\TariffProvenance;
 use App\Modules\Treatment\Models\Treatment;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
@@ -24,23 +25,35 @@ use InvalidArgumentException;
  * list. The service only refuses what cannot be authority and applies the rest
  * exactly, once.
  *
- *   plan()   read-only. Every row is CREATE, UNCHANGED or SKIPPED_BLANK, or the
- *            whole plan is REFUSED with every reason listed: unknown / inactive
- *            treatment code, duplicate code, a price that is not a positive
- *            decimal(18,2) (Rp0 is never price authority, D21g), or a CONFLICT —
- *            a tariff of that branch/treatment/effective date already exists
- *            with another price, inactive or soft-deleted (the unique index
- *            includes trashed rows). There is no partial import.
- *   apply()  requires the digest of the plan the operator reviewed; re-plans
- *            inside the transaction and refuses if anything moved. Writes only
- *            CREATE rows, each audited RME_TARIFF_IMPORTED. Re-running the same
- *            file is idempotent (every row UNCHANGED, nothing written).
+ *   plan()   read-only. Every row is CREATE, ATTEST, UNCHANGED or SKIPPED_BLANK,
+ *            or the whole plan is REFUSED with every reason listed: unknown /
+ *            inactive treatment code, duplicate code, a price that is not a
+ *            positive decimal(18,2) (Rp0 is never price authority, D21g), a
+ *            malformed approval reference, or a CONFLICT — a tariff of that
+ *            branch/treatment/effective date already exists with another price,
+ *            inactive or soft-deleted (the unique index includes trashed rows).
+ *            There is no partial import.
+ *   apply()  requires the OWNER-APPROVAL REFERENCE of the list and the digest of
+ *            the plan the operator reviewed (the digest binds the reference);
+ *            re-plans inside the transaction and refuses if anything moved.
+ *            CREATE rows are written with the approval provenance; ATTEST rows
+ *            (same price, no provenance yet) are re-read under a row lock and
+ *            only gain the provenance — never a new price. Each is audited.
+ *            Re-running the same file is idempotent (every row UNCHANGED).
  *
- * Never copies another branch's tariff, never derives a price from an invoice.
+ * FEATURE-RME-BRANCH-TARIFF-PROVISIONING-1 added the approval reference and
+ * ATTEST: before it, an import could not record which owner approval a price
+ * came from, so an approved list and seeded placeholders read the same.
+ *
+ * Never copies another branch's tariff, never derives a price from an invoice,
+ * never overwrites an existing price, never overwrites an existing approval.
  */
 class TariffImportService
 {
     public const CREATE = 'CREATE';
+
+    /** Same price already in force at that date but no approval recorded: provenance only. */
+    public const ATTEST = 'ATTEST';
 
     public const UNCHANGED = 'UNCHANGED';
 
@@ -59,11 +72,16 @@ class TariffImportService
 
     /**
      * @param  list<array{treatment_code: string, price: string}>  $rows
-     * @return array{branch: array{id: int|null, code: string}, effective_date: string, rows: list<array<string, mixed>>, refusals: list<string>, digest: string, creates: int}
+     * @return array{branch: array{id: int|null, code: string}, effective_date: string, rows: list<array<string, mixed>>, refusals: list<string>, digest: string, creates: int, attests: int, approval_reference: string|null, appliable: bool}
      */
-    public function plan(string $branchCode, string $effectiveDate, array $rows): array
+    public function plan(string $branchCode, string $effectiveDate, array $rows, ?string $approvalReference = null): array
     {
         $refusals = [];
+        $reference = TariffProvenance::normalizeReference($approvalReference);
+        if ($reference !== null && ! TariffProvenance::isValidReference($reference)) {
+            $refusals[] = 'APPROVAL_REFERENCE_INVALID: referensi persetujuan owner wajib satu token 6–'.TariffProvenance::REFERENCE_MAX.' karakter (huruf, angka, . _ : / -).';
+            $reference = null;
+        }
         $code = BranchCodeAlias::canonicalize($branchCode) ?? '';
         $branch = $code !== '' ? Branch::query()->whereIn('code', BranchCodeAlias::equivalentCodes($code))->first() : null;
 
@@ -160,7 +178,17 @@ class TariffImportService
                     continue;
                 }
 
-                $planned[] = ['line' => $line, 'treatment_code' => $treatmentCode, 'treatment_id' => (int) $treatment->id, 'action' => self::UNCHANGED, 'price_cents' => $cents];
+                // Same price already in force: an approval with no provenance yet is
+                // ATTESTED; one that already carries provenance is left alone —
+                // an existing approval reference is never overwritten.
+                $planned[] = [
+                    'line' => $line,
+                    'treatment_code' => $treatmentCode,
+                    'treatment_id' => (int) $treatment->id,
+                    'tariff_id' => (int) $current->id,
+                    'action' => $current->hasApprovalProvenance() ? self::UNCHANGED : self::ATTEST,
+                    'price_cents' => $cents,
+                ];
 
                 continue;
             }
@@ -169,6 +197,7 @@ class TariffImportService
         }
 
         $creates = count(array_filter($planned, fn ($p) => $p['action'] === self::CREATE));
+        $attests = count(array_filter($planned, fn ($p) => $p['action'] === self::ATTEST));
 
         return [
             'branch' => ['id' => $branch?->id !== null ? (int) $branch->id : null, 'code' => $code],
@@ -176,27 +205,43 @@ class TariffImportService
             'rows' => $planned,
             'refusals' => $refusals,
             'creates' => $creates,
-            'digest' => $this->digest($code, (string) ($date ?? $effectiveDate), $planned, $refusals),
+            'attests' => $attests,
+            'approval_reference' => $reference,
+            // A plan without a valid approval reference can be REVIEWED but never applied.
+            'appliable' => $refusals === [] && $reference !== null,
+            'digest' => $this->digest($code, (string) ($date ?? $effectiveDate), $planned, $refusals, $reference),
         ];
     }
 
     /**
      * @param  list<array{treatment_code: string, price: string}>  $rows
-     * @return array{created: int, unchanged: int, tariff_ids: list<int>}
+     * @return array{created: int, attested: int, unchanged: int, tariff_ids: list<int>}
      */
-    public function apply(string $branchCode, string $effectiveDate, array $rows, string $confirmDigest, string $reason, User $actor): array
+    public function apply(string $branchCode, string $effectiveDate, array $rows, string $confirmDigest, string $reason, User $actor, string $approvalReference): array
     {
+        $reference = TariffProvenance::normalizeReference($approvalReference);
+        if ($reference === null) {
+            throw new InvalidArgumentException('APPROVAL_REFERENCE_REQUIRED: impor wajib menyertakan referensi persetujuan owner atas daftar tarif ini (--approval-reference).');
+        }
+        if (! TariffProvenance::isValidReference($reference)) {
+            throw new InvalidArgumentException('APPROVAL_REFERENCE_INVALID: referensi persetujuan owner wajib satu token 6–'.TariffProvenance::REFERENCE_MAX.' karakter (huruf, angka, . _ : / -).');
+        }
+
         $reason = trim($reason);
         if (mb_strlen($reason) < self::REASON_MIN || mb_strlen($reason) > self::REASON_MAX) {
             throw new InvalidArgumentException('REASON_INVALID: alasan impor wajib '.self::REASON_MIN.'–'.self::REASON_MAX.' karakter.');
+        }
+
+        if (! (bool) $actor->is_active || $actor->trashed()) {
+            throw new InvalidArgumentException('ACTOR_NOT_AUTHORIZED: akun aktor tidak aktif.');
         }
 
         if (! $actor->can('manage_clinic_master_data')) {
             throw new InvalidArgumentException('ACTOR_NOT_AUTHORIZED: aktor tidak memiliki izin manage_clinic_master_data.');
         }
 
-        return DB::transaction(function () use ($branchCode, $effectiveDate, $rows, $confirmDigest, $reason, $actor) {
-            $plan = $this->plan($branchCode, $effectiveDate, $rows);
+        return DB::transaction(function () use ($branchCode, $effectiveDate, $rows, $confirmDigest, $reason, $actor, $reference) {
+            $plan = $this->plan($branchCode, $effectiveDate, $rows, $reference);
 
             if ($plan['refusals'] !== []) {
                 throw new InvalidArgumentException('PLAN_REFUSED: '.implode(' | ', $plan['refusals']));
@@ -207,24 +252,65 @@ class TariffImportService
             }
 
             $ids = [];
+            $created = 0;
+            $attested = 0;
             foreach ($plan['rows'] as $row) {
-                if ($row['action'] !== self::CREATE) {
+                if ($row['action'] === self::CREATE) {
+                    $tariff = $this->tariffs->create([
+                        'branch_id' => (int) $plan['branch']['id'],
+                        'treatment_id' => (int) $row['treatment_id'],
+                        'price' => number_format($row['price_cents'] / 100, 2, '.', ''),
+                        'effective_date' => $plan['effective_date'],
+                        'is_active' => true,
+                    ]);
+                    $tariff = $this->tariffs->recordApprovalProvenance($tariff, $reference, (int) $actor->id);
+
+                    $this->auditLogs->log(
+                        TariffAuditEvent::ENTITY,
+                        (int) $tariff->id,
+                        TariffAuditEvent::IMPORTED,
+                        null,
+                        array_merge(TariffAuditEvent::state($tariff), [
+                            'import_digest' => $plan['digest'],
+                            'reason_length' => mb_strlen($reason),
+                        ]),
+                        $actor,
+                    );
+
+                    $ids[] = (int) $tariff->id;
+                    $created++;
+
                     continue;
                 }
 
-                $tariff = $this->tariffs->create([
-                    'branch_id' => (int) $plan['branch']['id'],
-                    'treatment_id' => (int) $row['treatment_id'],
-                    'price' => number_format($row['price_cents'] / 100, 2, '.', ''),
-                    'effective_date' => $plan['effective_date'],
-                    'is_active' => true,
-                ]);
+                if ($row['action'] !== self::ATTEST) {
+                    continue;
+                }
+
+                // Re-read under a row lock: a master-data edit committed after the
+                // plan was read must refuse, never receive an approval it did not get.
+                $tariff = $this->tariffs->lockForAttestation((int) $row['tariff_id']);
+                $intact = $tariff instanceof Tariff
+                    && ! $tariff->trashed()
+                    && $tariff->is_active
+                    && ! $tariff->hasApprovalProvenance()
+                    && (int) $tariff->branch_id === (int) $plan['branch']['id']
+                    && (int) $tariff->treatment_id === (int) $row['treatment_id']
+                    && $tariff->effective_date?->toDateString() === $plan['effective_date']
+                    && BranchTariffAuthorityService::toCents($tariff->price) === (int) $row['price_cents'];
+
+                if (! $intact) {
+                    throw new InvalidArgumentException('PLAN_CHANGED: tarif '.$row['treatment_code'].' berubah setelah dry-run; tidak ada yang ditulis. Jalankan dry-run lagi.');
+                }
+
+                $before = TariffAuditEvent::state($tariff);
+                $tariff = $this->tariffs->recordApprovalProvenance($tariff, $reference, (int) $actor->id);
 
                 $this->auditLogs->log(
                     TariffAuditEvent::ENTITY,
                     (int) $tariff->id,
-                    TariffAuditEvent::IMPORTED,
-                    null,
+                    TariffAuditEvent::PROVENANCE_ATTESTED,
+                    $before,
                     array_merge(TariffAuditEvent::state($tariff), [
                         'import_digest' => $plan['digest'],
                         'reason_length' => mb_strlen($reason),
@@ -233,10 +319,12 @@ class TariffImportService
                 );
 
                 $ids[] = (int) $tariff->id;
+                $attested++;
             }
 
             return [
-                'created' => count($ids),
+                'created' => $created,
+                'attested' => $attested,
                 'unchanged' => count(array_filter($plan['rows'], fn ($r) => $r['action'] === self::UNCHANGED)),
                 'tariff_ids' => $ids,
             ];
@@ -259,12 +347,13 @@ class TariffImportService
      * @param  list<array<string, mixed>>  $planned
      * @param  list<string>  $refusals
      */
-    private function digest(string $code, string $date, array $planned, array $refusals): string
+    private function digest(string $code, string $date, array $planned, array $refusals, ?string $reference): string
     {
         $canonical = array_map(fn ($p) => $p['treatment_code'].'='.$p['action'].':'.($p['price_cents'] ?? '-'), $planned);
         sort($canonical);
 
-        return substr(hash('sha256', json_encode([$code, $date, $canonical, $refusals])), 0, 32);
+        // The approval reference is part of what the operator consents to.
+        return substr(hash('sha256', json_encode([$code, $date, $canonical, $refusals, $reference ?? ''])), 0, 32);
     }
 
     /** Characters a spreadsheet treats as the start of a formula. */

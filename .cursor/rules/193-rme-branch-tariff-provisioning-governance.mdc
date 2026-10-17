@@ -1,0 +1,171 @@
+---
+description: FEATURE-RME-BRANCH-TARIFF-PROVISIONING-1 — branch tariff provisioning governance (owner D21 / D21h). Coverage is not approval; tariff APPROVAL PROVENANCE (approval_reference / recorded_by / recorded_at) recorded only by the digest-bound import; ATTEST for identical-but-unapproved tariffs; master-data edits withdraw approval; readiness `provenance` + `strict_eligible`; no tariff invented, copied or derived; seeded TLK1 defaults are UNVERIFIED. Labels — IMPLEMENTED / PROVISIONED / APPROVED_SOURCE / PENDING_SOURCE / STRICT_READY / STRICT_NOT_ACTIVE / TRANSITIONAL / BLOCKED.
+globs: app/Modules/Tariff/**, app/Modules/RmeInvoice/Services/RmeTariffAuthorityReadinessService.php, app/Console/Commands/RmeTariff*.php, database/migrations/2026_10_17_300001_*, database/seeders/TariffSeeder.php, tests/Feature/RmeTariffAuthority/**
+alwaysApply: false
+---
+
+# RME branch tariff provisioning governance (rule 193)
+
+Evidence: `docs/sprints/feature-rme-branch-tariff-provisioning-1.md`.
+Extends rule 192 (tariff authority). Where they disagree about the IMPORT
+contract or what READINESS means, this rule is newer.
+
+## 0. Status vocabulary (use exactly these words)
+| Label | Meaning |
+|---|---|
+| IMPLEMENTED | code merged and deployed |
+| PROVISIONED | a tariff row exists for (branch, treatment) |
+| APPROVED_SOURCE | the tariff carries an owner-approval reference (`approval_reference`) |
+| PENDING_SOURCE | no owner-approved price exists yet (D21h) — no row is created |
+| STRICT_READY | `strict_eligible = true`: TARIFF_READY **and** every tariff in force APPROVED_SOURCE |
+| STRICT_NOT_ACTIVE | strict-eligible or not, the branch is not in `strict_branch_codes` |
+| TRANSITIONAL | the branch mode (rule 192 §11) — legacy billing with recorded provenance |
+| BLOCKED | needs an owner decision or source before anything can be provisioned |
+
+**Never write PROVISIONED as APPROVED_SOURCE, or coverage as readiness for strict.**
+
+## 1. Sources — what may become a tariff
+1. A tariff amount comes ONLY from an owner-approved price list (D21h). Never
+   from: another branch ("same as TLK1"), a historical invoice, a public or
+   competitor price, a seeder, a treatment NAME (`TRT-SC99` "Scalling 99K" is not
+   evidence of Rp 99.000), or an assistant's estimate.
+2. No source ⇒ `OFFICIAL_TARIFF_SOURCE=MISSING` ⇒ import NOT executed. A dry run
+   is not approval; a successful empty import is not evidence a branch is priced.
+3. `TRT-FREESC` (voucher gratis) and Rp0 consultation/control are D21g — no
+   tariff, no Rp0 row, until the owner decides. The importer refuses Rp0 anyway.
+4. The treatment master is GLOBAL (rule 192 §9). There is **no per-branch
+   applicability table**, so NOT_APPLICABLE cannot be derived from data; it needs
+   an owner decision and a schema change. Never fake it with a zero or a skip.
+
+## 2. Approval provenance — IMPLEMENTED
+5. `mst_tariffs.approval_reference` (≤120, single token), `approval_recorded_by`
+   (users, nullOnDelete), `approval_recorded_at`. Additive, nullable, **never
+   backfilled**: NULL = "approval not recorded". Inventing approval for history
+   is forbidden.
+6. The columns are **not fillable**. The ONLY writer is
+   `TariffRepository::recordApprovalProvenance()` (and `clearApprovalProvenance()`),
+   called only by the import. No request, controller, factory default or seeder
+   may set them. Tests: mass assignment is ignored.
+7. The reference is a POINTER to the owner's approval evidence (signed list,
+   decision record) held outside the system — never the evidence, never PHI,
+   never free text: `TariffProvenance::REFERENCE_PATTERN` = 6–120 chars
+   `[A-Za-z0-9][A-Za-z0-9._:/-]*` (no spaces, no formula lead, ASCII only) and
+   **no run of 13+ digits** (the shape of a KTP/NIK or phone number; the value
+   lands in `sys_audit_logs`).
+8. `TariffProvenance::classify()` is the single rule: VERIFIED (every tariff in
+   force carries a reference, ≥1), UNVERIFIED (any does not), NONE (none in force).
+
+## 3. Controlled import — IMPLEMENTED (supersedes rule 192 §31 import contract)
+9. `rme:tariff-import <csv> --branch= --effective-date= [--approval-reference=]`
+   is a DRY RUN by default. A dry run without a reference prints
+   `APPROVAL_REFERENCE=(none)` and says the plan CANNOT be applied.
+10. `--apply` requires `--approval-reference`, `--confirm-plan=<digest>` of a dry
+    run WITH that reference (the digest binds it — a swapped reference is
+    `PLAN_CHANGED`), `--actor` (active, `manage_clinic_master_data`), `--reason`
+    (10–1000, only its LENGTH is audited).
+11. Plan actions: `CREATE` (new row + provenance), `ATTEST` (row already at that
+    branch/treatment/date with the identical price, active, no provenance →
+    provenance recorded, **price/row/date untouched**), `UNCHANGED` (identical and
+    already approved — an existing reference is **never overwritten**),
+    `SKIPPED_BLANK`. Anything else refuses the WHOLE plan: unknown/inactive/
+    ambiguous code, duplicate, non-positive / >2-decimal price, malformed
+    reference, or `CONFLICT` (different price, inactive or trashed at that date).
+12. **Create-only is preserved.** A price is never overwritten by import; a
+    revision goes through master data, which withdraws approval (§13).
+13. ATTEST rows are re-read under `lockForUpdate` inside the transaction and
+    re-checked (branch, treatment, date, active, not trashed, price, still no
+    provenance); any drift ⇒ `PLAN_CHANGED`, nothing written. Proven on PG16 by
+    `RmeTariffProvisioningConcurrencyTest` (a concurrent price edit is refused;
+    a concurrent duplicate CREATE fails the unique index and rolls back the whole
+    plan, ATTEST rows included).
+14. Audit: `RME_TARIFF_IMPORTED` (state incl. `approval_reference`, digest,
+    reason length) and `RME_TARIFF_PROVENANCE_ATTESTED` (old/new state). Never the
+    reason text, never `notes`.
+
+## 4. Master-data edits — IMPLEMENTED
+15. The laundering guard lives on the **model**: `Tariff::booted()` `updating` hook
+    nulls the approval columns in the same UPDATE whenever
+    `Tariff::APPROVAL_COVERED_ATTRIBUTES` (price, effective_date, treatment_id,
+    branch_id) is dirty and the save does not itself write an approval. It covers
+    EVERY Eloquent save (master data, a seeder's `updateOrCreate`, an operator
+    repair) — the security review proved a service-only guard let
+    `updateOrCreate` keep an approval on a new price. `TariffService::update()`
+    keeps its own check as a second layer (mutation-proven equivalent while the
+    hook exists). Notes/active-flag edits keep the approval. The UPDATED audit
+    shows `approval_reference` before → null.
+16. Master-data create is UNVERIFIED by construction. Raw query-builder writes to
+    `mst_tariffs` bypass Eloquent and are forbidden outside the stress-only harness.
+
+## 5. Readiness — IMPLEMENTED (extends rule 192 §33)
+17. Per branch: `provenance`, `approved_tariffs`, `unverified_tariff_codes`,
+    `strict_eligible` (= TARIFF_READY ∧ VERIFIED). Judged on the tariff IN FORCE
+    on the clinical date (a newer unverified tariff hides an older verified one).
+    One extra query for all branches.
+18. Findings: WATCH `TARIFF_PROVENANCE_UNVERIFIED` (transitional branch with an
+    unapproved tariff in force); FAIL `STRICT_BRANCH_TARIFF_PROVENANCE_UNVERIFIED`
+    (strict branch with one). Readiness still never changes a mode.
+19. `rme:tariff-template` prints `current_tariff_provenance` (VERIFIED /
+    UNVERIFIED / blank) so the owner sees which current prices were never approved.
+
+## 5a. What VERIFIED does and does not prove (security review, accepted)
+19a. VERIFIED = "arrived through the governed, digest-bound, audited import with a
+     well-formed owner-approval label". It is NOT cryptographic proof the owner
+     signed: one `manage_clinic_master_data` holder could type a price in master
+     data and then ATTEST it with any well-formed label, and `--actor` is
+     attribution chosen by the shell operator. The control is procedural: the
+     reference must point at owner evidence kept outside the system, reviewed
+     with the owner before `--apply`. A separate approver step is a future
+     decision (D21b-style), not built here — never claim more.
+19b. The reference is not bound to a branch (an `…SPN4…` label is accepted on a
+     TLK1 import). Operators name references per branch; nothing enforces it.
+19c. Provenance is REPORT-ONLY: strict billing (`BranchTariffAuthorityService`)
+     does not read it, and `strict_eligible` is a point-in-time measurement. A
+     tariff created after a green readiness run is billed by its mode at once;
+     the next readiness run reveals it. Strict activation must re-run readiness
+     inside its supervised window.
+
+## 6. Production facts at release (2026-10-17, read-only, PG 16.15)
+20. 4 RME branches (TLK1, LDK2, ATG3, SPN4; MAIN not RME; SYN4A deleted), 13
+    active treatments ⇒ 52 combinations; 11 PROVISIONED (all TLK1), 41 missing.
+21. The 11 TLK1 rows equal `TariffSeeder::PRICES` byte-for-byte, effective
+    2026-01-01, created 2026-06-10 14:54:02 in one second, no audit row ⇒
+    **UNVERIFIED seeded development defaults, not APPROVED_SOURCE.** They are
+    preserved (never deleted or edited by this work). TLK1 becomes STRICT_READY
+    only if the owner approves those exact prices (ATTEST) or supplies others
+    (master-data revision, then a fresh approved import at a new date).
+22. Every branch TRANSITIONAL, `strict_branch_codes` empty, exceptions OFF,
+    correction flag OFF. No branch is STRICT_READY.
+
+## 7. Pending owner decisions — BLOCKED (never invent)
+23. D21h official tariff list per branch (the blocker for every import);
+    D21g Rp0/free treatments (`TRT-FREESC`, Rp0 consultation/control);
+    D21a–f transition duration, exception approver, caps, thresholds; D21i date
+    basis (current default: the invoice's clinical date — not changed here);
+    D1a correction applier. No per-branch NOT_APPLICABLE without a decision.
+
+## 8. Financial integrity & posture
+24. Provisioning never touches invoices, invoice items, payments, payment
+    batches, receivables, receipts, correction snapshots or visits, and never
+    recalculates or backfills history (tested by fingerprint).
+25. D10 (rule 192 §6) and price authority (rule 192 §2–§4) are unchanged and
+    re-verified on PG16. Finance Klinik / Data Analyst stay read-only; no role or
+    permission changes. Strict pricing, price exceptions and invoice correction
+    stay OFF — strict activation is a separate approved action (config + window).
+
+## 9. Operating the import (when an approved list exists)
+26. Owner provides the signed list → `rme:tariff-template --branch=X` → fill
+    `price` from the list only → dry run WITH `--approval-reference` → review
+    CREATE/ATTEST/UNCHANGED and the digest with the owner → `--apply` with the
+    same reference + digest, as the runtime user on the VPS → re-run readiness.
+    Never raw SQL, never `tinker`, never a dataset nobody approved.
+27. Rollback: code rollback leaves the nullable columns (unread by older code).
+    A wrong approved import is corrected through master data (which withdraws
+    approval), never by deleting rows or editing invoices.
+
+## 10. Tests, CI, GO
+28. `tests/Feature/RmeTariffAuthority/RmeTariffProvisioning{Provenance,Concurrency}Test`
+    are in `config/ci_runner.php` `critical_gate_mandatory_suites`, selected by the
+    `RmeTariffAuthority` token (29 tests verified with `--list-tests`).
+29. GO classification: FULL provisioning GO only with approved sources imported
+    and every applicable branch STRICT_READY. Governance shipped while sources are
+    missing ⇒ `feature-rme-branch-tariff-provisioning-1-foundation-go` (scoped).

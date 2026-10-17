@@ -7,6 +7,7 @@ namespace App\Console\Commands;
 use App\Models\User;
 use App\Modules\Tariff\Services\TariffImportService;
 use Illuminate\Console\Command;
+use Illuminate\Database\QueryException;
 use InvalidArgumentException;
 
 /**
@@ -14,9 +15,12 @@ use InvalidArgumentException;
  * (owner D21h). The CSV is the owner-approved price list; nothing is guessed.
  *
  *   DRY RUN BY DEFAULT. Prints the plan and its digest; writes nothing.
- *   --apply needs --confirm-plan=<digest> of the plan you reviewed, a named
- *   active --actor holding manage_clinic_master_data, and a --reason. The plan
- *   is recomputed inside the transaction; any drift refuses.
+ *   --apply needs --approval-reference=<owner approval of this list>, the
+ *   --confirm-plan=<digest> of the plan you reviewed WITH that reference (the
+ *   digest binds it), a named active --actor holding manage_clinic_master_data,
+ *   and a --reason. The plan is recomputed inside the transaction; any drift
+ *   refuses. Created tariffs carry the approval provenance; a tariff already at
+ *   the approved price but without provenance is ATTESTED (price untouched).
  *
  * CSV header must contain `treatment_code` and `price` (other columns, such as
  * the template's `current_tariff_in_force`, are ignored). A blank price is
@@ -32,6 +36,7 @@ class RmeTariffImportCommand extends Command
         {--confirm-plan= : Digest printed by the dry run (required with --apply)}
         {--actor= : Id or email of the active account this import is attributed to (required with --apply)}
         {--reason= : Why these tariffs are imported (required with --apply)}
+        {--approval-reference= : Non-PHI reference of the owner approval of this price list, e.g. OWNER-TARIFF-SPN4-2026-10-20 (required with --apply; bound into the digest)}
         {--json : Print the plan as JSON}';
 
     protected $description = 'Import an owner-approved branch tariff CSV. Dry run unless --apply with the reviewed plan digest.';
@@ -47,7 +52,8 @@ class RmeTariffImportCommand extends Command
 
         $branch = (string) $this->option('branch');
         $date = (string) $this->option('effective-date');
-        $plan = $importer->plan($branch, $date, $rows);
+        $reference = $this->option('approval-reference');
+        $plan = $importer->plan($branch, $date, $rows, is_string($reference) ? $reference : null);
 
         if ($this->option('json')) {
             $this->line((string) json_encode($plan, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
@@ -59,7 +65,8 @@ class RmeTariffImportCommand extends Command
             foreach ($plan['refusals'] as $refusal) {
                 $this->line('REFUSED '.$refusal);
             }
-            $this->line('BRANCH='.$plan['branch']['code'].' EFFECTIVE_DATE='.$plan['effective_date'].' CREATES='.$plan['creates']);
+            $this->line('BRANCH='.$plan['branch']['code'].' EFFECTIVE_DATE='.$plan['effective_date'].' CREATES='.$plan['creates'].' ATTESTS='.$plan['attests']);
+            $this->line('APPROVAL_REFERENCE='.($plan['approval_reference'] ?? '(none)'));
             $this->line('PLAN_DIGEST='.$plan['digest']);
         }
 
@@ -70,7 +77,13 @@ class RmeTariffImportCommand extends Command
         }
 
         if (! $this->option('apply')) {
-            $this->line('DRY RUN — nothing written. Re-run with --apply --confirm-plan='.$plan['digest'].' --actor= --reason=');
+            if (! $plan['appliable']) {
+                $this->line('DRY RUN — nothing written. This plan has no owner-approval reference, so it CANNOT be applied: re-run the dry run with --approval-reference= (the digest binds it).');
+
+                return self::SUCCESS;
+            }
+
+            $this->line('DRY RUN — nothing written. Re-run with --apply --approval-reference='.$plan['approval_reference'].' --confirm-plan='.$plan['digest'].' --actor= --reason=');
 
             return self::SUCCESS;
         }
@@ -83,14 +96,20 @@ class RmeTariffImportCommand extends Command
         }
 
         try {
-            $result = $importer->apply($branch, $date, $rows, (string) $this->option('confirm-plan'), (string) $this->option('reason'), $actor);
+            $result = $importer->apply($branch, $date, $rows, (string) $this->option('confirm-plan'), (string) $this->option('reason'), $actor, (string) $this->option('approval-reference'));
         } catch (InvalidArgumentException $e) {
             $this->error($e->getMessage());
 
             return self::FAILURE;
+        } catch (QueryException) {
+            // e.g. a concurrent session created the same (branch, treatment, date)
+            // tariff: the unique index refused it and the whole plan rolled back.
+            $this->error('PLAN_CHANGED: tarif berubah bersamaan saat impor (indeks unik menolak); tidak ada yang ditulis. Jalankan dry-run lagi.');
+
+            return self::FAILURE;
         }
 
-        $this->line('APPLIED created='.$result['created'].' unchanged='.$result['unchanged']);
+        $this->line('APPLIED created='.$result['created'].' attested='.$result['attested'].' unchanged='.$result['unchanged']);
 
         return self::SUCCESS;
     }

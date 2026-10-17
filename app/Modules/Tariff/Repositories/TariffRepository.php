@@ -129,6 +129,47 @@ class TariffRepository implements TariffRepositoryInterface
             ->all();
     }
 
+    public function approvalReferencesFor(array $tariffIds): array
+    {
+        $tariffIds = array_values(array_unique(array_map('intval', $tariffIds)));
+        if ($tariffIds === []) {
+            return [];
+        }
+
+        return Tariff::withTrashed()
+            ->whereIn('id', $tariffIds)
+            ->pluck('approval_reference', 'id')
+            ->mapWithKeys(fn ($reference, $id) => [(int) $id => is_string($reference) && trim($reference) !== '' ? $reference : null])
+            ->all();
+    }
+
+    public function lockForAttestation(int $tariffId): ?Tariff
+    {
+        return Tariff::withTrashed()->whereKey($tariffId)->lockForUpdate()->first();
+    }
+
+    public function recordApprovalProvenance(Tariff $tariff, string $reference, int $actorId): Tariff
+    {
+        $tariff->forceFill([
+            'approval_reference' => $reference,
+            'approval_recorded_by' => $actorId,
+            'approval_recorded_at' => now(),
+        ])->save();
+
+        return $tariff->refresh();
+    }
+
+    public function clearApprovalProvenance(Tariff $tariff): Tariff
+    {
+        $tariff->forceFill([
+            'approval_reference' => null,
+            'approval_recorded_by' => null,
+            'approval_recorded_at' => null,
+        ])->save();
+
+        return $tariff->refresh();
+    }
+
     public function create(array $data): Tariff
     {
         return Tariff::create($data);

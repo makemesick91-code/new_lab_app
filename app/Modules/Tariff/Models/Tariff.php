@@ -34,7 +34,45 @@ class Tariff extends Model
             'treatment_id' => 'integer',
             'price' => 'decimal:2',
             'is_active' => 'boolean',
+            'approval_recorded_by' => 'integer',
+            'approval_recorded_at' => 'datetime',
         ];
+    }
+
+    /**
+     * FEATURE-RME-BRANCH-TARIFF-PROVISIONING-1 — true only when this tariff
+     * arrived through the governed import with an owner-approval reference.
+     * The approval_* columns are deliberately NOT fillable: no request can forge
+     * an approval; only TariffRepository::recordApprovalProvenance() writes them.
+     */
+    public function hasApprovalProvenance(): bool
+    {
+        return is_string($this->approval_reference) && trim($this->approval_reference) !== '';
+    }
+
+    /** What an approval covers: a change to any of these withdraws it. */
+    public const APPROVAL_COVERED_ATTRIBUTES = ['price', 'effective_date', 'treatment_id', 'branch_id'];
+
+    /**
+     * FEATURE-RME-BRANCH-TARIFF-PROVISIONING-1 (security review) — the laundering
+     * guard lives on the MODEL, so EVERY Eloquent save is covered (master data,
+     * a seeder's updateOrCreate, an operator repair), not only TariffService.
+     * A save that moves price / effective date / treatment / branch without
+     * itself writing an approval drops the approval in the same UPDATE.
+     * Raw query-builder writes bypass Eloquent; none exists outside the
+     * stress-only harness (rule 193 §4).
+     */
+    protected static function booted(): void
+    {
+        static::updating(function (Tariff $tariff): void {
+            if ($tariff->isDirty(self::APPROVAL_COVERED_ATTRIBUTES) && ! $tariff->isDirty('approval_reference')) {
+                $tariff->forceFill([
+                    'approval_reference' => null,
+                    'approval_recorded_by' => null,
+                    'approval_recorded_at' => null,
+                ]);
+            }
+        });
     }
 
     /**

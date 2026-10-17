@@ -46,11 +46,27 @@ class TariffService
         });
     }
 
+    /**
+     * FEATURE-RME-BRANCH-TARIFF-PROVISIONING-1 — an approval covers the price,
+     * date and treatment it approved. A master-data change of any of them
+     * withdraws the tariff's approval provenance (in the same transaction), so an
+     * approved import followed by an unapproved edit can never read as approved.
+     * An edit of notes or the active flag keeps it.
+     */
     public function update(Tariff $tariff, array $data): Tariff
     {
         return DB::transaction(function () use ($tariff, $data) {
             $before = TariffAuditEvent::state($tariff);
             $updated = $this->tariffs->update($tariff, $data);
+
+            $moved = $before['price_cents'] !== TariffAuditEvent::state($updated)['price_cents']
+                || $before['effective_date'] !== $updated->effective_date?->toDateString()
+                || $before['treatment_id'] !== (int) $updated->treatment_id
+                || $before['branch_id'] !== (int) $updated->branch_id;
+
+            if ($moved && $updated->hasApprovalProvenance()) {
+                $updated = $this->tariffs->clearApprovalProvenance($updated);
+            }
 
             $this->auditLogs->log(TariffAuditEvent::ENTITY, (int) $updated->id, TariffAuditEvent::UPDATED, $before, TariffAuditEvent::state($updated));
 

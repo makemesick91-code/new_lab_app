@@ -55,6 +55,33 @@ interface TariffRepositoryInterface
     public function atEffectiveDateIncludingTrashed(int $branchId, array $treatmentIds, string $effectiveDate): array;
 
     /**
+     * FEATURE-RME-BRANCH-TARIFF-PROVISIONING-1 — the approval reference of each
+     * given tariff (null = approval not recorded). One query.
+     *
+     * @param  list<int>  $tariffIds
+     * @return array<int, string|null> keyed by tariff id; an unknown id is absent
+     */
+    public function approvalReferencesFor(array $tariffIds): array;
+
+    /**
+     * Re-read one tariff (soft-deleted included) under a row lock, so the import
+     * can re-check an ATTEST row inside its transaction before recording
+     * provenance on it.
+     */
+    public function lockForAttestation(int $tariffId): ?Tariff;
+
+    /**
+     * Record owner-approval provenance on a tariff. The ONLY writer of the
+     * approval_* columns (they are not mass-assignable). Never changes a price.
+     */
+    public function recordApprovalProvenance(Tariff $tariff, string $reference, int $actorId): Tariff;
+
+    /**
+     * Withdraw approval provenance (a master-data change moved what was approved).
+     */
+    public function clearApprovalProvenance(Tariff $tariff): Tariff;
+
+    /**
      * @param  array<string, mixed>  $data
      */
     public function create(array $data): Tariff;
