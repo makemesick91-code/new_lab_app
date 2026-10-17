@@ -177,3 +177,52 @@ authorization.
 3. A branch reaches STRICT_READY only with `strict_eligible = true`.
 4. Strict mode per branch is a separate approved config change in a supervised
    window. Correction activation additionally needs rule 191 §20.
+
+## 11. CI, merge, deployment and production evidence (2026-10-17 / 18)
+
+| Item | Evidence |
+|---|---|
+| Candidate | `c1cd908e` (tree `c6433858`) |
+| Authoritative CI | run `39049281819` — **success**: Classifier, NSF-R012 Quality, NSF-R011 Critical (**5952 passed / 31540 assertions, exit 0, 0 skipped**; both new suites ran, the PG concurrency races in 2.81 s / 4.96 s), Selective Module, NSF-9 Release Safety & Smoke, NSF-10 Release Evidence, Phase 3 Android Gate |
+| Full Suite | **SKIPPED** — the standing temporary policy does not enable it on `pull_request`; not a pass |
+| PR / merge | #493 squash-merged as **`e4f36a19`**; merge tree `c6433858` = candidate tree (byte-identical) |
+| Deploy | `scripts/deploy-vps-runner.sh start` **inside the VPS** (pid 32916): `exit=0`, `DEPLOY OK: 20261017-180404`, `DEPLOY_HEAD_TARGET_MATCH=YES (e4f36a19)`; pre-deploy backup `pre_auto_deploy_20261017-180404.sql`; migration `2026_10_17_300001` **Ran** (batch 83); deploy gates GO; runtime isolation 70 GO / 0 FAIL |
+| Production SHA | `e4f36a19` / tree `c6433858`, tracked tree clean, `git describe --exact-match` = the scoped GO tag |
+| Health (`https://daengtisia.online`) | `/login`, `/health/live`, `/health/ready`, `/health/lb` all **200**; php8.3-fpm, nginx, queue worker active; env pilot, debug OFF, maintenance OFF |
+
+**Production readiness after deploy** (`rme:tariff-authority-readiness --json`, runtime user):
+decision WATCH; strict codes `[]`; exceptions false. TLK1 TARIFF_INCOMPLETE 11/13,
+approved **0**, provenance **UNVERIFIED**, `strict_eligible=false`, new WATCH
+`TARIFF_PROVENANCE_UNVERIFIED`; LDK2/ATG3/SPN4 NO_TARIFFS, provenance NONE. Every
+branch TRANSITIONAL.
+
+**Templates** (`rme:tariff-template`, all four branches, read-only): TLK1 shows its
+11 tariffs as `UNVERIFIED`, TRT-FREESC/TRT-SC99 blank; LDK2/ATG3/SPN4 fully blank.
+
+**Write-free dry runs** (tooling verification, not provisioning): the blank SPN4
+template plans `CREATES=0 ATTESTS=0`, `APPROVAL_REFERENCE=(none)`, "CANNOT be
+applied". A simulation of TLK1 with its current seeded values plans **ATTEST × 11,
+CREATES=0** — what one owner-approved import would record if the owner approves
+those exact prices — and refuses to be applied without a reference. Nothing was
+applied: `PRODUCTION_IMPORT = NOT_EXECUTED`.
+
+**Financial integrity** (read-only fingerprints, md5 over id/amount/status/
+updated_at, before vs after deploy): invoices 7 / Rp 7.548.000, invoice items 8,
+payments 8 / Rp 5.548.000, corrections 0, document versions 0, tariffs 11 /
+Rp 14.600.000, visits 9, role permissions 508 — **all identical**. Audit watermark
+unchanged (max id 1623); tariffs with provenance: 0. `laravel.log` byte-identical
+(1,437,201 bytes / 162 ERROR before and after — **0 new errors**); no failed jobs.
+`FEATURE_RME_INVOICE_CORRECTION` OFF (registry default, no override).
+
+**GO tag:** `feature-rme-branch-tariff-provisioning-1-foundation-go` (annotated,
+object `cfb81be7`) → `e4f36a19`, the deployed runtime. The full
+`feature-rme-branch-tariff-provisioning-1-go` is **not** created: no approved
+tariff source exists and no branch is STRICT_READY. This evidence commit is
+docs-only and is not deployed.
+
+## 12. Final classification
+
+`SCOPED_FOUNDATION_GO` — provisioning governance implemented, merged, deployed
+and verified; tariff provisioning itself **BLOCKED on D21h**. Coverage 11/52,
+approved 0/52, missing 41. Strict pricing OFF, price exceptions OFF, invoice
+correction OFF.
