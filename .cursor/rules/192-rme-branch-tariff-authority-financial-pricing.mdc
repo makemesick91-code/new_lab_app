@@ -1,0 +1,175 @@
+---
+description: FEATURE-RME-BRANCH-TARIFF-AUTHORITY-1 — branch tariff authority (owner D21), server-side invoice pricing with recorded price provenance, strict vs transitional modes, price/discount exceptions (built, switched OFF), the D10 pending-correction payment block on every payment path, the D21(4) correction gate, controlled tariff import, and the D1/D7 contracts. Labels — OWNER_APPROVED_POLICY / IMPLEMENTED_THIS_RELEASE / ACTIVE_IN_PRODUCTION / TRANSITIONAL / STRICT_ENFORCEMENT_PENDING / FUTURE_ACTIVATION / PENDING_SUB_DECISIONS.
+globs: app/Modules/Tariff/**, app/Modules/RmeInvoice/**, config/rme_tariff_authority.php, app/Console/Commands/RmeTariff*.php, resources/views/rme/cashier/**, database/migrations/2026_10_17_2*, database/seeders/PermissionSeeder.php, database/seeders/RoleSeeder.php, tests/Feature/RmeTariffAuthority/**, tests/Feature/RmeInvoiceCorrection/**
+alwaysApply: false
+---
+
+# RME branch tariff authority & financial pricing (rule 192)
+
+Evidence: `docs/sprints/feature-rme-branch-tariff-authority-1.md`.
+Decision register: `docs/decisions/rme-billing-correction-owner-decisions.md`.
+Extends rules 188–191. Where this rule and those disagree about what EXISTS, this rule is newer.
+
+## 1. Owner decisions — OWNER_APPROVED_POLICY (recorded 2026-10-17, task-supplied evidence)
+1. **D1** Kasir submits a correction; Admin Klinik approves within its authorized
+   branch; Super Admin approves across branches; nobody approves their own
+   request — Super Admin included. Enforced already (service, under the invoice
+   lock, per account; branch via `RmeWorkingBranchScope`). **The role GRANTS are
+   NOT made** — they are the activation ceremony. Who APPLIES (D1a) is undecided.
+2. **D7** v0 original preserved, v1… immutable revisions referencing the original,
+   its date and reason, nothing overwritten. Already deployed (rule 190 §3).
+3. **D10** An invoice with an active correction (SUBMITTED / APPROVED-not-applied)
+   accepts no payment; payment resumes after REJECTED / CANCELLED / STALE /
+   APPLIED, revalidated against the current version. IMPLEMENTED_THIS_RELEASE.
+4. **D21** Prices come from the branch tariff master; overrides/discounts outside
+   policy need specific authorization; a branch without complete tariffs keeps
+   legacy billing temporarily under auditable transitional controls; correction is
+   never activated for lines whose price the tariff cannot validate.
+5. Owner approval ≠ repository record ≠ technical enforcement. Never claim the
+   third without deployed, verified evidence. Never self-approve a sub-decision.
+
+## 2. Tariff source of truth — IMPLEMENTED_THIS_RELEASE
+6. `mst_tariffs` (branch, treatment, effective_date → price) is the price authority.
+   `BranchTariffAuthorityService::resolveMany()` is the ONLY resolver: the tariff
+   OF THE BRANCH, active, not soft-deleted, `effective_date <= clinical date`
+   (latest wins, then highest id), in integer cents. Two queries per invoice.
+7. **No cross-branch fallback, ever** — no "same as TLK1". No tariff is invented,
+   copied from another branch, or derived from a historical invoice.
+8. **A zero tariff is not authority** (D21g / Rp0 undecided) — it resolves to
+   `TARIFF_ZERO_PRICE`. An inactive/deleted treatment resolves to
+   `TREATMENT_INACTIVE` (except when re-validating an UNCHANGED kept correction
+   line, `requireActiveTreatment: false` — rule 190 §11a).
+9. The treatment master is GLOBAL: every active treatment is billable in every
+   branch. A branch is `TARIFF_READY` only when ALL active treatments have a
+   positive tariff in force; some tariffs ⇒ `TARIFF_INCOMPLETE`, never ready.
+10. Clinical date comes from `ClinicalClock` (WITA), never `now()` / UTC. No cache:
+    a tariff edit is visible on the next resolution, so a stale cache never
+    authorizes a price.
+
+## 3. Branch pricing mode — TRANSITIONAL is ACTIVE_IN_PRODUCTION; STRICT_ENFORCEMENT_PENDING
+11. Every branch is **TRANSITIONAL** (`TariffPricingMode::TRANSITIONAL`) unless its
+    canonical code is listed — then it is `STRICT_ENFORCED` — in
+    `config/rme_tariff_authority.php` `strict_branch_codes`
+    (environment key `RME_TARIFF_STRICT_BRANCH_CODES`, parsed at config-build time,
+    canonicalised through `BranchCodeAlias`, exact-token). Default: none.
+12. **Nothing becomes strict because it has tariffs.** Readiness never changes a mode.
+    A strict branch that is not ready is a readiness FAIL (its cashiers are refused).
+13. Strict is honoured only for an active, RME-enabled branch; anything else —
+    including an unknown id — is TRANSITIONAL (never refuses more than legacy did).
+
+## 4. Server-side invoice pricing — IMPLEMENTED_THIS_RELEASE
+14. `RmeInvoicePricingService::price()` prices every line of `RmeInvoiceService::create()`:
+    **ALL MODES** — integer cents (no floats), qty ≥ 1, price/discount ≥ 0 (legacy
+    messages kept), **discount ≤ line gross** (`INVOICE_LINE_NEGATIVE`), overflow of
+    decimal(15,2) refused before multiplying (`INVOICE_TOTAL_OVERFLOW`), totals
+    recomputed (a submitted total/branch is never read). Priced BEFORE an invoice
+    number is drawn.
+15. **TRANSITIONAL** keeps the cashier price and records provenance on the line:
+    `pricing_mode`, `price_source` ∈ {`TARIFF_MATCHED`, `TRANSITIONAL_TARIFF_DEVIATION`,
+    `TRANSITIONAL_NO_TARIFF`, `TRANSITIONAL_FREE_TEXT`}, `tariff_id`,
+    `tariff_unit_price` (the tariff AT BILLING TIME — the evidence; a later tariff
+    edit never rewrites it). A transitional price is never shown as master tariff.
+16. Legacy lines (before this release) keep `price_source = NULL` = "Belum tercatat
+    (sebelum otoritas tarif)". **Never backfill provenance.**
+17. **STRICT** refuses, with stable codes, audited `RME_INVOICE_PRICING_REFUSED`
+    after the rollback (ids + code only, never a typed price):
+    `TARIFF_FREE_TEXT_NOT_PERMITTED`, `TARIFF_TREATMENT_INACTIVE`, `TARIFF_MISSING`,
+    `TARIFF_ZERO_PRICE`, `TARIFF_PRICE_MISMATCH`, `TARIFF_DISCOUNT_NOT_AUTHORIZED`,
+    `TARIFF_EXCEPTION_REASON_REQUIRED`, `TARIFF_RP0_NOT_PERMITTED` (line or total).
+
+## 5. Price / discount exceptions — IMPLEMENTED_THIS_RELEASE, FUTURE_ACTIVATION
+18. A strict deviation (`override_rme_tariff_price`) or discount
+    (`authorize_rme_tariff_discount`) is accepted only when the switch
+    `rme_tariff_authority.price_exceptions_enabled` is ON **and** the actor holds the
+    specific permission **and** gives a 10–500 character reason. Recorded as
+    `TARIFF_EXCEPTION_AUTHORIZED` with `price_exception_by` / `price_exception_reason`;
+    audited with the reason LENGTH only.
+19. The switch is **OFF** and **source-controlled** — a literal `false` in
+    `config/rme_tariff_authority.php` with **no environment override** (the
+    `global_permitted` precedent), so a widening of what a cashier may charge is
+    never one host edit away. Both permissions are granted to **NO role**. As
+    built, the account creating the invoice authorizes its own exception (no
+    maker/checker), so the switch must **not** be opened before D21b supplies a
+    separate approver and that step exists. The switch is a plain config value, so
+    Super Admin's wildcard grants the permission but **never** opens exceptions.
+    Even an authorized exception can never create an Rp0 line or total.
+20. PENDING_SUB_DECISIONS D21a–D21i (duration, exception approver, max discount,
+    max deviation, thresholds, max override, intrinsically-free treatments, official
+    tariff data, tariff date basis). **Never invent a percentage, a cap or an
+    approver.** D21i default: the tariff in force on the **invoice's clinical
+    date** selects the price, identically at creation and at correction.
+
+## 6. D10 — pending correction blocks payment — IMPLEMENTED_THIS_RELEASE
+21. `RmePaymentService::assertNoActiveCorrection()` runs on the LOCKED invoice row,
+    after the version check, on all three paths (`pay`, `allocateControlPayment`,
+    `allocateVisitPayment`) for every invoice the batch would settle (the paid /
+    control / current invoice always; parents and receivables when reached).
+22. A hit raises `RmeInvoicePaymentBlocked` (`[INVOICE_CORRECTION_ACTIVE]`): the WHOLE
+    batch rolls back (no partial allocation), audited `RME_PAYMENT_REFUSED_ACTIVE_CORRECTION`
+    after the rollback (ids, codes, correction id/status, version — never the
+    amount, note or reference), surfaced on field `payment_blocked`.
+23. Race safety: a correction becomes active only inside a transaction holding the
+    same invoice row lock (submit locks the invoice first). Correction first ⇒ the
+    payment waits then is refused; cancellation first ⇒ the payment waits then is
+    accepted; payment first ⇒ the submission waits then is refused (not pre-payment).
+    Proven on PostgreSQL 16 with a competing child process.
+24. The payment FormRequest repeats the check unlocked, BEFORE the amount cap, for the
+    paid invoice + carry-over parents / selected receivables (stricter, never the
+    authority). The payment page and invoice page explain the block and disable the
+    action; with no active correction they render exactly as before.
+25. **Not flag-gated.** With the flag OFF no correction can become active, so it
+    refuses nothing — but a correction left active by a flag switched off still
+    blocks. **Resolve (reject/cancel) every active correction before switching the
+    flag OFF.**
+26. STALE:PAYMENT_RECORDED stays as defence in depth (a payment written by a path that
+    bypassed the guard); in the normal flow D10 makes it unreachable.
+
+## 7. D21(4) — correction only within tariff authority — IMPLEMENTED_THIS_RELEASE
+27. `submit()` refuses unless every RESULTING line (kept, changed, added) names a
+    treatment billed at exactly its branch tariff in force on the INVOICE's clinical
+    date, with no discount: `CORRECTION_TARIFF_FREE_TEXT`, `CORRECTION_TARIFF_UNVERIFIED`,
+    `CORRECTION_TARIFF_PRICE_MISMATCH`, `CORRECTION_TARIFF_DISCOUNT`. Independent of
+    the branch mode: a transitional branch may correct INTO tariff authority, never out.
+28. Approve and apply re-check it under the lock; a moved/withdrawn tariff ⇒ STALE
+    `TARIFF_AUTHORITY_CHANGED`. Applied lines get `TARIFF_MATCHED` provenance.
+29. Corrections never carry exceptions (undecided). Rp0 refusals (rule 190 §10) unchanged.
+
+## 8. Tariff provisioning & audit — IMPLEMENTED_THIS_RELEASE
+30. Master-data tariff create/update/delete are audited `RME_TARIFF_CREATED|UPDATED|DELETED`
+    (ids, cents, dates, flags — never `notes`) inside their transaction.
+31. `rme:tariff-template --branch=` prints an import-ready CSV (price blank, tariff in
+    force for reference). `rme:tariff-import <csv> --branch= --effective-date=` is a
+    DRY RUN unless `--apply --confirm-plan=<digest> --actor= --reason=`; the plan is
+    recomputed in the transaction (drift refuses); the whole plan is refused on any
+    unknown/inactive treatment, duplicate code, non-positive / >2-decimal price, or a
+    CONFLICT with an existing tariff at that date (never overwritten — edit through
+    master data); only CREATE rows are written, each audited `RME_TARIFF_IMPORTED`;
+    re-running is idempotent. Actor needs `manage_clinic_master_data`.
+32. **An empty successful import is not evidence that a branch is priced.**
+
+## 9. Readiness — IMPLEMENTED_THIS_RELEASE
+33. `rme:tariff-authority-readiness [--json] [--strict]` — read-only per RME branch:
+    mode, readiness, tariffed/active, missing and zero codes, billed lines by
+    provenance. FAIL (exit 1): a strict branch not ready, or a strict code naming no
+    RME branch. WATCH (exit 1 only with --strict): any branch transitional.
+
+## 10. Roles, oversight, scope — unchanged
+34. Finance Klinik and Data Analyst stay READ-ONLY; the laboratory `Finance` role gains
+    nothing; no role gains a correction or exception permission. Branch isolation of
+    cashier/correction is unchanged (`RmeWorkingBranchScope`).
+35. `FEATURE_RME_INVOICE_CORRECTION` stays **OFF**. This rule is not activation.
+
+## 11. Tests, deploy, verification, activation
+36. Suites `tests/Feature/RmeTariffAuthority/*` (token `RmeTariffAuthority`) and the
+    new `tests/Feature/RmeInvoiceCorrection/RmeInvoiceCorrection{PaymentBlock,TariffAuthority}Test`
+    are declared in `config/ci_runner.php` `critical_gate_mandatory_suites`. The D10
+    races live in the PostgreSQL concurrency suite (skips on SQLite, runs in CI).
+37. Deploy: one additive migration (nullable provenance columns, no backfill) +
+    `PermissionSeeder` (two permissions, no grant). No RoleSeeder change. Rollback is
+    a code rollback; the columns can stay (nullable, unread by older code).
+38. Production verification is read-only: tariffs unchanged, all branches TRANSITIONAL,
+    exceptions OFF, flag OFF, invoice/payment totals unchanged. Never create a fake
+    invoice or payment to "prove" pricing or D10.
+39. Strict enforcement for a branch needs: the owner's official tariff list imported
+    (D21h), `rme:tariff-authority-readiness` READY for it, an explicit config change,
+    and a supervised window. Correction activation additionally needs rule 191 §20.

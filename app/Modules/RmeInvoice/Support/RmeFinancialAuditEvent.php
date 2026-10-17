@@ -2,6 +2,7 @@
 
 namespace App\Modules\RmeInvoice\Support;
 
+use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Models\RmeInvoiceCorrection;
 use App\Modules\RmeInvoice\Models\RmeInvoiceDocumentVersion;
@@ -36,12 +37,21 @@ final class RmeFinancialAuditEvent
 
     public const ACTION_PAYMENT_RECORDED = 'RME_PAYMENT_RECORDED';
 
+    /** FEATURE-RME-BRANCH-TARIFF-AUTHORITY-1 — a refused attempt is attached to the visit (no invoice exists). */
+    public const ENTITY_VISIT = 'trx_clinic_visits';
+
+    /** A strict-mode line the tariff does not authorize. Written AFTER the rollback (an attempt). */
+    public const ACTION_INVOICE_PRICING_REFUSED = 'RME_INVOICE_PRICING_REFUSED';
+
+    /** D10 — a payment refused because the invoice has an active correction. Written AFTER the rollback. */
+    public const ACTION_PAYMENT_REFUSED_ACTIVE_CORRECTION = 'RME_PAYMENT_REFUSED_ACTIVE_CORRECTION';
+
     /**
      * @return array<string, mixed>
      */
-    public static function invoiceCreatedPayload(RmeInvoice $invoice, int $itemCount): array
+    public static function invoiceCreatedPayload(RmeInvoice $invoice, int $itemCount, ?array $pricing = null): array
     {
-        return [
+        return array_merge([
             'invoice_id' => (int) $invoice->id,
             'invoice_number' => (string) $invoice->invoice_number,
             'branch_id' => (int) $invoice->branch_id,
@@ -54,7 +64,38 @@ final class RmeFinancialAuditEvent
             'subtotal' => self::money($invoice->subtotal),
             'discount_total' => self::money($invoice->discount_total),
             'grand_total' => self::money($invoice->grand_total),
-        ];
+        ], $pricing === null ? [] : self::pricingSummary($pricing));
+    }
+
+    /**
+     * FEATURE-RME-BRANCH-TARIFF-AUTHORITY-1 — how the invoice was priced: the
+     * branch mode and how many lines fell into each provenance. For an
+     * AUTHORIZED strict exception: line number, treatment, tariff vs billed
+     * cents and the LENGTH of the reason — never the reason text, which a
+     * cashier may have written a patient's name into.
+     *
+     * @param  array<string, mixed>  $pricing  RmeInvoicePricingService::price()
+     * @return array<string, mixed>
+     */
+    private static function pricingSummary(array $pricing): array
+    {
+        $exceptions = [];
+        foreach ($pricing['lines'] ?? [] as $index => $line) {
+            if (($line['price_source'] ?? null) !== RmeInvoicePriceSource::TARIFF_EXCEPTION_AUTHORIZED) {
+                continue;
+            }
+            $exceptions[] = [
+                'line_no' => $index + 1,
+                'treatment_id' => $line['treatment_id'],
+                'tariff_unit_price_cents' => $line['tariff_unit_price_cents'],
+                'unit_price_cents' => $line['unit_price_cents'],
+                'discount_cents' => $line['discount_cents'],
+                'reason_length' => mb_strlen((string) $line['price_exception_reason']),
+                'authorized_by' => $line['price_exception_by'],
+            ];
+        }
+
+        return array_merge($pricing['summary'] ?? [], ['price_exceptions' => $exceptions]);
     }
 
     /**
@@ -209,6 +250,44 @@ final class RmeFinancialAuditEvent
             'expected_version' => $conflict->expectedVersion,
             'current_version' => $conflict->currentVersion,
             'invoice_status' => (string) $invoice->status,
+        ];
+    }
+
+    /**
+     * Ids and codes only — never a price typed by the cashier or a description.
+     *
+     * @return array<string, mixed>
+     */
+    public static function invoicePricingRefusedPayload(ClinicVisit $visit, RmeInvoicePricingRefusal $refusal): array
+    {
+        return [
+            'clinic_visit_id' => (int) $visit->id,
+            'branch_id' => (int) $visit->branch_id,
+            'patient_id' => (int) $visit->patient_id,
+            'reason' => $refusal->refusalCode,
+            'line_no' => $refusal->lineNo,
+            'treatment_id' => $refusal->treatmentId,
+        ];
+    }
+
+    /**
+     * D10 — ids, codes and statuses only. Never the typed amount, a payment note
+     * or a reference number.
+     *
+     * @return array<string, mixed>
+     */
+    public static function paymentBlockedByCorrectionPayload(RmeInvoice $invoice, RmeInvoicePaymentBlocked $blocked, string $paymentPath): array
+    {
+        return [
+            'invoice_id' => (int) $invoice->id,
+            'invoice_number' => (string) $invoice->invoice_number,
+            'branch_id' => (int) $invoice->branch_id,
+            'reason' => RmeInvoicePaymentBlocked::REASON,
+            'payment_path' => $paymentPath,
+            'correction_id' => $blocked->correctionId,
+            'correction_status' => $blocked->correctionStatus,
+            'invoice_status' => (string) $invoice->status,
+            'invoice_version' => (int) ($invoice->correction_version ?? 0),
         ];
     }
 

@@ -21,6 +21,15 @@ Extends rule 190; where they disagree about what EXISTS, this rule is newer.
    while the flag is OFF or any of the four decisions is PENDING.
 
 ## 2. Owner decisions — PENDING_OWNER_DECISION
+
+> **SUPERSEDED IN PART by rule 192 (FEATURE-RME-BRANCH-TARIFF-AUTHORITY-1).**
+> D1, D7, D10 and D21 are now OWNER-APPROVED and recorded in
+> `docs/decisions/rme-billing-correction-owner-decisions.md` (task-supplied
+> evidence, 2026-10-17). D10 (§3 item 10, §6 item 18) is IMPLEMENTED: a pending
+> correction now BLOCKS payment. D21 (§4) is IMPLEMENTED as branch tariff
+> authority with every branch TRANSITIONAL. The flag is still OFF and no role is
+> granted. Text below kept as the record of what was true at release.
+
 3. D1 (pre-payment approval authority), D7 (receipt versioning policy), D10
    (does a PENDING correction block payment), D21 (price authority) are still
    **PENDING**. The audit register's "Rekomendasi" column and any brief's

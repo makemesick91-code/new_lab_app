@@ -57,6 +57,9 @@ class RmePaymentController extends Controller
             'paymentMethods' => $this->paymentMethods->listActive(),
             'payableSummary' => $payableSummary,
             'outstandingReceivables' => $outstandingReceivables,
+            // FEATURE-RME-BRANCH-TARIFF-AUTHORITY-1 — D10 display only; the
+            // service refuses under the invoice row lock.
+            'paymentBlock' => $this->service->activeCorrectionBlocking($rmeInvoice),
         ]);
     }
 

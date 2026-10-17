@@ -33,16 +33,25 @@
             <x-slot:breadcrumb>Rekam Medis Elektronik</x-slot:breadcrumb>
             <x-slot:actions>
                 <x-ui.button variant="secondary" :href="route('rme.cashier.index')">&larr; Kembali ke Daftar</x-ui.button>
-                @if ($invoice->isPayable())
+                @if ($invoice->isPayable() && empty($paymentBlock))
                     <x-ui.button variant="primary" :href="route('rme.cashier.payment.create', [$visit, $invoice])">
                         {{ $invoice->isPartial() ? 'Bayar Cicilan' : 'Bayar Sekarang' }}
                     </x-ui.button>
+                @elseif ($invoice->isPayable())
+                    <x-ui.button variant="primary" :disabled="true" data-payment-blocked-button>Pembayaran Ditahan</x-ui.button>
                 @endif
                 @if ($invoice->status === 'PAID')
                     <x-ui.button variant="secondary" :href="route('rme.cashier.receipt.show', [$visit, $invoice])">Lihat Kwitansi</x-ui.button>
                 @endif
             </x-slot:actions>
         </x-ui.page-header>
+
+        {{-- FEATURE-RME-BRANCH-TARIFF-AUTHORITY-1 — owner decision D10 (server-enforced). --}}
+        @if (! empty($paymentBlock))
+            <x-ui.alert variant="warning" title="Pembayaran ditahan" data-payment-blocked-by-correction>
+                Tagihan sedang dalam proses koreksi. Pembayaran dapat dilanjutkan setelah proses koreksi selesai.
+            </x-ui.alert>
+        @endif
 
         {{-- Invoice Header --}}
         <x-ui.card>
@@ -178,7 +187,16 @@
                             <td class="px-4 py-3 text-navy">{{ $item->description }}</td>
                             <td class="px-4 py-3 text-ink-soft text-xs">{{ $item->treatment?->name ?? '-' }}</td>
                             <td class="px-4 py-3 text-right text-ink">{{ $item->qty }}</td>
-                            <td class="px-4 py-3 text-right text-ink">Rp {{ number_format($item->unit_price, 0, ',', '.') }}</td>
+                            <td class="px-4 py-3 text-right text-ink">
+                                Rp {{ number_format($item->unit_price, 0, ',', '.') }}
+                                {{-- FEATURE-RME-BRANCH-TARIFF-AUTHORITY-1 — price provenance (D21). A transitional price is never shown as master tariff. --}}
+                                <div class="mt-1" data-price-source="{{ $item->price_source ?? 'NOT_RECORDED' }}">
+                                    <x-ui.badge :tone="\App\Modules\RmeInvoice\Support\RmeInvoicePriceSource::tone($item->price_source)">{{ \App\Modules\RmeInvoice\Support\RmeInvoicePriceSource::label($item->price_source) }}</x-ui.badge>
+                                    @if ($item->tariff_unit_price !== null && (float) $item->tariff_unit_price !== (float) $item->unit_price)
+                                        <div class="mt-0.5 text-xs text-ink-muted">Tarif master: Rp {{ number_format($item->tariff_unit_price, 0, ',', '.') }}</div>
+                                    @endif
+                                </div>
+                            </td>
                             <td class="px-4 py-3 text-right text-danger-700">{{ $item->discount > 0 ? 'Rp '.number_format($item->discount, 0, ',', '.') : '-' }}</td>
                             <td class="px-4 py-3 text-right font-medium text-navy">Rp {{ number_format($item->subtotal, 0, ',', '.') }}</td>
                         </tr>

@@ -101,6 +101,11 @@ Labels: **CURRENT_PRODUCTION_BEHAVIOR** (true on production after this release),
     depends on D10. It cannot happen while the flag is OFF.
 
 ## 5. Not implemented — PENDING_OWNER_DECISION
+
+> **SUPERSEDED IN PART by rule 192.** D1/D7/D10/D21 are now owner-approved and
+> recorded; D10 (pending correction blocks payment) and D21 (branch tariff
+> authority, correction only within tariff authority — §2 item 11 is narrowed by
+> rule 192 §7) are implemented. Everything else in this section stands.
 19. Never report as active: post-payment correction, refund, payment reversal,
     patient credit balance, retroactive revenue adjustment, Rp0 adjustment, financial
     settlement. Owner decisions D1–D27 were all **PENDING** at release; the feature

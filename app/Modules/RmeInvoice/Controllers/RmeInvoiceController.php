@@ -14,6 +14,7 @@ use App\Modules\RmeInvoice\Services\CashierHandoffStatusService;
 use App\Modules\RmeInvoice\Services\RmeControlReceivableService;
 use App\Modules\RmeInvoice\Services\RmeInvoiceCorrectionService;
 use App\Modules\RmeInvoice\Services\RmeInvoiceService;
+use App\Modules\RmeInvoice\Services\RmePaymentService;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
 use App\Modules\Treatment\Services\TreatmentService;
 use Carbon\Carbon;
@@ -36,6 +37,7 @@ class RmeInvoiceController extends Controller
         private readonly ClinicVisitService $visits,
         private readonly RmeControlReceivableService $carryOver,
         private readonly RmeInvoiceCorrectionService $corrections,
+        private readonly RmePaymentService $payments,
     ) {}
 
     /** @return array<int, string> */
@@ -502,9 +504,16 @@ SQL;
                 ->with('status', 'Tagihan sudah ada untuk kunjungan ini.');
         }
 
+        $treatments = $this->treatments->listActive();
+
         return view('rme.cashier.create', [
             'visit' => $clinicVisit->load($this->cashierVisitRelations()),
-            'treatments' => $this->treatments->listActive(),
+            'treatments' => $treatments,
+            // FEATURE-RME-BRANCH-TARIFF-AUTHORITY-1 — branch mode + tariff hints (display only).
+            'pricingContext' => $this->service->pricingContextFor(
+                $clinicVisit,
+                $treatments->pluck('id')->map(fn ($id) => (int) $id)->all(),
+            ),
         ]);
     }
 
@@ -542,6 +551,8 @@ SQL;
             // FEATURE-RME-INVOICE-CORRECTION-RECEIPT-FOUNDATION-1 — no query while
             // the capability is off and the invoice was never revised.
             'correctionPanel' => $this->corrections->panelFor($invoice, request()->user()),
+            // FEATURE-RME-BRANCH-TARIFF-AUTHORITY-1 — D10 (display only).
+            'paymentBlock' => $invoice->isPayable() ? $this->payments->activeCorrectionBlocking($invoice) : null,
         ]);
     }
 }

@@ -1,6 +1,13 @@
 <x-settings-shell title="Buat Tagihan RME">
     @php
         $oldItems = old('items', [['treatment_id' => '', 'description' => '', 'qty' => 1, 'unit_price' => '', 'discount' => '']]);
+        // FEATURE-RME-BRANCH-TARIFF-AUTHORITY-1 (owner D21) — display only; the
+        // server re-prices every submitted line against the branch tariff.
+        $pricingMode = $pricingContext['mode'] ?? 'TRANSITIONAL';
+        $isStrictPricing = $pricingMode === 'STRICT_ENFORCED';
+        $tariffCents = $pricingContext['tariffs'] ?? [];
+        $showExceptionReason = $isStrictPricing && ($pricingContext['exceptions_enabled'] ?? false);
+        $tariffRupiah = fn ($id) => isset($tariffCents[(int) $id]) ? rtrim(rtrim(number_format($tariffCents[(int) $id] / 100, 2, '.', ''), '0'), '.') : '';
         $mrStatusTone = [
             'FINAL'           => 'success',
             'CASHIER_PENDING' => 'warning',
@@ -36,6 +43,19 @@
                     <span class="font-medium">nama tindakan manual</span>.
                 </x-ui.alert>
 
+                @if ($isStrictPricing)
+                    <x-ui.alert variant="info" title="Mode tarif ketat" class="text-xs" data-pricing-mode="STRICT_ENFORCED">
+                        Harga setiap tindakan mengikuti <span class="font-medium">tarif master cabang</span>. Server menolak
+                        harga yang berbeda dari tarif, diskon, tindakan manual tanpa master, tindakan tanpa tarif, dan item Rp0.
+                    </x-ui.alert>
+                @else
+                    <x-ui.alert variant="warning" title="Mode tarif transisi" class="text-xs" data-pricing-mode="TRANSITIONAL">
+                        Tarif master cabang ini belum lengkap. Harga yang diisi kasir tetap diterima, tetapi setiap item
+                        dicatat asal harganya (sesuai tarif / berbeda dari tarif / belum ada tarif / manual) dan
+                        <span class="font-medium">tidak dianggap terverifikasi tarif master</span>.
+                    </x-ui.alert>
+                @endif
+
                 <div id="items-container" class="space-y-3">
                     @foreach ($oldItems as $idx => $item)
                         <div class="item-row grid grid-cols-12 gap-2 items-start border border-hairline rounded-md p-3">
@@ -47,6 +67,7 @@
                                     @foreach ($treatments as $treatment)
                                         <option value="{{ $treatment->id }}"
                                             data-name="{{ $treatment->name }}"
+                                            data-tariff="{{ $tariffRupiah($treatment->id) }}"
                                             {{ ($item['treatment_id'] ?? '') == $treatment->id ? 'selected' : '' }}>
                                             {{ $treatment->name }}
                                         </option>
@@ -72,14 +93,15 @@
                                 <label class="block text-xs text-ink-soft mb-1">Harga Satuan <span class="text-danger">*</span></label>
                                 <input type="number" name="items[{{ $idx }}][unit_price]"
                                     value="{{ $item['unit_price'] ?? '' }}"
-                                    min="0" step="1" class="price-input w-full rounded-md border-hairline shadow-sm text-sm focus:border-brand-500 focus:ring-brand-500"
+                                    min="0" step="0.01" class="price-input w-full rounded-md border-hairline shadow-sm text-sm focus:border-brand-500 focus:ring-brand-500"
                                     required>
+                                <p class="tariff-hint mt-1 text-xs text-ink-muted" data-tariff-hint></p>
                             </div>
                             <div class="col-span-2">
                                 <label class="block text-xs text-ink-soft mb-1">Diskon</label>
                                 <input type="number" name="items[{{ $idx }}][discount]"
                                     value="{{ $item['discount'] ?? 0 }}"
-                                    min="0" step="1" class="discount-input w-full rounded-md border-hairline shadow-sm text-sm focus:border-brand-500 focus:ring-brand-500">
+                                    min="0" step="0.01" class="discount-input w-full rounded-md border-hairline shadow-sm text-sm focus:border-brand-500 focus:ring-brand-500">
                             </div>
                             <div class="col-span-1 flex items-end pb-0.5">
                                 <button type="button" onclick="removeItem(this)"
@@ -87,6 +109,14 @@
                                     Hapus
                                 </button>
                             </div>
+                            @if ($showExceptionReason)
+                                <div class="col-span-12">
+                                    <input type="text" name="items[{{ $idx }}][price_exception_reason]" maxlength="500"
+                                        value="{{ $item['price_exception_reason'] ?? '' }}"
+                                        placeholder="Alasan pengecualian harga/diskon (wajib bila berbeda dari tarif master)"
+                                        class="w-full rounded-md border-hairline shadow-sm text-xs focus:border-brand-500 focus:ring-brand-500">
+                                </div>
+                            @endif
                         </div>
                     @endforeach
                 </div>
@@ -126,6 +156,13 @@
         </form>
     </div>
 
+    <template id="treatment-options-template">
+        <option value="">— Manual / Pilih Treatment —</option>
+        @foreach ($treatments as $treatment)
+            <option value="{{ $treatment->id }}" data-name="{{ $treatment->name }}" data-tariff="{{ $tariffRupiah($treatment->id) }}">{{ $treatment->name }}</option>
+        @endforeach
+    </template>
+
     <script>
         let itemIndex = {{ count($oldItems) }};
 
@@ -155,12 +192,7 @@
             row.innerHTML = `
                 <div class="col-span-3">
                     <label class="block text-xs text-ink-soft mb-1">Treatment <span class="text-ink-muted">(opsional)</span></label>
-                    <select name="items[${itemIndex}][treatment_id]" class="treatment-select w-full rounded-md border-hairline shadow-sm text-sm focus:border-brand-500 focus:ring-brand-500" onchange="fillDescription(this)">
-                        <option value="">— Manual / Pilih Treatment —</option>
-                        @foreach ($treatments as $treatment)
-                        <option value="{{ $treatment->id }}" data-name="{{ $treatment->name }}">{{ $treatment->name }}</option>
-                        @endforeach
-                    </select>
+                    <select name="items[${itemIndex}][treatment_id]" class="treatment-select w-full rounded-md border-hairline shadow-sm text-sm focus:border-brand-500 focus:ring-brand-500" onchange="fillDescription(this)"></select>
                 </div>
                 <div class="col-span-3">
                     <label class="block text-xs text-ink-soft mb-1">Tindakan / Deskripsi <span class="text-danger">*</span></label>
@@ -172,16 +204,27 @@
                 </div>
                 <div class="col-span-2">
                     <label class="block text-xs text-ink-soft mb-1">Harga Satuan <span class="text-danger">*</span></label>
-                    <input type="number" name="items[${itemIndex}][unit_price]" min="0" step="1" class="price-input w-full rounded-md border-hairline shadow-sm text-sm focus:border-brand-500 focus:ring-brand-500" required oninput="recalculate()">
+                    <input type="number" name="items[${itemIndex}][unit_price]" min="0" step="0.01" class="price-input w-full rounded-md border-hairline shadow-sm text-sm focus:border-brand-500 focus:ring-brand-500" required oninput="recalculate()">
+                    <p class="tariff-hint mt-1 text-xs text-ink-muted" data-tariff-hint></p>
                 </div>
                 <div class="col-span-2">
                     <label class="block text-xs text-ink-soft mb-1">Diskon</label>
-                    <input type="number" name="items[${itemIndex}][discount]" value="0" min="0" step="1" class="discount-input w-full rounded-md border-hairline shadow-sm text-sm focus:border-brand-500 focus:ring-brand-500" oninput="recalculate()">
+                    <input type="number" name="items[${itemIndex}][discount]" value="0" min="0" step="0.01" class="discount-input w-full rounded-md border-hairline shadow-sm text-sm focus:border-brand-500 focus:ring-brand-500" oninput="recalculate()">
                 </div>
                 <div class="col-span-1 flex items-end pb-0.5">
                     <button type="button" onclick="removeItem(this)" class="inline-flex items-center justify-center w-full rounded-lg px-2 py-2 text-xs font-semibold transition-colors bg-danger-700 text-white hover:bg-danger-700 focus:outline-none focus:ring-2 focus:ring-danger focus:ring-offset-2">Hapus</button>
                 </div>
+                @if ($showExceptionReason)
+                <div class="col-span-12">
+                    <input type="text" name="items[${itemIndex}][price_exception_reason]" maxlength="500" placeholder="Alasan pengecualian harga/diskon (wajib bila berbeda dari tarif master)" class="w-full rounded-md border-hairline shadow-sm text-xs focus:border-brand-500 focus:ring-brand-500">
+                </div>
+                @endif
             `;
+            // Options come from an HTML <template> rendered by Blade, never from
+            // this JS template literal: Blade echo escaping covers HTML but not a
+            // backtick or a template placeholder, so a treatment name inside the
+            // literal could run as script (security review, this sprint).
+            row.querySelector('.treatment-select').innerHTML = document.getElementById('treatment-options-template').innerHTML;
             container.appendChild(row);
             itemIndex++;
         }
@@ -193,13 +236,37 @@
             recalculate();
         }
 
+        // FEATURE-RME-BRANCH-TARIFF-AUTHORITY-1 — show the branch tariff of the
+        // chosen treatment and prefill an EMPTY price with it. Display only:
+        // the server re-prices every line and records its provenance.
+        function showTariff(row) {
+            const select = row.querySelector('.treatment-select');
+            const hint = row.querySelector('[data-tariff-hint]');
+            if (!select || !hint) return;
+            const option = select.options[select.selectedIndex];
+            const tariff = option ? option.getAttribute('data-tariff') : '';
+            if (!option || !option.value) {
+                hint.textContent = 'Tindakan manual — tanpa tarif master.';
+            } else if (tariff) {
+                hint.textContent = 'Tarif master cabang: ' + formatRupiah(parseFloat(tariff));
+            } else {
+                hint.textContent = 'Belum ada tarif master untuk tindakan ini di cabang ini.';
+            }
+        }
+
         function fillDescription(select) {
             const option = select.options[select.selectedIndex];
             const row = select.closest('.item-row');
             const descInput = row.querySelector('.description-input');
+            const priceInput = row.querySelector('.price-input');
             if (option.value && descInput.value === '') {
                 descInput.value = option.getAttribute('data-name');
             }
+            const tariff = option.getAttribute('data-tariff');
+            if (option.value && tariff && priceInput && priceInput.value === '') {
+                priceInput.value = tariff;
+            }
+            showTariff(row);
             recalculate();
         }
 
@@ -210,6 +277,7 @@
             el.addEventListener('input', recalculate);
         });
 
+        document.querySelectorAll('.item-row').forEach(showTariff);
         recalculate();
     </script>
 </x-settings-shell>
