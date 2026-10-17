@@ -400,6 +400,16 @@ return [
         'tests/Feature/RmeTariffAuthority/RmeTariffAuthorityInvoicePricingTest.php',
         'tests/Feature/RmeTariffAuthority/RmeTariffAuthorityCommandsTest.php',
         'tests/Feature/RmeTariffAuthority/RmeTariffAuthorityGovernanceTest.php',
+        // FEATURE-RME-BRANCH-TARIFF-PROVISIONING-1 — tariff APPROVAL PROVENANCE:
+        // the import refuses to apply without an owner-approval reference bound
+        // into its digest, ATTESTs identical-but-unapproved tariffs without
+        // touching their price, master-data edits withdraw the approval, and
+        // readiness never calls a branch strict-eligible on unapproved prices.
+        // The concurrency suite proves the ATTEST row lock and the create-only
+        // unique guard on PostgreSQL (skips on SQLite). Selected by the existing
+        // `RmeTariffAuthority` token (the directory is part of the test name).
+        'tests/Feature/RmeTariffAuthority/RmeTariffProvisioningProvenanceTest.php',
+        'tests/Feature/RmeTariffAuthority/RmeTariffProvisioningConcurrencyTest.php',
 
         // DOCTOR-PWA-WEBAUTHN-1 — the browser device-credential login. A `|Pwa`
         // or `|DoctorDevice` token does not select it: --filter matches the test

@@ -9,6 +9,7 @@ use App\Modules\Branch\Support\BranchCodeAlias;
 use App\Modules\Tariff\Interfaces\TariffRepositoryInterface;
 use App\Modules\Tariff\Services\BranchTariffAuthorityService;
 use App\Modules\Tariff\Services\TariffImportService;
+use App\Modules\Tariff\Support\TariffProvenance;
 use App\Support\Clinical\ClinicalClock;
 use Illuminate\Console\Command;
 
@@ -17,6 +18,12 @@ use Illuminate\Console\Command;
  * active treatment for ONE branch, with the tariff currently in force shown for
  * reference and the `price` column left BLANK for the owner's official list
  * (D21h). Read-only. A blank price is skipped on import — never imported as Rp0.
+ *
+ * FEATURE-RME-BRANCH-TARIFF-PROVISIONING-1 — `current_tariff_provenance` says
+ * whether the tariff in force carries an owner-approval reference (VERIFIED) or
+ * not (UNVERIFIED, e.g. seeded or typed in master data), so the owner reviewing
+ * the sheet sees which current prices were never approved. Informational: the
+ * import reads only `treatment_code` and `price`.
  */
 class RmeTariffTemplateCommand extends Command
 {
@@ -37,14 +44,25 @@ class RmeTariffTemplateCommand extends Command
 
         $treatments = $tariffs->activeTreatmentCodes();
         $inForce = $authority->resolveMany((int) $branch->id, array_keys($treatments), $clock->todayString());
+        $references = $tariffs->approvalReferencesFor(array_values(array_filter(array_map(
+            fn (int $id) => $inForce->for($id)->isResolved() ? $inForce->for($id)->tariffId : null,
+            array_keys($treatments),
+        ))));
 
         $out = fopen('php://temp', 'r+');
-        fputcsv($out, ['treatment_code', 'current_tariff_in_force', 'price']);
+        fputcsv($out, ['treatment_code', 'current_tariff_in_force', 'current_tariff_provenance', 'price']);
         foreach ($treatments as $id => $treatmentCode) {
             $resolution = $inForce->for($id);
+            $provenance = '';
+            if ($resolution->isResolved()) {
+                $provenance = ($references[(int) $resolution->tariffId] ?? null) !== null
+                    ? TariffProvenance::VERIFIED
+                    : TariffProvenance::UNVERIFIED;
+            }
             fputcsv($out, [
                 TariffImportService::csvSafeCode((string) $treatmentCode),
                 $resolution->isResolved() ? number_format(((int) $resolution->priceCents) / 100, 2, '.', '') : '',
+                $provenance,
                 '',
             ]);
         }

@@ -100,8 +100,9 @@ it('prints an import-ready template with the price column blank and the tariff i
     [$exit, $out] = rtaArtisan('rme:tariff-template', ['--branch' => 'RT01']);
 
     expect($exit)->toBe(0)
-        ->and($out)->toContain('treatment_code,current_tariff_in_force,price')
-        ->and($out)->toContain('TRT-RTSC,250000.00,')
+        // FEATURE-RME-BRANCH-TARIFF-PROVISIONING-1 added current_tariff_provenance.
+        ->and($out)->toContain('treatment_code,current_tariff_in_force,current_tariff_provenance,price')
+        ->and($out)->toContain('TRT-RTSC,250000.00,UNVERIFIED,')
         ->and(rtaArtisan('rme:tariff-template', ['--branch' => 'NOPE'])[0])->toBe(1);
 });
 
@@ -120,17 +121,19 @@ it('dry-runs by default and writes nothing', function () {
 });
 
 it('applies the reviewed plan once, audits every tariff, and is idempotent on re-run', function () {
+    // FEATURE-RME-BRANCH-TARIFF-PROVISIONING-1: --apply carries the owner-approval
+    // reference, and the reviewed digest binds it.
     $plan = app(TariffImportService::class)->plan('RT02', '2026-10-01', [
         ['treatment_code' => 'TRT-RTSC', 'price' => '175000'],
         ['treatment_code' => 'TRT-RTTB', 'price' => '125000.50'],
-    ]);
+    ], 'OWNER-TARIFF-RT02-01');
     $actor = userInRole('Super Admin');
 
     [$exit, $out] = rtaArtisan('rme:tariff-import', [
         'file' => rtaCsv([['TRT-RTSC', '175000'], ['TRT-RTTB', '125000.50']]),
         '--branch' => 'RT02', '--effective-date' => '2026-10-01',
         '--apply' => true, '--confirm-plan' => $plan['digest'], '--actor' => (string) $actor->id,
-        '--reason' => 'Daftar tarif resmi cabang dari owner.',
+        '--reason' => 'Daftar tarif resmi cabang dari owner.', '--approval-reference' => 'OWNER-TARIFF-RT02-01',
     ]);
 
     expect($exit)->toBe(0)->and($out)->toContain('APPLIED created=2')
@@ -139,18 +142,19 @@ it('applies the reviewed plan once, audits every tariff, and is idempotent on re
         ->and((string) Tariff::where('branch_id', test()->otherBranch->id)->where('treatment_id', test()->tambal->id)->value('price'))->toBe('125000.50');
 
     // Re-run: everything UNCHANGED, nothing written.
-    $again = app(TariffImportService::class)->plan('RT02', '2026-10-01', [['treatment_code' => 'TRT-RTSC', 'price' => '175000']]);
+    $again = app(TariffImportService::class)->plan('RT02', '2026-10-01', [['treatment_code' => 'TRT-RTSC', 'price' => '175000']], 'OWNER-TARIFF-RT02-01');
     expect($again['creates'])->toBe(0)->and($again['rows'][0]['action'])->toBe(TariffImportService::UNCHANGED);
 });
 
 it('refuses apply without the reviewed digest, a reason, or an authorized actor', function () {
     $rows = [['treatment_code' => 'TRT-RTSC', 'price' => '175000']];
     $importer = app(TariffImportService::class);
-    $digest = $importer->plan('RT02', '2026-10-01', $rows)['digest'];
+    $ref = 'OWNER-TARIFF-RT02-01';
+    $digest = $importer->plan('RT02', '2026-10-01', $rows, $ref)['digest'];
 
-    expect(fn () => $importer->apply('RT02', '2026-10-01', $rows, 'deadbeef', 'Daftar tarif resmi owner.', userInRole('Super Admin')))->toThrow(InvalidArgumentException::class, 'PLAN_CHANGED')
-        ->and(fn () => $importer->apply('RT02', '2026-10-01', $rows, $digest, 'singkat', userInRole('Super Admin')))->toThrow(InvalidArgumentException::class, 'REASON_INVALID')
-        ->and(fn () => $importer->apply('RT02', '2026-10-01', $rows, $digest, 'Daftar tarif resmi owner.', userWith(['manage_rme_billing'])))->toThrow(InvalidArgumentException::class, 'ACTOR_NOT_AUTHORIZED');
+    expect(fn () => $importer->apply('RT02', '2026-10-01', $rows, 'deadbeef', 'Daftar tarif resmi owner.', userInRole('Super Admin'), $ref))->toThrow(InvalidArgumentException::class, 'PLAN_CHANGED')
+        ->and(fn () => $importer->apply('RT02', '2026-10-01', $rows, $digest, 'singkat', userInRole('Super Admin'), $ref))->toThrow(InvalidArgumentException::class, 'REASON_INVALID')
+        ->and(fn () => $importer->apply('RT02', '2026-10-01', $rows, $digest, 'Daftar tarif resmi owner.', userWith(['manage_rme_billing']), $ref))->toThrow(InvalidArgumentException::class, 'ACTOR_NOT_AUTHORIZED');
 
     expect(Tariff::where('branch_id', test()->otherBranch->id)->count())->toBe(0);
 });
@@ -193,7 +197,7 @@ it('refuses an unknown, non-RME branch or an impossible date', function () {
 it('rolls the whole import back when a write fails', function () {
     $rows = [['treatment_code' => 'TRT-RTSC', 'price' => '175000'], ['treatment_code' => 'TRT-RTTB', 'price' => '125000']];
     $importer = app(TariffImportService::class);
-    $digest = $importer->plan('RT02', '2026-10-01', $rows)['digest'];
+    $digest = $importer->plan('RT02', '2026-10-01', $rows, 'OWNER-TARIFF-RT02-01')['digest'];
 
     Tariff::creating(function (Tariff $tariff) {
         if ((int) $tariff->treatment_id === (int) test()->tambal->id) {
@@ -201,7 +205,7 @@ it('rolls the whole import back when a write fails', function () {
         }
     });
 
-    expect(fn () => $importer->apply('RT02', '2026-10-01', $rows, $digest, 'Daftar tarif resmi owner.', userInRole('Super Admin')))->toThrow(RuntimeException::class);
+    expect(fn () => $importer->apply('RT02', '2026-10-01', $rows, $digest, 'Daftar tarif resmi owner.', userInRole('Super Admin'), 'OWNER-TARIFF-RT02-01'))->toThrow(RuntimeException::class);
     expect(Tariff::where('branch_id', test()->otherBranch->id)->count())->toBe(0)
         ->and(AuditLog::where('action', TariffAuditEvent::IMPORTED)->count())->toBe(0);
 

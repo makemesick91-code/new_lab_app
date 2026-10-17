@@ -42,6 +42,11 @@ Extends rules 188–191. Where this rule and those disagree about what EXISTS, t
 9. The treatment master is GLOBAL: every active treatment is billable in every
    branch. A branch is `TARIFF_READY` only when ALL active treatments have a
    positive tariff in force; some tariffs ⇒ `TARIFF_INCOMPLETE`, never ready.
+   **[Extended by rule 193: coverage is not approval.** TARIFF_READY says every
+   active treatment has a positive tariff; it says nothing about whether the owner
+   approved those prices. Strict eligibility additionally requires every tariff in
+   force to carry approval provenance. Production TLK1's 11 tariffs are seeded
+   development defaults (UNVERIFIED).]
 10. Clinical date comes from `ClinicalClock` (WITA), never `now()` / UTC. No cache:
     a tariff edit is visible on the next resolution, so a stale cache never
     authorizes a price.
@@ -145,6 +150,11 @@ Extends rules 188–191. Where this rule and those disagree about what EXISTS, t
     CONFLICT with an existing tariff at that date (never overwritten — edit through
     master data); only CREATE rows are written, each audited `RME_TARIFF_IMPORTED`;
     re-running is idempotent. Actor needs `manage_clinic_master_data`.
+   **[SUPERSEDED in part by rule 193 §3 (FEATURE-RME-BRANCH-TARIFF-PROVISIONING-1):
+   `--apply` now also REQUIRES `--approval-reference`, bound into the digest;
+   CREATE rows record approval provenance; an identical-price tariff without
+   provenance is ATTESTED (price untouched); master-data edits of price/date/
+   treatment withdraw the approval. Create-only and CONFLICT are unchanged.]**
 32. **An empty successful import is not evidence that a branch is priced.**
 
 ## 9. Readiness — IMPLEMENTED_THIS_RELEASE
@@ -152,6 +162,9 @@ Extends rules 188–191. Where this rule and those disagree about what EXISTS, t
     mode, readiness, tariffed/active, missing and zero codes, billed lines by
     provenance. FAIL (exit 1): a strict branch not ready, or a strict code naming no
     RME branch. WATCH (exit 1 only with --strict): any branch transitional.
+    **[Extended by rule 193 §5: `provenance`, `approved_tariffs`,
+    `unverified_tariff_codes`, `strict_eligible`; WATCH
+    `TARIFF_PROVENANCE_UNVERIFIED`, FAIL `STRICT_BRANCH_TARIFF_PROVENANCE_UNVERIFIED`.]**
 
 ## 10. Roles, oversight, scope — unchanged
 34. Finance Klinik and Data Analyst stay READ-ONLY; the laboratory `Finance` role gains
@@ -172,4 +185,5 @@ Extends rules 188–191. Where this rule and those disagree about what EXISTS, t
     invoice or payment to "prove" pricing or D10.
 39. Strict enforcement for a branch needs: the owner's official tariff list imported
     (D21h), `rme:tariff-authority-readiness` READY for it, an explicit config change,
-    and a supervised window. Correction activation additionally needs rule 191 §20.
+    and a supervised window. **[Rule 193: "READY" here means `strict_eligible = true`
+    — TARIFF_READY AND every tariff in force carrying approval provenance.]** Correction activation additionally needs rule 191 §20.

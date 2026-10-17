@@ -36,12 +36,15 @@ class RmeTariffAuthorityReadinessCommand extends Command
             $this->newLine();
 
             $this->table(
-                ['Branch', 'Mode', 'Readiness', 'Tariffed', 'Missing', 'Billed', 'Verified', 'Transitional', 'Not recorded'],
+                ['Branch', 'Mode', 'Readiness', 'Tariffed', 'Approved', 'Provenance', 'Strict-eligible', 'Missing', 'Billed', 'Verified', 'Transitional', 'Not recorded'],
                 array_map(fn (array $b) => [
                     $b['code'],
                     $b['mode'],
                     $b['readiness'],
                     $b['tariffed_treatments'].'/'.$b['active_treatments'],
+                    $b['approved_tariffs'].'/'.$b['tariffed_treatments'],
+                    $b['provenance'],
+                    $b['strict_eligible'] ? 'yes' : 'no',
                     $b['missing_tariff_codes'] === [] ? '-' : implode(',', $b['missing_tariff_codes']),
                     $b['billed_lines'],
                     $b['billed_lines_tariff_verified'],
@@ -57,6 +60,7 @@ class RmeTariffAuthorityReadinessCommand extends Command
             $this->newLine();
             $this->line('Decision: '.$report['decision']);
             $this->line('Note: the treatment master is global, so every active treatment is billable in every branch. No tariff is invented or copied.');
+            $this->line('Note: coverage is not approval. A branch is strict-eligible only when every tariff in force carries an owner-approval reference.');
         }
 
         return match ($report['decision']) {

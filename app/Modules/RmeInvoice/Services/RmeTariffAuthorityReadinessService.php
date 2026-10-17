@@ -12,6 +12,7 @@ use App\Modules\RmeInvoice\Support\RmeInvoicePriceSource;
 use App\Modules\Tariff\Interfaces\TariffRepositoryInterface;
 use App\Modules\Tariff\Services\BranchTariffAuthorityService;
 use App\Modules\Tariff\Support\TariffPricingMode;
+use App\Modules\Tariff\Support\TariffProvenance;
 use App\Modules\Tariff\Support\TariffResolution;
 use App\Support\Clinical\ClinicalClock;
 
@@ -26,11 +27,20 @@ use App\Support\Clinical\ClinicalClock;
  * billable in every branch. A branch is TARIFF_READY only when ALL of them have
  * a positive tariff in force; some tariffs make it TARIFF_INCOMPLETE, never ready.
  *
+ * APPROVAL PROVENANCE (FEATURE-RME-BRANCH-TARIFF-PROVISIONING-1). Coverage and
+ * approval are separate questions. Every branch also reports whether each tariff
+ * IN FORCE carries an owner-approval reference (VERIFIED / UNVERIFIED / NONE),
+ * and `strict_eligible` is true only when the branch is TARIFF_READY AND every
+ * tariff in force is VERIFIED — production TLK1's seeded placeholder prices are
+ * coverage, not approval. Readiness still never changes a mode.
+ *
  * Writes nothing; never changes a mode. The decision is:
- *   FAIL   a configured strict code names no active RME branch, or a strict
- *          branch is not TARIFF_READY (its cashiers are being refused);
- *   WATCH  any branch is still TRANSITIONAL (D21 transition is open);
- *   GO     every RME branch is strict and ready.
+ *   FAIL   a configured strict code names no active RME branch, a strict branch
+ *          is not TARIFF_READY (its cashiers are being refused), or a strict
+ *          branch has a tariff in force without approval provenance;
+ *   WATCH  any branch is still TRANSITIONAL (D21 transition is open), or any
+ *          branch has a tariff in force without approval provenance;
+ *   GO     every RME branch is strict, ready and verified.
  */
 class RmeTariffAuthorityReadinessService
 {
@@ -63,18 +73,39 @@ class RmeTariffAuthorityReadinessService
         $branchRows = [];
         $findings = [];
 
+        // Resolve every branch first, then read the approval provenance of every
+        // tariff in force in ONE query.
+        $resolved = [];
+        $inForceIds = [];
+        foreach ($rmeBranches as $branch) {
+            $resolved[(int) $branch->id] = $this->authority->resolveMany((int) $branch->id, array_keys($treatments), $date)->all();
+            foreach ($resolved[(int) $branch->id] as $resolution) {
+                if ($resolution->isResolved() && $resolution->tariffId !== null) {
+                    $inForceIds[] = (int) $resolution->tariffId;
+                }
+            }
+        }
+        $references = $this->tariffs->approvalReferencesFor($inForceIds);
+
         foreach ($rmeBranches as $branch) {
             /** @var Branch $branch */
             $branchId = (int) $branch->id;
-            $resolutions = $this->authority->resolveMany($branchId, array_keys($treatments), $date)->all();
+            $resolutions = $resolved[$branchId];
 
             $missing = [];
             $zero = [];
+            $unverified = [];
             $tariffed = 0;
+            $approved = 0;
             foreach ($treatments as $id => $code) {
                 $resolution = $resolutions[$id] ?? null;
                 if ($resolution?->isResolved()) {
                     $tariffed++;
+                    if (($references[(int) $resolution->tariffId] ?? null) !== null) {
+                        $approved++;
+                    } else {
+                        $unverified[] = $code;
+                    }
                 } elseif ($resolution?->outcome === TariffResolution::ZERO_PRICE) {
                     $zero[] = $code;
                 } else {
@@ -88,13 +119,23 @@ class RmeTariffAuthorityReadinessService
                 default => TariffPricingMode::NO_TARIFFS,
             };
 
+            $provenance = TariffProvenance::classify($tariffed, $approved);
+            $strictEligible = $readiness === TariffPricingMode::READY && $provenance === TariffProvenance::VERIFIED;
+
             $mode = $this->authority->modeFor($branchId);
-            $strictNotReady = $mode === TariffPricingMode::STRICT_ENFORCED && $readiness !== TariffPricingMode::READY;
+            $strict = $mode === TariffPricingMode::STRICT_ENFORCED;
+            $strictNotReady = $strict && $readiness !== TariffPricingMode::READY;
 
             if ($strictNotReady) {
                 $findings[] = ['level' => self::FAIL, 'code' => 'STRICT_BRANCH_NOT_READY', 'branch' => (string) $branch->code];
             } elseif ($mode === TariffPricingMode::TRANSITIONAL) {
                 $findings[] = ['level' => self::WATCH, 'code' => 'BRANCH_TRANSITIONAL', 'branch' => (string) $branch->code];
+            }
+
+            if ($unverified !== []) {
+                $findings[] = $strict
+                    ? ['level' => self::FAIL, 'code' => 'STRICT_BRANCH_TARIFF_PROVENANCE_UNVERIFIED', 'branch' => (string) $branch->code]
+                    : ['level' => self::WATCH, 'code' => 'TARIFF_PROVENANCE_UNVERIFIED', 'branch' => (string) $branch->code];
             }
 
             $lines = $exposure[$branchId] ?? [];
@@ -119,6 +160,10 @@ class RmeTariffAuthorityReadinessService
                 'tariffed_treatments' => $tariffed,
                 'missing_tariff_codes' => $missing,
                 'zero_tariff_codes' => $zero,
+                'provenance' => $provenance,
+                'approved_tariffs' => $approved,
+                'unverified_tariff_codes' => $unverified,
+                'strict_eligible' => $strictEligible,
                 'billed_lines' => array_sum($lines),
                 'billed_lines_tariff_verified' => $verified,
                 'billed_lines_transitional' => $transitional,
@@ -149,6 +194,7 @@ class RmeTariffAuthorityReadinessService
                 'treatment_master_is_global' => true,
                 'readiness_never_changes_mode' => true,
                 'no_tariff_invented_or_copied' => true,
+                'coverage_is_not_approval' => true,
             ],
         ];
     }
