@@ -4,6 +4,7 @@ namespace App\Modules\Tariff\Repositories;
 
 use App\Modules\Tariff\Interfaces\TariffRepositoryInterface;
 use App\Modules\Tariff\Models\Tariff;
+use App\Modules\Treatment\Models\Treatment;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Carbon;
 
@@ -53,6 +54,79 @@ class TariffRepository implements TariffRepositoryInterface
             ->orderByDesc('effective_date')
             ->orderByDesc('id')
             ->first();
+    }
+
+    public function inForceForTreatments(int $branchId, array $treatmentIds, string $onDate): array
+    {
+        $treatmentIds = array_values(array_unique(array_map('intval', $treatmentIds)));
+        if ($treatmentIds === []) {
+            return [];
+        }
+
+        $rows = Tariff::query()
+            ->where('branch_id', $branchId)
+            ->whereIn('treatment_id', $treatmentIds)
+            ->where('is_active', true)
+            ->whereDate('effective_date', '<=', $onDate)
+            ->orderBy('treatment_id')
+            ->orderByDesc('effective_date')
+            ->orderByDesc('id')
+            ->get();
+
+        $inForce = [];
+        foreach ($rows as $tariff) {
+            $inForce[(int) $tariff->treatment_id] ??= $tariff;
+        }
+
+        return $inForce;
+    }
+
+    public function treatmentUsability(array $treatmentIds): array
+    {
+        $treatmentIds = array_values(array_unique(array_map('intval', $treatmentIds)));
+        if ($treatmentIds === []) {
+            return [];
+        }
+
+        $usable = Treatment::query()
+            ->whereIn('id', $treatmentIds)
+            ->where('is_active', true)
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        $result = [];
+        foreach ($treatmentIds as $id) {
+            $result[$id] = in_array($id, $usable, true);
+        }
+
+        return $result;
+    }
+
+    public function activeTreatmentCodes(): array
+    {
+        return Treatment::query()
+            ->where('is_active', true)
+            ->orderBy('code')
+            ->pluck('code', 'id')
+            ->mapWithKeys(fn ($code, $id) => [(int) $id => (string) $code])
+            ->all();
+    }
+
+    public function atEffectiveDateIncludingTrashed(int $branchId, array $treatmentIds, string $effectiveDate): array
+    {
+        $treatmentIds = array_values(array_unique(array_map('intval', $treatmentIds)));
+        if ($treatmentIds === []) {
+            return [];
+        }
+
+        return Tariff::withTrashed()
+            ->where('branch_id', $branchId)
+            ->whereIn('treatment_id', $treatmentIds)
+            ->whereDate('effective_date', $effectiveDate)
+            ->get()
+            ->keyBy(fn (Tariff $tariff) => (int) $tariff->treatment_id)
+            ->all();
     }
 
     public function create(array $data): Tariff

@@ -114,6 +114,10 @@ class PermissionGroupingService
                 'approve_rme_invoice_correction',
                 'apply_rme_invoice_correction',
                 'view_billing_correction_oversight',
+                // FEATURE-RME-BRANCH-TARIFF-AUTHORITY-1 (rule 192) — strict-mode
+                // price exceptions; granted to no role (D21b undecided).
+                'override_rme_tariff_price',
+                'authorize_rme_tariff_discount',
             ],
         ],
         [
@@ -288,6 +292,8 @@ class PermissionGroupingService
         'approve_rme_invoice_correction' => 'Setujui atau tolak pengajuan koreksi tagihan RME milik akun lain (tidak pernah pengajuan sendiri).',
         'apply_rme_invoice_correction' => 'Terapkan koreksi tagihan RME yang sudah disetujui; dokumen asli dibekukan sebagai versi v0.',
         'view_billing_correction_oversight' => 'Lihat daftar dan riwayat koreksi tagihan di semua cabang RME — hanya baca, tanpa mengajukan/menyetujui.',
+        'override_rme_tariff_price' => 'Otorisasi harga tagihan RME yang berbeda dari tarif master pada cabang mode tarif ketat (wajib alasan; nonaktif sampai keputusan owner D21b–D21f).',
+        'authorize_rme_tariff_discount' => 'Otorisasi diskon tagihan RME pada cabang mode tarif ketat (wajib alasan; nonaktif sampai keputusan owner D21b–D21f).',
         'view_dashboard' => 'Akses dashboard operasional cabang.',
         'manage users' => 'Kelola akun pengguna sistem.',
         'manage roles' => 'Kelola role dan penugasan permission.',

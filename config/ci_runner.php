@@ -385,6 +385,21 @@ return [
         // first ⇒ stale form refused / reloaded form accepted) live in the
         // concurrency suite above.
         'tests/Feature/RmeInvoiceCorrection/RmeInvoiceCorrectionPaymentVersionBindingTest.php',
+        // FEATURE-RME-BRANCH-TARIFF-AUTHORITY-1 (rule 192) — owner D10 (a pending
+        // correction blocks payment on every path) and D21(4) (a correction only
+        // within branch tariff authority, D1 contract). Selected by the existing
+        // `RmeInvoiceCorrection` token; the D10 PostgreSQL races are in the
+        // concurrency suite above.
+        'tests/Feature/RmeInvoiceCorrection/RmeInvoiceCorrectionPaymentBlockTest.php',
+        'tests/Feature/RmeInvoiceCorrection/RmeInvoiceCorrectionTariffAuthorityTest.php',
+        // Branch tariff resolution, server-side invoice pricing with recorded
+        // provenance, strict refusals, exceptions (built, OFF), import/readiness
+        // commands and the release posture. Selected by the new
+        // `RmeTariffAuthority` token in BOTH critical-gate variants.
+        'tests/Feature/RmeTariffAuthority/RmeTariffAuthorityResolutionTest.php',
+        'tests/Feature/RmeTariffAuthority/RmeTariffAuthorityInvoicePricingTest.php',
+        'tests/Feature/RmeTariffAuthority/RmeTariffAuthorityCommandsTest.php',
+        'tests/Feature/RmeTariffAuthority/RmeTariffAuthorityGovernanceTest.php',
 
         // DOCTOR-PWA-WEBAUTHN-1 — the browser device-credential login. A `|Pwa`
         // or `|DoctorDevice` token does not select it: --filter matches the test

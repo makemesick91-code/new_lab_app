@@ -52,6 +52,8 @@ use App\Modules\RmeInvoice\Services\RmeInvoiceCorrectionService;
 use App\Modules\RmeInvoice\Services\RmePaymentService;
 use App\Modules\RmeInvoice\Support\RmeFinancialAuditEvent;
 use App\Modules\RmeInvoice\Support\RmeInvoiceCorrectionStatus;
+use App\Modules\Tariff\Models\Tariff;
+use App\Modules\Treatment\Models\Treatment;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
@@ -82,6 +84,11 @@ const RIC_TABLES = [
     'mst_patients',
     'mst_doctors',
     'mst_clinics',
+    // FEATURE-RME-BRANCH-TARIFF-AUTHORITY-1 — corrections validate against branch
+    // tariffs, so the fixture provisions treatments and tariffs.
+    'mst_tariffs',
+    'mst_treatments',
+    'mst_treatment_categories',
     'mst_branches',
     'users',
 ];
@@ -159,9 +166,17 @@ function ricCommittedInvoice(): array
             'medical_record_id' => $record->id, 'cashier_id' => $cashier->id,
             'subtotal' => 500000, 'discount_total' => 0, 'grand_total' => 500000,
         ]);
-        foreach ([['Scaling', 300000], ['Tambal', 200000]] as [$desc, $price]) {
+        // D21: the lines name treatments whose BRANCH tariffs validate the
+        // correction (Scaling 300.000, Tambal 50.000); Tambal is billed at a
+        // transitional 200.000 and the correction brings it to its tariff.
+        foreach ([['Scaling', 300000, 300000], ['Tambal', 200000, 50000]] as [$desc, $price, $tariff]) {
+            $treatment = Treatment::factory()->create(['name' => $desc.' '.uniqid(), 'is_active' => true]);
+            Tariff::factory()->create([
+                'branch_id' => $branch->id, 'treatment_id' => $treatment->id,
+                'price' => $tariff, 'effective_date' => '2026-01-01', 'is_active' => true,
+            ]);
             DB::table('trx_rme_invoice_items')->insert([
-                'rme_invoice_id' => $invoice->id, 'description' => $desc, 'qty' => 1,
+                'rme_invoice_id' => $invoice->id, 'treatment_id' => $treatment->id, 'description' => $desc, 'qty' => 1,
                 'unit_price' => $price, 'discount' => 0, 'subtotal' => $price,
                 'created_at' => now(), 'updated_at' => now(),
             ]);
@@ -183,8 +198,8 @@ function ricConcurrentLines(RmeInvoice $invoice): array
     $items = $invoice->items()->orderBy('id')->get();
 
     return [
-        ['original_item_id' => $items[0]->id, 'description' => 'Scaling', 'qty' => 1, 'unit_price' => '300000', 'discount' => '0'],
-        ['original_item_id' => $items[1]->id, 'description' => 'Tambal', 'qty' => 1, 'unit_price' => '50000', 'discount' => '0'],
+        ['original_item_id' => $items[0]->id, 'treatment_id' => $items[0]->treatment_id, 'description' => 'Scaling', 'qty' => 1, 'unit_price' => '300000', 'discount' => '0'],
+        ['original_item_id' => $items[1]->id, 'treatment_id' => $items[1]->treatment_id, 'description' => 'Tambal', 'qty' => 1, 'unit_price' => '50000', 'discount' => '0'],
     ];
 }
 
@@ -409,4 +424,116 @@ it('waits on a correction that is mid-apply, then accepts a payment from a page 
         ->and((float) $invoice->grand_total)->toEqual(350000.0)
         ->and($invoice->status)->toBe(RmeInvoice::STATUS_PAID)
         ->and((float) DB::table('trx_rme_payments')->where('rme_invoice_id', $invoice->id)->sum('amount'))->toEqual(350000.0);
+});
+
+/*
+| FEATURE-RME-BRANCH-TARIFF-AUTHORITY-1 — owner decision D10 under REAL
+| concurrency. A correction can only become active inside a transaction holding
+| the invoice row lock, and the payment reads active corrections under that same
+| lock — so the two orders resolve deterministically:
+|   correction commits first  ⇒ the payment waits, then is refused (D10);
+|   cancellation commits first ⇒ the payment waits, then is accepted;
+|   payment commits first     ⇒ the submission waits, then is refused (an
+|                               invoice with a payment is not pre-payment).
+*/
+
+/** A committed SUBMITTED-row template (built through the real service, then cancelled). */
+function ricActiveCorrectionRow(RmeInvoice $invoice, User $maker): array
+{
+    $service = app(RmeInvoiceCorrectionService::class);
+    $template = $service->submit($invoice, $maker, ['reason' => 'Template untuk baris pesaing.', 'lines' => ricConcurrentLines($invoice)]);
+    $service->cancel($template, $maker, 'Template dibatalkan sebelum balapan.');
+
+    $row = (array) DB::table('trx_rme_invoice_corrections')->where('id', $template->id)->first();
+    unset($row['id']);
+    $row['uuid'] = (string) Str::uuid();
+    $row['correction_number'] = null;
+    $row['status'] = RmeInvoiceCorrectionStatus::SUBMITTED;
+    $row['cancelled_by'] = null;
+    $row['cancelled_at'] = null;
+    $row['cancel_reason'] = null;
+    $row['idempotency_key'] = null;
+
+    return $row;
+}
+
+it('D10: waits on a correction submission that is mid-flight, then refuses the payment and records nothing', function () {
+    ['invoice' => $invoice, 'maker' => $maker, 'cashier' => $cashier] = ricCommittedInvoice();
+    $row = ricActiveCorrectionRow($invoice, $maker);
+    $columns = array_keys($row);
+
+    $handle = ricCompetingTransaction((int) $invoice->id, [
+        ['INSERT INTO trx_rme_invoice_corrections ('.implode(', ', $columns).') VALUES ('.implode(', ', array_fill(0, count($columns), '?')).')',
+            array_values($row)],
+    ]);
+
+    $this->actingAs($cashier);
+    $started = microtime(true);
+    $refusal = null;
+    try {
+        app(RmePaymentService::class)->pay($invoice, $cashier, [
+            'amount' => 100000,
+            'paid_at' => now()->format('Y-m-d H:i:s'),
+            'invoice_versions' => [$invoice->id => 0],
+        ]);
+    } catch (ValidationException $e) {
+        $refusal = json_encode($e->errors());
+    }
+    $waited = microtime(true) - $started;
+    ricJoin($handle);
+
+    expect($waited)->toBeGreaterThan(1.0)
+        ->and($refusal)->toContain('INVOICE_CORRECTION_ACTIVE')
+        ->and(DB::table('trx_rme_payments')->where('rme_invoice_id', $invoice->id)->count())->toBe(0)
+        ->and($invoice->fresh()->status)->toBe(RmeInvoice::STATUS_UNPAID)
+        ->and(DB::table('sys_audit_logs')
+            ->where('action', RmeFinancialAuditEvent::ACTION_PAYMENT_REFUSED_ACTIVE_CORRECTION)
+            ->where('entity_id', $invoice->id)->count())->toBe(1);
+});
+
+it('D10: waits on a cancellation that is mid-flight, then accepts the payment', function () {
+    ['invoice' => $invoice, 'maker' => $maker, 'cashier' => $cashier] = ricCommittedInvoice();
+    $active = app(RmeInvoiceCorrectionService::class)->submit($invoice, $maker, ['reason' => 'Harga tambal salah input kasir.', 'lines' => ricConcurrentLines($invoice)]);
+
+    $handle = ricCompetingTransaction((int) $invoice->id, [
+        ["UPDATE trx_rme_invoice_corrections SET status = 'CANCELLED', cancelled_at = NOW(), cancel_reason = 'Dibatalkan oleh pengaju.', updated_at = NOW() WHERE id = ?", [$active->id]],
+    ]);
+
+    $this->actingAs($cashier);
+    $started = microtime(true);
+    app(RmePaymentService::class)->pay($invoice, $cashier, [
+        'amount' => 100000,
+        'paid_at' => now()->format('Y-m-d H:i:s'),
+        'invoice_versions' => [$invoice->id => 0],
+    ]);
+    $waited = microtime(true) - $started;
+    ricJoin($handle);
+
+    expect($waited)->toBeGreaterThan(1.0)
+        ->and((float) DB::table('trx_rme_payments')->where('rme_invoice_id', $invoice->id)->sum('amount'))->toEqual(100000.0)
+        ->and($invoice->fresh()->status)->toBe(RmeInvoice::STATUS_PARTIAL);
+});
+
+it('D10: a payment that commits first makes a waiting submission refused, never a correction on a paid invoice', function () {
+    ['invoice' => $invoice, 'maker' => $maker, 'cashier' => $cashier] = ricCommittedInvoice();
+
+    $handle = ricCompetingTransaction((int) $invoice->id, [
+        ['INSERT INTO trx_rme_payments (branch_id, rme_invoice_id, clinic_visit_id, patient_id, cashier_id, payment_number, amount, paid_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), NOW())',
+            [$invoice->branch_id, $invoice->id, $invoice->clinic_visit_id, $invoice->patient_id, $cashier->id, 'PAY-RACE-'.uniqid(), 100000]],
+        ["UPDATE trx_rme_invoices SET status = 'PARTIAL', updated_at = NOW() WHERE id = ?", [$invoice->id]],
+    ]);
+
+    $started = microtime(true);
+    $refusal = null;
+    try {
+        app(RmeInvoiceCorrectionService::class)->submit($invoice, $maker, ['reason' => 'Harga tambal salah input kasir.', 'lines' => ricConcurrentLines($invoice)]);
+    } catch (ValidationException $e) {
+        $refusal = json_encode($e->errors());
+    }
+    $waited = microtime(true) - $started;
+    ricJoin($handle);
+
+    expect($waited)->toBeGreaterThan(1.0)
+        ->and($refusal)->toContain('CORRECTION_TYPE_NOT_ENABLED')
+        ->and(RmeInvoiceCorrection::where('rme_invoice_id', $invoice->id)->count())->toBe(0);
 });

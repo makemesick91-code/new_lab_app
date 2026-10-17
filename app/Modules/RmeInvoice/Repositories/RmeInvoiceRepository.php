@@ -175,4 +175,26 @@ class RmeInvoiceRepository implements RmeInvoiceRepositoryInterface
 
         return $invoice->refresh();
     }
+
+    public function priceSourceCountsByBranch(array $branchIds): array
+    {
+        if ($branchIds === []) {
+            return [];
+        }
+
+        $rows = RmeInvoiceItem::query()
+            ->join('trx_rme_invoices as inv', 'inv.id', '=', 'trx_rme_invoice_items.rme_invoice_id')
+            ->whereIn('inv.branch_id', $branchIds)
+            ->whereNull('inv.deleted_at')
+            ->groupBy('inv.branch_id', 'trx_rme_invoice_items.price_source')
+            ->selectRaw('inv.branch_id as branch_id, trx_rme_invoice_items.price_source as price_source, COUNT(*) as aggregate')
+            ->get();
+
+        $counts = [];
+        foreach ($rows as $row) {
+            $counts[(int) $row->branch_id][(string) ($row->price_source ?? 'NOT_RECORDED')] = (int) $row->aggregate;
+        }
+
+        return $counts;
+    }
 }

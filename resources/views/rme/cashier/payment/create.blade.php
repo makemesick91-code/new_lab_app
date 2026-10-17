@@ -234,6 +234,23 @@
                     </div>
                 @enderror
 
+                {{--
+                    FEATURE-RME-BRANCH-TARIFF-AUTHORITY-1 — owner decision D10. An invoice
+                    with an active (submitted / approved, not yet applied) correction
+                    accepts no payment. The payment service refuses it under the invoice
+                    row lock; this banner only explains why the button is disabled.
+                --}}
+                @if (! empty($paymentBlock))
+                    <x-ui.alert variant="warning" title="Pembayaran ditahan" data-payment-blocked-by-correction>
+                        Tagihan sedang dalam proses koreksi. Pembayaran dapat dilanjutkan setelah proses koreksi selesai.
+                    </x-ui.alert>
+                @endif
+                @error('payment_blocked')
+                    <div class="rounded-md border border-warning bg-warning-50 p-3 text-sm text-warning-700" role="alert" data-payment-blocked-error>
+                        {{ $message }}
+                    </div>
+                @enderror
+
                 @if ($showSelectableReceivables)
                     {{-- Sprint 62.2 — patient outstanding receivables (opt-in collection) --}}
                     <div class="rounded-md border border-warning-100 bg-warning-50 p-4 space-y-3">
@@ -390,7 +407,7 @@
 
                 {{-- Actions --}}
                 <div class="flex items-center gap-3 pt-2">
-                    <x-ui.button type="submit" variant="primary">Konfirmasi Pembayaran</x-ui.button>
+                    <x-ui.button type="submit" variant="primary" :disabled="! empty($paymentBlock)">Konfirmasi Pembayaran</x-ui.button>
                     <x-ui.button variant="neutral" :href="route('rme.cashier.show', [$visit, $invoice])">Batal</x-ui.button>
                 </div>
             </form>

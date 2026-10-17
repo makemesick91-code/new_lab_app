@@ -71,13 +71,15 @@ it('derives line operations server-side and never trusts a submitted total', fun
     $invoice = ricInvoice();
     $lines = ricLinesReducing($invoice);
     $lines[0]['subtotal'] = '1';            // ignored
-    $lines[] = ['description' => 'Kontrol tambahan', 'qty' => 2, 'unit_price' => '25000', 'discount' => '5000', 'treatment_id' => test()->treatment->id];
+    // FEATURE-RME-BRANCH-TARIFF-AUTHORITY-1 (D21): an added line must carry the
+    // branch tariff and no discount, so the addition is 2 × Tambal at its tariff.
+    $lines[] = ['description' => 'Kontrol tambahan', 'qty' => 2, 'unit_price' => '50000', 'discount' => '0', 'treatment_id' => test()->treatment2->id];
 
     $correction = ricSubmit($invoice, lines: $lines);
     $ops = $correction->lines()->pluck('operation')->all();
 
     expect($ops)->toBe([RmeInvoiceCorrectionLine::OP_KEEP, RmeInvoiceCorrectionLine::OP_CHANGE, RmeInvoiceCorrectionLine::OP_ADD])
-        ->and((float) $correction->proposed_grand_total)->toEqual(395000.0); // 300000 + 50000 + (50000 - 5000)
+        ->and((float) $correction->proposed_grand_total)->toEqual(450000.0); // 300000 + 50000 + 2 × 50000
 });
 
 it('records a REMOVE line for an original item left out of the proposal', function () {
@@ -324,17 +326,18 @@ it('applies an approved pre-payment correction atomically: items, totals, versio
 it('applies removals and additions, and the invoice can then be paid normally', function () {
     $invoice = ricInvoice();
     $lines = [ricLinesReducing($invoice)[0]];
-    $lines[] = ['description' => 'Konsultasi lanjutan', 'qty' => 1, 'unit_price' => '75000', 'discount' => '0', 'treatment_id' => test()->treatment2->id];
+    // D21: the added line is priced at the branch tariff (Tambal 50.000).
+    $lines[] = ['description' => 'Konsultasi lanjutan', 'qty' => 1, 'unit_price' => '50000', 'discount' => '0', 'treatment_id' => test()->treatment2->id];
 
     ricApply(ricApprove(ricSubmit($invoice, lines: $lines)));
     $invoice = $invoice->fresh(['items']);
 
     expect($invoice->items)->toHaveCount(2)
-        ->and((float) $invoice->grand_total)->toEqual(375000.0);
+        ->and((float) $invoice->grand_total)->toEqual(350000.0);
 
-    ricPay($invoice, 375000);
+    ricPay($invoice, 350000);
     expect($invoice->fresh()->status)->toBe(RmeInvoice::STATUS_PAID)
-        ->and(RmePayment::where('rme_invoice_id', $invoice->id)->sum('amount'))->toEqual(375000);
+        ->and(RmePayment::where('rme_invoice_id', $invoice->id)->sum('amount'))->toEqual(350000);
 });
 
 it('treats a repeated application as a no-op: no second revision, no double totals', function () {
@@ -346,10 +349,28 @@ it('treats a repeated application as a no-op: no second revision, no double tota
         ->and((int) $correction->invoice->fresh()->correction_version)->toBe(1);
 });
 
-it('marks a correction STALE when a payment lands before application, and applies nothing', function () {
+/*
+| FEATURE-RME-BRANCH-TARIFF-AUTHORITY-1 — owner decision D10 now REFUSES a payment
+| while a correction is active (RmeInvoiceCorrectionPaymentBlockTest). These two
+| tests used to land that payment through the payment service; they now write the
+| payment row directly — a writer that bypassed the D10 guard — to keep proving
+| the correction side's own defence in depth: a payment that exists makes it STALE.
+*/
+function ricPaymentRowBypassingTheService(RmeInvoice $invoice, float $amount): void
+{
+    DB::table('trx_rme_payments')->insert([
+        'branch_id' => $invoice->branch_id, 'rme_invoice_id' => $invoice->id,
+        'clinic_visit_id' => $invoice->clinic_visit_id, 'patient_id' => $invoice->patient_id,
+        'cashier_id' => test()->cashier->id, 'payment_number' => 'PAY-BYPASS-'.uniqid(),
+        'amount' => $amount, 'paid_at' => now(), 'created_at' => now(), 'updated_at' => now(),
+    ]);
+    DB::table('trx_rme_invoices')->where('id', $invoice->id)->update(['status' => RmeInvoice::STATUS_PARTIAL]);
+}
+
+it('marks a correction STALE when a payment row exists before application (defence behind D10), and applies nothing', function () {
     $invoice = ricInvoice();
     $correction = ricApprove(ricSubmit($invoice));
-    ricPay($invoice, 100000);
+    ricPaymentRowBypassingTheService($invoice, 100000);
 
     ricExpectRefusal(fn () => ricApply($correction), 'CORRECTION_STALE:PAYMENT_RECORDED');
 
@@ -363,7 +384,7 @@ it('marks a correction STALE when a payment lands before application, and applie
 it('marks a correction STALE at approval when the invoice changed since submission', function () {
     $invoice = ricInvoice();
     $correction = ricSubmit($invoice);
-    ricPay($invoice, 50000);
+    ricPaymentRowBypassingTheService($invoice, 50000);
 
     ricExpectRefusal(fn () => ricApprove($correction), 'CORRECTION_STALE:PAYMENT_RECORDED');
     expect($correction->fresh()->status)->toBe(RmeInvoiceCorrectionStatus::STALE);
@@ -396,9 +417,11 @@ it('accepts a second, sequential correction against the revised invoice and vers
     ricApply(ricApprove(ricSubmit($invoice)));
 
     $revised = $invoice->fresh();
+    // D21: a second correction can only stay within tariff authority — here it
+    // bills the Tambal line twice at its tariff (300.000 + 2 × 50.000).
     $second = ricApprove(ricSubmit($revised, lines: [
-        array_merge(ricLinesReducing($revised)[0], ['unit_price' => '280000']),
-        ricLinesReducing($revised, '50000')[1],
+        ricLinesReducing($revised)[0],
+        array_merge(ricLinesReducing($revised, '50000')[1], ['qty' => 2]),
     ]));
     expect((int) $second->invoice_version_at_request)->toBe(1);
 
@@ -406,7 +429,7 @@ it('accepts a second, sequential correction against the revised invoice and vers
     expect($applied->status)->toBe(RmeInvoiceCorrectionStatus::APPLIED)
         ->and(RmeInvoiceDocumentVersion::where('rme_invoice_id', $invoice->id)->orderBy('version_number')->pluck('version_number')->all())->toBe([0, 1, 2])
         ->and(RmeInvoiceDocumentVersion::where('version_number', 0)->count())->toBe(1)
-        ->and((float) $invoice->fresh()->grand_total)->toEqual(330000.0);
+        ->and((float) $invoice->fresh()->grand_total)->toEqual(400000.0);
 });
 
 it('keeps the original snapshot readable and unchanged after application', function () {

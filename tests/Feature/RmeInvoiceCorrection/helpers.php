@@ -21,6 +21,7 @@ use App\Modules\RmeInvoice\Services\RmeInvoiceService;
 use App\Modules\RmeInvoice\Services\RmePaymentService;
 use App\Modules\RmeInvoice\Support\RmeInvoiceCorrectionFeatureGuard;
 use App\Modules\RmeOnlineContext\Middleware\EnsureRmeOnlineContext;
+use App\Modules\Tariff\Models\Tariff;
 use App\Modules\Treatment\Models\Treatment;
 use Database\Seeders\BranchSeeder;
 use Illuminate\Support\Collection;
@@ -71,9 +72,28 @@ if (! function_exists('ricFlag')) {
         ricFlag(true);
     }
 
+    /**
+     * FEATURE-RME-BRANCH-TARIFF-AUTHORITY-1 (owner D21) — a correction is only
+     * activated for lines whose price the BRANCH tariff validates. The canonical
+     * scenario therefore has tariffs: Scaling 300.000, Tambal 50.000. The invoice
+     * is billed in a TRANSITIONAL branch with Tambal mistyped as 200.000 (a
+     * transitional deviation), and the correction brings it to the tariff.
+     * Idempotent per branch.
+     */
+    function ricTariffs(Branch $branch): void
+    {
+        foreach ([[test()->treatment, '300000.00'], [test()->treatment2, '50000.00']] as [$treatment, $price]) {
+            Tariff::query()->firstOrCreate(
+                ['branch_id' => $branch->id, 'treatment_id' => $treatment->id, 'effective_date' => '2026-01-01'],
+                ['price' => $price, 'is_active' => true],
+            );
+        }
+    }
+
     function ricVisit(?Branch $branch = null): ClinicVisit
     {
         $branch ??= test()->branch;
+        ricTariffs($branch);
 
         $visit = ClinicVisit::factory()->cashierPending()->create([
             'branch_id' => $branch->id,

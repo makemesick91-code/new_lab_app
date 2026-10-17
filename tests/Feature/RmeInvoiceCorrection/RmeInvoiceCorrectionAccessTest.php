@@ -306,6 +306,7 @@ it('shows the approver the original and proposed treatment and doctor of every l
     $invoice = ricInvoice();
     $lines = ricLinesReducing($invoice);
     $lines[1]['treatment_id'] = test()->treatment->id;   // Tambal → Scaling
+    $lines[1]['unit_price'] = '300000';                   // D21: at Scaling's branch tariff
     $correction = ricSubmit($invoice, lines: $lines);
 
     ricActingAs(test()->checker);

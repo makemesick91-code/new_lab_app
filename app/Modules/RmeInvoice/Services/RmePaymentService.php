@@ -7,11 +7,14 @@ use App\Modules\Branch\Services\BranchService;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\ClinicVisit\Services\ClinicVisitService;
 use App\Modules\LabOrder\Services\AuditLogService;
+use App\Modules\RmeInvoice\Interfaces\RmeInvoiceCorrectionRepositoryInterface;
 use App\Modules\RmeInvoice\Interfaces\RmeInvoiceRepositoryInterface;
 use App\Modules\RmeInvoice\Interfaces\RmePaymentRepositoryInterface;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
+use App\Modules\RmeInvoice\Models\RmeInvoiceCorrection;
 use App\Modules\RmeInvoice\Models\RmePayment;
 use App\Modules\RmeInvoice\Support\RmeFinancialAuditEvent;
+use App\Modules\RmeInvoice\Support\RmeInvoicePaymentBlocked;
 use App\Modules\RmeInvoice\Support\RmeInvoiceVersionConflict;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
 use Carbon\CarbonImmutable;
@@ -34,6 +37,7 @@ class RmePaymentService
         private readonly RmeControlReceivableService $carryOver,
         private readonly RmeWorkingBranchScope $workingBranchScope,
         private readonly AuditLogService $auditLogs,
+        private readonly RmeInvoiceCorrectionRepositoryInterface $corrections,
     ) {}
 
     /**
@@ -61,6 +65,9 @@ class RmePaymentService
      * through it; a request rule alone would leave any other caller unbounded.
      */
     private const PAID_AT_FUTURE_TOLERANCE_SECONDS = 60;
+
+    /** D10 — the validation error key of a payment blocked by an active correction. */
+    public const PAYMENT_BLOCKED_FIELD = 'payment_blocked';
 
     private function normalizePaidAt(mixed $value): CarbonImmutable
     {
@@ -118,6 +125,7 @@ class RmePaymentService
 
             $this->assertInvoicePayable($invoice);
             $this->assertFormVersion($invoice, $data);
+            $this->assertNoActiveCorrection($invoice);
 
             $amount = $this->normalizeAmount($data['amount']);
             $remainingBefore = $this->remainingForInvoice($invoice);
@@ -176,6 +184,7 @@ class RmePaymentService
             $controlInvoice = RmeInvoice::query()->lockForUpdate()->findOrFail($controlInvoice->id);
             $this->assertInvoicePayable($controlInvoice);
             $this->assertFormVersion($controlInvoice, $data);
+            $this->assertNoActiveCorrection($controlInvoice);
 
             $remainingPayment = $amount;
             $allocatedToParent = 0.0;
@@ -193,6 +202,7 @@ class RmePaymentService
                 }
 
                 $this->assertFormVersion($parentInvoice, $data);
+                $this->assertNoActiveCorrection($parentInvoice);
 
                 $parentVisit = $this->requireVisit($parentInvoice);
                 $parentRemaining = $this->remainingForInvoice($parentInvoice);
@@ -323,6 +333,7 @@ class RmePaymentService
             $currentInvoice = RmeInvoice::query()->lockForUpdate()->findOrFail($currentInvoice->id);
             $this->assertInvoicePayable($currentInvoice);
             $this->assertFormVersion($currentInvoice, $data);
+            $this->assertNoActiveCorrection($currentInvoice);
 
             $remainingPayment = $amount;
             $allocatedToParent = 0.0;
@@ -345,6 +356,7 @@ class RmePaymentService
                 }
 
                 $this->assertFormVersion($receivable, $data);
+                $this->assertNoActiveCorrection($receivable);
 
                 $receivableVisit = $this->requireVisit($receivable);
                 $receivableRemaining = $this->remainingForInvoice($receivable);
@@ -570,6 +582,89 @@ class RmePaymentService
 
             throw ValidationException::withMessages([
                 'invoice_versions' => $conflict->operatorMessage(),
+            ]);
+        } catch (RmeInvoicePaymentBlocked $blocked) {
+            $this->recordCorrectionBlockRefusal($blocked, $paymentPath, $cashier);
+
+            throw ValidationException::withMessages([
+                self::PAYMENT_BLOCKED_FIELD => $blocked->operatorMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * FEATURE-RME-BRANCH-TARIFF-AUTHORITY-1 — owner decision D10.
+     *
+     * An invoice whose correction is SUBMITTED (pending approval) or APPROVED
+     * (approved but not applied) accepts NO payment. Called on the LOCKED row,
+     * after the version check, for every invoice the batch would settle; a hit
+     * rolls the whole batch back.
+     *
+     * Why reading the correction under the INVOICE lock is race-safe: a
+     * correction can only become active inside a transaction that holds this
+     * same invoice row lock (RmeInvoiceCorrectionService::submit locks the
+     * invoice first). So either the correction committed before we took the
+     * lock — and we see it — or it waits for this payment to commit, and is
+     * then refused because the invoice has a payment (pre-payment only).
+     *
+     * Not flag-gated on purpose. With the correction flag OFF no correction can
+     * become active, so this refuses nothing; a correction left active by a flag
+     * that was switched off still blocks — resolve it before switching off.
+     */
+    private function assertNoActiveCorrection(RmeInvoice $locked): void
+    {
+        $active = $this->corrections->activeForInvoice((int) $locked->id);
+
+        if ($active === null) {
+            return;
+        }
+
+        throw new RmeInvoicePaymentBlocked(
+            (int) $locked->id,
+            $locked->invoice_number !== null ? (string) $locked->invoice_number : null,
+            (int) $active->id,
+            (string) $active->status,
+        );
+    }
+
+    /**
+     * D10 — the active correction of an invoice, for the payment / cashier pages
+     * (no lock; display only). The service check above is the authority.
+     */
+    public function activeCorrectionBlocking(RmeInvoice $invoice): ?RmeInvoiceCorrection
+    {
+        return $this->corrections->activeForInvoice((int) $invoice->id);
+    }
+
+    /**
+     * D10 — the single writer of RME_PAYMENT_REFUSED_ACTIVE_CORRECTION, shared by
+     * the under-lock check and the payment FormRequest's early check. Runs at
+     * transaction level 0 (after the rollback). An audit failure is logged and
+     * never turns the refusal into a 500 or a payment.
+     */
+    public function recordCorrectionBlockRefusal(RmeInvoicePaymentBlocked $blocked, string $paymentPath, User $cashier): void
+    {
+        try {
+            $invoice = RmeInvoice::query()->find($blocked->invoiceId);
+
+            if (! $invoice instanceof RmeInvoice) {
+                return;
+            }
+
+            $this->auditLogs->log(
+                RmeFinancialAuditEvent::ENTITY_INVOICE,
+                (int) $invoice->id,
+                RmeFinancialAuditEvent::ACTION_PAYMENT_REFUSED_ACTIVE_CORRECTION,
+                null,
+                RmeFinancialAuditEvent::paymentBlockedByCorrectionPayload($invoice, $blocked, $paymentPath),
+                $cashier,
+            );
+        } catch (\Throwable $e) {
+            Log::error('RME payment correction-block refusal could not be audited.', [
+                'invoice_id' => $blocked->invoiceId,
+                'correction_id' => $blocked->correctionId,
+                'payment_path' => $paymentPath,
+                'exception' => $e::class,
             ]);
         }
     }

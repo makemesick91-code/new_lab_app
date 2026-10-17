@@ -437,6 +437,14 @@ class PermissionSeeder extends Seeder
         'approve_rme_invoice_correction',
         'apply_rme_invoice_correction',
         'view_billing_correction_oversight',
+        // FEATURE-RME-BRANCH-TARIFF-AUTHORITY-1 (owner D21, rule 192) — the two
+        // SPECIFIC authorizations a strict-mode price exception needs. Granted
+        // to NO role: the exception approver (D21b) is undecided. Necessary but
+        // not sufficient — exceptions are also switched off in
+        // config/rme_tariff_authority.php until D21b–D21f are decided, which
+        // keeps them closed for Super Admin's wildcard too.
+        'override_rme_tariff_price',
+        'authorize_rme_tariff_discount',
     ];
 
     public function run(): void

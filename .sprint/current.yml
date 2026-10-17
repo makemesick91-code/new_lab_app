@@ -1,36 +1,43 @@
-# ACTIVATION-RME-INVOICE-CORRECTION-PREPAYMENT-1
+# FEATURE-RME-BRANCH-TARIFF-AUTHORITY-1
 #
-# Activation attempt for the dormant pre-payment invoice correction (rule 190).
-# Result: ACTIVATION NO_GO. Owner decisions D1 (approval authority), D7 (receipt
-# versioning), D10 (pending correction vs payment) and D21 (price authority) are
-# still PENDING, so the flag stays OFF and no operational role is granted a
-# correction permission. D21 additionally needs tariffs for every billing branch
-# (production: only TLK1 has any; SPN4 — the only billing branch — has none).
+# Owner decisions D1, D7, D10 and D21 (task-supplied decision evidence) are
+# recorded in docs/decisions/rme-billing-correction-owner-decisions.md and
+# partly enforced:
 #
-# What ships is the one activation prerequisite that needs no owner decision:
-# every RME payment path binds the form to each settled invoice's
-# `correction_version`, compared under the invoice row lock, so an applied
-# correction can never be settled from a page opened before it. Refusals roll
-# the whole batch back and are audited after the rollback. This holds under
-# every answer to D10 (which is about PENDING corrections, still undecided).
+#   D21 — the branch tariff master is the RME price authority. Every invoice
+#         line is priced server-side and records its provenance; a branch in
+#         STRICT_ENFORCED mode (explicit config only) refuses off-tariff
+#         prices, discounts, free text, missing/zero tariffs and Rp0. Every
+#         branch ships TRANSITIONAL because no official tariff list exists for
+#         the only billing branch (SPN4). Price exceptions are built, OFF, and
+#         their two permissions are granted to no role.
+#   D10 — a pending or approved-unapplied correction blocks payment on every
+#         path, under the invoice row lock, whole-batch, audited.
+#   D21(4) — a correction must keep every resulting line at its branch tariff.
+#   D1  — enforcement pinned as the owner contract; role grants NOT applied.
 #
-# No migration, no seeder change, no permission change, no route change, no
-# flag change. Rule 191.
+# FEATURE_RME_INVOICE_CORRECTION stays OFF. One additive migration (nullable
+# price provenance columns on trx_rme_invoice_items). Rule 192.
+#
+# Type FOUNDATION_SPRINT, not SECURITY_FIX: this is a cross-module financial
+# foundation (Tariff + RmeInvoice + AccessControl, one migration), not a scoped
+# fix. Both profiles are audit level 3 with the full foundation audit, so the
+# classification costs no rigor; security_impact stays true.
 
-id: ACTIVATION-RME-INVOICE-CORRECTION-PREPAYMENT-1
-type: SECURITY_FIX
+id: FEATURE-RME-BRANCH-TARIFF-AUTHORITY-1
+type: FOUNDATION_SPRINT
 module: RmeInvoice
-title: "RME invoice correction activation — NO_GO (D1/D7/D10/D21 pending); payment bound to invoice correction_version"
+title: "Branch tariff authority (D21), pending-correction payment block (D10), correction tariff gate — foundation, nothing activated"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 runtime_change: true
-schema_change: false
+schema_change: true
 frontend_change: true
 security_impact: true
 branch_isolation_impact: false
 ledger_impact: true
 deploy_required: true
 browser_required: false
-test_profiles: [rme, cashier, billing, oversight]
-go_tag: activation-rme-invoice-correction-prepayment-1-payment-version-prerequisite-go
-inherits_parent_go: feature-rme-invoice-correction-receipt-foundation-1-prepayment-foundation-go
+test_profiles: [rme, cashier, billing, oversight, tariff]
+go_tag: feature-rme-branch-tariff-authority-1-foundation-go
+inherits_parent_go: activation-rme-invoice-correction-prepayment-1-payment-version-prerequisite-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1

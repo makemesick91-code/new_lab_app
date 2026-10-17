@@ -75,4 +75,14 @@ interface RmeInvoiceRepositoryInterface
      * @param  array{subtotal: string, discount_total: string, grand_total: string, correction_version: int}  $data
      */
     public function applyCorrectionTotals(RmeInvoice $invoice, array $data): RmeInvoice;
+
+    /**
+     * FEATURE-RME-BRANCH-TARIFF-AUTHORITY-1 — invoice-line counts per branch and
+     * price provenance (a NULL source is reported as NOT_RECORDED: billed before
+     * tariff authority). Read-only; one grouped query.
+     *
+     * @param  list<int>  $branchIds
+     * @return array<int, array<string, int>> branch id => [price_source => count]
+     */
+    public function priceSourceCountsByBranch(array $branchIds): array;
 }

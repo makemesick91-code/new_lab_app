@@ -386,16 +386,24 @@ it('ignores versions declared for invoices the payment does not touch', function
     expect($invoice->fresh()->status)->toBe(RmeInvoice::STATUS_PAID);
 });
 
-it('accepts a payment while a correction is only SUBMITTED, then the correction goes STALE (D10 is not decided here)', function () {
+/*
+| SUPERSEDED by FEATURE-RME-BRANCH-TARIFF-AUTHORITY-1 — owner decision D10 is now
+| DECIDED: a payment against an invoice whose correction is APPROVED (not applied)
+| is REFUSED, not accepted. This test used to pin the opposite ("accepted, then the
+| correction goes STALE") while D10 was pending. The full D10 matrix lives in
+| RmeInvoiceCorrectionPaymentBlockTest; the version binding above is unchanged.
+*/
+it('refuses a payment while a correction is APPROVED but not applied (D10), leaving the correction applicable', function () {
     $invoice = ricInvoice();
     $correction = ricApprove(ricSubmit($invoice));
     test()->actingAs(test()->cashier);
 
-    app(RmePaymentService::class)->pay($invoice->fresh(), test()->cashier, rpvPayload(100000, [$invoice->id => 0]));
+    expect(fn () => app(RmePaymentService::class)->pay($invoice->fresh(), test()->cashier, rpvPayload(100000, [$invoice->id => 0])))
+        ->toThrow(ValidationException::class);
 
-    expect(fn () => ricApply($correction))->toThrow(ValidationException::class)
-        ->and($correction->fresh()->status)->toBe(RmeInvoiceCorrectionStatus::STALE)
-        ->and((float) $invoice->fresh()->grand_total)->toEqual(500000.0);
+    expect($correction->fresh()->status)->toBe(RmeInvoiceCorrectionStatus::APPROVED)
+        ->and(RmePayment::where('rme_invoice_id', $invoice->id)->count())->toBe(0)
+        ->and(ricApply($correction)->status)->toBe(RmeInvoiceCorrectionStatus::APPLIED);
 });
 
 it('binds payments the same way while the correction capability is switched off', function () {

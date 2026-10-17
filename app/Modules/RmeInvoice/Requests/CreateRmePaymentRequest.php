@@ -4,9 +4,11 @@ namespace App\Modules\RmeInvoice\Requests;
 
 use App\Models\User;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
+use App\Modules\RmeInvoice\Interfaces\RmeInvoiceCorrectionRepositoryInterface;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Services\RmeControlReceivableService;
 use App\Modules\RmeInvoice\Services\RmePaymentService;
+use App\Modules\RmeInvoice\Support\RmeInvoicePaymentBlocked;
 use App\Modules\RmeInvoice\Support\RmeInvoiceVersionConflict;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Gate;
@@ -102,6 +104,10 @@ class CreateRmePaymentRequest extends FormRequest
                         return;
                     }
 
+                    if (! $this->freeOfActiveCorrection([$invoice], RmeInvoiceVersionConflict::PATH_SINGLE, $validator)) {
+                        return;
+                    }
+
                     $remaining = $invoice->remainingAmount();
 
                     if ((float) $this->input('amount') > $remaining) {
@@ -121,6 +127,14 @@ class CreateRmePaymentRequest extends FormRequest
                     return;
                 }
 
+                if (! $this->freeOfActiveCorrection(
+                    [$invoice, ...$visitSummary['selected_receivables']->all()],
+                    RmeInvoiceVersionConflict::PATH_VISIT,
+                    $validator,
+                )) {
+                    return;
+                }
+
                 if ((float) $this->input('amount') > $visitSummary['total_payable']) {
                     $validator->errors()->add('amount', 'Pembayaran tidak boleh melebihi total yang harus dibayar.');
                 }
@@ -131,6 +145,14 @@ class CreateRmePaymentRequest extends FormRequest
             $summary = $carryOver->getControlPayableSummary($invoice);
 
             if (! $this->invoiceVersionsAreCurrentFor(
+                [$invoice, ...$summary['carry_over_invoices']->all()],
+                RmeInvoiceVersionConflict::PATH_CONTROL,
+                $validator,
+            )) {
+                return;
+            }
+
+            if (! $this->freeOfActiveCorrection(
                 [$invoice, ...$summary['carry_over_invoices']->all()],
                 RmeInvoiceVersionConflict::PATH_CONTROL,
                 $validator,
@@ -195,6 +217,47 @@ class CreateRmePaymentRequest extends FormRequest
                     $paymentPath,
                 );
             }
+        }
+
+        return true;
+    }
+
+    /**
+     * FEATURE-RME-BRANCH-TARIFF-AUTHORITY-1 — owner decision D10, EARLY.
+     *
+     * Refuses before the amount cap when any invoice this payment would settle
+     * has an active (SUBMITTED / APPROVED) correction, so the cashier reads "the
+     * bill is being corrected", not an amount error. Unlocked read, never the
+     * authority: RmePaymentService::assertNoActiveCorrection() decides under the
+     * invoice row lock. Audited through the same writer.
+     *
+     * @param  list<RmeInvoice>  $involved
+     */
+    private function freeOfActiveCorrection(array $involved, string $paymentPath, Validator $validator): bool
+    {
+        $corrections = app(RmeInvoiceCorrectionRepositoryInterface::class);
+
+        foreach ($involved as $invoice) {
+            $active = $corrections->activeForInvoice((int) $invoice->id);
+
+            if ($active === null) {
+                continue;
+            }
+
+            $blocked = new RmeInvoicePaymentBlocked(
+                (int) $invoice->id,
+                $invoice->invoice_number !== null ? (string) $invoice->invoice_number : null,
+                (int) $active->id,
+                (string) $active->status,
+            );
+
+            if ($this->user() instanceof User) {
+                app(RmePaymentService::class)->recordCorrectionBlockRefusal($blocked, $paymentPath, $this->user());
+            }
+
+            $validator->errors()->add(RmePaymentService::PAYMENT_BLOCKED_FIELD, $blocked->operatorMessage());
+
+            return false;
         }
 
         return true;
