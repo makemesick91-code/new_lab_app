@@ -173,3 +173,39 @@ caller; nothing else changes an UNPAID invoice's totals without a version bump.
 - `REAL_CORRECTION_PRODUCTION_TEST=NOT_PERFORMED` — no authorized correction case exists and
   none may be fabricated.
 - A payment page open across this deploy is refused once with "muat ulang halaman".
+
+## 9. Release evidence (2026-10-17 WITA)
+
+| Gate | Evidence |
+|---|---|
+| PR / merge | #489 squash-merged as `50751554`; merge tree `78902bdb` == CI candidate `b343eaea` tree |
+| CI (PR) | run `38975404740` — Classifier, NSF-R012 Quality, NSF-R011 Critical, Selective Module, NSF-9 Release Safety & Smoke, NSF-10 Release Evidence, Android gate: all **success** |
+| Critical gate | **5807 passed / 30961 assertions / 0 failed**, `critical_test_exit_status=0`; both PostgreSQL races executed (≈6.6 s each, waiting on the lock), not skipped |
+| Full Suite | **SKIPPED by policy — not a pass** (not requested) |
+| Deploy | runner executed ON the VPS: `exit=0`, `DEPLOY OK: 20261017-004734`, `DEPLOY_HEAD_TARGET_MATCH=YES (50751554)`, `Nothing to migrate.`, backup `pre_auto_deploy_20261017-004734.sql`, release safety / evidence gates GO, runtime isolation 70 GO / 0 FAIL, secret file permissions GO |
+| Runtime | VPS HEAD `50751554` = tag `activation-rme-invoice-correction-prepayment-1-payment-version-prerequisite-go` (exact match) |
+| Flag | `rme.invoice_correction` enabled=false, resolved from default |
+| Payment form (read-only in-process render, DB session READ ONLY) | `invoice_versions[40]` rendered with the current version; request rules require `invoice_versions`; 1 hidden input = 1 displayed invoice |
+| Financial reconciliation | invoices 6 (5 PAID, 1 UNPAID), payments 7, Σ grand_total = Σ paid = Rp 3.548.000 — identical to baseline; corrections / events / document versions 0 |
+| Permissions | identical to baseline: correction permissions Super Admin only, oversight permission Data Analyst / Finance Klinik / Super Admin, `role_has_permissions` 508, 0 direct grants |
+| Audit / log | `sys_audit_logs` 1578 (unchanged), 0 refusal rows; `laravel.log` byte-identical (1.437.201) |
+| HTTP (canonical domain) | `/login`, `/health/live`, `/health/ready`, `/health/lb` 200; guest payment page 302 |
+
+Tag created: `activation-rme-invoice-correction-prepayment-1-payment-version-prerequisite-go` → `50751554`.
+**Not created, by design:** `activation-rme-invoice-correction-prepayment-1-go` (feature OFF, decisions pending).
+
+### Final status
+```
+IMPLEMENTATION                    = PARTIAL (prerequisite complete, activation blocked)
+OWNER_D1 / D7 / D10 / D21         = PENDING
+PRICE_AUTHORITY / DISCOUNT_AUTH   = BLOCKED (D21 + tariffs per billing branch)
+PAYMENT_VERSION_SAFETY            = PASS
+MAKER_CHECKER                     = PASS (service, per account; unchanged)
+ROLE_PERMISSION_MAPPING           = NOT_APPLIED
+FEATURE_FLAG                      = OFF   ACTIVATION_SCOPE = NONE
+PREPAYMENT_CORRECTION             = DORMANT
+FINANCIAL_INTEGRITY               = PASS
+REAL_CORRECTION_PRODUCTION_TEST   = NOT_PERFORMED (no authorized case; none fabricated)
+FULL_SUITE                        = SKIPPED (policy)
+FINAL_DECISION                    = NO_GO for activation; GO for the scoped prerequisite
+```
