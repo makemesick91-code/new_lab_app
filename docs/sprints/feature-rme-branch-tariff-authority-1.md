@@ -230,3 +230,38 @@ document versions and role assignments are untouched by a rollback.
 5. D1a — who applies an approved correction.
 6. Then: strict mode per branch (config + supervised window), RoleSeeder grant (D1),
    flag ON, maker/checker pilot (rule 191 §20).
+
+## 15. Shipped — evidence (2026-10-17)
+
+| Item | Value |
+|---|---|
+| PR | #491, squash-merged as `90a39579` |
+| Merge tree | `98764062` == tested candidate `2f3acd09` tree (squash preserved it exactly) |
+| CI (exact candidate) | run `39026703432` success — Classifier, NSF-R012 Quality, NSF-R011 Critical (**5919 passed / 31397 assertions / 0 warnings**, warning contract held), Selective Module, NSF-9, NSF-10, Android gate; the second Critical variant skipped by design |
+| Full Suite | **SKIPPED** by the standing temporary policy — not passed, not claimed |
+| New suites in CI | all six selected by the critical filter; the three D10 PostgreSQL races passed on CI's PostgreSQL |
+| Local evidence | broad regression 2836 tests / 11767 assertions / 0 failures (SQLite); tariff + correction suites 220 tests on PostgreSQL 16.15; migration rollback + re-apply proven on PostgreSQL 16.15 |
+| Deploy | inside the VPS via `scripts/deploy-vps-runner.sh start`: `exit=0`, `DEPLOY OK: 20261017-131928`, `DEPLOY_HEAD_TARGET_MATCH=YES`, migration `2026_10_17_200001` applied (batch 82), runtime isolation 70 GO / 0 FAIL, smoke 6/6 GO |
+| Backup | `pre_auto_deploy_20261017-131928.sql` (32 MB, 0640, taken by the deploy before migrating) |
+| Seed | `PermissionSeeder` + `permission:cache-reset` as the runtime user; **no RoleSeeder** |
+| GO tag | `feature-rme-branch-tariff-authority-1-foundation-go` → `90a39579` (exact-match at VPS HEAD). The full tag `feature-rme-branch-tariff-authority-1-go` is **not** created. |
+
+**Production verified read-only after deploy (vs the pre-deploy baseline):**
+invoices 7 / Rp 7.548.000 and payments 8 / Rp 5.548.000 unchanged; `sys_audit_logs`
+1601 unchanged; `role_has_permissions` 508 unchanged; `permissions` 181 → 183 (the
+two exception permissions, granted to 0 roles); `model_has_permissions` 0; 0
+corrections; 11 tariffs (none written); 8 invoice items, 0 backfilled with
+provenance. `rme.invoice_correction` enabled=false (default); strict branch codes
+empty; price exceptions false. `rme:tariff-authority-readiness` → WATCH, every
+branch TRANSITIONAL (TLK1 11/13, LDK2/ATG3/SPN4 0/13), matching §3. Health
+`/login`, `/health/live|ready|lb` 200 over https://daengtisia.online, `/storage`
+403, guest RME surfaces 302; php8.3-fpm, nginx, queue worker active; 0 failed
+jobs; env pilot, debug OFF, maintenance OFF; `laravel.log` byte-identical
+(1,437,201 bytes) — 0 new errors.
+
+**Honest limits:** no live D10 refusal was exercised in production (there is no
+active correction to block, and creating one would require enabling the flag
+and fabricating a financial event); the D10 behaviour is proven by tests,
+including PostgreSQL races. No authenticated cashier page render was performed
+in production (no test credentials are used against real data); the deploy's
+view cache rebuilt cleanly and the guest surfaces answer without error.
