@@ -383,10 +383,10 @@ it('keeps a historical receivable collectible with no consent anywhere', functio
 
     expect($visit->consents()->count())->toBe(0);
 
-    app(RmePaymentService::class)->pay($invoice, $this->cashier, ['amount' => 50000, 'paid_at' => now()->toDateString()]);
+    app(RmePaymentService::class)->pay($invoice, $this->cashier, rmeFreshPaymentForm($invoice, ['amount' => 50000, 'paid_at' => now()->toDateString()]));
     expect($invoice->refresh()->status)->toBe(RmeInvoice::STATUS_PARTIAL);
 
-    app(RmePaymentService::class)->pay($invoice->refresh(), $this->cashier, ['amount' => 150000, 'paid_at' => now()->toDateString()]);
+    app(RmePaymentService::class)->pay($invoice->refresh(), $this->cashier, rmeFreshPaymentForm($invoice->refresh(), ['amount' => 150000, 'paid_at' => now()->toDateString()]));
     expect($invoice->refresh()->status)->toBe(RmeInvoice::STATUS_PAID);
 });
 
@@ -402,7 +402,7 @@ it('does not block a cashier_pending payment on consent state', function () {
         'items' => [['treatment_id' => null, 'description' => 'Tindakan', 'qty' => 1, 'unit_price' => 100000, 'discount' => 0]],
     ]);
 
-    app(RmePaymentService::class)->pay($invoice, $this->cashier, ['amount' => 100000, 'paid_at' => now()->toDateString()]);
+    app(RmePaymentService::class)->pay($invoice, $this->cashier, rmeFreshPaymentForm($invoice, ['amount' => 100000, 'paid_at' => now()->toDateString()]));
 
     expect($invoice->refresh()->status)->toBe(RmeInvoice::STATUS_PAID)
         ->and($visit->refresh()->status)->toBe(ClinicVisit::STATUS_COMPLETED);

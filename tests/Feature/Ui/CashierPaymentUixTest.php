@@ -132,10 +132,10 @@ it('still processes a full payment and renders the receipt after the polish', fu
     // FIX-01 the visit needs a signed consent before it can be paid.
     rmeSignedConsentFor($visit);
 
-    app(RmePaymentService::class)->pay($invoice, $this->cashier, [
+    app(RmePaymentService::class)->pay($invoice, $this->cashier, rmeFreshPaymentForm($invoice, [
         'amount' => $invoice->grand_total,
         'paid_at' => now()->format('Y-m-d H:i:s'),
-    ]);
+    ]));
 
     expect($invoice->refresh()->status)->toBe('PAID');
 

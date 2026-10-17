@@ -199,7 +199,7 @@ it('settles payment even when no consent document has been signed', function () 
 
     // SUPERSEDED by FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 / FIX-03 — consent is
     // taken at the start of the examination and is not a payment condition.
-    app(RmePaymentService::class)->pay($invoice, $this->cashier, consentPaymentPayload($invoice));
+    app(RmePaymentService::class)->pay($invoice, $this->cashier, rmeFreshPaymentForm($invoice, consentPaymentPayload($invoice)));
 
     expect(RmePayment::where('rme_invoice_id', $invoice->id)->exists())->toBeTrue()
         ->and($invoice->fresh()->status)->toBe(RmeInvoice::STATUS_PAID)
@@ -215,10 +215,10 @@ it('settles payment and ignores any consent claim the request carries', function
     app(RmePaymentService::class)->pay(
         $invoice,
         $this->cashier,
-        consentPaymentPayload($invoice, [
+        rmeFreshPaymentForm($invoice, consentPaymentPayload($invoice, [
             'consent_signed_by_patient' => true,
             'consent_signed_by_doctor' => true,
-        ]),
+        ])),
     );
 
     expect(RmePayment::where('rme_invoice_id', $invoice->id)->exists())->toBeTrue()
@@ -238,7 +238,7 @@ it('succeeds payment once a consent document exists for the visit', function () 
     app(RmePaymentService::class)->pay(
         $invoice,
         $this->cashier,
-        consentPaymentPayload($invoice),
+        rmeFreshPaymentForm($invoice, consentPaymentPayload($invoice)),
     );
 
     expect(RmePayment::where('rme_invoice_id', $invoice->id)->exists())->toBeTrue()
@@ -255,10 +255,10 @@ it('accepts an http payment without the consent checkboxes when a consent is sig
     [$visit, $invoice] = consentUnpaidInvoice($this->branch, $this->cashier);
     rmeSignedConsentFor($visit);
 
-    $this->post(route('rme.cashier.payment.store', [$visit, $invoice]), [
+    $this->post(route('rme.cashier.payment.store', [$visit, $invoice]), rmeFreshPaymentForm($invoice, [
         'amount' => $invoice->grand_total,
         'paid_at' => now()->format('Y-m-d H:i:s'),
-    ])->assertRedirect();
+    ]))->assertRedirect();
 
     expect($invoice->fresh()->status)->toBe(RmeInvoice::STATUS_PAID);
 });
@@ -268,12 +268,12 @@ it('accepts an http payment when no consent has been signed', function () {
 
     [$visit, $invoice] = consentUnpaidInvoice($this->branch, $this->cashier);
 
-    $this->post(route('rme.cashier.payment.store', [$visit, $invoice]), [
+    $this->post(route('rme.cashier.payment.store', [$visit, $invoice]), rmeFreshPaymentForm($invoice, [
         'amount' => $invoice->grand_total,
         'paid_at' => now()->format('Y-m-d H:i:s'),
         'consent_signed_by_patient' => 1,
         'consent_signed_by_doctor' => 1,
-    ])->assertSessionHasNoErrors();
+    ]))->assertSessionHasNoErrors();
 
     expect(RmePayment::where('rme_invoice_id', $invoice->id)->exists())->toBeTrue()
         ->and($invoice->fresh()->status)->toBe(RmeInvoice::STATUS_PAID);

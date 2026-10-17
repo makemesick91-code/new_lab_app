@@ -437,10 +437,10 @@ it('accepts a full payment on a visit that has NO consent at all', function () {
 
     expect($visit->consents()->count())->toBe(0);
 
-    app(RmePaymentService::class)->pay($invoice, $this->cashier, [
+    app(RmePaymentService::class)->pay($invoice, $this->cashier, rmeFreshPaymentForm($invoice, [
         'amount' => 150000,
         'paid_at' => now()->toDateString(),
-    ]);
+    ]));
 
     expect($invoice->refresh()->status)->toBe(RmeInvoice::STATUS_PAID)
         ->and($visit->refresh()->status)->toBe(ClinicVisit::STATUS_COMPLETED);
@@ -450,10 +450,10 @@ it('accepts a partial payment without consent and keeps the remainder as a recei
     [$visit] = examBillableVisit($this->branch);
     $invoice = examInvoiceFor($visit, $this->cashier);
 
-    app(RmePaymentService::class)->pay($invoice, $this->cashier, [
+    app(RmePaymentService::class)->pay($invoice, $this->cashier, rmeFreshPaymentForm($invoice, [
         'amount' => 50000,
         'paid_at' => now()->toDateString(),
-    ]);
+    ]));
 
     expect($invoice->refresh()->status)->toBe(RmeInvoice::STATUS_PARTIAL)
         ->and($visit->refresh()->status)->toBe(ClinicVisit::STATUS_COMPLETED);
@@ -463,8 +463,8 @@ it('keeps a historical receivable collectible when no consent exists', function 
     [$visit] = examBillableVisit($this->branch);
     $invoice = examInvoiceFor($visit, $this->cashier);
 
-    app(RmePaymentService::class)->pay($invoice, $this->cashier, ['amount' => 50000, 'paid_at' => now()->toDateString()]);
-    app(RmePaymentService::class)->pay($invoice->refresh(), $this->cashier, ['amount' => 100000, 'paid_at' => now()->toDateString()]);
+    app(RmePaymentService::class)->pay($invoice, $this->cashier, rmeFreshPaymentForm($invoice, ['amount' => 50000, 'paid_at' => now()->toDateString()]));
+    app(RmePaymentService::class)->pay($invoice->refresh(), $this->cashier, rmeFreshPaymentForm($invoice->refresh(), ['amount' => 100000, 'paid_at' => now()->toDateString()]));
 
     expect($invoice->refresh()->status)->toBe(RmeInvoice::STATUS_PAID);
 });
@@ -475,10 +475,10 @@ it('does not accept consent fields on the payment request any more', function ()
 
     $this->actingAs($this->cashier)
         ->withoutMiddleware(EnsureRmeOnlineContext::class)
-        ->post(route('rme.cashier.payment.store', [$visit, $invoice]), [
+        ->post(route('rme.cashier.payment.store', [$visit, $invoice]), rmeFreshPaymentForm($invoice, [
             'amount' => 150000,
             'paid_at' => now()->toDateString(),
-        ])
+        ]))
         ->assertSessionHasNoErrors();
 
     expect($invoice->refresh()->status)->toBe(RmeInvoice::STATUS_PAID);

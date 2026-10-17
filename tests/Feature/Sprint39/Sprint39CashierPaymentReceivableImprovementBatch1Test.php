@@ -194,12 +194,12 @@ describe('cashier payment receivable clarity', function (): void {
 
         $this->actingAs($this->cashier)
             ->from(route('rme.cashier.payment.create', [$invoice->clinicVisit, $invoice]))
-            ->post(route('rme.cashier.payment.store', [$invoice->clinicVisit, $invoice]), [
+            ->post(route('rme.cashier.payment.store', [$invoice->clinicVisit, $invoice]), rmeFreshPaymentForm($invoice, [
                 'amount' => 9999999,
                 'paid_at' => now()->toDateTimeString(),
                 'consent_signed_by_patient' => '1',
                 'consent_signed_by_doctor' => '1',
-            ])
+            ]))
             ->assertSessionHasErrors('amount');
 
         expect($invoice->fresh()->status)->toBe(RmeInvoice::STATUS_UNPAID);

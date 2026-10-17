@@ -102,10 +102,10 @@ function receiptPaidInvoice(array $items, ?float $payAmount = null): array
     $invoice = app(RmeInvoiceService::class)->create($visit, test()->cashier, ['items' => $payload]);
 
     $total = $invoice->grand_total;
-    app(RmePaymentService::class)->pay($invoice, test()->cashier, [
+    app(RmePaymentService::class)->pay($invoice, test()->cashier, rmeFreshPaymentForm($invoice, [
         'amount' => $payAmount ?? $total,
         'paid_at' => now()->toDateTimeString(),
-    ]);
+    ]));
 
     return [$visit->refresh(), $invoice->refresh()];
 }

@@ -104,13 +104,13 @@ it('accepts a payment POST regardless of any consent claim it carries', function
 
     $this->actingAs($this->cashier)
         ->from(route('rme.cashier.payment.create', [$visit, $invoice]))
-        ->post(route('rme.cashier.payment.store', [$visit, $invoice]), [
+        ->post(route('rme.cashier.payment.store', [$visit, $invoice]), rmeFreshPaymentForm($invoice, [
             'amount' => 150000,
             'paid_at' => now()->toDateTimeString(),
             // The exact payload that used to settle the invoice outright.
             'consent_signed_by_patient' => 1,
             'consent_signed_by_doctor' => 1,
-        ])
+        ]))
         ->assertSessionHasNoErrors();
 
     expect(RmePayment::count())->toBe(1);
@@ -125,10 +125,10 @@ it('accepts a payment POST that mentions consent not at all', function () {
 
     $this->actingAs($this->cashier)
         ->from(route('rme.cashier.payment.create', [$visit, $invoice]))
-        ->post(route('rme.cashier.payment.store', [$visit, $invoice]), [
+        ->post(route('rme.cashier.payment.store', [$visit, $invoice]), rmeFreshPaymentForm($invoice, [
             'amount' => 150000,
             'paid_at' => now()->toDateTimeString(),
-        ])
+        ]))
         ->assertSessionHasNoErrors();
 
     // SUPERSEDED by FIX-03 — consent is not a payment condition. Inverted rather
@@ -152,10 +152,10 @@ it('signs during the examination and pays afterwards, over HTTP', function () {
     $invoice = consentHttpInvoice($visit->refresh());
 
     $this->actingAs($this->cashier)
-        ->post(route('rme.cashier.payment.store', [$visit, $invoice]), [
+        ->post(route('rme.cashier.payment.store', [$visit, $invoice]), rmeFreshPaymentForm($invoice, [
             'amount' => 150000,
             'paid_at' => now()->toDateTimeString(),
-        ])
+        ]))
         ->assertRedirect();
 
     expect($invoice->refresh()->status)->toBe(RmeInvoice::STATUS_PAID);
@@ -424,10 +424,10 @@ it('lets a real Kasir complete the consent-then-pay workflow', function () {
     $invoice = consentHttpInvoice($visit->refresh());
 
     $this->actingAs($kasir)
-        ->post(route('rme.cashier.payment.store', [$visit, $invoice]), [
+        ->post(route('rme.cashier.payment.store', [$visit, $invoice]), rmeFreshPaymentForm($invoice, [
             'amount' => 150000,
             'paid_at' => now()->toDateTimeString(),
-        ])
+        ]))
         ->assertRedirect();
 
     expect($invoice->refresh()->status)->toBe(RmeInvoice::STATUS_PAID);

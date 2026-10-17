@@ -1,38 +1,36 @@
-# FEATURE-RME-INVOICE-CORRECTION-RECEIPT-FOUNDATION-1
+# ACTIVATION-RME-INVOICE-CORRECTION-PREPAYMENT-1
 #
-# Foundation for RME invoice correction and receipt versioning, shipped PARTIAL
-# and dormant. Every owner decision D1–D27 was still PENDING, so nothing that
-# needs one is invented:
-#   - PRE-PAYMENT correction only (UNPAID invoice, no payment, no lab candidate):
-#     submit → approve (maker != checker, enforced in the service under the
-#     invoice row lock, Super Admin included) → apply (atomic, totals recomputed
-#     server-side in cents, original frozen as v0, revision as vN). A payment
-#     that lands first makes the correction STALE.
-#   - all mutation behind the default-OFF, critical flag `rme.invoice_correction`
-#     (routes 404 while off), and the three operational permissions are granted
-#     to NO role — turning the flag on still enables nobody until the owner
-#     grants a role (D1).
-#   - read-only BILLING CORRECTION oversight for Finance Klinik / Data Analyst via
-#     the fifth oversight permission `view_billing_correction_oversight`.
-#   - NOT implemented: post-payment correction, refund, reversal, patient credit,
-#     Rp0 adjustment, retroactive revenue adjustment.
-# Five additive migrations (four new tables + one defaulted column). No data
-# migration, no change to lab billing tables or to any existing payment row.
+# Activation attempt for the dormant pre-payment invoice correction (rule 190).
+# Result: ACTIVATION NO_GO. Owner decisions D1 (approval authority), D7 (receipt
+# versioning), D10 (pending correction vs payment) and D21 (price authority) are
+# still PENDING, so the flag stays OFF and no operational role is granted a
+# correction permission. D21 additionally needs tariffs for every billing branch
+# (production: only TLK1 has any; SPN4 — the only billing branch — has none).
+#
+# What ships is the one activation prerequisite that needs no owner decision:
+# every RME payment path binds the form to each settled invoice's
+# `correction_version`, compared under the invoice row lock, so an applied
+# correction can never be settled from a page opened before it. Refusals roll
+# the whole batch back and are audited after the rollback. This holds under
+# every answer to D10 (which is about PENDING corrections, still undecided).
+#
+# No migration, no seeder change, no permission change, no route change, no
+# flag change. Rule 191.
 
-id: FEATURE-RME-INVOICE-CORRECTION-RECEIPT-FOUNDATION-1
-type: FOUNDATION_SPRINT
+id: ACTIVATION-RME-INVOICE-CORRECTION-PREPAYMENT-1
+type: SECURITY_FIX
 module: RmeInvoice
-title: "RME invoice correction & receipt versioning — pre-payment foundation, default OFF (owner decisions pending)"
+title: "RME invoice correction activation — NO_GO (D1/D7/D10/D21 pending); payment bound to invoice correction_version"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 runtime_change: true
-schema_change: true
+schema_change: false
 frontend_change: true
 security_impact: true
-branch_isolation_impact: true
+branch_isolation_impact: false
 ledger_impact: true
 deploy_required: true
 browser_required: false
 test_profiles: [rme, cashier, billing, oversight]
-go_tag: feature-rme-invoice-correction-receipt-foundation-1-prepayment-foundation-go
-inherits_parent_go: feature-rme-billing-refund-1-phase-0-financial-prerequisites-go
+go_tag: activation-rme-invoice-correction-prepayment-1-payment-version-prerequisite-go
+inherits_parent_go: feature-rme-invoice-correction-receipt-foundation-1-prepayment-foundation-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1

@@ -22,7 +22,12 @@
         $totalPayable = $payableSummary['total_payable'] ?? $remainingAmount;
         $hasCarryOver = ($payableSummary['has_carry_over'] ?? false) && $carryOverInvoices->isNotEmpty();
         $maxAmount = $hasCarryOver ? $totalPayable : $remainingAmount;
-        $defaultAmount = old('amount', $maxAmount);
+        // Rule 191: after a version refusal the page shows a DIFFERENT total, so the
+        // amount and receivable selection typed against the old total are not
+        // restored. The cashier re-reads the bill and enters them again.
+        $versionRefused = isset($errors) && $errors->has('invoice_versions');
+        $defaultAmount = $versionRefused ? $maxAmount : old('amount', $maxAmount);
+        $restoredReceivableIds = $versionRefused ? [] : (old('selected_receivable_ids', []) ?: []);
 
         // Sprint 62.2 — patient-level outstanding receivables (ordinary new visit).
         $outstandingReceivables = $outstandingReceivables ?? collect();
@@ -207,6 +212,28 @@
                 }">
                 @csrf
 
+                {{--
+                    ACTIVATION-RME-INVOICE-CORRECTION-PREPAYMENT-1 (rule 191): the
+                    correction version of EVERY invoice this page displays. The payment
+                    service refuses to settle an invoice whose version is not the one
+                    listed here. Read from the current rows on every render and never
+                    from old(), so a page re-rendered after a refusal carries the
+                    version it now shows.
+                --}}
+                <input type="hidden" name="invoice_versions[{{ $invoice->id }}]" value="{{ (int) $invoice->correction_version }}">
+                @foreach ($carryOverInvoices as $versionedInvoice)
+                    <input type="hidden" name="invoice_versions[{{ $versionedInvoice->id }}]" value="{{ (int) $versionedInvoice->correction_version }}">
+                @endforeach
+                @foreach ($outstandingReceivables as $versionedInvoice)
+                    <input type="hidden" name="invoice_versions[{{ $versionedInvoice->id }}]" value="{{ (int) $versionedInvoice->correction_version }}">
+                @endforeach
+
+                @error('invoice_versions')
+                    <div class="rounded-md border border-danger bg-danger-50 p-3 text-sm text-danger-700" role="alert" data-payment-invoice-version-error>
+                        {{ $message }}
+                    </div>
+                @enderror
+
                 @if ($showSelectableReceivables)
                     {{-- Sprint 62.2 — patient outstanding receivables (opt-in collection) --}}
                     <div class="rounded-md border border-warning-100 bg-warning-50 p-4 space-y-3">
@@ -233,7 +260,7 @@
                                         <tr>
                                             <td class="px-3 py-2">
                                                 <input type="checkbox" name="selected_receivable_ids[]" value="{{ $receivable->id }}"
-                                                    @checked(in_array($receivable->id, old('selected_receivable_ids', []) ?: []))
+                                                    @checked(in_array($receivable->id, $restoredReceivableIds))
                                                     x-on:change="toggle({{ $receivable->id }}, {{ (float) $receivable->remainingAmount() }}, $event.target.checked)"
                                                     class="rounded border-hairline text-brand-600 focus:ring-brand-500">
                                             </td>

@@ -49,6 +49,8 @@ use App\Modules\Patient\Models\Patient;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Models\RmeInvoiceCorrection;
 use App\Modules\RmeInvoice\Services\RmeInvoiceCorrectionService;
+use App\Modules\RmeInvoice\Services\RmePaymentService;
+use App\Modules\RmeInvoice\Support\RmeFinancialAuditEvent;
 use App\Modules\RmeInvoice\Support\RmeInvoiceCorrectionStatus;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\QueryException;
@@ -63,6 +65,10 @@ const RIC_WRITER = 'ric_concurrency_writer';
 /** Tables this suite writes to, in child-before-parent delete order. */
 const RIC_TABLES = [
     'sys_audit_logs',
+    // A successful payment completes the visit, and completion files a
+    // SATUSEHAT candidate (rule 191's accepted-payment race proves that path).
+    'trx_satusehat_audit_logs',
+    'trx_satusehat_candidates',
     'trx_rme_invoice_correction_events',
     'trx_rme_invoice_correction_lines',
     'trx_rme_invoice_document_versions',
@@ -333,4 +339,74 @@ it('rejects a second active correction at the database even when the service che
 
     expect($violated)->toBeTrue()
         ->and(RmeInvoiceCorrection::where('rme_invoice_id', $invoice->id)->count())->toBe(1);
+});
+
+/*
+| ACTIVATION-RME-INVOICE-CORRECTION-PREPAYMENT-1 (rule 191) — the OTHER commit
+| order. The test above proves "payment first ⇒ correction STALE". These two
+| prove "correction first ⇒ a payment from a page opened before it is refused,
+| and a payment from a page reloaded after it is accepted against the corrected
+| total". The competing transaction writes exactly what an applied correction
+| writes to the invoice row (totals + `correction_version` bump) and holds it.
+*/
+
+/** @return list<array{0: string, 1: list<mixed>}> */
+function ricAppliedCorrectionWrite(RmeInvoice $invoice): array
+{
+    return [
+        ['UPDATE trx_rme_invoices SET subtotal = 350000, grand_total = 350000, correction_version = correction_version + 1, updated_at = NOW() WHERE id = ?', [$invoice->id]],
+    ];
+}
+
+it('waits on a correction that is mid-apply, then refuses a payment from a page opened before it', function () {
+    ['invoice' => $invoice, 'cashier' => $cashier] = ricCommittedInvoice();
+    $this->actingAs($cashier);
+
+    $handle = ricCompetingTransaction((int) $invoice->id, ricAppliedCorrectionWrite($invoice));
+
+    $started = microtime(true);
+    $refusal = null;
+    try {
+        app(RmePaymentService::class)->pay($invoice, $cashier, [
+            'amount' => 100000,
+            'paid_at' => now()->format('Y-m-d H:i:s'),
+            'invoice_versions' => [$invoice->id => 0],
+        ]);
+    } catch (ValidationException $e) {
+        $refusal = json_encode($e->errors());
+    }
+    $waited = microtime(true) - $started;
+    ricJoin($handle);
+
+    // The payment genuinely waited for the correction to commit…
+    expect($waited)->toBeGreaterThan(1.0)
+        // …then read the NEW version under the lock and refused the stale form.
+        ->and($refusal)->toContain('INVOICE_VERSION_CHANGED')
+        ->and(DB::table('trx_rme_payments')->where('rme_invoice_id', $invoice->id)->count())->toBe(0)
+        ->and($invoice->fresh()->status)->toBe(RmeInvoice::STATUS_UNPAID)
+        ->and(DB::table('sys_audit_logs')
+            ->where('action', RmeFinancialAuditEvent::ACTION_PAYMENT_REFUSED_INVOICE_VERSION)
+            ->where('entity_id', $invoice->id)->count())->toBe(1);
+});
+
+it('waits on a correction that is mid-apply, then accepts a payment from a page reloaded after it', function () {
+    ['invoice' => $invoice, 'cashier' => $cashier] = ricCommittedInvoice();
+    $this->actingAs($cashier);
+
+    $handle = ricCompetingTransaction((int) $invoice->id, ricAppliedCorrectionWrite($invoice));
+
+    $started = microtime(true);
+    app(RmePaymentService::class)->pay($invoice, $cashier, [
+        'amount' => 350000,
+        'paid_at' => now()->format('Y-m-d H:i:s'),
+        'invoice_versions' => [$invoice->id => 1],
+    ]);
+    $waited = microtime(true) - $started;
+    ricJoin($handle);
+
+    $invoice = $invoice->fresh();
+    expect($waited)->toBeGreaterThan(1.0)
+        ->and((float) $invoice->grand_total)->toEqual(350000.0)
+        ->and($invoice->status)->toBe(RmeInvoice::STATUS_PAID)
+        ->and((float) DB::table('trx_rme_payments')->where('rme_invoice_id', $invoice->id)->sum('amount'))->toEqual(350000.0);
 });

@@ -212,7 +212,7 @@ it('full payment marks the invoice PAID and the visit completed', function () {
     [$visit] = gateBillableVisit($this->branch);
     $invoice = gateInvoiceFor($visit, $this->cashier, 150000);
 
-    $this->post(route('rme.cashier.payment.store', [$visit, $invoice]), gatePaymentPayload(['amount' => 150000]))
+    $this->post(route('rme.cashier.payment.store', [$visit, $invoice]), rmeFreshPaymentForm($invoice, gatePaymentPayload(['amount' => 150000])))
         ->assertRedirect();
 
     expect($invoice->fresh()->status)->toBe(RmeInvoice::STATUS_PAID)
@@ -230,7 +230,7 @@ it('partial payment keeps the invoice PARTIAL and completes the visit', function
     [$visit] = gateBillableVisit($this->branch);
     $invoice = gateInvoiceFor($visit, $this->cashier, 150000);
 
-    $this->post(route('rme.cashier.payment.store', [$visit, $invoice]), gatePaymentPayload(['amount' => 50000]))
+    $this->post(route('rme.cashier.payment.store', [$visit, $invoice]), rmeFreshPaymentForm($invoice, gatePaymentPayload(['amount' => 50000])))
         ->assertRedirect();
 
     expect($invoice->fresh()->status)->toBe(RmeInvoice::STATUS_PARTIAL)
@@ -243,7 +243,7 @@ it('a partially paid invoice still appears as an active receivable after the vis
     [$visit] = gateBillableVisit($this->branch);
     $invoice = gateInvoiceFor($visit, $this->cashier, 150000);
 
-    $this->post(route('rme.cashier.payment.store', [$visit, $invoice]), gatePaymentPayload(['amount' => 50000]));
+    $this->post(route('rme.cashier.payment.store', [$visit, $invoice]), rmeFreshPaymentForm($invoice, gatePaymentPayload(['amount' => 50000])));
 
     expect($visit->fresh()->status)->toBe(ClinicVisit::STATUS_COMPLETED)
         ->and($invoice->fresh()->remainingAmount())->toBe(100000.0);
@@ -282,10 +282,10 @@ it('accepts payment even when no consent document exists for the visit', functio
 
     $visit->consents()->delete();
 
-    $this->post(route('rme.cashier.payment.store', [$visit, $invoice]), [
+    $this->post(route('rme.cashier.payment.store', [$visit, $invoice]), rmeFreshPaymentForm($invoice, [
         'amount' => 150000,
         'paid_at' => now()->toDateString(),
-    ])->assertSessionHasNoErrors();
+    ]))->assertSessionHasNoErrors();
 
     expect($invoice->fresh()->status)->toBe(RmeInvoice::STATUS_PAID)
         ->and($visit->fresh()->status)->toBe(ClinicVisit::STATUS_COMPLETED);
@@ -349,7 +349,7 @@ it('a fully paid invoice completes the visit and is excluded from active receiva
     [$visit] = gateBillableVisit($this->branch);
     $invoice = gateInvoiceFor($visit, $this->cashier, 150000);
 
-    $this->post(route('rme.cashier.payment.store', [$visit, $invoice]), gatePaymentPayload(['amount' => 150000]));
+    $this->post(route('rme.cashier.payment.store', [$visit, $invoice]), rmeFreshPaymentForm($invoice, gatePaymentPayload(['amount' => 150000])));
 
     expect($visit->fresh()->status)->toBe(ClinicVisit::STATUS_COMPLETED);
 

@@ -83,11 +83,11 @@ function invdInvoice(array $items, ?float $pay = null, ?Branch $branch = null, ?
 
     $invoice = app(RmeInvoiceService::class)->create($visit, test()->cashier, ['items' => $payload]);
 
-    app(RmePaymentService::class)->pay($invoice, test()->cashier, [
+    app(RmePaymentService::class)->pay($invoice, test()->cashier, rmeFreshPaymentForm($invoice, [
         'amount' => $pay ?? (float) $invoice->grand_total,
         'paid_at' => $paidAt ?? now()->toDateTimeString(),
         'payment_method_id' => test()->method->id,
-    ]);
+    ]));
 
     return [$visit->refresh(), $invoice->refresh()];
 }
@@ -332,8 +332,8 @@ it('sums every payment on the invoice, dated by the settling payment', function 
         'description' => 'Perawatan Bertahap', 'qty' => 1, 'unit_price' => 900000,
     ]]]);
     $pay = app(RmePaymentService::class);
-    $pay->pay($invoice, $this->cashier, ['amount' => 400000, 'paid_at' => '2026-02-01 09:00:00', 'payment_method_id' => $this->method->id]);
-    $pay->pay($invoice->refresh(), $this->cashier, ['amount' => 500000, 'paid_at' => '2026-02-20 11:00:00', 'payment_method_id' => $this->method->id]);
+    $pay->pay($invoice, $this->cashier, rmeFreshPaymentForm($invoice, ['amount' => 400000, 'paid_at' => '2026-02-01 09:00:00', 'payment_method_id' => $this->method->id]));
+    $pay->pay($invoice->refresh(), $this->cashier, rmeFreshPaymentForm($invoice->refresh(), ['amount' => 500000, 'paid_at' => '2026-02-20 11:00:00', 'payment_method_id' => $this->method->id]));
     $invoice->refresh();
 
     expect($invoice->isPaid())->toBeTrue();
@@ -560,11 +560,11 @@ it('refuses every cashier route when the invoice was not raised for the visit in
     $this->get(route('rme.cashier.payment.create', [$visitA, $unpaidInvoiceB]))->assertNotFound();
 
     $paymentsBefore = DB::table('trx_rme_payments')->count();
-    $this->post(route('rme.cashier.payment.store', [$visitA, $unpaidInvoiceB]), [
+    $this->post(route('rme.cashier.payment.store', [$visitA, $unpaidInvoiceB]), rmeFreshPaymentForm($unpaidInvoiceB, [
         'amount' => 120000,
         'payment_method_id' => $this->method->id,
         'paid_at' => now()->toDateTimeString(),
-    ])->assertNotFound();
+    ]))->assertNotFound();
 
     expect(DB::table('trx_rme_payments')->count())->toBe($paymentsBefore)
         ->and($unpaidInvoiceB->refresh()->status)->not->toBe(RmeInvoice::STATUS_PAID);

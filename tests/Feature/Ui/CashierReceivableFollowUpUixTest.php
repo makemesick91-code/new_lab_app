@@ -92,12 +92,12 @@ it('shows a partial-payment status label on the invoice list after a partial pay
     [$visit, $invoice] = uix12UnpaidInvoice($this->branch, $this->cashier);
 
     // Business path unchanged — a partial payment via the service.
-    app(RmePaymentService::class)->pay($invoice, $this->cashier, [
+    app(RmePaymentService::class)->pay($invoice, $this->cashier, rmeFreshPaymentForm($invoice, [
         'amount' => 200000,
         'paid_at' => now()->format('Y-m-d H:i:s'),
         'consent_signed_by_patient' => true,
         'consent_signed_by_doctor' => true,
-    ]);
+    ]));
 
     expect($invoice->refresh()->status)->toBe('PARTIAL');
 
@@ -111,12 +111,12 @@ it('shows a partial-payment status label on the invoice list after a partial pay
 it('still processes a full payment and renders the receipt after the polish', function () {
     [$visit, $invoice] = uix12UnpaidInvoice($this->branch, $this->cashier);
 
-    app(RmePaymentService::class)->pay($invoice, $this->cashier, [
+    app(RmePaymentService::class)->pay($invoice, $this->cashier, rmeFreshPaymentForm($invoice, [
         'amount' => $invoice->grand_total,
         'paid_at' => now()->format('Y-m-d H:i:s'),
         'consent_signed_by_patient' => true,
         'consent_signed_by_doctor' => true,
-    ]);
+    ]));
 
     expect($invoice->refresh()->status)->toBe('PAID');
 

@@ -379,6 +379,12 @@ return [
         'tests/Feature/RmeInvoiceCorrection/RmeInvoiceCorrectionAccessTest.php',
         'tests/Feature/RmeInvoiceCorrection/RmeInvoiceCorrectionGovernanceTest.php',
         'tests/Feature/RmeInvoiceCorrection/RmeInvoiceCorrectionConcurrencyTest.php',
+        // ACTIVATION-RME-INVOICE-CORRECTION-PREPAYMENT-1 (rule 191) — a payment
+        // settles the invoice version the cashier saw. Selected by the existing
+        // `RmeInvoiceCorrection` token; its two PostgreSQL races (correction
+        // first ⇒ stale form refused / reloaded form accepted) live in the
+        // concurrency suite above.
+        'tests/Feature/RmeInvoiceCorrection/RmeInvoiceCorrectionPaymentVersionBindingTest.php',
 
         // DOCTOR-PWA-WEBAUTHN-1 — the browser device-credential login. A `|Pwa`
         // or `|DoctorDevice` token does not select it: --filter matches the test
