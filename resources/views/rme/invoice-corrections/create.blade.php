@@ -65,9 +65,11 @@
                   x-data="{
                       lines: @js(old('lines', $initialLines)),
                       blank() { return { original_item_id: null, treatment_id: null, doctor_id: null, description: '', qty: 1, unit_price: '0', discount: '0' } },
-                      net(l) { const v = (Number(l.qty) || 0) * (Number(l.unit_price) || 0) - (Number(l.discount) || 0); return v; },
+                      cents(v) { return Math.round((Number(v) || 0) * 100) },
+                      net(l) { return (Math.trunc(Number(l.qty)) || 0) * this.cents(l.unit_price) - this.cents(l.discount) },
                       total() { return this.lines.reduce((sum, l) => sum + this.net(l), 0) },
-                      rp(v) { return 'Rp ' + Math.round(v).toLocaleString('id-ID') }
+                      {{-- Rule 195 §25: integer cents, printed as stored — cents kept, never rounded (mirrors RmeInvoiceDocument::rupiah). --}}
+                      rp(c) { const a = Math.abs(c), w = Math.trunc(a / 100), f = a % 100; return (c < 0 ? '- ' : '') + 'Rp ' + w.toLocaleString('id-ID') + (f ? ',' + String(f).padStart(2, '0') : '') }
                   }"
                   data-correction-form>
                 @csrf

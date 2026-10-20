@@ -1041,8 +1041,9 @@ class RmeInvoiceCorrectionService
 
     /**
      * Rule 195 §27 — a CHANGED line only re-labels its price provenance when the
-     * correction actually changed the PRICE. A line whose unit price is identical
-     * (only qty, discount, description, treatment or doctor changed) keeps the
+     * correction actually changed the PRICE or the TREATMENT. A line whose unit
+     * price and treatment are identical (only qty, discount, description or
+     * doctor changed) keeps the
      * provenance of the price it still carries: stamping CORRECTION_MANUAL_ENTRY
      * on a price nobody re-entered would misdescribe where that figure came from.
      * The original price itself survives in the frozen v0 document either way.
@@ -1053,7 +1054,11 @@ class RmeInvoiceCorrectionService
     {
         $values = $this->itemValues($line);
 
-        if (RmeInvoiceDocument::toCents($item->unit_price) === RmeInvoiceDocument::toCents($line->proposed_unit_price)) {
+        // Provenance describes WHERE a price for THIS treatment came from, so it is
+        // kept only when both the price and the treatment are unchanged (a changed
+        // treatment at the same price is a new pricing decision — security review L2).
+        if (RmeInvoiceDocument::toCents($item->unit_price) === RmeInvoiceDocument::toCents($line->proposed_unit_price)
+            && (int) ($item->treatment_id ?? 0) === (int) ($line->proposed_treatment_id ?? 0)) {
             unset(
                 $values['pricing_mode'],
                 $values['price_source'],

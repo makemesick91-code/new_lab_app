@@ -208,7 +208,8 @@
                     controller: null,
                     requestSeq: 0,
                     fmt(v) { return number.format(Number(v || 0)); },
-                    rp(cents) { return 'Rp ' + number.format(Math.trunc(Number(cents || 0) / 100)); },
+                    // Rule 195 §25 — cents are kept, never truncated (mirrors OversightFormat::rupiahCents).
+                    rp(cents) { const c = Math.trunc(Number(cents || 0)), a = Math.abs(c), f = a % 100; return 'Rp ' + (c < 0 ? '-' : '') + number.format(Math.trunc(a / 100)) + (f ? ',' + String(f).padStart(2, '0') : ''); },
                     announceRange() {
                         if (typeof CustomEvent !== 'function' || typeof document.dispatchEvent !== 'function') { return; }
                         document.dispatchEvent(new CustomEvent('oversight-range-moved', {

@@ -321,6 +321,17 @@ it('canonicalizes a deprecated alias and matches whole codes only', function () 
         ->and($scope->admittedBranchIds())->toBe([(int) $sunu->id]);
 });
 
+it('never admits a live branch coded with a historical alias (widening is a commit, not a master-data edit)', function () {
+    $sunu = Branch::factory()->create(['code' => 'SPN4', 'name' => 'Cabang Sunu', 'is_rme_enabled' => true, 'is_active' => true]);
+    $alias = Branch::factory()->create(['code' => 'SUN4', 'name' => 'Cabang Sunu Kedua', 'is_rme_enabled' => true, 'is_active' => true]);
+
+    ricPilot(['SPN4']);
+
+    $scope = app(RmeInvoiceCorrectionPilotScope::class);
+    expect($scope->admittedBranchIds())->toBe([(int) $sunu->id])
+        ->and($scope->admits((int) $alias->id))->toBeFalse();
+});
+
 it('admits no branch that is inactive or not RME-enabled even when listed', function () {
     test()->branch->update(['is_rme_enabled' => false]);
     expect(app(RmeInvoiceCorrectionPilotScope::class)->admits((int) test()->branch->id))->toBeFalse();
@@ -501,6 +512,20 @@ it('keeps a line price provenance when the correction does not change its price'
     expect((int) $scaling->qty)->toBe(2)
         ->and($scaling->price_source)->toBe($originalSource)
         ->and($tambal->price_source)->toBe(RmeInvoicePriceSource::CORRECTION_MANUAL_ENTRY);
+});
+
+it('re-labels provenance when the treatment changes even at the same price', function () {
+    $invoice = ricInvoice();
+    $items = $invoice->items()->orderBy('id')->get();
+
+    $lines = ricLinesReducing($invoice);
+    $lines[0]['treatment_id'] = test()->treatment2->id; // Scaling line → Tambal treatment, price unchanged
+    ricApprove(ricSubmit($invoice, null, $lines));
+
+    $changed = $items[0]->fresh();
+    expect((int) $changed->treatment_id)->toBe((int) test()->treatment2->id)
+        ->and((float) $changed->unit_price)->toEqual(300000.0)
+        ->and($changed->price_source)->toBe(RmeInvoicePriceSource::CORRECTION_MANUAL_ENTRY);
 });
 
 it('uses one quantity bound for invoices and corrections', function () {

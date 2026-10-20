@@ -23,7 +23,9 @@ use App\Modules\Branch\Support\BranchCodeAlias;
  *   - MAIN is never admitted;
  *   - a listed code whose branch is inactive, deleted or not RME-enabled admits
  *     nothing (it is resolved against the live active RME set, one query);
- *   - matching is exact on the CANONICAL code (SUN4 → SPN4), never a prefix.
+ *   - the declared code is canonicalized (SUN4 → SPN4); the live branch must
+ *     carry that canonical code EXACTLY — an alias-coded branch is never
+ *     admitted, and no prefix ever matches.
  *
  * Reject and cancel are deliberately NOT gated here (rule 195 §14): they only
  * de-escalate, and they are how a correction left outside a narrowed pilot is
@@ -83,7 +85,12 @@ final class RmeInvoiceCorrectionPilotScope
 
         $ids = [];
         foreach ($this->branches->listRmeEnabled() as $branch) {
-            $code = BranchCodeAlias::canonicalize((string) $branch->code);
+            // Only the DECLARED side is canonicalized. The live branch must carry
+            // the canonical code itself: a branch created with a historical alias
+            // code (e.g. a second branch coded SUN4) must never ride on the SPN4
+            // approval — widening the pilot is a reviewed commit, never a
+            // master-data edit (security review L1).
+            $code = BranchCodeAlias::normalize((string) $branch->code);
 
             if ($code !== null && $code !== Branch::MAIN_CODE && in_array($code, $declared, true)) {
                 $ids[] = (int) $branch->id;

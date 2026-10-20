@@ -30,6 +30,16 @@ class RmeInvoiceCorrectionReadinessCommand extends Command
 
     public function handle(RmeInvoiceCorrectionReadinessService $readiness): int
     {
+        // Evaluating effective permissions can rebuild Spatie's permission cache
+        // in the file store. Run as root, that leaves a root-owned cache file the
+        // PHP-FPM runtime cannot overwrite — the FIX-LOGIN-REDIRECT-RUNTIME-
+        // PERMISSIONS incident class (security review L4). Refuse, fail closed.
+        if (function_exists('posix_geteuid') && posix_geteuid() === 0) {
+            $this->error('Refusing to run as root: run it as the runtime user, e.g. `runuser -u daengtisiams -- php artisan rme:invoice-correction-readiness`.');
+
+            return self::FAILURE;
+        }
+
         $ids = array_values(array_filter(array_map(
             fn ($v) => ctype_digit((string) $v) ? (int) $v : null,
             (array) $this->option('user'),
