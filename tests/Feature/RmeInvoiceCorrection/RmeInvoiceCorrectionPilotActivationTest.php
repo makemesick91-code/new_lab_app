@@ -340,6 +340,22 @@ it('admits no branch that is inactive or not RME-enabled even when listed', func
     expect(app(RmeInvoiceCorrectionPilotScope::class)->admits((int) test()->branch->id))->toBeFalse();
 });
 
+it('offers the cashier correction panel only for a pilot branch (mutation M19)', function () {
+    $invoice = ricInvoice();
+
+    $inside = rpaService()->panelFor($invoice, test()->maker);
+    expect($inside['pilot_admitted'])->toBeTrue()
+        ->and($inside['can_request'])->toBeTrue()
+        ->and($inside['eligible'])->toBeTrue();
+
+    ricPilot(['SPN4']);
+    $outside = rpaService()->panelFor($invoice, test()->maker);
+    expect($outside['enabled'])->toBeTrue()
+        ->and($outside['pilot_admitted'])->toBeFalse()
+        ->and($outside['can_request'])->toBeFalse()
+        ->and($outside['eligible'])->toBeFalse();
+});
+
 it('refuses everything while the flag is OFF even inside the pilot', function () {
     $correction = ricSubmit(ricInvoice());
     ricFlag(false);
@@ -574,6 +590,20 @@ it('reports a valid maker/checker pair inside the pilot and writes nothing', fun
         ->and($report['maker_checker_pair']['valid'])->toBeTrue()
         ->and($report['maker_checker_pair']['shared_pilot_branches'])->toBe(['IC01'])
         ->and($report['decision'])->toBe(RmeInvoiceCorrectionReadinessService::GO);
+});
+
+it('leaves a STALE operator online context untouched (the probe never persists a lazy expiry)', function () {
+    $maker = User::factory()->create();
+    rmeMakeFrontOfficeActive($maker, test()->branch);
+
+    // Age the context past the inactivity window: resolving the operator's scope
+    // now reaches the lazy markExpiredInactive() write (rule 165 item 6a).
+    DB::table('trx_user_online_contexts')->where('user_id', $maker->id)->update(['last_seen_at' => now()->subDays(2)]);
+    $before = DB::table('trx_user_online_contexts')->where('user_id', $maker->id)->get()->map(fn ($r) => (array) $r)->all();
+
+    app(RmeInvoiceCorrectionReadinessService::class)->report([(int) $maker->id]);
+
+    expect(DB::table('trx_user_online_contexts')->where('user_id', $maker->id)->get()->map(fn ($r) => (array) $r)->all())->toBe($before);
 });
 
 it('fails the probe for one account posing as both maker and checker', function () {
