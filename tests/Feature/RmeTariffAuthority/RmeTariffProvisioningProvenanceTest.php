@@ -479,5 +479,7 @@ it('never touches invoices, invoice items or payments, and changes no pricing po
         ->and($report['strict_branch_codes'])->toBe([])
         ->and($report['price_exceptions_enabled'])->toBeFalse()
         ->and(app(RmeInvoiceCorrectionFeatureGuard::class)->enabled())->toBeFalse()
-        ->and(collect($report['branches'])->pluck('mode')->unique()->all())->toBe(['TRANSITIONAL']);
+        // REVISED by REVISION-RME-MANUAL-PRICING-AUTHORITY-1: provisioning still
+        // changes no pricing posture; the posture is now MANUAL (was TRANSITIONAL).
+        ->and(collect($report['branches'])->pluck('mode')->unique()->all())->toBe(['MANUAL']);
 });

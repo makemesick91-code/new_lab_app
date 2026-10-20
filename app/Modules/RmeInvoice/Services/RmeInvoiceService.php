@@ -16,6 +16,7 @@ use App\Modules\RmeInvoice\Support\RmeInvoicePricingRefusal;
 use App\Modules\RmeInvoice\Support\RmeInvoiceSnapshot;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
 use App\Support\Clinical\ClinicalClock;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
@@ -128,19 +129,6 @@ class RmeInvoiceService
         return $this->invoices->findForVisit($visit->id);
     }
 
-    /**
-     * FEATURE-RME-BRANCH-TARIFF-AUTHORITY-1 — the cashier form's pricing context
-     * for a visit: the branch mode and the tariff in force per treatment, read
-     * for the VISIT's branch on the clinical today. Display only.
-     *
-     * @param  list<int>  $treatmentIds
-     * @return array{mode: string, tariffs: array<int, int>, exceptions_enabled: bool}
-     */
-    public function pricingContextFor(ClinicVisit $visit, array $treatmentIds): array
-    {
-        return $this->pricing->contextFor((int) $visit->branch_id, $treatmentIds, $this->clinicalClock->todayString());
-    }
-
     public function findInBranch(int $id): ?RmeInvoice
     {
         return $this->invoices->findInBranch($this->branchContext->requireId(), $id);
@@ -187,6 +175,16 @@ class RmeInvoiceService
                     ]);
                 }
 
+                // REVISION-RME-MANUAL-PRICING-AUTHORITY-1 (security review F1) — the
+                // cashier issues invoices only for the branch they work in, decided on
+                // the LOCKED visit so no caller (HTTP, command, job) can bill another
+                // branch's visit at a price it typed. Same canonical scope as view /
+                // pay / receipt; a context-bound role with no working branch fails
+                // closed, a whole-estate role is unaffected.
+                if (! $this->workingBranchScope->allows($cashier, $branchId)) {
+                    throw new AuthorizationException('Kunjungan berada di luar cabang kerja Anda.');
+                }
+
                 // Sprint 62.1 — Doctor → Cashier completion gate. The cashier can only
                 // bill a visit once the doctor has completed the examination (the RME
                 // finalize moves the visit to cashier_pending).
@@ -230,13 +228,14 @@ class RmeInvoiceService
                     ]);
                 }
 
-                // FEATURE-RME-BRANCH-TARIFF-AUTHORITY-1 (owner D21) — every line is
-                // priced on the SERVER: integer cents, discount never above the
-                // line, overflow refused, and its provenance recorded against the
-                // branch tariff in force on the clinical date. A strict-mode branch
-                // additionally refuses any price the tariff does not authorize.
+                // REVISION-RME-MANUAL-PRICING-AUTHORITY-1 (owner D21, revised) —
+                // the cashier's typed price is the price, and every line is still
+                // priced on the SERVER: integer cents, malformed money refused,
+                // discount never above the line, overflow refused, a named
+                // treatment active, MANUAL provenance recorded. No tariff is read.
                 // Submitted totals are never read. Priced BEFORE an invoice number
-                // is drawn, so a refused line never consumes one.
+                // is drawn, so a refused line never consumes one. Once created, the
+                // amounts change only through the invoice correction workflow.
                 $pricing = $this->pricing->price(
                     $branchId,
                     array_values($items),

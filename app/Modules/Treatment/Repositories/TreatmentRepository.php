@@ -40,6 +40,22 @@ class TreatmentRepository implements TreatmentRepositoryInterface
             ->get();
     }
 
+    public function activeIds(array $ids): array
+    {
+        $ids = array_values(array_unique(array_filter(array_map('intval', $ids), fn (int $id) => $id > 0)));
+        if ($ids === []) {
+            return [];
+        }
+
+        return Treatment::query()
+            ->whereIn('id', $ids)
+            ->where('is_active', true)
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->values()
+            ->all();
+    }
+
     public function create(array $data): Treatment
     {
         return Treatment::create($data);

@@ -7,16 +7,23 @@ namespace App\Modules\RmeInvoice\Support;
 use RuntimeException;
 
 /**
- * FEATURE-RME-BRANCH-TARIFF-AUTHORITY-1 — a line refused by STRICT tariff
- * authority (D21). Carries a stable code so a refusal is audited after the
- * invoice transaction rolled back, then surfaced as a validation error.
+ * A line the server refuses for an AUTHORITY reason (not a typing error).
+ * Carries a stable code so a refusal is audited after the invoice transaction
+ * rolled back, then surfaced as a validation error.
  *
- * Ordinary input errors (qty < 1, a negative number, a discount above the line)
- * are plain validation errors and are NOT this type: they are not a price
- * authority decision.
+ * REVISION-RME-MANUAL-PRICING-AUTHORITY-1: under manual pricing the only
+ * authority refusal is TREATMENT_INVALID — a line naming a treatment that does
+ * not exist, is soft-deleted or is inactive (a forged or stale id). The TARIFF_*
+ * codes belong to the LEGACY_SUPERSEDED strict tariff mode.
+ *
+ * Ordinary input errors (qty < 1, a negative number, malformed money, a
+ * discount above the line, overflow) are plain validation errors and are NOT
+ * this type: they are not an authority decision.
  */
 final class RmeInvoicePricingRefusal extends RuntimeException
 {
+    public const TREATMENT_INVALID = 'INVOICE_TREATMENT_INVALID';
+
     public const FREE_TEXT_NOT_PERMITTED = 'TARIFF_FREE_TEXT_NOT_PERMITTED';
 
     public const TREATMENT_INACTIVE = 'TARIFF_TREATMENT_INACTIVE';

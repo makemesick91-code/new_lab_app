@@ -3,6 +3,7 @@
 namespace App\Modules\RmeInvoice\Policies;
 
 use App\Models\User;
+use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
 
@@ -18,9 +19,22 @@ class RmeInvoicePolicy
         return $this->canManage($user) && $this->withinWorkingBranchScope($user, $invoice->branch_id);
     }
 
-    public function create(User $user): bool
+    /**
+     * REVISION-RME-MANUAL-PRICING-AUTHORITY-1 (security review F1) — issuing an
+     * invoice is bounded by the working branch exactly like view / pay /
+     * viewReceipt. Before this, `create` checked only the permission, so a Kasir
+     * working at branch A could open and issue the invoice of a branch-B visit at
+     * prices they typed — and under manual pricing the typed price IS the
+     * authoritative financial snapshot. The service re-checks the same scope on
+     * the locked visit; this is the HTTP door.
+     */
+    public function create(User $user, ?ClinicVisit $visit = null): bool
     {
-        return $this->canManage($user);
+        if (! $this->canManage($user)) {
+            return false;
+        }
+
+        return $visit === null || $this->withinWorkingBranchScope($user, $visit->branch_id);
     }
 
     public function pay(User $user, RmeInvoice $invoice): bool

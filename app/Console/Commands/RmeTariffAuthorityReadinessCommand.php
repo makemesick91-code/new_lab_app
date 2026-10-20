@@ -31,12 +31,13 @@ class RmeTariffAuthorityReadinessCommand extends Command
             $this->line((string) json_encode($report, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
         } else {
             $this->line('RME TARIFF AUTHORITY (D21) — clinical date '.$report['clinical_date']);
+            $this->line('PRICING_AUTHORITY='.$report['pricing_authority'].' (owner D21 revised 2026-10-20 — the tariff master is optional reference, never a billing block)');
             $this->line('STRICT_BRANCH_CODES='.($report['strict_branch_codes'] === [] ? '(none)' : implode(',', $report['strict_branch_codes'])));
             $this->line('PRICE_EXCEPTIONS_ENABLED='.($report['price_exceptions_enabled'] ? 'true' : 'false'));
             $this->newLine();
 
             $this->table(
-                ['Branch', 'Mode', 'Readiness', 'Tariffed', 'Approved', 'Provenance', 'Strict-eligible', 'Missing', 'Billed', 'Verified', 'Transitional', 'Not recorded'],
+                ['Branch', 'Mode', 'Readiness', 'Tariffed', 'Approved', 'Provenance', 'Strict-eligible', 'Missing', 'Billed', 'Manual', 'Tariff (hist.)', 'Transitional (hist.)', 'Not recorded'],
                 array_map(fn (array $b) => [
                     $b['code'],
                     $b['mode'],
@@ -47,6 +48,7 @@ class RmeTariffAuthorityReadinessCommand extends Command
                     $b['strict_eligible'] ? 'yes' : 'no',
                     $b['missing_tariff_codes'] === [] ? '-' : implode(',', $b['missing_tariff_codes']),
                     $b['billed_lines'],
+                    $b['billed_lines_manual'],
                     $b['billed_lines_tariff_verified'],
                     $b['billed_lines_transitional'],
                     $b['billed_lines_not_recorded'],

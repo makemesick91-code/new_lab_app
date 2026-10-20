@@ -14,40 +14,56 @@ use App\Modules\Tariff\Support\TariffAuthorityConfig;
 use App\Modules\Tariff\Support\TariffPricingMode;
 use App\Modules\Tariff\Support\TariffResolution;
 use App\Modules\Tariff\Support\TariffResolutionSet;
+use App\Modules\Treatment\Interfaces\TreatmentRepositoryInterface;
 use Illuminate\Validation\ValidationException;
 
 /**
- * FEATURE-RME-BRANCH-TARIFF-AUTHORITY-1 — the server-side price of every RME
- * invoice line (owner decision D21).
+ * The server-side price of every line of an ORIGINAL RME invoice.
  *
- * ALL MODES (tightening only, never widening):
- *   - money is integer cents, parsed from the submitted value; never floats;
+ * REVISION-RME-MANUAL-PRICING-AUTHORITY-1 (owner D21, revised 2026-10-20):
+ * the authorized cashier types the price. There is no mandatory tariff, no
+ * tariff equality, no automatic tariff fallback and no tariff lookup on this
+ * path. Manual pricing means the CASHIER chooses the amount — never that the
+ * browser decides the accounting. The server still owns:
+ *
+ *   - money: integer cents parsed from the submitted value, never floats; a
+ *     unit price is REQUIRED (empty / null / whitespace / exponent / separators
+ *     / currency text / 3+ decimals / non-finite are refused with
+ *     INVOICE_AMOUNT_INVALID — malformed money is never silently zero);
  *   - qty >= 1, unit price >= 0, discount >= 0 (unchanged messages);
- *   - a discount above the line's gross amount is refused (a negative line was
- *     accepted before; production held none);
- *   - overflow of decimal(15,2) is refused before multiplying;
- *   - the totals are recomputed here; a submitted total is never read.
+ *   - a discount never above its line (INVOICE_LINE_NEGATIVE), so neither a
+ *     line nor the invoice total can be negative;
+ *   - overflow of decimal(15,2) refused before multiplying;
+ *   - the totals, recomputed here — a submitted total is never read;
+ *   - a named treatment must exist, not be soft-deleted and be active
+ *     (INVOICE_TREATMENT_INVALID, audited) — a free-text line naming no
+ *     treatment stays permitted, as it is a live cashier workflow.
  *
- * TRANSITIONAL (default): the legacy cashier price is kept, and the line
- * records its PROVENANCE against the branch tariff — matched, deviating, no
- * tariff, or free text — so it is never mistaken for master pricing.
+ * Every line records MANUAL provenance (MANUAL_CASHIER_ENTRY /
+ * MANUAL_FREE_TEXT); a manual price is never labelled as tariff.
  *
- * STRICT_ENFORCED (explicit per-branch opt-in): the tariff in force IS the
- * price. Refused with a stable code: a free-text line, an inactive treatment, a
- * missing tariff, a zero tariff, a price that differs from the tariff, any
- * discount, and any Rp0 line or total. A deviation or a discount is accepted
- * only as an AUTHORIZED EXCEPTION: exceptions switched on AND the actor holds
- * the specific permission AND gives a written reason — and even then the
- * all-modes rules and the Rp0 refusal still hold. Exceptions are OFF until the
- * owner decides D21b–D21f.
+ * Rp0 on an ORIGINAL invoice keeps its pre-revision behaviour (accepted,
+ * counted as `zero_value_lines` in the audit). The Rp0 policy (D21g / D11 / D22)
+ * is still undecided, so no new Rp0 privilege and no new Rp0 block is invented
+ * here; invoice CORRECTION keeps refusing every new Rp0 line and total.
+ *
+ * STRICT_ENFORCED is LEGACY_SUPERSEDED: its code is kept below, but no branch
+ * can reach it (source-controlled empty list, rule 194).
  */
 class RmeInvoicePricingService
 {
     /** decimal(15,2) holds at most 9,999,999,999,999.99. */
     public const MAX_CENTS = 999_999_999_999_999;
 
+    /**
+     * The largest quantity `trx_rme_invoice_items.qty` holds on PostgreSQL
+     * (`integer`). A STORAGE bound — no business ceiling on quantity was decided.
+     */
+    public const MAX_QTY = 2_147_483_647;
+
     public function __construct(
         private readonly BranchTariffAuthorityService $authority,
+        private readonly TreatmentRepositoryInterface $treatments,
     ) {}
 
     /**
@@ -65,12 +81,16 @@ class RmeInvoicePricingService
     {
         $mode = $this->authority->modeFor($branchId);
         $strict = $mode === TariffPricingMode::STRICT_ENFORCED;
+        $treatmentIds = array_map(fn ($item) => self::optionalId(is_array($item) ? ($item['treatment_id'] ?? null) : null), $items);
 
-        $resolutions = $this->authority->resolveMany(
-            $branchId,
-            array_map(fn ($item) => self::optionalId($item['treatment_id'] ?? null), $items),
-            $clinicalDate,
-        );
+        // MANUAL: the tariff master is never read. Only treatment VALIDITY is
+        // checked, in one query for the whole invoice.
+        $resolutions = $strict
+            ? $this->authority->resolveMany($branchId, $treatmentIds, $clinicalDate)
+            : null;
+        $activeTreatmentIds = $strict
+            ? []
+            : $this->treatments->activeIds(array_values(array_filter($treatmentIds, fn (?int $id) => $id !== null)));
 
         $lines = [];
         $subtotal = 0;
@@ -79,7 +99,9 @@ class RmeInvoicePricingService
 
         foreach ($items as $item) {
             $lineNo++;
-            $line = $this->priceLine($item, $lineNo, $resolutions, $strict, $actor);
+            $line = $strict
+                ? $this->priceLine(is_array($item) ? $item : [], $lineNo, $resolutions, $actor)
+                : $this->priceManualLine(is_array($item) ? $item : [], $lineNo, $activeTreatmentIds);
 
             $subtotal += $line['gross_cents'];
             $discountTotal += $line['discount_cents'];
@@ -114,44 +136,62 @@ class RmeInvoicePricingService
     }
 
     /**
-     * What the cashier form displays for a branch: its mode, the tariff price in
-     * force (cents) for each given treatment, and whether exceptions are open.
-     * Display only — the server re-prices every submitted line.
+     * MANUAL pricing of one line: the cashier's price, validated by the server.
+     * No tariff is read, compared or recorded.
      *
-     * @param  list<int>  $treatmentIds
-     * @return array{mode: string, tariffs: array<int, int>, exceptions_enabled: bool}
+     * @param  array<string, mixed>  $item
+     * @param  list<int>  $activeTreatmentIds
+     * @return array<string, mixed>
      */
-    public function contextFor(int $branchId, array $treatmentIds, string $clinicalDate): array
+    private function priceManualLine(array $item, int $lineNo, array $activeTreatmentIds): array
     {
-        $tariffs = [];
-        foreach ($this->authority->resolveMany($branchId, $treatmentIds, $clinicalDate)->all() as $id => $resolution) {
-            if ($resolution->isResolved()) {
-                $tariffs[$id] = (int) $resolution->priceCents;
-            }
+        $line = $this->arithmetic($item);
+
+        if ($line['treatment_id'] !== null && ! in_array($line['treatment_id'], $activeTreatmentIds, true)) {
+            $this->refuse(
+                RmeInvoicePricingRefusal::TREATMENT_INVALID,
+                'Tindakan pada item "'.self::clip($line['description']).'" tidak ditemukan atau tidak aktif.',
+                $lineNo,
+                $line['treatment_id'],
+            );
         }
 
-        return [
-            'mode' => $this->authority->modeFor($branchId),
-            'tariffs' => $tariffs,
-            'exceptions_enabled' => $this->authority->exceptionsEnabled(),
-        ];
+        return array_merge($line, [
+            'price_source' => $line['treatment_id'] !== null
+                ? RmeInvoicePriceSource::MANUAL_CASHIER_ENTRY
+                : RmeInvoicePriceSource::MANUAL_FREE_TEXT,
+            'tariff_id' => null,
+            'tariff_unit_price_cents' => null,
+            'price_exception_reason' => null,
+            'price_exception_by' => null,
+        ]);
     }
 
     /**
+     * The server arithmetic every line goes through, in every mode: parsed
+     * money, unchanged legacy messages for ordinary input errors, overflow
+     * refused before multiplying, and a discount never above its line.
+     *
      * @param  array<string, mixed>  $item
-     * @return array<string, mixed>
+     * @return array{treatment_id: int|null, description: string, qty: int, unit_price_cents: int, discount_cents: int, gross_cents: int, subtotal_cents: int, doctor_id: int|null}
      */
-    private function priceLine(array $item, int $lineNo, TariffResolutionSet $resolutions, bool $strict, User $actor): array
+    private function arithmetic(array $item): array
     {
         $qty = (int) ($item['qty'] ?? 0);
-        $unit = self::amountToCents($item['unit_price'] ?? 0, 'Harga satuan');
-        $discount = self::amountToCents($item['discount'] ?? 0, 'Diskon');
+        $unit = self::amountToCents($item['unit_price'] ?? null, 'Harga satuan', required: true);
+        $discount = self::amountToCents($item['discount'] ?? null, 'Diskon', required: false);
         $treatmentId = self::optionalId($item['treatment_id'] ?? null);
         $description = (string) ($item['description'] ?? '');
 
-        // Unchanged legacy messages for ordinary input errors.
         if ($qty < 1) {
             throw ValidationException::withMessages(['items' => 'Qty item harus minimal 1.']);
+        }
+        // Security review F2: a quantity beyond the integer column reached the
+        // database and answered 500. This is the STORAGE bound, not a business cap.
+        if ($qty > self::MAX_QTY) {
+            throw ValidationException::withMessages([
+                'items' => '[INVOICE_QTY_OVERFLOW] Qty item "'.self::clip($description).'" melebihi batas yang dapat disimpan.',
+            ]);
         }
         if ($unit < 0) {
             throw ValidationException::withMessages(['items' => 'Harga satuan tidak boleh negatif.']);
@@ -176,20 +216,6 @@ class RmeInvoicePricingService
             ]);
         }
 
-        $resolution = $resolutions->for($treatmentId);
-        $exceptionReason = null;
-        $exceptionBy = null;
-
-        if ($strict) {
-            $source = $this->strictSource($resolution, $unit, $discount, $net, $lineNo, $item, $actor);
-            if ($source === RmeInvoicePriceSource::TARIFF_EXCEPTION_AUTHORIZED) {
-                $exceptionReason = trim((string) ($item['price_exception_reason'] ?? ''));
-                $exceptionBy = (int) $actor->id;
-            }
-        } else {
-            $source = $this->transitionalSource($resolution, $unit, $discount);
-        }
-
         return [
             'treatment_id' => $treatmentId,
             'description' => $description,
@@ -199,23 +225,36 @@ class RmeInvoicePricingService
             'gross_cents' => $gross,
             'subtotal_cents' => $net,
             'doctor_id' => self::optionalId($item['doctor_id'] ?? null),
+        ];
+    }
+
+    /**
+     * LEGACY_SUPERSEDED strict tariff pricing of one line (unreachable while the
+     * source-controlled strict list is empty — rule 194).
+     *
+     * @param  array<string, mixed>  $item
+     * @return array<string, mixed>
+     */
+    private function priceLine(array $item, int $lineNo, TariffResolutionSet $resolutions, User $actor): array
+    {
+        $line = $this->arithmetic($item);
+        $resolution = $resolutions->for($line['treatment_id']);
+        $exceptionReason = null;
+        $exceptionBy = null;
+
+        $source = $this->strictSource($resolution, $line['unit_price_cents'], $line['discount_cents'], $line['subtotal_cents'], $lineNo, $item, $actor);
+        if ($source === RmeInvoicePriceSource::TARIFF_EXCEPTION_AUTHORIZED) {
+            $exceptionReason = trim((string) ($item['price_exception_reason'] ?? ''));
+            $exceptionBy = (int) $actor->id;
+        }
+
+        return array_merge($line, [
             'price_source' => $source,
             'tariff_id' => $resolution->tariffId !== null && $resolution->isResolved() ? $resolution->tariffId : null,
             'tariff_unit_price_cents' => $resolution->isResolved() ? $resolution->priceCents : null,
             'price_exception_reason' => $exceptionReason,
             'price_exception_by' => $exceptionBy,
-        ];
-    }
-
-    private function transitionalSource(TariffResolution $resolution, int $unit, int $discount): string
-    {
-        return match ($resolution->outcome) {
-            TariffResolution::RESOLVED => ($unit === $resolution->priceCents && $discount === 0)
-                ? RmeInvoicePriceSource::TARIFF_MATCHED
-                : RmeInvoicePriceSource::TRANSITIONAL_TARIFF_DEVIATION,
-            TariffResolution::NO_TREATMENT => RmeInvoicePriceSource::TRANSITIONAL_FREE_TEXT,
-            default => RmeInvoicePriceSource::TRANSITIONAL_NO_TARIFF,
-        };
+        ]);
     }
 
     /**
@@ -289,10 +328,18 @@ class RmeInvoicePricingService
      * rather than converted, because the float fallback of a cents conversion
      * wraps silently on such input (security review, this sprint).
      */
-    private static function amountToCents(mixed $value, string $label): int
+    private static function amountToCents(mixed $value, string $label, bool $required): int
     {
-        if ($value === null || $value === '') {
-            return 0;
+        // An optional amount (the discount) left blank is zero. A REQUIRED one
+        // (the unit price) left blank is refused — never silently zero.
+        if ($value === null || (is_string($value) && trim($value) === '')) {
+            if (! $required) {
+                return 0;
+            }
+
+            throw ValidationException::withMessages([
+                'items' => "[INVOICE_AMOUNT_INVALID] {$label} wajib diisi dengan angka.",
+            ]);
         }
 
         $valid = match (true) {

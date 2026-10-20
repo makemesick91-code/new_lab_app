@@ -6,6 +6,18 @@ alwaysApply: false
 
 # RME branch tariff authority & financial pricing (rule 192)
 
+> **SUPERSEDED IN PART by rule 194 — REVISION-RME-MANUAL-PRICING-AUTHORITY-1
+> (owner D21 REVISED 2026-10-20: manual cashier pricing, no mandatory tariff).**
+> Withdrawn: §1 item 4 (D21 as tariff authority), §2 item 6 ("`mst_tariffs` is
+> the price authority" — it is now OPTIONAL REFERENCE), §3 (the default mode is
+> MANUAL; STRICT is LEGACY_SUPERSEDED and the strict list is a source-controlled
+> empty array — no `RME_TARIFF_STRICT_BRANCH_CODES` override), §4 items 15–16
+> (new lines record MANUAL provenance, never TRANSITIONAL / TARIFF_MATCHED), §5
+> (tariff exceptions NOT_APPLICABLE), §7 (correction is tariff-independent; no
+> `CORRECTION_TARIFF_*`, no STALE `TARIFF_AUTHORITY_CHANGED`) and §11 item 39.
+> **Still in force:** §4 item 14 (server arithmetic), §6 D10, §8 tariff audit,
+> §9 readiness (informational), §10 roles, and D1/D7.
+
 Evidence: `docs/sprints/feature-rme-branch-tariff-authority-1.md`.
 Decision register: `docs/decisions/rme-billing-correction-owner-decisions.md`.
 Extends rules 188–191. Where this rule and those disagree about what EXISTS, this rule is newer.

@@ -25,11 +25,8 @@ use App\Modules\RmeInvoice\Support\RmeInvoiceDocument;
 use App\Modules\RmeInvoice\Support\RmeInvoicePriceSource;
 use App\Modules\RmeInvoice\Support\RmeInvoiceSnapshot;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
-use App\Modules\Tariff\Services\BranchTariffAuthorityService;
-use App\Modules\Tariff\Support\TariffResolution;
-use App\Modules\Tariff\Support\TariffResolutionSet;
+use App\Modules\Tariff\Support\TariffPricingMode;
 use App\Modules\Treatment\Models\Treatment;
-use App\Support\Clinical\ClinicalClock;
 use Closure;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\QueryException;
@@ -81,8 +78,6 @@ class RmeInvoiceCorrectionService
         private readonly BranchService $branches,
         private readonly RmeWorkingBranchScope $workingBranchScope,
         private readonly AuditLogService $auditLogs,
-        private readonly BranchTariffAuthorityService $tariffAuthority,
-        private readonly ClinicalClock $clinicalClock,
     ) {}
 
     // ─── Reads ──────────────────────────────────────────────────────────────
@@ -265,15 +260,16 @@ class RmeInvoiceCorrectionService
                     }
 
                     $original = RmeInvoiceSnapshot::capture($locked);
-                    $proposal = $this->proposals->build($original, $lines);
 
-                    // FEATURE-RME-BRANCH-TARIFF-AUTHORITY-1 — owner decision D21(4):
-                    // a correction is never activated for a line whose price the
-                    // branch tariff cannot validate.
-                    $violation = $this->tariffAuthorityViolation($locked, $proposal['items']);
-                    if ($violation !== null) {
-                        throw ValidationException::withMessages(['lines' => '['.$violation['code'].'] '.$violation['message']]);
-                    }
+                    // REVISION-RME-MANUAL-PRICING-AUTHORITY-1 (owner D21, revised):
+                    // a corrected price is a MANUAL price. It does not have to
+                    // equal — or even find — a branch tariff. The proposal
+                    // builder is the price validation: integer cents, malformed
+                    // money refused, discount within its line, overflow, an
+                    // active treatment for a changed/added line, no doctor
+                    // re-attribution, no new Rp0 line or total, totals
+                    // recomputed on the server.
+                    $proposal = $this->proposals->build($original, $lines);
 
                     $originalTotal = (int) $original['totals']['grand_total_cents'];
                     $proposedTotal = $proposal['grand_total_cents'];
@@ -508,22 +504,15 @@ class RmeInvoiceCorrectionService
         $items = $invoice->items->keyBy('id')->all();
         $correction->loadMissing('lines');
 
-        // D21 — changed and added lines carry their tariff provenance (validated
-        // above under this lock by staleReason()).
-        $tariffs = $this->tariffAuthority->resolveMany(
-            (int) $invoice->branch_id,
-            $correction->lines->pluck('proposed_treatment_id')->all(),
-            $this->invoiceClinicalDate($invoice),
-            requireActiveTreatment: false,
-        );
-        $pricingMode = $this->tariffAuthority->modeFor((int) $invoice->branch_id);
-
+        // REVISION-RME-MANUAL-PRICING-AUTHORITY-1 — a changed or added line
+        // carries CORRECTION_MANUAL_ENTRY provenance; no tariff is read. A KEPT
+        // line is untouched and keeps the provenance of its original entry.
         foreach ($correction->lines as $line) {
             match ($line->operation) {
                 RmeInvoiceCorrectionLine::OP_KEEP => null,
                 RmeInvoiceCorrectionLine::OP_REMOVE => $this->invoices->deleteItem($this->itemFor($items, $line)),
-                RmeInvoiceCorrectionLine::OP_CHANGE => $this->invoices->updateItem($this->itemFor($items, $line), $this->itemValues($line, $tariffs, $pricingMode)),
-                RmeInvoiceCorrectionLine::OP_ADD => $this->invoices->createItem(array_merge($this->itemValues($line, $tariffs, $pricingMode), ['rme_invoice_id' => (int) $invoice->id])),
+                RmeInvoiceCorrectionLine::OP_CHANGE => $this->invoices->updateItem($this->itemFor($items, $line), $this->itemValues($line)),
+                RmeInvoiceCorrectionLine::OP_ADD => $this->invoices->createItem(array_merge($this->itemValues($line), ['rme_invoice_id' => (int) $invoice->id])),
                 default => throw new LogicException('Unknown correction line operation '.$line->operation),
             };
         }
@@ -697,100 +686,14 @@ class RmeInvoiceCorrectionService
             return 'LAB_CANDIDATES_EXIST';
         }
 
-        // D21(4) — the tariff authority the correction was validated against
-        // must still validate it (a tariff edited, deactivated or removed since
-        // submission makes the reviewed price unverified).
-        if ($this->tariffAuthorityViolation($invoice, $this->proposedItemsOf($correction)) !== null) {
-            return 'TARIFF_AUTHORITY_CHANGED';
-        }
+        // REVISION-RME-MANUAL-PRICING-AUTHORITY-1 — the optional tariff master is
+        // NOT a staleness reason: a correction approved at a manual price stays
+        // valid when a tariff is edited, deactivated or deleted. STALE now means
+        // only a genuine conflict with the INVOICE itself (the checks above).
+        // Historical rows may still carry stale_reason_code TARIFF_AUTHORITY_*
+        // from the tariff-authority period; nothing rewrites them.
 
         return null;
-    }
-
-    /**
-     * FEATURE-RME-BRANCH-TARIFF-AUTHORITY-1 — owner decision D21(4): "a branch must
-     * not activate invoice correction for treatment items whose prices cannot be
-     * validated against approved tariff authority".
-     *
-     * Every line of the RESULTING document (kept, changed and added) must name a
-     * treatment whose tariff — of THIS invoice's branch, in force on the
-     * invoice's clinical date — is exactly the line's unit price, with no
-     * discount. Free-text lines, missing or zero tariffs, deviations and
-     * discounts are refused: price exceptions are not decided (D21b–D21f) and a
-     * correction never becomes the path around them. Independent of the branch
-     * pricing mode: a transitional branch may correct a line only into tariff
-     * authority, never out of it.
-     *
-     * @param  list<array<string, mixed>>  $items  treatment_id, unit_price_cents, discount_cents, description
-     * @return array{code: string, message: string}|null
-     */
-    private function tariffAuthorityViolation(RmeInvoice $invoice, array $items): ?array
-    {
-        // Treatment ACTIVE status is not re-checked here. The proposal builder
-        // requires an active treatment only for an ADDED line or a line whose
-        // treatment_id CHANGED; a line that keeps its treatment (repriced or
-        // re-quantified, or kept as is) is not re-litigated against a later
-        // deactivation (rule 190 §11a). Such a line can still only land on its
-        // branch tariff — the checks below — so no price leaves tariff authority.
-        $resolutions = $this->tariffAuthority->resolveMany(
-            (int) $invoice->branch_id,
-            array_map(fn (array $item) => $item['treatment_id'] ?? null, $items),
-            $this->invoiceClinicalDate($invoice),
-            requireActiveTreatment: false,
-        );
-
-        foreach ($items as $item) {
-            $label = '"'.mb_substr((string) ($item['description'] ?? ''), 0, 60).'"';
-            $resolution = $resolutions->for(isset($item['treatment_id']) ? (int) $item['treatment_id'] : null);
-
-            if ($resolution->outcome === TariffResolution::NO_TREATMENT) {
-                return ['code' => 'CORRECTION_TARIFF_FREE_TEXT', 'message' => "Item {$label} tidak memilih tindakan master, sehingga harganya tidak dapat divalidasi terhadap tarif cabang."];
-            }
-
-            if (! $resolution->isResolved()) {
-                return ['code' => 'CORRECTION_TARIFF_UNVERIFIED', 'message' => "Harga item {$label} tidak dapat divalidasi: tindakan belum memiliki tarif master yang berlaku di cabang ini."];
-            }
-
-            if ((int) $item['unit_price_cents'] !== $resolution->priceCents) {
-                return ['code' => 'CORRECTION_TARIFF_PRICE_MISMATCH', 'message' => "Harga item {$label} berbeda dari tarif master cabang. Koreksi hanya dapat memakai harga tarif."];
-            }
-
-            if ((int) $item['discount_cents'] !== 0) {
-                return ['code' => 'CORRECTION_TARIFF_DISCOUNT', 'message' => "Item {$label} memuat diskon. Diskon pada koreksi belum diotorisasi (menunggu keputusan owner)."];
-            }
-        }
-
-        return null;
-    }
-
-    /**
-     * The resulting (non-removed) lines of a stored correction, in the shape
-     * tariffAuthorityViolation() reads.
-     *
-     * @return list<array<string, mixed>>
-     */
-    private function proposedItemsOf(RmeInvoiceCorrection $correction): array
-    {
-        $correction->loadMissing('lines');
-
-        return $correction->lines
-            ->filter(fn (RmeInvoiceCorrectionLine $line) => $line->operation !== RmeInvoiceCorrectionLine::OP_REMOVE)
-            ->map(fn (RmeInvoiceCorrectionLine $line) => [
-                'treatment_id' => $line->proposed_treatment_id !== null ? (int) $line->proposed_treatment_id : null,
-                'unit_price_cents' => RmeInvoiceDocument::toCents($line->proposed_unit_price),
-                'discount_cents' => RmeInvoiceDocument::toCents($line->proposed_discount),
-                'description' => (string) $line->proposed_description,
-            ])
-            ->values()
-            ->all();
-    }
-
-    /** The clinical date the invoice was issued on — the date its tariff is read at. */
-    private function invoiceClinicalDate(RmeInvoice $invoice): string
-    {
-        return $invoice->created_at !== null
-            ? $this->clinicalClock->toClinicalDateString($invoice->created_at)
-            : $this->clinicalClock->todayString();
     }
 
     private function markStale(RmeInvoiceCorrection $correction, string $reason, User $actor): RmeInvoiceCorrection
@@ -1036,10 +939,8 @@ class RmeInvoiceCorrectionService
     /**
      * @return array<string, mixed>
      */
-    private function itemValues(RmeInvoiceCorrectionLine $line, TariffResolutionSet $tariffs, string $pricingMode): array
+    private function itemValues(RmeInvoiceCorrectionLine $line): array
     {
-        $resolution = $tariffs->for($line->proposed_treatment_id !== null ? (int) $line->proposed_treatment_id : null);
-
         return [
             'treatment_id' => $line->proposed_treatment_id,
             'description' => (string) $line->proposed_description,
@@ -1048,13 +949,12 @@ class RmeInvoiceCorrectionService
             'discount' => (string) $line->proposed_discount,
             'subtotal' => (string) $line->proposed_subtotal,
             'doctor_id' => $line->proposed_doctor_id,
-            // FEATURE-RME-BRANCH-TARIFF-AUTHORITY-1 — provenance of the applied price.
-            'pricing_mode' => $pricingMode,
-            'price_source' => RmeInvoicePriceSource::TARIFF_MATCHED,
-            'tariff_id' => $resolution->isResolved() ? $resolution->tariffId : null,
-            'tariff_unit_price' => $resolution->isResolved()
-                ? RmeInvoiceSnapshot::centsToDecimal((int) $resolution->priceCents)
-                : null,
+            // REVISION-RME-MANUAL-PRICING-AUTHORITY-1 — provenance of the applied
+            // price: a manual price set by an approved correction, never a tariff.
+            'pricing_mode' => TariffPricingMode::MANUAL,
+            'price_source' => RmeInvoicePriceSource::CORRECTION_MANUAL_ENTRY,
+            'tariff_id' => null,
+            'tariff_unit_price' => null,
             'price_exception_reason' => null,
             'price_exception_by' => null,
         ];

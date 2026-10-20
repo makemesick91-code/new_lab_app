@@ -1,0 +1,177 @@
+---
+description: REVISION-RME-MANUAL-PRICING-AUTHORITY-1 — owner D21 REVISED (2026-10-20) to MANUAL cashier pricing. No mandatory tariff; the cashier types the price of every original invoice line; prices may differ per branch and per patient; the issued invoice is immutable and changes only through the maker-checker correction workflow, which is now tariff-independent. Server-side money validation, MANUAL price provenance, optional tariff master, strict tariff mode LEGACY_SUPERSEDED (source-controlled, no environment override). D1/D7/D10 unchanged. Labels — OWNER_APPROVED_REVISED / IMPLEMENTED / LEGACY_SUPERSEDED / NOT_APPLICABLE / PENDING_SUB_DECISION / FEATURE_FLAG_OFF.
+globs: app/Modules/RmeInvoice/**, app/Modules/Tariff/**, app/Modules/Treatment/**, config/rme_tariff_authority.php, app/Console/Commands/RmeTariff*.php, resources/views/rme/cashier/**, tests/Feature/RmeManualPricing/**, tests/Feature/RmeTariffAuthority/**, tests/Feature/RmeInvoiceCorrection/**, docs/decisions/rme-billing-correction-owner-decisions.md
+alwaysApply: false
+---
+
+# RME manual pricing authority (rule 194)
+
+Evidence: `docs/sprints/revision-rme-manual-pricing-authority-1.md`.
+Decision register: `docs/decisions/rme-billing-correction-owner-decisions.md` (D21 CURRENT).
+**Supersedes the mandatory-tariff parts of rules 190 §2(11), 191 §4, 192 §1(4)/§2/§3/§4/§5/§7/§11(39)
+and rule 193's strict-eligibility framing.** Where this rule and those disagree about PRICE
+AUTHORITY, this rule wins. Their D1, D7, D10, Rp0, maker-checker, concurrency and tariff-provisioning
+content stays in force.
+
+## 1. Owner decision — D21 REVISED (OWNER_APPROVED_REVISED, recorded 2026-10-20)
+1. There is **no mandatory official treatment tariff**. The authorized cashier types the price of every
+   line of the ORIGINAL invoice. A price may differ between branches and between patients.
+2. Recorded from task-supplied owner evidence (the brief), exactly like D1/D7/D10/D21 on 2026-10-17.
+   Owner approval ≠ repository record ≠ technical enforcement — claim the third only with deployed,
+   verified evidence. Never invent a sub-decision.
+
+## 2. Superseded tariff policy (LEGACY_SUPERSEDED)
+3. Withdrawn: "prices come from the branch tariff master", tariff equality, "correction only within tariff
+   authority" (old D21(4)), the `CORRECTION_TARIFF_*` refusals, STALE `TARIFF_AUTHORITY_CHANGED`, the
+   TRANSITIONAL mode as a "temporary" state, and the strict-readiness activation prerequisite.
+4. Superseded text in older rules is MARKED, never deleted; historical rows keep their values.
+
+## 3. Manual original invoice pricing (IMPLEMENTED)
+5. `RmeInvoicePricingService::price()` — MANUAL for every branch: the cashier price is kept after server
+   validation; **no tariff is read, compared, recorded or prefilled** on this path (tested: zero
+   `mst_tariffs` queries).
+6. The cashier form carries no tariff (`data-tariff` removed) and never prefills a price; it shows a
+   manual-pricing notice (`data-pricing-authority="MANUAL_CASHIER_ENTRY"`). The display total is computed in
+   integer cents; the SERVER total is the only stored one.
+
+## 4. Optional tariff master
+7. `mst_tariffs`, its approval provenance, `rme:tariff-authority-readiness`, `rme:tariff-template`,
+   `rme:tariff-import` and master-data CRUD stay — as OPTIONAL REFERENCE. They never block or change
+   billing. Never delete tariff rows or rewrite historical tariff amounts. No cross-branch fallback.
+
+## 5. Branch-independent amounts
+8. The same treatment may be billed at different amounts per branch and per patient. Branch scope of the
+   INVOICE is still authoritative and server-derived (the visit's branch; a submitted `branch_id` is
+   never read).
+
+## 6. Server-side monetary validation (IMPLEMENTED)
+9. Integer cents only (no float arithmetic). Unit price REQUIRED: empty / null / whitespace / exponent /
+   thousands separators / currency text / 3+ decimals / non-finite ⇒ `INVOICE_AMOUNT_INVALID` — malformed
+   money is never silently zero. qty ≥ 1 and ≤ `MAX_QTY` (2 147 483 647 — the PostgreSQL `integer`
+   STORAGE bound, not a business cap; FormRequest `max:` + in-service `INVOICE_QTY_OVERFLOW`); price,
+   discount ≥ 0; overflow of decimal(15,2) ⇒ `INVOICE_TOTAL_OVERFLOW` (refused per line BEFORE
+   multiplying, so no product becomes a float, and again on the running total); totals recomputed;
+   submitted totals ignored. Ordinary validation failures are 422s, never 500s.
+10. A named treatment must exist, not be soft-deleted, and be active ⇒ else `INVOICE_TREATMENT_INVALID`
+    (audited `RME_INVOICE_PRICING_REFUSED`, ids + code only). Free-text lines (no treatment) stay
+    permitted — a live cashier workflow (production invoice 37).
+
+## 7. Manual price provenance (IMPLEMENTED)
+11. New lines: `pricing_mode = MANUAL`; `price_source` ∈ {`MANUAL_CASHIER_ENTRY`, `MANUAL_FREE_TEXT`,
+    `CORRECTION_MANUAL_ENTRY`}; `tariff_id` / `tariff_unit_price` NULL. A manual price is NEVER labelled
+    `TARIFF_MATCHED` (or any tariff label), even when it equals a tariff — coincidence is not authority.
+12. Who/when is recorded by the invoice (cashier, created_at) and the correction (maker/checker/applier) —
+    not duplicated on the line. Historical values (NULL, `TARIFF_*`, `TRANSITIONAL_*`) are never
+    backfilled or rewritten; they render with honest historical labels.
+
+## 8. Discount boundary
+13. A discount is NOT a manual unit price. Enforced: `0 ≤ discount ≤ line gross` ⇒ no negative line or
+    total (`INVOICE_LINE_NEGATIVE` / `CORRECTION_LINE_NEGATIVE`). **No percentage or amount cap and no
+    discount approver are invented — D21c is PENDING_SUB_DECISION.**
+
+## 9. Issued invoice immutability
+14. After creation an RME invoice and its items are never edited directly: no edit/update/delete route
+    exists for them (pinned by a route-table test); only `RmeInvoiceCorrectionService` may call
+    `updateItem` / `deleteItem` / `createItem` / `applyCorrectionTotals` (pinned by a source scan).
+
+## 10. Correction workflow requirement
+15. Every change to an issued invoice goes through the correction workflow: request → approve → apply
+    (maker ≠ checker), pre-payment only, branch-scoped, audited, version + fingerprint checked.
+
+## 11. Maker-checker (D1, unchanged)
+16. Kasir submits; Admin Klinik approves within its branch; Super Admin across branches; nobody — Super
+    Admin included — approves their own request (enforced in the service under the lock, not the policy).
+    D1a (who APPLIES) is undecided — never invent it.
+
+## 12. Document versioning (D7, unchanged)
+17. v0 original frozen on first apply; v1… immutable revisions; SHA-256; nothing overwritten; no paid
+    receipt for an unpaid invoice; no refund evidence without a refund.
+
+## 13. Payment blocking (D10, unchanged)
+18. An invoice with a SUBMITTED / APPROVED-not-applied correction accepts no payment on any path
+    (`pay`, `allocateControlPayment`, `allocateVisitPayment`), checked on the locked row, whole batch
+    rolled back; payment forms bound to `invoice_versions[...]` = `correction_version` (rule 191).
+
+## 14. Correction tariff-independence (IMPLEMENTED)
+19. A corrected price may differ from the original and from any tariff; a branch with no tariff corrects
+    normally. `RmeInvoiceCorrectionService` holds no tariff dependency (pinned by a source scan).
+
+## 15. Correction approval validation
+20. Approval re-locks invoice → correction and re-runs staleness: invoice removed, payment recorded,
+    status changed, version changed, content fingerprint changed, lab candidates — **never a tariff**.
+
+## 16. Correction application validation
+21. Apply re-checks the same staleness under the lock, writes changed/added lines as
+    `CORRECTION_MANUAL_ENTRY` / `MANUAL`, recomputes totals, refuses if the applied total differs from the
+    approved total, and is idempotent (re-apply = no-op).
+
+## 17. Rp0 boundary
+22. Original invoice: pre-revision behaviour kept (Rp0 accepted, audited as `zero_value_lines`) — no new
+    Rp0 privilege and no new Rp0 block (D21g / D11 / D22 pending). Correction: every NEW Rp0 line or total
+    refused (`CORRECTION_RP0_NOT_PERMITTED`), consultation included. The approved Rp0 ADJUSTMENT scope
+    (Kontrol / Konsultasi Dokter, rule 188 §12) is a separate, NOT built workflow — `RP0_ADJUSTMENT=NOT_ACTIVE`.
+
+## 18. Existing Rp0 legacy preservation
+23. Historical Rp0 invoices (production #36, `TRT-CONS`, UNPAID) are never deleted or rewritten.
+
+## 19. Payment immutability
+24. `RmePayment` refuses Eloquent update (except patient_id) and delete (rule 189). Manual pricing never
+    writes a payment, a reversal, a refund or a credit balance.
+
+## 20. Invoice version safety
+25. Every payment path compares `invoice_versions[id]` to the locked `correction_version` (rule 191).
+
+## 21. Financial audit logging
+26. `RME_INVOICE_CREATED` (inside the invoice transaction) carries `pricing_mode` and per-source line
+    counts (`lines_manual_cashier_entry`, `lines_manual_free_text`, …) + `zero_value_lines`; never a
+    patient name, RM number, NIK, clinical note or payment reference.
+
+## 22. Branch isolation
+27. Cashier scope = `RmeWorkingBranchScope`; the invoice branch = the visit's branch; correction actors are
+    branch-scoped in the service. No price endpoint exposes another branch's invoice.
+27a. **Issuing an invoice is branch-bounded too** (security review F1, fixed here):
+    `RmeInvoicePolicy::create(User, ?ClinicVisit)` applies the working-branch scope, both
+    `rme.cashier.create` / `rme.cashier.store` authorize WITH the visit, and
+    `RmeInvoiceService::create()` re-checks `allows($cashier, $visit->branch_id)` on the LOCKED visit
+    (403). A context-bound cashier with no working branch fails closed; a whole-estate role is
+    unaffected. Under manual pricing the typed price is the financial snapshot — never let a cashier
+    type one for another branch's visit.
+
+## 23. Clinical data separation
+28. Pricing never writes medical records, diagnoses, odontograms, consent, visits' clinical content or
+    doctor attribution; a correction can never re-attribute an existing line's doctor.
+
+## 24–26. Oversight roles
+29. Finance Klinik and Data Analyst stay READ-ONLY (rule 186); laboratory `Finance` is untouched.
+
+## 27. Feature flag governance
+30. `FEATURE_RME_INVOICE_CORRECTION` stays **OFF**; the three operational correction permissions stay
+    granted to NO role. Strict pricing and price exceptions stay OFF (source-controlled; no environment
+    key can enable either). Post-payment correction, refund and Rp0 adjustment are NOT_ACTIVE.
+
+## 28. Refund restrictions
+31. Nothing here refunds, reverses or credits. Refund execution remains unbuilt (rule 189).
+
+## 29–30. PostgreSQL concurrency & idempotency
+32. Lock order unchanged (invoice row, then correction row). D10 races and correction apply idempotency stay
+    proven on PostgreSQL 16 by `RmeInvoiceCorrectionConcurrencyTest` (skips on SQLite, runs in CI).
+
+## 31. Regression requirements
+33. Suites `tests/Feature/RmeManualPricing/*` (Invoice, Correction, Governance, BranchBoundary; token
+    `RmeManualPricing`) are declared in
+    `config/ci_runner.php` `critical_gate_mandatory_suites`. Superseded tests in
+    `RmeTariffAuthority*` / `RmeInvoiceCorrectionTariffAuthorityTest` were REVISED in place with a
+    `REVISED by` note — never deleted.
+
+## 32–33. Production deployment & rollback
+34. No migration, no seeder, no permission change. Deploy with `scripts/deploy-vps-runner.sh` executed
+    INSIDE the VPS. Production verification is read-only; never create a fake invoice, payment or
+    correction. Rollback = code rollback to the previous GO; no data change to undo (no row was written
+    by the release itself).
+
+## 34. GO acceptance
+35. Full tag `revision-rme-manual-pricing-authority-1-go` only when: revised D21 recorded, mandatory tariff
+    dependency removed and verified, money validation intact, correction compatibility proven, Rp0 safety
+    intact, D1/D7/D10 intact, flag OFF, security review PASS, regression PASS, rules synced, required CI
+    PASS, merge verified, VPS deploy `exit=0` + `DEPLOY OK`, production verification PASS. A skipped Full
+    Suite is reported as SKIPPED, never PASS.

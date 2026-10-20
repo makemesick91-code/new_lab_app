@@ -1,44 +1,48 @@
-# FEATURE-RME-BRANCH-TARIFF-PROVISIONING-1
+# REVISION-RME-MANUAL-PRICING-AUTHORITY-1
 #
-# Provisioning governance for branch tariffs (owner D21 / D21h). No owner-approved
-# tariff list exists anywhere (repository, VPS, connected documents, local files),
-# so NO tariff is imported, invented, copied between branches or derived from an
-# invoice. Production TLK1's 11 tariffs were found to be the Sprint 19
-# TariffSeeder development defaults (byte-identical, one second, no audit row),
-# which readiness counted exactly like approved prices.
+# Owner D21 REVISED (2026-10-20): there is NO mandatory official treatment
+# tariff. The authorized cashier types the price of every ORIGINAL invoice line;
+# prices may differ per branch and per patient. The issued invoice is the
+# immutable financial snapshot and changes only through the maker-checker
+# correction workflow (D1 / D7 / D10 unchanged), which is now TARIFF-INDEPENDENT.
 #
-# This release adds APPROVAL PROVENANCE so coverage and approval can never be
-# confused again:
-#   - mst_tariffs gains nullable approval_reference / approval_recorded_by /
-#     approval_recorded_at (additive, not mass-assignable, nothing backfilled);
-#   - rme:tariff-import --apply REQUIRES --approval-reference, bound into the
-#     reviewed digest; CREATE rows carry it; an identical-price tariff without
-#     provenance is ATTESTED under a row lock (price untouched); a different
-#     price is still a CONFLICT (create-only preserved);
-#   - a master-data change of price / date / treatment withdraws the approval;
-#   - readiness reports provenance and `strict_eligible`; a strict branch with
-#     unapproved tariffs is FAIL; the template prints provenance.
+# Runtime changes:
+#   - RmeInvoicePricingService prices MANUAL for every branch: the cashier price
+#     is kept after server-side integer-cents validation; no tariff is read,
+#     compared, recorded or prefilled; a named treatment must be active
+#     (INVOICE_TREATMENT_INVALID); a blank / malformed unit price is refused,
+#     never silently zero;
+#   - new price provenance MANUAL_CASHIER_ENTRY / MANUAL_FREE_TEXT /
+#     CORRECTION_MANUAL_ENTRY (historical TARIFF_* / TRANSITIONAL_* untouched);
+#   - strict tariff mode LEGACY_SUPERSEDED: `strict_branch_codes` is a
+#     source-controlled empty list, no environment key can enable it;
+#   - correction submit / approve / apply hold no tariff dependency;
+#     TARIFF_AUTHORITY_CHANGED is no longer a staleness reason;
+#   - cashier form: no tariff autofill, manual-pricing notice, integer-cents
+#     display total;
+#   - tariff readiness reports PRICING_AUTHORITY=MANUAL_CASHIER_ENTRY.
 #
-# Strict pricing stays OFF everywhere, price exceptions OFF, FEATURE_RME_INVOICE_
-# CORRECTION OFF, no permission or role change. One additive migration. Rule 193.
+# No migration, no seeder, no permission or role change. FEATURE_RME_INVOICE_
+# CORRECTION stays OFF; its operational permissions stay granted to no role;
+# post-payment correction, refund and Rp0 adjustment stay NOT_ACTIVE. Rule 194.
 #
-# Type FOUNDATION_SPRINT: financial master-data governance across Tariff +
-# RmeInvoice readiness, one migration; audit level 3. security_impact true.
+# Type FOUNDATION_SPRINT: financial authority across RmeInvoice + Tariff +
+# Treatment + cashier UI; audit level 3. security_impact true.
 
-id: FEATURE-RME-BRANCH-TARIFF-PROVISIONING-1
+id: REVISION-RME-MANUAL-PRICING-AUTHORITY-1
 type: FOUNDATION_SPRINT
-module: Tariff
-title: "Branch tariff provisioning governance — approval provenance, digest-bound import, readiness gate; no tariff imported (official source missing)"
+module: RmeInvoice
+title: "Owner D21 revised to manual cashier pricing — tariff optional, server money validation, MANUAL provenance, tariff-independent correction; correction stays OFF"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 runtime_change: true
-schema_change: true
-frontend_change: false
+schema_change: false
+frontend_change: true
 security_impact: true
 branch_isolation_impact: false
 ledger_impact: false
 deploy_required: true
 browser_required: false
 test_profiles: [tariff, rme, cashier, billing]
-go_tag: feature-rme-branch-tariff-provisioning-1-foundation-go
-inherits_parent_go: feature-rme-branch-tariff-authority-1-foundation-go
+go_tag: revision-rme-manual-pricing-authority-1-go
+inherits_parent_go: feature-rme-branch-tariff-provisioning-1-foundation-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1

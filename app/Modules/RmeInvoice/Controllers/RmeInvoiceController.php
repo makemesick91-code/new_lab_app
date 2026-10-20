@@ -495,7 +495,7 @@ SQL;
 
     public function create(Request $request, ClinicVisit $clinicVisit): View
     {
-        $this->authorize('create', RmeInvoice::class);
+        $this->authorize('create', [RmeInvoice::class, $clinicVisit]);
 
         $existingInvoice = $this->service->findInvoiceForVisit($clinicVisit);
         if ($existingInvoice) {
@@ -504,22 +504,17 @@ SQL;
                 ->with('status', 'Tagihan sudah ada untuk kunjungan ini.');
         }
 
-        $treatments = $this->treatments->listActive();
-
+        // REVISION-RME-MANUAL-PRICING-AUTHORITY-1 — the cashier types every
+        // price; the form carries no tariff, no autofill and no pricing mode.
         return view('rme.cashier.create', [
             'visit' => $clinicVisit->load($this->cashierVisitRelations()),
-            'treatments' => $treatments,
-            // FEATURE-RME-BRANCH-TARIFF-AUTHORITY-1 — branch mode + tariff hints (display only).
-            'pricingContext' => $this->service->pricingContextFor(
-                $clinicVisit,
-                $treatments->pluck('id')->map(fn ($id) => (int) $id)->all(),
-            ),
+            'treatments' => $this->treatments->listActive(),
         ]);
     }
 
     public function store(CreateRmeInvoiceRequest $request, ClinicVisit $clinicVisit): RedirectResponse
     {
-        $this->authorize('create', RmeInvoice::class);
+        $this->authorize('create', [RmeInvoice::class, $clinicVisit]);
 
         $invoice = $this->service->create($clinicVisit, $request->user(), $request->validated());
 

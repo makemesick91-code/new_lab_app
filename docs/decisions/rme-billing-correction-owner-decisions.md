@@ -19,6 +19,17 @@ Three facts are kept apart and never merged:
 A decision is only as far along as the last label that is evidenced. A brief's
 "recommended default" or a proposal column is never an approval.
 
+## Decision chronology
+
+| Date (WITA) | Decision | Status | Source |
+|---|---|---|---|
+| 2026-10-17 | D1, D7, D10, D21 (branch tariff authority) | `OWNER_POLICY_APPROVED` | brief of `FEATURE-RME-BRANCH-TARIFF-AUTHORITY-1` |
+| 2026-10-20 | **D21 REVISED — manual cashier pricing** | `OWNER_POLICY_APPROVED` (`APPROVED_REVISED`) | brief of `REVISION-RME-MANUAL-PRICING-AUTHORITY-1` |
+| 2026-10-20 | D21 of 2026-10-17 (branch tariff authority) | **`SUPERSEDED`** by the revision above | — |
+
+The earlier D21 text is kept below, marked SUPERSEDED, as the record of what was
+decided and enforced between 2026-10-17 and 2026-10-20. It is never deleted.
+
 ## Provenance of D1, D7, D10 and D21
 
 - **Source:** the owner (Raushan Fikri Ridha) supplied the four decisions as
@@ -109,7 +120,68 @@ Rollback implication: while the correction flag is OFF no correction can leave
 `SUBMITTED`/`APPROVED`. Before switching the flag OFF, every active correction
 must be resolved (rejected or cancelled), or its invoice stays unpayable.
 
-### D21 — Price authority — `OWNER_POLICY_APPROVED`, `REPOSITORY_POLICY_RECORDED`
+### D21 (CURRENT) — Manual cashier pricing — `OWNER_POLICY_APPROVED` (`APPROVED_REVISED`), `REPOSITORY_POLICY_RECORDED`, technical enforcement: see rule 194
+
+**Provenance.** The owner (Raushan Fikri Ridha) supplied the revision as
+task-supplied decision evidence in the brief for
+`REVISION-RME-MANUAL-PRICING-AUTHORITY-1`, recorded in this repository on
+**2026-10-20 (WITA)**. That is the date this entry was written; no signature,
+timestamp or approval reference was invented. `TECHNICAL_ENFORCEMENT_DEPLOYED` is
+claimed only by the sprint evidence once production is verified
+(`docs/sprints/revision-rme-manual-pricing-authority-1.md`).
+
+**Policy (owner's words, normalised).** There is **no mandatory official treatment
+tariff**.
+
+1. The authorized cashier enters the price of every line of the **original**
+   invoice manually.
+2. No mandatory tariff lookup, no mandatory tariff equality, no automatic branch
+   tariff fallback, no mandatory official price document.
+3. A treatment price may legitimately differ **between branches** and **between
+   patients**.
+4. The tariff master is **optional** and is never required to create or correct
+   an invoice.
+5. The original invoice price is the **authoritative financial snapshot** of that
+   issued invoice and is preserved.
+6. After an invoice is saved and issued, its billing amounts may **not be edited
+   directly**; every later change uses the authorized Billing Correction workflow
+   (maker-checker, branch authorization, audit, invoice version check, balance
+   validation, immutable snapshots, payment concurrency protection — D1, D7, D10).
+7. Every money value is validated authoritatively on the server; relevant
+   financial writes are audited.
+8. Special zero-value transactions follow separate eligibility rules (not this
+   decision).
+
+**Technical implications** — rule 194: every new invoice line records
+`pricing_mode = MANUAL` and `price_source` ∈ {`MANUAL_CASHIER_ENTRY`,
+`MANUAL_FREE_TEXT`, `CORRECTION_MANUAL_ENTRY`}; the tariff master is never read on
+the authoritative pricing path; the correction tariff gate and the
+`TARIFF_AUTHORITY_CHANGED` staleness are removed; the strict tariff mode is
+`LEGACY_SUPERSEDED` (source-controlled empty list, no environment override). D1,
+D7 and D10 are unchanged. Tariff data and its provenance are preserved.
+
+#### D21 sub-decision reconciliation (2026-10-20)
+
+Each tariff-era sub-decision was re-evaluated against the revised D21. Nothing is
+marked approved that the owner did not decide.
+
+| Code | Question (tariff era) | Status after the revision | Reason / current behaviour |
+|---|---|---|---|
+| D21a | Maximum duration of the transitional period | `NOT_APPLICABLE` | Manual pricing is the policy, not a transition. The `BRANCH_TRANSITIONAL` WATCH no longer arises. |
+| D21b | Who approves a price/discount exception | `NOT_APPLICABLE` (tariff exceptions) | There is no tariff to deviate from. **Discount approval authority is NOT decided** — folded into D21c. |
+| D21c | Maximum discount | **`PENDING_SUB_DECISION`** (re-scoped: general discount policy) | Enforced today: `0 ≤ discount ≤ line gross` on invoice and correction; no percentage/amount cap is invented. |
+| D21d | Maximum deviation from the tariff | `NOT_APPLICABLE` | No mandatory tariff. |
+| D21e | Exception-approval threshold | `NOT_APPLICABLE` | No tariff exceptions. |
+| D21f | Maximum override amount | `NOT_APPLICABLE` | No tariff override; the only ceiling is the decimal(15,2) column (overflow refused). |
+| D21g | Intrinsically free treatments / Rp0 consultation & control | **`PENDING_SUB_DECISION`** | Original invoice: pre-revision behaviour kept (Rp0 accepted, audited as `zero_value_lines`). Correction: every new Rp0 line/total refused. The approved Rp0 *adjustment* scope (Kontrol / Konsultasi Dokter, rule 188 §12) is not built. |
+| D21h | Official tariff data per billing branch | `NOT_APPLICABLE` as a prerequisite | The tariff master is optional reference; no price list is required to bill. Tariff import/provenance governance (rule 193) stays available. |
+| D21i | Which date selects the tariff in force | `NOT_APPLICABLE` for pricing | Retained only for optional reference resolution (readiness / template). |
+
+### D21 (2026-10-17) — Price authority — **SUPERSEDED 2026-10-20** by the revised D21 above
+
+> Kept as the historical record. Do not enforce. Its mandatory tariff authority,
+> tariff equality and correction-only-within-tariff rules were withdrawn by the
+> owner; the strict mode it introduced is `LEGACY_SUPERSEDED` (rule 194).
 
 Policy:
 
@@ -124,7 +196,7 @@ Technical implications: see rule 192 and
 `docs/sprints/feature-rme-branch-tariff-authority-1.md`. Strict pricing is an
 explicit per-branch opt-in; nothing becomes strict because it has some tariffs.
 
-#### D21 sub-decisions — PENDING_SUB_DECISION
+#### D21 (2026-10-17) sub-decisions — superseded; see the reconciliation table above
 
 D21 approves the principle. These parameters were **not** stated and are not
 invented; until each is decided the code takes the fail-closed default shown.
@@ -161,9 +233,10 @@ their text. Decision codes are per register — the KTP-OCR "D7" is a different 
 
 ## Activation still requires (rule 191 §20, unchanged order)
 
-1. Recorded decisions — D1, D7, D10, D21 now recorded (D1a, D21a–h still open).
-2. D21 enforcement + tariffs per billing branch — the mechanism ships here; the
-   tariff data does not exist yet for SPN4, the only branch that bills.
+1. Recorded decisions — D1, D7, D10, D21 (revised 2026-10-20) recorded. Still
+   open: D1a (who applies), D21c (discount policy), D21g (Rp0).
+2. ~~D21 enforcement + tariffs per billing branch~~ — **no longer a prerequisite**
+   (revised D21): prices are manual and correction is tariff-independent (rule 194).
 3. `RoleSeeder` grant (D1 mapping above; D1a open).
 4. Flag ON via the environment + config cache rebuilt as `daengtisiams`.
 5. Authenticated maker/checker pilot with two distinct real accounts.

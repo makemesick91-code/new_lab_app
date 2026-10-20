@@ -29,6 +29,11 @@ Extends rule 190; where they disagree about what EXISTS, this rule is newer.
 > correction now BLOCKS payment. D21 (§4) is IMPLEMENTED as branch tariff
 > authority with every branch TRANSITIONAL. The flag is still OFF and no role is
 > granted. Text below kept as the record of what was true at release.
+>
+> **[Rule 194, 2026-10-20: D21 REVISED to manual cashier pricing. "The D21 price
+> authority enforced" in §1 item 1 now means rule 194 (server-validated manual
+> prices); tariff data per billing branch is NO LONGER an activation
+> prerequisite. D1, D7, D10 and every other activation step are unchanged.]**
 
 3. D1 (pre-payment approval authority), D7 (receipt versioning policy), D10
    (does a PENDING correction block payment), D21 (price authority) are still
@@ -89,6 +94,10 @@ Extends rule 190; where they disagree about what EXISTS, this rule is newer.
     must build `invoice_versions` explicitly — the helper never overwrites one.
 
 ## 4. Price & discount authority (D21) — PENDING_OWNER_DECISION, BLOCKED
+
+> **SUPERSEDED by rule 194 (D21 revised 2026-10-20).** Price authority is MANUAL
+> cashier entry, owner-approved; items 13–14 below are the historical record. The
+> remaining open parts are D21c (discount policy) and D21g (Rp0).
 13. Cashiers still type item prices and discounts freely (audit BCF-01). Rp0 is
     still refused by the correction proposal (no zero line, no zero/negative total).
 14. Measured 2026-10-17 (production, read-only): tariffs exist ONLY for TLK1
