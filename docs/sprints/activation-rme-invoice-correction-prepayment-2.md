@@ -114,5 +114,57 @@ New: `RmeInvoiceCorrectionPilotActivationTest` (declared in
 `config/ci_runner.php` `critical_gate_mandatory_suites`) and two PostgreSQL races
 (simultaneous approvals serialize to ONE application; atomic commit).
 
-_Sections 8+ (mutation, security review, CI, deploy, production verification,
-activation, GO decision) are filled in by the evidence commit._
+## 8. Mutation testing
+
+The harness reverts each mutant by file COPY, checks the file actually changed
+before banking a result, and verifies byte-identical restoration by SHA-256.
+
+**Pass 1 — 20 mutants: 19 KILLED, 1 SURVIVED.** The killed mutants cover:
+
+- the pilot gate removed from submit, approve and recovery apply;
+- the allowlist admitting everything, not canonicalizing, or prefix-matching;
+- approval no longer applying (D1a removed);
+- the maker allowed to approve or to apply;
+- provenance always kept or never kept;
+- money rounding or truncating again;
+- the correction quantity cap reverting to 10 000;
+- the create form ignoring the pilot;
+- readiness not checking distinct accounts, or ignoring role drift;
+- reject gated by the pilot (inverse mutant);
+- an apply refusal that does not roll back the approval.
+
+The survivor was **M19 — cashier panel ignores the pilot**. The panel's pilot
+gate was untested; a test was added (`46c3ad99`).
+
+**Pass 2 — 7 mutants, all KILLED:**
+
+| Mutant | Description |
+|---|---|
+| N01 | Alias-coded live branch admitted (L1 reverted) |
+| N02 | Treatment change keeps provenance (L2 reverted) |
+| N03 | Approve also requires the APPLY permission |
+| N04 | Approval audit lacks `application_mode` |
+| N05 | Readiness probe commits instead of rolling back |
+| N06 | Empty allowlist admits all |
+| N07 | M19 re-run against the new test |
+
+**Real survivors: 0.**
+
+## 9. Independent security review
+
+No CRITICAL, HIGH or MEDIUM findings. Four LOW findings, all fixed in `b26777a8`:
+
+| Finding | Fix |
+|---|---|
+| **L1** — a live branch carrying an alias code (`SUN4`) could ride the SPN4 approval. | Only the declared side is canonicalized now; the live branch must carry the canonical code exactly. |
+| **L2** — a treatment change at the same price kept the old price provenance. | A treatment change now re-labels it `CORRECTION_MANUAL_ENTRY`. |
+| **L3** — the correction-form preview and the oversight dashboard formatted money in floating point. | Both now compute in integer cents in the browser. |
+| **L4** — the readiness probe run as root could leave a root-owned Spatie permission-cache file. | It refuses to run as root. |
+
+One informational edge is documented in rule 195 §17. A pre-D1a APPROVED row
+outside the pilot can be neither applied nor rejected; only its maker can cancel
+it. Production holds 0 corrections, and the probe reports any such row as
+`ACTIVE_CORRECTION_OUTSIDE_PILOT`.
+
+_Sections 10+ (CI, deploy, production verification, activation, GO decision) are
+filled in by the evidence commit._
