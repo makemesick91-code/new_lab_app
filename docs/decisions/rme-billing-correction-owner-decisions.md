@@ -120,7 +120,7 @@ Rollback implication: while the correction flag is OFF no correction can leave
 `SUBMITTED`/`APPROVED`. Before switching the flag OFF, every active correction
 must be resolved (rejected or cancelled), or its invoice stays unpayable.
 
-### D21 (CURRENT) — Manual cashier pricing — `OWNER_POLICY_APPROVED` (`APPROVED_REVISED`), `REPOSITORY_POLICY_RECORDED`, technical enforcement: see rule 194
+### D21 (CURRENT) — Manual cashier pricing — `OWNER_POLICY_APPROVED` (`APPROVED_REVISED`), `REPOSITORY_POLICY_RECORDED`, `TECHNICAL_ENFORCEMENT_DEPLOYED` (2026-10-20, runtime `576e8aae`, tag `revision-rme-manual-pricing-authority-1-go`; rule 194)
 
 **Provenance.** The owner (Raushan Fikri Ridha) supplied the revision as
 task-supplied decision evidence in the brief for

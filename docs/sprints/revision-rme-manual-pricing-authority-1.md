@@ -222,20 +222,52 @@ although the file no longer references the class — `grep` returns only the
 `TariffPricingMode` import, and the source-scan test pins the absence. The graph is
 navigation, not evidence; the test is the authority.
 
-## 9. Validation still to be recorded
+## 9. Release evidence (filled from real output after deployment)
 
-The rows below are filled from real output only, in the evidence commit after
-deployment. Until then they are **PENDING**, not PASS.
-
-| Gate | Status |
+| Gate | Result |
 |---|---|
 | Mutation testing | 18/18 KILLED (see §8b) |
 | Independent security review | PASS after fixing F1 + F2 (see §8a) |
-| Authoritative CI on the exact candidate SHA | PENDING |
-| Full Suite | expected `SKIPPED` by the temporary Full-Suite policy — reported as SKIPPED, never PASS |
-| Merge verification | PENDING |
-| VPS deploy (`exit=0` + `DEPLOY OK`, inside the VPS) | PENDING |
-| Read-only production verification | PENDING |
+| PR | #495 → base `feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report` |
+| Candidate | `ce3dfc4efce77e6f356b7ffd880cfec026f48616`, tree `b385b3fc180fbdc7bb282bc16f5d8f08b806740e` |
+| Authoritative CI on the exact candidate SHA | run `39457174449` — **success**: NSF-R012 Quality, CICD-CTRL Classifier (`gate_profile=unknown_high_risk`), CICD-CTRL Selective Module, **NSF-R011 Critical 6014 passed / 31 867 assertions, `critical_test_exit_status=0`** (all four `RmeManualPricing*` suites PASS in the log), NSF-9 Release Safety & Smoke, NSF-10 Release Evidence, Phase 3 Android gate. The second Critical row is the inactive runner variant (skipped by design). |
+| Full Suite | **SKIPPED** — `full_suite_authorized=false`, `full_suite_defer_reason=FULL_SUITE_NOT_ENABLED_FOR_EVENT`, `temporary_full_suite_policy_active=true` (job had 0 steps). `run_full_suite=required` is the classifier's risk signal, not an authorization. `FULL_SUITE_EXECUTION_COUNT=0`. **Not a pass.** |
+| Merge | squash `576e8aaeafa29186251da18f47ab2ce84c751c53`, tree `b385b3fc…` **== candidate tree**, parent `1b733748` (base did not move) |
+| VPS deploy | `bash scripts/deploy-vps-runner.sh start` run INSIDE the VPS; run `20261020-185122`: **`exit=0`, `DEPLOY OK`, `DEPLOY_HEAD_TARGET_MATCH=YES`**, `DEPLOY_SNAPSHOT_CLEANED=YES`; pre-migrate backup `pre_auto_deploy_20261020-185122.sql` (32 104 166 B, NSF-10 backup-verify GO); **Nothing to migrate**. Production HEAD/tree = `576e8aae` / `b385b3fc`. The deploy log's WATCH lines are pre-existing and equal in count to the previous deploy (4): PgBouncer not installed (non-blocking, routing disabled), release-evidence `local` profile optional artefacts, `SMOKE-HTTP-HEALTH` loopback 404 (co-tenant nginx shadow — the canonical domain answers 200). |
+| Read-only production verification | see §9a |
+| GO tag | `revision-rme-manual-pricing-authority-1-go` → `576e8aae` (the deployed runtime commit; exact match locally, on origin and at VPS HEAD). This evidence commit is docs-only and is **not** deployed. |
+
+### 9a. Production verification (read-only, 2026-10-20 ~19:05 UTC / 2026-10-21 03:05 WITA)
+
+| Check | Before (16:25 UTC) | After |
+|---|---|---|
+| Health `/login` `/health/live` `/health/ready` `/health/lb` (https://daengtisia.online) | 200 ×4 | 200 ×4 |
+| Guest `/rme/cashier`, `/rme/cashier/1/billing/create` | — | 302 (auth redirect, no 500) |
+| Public storage probe | — | 403 |
+| `rme:tariff-authority-readiness` mode | 4 × TRANSITIONAL, WATCH `BRANCH_TRANSITIONAL` ×4 | **4 × MANUAL**, `PRICING_AUTHORITY=MANUAL_CASHIER_ENTRY`, no `BRANCH_TRANSITIONAL`; only `TARIFF_PROVENANCE_UNVERIFIED TLK1` (tariff-master hygiene) |
+| `strict_branch_codes` / `price_exceptions_enabled` | `(none)` / false | `[]` / false (`config:show`) |
+| `rme.invoice_correction` | OFF (`via=default`) | OFF (`via=default`) |
+| Environment / debug / maintenance | pilot / OFF / OFF | pilot / OFF / OFF |
+| Failed jobs | — | none |
+| Invoices (count / Σ grand total) | 7 / 7 548 000.00 | 7 / 7 548 000.00 |
+| Payments (count / Σ amount) | 8 / 5 548 000.00 | 8 / 5 548 000.00 |
+| Corrections | 0 | 0 |
+| Tariffs | 11 | 11 |
+| Invoice items (with recorded `price_source`) | 8 (0) | 8 (0) — no historical row rewritten |
+| Max invoice id | 41 | 41 |
+| `sys_audit_logs` rows | 1601 | 1601 |
+| `laravel.log` bytes / ERROR lines | 1 437 201 / 162 (last write Oct 9) | 1 437 201 / 162 — **0 new errors** |
+| Deployed source | — | cashier form carries `data-pricing-authority="MANUAL_CASHIER_ENTRY"` and no `data-tariff`; `RmeInvoicePolicy::create` and `RmeInvoiceService::create` carry the working-branch scope; `RmeInvoiceCorrectionService` holds no `BranchTariffAuthorityService` reference |
+
+No invoice, payment, correction, tariff or patient row was created, edited or
+deleted; no real correction was executed; no flag or permission changed.
+Pre-existing, not task-owned, left untouched: an untracked `storage/runtime-home/`
+directory in the production checkout.
+
+**Not proven in production** (no fake data is created to manufacture it): an
+authenticated cashier rendering the form and billing a real visit. The manual path
+is proven by the automated suites and by the deployed source; the first real
+invoice will carry `MANUAL_CASHIER_ENTRY`.
 
 ## 10. Rollback
 
