@@ -2,6 +2,7 @@
 
 namespace App\Modules\ClinicOversight\Support;
 
+use App\Modules\RmeInvoice\Support\RmeInvoiceDocument;
 use App\Support\Clinical\ClinicalClock;
 use Carbon\CarbonImmutable;
 use DateTimeInterface;
@@ -13,16 +14,35 @@ use DateTimeInterface;
  */
 final class OversightFormat
 {
-    /** Integer cents as Rupiah for display: "Rp 1.250.000". */
+    /**
+     * Integer cents as Rupiah for display: "Rp 1.250.000", or "Rp 175.000,50"
+     * when the amount is not a whole rupiah.
+     *
+     * ACTIVATION-RME-INVOICE-CORRECTION-PREPAYMENT-2 (rule 195 §25): this used to
+     * TRUNCATE the cents (intdiv), so a stored 175000.50 printed as
+     * "Rp 175.000" on the frozen correction document and in oversight. Nothing
+     * is rounded or dropped now: what is printed is what is stored.
+     */
     public static function rupiahCents(int $cents): string
     {
-        return 'Rp '.number_format(intdiv($cents, 100), 0, ',', '.');
+        $negative = $cents < 0;
+        $absolute = abs($cents);
+        $text = number_format(intdiv($absolute, 100), 0, ',', '.');
+
+        if ($absolute % 100 !== 0) {
+            $text .= ','.str_pad((string) ($absolute % 100), 2, '0', STR_PAD_LEFT);
+        }
+
+        return 'Rp '.($negative ? '-' : '').$text;
     }
 
-    /** A decimal money value (string|float|int|null) as Rupiah for display. */
+    /**
+     * A decimal money value (string|float|int|null) as Rupiah for display —
+     * parsed exactly (decimal strings digit by digit), never via a float.
+     */
     public static function rupiah(mixed $value): string
     {
-        return 'Rp '.number_format((float) ($value ?? 0), 0, ',', '.');
+        return self::rupiahCents(RmeInvoiceDocument::toCents($value ?? 0));
     }
 
     /**

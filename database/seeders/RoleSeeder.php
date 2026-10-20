@@ -103,6 +103,11 @@ class RoleSeeder extends Seeder
             'view reports',
         ],
         'Admin Klinik' => [
+            // ACTIVATION-RME-INVOICE-CORRECTION-PREPAYMENT-2 (rule 195) — owner D1:
+            // Admin Klinik APPROVES a correction within their working branch, and
+            // under owner D1a approving APPLIES it in the same transaction. The
+            // service refuses an approver who requested the correction.
+            'approve_rme_invoice_correction',
             'view dashboard',
             'view_branch_dashboard',
             'manage patients',
@@ -358,6 +363,11 @@ class RoleSeeder extends Seeder
             'view dashboard',
             'view_clinic_visits',
             'manage_rme_billing',
+            // ACTIVATION-RME-INVOICE-CORRECTION-PREPAYMENT-2 (rule 195) — owner D1:
+            // the cashier SUBMITS a pre-payment invoice correction. Never approve
+            // or apply: the checker is a different account (enforced per account
+            // in RmeInvoiceCorrectionService, Super Admin included).
+            'request_rme_invoice_correction',
             // FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-01 — capture and read the
             // signed PERSETUJUAN TINDAKAN MEDIS that gates RME payment.
             'view_rme_consents',
@@ -443,6 +453,16 @@ class RoleSeeder extends Seeder
             'view_satusehat_multi_branch_readiness',
             // --- from Kasir --------------------------------------------------
             'view_rme_payment_reports',
+            // ACTIVATION-RME-INVOICE-CORRECTION-PREPAYMENT-2 (rule 195) — owner
+            // decision 2026-10-21 ("Front Office request+approve"): the merged
+            // front desk inherits BOTH halves of D1 — Kasir's request and Admin
+            // Klinik's approve — because this role IS their exact union
+            // (FrontOfficeRoleTest). Holding both permissions does NOT let one
+            // person approve their own request: maker != checker is enforced per
+            // ACCOUNT under the invoice row lock. Within one branch, Front Office
+            // A may approve Front Office B's request, never their own.
+            'request_rme_invoice_correction',
+            'approve_rme_invoice_correction',
         ],
         'Perawat' => [
             'view dashboard',

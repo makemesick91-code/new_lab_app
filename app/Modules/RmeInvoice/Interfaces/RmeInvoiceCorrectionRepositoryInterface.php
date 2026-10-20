@@ -97,4 +97,21 @@ interface RmeInvoiceCorrectionRepositoryInterface
     public function createDocumentVersion(array $data): RmeInvoiceDocumentVersion;
 
     public function findDocumentVersion(int $id): ?RmeInvoiceDocumentVersion;
+
+    /**
+     * Rule 195 — active (SUBMITTED/APPROVED) corrections per branch id. Read-only
+     * readiness: an active correction blocks payment of its invoice (D10).
+     *
+     * @return array<int, int>
+     */
+    public function activeCountByBranch(): array;
+
+    /**
+     * Rule 195 — UNPAID invoices with no payment and a positive grand total in
+     * the given branches: the population a pre-payment correction could target.
+     * A candidate count only; full eligibility is decided at submission.
+     *
+     * @param  list<int>  $branchIds
+     */
+    public function positiveUnpaidUnsettledInvoiceCount(array $branchIds): int;
 }

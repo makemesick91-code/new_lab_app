@@ -99,12 +99,15 @@ it('accepts an added free-text line', function () {
 
 // REVISED (was: refused CORRECTION_TARIFF_UNVERIFIED). A branch without a tariff
 // corrects at the typed price — and still never borrows another branch's tariff.
+// REVISED by rule 195: the second branch is admitted to the (fail-closed) pilot
+// allowlist, and the approval applies on its own (D1a) — no separate apply call.
 it('accepts a correction in a branch without any tariff, using the typed price and never another branch\'s tariff', function () {
     $branch = Branch::factory()->create(['code' => 'IC05', 'is_rme_enabled' => true, 'is_active' => true]);
+    ricPilot(['IC01', 'IC05']);
     $invoice = ricInvoice(ricVisit($branch));
     Tariff::query()->where('branch_id', $branch->id)->delete(); // IC01 still holds tariffs for both treatments
 
-    $correction = ricApply(ricApprove(ricSubmit($invoice, lines: ricLinesReducing($invoice, '65000'))));
+    $correction = ricApprove(ricSubmit($invoice, lines: ricLinesReducing($invoice, '65000')));
     $tambal = RmeInvoiceItem::query()->where('rme_invoice_id', $invoice->id)->where('treatment_id', test()->treatment2->id)->sole();
 
     expect($correction->status)->toBe(RmeInvoiceCorrectionStatus::APPLIED)
@@ -130,7 +133,8 @@ it('approves normally when a tariff changed since submission', function () {
     $correction = ricSubmit($invoice);
     Tariff::query()->where('branch_id', test()->branch->id)->where('treatment_id', test()->treatment2->id)->update(['price' => '60000.00']);
 
-    expect(ricApprove($correction)->status)->toBe(RmeInvoiceCorrectionStatus::APPROVED)
+    // REVISED by rule 195 (D1a): the approval applies, so the outcome is APPLIED.
+    expect(ricApprove($correction)->status)->toBe(RmeInvoiceCorrectionStatus::APPLIED)
         ->and($correction->fresh()->stale_reason_code)->toBeNull();
 });
 
@@ -180,7 +184,9 @@ it('D1: lets a branch Kasir submit and that branch\'s Admin Klinik approve', fun
     $admin = rctPinned(test()->branch, [RmeInvoiceCorrectionPermission::APPROVE], 'Admin Klinik');
 
     $correction = ricSubmit(ricInvoice(), $kasir);
-    expect(ricApprove($correction, $admin)->status)->toBe(RmeInvoiceCorrectionStatus::APPROVED);
+    // REVISED by rule 195 (D1a): the Admin Klinik approval applies the correction.
+    expect(ricApprove($correction, $admin)->status)->toBe(RmeInvoiceCorrectionStatus::APPLIED)
+        ->and((int) $correction->fresh()->applied_by)->toBe((int) $admin->id);
 });
 
 it('D1: refuses an Admin Klinik of another branch', function () {
@@ -195,19 +201,30 @@ it('D1: refuses an Admin Klinik of another branch', function () {
 it('D1: lets Super Admin approve across branches, but never its own request', function () {
     $superAdmin = userInRole('Super Admin');
     $branch = Branch::factory()->create(['code' => 'IC07', 'is_rme_enabled' => true, 'is_active' => true]);
+    ricPilot(['IC01', 'IC07']); // REVISED by rule 195: both branches admitted to the pilot
 
     $theirs = ricSubmit(ricInvoice(ricVisit($branch)));
-    expect(ricApprove($theirs, $superAdmin)->status)->toBe(RmeInvoiceCorrectionStatus::APPROVED);
+    // REVISED by rule 195 (D1a): the cross-branch approval applies the correction.
+    expect(ricApprove($theirs, $superAdmin)->status)->toBe(RmeInvoiceCorrectionStatus::APPLIED);
 
     $own = ricSubmit(ricInvoice(), $superAdmin);
     expect(fn () => ricApprove($own, $superAdmin))->toThrow(RmeInvoiceCorrectionDenied::class);
 });
 
-it('D1: grants no correction permission to Kasir or Admin Klinik yet (activation is a separate ceremony)', function () {
-    foreach (['Kasir', 'Admin Klinik'] as $name) {
+// REVISED by rule 195 (ACTIVATION-RME-INVOICE-CORRECTION-PREPAYMENT-2): this
+// test pinned the dormant posture — "no correction permission for Kasir or Admin
+// Klinik yet". The activation ceremony has now granted D1: Kasir REQUESTS, Admin
+// Klinik APPROVES (which applies, D1a); neither holds the separate apply grant.
+it('D1: grants Kasir request only and Admin Klinik approve only (rule 195), never the separate apply', function () {
+    $expected = [
+        'Kasir' => [RmeInvoiceCorrectionPermission::REQUEST],
+        'Admin Klinik' => [RmeInvoiceCorrectionPermission::APPROVE],
+    ];
+
+    foreach ($expected as $name => $granted) {
         $role = Role::findByName($name);
         foreach (RmeInvoiceCorrectionPermission::OPERATIONAL as $permission) {
-            expect($role->hasPermissionTo($permission))->toBeFalse("{$name} unexpectedly holds {$permission}");
+            expect($role->hasPermissionTo($permission))->toBe(in_array($permission, $granted, true), "{$name} / {$permission}");
         }
     }
 });

@@ -54,8 +54,11 @@ it('does not strip the legacy permission grants', function (string $legacy, int 
     // 21 -> 22. Kasir is again deliberately unchanged — the completeness
     // report is a clinic-admin duty, not a cashier one.
     // FEATURE-PATIENT-DUPLICATE-RESOLUTION-MERGE-1 added `view_patient_duplicate_resolution` and `request_patient_merge` to Admin Klinik and Front Office (22 -> 24).
-    [FrontOfficeRole::LEGACY_ADMIN_CLINIC, 24],
-    [FrontOfficeRole::LEGACY_KASIR, 6],
+    // ACTIVATION-RME-INVOICE-CORRECTION-PREPAYMENT-2 (rule 195, owner D1) added
+    // `approve_rme_invoice_correction` to Admin Klinik (24 -> 25) and
+    // `request_rme_invoice_correction` to Kasir (6 -> 7); Front Office holds both.
+    [FrontOfficeRole::LEGACY_ADMIN_CLINIC, 25],
+    [FrontOfficeRole::LEGACY_KASIR, 7],
 ]);
 
 it('leaves a legacy role able to carry a user again, which is what rollback means', function (string $legacy) {

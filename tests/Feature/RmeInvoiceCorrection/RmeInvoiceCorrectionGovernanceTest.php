@@ -53,10 +53,23 @@ it('seeds the four new permissions and classifies each in a permission group', f
     }
 });
 
-it('grants the operational correction permissions to NO role except the Super Admin wildcard', function () {
+// REVISED by rule 195 (ACTIVATION-RME-INVOICE-CORRECTION-PREPAYMENT-2): this
+// pinned the dormant posture — "NO role except the Super Admin wildcard". D1 is
+// now granted: Kasir requests, Admin Klinik approves (which applies, D1a), Front
+// Office — their exact union — holds both (owner decision 2026-10-21). The
+// separate apply permission is still held by NO operational role, and every role
+// not listed must still hold nothing.
+it('grants the operational correction permissions exactly as rule 195 maps them', function () {
+    $map = [
+        'Kasir' => [RmeInvoiceCorrectionPermission::REQUEST],
+        'Admin Klinik' => [RmeInvoiceCorrectionPermission::APPROVE],
+        'Front Office' => [RmeInvoiceCorrectionPermission::REQUEST, RmeInvoiceCorrectionPermission::APPROVE],
+    ];
+
     foreach (Role::where('name', '!=', 'Super Admin')->get() as $role) {
+        $granted = $map[$role->name] ?? [];
         foreach (RmeInvoiceCorrectionPermission::OPERATIONAL as $permission) {
-            expect($role->hasPermissionTo($permission))->toBeFalse("{$role->name} must not hold {$permission} before the owner decides D1/D21");
+            expect($role->hasPermissionTo($permission))->toBe(in_array($permission, $granted, true), "{$role->name} / {$permission}");
         }
     }
 });

@@ -136,15 +136,39 @@ final class RmeInvoiceDocument
     }
 
     /**
-     * Rupiah with Indonesian thousands separators, no decimals — the same
-     * presentation every other RME money surface uses.
+     * Rupiah with Indonesian separators ("." thousands, "," decimals).
+     *
+     * A whole-rupiah amount prints with no decimals ("Rp 1.225.000"), exactly as
+     * before. A NON-whole amount prints its cents ("Rp 175.000,50").
+     *
+     * ACTIVATION-RME-INVOICE-CORRECTION-PREPAYMENT-2 (rule 195 §25): this used to
+     * round half-up to whole rupiah, so a stored 175000.50 printed as
+     * "Rp 175.001" — a financial document showing a figure that is not on the
+     * books. The stored value was always exact; only the presentation lied. It
+     * never rounds now: what is printed is what is stored.
      */
     public static function rupiah(int $cents): string
     {
         $negative = $cents < 0;
-        $whole = intdiv(abs($cents) + 50, 100);
+        $absolute = abs($cents);
+        $whole = intdiv($absolute, 100);
+        $fraction = $absolute % 100;
 
-        return ($negative ? '- ' : '').'Rp '.number_format($whole, 0, ',', '.');
+        $text = 'Rp '.number_format($whole, 0, ',', '.');
+        if ($fraction !== 0) {
+            $text .= ','.str_pad((string) $fraction, 2, '0', STR_PAD_LEFT);
+        }
+
+        return ($negative ? '- ' : '').$text;
+    }
+
+    /**
+     * rupiah() for a decimal(15,2) value as stored ("175000.50"), parsed exactly
+     * through toCents() — never through a float.
+     */
+    public static function rupiahDecimal(mixed $value): string
+    {
+        return self::rupiah(self::toCents($value));
     }
 
     /**

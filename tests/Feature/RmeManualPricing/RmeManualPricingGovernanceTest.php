@@ -46,8 +46,9 @@ it('reconciles every D21 sub-decision without approving anything the owner did n
         expect($matrix)->toMatch('/\| '.$code.' \|[^\n]*`PENDING_SUB_DECISION`/');
     }
 
-    // D1a (who applies) stays undecided.
-    expect($register)->toContain('D1a — who APPLIES an approved correction — PENDING_SUB_DECISION');
+    // REVISED by rule 195: D1a was decided 2026-10-21 (the checker's approval
+    // applies, atomically). D21c and D21g above are STILL pending.
+    expect($register)->toContain('D1a — who APPLIES an approved correction — `OWNER_POLICY_APPROVED`');
 });
 
 it('publishes rule 194 and marks the superseded tariff mandate in rules 188, 190, 191, 192 and 193', function () {
@@ -71,13 +72,23 @@ it('publishes rule 194 and marks the superseded tariff mandate in rules 188, 190
     expect((string) file_get_contents(base_path('CLAUDE.md')))->toContain('REVISION-RME-MANUAL-PRICING-AUTHORITY-1');
 });
 
-it('keeps invoice correction OFF and its operational permissions granted to no role', function () {
+// REVISED by rule 195 (ACTIVATION-RME-INVOICE-CORRECTION-PREPAYMENT-2): the
+// manual-pricing release pinned "no role holds a correction permission". The
+// activation ceremony granted D1/D1b; the flag still ships OFF by default — it is
+// switched on only through the environment, and only for the SPN4 pilot.
+it('keeps invoice correction OFF by default and grants its permissions exactly per rule 195', function () {
     $definition = require base_path('config/feature_flags.php');
     expect($definition['flags'][RmeInvoiceCorrectionFeatureGuard::FLAG]['default'])->toBeFalse();
 
+    $map = [
+        'Kasir' => [RmeInvoiceCorrectionPermission::REQUEST],
+        'Admin Klinik' => [RmeInvoiceCorrectionPermission::APPROVE],
+        'Front Office' => [RmeInvoiceCorrectionPermission::REQUEST, RmeInvoiceCorrectionPermission::APPROVE],
+    ];
+
     foreach (Role::where('name', '!=', 'Super Admin')->get() as $role) {
         foreach (RmeInvoiceCorrectionPermission::OPERATIONAL as $permission) {
-            expect($role->hasPermissionTo($permission))->toBeFalse("{$role->name} must not hold {$permission}");
+            expect($role->hasPermissionTo($permission))->toBe(in_array($permission, $map[$role->name] ?? [], true), "{$role->name} / {$permission}");
         }
     }
 });

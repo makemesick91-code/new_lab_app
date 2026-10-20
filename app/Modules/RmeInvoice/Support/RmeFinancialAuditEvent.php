@@ -183,6 +183,10 @@ final class RmeFinancialAuditEvent
             'document_version_original_id',
             'document_version_revision_id',
             'latest_version_matched_live_state',
+            // Rule 195 / D1a — how an application happened: AUTO_ON_APPROVAL
+            // (the checker's approval applied it in the same transaction) or
+            // MANUAL_RECOVERY (the legacy apply path for a pre-D1a APPROVED row).
+            'application_mode',
         ]));
 
         return array_merge([

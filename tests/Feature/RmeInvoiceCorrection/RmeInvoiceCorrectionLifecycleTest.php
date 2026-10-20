@@ -242,26 +242,35 @@ it('refuses approval by an account without the approve permission', function () 
         ->toBe(RmeInvoiceCorrectionDenied::PERMISSION_MISSING);
 });
 
-it('approves, audits and leaves the invoice untouched until application', function () {
+// REVISED by rule 195 (owner D1a, 2026-10-21): this test used to assert that an
+// approval left the invoice untouched until a separate apply. Under D1a the
+// checker's approval APPLIES the correction in the same transaction; the audit
+// of the approval itself (from SUBMITTED, by the checker) is unchanged.
+it('approves, audits and — under owner D1a — applies in the same transaction', function () {
     $invoice = ricInvoice();
     $correction = ricApprove(ricSubmit($invoice));
 
-    expect($correction->status)->toBe(RmeInvoiceCorrectionStatus::APPROVED)
+    expect($correction->status)->toBe(RmeInvoiceCorrectionStatus::APPLIED)
         ->and((int) $correction->decided_by)->toBe((int) test()->checker->id)
-        ->and((float) $invoice->fresh()->grand_total)->toEqual(500000.0);
+        ->and((int) $correction->applied_by)->toBe((int) test()->checker->id)
+        ->and((float) $invoice->fresh()->grand_total)->toEqual(350000.0);
 
     $row = ricAudit(RmeFinancialAuditEvent::ACTION_CORRECTION_APPROVED)->sole();
     expect($row->new_values['from_status'])->toBe('SUBMITTED')
         ->and((int) $row->performed_by)->toBe((int) test()->checker->id);
 });
 
+// REVISED by rule 195 (D1a): the replayed approval now finds an APPLIED row; it
+// is still a no-op — one approval, one application, never a second of either.
 it('treats a repeated approval as an idempotent no-op', function () {
     $correction = ricApprove(ricSubmit(ricInvoice()));
     $again = ricApprove($correction);
 
-    expect($again->status)->toBe(RmeInvoiceCorrectionStatus::APPROVED)
+    expect($again->status)->toBe(RmeInvoiceCorrectionStatus::APPLIED)
         ->and(ricAudit(RmeFinancialAuditEvent::ACTION_CORRECTION_APPROVED))->toHaveCount(1)
-        ->and(RmeInvoiceCorrectionEvent::where('to_status', 'APPROVED')->count())->toBe(1);
+        ->and(ricAudit(RmeFinancialAuditEvent::ACTION_CORRECTION_APPLIED))->toHaveCount(1)
+        ->and(RmeInvoiceCorrectionEvent::where('to_status', 'APPROVED')->count())->toBe(1)
+        ->and(RmeInvoiceCorrectionEvent::where('to_status', 'APPLIED')->count())->toBe(1);
 });
 
 it('rejects with a mandatory reason and a rejected correction can never be applied', function () {
@@ -278,8 +287,10 @@ it('rejects with a mandatory reason and a rejected correction can never be appli
     ricExpectRefusal(fn () => ricApply($rejected), 'CORRECTION_NOT_APPROVED');
 });
 
+// REVISED by rule 195 (D1a): an APPROVED-unapplied row now only exists from
+// before D1a, so the cancellable approved correction is built as that legacy shape.
 it('lets only the maker cancel, with a reason, and a cancelled correction cannot be applied', function () {
-    $correction = ricApprove(ricSubmit(ricInvoice()));
+    $correction = ricLegacyApproved(ricSubmit(ricInvoice()));
     $service = app(RmeInvoiceCorrectionService::class);
 
     $other = userWith(['request_rme_invoice_correction']);
@@ -367,9 +378,12 @@ function ricPaymentRowBypassingTheService(RmeInvoice $invoice, float $amount): v
     DB::table('trx_rme_invoices')->where('id', $invoice->id)->update(['status' => RmeInvoice::STATUS_PARTIAL]);
 }
 
+// REVISED by rule 195 (D1a): approve() now applies, so the separate apply() path
+// is exercised on the only rows it still serves — APPROVED rows that predate D1a.
+// The approval-time equivalent lives in RmeInvoiceCorrectionPilotActivationTest.
 it('marks a correction STALE when a payment row exists before application (defence behind D10), and applies nothing', function () {
     $invoice = ricInvoice();
-    $correction = ricApprove(ricSubmit($invoice));
+    $correction = ricLegacyApproved(ricSubmit($invoice));
     ricPaymentRowBypassingTheService($invoice, 100000);
 
     ricExpectRefusal(fn () => ricApply($correction), 'CORRECTION_STALE:PAYMENT_RECORDED');
@@ -390,9 +404,12 @@ it('marks a correction STALE at approval when the invoice changed since submissi
     expect($correction->fresh()->status)->toBe(RmeInvoiceCorrectionStatus::STALE);
 });
 
+// REVISED by rule 195 (D1a): approve() now applies, so the separate apply() path
+// is exercised on the only rows it still serves — APPROVED rows that predate D1a.
+// The approval-time equivalent lives in RmeInvoiceCorrectionPilotActivationTest.
 it('marks a correction STALE when the invoice content changed outside the workflow', function () {
     $invoice = ricInvoice();
-    $correction = ricApprove(ricSubmit($invoice));
+    $correction = ricLegacyApproved(ricSubmit($invoice));
     // A writer outside the workflow edits an item (the way such a change actually arises).
     DB::table('trx_rme_invoice_items')->where('id', $invoice->items()->first()->id)->update(['description' => 'Diubah di luar alur']);
 
@@ -400,9 +417,12 @@ it('marks a correction STALE when the invoice content changed outside the workfl
     expect($correction->fresh()->status)->toBe(RmeInvoiceCorrectionStatus::STALE);
 });
 
+// REVISED by rule 195 (D1a): approve() now applies, so the separate apply() path
+// is exercised on the only rows it still serves — APPROVED rows that predate D1a.
+// The approval-time equivalent lives in RmeInvoiceCorrectionPilotActivationTest.
 it('marks a correction STALE when the invoice version moved after submission', function () {
     $invoice = ricInvoice();
-    $correction = ricApprove(ricSubmit($invoice));
+    $correction = ricLegacyApproved(ricSubmit($invoice));
     // Only an applied correction moves the version; a raw bump models a version that
     // moved underneath an active correction (which the one-active rule otherwise forbids).
     DB::table('trx_rme_invoices')->where('id', $invoice->id)->update(['correction_version' => 7]);
@@ -443,15 +463,21 @@ it('keeps the original snapshot readable and unchanged after application', funct
         ->and(RmeInvoiceDocumentVersion::where('version_number', 0)->sole()->snapshot['items'][1]['subtotal_cents'])->toBe(20000000);
 });
 
+// REVISED by rule 195 (D1a): an approval now applies (and freezes v0/v1), so the
+// "approved" half of this test is the pre-D1a legacy shape.
 it('does not issue a revised document for a pending or approved correction', function () {
-    ricApprove(ricSubmit(ricInvoice()));
+    ricSubmit(ricInvoice());
+    ricLegacyApproved(ricSubmit(ricInvoice(ricVisit())));
 
     expect(RmeInvoiceDocumentVersion::count())->toBe(0);
 });
 
+// REVISED by rule 195 (D1a): approve() now applies, so the separate apply() path
+// is exercised on the only rows it still serves — APPROVED rows that predate D1a.
+// The approval-time equivalent lives in RmeInvoiceCorrectionPilotActivationTest.
 it('rolls back the whole application when the applied total would differ from the approved total', function () {
     $invoice = ricInvoice();
-    $correction = ricApprove(ricSubmit($invoice));
+    $correction = ricLegacyApproved(ricSubmit($invoice));
     // Tamper with the approved total (raw, as only a raw writer could).
     DB::table('trx_rme_invoice_corrections')->where('id', $correction->id)->update(['proposed_grand_total' => '1.00', 'difference_amount' => '-499999.00']);
 

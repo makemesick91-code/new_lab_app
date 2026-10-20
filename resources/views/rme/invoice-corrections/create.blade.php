@@ -1,3 +1,6 @@
+@php
+    use App\Modules\RmeInvoice\Support\RmeInvoiceDocument;
+@endphp
 <x-settings-shell title="Ajukan Koreksi Tagihan">
     <div class="space-y-6">
         <x-ui.page-header title="Ajukan Koreksi Tagihan"
@@ -29,7 +32,7 @@
                 <div><dt class="text-ink-soft">No. Invoice</dt><dd class="font-mono text-navy">{{ $invoice->invoice_number }}</dd></div>
                 <div><dt class="text-ink-soft">Pasien</dt><dd class="text-navy">{{ $visit->patient?->name }}</dd></div>
                 <div><dt class="text-ink-soft">Cabang</dt><dd class="text-navy">{{ $invoice->branch?->name }}</dd></div>
-                <div><dt class="text-ink-soft">Total Asli</dt><dd class="font-semibold text-navy">Rp {{ number_format((float) $invoice->grand_total, 0, ',', '.') }}</dd></div>
+                <div><dt class="text-ink-soft">Total Asli</dt><dd class="font-semibold text-navy">{{ RmeInvoiceDocument::rupiahDecimal($invoice->grand_total) }}</dd></div>
             </dl>
             <x-ui.table class="mt-4">
                 <thead class="bg-navy-50">
@@ -48,9 +51,9 @@
                             <td class="px-4 py-2 text-navy">{{ $item->description }}</td>
                             <td class="px-4 py-2 text-xs text-ink-soft">{{ $item->treatment?->name ?? '-' }}</td>
                             <td class="px-4 py-2 text-right">{{ $item->qty }}</td>
-                            <td class="px-4 py-2 text-right">Rp {{ number_format((float) $item->unit_price, 0, ',', '.') }}</td>
-                            <td class="px-4 py-2 text-right">Rp {{ number_format((float) $item->discount, 0, ',', '.') }}</td>
-                            <td class="px-4 py-2 text-right font-medium text-navy">Rp {{ number_format((float) $item->subtotal, 0, ',', '.') }}</td>
+                            <td class="px-4 py-2 text-right">{{ RmeInvoiceDocument::rupiahDecimal($item->unit_price) }}</td>
+                            <td class="px-4 py-2 text-right">{{ RmeInvoiceDocument::rupiahDecimal($item->discount) }}</td>
+                            <td class="px-4 py-2 text-right font-medium text-navy">{{ RmeInvoiceDocument::rupiahDecimal($item->subtotal) }}</td>
                         </tr>
                     @endforeach
                 </tbody>

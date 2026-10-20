@@ -14,12 +14,14 @@ use App\Modules\Doctor\Models\Doctor;
 use App\Modules\LabOrder\Models\AuditLog;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\Patient\Models\Patient;
+use App\Modules\RmeInvoice\Interfaces\RmeInvoiceCorrectionRepositoryInterface;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Models\RmeInvoiceCorrection;
 use App\Modules\RmeInvoice\Services\RmeInvoiceCorrectionService;
 use App\Modules\RmeInvoice\Services\RmeInvoiceService;
 use App\Modules\RmeInvoice\Services\RmePaymentService;
 use App\Modules\RmeInvoice\Support\RmeInvoiceCorrectionFeatureGuard;
+use App\Modules\RmeInvoice\Support\RmeInvoiceCorrectionStatus;
 use App\Modules\RmeOnlineContext\Middleware\EnsureRmeOnlineContext;
 use App\Modules\Tariff\Models\Tariff;
 use App\Modules\Treatment\Models\Treatment;
@@ -70,6 +72,21 @@ if (! function_exists('ricFlag')) {
         $t->cashier = userWith(['manage_rme_billing', 'view_clinic_visits']);
 
         ricFlag(true);
+        // Rule 195 — the pilot allowlist is fail-closed and source-controlled to
+        // SPN4; the suite admits its own fixture branch exactly like production
+        // admits SPN4. Tests about the allowlist itself call ricPilot() again.
+        ricPilot(['IC01']);
+    }
+
+    /**
+     * ACTIVATION-RME-INVOICE-CORRECTION-PREPAYMENT-2 (rule 195) — set the pilot
+     * allowlist of branch codes. An empty list admits nothing.
+     *
+     * @param  list<string>  $codes
+     */
+    function ricPilot(array $codes): void
+    {
+        config()->set('rme_invoice_correction.pilot.branch_codes', $codes);
     }
 
     /**
@@ -178,6 +195,26 @@ if (! function_exists('ricFlag')) {
         test()->actingAs($checker);
 
         return app(RmeInvoiceCorrectionService::class)->approve($correction, $checker, null);
+    }
+
+    /**
+     * ACTIVATION-RME-INVOICE-CORRECTION-PREPAYMENT-2 (rule 195) — since owner
+     * D1a, approve() APPLIES. A correction that is APPROVED but not applied can
+     * only predate D1a; this builds that legacy shape through the repository
+     * (no service path produces it any more) so the recovery path, the D10
+     * block on a legacy row and cancellation of an approved row stay tested.
+     */
+    function ricLegacyApproved(RmeInvoiceCorrection $correction, ?User $checker = null): RmeInvoiceCorrection
+    {
+        $checker ??= test()->checker;
+
+        app(RmeInvoiceCorrectionRepositoryInterface::class)->transition($correction, [
+            'status' => RmeInvoiceCorrectionStatus::APPROVED,
+            'decided_by' => (int) $checker->id,
+            'decided_at' => now(),
+        ]);
+
+        return $correction->fresh();
     }
 
     function ricApply(RmeInvoiceCorrection $correction, ?User $applier = null): RmeInvoiceCorrection

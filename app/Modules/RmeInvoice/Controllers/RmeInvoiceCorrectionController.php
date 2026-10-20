@@ -76,12 +76,19 @@ class RmeInvoiceCorrectionController extends Controller
             'correction' => $record,
             'versions' => $record->invoice !== null ? $this->corrections->documentVersionsFor($record->invoice) : collect(),
             'capabilityEnabled' => $this->corrections->capabilityEnabled(),
+            // Rule 195 — approve (which applies, D1a) and the recovery apply are
+            // offered only inside the pilot; reject/cancel stay available so an
+            // active correction can always be resolved.
+            'pilotAdmitted' => $this->corrections->capabilityEnabledForBranch((int) $record->branch_id),
         ]);
     }
 
     public function create(ClinicVisit $clinicVisit, RmeInvoice $rmeInvoice): View
     {
-        abort_unless($this->corrections->capabilityEnabled(), 404);
+        // Rule 195 — flag ON *and* the invoice's branch on the pilot allowlist.
+        // Outside the pilot the capability does not exist, exactly as when the
+        // flag is off; the service asserts the same predicate under the lock.
+        abort_unless($this->corrections->capabilityEnabledForBranch((int) $rmeInvoice->branch_id), 404);
         abort_unless($rmeInvoice->belongsToVisit($clinicVisit), 404);
         // Route middleware already requires the request permission, so the
         // policy can only fail on branch scope — answered like a missing invoice.
@@ -103,7 +110,7 @@ class RmeInvoiceCorrectionController extends Controller
 
     public function store(StoreRmeInvoiceCorrectionRequest $request, ClinicVisit $clinicVisit, RmeInvoice $rmeInvoice): RedirectResponse
     {
-        abort_unless($this->corrections->capabilityEnabled(), 404);
+        abort_unless($this->corrections->capabilityEnabledForBranch((int) $rmeInvoice->branch_id), 404);
         abort_unless($rmeInvoice->belongsToVisit($clinicVisit), 404);
         // Route middleware already requires the request permission, so the
         // policy can only fail on branch scope — answered like a missing invoice.
@@ -121,9 +128,13 @@ class RmeInvoiceCorrectionController extends Controller
         $record = $this->mutable($correction);
         $this->authorize('approve', $record);
 
-        $this->corrections->approve($record, $request->user(), $request->note());
+        $applied = $this->corrections->approve($record, $request->user(), $request->note());
 
-        return back()->with('success', 'Koreksi disetujui. Tagihan BELUM berubah sampai koreksi diterapkan.');
+        // Owner D1a (rule 195): approving APPLIES the correction in the same
+        // transaction. The message reports what the service actually did.
+        return back()->with('success', $applied->status === RmeInvoiceCorrectionStatus::APPLIED
+            ? 'Koreksi disetujui dan langsung diterapkan. Dokumen asli tersimpan sebagai versi v0 dan revisi baru diterbitkan.'
+            : 'Koreksi disetujui.');
     }
 
     public function reject(DecideRmeInvoiceCorrectionRequest $request, int $correction): RedirectResponse
