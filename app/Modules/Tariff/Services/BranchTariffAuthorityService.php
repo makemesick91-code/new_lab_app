@@ -13,9 +13,15 @@ use App\Modules\Tariff\Support\TariffResolution;
 use App\Modules\Tariff\Support\TariffResolutionSet;
 
 /**
- * FEATURE-RME-BRANCH-TARIFF-AUTHORITY-1 — the ONE authority for "what is the
- * authoritative price of a treatment in a branch on a clinical date" and "is
- * this branch priced strictly" (owner decision D21).
+ * FEATURE-RME-BRANCH-TARIFF-AUTHORITY-1 — the ONE resolver for "which branch
+ * tariff is in force for a treatment on a clinical date" and "is this branch
+ * priced strictly".
+ *
+ * REVISION-RME-MANUAL-PRICING-AUTHORITY-1 (owner D21, revised 2026-10-20): the
+ * tariff master is OPTIONAL REFERENCE data. Neither invoice creation nor invoice
+ * correction asks this class for a price any more; the cashier's typed price is
+ * the authority. resolveMany() serves readiness, the template/import tooling
+ * and the LEGACY_SUPERSEDED strict path only.
  *
  * What it never does:
  *   - read a branch, a price, a total or a discount from a request;
@@ -44,28 +50,34 @@ class BranchTariffAuthorityService
     }
 
     /**
-     * The pricing mode of a branch. Strict only when its canonical code is
-     * configured AND it is an active, RME-enabled branch; every other branch —
-     * including an unknown id — is TRANSITIONAL, which never refuses more than
-     * the legacy workflow already did.
+     * The pricing mode of a branch.
+     *
+     * REVISION-RME-MANUAL-PRICING-AUTHORITY-1 (owner D21, revised 2026-10-20):
+     * every branch is MANUAL — the cashier's typed price is the price. The
+     * strict list is a source-controlled empty array (no environment override),
+     * so STRICT_ENFORCED is LEGACY_SUPERSEDED: reachable only through a reviewed
+     * source change backed by a new owner decision. Even then strict is honoured
+     * only for an active, RME-enabled branch; anything else — including an
+     * unknown id — is MANUAL, which never refuses more than manual pricing does.
+     * With the list empty this answers without a query.
      */
     public function modeFor(int $branchId): string
     {
         $strict = $this->strictBranchCodes();
         if ($strict === []) {
-            return TariffPricingMode::TRANSITIONAL;
+            return TariffPricingMode::MANUAL;
         }
 
         $branch = Branch::query()->find($branchId);
         if (! $branch instanceof Branch || ! $branch->is_active || ! $branch->is_rme_enabled) {
-            return TariffPricingMode::TRANSITIONAL;
+            return TariffPricingMode::MANUAL;
         }
 
         $code = BranchCodeAlias::canonicalize((string) $branch->code);
 
         return $code !== null && in_array($code, $strict, true)
             ? TariffPricingMode::STRICT_ENFORCED
-            : TariffPricingMode::TRANSITIONAL;
+            : TariffPricingMode::MANUAL;
     }
 
     public function isStrict(int $branchId): bool

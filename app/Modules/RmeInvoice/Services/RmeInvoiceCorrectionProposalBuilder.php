@@ -34,10 +34,14 @@ use Illuminate\Validation\ValidationException;
  *   CORRECTION_EMPTY             no resulting line
  *   CORRECTION_TOTAL_OVERFLOW    totals do not fit decimal(15,2)
  *
- * PRICE AUTHORITY (D21) IS UNDECIDED. This builder applies the same price rules
- * invoice creation applies (cashier-entered unit price, non-negative, discount
- * not above the gross) — no stricter cap is invented and none is relaxed. That is
- * one of the reasons the capability ships behind a default-OFF flag.
+ * PRICE AUTHORITY (owner D21, REVISED 2026-10-20 — REVISION-RME-MANUAL-PRICING-
+ * AUTHORITY-1): prices are MANUAL. This builder IS the server-side price
+ * validation of a correction, and applies the same rules invoice creation
+ * applies (a typed unit price, non-negative, at most 2 decimals, discount not
+ * above the gross, overflow refused, totals recomputed). No tariff is compared;
+ * no discount cap or deviation cap is invented (D21c remains a pending owner
+ * decision); the Rp0 refusal stays. The capability still ships behind a
+ * default-OFF flag (activation is a separate ceremony).
  */
 final class RmeInvoiceCorrectionProposalBuilder
 {

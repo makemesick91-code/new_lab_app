@@ -13,6 +13,12 @@ declare(strict_types=1);
 | fallback, a zero tariff is not authority, and an inactive treatment has none.
 | A branch is strict only when it is named in configuration — never because it
 | has tariffs.
+|
+| REVISION-RME-MANUAL-PRICING-AUTHORITY-1 (owner D21 revised 2026-10-20): the
+| resolution contract below is unchanged, but its result is now OPTIONAL
+| REFERENCE — invoice creation and correction no longer ask it for a price. The
+| default mode is MANUAL; strict is LEGACY_SUPERSEDED (exercised here through
+| in-memory config only; the shipped config can never name a strict branch).
 */
 
 use App\Modules\Tariff\Services\BranchTariffAuthorityService;
@@ -105,28 +111,38 @@ it('resolves every line of an invoice in a bounded number of queries', function 
     expect($queries)->toBeLessThanOrEqual(2);
 });
 
-it('keeps every branch TRANSITIONAL by default, whatever its tariff coverage', function () {
+// REVISED by REVISION-RME-MANUAL-PRICING-AUTHORITY-1 (owner D21 revised): this
+// used to assert every branch defaults to TRANSITIONAL. Manual cashier pricing is
+// now the policy, not a transition, so the default mode is MANUAL — still
+// "whatever its tariff coverage" (a branch with tariffs is not thereby strict).
+it('keeps every branch MANUAL by default, whatever its tariff coverage', function () {
     $authority = app(BranchTariffAuthorityService::class);
 
-    expect($authority->modeFor(test()->branch->id))->toBe(TariffPricingMode::TRANSITIONAL)
-        ->and($authority->modeFor(test()->otherBranch->id))->toBe(TariffPricingMode::TRANSITIONAL);
+    expect($authority->modeFor(test()->branch->id))->toBe(TariffPricingMode::MANUAL)
+        ->and($authority->modeFor(test()->otherBranch->id))->toBe(TariffPricingMode::MANUAL);
 });
 
 it('makes a branch strict only when it is named in configuration', function () {
     rtaStrict(['rt01']);
     $authority = app(BranchTariffAuthorityService::class);
 
+    // REVISED by REVISION-RME-MANUAL-PRICING-AUTHORITY-1: the unnamed branch is
+    // MANUAL (was TRANSITIONAL). The legacy strict path itself is still covered;
+    // the shipped config can no longer name a strict branch (rule 194).
     expect($authority->modeFor(test()->branch->id))->toBe(TariffPricingMode::STRICT_ENFORCED)
-        ->and($authority->modeFor(test()->otherBranch->id))->toBe(TariffPricingMode::TRANSITIONAL);
+        ->and($authority->modeFor(test()->otherBranch->id))->toBe(TariffPricingMode::MANUAL);
 });
 
-it('never makes an inactive or non-RME branch strict, and an unknown id is transitional', function () {
+// REVISED by REVISION-RME-MANUAL-PRICING-AUTHORITY-1: the fallback mode is MANUAL
+// (was TRANSITIONAL); the guarantee — never strict for an inactive/non-RME/unknown
+// branch — is unchanged.
+it('never makes an inactive or non-RME branch strict, and an unknown id is manual', function () {
     rtaStrict(['RT01']);
     test()->branch->forceFill(['is_rme_enabled' => false])->save();
     $authority = app(BranchTariffAuthorityService::class);
 
-    expect($authority->modeFor(test()->branch->id))->toBe(TariffPricingMode::TRANSITIONAL)
-        ->and($authority->modeFor(999_999))->toBe(TariffPricingMode::TRANSITIONAL);
+    expect($authority->modeFor(test()->branch->id))->toBe(TariffPricingMode::MANUAL)
+        ->and($authority->modeFor(999_999))->toBe(TariffPricingMode::MANUAL);
 });
 
 it('canonicalises a deprecated branch code in the strict list (TKM1 names TLK1)', function () {

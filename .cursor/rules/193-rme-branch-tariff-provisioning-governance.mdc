@@ -6,6 +6,14 @@ alwaysApply: false
 
 # RME branch tariff provisioning governance (rule 193)
 
+> **SCOPE NARROWED by rule 194 (D21 REVISED 2026-10-20 — manual cashier pricing).**
+> The tariff master is OPTIONAL REFERENCE; no billing depends on it. Everything
+> below about provenance, ATTEST, controlled import and "coverage is not
+> approval" stays in force as tariff-master HYGIENE. `STRICT_READY` /
+> `strict_eligible` no longer unlock anything (strict mode is LEGACY_SUPERSEDED),
+> D21h is no longer a billing prerequisite, and `TRANSITIONAL` is a historical
+> label (every branch reports MANUAL).
+
 Evidence: `docs/sprints/feature-rme-branch-tariff-provisioning-1.md`.
 Extends rule 192 (tariff authority). Where they disagree about the IMPORT
 contract or what READINESS means, this rule is newer.

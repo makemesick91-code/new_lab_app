@@ -17,10 +17,17 @@ use App\Modules\Tariff\Support\TariffResolution;
 use App\Support\Clinical\ClinicalClock;
 
 /**
- * FEATURE-RME-BRANCH-TARIFF-AUTHORITY-1 — read-only measurement of branch tariff
- * authority (owner D21): for every active RME-enabled branch, its mode, how many
- * of the ACTIVE treatments have a positive tariff in force today, which do not,
- * and how its billed lines were priced.
+ * FEATURE-RME-BRANCH-TARIFF-AUTHORITY-1 — read-only measurement of the branch
+ * tariff master: for every active RME-enabled branch, its mode, how many of the
+ * ACTIVE treatments have a positive tariff in force today, which do not, and how
+ * its billed lines were priced.
+ *
+ * REVISION-RME-MANUAL-PRICING-AUTHORITY-1 (owner D21, revised 2026-10-20): the
+ * pricing authority is MANUAL cashier entry and the tariff master is OPTIONAL
+ * reference data. Everything below is INFORMATIONAL — coverage, approval
+ * provenance and readiness never block or change billing. Every branch reports
+ * mode MANUAL, so the former BRANCH_TRANSITIONAL WATCH no longer arises: manual
+ * pricing is the policy, not a transition (D21a NOT_APPLICABLE).
  *
  * WHAT "BILLABLE" MEANS HERE. The treatment master is GLOBAL — there is no
  * per-branch list of billable treatments — so every active treatment is
@@ -35,12 +42,13 @@ use App\Support\Clinical\ClinicalClock;
  * coverage, not approval. Readiness still never changes a mode.
  *
  * Writes nothing; never changes a mode. The decision is:
- *   FAIL   a configured strict code names no active RME branch, a strict branch
- *          is not TARIFF_READY (its cashiers are being refused), or a strict
- *          branch has a tariff in force without approval provenance;
- *   WATCH  any branch is still TRANSITIONAL (D21 transition is open), or any
- *          branch has a tariff in force without approval provenance;
- *   GO     every RME branch is strict, ready and verified.
+ *   FAIL   (LEGACY strict only — unreachable while the source-controlled strict
+ *          list is empty) a configured strict code names no active RME branch,
+ *          a strict branch is not TARIFF_READY, or a strict branch has a tariff
+ *          in force without approval provenance;
+ *   WATCH  the optional tariff master holds a tariff in force without approval
+ *          provenance (tariff-master hygiene, rule 193 — never a billing block);
+ *   GO     otherwise.
  */
 class RmeTariffAuthorityReadinessService
 {
@@ -139,10 +147,13 @@ class RmeTariffAuthorityReadinessService
             }
 
             $lines = $exposure[$branchId] ?? [];
+            $manual = 0;
             $verified = 0;
             $transitional = 0;
             foreach ($lines as $source => $count) {
-                if (in_array($source, RmeInvoicePriceSource::TARIFF_VERIFIED, true)) {
+                if (in_array($source, RmeInvoicePriceSource::MANUAL, true)) {
+                    $manual += $count;
+                } elseif (in_array($source, RmeInvoicePriceSource::TARIFF_VERIFIED, true)) {
                     $verified += $count;
                 } elseif ($source !== 'NOT_RECORDED') {
                     $transitional += $count;
@@ -165,6 +176,7 @@ class RmeTariffAuthorityReadinessService
                 'unverified_tariff_codes' => $unverified,
                 'strict_eligible' => $strictEligible,
                 'billed_lines' => array_sum($lines),
+                'billed_lines_manual' => $manual,
                 'billed_lines_tariff_verified' => $verified,
                 'billed_lines_transitional' => $transitional,
                 'billed_lines_not_recorded' => (int) ($lines['NOT_RECORDED'] ?? 0),
@@ -185,6 +197,7 @@ class RmeTariffAuthorityReadinessService
 
         return [
             'decision' => $decision,
+            'pricing_authority' => RmeInvoicePriceSource::MANUAL_CASHIER_ENTRY,
             'clinical_date' => $date,
             'strict_branch_codes' => $this->authority->strictBranchCodes(),
             'price_exceptions_enabled' => $this->authority->exceptionsEnabled(),
@@ -195,6 +208,8 @@ class RmeTariffAuthorityReadinessService
                 'readiness_never_changes_mode' => true,
                 'no_tariff_invented_or_copied' => true,
                 'coverage_is_not_approval' => true,
+                'tariff_master_is_optional_reference' => true,
+                'tariff_never_blocks_billing' => true,
             ],
         ];
     }

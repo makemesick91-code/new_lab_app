@@ -111,6 +111,9 @@ never be cited as production behaviour), **PENDING_OWNER_DECISION** (see audit �
   only — no flag column).
 - CURRENT defect: the cashier types `unit_price`/`discount` freely (tariffs never read; discount uncapped) — an Rp0 or
   negative line needs no approval today (BCF-01). Any Rp0 approval workflow is bypassable until this is closed.
+  **[REFRAMED by rule 194 (D21 revised 2026-10-20): the cashier-typed price IS the owner-approved policy; a negative
+  line/total is now refused (discount ≤ line gross). Still open: original-invoice Rp0 (D21g/D22) and the discount
+  policy (D21c).]**
 - PROPOSED: Rp0 per ITEM (D11); eligibility from `treatment_id` + category, never from `description` or client
   `visit_type`; unrelated treatments and carried-over receivables are never zeroed; an Rp0 outcome never fabricates a
   Rp0 payment row (D22).
@@ -143,7 +146,8 @@ never be cited as production behaviour), **PENDING_OWNER_DECISION** (see audit �
 - Doctor performance reads `grand_total` and item `subtotal`; corrections must be reflected and traceable there.
 
 ## 17. Known architecture gaps — CURRENT
-BCF-01 cashier-set pricing / uncapped discount (HIGH, still open — D21); BCF-02 no financial audit log (**CLOSED, rule 189**);
+BCF-01 cashier-set pricing / uncapped discount (HIGH, still open — D21) **[rule 194: price authority CLOSED by owner
+decision — manual pricing; residual = D21c discount policy + D21g Rp0 on original invoices]**; BCF-02 no financial audit log (**CLOSED, rule 189**);
 BCF-03 unbounded client `paid_at` (MEDIUM — future bound **CLOSED**, backdating open D24); BCF-04 overpayment hidden by clamp (MEDIUM, latent); BCF-05 Rp0 zombie UNPAID / stuck visit (MEDIUM);
 BCF-06 live-rendered receipts; BCF-07 MAX+1 numbering without lock; BCF-08 duplicate-invoice race (**CONFIRMED and
 CLOSED**, rule 189 §4); BCF-09 soft-deletable payments (application-layer guard, rule 189 §6); BCF-10 `recalculateTotals` bug; BCF-11 lab candidates keyed on items; BCF-12 F-01;
@@ -156,7 +160,7 @@ D1–D20 from the audit brief plus D21 (price authority), D22 (Rp0 completion pa
 
 ## 19. Implementation prerequisites
 - Phase 0 before any correction work: financial audit log (BCF-02 — **done**), server price authority + discount cap
-  (BCF-01, D21 — **open**), bounded `paid_at` (BCF-03 — future bound **done**, backdating D24 open), invoice-per-visit
+  (BCF-01, D21 — **price authority closed by rule 194 (manual pricing); discount cap D21c open**), bounded `paid_at` (BCF-03 — future bound **done**, backdating D24 open), invoice-per-visit
   race guard (BCF-08 — **done**). See rule 189.
 - Receipt snapshot (Phase E) before post-payment correction (Phase C). Refund (Phase D) only after D4–D6, D18.
 - Additive migrations only (`migrate --force`), never `migrate:fresh`/`db:wipe`; payments table untouched.

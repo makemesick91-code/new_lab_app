@@ -2,6 +2,7 @@
 
 namespace App\Modules\RmeInvoice\Requests;
 
+use App\Modules\RmeInvoice\Services\RmeInvoicePricingService;
 use Illuminate\Foundation\Http\FormRequest;
 
 class CreateRmeInvoiceRequest extends FormRequest
@@ -19,7 +20,8 @@ class CreateRmeInvoiceRequest extends FormRequest
             'items' => ['required', 'array', 'min:1'],
             'items.*.treatment_id' => ['nullable', 'integer', 'exists:mst_treatments,id'],
             'items.*.description' => ['required', 'string', 'max:255'],
-            'items.*.qty' => ['required', 'integer', 'min:1'],
+            // Storage bound (security review F2), not a business cap.
+            'items.*.qty' => ['required', 'integer', 'min:1', 'max:'.RmeInvoicePricingService::MAX_QTY],
             // A plain decimal with at most 2 places and within the decimal(15,2)
             // column: exponent notation such as 1.8e17 is numeric but wraps when
             // converted to integer cents (security review, this sprint).
@@ -42,6 +44,7 @@ class CreateRmeInvoiceRequest extends FormRequest
             'items.*.description.required' => 'Deskripsi item wajib diisi.',
             'items.*.qty.required' => 'Qty item wajib diisi.',
             'items.*.qty.min' => 'Qty minimal 1.',
+            'items.*.qty.max' => 'Qty melebihi batas yang dapat disimpan.',
             'items.*.unit_price.required' => 'Harga satuan wajib diisi.',
             'items.*.unit_price.min' => 'Harga satuan tidak boleh negatif.',
             'items.*.discount.min' => 'Diskon tidak boleh negatif.',

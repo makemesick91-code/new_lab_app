@@ -1,13 +1,9 @@
 <x-settings-shell title="Buat Tagihan RME">
     @php
         $oldItems = old('items', [['treatment_id' => '', 'description' => '', 'qty' => 1, 'unit_price' => '', 'discount' => '']]);
-        // FEATURE-RME-BRANCH-TARIFF-AUTHORITY-1 (owner D21) — display only; the
-        // server re-prices every submitted line against the branch tariff.
-        $pricingMode = $pricingContext['mode'] ?? 'TRANSITIONAL';
-        $isStrictPricing = $pricingMode === 'STRICT_ENFORCED';
-        $tariffCents = $pricingContext['tariffs'] ?? [];
-        $showExceptionReason = $isStrictPricing && ($pricingContext['exceptions_enabled'] ?? false);
-        $tariffRupiah = fn ($id) => isset($tariffCents[(int) $id]) ? rtrim(rtrim(number_format($tariffCents[(int) $id] / 100, 2, '.', ''), '0'), '.') : '';
+        // REVISION-RME-MANUAL-PRICING-AUTHORITY-1 (owner D21, revised) — the
+        // cashier types every price. The form carries no tariff, never prefills a
+        // price, and the server re-validates and re-totals every submitted line.
         $mrStatusTone = [
             'FINAL'           => 'success',
             'CASHIER_PENDING' => 'warning',
@@ -43,18 +39,12 @@
                     <span class="font-medium">nama tindakan manual</span>.
                 </x-ui.alert>
 
-                @if ($isStrictPricing)
-                    <x-ui.alert variant="info" title="Mode tarif ketat" class="text-xs" data-pricing-mode="STRICT_ENFORCED">
-                        Harga setiap tindakan mengikuti <span class="font-medium">tarif master cabang</span>. Server menolak
-                        harga yang berbeda dari tarif, diskon, tindakan manual tanpa master, tindakan tanpa tarif, dan item Rp0.
-                    </x-ui.alert>
-                @else
-                    <x-ui.alert variant="warning" title="Mode tarif transisi" class="text-xs" data-pricing-mode="TRANSITIONAL">
-                        Tarif master cabang ini belum lengkap. Harga yang diisi kasir tetap diterima, tetapi setiap item
-                        dicatat asal harganya (sesuai tarif / berbeda dari tarif / belum ada tarif / manual) dan
-                        <span class="font-medium">tidak dianggap terverifikasi tarif master</span>.
-                    </x-ui.alert>
-                @endif
+                <x-ui.alert variant="info" title="Harga diisi manual oleh kasir" class="text-xs" data-pricing-authority="MANUAL_CASHIER_ENTRY">
+                    Harga satuan setiap item diisi kasir dan boleh berbeda antar cabang maupun antar pasien. Tidak ada
+                    tarif wajib dan harga tidak diisi otomatis. Server memeriksa ulang setiap angka dan menghitung total.
+                    Setelah tagihan disimpan, harga <span class="font-medium">tidak dapat diubah langsung</span> —
+                    perubahan hanya melalui <span class="font-medium">Koreksi Tagihan</span> yang disetujui.
+                </x-ui.alert>
 
                 <div id="items-container" class="space-y-3">
                     @foreach ($oldItems as $idx => $item)
@@ -67,7 +57,6 @@
                                     @foreach ($treatments as $treatment)
                                         <option value="{{ $treatment->id }}"
                                             data-name="{{ $treatment->name }}"
-                                            data-tariff="{{ $tariffRupiah($treatment->id) }}"
                                             {{ ($item['treatment_id'] ?? '') == $treatment->id ? 'selected' : '' }}>
                                             {{ $treatment->name }}
                                         </option>
@@ -95,7 +84,6 @@
                                     value="{{ $item['unit_price'] ?? '' }}"
                                     min="0" step="0.01" class="price-input w-full rounded-md border-hairline shadow-sm text-sm focus:border-brand-500 focus:ring-brand-500"
                                     required>
-                                <p class="tariff-hint mt-1 text-xs text-ink-muted" data-tariff-hint></p>
                             </div>
                             <div class="col-span-2">
                                 <label class="block text-xs text-ink-soft mb-1">Diskon</label>
@@ -109,14 +97,6 @@
                                     Hapus
                                 </button>
                             </div>
-                            @if ($showExceptionReason)
-                                <div class="col-span-12">
-                                    <input type="text" name="items[{{ $idx }}][price_exception_reason]" maxlength="500"
-                                        value="{{ $item['price_exception_reason'] ?? '' }}"
-                                        placeholder="Alasan pengecualian harga/diskon (wajib bila berbeda dari tarif master)"
-                                        class="w-full rounded-md border-hairline shadow-sm text-xs focus:border-brand-500 focus:ring-brand-500">
-                                </div>
-                            @endif
                         </div>
                     @endforeach
                 </div>
@@ -159,7 +139,7 @@
     <template id="treatment-options-template">
         <option value="">— Manual / Pilih Treatment —</option>
         @foreach ($treatments as $treatment)
-            <option value="{{ $treatment->id }}" data-name="{{ $treatment->name }}" data-tariff="{{ $tariffRupiah($treatment->id) }}">{{ $treatment->name }}</option>
+            <option value="{{ $treatment->id }}" data-name="{{ $treatment->name }}">{{ $treatment->name }}</option>
         @endforeach
     </template>
 
@@ -170,19 +150,24 @@
             return 'Rp ' + Math.max(0, value).toLocaleString('id-ID');
         }
 
+        // Display only, in integer cents so the preview never shows a float
+        // artefact; the server recomputes every total it stores.
+        function toCents(value) {
+            const number = parseFloat(value);
+            return Number.isFinite(number) ? Math.round(number * 100) : 0;
+        }
+
         function recalculate() {
             let subtotal = 0;
             let discountTotal = 0;
             document.querySelectorAll('.item-row').forEach(function(row) {
-                const qty = parseFloat(row.querySelector('.qty-input').value) || 0;
-                const price = parseFloat(row.querySelector('.price-input').value) || 0;
-                const discount = parseFloat(row.querySelector('.discount-input').value) || 0;
-                subtotal += qty * price;
-                discountTotal += discount;
+                const qty = parseInt(row.querySelector('.qty-input').value, 10) || 0;
+                subtotal += qty * toCents(row.querySelector('.price-input').value);
+                discountTotal += toCents(row.querySelector('.discount-input').value);
             });
-            document.getElementById('display-subtotal').textContent = formatRupiah(subtotal);
-            document.getElementById('display-discount').textContent = formatRupiah(discountTotal);
-            document.getElementById('display-grand-total').textContent = formatRupiah(subtotal - discountTotal);
+            document.getElementById('display-subtotal').textContent = formatRupiah(subtotal / 100);
+            document.getElementById('display-discount').textContent = formatRupiah(discountTotal / 100);
+            document.getElementById('display-grand-total').textContent = formatRupiah((subtotal - discountTotal) / 100);
         }
 
         function addItem() {
@@ -205,7 +190,6 @@
                 <div class="col-span-2">
                     <label class="block text-xs text-ink-soft mb-1">Harga Satuan <span class="text-danger">*</span></label>
                     <input type="number" name="items[${itemIndex}][unit_price]" min="0" step="0.01" class="price-input w-full rounded-md border-hairline shadow-sm text-sm focus:border-brand-500 focus:ring-brand-500" required oninput="recalculate()">
-                    <p class="tariff-hint mt-1 text-xs text-ink-muted" data-tariff-hint></p>
                 </div>
                 <div class="col-span-2">
                     <label class="block text-xs text-ink-soft mb-1">Diskon</label>
@@ -214,11 +198,6 @@
                 <div class="col-span-1 flex items-end pb-0.5">
                     <button type="button" onclick="removeItem(this)" class="inline-flex items-center justify-center w-full rounded-lg px-2 py-2 text-xs font-semibold transition-colors bg-danger-700 text-white hover:bg-danger-700 focus:outline-none focus:ring-2 focus:ring-danger focus:ring-offset-2">Hapus</button>
                 </div>
-                @if ($showExceptionReason)
-                <div class="col-span-12">
-                    <input type="text" name="items[${itemIndex}][price_exception_reason]" maxlength="500" placeholder="Alasan pengecualian harga/diskon (wajib bila berbeda dari tarif master)" class="w-full rounded-md border-hairline shadow-sm text-xs focus:border-brand-500 focus:ring-brand-500">
-                </div>
-                @endif
             `;
             // Options come from an HTML <template> rendered by Blade, never from
             // this JS template literal: Blade echo escaping covers HTML but not a
@@ -236,37 +215,15 @@
             recalculate();
         }
 
-        // FEATURE-RME-BRANCH-TARIFF-AUTHORITY-1 — show the branch tariff of the
-        // chosen treatment and prefill an EMPTY price with it. Display only:
-        // the server re-prices every line and records its provenance.
-        function showTariff(row) {
-            const select = row.querySelector('.treatment-select');
-            const hint = row.querySelector('[data-tariff-hint]');
-            if (!select || !hint) return;
-            const option = select.options[select.selectedIndex];
-            const tariff = option ? option.getAttribute('data-tariff') : '';
-            if (!option || !option.value) {
-                hint.textContent = 'Tindakan manual — tanpa tarif master.';
-            } else if (tariff) {
-                hint.textContent = 'Tarif master cabang: ' + formatRupiah(parseFloat(tariff));
-            } else {
-                hint.textContent = 'Belum ada tarif master untuk tindakan ini di cabang ini.';
-            }
-        }
-
+        // Choosing a treatment fills an EMPTY description with its name. It
+        // never fills the price: under manual pricing the cashier types it.
         function fillDescription(select) {
             const option = select.options[select.selectedIndex];
             const row = select.closest('.item-row');
             const descInput = row.querySelector('.description-input');
-            const priceInput = row.querySelector('.price-input');
             if (option.value && descInput.value === '') {
                 descInput.value = option.getAttribute('data-name');
             }
-            const tariff = option.getAttribute('data-tariff');
-            if (option.value && tariff && priceInput && priceInput.value === '') {
-                priceInput.value = tariff;
-            }
-            showTariff(row);
             recalculate();
         }
 
@@ -277,7 +234,6 @@
             el.addEventListener('input', recalculate);
         });
 
-        document.querySelectorAll('.item-row').forEach(showTariff);
         recalculate();
     </script>
 </x-settings-shell>

@@ -14,6 +14,7 @@ declare(strict_types=1);
 */
 
 use App\Modules\LabOrder\Models\AuditLog;
+use App\Modules\RmeInvoice\Models\RmeInvoiceItem;
 use App\Modules\Tariff\Models\Tariff;
 use App\Modules\Tariff\Services\TariffImportService;
 use App\Modules\Tariff\Services\TariffService;
@@ -49,7 +50,12 @@ function rtaArtisan(string $command, array $parameters = []): array
 
 // ─── Readiness ─────────────────────────────────────────────────────────────
 
-it('reports every RME branch transitional with its coverage and missing tariffs, read-only', function () {
+// REVISED by REVISION-RME-MANUAL-PRICING-AUTHORITY-1: this used to assert every
+// branch reported mode TRANSITIONAL (a BRANCH_TRANSITIONAL WATCH). Manual pricing
+// is the policy, so every branch reports MANUAL, no BRANCH_TRANSITIONAL finding
+// exists, and the report names the pricing authority. Coverage and the
+// unverified-tariff WATCH (tariff-master hygiene, rule 193) are unchanged.
+it('reports every RME branch MANUAL with its tariff coverage and missing tariffs, read-only', function () {
     $tariffs = Tariff::count();
     [$exit, $out] = rtaArtisan('rme:tariff-authority-readiness', ['--json' => true]);
     $report = json_decode($out, true);
@@ -59,7 +65,12 @@ it('reports every RME branch transitional with its coverage and missing tariffs,
     expect($exit)->toBe(0)
         ->and($report['decision'])->toBe('WATCH')
         ->and($report['price_exceptions_enabled'])->toBeFalse()
-        ->and($rt01['mode'])->toBe('TRANSITIONAL')
+        ->and($report['pricing_authority'])->toBe('MANUAL_CASHIER_ENTRY')
+        ->and(collect($report['findings'])->pluck('code')->all())->not->toContain('BRANCH_TRANSITIONAL')
+        ->and(collect($report['findings'])->pluck('code')->all())->toContain('TARIFF_PROVENANCE_UNVERIFIED')
+        ->and($report['notes']['tariff_never_blocks_billing'])->toBeTrue()
+        ->and($rt01['mode'])->toBe('MANUAL')
+        ->and($rt02['mode'])->toBe('MANUAL')
         ->and($rt01['tariffed_treatments'])->toBe(2)
         ->and($rt02['readiness'])->toBe('NO_TARIFFS')
         ->and($rt02['missing_tariff_codes'])->toContain('TRT-RTSC')
@@ -83,13 +94,23 @@ it('fails on a strict code that names no active RME branch', function () {
     expect($exit)->toBe(1)->and($out)->toContain('STRICT_CODE_NOT_AN_RME_BRANCH');
 });
 
+// REVISED by REVISION-RME-MANUAL-PRICING-AUTHORITY-1: the same two lines used to
+// count as 1 tariff-verified + 1 transitional. They are both manual entries now;
+// historical tariff-era and transitional rows are still counted in their own
+// buckets, and no history is invented.
 it('counts billed lines by provenance without inventing history', function () {
-    rtaCreate(rtaVisit(), [rtaLine(test()->scaling, 250000), rtaLine(test()->tambal, 1)]);
+    $invoice = rtaCreate(rtaVisit(), [rtaLine(test()->scaling, 250000), rtaLine(test()->tambal, 1)]);
+    RmeInvoiceItem::query()->create([
+        'rme_invoice_id' => $invoice->id, 'description' => 'Baris era tarif', 'qty' => 1,
+        'unit_price' => 1000, 'discount' => 0, 'subtotal' => 1000,
+        'price_source' => 'TRANSITIONAL_NO_TARIFF',
+    ]);
     [, $out] = rtaArtisan('rme:tariff-authority-readiness', ['--json' => true]);
     $rt01 = collect(json_decode($out, true)['branches'])->firstWhere('code', 'RT01');
 
-    expect($rt01['billed_lines'])->toBe(2)
-        ->and($rt01['billed_lines_tariff_verified'])->toBe(1)
+    expect($rt01['billed_lines'])->toBe(3)
+        ->and($rt01['billed_lines_manual'])->toBe(2)
+        ->and($rt01['billed_lines_tariff_verified'])->toBe(0)
         ->and($rt01['billed_lines_transitional'])->toBe(1)
         ->and($rt01['billed_lines_not_recorded'])->toBe(0);
 });

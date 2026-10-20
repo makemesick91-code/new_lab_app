@@ -16,6 +16,15 @@ interface TreatmentRepositoryInterface
     public function listActive(): Collection;
 
     /**
+     * REVISION-RME-MANUAL-PRICING-AUTHORITY-1 — which of the given ids name a
+     * treatment that exists, is not soft-deleted and is active. One query.
+     *
+     * @param  list<int>  $ids
+     * @return list<int>
+     */
+    public function activeIds(array $ids): array;
+
+    /**
      * @param  array<string, mixed>  $data
      */
     public function create(array $data): Treatment;

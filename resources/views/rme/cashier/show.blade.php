@@ -189,11 +189,11 @@
                             <td class="px-4 py-3 text-right text-ink">{{ $item->qty }}</td>
                             <td class="px-4 py-3 text-right text-ink">
                                 Rp {{ number_format($item->unit_price, 0, ',', '.') }}
-                                {{-- FEATURE-RME-BRANCH-TARIFF-AUTHORITY-1 — price provenance (D21). A transitional price is never shown as master tariff. --}}
+                                {{-- Price provenance. REVISION-RME-MANUAL-PRICING-AUTHORITY-1: a manual price is never shown as tariff; a tariff recorded on a historical line is non-binding reference only. --}}
                                 <div class="mt-1" data-price-source="{{ $item->price_source ?? 'NOT_RECORDED' }}">
                                     <x-ui.badge :tone="\App\Modules\RmeInvoice\Support\RmeInvoicePriceSource::tone($item->price_source)">{{ \App\Modules\RmeInvoice\Support\RmeInvoicePriceSource::label($item->price_source) }}</x-ui.badge>
                                     @if ($item->tariff_unit_price !== null && (float) $item->tariff_unit_price !== (float) $item->unit_price)
-                                        <div class="mt-0.5 text-xs text-ink-muted">Tarif master: Rp {{ number_format($item->tariff_unit_price, 0, ',', '.') }}</div>
+                                        <div class="mt-0.5 text-xs text-ink-muted">Referensi tarif saat ditagih (historis, tidak mengikat): Rp {{ number_format($item->tariff_unit_price, 0, ',', '.') }}</div>
                                     @endif
                                 </div>
                             </td>

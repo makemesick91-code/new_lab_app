@@ -410,6 +410,15 @@ return [
         // `RmeTariffAuthority` token (the directory is part of the test name).
         'tests/Feature/RmeTariffAuthority/RmeTariffProvisioningProvenanceTest.php',
         'tests/Feature/RmeTariffAuthority/RmeTariffProvisioningConcurrencyTest.php',
+        // REVISION-RME-MANUAL-PRICING-AUTHORITY-1 — owner D21 revised to manual
+        // cashier pricing (rule 194): an invoice or a correction must never again
+        // depend on a tariff, malformed money must never become zero, and an issued
+        // invoice must stay editable only through the correction workflow. Selected
+        // by the new `RmeManualPricing` token in BOTH critical-gate variants.
+        'tests/Feature/RmeManualPricing/RmeManualPricingInvoiceTest.php',
+        'tests/Feature/RmeManualPricing/RmeManualPricingCorrectionTest.php',
+        'tests/Feature/RmeManualPricing/RmeManualPricingGovernanceTest.php',
+        'tests/Feature/RmeManualPricing/RmeManualPricingBranchBoundaryTest.php',
 
         // DOCTOR-PWA-WEBAUTHN-1 — the browser device-credential login. A `|Pwa`
         // or `|DoctorDevice` token does not select it: --filter matches the test

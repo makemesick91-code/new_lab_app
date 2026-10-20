@@ -8,12 +8,13 @@ declare(strict_types=1);
 | line (owner decision D21).
 |--------------------------------------------------------------------------
 |
-| TRANSITIONAL (default): the legacy cashier price is still accepted, and every
-| line records its provenance against the branch tariff, so it is never
-| presented as master pricing. STRICT (explicit opt-in): the tariff is the price
-| and everything else is refused with a stable code, audited after the rollback.
-| ALL MODES: integer cents, discount never above the line, overflow refused,
-| totals computed on the server.
+| REVISED by REVISION-RME-MANUAL-PRICING-AUTHORITY-1 (owner D21 revised
+| 2026-10-20): the default is MANUAL — the cashier's price is the price and every
+| new line records MANUAL provenance; no tariff is read, compared or recorded.
+| The former TRANSITIONAL assertions below were revised in place (each says what
+| it used to assert). STRICT is LEGACY_SUPERSEDED and stays covered here through
+| in-memory config only. ALL MODES: integer cents, discount never above the line,
+| overflow refused, totals computed on the server.
 */
 
 use App\Modules\LabOrder\Models\AuditLog;
@@ -47,64 +48,72 @@ function rtaExpectRefused(callable $work, string $code): void
     test()->fail('The invoice was accepted; it should have been refused with '.$code.'.');
 }
 
-// ─── TRANSITIONAL: legacy workflow kept, provenance recorded ───────────────
+// ─── MANUAL (default): the cashier price is the price ─────────────────────
+//
+// REVISED by REVISION-RME-MANUAL-PRICING-AUTHORITY-1. These six tests used to
+// pin the TRANSITIONAL contract (a line compared against the branch tariff and
+// labelled TARIFF_MATCHED / TRANSITIONAL_TARIFF_DEVIATION / TRANSITIONAL_NO_TARIFF
+// / TRANSITIONAL_FREE_TEXT, with the tariff recorded as evidence). Under manual
+// pricing nothing is compared or recorded against a tariff; each keeps its
+// original scenario and now pins the manual outcome.
 
-it('records TARIFF_MATCHED for a line billed exactly at the branch tariff', function () {
+it('records MANUAL_CASHIER_ENTRY for a line typed at exactly the branch tariff (was TARIFF_MATCHED)', function () {
     $invoice = rtaCreate(rtaVisit(), [rtaLine(test()->scaling, 250000)]);
     $item = $invoice->items->sole();
 
-    expect($item->pricing_mode)->toBe(TariffPricingMode::TRANSITIONAL)
-        ->and($item->price_source)->toBe(RmeInvoicePriceSource::TARIFF_MATCHED)
-        ->and((int) $item->tariff_id)->toBe((int) test()->scalingTariff->id)
-        ->and((float) $item->tariff_unit_price)->toEqual(250000.0);
+    expect($item->pricing_mode)->toBe(TariffPricingMode::MANUAL)
+        ->and($item->price_source)->toBe(RmeInvoicePriceSource::MANUAL_CASHIER_ENTRY)
+        ->and($item->tariff_id)->toBeNull()
+        ->and($item->tariff_unit_price)->toBeNull();
 });
 
-it('keeps a transitional cashier price that deviates from the tariff, recording the deviation and the tariff', function () {
+it('keeps a cashier price that differs from the tariff as a plain manual price (was TRANSITIONAL_TARIFF_DEVIATION)', function () {
     $invoice = rtaCreate(rtaVisit(), [rtaLine(test()->scaling, 200000)]);
     $item = $invoice->items->sole();
 
     expect((float) $item->unit_price)->toEqual(200000.0)
-        ->and($item->price_source)->toBe(RmeInvoicePriceSource::TRANSITIONAL_TARIFF_DEVIATION)
-        ->and((float) $item->tariff_unit_price)->toEqual(250000.0)
+        ->and($item->price_source)->toBe(RmeInvoicePriceSource::MANUAL_CASHIER_ENTRY)
+        ->and($item->tariff_unit_price)->toBeNull()
         ->and((float) $invoice->grand_total)->toEqual(200000.0);
 });
 
-it('records a discount on a matched price as a transitional deviation', function () {
+it('records a discounted manual price as MANUAL_CASHIER_ENTRY (was a transitional deviation)', function () {
     $invoice = rtaCreate(rtaVisit(), [rtaLine(test()->scaling, 250000, 10000)]);
 
-    expect($invoice->items->sole()->price_source)->toBe(RmeInvoicePriceSource::TRANSITIONAL_TARIFF_DEVIATION)
+    expect($invoice->items->sole()->price_source)->toBe(RmeInvoicePriceSource::MANUAL_CASHIER_ENTRY)
         ->and((float) $invoice->grand_total)->toEqual(240000.0);
 });
 
-it('records NO_TARIFF in a branch without tariffs and FREE_TEXT for a manual line', function () {
+it('records MANUAL_CASHIER_ENTRY in a branch without tariffs and MANUAL_FREE_TEXT for a free-text line (was NO_TARIFF / FREE_TEXT)', function () {
     $invoice = rtaCreate(rtaVisit(test()->otherBranch), [
         rtaLine(test()->scaling, 175000),
         rtaLine(null, 50000),
     ]);
     $items = $invoice->items->sortBy('id')->values();
 
-    expect($items[0]->price_source)->toBe(RmeInvoicePriceSource::TRANSITIONAL_NO_TARIFF)
+    expect($items[0]->price_source)->toBe(RmeInvoicePriceSource::MANUAL_CASHIER_ENTRY)
         ->and($items[0]->tariff_id)->toBeNull()
-        ->and($items[1]->price_source)->toBe(RmeInvoicePriceSource::TRANSITIONAL_FREE_TEXT)
+        ->and($items[1]->price_source)->toBe(RmeInvoicePriceSource::MANUAL_FREE_TEXT)
         ->and((float) $invoice->grand_total)->toEqual(225000.0);
 });
 
-it('keeps the transitional Rp0 behaviour of the legacy workflow (not a new exception), and audits it as a zero line', function () {
+it('keeps the Rp0 behaviour of the original invoice (not a new exception), and audits it as a zero line', function () {
     $invoice = rtaCreate(rtaVisit(test()->otherBranch), [rtaLine(test()->scaling, 0)]);
 
     $audit = AuditLog::query()->where('action', RmeFinancialAuditEvent::ACTION_INVOICE_CREATED)->sole();
     expect((float) $invoice->grand_total)->toEqual(0.0)
-        ->and($audit->new_values['pricing_mode'])->toBe(TariffPricingMode::TRANSITIONAL)
+        ->and($audit->new_values['pricing_mode'])->toBe(TariffPricingMode::MANUAL)
         ->and($audit->new_values['zero_value_lines'])->toBe(1);
 });
 
-it('never rewrites what was compared: a later tariff edit leaves the line evidence unchanged', function () {
+it('never rewrites an issued line when a tariff is later edited (nothing was compared)', function () {
     $invoice = rtaCreate(rtaVisit(), [rtaLine(test()->scaling, 250000)]);
     test()->scalingTariff->update(['price' => '400000.00']);
 
     $item = RmeInvoiceItem::query()->find($invoice->items->sole()->id);
-    expect((float) $item->tariff_unit_price)->toEqual(250000.0)
-        ->and($item->price_source)->toBe(RmeInvoicePriceSource::TARIFF_MATCHED);
+    expect((float) $item->unit_price)->toEqual(250000.0)
+        ->and($item->tariff_unit_price)->toBeNull()
+        ->and($item->price_source)->toBe(RmeInvoicePriceSource::MANUAL_CASHIER_ENTRY);
 });
 
 // ─── ALL MODES: server arithmetic ───────────────────────────────────────────
@@ -132,8 +141,10 @@ it('computes totals in cents on the server and never reads a submitted total', f
 it('bills the visit\'s branch, never a branch_id in the payload', function () {
     $invoice = rtaCreate(rtaVisit(), [rtaLine(test()->scaling, 250000, 0, 1, ['branch_id' => test()->otherBranch->id])]);
 
+    // REVISED by REVISION-RME-MANUAL-PRICING-AUTHORITY-1: the line is a manual
+    // entry (was TARIFF_MATCHED); the branch guarantee is unchanged.
     expect((int) $invoice->branch_id)->toBe((int) test()->branch->id)
-        ->and($invoice->items->sole()->price_source)->toBe(RmeInvoicePriceSource::TARIFF_MATCHED);
+        ->and($invoice->items->sole()->price_source)->toBe(RmeInvoicePriceSource::MANUAL_CASHIER_ENTRY);
 });
 
 // ─── STRICT: the tariff is the price ────────────────────────────────────────
@@ -228,19 +239,22 @@ it('never lets an authorized exception produce an Rp0 line', function () {
 
 // ─── HTTP / UI ──────────────────────────────────────────────────────────────
 
-it('shows the branch mode and the tariff of each treatment on the billing form, without misrepresenting transitional pricing', function () {
+// REVISED by REVISION-RME-MANUAL-PRICING-AUTHORITY-1. This used to assert that
+// the form showed the branch mode and embedded each treatment's tariff
+// (`data-tariff`, prefilled into an empty price). Under manual pricing the form
+// carries no tariff and never prefills a price — on TLK1 that prefill was the
+// unverified seeded default (rule 193). It now pins the opposite.
+it('shows the manual-pricing notice and never embeds or prefills a tariff on the billing form', function () {
     $visit = rtaVisit();
     $this->actingAs(userWith(['manage_rme_billing', 'view_clinic_visits']))->withoutMiddleware(EnsureRmeOnlineContext::class);
 
     $html = $this->get(route('rme.cashier.create', $visit))->assertOk()->getContent();
 
-    expect($html)->toContain('data-pricing-mode="TRANSITIONAL"')
-        ->and($html)->toContain('data-tariff="250000"')
-        ->and($html)->toContain('data-tariff="300000"')
-        ->and($html)->toContain('tidak dianggap terverifikasi tarif master');
-
-    rtaStrict(['RT01']);
-    $this->get(route('rme.cashier.create', $visit))->assertOk()->assertSee('data-pricing-mode="STRICT_ENFORCED"', false);
+    expect($html)->toContain('data-pricing-authority="MANUAL_CASHIER_ENTRY"')
+        ->and($html)->not->toContain('data-tariff=')
+        ->and($html)->not->toContain('data-pricing-mode=')
+        ->and($html)->not->toContain('250000')
+        ->and($html)->not->toContain('300000');
 });
 
 it('labels the provenance of every invoice line and never shows a legacy line as master tariff', function () {
@@ -253,12 +267,29 @@ it('labels the provenance of every invoice line and never shows a legacy line as
 
     $html = $this->get(route('rme.cashier.show', [$invoice->clinic_visit_id, $invoice]))->assertOk()->getContent();
 
-    expect($html)->toContain('data-price-source="TRANSITIONAL_TARIFF_DEVIATION"')
-        ->and($html)->toContain('data-price-source="TARIFF_MATCHED"')
+    // REVISED by REVISION-RME-MANUAL-PRICING-AUTHORITY-1: the new lines are
+    // manual entries (were TRANSITIONAL_TARIFF_DEVIATION / TARIFF_MATCHED with a
+    // "Tarif master" line). A historical tariff-era line keeps its label and its
+    // recorded tariff is shown only as non-binding historical reference.
+    $historical = RmeInvoiceItem::query()->create([
+        'rme_invoice_id' => $invoice->id, 'description' => 'Baris era tarif', 'qty' => 1,
+        'unit_price' => 200000, 'discount' => 0, 'subtotal' => 200000,
+        'pricing_mode' => TariffPricingMode::TRANSITIONAL,
+        'price_source' => RmeInvoicePriceSource::TRANSITIONAL_TARIFF_DEVIATION,
+        'tariff_unit_price' => 250000,
+    ]);
+
+    $html = $this->get(route('rme.cashier.show', [$invoice->clinic_visit_id, $invoice]))->assertOk()->getContent();
+
+    expect($html)->toContain('data-price-source="MANUAL_CASHIER_ENTRY"')
+        ->and($html)->toContain('Harga manual kasir')
         ->and($html)->toContain('data-price-source="NOT_RECORDED"')
-        ->and($html)->toContain('Belum tercatat (sebelum otoritas tarif)')
-        ->and($html)->toContain('Tarif master: Rp 250.000');
-    expect($legacy->fresh()->hasPriceProvenance())->toBeFalse();
+        ->and($html)->toContain('Belum tercatat (sebelum pencatatan asal harga)')
+        ->and($html)->toContain('data-price-source="TRANSITIONAL_TARIFF_DEVIATION"')
+        ->and($html)->toContain('Referensi tarif saat ditagih (historis, tidak mengikat): Rp 250.000')
+        ->and($html)->not->toContain('Tarif master: Rp');
+    expect($legacy->fresh()->hasPriceProvenance())->toBeFalse()
+        ->and($historical->fresh()->price_source)->toBe(RmeInvoicePriceSource::TRANSITIONAL_TARIFF_DEVIATION);
 });
 
 it('returns the strict refusal as a form error over HTTP, not a 500', function () {
