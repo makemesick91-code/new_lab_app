@@ -78,6 +78,13 @@ Each rung needs its own evidence; a lower rung never implies a higher one.
     refused. Payment-mutation behaviour is proven by the PostgreSQL suites.
 
 ## 5. Accounts (D1d) — a designation, not an allowlist
+> **SUPERSEDED 2026-10-21 by owner decision D1e / rule 197.** The finding below is
+> exactly why the owner narrowed the pilot: since
+> `HARDENING-RME-INVOICE-CORRECTION-PILOT-IDENTITY-PAYMENT-ACTOR-1` the two D1d
+> accounts ARE an enforced, source-controlled allowlist (maker 29 submits; checker
+> 1 approves/rejects/recovery-applies; everyone else refused in the service). The
+> measurement is kept as the historical record of what was true before.
+
 13. D1d names the two accounts that perform the pilot ceremony. It is NOT an
     account allowlist: the grant reaches every Front Office account that can work
     in SPN4. Measured 2026-10-21 with the probe (`--user=` for every holder): 8

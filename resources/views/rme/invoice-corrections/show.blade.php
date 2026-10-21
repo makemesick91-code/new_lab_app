@@ -131,7 +131,7 @@
                 <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
                     @if ($status === RmeInvoiceCorrectionStatus::SUBMITTED)
                         @if ($pilotAdmitted)
-                            @can('approve', $correction)
+                            @if ($actions['approve'])
                                 {{-- Owner D1a (rule 195): approving APPLIES the correction in the same transaction. --}}
                                 <form method="POST" action="{{ route('rme.invoice-corrections.approve', $correction->id) }}" class="space-y-2" data-correction-approve
                                       x-data="{ busy: false }" x-on:submit="if (busy) { $event.preventDefault() } busy = true">
@@ -140,34 +140,38 @@
                                     <p class="text-xs text-ink-soft" data-correction-approve-applies>Menyetujui langsung menerapkan koreksi: item dan total tagihan berubah, dokumen asli dibekukan sebagai versi v0.</p>
                                     <x-ui.button type="submit" variant="success">Setujui &amp; Terapkan</x-ui.button>
                                 </form>
-                            @endcan
+                            @endif
                         @else
                             <p class="text-xs text-ink-soft" data-correction-outside-pilot>Cabang tagihan ini belum termasuk pilot koreksi tagihan; pengajuan hanya dapat ditolak atau dibatalkan.</p>
                         @endif
-                        @can('reject', $correction)
+                        @if ($actions['reject'])
                             <form method="POST" action="{{ route('rme.invoice-corrections.reject', $correction->id) }}" class="space-y-2" data-correction-reject>
                                 @csrf
                                 <x-ui.textarea name="note" label="Alasan penolakan (wajib)" rows="2" required />
                                 <x-ui.button type="submit" variant="danger">Tolak</x-ui.button>
                             </form>
-                        @endcan
+                        @endif
                     @endif
                     @if ($status === RmeInvoiceCorrectionStatus::APPROVED && $pilotAdmitted)
-                        @can('apply', $correction)
+                        @if ($actions['apply'])
                             <form method="POST" action="{{ route('rme.invoice-corrections.apply', $correction->id) }}" class="space-y-2" data-correction-apply>
                                 @csrf
                                 <p class="text-xs text-ink-soft">Menerapkan mengubah item dan total tagihan. Dokumen asli dibekukan sebagai versi v0.</p>
                                 <x-ui.button type="submit" variant="primary">Terapkan Koreksi</x-ui.button>
                             </form>
-                        @endcan
+                        @endif
                     @endif
-                    @can('cancel', $correction)
+                    @if ($actions['cancel'])
                         <form method="POST" action="{{ route('rme.invoice-corrections.cancel', $correction->id) }}" class="space-y-2" data-correction-cancel>
                             @csrf
                             <x-ui.textarea name="note" label="Alasan pembatalan (wajib)" rows="2" required />
                             <x-ui.button type="submit" variant="secondary">Batalkan Pengajuan</x-ui.button>
                         </form>
-                    @endcan
+                    @endif
+                    @unless ($actions['any'])
+                        {{-- Rule 197 (owner D1e): pilot decisions belong to designated accounts only. --}}
+                        <p class="text-xs text-ink-soft md:col-span-3" data-correction-no-action>Akun Anda tidak ditunjuk untuk mengambil keputusan atas pengajuan ini dalam pilot koreksi tagihan.</p>
+                    @endunless
                 </div>
             </x-ui.card>
         @endif

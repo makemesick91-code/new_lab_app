@@ -28,7 +28,9 @@ names `activation-rme-invoice-correction-prepayment-2-go` as the full tag, rule 
    merged role, which is the exact union of Admin Klinik + Kasir).
 7. **D1c (2026-10-21)** — pilot scope = **SPN4 (Cabang Sunu) only**.
 8. **D1d (2026-10-21)** — pilot accounts: maker user 29 (Admin Sunu), checker user 1
-   (IT Support, Super Admin).
+   (IT Support, Super Admin). **Since D1e (rule 197) these are the ONLY accounts that
+   may act in the pilot** — enforced in the service, fail-closed; every other Front
+   Office account and every other Super Admin is refused.
 9. **D21c (discount policy) and D21g (Rp0) stay `OWNER_DECISION_PENDING`.**
    Classified `SAFE_TO_DEFER_WITH_EXPLICIT_RESTRICTION` — never as approved:
    no discount cap is invented (bounds: `0 ≤ discount ≤ gross`, no zero/negative
@@ -84,6 +86,8 @@ names `activation-rme-invoice-correction-prepayment-2-go` as the full tag, rule 
 ## 5. RBAC (D1 + D1b) — `RoleSeeder` only
 20. Kasir: request. Admin Klinik: approve. Front Office: request + approve (the
     union invariant of `FrontOfficeRoleTest` holds). Super Admin: all (wildcard).
+    These are ROLE grants; inside the pilot the identity allowlist of rule 197
+    (owner D1e) additionally confines submit to user 29 and decisions to user 1.
     EVERY other role (Supervisor RME, Owner, Doctor, Perawat, Finance Klinik, Data
     Analyst, Finance/Admin Lab …) holds none. `rme:invoice-correction-readiness`
     FAILs on any drift (`ROLE_GRANT_DRIFT`).

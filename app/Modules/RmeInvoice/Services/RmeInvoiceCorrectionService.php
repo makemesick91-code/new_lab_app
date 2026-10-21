@@ -19,6 +19,7 @@ use App\Modules\RmeInvoice\Support\RmeFinancialAuditEvent;
 use App\Modules\RmeInvoice\Support\RmeInvoiceCorrectionDenied;
 use App\Modules\RmeInvoice\Support\RmeInvoiceCorrectionFeatureGuard;
 use App\Modules\RmeInvoice\Support\RmeInvoiceCorrectionPermission;
+use App\Modules\RmeInvoice\Support\RmeInvoiceCorrectionPilotIdentity;
 use App\Modules\RmeInvoice\Support\RmeInvoiceCorrectionPilotScope;
 use App\Modules\RmeInvoice\Support\RmeInvoiceCorrectionStatus;
 use App\Modules\RmeInvoice\Support\RmeInvoiceCorrectionType;
@@ -96,6 +97,7 @@ class RmeInvoiceCorrectionService
         private readonly RmeWorkingBranchScope $workingBranchScope,
         private readonly AuditLogService $auditLogs,
         private readonly RmeInvoiceCorrectionPilotScope $pilot,
+        private readonly RmeInvoiceCorrectionPilotIdentity $identity,
     ) {}
 
     // ─── Reads ──────────────────────────────────────────────────────────────
@@ -227,7 +229,9 @@ class RmeInvoiceCorrectionService
             'can_request' => $pilotAdmitted
                 && $user !== null
                 && $user->can(RmeInvoiceCorrectionPermission::REQUEST)
-                && $this->workingBranchScope->allows($user, (int) $invoice->branch_id),
+                && $this->workingBranchScope->allows($user, (int) $invoice->branch_id)
+                // Rule 197 (owner D1e) — only the designated maker account.
+                && $this->identity->allows(RmeInvoiceCorrectionPilotIdentity::ACTION_SUBMIT, $user),
             'eligible' => $pilotAdmitted && $ineligible === null,
             'pilot_admitted' => $pilotAdmitted,
             'ineligible_reason' => $ineligible,
@@ -235,6 +239,47 @@ class RmeInvoiceCorrectionService
             'history' => $history,
             'versions' => $this->corrections->documentVersionsForInvoice((int) $invoice->id),
         ]);
+    }
+
+    /**
+     * Rule 197 — which decision controls the detail page may offer this account.
+     * A courtesy for the screen only: every one is re-asserted by the service
+     * under the lock. Gate::before answers `true` to any policy for a Super
+     * Admin, so the identity allowlist is consulted here explicitly.
+     *
+     * @return array{approve: bool, reject: bool, apply: bool, cancel: bool, any: bool}
+     */
+    public function actionsFor(RmeInvoiceCorrection $correction, ?User $user): array
+    {
+        if ($user === null || ! $this->guard->enabled() || ! $correction->isActive()) {
+            return ['approve' => false, 'reject' => false, 'apply' => false, 'cancel' => false, 'any' => false];
+        }
+
+        $pilotAdmitted = $this->pilot->admits((int) $correction->branch_id);
+        $decides = ! $correction->isRequestedBy($user);
+
+        $actions = [
+            'approve' => $pilotAdmitted && $decides && $user->can('approve', $correction)
+                && $this->identity->allows(RmeInvoiceCorrectionPilotIdentity::ACTION_APPROVE, $user),
+            'reject' => $decides && $user->can('reject', $correction)
+                && $this->identity->allows(RmeInvoiceCorrectionPilotIdentity::ACTION_REJECT, $user),
+            'apply' => $pilotAdmitted && $decides && $correction->status === RmeInvoiceCorrectionStatus::APPROVED
+                && $user->can('apply', $correction)
+                && $this->identity->allows(RmeInvoiceCorrectionPilotIdentity::ACTION_APPLY, $user),
+            // Cancel is the maker's own de-escalation (not identity-gated).
+            'cancel' => $correction->isRequestedBy($user) && $user->can('cancel', $correction),
+        ];
+
+        return $actions + ['any' => in_array(true, $actions, true)];
+    }
+
+    /**
+     * Rule 197 — may this account file a correction (the request form)? The
+     * service asserts the same allowlist under the lock.
+     */
+    public function mayRequest(?User $user): bool
+    {
+        return $this->identity->allows(RmeInvoiceCorrectionPilotIdentity::ACTION_SUBMIT, $user);
     }
 
     // ─── Submit ─────────────────────────────────────────────────────────────
@@ -276,6 +321,10 @@ class RmeInvoiceCorrectionService
 
                     $this->assertActor($maker, RmeInvoiceCorrectionPermission::REQUEST, (int) $locked->branch_id, null, (int) $locked->id);
                     $this->pilot->assertAdmitted((int) $locked->branch_id, null, (int) $locked->id);
+                    // Rule 197 (owner D1e) — only the designated maker ACCOUNT,
+                    // asserted here under the lock because Gate::before lets a
+                    // Super Admin past every policy.
+                    $this->identity->assertAllowed(RmeInvoiceCorrectionPilotIdentity::ACTION_SUBMIT, $maker, null, (int) $locked->id);
                     $this->assertRmeBranch((int) $locked->branch_id);
 
                     // Re-checked under the lock: a concurrent double-submit with
@@ -524,6 +573,12 @@ class RmeInvoiceCorrectionService
                     );
                 }
 
+                // Rule 197 — the recovery apply is the second half of an approval
+                // (D1a), so it belongs to the designated checker account only.
+                // This NARROWS the apply permission (held by every Super Admin)
+                // to that one account; it grants nobody anything new.
+                $this->identity->assertAllowed(RmeInvoiceCorrectionPilotIdentity::ACTION_APPLY, $actor, (int) $locked->id, (int) $locked->rme_invoice_id);
+
                 if ($locked->status === RmeInvoiceCorrectionStatus::APPLIED) {
                     return [$locked, null]; // re-applying is a no-op, never a second application
                 }
@@ -688,8 +743,18 @@ class RmeInvoiceCorrectionService
      */
     private function decide(RmeInvoiceCorrection $correction, User $checker, string $action, Closure $transition): RmeInvoiceCorrection
     {
-        [$result, $stale] = $this->audited($action, $checker, (int) $correction->id, (int) $correction->rme_invoice_id, function () use ($correction, $checker, $transition) {
-            return DB::transaction(function () use ($correction, $checker, $transition) {
+        // Resolved OUTSIDE the closures: a variable missing from a `use` clause
+        // is silently null, which would select the wrong allowlist action.
+        $identityAction = match ($action) {
+            'approve' => RmeInvoiceCorrectionPilotIdentity::ACTION_APPROVE,
+            'reject' => RmeInvoiceCorrectionPilotIdentity::ACTION_REJECT,
+            // A future caller must choose its identity rule explicitly; it never
+            // silently inherits the reject rule.
+            default => throw new LogicException("Unknown correction decision action [{$action}]."),
+        };
+
+        [$result, $stale] = $this->audited($action, $checker, (int) $correction->id, (int) $correction->rme_invoice_id, function () use ($correction, $checker, $transition, $identityAction) {
+            return DB::transaction(function () use ($correction, $checker, $transition, $identityAction) {
                 [$invoice, $locked] = $this->lockPair($correction);
                 $this->assertActor($checker, RmeInvoiceCorrectionPermission::APPROVE, (int) $locked->branch_id, (int) $locked->id, (int) $locked->rme_invoice_id);
 
@@ -703,6 +768,17 @@ class RmeInvoiceCorrectionService
                         (int) $locked->rme_invoice_id,
                     );
                 }
+
+                // Rule 197 (owner D1e) — approve (which applies, D1a) and reject
+                // belong to the designated checker ACCOUNT only. Reject is not
+                // branch-gated (rule 195 §17), but it IS identity-gated: the
+                // maker's own cancel stays the ungated release path.
+                $this->identity->assertAllowed(
+                    $identityAction,
+                    $checker,
+                    (int) $locked->id,
+                    (int) $locked->rme_invoice_id,
+                );
 
                 return $transition($locked, $invoice);
             });

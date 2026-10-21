@@ -184,11 +184,19 @@ function ricCommittedInvoice(): array
             ]);
         }
 
+        $maker = userWith(['request_rme_invoice_correction']);
+        $checker = userWith(['approve_rme_invoice_correction']);
+        $applier = userWith(['apply_rme_invoice_correction']);
+        // Rule 197 (owner D1e) — the identity allowlist is fail-closed; the race
+        // accounts are designated exactly like production designates 29 / 1 (the
+        // recovery applier belongs to the checker identity).
+        ricPilotIdentities([(int) $maker->id], [(int) $checker->id, (int) $applier->id]);
+
         return [
             'invoice' => $invoice->fresh(),
-            'maker' => userWith(['request_rme_invoice_correction']),
-            'checker' => userWith(['approve_rme_invoice_correction']),
-            'applier' => userWith(['apply_rme_invoice_correction']),
+            'maker' => $maker,
+            'checker' => $checker,
+            'applier' => $applier,
             'cashier' => $cashier,
         ];
     });
@@ -306,6 +314,8 @@ it('lets exactly one of two simultaneous submissions for one invoice become acti
     ['invoice' => $invoice, 'maker' => $maker] = ricCommittedInvoice();
     $service = app(RmeInvoiceCorrectionService::class);
     $other = userWith(['request_rme_invoice_correction']);
+    // Rule 197 — the second submitter must be a designated maker too.
+    ricDesignateMaker($other);
 
     // Request A holds the invoice lock and has inserted its SUBMITTED correction,
     // uncommitted. Its row is built from a committed template, then re-inserted.

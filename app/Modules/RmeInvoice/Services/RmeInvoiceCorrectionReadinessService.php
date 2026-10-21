@@ -9,6 +9,7 @@ use App\Modules\Branch\Services\BranchService;
 use App\Modules\RmeInvoice\Interfaces\RmeInvoiceCorrectionRepositoryInterface;
 use App\Modules\RmeInvoice\Support\RmeInvoiceCorrectionFeatureGuard;
 use App\Modules\RmeInvoice\Support\RmeInvoiceCorrectionPermission;
+use App\Modules\RmeInvoice\Support\RmeInvoiceCorrectionPilotIdentity;
 use App\Modules\RmeInvoice\Support\RmeInvoiceCorrectionPilotScope;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
 use App\Services\Foundation\FeatureFlagService;
@@ -80,6 +81,7 @@ class RmeInvoiceCorrectionReadinessService
         private readonly RmeWorkingBranchScope $workingScope,
         private readonly RmeInvoiceCorrectionRepositoryInterface $corrections,
         private readonly FrontOfficeBranchPinResolver $frontOfficePins,
+        private readonly RmeInvoiceCorrectionPilotIdentity $identity,
     ) {}
 
     /**
@@ -108,6 +110,22 @@ class RmeInvoiceCorrectionReadinessService
 
         if ($enabled && $admittedIds === []) {
             $findings[] = ['level' => self::WATCH, 'code' => 'FLAG_ON_NO_PILOT_BRANCH', 'detail' => 'flag ON but the allowlist admits no branch: inert'];
+        }
+
+        // Rule 197 (owner D1e) — WHO may act. A malformed list admits nobody,
+        // so the pilot cannot run at all: that is a FAIL, never a WATCH.
+        $identities = $this->identity->allowlist();
+        if ($identities === null) {
+            $findings[] = ['level' => self::FAIL, 'code' => 'PILOT_IDENTITY_CONFIG_INVALID', 'detail' => 'the identity allowlist is missing, malformed or overlapping: nobody may act'];
+        } elseif (($unusable = $this->identity->unusableDesignatedIds()) !== []) {
+            // A designated account that is missing, deleted or inactive cannot act.
+            // A missing checker would let the maker file corrections nobody may
+            // decide, so this is a FAIL, never a WATCH.
+            $findings[] = ['level' => self::FAIL, 'code' => 'PILOT_IDENTITY_ACCOUNT_UNUSABLE', 'detail' => implode(',', $unusable)];
+        } elseif ($identities['checker_user_ids'] === []) {
+            $findings[] = ['level' => self::WATCH, 'code' => 'PILOT_IDENTITY_NO_CHECKER', 'detail' => 'no checker designated: nothing may be submitted, decided or applied'];
+        } elseif ($identities['maker_user_ids'] === []) {
+            $findings[] = ['level' => self::WATCH, 'code' => 'PILOT_IDENTITY_NO_MAKER', 'detail' => 'no maker designated: new submissions are stopped; the checker can still resolve filed corrections'];
         }
 
         $roles = $this->roleGrants($findings);
@@ -152,6 +170,12 @@ class RmeInvoiceCorrectionReadinessService
                 'admitted_branch_codes' => $admittedCodes,
                 'unresolved_codes' => $unresolved,
                 'source' => 'config/rme_invoice_correction.php (source-controlled, no environment read)',
+            ],
+            'pilot_identities' => [
+                'valid' => $identities !== null,
+                'maker_user_ids' => $identities['maker_user_ids'] ?? [],
+                'checker_user_ids' => $identities['checker_user_ids'] ?? [],
+                'source' => 'config/rme_invoice_correction.php pilot.identities (owner D1e, source-controlled, no environment read)',
             ],
             'application_authority' => 'AUTO_ON_APPROVAL (owner D1a): the checker\'s approval applies the correction in the same transaction',
             'roles' => $roles,
@@ -249,6 +273,11 @@ class RmeInvoiceCorrectionReadinessService
             'can_request' => $user->can(RmeInvoiceCorrectionPermission::REQUEST),
             'can_approve' => $user->can(RmeInvoiceCorrectionPermission::APPROVE),
             'can_apply_recovery' => $user->can(RmeInvoiceCorrectionPermission::APPLY),
+            // Rule 197 (owner D1e) — the identity allowlist, independent of the
+            // permission grant above (which reaches every Front Office account
+            // and every Super Admin).
+            'designated_maker' => $this->identity->designates(RmeInvoiceCorrectionPilotIdentity::ACTION_SUBMIT, $id),
+            'designated_checker' => $this->identity->designates(RmeInvoiceCorrectionPilotIdentity::ACTION_APPROVE, $id),
             'working_scope' => array_values(array_map(fn (int $b) => $branchCodes[$b] ?? (string) $b, $scope)),
             'pilot_branches_in_scope' => array_values(array_map(fn (int $b) => $branchCodes[$b] ?? (string) $b, $inPilot)),
             // LIVE: what the account may do in the pilot RIGHT NOW (its current
@@ -335,6 +364,16 @@ class RmeInvoiceCorrectionReadinessService
         if (! $checkerOk) {
             $findings[] = ['level' => self::FAIL, 'code' => 'PAIR_CHECKER_CANNOT_APPROVE_IN_PILOT', 'detail' => (string) $checkerId];
         }
+        // Rule 197 — the pair must be the DESIGNATED accounts, not merely two
+        // accounts the permission grant reaches.
+        $makerDesignated = is_array($maker) && ($maker['designated_maker'] ?? false);
+        $checkerDesignated = is_array($checker) && ($checker['designated_checker'] ?? false);
+        if ($makerId !== null && ! $makerDesignated) {
+            $findings[] = ['level' => self::FAIL, 'code' => 'PAIR_MAKER_NOT_PILOT_IDENTITY', 'detail' => (string) $makerId];
+        }
+        if ($checkerId !== null && ! $checkerDesignated) {
+            $findings[] = ['level' => self::FAIL, 'code' => 'PAIR_CHECKER_NOT_PILOT_IDENTITY', 'detail' => (string) $checkerId];
+        }
         if ($makerOk && $checkerOk && $shared === []) {
             $findings[] = ['level' => self::FAIL, 'code' => 'PAIR_NO_SHARED_PILOT_BRANCH', 'detail' => 'no pilot branch both accounts may act in'];
         }
@@ -352,9 +391,11 @@ class RmeInvoiceCorrectionReadinessService
             'maker_may_request_in_pilot' => $makerOk,
             'checker_may_approve_in_pilot' => $checkerOk,
             'shared_pilot_branches' => $shared,
-            'valid' => $distinct && $makerOk && $checkerOk && $shared !== [],
+            'maker_designated' => $makerDesignated,
+            'checker_designated' => $checkerDesignated,
+            'valid' => $distinct && $makerOk && $checkerOk && $shared !== [] && $makerDesignated && $checkerDesignated,
             // Both accounts on shift, right now, in a pilot branch they share.
-            'live_now' => $distinct && $sharedLive !== [],
+            'live_now' => $distinct && $sharedLive !== [] && $makerDesignated && $checkerDesignated,
         ];
     }
 

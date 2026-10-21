@@ -37,6 +37,12 @@ final class RmeInvoiceCorrectionDenied extends AuthorizationException
      */
     public const SELF_APPLICATION = 'SELF_APPLICATION_FORBIDDEN';
 
+    /** Rule 197 (owner D1e) — the account is not designated for this action in the pilot. */
+    public const PILOT_IDENTITY_NOT_AUTHORIZED = 'PILOT_IDENTITY_NOT_AUTHORIZED';
+
+    /** Rule 197 — the actor is not a persisted, non-deleted, active account. */
+    public const PILOT_IDENTITY_ACTOR_UNUSABLE = 'PILOT_IDENTITY_ACTOR_UNUSABLE';
+
     public function __construct(
         public readonly string $reasonCode,
         string $message,
