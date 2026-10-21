@@ -10,6 +10,11 @@ Evidence: `docs/sprints/activation-rme-invoice-correction-prepayment-2.md`.
 Decisions: `docs/decisions/rme-billing-correction-owner-decisions.md`.
 Extends rules 190 (foundation), 191 (payment-version binding), 192 (D10 block),
 194 (manual pricing). Where they disagree about who may do what, THIS rule is newer.
+**Verification and closure of the live pilot: rule 196** (state ladder, evidence per
+rung, the full-GO tag `verification-rme-invoice-correction-prepayment-pilot-1-go`,
+and why a real eligible case can only be caught, never created). Where §29 below
+names `activation-rme-invoice-correction-prepayment-2-go` as the full tag, rule 196
+§14 supersedes it: that tag is never created retroactively.
 
 ## 1. Owner decisions (all `OWNER_POLICY_APPROVED`)
 1. **D1** — Kasir submits; Admin Klinik approves within their branch; Super Admin

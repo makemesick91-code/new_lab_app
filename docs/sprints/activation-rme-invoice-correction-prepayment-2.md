@@ -313,6 +313,13 @@ not be created until both NOT_PERFORMED rows above are performed and reconciled.
    - no other invoice changed.
 6. Only then create the full tag on the deployed runtime SHA.
 
+> **Forward pointer (2026-10-21, VERIFICATION-RME-INVOICE-CORRECTION-PREPAYMENT-PILOT-1):**
+> the verification contract is now rule 196. The full closure tag is
+> `verification-rme-invoice-correction-prepayment-pilot-1-go`; the
+> `activation-rme-invoice-correction-prepayment-2-go` named in step 6 and in §14 is
+> never created retroactively (rule 196 §14). Evidence:
+> `docs/sprints/verification-rme-invoice-correction-prepayment-pilot-1.md`.
+
 Rollback is unchanged (rule 195 §30): reject or cancel active corrections, set the
 flag OFF and rebuild the config cache as `daengtisiams`. Applied corrections and
 frozen document versions are never deleted.

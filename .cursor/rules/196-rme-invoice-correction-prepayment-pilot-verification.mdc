@@ -1,0 +1,109 @@
+---
+description: VERIFICATION-RME-INVOICE-CORRECTION-PREPAYMENT-PILOT-1 — how the live SPN4 pre-payment invoice correction pilot is verified and when it may be closed. Six-rung state ladder (PILOT_READY → PILOT_ACTIVE → PILOT_LIVE → AUTHENTICATED_VERIFIED → FINANCIAL_CORRECTION_VERIFIED → FULL_ACTIVATION_GO), the evidence each rung needs, the full-GO tag contract, and why an eligible real case can only be caught, never created. Extends rule 195; changes no runtime behaviour.
+globs: app/Modules/RmeInvoice/**, app/Console/Commands/RmeInvoiceCorrectionReadinessCommand.php, config/rme_invoice_correction.php, docs/sprints/verification-rme-invoice-correction-prepayment-pilot-1.md, docs/decisions/rme-billing-correction-owner-decisions.md
+alwaysApply: false
+---
+
+# RME invoice correction — pre-payment pilot VERIFICATION (rule 196)
+
+Evidence: `docs/sprints/verification-rme-invoice-correction-prepayment-pilot-1.md`.
+Extends rule 195 (activation contract). Rule 195 decides WHO may do WHAT; this rule
+decides what counts as PROOF that the live pilot works and when it may be closed.
+Nothing here changes runtime behaviour.
+
+## 1. The state ladder — never collapse two rungs into one
+Each rung needs its own evidence; a lower rung never implies a higher one.
+
+| Rung | Means | Evidence (all of it) |
+|---|---|---|
+| `PILOT_READY` | the code can run the pilot | deployed runtime SHA, flag OFF→ON path proven, RoleSeeder grants match rule 195 |
+| `PILOT_ACTIVE` | the flag is ON and the allowlist admits exactly the pilot branch | `rme:invoice-correction-readiness` → `STATE=PILOT_ACTIVE`, admitted codes `[SPN4]` |
+| `PILOT_LIVE` | the maker and the checker are on shift in a shared pilot branch now | the probe `--maker=29 --checker=1` → `live_now=true`, Decision GO |
+| `AUTHENTICATED_VERIFIED` | the two real operators logged in normally and saw/denied the right things | operator-performed login + working-branch selection, observed server-side (session/online-context rows, probe), never produced by anyone else |
+| `FINANCIAL_CORRECTION_VERIFIED` | one real, owner-authorized correction went SUBMITTED → APPLIED and reconciled | correction + 2 events + 2 audit rows, v0 frozen, v1 issued, version +1, no other financial row changed |
+| `FULL_ACTIVATION_GO` | the pilot is closed | every rung above + CI/rules/security/cleanup, then the full tag |
+
+1. `PILOT_ACTIVE` with Decision WATCH is a legitimate resting state. It is not a
+   failure and it is not a GO.
+2. A verification run that cannot reach a rung reports the rung it reached and the
+   missing evidence by name. It never rounds up.
+
+## 2. What may and may not be done to reach a rung
+3. **Never manufacture `PILOT_LIVE`.** The maker's working context exists only when
+   the operator logs in. Never log in as them, never reset their password, never
+   insert or edit a session / online-context / daily-context row, never open a REPL
+   on production to "act as" them (rule 195 §28b–29).
+4. **An online-context row's `status` column is not "on shift".** A row can read
+   `status=online` days after the operator left — expiry is evaluated lazily from
+   `last_seen_at`. Read the probe's `on_shift_in_pilot` / `live_now`, which applies
+   the expiry without writing (a probe that writes the expiry is a defect — rule 165
+   item 6a). Measured 2026-10-21: user 29's row read `online` with
+   `last_seen_at` 2026-10-17; the probe correctly reported off shift and left the
+   row untouched.
+5. Run the probe ONLY as the runtime user (`runuser -u daengtisiams -- php artisan
+   rme:invoice-correction-readiness --maker=29 --checker=1 [--json]`). It refuses root.
+
+## 3. A real eligible case can only be caught — never created
+6. An eligible case (rule 195 §23) exists only in the window between the cashier
+   creating a POSITIVE invoice and the patient paying it. In SPN4 the cashier
+   usually takes payment at handoff, so that window is short and a correction case
+   arises only when an operator notices a genuine error inside it.
+7. Therefore the full verification is OPPORTUNISTIC: when a real error is noticed
+   before payment, the owner authorizes THAT case (invoice reference, reason,
+   approved line changes, original and expected total, maker 29, checker 1), and
+   only then does the maker submit and the checker approve.
+8. Forbidden ways of producing a case, every one of them: creating an invoice with a
+   deliberate error; delaying a patient's payment to keep an invoice UNPAID;
+   editing an invoice's status or total; deleting or voiding a payment; using a
+   synthetic patient or visit; correcting a historical Rp0 invoice (D21g PENDING —
+   in 2026-10-21 the only UNPAID SPN4 invoice was Rp0, and it stays untouched);
+   using a case that needs an undecided discount policy (D21c PENDING).
+9. Generic approval to "finish the pilot" is never case-specific authorization for
+   a particular patient's invoice. Missing case authorization →
+   `CASE_SPECIFIC_AUTHORIZATION=PENDING`, no financial mutation.
+
+## 4. Before and after any real correction
+10. Capture a fresh read-only baseline immediately before (counts and sums of
+    invoices, items, payments, payment batches, corrections, events, document
+    versions, audit rows, role-permission pairs; the target invoice's version and
+    total). Historical figures are never a substitute.
+11. Reconcile after: exactly one correction APPLIED (`application_mode=AUTO_ON_APPROVAL`),
+    maker ≠ checker, invoice `correction_version` +1, v0 unchanged, v1 matching the
+    approved items and total, payment history unchanged, no other invoice changed.
+    Any unexplained difference → `FINANCIAL_RECONCILIATION=FAIL`, stop, preserve
+    evidence, follow the incident procedure. Never patch a financial row to make a
+    reconciliation pass.
+12. D10 is verified in production by STATE (the correction is SUBMITTED/APPROVED and
+    the payment page shows the block), never by posting a real payment to see it
+    refused. Payment-mutation behaviour is proven by the PostgreSQL suites.
+
+## 5. Accounts (D1d) — a designation, not an allowlist
+13. D1d names the two accounts that perform the pilot ceremony. It is NOT an
+    account allowlist: the grant reaches every Front Office account that can work
+    in SPN4. Measured 2026-10-21 with the probe (`--user=` for every holder): 8
+    active Front Office accounts (7, 8, 16, 17, 29, 30, 31, 32) + Super Admin 1 hold
+    request/approve, and ALL 8 Front Office accounts are eligible for SPN4 — only
+    user 29 is branch-pinned (to SPN4); 30/31/32 are not pinned in production, so
+    the pin cohort is not a pilot boundary. Maker ≠ checker still holds per
+    account. Narrowing the pilot to named accounts is a new owner decision,
+    implemented in code — never by editing roles, pins or cohorts.
+    Never infer an account's reach from a runbook's planned pin order; measure it.
+
+## 6. Tags, deploys and closure
+14. The pilot's full closure tag is `verification-rme-invoice-correction-prepayment-pilot-1-go`
+    on the DEPLOYED runtime SHA. `activation-rme-invoice-correction-prepayment-2-go`
+    is never created retroactively — one fact, one tag. Neither exists until
+    `FINANCIAL_CORRECTION_VERIFIED` is reached.
+15. A verification run that finds no runtime defect does NOT deploy: record
+    `DEPLOY_REQUIRED=NO` / `NO_RUNTIME_DELTA` and verify the existing runtime. Never
+    run a same-SHA redeploy to manufacture `DEPLOY OK`, never a meaningless commit to
+    force CI, never a second scoped tag on a SHA that already carries one for the
+    same evidence.
+16. A defect found during verification follows the full lifecycle (failing test →
+    minimal fix → security review → CI on the exact candidate → merge → deploy ON
+    the VPS → production re-verification). Suspend the pilot first if the defect can
+    move money wrongly: reject/cancel active corrections, flag OFF, config cache as
+    `daengtisiams` (rule 195 §30).
+17. Remaining FUTURE_SCOPE stays unreported as active: post-payment correction,
+    refund, reversal, patient credit, Rp0 adjustment, discount authority, any branch
+    other than SPN4.
