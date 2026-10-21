@@ -1,48 +1,50 @@
-# REVISION-RME-MANUAL-PRICING-AUTHORITY-1
+# ACTIVATION-RME-INVOICE-CORRECTION-PREPAYMENT-2
 #
-# Owner D21 REVISED (2026-10-20): there is NO mandatory official treatment
-# tariff. The authorized cashier types the price of every ORIGINAL invoice line;
-# prices may differ per branch and per patient. The issued invoice is the
-# immutable financial snapshot and changes only through the maker-checker
-# correction workflow (D1 / D7 / D10 unchanged), which is now TARIFF-INDEPENDENT.
+# Activation of the pre-payment RME invoice correction under owner decisions
+# recorded 2026-10-21 (docs/decisions/rme-billing-correction-owner-decisions.md):
+#   D1a — the CHECKER applies, automatically at approval (one transaction);
+#   D1b — Front Office holds request AND approve (the merged role is the exact
+#         union of Admin Klinik + Kasir; maker != checker stays per account);
+#   D1c — pilot scope SPN4 only, server-side, source-controlled, fail-closed;
+#   D1d — pilot accounts maker 29 (Admin Sunu), checker 1 (IT Support).
+# D21c (discount policy) and D21g (Rp0) stay PENDING — classified
+# SAFE_TO_DEFER_WITH_EXPLICIT_RESTRICTION, never approved.
 #
 # Runtime changes:
-#   - RmeInvoicePricingService prices MANUAL for every branch: the cashier price
-#     is kept after server-side integer-cents validation; no tariff is read,
-#     compared, recorded or prefilled; a named treatment must be active
-#     (INVOICE_TREATMENT_INVALID); a blank / malformed unit price is refused,
-#     never silently zero;
-#   - new price provenance MANUAL_CASHIER_ENTRY / MANUAL_FREE_TEXT /
-#     CORRECTION_MANUAL_ENTRY (historical TARIFF_* / TRANSITIONAL_* untouched);
-#   - strict tariff mode LEGACY_SUPERSEDED: `strict_branch_codes` is a
-#     source-controlled empty list, no environment key can enable it;
-#   - correction submit / approve / apply hold no tariff dependency;
-#     TARIFF_AUTHORITY_CHANGED is no longer a staleness reason;
-#   - cashier form: no tariff autofill, manual-pricing notice, integer-cents
-#     display total;
-#   - tariff readiness reports PRICING_AUTHORITY=MANUAL_CASHIER_ENTRY.
+#   - RmeInvoiceCorrectionService::approve() approves AND applies atomically;
+#     apply() is the recovery path for a pre-D1a APPROVED row and refuses the
+#     maker (SELF_APPLICATION_FORBIDDEN), Super Admin included;
+#   - RmeInvoiceCorrectionPilotScope + config/rme_invoice_correction.php
+#     (['SPN4'], no env read): submit/approve/apply refused outside the pilot
+#     (BRANCH_NOT_IN_PILOT, audited); reject/cancel are not gated;
+#   - RoleSeeder: Kasir request, Admin Klinik approve, Front Office both;
+#     no operational role holds apply;
+#   - money display never rounds stored cents (RmeInvoiceDocument::rupiah,
+#     OversightFormat::rupiahCents); correction qty bound == invoice qty bound;
+#     a price-unchanged CHANGE line keeps its price provenance;
+#   - read-only production authorization probe rme:invoice-correction-readiness.
 #
-# No migration, no seeder, no permission or role change. FEATURE_RME_INVOICE_
-# CORRECTION stays OFF; its operational permissions stay granted to no role;
-# post-payment correction, refund and Rp0 adjustment stay NOT_ACTIVE. Rule 194.
+# No migration. The flag stays OFF by default; activation (RoleSeeder on the
+# host, env flag ON, config cache as daengtisiams) is the ceremony after deploy.
+# Rule 195.
 #
-# Type FOUNDATION_SPRINT: financial authority across RmeInvoice + Tariff +
-# Treatment + cashier UI; audit level 3. security_impact true.
+# Type FOUNDATION_SPRINT: financial capability activation across RmeInvoice +
+# RBAC + cashier UI + oversight formatting; audit level 3. security_impact true.
 
-id: REVISION-RME-MANUAL-PRICING-AUTHORITY-1
+id: ACTIVATION-RME-INVOICE-CORRECTION-PREPAYMENT-2
 type: FOUNDATION_SPRINT
 module: RmeInvoice
-title: "Owner D21 revised to manual cashier pricing — tariff optional, server money validation, MANUAL provenance, tariff-independent correction; correction stays OFF"
+title: "Pre-payment RME invoice correction pilot activation — D1a atomic approve-and-apply, Front Office maker/checker per account, SPN4 fail-closed allowlist"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 runtime_change: true
 schema_change: false
 frontend_change: true
 security_impact: true
-branch_isolation_impact: false
+branch_isolation_impact: true
 ledger_impact: false
 deploy_required: true
 browser_required: false
-test_profiles: [tariff, rme, cashier, billing]
-go_tag: revision-rme-manual-pricing-authority-1-go
-inherits_parent_go: feature-rme-branch-tariff-provisioning-1-foundation-go
+test_profiles: [rme, cashier, billing, permission]
+go_tag: activation-rme-invoice-correction-prepayment-2-pilot-readiness-go
+inherits_parent_go: revision-rme-manual-pricing-authority-1-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1

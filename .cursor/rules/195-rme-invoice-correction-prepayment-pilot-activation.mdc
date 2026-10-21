@@ -1,0 +1,142 @@
+---
+description: ACTIVATION-RME-INVOICE-CORRECTION-PREPAYMENT-2 — activation contract of the pre-payment RME invoice correction. Owner decisions 2026-10-21 D1a (the checker's approval APPLIES, atomically), D1b (Front Office holds request+approve), D1c (pilot = SPN4 only, source-controlled fail-closed allowlist), D1d (pilot accounts 29/1). Maker != checker != applier per ACCOUNT. D21c/D21g still PENDING (safe-to-defer, restricted). Labels — FOUNDATION_IMPLEMENTED / DEPLOYED_DORMANT / PILOT_ACTIVE / PRODUCTION_ACTIVE / OWNER_DECISION_PENDING / FUTURE_SCOPE.
+globs: app/Modules/RmeInvoice/**, app/Modules/ClinicOversight/Support/OversightFormat.php, resources/views/rme/invoice-corrections/**, resources/views/rme/cashier/**, config/rme_invoice_correction.php, config/feature_flags.php, database/seeders/RoleSeeder.php, app/Console/Commands/RmeInvoiceCorrectionReadinessCommand.php, tests/Feature/RmeInvoiceCorrection/**
+alwaysApply: false
+---
+
+# RME invoice correction — pre-payment PILOT activation (rule 195)
+
+Evidence: `docs/sprints/activation-rme-invoice-correction-prepayment-2.md`.
+Decisions: `docs/decisions/rme-billing-correction-owner-decisions.md`.
+Extends rules 190 (foundation), 191 (payment-version binding), 192 (D10 block),
+194 (manual pricing). Where they disagree about who may do what, THIS rule is newer.
+
+## 1. Owner decisions (all `OWNER_POLICY_APPROVED`)
+1. **D1** — Kasir submits; Admin Klinik approves within their branch; Super Admin
+   approves across branches; the requester never approves their own request.
+2. **D7** — v0 original frozen, v1/v2… immutable revisions; never overwritten.
+3. **D10** — a SUBMITTED or APPROVED correction blocks payment on every path,
+   under the invoice row lock, whole batch rolled back.
+4. **D21 (revised)** — manual cashier pricing; no tariff lookup/equality/gate.
+5. **D1a (2026-10-21)** — the CHECKER applies, **automatically at approval**.
+6. **D1b (2026-10-21)** — Front Office holds request AND approve (literal D1 on the
+   merged role, which is the exact union of Admin Klinik + Kasir).
+7. **D1c (2026-10-21)** — pilot scope = **SPN4 (Cabang Sunu) only**.
+8. **D1d (2026-10-21)** — pilot accounts: maker user 29 (Admin Sunu), checker user 1
+   (IT Support, Super Admin).
+9. **D21c (discount policy) and D21g (Rp0) stay `OWNER_DECISION_PENDING`.**
+   Classified `SAFE_TO_DEFER_WITH_EXPLICIT_RESTRICTION` — never as approved:
+   no discount cap is invented (bounds: `0 ≤ discount ≤ gross`, no zero/negative
+   line or total, 2 decimals, overflow refused, server totals, and a DIFFERENT
+   account approves the whole fingerprint); every new Rp0 line/total is refused;
+   historical Rp0 invoices untouched; the dedicated Rp0 adjustment is not built.
+10. A brief's recommendation is never an approval. A new financial policy needs
+    the owner, recorded in the decision register first.
+
+## 2. Atomic approve-and-apply (D1a) — PILOT_ACTIVE once the ceremony runs
+11. `RmeInvoiceCorrectionService::approve()` records SUBMITTED→APPROVED and then
+    applies (APPROVED→APPLIED) in ONE transaction under the invoice → correction
+    lock pair. Anything that refuses the application (staleness, a disabled type,
+    a non-RME branch, a total that does not reconcile) leaves NO approval either:
+    the correction stays SUBMITTED, or goes STALE (persisted). Never split them
+    again without a new owner decision.
+12. The authority to approve-and-apply is the APPROVE permission. No operational
+    role holds `apply_rme_invoice_correction`; it gates only the recovery path
+    `apply()` for an APPROVED row that predates D1a (0 in production 2026-10-21).
+13. Both transitions write their event + audit row; the audit carries
+    `application_mode` = `AUTO_ON_APPROVAL` (or `MANUAL_RECOVERY`). A replayed
+    approval of an APPLIED correction is a no-op, never a second application.
+
+## 3. Maker ≠ checker ≠ applier — per ACCOUNT, in the SERVICE
+14. Under the lock: the requester cannot approve (`SELF_APPROVAL_FORBIDDEN`) and
+    cannot apply on the recovery path (`SELF_APPLICATION_FORBIDDEN`) — Super Admin
+    included. `Gate::before` lets Super Admin pass every policy, so a policy is a
+    courtesy, never the control. Holding both permissions (Front Office) never
+    lets one person decide their own request.
+
+## 4. Pilot allowlist (D1c) — server-side, fail-closed
+15. `config/rme_invoice_correction.php` → `pilot.branch_codes = ['SPN4']`.
+    SOURCE-CONTROLLED, no `env()`: widening is an owner decision arriving as a
+    reviewed commit. The flag stays the environment kill switch.
+16. `RmeInvoiceCorrectionPilotScope`: empty/malformed list admits nothing; MAIN never;
+    the DECLARED code is canonicalized (`sun4`→`SPN4`) but the LIVE branch must carry
+    that canonical code exactly — a branch created with an alias code (`SUN4`) is
+    never admitted (security review L1: widening is a commit, never a master-data
+    edit); never a prefix; a listed branch that is inactive/not RME-enabled admits
+    nothing.
+17. Gated (under the lock, audited refusal `BRANCH_NOT_IN_PILOT`): submit, approve
+    (= apply), recovery apply. NOT gated: reject, cancel (de-escalation; the
+    rollback path for a correction left outside a narrowed pilot). Known edge
+    (informational): a pre-D1a APPROVED row outside the pilot can be neither applied
+    nor rejected (APPROVED→REJECTED is not a transition) — only its maker can cancel
+    it. Production holds 0 corrections, and D1a never persists APPROVED again;
+    `ACTIVE_CORRECTION_OUTSIDE_PILOT` in the probe surfaces any such row.
+18. HTTP: create form and store answer 404 outside the pilot (like flag OFF); the
+    cashier panel renders only for a pilot branch or an invoice with history.
+19. Never activate another branch, never add a branch to the list, never move the
+    list to the environment without a new owner decision.
+
+## 5. RBAC (D1 + D1b) — `RoleSeeder` only
+20. Kasir: request. Admin Klinik: approve. Front Office: request + approve (the
+    union invariant of `FrontOfficeRoleTest` holds). Super Admin: all (wildcard).
+    EVERY other role (Supervisor RME, Owner, Doctor, Perawat, Finance Klinik, Data
+    Analyst, Finance/Admin Lab …) holds none. `rme:invoice-correction-readiness`
+    FAILs on any drift (`ROLE_GRANT_DRIFT`).
+21. Production grant = `db:seed --class=PermissionSeeder --force` THEN
+    `--class=RoleSeeder --force` THEN `permission:cache-reset`, after the deploy.
+    Measure the delta first (scratch-DB seed vs production `role_has_permissions`);
+    `syncPermissions` REMOVES anything not in the array. Never hand-edit
+    permission tables. Finance Klinik / Data Analyst stay read-only oversight.
+22. Branch scope is `RmeWorkingBranchScope` (Front Office/Kasir/Admin Klinik pinned
+    to their working branch; Super Admin every active RME branch). A request
+    `branch_id` is never authority. Out-of-scope correction ids answer 404.
+
+## 6. Eligibility, payments, documents — unchanged foundations
+23. Correctable: UNPAID, zero payments, non-cancelled visit, no lab candidate,
+    one active correction per invoice (partial unique index), version unchanged
+    since submission (fingerprint). PAID/PARTIAL/REFUNDED/CANCELLED are refused.
+24. Payment ↔ `correction_version` binding (rule 191) and the D10 block (rule 192)
+    are unchanged; an applied correction is payable only against the NEW version.
+
+## 7. Presentation and residual fixes (this release)
+25. Money is printed as stored: `RmeInvoiceDocument::rupiah()` /
+    `OversightFormat::rupiahCents()` keep non-zero cents (`Rp 175.000,50`); they
+    never round (the old code printed `Rp 175.001`) or truncate. Whole amounts
+    print unchanged. Correction views use `RmeInvoiceDocument::rupiahDecimal()`;
+    the correction-form preview and the oversight dashboard compute in integer
+    cents in the browser too (security review L3). Remaining `number_format(..., 0)`
+    sites on the cashier pages are a recorded residual (production holds 0
+    non-whole amounts).
+26. One quantity bound: `RmeInvoiceCorrectionProposalBuilder::MAX_QTY ===
+    RmeInvoicePricingService::MAX_QTY` (the old 10 000 made a large invoice
+    uncorrectable even for an unrelated line).
+27. A CHANGED line re-labels `price_source` to `CORRECTION_MANUAL_ENTRY` when its
+    PRICE or its TREATMENT changed; a qty/discount/description/doctor-only change
+    keeps the provenance of the price it still carries (security review L2). (The v0 snapshot does not carry provenance —
+    residual, recorded; production items have NULL provenance.)
+
+## 8. Activation, verification, rollback
+28. Order (a missing step is NO_GO): decisions → deploy (flag OFF) → RoleSeeder grant
+    → flag ON via the environment + config cache as `daengtisiams` →
+    `rme:invoice-correction-readiness --maker=29 --checker=1` = GO → authenticated
+    pilot by the two real operators → a real authorized correction + financial
+    reconciliation.
+28a. Run the probe as the RUNTIME user only — `runuser -u daengtisiams -- php
+    artisan rme:invoice-correction-readiness …`. It refuses to run as root: an
+    effective-permission check can rebuild the Spatie permission cache, and a
+    root-owned cache file is the FIX-LOGIN-REDIRECT-RUNTIME-PERMISSIONS 500
+    (security review L4).
+29. **Technical readiness ≠ operational verification.** Until the operators run
+    the authenticated pilot AND an authorized real positive UNPAID case is
+    corrected and reconciled, only a SCOPED GO tag may exist; the full tag
+    `activation-rme-invoice-correction-prepayment-2-go` must not. Never fabricate
+    an invoice, payment, patient or correction to produce evidence; never reset an
+    operator's password or open a REPL on production to "test as" them.
+30. Rollback: (1) reject/cancel every active correction (allowed outside the
+    pilot); (2) set the flag OFF via the environment + config cache as
+    `daengtisiams`; (3) only if required, remove the grants by reverting the
+    RoleSeeder change and re-seeding. Applied corrections, events, audit rows and
+    frozen v0/vN documents are NEVER deleted or reverted.
+31. FUTURE_SCOPE, never reported active: post-payment correction, refund, payment
+    reversal, patient credit, Rp0 adjustment, discount authority (D21c), any
+    branch other than SPN4.

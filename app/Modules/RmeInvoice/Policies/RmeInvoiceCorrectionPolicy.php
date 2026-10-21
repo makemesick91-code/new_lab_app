@@ -63,10 +63,17 @@ class RmeInvoiceCorrectionPolicy
             && $correction->isRequestedBy($user);
     }
 
+    /**
+     * The legacy recovery path for an APPROVED row that predates owner D1a
+     * (rule 195). The maker never applies their own correction; the service
+     * repeats this under the lock — Gate::before means this courtesy check never
+     * runs for Super Admin, so it is never the guarantee.
+     */
     public function apply(User $user, RmeInvoiceCorrection $correction): bool
     {
         return $user->can(RmeInvoiceCorrectionPermission::APPLY)
-            && $this->scope->allows($user, (int) $correction->branch_id);
+            && $this->scope->allows($user, (int) $correction->branch_id)
+            && ! $correction->isRequestedBy($user);
     }
 
     public function viewDocumentVersion(User $user, RmeInvoiceDocumentVersion $version): bool

@@ -95,9 +95,12 @@ it('blocks payment while a correction is SUBMITTED (pending approval)', function
         ->and($correction->fresh()->status)->toBe(RmeInvoiceCorrectionStatus::SUBMITTED);
 });
 
+// REVISED by rule 195 (D1a): an APPROVED-unapplied correction can no longer be
+// produced by approve() (which applies); it is built as the pre-D1a legacy shape.
+// D10 still blocks payment on such a row.
 it('blocks payment while a correction is APPROVED but not yet applied', function () {
     $invoice = ricInvoice();
-    ricApprove(ricSubmit($invoice));
+    ricLegacyApproved(ricSubmit($invoice));
 
     rpbExpectBlocked(fn () => rpbPay($invoice, 500000));
     expect(RmePayment::where('rme_invoice_id', $invoice->id)->count())->toBe(0);
@@ -134,9 +137,12 @@ it('resumes payment after the correction is REJECTED', function () {
     expect($invoice->fresh()->status)->toBe(RmeInvoice::STATUS_PAID);
 });
 
+// REVISED by rule 195 (D1a): an APPROVED-unapplied correction can no longer be
+// produced by approve() (which applies); it is built as the pre-D1a legacy shape.
+// D10 still blocks payment on such a row.
 it('resumes payment after the maker CANCELS the correction', function () {
     $invoice = ricInvoice();
-    $correction = ricApprove(ricSubmit($invoice));
+    $correction = ricLegacyApproved(ricSubmit($invoice));
     test()->actingAs(test()->maker);
     app(RmeInvoiceCorrectionService::class)->cancel($correction, test()->maker, 'Pengajuan dibatalkan oleh kasir.');
 
@@ -144,9 +150,12 @@ it('resumes payment after the maker CANCELS the correction', function () {
     expect($invoice->fresh()->status)->toBe(RmeInvoice::STATUS_PAID);
 });
 
+// REVISED by rule 195 (D1a): an APPROVED-unapplied correction can no longer be
+// produced by approve() (which applies); it is built as the pre-D1a legacy shape.
+// D10 still blocks payment on such a row.
 it('resumes payment after the correction goes STALE', function () {
     $invoice = ricInvoice();
-    $correction = ricApprove(ricSubmit($invoice));
+    $correction = ricLegacyApproved(ricSubmit($invoice));
     DB::table('trx_rme_invoice_items')->where('id', $invoice->items()->first()->id)->update(['description' => 'Diubah di luar alur']);
     expect(fn () => ricApply($correction))->toThrow(ValidationException::class);
     expect($correction->fresh()->status)->toBe(RmeInvoiceCorrectionStatus::STALE);

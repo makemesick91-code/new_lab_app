@@ -1,4 +1,5 @@
 @php
+    use App\Modules\RmeInvoice\Support\RmeInvoiceDocument;
     use App\Modules\ClinicOversight\Support\OversightFormat;
     use App\Modules\RmeInvoice\Support\RmeInvoiceCorrectionStatus;
     use App\Modules\RmeInvoice\Support\RmeInvoiceCorrectionType;
@@ -36,6 +37,7 @@
         @if ($status === RmeInvoiceCorrectionStatus::APPROVED)
             <x-ui.alert variant="info" data-correction-approved-not-applied>
                 Disetujui, BELUM diterapkan — tagihan masih menampilkan nilai asli sampai koreksi diterapkan.
+                Sejak keputusan Owner D1a, persetujuan langsung menerapkan koreksi; status ini hanya mungkin untuk pengajuan lama dan diselesaikan melalui tombol Terapkan.
             </x-ui.alert>
         @elseif ($status === RmeInvoiceCorrectionStatus::SUBMITTED)
             <x-ui.alert variant="warning" data-correction-pending>
@@ -62,10 +64,10 @@
         </x-ui.card>
 
         <div class="grid grid-cols-1 gap-4 sm:grid-cols-4">
-            <x-ui.card><p class="text-xs text-ink-soft">Total Asli</p><p class="text-lg font-semibold text-navy">Rp {{ number_format((float) $correction->original_grand_total, 0, ',', '.') }}</p></x-ui.card>
-            <x-ui.card><p class="text-xs text-ink-soft">Total Usulan</p><p class="text-lg font-semibold text-navy">Rp {{ number_format((float) $correction->proposed_grand_total, 0, ',', '.') }}</p></x-ui.card>
-            <x-ui.card><p class="text-xs text-ink-soft">Selisih Usulan</p><p class="text-lg font-semibold {{ (float) $correction->difference_amount < 0 ? 'text-success-700' : 'text-warning-700' }}">Rp {{ number_format((float) $correction->difference_amount, 0, ',', '.') }}</p></x-ui.card>
-            <x-ui.card><p class="text-xs text-ink-soft">Total Diterapkan</p><p class="text-lg font-semibold text-navy" data-correction-applied-total>{{ $isApplied ? 'Rp '.number_format((float) $correction->proposed_grand_total, 0, ',', '.') : 'Belum diterapkan' }}</p></x-ui.card>
+            <x-ui.card><p class="text-xs text-ink-soft">Total Asli</p><p class="text-lg font-semibold text-navy">{{ RmeInvoiceDocument::rupiahDecimal($correction->original_grand_total) }}</p></x-ui.card>
+            <x-ui.card><p class="text-xs text-ink-soft">Total Usulan</p><p class="text-lg font-semibold text-navy">{{ RmeInvoiceDocument::rupiahDecimal($correction->proposed_grand_total) }}</p></x-ui.card>
+            <x-ui.card><p class="text-xs text-ink-soft">Selisih Usulan</p><p class="text-lg font-semibold {{ (float) $correction->difference_amount < 0 ? 'text-success-700' : 'text-warning-700' }}">{{ RmeInvoiceDocument::rupiahDecimal($correction->difference_amount) }}</p></x-ui.card>
+            <x-ui.card><p class="text-xs text-ink-soft">Total Diterapkan</p><p class="text-lg font-semibold text-navy" data-correction-applied-total>{{ $isApplied ? RmeInvoiceDocument::rupiahDecimal($correction->proposed_grand_total) : 'Belum diterapkan' }}</p></x-ui.card>
         </div>
 
         <x-ui.card title="Rincian Baris (asli → usulan)" padding="">
@@ -87,18 +89,18 @@
                             <td class="px-4 py-2"><x-ui.badge tone="neutral">{{ $line->operationLabel() }}</x-ui.badge></td>
                             <td class="px-4 py-2 text-ink">
                                 @if ($line->original_item_id)
-                                    {{ $line->original_description }} · {{ $line->original_qty }} × Rp {{ number_format((float) $line->original_unit_price, 0, ',', '.') }}
-                                    @if ((float) $line->original_discount > 0) − Rp {{ number_format((float) $line->original_discount, 0, ',', '.') }} @endif
+                                    {{ $line->original_description }} · {{ $line->original_qty }} × {{ RmeInvoiceDocument::rupiahDecimal($line->original_unit_price) }}
+                                    @if ((float) $line->original_discount > 0) − {{ RmeInvoiceDocument::rupiahDecimal($line->original_discount) }} @endif
                                     <span class="block text-xs text-ink-muted" data-line-original-attribution>Tindakan: {{ $line->originalTreatment?->name ?? '—' }} · Dokter: {{ $line->originalDoctor?->name ?? '—' }}</span>
                                 @else
                                     —
                                 @endif
                             </td>
-                            <td class="px-4 py-2 text-right tabular-nums">{{ $line->original_subtotal !== null ? 'Rp '.number_format((float) $line->original_subtotal, 0, ',', '.') : '—' }}</td>
+                            <td class="px-4 py-2 text-right tabular-nums">{{ $line->original_subtotal !== null ? RmeInvoiceDocument::rupiahDecimal($line->original_subtotal) : '—' }}</td>
                             <td class="px-4 py-2 text-ink">
                                 @if ($line->proposed_description !== null)
-                                    {{ $line->proposed_description }} · {{ $line->proposed_qty }} × Rp {{ number_format((float) $line->proposed_unit_price, 0, ',', '.') }}
-                                    @if ((float) $line->proposed_discount > 0) − Rp {{ number_format((float) $line->proposed_discount, 0, ',', '.') }} @endif
+                                    {{ $line->proposed_description }} · {{ $line->proposed_qty }} × {{ RmeInvoiceDocument::rupiahDecimal($line->proposed_unit_price) }}
+                                    @if ((float) $line->proposed_discount > 0) − {{ RmeInvoiceDocument::rupiahDecimal($line->proposed_discount) }} @endif
                                     <span class="block text-xs text-ink-muted" data-line-proposed-attribution>Tindakan: {{ $line->proposedTreatment?->name ?? '—' }} · Dokter: {{ $line->proposedDoctor?->name ?? '—' }}</span>
                                     @if ($line->treatmentChanged())
                                         <x-ui.badge tone="warning" data-line-treatment-changed>Tindakan berubah</x-ui.badge>
@@ -107,7 +109,7 @@
                                     (dihapus)
                                 @endif
                             </td>
-                            <td class="px-4 py-2 text-right tabular-nums">{{ $line->proposed_subtotal !== null ? 'Rp '.number_format((float) $line->proposed_subtotal, 0, ',', '.') : '—' }}</td>
+                            <td class="px-4 py-2 text-right tabular-nums">{{ $line->proposed_subtotal !== null ? RmeInvoiceDocument::rupiahDecimal($line->proposed_subtotal) : '—' }}</td>
                         </tr>
                     @endforeach
                 </tbody>
@@ -128,13 +130,20 @@
             <x-ui.card title="Tindakan">
                 <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
                     @if ($status === RmeInvoiceCorrectionStatus::SUBMITTED)
-                        @can('approve', $correction)
-                            <form method="POST" action="{{ route('rme.invoice-corrections.approve', $correction->id) }}" class="space-y-2" data-correction-approve>
-                                @csrf
-                                <x-ui.textarea name="note" label="Catatan persetujuan (opsional)" rows="2" />
-                                <x-ui.button type="submit" variant="success">Setujui</x-ui.button>
-                            </form>
-                        @endcan
+                        @if ($pilotAdmitted)
+                            @can('approve', $correction)
+                                {{-- Owner D1a (rule 195): approving APPLIES the correction in the same transaction. --}}
+                                <form method="POST" action="{{ route('rme.invoice-corrections.approve', $correction->id) }}" class="space-y-2" data-correction-approve
+                                      x-data="{ busy: false }" x-on:submit="if (busy) { $event.preventDefault() } busy = true">
+                                    @csrf
+                                    <x-ui.textarea name="note" label="Catatan persetujuan (opsional)" rows="2" />
+                                    <p class="text-xs text-ink-soft" data-correction-approve-applies>Menyetujui langsung menerapkan koreksi: item dan total tagihan berubah, dokumen asli dibekukan sebagai versi v0.</p>
+                                    <x-ui.button type="submit" variant="success">Setujui &amp; Terapkan</x-ui.button>
+                                </form>
+                            @endcan
+                        @else
+                            <p class="text-xs text-ink-soft" data-correction-outside-pilot>Cabang tagihan ini belum termasuk pilot koreksi tagihan; pengajuan hanya dapat ditolak atau dibatalkan.</p>
+                        @endif
                         @can('reject', $correction)
                             <form method="POST" action="{{ route('rme.invoice-corrections.reject', $correction->id) }}" class="space-y-2" data-correction-reject>
                                 @csrf
@@ -143,7 +152,7 @@
                             </form>
                         @endcan
                     @endif
-                    @if ($status === RmeInvoiceCorrectionStatus::APPROVED)
+                    @if ($status === RmeInvoiceCorrectionStatus::APPROVED && $pilotAdmitted)
                         @can('apply', $correction)
                             <form method="POST" action="{{ route('rme.invoice-corrections.apply', $correction->id) }}" class="space-y-2" data-correction-apply>
                                 @csrf

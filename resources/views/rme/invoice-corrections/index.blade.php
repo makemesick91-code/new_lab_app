@@ -1,4 +1,5 @@
 @php
+    use App\Modules\RmeInvoice\Support\RmeInvoiceDocument;
     use App\Modules\ClinicOversight\Support\OversightFormat;
     use App\Modules\RmeInvoice\Support\RmeInvoiceCorrectionStatus;
     use App\Modules\RmeInvoice\Support\RmeInvoiceCorrectionType;
@@ -80,9 +81,9 @@
                                     <div class="text-xs text-ink-muted font-mono">{{ $correction->patient?->medical_record_number }}</div>
                                 </td>
                                 <td class="px-4 py-3 font-mono text-navy">{{ $correction->invoice?->invoice_number }}</td>
-                                <td class="px-4 py-3 text-right tabular-nums text-ink">Rp {{ number_format((float) $correction->original_grand_total, 0, ',', '.') }}</td>
-                                <td class="px-4 py-3 text-right tabular-nums text-ink">Rp {{ number_format((float) $correction->proposed_grand_total, 0, ',', '.') }}</td>
-                                <td class="px-4 py-3 text-right tabular-nums {{ (float) $correction->difference_amount < 0 ? 'text-success-700' : 'text-warning-700' }}">Rp {{ number_format((float) $correction->difference_amount, 0, ',', '.') }}</td>
+                                <td class="px-4 py-3 text-right tabular-nums text-ink">{{ RmeInvoiceDocument::rupiahDecimal($correction->original_grand_total) }}</td>
+                                <td class="px-4 py-3 text-right tabular-nums text-ink">{{ RmeInvoiceDocument::rupiahDecimal($correction->proposed_grand_total) }}</td>
+                                <td class="px-4 py-3 text-right tabular-nums {{ (float) $correction->difference_amount < 0 ? 'text-success-700' : 'text-warning-700' }}">{{ RmeInvoiceDocument::rupiahDecimal($correction->difference_amount) }}</td>
                                 <td class="px-4 py-3">
                                     <x-ui.badge :tone="RmeInvoiceCorrectionStatus::tone($correction->status)">{{ RmeInvoiceCorrectionStatus::label($correction->status) }}</x-ui.badge>
                                 </td>

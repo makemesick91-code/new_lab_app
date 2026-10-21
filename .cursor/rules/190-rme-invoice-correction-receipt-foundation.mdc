@@ -6,6 +6,16 @@ alwaysApply: false
 
 # RME invoice correction & receipt versioning — foundation (rule 190)
 
+> **SUPERSEDED IN PART by rule 195 (ACTIVATION-RME-INVOICE-CORRECTION-PREPAYMENT-2,
+> 2026-10-21).** Owner D1a: the checker's approval APPLIES the correction in the
+> same transaction. Owner D1b: Kasir requests, Admin Klinik approves, Front Office
+> holds both — granted through `RoleSeeder`; no operational role holds
+> `apply_rme_invoice_correction` (recovery path only). Owner D1c: the capability is
+> confined to SPN4 by a source-controlled, fail-closed allowlist. Any statement
+> below that "no role" holds a correction permission, that D1a is undecided, or that
+> an approval leaves the invoice untouched until a separate apply is the historical
+> record of its release, not current policy. D21c and D21g remain PENDING.
+
 Evidence: `docs/sprints/feature-rme-invoice-correction-receipt-foundation-1.md`.
 Builds on rule 188 (audit) and rule 189 (Phase 0 prerequisites). Where this rule and
 those disagree about what EXISTS, this rule is newer.

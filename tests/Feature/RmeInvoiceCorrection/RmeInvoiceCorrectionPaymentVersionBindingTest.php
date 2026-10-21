@@ -393,9 +393,12 @@ it('ignores versions declared for invoices the payment does not touch', function
 | correction goes STALE") while D10 was pending. The full D10 matrix lives in
 | RmeInvoiceCorrectionPaymentBlockTest; the version binding above is unchanged.
 */
+// REVISED by rule 195 (D1a): an APPROVED-unapplied correction can no longer be
+// produced by approve() (which applies); it is built as the pre-D1a legacy shape.
+// D10 still blocks payment on such a row.
 it('refuses a payment while a correction is APPROVED but not applied (D10), leaving the correction applicable', function () {
     $invoice = ricInvoice();
-    $correction = ricApprove(ricSubmit($invoice));
+    $correction = ricLegacyApproved(ricSubmit($invoice));
     test()->actingAs(test()->cashier);
 
     expect(fn () => app(RmePaymentService::class)->pay($invoice->fresh(), test()->cashier, rpvPayload(100000, [$invoice->id => 0])))

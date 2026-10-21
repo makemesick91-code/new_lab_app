@@ -70,7 +70,10 @@ it('records the four owner decisions and the open sub-decisions in the decision 
     }
 
     expect($register)->toContain('`OWNER_POLICY_APPROVED`')
-        ->and($register)->toContain('D1a — who APPLIES an approved correction — PENDING_SUB_DECISION');
+        // REVISED by rule 195: D1a was decided 2026-10-21 (the checker's approval
+        // applies). The superseded PENDING text is kept, labelled, not deleted.
+        ->and($register)->toContain('D1a — who APPLIES an approved correction — `OWNER_POLICY_APPROVED`')
+        ->and($register)->toContain('Superseded text (2026-10-17): "PENDING_SUB_DECISION');
 });
 
 it('publishes rule 192 and keeps rule 191\'s D10 text marked superseded rather than deleted', function () {

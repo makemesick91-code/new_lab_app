@@ -392,6 +392,13 @@ return [
         // concurrency suite above.
         'tests/Feature/RmeInvoiceCorrection/RmeInvoiceCorrectionPaymentBlockTest.php',
         'tests/Feature/RmeInvoiceCorrection/RmeInvoiceCorrectionTariffAuthorityTest.php',
+        // ACTIVATION-RME-INVOICE-CORRECTION-PREPAYMENT-2 (rule 195) — owner D1a
+        // (approve applies, atomically), maker != checker != applier per account,
+        // the fail-closed SPN4 pilot allowlist, the D1/D1b RoleSeeder grants, the
+        // exact-cents presentation and the read-only production authorization
+        // probe. Selected by the existing `RmeInvoiceCorrection` token in BOTH
+        // critical-gate variants; declared here so a rename cannot drop it.
+        'tests/Feature/RmeInvoiceCorrection/RmeInvoiceCorrectionPilotActivationTest.php',
         // Branch tariff resolution, server-side invoice pricing with recorded
         // provenance, strict refusals, exceptions (built, OFF), import/readiness
         // commands and the release posture. Selected by the new

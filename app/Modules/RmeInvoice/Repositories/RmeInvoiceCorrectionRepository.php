@@ -7,6 +7,7 @@ namespace App\Modules\RmeInvoice\Repositories;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\LabOrder\Models\LabCaseCandidate;
 use App\Modules\RmeInvoice\Interfaces\RmeInvoiceCorrectionRepositoryInterface;
+use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Models\RmeInvoiceCorrection;
 use App\Modules\RmeInvoice\Models\RmeInvoiceCorrectionEvent;
 use App\Modules\RmeInvoice\Models\RmeInvoiceCorrectionLine;
@@ -221,5 +222,30 @@ class RmeInvoiceCorrectionRepository implements RmeInvoiceCorrectionRepositoryIn
         return RmeInvoiceDocumentVersion::query()
             ->with(['invoice.patient', 'invoice.clinicVisit', 'sourceCorrection', 'issuer', 'branch'])
             ->find($id);
+    }
+
+    public function activeCountByBranch(): array
+    {
+        return RmeInvoiceCorrection::query()
+            ->whereIn('status', RmeInvoiceCorrectionStatus::ACTIVE)
+            ->selectRaw('branch_id, count(*) as aggregate')
+            ->groupBy('branch_id')
+            ->pluck('aggregate', 'branch_id')
+            ->map(fn ($count) => (int) $count)
+            ->all();
+    }
+
+    public function positiveUnpaidUnsettledInvoiceCount(array $branchIds): int
+    {
+        if ($branchIds === []) {
+            return 0;
+        }
+
+        return RmeInvoice::query()
+            ->whereIn('branch_id', $branchIds)
+            ->where('status', RmeInvoice::STATUS_UNPAID)
+            ->where('grand_total', '>', 0)
+            ->whereDoesntHave('payments')
+            ->count();
     }
 }

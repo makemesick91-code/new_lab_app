@@ -47,7 +47,16 @@ final class RmeInvoiceCorrectionProposalBuilder
 {
     public const MAX_LINES = 100;
 
-    public const MAX_QTY = 10000;
+    /**
+     * ACTIVATION-RME-INVOICE-CORRECTION-PREPAYMENT-2 (rule 195 §26) — the SAME
+     * quantity bound as the original invoice (a storage bound, no business cap
+     * was decided). It used to be 10 000 here while the invoice accepted up to
+     * the PostgreSQL integer limit, so an invoice billed above 10 000 units could
+     * never be corrected at all — not even an unrelated line, because every kept
+     * line is re-validated. One authority now: RmeInvoicePricingService::MAX_QTY.
+     * The cents-overflow guard below still refuses a product decimal(15,2) cannot hold.
+     */
+    public const MAX_QTY = RmeInvoicePricingService::MAX_QTY;
 
     /** decimal(15,2) holds at most 9,999,999,999,999.99. */
     public const MAX_CENTS = 999_999_999_999_999;

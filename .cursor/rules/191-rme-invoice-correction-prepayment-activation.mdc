@@ -6,6 +6,16 @@ alwaysApply: false
 
 # RME invoice correction — pre-payment activation contract (rule 191)
 
+> **SUPERSEDED IN PART by rule 195 (ACTIVATION-RME-INVOICE-CORRECTION-PREPAYMENT-2,
+> 2026-10-21).** Owner D1a: the checker's approval APPLIES the correction in the
+> same transaction. Owner D1b: Kasir requests, Admin Klinik approves, Front Office
+> holds both — granted through `RoleSeeder`; no operational role holds
+> `apply_rme_invoice_correction` (recovery path only). Owner D1c: the capability is
+> confined to SPN4 by a source-controlled, fail-closed allowlist. Any statement
+> below that "no role" holds a correction permission, that D1a is undecided, or that
+> an approval leaves the invoice untouched until a separate apply is the historical
+> record of its release, not current policy. D21c and D21g remain PENDING.
+
 Evidence: `docs/sprints/activation-rme-invoice-correction-prepayment-1.md`.
 Extends rule 190; where they disagree about what EXISTS, this rule is newer.
 
@@ -108,6 +118,7 @@ Extends rule 190; where they disagree about what EXISTS, this rule is newer.
     percentage limit, a default tariff, or a "same as TLK1" fallback.
 
 ## 5. Permissions — FEATURE_FLAG_OFF, NOT GRANTED
+> **[Rule 195, 2026-10-21: GRANTED per D1/D1b — Kasir request, Admin Klinik approve, Front Office both; apply to no operational role (D1a). Item 15 below is historical.]**
 15. `request_rme_invoice_correction`, `approve_rme_invoice_correction`,
     `apply_rme_invoice_correction` are held ONLY by Super Admin (via `'*'`). No
     operational role (Kasir, Admin Klinik, Front Office, Supervisor RME) gets them
@@ -128,7 +139,7 @@ Extends rule 190; where they disagree about what EXISTS, this rule is newer.
 19. Rollback of this release is a code rollback only: no migration, no seeder, no
     flag. The binding refuses nothing a freshly rendered page submits; a page opened
     before the deploy is refused once with "muat ulang halaman" — never a data loss.
-20. When activation is finally attempted it needs, in order: recorded decisions →
+20. **[Superseded by rule 195 §28 — the activation order now in force.]** When activation is finally attempted it needs, in order: recorded decisions →
     D21 enforcement + tariffs per billing branch → RoleSeeder grant → flag via
     environment + config cache as `daengtisiams` → authenticated pilot with two
     distinct real accounts → financial reconciliation. A missing step is NO_GO.

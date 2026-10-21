@@ -143,6 +143,8 @@ function ricCommittedInvoice(): array
 {
     return Model::withoutEvents(function () {
         $branch = Branch::factory()->create(['code' => 'RC'.random_int(100, 999), 'is_rme_enabled' => true, 'is_active' => true]);
+        // Rule 195 — admit the race branch to the (fail-closed) pilot allowlist.
+        ricPilot([(string) $branch->code]);
         $clinic = Clinic::factory()->create();
         $doctor = Doctor::factory()->create(['branch_id' => $branch->id]);
         $patient = Patient::factory()->create(['branch_id' => $branch->id]);
@@ -259,12 +261,15 @@ function ricJoin(array $handle): void
         ->and($rest)->toContain('COMMITTED');
 }
 
+// REVISED by rule 195 (owner D1a): the application now happens INSIDE the
+// approval, so the race is payment-vs-approval. The property is unchanged: the
+// approval waits on the mid-flight payment, then marks the correction STALE and
+// applies nothing to an invoice that now carries a payment.
 it('waits on a payment that is mid-flight, then marks the correction STALE instead of applying it to a paid invoice', function () {
-    ['invoice' => $invoice, 'maker' => $maker, 'checker' => $checker, 'applier' => $applier, 'cashier' => $cashier] = ricCommittedInvoice();
+    ['invoice' => $invoice, 'maker' => $maker, 'checker' => $checker, 'cashier' => $cashier] = ricCommittedInvoice();
     $service = app(RmeInvoiceCorrectionService::class);
 
     $correction = $service->submit($invoice, $maker, ['reason' => 'Harga tambal salah input kasir.', 'lines' => ricConcurrentLines($invoice)]);
-    $correction = $service->approve($correction, $checker, null);
 
     // The competing payment: lock the invoice exactly as RmePaymentService does,
     // record a payment and move the invoice to PARTIAL — uncommitted for 2 s.
@@ -277,14 +282,14 @@ it('waits on a payment that is mid-flight, then marks the correction STALE inste
     $started = microtime(true);
     $refusal = null;
     try {
-        $service->apply($correction, $applier);
+        $service->approve($correction, $checker, null);
     } catch (ValidationException $e) {
         $refusal = json_encode($e->errors());
     }
     $waited = microtime(true) - $started;
     ricJoin($handle);
 
-    // The apply genuinely waited for the payment to commit…
+    // The approval genuinely waited for the payment to commit…
     expect($waited)->toBeGreaterThan(1.0)
         // …then saw the paid invoice and refused, persisting STALE.
         ->and($refusal)->toContain('CORRECTION_STALE')
@@ -536,4 +541,51 @@ it('D10: a payment that commits first makes a waiting submission refused, never 
     expect($waited)->toBeGreaterThan(1.0)
         ->and($refusal)->toContain('CORRECTION_TYPE_NOT_ENABLED')
         ->and(RmeInvoiceCorrection::where('rme_invoice_id', $invoice->id)->count())->toBe(0);
+});
+
+/*
+| ACTIVATION-RME-INVOICE-CORRECTION-PREPAYMENT-2 (rule 195) — two checkers act at
+| once. The competing transaction holds the invoice lock having written exactly
+| what an approve-and-apply writes (correction APPLIED, invoice version bumped).
+| The second approval waits on the lock, then finds the correction APPLIED and is
+| a no-op: one application, never two.
+*/
+it('serializes two simultaneous approvals: the second waits, then finds it applied and applies nothing', function () {
+    ['invoice' => $invoice, 'maker' => $maker, 'checker' => $checker] = ricCommittedInvoice();
+    $service = app(RmeInvoiceCorrectionService::class);
+    $correction = $service->submit($invoice, $maker, ['reason' => 'Harga tambal salah input kasir.', 'lines' => ricConcurrentLines($invoice)]);
+    $otherChecker = userWith(['approve_rme_invoice_correction']);
+
+    $handle = ricCompetingTransaction((int) $invoice->id, [
+        ['UPDATE trx_rme_invoice_corrections SET status = ?, decided_by = ?, decided_at = NOW(), applied_by = ?, applied_at = NOW(), applied_invoice_version = 1, updated_at = NOW() WHERE id = ?',
+            [RmeInvoiceCorrectionStatus::APPLIED, $otherChecker->id, $otherChecker->id, $correction->id]],
+        ['UPDATE trx_rme_invoices SET subtotal = 350000, grand_total = 350000, correction_version = correction_version + 1, updated_at = NOW() WHERE id = ?', [$invoice->id]],
+    ]);
+
+    $started = microtime(true);
+    $result = $service->approve($correction, $checker, null);
+    $waited = microtime(true) - $started;
+    ricJoin($handle);
+
+    expect($waited)->toBeGreaterThan(1.0)
+        ->and($result->status)->toBe(RmeInvoiceCorrectionStatus::APPLIED)
+        ->and((int) $result->applied_by)->toBe((int) $otherChecker->id)
+        ->and((int) $invoice->fresh()->correction_version)->toBe(1)
+        ->and(DB::table('trx_rme_invoice_document_versions')->where('rme_invoice_id', $invoice->id)->count())->toBe(0)
+        ->and(DB::table('trx_rme_invoice_correction_events')->where('rme_invoice_correction_id', $correction->id)->where('to_status', RmeInvoiceCorrectionStatus::APPLIED)->count())->toBe(0);
+});
+
+it('applies atomically under real PostgreSQL: approve commits items, totals, version and v0/v1 together', function () {
+    ['invoice' => $invoice, 'maker' => $maker, 'checker' => $checker] = ricCommittedInvoice();
+    $service = app(RmeInvoiceCorrectionService::class);
+    $correction = $service->submit($invoice, $maker, ['reason' => 'Harga tambal salah input kasir.', 'lines' => ricConcurrentLines($invoice)]);
+
+    $applied = $service->approve($correction, $checker, null);
+
+    $invoice = $invoice->fresh(['items']);
+    expect($applied->status)->toBe(RmeInvoiceCorrectionStatus::APPLIED)
+        ->and((float) $invoice->grand_total)->toEqual(350000.0)
+        ->and((int) $invoice->correction_version)->toBe(1)
+        ->and($invoice->items->sortBy('id')->pluck('subtotal')->map(fn ($v) => (float) $v)->values()->all())->toBe([300000.0, 50000.0])
+        ->and(DB::table('trx_rme_invoice_document_versions')->where('rme_invoice_id', $invoice->id)->orderBy('version_number')->pluck('version_number')->all())->toBe([0, 1]);
 });

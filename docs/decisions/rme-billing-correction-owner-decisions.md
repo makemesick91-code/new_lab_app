@@ -26,6 +26,10 @@ A decision is only as far along as the last label that is evidenced. A brief's
 | 2026-10-17 | D1, D7, D10, D21 (branch tariff authority) | `OWNER_POLICY_APPROVED` | brief of `FEATURE-RME-BRANCH-TARIFF-AUTHORITY-1` |
 | 2026-10-20 | **D21 REVISED — manual cashier pricing** | `OWNER_POLICY_APPROVED` (`APPROVED_REVISED`) | brief of `REVISION-RME-MANUAL-PRICING-AUTHORITY-1` |
 | 2026-10-20 | D21 of 2026-10-17 (branch tariff authority) | **`SUPERSEDED`** by the revision above | — |
+| 2026-10-21 | **D1a — the checker applies, automatically at approval** | `OWNER_POLICY_APPROVED` | owner answers in `ACTIVATION-RME-INVOICE-CORRECTION-PREPAYMENT-2` |
+| 2026-10-21 | **D1b — Front Office holds request AND approve** (literal D1 on the merged role) | `OWNER_POLICY_APPROVED` | same |
+| 2026-10-21 | **D1c — pilot scope: SPN4 (Cabang Sunu) only**, server-side allowlist, fail-closed | `OWNER_POLICY_APPROVED` | same |
+| 2026-10-21 | **D1d — pilot accounts: maker user 29 (Admin Sunu), checker user 1 (IT Support, Super Admin)** | `OWNER_POLICY_APPROVED` | same |
 
 The earlier D21 text is kept below, marked SUPERSEDED, as the record of what was
 decided and enforced between 2026-10-17 and 2026-10-20. It is never deleted.
@@ -65,17 +69,52 @@ Technical implications:
 - **Not applied by this sprint.** The mapping below is prepared, not seeded.
   Granting it is the activation ceremony (rule 191 §20), never a deploy side effect.
 
-| Role | Permission to grant at activation | Holds today |
+| Role | Correction permission (rule 195, `RoleSeeder`) | Status |
 |---|---|---|
-| Kasir | `request_rme_invoice_correction` | no |
-| Admin Klinik | `approve_rme_invoice_correction` | no |
+| Kasir | `request_rme_invoice_correction` | granted by `ACTIVATION-RME-INVOICE-CORRECTION-PREPAYMENT-2` (0 production users hold Kasir) |
+| Admin Klinik | `approve_rme_invoice_correction` | granted (0 production users hold Admin Klinik) |
+| Front Office | `request_rme_invoice_correction` + `approve_rme_invoice_correction` | granted — D1b below |
 | Super Admin | all three (wildcard) | yes (wildcard) |
-| *(open — see D1a)* | `apply_rme_invoice_correction` | no |
+| *(no operational role)* | `apply_rme_invoice_correction` | recovery path only — D1a below |
 
-**D1a — who APPLIES an approved correction — PENDING_SUB_DECISION.** D1 names
-the submitter and the approver, not the applier. The foundation has a separate
-`apply_rme_invoice_correction` permission. Whether the approver applies, the
-maker applies, or a third role applies is not decided and is not assumed.
+> The historical text of this table (2026-10-17) listed every operational grant
+> as "no" and the applier as "open — see D1a". That was true until 2026-10-21.
+
+**D1a — who APPLIES an approved correction — `OWNER_POLICY_APPROVED` (2026-10-21).**
+The CHECKER applies, **automatically at approval**: approval and application are
+one atomic act (`RmeInvoiceCorrectionService::approve()`, one transaction under the
+invoice → correction lock pair). An approved-but-unapplied correction is never
+visible to another transaction, so D10 cannot strand an invoice behind an approval
+nobody applies. The authority is the APPROVE permission; no operational role is
+granted `apply_rme_invoice_correction`, which now serves only the recovery path for
+an APPROVED row that predates D1a (none exist in production: 0 corrections on
+2026-10-21). The maker can never apply their own correction on any path, Super
+Admin included (`SELF_APPLICATION_FORBIDDEN`, per account, under the lock).
+Superseded text (2026-10-17): "PENDING_SUB_DECISION … not decided and is not assumed".
+
+**D1b — Front Office holds request AND approve — `OWNER_POLICY_APPROVED` (2026-10-21).**
+Production finding that forced the question: `Kasir` and `Admin Klinik` each have
+**0 users**; all 8 front-desk operators hold `Front Office`, which `RoleSeeder` and
+`FrontOfficeRoleTest` define as the EXACT union of the two. Granting D1 literally
+therefore gives every Front Office account both halves. The owner chose that
+literal reading. Maker ≠ checker stays a per-ACCOUNT rule: within one branch, Front
+Office A may approve Front Office B's request, never their own. The alternatives
+offered and NOT chosen: Front Office request-only with Super Admin as sole checker;
+deferring until separate Kasir/Admin Klinik accounts are provisioned.
+
+**D1c — pilot scope: SPN4 (Cabang Sunu) only — `OWNER_POLICY_APPROVED` (2026-10-21).**
+The flag is global, so a server-side allowlist decides where an ON flag reaches:
+`config/rme_invoice_correction.php` `pilot.branch_codes = ['SPN4']`, source-
+controlled with NO environment read (widening is a reviewed commit), fail-closed
+(empty = nothing), canonical exact-token matching (SUN4 → SPN4), MAIN never.
+Submit, approve (= apply) and the recovery apply are gated; reject and cancel are
+not (they only de-escalate, and are how a correction outside a narrowed pilot is
+resolved). No other branch may be activated without a new owner decision.
+
+**D1d — pilot accounts — `OWNER_POLICY_APPROVED` (2026-10-21).** Maker: user 29
+(Admin Sunu, Front Office, pinned to SPN4). Checker: user 1 (IT Support, Super
+Admin). Two distinct real accounts. These authorize the pilot; they are not the
+only accounts the grant reaches (every Front Office account in SPN4 can act).
 
 ### D7 — Document versioning — `OWNER_POLICY_APPROVED`, `REPOSITORY_POLICY_RECORDED`, `TECHNICAL_ENFORCEMENT_DEPLOYED`
 
@@ -224,6 +263,23 @@ the owner supplies the list, TLK1's seeded rows are either approved as-is (ATTES
 price untouched) or replaced; `TRT-SC99` needs a price per branch (its name is
 not a price) and `TRT-FREESC` waits for D21g.
 
+#### D21c / D21g for the pre-payment activation (2026-10-21)
+
+Neither was decided. `ACTIVATION-RME-INVOICE-CORRECTION-PREPAYMENT-2` classified
+both as **`SAFE_TO_DEFER_WITH_EXPLICIT_RESTRICTION`** for ordinary non-zero
+pre-payment correction — a classification, never an approval:
+
+- **D21c (discount policy) — PENDING.** No cap is invented. What bounds a corrected
+  discount: `0 ≤ discount ≤ line gross`, no negative or zero line or total, 2-decimal
+  precision, decimal(15,2) overflow refused, totals recomputed server-side — AND the
+  whole proposal, discounts included, is a fingerprint a DIFFERENT account approves.
+  A correction therefore grants no discount authority beyond the cashier's existing
+  manual entry on the original invoice, and adds a second account's review.
+- **D21g (Rp0) — PENDING.** A correction still refuses every new Rp0 line and Rp0
+  total; historical Rp0 invoices are untouched; the dedicated Rp0 adjustment (rule
+  188 §12) is not built. Production's only UNPAID invoice on 2026-10-21 is an Rp0
+  legacy invoice (id 36): it is not a correction case.
+
 ## Pending decisions (unchanged)
 
 D2, D3, D4, D5, D6, D8, D9, D11, D12, D13, D14, D15, D16, D17, D18, D20, D22, D23,
@@ -231,15 +287,21 @@ D24, D25, D26, D27 remain **PENDING**. D19 remains `APPROVED_SCOPE (rule 186)`.
 See `docs/sprints/feature-rme-invoice-correction-receipt-foundation-1.md` §3 for
 their text. Decision codes are per register — the KTP-OCR "D7" is a different decision.
 
-## Activation still requires (rule 191 §20, unchanged order)
+## Activation requires (rule 195 §20, supersedes rule 191 §20)
 
-1. Recorded decisions — D1, D7, D10, D21 (revised 2026-10-20) recorded. Still
-   open: D1a (who applies), D21c (discount policy), D21g (Rp0).
-2. ~~D21 enforcement + tariffs per billing branch~~ — **no longer a prerequisite**
-   (revised D21): prices are manual and correction is tariff-independent (rule 194).
-3. `RoleSeeder` grant (D1 mapping above; D1a open).
-4. Flag ON via the environment + config cache rebuilt as `daengtisiams`.
-5. Authenticated maker/checker pilot with two distinct real accounts.
-6. Financial reconciliation.
+1. Recorded decisions — D1, D7, D10, D21 (revised), **D1a, D1b, D1c, D1d** recorded
+   2026-10-21. D21c and D21g stay PENDING, classified safe-to-defer (above).
+2. ~~D21 enforcement + tariffs per billing branch~~ — not a prerequisite (rule 194).
+3. `RoleSeeder` grant per the D1 table above, run on production AFTER the deploy,
+   `PermissionSeeder` first, then `permission:cache-reset`.
+4. Flag ON via the environment + config cache rebuilt as `daengtisiams`; the pilot
+   allowlist (source-controlled) confines it to SPN4.
+5. Production authorization probe `rme:invoice-correction-readiness --maker=29
+   --checker=1` = GO.
+6. Authenticated maker/checker pilot with the two D1d accounts — performed by those
+   operators; never simulated by resetting a password or opening a REPL.
+7. A real correction on an authorized positive UNPAID case + financial
+   reconciliation — only when such a case exists; none is fabricated.
 
-A missing step is NO_GO.
+Steps 1–5 are technical readiness (scoped GO). Steps 6–7 are operational
+verification; until both are evidenced the full activation GO tag is NOT created.

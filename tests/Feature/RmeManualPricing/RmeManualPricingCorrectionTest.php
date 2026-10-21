@@ -118,16 +118,15 @@ it('can correct an invoice carrying a free-text line', function () {
         ->and((float) $invoice->fresh()->grand_total)->toEqual(89000.0);
 });
 
+// REVISED by rule 195 (D1a): approval and application are one act now, so the
+// tariff moves between submission and that act; the property is unchanged.
 it('does not go STALE when the optional tariff changes between submission, approval and application', function () {
     $invoice = ricInvoice();
     $correction = ricSubmit($invoice); // Tambal 200.000 → 50.000
 
     Tariff::query()->update(['price' => '777000.00']);
-    $approved = ricApprove($correction);
-    expect($approved->status)->toBe(RmeInvoiceCorrectionStatus::APPROVED);
-
     Tariff::query()->delete();
-    $applied = ricApply($approved);
+    $applied = ricApprove($correction);
 
     expect($applied->status)->toBe(RmeInvoiceCorrectionStatus::APPLIED)
         ->and($applied->stale_reason_code)->toBeNull()
@@ -206,10 +205,11 @@ it('still blocks payment while a correction is active (D10)', function () {
 
 it('still goes STALE on a genuine change of the invoice (content), never on a tariff', function () {
     $invoice = rmpcInvoiceWithoutTariffs();
-    $correction = ricApprove(ricSubmit($invoice));
+    $correction = ricSubmit($invoice);
     RmeInvoiceItem::query()->where('rme_invoice_id', $invoice->id)->orderBy('id')->first()->update(['description' => 'Diubah di luar alur']);
 
-    rmpcExpectRefused(fn () => ricApply($correction), 'CORRECTION_STALE:INVOICE_CONTENT_CHANGED');
+    // REVISED by rule 195 (D1a): the approval (which applies) is where staleness is caught.
+    rmpcExpectRefused(fn () => ricApprove($correction), 'CORRECTION_STALE:INVOICE_CONTENT_CHANGED');
     expect($correction->fresh()->status)->toBe(RmeInvoiceCorrectionStatus::STALE);
 });
 

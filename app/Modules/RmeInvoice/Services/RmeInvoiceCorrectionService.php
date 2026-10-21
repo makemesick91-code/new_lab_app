@@ -19,6 +19,7 @@ use App\Modules\RmeInvoice\Support\RmeFinancialAuditEvent;
 use App\Modules\RmeInvoice\Support\RmeInvoiceCorrectionDenied;
 use App\Modules\RmeInvoice\Support\RmeInvoiceCorrectionFeatureGuard;
 use App\Modules\RmeInvoice\Support\RmeInvoiceCorrectionPermission;
+use App\Modules\RmeInvoice\Support\RmeInvoiceCorrectionPilotScope;
 use App\Modules\RmeInvoice\Support\RmeInvoiceCorrectionStatus;
 use App\Modules\RmeInvoice\Support\RmeInvoiceCorrectionType;
 use App\Modules\RmeInvoice\Support\RmeInvoiceDocument;
@@ -61,6 +62,16 @@ use LogicException;
  *  8. Every transition writes an append-only event and a PII-free audit row in
  *     the SAME transaction; a refused authorization attempt is audited after the
  *     rollback.
+ *  9. ACTIVATION-RME-INVOICE-CORRECTION-PREPAYMENT-2 (rule 195) — the PILOT
+ *     allowlist (RmeInvoiceCorrectionPilotScope): submit, approve and apply are
+ *     refused for an invoice whose branch is not admitted, fail-closed, under
+ *     the lock. Reject and cancel are not gated — they only de-escalate.
+ * 10. Owner D1a — the CHECKER applies, automatically: approve() records the
+ *     approval AND applies the approved fingerprint in ONE transaction under one
+ *     lock pair. An APPROVED-but-unapplied correction never becomes visible to
+ *     another transaction, so D10 can never strand an invoice behind an approval
+ *     nobody applies. The account that requested a correction can neither
+ *     approve nor apply it — on every path, Super Admin included.
  */
 class RmeInvoiceCorrectionService
 {
@@ -70,6 +81,12 @@ class RmeInvoiceCorrectionService
 
     private const IDEMPOTENCY_PATTERN = '/^[A-Za-z0-9-]{8,64}$/D';
 
+    /** Rule 195 / D1a — the checker's approval applied the correction in the same transaction. */
+    public const APPLICATION_AUTO_ON_APPROVAL = 'AUTO_ON_APPROVAL';
+
+    /** Rule 195 — the legacy apply() path, for an APPROVED row that predates D1a. */
+    public const APPLICATION_MANUAL_RECOVERY = 'MANUAL_RECOVERY';
+
     public function __construct(
         private readonly RmeInvoiceCorrectionRepositoryInterface $corrections,
         private readonly RmeInvoiceRepositoryInterface $invoices,
@@ -78,6 +95,7 @@ class RmeInvoiceCorrectionService
         private readonly BranchService $branches,
         private readonly RmeWorkingBranchScope $workingBranchScope,
         private readonly AuditLogService $auditLogs,
+        private readonly RmeInvoiceCorrectionPilotScope $pilot,
     ) {}
 
     // ─── Reads ──────────────────────────────────────────────────────────────
@@ -85,6 +103,16 @@ class RmeInvoiceCorrectionService
     public function capabilityEnabled(): bool
     {
         return $this->guard->enabled();
+    }
+
+    /**
+     * Rule 195 — the flag is ON *and* the branch is on the pilot allowlist. This
+     * is what decides whether a correction can be STARTED for an invoice; it is
+     * the same predicate the service asserts under the lock.
+     */
+    public function capabilityEnabledForBranch(int $branchId): bool
+    {
+        return $this->guard->enabled() && $this->pilot->admits($branchId);
     }
 
     /**
@@ -169,13 +197,14 @@ class RmeInvoiceCorrectionService
      * and the invoice never revised it runs NO query, so the page is exactly as
      * it was before this sprint.
      *
-     * @return array{enabled: bool, can_request: bool, eligible: bool, ineligible_reason: string|null, active: RmeInvoiceCorrection|null, history: Collection<int, RmeInvoiceCorrection>, versions: Collection<int, RmeInvoiceDocumentVersion>}
+     * @return array{enabled: bool, pilot_admitted: bool, can_request: bool, eligible: bool, ineligible_reason: string|null, active: RmeInvoiceCorrection|null, history: Collection<int, RmeInvoiceCorrection>, versions: Collection<int, RmeInvoiceDocumentVersion>}
      */
     public function panelFor(RmeInvoice $invoice, ?User $user): array
     {
         $enabled = $this->guard->enabled();
         $empty = [
             'enabled' => $enabled,
+            'pilot_admitted' => false,
             'can_request' => false,
             'eligible' => false,
             'ineligible_reason' => null,
@@ -192,13 +221,15 @@ class RmeInvoiceCorrectionService
         $active = $history->first(fn (RmeInvoiceCorrection $c) => $c->isActive());
 
         $ineligible = $this->prePaymentIneligibility($invoice, $active !== null);
+        $pilotAdmitted = $enabled && $this->pilot->admits((int) $invoice->branch_id);
 
         return array_merge($empty, [
-            'can_request' => $enabled
+            'can_request' => $pilotAdmitted
                 && $user !== null
                 && $user->can(RmeInvoiceCorrectionPermission::REQUEST)
                 && $this->workingBranchScope->allows($user, (int) $invoice->branch_id),
-            'eligible' => $enabled && $ineligible === null,
+            'eligible' => $pilotAdmitted && $ineligible === null,
+            'pilot_admitted' => $pilotAdmitted,
             'ineligible_reason' => $ineligible,
             'active' => $active,
             'history' => $history,
@@ -244,6 +275,7 @@ class RmeInvoiceCorrectionService
                     }
 
                     $this->assertActor($maker, RmeInvoiceCorrectionPermission::REQUEST, (int) $locked->branch_id, null, (int) $locked->id);
+                    $this->pilot->assertAdmitted((int) $locked->branch_id, null, (int) $locked->id);
                     $this->assertRmeBranch((int) $locked->branch_id);
 
                     // Re-checked under the lock: a concurrent double-submit with
@@ -336,17 +368,46 @@ class RmeInvoiceCorrectionService
 
     // ─── Decide ─────────────────────────────────────────────────────────────
 
+    /**
+     * Owner D1a (2026-10-21, rule 195): the CHECKER applies, automatically.
+     *
+     * Approval and application are ONE atomic act under the invoice → correction
+     * lock pair: the SUBMITTED → APPROVED transition and the APPROVED → APPLIED
+     * application (items, totals, correction_version, frozen v0/vN, events,
+     * audit rows) commit together or not at all. If anything refuses the
+     * application — staleness, a disabled correction type, a non-RME branch, a
+     * total that would not reconcile — the approval is not recorded either and
+     * the correction stays SUBMITTED (or goes STALE, which is persisted).
+     *
+     * The authority to apply here is the APPROVE permission the checker already
+     * holds: under D1a approving IS applying. `apply_rme_invoice_correction`
+     * gates only the legacy recovery path apply() below.
+     */
     public function approve(RmeInvoiceCorrection $correction, User $checker, ?string $note = null): RmeInvoiceCorrection
     {
         $this->guard->assertEnabled();
         $note = $this->optionalText($note, 'decision_note', 'Catatan persetujuan');
 
         return $this->decide($correction, $checker, 'approve', function (RmeInvoiceCorrection $locked, ?RmeInvoice $invoice) use ($checker, $note) {
+            // Rule 195 — the pilot allowlist, under the lock. Reject is NOT gated.
+            $this->pilot->assertAdmitted((int) $locked->branch_id, (int) $locked->id, (int) $locked->rme_invoice_id);
+
             if (in_array($locked->status, [RmeInvoiceCorrectionStatus::APPROVED, RmeInvoiceCorrectionStatus::APPLIED], true)) {
-                return [$locked, null]; // replay of an approval: idempotent no-op
+                // Replay of an approval: idempotent no-op, never a second
+                // application. (An APPROVED row can only predate D1a; it is
+                // completed through the recovery path apply().)
+                return [$locked, null];
             }
 
             $this->assertTransition($locked, RmeInvoiceCorrectionStatus::APPROVED);
+
+            if (! in_array($locked->correction_type, RmeInvoiceCorrectionType::ENABLED, true)) {
+                throw ValidationException::withMessages([
+                    'correction' => '[CORRECTION_TYPE_NOT_ENABLED] Jenis koreksi ini belum diaktifkan.',
+                ]);
+            }
+
+            $this->assertRmeBranch((int) $locked->branch_id);
 
             $stale = $this->staleReason($invoice, $locked);
             if ($stale !== null) {
@@ -360,9 +421,13 @@ class RmeInvoiceCorrectionService
                 'decided_at' => now(),
                 'decision_note' => $note,
             ]);
-            $this->recordTransition($locked, $from, $checker, ['note_length' => mb_strlen((string) $note)]);
+            $this->recordTransition($locked, $from, $checker, [
+                'note_length' => mb_strlen((string) $note),
+                'application_mode' => self::APPLICATION_AUTO_ON_APPROVAL,
+            ]);
 
-            return [$locked, null];
+            /** @var RmeInvoice $invoice staleReason() returns a reason when the invoice is gone */
+            return [$this->applyLocked($invoice, $locked, $checker, self::APPLICATION_AUTO_ON_APPROVAL), null];
         });
     }
 
@@ -445,6 +510,19 @@ class RmeInvoiceCorrectionService
             return DB::transaction(function () use ($correction, $actor) {
                 [$invoice, $locked] = $this->lockPair($correction);
                 $this->assertActor($actor, RmeInvoiceCorrectionPermission::APPLY, (int) $locked->branch_id, (int) $locked->id, (int) $locked->rme_invoice_id);
+                $this->pilot->assertAdmitted((int) $locked->branch_id, (int) $locked->id, (int) $locked->rme_invoice_id);
+
+                // Owner D1a — the CHECKER applies, never the maker. Under the
+                // lock, per ACCOUNT, Super Admin included (Gate::before means a
+                // policy could never be this guarantee).
+                if ($locked->isRequestedBy($actor)) {
+                    throw new RmeInvoiceCorrectionDenied(
+                        RmeInvoiceCorrectionDenied::SELF_APPLICATION,
+                        'Pengaju tidak boleh menerapkan koreksinya sendiri.',
+                        (int) $locked->id,
+                        (int) $locked->rme_invoice_id,
+                    );
+                }
 
                 if ($locked->status === RmeInvoiceCorrectionStatus::APPLIED) {
                     return [$locked, null]; // re-applying is a no-op, never a second application
@@ -470,7 +548,7 @@ class RmeInvoiceCorrectionService
                 }
 
                 /** @var RmeInvoice $invoice */
-                return [$this->applyLocked($invoice, $locked, $actor), null];
+                return [$this->applyLocked($invoice, $locked, $actor, self::APPLICATION_MANUAL_RECOVERY), null];
             });
         });
 
@@ -483,7 +561,7 @@ class RmeInvoiceCorrectionService
 
     // ─── Internals ──────────────────────────────────────────────────────────
 
-    private function applyLocked(RmeInvoice $invoice, RmeInvoiceCorrection $correction, User $actor): RmeInvoiceCorrection
+    private function applyLocked(RmeInvoice $invoice, RmeInvoiceCorrection $correction, User $actor, string $applicationMode): RmeInvoiceCorrection
     {
         $before = RmeInvoiceSnapshot::capture($invoice);
         $versionBefore = (int) ($invoice->correction_version ?? 0);
@@ -511,7 +589,7 @@ class RmeInvoiceCorrectionService
             match ($line->operation) {
                 RmeInvoiceCorrectionLine::OP_KEEP => null,
                 RmeInvoiceCorrectionLine::OP_REMOVE => $this->invoices->deleteItem($this->itemFor($items, $line)),
-                RmeInvoiceCorrectionLine::OP_CHANGE => $this->invoices->updateItem($this->itemFor($items, $line), $this->itemValues($line)),
+                RmeInvoiceCorrectionLine::OP_CHANGE => $this->invoices->updateItem($this->itemFor($items, $line), $this->changedItemValues($this->itemFor($items, $line), $line)),
                 RmeInvoiceCorrectionLine::OP_ADD => $this->invoices->createItem(array_merge($this->itemValues($line), ['rme_invoice_id' => (int) $invoice->id])),
                 default => throw new LogicException('Unknown correction line operation '.$line->operation),
             };
@@ -564,6 +642,7 @@ class RmeInvoiceCorrectionService
             'document_version_original_id' => $originalVersion?->id !== null ? (int) $originalVersion->id : null,
             'document_version_revision_id' => (int) $revision->id,
             'latest_version_matched_live_state' => $latestMatched,
+            'application_mode' => $applicationMode,
         ]);
 
         return $correction;
@@ -958,6 +1037,39 @@ class RmeInvoiceCorrectionService
             'price_exception_reason' => null,
             'price_exception_by' => null,
         ];
+    }
+
+    /**
+     * Rule 195 §27 — a CHANGED line only re-labels its price provenance when the
+     * correction actually changed the PRICE or the TREATMENT. A line whose unit
+     * price and treatment are identical (only qty, discount, description or
+     * doctor changed) keeps the
+     * provenance of the price it still carries: stamping CORRECTION_MANUAL_ENTRY
+     * on a price nobody re-entered would misdescribe where that figure came from.
+     * The original price itself survives in the frozen v0 document either way.
+     *
+     * @return array<string, mixed>
+     */
+    private function changedItemValues(RmeInvoiceItem $item, RmeInvoiceCorrectionLine $line): array
+    {
+        $values = $this->itemValues($line);
+
+        // Provenance describes WHERE a price for THIS treatment came from, so it is
+        // kept only when both the price and the treatment are unchanged (a changed
+        // treatment at the same price is a new pricing decision — security review L2).
+        if (RmeInvoiceDocument::toCents($item->unit_price) === RmeInvoiceDocument::toCents($line->proposed_unit_price)
+            && (int) ($item->treatment_id ?? 0) === (int) ($line->proposed_treatment_id ?? 0)) {
+            unset(
+                $values['pricing_mode'],
+                $values['price_source'],
+                $values['tariff_id'],
+                $values['tariff_unit_price'],
+                $values['price_exception_reason'],
+                $values['price_exception_by'],
+            );
+        }
+
+        return $values;
     }
 
     private function isUniqueViolation(QueryException $e): bool
