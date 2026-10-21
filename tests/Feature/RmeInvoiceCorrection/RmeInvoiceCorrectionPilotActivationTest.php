@@ -15,7 +15,9 @@
 
 use App\Models\User;
 use App\Modules\Branch\Models\Branch;
+use App\Modules\Branch\Services\BranchService;
 use App\Modules\ClinicOversight\Support\OversightFormat;
+use App\Modules\DoctorAccess\Services\DoctorEffectiveBranchResolver;
 use App\Modules\LabOrder\Models\AuditLog;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Models\RmeInvoiceCorrection;
@@ -34,6 +36,8 @@ use App\Modules\RmeInvoice\Support\RmeInvoiceCorrectionType;
 use App\Modules\RmeInvoice\Support\RmeInvoiceDocument;
 use App\Modules\RmeInvoice\Support\RmeInvoicePriceSource;
 use App\Modules\RmeOnlineContext\Middleware\EnsureRmeOnlineContext;
+use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
+use App\Modules\RmeOnlineContext\Services\UserOnlineContextService;
 use Database\Seeders\RoleSeeder;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -642,4 +646,164 @@ it('reports an active correction outside the pilot as WATCH', function () {
     $report = app(RmeInvoiceCorrectionReadinessService::class)->report();
     expect(collect($report['findings'])->pluck('code'))->toContain('ACTIVE_CORRECTION_OUTSIDE_PILOT')
         ->and($report['active_corrections_by_branch'])->toBe(['IC01' => 1]);
+});
+
+/*
+| OFF-SHIFT vs UNAUTHORIZED (found on production 2026-10-21). A context-bound
+| front-desk account has an EMPTY working scope whenever it is not logged in, so
+| the first probe reported the owner-designated maker (user 29, pinned to SPN4)
+| as "cannot request in the pilot" — a false FAIL that names an authorization
+| defect where there is only an operator who is not on shift. The probe now
+| separates the two: eligibility decides FAIL, being on shift decides WATCH.
+*/
+
+/** A real production code: the Front Office pin policy accepts only the four real codes. */
+function ricRealBranch(string $code): Branch
+{
+    return Branch::query()->firstOrCreate(['code' => $code], [
+        'name' => 'Cabang '.$code,
+        'is_active' => true,
+        'is_rme_enabled' => true,
+    ]);
+}
+
+/** Arm the branch-context pin (never the device lock) for one account. */
+function ricPinFrontOffice(User $user, string $code): void
+{
+    $flags = config('feature_flags.flags', []);
+    $flags['front_office.branch_context_lock']['default'] = true;
+    $flags['front_office.branch_context_lock']['env_value'] = null;
+    config()->set('feature_flags.flags', $flags);
+    config()->set('front_office_device_lock.scope.cohort', $user->id.':'.$code);
+}
+
+function ricOffShiftFrontOffice(): User
+{
+    return User::factory()->create()->assignRole('Front Office');
+}
+
+it('reports an off-shift maker pinned to the pilot branch as WATCH, never as an unauthorized FAIL', function () {
+    ricRealBranch('SPN4');
+    ricPilot(['SPN4']);
+    $maker = ricOffShiftFrontOffice();
+    ricPinFrontOffice($maker, 'SPN4');
+    $checker = userInRole('Super Admin');
+
+    $report = app(RmeInvoiceCorrectionReadinessService::class)->report([], (int) $maker->id, (int) $checker->id);
+    $codes = collect($report['findings'])->pluck('code');
+    $makerRow = $report['users'][0];
+
+    expect($makerRow['may_request_in_pilot'])->toBeFalse()
+        ->and($makerRow['on_shift_in_pilot'])->toBeFalse()
+        ->and($makerRow['eligible_pilot_branches'])->toBe(['SPN4'])
+        ->and($makerRow['may_request_when_on_shift'])->toBeTrue()
+        ->and($report['maker_checker_pair']['valid'])->toBeTrue()
+        ->and($report['maker_checker_pair']['live_now'])->toBeFalse()
+        ->and($report['maker_checker_pair']['shared_pilot_branches'])->toBe(['SPN4'])
+        ->and($codes)->toContain('PAIR_MAKER_NOT_ON_SHIFT_IN_PILOT')
+        ->and($codes)->not->toContain('PAIR_MAKER_CANNOT_REQUEST_IN_PILOT')
+        ->and($report['decision'])->toBe(RmeInvoiceCorrectionReadinessService::WATCH);
+});
+
+it('still FAILs an off-shift maker pinned to a branch outside the pilot', function () {
+    ricRealBranch('SPN4');
+    ricRealBranch('LDK2');
+    ricPilot(['SPN4']);
+    $maker = ricOffShiftFrontOffice();
+    ricPinFrontOffice($maker, 'LDK2');
+
+    $report = app(RmeInvoiceCorrectionReadinessService::class)->report([], (int) $maker->id, (int) userInRole('Super Admin')->id);
+
+    expect($report['users'][0]['eligible_pilot_branches'])->toBe([])
+        ->and($report['maker_checker_pair']['valid'])->toBeFalse()
+        ->and(collect($report['findings'])->pluck('code'))->toContain('PAIR_MAKER_CANNOT_REQUEST_IN_PILOT')
+        ->and($report['decision'])->toBe(RmeInvoiceCorrectionReadinessService::FAIL);
+});
+
+it('still FAILs an armed maker whose pin cannot be decided (no such live branch)', function () {
+    ricRealBranch('SPN4');
+    ricPilot(['SPN4']);
+    $maker = ricOffShiftFrontOffice();
+    // ATG3 is an allowed policy code, but no ATG3 branch exists here: undecidable.
+    ricPinFrontOffice($maker, 'ATG3');
+
+    $report = app(RmeInvoiceCorrectionReadinessService::class)->report([], (int) $maker->id, (int) userInRole('Super Admin')->id);
+
+    expect($report['users'][0]['eligible_pilot_branches'])->toBe([])
+        ->and(collect($report['findings'])->pluck('code'))->toContain('PAIR_MAKER_CANNOT_REQUEST_IN_PILOT')
+        ->and($report['decision'])->toBe(RmeInvoiceCorrectionReadinessService::FAIL);
+});
+
+it('treats an off-shift UNPINNED front-desk maker as able to select a pilot branch at login (WATCH)', function () {
+    $maker = ricOffShiftFrontOffice();
+
+    $report = app(RmeInvoiceCorrectionReadinessService::class)->report([], (int) $maker->id, (int) userInRole('Super Admin')->id);
+
+    expect($report['users'][0]['eligible_pilot_branches'])->toBe(['IC01'])
+        ->and($report['maker_checker_pair']['valid'])->toBeTrue()
+        ->and(collect($report['findings'])->pluck('code'))->toContain('PAIR_MAKER_NOT_ON_SHIFT_IN_PILOT')
+        ->and($report['decision'])->toBe(RmeInvoiceCorrectionReadinessService::WATCH);
+});
+
+it('still FAILs an off-shift maker whose role holds no request permission', function () {
+    $maker = User::factory()->create()->assignRole('Admin Klinik');
+
+    $report = app(RmeInvoiceCorrectionReadinessService::class)->report([], (int) $maker->id, (int) userInRole('Super Admin')->id);
+
+    expect($report['users'][0]['may_request_when_on_shift'])->toBeFalse()
+        ->and(collect($report['findings'])->pluck('code'))->toContain('PAIR_MAKER_CANNOT_REQUEST_IN_PILOT')
+        ->and($report['decision'])->toBe(RmeInvoiceCorrectionReadinessService::FAIL);
+});
+
+it('reports the pair LIVE and GO only when both accounts are on shift in a shared pilot branch', function () {
+    $maker = User::factory()->create();
+    rmeMakeFrontOfficeActive($maker, test()->branch);
+
+    $report = app(RmeInvoiceCorrectionReadinessService::class)->report([], (int) $maker->id, (int) userInRole('Super Admin')->id);
+
+    expect($report['users'][0]['on_shift_in_pilot'])->toBeTrue()
+        ->and($report['maker_checker_pair']['live_now'])->toBeTrue()
+        ->and(collect($report['findings'])->pluck('code'))->not->toContain('PAIR_MAKER_NOT_ON_SHIFT_IN_PILOT')
+        ->and($report['decision'])->toBe(RmeInvoiceCorrectionReadinessService::GO);
+});
+
+it('keeps the off-shift probe read-only for a pinned account', function () {
+    ricRealBranch('SPN4');
+    ricPilot(['SPN4']);
+    $maker = ricOffShiftFrontOffice();
+    ricPinFrontOffice($maker, 'SPN4');
+    $checker = userInRole('Super Admin');
+
+    $writes = 0;
+    DB::listen(function ($query) use (&$writes) {
+        if (preg_match('/^\s*(insert|update|delete)\b/i', $query->sql) === 1) {
+            $writes++;
+        }
+    });
+
+    app(RmeInvoiceCorrectionReadinessService::class)->report([], (int) $maker->id, (int) $checker->id);
+
+    expect($writes)->toBe(0);
+});
+
+it('fails closed when a governance account working scope cannot be resolved', function () {
+    $maker = userInRole('Super Admin');
+    $checker = userInRole('Super Admin');
+
+    // A governance account's eligibility IS its live scope; when that scope cannot
+    // be resolved the probe must admit nothing, never fall back to the allowlist.
+    app()->instance(RmeWorkingBranchScope::class, new class(app(UserOnlineContextService::class), app(BranchService::class), app(DoctorEffectiveBranchResolver::class)) extends RmeWorkingBranchScope
+    {
+        public function branchIdsFor(?User $user): array
+        {
+            throw new RuntimeException('scope unavailable');
+        }
+    });
+
+    $report = app(RmeInvoiceCorrectionReadinessService::class)->report([], (int) $maker->id, (int) $checker->id);
+
+    expect($report['users'][0]['eligible_pilot_branches'])->toBe([])
+        ->and($report['maker_checker_pair']['valid'])->toBeFalse()
+        ->and(collect($report['findings'])->pluck('code'))->toContain('PAIR_MAKER_CANNOT_REQUEST_IN_PILOT')
+        ->and($report['decision'])->toBe(RmeInvoiceCorrectionReadinessService::FAIL);
 });

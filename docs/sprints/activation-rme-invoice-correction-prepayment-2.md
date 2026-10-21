@@ -166,5 +166,46 @@ outside the pilot can be neither applied nor rejected; only its maker can cancel
 it. Production holds 0 corrections, and the probe reports any such row as
 `ACTIVE_CORRECTION_OUTSIDE_PILOT`.
 
-_Sections 10+ (CI, deploy, production verification, activation, GO decision) are
-filled in by the evidence commit._
+## 10. Production finding during activation — a false FAIL in the probe
+
+First release `ac58f02d` was deployed and activated in this order:
+
+1. Deploy (flag OFF).
+2. RoleSeeder grant. Production gained exactly the 6 measured pairs (508 → 514),
+   none were removed, and `Tester RME` was untouched.
+3. Flag ON through the environment and the config cache, as `daengtisiams`.
+
+The readiness probe then reported `STATE=PILOT_ACTIVE` with every role grant
+correct. It still returned **FAIL**, with `PAIR_MAKER_CANNOT_REQUEST_IN_PILOT 29`.
+
+The cause was not authorization. User 29 (Front Office, pinned `29:SPN4`) holds the
+request permission, but was last online 2026-10-17. It has no daily branch context
+for 2026-10-21 and no session. A context-bound account's live scope is empty off
+shift (fail-closed, correct). The probe read that live scope as "not authorized",
+so it reported a false FAIL that named a defect where there was only an operator
+off shift.
+
+The fix, in a follow-up release, is in `RmeInvoiceCorrectionReadinessService`:
+
+- **Validity comes from eligibility.** Validity is decided by the pilot branches
+  the account could act in once on shift. Eligibility is resolved through the
+  login-path authorities, never guessed:
+  - a pinned account → exactly its pinned branch;
+  - an undecidable pin → nothing;
+  - an unpinned context-bound account → any active RME pilot branch;
+  - a governance account → its live scope.
+- **Off shift is reported, not failed.** Being on shift now is reported
+  separately, as a WATCH (`PAIR_MAKER_NOT_ON_SHIFT_IN_PILOT`). A GO requires
+  `live_now`: both accounts on shift in a shared pilot branch.
+- **Tests.** Seven new tests, written first and seen red. The fixture's own
+  `userInRole()` call had been counted inside the read-only window; it was
+  corrected so the read-only measurement covers only the probe.
+
+Rule 195 §28b records the rule.
+
+The flag was left ON throughout. Production holds 0 positive UNPAID invoices in
+the pilot, so nothing is correctable. The capability's own gates (allowlist,
+maker ≠ checker, eligibility) were never in question.
+
+_Sections 11+ (second release, production verification, GO decision) are filled in
+by the evidence commit._

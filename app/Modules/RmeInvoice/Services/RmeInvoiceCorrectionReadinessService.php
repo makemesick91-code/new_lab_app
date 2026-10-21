@@ -12,6 +12,7 @@ use App\Modules\RmeInvoice\Support\RmeInvoiceCorrectionPermission;
 use App\Modules\RmeInvoice\Support\RmeInvoiceCorrectionPilotScope;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
 use App\Services\Foundation\FeatureFlagService;
+use App\Support\AccessControl\FrontOfficeBranchPinResolver;
 use Illuminate\Support\Facades\DB;
 use Spatie\Permission\Models\Role;
 use Throwable;
@@ -78,6 +79,7 @@ class RmeInvoiceCorrectionReadinessService
         private readonly BranchService $branches,
         private readonly RmeWorkingBranchScope $workingScope,
         private readonly RmeInvoiceCorrectionRepositoryInterface $corrections,
+        private readonly FrontOfficeBranchPinResolver $frontOfficePins,
     ) {}
 
     /**
@@ -235,6 +237,9 @@ class RmeInvoiceCorrectionReadinessService
 
         $scope = $this->scopeWithoutPersisting($user);
         $inPilot = array_values(array_intersect($scope, $admittedIds));
+        $contextBound = $this->workingScope->isContextBound($user);
+        $eligible = $this->eligiblePilotBranches($user, $contextBound, $inPilot, $admittedIds);
+        $codes = fn (array $ids) => array_values(array_map(fn (int $b) => $branchCodes[$b] ?? (string) $b, $ids));
 
         return [
             'id' => $id,
@@ -246,9 +251,57 @@ class RmeInvoiceCorrectionReadinessService
             'can_apply_recovery' => $user->can(RmeInvoiceCorrectionPermission::APPLY),
             'working_scope' => array_values(array_map(fn (int $b) => $branchCodes[$b] ?? (string) $b, $scope)),
             'pilot_branches_in_scope' => array_values(array_map(fn (int $b) => $branchCodes[$b] ?? (string) $b, $inPilot)),
+            // LIVE: what the account may do in the pilot RIGHT NOW (its current
+            // working scope). A context-bound account that is not logged in has
+            // an empty scope, so this is false for every off-shift operator.
             'may_request_in_pilot' => $user->can(RmeInvoiceCorrectionPermission::REQUEST) && $inPilot !== [],
             'may_approve_in_pilot' => $user->can(RmeInvoiceCorrectionPermission::APPROVE) && $inPilot !== [],
+            'context_bound' => $contextBound,
+            'on_shift_in_pilot' => $inPilot !== [],
+            // ELIGIBLE: what the account may do in the pilot once it is on shift.
+            // This — never the live scope — decides whether the pair is valid.
+            'eligible_pilot_branches' => $codes($eligible),
+            'may_request_when_on_shift' => $user->can(RmeInvoiceCorrectionPermission::REQUEST) && $eligible !== [],
+            'may_approve_when_on_shift' => $user->can(RmeInvoiceCorrectionPermission::APPROVE) && $eligible !== [],
         ];
+    }
+
+    /**
+     * The pilot branches this account may act in ONCE IT IS ON SHIFT.
+     *
+     * A context-bound account (Front Office, Admin Klinik, Kasir, Perawat) works
+     * from ONE branch it selects at login, so its live scope is empty whenever it
+     * is not logged in. Reporting that as "cannot act in the pilot" names an
+     * authorization defect where there is only an operator who is off shift —
+     * the false FAIL production showed on 2026-10-21 for the owner-designated
+     * maker. Eligibility is therefore derived from what the account COULD
+     * select, through the same authorities the login path uses, never guessed:
+     *
+     *  - not context-bound (Super Admin, Owner, Supervisor RME): the live scope
+     *    does not depend on a shift — eligibility is the live answer;
+     *  - pinned (FrontOfficeBranchPinResolver): exactly the pinned branch, when
+     *    it is in the pilot. An armed but UNDECIDABLE pin admits NOTHING — the
+     *    pin fails closed, so this does too;
+     *  - context-bound and unpinned: any active RME-enabled pilot branch, which
+     *    is what the online-context selector offers at login.
+     *
+     * @param  list<int>  $inPilot
+     * @param  list<int>  $admittedIds
+     * @return list<int>
+     */
+    private function eligiblePilotBranches(User $user, bool $contextBound, array $inPilot, array $admittedIds): array
+    {
+        if (! $contextBound) {
+            return $inPilot;
+        }
+
+        if ($this->frontOfficePins->appliesTo($user)) {
+            $pinned = $this->frontOfficePins->requiredBranchIdFor($user);
+
+            return $pinned === null ? [] : array_values(array_intersect([$pinned], $admittedIds));
+        }
+
+        return $admittedIds;
     }
 
     /**
@@ -262,9 +315,14 @@ class RmeInvoiceCorrectionReadinessService
         $checker = $checkerId !== null ? ($users[$checkerId] ?? null) : null;
 
         $distinct = $makerId !== null && $checkerId !== null && $makerId !== $checkerId;
-        $makerOk = is_array($maker) && ($maker['exists'] ?? false) && ($maker['active'] ?? false) && ($maker['may_request_in_pilot'] ?? false);
-        $checkerOk = is_array($checker) && ($checker['exists'] ?? false) && ($checker['active'] ?? false) && ($checker['may_approve_in_pilot'] ?? false);
+        // Validity is decided by ELIGIBILITY (could act once on shift); being on
+        // shift right now is reported separately, as a WATCH (see userCapability).
+        $makerOk = is_array($maker) && ($maker['exists'] ?? false) && ($maker['active'] ?? false) && ($maker['may_request_when_on_shift'] ?? false);
+        $checkerOk = is_array($checker) && ($checker['exists'] ?? false) && ($checker['active'] ?? false) && ($checker['may_approve_when_on_shift'] ?? false);
         $shared = $makerOk && $checkerOk
+            ? array_values(array_intersect((array) $maker['eligible_pilot_branches'], (array) $checker['eligible_pilot_branches']))
+            : [];
+        $sharedLive = $makerOk && $checkerOk && ($maker['may_request_in_pilot'] ?? false) && ($checker['may_approve_in_pilot'] ?? false)
             ? array_values(array_intersect((array) $maker['pilot_branches_in_scope'], (array) $checker['pilot_branches_in_scope']))
             : [];
 
@@ -280,6 +338,12 @@ class RmeInvoiceCorrectionReadinessService
         if ($makerOk && $checkerOk && $shared === []) {
             $findings[] = ['level' => self::FAIL, 'code' => 'PAIR_NO_SHARED_PILOT_BRANCH', 'detail' => 'no pilot branch both accounts may act in'];
         }
+        if ($makerOk && ! ($maker['may_request_in_pilot'] ?? false)) {
+            $findings[] = ['level' => self::WATCH, 'code' => 'PAIR_MAKER_NOT_ON_SHIFT_IN_PILOT', 'detail' => $makerId.' is eligible for '.implode(',', (array) $maker['eligible_pilot_branches']).' but holds no working context there now'];
+        }
+        if ($checkerOk && ! ($checker['may_approve_in_pilot'] ?? false)) {
+            $findings[] = ['level' => self::WATCH, 'code' => 'PAIR_CHECKER_NOT_ON_SHIFT_IN_PILOT', 'detail' => $checkerId.' is eligible for '.implode(',', (array) $checker['eligible_pilot_branches']).' but holds no working context there now'];
+        }
 
         return [
             'maker_id' => $makerId,
@@ -289,6 +353,8 @@ class RmeInvoiceCorrectionReadinessService
             'checker_may_approve_in_pilot' => $checkerOk,
             'shared_pilot_branches' => $shared,
             'valid' => $distinct && $makerOk && $checkerOk && $shared !== [],
+            // Both accounts on shift, right now, in a pilot branch they share.
+            'live_now' => $distinct && $sharedLive !== [],
         ];
     }
 
