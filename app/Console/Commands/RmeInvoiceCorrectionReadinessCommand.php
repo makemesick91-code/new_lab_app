@@ -68,23 +68,24 @@ class RmeInvoiceCorrectionReadinessCommand extends Command
 
             if ($report['users'] !== []) {
                 $this->table(
-                    ['User', 'Roles', 'Request', 'Approve', 'Apply(recovery)', 'Scope', 'Pilot in scope'],
+                    ['User', 'Roles', 'Request', 'Approve', 'Apply(recovery)', 'Scope now', 'Pilot now', 'Pilot when on shift'],
                     array_map(fn (array $u) => ($u['exists'] ?? false) ? [
                         $u['id'],
                         implode(',', $u['roles']),
-                        $u['may_request_in_pilot'] ? 'yes' : 'no',
-                        $u['may_approve_in_pilot'] ? 'yes' : 'no',
+                        $u['may_request_when_on_shift'] ? 'yes' : 'no',
+                        $u['may_approve_when_on_shift'] ? 'yes' : 'no',
                         $u['can_apply_recovery'] ? 'yes' : 'no',
                         implode(',', $u['working_scope']) ?: '-',
                         implode(',', $u['pilot_branches_in_scope']) ?: '-',
-                    ] : [$u['id'], '(not found)', '-', '-', '-', '-', '-'], $report['users']),
+                        implode(',', $u['eligible_pilot_branches']) ?: '-',
+                    ] : [$u['id'], '(not found)', '-', '-', '-', '-', '-', '-'], $report['users']),
                 );
             }
 
             if ($report['maker_checker_pair'] !== null) {
                 $p = $report['maker_checker_pair'];
                 $this->line(sprintf(
-                    'PAIR maker=%s checker=%s distinct=%s maker_ok=%s checker_ok=%s shared=%s VALID=%s',
+                    'PAIR maker=%s checker=%s distinct=%s maker_ok=%s checker_ok=%s shared=%s VALID=%s LIVE_NOW=%s',
                     $p['maker_id'] ?? '-',
                     $p['checker_id'] ?? '-',
                     $p['distinct_accounts'] ? 'yes' : 'no',
@@ -92,6 +93,7 @@ class RmeInvoiceCorrectionReadinessCommand extends Command
                     $p['checker_may_approve_in_pilot'] ? 'yes' : 'no',
                     implode(',', $p['shared_pilot_branches']) ?: '-',
                     $p['valid'] ? 'yes' : 'no',
+                    $p['live_now'] ? 'yes' : 'no',
                 ));
             }
 

@@ -126,6 +126,16 @@ Extends rules 190 (foundation), 191 (payment-version binding), 192 (D10 block),
     effective-permission check can rebuild the Spatie permission cache, and a
     root-owned cache file is the FIX-LOGIN-REDIRECT-RUNTIME-PERMISSIONS 500
     (security review L4).
+28b. OFF SHIFT ≠ UNAUTHORIZED. A context-bound account (Front Office, Admin Klinik,
+    Kasir, Perawat) has an EMPTY live scope whenever it is not logged in. The probe
+    therefore decides the pair's VALIDITY from ELIGIBILITY — the pilot branches the
+    account could act in once on shift (pinned → exactly the pinned branch; an
+    undecidable pin → nothing; unpinned → any active RME pilot branch; governance →
+    its live scope) — and reports "not on shift right now" as a WATCH
+    (`PAIR_MAKER_NOT_ON_SHIFT_IN_PILOT` / `…_CHECKER_…`), never as a FAIL. A GO needs
+    both accounts on shift in a shared pilot branch (`live_now`). Found on production
+    2026-10-21: the owner-designated maker (user 29, pinned SPN4) was reported FAIL
+    while simply off shift. Never "fix" a WATCH by opening a session as the operator.
 29. **Technical readiness ≠ operational verification.** Until the operators run
     the authenticated pilot AND an authorized real positive UNPAID case is
     corrected and reconciled, only a SCOPED GO tag may exist; the full tag
