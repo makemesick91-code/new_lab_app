@@ -207,5 +207,112 @@ The flag was left ON throughout. Production holds 0 positive UNPAID invoices in
 the pilot, so nothing is correctable. The capability's own gates (allowlist,
 maker ≠ checker, eligibility) were never in question.
 
-_Sections 11+ (second release, production verification, GO decision) are filled in
-by the evidence commit._
+## 11. CI, merge, deploy
+
+| Release | PR | Candidate | Merge (squash) | Tree | Critical Gate (exact SHA) | Deploy |
+|---|---|---|---|---|---|---|
+| 1 | #497 | `73c79e04` | `ac58f02d` | `af463acc` = candidate | run 39518170813: 6064 passed / 32104 assertions | `DEPLOY OK 20261021-013007` |
+| 2 | #498 | `b72543f6` | `61a29795` | `148f6e1f` = candidate | run 39531262595: 6072 passed / 32137 assertions | `DEPLOY OK 20261021-043434` |
+
+**Gates.** Every required gate passed on both candidates: Classifier, Quality,
+Critical, Selective Module (release 1), NSF-9, NSF-10 and the Android gate. Two
+gates were skipped:
+
+- the self-hosted Critical variant (exactly one variant runs);
+- the **Full Suite**, because the global temporary policy is ACTIVE. That skip is
+  not a pass.
+
+The PostgreSQL 16 concurrency suite ran in CI: 10 tests, including the two new races.
+
+**Deploys.** Both ran ON the VPS through `deploy-vps-runner.sh start`, detached,
+and both reported:
+
+- `DEPLOY_HEAD_TARGET_MATCH=YES`;
+- runtime isolation 70 GO / 0 FAIL;
+- no migration;
+- backups `pre_auto_deploy_20261021-013007.sql` and `…043434.sql` (0640).
+
+The NSF-9 smoke warning on `http://127.0.0.1/login` (404) is the known co-tenant
+nginx shadow; the canonical domain returns 200.
+
+## 12. Activation ceremony (production)
+
+| Step | Evidence |
+|---|---|
+| Delta measured before seeding | Production pairs were unchanged since the first capture (508). The seed-vs-production diff is exactly +6. The `Tester RME` pairs exist only in production; that role is not seeder-managed and stayed untouched. |
+| `PermissionSeeder` → `RoleSeeder` → `permission:cache-reset` as `daengtisiams` | All rc=0. Pairs 508→514. The diff is exactly the 6 measured pairs, with 0 removed. |
+| Flag ON | `FEATURE_RME_INVOICE_CORRECTION=true` was appended with `>>`. Inode 796156 and 640 `root:daengtisiams` were preserved. The runtime user can read the file. `config:clear` / `config:cache` ran as `daengtisiams`. Result: `enabled=true via=env captured=yes`. |
+| Opcache | No override of the defaults (`validate_timestamps=1`, `revalidate_freq=2`), so FPM picks up the new `config.php` within seconds. |
+| Probe (release 2) | `STATE=PILOT_ACTIVE`, `ADMITTED=SPN4`, grants as rule 195. User 29: request/approve yes, scope now `-`, eligible `SPN4`. User 1: SPN4. Pair `VALID=yes`, `LIVE_NOW=no`, `[WATCH] PAIR_MAKER_NOT_ON_SHIFT_IN_PILOT`. Decision **WATCH** (rc 0; `--strict` rc 1). |
+
+## 13. Production verification
+
+**Financial fingerprint, read-only, captured three times:** before the deploys,
+after activation, and after release 2. All three captures are identical except
+`role_permission_pairs` 508→514:
+
+| Item | Value |
+|---|---|
+| Invoices | 7, Rp 7.548.000 (PAID 5 / PARTIAL 1 / UNPAID 1 — invoice 36, Rp 0) |
+| Invoice items | 8 |
+| Payments | 8, Rp 5.548.000 |
+| Payment batches | 1 |
+| Corrections / correction events / document versions | 0 / 0 / 0 |
+| Outstanding | 2, Rp 2.000.000 |
+| Audit rows | 1601 (max id 1623), 0 correction audit rows |
+| User–role links | 36 |
+
+**HTTP over `https://daengtisia.online`:**
+
+- `/login` and `/health/{live,ready,lb}` return 200.
+- `/rme/invoice-corrections`, `/approvals`, `/{correction}` and the create form
+  all return 302 to `/login` for a guest.
+- A POST to approve without a CSRF token returns 419.
+- No 500 anywhere.
+
+**Runtime:**
+
+- `laravel.log` is byte-identical (1 437 201 bytes) across the deploys and the
+  ceremony.
+- `queue:failed` reports no failed jobs.
+- `php8.3-fpm`, nginx and the queue worker are active.
+- Environment `pilot`, debug OFF, maintenance OFF.
+
+## 14. GO decision
+
+| Gate | Result |
+|---|---|
+| Owner decisions D1a/D1b/D1c/D1d | RECORDED |
+| D21c / D21g | OWNER_DECISION_PENDING (safe-to-defer, restricted) |
+| TDD, mutation, security review | PASS (0 real survivors; 4 LOW fixed) |
+| CI on exact candidates | PASS (Full Suite SKIPPED by policy) |
+| Merge (tree identity), deploy (exit 0 + DEPLOY OK) | PASS ×2 |
+| RoleSeeder grant, flag ON, probe | PASS; probe WATCH (maker off shift) |
+| Financial reconciliation (no unintended change) | PASS |
+| Authenticated pilot by users 29 and 1 | **NOT_PERFORMED** |
+| Real authorized correction + reconciliation | **NOT_PERFORMED** — 0 positive UNPAID invoices in SPN4 |
+
+**Scoped GO:** `activation-rme-invoice-correction-prepayment-2-pilot-readiness-go`
+@ `61a29795`, an exact match at the VPS HEAD. The full tag
+`activation-rme-invoice-correction-prepayment-2-go` was **not** created, and must
+not be created until both NOT_PERFORMED rows above are performed and reconciled.
+
+## 15. To close the full activation (operators, not automation)
+
+1. Admin Sunu (user 29) logs in and selects SPN4. The pin allows nothing else.
+2. `runuser -u daengtisiams -- php artisan rme:invoice-correction-readiness --maker=29 --checker=1`
+   must show `LIVE_NOW=yes` and Decision GO.
+3. When a real SPN4 invoice is UNPAID, positive, unpaid and needs a correction, the
+   owner authorizes that specific case.
+4. User 29 submits the correction. User 1 (never user 29) approves it, which
+   applies it immediately.
+5. Reconcile:
+   - v0 is frozen and v1 matches the new items and total;
+   - one correction, two events and two audit rows (`application_mode=AUTO_ON_APPROVAL`);
+   - the payment form now binds to the new `correction_version`;
+   - no other invoice changed.
+6. Only then create the full tag on the deployed runtime SHA.
+
+Rollback is unchanged (rule 195 §30): reject or cancel active corrections, set the
+flag OFF and rebuild the config cache as `daengtisiams`. Applied corrections and
+frozen document versions are never deleted.
