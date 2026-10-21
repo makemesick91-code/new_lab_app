@@ -1,50 +1,50 @@
-# HARDENING-RME-INVOICE-CORRECTION-PILOT-IDENTITY-PAYMENT-ACTOR-1
+# FIX-RME-INVOICE-BRANCH-SCOPE-EXPLICIT-ACTOR-1
 #
-# Security hardening of the live SPN4 pre-payment invoice correction pilot and
-# of the RME payment service, under owner decision D1e (2026-10-21), recorded in
-# docs/decisions/rme-billing-correction-owner-decisions.md:
-#   D1e — only user 29 may SUBMIT; only user 1 may APPROVE (= apply, D1a) or
-#         REJECT; every other account — other Front Office, other Super Admin,
-#         every role — is refused, whatever its permissions say.
+# Security bugfix of the RME invoice service: branch authorization is decided
+# from the EXPLICIT actor the caller passes, never from the ambient session.
+# Closes rule 197 §30 for RmeInvoiceService.
+#
+# Root cause (reproduced on the base): RmeInvoiceService::cashierScopeBranchIds()
+# returned RmeWorkingBranchScope::branchIdsFor(Auth::user()); with no session
+# branchIdsFor(null) answers every active RME branch, so the cashier pending list
+# and the handoff queue failed OPEN. Latent over HTTP (one authenticated caller
+# each), real for any non-HTTP caller. Same audit: create() had no service-level
+# usability/permission check; findInBranch() read BranchContext and had 0 callers.
 #
 # Runtime changes:
-#   - RmeInvoiceCorrectionPilotIdentity + config/rme_invoice_correction.php
-#     `pilot.identities` (source-controlled, no env read, fail-closed: missing /
-#     malformed / overlapping lists admit nobody; an empty role list stops that
-#     role only; SUBMIT needs a designated checker). Asserted by the SERVICE under
-#     the invoice row lock for submit / approve / reject / recovery apply, after
-#     permission, branch scope, branch allowlist and self-decision. CANCEL of
-#     one's own correction is deliberately NOT identity-gated (release path).
-#   - The actor must be a persisted, non-deleted, ACTIVE account (re-read).
-#   - Policy courtesy, controller 403 on the request form for non-designated
-#     accounts, detail-page controls from actionsFor(), cashier panel can_request.
-#   - Readiness probe reports PILOT_IDENTITIES and FAILs a pair outside them.
-#   - RmePaymentService::assertInvoicePayable() judges the EXPLICIT cashier
-#     (persisted, active), never Auth::user() — which failed OPEN with no session
-#     because RmeWorkingBranchScope::branchIdsFor(null) answers every RME branch.
+#   - RmeBillingActorGuard: the one billing-actor authority (persisted, active,
+#     not deleted, manage_rme_billing on the persisted row), shared by
+#     RmeInvoiceService and RmePaymentService.
+#   - paginatePendingVisits / cashierHandoffQueue / findInvoiceForVisit take a
+#     non-nullable explicit User actor; an unusable actor gets an EMPTY scope.
+#   - create() refuses an unusable / non-billing cashier inside the transaction
+#     after the visit lock (AuthorizationException, nothing written).
+#   - RmePaymentService asks permission and working branch of the persisted
+#     account (security review F2).
+#   - RmeInvoiceController::create() returns View|RedirectResponse (pre-existing
+#     TypeError/500 when an invoice exists, security review F1).
 #
-# No migration. No RoleSeeder change. No route change. Rule 197.
-# Production: correction flag switched OFF before the code change (exposure:
-# 8 Front Office accounts held request+approve in SPN4); it returns ON only
-# after the deployed identity guard is verified on production.
+# No migration. No permission, role, route or feature-flag change. No owner
+# decision. Rule 198. Correction service, SPN4 pilot, maker 29 / checker 1, D10,
+# invoice-version binding and manual pricing D21 untouched.
 #
-# Type SECURITY_FIX: authorization hardening across RmeInvoice (correction +
-# payment), audit level 3. security_impact true.
+# Type SECURITY_FIX: authorization fix in RmeInvoice (invoice + payment), audit
+# level 3. security_impact true.
 
-id: HARDENING-RME-INVOICE-CORRECTION-PILOT-IDENTITY-PAYMENT-ACTOR-1
+id: FIX-RME-INVOICE-BRANCH-SCOPE-EXPLICIT-ACTOR-1
 type: SECURITY_FIX
 module: RmeInvoice
-title: "Pilot identity restriction (owner D1e: maker 29 submits, checker 1 decides) and explicit payment actor for the RME branch scope"
+title: "RME invoice branch scope from the explicit actor (no ambient Auth::user()), shared billing-actor guard"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 runtime_change: true
 schema_change: false
-frontend_change: true
+frontend_change: false
 security_impact: true
 branch_isolation_impact: true
 ledger_impact: false
 deploy_required: true
 browser_required: false
 test_profiles: [rme, cashier, billing, permission]
-go_tag: hardening-rme-invoice-correction-pilot-identity-payment-actor-1-go
-inherits_parent_go: activation-rme-invoice-correction-prepayment-2-pilot-readiness-go
+go_tag: fix-rme-invoice-branch-scope-explicit-actor-1-go
+inherits_parent_go: hardening-rme-invoice-correction-pilot-identity-payment-actor-1-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1

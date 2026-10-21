@@ -140,3 +140,7 @@ two designated accounts may use it.
     reads `Auth::user()` for cashier READ lists. Both are reached only from
     authenticated controllers today; changing the shared scope's null contract is a
     separate, wider change.
+    **[SUPERSEDED IN PART by rule 198 — FIX-RME-INVOICE-BRANCH-SCOPE-EXPLICIT-ACTOR-1:
+    `RmeInvoiceService` now judges the explicit actor (no `Auth::user()`), and
+    usability is asked of the shared `RmeBillingActorGuard`. The
+    `branchIdsFor(null)` null contract itself is still unchanged (rule 198 §30).]**

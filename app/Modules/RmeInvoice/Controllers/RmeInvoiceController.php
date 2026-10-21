@@ -62,7 +62,7 @@ class RmeInvoiceController extends Controller
         ];
 
         return view('rme.cashier.index', [
-            'visits' => $this->service->paginatePendingVisits($filters),
+            'visits' => $this->service->paginatePendingVisits($request->user(), $filters),
             'filters' => $filters,
             'rmLookup' => $rmLookup->lookupByMedicalRecordNumberAcrossBranches($request->string('rm_lookup')->toString()),
         ]);
@@ -94,7 +94,7 @@ class RmeInvoiceController extends Controller
                 : null,
         ];
 
-        $queue = $this->service->cashierHandoffQueue($filters);
+        $queue = $this->service->cashierHandoffQueue($request->user(), $filters);
 
         return view('rme.cashier.handoff', [
             'branches' => $branches,
@@ -493,11 +493,17 @@ SQL;
         return $summary;
     }
 
-    public function create(Request $request, ClinicVisit $clinicVisit): View
+    /**
+     * FIX-RME-INVOICE-BRANCH-SCOPE-EXPLICIT-ACTOR-1 (rule 198 §14a) — returns a
+     * redirect when the visit already has an active invoice. Declared `: View`
+     * since Sprint 20, that ordinary path (a stale "Buat Tagihan" link, back +
+     * reload, a direct URL) threw a TypeError and answered 500.
+     */
+    public function create(Request $request, ClinicVisit $clinicVisit): View|RedirectResponse
     {
         $this->authorize('create', [RmeInvoice::class, $clinicVisit]);
 
-        $existingInvoice = $this->service->findInvoiceForVisit($clinicVisit);
+        $existingInvoice = $this->service->findInvoiceForVisit($clinicVisit, $request->user());
         if ($existingInvoice) {
             return redirect()
                 ->route('rme.cashier.show', [$clinicVisit, $existingInvoice])

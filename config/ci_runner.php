@@ -436,6 +436,13 @@ return [
         'tests/Feature/RmeManualPricing/RmeManualPricingCorrectionTest.php',
         'tests/Feature/RmeManualPricing/RmeManualPricingGovernanceTest.php',
         'tests/Feature/RmeManualPricing/RmeManualPricingBranchBoundaryTest.php',
+        // FIX-RME-INVOICE-BRANCH-SCOPE-EXPLICIT-ACTOR-1 (rule 198) — the invoice
+        // service judges the EXPLICIT actor (persisted, active, billing permission)
+        // for the cashier read lists, the existing-invoice lookup and invoice
+        // creation; never Auth::user(), which failed OPEN with no session. No
+        // existing token matches `RmeInvoiceExplicitActorTest`, so the new
+        // `RmeInvoiceExplicitActor` token is added to BOTH critical-gate variants.
+        'tests/Feature/RME/RmeInvoiceExplicitActorTest.php',
 
         // DOCTOR-PWA-WEBAUTHN-1 — the browser device-credential login. A `|Pwa`
         // or `|DoctorDevice` token does not select it: --filter matches the test
