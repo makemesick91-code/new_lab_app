@@ -182,6 +182,10 @@ function rctPinned(Branch $branch, array $permissions, string $role): User
 it('D1: lets a branch Kasir submit and that branch\'s Admin Klinik approve', function () {
     $kasir = rctPinned(test()->branch, [RmeInvoiceCorrectionPermission::REQUEST, 'manage_rme_billing'], 'Kasir');
     $admin = rctPinned(test()->branch, [RmeInvoiceCorrectionPermission::APPROVE], 'Admin Klinik');
+    // REVISED by rule 197 (owner D1e): inside the pilot the ROLE grant is not
+    // enough — the accounts must also be designated. This test keeps proving the
+    // D1 role grants and the working-branch scope for designated accounts.
+    ricPilotIdentities([(int) $kasir->id], [(int) $admin->id]);
 
     $correction = ricSubmit(ricInvoice(), $kasir);
     // REVISED by rule 195 (D1a): the Admin Klinik approval applies the correction.
@@ -203,10 +207,16 @@ it('D1: lets Super Admin approve across branches, but never its own request', fu
     $branch = Branch::factory()->create(['code' => 'IC07', 'is_rme_enabled' => true, 'is_active' => true]);
     ricPilot(['IC01', 'IC07']); // REVISED by rule 195: both branches admitted to the pilot
 
+    // REVISED by rule 197 (owner D1e): the Super Admin must be the designated
+    // checker to approve at all, and the designated maker to file its own request
+    // (one account is never on both lists, so the designation changes between the
+    // two halves). Self-approval is refused BEFORE identity is asked.
+    ricDesignateChecker($superAdmin);
     $theirs = ricSubmit(ricInvoice(ricVisit($branch)));
     // REVISED by rule 195 (D1a): the cross-branch approval applies the correction.
     expect(ricApprove($theirs, $superAdmin)->status)->toBe(RmeInvoiceCorrectionStatus::APPLIED);
 
+    ricPilotIdentities([(int) $superAdmin->id], [(int) test()->checker->id]);
     $own = ricSubmit(ricInvoice(), $superAdmin);
     expect(fn () => ricApprove($own, $superAdmin))->toThrow(RmeInvoiceCorrectionDenied::class);
 });

@@ -188,6 +188,9 @@ it('still refuses a paid or partially paid invoice (pre-payment only)', function
 it('still refuses self-approval for every account, Super Admin included', function () {
     $superAdmin = User::factory()->create();
     $superAdmin->assignRole('Super Admin');
+    // REVISED by rule 197 (owner D1e): designated as the maker so it may file at
+    // all; self-approval is refused before identity is asked.
+    ricDesignateMaker($superAdmin);
     $invoice = rmpcInvoiceWithoutTariffs();
     $correction = ricSubmit($invoice, maker: $superAdmin);
 

@@ -1,0 +1,142 @@
+---
+description: HARDENING-RME-INVOICE-CORRECTION-PILOT-IDENTITY-PAYMENT-ACTOR-1 — owner decision D1e (2026-10-21) confines the SPN4 pre-payment correction pilot to two named ACCOUNTS (maker user 29 submits; checker user 1 approves/rejects/recovery-applies), enforced in the service under the invoice lock, source-controlled and fail-closed; and the payment branch-scope check judges the EXPLICIT cashier, never Auth::user() (which failed OPEN with no session). Extends rules 195/196; supersedes rule 196 §13 ("a designation, not an allowlist").
+globs: app/Modules/RmeInvoice/**, config/rme_invoice_correction.php, app/Console/Commands/RmeInvoiceCorrectionReadinessCommand.php, resources/views/rme/invoice-corrections/**, resources/views/rme/cashier/**, tests/Feature/RmeInvoiceCorrection/**, tests/Feature/RME/RmePayment*.php, docs/decisions/rme-billing-correction-owner-decisions.md
+alwaysApply: false
+---
+
+# RME invoice correction — pilot IDENTITY restriction + payment explicit ACTOR (rule 197)
+
+Evidence: `docs/sprints/hardening-rme-invoice-correction-pilot-identity-payment-actor-1.md`.
+Decisions: `docs/decisions/rme-billing-correction-owner-decisions.md` (D1e).
+Extends rule 195 (activation contract) and rule 196 (verification ladder).
+**Supersedes rule 196 §13**, which said D1d was "a designation, not an allowlist":
+since D1e it IS an enforced allowlist. Where rule 195 §5/§20 says Front Office
+holds request+approve, that remains true of the ROLE; inside the pilot only the
+two designated accounts may use it.
+
+## A. Owner decision D1e — who may act in the pilot
+
+1. Recorded `OWNER_POLICY_APPROVED` 2026-10-21 (owner instruction in this sprint's
+   brief). It is an owner decision: never widen, narrow or reinterpret it without
+   a new one recorded in the register first.
+2. | Action | Allowed | Everyone else |
+   |---|---|---|
+   | SUBMIT | maker `29` | `PILOT_IDENTITY_NOT_AUTHORIZED` |
+   | APPROVE (= apply, D1a) | checker `1` | refused |
+   | REJECT | checker `1` | refused |
+   | APPLY (recovery path) | checker `1` | refused |
+   | CANCEL own correction | the correction's own maker | `NOT_THE_MAKER` |
+3. Relation to D1a–D1d: D1a (approve applies) unchanged; D1b (Front Office holds
+   request+approve) unchanged for the ROLE and narrowed by identity inside the
+   pilot; D1c (SPN4) unchanged — WHERE; D1e — WHO. D1d named the accounts; D1e
+   makes them the only ones.
+4. Role permissions are NOT changed by D1e. `RoleSeeder` stays at its rule-195
+   grants (production 514 role-permission pairs). Never "implement" an identity
+   restriction by editing roles, pins, cohorts or `role_has_permissions`.
+5. Super Admin is NOT exempt. `Gate::before` returns true for every policy for a
+   Super Admin, so a policy can never be this control. A second Super Admin is
+   refused exactly like a second Front Office account.
+
+## B. Where it is enforced
+6. `RmeInvoiceCorrectionPilotIdentity` is the single authority. The SERVICE
+   (`RmeInvoiceCorrectionService`) asserts it inside the transaction, after the
+   row lock, for submit / approve / reject / recovery apply. A command, job or
+   future controller therefore cannot reach a transition around it.
+7. Order inside the lock (each refuses on its own; the order only decides which
+   code is reported): flag → permission + working-branch scope → branch allowlist
+   (submit/approve/apply) → self-decision (`SELF_APPROVAL` / `SELF_APPLICATION`) →
+   identity. A self-approval keeps its own code; an out-of-branch caller keeps the
+   404/`BRANCH_OUT_OF_SCOPE` that reveals nothing.
+8. The policy repeats identity for approve/reject/apply (a courtesy for non-Super-
+   Admin accounts). The controller answers the request form/store with **403** for
+   a non-designated account — asked AFTER the branch-scope 404. The detail page
+   renders decision controls from `RmeInvoiceCorrectionService::actionsFor()`
+   (explicit identity check), never from a bare `@can`, because `@can` is true for
+   any Super Admin. The cashier panel's `can_request` includes the identity.
+9. Read access (list, detail, frozen document versions, the approvals list) stays
+   governed by the existing permissions and branch scope. Hiding a control is a
+   courtesy; the service is the control.
+
+## C. The allowlist — source-controlled and fail-closed
+10. `config/rme_invoice_correction.php` → `pilot.identities` =
+    `['maker_user_ids' => [29], 'checker_user_ids' => [1]]`. NO `env()` — the
+    cohort is an owner decision that arrives as a reviewed commit. A governance
+    test pins the exact shipped values; changing them must fail CI until the test
+    and the decision register change in the same reviewed commit.
+11. FAIL CLOSED: a missing key, a non-array, a non-list, a string id, a zero or a
+    negative id voids the WHOLE allowlist (one unreadable entry is never skipped);
+    overlapping lists void it (one account never holds both halves). Void = nobody
+    may submit, approve, reject or recovery-apply.
+12. An EMPTY role list is readable and stops that role only: empty makers = no new
+    submissions while the checker still resolves filed corrections. SUBMIT also
+    requires at least one designated checker — a correction nobody may decide
+    would hold its invoice behind the D10 block.
+13. The identity allowlist is independent of the branch allowlist: adding a branch
+    to `pilot.branch_codes` does not widen who may act, and vice versa. Each is a
+    separate owner decision.
+14. The actor must be a PERSISTED, non-deleted, ACTIVE account, re-read from the
+    database (`PILOT_IDENTITY_ACTOR_UNUSABLE` otherwise). An in-memory object
+    carrying a designated id is not that account; a deactivation committed
+    elsewhere is seen immediately.
+
+## D. Release paths — never strand an invoice
+15. CANCEL of one's own SUBMITTED/APPROVED correction is NOT identity-gated: it is
+    the maker's de-escalation and the guaranteed release path. It stays confined
+    to that one account (`NOT_THE_MAKER`), the request permission and the branch
+    scope. Never gate it by the identity list.
+16. REJECT is identity-gated (owner D1e) but NOT branch-gated (rule 195 §17).
+17. The recovery APPLY (pre-D1a APPROVED rows; 0 in production) is the second half
+    of an approval (D1a) and belongs to the checker identity. This NARROWS the
+    apply permission (held by every Super Admin) to user 1, who already held it;
+    it grants nobody anything new.
+18. Every active correction keeps at least one release path whatever the lists
+    say: its own maker's cancel; and while a checker is designated, the checker's
+    reject. Tests pin both after a narrowing.
+19. The flag remains the global kill switch — but cancel and reject are ALSO
+    flag-gated, while D10 is NOT. So: resolve (reject/cancel) every active
+    correction BEFORE switching the flag OFF, or the invoice stays payment-blocked
+    until the flag returns (rule 195 §30).
+
+## E. Payment — the EXPLICIT actor, never the ambient session
+20. `RmePaymentService::assertInvoicePayable(RmeInvoice, User $cashier)` judges the
+    cashier the caller passes — the account written to `cashier_id` — on every
+    path (pay, control allocation, visit allocation all funnel through it).
+21. Root cause fixed: it used `Auth::user()`. That judged the wrong person for any
+    non-HTTP caller, and with NO session `RmeWorkingBranchScope::branchIdsFor(null)`
+    answers EVERY active RME branch — the branch check failed OPEN.
+22. The cashier must be a persisted, non-deleted, ACTIVE account (re-read). Every
+    payment entry point declares a non-nullable `User $cashier`; there is no
+    overload that omits it and no session fallback.
+23. A governance test strips comments and asserts `RmePaymentService` contains no
+    `Auth::`, `auth()` or `request()` in code. Never reintroduce one.
+24. Unchanged by design: carry-over parents of a control/visit allocation are
+    selected server-side by `RmeControlReceivableService` (patient-scoped, RME
+    branches) and are NOT re-scoped to the cashier's working branch — that is the
+    approved Sprint 62.2 cross-branch collection contract. Super Admin keeps its
+    existing governance cashier scope (every active RME branch).
+25. Preserved: D10 block under the invoice lock (rule 192), invoice-version binding
+    (rule 191), future `paid_at` refusal, batch atomicity, manual pricing (rule 194).
+
+## F. Readiness probe
+26. `rme:invoice-correction-readiness` reports `PILOT_IDENTITIES valid=… maker=…
+    checker=…`, a `Pilot identity` column per user, and FAILs on
+    `PILOT_IDENTITY_CONFIG_INVALID`, `PAIR_MAKER_NOT_PILOT_IDENTITY`,
+    `PAIR_CHECKER_NOT_PILOT_IDENTITY`; WATCHes on an empty role list. Run it only as
+    the runtime user (rule 195 §28a).
+
+## G. Production procedure (this sprint) and limits
+27. Exposure found 2026-10-21 08:14 UTC: 8 Front Office accounts held both halves in
+    SPN4. Mitigation before any code: flag OFF (one env line, inode/perms
+    preserved, config cache as `daengtisiams`) after confirming 0 corrections.
+28. The flag returns ON only after the deployed identity guard is verified on
+    production. If verification fails, it stays OFF (NO_GO).
+29. This sprint's GO tag certifies the HARDENING only. It does NOT certify
+    `PILOT_LIVE`, `AUTHENTICATED_VERIFIED`, `FINANCIAL_CORRECTION_VERIFIED` or
+    `FULL_ACTIVATION_GO` (rule 196) — those still need the real operators and a
+    real, owner-authorized case. Never fabricate a session, invoice, payment or
+    correction to produce evidence.
+30. Recorded residual (not fixed here): `RmeWorkingBranchScope::branchIdsFor(null)`
+    answers every RME branch, and `RmeInvoiceService::cashierScopeBranchIds()` still
+    reads `Auth::user()` for cashier READ lists. Both are reached only from
+    authenticated controllers today; changing the shared scope's null contract is a
+    separate, wider change.

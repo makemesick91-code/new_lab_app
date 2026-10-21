@@ -76,6 +76,57 @@ if (! function_exists('ricFlag')) {
         // SPN4; the suite admits its own fixture branch exactly like production
         // admits SPN4. Tests about the allowlist itself call ricPilot() again.
         ricPilot(['IC01']);
+        // Rule 197 (owner D1e) — the pilot identity allowlist is fail-closed and
+        // source-controlled to maker 29 / checker 1. The suite designates its own
+        // fixture accounts exactly like production designates those two. The
+        // recovery apply belongs to the checker identity, so the fixture applier
+        // is designated as a checker too (it holds no approve permission, so it
+        // can never approve). Tests about the identities call this again.
+        ricPilotIdentities([(int) $t->maker->id], [(int) $t->checker->id, (int) $t->applier->id]);
+    }
+
+    /**
+     * HARDENING-RME-INVOICE-CORRECTION-PILOT-IDENTITY-PAYMENT-ACTOR-1 (rule 197,
+     * owner D1e) — set the pilot identity allowlist. Empty lists admit nobody.
+     *
+     * @param  list<mixed>  $makers
+     * @param  list<mixed>  $checkers
+     */
+    function ricPilotIdentities(array $makers, array $checkers): void
+    {
+        config()->set('rme_invoice_correction.pilot.identities', [
+            'maker_user_ids' => $makers,
+            'checker_user_ids' => $checkers,
+        ]);
+    }
+
+    /**
+     * Rule 197 — add accounts to the designated MAKER list, keeping the rest of
+     * the allowlist. For tests whose subject is something other than identity
+     * (self-approval, D1 roles, readiness) and which therefore must run with
+     * their own actors designated, exactly as production designates user 29.
+     */
+    function ricDesignateMaker(User ...$users): void
+    {
+        $current = (array) config('rme_invoice_correction.pilot.identities', []);
+        $makers = array_values(array_unique(array_merge(
+            (array) ($current['maker_user_ids'] ?? []),
+            array_map(fn (User $u) => (int) $u->id, $users),
+        )));
+
+        ricPilotIdentities($makers, (array) ($current['checker_user_ids'] ?? []));
+    }
+
+    /** Rule 197 — add accounts to the designated CHECKER list (see ricDesignateMaker). */
+    function ricDesignateChecker(User ...$users): void
+    {
+        $current = (array) config('rme_invoice_correction.pilot.identities', []);
+        $checkers = array_values(array_unique(array_merge(
+            (array) ($current['checker_user_ids'] ?? []),
+            array_map(fn (User $u) => (int) $u->id, $users),
+        )));
+
+        ricPilotIdentities((array) ($current['maker_user_ids'] ?? []), $checkers);
     }
 
     /**

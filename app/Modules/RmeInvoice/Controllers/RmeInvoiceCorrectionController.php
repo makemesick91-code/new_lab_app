@@ -80,6 +80,10 @@ class RmeInvoiceCorrectionController extends Controller
             // offered only inside the pilot; reject/cancel stay available so an
             // active correction can always be resolved.
             'pilotAdmitted' => $this->corrections->capabilityEnabledForBranch((int) $record->branch_id),
+            // Rule 197 (owner D1e) — the controls this ACCOUNT may be offered.
+            // Explicit because Gate::before makes every @can true for a Super
+            // Admin; the service re-asserts each under the lock.
+            'actions' => $this->corrections->actionsFor($record, request()->user()),
         ]);
     }
 
@@ -93,6 +97,10 @@ class RmeInvoiceCorrectionController extends Controller
         // Route middleware already requires the request permission, so the
         // policy can only fail on branch scope — answered like a missing invoice.
         abort_unless(request()->user()?->can('create', [RmeInvoiceCorrection::class, $rmeInvoice]), 404);
+        // Rule 197 (owner D1e) — only the designated maker account may file a
+        // correction. Asked AFTER the branch scope, so an out-of-branch caller
+        // still gets the 404 that reveals nothing; the service re-asserts it.
+        abort_unless($this->corrections->mayRequest(request()->user()), 403);
 
         $panel = $this->corrections->panelFor($rmeInvoice, request()->user());
 
@@ -115,6 +123,10 @@ class RmeInvoiceCorrectionController extends Controller
         // Route middleware already requires the request permission, so the
         // policy can only fail on branch scope — answered like a missing invoice.
         abort_unless(request()->user()?->can('create', [RmeInvoiceCorrection::class, $rmeInvoice]), 404);
+        // Rule 197 (owner D1e) — only the designated maker account may file a
+        // correction. Asked AFTER the branch scope, so an out-of-branch caller
+        // still gets the 404 that reveals nothing; the service re-asserts it.
+        abort_unless($this->corrections->mayRequest(request()->user()), 403);
 
         $correction = $this->corrections->submit($rmeInvoice, $request->user(), $request->correctionData());
 

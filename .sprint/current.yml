@@ -1,40 +1,40 @@
-# ACTIVATION-RME-INVOICE-CORRECTION-PREPAYMENT-2
+# HARDENING-RME-INVOICE-CORRECTION-PILOT-IDENTITY-PAYMENT-ACTOR-1
 #
-# Activation of the pre-payment RME invoice correction under owner decisions
-# recorded 2026-10-21 (docs/decisions/rme-billing-correction-owner-decisions.md):
-#   D1a — the CHECKER applies, automatically at approval (one transaction);
-#   D1b — Front Office holds request AND approve (the merged role is the exact
-#         union of Admin Klinik + Kasir; maker != checker stays per account);
-#   D1c — pilot scope SPN4 only, server-side, source-controlled, fail-closed;
-#   D1d — pilot accounts maker 29 (Admin Sunu), checker 1 (IT Support).
-# D21c (discount policy) and D21g (Rp0) stay PENDING — classified
-# SAFE_TO_DEFER_WITH_EXPLICIT_RESTRICTION, never approved.
+# Security hardening of the live SPN4 pre-payment invoice correction pilot and
+# of the RME payment service, under owner decision D1e (2026-10-21), recorded in
+# docs/decisions/rme-billing-correction-owner-decisions.md:
+#   D1e — only user 29 may SUBMIT; only user 1 may APPROVE (= apply, D1a) or
+#         REJECT; every other account — other Front Office, other Super Admin,
+#         every role — is refused, whatever its permissions say.
 #
 # Runtime changes:
-#   - RmeInvoiceCorrectionService::approve() approves AND applies atomically;
-#     apply() is the recovery path for a pre-D1a APPROVED row and refuses the
-#     maker (SELF_APPLICATION_FORBIDDEN), Super Admin included;
-#   - RmeInvoiceCorrectionPilotScope + config/rme_invoice_correction.php
-#     (['SPN4'], no env read): submit/approve/apply refused outside the pilot
-#     (BRANCH_NOT_IN_PILOT, audited); reject/cancel are not gated;
-#   - RoleSeeder: Kasir request, Admin Klinik approve, Front Office both;
-#     no operational role holds apply;
-#   - money display never rounds stored cents (RmeInvoiceDocument::rupiah,
-#     OversightFormat::rupiahCents); correction qty bound == invoice qty bound;
-#     a price-unchanged CHANGE line keeps its price provenance;
-#   - read-only production authorization probe rme:invoice-correction-readiness.
+#   - RmeInvoiceCorrectionPilotIdentity + config/rme_invoice_correction.php
+#     `pilot.identities` (source-controlled, no env read, fail-closed: missing /
+#     malformed / overlapping lists admit nobody; an empty role list stops that
+#     role only; SUBMIT needs a designated checker). Asserted by the SERVICE under
+#     the invoice row lock for submit / approve / reject / recovery apply, after
+#     permission, branch scope, branch allowlist and self-decision. CANCEL of
+#     one's own correction is deliberately NOT identity-gated (release path).
+#   - The actor must be a persisted, non-deleted, ACTIVE account (re-read).
+#   - Policy courtesy, controller 403 on the request form for non-designated
+#     accounts, detail-page controls from actionsFor(), cashier panel can_request.
+#   - Readiness probe reports PILOT_IDENTITIES and FAILs a pair outside them.
+#   - RmePaymentService::assertInvoicePayable() judges the EXPLICIT cashier
+#     (persisted, active), never Auth::user() — which failed OPEN with no session
+#     because RmeWorkingBranchScope::branchIdsFor(null) answers every RME branch.
 #
-# No migration. The flag stays OFF by default; activation (RoleSeeder on the
-# host, env flag ON, config cache as daengtisiams) is the ceremony after deploy.
-# Rule 195.
+# No migration. No RoleSeeder change. No route change. Rule 197.
+# Production: correction flag switched OFF before the code change (exposure:
+# 8 Front Office accounts held request+approve in SPN4); it returns ON only
+# after the deployed identity guard is verified on production.
 #
-# Type FOUNDATION_SPRINT: financial capability activation across RmeInvoice +
-# RBAC + cashier UI + oversight formatting; audit level 3. security_impact true.
+# Type SECURITY_FIX: authorization hardening across RmeInvoice (correction +
+# payment), audit level 3. security_impact true.
 
-id: ACTIVATION-RME-INVOICE-CORRECTION-PREPAYMENT-2
-type: FOUNDATION_SPRINT
+id: HARDENING-RME-INVOICE-CORRECTION-PILOT-IDENTITY-PAYMENT-ACTOR-1
+type: SECURITY_FIX
 module: RmeInvoice
-title: "Pre-payment RME invoice correction pilot activation — D1a atomic approve-and-apply, Front Office maker/checker per account, SPN4 fail-closed allowlist"
+title: "Pilot identity restriction (owner D1e: maker 29 submits, checker 1 decides) and explicit payment actor for the RME branch scope"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 runtime_change: true
 schema_change: false
@@ -45,6 +45,6 @@ ledger_impact: false
 deploy_required: true
 browser_required: false
 test_profiles: [rme, cashier, billing, permission]
-go_tag: activation-rme-invoice-correction-prepayment-2-pilot-readiness-go
-inherits_parent_go: revision-rme-manual-pricing-authority-1-go
+go_tag: hardening-rme-invoice-correction-pilot-identity-payment-actor-1-go
+inherits_parent_go: activation-rme-invoice-correction-prepayment-2-pilot-readiness-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1

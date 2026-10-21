@@ -399,6 +399,16 @@ return [
         // probe. Selected by the existing `RmeInvoiceCorrection` token in BOTH
         // critical-gate variants; declared here so a rename cannot drop it.
         'tests/Feature/RmeInvoiceCorrection/RmeInvoiceCorrectionPilotActivationTest.php',
+        // HARDENING-RME-INVOICE-CORRECTION-PILOT-IDENTITY-PAYMENT-ACTOR-1 (rule
+        // 197, owner D1e) — only the designated maker submits and only the
+        // designated checker decides, in the service under the lock, Super Admin
+        // included; fail-closed allowlist; release paths survive a narrowing.
+        // Selected by the existing `RmeInvoiceCorrection` token.
+        'tests/Feature/RmeInvoiceCorrection/RmeInvoiceCorrectionPilotIdentityTest.php',
+        // Same sprint — the payment branch scope judges the EXPLICIT cashier,
+        // never Auth::user() (which failed OPEN with no session), on every
+        // payment path. Selected by the existing `RmePayment` token.
+        'tests/Feature/RME/RmePaymentExplicitActorTest.php',
         // Branch tariff resolution, server-side invoice pricing with recorded
         // provenance, strict refusals, exceptions (built, OFF), import/readiness
         // commands and the release posture. Selected by the new

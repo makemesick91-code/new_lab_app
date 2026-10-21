@@ -206,6 +206,10 @@ it('rolls back the approval too when the applied total would differ from the app
 
 it('refuses an approver who requested the correction even when one account holds both permissions', function () {
     $both = userWith(['request_rme_invoice_correction', 'approve_rme_invoice_correction', 'manage_rme_billing', 'view_clinic_visits']);
+    // REVISED by rule 197 (owner D1e): only a designated maker may submit, so this
+    // test's own account is designated. Self-decision is checked BEFORE identity
+    // and keeps its own code.
+    ricDesignateMaker($both);
     $invoice = ricInvoice();
     $correction = ricSubmit($invoice, $both);
 
@@ -217,6 +221,10 @@ it('refuses an approver who requested the correction even when one account holds
 
 it('refuses Super Admin approving their own correction', function () {
     $super = userInRole('Super Admin');
+    // REVISED by rule 197 (owner D1e): only a designated maker may submit, so this
+    // test's own account is designated. Self-decision is checked BEFORE identity
+    // and keeps its own code.
+    ricDesignateMaker($super);
     $invoice = ricInvoice();
     $correction = ricSubmit($invoice, $super);
 
@@ -226,6 +234,10 @@ it('refuses Super Admin approving their own correction', function () {
 
 it('refuses the maker applying their own legacy approved correction, Super Admin included', function () {
     $super = userInRole('Super Admin');
+    // REVISED by rule 197 (owner D1e): only a designated maker may submit, so this
+    // test's own account is designated. Self-decision is checked BEFORE identity
+    // and keeps its own code.
+    ricDesignateMaker($super);
     $invoice = ricInvoice();
     $correction = ricLegacyApproved(ricSubmit($invoice, $super), test()->checker);
 
@@ -249,6 +261,10 @@ it('lets a different account complete a legacy approved correction through the r
 
 it('audits a self-application refusal after the rollback', function () {
     $super = userInRole('Super Admin');
+    // REVISED by rule 197 (owner D1e): only a designated maker may submit, so this
+    // test's own account is designated. Self-decision is checked BEFORE identity
+    // and keeps its own code.
+    ricDesignateMaker($super);
     $invoice = ricInvoice();
     $correction = ricLegacyApproved(ricSubmit($invoice, $super), test()->checker);
 
@@ -371,13 +387,19 @@ it('refuses everything while the flag is OFF even inside the pilot', function ()
 
 // ─── HTTP — Front Office per the owner's decision ───────────────────────────
 
-it('runs the whole pilot flow with two Front Office accounts of the same branch', function () {
+// REVISED by rule 197 (owner D1e): the pilot no longer runs between ANY two Front
+// Office accounts (the literal D1b reading). The designated Front Office maker
+// files; a second Front Office account of the same branch — holding exactly the
+// same grants — is now REFUSED; the designated checker approves.
+it('runs the whole pilot flow with the designated Front Office maker and the designated checker, refusing a second Front Office account', function () {
     test()->withoutMiddleware(EnsureRmeOnlineContext::class);
 
     $maker = User::factory()->create();
-    $checker = User::factory()->create();
+    $secondFrontOffice = User::factory()->create();
     rmeMakeFrontOfficeActive($maker, test()->branch);
-    rmeMakeFrontOfficeActive($checker, test()->branch);
+    rmeMakeFrontOfficeActive($secondFrontOffice, test()->branch);
+    $checker = userInRole('Super Admin');
+    ricPilotIdentities([(int) $maker->id], [(int) $checker->id]);
 
     $visit = ricVisit();
     $invoice = ricInvoice($visit);
@@ -398,6 +420,10 @@ it('runs the whole pilot flow with two Front Office accounts of the same branch'
     test()->actingAs($maker)
         ->post(route('rme.invoice-corrections.approve', $correction->id))
         ->assertForbidden();
+    // A second Front Office account holds the same grants and is not designated.
+    test()->actingAs($secondFrontOffice)
+        ->post(route('rme.invoice-corrections.approve', $correction->id))
+        ->assertForbidden();
     expect($correction->fresh()->status)->toBe(RmeInvoiceCorrectionStatus::SUBMITTED);
 
     test()->actingAs($checker)
@@ -409,7 +435,7 @@ it('runs the whole pilot flow with two Front Office accounts of the same branch'
         ->and((float) $invoice->fresh()->grand_total)->toEqual(350000.0);
 
     // Front Office holds no separate apply permission (D1a).
-    expect($checker->can(RmeInvoiceCorrectionPermission::APPLY))->toBeFalse();
+    expect($secondFrontOffice->can(RmeInvoiceCorrectionPermission::APPLY))->toBeFalse();
 });
 
 it('keeps another branch Front Office account out of the pilot branch correction', function () {
@@ -578,6 +604,8 @@ it('reports a valid maker/checker pair inside the pilot and writes nothing', fun
     $maker = User::factory()->create();
     rmeMakeFrontOfficeActive($maker, test()->branch);
     $checker = userInRole('Super Admin');
+    // REVISED by rule 197 (owner D1e): a VALID pair must be the designated accounts.
+    ricPilotIdentities([(int) $maker->id], [(int) $checker->id]);
 
     $writes = 0;
     DB::listen(function ($query) use (&$writes) {
@@ -688,6 +716,8 @@ it('reports an off-shift maker pinned to the pilot branch as WATCH, never as an 
     $maker = ricOffShiftFrontOffice();
     ricPinFrontOffice($maker, 'SPN4');
     $checker = userInRole('Super Admin');
+    // REVISED by rule 197 (owner D1e): a VALID pair must be the designated accounts.
+    ricPilotIdentities([(int) $maker->id], [(int) $checker->id]);
 
     $report = app(RmeInvoiceCorrectionReadinessService::class)->report([], (int) $maker->id, (int) $checker->id);
     $codes = collect($report['findings'])->pluck('code');
@@ -736,8 +766,11 @@ it('still FAILs an armed maker whose pin cannot be decided (no such live branch)
 
 it('treats an off-shift UNPINNED front-desk maker as able to select a pilot branch at login (WATCH)', function () {
     $maker = ricOffShiftFrontOffice();
+    $checker = userInRole('Super Admin');
+    // REVISED by rule 197 (owner D1e): a VALID pair must be the designated accounts.
+    ricPilotIdentities([(int) $maker->id], [(int) $checker->id]);
 
-    $report = app(RmeInvoiceCorrectionReadinessService::class)->report([], (int) $maker->id, (int) userInRole('Super Admin')->id);
+    $report = app(RmeInvoiceCorrectionReadinessService::class)->report([], (int) $maker->id, (int) $checker->id);
 
     expect($report['users'][0]['eligible_pilot_branches'])->toBe(['IC01'])
         ->and($report['maker_checker_pair']['valid'])->toBeTrue()
@@ -758,8 +791,11 @@ it('still FAILs an off-shift maker whose role holds no request permission', func
 it('reports the pair LIVE and GO only when both accounts are on shift in a shared pilot branch', function () {
     $maker = User::factory()->create();
     rmeMakeFrontOfficeActive($maker, test()->branch);
+    $checker = userInRole('Super Admin');
+    // REVISED by rule 197 (owner D1e): a VALID pair must be the designated accounts.
+    ricPilotIdentities([(int) $maker->id], [(int) $checker->id]);
 
-    $report = app(RmeInvoiceCorrectionReadinessService::class)->report([], (int) $maker->id, (int) userInRole('Super Admin')->id);
+    $report = app(RmeInvoiceCorrectionReadinessService::class)->report([], (int) $maker->id, (int) $checker->id);
 
     expect($report['users'][0]['on_shift_in_pilot'])->toBeTrue()
         ->and($report['maker_checker_pair']['live_now'])->toBeTrue()

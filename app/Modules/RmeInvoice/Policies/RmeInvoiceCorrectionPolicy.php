@@ -9,6 +9,7 @@ use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Models\RmeInvoiceCorrection;
 use App\Modules\RmeInvoice\Models\RmeInvoiceDocumentVersion;
 use App\Modules\RmeInvoice\Support\RmeInvoiceCorrectionPermission;
+use App\Modules\RmeInvoice\Support\RmeInvoiceCorrectionPilotIdentity;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
 
 /**
@@ -22,13 +23,22 @@ use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
  * self-decision clauses below exist so a non-Super-Admin maker never even sees
  * an approve/reject button on their own request.
  *
+ * Rule 197 (owner D1e) — approve, reject and the recovery apply also require the
+ * designated checker ACCOUNT. `create` deliberately does NOT: the controller
+ * asks the identity allowlist only after this branch-scope answer, so an
+ * out-of-branch caller keeps getting the 404 that reveals nothing. Gate::before
+ * still skips all of this for a Super Admin — the service is the control.
+ *
  * Branch scope is the canonical RmeWorkingBranchScope (context-bound roles are
  * pinned to their working branch and fail closed without one). The read-only
  * oversight roles use ClinicOversightScope through the oversight module instead.
  */
 class RmeInvoiceCorrectionPolicy
 {
-    public function __construct(private readonly RmeWorkingBranchScope $scope) {}
+    public function __construct(
+        private readonly RmeWorkingBranchScope $scope,
+        private readonly RmeInvoiceCorrectionPilotIdentity $identity,
+    ) {}
 
     public function viewAny(User $user): bool
     {
@@ -48,12 +58,14 @@ class RmeInvoiceCorrectionPolicy
 
     public function approve(User $user, RmeInvoiceCorrection $correction): bool
     {
-        return $this->decides($user, $correction);
+        return $this->decides($user, $correction)
+            && $this->identity->allows(RmeInvoiceCorrectionPilotIdentity::ACTION_APPROVE, $user);
     }
 
     public function reject(User $user, RmeInvoiceCorrection $correction): bool
     {
-        return $this->decides($user, $correction);
+        return $this->decides($user, $correction)
+            && $this->identity->allows(RmeInvoiceCorrectionPilotIdentity::ACTION_REJECT, $user);
     }
 
     public function cancel(User $user, RmeInvoiceCorrection $correction): bool
@@ -73,7 +85,8 @@ class RmeInvoiceCorrectionPolicy
     {
         return $user->can(RmeInvoiceCorrectionPermission::APPLY)
             && $this->scope->allows($user, (int) $correction->branch_id)
-            && ! $correction->isRequestedBy($user);
+            && ! $correction->isRequestedBy($user)
+            && $this->identity->allows(RmeInvoiceCorrectionPilotIdentity::ACTION_APPLY, $user);
     }
 
     public function viewDocumentVersion(User $user, RmeInvoiceDocumentVersion $version): bool

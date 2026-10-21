@@ -56,6 +56,12 @@ class RmeInvoiceCorrectionReadinessCommand extends Command
             $this->line('STATE='.$report['state']);
             $this->line('FLAG_ENABLED='.($report['flag']['enabled'] ? 'true' : 'false').' env_resolution='.($report['flag']['env_resolution'] ?? 'n/a'));
             $this->line('PILOT_DECLARED='.implode(',', $report['pilot']['declared_codes']).' ADMITTED='.(implode(',', $report['pilot']['admitted_branch_codes']) ?: '(none)'));
+            $this->line(sprintf(
+                'PILOT_IDENTITIES valid=%s maker=%s checker=%s (owner D1e, rule 197)',
+                $report['pilot_identities']['valid'] ? 'yes' : 'no',
+                implode(',', $report['pilot_identities']['maker_user_ids']) ?: '(none)',
+                implode(',', $report['pilot_identities']['checker_user_ids']) ?: '(none)',
+            ));
             $this->line('APPLICATION='.$report['application_authority']);
             $this->line('POSITIVE_UNPAID_UNSETTLED_INVOICES_IN_PILOT='.$report['positive_unpaid_unsettled_invoices_in_pilot']);
             $this->newLine();
@@ -68,27 +74,29 @@ class RmeInvoiceCorrectionReadinessCommand extends Command
 
             if ($report['users'] !== []) {
                 $this->table(
-                    ['User', 'Roles', 'Request', 'Approve', 'Apply(recovery)', 'Scope now', 'Pilot now', 'Pilot when on shift'],
+                    ['User', 'Roles', 'Pilot identity', 'Request', 'Approve', 'Apply(recovery)', 'Scope now', 'Pilot now', 'Pilot when on shift'],
                     array_map(fn (array $u) => ($u['exists'] ?? false) ? [
                         $u['id'],
                         implode(',', $u['roles']),
+                        $u['designated_maker'] ? 'maker' : ($u['designated_checker'] ? 'checker' : 'none'),
                         $u['may_request_when_on_shift'] ? 'yes' : 'no',
                         $u['may_approve_when_on_shift'] ? 'yes' : 'no',
                         $u['can_apply_recovery'] ? 'yes' : 'no',
                         implode(',', $u['working_scope']) ?: '-',
                         implode(',', $u['pilot_branches_in_scope']) ?: '-',
                         implode(',', $u['eligible_pilot_branches']) ?: '-',
-                    ] : [$u['id'], '(not found)', '-', '-', '-', '-', '-', '-'], $report['users']),
+                    ] : [$u['id'], '(not found)', '-', '-', '-', '-', '-', '-', '-'], $report['users']),
                 );
             }
 
             if ($report['maker_checker_pair'] !== null) {
                 $p = $report['maker_checker_pair'];
                 $this->line(sprintf(
-                    'PAIR maker=%s checker=%s distinct=%s maker_ok=%s checker_ok=%s shared=%s VALID=%s LIVE_NOW=%s',
+                    'PAIR maker=%s checker=%s distinct=%s designated=%s maker_ok=%s checker_ok=%s shared=%s VALID=%s LIVE_NOW=%s',
                     $p['maker_id'] ?? '-',
                     $p['checker_id'] ?? '-',
                     $p['distinct_accounts'] ? 'yes' : 'no',
+                    $p['maker_designated'] && $p['checker_designated'] ? 'yes' : 'no',
                     $p['maker_may_request_in_pilot'] ? 'yes' : 'no',
                     $p['checker_may_approve_in_pilot'] ? 'yes' : 'no',
                     implode(',', $p['shared_pilot_branches']) ?: '-',

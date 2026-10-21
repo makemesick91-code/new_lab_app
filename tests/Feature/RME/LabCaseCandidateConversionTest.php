@@ -254,7 +254,13 @@ it('conversion does not alter rme invoice payment or visit status', function () 
 // ─── Test 14: RME payment does not auto-create LabOrder ──────────────────────
 
 it('rme payment still does not auto-create lab order only explicit conversion does', function () {
-    $this->actingAs(userWith(['manage_rme_billing']));
+    // REVISED by rule 197 (explicit payment actor): the payment used to be
+    // recorded under $this->converter — a lab-conversion account with no billing
+    // permission — and passed only because the branch check judged the ambient
+    // session (this billing user) instead of the account passed in. The cashier
+    // is now the billing account itself; the subject of the test is unchanged.
+    $cashier = userWith(['manage_rme_billing']);
+    $this->actingAs($cashier);
 
     $treatment = Treatment::factory()->requiresLab()->create();
     $visit = ClinicVisit::factory()->cashierPending()->create(['branch_id' => $this->branch->id]);
@@ -279,7 +285,7 @@ it('rme payment still does not auto-create lab order only explicit conversion do
     // signed PERSETUJUAN TINDAKAN MEDIS. This suite is not about consent.
     rmeSignedConsentFor($invoice->clinicVisit);
 
-    app(RmePaymentService::class)->pay($invoice->fresh(), $this->converter, rmeFreshPaymentForm($invoice->fresh(), [
+    app(RmePaymentService::class)->pay($invoice->fresh(), $cashier, rmeFreshPaymentForm($invoice->fresh(), [
         'amount' => $invoice->grand_total,
         'paid_at' => now()->format('Y-m-d H:i:s'),
         'consent_signed_by_patient' => true,

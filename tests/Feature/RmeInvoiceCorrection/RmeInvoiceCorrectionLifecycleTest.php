@@ -215,6 +215,10 @@ it('refuses every mutation while the capability flag is off', function () {
 
 it('refuses self-approval for an account holding both permissions', function () {
     $both = userWith(['request_rme_invoice_correction', 'approve_rme_invoice_correction']);
+    // REVISED by rule 197 (owner D1e): only a designated maker may submit, so the
+    // dual-permission account is designated as the maker. Self-approval is
+    // checked BEFORE identity and keeps its own refusal.
+    ricDesignateMaker($both);
     $correction = ricSubmit(ricInvoice(), $both);
 
     expect(fn () => ricApprove($correction, $both))->toThrow(RmeInvoiceCorrectionDenied::class);
@@ -223,6 +227,8 @@ it('refuses self-approval for an account holding both permissions', function () 
 
 it('refuses self-approval even for a Super Admin (Gate::before cannot bypass the service)', function () {
     $admin = superAdmin();
+    // REVISED by rule 197 (owner D1e): designated as the maker so it can submit.
+    ricDesignateMaker($admin);
     $correction = ricSubmit(ricInvoice(), $admin);
 
     expect(fn () => ricApprove($correction, $admin))->toThrow(RmeInvoiceCorrectionDenied::class);

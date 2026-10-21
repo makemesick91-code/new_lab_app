@@ -20,7 +20,6 @@ use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
 use Carbon\CarbonImmutable;
 use Closure;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -123,7 +122,7 @@ class RmePaymentService
         $payment = $this->settleUnderVersionBinding(RmeInvoiceVersionConflict::PATH_SINGLE, $cashier, function () use ($invoice, $cashier, $data) {
             $invoice = RmeInvoice::query()->lockForUpdate()->findOrFail($invoice->id);
 
-            $this->assertInvoicePayable($invoice);
+            $this->assertInvoicePayable($invoice, $cashier);
             $this->assertFormVersion($invoice, $data);
             $this->assertNoActiveCorrection($invoice);
 
@@ -182,7 +181,7 @@ class RmePaymentService
 
         $result = $this->settleUnderVersionBinding(RmeInvoiceVersionConflict::PATH_CONTROL, $cashier, function () use ($controlInvoice, $controlVisit, $cashier, $data, $amount, $summary, $batchUuid) {
             $controlInvoice = RmeInvoice::query()->lockForUpdate()->findOrFail($controlInvoice->id);
-            $this->assertInvoicePayable($controlInvoice);
+            $this->assertInvoicePayable($controlInvoice, $cashier);
             $this->assertFormVersion($controlInvoice, $data);
             $this->assertNoActiveCorrection($controlInvoice);
 
@@ -331,7 +330,7 @@ class RmePaymentService
 
         $result = $this->settleUnderVersionBinding(RmeInvoiceVersionConflict::PATH_VISIT, $cashier, function () use ($currentInvoice, $currentVisit, $cashier, $data, $amount, $summary, $batchUuid) {
             $currentInvoice = RmeInvoice::query()->lockForUpdate()->findOrFail($currentInvoice->id);
-            $this->assertInvoicePayable($currentInvoice);
+            $this->assertInvoicePayable($currentInvoice, $cashier);
             $this->assertFormVersion($currentInvoice, $data);
             $this->assertNoActiveCorrection($currentInvoice);
 
@@ -710,11 +709,32 @@ class RmePaymentService
         }
     }
 
-    private function assertInvoicePayable(RmeInvoice $invoice): void
+    private function assertInvoicePayable(RmeInvoice $invoice, User $cashier): void
     {
         if (! in_array((int) $invoice->branch_id, $this->branches->rmeEnabledIds(), true)) {
             throw ValidationException::withMessages([
                 'rme_invoice_id' => 'Invoice tidak berada di cabang RME aktif.',
+            ]);
+        }
+
+        // HARDENING-RME-INVOICE-CORRECTION-PILOT-IDENTITY-PAYMENT-ACTOR-1 (rule
+        // 197) — the cashier the payment is RECORDED under must be a real,
+        // usable account. Re-read from the database, so neither an unsaved
+        // object carrying an id nor a stale copy of a since-deactivated or
+        // deleted account can settle an invoice.
+        if (! $this->cashierIsUsable($cashier)) {
+            throw ValidationException::withMessages([
+                'rme_invoice_id' => 'Akun kasir tidak aktif atau tidak dikenali, sehingga pembayaran tidak dapat dicatat.',
+            ]);
+        }
+
+        // Rule 197 (security review L3) — the explicit cashier must hold the
+        // billing permission. This mirrors RmeInvoicePolicy::pay() (the HTTP
+        // controller authorizes it first), so a future non-HTTP caller passing an
+        // active account without billing rights cannot record a payment either.
+        if (! $cashier->can('manage_rme_billing')) {
+            throw ValidationException::withMessages([
+                'rme_invoice_id' => 'Akun ini tidak memiliki izin untuk mencatat pembayaran.',
             ]);
         }
 
@@ -724,7 +744,14 @@ class RmePaymentService
         // allocation all funnel through here) is covered no matter which
         // controller, command or crafted request reached it. Fails closed when
         // the cashier has no valid working context.
-        if (! $this->workingBranchScope->allows(Auth::user(), (int) $invoice->branch_id)) {
+        //
+        // Rule 197 — judged on the EXPLICIT cashier, never Auth::user(). The
+        // ambient session is the wrong person for any non-HTTP caller, and with
+        // NO session RmeWorkingBranchScope::branchIdsFor(null) answers every
+        // active RME branch, so the old check failed OPEN. The cashier passed in
+        // is the account written to `cashier_id`; it is the one whose usability,
+        // billing permission and working branch are checked here.
+        if (! $this->workingBranchScope->allows($cashier, (int) $invoice->branch_id)) {
             throw ValidationException::withMessages([
                 'rme_invoice_id' => 'Invoice ini berasal dari cabang lain. Pilih cabang kerja yang sesuai terlebih dahulu.',
             ]);
@@ -742,6 +769,22 @@ class RmePaymentService
                 'rme_invoice_id' => 'Invoice tidak memiliki item tindakan.',
             ]);
         }
+    }
+
+    /**
+     * Rule 197 — a persisted, non-deleted, active account (the SoftDeletes scope
+     * excludes a deleted one).
+     */
+    private function cashierIsUsable(User $cashier): bool
+    {
+        if (! $cashier->exists || $cashier->getKey() === null) {
+            return false;
+        }
+
+        return User::query()
+            ->whereKey($cashier->getKey())
+            ->where('is_active', true)
+            ->exists();
     }
 
     private function normalizeAmount(mixed $amount): float

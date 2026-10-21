@@ -30,6 +30,7 @@ A decision is only as far along as the last label that is evidenced. A brief's
 | 2026-10-21 | **D1b — Front Office holds request AND approve** (literal D1 on the merged role) | `OWNER_POLICY_APPROVED` | same |
 | 2026-10-21 | **D1c — pilot scope: SPN4 (Cabang Sunu) only**, server-side allowlist, fail-closed | `OWNER_POLICY_APPROVED` | same |
 | 2026-10-21 | **D1d — pilot accounts: maker user 29 (Admin Sunu), checker user 1 (IT Support, Super Admin)** | `OWNER_POLICY_APPROVED` | same |
+| 2026-10-21 | **D1e — pilot IDENTITY RESTRICTION: only user 29 may submit; only user 1 may approve/reject; every other account denied** (narrows D1b inside the pilot; D1d becomes an enforced allowlist) | `OWNER_POLICY_APPROVED`, `REPOSITORY_POLICY_RECORDED` | owner instruction in `HARDENING-RME-INVOICE-CORRECTION-PILOT-IDENTITY-PAYMENT-ACTOR-1` |
 
 The earlier D21 text is kept below, marked SUPERSEDED, as the record of what was
 decided and enforced between 2026-10-17 and 2026-10-20. It is never deleted.
@@ -115,6 +116,45 @@ resolved). No other branch may be activated without a new owner decision.
 (Admin Sunu, Front Office, pinned to SPN4). Checker: user 1 (IT Support, Super
 Admin). Two distinct real accounts. These authorize the pilot; they are not the
 only accounts the grant reaches (every Front Office account in SPN4 can act).
+**Superseded in effect by D1e below:** D1d named the accounts; D1e makes them the
+ONLY accounts that may act.
+
+**D1e — pilot identity restriction — `OWNER_POLICY_APPROVED`,
+`REPOSITORY_POLICY_RECORDED` (2026-10-21).** Recorded from the owner's instruction
+in `HARDENING-RME-INVOICE-CORRECTION-PILOT-IDENTITY-PAYMENT-ACTOR-1` (no approval
+timestamp beyond the date is invented). The production finding that prompted it:
+the verification sprint measured that ALL 8 Front Office accounts (7, 8, 16, 17,
+29, 30, 31, 32) could submit and approve SPN4 corrections, because D1b grants the
+role both halves and only user 29 is branch-pinned. The owner narrowed the pilot
+to the two D1d accounts:
+
+| Action | Allowed accounts | Everyone else |
+|---|---|---|
+| Submit a correction | **user 29 only** | refused |
+| Approve (= apply, D1a) | **user 1 only** | refused |
+| Reject | **user 1 only** | refused |
+| Self-approval | never (D1, per account, Super Admin included) | — |
+
+- The restriction applies **regardless of role permissions** — other Front Office
+  accounts, other Super Admins and every other role are refused. Super Admin's
+  `Gate::before` bypass does not reach it: the SERVICE asserts it under the
+  invoice row lock.
+- Roles and general permissions are **unchanged** (RoleSeeder untouched, still 6
+  correction pairs). Non-correction Front Office work is unaffected.
+- Pilot scope stays **SPN4** (D1c). The identity list is source-controlled in
+  `config/rme_invoice_correction.php` `pilot.identities`, no environment read,
+  fail-closed (missing / malformed / overlapping → nobody may act).
+- Implementation choices recorded with it (rule 197), none of which widens anyone:
+  the **recovery apply** of a pre-D1a APPROVED row is the second half of an
+  approval (D1a) and is confined to the checker identity — this NARROWS the apply
+  permission, previously held by every Super Admin, to user 1 who already held it;
+  **cancel** of one's OWN correction is not identity-gated — it is the maker's
+  de-escalation and the release path that keeps a narrowed list from stranding an
+  invoice behind the D10 payment block; an **empty** role list stops that role only
+  (empty maker list = no new submissions while the checker still resolves filed
+  ones), and SUBMIT requires at least one designated checker.
+- `TECHNICAL_ENFORCEMENT_DEPLOYED` is added only after the production
+  verification of this sprint (see its sprint document).
 
 ### D7 — Document versioning — `OWNER_POLICY_APPROVED`, `REPOSITORY_POLICY_RECORDED`, `TECHNICAL_ENFORCEMENT_DEPLOYED`
 
