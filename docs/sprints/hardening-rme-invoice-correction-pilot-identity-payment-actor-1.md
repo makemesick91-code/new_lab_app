@@ -187,6 +187,83 @@ The last three first exited 1 with `QueryException`: the task worktree carries n
 database connection. Re-run against the throwaway PostgreSQL 16.15 they return
 GO — an environment fault, not a code finding.
 
-## 11–14. CI, merge, deploy, production verification
+## 11. Authoritative CI
 
-Recorded in the evidence follow-up once measured.
+Run `39603057762` on the exact candidate `e7444f73` (tree `c39680bc`, event
+`pull_request`) — **success**. Verified from the job logs, not the check marks.
+
+| Gate | Result |
+|---|---|
+| CICD-CTRL Gate Classifier | success — `gate_profile=unknown_high_risk` |
+| NSF-R012 Quality Gate | success |
+| NSF-R011 Critical Test Gate | success — **6133 passed / 32321 assertions**, `critical_test_exit_status=0`, 0 failure glyphs; both new suites ran and PASSED (43 + 18 = 61 tests, equal to the local count) |
+| NSF-R011 Critical Test Gate (other runner variant) | skipped by design — exactly one variant runs |
+| CICD-CTRL Selective Module Gate | success |
+| NSF-9 Release Safety & Automated Smoke | success |
+| NSF-10 Release Evidence | success |
+| Phase 3 Android Clinic App Gate | success |
+| **NSF-R011 Full Suite Gate** | **SKIPPED** — `temporary_full_suite_policy_active=true`, `full_suite_authorized=false`, `FULL_SUITE_NOT_ENABLED_FOR_EVENT`. The classifier's `run_full_suite=required` is a risk signal, not an authorisation. **Not a pass.** |
+
+The critical gate ran 7922.80s (≈132 min); recent non-docs runs took 133, 111 and
+74 min, so this was within range, not a hang.
+
+## 12. Merge
+
+PR #501 squash-merged with `--match-head-commit e7444f73` as **`f66c6c2a`**;
+parent `1dd247a5` (the base had not moved); **merge tree `c39680bc` = candidate
+tree** — the merged content is exactly what CI tested.
+
+## 13. Deploy
+
+`bash scripts/deploy-vps-runner.sh start` executed ON the VPS (detached, pid
+117786), followed to its status file — `exit=0`.
+
+| Evidence | Value |
+|---|---|
+| Lock | `DEPLOY_LOCK_ACQUIRED=YES` |
+| Pin | `DEPLOY_TARGET_PINNED=f66c6c2a…`, snapshot `DEPLOY_SNAPSHOT_TRUSTED=PASS`, executed from `/run/daengtisiams-deploy/…` |
+| Backup | `storage/app/backups/deploy/pre_auto_deploy_20261021-152450.sql` (taken before migrate) |
+| Migrations | `Nothing to migrate.` |
+| Runtime isolation / secret permissions | GO / GO |
+| Smoke | 6 passed, 1 known warning (`http://127.0.0.1/login` 404 — the co-tenant `default_server`; the canonical domain is verified separately) |
+| Completion | **`DEPLOY OK: 20261021-152450`**, `DEPLOY_HEAD_TARGET_MATCH=YES`, `DEPLOY_SNAPSHOT_CLEANED=YES` |
+| Production HEAD / tree | `f66c6c2a` / `c39680bc`, 0 tracked changes, 0 pending migrations |
+
+## 14. Production verification
+
+**With the flag still OFF (15:3x UTC):**
+
+| Check | Result |
+|---|---|
+| Probe (as `daengtisiams`) | `STATE=DORMANT`; `PILOT_IDENTITIES valid=yes maker=29 checker=1` |
+| Designated pair 29/1 | `designated=yes VALID=yes` |
+| Non-designated maker 30/1 | `VALID=no`, `[FAIL] PAIR_MAKER_NOT_PILOT_IDENTITY 30` |
+| Reversed pair 1/29 | `VALID=no`, FAIL on both halves |
+| Deployed payment code | `assertInvoicePayable(RmeInvoice $invoice, User $cashier)`, 3 callers pass `$cashier`, the only `Auth::` occurrence is a comment |
+| Financial fingerprint | identical to §1: 0 corrections; 7 invoices / Rp 7.548.000; 8 payments / Rp 5.548.000; `role_has_permissions` 514; 0 direct grants; audit watermark unchanged |
+| Health | `/login`, `/health/live`, `/health/ready`, `/health/lb` 200 over `https://daengtisia.online` |
+| Runtime | php8.3-fpm, nginx, queue worker active; no failed jobs; `laravel.log` unchanged (no new error) |
+
+**Flag restored ON (2026-10-21 15:44 UTC / 23:44 WITA)** — only after the above.
+Same one-line, inode-preserving edit as the mitigation: inode `796156`, mode
+`640 root:daengtisiams` and 110 lines preserved; **hash returned to `1071b268`,
+the exact pre-mitigation value**, i.e. the environment file is byte-identical to
+its state before this sprint; `config:cache` rebuilt as `daengtisiams`.
+
+| After restore | Result |
+|---|---|
+| Probe | **`STATE=PILOT_ACTIVE`**, `FLAG_ENABLED=true env_resolution=env captured=yes` |
+| Pair 29/1 | `VALID=yes`; `LIVE_NOW=no` with `[WATCH] PAIR_MAKER_NOT_ON_SHIFT_IN_PILOT` — correct at 23:44 WITA, user 29 is off shift |
+| Health | 200 × 4 |
+
+## 15. Status
+
+| | |
+|---|---|
+| HARDENING_GO | **GO** — tag `hardening-rme-invoice-correction-pilot-identity-payment-actor-1-go` → `f66c6c2a` (local = remote = VPS) |
+| PILOT_STATE | `PILOT_ACTIVE` (WATCH off shift) |
+| FULL_SUITE | SKIPPED by policy — not a pass |
+| AUTHENTICATED_PILOT | PENDING — no authenticated session was manufactured |
+| REAL_FINANCIAL_CORRECTION | PENDING — none performed or claimed |
+| FULL_PILOT_GO / FULL_ACTIVATION_GO | NOT CLAIMED |
+| Residual | `RmeInvoiceService::cashierScopeBranchIds` still reads `Auth::user()` (rule 197) |
