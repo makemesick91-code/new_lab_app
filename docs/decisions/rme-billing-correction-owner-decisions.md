@@ -303,5 +303,13 @@ their text. Decision codes are per register — the KTP-OCR "D7" is a different 
 7. A real correction on an authorized positive UNPAID case + financial
    reconciliation — only when such a case exists; none is fabricated.
 
+**Status 2026-10-21 (production `61a29795`):** steps 1–4 **DONE**. Step 5 reads
+`STATE=PILOT_ACTIVE`, pair `VALID=yes`, `LIVE_NOW=no`, Decision **WATCH**; the
+maker (user 29) was off shift (rule 195 §28b: off shift is a WATCH, never a FAIL).
+A GO needs both accounts on shift in SPN4. Steps 6–7 are **NOT_PERFORMED**:
+production holds 0 positive UNPAID invoices in SPN4. Scoped tag
+`activation-rme-invoice-correction-prepayment-2-pilot-readiness-go`; the full tag
+does not exist.
+
 Steps 1–5 are technical readiness (scoped GO). Steps 6–7 are operational
 verification; until both are evidenced the full activation GO tag is NOT created.
