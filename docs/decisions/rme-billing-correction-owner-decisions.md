@@ -30,7 +30,7 @@ A decision is only as far along as the last label that is evidenced. A brief's
 | 2026-10-21 | **D1b — Front Office holds request AND approve** (literal D1 on the merged role) | `OWNER_POLICY_APPROVED` | same |
 | 2026-10-21 | **D1c — pilot scope: SPN4 (Cabang Sunu) only**, server-side allowlist, fail-closed | `OWNER_POLICY_APPROVED` | same |
 | 2026-10-21 | **D1d — pilot accounts: maker user 29 (Admin Sunu), checker user 1 (IT Support, Super Admin)** | `OWNER_POLICY_APPROVED` | same |
-| 2026-10-21 | **D1e — pilot IDENTITY RESTRICTION: only user 29 may submit; only user 1 may approve/reject; every other account denied** (narrows D1b inside the pilot; D1d becomes an enforced allowlist) | `OWNER_POLICY_APPROVED`, `REPOSITORY_POLICY_RECORDED` | owner instruction in `HARDENING-RME-INVOICE-CORRECTION-PILOT-IDENTITY-PAYMENT-ACTOR-1` |
+| 2026-10-21 | **D1e — pilot IDENTITY RESTRICTION: only user 29 may submit; only user 1 may approve/reject; every other account denied** (narrows D1b inside the pilot; D1d becomes an enforced allowlist) | `OWNER_POLICY_APPROVED`, `REPOSITORY_POLICY_RECORDED`, `TECHNICAL_ENFORCEMENT_DEPLOYED` (runtime `f66c6c2a`) | owner instruction in `HARDENING-RME-INVOICE-CORRECTION-PILOT-IDENTITY-PAYMENT-ACTOR-1` |
 
 The earlier D21 text is kept below, marked SUPERSEDED, as the record of what was
 decided and enforced between 2026-10-17 and 2026-10-20. It is never deleted.
@@ -120,7 +120,9 @@ only accounts the grant reaches (every Front Office account in SPN4 can act).
 ONLY accounts that may act.
 
 **D1e — pilot identity restriction — `OWNER_POLICY_APPROVED`,
-`REPOSITORY_POLICY_RECORDED` (2026-10-21).** Recorded from the owner's instruction
+`REPOSITORY_POLICY_RECORDED`, `TECHNICAL_ENFORCEMENT_DEPLOYED` (2026-10-21, runtime
+`f66c6c2a`, tag `hardening-rme-invoice-correction-pilot-identity-payment-actor-1-go`;
+rule 197).** Recorded from the owner's instruction
 in `HARDENING-RME-INVOICE-CORRECTION-PILOT-IDENTITY-PAYMENT-ACTOR-1` (no approval
 timestamp beyond the date is invented). The production finding that prompted it:
 the verification sprint measured that ALL 8 Front Office accounts (7, 8, 16, 17,
@@ -153,8 +155,11 @@ to the two D1d accounts:
   invoice behind the D10 payment block; an **empty** role list stops that role only
   (empty maker list = no new submissions while the checker still resolves filed
   ones), and SUBMIT requires at least one designated checker.
-- `TECHNICAL_ENFORCEMENT_DEPLOYED` is added only after the production
-  verification of this sprint (see its sprint document).
+- `TECHNICAL_ENFORCEMENT_DEPLOYED` was added after the production verification:
+  on runtime `f66c6c2a` the readiness probe reports `PILOT_IDENTITIES valid=yes
+  maker=29 checker=1`, a non-designated pair (30/1) and the reversed pair (1/29)
+  are refused, and the flag was restored ON only after that (`STATE=PILOT_ACTIVE`).
+  It does not record that a real correction was performed — none has been.
 
 ### D7 — Document versioning — `OWNER_POLICY_APPROVED`, `REPOSITORY_POLICY_RECORDED`, `TECHNICAL_ENFORCEMENT_DEPLOYED`
 
