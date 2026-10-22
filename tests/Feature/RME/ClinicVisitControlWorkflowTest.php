@@ -399,9 +399,23 @@ it('allows control visit cashier flow and does not auto-mutate parent invoice', 
 it('returns patient visit options json for dropdown', function () {
     $parent = makeParentVisit($this->patient, $this->rmeBranch, $this->doctor, $this->treatment);
 
-    $this->actingAs($this->viewer)
+    /*
+     * SUPERSEDED BY AUDIT-RME-CLINIC-VISIT-BRANCH-AUTHORITY-1 (rule 199). This
+     * test used `$this->viewer` (view_clinic_visits only) and asserted 200 —
+     * i.e. it pinned that anyone who could merely VIEW visits could read any
+     * patient's visit history through the prior-visit picker. That is the
+     * over-broad access the audit closed (a Kasir pinned to one branch read
+     * another branch's history). The picker's only consumer is the "Kunjungan
+     * Baru" form, which already requires the registration ability, so the
+     * positive case now uses the registrar and the viewer is refused.
+     */
+    $this->actingAs($this->manager)
         ->getJson(route('rme.visits.patient-options', ['patient_id' => $this->patient->id]))
         ->assertOk()
         ->assertJsonPath('visits.0.id', $parent->id)
         ->assertJsonPath('visits.0.visit_number', $parent->visit_number);
+
+    $this->actingAs($this->viewer)
+        ->getJson(route('rme.visits.patient-options', ['patient_id' => $this->patient->id]))
+        ->assertForbidden();
 });

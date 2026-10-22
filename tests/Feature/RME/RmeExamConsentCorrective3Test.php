@@ -277,9 +277,14 @@ it('keeps the visit in progress when the record and the odontogram are both comp
 it('denies finishing the examination while consent is unsigned', function () {
     $visit = c3Visit(ClinicVisit::STATUS_IN_PROGRESS);
 
+    // AUDIT-RME-CLINIC-VISIT-BRANCH-AUTHORITY-1 — the authorized doctor is
+    // passed explicitly and the REASON is pinned. A missing actor is now refused
+    // on its own, so without both this test would pass for the wrong reason.
     expect(fn () => app(ClinicVisitService::class)
-        ->transitionStatus($visit, ClinicVisit::STATUS_CASHIER_PENDING))
-        ->toThrow(ValidationException::class);
+        ->transitionStatus($visit, ClinicVisit::STATUS_CASHIER_PENDING, $this->doctorUser))
+        ->toThrow(function (ValidationException $e) {
+            expect($e->errors()['status'][0])->toContain('Persetujuan Tindakan Medis');
+        });
 
     expect($visit->fresh()->status)->toBe(ClinicVisit::STATUS_IN_PROGRESS);
 });

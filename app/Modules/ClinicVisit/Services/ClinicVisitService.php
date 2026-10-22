@@ -2,8 +2,8 @@
 
 namespace App\Modules\ClinicVisit\Services;
 
+use App\Models\User;
 use App\Modules\Branch\Models\Branch;
-use App\Modules\Branch\Services\BranchContext;
 use App\Modules\Branch\Services\BranchService;
 use App\Modules\ClinicRoom\Models\ClinicRoom;
 use App\Modules\ClinicVisit\Interfaces\ClinicVisitRepositoryInterface;
@@ -11,6 +11,7 @@ use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Consent\Services\RmeVisitConsentService;
 use App\Modules\DoctorAccess\Services\DoctorEffectiveBranchResolver;
 use App\Modules\LabOrder\Services\AuditLogService;
+use App\Modules\Patient\Services\PatientSelectorSearchService;
 use App\Modules\Patient\Services\PatientService;
 use App\Modules\PatientMerge\Services\PatientMergeGuard;
 use App\Modules\RME\Services\DoctorPatientScopeService;
@@ -20,9 +21,9 @@ use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
 use App\Modules\RmeOnlineContext\Services\UserOnlineContextService;
 use App\Support\Clinical\ClinicalClock;
 use Carbon\Carbon;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -42,9 +43,28 @@ class ClinicVisitService
 
     public const ACTION_EFFECTIVE_BRANCH_WRITE_REFUSED = 'DOCTOR_EFFECTIVE_BRANCH_WRITE_REFUSED';
 
+    /*
+     * AUDIT-RME-CLINIC-VISIT-BRANCH-AUTHORITY-1 (rule 199) — THE ACTOR CONTRACT.
+     *
+     * Every decision in this service that depends on WHO is asking takes that
+     * person as an explicit, non-nullable `User $actor` and judges the
+     * PERSISTED row through {@see ClinicVisitActorGuard} — never Auth::user(),
+     * never the session, never BranchContext. A null actor is a TypeError at
+     * the boundary. The ability checked is the one the HTTP controller already
+     * checks for the same operation, so no legitimate request changes outcome;
+     * what changes is that a non-HTTP caller (command, job, another service) can
+     * no longer inherit whoever happens to be logged in — or, with nobody logged
+     * in, every RME branch (`RmeWorkingBranchScope::branchIdsFor(null)`), which
+     * is how the list scope failed OPEN on the base.
+     *
+     * The single actorless path is the cashier-owned `cashier_pending ->
+     * completed` transition, reached only from RmePaymentService under its own
+     * explicit billing actor (rule 197) and guarded here by its status
+     * precondition. See transitionStatus().
+     */
     public function __construct(
         private readonly ClinicVisitRepositoryInterface $visits,
-        private readonly BranchContext $branchContext,
+        private readonly ClinicVisitActorGuard $actors,
         private readonly PatientService $patients,
         private readonly BranchService $branches,
         private readonly UserOnlineContextService $onlineContext,
@@ -64,13 +84,15 @@ class ClinicVisitService
      * filter narrows the scope to a single RME branch; any value outside the
      * RME set is ignored and the full RME scope is used (Sprint 23 Phase 23.9.3).
      */
-    public function paginate(array $filters = [], int $perPage = 15): LengthAwarePaginator
+    public function paginate(User $actor, array $filters = [], int $perPage = 15): LengthAwarePaginator
     {
+        $viewer = $this->actors->resolveViewer($actor);
+
         return $this->visits->paginateForBranches(
-            $this->scopeBranchIds($filters['branch_id'] ?? null),
+            $this->branchScopeFor($viewer, $filters['branch_id'] ?? null),
             $filters,
             $perPage,
-            $this->doctorVisitScope(),
+            $this->doctorVisitScope($viewer),
         );
     }
 
@@ -87,11 +109,25 @@ class ClinicVisitService
      * worklist and count widget funnels through here, so the scope also covers
      * aggregates and exports.
      *
+     * AUDIT-RME-CLINIC-VISIT-BRANCH-AUTHORITY-1 — public, so a caller that
+     * aggregates visit-domain data itself (the RME dashboard, the visit-list
+     * medical-record widgets) asks THIS method rather than re-deriving branch
+     * scope from `rmeEnabledIds()`. An actor that cannot read the visit domain
+     * gets an EMPTY scope, never the whole estate.
+     *
      * @return array<int, int>
      */
-    private function scopeBranchIds(?int $branchFilter): array
+    public function scopedBranchIdsFor(User $actor, ?int $branchFilter = null): array
     {
-        return $this->workingBranchScope->resolve(Auth::user(), $branchFilter);
+        return $this->branchScopeFor($this->actors->resolveViewer($actor), $branchFilter);
+    }
+
+    /**
+     * @return array<int, int>
+     */
+    private function branchScopeFor(?User $viewer, ?int $branchFilter): array
+    {
+        return $viewer === null ? [] : $this->workingBranchScope->resolve($viewer, $branchFilter);
     }
 
     /**
@@ -138,9 +174,15 @@ class ClinicVisitService
      *
      * @return Collection<int, Branch>
      */
-    public function selectableRmeBranches(): Collection
+    public function selectableRmeBranches(User $actor): Collection
     {
-        $allowed = $this->workingBranchScope->operationalBranchIdsFor(Auth::user());
+        $viewer = $this->actors->resolveViewer($actor);
+
+        if ($viewer === null) {
+            return new Collection;
+        }
+
+        $allowed = $this->workingBranchScope->operationalBranchIdsFor($viewer);
 
         return $this->branches->listRmeEnabled()
             ->filter(fn (Branch $branch) => in_array((int) $branch->id, $allowed, true))
@@ -152,13 +194,15 @@ class ClinicVisitService
      * across the active RME-enabled branch set (optionally narrowed to one RME
      * branch). Never falls back to a single BranchContext branch.
      */
-    public function roomWorklist(array $filters = [], int $perPage = 20): LengthAwarePaginator
+    public function roomWorklist(User $actor, array $filters = [], int $perPage = 20): LengthAwarePaginator
     {
+        $viewer = $this->actors->resolveViewer($actor);
+
         return $this->visits->worklistForBranches(
-            $this->scopeBranchIds($filters['branch_id'] ?? null),
+            $this->branchScopeFor($viewer, $filters['branch_id'] ?? null),
             $filters,
             $perPage,
-            $this->doctorVisitScope(),
+            $this->doctorVisitScope($viewer),
         );
     }
 
@@ -168,13 +212,15 @@ class ClinicVisitService
      * RME branch), including both room-assigned and not-yet-assigned visits. Never
      * falls back to a single BranchContext branch.
      */
-    public function registeredQueue(array $filters = [], int $perPage = 20): LengthAwarePaginator
+    public function registeredQueue(User $actor, array $filters = [], int $perPage = 20): LengthAwarePaginator
     {
+        $viewer = $this->actors->resolveViewer($actor);
+
         return $this->visits->queueForBranches(
-            $this->scopeBranchIds($filters['branch_id'] ?? null),
+            $this->branchScopeFor($viewer, $filters['branch_id'] ?? null),
             $filters,
             $perPage,
-            $this->doctorVisitScope(),
+            $this->doctorVisitScope($viewer),
         );
     }
 
@@ -213,9 +259,15 @@ class ClinicVisitService
     /**
      * Assign a treatment room to a visit. The room must be active and belong to
      * the same branch as the visit — rooms from other branches are rejected.
+     *
+     * AUDIT-RME-CLINIC-VISIT-BRANCH-AUTHORITY-1 — the explicit actor must hold
+     * `update` on this visit (the ability the controller checks), and is the one
+     * recorded as `assigned_by` on the automatic doctor assignment.
      */
-    public function assignRoom(ClinicVisit $visit, int $roomId): ClinicVisit
+    public function assignRoom(ClinicVisit $visit, int $roomId, User $actor): ClinicVisit
     {
+        $account = $this->assertVisitActor($actor, 'update', $visit);
+
         // Hotfix Sprint 60.8 — room assignment is a queue-stage action. A visit
         // that has already been completed or cancelled is past the workflow and
         // its room must not be reassigned.
@@ -241,31 +293,45 @@ class ClinicVisitService
 
         $doctorId = $this->onlineContext->resolveDoctorIdForRoom((int) $visit->branch_id, $room->id);
 
-        return DB::transaction(function () use ($visit, $room, $doctorId) {
+        return DB::transaction(function () use ($visit, $room, $doctorId, $account) {
             $updated = $this->visits->update($visit, [
                 'clinic_room_id' => $room->id,
                 'doctor_id' => $doctorId,
             ]);
 
             if ($doctorId !== null) {
-                $this->patientDoctorAssignments->ensureAssignedFromVisit($updated->fresh(), Auth::user());
+                $this->patientDoctorAssignments->ensureAssignedFromVisit($updated->fresh(), $account);
             }
 
             return $updated;
         });
     }
 
-    public function find(int $id): ?ClinicVisit
+    /**
+     * AUDIT-RME-CLINIC-VISIT-BRANCH-AUTHORITY-1 — `find(int $id)` was removed
+     * here. It read BranchContext (the ambient session) to pick the branch and
+     * had ZERO callers anywhere in app/, routes/, resources/ or tests/; rule 198
+     * removed the identical `RmeInvoiceService::findInBranch()` for the same
+     * reason. A visit is reached through route model binding + ClinicVisitPolicy.
+     *
+     * The explicit actor must be able to register visits AND be working the
+     * branch the visit lands in (the server-side twin of the FormRequest pin),
+     * and is the one recorded as `created_by`.
+     */
+    public function create(array $data, User $actor): ClinicVisit
     {
-        return $this->visits->findInBranch($this->branchContext->requireId(), $id);
-    }
+        $registrar = $this->actors->resolveRegistrar($actor);
 
-    public function create(array $data): ClinicVisit
-    {
+        if ($registrar === null) {
+            throw new AuthorizationException('Akun ini tidak berwenang mendaftarkan kunjungan RME.');
+        }
+
         // RME "Klinik" = "Cabang RME". The visit branch follows the selected
         // RME-enabled branch (Sprint 23 Phase 23.9.1). For new patients the
-        // patient and the visit share the same branch. The BranchContext
-        // fallback only applies to legacy callers that submit no branch.
+        // patient and the visit share the same branch. There is NO fallback: a
+        // request that names no branch is refused by resolveBranchId() (an
+        // earlier version of this comment described a BranchContext fallback
+        // that the code had not had for many sprints).
         //
         // DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1 (open item V2) — RESOLVED
         // AND ASSERTED BEFORE THE TRANSACTION OPENS, deliberately. This is a
@@ -275,9 +341,9 @@ class ClinicVisitService
         // trail back along with everything else, and the refusal would leave no
         // record at all — which is the defect V2 names. There is no caller-side
         // transaction around create(); the controller calls it directly.
-        $branchId = $this->resolveBranchId($data);
+        $branchId = $this->resolveBranchId($data, $registrar);
 
-        return DB::transaction(function () use ($data, $branchId) {
+        return DB::transaction(function () use ($data, $branchId, $registrar) {
             $data['branch_id'] = $branchId;
 
             $data = $this->resolvePatient($data);
@@ -309,7 +375,7 @@ class ClinicVisitService
                 'status' => ClinicVisit::STATUS_REGISTERED,
                 'visit_type' => $data['visit_type'] ?? ClinicVisit::VISIT_TYPE_NEW,
                 'follow_up_of_visit_id' => $data['follow_up_of_visit_id'] ?? null,
-                'created_by' => Auth::id(),
+                'created_by' => $registrar->id,
             ]));
         });
     }
@@ -343,10 +409,35 @@ class ClinicVisitService
     }
 
     /**
+     * The prior-visit picker on "Kunjungan Baru" (follow-up / Kontrol selection).
+     *
+     * AUDIT-RME-CLINIC-VISIT-BRANCH-AUTHORITY-1 — this is visit HISTORY, and
+     * before this audit it was reachable by anyone who could merely VIEW visits:
+     * a Kasir pinned to one branch could read any other branch's patient visit
+     * list (number, date, type, doctor, initial treatment, status) by passing a
+     * `patient_id`. The picker exists only to serve visit registration, so it
+     * now requires exactly the registration boundary: an actor who may register
+     * visits AND may select this patient for registration
+     * ({@see PatientSelectorSearchService::isSelectable()}, the same scope the
+     * submit re-asserts). Anything else is refused.
+     *
+     * Deliberately NOT narrowed to the registrar's working branch:
+     * StoreClinicVisitRequest::validateFollowUpVisit() accepts a prior visit from
+     * ANY active RME branch (a patient treated at one branch may return to
+     * another for the follow-up), so the picker must be able to show it. Whether
+     * cross-branch Kontrol should remain a supported workflow is an owner
+     * decision recorded in the audit, not one this method makes.
+     *
      * @return array<int, array<string, mixed>>
      */
-    public function patientVisitOptions(int $patientId, ?int $excludeVisitId = null): array
+    public function patientVisitOptions(User $actor, int $patientId, ?int $excludeVisitId = null): array
     {
+        $registrar = $this->actors->resolveRegistrar($actor);
+
+        if ($registrar === null || ! app(PatientSelectorSearchService::class)->isSelectable($registrar, $patientId)) {
+            throw new AuthorizationException('Riwayat kunjungan pasien ini tidak tersedia untuk akun Anda.');
+        }
+
         return $this->patientVisitHistory($patientId, $excludeVisitId)
             ->map(fn (ClinicVisit $visit) => [
                 'id' => $visit->id,
@@ -445,7 +536,7 @@ class ClinicVisitService
      *
      * @param  array<string, mixed>  $data
      */
-    private function resolveBranchId(array $data): int
+    private function resolveBranchId(array $data, User $registrar): int
     {
         $branchId = null;
 
@@ -469,7 +560,17 @@ class ClinicVisitService
             ]);
         }
 
-        $this->assertWithinDoctorEffectiveBranch($branchId);
+        // AUDIT-RME-CLINIC-VISIT-BRANCH-AUTHORITY-1 — the server-side twin of
+        // StoreClinicVisitRequest's branch pin. Over HTTP a context-bound
+        // registrar's branch_id is overwritten with its working branch before it
+        // gets here, so this never refuses a legitimate request; it stops a
+        // non-HTTP caller registering a visit at a branch the actor is not
+        // working. The canonical per-record answer is reused, not restated.
+        if (! $this->workingBranchScope->allows($registrar, $branchId)) {
+            throw new AuthorizationException('Kunjungan hanya dapat didaftarkan di cabang tempat Anda bertugas.');
+        }
+
+        $this->assertWithinDoctorEffectiveBranch($branchId, $registrar);
 
         return $branchId;
     }
@@ -500,15 +601,15 @@ class ClinicVisitService
      * pays nothing. It is deliberately NOT in the resolver, which runs on every
      * protected request and must stay pure.
      */
-    private function assertWithinDoctorEffectiveBranch(int $branchId): void
+    private function assertWithinDoctorEffectiveBranch(int $branchId, User $registrar): void
     {
-        $effectiveBranchId = app(DoctorEffectiveBranchResolver::class)->branchIdFor(Auth::user());
+        $effectiveBranchId = app(DoctorEffectiveBranchResolver::class)->branchIdFor($registrar);
 
         if ($effectiveBranchId === null || $effectiveBranchId === $branchId) {
             return;
         }
 
-        $this->auditEffectiveBranchWriteRefusal($effectiveBranchId, $branchId);
+        $this->auditEffectiveBranchWriteRefusal($effectiveBranchId, $branchId, $registrar);
 
         // Names the branch the doctor is already committed to — their own
         // locked branch, not a leak — and says what to do about it, in the
@@ -542,21 +643,25 @@ class ClinicVisitService
      * refusal itself is the security outcome and it is delivered by the caller's
      * ValidationException regardless.
      */
-    private function auditEffectiveBranchWriteRefusal(int $effectiveBranchId, int $attemptedBranchId): void
+    private function auditEffectiveBranchWriteRefusal(int $effectiveBranchId, int $attemptedBranchId, User $registrar): void
     {
         try {
+            // The explicit actor is passed as the audit actor too:
+            // AuditLogService falls back to auth()->user() for a NULL actor, so
+            // omitting it would leave `performed_by` ambient.
             app(AuditLogService::class)->log(
                 self::AUDIT_ENTITY_TYPE,
                 null,
                 self::ACTION_EFFECTIVE_BRANCH_WRITE_REFUSED,
                 null,
                 [
-                    'user_id' => (int) (Auth::id() ?? 0),
+                    'user_id' => (int) $registrar->id,
                     'effective_branch_id' => $effectiveBranchId,
                     'attempted_branch_id' => $attemptedBranchId,
                     'reason' => 'branch_outside_doctor_effective_branch',
                     'surface' => 'clinic_visit_create',
                 ],
+                $registrar,
             );
         } catch (\Throwable) {
             // Intentionally swallowed. See the docblock.
@@ -606,39 +711,65 @@ class ClinicVisitService
         return $data;
     }
 
-    public function update(ClinicVisit $visit, array $data): ClinicVisit
+    public function update(ClinicVisit $visit, array $data, User $actor): ClinicVisit
     {
-        unset($data['status']);
+        $this->assertVisitActor($actor, 'update', $visit);
+
+        // Status moves only through transitionStatus(); room and doctor only
+        // through assignRoom(), which enforces the same-branch active room, the
+        // terminal-visit refusal and "the doctor comes from the room". Stripped
+        // here as well as in UpdateClinicVisitRequest so a non-HTTP caller
+        // cannot bypass those rules either (AUDIT-RME-CLINIC-VISIT-BRANCH-
+        // AUTHORITY-1, found by the independent security review).
+        unset($data['status'], $data['clinic_room_id'], $data['doctor_id']);
 
         return DB::transaction(fn () => $this->visits->update($visit, $data));
     }
 
-    public function visitsTodayCount(?int $branchId = null): int
+    public function visitsTodayCount(User $actor, ?int $branchId = null): int
     {
         return $this->visits->countTodayByBranches(
-            $this->scopeBranchIds($branchId),
+            $this->scopedBranchIdsFor($actor, $branchId),
             // FIX-06 — the clinic's own calendar day, not a UTC now().
             $this->clock->todayString(),
         );
     }
 
-    public function waitingCount(?int $branchId = null): int
+    public function waitingCount(User $actor, ?int $branchId = null): int
     {
         return $this->visits->countByBranchesStatus(
-            $this->scopeBranchIds($branchId),
+            $this->scopedBranchIdsFor($actor, $branchId),
             ClinicVisit::STATUS_WAITING,
         );
     }
 
-    public function inProgressCount(?int $branchId = null): int
+    public function inProgressCount(User $actor, ?int $branchId = null): int
     {
         return $this->visits->countByBranchesStatus(
-            $this->scopeBranchIds($branchId),
+            $this->scopedBranchIdsFor($actor, $branchId),
             ClinicVisit::STATUS_IN_PROGRESS,
         );
     }
 
-    public function transitionStatus(ClinicVisit $visit, string $newStatus): ClinicVisit
+    /**
+     * AUDIT-RME-CLINIC-VISIT-BRANCH-AUTHORITY-1 — every transition except the
+     * cashier-owned completion is an act BY someone, and that someone is the
+     * explicit `$actor`, re-read and asked the same policy abilities the
+     * controller asks (`transition`, plus `completeExamination` for "Selesai
+     * Pemeriksaan").
+     *
+     * The base read Auth::user() and SKIPPED the check entirely when it was
+     * null ("system callers are not affected"). No system caller ever reached
+     * those transitions — the only non-HTTP caller is RmePaymentService, and it
+     * only ever asks for `completed` — so the skip protected nothing and left a
+     * non-HTTP path able to close an examination for nobody. A null actor now
+     * refuses every transition except `completed`, which stays actorless: it is
+     * reachable only from `cashier_pending` (asserted below) and only from the
+     * payment service, under that service's own explicit billing actor (rule
+     * 197). Refusals stay ValidationExceptions on `status`, as before, so a web
+     * request is redirected with a message rather than turned into a 500.
+     */
+    public function transitionStatus(ClinicVisit $visit, string $newStatus, ?User $actor = null): ClinicVisit
     {
         // Sprint 62.1 — Doctor → Cashier completion gate. A visit may only become
         // `completed` ("Selesai Visit") from `cashier_pending`, i.e. after the
@@ -652,15 +783,25 @@ class ClinicVisitService
             ]);
         }
 
+        if ($newStatus !== ClinicVisit::STATUS_COMPLETED) {
+            $account = $actor === null ? null : $this->actors->resolveForVisit($actor, 'transition', $visit);
+
+            if ($account === null) {
+                throw ValidationException::withMessages([
+                    'status' => 'Perubahan status kunjungan memerlukan pengguna yang berwenang atas kunjungan ini.',
+                ]);
+            }
+        }
+
         // FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1 (FIX-05) — "Selesai Pemeriksaan" is a
         // clinical act. Enforced here as well as at the route, so a non-HTTP
         // caller (command, job, another service) cannot close an examination on
-        // behalf of a user who may not. Unauthenticated/system callers are not
-        // affected, and the cashier-owned `completed` transition is untouched.
+        // behalf of a user who may not. Since AUDIT-RME-CLINIC-VISIT-BRANCH-
+        // AUTHORITY-1 the actor is the explicit one resolved above — a null actor
+        // has already been refused — and the cashier-owned `completed`
+        // transition is untouched.
         if ($newStatus === ClinicVisit::STATUS_CASHIER_PENDING) {
-            $actor = Auth::user();
-
-            if ($actor !== null && $actor->cannot('completeExamination', $visit)) {
+            if ($account->cannot('completeExamination', $visit)) {
                 throw ValidationException::withMessages([
                     'status' => 'Anda tidak berwenang menyelesaikan pemeriksaan. Tindakan ini dilakukan oleh dokter.',
                 ]);
@@ -721,10 +862,28 @@ class ClinicVisitService
         });
     }
 
-    private function doctorVisitScope(): ?\Closure
+    /**
+     * Resolve the explicit actor for a mutation of one visit, or refuse.
+     *
+     * The ability is the one the controller already authorizes for the same
+     * operation, asked of the PERSISTED row. Over HTTP it never changes an
+     * outcome (the controller asked first with the same user); it makes the
+     * service safe for every non-HTTP caller and for an account deactivated
+     * while its session was still alive.
+     */
+    private function assertVisitActor(User $actor, string $ability, ClinicVisit $visit): User
     {
-        $user = Auth::user();
+        $account = $this->actors->resolveForVisit($actor, $ability, $visit);
 
+        if ($account === null) {
+            throw new AuthorizationException('Akun ini tidak berwenang mengubah kunjungan tersebut.');
+        }
+
+        return $account;
+    }
+
+    private function doctorVisitScope(?User $user): ?\Closure
+    {
         if ($user === null) {
             return null;
         }

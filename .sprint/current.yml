@@ -1,40 +1,43 @@
-# FIX-RME-INVOICE-BRANCH-SCOPE-EXPLICIT-ACTOR-1
+# AUDIT-RME-CLINIC-VISIT-BRANCH-AUTHORITY-1
 #
-# Security bugfix of the RME invoice service: branch authorization is decided
-# from the EXPLICIT actor the caller passes, never from the ambient session.
-# Closes rule 197 §30 for RmeInvoiceService.
+# Security audit of ClinicVisitService actor/branch authority, with the fix the
+# audit proved necessary. Closes rule 198 §31.
 #
-# Root cause (reproduced on the base): RmeInvoiceService::cashierScopeBranchIds()
-# returned RmeWorkingBranchScope::branchIdsFor(Auth::user()); with no session
-# branchIdsFor(null) answers every active RME branch, so the cashier pending list
-# and the handoff queue failed OPEN. Latent over HTTP (one authenticated caller
-# each), real for any non-HTTP caller. Same audit: create() had no service-level
-# usability/permission check; findInBranch() read BranchContext and had 0 callers.
+# Reproduced on the unmodified base (a98af8fc):
+#   - LATENT: ClinicVisitService read Auth::user() in 8 places + BranchContext in
+#     one dead method. With no session the visit list, queue, counts and branch
+#     selector answered EVERY RME branch (branchIdsFor(null)); the ambient session
+#     decided scope; "Selesai Pemeriksaan" skipped the clinical check for a null
+#     user; create() failed only at the database.
+#   - EXPLOITABLE over HTTP: rme.visits.patient-options authorized viewAny only,
+#     so a Kasir pinned to branch A read branch B patient visit history (200);
+#     the RME dashboard summed payments/receivables over every RME branch for a
+#     context-bound operator and honored ?branch_id= for any branch.
 #
 # Runtime changes:
-#   - RmeBillingActorGuard: the one billing-actor authority (persisted, active,
-#     not deleted, manage_rme_billing on the persisted row), shared by
-#     RmeInvoiceService and RmePaymentService.
-#   - paginatePendingVisits / cashierHandoffQueue / findInvoiceForVisit take a
-#     non-nullable explicit User actor; an unusable actor gets an EMPTY scope.
-#   - create() refuses an unusable / non-billing cashier inside the transaction
-#     after the visit lock (AuthorizationException, nothing written).
-#   - RmePaymentService asks permission and working branch of the persisted
-#     account (security review F2).
-#   - RmeInvoiceController::create() returns View|RedirectResponse (pre-existing
-#     TypeError/500 when an invoice exists, security review F1).
+#   - ClinicVisitActorGuard: one clinic-visit actor authority (persisted, active,
+#     not deleted; ClinicVisitPolicy abilities asked of the persisted row).
+#   - Every actor-dependent ClinicVisitService method takes a non-nullable
+#     explicit User actor; transitionStatus keeps a nullable actor only for the
+#     cashier-owned `completed` transition (RmePaymentService).
+#   - patient-options requires `create` + PatientSelectorSearchService::isSelectable.
+#   - RME dashboard + visit-list medical-record widgets use
+#     ClinicVisitService::scopedBranchIdsFor($request->user()).
+#   - Dead find() (BranchContext, 0 callers) removed.
 #
 # No migration. No permission, role, route or feature-flag change. No owner
-# decision. Rule 198. Correction service, SPN4 pilot, maker 29 / checker 1, D10,
-# invoice-version binding and manual pricing D21 untouched.
+# decision taken (cross-branch Kontrol picker recorded as open owner decision
+# OD-1). Rule 199. Invoice/payment explicit actor, correction service, SPN4 pilot,
+# maker 29 / checker 1, D10, invoice-version binding and manual pricing D21
+# untouched.
 #
-# Type SECURITY_FIX: authorization fix in RmeInvoice (invoice + payment), audit
-# level 3. security_impact true.
+# Type SECURITY_FIX: authorization fix in ClinicVisit (+ RmeDashboard caller and
+# MedicalRecord count signature), audit level 3. security_impact true.
 
-id: FIX-RME-INVOICE-BRANCH-SCOPE-EXPLICIT-ACTOR-1
+id: AUDIT-RME-CLINIC-VISIT-BRANCH-AUTHORITY-1
 type: SECURITY_FIX
-module: RmeInvoice
-title: "RME invoice branch scope from the explicit actor (no ambient Auth::user()), shared billing-actor guard"
+module: ClinicVisit
+title: "Clinic visit authority from the explicit actor (no ambient Auth::user()); prior-visit picker and RME dashboard branch-scoped"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 runtime_change: true
 schema_change: false
@@ -44,7 +47,7 @@ branch_isolation_impact: true
 ledger_impact: false
 deploy_required: true
 browser_required: false
-test_profiles: [rme, cashier, billing, permission]
-go_tag: fix-rme-invoice-branch-scope-explicit-actor-1-go
-inherits_parent_go: hardening-rme-invoice-correction-pilot-identity-payment-actor-1-go
+test_profiles: [rme, clinic_visit, cashier, permission]
+go_tag: audit-rme-clinic-visit-branch-authority-1-go
+inherits_parent_go: fix-rme-invoice-branch-scope-explicit-actor-1-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1

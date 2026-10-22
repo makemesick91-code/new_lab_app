@@ -84,7 +84,7 @@ it('refuses a new visit, an identity edit or a deletion on a merged patient (ser
         'clinic_id' => null,
         'visit_type' => ClinicVisit::VISIT_TYPE_NEW,
         'created_by' => $this->approver->id,
-    ]))->toThrow(ValidationException::class);
+    ], $this->approver))->toThrow(ValidationException::class);
 
     expect(ClinicVisit::query()->where('patient_id', $source->id)->count())->toBe(0);
 });

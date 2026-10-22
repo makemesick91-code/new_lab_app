@@ -215,7 +215,17 @@ it('rejects visit creation without an explicit RME branch for existing patient',
     ]);
 });
 
-it('updates room but ignores status field', function () {
+it('ignores status and room on the visit edit (room changes go through assign-room)', function () {
+    /*
+     * SUPERSEDED BY AUDIT-RME-CLINIC-VISIT-BRANCH-AUTHORITY-1 (rule 199). This
+     * test was "updates room but ignores status field" and asserted that the
+     * edit endpoint MOVED the visit into the submitted room. The edit form never
+     * sends a room; the only use of that path was a crafted request that
+     * bypassed assignRoom()'s same-branch / active-room / terminal-visit rules
+     * and its "doctor comes from the room" rule. Room (and doctor) are now
+     * written only by rme.visits.assign-room, so both fields are ignored here,
+     * exactly as status always was.
+     */
     $visit = ClinicVisit::factory()->create([
         'branch_id' => $this->branch->id,
         'clinic_id' => $this->clinic->id,
@@ -234,7 +244,7 @@ it('updates room but ignores status field', function () {
         ->assertRedirect(route('rme.visits.show', $visit));
 
     expect($visit->refresh()->status)->toBe(ClinicVisit::STATUS_REGISTERED)
-        ->and($visit->clinic_room_id)->toBe($room->id);
+        ->and($visit->clinic_room_id)->not->toBe($room->id);
 });
 
 it('update endpoint cannot bypass transition — status change is ignored', function () {

@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Models\User;
 use App\Modules\Branch\Models\Branch;
 use App\Modules\Branch\Support\BranchCodeAlias;
 use App\Modules\ClinicRoom\Models\ClinicRoom;
@@ -11,6 +12,7 @@ use App\Modules\Doctor\Models\Doctor;
 use Database\Seeders\RmeBranchRoomSeeder;
 use Database\Seeders\RmeBranchSeeder;
 use Illuminate\Validation\ValidationException;
+use Spatie\Permission\Models\Role;
 
 /**
  * REVISION-SUNU-ADD-ROOM-A-B-1
@@ -49,6 +51,21 @@ function sunuRoomBranch(): Branch
 function provisionSunuRooms(): void
 {
     (new RmeBranchRoomSeeder)->run();
+}
+
+/**
+ * AUDIT-RME-CLINIC-VISIT-BRANCH-AUTHORITY-1 — assignRoom() now takes the
+ * explicit actor and checks it holds `update` on the visit. Authority is not
+ * what these tests are about, so they use a governance account that
+ * legitimately holds it on every RME branch; the room rules are unchanged.
+ */
+function sunuRoomActor(): User
+{
+    if (! Role::query()->where('name', 'Supervisor RME')->exists()) {
+        seedAccessControl();
+    }
+
+    return userInRole('Supervisor RME');
 }
 
 /**
@@ -414,7 +431,7 @@ it('refuses a Sunu room supplied for a visit belonging to another branch', funct
     $landakVisit = ClinicVisit::factory()->create(['branch_id' => $landak->id, 'clinic_room_id' => null]);
 
     expectRoomRefusal(
-        fn () => app(ClinicVisitService::class)->assignRoom($landakVisit, (int) $sunuRoom->id),
+        fn () => app(ClinicVisitService::class)->assignRoom($landakVisit, (int) $sunuRoom->id, sunuRoomActor()),
         'Ruangan harus berasal dari cabang yang sama'
     );
 
@@ -431,7 +448,7 @@ it('refuses another branch\'s room supplied for a Sunu visit', function () {
     $sunuVisit = ClinicVisit::factory()->create(['branch_id' => $sunu->id, 'clinic_room_id' => null]);
 
     expectRoomRefusal(
-        fn () => app(ClinicVisitService::class)->assignRoom($sunuVisit, (int) $landakRoom->id),
+        fn () => app(ClinicVisitService::class)->assignRoom($sunuVisit, (int) $landakRoom->id, sunuRoomActor()),
         'Ruangan harus berasal dari cabang yang sama'
     );
 
@@ -454,7 +471,7 @@ it('accepts a Sunu room for a Sunu visit once a doctor is online in it', functio
 
     $visit = ClinicVisit::factory()->create(['branch_id' => $sunu->id, 'clinic_room_id' => null]);
 
-    app(ClinicVisitService::class)->assignRoom($visit, (int) $room->id);
+    app(ClinicVisitService::class)->assignRoom($visit, (int) $room->id, sunuRoomActor());
 
     expect($visit->fresh()->clinic_room_id)->toBe($room->id);
     expect($visit->fresh()->doctor_id)->toBe($doctor->id);
@@ -469,7 +486,7 @@ it('leaves a new Sunu room unassignable until a doctor goes online in it', funct
     $room = ClinicRoom::query()->where('branch_id', $sunu->id)->where('name', 'Ruangan A')->firstOrFail();
     $visit = ClinicVisit::factory()->create(['branch_id' => $sunu->id, 'clinic_room_id' => null]);
 
-    expect(fn () => app(ClinicVisitService::class)->assignRoom($visit, (int) $room->id))
+    expect(fn () => app(ClinicVisitService::class)->assignRoom($visit, (int) $room->id, sunuRoomActor()))
         ->toThrow(ValidationException::class);
 
     expect($visit->fresh()->clinic_room_id)->toBeNull();
@@ -489,7 +506,7 @@ it('refuses an inactive Sunu room for a Sunu visit, naming the status as the rea
     $visit = ClinicVisit::factory()->create(['branch_id' => $sunu->id, 'clinic_room_id' => null]);
 
     expectRoomRefusal(
-        fn () => app(ClinicVisitService::class)->assignRoom($visit, (int) $room->id),
+        fn () => app(ClinicVisitService::class)->assignRoom($visit, (int) $room->id, sunuRoomActor()),
         'Ruangan tidak ditemukan atau tidak aktif'
     );
 

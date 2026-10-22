@@ -444,6 +444,16 @@ return [
         // `RmeInvoiceExplicitActor` token is added to BOTH critical-gate variants.
         'tests/Feature/RME/RmeInvoiceExplicitActorTest.php',
 
+        // AUDIT-RME-CLINIC-VISIT-BRANCH-AUTHORITY-1 (rule 199) — ClinicVisitService
+        // takes branch scope, visit-history reach and clinical authority from the
+        // EXPLICIT actor (re-read: persisted, active, same policy ability as the
+        // controller); never Auth::user(), which failed OPEN with no session.
+        // Also pins the prior-visit picker and the RME dashboard to the actor's
+        // working branch. No existing token matches `ClinicVisitBranchAuthorityTest`
+        // (there is no `ClinicVisit` token at all), so the new
+        // `ClinicVisitBranchAuthority` token is added to BOTH critical-gate variants.
+        'tests/Feature/RME/ClinicVisitBranchAuthorityTest.php',
+
         // DOCTOR-PWA-WEBAUTHN-1 — the browser device-credential login. A `|Pwa`
         // or `|DoctorDevice` token does not select it: --filter matches the test
         // IDENTITY, and this class is `DoctorPwaWebAuthnTest`, which contains

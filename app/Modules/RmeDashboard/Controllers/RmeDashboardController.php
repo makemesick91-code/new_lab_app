@@ -3,7 +3,6 @@
 namespace App\Modules\RmeDashboard\Controllers;
 
 use App\Http\Controllers\Controller;
-use App\Modules\Branch\Services\BranchService;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\ClinicVisit\Services\ClinicVisitService;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
@@ -23,22 +22,32 @@ use Illuminate\View\View;
  * queried or rendered. Branch isolation mirrors the existing RME listing
  * pattern: default to all RME-enabled branches, optionally narrow to a single
  * branch via ?branch_id when it is within the allowed set.
+ *
+ * AUDIT-RME-CLINIC-VISIT-BRANCH-AUTHORITY-1 — "the allowed set" is now the
+ * canonical working-branch scope of the authenticated user
+ * (ClinicVisitService::scopedBranchIdsFor()), not every RME branch. Before this
+ * audit only `visits_today` went through that scope; every other card —
+ * including today's PAYMENT TOTAL and the receivables count — summed the whole
+ * estate for a context-bound Kasir/Admin Klinik/Perawat, and `?branch_id=`
+ * reached any other branch. Governance roles keep the full RME set, so their
+ * dashboard is unchanged.
  */
 class RmeDashboardController extends Controller
 {
     public function __construct(
         private readonly ClinicVisitService $visits,
         private readonly MedicalRecordService $medicalRecords,
-        private readonly BranchService $branchService,
     ) {}
 
     public function index(Request $request): View
     {
-        $allowedBranchIds = $this->branchService->rmeEnabledIds();
+        $actor = $request->user();
+        $allowedBranchIds = $this->visits->scopedBranchIdsFor($actor);
         $requestedBranchId = $request->integer('branch_id') ?: null;
 
-        // Only honor an explicit branch filter when it is an RME-enabled branch;
-        // otherwise fall back to all RME branches. Prevents cross-branch leakage.
+        // Only honor an explicit branch filter when it is inside the actor's own
+        // scope; otherwise fall back to that scope. A crafted ?branch_id= can
+        // only NARROW, never reach a branch the actor does not work in.
         $selectedBranchId = ($requestedBranchId !== null && in_array($requestedBranchId, $allowedBranchIds, true))
             ? $requestedBranchId
             : null;
@@ -50,7 +59,7 @@ class RmeDashboardController extends Controller
         $monthEnd = Carbon::now()->endOfMonth();
 
         $metrics = [
-            'visits_today' => $this->visits->visitsTodayCount($selectedBranchId),
+            'visits_today' => $this->visits->visitsTodayCount($actor, $selectedBranchId),
             'visits_month' => ClinicVisit::query()
                 ->whereIn('branch_id', $branchIds)
                 ->whereBetween('visit_date', [$monthStart->toDateString(), $monthEnd->toDateString()])
@@ -65,7 +74,7 @@ class RmeDashboardController extends Controller
                 ->whereIn('visit_type', ClinicVisit::FOLLOW_UP_VISIT_TYPES)
                 ->whereBetween('visit_date', [$monthStart->toDateString(), $monthEnd->toDateString()])
                 ->count(),
-            'medical_records_draft' => $this->medicalRecords->draftCount(),
+            'medical_records_draft' => $this->medicalRecords->draftCount($branchIds),
             'medical_records_finalized_month' => MedicalRecord::query()
                 ->whereIn('branch_id', $branchIds)
                 ->where('status', MedicalRecord::STATUS_FINAL)
@@ -89,7 +98,8 @@ class RmeDashboardController extends Controller
 
         return view('rme.dashboard.index', [
             'metrics' => $metrics,
-            'rmeBranches' => $this->branchService->listRmeEnabled(),
+            // Never offer a branch the actor cannot read (same source as the visit list).
+            'rmeBranches' => $this->visits->selectableRmeBranches($actor),
             'selectedBranchId' => $selectedBranchId,
         ]);
     }

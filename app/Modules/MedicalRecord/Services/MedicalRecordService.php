@@ -56,18 +56,30 @@ class MedicalRecordService
         );
     }
 
-    public function draftCount(): int
+    /**
+     * AUDIT-RME-CLINIC-VISIT-BRANCH-AUTHORITY-1 — the caller passes the branch
+     * set it is allowed to aggregate over (ClinicVisitService::scopedBranchIdsFor()
+     * for the visit list and the RME dashboard). These counts used to hard-wire
+     * every active RME branch, so a context-bound operator's widgets mixed its
+     * own branch's visit counts with the whole estate's medical-record counts.
+     *
+     * @param  array<int, int>  $branchIds
+     */
+    public function draftCount(array $branchIds): int
     {
         return $this->medicalRecords->countByBranchesStatus(
-            $this->branches->rmeEnabledIds(),
+            $branchIds,
             MedicalRecord::STATUS_DRAFT,
         );
     }
 
-    public function finalizedTodayCount(): int
+    /**
+     * @param  array<int, int>  $branchIds
+     */
+    public function finalizedTodayCount(array $branchIds): int
     {
         return $this->medicalRecords->countFinalizedTodayByBranches(
-            $this->branches->rmeEnabledIds(),
+            $branchIds,
             now()->toDateString(),
         );
     }

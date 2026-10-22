@@ -272,7 +272,7 @@ it('allows odontogram, RME and finish once consent is signed', function () {
 
     app(OdontogramService::class)->updatePlaceholder($odontogram, pceToothPayload(), $this->doctorUser);
     app(MedicalRecordService::class)->updateDraft($record, ['notes' => 'catatan klinis'], $this->doctorUser);
-    app(ClinicVisitService::class)->transitionStatus($visit, ClinicVisit::STATUS_CASHIER_PENDING);
+    app(ClinicVisitService::class)->transitionStatus($visit, ClinicVisit::STATUS_CASHIER_PENDING, $this->doctorUser);
 
     expect($odontogram->fresh()->tooth_map_payload['teeth']['11']['conditions'])->toBe(['caries']);
     expect($record->fresh()->notes)->toBe('catatan klinis');
