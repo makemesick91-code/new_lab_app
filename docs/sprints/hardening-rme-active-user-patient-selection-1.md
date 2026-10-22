@@ -1,7 +1,8 @@
 # HARDENING-RME-ACTIVE-USER-PATIENT-SELECTION-1
 
-Status: **IMPLEMENTED — release evidence pending** (this document is updated with
-CI, merge, deploy and production evidence before the GO tag is created).
+Status: **SHIPPED + PRODUCTION DEPLOYED — GO** (scoped to this hardening; it does
+not certify the invoice correction pilot). Runtime authority `b76b0ed2`, GO tag
+`hardening-rme-active-user-patient-selection-1-go`.
 
 | Item | Value |
 |---|---|
@@ -263,7 +264,21 @@ re-checked under the invoice lock in both loops; same-branch flows unchanged.
 
 ## 10. Release
 
-_CI, merge, deploy and production verification recorded below._
+| Step | Evidence |
+|---|---|
+| Candidate | `061487c6`, tree `5fb0131c`, PR #507 |
+| CI on the exact candidate | run `39814315830`: Classifier, NSF-R012 Quality, **NSF-R011 Critical** (6343 passed, 0 failed, `critical_test_exit_status=0`, warning contract `expected_warning_count=0`; all eight relevant suites PASS in the log), Selective Module, NSF-9, NSF-10, Phase 3 Android — success. The second Critical row is the unused runner variant (exactly one runs). |
+| Full Suite | **SKIPPED** by the active temporary Full-Suite policy — not executed, not claimed. |
+| Merge | squash `b76b0ed2`, tree `5fb0131c` = candidate tree (identical); base was unmoved at `b1e6d3c6` |
+| Post-merge push run | run `39837264070` on `b76b0ed2` — success; Full Suite deferred (`full_suite_authorized=false`, `full_suite_defer_reason=TEMPORARY_FULL_SUITE_POLICY_ACTIVE`) |
+| Deploy | `scripts/deploy-vps-runner.sh start` executed INSIDE the VPS: `exit=0`, `DEPLOY OK: 20261022-190721`, `DEPLOY_HEAD_TARGET_MATCH=YES`, `DEPLOY_SNAPSHOT_CLEANED=YES`, backup before migrate, no migration, runtime isolation 70 GO / 0 FAIL, secret file permissions GO. (The SSH follow pipe dropped with exit 255; completion was read from the status file, never from the pipe.) |
+| Smoke | deploy smoke passed except the known `http://127.0.0.1/login` 404 (co-tenant nginx loopback shadow); over `https://daengtisia.online`: `/login`, `/health/live`, `/health/ready`, `/health/lb` 200; `/dashboard`, `/rme/visits/create` 302 for a guest; `/storage/…` 403 |
+| Code fingerprint | 9/9 changed runtime files byte-identical to the merge commit; `EnsureAccountIsActive` resolved at position 8 of the production `web` group, between `EnsureDoctorSessionLease` (7) and `TouchOnlineContextLastSeen` (9) |
+| Data fingerprint | every user, session-of-inactive-account, patient, visit, medical record, invoice, payment, correction, audit and carry-over count identical before and after the deploy; only `sessions_total` moved (normal logins) |
+| Posture | env pilot, debug OFF, maintenance OFF; 0 pending migrations; 0 failed jobs; nginx / php8.3-fpm / postgresql / queue worker active; 37 flags, none changed by this release (no `config/feature_flags.php` or environment change); correction pilot `PILOT_ACTIVE`, SPN4, maker 29 / checker 1, unchanged |
+| Errors | `laravel.log` unchanged (1 437 201 bytes) — 0 new errors |
+| GO tag | annotated `hardening-rme-active-user-patient-selection-1-go` → `b76b0ed2` (the deployed runtime, not this evidence commit); exact-match at VPS HEAD |
+| Rollback | `scripts/rollback-vps.sh audit-rme-clinic-visit-branch-authority-1-go` (runtime `3f0ec809`); no data to restore |
 
 ## 11. Residuals (recorded, not changed here)
 
