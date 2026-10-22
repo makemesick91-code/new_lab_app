@@ -33,8 +33,8 @@ A decision is only as far along as the last label that is evidenced. A brief's
 | 2026-10-21 | **D1c — pilot scope: SPN4 (Cabang Sunu) only**, server-side allowlist, fail-closed | `OWNER_POLICY_APPROVED` | same |
 | 2026-10-21 | **D1d — pilot accounts: maker user 29 (Admin Sunu), checker user 1 (IT Support, Super Admin)** | `OWNER_POLICY_APPROVED` | same |
 | 2026-10-21 | **D1e — pilot IDENTITY RESTRICTION: only user 29 may submit; only user 1 may approve/reject; every other account denied** (narrows D1b inside the pilot; D1d becomes an enforced allowlist) | `OWNER_POLICY_APPROVED`, `REPOSITORY_POLICY_RECORDED`, `TECHNICAL_ENFORCEMENT_DEPLOYED` (runtime `f66c6c2a`) | owner instruction in `HARDENING-RME-INVOICE-CORRECTION-PILOT-IDENTITY-PAYMENT-ACTOR-1` |
-| 2026-10-22 | **OD-1 — cross-branch AND cross-doctor Kontrol allowed** | `OWNER_POLICY_APPROVED`, `REPOSITORY_POLICY_RECORDED` (enforcement label added only with deploy evidence) | owner instruction in `HARDENING-RME-ACTIVE-USER-PATIENT-SELECTION-1` |
-| 2026-10-22 | **OD-1a — another branch's receivable is neither shown nor collected at this branch** (supersedes rule 197 §24) | `OWNER_POLICY_APPROVED`, `REPOSITORY_POLICY_RECORDED` (enforcement label added only with deploy evidence) | owner answer to the sprint's question, `HARDENING-RME-ACTIVE-USER-PATIENT-SELECTION-1` |
+| 2026-10-22 | **OD-1 — cross-branch AND cross-doctor Kontrol allowed** | `OWNER_POLICY_APPROVED`, `REPOSITORY_POLICY_RECORDED`, `TECHNICAL_ENFORCEMENT_DEPLOYED` (2026-10-23, runtime `b76b0ed2`, tag `hardening-rme-active-user-patient-selection-1-go`; rule 200) | owner instruction in `HARDENING-RME-ACTIVE-USER-PATIENT-SELECTION-1` |
+| 2026-10-22 | **OD-1a — another branch's receivable is neither shown nor collected at this branch** (supersedes rule 197 §24) | `OWNER_POLICY_APPROVED`, `REPOSITORY_POLICY_RECORDED`, `TECHNICAL_ENFORCEMENT_DEPLOYED` (2026-10-23, runtime `b76b0ed2`, tag `hardening-rme-active-user-patient-selection-1-go`; rule 200) | owner answer to the sprint's question, `HARDENING-RME-ACTIVE-USER-PATIENT-SELECTION-1` |
 
 The earlier D21 text is kept below, marked SUPERSEDED, as the record of what was
 decided and enforced between 2026-10-17 and 2026-10-20. It is never deleted.
@@ -329,7 +329,7 @@ pre-payment correction — a classification, never an approval:
   188 §12) is not built. Production's only UNPAID invoice on 2026-10-21 is an Rp0
   legacy invoice (id 36): it is not a correction case.
 
-### OD-1 — Cross-branch and cross-doctor Kontrol — `OWNER_POLICY_APPROVED`, `REPOSITORY_POLICY_RECORDED`
+### OD-1 — Cross-branch and cross-doctor Kontrol — `OWNER_POLICY_APPROVED`, `REPOSITORY_POLICY_RECORDED`, `TECHNICAL_ENFORCEMENT_DEPLOYED` (2026-10-23, runtime `b76b0ed2`, tag `hardening-rme-active-user-patient-selection-1-go`)
 
 Owner wording, verbatim (2026-10-22, brief of
 `HARDENING-RME-ACTIVE-USER-PATIENT-SELECTION-1`):
@@ -358,7 +358,7 @@ Required behaviour (rule 200):
 | 11 | Cross-branch history display respects the existing clinical authorization (rule 199 §15). |
 | 12 | Security-relevant refusals are audited through the existing audit trail. |
 
-#### OD-1a — another branch's receivable is not shown or collected here — `OWNER_POLICY_APPROVED`, `REPOSITORY_POLICY_RECORDED`
+#### OD-1a — another branch's receivable is not shown or collected here — `OWNER_POLICY_APPROVED`, `REPOSITORY_POLICY_RECORDED`, `TECHNICAL_ENFORCEMENT_DEPLOYED` (2026-10-23, runtime `b76b0ed2`)
 
 Rule 197 §24 had recorded the Sprint 62.2 receivable carry-over as a
 "cross-branch collection contract". That conflicted with OD-1 rules 8–9 and with
