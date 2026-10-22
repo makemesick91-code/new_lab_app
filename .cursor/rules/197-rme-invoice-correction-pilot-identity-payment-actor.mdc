@@ -114,6 +114,12 @@ two designated accounts may use it.
     branches) and are NOT re-scoped to the cashier's working branch — that is the
     approved Sprint 62.2 cross-branch collection contract. Super Admin keeps its
     existing governance cashier scope (every active RME branch).
+    **[SUPERSEDED IN PART by rule 200 §A2/§B9 — owner decision OD-1a (2026-10-22,
+    "Hanya piutang B"): carry-over parents are now discovered ONLY at the paying
+    visit's own branch (`RmeControlReceivableService::payingBranchIds()`), and both
+    allocation loops skip a receivable of another branch under the invoice lock.
+    Another branch's debt stays that branch's receivable. Same-branch carry-over is
+    unchanged. The governance cashier scope sentence still holds.]**
 25. Preserved: D10 block under the invoice lock (rule 192), invoice-version binding
     (rule 191), future `paid_at` refusal, batch atomicity, manual pricing (rule 194).
 

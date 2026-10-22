@@ -60,6 +60,7 @@ use App\Modules\DoctorDevice\Models\DoctorDeviceAuthorization;
 use App\Modules\Odontogram\Models\Odontogram;
 use App\Modules\Odontogram\Services\OdontogramService;
 use App\Modules\Patient\Models\Patient;
+use App\Modules\RME\Models\PatientDoctorAssignment;
 use App\Modules\RmeOnlineContext\Middleware\EnsureRmeOnlineContext;
 use App\Modules\RmeOnlineContext\Models\UserOnlineContext;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
@@ -518,6 +519,14 @@ it('lets the same locked doctor write to their OWN branch', function () {
     ['user' => $user, 'doctor' => $doctor] = daDoctorAccount([$this->sunu, $this->landak]);
     $patient = Patient::factory()->create(['branch_id' => $this->sunu->id, 'name' => 'Pasien SUN4']);
 
+    // HARDENING-RME-ACTIVE-USER-PATIENT-SELECTION-1 (rule 200) — the service now
+    // re-asserts what the registration form always required of a doctor: online
+    // at the visit branch, registering a patient inside their own patient scope.
+    // The direct call used to skip both; the fixture now states them, so this
+    // stays a positive control for the LOCK and nothing else.
+    dhblGoOnline($user, $this->sunu);
+    PatientDoctorAssignment::factory()->create(['patient_id' => $patient->id, 'doctor_id' => $doctor->id, 'unassigned_at' => null]);
+
     daGrantHomeLock($doctor, $this->sunu);
     daArmDoctorAccess();
 
@@ -688,6 +697,10 @@ it('degrades the same way when the locked branch loses is_rme_enabled, with no e
     dhblGoOnline($user, $this->landak);
 
     $patient = Patient::factory()->create(['branch_id' => $this->landak->id, 'name' => 'Pasien LDK2']);
+
+    // Rule 200: a doctor registers only a patient inside their own patient scope
+    // (the form always required it; the service now re-asserts it).
+    PatientDoctorAssignment::factory()->create(['patient_id' => $patient->id, 'doctor_id' => $doctor->id, 'unassigned_at' => null]);
 
     daGrantHomeLock($doctor, $this->sunu);
     daArmDoctorAccess();

@@ -454,6 +454,24 @@ return [
         // `ClinicVisitBranchAuthority` token is added to BOTH critical-gate variants.
         'tests/Feature/RME/ClinicVisitBranchAuthorityTest.php',
 
+        // HARDENING-RME-ACTIVE-USER-PATIENT-SELECTION-1 (rule 200) — a session,
+        // a remember-me cookie or an app ticket of a DEACTIVATED account no
+        // longer authenticates anything; visit registration re-asserts patient,
+        // prior-visit and doctor selection at the service (one rule source with
+        // the form); owner decision OD-1 (cross-branch / cross-doctor Kontrol)
+        // keeps a branch's receivables out of another branch's payment. No
+        // existing token matches these files (`ClinicVisitBranchAuthority` is a
+        // different name), so new tokens are added to BOTH critical-gate
+        // variants. The two carry-over suites are ADDED to the gate because this
+        // sprint changes the service they pin; they previously ran only in the
+        // deferred Full Suite.
+        'tests/Feature/AccessControl/ActiveAccountSessionTest.php',
+        'tests/Feature/RME/ClinicVisitPatientSelectionAuthorityTest.php',
+        'tests/Feature/RME/CrossBranchKontrolFinancialOwnershipTest.php',
+        'tests/Feature/RME/ClinicVisitRegistrationConcurrencyTest.php',
+        'tests/Feature/RME/PatientOutstandingReceivableCarryOverTest.php',
+        'tests/Feature/RME/RmeControlVisitReceivableCarryOverPaymentTest.php',
+
         // DOCTOR-PWA-WEBAUTHN-1 — the browser device-credential login. A `|Pwa`
         // or `|DoctorDevice` token does not select it: --filter matches the test
         // IDENTITY, and this class is `DoctorPwaWebAuthnTest`, which contains

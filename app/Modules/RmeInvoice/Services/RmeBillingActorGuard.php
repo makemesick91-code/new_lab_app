@@ -3,6 +3,7 @@
 namespace App\Modules\RmeInvoice\Services;
 
 use App\Models\User;
+use App\Support\AccessControl\ActiveAccountResolver;
 
 /**
  * FIX-RME-INVOICE-BRANCH-SCOPE-EXPLICIT-ACTOR-1 (rule 198) — the single answer
@@ -30,20 +31,19 @@ class RmeBillingActorGuard
 {
     public const BILLING_PERMISSION = 'manage_rme_billing';
 
+    public function __construct(
+        private readonly ActiveAccountResolver $accounts,
+    ) {}
+
     /**
      * The persisted, non-deleted, active account behind $actor, or null. The
      * SoftDeletes scope on User excludes a deleted account.
      */
     public function resolveUsable(User $actor): ?User
     {
-        if (! $actor->exists || $actor->getKey() === null) {
-            return null;
-        }
-
-        return User::query()
-            ->whereKey($actor->getKey())
-            ->where('is_active', true)
-            ->first();
+        // HARDENING-RME-ACTIVE-USER-PATIENT-SELECTION-1 — delegated to the
+        // single definition of a usable account (rule 200), unchanged in meaning.
+        return $this->accounts->resolveUsable($actor);
     }
 
     /**

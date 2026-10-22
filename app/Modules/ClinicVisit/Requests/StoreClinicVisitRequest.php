@@ -3,8 +3,8 @@
 namespace App\Modules\ClinicVisit\Requests;
 
 use App\Modules\Branch\Interfaces\BranchRepositoryInterface;
-use App\Modules\Branch\Services\BranchService;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
+use App\Modules\ClinicVisit\Services\ClinicVisitRegistrationGuard;
 use App\Modules\Patient\Services\PatientMedicalRecordNumberService;
 use App\Modules\Patient\Services\PatientSelectorSearchService;
 use App\Modules\PatientMerge\Services\PatientRegistrationDuplicateCheck;
@@ -258,7 +258,12 @@ class StoreClinicVisitRequest extends FormRequest
                 'integer',
                 Rule::exists('mst_doctors', 'id'),
             ],
-            'clinic_room_id' => ['nullable', 'integer', Rule::exists('mst_clinic_rooms', 'id')],
+            // HARDENING-RME-ACTIVE-USER-PATIENT-SELECTION-1 — no `clinic_room_id`
+            // here. A room is placed only through rme.visits.assign-room, where
+            // the same-branch / active-room / doctor-from-room rules live. The
+            // registration form never sent one; accepting it (existence-checked
+            // only) let a crafted POST place a new visit straight into another
+            // branch's room. The service drops it as well (rule 200).
             'chief_complaint' => ['nullable', 'string', 'max:5000'],
             'initial_treatment_id' => ['required', 'integer', Rule::exists('mst_treatments', 'id')->where('is_active', true)],
             'initial_service_note' => ['nullable', 'string', 'max:2000'],
@@ -450,61 +455,31 @@ class StoreClinicVisitRequest extends FormRequest
         }
     }
 
+    /**
+     * HARDENING-RME-ACTIVE-USER-PATIENT-SELECTION-1 (rule 200) — the prior-visit
+     * rule now lives in ONE place, {@see ClinicVisitRegistrationGuard}, which
+     * ClinicVisitService::create() also enforces against the explicit registrar.
+     * This method only turns its verdict into a form error, so the form and the
+     * service cannot disagree about which prior visit may be linked.
+     *
+     * OD-1 (owner, 2026-10-22): a Kontrol may follow a visit held at another
+     * branch and treated by another doctor; only the patient must match.
+     */
     private function validateFollowUpVisit(Validator $validator): void
     {
         if ($validator->errors()->isNotEmpty()) {
             return;
         }
 
-        $visitType = $this->input('visit_type', ClinicVisit::VISIT_TYPE_NEW);
-        $followUpId = $this->input('follow_up_of_visit_id');
-        $patientId = $this->input('patient_id');
-        $isNewPatient = $this->input('patient_mode') === 'new';
+        $violation = app(ClinicVisitRegistrationGuard::class)->followUpViolation([
+            'patient_mode' => $this->input('patient_mode'),
+            'patient_id' => $this->input('patient_id'),
+            'visit_type' => $this->input('visit_type', ClinicVisit::VISIT_TYPE_NEW),
+            'follow_up_of_visit_id' => $this->input('follow_up_of_visit_id'),
+        ]);
 
-        if (in_array($visitType, ClinicVisit::FOLLOW_UP_VISIT_TYPES, true)) {
-            if ($isNewPatient) {
-                $validator->errors()->add(
-                    'visit_type',
-                    'Kunjungan kontrol hanya dapat dibuat untuk pasien terdaftar.'
-                );
-
-                return;
-            }
-
-            if (! $followUpId) {
-                $validator->errors()->add('follow_up_of_visit_id', 'Kunjungan sebelumnya wajib dipilih untuk kunjungan kontrol atau lanjutan tindakan.');
-
-                return;
-            }
-
-            if (! $patientId) {
-                $validator->errors()->add('patient_id', 'Pilih pasien terdaftar.');
-
-                return;
-            }
-
-            $rmeBranchIds = app(BranchService::class)->rmeEnabledIds();
-            $parentVisit = ClinicVisit::query()
-                ->whereIn('branch_id', $rmeBranchIds)
-                ->find((int) $followUpId);
-
-            if ($parentVisit === null) {
-                $validator->errors()->add('follow_up_of_visit_id', 'Kunjungan sebelumnya harus berasal dari cabang RME yang valid.');
-
-                return;
-            }
-
-            if ((int) $parentVisit->patient_id !== (int) $patientId) {
-                $validator->errors()->add('follow_up_of_visit_id', 'Kunjungan sebelumnya harus milik pasien yang sama.');
-
-                return;
-            }
-
-            return;
-        }
-
-        if ($followUpId && in_array($visitType, [ClinicVisit::VISIT_TYPE_NEW, ClinicVisit::VISIT_TYPE_EMERGENCY], true)) {
-            // follow_up_of_visit_id is optional and ignored for new/emergency — no error.
+        if ($violation !== null) {
+            $validator->errors()->add($violation[0], $violation[1]);
         }
     }
 

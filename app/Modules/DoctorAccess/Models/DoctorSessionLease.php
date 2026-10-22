@@ -82,6 +82,12 @@ class DoctorSessionLease extends Model
     /** The account was deleted. */
     public const RELEASE_ACCOUNT_DELETED = 'account_deleted';
 
+    /**
+     * HARDENING-RME-ACTIVE-USER-PATIENT-SELECTION-1 — the session was torn down
+     * because the account had been deactivated while it was alive (rule 200).
+     */
+    public const RELEASE_ACCOUNT_INACTIVE = 'account_inactive';
+
     public const RELEASE_REASONS = [
         self::RELEASE_LOGOUT,
         self::RELEASE_EFFECTIVE_BRANCH_CHANGED,
@@ -90,6 +96,7 @@ class DoctorSessionLease extends Model
         self::RELEASE_ADMIN,
         self::RELEASE_DEVICE_INVALIDATED,
         self::RELEASE_ACCOUNT_DELETED,
+        self::RELEASE_ACCOUNT_INACTIVE,
     ];
 
     protected $table = 'trx_doctor_session_leases';

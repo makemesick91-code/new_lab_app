@@ -82,6 +82,10 @@ Owner-approved on 2026-10-12. Presentation and derivation rules — no schema ch
 21. Control-chain billing, piutang carry-over, payment allocation and invoice semantics are
     unchanged: a derived Kontrol + parent visit enters `RmeControlReceivableService`
     exactly as before.
+    **[SUPERSEDED IN PART by rule 200 §B9 (owner decision OD-1a, 2026-10-22): a Kontrol at
+    branch B may follow a visit at branch A (OD-1), but carry-over now discovers and
+    collects ONLY receivables of the paying visit's own branch; branch A's balance stays
+    branch A's receivable.]**
 22. "Buat Kontrol" on visit detail keeps its existing authorization (`$canOperateVisit` +
     `create`). Do not widen Front Office permissions to reach it.
 23. `continued_treatment` and `emergency` stay in the model, the database and history —

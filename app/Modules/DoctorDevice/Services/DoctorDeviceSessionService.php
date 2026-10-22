@@ -10,6 +10,7 @@ use App\Modules\DoctorDevice\Models\DoctorDeviceAuthorization;
 use App\Modules\DoctorDevice\Models\DoctorDeviceLoginTicket;
 use App\Modules\DoctorDevice\Support\DoctorSessionProof;
 use App\Modules\LabOrder\Services\AuditLogService;
+use App\Support\AccessControl\ActiveAccountResolver;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -99,6 +100,14 @@ class DoctorDeviceSessionService
 
         if ($user === null || $device === null || $authorization === null) {
             $this->deny($ticket, 'ticket_subject_missing');
+        }
+
+        // HARDENING-RME-ACTIVE-USER-PATIENT-SELECTION-1 (rule 200) — an account
+        // deactivated between minting and redemption must not be logged in. The
+        // web middleware would end the session on the NEXT request; refusing
+        // here means the deactivated account is never authenticated at all.
+        if (! app(ActiveAccountResolver::class)->isUsable($user)) {
+            $this->deny($ticket, 'account_inactive');
         }
 
         // The Clinic App's own proof, asserted as itself. A WebAuthn

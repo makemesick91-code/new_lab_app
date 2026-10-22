@@ -2,6 +2,8 @@
 
 namespace App\Http\Requests\Auth;
 
+use App\Models\User;
+use App\Support\AccessControl\ActiveAccountResolver;
 use Illuminate\Auth\Events\Lockout;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
@@ -42,11 +44,35 @@ class LoginRequest extends FormRequest
     {
         $this->ensureIsNotRateLimited();
 
-        if (! Auth::attempt($this->only('email', 'password'), $this->boolean('remember'))) {
+        // HARDENING-RME-ACTIVE-USER-PATIENT-SELECTION-1 (rule 200) — a
+        // deactivated account must not log in. The callback runs ONLY after the
+        // password has been verified, so the specific "inactive" message is
+        // shown to someone who has just proven they hold the account, never to
+        // an anonymous guess: a wrong password, an unknown address and a
+        // soft-deleted account all keep the generic failure. The decision is the
+        // persisted row's, through the single shared definition of a usable
+        // account. A refused attempt still counts against the rate limiter.
+        $inactive = false;
+
+        $authenticated = Auth::attemptWhen(
+            $this->only('email', 'password'),
+            function (User $user) use (&$inactive): bool {
+                if (app(ActiveAccountResolver::class)->isUsable($user)) {
+                    return true;
+                }
+
+                $inactive = true;
+
+                return false;
+            },
+            $this->boolean('remember'),
+        );
+
+        if (! $authenticated) {
             RateLimiter::hit($this->throttleKey());
 
             throw ValidationException::withMessages([
-                'email' => trans('auth.failed'),
+                'email' => $inactive ? ActiveAccountResolver::INACTIVE_MESSAGE : trans('auth.failed'),
             ]);
         }
 

@@ -148,6 +148,10 @@ security fix inside existing authority; the decision register is unchanged.
     handoff queue and a 403 on billing, but policy-only surfaces (invoice show,
     receivables, export, the billing form GET) still answer from the session
     user's permissions until the session ends. Recorded, not changed here.
+    **[CLOSED by rule 200 §E22 — HARDENING-RME-ACTIVE-USER-PATIENT-SELECTION-1:
+    `EnsureAccountIsActive` stops a deactivated account's session on its next web
+    request, before any controller; `RmeBillingActorGuard` now delegates the
+    active-account read to the shared `ActiveAccountResolver`.]**
 31. `ClinicVisitService` (`:94`, `:143`) still reads `Auth::user()` for the visit
     list scope — visit domain, out of scope; candidate
     `FIX-CLINIC-VISIT-BRANCH-SCOPE-EXPLICIT-ACTOR-1`.

@@ -29,12 +29,10 @@ class RmeControlReceivableService
             return collect();
         }
 
-        $rmeBranchIds = $this->branches->rmeEnabledIds();
-
         return RmeInvoice::query()
             ->whereIn('clinic_visit_id', $ancestorVisitIds)
             ->where('patient_id', $visit->patient_id)
-            ->whereIn('branch_id', $rmeBranchIds)
+            ->whereIn('branch_id', $this->payingBranchIds($visit))
             ->whereIn('status', [RmeInvoice::STATUS_UNPAID, RmeInvoice::STATUS_PARTIAL])
             ->with(['clinicVisit', 'payments', 'items'])
             ->get()
@@ -120,11 +118,9 @@ class RmeControlReceivableService
      */
     public function getOutstandingReceivablesForPatientVisit(ClinicVisit $visit, RmeInvoice $currentInvoice): Collection
     {
-        $rmeBranchIds = $this->branches->rmeEnabledIds();
-
         return RmeInvoice::query()
             ->where('patient_id', $visit->patient_id)
-            ->whereIn('branch_id', $rmeBranchIds)
+            ->whereIn('branch_id', $this->payingBranchIds($visit))
             ->whereIn('status', [RmeInvoice::STATUS_UNPAID, RmeInvoice::STATUS_PARTIAL])
             ->where('id', '!=', $currentInvoice->id)
             ->where('grand_total', '>', 0)
@@ -193,6 +189,31 @@ class RmeControlReceivableService
             'total_payable' => round($selectedRemaining + $currentRemaining, 2),
             'has_outstanding' => $outstanding->isNotEmpty(),
         ];
+    }
+
+    /**
+     * HARDENING-RME-ACTIVE-USER-PATIENT-SELECTION-1 — owner decision OD-1
+     * (rule 200): the only branch whose receivables may be shown or collected on
+     * a visit's payment is the branch that visit belongs to — the branch where
+     * the care was given and where the cashier taking the money works.
+     *
+     * Before this, both discoveries read EVERY active RME branch while only the
+     * CURRENT invoice passed RmePaymentService::assertInvoicePayable(), so a
+     * cross-branch Kontrol FIFO-allocated a branch-B cashier's cash into branch
+     * A's unpaid invoice (recorded on branch A's ledger by a branch-B cashier)
+     * and showed branch A's invoice to that cashier. A patient's balance at
+     * another branch stays that branch's receivable, collected there.
+     *
+     * The visit's own branch must itself be an active RME branch, or nothing is
+     * offered (fail closed).
+     *
+     * @return list<int>
+     */
+    private function payingBranchIds(ClinicVisit $visit): array
+    {
+        $branchId = (int) $visit->branch_id;
+
+        return in_array($branchId, $this->branches->rmeEnabledIds(), true) ? [$branchId] : [];
     }
 
     /**

@@ -15,6 +15,7 @@ use App\Modules\DoctorDevice\Support\DeviceKeyMaterial;
 use App\Modules\DoctorDevice\Support\DeviceProofMessage;
 use App\Modules\DoctorDevice\Support\DoctorSessionProof;
 use App\Modules\LabOrder\Services\AuditLogService;
+use App\Support\AccessControl\ActiveAccountResolver;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -372,6 +373,15 @@ class DoctorAppLoginService
 
         if (! Hash::check($password, (string) $user->password)) {
             $this->deny('invalid_credentials');
+        }
+
+        // HARDENING-RME-ACTIVE-USER-PATIENT-SELECTION-1 (rule 200) — the ACCOUNT
+        // must be usable, not only the doctor record checked further on: an
+        // administrator who switches the user off must stop the app login too.
+        // Asserted after the password so the opaque refusal reveals nothing, and
+        // before anything is written (no device, no authorization, no ticket).
+        if (! app(ActiveAccountResolver::class)->isUsable($user)) {
+            $this->deny('account_inactive');
         }
 
         return $user;

@@ -96,6 +96,9 @@ change what the shared resolver answers for null.
     `clinic_room_id` / `doctor_id`, and `update()` strips `status`,
     `clinic_room_id` and `doctor_id` itself so a future caller cannot reintroduce
     the bypass. Never re-add them to the edit request.
+    **[SUPERSEDED IN PART by rule 200 §D18 — HARDENING-RME-ACTIVE-USER-PATIENT-SELECTION-1:
+    the strip-list is replaced by an ALLOW-list (`ClinicVisitService::EDITABLE_FIELDS`),
+    and registration no longer writes `clinic_room_id` at all (§D17).]**
 
 ## E. Visit history and aggregates
 15. `patientVisitHistory()` / `adjacentVisits()` stay cross-branch BY DESIGN: their
@@ -107,6 +110,9 @@ change what the shared resolver answers for null.
     because `StoreClinicVisitRequest::validateFollowUpVisit()` accepts a prior
     visit from ANY active RME branch. Whether cross-branch Kontrol stays a
     supported workflow is an OPEN OWNER DECISION (sprint doc §OD-1).
+    **[DECIDED by rule 200 §A1 — owner decision OD-1 (2026-10-22): cross-branch AND
+    cross-doctor Kontrol are APPROVED. The picker and the prior-visit rule stay as
+    described; the rule itself now lives in `ClinicVisitRegistrationGuard`.]**
 17. Any caller that aggregates visit-domain data itself (RME dashboard, visit-list
     widgets) takes its branch set from `ClinicVisitService::scopedBranchIdsFor()`,
     never from `BranchService::rmeEnabledIds()`. `MedicalRecordService::draftCount()`
@@ -130,18 +136,23 @@ change what the shared resolver answers for null.
     directly remain safe only inside `auth`.
 24. No middleware enforces `is_active` per request (rule 198 §30a). Visit
     surfaces now fail closed for a deactivated account; policy-only surfaces do not.
+    **[CLOSED by rule 200 §E22 — `EnsureAccountIsActive` re-reads the account on every
+    authenticated web request.]**
 25. `MedicalRecordService::paginate()` has no callers and still reads
     `Auth::user()` — MedicalRecord domain, separate audit candidate.
 26. `MedicalRecordService::finalizedTodayCount()` uses UTC `now()` for "today"
     (rule 92 clinical-clock class) — separate fix.
 27. `create()` does not re-assert patient selectability (the FormRequest does);
     no non-HTTP caller exists.
+    **[CLOSED by rule 200 §C10–§C12 — `create()` re-asserts patient, prior-visit and
+    doctor selection through `ClinicVisitRegistrationGuard`.]**
 27a. Pre-existing N+1 on the context-bound visit list (~2 statements per visit:
     92 → 152 statements as visits go 10 → 40). Not touched.
 27b. `transitionStatus(completed)` reads `status === cashier_pending` on the
     in-memory model without a row lock; the payment service holds its own lock.
 27c. `show` / `edit` still render for a deactivated account with a live session
     (policy-only surfaces, rule 198 §30a).
+    **[CLOSED by rule 200 §E22.]**
 27d. The guard is deliberately NOT memoised: ~3 statements per resolution, a
     constant (O(1)) addition per request (+17..+23 on the list, +9..+19 on the
     dashboard). A memo on a container- or route-cached object outlives the

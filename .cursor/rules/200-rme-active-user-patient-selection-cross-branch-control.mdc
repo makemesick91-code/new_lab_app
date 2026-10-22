@@ -1,0 +1,184 @@
+---
+description: HARDENING-RME-ACTIVE-USER-PATIENT-SELECTION-1 — a deactivated account stops everywhere (login form, live session, remember-me cookie, Android app login and ticket redemption) through ONE definition of a usable account; visit registration re-asserts patient, prior-visit and doctor selection at the service through ONE rule source shared with the form; registration and the visit edit can no longer write room, doctor, patient or link around their rules; owner decision OD-1 (cross-branch AND cross-doctor Kontrol allowed) and OD-1a (another branch's receivable is neither shown nor collected here, supersedes rule 197 §24). No migration, no permission, no route, no RoleSeeder change.
+globs: app/Support/AccessControl/ActiveAccountResolver.php, app/Http/Middleware/EnsureAccountIsActive.php, app/Http/Requests/Auth/LoginRequest.php, app/Modules/ClinicVisit/Services/ClinicVisitRegistrationGuard.php, app/Modules/ClinicVisit/Services/ClinicVisitService.php, app/Modules/ClinicVisit/Services/ClinicVisitActorGuard.php, app/Modules/ClinicVisit/Requests/StoreClinicVisitRequest.php, app/Modules/RmeInvoice/Services/RmeBillingActorGuard.php, app/Modules/RmeInvoice/Services/RmeControlReceivableService.php, app/Modules/RmeInvoice/Services/RmePaymentService.php, app/Modules/DoctorDevice/Services/DoctorAppLoginService.php, app/Modules/DoctorDevice/Services/DoctorDeviceSessionService.php, bootstrap/app.php
+alwaysApply: false
+---
+
+# Active accounts, patient selection and cross-branch Kontrol (rule 200)
+
+Evidence: `docs/sprints/hardening-rme-active-user-patient-selection-1.md`.
+Owner decisions: `docs/decisions/rme-billing-correction-owner-decisions.md` (OD-1, OD-1a).
+Extends rule 199 (visit authority from the explicit actor), rule 198 (invoice) and
+rule 197 §E (payment). **Supersedes in part:** rule 197 §24, rule 198 §30a, rule 199
+§14a, §16, §24, §27, §27c (see §J).
+
+## A. Owner decisions
+1. **OD-1** (owner, 2026-10-22, verbatim: *"pasien bisa kontrol lintas cabang
+   bahkan dengan dokter berbeda"*): `CROSS_BRANCH_CONTROL = APPROVED`,
+   `CROSS_DOCTOR_CONTROL = APPROVED`. No approval reference beyond that wording
+   exists; never invent one.
+2. **OD-1a** (owner answer during the sprint, 2026-10-22: *"Hanya piutang B"*): a
+   patient's unpaid balance at another branch is NOT shown on, and NOT collectable
+   from, a payment taken at this branch. It stays that branch's receivable,
+   collected there. Collecting another branch's debt needs a NEW owner decision and
+   a cash-transfer policy — never re-enable it by widening a query.
+
+## B. Cross-branch / cross-doctor Kontrol (OD-1)
+3. A Kontrol may follow a visit held at ANOTHER RME branch and treated by ANOTHER
+   doctor. Never reject because the prior visit's branch or doctor differs.
+4. Patient identity is global (rule 101); a Kontrol never creates a duplicate patient.
+5. The prior-visit link is checked for PATIENT identity only: the prior visit must
+   exist at an active RME branch (soft-deleted = absent) and belong to the SAME
+   patient. `ClinicVisitRegistrationGuard::followUpViolation()` contains no branch
+   or doctor comparison, and a test pins that.
+6. The new visit's branch is the registrar's working branch
+   (`ClinicVisitService::resolveBranchId`), never the prior visit's. Its doctor comes
+   from rule §D, never from the prior visit.
+7. Historical immutability: registering a Kontrol writes nothing to the prior visit,
+   its medical record, consent, odontogram, invoice or payments (tests snapshot
+   each row before/after).
+8. Clinical history access is unchanged: the patient-centric workspace and archive
+   reads keep rule 199 §15; the registration picker returns only id, number, date,
+   type (+label), doctor name, initial treatment and status — never notes,
+   diagnoses, payments or cash data. Front Office gains no archive access.
+9. Financial ownership: the new invoice is the new visit's branch; its payments are
+   that branch's. `RmeControlReceivableService` discovers carry-over (control chain
+   AND patient-level receivables) ONLY at the paying visit's own branch
+   (`payingBranchIds()`), fail-closed when that branch is not an active RME branch.
+   `RmePaymentService` re-asserts it under the invoice lock in both allocation
+   loops (a receivable of another branch is skipped). Same-branch carry-over is
+   unchanged (rule 197 Phase 27.4 / Sprint 62.2 FIFO).
+
+## C. Patient selection at the authoritative boundary
+10. `ClinicVisitRegistrationGuard` is the ONE source of the registration selection
+    rules. `StoreClinicVisitRequest` turns its verdict into a form error;
+    `ClinicVisitService::create()` re-asserts it against the explicit registrar.
+    Never restate the prior-visit lookup in a caller (a test pins it).
+10a. A new-patient registration must really create the patient: `create()` drops
+    any `patient_id` in new mode and refuses a `new_patient` payload that is not an
+    array, so it can never fall through to an existing patient unchecked.
+11. Existing patient: `assertPatientSelectable()` = `PatientSelectorSearchService::
+    isSelectable($registrar, $id)` — global RME identity, doctor patient scope,
+    merged and soft-deleted excluded, fail-closed for a context-bound registrar with
+    no working branch. A nonexistent, deleted, out-of-registry or non-positive id is
+    refused (`patient_id`).
+12. Order inside the transaction: merge guard (FOR SHARE, its own message) →
+    selectability → patient resolution → prior-visit check with the prior visit
+    read FOR SHARE → insert. A refusal writes nothing.
+13. The prior visit is read FOR SHARE so a concurrent soft-delete / re-point (FOR NO
+    KEY UPDATE) waits. Verify with a FOR NO KEY UPDATE probe, never FOR UPDATE —
+    the insert's foreign key takes FOR KEY SHARE, which a FOR UPDATE probe would hit
+    even with no lock taken (vacuous pass).
+14. Incoherent input is refused: a follow-up type without a prior visit; a prior
+    visit under a non-follow-up type; a prior visit for a brand-new patient (checked
+    before the patient row is created).
+
+## D. Doctor and room at registration
+15. A front-desk registration (Admin Klinik / Perawat / Front Office working context)
+    carries NO doctor — any supplied doctor, the previous one included, is dropped;
+    the doctor is resolved from the room on `assignRoom()` (Sprint 66.1.4).
+16. Every other registrar must name a doctor online at the visit branch
+    (`assertDoctorSelectableForVisit`), at the service as well as the form, because a
+    visit's doctor widens that doctor's patient scope (rule 199 F9).
+17. Registration NEVER writes a room: `clinic_room_id` is not a
+    `StoreClinicVisitRequest` field and `create()` drops it. A crafted POST used to
+    place a new visit into another branch's room with an existence check only.
+18. The visit edit is an ALLOW-list (`ClinicVisitService::EDITABLE_FIELDS` =
+    chief_complaint, initial_treatment_id, initial_service_note). Patient, prior
+    visit, branch, type, numbering, creator, room, doctor and status are fixed at
+    registration or moved only by their own paths. Never return to a strip-list.
+
+## E. Active accounts
+19. Account status = `users.is_active` + SoftDeletes `deleted_at`. There is no
+    "suspended" state; never invent one.
+20. `App\Support\AccessControl\ActiveAccountResolver` is the ONE definition of a
+    usable account: persisted row, `is_active`, not soft-deleted, re-read from the
+    database. `ClinicVisitActorGuard` and `RmeBillingActorGuard` delegate to it;
+    nothing else may restate `where('is_active', true)` for an actor (a test pins the
+    three consumers).
+21. Login form: `LoginRequest` uses `Auth::attemptWhen`; the "Akun Anda tidak aktif"
+    message is shown only after the password is proven. Wrong password, unknown
+    address and soft-deleted account keep the generic `auth.failed`. A refused
+    inactive attempt counts against the rate limiter.
+22. Live session: `EnsureAccountIsActive` (appended to `web`, second after
+    `EnsureDoctorSessionLease`, before `TouchOnlineContextLastSeen` and
+    `EnsureRmeOnlineContext`) re-reads the account on every authenticated request.
+    A deactivated account is stopped BEFORE any controller: presence dropped (room
+    freed), its doctor lease released (`account_inactive`), one PII-free audit row
+    (`INACTIVE_ACCOUNT_SESSION_TERMINATED`, entity `users`), logout (cycles the
+    remember token → every remember-me cookie of the account dies), session
+    invalidated, CSRF token rotated; redirect to login (JSON: 401). Bookkeeping
+    failures are reported, never turned into a 500, never leave the session alive.
+23. NEVER name a middleware method `terminate()` unless it is a terminable hook: the
+    HTTP kernel calls `terminate($request, $response)` on every middleware after
+    every response, whatever its visibility (found here: a private `terminate()`
+    turned every request into a 500).
+24. Remember-me: a cookie of a deactivated account is torn down by §22 on the
+    restoring request; a soft-deleted account is never restored (provider scope).
+25. Android app login (`DoctorAppLoginService`) refuses a deactivated ACCOUNT even
+    when its doctor record is active (`account_inactive`, after the password, before
+    anything is written); ticket redemption re-checks it. Both browser WebAuthn
+    completions (`DoctorDeviceWebAuthnLoginService` and
+    `FrontOfficeDeviceWebAuthnLoginService::completeLogin`) re-check it before
+    anything is written, because an account can be deactivated between the password
+    step and the fingerprint. Any NEW login path must do the same.
+26. Permission or role revoked from an active account takes effect on the next
+    request: the session holds only the id and the user, roles and permissions are
+    re-read per request (Spatie flushes its cache through its own API; a raw SQL
+    edit of `role_has_permissions` needs `permission:cache-reset`).
+27. Branch authority: a context-bound account whose working branch is deactivated,
+    not RME-enabled, or whose context ended gets an EMPTY scope (fail closed). The
+    doctor branch lock, temporary cover and FO pin are unchanged.
+28. Not affected: guest pages, `/login`, health endpoints, the stateless device API
+    group, webhooks outside `web`. Doctor trusted-device, WebAuthn, branch-lock and
+    single-session flags are NOT changed by this rule.
+
+## F. Preserved (regression-verified)
+29. Invoice and payment explicit actor (rules 197/198), manual pricing D21 (rule
+    194), D10 payment block, invoice-version binding, immutable snapshots, financial
+    audit, receivable totals.
+30. SPN4 correction pilot: maker user 29, checker user 1, SPN4 only (rules 195–197).
+31. Doctor device/branch restrictions (rules 138, 143, 154, 160) and RME clinical
+    integrity (consent gate, room gate, SOAP hidden).
+32. Feature flags: none added, none changed.
+
+## G. Data confidentiality and audit
+33. Audit payloads carry ids and reason codes only — never a name, e-mail, NIK,
+    clinical text or session id. A terminated session writes exactly one row; the
+    next request is a guest and writes nothing.
+34. The patient picker and the payment screen never reveal another branch's
+    invoices, payments or cash data.
+
+## H. Concurrency
+35. PostgreSQL proves the prior-visit FOR SHARE lock
+    (`ClinicVisitRegistrationConcurrencyTest`, skips off PostgreSQL — never passes).
+    Payment loops keep their invoice row locks; lock order unchanged.
+
+## I. Verification, release, rollback
+36. CI: tokens `ActiveAccountSession|ClinicVisitPatientSelection|CrossBranchKontrol|
+    ClinicVisitRegistrationConcurrency|PatientOutstandingReceivableCarryOver|
+    RmeControlVisitReceivableCarryOverPayment` in BOTH critical-gate variants; the six
+    suites declared in `config/ci_runner.php` `critical_gate_mandatory_suites`.
+37. Deploy only via `scripts/deploy-vps-runner.sh` executed INSIDE the VPS; complete
+    only at `exit=0` + `DEPLOY OK` + `DEPLOY_HEAD_TARGET_MATCH=YES`. No migration.
+38. Production verification is read-only (code fingerprint, routes, flags, pilot
+    config, clinical + financial fingerprint). Never deactivate a real account,
+    create a patient/visit, or impersonate a doctor to produce evidence.
+39. Rollback: `scripts/rollback-vps.sh audit-rme-clinic-visit-branch-authority-1-go`;
+    no data to restore. Never "fix" a post-deploy access problem by removing an
+    is_active check or widening a branch query.
+40. GO acceptance: suites green on SQLite and PostgreSQL 16, mutation with no
+    actionable survivor, independent security review with no unresolved
+    CRITICAL/HIGH, required CI green on the exact candidate, merge verified,
+    deploy OK, production verification PASS. The GO tag is SCOPED to this
+    hardening; it never certifies the invoice correction pilot (rule 196 ladder).
+41. Cleanup: task worktree, test containers, scratch files and background runs
+    removed; nothing pre-existing touched.
+
+## J. Superseded in part (historical text kept in each rule)
+42. Rule 197 §24 ("carry-over parents … NOT re-scoped … cross-branch collection
+    contract") → superseded by OD-1a (§A2, §B9).
+43. Rule 198 §30a and rule 199 §24/§27c (no per-request `is_active` enforcement)
+    → closed by §E22. Rule 199 §27 (create() did not re-assert selectability) →
+    closed by §C. Rule 199 §16 (OD-1 open) → decided (§A1). Rule 199 §14a
+    (strip-list on update) → replaced by the allow-list (§D18).

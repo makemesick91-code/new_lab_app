@@ -206,6 +206,18 @@ class ClinicVisitRepository implements ClinicVisitRepositoryInterface
             ->find($id);
     }
 
+    public function findForRegistrationLink(array $branchIds, int $id, bool $sharedLock = false): ?ClinicVisit
+    {
+        if ($branchIds === []) {
+            return null;
+        }
+
+        return ClinicVisit::query()
+            ->whereIn('branch_id', $branchIds)
+            ->when($sharedLock, fn ($query) => $query->sharedLock())
+            ->find($id);
+    }
+
     public function adjacentVisitsForPatient(
         array $branchIds,
         ClinicVisit $visit,

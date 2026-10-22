@@ -7,6 +7,7 @@ use App\Console\Commands\PruneInventoryAnalyticsSummaryCommand;
 use App\Console\Commands\RefreshInventoryAnalyticsSummaryCommand;
 use App\Exceptions\ForbiddenProductionCommandException;
 use App\Http\Middleware\AttachRequestCorrelationContext;
+use App\Http\Middleware\EnsureAccountIsActive;
 use App\Modules\ClinicVisit\Middleware\EnsureVisitRoomAssigned;
 use App\Modules\DoctorAccess\Middleware\EnsureDoctorSessionLease;
 use App\Modules\DoctorDevice\Middleware\EnsureDoctorDeviceSession;
@@ -93,6 +94,15 @@ return Application::configure(basePath: dirname(__DIR__))
             // Prepending is impossible: group prepends land before
             // StartSession, where there is no session and no user.
             EnsureDoctorSessionLease::class,
+            // HARDENING-RME-ACTIVE-USER-PATIENT-SELECTION-1 (rule 200) — a
+            // session of an account deactivated since it logged in (or a
+            // remember-me cookie restoring one) is torn down here, before the
+            // presence touch below could refresh it and before the context
+            // gate could redirect it to the branch selector. Second, not first:
+            // the lease middleware above keeps its documented first place, and
+            // for a deactivated doctor the order between the two is immaterial
+            // — this one releases the lease either way.
+            EnsureAccountIsActive::class,
             TouchOnlineContextLastSeen::class,
             EnsureRmeOnlineContext::class,
             // REVISION-DOCTOR-AUTO-DEVICE-APPROVAL-APP-ONLY-LOGIN-1 — session

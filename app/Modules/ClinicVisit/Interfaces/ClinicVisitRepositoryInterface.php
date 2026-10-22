@@ -75,6 +75,16 @@ interface ClinicVisitRepositoryInterface
     public function findByIdInBranches(array $branchIds, int $id): ?ClinicVisit;
 
     /**
+     * HARDENING-RME-ACTIVE-USER-PATIENT-SELECTION-1 — the prior visit a new
+     * registration links to, inside the given branch set (soft-deleted visits
+     * excluded). With `$sharedLock` the row is read FOR SHARE so it cannot be
+     * soft-deleted or re-pointed until the registering transaction ends.
+     *
+     * @param  array<int, int>  $branchIds
+     */
+    public function findForRegistrationLink(array $branchIds, int $id, bool $sharedLock = false): ?ClinicVisit;
+
+    /**
      * Resolve the previous/next visit for the same patient, scoped to the given
      * RME branches and ordered chronologically by (visit_date, id). Used for the
      * prev/next arrow navigation on the RM and Odontogram pages (Sprint 59).
