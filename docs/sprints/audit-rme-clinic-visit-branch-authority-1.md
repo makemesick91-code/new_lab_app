@@ -236,3 +236,56 @@ Existing suites updated, each for a stated reason:
    model without a row lock (pre-existing; the payment service holds its own lock).
 10. `show`/`edit` of a visit still render for a deactivated account with a live
     session (policy-only surfaces; rule 198 §30a).
+
+## 13. Release evidence (2026-10-22)
+
+| Item | Value |
+|---|---|
+| PR | #505, squash-merged |
+| Candidate (PR head) | `1e6cb5ac81d3eff10225cd6c3287e6ab62cc40f3` |
+| Merge SHA (runtime authority) | `3f0ec80994255db958c85e58535e8d0e6fd0281a` |
+| Merge tree = candidate tree | `cee85ecfa187fa6948f2ed5cd5551d262615d2ad` (identical) |
+| Base before merge | `a98af8fc` (unchanged between fetch and merge) |
+| CI on the exact candidate | run `39750555920` — success. Classifier, NSF-R012 Quality, NSF-R011 Critical (**6214 passed / 32532 assertions**, `critical_test_exit_status=0`, `PASS Tests\Feature\RME\ClinicVisitBranchAuthorityTest` present in the log), Selective Module, NSF-9, NSF-10, Phase 3 Android all green; the second Critical row is the inactive runner variant |
+| Full Suite | **SKIPPED** — PR event not enabled; post-merge push run `39763673131` classifier `full_suite_authorized=false`, reason `TEMPORARY_FULL_SUITE_POLICY_ACTIVE`. Not claimed as passed |
+| Deploy | `bash scripts/deploy-vps-runner.sh start` executed **inside** the VPS; `exit=0`, `DEPLOY OK: 20261022-103114`, `DEPLOY_TARGET_PINNED=3f0ec809…`, `DEPLOY_HEAD_TARGET_MATCH=YES`, `DEPLOY_SNAPSHOT_CLEANED=YES`, `Nothing to migrate.`, runtime isolation 70 GO / 0 FAIL / 0 SKIP, auth landing smoke GO |
+| Deploy smoke warning | `SMOKE-HTTP-HEALTH` `http://127.0.0.1/login` 404 — the known co-tenant loopback shadow; the canonical domain answers 200 |
+| GO tag | `audit-rme-clinic-visit-branch-authority-1-go` (annotated) → `3f0ec809`; `git describe --tags --exact-match HEAD` on the VPS returns it. `fix-rme-invoice-branch-scope-explicit-actor-1-go` still → `f0044fd6` (untouched) |
+
+### Production verification (read-only)
+
+No visit, patient, invoice or payment was created; no service was called for a real
+account; no REPL was opened.
+
+| Check | Before deploy | After deploy |
+|---|---|---|
+| HEAD / tree | `f0044fd6` / `adad24bf` | `3f0ec809` / `cee85ecf` |
+| Changed runtime files (md5 vs the merge commit) | — | 6 / 6 OK |
+| Ambient reads in `ClinicVisitService` (comment-stripped) | 8 + BranchContext | none |
+| `clinic_room_id` / `doctor_id` rules in `UpdateClinicVisitRequest` | present | none |
+| Clinical/financial counts (visits, MR, invoices, payments, patients, audit, corrections, failed jobs) | 9 / 7 / 7 / 8 / 1522 / 1601 / 0 / 0 | identical |
+| Visits / invoices / payments row fingerprints (md5 over id, status, room, doctor, totals, updated_at) | `452d8268…` / `70aa25c8…` / `74cdd66f…` | identical |
+| Feature flags (37) | captured | 0 changed (`rme.invoice_correction` true, `doctor.single_active_session` true, `doctor.branch_lock` false, SATUSEHAT off) |
+| Correction pilot (`rme:invoice-correction-readiness --maker=29 --checker=1`) | SPN4, identities valid, pair VALID, WATCH (maker off shift) | identical |
+| Health over `https://daengtisia.online` | `/login` `/health/live` `/health/ready` `/health/lb` 200 | 200 ×4; `/rme/visits`, `/rme/dashboard` guest 302 |
+| `laravel.log` | 1 437 201 B, last write 2026-10-09 | unchanged → **0 new errors** |
+| Services | — | php8.3-fpm, nginx, queue worker active; `APP_ENV=pilot`, `APP_DEBUG=false` |
+
+The behaviour change (empty scope for an unusable actor, refusals for the picker,
+dashboard narrowing, ignored room/doctor on edit) is proven by the test suite, not
+by exercising production with real accounts — by design (calling the service for a
+context-bound account can update an expired online-context row).
+
+### Cleanup
+
+Task-owned resources removed: the PostgreSQL 16.15 test container and its
+anonymous data volume (identified by creation time 08:26 UTC matching the
+container start, and by holding exactly the system databases plus `cvba_test`),
+the pristine base worktree used to prove pre-existing failures, the query-count
+probe files, the two VPS `/tmp` fingerprint files. Left untouched: VPS
+`storage/runtime-home/` (untracked, predates this task); an older dangling PG16
+volume that cannot be shown to be task-owned; other worktrees, branches and
+stashes.
+
+**Status:** scoped security fix GO. `FULL_PILOT_GO` NOT claimed; the GO tag does not
+certify the invoice correction pilot. OD-1 (cross-branch Kontrol) remains open.

@@ -165,3 +165,7 @@ change what the shared resolver answers for null.
     branch check.
 32. The GO tag is SCOPED to this security fix; it never certifies the correction
     pilot (rule 196 ladder).
+33. Released: merge `3f0ec809`, GO tag `audit-rme-clinic-visit-branch-authority-1-go`,
+    deployed 2026-10-22 with production fingerprint identical before/after. Its
+    rollback target is therefore `audit-rme-clinic-visit-branch-authority-1-go`'s
+    predecessor `fix-rme-invoice-branch-scope-explicit-actor-1-go` (item 31).
