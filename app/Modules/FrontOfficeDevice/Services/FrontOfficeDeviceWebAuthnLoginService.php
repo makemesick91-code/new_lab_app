@@ -13,6 +13,7 @@ use App\Modules\DoctorDevice\Support\WebAuthnCeremonyFactory;
 use App\Modules\DoctorDevice\Support\WebAuthnDeviceBinding;
 use App\Modules\DoctorDevice\Support\WebAuthnRelyingParty;
 use App\Modules\LabOrder\Services\AuditLogService;
+use App\Support\AccessControl\ActiveAccountResolver;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
@@ -247,6 +248,14 @@ class FrontOfficeDeviceWebAuthnLoginService
     public function completeLogin(User $user, Request $request, array $credentialPayload): User
     {
         $this->assertArmed($user);
+
+        // HARDENING-RME-ACTIVE-USER-PATIENT-SELECTION-1 (rule 200) — the
+        // password step proved an ACTIVE account, but it may have been
+        // deactivated during the ceremony. Re-read it before anything is
+        // written or a session is opened.
+        if (! app(ActiveAccountResolver::class)->isUsable($user)) {
+            $this->deny(null, $user, 'account_inactive');
+        }
 
         $relyingParty = WebAuthnRelyingParty::fromConfig();
         $relyingParty->assertUsable();

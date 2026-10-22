@@ -1,43 +1,50 @@
-# AUDIT-RME-CLINIC-VISIT-BRANCH-AUTHORITY-1
+# HARDENING-RME-ACTIVE-USER-PATIENT-SELECTION-1
 #
-# Security audit of ClinicVisitService actor/branch authority, with the fix the
-# audit proved necessary. Closes rule 198 §31.
+# Three objectives, one release (rule 200):
 #
-# Reproduced on the unmodified base (a98af8fc):
-#   - LATENT: ClinicVisitService read Auth::user() in 8 places + BranchContext in
-#     one dead method. With no session the visit list, queue, counts and branch
-#     selector answered EVERY RME branch (branchIdsFor(null)); the ambient session
-#     decided scope; "Selesai Pemeriksaan" skipped the clinical check for a null
-#     user; create() failed only at the database.
-#   - EXPLOITABLE over HTTP: rme.visits.patient-options authorized viewAny only,
-#     so a Kasir pinned to branch A read branch B patient visit history (200);
-#     the RME dashboard summed payments/receivables over every RME branch for a
-#     context-bound operator and honored ?branch_id= for any branch.
+#   A. Active accounts. A deactivated account stops everywhere: login form
+#      (Auth::attemptWhen, inactive message only after the password is proven),
+#      live web session (EnsureAccountIsActive in the `web` group, before any
+#      controller: presence dropped, doctor lease released, one PII-free audit
+#      row, logout + invalidate), remember-me cookie, Android app login and
+#      ticket redemption. ONE definition of a usable account
+#      (App\Support\AccessControl\ActiveAccountResolver), shared by the clinic
+#      visit and RME billing actor guards. Closes rule 198 §30a and rule 199
+#      §24 / §27c.
 #
-# Runtime changes:
-#   - ClinicVisitActorGuard: one clinic-visit actor authority (persisted, active,
-#     not deleted; ClinicVisitPolicy abilities asked of the persisted row).
-#   - Every actor-dependent ClinicVisitService method takes a non-nullable
-#     explicit User actor; transitionStatus keeps a nullable actor only for the
-#     cashier-owned `completed` transition (RmePaymentService).
-#   - patient-options requires `create` + PatientSelectorSearchService::isSelectable.
-#   - RME dashboard + visit-list medical-record widgets use
-#     ClinicVisitService::scopedBranchIdsFor($request->user()).
-#   - Dead find() (BranchContext, 0 callers) removed.
+#   B. Patient selection. ClinicVisitService::create() re-asserts patient,
+#      prior-visit and doctor selection through ClinicVisitRegistrationGuard —
+#      the ONE rule source StoreClinicVisitRequest now also consults. The prior
+#      visit is read FOR SHARE inside the registering transaction. Registration
+#      never writes a room; the visit edit is an allow-list. Closes rule 199 §27.
 #
-# No migration. No permission, role, route or feature-flag change. No owner
-# decision taken (cross-branch Kontrol picker recorded as open owner decision
-# OD-1). Rule 199. Invoice/payment explicit actor, correction service, SPN4 pilot,
-# maker 29 / checker 1, D10, invoice-version binding and manual pricing D21
-# untouched.
+#   C. Owner decision OD-1 (2026-10-22, "pasien bisa kontrol lintas cabang
+#      bahkan dengan dokter berbeda"): cross-branch AND cross-doctor Kontrol
+#      allowed and pinned. OD-1a (owner answer, 2026-10-22, "Hanya piutang B"):
+#      carry-over receivables are discovered and collected only at the paying
+#      visit's own branch. Supersedes rule 197 §24.
 #
-# Type SECURITY_FIX: authorization fix in ClinicVisit (+ RmeDashboard caller and
-# MedicalRecord count signature), audit level 3. security_impact true.
+# No migration. No permission, role, route, RoleSeeder or feature-flag change.
+# Invoice/payment explicit actor, manual pricing D21, D10, invoice-version
+# binding, SPN4 correction pilot (maker 29 / checker 1) and doctor trusted
+# device / WebAuthn / branch lock / single session untouched.
+#
+# Type FOUNDATION_SPRINT (audit level 3, full foundation audit, rollback and
+# evidence required — same depth as SECURITY_FIX). First declared SECURITY_FIX;
+# `sprint:scope-audit` returned NO-GO because SECURITY_FIX forbids a change of
+# more than 10 code files ("looks like a refactor, not a scoped fix"). The
+# verdict is correct: this is not a scoped fix. It installs an application-wide
+# authentication foundation (one account-usability definition + a middleware on
+# every web request) and touches four modules (ClinicVisit, RmeInvoice,
+# DoctorDevice, DoctorAccess) plus app/Support and app/Http. FOUNDATION_SPRINT
+# is the profile that describes that ("cross-module / shared-foundation work");
+# no gate is lowered, and the security regression suites run regardless.
+# security_impact true.
 
-id: AUDIT-RME-CLINIC-VISIT-BRANCH-AUTHORITY-1
-type: SECURITY_FIX
+id: HARDENING-RME-ACTIVE-USER-PATIENT-SELECTION-1
+type: FOUNDATION_SPRINT
 module: ClinicVisit
-title: "Clinic visit authority from the explicit actor (no ambient Auth::user()); prior-visit picker and RME dashboard branch-scoped"
+title: "Deactivated accounts stop everywhere; visit registration re-asserts patient, prior-visit and doctor at the service; OD-1 cross-branch Kontrol with branch-local carry-over"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 runtime_change: true
 schema_change: false
@@ -47,7 +54,7 @@ branch_isolation_impact: true
 ledger_impact: false
 deploy_required: true
 browser_required: false
-test_profiles: [rme, clinic_visit, cashier, permission]
-go_tag: audit-rme-clinic-visit-branch-authority-1-go
-inherits_parent_go: fix-rme-invoice-branch-scope-explicit-actor-1-go
+test_profiles: [rme, clinic_visit, cashier, permission, auth]
+go_tag: hardening-rme-active-user-patient-selection-1-go
+inherits_parent_go: audit-rme-clinic-visit-branch-authority-1-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1

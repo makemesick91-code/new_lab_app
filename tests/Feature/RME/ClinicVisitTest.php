@@ -168,6 +168,11 @@ it('auto-generates visit_number in VIS-BRANCHCODE-YYYYMMDD-NNN format', function
 });
 
 it('rejects invalid patient, doctor, or room', function () {
+    // HARDENING-RME-ACTIVE-USER-PATIENT-SELECTION-1 (rule 200) — SUPERSEDED IN
+    // PART: registration no longer accepts `clinic_room_id` at all (a room is
+    // placed only through rme.visits.assign-room), so an invalid room is no
+    // longer a validation error here — it is simply not a registration field,
+    // and the service drops it as well. The other three refusals are unchanged.
     $this->actingAs($this->manager)
         ->from(route('rme.visits.create'))
         ->post(route('rme.visits.store'), [
@@ -176,7 +181,8 @@ it('rejects invalid patient, doctor, or room', function () {
             'doctor_id' => 99999,
             'clinic_room_id' => 99999,
         ])
-        ->assertSessionHasErrors(['clinic_id', 'patient_id', 'doctor_id', 'clinic_room_id']);
+        ->assertSessionHasErrors(['clinic_id', 'patient_id', 'doctor_id'])
+        ->assertSessionDoesntHaveErrors('clinic_room_id');
 });
 
 it('uses the selected RME branch as the visit branch (Klinik = Cabang RME)', function () {

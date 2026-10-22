@@ -1,7 +1,9 @@
 # RME billing correction — owner decision register
 
 This is the living register of the owner decisions that govern RME invoice
-correction, price authority, payment and refund. It supersedes, for the
+correction, price authority, payment and refund — and, since 2026-10-22, the
+clinic-visit decision OD-1, recorded here because it fixes which branch owns a
+Kontrol's invoice and payments. It supersedes, for the
 decisions it records, the "all PENDING" register in
 `docs/sprints/feature-rme-invoice-correction-receipt-foundation-1.md` §3, which
 stays as the historical record of what was true at that release.
@@ -31,6 +33,8 @@ A decision is only as far along as the last label that is evidenced. A brief's
 | 2026-10-21 | **D1c — pilot scope: SPN4 (Cabang Sunu) only**, server-side allowlist, fail-closed | `OWNER_POLICY_APPROVED` | same |
 | 2026-10-21 | **D1d — pilot accounts: maker user 29 (Admin Sunu), checker user 1 (IT Support, Super Admin)** | `OWNER_POLICY_APPROVED` | same |
 | 2026-10-21 | **D1e — pilot IDENTITY RESTRICTION: only user 29 may submit; only user 1 may approve/reject; every other account denied** (narrows D1b inside the pilot; D1d becomes an enforced allowlist) | `OWNER_POLICY_APPROVED`, `REPOSITORY_POLICY_RECORDED`, `TECHNICAL_ENFORCEMENT_DEPLOYED` (runtime `f66c6c2a`) | owner instruction in `HARDENING-RME-INVOICE-CORRECTION-PILOT-IDENTITY-PAYMENT-ACTOR-1` |
+| 2026-10-22 | **OD-1 — cross-branch AND cross-doctor Kontrol allowed** | `OWNER_POLICY_APPROVED`, `REPOSITORY_POLICY_RECORDED` (enforcement label added only with deploy evidence) | owner instruction in `HARDENING-RME-ACTIVE-USER-PATIENT-SELECTION-1` |
+| 2026-10-22 | **OD-1a — another branch's receivable is neither shown nor collected at this branch** (supersedes rule 197 §24) | `OWNER_POLICY_APPROVED`, `REPOSITORY_POLICY_RECORDED` (enforcement label added only with deploy evidence) | owner answer to the sprint's question, `HARDENING-RME-ACTIVE-USER-PATIENT-SELECTION-1` |
 
 The earlier D21 text is kept below, marked SUPERSEDED, as the record of what was
 decided and enforced between 2026-10-17 and 2026-10-20. It is never deleted.
@@ -324,6 +328,62 @@ pre-payment correction — a classification, never an approval:
   total; historical Rp0 invoices are untouched; the dedicated Rp0 adjustment (rule
   188 §12) is not built. Production's only UNPAID invoice on 2026-10-21 is an Rp0
   legacy invoice (id 36): it is not a correction case.
+
+### OD-1 — Cross-branch and cross-doctor Kontrol — `OWNER_POLICY_APPROVED`, `REPOSITORY_POLICY_RECORDED`
+
+Owner wording, verbatim (2026-10-22, brief of
+`HARDENING-RME-ACTIVE-USER-PATIENT-SELECTION-1`):
+
+> "pasien bisa kontrol lintas cabang bahkan dengan dokter berbeda"
+
+Status labels: `CROSS_BRANCH_CONTROL = APPROVED`, `CROSS_DOCTOR_CONTROL = APPROVED`.
+This register holds no approval reference, timestamp or signature beyond the
+wording above; none is invented. The question had been recorded as OPEN in
+`docs/sprints/audit-rme-clinic-visit-branch-authority-1.md` §7 (rule 199 §16).
+
+Required behaviour (rule 200):
+
+| # | Rule |
+|---|---|
+| 1 | Patient identity is global (rule 101); a Kontrol never creates a duplicate patient. |
+| 2 | The prior visit may belong to ANOTHER branch. |
+| 3 | The prior visit's doctor may differ from the new visit's doctor. |
+| 4 | The new Kontrol visit belongs to the branch where the patient now receives care — the registrar's working branch, never the prior visit's branch. |
+| 5 | The new visit's doctor must be authorized for the new visit (online at the visit branch, or resolved from the treatment room); it is never inherited from the prior visit. |
+| 6 | The prior visit is not changed. |
+| 7 | The prior visit's RME (medical record, consent, odontogram) is not changed. |
+| 8 | The prior visit's invoice and payments stay with their original branch. |
+| 9 | The new invoice and its payments belong to the new visit's branch. |
+| 10 | A cross-branch reference grants no archive access: history is shown through the existing clinical authorization only; the registration picker returns only what a choice needs. |
+| 11 | Cross-branch history display respects the existing clinical authorization (rule 199 §15). |
+| 12 | Security-relevant refusals are audited through the existing audit trail. |
+
+#### OD-1a — another branch's receivable is not shown or collected here — `OWNER_POLICY_APPROVED`, `REPOSITORY_POLICY_RECORDED`
+
+Rule 197 §24 had recorded the Sprint 62.2 receivable carry-over as a
+"cross-branch collection contract". That conflicted with OD-1 rules 8–9 and with
+the cashier branch scope of rule 197 (FIX-03), so the owner was asked during the
+sprint (2026-10-22) and answered, verbatim, with the option:
+
+> "Hanya piutang B (Recommended)" — Kasir B hanya melihat & menagih tagihan
+> Cabang B. Piutang Cabang A tidak tampil di layar kasir B dan tetap ditagih di
+> Cabang A.
+
+Policy: a patient's unpaid balance at another branch is NOT shown on, and NOT
+collectable from, a payment taken at this branch; it remains that branch's
+receivable, collected there. **Supersedes rule 197 §24.** Before rule 200 the
+control-chain and receivable carry-over discovered every RME branch, so a
+branch-B Kontrol payment was FIFO-allocated into branch A's invoice (booked to
+branch A by a branch-B cashier) and branch A's invoice was shown to that cashier;
+production held 0 such cases (read-only check, 2026-10-22). Collecting another
+branch's debt would need a new owner decision and a cash-transfer policy.
+
+Technical enforcement: `ClinicVisitRegistrationGuard` (prior-visit link checks
+patient identity only — never branch or doctor equality),
+`ClinicVisitService::create()` re-asserts it, and `RmeControlReceivableService`
+limits carry-over to the paying visit's branch. `TECHNICAL_ENFORCEMENT_DEPLOYED`
+is claimed only once the release that carries it is merged, deployed and verified
+on production (sprint doc §Release evidence).
 
 ## Pending decisions (unchanged)
 

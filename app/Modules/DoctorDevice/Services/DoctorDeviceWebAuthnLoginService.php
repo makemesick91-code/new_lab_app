@@ -15,6 +15,7 @@ use App\Modules\DoctorDevice\Support\WebAuthnDeviceBinding;
 use App\Modules\DoctorDevice\Support\WebAuthnRelyingParty;
 use App\Modules\LabOrder\Services\AuditLogService;
 use App\Services\Foundation\FeatureFlagService;
+use App\Support\AccessControl\ActiveAccountResolver;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
@@ -227,6 +228,14 @@ class DoctorDeviceWebAuthnLoginService
         // there is nothing to unlock and no reason to mint a device binding.
         if (! $this->gate->enforcementEnabled()) {
             $this->deny(null, $user, 'enforcement_disabled');
+        }
+
+        // HARDENING-RME-ACTIVE-USER-PATIENT-SELECTION-1 (rule 200) — the
+        // password step proved an ACTIVE account, but it may have been
+        // deactivated while the doctor was at the sensor. Re-read it before
+        // anything is written or a session is opened.
+        if (! app(ActiveAccountResolver::class)->isUsable($user)) {
+            $this->deny(null, $user, 'account_inactive');
         }
 
         $relyingParty = WebAuthnRelyingParty::fromConfig();

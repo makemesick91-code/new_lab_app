@@ -65,6 +65,7 @@ class ClinicVisitService
     public function __construct(
         private readonly ClinicVisitRepositoryInterface $visits,
         private readonly ClinicVisitActorGuard $actors,
+        private readonly ClinicVisitRegistrationGuard $registration,
         private readonly PatientService $patients,
         private readonly BranchService $branches,
         private readonly UserOnlineContextService $onlineContext,
@@ -343,16 +344,62 @@ class ClinicVisitService
         // transaction around create(); the controller calls it directly.
         $branchId = $this->resolveBranchId($data, $registrar);
 
+        // HARDENING-RME-ACTIVE-USER-PATIENT-SELECTION-1 (rule 200) — the
+        // selection rules the form applies are re-asserted here, against the
+        // explicit registrar, through the ONE shared rule source. Read-only, so
+        // a refusal before the transaction writes nothing.
+        //
+        // A room is NEVER written at registration: it comes only from
+        // assignRoom(), where the same-branch / active-room / doctor-from-room
+        // rules live (rule 199 §14a, now also for creation).
+        unset($data['clinic_room_id']);
+        $data = $this->registration->resolveDoctor($registrar, $data, $branchId);
+
+        if (($data['patient_mode'] ?? 'existing') === 'new') {
+            // A new-patient registration skips the selectability check, so it
+            // must really create the patient: no patient_id rides along, and a
+            // new-patient payload that cannot create one is refused rather than
+            // falling through to an existing patient (security review, LOW).
+            unset($data['patient_id']);
+
+            if (! is_array($data['new_patient'] ?? null)) {
+                throw ValidationException::withMessages(['new_patient' => 'Data pasien baru wajib diisi.']);
+            }
+
+            // A new patient can never carry a prior visit; refused before the
+            // patient row is created.
+            $this->registration->assertFollowUpLink($data);
+        }
+
         return DB::transaction(function () use ($data, $branchId, $registrar) {
             $data['branch_id'] = $branchId;
 
-            $data = $this->resolvePatient($data);
+            $isExistingPatient = ($data['patient_mode'] ?? 'existing') !== 'new';
 
             // FEATURE-PATIENT-DUPLICATE-RESOLUTION-MERGE-1 — no new visit on a
             // merged patient. Re-read under FOR SHARE so a registration racing
             // a merge queues behind the merge's row lock and then sees the
             // committed merged state, instead of landing on the emptied row.
-            $this->mergeGuard->assertNotMergedLocked((int) $data['patient_id']);
+            // For an existing patient it runs BEFORE the selectability check
+            // (rule 200), so a merged patient keeps the merge guard's own,
+            // more useful message.
+            if ($isExistingPatient) {
+                $this->mergeGuard->assertNotMergedLocked((int) ($data['patient_id'] ?? 0));
+                $this->registration->assertPatientSelectable($registrar, $data);
+            }
+
+            $data = $this->resolvePatient($data);
+
+            if (! $isExistingPatient) {
+                $this->mergeGuard->assertNotMergedLocked((int) $data['patient_id']);
+            }
+
+            // The prior visit (OD-1: same patient, any RME branch, any doctor),
+            // read FOR SHARE so it cannot be soft-deleted or re-pointed between
+            // this check and the insert that references it.
+            if ($isExistingPatient) {
+                $this->registration->assertFollowUpLink($data, lock: true);
+            }
 
             unset($data['branch_id']);
 
@@ -711,17 +758,27 @@ class ClinicVisitService
         return $data;
     }
 
+    /**
+     * The only fields the visit edit may change — exactly what
+     * UpdateClinicVisitRequest accepts.
+     *
+     * HARDENING-RME-ACTIVE-USER-PATIENT-SELECTION-1 (rule 200) — an ALLOW-list,
+     * replacing rule 199's strip-list. Status moves only through
+     * transitionStatus(); room and doctor only through assignRoom(); and the
+     * patient, the prior-visit link, the branch, the visit type and the
+     * numbering are fixed at registration, where their selection rules are
+     * enforced. A strip-list left those identity columns writable by any
+     * non-HTTP caller (re-pointing a visit to another patient, or linking it to
+     * another patient's history); an allow-list cannot grow a hole when a column
+     * is added.
+     */
+    public const EDITABLE_FIELDS = ['chief_complaint', 'initial_treatment_id', 'initial_service_note'];
+
     public function update(ClinicVisit $visit, array $data, User $actor): ClinicVisit
     {
         $this->assertVisitActor($actor, 'update', $visit);
 
-        // Status moves only through transitionStatus(); room and doctor only
-        // through assignRoom(), which enforces the same-branch active room, the
-        // terminal-visit refusal and "the doctor comes from the room". Stripped
-        // here as well as in UpdateClinicVisitRequest so a non-HTTP caller
-        // cannot bypass those rules either (AUDIT-RME-CLINIC-VISIT-BRANCH-
-        // AUTHORITY-1, found by the independent security review).
-        unset($data['status'], $data['clinic_room_id'], $data['doctor_id']);
+        $data = array_intersect_key($data, array_flip(self::EDITABLE_FIELDS));
 
         return DB::transaction(fn () => $this->visits->update($visit, $data));
     }

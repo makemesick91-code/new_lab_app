@@ -34,6 +34,7 @@ use App\Modules\DoctorDevice\Services\DoctorDeviceWebAuthnLoginService;
 use App\Modules\DoctorDevice\Support\WebAuthnRelyingParty;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Blade;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Schema;
 use Symfony\Component\Console\Output\BufferedOutput;
@@ -376,6 +377,32 @@ it('completes a doctor login from an approved device and binds the session', fun
         // revocation work for this session through existing machinery.
         ->and(session(DoctorAppLoginGate::SESSION_DEVICE_ID))->toBe($fixture['device']->id)
         ->and(session(DoctorAppLoginGate::SESSION_DOCTOR_ID))->toBe($fixture['doctor']->id);
+});
+
+it('refuses to complete a webauthn login for an account deactivated during the ceremony', function () {
+    // HARDENING-RME-ACTIVE-USER-PATIENT-SELECTION-1 (security review LOW):
+    // the password step passed while the account was active; an administrator
+    // deactivates it while the doctor is at the fingerprint sensor.
+    $fixture = waClinicFixture();
+    ['authenticator' => $authenticator] = waEnroll($fixture['device']);
+    waFlags(enforcement: true, webauthn: true);
+
+    $step = waReachAssertionStep($fixture, $authenticator);
+
+    DB::table('users')->where('id', $fixture['user']->id)->update(['is_active' => false]);
+
+    post(route('doctor-device-webauthn.store'), [
+        'credential' => $authenticator->assertion($step['challenge'], (string) $fixture['device']->uuid),
+    ])->assertSessionHasErrors('credential');
+
+    $audit = DB::table('sys_audit_logs')
+        ->where('action', 'DOCTOR_DEVICE_WEBAUTHN_LOGIN_REJECTED')
+        ->latest('id')->first();
+
+    expect(auth()->check())->toBeFalse()
+        ->and(json_decode((string) $audit?->new_values, true)['reason'] ?? null)->toBe('account_inactive')
+        ->and(DB::table('sys_audit_logs')->where('action', 'DOCTOR_DEVICE_WEBAUTHN_LOGIN_SUCCESS')->exists())->toBeFalse()
+        ->and(DoctorDeviceWebAuthnCredential::query()->where('doctor_device_id', $fixture['device']->id)->value('last_used_at'))->toBeNull();
 });
 
 it('stamps the authorization it used on a successful webauthn login', function () {

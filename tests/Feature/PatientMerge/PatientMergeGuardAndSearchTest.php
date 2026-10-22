@@ -1,8 +1,10 @@
 <?php
 
 use App\Models\User;
+use App\Modules\Branch\Models\Branch;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\ClinicVisit\Services\ClinicVisitService;
+use App\Modules\Doctor\Models\Doctor;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\Patient\Services\PatientSelectorSearchService;
@@ -76,6 +78,13 @@ it('refuses a new visit, an identity edit or a deletion on a merged patient (ser
     expect(fn () => app(PatientService::class)->delete($source))->toThrow(ValidationException::class);
     expect(fn () => app(PatientService::class)->activate($source))->toThrow(ValidationException::class);
 
+    // HARDENING-RME-ACTIVE-USER-PATIENT-SELECTION-1 (rule 200) — the service
+    // now re-asserts the doctor rule the form always applied (online at the
+    // visit branch). The doctor is put online so the refusal asserted here is
+    // the MERGE guard's, not an earlier one: a bare toThrow(ValidationException)
+    // would otherwise pass for the wrong reason.
+    rmeMakeDoctorOnline(Doctor::query()->findOrFail($source->doctor_id), Branch::query()->findOrFail($source->branch_id));
+
     expect(fn () => app(ClinicVisitService::class)->create([
         'patient_mode' => 'existing',
         'patient_id' => $source->id,
@@ -84,7 +93,7 @@ it('refuses a new visit, an identity edit or a deletion on a merged patient (ser
         'clinic_id' => null,
         'visit_type' => ClinicVisit::VISIT_TYPE_NEW,
         'created_by' => $this->approver->id,
-    ], $this->approver))->toThrow(ValidationException::class);
+    ], $this->approver))->toThrow(ValidationException::class, PatientMergeGuard::MESSAGE);
 
     expect(ClinicVisit::query()->where('patient_id', $source->id)->count())->toBe(0);
 });

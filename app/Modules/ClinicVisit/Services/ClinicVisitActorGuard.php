@@ -5,6 +5,7 @@ namespace App\Modules\ClinicVisit\Services;
 use App\Models\User;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\RmeInvoice\Services\RmeBillingActorGuard;
+use App\Support\AccessControl\ActiveAccountResolver;
 
 /**
  * AUDIT-RME-CLINIC-VISIT-BRANCH-AUTHORITY-1 — the ONE answer to "is this
@@ -26,16 +27,17 @@ use App\Modules\RmeInvoice\Services\RmeBillingActorGuard;
  */
 class ClinicVisitActorGuard
 {
+    public function __construct(
+        private readonly ActiveAccountResolver $accounts,
+    ) {}
+
+    /**
+     * HARDENING-RME-ACTIVE-USER-PATIENT-SELECTION-1 — delegated to the single
+     * definition of a usable account (rule 200), unchanged in meaning.
+     */
     public function resolveUsable(User $actor): ?User
     {
-        if (! $actor->exists || $actor->getKey() === null) {
-            return null;
-        }
-
-        return User::query()
-            ->whereKey($actor->getKey())
-            ->where('is_active', true)
-            ->first();
+        return $this->accounts->resolveUsable($actor);
     }
 
     /** A usable account that may read the visit domain (`viewAny`). */

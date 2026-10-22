@@ -29,6 +29,7 @@ use App\Modules\DoctorDevice\Support\DeviceKeyMaterial;
 use App\Modules\DoctorDevice\Support\DeviceProofMessage;
 use App\Services\Foundation\FeatureFlagService;
 use Database\Factories\DoctorDeviceEnrollmentFactory;
+use Illuminate\Support\Facades\DB;
 
 use function Pest\Laravel\actingAs;
 use function Pest\Laravel\postJson;
@@ -515,4 +516,63 @@ it('keeps enforcement behind exactly one authority', function () {
     }
 
     expect($readers)->toBe(['app/Modules/DoctorDevice/Services/DoctorAppLoginGate.php']);
+});
+
+// ===========================================================================
+// HARDENING-RME-ACTIVE-USER-PATIENT-SELECTION-1 — a deactivated ACCOUNT.
+//
+// The app login checked the doctor RECORD (`mst_doctors.is_active`) but never
+// the user ACCOUNT (`users.is_active`), so an account an administrator had
+// switched off could still mint a login ticket while its doctor record stayed
+// active. The two are different facts and both must hold.
+// ===========================================================================
+
+it('refuses the app login for a deactivated account even when its doctor record is active', function () {
+    $f = gateFixture();
+    enforceDeviceLock(true);
+
+    DoctorDeviceAuthorization::factory()->active()->create([
+        'doctor_id' => $f['doctor']->id,
+        'doctor_device_id' => $f['device']->id,
+    ]);
+
+    $f['user']->forceFill(['is_active' => false])->save();
+
+    postJson(route('device-api.v1.doctor.login'), array_merge(gateProof($f), [
+        'email' => $f['user']->email,
+        'password' => 'password123',
+    ]))->assertStatus(422)->assertJsonMissingPath('login_ticket');
+
+    expect(DoctorDeviceLoginTicket::query()->count())->toBe(0);
+
+    $reasons = DB::table('sys_audit_logs')
+        ->where('action', 'DOCTOR_APP_LOGIN_DEVICE_PROOF_REJECTED')
+        ->pluck('new_values')
+        ->implode(' ');
+
+    expect($reasons)->toContain('account_inactive');
+});
+
+it('refuses to redeem a ticket whose account was deactivated after it was minted', function () {
+    $f = gateFixture();
+    enforceDeviceLock(true);
+
+    DoctorDeviceAuthorization::factory()->active()->create([
+        'doctor_id' => $f['doctor']->id,
+        'doctor_device_id' => $f['device']->id,
+    ]);
+
+    $ticket = postJson(route('device-api.v1.doctor.login'), array_merge(gateProof($f), [
+        'email' => $f['user']->email,
+        'password' => 'password123',
+    ]))->assertOk()->json('login_ticket');
+
+    expect($ticket)->not->toBeNull();
+
+    $f['user']->forceFill(['is_active' => false])->save();
+
+    test()->get(route('doctor-device-login.redeem', $ticket))
+        ->assertRedirect(route('login'));
+
+    test()->assertGuest();
 });

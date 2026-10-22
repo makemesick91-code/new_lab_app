@@ -213,6 +213,30 @@ it('refuses a forged signature on an otherwise perfect credential', function () 
     $this->assertGuest();
 });
 
+it('refuses to complete the device login for an account deactivated during the ceremony', function () {
+    // HARDENING-RME-ACTIVE-USER-PATIENT-SELECTION-1 (security review LOW).
+    $device = folDevice($this->sunu);
+    $enrolled = folEnrol($device);
+
+    $this->post('/login', ['email' => $this->user->email, 'password' => 'password'])
+        ->assertRedirect(route('front-office-device-webauthn.show'));
+
+    $options = $this->postJson(route('front-office-device-webauthn.options'))->json();
+
+    DB::table('users')->where('id', $this->user->id)->update(['is_active' => false]);
+
+    $this->post(route('front-office-device-webauthn.store'), [
+        'credential' => $enrolled['authenticator']->assertion($options['challenge'], (string) $device->uuid),
+    ])->assertSessionHasErrors('credential');
+
+    $audit = DB::table('sys_audit_logs')
+        ->where('action', 'FRONT_OFFICE_DEVICE_WEBAUTHN_LOGIN_REJECTED')
+        ->latest('id')->first();
+
+    $this->assertGuest();
+    expect(json_decode((string) $audit?->new_values, true)['reason'] ?? null)->toBe('account_inactive');
+});
+
 it('refuses a replayed assertion', function () {
     $device = folDevice($this->sunu);
     $enrolled = folEnrol($device);

@@ -201,6 +201,13 @@ class RmePaymentService
                     continue;
                 }
 
+                // OD-1 (rule 200), defence in depth under the lock: money taken
+                // at this branch is never allocated into another branch's
+                // invoice, whatever the carry-over discovery returned.
+                if ((int) $parentInvoice->branch_id !== (int) $controlInvoice->branch_id) {
+                    continue;
+                }
+
                 $this->assertFormVersion($parentInvoice, $data);
                 $this->assertNoActiveCorrection($parentInvoice);
 
@@ -351,7 +358,10 @@ class RmePaymentService
                 }
 
                 // Re-assert branch isolation under lock (defence in depth).
-                if (! in_array((int) $receivable->branch_id, $this->branches->rmeEnabledIds(), true)) {
+                // OD-1 (rule 200): only a receivable of the branch taking this
+                // payment — never another branch's — may be settled from it.
+                if (! in_array((int) $receivable->branch_id, $this->branches->rmeEnabledIds(), true)
+                    || (int) $receivable->branch_id !== (int) $currentInvoice->branch_id) {
                     continue;
                 }
 
