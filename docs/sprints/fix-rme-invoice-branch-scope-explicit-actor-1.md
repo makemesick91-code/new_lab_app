@@ -199,7 +199,122 @@ An independent reviewer (read-only, no edits) found **0 CRITICAL, 0 HIGH**.
 | F9 | INFO, pre-existing | online-context expiry write from read paths | unchanged |
 | F10 | INFO | wording of "before any branch read" | **rule corrected** (§14) |
 
-## 9. Pending (filled in the release-evidence commit)
+## 9. Authoritative CI (exact candidate)
 
-Authoritative CI, merge, VPS deploy, production verification, financial
-reconciliation, GO tag and cleanup.
+Run `39691774035` (`pull_request`) on candidate `dfcac520` / tree `adad24bf` — **success**.
+
+| Job | Id | Result |
+|---|---|---|
+| CICD-CTRL Gate Classifier | 119539432760 | success (`gate_profile=unknown_high_risk`) |
+| NSF-R012 Quality Gate | 119539433132 | success |
+| Phase 3 Android Clinic App Gate | 119539432904 | success |
+| NSF-R011 Critical Test Gate | 119540502417 | success — **6172 passed / 32423 assertions, 0 failed, 0 skipped**, `critical_test_exit_status=0`, duration 8398 s; warning contract `expected=0 observed=0 unexplained=0`; `RmeInvoiceExplicitActorTest` and `RmePaymentExplicitActorTest` both PASS in the log |
+| NSF-R011 Critical Test Gate (other runner variant) | 119540504466 | skipped by design (exactly one variant runs) |
+| CICD-CTRL Selective Module Gate | 119540502474 | success |
+| NSF-9 Release Safety & Automated Smoke Gate | 119590259710 | success |
+| NSF-10 Release Evidence Gate | 119592002199 | success |
+| NSF-R011 Full Suite Gate | 119590261177 | **SKIPPED** — `full_suite_authorized=false`, `full_suite_defer_reason=FULL_SUITE_NOT_ENABLED_FOR_EVENT`. Not a pass. |
+
+Local final SQLite regression on the final tree (after the F1/F2 follow-up):
+**3111 passed / 15 skipped / 0 failed**, 11941 assertions, exit 0.
+
+## 10. Merge
+
+PR #503 squash-merged as **`f0044fd69272f8b89e25baaee0a6e0d9d27261b8`**, parent
+`3d7ca206` (base did not move). Merge tree `adad24bf` **==** candidate tree
+`adad24bf` — the tested tree is the merged tree.
+
+Post-merge `push` run: `39708364725` (recorded in §15; this evidence commit is
+merged only after it reaches a terminal state, so it is not cancelled by
+concurrency the way `39625376276` was).
+
+## 11. VPS deployment
+
+Executed **inside the VPS** (`/var/www/asia-dental-lab-v2`) via
+`bash scripts/deploy-vps-runner.sh start` (detached pid 132500).
+
+| Item | Value |
+|---|---|
+| Preflight | deploy lock free, no competing deploy, HEAD `f66c6c2a`, 88 G free, health 200×4, no pending migration |
+| Log / status | `storage/logs/deploy-runner/deploy-20261022-015453.{log,status}` |
+| Final status | **`exit=0`**, **`DEPLOY OK: 20261022-015454`** |
+| Immutable entrypoint | `DEPLOY_LOCK_ACQUIRED=YES`, `DEPLOY_TARGET_PINNED=f0044fd6…`, `DEPLOY_SNAPSHOT_TRUSTED=PASS`, `immutable-exec rc=0`, `DEPLOY_SNAPSHOT_CLEANED=YES` |
+| Target match | **`DEPLOY_HEAD_TARGET_MATCH=YES (f0044fd6…)`**; VPS HEAD `f0044fd6`, tree `adad24bf` |
+| Backup | `pre_auto_deploy_20261022-015454.sql` (NSF-10 backup-verify GO) |
+| Migrations | `Nothing to migrate.` |
+| Runtime isolation / secrets | 70 GO / 0 FAIL / 0 SKIP; secret file permissions GO |
+| Governance profile | 4 WATCH / 50 GO / 0 FAIL — **identical** to the previous deploy (`deploy-20261021-152449`); the WATCHes are pre-existing (risky flags deliberately on, DBPERF-2, release-safety local-profile evidence, and the known `http://127.0.0.1/login` 404 from the co-tenant nginx shadow) |
+
+## 12. Production verification (read-only)
+
+| Check | Result |
+|---|---|
+| Canonical domain | `/login`, `/health/live`, `/health/ready`, `/health/lb` 200; guest `/rme/cashier`, `/rme/cashier/handoff` 302 (no 500) |
+| Deployed code fingerprint (tokenizer, comments stripped) | `RmeInvoiceService` contains no `Auth::`, `auth()`, `request()`, `app('auth')`, `session()`, `BranchContext` |
+| Signatures (reflection, no app boot, no DB) | `paginatePendingVisits`/`cashierHandoffQueue`/`findInvoiceForVisit` → `actor: App\Models\User` non-nullable; `create` → `cashier: App\Models\User` non-nullable; `findInBranch` absent; `RmeBillingActorGuard` present |
+| Payment | resolves the persisted account through the guard; scope asked of `$account` |
+| Billing form | `create()` returns `View|RedirectResponse` |
+| Cashier routes | 8 `rme.cashier.*` routes registered |
+| Correction pilot (`rme:invoice-correction-readiness --maker=29 --checker=1`, as `daengtisiams`) | `STATE=PILOT_ACTIVE`, `FLAG_ENABLED=true`, pilot `SPN4`, `PILOT_IDENTITIES valid=yes maker=29 checker=1`, pair `VALID=yes`, WATCH only `PAIR_MAKER_NOT_ON_SHIFT_IN_PILOT` (unchanged); `--maker=30` still FAILs `PAIR_MAKER_NOT_PILOT_IDENTITY` |
+| RBAC | `role_has_permissions` 514, direct grants 0 (unchanged) |
+| Queue | `failed_jobs` 0, `jobs` 0, worker active |
+| Application log | `laravel.log` 1 437 201 bytes / 162 ERROR before and after — **0 new errors** |
+
+Authenticated runtime exercise was deliberately NOT performed: calling the cashier
+lists for a real context-bound account can expire its online-context row (an
+UPDATE from a read path, review F9), and no fake patient, invoice or payment is
+ever created for evidence. Behaviour is proven by the 39-case suite on SQLite and
+PostgreSQL 16 and in CI; production proves the deployed code is that code.
+
+## 13. Financial reconciliation
+
+Captured before (preflight) and after (post-deploy) with
+`default_transaction_read_only=on`:
+
+| Metric | Before | After | Class |
+|---|---|---|---|
+| Invoices (count / grand total) | 7 / 7.548.000 | 7 / 7.548.000 | unchanged |
+| Status mix | PAID 5, PARTIAL 1, UNPAID 1 | same | unchanged |
+| Invoice items (count / subtotal) | 8 / 7.548.000 | 8 / 7.548.000 | unchanged |
+| Payments (count / amount) | 8 / 5.548.000 | 8 / 5.548.000 | unchanged |
+| Payment batches | 1 | 1 | unchanged |
+| Corrections | 0 | 0 | unchanged |
+| `sys_audit_logs` (rows / max id) | 1601 / 1623 | 1601 / 1623 | unchanged |
+| Receivable remaining | 2.000.000 | 2.000.000 | unchanged |
+
+`UNEXPECTED_MUTATION=0`. No financial row was written by this release.
+
+## 14. GO tag
+
+Annotated **`fix-rme-invoice-branch-scope-explicit-actor-1-go`** (tag object
+`01eb884f`) → **`f0044fd6`**, the deployed runtime (not this evidence commit).
+Local = remote = VPS (`git describe --exact-match HEAD` on the VPS). Rollback:
+`bash scripts/rollback-vps.sh hardening-rme-invoice-correction-pilot-identity-payment-actor-1-go`
+(no schema or data to restore). SCOPED security GO only — `FULL_PILOT_GO` is NOT
+claimed; the authenticated pilot and a real owner-authorized correction remain
+PENDING (rule 196).
+
+## 15. Post-merge CI and cleanup
+
+Post-merge `push` run **`39708364725`** on `f0044fd6` — **success** (allowed to
+finish before this evidence was merged):
+
+| Job | Id | Result |
+|---|---|---|
+| CICD-CTRL Gate Classifier | 119593601710 | success (`gate_profile=unknown_high_risk`) |
+| NSF-R012 Quality Gate | 119593601785 | success |
+| Phase 3 Android Clinic App Gate | 119593601434 | success |
+| NSF-R011 Critical Test Gate | 119594457787 | success — **6172 passed / 32423 assertions**, `critical_test_exit_status=0`, `observed_warning_count=0`; `RmeInvoiceExplicitActorTest` PASS |
+| CICD-CTRL Selective Module Gate | 119594457710 | success |
+| NSF-9 / NSF-10 | 119636664570 / 119637943520 | success / success |
+| NSF-R011 Full Suite Gate | 119636666211 | **SKIPPED** — `full_suite_defer_reason=TEMPORARY_FULL_SUITE_POLICY_ACTIVE`. Not a pass. |
+
+So, unlike the previous sprint (`39625376276`, CANCELLED), this runtime has a
+completed post-merge test run as well as candidate-SHA evidence.
+
+Cleanup (task-owned only): throwaway PostgreSQL 16 container removed; the VPS
+read-only fingerprint SQL file removed; the task worktree, its local branches and
+its merged remote branches removed after this PR merged; scratch test temp
+directory removed; no task-owned test process, CI run, deploy or lock left.
+Pre-existing, not touched: `storage/runtime-home/` (untracked) on the VPS, the
+stale local base-branch ref in the primary checkout, and the other worktrees.
