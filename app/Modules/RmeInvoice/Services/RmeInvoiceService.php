@@ -3,7 +3,6 @@
 namespace App\Modules\RmeInvoice\Services;
 
 use App\Models\User;
-use App\Modules\Branch\Services\BranchContext;
 use App\Modules\Branch\Services\BranchService;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\LabOrder\Services\AuditLogService;
@@ -19,7 +18,6 @@ use App\Support\Clinical\ClinicalClock;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
@@ -28,7 +26,6 @@ class RmeInvoiceService
 {
     public function __construct(
         private readonly RmeInvoiceRepositoryInterface $invoices,
-        private readonly BranchContext $branchContext,
         private readonly RmeInvoiceNumberGeneratorService $numberGenerator,
         private readonly BranchService $branches,
         private readonly CashierHandoffStatusService $handoffStatus,
@@ -36,6 +33,7 @@ class RmeInvoiceService
         private readonly AuditLogService $auditLogs,
         private readonly RmeInvoicePricingService $pricing,
         private readonly ClinicalClock $clinicalClock,
+        private readonly RmeBillingActorGuard $actors,
     ) {}
 
     /**
@@ -43,11 +41,26 @@ class RmeInvoiceService
      * workspace reads only the branch the cashier is working in. Fails closed to
      * an empty scope without a valid context; governance roles keep the full set.
      *
+     * FIX-RME-INVOICE-BRANCH-SCOPE-EXPLICIT-ACTOR-1 (rule 198) — judged on the
+     * EXPLICIT actor the caller passes, never the ambient session. This read
+     * Auth::user(): it judged whoever was logged in rather than the cashier the
+     * caller meant, and with NO session RmeWorkingBranchScope::branchIdsFor(null)
+     * answers EVERY active RME branch, so both cashier lists failed OPEN
+     * (reproduced on the unmodified base). The actor must also be a usable
+     * account holding the billing permission, decided on the persisted row; any
+     * other actor gets an EMPTY scope — never the estate, never a fallback.
+     *
      * @return array<int, int>
      */
-    private function cashierScopeBranchIds(): array
+    private function cashierScopeBranchIds(User $actor): array
     {
-        return $this->workingBranchScope->branchIdsFor(Auth::user());
+        $account = $this->actors->resolveBillingActor($actor);
+
+        if ($account === null) {
+            return [];
+        }
+
+        return $this->workingBranchScope->branchIdsFor($account);
     }
 
     /**
@@ -62,10 +75,10 @@ class RmeInvoiceService
      *     total: int
      * }
      */
-    public function cashierHandoffQueue(array $filters = []): array
+    public function cashierHandoffQueue(User $actor, array $filters = []): array
     {
         $visits = $this->invoices->cashierHandoffQueueForBranches(
-            $this->cashierScopeBranchIds(),
+            $this->cashierScopeBranchIds($actor),
             $filters,
         );
 
@@ -115,23 +128,33 @@ class RmeInvoiceService
      *
      * @param  array<string, mixed>  $filters
      */
-    public function paginatePendingVisits(array $filters = [], int $perPage = 15): LengthAwarePaginator
+    public function paginatePendingVisits(User $actor, array $filters = [], int $perPage = 15): LengthAwarePaginator
     {
         return $this->invoices->paginateCashierPendingForBranches(
-            $this->cashierScopeBranchIds(),
+            $this->cashierScopeBranchIds($actor),
             $filters,
             $perPage,
         );
     }
 
-    public function findInvoiceForVisit(ClinicVisit $visit): ?RmeInvoice
+    /**
+     * The visit's existing invoice, disclosed only to an actor allowed in that
+     * invoice's branch (rule 198). Judged on the invoice ROW, the record being
+     * disclosed; an unusable or unauthorized actor gets null, exactly like a
+     * visit with no invoice. The controller authorizes the visit first; this
+     * keeps the service safe for any other caller.
+     */
+    public function findInvoiceForVisit(ClinicVisit $visit, User $actor): ?RmeInvoice
     {
-        return $this->invoices->findForVisit($visit->id);
-    }
+        $invoice = $this->invoices->findForVisit($visit->id);
 
-    public function findInBranch(int $id): ?RmeInvoice
-    {
-        return $this->invoices->findInBranch($this->branchContext->requireId(), $id);
+        if ($invoice === null) {
+            return null;
+        }
+
+        return in_array((int) $invoice->branch_id, $this->cashierScopeBranchIds($actor), true)
+            ? $invoice
+            : null;
     }
 
     /**
@@ -163,6 +186,21 @@ class RmeInvoiceService
                 // with FOR KEY SHARE, so no FK insert anywhere is blocked by it.
                 // SQLite compiles any lock clause to nothing.
                 $visit = ClinicVisit::query()->lock('for no key update')->findOrFail($visit->id);
+
+                // FIX-RME-INVOICE-BRANCH-SCOPE-EXPLICIT-ACTOR-1 (rule 198) — the
+                // cashier the invoice is RECORDED under (`cashier_id`) must be a
+                // real, usable account holding the billing permission, decided on
+                // the persisted row inside the transaction. Before this an inactive
+                // or deleted account, an unsaved object carrying a governance id, or
+                // an active account without manage_rme_billing could all bill a
+                // visit through any non-HTTP caller: the policy that refuses them
+                // runs only in the controller. Every check below is then asked of
+                // this persisted account, never of the object passed in.
+                $account = $this->actors->resolveBillingActor($cashier);
+                if ($account === null) {
+                    throw new AuthorizationException('Akun kasir tidak aktif, tidak dikenali, atau tidak memiliki izin penagihan.');
+                }
+                $cashier = $account;
 
                 // The invoice branch always follows the visit's own "Cabang RME"
                 // branch — never a BranchContext/MAIN fallback. The visit must belong

@@ -1,0 +1,175 @@
+---
+description: FIX-RME-INVOICE-BRANCH-SCOPE-EXPLICIT-ACTOR-1 — the RME invoice service decides branch scope from the EXPLICIT actor the caller passes (re-read from the database: persisted, active, holding manage_rme_billing), never from Auth::user() / BranchContext. Closes rule 197 §30 for RmeInvoiceService (cashier read lists failed OPEN with no session because RmeWorkingBranchScope::branchIdsFor(null) answers every RME branch). One shared billing-actor authority for invoice and payment. No owner decision, no migration, no permission, no route, no RoleSeeder change.
+globs: app/Modules/RmeInvoice/Services/RmeInvoiceService.php, app/Modules/RmeInvoice/Services/RmeBillingActorGuard.php, app/Modules/RmeInvoice/Services/RmePaymentService.php, app/Modules/RmeInvoice/Controllers/RmeInvoiceController.php, app/Modules/RmeOnlineContext/Services/RmeWorkingBranchScope.php, tests/Feature/RME/RmeInvoiceExplicitActorTest.php, tests/Feature/RME/RmePayment*.php
+alwaysApply: false
+---
+
+# RME invoice — branch scope from the EXPLICIT actor (rule 198)
+
+Evidence: `docs/sprints/fix-rme-invoice-branch-scope-explicit-actor-1.md`.
+Extends rule 197 (§E payment explicit actor). **Supersedes rule 197 §30 for
+`RmeInvoiceService`** — that residual is CLOSED. The other half of §30 (the shared
+`RmeWorkingBranchScope::branchIdsFor(null)` null contract) is NOT changed here and
+stays recorded (§30 below). No owner decision is involved: this is a technical
+security fix inside existing authority; the decision register is unchanged.
+
+## A. Root cause (verified, reproduced on the unmodified base)
+1. `RmeInvoiceService::cashierScopeBranchIds()` returned
+   `RmeWorkingBranchScope::branchIdsFor(Auth::user())` for the cashier pending list
+   (`paginatePendingVisits`) and the doctor→cashier handoff queue
+   (`cashierHandoffQueue`). It judged whoever was logged in, not the actor the
+   caller meant; and with NO session `branchIdsFor(null)` answers EVERY active RME
+   branch, so both lists failed OPEN. Reproduced on `3d7ca206`: no session → visits
+   of both fixture branches returned; ambient foreign cashier → the ambient branch.
+2. Reachability (measured, not claimed): both methods are called ONLY by
+   `RmeInvoiceController::index|handoff`, behind `auth` +
+   `permission:manage_rme_billing` + `authorize('viewAny')`. Over HTTP the session
+   user IS the actor, so it was a LATENT defect, not an exploited one. It became a
+   real defect for any non-HTTP caller (command, job, future service).
+3. Found in the same audit and fixed: `create()` took an explicit `$cashier` but
+   performed NO service-level usability/permission check — an inactive or deleted
+   account, an unsaved object carrying a governance id, or an active account
+   without `manage_rme_billing` could bill a visit through a non-HTTP caller
+   (reproduced red: "The invoice was created"). `findInBranch()` read
+   `BranchContext` (the ambient session) and had ZERO callers — removed.
+
+## B. The contract
+4. Explicit actor requirement: every actor-scoped entry point declares a
+   NON-NULLABLE, REQUIRED `User` parameter —
+   `paginatePendingVisits(User $actor, …)`, `cashierHandoffQueue(User $actor, …)`,
+   `findInvoiceForVisit(ClinicVisit, User $actor)`, `create(ClinicVisit, User $cashier, …)`.
+   A null actor is a `TypeError` at the boundary; there is no overload that omits
+   it and no default.
+5. Trusted actor source: the controller's authenticated user
+   (`$request->user()`), behind the existing `auth` middleware and policies. The
+   service never accepts an actor id from the browser; a request-supplied
+   `cashier_id` is ignored (validated data carries items/notes only).
+6. Controller → service propagation: `RmeInvoiceController` passes
+   `$request->user()` to all three read paths and to `create()`. Controller
+   policies (`viewAny`, `create`) still run FIRST; the service check is
+   independent and does not rely on them.
+7. No ambient fallback: `RmeInvoiceService` code contains no `Auth::`, `auth()`,
+   `app('auth')`, `request()`, `Request::`, `session()` or `BranchContext` (a
+   comment-stripping governance test pins it, as rule 197 §23 does for the payment
+   service). Never reintroduce one; never substitute the session user for a
+   missing actor. (`AuditLogService::log` falls back to `auth()->user()` only for a
+   NULL actor; the invoice service always passes the explicit one.)
+
+## C. The single billing-actor authority
+8. `RmeBillingActorGuard` (app/Modules/RmeInvoice/Services) is the ONE answer to
+   "is this explicit actor a usable billing account?", shared by
+   `RmeInvoiceService` and `RmePaymentService`. Both services resolve the
+   persisted account ONCE and then ask the billing permission AND the working
+   branch of that account — never of the object the caller passed in (security
+   review F2: the payment half previously asked both of the passed object, so a
+   stale in-memory role could have let invoice and payment disagree). Never add a
+   second resolver.
+9. `resolveUsable()` re-reads the account from the DATABASE: persisted, key
+   present, `is_active = true`, not soft-deleted. An unsaved object carrying a real
+   id, an unknown id, a deleted account, or a stale in-memory "active" copy of a
+   since-deactivated account all resolve to null.
+10. `resolveBillingActor()` additionally requires `manage_rme_billing`, evaluated
+    on the PERSISTED account (stale in-memory roles cannot grant it). Super Admin
+    passes through `Gate::before` exactly as in the policy — no new authority.
+11. Branch scope is then asked of `RmeWorkingBranchScope` with the PERSISTED
+    account (`branchIdsFor()` for the read lists, `allows()` for creation) — the
+    canonical scope resolver; never re-derived, never hardcoded branches.
+
+## D. Fail-closed behaviour
+12. Read lists (pending visits, handoff queue): an unusable or unauthorized actor
+    gets an EMPTY scope (`whereIn([])` ⇒ no rows) — never the estate, never MAIN,
+    never the first branch, never a request `branch_id`.
+13. Existing-invoice lookup: disclosed only when the invoice ROW's branch is in the
+    actor's scope; otherwise null, indistinguishable from "no invoice".
+14. Creation: inside the transaction, immediately after the visit row lock (a
+    nonexistent visit is a 404 from that lookup first), an unusable or non-billing
+    actor is refused with `AuthorizationException` (HTTP 403, never a 500) BEFORE
+    the RME-branch check, the working-branch check, the status / finalized-RME /
+    active-invoice checks, pricing, the invoice number and the audit row. Then the
+    existing working-branch check (`allows`, rule 194 F1) runs on the persisted
+    account. A refused attempt writes NOTHING (no invoice, no number, no audit).
+14a. The billing form (`RmeInvoiceController::create`) returns `View|RedirectResponse`:
+    when the visit already has an active invoice it redirects to that invoice. It
+    was declared `: View`, so that ordinary path (a stale "Buat Tagihan" link
+    after a colleague billed, back+reload, a direct URL) threw a `TypeError` = 500
+    since Sprint 20 (security review F1, pre-existing; fixed here because the
+    caller inventory reached it and rule "no 500 on an expected path").
+15. Unchanged: a context-bound role (Kasir, Admin Klinik, Perawat; Front Office as
+    their union) without a valid working context ⇒ empty scope; a request branch
+    filter can only NARROW (`where branch_id` ANDed with `whereIn(scope)`).
+
+## E. Roles — no new authority
+16. Super Admin: governance scope (every active RME branch) as before; NOT a
+    system actor, never used implicitly.
+17. Kasir / Front Office: exactly what `RmeWorkingBranchScope` already answers for
+    them (a context-bound account: its selected working branch), unchanged.
+18. Admin Klinik: unchanged (its existing permission set decides).
+19. A cross-branch exception exists only where already approved (governance
+    roles); none is created here.
+20. Background callers: there are NONE for `RmeInvoiceService` (no job, command,
+    listener or schedule). A future one must pass a real, authorized human actor;
+    there is no system cashier, and none may be invented. Absent one, it fails
+    closed.
+
+## F. Financial invariants preserved (verified by regression)
+21. Manual pricing D21 (rule 194): unchanged — the cashier types the price, server
+    computes integer cents, no tariff lookup, provenance MANUAL.
+22. Issued invoices stay immutable; amounts change only through the correction
+    workflow (rules 190/191). No new mutation route.
+23. Payment explicit actor (rule 197 §E): unchanged behaviour; usability now asked
+    of the shared guard.
+24. D10 payment block under the invoice lock (rule 192) and invoice-version binding
+    (rule 191): unchanged.
+25. PostgreSQL transactions/locks: the actor check runs inside the existing
+    per-visit `FOR NO KEY UPDATE` transaction; no new lock, no lock-order change.
+26. Financial audit: the invoice + its audit row still commit together; a refused
+    actor writes no audit row (consistent with the existing branch refusal).
+27. Snapshots v0/vN, receivable totals, price provenance: untouched.
+28. SPN4 pilot (rule 195), maker user 29 / checker user 1 (rule 197 D1e),
+    D1/D1a/D1b/D1c/D1d: untouched — the correction service and its identity guard
+    are not modified.
+29. Finance Klinik / Data Analyst remain read-only; RoleSeeder unchanged.
+
+25a. Cost: each guard resolution is ~3 queries (the `users` row plus the role and
+    permission loads of a fresh instance); one per cashier list request, one
+    inside the creation transaction. No N+1. Authorization is never cached across
+    requests.
+
+## G. Recorded residuals (NOT changed here — separate, wider changes)
+30. `RmeWorkingBranchScope::branchIdsFor(null)` still answers every active RME
+    branch. After this rule neither `RmeInvoiceService` nor `RmePaymentService` can
+    pass null (non-nullable parameters). Controllers still hand the nullable
+    `request()->user()` to the scope directly — `RmeInvoiceController::rmeBranches()`
+    (handoff branch selector, receivables list and export) and `RmeReportController`
+    — safe today only because every such route sits inside `auth`. The shared null
+    contract is consumed across modules and is a separate change.
+30a. No middleware enforces `is_active` per request (pre-existing). An account
+    deactivated while its session is live now gets an EMPTY pending list and
+    handoff queue and a 403 on billing, but policy-only surfaces (invoice show,
+    receivables, export, the billing form GET) still answer from the session
+    user's permissions until the session ends. Recorded, not changed here.
+31. `ClinicVisitService` (`:94`, `:143`) still reads `Auth::user()` for the visit
+    list scope — visit domain, out of scope; candidate
+    `FIX-CLINIC-VISIT-BRANCH-SCOPE-EXPLICIT-ACTOR-1`.
+
+## H. Verification, release and rollback
+32. CI: `tests/Feature/RME/RmeInvoiceExplicitActorTest.php` matched NO critical
+    token; the `RmeInvoiceExplicitActor` token was added to BOTH critical-gate
+    variants and the file declared in `config/ci_runner.php`
+    `critical_gate_mandatory_suites`.
+33. Deploy: only `scripts/deploy-vps-runner.sh` executed INSIDE the VPS; complete
+    only at `exit=0` + `DEPLOY OK` + `DEPLOY_HEAD_TARGET_MATCH=YES`. No migration.
+34. Production verification is read-only: code fingerprint (no `Auth::` in the
+    service), route list, flag + pilot config unchanged, financial fingerprint
+    before/after. Never create a patient, invoice, payment or correction to
+    produce evidence.
+35. Rollback: `scripts/rollback-vps.sh` to the previous GO tag
+    (`hardening-rme-invoice-correction-pilot-identity-payment-actor-1-go`); no data
+    to restore (no schema or data change). Never "fix" a post-deploy billing
+    problem by bypassing branch authorization.
+36. GO criteria: all of §B–§F pass, authoritative CI green on the exact candidate,
+    merge verified, deploy completed, production verification PASS. The GO tag is
+    SCOPED to this security fix; it never certifies the pilot (rule 196 ladder).
+37. Cleanup: every task-owned worktree, test database, container, temp file and
+    background process is removed; pre-existing leftovers are reported, not
+    touched.
