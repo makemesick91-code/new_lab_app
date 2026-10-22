@@ -74,21 +74,28 @@ class ClinicVisitController extends Controller
 
         $filters = $this->visits->applyVisitIndexDateDefault($filters, $hasExplicitDateFilter);
 
+        // AUDIT-RME-CLINIC-VISIT-BRANCH-AUTHORITY-1 — the authenticated user is
+        // passed EXPLICITLY; the service never reads the session. The medical
+        // record widgets aggregate over the same scoped branch set as the visit
+        // widgets beside them.
+        $actor = $request->user();
+        $widgetBranchIds = $this->visits->scopedBranchIdsFor($actor, $branchId);
+
         $rmeWidgets = [
-            'visits_today' => $this->visits->visitsTodayCount($branchId),
-            'waiting' => $this->visits->waitingCount($branchId),
-            'in_progress' => $this->visits->inProgressCount($branchId),
-            'draft_medical_records' => $this->medicalRecords->draftCount(),
-            'finalized_today' => $this->medicalRecords->finalizedTodayCount(),
+            'visits_today' => $this->visits->visitsTodayCount($actor, $branchId),
+            'waiting' => $this->visits->waitingCount($actor, $branchId),
+            'in_progress' => $this->visits->inProgressCount($actor, $branchId),
+            'draft_medical_records' => $this->medicalRecords->draftCount($widgetBranchIds),
+            'finalized_today' => $this->medicalRecords->finalizedTodayCount($widgetBranchIds),
         ];
 
         return view('rme.visits.index', [
-            'visits' => $this->visits->paginate($filters),
+            'visits' => $this->visits->paginate($actor, $filters),
             'filters' => $filters,
             'statuses' => ClinicVisit::STATUSES,
             'rmeWidgets' => $rmeWidgets,
             // FIX-04 — a context-bound role is never offered a branch it cannot read.
-            'rmeBranches' => $this->visits->selectableRmeBranches(),
+            'rmeBranches' => $this->visits->selectableRmeBranches($actor),
             'roomsByBranch' => $this->visits->activeRoomsByRmeBranch(),
             'rmLookup' => $rmLookup->lookupByMedicalRecordNumberAcrossBranches($request->string('rm_lookup')->toString()),
         ]);
@@ -123,7 +130,7 @@ class ClinicVisitController extends Controller
 
         return view('rme.visits.room-worklist', [
             'roomScoped' => $roomScoped,
-            'visits' => $this->visits->roomWorklist($filters),
+            'visits' => $this->visits->roomWorklist($request->user(), $filters),
             'filters' => $filters,
             'statuses' => ClinicVisit::STATUSES,
             'rooms' => ClinicRoom::where('status', ClinicRoom::STATUS_ACTIVE)
@@ -156,7 +163,7 @@ class ClinicVisitController extends Controller
         }
 
         return view('rme.patient-queue.index', [
-            'visits' => $this->visits->registeredQueue($filters),
+            'visits' => $this->visits->registeredQueue($request->user(), $filters),
             'filters' => $filters,
             'statuses' => ClinicVisit::STATUSES,
             'roomsByBranch' => $this->visits->activeRoomsByRmeBranch(),
@@ -167,7 +174,7 @@ class ClinicVisitController extends Controller
     {
         $this->authorize('update', $clinicVisit);
 
-        $this->visits->assignRoom($clinicVisit, (int) $request->validated()['clinic_room_id']);
+        $this->visits->assignRoom($clinicVisit, (int) $request->validated()['clinic_room_id'], $request->user());
 
         return redirect()
             ->back()
@@ -238,7 +245,16 @@ class ClinicVisitController extends Controller
 
     public function patientVisitOptions(Request $request): JsonResponse
     {
-        $this->authorize('viewAny', ClinicVisit::class);
+        // AUDIT-RME-CLINIC-VISIT-BRANCH-AUTHORITY-1 — this is the prior-visit
+        // picker of the "Kunjungan Baru" form and nothing else consumes it, so it
+        // requires the registration ability, not mere `viewAny`. With `viewAny` an
+        // account that cannot register visits (e.g. a Kasir pinned to one branch)
+        // could read any other branch's patient visit history. This closes it
+        // ONLY for such accounts: a registrar still sees a patient's visits at
+        // every RME branch, deliberately, because a follow-up may link to any of
+        // them (open owner decision OD-1). The service re-asserts the same
+        // boundary (plus patient selectability) against the explicit actor.
+        $this->authorize('create', ClinicVisit::class);
 
         $patientId = $request->integer('patient_id');
         abort_if($patientId <= 0, 422, 'patient_id wajib diisi.');
@@ -252,7 +268,7 @@ class ClinicVisitController extends Controller
         }
 
         return response()->json([
-            'visits' => $this->visits->patientVisitOptions($patientId),
+            'visits' => $this->visits->patientVisitOptions($request->user(), $patientId),
         ]);
     }
 
@@ -293,7 +309,7 @@ class ClinicVisitController extends Controller
             $this->authorize('create', Patient::class);
         }
 
-        $visit = $this->visits->create($data);
+        $visit = $this->visits->create($data, $request->user());
 
         // Sprint 61.1.1 — promote a scanned KTP (if any) into the freshly created
         // patient's private document folder. Only for the new-patient flow; an
@@ -379,7 +395,7 @@ class ClinicVisitController extends Controller
     public function update(UpdateClinicVisitRequest $request, ClinicVisit $clinicVisit): RedirectResponse
     {
         $this->authorize('update', $clinicVisit);
-        $this->visits->update($clinicVisit, $request->validated());
+        $this->visits->update($clinicVisit, $request->validated(), $request->user());
 
         return redirect()->route('rme.visits.show', $clinicVisit)->with('status', 'Kunjungan berhasil diperbarui.');
     }
@@ -395,7 +411,7 @@ class ClinicVisitController extends Controller
             $this->authorize('completeExamination', $clinicVisit);
         }
 
-        $this->visits->transitionStatus($clinicVisit, $newStatus);
+        $this->visits->transitionStatus($clinicVisit, $newStatus, $request->user());
 
         // Sprint 62.1 — "Selesai Pemeriksaan" handoff: a visit moved to
         // cashier_pending is now waiting at the cashier.

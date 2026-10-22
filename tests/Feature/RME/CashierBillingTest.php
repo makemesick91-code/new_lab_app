@@ -393,7 +393,7 @@ it('lists an RME-branch visit in the cashier queue after the doctor completes th
     // Still with the doctor: a final document is not a finished examination.
     expect($visit->refresh()->status)->toBe(ClinicVisit::STATUS_IN_PROGRESS);
 
-    app(ClinicVisitService::class)->transitionStatus($visit, ClinicVisit::STATUS_CASHIER_PENDING);
+    app(ClinicVisitService::class)->transitionStatus($visit, ClinicVisit::STATUS_CASHIER_PENDING, $this->doctorUser);
 
     $this->actingAs($this->cashier)
         ->get(route('rme.cashier.index'))

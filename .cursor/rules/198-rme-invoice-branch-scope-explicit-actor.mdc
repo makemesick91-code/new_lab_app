@@ -151,6 +151,11 @@ security fix inside existing authority; the decision register is unchanged.
 31. `ClinicVisitService` (`:94`, `:143`) still reads `Auth::user()` for the visit
     list scope — visit domain, out of scope; candidate
     `FIX-CLINIC-VISIT-BRANCH-SCOPE-EXPLICIT-ACTOR-1`.
+    **CLOSED by AUDIT-RME-CLINIC-VISIT-BRANCH-AUTHORITY-1 — see rule 199.** The
+    audit found 8 `Auth::user()`/`Auth::id()` sites and one `BranchContext` read
+    (not 2), all now replaced by the explicit actor; it also closed two
+    HTTP-reachable cross-branch reads (prior-visit picker, RME dashboard). §30 is
+    unchanged.
 
 ## H. Verification, release and rollback
 32. CI: `tests/Feature/RME/RmeInvoiceExplicitActorTest.php` matched NO critical

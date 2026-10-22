@@ -464,7 +464,13 @@ it('keeps "Selesai Pemeriksaan" refused while consent is unsigned', function () 
         $visit,
         ClinicVisit::STATUS_CASHIER_PENDING,
         $this->doctorUser,
-    ))->toThrow(ValidationException::class);
+    ))->toThrow(function (ValidationException $e) {
+        // AUDIT-RME-CLINIC-VISIT-BRANCH-AUTHORITY-1 — the third argument used to
+        // be dropped silently by PHP (the signature had two parameters), so the
+        // service judged the ambient session. It is honoured now; pin the reason
+        // so the refusal is provably the consent gate and not the actor check.
+        expect($e->errors()['status'][0])->toContain('Persetujuan Tindakan Medis');
+    });
 
     expect($visit->fresh()->status)->toBe(ClinicVisit::STATUS_IN_PROGRESS);
 });

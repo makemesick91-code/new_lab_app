@@ -1,0 +1,167 @@
+---
+description: AUDIT-RME-CLINIC-VISIT-BRANCH-AUTHORITY-1 — ClinicVisitService decides branch scope, visit-history reach and clinical authority from the EXPLICIT actor the caller passes (re-read from the database: persisted, active, holding the same ClinicVisitPolicy ability the controller checks), never from Auth::user() / BranchContext. Closes rule 198 §31. Also closes three HTTP-reachable defects found in the audit (prior-visit picker, RME dashboard aggregates, the visit edit endpoint writing room/doctor around assignRoom). No owner decision, no migration, no permission, no route, no RoleSeeder change.
+globs: app/Modules/ClinicVisit/Services/ClinicVisitService.php, app/Modules/ClinicVisit/Services/ClinicVisitActorGuard.php, app/Modules/ClinicVisit/Controllers/ClinicVisitController.php, app/Modules/RmeDashboard/Controllers/RmeDashboardController.php, app/Modules/MedicalRecord/Services/MedicalRecordService.php, app/Modules/RmeOnlineContext/Services/RmeWorkingBranchScope.php, tests/Feature/RME/ClinicVisitBranchAuthorityTest.php
+alwaysApply: false
+---
+
+# RME clinic visit — authority from the EXPLICIT actor (rule 199)
+
+Evidence: `docs/sprints/audit-rme-clinic-visit-branch-authority-1.md`.
+Extends rule 198 (invoice) and rule 197 §E (payment) to the visit domain.
+**Supersedes rule 198 §31** — that residual is CLOSED. Rule 198 §30 (the shared
+`RmeWorkingBranchScope::branchIdsFor(null)` null contract) is NOT changed and stays
+recorded: this rule makes ClinicVisitService unable to pass null, it does not
+change what the shared resolver answers for null.
+
+## A. What the audit found (reproduced on the unmodified base `a98af8fc`)
+1. `ClinicVisitService` read `Auth::user()` in 8 places and `BranchContext` in 1:
+   list/queue/worklist/count scope (`:94`), the branch selector (`:143`), the
+   doctor auto-assignment actor (`:251`), `created_by` (`:312`), the doctor branch
+   lock on create (`:505`), the lock-refusal audit (`:554`), "Selesai
+   Pemeriksaan" (`:661`), the doctor visit scope (`:726`); `find()` read
+   `BranchContext` and had ZERO callers.
+2. LATENT (no non-HTTP caller exists): with no session the lists, queue, counts
+   and selector answered EVERY RME branch (fail-open); the ambient session, not
+   the intended actor, decided scope; "Selesai Pemeriksaan" SKIPPED the clinical
+   check for a null user; `create()` failed only at the database (NOT NULL).
+3. EXPLOITABLE over HTTP (authenticated, insider): `GET rme/visits/patient-options`
+   authorized only `viewAny`, so a Kasir pinned to branch A read branch B's
+   patient visit history (number, date, type, doctor, initial treatment, status)
+   — HTTP 200. The RME dashboard summed today's payments, receivables, cashier
+   pending, month counts and draft records over EVERY RME branch for a
+   context-bound operator, and `?branch_id=` reached any branch.
+3a. EXPLOITABLE over HTTP, pre-existing since Sprint 20 (found by the independent
+   review): `UpdateClinicVisitRequest` accepted `clinic_room_id` and `doctor_id`
+   checked only for existence. A crafted PUT moved a branch-A visit into a
+   branch-B room — bypassing same-branch, active-room, terminal-visit and
+   doctor-from-room — or set ANY doctor, widening that doctor's patient scope.
+   The edit form never sent either field. Reproduced RED (`room 3 instead of 1`).
+3b. Production calibration (read-only, 2026-10-22): the ONLY active account with
+   `view_clinic_visits` but not `manage_clinic_visits` is Owner (governance,
+   already estate-wide). So F1 (picker) protects no account that exists today —
+   Kasir was merged into Front Office, a registrar. F1 is a real code-level hole
+   for any future view-only role, NOT a live exposure. F2 (dashboard) and 3a
+   (edit) ARE reachable by current context-bound operators. 0 inactive accounts,
+   0 inactive accounts with a session.
+
+## B. The contract
+4. Every actor-dependent ClinicVisitService method takes a NON-NULLABLE
+   `User $actor`: `paginate`, `roomWorklist`, `registeredQueue`,
+   `visitsTodayCount`, `waitingCount`, `inProgressCount`, `selectableRmeBranches`,
+   `scopedBranchIdsFor`, `patientVisitOptions`, `create`, `assignRoom`, `update`.
+   A null actor is a `TypeError` at the boundary. No default, no overload.
+5. `transitionStatus(ClinicVisit, string, ?User $actor = null)` is the ONE
+   nullable signature, and null is valid ONLY for `completed`: the cashier-owned
+   transition, reachable only from `cashier_pending` (asserted) and only from
+   `RmePaymentService` under its own explicit billing actor (rule 197). Every
+   other target status requires a usable actor holding `transition`; "Selesai
+   Pemeriksaan" (`cashier_pending`) additionally `completeExamination`. The old
+   "system callers are not affected" skip is REMOVED — no system caller ever
+   reached it. Refusals stay `ValidationException` on `status` (redirect, no 500).
+6. Trusted actor source: the controller's `$request->user()`, behind `auth` and
+   the existing policies. Never a request-supplied user id. Controller policies
+   still run FIRST; the service check is independent and never weaker.
+7. No ambient fallback: ClinicVisitService contains no `Auth::`, `auth()`,
+   `app('auth')`, `request()`, `Request::`, `session()` or `BranchContext`
+   (comment-stripping test pins it). The lock-refusal audit passes the explicit
+   actor to `AuditLogService::log()`, whose own null fallback is
+   `auth()->user()`.
+
+## C. The single clinic-visit actor authority
+8. `ClinicVisitActorGuard` (app/Modules/ClinicVisit/Services) is the ONE answer to
+   "is this explicit actor a usable clinic-visit account?". `resolveUsable()`
+   re-reads the row (persisted, key present, `is_active`, not soft-deleted) —
+   same semantics as `RmeBillingActorGuard::resolveUsable()`, deliberately a
+   different permission set.
+9. Abilities are asked of `ClinicVisitPolicy` on the PERSISTED account, never
+   restated as permission strings: `viewAny` (reads), `create` (registration,
+   prior-visit picker), `update` (room, edit), `transition` / `completeExamination`
+   (status). The guard and the controller can therefore never disagree.
+10. Branch scope is asked of `RmeWorkingBranchScope` with the persisted account:
+    `resolve()` for lists/counts (`scopedBranchIdsFor()`), `operationalBranchIdsFor()`
+    for the selector, `allows()` for creation. Never re-derived.
+
+## D. Fail-closed behaviour
+11. Reads: an unusable or unauthorized actor gets an EMPTY scope (`whereIn([])`),
+    zero counts and an empty selector — never the estate, MAIN or a first branch.
+12. A request `branch_id` only NARROWS; outside the actor's scope it is ignored.
+13. `create()`: a non-registrar is refused (`AuthorizationException`, 403) before
+    branch resolution; a registrar is refused at a branch it is not working in
+    (server-side twin of the FormRequest pin) before the doctor lock and before
+    the transaction. A refused attempt writes NOTHING (no visit, no patient).
+14. Mutations (`assignRoom`, `update`): refused with `AuthorizationException`
+    unless the persisted actor holds `update` on that visit.
+14a. Room and doctor are written ONLY by `assignRoom()` (`rme.visits.assign-room`),
+    where the room rules live. `UpdateClinicVisitRequest` does not accept
+    `clinic_room_id` / `doctor_id`, and `update()` strips `status`,
+    `clinic_room_id` and `doctor_id` itself so a future caller cannot reintroduce
+    the bypass. Never re-add them to the edit request.
+
+## E. Visit history and aggregates
+15. `patientVisitHistory()` / `adjacentVisits()` stay cross-branch BY DESIGN: their
+    callers authorize the anchor visit first (patient-centric RM workspace,
+    archive reads cross-branch, owner decision O3). Do not narrow them.
+16. The prior-visit picker (`patientVisitOptions`) is REGISTRATION-only: `create`
+    + `PatientSelectorSearchService::isSelectable()` — the same boundary the
+    submit re-asserts. It is NOT narrowed to the registrar's working branch,
+    because `StoreClinicVisitRequest::validateFollowUpVisit()` accepts a prior
+    visit from ANY active RME branch. Whether cross-branch Kontrol stays a
+    supported workflow is an OPEN OWNER DECISION (sprint doc §OD-1).
+17. Any caller that aggregates visit-domain data itself (RME dashboard, visit-list
+    widgets) takes its branch set from `ClinicVisitService::scopedBranchIdsFor()`,
+    never from `BranchService::rmeEnabledIds()`. `MedicalRecordService::draftCount()`
+    / `finalizedTodayCount()` take the branch set as a parameter.
+
+## F. Preserved (verified by regression)
+18. Doctor branch lock (rule 154) judged on the explicit registrar; refusal still
+    audited once; branch_lock stays OFF in production.
+19. Consent gate before "Selesai Pemeriksaan" (rule 109) unchanged and still the
+    reason a consented-but-unsigned refusal names.
+20. Invoice (rule 198) and payment (rule 197 §E) explicit-actor contracts,
+    RmeBillingActorGuard, manual pricing D21 (rule 194), D10 payment block,
+    invoice-version binding, snapshots, financial audit: untouched.
+21. SPN4 correction pilot, maker user 29 / checker user 1 (rules 195–197): untouched.
+22. Patient identity lookup global for registration (rule 101); doctor patient
+    and room scope (rule 138); daily branch context lock (`92-daily-branch-context-lock.mdc`) unchanged.
+
+## G. Recorded residuals (NOT changed here)
+23. `RmeWorkingBranchScope::branchIdsFor(null)` still answers every RME branch
+    (rule 198 §30). Controllers that hand `request()->user()` to the scope
+    directly remain safe only inside `auth`.
+24. No middleware enforces `is_active` per request (rule 198 §30a). Visit
+    surfaces now fail closed for a deactivated account; policy-only surfaces do not.
+25. `MedicalRecordService::paginate()` has no callers and still reads
+    `Auth::user()` — MedicalRecord domain, separate audit candidate.
+26. `MedicalRecordService::finalizedTodayCount()` uses UTC `now()` for "today"
+    (rule 92 clinical-clock class) — separate fix.
+27. `create()` does not re-assert patient selectability (the FormRequest does);
+    no non-HTTP caller exists.
+27a. Pre-existing N+1 on the context-bound visit list (~2 statements per visit:
+    92 → 152 statements as visits go 10 → 40). Not touched.
+27b. `transitionStatus(completed)` reads `status === cashier_pending` on the
+    in-memory model without a row lock; the payment service holds its own lock.
+27c. `show` / `edit` still render for a deactivated account with a live session
+    (policy-only surfaces, rule 198 §30a).
+27d. The guard is deliberately NOT memoised: ~3 statements per resolution, a
+    constant (O(1)) addition per request (+17..+23 on the list, +9..+19 on the
+    dashboard). A memo on a container- or route-cached object outlives the
+    request — never add one to save these.
+
+## H. Verification, release and rollback
+28. CI: `ClinicVisitBranchAuthority` token in BOTH critical-gate variants; the
+    suite declared in `config/ci_runner.php` `critical_gate_mandatory_suites`.
+28a. Local evidence: new suite RED 34 failed on the unmodified service → 42 passed;
+    21 affected suites 497 passed; PostgreSQL 16.15 — 12 affected suites 280 passed
+    and the financial/correction/manual-pricing/payment suites 518 passed;
+    mutation 18 KILLED + 1 proven equivalent, 0 actionable survivors.
+29. Deploy only via `scripts/deploy-vps-runner.sh` executed INSIDE the VPS;
+    complete only at `exit=0` + `DEPLOY OK` + `DEPLOY_HEAD_TARGET_MATCH=YES`.
+    No migration.
+30. Production verification is read-only (code fingerprint, routes, flags, pilot
+    config, clinical + financial fingerprint). Never create a visit, patient,
+    invoice or payment to produce evidence.
+31. Rollback: `scripts/rollback-vps.sh fix-rme-invoice-branch-scope-explicit-actor-1-go`;
+    no data to restore. Never "fix" a post-deploy access problem by removing a
+    branch check.
+32. The GO tag is SCOPED to this security fix; it never certifies the correction
+    pilot (rule 196 ladder).

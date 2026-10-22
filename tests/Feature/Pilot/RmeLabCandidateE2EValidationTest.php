@@ -16,6 +16,7 @@ use App\Modules\LabService\Models\LabService;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\MedicalRecord\Models\MedicalRecordHandwriting;
 use App\Modules\MedicalRecord\Services\MedicalRecordService;
+use App\Modules\RME\Services\DoctorRoomScopeService;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Models\RmeInvoiceItem;
 use App\Modules\RmeInvoice\Models\RmePayment;
@@ -89,9 +90,15 @@ function e2eVisitReadyForFinalize(Branch $branch, ?User $doctorUser = null): arr
     $doctorUser ??= test()->doctor;
     $doctorId = Doctor::query()->where('user_id', $doctorUser->id)->value('id');
 
+    // AUDIT-RME-CLINIC-VISIT-BRANCH-AUTHORITY-1 — the visit sits in the room the
+    // examining doctor is online in. "Selesai Pemeriksaan" now checks the
+    // EXPLICIT doctor with the same `transition` ability the controller asks,
+    // and that includes the doctor room scope; ClinicVisitFactory otherwise puts
+    // the visit in a fresh room no doctor is in, which HTTP would refuse too.
     $visit = ClinicVisit::factory()->inProgress()->create(array_filter([
         'branch_id' => $branch->id,
         'doctor_id' => $doctorId,
+        'clinic_room_id' => app(DoctorRoomScopeService::class)->currentRoomIdFor($doctorUser),
     ]));
     $record = MedicalRecord::factory()->create([
         'clinic_visit_id' => $visit->id,
@@ -129,7 +136,7 @@ function e2eFinalizeAndCompleteExamination(ClinicVisit $visit, MedicalRecord $re
     test()->actingAs($doctorUser);
 
     app(MedicalRecordService::class)->finalize($record->fresh());
-    app(ClinicVisitService::class)->transitionStatus($visit->fresh(), ClinicVisit::STATUS_CASHIER_PENDING);
+    app(ClinicVisitService::class)->transitionStatus($visit->fresh(), ClinicVisit::STATUS_CASHIER_PENDING, $doctorUser);
 }
 
 /**
@@ -420,7 +427,7 @@ it('medical record finalization leaves the visit in_progress until the doctor fi
     expect($visit->fresh()->status)->toBe(ClinicVisit::STATUS_IN_PROGRESS)
         ->and($record->fresh()->status)->toBe(MedicalRecord::STATUS_FINAL);
 
-    app(ClinicVisitService::class)->transitionStatus($visit->fresh(), ClinicVisit::STATUS_CASHIER_PENDING);
+    app(ClinicVisitService::class)->transitionStatus($visit->fresh(), ClinicVisit::STATUS_CASHIER_PENDING, $this->doctor);
 
     expect($visit->fresh()->status)->toBe(ClinicVisit::STATUS_CASHIER_PENDING);
 });

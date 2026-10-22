@@ -366,7 +366,7 @@ it('offers a locked doctor only their own branch in the selector (open item V3)'
 
     // A choice that does nothing is worse than no choice: `narrow()` would
     // discard any other branch anyway, so the selector must not offer one.
-    expect(app(ClinicVisitService::class)->selectableRmeBranches()->pluck('id')->map(fn ($id) => (int) $id)->all())
+    expect(app(ClinicVisitService::class)->selectableRmeBranches($user)->pluck('id')->map(fn ($id) => (int) $id)->all())
         ->toBe([(int) $this->sunu->id]);
 });
 
@@ -395,6 +395,7 @@ it('refuses an out-of-lock visit written by a locked doctor, and AUDITS the refu
 
     expect(fn () => app(ClinicVisitService::class)->create(
         dhblVisitPayload($doctor, $patient, (int) $this->landak->id),
+        $user,
     ))->toThrow(ValidationException::class);
 
     // No visit anywhere. The refusal is asserted BEFORE the transaction opens,
@@ -463,7 +464,7 @@ it('refuses the NEW-PATIENT converging input too, and creates no patient', funct
             'branch_id' => $this->landak->id,
             'manual_rm_number' => '778899',
         ],
-    ]))->toThrow(ValidationException::class);
+    ], $user))->toThrow(ValidationException::class);
 
     expect(Patient::query()->count())->toBe($patientsBefore)
         ->and(ClinicVisit::query()->count())->toBe($visitsBefore);
@@ -524,6 +525,7 @@ it('lets the same locked doctor write to their OWN branch', function () {
 
     $visit = app(ClinicVisitService::class)->create(
         dhblVisitPayload($doctor, $patient, (int) $this->sunu->id),
+        $user,
     );
 
     expect((int) $visit->branch_id)->toBe((int) $this->sunu->id)
@@ -706,6 +708,7 @@ it('degrades the same way when the locked branch loses is_rme_enabled, with no e
      */
     $visit = app(ClinicVisitService::class)->create(
         dhblVisitPayload($doctor, $patient, (int) $this->landak->id),
+        $user,
     );
 
     expect((int) $visit->branch_id)->toBe((int) $this->landak->id)

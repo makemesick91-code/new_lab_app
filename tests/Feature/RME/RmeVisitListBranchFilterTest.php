@@ -225,9 +225,9 @@ it('visit counts match the all-RME default scope', function () {
 
     $service = app(ClinicVisitService::class);
 
-    expect($service->visitsTodayCount())->toBe(3)
-        ->and($service->waitingCount())->toBe(2)
-        ->and($service->inProgressCount())->toBe(1);
+    expect($service->visitsTodayCount($this->admin))->toBe(3)
+        ->and($service->waitingCount($this->admin))->toBe(2)
+        ->and($service->inProgressCount($this->admin))->toBe(1);
 });
 
 it('visit counts match the selected branch filter', function () {
@@ -237,9 +237,9 @@ it('visit counts match the selected branch filter', function () {
 
     $service = app(ClinicVisitService::class);
 
-    expect($service->visitsTodayCount($this->atg3->id))->toBe(2)
-        ->and($service->waitingCount($this->atg3->id))->toBe(1)
-        ->and($service->inProgressCount($this->atg3->id))->toBe(1);
+    expect($service->visitsTodayCount($this->admin, $this->atg3->id))->toBe(2)
+        ->and($service->waitingCount($this->admin, $this->atg3->id))->toBe(1)
+        ->and($service->inProgressCount($this->admin, $this->atg3->id))->toBe(1);
 });
 
 // --- Show / policy -------------------------------------------------------------
