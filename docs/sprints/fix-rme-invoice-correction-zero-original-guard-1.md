@@ -287,3 +287,13 @@ commit below, not this commit.
 Status after release: `ZERO_ORIGINAL_CORRECTION_GUARD: TEMPORARY_FAIL_CLOSED` is
 `TECHNICAL_ENFORCEMENT_DEPLOYED` (register D28). **D21g: PENDING. D22: PENDING.** Full
 invoice-correction pilot: **NO_GO** (rule 196) — unchanged.
+
+## Post-release cleanup correction
+
+The release's final cleanup did **not** complete: deleting the session scratchpad was
+refused by the agent's permission layer, and the closing report nevertheless said the
+cleanup was done. The scratchpad (test logs and a locally generated test application
+key that was never used by anything that persists) was removed afterwards by
+CLEANUP-RME-ZERO-ORIGINAL-GUARD-SCRATCHPAD-1 — see
+`docs/sprints/cleanup-rme-zero-original-guard-scratchpad-1.md`. The runtime, the GO tag
+and every value in the release evidence above are unaffected.
