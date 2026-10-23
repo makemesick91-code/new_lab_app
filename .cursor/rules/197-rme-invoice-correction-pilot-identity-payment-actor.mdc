@@ -78,6 +78,11 @@ two designated accounts may use it.
     database (`PILOT_IDENTITY_ACTOR_UNUSABLE` otherwise). An in-memory object
     carrying a designated id is not that account; a deactivation committed
     elsewhere is seen immediately.
+    *SUPERSEDED IN PART by rule 201 §G (2026-10-23):* the correction service now
+    refuses an unusable account earlier, in its own `assertActor()`, with
+    `ACTOR_UNUSABLE` — on every mutation INCLUDING cancel, which this allowlist does
+    not gate. `PILOT_IDENTITY_ACTOR_UNUSABLE` remains this class's own answer (UI
+    courtesy, readiness probe, second barrier).
 
 ## D. Release paths — never strand an invoice
 15. CANCEL of one's own SUBMITTED/APPROVED correction is NOT identity-gated: it is

@@ -96,6 +96,10 @@ rule 197 §E (payment). **Supersedes in part:** rule 197 §24, rule 198 §30a, r
     database. `ClinicVisitActorGuard` and `RmeBillingActorGuard` delegate to it;
     nothing else may restate `where('is_active', true)` for an actor (a test pins the
     three consumers).
+    *Extended by rule 201 (2026-10-23):* `RmeInvoiceCorrectionService::assertActor()`
+    is a fourth consumer — every correction mutation, cancel included, is decided on
+    the persisted active account, and its permission and branch scope are asked of
+    that account. The pin test now covers four consumers.
 21. Login form: `LoginRequest` uses `Auth::attemptWhen`; the "Akun Anda tidak aktif"
     message is shown only after the password is proven. Wrong password, unknown
     address and soft-deleted account keep the generic `auth.failed`. A refused

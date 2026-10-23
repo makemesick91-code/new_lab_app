@@ -33,6 +33,7 @@ use App\Modules\RmeInvoice\Services\RmeInvoiceCorrectionService;
 use App\Modules\RmeInvoice\Support\RmeFinancialAuditEvent;
 use App\Modules\RmeInvoice\Support\RmeInvoiceCorrectionDenied;
 use App\Modules\RmeInvoice\Support\RmeInvoiceCorrectionPermission;
+use App\Modules\RmeInvoice\Support\RmeInvoiceCorrectionPilotIdentity;
 use App\Modules\RmeInvoice\Support\RmeInvoiceCorrectionStatus;
 use App\Modules\RmeOnlineContext\Middleware\EnsureRmeOnlineContext;
 use Illuminate\Support\Facades\Auth;
@@ -247,11 +248,28 @@ it('audits an identity refusal with ids and the code only', function () {
 
 // ─── Unusable actors ────────────────────────────────────────────────────────
 
+// REVISED by FIX-RME-INVOICE-CORRECTION-ZERO-ORIGINAL-GUARD-1 (rule 201): the
+// service now refuses an unusable account in assertActor(), BEFORE the identity
+// allowlist is asked — on every mutation, cancel included (cancel is not
+// identity-gated, so an inactive maker could cancel through a direct call). The
+// service-path code is therefore ACTOR_UNUSABLE. The identity allowlist keeps
+// its own usable-account check (the UI courtesy, the readiness probe, and the
+// second barrier); rpiIdentityRefuses() proves it still refuses on its own.
+
+function rpiIdentityRefuses(string $action, User $actor): void
+{
+    rpiDenied(
+        fn () => app(RmeInvoiceCorrectionPilotIdentity::class)->assertAllowed($action, $actor),
+        RmeInvoiceCorrectionDenied::PILOT_IDENTITY_ACTOR_UNUSABLE,
+    );
+}
+
 it('refuses the designated maker once deactivated', function () {
     test()->pilotMaker->forceFill(['is_active' => false])->save();
     $invoice = ricInvoice();
 
-    rpiDenied(fn () => ricSubmit($invoice, test()->pilotMaker->fresh()), 'PILOT_IDENTITY_ACTOR_UNUSABLE');
+    rpiDenied(fn () => ricSubmit($invoice, test()->pilotMaker->fresh()), RmeInvoiceCorrectionDenied::ACTOR_UNUSABLE);
+    rpiIdentityRefuses(RmeInvoiceCorrectionPilotIdentity::ACTION_SUBMIT, test()->pilotMaker->fresh());
 });
 
 it('refuses the designated checker once deactivated or deleted', function () {
@@ -259,11 +277,13 @@ it('refuses the designated checker once deactivated or deleted', function () {
 
     test()->pilotChecker->forceFill(['is_active' => false])->save();
     test()->actingAs(test()->pilotChecker->fresh());
-    rpiDenied(fn () => rpiService()->approve($correction, test()->pilotChecker->fresh()), 'PILOT_IDENTITY_ACTOR_UNUSABLE');
+    rpiDenied(fn () => rpiService()->approve($correction, test()->pilotChecker->fresh()), RmeInvoiceCorrectionDenied::ACTOR_UNUSABLE);
+    rpiIdentityRefuses(RmeInvoiceCorrectionPilotIdentity::ACTION_APPROVE, test()->pilotChecker->fresh());
 
     test()->pilotChecker->forceFill(['is_active' => true])->save();
     test()->pilotChecker->delete();
-    rpiDenied(fn () => rpiService()->approve($correction, test()->pilotChecker), 'PILOT_IDENTITY_ACTOR_UNUSABLE');
+    rpiDenied(fn () => rpiService()->approve($correction, test()->pilotChecker), RmeInvoiceCorrectionDenied::ACTOR_UNUSABLE);
+    rpiIdentityRefuses(RmeInvoiceCorrectionPilotIdentity::ACTION_APPROVE, test()->pilotChecker);
 
     expect(rpiStatus($correction))->toBe(RmeInvoiceCorrectionStatus::SUBMITTED);
 });
@@ -275,7 +295,8 @@ it('refuses an unsaved account object that merely carries a designated id', func
 
     $correction = rpiSubmitted();
 
-    rpiDenied(fn () => rpiService()->approve($correction, $forged), 'PILOT_IDENTITY_ACTOR_UNUSABLE');
+    rpiDenied(fn () => rpiService()->approve($correction, $forged), RmeInvoiceCorrectionDenied::ACTOR_UNUSABLE);
+    rpiIdentityRefuses(RmeInvoiceCorrectionPilotIdentity::ACTION_APPROVE, $forged);
     expect(rpiStatus($correction))->toBe(RmeInvoiceCorrectionStatus::SUBMITTED);
 });
 

@@ -29,6 +29,7 @@ use App\Modules\RmeInvoice\Support\RmeInvoiceSnapshot;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
 use App\Modules\Tariff\Support\TariffPricingMode;
 use App\Modules\Treatment\Models\Treatment;
+use App\Support\AccessControl\ActiveAccountResolver;
 use Closure;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\QueryException;
@@ -73,6 +74,20 @@ use LogicException;
  *     another transaction, so D10 can never strand an invoice behind an approval
  *     nobody applies. The account that requested a correction can neither
  *     approve nor apply it — on every path, Super Admin included.
+ * 11. FIX-RME-INVOICE-CORRECTION-ZERO-ORIGINAL-GUARD-1 (rule 201) — a TEMPORARY
+ *     FAIL-CLOSED boundary while the Rp0 policy (D21g) and the zombie-invoice
+ *     question (D22) are PENDING: an invoice whose AUTHORITATIVE ORIGINAL total
+ *     is Rp0 can never be corrected. Submit, approve (= apply) and the recovery
+ *     apply refuse it under the invoice row lock, BEFORE any mutation; reject and
+ *     cancel stay open because they only de-escalate. The original is persisted
+ *     data — the live row at correction_version 0, the frozen v0 document above
+ *     it — never a request field or the object a caller passes in.
+ * 12. Rule 200 at this service — every mutation, cancel included, is decided on
+ *     the PERSISTED, active, non-deleted account (ActiveAccountResolver), and the
+ *     permission and branch scope are asked of THAT account, never of roles a
+ *     stale in-memory object still carries. The account is re-read after the
+ *     invoice lock is held: that read is the linearization point for a
+ *     concurrent deactivation (rule 201 §29).
  */
 class RmeInvoiceCorrectionService
 {
@@ -98,6 +113,7 @@ class RmeInvoiceCorrectionService
         private readonly AuditLogService $auditLogs,
         private readonly RmeInvoiceCorrectionPilotScope $pilot,
         private readonly RmeInvoiceCorrectionPilotIdentity $identity,
+        private readonly ActiveAccountResolver $accounts,
     ) {}
 
     // ─── Reads ──────────────────────────────────────────────────────────────
@@ -463,6 +479,13 @@ class RmeInvoiceCorrectionService
                 return [$this->markStale($locked, $stale, $checker), $stale];
             }
 
+            // Rule 201 — the invoice is still the document the checker reviewed
+            // (staleReason() just proved it). If its original total is Rp0 — a
+            // correction filed before this guard existed — it is refused BEFORE
+            // anything is written: not APPROVED, not APPLIED. It stays SUBMITTED
+            // so the checker can reject it or the maker cancel it (D10 release).
+            $this->assertNotZeroOriginal($invoice);
+
             $from = $locked->status;
             $this->corrections->transition($locked, [
                 'status' => RmeInvoiceCorrectionStatus::APPROVED,
@@ -601,6 +624,11 @@ class RmeInvoiceCorrectionService
                 if ($stale !== null) {
                     return [$this->markStale($locked, $stale, $actor), $stale];
                 }
+
+                // Rule 201 — the recovery apply of a pre-guard APPROVED row of a
+                // Rp0 original (invoice unchanged since review) is refused before
+                // mutation; it stays APPROVED and remains cancellable by its maker.
+                $this->assertNotZeroOriginal($invoice);
 
                 /** @var RmeInvoice $invoice */
                 return [$this->applyLocked($invoice, $locked, $actor, self::APPLICATION_MANUAL_RECOVERY), null];
@@ -910,6 +938,12 @@ class RmeInvoiceCorrectionService
             return '[CORRECTION_INVOICE_TOTAL_NEGATIVE] Total tagihan ini negatif; koreksinya menunggu keputusan owner.';
         }
 
+        // Rule 201 — the zero-original guard, read from persisted data.
+        $zero = $this->zeroOriginalIneligibility($invoice);
+        if ($zero !== null) {
+            return $zero;
+        }
+
         if ($invoice->clinicVisit?->status === ClinicVisit::STATUS_CANCELLED) {
             return '[CORRECTION_VISIT_CANCELLED] Kunjungan tagihan ini dibatalkan.';
         }
@@ -926,12 +960,106 @@ class RmeInvoiceCorrectionService
     }
 
     /**
-     * Permission + branch scope, asserted in the SERVICE so a command, a job or a
-     * future caller cannot reach a transition without them.
+     * FIX-RME-INVOICE-CORRECTION-ZERO-ORIGINAL-GUARD-1 (rule 201) — why an
+     * invoice's ORIGINAL total forbids every correction, or null.
+     *
+     * TEMPORARY FAIL-CLOSED BOUNDARY, not a Rp0 policy: D21g (intrinsically free
+     * treatments / Rp0 consultation and control) and D22 (zombie Rp0 invoices)
+     * are PENDING owner decisions. Until one of them decides otherwise, a
+     * correction may not create money out of a Rp0 document. Issuing a Rp0
+     * invoice is untouched — this is about correction only.
+     *
+     * Refused when the authoritative original total is Rp0, when the CURRENT
+     * total is Rp0 (the same outcome reached from a later version), and when the
+     * original cannot be proven at all.
+     */
+    private function zeroOriginalIneligibility(RmeInvoice $invoice): ?string
+    {
+        $original = $this->originalTotalCents($invoice);
+
+        if ($original === null) {
+            return '[CORRECTION_ORIGINAL_TOTAL_UNVERIFIABLE] Total asli tagihan ini tidak dapat dibuktikan dari versi dokumen aslinya, sehingga koreksi ditolak.';
+        }
+
+        if ($original < 0) {
+            return '[CORRECTION_INVOICE_TOTAL_NEGATIVE] Total asli tagihan ini negatif; koreksinya menunggu keputusan owner.';
+        }
+
+        if ($original === 0 || RmeInvoiceDocument::toCents($invoice->grand_total) === 0) {
+            return '[CORRECTION_ORIGINAL_TOTAL_ZERO] Total asli tagihan ini Rp0. Koreksi tagihan Rp0 belum diizinkan — kebijakan Rp0 (D21g) dan tagihan Rp0 tertunda (D22) masih menunggu keputusan owner.';
+        }
+
+        return null;
+    }
+
+    /**
+     * The ORIGINAL (v0) grand total in cents, from persisted data only, or null
+     * when it cannot be proven:
+     *  - correction_version 0: the invoice was never corrected, so the live row
+     *    IS v0 (read by the caller under its FOR UPDATE lock);
+     *  - correction_version > 0: v0 was frozen as the ORIGINAL document version
+     *    by the first application; its snapshot is the authority;
+     *  - correction_version > 0 with no frozen v0, a v0 whose snapshot no longer
+     *    hashes to the value recorded when it was frozen (an out-of-band edit),
+     *    or a snapshot without an integer total: unknowable, and the caller
+     *    fails closed.
+     */
+    private function originalTotalCents(RmeInvoice $invoice): ?int
+    {
+        if ((int) ($invoice->correction_version ?? 0) === 0) {
+            return RmeInvoiceDocument::toCents($invoice->grand_total);
+        }
+
+        $v0 = $this->corrections->originalDocumentVersion((int) $invoice->id);
+        if ($v0 === null || ! $v0->integrityHolds()) {
+            return null;
+        }
+
+        $cents = $v0->snapshot['totals']['grand_total_cents'] ?? null;
+
+        return is_int($cents) ? $cents : null;
+    }
+
+    /**
+     * Rule 201 at approve and at the recovery apply, inside the transaction that
+     * holds the invoice → correction locks and before any write. A removed
+     * invoice is left to staleReason() (INVOICE_REMOVED), unchanged.
+     */
+    private function assertNotZeroOriginal(?RmeInvoice $invoice): void
+    {
+        if ($invoice === null) {
+            return;
+        }
+
+        $zero = $this->zeroOriginalIneligibility($invoice);
+        if ($zero !== null) {
+            throw ValidationException::withMessages(['correction' => $zero]);
+        }
+    }
+
+    /**
+     * Usability + permission + branch scope, asserted in the SERVICE so a
+     * command, a job or a future caller cannot reach a transition without them.
+     *
+     * Rule 201 / rule 200 — all three are decided on the PERSISTED account,
+     * re-read here (after the invoice lock is held): an inactive, deleted or
+     * unsaved account is refused, and the permission is never answered by roles
+     * a stale in-memory object still carries.
      */
     private function assertActor(User $actor, string $permission, int $branchId, ?int $correctionId, ?int $invoiceId): void
     {
-        if (! $actor->can($permission)) {
+        $account = $this->accounts->resolveUsable($actor);
+
+        if ($account === null) {
+            throw new RmeInvoiceCorrectionDenied(
+                RmeInvoiceCorrectionDenied::ACTOR_UNUSABLE,
+                'Akun ini tidak aktif atau tidak dikenali, sehingga tidak dapat menjalankan tindakan koreksi tagihan.',
+                $correctionId,
+                $invoiceId,
+            );
+        }
+
+        if (! $account->can($permission)) {
             throw new RmeInvoiceCorrectionDenied(
                 RmeInvoiceCorrectionDenied::PERMISSION_MISSING,
                 'Anda tidak memiliki izin untuk tindakan koreksi ini.',
@@ -940,7 +1068,7 @@ class RmeInvoiceCorrectionService
             );
         }
 
-        if (! $this->workingBranchScope->allows($actor, $branchId)) {
+        if (! $this->workingBranchScope->allows($account, $branchId)) {
             throw new RmeInvoiceCorrectionDenied(
                 RmeInvoiceCorrectionDenied::BRANCH_OUT_OF_SCOPE,
                 'Tagihan ini berada di luar cabang kerja Anda.',

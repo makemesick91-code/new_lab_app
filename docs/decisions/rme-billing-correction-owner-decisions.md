@@ -336,6 +336,10 @@ pre-payment correction — a classification, never an approval:
     forbidden by rule 196 §8/§23 and requires both pilot accounts (29 submits, 1
     approves). Whether to add a hard refusal while D21g/D22 are pending is an open
     owner question.
+  - *Update, 2026-10-23 (`FIX-RME-INVOICE-CORRECTION-ZERO-ORIGINAL-GUARD-1`, rule 201):*
+    the owner instructed that hard refusal as a TEMPORARY fail-closed boundary — see
+    **D28** below. **D21g itself is still PENDING**; D28 decides nothing about Rp0
+    pricing, consultation or control.
 
 ### OD-1 — Cross-branch and cross-doctor Kontrol — `OWNER_POLICY_APPROVED`, `REPOSITORY_POLICY_RECORDED`, `TECHNICAL_ENFORCEMENT_DEPLOYED` (2026-10-23, runtime `b76b0ed2`, tag `hardening-rme-active-user-patient-selection-1-go`)
 
@@ -393,10 +397,39 @@ limits carry-over to the paying visit's branch. `TECHNICAL_ENFORCEMENT_DEPLOYED`
 is claimed only once the release that carries it is merged, deployed and verified
 on production (sprint doc §Release evidence).
 
+### D28 — Interim refusal of corrections on a Rp0 ORIGINAL invoice — `OWNER_TASK_INSTRUCTION`, `REPOSITORY_POLICY_RECORDED` (2026-10-23)
+
+`ZERO_ORIGINAL_CORRECTION_GUARD: TEMPORARY_FAIL_CLOSED`
+
+- **Source:** the owner's task instruction for
+  `FIX-RME-INVOICE-CORRECTION-ZERO-ORIGINAL-GUARD-1` (2026-10-23), which asked for a
+  temporary fail-closed server-side guard preventing correction of an invoice whose
+  authoritative original total is exactly zero, while D21g and D22 stay pending. No
+  signature, timestamp or approval reference beyond that instruction exists; none
+  is claimed.
+- **What it is:** an enforcement boundary, not a commercial policy. Submit, approve
+  (= apply, D1a) and the recovery apply refuse `CORRECTION_ORIGINAL_TOTAL_ZERO`
+  (or `CORRECTION_ORIGINAL_TOTAL_UNVERIFIABLE` when v0 cannot be proven) under the
+  invoice row lock, before any mutation. Reject and cancel stay open (D10 release).
+- **The original total** is persisted data: the live invoice row while
+  `correction_version = 0`, the frozen ORIGINAL (v0) document version above it.
+- **What it is NOT:** an approval of D21g or D22; a new Rp0 product; a change to
+  Rp0 invoice ISSUANCE (consultation, Kontrol, voucher invoices are still issued);
+  postpayment correction; refund; a discount policy; a change to any historical
+  invoice (invoice #36 stays Rp0 UNPAID; #41 stays PARTIAL).
+- **Ends when:** the owner decides D21g/D22 and a reviewed code change replaces this
+  guard. It is never relaxed by configuration or environment.
+- **Not a pending decision** and not a resolution of one: D21g and D22 remain
+  **PENDING** (list below). `TECHNICAL_ENFORCEMENT_DEPLOYED` is claimed only once the
+  release that carries it is merged, deployed and verified on production (sprint doc
+  §Release evidence).
+
 ## Pending decisions (unchanged)
 
 D2, D3, D4, D5, D6, D8, D9, D11, D12, D13, D14, D15, D16, D17, D18, D20, D22, D23,
 D24, D25, D26, D27 remain **PENDING**. D19 remains `APPROVED_SCOPE (rule 186)`.
+D28 (above) is an interim enforcement of an owner instruction, not a decision of
+D21g or D22 — both stay PENDING.
 See `docs/sprints/feature-rme-invoice-correction-receipt-foundation-1.md` §3 for
 their text. Decision codes are per register — the KTP-OCR "D7" is a different decision.
 

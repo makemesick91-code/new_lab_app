@@ -147,7 +147,12 @@ Evidence: `docs/sprints/verification-rme-invoice-correction-prepayment-pilot-2.m
     server-side. `users.last_login_at` is written by NO code path (the column is
     only declared fillable/cast; 0 of 35 accounts non-NULL on 2026-10-23) and is
     never read as login evidence — a NULL there proves nothing either way.
-23. **The ban on correcting the Rp0 invoice #36 is PROCEDURAL, not refused in code.**
+23. **SUPERSEDED IN PART by rule 201 (FIX-RME-INVOICE-CORRECTION-ZERO-ORIGINAL-GUARD-1,
+    2026-10-23): a Rp0 ORIGINAL is now REFUSED IN CODE** — submit, approve (= apply)
+    and the recovery apply return `CORRECTION_ORIGINAL_TOTAL_ZERO` under the invoice
+    lock; reject/cancel stay open. D21g and D22 remain PENDING; the procedural ban
+    below stays as a second layer. Historical text, kept:
+    **The ban on correcting the Rp0 invoice #36 is PROCEDURAL, not refused in code.**
     `RmeInvoiceCorrectionService::prePaymentIneligibility()` refuses a paid,
     non-UNPAID, negative-total, cancelled-visit or lab-candidate invoice, or one that
     already holds an ACTIVE correction — but NOT a Rp0 original. The proposal builder refuses every NEW Rp0

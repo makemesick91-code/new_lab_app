@@ -43,6 +43,16 @@ final class RmeInvoiceCorrectionDenied extends AuthorizationException
     /** Rule 197 — the actor is not a persisted, non-deleted, active account. */
     public const PILOT_IDENTITY_ACTOR_UNUSABLE = 'PILOT_IDENTITY_ACTOR_UNUSABLE';
 
+    /**
+     * FIX-RME-INVOICE-CORRECTION-ZERO-ORIGINAL-GUARD-1 (rule 201, rule 200) —
+     * the actor is not a persisted, non-deleted, active account. Asserted for
+     * EVERY correction mutation, cancel included, before any other check reads
+     * the account — so the identity allowlist is no longer the only place an
+     * inactive account is stopped, and a path it does not gate (cancel) is not
+     * left open.
+     */
+    public const ACTOR_UNUSABLE = 'ACTOR_UNUSABLE';
+
     public function __construct(
         public readonly string $reasonCode,
         string $message,

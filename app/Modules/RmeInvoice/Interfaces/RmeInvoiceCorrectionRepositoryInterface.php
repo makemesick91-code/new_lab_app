@@ -93,6 +93,14 @@ interface RmeInvoiceCorrectionRepositoryInterface
 
     public function latestDocumentVersion(int $invoiceId): ?RmeInvoiceDocumentVersion;
 
+    /**
+     * FIX-RME-INVOICE-CORRECTION-ZERO-ORIGINAL-GUARD-1 (rule 201) — the frozen
+     * v0 (ORIGINAL, version 0) document of an invoice, or null when the invoice
+     * has never been corrected. The authority for the ORIGINAL total of an
+     * invoice whose correction_version is above 0.
+     */
+    public function originalDocumentVersion(int $invoiceId): ?RmeInvoiceDocumentVersion;
+
     /** @param array<string, mixed> $data */
     public function createDocumentVersion(array $data): RmeInvoiceDocumentVersion;
 
