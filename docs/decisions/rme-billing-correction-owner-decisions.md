@@ -464,3 +464,19 @@ does not exist.
 
 Steps 1–5 are technical readiness (scoped GO). Steps 6–7 are operational
 verification; until both are evidenced the full activation GO tag is NOT created.
+
+**Procedure recorded, 2026-10-23 (`PREPARATION-RME-INVOICE-CORRECTION-PILOT-OPERATIONAL-READINESS-1`,
+rule 202; no decision made or changed).** Steps 6–7 now have a written counter
+procedure in `docs/operations/rme-invoice-correction-*.md` (master SOP, case-specific
+Owner approval form, maker/checker guide, reconciliation form, incident matrix,
+operator handoff). Production re-measured that day: unchanged — `PILOT_ACTIVE`,
+probe WATCH (`LIVE_NOW=no`), 0 positive UNPAID SPN4 invoices, 0 corrections.
+D21c, D21g and D22 remain PENDING; D28 remains the interim guard.
+
+- **OPS-OQ-1 — open owner question, not a decision.** The repository records no
+  authorized clinic procedure for a patient whose invoice is known to be wrong
+  while Owner approval of the correction is still pending (pay the issued amount
+  under dispute, or leave with the invoice UNPAID), nor whether such an invoice may
+  be corrected later. Until the owner decides, the case is `NOT_EXECUTED`, the
+  patient is never held, and such an invoice is not used as a pilot case (rule 196
+  §21).

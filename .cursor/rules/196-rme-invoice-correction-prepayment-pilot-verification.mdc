@@ -10,6 +10,10 @@ Evidence: `docs/sprints/verification-rme-invoice-correction-prepayment-pilot-1.m
 Extends rule 195 (activation contract). Rule 195 decides WHO may do WHAT; this rule
 decides what counts as PROOF that the live pilot works and when it may be closed.
 Nothing here changes runtime behaviour.
+**The human counter procedure that walks this ladder** (eligibility, case-specific
+Owner approval form, maker/checker steps, D10, reconciliation form, incident matrix,
+readiness levels): rule 202 and `docs/operations/rme-invoice-correction-*.md`. Rule
+202 adds no rung and no tag; §14 below stays the only full-closure tag.
 
 ## 1. The state ladder — never collapse two rungs into one
 Each rung needs its own evidence; a lower rung never implies a higher one.
