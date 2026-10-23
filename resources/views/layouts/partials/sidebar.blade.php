@@ -373,6 +373,13 @@
                                    class="menu-subitem {{ request()->routeIs('rme.invoice-corrections.approvals') ? $linkActive : $linkIdle }}">Persetujuan Koreksi</a>
                             @endcan
                         @endif
+                        {{-- Rule 203 (OPS-OQ-1) — billing disputes. Every branch, independent of the
+                             SPN4-only correction pilot flag: a dispute holds collection, it corrects nothing.
+                             Visibility is a courtesy; the route + policy + service decide. --}}
+                        @canany(['manage_rme_billing', 'review_rme_billing_disputes', 'view_rme_billing_disputes'])
+                            <a href="{{ route('rme.billing-disputes.index') }}" data-sidebar-link="billing-disputes"
+                               class="menu-subitem {{ request()->routeIs('rme.billing-disputes.*') ? $linkActive : $linkIdle }}">Ketidaksesuaian Tagihan</a>
+                        @endcanany
                         @can('view_rme_patient_reports')
                             <a href="{{ route('rme.reports.patients') }}"
                                class="menu-subitem {{ request()->routeIs('rme.reports.patients') ? $linkActive : $linkIdle }}">Laporan Pasien RME</a>

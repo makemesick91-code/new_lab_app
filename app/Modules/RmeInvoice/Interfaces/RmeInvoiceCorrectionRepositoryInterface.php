@@ -30,6 +30,12 @@ interface RmeInvoiceCorrectionRepositoryInterface
 
     public function activeForInvoice(int $invoiceId): ?RmeInvoiceCorrection;
 
+    /**
+     * Rule 203 — the most recently APPLIED correction of an invoice (highest
+     * applied_invoice_version), or null. Read under the caller's invoice lock.
+     */
+    public function latestAppliedForInvoice(int $invoiceId): ?RmeInvoiceCorrection;
+
     /** @return Collection<int, RmeInvoiceCorrection> */
     public function forInvoice(int $invoiceId): Collection;
 

@@ -279,14 +279,18 @@ use App\Modules\QualityControl\Repositories\RemakeRequestRepository;
 use App\Modules\Reporting\Interfaces\ReportingRepositoryInterface;
 use App\Modules\Reporting\Policies\ReportingPolicy;
 use App\Modules\Reporting\Repositories\ReportingRepository;
+use App\Modules\RmeInvoice\Interfaces\RmeBillingDisputeRepositoryInterface;
 use App\Modules\RmeInvoice\Interfaces\RmeInvoiceCorrectionRepositoryInterface;
 use App\Modules\RmeInvoice\Interfaces\RmeInvoiceRepositoryInterface;
 use App\Modules\RmeInvoice\Interfaces\RmePaymentRepositoryInterface;
+use App\Modules\RmeInvoice\Models\RmeBillingDispute;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Models\RmeInvoiceCorrection;
 use App\Modules\RmeInvoice\Models\RmeInvoiceDocumentVersion;
+use App\Modules\RmeInvoice\Policies\RmeBillingDisputePolicy;
 use App\Modules\RmeInvoice\Policies\RmeInvoiceCorrectionPolicy;
 use App\Modules\RmeInvoice\Policies\RmeInvoicePolicy;
+use App\Modules\RmeInvoice\Repositories\RmeBillingDisputeRepository;
 use App\Modules\RmeInvoice\Repositories\RmeInvoiceCorrectionRepository;
 use App\Modules\RmeInvoice\Repositories\RmeInvoiceRepository;
 use App\Modules\RmeInvoice\Repositories\RmePaymentRepository;
@@ -451,6 +455,8 @@ class RepositoryServiceProvider extends ServiceProvider
         RmePaymentRepositoryInterface::class => RmePaymentRepository::class,
         // FEATURE-RME-INVOICE-CORRECTION-RECEIPT-FOUNDATION-1 — invoice corrections + frozen document versions
         RmeInvoiceCorrectionRepositoryInterface::class => RmeInvoiceCorrectionRepository::class,
+        // IMPLEMENTATION-RME-BILLING-DISPUTE-ESCALATION-OPS-OQ-1 (rule 203).
+        RmeBillingDisputeRepositoryInterface::class => RmeBillingDisputeRepository::class,
         OversightBillingCorrectionRepositoryInterface::class => OversightBillingCorrectionRepository::class,
         // LEGACY-RME-PDF-1A — legacy (historical) RME PDF archive
         LegacyRmeImportRepositoryInterface::class => LegacyRmeImportRepository::class,
@@ -565,6 +571,7 @@ class RepositoryServiceProvider extends ServiceProvider
         // FEATURE-RME-INVOICE-CORRECTION-RECEIPT-FOUNDATION-1 (rule 190)
         RmeInvoiceCorrection::class => RmeInvoiceCorrectionPolicy::class,
         RmeInvoiceDocumentVersion::class => RmeInvoiceCorrectionPolicy::class,
+        RmeBillingDispute::class => RmeBillingDisputePolicy::class,
         TreatmentCategory::class => TreatmentCategoryPolicy::class,
         Treatment::class => TreatmentPolicy::class,
         Tariff::class => TariffPolicy::class,

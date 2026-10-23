@@ -1,5 +1,5 @@
 ---
-description: PREPARATION-RME-INVOICE-CORRECTION-PILOT-OPERATIONAL-READINESS-1 — the operational procedure contract of the SPN4 pre-payment invoice correction pilot. Six operator documents under docs/operations/rme-invoice-correction-* are the canonical counter procedure (eligibility, Front Office detection, case-specific Owner approval, maker 29 / checker 1 steps, D10 payment block, D1a auto-apply verification, reconciliation, rejection/cancellation, incident matrix A–R, training, master readiness checklist). Six readiness levels are never collapsed. Operational readiness is not the pilot's full GO and mints no tag. Changes no runtime behaviour; D21g, D22, D21c stay PENDING; OPS-OQ-1 is an open owner question, not a decision.
+description: PREPARATION-RME-INVOICE-CORRECTION-PILOT-OPERATIONAL-READINESS-1 — the operational procedure contract of the SPN4 pre-payment invoice correction pilot. Six operator documents under docs/operations/rme-invoice-correction-* are the canonical counter procedure (eligibility, Front Office detection, case-specific Owner approval, maker 29 / checker 1 steps, D10 payment block, D1a auto-apply verification, reconciliation, rejection/cancellation, incident matrix A–R, training, master readiness checklist). Six readiness levels are never collapsed. Operational readiness is not the pilot's full GO and mints no tag. Changes no runtime behaviour; D21g, D22, D21c stay PENDING. OPS-OQ-1 was answered by the Owner (all branches) and is enforced by rule 203 (billing dispute & payment hold).
 globs: docs/operations/rme-invoice-correction-*.md, docs/sprints/preparation-rme-invoice-correction-pilot-operational-readiness-1.md, docs/decisions/rme-billing-correction-owner-decisions.md, app/Modules/RmeInvoice/**, resources/views/rme/invoice-corrections/**, resources/views/rme/cashier/**, config/rme_invoice_correction.php
 alwaysApply: false
 ---
@@ -80,8 +80,9 @@ operator document and a rule disagree, the rule wins and the document is wrong.
     snapshot. **Release is not permission to collect:** the original amount is
     collected only when the checker/Owner concluded the original invoice is
     right; while the error is still known, the cashier never collects it as if
-    resolved — management decides (OPS-OQ-1). A payment cannot be undone and a
-    paid invoice is uncorrectable in this pilot.
+    resolved — the cashier files a billing dispute, which holds every payment
+    path until the branch authority resolves it (OPS-OQ-1, rule 203). A payment
+    cannot be undone and a paid invoice is uncorrectable in this pilot.
     An inactive maker cannot cancel (`ACTOR_UNUSABLE`); the checker can still
     reject a SUBMITTED row. A legacy (pre-D1a) APPROVED row cannot be rejected; it
     is released by its maker's cancel or by the checker's recovery apply
@@ -97,12 +98,17 @@ operator document and a rule disagree, the rule wins and the document is wrong.
     while the patient is present, the case is `NOT_EXECUTED`, no correction is
     filed, no known-wrong amount is collected as if resolved, and clinic
     management decides about the patient.
-19. **OPS-OQ-1 (open owner question, NOT a decision):** the repository records no
-    authorized clinic procedure for resolving a patient whose invoice is known to
-    be wrong while Owner approval is pending (pay the issued amount under dispute,
-    or leave with the invoice UNPAID), nor whether such an invoice may be corrected
-    later. Until the Owner decides, such an invoice is not used as a pilot case
-    (rule 196 §21). Never invent the answer in a document or in code.
+19. **OPS-OQ-1 — ANSWERED by the Owner for ALL branches; enforced by rule 203.**
+    Before the answer this item recorded that no clinic procedure existed for a
+    patient whose invoice is known to be wrong while Owner approval is pending.
+    The answer: do not collect the known-wrong amount, do not modify the invoice
+    unilaterally, escalate to the branch authority (a billing dispute, which holds
+    payment on every path), keep the invoice financially unresolved until an
+    authorized resolution, never mark it PAID/CANCELLED/Rp0 because of the dispute,
+    and never keep the patient waiting for the pilot. It does not widen the pilot
+    (SPN4, maker 29 / checker 1, D28). A known-wrong invoice is still not used as a
+    pilot case unless the case-specific Owner approval exists (rule 196 §21).
+    Which branch account reviews disputes is open owner question OPS-OQ-1a.
 20. **No synthetic financial cases**, no fabricated approvals, signatures,
     timestamps, approval references, sessions, invoices, payments or corrections.
 21. Evidence carries ids, numbers (`RME-…`, `RMECOR-…`), amounts, statuses, codes

@@ -60,6 +60,9 @@ class RmePaymentController extends Controller
             // FEATURE-RME-BRANCH-TARIFF-AUTHORITY-1 — D10 display only; the
             // service refuses under the invoice row lock.
             'paymentBlock' => $this->service->activeCorrectionBlocking($rmeInvoice),
+            // Rule 203 — OPS-OQ-1 dispute hold, display only; the service refuses
+            // under the invoice row lock.
+            'disputeHold' => $this->service->activeDisputeHolding($rmeInvoice),
         ]);
     }
 

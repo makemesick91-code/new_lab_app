@@ -115,7 +115,7 @@ piutang yang dipilih — di bawah kunci baris tagihan.
 | Keadaan | Tindakan |
 |---|---|
 | Koreksi aktif | Jangan menerima uang. Jelaskan ke pasien bahwa tagihan sedang diperiksa. Tunggu keputusan Checker. |
-| Pasien tidak dapat menunggu | Jangan menahan pasien. Maker boleh **membatalkan** pengajuan agar blokir lepas; keputusan atas pasien diambil manajemen (SOP §8, OPS-OQ-1). |
+| Pasien tidak dapat menunggu | Jangan menahan pasien — **pasien boleh pulang**, tagihan tetap Belum Dibayar. Pengajuan koreksi tidak perlu dibatalkan. Bila nominal diketahui salah, laporkan **Ketidaksesuaian Tagihan** agar pembayaran tetap ditahan setelah keputusan koreksi apa pun (SOP §8, OPS-OQ-1, rule 203). |
 | Halaman pembayaran sudah terbuka sebelum koreksi diterapkan | **Tutup dan muat ulang.** Sistem menolak formulir lama dengan `[INVOICE_VERSION_CHANGED] Tagihan ini telah dikoreksi sejak halaman pembayaran dibuka…` |
 | Ragu apakah pembayaran sudah tercatat | Jangan mengirim ulang. Buka riwayat pembayaran tagihan; laporkan ke IT bila janggal. |
 
@@ -131,8 +131,9 @@ piutang yang dipilih — di bawah kunci baris tagihan.
 **Blokir lepas ≠ boleh menagih.** Setelah Ditolak/Dibatalkan/Kedaluwarsa,
 tagihan kembali ke nominal asli. Tagih nominal itu **hanya** bila Checker/Owner
 menyimpulkan tagihan asli memang benar. Jika kesalahan masih diketahui, kasir
-**tidak** memungut nominal asli seolah-olah benar; keputusan pembayaran oleh
-manajemen (OPS-OQ-1, SOP §8–§9.1). Pembayaran tidak dapat ditarik kembali, dan
+**tidak** memungut nominal asli seolah-olah benar; kasir melaporkan
+**Ketidaksesuaian Tagihan** dan pembayaran ditahan sampai penanggung jawab cabang
+menyelesaikannya (OPS-OQ-1, rule 203, SOP §8–§9.1). Pembayaran tidak dapat ditarik kembali, dan
 tagihan yang sudah dibayar tidak dapat lagi dikoreksi di pilot ini.
 
 ```mermaid
@@ -240,8 +241,8 @@ nyata, status ini **NOT_PERFORMED**.
   dokumen revisi, snapshot asli tidak disentuh, event + audit
   `RME_INVOICE_CORRECTION_REJECTED` tercatat.
 - Blokir D10 lepas. Penagihan mengikuti §3.3: nominal asli ditagih hanya bila
-  tagihan asli memang benar; bila kesalahan masih diketahui → manajemen
-  (OPS-OQ-1).
+  tagihan asli memang benar; bila kesalahan masih diketahui → laporkan
+  **Ketidaksesuaian Tagihan** (OPS-OQ-1, rule 203).
 - Jika masih ada kesalahan nyata, kasus baru memerlukan persetujuan Owner baru.
 
 ### 6.2 Maker membatalkan

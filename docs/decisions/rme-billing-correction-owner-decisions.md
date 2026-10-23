@@ -36,6 +36,9 @@ A decision is only as far along as the last label that is evidenced. A brief's
 | 2026-10-22 | **OD-1 — cross-branch AND cross-doctor Kontrol allowed** | `OWNER_POLICY_APPROVED`, `REPOSITORY_POLICY_RECORDED`, `TECHNICAL_ENFORCEMENT_DEPLOYED` (2026-10-23, runtime `b76b0ed2`, tag `hardening-rme-active-user-patient-selection-1-go`; rule 200) | owner instruction in `HARDENING-RME-ACTIVE-USER-PATIENT-SELECTION-1` |
 | 2026-10-22 | **OD-1a — another branch's receivable is neither shown nor collected at this branch** (supersedes rule 197 §24) | `OWNER_POLICY_APPROVED`, `REPOSITORY_POLICY_RECORDED`, `TECHNICAL_ENFORCEMENT_DEPLOYED` (2026-10-23, runtime `b76b0ed2`, tag `hardening-rme-active-user-patient-selection-1-go`; rule 200) | owner answer to the sprint's question, `HARDENING-RME-ACTIVE-USER-PATIENT-SELECTION-1` |
 | 2026-10-23 | **D28 — interim refusal of corrections on a Rp0 ORIGINAL invoice** (`ZERO_ORIGINAL_CORRECTION_GUARD: TEMPORARY_FAIL_CLOSED`; D21g and D22 stay PENDING) | `OWNER_TASK_INSTRUCTION`, `REPOSITORY_POLICY_RECORDED`, `TECHNICAL_ENFORCEMENT_DEPLOYED` (2026-10-23, runtime `b3ec7133`, tag `fix-rme-invoice-correction-zero-original-guard-1-go`; rule 201) | owner task instruction for `FIX-RME-INVOICE-CORRECTION-ZERO-ORIGINAL-GUARD-1` |
+| 2026-10-23 | **OPS-OQ-1 — an invoice known to be wrong is not collected, not modified unilaterally, escalated to the branch authority, kept financially unresolved; the patient is never held** (ALL branches; does not widen the SPN4 correction pilot) | `OWNER_POLICY_APPROVED`, `REPOSITORY_POLICY_RECORDED`, `TECHNICAL_ENFORCEMENT: IMPLEMENTED — deployment pending` (rule 203) | owner answer in the brief of `IMPLEMENTATION-RME-BILLING-DISPUTE-ESCALATION-OPS-OQ-1` |
+| 2026-10-23 | **OPS-OQ-1a — which branch-level account reviews/resolves a billing dispute** | **open owner question** — granted to no operational role meanwhile | recorded by the same sprint |
+| 2026-10-23 | **OPS-OQ-1b — may a control visit's own invoice be collected while its carry-over parent is disputed?** | **open owner question** — current whole-batch refusal stands | security review of the same sprint |
 
 The earlier D21 text is kept below, marked SUPERSEDED, as the record of what was
 decided and enforced between 2026-10-17 and 2026-10-20. It is never deleted.
@@ -473,10 +476,65 @@ operator handoff). Production re-measured that day: unchanged — `PILOT_ACTIVE`
 probe WATCH (`LIVE_NOW=no`), 0 positive UNPAID SPN4 invoices, 0 corrections.
 D21c, D21g and D22 remain PENDING; D28 remains the interim guard.
 
-- **OPS-OQ-1 — open owner question, not a decision.** The repository records no
-  authorized clinic procedure for a patient whose invoice is known to be wrong
-  while Owner approval of the correction is still pending (pay the issued amount
-  under dispute, or leave with the invoice UNPAID), nor whether such an invoice may
-  be corrected later. Until the owner decides, the case is `NOT_EXECUTED`, the
-  patient is never held, and such an invoice is not used as a pilot case (rule 196
-  §21).
+- **OPS-OQ-1 — ANSWERED by the Owner (sprint brief received 2026-10-23; see "OPS-OQ-1 — owner policy" below).** As
+  recorded on 2026-10-23 before the answer: *open owner question, not a decision.*
+  The repository recorded no authorized clinic procedure for a patient whose
+  invoice is known to be wrong while Owner approval of the correction is still
+  pending (pay the issued amount under dispute, or leave with the invoice UNPAID),
+  nor whether such an invoice may be corrected later. That text is kept as history;
+  it no longer describes the system.
+
+## OPS-OQ-1 — owner policy: an invoice known to be wrong (all branches)
+
+**Status:** `OWNER_POLICY_APPROVED` · `REPOSITORY_POLICY_RECORDED` ·
+`TECHNICAL_ENFORCEMENT: IMPLEMENTED — deployment pending` (becomes
+`TECHNICAL_ENFORCEMENT_DEPLOYED` only after production deploy and verification).
+**Approved by:** Owner, for **ALL branches**, as stated in the
+`IMPLEMENTATION-RME-BILLING-DISPUTE-ESCALATION-OPS-OQ-1` sprint brief received
+2026-10-23. No separate signed artefact, approval reference or timestamp exists in
+the repository and none is invented here. **Implemented by:**
+`IMPLEMENTATION-RME-BILLING-DISPUTE-ESCALATION-OPS-OQ-1` (rule 203).
+
+The owner's answer, verbatim in substance:
+
+1. Do not collect the amount known to be incorrect.
+2. Do not modify the invoice unilaterally.
+3. Escalate the dispute to the responsible branch authority.
+4. Keep the invoice financially unresolved until a legitimate authorized resolution.
+5. Do not mark it PAID, CANCELLED, or Rp0 merely because a dispute exists.
+6. Do not keep the patient waiting merely to complete the Invoice Correction pilot.
+
+**What it does NOT authorize.** It does not expand the invoice-correction pilot:
+correction stays SPN4 only, maker 29 / checker 1 (D1c, D1e). It changes no
+pending decision: D21c, D21g and D22 remain PENDING and D28 remains the interim
+Rp0-original guard. It authorizes no refund, payment reversal, patient credit or
+Rp0 adjustment. It is not a case-specific Owner approval of any invoice.
+
+**How the system enforces it (rule 203).** A billing dispute
+(`trx_rme_billing_disputes`) is a report, not a correction. While it is active the
+invoice accepts no payment on any path (whole-batch refusal), the invoice is never
+changed by it, the case is routed in-app to the branch authority, and only a
+RESOLVED dispute with a verifiable outcome releases the hold — an applied correction
+newer than the report (SPN4 only, through the existing maker/checker flow), or a
+second account's confirmation that the unchanged original is correct.
+
+**Consequence recorded, not a new decision.** Outside SPN4 there is no correction
+path. An invoice there whose original amount is genuinely wrong therefore stays
+disputed (ESCALATED) — financially unresolved, exactly as the policy says — until
+the owner decides a correction path for that branch. No override was invented.
+
+- **OPS-OQ-1a — open owner question, not a decision.** Which branch-level account
+  should hold `review_rme_billing_disputes` (start review, escalate, resolve)? Until
+  the owner names one, the permission is granted to **no operational role**; only
+  Super Admin (the existing `'*'` grant) can review and resolve, and the Owner has
+  read-only `view_rme_billing_disputes`. Granting it to Admin Klinik would extend it
+  to every Front Office account (FrontOfficeRole is the exact union) and let
+  front-desk peers clear disputes raised at their own counter. Never answered in code.
+- **OPS-OQ-1b — open owner question, not a decision.** A control (follow-up) visit's
+  payment must settle the carry-over parent invoice first (existing control-chain
+  rule), so while that parent is disputed the control visit's OWN invoice cannot be
+  collected and the visit stays at the cashier — whole-batch refusal, no silent
+  omission. The patient is not physically held (they may leave), but the follow-up
+  visit stays financially open. Should a control invoice be collectable on its own
+  while its parent is disputed? Until the owner decides, the current behaviour stands
+  and nothing is changed in code.

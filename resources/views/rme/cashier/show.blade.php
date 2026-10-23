@@ -33,7 +33,7 @@
             <x-slot:breadcrumb>Rekam Medis Elektronik</x-slot:breadcrumb>
             <x-slot:actions>
                 <x-ui.button variant="secondary" :href="route('rme.cashier.index')">&larr; Kembali ke Daftar</x-ui.button>
-                @if ($invoice->isPayable() && empty($paymentBlock))
+                @if ($invoice->isPayable() && empty($paymentBlock) && empty($disputeHold))
                     <x-ui.button variant="primary" :href="route('rme.cashier.payment.create', [$visit, $invoice])">
                         {{ $invoice->isPartial() ? 'Bayar Cicilan' : 'Bayar Sekarang' }}
                     </x-ui.button>
@@ -50,6 +50,15 @@
         @if (! empty($paymentBlock))
             <x-ui.alert variant="warning" title="Pembayaran ditahan" data-payment-blocked-by-correction>
                 Tagihan sedang dalam proses koreksi. Pembayaran dapat dilanjutkan setelah proses koreksi selesai.
+            </x-ui.alert>
+        @endif
+
+        {{-- IMPLEMENTATION-RME-BILLING-DISPUTE-ESCALATION-OPS-OQ-1 — owner OPS-OQ-1 (rule 203, server-enforced). --}}
+        @if (! empty($disputeHold))
+            <x-ui.alert variant="danger" title="Pembayaran ditahan — tagihan dalam peninjauan" data-payment-held-by-dispute>
+                Tagihan ini sedang dalam peninjauan karena terdapat ketidaksesuaian nominal
+                ({{ $disputeHold->dispute_number }}). Pembayaran sementara tidak dapat diproses.
+                Silakan hubungi penanggung jawab cabang.
             </x-ui.alert>
         @endif
 
@@ -264,6 +273,8 @@
         <x-rme.lab-workflow-panel :invoice="$invoice" :candidates="$labCaseCandidates" />
 
         @include('rme.cashier.partials.invoice-correction-panel', ['panel' => $correctionPanel, 'visit' => $visit, 'invoice' => $invoice])
+
+        @include('rme.cashier.partials.billing-dispute-panel', ['panel' => $disputePanel, 'visit' => $visit, 'invoice' => $invoice])
 
     </div>
 </x-settings-shell>

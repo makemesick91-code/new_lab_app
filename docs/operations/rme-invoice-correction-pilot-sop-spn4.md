@@ -229,14 +229,23 @@ beredar di luar sistem.
 6. Catat kasus sebagai **`NOT_EXECUTED`** dengan alasan singkat tanpa data
    pasien (mis. "Owner tidak dapat dihubungi sebelum pasien pulang").
 
-**Hambatan operasional yang tercatat (OPS-OQ-1, pertanyaan untuk Owner — bukan
-keputusan):** repositori tidak memuat prosedur resmi klinik untuk menyelesaikan
-pasien ketika tagihan diketahui salah dan Owner belum menyetujui koreksi —
-apakah pasien membayar nominal terbit dengan catatan sengketa, atau pulang
-dengan tagihan tetap Belum Dibayar, dan apakah tagihan seperti itu boleh dikoreksi
-kemudian. SOP ini **tidak menetapkan** jawabannya. Sampai Owner memutuskan,
-tagihan seperti itu **tidak dipakai sebagai kasus pilot** (rule 196 §21) dan
-keputusan atas pasiennya diambil manajemen klinik.
+**Kebijakan Owner OPS-OQ-1 (sudah dijawab, berlaku di SEMUA cabang — rule 203).**
+Bila tagihan diketahui salah dan koreksi belum disetujui:
+
+1. **Jangan memungut** nominal yang diketahui salah.
+2. **Jangan mengubah** tagihan sendiri.
+3. Pada halaman tagihan, klik **Laporkan Ketidaksesuaian Tagihan**. Sistem
+   **menahan pembayaran** tagihan itu di semua jalur kasir dan meneruskan kasus
+   ke penanggung jawab cabang.
+4. Tagihan **tetap belum selesai** secara keuangan (Belum Dibayar/Sebagian) sampai
+   ada penyelesaian yang sah. Laporan tidak membuat tagihan Lunas, Dibatalkan,
+   atau Rp0.
+5. **Pasien boleh pulang.** Jangan menahan pasien demi menyelesaikan pilot koreksi.
+
+Kebijakan ini **tidak memperluas pilot koreksi** (tetap SPN4, Maker 29, Checker 1,
+D28 tetap berlaku). Tagihan yang diketahui salah tetap **tidak dipakai sebagai
+kasus pilot** tanpa persetujuan Owner untuk kasus itu (rule 196 §21). Panduan
+lengkap: `docs/operations/rme-billing-dispute-sop.md`.
 
 ## 9. Siklus status koreksi
 
@@ -283,8 +292,9 @@ berarti nominal asli benar:
   kesalahan), pembayaran biasa dilanjutkan.
 - Jika **kesalahan masih diketahui** — mis. pengajuan dibatalkan karena pasien
   tidak bisa menunggu, atau ditolak karena usulannya keliru — kasir **tidak**
-  memungut nominal asli seolah-olah benar. Keputusan pembayaran diambil
-  manajemen klinik (OPS-OQ-1, §8). Pembayaran tidak dapat ditarik kembali:
+  memungut nominal asli seolah-olah benar: laporkan **Ketidaksesuaian Tagihan**
+  (OPS-OQ-1, rule 203, §8) — pembayaran ditahan sampai penanggung jawab cabang
+  menyelesaikannya. Pembayaran tidak dapat ditarik kembali:
   begitu dibayar, tagihan menjadi Lunas/Sebagian dan **tidak dapat lagi
   dikoreksi** di pilot ini (koreksi setelah pembayaran dan refund belum ada).
 - Koreksi ulang membutuhkan pengajuan baru dan persetujuan Owner baru.

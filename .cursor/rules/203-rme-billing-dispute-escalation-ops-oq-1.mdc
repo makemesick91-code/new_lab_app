@@ -1,0 +1,137 @@
+---
+description: IMPLEMENTATION-RME-BILLING-DISPUTE-ESCALATION-OPS-OQ-1 — owner policy OPS-OQ-1 (approved for ALL branches) as code. A billing dispute is a REPORT that an issued RME invoice is known or suspected to be wrong; it is not a correction. While a dispute is active (OPEN, UNDER_REVIEW, ESCALATED) the invoice accepts no payment on any path (whole-batch refusal, decided under the invoice row lock, audited after rollback, de-duplicated), the invoice is never modified, PAID, CANCELLED or set to Rp0 by the dispute, the case is routed in-app to the branch authority, and the hold is released only by a RESOLVED dispute whose outcome the service can verify (an applied correction after the report, or a second account's confirmation of the unchanged original). The invoice-correction pilot stays SPN4, maker 29 / checker 1; D28 stays. The patient is never held.
+globs: app/Modules/RmeInvoice/**, resources/views/rme/billing-disputes/**, resources/views/rme/cashier/**, database/migrations/*rme_billing_disputes*, tests/Feature/RmeBillingDispute/**, docs/decisions/rme-billing-correction-owner-decisions.md, docs/operations/rme-invoice-correction-*.md, docs/sprints/implementation-rme-billing-dispute-escalation-ops-oq-1.md, docs/architecture/rme-billing-dispute-escalation.md
+alwaysApply: false
+---
+
+# RME billing dispute & escalation — OPS-OQ-1 (rule 203)
+
+Evidence: `docs/sprints/implementation-rme-billing-dispute-escalation-ops-oq-1.md`.
+Architecture: `docs/architecture/rme-billing-dispute-escalation.md`.
+Operator guidance (Bahasa Indonesia): `docs/operations/rme-billing-dispute-sop.md`.
+
+## A. The owner policy (OPS-OQ-1, approved for all branches)
+
+1. **An invoice known to be wrong is not collected at that amount.** The counter
+   files a billing dispute; it never "collects now, fixes later".
+2. **The invoice is not modified unilaterally.** A dispute is not a correction:
+   it changes no item, total, discount, status, version or payment. The only
+   paths that change an invoice remain the ones that existed before (creation,
+   payment, and — in SPN4 only — the maker/checker correction).
+3. **Escalation to the responsible branch authority** — in-app, to every usable
+   account that holds `review_rme_billing_disputes` and whose server-resolved
+   working scope reaches the invoice branch. No WhatsApp, e-mail or external
+   channel. Notification failure never unwinds the dispute or its hold.
+4. **The invoice stays financially unresolved** until a legitimate, authorized
+   resolution. A dispute is never PAID, CANCELLED or Rp0 by itself — a dispute
+   never PAID, CANCELLED or Rp0 the invoice, and no dispute state means "settled".
+5. **The patient is never held.** A dispute never holds the patient: the patient
+   leaves; the invoice remains UNPAID/PARTIAL and visible; reporting changes no
+   visit status. Nobody keeps a patient waiting to produce pilot evidence.
+6. **OPS-OQ-1 does not widen the correction pilot.** Correction stays SPN4 only,
+   maker 29 / checker 1, the Rp0-original guard (D28) stays, D21c/D21g/D22 stay
+   PENDING. A dispute grants no correction power to anyone.
+
+## B. The dispute record
+
+7. Table `trx_rme_billing_disputes`; states `OPEN → UNDER_REVIEW → ESCALATED →
+   RESOLVED` with the explicit map in `RmeBillingDisputeStatus::TRANSITIONS`
+   (OPEN may go straight to ESCALATED or RESOLVED; RESOLVED is terminal). No
+   state is ever inferred; no other transition exists.
+8. **One active dispute per invoice** — checked under the invoice row lock AND
+   enforced by the partial unique index `trx_rme_billing_dispute_one_active_uq`
+   (`WHERE status IN ('OPEN','UNDER_REVIEW','ESCALATED')`). A resolved dispute
+   does not block a new report.
+9. Reportable invoice statuses: UNPAID, PARTIAL, PAID. DRAFT and VOID are refused
+   (`BILLING_DISPUTE_INVOICE_STATUS_UNSUPPORTED`). A dispute on a PARTIAL/PAID
+   invoice blocks further collection; it never reverses or refunds a payment —
+   refund/reversal remain unimplemented and out of scope.
+10. The report snapshot (invoice status, grand total, paid total, correction
+    version at report) and the reporter are **immutable**; the row can never be
+    deleted; RESOLVED is terminal; `trx_rme_billing_dispute_events` is
+    append-only. Enforced in the model, not by convention.
+11. Free text (description, notes, resolution reason) is 10–1000 characters and
+    refuses any run of 13+ digits (no NIK). It is stored in the dispute and its
+    timeline only — never in the audit trail, never in a notification.
+
+## C. The payment hold
+
+12. **Every payment path** goes through `RmePaymentService::assertNoPaymentHold()`
+    (D10 correction block + this dispute hold): standard pay, visit payment with
+    selected receivables, control/carry-over chains, multi-invoice batches,
+    retries, and direct service calls. The check runs under the invoice row lock;
+    the FormRequest check is only an early courtesy.
+13. **Whole batch** — if any invoice the batch would settle is disputed, the whole
+    batch is refused and rolled back. Money is never silently redirected to the
+    batch's other invoices and a disputed invoice is never silently omitted.
+    Consequence: a disputed carry-over parent holds the forced control payment;
+    whether a control invoice may be collected alone is open owner question
+    **OPS-OQ-1b** — never changed in code without the answer.
+14. The hold is **independent of D10**: a rejected, cancelled, stale or applied
+    correction releases D10, never this hold. Only a RESOLVED dispute releases it,
+    and the next payment is still bound to the invoice's current version (rule 191).
+15. A held attempt writes `RME_PAYMENT_REFUSED_ACTIVE_DISPUTE` after the rollback,
+    with ids, codes and the payment path only, de-duplicated per (invoice, cashier)
+    within 15 minutes. Operator message (stable code `BILLING_DISPUTE_ACTIVE`):
+    "Tagihan ini sedang dalam peninjauan karena terdapat ketidaksesuaian nominal.
+    Pembayaran sementara tidak dapat diproses. Silakan hubungi penanggung jawab
+    cabang."
+16. There is **no switch** that turns the hold off — no feature flag, no
+    environment key. A hold that could be switched off would let a known-wrong
+    amount be collected.
+
+## D. Authority
+
+17. `manage_rme_billing` — report a dispute and add follow-up notes (the cashier).
+    `review_rme_billing_disputes` — start review, escalate, resolve (the branch
+    authority). `view_rme_billing_disputes` — read-only (Owner). None of them is
+    a financial power.
+18. **Conservative grant:** `review_rme_billing_disputes` is granted to NO
+    operational role; Super Admin holds it through the `'*'` grant. Granting it
+    to Admin Klinik would extend it to every Front Office account (FrontOfficeRole
+    is the exact union) and let front-desk peers clear their own counter's
+    disputes. Which branch-level account should review is open owner question
+    **OPS-OQ-1a** — never answered in code.
+19. Every action re-reads the PERSISTED account (`RmeBillingActorGuard::resolveUsable`)
+    under the invoice row lock: inactive, soft-deleted or permission-revoked
+    accounts are refused even with a live session. Branch scope is server-resolved
+    (`RmeWorkingBranchScope`); a request `branch_id` is never read. A dispute or
+    invoice outside the caller's scope is a 404, never a 403.
+20. Lock order: invoice row first, then the dispute row — the same order payments
+    and corrections use, so no new deadlock cycle exists.
+
+## E. Resolution
+
+21. Two outcomes only, each verified by the service, never accepted from input:
+    - `CORRECTION_APPLIED` — the latest APPLIED correction produced the invoice's
+      CURRENT version and that version is newer than the one disputed; the
+      reference and correction id are filled by the server. Self-resolution is
+      allowed here because the correction itself passed maker != checker.
+    - `ORIGINAL_CONFIRMED_CORRECT` — the invoice is unchanged since the report, a
+      reference (6–120 chars) is recorded, and the resolver is NOT the reporter
+      (`SELF_RESOLUTION_FORBIDDEN`), Super Admin included.
+22. No resolution while a correction is in flight
+    (`BILLING_DISPUTE_CORRECTION_ACTIVE`). A rejected or cancelled correction is
+    not an outcome. No override, waiver or "close without evidence" exists; if no
+    verifiable outcome is available, the dispute stays open — outside SPN4 that
+    means an invoice whose original is genuinely wrong stays ESCALATED until the
+    owner decides a correction path for that branch. Never invent one.
+23. An Owner's case-specific approval is never fabricated: no signature,
+    timestamp, reference or authorization is created by code or by an operator on
+    the Owner's behalf.
+
+## F. Operations, privacy, deployment
+
+24. `php artisan rme:billing-dispute-status [--json] [--strict]` (as the runtime
+    user, never root) — read-only per-branch counts, oldest active age, reachable
+    reviewers; FAIL when an active hold sits in a branch no reviewer can reach.
+25. Audit rows, logs and notifications carry ids, numbers (`RMEDSP-…`, `RME-…`),
+    statuses and codes only — never patient name, NIK/KTP, medical record number,
+    clinical content or the free text.
+26. The migration is additive and fabricates no dispute; existing UNPAID invoices
+    are never turned into disputes.
+27. Rollback: a code rollback is safe only while `rme:billing-dispute-status`
+    reports 0 active disputes — the previous runtime cannot honour a hold. With
+    active disputes, forward-fix; never roll back over an active hold.
+28. Tests: `tests/Feature/RmeBillingDispute/` (selected by the `RmeBillingDispute`
+    critical-gate token in both variants; races A–J on PostgreSQL).

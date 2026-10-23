@@ -120,6 +120,7 @@ use App\Modules\Reporting\Controllers\ExportReportController;
 use App\Modules\Reporting\Controllers\ReportController;
 use App\Modules\RmeDashboard\Controllers\RmeDashboardController;
 use App\Modules\RmeInvoice\Controllers\DoctorPerformanceReportController;
+use App\Modules\RmeInvoice\Controllers\RmeBillingDisputeController;
 use App\Modules\RmeInvoice\Controllers\RmeInvoiceController;
 use App\Modules\RmeInvoice\Controllers\RmeInvoiceCorrectionController;
 use App\Modules\RmeInvoice\Controllers\RmePaymentController;
@@ -1412,6 +1413,43 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
         Route::post('invoice-corrections/{correction}/apply', [RmeInvoiceCorrectionController::class, 'apply'])
             ->middleware('permission:apply_rme_invoice_correction')
             ->whereNumber('correction')->name('invoice-corrections.apply');
+    });
+
+    /*
+    | IMPLEMENTATION-RME-BILLING-DISPUTE-ESCALATION-OPS-OQ-1 (owner OPS-OQ-1, rule
+    | 203) — billing disputes, ALL branches. Three layers, each refusing on its own:
+    |   1. route middleware — the dispute read permissions; reporting needs the
+    |      cashier permission, review/escalate/resolve the review permission;
+    |   2. the controller — the RmeBillingDisputePolicy ability, and a 404 for any
+    |      dispute or invoice outside the caller's branch scope;
+    |   3. the service — usability, permission, branch scope, the state machine and
+    |      the resolution evidence, all under the invoice row lock.
+    | Not feature-flagged: a hold must never be released by a configuration change.
+    */
+    Route::middleware('permission:manage_rme_billing|review_rme_billing_disputes|view_rme_billing_disputes')->group(function () {
+        Route::get('billing-disputes', [RmeBillingDisputeController::class, 'index'])->name('billing-disputes.index');
+        Route::get('billing-disputes/{dispute}', [RmeBillingDisputeController::class, 'show'])
+            ->whereNumber('dispute')->name('billing-disputes.show');
+
+        Route::middleware('permission:manage_rme_billing')->group(function () {
+            Route::get('cashier/{clinicVisit}/billing/{rmeInvoice}/disputes/create', [RmeBillingDisputeController::class, 'create'])
+                ->name('billing-disputes.create');
+            Route::post('cashier/{clinicVisit}/billing/{rmeInvoice}/disputes', [RmeBillingDisputeController::class, 'store'])
+                ->name('billing-disputes.store');
+        });
+
+        Route::post('billing-disputes/{dispute}/notes', [RmeBillingDisputeController::class, 'note'])
+            ->middleware('permission:manage_rme_billing|review_rme_billing_disputes')
+            ->whereNumber('dispute')->name('billing-disputes.notes.store');
+
+        Route::middleware('permission:review_rme_billing_disputes')->group(function () {
+            Route::post('billing-disputes/{dispute}/review', [RmeBillingDisputeController::class, 'review'])
+                ->whereNumber('dispute')->name('billing-disputes.review');
+            Route::post('billing-disputes/{dispute}/escalate', [RmeBillingDisputeController::class, 'escalate'])
+                ->whereNumber('dispute')->name('billing-disputes.escalate');
+            Route::post('billing-disputes/{dispute}/resolve', [RmeBillingDisputeController::class, 'resolve'])
+                ->whereNumber('dispute')->name('billing-disputes.resolve');
+        });
     });
 
     // Sprint 23 Phase 23.5 — Separated RME reports (branch-aware, RME is multi-branch)

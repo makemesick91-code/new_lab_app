@@ -245,6 +245,20 @@
                         Tagihan sedang dalam proses koreksi. Pembayaran dapat dilanjutkan setelah proses koreksi selesai.
                     </x-ui.alert>
                 @endif
+                {{--
+                    IMPLEMENTATION-RME-BILLING-DISPUTE-ESCALATION-OPS-OQ-1 — owner
+                    OPS-OQ-1 (rule 203). An invoice under an active billing dispute is
+                    not collected; the payment service refuses it under the invoice row
+                    lock. This banner only explains why the button is disabled.
+                --}}
+                @if (! empty($disputeHold))
+                    <x-ui.alert variant="danger" title="Pembayaran ditahan — tagihan dalam peninjauan" data-payment-held-by-dispute>
+                        Tagihan ini sedang dalam peninjauan karena terdapat ketidaksesuaian nominal
+                        ({{ $disputeHold->dispute_number }}). Pembayaran sementara tidak dapat diproses.
+                        Silakan hubungi penanggung jawab cabang. Jangan menagih nominal yang diketahui salah,
+                        dan jangan menahan pasien.
+                    </x-ui.alert>
+                @endif
                 @error('payment_blocked')
                     <div class="rounded-md border border-warning bg-warning-50 p-3 text-sm text-warning-700" role="alert" data-payment-blocked-error>
                         {{ $message }}
@@ -407,7 +421,7 @@
 
                 {{-- Actions --}}
                 <div class="flex items-center gap-3 pt-2">
-                    <x-ui.button type="submit" variant="primary" :disabled="! empty($paymentBlock)">Konfirmasi Pembayaran</x-ui.button>
+                    <x-ui.button type="submit" variant="primary" :disabled="! empty($paymentBlock) || ! empty($disputeHold)">Konfirmasi Pembayaran</x-ui.button>
                     <x-ui.button variant="neutral" :href="route('rme.cashier.show', [$visit, $invoice])">Batal</x-ui.button>
                 </div>
             </form>

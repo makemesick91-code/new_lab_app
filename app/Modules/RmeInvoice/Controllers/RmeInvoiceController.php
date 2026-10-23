@@ -11,6 +11,7 @@ use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Models\RmeReceivableFollowUp;
 use App\Modules\RmeInvoice\Requests\CreateRmeInvoiceRequest;
 use App\Modules\RmeInvoice\Services\CashierHandoffStatusService;
+use App\Modules\RmeInvoice\Services\RmeBillingDisputeService;
 use App\Modules\RmeInvoice\Services\RmeControlReceivableService;
 use App\Modules\RmeInvoice\Services\RmeInvoiceCorrectionService;
 use App\Modules\RmeInvoice\Services\RmeInvoiceService;
@@ -38,6 +39,7 @@ class RmeInvoiceController extends Controller
         private readonly RmeControlReceivableService $carryOver,
         private readonly RmeInvoiceCorrectionService $corrections,
         private readonly RmePaymentService $payments,
+        private readonly RmeBillingDisputeService $disputes,
     ) {}
 
     /** @return array<int, string> */
@@ -554,6 +556,10 @@ SQL;
             'correctionPanel' => $this->corrections->panelFor($invoice, request()->user()),
             // FEATURE-RME-BRANCH-TARIFF-AUTHORITY-1 — D10 (display only).
             'paymentBlock' => $invoice->isPayable() ? $this->payments->activeCorrectionBlocking($invoice) : null,
+            // Rule 203 — OPS-OQ-1 dispute hold (display only; the payment service
+            // refuses under the invoice row lock) and the dispute panel.
+            'disputeHold' => $invoice->isPayable() ? $this->payments->activeDisputeHolding($invoice) : null,
+            'disputePanel' => $this->disputes->panelFor($invoice, request()->user()),
         ]);
     }
 }
