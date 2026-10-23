@@ -328,6 +328,14 @@ pre-payment correction — a classification, never an approval:
   total; historical Rp0 invoices are untouched; the dedicated Rp0 adjustment (rule
   188 §12) is not built. Production's only UNPAID invoice on 2026-10-21 is an Rp0
   legacy invoice (id 36): it is not a correction case.
+  - *Clarification, 2026-10-23 (`VERIFICATION-RME-INVOICE-CORRECTION-PREPAYMENT-PILOT-2`,
+    no decision changed):* "untouched" is a procedure, not a code refusal. The
+    correction service refuses a NEW Rp0 line or total, but it does not refuse a Rp0
+    ORIGINAL — so it could raise #36 to a positive total. Doing so would settle the
+    pending zombie-invoice question (D22, with D21g) by an operator act; it is
+    forbidden by rule 196 §8/§23 and requires both pilot accounts (29 submits, 1
+    approves). Whether to add a hard refusal while D21g/D22 are pending is an open
+    owner question.
 
 ### OD-1 — Cross-branch and cross-doctor Kontrol — `OWNER_POLICY_APPROVED`, `REPOSITORY_POLICY_RECORDED`, `TECHNICAL_ENFORCEMENT_DEPLOYED` (2026-10-23, runtime `b76b0ed2`, tag `hardening-rme-active-user-patient-selection-1-go`)
 
