@@ -1,0 +1,169 @@
+---
+description: PREPARATION-RME-INVOICE-CORRECTION-PILOT-OPERATIONAL-READINESS-1 — the operational procedure contract of the SPN4 pre-payment invoice correction pilot. Six operator documents under docs/operations/rme-invoice-correction-* are the canonical counter procedure (eligibility, Front Office detection, case-specific Owner approval, maker 29 / checker 1 steps, D10 payment block, D1a auto-apply verification, reconciliation, rejection/cancellation, incident matrix A–R, training, master readiness checklist). Six readiness levels are never collapsed. Operational readiness is not the pilot's full GO and mints no tag. Changes no runtime behaviour; D21g, D22, D21c stay PENDING; OPS-OQ-1 is an open owner question, not a decision.
+globs: docs/operations/rme-invoice-correction-*.md, docs/sprints/preparation-rme-invoice-correction-pilot-operational-readiness-1.md, docs/decisions/rme-billing-correction-owner-decisions.md, app/Modules/RmeInvoice/**, resources/views/rme/invoice-corrections/**, resources/views/rme/cashier/**, config/rme_invoice_correction.php
+alwaysApply: false
+---
+
+# RME invoice correction — pilot OPERATIONAL READINESS (rule 202)
+
+Evidence: `docs/sprints/preparation-rme-invoice-correction-pilot-operational-readiness-1.md`.
+Operator documents (Bahasa Indonesia, canonical counter procedure):
+
+| Document | Purpose |
+|---|---|
+| `docs/operations/rme-invoice-correction-pilot-sop-spn4.md` | master SOP: scope, roles, eligibility decision tree, Front Office detection, Owner-unavailable path, status lifecycle |
+| `docs/operations/rme-invoice-correction-owner-approval-template.md` | case-specific Owner approval form + approval reference format |
+| `docs/operations/rme-invoice-correction-maker-checker-guide.md` | maker 29 SOP, D10 SOP, checker 1 SOP, D1a verification, rejection/cancellation |
+| `docs/operations/rme-invoice-correction-financial-reconciliation.md` | before/after form, read-only SQL, expected deltas |
+| `docs/operations/rme-invoice-correction-incident-escalation.md` | incident matrix A–R, emergency stop, message codes |
+| `docs/operations/rme-invoice-correction-operator-handoff.md` | training one-pager, master readiness checklist A–S, GO readiness matrix, probe, sign-off |
+
+Extends rules 195 (who may do what), 196 (what counts as proof, the state ladder),
+197 (identity allowlist), 201 (zero-original guard). This rule does NOT restate or
+replace rule 196's ladder; it binds the HUMAN procedure that walks it. Where an
+operator document and a rule disagree, the rule wins and the document is wrong.
+
+## A. Scope and decisions (unchanged — never widened here)
+1. Pilot branch **SPN4** only (D1c, source-controlled allowlist).
+2. Maker **user 29** only; checker **user 1** only (D1d/D1e, rule 197).
+3. **Case-specific Owner approval** is required for every correction: one form per
+   invoice naming the invoice, the line changes, original/proposed total and
+   difference. A sprint authorization, "finish the pilot", or a blanket approval
+   is never case approval (rule 196 §9).
+4. A **genuine** billing error noticed **before** payment. Cases are caught, never
+   created (rule 196 §3); no deliberate wrong invoice, delayed payment, synthetic
+   patient, or case needing a discount policy (D21c PENDING).
+5. **Positive original total** — Rp0 originals are refused in code (D28, rule 201).
+6. **Zero payment** (no partial payment) and status **UNPAID**.
+7. **D21g PENDING. D22 PENDING. D21c PENDING.** Never mark any of them approved.
+8. Manual pricing **D21**; maker-checker **D1** per account; atomic **D1a**
+   approve = apply; immutable snapshots **D7**; payment blocking **D10**; invoice
+   version binding (rule 191); active-account security (rule 200/201);
+   branch isolation (rule 198/199); OD-1/OD-1a unchanged.
+9. Finance Klinik / Data Analyst are read-only oversight; they never request,
+   approve or reconcile-sign on the system's behalf.
+
+## B. The procedure (what the documents fix)
+10. **Front Office** detects and verifies eligibility, records the discrepancy on
+    the Owner approval form through the clinic's existing private channel (never a
+    public chat, never NIK/diagnosis), and informs the maker and the Owner.
+11. **Maker 29** logs in personally, selects SPN4, submits through the UI with a
+    reason (10–1000 chars) that carries the Owner approval reference, and may
+    cancel only their own active correction.
+12. **D10**: while a correction is SUBMITTED (or a legacy APPROVED row) every
+    payment path refuses (`[INVOICE_CORRECTION_ACTIVE]`). D10 is observed by STATE
+    on the page — never by posting a real payment (rule 196 §12). A stale payment
+    form after application is refused `[INVOICE_VERSION_CHANGED]`; reload.
+13. **Checker 1** logs in personally, obtains the Owner approval form DIRECTLY
+    from the Owner's own channel (never relayed by the maker or the cashier — the
+    reference in the reason was typed by the maker and is not evidence by itself;
+    only the Owner writes the approval reference), compares the correction against
+    it (invoice, branch, maker "Admin Sunu", original/proposed totals, every
+    changed line, reason), then **Setujui & Terapkan** or **Tolak** (reason
+    required).
+14. **Auto-apply (D1a)** is one transaction: `SUBMITTED → APPROVED → APPLIED` are
+    recorded, `APPROVED` is never visible committed; a refused application leaves
+    no approval.
+15. **Reconciliation** uses a fresh read-only baseline immediately before
+    submission and read-only SQL after (`default_transaction_read_only=on`). For a
+    first applied correction the expected deltas are: corrections +1 (APPLIED),
+    events +3, audit +5 (three transitions + two `RME_INVOICE_DOCUMENT_VERSION_ISSUED`),
+    document versions +2 (v0 ORIGINAL, v1 REVISION), invoice `correction_version`
+    +1, payments 0, invoices 0. Reject/cancel: events +2, audit +2, document
+    versions 0. STALE (persisted before the error is shown): events +2, audit +2,
+    document versions 0. Any unexplained delta → FAIL, stop, never patch.
+    Accepted residual: the SQL runs as the `postgres` superuser, for whom
+    read-only is a session default; the safeguard is procedural (no write
+    statement in the published SQL, first line asserts `on`). A least-privilege
+    read role does not exist on production and needs its own sprint.
+16. **Reject / cancel / stale** release D10 and never touch the invoice or the v0
+    snapshot. **Release is not permission to collect:** the original amount is
+    collected only when the checker/Owner concluded the original invoice is
+    right; while the error is still known, the cashier never collects it as if
+    resolved — management decides (OPS-OQ-1). A payment cannot be undone and a
+    paid invoice is uncorrectable in this pilot.
+    An inactive maker cannot cancel (`ACTOR_UNUSABLE`); the checker can still
+    reject a SUBMITTED row. A legacy (pre-D1a) APPROVED row cannot be rejected; it
+    is released by its maker's cancel or by the checker's recovery apply
+    ("Terapkan Koreksi", only when still Owner-approved, unchanged and non-Rp0).
+    A Rp0-original legacy APPROVED row of an INACTIVE maker has no release path but
+    an Owner-approved, audited reactivation → cancel → deactivation (rule 201 §16)
+    — never a data edit. Production holds 0 such rows.
+17. **Incident matrix A–R** is the escalation contract; it grants no operator a
+    power its account does not already have.
+
+## C. Patients, evidence, privacy
+18. **A patient is never held** for pilot evidence. If the Owner cannot approve
+    while the patient is present, the case is `NOT_EXECUTED`, no correction is
+    filed, no known-wrong amount is collected as if resolved, and clinic
+    management decides about the patient.
+19. **OPS-OQ-1 (open owner question, NOT a decision):** the repository records no
+    authorized clinic procedure for resolving a patient whose invoice is known to
+    be wrong while Owner approval is pending (pay the issued amount under dispute,
+    or leave with the invoice UNPAID), nor whether such an invoice may be corrected
+    later. Until the Owner decides, such an invoice is not used as a pilot case
+    (rule 196 §21). Never invent the answer in a document or in code.
+20. **No synthetic financial cases**, no fabricated approvals, signatures,
+    timestamps, approval references, sessions, invoices, payments or corrections.
+21. Evidence carries ids, numbers (`RME-…`, `RMECOR-…`), amounts, statuses, codes
+    and hashes only — never patient name, NIK/KTP, medical record number or
+    clinical content. Evidence is written as text, never as a raw screenshot (the
+    invoice and correction pages show the patient name and medical record number). Filled forms stay in the clinic's authorized private
+    channel, never in Git; the repository may hold only the approval REFERENCE
+    (6–120 chars, `[A-Za-z0-9._:/-]`, no 13+ digit run).
+22. Account separation is enforced; human separation (two different people, or the
+    Owner vs the checker account holder) is NOT verifiable by the application and
+    is never claimed.
+
+## D. Readiness levels — never collapsed
+23. `DOCUMENTATION_READY`, `CONFIGURATION_READY`, `AUTHENTICATED_READY`,
+    `REAL_CORRECTION_READY`, `FINANCIAL_VERIFIED`, `FULL_GO` are reported
+    separately (operator handoff §2). A lower level never implies a higher one;
+    `PILOT_ACTIVE` with probe WATCH is a legitimate resting state.
+24. The **probe** (`runuser -u daengtisiams -- env HOME=/tmp php artisan
+    rme:invoice-correction-readiness --maker=29 --checker=1`) is the only
+    authority for `LIVE_NOW`. Off shift is WATCH, never FAIL; never manufacture
+    `LIVE_NOW` by opening, editing or simulating a session, online context, shift,
+    device lease or password.
+25. **Operational readiness GO ≠ full pilot GO.** The pilot's full closure tag stays
+    `verification-rme-invoice-correction-prepayment-pilot-1-go` (rule 196 §14/§18),
+    created only after `FINANCIAL_CORRECTION_VERIFIED` on the deployed runtime SHA.
+
+## E. Documentation integrity
+26. Every button label, status label, message and code quoted in the operator
+    documents is copied from the application and verified against it before merge
+    (`RmeInvoiceCorrectionStatus::LABELS`, the correction views, the cashier panel,
+    `RmeInvoicePaymentBlocked`, `RmeInvoiceVersionConflict`, the service's
+    `[CODE]` refusals, `REASON_MIN/MAX`). A code change that renames any of them
+    updates these documents in the same reviewed commit.
+27. The reconciliation SQL is validated read-only on production before it is
+    published (`show default_transaction_read_only` = `on`, exit 0).
+
+## F. Release governance for an operational-readiness sprint
+28. Documentation/rules only → classifier `docs_only`; the governance, security,
+    release-safety and evidence gates run; the critical Pest step is skipped and no
+    runtime correctness is claimed from it. Governance tests that read the decision
+    register or rules are run locally when those files change.
+29. **`DEPLOY_REQUIRED=NO`** when no runtime file changes; never run a same-SHA
+    deployment to manufacture `DEPLOY OK`. A runtime fix found during preparation
+    follows the full lifecycle (failing test → minimal fix → PostgreSQL regression
+    → security review → CI on the exact candidate → merge → `scripts/deploy-vps-runner.sh`
+    executed INSIDE the VPS → production verification) and, if it changes scope or
+    needs an Owner decision, is reported separately.
+30. **GO tag: none.** Operational work without a runtime change closes in an
+    evidence document and takes no tag (rule 72 practice; precedents #500, #509,
+    #512). Never tag a documentation commit as if it were a runtime release, never
+    move a historical financial security tag, never mint `…-pilot-2-go` or any
+    second pilot tag.
+31. **Rollback** of this rule's procedure is a documentation revert; the
+    capability's own rollback stays rule 195 §30 (resolve active corrections, then
+    flag OFF + config cache as `daengtisiams`). Applied corrections, events, audit
+    rows and document versions are never deleted.
+32. **Full Suite** follows the standing temporary policy: report `SKIPPED`, never
+    `PASS`.
+33. **Cleanup**: task-owned worktree, scratch files and processes removed by exact
+    path and verified with `test ! -e`; secrets are never written to files (rule 201
+    §38a–§38c); a denied deletion is `PARTIAL`.
+34. **Re-verification** before the first real case: re-run the probe, re-measure the
+    financial fingerprint and re-read the eligible-invoice count — never inherit the
+    figures recorded in the evidence document.
