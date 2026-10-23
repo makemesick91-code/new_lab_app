@@ -35,6 +35,7 @@ A decision is only as far along as the last label that is evidenced. A brief's
 | 2026-10-21 | **D1e — pilot IDENTITY RESTRICTION: only user 29 may submit; only user 1 may approve/reject; every other account denied** (narrows D1b inside the pilot; D1d becomes an enforced allowlist) | `OWNER_POLICY_APPROVED`, `REPOSITORY_POLICY_RECORDED`, `TECHNICAL_ENFORCEMENT_DEPLOYED` (runtime `f66c6c2a`) | owner instruction in `HARDENING-RME-INVOICE-CORRECTION-PILOT-IDENTITY-PAYMENT-ACTOR-1` |
 | 2026-10-22 | **OD-1 — cross-branch AND cross-doctor Kontrol allowed** | `OWNER_POLICY_APPROVED`, `REPOSITORY_POLICY_RECORDED`, `TECHNICAL_ENFORCEMENT_DEPLOYED` (2026-10-23, runtime `b76b0ed2`, tag `hardening-rme-active-user-patient-selection-1-go`; rule 200) | owner instruction in `HARDENING-RME-ACTIVE-USER-PATIENT-SELECTION-1` |
 | 2026-10-22 | **OD-1a — another branch's receivable is neither shown nor collected at this branch** (supersedes rule 197 §24) | `OWNER_POLICY_APPROVED`, `REPOSITORY_POLICY_RECORDED`, `TECHNICAL_ENFORCEMENT_DEPLOYED` (2026-10-23, runtime `b76b0ed2`, tag `hardening-rme-active-user-patient-selection-1-go`; rule 200) | owner answer to the sprint's question, `HARDENING-RME-ACTIVE-USER-PATIENT-SELECTION-1` |
+| 2026-10-23 | **D28 — interim refusal of corrections on a Rp0 ORIGINAL invoice** (`ZERO_ORIGINAL_CORRECTION_GUARD: TEMPORARY_FAIL_CLOSED`; D21g and D22 stay PENDING) | `OWNER_TASK_INSTRUCTION`, `REPOSITORY_POLICY_RECORDED`, `TECHNICAL_ENFORCEMENT_DEPLOYED` (2026-10-23, runtime `b3ec7133`, tag `fix-rme-invoice-correction-zero-original-guard-1-go`; rule 201) | owner task instruction for `FIX-RME-INVOICE-CORRECTION-ZERO-ORIGINAL-GUARD-1` |
 
 The earlier D21 text is kept below, marked SUPERSEDED, as the record of what was
 decided and enforced between 2026-10-17 and 2026-10-20. It is never deleted.
@@ -397,7 +398,7 @@ limits carry-over to the paying visit's branch. `TECHNICAL_ENFORCEMENT_DEPLOYED`
 is claimed only once the release that carries it is merged, deployed and verified
 on production (sprint doc §Release evidence).
 
-### D28 — Interim refusal of corrections on a Rp0 ORIGINAL invoice — `OWNER_TASK_INSTRUCTION`, `REPOSITORY_POLICY_RECORDED` (2026-10-23)
+### D28 — Interim refusal of corrections on a Rp0 ORIGINAL invoice — `OWNER_TASK_INSTRUCTION`, `REPOSITORY_POLICY_RECORDED`, `TECHNICAL_ENFORCEMENT_DEPLOYED` (2026-10-23, runtime `b3ec7133`, tag `fix-rme-invoice-correction-zero-original-guard-1-go`; rule 201)
 
 `ZERO_ORIGINAL_CORRECTION_GUARD: TEMPORARY_FAIL_CLOSED`
 
@@ -420,9 +421,13 @@ on production (sprint doc §Release evidence).
 - **Ends when:** the owner decides D21g/D22 and a reviewed code change replaces this
   guard. It is never relaxed by configuration or environment.
 - **Not a pending decision** and not a resolution of one: D21g and D22 remain
-  **PENDING** (list below). `TECHNICAL_ENFORCEMENT_DEPLOYED` is claimed only once the
-  release that carries it is merged, deployed and verified on production (sprint doc
-  §Release evidence).
+  **PENDING** (list below).
+- **`TECHNICAL_ENFORCEMENT_DEPLOYED`** was added after the production verification:
+  PR #510 squash-merged as `b3ec7133` (tree `e7babf15`, identical to the CI-validated
+  candidate), deployed on the VPS (`DEPLOY OK 20261023-071319`,
+  `DEPLOY_HEAD_TARGET_MATCH=YES`, no migration), the guard verified present in the
+  deployed service, the production financial fingerprint unchanged, no correction
+  created to prove it (sprint doc §Release evidence).
 
 ## Pending decisions (unchanged)
 

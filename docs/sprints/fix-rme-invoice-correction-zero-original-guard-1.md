@@ -264,4 +264,26 @@ status unchanged: **NO_GO** (rule 196) — no authorized positive real case exis
 
 ## Release evidence
 
-_Filled after CI, merge, deploy and production verification._
+Recorded after the fact in a docs-only commit; the runtime it describes is the merge
+commit below, not this commit.
+
+| Item | Value |
+|---|---|
+| PR | #510, squash-merged |
+| CI candidate | `be66df86` (tree `e7babf15`) |
+| Runtime authority (merge) | **`b3ec7133`** (tree **`e7babf15`** — identical to the candidate) |
+| GO tag | `fix-rme-invoice-correction-zero-original-guard-1-go` → `b3ec7133` (local = remote = exact match at VPS HEAD) |
+| Authoritative CI | run `39901089123`, **success** on the exact candidate SHA: CICD-CTRL Classifier (`gate_profile=unknown_high_risk`), NSF-R012 Quality, Phase 3 Android, CICD-CTRL Selective Module, **NSF-R011 Critical** (one variant ran, the sibling skipped by routing design), NSF-9, NSF-10 — all success |
+| Critical gate content (from the job log) | **6380 passed / 0 skipped / 0 failed**, `critical_test_exit_status=0`; `RmeInvoiceCorrectionZeroOriginalGuardTest` **30/30**, `RmeInvoiceCorrectionRejectionDeactivationRaceTest` **7/7 executed on PostgreSQL** (not skipped), `RmeInvoiceCorrectionPilotIdentityTest` 43, `ActiveAccountSessionTest` 37 |
+| Full Suite | **SKIPPED** — PR run `FULL_SUITE_NOT_ENABLED_FOR_EVENT`; post-merge push run `39916288560` `TEMPORARY_FULL_SUITE_POLICY_ACTIVE`. Never claimed as passed. |
+| Production preflight (read-only) | VPS at `b76b0ed2` / `5fb0131c`, tracked tree clean, deploy lock free, previous runner `exit=0`; health `/login` `/health/live` `/health/ready` `/health/lb` = 200 over `https://daengtisia.online`; fingerprint identical to §2 |
+| Deploy | `bash scripts/deploy-vps-runner.sh start` **executed on the VPS** → `exit=0`, `DEPLOY OK: 20261023-071319`, `DEPLOY_HEAD_TARGET_MATCH=YES (b3ec7133)`, `Nothing to migrate.`, runtime isolation 70 GO / 0 FAIL / 0 SKIP, secret file permissions GO, auth-landing smoke GO, `DEPLOY_SNAPSHOT_CLEANED=YES`. The one smoke warning (`http://127.0.0.1/login` 404) is the known nginx co-tenant shadow on bare loopback, not a regression. |
+| Production after | HEAD `b3ec7133` / tree `e7babf15`, 0 dirty tracked files; the three guard methods, both `assertNotZeroOriginal($invoice)` call sites, both refusal codes and the account re-read present in the deployed service; rule 201 present |
+| Financial fingerprint after | **identical** to before (strict diff of the read-only query output): invoices 7 / Rp 7.548.000; items 8 / Rp 7.548.000; payments 8 / Rp 5.548.000; receivable 2 / Rp 2.000.000; corrections 0; events 0; document versions 0; audit rows 1601 (max id 1623); `role_has_permissions` 514; #36 SPN4 UNPAID Rp0; #41 SPN4 PARTIAL 4.000.000 / paid 2.000.000 |
+| Runtime posture | env `pilot`, debug OFF, maintenance OFF; php8.3-fpm, nginx, queue worker active; `queue:failed` empty; `laravel.log` byte-identical (1 437 201 bytes) — **0 new log entries** |
+| Readiness probe | `rme:invoice-correction-readiness --maker=29 --checker=1` unchanged: flag on, pilot SPN4, identities valid, D1a auto-apply, pair VALID; WATCH only because the maker holds no working context at the moment (expected off-shift state) |
+| Guard behaviour on production | proven by the deployed code plus the CI run on the identical tree. **No correction was created**, no operator session impersonated, no financial row written. |
+
+Status after release: `ZERO_ORIGINAL_CORRECTION_GUARD: TEMPORARY_FAIL_CLOSED` is
+`TECHNICAL_ENFORCEMENT_DEPLOYED` (register D28). **D21g: PENDING. D22: PENDING.** Full
+invoice-correction pilot: **NO_GO** (rule 196) — unchanged.
