@@ -177,6 +177,22 @@ check before the identity allowlist is asked) — see §L.
     correction capability must stop instead, use the flag (rule 195 rollback) —
     never disable a payment check.
 38. Cleanup: task-owned containers, worktrees, processes and temp files only.
+38a. A secret-bearing scratch file (for example a locally generated test application
+    key) is deleted by exact path as soon as its last consumer finishes — never left
+    for a final bulk sweep. Better: do not write it at all; generate the key inline
+    for each test command (`php artisan key:generate --show` into the command's own
+    environment). It must never equal a production key, and nothing that persists
+    may be encrypted with it.
+38b. In the agent workspace, `shred` is denied by the owner's own permission policy
+    and the auto-mode classifier refuses broad deletes (`rm -rf` over globs,
+    `find … -delete`). Delete with `rm --` on an explicit path list checked to stay
+    inside the task's own directory, then `rmdir` per empty directory, deepest first.
+    A refusal is never routed around through another tool or interpreter.
+38c. Cleanup is reported only after it is verified (`test ! -e` on every removed
+    path). "Deletion was denied" is `PARTIAL`, never `DONE`, and the sprint document
+    records it. This guard sprint's own scratchpad was left behind exactly this way
+    and is closed by CLEANUP-RME-ZERO-ORIGINAL-GUARD-SCRATCHPAD-1
+    (`docs/sprints/cleanup-rme-zero-original-guard-scratchpad-1.md`).
 39. Full pilot status is unchanged by this rule: still NO_GO until an authorized
     positive real case is corrected (rule 196).
 
