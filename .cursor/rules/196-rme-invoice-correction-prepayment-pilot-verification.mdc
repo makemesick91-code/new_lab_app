@@ -1,12 +1,12 @@
 ---
-description: VERIFICATION-RME-INVOICE-CORRECTION-PREPAYMENT-PILOT-1 — how the live SPN4 pre-payment invoice correction pilot is verified and when it may be closed. Six-rung state ladder (PILOT_READY → PILOT_ACTIVE → PILOT_LIVE → AUTHENTICATED_VERIFIED → FINANCIAL_CORRECTION_VERIFIED → FULL_ACTIVATION_GO), the evidence each rung needs, the full-GO tag contract, and why an eligible real case can only be caught, never created. Extends rule 195; changes no runtime behaviour.
-globs: app/Modules/RmeInvoice/**, app/Console/Commands/RmeInvoiceCorrectionReadinessCommand.php, config/rme_invoice_correction.php, docs/sprints/verification-rme-invoice-correction-prepayment-pilot-1.md, docs/decisions/rme-billing-correction-owner-decisions.md
+description: VERIFICATION-RME-INVOICE-CORRECTION-PREPAYMENT-PILOT-1 — how the live SPN4 pre-payment invoice correction pilot is verified and when it may be closed. Six-rung state ladder (PILOT_READY → PILOT_ACTIVE → PILOT_LIVE → AUTHENTICATED_VERIFIED → FINANCIAL_CORRECTION_VERIFIED → FULL_ACTIVATION_GO), the evidence each rung needs, the full-GO tag contract, and why an eligible real case can only be caught, never created. Extends rule 195; changes no runtime behaviour. §7 (PILOT-2, 2026-10-23) governs later re-verification runs: one closure tag, re-measure never inherit, no patient held for a case, only a live session is login evidence, and the Rp0 invoice ban is procedural.
+globs: app/Modules/RmeInvoice/**, app/Console/Commands/RmeInvoiceCorrectionReadinessCommand.php, config/rme_invoice_correction.php, docs/sprints/verification-rme-invoice-correction-prepayment-pilot-1.md, docs/sprints/verification-rme-invoice-correction-prepayment-pilot-2.md, docs/decisions/rme-billing-correction-owner-decisions.md
 alwaysApply: false
 ---
 
 # RME invoice correction — pre-payment pilot VERIFICATION (rule 196)
 
-Evidence: `docs/sprints/verification-rme-invoice-correction-prepayment-pilot-1.md`.
+Evidence: `docs/sprints/verification-rme-invoice-correction-prepayment-pilot-1.md` (re-verification: `…-pilot-2.md`, §7).
 Extends rule 195 (activation contract). Rule 195 decides WHO may do WHAT; this rule
 decides what counts as PROOF that the live pilot works and when it may be closed.
 Nothing here changes runtime behaviour.
@@ -114,3 +114,48 @@ Each rung needs its own evidence; a lower rung never implies a higher one.
 17. Remaining FUTURE_SCOPE stays unreported as active: post-payment correction,
     refund, reversal, patient credit, Rp0 adjustment, discount authority, any branch
     other than SPN4.
+
+## 7. Re-verification runs (added by VERIFICATION-RME-INVOICE-CORRECTION-PREPAYMENT-PILOT-2, 2026-10-23)
+Evidence: `docs/sprints/verification-rme-invoice-correction-prepayment-pilot-2.md`.
+
+18. A later verification run is a re-measurement of the SAME pilot, not a new
+    pilot. It reports the rung it reached and the delta since the previous run; it
+    never mints its own tag. `PILOT-2`, `PILOT-3`, … all close under the one tag in
+    §14 (`verification-rme-invoice-correction-prepayment-pilot-1-go`) — there is
+    no `…-pilot-2-go`.
+19. Re-measure, never inherit. Every run re-reads the production SHA, the probe,
+    the identity matrix (rule 197 — `allows()` for EVERY active holder of a
+    correction permission, not only 29 and 1), the branch admission per branch and
+    the financial fingerprint. A fingerprint identical to the previous run is
+    evidence that nothing moved, and is reported as such; it is not a reason to
+    skip the measurement.
+20. Absence of clinic activity is a blocker, not a defect. If no SPN4 invoice was
+    created since the last run, no case could have arisen; say so with the date of
+    the last invoice. Do not "help" the window open: no request to the clinic to
+    issue invoices, delay payment, or route patients for the pilot's sake.
+21. The pilot may only be closed from inside a real clinic session. The handoff
+    (sprint doc §11) is the procedure: the cashier notices a genuine error on a
+    POSITIVE SPN4 invoice before payment → the owner authorizes THAT invoice in
+    writing → users 29 and 1 log in themselves → probe `LIVE_NOW=yes`, GO → fresh
+    baseline → submit → D10 observed on the payment page → approve (auto-apply) →
+    reconcile (§11) → tag. If the owner cannot authorize while the patient is
+    still present, the patient is NOT held: the cashier uses the existing
+    pre-pilot procedure and that case is lost to the pilot. Holding a payment to
+    keep a case alive is the forbidden §8 "delay".
+22. Only the live session is evidence of `AUTHENTICATED_VERIFIED`: a session row
+    and a live working context belonging to the operator's own login, observed
+    server-side. `users.last_login_at` is written by NO code path (the column is
+    only declared fillable/cast; 0 of 35 accounts non-NULL on 2026-10-23) and is
+    never read as login evidence — a NULL there proves nothing either way.
+23. **The ban on correcting the Rp0 invoice #36 is PROCEDURAL, not refused in code.**
+    `RmeInvoiceCorrectionService::prePaymentIneligibility()` refuses a paid,
+    non-UNPAID, negative-total, cancelled-visit or lab-candidate invoice, or one that
+    already holds an ACTIVE correction — but NOT a Rp0 original. The proposal builder refuses every NEW Rp0
+    line or total, so a correction cannot zero anything; it CAN raise a Rp0 UNPAID
+    invoice to a positive total. Raising #36 resolves the pending zombie-invoice
+    decision (D22, with D21g) by an operator act, so it stays forbidden by §8 and by
+    the two-account gate (29 submits, 1 approves) until the owner decides. The
+    readiness probe counts only POSITIVE unpaid invoices, so #36 is never reported
+    as a case. If the owner wants a hard refusal while D21g/D22 are pending, that
+    is a small fail-closed change (refuse a zero-total original with its own code)
+    through the full lifecycle (§16) — never a data edit to #36.
