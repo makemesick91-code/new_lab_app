@@ -1,60 +1,49 @@
-# HARDENING-RME-ACTIVE-USER-PATIENT-SELECTION-1
+# FIX-RME-INVOICE-CORRECTION-ZERO-ORIGINAL-GUARD-1
 #
-# Three objectives, one release (rule 200):
+# One release (rule 201):
 #
-#   A. Active accounts. A deactivated account stops everywhere: login form
-#      (Auth::attemptWhen, inactive message only after the password is proven),
-#      live web session (EnsureAccountIsActive in the `web` group, before any
-#      controller: presence dropped, doctor lease released, one PII-free audit
-#      row, logout + invalidate), remember-me cookie, Android app login and
-#      ticket redemption. ONE definition of a usable account
-#      (App\Support\AccessControl\ActiveAccountResolver), shared by the clinic
-#      visit and RME billing actor guards. Closes rule 198 §30a and rule 199
-#      §24 / §27c.
+#   A. Zero-original guard. An RME invoice whose AUTHORITATIVE ORIGINAL total
+#      is Rp0 can never be corrected: submit, approve (= apply, D1a) and the
+#      recovery apply refuse CORRECTION_ORIGINAL_TOTAL_ZERO under the invoice
+#      row lock, before any mutation (UNVERIFIABLE when v0 cannot be proven).
+#      Reject and cancel stay open (D10 release). The original is persisted data:
+#      the live row at correction_version 0, the frozen ORIGINAL (v0) document
+#      version above it — never a request field. TEMPORARY FAIL-CLOSED boundary
+#      on the owner's task instruction (register D28); D21g and D22 stay PENDING.
+#      Closes the pilot-2 LOW-2 finding (rule 196 §23 was procedural only).
 #
-#   B. Patient selection. ClinicVisitService::create() re-asserts patient,
-#      prior-visit and doctor selection through ClinicVisitRegistrationGuard —
-#      the ONE rule source StoreClinicVisitRequest now also consults. The prior
-#      visit is read FOR SHARE inside the registering transaction. Registration
-#      never writes a room; the visit edit is an allow-list. Closes rule 199 §27.
+#   B. Rule 200 at the correction service. assertActor() decides every mutation
+#      — cancel included, which the identity allowlist does not gate — on the
+#      PERSISTED active account (ActiveAccountResolver) and asks the permission
+#      and branch scope of THAT account, never of a stale in-memory object.
 #
-#   C. Owner decision OD-1 (2026-10-22, "pasien bisa kontrol lintas cabang
-#      bahkan dengan dokter berbeda"): cross-branch AND cross-doctor Kontrol
-#      allowed and pinned. OD-1a (owner answer, 2026-10-22, "Hanya piutang B"):
-#      carry-over receivables are discovered and collected only at the paying
-#      visit's own branch. Supersedes rule 197 §24.
+#   C. Two PostgreSQL races, both sides real services (child process):
+#      correction rejection vs payment (D10), and account deactivation vs a
+#      correction mutation (linearization point = the account re-read after the
+#      invoice lock).
 #
-# No migration. No permission, role, route, RoleSeeder or feature-flag change.
-# Invoice/payment explicit actor, manual pricing D21, D10, invoice-version
-# binding, SPN4 correction pilot (maker 29 / checker 1) and doctor trusted
-# device / WebAuthn / branch lock / single session untouched.
+# No migration. No permission, role, route, RoleSeeder, feature-flag or config
+# value change. Rp0 invoice ISSUANCE untouched; historical invoices (#36 Rp0
+# UNPAID, #41 PARTIAL) untouched. Manual pricing D21, D1/D1a/D1c/D1e, D7, D10,
+# invoice-version binding, explicit actors, OD-1/OD-1a preserved.
 #
-# Type FOUNDATION_SPRINT (audit level 3, full foundation audit, rollback and
-# evidence required — same depth as SECURITY_FIX). First declared SECURITY_FIX;
-# `sprint:scope-audit` returned NO-GO because SECURITY_FIX forbids a change of
-# more than 10 code files ("looks like a refactor, not a scoped fix"). The
-# verdict is correct: this is not a scoped fix. It installs an application-wide
-# authentication foundation (one account-usability definition + a middleware on
-# every web request) and touches four modules (ClinicVisit, RmeInvoice,
-# DoctorDevice, DoctorAccess) plus app/Support and app/Http. FOUNDATION_SPRINT
-# is the profile that describes that ("cross-module / shared-foundation work");
-# no gate is lowered, and the security regression suites run regardless.
-# security_impact true.
+# Type SECURITY_FIX: one module (RmeInvoice), scoped financial security fix;
+# security_impact true. Full pilot status unchanged (NO_GO, rule 196).
 
-id: HARDENING-RME-ACTIVE-USER-PATIENT-SELECTION-1
-type: FOUNDATION_SPRINT
-module: ClinicVisit
-title: "Deactivated accounts stop everywhere; visit registration re-asserts patient, prior-visit and doctor at the service; OD-1 cross-branch Kontrol with branch-local carry-over"
+id: FIX-RME-INVOICE-CORRECTION-ZERO-ORIGINAL-GUARD-1
+type: SECURITY_FIX
+module: RmeInvoice
+title: "RME invoice correction refuses a Rp0 original (submit, approve, recovery apply) as a temporary fail-closed boundary; every correction mutation decided on the persisted active account; rejection-vs-payment and deactivation races proven on PostgreSQL"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 runtime_change: true
 schema_change: false
 frontend_change: false
 security_impact: true
-branch_isolation_impact: true
+branch_isolation_impact: false
 ledger_impact: false
 deploy_required: true
 browser_required: false
-test_profiles: [rme, clinic_visit, cashier, permission, auth]
-go_tag: hardening-rme-active-user-patient-selection-1-go
-inherits_parent_go: audit-rme-clinic-visit-branch-authority-1-go
+test_profiles: [rme, cashier, permission]
+go_tag: fix-rme-invoice-correction-zero-original-guard-1-go
+inherits_parent_go: hardening-rme-active-user-patient-selection-1-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1

@@ -1,0 +1,189 @@
+---
+description: FIX-RME-INVOICE-CORRECTION-ZERO-ORIGINAL-GUARD-1 — a TEMPORARY FAIL-CLOSED boundary while D21g (Rp0 consultation/control) and D22 (Rp0 / zombie invoice completion) are PENDING — an invoice whose AUTHORITATIVE ORIGINAL total is Rp0 can never be corrected. Submit, approve (= apply, D1a) and the recovery apply refuse it under the invoice row lock, before any mutation; reject and cancel stay open. The original is persisted data (live row at correction_version 0, frozen v0 document above it), never a request field. Also: every correction mutation, cancel included, is decided on the PERSISTED active account (rule 200 at the correction service); the account re-read after the invoice lock is the linearization point for a concurrent deactivation. Two PostgreSQL races added (rejection vs payment, deactivation vs mutation). No migration, no permission, no route, no RoleSeeder, no flag change.
+globs: app/Modules/RmeInvoice/Services/RmeInvoiceCorrectionService.php, app/Modules/RmeInvoice/Support/RmeInvoiceCorrectionDenied.php, app/Modules/RmeInvoice/Interfaces/RmeInvoiceCorrectionRepositoryInterface.php, app/Modules/RmeInvoice/Repositories/RmeInvoiceCorrectionRepository.php, app/Modules/RmeInvoice/Services/RmeInvoiceCorrectionProposalBuilder.php, tests/Feature/RmeInvoiceCorrection/**
+alwaysApply: false
+---
+
+# RME invoice correction — zero-original guard (rule 201)
+
+Evidence: `docs/sprints/fix-rme-invoice-correction-zero-original-guard-1.md`.
+Register: `docs/decisions/rme-billing-correction-owner-decisions.md` (D28 interim
+guard; D21g and D22 remain PENDING). Extends rules 190, 195, 196, 197, 198, 200.
+**Supersedes in part:** rule 196 §23 (the Rp0 ban is now ENFORCED, not procedural)
+and rule 197 §14 (an unusable account is now refused by the service's own actor
+check before the identity allowlist is asked) — see §L.
+
+## A. Root cause (verified in source on `b76b0ed2`, before this sprint)
+1. `prePaymentIneligibility()` refused a NEGATIVE current total, never a Rp0 one.
+2. The proposal builder refuses a NEW Rp0 line and a Rp0 RESULTING total (so a
+   correction can never ZERO anything), but an UNCHANGED Rp0 line may be CHANGED to
+   a positive price. Rp0 original → positive revised passed every check.
+3. Production held exactly that case — SPN4 invoice #36, UNPAID, Rp0 — guarded only
+   by procedure (rule 196 §8/§23). The pilot-2 verification recorded it as LOW-2.
+
+## B. What "the original total" is (the authority)
+4. **Initial issued total = v0.** Never a request field (`original_grand_total`,
+   `grand_total`, `original_total`), never a rendered amount, never the object a
+   caller passes in. The service reads the invoice row it holds FOR UPDATE.
+5. `correction_version == 0` → the invoice was never corrected; the LIVE row is v0.
+6. `correction_version > 0` → v0 is the frozen `ORIGINAL` document version
+   (`version_number = 0`, `version_kind = ORIGINAL`) written by the first
+   application; its `snapshot.totals.grand_total_cents` is the authority
+   (`RmeInvoiceCorrectionRepositoryInterface::originalDocumentVersion()`).
+7. `correction_version > 0` with no frozen v0, a v0 whose snapshot no longer hashes
+   to its recorded `snapshot_sha256` (`integrityHolds()` false — an out-of-band
+   edit), or a snapshot without an integer total →
+   `CORRECTION_ORIGINAL_TOTAL_UNVERIFIABLE` — fail closed, never guess.
+8. Distinct quantities, never collapsed: initial issued total (v0), current
+   version total, requested revised total (server-computed by the builder), already
+   applied corrections (vN document versions), paid amount, remaining balance.
+
+## C. The guard — a TEMPORARY FAIL-CLOSED boundary
+9. `ZERO_ORIGINAL_CORRECTION_GUARD = TEMPORARY_FAIL_CLOSED`. Refused with
+   `[CORRECTION_ORIGINAL_TOTAL_ZERO]` when v0 is Rp0, OR when the CURRENT total is
+   Rp0 (the same outcome reached from a later version). A negative v0 reuses
+   `CORRECTION_INVOICE_TOTAL_NEGATIVE`.
+10. It refuses regardless of the revised total: positive, zero, zero-by-discount,
+    over-discounted. It answers BEFORE the proposal builder is consulted.
+11. **D21g = PENDING. D22 = PENDING.** This guard decides neither. It is NOT a
+    permanent Rp0 business policy, NOT a new pricing rule, NOT a discount policy.
+    Never mark D21g or D22 approved on the strength of this rule; never relax the
+    guard without a recorded owner decision on D21g/D22 AND a reviewed code change.
+12. The guard lives in ONE place (`zeroOriginalIneligibility()` +
+    `originalTotalCents()` in `RmeInvoiceCorrectionService`) and is consulted by
+    submit (through `prePaymentIneligibility()`, also feeding the cashier panel) and
+    by approve/apply (`assertNotZeroOriginal()`). Never duplicate it in a
+    controller, FormRequest, view or policy — those are courtesies.
+13. **Issuance is untouched.** A Rp0 invoice can still be issued (consultation,
+    Kontrol, voucher). This rule is about CORRECTION only — never add a global
+    zero-invoice refusal.
+
+## D. Where it is enforced
+14. **Submit** — under the invoice lock, after flag, actor, pilot branch, identity
+    and RME-branch checks, through `prePaymentIneligibility()` (ValidationException
+    on `rme_invoice_id`; nothing written, no audit row — like every eligibility
+    refusal).
+15. **Approve (= apply, D1a)** — after the staleness check proved the invoice is
+    still the reviewed document, BEFORE the SUBMITTED→APPROVED write: refused with
+    nothing written (not APPROVED, not APPLIED). A changed invoice is marked STALE
+    exactly as before (staleness first — a STALE correction can never apply).
+16. **Recovery apply** (pre-D1a APPROVED rows) — same position and effect; the row
+    stays APPROVED and cancellable — by its MAKER only, and only while that maker is
+    an ACTIVE account (§25). APPROVED cannot move to REJECTED, so a pre-D1a APPROVED
+    Rp0-original row whose maker was deactivated has no release path and holds its
+    invoice behind D10. Production held 0 corrections at this release, so the case
+    is theoretical; if it ever exists, the recovery is an owner-approved, audited
+    reactivation of the maker → cancel → deactivation — never a data edit.
+17. **Reject and cancel are never gated** — they only de-escalate and are the D10
+    release path for a pre-existing zero-original correction.
+18. The cashier panel shows the refusal text instead of the request button; the
+    request form shows the not-eligible notice. Both are courtesy; the service is
+    the control.
+
+## E. Historical data immutability
+19. No historical invoice, item, payment, receivable, snapshot, document version,
+    correction or audit row is changed by this rule. Invoice #36 stays Rp0 UNPAID;
+    #41 stays PARTIAL. No migration, no backfill, no data repair. Any repair of an
+    existing zero-original correction row needs its own owner approval.
+
+## F. Preserved, unchanged (regression-verified)
+20. Positive originals: a valid pre-payment correction still submits, approves
+    (= applies v0/v1 atomically) and audits; a later version of an originally
+    POSITIVE invoice still corrects.
+21. Manual pricing D21 (`CORRECTION_MANUAL_ENTRY` provenance, no tariff gate).
+22. Maker-checker D1; automatic apply D1a; SPN4 pilot D1c; identity D1e (29 submits,
+    1 approves/rejects/applies); immutable snapshots D7; payment blocking D10;
+    invoice-version binding; explicit actors (rules 197/198/199); OD-1 / OD-1a.
+23. Existing refusals: paid, partially paid, negative total, new Rp0 line/total,
+    stale version/content, unauthorized branch/identity, self-approval, duplicate
+    active correction, invalid state, flag disabled.
+
+## G. Explicit actor and active account (rule 200 at the correction service)
+24. `assertActor()` re-reads the account through `ActiveAccountResolver` (the ONE
+    usable-account definition) and asks the permission and the branch scope of THAT
+    persisted account — never of roles a stale in-memory object carries.
+25. An inactive, soft-deleted or unsaved account is refused with `ACTOR_UNUSABLE`
+    on EVERY mutation — submit, approve, reject, cancel, apply. Cancel was not
+    identity-gated, so before this rule an inactive maker could cancel through a
+    direct service call (over HTTP `EnsureAccountIsActive` already stopped it).
+26. The identity allowlist keeps its own usable check (UI courtesy, readiness
+    probe, second barrier) — proven separately in the identity suite.
+
+## H. Concurrency (PostgreSQL, real services in a child process)
+27. Lock order unchanged: INVOICE row FOR UPDATE, then the correction row. The
+    guard reads only under that lock; no new lock, no lock on `users`.
+28. **Rejection vs payment** (`RmeInvoiceCorrectionRejectionDeactivationRaceTest`
+    A1/A2): a payment waits on a mid-flight REAL rejection; if it commits, the
+    payment is accepted (version unchanged, exactly one payment); if it rolls back,
+    D10 refuses the payment and records nothing; a later rejection releases it.
+29. **Deactivation vs mutation** (B1/B2). LINEARIZATION POINT = the account re-read
+    in `assertActor()`, taken after the invoice lock is held:
+    - deactivation committed before it (even while the mutation waited on the lock)
+      → refused `ACTOR_UNUSABLE`, nothing written, attempt audited after rollback;
+    - deactivation not yet committed at it → the mutation proceeds and is ordered
+      BEFORE the deactivation, even if the deactivation commits while the mutation's
+      transaction is still open. Serializable (mutation, then deactivation): the
+      mutation never writes the account row. A late deactivation never retroactively
+      undoes an authorized commit; it stops the NEXT mutation.
+    - Serialization order is NOT commit order: an observer can see "account
+      inactive" and only later see the correction APPLIED by that account, with
+      `decided_at` / audit ids after the deactivation. An emergency deactivation is
+      therefore not instantaneous for a mutation already past its authorization
+      read; to stop corrections at once use the flag (rule 195 rollback).
+    Do not add a `FOR SHARE`/`FOR UPDATE` on `users` to "strengthen" this without a
+    new lock-order analysis — it would make every deactivation and login wait on
+    corrections and is not required by the invariant.
+30. The race suites skip (stated) off PostgreSQL; a skip is never a PASS.
+
+## H2. Residuals (recorded, not closed by this rule)
+30a. Line-level Rp0 → positive on a POSITIVE invoice: the builder refuses only a
+     non-KEEP line whose RESULT is Rp0, so a free (Rp0) consultation/Kontrol line on
+     a positive invoice can still be repriced upward. That is the D21g policy
+     question itself; this rule is total-based by the owner's instruction and does
+     not invent a line-level pricing policy.
+30b. The guard sits in `prePaymentIneligibility()` (PRE_PAYMENT submit). Approve and
+     apply are type-agnostic. A future correction type (post-payment) must call the
+     guard explicitly at its own submit.
+30c. `replayFor()` runs before `assertActor()` in submit: an inactive maker can
+     re-read their OWN existing correction through an idempotent replay. Read-only;
+     pre-existing.
+
+## I. Audit
+31. Authorization refusals (`ACTOR_UNUSABLE`, identity, permission, branch) write
+    `RME_INVOICE_CORRECTION_REFUSED` after the rollback. The zero-original refusal is
+    an eligibility refusal: rolled back, no audit row, no event, no snapshot, no
+    version increment. A refused act never leaves a SUBMITTED/APPROVED/APPLIED trace.
+
+## J. Tests and CI
+32. `RmeInvoiceCorrectionZeroOriginalGuardTest` (SQLite + PostgreSQL) and
+    `RmeInvoiceCorrectionRejectionDeactivationRaceTest` (PostgreSQL) are declared in
+    `config/ci_runner.php` `critical_gate_mandatory_suites` and selected by the
+    `RmeInvoiceCorrection` token in BOTH critical-gate variants. Verify in the CI
+    log that both ran (race tests not skipped) — never infer from a green check.
+33. Full Suite follows the standing deferral policy: report `SKIPPED`, never PASS.
+
+## K. Release, verification, rollback
+34. Deploy only by running `scripts/deploy-vps-runner.sh` INSIDE the VPS; complete
+    only at `exit=0` + `DEPLOY OK` + `DEPLOY_HEAD_TARGET_MATCH=YES`.
+35. Production verification is read-only: deployed SHA, guard present in the
+    deployed file, financial fingerprint unchanged (or every delta classified),
+    #36/#41 unchanged, 0 corrections created, flags/permissions unchanged. Never
+    create a real correction to "test" the guard.
+36. Scoped GO tag `fix-rme-invoice-correction-zero-original-guard-1-go` on the
+    deployed runtime SHA only. It is NOT the pilot's full GO
+    (`verification-rme-invoice-correction-prepayment-pilot-1-go`, rule 196).
+37. Rollback = code-only redeploy of the previous GO tag
+    (`hardening-rme-active-user-patient-selection-1-go`); no data restore. If the
+    correction capability must stop instead, use the flag (rule 195 rollback) —
+    never disable a payment check.
+38. Cleanup: task-owned containers, worktrees, processes and temp files only.
+39. Full pilot status is unchanged by this rule: still NO_GO until an authorized
+    positive real case is corrected (rule 196).
+
+## L. Superseded in part (historical text kept in each rule)
+- Rule 196 §23 — "the ban on correcting the Rp0 invoice #36 is PROCEDURAL, not
+  refused in code": SUPERSEDED — it is refused in code (§C/§D here). The procedural
+  ban stays as a second layer.
+- Rule 197 §14 / rule 200 §E — an unusable correction actor is refused by
+  `assertActor()` (`ACTOR_UNUSABLE`) before the identity allowlist
+  (`PILOT_IDENTITY_ACTOR_UNUSABLE`) is reached.

@@ -415,6 +415,9 @@ it('keeps a single definition of a usable account behind both actor guards', fun
         file_get_contents(app_path('Modules/ClinicVisit/Services/ClinicVisitActorGuard.php')),
         file_get_contents(app_path('Modules/RmeInvoice/Services/RmeBillingActorGuard.php')),
         file_get_contents(app_path('Http/Middleware/EnsureAccountIsActive.php')),
+        // FIX-RME-INVOICE-CORRECTION-ZERO-ORIGINAL-GUARD-1 (rule 201) — the
+        // correction service decides every mutation on the persisted account.
+        file_get_contents(app_path('Modules/RmeInvoice/Services/RmeInvoiceCorrectionService.php')),
     ];
 
     foreach ($sources as $source) {

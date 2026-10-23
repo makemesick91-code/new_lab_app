@@ -212,6 +212,15 @@ class RmeInvoiceCorrectionRepository implements RmeInvoiceCorrectionRepositoryIn
             ->first();
     }
 
+    public function originalDocumentVersion(int $invoiceId): ?RmeInvoiceDocumentVersion
+    {
+        return RmeInvoiceDocumentVersion::query()
+            ->where('rme_invoice_id', $invoiceId)
+            ->where('version_number', 0)
+            ->where('version_kind', RmeInvoiceDocumentVersion::KIND_ORIGINAL)
+            ->first();
+    }
+
     public function createDocumentVersion(array $data): RmeInvoiceDocumentVersion
     {
         return RmeInvoiceDocumentVersion::create($data);

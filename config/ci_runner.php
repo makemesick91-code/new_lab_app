@@ -405,6 +405,16 @@ return [
         // included; fail-closed allowlist; release paths survive a narrowing.
         // Selected by the existing `RmeInvoiceCorrection` token.
         'tests/Feature/RmeInvoiceCorrection/RmeInvoiceCorrectionPilotIdentityTest.php',
+        // FIX-RME-INVOICE-CORRECTION-ZERO-ORIGINAL-GUARD-1 (rule 201) — a Rp0
+        // ORIGINAL invoice is never corrected (submit, approve = apply, recovery
+        // apply), the original read from persisted data only; every mutation is
+        // decided on the persisted active account. The race suite proves, on
+        // PostgreSQL with the REAL services in a child process, rejection vs
+        // payment (D10) and the deactivation linearization point. Both selected by
+        // the existing `RmeInvoiceCorrection` token; declared so a rename cannot
+        // silently drop them.
+        'tests/Feature/RmeInvoiceCorrection/RmeInvoiceCorrectionZeroOriginalGuardTest.php',
+        'tests/Feature/RmeInvoiceCorrection/RmeInvoiceCorrectionRejectionDeactivationRaceTest.php',
         // Same sprint — the payment branch scope judges the EXPLICIT cashier,
         // never Auth::user() (which failed OPEN with no session), on every
         // payment path. Selected by the existing `RmePayment` token.
