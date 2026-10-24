@@ -121,6 +121,7 @@ use App\Modules\Reporting\Controllers\ReportController;
 use App\Modules\RmeDashboard\Controllers\RmeDashboardController;
 use App\Modules\RmeInvoice\Controllers\DoctorPerformanceReportController;
 use App\Modules\RmeInvoice\Controllers\RmeBillingDisputeController;
+use App\Modules\RmeInvoice\Controllers\RmeBillingDisputeReviewerController;
 use App\Modules\RmeInvoice\Controllers\RmeInvoiceController;
 use App\Modules\RmeInvoice\Controllers\RmeInvoiceCorrectionController;
 use App\Modules\RmeInvoice\Controllers\RmePaymentController;
@@ -1418,15 +1419,17 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
     /*
     | IMPLEMENTATION-RME-BILLING-DISPUTE-ESCALATION-OPS-OQ-1 (owner OPS-OQ-1, rule
     | 203) — billing disputes, ALL branches. Three layers, each refusing on its own:
-    |   1. route middleware — the dispute read permissions; reporting needs the
-    |      cashier permission, review/escalate/resolve the review permission;
+    |   1. route middleware — the dispute read door (a read permission, or rule 204
+    |      an active branch reviewer designation); reporting needs the cashier
+    |      permission; notes and review/escalate/resolve their policy doors
+    |      (permission OR designation — never a role);
     |   2. the controller — the RmeBillingDisputePolicy ability, and a 404 for any
     |      dispute or invoice outside the caller's branch scope;
     |   3. the service — usability, permission, branch scope, the state machine and
     |      the resolution evidence, all under the invoice row lock.
     | Not feature-flagged: a hold must never be released by a configuration change.
     */
-    Route::middleware('permission:manage_rme_billing|review_rme_billing_disputes|view_rme_billing_disputes')->group(function () {
+    Route::middleware('can:viewAny,App\Modules\RmeInvoice\Models\RmeBillingDispute')->group(function () {
         Route::get('billing-disputes', [RmeBillingDisputeController::class, 'index'])->name('billing-disputes.index');
         Route::get('billing-disputes/{dispute}', [RmeBillingDisputeController::class, 'show'])
             ->whereNumber('dispute')->name('billing-disputes.show');
@@ -1439,10 +1442,10 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
         });
 
         Route::post('billing-disputes/{dispute}/notes', [RmeBillingDisputeController::class, 'note'])
-            ->middleware('permission:manage_rme_billing|review_rme_billing_disputes')
+            ->middleware('can:noteAny,App\Modules\RmeInvoice\Models\RmeBillingDispute')
             ->whereNumber('dispute')->name('billing-disputes.notes.store');
 
-        Route::middleware('permission:review_rme_billing_disputes')->group(function () {
+        Route::middleware('can:reviewAny,App\Modules\RmeInvoice\Models\RmeBillingDispute')->group(function () {
             Route::post('billing-disputes/{dispute}/review', [RmeBillingDisputeController::class, 'review'])
                 ->whereNumber('dispute')->name('billing-disputes.review');
             Route::post('billing-disputes/{dispute}/escalate', [RmeBillingDisputeController::class, 'escalate'])
@@ -1450,6 +1453,22 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
             Route::post('billing-disputes/{dispute}/resolve', [RmeBillingDisputeController::class, 'resolve'])
                 ->whereNumber('dispute')->name('billing-disputes.resolve');
         });
+    });
+
+    /*
+    | HARDENING-RME-BILLING-DISPUTE-BRANCH-REVIEWER-CONTROL-PAYMENT-1 (owner
+    | OPS-OQ-1a, rule 204) — designate / revoke branch billing dispute reviewers.
+    | The governance permission is granted to no operational role (Super Admin via
+    | '*'); the service re-asserts it on the persisted account, refuses
+    | self-designation, the Owner, redundant grants and non-RME branches.
+    */
+    Route::middleware('permission:manage_rme_billing_dispute_reviewers')->group(function () {
+        Route::get('billing-dispute-reviewers', [RmeBillingDisputeReviewerController::class, 'index'])
+            ->name('billing-dispute-reviewers.index');
+        Route::post('billing-dispute-reviewers', [RmeBillingDisputeReviewerController::class, 'store'])
+            ->name('billing-dispute-reviewers.store');
+        Route::post('billing-dispute-reviewers/{designation}/revoke', [RmeBillingDisputeReviewerController::class, 'revoke'])
+            ->whereNumber('designation')->name('billing-dispute-reviewers.revoke');
     });
 
     // Sprint 23 Phase 23.5 — Separated RME reports (branch-aware, RME is multi-branch)

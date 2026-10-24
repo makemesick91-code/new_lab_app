@@ -37,8 +37,10 @@ A decision is only as far along as the last label that is evidenced. A brief's
 | 2026-10-22 | **OD-1a — another branch's receivable is neither shown nor collected at this branch** (supersedes rule 197 §24) | `OWNER_POLICY_APPROVED`, `REPOSITORY_POLICY_RECORDED`, `TECHNICAL_ENFORCEMENT_DEPLOYED` (2026-10-23, runtime `b76b0ed2`, tag `hardening-rme-active-user-patient-selection-1-go`; rule 200) | owner answer to the sprint's question, `HARDENING-RME-ACTIVE-USER-PATIENT-SELECTION-1` |
 | 2026-10-23 | **D28 — interim refusal of corrections on a Rp0 ORIGINAL invoice** (`ZERO_ORIGINAL_CORRECTION_GUARD: TEMPORARY_FAIL_CLOSED`; D21g and D22 stay PENDING) | `OWNER_TASK_INSTRUCTION`, `REPOSITORY_POLICY_RECORDED`, `TECHNICAL_ENFORCEMENT_DEPLOYED` (2026-10-23, runtime `b3ec7133`, tag `fix-rme-invoice-correction-zero-original-guard-1-go`; rule 201) | owner task instruction for `FIX-RME-INVOICE-CORRECTION-ZERO-ORIGINAL-GUARD-1` |
 | 2026-10-23 | **OPS-OQ-1 — an invoice known to be wrong is not collected, not modified unilaterally, escalated to the branch authority, kept financially unresolved; the patient is never held** (ALL branches; does not widen the SPN4 correction pilot) | `OWNER_POLICY_APPROVED`, `REPOSITORY_POLICY_RECORDED`, `TECHNICAL_ENFORCEMENT_DEPLOYED` (2026-10-24, runtime `5b1d4262`, tag `implementation-rme-billing-dispute-escalation-ops-oq-1-go`; rule 203) | owner answer in the brief of `IMPLEMENTATION-RME-BILLING-DISPUTE-ESCALATION-OPS-OQ-1` |
-| 2026-10-23 | **OPS-OQ-1a — which branch-level account reviews/resolves a billing dispute** | **open owner question** — granted to no operational role meanwhile | recorded by the same sprint |
-| 2026-10-23 | **OPS-OQ-1b — may a control visit's own invoice be collected while its carry-over parent is disputed?** | **open owner question** — current whole-batch refusal stands | security review of the same sprint |
+| 2026-10-23 | **OPS-OQ-1a — which branch-level account reviews/resolves a billing dispute** | ~~open owner question~~ → **ANSWERED 2026-10-24** (row below) | recorded by the same sprint |
+| 2026-10-23 | **OPS-OQ-1b — may a control visit's own invoice be collected while its carry-over parent is disputed?** | ~~open owner question~~ → **ANSWERED 2026-10-24** (row below) | security review of the same sprint |
+| 2026-10-24 | **OPS-OQ-1a — an EXPLICITLY designated branch responsible person may review and resolve that branch's billing disputes** (per account, per branch; never a role grant; Owner stays read-only; no financial power) | `OWNER_POLICY_APPROVED`, `REPOSITORY_POLICY_RECORDED`, `TECHNICAL_ENFORCEMENT_IMPLEMENTED` (deploy evidence recorded after merge; rule 204 §B) | owner instruction in the brief of `HARDENING-RME-BILLING-DISPUTE-BRANCH-REVIEWER-CONTROL-PAYMENT-1` (no signed artefact; none fabricated) |
+| 2026-10-24 | **OPS-OQ-1b — a Kontrol invoice may be paid ON ITS OWN while every outstanding origin invoice is disputed** (allocated to the Kontrol invoice only; origin receivable, status, version and dispute unchanged; the combined payment is still refused whole) | `OWNER_POLICY_APPROVED`, `REPOSITORY_POLICY_RECORDED`, `TECHNICAL_ENFORCEMENT_IMPLEMENTED` (deploy evidence recorded after merge; rule 204 §C) | owner instruction in the brief of `HARDENING-RME-BILLING-DISPUTE-BRANCH-REVIEWER-CONTROL-PAYMENT-1` (no signed artefact; none fabricated) |
 
 The earlier D21 text is kept below, marked SUPERSEDED, as the record of what was
 decided and enforced between 2026-10-17 and 2026-10-20. It is never deleted.
@@ -523,14 +525,14 @@ path. An invoice there whose original amount is genuinely wrong therefore stays
 disputed (ESCALATED) — financially unresolved, exactly as the policy says — until
 the owner decides a correction path for that branch. No override was invented.
 
-- **OPS-OQ-1a — open owner question, not a decision.** Which branch-level account
+- **OPS-OQ-1a — open owner question, not a decision** *(as recorded 2026-10-23; ANSWERED 2026-10-24 — see the entry below).* Which branch-level account
   should hold `review_rme_billing_disputes` (start review, escalate, resolve)? Until
   the owner names one, the permission is granted to **no operational role**; only
   Super Admin (the existing `'*'` grant) can review and resolve, and the Owner has
   read-only `view_rme_billing_disputes`. Granting it to Admin Klinik would extend it
   to every Front Office account (FrontOfficeRole is the exact union) and let
   front-desk peers clear disputes raised at their own counter. Never answered in code.
-- **OPS-OQ-1b — open owner question, not a decision.** A control (follow-up) visit's
+- **OPS-OQ-1b — open owner question, not a decision** *(as recorded 2026-10-23; ANSWERED 2026-10-24 — see the entry below).* A control (follow-up) visit's
   payment must settle the carry-over parent invoice first (existing control-chain
   rule), so while that parent is disputed the control visit's OWN invoice cannot be
   collected and the visit stays at the cashier — whole-batch refusal, no silent
@@ -538,3 +540,38 @@ the owner decides a correction path for that branch. No override was invented.
   visit stays financially open. Should a control invoice be collectable on its own
   while its parent is disputed? Until the owner decides, the current behaviour stands
   and nothing is changed in code.
+
+### OPS-OQ-1a and OPS-OQ-1b — answered (2026-10-24, rule 204)
+
+Provenance: the owner's instruction in the brief of
+`HARDENING-RME-BILLING-DISPUTE-BRANCH-REVIEWER-CONTROL-PAYMENT-1`. No signed
+artefact, approval reference or timestamp exists and none was created.
+
+- **OPS-OQ-1a.** An explicitly designated branch responsible person may review and
+  resolve branch-scoped billing disputes with legitimate resolution evidence.
+  Implemented as one row per (account, branch) in
+  `mst_rme_billing_dispute_reviewers`, created and revoked by an account holding
+  `manage_rme_billing_dispute_reviewers` — a permission granted to **no operational
+  role** (Super Admin via `'*'`). It is never a role grant, so it cannot reach the
+  Front Office accounts through the Admin Klinik + Kasir union. Super Admin keeps its
+  authority; the Owner stays read-only and cannot be designated; a designee is
+  limited to the designated branch, re-checked as an active account working in that
+  branch on every action, and gains no invoice edit, correction, refund, debt
+  forgiveness, cancellation, manual PAID or guard override. **No designation is
+  created by the deployment** — the owner names the person and Super Admin records it.
+  Fail-closed interpretations recorded (not new authority, per the brief's §8 rule
+  "if an additional policy decision is required, fail closed"): a **counter**
+  account (Front Office, Kasir) is never designatable (brief §13: Front Office
+  cannot review or resolve); eligibility is re-checked on every use (brief §12:
+  revalidate on a role change); and a designee's "original is correct" must be
+  **independent** — not on an invoice they issued or collected on (brief §14:
+  independent confirmation). Should the owner ever want a counter account to review,
+  that is a new decision.
+- **OPS-OQ-1b.** A legitimate Kontrol invoice may be paid independently while its
+  originating visit invoice is under an active billing dispute. Implemented as the
+  separate, explicitly confirmed `payControlInvoiceOnly()` path: eligible only while
+  EVERY outstanding same-branch origin is disputed (a mixed chain fails closed), the
+  payment is allocated to the Kontrol invoice only, and the origin's receivable,
+  status, version, history and dispute are unchanged. The ordinary combined payment
+  and every batch that would settle a disputed origin are still refused whole. D10,
+  D28, version binding (rule 191), OD-1 and OD-1a are preserved.

@@ -119,6 +119,10 @@ class PermissionGroupingService
                 // read-only dispute visibility. Reporting reuses manage_rme_billing.
                 'review_rme_billing_disputes',
                 'view_rme_billing_disputes',
+                // HARDENING-RME-BILLING-DISPUTE-BRANCH-REVIEWER-CONTROL-PAYMENT-1
+                // (rule 204) — designate / revoke branch dispute reviewers (granted
+                // to no operational role).
+                'manage_rme_billing_dispute_reviewers',
                 // FEATURE-RME-BRANCH-TARIFF-AUTHORITY-1 (rule 192) — strict-mode
                 // price exceptions; granted to no role (D21b undecided).
                 'override_rme_tariff_price',
@@ -299,6 +303,7 @@ class PermissionGroupingService
         'view_billing_correction_oversight' => 'Lihat daftar dan riwayat koreksi tagihan di semua cabang RME — hanya baca, tanpa mengajukan/menyetujui.',
         'review_rme_billing_disputes' => 'Tinjau, eskalasi ke Owner, dan selesaikan laporan ketidaksesuaian tagihan RME di cabang kerja (tidak dapat mengubah, membatalkan atau mengoreksi tagihan).',
         'view_rme_billing_disputes' => 'Lihat daftar dan riwayat laporan ketidaksesuaian tagihan RME — hanya baca.',
+        'manage_rme_billing_dispute_reviewers' => 'Tunjuk dan cabut peninjau ketidaksesuaian tagihan per akun dan per cabang (tidak memberi izin tagihan, koreksi, atau pembayaran).',
         'override_rme_tariff_price' => 'Otorisasi harga tagihan RME yang berbeda dari tarif master pada cabang mode tarif ketat (wajib alasan; nonaktif sampai keputusan owner D21b–D21f).',
         'authorize_rme_tariff_discount' => 'Otorisasi diskon tagihan RME pada cabang mode tarif ketat (wajib alasan; nonaktif sampai keputusan owner D21b–D21f).',
         'view_dashboard' => 'Akses dashboard operasional cabang.',

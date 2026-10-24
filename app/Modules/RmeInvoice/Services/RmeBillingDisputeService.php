@@ -19,6 +19,7 @@ use App\Modules\RmeInvoice\Support\RmeBillingDisputeOutcome;
 use App\Modules\RmeInvoice\Support\RmeBillingDisputePermission;
 use App\Modules\RmeInvoice\Support\RmeBillingDisputeReason;
 use App\Modules\RmeInvoice\Support\RmeBillingDisputeStatus;
+use App\Modules\RmeInvoice\Support\RmeBillingDisputeText;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
 use Closure;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
@@ -57,9 +58,9 @@ use Illuminate\Validation\ValidationException;
  */
 class RmeBillingDisputeService
 {
-    public const TEXT_MIN = 10;
+    public const TEXT_MIN = RmeBillingDisputeText::MIN;
 
-    public const TEXT_MAX = 1000;
+    public const TEXT_MAX = RmeBillingDisputeText::MAX;
 
     public const REFERENCE_MIN = 6;
 
@@ -67,9 +68,6 @@ class RmeBillingDisputeService
 
     /** Same shape as the Owner approval reference (rule 202 §21). */
     private const REFERENCE_PATTERN = '/^[A-Za-z0-9._:\/-]+$/';
-
-    /** A run this long is an identity number (NIK is 16 digits), never billing prose. */
-    private const IDENTITY_NUMBER_PATTERN = '/\d{13,}/';
 
     /** Invoice statuses a dispute may be reported against. */
     public const REPORTABLE_INVOICE_STATUSES = [
@@ -87,6 +85,7 @@ class RmeBillingDisputeService
         private readonly BranchService $branches,
         private readonly AuditLogService $auditLogs,
         private readonly RmeBillingDisputeEscalationService $escalation,
+        private readonly RmeBillingDisputeReviewerService $reviewers,
     ) {}
 
     // ─── Reads ───────────────────────────────────────────────────────────────
@@ -144,20 +143,24 @@ class RmeBillingDisputeService
     }
 
     /**
-     * Branch ids whose disputes this user may read: their working-branch scope,
-     * and only if they hold one of the read permissions. Empty otherwise.
+     * Branch ids whose disputes this user may read: their working-branch scope
+     * when they hold one of the read permissions; otherwise (rule 204) only the
+     * branches they are DESIGNATED to review, still inside their working scope.
+     * Empty otherwise.
      *
      * @return list<int>
      */
     public function readableBranchIds(User $user): array
     {
+        $scope = array_values(array_map('intval', $this->workingBranchScope->branchIdsFor($user)));
+
         foreach (RmeBillingDisputePermission::READ as $permission) {
             if ($user->can($permission)) {
-                return array_values(array_map('intval', $this->workingBranchScope->branchIdsFor($user)));
+                return $scope;
             }
         }
 
-        return [];
+        return array_values(array_intersect($scope, $this->reviewers->designatedBranchIds($user)));
     }
 
     // ─── Report ──────────────────────────────────────────────────────────────
@@ -249,7 +252,7 @@ class RmeBillingDisputeService
     {
         $note = $this->optionalText($note, 'note', 'Catatan tinjauan');
 
-        return $this->mutate('review', $dispute, $reviewer, [RmeBillingDisputePermission::REVIEW], function (RmeBillingDispute $locked) use ($reviewer, $note) {
+        return $this->mutate('review', $dispute, $reviewer, [RmeBillingDisputePermission::REVIEW], true, function (RmeBillingDispute $locked) use ($reviewer, $note) {
             $this->assertTransition($locked, RmeBillingDisputeStatus::UNDER_REVIEW);
             $from = (string) $locked->status;
 
@@ -273,7 +276,7 @@ class RmeBillingDisputeService
     {
         $note = $this->assertText($note, 'note', 'Alasan eskalasi');
 
-        $escalated = $this->mutate('escalate', $dispute, $reviewer, [RmeBillingDisputePermission::REVIEW], function (RmeBillingDispute $locked) use ($reviewer, $note) {
+        $escalated = $this->mutate('escalate', $dispute, $reviewer, [RmeBillingDisputePermission::REVIEW], true, function (RmeBillingDispute $locked) use ($reviewer, $note) {
             $this->assertTransition($locked, RmeBillingDisputeStatus::ESCALATED);
             $from = (string) $locked->status;
 
@@ -297,7 +300,7 @@ class RmeBillingDisputeService
     {
         $note = $this->assertText($note, 'note', 'Catatan tindak lanjut');
 
-        return $this->mutate('note', $dispute, $actor, RmeBillingDisputePermission::NOTE, function (RmeBillingDispute $locked) use ($actor, $note) {
+        return $this->mutate('note', $dispute, $actor, RmeBillingDisputePermission::NOTE, true, function (RmeBillingDispute $locked) use ($actor, $note) {
             if (! $locked->isActive()) {
                 throw ValidationException::withMessages([
                     'dispute' => '[BILLING_DISPUTE_INVALID_TRANSITION] Laporan yang sudah selesai tidak dapat diberi catatan baru.',
@@ -328,7 +331,7 @@ class RmeBillingDisputeService
             ? $this->assertReference($data['resolution_reference'] ?? null)
             : null;
 
-        return $this->mutate('resolve', $dispute, $resolver, [RmeBillingDisputePermission::REVIEW], function (RmeBillingDispute $locked, ?RmeInvoice $invoice) use ($resolver, $outcome, $reason, $reference) {
+        return $this->mutate('resolve', $dispute, $resolver, [RmeBillingDisputePermission::REVIEW], true, function (RmeBillingDispute $locked, ?RmeInvoice $invoice) use ($resolver, $outcome, $reason, $reference) {
             $this->assertTransition($locked, RmeBillingDisputeStatus::RESOLVED);
 
             if ($invoice === null) {
@@ -373,6 +376,21 @@ class RmeBillingDisputeService
                     );
                 }
 
+                // Rule 204 §15 — a DESIGNEE's confirmation must be independent of the
+                // invoice's billing: never the account that issued it or collected on
+                // it. Decided on the persisted account; an account that no longer
+                // resolves takes the stricter (designee) branch — fail closed.
+                $account = $this->actors->resolveUsable($resolver);
+                if (! ($account?->can(RmeBillingDisputePermission::REVIEW) ?? false)
+                    && $this->reviewers->hasBilledInvoice($resolver, $invoice)) {
+                    throw new RmeBillingDisputeDenied(
+                        RmeBillingDisputeDenied::RESOLVER_NOT_INDEPENDENT,
+                        'Peninjau cabang yang menerbitkan atau menerima pembayaran tagihan ini tidak dapat menyatakan tagihannya benar. Minta peninjau lain.',
+                        (int) $locked->id,
+                        (int) $invoice->id,
+                    );
+                }
+
                 // Only the invoice exactly as disputed can be "confirmed correct".
                 if ((int) ($invoice->correction_version ?? 0) !== (int) $locked->invoice_correction_version_at_report) {
                     throw ValidationException::withMessages([
@@ -404,12 +422,13 @@ class RmeBillingDisputeService
 
     /**
      * @param  list<string>  $permissions  any one of them authorizes
+     * @param  bool  $designationAuthorizes  rule 204: an ACTIVE branch reviewer designation for the dispute's branch also authorizes
      * @param  Closure(RmeBillingDispute, ?RmeInvoice): RmeBillingDispute  $work
      */
-    private function mutate(string $action, RmeBillingDispute $dispute, User $actor, array $permissions, Closure $work): RmeBillingDispute
+    private function mutate(string $action, RmeBillingDispute $dispute, User $actor, array $permissions, bool $designationAuthorizes, Closure $work): RmeBillingDispute
     {
-        return $this->audited($action, $actor, (int) $dispute->id, (int) $dispute->rme_invoice_id, function () use ($dispute, $actor, $permissions, $work) {
-            return DB::transaction(function () use ($dispute, $actor, $permissions, $work) {
+        return $this->audited($action, $actor, (int) $dispute->id, (int) $dispute->rme_invoice_id, function () use ($dispute, $actor, $permissions, $designationAuthorizes, $work) {
+            return DB::transaction(function () use ($dispute, $actor, $permissions, $designationAuthorizes, $work) {
                 // Lock order: INVOICE first, then the dispute. The invoice id is
                 // the immutable column of an unlocked read; the dispute is then
                 // re-read under its own lock and must still belong to it.
@@ -421,7 +440,7 @@ class RmeBillingDisputeService
                     throw ValidationException::withMessages(['dispute' => '[BILLING_DISPUTE_NOT_FOUND] Laporan ketidaksesuaian tidak ditemukan.']);
                 }
 
-                $this->assertActor($actor, $permissions, (int) $locked->branch_id, (int) $locked->id, $invoiceId);
+                $this->assertActor($actor, $permissions, (int) $locked->branch_id, (int) $locked->id, $invoiceId, $designationAuthorizes);
 
                 return $work($locked, $invoice);
             });
@@ -429,11 +448,18 @@ class RmeBillingDisputeService
     }
 
     /**
-     * Usability + permission + branch scope of the PERSISTED account.
+     * Usability + permission (or, rule 204, an active designation for exactly this
+     * branch) + branch scope of the PERSISTED account.
+     *
+     * The designation is read FOR SHARE under the invoice and dispute locks this
+     * transaction already holds: a revocation (which locks the designation FOR
+     * UPDATE) either committed first — and the designation is not found — or
+     * waits until this action commits. Lock order: invoice → dispute →
+     * designation; a revocation takes only the designation, so no cycle exists.
      *
      * @param  list<string>  $permissions
      */
-    private function assertActor(User $actor, array $permissions, int $branchId, ?int $disputeId, ?int $invoiceId): void
+    private function assertActor(User $actor, array $permissions, int $branchId, ?int $disputeId, ?int $invoiceId, bool $designationAuthorizes = false): void
     {
         $account = $this->actors->resolveUsable($actor);
 
@@ -452,6 +478,10 @@ class RmeBillingDisputeService
                 $holds = true;
                 break;
             }
+        }
+
+        if (! $holds && $designationAuthorizes) {
+            $holds = $this->reviewers->isDesignatedFor($account, $branchId, lock: true);
         }
 
         if (! $holds) {
@@ -567,22 +597,7 @@ class RmeBillingDisputeService
 
     private function assertText(mixed $value, string $field, string $label): string
     {
-        $text = is_string($value) ? trim($value) : '';
-        $length = mb_strlen($text);
-
-        if ($length < self::TEXT_MIN || $length > self::TEXT_MAX) {
-            throw ValidationException::withMessages([
-                $field => "{$label} wajib diisi ".self::TEXT_MIN.'–'.self::TEXT_MAX.' karakter.',
-            ]);
-        }
-
-        if (preg_match(self::IDENTITY_NUMBER_PATTERN, $text) === 1) {
-            throw ValidationException::withMessages([
-                $field => "{$label} tidak boleh memuat NIK atau nomor identitas (deretan 13 angka atau lebih).",
-            ]);
-        }
-
-        return $text;
+        return RmeBillingDisputeText::assert($value, $field, $label);
     }
 
     private function optionalText(mixed $value, string $field, string $label): ?string
@@ -602,7 +617,7 @@ class RmeBillingDisputeService
         if ($length < self::REFERENCE_MIN
             || $length > self::REFERENCE_MAX
             || preg_match(self::REFERENCE_PATTERN, $text) !== 1
-            || preg_match(self::IDENTITY_NUMBER_PATTERN, $text) === 1) {
+            || RmeBillingDisputeText::containsIdentityNumber($text)) {
             throw ValidationException::withMessages([
                 'resolution_reference' => 'Referensi penyelesaian wajib diisi '.self::REFERENCE_MIN.'–'.self::REFERENCE_MAX
                     .' karakter (huruf, angka, titik, garis bawah, titik dua, garis miring, tanda hubung; tanpa NIK).',

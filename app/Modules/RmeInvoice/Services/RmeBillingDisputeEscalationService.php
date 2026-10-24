@@ -24,9 +24,10 @@ use Spatie\Permission\Models\Permission;
  *
  * The responsible authority of a branch = every usable account holding the
  * REVIEW permission whose working-branch scope reaches the dispute's branch.
- * Today that is Super Admin only (REVIEW is granted to no operational role —
- * OPS-OQ-1a). A context-bound reviewer is reached only while working in that
- * branch; the branch queue itself never depends on a notification.
+ * REVIEW is granted to no operational role (Super Admin via '*'); rule 204
+ * (OPS-OQ-1a) adds every account explicitly DESIGNATED for that branch. A
+ * context-bound reviewer is reached only while working in that branch; the
+ * branch queue itself never depends on a notification.
  *
  * FAIL SAFE: if no reviewer can be resolved, the dispute stays OPEN in the
  * branch queue with its payment hold, and the gap is AUDITED
@@ -51,6 +52,7 @@ class RmeBillingDisputeEscalationService
         private readonly RmeWorkingBranchScope $workingBranchScope,
         private readonly ActiveAccountResolver $accounts,
         private readonly AuditLogService $auditLogs,
+        private readonly RmeBillingDisputeReviewerService $reviewers,
     ) {}
 
     /**
@@ -60,7 +62,7 @@ class RmeBillingDisputeEscalationService
      */
     public function reviewersFor(int $branchId, ?User $except = null): Collection
     {
-        return $this->holdersReaching([RmeBillingDisputePermission::REVIEW], $branchId, $except);
+        return $this->holdersReaching([RmeBillingDisputePermission::REVIEW], $branchId, $except, includeDesignees: true);
     }
 
     public function reported(RmeBillingDispute $dispute, User $reporter): void
@@ -102,7 +104,7 @@ class RmeBillingDisputeEscalationService
      */
     private function routeToAuthority(RmeBillingDispute $dispute, User $actor, array $permissions, string $stage, string $title, string $message): void
     {
-        $recipients = $this->holdersReaching($permissions, (int) $dispute->branch_id, $actor);
+        $recipients = $this->holdersReaching($permissions, (int) $dispute->branch_id, $actor, includeDesignees: true);
 
         if ($recipients->isEmpty()) {
             $this->audit($dispute, $actor, RmeBillingDisputeAuditEvent::ACTION_ESCALATION_UNROUTED, [
@@ -135,17 +137,33 @@ class RmeBillingDisputeEscalationService
     }
 
     /**
+     * Holders of any of $permissions, plus (rule 204) the accounts actively
+     * designated for $branchId, that are usable and whose working scope reaches
+     * the branch.
+     *
      * @param  list<string>  $permissions
      * @return Collection<int, User>
      */
-    private function holdersReaching(array $permissions, int $branchId, ?User $except): Collection
+    private function holdersReaching(array $permissions, int $branchId, ?User $except, bool $includeDesignees = false): Collection
     {
         $names = Permission::query()->whereIn('name', $permissions)->pluck('name')->all();
-        if ($names === []) {
-            return collect();
+        $candidates = $names === [] ? collect() : User::permission($names)->orderBy('id')->get();
+
+        if ($includeDesignees) {
+            $designated = $this->reviewers->designatedUserIdsFor($branchId);
+
+            if ($designated !== []) {
+                $candidates = $candidates
+                    ->concat(User::query()->whereIn('id', $designated)->get())
+                    ->unique(fn (User $user) => (int) $user->id)
+                    ->sortBy(fn (User $user) => (int) $user->id)
+                    ->values();
+            }
         }
 
-        $candidates = User::permission($names)->orderBy('id')->get();
+        if ($candidates->isEmpty()) {
+            return collect();
+        }
 
         // The working-branch scope of ANOTHER account may expire its stale online
         // context as a side effect; evaluate it inside a transaction that is

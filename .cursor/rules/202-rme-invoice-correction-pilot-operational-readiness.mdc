@@ -108,7 +108,9 @@ operator document and a rule disagree, the rule wins and the document is wrong.
     and never keep the patient waiting for the pilot. It does not widen the pilot
     (SPN4, maker 29 / checker 1, D28). A known-wrong invoice is still not used as a
     pilot case unless the case-specific Owner approval exists (rule 196 §21).
-    Which branch account reviews disputes is open owner question OPS-OQ-1a.
+    Which branch account reviews disputes (OPS-OQ-1a) is ANSWERED by rule 204: an
+    explicitly designated account per branch, never a role grant; designations do
+    not widen the correction pilot.
 20. **No synthetic financial cases**, no fabricated approvals, signatures,
     timestamps, approval references, sessions, invoices, payments or corrections.
 21. Evidence carries ids, numbers (`RME-…`, `RMECOR-…`), amounts, statuses, codes

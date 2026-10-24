@@ -428,6 +428,13 @@ return [
         'tests/Feature/RmeBillingDispute/RmeBillingDisputeCorrectionCompatibilityTest.php',
         'tests/Feature/RmeBillingDispute/RmeBillingDisputeConcurrencyTest.php',
         'tests/Feature/RmeBillingDispute/RmeBillingDisputeGovernanceTest.php',
+        // HARDENING-RME-BILLING-DISPUTE-BRANCH-REVIEWER-CONTROL-PAYMENT-1 (rule 204)
+        // — the branch reviewer designation (OPS-OQ-1a), the Kontrol-only payment
+        // (OPS-OQ-1b) and their PostgreSQL races A–N. Same `RmeBillingDispute`
+        // token; declared so a rename cannot silently drop them from the gate.
+        'tests/Feature/RmeBillingDispute/RmeBillingDisputeBranchReviewerTest.php',
+        'tests/Feature/RmeBillingDispute/RmeBillingDisputeControlOnlyPaymentTest.php',
+        'tests/Feature/RmeBillingDispute/RmeBillingDisputeBranchReviewerConcurrencyTest.php',
         // Same sprint — the payment branch scope judges the EXPLICIT cashier,
         // never Auth::user() (which failed OPEN with no session), on every
         // payment path. Selected by the existing `RmePayment` token.

@@ -303,6 +303,188 @@ class RmePaymentService
         return $result;
     }
 
+    /** Rule 204 (OPS-OQ-1b) — the explicit operator intent of a Kontrol-only payment. */
+    public const PAYMENT_SCOPE_CONTROL_ONLY = 'control_only';
+
+    public const CONTROL_ONLY_NOT_APPLICABLE = 'CONTROL_ONLY_PAYMENT_NOT_APPLICABLE';
+
+    public const CONTROL_ONLY_ORIGIN_NOT_DISPUTED = 'CONTROL_ONLY_PAYMENT_ORIGIN_NOT_DISPUTED';
+
+    /**
+     * HARDENING-RME-BILLING-DISPUTE-BRANCH-REVIEWER-CONTROL-PAYMENT-1 — owner
+     * decision OPS-OQ-1b (rule 204): a legitimate Kontrol invoice may be paid ON
+     * ITS OWN while its origin visit invoice is under an active billing dispute.
+     *
+     * The money goes to the Kontrol invoice ONLY. No payment row — not even a
+     * zero one — is written on any origin; no origin status, balance, version,
+     * snapshot, dispute or hold changes. The ordinary control payment
+     * (allocateControlPayment, origin first) is untouched and still refuses the
+     * whole batch while an origin is disputed: this is a separate, explicit path.
+     *
+     * NARROW BY CONSTRUCTION, decided under the locks:
+     *  - the Kontrol invoice passes every ordinary guard: active RME branch, a
+     *    usable cashier in branch scope, its own version binding (rule 191), and
+     *    its own payment holds — its own dispute and D10 correction block;
+     *  - the chain is re-discovered from server data (follow_up_of_visit_id,
+     *    same patient, same branch per OD-1a) — never from the request;
+     *  - there must be at least one outstanding origin, and EVERY outstanding
+     *    origin must be under an ACTIVE dispute. A collectable, undisputed debt is
+     *    never skipped (fail closed: it is collected by the ordinary rules);
+     *  - the amount never exceeds the Kontrol invoice's own remaining balance.
+     *
+     * LOCK ORDER: the Kontrol invoice, then each origin in chain order — exactly
+     * the order allocateControlPayment uses — so no new deadlock cycle exists. A
+     * dispute report or resolution on an origin locks that origin first, so its
+     * state is decided here under the lock (races E, F).
+     *
+     * @param  array{payment_method_id?: int|null, amount: numeric, paid_at: string, reference_number?: string|null, notes?: string|null}  $data
+     */
+    public function payControlInvoiceOnly(RmeInvoice $controlInvoice, User $cashier, array $data): RmePayment
+    {
+        // The operator's explicit confirmation is part of the contract, not only of
+        // the HTTP form: a future non-HTTP caller must state it too.
+        if (! filter_var($data['confirm_control_only'] ?? false, FILTER_VALIDATE_BOOLEAN)) {
+            throw ValidationException::withMessages([
+                'confirm_control_only' => 'Pembayaran tagihan kontrol saja memerlukan konfirmasi bahwa tagihan kunjungan asal tetap ditahan.',
+            ]);
+        }
+
+        $data['paid_at'] = $this->normalizePaidAt($data['paid_at'] ?? null);
+
+        // Validates the chain (patient, RME branch) exactly as the control path does.
+        $this->carryOver->getControlPayableSummary($controlInvoice);
+        $amount = $this->normalizeAmount($data['amount']);
+
+        $controlInvoice->loadMissing('clinicVisit');
+        $controlVisit = $this->requireVisit($controlInvoice);
+
+        $payment = $this->settleUnderVersionBinding(RmeInvoiceVersionConflict::PATH_CONTROL_ONLY, $cashier, function () use ($controlInvoice, $controlVisit, $cashier, $data, $amount) {
+            $control = RmeInvoice::query()->lockForUpdate()->findOrFail($controlInvoice->id);
+            $this->assertInvoicePayable($control, $cashier);
+            $this->assertFormVersion($control, $data);
+            $this->assertNoPaymentHold($control);
+
+            $outstanding = [];
+            foreach ($this->carryOver->getCarryOverInvoicesForControlVisit($controlVisit) as $origin) {
+                $locked = RmeInvoice::query()->lockForUpdate()->findOrFail($origin->id);
+
+                if ($this->isOutstandingOrigin($locked, $control)) {
+                    $outstanding[] = $locked;
+                }
+            }
+
+            $decision = $this->controlOnlyDecision($outstanding);
+            if (! $decision['eligible']) {
+                throw ValidationException::withMessages(['payment_scope' => $decision['message']]);
+            }
+
+            if ($amount > $this->remainingForInvoice($control)) {
+                throw ValidationException::withMessages([
+                    'amount' => 'Pembayaran tidak boleh melebihi sisa tagihan kontrol. Tagihan kunjungan asal tidak dapat ditagihkan di sini.',
+                ]);
+            }
+
+            $payment = $this->recordPayment($control, $controlVisit, $cashier, $data, $amount, null, $data['notes'] ?? null);
+
+            $this->auditLogs->log(
+                RmeFinancialAuditEvent::ENTITY_PAYMENT,
+                (int) $payment->id,
+                RmeFinancialAuditEvent::ACTION_PAYMENT_CONTROL_ONLY_ORIGIN_DISPUTED,
+                null,
+                RmeFinancialAuditEvent::controlOnlyPaymentPayload(
+                    $payment,
+                    $control,
+                    array_map(fn (RmeInvoice $origin) => (int) $origin->id, $decision['invoices']),
+                    array_map(fn (RmeBillingDispute $dispute) => (int) $dispute->id, $decision['disputes']),
+                ),
+                $cashier,
+            );
+
+            $this->refreshInvoiceStatus($control);
+            // Phase 27.4.1 rule: a Kontrol visit completes once its OWN invoice is
+            // settled; origin balances never block it.
+            $this->completeControlVisitIfSettled($control, $controlVisit, paymentMade: true);
+
+            return $payment->refresh();
+        });
+
+        $this->generateLabCandidatesIfPaid($payment->rme_invoice_id, $cashier);
+
+        return $payment;
+    }
+
+    /**
+     * Rule 204 — whether the Kontrol-only action is available for this invoice,
+     * for the payment page (unlocked reads; display only). payControlInvoiceOnly()
+     * decides again under the locks through the SAME rule.
+     *
+     * @return array{eligible: bool, code: ?string, message: ?string, invoices: list<RmeInvoice>, disputes: list<RmeBillingDispute>}
+     */
+    public function controlOnlyEligibility(RmeInvoice $controlInvoice): array
+    {
+        $controlInvoice->loadMissing('clinicVisit');
+        $visit = $controlInvoice->clinicVisit;
+
+        if ($visit === null) {
+            return $this->controlOnlyDecision([]);
+        }
+
+        $outstanding = $this->carryOver->getCarryOverInvoicesForControlVisit($visit)
+            ->filter(fn (RmeInvoice $origin) => $this->isOutstandingOrigin($origin, $controlInvoice))
+            ->values()
+            ->all();
+
+        return $this->controlOnlyDecision($outstanding);
+    }
+
+    /** A carry-over origin that this Kontrol visit's ordinary payment would have to settle. */
+    private function isOutstandingOrigin(RmeInvoice $origin, RmeInvoice $control): bool
+    {
+        return $origin->isPayable()
+            && (int) $origin->branch_id === (int) $control->branch_id
+            && $origin->remainingAmount() > 0;
+    }
+
+    /**
+     * The ONE rule of the exception, shared by the page and the locked service.
+     *
+     * @param  list<RmeInvoice>  $outstanding
+     * @return array{eligible: bool, code: ?string, message: ?string, invoices: list<RmeInvoice>, disputes: list<RmeBillingDispute>}
+     */
+    private function controlOnlyDecision(array $outstanding): array
+    {
+        if ($outstanding === []) {
+            return [
+                'eligible' => false,
+                'code' => self::CONTROL_ONLY_NOT_APPLICABLE,
+                'message' => '['.self::CONTROL_ONLY_NOT_APPLICABLE.'] Pembayaran tagihan kontrol saja hanya untuk kunjungan kontrol '
+                    .'yang tagihan kunjungan asalnya sedang dalam peninjauan. Gunakan pembayaran biasa.',
+                'invoices' => [],
+                'disputes' => [],
+            ];
+        }
+
+        $disputes = [];
+        foreach ($outstanding as $origin) {
+            $active = $this->disputes->activeForInvoice((int) $origin->id);
+
+            if ($active === null) {
+                return [
+                    'eligible' => false,
+                    'code' => self::CONTROL_ONLY_ORIGIN_NOT_DISPUTED,
+                    'message' => '['.self::CONTROL_ONLY_ORIGIN_NOT_DISPUTED.'] Masih ada tagihan kunjungan sebelumnya yang tidak sedang '
+                        .'dalam peninjauan. Tagihan tersebut ditagihkan sesuai aturan biasa; pembayaran tagihan kontrol saja tidak dapat dipakai.',
+                    'invoices' => [],
+                    'disputes' => [],
+                ];
+            }
+
+            $disputes[] = $active;
+        }
+
+        return ['eligible' => true, 'code' => null, 'message' => null, 'invoices' => $outstanding, 'disputes' => $disputes];
+    }
+
     /**
      * Sprint 62.2 — generalized FIFO allocation for ANY new visit.
      *

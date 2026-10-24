@@ -24,6 +24,12 @@ final class RmeBillingDisputeDenied extends AuthorizationException
     /** The reporter may not certify, alone, that the invoice they disputed is right. */
     public const SELF_RESOLUTION = 'SELF_RESOLUTION_FORBIDDEN';
 
+    /** Rule 204 — nobody designates themself as a branch reviewer, Super Admin included. */
+    public const SELF_DESIGNATION = 'SELF_DESIGNATION_FORBIDDEN';
+
+    /** Rule 204 §15 — a designee who issued or collected on the invoice confirms nothing about it. */
+    public const RESOLVER_NOT_INDEPENDENT = 'RESOLVER_NOT_INDEPENDENT';
+
     public function __construct(
         public readonly string $reasonCode,
         string $message,

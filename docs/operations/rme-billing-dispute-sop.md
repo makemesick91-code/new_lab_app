@@ -1,8 +1,9 @@
-# SOP — Ketidaksesuaian Tagihan RME (OPS-OQ-1, rule 203)
+# SOP — Ketidaksesuaian Tagihan RME (OPS-OQ-1, rule 203; OPS-OQ-1a/1b, rule 204)
 
 **Berlaku untuk:** semua cabang RME. **Pembaca:** kasir, Front Office, penanggung
-jawab cabang, IT. **Dasar:** kebijakan Owner OPS-OQ-1 (dicatat di
-`docs/decisions/rme-billing-correction-owner-decisions.md`).
+jawab cabang, IT. **Dasar:** kebijakan Owner OPS-OQ-1, ditambah keputusan Owner OPS-OQ-1a
+(peninjau cabang yang ditunjuk) dan OPS-OQ-1b (tagihan kontrol dapat dibayar
+tersendiri) — dicatat di `docs/decisions/rme-billing-correction-owner-decisions.md`.
 
 ## 1. Kapan dipakai
 
@@ -41,13 +42,18 @@ dengan pesan:
 Bila tagihan yang ditahan ikut terpilih dalam pembayaran gabungan, **seluruh**
 pembayaran gabungan itu ditolak — tidak ada uang yang dialihkan diam-diam ke
 tagihan lain. Pada pembayaran kunjungan baru, hapus pilihan piutang yang ditahan,
-lalu bayar yang lain. Pada **kunjungan kontrol**, tagihan asal yang dilaporkan ikut
-wajib diselesaikan dalam pembayaran kontrol, sehingga pembayaran kontrol ikut
-tertahan sampai laporan selesai — pasien tetap boleh pulang.
+lalu bayar yang lain. Pada **kunjungan kontrol**, pembayaran kontrol biasa tetap
+wajib menyelesaikan tagihan asal lebih dulu, sehingga pembayaran kontrol biasa
+tertahan bila tagihan asal sedang ditinjau. Untuk itu tersedia **Bayar Tagihan
+Kontrol Saja** (§9) — pasien tetap boleh pulang.
 
 ## 4. Langkah penanggung jawab cabang
 
-Menu **Ketidaksesuaian Tagihan** → buka laporan.
+Penanggung jawab cabang adalah **Super Admin**, atau akun yang **ditunjuk secara
+khusus** untuk satu cabang (§7). Menu **Klinik & RME → Ketidaksesuaian Tagihan**
+berisi laporan cabang yang boleh Anda lihat; akun yang ditunjuk hanya melihat dan
+menangani laporan **cabang penunjukannya**, dan hanya saat sedang bekerja di cabang
+tersebut. Buka laporan.
 
 | Tindakan | Kapan | Akibat |
 |---|---|---|
@@ -55,8 +61,9 @@ Menu **Ketidaksesuaian Tagihan** → buka laporan.
 | **Eskalasi ke Owner** (alasan wajib) | perlu keputusan Owner, mis. koreksi tagihan | status *Dieskalasi ke Owner*; Owner menerima notifikasi; pembayaran tetap ditahan |
 | **Selesaikan Laporan** | ada bukti penyelesaian (§5) | status *Selesai*; penahanan dari laporan ini dilepas |
 
-Peninjau **tidak** memiliki kuasa keuangan: tidak dapat mengubah tagihan, membuat
-koreksi, atau mencatat pembayaran dari laporan.
+Peninjau **tidak** memiliki kuasa keuangan: tidak dapat mengubah harga atau tagihan,
+membuat/menyetujui koreksi, membatalkan tagihan, menandai Lunas, menghapus utang,
+mengembalikan uang, atau mencatat pembayaran dari laporan.
 
 ## 5. Penyelesaian yang sah (hanya dua)
 
@@ -80,18 +87,121 @@ pembayaran ke versi tagihan terbaru (formulir lama ditolak `INVOICE_VERSION_CHAN
 Tagihan yang sudah Sebagian/Lunas tidak dikembalikan — refund dan pembalikan
 pembayaran belum tersedia.
 
-## 7. Bila tidak ada penanggung jawab peninjau
+## 7. Penunjukan dan pencabutan peninjau cabang (OPS-OQ-1a)
 
-Saat ini izin peninjau hanya dimiliki Super Admin; siapa peninjau di tingkat cabang
-adalah pertanyaan terbuka **OPS-OQ-1a** untuk Owner. Bila tidak ada peninjau aktif,
-laporan tetap tercatat dan pembayaran tetap ditahan. **Jangan** memberi izin peninjau
-ke akun kasir. IT memeriksa dengan:
+**Siapa yang menunjuk:** hanya Super Admin (menu **Klinik & RME → Peninjau
+Ketidaksesuaian Tagihan**). Penunjukan dilakukan **per akun dan per cabang** atas
+nama orang yang **telah ditetapkan Owner** sebagai penanggung jawab — sistem tidak
+pernah membuat penunjukan sendiri, dan tidak ada penunjukan otomatis.
+
+**Menunjuk:** pilih akun, pilih cabang, tulis alasan (10–1000 karakter, tanpa NIK),
+klik **Tunjuk peninjau**. Sistem menolak bila:
+
+- akun yang ditunjuk adalah Anda sendiri;
+- akun tidak aktif, atau tidak memiliki akses RME;
+- akun Owner (Owner tetap hanya-baca);
+- akun loket **Front Office** atau **Kasir** — loket melaporkan, tidak meninjau;
+- akun sudah memegang izin peninjau penuh (penunjukan tidak diperlukan);
+- akun sudah ditunjuk untuk cabang itu dan belum dicabut.
+
+Penunjukan **tidak** diwariskan lewat peran: akun lain dengan peran yang sama tidak
+ikut menjadi peninjau. Bila peran akun yang ditunjuk kemudian berubah menjadi Owner,
+Front Office, atau Kasir — atau akun kehilangan akses RME — penunjukannya langsung
+tidak berlaku walau belum dicabut; cabut penunjukan itu agar daftar tetap rapi.
+
+**Mencabut:** pada daftar penunjukan, tulis alasan pencabutan lalu klik **Cabut**.
+Tindakan berikutnya dari akun itu pada laporan cabang tersebut langsung ditolak.
+Riwayat penunjukan tidak pernah dihapus.
+
+**Pindah cabang:** bila peninjau berpindah cabang kerja, ia tidak dapat menangani
+laporan cabang lama sampai bekerja di sana lagi. Cabut penunjukan bila ia tidak lagi
+menjadi penanggung jawab cabang itu, lalu tunjuk penggantinya.
+
+**Bila tidak ada peninjau aktif:** laporan tetap tercatat, pembayaran tetap ditahan,
+Super Admin tetap dapat meninjau. **Jangan** memberi izin peninjau penuh ke akun
+kasir. IT memeriksa dengan:
 
 ```
 runuser -u daengtisiams -- php artisan rme:billing-dispute-status
 ```
 
-## 8. Privasi
+## 8. Penyelesaian berbasis bukti oleh peninjau cabang
+
+Peninjau cabang menyelesaikan laporan dengan cara yang **sama persis** seperti
+Super Admin (§5): koreksi yang sudah diterapkan, atau konfirmasi bahwa tagihan asli
+benar dengan referensi. Konfirmasi "tagihan asli benar" harus **independen**:
+peninjau cabang **tidak boleh** menyatakan tagihan benar bila ia yang **melaporkan**
+laporan itu, yang **menerbitkan** tagihan itu, yang pernah **menerima
+pembayaran** atas tagihan itu, atau yang pernah **mengajukan, memutuskan, atau
+menerapkan koreksi** atas tagihan itu (kode `RESOLVER_NOT_INDEPENDENT`) — minta peninjau
+lain atau Super Admin. Tidak ada jalan pintas, pengecualian, atau penutupan tanpa
+bukti.
+
+## 9. Bayar Tagihan Kontrol Saja (OPS-OQ-1b)
+
+**Kapan muncul:** di halaman pembayaran tagihan **kunjungan kontrol** (B), bila
+**setiap** tagihan kunjungan asal (A) yang masih bersisa di cabang ini sedang dalam
+peninjauan. Halaman menampilkan:
+
+> Tagihan kunjungan asal sedang dalam peninjauan dan tidak dapat ditagihkan.
+
+beserta nomor laporan, **Rp0** yang dialokasikan ke tagihan asal, dan sisa tagihan
+asal yang tetap tercatat. Tombol pembayaran biasa nonaktif; gunakan formulir
+terpisah **Bayar Tagihan Kontrol Saja**.
+
+**Langkah kasir:**
+
+1. Pastikan nominal yang dibayar hanya untuk tagihan kontrol hari ini (maksimal sisa
+   tagihan kontrol).
+2. Isi metode, tanggal, dan referensi pembayaran.
+3. Centang konfirmasi *"Saya memahami pembayaran ini hanya untuk tagihan kontrol…"*.
+4. Klik **Bayar Tagihan Kontrol Saja**.
+
+**Akibatnya:** pembayaran hanya masuk ke tagihan kontrol. Tagihan asal **tidak
+berubah sama sekali** — nominal, status, riwayat pembayaran, dan laporannya tetap;
+sisa tagihan asal tetap tercatat sebagai piutang. Kunjungan kontrol selesai bila
+tagihan kontrolnya lunas; ini **bukan** penghapusan utang tagihan asal.
+
+**Tidak muncul / ditolak bila:**
+
+- tidak ada tagihan asal yang masih bersisa — gunakan pembayaran biasa;
+- ada tagihan asal yang bersisa tetapi **tidak** sedang ditinjau — tagihan itu wajib
+  ditagih sesuai aturan biasa (`CONTROL_ONLY_PAYMENT_ORIGIN_NOT_DISPUTED`);
+- tagihan kontrol itu sendiri sedang ditinjau atau sedang dikoreksi;
+- halaman sudah usang (`INVOICE_VERSION_CHANGED`) — muat ulang halaman.
+
+**Lintas cabang:** bila tagihan asal berasal dari cabang lain, tagihan itu memang
+tidak ditagih di cabang ini (OD-1a) — tagihan kontrol dibayar dengan pembayaran
+biasa, bukan formulir ini.
+
+## 10. Kwitansi dan rekonsiliasi
+
+Kwitansi pembayaran **Bayar Tagihan Kontrol Saja** hanya memuat tagihan kontrol.
+Tagihan asal tidak tercantum sebagai dibayar karena memang tidak dibayar. Untuk
+rekonsiliasi keuangan, audit `RME_PAYMENT_CONTROL_ONLY_ORIGIN_DISPUTED` mencatat
+nomor pembayaran, tagihan kontrol, nomor tagihan asal dan laporan yang ditahan, serta
+alokasi ke tagihan asal = 0. Laporan piutang tetap menampilkan sisa tagihan asal.
+
+## 11. Pembayaran gagal dan pengulangan
+
+- Bila pembayaran ditolak, **tidak ada** pembayaran yang tercatat — tidak ada
+  pembayaran sebagian dari satu klik.
+- Sebelum mengulang, **muat ulang** halaman dan periksa riwayat pembayaran tagihan.
+  Bila pembayaran pertama ternyata sudah tercatat, **jangan** mengulang — pengulangan
+  dengan nominal penuh akan ditolak karena tagihan sudah lunas.
+- Sistem belum memiliki kunci anti-duplikat untuk pembayaran **sebagian** dengan
+  nominal sama di jalur mana pun. Selalu periksa riwayat sebelum mengulang.
+
+## 12. Komunikasi dengan pasien dan eskalasi
+
+Sampaikan ke pasien: *"Tagihan kunjungan sebelumnya sedang kami tinjau. Hari ini
+Bapak/Ibu cukup membayar tagihan kontrol; tagihan sebelumnya akan kami informasikan
+setelah peninjauan selesai."* **Jangan** menagih nominal yang diketahui salah, dan
+**jangan** menahan pasien. Insiden (halaman tidak sesuai, pembayaran tercatat ganda,
+tidak ada peninjau) dilaporkan ke IT dan penanggung jawab cabang sesuai
+`docs/operations/rme-invoice-correction-incident-escalation.md`.
+
+## 13. Privasi
 
 Laporan, catatan, audit, dan notifikasi hanya memuat nomor (`RMEDSP-…`, `RME-…`),
 status, dan kode — tidak pernah nama pasien, NIK, nomor rekam medis, atau isi klinis.

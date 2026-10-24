@@ -19,15 +19,23 @@ declare(strict_types=1);
 | savepoint), so every row lock it takes is held until the outer COMMIT /
 | ROLLBACK below — which is exactly the window the parent must race.
 |
+| HARDENING-RME-BILLING-DISPUTE-BRANCH-REVIEWER-CONTROL-PAYMENT-1 (rule 204) adds
+| the reviewer designation (designate / revoke), the review action, the
+| Kontrol-only payment, the ordinary control payment, a correction approval
+| and a branch-change approval — each through its REAL service.
+|
 | Usage (by the suite only): php dispute_race_child.php <base64 JSON payload>
 */
 
 use App\Models\User;
 use App\Modules\RmeInvoice\Models\RmeBillingDispute;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
+use App\Modules\RmeInvoice\Models\RmeInvoiceCorrection;
+use App\Modules\RmeInvoice\Services\RmeBillingDisputeReviewerService;
 use App\Modules\RmeInvoice\Services\RmeBillingDisputeService;
 use App\Modules\RmeInvoice\Services\RmeInvoiceCorrectionService;
 use App\Modules\RmeInvoice\Services\RmePaymentService;
+use App\Modules\RmeOnlineContext\Services\BranchChangeApprovalService;
 use App\Modules\User\Services\UserService;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Support\Facades\DB;
@@ -71,6 +79,17 @@ try {
             'pay_invoice' => app(RmePaymentService::class)->pay($invoice($step), $user($step), (array) $step['form']),
             'submit_correction' => app(RmeInvoiceCorrectionService::class)->submit($invoice($step), $user($step), (array) $step['data']),
             'deactivate_user' => app(UserService::class)->deactivate($user($step, 'user')),
+            'start_review' => app(RmeBillingDisputeService::class)->startReview($dispute($step), $user($step), $step['note'] ?? null),
+            'designate_reviewer' => app(RmeBillingDisputeReviewerService::class)->designate($user($step), $user($step, 'user'), (int) $step['branch'], (string) $step['reason']),
+            'revoke_designation' => app(RmeBillingDisputeReviewerService::class)->revoke(
+                $user($step),
+                app(RmeBillingDisputeReviewerService::class)->find((int) $step['designation']) ?? throw new InvalidArgumentException('designation not found'),
+                (string) $step['reason'],
+            ),
+            'pay_control_only' => app(RmePaymentService::class)->payControlInvoiceOnly($invoice($step), $user($step), (array) $step['form']),
+            'pay_control' => app(RmePaymentService::class)->allocateControlPayment($invoice($step), $user($step), (array) $step['form']),
+            'approve_correction' => app(RmeInvoiceCorrectionService::class)->approve(RmeInvoiceCorrection::query()->findOrFail((int) $step['correction']), $user($step)),
+            'approve_branch_change' => app(BranchChangeApprovalService::class)->approve((int) $step['request'], $user($step)),
             default => throw new InvalidArgumentException('Unknown race step '.(string) $step['kind']),
         };
     }

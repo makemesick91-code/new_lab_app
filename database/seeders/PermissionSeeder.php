@@ -442,11 +442,17 @@ class PermissionSeeder extends Seeder
         // accounts that could collect a known-wrong amount are the ones that can
         // stop it). REVIEW (take into review, escalate to the Owner, resolve) is
         // granted to NO operational role — Super Admin holds it through '*'; the
-        // branch-level reviewer is an open owner question (OPS-OQ-1a). VIEW is
-        // read-only queue visibility (Owner). None of them grants any power over
-        // an invoice's amount, status, payment, correction or refund.
+        // branch-level reviewer is answered by OPS-OQ-1a (rule 204): an explicit
+        // per-account, per-branch DESIGNATION, never a role. VIEW is read-only
+        // queue visibility (Owner). None of them grants any power over an
+        // invoice's amount, status, payment, correction or refund.
         'review_rme_billing_disputes',
         'view_rme_billing_disputes',
+        // HARDENING-RME-BILLING-DISPUTE-BRANCH-REVIEWER-CONTROL-PAYMENT-1 (owner
+        // OPS-OQ-1a, rule 204) — designate and revoke branch billing dispute
+        // reviewers. Granted to NO operational role: Super Admin holds it through
+        // '*'. It grants no dispute, invoice or payment power by itself.
+        'manage_rme_billing_dispute_reviewers',
         // FEATURE-RME-BRANCH-TARIFF-AUTHORITY-1 (owner D21, rule 192) — the two
         // SPECIFIC authorizations a strict-mode price exception needs. Granted
         // to NO role: the exception approver (D21b) is undecided. Necessary but

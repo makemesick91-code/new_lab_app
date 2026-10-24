@@ -1,0 +1,169 @@
+---
+description: HARDENING-RME-BILLING-DISPUTE-BRANCH-REVIEWER-CONTROL-PAYMENT-1 — owner decisions OPS-OQ-1a and OPS-OQ-1b as code, extending rule 203. (a) A billing dispute may be reviewed and resolved by an EXPLICITLY designated branch responsible person — a per-account, per-branch designation row, never a role grant — limited to that branch, while working there, and never with any financial power. (b) While EVERY outstanding origin invoice of a Kontrol visit is disputed, the Kontrol invoice may be paid on its own through a separate, explicitly confirmed action: the payment is allocated to the Kontrol invoice only, the origin's receivable, status, version and dispute stay untouched, and every hold and lock rule is decided again under the row locks. The ordinary combined payment that includes a disputed origin is still refused whole.
+globs: app/Modules/RmeInvoice/**, resources/views/rme/billing-disputes/**, resources/views/rme/cashier/**, database/migrations/*rme_billing_dispute*, database/seeders/PermissionSeeder.php, routes/web.php, tests/Feature/RmeBillingDispute/**, docs/decisions/rme-billing-correction-owner-decisions.md, docs/operations/rme-billing-dispute-sop.md, docs/architecture/rme-billing-dispute-escalation.md, docs/sprints/hardening-rme-billing-dispute-branch-reviewer-control-payment-1.md
+alwaysApply: false
+---
+
+# Branch dispute reviewer & Kontrol-only payment — OPS-OQ-1a / OPS-OQ-1b (rule 204)
+
+Extends rule 203; where they differ, this rule wins **only** for §D.18 (who
+reviews) and §C.13 (whether a Kontrol invoice may be paid alone). Everything else
+in rule 203 stands unchanged.
+
+Evidence: `docs/sprints/hardening-rme-billing-dispute-branch-reviewer-control-payment-1.md`.
+Architecture: `docs/architecture/rme-billing-dispute-escalation.md` §OPS-OQ-1a/1b.
+Operator guidance (Bahasa Indonesia): `docs/operations/rme-billing-dispute-sop.md`.
+
+## A. The owner decisions
+
+01. **OPS-OQ-1a — approved.** An explicitly designated branch responsible person
+    may review and resolve branch-scoped billing disputes with legitimate
+    resolution evidence. Provenance: the owner's instruction in the brief of this
+    sprint. No signed artefact exists and none is fabricated.
+02. **OPS-OQ-1b — approved.** A legitimate Kontrol invoice may be paid on its own
+    while its originating visit invoice is under an active billing dispute; the
+    payment is allocated to the Kontrol invoice only and the origin stays exactly
+    as it was. Same provenance.
+03. **The all-branch dispute policy (OPS-OQ-1, rule 203) is unchanged.** A known
+    wrong amount is still not collected; a disputed invoice is still held on every
+    payment path; the patient is still never held.
+
+## B. Who reviews (OPS-OQ-1a)
+
+04. **Explicit designation, never a role.** Authority comes from one row in
+    `mst_rme_billing_dispute_reviewers` naming ONE account and ONE branch,
+    created by an account holding `manage_rme_billing_dispute_reviewers`. That
+    permission is granted to **no operational role** — Super Admin holds it
+    through the existing `'*'` grant.
+05. **Branch-scoped.** A designation authorizes review, note, escalate and resolve
+    on disputes of **that branch only**, and only while the account's
+    server-resolved working scope (`RmeWorkingBranchScope`) reaches that branch.
+    Both are required; neither substitutes for the other.
+06. **No role inheritance.** Front Office is the exact union of Admin Klinik and
+    Kasir; a role grant would reach all eight Front Office accounts. Designations
+    are per account and never inherited, so they cannot leak through a role.
+07. **No Front Office review — implicit or explicit.** Holding
+    `manage_rme_billing` (report / note) never implies review, and a counter
+    account (`Front Office`, `Kasir`) can never be designated
+    (`BILLING_DISPUTE_REVIEWER_COUNTER_ROLE`, brief §13). The counter reports; a
+    designee reviews. Admin Klinik and Supervisor RME accounts may be designated
+    explicitly — they hold billing rights, which is why §15 adds independence.
+08. **Super Admin keeps its existing authority** through `'*'` and is unaffected
+    by designations.
+09. **Owner stays read-only.** An Owner account cannot be designated
+    (`BILLING_DISPUTE_REVIEWER_OWNER_READ_ONLY`); `view_rme_billing_disputes`
+    remains its only dispute permission.
+09a. **Eligibility is revalidated on every use**, not only at the grant
+    (`RmeBillingDisputeReviewerService::isEligibleDesignee()` — one rule for the
+    grant, the policy, the service and the routing): an account that later
+    becomes Owner, Front Office or Kasir, or loses RME workspace access, keeps
+    its row but loses its effect at once. Revoke the row afterwards for clarity.
+10. **Active account only.** The designee must be a usable account (active, not
+    soft-deleted) with RME workspace access (`view_clinic_visits` or
+    `manage_clinic_visits`) at designation time, and it is re-read from the
+    database on every action — a deactivated designee is refused
+    (`ACTOR_UNUSABLE`) even with a live session.
+11. **Revocation** sets `revoked_at` / `revoked_by` / `revoke_reason` (all three,
+    enforced by a database CHECK); revoked rows are immutable and never deleted;
+    the very next action of that account on that branch is refused.
+12. **Branch transfer invalidates in practice.** The designation names the branch,
+    not the person: a context-bound account (Admin Klinik, Kasir, Perawat, Front
+    Office) transferred to another branch keeps an active row but loses the
+    working scope, so its next action is refused (`BRANCH_OUT_OF_SCOPE`). An
+    account that is not context-bound keeps a scope over every RME branch, so for
+    it the designation row itself is the only branch limit. Revoke the row when
+    the person no longer holds the branch responsibility.
+13. **Reviewer audit.** `RME_BILLING_DISPUTE_REVIEWER_DESIGNATED`, `…_REVOKED` and
+    `…_REFUSED` (every refusal — authorization AND eligibility — with its stable
+    `[CODE]`) carry ids, codes and the reason length only — never the free text,
+    a patient name, NIK/KTP or clinical content.
+14. **Resolution evidence is unchanged.** A designee resolves exactly as a
+    permission holder does: `CORRECTION_APPLIED` (server-verified) or
+    `ORIGINAL_CONFIRMED_CORRECT` (reference recorded, invoice unchanged). No
+    override, waiver or "close without evidence" exists.
+15. **No self-certification.** The reporter may not confirm the original
+    (`SELF_RESOLUTION_FORBIDDEN`); a DESIGNEE who issued the invoice
+    (`cashier_id`), recorded a payment on it, or requested / decided / applied a
+    correction of it may not confirm the original either
+    (`RESOLVER_NOT_INDEPENDENT` — "independent confirmation", brief §14;
+    Super Admin's rule-203 path is unchanged); the governor may not designate itself
+    (`SELF_DESIGNATION_FORBIDDEN`, plus a database CHECK `user_id <> granted_by`);
+    a holder of the review permission is refused as redundant. A designation
+    carries **no** invoice price edit, correction maker/checker, refund, debt
+    forgiveness, cancellation, manual PAID or guard override.
+
+## C. The Kontrol-only payment (OPS-OQ-1b)
+
+16. **B may be paid alone** — `RmePaymentService::payControlInvoiceOnly()`, reached
+    only by the explicit `payment_scope=control_only` + `confirm_control_only`
+    form; the service itself also requires `confirm_control_only`, so a future
+    non-HTTP caller states the intent too. It is never inferred; without it the
+    ordinary rules apply unchanged.
+17. **Eligibility:** every OUTSTANDING origin of the Kontrol chain (payable, same
+    branch, remaining > 0) has an ACTIVE dispute. No outstanding origin →
+    `CONTROL_ONLY_PAYMENT_NOT_APPLICABLE`. Any outstanding origin NOT disputed →
+    `CONTROL_ONLY_PAYMENT_ORIGIN_NOT_DISPUTED` (fail closed on a mixed chain:
+    collectable debt is collected by the ordinary rule, never skipped).
+18. **Allocation to B only.** Exactly one payment row, on B. The request carries no
+    origin id and no allocation; forged ones are ignored — the service re-derives
+    the chain under the locks.
+19. **Rp0 to A.** No payment row is ever written for the origin on this path.
+20. **Origin receivable preserved:** A's grand total, remaining and payment history
+    are unchanged; it stays UNPAID/PARTIAL and in the receivable report.
+21. **Origin status preserved:** A's status, version and dispute are unchanged; the
+    dispute stays active until legitimately resolved.
+22. **No carry-over debt forgiveness.** The Kontrol visit completing on its own
+    settlement does not waive, reallocate or rewrite A's balance.
+23. **Multi-invoice atomicity.** The ordinary combined payment (`allocateControlPayment`)
+    and any visit batch that would settle a disputed origin are still refused
+    whole (`BILLING_DISPUTE_ACTIVE`) — rule 203 §C.13 holds for them.
+24. **D10 compatibility.** An active correction on B holds the B-only payment
+    (`assertNoPaymentHold`); a dispute on B holds it too.
+25. **D28 compatibility.** Nothing here changes the Rp0-original correction guard.
+26. **Invoice version safety (rule 191).** B is settled only at the version the
+    form carries (`PATH_CONTROL_ONLY`); A's version is neither required nor
+    changed. An origin correction applying concurrently is unaffected.
+27. **Cross-branch Kontrol (OD-1)** stays allowed; the B-only path applies to B's
+    own branch only.
+28. **Receivable isolation (OD-1a):** another branch's origin is neither shown nor
+    collected here; the eligibility rule considers same-branch origins only.
+
+## D. Preserved controls
+
+29. **Maker / checker** of corrections is unchanged (maker 29, checker 1, D1e).
+30. **SPN4 pilot restrictions** stand: corrections stay SPN4-only (D1c). The B-only
+    payment is all-branch, like the dispute policy, and needs no correction.
+31. **Payment actor authority.** The cashier is the persisted, usable account with
+    `manage_rme_billing` whose working branch is B's branch — re-read under the
+    invoice lock (rules 197/198).
+
+## E. Concurrency, verification, operations
+
+32. **PostgreSQL locking contract.** Dispute action: invoice → dispute → designation
+    (`FOR SHARE`); revocation takes only the designation (`FOR UPDATE`). B-only
+    payment: B → each origin (`FOR UPDATE`) — the ordinary control path's own
+    order, so no new lock edge exists. Races A–N run on PostgreSQL 16
+    (`RmeBillingDisputeBranchReviewerConcurrencyTest`) and skip, stated, on SQLite.
+33. **Mutation tests** target designation required, branch match, revocation,
+    inactive actor, self-grant, origin dispute required, B-only allocation, A
+    untouched, D10, B dispute, version check and combined-payment denial.
+34. **Independent security review** precedes merge; no unreviewed CRITICAL/HIGH.
+35. **Financial reconciliation:** the B-only payment writes
+    `RME_PAYMENT_CONTROL_ONLY_ORIGIN_DISPUTED` with the held origin and dispute ids
+    and `allocated_to_origin = 0`; receipts and reports show B's payment only.
+36. **Rollback protection.** Rolling back to the rule-203 runtime is fail-closed
+    for both decisions: it still honours every dispute hold, ignores designations
+    (only Super Admin reviews again) and offers no B-only path (the combined
+    payment is refused whole again). B-only payments already recorded are ordinary
+    payment rows and stay historically accurate. Never roll back BELOW rule 203
+    while `rme:billing-dispute-status` reports an active dispute; never delete
+    designation or dispute rows; never run the migration's `down()` on a database
+    that holds designations; never rewrite a payment.
+37. **VPS-only deployment** — `scripts/deploy-vps-runner.sh` runs inside the VPS;
+    completion is `DEPLOY_EXIT_CODE=0`, `DEPLOY_STATUS=DEPLOY_OK`,
+    `DEPLOY_HEAD_TARGET_MATCH=YES`.
+38. **Production verification is read-only:** no designation, invoice, dispute or
+    payment is created to prove behaviour; production starts with zero designations.
+39. **GO tag** names the exact deployed runtime SHA and scopes only this hardening;
+    it is never a full prepayment-pilot GO.
+40. **Cleanup** removes only task-owned resources by exact path.

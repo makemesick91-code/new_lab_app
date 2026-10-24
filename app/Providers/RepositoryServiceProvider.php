@@ -280,6 +280,7 @@ use App\Modules\Reporting\Interfaces\ReportingRepositoryInterface;
 use App\Modules\Reporting\Policies\ReportingPolicy;
 use App\Modules\Reporting\Repositories\ReportingRepository;
 use App\Modules\RmeInvoice\Interfaces\RmeBillingDisputeRepositoryInterface;
+use App\Modules\RmeInvoice\Interfaces\RmeBillingDisputeReviewerRepositoryInterface;
 use App\Modules\RmeInvoice\Interfaces\RmeInvoiceCorrectionRepositoryInterface;
 use App\Modules\RmeInvoice\Interfaces\RmeInvoiceRepositoryInterface;
 use App\Modules\RmeInvoice\Interfaces\RmePaymentRepositoryInterface;
@@ -291,6 +292,7 @@ use App\Modules\RmeInvoice\Policies\RmeBillingDisputePolicy;
 use App\Modules\RmeInvoice\Policies\RmeInvoiceCorrectionPolicy;
 use App\Modules\RmeInvoice\Policies\RmeInvoicePolicy;
 use App\Modules\RmeInvoice\Repositories\RmeBillingDisputeRepository;
+use App\Modules\RmeInvoice\Repositories\RmeBillingDisputeReviewerRepository;
 use App\Modules\RmeInvoice\Repositories\RmeInvoiceCorrectionRepository;
 use App\Modules\RmeInvoice\Repositories\RmeInvoiceRepository;
 use App\Modules\RmeInvoice\Repositories\RmePaymentRepository;
@@ -457,6 +459,7 @@ class RepositoryServiceProvider extends ServiceProvider
         RmeInvoiceCorrectionRepositoryInterface::class => RmeInvoiceCorrectionRepository::class,
         // IMPLEMENTATION-RME-BILLING-DISPUTE-ESCALATION-OPS-OQ-1 (rule 203).
         RmeBillingDisputeRepositoryInterface::class => RmeBillingDisputeRepository::class,
+        RmeBillingDisputeReviewerRepositoryInterface::class => RmeBillingDisputeReviewerRepository::class,
         OversightBillingCorrectionRepositoryInterface::class => OversightBillingCorrectionRepository::class,
         // LEGACY-RME-PDF-1A — legacy (historical) RME PDF archive
         LegacyRmeImportRepositoryInterface::class => LegacyRmeImportRepository::class,

@@ -42,6 +42,16 @@ final class RmeBillingDisputeAuditEvent
     /** The in-app escalation notification could not be delivered (hold stands). */
     public const ACTION_NOTIFICATION_FAILED = 'RME_BILLING_DISPUTE_NOTIFICATION_FAILED';
 
+    /** Rule 204 (OPS-OQ-1a) — explicit branch reviewer designations. */
+    public const ENTITY_REVIEWER = 'mst_rme_billing_dispute_reviewers';
+
+    public const ACTION_REVIEWER_DESIGNATED = 'RME_BILLING_DISPUTE_REVIEWER_DESIGNATED';
+
+    public const ACTION_REVIEWER_REVOKED = 'RME_BILLING_DISPUTE_REVIEWER_REVOKED';
+
+    /** A designation or revocation refused for an authorization reason (written after rollback). */
+    public const ACTION_REVIEWER_REFUSED = 'RME_BILLING_DISPUTE_REVIEWER_REFUSED';
+
     /** event_type => audit action. */
     public const EVENT_ACTIONS = [
         'REPORTED' => self::ACTION_REPORTED,

@@ -34,6 +34,9 @@ final class RmeInvoiceVersionConflict extends RuntimeException
 
     public const PATH_VISIT = 'visit';
 
+    /** Rule 204 (OPS-OQ-1b) — a Kontrol invoice paid on its own while its origin is disputed. */
+    public const PATH_CONTROL_ONLY = 'control_only';
+
     public function __construct(
         public readonly string $reasonCode,
         public readonly int $invoiceId,

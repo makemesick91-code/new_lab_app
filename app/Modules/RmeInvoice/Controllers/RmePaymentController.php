@@ -63,6 +63,11 @@ class RmePaymentController extends Controller
             // Rule 203 — OPS-OQ-1 dispute hold, display only; the service refuses
             // under the invoice row lock.
             'disputeHold' => $this->service->activeDisputeHolding($rmeInvoice),
+            // Rule 204 (OPS-OQ-1b) — whether the separate Kontrol-only action is
+            // offered; display only, the service decides under the locks.
+            'controlOnly' => $payableSummary['has_carry_over']
+                ? $this->service->controlOnlyEligibility($rmeInvoice)
+                : null,
         ]);
     }
 
@@ -72,6 +77,21 @@ class RmePaymentController extends Controller
         abort_unless($rmeInvoice->belongsToVisit($clinicVisit), 404);
 
         $validated = $request->validated();
+
+        // Rule 204 (OPS-OQ-1b) — explicit, confirmed Kontrol-only payment while the
+        // origin is disputed. Never inferred: without payment_scope the ordinary
+        // rules below apply unchanged.
+        if (($validated['payment_scope'] ?? null) === RmePaymentService::PAYMENT_SCOPE_CONTROL_ONLY) {
+            $payment = $this->service->payControlInvoiceOnly($rmeInvoice, $request->user(), $validated);
+            $freshInvoice = $rmeInvoice->fresh();
+            $message = 'Pembayaran tagihan kontrol tercatat. No. Kwitansi: '.$payment->payment_number
+                .'. Tagihan kunjungan asal tetap dalam peninjauan dan belum ditagihkan.';
+
+            return $freshInvoice?->isPaid()
+                ? redirect()->route('rme.cashier.receipt.show', [$clinicVisit, $freshInvoice])->with('status', $message)
+                : redirect()->route('rme.cashier.show', [$clinicVisit, $freshInvoice ?? $rmeInvoice])->with('status', $message);
+        }
+
         $payableSummary = $this->carryOver->getControlPayableSummary($rmeInvoice);
 
         if ($payableSummary['has_carry_over']) {
