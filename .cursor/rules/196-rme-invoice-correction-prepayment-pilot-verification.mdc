@@ -1,6 +1,6 @@
 ---
-description: VERIFICATION-RME-INVOICE-CORRECTION-PREPAYMENT-PILOT-1 — how the live SPN4 pre-payment invoice correction pilot is verified and when it may be closed. Six-rung state ladder (PILOT_READY → PILOT_ACTIVE → PILOT_LIVE → AUTHENTICATED_VERIFIED → FINANCIAL_CORRECTION_VERIFIED → FULL_ACTIVATION_GO), the evidence each rung needs, the full-GO tag contract, and why an eligible real case can only be caught, never created. Extends rule 195; changes no runtime behaviour. §7 (PILOT-2, 2026-10-23) governs later re-verification runs: one closure tag, re-measure never inherit, no patient held for a case, only a live session is login evidence, and the Rp0 invoice ban is procedural.
-globs: app/Modules/RmeInvoice/**, app/Console/Commands/RmeInvoiceCorrectionReadinessCommand.php, config/rme_invoice_correction.php, docs/sprints/verification-rme-invoice-correction-prepayment-pilot-1.md, docs/sprints/verification-rme-invoice-correction-prepayment-pilot-2.md, docs/decisions/rme-billing-correction-owner-decisions.md
+description: VERIFICATION-RME-INVOICE-CORRECTION-PREPAYMENT-PILOT-1 — how the live SPN4 pre-payment invoice correction pilot is verified and when it may be closed. Six-rung state ladder (PILOT_READY → PILOT_ACTIVE → PILOT_LIVE → AUTHENTICATED_VERIFIED → FINANCIAL_CORRECTION_VERIFIED → FULL_ACTIVATION_GO), the evidence each rung needs, the full-GO tag contract, and why an eligible real case can only be caught, never created. Extends rule 195; changes no runtime behaviour. §7 (PILOT-2, 2026-10-23) governs later re-verification runs: one closure tag, re-measure never inherit, no patient held for a case, only a live session is login evidence, and the Rp0 invoice ban is procedural. §8 (PILOT-CLOSURE, 2026-10-24): a genuinely wrong invoice held by an OPS-OQ-1 dispute stays an eligible case after the patient leaves, the dispute is resolved from the applied correction, and the payment-idempotency audit result.
+globs: app/Modules/RmeInvoice/**, app/Console/Commands/RmeInvoiceCorrectionReadinessCommand.php, config/rme_invoice_correction.php, docs/sprints/verification-rme-invoice-correction-prepayment-pilot-1.md, docs/sprints/verification-rme-invoice-correction-prepayment-pilot-2.md, docs/sprints/verification-rme-invoice-correction-prepayment-pilot-closure.md, docs/decisions/rme-billing-correction-owner-decisions.md
 alwaysApply: false
 ---
 
@@ -168,3 +168,66 @@ Evidence: `docs/sprints/verification-rme-invoice-correction-prepayment-pilot-2.m
     as a case. If the owner wants a hard refusal while D21g/D22 are pending, that
     is a small fail-closed change (refuse a zero-total original with its own code)
     through the full lifecycle (§16) — never a data edit to #36.
+
+## 8. Pilot closure re-run (added by VERIFICATION-RME-INVOICE-CORRECTION-PREPAYMENT-PILOT-CLOSURE, 2026-10-24)
+Evidence: `docs/sprints/verification-rme-invoice-correction-prepayment-pilot-closure.md`.
+Read with rule 202 (counter procedure), rule 203 (OPS-OQ-1 dispute hold) and rule
+204 (OPS-OQ-1a reviewer, OPS-OQ-1b Kontrol-only payment). Changes no runtime behaviour.
+
+24. **Since rule 203 a genuine case is not necessarily lost when the Owner cannot
+    authorize while the patient is present.** This supersedes in part the last
+    sentence of §21 ("that case is lost to the pilot"). The cashier reports a
+    billing dispute ONLY because the invoice is genuinely known to be wrong
+    (OPS-OQ-1, SOP §8) — never to keep a pilot case alive; a dispute reported for
+    the pilot's sake is the forbidden §8 "delay". The dispute holds every payment
+    path, the patient leaves, and the invoice stays UNPAID, positive, with zero
+    payments and an unchanged `correction_version`. It is therefore still an
+    eligible case if the Owner later authorizes THAT invoice (rule 202 form) and
+    users 29 and 1 log in themselves. The readiness probe counts it among
+    `POSITIVE_UNPAID_UNSETTLED_INVOICES_IN_PILOT` (disputes are not excluded).
+25. Order on a disputed invoice: submit → payment page shows BOTH holds (D10 and the
+    dispute), observed by state, never by posting a payment → approve (D1a
+    auto-apply) → resolve the dispute with outcome `CORRECTION_APPLIED` → collect
+    the corrected amount through the ordinary payment path. `CORRECTION_APPLIED` is
+    system-verified: the latest APPLIED correction must have produced the CURRENT
+    invoice version and be newer than the version recorded at report; while a
+    correction is still SUBMITTED/APPROVED the resolve is refused
+    (`BILLING_DISPUTE_CORRECTION_ACTIVE`). Applying a correction never releases the
+    hold by itself, and a rejected or cancelled correction never releases it.
+    Source: `RmeBillingDisputeService::resolve()`; test
+    `RmeBillingDisputeCorrectionCompatibilityTest`.
+26. Neither power leaks across: the pilot pair gains no dispute power from the
+    pilot, and a dispute reviewer gains no correction power. Measured 2026-10-24:
+    0 branch designations (rule 204), so on every branch the only reachable
+    reviewer is Super Admin through the existing RoleSeeder grant. User 1 may
+    therefore resolve a dispute from the correction user 1 approved — that is the
+    system-verified outcome; rule 204's independence check guards the HUMAN outcome
+    (`ORIGINAL_CONFIRMED_CORRECT`) by a designee and is not engaged. A pilot case is
+    never closed through the human outcome.
+27. Reconcile the dispute SEPARATELY from the correction: status `RESOLVED`,
+    `resolution_outcome=CORRECTION_APPLIED`, `resolution_correction_id` = the
+    applied correction, the `*_at_report` snapshot fields unchanged. Dispute rows,
+    events and audit rows are never counted as correction deltas; rule 202's
+    expected correction deltas stay as they are.
+28. **Payment idempotency (read-only audit, 2026-10-24).** A missing idempotency key
+    is not by itself a proven defect — state what can and cannot happen. Cannot:
+    overpayment (amount ≤ remaining under the invoice lock; the allocation paths cap
+    each invoice with `min()`); a second FULL payment after the first commits (PG
+    case K2); a duplicate after a rollback (PG case K). Can (pre-existing LOW, not a
+    pilot blocker): a double-submitted or retried PARTIAL payment records a second
+    real payment (no nonce, no key, no unique constraint beyond `payment_number`, no
+    in-flight button disable); the control/visit allocation paths validate the amount
+    against a summary read before the lock and never assert that the whole amount
+    was allocated. Production 2026-10-24: 0 same-invoice, same-amount payment pairs
+    within 120 s. The correction reconciliation already requires a payment-count
+    delta of 0. Fix only in its own sprint (suggested
+    `FIX-RME-PAYMENT-SUBMISSION-IDEMPOTENCY-1`) — never inside a verification run.
+29. Every run also measures the dispute layer: `rme:billing-dispute-status`
+    (`ACTIVE_TOTAL`, reachable reviewers per branch) and the dispute grant set.
+    `role_has_permissions` 514 → 517 is exactly rule 203's three pairs (Owner view;
+    Super Admin view + review); 517 is the baseline from 2026-10-24.
+30. Local regression runs in a worktree that has no application environment file.
+    Pass a throwaway application key as a process environment variable only (never
+    written to a file). Without it every HTTP/view test fails with
+    `MissingAppKeyException` — an environment fault, not a regression (2026-10-24:
+    181 such failures before, 0 after).
