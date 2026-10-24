@@ -1,44 +1,45 @@
-# IMPLEMENTATION-RME-BILLING-DISPUTE-ESCALATION-OPS-OQ-1
+# HARDENING-RME-BILLING-DISPUTE-BRANCH-REVIEWER-CONTROL-PAYMENT-1
 #
-# Owner policy OPS-OQ-1 (approved for ALL branches) as code (rule 203):
+# Program DAENGTISIAMS-RME-BILLING-CORRECTION, Sprint 1A — an extension of
+# Sprint 1/7 (rule 203), not a new main sprint. Owner decisions OPS-OQ-1a and
+# OPS-OQ-1b as code (rule 204):
 #
-#   A. Billing dispute (trx_rme_billing_disputes + append-only events). A REPORT
-#      that an issued RME invoice is known or suspected to be wrong — not a
-#      correction. Explicit state machine OPEN → UNDER_REVIEW → ESCALATED →
-#      RESOLVED; one active dispute per invoice under the invoice row lock AND a
-#      partial unique index; immutable report snapshot; RESOLVED terminal.
+#   A. OPS-OQ-1a — an EXPLICITLY designated branch responsible person may review
+#      and resolve that branch's billing disputes. One row per (account, branch)
+#      in mst_rme_billing_dispute_reviewers, created / revoked by an account
+#      holding manage_rme_billing_dispute_reviewers (granted to NO operational
+#      role; Super Admin via '*'). Never a role grant, so it cannot reach the
+#      Front Office accounts through the Admin Klinik + Kasir union. The Owner
+#      stays read-only and cannot be designated. A designee is re-checked as an
+#      active account working in that branch, under the invoice + dispute locks
+#      (designation read FOR SHARE; revocation locks it FOR UPDATE), and gains no
+#      financial power.
 #
-#   B. Payment hold on EVERY payment path (pay, visit + selected receivables,
-#      control/carry-over, multi-invoice batches, retries, direct service calls):
-#      decided under the invoice row lock, whole-batch refusal, audited after the
-#      rollback and de-duplicated. Independent of D10; no switch can disable it.
+#   B. OPS-OQ-1b — a Kontrol invoice may be paid ON ITS OWN while every
+#      outstanding same-branch origin invoice is disputed:
+#      RmePaymentService::payControlInvoiceOnly(), reached only by an explicit,
+#      confirmed form. One payment on the Kontrol invoice; the origin's
+#      receivable, status, version and dispute are untouched; the ordinary
+#      combined payment is still refused whole. Same lock order as the ordinary
+#      control path (Kontrol invoice, then origins) — no new lock edge.
 #
-#   C. Escalation to the branch authority — in-app notifications only, after
-#      commit; failure never unwinds the dispute. Resolution only on a verifiable
-#      outcome (applied correction newer than the report, or a second account's
-#      confirmation of the unchanged original). No override, no fabricated Owner
-#      approval.
+# One additive migration (one table, partial unique index, PostgreSQL CHECKs); no
+# backfill and no designation created by the deployment. One new permission
+# (PermissionSeeder → permission:cache-reset; RoleSeeder unchanged). Blade views
+# only (no JS/CSS/asset change, no npm build required).
 #
-#   D. Conservative authority: review_rme_billing_disputes to NO operational
-#      role (Super Admin via '*'); view_rme_billing_disputes to Owner. Branch
-#      reviewer is open owner question OPS-OQ-1a.
+# Preserved: rule 203 (all-branch hold, whole-batch refusal for every other path),
+# the SPN4 correction pilot (maker 29 / checker 1), D1/D1a/D1c/D1e, D7, D10, D21,
+# D28, OD-1/OD-1a, version binding (rule 191); D21c, D21g, D22 stay PENDING.
 #
-# One additive migration (two tables, partial unique index, PostgreSQL CHECKs);
-# no backfill — no dispute is inferred from an existing invoice. Two new
-# permissions (PermissionSeeder → RoleSeeder → permission:cache-reset). Blade
-# views only (no JS/CSS/asset change, no npm build required).
-#
-# The SPN4 correction pilot (maker 29 / checker 1), D1/D1a/D1c/D1e, D7, D10,
-# D21 (manual pricing), D28, OD-1/OD-1a are preserved; D21c, D21g, D22 stay
-# PENDING. Refund, reversal, credit and Rp0 adjustment remain out of scope.
-#
-# Type FOUNDATION_SPRINT (audit level 3): new financial control + schema +
-# permissions across RmeInvoice, AccessControl, providers, seeders, console.
+# Type FOUNDATION_SPRINT (audit level 3): new financial payment path + schema +
+# permission + authorization model across RmeInvoice, AccessControl, routes,
+# providers and seeders.
 
-id: IMPLEMENTATION-RME-BILLING-DISPUTE-ESCALATION-OPS-OQ-1
+id: HARDENING-RME-BILLING-DISPUTE-BRANCH-REVIEWER-CONTROL-PAYMENT-1
 type: FOUNDATION_SPRINT
 module: RmeInvoice
-title: "OPS-OQ-1 for all branches: an RME invoice known to be wrong is reported as a billing dispute that holds payment on every path, is routed in-app to the branch authority, changes nothing financial, and is released only by a verified resolution"
+title: "OPS-OQ-1a/1b: an explicitly designated branch reviewer may review and resolve that branch's billing disputes, and a Kontrol invoice may be paid on its own while every outstanding origin is disputed — origin untouched, combined payment still refused whole"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 runtime_change: true
 schema_change: true
@@ -49,6 +50,6 @@ ledger_impact: false
 deploy_required: true
 browser_required: false
 test_profiles: [rme, cashier, permission]
-go_tag: implementation-rme-billing-dispute-escalation-ops-oq-1-go
-inherits_parent_go: fix-rme-invoice-correction-zero-original-guard-1-go
+go_tag: hardening-rme-billing-dispute-branch-reviewer-control-payment-1-go
+inherits_parent_go: implementation-rme-billing-dispute-escalation-ops-oq-1-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1

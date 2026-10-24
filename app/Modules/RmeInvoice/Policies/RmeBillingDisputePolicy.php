@@ -7,6 +7,7 @@ namespace App\Modules\RmeInvoice\Policies;
 use App\Models\User;
 use App\Modules\RmeInvoice\Models\RmeBillingDispute;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
+use App\Modules\RmeInvoice\Services\RmeBillingDisputeReviewerService;
 use App\Modules\RmeInvoice\Support\RmeBillingDisputePermission;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
 
@@ -23,20 +24,45 @@ use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
  * dispute's / invoice's OWN branch — never a request field. Context-bound roles
  * (Front Office, Kasir, Admin Klinik, Perawat) are pinned to their working
  * branch and fail closed without one.
+ *
+ * Rule 204 (OPS-OQ-1a): an ACTIVE branch reviewer designation for the dispute's
+ * OWN branch authorizes view, note, review, escalate and resolve ALONGSIDE the
+ * permissions — always ANDed with the working scope. It never authorizes
+ * reporting (a cashier act) or any other branch. viewAny / noteAny / reviewAny
+ * are the instance-free doors the route middleware asks.
  */
 class RmeBillingDisputePolicy
 {
-    public function __construct(private readonly RmeWorkingBranchScope $scope) {}
+    public function __construct(
+        private readonly RmeWorkingBranchScope $scope,
+        private readonly RmeBillingDisputeReviewerService $reviewers,
+    ) {}
 
     public function viewAny(User $user): bool
     {
-        return $this->holdsAny($user, RmeBillingDisputePermission::READ);
+        return $this->holdsAny($user, RmeBillingDisputePermission::READ)
+            || $this->reviewers->hasAnyActiveDesignation($user);
+    }
+
+    /** Route door of the note endpoint. */
+    public function noteAny(User $user): bool
+    {
+        return $this->holdsAny($user, RmeBillingDisputePermission::NOTE)
+            || $this->reviewers->hasAnyActiveDesignation($user);
+    }
+
+    /** Route door of review / escalate / resolve. */
+    public function reviewAny(User $user): bool
+    {
+        return $user->can(RmeBillingDisputePermission::REVIEW)
+            || $this->reviewers->hasAnyActiveDesignation($user);
     }
 
     public function view(User $user, RmeBillingDispute $dispute): bool
     {
-        return $this->holdsAny($user, RmeBillingDisputePermission::READ)
-            && $this->scope->allows($user, (int) $dispute->branch_id);
+        return $this->scope->allows($user, (int) $dispute->branch_id)
+            && ($this->holdsAny($user, RmeBillingDisputePermission::READ)
+                || $this->designatedFor($user, $dispute));
     }
 
     public function create(User $user, RmeInvoice $invoice): bool
@@ -48,15 +74,17 @@ class RmeBillingDisputePolicy
     public function addNote(User $user, RmeBillingDispute $dispute): bool
     {
         return $dispute->isActive()
-            && $this->holdsAny($user, RmeBillingDisputePermission::NOTE)
-            && $this->scope->allows($user, (int) $dispute->branch_id);
+            && $this->scope->allows($user, (int) $dispute->branch_id)
+            && ($this->holdsAny($user, RmeBillingDisputePermission::NOTE)
+                || $this->designatedFor($user, $dispute));
     }
 
     public function review(User $user, RmeBillingDispute $dispute): bool
     {
         return $dispute->isActive()
-            && $user->can(RmeBillingDisputePermission::REVIEW)
-            && $this->scope->allows($user, (int) $dispute->branch_id);
+            && $this->scope->allows($user, (int) $dispute->branch_id)
+            && ($user->can(RmeBillingDisputePermission::REVIEW)
+                || $this->designatedFor($user, $dispute));
     }
 
     public function escalate(User $user, RmeBillingDispute $dispute): bool
@@ -67,6 +95,11 @@ class RmeBillingDisputePolicy
     public function resolve(User $user, RmeBillingDispute $dispute): bool
     {
         return $this->review($user, $dispute);
+    }
+
+    private function designatedFor(User $user, RmeBillingDispute $dispute): bool
+    {
+        return $this->reviewers->isDesignatedFor($user, (int) $dispute->branch_id);
     }
 
     /**

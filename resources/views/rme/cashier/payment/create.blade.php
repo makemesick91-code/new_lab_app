@@ -421,10 +421,103 @@
 
                 {{-- Actions --}}
                 <div class="flex items-center gap-3 pt-2">
-                    <x-ui.button type="submit" variant="primary" :disabled="! empty($paymentBlock) || ! empty($disputeHold)">Konfirmasi Pembayaran</x-ui.button>
+                    <x-ui.button type="submit" variant="primary" :disabled="! empty($paymentBlock) || ! empty($disputeHold) || ! empty($controlOnly['eligible'])">Konfirmasi Pembayaran</x-ui.button>
                     <x-ui.button variant="neutral" :href="route('rme.cashier.show', [$visit, $invoice])">Batal</x-ui.button>
                 </div>
             </form>
+
+            {{--
+                HARDENING-RME-BILLING-DISPUTE-BRANCH-REVIEWER-CONTROL-PAYMENT-1 — owner
+                OPS-OQ-1b (rule 204). While EVERY outstanding origin invoice of this
+                Kontrol visit is under an active billing dispute, the Kontrol invoice
+                may be settled on its own. This is a SEPARATE, explicitly confirmed
+                action: it carries no origin id and no allocation, only this
+                invoice's version. The payment service re-derives the chain, re-checks
+                every hold and the eligibility rule under the row locks, and allocates
+                to this invoice only — the origin keeps its full outstanding balance
+                and its dispute. The ordinary button above stays disabled because the
+                origin cannot be collected while it is in review.
+            --}}
+            @if (! empty($controlOnly['eligible']) && empty($paymentBlock) && empty($disputeHold))
+                <div class="mt-6 space-y-4 rounded-md border border-danger-100 bg-danger-50 p-4" data-control-only-payment>
+                    <div>
+                        <p class="text-sm font-semibold text-danger-700">Tagihan kunjungan asal sedang dalam peninjauan dan tidak dapat ditagihkan.</p>
+                        <p class="mt-1 text-xs text-danger-700">
+                            Tagihan kontrol hari ini dapat dibayar tersendiri. Pembayaran ini dialokasikan hanya ke tagihan kontrol.
+                            Tagihan kunjungan asal tidak berubah, sisa tagihannya tetap tercatat sebagai piutang, dan laporan
+                            ketidaksesuaiannya tetap aktif sampai diselesaikan penanggung jawab.
+                        </p>
+                    </div>
+                    <dl class="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
+                        @foreach ($controlOnly['invoices'] as $index => $heldOrigin)
+                            <div data-control-only-held-origin="{{ $heldOrigin->id }}">
+                                <dt class="text-xs text-ink-soft">
+                                    Tagihan asal {{ $heldOrigin->invoice_number }}
+                                    @if (! empty($controlOnly['disputes'][$index]))
+                                        ({{ $controlOnly['disputes'][$index]->dispute_number }})
+                                    @endif
+                                </dt>
+                                <dd class="font-semibold text-danger-700">
+                                    Dialokasikan dari pembayaran ini: Rp0 · Sisa tetap Rp {{ number_format($heldOrigin->remainingAmount(), 0, ',', '.') }}
+                                </dd>
+                            </div>
+                        @endforeach
+                        <div>
+                            <dt class="text-xs text-ink-soft">Tagihan kontrol {{ $invoice->invoice_number }}</dt>
+                            <dd class="font-semibold text-brand-700">Maksimal dibayar: Rp {{ number_format($remainingAmount, 0, ',', '.') }}</dd>
+                        </div>
+                    </dl>
+
+                    <form method="POST" action="{{ route('rme.cashier.payment.store', [$visit, $invoice]) }}" class="space-y-4">
+                        @csrf
+                        <input type="hidden" name="payment_scope" value="{{ \App\Modules\RmeInvoice\Services\RmePaymentService::PAYMENT_SCOPE_CONTROL_ONLY }}">
+                        <input type="hidden" name="invoice_versions[{{ $invoice->id }}]" value="{{ (int) $invoice->correction_version }}">
+
+                        @error('payment_scope')
+                            <div class="rounded-md border border-danger bg-white p-3 text-sm text-danger-700" role="alert">{{ $message }}</div>
+                        @enderror
+
+                        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                            <div>
+                                <label for="co_payment_method_id" class="mb-1 block text-sm font-medium text-ink">Metode Pembayaran</label>
+                                <select name="payment_method_id" id="co_payment_method_id"
+                                    class="block w-full rounded-md border-hairline text-sm shadow-sm focus:border-brand-500 focus:ring-brand-500">
+                                    <option value="">— Pilih Metode —</option>
+                                    @foreach ($paymentMethods as $method)
+                                        <option value="{{ $method->id }}">{{ $method->name }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
+                            <div>
+                                <label for="co_amount" class="mb-1 block text-sm font-medium text-ink">Jumlah Dibayar <span class="text-danger">*</span></label>
+                                <input type="number" name="amount" id="co_amount" value="{{ $remainingAmount }}"
+                                    step="0.01" min="0.01" max="{{ $remainingAmount }}"
+                                    class="block w-full rounded-md border-hairline text-sm shadow-sm focus:border-brand-500 focus:ring-brand-500">
+                            </div>
+                            <div>
+                                <label for="co_paid_at" class="mb-1 block text-sm font-medium text-ink">Tanggal &amp; Waktu Bayar <span class="text-danger">*</span></label>
+                                <input type="datetime-local" name="paid_at" id="co_paid_at" value="{{ now()->format('Y-m-d\TH:i') }}"
+                                    class="block w-full rounded-md border-hairline text-sm shadow-sm focus:border-brand-500 focus:ring-brand-500">
+                            </div>
+                            <div>
+                                <label for="co_reference_number" class="mb-1 block text-sm font-medium text-ink">No. Referensi <span class="text-xs text-ink-muted">(opsional)</span></label>
+                                <input type="text" name="reference_number" id="co_reference_number"
+                                    class="block w-full rounded-md border-hairline text-sm shadow-sm focus:border-brand-500 focus:ring-brand-500">
+                            </div>
+                        </div>
+
+                        <label class="flex items-start gap-2 text-sm text-ink">
+                            <input type="checkbox" name="confirm_control_only" value="1" class="mt-1 rounded border-hairline">
+                            <span>Saya memahami pembayaran ini hanya untuk tagihan kontrol. Tagihan kunjungan asal tetap ditahan dan tidak berkurang.</span>
+                        </label>
+                        @error('confirm_control_only')
+                            <p class="text-xs text-danger-700">{{ $message }}</p>
+                        @enderror
+
+                        <x-ui.button type="submit" variant="danger">Bayar Tagihan Kontrol Saja</x-ui.button>
+                    </form>
+                </div>
+            @endif
         </x-ui.card>
 
     </div>

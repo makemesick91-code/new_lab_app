@@ -24,6 +24,16 @@ use App\Modules\RmeInvoice\Services\RmeBillingActorGuard;
  * correction, price, cancellation, refund or payment power.
  *
  * VIEW is read-only visibility of the dispute queue (Owner oversight).
+ *
+ * OPS-OQ-1a ANSWERED (rule 204). The branch-level reviewer is an ACCOUNT-specific,
+ * BRANCH-specific designation (RmeBillingDisputeReviewer), never a role and never
+ * a Spatie permission — so it cannot propagate through the Front Office union.
+ * REVIEW stays granted to no operational role. A designation authorizes review of
+ * its one branch alongside REVIEW; see RmeBillingDisputeReviewerService.
+ *
+ * MANAGE_REVIEWERS is the authority to designate and revoke branch reviewers. Like
+ * REVIEW it is granted to NO operational role: Super Admin holds it through
+ * RoleSeeder's '*'. It grants no dispute, invoice or payment power itself.
  */
 final class RmeBillingDisputePermission
 {
@@ -32,6 +42,8 @@ final class RmeBillingDisputePermission
     public const REVIEW = 'review_rme_billing_disputes';
 
     public const VIEW = 'view_rme_billing_disputes';
+
+    public const MANAGE_REVIEWERS = 'manage_rme_billing_dispute_reviewers';
 
     /** Any of these lets an account read disputes (always within its branch scope). */
     public const READ = [self::REPORT, self::REVIEW, self::VIEW];

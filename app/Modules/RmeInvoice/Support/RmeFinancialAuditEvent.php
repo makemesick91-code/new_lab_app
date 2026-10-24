@@ -325,6 +325,41 @@ final class RmeFinancialAuditEvent
         ];
     }
 
+    // HARDENING-RME-BILLING-DISPUTE-BRANCH-REVIEWER-CONTROL-PAYMENT-1 (owner
+    // OPS-OQ-1b, rule 204) — a Kontrol invoice was paid ON ITS OWN while every
+    // outstanding carry-over origin invoice of its chain was under an active
+    // billing dispute. Written inside the payment transaction, next to the
+    // RME_PAYMENT_RECORDED row of the same payment. It records that the origin was
+    // HELD (allocated 0), never an allocation to it: no payment row exists on the
+    // origin and none is manufactured.
+
+    public const ACTION_PAYMENT_CONTROL_ONLY_ORIGIN_DISPUTED = 'RME_PAYMENT_CONTROL_ONLY_ORIGIN_DISPUTED';
+
+    /**
+     * Ids, numbers and amounts only — never a patient field, a note or a
+     * reference number.
+     *
+     * @param  list<int>  $heldOriginInvoiceIds
+     * @param  list<int>  $heldDisputeIds
+     * @return array<string, mixed>
+     */
+    public static function controlOnlyPaymentPayload(RmePayment $payment, RmeInvoice $controlInvoice, array $heldOriginInvoiceIds, array $heldDisputeIds): array
+    {
+        return [
+            'payment_id' => (int) $payment->id,
+            'payment_number' => (string) $payment->payment_number,
+            'control_invoice_id' => (int) $controlInvoice->id,
+            'control_invoice_number' => (string) $controlInvoice->invoice_number,
+            'branch_id' => (int) $controlInvoice->branch_id,
+            'payment_path' => RmeInvoiceVersionConflict::PATH_CONTROL_ONLY,
+            'amount' => self::money($payment->amount),
+            'allocated_to_control' => self::money($payment->amount),
+            'allocated_to_origin' => 0.0,
+            'held_origin_invoice_ids' => array_values(array_map('intval', $heldOriginInvoiceIds)),
+            'held_dispute_ids' => array_values(array_map('intval', $heldDisputeIds)),
+        ];
+    }
+
     private static function money(mixed $value): float
     {
         return round((float) $value, 2);

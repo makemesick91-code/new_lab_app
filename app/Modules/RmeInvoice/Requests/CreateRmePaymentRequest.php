@@ -57,6 +57,16 @@ class CreateRmePaymentRequest extends FormRequest
             'selected_receivable_ids' => ['nullable', 'array'],
             'selected_receivable_ids.*' => ['integer'],
             /*
+             * HARDENING-RME-BILLING-DISPUTE-BRANCH-REVIEWER-CONTROL-PAYMENT-1
+             * (owner OPS-OQ-1b, rule 204) — the EXPLICIT operator intent to pay
+             * a Kontrol invoice on its own while its origin is disputed, plus the
+             * operator's confirmation. Without both, a payment follows the
+             * ordinary rules (origin first) exactly as before. The request carries
+             * no origin id and no allocation: the service derives the chain.
+             */
+            'payment_scope' => ['nullable', 'string', Rule::in([RmePaymentService::PAYMENT_SCOPE_CONTROL_ONLY])],
+            'confirm_control_only' => ['nullable', 'boolean'],
+            /*
              * ACTIVATION-RME-INVOICE-CORRECTION-PREPAYMENT-1 (rule 191) — the
              * `correction_version` of every invoice the page displayed, keyed by
              * invoice id. REQUIRED: a form that does not say which version it
@@ -89,6 +99,12 @@ class CreateRmePaymentRequest extends FormRequest
             $invoice = $this->route('rmeInvoice');
 
             if (! $invoice instanceof RmeInvoice) {
+                return;
+            }
+
+            if ($this->input('payment_scope') === RmePaymentService::PAYMENT_SCOPE_CONTROL_ONLY) {
+                $this->validateControlOnly($invoice, $validator);
+
                 return;
             }
 
@@ -166,6 +182,45 @@ class CreateRmePaymentRequest extends FormRequest
                 $validator->errors()->add('amount', 'Pembayaran tidak boleh melebihi total yang harus dibayar.');
             }
         });
+    }
+
+    /**
+     * Rule 204 (OPS-OQ-1b), EARLY. Only the Kontrol invoice is settled on this
+     * path, so only ITS version and ITS holds are checked here — the origin's
+     * dispute is the very condition of the path, not a refusal. Whether every
+     * outstanding origin is disputed is asked of the payment service's own rule;
+     * the service decides all of it again under the locks.
+     */
+    private function validateControlOnly(RmeInvoice $invoice, Validator $validator): void
+    {
+        if (! $this->boolean('confirm_control_only')) {
+            $validator->errors()->add(
+                'confirm_control_only',
+                'Centang konfirmasi bahwa pembayaran ini hanya untuk tagihan kontrol dan tagihan kunjungan asal tetap ditahan.',
+            );
+
+            return;
+        }
+
+        if (! $this->invoiceVersionsAreCurrentFor([$invoice], RmeInvoiceVersionConflict::PATH_CONTROL_ONLY, $validator)) {
+            return;
+        }
+
+        if (! $this->freeOfPaymentHolds([$invoice], RmeInvoiceVersionConflict::PATH_CONTROL_ONLY, $validator)) {
+            return;
+        }
+
+        $eligibility = app(RmePaymentService::class)->controlOnlyEligibility($invoice);
+
+        if (! $eligibility['eligible']) {
+            $validator->errors()->add('payment_scope', (string) $eligibility['message']);
+
+            return;
+        }
+
+        if ((float) $this->input('amount') > $invoice->remainingAmount()) {
+            $validator->errors()->add('amount', 'Pembayaran tidak boleh melebihi sisa tagihan kontrol.');
+        }
     }
 
     /**

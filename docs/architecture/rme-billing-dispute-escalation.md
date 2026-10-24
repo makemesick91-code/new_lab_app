@@ -1,4 +1,4 @@
-# RME billing dispute & escalation (OPS-OQ-1, rule 203)
+# RME billing dispute & escalation (OPS-OQ-1, rule 203; OPS-OQ-1a/1b, rule 204)
 
 **Owner policy:** OPS-OQ-1, approved for **all branches** — an RME invoice known to
 be wrong is not collected at that amount, is not modified unilaterally, is escalated
@@ -70,7 +70,8 @@ PostgreSQL, races B/C/J).
 Every action re-reads the persisted account under the invoice row lock
 (`RmeBillingActorGuard::resolveUsable`) and the branch scope
 (`RmeWorkingBranchScope`, server-resolved). Out-of-scope reads are 404. Which
-branch-level account should review is **OPS-OQ-1a** (open owner question).
+branch-level account should review was **OPS-OQ-1a** — answered 2026-10-24 by an
+explicit per-account, per-branch designation (§9).
 
 ## 5. Resolution evidence
 
@@ -120,3 +121,73 @@ dispute or its hold. Messages carry the dispute and invoice numbers only.
   WATCH for a branch without a reviewer or an active dispute older than 7 days.
 - Rollback: safe only while the status command reports 0 active disputes; otherwise
   forward-fix — the previous runtime cannot honour a hold.
+
+## 9. Branch reviewer designation (OPS-OQ-1a, rule 204)
+
+`mst_rme_billing_dispute_reviewers` — one row = one ACCOUNT designated for one
+BRANCH. Columns: `user_id`, `branch_id`, `granted_by`, `granted_at`,
+`grant_reason`, `revoked_by`, `revoked_at`, `revoke_reason`. Database guarantees:
+a partial unique index (one active row per account and branch), a CHECK that the
+revocation triple is all-null or all-set, a CHECK `user_id <> granted_by`, and
+`RESTRICT` foreign keys. The model refuses any update to a revoked row, any update
+outside the revocation columns, and every delete.
+
+| Concern | Rule |
+|---|---|
+| Who designates | `manage_rme_billing_dispute_reviewers` — no operational role; Super Admin via `'*'` |
+| Eligible designee | usable account, RME workspace access, not Owner, not a counter role (Front Office, Kasir), not already holding `review_rme_billing_disputes`, not the governor itself — `isEligibleDesignee()` is checked at the grant AND on every use (policy, service, routing) |
+| Independence | a designee may not confirm "original correct" on an invoice it issued (`cashier_id`), collected on, or requested / decided / applied a correction of (`RESOLVER_NOT_INDEPENDENT`); Super Admin's rule-203 path unchanged |
+| Authority granted | review / note / escalate / resolve on THAT branch's disputes only |
+| Also required on every action | usable persisted account + working scope reaching the branch (`RmeWorkingBranchScope`) |
+| Never granted | invoice edit, correction maker/checker, refund, debt forgiveness, cancellation, manual PAID, guard override |
+| Routing | the escalation service adds active designees of the branch to the in-app recipients |
+
+Policy doors (`viewAny`, `noteAny`, `reviewAny`) are permission **or** an active
+designation; the per-record abilities additionally require branch scope and, for a
+designee, a designation for that record's branch. The service re-asserts everything
+under the locks:
+
+```
+dispute action:  lock INVOICE → lock DISPUTE → read DESIGNATION FOR SHARE
+revocation:      lock DESIGNATION FOR UPDATE   (no other lock → no cycle)
+```
+
+A revocation that commits first makes the designation invisible to the waiting
+action; an action that holds the share lock first commits before the revocation.
+
+## 10. Kontrol-only payment (OPS-OQ-1b, rule 204)
+
+`RmePaymentService::payControlInvoiceOnly()` — reached only by the explicit
+`payment_scope=control_only` + `confirm_control_only` form on the Kontrol invoice's
+payment page (a separate form; the ordinary button is disabled while the exception
+applies).
+
+```
+lock KONTROL invoice B            (same first lock as allocateControlPayment)
+  assertInvoicePayable(B, cashier)   usable cashier, billing permission, B's branch
+  assertFormVersion(B)               rule 191, PATH_CONTROL_ONLY
+  assertNoPaymentHold(B)             D10 + a dispute on B itself
+re-derive the Kontrol chain; lock each origin A FOR UPDATE   (same order as the ordinary path)
+  outstanding = payable ∧ same branch ∧ remaining > 0
+  eligible    = outstanding ≠ ∅ ∧ every outstanding origin has an ACTIVE dispute
+amount ≤ remaining(B)
+record ONE payment on B; audit RME_PAYMENT_CONTROL_ONLY_ORIGIN_DISPUTED (allocated_to_origin = 0)
+refresh B; complete the Kontrol visit when B is settled
+```
+
+The origin is locked but never written: its status, totals, version, payments and
+dispute are unchanged. The ordinary `allocateControlPayment()` and every visit batch
+that would settle a disputed origin keep the rule-203 whole-batch refusal.
+
+| Refusal | Code / message |
+|---|---|
+| no outstanding origin | `CONTROL_ONLY_PAYMENT_NOT_APPLICABLE` |
+| an outstanding origin is not disputed (mixed chain) | `CONTROL_ONLY_PAYMENT_ORIGIN_NOT_DISPUTED` |
+| B is disputed | `BILLING_DISPUTE_ACTIVE` |
+| B has an active correction (D10) | the existing D10 message |
+| stale B version | `INVOICE_VERSION_CHANGED` |
+| cashier unusable / other branch / no permission | the existing payment-actor messages |
+| amount above B's remaining | `amount` error — the origin is not collectable here |
+
+Concurrency is proven by `RmeBillingDisputeBranchReviewerConcurrencyTest` (races A–N
+on PostgreSQL 16).

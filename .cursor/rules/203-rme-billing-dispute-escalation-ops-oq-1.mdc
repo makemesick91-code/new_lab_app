@@ -65,8 +65,12 @@ Operator guidance (Bahasa Indonesia): `docs/operations/rme-billing-dispute-sop.m
     batch is refused and rolled back. Money is never silently redirected to the
     batch's other invoices and a disputed invoice is never silently omitted.
     Consequence: a disputed carry-over parent holds the forced control payment;
-    whether a control invoice may be collected alone is open owner question
-    **OPS-OQ-1b** — never changed in code without the answer.
+    whether a control invoice may be collected alone was open owner question
+    **OPS-OQ-1b** — **ANSWERED (2026-10-24, rule 204 §C)**: while every
+    outstanding origin is disputed, the Kontrol invoice may be paid alone through
+    the separate, explicitly confirmed `payControlInvoiceOnly()` path, allocated
+    to the Kontrol invoice only. The ordinary combined payment and every batch
+    that would settle a disputed origin are still refused whole, as stated here.
 14. The hold is **independent of D10**: a rejected, cancelled, stale or applied
     correction releases D10, never this hold. Only a RESOLVED dispute releases it,
     and the next payment is still bound to the invoice's current version (rule 191).
@@ -90,8 +94,10 @@ Operator guidance (Bahasa Indonesia): `docs/operations/rme-billing-dispute-sop.m
     operational role; Super Admin holds it through the `'*'` grant. Granting it
     to Admin Klinik would extend it to every Front Office account (FrontOfficeRole
     is the exact union) and let front-desk peers clear their own counter's
-    disputes. Which branch-level account should review is open owner question
-    **OPS-OQ-1a** — never answered in code.
+    disputes. Which branch-level account should review was open owner question
+    **OPS-OQ-1a** — **ANSWERED (2026-10-24, rule 204 §B)**: an explicitly
+    designated account per branch (`mst_rme_billing_dispute_reviewers`), never a
+    role grant. The permission above is still granted to no operational role.
 19. Every action re-reads the PERSISTED account (`RmeBillingActorGuard::resolveUsable`)
     under the invoice row lock: inactive, soft-deleted or permission-revoked
     accounts are refused even with a live session. Branch scope is server-resolved
