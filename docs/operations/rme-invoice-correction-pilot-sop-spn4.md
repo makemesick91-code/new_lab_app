@@ -228,6 +228,15 @@ beredar di luar sistem.
 5. **Eskalasi ke manajemen klinik** sesuai praktik yang berlaku.
 6. Catat kasus sebagai **`NOT_EXECUTED`** dengan alasan singkat tanpa data
    pasien (mis. "Owner tidak dapat dihubungi sebelum pasien pulang").
+7. `NOT_EXECUTED` hanya berlaku untuk momen di kasir. Bila tagihan dilaporkan
+   sebagai **Ketidaksesuaian Tagihan** karena memang salah (bukan demi pilot),
+   pembayaran ditahan dan tagihan tetap Belum Dibayar. Tagihan itu **tetap boleh
+   menjadi kasus pilot** bila kemudian Owner menyetujui **tagihan itu** secara
+   tertulis dan Maker 29 serta Checker 1 login sendiri. Urutannya: ajukan →
+   halaman pembayaran menampilkan kedua blokir → Setujui & Terapkan → laporan
+   diselesaikan dengan hasil **Selesai dengan koreksi tagihan yang telah
+   diterapkan** (diverifikasi sistem) →
+   pasien membayar nominal yang sudah dikoreksi (rule 196 §8).
 
 **Kebijakan Owner OPS-OQ-1 (sudah dijawab, berlaku di SEMUA cabang — rule 203).**
 Bila tagihan diketahui salah dan koreksi belum disetujui:

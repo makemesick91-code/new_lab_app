@@ -97,7 +97,10 @@ operator document and a rule disagree, the rule wins and the document is wrong.
 18. **A patient is never held** for pilot evidence. If the Owner cannot approve
     while the patient is present, the case is `NOT_EXECUTED`, no correction is
     filed, no known-wrong amount is collected as if resolved, and clinic
-    management decides about the patient.
+    management decides about the patient. `NOT_EXECUTED` describes the counter
+    moment only: if the invoice was held by an OPS-OQ-1 dispute because it is
+    genuinely wrong, it stays an eligible case for a later Owner authorization of
+    that invoice (rule 196 §8 items 24–27).
 19. **OPS-OQ-1 — ANSWERED by the Owner for ALL branches; enforced by rule 203.**
     Before the answer this item recorded that no clinic procedure existed for a
     patient whose invoice is known to be wrong while Owner approval is pending.
