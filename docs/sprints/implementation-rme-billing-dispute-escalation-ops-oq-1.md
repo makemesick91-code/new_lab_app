@@ -11,7 +11,8 @@
 | Item | Status |
 |---|---|
 | Owner policy OPS-OQ-1 | `OWNER_POLICY_APPROVED` (all branches), `REPOSITORY_POLICY_RECORDED` |
-| Technical enforcement | `IMPLEMENTED` — becomes `TECHNICAL_ENFORCEMENT_DEPLOYED` only after production deploy + verification (§35) |
+| Technical enforcement | **`TECHNICAL_ENFORCEMENT_DEPLOYED`** — runtime `5b1d4262`, tag `implementation-rme-billing-dispute-escalation-ops-oq-1-go` (§35) |
+| Verification level | `DEPLOYED_CODE_VERIFIED` · `REAL_OPERATOR_ACCEPTANCE_VERIFIED: NOT_PERFORMED` (no real dispute exists; none fabricated) |
 | Invoice-correction pilot | unchanged: `PILOT_ACTIVE`, SPN4, maker 29 / checker 1 — **FULL_INVOICE_CORRECTION_PILOT_GO: NOT_CLAIMED** |
 | Open follow-ups | **OPS-OQ-1a** — which branch-level account reviews/resolves disputes; **OPS-OQ-1b** — may a control invoice be collected while its carry-over parent is disputed |
 
@@ -266,7 +267,57 @@ guide, incident matrix A/H/I/Q + new S/T, handoff) point at rule 203. New
 
 ## 35. DEVFLOW, CI, merge, deploy, production
 
-See §35a (filled from measured evidence only).
+**DEVFLOW** (real exit codes, all 0 / GO): `sprint:manifest-check`,
+`sprint:scope-audit --strict` (2 modules: RmeInvoice, AccessControl),
+`foundation:devflow-check --strict`, `foundation:shared-service-audit --strict`,
+`foundation:security-compliance-check`, `foundation:ci-runtime-control-check --strict`,
+`foundation:cicd-enterprise-gate-check`, `foundation:roadmap-check --strict`,
+`foundation:enterprise-documentation-check`. Base authority = canonical remote
+`712ee0b2` (local base ref was stale `9eabff07`; the remote won). Classifier:
+`unknown_high_risk` → every gate ran. `pint --test` and `git diff --check` clean;
+`view:cache` compiles.
+
+**CI** — PR #514, candidate `5bb15f2b` (tree `82dd1261`), run `40037596733`:
+Classifier, NSF-R012 Quality, Phase 3 Android, CICD-CTRL Selective Module, NSF-R011
+Critical, NSF-9 Release Safety & Smoke, NSF-10 Release Evidence — all **SUCCESS**.
+Critical job `120701729078`: **6467 passed / 33744 assertions**,
+`critical_test_exit_status=0`; all six `RmeBillingDispute` suites PASS and the ten
+races ran (executed, not skipped) on `postgres:16`. The self-hosted Critical variant
+was SKIPPED (one variant runs by design). **NSF-R011 Full Suite: SKIPPED** by the
+active temporary Full-Suite policy — this is not a pass and none is claimed.
+
+**Merge** — squash `5b1d4262`; merge tree `82dd1261` == candidate tree. Base had not
+moved (`712ee0b2`).
+
+**Production preflight (read-only)** — fingerprints equal the §4 baseline; last
+deploy runner OK; checkout clean of tracked changes (one untracked runtime directory
+`storage/runtime-home/`, owned by the runtime user, left untouched). Pre-seed role
+diff: Owner +`view_rme_billing_disputes`, Super Admin wildcard, every other role
+unchanged; production-only role `Tester RME` is not touched by RoleSeeder.
+
+**Deploy** — `bash scripts/deploy-vps-runner.sh start` executed **inside the VPS**:
+`exit=0`, `DEPLOY OK: 20261024-012039`, `DEPLOY_TARGET_PINNED=5b1d4262`,
+`DEPLOY_HEAD_TARGET_MATCH=YES`, backup `pre_auto_deploy_20261024-012039.sql`,
+migration `2026_10_24_100001` Ran (batch 84), gates 10/10 GO, runtime isolation
+70 GO / 0 FAIL. Then, as `daengtisiams`: `PermissionSeeder` → `RoleSeeder` →
+`permission:cache-reset` (all exit 0). Role diff after = exactly three added grants
+(Owner view; Super Admin review + view), none removed.
+
+**Production verification (read-only, no fabricated dispute/payment, no
+impersonation)** — VPS HEAD/tree `5b1d4262`/`82dd1261`, `git describe --exact-match`
+= the GO tag; `/login` and `/health/{live,ready,lb}` 200; dispute pages 302 to a guest;
+8 routes registered with the layered permission middleware; partial unique index and
+5 CHECK constraints present; **invoice fingerprint `8b5c43ae…` and payment
+fingerprint `fb1e137f…` unchanged**; corrections 0, disputes 0, events 0; exactly one
+active account holds review (Super Admin role), no direct grants;
+`rme:billing-dispute-status` = **GO** (one reachable reviewer per RME branch, no
+findings); pilot config SPN4 / maker 29 / checker 1 unchanged; audit trail unchanged
+(1623); `laravel.log` untouched since 2026-10-09 (no new errors); no failed jobs;
+env pilot, debug OFF, maintenance OFF; php-fpm, nginx, queue worker active.
+
+**GO tag** `implementation-rme-billing-dispute-escalation-ops-oq-1-go` (object
+`df9efc2f`) → `5b1d4262`. Scope: the dispute/hold capability. It is not the
+correction pilot's full GO and claims no operator acceptance.
 
 ## 36. Residuals and rollback
 

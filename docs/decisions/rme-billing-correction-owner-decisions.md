@@ -36,7 +36,7 @@ A decision is only as far along as the last label that is evidenced. A brief's
 | 2026-10-22 | **OD-1 — cross-branch AND cross-doctor Kontrol allowed** | `OWNER_POLICY_APPROVED`, `REPOSITORY_POLICY_RECORDED`, `TECHNICAL_ENFORCEMENT_DEPLOYED` (2026-10-23, runtime `b76b0ed2`, tag `hardening-rme-active-user-patient-selection-1-go`; rule 200) | owner instruction in `HARDENING-RME-ACTIVE-USER-PATIENT-SELECTION-1` |
 | 2026-10-22 | **OD-1a — another branch's receivable is neither shown nor collected at this branch** (supersedes rule 197 §24) | `OWNER_POLICY_APPROVED`, `REPOSITORY_POLICY_RECORDED`, `TECHNICAL_ENFORCEMENT_DEPLOYED` (2026-10-23, runtime `b76b0ed2`, tag `hardening-rme-active-user-patient-selection-1-go`; rule 200) | owner answer to the sprint's question, `HARDENING-RME-ACTIVE-USER-PATIENT-SELECTION-1` |
 | 2026-10-23 | **D28 — interim refusal of corrections on a Rp0 ORIGINAL invoice** (`ZERO_ORIGINAL_CORRECTION_GUARD: TEMPORARY_FAIL_CLOSED`; D21g and D22 stay PENDING) | `OWNER_TASK_INSTRUCTION`, `REPOSITORY_POLICY_RECORDED`, `TECHNICAL_ENFORCEMENT_DEPLOYED` (2026-10-23, runtime `b3ec7133`, tag `fix-rme-invoice-correction-zero-original-guard-1-go`; rule 201) | owner task instruction for `FIX-RME-INVOICE-CORRECTION-ZERO-ORIGINAL-GUARD-1` |
-| 2026-10-23 | **OPS-OQ-1 — an invoice known to be wrong is not collected, not modified unilaterally, escalated to the branch authority, kept financially unresolved; the patient is never held** (ALL branches; does not widen the SPN4 correction pilot) | `OWNER_POLICY_APPROVED`, `REPOSITORY_POLICY_RECORDED`, `TECHNICAL_ENFORCEMENT: IMPLEMENTED — deployment pending` (rule 203) | owner answer in the brief of `IMPLEMENTATION-RME-BILLING-DISPUTE-ESCALATION-OPS-OQ-1` |
+| 2026-10-23 | **OPS-OQ-1 — an invoice known to be wrong is not collected, not modified unilaterally, escalated to the branch authority, kept financially unresolved; the patient is never held** (ALL branches; does not widen the SPN4 correction pilot) | `OWNER_POLICY_APPROVED`, `REPOSITORY_POLICY_RECORDED`, `TECHNICAL_ENFORCEMENT_DEPLOYED` (2026-10-24, runtime `5b1d4262`, tag `implementation-rme-billing-dispute-escalation-ops-oq-1-go`; rule 203) | owner answer in the brief of `IMPLEMENTATION-RME-BILLING-DISPUTE-ESCALATION-OPS-OQ-1` |
 | 2026-10-23 | **OPS-OQ-1a — which branch-level account reviews/resolves a billing dispute** | **open owner question** — granted to no operational role meanwhile | recorded by the same sprint |
 | 2026-10-23 | **OPS-OQ-1b — may a control visit's own invoice be collected while its carry-over parent is disputed?** | **open owner question** — current whole-batch refusal stands | security review of the same sprint |
 
@@ -487,8 +487,8 @@ D21c, D21g and D22 remain PENDING; D28 remains the interim guard.
 ## OPS-OQ-1 — owner policy: an invoice known to be wrong (all branches)
 
 **Status:** `OWNER_POLICY_APPROVED` · `REPOSITORY_POLICY_RECORDED` ·
-`TECHNICAL_ENFORCEMENT: IMPLEMENTED — deployment pending` (becomes
-`TECHNICAL_ENFORCEMENT_DEPLOYED` only after production deploy and verification).
+`TECHNICAL_ENFORCEMENT_DEPLOYED` (2026-10-24, runtime `5b1d4262`, tag
+`implementation-rme-billing-dispute-escalation-ops-oq-1-go`; rule 203).
 **Approved by:** Owner, for **ALL branches**, as stated in the
 `IMPLEMENTATION-RME-BILLING-DISPUTE-ESCALATION-OPS-OQ-1` sprint brief received
 2026-10-23. No separate signed artefact, approval reference or timestamp exists in
