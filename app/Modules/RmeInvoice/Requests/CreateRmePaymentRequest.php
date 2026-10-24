@@ -4,11 +4,13 @@ namespace App\Modules\RmeInvoice\Requests;
 
 use App\Models\User;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
+use App\Modules\RmeInvoice\Interfaces\RmeBillingDisputeRepositoryInterface;
 use App\Modules\RmeInvoice\Interfaces\RmeInvoiceCorrectionRepositoryInterface;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Services\RmeControlReceivableService;
 use App\Modules\RmeInvoice\Services\RmePaymentService;
 use App\Modules\RmeInvoice\Support\RmeInvoicePaymentBlocked;
+use App\Modules\RmeInvoice\Support\RmeInvoicePaymentDisputed;
 use App\Modules\RmeInvoice\Support\RmeInvoiceVersionConflict;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Gate;
@@ -104,7 +106,7 @@ class CreateRmePaymentRequest extends FormRequest
                         return;
                     }
 
-                    if (! $this->freeOfActiveCorrection([$invoice], RmeInvoiceVersionConflict::PATH_SINGLE, $validator)) {
+                    if (! $this->freeOfPaymentHolds([$invoice], RmeInvoiceVersionConflict::PATH_SINGLE, $validator)) {
                         return;
                     }
 
@@ -127,7 +129,7 @@ class CreateRmePaymentRequest extends FormRequest
                     return;
                 }
 
-                if (! $this->freeOfActiveCorrection(
+                if (! $this->freeOfPaymentHolds(
                     [$invoice, ...$visitSummary['selected_receivables']->all()],
                     RmeInvoiceVersionConflict::PATH_VISIT,
                     $validator,
@@ -152,7 +154,7 @@ class CreateRmePaymentRequest extends FormRequest
                 return;
             }
 
-            if (! $this->freeOfActiveCorrection(
+            if (! $this->freeOfPaymentHolds(
                 [$invoice, ...$summary['carry_over_invoices']->all()],
                 RmeInvoiceVersionConflict::PATH_CONTROL,
                 $validator,
@@ -217,6 +219,60 @@ class CreateRmePaymentRequest extends FormRequest
                     $paymentPath,
                 );
             }
+        }
+
+        return true;
+    }
+
+    /**
+     * Every payment HOLD, early, in one place: D10 (active correction) first,
+     * then OPS-OQ-1 (active billing dispute, rule 203). Unlocked reads, never the
+     * authority — RmePaymentService::assertNoPaymentHold() decides both under the
+     * invoice row lock.
+     *
+     * @param  list<RmeInvoice>  $involved
+     */
+    private function freeOfPaymentHolds(array $involved, string $paymentPath, Validator $validator): bool
+    {
+        return $this->freeOfActiveCorrection($involved, $paymentPath, $validator)
+            && $this->freeOfActiveDispute($involved, $paymentPath, $validator);
+    }
+
+    /**
+     * IMPLEMENTATION-RME-BILLING-DISPUTE-ESCALATION-OPS-OQ-1 (rule 203), EARLY.
+     *
+     * Refuses before the amount cap when any invoice this payment would settle is
+     * under an ACTIVE billing dispute, so the cashier reads "the bill is under
+     * review", not an amount error. Audited through the payment service's
+     * single (de-duplicated) writer.
+     *
+     * @param  list<RmeInvoice>  $involved
+     */
+    private function freeOfActiveDispute(array $involved, string $paymentPath, Validator $validator): bool
+    {
+        $disputes = app(RmeBillingDisputeRepositoryInterface::class);
+
+        foreach ($involved as $invoice) {
+            $active = $disputes->activeForInvoice((int) $invoice->id);
+
+            if ($active === null) {
+                continue;
+            }
+
+            $disputed = new RmeInvoicePaymentDisputed(
+                (int) $invoice->id,
+                $invoice->invoice_number !== null ? (string) $invoice->invoice_number : null,
+                (int) $active->id,
+                (string) $active->status,
+            );
+
+            if ($this->user() instanceof User) {
+                app(RmePaymentService::class)->recordDisputeHoldRefusal($disputed, $paymentPath, $this->user());
+            }
+
+            $validator->errors()->add(RmePaymentService::PAYMENT_BLOCKED_FIELD, $disputed->operatorMessage());
+
+            return false;
         }
 
         return true;

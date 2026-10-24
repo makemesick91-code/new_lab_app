@@ -295,6 +295,36 @@ final class RmeFinancialAuditEvent
         ];
     }
 
+    // ─── IMPLEMENTATION-RME-BILLING-DISPUTE-ESCALATION-OPS-OQ-1 (rule 203) ──
+    //
+    // A payment refused because an invoice it would settle is under an ACTIVE
+    // billing dispute (owner OPS-OQ-1: a known-wrong amount is not collected).
+    // Written AFTER the rollback (an attempt), and de-duplicated per invoice and
+    // cashier inside a short window so a repeated click cannot flood the trail.
+
+    public const ACTION_PAYMENT_REFUSED_ACTIVE_DISPUTE = 'RME_PAYMENT_REFUSED_ACTIVE_DISPUTE';
+
+    /**
+     * Ids, codes and statuses only. Never the typed amount, a payment note, a
+     * reference number or the dispute description.
+     *
+     * @return array<string, mixed>
+     */
+    public static function paymentBlockedByDisputePayload(RmeInvoice $invoice, RmeInvoicePaymentDisputed $disputed, string $paymentPath): array
+    {
+        return [
+            'invoice_id' => (int) $invoice->id,
+            'invoice_number' => (string) $invoice->invoice_number,
+            'branch_id' => (int) $invoice->branch_id,
+            'reason' => RmeInvoicePaymentDisputed::REASON,
+            'payment_path' => $paymentPath,
+            'dispute_id' => $disputed->disputeId,
+            'dispute_status' => $disputed->disputeStatus,
+            'invoice_status' => (string) $invoice->status,
+            'invoice_version' => (int) ($invoice->correction_version ?? 0),
+        ];
+    }
+
     private static function money(mixed $value): float
     {
         return round((float) $value, 2);

@@ -27,7 +27,9 @@ pengawas keuangan (Finance Klinik / Data Analyst).
 8. **IT** merekonsiliasi. Jika **diterapkan**, kasir memuat ulang halaman dan
    menerima pembayaran sesuai tagihan baru. Jika **ditolak/dibatalkan** sementara
    kesalahan masih diketahui, kasir **tidak** menagih nominal asli seolah-olah
-   benar — keputusan pembayaran oleh manajemen (OPS-OQ-1).
+   benar — kasir melaporkan **Ketidaksesuaian Tagihan**; pembayaran ditahan dan
+   kasus diteruskan ke penanggung jawab cabang (OPS-OQ-1, rule 203). Pasien boleh
+   pulang.
 
 ### 1.2 Daftar periksa kelayakan (semua harus "ya")
 

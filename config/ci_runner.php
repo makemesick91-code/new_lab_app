@@ -415,6 +415,19 @@ return [
         // silently drop them.
         'tests/Feature/RmeInvoiceCorrection/RmeInvoiceCorrectionZeroOriginalGuardTest.php',
         'tests/Feature/RmeInvoiceCorrection/RmeInvoiceCorrectionRejectionDeactivationRaceTest.php',
+        // IMPLEMENTATION-RME-BILLING-DISPUTE-ESCALATION-OPS-OQ-1 (rule 203) — an
+        // invoice known to be wrong is not collected: the dispute holds payment on
+        // every path (whole-batch refusal), corrects nothing, routes to the branch
+        // authority, and resolves only on verifiable evidence. The concurrency
+        // suite proves races A–J on PostgreSQL with the REAL services in a child
+        // process. Selected by the new `RmeBillingDispute` token in BOTH
+        // critical-gate variants; declared so a rename cannot silently drop them.
+        'tests/Feature/RmeBillingDispute/RmeBillingDisputePaymentHoldTest.php',
+        'tests/Feature/RmeBillingDispute/RmeBillingDisputeLifecycleTest.php',
+        'tests/Feature/RmeBillingDispute/RmeBillingDisputeAccessTest.php',
+        'tests/Feature/RmeBillingDispute/RmeBillingDisputeCorrectionCompatibilityTest.php',
+        'tests/Feature/RmeBillingDispute/RmeBillingDisputeConcurrencyTest.php',
+        'tests/Feature/RmeBillingDispute/RmeBillingDisputeGovernanceTest.php',
         // Same sprint — the payment branch scope judges the EXPLICIT cashier,
         // never Auth::user() (which failed OPEN with no session), on every
         // payment path. Selected by the existing `RmePayment` token.

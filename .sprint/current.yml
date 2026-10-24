@@ -1,49 +1,54 @@
-# FIX-RME-INVOICE-CORRECTION-ZERO-ORIGINAL-GUARD-1
+# IMPLEMENTATION-RME-BILLING-DISPUTE-ESCALATION-OPS-OQ-1
 #
-# One release (rule 201):
+# Owner policy OPS-OQ-1 (approved for ALL branches) as code (rule 203):
 #
-#   A. Zero-original guard. An RME invoice whose AUTHORITATIVE ORIGINAL total
-#      is Rp0 can never be corrected: submit, approve (= apply, D1a) and the
-#      recovery apply refuse CORRECTION_ORIGINAL_TOTAL_ZERO under the invoice
-#      row lock, before any mutation (UNVERIFIABLE when v0 cannot be proven).
-#      Reject and cancel stay open (D10 release). The original is persisted data:
-#      the live row at correction_version 0, the frozen ORIGINAL (v0) document
-#      version above it — never a request field. TEMPORARY FAIL-CLOSED boundary
-#      on the owner's task instruction (register D28); D21g and D22 stay PENDING.
-#      Closes the pilot-2 LOW-2 finding (rule 196 §23 was procedural only).
+#   A. Billing dispute (trx_rme_billing_disputes + append-only events). A REPORT
+#      that an issued RME invoice is known or suspected to be wrong — not a
+#      correction. Explicit state machine OPEN → UNDER_REVIEW → ESCALATED →
+#      RESOLVED; one active dispute per invoice under the invoice row lock AND a
+#      partial unique index; immutable report snapshot; RESOLVED terminal.
 #
-#   B. Rule 200 at the correction service. assertActor() decides every mutation
-#      — cancel included, which the identity allowlist does not gate — on the
-#      PERSISTED active account (ActiveAccountResolver) and asks the permission
-#      and branch scope of THAT account, never of a stale in-memory object.
+#   B. Payment hold on EVERY payment path (pay, visit + selected receivables,
+#      control/carry-over, multi-invoice batches, retries, direct service calls):
+#      decided under the invoice row lock, whole-batch refusal, audited after the
+#      rollback and de-duplicated. Independent of D10; no switch can disable it.
 #
-#   C. Two PostgreSQL races, both sides real services (child process):
-#      correction rejection vs payment (D10), and account deactivation vs a
-#      correction mutation (linearization point = the account re-read after the
-#      invoice lock).
+#   C. Escalation to the branch authority — in-app notifications only, after
+#      commit; failure never unwinds the dispute. Resolution only on a verifiable
+#      outcome (applied correction newer than the report, or a second account's
+#      confirmation of the unchanged original). No override, no fabricated Owner
+#      approval.
 #
-# No migration. No permission, role, route, RoleSeeder, feature-flag or config
-# value change. Rp0 invoice ISSUANCE untouched; historical invoices (#36 Rp0
-# UNPAID, #41 PARTIAL) untouched. Manual pricing D21, D1/D1a/D1c/D1e, D7, D10,
-# invoice-version binding, explicit actors, OD-1/OD-1a preserved.
+#   D. Conservative authority: review_rme_billing_disputes to NO operational
+#      role (Super Admin via '*'); view_rme_billing_disputes to Owner. Branch
+#      reviewer is open owner question OPS-OQ-1a.
 #
-# Type SECURITY_FIX: one module (RmeInvoice), scoped financial security fix;
-# security_impact true. Full pilot status unchanged (NO_GO, rule 196).
+# One additive migration (two tables, partial unique index, PostgreSQL CHECKs);
+# no backfill — no dispute is inferred from an existing invoice. Two new
+# permissions (PermissionSeeder → RoleSeeder → permission:cache-reset). Blade
+# views only (no JS/CSS/asset change, no npm build required).
+#
+# The SPN4 correction pilot (maker 29 / checker 1), D1/D1a/D1c/D1e, D7, D10,
+# D21 (manual pricing), D28, OD-1/OD-1a are preserved; D21c, D21g, D22 stay
+# PENDING. Refund, reversal, credit and Rp0 adjustment remain out of scope.
+#
+# Type FOUNDATION_SPRINT (audit level 3): new financial control + schema +
+# permissions across RmeInvoice, AccessControl, providers, seeders, console.
 
-id: FIX-RME-INVOICE-CORRECTION-ZERO-ORIGINAL-GUARD-1
-type: SECURITY_FIX
+id: IMPLEMENTATION-RME-BILLING-DISPUTE-ESCALATION-OPS-OQ-1
+type: FOUNDATION_SPRINT
 module: RmeInvoice
-title: "RME invoice correction refuses a Rp0 original (submit, approve, recovery apply) as a temporary fail-closed boundary; every correction mutation decided on the persisted active account; rejection-vs-payment and deactivation races proven on PostgreSQL"
+title: "OPS-OQ-1 for all branches: an RME invoice known to be wrong is reported as a billing dispute that holds payment on every path, is routed in-app to the branch authority, changes nothing financial, and is released only by a verified resolution"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 runtime_change: true
-schema_change: false
+schema_change: true
 frontend_change: false
 security_impact: true
-branch_isolation_impact: false
+branch_isolation_impact: true
 ledger_impact: false
 deploy_required: true
 browser_required: false
 test_profiles: [rme, cashier, permission]
-go_tag: fix-rme-invoice-correction-zero-original-guard-1-go
-inherits_parent_go: hardening-rme-active-user-patient-selection-1-go
+go_tag: implementation-rme-billing-dispute-escalation-ops-oq-1-go
+inherits_parent_go: fix-rme-invoice-correction-zero-original-guard-1-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1

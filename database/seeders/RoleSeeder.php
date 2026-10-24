@@ -343,6 +343,11 @@ class RoleSeeder extends Seeder
             'view_satusehat_readiness',
             // SATUSEHAT-4B — executive read-only view of diagnosis adoption.
             'view_diagnosis_adoption',
+            // IMPLEMENTATION-RME-BILLING-DISPUTE-ESCALATION-OPS-OQ-1 (rule 203) —
+            // the Owner sees the billing dispute queue read-only (escalations
+            // need the Owner's case-specific decision). Not review: resolving a
+            // dispute is not granted to any operational role (OPS-OQ-1a).
+            'view_rme_billing_disputes',
             // SATUSEHAT-4C — executive read-only view of branch readiness +
             // pilot operations metrics (no pilot configuration/approval).
             'view_satusehat_branch_readiness',

@@ -75,6 +75,16 @@ class RmeInvoiceCorrectionRepository implements RmeInvoiceCorrectionRepositoryIn
             ->first();
     }
 
+    public function latestAppliedForInvoice(int $invoiceId): ?RmeInvoiceCorrection
+    {
+        return RmeInvoiceCorrection::query()
+            ->where('rme_invoice_id', $invoiceId)
+            ->where('status', RmeInvoiceCorrectionStatus::APPLIED)
+            ->orderByDesc('applied_invoice_version')
+            ->orderByDesc('id')
+            ->first();
+    }
+
     public function forInvoice(int $invoiceId): Collection
     {
         return RmeInvoiceCorrection::query()

@@ -437,6 +437,16 @@ class PermissionSeeder extends Seeder
         'approve_rme_invoice_correction',
         'apply_rme_invoice_correction',
         'view_billing_correction_oversight',
+        // IMPLEMENTATION-RME-BILLING-DISPUTE-ESCALATION-OPS-OQ-1 (owner OPS-OQ-1,
+        // rule 203) — billing disputes. REPORTING reuses manage_rme_billing (the
+        // accounts that could collect a known-wrong amount are the ones that can
+        // stop it). REVIEW (take into review, escalate to the Owner, resolve) is
+        // granted to NO operational role — Super Admin holds it through '*'; the
+        // branch-level reviewer is an open owner question (OPS-OQ-1a). VIEW is
+        // read-only queue visibility (Owner). None of them grants any power over
+        // an invoice's amount, status, payment, correction or refund.
+        'review_rme_billing_disputes',
+        'view_rme_billing_disputes',
         // FEATURE-RME-BRANCH-TARIFF-AUTHORITY-1 (owner D21, rule 192) — the two
         // SPECIFIC authorizations a strict-mode price exception needs. Granted
         // to NO role: the exception approver (D21b) is undecided. Necessary but

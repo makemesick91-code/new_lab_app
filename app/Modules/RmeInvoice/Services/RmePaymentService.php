@@ -7,14 +7,17 @@ use App\Modules\Branch\Services\BranchService;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\ClinicVisit\Services\ClinicVisitService;
 use App\Modules\LabOrder\Services\AuditLogService;
+use App\Modules\RmeInvoice\Interfaces\RmeBillingDisputeRepositoryInterface;
 use App\Modules\RmeInvoice\Interfaces\RmeInvoiceCorrectionRepositoryInterface;
 use App\Modules\RmeInvoice\Interfaces\RmeInvoiceRepositoryInterface;
 use App\Modules\RmeInvoice\Interfaces\RmePaymentRepositoryInterface;
+use App\Modules\RmeInvoice\Models\RmeBillingDispute;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Models\RmeInvoiceCorrection;
 use App\Modules\RmeInvoice\Models\RmePayment;
 use App\Modules\RmeInvoice\Support\RmeFinancialAuditEvent;
 use App\Modules\RmeInvoice\Support\RmeInvoicePaymentBlocked;
+use App\Modules\RmeInvoice\Support\RmeInvoicePaymentDisputed;
 use App\Modules\RmeInvoice\Support\RmeInvoiceVersionConflict;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
 use Carbon\CarbonImmutable;
@@ -38,6 +41,7 @@ class RmePaymentService
         private readonly AuditLogService $auditLogs,
         private readonly RmeInvoiceCorrectionRepositoryInterface $corrections,
         private readonly RmeBillingActorGuard $actors,
+        private readonly RmeBillingDisputeRepositoryInterface $disputes,
     ) {}
 
     /**
@@ -125,7 +129,7 @@ class RmePaymentService
 
             $this->assertInvoicePayable($invoice, $cashier);
             $this->assertFormVersion($invoice, $data);
-            $this->assertNoActiveCorrection($invoice);
+            $this->assertNoPaymentHold($invoice);
 
             $amount = $this->normalizeAmount($data['amount']);
             $remainingBefore = $this->remainingForInvoice($invoice);
@@ -184,7 +188,7 @@ class RmePaymentService
             $controlInvoice = RmeInvoice::query()->lockForUpdate()->findOrFail($controlInvoice->id);
             $this->assertInvoicePayable($controlInvoice, $cashier);
             $this->assertFormVersion($controlInvoice, $data);
-            $this->assertNoActiveCorrection($controlInvoice);
+            $this->assertNoPaymentHold($controlInvoice);
 
             $remainingPayment = $amount;
             $allocatedToParent = 0.0;
@@ -209,7 +213,7 @@ class RmePaymentService
                 }
 
                 $this->assertFormVersion($parentInvoice, $data);
-                $this->assertNoActiveCorrection($parentInvoice);
+                $this->assertNoPaymentHold($parentInvoice);
 
                 $parentVisit = $this->requireVisit($parentInvoice);
                 $parentRemaining = $this->remainingForInvoice($parentInvoice);
@@ -340,7 +344,7 @@ class RmePaymentService
             $currentInvoice = RmeInvoice::query()->lockForUpdate()->findOrFail($currentInvoice->id);
             $this->assertInvoicePayable($currentInvoice, $cashier);
             $this->assertFormVersion($currentInvoice, $data);
-            $this->assertNoActiveCorrection($currentInvoice);
+            $this->assertNoPaymentHold($currentInvoice);
 
             $remainingPayment = $amount;
             $allocatedToParent = 0.0;
@@ -366,7 +370,7 @@ class RmePaymentService
                 }
 
                 $this->assertFormVersion($receivable, $data);
-                $this->assertNoActiveCorrection($receivable);
+                $this->assertNoPaymentHold($receivable);
 
                 $receivableVisit = $this->requireVisit($receivable);
                 $receivableRemaining = $this->remainingForInvoice($receivable);
@@ -598,6 +602,118 @@ class RmePaymentService
 
             throw ValidationException::withMessages([
                 self::PAYMENT_BLOCKED_FIELD => $blocked->operatorMessage(),
+            ]);
+        } catch (RmeInvoicePaymentDisputed $disputed) {
+            $this->recordDisputeHoldRefusal($disputed, $paymentPath, $cashier);
+
+            throw ValidationException::withMessages([
+                self::PAYMENT_BLOCKED_FIELD => $disputed->operatorMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Every payment HOLD on one locked invoice, in one place, so no payment path
+     * can apply one and forget the other:
+     *  - D10 — an active (SUBMITTED / APPROVED) invoice correction;
+     *  - OPS-OQ-1 (rule 203) — an active billing dispute.
+     * The two are independent: releasing one never releases the other.
+     */
+    private function assertNoPaymentHold(RmeInvoice $locked): void
+    {
+        $this->assertNoActiveCorrection($locked);
+        $this->assertNoActiveDispute($locked);
+    }
+
+    /**
+     * IMPLEMENTATION-RME-BILLING-DISPUTE-ESCALATION-OPS-OQ-1 — owner OPS-OQ-1
+     * (rule 203): an invoice under an ACTIVE billing dispute (OPEN,
+     * UNDER_REVIEW, ESCALATED) accepts NO payment. Called on the LOCKED row for
+     * every invoice the batch would settle; a hit rolls the WHOLE batch back.
+     *
+     * Race-safe for the same reason as D10: a dispute is only ever created or
+     * resolved inside a transaction that holds this same invoice row lock
+     * (RmeBillingDisputeService locks the invoice first). Either the dispute
+     * committed before we took the lock — and we see it — or it waits for this
+     * payment to commit, and is then recorded against the invoice as it stands
+     * (the payment is never erased or rewritten by the later report).
+     *
+     * Not feature-flagged and not branch-gated: owner OPS-OQ-1 applies to every
+     * branch, and a hold must never be released by a configuration change.
+     */
+    private function assertNoActiveDispute(RmeInvoice $locked): void
+    {
+        $active = $this->disputes->activeForInvoice((int) $locked->id);
+
+        if ($active === null) {
+            return;
+        }
+
+        throw new RmeInvoicePaymentDisputed(
+            (int) $locked->id,
+            $locked->invoice_number !== null ? (string) $locked->invoice_number : null,
+            (int) $active->id,
+            (string) $active->status,
+        );
+    }
+
+    /**
+     * Rule 203 — the active billing dispute of an invoice, for the payment /
+     * cashier pages (no lock; display only). The service check above is the
+     * authority.
+     */
+    public function activeDisputeHolding(RmeInvoice $invoice): ?RmeBillingDispute
+    {
+        return $this->disputes->activeForInvoice((int) $invoice->id);
+    }
+
+    /** Rule 203 — refusals of the same invoice by the same cashier inside this window are recorded once. */
+    private const DISPUTE_REFUSAL_AUDIT_WINDOW_MINUTES = 15;
+
+    /**
+     * Rule 203 — the single writer of RME_PAYMENT_REFUSED_ACTIVE_DISPUTE, shared
+     * by the under-lock check and the payment FormRequest's early check. Runs at
+     * transaction level 0 (after the rollback). DE-DUPLICATED: a refusal of the
+     * same invoice by the same cashier already recorded inside the window is not
+     * recorded again, so repeated clicks cannot flood the audit trail; a
+     * different cashier, invoice or a later attempt is recorded. An audit
+     * failure is logged and never turns the refusal into a 500 or a payment.
+     */
+    public function recordDisputeHoldRefusal(RmeInvoicePaymentDisputed $disputed, string $paymentPath, User $cashier): void
+    {
+        try {
+            $invoice = RmeInvoice::query()->find($disputed->invoiceId);
+
+            if (! $invoice instanceof RmeInvoice) {
+                return;
+            }
+
+            $alreadyRecorded = DB::table('sys_audit_logs')
+                ->where('entity_type', RmeFinancialAuditEvent::ENTITY_INVOICE)
+                ->where('entity_id', (int) $invoice->id)
+                ->where('action', RmeFinancialAuditEvent::ACTION_PAYMENT_REFUSED_ACTIVE_DISPUTE)
+                ->where('performed_by', (int) $cashier->id)
+                ->where('performed_at', '>=', now()->subMinutes(self::DISPUTE_REFUSAL_AUDIT_WINDOW_MINUTES))
+                ->exists();
+
+            if ($alreadyRecorded) {
+                return;
+            }
+
+            $this->auditLogs->log(
+                RmeFinancialAuditEvent::ENTITY_INVOICE,
+                (int) $invoice->id,
+                RmeFinancialAuditEvent::ACTION_PAYMENT_REFUSED_ACTIVE_DISPUTE,
+                null,
+                RmeFinancialAuditEvent::paymentBlockedByDisputePayload($invoice, $disputed, $paymentPath),
+                $cashier,
+            );
+        } catch (\Throwable $e) {
+            Log::error('RME payment dispute-hold refusal could not be audited.', [
+                'invoice_id' => $disputed->invoiceId,
+                'dispute_id' => $disputed->disputeId,
+                'payment_path' => $paymentPath,
+                'exception' => $e::class,
             ]);
         }
     }
