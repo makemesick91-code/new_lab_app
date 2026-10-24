@@ -12,9 +12,10 @@ Operator SOP (Bahasa Indonesia): `docs/operations/rme-billing-dispute-sop.md` §
 
 | Item | Status |
 |---|---|
-| OPS-OQ-1a (branch reviewer) | `OWNER_POLICY_APPROVED`, `REPOSITORY_POLICY_RECORDED`, `TECHNICAL_ENFORCEMENT_IMPLEMENTED` |
-| OPS-OQ-1b (Kontrol-only payment) | `OWNER_POLICY_APPROVED`, `REPOSITORY_POLICY_RECORDED`, `TECHNICAL_ENFORCEMENT_IMPLEMENTED` |
-| Deployment | recorded in the post-merge evidence commit (merge SHA, deploy run, production verification) |
+| OPS-OQ-1a (branch reviewer) | `OWNER_POLICY_APPROVED`, `REPOSITORY_POLICY_RECORDED`, `TECHNICAL_ENFORCEMENT_DEPLOYED` |
+| OPS-OQ-1b (Kontrol-only payment) | `OWNER_POLICY_APPROVED`, `REPOSITORY_POLICY_RECORDED`, `TECHNICAL_ENFORCEMENT_DEPLOYED` |
+| Deployment | `DEPLOYED` — runtime `9e37b855`, `DEPLOY_EXIT_CODE=0`, `DEPLOY_OK`, `DEPLOY_HEAD_TARGET_MATCH=YES` (§14) |
+| Scoped GO tag | `hardening-rme-billing-dispute-branch-reviewer-control-payment-1-go` → `9e37b855` (scoped to this hardening; not a pilot GO) |
 | Real operator acceptance | `NOT_PERFORMED` — no designation exists and none is fabricated; no production payment is created to prove behaviour |
 | Invoice-correction pilot | unchanged: SPN4, maker 29 / checker 1, D28 — `FULL_PREPAYMENT_PILOT_GO: NO_GO` |
 
@@ -246,7 +247,100 @@ as run or SKIPPED in the post-merge evidence, never claimed passed.
 
 ## 14. Authoritative CI, merge, deployment, production verification
 
-Recorded in the post-merge evidence commit: candidate SHA, CI run and job ids, merge
-SHA and tree identity, VPS deploy run (`scripts/deploy-vps-runner.sh` inside the VPS),
-production verification (read-only), financial fingerprint and the scoped GO tag
-`hardening-rme-billing-dispute-branch-reviewer-control-payment-1-go`.
+### 14.1 Candidate, CI, merge
+
+| Item | Value |
+|---|---|
+| Base (remote-resolved) | `d0e638ff` |
+| Candidate commit / tree | `2e87cdd0` / `31719409` |
+| PR | #516 |
+| Authoritative CI run (exact candidate SHA) | `40067255805` — **success** |
+| Classifier | `gate_profile=unknown_high_risk`, `run_full_suite=required` (risk signal, not authorization) |
+| NSF-R011 Critical Test Gate (job `120793308800`) | success — pgsql, **6555 passed / 34175 assertions**, `critical_test_exit_status=0`; the new suites visibly executed |
+| CICD-CTRL Selective Module Gate (job `120793308825`) | success — 1586 / 674 (1 skipped) / 899 / 666 passed |
+| NSF-R012 Quality, NSF-9 Release Safety & Smoke, NSF-10 Release Evidence, Phase 3 Android | success |
+| NSF-R011 Critical Test Gate, self-hosted variant (job `120793309872`) | skipped — exactly one runner variant runs by design |
+| NSF-R011 Full Suite Gate (job `120823074108`) | **SKIPPED** — `full_suite_defer_reason=FULL_SUITE_NOT_ENABLED_FOR_EVENT` |
+| Merge commit / tree | `9e37b8557d10824d21eba9a1c802867120c9c058` / `3171940928ff77b2edba9081a22794964cae1911` — **tree identical to the candidate** |
+| Post-merge push run on the merge SHA | `40078083924` — success; Full Suite **SKIPPED** with `full_suite_defer_reason=TEMPORARY_FULL_SUITE_POLICY_ACTIVE` (`policy_status=ACTIVE`) |
+
+`FULL_SUITE: SKIPPED` on both runs. It is not claimed passed; the substitute evidence
+is §15 plus the critical and selective gates above.
+
+### 14.2 Deployment (inside the VPS)
+
+| Item | Value |
+|---|---|
+| Production before | HEAD `5b1d4262` (rule-203 GO), tracked tree clean |
+| Command | `bash scripts/deploy-vps-runner.sh start`, executed on `srv1730088` |
+| Pre-deploy backup | `pre_auto_deploy_20261024-082731.sql`, verified by NSF-10 `foundation:backup-verify` |
+| Result | `exit=0`, `DEPLOY OK: 20261024-082731`, `DEPLOY_HEAD_TARGET_MATCH=YES`, `DEPLOY_SNAPSHOT_CLEANED=YES` |
+| Runtime isolation / secret permissions | 70 GO / 0 FAIL; GO |
+| Automated smoke | WATCH — the only warning is `SMOKE-HTTP-HEALTH` on `http://127.0.0.1/login` (404 from the shared VPS's `default_server`; the canonical domain answers 200). Pre-existing, not a regression |
+| Migration | `2026_10_24_200001_create_mst_rme_billing_dispute_reviewers_table` — Ran (batch 85) |
+| Post-deploy seed (as `daengtisiams`) | `PermissionSeeder` + `permission:cache-reset` — no log growth. `RoleSeeder` deliberately NOT run: the new permission is granted to no role |
+| Production after | HEAD `9e37b855`, tree `31719409`, tracked tree clean (only the pre-existing untracked `storage/runtime-home/`) |
+
+### 14.3 Production verification (read-only, `default_transaction_read_only = on`)
+
+Financial state, before == after (fingerprints over id/status/amount/version/branch
+columns only — no patient data):
+
+| Measure | Before | After |
+|---|---|---|
+| Invoices (count / total) | 7 / 7,548,000.00 | 7 / 7,548,000.00 |
+| Payments (count / total) | 8 / 5,548,000.00 | 8 / 5,548,000.00 |
+| Receivable (UNPAID+PARTIAL) | 2,000,000.00 across 2 invoices | identical |
+| Disputes / corrections | 0 / 0 | 0 / 0 |
+| `fp_invoices` | `e04fdbc3…` | `e04fdbc3…` |
+| `fp_payments` | `3ebed335…` | `3ebed335…` |
+| `fp_role_permissions` | `5c5f9319…` | `5c5f9319…` |
+| `role_has_permissions` | 517 | 517 |
+| `permissions` | 185 | 186 (`manage_rme_billing_dispute_reviewers`) |
+| Audit rows | 1601 | 1601 |
+
+The ONLY differences are the new permission row and the new migration row.
+
+- `manage_rme_billing_dispute_reviewers`: exists; **0 role grants, 0 user grants**
+  (Super Admin reaches it through `Gate::before`).
+- `mst_rme_billing_dispute_reviewers`: present, **0 rows**; CHECKs
+  `mst_rme_bd_reviewers_not_self_chk` and `mst_rme_bd_reviewers_revocation_chk` and the
+  partial unique index `mst_rme_bd_reviewers_one_active_uq` present.
+- In-process checks (no write): a Front Office account is not an eligible designee and
+  `reviewAny` is false; a pure Owner account has `viewAny` true and `reviewAny` false;
+  an account holding Super Admin keeps its existing authority; the Owner role holds
+  only `view_rme_billing_disputes`.
+- `RmePaymentService::payControlInvoiceOnly()` and `PAYMENT_SCOPE_CONTROL_ONLY` present;
+  all 11 dispute/reviewer routes registered with their middleware.
+- Invoice-correction pilot unchanged: SPN4 only, maker 29 / checker 1 (D1c, D1e).
+- `https://daengtisia.online` `/login`, `/health/live`, `/health/ready`, `/health/lb`
+  → 200; guests get 302 on the new routes; php8.3-fpm, nginx and the queue worker
+  active; `rme:billing-dispute-status` verdict GO with 0 active disputes;
+  `queue:failed` empty; debug OFF; maintenance OFF.
+- **No designation, invoice, dispute or payment was created in production to prove
+  behaviour.** `REAL_OPERATOR_ACCEPTANCE: NOT_PERFORMED`.
+
+### 14.4 Residual found during verification (not caused by this sprint)
+
+The application ERROR count moved 162 → 163. The new line is a database disconnect at
+06:52 UTC (**14:52 WITA**): `unattended-upgrades` upgraded `zlib1g` at 06:52:29 UTC and
+systemd restarted `postgresql@16-main` at 06:52:33–37 UTC — about 1.5 hours **before**
+this deploy started (08:27 UTC). It is host maintenance, not this change. It is still
+recorded because it restarted the clinical database during clinic hours; whether host
+security updates may restart PostgreSQL unattended in that window is an operations
+decision for the owner, not something this sprint changed.
+
+### 14.5 Rollback readiness
+
+`ROLLBACK_READY: YES`. `rme:billing-dispute-status` reports 0 active disputes, and the
+rule-203 runtime `5b1d4262` is fail-closed for both decisions (§36 of rule 204): it
+honours every dispute hold, ignores designations and offers no Kontrol-only path.
+Never roll back below rule 203 while a dispute is active, never run the reviewer
+migration's `down()` while designations exist, never rewrite a payment.
+
+### 14.6 Scoped GO tag
+
+`hardening-rme-billing-dispute-branch-reviewer-control-payment-1-go` — annotated, tag
+object `7418c252`, peels to `9e37b855`; verified on local, origin and the VPS
+(`git describe --tags --exact-match HEAD`). It scopes only this hardening and is
+**not** a full prepayment-pilot GO (`FULL_PREPAYMENT_PILOT_GO: NO_GO`).
