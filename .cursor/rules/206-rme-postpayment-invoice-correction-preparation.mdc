@@ -1,6 +1,6 @@
 ---
-description: PREPARATION-RME-POSTPAYMENT-INVOICE-CORRECTION-1 — preparation contract for correcting PARTIAL/PAID RME invoices. Everything here is PROPOSED design pending owner decisions PP-1…PP-10; post-payment correction stays NOT_IMPLEMENTED and NOT_ACTIVE. Records the verified foundations a future implementation must reuse (one correction engine, server-derived type, D10/D28 type-agnostic, invoice-first lock order, payment immutability, fingerprint covers payments) and the 2026-10-25 production evidence of the first real pre-payment correction, which this rule does NOT verify.
-globs: app/Modules/RmeInvoice/**, docs/adr/0012-rme-postpayment-invoice-correction.md, docs/architecture/rme-postpayment-invoice-correction-design.md, docs/decisions/rme-postpayment-correction-owner-decision-proposals.md, docs/decisions/rme-billing-correction-owner-decisions.md, docs/operations/rme-postpayment-invoice-correction-sop-draft.md, docs/sprints/preparation-rme-postpayment-invoice-correction-1.md
+description: PREPARATION-RME-POSTPAYMENT-INVOICE-CORRECTION-1 — preparation contract for correcting PARTIAL/PAID RME invoices. Designed as PROPOSED; owner decisions PP-1…PP-10 RATIFIED 2026-10-25 (§F: canonical options, mandatory case approval reference in code, D7 extends to receipts, activation blocked by PP-10); post-payment correction stays NOT_IMPLEMENTED and NOT_ACTIVE. Records the verified foundations a future implementation must reuse (one correction engine, server-derived type, D10/D28 type-agnostic, invoice-first lock order, payment immutability, fingerprint covers payments) and the 2026-10-25 production evidence of the first real pre-payment correction, which this rule does NOT verify.
+globs: app/Modules/RmeInvoice/**, docs/adr/0012-rme-postpayment-invoice-correction.md, docs/architecture/rme-postpayment-invoice-correction-design.md, docs/decisions/rme-postpayment-correction-owner-decision-proposals.md, docs/decisions/rme-billing-correction-owner-decisions.md, docs/operations/rme-postpayment-invoice-correction-sop-draft.md, docs/sprints/preparation-rme-postpayment-invoice-correction-1.md, docs/sprints/ratification-rme-postpayment-owner-decisions-pp1-pp10-1.md
 alwaysApply: false
 ---
 
@@ -22,9 +22,10 @@ Documents: ADR 0012 · `docs/architecture/rme-postpayment-invoice-correction-des
    (`prePaymentIneligibility()`); `RmeInvoiceCorrectionType::ENABLED = [PRE_PAYMENT]`.
    The schema already admits `POST_PAYMENT` (CHECK), so enabling it needs no
    correction-table migration — which is exactly why a type flip alone is forbidden.
-2. Owner decisions PP-1…PP-10 are **PROPOSED, none approved**. D2, D8, D9, D12, D13,
-   D14, D15, D17, D23 stay PENDING; D21c, D21g, D22 stay PENDING; D28 stays the
-   interim Rp0-original guard.
+2. ~~Owner decisions PP-1…PP-10 are **PROPOSED, none approved**.~~ **SUPERSEDED
+   2026-10-25 by §F (ratification):** PP-1…PP-10 are `OWNER_POLICY_APPROVED`. D2, D8,
+   D9, D12, D13, D14, D15, D17, D23 are answered for post-payment correction only;
+   D21c, D21g, D22 stay PENDING; D28 stays the interim Rp0-original guard.
 3. Refund, payment reversal, patient credit, Rp0 adjustment, financial settlement
    remain NOT_ACTIVE. The SPN4 pilot (D1c) and identities 29/1 (D1e) are unchanged;
    no reviewer or role gained financial authority.
@@ -60,7 +61,7 @@ Documents: ADR 0012 · `docs/architecture/rme-postpayment-invoice-correction-des
 14. Lab candidates are generated only by the payment path when an invoice becomes
     PAID; D23 refuses correcting an invoice that has candidates (production: #38, #42).
 
-## C. Proposed design (PROPOSED — not policy)
+## C. Design — PROPOSED at preparation, **approved policy since 2026-10-25** (§F)
 
 15. Separate default-OFF flag, SPN4 allowlist and identities 29/1 (PP-1); checker 1
     approves = applies atomically, case-specific Owner approval reference (PP-2).
@@ -92,3 +93,29 @@ Documents: ADR 0012 · `docs/architecture/rme-postpayment-invoice-correction-des
     reference, and never fabricate a case to produce evidence.
 22. Never return money outside the system to settle an obligation; never offset an
     obligation against another invoice; never reopen a visit because a total changed.
+
+## F. Ratification (RATIFICATION-RME-POSTPAYMENT-OWNER-DECISIONS-PP1-PP10-1, 2026-10-25)
+Evidence: `docs/sprints/ratification-rme-postpayment-owner-decisions-pp1-pp10-1.md`;
+register section "Ratification of PP-1 … PP-10".
+
+23. PP-1…PP-10 are `OWNER_POLICY_APPROVED` against their canonical text (owner
+    directive in the brief; no signed artefact, none fabricated). Labels stay apart:
+    approved ≠ `TECHNICAL_ENFORCEMENT_DEPLOYED`. Post-payment correction remains
+    NOT_IMPLEMENTED / NOT_ACTIVE until its feature ships.
+24. Each PP names one recommended option and that option is what was approved: PP-3
+    is option A (atomic OPEN obligation); option B was offered only "if the Owner wants
+    it staged" and was not elected. An implementer never picks an option a decision
+    left open — none was.
+25. **The case-specific Owner approval reference is MANDATORY for post-payment
+    correction** (PP-2, PP-7) and must be enforced in code, not only by procedure —
+    Sprint A showed the procedural gate let the first real pre-payment case through
+    with no reference at all.
+26. D7 extends to issued receipts (PP-5). The receipt snapshot is an ACTIVATION
+    prerequisite; a legacy receipt with no snapshot is never presented as an identical
+    reprint.
+27. Activation is blocked while Sprint 2 is NO_GO (PP-10); flag-OFF implementation is
+    allowed. Refund, settlement, reversal and patient credit stay PENDING
+    (D4/D5/D6/D18/D25/D26).
+28. Sprint A's `HUMAN_SEPARATION=RED_FLAG_UNRESOLVED` concerns accounts 29/1 — the pair
+    PP-1 names. It is not a ratification conflict; it is an Owner follow-up that must be
+    resolved before any activation relies on the pair.

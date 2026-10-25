@@ -1,6 +1,11 @@
 # DRAF SOP — Koreksi Tagihan RME Setelah Pembayaran (Pilot SPN4)
 
 > **DRAF — TIDAK BERLAKU.** Fitur ini **belum dibangun dan belum diaktifkan**.
+> *Pembaruan 2026-10-25:* keputusan Owner PP-1…PP-10 telah **disetujui**
+> (`OWNER_POLICY_APPROVED`, ratifikasi). Penanda **[USULAN PP-x]** di bawah kini
+> menunjuk keputusan yang disetujui; SOP tetap DRAF sampai fitur dirilis dan
+> **diaktifkan** — aktivasi diblokir oleh PP-10 selama closure Sprint 2 belum
+> terverifikasi. Teks di bawah tidak diubah.
 > Jangan dipakai di loket. Dokumen ini disiapkan oleh
 > `PREPARATION-RME-POSTPAYMENT-INVOICE-CORRECTION-1` supaya prosedur siap ketika
 > Owner menyetujui usulan PP-1…PP-10
