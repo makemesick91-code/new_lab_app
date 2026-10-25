@@ -17,6 +17,7 @@ use App\Modules\RmeInvoice\Models\RmeInvoiceCorrection;
 use App\Modules\RmeInvoice\Models\RmePayment;
 use App\Modules\RmeInvoice\Support\RmeFinancialAuditEvent;
 use App\Modules\RmeInvoice\Support\RmeInvoiceBalanceConflict;
+use App\Modules\RmeInvoice\Support\RmeInvoiceLedger;
 use App\Modules\RmeInvoice\Support\RmeInvoicePaymentBlocked;
 use App\Modules\RmeInvoice\Support\RmeInvoicePaymentDisputed;
 use App\Modules\RmeInvoice\Support\RmeInvoiceVersionConflict;
@@ -54,6 +55,7 @@ class RmePaymentService
         private readonly RmeBillingActorGuard $actors,
         private readonly RmeBillingDisputeRepositoryInterface $disputes,
         private readonly RmePaymentSubmissionService $submissionIntents,
+        private readonly RmeReceiptSnapshotService $receiptSnapshots,
     ) {}
 
     /**
@@ -171,7 +173,7 @@ class RmePaymentService
 
             $payment = $this->recordPayment($invoice, $visit, $cashier, $data, $amount);
 
-            $this->refreshInvoiceStatus($invoice);
+            $this->refreshInvoiceStatus($invoice, $payment, $cashier);
             $this->completeVisitAfterCashierPayment($invoice, $visit);
             $this->submissionIntents->record($intent, $invoice, $cashier, RmeInvoiceVersionConflict::PATH_SINGLE, $amount, $payment, null, 1);
 
@@ -307,7 +309,7 @@ class RmePaymentService
                     $parentNote,
                 );
 
-                $this->refreshInvoiceStatus($parentInvoice);
+                $this->refreshInvoiceStatus($parentInvoice, $parentPayment, $cashier);
                 $this->completeVisitAfterCashierPayment($parentInvoice, $parentVisit);
 
                 $parentPayments->push($parentPayment->refresh());
@@ -334,7 +336,7 @@ class RmePaymentService
                         $controlNote,
                     );
 
-                    $this->refreshInvoiceStatus($controlInvoice);
+                    $this->refreshInvoiceStatus($controlInvoice, $controlPayment, $cashier);
                     $allocatedToControl = $allocateAmount;
                 }
             }
@@ -511,7 +513,7 @@ class RmePaymentService
                 $cashier,
             );
 
-            $this->refreshInvoiceStatus($control);
+            $this->refreshInvoiceStatus($control, $payment, $cashier);
             // Phase 27.4.1 rule: a Kontrol visit completes once its OWN invoice is
             // settled; origin balances never block it.
             $this->completeControlVisitIfSettled($control, $controlVisit, paymentMade: true);
@@ -726,7 +728,7 @@ class RmePaymentService
                     $note,
                 );
 
-                $this->refreshInvoiceStatus($receivable);
+                $this->refreshInvoiceStatus($receivable, $receivablePayment, $cashier);
                 $this->completeVisitAfterCashierPayment($receivable, $receivableVisit);
 
                 $parentPayments->push($receivablePayment->refresh());
@@ -752,7 +754,7 @@ class RmePaymentService
                         $data['notes'] ?? null,
                     );
 
-                    $this->refreshInvoiceStatus($currentInvoice);
+                    $this->refreshInvoiceStatus($currentInvoice, $currentPayment, $cashier);
                     $allocatedToControl = $allocateAmount;
                 }
             }
@@ -1418,15 +1420,28 @@ class RmePaymentService
         return $visit;
     }
 
-    private function refreshInvoiceStatus(RmeInvoice $invoice): void
+    /**
+     * Re-derive the invoice status from its own ledger after a payment row was
+     * recorded, then freeze that payment's receipt (owner decision PP-5).
+     *
+     * FEATURE-RME-POSTPAYMENT-INVOICE-CORRECTION-1 — the status comes from
+     * RmeInvoiceLedger, the same helper a post-payment correction uses, so the two
+     * can never disagree about PAID vs PARTIAL. Every caller pairs exactly one
+     * recordPayment() with one call here, inside the payment transaction and under
+     * the invoice row lock, so every payment row issues exactly one receipt
+     * snapshot and a rolled-back payment issues none.
+     */
+    private function refreshInvoiceStatus(RmeInvoice $invoice, RmePayment $payment, User $cashier): void
     {
-        $grandTotal = round((float) $invoice->grand_total, 2);
-        $paidAfter = round((float) $invoice->paidAmount(), 2);
-        $remainingAfter = max(0, round($grandTotal - $paidAfter, 2));
-        $newStatus = $remainingAfter <= 0 ? RmeInvoice::STATUS_PAID : RmeInvoice::STATUS_PARTIAL;
+        $newStatus = RmeInvoiceLedger::statusAfterMoneyReceived(
+            RmeInvoiceLedger::grandTotalCents($invoice),
+            RmeInvoiceLedger::paidCents($invoice),
+        );
 
         $this->invoices->update($invoice, ['status' => $newStatus]);
         $invoice->refresh();
+
+        $this->receiptSnapshots->issueForPayment($invoice, $payment, $cashier);
     }
 
     /**

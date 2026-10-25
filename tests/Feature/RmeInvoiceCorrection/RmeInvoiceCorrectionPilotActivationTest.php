@@ -127,7 +127,14 @@ it('records neither the approval nor the application when the application is ref
     $before = $invoice->fresh()->only(['grand_total', 'subtotal', 'discount_total', 'correction_version']);
 
     // A correction type that is not enabled cannot be applied — so it cannot be approved either.
-    DB::table('trx_rme_invoice_corrections')->where('id', $correction->id)->update(['correction_type' => 'POST_PAYMENT']);
+    // FEATURE-RME-POSTPAYMENT-INVOICE-CORRECTION-1 — the tampered row also carries an
+    // owner approval reference: PostgreSQL refuses a POST_PAYMENT row without one
+    // (trx_rme_inv_corr_postpay_reference_chk), so this keeps testing the SERVICE
+    // refusal (post-payment switch off) rather than the database backstop.
+    DB::table('trx_rme_invoice_corrections')->where('id', $correction->id)->update([
+        'correction_type' => 'POST_PAYMENT',
+        'owner_approval_reference' => 'OWNER-APPROVAL-TAMPER-TEST',
+    ]);
 
     expect(fn () => ricApprove($correction->fresh()))->toThrow(ValidationException::class);
 

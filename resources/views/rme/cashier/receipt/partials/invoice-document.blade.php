@@ -28,6 +28,11 @@
     Expects: $visit, $invoice, $payment, $document, $invoiceTerms,
              $hasPaymentAllocation, $allocatedToParent, $allocatedToControl,
              $pdf (bool — embed the logo for dompdf).
+    Optional (FEATURE-RME-POSTPAYMENT-INVOICE-CORRECTION-1, owner PP-5):
+             $receiptSnapshot (the immutable receipt this render comes from),
+             $supersededByVersion (int — the invoice was corrected after it was
+             issued: stamped "DIREVISI — lihat versi ke-N"), $frozenBranch (the
+             branch header as it was printed).
 --}}
 @php
     $pdf = (bool) ($pdf ?? false);
@@ -37,10 +42,15 @@
     $bank = $terms['bank_transfer'] ?? [];
     $hasBank = trim((string) ($bank['account_number'] ?? '')) !== '';
     $closing = $terms['closing'] ?? [];
-    $branch = $invoice->branch;
+    $receiptSnapshot = $receiptSnapshot ?? null;
+    $supersededByVersion = $supersededByVersion ?? null;
+    // A receipt reprinted from its snapshot keeps the branch header it was printed with.
+    $branch = $receiptSnapshot !== null && isset($frozenBranch) ? $frozenBranch : $invoice->branch;
     $patient = $visit->patient;
     $patientPhone = $patient?->phone ?: ($patient?->whatsapp_number ?: null);
-    $cashierName = $payment?->cashier?->name ?? $invoice->cashier?->name;
+    $cashierName = ($receiptSnapshot ?? null) !== null && filled($frozenCashierName ?? null)
+        ? $frozenCashierName
+        : ($payment?->cashier?->name ?? $invoice->cashier?->name);
     $rp = fn (int $cents) => \App\Modules\RmeInvoice\Support\RmeInvoiceDocument::rupiah($cents);
     $controlLabel = $visit->isControlVisit() ? 'Dibayarkan ke tagihan kontrol' : 'Dibayarkan ke tagihan kunjungan ini';
 @endphp
@@ -158,7 +168,12 @@
                          partial prints exactly what it printed before. The original is
                          frozen as document version v0 and is never re-rendered from
                          live rows. --}}
-                    @if ($invoice->isRevised())
+                    @if ($receiptSnapshot !== null)
+                        <tr>
+                            <td class="k">Versi Dokumen</td>
+                            <td data-receipt-snapshot-version>Kwitansi terbit pada versi ke-{{ (int) $receiptSnapshot->invoice_version }}</td>
+                        </tr>
+                    @elseif ($invoice->isRevised())
                         <tr>
                             <td class="k">Versi Dokumen</td>
                             <td data-invoice-document-revision>Revisi ke-{{ (int) $invoice->correction_version }} (asli tersimpan v0)</td>
@@ -234,6 +249,15 @@
                             {{-- A remaining balance is real money owed: it is printed and
                                  stamped as such, never stamped LUNAS. --}}
                             <div><span class="stamp {{ $document->isSettled() ? '' : 'partial' }}">{{ $document->isSettled() ? 'LUNAS' : 'DIBAYAR SEBAGIAN' }}</span></div>
+                            {{-- PP-5 — a receipt is never changed in place. When the invoice
+                                 was corrected after this receipt was issued, the receipt is
+                                 reprinted exactly as issued and stamped so. --}}
+                            @if ($supersededByVersion !== null)
+                                <div><span class="stamp partial" data-receipt-revised-stamp>DIREVISI — LIHAT VERSI KE-{{ (int) $supersededByVersion }}</span></div>
+                            @endif
+                            @if ($receiptSnapshot?->isReconstructed())
+                                <div class="methods" style="font-size: 7.6pt;" data-receipt-reconstructed>Direkonstruksi dari data tagihan sebelum koreksi — bukan cetak ulang identik kwitansi kertas.</div>
+                            @endif
 
                             @if ($hasPaymentAllocation ?? false)
                                 <div class="alloc">

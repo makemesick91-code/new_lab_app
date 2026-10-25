@@ -42,6 +42,25 @@
             </ul>
         @endif
 
+        {{-- FEATURE-RME-POSTPAYMENT-INVOICE-CORRECTION-1 (PP-9) — the cashier of the
+             invoice's branch sees the obligation status; nobody can act on it here. --}}
+        @foreach ($panel['obligations'] as $obligation)
+            <x-ui.alert variant="warning" class="mt-3" data-invoice-obligation>
+                Kewajiban kelebihan bayar <span class="font-mono">{{ $obligation->obligation_number }}</span>:
+                {{ \App\Modules\RmeInvoice\Support\RmeInvoiceDocument::rupiahDecimal($obligation->amount) }} — {{ $obligation->label() }}.
+                Jangan mengembalikan uang di luar sistem; pengembalian (refund) belum tersedia.
+            </x-ui.alert>
+        @endforeach
+
+        {{-- PP-5 — receipts issued before the latest version are reprinted from their snapshots. --}}
+        @if (($panel['receipts'] ?? collect())->isNotEmpty())
+            <p class="mt-3 text-xs text-ink-soft" data-invoice-receipt-snapshots>Kwitansi terbit:
+                @foreach ($panel['receipts'] as $receipt)
+                    <a class="text-brand-700 hover:underline" href="{{ route('rme.cashier.receipt-snapshots.show', [$visit, $invoice, $receipt->id]) }}">{{ $receipt->receipt_number }} (v{{ (int) $receipt->invoice_version }}{{ $receipt->isReconstructed() ? ', rekonstruksi' : '' }})</a>@if (! $loop->last), @endif
+                @endforeach
+            </p>
+        @endif
+
         @if ($panel['versions']->isNotEmpty())
             <p class="mt-3 text-xs text-ink-soft">Versi dokumen:
                 @foreach ($panel['versions'] as $version)

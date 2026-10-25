@@ -125,6 +125,81 @@ final class RmeInvoiceDocument
         );
     }
 
+    /**
+     * FEATURE-RME-POSTPAYMENT-INVOICE-CORRECTION-1 (owner decision PP-5) — the
+     * money of a receipt AS IT WAS ISSUED, read from its immutable receipt
+     * snapshot, never from live rows. Used to reprint a receipt after the invoice
+     * was corrected: what prints is what the patient was given.
+     *
+     * Payment method NAMES are display labels resolved by the caller from the ids
+     * the snapshot froze; nothing financial is read live.
+     *
+     * @param  array<string, mixed>  $snapshot
+     * @param  list<string>  $paymentMethods
+     */
+    public static function fromReceiptSnapshot(array $snapshot, array $paymentMethods): self
+    {
+        $lines = [];
+        $discrepancies = [];
+        $lineGrossSum = 0;
+        $lineDiscountSum = 0;
+
+        foreach ((array) ($snapshot['items'] ?? []) as $item) {
+            $qty = (int) ($item['qty'] ?? 0);
+            $unit = (int) ($item['unit_price_cents'] ?? 0);
+            $gross = $qty * $unit;
+            $discount = (int) ($item['discount_cents'] ?? 0);
+            $net = (int) ($item['subtotal_cents'] ?? 0);
+
+            if ($gross - $discount !== $net) {
+                $discrepancies[] = 'line_net_mismatch';
+            }
+
+            $lineGrossSum += $gross;
+            $lineDiscountSum += $discount;
+
+            $lines[] = [
+                'description' => (string) ($item['description'] ?? ''),
+                'qty' => $qty,
+                'unit_price_cents' => $unit,
+                'gross_cents' => $gross,
+                'discount_cents' => $discount,
+                'net_cents' => $net,
+            ];
+        }
+
+        $totals = (array) ($snapshot['totals'] ?? []);
+        $gross = (int) ($totals['subtotal_cents'] ?? 0);
+        $discountTotal = (int) ($totals['discount_total_cents'] ?? 0);
+        $total = (int) ($totals['grand_total_cents'] ?? 0);
+        $paid = (int) ($totals['paid_cents'] ?? 0);
+        $remaining = (int) ($snapshot['receipt']['outstanding_cents'] ?? max(0, $total - $paid));
+
+        if ($lineGrossSum !== $gross) {
+            $discrepancies[] = 'subtotal_mismatch';
+        }
+        if ($lineDiscountSum !== $discountTotal) {
+            $discrepancies[] = 'discount_mismatch';
+        }
+        if ($gross - $discountTotal !== $total) {
+            $discrepancies[] = 'grand_total_mismatch';
+        }
+        if ($remaining !== max(0, $total - $paid)) {
+            $discrepancies[] = 'remaining_mismatch';
+        }
+
+        return new self(
+            lines: $lines,
+            grossCents: $gross,
+            discountCents: $discountTotal,
+            totalCents: $total,
+            paidCents: $paid,
+            remainingCents: $remaining,
+            paymentMethods: array_values(array_unique($paymentMethods)),
+            discrepancies: array_values(array_unique($discrepancies)),
+        );
+    }
+
     public function reconciles(): bool
     {
         return $this->discrepancies === [];

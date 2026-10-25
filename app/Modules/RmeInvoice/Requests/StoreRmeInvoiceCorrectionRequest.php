@@ -6,6 +6,7 @@ namespace App\Modules\RmeInvoice\Requests;
 
 use App\Modules\RmeInvoice\Services\RmeInvoiceCorrectionProposalBuilder;
 use App\Modules\RmeInvoice\Services\RmeInvoiceCorrectionService;
+use App\Modules\RmeInvoice\Support\RmeInvoiceCorrectionApprovalReference;
 use App\Modules\RmeInvoice\Support\RmeInvoiceCorrectionFeatureGuard;
 use Illuminate\Foundation\Http\FormRequest;
 
@@ -43,6 +44,10 @@ class StoreRmeInvoiceCorrectionRequest extends FormRequest
         return [
             'reason' => ['required', 'string', 'min:'.RmeInvoiceCorrectionService::REASON_MIN, 'max:'.RmeInvoiceCorrectionService::REASON_MAX],
             'idempotency_key' => ['nullable', 'string', 'regex:/^[A-Za-z0-9-]{8,64}$/D'],
+            // FEATURE-RME-POSTPAYMENT-INVOICE-CORRECTION-1 — shape only (rule 202).
+            // Whether it is REQUIRED depends on the correction type, which the
+            // service derives from the ledger under the invoice lock.
+            'owner_approval_reference' => ['nullable', 'string', 'max:'.RmeInvoiceCorrectionApprovalReference::MAX],
             'lines' => ['required', 'array', 'min:1', 'max:'.RmeInvoiceCorrectionProposalBuilder::MAX_LINES],
             'lines.*.original_item_id' => ['nullable', 'integer', 'min:1'],
             'lines.*.treatment_id' => ['nullable', 'integer', 'min:1'],
@@ -73,7 +78,7 @@ class StoreRmeInvoiceCorrectionRequest extends FormRequest
     /**
      * Only the keys the service reads.
      *
-     * @return array{reason: string, idempotency_key: string|null, lines: array<int, array<string, mixed>>}
+     * @return array{reason: string, idempotency_key: string|null, owner_approval_reference: string|null, lines: array<int, array<string, mixed>>}
      */
     public function correctionData(): array
     {
@@ -82,6 +87,7 @@ class StoreRmeInvoiceCorrectionRequest extends FormRequest
         return [
             'reason' => (string) $validated['reason'],
             'idempotency_key' => $validated['idempotency_key'] ?? null,
+            'owner_approval_reference' => $validated['owner_approval_reference'] ?? null,
             'lines' => array_values(array_map(fn (array $line) => [
                 'original_item_id' => $line['original_item_id'] ?? null,
                 'treatment_id' => $line['treatment_id'] ?? null,

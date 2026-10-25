@@ -307,6 +307,9 @@
                                class="menu-subitem {{ request()->routeIs('oversight.billing-corrections.patients') ? $linkActive : $linkIdle }}">Daftar Pasien Koreksi</a>
                             <a href="{{ route('oversight.billing-corrections.index') }}"
                                class="menu-subitem {{ request()->routeIs('oversight.billing-corrections.index', 'oversight.billing-corrections.show*') ? $linkActive : $linkIdle }}">Riwayat &amp; Detail Koreksi</a>
+                            {{-- FEATURE-RME-POSTPAYMENT-INVOICE-CORRECTION-1 (PP-9) — read-only. --}}
+                            <a href="{{ route('oversight.billing-corrections.obligations.index') }}"
+                               class="menu-subitem {{ request()->routeIs('oversight.billing-corrections.obligations.*') ? $linkActive : $linkIdle }}">Kewajiban Kelebihan Bayar</a>
                         </div>
                     @endcan
                 </div>

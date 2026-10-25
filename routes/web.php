@@ -17,6 +17,7 @@ use App\Modules\ClinicOversight\Controllers\OversightClinicalRecordController;
 use App\Modules\ClinicOversight\Controllers\OversightDashboardController;
 use App\Modules\ClinicOversight\Controllers\OversightLegacyArchiveController;
 use App\Modules\ClinicOversight\Controllers\OversightMonitoringController;
+use App\Modules\ClinicOversight\Controllers\OversightOverpaymentObligationController;
 use App\Modules\ClinicRoom\Controllers\ClinicRoomController;
 use App\Modules\ClinicVisit\Controllers\ClinicVisitController;
 use App\Modules\Consent\Controllers\RmeVisitConsentController;
@@ -1371,6 +1372,10 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
         // data; it exists so the one-page contract is measurable rather than
         // assumed.
         Route::get('cashier/{clinicVisit}/billing/{rmeInvoice}/receipt/pdf', [RmePaymentController::class, 'receiptPdf'])->name('cashier.receipt.pdf');
+        // FEATURE-RME-POSTPAYMENT-INVOICE-CORRECTION-1 (PP-5) — reprint one issued
+        // receipt from its immutable snapshot (GET-only, same viewReceipt policy).
+        Route::get('cashier/{clinicVisit}/billing/{rmeInvoice}/receipts/{receiptSnapshot}', [RmePaymentController::class, 'receiptSnapshot'])
+            ->whereNumber('receiptSnapshot')->name('cashier.receipt-snapshots.show');
     });
 
     /*
@@ -2545,6 +2550,10 @@ Route::middleware('auth')->prefix('oversight')->name('oversight.')->group(functi
         Route::get('patients', [OversightBillingCorrectionController::class, 'patients'])->name('patients');
         Route::get('{correction}', [OversightBillingCorrectionController::class, 'show'])
             ->whereNumber('correction')->name('show');
+        // FEATURE-RME-POSTPAYMENT-INVOICE-CORRECTION-1 (PP-9) — obligations, read-only.
+        Route::get('overpayment-obligations', [OversightOverpaymentObligationController::class, 'index'])->name('obligations.index');
+        Route::get('overpayment-obligations/{obligation}', [OversightOverpaymentObligationController::class, 'show'])
+            ->whereNumber('obligation')->name('obligations.show');
         Route::middleware('permission:export_oversight_data')->group(function () {
             Route::get('export', [OversightBillingCorrectionController::class, 'export'])->name('export');
             Route::get('print', [OversightBillingCorrectionController::class, 'print'])->name('print');

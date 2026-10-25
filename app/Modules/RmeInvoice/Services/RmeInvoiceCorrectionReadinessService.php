@@ -7,10 +7,12 @@ namespace App\Modules\RmeInvoice\Services;
 use App\Models\User;
 use App\Modules\Branch\Services\BranchService;
 use App\Modules\RmeInvoice\Interfaces\RmeInvoiceCorrectionRepositoryInterface;
+use App\Modules\RmeInvoice\Interfaces\RmeOverpaymentObligationRepositoryInterface;
 use App\Modules\RmeInvoice\Support\RmeInvoiceCorrectionFeatureGuard;
 use App\Modules\RmeInvoice\Support\RmeInvoiceCorrectionPermission;
 use App\Modules\RmeInvoice\Support\RmeInvoiceCorrectionPilotIdentity;
 use App\Modules\RmeInvoice\Support\RmeInvoiceCorrectionPilotScope;
+use App\Modules\RmeInvoice\Support\RmeInvoicePostPaymentCorrectionFeatureGuard;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
 use App\Services\Foundation\FeatureFlagService;
 use App\Support\AccessControl\FrontOfficeBranchPinResolver;
@@ -82,6 +84,8 @@ class RmeInvoiceCorrectionReadinessService
         private readonly RmeInvoiceCorrectionRepositoryInterface $corrections,
         private readonly FrontOfficeBranchPinResolver $frontOfficePins,
         private readonly RmeInvoiceCorrectionPilotIdentity $identity,
+        private readonly RmeInvoicePostPaymentCorrectionFeatureGuard $postPaymentGuard,
+        private readonly RmeOverpaymentObligationRepositoryInterface $obligations,
     ) {}
 
     /**
@@ -141,6 +145,18 @@ class RmeInvoiceCorrectionReadinessService
             $findings[] = ['level' => self::WATCH, 'code' => 'ACTIVE_CORRECTION_OUTSIDE_PILOT', 'detail' => (string) $activeOutsidePilot];
         }
 
+        // FEATURE-RME-POSTPAYMENT-INVOICE-CORRECTION-1 — the second switch and the
+        // money the clinic owes back. Both are WATCH: post-payment activation is
+        // its own owner decision (PP-10), and an OPEN obligation is a debt.
+        $postPaymentEnabled = $enabled && $this->postPaymentGuard->enabled();
+        if ($this->postPaymentGuard->enabled()) {
+            $findings[] = ['level' => self::WATCH, 'code' => 'POSTPAYMENT_FLAG_ON', 'detail' => 'post-payment correction switch is ON; activation needs its own owner decision (PP-10)'];
+        }
+        $openObligations = $this->obligations->openSummaryByBranch();
+        if ($openObligations !== []) {
+            $findings[] = ['level' => self::WATCH, 'code' => 'OVERPAYMENT_OBLIGATIONS_OPEN', 'detail' => (string) array_sum(array_column($openObligations, 'count'))];
+        }
+
         $users = [];
         foreach (array_values(array_unique(array_merge($userIds, array_filter([$makerId, $checkerId])))) as $id) {
             $users[(int) $id] = $this->userCapability((int) $id, $admittedIds, $branchCodes);
@@ -181,6 +197,13 @@ class RmeInvoiceCorrectionReadinessService
             'roles' => $roles,
             'active_corrections_by_branch' => $this->byCode($active, $branchCodes),
             'positive_unpaid_unsettled_invoices_in_pilot' => $this->corrections->positiveUnpaidUnsettledInvoiceCount($admittedIds),
+            'post_payment' => [
+                'state' => $postPaymentEnabled && $admittedIds !== [] ? 'ACTIVE' : 'NOT_ACTIVE',
+                'flag_enabled' => $this->postPaymentGuard->enabled(),
+                'flag' => RmeInvoicePostPaymentCorrectionFeatureGuard::FLAG,
+                'owner_approval_reference' => 'MANDATORY (PP-2 / PP-7)',
+                'open_overpayment_obligations_by_branch' => $this->byCodeSummary($openObligations, $branchCodes),
+            ],
             'users' => array_values($users),
             'maker_checker_pair' => $pair,
             'findings' => $findings,
@@ -430,5 +453,20 @@ class RmeInvoiceCorrectionReadinessService
         ksort($out);
 
         return $out;
+    }
+
+    /**
+     * @param  array<int, array{count: int, amount: string}>  $summary
+     * @param  array<int, string>  $branchCodes
+     * @return array<string, array{count: int, amount: string}>
+     */
+    private function byCodeSummary(array $summary, array $branchCodes): array
+    {
+        $result = [];
+        foreach ($summary as $branchId => $row) {
+            $result[$branchCodes[(int) $branchId] ?? (string) $branchId] = $row;
+        }
+
+        return $result;
     }
 }

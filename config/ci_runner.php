@@ -392,6 +392,16 @@ return [
         // concurrency suite above.
         'tests/Feature/RmeInvoiceCorrection/RmeInvoiceCorrectionPaymentBlockTest.php',
         'tests/Feature/RmeInvoiceCorrection/RmeInvoiceCorrectionTariffAuthorityTest.php',
+        // FEATURE-RME-POSTPAYMENT-INVOICE-CORRECTION-1 (rule 207) — post-payment
+        // correction behind its own default-OFF switch: the type derived from the
+        // ledger, the mandatory owner approval reference, the three financial
+        // outcomes (OPEN obligation / outstanding / balanced), receipt snapshots
+        // (PP-5) and the read-only obligation list (PP-9). Selected by the
+        // existing `RmeInvoiceCorrection` token; the races (P1–P5) and the
+        // database backstops need PostgreSQL and skip loudly on SQLite.
+        'tests/Feature/RmeInvoiceCorrection/RmeInvoiceCorrectionPostPaymentLifecycleTest.php',
+        'tests/Feature/RmeInvoiceCorrection/RmeInvoiceCorrectionPostPaymentAccessTest.php',
+        'tests/Feature/RmeInvoiceCorrection/RmeInvoiceCorrectionPostPaymentConcurrencyTest.php',
         // ACTIVATION-RME-INVOICE-CORRECTION-PREPAYMENT-2 (rule 195) — owner D1a
         // (approve applies, atomically), maker != checker != applier per account,
         // the fail-closed SPN4 pilot allowlist, the D1/D1b RoleSeeder grants, the

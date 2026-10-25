@@ -8,11 +8,14 @@ use App\Http\Controllers\Controller;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Models\RmeInvoiceCorrection;
+use App\Modules\RmeInvoice\Models\RmeOverpaymentObligation;
 use App\Modules\RmeInvoice\Requests\DecideRmeInvoiceCorrectionRequest;
 use App\Modules\RmeInvoice\Requests\RmeInvoiceCorrectionFilterRequest;
 use App\Modules\RmeInvoice\Requests\StoreRmeInvoiceCorrectionRequest;
 use App\Modules\RmeInvoice\Services\RmeInvoiceCorrectionService;
 use App\Modules\RmeInvoice\Support\RmeInvoiceCorrectionStatus;
+use App\Modules\RmeInvoice\Support\RmeInvoiceDocument;
+use App\Modules\RmeInvoice\Support\RmeInvoiceLedger;
 use App\Modules\RmeInvoice\Support\RmeInvoiceSnapshot;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
@@ -84,7 +87,40 @@ class RmeInvoiceCorrectionController extends Controller
             // Explicit because Gate::before makes every @can true for a Super
             // Admin; the service re-asserts each under the lock.
             'actions' => $this->corrections->actionsFor($record, request()->user()),
+            'ledger' => $this->ledgerFigures($record),
         ]);
+    }
+
+    /**
+     * FEATURE-RME-POSTPAYMENT-INVOICE-CORRECTION-1 — the ledger figures the checker
+     * reviews for a POST_PAYMENT correction: money received at request, and the
+     * outcome the approval would produce (or, once applied, the recorded outcome).
+     * Derived with the same helper the service uses; display only — approval
+     * re-derives everything under the lock. Null for a PRE_PAYMENT correction.
+     *
+     * @return array{paid_cents: int, original_outstanding_cents: int, projected_outstanding_cents: int, projected_overpaid_cents: int, projected_status: string, status_before: string|null, applied: bool, obligation: RmeOverpaymentObligation|null}|null
+     */
+    private function ledgerFigures(RmeInvoiceCorrection $correction): ?array
+    {
+        if (! $correction->isPostPayment()) {
+            return null;
+        }
+
+        $paid = RmeInvoiceDocument::toCents($correction->paid_total_at_request);
+        $original = RmeInvoiceDocument::toCents($correction->original_grand_total);
+        $proposed = RmeInvoiceDocument::toCents($correction->proposed_grand_total);
+        $applied = $correction->isApplied();
+
+        return [
+            'paid_cents' => $paid,
+            'original_outstanding_cents' => RmeInvoiceLedger::outstandingCents($original, $paid),
+            'projected_outstanding_cents' => $applied ? RmeInvoiceDocument::toCents($correction->outstanding_after) : RmeInvoiceLedger::outstandingCents($proposed, $paid),
+            'projected_overpaid_cents' => $applied ? RmeInvoiceDocument::toCents($correction->overpaid_after) : RmeInvoiceLedger::overpaidCents($proposed, $paid),
+            'projected_status' => $applied ? (string) $correction->invoice_status_after : RmeInvoiceLedger::statusAfterMoneyReceived($proposed, $paid),
+            'status_before' => $correction->invoice_status_at_request,
+            'applied' => $applied,
+            'obligation' => $correction->overpaymentObligation,
+        ];
     }
 
     public function create(ClinicVisit $clinicVisit, RmeInvoice $rmeInvoice): View
@@ -113,6 +149,11 @@ class RmeInvoiceCorrectionController extends Controller
             'treatments' => $this->corrections->treatmentOptionsFor($invoice),
             'initialLines' => $this->corrections->initialFormLines($invoice),
             'idempotencyKey' => (string) Str::uuid(),
+            // FEATURE-RME-POSTPAYMENT-INVOICE-CORRECTION-1 — the ledger the cashier
+            // sees on a post-payment form (display only; the service re-reads it
+            // under the lock).
+            'paidCents' => RmeInvoiceLedger::paidCents($invoice),
+            'outstandingCents' => RmeInvoiceLedger::outstandingCents(RmeInvoiceLedger::grandTotalCents($invoice), RmeInvoiceLedger::paidCents($invoice)),
         ]);
     }
 

@@ -1,10 +1,14 @@
 @php
+    use App\Modules\RmeInvoice\Support\RmeInvoiceCorrectionApprovalReference;
     use App\Modules\RmeInvoice\Support\RmeInvoiceDocument;
+    $postPayment = (bool) ($panel['requires_owner_approval_reference'] ?? false);
 @endphp
 <x-settings-shell title="Ajukan Koreksi Tagihan">
     <div class="space-y-6">
         <x-ui.page-header title="Ajukan Koreksi Tagihan"
-            subtitle="Koreksi tagihan yang BELUM dibayar. Pengajuan harus disetujui akun lain lalu diterapkan sebelum tagihan berubah.">
+            :subtitle="$postPayment
+                ? 'Koreksi tagihan yang SUDAH menerima pembayaran. Wajib referensi persetujuan Owner untuk kasus ini; persetujuan akun lain langsung menerapkannya.'
+                : 'Koreksi tagihan yang BELUM dibayar. Pengajuan harus disetujui akun lain lalu diterapkan sebelum tagihan berubah.'">
             <x-slot:breadcrumb>Rekam Medis Elektronik · Kasir · {{ $invoice->invoice_number }}</x-slot:breadcrumb>
             <x-slot:actions>
                 <x-ui.button variant="secondary" :href="route('rme.cashier.show', [$visit, $invoice])">&larr; Kembali ke Tagihan</x-ui.button>
@@ -33,6 +37,10 @@
                 <div><dt class="text-ink-soft">Pasien</dt><dd class="text-navy">{{ $visit->patient?->name }}</dd></div>
                 <div><dt class="text-ink-soft">Cabang</dt><dd class="text-navy">{{ $invoice->branch?->name }}</dd></div>
                 <div><dt class="text-ink-soft">Total Asli</dt><dd class="font-semibold text-navy">{{ RmeInvoiceDocument::rupiahDecimal($invoice->grand_total) }}</dd></div>
+                @if ($postPayment)
+                    <div data-correction-paid-total><dt class="text-ink-soft">Sudah Dibayar</dt><dd class="font-semibold text-navy">{{ RmeInvoiceDocument::rupiah($paidCents) }}</dd></div>
+                    <div><dt class="text-ink-soft">Sisa Tagihan</dt><dd class="font-semibold text-navy">{{ RmeInvoiceDocument::rupiah($outstandingCents) }}</dd></div>
+                @endif
             </dl>
             <x-ui.table class="mt-4">
                 <thead class="bg-navy-50">
@@ -127,6 +135,26 @@
                         <x-ui.button variant="secondary" size="sm" x-on:click="lines.push(blank())">+ Tambah Item</x-ui.button>
                         <div class="text-sm">Pratinjau total usulan: <span class="font-semibold text-navy" x-text="rp(total())"></span></div>
                     </div>
+                </x-ui.card>
+
+                @if ($postPayment)
+                    {{-- PP-3 / PP-4 — what the server will do; the result is decided by
+                         the ledger on approval, never by this form. --}}
+                    <x-ui.alert variant="warning" class="mt-6" data-postpayment-outcome-notice>
+                        Tagihan ini sudah menerima pembayaran. Setelah disetujui: bila total baru <strong>lebih besar</strong> dari yang sudah dibayar, selisihnya menjadi sisa tagihan biasa;
+                        bila <strong>lebih kecil</strong>, selisihnya dicatat sebagai <strong>kewajiban kelebihan bayar (belum dikembalikan)</strong> — tidak ada uang yang dikembalikan oleh sistem dan
+                        uang tidak boleh dikembalikan di luar sistem. Pembayaran yang sudah tercatat tidak diubah dan kwitansi yang sudah terbit tidak berubah.
+                    </x-ui.alert>
+                @endif
+
+                <x-ui.card title="Persetujuan Owner" class="mt-6">
+                    <x-ui.input name="owner_approval_reference"
+                        :label="$postPayment ? 'Referensi persetujuan Owner (wajib)' : 'Referensi persetujuan Owner (opsional)'"
+                        :value="old('owner_approval_reference')"
+                        maxlength="{{ RmeInvoiceCorrectionApprovalReference::MAX }}"
+                        placeholder="mis. OWNER-COR-SPN4-20261025-01"
+                        :required="$postPayment" />
+                    <p class="mt-2 text-xs text-ink-muted">Hanya nomor referensi formulir persetujuan Owner untuk kasus ini (6–120 karakter: huruf, angka, . _ : / -). Formulirnya sendiri disimpan di kanal klinik, bukan di sistem. Sistem mencatat referensi, tetapi tidak dapat membuktikan tanda tangan Owner.</p>
                 </x-ui.card>
 
                 <x-ui.card title="Alasan Koreksi" class="mt-6">

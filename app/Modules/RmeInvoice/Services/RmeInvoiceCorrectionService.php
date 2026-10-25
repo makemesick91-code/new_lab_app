@@ -10,12 +10,16 @@ use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\LabOrder\Services\AuditLogService;
 use App\Modules\RmeInvoice\Interfaces\RmeInvoiceCorrectionRepositoryInterface;
 use App\Modules\RmeInvoice\Interfaces\RmeInvoiceRepositoryInterface;
+use App\Modules\RmeInvoice\Interfaces\RmeOverpaymentObligationRepositoryInterface;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Models\RmeInvoiceCorrection;
 use App\Modules\RmeInvoice\Models\RmeInvoiceCorrectionLine;
 use App\Modules\RmeInvoice\Models\RmeInvoiceDocumentVersion;
 use App\Modules\RmeInvoice\Models\RmeInvoiceItem;
+use App\Modules\RmeInvoice\Models\RmeOverpaymentObligation;
+use App\Modules\RmeInvoice\Models\RmeReceiptSnapshot;
 use App\Modules\RmeInvoice\Support\RmeFinancialAuditEvent;
+use App\Modules\RmeInvoice\Support\RmeInvoiceCorrectionApprovalReference;
 use App\Modules\RmeInvoice\Support\RmeInvoiceCorrectionDenied;
 use App\Modules\RmeInvoice\Support\RmeInvoiceCorrectionFeatureGuard;
 use App\Modules\RmeInvoice\Support\RmeInvoiceCorrectionPermission;
@@ -24,6 +28,8 @@ use App\Modules\RmeInvoice\Support\RmeInvoiceCorrectionPilotScope;
 use App\Modules\RmeInvoice\Support\RmeInvoiceCorrectionStatus;
 use App\Modules\RmeInvoice\Support\RmeInvoiceCorrectionType;
 use App\Modules\RmeInvoice\Support\RmeInvoiceDocument;
+use App\Modules\RmeInvoice\Support\RmeInvoiceLedger;
+use App\Modules\RmeInvoice\Support\RmeInvoicePostPaymentCorrectionFeatureGuard;
 use App\Modules\RmeInvoice\Support\RmeInvoicePriceSource;
 use App\Modules\RmeInvoice\Support\RmeInvoiceSnapshot;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
@@ -46,8 +52,14 @@ use LogicException;
  *
  * INVARIANTS (each enforced here, not in a controller, so no caller can skip it):
  *  1. Feature flag `rme.invoice_correction` must be on for every mutation.
- *  2. PRE-PAYMENT ONLY: an invoice with any payment is refused at submission and
- *     makes a pending correction STALE. A payment row is never touched.
+ *  2. The correction TYPE is derived by the server from the payment ledger under
+ *     the invoice lock (any payment => POST_PAYMENT), never submitted, and is
+ *     fixed at submission. A PRE_PAYMENT correction goes STALE if a payment
+ *     lands. POST_PAYMENT (FEATURE-RME-POSTPAYMENT-INVOICE-CORRECTION-1, owner
+ *     PP-1..PP-10) needs its own switch on top of the main flag, a case-specific
+ *     owner approval reference, and re-derives the invoice status from its own
+ *     ledger with the helper payments use; an overpaid result records an OPEN
+ *     overpayment obligation. A payment row is never touched, by either type.
  *  3. Lock order is always INVOICE row (FOR UPDATE — the lock every payment path
  *     takes on the same row) then CORRECTION row. One order, no deadlock cycle;
  *     a payment and a correction on the same invoice serialize.
@@ -114,6 +126,9 @@ class RmeInvoiceCorrectionService
         private readonly RmeInvoiceCorrectionPilotScope $pilot,
         private readonly RmeInvoiceCorrectionPilotIdentity $identity,
         private readonly ActiveAccountResolver $accounts,
+        private readonly RmeInvoicePostPaymentCorrectionFeatureGuard $postPaymentGuard,
+        private readonly RmeReceiptSnapshotService $receiptSnapshots,
+        private readonly RmeOverpaymentObligationRepositoryInterface $obligations,
     ) {}
 
     // ─── Reads ──────────────────────────────────────────────────────────────
@@ -215,7 +230,7 @@ class RmeInvoiceCorrectionService
      * and the invoice never revised it runs NO query, so the page is exactly as
      * it was before this sprint.
      *
-     * @return array{enabled: bool, pilot_admitted: bool, can_request: bool, eligible: bool, ineligible_reason: string|null, active: RmeInvoiceCorrection|null, history: Collection<int, RmeInvoiceCorrection>, versions: Collection<int, RmeInvoiceDocumentVersion>}
+     * @return array{enabled: bool, pilot_admitted: bool, can_request: bool, eligible: bool, ineligible_reason: string|null, active: RmeInvoiceCorrection|null, history: Collection<int, RmeInvoiceCorrection>, versions: Collection<int, RmeInvoiceDocumentVersion>, correction_type: string|null, requires_owner_approval_reference: bool, obligations: Collection<int, RmeOverpaymentObligation>, receipts: Collection<int, RmeReceiptSnapshot>}
      */
     public function panelFor(RmeInvoice $invoice, ?User $user): array
     {
@@ -229,6 +244,10 @@ class RmeInvoiceCorrectionService
             'active' => null,
             'history' => collect(),
             'versions' => collect(),
+            'correction_type' => null,
+            'requires_owner_approval_reference' => false,
+            'obligations' => collect(),
+            'receipts' => collect(),
         ];
 
         if (! $enabled && ! $invoice->isRevised()) {
@@ -238,7 +257,8 @@ class RmeInvoiceCorrectionService
         $history = $this->corrections->forInvoice((int) $invoice->id);
         $active = $history->first(fn (RmeInvoiceCorrection $c) => $c->isActive());
 
-        $ineligible = $this->prePaymentIneligibility($invoice, $active !== null);
+        $type = $this->typeFor($invoice);
+        $ineligible = $this->ineligibility($invoice, $type, $active !== null);
         $pilotAdmitted = $enabled && $this->pilot->admits((int) $invoice->branch_id);
 
         return array_merge($empty, [
@@ -254,6 +274,12 @@ class RmeInvoiceCorrectionService
             'active' => $active,
             'history' => $history,
             'versions' => $this->corrections->documentVersionsForInvoice((int) $invoice->id),
+            'correction_type' => $type,
+            'requires_owner_approval_reference' => $type === RmeInvoiceCorrectionType::POST_PAYMENT,
+            'obligations' => $this->obligations->forInvoice((int) $invoice->id),
+            // PP-5 — once the invoice is revised, every issued receipt stays
+            // reachable exactly as issued.
+            'receipts' => $invoice->isRevised() ? $invoice->receiptSnapshots()->get() : collect(),
         ]);
     }
 
@@ -301,13 +327,16 @@ class RmeInvoiceCorrectionService
     // ─── Submit ─────────────────────────────────────────────────────────────
 
     /**
-     * @param  array{reason?: mixed, lines?: mixed, idempotency_key?: mixed}  $data
+     * @param  array{reason?: mixed, lines?: mixed, idempotency_key?: mixed, owner_approval_reference?: mixed}  $data
      */
     public function submit(RmeInvoice $invoice, User $maker, array $data): RmeInvoiceCorrection
     {
         $this->guard->assertEnabled();
 
         $reason = $this->assertText($data['reason'] ?? null, 'reason', 'Alasan koreksi');
+        // Format only; whether it is REQUIRED depends on the type, which is
+        // decided under the lock below.
+        $approvalReference = RmeInvoiceCorrectionApprovalReference::normalize($data['owner_approval_reference'] ?? null);
         $lines = $data['lines'] ?? null;
         if (! is_array($lines)) {
             throw ValidationException::withMessages(['lines' => '[CORRECTION_EMPTY] Daftar item koreksi wajib diisi.']);
@@ -327,9 +356,9 @@ class RmeInvoiceCorrectionService
             $key = null;
         }
 
-        return $this->audited('submit', $maker, null, (int) $invoice->id, function () use ($invoice, $maker, $reason, $lines, $key) {
+        return $this->audited('submit', $maker, null, (int) $invoice->id, function () use ($invoice, $maker, $reason, $lines, $key, $approvalReference) {
             try {
-                return DB::transaction(function () use ($invoice, $maker, $reason, $lines, $key) {
+                return DB::transaction(function () use ($invoice, $maker, $reason, $lines, $key, $approvalReference) {
                     $locked = $this->invoices->findForUpdate((int) $invoice->id);
                     if ($locked === null) {
                         throw ValidationException::withMessages(['rme_invoice_id' => 'Tagihan tidak ditemukan.']);
@@ -350,10 +379,32 @@ class RmeInvoiceCorrectionService
                         return $replay;
                     }
 
+                    // The TYPE is the ledger's, read under the lock — never the
+                    // request's (rule 206 §B).
+                    $type = $this->typeFor($locked);
+
                     $hasActive = $this->corrections->activeForInvoice((int) $locked->id) !== null;
-                    $ineligible = $this->prePaymentIneligibility($locked, $hasActive);
+                    $ineligible = $this->ineligibility($locked, $type, $hasActive);
                     if ($ineligible !== null) {
                         throw ValidationException::withMessages(['rme_invoice_id' => $ineligible]);
+                    }
+
+                    // PP-2 / PP-7 — a correction of money already received needs
+                    // the owner's case-specific approval reference (rule 202).
+                    if ($type === RmeInvoiceCorrectionType::POST_PAYMENT && $approvalReference === null) {
+                        throw ValidationException::withMessages([
+                            'owner_approval_reference' => '[CORRECTION_OWNER_APPROVAL_REFERENCE_REQUIRED] Koreksi tagihan yang sudah dibayar wajib mencantumkan referensi persetujuan Owner untuk kasus ini.',
+                        ]);
+                    }
+
+                    // A reference is CASE-specific: one recorded on a post-payment
+                    // correction of another invoice cannot authorise this one. The
+                    // same invoice may reuse it (a resubmission after STALE/REJECT).
+                    if ($type === RmeInvoiceCorrectionType::POST_PAYMENT
+                        && $this->corrections->postPaymentReferenceUsedOnOtherInvoice($approvalReference, (int) $locked->id)) {
+                        throw ValidationException::withMessages([
+                            'owner_approval_reference' => '[CORRECTION_OWNER_APPROVAL_REFERENCE_REUSED] Referensi persetujuan Owner ini sudah dipakai untuk koreksi tagihan lain. Setiap kasus memerlukan referensi persetujuannya sendiri.',
+                        ]);
                     }
 
                     $original = RmeInvoiceSnapshot::capture($locked);
@@ -377,7 +428,7 @@ class RmeInvoiceCorrectionService
                         'rme_invoice_id' => (int) $locked->id,
                         'clinic_visit_id' => (int) $locked->clinic_visit_id,
                         'patient_id' => (int) $locked->patient_id,
-                        'correction_type' => RmeInvoiceCorrectionType::PRE_PAYMENT,
+                        'correction_type' => $type,
                         'status' => RmeInvoiceCorrectionStatus::SUBMITTED,
                         'reason' => $reason,
                         'snapshot_schema_version' => RmeInvoiceSnapshot::SCHEMA_VERSION,
@@ -392,6 +443,9 @@ class RmeInvoiceCorrectionService
                         'requested_by' => (int) $maker->id,
                         'requested_at' => now(),
                         'idempotency_key' => $key,
+                        'invoice_status_at_request' => (string) $locked->status,
+                        'paid_payment_count_at_request' => count($original['payments']),
+                        'owner_approval_reference' => $approvalReference,
                     ]);
 
                     $correction = $this->corrections->assignNumber(
@@ -466,11 +520,7 @@ class RmeInvoiceCorrectionService
 
             $this->assertTransition($locked, RmeInvoiceCorrectionStatus::APPROVED);
 
-            if (! in_array($locked->correction_type, RmeInvoiceCorrectionType::ENABLED, true)) {
-                throw ValidationException::withMessages([
-                    'correction' => '[CORRECTION_TYPE_NOT_ENABLED] Jenis koreksi ini belum diaktifkan.',
-                ]);
-            }
+            $this->assertTypeEnabled($locked);
 
             $this->assertRmeBranch((int) $locked->branch_id);
 
@@ -612,6 +662,16 @@ class RmeInvoiceCorrectionService
                     ]);
                 }
 
+                // The recovery path exists only for a PRE_PAYMENT row approved
+                // before D1a. A POST_PAYMENT correction is applied by its approval
+                // in one transaction and can never be APPROVED-but-unapplied, so
+                // reaching here with one is refused rather than completed.
+                if ($locked->isPostPayment()) {
+                    throw ValidationException::withMessages([
+                        'correction' => '[CORRECTION_RECOVERY_NOT_SUPPORTED] Koreksi setelah pembayaran diterapkan bersama persetujuannya dan tidak melalui jalur pemulihan.',
+                    ]);
+                }
+
                 if (! in_array($locked->correction_type, RmeInvoiceCorrectionType::ENABLED, true)) {
                     throw ValidationException::withMessages([
                         'correction' => '[CORRECTION_TYPE_NOT_ENABLED] Jenis koreksi ini belum diaktifkan.',
@@ -646,7 +706,18 @@ class RmeInvoiceCorrectionService
 
     private function applyLocked(RmeInvoice $invoice, RmeInvoiceCorrection $correction, User $actor, string $applicationMode): RmeInvoiceCorrection
     {
+        $postPayment = $correction->isPostPayment();
         $before = RmeInvoiceSnapshot::capture($invoice);
+        $statusBefore = (string) $invoice->status;
+        $paidCentsBefore = (int) $before['totals']['paid_cents'];
+        $paymentCountBefore = count($before['payments']);
+
+        // PP-5 — every receipt already issued for this invoice is frozen BEFORE the
+        // invoice changes. A payment recorded before receipt snapshots existed is
+        // reconstructed now, from the verified pre-correction state (staleReason()
+        // just proved it is the document the checker approved), and labelled so.
+        $receiptsReconstructed = $postPayment ? $this->receiptSnapshots->reconstructMissing($invoice, $actor) : 0;
+
         $versionBefore = (int) ($invoice->correction_version ?? 0);
         $versionAfter = $versionBefore + 1;
         $latest = $this->corrections->latestDocumentVersion((int) $invoice->id);
@@ -700,10 +771,51 @@ class RmeInvoiceCorrectionService
             'correction_version' => $versionAfter,
         ]);
 
-        // Pre-payment only: no payment exists (verified under this lock), so the
-        // ledger-derived status is UNPAID and nothing about it changes.
-        if ($invoice->status !== RmeInvoice::STATUS_UNPAID || $invoice->payments()->exists()) {
-            throw new LogicException(sprintf('Correction #%d reached application on a paid invoice.', (int) $correction->id));
+        // The ledger is read again, under the same lock: a correction never writes,
+        // edits or deletes a payment, so the money received must be exactly what
+        // it was before the items changed.
+        $paidCents = RmeInvoiceLedger::paidCents($invoice);
+        if ($paidCents !== $paidCentsBefore || $invoice->payments()->count() !== $paymentCountBefore) {
+            throw new LogicException(sprintf('Correction #%d changed the payment ledger of its invoice.', (int) $correction->id));
+        }
+
+        $outstandingCents = RmeInvoiceLedger::outstandingCents($grandTotal, $paidCents);
+        $overpaidCents = RmeInvoiceLedger::overpaidCents($grandTotal, $paidCents);
+        $obligation = null;
+
+        if (! $postPayment) {
+            // Pre-payment: no payment exists (verified under this lock), so the
+            // ledger-derived status is UNPAID and nothing about it changes.
+            if ($invoice->status !== RmeInvoice::STATUS_UNPAID || $paidCents !== 0 || $paymentCountBefore !== 0) {
+                throw new LogicException(sprintf('Correction #%d reached application on a paid invoice.', (int) $correction->id));
+            }
+
+            $statusAfter = RmeInvoice::STATUS_UNPAID;
+        } else {
+            if ($paidCents <= 0) {
+                throw new LogicException(sprintf('Post-payment correction #%d reached application on an invoice with no money received.', (int) $correction->id));
+            }
+
+            // PP-3 / PP-4 — the status is re-derived from the invoice's own ledger
+            // by the helper every payment uses: paid >= total => PAID, else PARTIAL.
+            $statusAfter = RmeInvoiceLedger::statusAfterMoneyReceived($grandTotal, $paidCents);
+            $invoice = $this->invoices->update($invoice, ['status' => $statusAfter]);
+
+            if ($overpaidCents > 0) {
+                // PP-3 option A — the difference is money owed back. It is
+                // recorded, OPEN, in this transaction; no money moves.
+                $obligation = $this->openObligation($invoice, $correction, $overpaidCents, $versionAfter, $actor);
+            }
+        }
+
+        // Ledger invariants (FI-1..FI-4): never both outstanding and overpaid; a
+        // balance owed back means the invoice is settled; a balance still due
+        // means it is not; nothing is negative.
+        if (($outstandingCents > 0 && $overpaidCents > 0)
+            || ($overpaidCents > 0 && $statusAfter !== RmeInvoice::STATUS_PAID)
+            || ($postPayment && $outstandingCents > 0 && $statusAfter !== RmeInvoice::STATUS_PARTIAL)
+            || $outstandingCents < 0 || $overpaidCents < 0) {
+            throw new LogicException(sprintf('Correction #%d would leave an inconsistent ledger.', (int) $correction->id));
         }
 
         $after = RmeInvoiceSnapshot::capture($invoice);
@@ -715,9 +827,12 @@ class RmeInvoiceCorrectionService
             'applied_by' => (int) $actor->id,
             'applied_at' => now(),
             'applied_invoice_version' => $versionAfter,
+            'outstanding_after' => RmeInvoiceSnapshot::centsToDecimal($outstandingCents),
+            'overpaid_after' => RmeInvoiceSnapshot::centsToDecimal($overpaidCents),
+            'invoice_status_after' => $statusAfter,
         ]);
 
-        $this->recordTransition($correction, $from, $actor, [
+        $this->recordTransition($correction, $from, $actor, array_merge([
             'invoice_version_before' => $versionBefore,
             'invoice_version_after' => $versionAfter,
             'grand_total_before' => round((int) $before['totals']['grand_total_cents'] / 100, 2),
@@ -726,9 +841,73 @@ class RmeInvoiceCorrectionService
             'document_version_revision_id' => (int) $revision->id,
             'latest_version_matched_live_state' => $latestMatched,
             'application_mode' => $applicationMode,
-        ]);
+        ], $postPayment ? [
+            'invoice_status_before' => $statusBefore,
+            'invoice_status_after' => $statusAfter,
+            'paid_total' => round($paidCents / 100, 2),
+            'outstanding_after' => round($outstandingCents / 100, 2),
+            'overpaid_after' => round($overpaidCents / 100, 2),
+            'overpayment_obligation_id' => $obligation?->id !== null ? (int) $obligation->id : null,
+            'receipt_snapshots_reconstructed' => $receiptsReconstructed,
+            'owner_approval_reference' => $correction->owner_approval_reference,
+        ] : []));
 
         return $correction;
+    }
+
+    /**
+     * PP-3 option A — record, inside the application transaction, the money the
+     * clinic now owes back. The amount is the server's (paid − new total); the
+     * partial unique index is the database backstop for one OPEN obligation per
+     * invoice, the service already refused a second at submission and approval.
+     */
+    private function openObligation(RmeInvoice $invoice, RmeInvoiceCorrection $correction, int $amountCents, int $invoiceVersion, User $actor): RmeOverpaymentObligation
+    {
+        if ($amountCents <= 0) {
+            throw new LogicException('An overpayment obligation must be for a positive amount.');
+        }
+
+        $obligation = $this->obligations->create([
+            'uuid' => (string) Str::uuid(),
+            'branch_id' => (int) $invoice->branch_id,
+            'rme_invoice_id' => (int) $invoice->id,
+            'clinic_visit_id' => (int) $invoice->clinic_visit_id,
+            'patient_id' => (int) $invoice->patient_id,
+            'source_correction_id' => (int) $correction->id,
+            'amount' => RmeInvoiceSnapshot::centsToDecimal($amountCents),
+            'invoice_version' => $invoiceVersion,
+            'status' => RmeOverpaymentObligation::STATUS_OPEN,
+            'created_by' => (int) $actor->id,
+        ]);
+
+        $obligation = $this->obligations->assignNumber(
+            $obligation,
+            'RMEOVP-'.now()->format('Ym').'-'.str_pad((string) $obligation->id, 6, '0', STR_PAD_LEFT),
+        );
+
+        $this->obligations->recordEvent([
+            'rme_overpayment_obligation_id' => (int) $obligation->id,
+            'from_status' => null,
+            'to_status' => RmeOverpaymentObligation::STATUS_OPEN,
+            'actor_id' => (int) $actor->id,
+            'occurred_at' => now(),
+            'metadata' => [
+                'source_correction_id' => (int) $correction->id,
+                'amount' => round($amountCents / 100, 2),
+                'invoice_version' => $invoiceVersion,
+            ],
+        ]);
+
+        $this->auditLogs->log(
+            RmeFinancialAuditEvent::ENTITY_OVERPAYMENT_OBLIGATION,
+            (int) $obligation->id,
+            RmeFinancialAuditEvent::ACTION_OVERPAYMENT_OBLIGATION_OPENED,
+            null,
+            RmeFinancialAuditEvent::overpaymentObligationPayload($obligation),
+            $actor,
+        );
+
+        return $obligation;
     }
 
     /**
@@ -849,6 +1028,10 @@ class RmeInvoiceCorrectionService
             return 'INVOICE_REMOVED';
         }
 
+        if ($correction->isPostPayment()) {
+            return $this->postPaymentStaleReason($invoice, $correction);
+        }
+
         if ($invoice->payments()->exists()) {
             return 'PAYMENT_RECORDED';
         }
@@ -875,6 +1058,47 @@ class RmeInvoiceCorrectionService
         // only a genuine conflict with the INVOICE itself (the checks above).
         // Historical rows may still carry stale_reason_code TARIFF_AUTHORITY_*
         // from the tariff-authority period; nothing rewrites them.
+
+        return null;
+    }
+
+    /**
+     * POST_PAYMENT staleness. The fingerprint already covers status, version,
+     * items, payments and totals; the named checks before it exist so the STALE
+     * reason tells the cashier WHAT changed. An OPEN obligation (PP-3: no further
+     * correction while one is open) is read FOR UPDATE under the invoice lock.
+     */
+    private function postPaymentStaleReason(RmeInvoice $invoice, RmeInvoiceCorrection $correction): ?string
+    {
+        if ($invoice->payments()->count() !== (int) $correction->paid_payment_count_at_request) {
+            return 'PAYMENT_RECORDED';
+        }
+
+        if ((string) $invoice->status !== (string) $correction->invoice_status_at_request) {
+            return 'INVOICE_STATUS_CHANGED';
+        }
+
+        if ((int) ($invoice->correction_version ?? 0) !== (int) $correction->invoice_version_at_request) {
+            return 'INVOICE_VERSION_CHANGED';
+        }
+
+        if (! hash_equals((string) $correction->invoice_fingerprint, RmeInvoiceSnapshot::fingerprint(RmeInvoiceSnapshot::capture($invoice)))) {
+            return 'INVOICE_CONTENT_CHANGED';
+        }
+
+        if ($this->corrections->invoiceHasLabCandidates((int) $invoice->id)) {
+            return 'LAB_CANDIDATES_EXIST';
+        }
+
+        // The visit is not part of the invoice fingerprint: re-read it, so a visit
+        // cancelled (or no longer completed) since submission is never corrected.
+        if ($invoice->clinicVisit()->value('status') !== ClinicVisit::STATUS_COMPLETED) {
+            return 'VISIT_STATUS_CHANGED';
+        }
+
+        if ($this->obligations->openForInvoice((int) $invoice->id, lock: true) !== null) {
+            return 'OVERPAYMENT_OBLIGATION_OPEN';
+        }
 
         return null;
     }
@@ -919,6 +1143,116 @@ class RmeInvoiceCorrectionService
         }
 
         throw ValidationException::withMessages(['idempotency_key' => 'Kunci idempoten sudah dipakai untuk pengajuan lain.']);
+    }
+
+    /**
+     * The correction type the ledger implies, read from persisted payment rows:
+     * any payment => POST_PAYMENT. Call it on the locked row when deciding.
+     */
+    private function typeFor(RmeInvoice $invoice): string
+    {
+        return $invoice->payments()->exists()
+            ? RmeInvoiceCorrectionType::POST_PAYMENT
+            : RmeInvoiceCorrectionType::PRE_PAYMENT;
+    }
+
+    private function ineligibility(RmeInvoice $invoice, string $type, bool $hasActiveCorrection): ?string
+    {
+        return $type === RmeInvoiceCorrectionType::POST_PAYMENT
+            ? $this->postPaymentIneligibility($invoice, $hasActiveCorrection)
+            : $this->prePaymentIneligibility($invoice, $hasActiveCorrection);
+    }
+
+    /**
+     * Rule 206 — a correction type is accepted only when its own switch says so.
+     * PRE_PAYMENT: RmeInvoiceCorrectionType::ENABLED (unchanged). POST_PAYMENT: the
+     * separate flag `rme.invoice_postpayment_correction` (PP-1 / PP-10) — never by
+     * adding the type to ENABLED. A POST_PAYMENT row also needs its approval
+     * reference (defence behind the submission check and the database CHECK).
+     */
+    private function assertTypeEnabled(RmeInvoiceCorrection $correction): void
+    {
+        $enabled = $correction->isPostPayment()
+            ? $this->postPaymentGuard->enabled()
+            : in_array($correction->correction_type, RmeInvoiceCorrectionType::ENABLED, true);
+
+        if (! $enabled) {
+            throw ValidationException::withMessages([
+                'correction' => '[CORRECTION_TYPE_NOT_ENABLED] Jenis koreksi ini belum diaktifkan.',
+            ]);
+        }
+
+        if ($correction->isPostPayment() && trim((string) $correction->owner_approval_reference) === '') {
+            throw ValidationException::withMessages([
+                'correction' => '[CORRECTION_OWNER_APPROVAL_REFERENCE_REQUIRED] Koreksi tagihan yang sudah dibayar wajib mencantumkan referensi persetujuan Owner untuk kasus ini.',
+            ]);
+        }
+    }
+
+    /**
+     * Why an invoice that has received money cannot receive a POST_PAYMENT
+     * correction now, or null (owner decisions PP-1..PP-9).
+     */
+    private function postPaymentIneligibility(RmeInvoice $invoice, bool $hasActiveCorrection): ?string
+    {
+        if (! $this->postPaymentGuard->enabled()) {
+            return '[CORRECTION_TYPE_NOT_ENABLED] Tagihan ini sudah memiliki pembayaran. Koreksi setelah pembayaran belum diaktifkan.';
+        }
+
+        if (! in_array($invoice->status, [RmeInvoice::STATUS_PARTIAL, RmeInvoice::STATUS_PAID], true)) {
+            return '[CORRECTION_INVOICE_STATUS_NOT_SETTLED] Koreksi setelah pembayaran hanya untuk tagihan berstatus Dibayar Sebagian atau Lunas.';
+        }
+
+        // PP-3 — while money is owed back on this invoice, no further correction.
+        if ($this->obligations->openForInvoice((int) $invoice->id) !== null) {
+            return '[CORRECTION_OVERPAYMENT_OBLIGATION_OPEN] Tagihan ini memiliki kewajiban kelebihan bayar yang belum diselesaikan; koreksi berikutnya ditolak sampai kewajiban itu selesai.';
+        }
+
+        $grandCents = RmeInvoiceLedger::grandTotalCents($invoice);
+        $paidCents = RmeInvoiceLedger::paidCents($invoice);
+
+        // Fail closed on a ledger that does not explain its own status: a
+        // correction is reviewed against figures, and figures that disagree with
+        // the status cannot be reviewed.
+        if ($paidCents <= 0
+            || $grandCents < 0
+            || $paidCents > $grandCents
+            || RmeInvoiceLedger::statusAfterMoneyReceived($grandCents, $paidCents) !== $invoice->status) {
+            return '[CORRECTION_LEDGER_INCONSISTENT] Status tagihan ini tidak sesuai dengan pembayaran yang tercatat, sehingga koreksi ditolak. Laporkan ke Owner.';
+        }
+
+        // D28 / rule 201 — the zero-original guard, read from persisted data.
+        $zero = $this->zeroOriginalIneligibility($invoice);
+        if ($zero !== null) {
+            return $zero;
+        }
+
+        $visitStatus = $invoice->clinicVisit?->status;
+
+        if ($visitStatus === ClinicVisit::STATUS_CANCELLED) {
+            return '[CORRECTION_VISIT_CANCELLED] Kunjungan tagihan ini dibatalkan.';
+        }
+
+        // Only a COMPLETED visit. A Kontrol visit waits at cashier_pending while its
+        // own invoice is PARTIAL, and only the payment path completes it: a
+        // correction that settled that invoice would leave the visit pending with no
+        // path out (a PAID invoice refuses payment). Refusing is the conservative
+        // choice — completing a visit from a correction is not an approved decision.
+        // A missing visit fails closed.
+        if ($visitStatus !== ClinicVisit::STATUS_COMPLETED) {
+            return '[CORRECTION_VISIT_NOT_COMPLETED] Kunjungan tagihan ini belum selesai di kasir; koreksi setelah pembayaran hanya untuk kunjungan yang sudah selesai.';
+        }
+
+        // PP-8 (a) — lab work already generated from this invoice: refused.
+        if ($this->corrections->invoiceHasLabCandidates((int) $invoice->id)) {
+            return '[CORRECTION_LAB_CANDIDATES_EXIST] Tagihan ini sudah menghasilkan kandidat lab; koreksi setelah pembayaran ditolak (keputusan owner PP-8).';
+        }
+
+        if ($hasActiveCorrection) {
+            return '[CORRECTION_ALREADY_ACTIVE] Tagihan ini sudah memiliki pengajuan koreksi yang aktif.';
+        }
+
+        return null;
     }
 
     private function prePaymentIneligibility(RmeInvoice $invoice, bool $hasActiveCorrection): ?string

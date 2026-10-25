@@ -1,0 +1,129 @@
+---
+description: FEATURE-RME-POSTPAYMENT-INVOICE-CORRECTION-1 — correcting PARTIAL/PAID RME invoices, IMPLEMENTED behind its own default-OFF switch `rme.invoice_postpayment_correction` (owner decisions PP-1…PP-10). Type derived from the ledger under the invoice lock; mandatory owner approval reference (code + DB CHECK); status re-derived by the one ledger helper payments use; downward below paid ⇒ OPEN overpayment obligation (no refund, no negative receivable); upward ⇒ outstanding; receipts frozen as immutable snapshots and reprinted "DIREVISI"; no payment row written; no lab candidate generated. NOT ACTIVE — activation is its own owner decision (PP-10) and is blocked while the pre-payment pilot is NO_GO.
+globs: app/Modules/RmeInvoice/**, app/Modules/ClinicOversight/Controllers/OversightOverpaymentObligationController.php, config/feature_flags.php, database/migrations/2026_10_25_2000*, resources/views/rme/cashier/receipt/**, resources/views/rme/invoice-corrections/**, resources/views/oversight/billing-corrections/obligations-*, tests/Feature/RmeInvoiceCorrection/RmeInvoiceCorrectionPostPayment*, docs/sprints/feature-rme-postpayment-invoice-correction-1.md
+alwaysApply: false
+---
+
+# RME post-payment invoice correction (rule 207)
+
+Supersedes the "NOT_IMPLEMENTED" status of rule 206 §A/§F. Rule 206 §B (foundations to
+reuse), §C (approved design), §E (never) remain in force; where they differ, this rule
+records what was built.
+
+## A. Status
+1. `CODE_DEPLOYED` is a deployment fact; `FEATURE_ENABLED`, `REAL_OPERATOR_ACCEPTANCE`
+   and `FULL_FEATURE_GO` are separate and are **NO** until each is genuinely true. A GO
+   tag for this sprint is an IMPLEMENTATION GO with the flag OFF, never a feature GO.
+2. Activation is its own owner decision (PP-10). It is blocked while the pre-payment
+   pilot (rule 196) is NO_GO. Never enable the flag to close a sprint, to test in
+   production, or because the code is merged.
+
+## B. Switches — two, never one
+3. A POST_PAYMENT submit or approve needs BOTH `rme.invoice_correction` and
+   `rme.invoice_postpayment_correction` (`RmeInvoicePostPaymentCorrectionFeatureGuard`).
+   `RmeInvoiceCorrectionType::ENABLED` stays `[PRE_PAYMENT]`; post-payment is never
+   enabled by editing that constant.
+4. Reject and cancel are not gated by the post-payment switch (an active correction
+   blocks payment, D10). The recovery `apply()` path refuses POST_PAYMENT outright
+   (`CORRECTION_RECOVERY_NOT_SUPPORTED`): approval applies it atomically (D1a).
+5. Same fail-closed SPN4 pilot allowlist and the same maker/checker identities as the
+   pre-payment pilot (PP-1/PP-2). Nothing widens either.
+
+## C. Type, eligibility, staleness
+6. The type is the ledger's: any payment row ⇒ POST_PAYMENT, read on the locked row;
+   a submitted `correction_type` is ignored. The type is fixed at submission.
+7. POST_PAYMENT submission requires: the switch on; status PARTIAL or PAID; no OPEN
+   obligation on the invoice; a ledger that explains its own status
+   (`CORRECTION_LEDGER_INCONSISTENT` otherwise — fail closed); D28 zero-original guard;
+   a **COMPLETED** visit (`CORRECTION_VISIT_CANCELLED` / `CORRECTION_VISIT_NOT_COMPLETED`;
+   a missing visit fails closed); **no lab candidates** (PP-8a); no active correction.
+   The completed-visit rule exists because a Kontrol visit waits at `cashier_pending`
+   while its own invoice is PARTIAL and only the payment path completes it: a correction
+   that settled that invoice would strand the visit (a PAID invoice refuses payment). A
+   correction never completes a visit — that would be an unapproved lifecycle decision.
+8. Staleness (`postPaymentStaleReason`): payment count changed (`PAYMENT_RECORDED`),
+   status changed, version changed, fingerprint changed, lab candidates appeared, the
+   visit is no longer completed (`VISIT_STATUS_CHANGED` — the visit is not part of the
+   fingerprint, so it is re-read), an OPEN obligation exists (read FOR UPDATE). Lock order: invoice → correction →
+   obligation.
+
+## D. Owner approval reference (PP-2/PP-7, rule 202)
+9. Mandatory for POST_PAYMENT, refused when missing/blank
+   (`CORRECTION_OWNER_APPROVAL_REFERENCE_REQUIRED`), backed by the database CHECK
+   `trx_rme_inv_corr_postpay_reference_chk`. Optional for PRE_PAYMENT (stored if given;
+   requiring it there is an open owner question).
+10. Format: 6–120 chars of `[A-Za-z0-9._:/-]`, never 13+ digits in one run of numbers
+    **counted across the allowed punctuation** (`3171-0123-4567-8901` is a NIK and is
+    refused; a letter ends a run, so `RME-202610-000042` passes)
+    (`RmeInvoiceCorrectionApprovalReference`). A malformed value is refused, never
+    dropped. The application proves a reference was recorded, **never** that the Owner
+    signed the form behind it; never report it as proof.
+10a. Case-specific: a reference already recorded on a POST_PAYMENT correction of
+    ANOTHER invoice is refused (`CORRECTION_OWNER_APPROVAL_REFERENCE_REUSED`,
+    case-insensitive); the same invoice may reuse it after STALE/REJECT/CANCEL.
+    Residuals, recorded not hidden: a phone number of ≤12 digits is not caught by the
+    digit rule; two simultaneous submissions on two different invoices with one
+    reference are not serialised by a database constraint (one maker account).
+
+## E. Money (PP-3, PP-4)
+11. The status after application is `RmeInvoiceLedger::statusAfterMoneyReceived()` — the
+    SAME helper `RmePaymentService::refreshInvoiceStatus()` uses: paid ≥ total ⇒ PAID,
+    else PARTIAL. Integer cents only.
+12. Downward below the money received ⇒ an OPEN `RmeOverpaymentObligation` for
+    `paid − new total`, inside the application transaction, with an event and an audit
+    row. **No refund, reversal, settlement or patient credit exists**; no money leaves;
+    the obligation is never a negative receivable. At most one OPEN per invoice (partial
+    unique index); further corrections are refused while it is OPEN.
+13. Upward ⇒ the difference is an ordinary outstanding balance (PAID → PARTIAL) collected
+    by the normal payment path. The visit is never reopened.
+14. Equal ⇒ balanced, no obligation. A Rp0 proposed total is refused (D28 / builder).
+15. Ledger invariants asserted before commit: no payment row written or changed (paid
+    cents and payment count identical), never both outstanding and overpaid, overpaid ⇒
+    PAID, outstanding ⇒ PARTIAL, nothing negative; plus the database CHECK
+    `trx_rme_inv_corr_ledger_after_chk`.
+16. PP-8b — a correction never generates or changes lab work. Known consequence: a
+    PARTIAL invoice settled by a downward correction gets no automatic lab candidate
+    (candidates come from the payment path only); lab work for such a case follows the
+    normal lab request route. Never auto-generate from the correction.
+
+## F. Receipts (PP-5 — D7 extends to receipts)
+17. Every payment row issues exactly ONE immutable `RmeReceiptSnapshot` inside the
+    payment transaction (`RmeReceiptSnapshotService::issueForPayment`, called from
+    `refreshInvoiceStatus()` — the single pairing point of every payment path).
+18. The first post-payment correction of an invoice reconstructs missing receipts
+    (payments recorded before this release) BEFORE mutating, from the verified
+    pre-correction state, basis `RECONSTRUCTED_BEFORE_POSTPAYMENT_CORRECTION`, labelled as
+    a reconstruction and never presented as an identical reprint. This is truthful only
+    because no earlier code path could change a paid invoice.
+19. A receipt issued at an older version is rendered from its snapshot, stamped
+    "DIREVISI — LIHAT VERSI KE-N"; a snapshot failing its integrity hash is refused (409),
+    never printed. Receipts stay reprintable after an upward correction makes the invoice
+    PARTIAL again (`rme.cashier.receipt-snapshots.show`).
+19a. The snapshot freezes the display labels as printed (payment method names, cashier
+    name). Patient identity is deliberately NOT frozen (personal data a patient may have
+    corrected; not frozen in D7 document versions either). A reconstruction freezes the
+    labels and branch header of the moment it ran — it is labelled a reconstruction.
+19b. Receipt snapshots are NOT gated by either switch: every payment writes one (PP-5
+    foundation). A failure to capture aborts that payment (rolled back, no money
+    mis-recorded). Never add a "skip if the table is missing" bypass — that fails open;
+    the deploy runs `migrate --force` before caches are rebuilt.
+19c. Open owner question: when a correction (not a payment) settles a PARTIAL invoice,
+    no LUNAS receipt exists — the latest receipt is the last PARTIAL one, stamped DIREVISI.
+
+## G. Visibility (PP-9)
+20a. Patient merge: `trx_rme_overpayment_obligations.patient_id` is registered in
+    `PatientOwnedRecordRegistry` (group `invoices`) and moves with the patient through the
+    query builder; amount, status, source correction and events never change. Any new
+    table with a foreign key to `mst_patients` must be registered, or every merge refuses.
+20. Owner/oversight see obligations read-only (`oversight.billing-corrections.obligations.*`,
+    `view_billing_correction_oversight`, ClinicOversightScope, 404 out of scope, audited
+    view). The cashier of the invoice branch sees the obligation status on the invoice
+    page. No role holds a write permission over an obligation; no route writes one.
+
+## H. Never
+21. Never write, edit or delete a payment row; never create a negative receivable;
+    never process a refund automatically; never return money outside the system.
+22. Never guess lab impact; never widen branch access or the pilot; never change
+    D21c / D21g / D22 without its own approval.
+23. Never fabricate an approval reference, a case, a payment or operator evidence;
+    never enable the switch without its owner decision.
