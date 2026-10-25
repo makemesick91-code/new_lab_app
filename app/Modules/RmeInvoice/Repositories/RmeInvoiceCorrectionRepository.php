@@ -13,6 +13,7 @@ use App\Modules\RmeInvoice\Models\RmeInvoiceCorrectionEvent;
 use App\Modules\RmeInvoice\Models\RmeInvoiceCorrectionLine;
 use App\Modules\RmeInvoice\Models\RmeInvoiceDocumentVersion;
 use App\Modules\RmeInvoice\Support\RmeInvoiceCorrectionStatus;
+use App\Modules\RmeInvoice\Support\RmeInvoiceCorrectionType;
 use App\Modules\Treatment\Models\Treatment;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
@@ -33,6 +34,11 @@ class RmeInvoiceCorrectionRepository implements RmeInvoiceCorrectionRepositoryIn
         'cancel_reason',
         'stale_at',
         'stale_reason_code',
+        // FEATURE-RME-POSTPAYMENT-INVOICE-CORRECTION-1 — the ledger outcome,
+        // written once by the application.
+        'outstanding_after',
+        'overpaid_after',
+        'invoice_status_after',
     ];
 
     public function find(int $id): ?RmeInvoiceCorrection
@@ -203,6 +209,15 @@ class RmeInvoiceCorrectionRepository implements RmeInvoiceCorrectionRepositoryIn
     public function invoiceHasLabCandidates(int $invoiceId): bool
     {
         return LabCaseCandidate::query()->where('rme_invoice_id', $invoiceId)->exists();
+    }
+
+    public function postPaymentReferenceUsedOnOtherInvoice(string $reference, int $invoiceId): bool
+    {
+        return RmeInvoiceCorrection::query()
+            ->where('correction_type', RmeInvoiceCorrectionType::POST_PAYMENT)
+            ->where('rme_invoice_id', '!=', $invoiceId)
+            ->whereRaw('lower(owner_approval_reference) = ?', [mb_strtolower($reference)])
+            ->exists();
     }
 
     public function documentVersionsForInvoice(int $invoiceId): Collection

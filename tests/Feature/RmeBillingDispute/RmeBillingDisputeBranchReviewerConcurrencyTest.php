@@ -86,6 +86,11 @@ const RBRC_TABLES = [
     'trx_branch_change_requests',
     'trx_daily_branch_contexts',
     'trx_user_online_contexts',
+    // FEATURE-RME-POSTPAYMENT-INVOICE-CORRECTION-1 — every payment issues a receipt
+    // snapshot (FK to trx_rme_payments); obligations reference corrections.
+    'trx_rme_overpayment_obligation_events',
+    'trx_rme_overpayment_obligations',
+    'trx_rme_receipt_snapshots',
     'trx_rme_invoice_correction_events',
     'trx_rme_invoice_correction_lines',
     'trx_rme_invoice_document_versions',

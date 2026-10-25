@@ -6,6 +6,25 @@
 > menunjuk keputusan yang disetujui; SOP tetap DRAF sampai fitur dirilis dan
 > **diaktifkan** — aktivasi diblokir oleh PP-10 selama closure Sprint 2 belum
 > terverifikasi. Teks di bawah tidak diubah.
+> *Pembaruan 2026-10-25 (FEATURE-RME-POSTPAYMENT-INVOICE-CORRECTION-1):* fitur
+> **sudah dibangun** dengan sakelar `rme.invoice_postpayment_correction` **OFF**
+> (rule 207) dan **belum diaktifkan**. Catatan operasional dari implementasi:
+> (1) formulir pengajuan wajib berisi referensi persetujuan Owner (6–120 karakter,
+> tanpa 13 digit berurutan) — tanpa itu sistem menolak; (2) bila total baru lebih
+> kecil dari yang sudah dibayar, sistem mencatat **kewajiban kelebihan bayar —
+> belum dikembalikan**; kasir **tidak** mengembalikan uang di luar sistem; (3)
+> kwitansi lama dicetak ulang dari salinan bekunya dengan cap **DIREVISI**; kwitansi
+> dari sebelum rilis ini diberi label **rekonstruksi**; (4) koreksi tidak membuat
+> kandidat lab — bila koreksi menurunkan total sehingga tagihan PARTIAL menjadi
+> lunas, pekerjaan lab untuk kasus itu diajukan lewat jalur permintaan lab biasa;
+> (5) tagihan yang sudah punya kandidat lab tidak dapat dikoreksi; (6) koreksi
+> hanya untuk kunjungan yang **sudah selesai** — kunjungan Kontrol yang masih
+> menunggu di kasir (tagihan dibayar sebagian) ditolak; (7) satu referensi
+> persetujuan Owner hanya untuk **satu tagihan** — referensi yang sudah dipakai
+> tagihan lain ditolak, dan angka identitas (NIK) tidak boleh dimasukkan meski
+> dipisah tanda baca; (8) bila koreksi (bukan pembayaran) membuat tagihan lunas,
+> belum ada kwitansi LUNAS — kwitansi terakhir tetap yang "dibayar sebagian"
+> bercap DIREVISI (pertanyaan terbuka untuk Owner).
 > Jangan dipakai di loket. Dokumen ini disiapkan oleh
 > `PREPARATION-RME-POSTPAYMENT-INVOICE-CORRECTION-1` supaya prosedur siap ketika
 > Owner menyetujui usulan PP-1…PP-10

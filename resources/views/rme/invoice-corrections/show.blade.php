@@ -70,6 +70,30 @@
             <x-ui.card><p class="text-xs text-ink-soft">Total Diterapkan</p><p class="text-lg font-semibold text-navy" data-correction-applied-total>{{ $isApplied ? RmeInvoiceDocument::rupiahDecimal($correction->proposed_grand_total) : 'Belum diterapkan' }}</p></x-ui.card>
         </div>
 
+        @if ($ledger)
+            {{-- FEATURE-RME-POSTPAYMENT-INVOICE-CORRECTION-1 — the money already
+                 received and what the correction does to the balance (PP-3/PP-4).
+                 No payment row is ever written or changed. --}}
+            <x-ui.card title="Pembayaran & Dampak Koreksi" data-postpayment-ledger>
+                <dl class="grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
+                    <div><dt class="text-ink-soft">Sudah Dibayar (saat diajukan)</dt><dd class="font-semibold text-navy">{{ RmeInvoiceDocument::rupiah($ledger['paid_cents']) }}</dd></div>
+                    <div><dt class="text-ink-soft">Sisa Tagihan Sebelum</dt><dd class="font-semibold text-navy">{{ RmeInvoiceDocument::rupiah($ledger['original_outstanding_cents']) }}</dd></div>
+                    <div><dt class="text-ink-soft">Status Sebelum → {{ $ledger['applied'] ? 'Sesudah' : 'Sesudah (bila disetujui)' }}</dt><dd class="font-semibold text-navy">{{ $ledger['status_before'] ?? '—' }} → {{ $ledger['projected_status'] }}</dd></div>
+                    <div><dt class="text-ink-soft">Sisa Tagihan {{ $ledger['applied'] ? 'Sesudah' : '(bila disetujui)' }}</dt><dd class="font-semibold text-navy" data-postpayment-outstanding>{{ RmeInvoiceDocument::rupiah($ledger['projected_outstanding_cents']) }}</dd></div>
+                    <div><dt class="text-ink-soft">Kelebihan Bayar {{ $ledger['applied'] ? 'Sesudah' : '(bila disetujui)' }}</dt><dd class="font-semibold {{ $ledger['projected_overpaid_cents'] > 0 ? 'text-danger-700' : 'text-navy' }}" data-postpayment-overpaid>{{ RmeInvoiceDocument::rupiah($ledger['projected_overpaid_cents']) }}</dd></div>
+                    <div><dt class="text-ink-soft">Referensi Persetujuan Owner</dt><dd class="font-mono text-navy" data-owner-approval-reference>{{ $correction->owner_approval_reference ?? '—' }}</dd></div>
+                </dl>
+                @if ($ledger['obligation'])
+                    <x-ui.alert variant="warning" class="mt-4" data-postpayment-obligation>
+                        Kewajiban kelebihan bayar <span class="font-mono">{{ $ledger['obligation']->obligation_number }}</span>:
+                        {{ RmeInvoiceDocument::rupiahDecimal($ledger['obligation']->amount) }} — {{ $ledger['obligation']->label() }}. Tidak ada uang yang dikembalikan oleh sistem pada rilis ini.
+                    </x-ui.alert>
+                @elseif (! $ledger['applied'] && $ledger['projected_overpaid_cents'] > 0)
+                    <p class="mt-3 text-xs text-ink-soft">Bila disetujui, selisih di atas dicatat sebagai kewajiban kelebihan bayar (belum dikembalikan). Persetujuan Owner harus sudah diterima checker langsung dari Owner (rule 202).</p>
+                @endif
+            </x-ui.card>
+        @endif
+
         <x-ui.card title="Rincian Baris (asli → usulan)" padding="">
             <x-ui.table>
                 <thead class="bg-navy-50">

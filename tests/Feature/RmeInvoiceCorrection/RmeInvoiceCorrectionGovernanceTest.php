@@ -111,7 +111,11 @@ it('puts a correction permission on every operational correction route and the r
 
 it('exposes the oversight Billing Correction area as GET-only, gated by its own permission', function () {
     $routes = collect(Route::getRoutes()->getRoutes())->filter(fn ($r) => str_starts_with((string) $r->getName(), 'oversight.billing-corrections.'));
-    expect($routes)->toHaveCount(7);
+    // FEATURE-RME-POSTPAYMENT-INVOICE-CORRECTION-1 (PP-9) adds the two read-only
+    // overpayment obligation pages; every route in the area stays GET-only.
+    expect($routes)->toHaveCount(9)
+        ->and($routes->map(fn ($r) => (string) $r->getName())->values()->all())
+        ->toContain('oversight.billing-corrections.obligations.index', 'oversight.billing-corrections.obligations.show');
 
     foreach ($routes as $route) {
         expect(array_diff($route->methods(), ['GET', 'HEAD']))->toBe([], (string) $route->getName())

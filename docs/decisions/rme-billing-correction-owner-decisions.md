@@ -722,5 +722,11 @@ D25, D26 (refund, settlement, reversal, patient credit — Sprint 4/7 and 5/7).
 | Activation order | PP-10 vs Sprint 2 NO_GO | activation blocked; implementation with the flag OFF allowed |
 | Human separation (Sprint A) | `RED_FLAG_UNRESOLVED` on accounts 29/1, the same pair PP-1 names | not a policy conflict; an Owner follow-up that must be resolved before any activation of either correction type relies on the pair |
 
+**Implementation (2026-10-25):** `FEATURE-RME-POSTPAYMENT-INVOICE-CORRECTION-1` built
+PP-1…PP-9 behind `rme.invoice_postpayment_correction` (default **OFF**, rule 207).
+Technical status `IMPLEMENTED_FLAG_OFF`; `FEATURE_ENABLED = NO`; activation (PP-10)
+remains BLOCKED while the pre-payment pilot is NO_GO. No decision in this register is
+changed by the implementation; D21c, D21g, D22 stay PENDING.
+
 **Result: `OWNER_DECISION_RATIFICATION = GO`** — all ten decisions map unambiguously
 and consistently; no blocker in the ratification itself.

@@ -1,50 +1,45 @@
-# FIX-RME-PAYMENT-SUBMISSION-IDEMPOTENCY-1
+# FEATURE-RME-POSTPAYMENT-INVOICE-CORRECTION-1
 #
-# Program DAENGTISIAMS-RME-BILLING-CORRECTION — supporting hardening after
-# Sprint 2, not a new main sprint and not a Full Prepayment Pilot GO (rule 205):
+# Program DAENGTISIAMS-RME-BILLING-CORRECTION — Sprint 3/7 (rule 207). Built on
+# the owner decisions PP-1…PP-10 ratified on 2026-10-25
+# (RATIFICATION-RME-POSTPAYMENT-OWNER-DECISIONS-PP1-PP10-1). IMPLEMENTATION with
+# the switch OFF; activation is its own owner decision (PP-10) and stays blocked
+# while the pre-payment pilot is NO_GO (VERIFICATION-…-REAL-CASE-42-1).
 #
-#   F1. No payment path knew whether a request had been seen before: a double
-#       click, a browser retry or a resubmitted form recorded a SECOND partial
-#       payment; a replayed full payment was refused as an error. Every payment
-#       form now carries a server-issued, invoice-bound HMAC payment intent; a
-#       committed submission is recorded in trx_rme_payment_submissions (same
-#       transaction, UNIQUE(intent_key), immutable). An exact repetition is
-#       answered with the ORIGINAL result and writes nothing; any other use of a
-#       committed intent is refused (PAYMENT_INTENT_REUSED).
+#   C1. Receipt snapshot foundation (PP-5): one immutable receipt snapshot per
+#       payment, issued inside the payment transaction; legacy receipts are
+#       reconstructed (labelled) before the first post-payment correction
+#       mutates; a superseded receipt is reprinted from its snapshot, "DIREVISI".
+#   C2. POST_PAYMENT domain behind `rme.invoice_postpayment_correction` (default
+#       OFF): type from the ledger under the invoice lock, mandatory owner
+#       approval reference (code + DB CHECK), its own eligibility and staleness.
+#   C3. Outcomes: status re-derived by the one ledger helper payments use;
+#       downward below paid ⇒ OPEN overpayment obligation (no refund, no
+#       negative receivable); upward ⇒ outstanding; equal ⇒ balanced.
+#   C4. PP-8 (lab refused / never generated), PP-9 (read-only obligation list).
 #
-#   F3. The Kontrol and visit paths read the payable summary and capped the
-#       amount BEFORE the row locks, then skipped a changed invoice and min()-capped
-#       the rest — silent truncation / redistribution. The page now declares its
-#       plan and per-invoice balances; the summary is read inside the transaction;
-#       every plan invoice is locked in the existing order; plan, balances and the
-#       amount cap are decided against the LOCKED rows; full allocation is asserted
-#       in cents. A changed view refuses the WHOLE payment.
+# Three additive migrations (columns on corrections, obligations + events,
+# receipt snapshots; PostgreSQL CHECKs / partial index; down() refuses while
+# rows exist). No backfill, no permission, no seeder, no role change; no
+# JS/CSS/asset change.
 #
-# One additive migration (one table, unique index, PostgreSQL CHECKs; down()
-# refuses while rows exist); no backfill, no permission, no route, no seeder.
-# Blade only (no JS/CSS/asset change, no npm build).
-#
-# Preserved: rule 191 version binding, D10, OPS-OQ-1 / 1a / 1b, OD-1 / OD-1a,
-# RmeBillingActorGuard, RmeWorkingBranchScope, D1 / D1a / D1c / D1e, D7, D21, D28;
-# D21c, D21g, D22 stay PENDING.
-#
-# Type FOUNDATION_SPRINT (audit level 3): financial write path + schema + request
-# boundary across RmeInvoice, providers, views and the CI gate registry.
+# Preserved: D1, D1a, D1c, D1e, D7, D10, D21, D28, OPS-OQ-1 / 1a / 1b, OD-1 /
+# OD-1a, rule 191, rule 205, rule 206; D21c, D21g, D22 stay PENDING.
 
-id: FIX-RME-PAYMENT-SUBMISSION-IDEMPOTENCY-1
+id: FEATURE-RME-POSTPAYMENT-INVOICE-CORRECTION-1
 type: FOUNDATION_SPRINT
 module: RmeInvoice
-title: "RME payment submission idempotency: one form records at most one payment (replay answered with the original result, reuse refused), and the multi-invoice paths decide plan, balances and amount under the row locks — refusing instead of truncating"
+title: "RME post-payment invoice correction behind its own default-OFF switch: ledger-derived type, mandatory owner approval reference, OPEN overpayment obligation instead of a refund, immutable receipt snapshots"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 runtime_change: true
 schema_change: true
-frontend_change: false
+frontend_change: true
 security_impact: true
 branch_isolation_impact: true
 ledger_impact: false
 deploy_required: true
 browser_required: false
 test_profiles: [rme, cashier, permission]
-go_tag: fix-rme-payment-submission-idempotency-1-go
+go_tag: feature-rme-postpayment-invoice-correction-1-implementation-go
 inherits_parent_go: hardening-rme-billing-dispute-branch-reviewer-control-payment-1-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1

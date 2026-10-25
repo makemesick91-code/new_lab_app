@@ -4,9 +4,13 @@ namespace App\Modules\RmeInvoice\Controllers;
 
 use App\Http\Controllers\Controller;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
+use App\Modules\PaymentMethod\Models\PaymentMethod;
 use App\Modules\PaymentMethod\Services\PaymentMethodService;
+use App\Modules\RmeInvoice\Interfaces\RmeReceiptSnapshotRepositoryInterface;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
+use App\Modules\RmeInvoice\Models\RmePayment;
 use App\Modules\RmeInvoice\Models\RmePaymentSubmission;
+use App\Modules\RmeInvoice\Models\RmeReceiptSnapshot;
 use App\Modules\RmeInvoice\Requests\CreateRmePaymentRequest;
 use App\Modules\RmeInvoice\Services\RmeControlReceivableService;
 use App\Modules\RmeInvoice\Services\RmePaymentService;
@@ -32,6 +36,7 @@ class RmePaymentController extends Controller
         private readonly PaymentMethodService $paymentMethods,
         private readonly RmeControlReceivableService $carryOver,
         private readonly RmePaymentSubmissionService $submissions,
+        private readonly RmeReceiptSnapshotRepositoryInterface $receiptSnapshots,
     ) {}
 
     public function create(Request $request, ClinicVisit $clinicVisit, RmeInvoice $rmeInvoice): View|RedirectResponse
@@ -277,10 +282,52 @@ class RmePaymentController extends Controller
     }
 
     /**
+     * FEATURE-RME-POSTPAYMENT-INVOICE-CORRECTION-1 (owner decision PP-5) — reprint
+     * one issued receipt from its immutable snapshot. Always rendered from the
+     * snapshot, never from live rows; stamped "DIREVISI — lihat versi ke-N" when the
+     * invoice was corrected after it was issued. Not limited to PAID invoices: a
+     * receipt that was issued stays reprintable even if a later correction raised
+     * the total and the invoice is PARTIAL again. Same policy as the receipt page.
+     */
+    public function receiptSnapshot(Request $request, ClinicVisit $clinicVisit, RmeInvoice $rmeInvoice, int $receiptSnapshot): View
+    {
+        $this->authorize('viewReceipt', $rmeInvoice);
+        abort_unless($rmeInvoice->belongsToVisit($clinicVisit), 404);
+
+        $snapshot = RmeReceiptSnapshot::query()->whereKey($receiptSnapshot)->first();
+        abort_if($snapshot === null || (int) $snapshot->rme_invoice_id !== (int) $rmeInvoice->id, 404);
+
+        return view('rme.cashier.receipt.show', $this->resolveReceiptData($clinicVisit, $rmeInvoice, $snapshot));
+    }
+
+    /**
+     * The snapshot a receipt must be rendered from, or null when the live invoice
+     * is still the document that receipt described. Before any post-payment
+     * correction every receipt carries the current invoice version, so this is
+     * null and the receipt renders exactly as it always did.
+     */
+    private function frozenReceiptFor(RmeInvoice $invoice): ?RmeReceiptSnapshot
+    {
+        if (! $invoice->isRevised()) {
+            return null;
+        }
+
+        $latest = $this->receiptSnapshots->latestForInvoice((int) $invoice->id);
+
+        return $latest !== null && (int) $latest->invoice_version < (int) $invoice->correction_version ? $latest : null;
+    }
+
+    /**
      * @return array<string, mixed>
      */
-    private function resolveReceiptData(ClinicVisit $clinicVisit, RmeInvoice $rmeInvoice): array
+    private function resolveReceiptData(ClinicVisit $clinicVisit, RmeInvoice $rmeInvoice, ?RmeReceiptSnapshot $snapshot = null): array
     {
+        $snapshot ??= $this->frozenReceiptFor($rmeInvoice);
+
+        if ($snapshot !== null) {
+            return $this->snapshotReceiptData($clinicVisit, $rmeInvoice, $snapshot);
+        }
+
         // Newest first (RmePaymentRepository::forInvoice orders by paid_at desc),
         // so $payment is the settling payment and its date is the payment date.
         $clock = app(ClinicalClock::class);
@@ -340,6 +387,64 @@ class RmePaymentController extends Controller
             'allocatedToParent' => $allocatedToParent,
             'allocatedToControl' => $allocatedToControl,
             'hasPaymentAllocation' => $allocatedToParent > 0 || $allocatedToControl > 0,
+        ];
+    }
+
+    /**
+     * PP-5 — the receipt exactly as issued. Money, items, the frozen branch header,
+     * the payment and its date come from the snapshot; a snapshot that no longer
+     * hashes to its recorded value is refused, never printed.
+     *
+     * @return array<string, mixed>
+     */
+    private function snapshotReceiptData(ClinicVisit $clinicVisit, RmeInvoice $rmeInvoice, RmeReceiptSnapshot $snapshot): array
+    {
+        abort_unless($snapshot->integrityHolds(), 409, 'Snapshot kwitansi tidak lolos verifikasi integritas dan tidak dapat dicetak.');
+
+        $clock = app(ClinicalClock::class);
+        $document = (array) $snapshot->snapshot;
+        $receipt = (array) ($document['receipt'] ?? []);
+
+        $methodIds = array_values(array_filter(array_map(
+            fn (array $payment) => $payment['payment_method_id'] ?? null,
+            (array) ($document['payments'] ?? []),
+        )));
+        // Labels frozen at issuance win; a live lookup is only the fallback for a
+        // snapshot that carries none.
+        $frozenNames = (array) ($receipt['labels']['payment_methods'] ?? []);
+        $methodNames = PaymentMethod::query()->whereIn('id', $methodIds === [] ? [0] : $methodIds)->pluck('name', 'id')->all();
+        foreach ($frozenNames as $id => $name) {
+            $methodNames[(int) $id] = $name;
+        }
+        $methods = array_map(
+            fn (array $payment) => isset($payment['payment_method_id']) && filled($methodNames[$payment['payment_method_id']] ?? null)
+                ? (string) $methodNames[$payment['payment_method_id']]
+                : 'Tidak tercatat',
+            (array) ($document['payments'] ?? []),
+        );
+
+        $invoice = $rmeInvoice->load(['cashier', 'branch', 'labCaseCandidates.convertedLabOrder', 'labCaseCandidates.treatment']);
+        $payment = RmePayment::query()->with('cashier')->find((int) $snapshot->rme_payment_id);
+        $paidAt = isset($receipt['paid_at']) ? CarbonImmutable::parse((string) $receipt['paid_at']) : null;
+
+        return [
+            'visit' => $clinicVisit->load(['patient', 'doctor', 'initialTreatment']),
+            'invoice' => $invoice,
+            'document' => RmeInvoiceDocument::fromReceiptSnapshot($document, $methods),
+            'invoiceTerms' => config('rme_invoice'),
+            'paidAtClinical' => $paidAt?->setTimezone($clock->timezone()),
+            'printedAtClinical' => $clock->now(),
+            'payment' => $payment,
+            'labCaseCandidates' => $invoice->labCaseCandidates,
+            'allocatedToParent' => 0.0,
+            'allocatedToControl' => 0.0,
+            'hasPaymentAllocation' => false,
+            'receiptSnapshot' => $snapshot,
+            'supersededByVersion' => (int) $snapshot->invoice_version < (int) $rmeInvoice->correction_version
+                ? (int) $rmeInvoice->correction_version
+                : null,
+            'frozenBranch' => (object) array_merge(['name' => null, 'address' => null, 'phone' => null, 'code' => null], (array) ($document['branch'] ?? [])),
+            'frozenCashierName' => isset($receipt['labels']['cashier_name']) ? (string) $receipt['labels']['cashier_name'] : null,
         ];
     }
 }

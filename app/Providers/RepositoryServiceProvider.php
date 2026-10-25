@@ -283,8 +283,10 @@ use App\Modules\RmeInvoice\Interfaces\RmeBillingDisputeRepositoryInterface;
 use App\Modules\RmeInvoice\Interfaces\RmeBillingDisputeReviewerRepositoryInterface;
 use App\Modules\RmeInvoice\Interfaces\RmeInvoiceCorrectionRepositoryInterface;
 use App\Modules\RmeInvoice\Interfaces\RmeInvoiceRepositoryInterface;
+use App\Modules\RmeInvoice\Interfaces\RmeOverpaymentObligationRepositoryInterface;
 use App\Modules\RmeInvoice\Interfaces\RmePaymentRepositoryInterface;
 use App\Modules\RmeInvoice\Interfaces\RmePaymentSubmissionRepositoryInterface;
+use App\Modules\RmeInvoice\Interfaces\RmeReceiptSnapshotRepositoryInterface;
 use App\Modules\RmeInvoice\Models\RmeBillingDispute;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Models\RmeInvoiceCorrection;
@@ -296,8 +298,10 @@ use App\Modules\RmeInvoice\Repositories\RmeBillingDisputeRepository;
 use App\Modules\RmeInvoice\Repositories\RmeBillingDisputeReviewerRepository;
 use App\Modules\RmeInvoice\Repositories\RmeInvoiceCorrectionRepository;
 use App\Modules\RmeInvoice\Repositories\RmeInvoiceRepository;
+use App\Modules\RmeInvoice\Repositories\RmeOverpaymentObligationRepository;
 use App\Modules\RmeInvoice\Repositories\RmePaymentRepository;
 use App\Modules\RmeInvoice\Repositories\RmePaymentSubmissionRepository;
+use App\Modules\RmeInvoice\Repositories\RmeReceiptSnapshotRepository;
 use App\Modules\RmeOnlineContext\Interfaces\BranchChangeRequestRepositoryInterface;
 use App\Modules\RmeOnlineContext\Interfaces\DailyBranchContextRepositoryInterface;
 use App\Modules\RmeOnlineContext\Interfaces\UserOnlineContextRepositoryInterface;
@@ -460,6 +464,8 @@ class RepositoryServiceProvider extends ServiceProvider
         RmePaymentSubmissionRepositoryInterface::class => RmePaymentSubmissionRepository::class,
         // FEATURE-RME-INVOICE-CORRECTION-RECEIPT-FOUNDATION-1 — invoice corrections + frozen document versions
         RmeInvoiceCorrectionRepositoryInterface::class => RmeInvoiceCorrectionRepository::class,
+        RmeOverpaymentObligationRepositoryInterface::class => RmeOverpaymentObligationRepository::class,
+        RmeReceiptSnapshotRepositoryInterface::class => RmeReceiptSnapshotRepository::class,
         // IMPLEMENTATION-RME-BILLING-DISPUTE-ESCALATION-OPS-OQ-1 (rule 203).
         RmeBillingDisputeRepositoryInterface::class => RmeBillingDisputeRepository::class,
         RmeBillingDisputeReviewerRepositoryInterface::class => RmeBillingDisputeReviewerRepository::class,

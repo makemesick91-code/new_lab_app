@@ -363,5 +363,14 @@ Tidak ada aturan bernomor baru: seluruh pelajaran adalah perluasan rule 196.
 
 ## 12. Pembersihan
 
-Diisi saat penutupan: worktree, container PostgreSQL sekali pakai, berkas sementara,
-proses test, CI, dan perubahan yang belum di-commit milik tugas ini.
+*Dicatat oleh FEATURE-RME-POSTPAYMENT-INVOICE-CORRECTION-1 (2026-10-25), karena dokumen
+ini di-merge sebelum CI pasca-merge selesai:*
+
+| Butir | Bukti |
+|---|---|
+| CI kandidat (PR #522, head `d649047c`) | run `40193241402` — success |
+| Merge | `aca70951`, tree `c6a0be2e` = tree kandidat |
+| CI pasca-merge (push ke base) | run `40195005438` — success (Full Suite skipped sesuai kebijakan; skipped ≠ pass) |
+| Deploy | tidak — perubahan dokumen saja (`DEPLOY_REQUIRED = NO`) |
+| GO tag | tidak dibuat (`FULL_PREPAYMENT_PILOT_GO = NO_GO`) |
+| Worktree, branch lokal/remote, container PG16 sekali pakai, berkas sementara | dihapus; tidak ada proses test atau perubahan tak ter-commit milik tugas ini |

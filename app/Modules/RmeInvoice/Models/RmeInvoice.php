@@ -156,6 +156,24 @@ class RmeInvoice extends Model
         return $this->hasMany(RmeInvoiceDocumentVersion::class, 'rme_invoice_id')->orderBy('version_number');
     }
 
+    /**
+     * FEATURE-RME-POSTPAYMENT-INVOICE-CORRECTION-1 — immutable receipt snapshots,
+     * one per payment (owner decision PP-5).
+     */
+    public function receiptSnapshots(): HasMany
+    {
+        return $this->hasMany(RmeReceiptSnapshot::class, 'rme_invoice_id')->orderBy('rme_payment_id');
+    }
+
+    /**
+     * FEATURE-RME-POSTPAYMENT-INVOICE-CORRECTION-1 — money owed back after a
+     * post-payment correction brought the total below what was paid (PP-3 A).
+     */
+    public function overpaymentObligations(): HasMany
+    {
+        return $this->hasMany(RmeOverpaymentObligation::class, 'rme_invoice_id')->orderBy('id');
+    }
+
     /** True once at least one correction has been applied to this document. */
     public function isRevised(): bool
     {

@@ -6,6 +6,10 @@ alwaysApply: false
 
 # RME post-payment invoice correction — preparation (rule 206)
 
+> **Superseded in part by rule 207 (FEATURE-RME-POSTPAYMENT-INVOICE-CORRECTION-1):**
+> post-payment correction is now IMPLEMENTED behind its own default-OFF switch and is
+> still NOT ACTIVE. §B, §C and §E below remain in force; rule 207 records what was built.
+
 Labels: **VERIFIED** (read from source or production, this task),
 **PROPOSED** (design only, awaiting the owner), **PENDING** (register code still open).
 Nothing labelled PROPOSED is policy. Do not implement, enable or report it as active.

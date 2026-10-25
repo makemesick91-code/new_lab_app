@@ -6,8 +6,10 @@ use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Models\RmeInvoiceCorrection;
 use App\Modules\RmeInvoice\Models\RmeInvoiceDocumentVersion;
+use App\Modules\RmeInvoice\Models\RmeOverpaymentObligation;
 use App\Modules\RmeInvoice\Models\RmePayment;
 use App\Modules\RmeInvoice\Models\RmePaymentSubmission;
+use App\Modules\RmeInvoice\Models\RmeReceiptSnapshot;
 
 /**
  * FEATURE-RME-BILLING-REFUND-1 / Phase 0 (audit BCF-02) — the vocabulary and
@@ -188,6 +190,16 @@ final class RmeFinancialAuditEvent
             // (the checker's approval applied it in the same transaction) or
             // MANUAL_RECOVERY (the legacy apply path for a pre-D1a APPROVED row).
             'application_mode',
+            // FEATURE-RME-POSTPAYMENT-INVOICE-CORRECTION-1 — the ledger outcome of
+            // a POST_PAYMENT correction, all server-derived.
+            'invoice_status_before',
+            'invoice_status_after',
+            'paid_total',
+            'outstanding_after',
+            'overpaid_after',
+            'overpayment_obligation_id',
+            'receipt_snapshots_reconstructed',
+            'owner_approval_reference',
         ]));
 
         return array_merge([
@@ -435,6 +447,62 @@ final class RmeFinancialAuditEvent
             'declared_remaining' => $conflict->declaredCents !== null ? round($conflict->declaredCents / 100, 2) : null,
             'current_remaining' => $conflict->currentCents !== null ? round($conflict->currentCents / 100, 2) : null,
             'invoice_status' => (string) $invoice->status,
+        ];
+    }
+
+    // ─── FEATURE-RME-POSTPAYMENT-INVOICE-CORRECTION-1 ────────────────────────
+    //
+    // Receipt snapshots (PP-5) and overpayment obligations (PP-3 A). Written
+    // inside the transaction that writes the fact; PII-free payloads.
+
+    public const ENTITY_RECEIPT_SNAPSHOT = 'trx_rme_receipt_snapshots';
+
+    public const ENTITY_OVERPAYMENT_OBLIGATION = 'trx_rme_overpayment_obligations';
+
+    /** A receipt frozen in the payment transaction that issued it. */
+    public const ACTION_RECEIPT_SNAPSHOT_ISSUED = 'RME_RECEIPT_SNAPSHOT_ISSUED';
+
+    /** A receipt of a pre-release payment frozen by the first post-payment correction, before it mutated the invoice. */
+    public const ACTION_RECEIPT_SNAPSHOT_RECONSTRUCTED = 'RME_RECEIPT_SNAPSHOT_RECONSTRUCTED';
+
+    /** An OPEN obligation recorded because a correction brought the total below the money received. */
+    public const ACTION_OVERPAYMENT_OBLIGATION_OPENED = 'RME_OVERPAYMENT_OBLIGATION_OPENED';
+
+    /**
+     * @return array<string, mixed>
+     */
+    public static function receiptSnapshotPayload(RmeReceiptSnapshot $snapshot): array
+    {
+        return [
+            'receipt_snapshot_id' => (int) $snapshot->id,
+            'rme_payment_id' => (int) $snapshot->rme_payment_id,
+            'rme_invoice_id' => (int) $snapshot->rme_invoice_id,
+            'branch_id' => (int) $snapshot->branch_id,
+            'receipt_number' => (string) $snapshot->receipt_number,
+            'invoice_version' => (int) $snapshot->invoice_version,
+            'invoice_status' => (string) $snapshot->invoice_status,
+            'capture_basis' => (string) $snapshot->capture_basis,
+            'snapshot_schema_version' => (int) $snapshot->snapshot_schema_version,
+            'snapshot_sha256' => (string) $snapshot->snapshot_sha256,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public static function overpaymentObligationPayload(RmeOverpaymentObligation $obligation): array
+    {
+        return [
+            'overpayment_obligation_id' => (int) $obligation->id,
+            'obligation_number' => $obligation->obligation_number,
+            'rme_invoice_id' => (int) $obligation->rme_invoice_id,
+            'branch_id' => (int) $obligation->branch_id,
+            'clinic_visit_id' => (int) $obligation->clinic_visit_id,
+            'patient_id' => (int) $obligation->patient_id,
+            'source_correction_id' => (int) $obligation->source_correction_id,
+            'amount' => self::money($obligation->amount),
+            'invoice_version' => (int) $obligation->invoice_version,
+            'status' => (string) $obligation->status,
         ];
     }
 

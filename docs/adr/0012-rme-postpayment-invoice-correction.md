@@ -1,6 +1,6 @@
 # ADR 0012 — Koreksi tagihan RME setelah pembayaran (PARTIAL dan PAID)
 
-* Status: **ACCEPTED (keputusan Owner PP-1…PP-10 diratifikasi 2026-10-25)** — implementasi `NOT_IMPLEMENTED`, aktivasi diblokir (PP-10). Status asli: ~~PROPOSED — desain persiapan, BUKAN keputusan yang berlaku dan BUKAN kode~~
+* Status: **ACCEPTED (keputusan Owner PP-1…PP-10 diratifikasi 2026-10-25)** — implementasi **`IMPLEMENTED_FLAG_OFF`** oleh `FEATURE-RME-POSTPAYMENT-INVOICE-CORRECTION-1` (rule 207; flag `rme.invoice_postpayment_correction` default OFF), aktivasi diblokir (PP-10). *Status implementasi sebelumnya:* ~~`NOT_IMPLEMENTED`~~ Status asli: ~~PROPOSED — desain persiapan, BUKAN keputusan yang berlaku dan BUKAN kode~~
 * Tanggal: 2026-10-25 (WITA)
 * Tugas: `PREPARATION-RME-POSTPAYMENT-INVOICE-CORRECTION-1` (program
   `DAENGTISIAMS-RME-BILLING-CORRECTION`, persiapan Sprint 3/7)

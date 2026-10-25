@@ -36,6 +36,11 @@ final class PatientOwnedRecordRegistry
         // belongs to its invoice's patient; merge re-points it (the frozen
         // snapshots keep the historical patient_id they were captured with).
         'trx_rme_invoice_corrections' => ['column' => 'patient_id', 'label' => 'Koreksi Tagihan', 'group' => 'invoices'],
+        // FEATURE-RME-POSTPAYMENT-INVOICE-CORRECTION-1 — money the clinic owes back
+        // belongs to its invoice's patient and moves with it; the obligation's
+        // amount, status, source correction and events are untouched (the model
+        // refuses any other write; merge re-points through the query builder).
+        'trx_rme_overpayment_obligations' => ['column' => 'patient_id', 'label' => 'Kewajiban Kelebihan Bayar', 'group' => 'invoices'],
         'trx_rme_prescriptions' => ['column' => 'patient_id', 'label' => 'Resep', 'group' => 'prescriptions'],
         'trx_rme_prescription_whatsapp_deliveries' => ['column' => 'patient_id', 'label' => 'Pengiriman Resep WhatsApp', 'group' => 'prescriptions'],
         'trx_rme_visit_consents' => ['column' => 'patient_id', 'label' => 'Persetujuan Tindakan', 'group' => 'consents'],

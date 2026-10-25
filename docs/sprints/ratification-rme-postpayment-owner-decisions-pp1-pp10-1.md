@@ -104,7 +104,16 @@ diblokir) masuk rule 206 §F. `.sprint/current.yml` tidak diubah (sprint docs-on
 
 ## 7. B4 — Governance dan penutupan
 
-Diisi saat penutupan (CI, merge, pembersihan).
+*Dicatat oleh FEATURE-RME-POSTPAYMENT-INVOICE-CORRECTION-1 (2026-10-25):*
+
+| Butir | Bukti |
+|---|---|
+| CI kandidat (PR #523, head `107dfa20`) | run `40195496972` — success |
+| Merge | `572a32a9`, tree `1cae6cba` = tree kandidat |
+| CI pasca-merge (push ke base) | run `40197230789` — success (Full Suite skipped sesuai kebijakan; skipped ≠ pass) |
+| Deploy | tidak — perubahan dokumen saja (`DEPLOY_REQUIRED = NO`) |
+| GO tag runtime | tidak ada (keputusan, bukan runtime) |
+| Worktree, branch lokal/remote | dihapus; tidak ada perubahan tak ter-commit milik tugas ini |
 
 ## 8. Roadmap program (7 sprint)
 

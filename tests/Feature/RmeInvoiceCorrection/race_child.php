@@ -23,8 +23,10 @@ declare(strict_types=1);
 */
 
 use App\Models\User;
+use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Models\RmeInvoiceCorrection;
 use App\Modules\RmeInvoice\Services\RmeInvoiceCorrectionService;
+use App\Modules\RmeInvoice\Services\RmePaymentService;
 use App\Modules\User\Services\UserService;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Support\Facades\DB;
@@ -57,6 +59,18 @@ try {
                 (string) $step['note'],
             ),
             'deactivate_user' => app(UserService::class)->deactivate(User::query()->findOrFail((int) $step['user'])),
+            // FEATURE-RME-POSTPAYMENT-INVOICE-CORRECTION-1 — the post-payment races
+            // (RmeInvoiceCorrectionPostPaymentConcurrencyTest).
+            'approve_correction' => app(RmeInvoiceCorrectionService::class)->approve(
+                RmeInvoiceCorrection::query()->findOrFail((int) $step['correction']),
+                User::query()->findOrFail((int) $step['actor']),
+                null,
+            ),
+            'pay_invoice' => app(RmePaymentService::class)->pay(
+                RmeInvoice::query()->findOrFail((int) $step['invoice']),
+                User::query()->findOrFail((int) $step['actor']),
+                (array) $step['form'],
+            ),
             default => throw new InvalidArgumentException('Unknown race step '.(string) $step['kind']),
         };
     }

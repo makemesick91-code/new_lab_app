@@ -1,6 +1,6 @@
 # Desain Koreksi Tagihan RME Setelah Pembayaran (PARTIAL / PAID)
 
-> **Status: keputusan Owner PP-1…PP-10 `OWNER_POLICY_APPROVED` (ratifikasi 2026-10-25) — desain ini menjadi dasar implementasi; tetap `NOT_IMPLEMENTED` dan aktivasi diblokir PP-10.** Status asli: ~~PROPOSED — persiapan, tidak diimplementasikan, tidak diaktifkan.~~
+> **Status: keputusan Owner PP-1…PP-10 `OWNER_POLICY_APPROVED` (ratifikasi 2026-10-25) — desain ini DIIMPLEMENTASIKAN dengan flag OFF oleh `FEATURE-RME-POSTPAYMENT-INVOICE-CORRECTION-1` (rule 207); aktivasi tetap diblokir PP-10.** Apa yang dibangun (dan di mana berbeda dari desain) dicatat di rule 207 dan `docs/sprints/feature-rme-postpayment-invoice-correction-1.md`. *Status sebelumnya:* ~~tetap `NOT_IMPLEMENTED`~~. Status asli: ~~PROPOSED — persiapan, tidak diimplementasikan, tidak diaktifkan.~~
 > Tidak ada isi dokumen ini yang merupakan perilaku produksi. Perilaku produksi ada
 > di rule 188–205. Setiap kebijakan di sini menunggu keputusan Owner PP-1…PP-10
 > (`docs/decisions/rme-postpayment-correction-owner-decision-proposals.md`).

@@ -9,6 +9,7 @@ use App\Modules\Branch\Models\Branch;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\RmeInvoice\Support\RmeInvoiceCorrectionStatus;
+use App\Modules\RmeInvoice\Support\RmeInvoiceCorrectionType;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -56,6 +57,12 @@ class RmeInvoiceCorrection extends Model
         'requested_by',
         'requested_at',
         'idempotency_key',
+        // FEATURE-RME-POSTPAYMENT-INVOICE-CORRECTION-1 — written once at
+        // submission: the ledger the checker reviews, and the owner's case
+        // approval reference (mandatory for POST_PAYMENT, PP-2/PP-7).
+        'invoice_status_at_request',
+        'paid_payment_count_at_request',
+        'owner_approval_reference',
     ];
 
     protected $fillable = [
@@ -79,6 +86,9 @@ class RmeInvoiceCorrection extends Model
         'requested_by',
         'requested_at',
         'idempotency_key',
+        'invoice_status_at_request',
+        'paid_payment_count_at_request',
+        'owner_approval_reference',
     ];
 
     protected static function booted(): void
@@ -133,6 +143,9 @@ class RmeInvoiceCorrection extends Model
             'proposed_grand_total' => 'decimal:2',
             'difference_amount' => 'decimal:2',
             'paid_total_at_request' => 'decimal:2',
+            'paid_payment_count_at_request' => 'integer',
+            'outstanding_after' => 'decimal:2',
+            'overpaid_after' => 'decimal:2',
             'requested_by' => 'integer',
             'requested_at' => 'datetime',
             'decided_by' => 'integer',
@@ -199,6 +212,17 @@ class RmeInvoiceCorrection extends Model
     public function revisionVersion(): HasOne
     {
         return $this->hasOne(RmeInvoiceDocumentVersion::class, 'source_correction_id');
+    }
+
+    /** FEATURE-RME-POSTPAYMENT-INVOICE-CORRECTION-1 — the obligation this correction opened, if any. */
+    public function overpaymentObligation(): HasOne
+    {
+        return $this->hasOne(RmeOverpaymentObligation::class, 'source_correction_id');
+    }
+
+    public function isPostPayment(): bool
+    {
+        return $this->correction_type === RmeInvoiceCorrectionType::POST_PAYMENT;
     }
 
     public function isActive(): bool

@@ -94,6 +94,14 @@ interface RmeInvoiceCorrectionRepositoryInterface
     /** D23 guard: lab case candidates already generated for this invoice. */
     public function invoiceHasLabCandidates(int $invoiceId): bool;
 
+    /**
+     * FEATURE-RME-POSTPAYMENT-INVOICE-CORRECTION-1 (PP-2/PP-7) — whether this owner
+     * approval reference is already recorded on a POST_PAYMENT correction of a
+     * DIFFERENT invoice (any status). A reference is case-specific: it may be reused
+     * on the same invoice (a resubmission after STALE/REJECT), never on another one.
+     */
+    public function postPaymentReferenceUsedOnOtherInvoice(string $reference, int $invoiceId): bool;
+
     /** @return Collection<int, RmeInvoiceDocumentVersion> */
     public function documentVersionsForInvoice(int $invoiceId): Collection;
 
