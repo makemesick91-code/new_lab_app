@@ -627,3 +627,28 @@ This observation does **not** mark Activation steps 6–7 done, does **not** sta
 the case carried a case-specific Owner approval (the correction reason carries no
 recognisable approval reference), and does **not** change Sprint 2's status. Only a
 Sprint 2 closure verification may evaluate it.
+
+**Evaluated 2026-10-25 (19:45–20:30 WITA) by `VERIFICATION-RME-INVOICE-CORRECTION-PREPAYMENT-PILOT-REAL-CASE-42-1`
+(rule 196 §9; read-only, no decision made or changed).** Evidence:
+`docs/sprints/verification-rme-invoice-correction-prepayment-pilot-real-case-42-1.md`.
+
+- The case ran on runtime `9e37b855` (the rule-205 release `20303a5b` began deploying
+  at 04:08:31 UTC, after it).
+- Financial reconciliation: **PASS (RECONSTRUCTED)** — v0/v1 integrity hashes hold,
+  the fingerprint at request equals v0, the live invoice minus its payment equals v1,
+  and every global delta since the 2026-10-24 baseline is attributed row by row.
+  Payment #50 followed the apply (server time 03:24:00 > 03:23:22; the form carried
+  the post-apply version).
+- **Case-specific Owner approval: `UNVERIFIED`.** No approval reference in the reason
+  ("salah input, karena beda harga"), an empty checker note, nothing in this register
+  or any repository branch, and the clinic channel that holds rule-202 forms is not
+  accessible to the task. The checker account holding the Owner role does not merge
+  the Owner's authorization with the checker's verification. No approval was
+  requested or recorded retroactively.
+- Activation steps 6–7 therefore stay **NOT DONE**; Full Prepayment Pilot GO =
+  **NO_GO** (`OPERATIONAL_OR_EVIDENCE_BLOCKED`); the full tag does not exist.
+- **Human separation: `RED_FLAG_UNRESOLVED`.** The maker account acted from the same
+  browser family and version the checker account had used for months, on a public IP
+  the two accounts also shared on five earlier days. This proves nothing either way;
+  the Owner is asked to establish who operated each account. Account separation
+  (29 ≠ 1) holds.

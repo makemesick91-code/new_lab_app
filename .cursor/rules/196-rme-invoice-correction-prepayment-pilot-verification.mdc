@@ -1,6 +1,6 @@
 ---
-description: VERIFICATION-RME-INVOICE-CORRECTION-PREPAYMENT-PILOT-1 — how the live SPN4 pre-payment invoice correction pilot is verified and when it may be closed. Six-rung state ladder (PILOT_READY → PILOT_ACTIVE → PILOT_LIVE → AUTHENTICATED_VERIFIED → FINANCIAL_CORRECTION_VERIFIED → FULL_ACTIVATION_GO), the evidence each rung needs, the full-GO tag contract, and why an eligible real case can only be caught, never created. Extends rule 195; changes no runtime behaviour. §7 (PILOT-2, 2026-10-23) governs later re-verification runs: one closure tag, re-measure never inherit, no patient held for a case, only a live session is login evidence, and the Rp0 invoice ban is procedural. §8 (PILOT-CLOSURE, 2026-10-24): a genuinely wrong invoice held by an OPS-OQ-1 dispute stays an eligible case after the patient leaves, the dispute is resolved from the applied correction, and the payment-idempotency audit result.
-globs: app/Modules/RmeInvoice/**, app/Console/Commands/RmeInvoiceCorrectionReadinessCommand.php, config/rme_invoice_correction.php, docs/sprints/verification-rme-invoice-correction-prepayment-pilot-1.md, docs/sprints/verification-rme-invoice-correction-prepayment-pilot-2.md, docs/sprints/verification-rme-invoice-correction-prepayment-pilot-closure.md, docs/decisions/rme-billing-correction-owner-decisions.md
+description: VERIFICATION-RME-INVOICE-CORRECTION-PREPAYMENT-PILOT-1 — how the live SPN4 pre-payment invoice correction pilot is verified and when it may be closed. Six-rung state ladder (PILOT_READY → PILOT_ACTIVE → PILOT_LIVE → AUTHENTICATED_VERIFIED → FINANCIAL_CORRECTION_VERIFIED → FULL_ACTIVATION_GO), the evidence each rung needs, the full-GO tag contract, and why an eligible real case can only be caught, never created. Extends rule 195; changes no runtime behaviour. §7 (PILOT-2, 2026-10-23) governs later re-verification runs: one closure tag, re-measure never inherit, no patient held for a case, only a live session is login evidence, and the Rp0 invoice ban is procedural. §8 (PILOT-CLOSURE, 2026-10-24): a genuinely wrong invoice held by an OPS-OQ-1 dispute stays an eligible case after the patient leaves, the dispute is resolved from the applied correction, and the payment-idempotency audit result. §9 (REAL-CASE-42, 2026-10-25): a real case done without a verifier reconciles afterwards (PASS RECONSTRUCTED) but cannot reach the live-observation rungs; case Owner approval must pre-exist the submit and the checker holding the Owner role does not merge the two controls; order by server time not paid_at; the runtime that ran a case comes from the deploy log.
+globs: app/Modules/RmeInvoice/**, app/Console/Commands/RmeInvoiceCorrectionReadinessCommand.php, config/rme_invoice_correction.php, docs/sprints/verification-rme-invoice-correction-prepayment-pilot-1.md, docs/sprints/verification-rme-invoice-correction-prepayment-pilot-2.md, docs/sprints/verification-rme-invoice-correction-prepayment-pilot-closure.md, docs/sprints/verification-rme-invoice-correction-prepayment-pilot-real-case-42-1.md, docs/decisions/rme-billing-correction-owner-decisions.md
 alwaysApply: false
 ---
 
@@ -24,7 +24,7 @@ Each rung needs its own evidence; a lower rung never implies a higher one.
 | `PILOT_ACTIVE` | the flag is ON and the allowlist admits exactly the pilot branch | `rme:invoice-correction-readiness` → `STATE=PILOT_ACTIVE`, admitted codes `[SPN4]` |
 | `PILOT_LIVE` | the maker and the checker are on shift in a shared pilot branch now | the probe `--maker=29 --checker=1` → `live_now=true`, Decision GO |
 | `AUTHENTICATED_VERIFIED` | the two real operators logged in normally and saw/denied the right things | operator-performed login + working-branch selection, observed server-side (session/online-context rows, probe), never produced by anyone else |
-| `FINANCIAL_CORRECTION_VERIFIED` | one real, owner-authorized correction went SUBMITTED → APPLIED and reconciled | correction + 2 events + 2 audit rows, v0 frozen, v1 issued, version +1, no other financial row changed |
+| `FINANCIAL_CORRECTION_VERIFIED` | one real, owner-authorized correction went SUBMITTED → APPLIED and reconciled | correction + 3 events + 5 audit rows (rule 202 §4; the original "2 events + 2 audit rows" was wrong — corrected 2026-10-25, §9 item 39), v0 frozen, v1 issued, version +1, no other financial row changed |
 | `FULL_ACTIVATION_GO` | the pilot is closed | every rung above + CI/rules/security/cleanup, then the full tag |
 
 1. `PILOT_ACTIVE` with Decision WATCH is a legitimate resting state. It is not a
@@ -237,3 +237,63 @@ Read with rule 202 (counter procedure), rule 203 (OPS-OQ-1 dispute hold) and rul
     written to a file). Without it every HTTP/view test fails with
     `MissingAppKeyException` — an environment fault, not a regression (2026-10-24:
     181 such failures before, 0 after).
+
+## 9. Retrospective evaluation of a real case (added by VERIFICATION-RME-INVOICE-CORRECTION-PREPAYMENT-PILOT-REAL-CASE-42-1, 2026-10-25)
+Evidence: `docs/sprints/verification-rme-invoice-correction-prepayment-pilot-real-case-42-1.md`.
+First real correction: `RMECOR-202610-000001`, invoice #42 SPN4, Rp6.000.000 → Rp5.000.000,
+performed by the operators without a verifier present. Outcome: financial reconciliation
+PASS (RECONSTRUCTED), `OWNER_CASE_APPROVAL=UNVERIFIED`, Full Pilot GO = **NO_GO**
+(`OPERATIONAL_OR_EVIDENCE_BLOCKED`), no tag. Changes no runtime behaviour.
+
+31. **A case performed without a verifier can be reconciled afterwards, but it cannot
+    retroactively reach the rungs that need live observation.** From immutable rows
+    (events, audit, document versions with `integrityHolds()`, fingerprints) the
+    financial result can be proven — report it as `PASS (RECONSTRUCTED)`. A fresh
+    baseline (§10), `PILOT_LIVE` (§21), `AUTHENTICATED_VERIFIED` (§22) and D10 by
+    state (§12) cannot be produced afterwards; report them NOT_PERFORMED /
+    NOT_REACHED by name. Never round up, and never re-stage a case to collect them.
+32. **Case-specific Owner approval must pre-exist the submit and be found in a
+    sanctioned source** (register, workflow record, the clinic's own archive/official
+    owner channel per rule 202). An empty decision note and a reason without an
+    `OWNER_APPROVAL_REFERENCE` leave it `UNVERIFIED`. The checker account also holding
+    the Owner role (user 1 holds `Super Admin` + `Owner`; user 6 also holds Owner)
+    does NOT turn the checker's approval into the Owner's case authorization: rule
+    202 separates the two controls, and an approval recorded after the submit cannot
+    have authorized it.
+33. **Never solicit, draft or record a case approval retroactively.** A written record
+    that already existed before the submit may be evaluated later as separate,
+    additional evidence; the audit trail is never edited to carry it.
+34. **Order is judged by server-written time, not by ids and not by `paid_at`.**
+    `paid_at` is the cashier form's `now()` default at minute precision, so a payment
+    can read `paid_at` earlier than an apply it followed. Prove form freshness from
+    the version binding (rule 191): no `RME_PAYMENT_REFUSED_INVOICE_VERSION` means the
+    submitted form carried the post-apply version.
+35. **Identify the runtime that executed the case from the deploy log**, not from the
+    current `HEAD`. Case #42 ran on `9e37b855`; the rule-205 release `20303a5b` started
+    deploying at 04:08:31 UTC, after the payment, so payment #50 correctly has no
+    `trx_rme_payment_submissions` row.
+36. **Human separation is not verifiable by the application — and case #42 carries an
+    unresolved red flag.** Maker and checker came from the same public IP. The maker
+    account (29) acted from Ubuntu + Firefox rv:157, the exact browser family and
+    version the checker account (1) used continuously from July to 2026-10-04, and
+    the two accounts shared a public IP on 2026-09-27, 10-03, 10-04, 10-06, 10-08 and
+    10-25; account 29 also used Windows/Chrome on 10-08 and 10-17 and Ubuntu/Firefox
+    alone on 10-10. The checker's reduced Chrome UA ("Android 10; K … Chrome/155 …
+    Mobile") is identical to a clinician's device that day, so it identifies no
+    device. This proves nothing either way: record
+    `HUMAN_SEPARATION=RED_FLAG_UNRESOLVED`, ask the Owner to establish who operated
+    each account, and never resolve it from the database. Account separation
+    (29 ≠ 1) is all the system proves.
+37. A corrected invoice that later produced a lab candidate is outside any further
+    correction while PP-8(a) stands (#42 now has candidate #13).
+38. Case #42 cannot close the pilot: it is PAID and the observation window has passed.
+    Closure still waits for the next real case authorized by the Owner BEFORE the
+    submit (§21, §24); every later run still closes under the one tag in §14.
+39. The ladder table's FINANCIAL_CORRECTION_VERIFIED evidence once read "2 events + 2
+    audit rows"; the code (`recordTransition` per transition + one row per frozen
+    version), rule 202 §4 and the reconciliation form give **3 events and 5 audit
+    rows** for a first applied correction — exactly what case #42 produced. A
+    reconciliation is judged against rule 202 §4, never against that stale cell.
+40. The wording "salah input, karena beda harga" does not settle whether the change was
+    an input error or a price concession; a concession would touch the PENDING
+    discount policy (D21c). Only the Owner's `ERROR_DESCRIPTION` can decide it.
