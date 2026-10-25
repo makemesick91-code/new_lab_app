@@ -49,7 +49,7 @@ Diambil dengan `psql` sebagai `postgres`, `default_transaction_read_only=on`
 | 03:21:58 | Peninjau dispute SPN4 ditetapkan (user 11) | user 1 |
 | 03:23:22 | APPROVED → APPLIED (D1a, satu transaksi), v0 + v1 dibekukan | user 1 |
 | 03:24:00 (`paid_at` 03:23:00) | Pembayaran #50 Rp5.000.000 → tagihan PAID | kasir user 29 |
-| 03:24:xx | Kandidat lab untuk #42 dibuat (pembayaran lunas) | sistem |
+| 03:24:00 | Kandidat lab #13 untuk #42 dibuat (pembayaran lunas) | sistem |
 
 Rekonsiliasi cepat: Σ item #42 = Rp5.000.000 = `grand_total`; v0 `grand_total_cents`
 = 600.000.000, v1 = 500.000.000; audit SUBMITTED/APPROVED/APPLIED masing-masing 1,
