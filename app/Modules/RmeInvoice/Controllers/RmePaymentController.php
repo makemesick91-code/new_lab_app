@@ -6,10 +6,14 @@ use App\Http\Controllers\Controller;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\PaymentMethod\Services\PaymentMethodService;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
+use App\Modules\RmeInvoice\Models\RmePaymentSubmission;
 use App\Modules\RmeInvoice\Requests\CreateRmePaymentRequest;
 use App\Modules\RmeInvoice\Services\RmeControlReceivableService;
 use App\Modules\RmeInvoice\Services\RmePaymentService;
+use App\Modules\RmeInvoice\Services\RmePaymentSubmissionService;
 use App\Modules\RmeInvoice\Support\RmeInvoiceDocument;
+use App\Modules\RmeInvoice\Support\RmePaymentDeclaredView;
+use App\Modules\RmeInvoice\Support\RmePaymentSubmissionReplayed;
 use App\Support\Clinical\ClinicalClock;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\CarbonImmutable;
@@ -27,6 +31,7 @@ class RmePaymentController extends Controller
         private readonly RmePaymentService $service,
         private readonly PaymentMethodService $paymentMethods,
         private readonly RmeControlReceivableService $carryOver,
+        private readonly RmePaymentSubmissionService $submissions,
     ) {}
 
     public function create(Request $request, ClinicVisit $clinicVisit, RmeInvoice $rmeInvoice): View|RedirectResponse
@@ -68,6 +73,16 @@ class RmePaymentController extends Controller
             'controlOnly' => $payableSummary['has_carry_over']
                 ? $this->service->controlOnlyEligibility($rmeInvoice)
                 : null,
+            // Rule 205 — one server-issued intent per form on this page (the
+            // ordinary form and the Kontrol-only form are different payments), and
+            // the plan the ordinary form offers. Fresh on every render: a page
+            // re-rendered after a refusal is a new view of new balances.
+            'paymentIntent' => $this->submissions->issueIntent($rmeInvoice),
+            'controlOnlyIntent' => $this->submissions->issueIntent($rmeInvoice),
+            'paymentPlan' => RmePaymentDeclaredView::planFor(
+                (bool) $payableSummary['has_carry_over'],
+                $outstandingReceivables->isNotEmpty(),
+            ),
         ]);
     }
 
@@ -76,6 +91,55 @@ class RmePaymentController extends Controller
         $this->authorize('pay', $rmeInvoice);
         abort_unless($rmeInvoice->belongsToVisit($clinicVisit), 404);
 
+        // Rule 205 — the same form submitted again (double click, retry after a
+        // lost response, resubmission after "back"): the original result, nothing
+        // new recorded. Caught early by the FormRequest, or under the invoice lock
+        // by the payment service when two copies raced past it.
+        if (($replayed = $request->replayedSubmission()) !== null) {
+            return $this->replayResponse($clinicVisit, $rmeInvoice, $replayed);
+        }
+
+        try {
+            return $this->recordPayment($request, $clinicVisit, $rmeInvoice);
+        } catch (RmePaymentSubmissionReplayed $replayed) {
+            return $this->replayResponse($clinicVisit, $rmeInvoice, $replayed->submission);
+        }
+    }
+
+    /**
+     * Rule 205 — answers a repeated submission exactly where the original one
+     * landed (the receipt once the invoice is settled, otherwise the invoice),
+     * naming the ORIGINAL receipt number and saying that no new payment was made.
+     * Only ever reached for the account that recorded it, which still holds the
+     * billing permission and the invoice's working branch (authorized above and
+     * re-checked by the service under the lock).
+     */
+    private function replayResponse(ClinicVisit $clinicVisit, RmeInvoice $rmeInvoice, RmePaymentSubmission $submission): RedirectResponse
+    {
+        $freshInvoice = $rmeInvoice->fresh() ?? $rmeInvoice;
+        $receiptNumber = $submission->payment?->payment_number ?? '-';
+        $message = 'Pembayaran ini sudah tercatat sebelumnya — tidak ada pembayaran baru yang dibuat. No. Kwitansi: '.$receiptNumber.'.';
+
+        $response = $freshInvoice->isPaid()
+            ? redirect()->route('rme.cashier.receipt.show', [$clinicVisit, $freshInvoice])
+            : redirect()->route('rme.cashier.show', [$clinicVisit, $freshInvoice]);
+
+        $response->with('status', $message)->with('payment_replayed', true);
+
+        if ($submission->payment_batch_uuid !== null) {
+            $batch = $this->service->paymentsForBatch((string) $submission->payment_batch_uuid);
+            $response->with('payment_allocation', [
+                'allocated_to_parent' => round((float) $batch->filter(fn ($payment) => (int) $payment->rme_invoice_id !== (int) $rmeInvoice->id)->sum('amount'), 2),
+                'allocated_to_control' => round((float) $batch->filter(fn ($payment) => (int) $payment->rme_invoice_id === (int) $rmeInvoice->id)->sum('amount'), 2),
+                'payment_batch_uuid' => (string) $submission->payment_batch_uuid,
+            ]);
+        }
+
+        return $response;
+    }
+
+    private function recordPayment(CreateRmePaymentRequest $request, ClinicVisit $clinicVisit, RmeInvoice $rmeInvoice): RedirectResponse
+    {
         $validated = $request->validated();
 
         // Rule 204 (OPS-OQ-1b) — explicit, confirmed Kontrol-only payment while the

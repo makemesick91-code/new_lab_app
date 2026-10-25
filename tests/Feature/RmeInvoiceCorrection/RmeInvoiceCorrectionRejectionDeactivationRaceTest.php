@@ -83,6 +83,7 @@ const RDR_TABLES = [
     'trx_rme_invoice_correction_lines',
     'trx_rme_invoice_document_versions',
     'trx_rme_invoice_corrections',
+    'trx_rme_payment_submissions', // rule 205 — references trx_rme_payments
     'trx_rme_payments',
     'trx_rme_invoice_items',
     'trx_rme_invoices',
@@ -291,7 +292,8 @@ function rdrLockInvoice(RmeInvoice $invoice): array
 
 function rdrPayForm(RmeInvoice $invoice, int $amount): array
 {
-    return ['amount' => $amount, 'paid_at' => now()->format('Y-m-d H:i:s'), 'invoice_versions' => [$invoice->id => 0]];
+    // Rule 205: the page also carries a fresh intent and declares its plan and balances.
+    return rmeDeclaredPaymentForm($invoice, ['amount' => $amount, 'paid_at' => now()->format('Y-m-d H:i:s'), 'invoice_versions' => [$invoice->id => 0]]);
 }
 
 function rdrRefusalCount(string $action, int $entityId): int

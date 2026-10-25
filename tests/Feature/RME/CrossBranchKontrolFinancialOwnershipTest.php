@@ -280,35 +280,49 @@ function cbkLeakyDiscovery(RmeInvoice $leak): RmeControlReceivableService
     };
 }
 
+/*
+| SUPERSEDED by FIX-RME-PAYMENT-SUBMISSION-IDEMPOTENCY-1 (rule 205). These two
+| tests used to pin, as the SAFE outcome, that a leaked cross-branch parent was
+| silently skipped under the lock and the rest of the money capped: 300.000 was
+| submitted and 100.000 recorded. That silent truncation is the defect rule 205
+| removes — the cashier is told one amount was received while another is in the
+| ledger. A plan invoice that is not collectable under the lock now refuses the
+| WHOLE payment ([PAYMENT_PLAN_CHANGED]); the defence the tests exist for — no
+| branch-B money ever reaches the branch-A invoice — is asserted unchanged.
+*/
 it('never allocates control-path money into another branch\'s invoice, even if discovery leaked it', function () {
     app()->instance(RmeControlReceivableService::class, cbkLeakyDiscovery($this->parentInvoice));
     app()->forgetInstance(RmePaymentService::class);
     $ledgerA = cbkLedger($this->parentInvoice);
+    $ledgerB = cbkLedger($this->controlInvoice);
+    $paymentsBefore = RmePayment::query()->count();
 
-    $result = app(RmePaymentService::class)->allocateControlPayment(
+    expect(fn () => app(RmePaymentService::class)->allocateControlPayment(
         $this->controlInvoice,
         $this->kasirB,
         cbkPayload($this->controlInvoice, 300000),
-    );
+    ))->toThrow(ValidationException::class, '[PAYMENT_PLAN_CHANGED]');
 
-    expect($result->allocatedToParent)->toBe(0.0)
-        ->and($result->allocatedToControl)->toBe(100000.0)
-        ->and(cbkLedger($this->parentInvoice))->toBe($ledgerA);
+    expect(cbkLedger($this->parentInvoice))->toBe($ledgerA)
+        ->and(cbkLedger($this->controlInvoice))->toBe($ledgerB)
+        ->and(RmePayment::query()->count())->toBe($paymentsBefore);
 });
 
 it('never allocates visit-path money into another branch\'s invoice, even if discovery leaked it', function () {
     app()->instance(RmeControlReceivableService::class, cbkLeakyDiscovery($this->parentInvoice));
     app()->forgetInstance(RmePaymentService::class);
     $ledgerA = cbkLedger($this->parentInvoice);
+    $ledgerB = cbkLedger($this->controlInvoice);
+    $paymentsBefore = RmePayment::query()->count();
 
-    $result = app(RmePaymentService::class)->allocateVisitPayment(
+    expect(fn () => app(RmePaymentService::class)->allocateVisitPayment(
         $this->controlInvoice,
         $this->kasirB,
         cbkPayload($this->controlInvoice, 300000),
         [$this->parentInvoice->id],
-    );
+    ))->toThrow(ValidationException::class, '[PAYMENT_PLAN_CHANGED]');
 
-    expect($result->allocatedToParent)->toBe(0.0)
-        ->and($result->allocatedToControl)->toBe(100000.0)
-        ->and(cbkLedger($this->parentInvoice))->toBe($ledgerA);
+    expect(cbkLedger($this->parentInvoice))->toBe($ledgerA)
+        ->and(cbkLedger($this->controlInvoice))->toBe($ledgerB)
+        ->and(RmePayment::query()->count())->toBe($paymentsBefore);
 });

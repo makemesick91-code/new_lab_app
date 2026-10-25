@@ -296,11 +296,11 @@ it('refuses the held payment over HTTP with the dispute message, before the amou
     rbdReport($invoice);
     rbdActingAs(test()->cashier);
 
-    $this->post(route('rme.cashier.payment.store', [$invoice->clinic_visit_id, $invoice]), [
+    $this->post(route('rme.cashier.payment.store', [$invoice->clinic_visit_id, $invoice]), rmeDeclaredPaymentForm($invoice, [
         'amount' => 99_999_999,
         'paid_at' => now()->format('Y-m-d H:i:s'),
         'invoice_versions' => [$invoice->id => 0],
-    ])->assertSessionHasErrors(RmePaymentService::PAYMENT_BLOCKED_FIELD)
+    ]))->assertSessionHasErrors(RmePaymentService::PAYMENT_BLOCKED_FIELD)
         ->assertSessionDoesntHaveErrors('amount');
 
     expect(RmePayment::count())->toBe(0)
@@ -313,12 +313,12 @@ it('refuses a held receivable over HTTP when the visit form selects it', functio
     rbdReport($prior);
     rbdActingAs(test()->cashier);
 
-    $this->post(route('rme.cashier.payment.store', [$current->clinic_visit_id, $current]), [
+    $this->post(route('rme.cashier.payment.store', [$current->clinic_visit_id, $current]), rmeDeclaredPaymentForm($current, [
         'amount' => 1000000,
         'paid_at' => now()->format('Y-m-d H:i:s'),
         'selected_receivable_ids' => [$prior->id],
         'invoice_versions' => [$prior->id => 0, $current->id => 0],
-    ])->assertSessionHasErrors(RmePaymentService::PAYMENT_BLOCKED_FIELD);
+    ]))->assertSessionHasErrors(RmePaymentService::PAYMENT_BLOCKED_FIELD);
 
     expect(RmePayment::count())->toBe(0);
 });

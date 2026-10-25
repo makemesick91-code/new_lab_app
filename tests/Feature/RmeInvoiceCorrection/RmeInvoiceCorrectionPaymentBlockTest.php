@@ -279,11 +279,11 @@ it('refuses the blocked payment over HTTP with the D10 message, before the amoun
     ricSubmit($invoice);
     ricActingAs(test()->cashier);
 
-    $this->post(route('rme.cashier.payment.store', [$invoice->clinic_visit_id, $invoice]), [
+    $this->post(route('rme.cashier.payment.store', [$invoice->clinic_visit_id, $invoice]), rmeDeclaredPaymentForm($invoice, [
         'amount' => 99_999_999, // would also exceed the balance; the D10 refusal comes first
         'paid_at' => now()->format('Y-m-d H:i:s'),
         'invoice_versions' => [$invoice->id => 0],
-    ])->assertSessionHasErrors(RmePaymentService::PAYMENT_BLOCKED_FIELD)
+    ]))->assertSessionHasErrors(RmePaymentService::PAYMENT_BLOCKED_FIELD)
         ->assertSessionDoesntHaveErrors('amount');
 
     expect(RmePayment::count())->toBe(0)

@@ -46,14 +46,29 @@ require_once __DIR__.'/helpers.php';
 
 beforeEach(fn () => ricSetup());
 
-/** A payment payload as a page rendered RIGHT NOW would submit it. */
-function rpvPayload(float $amount, array $versions, array $overrides = []): array
+/**
+ * A payment payload as a page rendered RIGHT NOW would submit it.
+ *
+ * FIX-RME-PAYMENT-SUBMISSION-IDEMPOTENCY-1 (rule 205): a rendered page also carries
+ * a server-issued `payment_intent` and declares the `payment_plan` and
+ * `invoice_balances` it displays — captured HERE, when the "page" is built, so a
+ * stale form stays stale in those fields too. The versions under test are still
+ * exactly the ones the caller passes. The page is for $route; when omitted it is
+ * the newest existing invoice the versions name (in these fixtures the invoice
+ * being paid is always created after the parent or receivable it displays).
+ */
+function rpvPayload(float $amount, array $versions, array $overrides = [], ?RmeInvoice $route = null): array
 {
-    return array_merge([
+    $route ??= RmeInvoice::query()
+        ->whereIn('id', array_filter(array_keys($versions), 'is_int'))
+        ->orderByDesc('id')
+        ->firstOrFail();
+
+    return rmeDeclaredPaymentForm($route, array_merge([
         'amount' => $amount,
         'paid_at' => now()->format('Y-m-d H:i:s'),
         'invoice_versions' => $versions,
-    ], $overrides);
+    ], $overrides));
 }
 
 /** Apply the canonical reducing correction (500.000 → 350.000) through the real service. */
@@ -143,10 +158,10 @@ it('refuses an HTTP payment whose form carries no invoice version', function () 
     $invoice = ricInvoice();
     ricActingAs(test()->cashier);
 
-    $this->post(route('rme.cashier.payment.store', [$invoice->clinic_visit_id, $invoice]), [
+    $this->post(route('rme.cashier.payment.store', [$invoice->clinic_visit_id, $invoice]), rmeDeclaredPaymentForm($invoice, [
         'amount' => 500000,
         'paid_at' => now()->format('Y-m-d H:i:s'),
-    ])->assertSessionHasErrors('invoice_versions');
+    ]))->assertSessionHasErrors('invoice_versions');
 
     expect(RmePayment::count())->toBe(0)
         ->and($invoice->fresh()->status)->toBe(RmeInvoice::STATUS_UNPAID);
@@ -164,11 +179,11 @@ it('refuses an HTTP payment whose declared versions are malformed', function (st
         'only another invoice' => [999999 => 0],
     };
 
-    $this->post(route('rme.cashier.payment.store', [$invoice->clinic_visit_id, $invoice]), [
+    $this->post(route('rme.cashier.payment.store', [$invoice->clinic_visit_id, $invoice]), rmeDeclaredPaymentForm($invoice, [
         'amount' => 500000,
         'paid_at' => now()->format('Y-m-d H:i:s'),
         'invoice_versions' => $versions,
-    ])->assertSessionHasErrors('invoice_versions');
+    ]))->assertSessionHasErrors('invoice_versions');
 
     expect(RmePayment::count())->toBe(0);
 })->with(['non-numeric key', 'negative version', 'fractional version', 'not a list of versions', 'only another invoice']);
@@ -306,10 +321,10 @@ it('refuses a programmatic payment that declares no version', function () {
     $invoice = ricInvoice();
     test()->actingAs(test()->cashier);
 
-    rpvExpectRefused(fn () => app(RmePaymentService::class)->pay($invoice, test()->cashier, [
+    rpvExpectRefused(fn () => app(RmePaymentService::class)->pay($invoice, test()->cashier, rmeDeclaredPaymentForm($invoice, [
         'amount' => 500000,
         'paid_at' => now()->format('Y-m-d H:i:s'),
-    ]), 'INVOICE_VERSION_MISSING');
+    ])), 'INVOICE_VERSION_MISSING');
 
     expect(RmePayment::count())->toBe(0);
 });
@@ -414,13 +429,26 @@ it('binds payments the same way while the correction capability is switched off'
     ricFlag(false);
     test()->actingAs(test()->cashier);
 
-    rpvExpectRefused(fn () => app(RmePaymentService::class)->pay($invoice, test()->cashier, [
+    rpvExpectRefused(fn () => app(RmePaymentService::class)->pay($invoice, test()->cashier, rmeDeclaredPaymentForm($invoice, [
         'amount' => 500000,
         'paid_at' => now()->format('Y-m-d H:i:s'),
-    ]), 'INVOICE_VERSION_MISSING');
+    ])), 'INVOICE_VERSION_MISSING');
 
     app(RmePaymentService::class)->pay($invoice, test()->cashier, rpvPayload(500000, [$invoice->id => 0]));
     expect($invoice->fresh()->status)->toBe(RmeInvoice::STATUS_PAID);
+});
+
+it('reports a stale programmatic form as a version change, never as a stale balance (rule 205 check order)', function () {
+    $invoice = ricInvoice();
+    // Rendered before the correction: version 0 and balance 500.000 — both stale
+    // once it applies. The version is the cause, so the version is the answer.
+    $staleForm = rpvPayload(350000, [$invoice->id => 0]);
+    rpvApplyCorrection($invoice);
+    test()->actingAs(test()->cashier);
+
+    rpvExpectRefused(fn () => app(RmePaymentService::class)->pay($invoice->fresh(), test()->cashier, $staleForm), 'INVOICE_VERSION_CHANGED');
+
+    expect(RmePayment::count())->toBe(0);
 });
 
 // ─── Multi-invoice batches ──────────────────────────────────────────────────

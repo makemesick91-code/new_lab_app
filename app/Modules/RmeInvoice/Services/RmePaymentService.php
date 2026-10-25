@@ -16,20 +16,31 @@ use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Models\RmeInvoiceCorrection;
 use App\Modules\RmeInvoice\Models\RmePayment;
 use App\Modules\RmeInvoice\Support\RmeFinancialAuditEvent;
+use App\Modules\RmeInvoice\Support\RmeInvoiceBalanceConflict;
 use App\Modules\RmeInvoice\Support\RmeInvoicePaymentBlocked;
 use App\Modules\RmeInvoice\Support\RmeInvoicePaymentDisputed;
 use App\Modules\RmeInvoice\Support\RmeInvoiceVersionConflict;
+use App\Modules\RmeInvoice\Support\RmePaymentDeclaredView;
+use App\Modules\RmeInvoice\Support\RmePaymentIntent;
+use App\Modules\RmeInvoice\Support\RmePaymentIntentRefused;
+use App\Modules\RmeInvoice\Support\RmePaymentSubmissionReplayed;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
 use Carbon\CarbonImmutable;
 use Closure;
+use Illuminate\Database\DetectsConcurrencyErrors;
+use Illuminate\Database\QueryException;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use PDOException;
 
 class RmePaymentService
 {
+    use DetectsConcurrencyErrors;
+
     public function __construct(
         private readonly RmePaymentRepositoryInterface $payments,
         private readonly RmeInvoiceRepositoryInterface $invoices,
@@ -42,6 +53,7 @@ class RmePaymentService
         private readonly RmeInvoiceCorrectionRepositoryInterface $corrections,
         private readonly RmeBillingActorGuard $actors,
         private readonly RmeBillingDisputeRepositoryInterface $disputes,
+        private readonly RmePaymentSubmissionService $submissionIntents,
     ) {}
 
     /**
@@ -122,14 +134,29 @@ class RmePaymentService
      */
     public function pay(RmeInvoice $invoice, User $cashier, array $data): RmePayment
     {
+        // Rule 205 — the intent and its fingerprint are taken from the RAW
+        // submission, before any normalization, exactly as the payment FormRequest
+        // computes them.
+        $intent = $this->intentOrRefuse($invoice, $cashier, $data);
         $data['paid_at'] = $this->normalizePaidAt($data['paid_at'] ?? null);
 
-        $payment = $this->settleUnderVersionBinding(RmeInvoiceVersionConflict::PATH_SINGLE, $cashier, function () use ($invoice, $cashier, $data) {
+        $payment = $this->settleUnderVersionBinding(RmeInvoiceVersionConflict::PATH_SINGLE, $cashier, $intent, $invoice, function () use ($invoice, $cashier, $data, $intent) {
             $invoice = RmeInvoice::query()->lockForUpdate()->findOrFail($invoice->id);
 
-            $this->assertInvoicePayable($invoice, $cashier);
+            $this->assertCashierMayCollect($invoice, $cashier);
+            // Rule 205 — under the lock and after the cashier's authority is
+            // re-checked, BEFORE any state check: a replay of a payment that has
+            // since settled the invoice is answered with the original result,
+            // never refused as "nothing left to pay" and never recorded again.
+            $this->assertNotYetCommitted($intent, $invoice, $cashier);
+            $this->assertInvoiceCollectable($invoice);
             $this->assertFormVersion($invoice, $data);
             $this->assertNoPaymentHold($invoice);
+            // Rule 205 (F3) — this path settles THIS invoice alone, at the balance
+            // the cashier saw. A page that offered Kontrol carry-over or ticked
+            // receivables never lands here silently.
+            $this->throwIfConflict(RmePaymentDeclaredView::singlePlanConflict($data, (int) $invoice->id));
+            $this->throwIfConflict(RmePaymentDeclaredView::balanceConflict($data, $invoice));
 
             $amount = $this->normalizeAmount($data['amount']);
             $remainingBefore = $this->remainingForInvoice($invoice);
@@ -146,6 +173,7 @@ class RmePaymentService
 
             $this->refreshInvoiceStatus($invoice);
             $this->completeVisitAfterCashierPayment($invoice, $visit);
+            $this->submissionIntents->record($intent, $invoice, $cashier, RmeInvoiceVersionConflict::PATH_SINGLE, $amount, $payment, null, 1);
 
             return $payment->refresh();
         });
@@ -162,61 +190,102 @@ class RmePaymentService
      */
     public function allocateControlPayment(RmeInvoice $controlInvoice, User $cashier, array $data): RmeControlPaymentResult
     {
+        $intent = $this->intentOrRefuse($controlInvoice, $cashier, $data);
         $data['paid_at'] = $this->normalizePaidAt($data['paid_at'] ?? null);
-
-        $summary = $this->carryOver->getControlPayableSummary($controlInvoice);
-
-        if (! $summary['has_carry_over']) {
-            throw ValidationException::withMessages([
-                'amount' => 'Kunjungan kontrol ini tidak memiliki piutang kunjungan sebelumnya.',
-            ]);
-        }
-
         $amount = $this->normalizeAmount($data['amount']);
 
-        if ($amount > $summary['total_payable']) {
-            throw ValidationException::withMessages([
-                'amount' => 'Pembayaran tidak boleh melebihi total yang harus dibayar.',
-            ]);
-        }
-
         $controlInvoice->loadMissing('clinicVisit');
-        $controlVisit = $this->requireVisit($controlInvoice);
+        // Fail fast without a visit; the closure re-derives it per attempt (R1).
+        $this->requireVisit($controlInvoice);
         $batchUuid = (string) Str::uuid();
 
-        $result = $this->settleUnderVersionBinding(RmeInvoiceVersionConflict::PATH_CONTROL, $cashier, function () use ($controlInvoice, $controlVisit, $cashier, $data, $amount, $summary, $batchUuid) {
+        $result = $this->settleUnderVersionBinding(RmeInvoiceVersionConflict::PATH_CONTROL, $cashier, $intent, $controlInvoice, function () use ($controlInvoice, $cashier, $data, $amount, $batchUuid, $intent) {
             $controlInvoice = RmeInvoice::query()->lockForUpdate()->findOrFail($controlInvoice->id);
-            $this->assertInvoicePayable($controlInvoice, $cashier);
+            // Security review R1 — re-derived on EVERY attempt from the row just
+            // locked: a lock-conflict retry must never see the visit model a
+            // rolled-back attempt already moved to completed (it would then skip
+            // completion and leave the visit cashier_pending after the payment).
+            $controlVisit = $this->requireVisit($controlInvoice);
+            $this->assertCashierMayCollect($controlInvoice, $cashier);
+            $this->assertNotYetCommitted($intent, $controlInvoice, $cashier);
+            $this->assertInvoiceCollectable($controlInvoice);
             $this->assertFormVersion($controlInvoice, $data);
             $this->assertNoPaymentHold($controlInvoice);
+
+            // Rule 205 (F3) — the carry-over chain and its balances are read AFTER
+            // the Kontrol invoice lock and the intent check, never before. The
+            // amount was previously capped against a summary read before any lock.
+            $summary = $this->carryOver->getControlPayableSummary($controlInvoice);
+
+            if (! $summary['has_carry_over']) {
+                // The page showed carry-over that no longer exists: the money it
+                // described would land on this invoice alone. Refuse, never move it.
+                if (RmePaymentDeclaredView::plan($data) === RmePaymentDeclaredView::PLAN_CONTROL) {
+                    throw new RmeInvoiceBalanceConflict(RmeInvoiceBalanceConflict::PLAN_CHANGED, (int) $controlInvoice->id);
+                }
+
+                throw ValidationException::withMessages([
+                    'amount' => 'Kunjungan kontrol ini tidak memiliki piutang kunjungan sebelumnya.',
+                ]);
+            }
+
+            // Every outstanding origin is locked, in chain order — the order this
+            // path has always taken its locks in (Kontrol invoice first, then the
+            // origins) — whether or not the amount reaches it, so the WHOLE plan
+            // the cashier saw is the plan that is checked and settled.
+            $origins = [];
+            foreach ($summary['carry_over_invoices'] as $parentInvoice) {
+                $parentInvoice = RmeInvoice::query()->lockForUpdate()->findOrFail($parentInvoice->id);
+
+                // F3 — an origin that stopped being collectable between the read
+                // and its lock is never skipped (that redistributed its share onto
+                // the next invoice). OD-1 (rule 200), defence in depth under the
+                // lock: money taken at this branch is never allocated into another
+                // branch's invoice, whatever the carry-over discovery returned —
+                // and the batch is refused rather than silently re-routed.
+                if (! $parentInvoice->isPayable() || (int) $parentInvoice->branch_id !== (int) $controlInvoice->branch_id) {
+                    throw new RmeInvoiceBalanceConflict(RmeInvoiceBalanceConflict::PLAN_CHANGED, (int) $parentInvoice->id);
+                }
+
+                $this->assertFormVersion($parentInvoice, $data);
+                $this->assertNoPaymentHold($parentInvoice);
+                $origins[] = $parentInvoice;
+            }
+
+            $this->throwIfConflict(RmePaymentDeclaredView::controlPlanConflict(
+                $data,
+                (int) $controlInvoice->id,
+                array_map(fn (RmeInvoice $origin) => (int) $origin->id, $origins),
+            ));
+            $this->throwIfConflict(RmePaymentDeclaredView::balanceConflict($data, $controlInvoice));
+            foreach ($origins as $origin) {
+                $this->throwIfConflict(RmePaymentDeclaredView::balanceConflict($data, $origin));
+            }
+
+            // The authoritative cap: the locked balances, never the pre-lock summary.
+            $payable = round(
+                array_sum(array_map(fn (RmeInvoice $origin) => $origin->remainingAmount(), $origins))
+                + $controlInvoice->remainingAmount(),
+                2,
+            );
+
+            if ($amount > $payable) {
+                throw ValidationException::withMessages([
+                    'amount' => 'Pembayaran tidak boleh melebihi total yang harus dibayar.',
+                ]);
+            }
 
             $remainingPayment = $amount;
             $allocatedToParent = 0.0;
             $parentPayments = collect();
 
-            foreach ($summary['carry_over_invoices'] as $parentInvoice) {
+            foreach ($origins as $parentInvoice) {
                 if ($remainingPayment <= 0) {
                     break;
                 }
 
-                $parentInvoice = RmeInvoice::query()->lockForUpdate()->findOrFail($parentInvoice->id);
-
-                if (! $parentInvoice->isPayable()) {
-                    continue;
-                }
-
-                // OD-1 (rule 200), defence in depth under the lock: money taken
-                // at this branch is never allocated into another branch's
-                // invoice, whatever the carry-over discovery returned.
-                if ((int) $parentInvoice->branch_id !== (int) $controlInvoice->branch_id) {
-                    continue;
-                }
-
-                $this->assertFormVersion($parentInvoice, $data);
-                $this->assertNoPaymentHold($parentInvoice);
-
                 $parentVisit = $this->requireVisit($parentInvoice);
-                $parentRemaining = $this->remainingForInvoice($parentInvoice);
+                $parentRemaining = round($parentInvoice->remainingAmount(), 2);
                 $allocateAmount = min($remainingPayment, $parentRemaining);
 
                 if ($allocateAmount <= 0) {
@@ -277,23 +346,41 @@ class RmePaymentService
             // completion, so the parent balance is deliberately ignored here. A
             // successful payment in this batch is still required: a free control
             // visit is never auto-completed without a cashier payment action.
+            // Rule 205 (F3) — never record less than the amount received. With the
+            // plan and balances verified above this always holds; if it ever did
+            // not, the whole batch is refused instead of booking a cut-down amount.
+            $this->assertFullyAllocated($amount, $allocatedToParent + $allocatedToControl, (int) $controlInvoice->id);
+
             $this->completeControlVisitIfSettled(
                 $controlInvoice,
                 $controlVisit,
                 paymentMade: $allocatedToParent > 0 || $allocatedToControl > 0,
             );
 
-            return new RmeControlPaymentResult(
+            $result = new RmeControlPaymentResult(
                 parentPayments: $parentPayments,
                 controlPayment: $controlPayment?->refresh(),
                 allocatedToParent: $allocatedToParent,
                 allocatedToControl: $allocatedToControl,
                 paymentBatchUuid: $batchUuid,
             );
+
+            $this->submissionIntents->record(
+                $intent,
+                $controlInvoice,
+                $cashier,
+                RmeInvoiceVersionConflict::PATH_CONTROL,
+                $amount,
+                $result->primaryPayment(),
+                $batchUuid,
+                $parentPayments->count() + ($controlPayment !== null ? 1 : 0),
+            );
+
+            return $result;
         });
 
-        foreach ($summary['carry_over_invoices'] as $parentInvoice) {
-            $this->generateLabCandidatesIfPaid($parentInvoice->id, $cashier);
+        foreach ($result->parentPayments as $parentPayment) {
+            $this->generateLabCandidatesIfPaid((int) $parentPayment->rme_invoice_id, $cashier);
         }
 
         if ($result->controlPayment) {
@@ -305,6 +392,16 @@ class RmePaymentService
 
     /** Rule 204 (OPS-OQ-1b) — the explicit operator intent of a Kontrol-only payment. */
     public const PAYMENT_SCOPE_CONTROL_ONLY = 'control_only';
+
+    /**
+     * Security review L3 — how many times a payment transaction aborted by a lock
+     * conflict (deadlock / serialization failure) is attempted before the cashier
+     * is asked to reload. Each attempt re-decides everything under fresh locks.
+     */
+    private const TRANSACTION_ATTEMPTS = 3;
+
+    private const CONCURRENT_RETRY_MESSAGE = '[PAYMENT_CONCURRENT_RETRY] Pembayaran lain untuk pasien ini sedang diproses pada saat yang sama. '
+        .'Tidak ada pembayaran yang dicatat. Muat ulang halaman pembayaran, periksa sisa tagihan terbaru, lalu konfirmasi ulang.';
 
     public const CONTROL_ONLY_NOT_APPLICABLE = 'CONTROL_ONLY_PAYMENT_NOT_APPLICABLE';
 
@@ -349,6 +446,7 @@ class RmePaymentService
             ]);
         }
 
+        $intent = $this->intentOrRefuse($controlInvoice, $cashier, $data);
         $data['paid_at'] = $this->normalizePaidAt($data['paid_at'] ?? null);
 
         // Validates the chain (patient, RME branch) exactly as the control path does.
@@ -356,13 +454,23 @@ class RmePaymentService
         $amount = $this->normalizeAmount($data['amount']);
 
         $controlInvoice->loadMissing('clinicVisit');
-        $controlVisit = $this->requireVisit($controlInvoice);
+        // Fail fast without a visit; the closure re-derives it per attempt (R1).
+        $this->requireVisit($controlInvoice);
 
-        $payment = $this->settleUnderVersionBinding(RmeInvoiceVersionConflict::PATH_CONTROL_ONLY, $cashier, function () use ($controlInvoice, $controlVisit, $cashier, $data, $amount) {
+        $payment = $this->settleUnderVersionBinding(RmeInvoiceVersionConflict::PATH_CONTROL_ONLY, $cashier, $intent, $controlInvoice, function () use ($controlInvoice, $cashier, $data, $amount, $intent) {
             $control = RmeInvoice::query()->lockForUpdate()->findOrFail($controlInvoice->id);
-            $this->assertInvoicePayable($control, $cashier);
+            // Security review R1 — re-derived on EVERY attempt from the row just
+            // locked: a lock-conflict retry must never see the visit model a
+            // rolled-back attempt already moved to completed (it would then skip
+            // completion and leave the visit cashier_pending after the payment).
+            $controlVisit = $this->requireVisit($control);
+            $this->assertCashierMayCollect($control, $cashier);
+            $this->assertNotYetCommitted($intent, $control, $cashier);
+            $this->assertInvoiceCollectable($control);
             $this->assertFormVersion($control, $data);
             $this->assertNoPaymentHold($control);
+            // Rule 205 — reachable only from its own explicitly confirmed form.
+            $this->throwIfConflict(RmePaymentDeclaredView::controlOnlyPlanConflict($data, (int) $control->id));
 
             $outstanding = [];
             foreach ($this->carryOver->getCarryOverInvoicesForControlVisit($controlVisit) as $origin) {
@@ -377,6 +485,9 @@ class RmePaymentService
             if (! $decision['eligible']) {
                 throw ValidationException::withMessages(['payment_scope' => $decision['message']]);
             }
+
+            // Rule 205 (F3) — the Kontrol balance the cashier saw, under the lock.
+            $this->throwIfConflict(RmePaymentDeclaredView::balanceConflict($data, $control));
 
             if ($amount > $this->remainingForInvoice($control)) {
                 throw ValidationException::withMessages([
@@ -404,6 +515,7 @@ class RmePaymentService
             // Phase 27.4.1 rule: a Kontrol visit completes once its OWN invoice is
             // settled; origin balances never block it.
             $this->completeControlVisitIfSettled($control, $controlVisit, paymentMade: true);
+            $this->submissionIntents->record($intent, $control, $cashier, RmeInvoiceVersionConflict::PATH_CONTROL_ONLY, $amount, $payment, null, 1);
 
             return $payment->refresh();
         });
@@ -500,62 +612,99 @@ class RmePaymentService
      */
     public function allocateVisitPayment(RmeInvoice $currentInvoice, User $cashier, array $data, array $selectedReceivableIds): RmeControlPaymentResult
     {
+        $intent = $this->intentOrRefuse($currentInvoice, $cashier, $data);
         $data['paid_at'] = $this->normalizePaidAt($data['paid_at'] ?? null);
-
-        $summary = $this->carryOver->getVisitPayableSummary($currentInvoice, $selectedReceivableIds);
-
-        if ($summary['selected_remaining'] <= 0) {
-            throw ValidationException::withMessages([
-                'selected_receivable_ids' => 'Tidak ada piutang sebelumnya yang valid untuk ditagihkan.',
-            ]);
-        }
-
         $amount = $this->normalizeAmount($data['amount']);
 
-        if ($amount > $summary['total_payable']) {
-            throw ValidationException::withMessages([
-                'amount' => 'Pembayaran tidak boleh melebihi total yang harus dibayar.',
-            ]);
-        }
-
         $currentInvoice->loadMissing('clinicVisit');
-        $currentVisit = $this->requireVisit($currentInvoice);
+        // Fail fast without a visit; the closure re-derives it per attempt (R1).
+        $this->requireVisit($currentInvoice);
         $batchUuid = (string) Str::uuid();
 
-        $result = $this->settleUnderVersionBinding(RmeInvoiceVersionConflict::PATH_VISIT, $cashier, function () use ($currentInvoice, $currentVisit, $cashier, $data, $amount, $summary, $batchUuid) {
+        $result = $this->settleUnderVersionBinding(RmeInvoiceVersionConflict::PATH_VISIT, $cashier, $intent, $currentInvoice, function () use ($currentInvoice, $cashier, $data, $amount, $batchUuid, $selectedReceivableIds, $intent) {
             $currentInvoice = RmeInvoice::query()->lockForUpdate()->findOrFail($currentInvoice->id);
-            $this->assertInvoicePayable($currentInvoice, $cashier);
+            // Security review R1 — re-derived on EVERY attempt from the row just
+            // locked: a lock-conflict retry must never see the visit model a
+            // rolled-back attempt already moved to completed (it would then skip
+            // completion and leave the visit cashier_pending after the payment).
+            $currentVisit = $this->requireVisit($currentInvoice);
+            $this->assertCashierMayCollect($currentInvoice, $cashier);
+            $this->assertNotYetCommitted($intent, $currentInvoice, $cashier);
+            $this->assertInvoiceCollectable($currentInvoice);
             $this->assertFormVersion($currentInvoice, $data);
             $this->assertNoPaymentHold($currentInvoice);
+
+            // Rule 205 (F3) — the selection is re-derived AFTER the current
+            // invoice lock and the intent check, never from a pre-lock summary.
+            // getVisitPayableSummary() stays the IDOR boundary: ids the page never
+            // displayed for this patient and branch are dropped, never paid.
+            $summary = $this->carryOver->getVisitPayableSummary($currentInvoice, $selectedReceivableIds);
+
+            // A receivable the cashier TICKED that is no longer collectable means the
+            // money it described would move onto another invoice: refuse instead.
+            $this->throwIfConflict(RmePaymentDeclaredView::receivablesPlanConflict(
+                $data,
+                (int) $currentInvoice->id,
+                $summary['selected_receivables']->map(fn (RmeInvoice $receivable) => (int) $receivable->id)->all(),
+            ));
+
+            if ($summary['selected_remaining'] <= 0) {
+                throw ValidationException::withMessages([
+                    'selected_receivable_ids' => 'Tidak ada piutang sebelumnya yang valid untuk ditagihkan.',
+                ]);
+            }
+
+            // Every selected receivable is locked, oldest-first — the order this path
+            // has always taken its locks in (current invoice first) — whether or not
+            // the amount reaches it, so the whole selection is checked and settled.
+            $receivables = [];
+            foreach ($summary['selected_receivables'] as $receivable) {
+                $receivable = RmeInvoice::query()->lockForUpdate()->findOrFail($receivable->id);
+
+                // F3 — never skip a selected receivable that changed between the read
+                // and its lock. OD-1 (rule 200), defence in depth under the lock: only
+                // a receivable of the branch taking this payment — never another
+                // branch's — may be settled from it; refused, never re-routed.
+                if (! $receivable->isPayable()
+                    || ! in_array((int) $receivable->branch_id, $this->branches->rmeEnabledIds(), true)
+                    || (int) $receivable->branch_id !== (int) $currentInvoice->branch_id) {
+                    throw new RmeInvoiceBalanceConflict(RmeInvoiceBalanceConflict::PLAN_CHANGED, (int) $receivable->id);
+                }
+
+                $this->assertFormVersion($receivable, $data);
+                $this->assertNoPaymentHold($receivable);
+                $receivables[] = $receivable;
+            }
+
+            $this->throwIfConflict(RmePaymentDeclaredView::balanceConflict($data, $currentInvoice));
+            foreach ($receivables as $receivable) {
+                $this->throwIfConflict(RmePaymentDeclaredView::balanceConflict($data, $receivable));
+            }
+
+            // The authoritative cap: the locked balances, never the pre-lock summary.
+            $payable = round(
+                array_sum(array_map(fn (RmeInvoice $receivable) => $receivable->remainingAmount(), $receivables))
+                + $currentInvoice->remainingAmount(),
+                2,
+            );
+
+            if ($amount > $payable) {
+                throw ValidationException::withMessages([
+                    'amount' => 'Pembayaran tidak boleh melebihi total yang harus dibayar.',
+                ]);
+            }
 
             $remainingPayment = $amount;
             $allocatedToParent = 0.0;
             $parentPayments = collect();
 
-            foreach ($summary['selected_receivables'] as $receivable) {
+            foreach ($receivables as $receivable) {
                 if ($remainingPayment <= 0) {
                     break;
                 }
 
-                $receivable = RmeInvoice::query()->lockForUpdate()->findOrFail($receivable->id);
-
-                if (! $receivable->isPayable()) {
-                    continue;
-                }
-
-                // Re-assert branch isolation under lock (defence in depth).
-                // OD-1 (rule 200): only a receivable of the branch taking this
-                // payment — never another branch's — may be settled from it.
-                if (! in_array((int) $receivable->branch_id, $this->branches->rmeEnabledIds(), true)
-                    || (int) $receivable->branch_id !== (int) $currentInvoice->branch_id) {
-                    continue;
-                }
-
-                $this->assertFormVersion($receivable, $data);
-                $this->assertNoPaymentHold($receivable);
-
                 $receivableVisit = $this->requireVisit($receivable);
-                $receivableRemaining = $this->remainingForInvoice($receivable);
+                $receivableRemaining = round($receivable->remainingAmount(), 2);
                 $allocateAmount = min($remainingPayment, $receivableRemaining);
 
                 if ($allocateAmount <= 0) {
@@ -614,22 +763,38 @@ class RmePaymentService
             // partial current invoice stays active piutang; unfilled prior
             // receivables stay active piutang. Prior visits are already completed,
             // so completeVisitAfterCashierPayment above is a no-op guard for them.
+            // Rule 205 (F3) — never record less than the amount received.
+            $this->assertFullyAllocated($amount, $allocatedToParent + $allocatedToControl, (int) $currentInvoice->id);
+
             $this->completeVisitAfterCashierBatch(
                 $currentVisit,
                 paymentMade: $allocatedToParent > 0 || $allocatedToControl > 0,
             );
 
-            return new RmeControlPaymentResult(
+            $result = new RmeControlPaymentResult(
                 parentPayments: $parentPayments,
                 controlPayment: $currentPayment?->refresh(),
                 allocatedToParent: $allocatedToParent,
                 allocatedToControl: $allocatedToControl,
                 paymentBatchUuid: $batchUuid,
             );
+
+            $this->submissionIntents->record(
+                $intent,
+                $currentInvoice,
+                $cashier,
+                RmeInvoiceVersionConflict::PATH_VISIT,
+                $amount,
+                $result->primaryPayment(),
+                $batchUuid,
+                $parentPayments->count() + ($currentPayment !== null ? 1 : 0),
+            );
+
+            return $result;
         });
 
-        foreach ($summary['selected_receivables'] as $receivable) {
-            $this->generateLabCandidatesIfPaid($receivable->id, $cashier);
+        foreach ($result->parentPayments as $parentPayment) {
+            $this->generateLabCandidatesIfPaid((int) $parentPayment->rme_invoice_id, $cashier);
         }
 
         if ($result->controlPayment) {
@@ -764,15 +929,65 @@ class RmePaymentService
      * error. The audit row is written after the rollback because it records an
      * attempt, which the rollback would otherwise erase.
      *
+     * Rule 205 adds the submission intent. A REPLAY (the intent already committed
+     * exactly this submission) propagates as RmePaymentSubmissionReplayed — not an
+     * error: the caller answers with the original result. A REUSED intent and a
+     * stale balance or plan (F3) roll the batch back and surface as validation
+     * errors. If two transactions ever both reached the submission insert, the
+     * database's UNIQUE(intent_key) refuses the second; its payments roll back with
+     * it, and it is then answered like any replay.
+     *
+     * Security review L3 — rule 205 locks EVERY invoice of the plan, so two
+     * payments of one patient whose pages list each other's invoices can now
+     * deadlock where they rarely did before. PostgreSQL aborts one transaction
+     * whole; it is retried (each attempt re-decides everything under fresh locks,
+     * and the intent makes a retry safe), and if it still cannot proceed it is
+     * refused with a reload instruction — never a 500, never a partial write.
+     *
      * @template T
      *
+     * @param  array{key: string, fingerprint: string}  $intent
      * @param  Closure(): T  $work
      * @return T
      */
-    private function settleUnderVersionBinding(string $paymentPath, User $cashier, Closure $work): mixed
+    private function settleUnderVersionBinding(string $paymentPath, User $cashier, array $intent, RmeInvoice $routeInvoice, Closure $work): mixed
     {
         try {
-            return DB::transaction($work);
+            return DB::transaction($work, self::TRANSACTION_ATTEMPTS);
+        } catch (RmePaymentSubmissionReplayed $replayed) {
+            $this->submissionIntents->recordReplay($replayed->submission, RmePaymentSubmissionService::SOURCE_SERVICE_LOCK, $cashier);
+
+            throw $replayed;
+        } catch (UniqueConstraintViolationException $collision) {
+            // Only the submission backstop is answered here; any other unique
+            // violation (a payment number, say) keeps its original meaning.
+            if ($this->submissionIntents->findCommitted($intent['key']) === null) {
+                throw $collision;
+            }
+
+            try {
+                $replay = $this->submissionIntents->committedReplay($intent, $routeInvoice, $cashier);
+            } catch (RmePaymentIntentRefused $refused) {
+                $this->submissionIntents->recordIntentRefusal($refused, $paymentPath, $cashier);
+
+                throw ValidationException::withMessages([RmePaymentIntent::FIELD => $refused->operatorMessage()]);
+            }
+
+            if ($replay === null) {
+                throw $collision;
+            }
+
+            $this->submissionIntents->recordReplay($replay, RmePaymentSubmissionService::SOURCE_UNIQUE_INDEX, $cashier);
+
+            throw new RmePaymentSubmissionReplayed($replay);
+        } catch (RmePaymentIntentRefused $refused) {
+            $this->submissionIntents->recordIntentRefusal($refused, $paymentPath, $cashier);
+
+            throw ValidationException::withMessages([RmePaymentIntent::FIELD => $refused->operatorMessage()]);
+        } catch (RmeInvoiceBalanceConflict $stale) {
+            $this->submissionIntents->recordBalanceRefusal($stale, $paymentPath, $cashier, $routeInvoice);
+
+            throw ValidationException::withMessages([RmePaymentDeclaredView::BALANCES_FIELD => $stale->operatorMessage()]);
         } catch (RmeInvoiceVersionConflict $conflict) {
             $this->recordVersionRefusal($conflict, $paymentPath, $cashier);
 
@@ -790,6 +1005,17 @@ class RmePaymentService
 
             throw ValidationException::withMessages([
                 self::PAYMENT_BLOCKED_FIELD => $disputed->operatorMessage(),
+            ]);
+        } catch (QueryException|PDOException $failure) {
+            // Security review L3 — only a lock conflict that outlived every retry
+            // is answered here (a submission collision was resolved above); every
+            // other database error keeps its original meaning.
+            if (! $this->causedByConcurrencyError($failure)) {
+                throw $failure;
+            }
+
+            throw ValidationException::withMessages([
+                RmePaymentDeclaredView::BALANCES_FIELD => self::CONCURRENT_RETRY_MESSAGE,
             ]);
         }
     }
@@ -1018,7 +1244,67 @@ class RmePaymentService
         }
     }
 
-    private function assertInvoicePayable(RmeInvoice $invoice, User $cashier): void
+    /**
+     * Rule 205 — the submission's intent, or a validation error when the form
+     * carries none or one this server did not issue for this invoice. Nothing is
+     * recorded in either case.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array{key: string, fingerprint: string}
+     */
+    private function intentOrRefuse(RmeInvoice $routeInvoice, User $cashier, array $data): array
+    {
+        try {
+            return $this->submissionIntents->intentFor($routeInvoice, $cashier, $data);
+        } catch (RmePaymentIntentRefused $refused) {
+            throw ValidationException::withMessages([RmePaymentIntent::FIELD => $refused->operatorMessage()]);
+        }
+    }
+
+    /**
+     * Rule 205 — MUST be called on the LOCKED route invoice, after the cashier's
+     * authority was re-checked. Every submission of one intent is for one invoice
+     * (the token is signed for it), so its row lock serializes them: the second one
+     * reads the first one's committed submission here and is answered with it.
+     *
+     * @param  array{key: string, fingerprint: string}  $intent
+     */
+    private function assertNotYetCommitted(array $intent, RmeInvoice $lockedRouteInvoice, User $cashier): void
+    {
+        $replay = $this->submissionIntents->committedReplay($intent, $lockedRouteInvoice, $cashier);
+
+        if ($replay !== null) {
+            throw new RmePaymentSubmissionReplayed($replay);
+        }
+    }
+
+    private function throwIfConflict(?RmeInvoiceBalanceConflict $conflict): void
+    {
+        if ($conflict !== null) {
+            throw $conflict;
+        }
+    }
+
+    /** Rule 205 (F3) — the batch records exactly the amount received, in cents. */
+    private function assertFullyAllocated(float $amount, float $allocated, int $routeInvoiceId): void
+    {
+        $expected = (int) RmePaymentIntent::cents($amount);
+        $recorded = (int) RmePaymentIntent::cents(round($allocated, 2));
+
+        if ($expected !== $recorded) {
+            throw new RmeInvoiceBalanceConflict(RmeInvoiceBalanceConflict::NOT_ALLOCATED, $routeInvoiceId, $expected, $recorded);
+        }
+    }
+
+    /**
+     * The cashier side of "may this invoice be collected now": the invoice's branch
+     * is an active RME branch and the cashier is a usable account holding the billing
+     * permission and working in that branch. Split out of the former
+     * assertInvoicePayable() (rule 205) so a replay is answered only to an account
+     * that STILL has this authority — never to one revoked since — and before the
+     * invoice-state checks below that the original payment itself has changed.
+     */
+    private function assertCashierMayCollect(RmeInvoice $invoice, User $cashier): void
     {
         if (! in_array((int) $invoice->branch_id, $this->branches->rmeEnabledIds(), true)) {
             throw ValidationException::withMessages([
@@ -1072,7 +1358,11 @@ class RmePaymentService
                 'rme_invoice_id' => 'Invoice ini berasal dari cabang lain. Pilih cabang kerja yang sesuai terlebih dahulu.',
             ]);
         }
+    }
 
+    /** The invoice side of "may this invoice be collected now", unchanged from the former assertInvoicePayable(). */
+    private function assertInvoiceCollectable(RmeInvoice $invoice): void
+    {
         if (! $invoice->isPayable()) {
             throw ValidationException::withMessages([
                 'rme_invoice_id' => 'Pembayaran hanya dapat dicatat untuk invoice berstatus UNPAID atau PARTIAL.',
@@ -1245,7 +1535,9 @@ class RmePaymentService
      * by design.
      *
      * Payment eligibility is now purely financial and workflow-based:
-     *   - the invoice must be payable (assertInvoicePayable)
+     *   - the invoice must be payable (assertInvoiceCollectable; the cashier
+     *     side is assertCashierMayCollect — rule 205 split the former
+     *     assertInvoicePayable so a replay is answered only to a usable account)
      *   - the amount must not exceed the remaining balance
      *   - the cashier must hold manage_rme_billing and be in the invoice branch
      *   - invoice creation still requires the visit to be at cashier_pending

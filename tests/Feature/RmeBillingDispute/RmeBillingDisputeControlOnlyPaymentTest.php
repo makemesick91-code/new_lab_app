@@ -48,9 +48,12 @@ function rcoPayOnly(RmeInvoice $control, float $amount, array $extra = [], ?User
     $cashier ??= test()->cashier;
     test()->actingAs($cashier);
 
+    // Rule 205: the Kontrol-only form declares the control_only scope it renders,
+    // so its declared plan (control_only, Kontrol balance only) is what is built.
     return app(RmePaymentService::class)->payControlInvoiceOnly($control->fresh(), $cashier, rmeFreshPaymentForm($control->fresh(), array_merge([
         'amount' => $amount,
         'paid_at' => now()->format('Y-m-d H:i:s'),
+        'payment_scope' => RmePaymentService::PAYMENT_SCOPE_CONTROL_ONLY,
         'confirm_control_only' => true,
     ], $extra)));
 }

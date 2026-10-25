@@ -284,6 +284,7 @@ use App\Modules\RmeInvoice\Interfaces\RmeBillingDisputeReviewerRepositoryInterfa
 use App\Modules\RmeInvoice\Interfaces\RmeInvoiceCorrectionRepositoryInterface;
 use App\Modules\RmeInvoice\Interfaces\RmeInvoiceRepositoryInterface;
 use App\Modules\RmeInvoice\Interfaces\RmePaymentRepositoryInterface;
+use App\Modules\RmeInvoice\Interfaces\RmePaymentSubmissionRepositoryInterface;
 use App\Modules\RmeInvoice\Models\RmeBillingDispute;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Models\RmeInvoiceCorrection;
@@ -296,6 +297,7 @@ use App\Modules\RmeInvoice\Repositories\RmeBillingDisputeReviewerRepository;
 use App\Modules\RmeInvoice\Repositories\RmeInvoiceCorrectionRepository;
 use App\Modules\RmeInvoice\Repositories\RmeInvoiceRepository;
 use App\Modules\RmeInvoice\Repositories\RmePaymentRepository;
+use App\Modules\RmeInvoice\Repositories\RmePaymentSubmissionRepository;
 use App\Modules\RmeOnlineContext\Interfaces\BranchChangeRequestRepositoryInterface;
 use App\Modules\RmeOnlineContext\Interfaces\DailyBranchContextRepositoryInterface;
 use App\Modules\RmeOnlineContext\Interfaces\UserOnlineContextRepositoryInterface;
@@ -455,6 +457,7 @@ class RepositoryServiceProvider extends ServiceProvider
         RmeInvoiceRepositoryInterface::class => RmeInvoiceRepository::class,
         // Sprint 20 Phase 1.11 — RME Payment
         RmePaymentRepositoryInterface::class => RmePaymentRepository::class,
+        RmePaymentSubmissionRepositoryInterface::class => RmePaymentSubmissionRepository::class,
         // FEATURE-RME-INVOICE-CORRECTION-RECEIPT-FOUNDATION-1 — invoice corrections + frozen document versions
         RmeInvoiceCorrectionRepositoryInterface::class => RmeInvoiceCorrectionRepository::class,
         // IMPLEMENTATION-RME-BILLING-DISPUTE-ESCALATION-OPS-OQ-1 (rule 203).

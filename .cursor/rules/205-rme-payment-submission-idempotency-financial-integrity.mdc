@@ -1,0 +1,218 @@
+---
+description: FIX-RME-PAYMENT-SUBMISSION-IDEMPOTENCY-1 — every RME payment submission carries a server-issued, single-use payment intent and declares the plan and per-invoice balances the cashier saw. A submission that already committed is answered with its ORIGINAL result and writes nothing (replay); a used intent presented with a different payload, invoice or cashier is refused. Every multi-invoice path decides its plan, its balances and its amount cap UNDER the row locks — never from a summary read before them — and refuses the whole payment instead of silently skipping an invoice or recording less than was submitted.
+globs: app/Modules/RmeInvoice/**, resources/views/rme/cashier/payment/**, database/migrations/*rme_payment_submissions*, tests/Feature/RmePaymentIdempotency/**, tests/Pest.php, docs/sprints/fix-rme-payment-submission-idempotency-1.md
+alwaysApply: false
+---
+
+# RME payment submission idempotency & financial integrity (rule 205)
+
+Supporting hardening after Sprint 2 of DAENGTISIAMS-RME-BILLING-CORRECTION.
+It changes **how a payment request is recognised and decided**, never what a
+payment is allowed to settle. Rules 191, 196–204 stand unchanged; where a test
+pinned the old behaviour this rule names the supersession explicitly (§K).
+
+Evidence: `docs/sprints/fix-rme-payment-submission-idempotency-1.md`.
+
+## A. The two defects this rule closes
+
+01. **F1 — no request identity.** None of the four payment paths
+    (`pay`, `allocateControlPayment`, `payControlInvoiceOnly`,
+    `allocateVisitPayment`) knew whether a request had been seen before. A
+    double click, a browser retry or a resubmitted form recorded a SECOND
+    partial payment, because the second request still saw enough remaining
+    balance. A replayed full payment was refused as an error instead of being
+    recognised as the payment that already happened.
+02. **F3 — a decision taken before the lock.** The Kontrol and visit paths read
+    the payable summary and capped the amount BEFORE taking the row locks. Under
+    the locks an origin or receivable that had stopped being collectable was
+    skipped (`continue`) and the rest `min()`-capped: the cashier submitted
+    300.000 and 100.000 was recorded (silent truncation), or money meant for one
+    invoice landed on the next (silent redistribution).
+
+## B. The payment intent
+
+03. **Server-issued, per render.** `RmePaymentIntent::issue($invoiceId)` returns
+    `nonce.signature`: a 32-hex random nonce and an HMAC-SHA256 over
+    `rme-payment-intent|v1|<nonce>|<invoice id>` keyed by the application key.
+    It is minted when the payment page is rendered and posted back unchanged.
+04. **Stateless.** Issuing writes nothing. Nothing is stored until the payment
+    commits (§C), so an abandoned page leaves no row behind.
+05. **Bound to one invoice.** A token minted for invoice A does not verify for
+    invoice B; the HMAC covers the route invoice id.
+06. **Grants nothing.** An intent is an identity, never an authority. Every
+    permission, branch, hold, version, dispute and correction check runs exactly
+    as before; a valid intent only decides "new" versus "seen".
+07. **Required, fail-closed.** A missing intent is refused
+    (`PAYMENT_INTENT_MISSING`) and a malformed or forged one is refused
+    (`PAYMENT_INTENT_INVALID`). There is no fallback that records an
+    unidentified payment — a form opened before this release is refused with a
+    reload instruction, the rule-191 precedent.
+08. **Comparison is constant-time** (`hash_equals`), and an empty application
+    key is a configuration error, never an unsigned token.
+
+## C. The submission ledger
+
+09. **`trx_rme_payment_submissions` — one row per COMMITTED submission.** The
+    row is inserted inside the same transaction as the payment rows, after them.
+    A row exists if and only if the payment committed; a rolled-back payment
+    leaves no ghost.
+10. **No status column.** There is no "pending" or "failed" state to reconcile,
+    expire or clean up.
+11. **`UNIQUE(intent_key)` is the backstop.** Two transactions that both pass
+    the application check cannot both commit; the loser's unique violation is
+    resolved to the winner's result (§D).
+12. **Immutable.** The model refuses update and delete; the migration's `down()`
+    refuses while rows exist. History is never rewritten to make a replay pass.
+13. **PostgreSQL CHECK constraints** pin the shape: path in
+    `single|control|visit|control_only`, intent key `^[0-9a-f]{32}$`,
+    fingerprint `^[0-9a-f]{64}$`, amount > 0, payment count ≥ 1.
+14. **Nothing historical is backfilled.** Payments recorded before this release
+    have no submission row and are not given one.
+15. **No PII.** The row holds ids, a path, an amount, a fingerprint hash and a
+    timestamp — never a name, NIK, reference text or note.
+
+## D. Replay and reuse
+
+16. **Fingerprint.** SHA-256 over a canonical, versioned payload: route invoice,
+    cashier, scope, Kontrol-only confirmation, plan, method, amount in cents,
+    paid-at normalised to the application timezone, reference, notes, the sorted
+    selected receivables, the declared versions and the declared balances in
+    cents. Key order and number formatting cannot change it. Free text that is
+    not valid UTF-8 is encoded by its exact bytes and the JSON encoding throws on
+    failure, so no payload ever collapses onto one constant fingerprint.
+17. **Replay = same intent + same cashier + same invoice + same fingerprint.**
+    The original committed result is returned and **nothing is written**: no
+    payment, no status change, no allocation, no lab candidate.
+18. **Reuse = same intent, anything else different.** Refused with
+    `PAYMENT_INTENT_REUSED`. It never leaks the original payment to a different
+    cashier, and never applies the original intent to a different amount.
+19. **Replay is decided twice.** Early in the FormRequest (so a replay is never
+    refused by a balance check that the first submission itself made stale) and
+    again under the route-invoice lock in the service (so a direct service call
+    or a racing duplicate cannot slip past). A unique violation at commit is
+    resolved the same way.
+20. **Replay respects current authority.** The cashier's authority is
+    re-checked under the lock BEFORE the replay is answered: an account that has
+    since lost billing permission, branch scope or activity is refused, not
+    shown the earlier receipt.
+21. **The operator sees the truth.** A replay redirects to the original receipt
+    (or the invoice page while it is still partially paid) with: "Pembayaran ini
+    sudah tercatat sebelumnya — tidak ada pembayaran baru yang dibuat. No.
+    Kwitansi: …". A multi-invoice replay restores the original allocation summary.
+22. **Two genuine installments are two intents.** A fresh page render issues a
+    fresh intent, so paying an invoice in parts still works; only a repeated
+    submission of the SAME rendered form is collapsed.
+
+## E. What the page declares
+
+23. **`payment_plan`** — `single`, `receivables`, `control` or `control_only`,
+    chosen by `RmePaymentDeclaredView::planFor()`, the same rule the controller
+    renders with.
+24. **`invoice_balances[<id>]`** — the remaining balance the page displayed for
+    the route invoice and every carry-over parent or outstanding receivable it
+    showed, rendered as fixed two-decimal strings and compared in cents.
+25. **Neither is authority.** They are the cashier's view, verified against the
+    locked rows; the server never pays an invoice because the page named it and
+    never trusts a client id as financial authority.
+
+## F. Deciding under the lock
+
+26. **Lock order is unchanged:** the route invoice first, then the Kontrol
+    origins in chain order or the selected receivables in FIFO order. No new
+    lock is introduced ahead of an existing one — but the WHOLE plan is now
+    locked, so two payments of one patient whose pages list each other's
+    invoices can deadlock. PostgreSQL aborts one; the payment transaction is
+    retried (3 attempts, each re-deciding everything under fresh locks) and,
+    if it still conflicts, refused with `PAYMENT_CONCURRENT_RETRY` and a reload
+    instruction — never a 500, never a partial write. Any other database error
+    keeps its meaning.
+26a. **A retried attempt re-reads everything it writes.** Every model a payment
+    attempt mutates (the invoices AND their visits) is re-derived inside the
+    attempt from the rows it just locked — never captured from outside the
+    retried closure. A model a rolled-back attempt already moved to `completed`
+    would make the retry skip visit completion and leave the visit
+    `cashier_pending` after the payment committed (security review R1).
+27. **The payable summary is read inside the transaction**, after the route lock
+    and the intent check — never before them, and the controller's pre-lock
+    dispatch is only a routing hint.
+28. **Every plan invoice is locked.** None is skipped: an origin or receivable
+    that is no longer collectable, or belongs to another branch, refuses the
+    WHOLE payment with `PAYMENT_PLAN_CHANGED`.
+29. **Plan conflict.** A declared plan that no longer matches what the locked
+    rows support (a carry-over appeared or disappeared, the origin set changed,
+    a displayed receivable vanished) is refused with `PAYMENT_PLAN_CHANGED`.
+30. **Balance conflict.** A declared balance that differs from the locked
+    remaining balance is `PAYMENT_BALANCE_CHANGED`; a plan invoice with no
+    declared balance is `PAYMENT_BALANCE_MISSING`.
+31. **The amount cap is computed from the locked balances**, not from the
+    pre-lock summary.
+32. **Full allocation is asserted in cents.** If the allocation would record
+    less than the amount accepted, the payment is refused with
+    `PAYMENT_AMOUNT_NOT_ALLOCATED` — money submitted is never silently dropped.
+33. **One transaction, all or nothing.** A refusal at any of these steps rolls
+    back every allocation of the batch.
+34. **Check order is fixed and test-pinned:** authority → replay → collectable →
+    rule-191 version → D10 correction hold / OPS-OQ-1 dispute hold → plan →
+    balances → amount cap → allocate → full-allocation assertion. A version or
+    hold refusal is never masked by a balance refusal.
+
+## G. Audit
+
+35. **Three events, ids only:** `RME_PAYMENT_SUBMISSION_REPLAYED`,
+    `RME_PAYMENT_REFUSED_INTENT_REUSED`, `RME_PAYMENT_REFUSED_STALE_BALANCE`.
+    Payloads carry invoice, cashier, path, codes and money — never a patient
+    name, NIK, reference text or note.
+36. **De-duplicated.** One row per invoice, cashier and action in a 15-minute
+    window, so a client retrying in a loop cannot flood the trail.
+36a. **Never on a client-chosen invoice.** A stale-view refusal can name an id the
+    client supplied; it is audited on that invoice only when it is the route
+    invoice or one of the same patient at the same branch, otherwise on the
+    route invoice without the foreign id.
+37. **Audit never decides.** A failed audit write is logged and the refusal or
+    replay stands.
+38. **Missing and malformed intents are not audited** — they are client or
+    staleness errors with no financial meaning; refusing them is enough.
+
+## H. The page
+
+39. **Hidden fields:** `payment_intent`, `payment_plan`, `invoice_balances[...]`
+    on the ordinary and the Kontrol-only form.
+40. **Double-click guard in the browser** disables the submit button while the
+    request is in flight ("Memproses pembayaran…") — a courtesy only. The server
+    is the protection; a server-side disabled state is never re-enabled by it.
+41. **Stale-view refusals do not restore** the old amount or selection, so a
+    cashier cannot resubmit the stale numbers by pressing save again.
+42. **Retry guidance** tells the cashier to reload rather than resubmit.
+
+## I. Preserved, unchanged
+
+43. Rule 191 version binding, D10 correction hold, OPS-OQ-1 / 1a / 1b dispute
+    policy, the Kontrol-only payment, OD-1 / OD-1a branch isolation,
+    `RmeBillingActorGuard`, `RmeWorkingBranchScope`, D1 / D1a / D1c / D1e pilot
+    scope, D7, D21, D28. D21c, D21g and D22 stay PENDING.
+44. Full-payment-only and partial-payment semantics, receipt numbering, visit
+    completion and lab-candidate generation are unchanged; a replay generates no
+    second lab candidate.
+
+## J. Never
+
+45. Never deduplicate in JavaScript, Redis or the cache alone — the database
+    unique index is the authority.
+46. Never return a stored result to a different cashier, invoice or payload.
+47. Never skip an invoice of the plan under the lock, never cap silently, never
+    redistribute money onto an invoice the cashier did not see.
+48. Never create, replay or reverse a real production payment to verify this
+    rule; production verification is read-only.
+
+## K. Supersessions
+
+49. `CrossBranchKontrolFinancialOwnershipTest` — the two "even if discovery
+    leaked it" cases used to pin silent truncation (300.000 submitted, 100.000
+    recorded) as the safe outcome. They now expect a whole refusal
+    (`PAYMENT_PLAN_CHANGED`) with no payment anywhere; the branch-isolation
+    property they exist for is asserted unchanged.
+50. Rule 200 §9 ("a receivable of another branch is skipped") and rule 196 §28
+    (the 2026-10-24 audit that named this sprint) carry in-place supersession
+    notes. Every race suite that built a payment form by hand now builds it with
+    the intent, plan and balances a rendered page carries
+    (`rmeDeclaredPaymentForm()`), so its race still reaches the lock it races on.

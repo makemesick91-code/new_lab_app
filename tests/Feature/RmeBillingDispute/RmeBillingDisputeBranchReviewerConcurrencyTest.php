@@ -91,6 +91,7 @@ const RBRC_TABLES = [
     'trx_rme_invoice_document_versions',
     'trx_rme_invoice_corrections',
     'trx_lab_case_candidates',
+    'trx_rme_payment_submissions', // rule 205 — references trx_rme_payments
     'trx_rme_payments',
     'trx_rme_invoice_items',
     'trx_rme_invoices',
@@ -377,12 +378,15 @@ function rbrcLockStep(RmeInvoice $invoice): array
 
 function rbrcPayForm(RmeInvoice $invoice, int $amount): array
 {
-    return [
+    // Rule 205: the Kontrol-only form also carries a fresh intent and declares
+    // the control_only plan with the Kontrol balance it displays.
+    return rmeDeclaredPaymentForm($invoice, [
         'amount' => $amount,
         'paid_at' => now()->format('Y-m-d H:i:s'),
         'invoice_versions' => [$invoice->id => (int) $invoice->fresh()->correction_version],
+        'payment_scope' => RmePaymentService::PAYMENT_SCOPE_CONTROL_ONLY,
         'confirm_control_only' => true,
-    ];
+    ]);
 }
 
 /** @param array<string, mixed> $fx */
@@ -689,11 +693,12 @@ it('I: the ordinary combined payment waiting on an origin report that commits is
     $handle = rbrcCompeting([rbrcReportStep($fx['origin'], $fx['cashier'])]);
 
     test()->actingAs($fx['cashier']);
-    [$outcome, $waited] = rbrcRace(fn () => app(RmePaymentService::class)->allocateControlPayment($fx['control']->fresh(), $fx['cashier'], [
+    $form = rmeDeclaredPaymentForm($fx['control'], [
         'amount' => 1000000,
         'paid_at' => now()->format('Y-m-d H:i:s'),
         'invoice_versions' => [$fx['origin']->id => 0, $fx['control']->id => 0],
-    ]));
+    ]);
+    [$outcome, $waited] = rbrcRace(fn () => app(RmePaymentService::class)->allocateControlPayment($fx['control']->fresh(), $fx['cashier'], $form));
     rbrcJoin($handle);
 
     expect($waited)->toBeGreaterThan(1.0)

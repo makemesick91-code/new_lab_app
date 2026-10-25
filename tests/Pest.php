@@ -83,6 +83,10 @@ use App\Modules\Production\Services\ProductionWorkflowService;
 use App\Modules\QualityControl\Models\QualityControl;
 use App\Modules\QualityControl\Services\QualityControlService;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
+use App\Modules\RmeInvoice\Services\RmeControlReceivableService;
+use App\Modules\RmeInvoice\Services\RmePaymentService;
+use App\Modules\RmeInvoice\Support\RmePaymentDeclaredView;
+use App\Modules\RmeInvoice\Support\RmePaymentIntent;
 use App\Modules\RmeOnlineContext\Services\UserOnlineContextService;
 use App\Modules\Technician\Models\Technician;
 use App\Modules\Technician\Services\TechnicianAssignmentEligibility;
@@ -1056,22 +1060,88 @@ function rmeConsentedOdontogramVisit(array $attributes = []): ClinicVisit
  * a STALE form must build `invoice_versions` explicitly (an explicit key is never
  * overwritten here) — see RmeInvoiceCorrectionPaymentVersionBindingTest.
  *
+ * FIX-RME-PAYMENT-SUBMISSION-IDEMPOTENCY-1 (rule 205) — a page rendered now also
+ * carries a fresh, server-issued `payment_intent` and declares the `payment_plan`
+ * and `invoice_balances` it displays. Each is added only when the caller did not
+ * set it, so a test about a stale or replayed form builds that field explicitly.
+ * A form built ONCE and submitted twice is, deliberately, the SAME form: its second
+ * submission is a replay, not a second payment. Build a fresh form per payment.
+ *
  * @param  array<string, mixed>  $data
  * @return array<string, mixed>
  */
 function rmeFreshPaymentForm(RmeInvoice $invoice, array $data): array
 {
-    if (array_key_exists('invoice_versions', $data)) {
-        return $data;
+    if (! array_key_exists('invoice_versions', $data)) {
+        $data['invoice_versions'] = RmeInvoice::query()
+            ->where('patient_id', $invoice->patient_id)
+            ->pluck('correction_version', 'id')
+            ->map(fn ($version) => (int) $version)
+            ->all();
     }
 
-    $data['invoice_versions'] = RmeInvoice::query()
-        ->where('patient_id', $invoice->patient_id)
-        ->pluck('correction_version', 'id')
-        ->map(fn ($version) => (int) $version)
-        ->all();
+    return rmeDeclaredPaymentForm($invoice, $data);
+}
+
+/**
+ * Rule 205 — add ONLY what rule 205 makes a rendered page carry: a fresh,
+ * server-issued `payment_intent` for $invoice and the `payment_plan` and
+ * `invoice_balances` the page displays now. It never adds `invoice_versions`.
+ *
+ * For tests whose subject is another guard (rule 191 version binding, D10, a
+ * dispute hold) that build the rest of the form themselves — including a form
+ * that deliberately carries NO version. Without this such a form is refused one
+ * step earlier, for a missing intent, and the guard under test never runs.
+ * Each field is added only when the caller did not set it.
+ *
+ * @param  array<string, mixed>  $data
+ * @return array<string, mixed>
+ */
+function rmeDeclaredPaymentForm(RmeInvoice $invoice, array $data): array
+{
+    if (! array_key_exists(RmePaymentIntent::FIELD, $data)) {
+        $data[RmePaymentIntent::FIELD] = RmePaymentIntent::issue((int) $invoice->id);
+    }
+
+    if (! array_key_exists(RmePaymentDeclaredView::PLAN_FIELD, $data) || ! array_key_exists(RmePaymentDeclaredView::BALANCES_FIELD, $data)) {
+        [$plan, $balances] = rmePaymentDisplayedView($invoice, $data);
+        $data += [RmePaymentDeclaredView::PLAN_FIELD => $plan, RmePaymentDeclaredView::BALANCES_FIELD => $balances];
+    }
 
     return $data;
+}
+
+/**
+ * Rule 205 — the plan and balances the payment page for $invoice displays now,
+ * by the SAME rule the controller renders with (RmePaymentDeclaredView::planFor).
+ *
+ * @param  array<string, mixed>  $data
+ * @return array{0: string, 1: array<int, string>}
+ */
+function rmePaymentDisplayedView(RmeInvoice $invoice, array $data = []): array
+{
+    $invoice = $invoice->fresh() ?? $invoice;
+    $render = fn (RmeInvoice $shown) => RmePaymentDeclaredView::render($shown->remainingAmount());
+    $balances = [(int) $invoice->id => $render($invoice)];
+
+    if (($data['payment_scope'] ?? null) === RmePaymentService::PAYMENT_SCOPE_CONTROL_ONLY) {
+        return [RmePaymentDeclaredView::PLAN_CONTROL_ONLY, $balances];
+    }
+
+    $carryOver = app(RmeControlReceivableService::class);
+    $summary = $carryOver->getControlPayableSummary($invoice);
+    $outstanding = $summary['has_carry_over']
+        ? collect()
+        : $carryOver->getVisitPayableSummary($invoice)['outstanding_receivables'];
+
+    foreach ([...$summary['carry_over_invoices']->all(), ...$outstanding->all()] as $shown) {
+        $balances[(int) $shown->id] = $render($shown);
+    }
+
+    return [
+        RmePaymentDeclaredView::planFor((bool) $summary['has_carry_over'], $outstanding->isNotEmpty()),
+        $balances,
+    ];
 }
 
 /**

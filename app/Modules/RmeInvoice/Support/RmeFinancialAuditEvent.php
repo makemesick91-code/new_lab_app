@@ -7,6 +7,7 @@ use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Models\RmeInvoiceCorrection;
 use App\Modules\RmeInvoice\Models\RmeInvoiceDocumentVersion;
 use App\Modules\RmeInvoice\Models\RmePayment;
+use App\Modules\RmeInvoice\Models\RmePaymentSubmission;
 
 /**
  * FEATURE-RME-BILLING-REFUND-1 / Phase 0 (audit BCF-02) — the vocabulary and
@@ -357,6 +358,83 @@ final class RmeFinancialAuditEvent
             'allocated_to_origin' => 0.0,
             'held_origin_invoice_ids' => array_values(array_map('intval', $heldOriginInvoiceIds)),
             'held_dispute_ids' => array_values(array_map('intval', $heldDisputeIds)),
+        ];
+    }
+
+    // ─── FIX-RME-PAYMENT-SUBMISSION-IDEMPOTENCY-1 (rule 205) ─────────────────
+    //
+    // A payment submission repeated with the same intent (double click, retry
+    // after a lost response, resubmission after "back") is answered with the
+    // ORIGINAL result and records nothing new; a submission refused because its
+    // intent was already used for something else, or because the balances it
+    // displayed are no longer current, is refused whole. All three are ATTEMPTS:
+    // written after the payment transaction (never inside it, where a rollback
+    // would erase them) and de-duplicated per invoice, cashier and action inside a
+    // short window, so repeated clicks cannot flood the trail.
+
+    public const ACTION_PAYMENT_SUBMISSION_REPLAYED = 'RME_PAYMENT_SUBMISSION_REPLAYED';
+
+    public const ACTION_PAYMENT_REFUSED_INTENT_REUSED = 'RME_PAYMENT_REFUSED_INTENT_REUSED';
+
+    public const ACTION_PAYMENT_REFUSED_STALE_BALANCE = 'RME_PAYMENT_REFUSED_STALE_BALANCE';
+
+    /**
+     * Ids, numbers and the stage that caught the replay only — never the intent
+     * token itself, a note or a reference number.
+     *
+     * @return array<string, mixed>
+     */
+    public static function paymentSubmissionReplayedPayload(RmeInvoice $invoice, RmePaymentSubmission $submission, string $source): array
+    {
+        return [
+            'invoice_id' => (int) $invoice->id,
+            'invoice_number' => (string) $invoice->invoice_number,
+            'branch_id' => (int) $invoice->branch_id,
+            'submission_id' => (int) $submission->id,
+            'payment_path' => (string) $submission->payment_path,
+            'payment_id' => (int) $submission->rme_payment_id,
+            'payment_batch_uuid' => $submission->payment_batch_uuid,
+            'payment_count' => (int) $submission->payment_count,
+            'detected_by' => $source,
+        ];
+    }
+
+    /**
+     * Ids and codes only. The submission it collided with is named by id; its
+     * payload, amount and account are not repeated here.
+     *
+     * @return array<string, mixed>
+     */
+    public static function paymentIntentReusedPayload(RmeInvoice $invoice, RmePaymentIntentRefused $refused, string $paymentPath): array
+    {
+        return [
+            'invoice_id' => (int) $invoice->id,
+            'invoice_number' => (string) $invoice->invoice_number,
+            'branch_id' => (int) $invoice->branch_id,
+            'reason' => $refused->reasonCode,
+            'payment_path' => $paymentPath,
+            'submission_id' => $refused->submissionId,
+        ];
+    }
+
+    /**
+     * The balance the page displayed and the balance found under the lock — both
+     * server-computed figures, never the amount the cashier typed, a note or a
+     * reference number.
+     *
+     * @return array<string, mixed>
+     */
+    public static function paymentStaleBalancePayload(RmeInvoice $invoice, RmeInvoiceBalanceConflict $conflict, string $paymentPath): array
+    {
+        return [
+            'invoice_id' => (int) $invoice->id,
+            'invoice_number' => (string) $invoice->invoice_number,
+            'branch_id' => (int) $invoice->branch_id,
+            'reason' => $conflict->reasonCode,
+            'payment_path' => $paymentPath,
+            'declared_remaining' => $conflict->declaredCents !== null ? round($conflict->declaredCents / 100, 2) : null,
+            'current_remaining' => $conflict->currentCents !== null ? round($conflict->currentCents / 100, 2) : null,
+            'invoice_status' => (string) $invoice->status,
         ];
     }
 
