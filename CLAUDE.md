@@ -2,6 +2,14 @@
 
 Status: **FOUNDATION-FIRST LOCK ACTIVE**. All non-foundation work is POST-FOUNDATION BACKLOG and blocked until FOUNDATION GO. Read `docs/architecture/foundation-first-sprint-lock-governance.md` before planning or implementing sprint work.
 
+## Developer Knowledge Base (Obsidian vault: `docs/`)
+
+DEV-AI-OBSIDIAN-KNOWLEDGE-BASE-1 (2026-10-25). When a task needs documentation, start at `docs/00-INDEX.md` and read it **on demand**. It is deliberately **not** `@`-imported: imports load into every session, and this file is already ~1.56 MB.
+- Module → docs map: `docs/knowledge-base/module-index.md`. Trust levels and measured drift: `docs/knowledge-base/doc-status-registry.md` (most of `docs/ai-knowledge/` is a 2026-06-28 snapshot, and several of those files are STALE).
+- Code, migrations, routes, tests and config remain the source of truth. Verify a doc against them before relying on it.
+- Doc drift found during a task is **reported as a proposal** (format in `docs/knowledge-base/conventions.md`), never edited silently outside the task's scope. Never rename or move existing docs: 119 code/config/test files reference doc paths exactly.
+- Procedure: project skill `.claude/skills/knowledge-base/SKILL.md`.
+
 ## RME Module (Sprint 20)
 
 **Modules:** `ClinicVisit`, `MedicalRecord`, `Odontogram`, `RmeInvoice` under `app/Modules/`.
