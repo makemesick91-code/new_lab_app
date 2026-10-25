@@ -3807,3 +3807,29 @@ Branch `fix/rme-payment-submission-idempotency-1` (base `feature/sprint-26-phase
 **Tests:** `tests/Feature/RmePaymentIdempotency/RmePaymentSubmissionIdempotencyTest.php` + `RmePaymentSubmissionConcurrencyTest.php` (PostgreSQL races A–V via `payment_race_child.php`, each asserting real overlap `> 1 s`; U is a genuine deadlock proven by `pg_stat_database.deadlocks`), both declared in `config/ci_runner.php` `critical_gate_mandatory_suites` and selected by the existing `RmePayment` token. RED first: 7/9 failed on SQLite and PG16 against the base. Mutation: **26 mutants — 23 killed, 3 equivalent by redundancy (each combined mutant killed), 0 real survivors.** Test helpers: `rmeFreshPaymentForm()` (versions + intent + plan + balances) and `rmeDeclaredPaymentForm()` (intent + plan + balances only — for suites whose subject is another guard). **Every race suite that hand-built a payment form now builds it with `rmeDeclaredPaymentForm()`** — without it the payment is refused before taking any lock and the race silently never happens (24 PG failures with `waited ≈ 0 s`); their cleanup lists include `trx_rme_payment_submissions` (FK to payments).
 
 **Deploy:** `php artisan migrate --force` (one additive table, no backfill); no seeder, permission, route or JS/CSS asset. Payment pages opened before the deploy must be reloaded. Rollback: code to `hardening-rme-billing-dispute-branch-reviewer-control-payment-1-go`; never drop the table while it holds rows — roll forward.
+
+**SHIPPED + VPS DEPLOYED (2026-10-25)**
+
+- *PR and CI.* PR #519 was squash-merged as `20303a5b92f7bc85d0b34abfbc1c880ef49d6112`. Its tree,
+  `058d66ff`, is identical to the candidate tree `9733da43`. Authoritative CI run `40149798577` on the
+  exact candidate succeeded. The critical gate executed 6624 tests (34557 assertions) with 0 failures,
+  and all 24 concurrency races ran on CI's PostgreSQL.
+- *Full Suite.* **SKIPPED. It must never be read as passed.** It was skipped by the active temporary
+  policy: `FULL_SUITE_NOT_ENABLED_FOR_EVENT` on the PR run, and `TEMPORARY_FULL_SUITE_POLICY_ACTIVE` on
+  the post-merge push run.
+- *Deploy.* The runner was executed inside the VPS and reported `exit=0` and `DEPLOY OK 20261025-040833`
+  with `DEPLOY_HEAD_TARGET_MATCH=YES`. Pre-deploy backup: `pre_auto_deploy_20261025-040833.sql`.
+  Migration `[86] Ran`.
+- *Production verification (read-only).* The financial fingerprint is byte-identical before and after
+  the deploy: 9 payments, 10,548,000.00, max id 50, and identical payment and invoice row hashes. The
+  new table is present with 0 rows (nothing backfilled), 5 CHECK constraints, 4 RESTRICT foreign keys
+  and `UNIQUE(intent_key)`. Over the domain, `/login` and the three health endpoints return 200.
+  `laravel.log` is byte-identical, so the deploy logged 0 new errors.
+- *GO tag.* `fix-rme-payment-submission-idempotency-1-go` points to `20303a5b`, an exact match at the
+  VPS HEAD. It is **supporting hardening only**: it is NOT Sprint 2 Full GO and NOT a Full Prepayment
+  Pilot GO.
+
+**Closes the payment idempotency gap recorded by Sprint 2 (rule 196 §8 (2) above).** That §8 (2)
+record stays as history. **Gotcha for future fingerprint comparisons:** production is live, and a
+genuine SPN4 payment (id 50) landed during the 2.5-hour CI run. Always take the pre-deploy fingerprint
+immediately before the deploy. Never compare against a baseline taken before CI started.

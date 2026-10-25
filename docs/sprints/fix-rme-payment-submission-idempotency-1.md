@@ -233,14 +233,97 @@ record the same payment again. No data restore is needed or allowed.
 
 ## 12. CI, deploy and production verification
 
-Recorded after the fact in the evidence commit (not tagged).
+Recorded after the fact. This evidence commit is docs-only, is not tagged, and is not deployed.
+
+**Authoritative CI.** Run `40149798577` (`pull_request`) on the exact candidate
+`9733da43e062e038f8a0e68a6dcb59444c961ee7`, tree `058d66ff751ea58800e256bf4e7fe29c8bc81371`,
+concluded **success**:
+
+| Job | Result |
+|---|---|
+| CICD-CTRL Gate Classifier | success (`gate_profile=unknown_high_risk`) |
+| NSF-R012 Quality Gate | success |
+| Phase 3 Android Clinic App Gate | success |
+| CICD-CTRL Selective Module Gate | success (Inventory, Lab, UI/UIX and Permission suites all ran) |
+| NSF-R011 Critical Test Gate (GitHub-hosted) | success: `Run critical regression tests` executed, **6624 passed (34557 assertions)**, `critical_test_exit_status=0`, 8874 s |
+| NSF-R011 Critical Test Gate (self-hosted variant) | skipped. CICD-CTRL-3 runs exactly one variant |
+| NSF-9 Release Safety & Automated Smoke Gate | success |
+| NSF-10 Release Evidence Gate | success |
+| NSF-R011 Full Suite Gate | **SKIPPED** |
+
+**FULL_SUITE=SKIPPED. It must not be reported as PASS.**
+
+- *Why it was skipped:* the classifier published `temporary_full_suite_policy_active=true`,
+  `full_suite_authorized=false` and `full_suite_defer_reason=FULL_SUITE_NOT_ENABLED_FOR_EVENT`.
+  `run_full_suite=required` is a risk signal, not an authorization.
+- *Post-merge run:* the push run on the merge commit (`40160697653`) deferred the Full Suite as well,
+  with `TEMPORARY_FULL_SUITE_POLICY_ACTIVE`.
+- *The new suites inside the critical gate:* `RmePaymentSubmissionIdempotencyTest` and
+  `RmePaymentSubmissionConcurrencyTest` both PASS. All 24 concurrency races ran on CI's PostgreSQL, each
+  taking several seconds, which is a genuine lock wait.
+
+**Merge.** PR #519 was squash-merged as `20303a5b92f7bc85d0b34abfbc1c880ef49d6112` with
+`--match-head-commit 9733da43`. Its tree is `058d66ff…`, **identical to the candidate tree**. Its parent
+is `7a93b8ff`, which was the unmoved base tip.
+
+**Deploy.** `bash scripts/deploy-vps-runner.sh start` was executed **inside the VPS**. The runner
+reported `exit=0` and `DEPLOY OK: 20261025-040833`, and its log records:
+
+- `DEPLOY_TARGET_PINNED=20303a5b…` and `DEPLOY_HEAD_TARGET_MATCH=YES`;
+- pre-deploy backup `pre_auto_deploy_20261025-040833.sql` (32 225 046 bytes, `0640 daengtisiams`);
+- migration `2026_10_25_100001_create_trx_rme_payment_submissions_table`, done in 88.97 ms;
+- `SECRET FILE PERMISSIONS: GO` and `RUNTIME ISOLATION: GO (70 GO / 0 FAIL / 0 SKIP)`;
+- `DEPLOY_SNAPSHOT_CLEANED=YES`.
+
+The smoke check reported 6 passed and 1 warning. The warning is the known co-tenant answer on bare
+`127.0.0.1/login` (404); the canonical domain is verified below.
+
+**Production verification.** Read-only throughout: `BEGIN READ ONLY` psql, no REPL, no write.
+
+- *Revision:* VPS HEAD/tree `20303a5b…`/`058d66ff…`, equal to the merge. The tracked tree is clean.
+  The only untracked path is `storage/runtime-home/`, which is preserved.
+- *Migration and environment:* migration `[86] Ran`, no pending migrations. Environment `pilot`, debug
+  OFF, maintenance OFF. The config cache is owned by `daengtisiams`.
+- *Services:* php8.3-fpm, nginx, the queue worker and postgresql are all active. 0 failed jobs.
+  The deploy lock has no holder.
+- *Over `https://daengtisia.online`:* `/login`, `/health/live`, `/health/ready` and `/health/lb` return
+  200, and every `/health/ready` component reports ok. As a guest, `/rme/cashier`,
+  `/rme/cashier/receivables` and `/dashboard` return 302.
+- *Financial fingerprint:* byte-identical before and after the deploy.
+
+| Measure | Pre-deploy | Post-deploy |
+|---|---|---|
+| Payments | 9 / 10 548 000.00 / max id 50 / 0 soft-deleted | same |
+| Invoices | PAID 6, PARTIAL 1, UNPAID 1 / max id 42 | same |
+| Payment row hash | `6562cc3b26110108680e2ca63453619a` | same |
+| Invoice row hash | `701024c17061d185476dc9bdb24a1ad4` | same |
+| `trx_rme_payment_submissions` | absent | present, **0 rows**. Nothing was backfilled |
+
+One genuine payment (id 50, invoice 42, branch SPN4) was recorded by the clinic at 11:24 WITA,
+while CI was running and before the deploy. This session did not write it. The baseline was taken
+again immediately before the deploy, and the comparison above uses that second baseline.
+
+- *New table structure:* the 5 CHECK constraints (amount, count, fingerprint, key, path), 4 foreign
+  keys all `ON DELETE RESTRICT` (branch, cashier, invoice, payment) and `UNIQUE(intent_key)` are
+  present on production.
+- *Logs:* `laravel.log` is byte-identical (1 442 282 bytes) and has no entry dated 2026-10-25. The
+  deploy caused **0 new application errors**.
+- *Deployed code:* the cashier payment view carries the intent, plan and balance fields, and the
+  service carries the retry constants.
+
+**Transition note.** The deploy took place during clinic hours, which is the normal practice; the
+deploy has no maintenance window. A payment form opened before the deploy and submitted after it is
+refused with `PAYMENT_INTENT_MISSING`. The refusal message says no payment was recorded and that the
+page must be reloaded. Nothing is lost and nothing is written twice.
 
 ## 13. GO
 
-`fix-rme-payment-submission-idempotency-1-go` on the exact deployed runtime SHA,
-only after authoritative CI on the exact candidate, merge verification,
-`DEPLOY OK` from the runner executed inside the VPS, and read-only production
-verification.
+`fix-rme-payment-submission-idempotency-1-go` is an annotated tag on the deployed runtime SHA
+`20303a5b92f7bc85d0b34abfbc1c880ef49d6112`. The local, remote and VPS peels are all equal, and
+`git describe --exact-match` on the VPS HEAD resolves to it.
+
+This is a **supporting hardening GO**. It is NOT Sprint 2 Full GO, and it is NOT a Full Prepayment
+Pilot GO. The pilot stays SPN4-only, with maker 29 and checker 1. D21c, D21g and D22 remain PENDING.
 
 ## Catatan untuk kasir (Bahasa Indonesia)
 
