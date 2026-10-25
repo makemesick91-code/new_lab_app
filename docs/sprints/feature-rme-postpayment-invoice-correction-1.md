@@ -132,16 +132,71 @@ Dua cacat pada harness ditemukan dan diperbaiki, tidak ditutupi:
 
 ## 6. CI, merge, deploy, verifikasi
 
-Diisi saat penutupan.
+| Butir | Bukti |
+|---|---|
+| PR | #524, head `42ec6db9`, tree `a3f45ee2` |
+| CI kandidat | run `40208895793` **success** — Classifier, NSF-R012 Quality, CICD-CTRL Selective Module, **NSF-R011 Critical** (langkah *Run critical regression tests*: **6701 passed, 34925 asersi, `critical_test_exit_status=0`**, 0 skipped; suite post-payment ikut terpilih, termasuk race PG), NSF-9, NSF-10, Phase 3 Android. Varian Critical kedua *skipped* (satu varian per mode runner). **Full Suite: SKIPPED** — kebijakan global sementara ACTIVE; **bukan PASS**. |
+| Merge | squash `b7ffa92b`, tree `a3f45ee2` == tree kandidat (identik), dipin `--match-head-commit 42ec6db9`; base tidak bergerak (`572a32a9`) |
+| CI pasca-merge | run `40220613612` (push base, `b7ffa92b`) **success** — critical **6701 passed / 34925 asersi**; Selective Module, NSF-9, NSF-10, Android success; Full Suite SKIPPED (kebijakan sementara — bukan PASS) |
+| Fingerprint finansial pra-deploy | 2026-10-25 18:18 UTC (02:18 WITA 26-10): invoices 8 / Σ 12.548.000 / md5 `cb122125…`; items 9 / md5 `4e06827f…`; payments 9 / Σ 10.548.000 / max id 50 / md5 `6562cc3b…`; corrections 1 / md5 `57f5adfe…`; doc versions 2; lab candidates 2; disputes 0; audit max 1632; tabel baru belum ada; pembayaran 1 jam terakhir 0; sesi 30 menit terakhir hanya tamu |
+| Deploy | `scripts/deploy-vps-runner.sh start` **dijalankan di VPS**, `deploy-20261025-181913`: **`exit=0`**, **`DEPLOY OK: 20261025-181915`**, `DEPLOY_HEAD_TARGET_MATCH=YES (b7ffa92b…)`, `DEPLOY_SNAPSHOT_CLEANED=YES`; 3 migrasi DONE (batch 87); smoke 6/6 GO |
+| Production pasca-deploy | HEAD `b7ffa92b`, tree `a3f45ee2` == merge |
+| Fingerprint finansial pasca-deploy | 18:38 UTC: **identik** pada setiap baris finansial (diff kosong); audit max tetap 1632; tabel baru ada dengan 0 baris; 6 CHECK + partial unique index ada |
+| Flag | `rme.invoice_postpayment_correction enabled=false default=false via=default captured=yes` (tidak ada override env); `rme.invoice_correction` tetap `enabled=true` (pilot pra-bayar, tidak disentuh) |
+| Readiness | `POSTPAYMENT_STATE=NOT_ACTIVE FLAG_ENABLED=false`; kewajiban OPEN per cabang: kosong; Decision WATCH karena satu temuan yang sudah ada sebelumnya `PAIR_MAKER_NOT_ON_SHIFT_IN_PILOT` (maker tidak online pukul 02:39 WITA) |
+| Kesehatan | `https://daengtisia.online` `/login`, `/health/live`, `/health/ready`, `/health/lb` → 200 |
+| Log & antrean | `laravel.log` byte-identik (1442282, 163 ERROR) sebelum/sesudah — 0 error baru; `queue:failed` kosong |
+| Penerbitan snapshot kwitansi di production | **NOT_YET_OBSERVED** — belum ada pembayaran nyata sejak deploy; tidak ada transaksi yang dibuat untuk membuktikannya |
 
 ## 7. Keputusan
 
-Diisi saat penutupan.
+```
+SPRINT_C_RESULT          = IMPLEMENTATION_GO / FLAG_OFF
+CODE_DEPLOYED            = YES (b7ffa92b, 2026-10-26 02:19 WITA)
+FEATURE_ENABLED          = NO
+REAL_OPERATOR_ACCEPTANCE = NO
+FULL_FEATURE_GO          = NO
+ACTIVATION               = BLOCKED (PP-10; Sprint A FULL_PREPAYMENT_PILOT_GO = NO_GO)
+GO_TAG                   = feature-rme-postpayment-invoice-correction-1-implementation-go
+                           (annotated, objek e29eedd8 → b7ffa92b == production HEAD;
+                           dibuat setelah CI pasca-merge sukses; tag BUKAN feature GO)
+D21c / D21g / D22        = PENDING (tidak disentuh)
+```
+
+Pertanyaan Owner yang tercatat (tidak diputuskan oleh sprint ini):
+1. Siapa yang mengoperasikan akun 29 dan 1 pada 2026-10-25 (`RED_FLAG_UNRESOLVED`, Sprint A) — wajib terjawab sebelum aktivasi bergantung pada pasangan itu.
+2. Apakah ada formulir rule 202 pra-pengajuan untuk kasus #42.
+3. Apakah kasus #42 salah input atau potongan harga.
+4. Apakah referensi persetujuan Owner juga diwajibkan untuk koreksi pra-bayar.
+5. Kwitansi LUNAS ketika koreksi (bukan pembayaran) melunasi tagihan PARTIAL (rule 207 §19c).
+6. Pengembalian kelebihan bayar (refund) — kewajiban OPEN saat ini tidak punya jalur penyelesaian (Sprint 4/7 & 5/7).
 
 ## 8. Roadmap program (7 sprint)
 
-Diisi saat penutupan.
+| Sprint | Isi | Status |
+|---|---|---|
+| 1/7 | OPS-OQ-1 dispute + tahan pembayaran | GO |
+| 1A | peninjau cabang + bayar Kontrol saja | GO |
+| 2/7 | closure pilot koreksi pra-bayar SPN4 | **NO_GO — `OPERATIONAL_OR_EVIDENCE_BLOCKED`** (Sprint A, run 2026-10-25) |
+| 3/7 | koreksi pasca-bayar | keputusan PP-1…PP-10 **disetujui** (Sprint B); **implementasi selesai & ter-deploy dengan flag OFF** (sprint ini); **aktivasi diblokir** PP-10 |
+| 4/7 | refund — permintaan & persetujuan | belum dimulai; D4/D5/D18 PENDING |
+| 5/7 | refund — settlement | belum dimulai; D25 PENDING |
+| 6/7, 7/7 | — | belum didefinisikan di repositori |
 
-## 9. Pembersihan
+Progres tercatat: **1/7 sprint program selesai (GO)**; Sprint 3/7 berstatus
+*implementasi selesai, belum aktif* — tidak dihitung selesai sampai aktivasi
+diputuskan dan diverifikasi.
 
-Diisi saat penutupan.
+## 9. Pembersihan (rule 201)
+
+| Sumber daya milik tugas | Status |
+|---|---|
+| Kontainer PG16 `rme-postpay-c-pg16` (+ volume) | dihapus (`docker rm -f -v`) |
+| Salinan regresi terisolasi, harness mutasi, berkas JUnit/log, SQL fingerprint, draf PR | dihapus per path; scratchpad kosong |
+| Branch `feature/rme-postpayment-invoice-correction-1` | dihapus lokal & remote setelah merge |
+| Worktree `rme-postpayment-correction-1` + branch evidence ini | dihapus setelah commit evidence ini di-merge |
+| Proses test/CI/deploy milik tugas | tidak ada yang tersisa (tanpa proses php; runner deploy selesai `exit=0`) |
+| Production | tidak ada file/secret/backup yang dibuat oleh tugas; `storage/runtime-home/` (untracked) bukan milik tugas dan tidak disentuh |
+
+Commit evidence ini **dokumen saja** dan **tidak di-deploy** (runtime production tetap
+`b7ffa92b`, sesuai aturan "jangan deploy bila hanya dokumen yang berubah").

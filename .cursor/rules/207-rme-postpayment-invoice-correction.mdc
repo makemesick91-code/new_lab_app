@@ -14,6 +14,8 @@ records what was built.
 1. `CODE_DEPLOYED` is a deployment fact; `FEATURE_ENABLED`, `REAL_OPERATOR_ACCEPTANCE`
    and `FULL_FEATURE_GO` are separate and are **NO** until each is genuinely true. A GO
    tag for this sprint is an IMPLEMENTATION GO with the flag OFF, never a feature GO.
+1a. Recorded facts (2026-10-26): `CODE_DEPLOYED=YES` at `b7ffa92b`; `FEATURE_ENABLED=NO`;
+   `REAL_OPERATOR_ACCEPTANCE=NO`; `FULL_FEATURE_GO=NO`.
 2. Activation is its own owner decision (PP-10). It is blocked while the pre-payment
    pilot (rule 196) is NO_GO. Never enable the flag to close a sprint, to test in
    production, or because the code is merged.
