@@ -222,6 +222,12 @@ Read with rule 202 (counter procedure), rule 203 (OPS-OQ-1 dispute hold) and rul
     within 120 s. The correction reconciliation already requires a payment-count
     delta of 0. Fix only in its own sprint (suggested
     `FIX-RME-PAYMENT-SUBMISSION-IDEMPOTENCY-1`) — never inside a verification run.
+    **SUPERSEDED (2026-10-25) by rule 205** — that sprint closed both "Can" items:
+    a repeated form is a replay that writes nothing, and the allocation paths now
+    decide under the locks and assert full allocation. The audit above stays as
+    the record of what was true on 2026-10-24. A verification run now also checks
+    that every payment since the release has a `trx_rme_payment_submissions` row
+    (rule 205 §C).
 29. Every run also measures the dispute layer: `rme:billing-dispute-status`
     (`ACTIVE_TOTAL`, reachable reviewers per branch) and the dispute grant set.
     `role_has_permissions` 514 → 517 is exactly rule 203's three pairs (Owner view;

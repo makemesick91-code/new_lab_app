@@ -75,6 +75,7 @@ const RIC_TABLES = [
     'trx_rme_invoice_correction_lines',
     'trx_rme_invoice_document_versions',
     'trx_rme_invoice_corrections',
+    'trx_rme_payment_submissions', // rule 205 — references trx_rme_payments
     'trx_rme_payments',
     'trx_rme_invoice_items',
     'trx_rme_invoices',
@@ -397,11 +398,11 @@ it('waits on a correction that is mid-apply, then refuses a payment from a page 
     $started = microtime(true);
     $refusal = null;
     try {
-        app(RmePaymentService::class)->pay($invoice, $cashier, [
+        app(RmePaymentService::class)->pay($invoice, $cashier, rmeDeclaredPaymentForm($invoice, [
             'amount' => 100000,
             'paid_at' => now()->format('Y-m-d H:i:s'),
             'invoice_versions' => [$invoice->id => 0],
-        ]);
+        ]));
     } catch (ValidationException $e) {
         $refusal = json_encode($e->errors());
     }
@@ -426,11 +427,14 @@ it('waits on a correction that is mid-apply, then accepts a payment from a page 
     $handle = ricCompetingTransaction((int) $invoice->id, ricAppliedCorrectionWrite($invoice));
 
     $started = microtime(true);
-    app(RmePaymentService::class)->pay($invoice, $cashier, [
+    // Rule 205: a page reloaded after the correction displays the corrected
+    // balance (350.000) beside version 1 — that is what it declares.
+    app(RmePaymentService::class)->pay($invoice, $cashier, rmeDeclaredPaymentForm($invoice, [
         'amount' => 350000,
         'paid_at' => now()->format('Y-m-d H:i:s'),
         'invoice_versions' => [$invoice->id => 1],
-    ]);
+        'invoice_balances' => [$invoice->id => '350000.00'],
+    ]));
     $waited = microtime(true) - $started;
     ricJoin($handle);
 
@@ -486,11 +490,11 @@ it('D10: waits on a correction submission that is mid-flight, then refuses the p
     $started = microtime(true);
     $refusal = null;
     try {
-        app(RmePaymentService::class)->pay($invoice, $cashier, [
+        app(RmePaymentService::class)->pay($invoice, $cashier, rmeDeclaredPaymentForm($invoice, [
             'amount' => 100000,
             'paid_at' => now()->format('Y-m-d H:i:s'),
             'invoice_versions' => [$invoice->id => 0],
-        ]);
+        ]));
     } catch (ValidationException $e) {
         $refusal = json_encode($e->errors());
     }
@@ -516,11 +520,11 @@ it('D10: waits on a cancellation that is mid-flight, then accepts the payment', 
 
     $this->actingAs($cashier);
     $started = microtime(true);
-    app(RmePaymentService::class)->pay($invoice, $cashier, [
+    app(RmePaymentService::class)->pay($invoice, $cashier, rmeDeclaredPaymentForm($invoice, [
         'amount' => 100000,
         'paid_at' => now()->format('Y-m-d H:i:s'),
         'invoice_versions' => [$invoice->id => 0],
-    ]);
+    ]));
     $waited = microtime(true) - $started;
     ricJoin($handle);
 

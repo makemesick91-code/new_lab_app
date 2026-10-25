@@ -439,6 +439,15 @@ return [
         // never Auth::user() (which failed OPEN with no session), on every
         // payment path. Selected by the existing `RmePayment` token.
         'tests/Feature/RME/RmePaymentExplicitActorTest.php',
+        // FIX-RME-PAYMENT-SUBMISSION-IDEMPOTENCY-1 (rule 205) — one payment form
+        // records at most one payment (replay answered with the original result,
+        // reuse refused), and the multi-invoice paths decide plan, balances and the
+        // amount cap under the row locks, refusing instead of truncating. The
+        // concurrency suite proves races A–V on PostgreSQL with the REAL services in
+        // a child process. Selected by the existing `RmePayment` token; declared so
+        // a rename cannot silently drop them from the gate.
+        'tests/Feature/RmePaymentIdempotency/RmePaymentSubmissionIdempotencyTest.php',
+        'tests/Feature/RmePaymentIdempotency/RmePaymentSubmissionConcurrencyTest.php',
         // Branch tariff resolution, server-side invoice pricing with recorded
         // provenance, strict refusals, exceptions (built, OFF), import/readiness
         // commands and the release posture. Selected by the new

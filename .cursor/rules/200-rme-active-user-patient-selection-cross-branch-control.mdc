@@ -48,6 +48,10 @@ rule 197 §E (payment). **Supersedes in part:** rule 197 §24, rule 198 §30a, r
    `RmePaymentService` re-asserts it under the invoice lock in both allocation
    loops (a receivable of another branch is skipped). Same-branch carry-over is
    unchanged (rule 197 Phase 27.4 / Sprint 62.2 FIFO).
+   **SUPERSEDED in part (2026-10-25) by rule 205:** a receivable or origin of
+   another branch found under the lock is no longer skipped — skipping silently
+   truncated or redistributed the cashier's amount. The WHOLE payment is refused
+   (`PAYMENT_PLAN_CHANGED`); still no money ever reaches the other branch.
 
 ## C. Patient selection at the authoritative boundary
 10. `ClinicVisitRegistrationGuard` is the ONE source of the registration selection

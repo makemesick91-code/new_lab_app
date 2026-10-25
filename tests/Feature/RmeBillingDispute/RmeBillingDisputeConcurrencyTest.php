@@ -78,6 +78,7 @@ const RBDC_TABLES = [
     'trx_rme_invoice_correction_lines',
     'trx_rme_invoice_document_versions',
     'trx_rme_invoice_corrections',
+    'trx_rme_payment_submissions', // rule 205 — references trx_rme_payments
     'trx_rme_payments',
     'trx_rme_invoice_items',
     'trx_rme_invoices',
@@ -282,7 +283,8 @@ function rbdcJoin(array $handle): void
 
 function rbdcPayForm(RmeInvoice $invoice, int $amount): array
 {
-    return ['amount' => $amount, 'paid_at' => now()->format('Y-m-d H:i:s'), 'invoice_versions' => [$invoice->id => 0]];
+    // Rule 205: the page also carries a fresh intent and declares its plan and balances.
+    return rmeDeclaredPaymentForm($invoice, ['amount' => $amount, 'paid_at' => now()->format('Y-m-d H:i:s'), 'invoice_versions' => [$invoice->id => 0]]);
 }
 
 /** @return array<string, string> */
@@ -535,12 +537,13 @@ it('J: a visit payment waiting on a report against its selected receivable is re
 
     test()->actingAs($fx['cashier']);
     $started = microtime(true);
-    $refusal = rbdcRefusalMessage(fn () => app(RmePaymentService::class)->allocateVisitPayment($current->fresh(), $fx['cashier'], [
+    $form = rmeDeclaredPaymentForm($current, [
         'amount' => 1000000,
         'paid_at' => now()->format('Y-m-d H:i:s'),
         'selected_receivable_ids' => [$prior->id],
         'invoice_versions' => [$prior->id => 0, $current->id => 0],
-    ], [$prior->id]));
+    ]);
+    $refusal = rbdcRefusalMessage(fn () => app(RmePaymentService::class)->allocateVisitPayment($current->fresh(), $fx['cashier'], $form, [$prior->id]));
     $waited = microtime(true) - $started;
     rbdcJoin($handle);
 

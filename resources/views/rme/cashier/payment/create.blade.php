@@ -26,8 +26,15 @@
         // amount and receivable selection typed against the old total are not
         // restored. The cashier re-reads the bill and enters them again.
         $versionRefused = isset($errors) && $errors->has('invoice_versions');
-        $defaultAmount = $versionRefused ? $maxAmount : old('amount', $maxAmount);
-        $restoredReceivableIds = $versionRefused ? [] : (old('selected_receivable_ids', []) ?: []);
+        // Rule 205 (F3): the same holds after a stale-balance refusal — the page now
+        // shows the current balances, so nothing typed against the old ones returns.
+        $balanceRefused = isset($errors) && ($errors->has('invoice_balances') || $errors->has('payment_intent'));
+        $viewRefused = $versionRefused || $balanceRefused;
+        $defaultAmount = $viewRefused ? $maxAmount : old('amount', $maxAmount);
+        $restoredReceivableIds = $viewRefused ? [] : (old('selected_receivable_ids', []) ?: []);
+        // The ordinary button is disabled by the server while a hold applies; the
+        // double-submit guard below may only ADD to that, never lift it.
+        $ordinaryLocked = ! empty($paymentBlock) || ! empty($disputeHold) || ! empty($controlOnly['eligible']);
 
         // Sprint 62.2 — patient-level outstanding receivables (ordinary new visit).
         $outstandingReceivables = $outstandingReceivables ?? collect();
@@ -200,7 +207,10 @@
             </p>
 
             <form method="POST" action="{{ route('rme.cashier.payment.store', [$visit, $invoice]) }}" class="space-y-5"
+                data-payment-form
+                x-on:submit="if (submitting) { $event.preventDefault(); return; } submitting = true"
                 x-data="{
+                    submitting: false,
                     baseAmount: {{ (float) $maxAmount }},
                     selected: {},
                     get selectedTotal() { return Object.values(this.selected).reduce((sum, value) => sum + value, 0); },
@@ -228,8 +238,37 @@
                     <input type="hidden" name="invoice_versions[{{ $versionedInvoice->id }}]" value="{{ (int) $versionedInvoice->correction_version }}">
                 @endforeach
 
+                {{--
+                    FIX-RME-PAYMENT-SUBMISSION-IDEMPOTENCY-1 (rule 205). payment_intent is
+                    the server-issued identity of THIS form: submitting it twice (double
+                    click, retry after a lost response, "back" and resubmit) records the
+                    payment once and answers the repeat with the original receipt.
+                    payment_plan and invoice_balances say what this page displayed; the
+                    payment service settles exactly these balances under the row locks,
+                    or nothing. All read from the current rows on every render.
+                --}}
+                <input type="hidden" name="payment_intent" value="{{ $paymentIntent }}">
+                <input type="hidden" name="payment_plan" value="{{ $paymentPlan }}">
+                <input type="hidden" name="invoice_balances[{{ $invoice->id }}]" value="{{ \App\Modules\RmeInvoice\Support\RmePaymentDeclaredView::render($remainingAmount) }}">
+                @foreach ($carryOverInvoices as $balancedInvoice)
+                    <input type="hidden" name="invoice_balances[{{ $balancedInvoice->id }}]" value="{{ \App\Modules\RmeInvoice\Support\RmePaymentDeclaredView::render($balancedInvoice->remainingAmount()) }}">
+                @endforeach
+                @foreach ($outstandingReceivables as $balancedInvoice)
+                    <input type="hidden" name="invoice_balances[{{ $balancedInvoice->id }}]" value="{{ \App\Modules\RmeInvoice\Support\RmePaymentDeclaredView::render($balancedInvoice->remainingAmount()) }}">
+                @endforeach
+
                 @error('invoice_versions')
                     <div class="rounded-md border border-danger bg-danger-50 p-3 text-sm text-danger-700" role="alert" data-payment-invoice-version-error>
+                        {{ $message }}
+                    </div>
+                @enderror
+                @error('invoice_balances')
+                    <div class="rounded-md border border-danger bg-danger-50 p-3 text-sm text-danger-700" role="alert" data-payment-stale-balance-error>
+                        {{ $message }}
+                    </div>
+                @enderror
+                @error('payment_intent')
+                    <div class="rounded-md border border-danger bg-danger-50 p-3 text-sm text-danger-700" role="alert" data-payment-intent-error>
                         {{ $message }}
                     </div>
                 @enderror
@@ -421,9 +460,20 @@
 
                 {{-- Actions --}}
                 <div class="flex items-center gap-3 pt-2">
-                    <x-ui.button type="submit" variant="primary" :disabled="! empty($paymentBlock) || ! empty($disputeHold) || ! empty($controlOnly['eligible'])">Konfirmasi Pembayaran</x-ui.button>
+                    <x-ui.button type="submit" variant="primary" :disabled="$ordinaryLocked"
+                        data-payment-submit
+                        x-bind:disabled="submitting || {{ $ordinaryLocked ? 'true' : 'false' }}"
+                        x-bind:aria-busy="submitting ? 'true' : 'false'">
+                        <span x-show="! submitting">Konfirmasi Pembayaran</span>
+                        <span x-show="submitting" x-cloak>Memproses pembayaran…</span>
+                    </x-ui.button>
                     <x-ui.button variant="neutral" :href="route('rme.cashier.show', [$visit, $invoice])">Batal</x-ui.button>
                 </div>
+                <p class="text-xs text-ink-soft" data-payment-retry-guidance>
+                    Tekan Konfirmasi satu kali. Jika koneksi terputus setelah menekan tombol, jangan membuka formulir pembayaran baru:
+                    kirim ulang formulir ini (muat ulang halaman ini) — sistem mengenali formulir yang sama dan tidak akan mencatat pembayaran dua kali.
+                    Periksa riwayat pembayaran tagihan sebelum mencatat pembayaran lain.
+                </p>
             </form>
 
             {{--
@@ -468,10 +518,17 @@
                         </div>
                     </dl>
 
-                    <form method="POST" action="{{ route('rme.cashier.payment.store', [$visit, $invoice]) }}" class="space-y-4">
+                    <form method="POST" action="{{ route('rme.cashier.payment.store', [$visit, $invoice]) }}" class="space-y-4"
+                        data-control-only-payment-form
+                        x-data="{ submitting: false }"
+                        x-on:submit="if (submitting) { $event.preventDefault(); return; } submitting = true">
                         @csrf
                         <input type="hidden" name="payment_scope" value="{{ \App\Modules\RmeInvoice\Services\RmePaymentService::PAYMENT_SCOPE_CONTROL_ONLY }}">
                         <input type="hidden" name="invoice_versions[{{ $invoice->id }}]" value="{{ (int) $invoice->correction_version }}">
+                        {{-- Rule 205: its own intent (a different payment from the ordinary form), and only this invoice's balance. --}}
+                        <input type="hidden" name="payment_intent" value="{{ $controlOnlyIntent }}">
+                        <input type="hidden" name="payment_plan" value="{{ \App\Modules\RmeInvoice\Support\RmePaymentDeclaredView::PLAN_CONTROL_ONLY }}">
+                        <input type="hidden" name="invoice_balances[{{ $invoice->id }}]" value="{{ \App\Modules\RmeInvoice\Support\RmePaymentDeclaredView::render($remainingAmount) }}">
 
                         @error('payment_scope')
                             <div class="rounded-md border border-danger bg-white p-3 text-sm text-danger-700" role="alert">{{ $message }}</div>
@@ -514,7 +571,13 @@
                             <p class="text-xs text-danger-700">{{ $message }}</p>
                         @enderror
 
-                        <x-ui.button type="submit" variant="danger">Bayar Tagihan Kontrol Saja</x-ui.button>
+                        <x-ui.button type="submit" variant="danger"
+                            data-control-only-payment-submit
+                            x-bind:disabled="submitting"
+                            x-bind:aria-busy="submitting ? 'true' : 'false'">
+                            <span x-show="! submitting">Bayar Tagihan Kontrol Saja</span>
+                            <span x-show="submitting" x-cloak>Memproses pembayaran…</span>
+                        </x-ui.button>
                     </form>
                 </div>
             @endif
