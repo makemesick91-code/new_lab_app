@@ -186,6 +186,13 @@ from the snapshot). Because only UNPAID invoices are correctable, no issued
 receipt is ever invalidated. The approval matches what is deployed; no code
 change was needed.
 
+> *Note, 2026-10-25 (`PREPARATION-RME-POSTPAYMENT-INVOICE-CORRECTION-1`, no decision
+> changed):* the sentence "no issued receipt is ever invalidated" holds only while
+> post-payment correction does not exist. Payment receipts are rendered from LIVE
+> rows (`RmePaymentController::receipt`), not from a snapshot, so correcting a PAID
+> invoice would change an issued receipt. Whether D7 extends to issued receipts is
+> proposal **PP-5** (`PROPOSED`, below) — D7 itself is unchanged.
+
 ### D10 — A pending correction blocks payment — `OWNER_POLICY_APPROVED`, `REPOSITORY_POLICY_RECORDED`
 
 Policy: an invoice with an active correction request must not accept payment
@@ -575,3 +582,48 @@ artefact, approval reference or timestamp exists and none was created.
   status, version, history and dispute are unchanged. The ordinary combined payment
   and every batch that would settle a disputed origin are still refused whole. D10,
   D28, version binding (rule 191), OD-1 and OD-1a are preserved.
+
+## Post-payment correction — owner decision proposals PP-1 … PP-10 — `PROPOSED` (2026-10-25)
+
+Recorded by `PREPARATION-RME-POSTPAYMENT-INVOICE-CORRECTION-1` (rule 206). **None of
+these is approved.** They are proposals for the owner, written in full (options,
+recommendation, consequences) in
+`docs/decisions/rme-postpayment-correction-owner-decision-proposals.md`. A proposal
+becomes policy only when the owner states it and it is recorded here with
+`OWNER_POLICY_APPROVED`. Until then post-payment correction stays
+`NOT_IMPLEMENTED` / `NOT_ACTIVE`.
+
+| Code | Subject | Related register codes | Status |
+|---|---|---|---|
+| PP-1 | Scope and enablement: separate default-OFF flag, SPN4, identities 29/1 | D1c, D1e | `PROPOSED` |
+| PP-2 | Post-payment approval authority, approve = apply, case-specific Owner approval | D2, D1a | `PROPOSED` |
+| PP-3 | Downward correction below money received: atomic overpayment obligation, no refund | D12, D4–D6, D18, D25 | `PROPOSED` |
+| PP-4 | Upward correction: ordinary outstanding balance at the invoice branch | D12, OD-1a | `PROPOSED` |
+| PP-5 | Issued receipts: snapshot + "DIREVISI" (applies D7 to receipts) | D7 | `PROPOSED` |
+| PP-6 | Reporting: cash KPI unchanged, obligations separate, invoice-branch attribution | D8, D9, D13 | `PROPOSED` |
+| PP-7 | Limits: no invented threshold or deadline; D21c/D28 unchanged | D14, D15, D17, D21c, D28 | `PROPOSED` |
+| PP-8 | Lab candidates: invoices with candidates stay refused; a correction does not generate candidates | D23 | `PROPOSED` |
+| PP-9 | Obligation visibility: read-only oversight; no write authority to anyone | D19 | `PROPOSED` |
+| PP-10 | Sequencing: activation waits for a verified Sprint 2 closure | — | `PROPOSED` |
+
+D2, D8, D9, D12, D13, D14, D15, D17, D23 remain **PENDING**; D21c, D21g and D22 remain
+**PENDING**; D28 remains the interim guard.
+
+## Production observation, 2026-10-25 — recorded, not verified
+
+Read-only measurement by `PREPARATION-RME-POSTPAYMENT-INVOICE-CORRECTION-1` (psql,
+`default_transaction_read_only=on`, no REPL, no write) found the first real
+correction in production:
+
+- `RMECOR-202610-000001` — invoice #42 (SPN4), `PRE_PAYMENT`, `APPLIED`;
+  Rp6.000.000 → Rp5.000.000; submitted by user 29 at 2026-10-25 03:20:52 UTC,
+  approved and applied by user 1 at 03:23:22 UTC (one transaction, D1a); document
+  versions v0 ORIGINAL and v1 REVISION frozen; payment #50 Rp5.000.000 followed
+  (invoice PAID), then a lab case candidate.
+- The first dispute-reviewer designation also exists: user 11 for SPN4, recorded by
+  user 1 at 03:21:58 UTC.
+
+This observation does **not** mark Activation steps 6–7 done, does **not** state that
+the case carried a case-specific Owner approval (the correction reason carries no
+recognisable approval reference), and does **not** change Sprint 2's status. Only a
+Sprint 2 closure verification may evaluate it.

@@ -1,0 +1,94 @@
+---
+description: PREPARATION-RME-POSTPAYMENT-INVOICE-CORRECTION-1 — preparation contract for correcting PARTIAL/PAID RME invoices. Everything here is PROPOSED design pending owner decisions PP-1…PP-10; post-payment correction stays NOT_IMPLEMENTED and NOT_ACTIVE. Records the verified foundations a future implementation must reuse (one correction engine, server-derived type, D10/D28 type-agnostic, invoice-first lock order, payment immutability, fingerprint covers payments) and the 2026-10-25 production evidence of the first real pre-payment correction, which this rule does NOT verify.
+globs: app/Modules/RmeInvoice/**, docs/adr/0012-rme-postpayment-invoice-correction.md, docs/architecture/rme-postpayment-invoice-correction-design.md, docs/decisions/rme-postpayment-correction-owner-decision-proposals.md, docs/decisions/rme-billing-correction-owner-decisions.md, docs/operations/rme-postpayment-invoice-correction-sop-draft.md, docs/sprints/preparation-rme-postpayment-invoice-correction-1.md
+alwaysApply: false
+---
+
+# RME post-payment invoice correction — preparation (rule 206)
+
+Labels: **VERIFIED** (read from source or production, this task),
+**PROPOSED** (design only, awaiting the owner), **PENDING** (register code still open).
+Nothing labelled PROPOSED is policy. Do not implement, enable or report it as active.
+
+Documents: ADR 0012 · `docs/architecture/rme-postpayment-invoice-correction-design.md` ·
+`docs/decisions/rme-postpayment-correction-owner-decision-proposals.md` ·
+`docs/operations/rme-postpayment-invoice-correction-sop-draft.md` (DRAFT) ·
+`docs/sprints/preparation-rme-postpayment-invoice-correction-1.md`.
+
+## A. Status (VERIFIED, 2026-10-25, runtime `20303a5b`)
+
+1. Post-payment correction is **NOT_IMPLEMENTED and NOT_ACTIVE**. Any invoice with a
+   payment is refused at submission with `CORRECTION_TYPE_NOT_ENABLED`
+   (`prePaymentIneligibility()`); `RmeInvoiceCorrectionType::ENABLED = [PRE_PAYMENT]`.
+   The schema already admits `POST_PAYMENT` (CHECK), so enabling it needs no
+   correction-table migration — which is exactly why a type flip alone is forbidden.
+2. Owner decisions PP-1…PP-10 are **PROPOSED, none approved**. D2, D8, D9, D12, D13,
+   D14, D15, D17, D23 stay PENDING; D21c, D21g, D22 stay PENDING; D28 stays the
+   interim Rp0-original guard.
+3. Refund, payment reversal, patient credit, Rp0 adjustment, financial settlement
+   remain NOT_ACTIVE. The SPN4 pilot (D1c) and identities 29/1 (D1e) are unchanged;
+   no reviewer or role gained financial authority.
+
+## B. Foundations a future implementation MUST reuse (VERIFIED)
+
+4. **One correction engine.** Post-payment is a second correction TYPE in
+   `RmeInvoiceCorrectionService`, not a parallel service, table or state machine.
+5. **Type is derived by the server from the ledger under the invoice lock**
+   (`Σ payments > 0` ⇒ `POST_PAYMENT`), never taken from input.
+6. **Payment rows are never written by a correction** (rule 189 model guard). A
+   correction never creates a payment, refund, reversal or settlement row.
+7. **D10 is already type-agnostic** (`RmePaymentService::assertNoActiveCorrection`)
+   and **D28 is already type-agnostic** (`zeroOriginalIneligibility`, original from
+   v0). Keep both; do not fork them per type.
+8. **Lock order:** invoice row `FOR UPDATE` → correction row → (new) obligation row.
+   No new lock ahead of the invoice; the visit is not locked by a correction.
+9. **The invoice fingerprint already covers payments** (id + amount), status and
+   `correction_version`; a payment landing after submission makes the correction
+   STALE. Staleness for post-payment must compare the ledger, not "any payment exists".
+10. `applyLocked()` asserts `status = UNPAID` and no payment — a post-payment path
+    must branch by type, never delete that assertion for pre-payment.
+11. Invoice status after a post-payment apply is DERIVED from the ledger with the same
+    rule as `RmePaymentService::refreshInvoiceStatus()` (`paid ≥ total ⇒ PAID`, else
+    `PARTIAL`) through ONE shared helper.
+12. **Overpayment is never a negative receivable and never a negative payment**
+    (audit §12). Every receivable consumer clamps or filters (`remainingAmount()`,
+    oversight `> 0`, dashboards `max(0, …)`); a new consumer must do the same.
+13. **Receipts render from LIVE rows today** (`RmePaymentController::receipt`, PAID
+    only). Correcting a PAID invoice would silently change an issued receipt — a
+    receipt snapshot (Phase E) is a hard prerequisite of activation (PP-5; D7's
+    technical note "no issued receipt is ever invalidated" stops being true).
+14. Lab candidates are generated only by the payment path when an invoice becomes
+    PAID; D23 refuses correcting an invoice that has candidates (production: #38, #42).
+
+## C. Proposed design (PROPOSED — not policy)
+
+15. Separate default-OFF flag, SPN4 allowlist and identities 29/1 (PP-1); checker 1
+    approves = applies atomically, case-specific Owner approval reference (PP-2).
+16. A downward correction below the money received records an **overpayment
+    obligation atomically** (`OPEN`, server-derived amount `max(0, paid − new total)`),
+    never executes a refund; a further correction is refused while an obligation is
+    OPEN (PP-3). An upward correction creates an ordinary outstanding balance
+    collected at the invoice branch (PP-4, OD-1a).
+17. Reporting: cash KPI unchanged; obligations reported separately; attribution to
+    the invoice branch (PP-6).
+
+## D. Production evidence recorded, NOT verified (2026-10-25)
+
+18. Read-only measurement found the **first real pre-payment correction**:
+    `RMECOR-202610-000001` on invoice #42 (SPN4), Rp6.000.000 → Rp5.000.000, submitted
+    by user 29 at 03:20:52 UTC, approved+applied by user 1 at 03:23:22 UTC (v0 + v1
+    frozen), then payment #50 Rp5.000.000 → PAID; a lab candidate followed. Also the
+    first dispute-reviewer designation (user 11, SPN4, by user 1, 03:21:58 UTC).
+19. This rule does **not** state that the case was Owner-approved (the reason text
+    carries no recognisable approval reference) and does **not** change Sprint 2's
+    status. Only a Sprint 2 closure verification task may evaluate it (design RG-0).
+
+## E. Never
+
+20. Never enable `POST_PAYMENT` by editing `ENABLED`, a config value or an
+    environment variable without the recorded owner decisions and the full
+    implementation (obligation, receipt snapshot, tests, PG races).
+21. Never encode a PP as approved, never invent an Owner approval, signature or
+    reference, and never fabricate a case to produce evidence.
+22. Never return money outside the system to settle an obligation; never offset an
+    obligation against another invoice; never reopen a visit because a total changed.
