@@ -1,6 +1,6 @@
 # ADR 0012 — Koreksi tagihan RME setelah pembayaran (PARTIAL dan PAID)
 
-* Status: **PROPOSED** — desain persiapan, BUKAN keputusan yang berlaku dan BUKAN kode
+* Status: **ACCEPTED (keputusan Owner PP-1…PP-10 diratifikasi 2026-10-25)** — implementasi `NOT_IMPLEMENTED`, aktivasi diblokir (PP-10). Status asli: ~~PROPOSED — desain persiapan, BUKAN keputusan yang berlaku dan BUKAN kode~~
 * Tanggal: 2026-10-25 (WITA)
 * Tugas: `PREPARATION-RME-POSTPAYMENT-INVOICE-CORRECTION-1` (program
   `DAENGTISIAMS-RME-BILLING-CORRECTION`, persiapan Sprint 3/7)
@@ -10,6 +10,14 @@
 * Desain lengkap: `docs/architecture/rme-postpayment-invoice-correction-design.md`
 * Usulan keputusan Owner: `docs/decisions/rme-postpayment-correction-owner-decision-proposals.md`
 
+> **Ratifikasi 2026-10-25** (`RATIFICATION-RME-POSTPAYMENT-OWNER-DECISIONS-PP1-PP10-1`):
+> Owner menyetujui PP-1…PP-10 sebagaimana teks kanoniknya
+> (`docs/decisions/rme-postpayment-correction-owner-decision-proposals.md`). Keputusan
+> di bawah kini adalah kebijakan yang berlaku untuk **implementasi**; ADR ini tetap
+> **tidak mengaktifkan apa pun** — aktivasi menunggu closure Sprint 2 yang terverifikasi
+> (PP-10), dan pada 2026-10-25 Sprint 2 tetap NO_GO.
+>
+> *Teks asli, disimpan sebagai sejarah:*
 > ADR ini **tidak mengaktifkan apa pun** dan **tidak menyetujui kebijakan apa pun**.
 > Setiap "keputusan" di bawah adalah USULAN desain yang baru boleh diimplementasikan
 > setelah Owner mencatat keputusan PP-1 s.d. PP-10 di register. Selama itu, layanan
