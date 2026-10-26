@@ -7,6 +7,7 @@ use App\Modules\DoctorDevice\Models\DoctorDeviceWebAuthnCredential;
 use App\Modules\DoctorDevice\Services\DoctorAppLoginGate;
 use App\Modules\DoctorDevice\Services\DoctorDeviceWebAuthnLoginService;
 use App\Modules\DoctorDevice\Services\DoctorWebAuthnLiveProofService;
+use App\Modules\DoctorDevice\Support\WebAuthnDeviceBinding;
 use App\Modules\DoctorDevice\Support\WebAuthnRelyingParty;
 use App\Services\Foundation\FeatureFlagService;
 use Illuminate\Console\Command;
@@ -59,13 +60,18 @@ use Throwable;
  *  is DELIBERATELY unchanged: it still fails only on a relying party
  * that cannot run a ceremony. Liveness is opt-in through --require-live-proof
  * so that adding this dimension cannot silently start failing a caller that
- * asked the old question.
+ * asked the old question. (D7 later made liveness the default; see below.)
+ *
+ * SECURITY-DOCTOR-WEBAUTHN-DEVICE-BOUND-FAIL-CLOSED-1 — --strict also fails
+ * when the device-binding requirement was written as a blank or unparseable
+ * value. Such a value fails CLOSED at runtime, so this is a configuration
+ * fault rather than a hole, but it is exactly the line nobody notices.
  */
 class DoctorDeviceWebAuthnReadinessCommand extends Command
 {
     protected $signature = 'webauthn:readiness
         {--json : Emit the report as JSON}
-        {--strict : Exit non-zero when the relying party could not run a ceremony}
+        {--strict : Exit non-zero when the relying party could not run a ceremony, or the device-binding requirement was configured with a blank or unparseable value}
         {--require-live-proof : Retained alias for the default gate behaviour; liveness is now checked unless --report-only is passed}
         {--report-only : Print the report and ALWAYS exit 0. For a human reading state, never for a gate}';
 
@@ -108,13 +114,22 @@ class DoctorDeviceWebAuthnReadinessCommand extends Command
             $failure ??= 'user_verification_invalid';
         }
 
+        // SECURITY-DOCTOR-WEBAUTHN-DEVICE-BOUND-FAIL-CLOSED-1 — the same answer
+        // the enforcement reads, never a re-cast of the config. The old line
+        // here cast the value itself, so a null printed "not required" beside
+        // a login path that refuses syncable credentials.
+        $deviceBinding = WebAuthnDeviceBinding::requirementPosture();
+
         $report = [
             'relying_party_id' => $relyingParty->id(),
             'allowed_origins' => $relyingParty->allowedOrigins(),
             'usable' => $failure === null,
             'usability_failure' => $failure,
             'user_verification' => $userVerification,
-            'require_device_bound' => (bool) config('webauthn.device_binding.require_device_bound', true),
+            'require_device_bound' => $deviceBinding['required'],
+            // How it was resolved — a source CODE, never the raw value.
+            'require_device_bound_source' => $deviceBinding['source'],
+            'device_binding_config_valid' => $deviceBinding['valid'],
             'challenge_ttl_seconds' => (int) config('webauthn.ceremony.challenge_ttl_seconds', 120),
 
             // Both switches. Neither is changed here.
@@ -238,6 +253,9 @@ class DoctorDeviceWebAuthnReadinessCommand extends Command
              */
             $this->newLine();
             $this->line('  CONFIGURED           '.($report['webauthn_configured'] ? 'YES' : 'NO'));
+            $this->line('  DEVICE BINDING       '.($report['require_device_bound'] ? 'REQUIRED' : 'RELAXED')
+                .' ('.$report['require_device_bound_source'].')'
+                .($report['device_binding_config_valid'] ? '' : ' — CONFIGURATION FAULT, read as REQUIRED'));
             $this->line('  CREDENTIALS USABLE   '.(($report['credentials_usable'] ?? 0) > 0 ? 'YES' : 'NO'));
             $this->line('  LIVE ASSERTION PROOF '.$report['live_assertion_proof']);
             $this->line('  READINESS            '.$report['effective_readiness']);
@@ -255,10 +273,14 @@ class DoctorDeviceWebAuthnReadinessCommand extends Command
             }
         }
 
-        // Only an unusable relying party is a failure under --strict. "No
-        // credentials yet" is a state, not a fault, and exiting non-zero on it
-        // would train an operator to ignore the command.
-        if ($this->option('strict') && $failure !== null) {
+        // Under --strict, an unusable relying party is a failure, and so is a
+        // device-binding requirement written as a blank or unparseable value:
+        // it fails CLOSED at runtime, but somebody meant something by that line
+        // and it is not what the deployment is doing. A reviewed `false` is a
+        // valid configuration and does not fail here. "No credentials yet" is a
+        // state, not a fault, and exiting non-zero on it would train an
+        // operator to ignore the command.
+        if ($this->option('strict') && ($failure !== null || ! $deviceBinding['valid'])) {
             return self::FAILURE;
         }
 

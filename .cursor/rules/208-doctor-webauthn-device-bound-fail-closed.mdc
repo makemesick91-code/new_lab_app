@@ -1,0 +1,91 @@
+---
+description: SECURITY-DOCTOR-WEBAUTHN-DEVICE-BOUND-FAIL-CLOSED-1 — the WebAuthn device-bound requirement fails closed. One parser for the environment value (relaxes ONLY on a boolean false or the exact string 0), one runtime reader (relaxes ONLY on a genuine boolean false), provenance recorded at config build and reported by webauthn:readiness (--strict fails on blank/unparseable), and the SIGNED BE bit must equal the registered one on both assertion paths (W3C WebAuthn L3 §7.2). Tightens the requirement only; never changes who is enforced.
+globs:
+  - "app/Modules/DoctorDevice/Support/WebAuthnDeviceBinding.php"
+  - "app/Modules/DoctorDevice/Services/DoctorDeviceWebAuthnLoginService.php"
+  - "app/Modules/DoctorDevice/Services/DoctorDeviceWebAuthnRegistrationService.php"
+  - "app/Modules/DoctorDevice/Services/DoctorAppLoginGate.php"
+  - "app/Modules/FrontOfficeDevice/Services/FrontOfficeDeviceWebAuthnLoginService.php"
+  - "app/Console/Commands/DoctorDeviceWebAuthnReadinessCommand.php"
+  - "config/webauthn.php"
+  - "tests/Feature/DoctorDeviceWebAuthn/**"
+  - "tests/Support/FakeWebAuthnAuthenticator.php"
+alwaysApply: false
+---
+
+# WebAuthn device-bound requirement fails closed (rule 208)
+
+Extends rule 93 (§2–3) without replacing it. Where rule 93 or a domain rule says the
+config "reads `(bool) env(...)` and fails open", that described the code before this
+sprint and is superseded here.
+
+## The rules
+
+- **WEBAUTHN-SEC-01 — Active device-bound enforcement fails closed.** When the
+  requirement is in force, anything that cannot be read as a deliberate relaxation is
+  read as REQUIRED. "I do not know" never means "not required".
+- **WEBAUTHN-SEC-02 — Missing or invalid configuration never silently disables it.**
+  `WebAuthnDeviceBinding::resolveRequirementFromEnv()` is the only parser of
+  `WEBAUTHN_REQUIRE_DEVICE_BOUND`. It relaxes ONLY on a boolean `false` — what
+  Laravel's env() makes of an unquoted `false` or `(false)`, in any case — or the exact
+  string `0`: the readings that already relaxed it before this fix. Blank, whitespace,
+  `empty`/`(empty)`, `null`/`(null)`, `off`, `no`, a padded value, a literally quoted
+  `'false'` (env() strips the quotes only AFTER mapping booleans, so it arrives as the
+  string `false`, which `(bool)` read as true) and any other value resolve to REQUIRED. Never reintroduce `(bool) env(...)` for this key, and
+  never widen the relaxing vocabulary: a fix is not allowed to be a relaxation.
+- **WEBAUTHN-SEC-03 — The policy is evaluated server-side through one reader.**
+  `WebAuthnDeviceBinding::isRequired()` is the only reader of
+  `webauthn.device_binding.require_device_bound`; it relaxes only on a genuine boolean
+  `false` (a null, string, integer or missing key is REQUIRED). Controllers, commands,
+  reports and views that honour the policy call it; none reads or re-casts the key. Some
+  consumers (`DoctorDeviceCredentialUsabilityPolicy`, `DoctorDeviceIdentityProofPolicy`,
+  the estate report's eligibility) ignore the setting and always demand device-bound —
+  they may only ever disagree in the stricter direction. A structural test fails CI if
+  anything outside `WebAuthnDeviceBinding` reads the key.
+- **WEBAUTHN-SEC-04 — Unverified authenticator metadata cannot establish trust.** The BE
+  bit used for a decision comes from authenticator data the library has verified: at
+  registration from the validated credential record, at login from the assertion whose
+  signature covers it. A client-supplied field is never the source. With
+  `attestation: none` the registration BE is the client's word, so the signed assertion
+  must be checked too.
+- **WEBAUTHN-SEC-05 — Signed BE must agree with the registration.** After
+  `assertionValidator()->check()` succeeds, both login services call
+  `WebAuthnDeviceBinding::assertionDenialReason()`: a changed BE is refused as
+  `backup_eligibility_changed` regardless of policy (BE "MUST NOT change", L3 §6.1.3,
+  verified per §7.2), and the signed BE must itself satisfy the policy
+  (`asserted_device_binding_policy`, distinct from the stored-verdict refusal
+  `device_binding_policy` so the audit trail says which check refused). The library only dispatches an event for a change; do not
+  rely on it. The check runs before any write, so a refused login stamps nothing.
+- **WEBAUTHN-SEC-06 — Device-bound credentials and trusted-device approval are separate
+  requirements.** A device-bound credential does not approve a device, and an approved
+  device does not make a syncable credential acceptable. Device status, enrolment,
+  authorization and branch checks stay where they are.
+- **WEBAUTHN-SEC-07 — Enforcement scope stays explicit.** Failing closed tightens the
+  requirement, never who is enforced: `doctor.trusted_device_enforcement`,
+  `doctor.pwa_webauthn_device_login`, the pilot cohort and `global_permitted` are not
+  touched by this rule, and a test pins that.
+- **WEBAUTHN-SEC-08 — The answer survives `config:cache`.** The resolved boolean and its
+  provenance (`require_device_bound_source`: `default`, `explicit_on`, `explicit_off`,
+  `blank_fail_closed`, `invalid_fail_closed`) are computed at config build. A runtime
+  `false` with no recorded provenance is reported invalid: a relaxation nobody can show
+  was deliberate is not a clean configuration. Both are
+  var_exported into the cache; the runtime never reads the environment for them.
+  Rebuild the cache as the runtime user after an edit.
+- **WEBAUTHN-SEC-09 — No fallback bypasses device security.** A refused WebAuthn login
+  has one opaque client message; the reason code goes to the audit trail only. No path
+  falls back to a password-only session for an enforced doctor, and branch isolation
+  and session controls stay mandatory.
+- **WEBAUTHN-SEC-10 — Changes need regression tests and a controlled rollout.** Any
+  change to this policy ships with real-cryptography tests (the software authenticator
+  in `tests/Support`), a config-cache round trip, and a mutation check. Real-hardware
+  behaviour (that a clinic tablet reports BE consistently) is proven only by a
+  ceremony on the tablet, never by an automated test.
+
+## Operating notes
+
+- `webauthn:readiness` reports `require_device_bound`, `require_device_bound_source` and
+  `device_binding_config_valid`, and its `--strict` exits non-zero on an invalid value.
+  It never prints the raw value. A reviewed `false` is valid and prints as RELAXED.
+- Never set the variable to `false` to make a gate or a ceremony pass (rule 159).
+- Limit, stated: BE is an authenticator's claim. A fully attacker-controlled software
+  authenticator can sign BE=0; WebAuthn cannot prove a negative about key custody.

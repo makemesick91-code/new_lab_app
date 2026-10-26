@@ -107,9 +107,13 @@ Session lease, branch lock, fleet readiness and global activation live in `.clau
 
 - **AIR-DDA-19** Refuse syncable passkeys: with `require_device_bound` (`WEBAUTHN_REQUIRE_DEVICE_BOUND`, default true)
   a `backup_eligible` or unknown credential is rejected; `platform` attachment is not device-bound and BS is never the
-  gate. `WebAuthnDeviceBinding::isAcceptable()` is re-checked per request. The config reads
-  `(bool) env('WEBAUTHN_REQUIRE_DEVICE_BOUND', true)`, so a present-but-empty value turns the requirement OFF (fails
-  open): never set it blank, and report this as code drift. Source: `93` §2–3, §62, §67.
+  gate. `WebAuthnDeviceBinding::isAcceptable()` is re-checked per request. The requirement fails CLOSED: one parser
+  (`resolveRequirementFromEnv`, relaxes only on a boolean false or the exact string `0`; a quoted `'false'` stays
+  REQUIRED) and one reader (`isRequired()`, relaxes only on a genuine boolean false); nothing else reads the config
+  key. On both assertion paths (doctor, Front Office) the SIGNED BE bit must equal the registered one and satisfy the
+  policy: `assertionDenialReason()` after the signature verifies, before any write (the library only dispatches an
+  event for a BE change). `webauthn:readiness` reports `require_device_bound_source` (a code, never the raw value);
+  `--strict` fails on a blank or unparseable value. Source: `93` §2–3, §62, §67; `208`.
 - **AIR-DDA-20** Ceremonies: one-time expiring challenge, user verification `required`, exact origin list, crypto only
   from `web-auth/webauthn-lib`, bound to a session-data token (never `session()->getId()`). Test with a real software
   authenticator; device-binding claims need the real tablet. Source: `93` §5–10, §24–26.
@@ -250,6 +254,7 @@ Session lease, branch lock, fleet readiness and global activation live in `.clau
 | `.cursor/rules/150-phase4a-doctor-android-non-destructive-pilot.mdc` | Non-destructive pilot, scope before arming |
 | `.cursor/rules/151-doctor-pilot-enforcement-cohort.mdc` | Ceilinged user-id cohort |
 | `.cursor/rules/163-doctor-device-guided-registration-workflow.mdc` | Guided device registration |
+| `.cursor/rules/208-doctor-webauthn-device-bound-fail-closed.mdc` | Device-bound requirement fails closed; signed BE check |
 
 ## History
 

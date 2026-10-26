@@ -1,5 +1,7 @@
 <?php
 
+use App\Modules\DoctorDevice\Support\WebAuthnDeviceBinding;
+
 /*
 |--------------------------------------------------------------------------
 | DOCTOR-PWA-WEBAUTHN-1 — relying party configuration
@@ -133,9 +135,25 @@ return [
     | This defaults to true and should stay true. It is configurable only so
     | that a deployment which has formally accepted synced credentials can say
     | so out loud, in a reviewed change, rather than by weakening the check.
+    |
+    | SECURITY-DOCTOR-WEBAUTHN-DEVICE-BOUND-FAIL-CLOSED-1 — this used to be
+    | `(bool) env(...)`, and Laravel hands a present-but-empty variable back as
+    | '' (and `empty`/`null` as ''/null), which PHP casts to FALSE: a blank line
+    | turned the requirement OFF. It is now parsed by the one resolver, which
+    | relaxes ONLY on an unquoted `false`/`(false)` (env() makes those a boolean)
+    | or the exact string `0`, and reads every other present value — blank,
+    | `off`, `no`, a typo, a literally quoted 'false' — as REQUIRED. The resolved boolean and
+    | how it was arrived at are both captured here, at config build, so they
+    | survive `config:cache`; `webauthn:readiness --strict` fails on a blank or
+    | unparseable value instead of letting it pass silently.
     */
     'device_binding' => [
-        'require_device_bound' => (bool) env('WEBAUTHN_REQUIRE_DEVICE_BOUND', true),
+        'require_device_bound' => WebAuthnDeviceBinding::resolveRequirementFromEnv(
+            env('WEBAUTHN_REQUIRE_DEVICE_BOUND'),
+        ),
+        'require_device_bound_source' => WebAuthnDeviceBinding::classifyRequirementOverride(
+            env('WEBAUTHN_REQUIRE_DEVICE_BOUND'),
+        ),
 
         // Verdicts recorded against a credential. `unknown` exists because an
         // authenticator that reports no backup flags has not told us it is

@@ -358,6 +358,17 @@ class FrontOfficeDeviceWebAuthnLoginService
             $this->deny($credential, $user, 'user_verification_missing');
         }
 
+        // SECURITY-DOCTOR-WEBAUTHN-DEVICE-BOUND-FAIL-CLOSED-1 — the same
+        // signed-flag check as the doctor path; see WebAuthnDeviceBinding.
+        $backupDenial = WebAuthnDeviceBinding::assertionDenialReason(
+            $credential->backup_eligible,
+            $response->authenticatorData->isBackupEligible(),
+        );
+
+        if ($backupDenial !== null) {
+            $this->deny($credential, $user, $backupDenial);
+        }
+
         // Clone-detection counter, advanced monotonically.
         DB::transaction(function () use ($credential, $verified) {
             $credential->forceFill([
