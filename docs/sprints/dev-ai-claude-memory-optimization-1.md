@@ -12,7 +12,7 @@ kb_updated: 2026-10-26
 | Type | `FOUNDATION_SPRINT`, module `Devflow` (AI tooling, governance, CI, documentation) |
 | Base | `feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report` @ `53d76643` (verified against `origin`) |
 | Branch | `feature/dev-ai-claude-memory-optimization-1` |
-| PR / merge / GO tag | recorded in the closure section at the end |
+| PR / merge / GO tag | #527 · `9748aeb0` · `dev-ai-claude-memory-optimization-1-go` (details in §12) |
 | Runtime change | none: no PHP class under `app/`, no migration, no route, no permission, no view |
 
 ## 1. Problem, measured
@@ -276,4 +276,17 @@ production configuration depends on these files.
 
 ## 12. Closure
 
-CLOSURE_SECTION
+**Status: GO** (2026-10-26, WITA).
+
+| Item | Evidence |
+|---|---|
+| Candidate | `35be87d5`, tree `6b6036c6` |
+| CI on the candidate | run `40271034723`: classifier, NSF-R012 quality (step `AI instruction system contract`: 15 passed / 2,286 assertions), NSF-R011 critical (6,716 passed / 37,216 assertions, `critical_test_exit_status=0`, warning contract 0), selective module, NSF-9, NSF-10, Android gate: success. The self-hosted critical variant is skipped by design (exactly one variant runs) |
+| Merge | PR #527 squash-merged as `9748aeb0`; merge tree `6b6036c6` = candidate tree |
+| CI on the merge push | run `40284623131`: same gates success, same counts; the Full Suite job was skipped by the active global temporary policy and its suite step never ran — **Full Suite not run and not claimed** |
+| Deploy | `bash scripts/deploy-vps-runner.sh start` on the VPS, run `deploy-20261026-071525`: `exit=0`, `DEPLOY OK`, `DEPLOY_HEAD_TARGET_MATCH=YES (9748aeb0…)`, snapshot cleaned, runtime isolation GO, secret file permissions GO, automated smoke GO. One smoke warning (`http://127.0.0.1/login` → 404) is the known co-tenant loopback shadow; the canonical domain answers 200 |
+| Production checks (read-only) | VPS HEAD = `9748aeb0`, tree `6b6036c6`, tracked tree clean; deployed `CLAUDE.md` 148 lines; environment `pilot`, debug OFF, maintenance OFF; 0 pending migrations; 0 failed jobs; queue worker, `php8.3-fpm` and nginx active; `https://daengtisia.online` `/login`, `/health/live`, `/health/ready` (all components ok), `/health/lb` → 200; guest `/dashboard`, `/rme/visits`, `/rme/cashier`, `/settings/legacy-imports` → 302; `laravel.log` 1,442,282 bytes and 163 ERROR lines before and after (no new line) |
+| GO tag | annotated `dev-ai-claude-memory-optimization-1-go` (object `a193a0bd`) → `9748aeb0`; verified on the remote and on the VPS after an explicit tag fetch (`git describe --exact-match HEAD` on the VPS returns it) |
+| Knowledge-base vault | `/home/fikri/Projects/daengtisiams-kb-vault` advanced by detached checkout to `9748aeb0` while Obsidian was closed; still locked and clean |
+
+This closure record is a docs-only commit after the GO commit; it is not deployed.
