@@ -534,6 +534,14 @@ return [
         // carrying BOTH an Android keystore key and a WebAuthn credential.
         'tests/Feature/DoctorDeviceWebAuthn/DoctorPwaWebAuthnProofBindingTest.php',
 
+        // SECURITY-DOCTOR-WEBAUTHN-DEVICE-BOUND-FAIL-CLOSED-1 — the device-bound
+        // requirement fails closed (env parsing, runtime reader, config-cache
+        // round trip) and the SIGNED BE bit is checked on both assertion paths.
+        // Selected by the `DoctorPwaWebAuthn` token; declared so a dropped token
+        // or a rename fails the coverage reconciliation instead of silently
+        // removing the only tests that reproduce both fail-open defects.
+        'tests/Feature/DoctorDeviceWebAuthn/DoctorPwaWebAuthnDeviceBoundFailClosedTest.php',
+
         // DOCTOR-PWA-GLOBAL-ROLLOUT-READINESS-1 — the fleet readiness engine.
         // Selected by the `DoctorDevice` token through its namespace, and
         // declared here so that coverage is a decision rather than a side

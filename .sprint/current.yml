@@ -1,26 +1,30 @@
-# DEV-AI-CLAUDE-MEMORY-OPTIMIZATION-1 — Claude Code memory and instruction system.
-# CLAUDE.md (1.56 MB, 240 sprint records, ~659K tokens loaded into EVERY session,
-# US$6.59 before any work) becomes the critical global rules CG-01..CG-24.
-# The records move verbatim to docs/sprints/claude-md-archive/ (sha256 manifest);
-# domain rules load on demand from path-scoped .claude/rules/*.md.
-# Guarded by tests/Feature/Foundation/DevflowAiInstructionSystemTest.php (critical
-# gate via the Devflow token, plus the mandatory-suite registry).
-# No runtime code, no migration, no route, no permission, no seeder, no asset.
+# SECURITY-DOCTOR-WEBAUTHN-DEVICE-BOUND-FAIL-CLOSED-1 — two fail-open defects in
+# the WebAuthn device-bound requirement, both reproduced on 3ae7a502 first:
+#   1. config/webauthn.php read `(bool) env('WEBAUTHN_REQUIRE_DEVICE_BOUND', true)`,
+#      so a blank value (or Laravel's empty/(empty)/null/(null)) turned the
+#      requirement OFF; `(bool) config(...)` read a runtime null the same way.
+#   2. Both login services gated on the STORED verdict only; the library reports
+#      a signed BE change with an event and does not refuse (WebAuthn L3 §7.2).
+# Fix: one parser + one reader in WebAuthnDeviceBinding, signed-flag check on
+# both assertion paths, readiness reports provenance and --strict fails on a
+# blank/unparseable value. No migration, no route, no permission, no flag, no
+# enforcement-scope change. Production is unaffected in effect: the variable is
+# absent there (default REQUIRED) and all 7 usable credentials are device-bound.
 # Carried forward: LEGACY-RME-PROGRAM-CLOSURE-1 stays CLOSED and inherited.
-id: DEV-AI-CLAUDE-MEMORY-OPTIMIZATION-1
-type: FOUNDATION_SPRINT
-module: Devflow
-title: "Claude Code memory optimization: slim CLAUDE.md (CG-01..CG-24), verbatim hashed archive of 240 sprint records, path-scoped .claude/rules domain loaders, contract test"
+id: SECURITY-DOCTOR-WEBAUTHN-DEVICE-BOUND-FAIL-CLOSED-1
+type: SECURITY_FIX
+module: DoctorDevice
+title: "WebAuthn device-bound requirement fails closed: strict env parsing, single runtime reader, signed BE-consistency check on both assertion paths"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
-runtime_change: false
+runtime_change: true
 schema_change: false
 frontend_change: false
-security_impact: false
+security_impact: true
 branch_isolation_impact: false
 ledger_impact: false
 deploy_required: true
 browser_required: false
-test_profiles: [focused, cross_module_regression]
-go_tag: dev-ai-claude-memory-optimization-1-go
-inherits_parent_go: feature-rme-postpayment-invoice-correction-1-implementation-go
+test_profiles: [focused, security_regression]
+go_tag: security-doctor-webauthn-device-bound-fail-closed-1-go
+inherits_parent_go: dev-ai-claude-memory-optimization-1-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1

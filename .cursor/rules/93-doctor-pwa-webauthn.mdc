@@ -30,7 +30,9 @@ Durable contract: `docs/architecture/doctor-pwa-webauthn.md`.
 3. **A syncable credential is refused** while `WEBAUTHN_REQUIRE_DEVICE_BOUND` is
    true, which is the default and should stay true. `BS` is mutable and must not
    be the gate. **`unknown` is not a pass** — an authenticator that reports no
-   backup flags has not told us anything.
+   backup flags has not told us anything. The requirement itself fails closed and
+   the signed BE bit is checked at every login: see rule 208
+   (SECURITY-DOCTOR-WEBAUTHN-DEVICE-BOUND-FAIL-CLOSED-1).
 4. **Private keys never leave the authenticator.** Never store a private key, a
    reusable device secret, a password or biometric data.
 

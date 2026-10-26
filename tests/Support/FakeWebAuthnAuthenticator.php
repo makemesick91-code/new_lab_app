@@ -98,6 +98,13 @@ final class FakeWebAuthnAuthenticator
      *
      * @param  bool  $forgeSignature  sign with a DIFFERENT key pair, to prove a
      *                                forged signature is refused
+     * @param  bool|null  $backupEligibleOverride  SECURITY-DOCTOR-WEBAUTHN-DEVICE-BOUND-FAIL-CLOSED-1:
+     *                                             report a BE bit in THIS assertion that differs from
+     *                                             the one this key was registered with. The assertion is
+     *                                             still signed with the genuine key, so it is exactly what
+     *                                             a misbehaving or tampered authenticator would produce —
+     *                                             the signature verifies and only the flags lie.
+     * @param  bool|null  $backupStateOverride  the same for the BS bit
      * @return array<string, mixed>
      */
     public function assertion(
@@ -106,12 +113,19 @@ final class FakeWebAuthnAuthenticator
         ?string $originOverride = null,
         bool $userVerified = true,
         bool $forgeSignature = false,
+        ?bool $backupEligibleOverride = null,
+        ?bool $backupStateOverride = null,
     ): array {
         $clientDataJSON = $this->clientData('webauthn.get', $challengeBase64Url, $originOverride);
 
         $this->signCount++;
 
-        $authData = $this->authenticatorData($userVerified, includeAttestedCredentialData: false);
+        $authData = $this->authenticatorData(
+            $userVerified,
+            includeAttestedCredentialData: false,
+            backupEligible: $backupEligibleOverride ?? $this->backupEligible,
+            backupState: $backupStateOverride ?? $this->backupState,
+        );
 
         $signedBytes = $authData.hash('sha256', $clientDataJSON, true);
 
@@ -154,16 +168,20 @@ final class FakeWebAuthnAuthenticator
     /**
      * rpIdHash(32) || flags(1) || signCount(4) [ || attestedCredentialData ]
      */
-    private function authenticatorData(bool $userVerified, bool $includeAttestedCredentialData): string
-    {
+    private function authenticatorData(
+        bool $userVerified,
+        bool $includeAttestedCredentialData,
+        ?bool $backupEligible = null,
+        ?bool $backupState = null,
+    ): string {
         $flags = 0x01;                                  // UP — user present
         if ($userVerified) {
             $flags |= 0x04;                             // UV — user verified
         }
-        if ($this->backupEligible) {
+        if ($backupEligible ?? $this->backupEligible) {
             $flags |= 0x08;                             // BE
         }
-        if ($this->backupState) {
+        if ($backupState ?? $this->backupState) {
             $flags |= 0x10;                             // BS
         }
         if ($includeAttestedCredentialData) {

@@ -10,6 +10,7 @@ use App\Modules\DoctorDevice\Requests\DoctorDeviceWebAuthnRevokeRequest;
 use App\Modules\DoctorDevice\Services\DoctorDeviceWebAuthnRegistrationService;
 use App\Modules\DoctorDevice\Support\ReturnsToRegistrationWorkflow;
 use App\Modules\DoctorDevice\Support\WebAuthnCeremonyFactory;
+use App\Modules\DoctorDevice\Support\WebAuthnDeviceBinding;
 use App\Modules\DoctorDevice\Support\WebAuthnRelyingParty;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\JsonResponse;
@@ -48,7 +49,7 @@ class DoctorDeviceWebAuthnController extends Controller
             'device' => $doctorDevice,
             'credentials' => $doctorDevice->webAuthnCredentials()->orderBy('id')->get(),
             'configurationFailure' => $relyingParty->usabilityFailure(),
-            'requiresDeviceBound' => (bool) config('webauthn.device_binding.require_device_bound', true),
+            'requiresDeviceBound' => WebAuthnDeviceBinding::isRequired(),
         ]);
     }
 

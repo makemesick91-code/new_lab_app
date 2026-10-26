@@ -59,6 +59,13 @@ in the authenticator data, fixed at creation and immutable for the credential's
 life. `WEBAUTHN_REQUIRE_DEVICE_BOUND` defaults to **true**, and a `BE=1`
 credential is refused at registration.
 
+The requirement fails **closed** (§19): only a boolean `false` (an unquoted `false` or
+`(false)`) or the exact string `0` relaxes it, and a blank, padded, literally quoted or
+unparseable value — including `off` and `no` — is read as REQUIRED and reported by `webauthn:readiness --strict` as a configuration fault.
+At login the BE bit inside the *signed* authenticator data must equal the one
+recorded at registration and must itself satisfy the policy; the stored verdict
+alone is not enough.
+
 `BS` (Backup State) is deliberately *not* the gate: it is mutable and reports
 `0` until the credential actually syncs, so judging on it would pass a syncable
 credential that simply had not synced yet.
@@ -222,7 +229,7 @@ distinction wanted.
 | `WEBAUTHN_RP_ID` | derived from `APP_URL` host | A hand-typed value that drifts from the served origin is the commonest way this breaks after a domain change. |
 | `WEBAUTHN_ALLOWED_ORIGINS` | the `APP_URL` origin | Exact list; **subdomain wildcards are not enabled**. |
 | `WEBAUTHN_USER_VERIFICATION` | `required` | `discouraged` is refused outright rather than silently accepted. |
-| `WEBAUTHN_REQUIRE_DEVICE_BOUND` | `true` | See §2. |
+| `WEBAUTHN_REQUIRE_DEVICE_BOUND` | `true` | See §2 and §19. Relaxed only by an unquoted `false`/`(false)` or the exact string `0`; anything else present is REQUIRED and a `--strict` readiness fault. |
 | `WEBAUTHN_ALLOW_INSECURE_LOCALHOST` | `false` | Refused in production-like environments regardless of the value. |
 
 The relying party is validated before any ceremony is issued; an unusable
@@ -1147,3 +1154,52 @@ and the cohort returns to its approved membership afterwards.
 
 Full record: `docs/sprints/doctor-pwa-global-rollout-readiness-1.md`. Rules:
 GR-R1…R20 in `.cursor/rules/152-doctor-global-rollout-readiness.mdc`.
+
+---
+
+## 19. The device-bound requirement fails closed — SECURITY-DOCTOR-WEBAUTHN-DEVICE-BOUND-FAIL-CLOSED-1
+
+Sprint record: [security-doctor-webauthn-device-bound-fail-closed-1](../sprints/security-doctor-webauthn-device-bound-fail-closed-1.md).
+Canonical rule: `.cursor/rules/208-doctor-webauthn-device-bound-fail-closed.mdc` (WEBAUTHN-SEC-01..10).
+
+Two fail-open defects were reproduced against the unmodified code and closed.
+
+**Configuration.** The requirement used to be `(bool) env('WEBAUTHN_REQUIRE_DEVICE_BOUND', true)`.
+Laravel returns a present-but-empty variable as `''` and maps `empty`/`(empty)` to `''` and
+`null`/`(null)` to null; PHP casts all of them to false, so five spellings switched the
+requirement OFF without an error. The runtime reader, `(bool) config(...)`, read a null the
+same way. There is now one parser, `WebAuthnDeviceBinding::resolveRequirementFromEnv()`, called
+from the config file so its answer survives `config:cache`, and one reader,
+`WebAuthnDeviceBinding::isRequired()`, which relaxes only on a genuine boolean `false`. The
+config also records how the value was resolved (`require_device_bound_source`); the readiness
+command prints that code — never the raw value — and `--strict` fails on `blank_fail_closed`,
+`invalid_fail_closed` or a non-boolean runtime value.
+
+The relaxing vocabulary is the narrowest possible: a boolean `false` (what env() makes of an
+unquoted `false` or `(false)`) and the exact string `0` — the readings that already relaxed it.
+`off`, `no`, a padded value and a literally quoted `'false'` used to resolve to REQUIRED
+(`(bool) 'off'` and `(bool) 'false'` are true; env() strips quotes only after mapping
+booleans), so reading them as a relaxation now would have been a widening. An independent
+review caught the quoted-`'false'` case in the first draft of this fix.
+
+**Authenticator data.** With `attestation: none`, the BE bit recorded at registration is the
+client's word. The assertion is different: its authenticator data is covered by the
+credential's signature. The library verifies that signature and, when the signed BE bit
+differs from the credential record, dispatches an event and continues. Nothing listened, and
+both login services judged only the stored verdict. W3C WebAuthn Level 3 §7.2 requires the
+relying party to verify that BE is unchanged when backup state is used as policy, and §6.1.3
+says BE MUST NOT change. Both assertion paths (doctor and Front Office) now call
+`WebAuthnDeviceBinding::assertionDenialReason()` after signature verification: a changed BE is
+refused as `backup_eligibility_changed` whatever the policy, and the signed BE must also
+satisfy the policy (`asserted_device_binding_policy`).
+
+**What did not change.** Doctor device enforcement, the WebAuthn admission switch, the pilot
+cohort and `global_permitted` are untouched: failing closed tightens the *requirement*, never
+*who is enforced*. A reviewed `false` still works. Production carried no value for the variable
+(default REQUIRED) and all usable credentials were device-bound when this shipped, so the
+deployed posture did not move.
+
+**Residual limit, unchanged.** BE is an authenticator's claim. A fully attacker-controlled
+software authenticator can sign BE=0; nothing in WebAuthn can prove a negative about key
+custody. The signed-flag check closes the case where a genuine syncing authenticator is
+registered behind a tampered client, not the case where the authenticator itself lies.

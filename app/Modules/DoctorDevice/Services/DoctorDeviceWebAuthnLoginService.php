@@ -345,6 +345,20 @@ class DoctorDeviceWebAuthnLoginService
             $this->deny($credential, $user, 'user_verification_missing');
         }
 
+        // SECURITY-DOCTOR-WEBAUTHN-DEVICE-BOUND-FAIL-CLOSED-1 — the signed BE
+        // bit, read only now that the signature over it has been verified. The
+        // library reports a change with an event and does not refuse; the
+        // stored verdict alone would let an assertion that SIGNS "this key can
+        // be synced" through on a credential enrolled as device-bound.
+        $backupDenial = WebAuthnDeviceBinding::assertionDenialReason(
+            $credential->backup_eligible,
+            $response->authenticatorData->isBackupEligible(),
+        );
+
+        if ($backupDenial !== null) {
+            $this->deny($credential, $user, $backupDenial);
+        }
+
         DB::transaction(function () use ($credential, $verified) {
             $credential->forceFill([
                 // A counter that stays at zero is normal for many platform

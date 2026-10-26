@@ -14,6 +14,7 @@ use App\Modules\DoctorDevice\Services\DoctorDeviceRegistrationReadinessService;
 use App\Modules\DoctorDevice\Services\DoctorDeviceRegistrationWorkflowService;
 use App\Modules\DoctorDevice\Services\DoctorDeviceService;
 use App\Modules\DoctorDevice\Services\DoctorGlobalRolloutReadinessService;
+use App\Modules\DoctorDevice\Support\WebAuthnDeviceBinding;
 use App\Modules\DoctorDevice\Support\WebAuthnRelyingParty;
 use App\Modules\LabOrder\Services\AuditLogService;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
@@ -130,7 +131,7 @@ class DoctorDeviceRegistrationWorkflowController extends Controller
         return view('settings.doctor-device-registration.webauthn', $this->shell($registration, $request, 'webauthn') + [
             'credentials' => $registration->webAuthnCredentials()->orderBy('id')->get(),
             'configurationFailure' => $relyingParty->usabilityFailure(),
-            'requiresDeviceBound' => (bool) config('webauthn.device_binding.require_device_bound', true),
+            'requiresDeviceBound' => WebAuthnDeviceBinding::isRequired(),
             'canEnrol' => $request->user()->can('update', $registration),
         ]);
     }

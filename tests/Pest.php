@@ -1813,10 +1813,15 @@ function pilotSnapshotDiskProbe(?float $freeGb): PilotPerformanceSnapshotDiskPro
  * test can never leak an override into the next one — these tests must assert
  * the resolution contract, not the ambient state of the process.
  *
+ * SECURITY-DOCTOR-WEBAUTHN-DEVICE-BOUND-FAIL-CLOSED-1 — `$configFile` lets a
+ * second suite evaluate a DIFFERENT config file through this same harness
+ * (config/webauthn.php's device-binding requirement) instead of growing a
+ * second one. It defaults to the file every existing caller already meant.
+ *
  * @param  array<string, string|null>  $env
  * @return array<string, mixed>
  */
-function ffBuildRegistry(array $env): array
+function ffBuildRegistry(array $env, string $configFile = 'feature_flags.php'): array
 {
     $restore = [];
 
@@ -1836,7 +1841,7 @@ function ffBuildRegistry(array $env): array
     }
 
     try {
-        return require config_path('feature_flags.php');
+        return require config_path($configFile);
     } finally {
         foreach ($restore as $key => $value) {
             if ($value === null) {
