@@ -1,7 +1,9 @@
 # SECURITY-DOCTOR-WEBAUTHN-DEVICE-BOUND-FAIL-CLOSED-1
 
-**Status:** IMPLEMENTED — evidence below; closure fields are filled as each gate is
-reached and never ahead of it.
+**Status:** COMPLETE — merged (PR #529, `53f01a72`), deployed to the production pilot,
+verified, rules synced, GO tagged (`security-doctor-webauthn-device-bound-fail-closed-1-go`).
+A real-tablet WebAuthn ceremony after deploy was **not** performed and is not claimed
+(§8.4).
 
 **Type:** `SECURITY_FIX` (P0 hardening). **Base:** `3ae7a502`
 (`feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report`, one docs-only
@@ -190,6 +192,14 @@ tables, none WebAuthn-related) and are taken from CI and the deploy's own gate p
 **Full Suite:** DEFERRED by the GLOBAL TEMPORARY FULL-SUITE POLICY (CG-18). Not run, not
 claimed.
 
+**CI on the exact candidate** — run `40314431929`, head `28d5604e`, conclusion **success**:
+CICD-CTRL Classifier (profile `unknown_high_risk`, the strongest), NSF-R012 Quality, NSF-R011
+Critical (one runner variant ran, the other skipped by design), CICD-CTRL Selective Module,
+Phase 3 Android Clinic App, NSF-9 Release Safety & Smoke, NSF-10 Release Evidence. The critical
+step log was read rather than the check mark: `critical_test_exit_status=0`, **6781 passed
+(37,400 assertions)** on PostgreSQL 16, and `DoctorPwaWebAuthnDeviceBoundFailClosedTest`
+appears as PASS with **65 tests, 0 failed**. NSF-R011 Full Suite Gate: skipped by policy.
+
 ## 8. Production
 
 ### 8.1 Pre-deploy posture (read-only, 2026-10-26, as `daengtisiams`)
@@ -221,6 +231,74 @@ Impact matrix before deploy:
 
 The deploy changes no configuration: the variable stays absent, so the resolved value is
 `true` before and after.
+
+### 8.2 Merge
+
+PR #529 squash-merged as `53f01a721bfae34c38f8b1c9c8179561fc881110`. Merge tree `fec41ea5`
+is identical to the CI-validated candidate tree; the base had not moved (`3ae7a502`).
+
+### 8.3 Deployment
+
+Executed on the VPS with `bash scripts/deploy-vps-runner.sh start` from
+`/var/www/asia-dental-lab-v2` (never from a workstation).
+
+| Item | Evidence |
+| --- | --- |
+| Start / end | 2026-10-26 14:18:04 UTC → status written 14:38:06 UTC (22:18–22:38 WITA) |
+| Runner | detached pid 313824; status `exit=0`; log `DEPLOY OK: 20261026-141806` |
+| Lock / pin | `DEPLOY_LOCK_ACQUIRED=YES`, `DEPLOY_TARGET_PINNED=53f01a72…` |
+| Execution source | trusted immutable snapshot under `/run/daengtisiams-deploy` (`DEPLOY_SNAPSHOT_TRUSTED=PASS`), cleaned afterwards |
+| Backup | `storage/app/backups/deploy/pre_auto_deploy_20261026-141806.sql`, 32,289,407 B, `0640 daengtisiams` |
+| Migrations | `Nothing to migrate` (`migrate --force` only) |
+| Gates | writable-path gates GO, secret-file permissions GO, runtime isolation 70 GO / 0 FAIL / 0 SKIP, auth-landing smoke GO |
+| Smoke | NSF-9 command readiness GO; HTTP probe WATCH only for `http://127.0.0.1/login` → 404, the known co-tenant loopback shadow (CG-14); the canonical domain returns 200 |
+| HEAD | `DEPLOY_HEAD_TARGET_MATCH=YES`; HEAD `53f01a72`, tree `fec41ea5`, tracked tree clean |
+| Rollback | `bash scripts/rollback-vps.sh dev-ai-claude-memory-optimization-1-go` (previous GO, `9748aeb0`) + the backup above if ever needed |
+
+### 8.4 Production verification (read-only, as `daengtisiams`, 2026-10-26)
+
+| Check | Result |
+| --- | --- |
+| `https://daengtisia.online` `/login`, `/health/live`, `/health/ready`, `/health/lb` | 200 ×4 |
+| Guest `/doctor-device-webauthn`, `/front-office-device-webauthn` | 302 (no 500) |
+| Cached config `webauthn.device_binding` | `require_device_bound=true`, `require_device_bound_source=default` |
+| `webauthn:readiness --report-only` | REQUIRED (default), `device_binding_config_valid=true`, RP usable, UV `required`, 7/7 credentials device-bound, verdict ARMED |
+| `webauthn:readiness --strict --report-only` | exit 0 |
+| Fix present | `assertionDenialReason(` once in each login service; resolver in the config; no `(bool) env(` for the key |
+| Enforcement scope | `pilot`, covered `[18, 15, 9]`, `global_enforcement_active=false`, `global_scope_permitted=false` — unchanged |
+| Flags | `doctor.trusted_device_enforcement` ON, `doctor.pwa_webauthn_device_login` ON, `doctor.single_active_session` ON, `doctor.branch_lock` OFF, `front_office.branch_device_lock` OFF, `front_office.branch_context_lock` ON — unchanged |
+| Application log | 1,442,282 B / 163 ERROR before and after: **0 new errors** |
+| Failed jobs | 0 |
+| Runtime | env `pilot`, debug OFF, maintenance OFF; php8.3-fpm, nginx, queue worker active |
+
+**Not performed, not claimed:** a real-tablet WebAuthn login after deploy. The last qualifying
+production WebAuthn assertion was 2026-10-17 07:22 UTC; nothing in production history records
+the assertion-time BE bit, so the new check's effect on real hardware is unmeasured. It can only
+refuse an authenticator that contradicts its own registration. After the next real PWA login by
+a pilot doctor, confirm it with a read-only look at `sys_audit_logs` for
+`DOCTOR_DEVICE_WEBAUTHN_LOGIN_SUCCESS`, and for any `DOCTOR_DEVICE_WEBAUTHN_LOGIN_REJECTED` whose
+reason is `backup_eligibility_changed` or `asserted_device_binding_policy`. Recovery if one
+appears: the Android Clinic App path (unaffected), break-glass, or enrolling a conforming
+credential; never relax the requirement.
+
+### 8.5 Rules and knowledge base
+
+- Canonical rule `.cursor/rules/208-doctor-webauthn-device-bound-fail-closed.mdc`; every one of
+  its path globs matches tracked files (checked). Rule 93 §3 points to it.
+- Domain rule `.claude/rules/doctor-device-android.md` AIR-DDA-19 rewritten (it described the
+  fail-open as current drift) and loads on `config/webauthn.php`; the canonical index lists 208.
+  `DevflowAiInstructionSystemTest` enforces numbering, path scope, size and references.
+- Contract `docs/architecture/doctor-pwa-webauthn.md` §2, §7 and §19.
+- `CLAUDE.md` unchanged (CG-24).
+- Obsidian vault `/home/fikri/Projects/daengtisiams-kb-vault` refreshed by detached checkout
+  to `53f01a72`; still detached, locked, clean; Sync OFF.
+
+### 8.6 GO tag
+
+`security-doctor-webauthn-device-bound-fail-closed-1-go` — annotated, tag object `accdaa39`,
+points at the deployed `53f01a72`; verified locally, on `origin`, and on the VPS
+(`git describe --tags --exact-match HEAD`). This evidence commit comes after the GO commit and
+is not deployed (CG-16).
 
 ## 9. Risks and future improvements
 
