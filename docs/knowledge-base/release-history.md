@@ -1,7 +1,7 @@
 ---
 kb_status: snapshot
-kb_verified_against: 572a32a9
-kb_updated: 2026-10-25
+kb_verified_against: 53d76643
+kb_updated: 2026-10-26
 ---
 
 # Riwayat Rilis
@@ -17,7 +17,8 @@ usang, karena rata-rata ada lebih dari satu GO tag baru setiap hari.
 |---|---|---|
 | GO tag git (`*-go`) | Semua sprint yang ditutup dengan GO | `AUTHORITATIVE` untuk "apa yang dinyatakan GO" |
 | `docs/sprints/` | Catatan per sprint (311 dokumen) | `HISTORICAL` |
-| `CLAUDE.md` | Bagian penutupan per sprint (append-only) | `CURRENT` |
+| `CLAUDE.md` | Hanya aturan global CG-01…CG-24; tidak lagi memuat catatan sprint (sejak 2026-10-26) | `CURRENT` |
+| [Arsip `CLAUDE.md`](../sprints/claude-md-archive/README.md) | 240 bagian penutupan sprint yang dulu ada di `CLAUDE.md`, verbatim, sampai commit `53d76643` (2026-10-25) | `HISTORICAL` |
 | [sprint_history](../sprint_history.md) | Hanya sampai **2026-06-28** | `STALE` |
 | [24 Sprint History](../ai-knowledge/24_DaengtisiaMS_Sprint_History_Changelog.md) | Hanya sampai **2026-06-28** | `STALE` |
 
@@ -57,8 +58,8 @@ ls docs/sprints | grep <bagian-nama-sprint>
 
 ## Batasan yang perlu diketahui
 
-- **GO tag tidak sama dengan "sudah di-deploy".** Status deployment produksi tercatat di bagian
-  sprint terkait dalam `CLAUDE.md` dan di runbook deploy. Halaman ini tidak memuatnya.
+- **GO tag tidak sama dengan "sudah di-deploy".** Status deployment produksi tercatat di dokumen
+  sprint terkait (`docs/sprints/`; untuk sprint sampai 2026-10-25 juga di arsip `CLAUDE.md`) dan di runbook deploy. Halaman ini tidak memuatnya.
 - Beberapa sprint ditutup dengan status `WATCH` atau `NO-GO` **tanpa** GO tag. Sprint seperti
-  itu hanya tercatat di `CLAUDE.md` dan `docs/sprints/`.
+  itu hanya tercatat di `docs/sprints/` (dan, sampai 2026-10-25, di arsip `CLAUDE.md`).
 - Tanggal yang dipakai adalah tanggal **pembuatan tag**, bukan tanggal merge.

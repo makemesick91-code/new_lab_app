@@ -1,45 +1,26 @@
-# FEATURE-RME-POSTPAYMENT-INVOICE-CORRECTION-1
-#
-# Program DAENGTISIAMS-RME-BILLING-CORRECTION — Sprint 3/7 (rule 207). Built on
-# the owner decisions PP-1…PP-10 ratified on 2026-10-25
-# (RATIFICATION-RME-POSTPAYMENT-OWNER-DECISIONS-PP1-PP10-1). IMPLEMENTATION with
-# the switch OFF; activation is its own owner decision (PP-10) and stays blocked
-# while the pre-payment pilot is NO_GO (VERIFICATION-…-REAL-CASE-42-1).
-#
-#   C1. Receipt snapshot foundation (PP-5): one immutable receipt snapshot per
-#       payment, issued inside the payment transaction; legacy receipts are
-#       reconstructed (labelled) before the first post-payment correction
-#       mutates; a superseded receipt is reprinted from its snapshot, "DIREVISI".
-#   C2. POST_PAYMENT domain behind `rme.invoice_postpayment_correction` (default
-#       OFF): type from the ledger under the invoice lock, mandatory owner
-#       approval reference (code + DB CHECK), its own eligibility and staleness.
-#   C3. Outcomes: status re-derived by the one ledger helper payments use;
-#       downward below paid ⇒ OPEN overpayment obligation (no refund, no
-#       negative receivable); upward ⇒ outstanding; equal ⇒ balanced.
-#   C4. PP-8 (lab refused / never generated), PP-9 (read-only obligation list).
-#
-# Three additive migrations (columns on corrections, obligations + events,
-# receipt snapshots; PostgreSQL CHECKs / partial index; down() refuses while
-# rows exist). No backfill, no permission, no seeder, no role change; no
-# JS/CSS/asset change.
-#
-# Preserved: D1, D1a, D1c, D1e, D7, D10, D21, D28, OPS-OQ-1 / 1a / 1b, OD-1 /
-# OD-1a, rule 191, rule 205, rule 206; D21c, D21g, D22 stay PENDING.
-
-id: FEATURE-RME-POSTPAYMENT-INVOICE-CORRECTION-1
+# DEV-AI-CLAUDE-MEMORY-OPTIMIZATION-1 — Claude Code memory and instruction system.
+# CLAUDE.md (1.56 MB, 240 sprint records, ~659K tokens loaded into EVERY session,
+# US$6.59 before any work) becomes the critical global rules CG-01..CG-24.
+# The records move verbatim to docs/sprints/claude-md-archive/ (sha256 manifest);
+# domain rules load on demand from path-scoped .claude/rules/*.md.
+# Guarded by tests/Feature/Foundation/DevflowAiInstructionSystemTest.php (critical
+# gate via the Devflow token, plus the mandatory-suite registry).
+# No runtime code, no migration, no route, no permission, no seeder, no asset.
+# Carried forward: LEGACY-RME-PROGRAM-CLOSURE-1 stays CLOSED and inherited.
+id: DEV-AI-CLAUDE-MEMORY-OPTIMIZATION-1
 type: FOUNDATION_SPRINT
-module: RmeInvoice
-title: "RME post-payment invoice correction behind its own default-OFF switch: ledger-derived type, mandatory owner approval reference, OPEN overpayment obligation instead of a refund, immutable receipt snapshots"
+module: Devflow
+title: "Claude Code memory optimization: slim CLAUDE.md (CG-01..CG-24), verbatim hashed archive of 240 sprint records, path-scoped .claude/rules domain loaders, contract test"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
-runtime_change: true
-schema_change: true
-frontend_change: true
-security_impact: true
-branch_isolation_impact: true
+runtime_change: false
+schema_change: false
+frontend_change: false
+security_impact: false
+branch_isolation_impact: false
 ledger_impact: false
 deploy_required: true
 browser_required: false
-test_profiles: [rme, cashier, permission]
-go_tag: feature-rme-postpayment-invoice-correction-1-implementation-go
-inherits_parent_go: hardening-rme-billing-dispute-branch-reviewer-control-payment-1-go
+test_profiles: [focused, cross_module_regression]
+go_tag: dev-ai-claude-memory-optimization-1-go
+inherits_parent_go: feature-rme-postpayment-invoice-correction-1-implementation-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1

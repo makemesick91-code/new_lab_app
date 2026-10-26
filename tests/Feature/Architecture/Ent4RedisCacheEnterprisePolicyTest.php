@@ -139,8 +139,8 @@ it('references ENT-4 policy from durable governance docs and cursor rules', func
         ->and($cursor)->toContain('dms:{env}:{domain}:{scope}:{identifier}:{version}');
 });
 
-it('documents the ENT-4 sprint evidence in CLAUDE.md', function () {
-    $doc = file_get_contents(base_path('CLAUDE.md'));
+it('documents the ENT-4 sprint evidence in the project AI memory (CLAUDE.md or its archive)', function () {
+    $doc = aiProjectMemory();
 
     expect($doc)->toContain('ENT-4 — Redis Cache Enterprise Policy')
         ->and($doc)->toContain('redis-cache-enterprise-policy.md')

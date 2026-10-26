@@ -1177,6 +1177,18 @@ return [
         // cannot drop them.
         'tests/Feature/RME/RmeBillingRefundPhase0FinancialPrerequisitesTest.php',
         'tests/Feature/RME/RmeBillingRefundPhase0InvoiceRaceConcurrencyTest.php',
+
+        // DEV-AI-CLAUDE-MEMORY-OPTIMIZATION-1 — the AI instruction system.
+        // CLAUDE.md is loaded into every Claude Code session; this suite keeps
+        // it within budget, keeps every critical global rule (CG-01..CG-24)
+        // with its content, keeps every .claude/rules/ file validly
+        // path-scoped (an unparseable or unscoped rule loads everywhere; a
+        // glob that matches nothing never loads) and proves the 240-record
+        // archive lossless against its manifest. Every regression here is
+        // silent: nothing errors, the next session simply loses a rule or
+        // pays for 659K tokens again. Selected by the `Devflow` token;
+        // declared so a rename cannot drop it.
+        'tests/Feature/Foundation/DevflowAiInstructionSystemTest.php',
     ],
 
     /*
@@ -1229,6 +1241,8 @@ return [
             'release_safety_gate',
             'nsf10_release_evidence_gate',
             'full_suite_gate',
+            // DEV-AI-CLAUDE-MEMORY-OPTIMIZATION-1 — runs the AI instruction-system contract.
+            'quality_gate',
         ],
 
         /*
@@ -1300,6 +1314,10 @@ return [
          * line would silently restore a green full suite over a red one.
          */
         'Run full Pest suite',
+
+        // DEV-AI-CLAUDE-MEMORY-OPTIMIZATION-1 — the AI instruction-system contract in the
+        // always-on NSF-R012 quality gate (the only gate an instructions-only change reaches).
+        'AI instruction system contract',
     ],
 
     /*

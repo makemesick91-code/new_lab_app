@@ -51,7 +51,7 @@ it('keeps the ENT-7 governance docs free of release-evidence forbidden literals'
 it('references ENT-7 governance from durable docs cursor rules and CLAUDE memory', function () {
     $freeze = file_get_contents(base_path('docs/architecture/enterprise-foundation-freeze-rules.md'));
     $cursor = file_get_contents(base_path('.cursor/rules/56-developer-assistance-console.mdc'));
-    $claude = file_get_contents(base_path('CLAUDE.md'));
+    $claude = aiProjectMemory();
 
     expect($freeze)->toContain('developer-assistance-console-governance.md')
         ->and($freeze)->toContain('foundation:developer-console-check')

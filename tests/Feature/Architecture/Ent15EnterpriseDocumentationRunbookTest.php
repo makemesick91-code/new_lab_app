@@ -56,7 +56,7 @@ it('keeps the ENT-15 governance docs and runbooks free of release-evidence forbi
 it('references ENT-15 governance from durable docs cursor rules and CLAUDE memory', function () {
     $freeze = file_get_contents(base_path('docs/architecture/enterprise-foundation-freeze-rules.md'));
     $cursor = file_get_contents(base_path('.cursor/rules/64-enterprise-documentation-runbook.mdc'));
-    $claude = file_get_contents(base_path('CLAUDE.md'));
+    $claude = aiProjectMemory();
 
     expect($freeze)->toContain('enterprise-documentation-runbook-governance.md')
         ->and($freeze)->toContain('foundation:enterprise-documentation-check')

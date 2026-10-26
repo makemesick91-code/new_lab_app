@@ -116,8 +116,8 @@ it('ships the cursor mirror rule for the reporting materialized summary contract
         ->and($doc)->toContain('RPTSUM-R001..RPTSUM-R016');
 });
 
-it('documents the ENT-3 sprint evidence in CLAUDE.md', function () {
-    $doc = file_get_contents(base_path('CLAUDE.md'));
+it('documents the ENT-3 sprint evidence in the project AI memory (CLAUDE.md or its archive)', function () {
+    $doc = aiProjectMemory();
 
     expect($doc)->toContain('ENT-3 — Reporting Materialized Summary Expansion')
         ->and($doc)->toContain('reporting-materialized-summary-contract.md');

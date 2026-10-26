@@ -56,8 +56,8 @@ it('references the ENT-1 architecture baseline from the enterprise freeze rules 
         ->and($doc)->toContain('enterprise-architecture-baseline-lock.md');
 });
 
-it('documents the ENT-1 sprint evidence in CLAUDE.md', function () {
-    $doc = file_get_contents(base_path('CLAUDE.md'));
+it('documents the ENT-1 sprint evidence in the project AI memory (CLAUDE.md or its archive)', function () {
+    $doc = aiProjectMemory();
 
     expect($doc)->toContain('ENT-1 — Enterprise Architecture Baseline Lock')
         ->and($doc)->toContain('enterprise-architecture-baseline-lock.md');

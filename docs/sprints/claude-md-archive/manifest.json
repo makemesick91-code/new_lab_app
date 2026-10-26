@@ -1,0 +1,2172 @@
+{
+ "source_file": "CLAUDE.md",
+ "source_commit": "53d76643314eabf38577cc85bb13dd4e3f263266",
+ "source_bytes": 1564863,
+ "source_lines": 3891,
+ "source_sha256": "58be28c7c6601287b66bb6f1fbe9c54b75f7fd235f6aa56f5c78e7410f7459d4",
+ "section_count": 240,
+ "hash_normalisation": "sha256 over the UTF-8 section text (from its \"## \" heading line up to, excluding, the next \"## \" line) with trailing newlines removed",
+ "moved_by": "DEV-AI-CLAUDE-MEMORY-OPTIMIZATION-1",
+ "sections": [
+  {
+   "n": 0,
+   "heading": "Foundation-First Sprint Lock",
+   "source_line": 1,
+   "file": "00-global.md",
+   "rules_domain": "global",
+   "bytes": 271,
+   "sha256": "06fb57b9b17a0512c5bdc7ad8e5854066824a458c3ba1416b4eacb492c9d29d4"
+  },
+  {
+   "n": 1,
+   "heading": "Developer Knowledge Base (Obsidian vault: `docs/`)",
+   "source_line": 5,
+   "file": "00-global.md",
+   "rules_domain": "global",
+   "bytes": 975,
+   "sha256": "16cd34f4ec494a963373a90c199f99c77d427df7b09a8257e5aa8d87dee284af"
+  },
+  {
+   "n": 2,
+   "heading": "RME Module (Sprint 20)",
+   "source_line": 13,
+   "file": "01-rme-clinical.md",
+   "rules_domain": "rme-clinical",
+   "bytes": 5252,
+   "sha256": "618e91b3087fd88c9f8795d17f34be3d9ae18b545604006d8ed68f1358ecd145"
+  },
+  {
+   "n": 3,
+   "heading": "graphify",
+   "source_line": 50,
+   "file": "00-global.md",
+   "rules_domain": "global",
+   "bytes": 771,
+   "sha256": "df30b2a4fe90825b3cf07f7fb2e4d319f00d711979030f33ed54ae2be85e9e53"
+  },
+  {
+   "n": 4,
+   "heading": "Sprint 21 Phase 21.3 — Admin Lab Candidate Queue UI (2026-06-11)",
+   "source_line": 60,
+   "file": "01-rme-clinical.md",
+   "rules_domain": "rme-clinical",
+   "bytes": 8371,
+   "sha256": "6a900436da475ec1fc92b3b04aef579212ba03b350bc3c353b38cf0cd9dfa08d"
+  },
+  {
+   "n": 5,
+   "heading": "Active Planning — Sprint 60 RME Multi-Page Handwriting Canvas",
+   "source_line": 95,
+   "file": "01-rme-clinical.md",
+   "rules_domain": "rme-clinical",
+   "bytes": 3467,
+   "sha256": "d1833a24b6d81a0057a1feb4ddbfff2e5b25112b0509f9b5fa89fa77afb57bb1"
+  },
+  {
+   "n": 6,
+   "heading": "Sprint 61.0 — Patient Data Completeness Audit & RM Gap Review",
+   "source_line": 110,
+   "file": "04-patient-identity.md",
+   "rules_domain": "patient-identity",
+   "bytes": 856,
+   "sha256": "fa26caec538ce374c890e7191cad68229854291a1c59c7c8e93eee5c11c93341"
+  },
+  {
+   "n": 7,
+   "heading": "Sprint 62.0 — Owner KPI Dashboard (2026-06-27)",
+   "source_line": 135,
+   "file": "02-rme-billing-reporting.md",
+   "rules_domain": "rme-billing",
+   "bytes": 1407,
+   "sha256": "149fac5b3d97a8ce680beca485ac4f480b8515c1bae528d5e3bd69c5f7d86bda"
+  },
+  {
+   "n": 8,
+   "heading": "Sprint 62.1 — RME Doctor-to-Cashier Completion Gate (2026-06-27)",
+   "source_line": 139,
+   "file": "02-rme-billing-reporting.md",
+   "rules_domain": "rme-billing",
+   "bytes": 2423,
+   "sha256": "0692757eb162eb8b3637106b77ce037c0ee18552fc2daf4e71a9cfe9d3cacebe"
+  },
+  {
+   "n": 9,
+   "heading": "Hotfix — RME Partial Payment Completes Visit (2026-06-27)",
+   "source_line": 143,
+   "file": "02-rme-billing-reporting.md",
+   "rules_domain": "rme-billing",
+   "bytes": 1911,
+   "sha256": "3f0e4065908f6f438d14c26acb2c8885d48385ac8f463b388c8c2f6d34c38d08"
+  },
+  {
+   "n": 10,
+   "heading": "Sprint 62.2 — Patient Outstanding Receivable Carry-over for New Visits (2026-06-27)",
+   "source_line": 147,
+   "file": "02-rme-billing-reporting.md",
+   "rules_domain": "rme-billing",
+   "bytes": 2788,
+   "sha256": "99e4eb55c1e9576571e8ff5ef13350e959c5bb3afe057b33ed7bd2887b7282f7"
+  },
+  {
+   "n": 11,
+   "heading": "Sprint 62.3 — Legacy RME Patient Batch Import (2026-06-27)",
+   "source_line": 151,
+   "file": "06-legacy-import-odontogram-patient.part1.md",
+   "rules_domain": "legacy-import",
+   "bytes": 3081,
+   "sha256": "733aaf137945191356ef052ed420b790380534ac9e56f8d1d668ef0f4c541cf8"
+  },
+  {
+   "n": 12,
+   "heading": "Sprint 63.1 — Structured Odontogram Print Template Conversion (2026-06-28)",
+   "source_line": 155,
+   "file": "01-rme-clinical.md",
+   "rules_domain": "rme-clinical",
+   "bytes": 1994,
+   "sha256": "469d7c8f16d918f1b625b4a675f9c193408ae7370907a20a96d10866fff9f80c"
+  },
+  {
+   "n": 13,
+   "heading": "Sprint 64.0 — Patient-Centric RM Workspace with Swipeable Sheets (2026-06-28)",
+   "source_line": 159,
+   "file": "01-rme-clinical.md",
+   "rules_domain": "rme-clinical",
+   "bytes": 3068,
+   "sha256": "c1042085ffc392f4eab6312d2910a90182a7acbd5e3dfd2ea3d01107cdf829d9"
+  },
+  {
+   "n": 14,
+   "heading": "STORAGE-1 — Object Storage Readiness (2026-07-05)",
+   "source_line": 163,
+   "file": "12-foundation-enterprise.md",
+   "rules_domain": "foundation-governance",
+   "bytes": 2526,
+   "sha256": "c3e2c4a14ff36af264e6792f7f94d83841435d27f406f7de7c6f7c950cdc324e"
+  },
+  {
+   "n": 15,
+   "heading": "STATELESS-1 — Runtime Statelessness & Deploy Portability Foundation (2026-07-05)",
+   "source_line": 167,
+   "file": "12-foundation-enterprise.md",
+   "rules_domain": "foundation-governance",
+   "bytes": 2970,
+   "sha256": "c50e646e0c53db6196c1512a2668d2266a4636b9d2bb9906147d31114267eb66"
+  },
+  {
+   "n": 16,
+   "heading": "LB-1 — Load Balancer Pilot (2026-07-05)",
+   "source_line": 171,
+   "file": "12-foundation-enterprise.md",
+   "rules_domain": "foundation-governance",
+   "bytes": 4006,
+   "sha256": "d23d4f91491c9b5dfc110881f7d3d863cd740a49825866a0938f3e52e61a85f0"
+  },
+  {
+   "n": 17,
+   "heading": "OBS-1 — Request ID, Correlation ID & Observability Foundation (2026-07-05)",
+   "source_line": 175,
+   "file": "12-foundation-enterprise.md",
+   "rules_domain": "foundation-governance",
+   "bytes": 3628,
+   "sha256": "aadb478e0c736ba772943ec322ab23dee33bcbbe9e94e5178fb7032b1b2f9c08"
+  },
+  {
+   "n": 18,
+   "heading": "OBS-2 — Centralized Logging & Error Tracking Readiness (2026-07-05)",
+   "source_line": 179,
+   "file": "12-foundation-enterprise.md",
+   "rules_domain": "foundation-governance",
+   "bytes": 3467,
+   "sha256": "8cef812a60c7736d604c7208431ea61f734a6c9d8cb8e662075e0f2b82823a52"
+  },
+  {
+   "n": 19,
+   "heading": "ROADMAP-1 — Foundation Roadmap Canonicalization (2026-07-05)",
+   "source_line": 183,
+   "file": "12-foundation-enterprise.md",
+   "rules_domain": "foundation-governance",
+   "bytes": 4185,
+   "sha256": "dc8c10ce79ad6d4d021e0c921eba43e9c51306efa665a79bef2c2beb74870eea"
+  },
+  {
+   "n": 20,
+   "heading": "ENT-0 — Enterprise Foundation Freeze Rules & Roadmap Reconciliation (2026-07-05)",
+   "source_line": 187,
+   "file": "12-foundation-enterprise.md",
+   "rules_domain": "foundation-governance",
+   "bytes": 2802,
+   "sha256": "623db852e6066179fd963b4f7cec90600f11f5fa2fccc62421e4100f9c0b43b6"
+  },
+  {
+   "n": 21,
+   "heading": "ENT-1 — Enterprise Architecture Baseline Lock (2026-07-05)",
+   "source_line": 191,
+   "file": "12-foundation-enterprise.md",
+   "rules_domain": "foundation-governance",
+   "bytes": 3844,
+   "sha256": "3ee82fbfbcab2905628676bef4f3497de56ac3a1c121109a0ffb601e7c1ca98c"
+  },
+  {
+   "n": 22,
+   "heading": "ENT-2 — Database Performance Contract (2026-07-06)",
+   "source_line": 195,
+   "file": "12-foundation-enterprise.md",
+   "rules_domain": "foundation-governance",
+   "bytes": 3902,
+   "sha256": "c7ccd3b29b31743a5f2e971d6d56d5c651783340a4f98fd889b4d92e77e8381e"
+  },
+  {
+   "n": 23,
+   "heading": "ENT-3 — Reporting Materialized Summary Expansion (2026-07-06)",
+   "source_line": 199,
+   "file": "12-foundation-enterprise.md",
+   "rules_domain": "foundation-governance",
+   "bytes": 4792,
+   "sha256": "0334b0e00026776064d4ae5bed02eefcce0f77417ac2dbe62758dea60e333f5f"
+  },
+  {
+   "n": 24,
+   "heading": "ENT-4 — Redis Cache Enterprise Policy (2026-07-06)",
+   "source_line": 203,
+   "file": "12-foundation-enterprise.md",
+   "rules_domain": "foundation-governance",
+   "bytes": 2671,
+   "sha256": "ddeb178315f08d2317ef035dbaa9a41711f84bfac8b4e1259a47c02d9c29fc7a"
+  },
+  {
+   "n": 25,
+   "heading": "ENT-5 — Queue, Retry & Failed Job Governance (2026-07-06)",
+   "source_line": 207,
+   "file": "12-foundation-enterprise.md",
+   "rules_domain": "foundation-governance",
+   "bytes": 4548,
+   "sha256": "f66247e12687a0d33ede30a767826f0050408acf302f1a62ee61d2799c4b9808"
+  },
+  {
+   "n": 26,
+   "heading": "ENT-6 — Idempotency & Outbox Foundation (2026-07-06)",
+   "source_line": 213,
+   "file": "12-foundation-enterprise.md",
+   "rules_domain": "foundation-governance",
+   "bytes": 1389,
+   "sha256": "85436093267877640f76bac7a29ec1ff5aef936250816df7d89197b77d4eb6ae"
+  },
+  {
+   "n": 27,
+   "heading": "ENT-7 — Developer Assistance Console (2026-07-06)",
+   "source_line": 217,
+   "file": "12-foundation-enterprise.md",
+   "rules_domain": "foundation-governance",
+   "bytes": 4343,
+   "sha256": "8669755ead77d5db6037249fc1330f907103405351d9507310c958678ed4fccb"
+  },
+  {
+   "n": 28,
+   "heading": "ENT-8 — Observability & Health Check Pack (2026-07-06)",
+   "source_line": 223,
+   "file": "12-foundation-enterprise.md",
+   "rules_domain": "foundation-governance",
+   "bytes": 4532,
+   "sha256": "19121e97a3a90305024e71119d4454d71a81b2df10ea83cae8560a6b6e69df94"
+  },
+  {
+   "n": 29,
+   "heading": "ENT-9 — Security & PII Compliance Hardening (2026-07-06)",
+   "source_line": 229,
+   "file": "12-foundation-enterprise.md",
+   "rules_domain": "foundation-governance",
+   "bytes": 4326,
+   "sha256": "f7730a76e2283e161b46189149ebba036ddac76b6e6308fb848aedf4a6ceb7f6"
+  },
+  {
+   "n": 30,
+   "heading": "ENT-10 — CI/CD Enterprise Gate (2026-07-06)",
+   "source_line": 235,
+   "file": "12-foundation-enterprise.md",
+   "rules_domain": "foundation-governance",
+   "bytes": 4932,
+   "sha256": "02dbc46e4d25572eb48e038b2baa5908cbee207a48e6603c510f591f97d672ab"
+  },
+  {
+   "n": 31,
+   "heading": "ENT-11 — Deployment & Rollback Automation (2026-07-06)",
+   "source_line": 241,
+   "file": "12-foundation-enterprise.md",
+   "rules_domain": "foundation-governance",
+   "bytes": 4820,
+   "sha256": "577c419ea54666a740bfb61fb6e783b2b00231de5f4baa2969eeafe974822f74"
+  },
+  {
+   "n": 32,
+   "heading": "ENT-12 — Backup & Disaster Recovery Automation (2026-07-06)",
+   "source_line": 247,
+   "file": "12-foundation-enterprise.md",
+   "rules_domain": "foundation-governance",
+   "bytes": 5340,
+   "sha256": "159e64807ef4fa88934f62cde2ef9e165cfa39821d65a8769156c4b6a9a1e108"
+  },
+  {
+   "n": 33,
+   "heading": "ENT-13 — Load Test 5 Cabang Baseline (2026-07-06)",
+   "source_line": 253,
+   "file": "12-foundation-enterprise.md",
+   "rules_domain": "foundation-governance",
+   "bytes": 5708,
+   "sha256": "53283d54d45e5becc34575bafede855ace1a6ebb51bb8eed10b69328f57079a3"
+  },
+  {
+   "n": 34,
+   "heading": "ENT-14 — Load Test Scale Projection (2026-07-06)",
+   "source_line": 259,
+   "file": "12-foundation-enterprise.md",
+   "rules_domain": "foundation-governance",
+   "bytes": 6665,
+   "sha256": "0fe50cd3a16038109d032698a70a523ff559f0beaf65ef75460bd3a8386b1546"
+  },
+  {
+   "n": 35,
+   "heading": "ENT-15 — Enterprise Documentation & Runbook (2026-07-06)",
+   "source_line": 265,
+   "file": "12-foundation-enterprise.md",
+   "rules_domain": "foundation-governance",
+   "bytes": 6155,
+   "sha256": "de9fd99ffb0984aad2c2a2a6512ec10c7cf9d7a45170e2f9454f912514a5ce6a"
+  },
+  {
+   "n": 36,
+   "heading": "ENT-16 — Enterprise Foundation Closure GO/NO-GO (2026-07-07)",
+   "source_line": 271,
+   "file": "12-foundation-enterprise.md",
+   "rules_domain": "foundation-governance",
+   "bytes": 4686,
+   "sha256": "88addc22505bf60bf5f7004aa04834d580d0174187a2b04bf33be0124d152c18"
+  },
+  {
+   "n": 37,
+   "heading": "POST-ENT — Enterprise Foundation Runtime Hardening (Queue Worker & Deploy Evidence Timeout) (2026-07-07)",
+   "source_line": 275,
+   "file": "12-foundation-enterprise.md",
+   "rules_domain": "foundation-governance",
+   "bytes": 3810,
+   "sha256": "f4d36b17ef95c1ea374ca9f3bf963d397fe06a433ada54b3850ff7ecaed9baf2"
+  },
+  {
+   "n": 38,
+   "heading": "UIX-1 — DaengtisiaMS Luxury Healthcare Design System Foundation (2026-07-07)",
+   "source_line": 279,
+   "file": "10-ui.md",
+   "rules_domain": "ui",
+   "bytes": 5001,
+   "sha256": "7d34ae83aabb8a83e8dd200c82a85030094f9d882b2c81479e5e3f22988a4800"
+  },
+  {
+   "n": 39,
+   "heading": "UIX-2 — Dashboard Owner Polish (2026-07-07)",
+   "source_line": 283,
+   "file": "10-ui.md",
+   "rules_domain": "ui",
+   "bytes": 4365,
+   "sha256": "9ac8a37e5948a098c7f0845d13d63c25ec5c4189948739afa23f82bd4cc42d90"
+  },
+  {
+   "n": 40,
+   "heading": "UIX-3 — Kunjungan List Polish (2026-07-07)",
+   "source_line": 287,
+   "file": "10-ui.md",
+   "rules_domain": "ui",
+   "bytes": 3839,
+   "sha256": "a36ae6e41c5273cba8967be01e81972814ccf78132d3e0391d16cadd4b3eab15"
+  },
+  {
+   "n": 41,
+   "heading": "UIX-4 — RME + Odontogram Polish (2026-07-07)",
+   "source_line": 291,
+   "file": "10-ui.md",
+   "rules_domain": "ui",
+   "bytes": 5289,
+   "sha256": "ba41bdaf269d331d6de189c816e6e5eecb93da28c2075e20fbcf65b629fb7426"
+  },
+  {
+   "n": 42,
+   "heading": "UIX-5 — Kasir / Payment Polish (2026-07-07)",
+   "source_line": 295,
+   "file": "10-ui.md",
+   "rules_domain": "ui",
+   "bytes": 5037,
+   "sha256": "67c8878ae4150a94da74e8addf9ae87b367ecde8d0bf13e741958870e76a284c"
+  },
+  {
+   "n": 43,
+   "heading": "UIX-6 — Inventory Polish (2026-07-07)",
+   "source_line": 299,
+   "file": "09-inventory.md",
+   "rules_domain": "inventory",
+   "bytes": 5027,
+   "sha256": "9da2e6ace1d8a0a8e29195033239126a2c3700c53fda97b36b9c724d1d937bb6"
+  },
+  {
+   "n": 44,
+   "heading": "UIX-8 — Reports, Print & PDF Polish (2026-07-07)",
+   "source_line": 303,
+   "file": "10-ui.md",
+   "rules_domain": "ui",
+   "bytes": 4929,
+   "sha256": "cc9ec1dbd9d2e111c8926404f2cc6945e5fc2e73d057e037fbfb8e3077a069a2"
+  },
+  {
+   "n": 45,
+   "heading": "UIX-9 — Inventory Analytics, Charts & Workflow Forms Polish (2026-07-08)",
+   "source_line": 307,
+   "file": "09-inventory.md",
+   "rules_domain": "inventory",
+   "bytes": 4811,
+   "sha256": "a58914331374a8a736997bd6dba2d8520a825b9f6dbd552897dbff76674c8534"
+  },
+  {
+   "n": 46,
+   "heading": "CICD-CTRL-1 — Safe CI Runtime Control & Required-Gate Optimization (2026-07-09)",
+   "source_line": 311,
+   "file": "13-cicd-testing.md",
+   "rules_domain": "cicd-testing",
+   "bytes": 4031,
+   "sha256": "598a310d5d747cd1893dd0c2e9d7d63769a8fc6dc025683a3820e6ce8913cdfc"
+  },
+  {
+   "n": 47,
+   "heading": "FIX-PRE-68-45 — RME/Owner/Doctor/Inventory-PR Polish Fix Sprint (2026-07-09)",
+   "source_line": 315,
+   "file": "09-inventory.md",
+   "rules_domain": "inventory",
+   "bytes": 13275,
+   "sha256": "930c7998662524b9b8d9769857879aaa8facc8698bc2e867cedd7bb41f4d7d0b"
+  },
+  {
+   "n": 48,
+   "heading": "HOTFIX — FIX-PRE-68-45 Doctor Performance 403 (2026-07-09)",
+   "source_line": 338,
+   "file": "02-rme-billing-reporting.md",
+   "rules_domain": "rme-billing",
+   "bytes": 3206,
+   "sha256": "1a2dd4e3d6688e16e197bd92053e7033b4696439110a9935b1d1b25e35a49080"
+  },
+  {
+   "n": 49,
+   "heading": "HOTFIX — FIX-PRE-68-45 Doctor Performance Treatment Date Table (2026-07-09)",
+   "source_line": 342,
+   "file": "02-rme-billing-reporting.md",
+   "rules_domain": "rme-billing",
+   "bytes": 3733,
+   "sha256": "73018d98a99b1e1b7716c11ce76f63eea847d6c7cffc72c6a2751c4d0812fc41"
+  },
+  {
+   "n": 50,
+   "heading": "SPRINT-68.45 — Inventory Procurement Workflow Stabilization, GR Batch Default Hardening & Vendor Report Governance (2026-07-09)",
+   "source_line": 346,
+   "file": "09-inventory.md",
+   "rules_domain": "inventory",
+   "bytes": 5577,
+   "sha256": "93eeefe0fb52ce14f7d11fc55ae2f8c5e5014954690b4992ae6bfc345eca3879"
+  },
+  {
+   "n": 51,
+   "heading": "MON-1 — Foundation Monitoring & Observability Gap Consolidation (2026-07-09)",
+   "source_line": 350,
+   "file": "12-foundation-enterprise.md",
+   "rules_domain": "foundation-governance",
+   "bytes": 4946,
+   "sha256": "71e7534e26077b0277881c310b2e4aba5950e111944a0e5c7c69ec08b8ac542e"
+  },
+  {
+   "n": 52,
+   "heading": "ROLL-5-1 — Five Branch Controlled Production Rollout Readiness (2026-07-09)",
+   "source_line": 354,
+   "file": "12-foundation-enterprise.md",
+   "rules_domain": "foundation-governance",
+   "bytes": 4158,
+   "sha256": "49e9de04b23f82863aaead63524397d38767e6d6040c3adc1e2e3e0c5df2a361"
+  },
+  {
+   "n": 53,
+   "heading": "ROLL-5-1A — Staging Restore Drill Evidence & Stage-1 GO Clearance (2026-07-10)",
+   "source_line": 358,
+   "file": "12-foundation-enterprise.md",
+   "rules_domain": "foundation-governance",
+   "bytes": 4682,
+   "sha256": "095d69a9bf7e5cc093cae0664bc46dacfd5af63c3df9b91ddd27735d6791dc79"
+  },
+  {
+   "n": 54,
+   "heading": "FIX-PO-MULTI-VENDOR — Item-Level Vendor Selection, Estimated Arrival Date & Supplier PDF (2026-07-10)",
+   "source_line": 362,
+   "file": "09-inventory.md",
+   "rules_domain": "inventory",
+   "bytes": 3716,
+   "sha256": "9251f2d0eb887fb89bbb421fc3e962beb88e6c15073ca3322309e21df2935336"
+  },
+  {
+   "n": 55,
+   "heading": "LAB-WORKFLOW-V2 — Cabang Pickup, Courier Transport, Internal/External Production, QC, Delivery Proof & Legacy Inactivation (2026-07-10)",
+   "source_line": 366,
+   "file": "08-lab.md",
+   "rules_domain": "lab",
+   "bytes": 4682,
+   "sha256": "ca213cceed3a0e5486f1c56f35dad3c5b8cf9af4baf943154eae1cb3605c7c38"
+  },
+  {
+   "n": 56,
+   "heading": "FIX-LAB-REQUEST-RME-BRANCH-SEARCHABLE-FIELDS (2026-07-10)",
+   "source_line": 384,
+   "file": "08-lab.md",
+   "rules_domain": "lab",
+   "bytes": 2157,
+   "sha256": "6871819d9a49f526f53659f47c98e2d6a10c99b8e487fbf0cb35ef68fcbb65af"
+  },
+  {
+   "n": 57,
+   "heading": "OPS — Lab Request Operator → Cabang RME Mapping (2026-07-10)",
+   "source_line": 388,
+   "file": "08-lab.md",
+   "rules_domain": "lab",
+   "bytes": 1793,
+   "sha256": "e16a418c0e9f6c890355e4ee3c260512ce4c04703ced106e28e243ea98af330a"
+  },
+  {
+   "n": 58,
+   "heading": "RME-BRANCH-SUN4 — Cabang Sunu + Perawat Online Context (2026-07-11)",
+   "source_line": 392,
+   "file": "03-branch-context.md",
+   "rules_domain": "branch-context",
+   "bytes": 3329,
+   "sha256": "d60e7b34bedd0fc6a7ddfa29f77cc329af2c49aa8bb59c16edbe17195cadcb5e"
+  },
+  {
+   "n": 59,
+   "heading": "FIX-LAB-TECHNICIAN-ROLE-ASSIGNMENT-UPLOAD-COMPRESSION (2026-07-11)",
+   "source_line": 396,
+   "file": "08-lab.md",
+   "rules_domain": "lab",
+   "bytes": 3493,
+   "sha256": "232e11002192c4ecb8f7af1414a2e2548289d60ca221f9ab94cb3a13829d4e53"
+  },
+  {
+   "n": 60,
+   "heading": "FIX-ADMIN-LAB-LAB-ONLY-ACCESS — Restrict Admin Lab Role to Lab Module & Lab Workflow Only (2026-07-11)",
+   "source_line": 400,
+   "file": "08-lab.md",
+   "rules_domain": "lab",
+   "bytes": 5454,
+   "sha256": "690e671214aad705c14f97659a6aabfa60351457ea80a2cb8aa1a90f23887e15"
+  },
+  {
+   "n": 61,
+   "heading": "HOTFIX-LAB-V2-NOTIFICATION-DESTINATION-ROUTING — Recipient-Aware Notification Destinations + Repair Broken Links (2026-07-11)",
+   "source_line": 404,
+   "file": "08-lab.md",
+   "rules_domain": "lab",
+   "bytes": 4461,
+   "sha256": "8a319c6cf74e04bbe12d89d97f9a70faf95f46ad758bc1ba26e498282d1a2bae"
+  },
+  {
+   "n": 62,
+   "heading": "DEVFLOW-1 — Safe Sprint Acceleration, Reusable Foundations & Release Automation (2026-07-12)",
+   "source_line": 408,
+   "file": "12-foundation-enterprise.md",
+   "rules_domain": "foundation-governance",
+   "bytes": 5002,
+   "sha256": "c8101404c62b07402cc728d4b0b89c755de132e58825f40aad945a0134c4ee82"
+  },
+  {
+   "n": 63,
+   "heading": "LAB-WORKFLOW-V2-PILOT-UAT-1 — Pilot Operational Readiness, Real-Role UAT, SLA Baseline & Closure (2026-07-12)",
+   "source_line": 412,
+   "file": "08-lab.md",
+   "rules_domain": "lab",
+   "bytes": 6572,
+   "sha256": "29c006fa73605995656a734ac33dcb74656e3f1564fffc97ed07edc80a8710ec"
+  },
+  {
+   "n": 64,
+   "heading": "LAB-OPS-READINESS-1 — Lab Workflow V2 Operational Data Readiness Closure (Technician Account Governance & Active External Lab Enablement) (2026-07-12)",
+   "source_line": 416,
+   "file": "08-lab.md",
+   "rules_domain": "lab",
+   "bytes": 6509,
+   "sha256": "7d3fd06dfc8e71255f7322efdcf070c3c2944dfe1c85c149b416cbfbadf85ea7"
+  },
+  {
+   "n": 65,
+   "heading": "LAB-PROD-2 — Lab Workflow V2 Operational Analytics & KPI (2026-07-12)",
+   "source_line": 422,
+   "file": "08-lab.md",
+   "rules_domain": "lab",
+   "bytes": 6121,
+   "sha256": "145e03a6f5007ef777166a018d0247f5b101f883e400d1b98d3f26253dc49da8"
+  },
+  {
+   "n": 66,
+   "heading": "LAB-PROD-3 — Technician Capacity Planning (2026-07-12)",
+   "source_line": 428,
+   "file": "08-lab.md",
+   "rules_domain": "lab",
+   "bytes": 7711,
+   "sha256": "15ada4c81b2654300b167ce5215409c45e14dc2e32b7eef6387adc81770c4d29"
+  },
+  {
+   "n": 67,
+   "heading": "FIX-LOGIN-REDIRECT-RUNTIME-PERMISSIONS — Login Recovery & Deploy Runtime Permission Hardening (2026-07-12)",
+   "source_line": 434,
+   "file": "14-deploy-infra-security.md",
+   "rules_domain": "deploy-infra",
+   "bytes": 7125,
+   "sha256": "b39b69810495effc708da6feb8aa8abea6615fbb15c87331feeac624ae5e6799"
+  },
+  {
+   "n": 68,
+   "heading": "SATUSEHAT-1 — Readiness Foundation & Controlled Submission Filter (2026-07-16)",
+   "source_line": 440,
+   "file": "11-satusehat.md",
+   "rules_domain": "satusehat",
+   "bytes": 8759,
+   "sha256": "d8cdf0ebf6400a18b5c46c45fc035b671c8c8d14ce6261bc0b63b5a2cb4bd239"
+  },
+  {
+   "n": 69,
+   "heading": "SATUSEHAT-2 — Sandbox API Adapter & FHIR Submission (2026-07-16)",
+   "source_line": 446,
+   "file": "11-satusehat.md",
+   "rules_domain": "satusehat",
+   "bytes": 5603,
+   "sha256": "22c1c02a4e648120d28583af762f4e00083755159e7de5efc2b471947c797d91"
+  },
+  {
+   "n": 70,
+   "heading": "SATUSEHAT-3 — Dental Use-Case Expansion & Production Readiness (2026-07-16)",
+   "source_line": 450,
+   "file": "11-satusehat.md",
+   "rules_domain": "satusehat",
+   "bytes": 7088,
+   "sha256": "ac6fbc694a43f37f99a405b2982f16f2444aedf5e42123951c092c8aa2e19bdc"
+  },
+  {
+   "n": 71,
+   "heading": "SATUSEHAT-4A — Credential-Independent Operational Readiness & Data Quality Closure (2026-07-17)",
+   "source_line": 454,
+   "file": "11-satusehat.md",
+   "rules_domain": "satusehat",
+   "bytes": 7239,
+   "sha256": "87dc5384db9e71a6b0985b8526538005e498ab430b387ffff94f162630dac4b6"
+  },
+  {
+   "n": 72,
+   "heading": "SATUSEHAT-4B — Structured Diagnosis Adoption & Clinical Terminology Rollout (2026-07-17)",
+   "source_line": 458,
+   "file": "11-satusehat.md",
+   "rules_domain": "satusehat",
+   "bytes": 6597,
+   "sha256": "776b9afe38b5b4ee9368f7b8dee859a7318510fa0a92b6c2bda4901a16591d11"
+  },
+  {
+   "n": 73,
+   "heading": "SATUSEHAT-4C — Branch Readiness Remediation & Internal Pilot Operations (2026-07-18)",
+   "source_line": 462,
+   "file": "11-satusehat.md",
+   "rules_domain": "satusehat",
+   "bytes": 6916,
+   "sha256": "bedcc712913b1bd405ce8c4c7f7fd9c3464df97e3d2d8881ab6f27553741fc9a"
+  },
+  {
+   "n": 74,
+   "heading": "SATUSEHAT-4D — Multi-Branch Readiness Scale-Up & Operational Governance (2026-07-17)",
+   "source_line": 466,
+   "file": "11-satusehat.md",
+   "rules_domain": "satusehat",
+   "bytes": 7330,
+   "sha256": "2d217c42805faec95e15865ac4427ce6b4fa7c7c9cfc80951a462bb4e348c391"
+  },
+  {
+   "n": 75,
+   "heading": "LEGACY-RME-PDF-1A — Legacy RME PDF Archive Foundation: Schema, Permission & Date Rules (2026-08-06)",
+   "source_line": 470,
+   "file": "05-legacy-rme.part1.md",
+   "rules_domain": "legacy-rme",
+   "bytes": 10075,
+   "sha256": "524201c740f1bf5dfc3922a6335e268ccae58d27afc7db507c29856ef0726365"
+  },
+  {
+   "n": 76,
+   "heading": "LEGACY-RME-PDF-1B — Private Upload Runtime, PDF Validation, Queue Processing & Page Rendering (2026-08-06)",
+   "source_line": 490,
+   "file": "05-legacy-rme.part1.md",
+   "rules_domain": "legacy-rme",
+   "bytes": 9654,
+   "sha256": "fb3cff6c1bb5588b0b91ea9d0b2e852806c79c176335954464eeab94f0e8e0c3"
+  },
+  {
+   "n": 77,
+   "heading": "CICD-CTRL-3 — Dedicated Self-Hosted CI Runner (2026-08-07)",
+   "source_line": 514,
+   "file": "13-cicd-testing.md",
+   "rules_domain": "cicd-testing",
+   "bytes": 7311,
+   "sha256": "e3d4e1b49c8001f09e34e9b7847177e2f86ca5c0bd019031a50c81305fed3818"
+  },
+  {
+   "n": 78,
+   "heading": "LEGACY-RME-PDF-1C — Controlled Publish & Patient History Integration (2026-08-10)",
+   "source_line": 538,
+   "file": "05-legacy-rme.part1.md",
+   "rules_domain": "legacy-rme",
+   "bytes": 7634,
+   "sha256": "37d30bb2dcc66fc120c124a391638f0bbc80b5c45d834597aedcd9f8a0d1b5e0"
+  },
+  {
+   "n": 79,
+   "heading": "LEGACY-RME-PDF-ROLL-1 — Feature Flag Runtime Override & Controlled Enablement Readiness (2026-08-10)",
+   "source_line": 554,
+   "file": "05-legacy-rme.part1.md",
+   "rules_domain": "legacy-rme",
+   "bytes": 5221,
+   "sha256": "0409a6f998900388a768971a0e9f95d5cb405e8380f26caf7bf7b3f0f54e20ef"
+  },
+  {
+   "n": 80,
+   "heading": "LEGACY-RME-PDF-1D — VOID & Clinical Read/Print Completion (2026-08-11)",
+   "source_line": 568,
+   "file": "05-legacy-rme.part1.md",
+   "rules_domain": "legacy-rme",
+   "bytes": 5580,
+   "sha256": "c7f9ef9a51018951aa687a1a9a3c74bc6de6eed82f0108dc36342dcc868569d6"
+  },
+  {
+   "n": 81,
+   "heading": "LEGACY-RME-PDF-ROLL-2 — Controlled Pilot Enablement & Operational Readiness (2026-08-11)",
+   "source_line": 586,
+   "file": "05-legacy-rme.part1.md",
+   "rules_domain": "legacy-rme",
+   "bytes": 14523,
+   "sha256": "165184e28262349b3c1037a6c9a67a371e543d89f5303152c8cd5af4a4c517d3"
+  },
+  {
+   "n": 82,
+   "heading": "LEGACY-RME-PDF-FIX-ROLL2-1 — Legacy Eligibility, Multi-Date & RM-Branch Resolution (2026-08-12)",
+   "source_line": 612,
+   "file": "05-legacy-rme.part1.md",
+   "rules_domain": "legacy-rme",
+   "bytes": 7744,
+   "sha256": "ec10357a1e3a768db4b09b3963b1e2b8855ee1114fcf208eac6e0e343a4e9b25"
+  },
+  {
+   "n": 83,
+   "heading": "LEGACY-RME-PDF-ROLL-3 — Multi-Branch Controlled Migration Rollout (2026-08-12)",
+   "source_line": 632,
+   "file": "05-legacy-rme.part1.md",
+   "rules_domain": "legacy-rme",
+   "bytes": 9134,
+   "sha256": "f5a6ac915a2d38c8e241d1117e6545e1aac6923a8fd7434cff10b2721ba42279"
+  },
+  {
+   "n": 84,
+   "heading": "LEGACY-RME-PDF-ROLL-3 — Wave-1 production evidence + corrective (2026-08-13)",
+   "source_line": 658,
+   "file": "05-legacy-rme.part1.md",
+   "rules_domain": "legacy-rme",
+   "bytes": 2591,
+   "sha256": "13d1747c6b7b9f74990100806fe5c7d9909b10348927b11cdc3a86a90226c77e"
+  },
+  {
+   "n": 85,
+   "heading": "LEGACY-RME-PDF-HISTORY-1 — Patient-Centric Clinical History Integration (2026-08-13)",
+   "source_line": 670,
+   "file": "05-legacy-rme.part1.md",
+   "rules_domain": "legacy-rme",
+   "bytes": 9477,
+   "sha256": "db412591e70dbbdbeaa1da14c66ce7c00993356e9296494963f37b323ea2c6cc"
+  },
+  {
+   "n": 86,
+   "heading": "LEGACY-RME-PDF-HISTORY-1A — Published Legacy Clinical Read Availability & Read/Write Capability Separation (2026-08-13)",
+   "source_line": 692,
+   "file": "05-legacy-rme.part1.md",
+   "rules_domain": "legacy-rme",
+   "bytes": 9118,
+   "sha256": "eedce2b06027ac844ecb6a6cbd051fae5911a014d8295fbd68055b7d0d7f69a3"
+  },
+  {
+   "n": 87,
+   "heading": "LEGACY-RME-PDF-HISTORY-1B — Doctor Clinical Branch Context & Production Read UAT (2026-08-13)",
+   "source_line": 716,
+   "file": "05-legacy-rme.part1.md",
+   "rules_domain": "legacy-rme",
+   "bytes": 7193,
+   "sha256": "dee0345286ac0d8cfe0b57cab7c7f9ade91a6aaf658027c8cd733d9761166e55"
+  },
+  {
+   "n": 88,
+   "heading": "LEGACY-RME-PDF-ROLL-4 — Production Migration Operations & Scale-Up (2026-08-14)",
+   "source_line": 744,
+   "file": "05-legacy-rme.part1.md",
+   "rules_domain": "legacy-rme",
+   "bytes": 9399,
+   "sha256": "de57e659161944b5ffcf9fb5e0d52e92fa82adba51c226269b3d42637a0b7687"
+  },
+  {
+   "n": 89,
+   "heading": "LEGACY-RME-PDF-ROLL-4-WAVE-1 — Controlled Production Migration Wave-1 (2026-08-14)",
+   "source_line": 780,
+   "file": "05-legacy-rme.part1.md",
+   "rules_domain": "legacy-rme",
+   "bytes": 9647,
+   "sha256": "7fa8352f82216b7bda9bbeecf10e9ed0bf2862b988612188646d40370d612c85"
+  },
+  {
+   "n": 90,
+   "heading": "INFRA-SEC-ENV-1 — Production Secret File Permission Hardening (2026-08-15)",
+   "source_line": 802,
+   "file": "14-deploy-infra-security.md",
+   "rules_domain": "deploy-infra",
+   "bytes": 6263,
+   "sha256": "9d3ebb487aa57a1a504f90300105bbb12deb1b817e073659a40ea1afdd452fd9"
+  },
+  {
+   "n": 91,
+   "heading": "INFRA-SEC-RUNTIME-1 — Dedicated Runtime Identity & Co-Tenant Isolation (2026-08-15)",
+   "source_line": 818,
+   "file": "14-deploy-infra-security.md",
+   "rules_domain": "deploy-infra",
+   "bytes": 12421,
+   "sha256": "17276e1101a541bf3488b5d3a2329dffc1810cbdcea20d3987f099dff8efb3f6"
+  },
+  {
+   "n": 92,
+   "heading": "DEPLOY-HARDEN-1 — Immutable Deployment Entrypoint & Self-Update Safety (2026-08-15)",
+   "source_line": 840,
+   "file": "14-deploy-infra-security.md",
+   "rules_domain": "deploy-infra",
+   "bytes": 11633,
+   "sha256": "80fe90f2652322476a13662d6c879f61d618cbb8a4e8526c2fcb434fc1cbea05"
+  },
+  {
+   "n": 93,
+   "heading": "LEGACY-RME-DATE-TZ-1 — Canonical Clinical Timezone & Date-Boundary Correctness (2026-08-15)",
+   "source_line": 874,
+   "file": "01-rme-clinical.md",
+   "rules_domain": "rme-clinical",
+   "bytes": 8174,
+   "sha256": "bdb568b1b98b4a2734d2541dc2efd8d9c816838be55784516377b9a93cd2dfd1"
+  },
+  {
+   "n": 94,
+   "heading": "DEVFLOW-FIX-BASE-REF-1 — Canonical Remote Base Resolution (2026-08-15)",
+   "source_line": 896,
+   "file": "12-foundation-enterprise.md",
+   "rules_domain": "foundation-governance",
+   "bytes": 6133,
+   "sha256": "d2fea222f51e47f66b88b26c48db7bd40c93ddac124ed8f4a1539f1fc031167c"
+  },
+  {
+   "n": 95,
+   "heading": "LEGACY-RME-PDF-ROLL-4-WAVE-2 — Controlled Production Migration Wave-2 (2026-08-16)",
+   "source_line": 915,
+   "file": "05-legacy-rme.part1.md",
+   "rules_domain": "legacy-rme",
+   "bytes": 4805,
+   "sha256": "90da5c17178e7ff1d6b80d7fc5cf2c6042a6cafcd03a43a1061bf12fe433d7f2"
+  },
+  {
+   "n": 96,
+   "heading": "LEGACY-RME-PDF-ROLL-4-WAVE-3 — SKIPPED / NOT REQUIRED (2026-08-16)",
+   "source_line": 919,
+   "file": "05-legacy-rme.part1.md",
+   "rules_domain": "legacy-rme",
+   "bytes": 1451,
+   "sha256": "5846bec7837ba4f465d537e1046bd802824c26a4de91e7399569caa50bdbe660"
+  },
+  {
+   "n": 97,
+   "heading": "LEGACY-RME-OPS-CLI-1 — Canonical Import Lifecycle CLI & Abort-Recovery Operations (2026-08-16)",
+   "source_line": 923,
+   "file": "05-legacy-rme.part1.md",
+   "rules_domain": "legacy-rme",
+   "bytes": 9137,
+   "sha256": "e0fb129ea28d526a18d1f1793d87f1b8b78983731aacca168f579193af0bea9c"
+  },
+  {
+   "n": 98,
+   "heading": "LEGACY-RME-SOD-1 — Mandatory Separate Publisher Enforcement & Production Activation (2026-08-16)",
+   "source_line": 947,
+   "file": "05-legacy-rme.part1.md",
+   "rules_domain": "legacy-rme",
+   "bytes": 5648,
+   "sha256": "dc936ce3bde093dfea8ad44a82cdb555c50ffd03d2d153850e68755b6717de8c"
+  },
+  {
+   "n": 99,
+   "heading": "LEGACY-RME-MASTERDATA-1 — RM 27541 Patient Resolution Investigation & Master-Data Integrity (2026-08-16)",
+   "source_line": 965,
+   "file": "05-legacy-rme.part1.md",
+   "rules_domain": "legacy-rme",
+   "bytes": 8002,
+   "sha256": "b7698952f9ecab8c6696cb5b62cc55a55bc7c6afbd06bc76ff89bc020718ddbd"
+  },
+  {
+   "n": 100,
+   "heading": "LEGACY-RME-SOURCE-RM-BINDING-1 — Source RM Capture, Patient-Binding Enforcement & Wrong-Patient Prevention (2026-08-17)",
+   "source_line": 981,
+   "file": "05-legacy-rme.part2.md",
+   "rules_domain": "legacy-rme",
+   "bytes": 9321,
+   "sha256": "347be053d0b3d79bdb792e91f326e1f3eb42c57b5e8711be9c803bd53edc9f66"
+  },
+  {
+   "n": 101,
+   "heading": "CICD-BASELINE-REVERIFY-1 — Full-Suite Baseline Revalidation & Stale Failure-Debt Closure (2026-08-17)",
+   "source_line": 1009,
+   "file": "13-cicd-testing.md",
+   "rules_domain": "cicd-testing",
+   "bytes": 8213,
+   "sha256": "6889285f2ff13bd6859a6ade43329ec250c46216a805cd8363092c3f9d724d49"
+  },
+  {
+   "n": 102,
+   "heading": "LEGACY-RME-STEADY-STATE-OPS-1 — Operationalization, SOP, Monitoring & Multi-Branch Routine Migration (2026-08-18)",
+   "source_line": 1033,
+   "file": "05-legacy-rme.part2.md",
+   "rules_domain": "legacy-rme",
+   "bytes": 8735,
+   "sha256": "dd21f6b97f2bf407684f86df83a7f1dbbfc019e3853e805a03b55a7af2c65cc2"
+  },
+  {
+   "n": 103,
+   "heading": "LEGACY-RME-DOCTOR-WORKSPACE-1 — Embedded Read-Only Legacy PDF in the Doctor's RME Workspace (2026-08-18)",
+   "source_line": 1055,
+   "file": "05-legacy-rme.part2.md",
+   "rules_domain": "legacy-rme",
+   "bytes": 6267,
+   "sha256": "ac865279b1ea2366d5195b51d4a32ad399efbdc090f5314e5e4466e3b006289d"
+  },
+  {
+   "n": 104,
+   "heading": "LEGACY-RME-DOCTOR-WORKSPACE-1A — Inline Legacy PDF Pages in the Handwritten RME Swipe Canvas (2026-08-18)",
+   "source_line": 1079,
+   "file": "05-legacy-rme.part2.md",
+   "rules_domain": "legacy-rme",
+   "bytes": 5875,
+   "sha256": "5ab23d47f13a1d7395f9f89e2d47267afde824429a74a1f229576ff40243433e"
+  },
+  {
+   "n": 105,
+   "heading": "LEGACY-RME-PROGRAM-CLOSURE-1 — Final Program Audit, Foundation Revalidation & Production Steady-State Closure (2026-08-18)",
+   "source_line": 1101,
+   "file": "05-legacy-rme.part2.md",
+   "rules_domain": "legacy-rme",
+   "bytes": 11487,
+   "sha256": "4aa6d2ee27e4bcda7c7db338f5da5c181802e6bdbdb1fc7dd5c1b9d919d3fe70"
+  },
+  {
+   "n": 106,
+   "heading": "FIX-LEGACY-RME-ROUTINE-OPS-1 — Routine Batch Operational Surface, Time-Bounded Governance & SOD Staffing Truth (2026-08-19)",
+   "source_line": 1139,
+   "file": "05-legacy-rme.part2.md",
+   "rules_domain": "legacy-rme",
+   "bytes": 15905,
+   "sha256": "307e0f2e5f3519ec2ca8b72abf707700bf2630129096758f7167e0817081ddf6"
+  },
+  {
+   "n": 107,
+   "heading": "GLOBAL TEMPORARY FULL-SUITE POLICY — **ACTIVE** (2026-08-19)",
+   "source_line": 1165,
+   "file": "13-cicd-testing.md",
+   "rules_domain": "cicd-testing",
+   "bytes": 7599,
+   "sha256": "d8b0b6b78a8f864e4ff904a286cdaf2b0f26653eb849ae50535ec50a5d8dafaa"
+  },
+  {
+   "n": 108,
+   "heading": "CI-TEMP-FULL-SUITE-SCHEDULE-GATE — Temporary Scheduled Full-Suite Suppression (2026-08-19)",
+   "source_line": 1191,
+   "file": "13-cicd-testing.md",
+   "rules_domain": "cicd-testing",
+   "bytes": 6633,
+   "sha256": "c1e9415bd6d50148622d328afa01999ff4b65d52df425eb22df109cec45c4ff2"
+  },
+  {
+   "n": 109,
+   "heading": "FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1 — Clinic/Cashier Working Branch, Document Identity, WhatsApp Prescriptions, Super-Admin SATUSEHAT (2026-08-20)",
+   "source_line": 1209,
+   "file": "03-branch-context.md",
+   "rules_domain": "branch-context",
+   "bytes": 10328,
+   "sha256": "b7e3de6558279427f1a9c55892745b0884d167368e2df37bf90129ede1364455"
+  },
+  {
+   "n": 110,
+   "heading": "FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 — signed consent as the payment gate, RME page ownership, print ownership, one-page kwitansi (2026-08-20)",
+   "source_line": 1233,
+   "file": "01-rme-clinical.md",
+   "rules_domain": "rme-clinical",
+   "bytes": 14703,
+   "sha256": "0db220851ebe470fbb8413efe9a21b169ecd2a1cca029ec26466a23fa88ece15"
+  },
+  {
+   "n": 111,
+   "heading": "FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 — explicit examination completion, consent as the RME authoring gate, cashier consent independence, patient odontogram history + Legacy Odontogram (2026-08-21)",
+   "source_line": 1265,
+   "file": "01-rme-clinical.md",
+   "rules_domain": "rme-clinical",
+   "bytes": 12011,
+   "sha256": "c3745c370665fc65e3c8b2e44a06c61a70201ac3fc5739efd15f1a5dd8680710"
+  },
+  {
+   "n": 112,
+   "heading": "POST-RME-ODONTOGRAM-STABILIZATION-1 — odontogram view creates no clinical row, repository SQLite artifact hygiene, RM number on the clinical calendar (2026-08-21)",
+   "source_line": 1285,
+   "file": "01-rme-clinical.md",
+   "rules_domain": "rme-clinical",
+   "bytes": 12252,
+   "sha256": "81893b59c98de568751266b53f1aba44bbf2985e495a1bfd760f6afcd914b4fc"
+  },
+  {
+   "n": 113,
+   "heading": "LEGACY-ODONTOGRAM-NATIVE-REFERENCE-CUTOFF-1 — an empty odontogram placeholder is not clinical evidence for the archive cutoff (2026-08-22)",
+   "source_line": 1305,
+   "file": "06-legacy-import-odontogram-patient.part1.md",
+   "rules_domain": "legacy-import",
+   "bytes": 5296,
+   "sha256": "b01f69f509cc454e1e6dad2c9a734ed018b6897e56dc2af03ac4e95ac4660895"
+  },
+  {
+   "n": 114,
+   "heading": "TEST-BASELINE-MONITORING-FAILURES-1 — the Monitoring baseline is zero, and it is deterministic (2026-08-22)",
+   "source_line": 1321,
+   "file": "15-monitoring.md",
+   "rules_domain": "monitoring",
+   "bytes": 5875,
+   "sha256": "a6154d4442740f2a1970e594ac158f0014f8a2829ad7ebb0376fac14947e6d64"
+  },
+  {
+   "n": 115,
+   "heading": "MONITORING-LOGS-WATCH-ROOT-CAUSE-1 — the logs WATCH was correct; the logs section can no longer report OK without evidence (2026-08-22)",
+   "source_line": 1339,
+   "file": "15-monitoring.md",
+   "rules_domain": "monitoring",
+   "bytes": 8271,
+   "sha256": "637c879dfbc8dab2cd1141bb2431114ada004eaa26086dfcf07eb546052669a2"
+  },
+  {
+   "n": 116,
+   "heading": "MONITORING-LOG-SOURCE-RESILIENCE-1 — Monitoring reads where the application writes (2026-08-22)",
+   "source_line": 1355,
+   "file": "15-monitoring.md",
+   "rules_domain": "monitoring",
+   "bytes": 5770,
+   "sha256": "13f329792bb6346f984fd5d2a81aead2479b6d176f5a73cc96efceb830e395a9"
+  },
+  {
+   "n": 117,
+   "heading": "MONITORING-LOG-TIMESTAMP-ROLLOVER-1 — an event's age comes from the timestamp the log wrote, not one the parser invented (2026-08-22)",
+   "source_line": 1371,
+   "file": "15-monitoring.md",
+   "rules_domain": "monitoring",
+   "bytes": 6628,
+   "sha256": "e712b37fb7ce85d3eb4b3befdfab447503821516154e3a972cbc51d23fe59f6d"
+  },
+  {
+   "n": 118,
+   "heading": "MONITORING-LOG-COVERAGE-ANCHOR-INJECTION-1 — log coverage is proven by the bytes actually read, never by a timestamp inside them (2026-08-23)",
+   "source_line": 1387,
+   "file": "15-monitoring.md",
+   "rules_domain": "monitoring",
+   "bytes": 9540,
+   "sha256": "059517b6e7510e7cc865a1f86913529500ce5ab438ba8cca8deb169518429450"
+  },
+  {
+   "n": 119,
+   "heading": "RESTORE-DRILL-TIMESTAMP-FAITHFULNESS-1 — Restore Drill evidence age is computed only from a faithful timestamp (2026-08-23)",
+   "source_line": 1405,
+   "file": "15-monitoring.md",
+   "rules_domain": "monitoring",
+   "bytes": 7223,
+   "sha256": "863e60375b92df3ef5612648b61dee439276239394776fc83a8cc183d00d97cc"
+  },
+  {
+   "n": 120,
+   "heading": "MONITORING-UNDATED-SEVERITY-ESCALATION-1 — Unageable ERROR Evidence Carries Severity Weight (2026-08-23)",
+   "source_line": 1427,
+   "file": "15-monitoring.md",
+   "rules_domain": "monitoring",
+   "bytes": 8451,
+   "sha256": "049ebcc3f8391cd35d35f7b75d6022a0de996f1b78bc68360fb7fe26c50b8002"
+  },
+  {
+   "n": 121,
+   "heading": "CICD-CRITICAL-GATE-FILE-GET-CONTENTS-WARN-1 — Critical Gate warnings are attributable and judged (2026-08-23)",
+   "source_line": 1447,
+   "file": "13-cicd-testing.md",
+   "rules_domain": "cicd-testing",
+   "bytes": 6958,
+   "sha256": "2d377d67ce66c176ef7df681a04255fd4211b41222a931b89333ecd02419ff2f"
+  },
+  {
+   "n": 122,
+   "heading": "CI-MONITORING-CRITICAL-TOKEN-COVERAGE-1 — mandatory critical suites are selected by an explicit registry, never a filename coincidence (2026-08-23)",
+   "source_line": 1467,
+   "file": "13-cicd-testing.md",
+   "rules_domain": "cicd-testing",
+   "bytes": 5892,
+   "sha256": "e1083fc22546fd68e3ab501c28487fef634a83c3471881b40338955be955f80c"
+  },
+  {
+   "n": 123,
+   "heading": "RESTORE-DRILL-EVIDENCE-READ-STATE-1 — Restore Drill Evidence Read-State Contract (2026-08-23)",
+   "source_line": 1487,
+   "file": "15-monitoring.md",
+   "rules_domain": "monitoring",
+   "bytes": 6074,
+   "sha256": "c40daafb4c406ffe8d5561258974e1e72c1fa3b02aa8f6698addc9e9568f1838"
+  },
+  {
+   "n": 124,
+   "heading": "STORAGE-PUBLIC-CLINICAL-EVIDENCE-1 — Private Clinical Evidence Remediation (2026-08-23)",
+   "source_line": 1503,
+   "file": "14-deploy-infra-security.md",
+   "rules_domain": "deploy-infra",
+   "bytes": 5983,
+   "sha256": "116fe047d25aadd69223ce11925e986d7640b74ff15705adf49673fa6f470845"
+  },
+  {
+   "n": 125,
+   "heading": "FINAL-STABILIZATION-RESIDUAL-AUDIT-1 — Residual Reconciliation Before the Consolidated Full Suite (2026-08-24)",
+   "source_line": 1523,
+   "file": "13-cicd-testing.md",
+   "rules_domain": "cicd-testing",
+   "bytes": 10241,
+   "sha256": "8644704c2b6fb91b1d092d5fab936d529c7f89db2a998425cb092a864f75af41"
+  },
+  {
+   "n": 126,
+   "heading": "FIX-RECEIPT-PDF-TEXT-CONTIGUITY-1 — PDF field assertions read their own column (2026-08-25)",
+   "source_line": 1545,
+   "file": "13-cicd-testing.md",
+   "rules_domain": "cicd-testing",
+   "bytes": 6333,
+   "sha256": "bb1529bed05a80b9c0696af79d05e6a9421d1bf99f987b4551cf8b3da9bf54b4"
+  },
+  {
+   "n": 127,
+   "heading": "FIX-PDF-TEMPFILE-LEAK-1 — PDF temp-file ownership contract (2026-08-25)",
+   "source_line": 1565,
+   "file": "13-cicd-testing.md",
+   "rules_domain": "cicd-testing",
+   "bytes": 5826,
+   "sha256": "691c3203ff1cbd35c67ae390c650d24e5a4854176e75ac7c33a0d0a2d053d7b1"
+  },
+  {
+   "n": 128,
+   "heading": "FIX-LAB-ANALYTICS-MEDIAN-LATENESS-DAY-BOUNDARY-1 — Lab analytics lateness stops depending on the hour CI starts (2026-08-25)",
+   "source_line": 1585,
+   "file": "08-lab.md",
+   "rules_domain": "lab",
+   "bytes": 5597,
+   "sha256": "fd376d8a8d63961321150e7fab97d99553cf3c8184acd1417b7a6a73e47ef488"
+  },
+  {
+   "n": 129,
+   "heading": "FIX-TEST-TEMPFILE-SIBLING-LEAKS-1 — every temporary artifact has one owner that can reach it (2026-08-25)",
+   "source_line": 1607,
+   "file": "13-cicd-testing.md",
+   "rules_domain": "cicd-testing",
+   "bytes": 5926,
+   "sha256": "69d8348a94147de29492d073ae438b03062c2f556284fad44686eae79756ba8f"
+  },
+  {
+   "n": 130,
+   "heading": "FIX-CI-GATE-WORKDIR-TEMPFILE-LEAK-1 — R-22: ownership is the allocation API, not a prefix list (2026-08-26)",
+   "source_line": 1625,
+   "file": "13-cicd-testing.md",
+   "rules_domain": "cicd-testing",
+   "bytes": 5872,
+   "sha256": "4fb9b03adfcaa035fa0fe4e6c88e0c67af77e168ccb8043938286aa1f3718e62"
+  },
+  {
+   "n": 131,
+   "heading": "FINAL-PRE-FULL-SUITE-READINESS-CHECK-1 — readiness GO (retry after R-22) (2026-08-26)",
+   "source_line": 1645,
+   "file": "13-cicd-testing.md",
+   "rules_domain": "cicd-testing",
+   "bytes": 4529,
+   "sha256": "1a76633fcf7a0fab9cdebe02198f274f5007d9b310909e36a05d25ba31cd77f8"
+  },
+  {
+   "n": 132,
+   "heading": "AUTHORITATIVE-CONSOLIDATED-FULL-SUITE-2 — Final Stabilization Programme Closure (2026-08-26)",
+   "source_line": 1665,
+   "file": "13-cicd-testing.md",
+   "rules_domain": "cicd-testing",
+   "bytes": 5267,
+   "sha256": "cf041328be92deb67da44682d19f3fe0e5b0a6ac81e733b3b49b381c45d9fbbc"
+  },
+  {
+   "n": 133,
+   "heading": "FIX-RME-PRINT-REMOVE-PATIENT-VISIT-DUPLICATE-1 — RME print drops the duplicated patient/visit card (2026-08-27)",
+   "source_line": 1681,
+   "file": "01-rme-clinical.md",
+   "rules_domain": "rme-clinical",
+   "bytes": 6148,
+   "sha256": "3f0d62c689a629246a841718db77c6586f405c9faff29e38cce226c79e561330"
+  },
+  {
+   "n": 134,
+   "heading": "FEATURE-LEGACY-IMPORT-HUB-1 — Legacy Import Hub: one home, one ceiling (2026-08-27)",
+   "source_line": 1701,
+   "file": "06-legacy-import-odontogram-patient.part1.md",
+   "rules_domain": "legacy-import",
+   "bytes": 13478,
+   "sha256": "477601ed4d5db81a508e589580afb01ad355df6dfb70641e90e44104ae06fd57"
+  },
+  {
+   "n": 135,
+   "heading": "FEATURE-LEGACY-IMPORT-HUB-1A — Legacy RME Activation (2026-08-28)",
+   "source_line": 1741,
+   "file": "06-legacy-import-odontogram-patient.part1.md",
+   "rules_domain": "legacy-import",
+   "bytes": 10657,
+   "sha256": "c5f6d66692e73fc3960245ec8d639025e9eac2304cba333dd00d220ca7a8dcfc"
+  },
+  {
+   "n": 136,
+   "heading": "FEATURE-DAILY-BRANCH-CONTEXT-LOCK-1 — Daily Working-Branch Lock for Kasir & Admin Klinik (2026-08-29)",
+   "source_line": 1767,
+   "file": "03-branch-context.md",
+   "rules_domain": "branch-context",
+   "bytes": 9104,
+   "sha256": "2f3dace86c1ca8b40a0214feb9f0e0c5455030dffa9139b2465a6f6488f335d3"
+  },
+  {
+   "n": 137,
+   "heading": "REVISION-RME-REPORTS-TODAY-DEFAULT-1 — RME reports default to the clinical today (2026-08-29)",
+   "source_line": 1805,
+   "file": "01-rme-clinical.md",
+   "rules_domain": "rme-clinical",
+   "bytes": 6892,
+   "sha256": "42540d5bb480aa4791a312703c1a4325e63dde19f25c4a3068278fca9580ec34"
+  },
+  {
+   "n": 138,
+   "heading": "REVISION-NEW-VISIT-PATIENT-SEARCH-COMBOBOX-1 — Kunjungan Baru patient selection (2026-08-29)",
+   "source_line": 1835,
+   "file": "04-patient-identity.md",
+   "rules_domain": "patient-identity",
+   "bytes": 5784,
+   "sha256": "d0b0f1b88945d95263465333c0f23f55a257044a779c05c80ffbb133be3083c5"
+  },
+  {
+   "n": 139,
+   "heading": "BUGFIX-NEW-VISIT-PATIENT-SEARCH-RUNTIME-1 — New Visit patient search survives PostgreSQL (2026-08-29)",
+   "source_line": 1855,
+   "file": "04-patient-identity.md",
+   "rules_domain": "patient-identity",
+   "bytes": 5138,
+   "sha256": "5d53782d09d05cc24b49cbda6ea59dacc05391b5ff25531743d253afb2f2838b"
+  },
+  {
+   "n": 140,
+   "heading": "REVISION-NEW-VISIT-GLOBAL-PATIENT-LOOKUP-1 — New Visit patient lookup is global patient identity (2026-08-30)",
+   "source_line": 1873,
+   "file": "04-patient-identity.md",
+   "rules_domain": "patient-identity",
+   "bytes": 7134,
+   "sha256": "f33e90545ae3473c30184e3933bebb5b042614fbc5ee83eb984a3585815eef2a"
+  },
+  {
+   "n": 141,
+   "heading": "BUGFIX-LEGACY-ODONTOGRAM-PATIENT-LOOKUP-1 — the operator can find the patient, and is told when they cannot (2026-08-30)",
+   "source_line": 1903,
+   "file": "06-legacy-import-odontogram-patient.part1.md",
+   "rules_domain": "legacy-import",
+   "bytes": 7456,
+   "sha256": "d2170b72fa9ea0a062c3fa2ff21ffab62420232f383ab87802c2c8e5d80dc116"
+  },
+  {
+   "n": 142,
+   "heading": "REVISION-LEGACY-ODONTOGRAM-NATIVE-OPTIONAL-1 — a paper chart does not need permission from the present (2026-08-31)",
+   "source_line": 1923,
+   "file": "06-legacy-import-odontogram-patient.part1.md",
+   "rules_domain": "legacy-import",
+   "bytes": 6714,
+   "sha256": "d6f27ef035d15f0c1d8447975be3051be59004ec6cc81a4da4d5149b3b69d10d"
+  },
+  {
+   "n": 143,
+   "heading": "BUGFIX-LEGACY-ODONTOGRAM-QUEUE-CONSUMER-1 — Dedicated queue producer ↔ consumer contract (2026-08-31)",
+   "source_line": 1943,
+   "file": "06-legacy-import-odontogram-patient.part1.md",
+   "rules_domain": "legacy-import",
+   "bytes": 6268,
+   "sha256": "de1d42cd9f557f4d3103dbf1e7c938ea14c8192540ece1434b3dc5e6413c6f24"
+  },
+  {
+   "n": 144,
+   "heading": "REVISION-TELKOMAS-BRANCH-CODE-TKM1-TO-TLK1-1 — Telkomas Branch Code Foundation (2026-08-31)",
+   "source_line": 1965,
+   "file": "03-branch-context.md",
+   "rules_domain": "branch-context",
+   "bytes": 6344,
+   "sha256": "12a3ddc577e93e7820f858e430bd85e2e39d94e0e0c96d8849ed8f99001bd34f"
+  },
+  {
+   "n": 145,
+   "heading": "FEATURE-DOCTOR-ACCOUNT-PERFORMANCE-INCOME-LINKAGE-1 — Doctor Account Identity Link (2026-08-31)",
+   "source_line": 1981,
+   "file": "07-doctor-access-device.part1.md",
+   "rules_domain": "doctor-access",
+   "bytes": 6482,
+   "sha256": "fef8ca6c34de3eb37b2eb39ceef9679dd5cde5ee5455a1b373cb860d8c4f6473"
+  },
+  {
+   "n": 146,
+   "heading": "REVISION-RME-CONSENT-ODONTOGRAM-PRECONSENT-EDIT-1 — the odontogram may be charted before the signature; the record and the finish may not (2026-09-01)",
+   "source_line": 1995,
+   "file": "01-rme-clinical.md",
+   "rules_domain": "rme-clinical",
+   "bytes": 4864,
+   "sha256": "eeed63fc003eba4229dcd2dce053d28bdeed338c5c115ca9acdd83e94dd45160"
+  },
+  {
+   "n": 147,
+   "heading": "BUGFIX-RME-PRECONSENT-FIRST-PAGE-UI-GATE-1 — the empty state stopped offering a create the server refuses (2026-09-02)",
+   "source_line": 2015,
+   "file": "01-rme-clinical.md",
+   "rules_domain": "rme-clinical",
+   "bytes": 5503,
+   "sha256": "ebdaa18e13f13dc094a0dcc1d6eafddf0c630dc546aad7aa348399e5195bd055"
+  },
+  {
+   "n": 148,
+   "heading": "REVISION-SUNU-BRANCH-CODE-SUN4-TO-SPN4-1 — Cabang Sunu canonical code becomes SPN4 (2026-09-02)",
+   "source_line": 2035,
+   "file": "03-branch-context.md",
+   "rules_domain": "branch-context",
+   "bytes": 4780,
+   "sha256": "188a6530ec1ba4f2be4456e71f3b58e4b46a0f48b928c410c2836970c16b9f70"
+  },
+  {
+   "n": 149,
+   "heading": "REVISION-SUNU-ADD-ROOM-A-B-1 — Cabang Sunu gets Ruangan A + Ruangan B (2026-09-02)",
+   "source_line": 2051,
+   "file": "03-branch-context.md",
+   "rules_domain": "branch-context",
+   "bytes": 5426,
+   "sha256": "88630368f00f5af628b8b39b86ece669b9099ed7a173c3abc3422020b454963d"
+  },
+  {
+   "n": 150,
+   "heading": "FEATURE-DOCTOR-TRUSTED-ANDROID-DEVICE-LOCK-1 — Phase 1: Doctor room-scoped access + RME/Odontogram print denial (2026-09-03)",
+   "source_line": 2069,
+   "file": "07-doctor-access-device.part1.md",
+   "rules_domain": "doctor-access",
+   "bytes": 5896,
+   "sha256": "2a19557fbfcd34d4703edba1ff6a044cf6056be3de08577e25a8e5594daf798e"
+  },
+  {
+   "n": 151,
+   "heading": "FEATURE-DOCTOR-TRUSTED-ANDROID-DEVICE-LOCK-1 — Phase 2: Doctor device registry + Master Data → Device Dokter (2026-09-03)",
+   "source_line": 2093,
+   "file": "07-doctor-access-device.part1.md",
+   "rules_domain": "doctor-device-android",
+   "bytes": 5371,
+   "sha256": "c8e156b0110407c6266d11cd52980bf802338c97adc6e95f3763ee0aef642d8a"
+  },
+  {
+   "n": 152,
+   "heading": "FEATURE-DOCTOR-TRUSTED-ANDROID-DEVICE-LOCK-1 — Phase 3: Android Clinic App + cryptographic device enrolment (2026-09-03)",
+   "source_line": 2119,
+   "file": "07-doctor-access-device.part1.md",
+   "rules_domain": "doctor-device-android",
+   "bytes": 5425,
+   "sha256": "655ea7d5a688f8128e92d961c16967482487a45a5b4b264f9ca057fd9d8bf61a"
+  },
+  {
+   "n": 153,
+   "heading": "FEATURE-DOCTOR-TRUSTED-ANDROID-DEVICE-LOCK-1 — Phase 3.5: Android production readiness & governance (2026-09-03)",
+   "source_line": 2141,
+   "file": "07-doctor-access-device.part1.md",
+   "rules_domain": "doctor-device-android",
+   "bytes": 8744,
+   "sha256": "e93d2c27942ac3e2e40dbb68868e47a3022ea2f0dc1b6bed9558b42f09c0ec99"
+  },
+  {
+   "n": 154,
+   "heading": "REVISION-DOCTOR-ANDROID-DIRECT-APK-SIGNING-DISTRIBUTION-1 — self-managed signing + direct APK (2026-09-03)",
+   "source_line": 2169,
+   "file": "07-doctor-access-device.part1.md",
+   "rules_domain": "doctor-device-android",
+   "bytes": 6976,
+   "sha256": "235beec866c85a4044524f4ec0a1236b4ddab5f4ad23273a48efee1b2b3e2f3b"
+  },
+  {
+   "n": 155,
+   "heading": "REVISION-DOCTOR-AUTO-DEVICE-APPROVAL-APP-ONLY-LOGIN-1 — doctor↔device approval + app-only gate (2026-09-03)",
+   "source_line": 2191,
+   "file": "07-doctor-access-device.part1.md",
+   "rules_domain": "doctor-device-android",
+   "bytes": 7986,
+   "sha256": "aa18604807842f64380914245f99694f947a66bf514c163b3fba0c55bb0883a2"
+  },
+  {
+   "n": 156,
+   "heading": "REVISION-ANDROID-RELEASE-READINESS-PHASE4A-PILOT-AUTHORITY-1 (2026-09-04)",
+   "source_line": 2221,
+   "file": "07-doctor-access-device.part1.md",
+   "rules_domain": "doctor-device-android",
+   "bytes": 6945,
+   "sha256": "22be2a6be7e910e6ecb95033a7cc47d48632c1d3bfaf0acf4c54553f803a6c00"
+  },
+  {
+   "n": 157,
+   "heading": "EVIDENCE-PHASE4A-REAL-DEVICE-KEYINFO-PREFLIGHT-1 (2026-09-05)",
+   "source_line": 2243,
+   "file": "07-doctor-access-device.part1.md",
+   "rules_domain": "doctor-device-android",
+   "bytes": 8931,
+   "sha256": "5aa504e1c1c658f16114b932a3504d4ba18ce9372324f0015dd04f67c8009fd7"
+  },
+  {
+   "n": 158,
+   "heading": "PRODUCTION-ANDROID-SIGNING-CUSTODY-READINESS-1 (2026-09-05)",
+   "source_line": 2265,
+   "file": "07-doctor-access-device.part1.md",
+   "rules_domain": "doctor-device-android",
+   "bytes": 10759,
+   "sha256": "a0c3cbf5448a373779fecc9e9d14918ad7652b8938e6cdfd018815f1b6af2cfa"
+  },
+  {
+   "n": 159,
+   "heading": "REVISION-PRODUCTION-SIGNING-CUSTODIAN1-ENCRYPTED-VAULT-1 (2026-09-05)",
+   "source_line": 2289,
+   "file": "07-doctor-access-device.part1.md",
+   "rules_domain": "doctor-device-android",
+   "bytes": 6609,
+   "sha256": "eb4305228b3d7f81fb33a311294d64213af2d20e3e8b8cd5014aff839e77ef88"
+  },
+  {
+   "n": 160,
+   "heading": "PRODUCTION-ANDROID-SIGNING-KEY-PROVISIONING-1 — the production signing key exists (2026-09-06)",
+   "source_line": 2307,
+   "file": "07-doctor-access-device.part1.md",
+   "rules_domain": "doctor-device-android",
+   "bytes": 11761,
+   "sha256": "5fd034f0bdc1ecfa5e769419f8f57eb423c381cd1ccfaec91a8cee653f81ca0c"
+  },
+  {
+   "n": 161,
+   "heading": "PRODUCTION-ANDROID-SIGNING-CERTIFICATE-PIN-1 — the certificate is pinned (2026-09-06)",
+   "source_line": 2327,
+   "file": "07-doctor-access-device.part1.md",
+   "rules_domain": "doctor-device-android",
+   "bytes": 7442,
+   "sha256": "35d0e5d966eeee91bde680cc7dfe37c961cf6d4a647c5cd301a5f559368403ba"
+  },
+  {
+   "n": 162,
+   "heading": "PRODUCTION-ANDROID-RELEASE-APK-EVIDENCE-1 — Release source frozen, ceremony pending (2026-09-06)",
+   "source_line": 2343,
+   "file": "07-doctor-access-device.part1.md",
+   "rules_domain": "doctor-device-android",
+   "bytes": 8868,
+   "sha256": "781f597904494f501cbee36e7540ebc2f2231f2e0e38f1881847200232b3a65c"
+  },
+  {
+   "n": 163,
+   "heading": "PHASE4A-DOCTOR-ANDROID-PILOT-PREPARATION-1 — non-destructive doctor Android pilot, prepared and inert (2026-09-06)",
+   "source_line": 2377,
+   "file": "07-doctor-access-device.part1.md",
+   "rules_domain": "doctor-device-android",
+   "bytes": 6567,
+   "sha256": "e4d5f861862f2a413a284f7f51fa7eb17e7f6ce4515273b3aa4ad3b935194932"
+  },
+  {
+   "n": 164,
+   "heading": "PWA-FOUNDATION-1 — Installable PWA Foundation (2026-09-07)",
+   "source_line": 2472,
+   "file": "07-doctor-access-device.part1.md",
+   "rules_domain": "doctor-device-android",
+   "bytes": 5297,
+   "sha256": "58ec09ae76a3078916114ea0ad548d41e3b0b62b857cc04be5e50439f6ebbe83"
+  },
+  {
+   "n": 165,
+   "heading": "DOCTOR-PWA-WEBAUTHN-1 — WebAuthn device credentials for the doctor browser login (2026-09-08)",
+   "source_line": 2488,
+   "file": "07-doctor-access-device.part1.md",
+   "rules_domain": "doctor-device-android",
+   "bytes": 7144,
+   "sha256": "a06a62171fb64393d576c57568d3d5a43fcca25e7f8b8fbe7071bcccff675f7f"
+  },
+  {
+   "n": 166,
+   "heading": "DOCTOR-PWA-WEBAUTHN-PROOF-BINDING-1 — a session remembers the proof that authenticated it (2026-09-08)",
+   "source_line": 2519,
+   "file": "07-doctor-access-device.part1.md",
+   "rules_domain": "doctor-device-android",
+   "bytes": 5909,
+   "sha256": "f0921c9396acfd9bfdfdebda31b7ef7731113c5ed6b73df5f13ff169aa58ec9e"
+  },
+  {
+   "n": 167,
+   "heading": "DOCTOR-PWA-WEBAUTHN-KILL-SWITCH-1 — the WebAuthn admission switch, proven as a rollback (2026-09-08)",
+   "source_line": 2542,
+   "file": "07-doctor-access-device.part1.md",
+   "rules_domain": "doctor-device-android",
+   "bytes": 8047,
+   "sha256": "51377fcd569ad778738519eb58d2a6abb4fefc2c4bbf2777ea22fe7facf0b3ae"
+  },
+  {
+   "n": 168,
+   "heading": "DOCTOR-PWA-WEBAUTHN-CREDENTIAL-REVOKE-CONTAINMENT-1 — revoking one credential contains exactly one session (2026-09-08)",
+   "source_line": 2560,
+   "file": "07-doctor-access-device.part2.md",
+   "rules_domain": "doctor-device-android",
+   "bytes": 11422,
+   "sha256": "89783481cfdb44ba23e1b8fb91d786628c5573cf0f4503a42b3ba169be94c41e"
+  },
+  {
+   "n": 169,
+   "heading": "DOCTOR-PWA-MULTI-DOCTOR-PILOT-1 — the pilot becomes a bounded cohort, and goes live for three doctors (2026-09-09)",
+   "source_line": 2588,
+   "file": "07-doctor-access-device.part2.md",
+   "rules_domain": "doctor-access",
+   "bytes": 8204,
+   "sha256": "8b53547121a45837f79220320346ee265b7a072b2a9366442525074ae39566cf"
+  },
+  {
+   "n": 170,
+   "heading": "DOCTOR-PWA-GLOBAL-ROLLOUT-READINESS-1 — measuring whether the whole fleet could be enforced, and finding that twelve doctors could not (2026-09-10)",
+   "source_line": 2612,
+   "file": "07-doctor-access-device.part2.md",
+   "rules_domain": "doctor-access",
+   "bytes": 11353,
+   "sha256": "ba3a4a422bfff682e5b2056ed61071fef2ff5151fc7962519a8f7b5556ab7a53"
+  },
+  {
+   "n": 171,
+   "heading": "DOCTOR-ACCESS-PR-A-SINGLE-SESSION-FOUNDATION — one authenticated session per doctor (2026-09-11)",
+   "source_line": 2634,
+   "file": "07-doctor-access-device.part2.md",
+   "rules_domain": "doctor-access",
+   "bytes": 13318,
+   "sha256": "837adfbee855bfc8e2811eecc235ed4d02130250516f620e1cff9592a4a3ecb6"
+  },
+  {
+   "n": 172,
+   "heading": "DOCTOR-ACCESS-PR-B-BRANCH-LOCK-COVER — one server-authoritative branch per doctor (2026-09-11)",
+   "source_line": 2654,
+   "file": "07-doctor-access-device.part2.md",
+   "rules_domain": "doctor-access",
+   "bytes": 16627,
+   "sha256": "e75d86bf5529895b243073d1067a8d50d6e56d7d72fd3157e402fe0c3c831e8f"
+  },
+  {
+   "n": 173,
+   "heading": "DOCTOR-ACCESS-FLEET-ROLLOUT-READINESS-1 (2026-09-13)",
+   "source_line": 2686,
+   "file": "07-doctor-access-device.part2.md",
+   "rules_domain": "doctor-access",
+   "bytes": 27661,
+   "sha256": "507ea9614a668d92ddb91eae511b7fe5ae3459d7b8ae211d176c7f521f3392b6"
+  },
+  {
+   "n": 174,
+   "heading": "FIX-READINESS-ESTATE-SNAPSHOT-INTEGRITY — one readiness report, one device-estate snapshot (2026-09-13)",
+   "source_line": 2734,
+   "file": "07-doctor-access-device.part2.md",
+   "rules_domain": "doctor-access",
+   "bytes": 8091,
+   "sha256": "3f7aec7eced640fa92796f8e60a38ae6732d262f9d24630c09adb31a87abc681"
+  },
+  {
+   "n": 175,
+   "heading": "DOCTOR-ACCESS-FLEET-ROLLOUT-READINESS-1 — CLOSED / GO, 15/15 (2026-09-14)",
+   "source_line": 2754,
+   "file": "07-doctor-access-device.part2.md",
+   "rules_domain": "doctor-access",
+   "bytes": 5244,
+   "sha256": "a692276b92357579cfc7b95b157eb5edee5e588ed90ae3609d8dc8aa898acb8b"
+  },
+  {
+   "n": 176,
+   "heading": "DOCTOR-ACCESS-GLOBAL-ACTIVATION-BLOCKER-CLOSURE-1 (2026-09-15)",
+   "source_line": 2774,
+   "file": "07-doctor-access-device.part2.md",
+   "rules_domain": "doctor-access",
+   "bytes": 7930,
+   "sha256": "cbc1bf652d0951434d7a1b8c28909a922a46acbc8a99458fddc5a69f6f14f7f1"
+  },
+  {
+   "n": 177,
+   "heading": "REVISION-DOCTOR-TRUSTED-DEVICE-ESTATE-CAPACITY-POLICY-1 (2026-09-16)",
+   "source_line": 2796,
+   "file": "07-doctor-access-device.part2.md",
+   "rules_domain": "doctor-access",
+   "bytes": 7016,
+   "sha256": "b6820c6e5ac9e5ca52bd76492c0b14d2a40373ca39bc8641308bf9112dd87368"
+  },
+  {
+   "n": 178,
+   "heading": "DOCTOR-ACCESS-TRUSTED-DEVICE-ESTATE-PROVISIONING-1 (2026-09-16)",
+   "source_line": 2830,
+   "file": "07-doctor-access-device.part2.md",
+   "rules_domain": "doctor-access",
+   "bytes": 4343,
+   "sha256": "0eb129566a3a07c9cf8c0c8d3e22f91fc0f2295414adfca21915916a9301500a"
+  },
+  {
+   "n": 179,
+   "heading": "DOCTOR-ACCESS-GLOBAL-ACTIVATION-1 — PHASE-0 DELTA RECHECK (2026-09-17)",
+   "source_line": 2855,
+   "file": "07-doctor-access-device.part2.md",
+   "rules_domain": "doctor-access",
+   "bytes": 11234,
+   "sha256": "049ec8adabe92bfd508cd3973895f5026058d1b7e819f859e053e8559f0b6cb7"
+  },
+  {
+   "n": 180,
+   "heading": "DOCTOR-ACCESS-GLOBAL-ACTIVATION-1 — HALF-A CUTOVER + BRANCH-MODEL CORRECTION (2026-09-17)",
+   "source_line": 2875,
+   "file": "07-doctor-access-device.part2.md",
+   "rules_domain": "doctor-access",
+   "bytes": 5997,
+   "sha256": "3e34888ef4b4edb02716c2ff8a187a8d73d7f926e75d7396abe234d023808106"
+  },
+  {
+   "n": 181,
+   "heading": "DOCTOR-ACCESS-GLOBAL-DEVICE-ENFORCEMENT-READINESS-1 — Half-B readiness (2026-09-18)",
+   "source_line": 2901,
+   "file": "07-doctor-access-device.part2.md",
+   "rules_domain": "doctor-access",
+   "bytes": 8679,
+   "sha256": "e599b6041118d9d6ff7f8812b3b657ba649d0ee20bf0b61fa7c1595a704f1512"
+  },
+  {
+   "n": 182,
+   "heading": "REVISION-DOCTOR-PWA-WEBAUTHN-ONLY-ACCESS-1 — Stages 1–3 + verify-device bugfix (2026-09-19)",
+   "source_line": 2921,
+   "file": "07-doctor-access-device.part3.md",
+   "rules_domain": "doctor-device-android",
+   "bytes": 8014,
+   "sha256": "3c11c0000813fb13805bcf4cd77c8a75ef9bc1394495ff7b0248e2dbba8be1e2"
+  },
+  {
+   "n": 183,
+   "heading": "FIX-SUNU-GO-LIVE-BLOCKERS-1 — Sunu go-live blocker closure (2026-09-19)",
+   "source_line": 2941,
+   "file": "03-branch-context.md",
+   "rules_domain": "branch-context",
+   "bytes": 6838,
+   "sha256": "6a844bf2598b2e832cd87bbb51b801755a7438918df4077a6dd0b10151d134fd"
+  },
+  {
+   "n": 184,
+   "heading": "DOCTOR-DEVICE-GUIDED-REGISTRATION-WORKFLOW-1 — Pendaftaran Device Dokter (2026-09-21)",
+   "source_line": 2959,
+   "file": "07-doctor-access-device.part3.md",
+   "rules_domain": "doctor-device-android",
+   "bytes": 6490,
+   "sha256": "7f0856d89d5313c8a5221c1d18b8521a3ba837900b1bc95f9c8ea955b1e3cc73"
+  },
+  {
+   "n": 185,
+   "heading": "REVISION-FRONT-OFFICE-BRANCH-DEVICE-LOCK-1 — Front Office Branch-Device Login Lock, Four Accounts Only (2026-09-21)",
+   "source_line": 2967,
+   "file": "03-branch-context.md",
+   "rules_domain": "branch-context",
+   "bytes": 9932,
+   "sha256": "b4c86aefa4046f336a04e4cd8525d45d413f95108822e0277cafa022ad171748"
+  },
+  {
+   "n": 186,
+   "heading": "REVISION-FRONT-OFFICE-BRANCH-CONTEXT-LOCK-1 — Branch Context Lock for Four Front Office Accounts (2026-09-22)",
+   "source_line": 2987,
+   "file": "03-branch-context.md",
+   "rules_domain": "branch-context",
+   "bytes": 10849,
+   "sha256": "7102bf9e11e24de476a15e88975d3150db8729c820b5f8d378241f4a8c920135"
+  },
+  {
+   "n": 187,
+   "heading": "SUNU-GO-LIVE-READINESS-1 — Cabang Sunu ready for its first REAL patient (2026-09-24)",
+   "source_line": 3023,
+   "file": "03-branch-context.md",
+   "rules_domain": "branch-context",
+   "bytes": 6121,
+   "sha256": "84f3137218b17535343d916ccc864fa5edb0b7bd4aa45982aa40272cbd78e49f"
+  },
+  {
+   "n": 188,
+   "heading": "REVISION-SUNU-LEGACY-IMPORT-UNLIMITED-ADMIN-ACCESS-1 — Legacy Import Unlimited Business Quota (2026-09-24)",
+   "source_line": 3041,
+   "file": "06-legacy-import-odontogram-patient.part1.md",
+   "rules_domain": "legacy-import",
+   "bytes": 5980,
+   "sha256": "04b0902ee1355a6b652cd3862e33ec83b1c2f2657c32e3715f003c93546cc7a0"
+  },
+  {
+   "n": 189,
+   "heading": "REVISION-LEGACY-VISIT-BOUND-PREVERIFIED-INGESTION-1 — Date Attestation at a Real Visit (2026-09-26)",
+   "source_line": 3057,
+   "file": "06-legacy-import-odontogram-patient.part1.md",
+   "rules_domain": "legacy-import",
+   "bytes": 6019,
+   "sha256": "8791eb0813de286c4612744b2cc2027bf323a8c9ab98c44f5b106050fa9f5e28"
+  },
+  {
+   "n": 190,
+   "heading": "REVISION-LEGACY-PATIENT-STAGED-VERIFICATION-CANCEL-1 — Legacy Patient Staged Verification & Cancellation (2026-09-27)",
+   "source_line": 3087,
+   "file": "06-legacy-import-odontogram-patient.part1.md",
+   "rules_domain": "legacy-import",
+   "bytes": 9010,
+   "sha256": "83293245c4732789f846dcad7d31c45c2f9f79bd43312cbdef39de2bb98d79fc"
+  },
+  {
+   "n": 191,
+   "heading": "DIAGNOSE-AND-CLEAN-LEGACY-PATIENT-NIK-CONFLICT-1 — Rolled-Back Legacy Patient Batch Reserved Every NIK (2026-09-27)",
+   "source_line": 3107,
+   "file": "06-legacy-import-odontogram-patient.part1.md",
+   "rules_domain": "legacy-import",
+   "bytes": 6065,
+   "sha256": "916415cf3bd16c055a37e35ec5c8cf7de8a93fadff8cc3c528c64931bce398f6"
+  },
+  {
+   "n": 192,
+   "heading": "REVISION-LEGACY-SINGLE-ACTIVE-DOCUMENT-PER-PATIENT-1 (2026-09-27)",
+   "source_line": 3131,
+   "file": "06-legacy-import-odontogram-patient.part1.md",
+   "rules_domain": "legacy-import",
+   "bytes": 7124,
+   "sha256": "162b9916f4c7d2181e4578ee15bd2a0207b30e71ac61200f25d5470ba427aa51"
+  },
+  {
+   "n": 193,
+   "heading": "FEATURE-LEGACY-RME-ODONTOGRAM-MASS-UPLOAD-1 — Mass Upload Legacy RME & Odontogram (2026-09-30)",
+   "source_line": 3157,
+   "file": "06-legacy-import-odontogram-patient.part1.md",
+   "rules_domain": "legacy-import",
+   "bytes": 7726,
+   "sha256": "7c65dbe3684975e9e35cbf593970fa7201d35332022a77e5db128c958488d0c7"
+  },
+  {
+   "n": 194,
+   "heading": "BUGFIX-MASS-UPLOAD-REQUEST-ENTITY-TOO-LARGE-1 — Mass Upload 413 (2026-10-03)",
+   "source_line": 3181,
+   "file": "06-legacy-import-odontogram-patient.part1.md",
+   "rules_domain": "legacy-import",
+   "bytes": 11689,
+   "sha256": "25acba2f0804f1e190753b9f48811f24eb2318a9bd4f349b0af9451d6cf7eff7"
+  },
+  {
+   "n": 195,
+   "heading": "OPS — Admin Sunu admitted as WAVE-4 migration operator for SPN4 (2026-10-03)",
+   "source_line": 3205,
+   "file": "06-legacy-import-odontogram-patient.part1.md",
+   "rules_domain": "legacy-import",
+   "bytes": 2664,
+   "sha256": "51973f982f6aa0ac4d3b94bb703aa1b9cc8b6afeec40fb3a359662e7464fbe03"
+  },
+  {
+   "n": 196,
+   "heading": "FIX-LEGACY-WAVE4-WINDOW-EXTENSION-1 — extending an approved migration window (2026-10-04)",
+   "source_line": 3209,
+   "file": "06-legacy-import-odontogram-patient.part1.md",
+   "rules_domain": "legacy-import",
+   "bytes": 2966,
+   "sha256": "997027f78a85d4eaae7cd36eee16db1417af1d196e6f2a40a87ce76119824c18"
+  },
+  {
+   "n": 197,
+   "heading": "FEATURE-LEGACY-BATCH-REVIEW-PUBLISH-1 — PR1 Batch Review (RME + Odontogram) (2026-10-04)",
+   "source_line": 3213,
+   "file": "06-legacy-import-odontogram-patient.part1.md",
+   "rules_domain": "legacy-import",
+   "bytes": 7882,
+   "sha256": "6ced876f96cddf21f513b8b8d9a88d22fe38712c933d4bd42f396754abb6f881"
+  },
+  {
+   "n": 198,
+   "heading": "FEATURE-LEGACY-BATCH-REVIEW-PUBLISH-1 — PR2 Batch Publish (RME + Odontogram) (2026-10-04)",
+   "source_line": 3235,
+   "file": "06-legacy-import-odontogram-patient.part1.md",
+   "rules_domain": "legacy-import",
+   "bytes": 9208,
+   "sha256": "a00f9bec3b70fcaf1f6244ea09b4c67462ed21625a9c84c9f90d62c9ddcde2dd"
+  },
+  {
+   "n": 199,
+   "heading": "BUGFIX-LEGACY-BATCH-REVIEW-DECISION-NOT-SUBMITTED-1 — a declarative binding is stale at submit time (2026-10-04)",
+   "source_line": 3259,
+   "file": "06-legacy-import-odontogram-patient.part1.md",
+   "rules_domain": "legacy-import",
+   "bytes": 9648,
+   "sha256": "d5e1f16c64746371bf51eec73c737ff90421788fee663de3b71d02d3738157b9"
+  },
+  {
+   "n": 200,
+   "heading": "FEATURE-LEGACY-PATIENT-DOCUMENT-COMPLETENESS-1 — Kelengkapan Arsip Pasien Legacy (2026-10-05)",
+   "source_line": 3287,
+   "file": "06-legacy-import-odontogram-patient.part2.md",
+   "rules_domain": "legacy-import",
+   "bytes": 22215,
+   "sha256": "c8e210fdb22cae8f74e3ec83549dc3fc8b1d5dc8b506169ea31688672510325d"
+  },
+  {
+   "n": 201,
+   "heading": "FEATURE-RME-MEDICAL-RECORDS-UNIFIED-NATIVE-LEGACY-1 — Unified Medical-Record Index (2026-10-05)",
+   "source_line": 3327,
+   "file": "01-rme-clinical.md",
+   "rules_domain": "rme-clinical",
+   "bytes": 4180,
+   "sha256": "bbcb70f47ca1d61abf2659e06d0aec45d89b89b6944b957f7d22499378c563f4"
+  },
+  {
+   "n": 202,
+   "heading": "FIX-LEGACY-ODONTOGRAM-CROSS-BRANCH-READ-SCOPE-1 — Upload Authority Is Not Global Read Authority (2026-10-06)",
+   "source_line": 3341,
+   "file": "06-legacy-import-odontogram-patient.part2.md",
+   "rules_domain": "legacy-import",
+   "bytes": 5744,
+   "sha256": "a53e13d0cee7bc53c78bda0102f35086208315126c5139132a2c30b189810145"
+  },
+  {
+   "n": 203,
+   "heading": "FEATURE-DEV-CONSOLE-OBSERVABILITY-1 — DaengtisiaMS Observability Console (2026-10-07)",
+   "source_line": 3357,
+   "file": "12-foundation-enterprise.md",
+   "rules_domain": "foundation-governance",
+   "bytes": 4223,
+   "sha256": "d4f878bd6bb753f39d12830ce222a765662f6a7905fa926e8d3ac5ecc3be92ae"
+  },
+  {
+   "n": 204,
+   "heading": "FEATURE-PATIENT-DUPLICATE-RESOLUTION-MERGE-1 — Duplikasi Pasien (2026-10-07)",
+   "source_line": 3367,
+   "file": "04-patient-identity.md",
+   "rules_domain": "patient-identity",
+   "bytes": 3862,
+   "sha256": "1c3eabc32c1f46f122fac191ef40e08f5003fc14b6c31ffc51a1647584fe20fc"
+  },
+  {
+   "n": 205,
+   "heading": "PHASE-1-PATIENT-KTP-CAMERA-OCR-SUPERVISED-PILOT — Server-side pilot gate for KTP camera OCR (2026-10-10)",
+   "source_line": 3381,
+   "file": "04-patient-identity.md",
+   "rules_domain": "patient-identity",
+   "bytes": 2931,
+   "sha256": "35cb76a1e4dced32908e028dfd0f799fa2584094fd38857020d6329dfe3a3222"
+  },
+  {
+   "n": 206,
+   "heading": "PHASE-2-PATIENT-KTP-CAMERA-OCR-SUPERVISED-PILOT-ACTIVATION-1 — Pilot armed for Admin Sunu @ SPN4 (2026-10-10)",
+   "source_line": 3389,
+   "file": "04-patient-identity.md",
+   "rules_domain": "patient-identity",
+   "bytes": 1871,
+   "sha256": "d671983be6722d806bfc4d2f509290ccffe3b0cabbc8764fb82200942a7a9739"
+  },
+  {
+   "n": 207,
+   "heading": "REVISION-PATIENT-KTP-OCR-FIELD-BASED-ROI-1 — Hybrid field-based KTP OCR (2026-10-10)",
+   "source_line": 3393,
+   "file": "04-patient-identity.md",
+   "rules_domain": "patient-identity",
+   "bytes": 5741,
+   "sha256": "87005cd0d7e151c8ea97f12b667e2a95f5cb98eea9d1cd7173daa0eaddfeb077"
+  },
+  {
+   "n": 208,
+   "heading": "PHASE-3-PATIENT-KTP-ROI-OCR-CLINICAL-PILOT-1 — D7 consent before KTP OCR, privacy review, pilot readiness (2026-10-10)",
+   "source_line": 3407,
+   "file": "04-patient-identity.md",
+   "rules_domain": "patient-identity",
+   "bytes": 6206,
+   "sha256": "faa364d236243424561c2ff23b91c4a782743f4931c2207f0228de661da78beb"
+  },
+  {
+   "n": 209,
+   "heading": "REVISION-PATIENT-KTP-LIVE-FIELD-OVERLAY-OCR-1 — Live field overlay on the KTP camera preview (2026-10-10)",
+   "source_line": 3421,
+   "file": "04-patient-identity.md",
+   "rules_domain": "patient-identity",
+   "bytes": 7044,
+   "sha256": "627185b6997b4f0b05e5a3ff6e3437dba2f74407a698c156b41eadec568efe32"
+  },
+  {
+   "n": 210,
+   "heading": "AUDIT-PATIENT-KTP-ARCHIVE-PERSISTENCE-1 — Is a camera KTP photo archived as the patient's document? (2026-10-11)",
+   "source_line": 3441,
+   "file": "04-patient-identity.md",
+   "rules_domain": "patient-identity",
+   "bytes": 6373,
+   "sha256": "8d933e739abf6c03bcdfbab3618799deaf3c6ec0c8a7819cbbf70e7fd05a0d90"
+  },
+  {
+   "n": 211,
+   "heading": "SECURITY-PATIENT-KTP-ARCHIVE-BRANCH-ISOLATION-1 — A stored KTP card is served only to its capture branch (2026-10-11)",
+   "source_line": 3455,
+   "file": "04-patient-identity.md",
+   "rules_domain": "patient-identity",
+   "bytes": 5703,
+   "sha256": "dbd9236edd0e0674240e2cc3a92b5c659e30aceaae624ebfae7d8f8cc4ff5042"
+  },
+  {
+   "n": 212,
+   "heading": "GOVERNANCE-PATIENT-KTP-NEW-PATIENT-ONLY-1 — Patient identity is global; KTP photo capture is new-patient-only (2026-10-11)",
+   "source_line": 3469,
+   "file": "04-patient-identity.md",
+   "rules_domain": "patient-identity",
+   "bytes": 6326,
+   "sha256": "0e0fd765ff10bf33f42a2e100f95a30c47fab003a25746275306f1cac4882e08"
+  },
+  {
+   "n": 213,
+   "heading": "REVISION-RME-VISIT-DETAIL-INVOICE-REGISTRATION-UX-1 — visit detail order, landscape invoice, server-derived visit type (2026-10-12)",
+   "source_line": 3485,
+   "file": "01-rme-clinical.md",
+   "rules_domain": "rme-clinical",
+   "bytes": 6696,
+   "sha256": "ab51897216034f41dd784e5dc0dc31026d14bf87b01a75893061e28fcca7e98e"
+  },
+  {
+   "n": 214,
+   "heading": "FEATURE-FINANCE-KLINIK-DATA-ANALYST-ROLES-1 — two read-only cross-branch oversight roles (2026-10-12)",
+   "source_line": 3503,
+   "file": "02-rme-billing-reporting.md",
+   "rules_domain": "rme-billing",
+   "bytes": 3980,
+   "sha256": "7f1d63d13dbb11eb1da85d5eaaea26a46712c54f276e954f1309f47d64537650"
+  },
+  {
+   "n": 215,
+   "heading": "REVISION-OVERSIGHT-DASHBOARD-DATE-RANGE-1 — oversight dashboard over an inclusive WITA date range (2026-10-13)",
+   "source_line": 3511,
+   "file": "02-rme-billing-reporting.md",
+   "rules_domain": "rme-billing",
+   "bytes": 4104,
+   "sha256": "cbbef1704dc9caee5d9fbffaff358a3dde2bd671c410343075e1edacd1cae6ef"
+  },
+  {
+   "n": 216,
+   "heading": "AUDIT-RME-BILLING-CORRECTION-PAYMENT-REFUND-FOUNDATION-1 — RME billing correction / payment / refund foundation audit (2026-10-16)",
+   "source_line": 3517,
+   "file": "02-rme-billing-reporting.md",
+   "rules_domain": "rme-billing",
+   "bytes": 4811,
+   "sha256": "a57b7017efc73f2f049127b71a7927b14a0dd5b8405f73a809bc4ec520c01288"
+  },
+  {
+   "n": 217,
+   "heading": "FEATURE-RME-BILLING-REFUND-1 — Phase 0 financial prerequisites shipped; refund execution NOT built (2026-10-16)",
+   "source_line": 3529,
+   "file": "02-rme-billing-reporting.md",
+   "rules_domain": "rme-billing",
+   "bytes": 6788,
+   "sha256": "d07e524c147936b5919040d2952af5ab64d22059f48ed0e45c60dae409135989"
+  },
+  {
+   "n": 218,
+   "heading": "FEATURE-RME-INVOICE-CORRECTION-RECEIPT-FOUNDATION-1 — Pre-payment Invoice Correction Foundation, Default OFF (2026-10-17)",
+   "source_line": 3543,
+   "file": "02-rme-billing-reporting.md",
+   "rules_domain": "rme-billing",
+   "bytes": 6135,
+   "sha256": "25eda51b7781e3e1867215136f726c1fb6b5f5af7933867691dfb262ef4285fd"
+  },
+  {
+   "n": 219,
+   "heading": "ACTIVATION-RME-INVOICE-CORRECTION-PREPAYMENT-1 — activation NO_GO; payment bound to invoice version (2026-10-17)",
+   "source_line": 3559,
+   "file": "02-rme-billing-reporting.md",
+   "rules_domain": "rme-billing",
+   "bytes": 5912,
+   "sha256": "862831c1c21e1e78ad77a19b7dd3859da44c0358d9149e34a16b4e13337ba921"
+  },
+  {
+   "n": 220,
+   "heading": "FEATURE-RME-BRANCH-TARIFF-AUTHORITY-1 — branch tariff authority (D21), pending-correction payment block (D10), correction tariff gate (2026-10-17)",
+   "source_line": 3575,
+   "file": "02-rme-billing-reporting.md",
+   "rules_domain": "rme-billing",
+   "bytes": 7379,
+   "sha256": "a5c1465b92ab30a72c5a46a1229bbacb7340c25a47980e47aef7bea2d69d5fe0"
+  },
+  {
+   "n": 221,
+   "heading": "FEATURE-RME-BRANCH-TARIFF-PROVISIONING-1 — tariff approval provenance; no tariff imported (2026-10-17)",
+   "source_line": 3597,
+   "file": "02-rme-billing-reporting.md",
+   "rules_domain": "rme-billing",
+   "bytes": 4974,
+   "sha256": "ed7b9d1ffbc04e55ff159ad85c46a70da0d07ca78fe4bf977f4ec1fd9a08ff1a"
+  },
+  {
+   "n": 222,
+   "heading": "REVISION-RME-MANUAL-PRICING-AUTHORITY-1 — owner D21 revised to manual cashier pricing (2026-10-20)",
+   "source_line": 3613,
+   "file": "02-rme-billing-reporting.md",
+   "rules_domain": "rme-billing",
+   "bytes": 9020,
+   "sha256": "3913d1eedefa1f98fcc9989463ff97a54aeedeb5f3adc48e21348e5532db62f4"
+  },
+  {
+   "n": 223,
+   "heading": "ACTIVATION-RME-INVOICE-CORRECTION-PREPAYMENT-2 — pre-payment correction pilot activation (2026-10-21)",
+   "source_line": 3631,
+   "file": "02-rme-billing-reporting.md",
+   "rules_domain": "rme-billing",
+   "bytes": 7669,
+   "sha256": "d85540fc49c0bbce51b147796b266905c3d27cb26f8634c9ba57e4610ce84a8c"
+  },
+  {
+   "n": 224,
+   "heading": "VERIFICATION-RME-INVOICE-CORRECTION-PREPAYMENT-PILOT-1 — live SPN4 pilot verified, not closable yet (2026-10-21)",
+   "source_line": 3661,
+   "file": "02-rme-billing-reporting.md",
+   "rules_domain": "rme-billing",
+   "bytes": 4295,
+   "sha256": "9c7f9073be5e02e4925d4d6ea232be63872b25fc4479b60faed83955908c46b5"
+  },
+  {
+   "n": 225,
+   "heading": "HARDENING-RME-INVOICE-CORRECTION-PILOT-IDENTITY-PAYMENT-ACTOR-1 — pilot identity allowlist (owner D1e) + explicit payment actor (2026-10-21)",
+   "source_line": 3675,
+   "file": "02-rme-billing-reporting.md",
+   "rules_domain": "rme-billing",
+   "bytes": 6437,
+   "sha256": "2e40894192d26c349f3f431b465a8f29a0b7a715cef93780481f55f917408c97"
+  },
+  {
+   "n": 226,
+   "heading": "FIX-RME-INVOICE-BRANCH-SCOPE-EXPLICIT-ACTOR-1 — invoice branch scope from the explicit actor (2026-10-22)",
+   "source_line": 3691,
+   "file": "02-rme-billing-reporting.md",
+   "rules_domain": "rme-billing",
+   "bytes": 4895,
+   "sha256": "2e3a5a4dcfbd1372a96bf8018e2591fcd91c4402e0bc06a7f94b765579823c7a"
+  },
+  {
+   "n": 227,
+   "heading": "AUDIT-RME-CLINIC-VISIT-BRANCH-AUTHORITY-1 — clinic visit authority from the explicit actor (2026-10-22)",
+   "source_line": 3701,
+   "file": "03-branch-context.md",
+   "rules_domain": "branch-context",
+   "bytes": 7303,
+   "sha256": "4e4c6a7f024352d39562a40cfcb0dcd84f1870385a7abc81671f0b4cd581f841"
+  },
+  {
+   "n": 228,
+   "heading": "HARDENING-RME-ACTIVE-USER-PATIENT-SELECTION-1 — deactivated accounts stop everywhere; registration re-asserted at the service; OD-1 cross-branch Kontrol (2026-10-22)",
+   "source_line": 3707,
+   "file": "03-branch-context.md",
+   "rules_domain": "branch-context",
+   "bytes": 8309,
+   "sha256": "bf8097aafbff30722fadc1092f9974fd03a463fe1b7c8acdad9d43ceb0301515"
+  },
+  {
+   "n": 229,
+   "heading": "VERIFICATION-RME-INVOICE-CORRECTION-PREPAYMENT-PILOT-2 — second pilot re-verification, still not closable (2026-10-23)",
+   "source_line": 3725,
+   "file": "02-rme-billing-reporting.md",
+   "rules_domain": "rme-billing",
+   "bytes": 3761,
+   "sha256": "3067855198bab8d7865f8bc6ba3467c8438708ca3baa606e4f27acb2ac655edb"
+  },
+  {
+   "n": 230,
+   "heading": "FIX-RME-INVOICE-CORRECTION-ZERO-ORIGINAL-GUARD-1 — a Rp0 ORIGINAL invoice is never corrected; every correction mutation decided on the persisted active account (2026-10-23)",
+   "source_line": 3739,
+   "file": "02-rme-billing-reporting.md",
+   "rules_domain": "rme-billing",
+   "bytes": 5839,
+   "sha256": "e77bb156c25c875db250d51bc64f84177db3f18d8f521e5c794eb4ed65bb896b"
+  },
+  {
+   "n": 231,
+   "heading": "PREPARATION-RME-INVOICE-CORRECTION-PILOT-OPERATIONAL-READINESS-1 — counter procedure for the SPN4 correction pilot (2026-10-23)",
+   "source_line": 3759,
+   "file": "02-rme-billing-reporting.md",
+   "rules_domain": "rme-billing",
+   "bytes": 3920,
+   "sha256": "437d64986d23e687f706e292d935f1aeed42de89c362364ca457c09069c8b931"
+  },
+  {
+   "n": 232,
+   "heading": "IMPLEMENTATION-RME-BILLING-DISPUTE-ESCALATION-OPS-OQ-1 — an invoice known to be wrong is not collected (2026-10-23)",
+   "source_line": 3771,
+   "file": "02-rme-billing-reporting.md",
+   "rules_domain": "rme-billing",
+   "bytes": 6955,
+   "sha256": "2353e634f44011102891eb43657f6cd69016ff310a0c55c92b25f76f0f76fa83"
+  },
+  {
+   "n": 233,
+   "heading": "HARDENING-RME-BILLING-DISPUTE-BRANCH-REVIEWER-CONTROL-PAYMENT-1 — explicit branch dispute reviewers; a Kontrol invoice payable alone while its origin is disputed (2026-10-24)",
+   "source_line": 3783,
+   "file": "02-rme-billing-reporting.md",
+   "rules_domain": "rme-billing",
+   "bytes": 7375,
+   "sha256": "59f449ddf7ed8b7e8418af779519be4763d55e60d7126348ef867e342dd85f64"
+  },
+  {
+   "n": 234,
+   "heading": "VERIFICATION-RME-INVOICE-CORRECTION-PREPAYMENT-PILOT-CLOSURE — third pilot re-verification, still OPERATIONAL_BLOCKED (2026-10-24)",
+   "source_line": 3797,
+   "file": "02-rme-billing-reporting.md",
+   "rules_domain": "rme-billing",
+   "bytes": 3510,
+   "sha256": "238efb29b396f9827ce105a4e619dd28295d436e6cf67d856add6198e83ffc64"
+  },
+  {
+   "n": 235,
+   "heading": "FIX-RME-PAYMENT-SUBMISSION-IDEMPOTENCY-1 — one payment form, at most one payment (2026-10-25)",
+   "source_line": 3805,
+   "file": "02-rme-billing-reporting.md",
+   "rules_domain": "rme-billing",
+   "bytes": 6743,
+   "sha256": "a9bd205782055540be87cd0b5cdae2fe928630573cd212f68dd4d3819e05a083"
+  },
+  {
+   "n": 236,
+   "heading": "PREPARATION-RME-POSTPAYMENT-INVOICE-CORRECTION-1 — post-payment correction prepared, nothing enabled (2026-10-25)",
+   "source_line": 3845,
+   "file": "02-rme-billing-reporting.md",
+   "rules_domain": "rme-billing",
+   "bytes": 3310,
+   "sha256": "b14674878e862841bfa81f7495374f1dc27cdf3602f5bb5981bd9eb3d901139c"
+  },
+  {
+   "n": 237,
+   "heading": "VERIFICATION-RME-INVOICE-CORRECTION-PREPAYMENT-PILOT-REAL-CASE-42-1 — the first real correction reconciles, but it was never authorized on the record (2026-10-25)",
+   "source_line": 3855,
+   "file": "02-rme-billing-reporting.md",
+   "rules_domain": "rme-billing",
+   "bytes": 4443,
+   "sha256": "b8ebfc9223ee02f794ea7fab015f555cfcf327f90efd5adb2163c2236c4fdbea"
+  },
+  {
+   "n": 238,
+   "heading": "RATIFICATION-RME-POSTPAYMENT-OWNER-DECISIONS-PP1-PP10-1 — post-payment correction policy approved, nothing enabled (2026-10-25)",
+   "source_line": 3867,
+   "file": "02-rme-billing-reporting.md",
+   "rules_domain": "rme-billing",
+   "bytes": 2333,
+   "sha256": "6d99cbf64c1e189ebca0d1e0e30de227850111a053a3a5236cc1b4e7942e5fab"
+  },
+  {
+   "n": 239,
+   "heading": "FEATURE-RME-POSTPAYMENT-INVOICE-CORRECTION-1 — post-payment correction built, switch OFF (2026-10-25)",
+   "source_line": 3875,
+   "file": "02-rme-billing-reporting.md",
+   "rules_domain": "rme-billing",
+   "bytes": 5781,
+   "sha256": "7b6ba7c285a3a7808e6f8e2fe2a72961217b3caeaa2ae2d6900fb0eba845f67e"
+  }
+ ]
+}

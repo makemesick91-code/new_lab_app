@@ -259,6 +259,24 @@ jobs:
       - name: Git diff check
         run: git diff --check
 
+      # DEV-AI-CLAUDE-MEMORY-OPTIMIZATION-1 — the AI instruction-system contract runs in this
+      # ALWAYS-ON job, not in the critical gate. The classifier maps CLAUDE.md, .claude/rules/*.md
+      # and .cursor/rules/* to docs_only, and docs_only skips the critical Pest step, so an
+      # instructions-only pull request could delete a critical global rule and still go green.
+      # SQLite in memory (phpunit.xml); no database service is needed.
+      - name: Provision the CI environment file
+        shell: bash
+        run: |
+          printf '' > .env
+          echo "ci_environment_file=provisioned bytes=$(wc -c < .env) configuration_source=phpunit-xml"
+
+      - name: AI instruction system contract
+        shell: bash
+        env:
+          APP_KEY: base64:dGVzdGluZ2tleXRlc3RpbmdrZXl0ZXN0aW5na2V5MTI=
+        run: |
+          php artisan test tests/Feature/Foundation/DevflowAiInstructionSystemTest.php 2>&1 | tee storage/ci-evidence/nsf-r012-ai-instructions.log
+
       - name: Write NSF-R012 evidence summary
         run: |
           mkdir -p storage/ci-evidence
