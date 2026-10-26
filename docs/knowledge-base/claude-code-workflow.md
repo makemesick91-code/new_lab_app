@@ -1,6 +1,6 @@
 ---
 kb_status: current
-kb_verified_against: 572a32a9
+kb_verified_against: 53d76643
 kb_updated: 2026-10-26
 ---
 
@@ -10,12 +10,25 @@ Kembali ke [00-INDEX](../00-INDEX.md).
 
 ## Mekanisme
 
-Ada dua titik masuk, keduanya native Claude Code, tanpa MCP server tambahan:
+Sejak DEV-AI-CLAUDE-MEMORY-OPTIMIZATION-1 (2026-10-26) instruksi AI terdiri dari empat lapis,
+semuanya native Claude Code, tanpa MCP server tambahan:
 
-1. **Pointer di `CLAUDE.md`**: bagian singkat "Developer Knowledge Base" di bagian atas
-   `CLAUDE.md` menunjuk ke `docs/00-INDEX.md` dan aturan pemakaiannya.
-2. **Skill proyek `knowledge-base`** di `.claude/skills/knowledge-base/SKILL.md`: berisi prosedur
-   lengkap. Skill ini dimuat hanya saat dipakai.
+| Lapis | Lokasi | Kapan dimuat |
+|---|---|---|
+| Aturan global kritis (CG-01…CG-24) dan peta otoritas | `CLAUDE.md` (±11 KB) | Setiap sesi |
+| Aturan domain, satu berkas per domain, berisi invariant + indeks rule kanonik | `.claude/rules/<domain>.md` (frontmatter `paths`) | Hanya saat Claude membuka berkas yang cocok dengan `paths` |
+| Prosedur berulang (`knowledge-base`, `sprint-doc-writer`, `limit-saver`, …) | `.claude/skills/*/SKILL.md` | Deskripsi saja di awal sesi; isi saat dipanggil |
+| Catatan sprint lama `CLAUDE.md`, verbatim | `docs/sprints/claude-md-archive/` ([indeks](../sprints/claude-md-archive/README.md)) | Tidak pernah otomatis; cari dengan `grep` |
+
+Titik masuk knowledge base tetap dua: bagian "Where knowledge lives" di `CLAUDE.md`, yang
+menunjuk ke `docs/00-INDEX.md`, dan **skill proyek `knowledge-base`** yang berisi prosedur
+lengkap.
+
+**Hasil terukur.** Sesi headless baru yang hanya menjawab "OK" (`--tools ""`, model default
+`opus[1m]`) membuat **659.317 token input** cache dengan biaya **US$6,59** sebelum pekerjaan
+apa pun, saat `CLAUDE.md` masih 1,56 MB. Model dengan konteks 200K bahkan tidak dapat
+membuka repositori ini ("Prompt is too long … ~470.423 tokens"). Angka sesudah optimasi
+tercatat di `docs/sprints/dev-ai-claude-memory-optimization-1.md`.
 
 ### Mengapa tidak memakai `@import`
 
@@ -29,8 +42,12 @@ Fakta dari dokumentasi resmi Claude Code (diperiksa 2026-10-25):
 | Disarankan `CLAUDE.md` di bawah 200 baris; berkas lebih dari 4 MiB dilewati seluruhnya | [memory](https://code.claude.com/docs/en/memory.md) |
 
 Karena itu indeks ini **sengaja tidak di-`@import`**. Mengimpor indeks ke setiap sesi akan
-menambah beban konteks pada `CLAUDE.md` yang sudah berukuran 1,56 MB, padahal sebagian besar
-tugas hanya membutuhkan satu atau dua dokumen.
+menambah beban konteks di setiap sesi, padahal sebagian besar tugas hanya membutuhkan satu
+atau dua dokumen. Untuk aturan domain dipakai `.claude/rules/` dengan frontmatter `paths`:
+aturan tanpa `paths` dimuat di setiap sesi, sedangkan aturan dengan `paths` dimuat saat Claude
+membuka berkas yang cocok. Berkas aturan yang dimuat sesuai kebutuhan dipotong setelah
+40.000 karakter pada sesi berkonteks 200K, sehingga setiap berkas aturan dijaga di bawah
+30.000 karakter (diuji oleh `DevflowAiInstructionSystemTest`).
 
 ## Prosedur (ringkas)
 
@@ -54,6 +71,8 @@ tugas hanya membutuhkan satu atau dua dokumen.
 | Membaca indeks lalu dokumen tertaut secara selektif | Membaca seluruh `docs/`, `docs/sprints/`, atau `.cursor/rules/` |
 | Mencari dengan `grep` untuk istilah tertentu | Membaca `DaengtisiaMS_ChatGPT_Master_Knowledge_Compact.md` utuh (snapshot, 13 modul hilang) |
 | Membaca bagian dokumen yang relevan saja | Membaca ulang `CLAUDE.md`; berkas ini sudah dimuat otomatis |
+| Mencari catatan sprint lama dengan `grep` di arsip | Membaca seluruh berkas `docs/sprints/claude-md-archive/` |
+| Mencatat penutupan sprint di `docs/sprints/` (skill `sprint-doc-writer`) | Menambahkan catatan sprint ke `CLAUDE.md` |
 | Memakai subagent untuk penelusuran luas | Membuka puluhan dokumen sprint satu per satu di konteks utama |
 
 ## Interaksi dengan alat yang sudah ada
@@ -90,7 +109,7 @@ isolation, dan aturan akses RME, **tanpa menyebut skill**.
 | Klaim diverifikasi ke kode | Ya, dengan sitasi `file:baris`; klaim yang tidak diverifikasi dipisahkan |
 | Perubahan berkas | Tidak ada (0 tool penulis dipanggil) |
 | Drift dilaporkan | Sebagai usulan. Usulan tersebut (dok. 07 dari `SNAPSHOT` ke `STALE`) diukur ulang lalu diterapkan di [doc-status-registry](doc-status-registry.md) |
-| Biaya | Sekitar US$13 untuk 26 turn. Sebagian besar berasal dari `CLAUDE.md` (~1,56 MB) yang dimuat di setiap sesi. Lihat pekerjaan lanjutan `DEV-AI-CLAUDE-MEMORY-OPTIMIZATION-1` |
+| Biaya | Sekitar US$13 untuk 26 turn. Sebagian besar berasal dari `CLAUDE.md` (~1,56 MB) yang dimuat di setiap sesi. Ditangani oleh `DEV-AI-CLAUDE-MEMORY-OPTIMIZATION-1` (lihat **Mekanisme**) |
 
 **Skill dimuat dari direktori kerja sesi.** Sesi yang dimulai di checkout yang belum memuat
 `.claude/skills/knowledge-base/` (misalnya checkout utama sebelum PR ini di-merge) tidak akan

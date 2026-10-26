@@ -1,7 +1,7 @@
 ---
 kb_status: current
-kb_verified_against: 572a32a9
-kb_updated: 2026-10-25
+kb_verified_against: 53d76643
+kb_updated: 2026-10-26
 ---
 
 # Konvensi Dokumentasi
@@ -130,12 +130,16 @@ Koreksi dicatat di dokumen yang lebih baru beserta rujukan ke dokumen lama.
 Validasi tautan sebelum commit: setiap tautan relatif di berkas yang diubah harus menunjuk ke
 berkas yang benar-benar ada. Repo ini belum memiliki gate CI untuk tautan dokumentasi.
 
+## Usulan yang sudah diadopsi
+
+- **Pertumbuhan `CLAUDE.md`** (diadopsi 2026-10-26, DEV-AI-CLAUDE-MEMORY-OPTIMIZATION-1):
+  catatan penutupan sprint **tidak lagi** ditambahkan ke `CLAUDE.md`. Catatan lengkap ditulis
+  di `docs/sprints/<sprint-id>.md` (skill `sprint-doc-writer`), rule durable di
+  `.cursor/rules/NNN-*.mdc` ditambah satu baris di `.claude/rules/<domain>.md`. Rilisnya dicatat oleh GO tag;
+  [release-history](release-history.md) menurunkan riwayat dari tag, jadi tidak perlu ditambah baris. Ke-240 catatan lama ada verbatim di
+  [arsip](../sprints/claude-md-archive/README.md). Test yang dulu memeriksa teks bukti di
+  `CLAUDE.md` kini membaca `CLAUDE.md` **dan** arsipnya (`aiProjectMemory()` di `tests/Pest.php`).
+
 ## Usulan terbuka (belum diadopsi)
 
-- **Pertumbuhan `CLAUDE.md`**: catatan penutupan sprint saat ini ditambahkan ke `CLAUDE.md`
-  (sekitar 10 KB/hari). Salah satu opsinya adalah menyimpan catatan lengkap di `docs/sprints/`,
-  sementara `CLAUDE.md` cukup memuat aturan aktif dan satu baris rujukan per sprint.
-  Perhatikan bahwa beberapa test (misalnya `Ent1EnterpriseArchitectureBaselineLockTest`)
-  memeriksa bahwa `CLAUDE.md` *memuat* teks bukti sprint tertentu. Ini keputusan owner;
-  lihat risikonya di [doc-status-registry](doc-status-registry.md).
 - **`AGENTS.md` dan `README.md`** masih memakai nama "ADLMS" dan perlu diselaraskan.

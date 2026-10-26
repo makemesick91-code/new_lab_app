@@ -52,7 +52,7 @@ it('keeps the ENT-16 governance docs and runbook free of release-evidence forbid
 it('references ENT-16 closure governance from durable docs, cursor rules and CLAUDE memory', function () {
     $freeze = file_get_contents(base_path('docs/architecture/enterprise-foundation-freeze-rules.md'));
     $cursor = file_get_contents(base_path('.cursor/rules/65-enterprise-foundation-closure-go-no-go.mdc'));
-    $claude = file_get_contents(base_path('CLAUDE.md'));
+    $claude = aiProjectMemory();
 
     expect($freeze)->toContain('enterprise-foundation-closure-go-no-go.md')
         ->and($freeze)->toContain('foundation:enterprise-closure-check')

@@ -72,7 +72,7 @@ it('keeps the ENT-5 governance docs free of release-evidence forbidden literals'
 it('references ENT-5 governance from durable docs and cursor rules', function () {
     $freeze = file_get_contents(base_path('docs/architecture/enterprise-foundation-freeze-rules.md'));
     $cursor = file_get_contents(base_path('.cursor/rules/54-queue-retry-failed-job-governance.mdc'));
-    $claude = file_get_contents(base_path('CLAUDE.md'));
+    $claude = aiProjectMemory();
 
     expect($freeze)->toContain('queue-retry-failed-job-governance.md')
         ->and($freeze)->toContain('queue-worker-operations-runbook.md')

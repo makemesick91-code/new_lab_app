@@ -1,7 +1,7 @@
 ---
 kb_status: current
-kb_verified_against: 572a32a9
-kb_updated: 2026-10-25
+kb_verified_against: 53d76643
+kb_updated: 2026-10-26
 ---
 
 # DaengtisiaMS — Indeks Knowledge Base Developer & AI
@@ -29,15 +29,16 @@ relatif biasa, sehingga tetap berfungsi di GitHub, VS Code, dan saat diunggah ke
 | Prioritas | Sumber | Lokasi |
 |---|---|---|
 | 1 | Kode, migration, route, test, config | `app/`, `database/migrations/`, `routes/`, `tests/`, `config/` (di luar vault) |
-| 2 | Rule durable & ADR yang `Accepted` | `.cursor/rules/*.mdc` (di luar vault), `docs/adr/` (daftar di bawah) |
-| 3 | Catatan penutupan sprint | `CLAUDE.md` (di luar vault), `docs/sprints/` |
+| 2 | Rule durable & ADR yang `Accepted` | `.cursor/rules/*.mdc` (di luar vault), `docs/adr/` (daftar di bawah); aturan global kritis CG-01…CG-24 di `CLAUDE.md` |
+| 3 | Ringkasan aturan per domain (dimuat otomatis sesuai `paths`) | `.claude/rules/*.md` (di luar vault); jika bertentangan, nomor 1 lalu 2 yang menang |
 | 4 | Kontrak desain & runbook | `docs/architecture/`, `docs/runbooks/`, `docs/operations/` |
-| 5 | Ringkasan untuk AI (snapshot) | `docs/ai-knowledge/` |
+| 5 | Catatan penutupan sprint | `docs/sprints/`, termasuk [arsip catatan lama `CLAUDE.md`](sprints/claude-md-archive/README.md) (verbatim, `HISTORICAL`) |
+| 5a | Ringkasan untuk AI (snapshot) | `docs/ai-knowledge/` |
 | 6 | Dokumen era awal (Sprint 3–64) | berkas `docs/*.md` di root folder docs |
 
-Jika dua sumber bertentangan, sumber dengan prioritas lebih tinggi menang. Di dalam
-`CLAUDE.md`, bagian yang lebih baru dan **secara eksplisit** menyatakan `SUPERSEDED`
-mengalahkan bagian yang lebih lama.
+Jika dua sumber bertentangan, sumber dengan prioritas lebih tinggi menang. Di antara catatan
+sprint (termasuk arsip `CLAUDE.md`), bagian yang lebih baru dan **secara eksplisit** menyatakan
+`SUPERSEDED` mengalahkan bagian yang lebih lama.
 
 ## Dokumen knowledge base
 
@@ -179,8 +180,9 @@ berkas di luar folder vault.
 
 | Path | Isi |
 |---|---|
-| `CLAUDE.md` | Instruksi proyek dan catatan penutupan sprint (append-only, dimuat setiap sesi Claude Code) |
-| `.cursor/rules/*.mdc` | 194 rule durable (sebagian besar adalah mirror rule sprint) |
+| `CLAUDE.md` | Aturan global kritis CG-01…CG-24 dan peta otoritas (±11 KB, dimuat setiap sesi Claude Code). Sejak 2026-10-26 tidak lagi memuat catatan sprint; catatan lama ada di [arsip](sprints/claude-md-archive/README.md) |
+| `.claude/rules/*.md` | 16 berkas aturan domain dengan frontmatter `paths`; dimuat hanya saat Claude membuka berkas yang cocok |
+| `.cursor/rules/*.mdc` | 195 rule durable (sebagian besar adalah mirror rule sprint) |
 | `.claude/skills/*/SKILL.md` | Skill proyek Claude Code, termasuk `knowledge-base` |
 | `AGENTS.md` | Instruksi agen Codex (masih memakai nama lama "ADLMS"; lihat registry) |
 | `app/Modules/` | 41 modul domain (kode) |

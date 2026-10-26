@@ -53,7 +53,7 @@ it('keeps the ENT-14 governance docs free of release-evidence forbidden literals
 it('references ENT-14 governance from durable docs cursor rules and CLAUDE memory', function () {
     $freeze = file_get_contents(base_path('docs/architecture/enterprise-foundation-freeze-rules.md'));
     $cursor = file_get_contents(base_path('.cursor/rules/63-load-test-scale-projection.mdc'));
-    $claude = file_get_contents(base_path('CLAUDE.md'));
+    $claude = aiProjectMemory();
 
     expect($freeze)->toContain('load-test-scale-projection-governance.md')
         ->and($freeze)->toContain('foundation:load-test-scale-projection-check')

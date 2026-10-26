@@ -52,7 +52,7 @@ it('keeps the ENT-13 governance docs free of release-evidence forbidden literals
 it('references ENT-13 governance from durable docs cursor rules and CLAUDE memory', function () {
     $freeze = file_get_contents(base_path('docs/architecture/enterprise-foundation-freeze-rules.md'));
     $cursor = file_get_contents(base_path('.cursor/rules/62-load-test-5-cabang-baseline.mdc'));
-    $claude = file_get_contents(base_path('CLAUDE.md'));
+    $claude = aiProjectMemory();
 
     expect($freeze)->toContain('load-test-5-cabang-baseline-governance.md')
         ->and($freeze)->toContain('foundation:load-test-baseline-check')

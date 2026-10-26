@@ -2116,3 +2116,36 @@ function ktpPilotOperator(?Branch $branch = null, array $scope = []): User
 
     return $user;
 }
+
+/*
+|--------------------------------------------------------------------------
+| DEV-AI-CLAUDE-MEMORY-OPTIMIZATION-1 — the project's AI memory
+|--------------------------------------------------------------------------
+|
+| CLAUDE.md used to carry every sprint closure record (1.56 MB, loaded into
+| every Claude Code session). The records now live verbatim in
+| docs/sprints/claude-md-archive/, hashed by its manifest.json. A test that
+| pins "this sprint is recorded in the AI memory" reads CLAUDE.md AND that
+| archive: moving a record out of the always-loaded file must not break the
+| evidence, while deleting it from the archive must.
+*/
+function aiProjectMemory(): string
+{
+    // Only the numbered record files. The archive's README.md indexes every
+    // heading, so including it would let an evidence assertion pass on the
+    // index alone after the record itself had been deleted.
+    $files = glob(base_path('docs/sprints/claude-md-archive/[0-9][0-9]-*.md')) ?: [];
+
+    if ($files === []) {
+        throw new RuntimeException('The CLAUDE.md archive (docs/sprints/claude-md-archive/*.md) is missing.');
+    }
+
+    sort($files);
+    $parts = [(string) file_get_contents(base_path('CLAUDE.md'))];
+
+    foreach ($files as $file) {
+        $parts[] = (string) file_get_contents($file);
+    }
+
+    return implode("\n", $parts);
+}

@@ -1,6 +1,6 @@
 ---
 kb_status: current
-kb_verified_against: 572a32a9
+kb_verified_against: 53d76643
 kb_updated: 2026-10-26
 ---
 
@@ -36,6 +36,7 @@ Dokumen knowledge base yang baru memakai frontmatter `kb_status`, `kb_verified_a
 | `docs/runbooks/` | `UNVERIFIED` | Operasional; dipindai `ProductionShellCommandGuardTest` |
 | `docs/operations/` | `HISTORICAL` atau `UNVERIFIED` | Bukti dan SOP per tanggal; periksa tanggal pada nama berkas |
 | `docs/sprints/` | `HISTORICAL` | Catatan per sprint; sprint yang lebih baru bisa men-supersede |
+| `docs/sprints/claude-md-archive/` | `HISTORICAL` (terkunci) | 240 catatan lama `CLAUDE.md`, verbatim; di-hash oleh `manifest.json` dan diuji `DevflowAiInstructionSystemTest`. Jangan diedit |
 | `docs/sprint_*.md`, `docs/hotfix_*.md` | `HISTORICAL` | Era Sprint 3–64 |
 | `docs/graphify_sprint_*.md` (26 berkas) | `HISTORICAL` | Catatan pembaruan graf; terbaru 2026-06-14 |
 | `docs/ai-knowledge/` | `SNAPSHOT` / `STALE` | Lihat tabel per berkas di bawah |
@@ -62,8 +63,9 @@ Di luar vault:
 
 | Path | Status | Bukti |
 |---|---|---|
-| `CLAUDE.md` | `CURRENT` (append-only) | Diperbarui setiap sprint. 3.865 baris / 1,56 MB per 2026-10-25 (lihat risiko di bawah) |
-| `.cursor/rules/*.mdc` | `CURRENT` | 194 rule; prefiks nomor bertabrakan (13 berkas berprefiks `92-`, 6 berprefiks `100-`) |
+| `CLAUDE.md` | `CURRENT` | Aturan global kritis CG-01…CG-24 (±11 KB) sejak 2026-10-26. Tidak lagi append-only: catatan sprint ditulis di `docs/sprints/`. Ukuran dijaga test |
+| `.claude/rules/*.md` | `CURRENT` | 16 berkas aturan domain berlingkup `paths`; meringkas invariant dan mengindeks `.cursor/rules` kanonik. Jika bertentangan, kode lalu rule kanonik yang menang |
+| `.cursor/rules/*.mdc` | `CURRENT` | 195 rule; prefiks nomor bertabrakan (13 berkas berprefiks `92-`, 6 berprefiks `100-`) |
 | `AGENTS.md` | `STALE` | Memakai nama lama "ADLMS" (3×), tidak menyebut "Daengtisia", merujuk `claude-mem` |
 | `README.md` | `STALE` | Berjudul "ADLMS Cursor Package"; 29 baris; terakhir diubah 2026-06-06 |
 | `.claude/settings.json` | `STALE` (sebagian) | Hook graphify berlaku; daftar izin merujuk path Windows/XAMPP, sementara mesin dev memakai Ubuntu |
@@ -103,7 +105,7 @@ Dicatat dan **tidak** diperbaiki dalam sprint ini. Perbaikan apa pun memerlukan 
 |---|---|---|
 | D1 | Keputusan tersebar di `docs/adr/` (ADR bernomor) dan `docs/decisions/` (register owner) | Keduanya dirujuk test dengan path persis, jadi **jangan dipindahkan** |
 | D2 | Dokumen sprint ada di `docs/sprint_*.md` (lama, 156) dan `docs/sprints/` (baru, 311) | Telusuri keduanya untuk sejarah suatu topik |
-| D3 | Ringkasan AI ada di tiga tempat: `docs/ai-knowledge/`, `.cursor/memory/`, dan bagian-bagian `CLAUDE.md` | `CLAUDE.md` dan `.cursor/rules` paling baru |
+| D3 | Ringkasan AI ada di beberapa tempat: `docs/ai-knowledge/`, `.cursor/memory/`, `.claude/rules/`, dan arsip `CLAUDE.md` | `.cursor/rules` dan `.claude/rules/` paling baru; arsip adalah sejarah |
 | D4 | Tautan rusak (sudah ada sebelumnya): `docs/ai-knowledge/README.md` menautkan `../.cursor/snippets/...`; seharusnya `../../.cursor/snippets/...` | Satu-satunya tautan relatif rusak dari 166 tautan per 2026-10-25 |
 | D5 | Prefiks nomor `.cursor/rules` bertabrakan (`92-` ×13, `100-` ×6, `97-`/`93-`/`101-`/`121-`/`143-`/`172-` ×2) | Rule dimuat berdasarkan nama berkas; tabrakan hanya membingungkan rujukan "rule NN" |
 | D6 | 723 dari 782 dokumen `docs/*.md` tidak memiliki tautan masuk | Hanya bisa ditemukan lewat pencarian; indeks ini mengurangi masalah tersebut |
@@ -124,8 +126,13 @@ Dokumentasi resmi Claude Code menyarankan `CLAUDE.md` **di bawah 200 baris** dan
 
 Laju pertumbuhan 30 hari terakhir sekitar 10 KB/hari. Pada laju itu, batas 4 MiB tercapai
 dalam kira-kira 255 hari. Setelah itu Claude Code **tidak akan memuat aturan proyek sama
-sekali**. Penataan ulang `CLAUDE.md` adalah keputusan owner dan **tidak** dilakukan di sini.
-Usulannya ada di [conventions](conventions.md).
+sekali**.
+
+**Status 2026-10-26: diselesaikan oleh DEV-AI-CLAUDE-MEMORY-OPTIMIZATION-1** atas keputusan owner.
+Sesi baru yang hanya menjawab "OK" membuat 659.317 token input (US$6,59) sebelum optimasi.
+Ke-240 catatan dipindah verbatim ke [arsip](../sprints/claude-md-archive/README.md), `CLAUDE.md`
+diganti aturan global kritis, dan aturan domain dimuat sesuai kebutuhan dari `.claude/rules/`.
+`DevflowAiInstructionSystemTest` menjaga anggaran ukuran dan kelengkapan arsip.
 
 ## Audit konten sensitif (2026-10-25)
 

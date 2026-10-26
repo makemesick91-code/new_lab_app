@@ -48,7 +48,7 @@ it('keeps the ENT-10 governance docs free of release-evidence forbidden literals
 it('references ENT-10 governance from durable docs cursor rules and CLAUDE memory', function () {
     $freeze = file_get_contents(base_path('docs/architecture/enterprise-foundation-freeze-rules.md'));
     $cursor = file_get_contents(base_path('.cursor/rules/59-cicd-enterprise-gate.mdc'));
-    $claude = file_get_contents(base_path('CLAUDE.md'));
+    $claude = aiProjectMemory();
 
     expect($freeze)->toContain('cicd-enterprise-gate-governance.md')
         ->and($freeze)->toContain('foundation:cicd-enterprise-gate-check')

@@ -69,7 +69,7 @@ it('publishes rule 194 and marks the superseded tariff mandate in rules 188, 190
         expect((string) file_get_contents(base_path('.cursor/rules/'.$file)))->toContain($marker);
     }
 
-    expect((string) file_get_contents(base_path('CLAUDE.md')))->toContain('REVISION-RME-MANUAL-PRICING-AUTHORITY-1');
+    expect(aiProjectMemory())->toContain('REVISION-RME-MANUAL-PRICING-AUTHORITY-1');
 });
 
 // REVISED by rule 195 (ACTIVATION-RME-INVOICE-CORRECTION-PREPAYMENT-2): the

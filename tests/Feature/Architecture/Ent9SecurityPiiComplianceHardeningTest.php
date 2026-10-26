@@ -49,7 +49,7 @@ it('keeps the ENT-9 governance docs free of release-evidence forbidden literals'
 it('references ENT-9 governance from durable docs cursor rules and CLAUDE memory', function () {
     $freeze = file_get_contents(base_path('docs/architecture/enterprise-foundation-freeze-rules.md'));
     $cursor = file_get_contents(base_path('.cursor/rules/58-security-pii-compliance-hardening.mdc'));
-    $claude = file_get_contents(base_path('CLAUDE.md'));
+    $claude = aiProjectMemory();
 
     expect($freeze)->toContain('security-pii-compliance-hardening-governance.md')
         ->and($freeze)->toContain('foundation:security-compliance-check')

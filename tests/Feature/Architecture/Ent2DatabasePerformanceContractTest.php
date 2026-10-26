@@ -91,8 +91,8 @@ it('ships the cursor mirror rule for the database performance contract', functio
         ->and($doc)->toContain('DBPERF-R001..DBPERF-R014');
 });
 
-it('documents the ENT-2 sprint evidence in CLAUDE.md', function () {
-    $doc = file_get_contents(base_path('CLAUDE.md'));
+it('documents the ENT-2 sprint evidence in the project AI memory (CLAUDE.md or its archive)', function () {
+    $doc = aiProjectMemory();
 
     expect($doc)->toContain('ENT-2 — Database Performance Contract')
         ->and($doc)->toContain('database-performance-contract.md');

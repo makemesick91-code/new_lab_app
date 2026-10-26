@@ -53,7 +53,7 @@ it('keeps the ENT-12 governance docs free of release-evidence forbidden literals
 it('references ENT-12 governance from durable docs cursor rules and CLAUDE memory', function () {
     $freeze = file_get_contents(base_path('docs/architecture/enterprise-foundation-freeze-rules.md'));
     $cursor = file_get_contents(base_path('.cursor/rules/61-backup-disaster-recovery-automation.mdc'));
-    $claude = file_get_contents(base_path('CLAUDE.md'));
+    $claude = aiProjectMemory();
 
     expect($freeze)->toContain('backup-disaster-recovery-automation-governance.md')
         ->and($freeze)->toContain('foundation:backup-dr-check')
