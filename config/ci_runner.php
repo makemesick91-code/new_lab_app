@@ -1223,6 +1223,15 @@ return [
         // pays for 659K tokens again. Selected by the `Devflow` token;
         // declared so a rename cannot drop it.
         'tests/Feature/Foundation/DevflowAiInstructionSystemTest.php',
+
+        // CICD-COMPOSER-CACHE-RELEASE-GATES-1 — every GitHub-hosted job that
+        // runs `composer install` restores Composer's download cache first, keyed
+        // on composer.lock; nothing caches vendor/, and the self-hosted runner
+        // keeps its own persistent cache. A job added without the cache is not
+        // an error anywhere else, only a slower run that also fails whenever
+        // Packagist is unreachable. Selected by the `Cicd` token; declared so a
+        // rename cannot drop it.
+        'tests/Feature/Cicd/ComposerCacheCoverageTest.php',
     ],
 
     /*
