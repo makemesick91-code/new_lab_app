@@ -1,28 +1,24 @@
-# CICD-GOVERNANCE-EVALUATION-MEMO-1 — one governance evaluation computes each enterprise
-# gate once. The ENT-5..ENT-16 gates re-verify their predecessors and each received fresh
-# predecessor instances, so the chain doubled at every level: one
-# architecture:foundation-governance-summary built ENT-5 2,080 times and took ~116 s, and
-# every test rendering the summary paid it again (CI critical gate 9,288 s).
-# Fix: App\Support\Foundation\GovernanceEvaluation memoizes each gate's collect() for the
-# lifetime of the OUTERMOST evaluation only; nothing survives it. Kill switch
-# foundation_governance.evaluation_memo (source-controlled, not read from the environment).
-# No gate rule, decision, threshold or required check changes. No migration, no route,
-# no permission.
+# CICD-COMPOSER-CACHE-RELEASE-GATES-1 — the three GitHub-hosted jobs that installed Composer
+# dependencies without the download cache (NSF-9, NSF-10, Full Suite) now restore it, keyed
+# on composer.lock, exactly as the four other hosted jobs already did. Post-audit roadmap
+# priority 4; CICD-OPTIMIZATION-PLAN item 6. A structural test keeps every hosted install
+# cached, keeps vendor/ out of every cache and keeps actions/cache off the self-hosted runner.
+# No gate, filter, required check or test selection changes. No application code.
 # Carried forward: LEGACY-RME-PROGRAM-CLOSURE-1 stays CLOSED and inherited.
-id: CICD-GOVERNANCE-EVALUATION-MEMO-1
-type: FOUNDATION_SPRINT
-module: Foundation
-title: "Governance evaluation computes each enterprise gate once"
+id: CICD-COMPOSER-CACHE-RELEASE-GATES-1
+type: INFRA_RELEASE
+module: Cicd
+title: "Composer download cache in every GitHub-hosted job that installs dependencies"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
-runtime_change: true
+runtime_change: false
 schema_change: false
 frontend_change: false
 security_impact: false
 branch_isolation_impact: false
 ledger_impact: false
-deploy_required: true
+deploy_required: false
 browser_required: false
-test_profiles: [focused, cross_module_regression]
-go_tag: cicd-governance-evaluation-memo-1-go
+test_profiles: [focused]
+go_tag: cicd-composer-cache-release-gates-1-go
 inherits_parent_go: security-f8c-env-copy-backup-classification-1-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
