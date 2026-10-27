@@ -48,7 +48,9 @@ preview snapshots, 0 merge cases, 0 field resolutions; 1 pending device enrolmen
 
 ## 3. Change
 
-- `config/app_key_rotation.php` — the four encrypted columns, plus the inspection chunk size.
+- `config/app_key_rotation.php` — the four encrypted columns, the inspection chunk size, and
+  `current_key_only_consumers`: the three files that key an HMAC on the current key, each with
+  its rotation behaviour.
 - `App\Support\Security\AppKeyReencryptionService` — classifies every value as `current`,
   `previous` or `undecryptable`, and rewrites `previous` values one row per transaction
   under a row lock, verifying each rewrite against the current key alone. Writes go through
@@ -75,6 +77,18 @@ report, rewrite and verify.
 6. classification and rewrite across several chunks;
 7. no key, plaintext or ciphertext prefix appears in JSON or text output;
 8. a payment form signed under the previous key is refused after rotation.
+
+`tests/Feature/Security/AppKeyReencryptionCurrentKeyConsumersTest.php` (4):
+
+1. every file under `app/` that reads the application key is registered, and every registered
+   file exists and states its rotation behaviour;
+2. a doctor login ticket issued under key A is refused after rotation to B (A still a previous
+   key): `unknown_ticket`, a validation error, not a 500, and the ticket stays unspent;
+3. a ticket issued after rotation resolves;
+4. a pairing code issued under A no longer resolves after rotation; one issued after does.
+
+Mutations, each restored by copy: an unregistered file reading the key → 1 fails; the ticket
+HMAC no longer depending on the key → 2 fail; the same for the pairing code → 2 fail.
 
 Green on SQLite and on PostgreSQL 16 (16.15). Declared in
 `config/ci_runner.php` `critical_gate_mandatory_suites`, selected by the `AppKeyReencryption`
@@ -106,6 +120,8 @@ in any log. The fixture file and the container were destroyed after the rehearsa
 The rotation itself is a supervised operation in a quiet window, after this change is
 deployed:
 
+0. SECURITY-F8B deployed: the rotation rebuilds the configuration cache, which carries the key in
+   plain text, and that cache must not be readable by another local account;
 1. preflight: `security:app-key-reencrypt --json` reports 0 undecryptable and 0 previous;
    `session.encrypt` recorded; no in-flight payment form, login or pairing;
 2. backup taken and verified;
@@ -124,7 +140,8 @@ retired.
 
 - Dumps taken before rotation decrypt only with the old key; restoring one needs the old key
   configured as a previous key and the command run with `--apply`.
-- Old environment copies on the host carry the old key until they are rotated or removed
-  under a retention decision.
+- 21 environment copies on the host carry the old key until they are removed under a retention
+  decision: 10 in the application root, 1 under `storage/backups`, 10 `.bak` files in the private
+  backup tree (measured 2026-10-27). None is readable by another local account.
 - The three HMAC users fail closed: an in-flight login, pairing or payment form at the moment
   of rotation has to be redone.

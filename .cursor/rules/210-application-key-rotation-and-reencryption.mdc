@@ -59,6 +59,10 @@ before the old one can be removed.
    an in-flight login retries, an unexpired pairing code must be re-issued, and an
    open payment form is refused and must be reopened — a resubmission can never
    be accepted as a second payment. Rotate in a window where none is in flight.
+   These files are registered in `config/app_key_rotation.php`
+   (`current_key_only_consumers`) with their rotation behaviour; a test fails when
+   another file under `app/` reads the application key directly, and the ticket
+   and pairing-code refusals are exercised with a real key rotation.
 8. **Framework state that follows previous keys.** Encrypted cookies and signed
    URLs are verified against the current and every previous key, and the response
    re-encrypts cookies with the current key, so active sessions survive the

@@ -689,6 +689,14 @@ return [
          * Selected by the `AppKeyReencryption` token in both critical variants.
          */
         'tests/Feature/Security/AppKeyReencryptionTest.php',
+        /*
+         * SECURITY-G7B-APP-KEY-REENCRYPTION-1 — every file that keys an HMAC on
+         * the current application key is registered with its rotation
+         * behaviour, and the doctor login ticket and device pairing code issued
+         * under a previous key are refused (not honoured, not a 500) after
+         * rotation. Selected by the `AppKeyReencryption` token in both variants.
+         */
+        'tests/Feature/Security/AppKeyReencryptionCurrentKeyConsumersTest.php',
 
         // FEATURE-DOCTOR-TRUSTED-ANDROID-DEVICE-LOCK-1 Phase 1 — a Doctor is
         // confined to the ACTIVE patients of the treatment room they are online

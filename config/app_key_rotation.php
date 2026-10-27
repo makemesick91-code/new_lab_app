@@ -31,4 +31,18 @@ return [
     // transaction, under a row lock.
     'chunk_size' => 200,
 
+    // Code that computes hash_hmac(..., config('app.key')) — the CURRENT key
+    // only. APP_PREVIOUS_KEYS keeps old ciphertext readable; it does nothing for
+    // these values. Anything they issued before a rotation stops verifying the
+    // moment the key changes, so each must stay short-lived and fail closed
+    // (refused and re-issued, never a 500, never silently accepted).
+    //
+    // tests/Feature/Security/AppKeyReencryptionCurrentKeyConsumersTest.php fails
+    // when another file under app/ starts reading the application key directly.
+    'current_key_only_consumers' => [
+        'app/Modules/DoctorDevice/Services/DoctorAppLoginService.php' => 'doctor login ticket (60 s) and challenge (120 s): an in-flight login is refused and retried',
+        'app/Modules/DoctorDevice/Services/DoctorDeviceEnrollmentService.php' => 'device pairing code (15 min): an unexpired code is refused and re-issued',
+        'app/Modules/RmeInvoice/Support/RmePaymentIntent.php' => 'payment form intent: a form opened before rotation is refused on submit and reopened, never paid twice',
+    ],
+
 ];
