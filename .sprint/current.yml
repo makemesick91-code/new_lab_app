@@ -1,18 +1,17 @@
-# SECURITY-F8C-ENV-COPY-BACKUP-CLASSIFICATION-1 — environment copies named with
-# "backup" anywhere are classified as backups. scripts/harden-secret-permissions.sh
-# recognised only prefix forms (.env.bak*, .env.backup*, ...), so a copy named
-# after the occasion first (.env.wave1-backup-20260913-100607) was classified as a
-# runtime file and reset to 0640 on every deploy, giving the runtime group read
-# access to a stale copy of every secret. Fix: one pattern in the classifier;
-# gate the INFRA-SEC-ENV-1 suite, which matched no critical-gate token before.
-# No migration, no route, no permission, no application code change.
+# SECURITY-F4A1-CLINIC-CALENDAR-CLINICAL-RECORDS-1 — part of SECURITY-F4A (audit item F-4a), split by module.
+# The application timezone is UTC; the clinic runs on Asia/Makassar (UTC+8), so a UTC
+# "today" names the previous clinic day between 00:00 and 08:00 WITA. Sites here:
+# RmePrescriptionService::buildDefaults() (prescription date), PatientMergeCaseService::validDate() (date of birth), ClinicalDiagnosisService deprecation (effective_to), MedicalRecordService::finalizedTodayCount() with MedicalRecordRepository::countFinalizedTodayByBranches(date) → countFinalizedInRangeByBranches(startUtc, endUtc) (one caller).
+# The original combined fix touched 7 modules and failed sprint:scope-audit for RUNTIME_FIX
+# (limit 3); it is split rather than reclassified. Siblings: SECURITY-F4A2-CLINIC-CALENDAR-FINANCIAL-DASHBOARDS-1, SECURITY-F4A3-CLINIC-CALENDAR-SATUSEHAT-ADOPTION-1.
+# No migration, no route, no permission; no stored data is rewritten.
 # Carried forward: LEGACY-RME-PROGRAM-CLOSURE-1 stays CLOSED and inherited.
-id: SECURITY-F8C-ENV-COPY-BACKUP-CLASSIFICATION-1
-type: SECURITY_FIX
-module: Deploy
-title: "Environment copies named with backup anywhere are 0600; the secret-permission suite runs in the critical gate"
+id: SECURITY-F4A1-CLINIC-CALENDAR-CLINICAL-RECORDS-1
+type: RUNTIME_FIX
+module: MedicalRecord
+title: "Clinical record dates on the clinic calendar: prescription default, merge date of birth, diagnosis deprecation, finalized-today count"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
-runtime_change: false
+runtime_change: true
 schema_change: false
 frontend_change: false
 security_impact: true
@@ -21,6 +20,6 @@ ledger_impact: false
 deploy_required: true
 browser_required: false
 test_profiles: [focused, security_regression]
-go_tag: security-f8c-env-copy-backup-classification-1-go
-inherits_parent_go: security-f8-private-storage-paths-1-go
+go_tag: security-f4a1-clinic-calendar-clinical-records-1-go
+inherits_parent_go: security-f8c-env-copy-backup-classification-1-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1

@@ -7,6 +7,7 @@ use App\Modules\Branch\Services\BranchService;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Prescription\Interfaces\RmePrescriptionRepositoryInterface;
 use App\Modules\Prescription\Models\RmePrescription;
+use App\Support\Clinical\ClinicalClock;
 use App\Support\Storage\ClinicalEvidenceStorage;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -19,6 +20,7 @@ class RmePrescriptionService
         private readonly RmePrescriptionRepositoryInterface $prescriptions,
         private readonly BranchService $branches,
         private readonly PrescriptionCanvasDecoder $canvasDecoder,
+        private readonly ClinicalClock $clock,
     ) {}
 
     public function showDataForVisit(ClinicVisit $clinicVisit): array
@@ -50,7 +52,7 @@ class RmePrescriptionService
 
         return [
             'prescribed_by_name' => $clinicVisit->doctor?->name ?? '',
-            'prescription_date' => now()->toDateString(),
+            'prescription_date' => $this->clock->todayString(),
             'patient_name_snapshot' => $patient?->name ?? '',
             'patient_age_snapshot' => $age !== null ? (string) $age : '',
             'allergy_note' => '',
