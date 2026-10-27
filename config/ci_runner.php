@@ -680,6 +680,32 @@ return [
          * redirect-then-chmod window return silently.
          */
         'tests/Feature/Deploy/PrivateDatabaseDumpCreationTest.php',
+        /*
+         * SECURITY-F8-PRIVATE-STORAGE-PATHS-1 — every private disk and dump
+         * directory is declared in DMS_PRIVATE_PATHS, the deploy merges the
+         * target release's list after the checkout advances, and the real
+         * deploy/rollback normalization never widens a private tree. Private
+         * disks added after the list was written were left world-readable on the
+         * host by every deploy. Selected by the existing
+         * `RuntimeIdentityIsolation` token in both critical-gate variants.
+         */
+        'tests/Feature/Deploy/RuntimeIdentityIsolationPrivatePathsTest.php',
+        /*
+         * SECURITY-F8B-CONFIG-CACHE-PRIVATE-1 — the isolation gate fails when
+         * the declared configuration cache (bootstrap/cache, which holds the
+         * database password and the application key once `config:cache` runs)
+         * is readable by another local account. Selected by the existing
+         * `RuntimeIdentityIsolation` token in both critical-gate variants.
+         */
+        'tests/Feature/Deploy/RuntimeIdentityIsolationTest.php',
+        /*
+         * SECURITY-F8C-ENV-COPY-BACKUP-CLASSIFICATION-1 — every secret-bearing
+         * environment copy is 0600 and the live file 0640 (INFRA-SEC-ENV-1).
+         * This suite matched no critical-gate token before, so the control ran
+         * in no required gate. Selected by the `SecretFilePermissionHardening`
+         * token in both critical-gate variants.
+         */
+        'tests/Feature/Deploy/SecretFilePermissionHardeningTest.php',
 
         // FEATURE-DOCTOR-TRUSTED-ANDROID-DEVICE-LOCK-1 Phase 1 — a Doctor is
         // confined to the ACTIVE patients of the treatment room they are online
