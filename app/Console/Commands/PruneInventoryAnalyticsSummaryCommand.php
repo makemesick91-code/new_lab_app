@@ -2,8 +2,8 @@
 
 namespace App\Console\Commands;
 
+use App\Modules\Inventory\Support\InventoryBusinessCalendar;
 use Illuminate\Console\Command;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
@@ -19,7 +19,7 @@ class PruneInventoryAnalyticsSummaryCommand extends Command
     {
         try {
             $days = $this->resolveRetentionDays();
-            $cutoff = Carbon::today()->subDays($days)->toDateString();
+            $cutoff = app(InventoryBusinessCalendar::class)->today()->subDays($days)->toDateString();
             $dryRun = (bool) $this->option('dry-run');
 
             $dailyCount = DB::table('rpt_inventory_daily_summaries')

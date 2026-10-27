@@ -6,6 +6,7 @@ use App\Modules\Inventory\Interfaces\InventoryAnalyticsRepositoryInterface;
 use App\Modules\Inventory\Interfaces\InventoryBatchRepositoryInterface;
 use App\Modules\Inventory\Interfaces\InventoryMovementRepositoryInterface;
 use App\Modules\Inventory\Models\Product;
+use App\Modules\Inventory\Support\InventoryBusinessCalendar;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 
@@ -57,6 +58,7 @@ class InventoryAnalyticsService
         private readonly InventoryMovementRepositoryInterface $movements,
         private readonly InventoryBatchRepositoryInterface $batches,
         private readonly InventoryAnalyticsRepositoryInterface $analyticsRepository,
+        private readonly InventoryBusinessCalendar $calendar,
     ) {}
 
     /**
@@ -306,7 +308,7 @@ class InventoryAnalyticsService
     {
         $filters = $this->normalizeFilters($filters);
         $deadStockDays = (int) $filters['dead_stock_days'];
-        $cutoffDate = now()->subDays($deadStockDays)->toDateString();
+        $cutoffDate = $this->calendar->today()->subDays($deadStockDays)->toDateString();
 
         $lastOutByProduct = $this->movements
             ->lastOutboundDateByProduct($branchId, $filters['inventory_location_id'] ?? null)
@@ -334,7 +336,7 @@ class InventoryAnalyticsService
                 $currentStock = (float) $product->current_stock;
                 $lastOut = $lastOutByProduct[$product->id]->last_out_date ?? null;
                 $daysSinceLastOut = $lastOut !== null
-                    ? (int) Carbon::parse($lastOut)->startOfDay()->diffInDays(now()->startOfDay())
+                    ? (int) Carbon::parse($lastOut)->startOfDay()->diffInDays($this->calendar->today())
                     : null;
 
                 return $this->productRow($product, [
@@ -548,7 +550,7 @@ class InventoryAnalyticsService
                 $currentStock = (float) $product->current_stock;
                 $lastIn = $lastInByProduct[$product->id]->last_in_date ?? null;
                 $ageDays = $lastIn !== null
-                    ? (int) Carbon::parse($lastIn)->startOfDay()->diffInDays(now()->startOfDay())
+                    ? (int) Carbon::parse($lastIn)->startOfDay()->diffInDays($this->calendar->today())
                     : 0;
                 $bucket = $this->resolveAgeBucket($ageDays);
 
@@ -595,7 +597,7 @@ class InventoryAnalyticsService
             ->map(function ($batch) {
                 $ageAnchor = $batch->age_anchor_date ?? $batch->received_date;
                 $ageDays = $ageAnchor !== null
-                    ? (int) Carbon::parse($ageAnchor)->startOfDay()->diffInDays(now()->startOfDay())
+                    ? (int) Carbon::parse($ageAnchor)->startOfDay()->diffInDays($this->calendar->today())
                     : 0;
                 $bucket = $this->resolveAgeBucket($ageDays);
                 $batchStock = (float) $batch->batch_stock;
@@ -702,8 +704,8 @@ class InventoryAnalyticsService
      */
     private function normalizeFilters(array $filters): array
     {
-        $dateTo = $filters['date_to'] ?? now()->toDateString();
-        $dateFrom = $filters['date_from'] ?? now()->subDays(self::DEFAULT_PERIOD_DAYS)->toDateString();
+        $dateTo = $filters['date_to'] ?? $this->calendar->todayString();
+        $dateFrom = $filters['date_from'] ?? $this->calendar->today()->subDays(self::DEFAULT_PERIOD_DAYS)->toDateString();
 
         return array_merge([
             'date_from' => $dateFrom,

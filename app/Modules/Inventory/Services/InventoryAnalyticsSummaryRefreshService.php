@@ -14,6 +14,7 @@ use App\Modules\Inventory\Models\StockOpname;
 use App\Modules\Inventory\Models\StockOpnameItem;
 use App\Modules\Inventory\Models\StockTransfer;
 use App\Modules\Inventory\Models\Supplier;
+use App\Modules\Inventory\Support\InventoryBusinessCalendar;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
@@ -39,6 +40,10 @@ class InventoryAnalyticsSummaryRefreshService
     private const BUCKET_OLD = 'old';
 
     private const BUCKET_VERY_OLD = 'very_old';
+
+    public function __construct(
+        private readonly InventoryBusinessCalendar $calendar,
+    ) {}
 
     public function refreshDailySummaries(?int $branchId = null, ?string $date = null): void
     {
@@ -381,7 +386,7 @@ class InventoryAnalyticsSummaryRefreshService
     {
         return $date !== null
             ? Carbon::parse($date)->toDateString()
-            : now()->toDateString();
+            : $this->calendar->todayString();
     }
 
     /**

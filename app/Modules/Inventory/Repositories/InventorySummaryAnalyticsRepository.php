@@ -3,6 +3,7 @@
 namespace App\Modules\Inventory\Repositories;
 
 use App\Modules\Inventory\Interfaces\InventoryAnalyticsRepositoryInterface;
+use App\Modules\Inventory\Support\InventoryBusinessCalendar;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -37,6 +38,7 @@ class InventorySummaryAnalyticsRepository implements InventoryAnalyticsRepositor
 
     public function __construct(
         private readonly InventoryAnalyticsRepository $fallback,
+        private readonly InventoryBusinessCalendar $calendar,
     ) {}
 
     public function getInventoryValue(int $branchId): float
@@ -76,7 +78,7 @@ class InventorySummaryAnalyticsRepository implements InventoryAnalyticsRepositor
                 ->count();
         }
 
-        $cutoffDate = now()->subDays($days)->toDateString();
+        $cutoffDate = $this->calendar->today()->subDays($days)->toDateString();
 
         return (int) DB::table('rpt_inventory_product_summaries')
             ->where('branch_id', $branchId)
@@ -273,7 +275,7 @@ class InventorySummaryAnalyticsRepository implements InventoryAnalyticsRepositor
         if ($days === 90) {
             $query->where('ps.is_dead_stock', true);
         } else {
-            $cutoffDate = now()->subDays($days)->toDateString();
+            $cutoffDate = $this->calendar->today()->subDays($days)->toDateString();
             $query->where(function ($builder) use ($cutoffDate) {
                 $builder->whereNull('ps.last_out_date')
                     ->orWhereDate('ps.last_out_date', '<', $cutoffDate);
@@ -295,7 +297,7 @@ class InventorySummaryAnalyticsRepository implements InventoryAnalyticsRepositor
                     ? Carbon::parse($row->last_out_date)->toDateString()
                     : null;
                 $daysSinceLastOut = $lastOut !== null
-                    ? (int) Carbon::parse($lastOut)->startOfDay()->diffInDays(now()->startOfDay())
+                    ? (int) Carbon::parse($lastOut)->startOfDay()->diffInDays($this->calendar->today())
                     : null;
 
                 return [
@@ -379,7 +381,7 @@ class InventorySummaryAnalyticsRepository implements InventoryAnalyticsRepositor
     public function getPurchaseTrend(int $branchId, string $period = 'monthly'): array
     {
         $months = $this->trendMonthKeys();
-        $dateFrom = now()->subMonths(self::TREND_MONTH_COUNT - 1)->startOfMonth()->toDateString();
+        $dateFrom = $this->calendar->today()->subMonths(self::TREND_MONTH_COUNT - 1)->startOfMonth()->toDateString();
         $monthExpression = $this->monthTruncExpression('summary_date');
 
         $rows = DB::table('rpt_procurement_daily_summaries')
@@ -416,7 +418,7 @@ class InventorySummaryAnalyticsRepository implements InventoryAnalyticsRepositor
     public function getConsumptionTrend(int $branchId, string $period = 'monthly'): array
     {
         $months = $this->trendMonthKeys();
-        $dateFrom = now()->subMonths(self::TREND_MONTH_COUNT - 1)->startOfMonth()->toDateString();
+        $dateFrom = $this->calendar->today()->subMonths(self::TREND_MONTH_COUNT - 1)->startOfMonth()->toDateString();
         $monthExpression = $this->monthTruncExpression('summary_date');
 
         $rows = DB::table('rpt_inventory_daily_summaries')
@@ -555,7 +557,7 @@ class InventorySummaryAnalyticsRepository implements InventoryAnalyticsRepositor
         $months = [];
 
         for ($i = self::TREND_MONTH_COUNT - 1; $i >= 0; $i--) {
-            $months[] = now()->subMonths($i)->format('Y-m');
+            $months[] = $this->calendar->today()->subMonths($i)->format('Y-m');
         }
 
         return $months;
