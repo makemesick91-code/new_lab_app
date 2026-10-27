@@ -8,6 +8,7 @@ use App\Modules\Inventory\Enums\InventoryBatchActionType;
 use App\Modules\Inventory\Enums\InventoryBatchDisposalRequestStatus;
 use App\Modules\Inventory\Enums\InventoryBatchDisposalRequestType;
 use App\Modules\Inventory\Models\InventoryBatchDisposalRequest;
+use App\Modules\Inventory\Support\InventoryBusinessCalendar;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
@@ -22,6 +23,7 @@ class InventoryBatchDisposalReportService
     public function __construct(
         private readonly InventoryReportService $reports,
         private readonly BranchContext $branchContext,
+        private readonly InventoryBusinessCalendar $calendar,
     ) {}
 
     /**
@@ -30,8 +32,8 @@ class InventoryBatchDisposalReportService
      */
     public function prepareFilters(array $filters, ?User $user = null): array
     {
-        $filters['date_from'] = (string) ($filters['date_from'] ?? now()->startOfMonth()->toDateString());
-        $filters['date_to'] = (string) ($filters['date_to'] ?? now()->toDateString());
+        $filters['date_from'] = (string) ($filters['date_from'] ?? $this->calendar->today()->startOfMonth()->toDateString());
+        $filters['date_to'] = (string) ($filters['date_to'] ?? $this->calendar->todayString());
 
         $scope = $this->resolveBranchScope($filters, $user);
         if ($scope['selected_branch_id'] !== null) {
@@ -115,8 +117,8 @@ class InventoryBatchDisposalReportService
      */
     public function getDashboardKpis(int $branchId, ?User $user = null): array
     {
-        $monthStart = now()->startOfMonth()->toDateString();
-        $today = now()->toDateString();
+        $monthStart = $this->calendar->today()->startOfMonth()->toDateString();
+        $today = $this->calendar->todayString();
         $filters = [
             'date_from' => $monthStart,
             'date_to' => $today,
@@ -180,7 +182,7 @@ class InventoryBatchDisposalReportService
             'finalized_at',
         ];
 
-        $filename = 'laporan-disposal-adjustment-batch-'.now()->toDateString().'.csv';
+        $filename = 'laporan-disposal-adjustment-batch-'.$this->calendar->todayString().'.csv';
 
         return response()->streamDownload(function () use ($rows, $headers, $capped) {
             $handle = fopen('php://output', 'w');

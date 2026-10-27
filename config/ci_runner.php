@@ -1235,6 +1235,12 @@ return [
         // Selected by the `FoundationGovernance` token; declared so a rename
         // cannot drop it.
         'tests/Feature/Foundation/FoundationGovernanceEvaluationMemoTest.php',
+
+        // SECURITY-F4B3-CLINIC-CALENDAR-INVENTORY-REPORTS-1 (part of SECURITY-F4B, owner decision D15) — the default report periods and report file names
+        // on the clinic calendar (Asia/Makassar). A UTC "today" named the previous clinic day for eight
+        // hours of every day; the screens still render, so the error is silent. Selected by the
+        // `InventoryClinicCalendarBoundary` token in BOTH critical variants; declared so a rename cannot drop it.
+        'tests/Feature/Inventory/InventoryClinicCalendarBoundaryReportsTest.php',
     ],
 
     /*
