@@ -20,5 +20,5 @@ deploy_required: true
 browser_required: true
 test_profiles: [focused]
 go_tag: security-f5-tailwind-js-content-1-go
-inherits_parent_go: security-doctor-webauthn-device-bound-fail-closed-1-go
+inherits_parent_go: security-f8c-env-copy-backup-classification-1-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
