@@ -1,30 +1,25 @@
-# SECURITY-DOCTOR-WEBAUTHN-DEVICE-BOUND-FAIL-CLOSED-1 — two fail-open defects in
-# the WebAuthn device-bound requirement, both reproduced on 3ae7a502 first:
-#   1. config/webauthn.php read `(bool) env('WEBAUTHN_REQUIRE_DEVICE_BOUND', true)`,
-#      so a blank value (or Laravel's empty/(empty)/null/(null)) turned the
-#      requirement OFF; `(bool) config(...)` read a runtime null the same way.
-#   2. Both login services gated on the STORED verdict only; the library reports
-#      a signed BE change with an event and does not refuse (WebAuthn L3 §7.2).
-# Fix: one parser + one reader in WebAuthnDeviceBinding, signed-flag check on
-# both assertion paths, readiness reports provenance and --strict fails on a
-# blank/unparseable value. No migration, no route, no permission, no flag, no
-# enforcement-scope change. Production is unaffected in effect: the variable is
-# absent there (default REQUIRED) and all 7 usable credentials are device-bound.
+# SECURITY-F2-DENY-SELF-DELETION-1 — Breeze profile scaffolding let any
+# authenticated user, doctors included, DELETE /profile, which forceDelete()d the
+# user row: every attribution column naming the user (audit actor, record author,
+# consent signer, publisher, approver) is nulled and trail tables cascade-delete.
+# Decision D2: DENY. Fix: remove the route, the controller method, the form and its
+# online-context exemption. Administrators deactivate accounts instead; deactivation
+# refuses login and ends live sessions (ActiveAccountSessionTest, gate-selected).
 # Carried forward: LEGACY-RME-PROGRAM-CLOSURE-1 stays CLOSED and inherited.
-id: SECURITY-DOCTOR-WEBAUTHN-DEVICE-BOUND-FAIL-CLOSED-1
+id: SECURITY-F2-DENY-SELF-DELETION-1
 type: SECURITY_FIX
-module: DoctorDevice
-title: "WebAuthn device-bound requirement fails closed: strict env parsing, single runtime reader, signed BE-consistency check on both assertion paths"
+module: Auth
+title: "No self-service account deletion; clinical attribution and audit trails cannot be erased by their subject"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 runtime_change: true
 schema_change: false
-frontend_change: false
+frontend_change: true
 security_impact: true
 branch_isolation_impact: false
 ledger_impact: false
 deploy_required: true
 browser_required: false
 test_profiles: [focused, security_regression]
-go_tag: security-doctor-webauthn-device-bound-fail-closed-1-go
-inherits_parent_go: dev-ai-claude-memory-optimization-1-go
+go_tag: security-f2-deny-self-deletion-1-go
+inherits_parent_go: security-doctor-webauthn-device-bound-fail-closed-1-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1

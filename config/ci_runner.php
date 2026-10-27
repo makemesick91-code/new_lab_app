@@ -1197,6 +1197,13 @@ return [
         // pays for 659K tokens again. Selected by the `Devflow` token;
         // declared so a rename cannot drop it.
         'tests/Feature/Foundation/DevflowAiInstructionSystemTest.php',
+
+        // SECURITY-F2-DENY-SELF-DELETION-1 — a user cannot delete their own
+        // account (decision D2). The removed DELETE /profile hard-deleted the
+        // user row, nulling clinical attribution and cascading audit trails —
+        // silently, with a redirect. Selected by the `AccountSelfDeletionDenied`
+        // token in BOTH critical variants; declared so a rename cannot drop it.
+        'tests/Feature/Auth/AccountSelfDeletionDeniedTest.php',
     ],
 
     /*
