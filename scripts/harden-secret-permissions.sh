@@ -110,9 +110,14 @@ fail()  { echo "secret-perm: FAIL $*" >&2; failures=$((failures + 1)); }
 
 # Classify an environment file: "backup" files are never read by the runtime,
 # everything else may be loaded by the framework and needs runtime-group read.
+#
+# SECURITY-F8C-ENV-COPY-BACKUP-CLASSIFICATION-1: a copy named after the occasion
+# first and "backup" second (`.env.wave1-backup-20260913-100607`) matched none of
+# the prefixes, was classified "runtime" and was set to 0640 on every deploy. Any
+# name containing "backup" is a backup; the framework only ever loads `.env`.
 classify() {
   case "$(basename "$1")" in
-    .env.bak*|.env.backup*|.env.save*|.env.old*|.env.orig*|*.bak) echo "backup" ;;
+    .env.bak*|.env.backup*|.env.save*|.env.old*|.env.orig*|*.bak|.env.*backup*) echo "backup" ;;
     *) echo "runtime" ;;
   esac
 }

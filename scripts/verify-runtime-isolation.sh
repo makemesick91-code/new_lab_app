@@ -29,6 +29,12 @@
 #                        is the unprivileged test user rather than the real
 #                        production account. Mutually exclusive with
 #                        --require-host, so the production path can never use it.
+#   --additional-private-paths LIST
+#                        Space-separated private storage paths to check IN
+#                        ADDITION to DMS_PRIVATE_PATHS from the identity file
+#                        (union; it can only add checks). The deploy passes the
+#                        target release's declaration here, because the identity
+#                        file it verifies against is the live host copy.
 #   --quiet              Only print the summary and failures.
 #
 # Exit: 0 = every applicable check passed. 1 = at least one FAIL.
@@ -45,6 +51,7 @@ SYSTEMD_DIR="/etc/systemd/system"
 REQUIRE_HOST=0
 SKIP_OS_ACCOUNT=0
 QUIET=0
+ADDITIONAL_PRIVATE_PATHS=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -55,6 +62,7 @@ while [ $# -gt 0 ]; do
     --systemd-dir) SYSTEMD_DIR="${2:?--systemd-dir needs a value}"; shift 2 ;;
     --require-host) REQUIRE_HOST=1; shift ;;
     --skip-os-account) SKIP_OS_ACCOUNT=1; shift ;;
+    --additional-private-paths) ADDITIONAL_PRIVATE_PATHS="${2?--additional-private-paths needs a value}"; shift 2 ;;
     --quiet) QUIET=1; shift ;;
     -h|--help) sed -n '2,30p' "${BASH_SOURCE[0]}"; exit 0 ;;
     *) echo "verify-runtime-isolation: unknown option '$1'" >&2; exit 2 ;;
@@ -115,6 +123,19 @@ for key in DMS_SOURCE_IMMUTABLE_PATHS DMS_PRIVATE_PATHS DMS_FORBIDDEN_RUNTIME_US
     bad "identity authority does not declare ${key}"
   fi
 done
+
+# SECURITY-F8-PRIVATE-STORAGE-PATHS-1: widen the private-path check set, never
+# narrow it. An invalid entry is a FAIL, not a silently dropped check.
+if [ -n "$ADDITIONAL_PRIVATE_PATHS" ]; then
+  # shellcheck source=lib/private-paths.sh
+  . "${SCRIPT_DIR}/lib/private-paths.sh"
+  if MERGED_PRIVATE_PATHS="$(dms_private_paths_union "${DMS_PRIVATE_PATHS:-}" "$ADDITIONAL_PRIVATE_PATHS")"; then
+    DMS_PRIVATE_PATHS="$MERGED_PRIVATE_PATHS"
+    ok "private path set includes the additional declaration"
+  else
+    bad "additional private path declaration is invalid"
+  fi
+fi
 
 RUNTIME_USER="${DMS_RUNTIME_USER:-}"
 RUNTIME_GROUP="${DMS_RUNTIME_GROUP:-}"
