@@ -232,8 +232,16 @@ chown -R "${RUNTIME_USER}:${RUNTIME_GROUP}" storage bootstrap/cache
 # SECURITY-FIX-DEPLOY-BACKUP-FILE-PERMISSIONS-1: the backup tree is pruned from
 # the widening and set straight to its private modes (dirs 2750, files 0640),
 # so no database dump is ever 0664 inside a 2775 directory, even briefly.
-find storage bootstrap/cache -path storage/app/backups -prune -o -type d -exec chmod 2775 {} \;
-find storage bootstrap/cache -path storage/app/backups -prune -o -type f -exec chmod 0664 {} \;
+# SECURITY-F8-PRIVATE-STORAGE-PATHS-1: every declared private path is pruned
+# from the widening too, so clinical evidence is never 0664, even briefly; the
+# loop below sets those trees directly.
+private_prune=()
+read -r -a private_paths <<< "${DMS_PRIVATE_PATHS:-}"
+for rel in "${private_paths[@]}"; do
+  private_prune+=(-path "$rel" -prune -o)
+done
+find storage bootstrap/cache -path storage/app/backups -prune -o "${private_prune[@]}" -type d -exec chmod 2775 {} \;
+find storage bootstrap/cache -path storage/app/backups -prune -o "${private_prune[@]}" -type f -exec chmod 0664 {} \;
 if [ -d storage/app/backups ]; then
   find storage/app/backups -type d -exec chmod 2750 {} +
   find storage/app/backups -type f -exec chmod 0640 {} +
@@ -243,8 +251,11 @@ fi
 # world-readable (2775/0664). Private clinical storage must not inherit that, so
 # re-strip world access — otherwise a rollback would quietly re-expose lab
 # workflow evidence and patient documents to the co-tenant uid.
+# The private trees were not widened above, so the owner (the runtime) is given
+# read/write here; "other" loses everything.
 for rel in ${DMS_PRIVATE_PATHS:-}; do
   [ -d "${APP_DIR}/${rel}" ] || continue
+  chmod -R u+rwX "${APP_DIR}/${rel}"
   chmod -R o-rwx "${APP_DIR}/${rel}"
 done
 
