@@ -690,6 +690,14 @@ return [
          * `RuntimeIdentityIsolation` token in both critical-gate variants.
          */
         'tests/Feature/Deploy/RuntimeIdentityIsolationPrivatePathsTest.php',
+        /*
+         * SECURITY-F8C-ENV-COPY-BACKUP-CLASSIFICATION-1 — every secret-bearing
+         * environment copy is 0600 and the live file 0640 (INFRA-SEC-ENV-1).
+         * This suite matched no critical-gate token before, so the control ran
+         * in no required gate. Selected by the `SecretFilePermissionHardening`
+         * token in both critical-gate variants.
+         */
+        'tests/Feature/Deploy/SecretFilePermissionHardeningTest.php',
 
         // FEATURE-DOCTOR-TRUSTED-ANDROID-DEVICE-LOCK-1 Phase 1 — a Doctor is
         // confined to the ACTIVE patients of the treatment room they are online
