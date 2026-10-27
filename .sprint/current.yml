@@ -22,5 +22,5 @@ deploy_required: false
 browser_required: false
 test_profiles: [focused]
 go_tag: security-f7-satusehat-reset-guard-selection-1-go
-inherits_parent_go: security-doctor-webauthn-device-bound-fail-closed-1-go
+inherits_parent_go: security-f8c-env-copy-backup-classification-1-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1

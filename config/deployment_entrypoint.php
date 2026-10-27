@@ -175,6 +175,9 @@ return [
             'scripts/rollback-vps.sh',
             'scripts/harden-secret-permissions.sh',
             'scripts/verify-runtime-isolation.sh',
+            // SECURITY-F8-PRIVATE-STORAGE-PATHS-1: sourced by the deploy and the
+            // verifier to merge the target release's private paths.
+            'scripts/lib/private-paths.sh',
             'deploy/runtime-identity.conf',
         ],
         // The live runtime identity authority is overlaid onto the snapshot
