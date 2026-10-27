@@ -1,20 +1,15 @@
-# SECURITY-DOCTOR-WEBAUTHN-DEVICE-BOUND-FAIL-CLOSED-1 — two fail-open defects in
-# the WebAuthn device-bound requirement, both reproduced on 3ae7a502 first:
-#   1. config/webauthn.php read `(bool) env('WEBAUTHN_REQUIRE_DEVICE_BOUND', true)`,
-#      so a blank value (or Laravel's empty/(empty)/null/(null)) turned the
-#      requirement OFF; `(bool) config(...)` read a runtime null the same way.
-#   2. Both login services gated on the STORED verdict only; the library reports
-#      a signed BE change with an event and does not refuse (WebAuthn L3 §7.2).
-# Fix: one parser + one reader in WebAuthnDeviceBinding, signed-flag check on
-# both assertion paths, readiness reports provenance and --strict fails on a
-# blank/unparseable value. No migration, no route, no permission, no flag, no
-# enforcement-scope change. Production is unaffected in effect: the variable is
-# absent there (default REQUIRED) and all 7 usable credentials are device-bound.
+# SECURITY-F6-TINKER-REQUIRE-DEV-1 — laravel/tinker (and with it psy/psysh and
+# nikic/php-parser) was in `require`, so `composer install --no-dev` on the VPS
+# shipped an interactive REPL that CG-14 forbids using: psysh writes ERROR lines
+# into the application log and a REPL is an unaudited write path to clinical data.
+# Fix: move laravel/tinker to require-dev; the lock moves exactly three packages to
+# packages-dev with no version change. A test fails if either package returns to the
+# production set. ForbiddenConsoleCommandGuard stays as the second layer.
 # Carried forward: LEGACY-RME-PROGRAM-CLOSURE-1 stays CLOSED and inherited.
-id: SECURITY-DOCTOR-WEBAUTHN-DEVICE-BOUND-FAIL-CLOSED-1
+id: SECURITY-F6-TINKER-REQUIRE-DEV-1
 type: SECURITY_FIX
-module: DoctorDevice
-title: "WebAuthn device-bound requirement fails closed: strict env parsing, single runtime reader, signed BE-consistency check on both assertion paths"
+module: Deploy
+title: "laravel/tinker is a development dependency only; no REPL ships to production"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 runtime_change: true
 schema_change: false
@@ -24,7 +19,7 @@ branch_isolation_impact: false
 ledger_impact: false
 deploy_required: true
 browser_required: false
-test_profiles: [focused, security_regression]
-go_tag: security-doctor-webauthn-device-bound-fail-closed-1-go
-inherits_parent_go: dev-ai-claude-memory-optimization-1-go
+test_profiles: [focused]
+go_tag: security-f6-tinker-require-dev-1-go
+inherits_parent_go: security-doctor-webauthn-device-bound-fail-closed-1-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
