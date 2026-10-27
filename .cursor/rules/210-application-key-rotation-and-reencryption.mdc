@@ -4,7 +4,7 @@ globs:
   - "config/app_key_rotation.php"
   - "app/Support/Security/AppKeyReencryptionService.php"
   - "app/Console/Commands/SecurityAppKeyReencryptCommand.php"
-  - "tests/Feature/Security/AppKeyReencryptionTest.php"
+  - "tests/Feature/Security/AppKeyReencryption*Test.php"
   - "app/Modules/**/Models/**"
 alwaysApply: false
 ---
@@ -74,7 +74,9 @@ before the old one can be removed.
    rotation decrypts only with the old key. Keep the old key in sealed custody for
    at least the backup retention window; restoring such a dump means configuring
    the old key as a previous key and running the command with `--apply`, never
-   editing rows by hand.
+   editing rows by hand. `AppKeyReencryptionRecoveryTest` pins this: with the old
+   key retired a restored pre-rotation backup is refused and nothing is written;
+   with the escrowed key it is recovered and re-encrypted.
 10. **Rotation is a supervised operation.** Generate the key on the host, write it
     into the environment file in place (same inode, owner and mode), rebuild the
     configuration cache as the runtime user, restart the queue worker and reload

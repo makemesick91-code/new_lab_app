@@ -3,7 +3,9 @@
 **Status:** IMPLEMENTED AND TESTED IN ISOLATION. Not merged, not deployed. The production
 key rotation is a separate supervised operation (§6) and is **not** claimed here.
 
-**Type:** `SECURITY_FIX`. **Base:** `19a2ed1c`
+**Type:** `SECURITY_FIX`. **Base:** written on `19a2ed1c`; the canonical base `f9134aac`
+(SECURITY-F8 / F8B / F8C, the deployed production authority) was merged in on 2026-10-27 —
+three additive conflicts, both sides kept; no G7-B application file changed in the merge.
 (`feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report`).
 **Canonical rule:** `.cursor/rules/210-application-key-rotation-and-reencryption.mdc`.
 
@@ -98,6 +100,29 @@ does to values the database command cannot rewrite:
    invalid once A is retired; a link made after rotation is unaffected;
 4. new cookies and links are made with the current key only.
 
+`tests/Feature/Security/AppKeyReencryptionRecoveryTest.php` (6) — the recovery paths, each
+end state proved through the application and against a single-key encrypter:
+
+1. once re-encryption is complete every value reads with **no previous key configured**: the dry
+   run reports 0 previous keys, 0 previous values, 0 undecryptable, and no value decrypts with
+   the old key alone;
+2. eleven SATUSEHAT candidates across chunks of 3 — Unicode, nested arrays, `null` flags, large
+   Bundles, three `null` preview snapshots — migrate with identical plaintext; a `NULL` snapshot
+   stays SQL `NULL`;
+3. a **backup taken before rotation and restored after the old key was retired** is refused:
+   `undecryptable = 4`, exit 1, not a byte written; with the escrowed old key configured as a
+   previous key it reads, is re-encrypted, and reads again with the new key alone;
+4. **rollback after a complete re-encryption**: old key current, new key previous, every value
+   moved back, the abandoned key retired, nothing decrypts with it;
+5. **rollback or resume after an interrupted re-encryption** (2 of 4 values rewritten): every
+   value readable in the mixed state; rollback moves exactly the 2 back; resuming forward
+   rewrites exactly the other 2;
+6. a rollback that drops the new key (old key current, no previous key) is refused and writes
+   nothing.
+
+Mutations of the service, each restored by copy: classifying "current" with every key → 6
+fail; never rewriting previous values → 6 fail; leaving the rewrite under the old key → 6 fail.
+
 Consequence for step 7 of §6: retiring the previous key signs out a browser not seen since the
 rotation and expires older verification links. Nothing returns a 500.
 
@@ -128,6 +153,25 @@ environment file and a shim that runs the real command. Results:
 
 The environment file kept its inode and mode through every step. No key material appeared
 in any log. The fixture file and the container were destroyed after the rehearsal.
+
+### 5.1 Backup recovery rehearsal (2026-10-27, after the base merge)
+
+A second throwaway PostgreSQL 16.15 container, keys held only in process memory, synthetic
+rows only; the dump, the databases and the container were destroyed afterwards.
+
+| Step | Result |
+|---|---|
+| migrate, seed 4 encrypted values under key A | done |
+| `pg_dump` (16, plain SQL, as production) **before** rotation | 797 KB; synthetic plaintext occurrences in the dump: 0 |
+| rotate: B current, A previous, `--apply` | GO, 4 rewritten, removable |
+| retire A (B alone) | GO, 0 previous keys, 4 current; application read identical |
+| restore the pre-rotation dump into a fresh database | done |
+| B alone on the restored database, `--apply` | NO-GO, `undecryptable = 4`, exit 1; rows byte-identical (md5); application read fails with `DecryptException` |
+| escrowed A configured as previous | application read identical; `--apply` GO, 4 rewritten |
+| retire A again on the restored database | GO, 0 previous keys; application read identical |
+
+Conclusion carried into §6: the old key must stay in sealed custody for at least the
+retention window of pre-rotation dumps, because without it such a dump is unrecoverable.
 
 ## 6. Production rotation — not part of this change
 

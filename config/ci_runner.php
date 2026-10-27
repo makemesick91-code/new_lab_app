@@ -731,6 +731,16 @@ return [
          * Selected by the `AppKeyReencryption` token in both variants.
          */
         'tests/Feature/Security/AppKeyReencryptionFrameworkDependenciesTest.php',
+        /*
+         * SECURITY-G7B-APP-KEY-REENCRYPTION-1 — the recovery paths: every value
+         * reads with no previous key once re-encryption is complete; SATUSEHAT
+         * snapshots migrate across chunks byte for byte; a backup restored after
+         * the old key was retired is refused (nothing written) and recovered with
+         * the escrowed key; a rollback after a complete or interrupted
+         * re-encryption moves values back; a rollback that drops the new key is
+         * refused. Selected by the `AppKeyReencryption` token in both variants.
+         */
+        'tests/Feature/Security/AppKeyReencryptionRecoveryTest.php',
 
         // FEATURE-DOCTOR-TRUSTED-ANDROID-DEVICE-LOCK-1 Phase 1 — a Doctor is
         // confined to the ACTIVE patients of the treatment room they are online
