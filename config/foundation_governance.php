@@ -6,6 +6,12 @@
  */
 return [
     'sprint' => 'NSF-9',
+
+    // CICD-GOVERNANCE-EVALUATION-MEMO-1 — compute each enterprise gate once per
+    // governance evaluation (see App\Support\Foundation\GovernanceEvaluation).
+    // false = recompute on every re-verification; the result is identical, only
+    // slower. Deliberately not read from the environment.
+    'evaluation_memo' => true,
     'version' => 'NSF-9',
 
     'evidence_docs' => [
