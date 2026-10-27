@@ -1,26 +1,28 @@
-# SECURITY-F8C-ENV-COPY-BACKUP-CLASSIFICATION-1 — environment copies named with
-# "backup" anywhere are classified as backups. scripts/harden-secret-permissions.sh
-# recognised only prefix forms (.env.bak*, .env.backup*, ...), so a copy named
-# after the occasion first (.env.wave1-backup-20260913-100607) was classified as a
-# runtime file and reset to 0640 on every deploy, giving the runtime group read
-# access to a stale copy of every secret. Fix: one pattern in the classifier;
-# gate the INFRA-SEC-ENV-1 suite, which matched no critical-gate token before.
-# No migration, no route, no permission, no application code change.
+# CICD-GOVERNANCE-EVALUATION-MEMO-1 — one governance evaluation computes each enterprise
+# gate once. The ENT-5..ENT-16 gates re-verify their predecessors and each received fresh
+# predecessor instances, so the chain doubled at every level: one
+# architecture:foundation-governance-summary built ENT-5 2,080 times and took ~116 s, and
+# every test rendering the summary paid it again (CI critical gate 9,288 s).
+# Fix: App\Support\Foundation\GovernanceEvaluation memoizes each gate's collect() for the
+# lifetime of the OUTERMOST evaluation only; nothing survives it. Kill switch
+# foundation_governance.evaluation_memo (source-controlled, not read from the environment).
+# No gate rule, decision, threshold or required check changes. No migration, no route,
+# no permission.
 # Carried forward: LEGACY-RME-PROGRAM-CLOSURE-1 stays CLOSED and inherited.
-id: SECURITY-F8C-ENV-COPY-BACKUP-CLASSIFICATION-1
-type: SECURITY_FIX
-module: Deploy
-title: "Environment copies named with backup anywhere are 0600; the secret-permission suite runs in the critical gate"
+id: CICD-GOVERNANCE-EVALUATION-MEMO-1
+type: FOUNDATION_SPRINT
+module: Foundation
+title: "Governance evaluation computes each enterprise gate once"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
-runtime_change: false
+runtime_change: true
 schema_change: false
 frontend_change: false
-security_impact: true
+security_impact: false
 branch_isolation_impact: false
 ledger_impact: false
 deploy_required: true
 browser_required: false
-test_profiles: [focused, security_regression]
-go_tag: security-f8c-env-copy-backup-classification-1-go
-inherits_parent_go: security-f8-private-storage-paths-1-go
+test_profiles: [focused, cross_module_regression]
+go_tag: cicd-governance-evaluation-memo-1-go
+inherits_parent_go: security-f8c-env-copy-backup-classification-1-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
