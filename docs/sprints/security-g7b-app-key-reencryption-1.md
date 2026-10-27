@@ -87,6 +87,20 @@ report, rewrite and verify.
 3. a ticket issued after rotation resolves;
 4. a pairing code issued under A no longer resolves after rotation; one issued after does.
 
+`tests/Feature/Security/AppKeyReencryptionFrameworkDependenciesTest.php` (4) — what the retire step
+does to values the database command cannot rewrite:
+
+1. a cookie encrypted under key A is read normally while A is a previous key, and reads as absent
+   (no exception) once A is retired;
+2. EncryptCookies re-encrypts such a cookie with the current key on the next response, and the
+   reissued value survives retirement — an active browser moves to the new key by itself;
+3. a signed link (the email verification route) made with A is valid while A is a previous key and
+   invalid once A is retired; a link made after rotation is unaffected;
+4. new cookies and links are made with the current key only.
+
+Consequence for step 7 of §6: retiring the previous key signs out a browser not seen since the
+rotation and expires older verification links. Nothing returns a 500.
+
 Mutations, each restored by copy: an unregistered file reading the key → 1 fails; the ticket
 HMAC no longer depending on the key → 2 fail; the same for the pairing code → 2 fail.
 

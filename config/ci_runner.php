@@ -697,6 +697,14 @@ return [
          * rotation. Selected by the `AppKeyReencryption` token in both variants.
          */
         'tests/Feature/Security/AppKeyReencryptionCurrentKeyConsumersTest.php',
+        /*
+         * SECURITY-G7B-APP-KEY-REENCRYPTION-1 — encrypted cookies and signed
+         * URLs made with a previous application key keep working until that key
+         * is retired, and are then rejected cleanly (absent cookie, invalid
+         * signature, never a 500). The retire step depends on both halves.
+         * Selected by the `AppKeyReencryption` token in both variants.
+         */
+        'tests/Feature/Security/AppKeyReencryptionFrameworkDependenciesTest.php',
 
         // FEATURE-DOCTOR-TRUSTED-ANDROID-DEVICE-LOCK-1 Phase 1 — a Doctor is
         // confined to the ACTIVE patients of the treatment room they are online
