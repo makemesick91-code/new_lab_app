@@ -194,6 +194,28 @@ Every other copy of the environment file that still carries the old key as the l
 part of the exposure being closed and has to be handled before the old key is called
 retired.
 
+## 6.1 Production readiness report (owner Decision 4, 2026-10-28)
+
+Owner decision 4 (2026-10-28): this pull request may merge once the required checks pass. The
+production key rotation stays **NO-GO** until this checklist is complete and the owner gives a
+separate execution approval. Merging deploys nothing.
+
+| # | Prerequisite | Status | Evidence, or what remains |
+|---|---|---|---|
+| 1 | Secure legacy-key escrow | **NOT ESTABLISHED** — owner action | The old key must sit in sealed custody, separate from the host, before rotation. The rotation tool's state directory holds both keys only until `finalize`, so it is not escrow. Needed: named custodians and a medium, as for Android signing custody (several custodians, encrypted copies, a restore drill). The key value is never printed, sent over chat, or stored in the repository, CI or the knowledge base. |
+| 2 | Pre-rotation backup recovery | **Mechanism verified; in-window step defined** | §5.1: a dump taken before rotation restores only with the escrowed old key configured as a previous key, then `--apply` moves its values to the new key. Production restore drill 2026-10-28 05:35 WITA (`scripts/restore-rehearsal.sh`): fresh snapshot verified 9/9, 174 tables restored into a scratch database in 7 s, scratch database dropped, production untouched. In the window, the backup taken at step 2 of §6 is the one that must be restorable. |
+| 3 | Encrypted data migration | **Verified in isolation; production dry run needs deploy** | §5: 8 values rewritten and read with the new key alone. Production scope measured read-only on 2026-10-28: 8 SATUSEHAT eligibility snapshots, 0 preview snapshots, 0 merge cases, 0 field resolutions (unchanged since 2026-10-27). `security:app-key-reencrypt --json` (dry run, counts only) can run on production only after this code is deployed, which needs its own approval. |
+| 4 | Recovery with the old key removed from active configuration | **Verified in isolation** | §5 `retire-previous`, and §5.1 on a restored dump. In production this is step 7 of §6, run only after escrow (item 1) covers the backup retention window. |
+| 5 | Doctor authentication and device pairing | **Verified in isolation; in-window smoke defined** | `AppKeyReencryptionCurrentKeyConsumersTest`: login tickets (60 s) and challenges (120 s) fail closed and the doctor retries; pairing codes (15 min) are re-issued. In the window: one doctor login and one device verification after step 4. |
+| 6 | Payment-intent invalidation | **Verified in isolation** | An open payment form is refused and reopened, never paid twice (payment idempotency rule). In the window: no cashier form open at the moment of rotation (item 7). |
+| 7 | No active clinical or cashier transactions | **In-window gate** | Run read-only immediately before step 3 of §6: no visit in progress, no payment form open, no active doctor or cashier session, queue empty. Measured at 05:45 WITA as a reference only: 2 session rows, 0 queued jobs. |
+| 8 | Queue and worker readiness | **Verified now; restart is in-window** | Worker, PHP-FPM and nginx active; 0 queued jobs; 0 failed jobs; no encrypted queued job exists in the code. Step 4 of §6 restarts the worker after the configuration cache is rebuilt. |
+| 9 | Production rollback | **Rehearsed; tool not yet installed** | §5: `apply` then `rollback` restores the original key (proved by salted hash) and moves values back. The tool (`g7b-rotate-app-key.sh`: plan, apply, verify, rollback, retire-previous, finalize) goes into the root-only tools directory on the host when execution is prepared, as for G7-A. |
+| 10 | Final readiness report | This section | Remaining before an execution approval can be requested: item 1 (escrow), deployment of this change (separate approval), the production dry run (item 3), and a retention decision for the 21 environment copies that still carry the old key as the live key (§7). |
+
+Production configuration is unchanged by this report: no key was read, printed or rotated, and
+the only production write was the scratch database the restore drill creates and drops.
+
 ## 7. Residual risks
 
 - Dumps taken before rotation decrypt only with the old key; restoring one needs the old key
