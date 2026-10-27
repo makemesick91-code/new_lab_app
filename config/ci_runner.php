@@ -680,6 +680,15 @@ return [
          * redirect-then-chmod window return silently.
          */
         'tests/Feature/Deploy/PrivateDatabaseDumpCreationTest.php',
+        /*
+         * SECURITY-G7B-APP-KEY-REENCRYPTION-1 — every encrypted model cast is in
+         * the rotation registry, values under a previous application key are
+         * rewritten and verified, and nothing is written while any value decrypts
+         * with no configured key. A rename that dropped this suite from the gate
+         * would let a new encrypted column silently keep a retired key alive.
+         * Selected by the `AppKeyReencryption` token in both critical variants.
+         */
+        'tests/Feature/Security/AppKeyReencryptionTest.php',
 
         // FEATURE-DOCTOR-TRUSTED-ANDROID-DEVICE-LOCK-1 Phase 1 — a Doctor is
         // confined to the ACTIVE patients of the treatment room they are online
