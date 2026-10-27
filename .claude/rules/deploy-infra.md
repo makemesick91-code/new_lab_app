@@ -177,6 +177,11 @@ code, then the canonical rule, and report the drift.
   a co-tenant answers it — a known warning, not a regression. `systemctl reload nginx` is graceful, so re-verify after
   workers cycle; `grep -r` does not follow the symlinks in `sites-enabled`, so read `nginx -T` before filing a missing
   directive. Source: `121-clinical-…` (traps), `121-final-…` (R11).
+- **AIR-DEP-29** Every private local disk and every dump or evidence-manifest directory is listed in
+  `DMS_PRIVATE_PATHS`; deploy and rollback prune those trees from the 2775/0664 widening, and the deploy merges the
+  target release's list after the fast-forward (union only, via `scripts/lib/private-paths.sh`), because it sources the
+  live identity file first. A new private disk fails `RuntimeIdentityIsolationPrivatePathsTest` until listed. Source:
+  `.cursor/rules/209-private-storage-paths-declared-and-never-widened.mdc`.
 
 ## Current posture (snapshot 2026-10-25 — verify before relying on it)
 
@@ -202,6 +207,7 @@ code, then the canonical rule, and report the drift.
 | `.cursor/rules/100-production-secret-file-permission-hardening.mdc` | Secret file mode and handling |
 | `.cursor/rules/121-clinical-evidence-private-storage.mdc` | Clinical evidence on private disks only |
 | `.cursor/rules/176-private-database-dump-creation.mdc` | Dumps private from creation |
+| `.cursor/rules/209-private-storage-paths-declared-and-never-widened.mdc` | `DMS_PRIVATE_PATHS` coverage and deploy pruning |
 | `.cursor/rules/59-cicd-enterprise-gate.mdc` | ENT-10 gate, cache-clear order |
 | `.cursor/rules/133-dedicated-queue-producer-consumer-contract.mdc` | Worker unit queue list |
 | `.cursor/rules/121-final-stabilization-residual-audit.mdc` | Public-disk scan, `/storage/` deny, rule pins |

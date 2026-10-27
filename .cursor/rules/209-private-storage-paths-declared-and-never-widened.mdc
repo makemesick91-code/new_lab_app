@@ -1,0 +1,67 @@
+---
+description: SECURITY-F8-PRIVATE-STORAGE-PATHS-1 — every private local disk and every directory holding database dumps or clinical evidence manifests is listed in DMS_PRIVATE_PATHS; deploy and rollback prune those trees from the 2775/0664 storage widening; the deploy merges the target release's list after the fast-forward (union only); a test fails when a new private disk is not listed.
+globs:
+  - "deploy/runtime-identity.conf"
+  - "scripts/deploy-vps.sh"
+  - "scripts/rollback-vps.sh"
+  - "scripts/verify-runtime-isolation.sh"
+  - "scripts/lib/private-paths.sh"
+  - "config/filesystems.php"
+  - "tests/Feature/Deploy/RuntimeIdentityIsolationPrivatePathsTest.php"
+alwaysApply: false
+---
+
+# Private storage paths are declared, and declared paths are never widened
+
+## Why
+
+The deploy and rollback make the whole storage tree 2775/0664 so the runtime can
+work, then strip "other" only from `DMS_PRIVATE_PATHS`. That list was written
+before the clinical-evidence, legacy-odontogram and legacy-mass-upload disks
+existed, so every deploy left those disks — and two old dump directories —
+readable by every local account on the host. HTTP was never involved; the
+exposure was at the filesystem level. The isolation verifier checked the same
+list, so it reported GO.
+
+A second defect hid behind the first: the deploy sources the runtime identity
+file from the live host copy *before* it fast-forwards. Adding a path to the
+list in a release only protected it from the next deploy on, and the deploy
+shipping the change would itself widen the path.
+
+## Rules
+
+1. **Every private local disk is listed.** A disk in `config/filesystems.php`
+   with `driver => local`, a root under `storage/`, and a visibility other than
+   `public` must be covered by `DMS_PRIVATE_PATHS`.
+   `RuntimeIdentityIsolationPrivatePathsTest` fails until it is.
+2. **Dump and evidence-manifest directories are listed too**, even when no disk
+   points at them: `storage/app/backups`, `storage/app/deploy-backups`,
+   `storage/backups`, `storage/app/clinical-evidence-migration`, `storage/logs`.
+3. **Private trees are never widened.** Both normalization paths prune every
+   declared path from the 2775/0664 `find`, alongside the existing backup-tree
+   prune, then give the owner read/write (`u+rwX`) and strip "other" (`o-rwx`).
+   Group bits are left as found; the runtime group has no other member.
+4. **The deploy merges, never replaces.** After `git merge --ff-only` it reads
+   the target commit's `DMS_PRIVATE_PATHS` from the pinned object and takes the
+   union with the live list (`dms_private_paths_union`). A release can add a
+   private path; it can never drop one the host protects. An invalid entry fails
+   the deploy closed.
+5. **The verifier checks the merged set.** The deploy passes it with
+   `--additional-private-paths`; the option only adds checks, and an invalid
+   entry is a FAIL.
+6. **One definition of a valid path.** `scripts/lib/private-paths.sh`: relative,
+   under `storage/`, plain segments, no `..`, no glob characters. Lists are split
+   with `read -a`, never by unquoted expansion.
+7. **A git revert reopens the exposure.** The deploy that lands a revert still
+   restricts the paths (live list), but later deploys would not. Re-contain
+   instead of assuming the revert is safe.
+8. **Never widen a private tree by hand**, and never fix an access problem by
+   adding "other" bits; the runtime owns these trees.
+
+## Not covered here
+
+- Environment-file copies are governed by
+  `100-production-secret-file-permission-hardening.mdc`; files named outside its
+  backup patterns are treated as runtime-readable (0640, runtime group only).
+- One-time host provisioning (`scripts/provision-runtime-identity.sh`) still
+  widens before restricting; it is not part of the deploy path.

@@ -680,6 +680,16 @@ return [
          * redirect-then-chmod window return silently.
          */
         'tests/Feature/Deploy/PrivateDatabaseDumpCreationTest.php',
+        /*
+         * SECURITY-F8-PRIVATE-STORAGE-PATHS-1 — every private disk and dump
+         * directory is declared in DMS_PRIVATE_PATHS, the deploy merges the
+         * target release's list after the checkout advances, and the real
+         * deploy/rollback normalization never widens a private tree. Private
+         * disks added after the list was written were left world-readable on the
+         * host by every deploy. Selected by the existing
+         * `RuntimeIdentityIsolation` token in both critical-gate variants.
+         */
+        'tests/Feature/Deploy/RuntimeIdentityIsolationPrivatePathsTest.php',
 
         // FEATURE-DOCTOR-TRUSTED-ANDROID-DEVICE-LOCK-1 Phase 1 — a Doctor is
         // confined to the ACTIVE patients of the treatment room they are online
