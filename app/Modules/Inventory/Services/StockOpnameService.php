@@ -15,6 +15,7 @@ use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Models\StockOpname;
 use App\Modules\Inventory\Models\StockOpnameItem;
 use App\Modules\Inventory\Services\Concerns\LogsInventoryActivity;
+use App\Modules\Inventory\Support\InventoryBusinessCalendar;
 use App\Modules\Inventory\Support\SourceDocumentBatchGuard;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
@@ -34,6 +35,7 @@ class StockOpnameService
         private readonly BranchContext $branchContext,
         private readonly InventoryActivityLogService $activityLogger,
         private readonly BatchStockOptionService $batchStockOptions,
+        private readonly InventoryBusinessCalendar $calendar,
     ) {}
 
     /**
@@ -53,7 +55,7 @@ class StockOpnameService
                 'branch_id' => $branchId,
                 'inventory_location_id' => $location->id,
                 'opname_number' => $this->generateOpnameNumber(),
-                'opname_date' => $opnameDate ?? now()->toDateString(),
+                'opname_date' => $opnameDate ?? $this->calendar->todayString(),
                 'status' => StockOpname::STATUS_DRAFT,
                 'notes' => $notes,
                 'counted_by' => null,
@@ -510,7 +512,7 @@ class StockOpnameService
 
     private function generateOpnameNumber(): string
     {
-        return 'OPN-'.now()->format('Ym').'-'.Str::upper(Str::random(6));
+        return 'OPN-'.$this->calendar->today()->format('Ym').'-'.Str::upper(Str::random(6));
     }
 
     /**

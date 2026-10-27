@@ -90,7 +90,7 @@
 
             <div>
                 <label for="transfer-date" class="block text-sm font-medium text-gray-700">Tanggal Transfer</label>
-                <input id="transfer-date" type="date" name="transfer_date" value="{{ old('transfer_date', optional($stockTransfer?->transfer_date)->format('Y-m-d') ?? now()->toDateString()) }}"
+                <input id="transfer-date" type="date" name="transfer_date" value="{{ old('transfer_date', optional($stockTransfer?->transfer_date)->format('Y-m-d') ?? app(\App\Modules\Inventory\Support\InventoryBusinessCalendar::class)->todayString()) }}"
                        class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500">
                 @error('transfer_date')
                     <p class="mt-1 text-sm text-red-600">{{ $message }}</p>

@@ -18,6 +18,7 @@ use App\Modules\Inventory\Models\PurchaseRequest;
 use App\Modules\Inventory\Models\PurchaseRequestItem;
 use App\Modules\Inventory\Models\Supplier;
 use App\Modules\Inventory\Services\Concerns\LogsInventoryActivity;
+use App\Modules\Inventory\Support\InventoryBusinessCalendar;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
@@ -36,6 +37,7 @@ class PurchaseOrderService
         private readonly SupplierRepositoryInterface $suppliers,
         private readonly BranchContext $branchContext,
         private readonly InventoryActivityLogService $activityLogger,
+        private readonly InventoryBusinessCalendar $calendar,
     ) {}
 
     /**
@@ -124,7 +126,7 @@ class PurchaseOrderService
             $this->assertPurchaseRequestEligible($purchaseRequest, $branchId);
             $this->assertNoActivePurchaseOrderForPurchaseRequest($purchaseRequest);
 
-            $orderDate = $data['order_date'] ?? now()->toDateString();
+            $orderDate = $data['order_date'] ?? $this->calendar->todayString();
             $items = $this->resolveItemsFromPurchaseRequest($purchaseRequest, $data['items'] ?? null);
 
             // PR → PO convenience: purchase requests carry no supplier and no

@@ -1,5 +1,5 @@
 @php
-    $receiptDateDefault = old('receipt_date', optional($goodsReceipt?->receipt_date)->format('Y-m-d') ?? now()->toDateString());
+    $receiptDateDefault = old('receipt_date', optional($goodsReceipt?->receipt_date)->format('Y-m-d') ?? app(\App\Modules\Inventory\Support\InventoryBusinessCalendar::class)->todayString());
 @endphp
 
 <div

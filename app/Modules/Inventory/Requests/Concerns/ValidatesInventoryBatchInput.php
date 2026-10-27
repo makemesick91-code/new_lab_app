@@ -2,6 +2,8 @@
 
 namespace App\Modules\Inventory\Requests\Concerns;
 
+use App\Modules\Inventory\Support\InventoryBusinessCalendar;
+
 trait ValidatesInventoryBatchInput
 {
     /**
@@ -17,7 +19,7 @@ trait ValidatesInventoryBatchInput
         if ($allowCreate) {
             $rules['batch_number'] = ['nullable', 'string', 'max:100'];
             $rules['lot_number'] = ['nullable', 'string', 'max:100'];
-            $rules['received_date'] = ['nullable', 'date', 'before_or_equal:today'];
+            $rules['received_date'] = ['nullable', 'date', 'before_or_equal:'.app(InventoryBusinessCalendar::class)->todayString()];
             $rules['expiry_date'] = ['nullable', 'date', 'after_or_equal:received_date'];
         }
 

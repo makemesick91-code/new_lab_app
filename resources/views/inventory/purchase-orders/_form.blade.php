@@ -58,7 +58,7 @@
             <div>
                 <label for="order-date" class="block text-sm font-medium text-gray-700">Tanggal Pesanan <span class="text-red-600">*</span></label>
                 <input id="order-date" type="date" name="order_date" required
-                       value="{{ old('order_date', optional($purchaseOrder?->order_date)->format('Y-m-d') ?? now()->toDateString()) }}"
+                       value="{{ old('order_date', optional($purchaseOrder?->order_date)->format('Y-m-d') ?? app(\App\Modules\Inventory\Support\InventoryBusinessCalendar::class)->todayString()) }}"
                        class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500">
                 @error('order_date')
                     <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
