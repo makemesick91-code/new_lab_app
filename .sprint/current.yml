@@ -1,26 +1,28 @@
-# SECURITY-F8C-ENV-COPY-BACKUP-CLASSIFICATION-1 — environment copies named with
-# "backup" anywhere are classified as backups. scripts/harden-secret-permissions.sh
-# recognised only prefix forms (.env.bak*, .env.backup*, ...), so a copy named
-# after the occasion first (.env.wave1-backup-20260913-100607) was classified as a
-# runtime file and reset to 0640 on every deploy, giving the runtime group read
-# access to a stale copy of every secret. Fix: one pattern in the classifier;
-# gate the INFRA-SEC-ENV-1 suite, which matched no critical-gate token before.
-# No migration, no route, no permission, no application code change.
+# SECURITY-DEPENDENCY-UPDATES-1 — `composer audit` and `npm audit` on the deployed
+# authority f9134aac reported 30 production advisories (laravel/framework,
+# guzzlehttp/guzzle, league/commonmark, dompdf/dompdf, league/flysystem,
+# symfony/http-foundation) plus symfony/yaml (dev) and 12 npm advisories (axios ships
+# in the browser bundle; vite, postcss, concurrently and transitives are build-time).
+# Fix: same-major updates only — 10 composer packages (composer update of the named
+# packages with --minimal-changes) and 16 npm packages (npm audit fix, no --force).
+# composer.json and package.json unchanged; no major version moves. A floor test fails
+# if a later lock change pulls any patched package back below its fixed release.
+# Assessment: docs/governance/dependency-security-assessment-2026-10-27.md.
 # Carried forward: LEGACY-RME-PROGRAM-CLOSURE-1 stays CLOSED and inherited.
-id: SECURITY-F8C-ENV-COPY-BACKUP-CLASSIFICATION-1
+id: SECURITY-DEPENDENCY-UPDATES-1
 type: SECURITY_FIX
-module: Deploy
-title: "Environment copies named with backup anywhere are 0600; the secret-permission suite runs in the critical gate"
+module: Dependencies
+title: "Same-major security updates for 10 composer and 16 npm packages; lock floors enforced in the critical gate"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
-runtime_change: false
+runtime_change: true
 schema_change: false
-frontend_change: false
+frontend_change: true
 security_impact: true
 branch_isolation_impact: false
 ledger_impact: false
 deploy_required: true
 browser_required: false
 test_profiles: [focused, security_regression]
-go_tag: security-f8c-env-copy-backup-classification-1-go
-inherits_parent_go: security-f8-private-storage-paths-1-go
+go_tag: security-dependency-updates-1-go
+inherits_parent_go: security-f8c-env-copy-backup-classification-1-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
