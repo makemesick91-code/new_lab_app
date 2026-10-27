@@ -436,6 +436,41 @@ it('reports GO for a fully isolated synthetic host', function () {
         ->and($out)->toContain('0 FAIL');
 });
 
+// SECURITY-F8-PRIVATE-STORAGE-PATHS-1: the deploy verifies against the LIVE
+// identity file and passes the target release's private paths separately. The
+// extra declaration can only add checks, and an invalid entry is a FAIL.
+it('checks additional private paths only when they are declared', function () {
+    $fx = isoFixture();
+    $extra = $fx['app'].'/storage/app/clinical-evidence-private';
+    @mkdir($extra, 0775, true);
+    chmod($extra, 0775);
+
+    [$withoutExit] = isoVerify($fx);
+    [$withExit, $withOut] = isoVerify($fx, ['--additional-private-paths', 'storage/app/clinical-evidence-private']);
+
+    chmod($extra, 0770);
+    [$privateExit, $privateOut] = isoVerify($fx, ['--additional-private-paths', 'storage/app/clinical-evidence-private']);
+
+    isoCleanup($fx);
+
+    expect($withoutExit)->toBe(0)
+        ->and($withExit)->toBe(1, $withOut)
+        ->and($withOut)->toContain('storage/app/clinical-evidence-private is world-readable')
+        ->and($privateExit)->toBe(0, $privateOut)
+        ->and($privateOut)->toContain('storage/app/clinical-evidence-private is private');
+});
+
+it('fails closed on an invalid additional private path', function () {
+    $fx = isoFixture();
+
+    [$exit, $out] = isoVerify($fx, ['--additional-private-paths', 'storage/../.env']);
+
+    isoCleanup($fx);
+
+    expect($exit)->toBe(1)
+        ->and($out)->toContain('additional private path declaration is invalid');
+});
+
 // ── 5. Functional: the negative matrix ──────────────────────────────────────
 
 dataset('isolation breaches', [

@@ -130,6 +130,14 @@ Never run these during deploy or rollback on the pilot/production VPS:
   re-verifies ENT-5..15 gates, rebuilds/restarts, and smokes — it never runs a
   destructive DB command and never auto-restores data.
 
+- Private storage paths (SECURITY-F8-PRIVATE-STORAGE-PATHS-1): rolling back to
+  an older tag keeps them private, because rollback reads the runtime identity
+  file from the live host copy, which still lists them. A git revert of this
+  change is different: the deploy that lands the revert still restricts them for
+  the same reason, but every later deploy widens them again. Treat a revert as
+  reopening the exposure and re-contain the paths. Never widen a private tree by
+  hand.
+
 ## Troubleshooting
 
 - Route-dependent gate fails on first run after a route-adding sprint → the VPS
@@ -167,6 +175,10 @@ Never run these during deploy or rollback on the pilot/production VPS:
 - `curl -I http://127.0.0.1/login` → HTTP 200.
 - Health endpoints 200; `/dev-console` guest → 302.
 - `git describe --tags --exact-match HEAD` equals the deployed GO tag.
+- Private storage: the deploy log prints `Private storage paths (live + target)`
+  and the isolation gate reports every listed path as private. Spot-check one
+  path with `runuser -u www-data -- test -r storage/app/clinical-evidence-private`
+  (must fail) and `runuser -u daengtisiams -- test -r <same path>` (must succeed).
 
 ## Security / PII Notes
 
