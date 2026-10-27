@@ -1235,6 +1235,13 @@ return [
         // Selected by the `FoundationGovernance` token; declared so a rename
         // cannot drop it.
         'tests/Feature/Foundation/FoundationGovernanceEvaluationMemoTest.php',
+
+        // SECURITY-F4C-CLINIC-CALENDAR-LAB-ORDERS-1 (owner decision D16) — lab order dates, order and
+        // delivery numbering, the due-date floor and "delivered today" on the clinic calendar
+        // (Asia/Makassar). A UTC "today" named the previous clinic day for eight hours of every day;
+        // the screens still render, so the error is silent. Selected by the `LabClinicCalendarBoundary`
+        // token in BOTH critical variants; declared so a rename cannot drop it.
+        'tests/Feature/LabWorkflow/LabClinicCalendarBoundaryTest.php',
     ],
 
     /*

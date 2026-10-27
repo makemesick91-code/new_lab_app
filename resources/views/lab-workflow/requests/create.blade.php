@@ -66,7 +66,7 @@
                         @error('patient_id')<p class="mt-1 text-xs text-danger-700">{{ $message }}</p>@enderror
                     </div>
                     <x-ui.input name="medical_record_number" label="No. Rekam Medis (opsional)" :value="old('medical_record_number')" />
-                    <x-ui.input type="date" name="order_date" label="Tanggal Order" :value="old('order_date', now()->toDateString())" />
+                    <x-ui.input type="date" name="order_date" label="Tanggal Order" :value="old('order_date', app(\App\Support\Clinical\ClinicalClock::class)->todayString())" />
                     <x-ui.input type="date" name="due_date" label="Tenggat" :value="old('due_date')" required />
                     <x-ui.select name="priority" label="Prioritas" required>
                         @foreach (['NORMAL' => 'Normal', 'URGENT' => 'Mendesak', 'SUPER_URGENT' => 'Sangat Mendesak'] as $value => $label)

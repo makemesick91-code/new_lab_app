@@ -16,6 +16,7 @@ use App\Modules\LabOrder\Support\LabWorkflowNotificationDestinationResolver;
 use App\Modules\LabOrder\Workflow\LabWorkflowState;
 use App\Modules\LabService\Models\LabService;
 use App\Modules\Patient\Models\Patient;
+use App\Support\Clinical\ClinicalClock;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
@@ -43,6 +44,7 @@ class LabWorkflowRequestService
         private readonly LabWorkflowStateMachine $stateMachine,
         private readonly BranchContext $branchContext,
         private readonly LabWorkflowNotificationService $notifications,
+        private readonly ClinicalClock $clock,
     ) {}
 
     /**
@@ -101,7 +103,7 @@ class LabWorkflowRequestService
         $actor = $actor ?? auth()->user();
 
         return DB::transaction(function () use ($data, $branchId, $actor) {
-            $orderDate = $data['order_date'] ?? now()->toDateString();
+            $orderDate = $data['order_date'] ?? $this->clock->todayString();
 
             $order = $this->labOrders->create([
                 'order_number' => $this->orderNumbers->generate($orderDate),
