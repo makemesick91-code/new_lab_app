@@ -180,6 +180,42 @@ test('apply hardens backup copies to 0600', function () {
     removeFixtureDir($dir);
 });
 
+// SECURITY-F8C-ENV-COPY-BACKUP-CLASSIFICATION-1: copies named after the occasion
+// first ("wave1-backup", "pre-deploy-backup") used to be classified as runtime
+// files and set to 0640 on every deploy.
+test('apply hardens a copy whose name contains backup anywhere to 0600', function () {
+    $dir = makeSecretFixtureDir([
+        '.env' => 0644,
+        '.env.wave1-backup-20260913-100607' => 0640,
+        '.env.wave2-irwan-backup-102632' => 0644,
+        '.env.pre-deploy-backup' => 0640,
+    ]);
+
+    $result = runHarden('apply', $dir, ['--group' => currentGroup()]);
+
+    expect($result['exit'])->toBe(0)
+        ->and(fileMode($dir.'/.env'))->toBe('640')
+        ->and(fileMode($dir.'/.env.wave1-backup-20260913-100607'))->toBe('600')
+        ->and(fileMode($dir.'/.env.wave2-irwan-backup-102632'))->toBe('600')
+        ->and(fileMode($dir.'/.env.pre-deploy-backup'))->toBe('600');
+
+    removeFixtureDir($dir);
+});
+
+test('verify rejects a backup-named copy left at the runtime mode', function () {
+    $dir = makeSecretFixtureDir([
+        '.env' => 0640,
+        '.env.wave1-backup-20260913-100607' => 0640,
+    ]);
+
+    $result = runHarden('verify', $dir, ['--group' => currentGroup()]);
+
+    expect($result['exit'])->not->toBe(0)
+        ->and($result['output'])->toContain('.env.wave1-backup-20260913-100607');
+
+    removeFixtureDir($dir);
+});
+
 test('apply is idempotent', function () {
     $dir = makeSecretFixtureDir(['.env' => 0644]);
 

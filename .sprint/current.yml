@@ -12,7 +12,7 @@ type: SECURITY_FIX
 module: Auth
 title: "No public self-registration; a role-less user reaches only their own pages"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
-runtime_change: true
+runtime_change: false
 schema_change: false
 frontend_change: true
 security_impact: true
@@ -22,5 +22,5 @@ deploy_required: true
 browser_required: false
 test_profiles: [focused, security_regression]
 go_tag: security-f1-close-public-registration-1-go
-inherits_parent_go: security-doctor-webauthn-device-bound-fail-closed-1-go
+inherits_parent_go: security-f8c-env-copy-backup-classification-1-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1

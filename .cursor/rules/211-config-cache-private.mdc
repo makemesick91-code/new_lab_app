@@ -1,0 +1,45 @@
+---
+description: SECURITY-F8B-CONFIG-CACHE-PRIVATE-1 — bootstrap/cache holds the compiled configuration, which carries the database password and the application key in plain text, so it is a declared private path; the deploy and rollback never widen it and the isolation gate fails when another local account can read it.
+globs:
+  - "deploy/runtime-identity.conf"
+  - "scripts/lib/private-paths.sh"
+  - "scripts/deploy-vps.sh"
+  - "scripts/rollback-vps.sh"
+  - "scripts/verify-runtime-isolation.sh"
+  - "tests/Feature/Deploy/RuntimeIdentityIsolation*Test.php"
+alwaysApply: false
+---
+
+# The compiled configuration is as secret as the environment file
+
+## Why
+
+`php artisan config:cache` writes the resolved configuration to
+`bootstrap/cache/config.php`, and that file contains every value the
+environment file supplies — the database password and the application key
+included. The environment file has been 0640 since INFRA-SEC-ENV-1, but the
+deploy normalized `bootstrap/cache` to 2775/0664 like any runtime directory, so
+every local account (the co-tenant's `www-data` among them) could read both
+secrets from the cache. Protecting the environment file alone protected nothing.
+
+## Rules
+
+1. `bootstrap/cache` is listed in `DMS_PRIVATE_PATHS`. It is the only declared
+   path outside `storage/`, and `scripts/lib/private-paths.sh` admits it by exact
+   name — never `bootstrap/` or anything below the cache directory.
+2. Any file that receives a secret at runtime (a compiled cache, a token cache,
+   a generated credential file) is treated exactly like the environment file:
+   its directory is declared private before the feature ships.
+3. The deploy and rollback prune `bootstrap/cache` from the 2775/0664 widening;
+   the runtime keeps owner read/write; "other" gets nothing.
+4. The isolation gate (`verify-runtime-isolation.sh`) checks the declared cache
+   and fails when another local account can read or traverse it.
+5. A deploy of a release older than this rule fails closed against a host that
+   already declares `bootstrap/cache` (its validator rejects the path). That is
+   intended: a union of private paths may only add protection.
+
+## Related
+
+- `.cursor/rules/209-private-storage-paths-declared-and-never-widened.mdc`
+- `.cursor/rules/100-production-secret-file-permission-hardening.mdc`
+- `.cursor/rules/92-dedicated-runtime-identity-co-tenant-isolation.mdc`
