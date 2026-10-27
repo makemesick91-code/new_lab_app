@@ -18,7 +18,7 @@ deploy prove that on every run instead of trusting historical filesystem state.
 | File | Owner | Group | Mode |
 | --- | --- | --- | --- |
 | `.env` | `root` | PHP-FPM runtime group (`www-data`) | `0640` |
-| `.env.bak*`, `.env.backup*`, `.env.save*`, `.env.old*`, `.env.orig*` | `root` | any | `0600` |
+| `.env.bak*`, `.env.backup*`, `.env.save*`, `.env.old*`, `.env.orig*`, any `.env.*` name containing `backup` | `root` | any | `0600` |
 | `.env.example` | tracked in git, holds no secret | — | untouched |
 
 Forbidden for any of the above, permanently: `0644`, `0664`, `0666`, and any mode

@@ -143,8 +143,20 @@ normalize_runtime_ownership() {
   # afterwards (restrict_private_paths) still left every database dump 0664
   # inside a 2775 directory for the duration of the find — a deploy-wide window
   # on every dump on the host. The tree is set to its private modes directly.
-  find storage bootstrap/cache -path storage/app/backups -prune -o -type d -exec chmod 2775 {} \;
-  find storage bootstrap/cache -path storage/app/backups -prune -o -type f -exec chmod 0664 {} \;
+  #
+  # SECURITY-F8-PRIVATE-STORAGE-PATHS-1: every declared private path is pruned
+  # from the widening too, for the same reason. Widening clinical evidence to
+  # 0664 and stripping "other" a moment later left it world-readable for the
+  # length of the find on every deploy; restrict_private_paths now sets those
+  # trees directly.
+  local -a private_prune=() private_paths=()
+  local rel
+  read -r -a private_paths <<< "${DMS_PRIVATE_PATHS:-}"
+  for rel in "${private_paths[@]}"; do
+    private_prune+=(-path "$rel" -prune -o)
+  done
+  find storage bootstrap/cache -path storage/app/backups -prune -o "${private_prune[@]}" -type d -exec chmod 2775 {} \;
+  find storage bootstrap/cache -path storage/app/backups -prune -o "${private_prune[@]}" -type f -exec chmod 0664 {} \;
   restrict_backup_tree
   restrict_private_paths
 }
@@ -168,11 +180,17 @@ restrict_backup_tree() {
 # workflow evidence, patient documents and the legacy import staging area — the
 # exact exposure this sprint closes — and would then fail the isolation gate
 # below with a confusing message instead of never happening.
+#
+# SECURITY-F8-PRIVATE-STORAGE-PATHS-1: these trees are no longer widened first,
+# so the owner (the runtime, after the chown above) is given read/write here —
+# the widening used to guarantee that. Group bits are left as found: the runtime
+# group has no other member, and the backup tree keeps its 2750/0640.
 restrict_private_paths() {
   local rel p
   for rel in ${DMS_PRIVATE_PATHS:-}; do
     p="${APP_DIR}/${rel}"
     [ -d "$p" ] || continue
+    chmod -R u+rwX "$p"
     chmod -R o-rwx "$p"
   done
 }
@@ -239,6 +257,10 @@ echo "== Backup DB =="
 source "${DEPLOY_TOOLS_DIR}/scripts/lib/private-db-dump.sh"
 dms_prepare_private_backup_dir storage/app/backups
 dms_prepare_private_backup_dir storage/app/backups/deploy
+# SECURITY-F8-PRIVATE-STORAGE-PATHS-1: private-path validation + union, used once
+# the checkout has advanced. Read from the immutable snapshot.
+# shellcheck source=lib/private-paths.sh
+source "${DEPLOY_TOOLS_DIR}/scripts/lib/private-paths.sh"
 
 set -a
 source .env
@@ -268,6 +290,25 @@ if [ "$DEPLOYED_SHA" != "$TARGET_SHA" ]; then
   exit 1
 fi
 echo "HEAD verified at pinned target: ${DEPLOYED_SHA}"
+
+# SECURITY-F8-PRIVATE-STORAGE-PATHS-1: DMS_PRIVATE_PATHS was read from the LIVE
+# identity authority before the fast-forward, so private paths the target
+# release adds would otherwise only be protected from the NEXT deploy on, and
+# this deploy's storage widening would re-open them. Adopt the target's
+# declaration now, read from the pinned commit object (not the working tree).
+# Union only: a release can add private paths, never drop one the host already
+# protects. Any invalid entry fails the deploy closed.
+TARGET_PRIVATE_PATHS="$(
+  # shellcheck disable=SC1090
+  . <(git show "${TARGET_SHA}:deploy/runtime-identity.conf" 2>/dev/null)
+  printf '%s' "${DMS_PRIVATE_PATHS:-}"
+)"
+if ! EFFECTIVE_PRIVATE_PATHS="$(dms_private_paths_union "${DMS_PRIVATE_PATHS:-}" "$TARGET_PRIVATE_PATHS")"; then
+  echo "FATAL: invalid private storage path declaration — NOT GO" >&2
+  exit 1
+fi
+DMS_PRIVATE_PATHS="$EFFECTIVE_PRIVATE_PATHS"
+echo "Private storage paths (live + target): ${DMS_PRIVATE_PATHS}"
 
 echo "== Composer install =="
 composer install --no-dev --optimize-autoloader
@@ -418,6 +459,7 @@ echo "== Verify runtime identity isolation (INFRA-SEC-RUNTIME-1) =="
 if ! bash "${DEPLOY_TOOLS_DIR}/scripts/verify-runtime-isolation.sh" \
       --app-dir "$APP_DIR" \
       --identity-file "${DEPLOY_TOOLS_DIR}/deploy/runtime-identity.conf" \
+      --additional-private-paths "$DMS_PRIVATE_PATHS" \
       --require-host; then
   echo "FATAL: runtime identity isolation is broken — NOT GO" >&2
   exit 1
