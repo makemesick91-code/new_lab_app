@@ -98,8 +98,10 @@ function f8StorageFixture(): string
         'storage/logs' => [0755, true],
         'storage/logs/laravel.log' => [0644, false],
         'bootstrap' => [0755, true],
-        'bootstrap/cache' => [0700, true],
-        'bootstrap/cache/config.php' => [0600, false],
+        // SECURITY-F8B-CONFIG-CACHE-PRIVATE-1: the modes the host actually had —
+        // the compiled configuration readable by every local account.
+        'bootstrap/cache' => [02775, true],
+        'bootstrap/cache/config.php' => [0664, false],
     ];
 
     foreach ($layout as $relative => [$mode, $isDir]) {
@@ -151,8 +153,13 @@ function f8AssertNormalizedTree(string $app, array $declared): void
 {
     // Non-private runtime paths are widened so the runtime group can work.
     expect(f8Mode($app.'/storage/framework/views/compiled.php'))->toBe('0664')
-        ->and(f8Mode($app.'/storage/framework/views'))->toBe('2775')
-        ->and(f8Mode($app.'/bootstrap/cache/config.php'))->toBe('0664');
+        ->and(f8Mode($app.'/storage/framework/views'))->toBe('2775');
+
+    // SECURITY-F8B-CONFIG-CACHE-PRIVATE-1: the compiled configuration holds the
+    // database password and the application key. It used to come out 0664 here
+    // in a 2775 directory — readable by every local account.
+    expect(f8Mode($app.'/bootstrap/cache/config.php'))->toBe('0660')
+        ->and(f8Mode($app.'/bootstrap/cache'))->toBe('2770');
 
     // Private trees are NOT widened: an owner-only file stays owner-only. Under
     // the old widen-then-strip order it came out 0660.
@@ -191,7 +198,7 @@ function f8AssertNormalizedTree(string $app, array $declared): void
 
 function f8FixturePrivatePaths(): string
 {
-    return 'storage/app/private storage/app/clinical-evidence-private storage/app/backups storage/logs';
+    return 'storage/app/private storage/app/clinical-evidence-private storage/app/backups storage/logs bootstrap/cache';
 }
 
 // ── 1. Coverage ─────────────────────────────────────────────────────────────
@@ -243,6 +250,22 @@ it('declares the directories that hold dumps and clinical evidence manifests out
     expect(f8IsCovered('storage/app/public', $declared))->toBeFalse();
 });
 
+// SECURITY-F8B-CONFIG-CACHE-PRIVATE-1: `config:cache` writes the resolved
+// configuration — database password and application key included — under
+// bootstrap/cache, so that directory is as secret as the environment file.
+it('declares the compiled configuration cache as a private path', function () {
+    $declared = f8DeclaredPrivatePaths();
+    $cachedConfig = Str::after(app()->getCachedConfigPath(), base_path().'/');
+
+    expect($declared)->toContain('bootstrap/cache')
+        ->and($cachedConfig)->toBe('bootstrap/cache/config.php')
+        ->and(f8IsCovered($cachedConfig, $declared))->toBeTrue("{$cachedConfig} must sit under a declared private path")
+        // Only the cache directory: application source under bootstrap/ stays
+        // deploy-owned and is never part of the private set.
+        ->and(f8IsCovered('bootstrap/app.php', $declared))->toBeFalse()
+        ->and(f8IsCovered('bootstrap/providers.php', $declared))->toBeFalse();
+});
+
 it('declares only valid and unique private paths', function () {
     $declared = f8DeclaredPrivatePaths();
 
@@ -280,7 +303,18 @@ it('fails closed on an invalid private path and prints nothing', function (strin
     'trailing slash' => ['storage/app/'],
     'dot segment' => ['storage/./app'],
     'glob' => ['storage/app/*'],
+    'bootstrap root' => ['bootstrap'],
+    'bootstrap source file' => ['bootstrap/app.php'],
+    'below the configuration cache' => ['bootstrap/cache/sub'],
+    'configuration cache with trailing slash' => ['bootstrap/cache/'],
+    'configuration cache by traversal' => ['storage/../bootstrap/cache'],
 ]);
+
+it('admits the compiled configuration cache by exact name', function () {
+    [$exit, $out] = f8Lib("dms_private_paths_union 'storage/logs' 'bootstrap/cache'");
+
+    expect($exit)->toBe(0)->and($out)->toBe('storage/logs bootstrap/cache');
+});
 
 it('never expands a glob while splitting a list', function () {
     $dir = tempArtifactDir('f8-glob-');
@@ -356,6 +390,42 @@ it('adopts the private paths a release adds and never drops a live one', functio
     // An invalid live declaration fails the deploy closed instead of being dropped.
     [$exit, , $err] = $run('storage/../.env');
     expect($exit)->toBe(1)->and($err)->toContain('NOT GO');
+});
+
+it('protects the configuration cache in the same deploy that first declares it', function () {
+    $deploy = f8Read('scripts/deploy-vps.sh');
+    $start = strpos($deploy, 'TARGET_PRIVATE_PATHS="$(');
+    $end = strpos($deploy, 'echo "Private storage paths (live + target)', (int) $start);
+    expect($start)->not->toBeFalse()->and($end)->not->toBeFalse();
+    $block = substr($deploy, (int) $start, (int) $end - (int) $start);
+
+    // The live host copy predates bootstrap/cache; the release being installed
+    // declares it. The deploy must adopt it before it normalizes storage.
+    $repo = tempArtifactDir('f8b-target-');
+    mkdir($repo.'/deploy');
+    file_put_contents($repo.'/deploy/runtime-identity.conf', "DMS_RUNTIME_USER=runtime\nDMS_PRIVATE_PATHS=\"storage/app/private bootstrap/cache\"\n");
+    $git = 'git -C '.escapeshellarg($repo).' -c user.name=t -c user.email=t@example.invalid -c commit.gpgsign=false';
+    exec($git.' init -q && '.$git.' add deploy && '.$git.' commit -q -m t');
+    $sha = trim((string) shell_exec('git -C '.escapeshellarg($repo).' rev-parse HEAD'));
+
+    $script = implode("\n", [
+        'set -euo pipefail',
+        '. '.escapeshellarg(base_path('scripts/lib/private-paths.sh')),
+        'cd '.escapeshellarg($repo),
+        'TARGET_SHA='.escapeshellarg($sha),
+        'DMS_PRIVATE_PATHS='.escapeshellarg('storage/app/private storage/logs'),
+        $block,
+        'printf "%s" "$DMS_PRIVATE_PATHS"',
+    ]);
+    $proc = proc_open(['bash', '-c', $script], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
+    $out = stream_get_contents($pipes[1]);
+    $err = stream_get_contents($pipes[2]);
+    fclose($pipes[1]);
+    fclose($pipes[2]);
+    $exit = proc_close($proc);
+
+    expect($exit)->toBe(0, (string) $err)
+        ->and($out)->toBe('storage/app/private storage/logs bootstrap/cache');
 });
 
 it('verifies the merged private path set on the host', function () {

@@ -1,19 +1,17 @@
-# SECURITY-F8-PRIVATE-STORAGE-PATHS-1 — private storage paths declared and never
-# widened. DMS_PRIVATE_PATHS (deploy/runtime-identity.conf) predated three
-# private disks and two dump directories, so every deploy normalized them to
-# 2775/0664 and left them readable by other local accounts (filesystem only;
-# HTTP was never involved). The deploy also sourced the identity file from the
-# live host copy before the fast-forward, so a release adding a path only took
-# effect one deploy later. Fix: list every private disk and dump/manifest
-# directory; prune declared paths from the deploy/rollback widening; merge the
-# target release's list after the fast-forward (union, scripts/lib/private-paths.sh);
-# the isolation verifier checks the merged set. No migration, no route, no
-# permission, no application code change.
+# SECURITY-F8B-CONFIG-CACHE-PRIVATE-1 — the compiled configuration cache is a
+# declared private path. `php artisan config:cache` writes the resolved
+# configuration, database password and application key included, to
+# bootstrap/cache/config.php. The environment file is 0640 (INFRA-SEC-ENV-1), but
+# the deploy normalized bootstrap/cache to 2775/0664, so every local account could
+# read both secrets from the cache. Fix: declare bootstrap/cache in
+# DMS_PRIVATE_PATHS (admitted by exact name in scripts/lib/private-paths.sh), so
+# deploy and rollback prune it from the widening and the isolation gate verifies
+# it. No migration, no route, no permission, no application code change.
 # Carried forward: LEGACY-RME-PROGRAM-CLOSURE-1 stays CLOSED and inherited.
-id: SECURITY-F8-PRIVATE-STORAGE-PATHS-1
+id: SECURITY-F8B-CONFIG-CACHE-PRIVATE-1
 type: SECURITY_FIX
 module: Deploy
-title: "Private storage paths declared and never widened: full DMS_PRIVATE_PATHS coverage, deploy/rollback prune private trees from storage widening, deploy merges the target release's private paths after the fast-forward"
+title: "Compiled configuration cache private: bootstrap/cache declared in DMS_PRIVATE_PATHS, never widened by deploy or rollback, verified by the isolation gate"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 runtime_change: false
 schema_change: false
@@ -24,6 +22,6 @@ ledger_impact: false
 deploy_required: true
 browser_required: false
 test_profiles: [focused, security_regression]
-go_tag: security-f8-private-storage-paths-1-go
-inherits_parent_go: security-doctor-webauthn-device-bound-fail-closed-1-go
+go_tag: security-f8b-config-cache-private-1-go
+inherits_parent_go: security-f8-private-storage-paths-1-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
