@@ -1197,6 +1197,14 @@ return [
         // pays for 659K tokens again. Selected by the `Devflow` token;
         // declared so a rename cannot drop it.
         'tests/Feature/Foundation/DevflowAiInstructionSystemTest.php',
+
+        // SECURITY-F1-CLOSE-PUBLIC-REGISTRATION-1 — there is no public
+        // self-registration, and an authenticated user without a role reaches
+        // only their own profile and notifications (decision D1). Reopening the
+        // route, or an authenticated route that forgets to authorize, is silent:
+        // it renders a 200. Selected by the `PublicRegistrationClosed` token in
+        // BOTH critical variants; declared so a rename cannot drop it.
+        'tests/Feature/Auth/PublicRegistrationClosedTest.php',
     ],
 
     /*

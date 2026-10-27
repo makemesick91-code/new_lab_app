@@ -1,30 +1,26 @@
-# SECURITY-DOCTOR-WEBAUTHN-DEVICE-BOUND-FAIL-CLOSED-1 — two fail-open defects in
-# the WebAuthn device-bound requirement, both reproduced on 3ae7a502 first:
-#   1. config/webauthn.php read `(bool) env('WEBAUTHN_REQUIRE_DEVICE_BOUND', true)`,
-#      so a blank value (or Laravel's empty/(empty)/null/(null)) turned the
-#      requirement OFF; `(bool) config(...)` read a runtime null the same way.
-#   2. Both login services gated on the STORED verdict only; the library reports
-#      a signed BE change with an event and does not refuse (WebAuthn L3 §7.2).
-# Fix: one parser + one reader in WebAuthnDeviceBinding, signed-flag check on
-# both assertion paths, readiness reports provenance and --strict fails on a
-# blank/unparseable value. No migration, no route, no permission, no flag, no
-# enforcement-scope change. Production is unaffected in effect: the variable is
-# absent there (default REQUIRED) and all 7 usable credentials are device-bound.
+# SECURITY-F1-CLOSE-PUBLIC-REGISTRATION-1 — Breeze scaffolding left GET/POST
+# /register open: anyone on the internet could create an account and was logged in
+# at once. The account held no role, so protection rested on every authenticated
+# route authorizing its own action. Decision D1: DISABLE. Fix: remove the two
+# routes, the controller and the view; a test sweeps every parameterless
+# authenticated GET route as a role-less user and allows only the self-scoped
+# pages (profile, notifications, confirm-password). Staff accounts continue
+# through Settings -> Users (`manage users`).
 # Carried forward: LEGACY-RME-PROGRAM-CLOSURE-1 stays CLOSED and inherited.
-id: SECURITY-DOCTOR-WEBAUTHN-DEVICE-BOUND-FAIL-CLOSED-1
+id: SECURITY-F1-CLOSE-PUBLIC-REGISTRATION-1
 type: SECURITY_FIX
-module: DoctorDevice
-title: "WebAuthn device-bound requirement fails closed: strict env parsing, single runtime reader, signed BE-consistency check on both assertion paths"
+module: Auth
+title: "No public self-registration; a role-less user reaches only their own pages"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 runtime_change: true
 schema_change: false
-frontend_change: false
+frontend_change: true
 security_impact: true
 branch_isolation_impact: false
 ledger_impact: false
 deploy_required: true
 browser_required: false
 test_profiles: [focused, security_regression]
-go_tag: security-doctor-webauthn-device-bound-fail-closed-1-go
-inherits_parent_go: dev-ai-claude-memory-optimization-1-go
+go_tag: security-f1-close-public-registration-1-go
+inherits_parent_go: security-doctor-webauthn-device-bound-fail-closed-1-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
