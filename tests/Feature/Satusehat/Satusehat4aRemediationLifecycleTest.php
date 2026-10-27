@@ -1,6 +1,7 @@
 <?php
 
 use App\Modules\Branch\Models\Branch;
+use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\RmeOnlineContext\Middleware\EnsureRmeOnlineContext;
 use App\Modules\Satusehat\Models\SatusehatAuditLog;
@@ -269,6 +270,47 @@ it('reset succeeds after a batch-prep rehearsal and aborts when real data sits i
     $counts = $synthetic->reset($actor);
     expect(Branch::query()->where('code', 'SYN4A')->exists())->toBeFalse()
         ->and($counts['candidates'])->toBeGreaterThanOrEqual(1);
+});
+
+it('reset aborts when a non-synthetic visit sits in SYN4A, even for the synthetic patient', function () {
+    // SECURITY-F7: the visit scope (`visit_number LIKE 'SYN4A-%'`) is what keeps a
+    // real visit out of the force-delete set. A real visit registered in SYN4A for
+    // the synthetic patient, in the synthetic room, trips only the VISIT stray check.
+    $actor = superAdmin();
+    $synthetic = app(SatusehatSyntheticPilotService::class);
+    $synthetic->seed($actor);
+
+    $branch = Branch::query()->where('code', 'SYN4A')->firstOrFail();
+    $seeded = ClinicVisit::query()->where('visit_number', 'SYN4A-0001')->firstOrFail();
+    $real = ClinicVisit::factory()->create([
+        'branch_id' => $branch->id,
+        'patient_id' => $seeded->patient_id,
+        'clinic_room_id' => $seeded->clinic_room_id,
+        'visit_number' => 'VIS-REAL-0001',
+    ]);
+    $before = ClinicVisit::query()->where('branch_id', $branch->id)->count();
+
+    expect(fn () => $synthetic->reset($actor))->toThrow(RuntimeException::class);
+    expect(ClinicVisit::query()->whereKey($real->id)->exists())->toBeTrue()
+        ->and(ClinicVisit::query()->where('branch_id', $branch->id)->count())->toBe($before)
+        ->and(Branch::query()->where('code', 'SYN4A')->exists())->toBeTrue();
+});
+
+it('reset never touches clinical rows outside the SYN4A branch', function () {
+    $actor = superAdmin();
+    $synthetic = app(SatusehatSyntheticPilotService::class);
+    $synthetic->seed($actor);
+
+    $elsewhere = ClinicVisit::factory()->create();
+    $patientsElsewhere = Patient::query()->whereKeyNot(
+        ClinicVisit::query()->where('visit_number', 'SYN4A-0001')->value('patient_id')
+    )->count();
+
+    $synthetic->reset($actor);
+
+    expect(ClinicVisit::query()->whereKey($elsewhere->id)->exists())->toBeTrue()
+        ->and(Patient::query()->count())->toBe($patientsElsewhere)
+        ->and(Branch::query()->where('code', 'SYN4A')->exists())->toBeFalse();
 });
 
 it('the scan cap cannot be bypassed with a negative limit', function () {

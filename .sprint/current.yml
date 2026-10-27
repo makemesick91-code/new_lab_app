@@ -1,30 +1,26 @@
-# SECURITY-DOCTOR-WEBAUTHN-DEVICE-BOUND-FAIL-CLOSED-1 — two fail-open defects in
-# the WebAuthn device-bound requirement, both reproduced on 3ae7a502 first:
-#   1. config/webauthn.php read `(bool) env('WEBAUTHN_REQUIRE_DEVICE_BOUND', true)`,
-#      so a blank value (or Laravel's empty/(empty)/null/(null)) turned the
-#      requirement OFF; `(bool) config(...)` read a runtime null the same way.
-#   2. Both login services gated on the STORED verdict only; the library reports
-#      a signed BE change with an event and does not refuse (WebAuthn L3 §7.2).
-# Fix: one parser + one reader in WebAuthnDeviceBinding, signed-flag check on
-# both assertion paths, readiness reports provenance and --strict fails on a
-# blank/unparseable value. No migration, no route, no permission, no flag, no
-# enforcement-scope change. Production is unaffected in effect: the variable is
-# absent there (default REQUIRED) and all 7 usable credentials are device-bound.
+# SECURITY-F7-SATUSEHAT-RESET-GUARD-SELECTION-1 — the SATUSEHAT synthetic-pilot
+# reset force-deletes visits, records, invoices and patients scoped to the SYN4A
+# branch and aborts on non-synthetic data. Two suites prove it, but no critical-gate
+# token selected them, so a scoping regression could merge with every required gate
+# green. Fix: select both suites in BOTH critical variants and declare them
+# mandatory; add two guard tests (a non-synthetic visit in SYN4A aborts the reset;
+# rows outside SYN4A are never touched) — the second mutant of the scope survived
+# the existing tests. CI and tests only: no runtime change.
 # Carried forward: LEGACY-RME-PROGRAM-CLOSURE-1 stays CLOSED and inherited.
-id: SECURITY-DOCTOR-WEBAUTHN-DEVICE-BOUND-FAIL-CLOSED-1
+id: SECURITY-F7-SATUSEHAT-RESET-GUARD-SELECTION-1
 type: SECURITY_FIX
-module: DoctorDevice
-title: "WebAuthn device-bound requirement fails closed: strict env parsing, single runtime reader, signed BE-consistency check on both assertion paths"
+module: Satusehat
+title: "SATUSEHAT synthetic-pilot reset guard tests selected by the critical gate"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
-runtime_change: true
+runtime_change: false
 schema_change: false
 frontend_change: false
 security_impact: true
 branch_isolation_impact: false
 ledger_impact: false
-deploy_required: true
+deploy_required: false
 browser_required: false
-test_profiles: [focused, security_regression]
-go_tag: security-doctor-webauthn-device-bound-fail-closed-1-go
-inherits_parent_go: dev-ai-claude-memory-optimization-1-go
+test_profiles: [focused]
+go_tag: security-f7-satusehat-reset-guard-selection-1-go
+inherits_parent_go: security-doctor-webauthn-device-bound-fail-closed-1-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
