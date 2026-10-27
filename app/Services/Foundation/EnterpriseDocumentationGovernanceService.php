@@ -3,6 +3,7 @@
 namespace App\Services\Foundation;
 
 use App\Support\Documentation\EnterpriseDocumentationScanner;
+use App\Support\Foundation\GovernanceEvaluation;
 
 /**
  * ENT-15 — Enterprise Documentation & Runbook governance layer.
@@ -33,6 +34,7 @@ class EnterpriseDocumentationGovernanceService
         private readonly BackupDrGovernanceService $backupDrGovernance,
         private readonly LoadTestBaselineGovernanceService $loadTestBaselineGovernance,
         private readonly LoadTestScaleProjectionGovernanceService $loadTestScaleProjectionGovernance,
+        private readonly GovernanceEvaluation $evaluation,
     ) {}
 
     /**
@@ -108,6 +110,15 @@ class EnterpriseDocumentationGovernanceService
      * @return array<string, mixed>
      */
     public function collect(): array
+    {
+        return $this->evaluation->remember(
+            GovernanceEvaluation::key(self::class, 'collect', func_get_args()),
+            fn (): array => $this->evaluate(),
+        );
+    }
+
+    /** CICD-GOVERNANCE-EVALUATION-MEMO-1 — the uncached evaluation behind collect(). */
+    private function evaluate(): array
     {
         $checks = [];
 

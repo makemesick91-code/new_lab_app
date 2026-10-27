@@ -2,6 +2,7 @@
 
 namespace App\Services\Foundation;
 
+use App\Support\Foundation\GovernanceEvaluation;
 use App\Support\Health\HealthCheckService;
 use Illuminate\Support\Facades\Route;
 
@@ -21,6 +22,7 @@ class HealthCheckGovernanceService
         private readonly QueueRetryFailedJobGovernanceService $queueRetryGovernance,
         private readonly IdempotencyOutboxGovernanceService $idempotencyOutboxGovernance,
         private readonly DeveloperConsoleGovernanceService $developerConsoleGovernance,
+        private readonly GovernanceEvaluation $evaluation,
     ) {}
 
     /**
@@ -86,6 +88,15 @@ class HealthCheckGovernanceService
      * @return array<string, mixed>
      */
     public function collect(): array
+    {
+        return $this->evaluation->remember(
+            GovernanceEvaluation::key(self::class, 'collect', func_get_args()),
+            fn (): array => $this->evaluate(),
+        );
+    }
+
+    /** CICD-GOVERNANCE-EVALUATION-MEMO-1 — the uncached evaluation behind collect(). */
+    private function evaluate(): array
     {
         $checks = [];
 
