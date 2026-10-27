@@ -1232,6 +1232,27 @@ return [
         // pays for 659K tokens again. Selected by the `Devflow` token;
         // declared so a rename cannot drop it.
         'tests/Feature/Foundation/DevflowAiInstructionSystemTest.php',
+
+        // CICD-GOVERNANCE-EVALUATION-MEMO-1 — one governance evaluation computes
+        // each enterprise gate (ENT-5..ENT-16) once. The gates re-verify their
+        // predecessors with fresh instances, so the chain doubled at every level
+        // and one governance summary rebuilt ENT-5 2,080 times. The memo lives
+        // for the outermost evaluation only; this suite pins both that it
+        // removes the recomputation and that it never serves a result across
+        // evaluations, after an exception, or with the kill switch off. Both
+        // failure modes are silent: one is a slow gate, the other a stale GO.
+        // Selected by the `FoundationGovernance` token; declared so a rename
+        // cannot drop it.
+        'tests/Feature/Foundation/FoundationGovernanceEvaluationMemoTest.php',
+
+        // CICD-COMPOSER-CACHE-RELEASE-GATES-1 — every GitHub-hosted job that
+        // runs `composer install` restores Composer's download cache first, keyed
+        // on composer.lock; nothing caches vendor/, and the self-hosted runner
+        // keeps its own persistent cache. A job added without the cache is not
+        // an error anywhere else, only a slower run that also fails whenever
+        // Packagist is unreachable. Selected by the `Cicd` token; declared so a
+        // rename cannot drop it.
+        'tests/Feature/Cicd/ComposerCacheCoverageTest.php',
     ],
 
     /*
