@@ -179,6 +179,12 @@ Never run these during deploy or rollback on the pilot/production VPS:
   and the isolation gate reports every listed path as private. Spot-check one
   path with `runuser -u www-data -- test -r storage/app/clinical-evidence-private`
   (must fail) and `runuser -u daengtisiams -- test -r <same path>` (must succeed).
+- Configuration cache (SECURITY-F8B-CONFIG-CACHE-PRIVATE-1): `bootstrap/cache`
+  holds the database password and the application key once `config:cache` runs,
+  so it is a private path too. `runuser -u www-data -- test -r
+  bootstrap/cache/config.php` must fail. A deploy of a release older than that
+  change fails closed on a host that declares the path; roll back with
+  `scripts/rollback-vps.sh` instead.
 
 ## Security / PII Notes
 

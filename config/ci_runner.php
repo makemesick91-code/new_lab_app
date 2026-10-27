@@ -690,6 +690,14 @@ return [
          * `RuntimeIdentityIsolation` token in both critical-gate variants.
          */
         'tests/Feature/Deploy/RuntimeIdentityIsolationPrivatePathsTest.php',
+        /*
+         * SECURITY-F8B-CONFIG-CACHE-PRIVATE-1 — the isolation gate fails when
+         * the declared configuration cache (bootstrap/cache, which holds the
+         * database password and the application key once `config:cache` runs)
+         * is readable by another local account. Selected by the existing
+         * `RuntimeIdentityIsolation` token in both critical-gate variants.
+         */
+        'tests/Feature/Deploy/RuntimeIdentityIsolationTest.php',
 
         // FEATURE-DOCTOR-TRUSTED-ANDROID-DEVICE-LOCK-1 Phase 1 — a Doctor is
         // confined to the ACTIVE patients of the treatment room they are online

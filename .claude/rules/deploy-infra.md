@@ -182,6 +182,10 @@ code, then the canonical rule, and report the drift.
   target release's list after the fast-forward (union only, via `scripts/lib/private-paths.sh`), because it sources the
   live identity file first. A new private disk fails `RuntimeIdentityIsolationPrivatePathsTest` until listed. Source:
   `.cursor/rules/209-private-storage-paths-declared-and-never-widened.mdc`.
+- **AIR-DEP-30** `bootstrap/cache` is a declared private path: `config:cache` writes the database password and the
+  application key into `bootstrap/cache/config.php`, so the directory is as secret as the environment file. It is the
+  only private path outside `storage/`, admitted by exact name in `scripts/lib/private-paths.sh`; the isolation gate
+  fails when another account can read it. Source: `.cursor/rules/211-config-cache-private.mdc`.
 
 ## Current posture (snapshot 2026-10-25 — verify before relying on it)
 

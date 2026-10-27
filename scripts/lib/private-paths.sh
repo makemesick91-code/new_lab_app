@@ -16,9 +16,16 @@
 # declaration. A union can only ADD protection: a release can never remove a path
 # the host already treats as private.
 
-# A private path is a relative path under storage/, one or more plain segments.
-# No absolute paths, no "..", no empty segments, no glob characters: the value
-# is used as a find(1) -path pattern and as a chmod target.
+# A private path is a relative path under storage/, one or more plain segments,
+# or exactly bootstrap/cache. No absolute paths, no "..", no empty segments, no
+# glob characters: the value is used as a find(1) -path pattern and as a chmod
+# target.
+#
+# SECURITY-F8B-CONFIG-CACHE-PRIVATE-1: bootstrap/cache is the one private path
+# outside storage/. `php artisan config:cache` writes the resolved configuration
+# there — the database password and the application key included — so it holds
+# every secret the environment file holds. It is admitted by exact name only;
+# nothing else under bootstrap/ may be declared.
 dms_private_path_is_valid() {
   local rel="${1:-}"
   case "$rel" in
@@ -27,7 +34,7 @@ dms_private_path_is_valid() {
   case "/${rel}/" in
     */../* | */./* ) return 1 ;;
   esac
-  [[ "$rel" =~ ^storage(/[A-Za-z0-9._-]+)+$ ]]
+  [[ "$rel" =~ ^storage(/[A-Za-z0-9._-]+)+$ || "$rel" == "bootstrap/cache" ]]
 }
 
 # Print the union of one or more space-separated path lists, in first-seen
