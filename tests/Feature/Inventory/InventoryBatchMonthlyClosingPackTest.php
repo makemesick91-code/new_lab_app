@@ -408,3 +408,16 @@ it('registers sidebar route for monthly closing pack', function () {
         ->get(route('inventory.reports.batch-monthly-closing.index'))
         ->assertOk();
 });
+
+it('neutralises a formula in a batch number in the closing pack export', function () {
+    // SECURITY-F3: batch numbers and references are typed by users.
+    sprint6844CreateDisposalRequest(test()->mainBranch, ['batch_number' => '@B6844+FORMULA']);
+
+    $csv = preg_replace('/^\xEF\xBB\xBF/', '', $this->actingAs(test()->reportUser)
+        ->get(route('inventory.reports.batch-monthly-closing.export', ['branch_id' => test()->mainBranch->id]))
+        ->streamedContent());
+    $cells = collect(preg_split("/\r\n|\n/", trim($csv)))->flatMap(fn (string $l) => str_getcsv($l));
+
+    expect($cells)->toContain("'@B6844+FORMULA")
+        ->and($cells)->not->toContain('@B6844+FORMULA');
+});

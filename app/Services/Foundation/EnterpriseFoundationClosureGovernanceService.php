@@ -3,6 +3,7 @@
 namespace App\Services\Foundation;
 
 use App\Support\Foundation\EnterpriseFoundationClosureScanner;
+use App\Support\Foundation\GovernanceEvaluation;
 
 /**
  * ENT-16 — Enterprise Foundation Closure GO/NO-GO governance layer.
@@ -25,6 +26,7 @@ class EnterpriseFoundationClosureGovernanceService
         private readonly EnterpriseFoundationClosureScanner $scanner,
         private readonly EnterpriseDocumentationGovernanceService $enterpriseDocumentationGovernance,
         private readonly FoundationRoadmapGovernanceService $roadmapGovernance,
+        private readonly GovernanceEvaluation $evaluation,
     ) {}
 
     /**
@@ -103,6 +105,15 @@ class EnterpriseFoundationClosureGovernanceService
      * @return array<string, mixed>
      */
     public function collect(?array $enterpriseDocumentationReport = null): array
+    {
+        return $this->evaluation->remember(
+            GovernanceEvaluation::key(self::class, 'collect', func_get_args()),
+            fn (): array => $this->evaluate($enterpriseDocumentationReport),
+        );
+    }
+
+    /** CICD-GOVERNANCE-EVALUATION-MEMO-1 — the uncached evaluation behind collect(). */
+    private function evaluate(?array $enterpriseDocumentationReport = null): array
     {
         $checks = [];
 

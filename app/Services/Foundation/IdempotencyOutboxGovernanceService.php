@@ -2,6 +2,7 @@
 
 namespace App\Services\Foundation;
 
+use App\Support\Foundation\GovernanceEvaluation;
 use Illuminate\Support\Facades\Schema;
 
 /**
@@ -18,6 +19,7 @@ class IdempotencyOutboxGovernanceService
         private readonly IdempotencyService $idempotency,
         private readonly OutboxService $outbox,
         private readonly QueueRetryFailedJobGovernanceService $queueRetryGovernance,
+        private readonly GovernanceEvaluation $evaluation,
     ) {}
 
     /**
@@ -73,6 +75,15 @@ class IdempotencyOutboxGovernanceService
      * @return array<string, mixed>
      */
     public function collect(): array
+    {
+        return $this->evaluation->remember(
+            GovernanceEvaluation::key(self::class, 'collect', func_get_args()),
+            fn (): array => $this->evaluate(),
+        );
+    }
+
+    /** CICD-GOVERNANCE-EVALUATION-MEMO-1 — the uncached evaluation behind collect(). */
+    private function evaluate(): array
     {
         $queue = $this->queueGovernance->collect();
         $idempotencyAudit = Schema::hasTable('sys_idempotency_keys')

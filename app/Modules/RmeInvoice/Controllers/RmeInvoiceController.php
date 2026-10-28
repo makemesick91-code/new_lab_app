@@ -18,6 +18,7 @@ use App\Modules\RmeInvoice\Services\RmeInvoiceService;
 use App\Modules\RmeInvoice\Services\RmePaymentService;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
 use App\Modules\Treatment\Services\TreatmentService;
+use App\Support\Export\CsvCell;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
@@ -178,13 +179,13 @@ class RmeInvoiceController extends Controller
 
         return response()->stream(function () use ($invoices, $columns): void {
             $handle = fopen('php://output', 'w');
-            fputcsv($handle, $columns);
+            fputcsv($handle, CsvCell::row($columns));
 
             foreach ($invoices as $invoice) {
                 $paidAmount = (float) $invoice->payments->sum('amount');
                 $days = $this->invoiceAgeDays($invoice);
 
-                fputcsv($handle, [
+                fputcsv($handle, CsvCell::row([
                     $invoice->invoice_number,
                     $invoice->patient?->name ?? '-',
                     $invoice->clinicVisit?->visit_number ?? '-',
@@ -196,7 +197,7 @@ class RmeInvoiceController extends Controller
                     number_format((float) $invoice->grand_total, 2, '.', ''),
                     number_format($paidAmount, 2, '.', ''),
                     number_format($this->receivableRemaining($invoice), 2, '.', ''),
-                ]);
+                ]));
             }
 
             fclose($handle);

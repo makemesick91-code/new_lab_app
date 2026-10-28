@@ -183,7 +183,9 @@ Route::get('/dashboard', [HomeDashboardController::class, 'index'])
 Route::middleware('auth')->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
-    Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
+    // SECURITY-F2: no self-service account deletion. Hard-deleting a user nulls
+    // clinical attribution and cascades audit trails; an administrator
+    // deactivates an account instead (Settings -> Users).
 
     // LAB-WORKFLOW-V2 Phase 5 — in-app notification inbox (strictly self-scoped).
     Route::get('/notifications', [NotificationController::class, 'index'])->name('notifications.index');
