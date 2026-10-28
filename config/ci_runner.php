@@ -707,6 +707,41 @@ return [
          */
         'tests/Feature/Deploy/SecretFilePermissionHardeningTest.php',
         /*
+         * SECURITY-G7B-APP-KEY-REENCRYPTION-1 — every encrypted model cast is in
+         * the rotation registry, values under a previous application key are
+         * rewritten and verified, and nothing is written while any value decrypts
+         * with no configured key. A rename that dropped this suite from the gate
+         * would let a new encrypted column silently keep a retired key alive.
+         * Selected by the `AppKeyReencryption` token in both critical variants.
+         */
+        'tests/Feature/Security/AppKeyReencryptionTest.php',
+        /*
+         * SECURITY-G7B-APP-KEY-REENCRYPTION-1 — every file that keys an HMAC on
+         * the current application key is registered with its rotation
+         * behaviour, and the doctor login ticket and device pairing code issued
+         * under a previous key are refused (not honoured, not a 500) after
+         * rotation. Selected by the `AppKeyReencryption` token in both variants.
+         */
+        'tests/Feature/Security/AppKeyReencryptionCurrentKeyConsumersTest.php',
+        /*
+         * SECURITY-G7B-APP-KEY-REENCRYPTION-1 — encrypted cookies and signed
+         * URLs made with a previous application key keep working until that key
+         * is retired, and are then rejected cleanly (absent cookie, invalid
+         * signature, never a 500). The retire step depends on both halves.
+         * Selected by the `AppKeyReencryption` token in both variants.
+         */
+        'tests/Feature/Security/AppKeyReencryptionFrameworkDependenciesTest.php',
+        /*
+         * SECURITY-G7B-APP-KEY-REENCRYPTION-1 — the recovery paths: every value
+         * reads with no previous key once re-encryption is complete; SATUSEHAT
+         * snapshots migrate across chunks byte for byte; a backup restored after
+         * the old key was retired is refused (nothing written) and recovered with
+         * the escrowed key; a rollback after a complete or interrupted
+         * re-encryption moves values back; a rollback that drops the new key is
+         * refused. Selected by the `AppKeyReencryption` token in both variants.
+         */
+        'tests/Feature/Security/AppKeyReencryptionRecoveryTest.php',
+        /*
          * SECURITY-DEPENDENCY-UPDATES-1 — every package patched for a published
          * advisory stays at or above its first fixed release in composer.lock
          * and package-lock.json, and on the major the application was built
