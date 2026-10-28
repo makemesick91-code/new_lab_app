@@ -1,29 +1,26 @@
-# SECURITY-G7B-APP-KEY-REENCRYPTION-1 — rotating the application key without losing
-# encrypted data. Laravel decrypts with the current key and then each previous key, so a
-# rotated key keeps old rows readable only while the old key stays configured. Nothing
-# could move rows to the new key or tell an operator whether the old key was still needed.
-# Fix: config/app_key_rotation.php registers the four encrypted columns (a test fails when
-# a model gains an unregistered encrypted cast); AppKeyReencryptionService classifies each
-# value as current/previous/undecryptable and rewrites previous values one row per
-# transaction under a row lock; `security:app-key-reencrypt` (dry run by default, counts
-# only) reports and, with --apply, rewrites. No migration, no route, no permission, no
-# flag. The production rotation is a separate supervised operation and is not part of
-# this change.
+# SECURITY-F1-CLOSE-PUBLIC-REGISTRATION-1 — Breeze scaffolding left GET/POST
+# /register open: anyone on the internet could create an account and was logged in
+# at once. The account held no role, so protection rested on every authenticated
+# route authorizing its own action. Decision D1: DISABLE. Fix: remove the two
+# routes, the controller and the view; a test sweeps every parameterless
+# authenticated GET route as a role-less user and allows only the self-scoped
+# pages (profile, notifications, confirm-password). Staff accounts continue
+# through Settings -> Users (`manage users`).
 # Carried forward: LEGACY-RME-PROGRAM-CLOSURE-1 stays CLOSED and inherited.
-id: SECURITY-G7B-APP-KEY-REENCRYPTION-1
+id: SECURITY-F1-CLOSE-PUBLIC-REGISTRATION-1
 type: SECURITY_FIX
-module: Security
-title: "Application key rotation: registered encrypted columns, re-encryption command, safe previous-key retirement"
+module: Auth
+title: "No public self-registration; a role-less user reaches only their own pages"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 runtime_change: false
 schema_change: false
-frontend_change: false
+frontend_change: true
 security_impact: true
 branch_isolation_impact: false
 ledger_impact: false
 deploy_required: true
 browser_required: false
 test_profiles: [focused, security_regression]
-go_tag: security-g7b-app-key-reencryption-1-go
+go_tag: security-f1-close-public-registration-1-go
 inherits_parent_go: security-f8c-env-copy-backup-classification-1-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
