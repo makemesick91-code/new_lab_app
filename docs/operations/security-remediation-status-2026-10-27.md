@@ -1,7 +1,7 @@
 ---
 kb_status: snapshot
 kb_verified_against: f9134aac
-kb_updated: 2026-10-28
+kb_updated: 2026-10-29
 ---
 
 # Status Remediasi Keamanan — 2026-10-27
@@ -10,6 +10,10 @@ Snapshot status remediasi keamanan setelah audit sistem menyeluruh 2026-10-27. H
 **bukan** sumber kebenaran. Yang menjadi sumber kebenaran adalah kode, GO tag git, dan pull
 request. Status di sini dicatat per **2026-10-28 01:34 WITA**. Untuk keadaan terbaru, periksa GO tag dan
 PR terkait.
+
+> **Pembaruan 2026-10-29:** urutan merge PR sesudah snapshot ini dicatat di bagian **Pembaruan**
+> di bawah. Produksi tetap `f9134aac`. PR yang sudah di-merge berstatus MERGED_NOT_DEPLOYED dan
+> belum diverifikasi di produksi.
 
 Kembali ke [00-INDEX](../00-INDEX.md).
 
@@ -45,7 +49,166 @@ Kembali ke [00-INDEX](../00-INDEX.md).
   baru; 0 error aplikasi sejak rotasi; nilai password baru tidak ditemukan di log mana pun.
 - Pemeriksaan regresi F-8b/F-8c setelah rotasi: GO.
 
+## Pembaruan — status merge per 2026-10-29 07:52 WITA
+
+Bagian ini mencatat yang terjadi **setelah** snapshot 2026-10-28 01:34 WITA. Snapshot di bawah tidak
+diubah, supaya tetap terbaca sebagai catatan pada waktu itu.
+
+**Produksi tidak berubah: tetap `f9134aac`.** Semua PR di bawah berstatus **MERGED_NOT_DEPLOYED**:
+sudah di-merge ke basis kanonik, belum di-deploy, dan belum diverifikasi di produksi. Kode yang sudah
+di-merge tidak otomatis dianggap terverifikasi di produksi. Deploy memerlukan persetujuan terpisah.
+
+Basis kanonik setelah merge terakhir di daftar ini: `b07b54b0`.
+
+### Urutan merge
+
+Setiap PR di-merge satu per satu dengan langkah berikut:
+
+1. Basis terbaru di-merge ke branch PR.
+2. Diff lengkapnya ditinjau.
+3. Semua gate CI wajib dijalankan pada SHA kandidat yang persis akan di-merge.
+4. PR di-squash-merge hanya bila semua gate wajib lulus.
+5. Tree hasil merge dibandingkan dengan tree kandidat, dan keduanya identik.
+
+| # | PR | Item | Run CI kandidat | Commit merge | Run CI basis setelah merge |
+|---:|---|---|---|---|---|
+| 1 | #545 | Memo evaluasi governance | `40551686916` lulus | `7d3a86b0` | `40585194638` lulus |
+| 2 | #546 | Cache Composer | `40585384993` lulus | `cc470286` | `40602199954` lulus |
+| 3 | #544 | Pembaruan dependency | `40602345930` lulus | `a1229ac8` | `40613944439` lulus |
+| 4 | #534 | Persiapan G7-B (re-enkripsi application key) | `40614035627` lulus | `5d62faf3` | `40626190812` lulus |
+| 5 | #535 | F-1 — registrasi publik ditutup | `40626294749` lulus | `b3434104` | `40638416365` lulus |
+| 6 | #536 | F-2 — penghapusan akun sendiri ditolak | `40638576534` lulus | `da897219` | `40650040667` lulus |
+| 7 | #537 | F-6 — REPL tidak ikut ke produksi | `40650223934` lulus | `50e5655a` | `40666705791` lulus |
+| 8 | #538 | F-7 — guard reset sintetis SATUSEHAT | `40666902306` lulus | `bd1e08d9` | `40683648510` lulus |
+| 9 | #539 | F-3 — sel CSV diamankan dari formula | `40684559972` lulus | `da62a57d` | `40704866085` lulus |
+| 10 | #540 | F-5 — class dari JavaScript tetap ada di build | `40705147232` lulus | `d0e11ad6` | `40721932691` **dibatalkan** |
+| 11 | #541 | F-4a1 — tanggal rekam medis | `40723557594` lulus | `1ee92f4c` | `40740967050` lulus |
+| 12 | #542 | F-4a2 — layar keuangan | `40742505433` lulus | `21f2e2e8` | `40754946223` lulus |
+| 13 | #543 | F-4a3 — periode adopsi SATUSEHAT | `40755621389` lulus | `b07b54b0` | `40774433531` lulus |
+
+"Lulus" berarti semua gate CI wajib lulus. Full Suite dilewati oleh kebijakan sementara dan **tidak**
+dihitung sebagai PASS.
+
+"Dibatalkan" berarti run CI basis dihentikan oleh aturan concurrency workflow: merge berikutnya
+membatalkan run yang masih berjalan pada branch yang sama. Run yang dibatalkan **tidak** dihitung
+lulus. Tree setiap commit merge sudah diuji lebih dulu lewat run CI kandidatnya, dan run CI basis
+terakhir menguji seluruh perubahan sekaligus.
+
+Halaman ini sendiri di-merge lewat #547, setelah urutan di atas.
+
+Catatan sprint yang sudah ada di basis:
+
+- [memo evaluasi governance](../sprints/cicd-governance-evaluation-memo-1.md)
+- [cache Composer](../sprints/cicd-composer-cache-release-gates-1.md)
+- [pembaruan dependency](../sprints/security-dependency-updates-1.md) dan
+  [penilaian keamanan dependency](../governance/dependency-security-assessment-2026-10-27.md)
+- [G7-B](../sprints/security-g7b-app-key-reencryption-1.md)
+- [F-1](../sprints/security-f1-close-public-registration-1.md)
+- [F-2](../sprints/security-f2-deny-self-deletion-1.md)
+- [F-3](../sprints/security-f3-csv-cell-guard-1.md)
+- [F-4a1](../sprints/security-f4a1-clinic-calendar-clinical-records-1.md)
+- [F-4a2](../sprints/security-f4a2-clinic-calendar-financial-dashboards-1.md)
+- [F-4a3](../sprints/security-f4a3-clinic-calendar-satusehat-adoption-1.md)
+- [F-5](../sprints/security-f5-tailwind-js-content-1.md)
+- [F-6](../sprints/security-f6-tinker-require-dev-1.md)
+- [F-7](../sprints/security-f7-satusehat-reset-guard-selection-1.md)
+
+### G7-B — rotasi application key produksi: tetap NO-GO
+
+- PR persiapan #534 sudah di-merge (`5d62faf3`), tetapi **belum di-deploy**.
+- Rotasi di produksi tetap **NO-GO**. Rotasi memerlukan laporan kesiapan final dan persetujuan
+  eksekusi yang terpisah.
+- Sudah diverifikasi (2026-10-28, tanpa mengubah database produksi):
+  - Backup sebelum rotasi berhasil dipulihkan ke database sementara, lalu database sementara itu
+    dihapus.
+  - Data terenkripsi yang harus ditulis ulang saat rotasi sudah dihitung.
+  - Antrean job kosong, tidak ada job gagal, dan worker aktif. Ini harus diperiksa ulang di dalam
+    jendela rotasi.
+- Uji terisolasi di #534 lulus di critical gate CI: re-enkripsi data, pembacaan tanpa key lama,
+  pemulihan backup dengan key yang di-escrow, dampak ke login dokter, pairing perangkat, dan signature
+  payment intent, serta rollback. Uji ini memakai data uji dan **belum** dijalankan terhadap data
+  produksi.
+- Masih terbuka sebelum rotasi produksi:
+  - Penyimpanan key lama (escrow), dengan custodian yang ditetapkan owner.
+  - Deploy #534, yang memerlukan persetujuan terpisah.
+  - Keputusan retensi untuk salinan file environment yang masih memuat key lama.
+  - Rencana rollback final untuk jendela rotasi.
+  - Laporan kesiapan final.
+- Diperiksa di dalam jendela rotasi:
+  - re-enkripsi data produksi berhasil;
+  - pemulihan berhasil setelah key lama dilepas;
+  - login dokter dan pairing perangkat berfungsi;
+  - signature payment intent lama menjadi tidak berlaku;
+  - tidak ada transaksi klinis atau kasir yang aktif;
+  - queue dan worker siap.
+
+### F-4b dan F-4c — keputusan sudah ada, PR belum di-merge
+
+- **D15 disetujui** (2026-10-28): tanggal bisnis inventori memakai Asia/Makassar. Timestamp event UTC
+  dan catatan ledger yang immutable tetap dipertahankan.
+- **D16 disetujui** (2026-10-28): tanggal operasional lab memakai Asia/Makassar. Timestamp event,
+  urutan workflow, dan due date yang sudah ditetapkan tetap dipertahankan.
+- Tidak ada backfill data historis di produksi.
+- Implementasi ada di PR terbuka. CI hijau, tetapi PR **belum di-merge**:
+
+  | Item | PR | Run CI |
+  |---|---|---|
+  | F-4c — tanggal order lab | #548 | `40594041015` |
+  | F-4b1 — ledger inventori | #549 | `40594072585` |
+  | F-4b2 — kedaluwarsa batch | #550 | `40594083925` |
+  | F-4b3 — laporan inventori | #551 | `40594096140` |
+  | F-4b4 — analitik inventori | #552 | `40594105262` |
+
+- Di luar cakupan F-4c dan menunggu keputusan owner tersendiri:
+  - analitik KPI lab dan perencanaan kapasitas;
+  - laporan jatuh tempo invoice lab legacy.
+
+### Durasi CI setelah memo evaluasi governance (#545)
+
+Step perintah governance turun konsisten di setiap run sesudah #545 (diukur pada 28 run):
+
+| Step | Sebelum | Sesudah |
+|---|---:|---:|
+| Governance audit commands (critical gate) | 284–457 dtk | 10–17 dtk |
+| NSF-9 ENT-14, ENT-15, ENT-16 | 50–101 dtk per step | 0–2 dtk per step |
+| NSF-10 capture release evidence | 205–293 dtk | 1–3 dtk |
+
+Step critical regression tests **tidak** menunjukkan penghematan agregat yang dapat diklaim:
+
+| Kondisi | Rentang | Jumlah run |
+|---|---:|---:|
+| Sebelum #545 | 5.396–9.416 dtk | 13 |
+| Sesudah #545 | 4.109–8.207 dtk | 28 |
+
+Rentang keduanya tumpang tindih karena kecepatan runner berbeda-beda. Tidak ada target benchmark yang
+diklaim tercapai.
+
+Yang tidak diubah:
+
+- Cakupan test wajib tetap lengkap.
+- Parallel testing tetap nonaktif.
+- Memo dibatasi pada satu evaluasi. Uji dengan dokumen yang sengaja dihapus menghasilkan FAIL yang
+  sama dengan dan tanpa memo, sehingga memo tidak menyembunyikan hasil basi.
+
+### Keputusan owner — status terbaru
+
+| Kode | Status |
+|---|---|
+| D4 | PENDING |
+| D5 | Disetujui prinsipnya; implementasi PENDING. Visibilitas repository belum diubah. |
+| D6 | PENDING |
+| D15 | **Disetujui** 2026-10-28 |
+| D16 | **Disetujui** 2026-10-28 |
+| D17 | PENDING |
+| D20 | Tidak berubah: default yang direkomendasikan tetap dipakai di F-3 |
+
+Perubahan infrastruktur, tagihan, visibilitas repository, dan retensi tidak dilakukan tanpa
+persetujuan yang sesuai.
+
 ## Belum selesai — jangan dianggap COMPLETE
+
+> Bagian ini adalah snapshot per 2026-10-28 01:34 WITA dan tidak diubah. Status PR, run CI, dan
+> keputusan owner yang lebih baru ada di bagian **Pembaruan** di atas.
 
 ### G7-B — rotasi application key: PENDING
 
@@ -145,6 +308,9 @@ belum aman. Matrix sharding lintas job sudah siap dan menjadi langkah berikutnya
 critical gate diukur ulang dengan memo terpasang.
 
 ## Keputusan owner yang masih terbuka
+
+> Tabel ini adalah snapshot per 2026-10-28 01:34 WITA. D15 dan D16 sudah disetujui sesudahnya;
+> lihat bagian **Pembaruan** di atas.
 
 | Kode | Topik | Status | Dampak |
 |---|---|---|---|
