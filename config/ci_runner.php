@@ -1338,8 +1338,8 @@ return [
         // in BOTH critical variants; declared so a rename cannot drop it.
         'tests/Feature/RME/RmeClinicCalendarBoundaryFinancialDashboardsTest.php',
 
-        // SECURITY-F4A3-CLINIC-CALENDAR-SATUSEHAT-ADOPTION-1 (part of SECURITY-F4A) — satusehat diagnosis adoption default period ends on the clinic date on
-        // the clinic calendar (Asia/Makassar). A UTC "today" names the previous
+        // SECURITY-F4A3-CLINIC-CALENDAR-SATUSEHAT-ADOPTION-1 (part of SECURITY-F4A) — the SATUSEHAT diagnosis adoption default period ends on
+        // the clinic date (Asia/Makassar). A UTC "today" names the previous
         // clinic day for eight hours of every day; the screens still render, so
         // the error is silent. Selected by the `RmeClinicCalendarBoundary` token
         // in BOTH critical variants; declared so a rename cannot drop it.
