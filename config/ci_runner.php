@@ -1303,6 +1303,18 @@ return [
         // silently, with a redirect. Selected by the `AccountSelfDeletionDenied`
         // token in BOTH critical variants; declared so a rename cannot drop it.
         'tests/Feature/Auth/AccountSelfDeletionDeniedTest.php',
+
+        // SECURITY-F7-SATUSEHAT-RESET-GUARD-SELECTION-1 — the SATUSEHAT
+        // synthetic-pilot reset force-deletes visits, records, invoices and
+        // patients. It is scoped to the synthetic branch and aborts on real
+        // data, and these two suites prove it — but no critical-gate token
+        // selected them, so a scoping regression could merge with every
+        // required gate green and hard-delete real clinical rows in production.
+        // Selected by the `Satusehat4aSyntheticRehearsal` and
+        // `Satusehat4aRemediationLifecycle` tokens in BOTH critical variants;
+        // declared so a rename cannot drop them.
+        'tests/Feature/Satusehat/Satusehat4aSyntheticRehearsalTest.php',
+        'tests/Feature/Satusehat/Satusehat4aRemediationLifecycleTest.php',
     ],
 
     /*
