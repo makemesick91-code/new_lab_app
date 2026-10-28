@@ -23,6 +23,7 @@ use App\Support\Devflow\CanonicalBaseRefResolver;
 use App\Support\Devflow\DevflowScanner;
 use App\Support\Devflow\GitChangeInspector;
 use App\Support\Devflow\SharedFoundationScanner;
+use App\Support\Foundation\GovernanceEvaluation;
 use Illuminate\Auth\Events\Login;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Console\Events\CommandStarting;
@@ -40,6 +41,11 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         require_once app_path('Support/helpers.php');
+
+        // CICD-GOVERNANCE-EVALUATION-MEMO-1 — shared so every governance gate
+        // reached during one evaluation sees the same memo. It caches only while
+        // an evaluation is open and forgets everything when it closes.
+        $this->app->singleton(GovernanceEvaluation::class);
 
         // DEVFLOW-1 read-only scanners need the repository base path.
         $this->app->bind(DevflowScanner::class, fn () => new DevflowScanner(base_path()));

@@ -3,11 +3,13 @@
 namespace App\Modules\MedicalRecord\Services;
 
 use App\Modules\Branch\Services\BranchService;
+use App\Modules\ClinicOversight\Support\ClinicalDayWindow;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Consent\Services\RmeVisitConsentService;
 use App\Modules\MedicalRecord\Interfaces\MedicalRecordRepositoryInterface;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\RME\Services\DoctorPatientScopeService;
+use App\Support\Clinical\ClinicalClock;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -28,6 +30,7 @@ class MedicalRecordService
         // FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 / FIX-02 — every write path
         // in this service asserts the consent gate before it touches a record.
         private readonly RmeVisitConsentService $consents,
+        private readonly ClinicalClock $clock,
     ) {}
 
     /**
@@ -78,9 +81,14 @@ class MedicalRecordService
      */
     public function finalizedTodayCount(array $branchIds): int
     {
-        return $this->medicalRecords->countFinalizedTodayByBranches(
+        // SECURITY-F4A: the clinic day as UTC instants — finalized_at is a UTC
+        // timestamp, so a date comparison would count the UTC day.
+        $today = ClinicalDayWindow::today($this->clock);
+
+        return $this->medicalRecords->countFinalizedInRangeByBranches(
             $branchIds,
-            now()->toDateString(),
+            $today->startUtcString(),
+            $today->endUtcString(),
         );
     }
 

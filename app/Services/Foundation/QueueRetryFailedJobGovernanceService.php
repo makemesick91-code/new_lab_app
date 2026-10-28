@@ -2,6 +2,7 @@
 
 namespace App\Services\Foundation;
 
+use App\Support\Foundation\GovernanceEvaluation;
 use App\Support\Queue\QueueRetryFailedJobReadinessService;
 
 /**
@@ -17,7 +18,10 @@ use App\Support\Queue\QueueRetryFailedJobReadinessService;
  */
 class QueueRetryFailedJobGovernanceService
 {
-    public function __construct(private readonly QueueRetryFailedJobReadinessService $readiness) {}
+    public function __construct(
+        private readonly QueueRetryFailedJobReadinessService $readiness,
+        private readonly GovernanceEvaluation $evaluation,
+    ) {}
 
     /**
      * @return list<array{id: string, title: string, description: string}>
@@ -82,6 +86,15 @@ class QueueRetryFailedJobGovernanceService
      * @return array<string, mixed>
      */
     public function collect(): array
+    {
+        return $this->evaluation->remember(
+            GovernanceEvaluation::key(self::class, 'collect', func_get_args()),
+            fn (): array => $this->evaluate(),
+        );
+    }
+
+    /** CICD-GOVERNANCE-EVALUATION-MEMO-1 — the uncached evaluation behind collect(). */
+    private function evaluate(): array
     {
         $readiness = $this->readiness->collect();
 
