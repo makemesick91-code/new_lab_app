@@ -1,26 +1,24 @@
-# SECURITY-F3-CSV-CELL-GUARD-1 — seven web CSV exporters wrote raw cell values. A
-# value beginning with = + - @ tab or CR (a patient or product name, a batch
-# number, a note) becomes a live formula in the spreadsheet a user opens. Five
-# other exporters each carried a private guard. Fix: one shared helper,
-# App\Support\Export\CsvCell (decision D20: numbers and plain numeric strings stay
-# unchanged), applied to every row of the seven exporters; an end-to-end hostile-
-# value test per exporter; a scan that fails when a file starts writing CSV without
-# the guard. Consolidating the private copies is SAFE-CLEANUP M-8, not this PR.
+# SECURITY-F5-TAILWIND-JS-CONTENT-1 — tailwind.config.js `content` scanned Blade
+# views only, so classes applied from JavaScript were purged from the production
+# stylesheet: the KTP scan region handles (ktp-roi-ui.js) rendered without
+# centring, cursor or width. Fix: add ./resources/js/**/*.js to `content`; a JS test
+# fails when the glob is missing or the built stylesheet lacks the four classes.
+# Asset rebuild only; no PHP change.
 # Carried forward: LEGACY-RME-PROGRAM-CLOSURE-1 stays CLOSED and inherited.
-id: SECURITY-F3-CSV-CELL-GUARD-1
-type: SECURITY_FIX
-module: Reporting
-title: "Shared CSV cell guard: no live spreadsheet formulas in exports of patient and inventory data"
+id: SECURITY-F5-TAILWIND-JS-CONTENT-1
+type: UI_POLISH
+module: Patient
+title: "Tailwind scans JavaScript sources so JS-applied classes survive the production build"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 runtime_change: false
 schema_change: false
-frontend_change: false
-security_impact: true
+frontend_change: true
+security_impact: false
 branch_isolation_impact: false
 ledger_impact: false
 deploy_required: true
-browser_required: false
-test_profiles: [focused, security_regression]
-go_tag: security-f3-csv-cell-guard-1-go
+browser_required: true
+test_profiles: [focused]
+go_tag: security-f5-tailwind-js-content-1-go
 inherits_parent_go: security-f8c-env-copy-backup-classification-1-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
