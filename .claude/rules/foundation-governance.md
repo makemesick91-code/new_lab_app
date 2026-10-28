@@ -12,6 +12,7 @@ paths:
   - "app/Support/Database/**"
   - "app/Support/Documentation/**"
   - "app/Support/Security/**"
+  - "config/app_key_rotation.php"
   - "config/foundation_*.php"
   - "config/feature_flags.php"
   - "config/devflow.php"
@@ -189,6 +190,11 @@ code, then the canonical rule, and report the drift.
 - **AIR-FND-34** Reuse the canonical services registered in `config/shared_foundations.php` (`BranchContext`,
   `SensitiveValueMasker`, `AuditLogService` and others); never add a parallel implementation. Source:
   `.cursor/rules/77-…`; archive DEVFLOW-1.
+- **AIR-FND-35** Register every `encrypted` model cast in `config/app_key_rotation.php`. Rotate the application key
+  only through `security:app-key-reencrypt`: rewrite every value still under a previous key, and retire the previous
+  key only when `previous_key_values = 0` and `undecryptable = 0`. Never print, log or commit a key value; the HMAC users
+  (doctor login ticket/challenge, device pairing code, payment intent) fail closed after rotation. Source:
+  `.cursor/rules/210-…`.
 
 ## Current posture (snapshot 2026-10-25 — verify before relying on it)
 
@@ -230,6 +236,7 @@ code, then the canonical rule, and report the drift.
 | `.cursor/rules/133-dedicated-queue-producer-consumer-contract.mdc` | Produced queue must have a consumer |
 | `.cursor/rules/adlms-architect.mdc` | Always-on architecture, branch and inventory basics |
 | `.cursor/rules/107-global-temporary-full-suite-policy.mdc` | Full Suite deferred for fix sprints |
+| `.cursor/rules/210-application-key-rotation-and-reencryption.mdc` | Application key rotation, re-encryption, previous-key retirement |
 
 ## History
 
