@@ -1323,6 +1323,13 @@ return [
         // `CsvFormulaInjectionGuard` token in BOTH critical variants; declared so
         // a rename cannot drop it.
         'tests/Feature/Security/CsvFormulaInjectionGuardTest.php',
+
+        // SECURITY-F4A1-CLINIC-CALENDAR-CLINICAL-RECORDS-1 (part of SECURITY-F4A) — clinical record dates on the clinic calendar
+        // (Asia/Makassar). A UTC "today" names the previous
+        // clinic day for eight hours of every day; the screens still render, so
+        // the error is silent. Selected by the `RmeClinicCalendarBoundary` token
+        // in BOTH critical variants; declared so a rename cannot drop it.
+        'tests/Feature/RME/RmeClinicCalendarBoundaryClinicalRecordsTest.php',
     ],
 
     /*
