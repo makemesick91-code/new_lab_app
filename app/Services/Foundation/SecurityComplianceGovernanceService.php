@@ -2,6 +2,7 @@
 
 namespace App\Services\Foundation;
 
+use App\Support\Foundation\GovernanceEvaluation;
 use App\Support\Security\SecurityComplianceScanner;
 
 /**
@@ -21,6 +22,7 @@ class SecurityComplianceGovernanceService
         private readonly IdempotencyOutboxGovernanceService $idempotencyOutboxGovernance,
         private readonly DeveloperConsoleGovernanceService $developerConsoleGovernance,
         private readonly HealthCheckGovernanceService $healthCheckGovernance,
+        private readonly GovernanceEvaluation $evaluation,
     ) {}
 
     /**
@@ -96,6 +98,15 @@ class SecurityComplianceGovernanceService
      * @return array<string, mixed>
      */
     public function collect(): array
+    {
+        return $this->evaluation->remember(
+            GovernanceEvaluation::key(self::class, 'collect', func_get_args()),
+            fn (): array => $this->evaluate(),
+        );
+    }
+
+    /** CICD-GOVERNANCE-EVALUATION-MEMO-1 — the uncached evaluation behind collect(). */
+    private function evaluate(): array
     {
         $checks = [];
 
