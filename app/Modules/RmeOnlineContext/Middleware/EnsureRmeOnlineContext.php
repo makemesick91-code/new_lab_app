@@ -20,7 +20,6 @@ class EnsureRmeOnlineContext
         'logout',
         'profile.edit',
         'profile.update',
-        'profile.destroy',
         'rme.online-context.select',
         'rme.online-context.rooms',
         'rme.online-context.doctor',

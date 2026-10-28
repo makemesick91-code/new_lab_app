@@ -84,12 +84,13 @@ class MedicalRecordRepository implements MedicalRecordRepositoryInterface
             ->count();
     }
 
-    public function countFinalizedTodayByBranches(array $branchIds, string $date): int
+    public function countFinalizedInRangeByBranches(array $branchIds, string $startUtc, string $endUtc): int
     {
         return MedicalRecord::query()
             ->whereIn('branch_id', $branchIds)
             ->where('status', MedicalRecord::STATUS_FINAL)
-            ->whereDate('finalized_at', $date)
+            ->where('finalized_at', '>=', $startUtc)
+            ->where('finalized_at', '<', $endUtc)
             ->count();
     }
 

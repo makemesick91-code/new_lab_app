@@ -10,6 +10,7 @@ use App\Modules\LabOrder\Models\LabOrder;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Models\RmePayment;
+use App\Support\Clinical\ClinicalClock;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Route;
@@ -34,6 +35,7 @@ class OwnerDashboardKpiService
 
     public function __construct(
         private readonly InventoryAnalyticsRepositoryInterface $inventoryAnalytics,
+        private readonly ClinicalClock $clock,
     ) {}
 
     /**
@@ -134,7 +136,7 @@ class OwnerDashboardKpiService
         $today = $to->copy()->endOfDay()->toDateString();
         $followUpDue = $this->invoiceQuery($branchIds)
             ->whereIn('status', [RmeInvoice::STATUS_UNPAID, RmeInvoice::STATUS_PARTIAL])
-            ->whereHas('latestFollowUp', fn (Builder $q) => $q->whereDate('next_follow_up_date', '<=', now()->toDateString()))
+            ->whereHas('latestFollowUp', fn (Builder $q) => $q->whereDate('next_follow_up_date', '<=', $this->clock->todayString()))
             ->count();
 
         // Lab is a single global laboratory; not branch-grouped (Sprint 23.5).
@@ -208,7 +210,7 @@ class OwnerDashboardKpiService
 
             $followUpDue = $this->invoiceQuery([$branch->id])
                 ->whereIn('status', [RmeInvoice::STATUS_UNPAID, RmeInvoice::STATUS_PARTIAL])
-                ->whereHas('latestFollowUp', fn (Builder $q) => $q->whereDate('next_follow_up_date', '<=', now()->toDateString()))
+                ->whereHas('latestFollowUp', fn (Builder $q) => $q->whereDate('next_follow_up_date', '<=', $this->clock->todayString()))
                 ->count();
 
             return [

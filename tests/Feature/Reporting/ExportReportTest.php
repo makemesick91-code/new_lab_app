@@ -55,3 +55,16 @@ it('includes the CSV header row', function () {
 
     expect($response->streamedContent())->toContain('Order Number');
 });
+
+it('neutralises a formula in a patient name in the order export', function () {
+    // SECURITY-F3: lab report exports carry patient names.
+    $order = LabOrder::factory()->create(['status' => 'RECEIVED']);
+    $order->patient->update(['name' => '=1+1 Pasien Lab']);
+
+    $csv = $this->actingAs(userWith(['view_order_report', 'export_report']))
+        ->get(route('reports.orders.export'))->streamedContent();
+    $cells = collect(preg_split("/\r\n|\n/", trim($csv)))->flatMap(fn (string $l) => str_getcsv($l));
+
+    expect($cells)->toContain("'=1+1 Pasien Lab")
+        ->and($cells)->not->toContain('=1+1 Pasien Lab');
+});

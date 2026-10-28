@@ -3,6 +3,7 @@
 namespace App\Services\Foundation;
 
 use App\Support\Backup\BackupDrScanner;
+use App\Support\Foundation\GovernanceEvaluation;
 
 /**
  * ENT-12 — Backup & Disaster Recovery Automation governance layer.
@@ -28,6 +29,7 @@ class BackupDrGovernanceService
         private readonly SecurityComplianceGovernanceService $securityComplianceGovernance,
         private readonly CicdEnterpriseGateGovernanceService $cicdEnterpriseGateGovernance,
         private readonly DeploymentRollbackGovernanceService $deploymentRollbackGovernance,
+        private readonly GovernanceEvaluation $evaluation,
     ) {}
 
     /**
@@ -103,6 +105,15 @@ class BackupDrGovernanceService
      * @return array<string, mixed>
      */
     public function collect(): array
+    {
+        return $this->evaluation->remember(
+            GovernanceEvaluation::key(self::class, 'collect', func_get_args()),
+            fn (): array => $this->evaluate(),
+        );
+    }
+
+    /** CICD-GOVERNANCE-EVALUATION-MEMO-1 — the uncached evaluation behind collect(). */
+    private function evaluate(): array
     {
         $checks = [];
 
