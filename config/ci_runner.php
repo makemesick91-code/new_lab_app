@@ -706,6 +706,15 @@ return [
          * token in both critical-gate variants.
          */
         'tests/Feature/Deploy/SecretFilePermissionHardeningTest.php',
+        /*
+         * SECURITY-DEPENDENCY-UPDATES-1 — every package patched for a published
+         * advisory stays at or above its first fixed release in composer.lock
+         * and package-lock.json, and on the major the application was built
+         * for. The audit commands need a live advisory feed; this is the
+         * offline half that a lock regression cannot pass. Selected by the
+         * `DependencySecurityFloor` token in both critical-gate variants.
+         */
+        'tests/Feature/Security/DependencySecurityFloorTest.php',
 
         // FEATURE-DOCTOR-TRUSTED-ANDROID-DEVICE-LOCK-1 Phase 1 — a Doctor is
         // confined to the ACTIVE patients of the treatment room they are online

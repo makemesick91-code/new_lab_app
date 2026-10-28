@@ -1,24 +1,28 @@
-# CICD-COMPOSER-CACHE-RELEASE-GATES-1 — the three GitHub-hosted jobs that installed Composer
-# dependencies without the download cache (NSF-9, NSF-10, Full Suite) now restore it, keyed
-# on composer.lock, exactly as the four other hosted jobs already did. Post-audit roadmap
-# priority 4; CICD-OPTIMIZATION-PLAN item 6. A structural test keeps every hosted install
-# cached, keeps vendor/ out of every cache and keeps actions/cache off the self-hosted runner.
-# No gate, filter, required check or test selection changes. No application code.
+# SECURITY-DEPENDENCY-UPDATES-1 — `composer audit` and `npm audit` on the deployed
+# authority f9134aac reported 30 production advisories (laravel/framework,
+# guzzlehttp/guzzle, league/commonmark, dompdf/dompdf, league/flysystem,
+# symfony/http-foundation) plus symfony/yaml (dev) and 12 npm advisories (axios ships
+# in the browser bundle; vite, postcss, concurrently and transitives are build-time).
+# Fix: same-major updates only — 10 composer packages (composer update of the named
+# packages with --minimal-changes) and 16 npm packages (npm audit fix, no --force).
+# composer.json and package.json unchanged; no major version moves. A floor test fails
+# if a later lock change pulls any patched package back below its fixed release.
+# Assessment: docs/governance/dependency-security-assessment-2026-10-27.md.
 # Carried forward: LEGACY-RME-PROGRAM-CLOSURE-1 stays CLOSED and inherited.
-id: CICD-COMPOSER-CACHE-RELEASE-GATES-1
-type: INFRA_RELEASE
-module: Cicd
-title: "Composer download cache in every GitHub-hosted job that installs dependencies"
+id: SECURITY-DEPENDENCY-UPDATES-1
+type: SECURITY_FIX
+module: Dependencies
+title: "Same-major security updates for 10 composer and 16 npm packages; lock floors enforced in the critical gate"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
-runtime_change: false
+runtime_change: true
 schema_change: false
-frontend_change: false
-security_impact: false
+frontend_change: true
+security_impact: true
 branch_isolation_impact: false
 ledger_impact: false
-deploy_required: false
+deploy_required: true
 browser_required: false
-test_profiles: [focused]
-go_tag: cicd-composer-cache-release-gates-1-go
+test_profiles: [focused, security_regression]
+go_tag: security-dependency-updates-1-go
 inherits_parent_go: security-f8c-env-copy-backup-classification-1-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
