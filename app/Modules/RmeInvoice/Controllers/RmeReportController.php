@@ -12,6 +12,7 @@ use App\Modules\RmeInvoice\Support\RmeReportDateRange;
 use App\Modules\RmeInvoice\Support\RmeReportDateScope;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
 use App\Modules\Treatment\Models\Treatment;
+use App\Support\Export\CsvCell;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
@@ -275,10 +276,10 @@ class RmeReportController extends Controller
         return response()->streamDownload(function () use ($header, $rows) {
             echo "\xEF\xBB\xBF";
             $handle = fopen('php://output', 'w');
-            fputcsv($handle, $header);
+            fputcsv($handle, CsvCell::row($header));
 
             foreach ($rows as $row) {
-                fputcsv($handle, array_map(static fn ($v) => $v ?? '', (array) $row));
+                fputcsv($handle, CsvCell::row(array_map(static fn ($v) => $v ?? '', (array) $row)));
             }
 
             fclose($handle);

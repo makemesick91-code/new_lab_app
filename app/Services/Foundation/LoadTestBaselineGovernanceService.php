@@ -2,6 +2,7 @@
 
 namespace App\Services\Foundation;
 
+use App\Support\Foundation\GovernanceEvaluation;
 use App\Support\LoadTest\LoadTestBaselineScanner;
 
 /**
@@ -29,6 +30,7 @@ class LoadTestBaselineGovernanceService
         private readonly CicdEnterpriseGateGovernanceService $cicdEnterpriseGateGovernance,
         private readonly DeploymentRollbackGovernanceService $deploymentRollbackGovernance,
         private readonly BackupDrGovernanceService $backupDrGovernance,
+        private readonly GovernanceEvaluation $evaluation,
     ) {}
 
     /**
@@ -104,6 +106,15 @@ class LoadTestBaselineGovernanceService
      * @return array<string, mixed>
      */
     public function collect(): array
+    {
+        return $this->evaluation->remember(
+            GovernanceEvaluation::key(self::class, 'collect', func_get_args()),
+            fn (): array => $this->evaluate(),
+        );
+    }
+
+    /** CICD-GOVERNANCE-EVALUATION-MEMO-1 — the uncached evaluation behind collect(). */
+    private function evaluate(): array
     {
         $checks = [];
 

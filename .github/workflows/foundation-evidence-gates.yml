@@ -437,7 +437,7 @@ jobs:
           # also matches lowercase occurrences inside Pest test DESCRIPTIONS,
           # not only class names. That is deliberate here (wider is the safe
           # direction); do not prune it assuming class-name matching.
-          php artisan test --filter='FoundationGovernance|Nsf7|NsfGovernance|DmoGovernance|Dmo3|Dq31|Dq3SourceDocumentBatch|Dq2BatchGovernance|Dq1|RmeDoctorCashierCompletionGate|RmeRoomAssignmentGate|MedicalRecordFinalization|CashierBilling|RmePayment|PatientOutstandingReceivableCarryOver|PatientCentricRmWorkspace|RmeVisitConsent|RmeExamConsentOdontogramHistory|LegacyOdontogram|RmeReceiptOnePage|MedicalRecordPageActions|MedicalRecordPrintOdontogramSeparation|RmePrintPatientVisitDuplicate|Odontogram|RepositoryArtifactHygiene|LegacyRme|LegacyMassUpload|UnifiedMedicalRecord|LegacyPatient|LegacyImportHub|LegacyBatchReview|LegacyBatchPublish|ClinicalClock|FrontOffice|PatientEarliestNativeRmeDateResolver|RuntimeIdentityIsolation|DeployHarden|FeatureFlag|Cicd|Devflow|PilotPerformanceSnapshot|MonitoringLogSource|RestoreDrill|ClinicalEvidence|DailyBranch|BranchChange|RmeReportTodayDefault|NewVisitPatientSearch|NewVisitGlobalPatientLookup|QueueProducerConsumerParity|TelkomasBranchCode|SunuBranchCode|SunuClinicRoom|DoctorAccountLink|RmePreConsentFirstPageUiGate|DoctorRoomScoped|DoctorDevice|DoctorAccess|DoctorPwaWebAuthn|ProductionShellCommandGuard|ForbiddenConsoleCommand|Pwa|ObservabilityConsole|ObservabilityTelemetry|PatientMerge|PatientKtp|PrivateDatabaseDump|RmeInvoiceRedesign|RmeBillingRefund|RmeBillingDispute|VisitTypeServerDerivation|VisitDetailClinicalSectionOrder|ClinicOversight|RmeInvoiceCorrection|RmeTariffAuthority|RmeManualPricing|RmeInvoiceExplicitActor|ClinicVisitBranchAuthority|ActiveAccountSession|ClinicVisitPatientSelection|CrossBranchKontrol|ClinicVisitRegistrationConcurrency|PatientOutstandingReceivableCarryOver|RmeControlVisitReceivableCarryOverPayment|SecretFilePermissionHardening' \
+          php artisan test --filter='FoundationGovernance|Nsf7|NsfGovernance|DmoGovernance|Dmo3|Dq31|Dq3SourceDocumentBatch|Dq2BatchGovernance|Dq1|RmeDoctorCashierCompletionGate|RmeRoomAssignmentGate|MedicalRecordFinalization|CashierBilling|RmePayment|PatientOutstandingReceivableCarryOver|PatientCentricRmWorkspace|RmeVisitConsent|RmeExamConsentOdontogramHistory|LegacyOdontogram|RmeReceiptOnePage|MedicalRecordPageActions|MedicalRecordPrintOdontogramSeparation|RmePrintPatientVisitDuplicate|Odontogram|RepositoryArtifactHygiene|LegacyRme|LegacyMassUpload|UnifiedMedicalRecord|LegacyPatient|LegacyImportHub|LegacyBatchReview|LegacyBatchPublish|ClinicalClock|FrontOffice|PatientEarliestNativeRmeDateResolver|RuntimeIdentityIsolation|DeployHarden|FeatureFlag|Cicd|Devflow|PilotPerformanceSnapshot|MonitoringLogSource|RestoreDrill|ClinicalEvidence|DailyBranch|BranchChange|RmeReportTodayDefault|NewVisitPatientSearch|NewVisitGlobalPatientLookup|QueueProducerConsumerParity|TelkomasBranchCode|SunuBranchCode|SunuClinicRoom|DoctorAccountLink|RmePreConsentFirstPageUiGate|DoctorRoomScoped|DoctorDevice|DoctorAccess|DoctorPwaWebAuthn|ProductionShellCommandGuard|ForbiddenConsoleCommand|Pwa|ObservabilityConsole|ObservabilityTelemetry|PatientMerge|PatientKtp|PrivateDatabaseDump|RmeInvoiceRedesign|RmeBillingRefund|RmeBillingDispute|VisitTypeServerDerivation|VisitDetailClinicalSectionOrder|ClinicOversight|RmeInvoiceCorrection|RmeTariffAuthority|RmeManualPricing|RmeInvoiceExplicitActor|ClinicVisitBranchAuthority|ActiveAccountSession|ClinicVisitPatientSelection|CrossBranchKontrol|ClinicVisitRegistrationConcurrency|PatientOutstandingReceivableCarryOver|RmeControlVisitReceivableCarryOverPayment|SecretFilePermissionHardening|DependencySecurityFloor|AppKeyReencryption|PublicRegistrationClosed|AccountSelfDeletionDenied|Satusehat4aSyntheticRehearsal|Satusehat4aRemediationLifecycle|CsvFormulaInjectionGuard|RmeClinicCalendarBoundary' \
             2>&1 | tee storage/ci-evidence/nsf-r011-critical-tests.log
           TEST_STATUS="${PIPESTATUS[0]}"
           set -e
@@ -705,7 +705,7 @@ jobs:
         shell: bash
         run: |
           set +e
-          bash scripts/ci/self-hosted-php.sh php artisan test --filter='FoundationGovernance|Nsf7|NsfGovernance|DmoGovernance|Dmo3|Dq31|Dq3SourceDocumentBatch|Dq2BatchGovernance|Dq1|RmeDoctorCashierCompletionGate|RmeRoomAssignmentGate|MedicalRecordFinalization|CashierBilling|RmePayment|PatientOutstandingReceivableCarryOver|PatientCentricRmWorkspace|RmeVisitConsent|RmeExamConsentOdontogramHistory|LegacyOdontogram|RmeReceiptOnePage|MedicalRecordPageActions|MedicalRecordPrintOdontogramSeparation|RmePrintPatientVisitDuplicate|Odontogram|RepositoryArtifactHygiene|LegacyRme|LegacyMassUpload|UnifiedMedicalRecord|LegacyPatient|LegacyImportHub|LegacyBatchReview|LegacyBatchPublish|ClinicalClock|FrontOffice|PatientEarliestNativeRmeDateResolver|RuntimeIdentityIsolation|DeployHarden|FeatureFlag|Cicd|Devflow|PilotPerformanceSnapshot|MonitoringLogSource|RestoreDrill|ClinicalEvidence|DailyBranch|BranchChange|RmeReportTodayDefault|NewVisitPatientSearch|NewVisitGlobalPatientLookup|QueueProducerConsumerParity|TelkomasBranchCode|SunuBranchCode|SunuClinicRoom|DoctorAccountLink|RmePreConsentFirstPageUiGate|DoctorRoomScoped|DoctorDevice|DoctorAccess|DoctorPwaWebAuthn|ProductionShellCommandGuard|ForbiddenConsoleCommand|Pwa|ObservabilityConsole|ObservabilityTelemetry|PatientMerge|PatientKtp|PrivateDatabaseDump|RmeInvoiceRedesign|RmeBillingRefund|RmeBillingDispute|VisitTypeServerDerivation|VisitDetailClinicalSectionOrder|ClinicOversight|RmeInvoiceCorrection|RmeTariffAuthority|RmeManualPricing|RmeInvoiceExplicitActor|ClinicVisitBranchAuthority|ActiveAccountSession|ClinicVisitPatientSelection|CrossBranchKontrol|ClinicVisitRegistrationConcurrency|PatientOutstandingReceivableCarryOver|RmeControlVisitReceivableCarryOverPayment|SecretFilePermissionHardening' \
+          bash scripts/ci/self-hosted-php.sh php artisan test --filter='FoundationGovernance|Nsf7|NsfGovernance|DmoGovernance|Dmo3|Dq31|Dq3SourceDocumentBatch|Dq2BatchGovernance|Dq1|RmeDoctorCashierCompletionGate|RmeRoomAssignmentGate|MedicalRecordFinalization|CashierBilling|RmePayment|PatientOutstandingReceivableCarryOver|PatientCentricRmWorkspace|RmeVisitConsent|RmeExamConsentOdontogramHistory|LegacyOdontogram|RmeReceiptOnePage|MedicalRecordPageActions|MedicalRecordPrintOdontogramSeparation|RmePrintPatientVisitDuplicate|Odontogram|RepositoryArtifactHygiene|LegacyRme|LegacyMassUpload|UnifiedMedicalRecord|LegacyPatient|LegacyImportHub|LegacyBatchReview|LegacyBatchPublish|ClinicalClock|FrontOffice|PatientEarliestNativeRmeDateResolver|RuntimeIdentityIsolation|DeployHarden|FeatureFlag|Cicd|Devflow|PilotPerformanceSnapshot|MonitoringLogSource|RestoreDrill|ClinicalEvidence|DailyBranch|BranchChange|RmeReportTodayDefault|NewVisitPatientSearch|NewVisitGlobalPatientLookup|QueueProducerConsumerParity|TelkomasBranchCode|SunuBranchCode|SunuClinicRoom|DoctorAccountLink|RmePreConsentFirstPageUiGate|DoctorRoomScoped|DoctorDevice|DoctorAccess|DoctorPwaWebAuthn|ProductionShellCommandGuard|ForbiddenConsoleCommand|Pwa|ObservabilityConsole|ObservabilityTelemetry|PatientMerge|PatientKtp|PrivateDatabaseDump|RmeInvoiceRedesign|RmeBillingRefund|RmeBillingDispute|VisitTypeServerDerivation|VisitDetailClinicalSectionOrder|ClinicOversight|RmeInvoiceCorrection|RmeTariffAuthority|RmeManualPricing|RmeInvoiceExplicitActor|ClinicVisitBranchAuthority|ActiveAccountSession|ClinicVisitPatientSelection|CrossBranchKontrol|ClinicVisitRegistrationConcurrency|PatientOutstandingReceivableCarryOver|RmeControlVisitReceivableCarryOverPayment|SecretFilePermissionHardening|DependencySecurityFloor|AppKeyReencryption|PublicRegistrationClosed|AccountSelfDeletionDenied|Satusehat4aSyntheticRehearsal|Satusehat4aRemediationLifecycle|CsvFormulaInjectionGuard|RmeClinicCalendarBoundary' \
             2>&1 | tee storage/ci-evidence/nsf-r011-critical-tests.log
           TEST_STATUS="${PIPESTATUS[0]}"
           set -e
@@ -990,6 +990,16 @@ jobs:
           extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, pdo_pgsql, bcmath, gd, exif
           coverage: none
 
+      - name: Get composer cache directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: composer-${{ runner.os }}-${{ hashFiles('**/composer.lock') }}
+          restore-keys: composer-${{ runner.os }}-
+
       - name: Install Composer dependencies
         run: composer install --no-interaction --prefer-dist --optimize-autoloader
 
@@ -1216,6 +1226,16 @@ jobs:
           extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, pdo_pgsql, bcmath, gd, exif
           coverage: none
 
+      - name: Get composer cache directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: composer-${{ runner.os }}-${{ hashFiles('**/composer.lock') }}
+          restore-keys: composer-${{ runner.os }}-
+
       - name: Install Composer dependencies
         run: composer install --no-interaction --prefer-dist --optimize-autoloader
 
@@ -1370,6 +1390,16 @@ jobs:
           php-version: '8.3'
           extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, pdo_pgsql, bcmath, gd, exif
           coverage: none
+
+      - name: Get composer cache directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: composer-${{ runner.os }}-${{ hashFiles('**/composer.lock') }}
+          restore-keys: composer-${{ runner.os }}-
 
       - name: Install Composer dependencies
         run: composer install --no-interaction --prefer-dist --optimize-autoloader

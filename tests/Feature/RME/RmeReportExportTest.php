@@ -290,3 +290,39 @@ it('denies payment export without payment report permission', function () {
         ->get(route('rme.reports.payments.export'))
         ->assertForbidden();
 });
+
+/** Every cell of a streamed CSV, BOM removed. */
+function expCsvCells(string $csv): array
+{
+    $csv = preg_replace('/^\xEF\xBB\xBF/', '', $csv);
+
+    return collect(preg_split("/\r\n|\n/", trim($csv)))
+        ->flatMap(fn (string $line) => str_getcsv($line))
+        ->all();
+}
+
+it('neutralises a formula in a patient name in the patient report export', function () {
+    // SECURITY-F3: a spreadsheet would run `=1+1` as a formula.
+    $patient = expPatient(['name' => '=1+1 Pasien Formula', 'medical_record_number' => 'RM-EXP-FORMULA']);
+    expVisit($patient);
+
+    $cells = expCsvCells($this->actingAs($this->patientViewer)
+        ->get(route('rme.reports.patients.export'))->streamedContent());
+
+    expect($cells)->toContain("'=1+1 Pasien Formula")
+        ->and(collect($cells)->first(fn ($c) => str_starts_with((string) $c, '=')))->toBeNull();
+});
+
+it('neutralises a formula in a patient name in the payment report export', function () {
+    $patient = expPatient(['name' => '@SUM(A1) Pasien Formula', 'medical_record_number' => 'RM-PAY-FORMULA']);
+    $method = PaymentMethod::factory()->create(['name' => 'Tunai Formula', 'is_active' => true]);
+    $treatment = Treatment::factory()->create(['name' => 'Scaling Formula', 'is_active' => true]);
+    $doctor = Doctor::factory()->create(['name' => 'Dr. Formula', 'is_active' => true]);
+    expPayment($patient, $method, $treatment, $doctor);
+
+    $cells = expCsvCells($this->actingAs($this->paymentViewer)
+        ->get(route('rme.reports.payments.export'))->streamedContent());
+
+    expect($cells)->toContain("'@SUM(A1) Pasien Formula")
+        ->and(collect($cells)->first(fn ($c) => str_starts_with((string) $c, '@')))->toBeNull();
+});

@@ -13,6 +13,7 @@ use App\Modules\PatientMerge\Support\PatientIdentityMask;
 use App\Modules\PatientMerge\Support\PatientMergeField;
 use App\Modules\PatientMerge\Support\PatientMergeStatus;
 use App\Modules\PatientMerge\Support\PatientOwnedRecordRegistry;
+use App\Support\Clinical\ClinicalClock;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -42,6 +43,7 @@ class PatientMergeCaseService
         private readonly PatientIdentityComparator $comparator,
         private readonly PatientMergeBlockerService $blockers,
         private readonly AuditLogService $audit,
+        private readonly ClinicalClock $clock,
     ) {}
 
     /**
@@ -456,7 +458,7 @@ class PatientMergeCaseService
             return false;
         }
 
-        return $value <= now()->toDateString();
+        return $value <= $this->clock->todayString();
     }
 
     private function invalid(string $field, string $message): never
