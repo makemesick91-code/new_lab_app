@@ -1,16 +1,16 @@
-# SECURITY-F7-SATUSEHAT-RESET-GUARD-SELECTION-1 — the SATUSEHAT synthetic-pilot
-# reset force-deletes visits, records, invoices and patients scoped to the SYN4A
-# branch and aborts on non-synthetic data. Two suites prove it, but no critical-gate
-# token selected them, so a scoping regression could merge with every required gate
-# green. Fix: select both suites in BOTH critical variants and declare them
-# mandatory; add two guard tests (a non-synthetic visit in SYN4A aborts the reset;
-# rows outside SYN4A are never touched) — the second mutant of the scope survived
-# the existing tests. CI and tests only: no runtime change.
+# SECURITY-F3-CSV-CELL-GUARD-1 — seven web CSV exporters wrote raw cell values. A
+# value beginning with = + - @ tab or CR (a patient or product name, a batch
+# number, a note) becomes a live formula in the spreadsheet a user opens. Five
+# other exporters each carried a private guard. Fix: one shared helper,
+# App\Support\Export\CsvCell (decision D20: numbers and plain numeric strings stay
+# unchanged), applied to every row of the seven exporters; an end-to-end hostile-
+# value test per exporter; a scan that fails when a file starts writing CSV without
+# the guard. Consolidating the private copies is SAFE-CLEANUP M-8, not this PR.
 # Carried forward: LEGACY-RME-PROGRAM-CLOSURE-1 stays CLOSED and inherited.
-id: SECURITY-F7-SATUSEHAT-RESET-GUARD-SELECTION-1
+id: SECURITY-F3-CSV-CELL-GUARD-1
 type: SECURITY_FIX
-module: Satusehat
-title: "SATUSEHAT synthetic-pilot reset guard tests selected by the critical gate"
+module: Reporting
+title: "Shared CSV cell guard: no live spreadsheet formulas in exports of patient and inventory data"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 runtime_change: false
 schema_change: false
@@ -18,9 +18,9 @@ frontend_change: false
 security_impact: true
 branch_isolation_impact: false
 ledger_impact: false
-deploy_required: false
+deploy_required: true
 browser_required: false
-test_profiles: [focused]
-go_tag: security-f7-satusehat-reset-guard-selection-1-go
+test_profiles: [focused, security_regression]
+go_tag: security-f3-csv-cell-guard-1-go
 inherits_parent_go: security-f8c-env-copy-backup-classification-1-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1

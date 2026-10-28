@@ -1315,6 +1315,14 @@ return [
         // declared so a rename cannot drop them.
         'tests/Feature/Satusehat/Satusehat4aSyntheticRehearsalTest.php',
         'tests/Feature/Satusehat/Satusehat4aRemediationLifecycleTest.php',
+
+        // SECURITY-F3-CSV-CELL-GUARD-1 — one rule for every CSV cell, and a scan
+        // that fails when a file starts writing CSV without it. A formula in a
+        // patient or product name becomes live in the spreadsheet a user opens;
+        // the export still downloads with a 200. Selected by the
+        // `CsvFormulaInjectionGuard` token in BOTH critical variants; declared so
+        // a rename cannot drop it.
+        'tests/Feature/Security/CsvFormulaInjectionGuardTest.php',
     ],
 
     /*
