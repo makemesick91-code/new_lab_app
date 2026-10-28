@@ -7,6 +7,9 @@ export default {
         './vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php',
         './storage/framework/views/*.php',
         './resources/views/**/*.blade.php',
+        // Classes applied from JavaScript (e.g. the KTP scan region handles in
+        // ktp-roi-ui.js) are purged unless the scripts are scanned too.
+        './resources/js/**/*.js',
     ],
 
     theme: {

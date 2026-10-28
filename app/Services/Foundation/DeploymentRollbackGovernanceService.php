@@ -3,6 +3,7 @@
 namespace App\Services\Foundation;
 
 use App\Support\Deploy\DeploymentRollbackScanner;
+use App\Support\Foundation\GovernanceEvaluation;
 
 /**
  * ENT-11 — Deployment & Rollback Automation governance layer.
@@ -27,6 +28,7 @@ class DeploymentRollbackGovernanceService
         private readonly HealthCheckGovernanceService $healthCheckGovernance,
         private readonly SecurityComplianceGovernanceService $securityComplianceGovernance,
         private readonly CicdEnterpriseGateGovernanceService $cicdEnterpriseGateGovernance,
+        private readonly GovernanceEvaluation $evaluation,
     ) {}
 
     /**
@@ -102,6 +104,15 @@ class DeploymentRollbackGovernanceService
      * @return array<string, mixed>
      */
     public function collect(): array
+    {
+        return $this->evaluation->remember(
+            GovernanceEvaluation::key(self::class, 'collect', func_get_args()),
+            fn (): array => $this->evaluate(),
+        );
+    }
+
+    /** CICD-GOVERNANCE-EVALUATION-MEMO-1 — the uncached evaluation behind collect(). */
+    private function evaluate(): array
     {
         $checks = [];
 
