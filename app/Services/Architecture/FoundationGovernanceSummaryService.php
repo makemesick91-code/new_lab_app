@@ -41,6 +41,7 @@ use App\Services\Foundation\StorageGovernanceService;
 use App\Services\Inventory\AmbiguousBatchReviewPackService;
 use App\Services\Inventory\BatchGovernanceAuditService;
 use App\Services\Inventory\SourceDocumentBatchAuditService;
+use App\Support\Foundation\GovernanceEvaluation;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schema;
@@ -98,12 +99,21 @@ class FoundationGovernanceSummaryService
         private readonly EnterpriseDocumentationGovernanceService $enterpriseDocumentationGovernance,
         private readonly EnterpriseFoundationClosureGovernanceService $enterpriseFoundationClosureGovernance,
         private readonly EntFoundationRuntimeHardeningGovernanceService $entRuntimeHardeningGovernance,
+        private readonly GovernanceEvaluation $evaluation,
     ) {}
 
     /**
      * @return array<string, mixed>
      */
     public function collect(string $releaseSafetyProfile = 'local'): array
+    {
+        // CICD-GOVERNANCE-EVALUATION-MEMO-1 — one summary is one evaluation, so
+        // each enterprise gate is computed once however many gates re-verify it.
+        return $this->evaluation->within(fn (): array => $this->evaluate($releaseSafetyProfile));
+    }
+
+    /** CICD-GOVERNANCE-EVALUATION-MEMO-1 — the summary itself, inside one evaluation. */
+    private function evaluate(string $releaseSafetyProfile): array
     {
         $nsf = $this->nsfRules->collect([
             'include_dmo' => true,

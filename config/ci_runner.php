@@ -706,6 +706,50 @@ return [
          * token in both critical-gate variants.
          */
         'tests/Feature/Deploy/SecretFilePermissionHardeningTest.php',
+        /*
+         * SECURITY-G7B-APP-KEY-REENCRYPTION-1 — every encrypted model cast is in
+         * the rotation registry, values under a previous application key are
+         * rewritten and verified, and nothing is written while any value decrypts
+         * with no configured key. A rename that dropped this suite from the gate
+         * would let a new encrypted column silently keep a retired key alive.
+         * Selected by the `AppKeyReencryption` token in both critical variants.
+         */
+        'tests/Feature/Security/AppKeyReencryptionTest.php',
+        /*
+         * SECURITY-G7B-APP-KEY-REENCRYPTION-1 — every file that keys an HMAC on
+         * the current application key is registered with its rotation
+         * behaviour, and the doctor login ticket and device pairing code issued
+         * under a previous key are refused (not honoured, not a 500) after
+         * rotation. Selected by the `AppKeyReencryption` token in both variants.
+         */
+        'tests/Feature/Security/AppKeyReencryptionCurrentKeyConsumersTest.php',
+        /*
+         * SECURITY-G7B-APP-KEY-REENCRYPTION-1 — encrypted cookies and signed
+         * URLs made with a previous application key keep working until that key
+         * is retired, and are then rejected cleanly (absent cookie, invalid
+         * signature, never a 500). The retire step depends on both halves.
+         * Selected by the `AppKeyReencryption` token in both variants.
+         */
+        'tests/Feature/Security/AppKeyReencryptionFrameworkDependenciesTest.php',
+        /*
+         * SECURITY-G7B-APP-KEY-REENCRYPTION-1 — the recovery paths: every value
+         * reads with no previous key once re-encryption is complete; SATUSEHAT
+         * snapshots migrate across chunks byte for byte; a backup restored after
+         * the old key was retired is refused (nothing written) and recovered with
+         * the escrowed key; a rollback after a complete or interrupted
+         * re-encryption moves values back; a rollback that drops the new key is
+         * refused. Selected by the `AppKeyReencryption` token in both variants.
+         */
+        'tests/Feature/Security/AppKeyReencryptionRecoveryTest.php',
+        /*
+         * SECURITY-DEPENDENCY-UPDATES-1 — every package patched for a published
+         * advisory stays at or above its first fixed release in composer.lock
+         * and package-lock.json, and on the major the application was built
+         * for. The audit commands need a live advisory feed; this is the
+         * offline half that a lock regression cannot pass. Selected by the
+         * `DependencySecurityFloor` token in both critical-gate variants.
+         */
+        'tests/Feature/Security/DependencySecurityFloorTest.php',
 
         // FEATURE-DOCTOR-TRUSTED-ANDROID-DEVICE-LOCK-1 Phase 1 — a Doctor is
         // confined to the ACTIVE patients of the treatment room they are online
@@ -1223,6 +1267,42 @@ return [
         // pays for 659K tokens again. Selected by the `Devflow` token;
         // declared so a rename cannot drop it.
         'tests/Feature/Foundation/DevflowAiInstructionSystemTest.php',
+
+        // CICD-GOVERNANCE-EVALUATION-MEMO-1 — one governance evaluation computes
+        // each enterprise gate (ENT-5..ENT-16) once. The gates re-verify their
+        // predecessors with fresh instances, so the chain doubled at every level
+        // and one governance summary rebuilt ENT-5 2,080 times. The memo lives
+        // for the outermost evaluation only; this suite pins both that it
+        // removes the recomputation and that it never serves a result across
+        // evaluations, after an exception, or with the kill switch off. Both
+        // failure modes are silent: one is a slow gate, the other a stale GO.
+        // Selected by the `FoundationGovernance` token; declared so a rename
+        // cannot drop it.
+        'tests/Feature/Foundation/FoundationGovernanceEvaluationMemoTest.php',
+
+        // CICD-COMPOSER-CACHE-RELEASE-GATES-1 — every GitHub-hosted job that
+        // runs `composer install` restores Composer's download cache first, keyed
+        // on composer.lock; nothing caches vendor/, and the self-hosted runner
+        // keeps its own persistent cache. A job added without the cache is not
+        // an error anywhere else, only a slower run that also fails whenever
+        // Packagist is unreachable. Selected by the `Cicd` token; declared so a
+        // rename cannot drop it.
+        'tests/Feature/Cicd/ComposerCacheCoverageTest.php',
+
+        // SECURITY-F1-CLOSE-PUBLIC-REGISTRATION-1 — there is no public
+        // self-registration, and an authenticated user without a role reaches
+        // only their own profile and notifications (decision D1). Reopening the
+        // route, or an authenticated route that forgets to authorize, is silent:
+        // it renders a 200. Selected by the `PublicRegistrationClosed` token in
+        // BOTH critical variants; declared so a rename cannot drop it.
+        'tests/Feature/Auth/PublicRegistrationClosedTest.php',
+
+        // SECURITY-F2-DENY-SELF-DELETION-1 — a user cannot delete their own
+        // account (decision D2). The removed DELETE /profile hard-deleted the
+        // user row, nulling clinical attribution and cascading audit trails —
+        // silently, with a redirect. Selected by the `AccountSelfDeletionDenied`
+        // token in BOTH critical variants; declared so a rename cannot drop it.
+        'tests/Feature/Auth/AccountSelfDeletionDeniedTest.php',
     ],
 
     /*

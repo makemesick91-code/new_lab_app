@@ -1,0 +1,90 @@
+---
+description: SECURITY-G7B-APP-KEY-REENCRYPTION-1 — rotating the application key without losing encrypted data. Every encrypted model cast is registered in config/app_key_rotation.php; `security:app-key-reencrypt` moves values from a previous key to the current one; a previous key is retired only when 0 values depend on it and 0 are undecryptable; the HMAC users of the key fail closed after rotation; no key value is ever printed, logged, committed or stored outside the environment file and a 0700 root-only state directory.
+globs:
+  - "config/app_key_rotation.php"
+  - "app/Support/Security/AppKeyReencryptionService.php"
+  - "app/Console/Commands/SecurityAppKeyReencryptCommand.php"
+  - "tests/Feature/Security/AppKeyReencryption*Test.php"
+  - "app/Modules/**/Models/**"
+alwaysApply: false
+---
+
+# Application key rotation and re-encryption
+
+## Why
+
+The application key encrypts four database columns and keys three HMACs. A
+copy of the key that has left its custody (old environment backups, an old
+application directory, a workstation) can decrypt those columns and forge those
+HMACs, so the key has to be rotatable — and rotating it must not make a single
+encrypted value unreadable.
+
+Laravel decrypts with the current key and then each previous key, so setting a
+new key with the old one as a previous key keeps every row readable. That only
+holds while the old key stays configured: a rotation that stops there has not
+retired the old key at all. The rows have to be rewritten under the new key
+before the old one can be removed.
+
+## Rules
+
+1. **Every encrypted model cast is registered.** A model cast to `encrypted` or
+   `encrypted:<type>` must be listed in `config/app_key_rotation.php`.
+   `AppKeyReencryptionTest` scans `app/**/Models/` and fails until it is, so a new
+   encrypted column cannot silently keep a retired key alive.
+2. **A value is in exactly one state.** `current` decrypts with the current key
+   alone; `previous` decrypts only with a previous key; `undecryptable` decrypts
+   with no configured key. `security:app-key-reencrypt` reports all three.
+3. **Undecryptable stops everything.** While any value is undecryptable the
+   command writes nothing and exits 1. Never "skip" such a row — it is evidence
+   of a key that was lost or a value that was corrupted, and rewriting the others
+   would hide it.
+4. **One row per transaction.** The rewrite re-reads the value under a row lock,
+   encrypts the identical plaintext with the current key, proves the result
+   decrypts with the current key alone, and writes through the query builder so
+   `updated_at` and model observers do not move. Never batch rows into one
+   transaction and never write through Eloquent.
+5. **A previous key is retired only when 0 values depend on it.** The condition is
+   `previous_key_values = 0` and `undecryptable = 0` on the running configuration
+   (`previous_keys_removable: true`). Never remove the previous key on the
+   strength of a dry run taken before the rewrite.
+6. **Nothing secret leaves the process.** The command prints counts only — never
+   a key, a plaintext or a ciphertext — and the audit row
+   `APP_KEY_VALUES_REENCRYPTED` carries counts only. No key value goes into the
+   repository, a report, a sprint doc, Obsidian, a CI artifact or a terminal.
+   Compare keys by salted hash, never by value.
+7. **The HMAC users fail closed and are not covered by previous keys.**
+   `DoctorAppLoginService` (login ticket, 60 s; challenge, 120 s),
+   `DoctorDeviceEnrollmentService` (pairing code, 15 min) and `RmePaymentIntent`
+   (payment form intent) key their HMAC on the current key only. After rotation
+   an in-flight login retries, an unexpired pairing code must be re-issued, and an
+   open payment form is refused and must be reopened — a resubmission can never
+   be accepted as a second payment. Rotate in a window where none is in flight.
+   These files are registered in `config/app_key_rotation.php`
+   (`current_key_only_consumers`) with their rotation behaviour; a test fails when
+   another file under `app/` reads the application key directly, and the ticket
+   and pairing-code refusals are exercised with a real key rotation.
+8. **Framework state that follows previous keys.** Encrypted cookies and signed
+   URLs are verified against the current and every previous key, and the response
+   re-encrypts cookies with the current key, so active sessions survive the
+   rotation and are migrated by the next request. Once the previous key is
+   retired, a cookie or signed URL issued before rotation and not refreshed since
+   is no longer valid. Check `session.encrypt` before rotating: if it is true,
+   stored session payloads follow the same rule.
+9. **Old backups keep the old key's ciphertext.** A database dump taken before
+   rotation decrypts only with the old key. Keep the old key in sealed custody for
+   at least the backup retention window; restoring such a dump means configuring
+   the old key as a previous key and running the command with `--apply`, never
+   editing rows by hand. `AppKeyReencryptionRecoveryTest` pins this: with the old
+   key retired a restored pre-rotation backup is refused and nothing is written;
+   with the escrowed key it is recovered and re-encrypted.
+10. **Rotation is a supervised operation.** Generate the key on the host, write it
+    into the environment file in place (same inode, owner and mode), rebuild the
+    configuration cache as the runtime user, restart the queue worker and reload
+    PHP-FPM, then run the command with `--apply` and verify. Rollback before the
+    previous key is retired restores the old key, keeps the new one as a previous
+    key and moves the rewritten values back. After retirement there is no rollback
+    without the retired key, which is why retirement is a separate, later step.
+11. **Never delete the old key before the data and its dependants are safe.**
+    That means: 0 values depend on it, the backup retention window for pre-rotation
+    dumps is covered by sealed custody, and no other copy of the environment file
+    still carries it as the live key.
