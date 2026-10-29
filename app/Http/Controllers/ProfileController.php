@@ -3,12 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\ProfileUpdateRequest;
-use App\Modules\DoctorAccess\Models\DoctorSessionLease;
-use App\Modules\DoctorAccess\Services\DoctorSessionLeaseService;
-use App\Modules\RmeOnlineContext\Services\UserOnlineContextService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Redirect;
 use Illuminate\View\View;
 
@@ -38,43 +34,5 @@ class ProfileController extends Controller
         $request->user()->save();
 
         return Redirect::route('profile.edit')->with('status', 'profile-updated');
-    }
-
-    /**
-     * Delete the user's account.
-     */
-    public function destroy(Request $request): RedirectResponse
-    {
-        $request->validateWithBag('userDeletion', [
-            'password' => ['required', 'current_password'],
-        ]);
-
-        $user = $request->user();
-
-        if ($user !== null) {
-            app(UserOnlineContextService::class)->markOffline($user);
-        }
-
-        // DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1 — release the lease before
-        // the account goes. The foreign key cascades on delete, so the row
-        // would disappear either way — but silently, taking the reason with it.
-        // Releasing first writes the audit record while there is still a lease
-        // to name. A no-op for a session that holds no lease.
-        app(DoctorSessionLeaseService::class)->releaseCurrent(
-            $request,
-            $user,
-            DoctorSessionLease::RELEASE_ACCOUNT_DELETED,
-        );
-
-        Auth::logout();
-
-        // Self-service account deletion is permanent (users are not transactional
-        // records). Admin-initiated deletions still soft-delete for auditability.
-        $user->forceDelete();
-
-        $request->session()->invalidate();
-        $request->session()->regenerateToken();
-
-        return Redirect::to('/');
     }
 }

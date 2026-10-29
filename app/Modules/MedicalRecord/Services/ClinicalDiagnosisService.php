@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Modules\MedicalRecord\Models\ClinicalDiagnosis;
 use App\Modules\Satusehat\Models\SatusehatAuditLog;
 use App\Modules\Satusehat\Services\SatusehatAuditLogger;
+use App\Support\Clinical\ClinicalClock;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -32,6 +33,7 @@ class ClinicalDiagnosisService
 {
     public function __construct(
         private readonly SatusehatAuditLogger $audit,
+        private readonly ClinicalClock $clock,
     ) {}
 
     /**
@@ -193,7 +195,7 @@ class ClinicalDiagnosisService
                 'reviewed_at' => now(),
                 'deprecated_by' => $actor->id,
                 'deprecated_at' => now(),
-                'effective_to' => now()->toDateString(),
+                'effective_to' => $this->clock->todayString(),
                 'replacement_diagnosis_id' => $replacement?->id,
                 'notes' => $reason !== null && trim($reason) !== ''
                     ? mb_substr(trim($reason), 0, 500)

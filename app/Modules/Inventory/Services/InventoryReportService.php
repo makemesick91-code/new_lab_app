@@ -18,6 +18,7 @@ use App\Modules\Inventory\Models\InventoryMovement;
 use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Models\Supplier;
 use App\Modules\Inventory\Requests\InventoryReportFilterRequest;
+use App\Support\Export\CsvCell;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator as LengthAwarePaginatorContract;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Carbon;
@@ -223,15 +224,15 @@ class InventoryReportService
             }
 
             fwrite($handle, "\xEF\xBB\xBF");
-            fputcsv($handle, $export['headers']);
+            fputcsv($handle, CsvCell::row($export['headers']));
 
             foreach ($export['rows'] as $row) {
-                fputcsv($handle, $row);
+                fputcsv($handle, CsvCell::row($row));
             }
 
             if ($export['capped']) {
                 fputcsv($handle, []);
-                fputcsv($handle, ['CATATAN', 'Export dibatasi '.self::EXPORT_ROW_CAP.' baris. Persempit filter untuk melihat sisa data.']);
+                fputcsv($handle, CsvCell::row(['CATATAN', 'Export dibatasi '.self::EXPORT_ROW_CAP.' baris. Persempit filter untuk melihat sisa data.']));
             }
 
             fclose($handle);
