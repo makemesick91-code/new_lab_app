@@ -17,6 +17,7 @@ use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Models\PurchaseOrder;
 use App\Modules\Inventory\Models\PurchaseOrderItem;
 use App\Modules\Inventory\Services\Concerns\LogsInventoryActivity;
+use App\Modules\Inventory\Support\InventoryBusinessCalendar;
 use DomainException;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Carbon;
@@ -42,6 +43,7 @@ class GoodsReceiptService
         private readonly AutoBatchNumberService $autoBatchNumber,
         private readonly BranchContext $branchContext,
         private readonly InventoryActivityLogService $activityLogger,
+        private readonly InventoryBusinessCalendar $calendar,
     ) {}
 
     public function listForBranch(int $branchId, array $filters = []): LengthAwarePaginator
@@ -463,7 +465,7 @@ class GoodsReceiptService
                     $reversalNotes,
                     $locked->getTable(),
                     $locked->id,
-                    now()->toDateString(),
+                    $this->calendar->todayString(),
                 );
 
                 $this->goodsReceipts->updateItem($item, [

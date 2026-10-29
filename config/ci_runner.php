@@ -1351,6 +1351,12 @@ return [
         // the screens still render, so the error is silent. Selected by the `LabClinicCalendarBoundary`
         // token in BOTH critical variants; declared so a rename cannot drop it.
         'tests/Feature/LabWorkflow/LabClinicCalendarBoundaryTest.php',
+
+        // SECURITY-F4B1-CLINIC-CALENDAR-INVENTORY-LEDGER-1 (part of SECURITY-F4B, owner decision D15) — stock movement and document dates, document numbers, the outbound expiry guard and receipt-date validation
+        // on the clinic calendar (Asia/Makassar). A UTC "today" named the previous clinic day for eight
+        // hours of every day; the screens still render, so the error is silent. Selected by the
+        // `InventoryClinicCalendarBoundary` token in BOTH critical variants; declared so a rename cannot drop it.
+        'tests/Feature/Inventory/InventoryClinicCalendarBoundaryLedgerTest.php',
     ],
 
     /*

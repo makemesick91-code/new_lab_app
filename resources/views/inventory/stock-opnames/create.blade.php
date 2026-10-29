@@ -15,7 +15,7 @@
                         @endforeach
                     </x-ui.select>
 
-                    <x-ui.input label="Tanggal Opname" name="opname_date" id="opname-date" type="date" required :value="old('opname_date', now()->toDateString())" />
+                    <x-ui.input label="Tanggal Opname" name="opname_date" id="opname-date" type="date" required :value="old('opname_date', app(\App\Modules\Inventory\Support\InventoryBusinessCalendar::class)->todayString())" />
 
                     <div class="md:col-span-2">
                         <label for="product-ids" class="block text-sm font-medium text-navy">Produk yang Dihitung</label>
