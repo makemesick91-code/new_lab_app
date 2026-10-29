@@ -137,6 +137,10 @@ Nomor ADR berikutnya yang tersedia: **0013**.
   [security-remediation-status-2026-10-27](operations/security-remediation-status-2026-10-27.md);
   kesiapan rotasi application key:
   [g7b-production-readiness-report-2026-10-29](operations/g7b-production-readiness-report-2026-10-29.md).
+- Rilis produksi F-4b/F-4c `fb3726c5` (2026-10-30) dan kesiapan final G7-B:
+  [F4BC-PRODUCTION-RELEASE-REPORT](operations/release-cicd-phase2-2026-10-29/F4BC-PRODUCTION-RELEASE-REPORT.md),
+  [G7B-FINAL-READINESS-REPORT](operations/release-cicd-phase2-2026-10-29/G7B-FINAL-READINESS-REPORT.md),
+  [G7B-ESCROW-TOOLS](operations/release-cicd-phase2-2026-10-29/G7B-ESCROW-TOOLS.md).
 - Backup & DR: [backup-dr-restore-rehearsal-runbook](runbooks/backup-dr-restore-rehearsal-runbook.md),
   [roll-5-backup-restore-drill-runbook](runbooks/roll-5-backup-restore-drill-runbook.md),
   [backup-disaster-recovery-automation-governance](architecture/backup-disaster-recovery-automation-governance.md).
