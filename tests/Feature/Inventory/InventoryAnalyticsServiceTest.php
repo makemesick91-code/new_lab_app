@@ -16,6 +16,7 @@ use App\Modules\Inventory\Models\PurchaseRequest;
 use App\Modules\Inventory\Models\Supplier;
 use App\Modules\Inventory\Services\InventoryAnalyticsService;
 use App\Modules\Inventory\Services\InventoryStockService;
+use App\Modules\Inventory\Support\InventoryBusinessCalendar;
 use Database\Seeders\BranchSeeder;
 use Illuminate\Support\Facades\Schema;
 use Mockery\MockInterface;
@@ -162,7 +163,10 @@ it('handles null batch product movements using last inbound date proxy for aging
     $location = InventoryLocation::factory()->create(['branch_id' => $this->branch->id]);
     $product = Product::factory()->create(['branch_id' => $this->branch->id, 'average_cost' => 75]);
 
-    createMovementWithDate($this->branch, $product, $location, now()->subDays(45)->toDateString(), qtyIn: 12);
+    // SECURITY-F4B (D15): age is counted on the clinic calendar. A UTC now() would make the
+    // expected age one day short for eight hours of every day (00:00-08:00 WITA).
+    $lastIn = app(InventoryBusinessCalendar::class)->today()->subDays(45)->toDateString();
+    createMovementWithDate($this->branch, $product, $location, $lastIn, qtyIn: 12);
 
     $aging = $this->analytics->getInventoryAging($this->branch->id, [
         'aging_granularity' => 'product',
@@ -172,7 +176,7 @@ it('handles null batch product movements using last inbound date proxy for aging
 
     expect($aging['granularity'])->toBe('product')
         ->and($item['age_bucket'])->toBe(InventoryAnalyticsService::BUCKET_AGING)
-        ->and($item['last_in_date'])->toBe(now()->subDays(45)->toDateString())
+        ->and($item['last_in_date'])->toBe($lastIn)
         ->and($item['age_days'])->toBe(45);
 });
 
@@ -509,6 +513,7 @@ it('forwards mocked repository values in getKpiSummary without recalculating sca
         app(InventoryMovementRepositoryInterface::class),
         app(InventoryBatchRepositoryInterface::class),
         $mockRepository,
+        app(InventoryBusinessCalendar::class),
     );
 
     expect($service->getKpiSummary(99))->toBe([
@@ -537,6 +542,7 @@ it('delegates getFastMovingItems through mocked repository contract', function (
         app(InventoryMovementRepositoryInterface::class),
         app(InventoryBatchRepositoryInterface::class),
         $mockRepository,
+        app(InventoryBusinessCalendar::class),
     );
 
     expect($service->getFastMovingItems(42, days: 30, limit: 3))->toBe($expected);

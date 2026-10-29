@@ -1,8 +1,8 @@
 @php
     use App\Modules\Inventory\Services\InventoryAnalyticsService;
 
-    $dateFrom = $filters['date_from'] ?? now()->subDays(InventoryAnalyticsService::DEFAULT_PERIOD_DAYS)->toDateString();
-    $dateTo = $filters['date_to'] ?? now()->toDateString();
+    $dateFrom = $filters['date_from'] ?? app(\App\Modules\Inventory\Support\InventoryBusinessCalendar::class)->today()->subDays(InventoryAnalyticsService::DEFAULT_PERIOD_DAYS)->toDateString();
+    $dateTo = $filters['date_to'] ?? app(\App\Modules\Inventory\Support\InventoryBusinessCalendar::class)->todayString();
     $deadStockDays = $filters['dead_stock_days'] ?? InventoryAnalyticsService::DEFAULT_DEAD_STOCK_DAYS;
     $slowThreshold = $filters['slow_moving_threshold'] ?? InventoryAnalyticsService::DEFAULT_SLOW_THRESHOLD;
     $limit = $filters['limit'] ?? InventoryAnalyticsService::DEFAULT_FAST_LIMIT;

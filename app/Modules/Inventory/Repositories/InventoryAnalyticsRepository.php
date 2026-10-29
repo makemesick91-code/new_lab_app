@@ -15,6 +15,7 @@ use App\Modules\Inventory\Models\StockOpname;
 use App\Modules\Inventory\Models\StockOpnameItem;
 use App\Modules\Inventory\Models\StockTransfer;
 use App\Modules\Inventory\Models\Supplier;
+use App\Modules\Inventory\Support\InventoryBusinessCalendar;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
@@ -44,6 +45,7 @@ class InventoryAnalyticsRepository implements InventoryAnalyticsRepositoryInterf
 
     public function __construct(
         private readonly InventoryMovementRepositoryInterface $movements,
+        private readonly InventoryBusinessCalendar $calendar,
     ) {}
 
     public function getInventoryValue(int $branchId): float
@@ -89,7 +91,7 @@ class InventoryAnalyticsRepository implements InventoryAnalyticsRepositoryInterf
 
     public function getDeadStockCount(int $branchId, int $days = 90): int
     {
-        $cutoffDate = now()->subDays($days)->toDateString();
+        $cutoffDate = $this->calendar->today()->subDays($days)->toDateString();
         $stock = $this->stockSubquery($branchId);
         $lastOut = $this->lastOutboundSubquery($branchId);
 
@@ -184,8 +186,8 @@ class InventoryAnalyticsRepository implements InventoryAnalyticsRepositoryInterf
 
     public function getFastMovingItems(int $branchId, int $days = 90, int $limit = 10): Collection
     {
-        $dateFrom = now()->subDays($days)->toDateString();
-        $dateTo = now()->toDateString();
+        $dateFrom = $this->calendar->today()->subDays($days)->toDateString();
+        $dateTo = $this->calendar->todayString();
 
         $outbound = $this->movements
             ->outboundByProductInPeriod($branchId, [
@@ -227,8 +229,8 @@ class InventoryAnalyticsRepository implements InventoryAnalyticsRepositoryInterf
 
     public function getSlowMovingItems(int $branchId, int $days = 90, int $limit = 10): Collection
     {
-        $dateFrom = now()->subDays($days)->toDateString();
-        $dateTo = now()->toDateString();
+        $dateFrom = $this->calendar->today()->subDays($days)->toDateString();
+        $dateTo = $this->calendar->todayString();
 
         $outbound = $this->movements
             ->outboundByProductInPeriod($branchId, [
@@ -287,7 +289,7 @@ class InventoryAnalyticsRepository implements InventoryAnalyticsRepositoryInterf
 
     public function getDeadStockItems(int $branchId, int $days = 90, int $limit = 10): Collection
     {
-        $cutoffDate = now()->subDays($days)->toDateString();
+        $cutoffDate = $this->calendar->today()->subDays($days)->toDateString();
 
         $lastOutByProduct = $this->movements
             ->lastOutboundDateByProduct($branchId)
@@ -316,7 +318,7 @@ class InventoryAnalyticsRepository implements InventoryAnalyticsRepositoryInterf
                 $averageCost = (float) $product->average_cost;
                 $lastOut = $lastOutByProduct[$product->id]->last_out_date ?? null;
                 $daysSinceLastOut = $lastOut !== null
-                    ? (int) Carbon::parse($lastOut)->startOfDay()->diffInDays(now()->startOfDay())
+                    ? (int) Carbon::parse($lastOut)->startOfDay()->diffInDays($this->calendar->today())
                     : null;
 
                 return [
@@ -362,7 +364,7 @@ class InventoryAnalyticsRepository implements InventoryAnalyticsRepositoryInterf
                 $lastInDate = $lastIn[$product->id]->last_in_date ?? null;
                 $anchorDate = $batchDate ?? $lastInDate;
                 $ageDays = $anchorDate !== null
-                    ? (int) Carbon::parse($anchorDate)->startOfDay()->diffInDays(now()->startOfDay())
+                    ? (int) Carbon::parse($anchorDate)->startOfDay()->diffInDays($this->calendar->today())
                     : 0;
                 $bucket = $this->resolveAgeBucket($ageDays);
 
@@ -418,7 +420,7 @@ class InventoryAnalyticsRepository implements InventoryAnalyticsRepositoryInterf
     {
         $months = $this->trendMonthKeys();
         $monthExpression = $this->monthTruncExpression('trx_inventory_movements.movement_date');
-        $dateFrom = now()->subMonths(self::TREND_MONTH_COUNT - 1)->startOfMonth()->toDateString();
+        $dateFrom = $this->calendar->today()->subMonths(self::TREND_MONTH_COUNT - 1)->startOfMonth()->toDateString();
 
         $rows = InventoryMovement::query()
             ->join('inv_products', 'inv_products.id', '=', 'trx_inventory_movements.product_id')
@@ -477,11 +479,11 @@ class InventoryAnalyticsRepository implements InventoryAnalyticsRepositoryInterf
 
     public function getReorderRecommendations(int $branchId): Collection
     {
-        $lookbackStart = now()->subDays(self::REORDER_LOOKBACK_DAYS)->toDateString();
+        $lookbackStart = $this->calendar->today()->subDays(self::REORDER_LOOKBACK_DAYS)->toDateString();
         $outbound = $this->movements
             ->outboundByProductInPeriod($branchId, [
                 'date_from' => $lookbackStart,
-                'date_to' => now()->toDateString(),
+                'date_to' => $this->calendar->todayString(),
             ])
             ->keyBy('product_id');
 
@@ -717,7 +719,7 @@ class InventoryAnalyticsRepository implements InventoryAnalyticsRepositoryInterf
     private function purchaseOrderTrendRows(int $branchId, array $months): array
     {
         $monthExpression = $this->monthTruncExpression('trx_purchase_orders.order_date');
-        $dateFrom = now()->subMonths(self::TREND_MONTH_COUNT - 1)->startOfMonth()->toDateString();
+        $dateFrom = $this->calendar->today()->subMonths(self::TREND_MONTH_COUNT - 1)->startOfMonth()->toDateString();
 
         $rows = PurchaseOrder::query()
             ->leftJoin('trx_purchase_order_items', 'trx_purchase_order_items.purchase_order_id', '=', 'trx_purchase_orders.id')
@@ -751,7 +753,7 @@ class InventoryAnalyticsRepository implements InventoryAnalyticsRepositoryInterf
     private function goodsReceiptTrendRows(int $branchId, array $months): array
     {
         $monthExpression = $this->monthTruncExpression('trx_goods_receipts.posted_at');
-        $dateFrom = now()->subMonths(self::TREND_MONTH_COUNT - 1)->startOfMonth()->toDateString();
+        $dateFrom = $this->calendar->today()->subMonths(self::TREND_MONTH_COUNT - 1)->startOfMonth()->toDateString();
 
         $rows = GoodsReceipt::query()
             ->leftJoin('trx_goods_receipt_items', 'trx_goods_receipt_items.goods_receipt_id', '=', 'trx_goods_receipts.id')
@@ -785,7 +787,7 @@ class InventoryAnalyticsRepository implements InventoryAnalyticsRepositoryInterf
     private function ledgerPurchaseTrendRows(int $branchId, array $months): array
     {
         $monthExpression = $this->monthTruncExpression('trx_inventory_movements.movement_date');
-        $dateFrom = now()->subMonths(self::TREND_MONTH_COUNT - 1)->startOfMonth()->toDateString();
+        $dateFrom = $this->calendar->today()->subMonths(self::TREND_MONTH_COUNT - 1)->startOfMonth()->toDateString();
 
         $rows = InventoryMovement::query()
             ->selectRaw("{$monthExpression} as period_month")
@@ -816,7 +818,7 @@ class InventoryAnalyticsRepository implements InventoryAnalyticsRepositoryInterf
         $months = [];
 
         for ($i = self::TREND_MONTH_COUNT - 1; $i >= 0; $i--) {
-            $months[] = now()->subMonths($i)->format('Y-m');
+            $months[] = $this->calendar->today()->subMonths($i)->format('Y-m');
         }
 
         return $months;
