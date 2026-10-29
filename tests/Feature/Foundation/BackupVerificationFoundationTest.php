@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\File;
 uses()->group('Foundation', 'BackupVerification');
 
 beforeEach(function () {
-    $this->backupDir = 'storage/framework/testing/nsf10-backups';
+    $this->backupDir = isolatedTestStoragePath('storage/framework/testing/nsf10-backups');
     config(['backup_governance.allowed_directories' => [$this->backupDir]]);
 
     File::deleteDirectory(base_path($this->backupDir));

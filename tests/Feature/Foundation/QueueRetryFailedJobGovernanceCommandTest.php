@@ -98,12 +98,13 @@ it('fails when the central retry standard breaks its own caps', function () {
 });
 
 it('flags a ShouldQueue class without an approved retry policy', function () {
-    $dir = base_path('storage/framework/testing/ent5-scan');
+    $scanPath = isolatedTestStoragePath('storage/framework/testing/ent5-scan');
+    $dir = base_path($scanPath);
     File::ensureDirectoryExists($dir);
     File::put($dir.'/NakedJob.php', "<?php\nclass Ent5ScanFixtureNakedJob implements ShouldQueue {}\n");
 
     try {
-        config(['queue_governance.ent5_retry_failed_job.job_scan.paths' => ['storage/framework/testing/ent5-scan']]);
+        config(['queue_governance.ent5_retry_failed_job.job_scan.paths' => [$scanPath]]);
 
         $report = app(QueueRetryFailedJobReadinessService::class)->collect();
 
@@ -123,12 +124,13 @@ it('tolerates a scan across the real app tree (zero or many jobs) without flaggi
 });
 
 it('detects destructive queue command automation in scanned code', function () {
-    $dir = base_path('storage/framework/testing/ent5-unsafe');
+    $scanPath = isolatedTestStoragePath('storage/framework/testing/ent5-unsafe');
+    $dir = base_path($scanPath);
     File::ensureDirectoryExists($dir);
     File::put($dir.'/Unsafe.php', "<?php\nArtisan::call('queue:flush');\n");
 
     try {
-        config(['queue_governance.ent5_retry_failed_job.unsafe_command_scan.paths' => ['storage/framework/testing/ent5-unsafe']]);
+        config(['queue_governance.ent5_retry_failed_job.unsafe_command_scan.paths' => [$scanPath]]);
 
         $report = app(QueueRetryFailedJobReadinessService::class)->collect();
 

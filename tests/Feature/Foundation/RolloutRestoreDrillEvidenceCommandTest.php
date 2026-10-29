@@ -1,9 +1,16 @@
 <?php
 
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\File;
 use Symfony\Component\Console\Output\BufferedOutput;
 
 uses()->group('Foundation', 'RolloutReadiness', 'RollFive', 'RestoreDrill');
+
+/** CI-PERF-02: this suite's private restore-drill directory (never the canonical one). */
+function cmdDrillDir(): string
+{
+    return base_path(isolatedTestStoragePath('storage/framework/testing/restore-drills-cmd'));
+}
 
 function restoreDrillCommand(array $params = []): string
 {
@@ -30,7 +37,7 @@ function writeCommandEvidence(array $overrides = []): string
         ],
         'decision' => 'GO',
     ];
-    $dir = storage_path('app/readiness/restore-drills');
+    $dir = cmdDrillDir();
     if (! is_dir($dir)) {
         mkdir($dir, 0775, true);
     }
@@ -41,16 +48,13 @@ function writeCommandEvidence(array $overrides = []): string
 }
 
 afterEach(function () {
-    foreach (glob(storage_path('app/readiness/restore-drills/cmd-*.json')) ?: [] as $f) {
-        @unlink($f);
-    }
-    @unlink(storage_path('app/readiness/restore-drills/latest.json'));
+    File::deleteDirectory(cmdDrillDir());
 });
 
 it('reports WATCH and exits 0 when no evidence exists', function () {
     // Point the canonical candidate at a non-existent path for determinism.
     config()->set('rollout_readiness.paths.restore_drill_evidence', [
-        'storage/app/readiness/restore-drills/none-'.uniqid().'.json',
+        cmdDrillDir().'/none-'.uniqid().'.json',
     ]);
 
     $this->artisan('rollout:restore-drill-evidence')
@@ -83,15 +87,19 @@ it('exits non-zero with --strict on unsafe FAIL evidence', function () {
 
 it('exits 0 with --strict on a WATCH state', function () {
     config()->set('rollout_readiness.paths.restore_drill_evidence', [
-        'storage/app/readiness/restore-drills/none-'.uniqid().'.json',
+        cmdDrillDir().'/none-'.uniqid().'.json',
     ]);
 
     expect(Artisan::call('rollout:restore-drill-evidence', ['--strict' => true]))->toBe(0);
 });
 
 it('creates a non-GO template with --create-template and never runs a restore', function () {
-    $path = storage_path('app/readiness/restore-drills/latest.json');
-    @unlink($path);
+    // The shipped default is the canonical evidence file; pin it, then point the
+    // command at this suite's private directory so the test never writes there.
+    expect(config('rollout_readiness.restore_drill.canonical_evidence_path'))
+        ->toBe('storage/app/readiness/restore-drills/latest.json');
+    $path = cmdDrillDir().'/latest.json';
+    config()->set('rollout_readiness.restore_drill.canonical_evidence_path', $path);
 
     Artisan::call('rollout:restore-drill-evidence', ['--create-template' => true]);
 

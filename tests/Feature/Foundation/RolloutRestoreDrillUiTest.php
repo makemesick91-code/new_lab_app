@@ -2,8 +2,15 @@
 
 use App\Models\User;
 use App\Modules\RmeOnlineContext\Middleware\EnsureRmeOnlineContext;
+use Illuminate\Support\Facades\File;
 
 uses()->group('Foundation', 'RolloutReadiness', 'RollFive', 'RestoreDrill');
+
+/** CI-PERF-02: this suite's private restore-drill directory (never the canonical one). */
+function uiDrillDir(): string
+{
+    return base_path(isolatedTestStoragePath('storage/framework/testing/restore-drills-ui'));
+}
 
 beforeEach(function () {
     seedAccessControl();
@@ -26,7 +33,7 @@ function writeUiEvidence(array $overrides = []): string
         ],
         'decision' => 'GO',
     ];
-    $dir = storage_path('app/readiness/restore-drills');
+    $dir = uiDrillDir();
     if (! is_dir($dir)) {
         mkdir($dir, 0775, true);
     }
@@ -38,9 +45,7 @@ function writeUiEvidence(array $overrides = []): string
 }
 
 afterEach(function () {
-    foreach (glob(storage_path('app/readiness/restore-drills/ui-*.json')) ?: [] as $f) {
-        @unlink($f);
-    }
+    File::deleteDirectory(uiDrillDir());
 });
 
 it('shows the restore-drill evidence card and Stage-1 clearance panel', function () {

@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\File;
 uses()->group('Architecture', 'Nsf10', 'FoundationGovernance');
 
 beforeEach(function () {
-    $this->ciDir = 'storage/framework/testing/nsf10-summary-ci-evidence';
+    $this->ciDir = isolatedTestStoragePath('storage/framework/testing/nsf10-summary-ci-evidence');
     config(['release_evidence.profiles.ci.directory' => $this->ciDir]);
     File::deleteDirectory(base_path($this->ciDir));
 });

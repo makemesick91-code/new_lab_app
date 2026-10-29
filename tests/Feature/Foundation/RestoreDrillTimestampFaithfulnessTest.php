@@ -5,8 +5,15 @@ use App\Services\Foundation\RestoreDrillEvidenceService;
 use App\Support\Foundation\RestoreDrillTimestampParser;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Blade;
+use Illuminate\Support\Facades\File;
 
 uses()->group('Foundation', 'RolloutReadiness', 'RollFive', 'RestoreDrill');
+
+/** CI-PERF-02: this suite's private restore-drill directory (never the canonical one). */
+function tsfaithDrillDir(): string
+{
+    return base_path(isolatedTestStoragePath('storage/framework/testing/restore-drills-tsfaith'));
+}
 
 /**
  * RESTORE-DRILL-TIMESTAMP-FAITHFULNESS-1
@@ -31,9 +38,7 @@ beforeEach(function () {
 
 afterEach(function () {
     Carbon::setTestNow();
-    foreach (glob(storage_path('app/readiness/restore-drills/tsfaith-*.json')) ?: [] as $f) {
-        @unlink($f);
-    }
+    File::deleteDirectory(tsfaithDrillDir());
 });
 
 function rdParser(): RestoreDrillTimestampParser
@@ -81,7 +86,7 @@ function rdEvidence(array $overrides = []): string
         'notes' => ['safe'],
     ], $overrides);
 
-    $dir = storage_path('app/readiness/restore-drills');
+    $dir = tsfaithDrillDir();
     if (! is_dir($dir)) {
         mkdir($dir, 0775, true);
     }
