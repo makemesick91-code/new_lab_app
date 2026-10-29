@@ -11,6 +11,8 @@ use App\Modules\Inventory\Services\PurchaseOrderService;
 use App\Modules\Inventory\Services\PurchaseRequestService;
 use Database\Seeders\BranchSeeder;
 
+require_once __DIR__.'/helpers.php';
+
 beforeEach(function () {
     seedAccessControl();
     test()->seed(BranchSeeder::class);

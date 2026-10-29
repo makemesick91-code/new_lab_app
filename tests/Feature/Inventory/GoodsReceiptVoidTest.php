@@ -10,6 +10,8 @@ use App\Modules\Inventory\Services\PurchaseOrderService;
 use Database\Seeders\BranchSeeder;
 use Illuminate\Validation\ValidationException;
 
+require_once __DIR__.'/helpers.php';
+
 beforeEach(function () {
     seedAccessControl();
     test()->seed(BranchSeeder::class);

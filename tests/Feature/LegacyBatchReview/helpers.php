@@ -38,6 +38,9 @@ use App\Modules\LegacyRme\Services\Pdf\FakeLegacyRmePdfInspector;
 use App\Modules\LegacyRme\Services\Pdf\FakeLegacyRmePdfRasterizer;
 use Illuminate\Http\UploadedFile;
 
+// The odontogram fixtures below call the lodo* helpers; declare that here so this file works on its own.
+require_once __DIR__.'/../LegacyOdontogram/helpers.php';
+
 if (! function_exists('lbrRmeUpload')) {
     /**
      * A DISTINCT source PDF on every call.

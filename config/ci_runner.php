@@ -1388,6 +1388,13 @@ return [
         // stopped running, a drift in the snapshot would silently change what every test authorises.
         // Selected by the `Cicd` token in BOTH critical variants; declared so a rename cannot drop it.
         'tests/Feature/Cicd/AccessControlSeedSnapshotTest.php',
+
+        // CI-PERF-03 — every global helper a test file calls resolves from that file alone (its own
+        // declaration, a required helpers.php, or tests/Pest.php). A serial run loads every file and
+        // hides a borrowed helper; a parallel worker fails it with "Call to undefined function" (two
+        // critical tests in every 2- and 4-worker run, 14 suites when run alone). Selected by the
+        // `Cicd` token in BOTH critical variants; declared so a rename cannot drop it.
+        'tests/Feature/Cicd/ParallelTestHelperResolutionContractTest.php',
     ],
 
     /*
