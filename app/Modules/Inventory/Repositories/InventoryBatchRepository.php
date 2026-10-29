@@ -7,14 +7,19 @@ use App\Modules\Inventory\Models\InventoryBatch;
 use App\Modules\Inventory\Models\InventoryMovement;
 use App\Modules\Inventory\Models\StockTransferItem;
 use App\Modules\Inventory\Services\BatchExpiryStatusService;
+use App\Modules\Inventory\Support\InventoryBusinessCalendar;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
 
 class InventoryBatchRepository implements InventoryBatchRepositoryInterface
 {
+    public function __construct(
+        private readonly InventoryBusinessCalendar $calendar,
+    ) {}
+
     public function paginateForBranch(int $branchId, array $filters = [], int $perPage = 15): LengthAwarePaginator
     {
-        $today = now()->toDateString();
+        $today = $this->calendar->todayString();
         $expiryStatusService = app(BatchExpiryStatusService::class);
         $nearExpiryThreshold = $expiryStatusService->nearExpiryThresholdDate()->toDateString();
         $activeThreshold = $expiryStatusService->nearExpiryThresholdDate()->copy()->addDay()->toDateString();

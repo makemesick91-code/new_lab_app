@@ -1,25 +1,25 @@
-# SECURITY-F4B1-CLINIC-CALENDAR-INVENTORY-LEDGER-1 — part 1 of 4 of audit item F-4b, owner decision D15 (2026-10-28):
+# SECURITY-F4B2-CLINIC-CALENDAR-INVENTORY-EXPIRY-1 — part 2 of 4 of audit item F-4b, owner decision D15 (2026-10-28):
 # inventory business dates use the clinic calendar (Asia/Makassar, UTC+8). A UTC "today" named the
-# previous clinic day between 00:00 and 08:00 WITA. This part: stock movement and document dates, document numbers, the outbound expiry guard and receipt-date validation.
+# previous clinic day between 00:00 and 08:00 WITA. This part: expiry status and days text, the expiry alert and the not-expired scope.
 # One seam, App\Modules\Inventory\Support\InventoryBusinessCalendar, delegates to ClinicalClock.
 # F-4b moves 24 application files; sprint:scope-audit caps a RUNTIME_FIX at 10, so it is split by
 # concern rather than reclassified. Event timestamps stay UTC instants; entered business dates are
 # kept as entered; no stored date is rewritten and no backfill runs. No migration, no route, no permission.
 # Carried forward: LEGACY-RME-PROGRAM-CLOSURE-1 stays CLOSED and inherited.
-id: SECURITY-F4B1-CLINIC-CALENDAR-INVENTORY-LEDGER-1
+id: SECURITY-F4B2-CLINIC-CALENDAR-INVENTORY-EXPIRY-1
 type: RUNTIME_FIX
 module: Inventory
-title: "Inventory ledger and document dates on the clinic calendar: movement, receipt, opname, transfer and purchase order dates, outbound expiry guard, receipt-date validation"
+title: "Inventory expiry decisions on the clinic calendar: expiry status, alerts and the not-expired scope"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 runtime_change: true
 schema_change: false
 frontend_change: false
 security_impact: true
 branch_isolation_impact: false
-ledger_impact: true
+ledger_impact: false
 deploy_required: true
 browser_required: false
 test_profiles: [focused, security_regression]
-go_tag: security-f4b1-clinic-calendar-inventory-ledger-1-go
+go_tag: security-f4b2-clinic-calendar-inventory-expiry-1-go
 inherits_parent_go: security-f8c-env-copy-backup-classification-1-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
