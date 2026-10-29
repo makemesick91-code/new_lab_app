@@ -1,15 +1,16 @@
-# SECURITY-F4A3-CLINIC-CALENDAR-SATUSEHAT-ADOPTION-1 — part of SECURITY-F4A (audit item F-4a), split by module.
-# The application timezone is UTC; the clinic runs on Asia/Makassar (UTC+8), so a UTC
-# "today" names the previous clinic day between 00:00 and 08:00 WITA. Sites here:
-# SatusehatDiagnosisAdoptionService (default period end).
-# The original combined fix touched 7 modules and failed sprint:scope-audit for RUNTIME_FIX
-# (limit 3); it is split rather than reclassified. Siblings: SECURITY-F4A1-CLINIC-CALENDAR-CLINICAL-RECORDS-1, SECURITY-F4A2-CLINIC-CALENDAR-FINANCIAL-DASHBOARDS-1.
-# No migration, no route, no permission; no stored data is rewritten.
+# SECURITY-F4C-CLINIC-CALENDAR-LAB-ORDERS-1 — audit item F-4c, owner decision D16 (2026-10-28): lab
+# operational business dates use the clinic calendar (Asia/Makassar, UTC+8). A UTC "today" dated a
+# new lab order on the previous clinic day between 00:00 and 08:00 WITA, numbered it (and deliveries)
+# in the previous year on 1 January, accepted a due date of "yesterday" on candidate conversion,
+# and counted "delivered today" over the UTC day. Explicit order and due dates and event timestamps
+# are preserved; no stored date is rewritten. Lab KPI analytics and capacity planning are
+# deliberately unchanged pending an explicit owner decision (earlier documented UTC decision).
+# No migration, no route, no permission.
 # Carried forward: LEGACY-RME-PROGRAM-CLOSURE-1 stays CLOSED and inherited.
-id: SECURITY-F4A3-CLINIC-CALENDAR-SATUSEHAT-ADOPTION-1
+id: SECURITY-F4C-CLINIC-CALENDAR-LAB-ORDERS-1
 type: RUNTIME_FIX
-module: Satusehat
-title: "SATUSEHAT diagnosis adoption default period ends on the clinic date"
+module: LabOrder
+title: "Lab order dates on the clinic calendar: order date default, numbering year, due-date floor, delivered today"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 runtime_change: true
 schema_change: false
@@ -20,6 +21,6 @@ ledger_impact: false
 deploy_required: true
 browser_required: false
 test_profiles: [focused, security_regression]
-go_tag: security-f4a3-clinic-calendar-satusehat-adoption-1-go
+go_tag: security-f4c-clinic-calendar-lab-orders-1-go
 inherits_parent_go: security-f8c-env-copy-backup-classification-1-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1

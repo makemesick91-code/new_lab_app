@@ -8,6 +8,7 @@ use App\Modules\LabOrder\Interfaces\LabOrderRepositoryInterface;
 use App\Modules\LabOrder\Models\LabCaseCandidate;
 use App\Modules\LabOrder\Models\LabOrder;
 use App\Modules\LabService\Models\LabService;
+use App\Support\Clinical\ClinicalClock;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -19,6 +20,7 @@ class LabCaseCandidateConversionService
         private readonly LabOrderRepositoryInterface $labOrders,
         private readonly LabWorkflowResolver $workflowResolver,
         private readonly LabWorkflowRequestService $workflowRequests,
+        private readonly ClinicalClock $clock,
     ) {}
 
     /**
@@ -80,7 +82,7 @@ class LabCaseCandidateConversionService
                 'doctor_id' => $locked->doctor_id,
                 'patient_id' => $locked->patient_id,
                 'medical_record_number' => $locked->patient?->medical_record_number,
-                'order_date' => now()->toDateString(),
+                'order_date' => $this->clock->todayString(),
                 'due_date' => $dueDate,
                 'priority' => 'NORMAL',
                 'notes' => $payload['notes'] ?? null,

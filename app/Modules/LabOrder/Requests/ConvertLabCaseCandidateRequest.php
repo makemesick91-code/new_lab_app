@@ -2,6 +2,7 @@
 
 namespace App\Modules\LabOrder\Requests;
 
+use App\Support\Clinical\ClinicalClock;
 use Illuminate\Foundation\Http\FormRequest;
 
 class ConvertLabCaseCandidateRequest extends FormRequest
@@ -18,7 +19,7 @@ class ConvertLabCaseCandidateRequest extends FormRequest
     {
         return [
             'lab_service_id' => ['required', 'integer', 'exists:mst_lab_services,id'],
-            'due_date' => ['required', 'date', 'after_or_equal:today'],
+            'due_date' => ['required', 'date', 'after_or_equal:'.app(ClinicalClock::class)->todayString()],
             'notes' => ['nullable', 'string', 'max:2000'],
             'quantity' => ['nullable', 'integer', 'min:1'],
         ];
