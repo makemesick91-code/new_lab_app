@@ -1381,6 +1381,13 @@ return [
         // hours of every day; the screens still render, so the error is silent. Selected by the
         // `InventoryClinicCalendarBoundary` token in BOTH critical variants; declared so a rename cannot drop it.
         'tests/Feature/Inventory/InventoryClinicCalendarBoundaryAnalyticsTest.php',
+
+        // CI-PERF-01 — seedAccessControl() restores a per-process snapshot instead of re-running
+        // PermissionSeeder + RoleSeeder before ~3,400 critical tests. This suite proves the restored
+        // permissions, roles and grants equal both the real seeders and the seeders' constants; if it
+        // stopped running, a drift in the snapshot would silently change what every test authorises.
+        // Selected by the `Cicd` token in BOTH critical variants; declared so a rename cannot drop it.
+        'tests/Feature/Cicd/AccessControlSeedSnapshotTest.php',
     ],
 
     /*

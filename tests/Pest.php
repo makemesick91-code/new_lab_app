@@ -94,21 +94,22 @@ use App\Services\Foundation\FeatureFlagService;
 use App\Services\Monitoring\PilotPerformanceSnapshotDiskProbe;
 use App\Support\AccessControl\FrontOfficeRole;
 use App\Support\Clinical\ClinicalClock;
-use Database\Seeders\PermissionSeeder;
-use Database\Seeders\RoleSeeder;
 use Illuminate\Http\Testing\File;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\ParallelTesting;
 use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\Models\Role;
+use Tests\Support\AccessControlSeedSnapshot;
 
 /**
  * Seed the Sprint 0 roles & permissions for access-control tests.
  */
 function seedAccessControl(): void
 {
-    test()->seed([PermissionSeeder::class, RoleSeeder::class]);
+    // CI-PERF-01: the same rows as PermissionSeeder + RoleSeeder, restored from a
+    // per-process snapshot after the first real seed (see the class docblock).
+    AccessControlSeedSnapshot::seed(test());
 }
 
 /**
