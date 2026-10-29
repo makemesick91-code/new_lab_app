@@ -132,8 +132,11 @@ Nomor ADR berikutnya yang tersedia: **0013**.
 - Keamanan runtime: [dedicated-runtime-identity-runbook](runbooks/dedicated-runtime-identity-runbook.md),
   [production-secret-file-permissions-runbook](runbooks/production-secret-file-permissions-runbook.md),
   [security-pii-compliance-hardening-governance](architecture/security-pii-compliance-hardening-governance.md).
-- Status remediasi keamanan pasca-audit (snapshot 2026-10-27, dengan pembaruan status merge 2026-10-29):
-  [security-remediation-status-2026-10-27](operations/security-remediation-status-2026-10-27.md).
+- Status remediasi keamanan pasca-audit (snapshot 2026-10-27, dengan pembaruan status merge dan rilis
+  produksi `755c6bce` 2026-10-29):
+  [security-remediation-status-2026-10-27](operations/security-remediation-status-2026-10-27.md);
+  kesiapan rotasi application key:
+  [g7b-production-readiness-report-2026-10-29](operations/g7b-production-readiness-report-2026-10-29.md).
 - Backup & DR: [backup-dr-restore-rehearsal-runbook](runbooks/backup-dr-restore-rehearsal-runbook.md),
   [roll-5-backup-restore-drill-runbook](runbooks/roll-5-backup-restore-drill-runbook.md),
   [backup-disaster-recovery-automation-governance](architecture/backup-disaster-recovery-automation-governance.md).

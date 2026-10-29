@@ -1,6 +1,6 @@
 ---
 kb_status: snapshot
-kb_verified_against: f9134aac
+kb_verified_against: 755c6bce
 kb_updated: 2026-10-29
 ---
 
@@ -11,9 +11,10 @@ Snapshot status remediasi keamanan setelah audit sistem menyeluruh 2026-10-27. H
 request. Status di sini dicatat per **2026-10-28 01:34 WITA**. Untuk keadaan terbaru, periksa GO tag dan
 PR terkait.
 
-> **Pembaruan 2026-10-29:** urutan merge PR sesudah snapshot ini dicatat di bagian **Pembaruan**
-> di bawah. Produksi tetap `f9134aac`. PR yang sudah di-merge berstatus MERGED_NOT_DEPLOYED dan
-> belum diverifikasi di produksi.
+> **Pembaruan 2026-10-29:** dua bagian **Pembaruan** di bawah mencatat yang terjadi sesudah snapshot
+> ini. Bagian yang lebih baru mencatat rilis produksi `755c6bce`, yang membawa seluruh PR urutan merge
+> dan sudah diverifikasi di produksi. Bagian per 07:52 WITA dipertahankan sebagai catatan pada waktu
+> itu. F-4b dan F-4c sudah di-merge, tetapi belum di-deploy.
 
 Kembali ke [00-INDEX](../00-INDEX.md).
 
@@ -25,9 +26,10 @@ Kembali ke [00-INDEX](../00-INDEX.md).
 
 | Item | Nilai |
 |---|---|
-| Commit produksi | `f9134aac` (tree `2aa2d01c`) |
-| GO tag pada HEAD produksi | `security-f8c-env-copy-backup-classification-1-go` |
-| Diverifikasi | 2026-10-27, setelah deploy F-8c dan setelah rotasi G7-A |
+| Commit produksi | `755c6bce` (tree `b53ade16`) |
+| GO tag pada HEAD produksi | `post-audit-security-release-1-go` |
+| Diverifikasi | 2026-10-29, setelah deploy rilis pasca-audit; lihat bagian **Pembaruan — rilis produksi** |
+| Produksi sebelumnya | `f9134aac` (tree `2aa2d01c`), GO tag `security-f8c-env-copy-backup-classification-1-go`, diverifikasi 2026-10-27 |
 
 ## Selesai dan terverifikasi di produksi
 
@@ -48,6 +50,154 @@ Kembali ke [00-INDEX](../00-INDEX.md).
   layanan aktif; queue worker sudah di-restart; satu backup terjadwal berhasil memakai kredensial
   baru; 0 error aplikasi sejak rotasi; nilai password baru tidak ditemukan di log mana pun.
 - Pemeriksaan regresi F-8b/F-8c setelah rotasi: GO.
+
+## Pembaruan — rilis produksi `755c6bce` per 2026-10-29 22:30 WITA
+
+Bagian ini mencatat yang terjadi setelah bagian **Pembaruan** per 07:52 WITA di bawah. Bagian itu tidak
+diubah, supaya tetap terbaca sebagai catatan pada waktu itu.
+
+Tiga status dipisahkan dengan tegas:
+
+- **MERGED**: sudah di-merge ke basis kanonik.
+- **DEPLOYED**: sudah berjalan di produksi.
+- **PRODUCTION-VERIFIED**: sudah diperiksa di produksi setelah deploy.
+
+### Rilis produksi
+
+| Item | Nilai |
+|---|---|
+| Commit produksi | `755c6bce` (tree `b53ade16`) |
+| GO tag | `post-audit-security-release-1-go` (annotated, cocok persis dengan HEAD produksi) |
+| Deploy | 2026-10-29 11:09 WITA, lewat runner deploy resmi yang dijalankan di VPS. Target dipin ke `755c6bce`, `DEPLOY OK`, tidak ada migrasi. |
+| Backup sebelum deploy | Dibuat otomatis oleh deploy dan lulus `foundation:backup-verify` |
+| Rollback | Kode saja, ke GO tag `security-f8c-env-copy-backup-classification-1-go` (`f9134aac`). Tidak ada migrasi yang perlu dibalik. |
+| Produksi sebelumnya | `f9134aac` |
+
+Rilis ini membawa seluruh PR di tabel **Urutan merge** di bawah, ditambah halaman status ini (#547).
+Semuanya sekarang **DEPLOYED** dan **PRODUCTION-VERIFIED**.
+
+### Validasi rilis sebelum deploy
+
+- Run CI `40797351874` pada `755c6bce` (dijalankan manual, sehingga classifier memilih profil terkuat):
+  - critical gate: 6.965 test lulus, 38.996 assertion, exit 0;
+  - selective module gate: Inventory 1.589, Lab 679 (1 skipped), UI 950, Permission 669;
+  - NSF-9 dan NSF-10 lulus.
+- Full Suite **tidak dijalankan** (`FULL_SUITE_NOT_REQUESTED`) dan tidak dihitung sebagai PASS.
+- Kompatibilitas database: tidak ada migrasi baru, dan lock file dependency mendukung PHP 8.3 yang dipakai
+  produksi.
+- Prasyarat runtime di produksi: isolasi runtime 105/105 GO, izin file rahasia GO, `backup-dr-check` 13/13
+  GO, 0 migrasi tertunda, 0 job gagal.
+
+### Verifikasi produksi setelah deploy
+
+Semua pemeriksaan di bawah hanya membaca. Tidak ada data klinis, keuangan, inventori, atau lab yang
+dibuat atau diubah.
+
+| Area | Hasil |
+|---|---|
+| Rilis | HEAD produksi `755c6bce`, tidak ada file terlacak yang berubah, environment pilot, debug OFF, maintenance OFF |
+| HTTP lewat domain kanonik | `/login`, `/health/live`, `/health/ready`, `/health/lb`: 200. `/register`: 404. `/storage/…`: 403. Halaman RME, kasir, lab, inventori, dan dashboard tanpa login: 302 ke login. |
+| F-1, F-2 | Route registrasi publik dan hapus akun sendiri tidak ada |
+| F-3 | Kelas pengaman sel CSV ada. 24 route export, semuanya di belakang autentikasi. |
+| F-4a | `clinical:date-diagnose --strict`: zona Asia/Makassar, kanonik, exit 0 |
+| F-6 | Perintah REPL tidak terdaftar dan paketnya tidak terpasang di produksi |
+| G7-B | Perintah `security:app-key-reencrypt` terdaftar. Dry run: 8 nilai, semuanya di key saat ini, 0 tidak terbaca. |
+| RME, odontogram, consent, kasir | Route utama ada. `rme:invoice-correction-readiness` GO, `rme:billing-dispute-status` GO. |
+| Akses dokter dan autentikasi perangkat | Fleet `TRUSTED_PATHS_COMPLETE`. WebAuthn tetap mode pilot, dengan cakupan yang sama seperti sebelum deploy. Enforcement global tetap nonaktif. |
+| Integritas ledger inventori | Tiga audit batch dan dokumen sumber GO (10/10, 10/10, 9/9). Audit alur pengadaan strict exit 0. |
+| Workflow lab | Pilot readiness GO, audit akun teknisi GO |
+| Queue dan backup | PHP-FPM, nginx, dan worker aktif. Timer backup aktif, run terakhir sukses. 0 job gagal. Worker di-restart otomatis dan berjalan di rilis baru. |
+| Penyimpanan privat | Isolasi runtime GO. Disk publik tidak memuat file klinis. Direktori bukti klinis privat mode 2770. `foundation:security-compliance-check` 9/9. |
+| Log aplikasi | Tidak ada baris baru setelah deploy |
+
+Yang **tidak** diuji secara langsung di produksi, supaya tidak membuat data atau sesi nyata: login dokter
+di perangkat, transaksi kasir, dan unduhan CSV. Ketiganya tercakup di critical gate CI.
+
+Satu baris ERROR di log aplikasi berasal dari alat pemeriksaan sendiri, bukan dari aplikasi. Baris itu
+tercatat 2026-10-29 09:09 WITA, sebelum deploy: pemeriksaan awal memanggil perintah G7-B yang saat itu
+belum ada di produksi. Pemeriksaan sekarang memastikan perintah terdaftar lebih dulu. Baris ini menahan
+pemeriksaan log monitoring di WATCH sampai sekitar 24 jam.
+
+### G7-B — kesiapan rotasi application key
+
+Rotasi produksi tetap **NO-GO**. Rincian di
+[laporan kesiapan G7-B](g7b-production-readiness-report-2026-10-29.md).
+
+- Perintah re-enkripsi sudah DEPLOYED dan PRODUCTION-VERIFIED (dry run saja).
+- Gladi rotasi pada salinan data produksi **lulus**: tulis ulang, pembacaan dengan key baru saja, dan
+  rollback. Database produksi tidak diubah.
+- Salinan file environment dihitung ulang: **28**, bukan 21. Sebanyak 27 memuat application key yang sedang
+  aktif.
+- Masih menunggu owner:
+  - penunjukan custodian kedua dari manajemen dan seremoni escrow;
+  - keputusan retensi salinan;
+  - persetujuan eksekusi rotasi.
+
+### F-4b dan F-4c — MERGED, belum DEPLOYED
+
+Kelima PR diperbarui terhadap basis terbaru satu per satu, lalu di-merge berurutan. Setiap PR baru
+di-merge setelah semua gate CI wajib pada kandidatnya lulus.
+
+| # | PR | Item | Run CI kandidat | Commit merge | Run CI basis setelah merge |
+|---:|---|---|---|---|---|
+| 1 | #548 | F-4c — tanggal order lab | `40798373656` lulus | `03415ffb` | `40810992478` lulus |
+| 2 | #549 | F-4b1 — ledger inventori | `40811124407` lulus | `24998c71` | `40823410464` lulus |
+| 3 | #550 | F-4b2 — kedaluwarsa batch | `40823677696` lulus | `62ee56e4` | `40836499781` lulus |
+| 4 | #551 | F-4b3 — laporan inventori | `40837127984` lulus | `bcc793e2` | `40855928295` lulus |
+| 5 | #552 | F-4b4 — analitik inventori | `40856285308` lulus | `897efd6b` | `40872747306` lulus |
+
+- Untuk setiap PR, tree hasil merge identik dengan tree kandidat yang diuji CI. Tree itu juga identik
+  dengan trial terintegrasi: basis ditambah kelima PR, 1.843 test lulus, 8 skipped, 0 gagal.
+- Konflik hanya ada di registry bersama, yaitu filter workflow, `config/ci_runner.php`, dan manifest
+  sprint. Konflik diselesaikan dengan aturan yang sama seperti urutan merge sebelumnya. Satu PR (#551)
+  juga punya konflik import di samping pengaman CSV, dan kedua sisi dipertahankan.
+- Pengaman CSV, aturan kalender klinik, dan invariant ledger inventori tetap utuh. Tidak ada backfill dan
+  tidak ada koreksi data historis.
+- **Belum DEPLOYED**, karena tidak termasuk rilis `755c6bce`. Deploy memerlukan persetujuan terpisah.
+- Basis kanonik setelah merge terakhir: `897efd6b`.
+
+### Durasi CI setelah memo evaluasi governance (#545) dan cache Composer (#546)
+
+Diukur pada run resmi workflow `foundation-evidence-gates` sejak 2026-10-24. Run yang dibandingkan hanya
+run yang critical regression step-nya benar-benar berjalan dan lulus. Klasifikasi sebelum atau sesudah
+mengikuti isi yang diuji. Run PR menguji PR yang sudah digabung dengan basis saat run dipicu, jadi run PR
+setelah #545 masuk basis sudah membawa memo. Klasifikasi ini dicocokkan dengan durasi step governance, dan
+tidak ada yang berbeda.
+
+| Ukuran (median) | Sebelum (26 run) | Sesudah (30 run) |
+|---|---:|---:|
+| Waktu workflow (wall-clock) | 9.377 dtk | 7.401 dtk |
+| Menit runner | 12.986 dtk | 10.211 dtk |
+| Job critical gate | 8.537 dtk | 7.129 dtk |
+| Step critical regression tests | 8.040 dtk | 7.057 dtk |
+| Step governance audit (critical gate) | 431 dtk | 15 dtk |
+| Step NSF-9 ENT-14/15/16 (terlama) | 96 dtk | 1 dtk |
+| Step NSF-10 capture release evidence | 294 dtk | 2 dtk |
+| Install Composer di NSF-9 dan NSF-10 | 8 dtk | 4 dtk |
+
+Kesimpulan yang boleh ditarik:
+
+- Evaluasi governance turun dari ratusan detik menjadi satu digit di setiap run. Ini efek langsung memo.
+- Cache Composer menghemat sekitar 4 detik per job di NSF-9 dan NSF-10. Efeknya kecil.
+- Median waktu workflow dan menit runner turun sekitar 21%. Sebagian penurunan berasal dari step
+  governance. Sisanya tidak dapat diatribusikan, karena step test juga berubah.
+- **Tidak ada klaim percepatan eksekusi test.** Rentang step critical regression tests masih tumpang tindih:
+  5.143–9.416 dtk sebelum, 4.022–8.207 dtk sesudah. Kecepatan runner berbeda-beda, dan himpunan test juga
+  bertambah di antara kedua periode.
+- Parallel testing tetap **nonaktif**, sampai isolasi bukti bersama di `storage/release-evidence/…`
+  diselesaikan.
+
+### Keputusan owner — status per 22:30 WITA
+
+| Kode | Status |
+|---|---|
+| D4 | PENDING |
+| D5 | Disetujui prinsipnya. Implementasi PENDING, visibilitas repository belum diubah. |
+| D6 | PENDING |
+| D15, D16 | Disetujui 2026-10-28. Implementasinya MERGED, belum DEPLOYED. |
+| D17 | PENDING |
+| G7-B | Custodian kedua, retensi salinan, dan persetujuan eksekusi: belum diberikan |
+| Deploy F-4b dan F-4c | Belum diminta |
 
 ## Pembaruan — status merge per 2026-10-29 07:52 WITA
 
