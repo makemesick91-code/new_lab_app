@@ -34,7 +34,6 @@ use App\Modules\LegacyRme\Services\LegacyRmeBranchAdmissionService;
 use App\Modules\LegacyRme\Support\LegacyRmeWaveStatus;
 use App\Modules\RmeOnlineContext\Middleware\EnsureRmeOnlineContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use RuntimeException;
 
 uses(RefreshDatabase::class);
 

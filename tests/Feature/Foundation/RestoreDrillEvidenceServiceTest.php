@@ -1,8 +1,15 @@
 <?php
 
 use App\Services\Foundation\RestoreDrillEvidenceService;
+use Illuminate\Support\Facades\File;
 
 uses()->group('Foundation', 'RolloutReadiness', 'RollFive', 'RestoreDrill');
+
+/** CI-PERF-02: this suite's private restore-drill directory (never the canonical one). */
+function serviceDrillDir(): string
+{
+    return base_path(isolatedTestStoragePath('storage/framework/testing/restore-drills-service'));
+}
 
 function restoreDrillService(): RestoreDrillEvidenceService
 {
@@ -43,7 +50,7 @@ function writeDrillEvidence(array $overrides = []): string
     ];
 
     $payload = array_replace($base, $overrides);
-    $dir = storage_path('app/readiness/restore-drills');
+    $dir = serviceDrillDir();
     if (! is_dir($dir)) {
         mkdir($dir, 0775, true);
     }
@@ -54,13 +61,11 @@ function writeDrillEvidence(array $overrides = []): string
 }
 
 afterEach(function () {
-    foreach (glob(storage_path('app/readiness/restore-drills/test-*.json')) ?: [] as $f) {
-        @unlink($f);
-    }
+    File::deleteDirectory(serviceDrillDir());
 });
 
 it('returns WATCH when no evidence file is present', function () {
-    $result = restoreDrillService()->evaluate(storage_path('app/readiness/restore-drills/does-not-exist.json'));
+    $result = restoreDrillService()->evaluate(serviceDrillDir().'/does-not-exist.json');
 
     expect($result['status'])->toBe('WATCH')
         ->and($result['unsafe'])->toBeFalse()

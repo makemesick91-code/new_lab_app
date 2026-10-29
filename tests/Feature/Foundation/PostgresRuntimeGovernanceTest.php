@@ -213,7 +213,7 @@ it('foundation governance summary includes POSTGRES_RUNTIME and combined stays G
 });
 
 it('release evidence capture includes postgres-runtime-check artifact for ci profile', function () {
-    $ciDir = 'storage/framework/testing/dbperf2-ci-evidence';
+    $ciDir = isolatedTestStoragePath('storage/framework/testing/dbperf2-ci-evidence');
     config(['release_evidence.profiles.ci.directory' => $ciDir]);
     File::deleteDirectory(base_path($ciDir));
 

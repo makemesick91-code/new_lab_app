@@ -118,7 +118,7 @@ it('foundation governance summary includes DB_PERFORMANCE and combined stays GO'
 });
 
 it('release evidence capture includes db-performance-check artifact for ci profile', function () {
-    $ciDir = 'storage/framework/testing/dbperf1-ci-evidence';
+    $ciDir = isolatedTestStoragePath('storage/framework/testing/dbperf1-ci-evidence');
     config(['release_evidence.profiles.ci.directory' => $ciDir]);
     File::deleteDirectory(base_path($ciDir));
 

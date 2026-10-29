@@ -1352,6 +1352,12 @@ return [
         // token in BOTH critical variants; declared so a rename cannot drop it.
         'tests/Feature/LabWorkflow/LabClinicCalendarBoundaryTest.php',
 
+        // CI-PERF-02 — tests never write a canonical evidence directory, and every fixed test-storage
+        // directory is unique per ParaTest worker (isolatedTestStoragePath). Without this, parallel
+        // workers would delete each other's release evidence mid-assertion. Selected by the `Cicd`
+        // token in BOTH critical variants; declared so a rename cannot drop it.
+        'tests/Feature/Cicd/TestEvidenceIsolationContractTest.php',
+
         // SECURITY-F4B1-CLINIC-CALENDAR-INVENTORY-LEDGER-1 (part of SECURITY-F4B, owner decision D15) — stock movement and document dates, document numbers, the outbound expiry guard and receipt-date validation
         // on the clinic calendar (Asia/Makassar). A UTC "today" named the previous clinic day for eight
         // hours of every day; the screens still render, so the error is silent. Selected by the

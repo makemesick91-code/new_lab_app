@@ -97,6 +97,7 @@ use App\Support\Clinical\ClinicalClock;
 use Illuminate\Http\Testing\File;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\ParallelTesting;
 use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\Models\Role;
 use Tests\Support\AccessControlSeedSnapshot;
@@ -1288,6 +1289,36 @@ function tempArtifactDir(string $prefix, int $mode = 0o700): string
     tempArtifactStore($path);
 
     return $path;
+}
+
+/**
+ * CI-PERF-02 — a fixed test storage path made unique per test PROCESS.
+ *
+ * Some fixtures must live under `storage/` rather than the temp root: the
+ * release-evidence service refuses any directory outside `storage/`, and the
+ * restore-drill and queue scanners read project-relative paths. Those suites
+ * use one fixed directory per file, which is enough when a single process runs
+ * the suite. Under ParaTest (`php artisan test --parallel`, `--functional`
+ * included) two workers could hold that directory at once, and one worker's
+ * cleanup would delete the other's evidence mid-assertion.
+ *
+ * This appends the worker token when one exists (`-p3`), and returns the path
+ * unchanged otherwise — so a serial run uses byte-for-byte the same paths as
+ * before, and its existing cleanup keeps working. Only paths under
+ * `storage/framework/testing/` are accepted: this helper never renames a real
+ * evidence directory.
+ */
+function isolatedTestStoragePath(string $relative): string
+{
+    $root = 'storage/framework/testing/';
+
+    if (! str_starts_with($relative, $root) || $relative === $root || str_contains($relative, '..')) {
+        throw new InvalidArgumentException("isolatedTestStoragePath() only isolates paths under {$root}: {$relative}");
+    }
+
+    $token = ParallelTesting::token();
+
+    return ($token === false || $token === null || $token === '') ? $relative : "{$relative}-p{$token}";
 }
 
 /**

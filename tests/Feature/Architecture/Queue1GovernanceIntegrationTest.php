@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\File;
 uses()->group('Architecture', 'Queue1', 'FoundationGovernance');
 
 beforeEach(function () {
-    $this->ciDir = 'storage/framework/testing/queue1-ci-evidence';
+    $this->ciDir = isolatedTestStoragePath('storage/framework/testing/queue1-ci-evidence');
     config(['release_evidence.profiles.ci.directory' => $this->ciDir]);
     File::deleteDirectory(base_path($this->ciDir));
 });

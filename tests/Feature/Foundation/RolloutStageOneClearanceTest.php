@@ -2,8 +2,15 @@
 
 use App\Modules\Branch\Models\Branch;
 use App\Services\Foundation\FiveBranchRolloutReadinessService;
+use Illuminate\Support\Facades\File;
 
 uses()->group('Foundation', 'RolloutReadiness', 'RollFive', 'RestoreDrill');
+
+/** CI-PERF-02: this suite's private restore-drill directory (never the canonical one). */
+function stageDrillDir(): string
+{
+    return base_path(isolatedTestStoragePath('storage/framework/testing/restore-drills-stage'));
+}
 
 beforeEach(function () {
     seedAccessControl();
@@ -31,7 +38,7 @@ function writeStageEvidence(array $overrides = []): string
         ],
         'decision' => 'GO',
     ];
-    $dir = storage_path('app/readiness/restore-drills');
+    $dir = stageDrillDir();
     if (! is_dir($dir)) {
         mkdir($dir, 0775, true);
     }
@@ -43,9 +50,7 @@ function writeStageEvidence(array $overrides = []): string
 }
 
 afterEach(function () {
-    foreach (glob(storage_path('app/readiness/restore-drills/stage-*.json')) ?: [] as $f) {
-        @unlink($f);
-    }
+    File::deleteDirectory(stageDrillDir());
 });
 
 it('clears Stage-1 to GO independently of Stage-3 via the pure stage decision', function () {
@@ -73,7 +78,7 @@ it('surfaces restore_drill_evidence GO in collect() when valid staging evidence 
 
 it('keeps every stage gated by restore evidence when the evidence is missing', function () {
     config()->set('rollout_readiness.paths.restore_drill_evidence', [
-        'storage/app/readiness/restore-drills/none-'.uniqid().'.json',
+        stageDrillDir().'/none-'.uniqid().'.json',
     ]);
 
     $report = stageClearanceService()->collect();

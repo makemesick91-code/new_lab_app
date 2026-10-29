@@ -8,9 +8,9 @@ use Illuminate\Support\Facades\File;
 uses()->group('Foundation', 'ReleaseSafety', 'Nsf10');
 
 beforeEach(function () {
-    $this->ciDir = 'storage/framework/testing/nsf10-safety-ci-evidence';
-    $this->vpsDir = 'storage/framework/testing/nsf10-safety-vps-evidence';
-    $this->backupDir = 'storage/framework/testing/nsf10-safety-backups';
+    $this->ciDir = isolatedTestStoragePath('storage/framework/testing/nsf10-safety-ci-evidence');
+    $this->vpsDir = isolatedTestStoragePath('storage/framework/testing/nsf10-safety-vps-evidence');
+    $this->backupDir = isolatedTestStoragePath('storage/framework/testing/nsf10-safety-backups');
 
     config([
         'release_evidence.profiles.ci.directory' => $this->ciDir,

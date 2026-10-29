@@ -547,7 +547,7 @@ it('rejects a health script that hides group checks behind a container-runtime p
         fi
         SH;
 
-    $relative = 'storage/framework/testing/regressed-runner-health.sh';
+    $relative = isolatedTestStoragePath('storage/framework/testing/regressed-runner-health').'.sh';
     $absolute = base_path($relative);
     @mkdir(dirname($absolute), 0755, true);
     file_put_contents($absolute, $regressed);

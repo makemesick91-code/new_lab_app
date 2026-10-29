@@ -26,6 +26,7 @@ use App\Modules\RME\Middleware\EnsureRmeOnlineContext;
 use App\Support\Storage\ClinicalEvidenceStorage;
 use Database\Seeders\BranchSeeder;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Storage;
 
 /** A real 1x1 PNG; the codebase rejects uniform/blank canvases elsewhere. */
@@ -42,6 +43,14 @@ beforeEach(function () {
 
     Storage::fake('public');
     Storage::fake('clinical_evidence');
+
+    // CI-PERF-02: clinical-evidence:migrate-public writes its rollback manifests under
+    // storage_path(). Give each test a private storage root so it only ever reads the
+    // manifest it produced, never one left by another test or another worker. The
+    // disks above are already faked and keep their own roots.
+    $this->storageRoot = base_path(isolatedTestStoragePath('storage/framework/testing/clinical-evidence-storage-root'));
+    File::deleteDirectory($this->storageRoot);
+    $this->app->useStoragePath($this->storageRoot);
 
     $this->branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
     $this->manager = userWith(['manage_clinic_visits', 'view_clinic_visits']);
@@ -78,6 +87,10 @@ beforeEach(function () {
         'handwriting_path' => $this->path,
         'created_by' => $this->manager->id,
     ]);
+});
+
+afterEach(function () {
+    File::deleteDirectory($this->storageRoot);
 });
 
 /* ---------------------------------------------------------------------------
@@ -307,7 +320,8 @@ it('writes a manifest recording checksums for rollback', function () {
 
     $manifests = glob(storage_path('app/clinical-evidence-migration/manifest-apply-*.json'));
 
-    expect($manifests)->not->toBeEmpty();
+    // The storage root is private to this test, so the run's own manifest is the only one.
+    expect($manifests)->toHaveCount(1);
 
     $manifest = json_decode((string) file_get_contents(end($manifests)), true);
 

@@ -7,8 +7,8 @@ use Illuminate\Support\Facades\File;
 uses()->group('Foundation', 'ReleaseEvidence');
 
 beforeEach(function () {
-    $this->ciDir = 'storage/framework/testing/nsf10-ci-evidence';
-    $this->vpsDir = 'storage/framework/testing/nsf10-vps-evidence';
+    $this->ciDir = isolatedTestStoragePath('storage/framework/testing/nsf10-ci-evidence');
+    $this->vpsDir = isolatedTestStoragePath('storage/framework/testing/nsf10-vps-evidence');
 
     config([
         'release_evidence.profiles.ci.directory' => $this->ciDir,
