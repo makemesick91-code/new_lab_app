@@ -2,8 +2,8 @@
     $activeTab = $activeTab ?? ($filters['report_tab'] ?? 'current_stock');
     $activeTabKebab = $activeTabKebab ?? \App\Modules\Inventory\Requests\InventoryReportFilterRequest::TAB_TO_KEBAB[$activeTab] ?? 'current-stock';
     $stockCardRows = $stockCardReport['rows'] ?? null;
-    $stockMutationDateFrom = $filters['date_from'] ?? now()->startOfMonth()->toDateString();
-    $stockMutationDateTo = $filters['date_to'] ?? now()->toDateString();
+    $stockMutationDateFrom = $filters['date_from'] ?? app(\App\Modules\Inventory\Support\InventoryBusinessCalendar::class)->today()->startOfMonth()->toDateString();
+    $stockMutationDateTo = $filters['date_to'] ?? app(\App\Modules\Inventory\Support\InventoryBusinessCalendar::class)->todayString();
     $exportFilters = collect($filters)
         ->except(['per_page', 'report_tab'])
         ->put('report_type', $activeTab)

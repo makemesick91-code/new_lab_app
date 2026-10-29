@@ -5,6 +5,7 @@ namespace App\Modules\Inventory\Requests;
 use App\Modules\Inventory\Enums\InventoryBatchActionType;
 use App\Modules\Inventory\Enums\InventoryBatchDisposalRequestStatus;
 use App\Modules\Inventory\Enums\InventoryBatchDisposalRequestType;
+use App\Modules\Inventory\Support\InventoryBusinessCalendar;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -17,7 +18,7 @@ class InventoryBatchMonthlyClosingPackFilterRequest extends FormRequest
 
     public function rules(): array
     {
-        $currentYear = (int) now()->format('Y');
+        $currentYear = (int) app(InventoryBusinessCalendar::class)->today()->format('Y');
 
         return [
             'year' => ['nullable', 'integer', 'min:2020', 'max:'.($currentYear + 1)],
