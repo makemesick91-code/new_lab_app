@@ -1,0 +1,140 @@
+# CI-PERF-03 — EXPERIMENT, NOT A GATE. Lives only on a draft PR that is never merged.
+# Runs the exact NSF-R011 critical filter at 1, 2 and 4 ParaTest workers on the same runner type and
+# postgres:16 service as the critical gate, and records wall time, CPU, memory and PostgreSQL lock waits.
+name: CI-PERF-03 parallel benchmark (experiment)
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  bench:
+    name: critical filter, ${{ matrix.workers }} worker(s)
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        workers: [1, 2, 4]
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: testing
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d testing"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      APP_ENV: testing
+      APP_DEBUG: 'false'
+      APP_KEY: base64:dGVzdGluZ2tleXRlc3RpbmdrZXl0ZXN0aW5na2V5MTI=
+      DB_CONNECTION: pgsql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 5432
+      DB_DATABASE: testing
+      DB_USERNAME: postgres
+      DB_PASSWORD: postgres
+      CACHE_STORE: array
+      QUEUE_CONNECTION: sync
+      SESSION_DRIVER: array
+      MAIL_MAILER: array
+      FILESYSTEM_DISK: local
+      PGPASSWORD: postgres
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, pdo_pgsql, bcmath, gd, exif
+          coverage: none
+
+      - name: Install Composer dependencies
+        run: composer install --no-interaction --prefer-dist --optimize-autoloader
+
+      - name: Prepare directories
+        run: mkdir -p storage/ci-evidence storage/framework/{cache,sessions,views} bootstrap/cache
+
+      - name: Provision the CI environment file
+        shell: bash
+        run: printf '' > .env
+
+      - name: Install Poppler
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y poppler-utils
+
+      - name: Assert non-production database
+        run: php artisan ci:assert-non-production-database
+
+      - name: Run migrations
+        run: php artisan migrate --force
+
+      - name: Record runner
+        shell: bash
+        run: |
+          echo "nproc=$(nproc) mem_total_mb=$(awk '/MemTotal/{print int($2/1024)}' /proc/meminfo)"
+          lscpu | grep -E 'Model name|^CPU\(s\)'
+          psql -h 127.0.0.1 -U postgres -Atc "show max_connections" -c "show max_locks_per_transaction" testing
+
+      - name: Run the critical filter
+        shell: bash
+        run: |
+          # Measure even when tests fail: no errexit here; the test status is captured and re-raised below.
+          set +e -o pipefail
+          FILTER=$(grep -m1 -oE "php artisan test --filter='[^']+'" .github/workflows/foundation-evidence-gates.yml | sed -E "s/^php artisan test --filter='(.*)'$/\1/")
+          echo "filter_tokens=$(tr '|' '\n' <<< "$FILTER" | wc -l)"
+          mkdir -p bench
+          (
+            echo "t,php_rss_mb,mem_used_mb,cpu_busy_pct,load1,pg_active,pg_lock_waits"
+            prev=$(awk '/^cpu /{print $2+$3+$4+$6+$7+$8, $2+$3+$4+$5+$6+$7+$8}' /proc/stat)
+            while :; do
+              sleep 2
+              now=$(awk '/^cpu /{print $2+$3+$4+$6+$7+$8, $2+$3+$4+$5+$6+$7+$8}' /proc/stat)
+              busy=$(awk -v a="$prev" -v b="$now" 'BEGIN{split(a,x," ");split(b,y," "); d=y[2]-x[2]; print (d>0)?int((y[1]-x[1])*100/d):0}')
+              prev=$now
+              rss=$(ps -eo rss,args | awk '/php/ && /(artisan test|pest|paratest|phpunit)/ && !/awk/ {s+=$1} END{printf "%d", s/1024}')
+              used=$(awk '/MemTotal/{t=$2} /MemAvailable/{a=$2} END{printf "%d", (t-a)/1024}' /proc/meminfo)
+              pg=$(psql -h 127.0.0.1 -U postgres -Atc "select count(*) filter (where state='active'), count(*) filter (where wait_event_type='Lock') from pg_stat_activity where backend_type='client backend'" testing | tr '|' ',')
+              echo "$(date +%s),$rss,$used,$busy,$(cut -d' ' -f1 /proc/loadavg),${pg:-,}"
+            done
+          ) > bench/samples.csv &
+          SAMPLER=$!
+          t0=$(date +%s)
+          if [ "${{ matrix.workers }}" = "1" ]; then
+            php artisan test --filter="$FILTER" 2>&1 | tee bench/run.log
+          else
+            php artisan test --parallel --processes=${{ matrix.workers }} --filter="$FILTER" 2>&1 | tee bench/run.log
+          fi
+          rc=$?
+          t1=$(date +%s)
+          kill "$SAMPLER"
+          python3 -I - bench/samples.csv "${{ matrix.workers }}" "$rc" "$((t1 - t0))" <<'PY'
+          import csv, statistics as st, sys
+          f, w, rc, wall = sys.argv[1:]
+          rows = [r for r in csv.DictReader(open(f)) if r['php_rss_mb']]
+          col = lambda k: [float(r[k]) for r in rows if r.get(k) not in (None, '')]
+          print(f"RESULT workers={w} rc={rc} wall_s={wall} php_rss_peak_mb={max(col('php_rss_mb'))} "
+                f"mem_used_peak_mb={max(col('mem_used_mb'))} cpu_busy_mean={round(st.mean(col('cpu_busy_pct')), 1)} "
+                f"cpu_busy_peak={max(col('cpu_busy_pct'))} load1_peak={max(col('load1'))} "
+                f"pg_active_peak={max(col('pg_active'))} pg_lock_wait_samples={sum(1 for x in col('pg_lock_waits') if x > 0)}/{len(rows)}")
+          PY
+          exit "$rc"
+
+      - name: Upload samples
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-perf-03-w${{ matrix.workers }}-attempt${{ github.run_attempt }}
+          path: bench/
+          retention-days: 14
