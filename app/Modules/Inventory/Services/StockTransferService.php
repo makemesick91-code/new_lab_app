@@ -16,6 +16,7 @@ use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Models\StockTransfer;
 use App\Modules\Inventory\Models\StockTransferItem;
 use App\Modules\Inventory\Services\Concerns\LogsInventoryActivity;
+use App\Modules\Inventory\Support\InventoryBusinessCalendar;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -34,6 +35,7 @@ class StockTransferService
         private readonly BranchContext $branchContext,
         private readonly InventoryActivityLogService $activityLogger,
         private readonly BatchStockOptionService $batchStockOptions,
+        private readonly InventoryBusinessCalendar $calendar,
     ) {}
 
     /**
@@ -59,7 +61,7 @@ class StockTransferService
                 'transfer_number' => $this->generateTransferNumber(),
                 'source_inventory_location_id' => $source->id,
                 'destination_inventory_location_id' => $destination->id,
-                'transfer_date' => $transferDate ?? now()->toDateString(),
+                'transfer_date' => $transferDate ?? $this->calendar->todayString(),
                 'status' => StockTransfer::STATUS_DRAFT,
                 'notes' => $notes,
                 'requested_by' => $actorId,
@@ -815,7 +817,7 @@ class StockTransferService
             ]);
         }
 
-        if ($forOutbound && $batch->expiry_date !== null && $batch->expiry_date->lt(now()->startOfDay())) {
+        if ($forOutbound && $batch->expiry_date !== null && $batch->expiry_date->lt($this->calendar->today())) {
             throw ValidationException::withMessages([
                 'inventory_batch_id' => 'Batch ini sudah kedaluwarsa dan tidak dapat dikeluarkan.',
             ]);
@@ -839,7 +841,7 @@ class StockTransferService
 
     private function generateTransferNumber(): string
     {
-        return 'TRF-'.now()->format('Ym').'-'.Str::upper(Str::random(6));
+        return 'TRF-'.$this->calendar->today()->format('Ym').'-'.Str::upper(Str::random(6));
     }
 
     private function logStockTransferActivity(string $action, StockTransfer $transfer, ?string $statusFrom): void

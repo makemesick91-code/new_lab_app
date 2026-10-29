@@ -18,7 +18,8 @@ use App\Modules\RmeInvoice\Services\RmeInvoiceService;
 use App\Modules\RmeInvoice\Services\RmePaymentService;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
 use App\Modules\Treatment\Services\TreatmentService;
-use Carbon\Carbon;
+use App\Support\Clinical\ClinicalClock;
+use App\Support\Export\CsvCell;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
@@ -40,6 +41,7 @@ class RmeInvoiceController extends Controller
         private readonly RmeInvoiceCorrectionService $corrections,
         private readonly RmePaymentService $payments,
         private readonly RmeBillingDisputeService $disputes,
+        private readonly ClinicalClock $clock,
     ) {}
 
     /** @return array<int, string> */
@@ -178,13 +180,13 @@ class RmeInvoiceController extends Controller
 
         return response()->stream(function () use ($invoices, $columns): void {
             $handle = fopen('php://output', 'w');
-            fputcsv($handle, $columns);
+            fputcsv($handle, CsvCell::row($columns));
 
             foreach ($invoices as $invoice) {
                 $paidAmount = (float) $invoice->payments->sum('amount');
                 $days = $this->invoiceAgeDays($invoice);
 
-                fputcsv($handle, [
+                fputcsv($handle, CsvCell::row([
                     $invoice->invoice_number,
                     $invoice->patient?->name ?? '-',
                     $invoice->clinicVisit?->visit_number ?? '-',
@@ -196,7 +198,7 @@ class RmeInvoiceController extends Controller
                     number_format((float) $invoice->grand_total, 2, '.', ''),
                     number_format($paidAmount, 2, '.', ''),
                     number_format($this->receivableRemaining($invoice), 2, '.', ''),
-                ]);
+                ]));
             }
 
             fclose($handle);
@@ -307,7 +309,9 @@ class RmeInvoiceController extends Controller
             return 0;
         }
 
-        return (int) $invoice->created_at->copy()->startOfDay()->diffInDays(Carbon::today());
+        // SECURITY-F4A: both ends on the clinic calendar. created_at is a UTC
+        // instant; its clinic date, not its UTC date, is the invoice date.
+        return (int) $this->clock->toClinicalDate($invoice->created_at)->diffInDays($this->clock->today());
     }
 
     private function agingBucketForDays(int $days): string
@@ -322,17 +326,23 @@ class RmeInvoiceController extends Controller
 
     private function applyAgingBucket(Builder $query, string $bucket): Builder
     {
-        $today = Carbon::today();
-
+        // SECURITY-F4A: "invoice clinic date >= D" is "created_at >= the UTC
+        // instant at which clinic day D begins"; the column is never converted.
         return match ($bucket) {
-            '0-7' => $query->whereDate('created_at', '>=', $today->copy()->subDays(7)),
-            '8-14' => $query->whereDate('created_at', '<=', $today->copy()->subDays(8))
-                ->whereDate('created_at', '>=', $today->copy()->subDays(14)),
-            '15-30' => $query->whereDate('created_at', '<=', $today->copy()->subDays(15))
-                ->whereDate('created_at', '>=', $today->copy()->subDays(30)),
-            '>30' => $query->whereDate('created_at', '<', $today->copy()->subDays(30)),
+            '0-7' => $query->where('created_at', '>=', $this->clinicDayStartUtc(7)),
+            '8-14' => $query->where('created_at', '<', $this->clinicDayStartUtc(7))
+                ->where('created_at', '>=', $this->clinicDayStartUtc(14)),
+            '15-30' => $query->where('created_at', '<', $this->clinicDayStartUtc(14))
+                ->where('created_at', '>=', $this->clinicDayStartUtc(30)),
+            '>30' => $query->where('created_at', '<', $this->clinicDayStartUtc(30)),
             default => $query,
         };
+    }
+
+    /** UTC instant at which the clinic day $daysAgo days before today begins. */
+    private function clinicDayStartUtc(int $daysAgo): string
+    {
+        return $this->clock->today()->subDays($daysAgo)->utc()->format('Y-m-d H:i:s');
     }
 
     /**
@@ -341,7 +351,7 @@ class RmeInvoiceController extends Controller
      */
     private function applyFollowUpFilter(Builder $query, string $filter): Builder
     {
-        $today = Carbon::today()->toDateString();
+        $today = $this->clock->todayString();
 
         return match ($filter) {
             'overdue' => $query->whereHas('latestFollowUp', fn (Builder $q) => $q->whereDate('next_follow_up_date', '<', $today)),
@@ -430,12 +440,11 @@ class RmeInvoiceController extends Controller
             $summary[$bucket] = ['count' => 0, 'remaining' => 0.0];
         }
 
-        $today = Carbon::today();
         $bucketExpression = <<<'SQL'
 CASE
-    WHEN DATE(receivables.created_at) >= ? THEN '0-7'
-    WHEN DATE(receivables.created_at) >= ? THEN '8-14'
-    WHEN DATE(receivables.created_at) >= ? THEN '15-30'
+    WHEN receivables.created_at >= ? THEN '0-7'
+    WHEN receivables.created_at >= ? THEN '8-14'
+    WHEN receivables.created_at >= ? THEN '15-30'
     ELSE '>30'
 END
 SQL;
@@ -446,9 +455,9 @@ SQL;
                 $join->on('payment_totals.rme_invoice_id', '=', 'receivables.id');
             })
             ->selectRaw($bucketExpression.' AS bucket', [
-                $today->copy()->subDays(7)->toDateString(),
-                $today->copy()->subDays(14)->toDateString(),
-                $today->copy()->subDays(30)->toDateString(),
+                $this->clinicDayStartUtc(7),
+                $this->clinicDayStartUtc(14),
+                $this->clinicDayStartUtc(30),
             ])
             ->selectRaw('receivables.grand_total - COALESCE(payment_totals.paid_total, 0) AS remaining_total');
 

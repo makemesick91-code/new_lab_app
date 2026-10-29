@@ -2,6 +2,7 @@
 
 namespace App\Modules\Reporting\Services;
 
+use App\Support\Export\CsvCell;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
@@ -23,11 +24,11 @@ class ExportReportService
             $handle = fopen('php://output', 'w');
 
             if (! empty($header)) {
-                fputcsv($handle, $header);
+                fputcsv($handle, CsvCell::row($header));
             }
 
             foreach ($rows as $row) {
-                fputcsv($handle, array_map(static fn ($v) => $v ?? '', (array) $row));
+                fputcsv($handle, CsvCell::row(array_map(static fn ($v) => $v ?? '', (array) $row)));
             }
 
             fclose($handle);

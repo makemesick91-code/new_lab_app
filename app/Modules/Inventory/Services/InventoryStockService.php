@@ -15,6 +15,7 @@ use App\Modules\Inventory\Models\InventoryMovement;
 use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Models\Supplier;
 use App\Modules\Inventory\Services\Concerns\LogsInventoryActivity;
+use App\Modules\Inventory\Support\InventoryBusinessCalendar;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -31,6 +32,7 @@ class InventoryStockService
         private readonly SupplierRepositoryInterface $suppliers,
         private readonly BranchContext $branchContext,
         private readonly InventoryActivityLogService $activityLogger,
+        private readonly InventoryBusinessCalendar $calendar,
     ) {}
 
     public function getCurrentStock(int $productId, ?int $locationId = null): float
@@ -234,7 +236,7 @@ class InventoryStockService
                 'supplier_id' => $original->supplier_id,
                 'inventory_batch_id' => $batchId,
                 'movement_type' => InventoryMovement::TYPE_ADJUSTMENT_OUT,
-                'movement_date' => $movementDate ?? now()->toDateString(),
+                'movement_date' => $movementDate ?? $this->calendar->todayString(),
                 'quantity_in' => 0,
                 'quantity_out' => $qty,
                 'unit_cost' => (float) ($original->unit_cost ?? 0),
@@ -296,7 +298,7 @@ class InventoryStockService
                 'supplier_id' => null,
                 'inventory_batch_id' => $batch?->id,
                 'movement_type' => InventoryMovement::TYPE_ADJUSTMENT_OUT,
-                'movement_date' => now()->toDateString(),
+                'movement_date' => $this->calendar->todayString(),
                 'quantity_in' => 0,
                 'quantity_out' => $qty,
                 'unit_cost' => 0,
@@ -423,7 +425,7 @@ class InventoryStockService
                 'supplier_id' => $supplierId,
                 'inventory_batch_id' => $batch?->id,
                 'movement_type' => $movementType,
-                'movement_date' => $movementDate ?? now()->toDateString(),
+                'movement_date' => $movementDate ?? $this->calendar->todayString(),
                 'quantity_in' => $qty,
                 'quantity_out' => 0,
                 'unit_cost' => max(0, $unitCost),
@@ -472,7 +474,7 @@ class InventoryStockService
             ? trim((string) $batchData['lot_number'])
             : null;
 
-        $receivedDate = $batchData['received_date'] ?? now()->toDateString();
+        $receivedDate = $batchData['received_date'] ?? $this->calendar->todayString();
 
         $duplicateExists = InventoryBatch::query()
             ->forBranch($branchId)
@@ -554,7 +556,7 @@ class InventoryStockService
             ]);
         }
 
-        if ($forOutbound && ! $allowExpired && $batch->expiry_date !== null && $batch->expiry_date->lt(now()->startOfDay())) {
+        if ($forOutbound && ! $allowExpired && $batch->expiry_date !== null && $batch->expiry_date->lt($this->calendar->today())) {
             throw ValidationException::withMessages([
                 'inventory_batch_id' => 'Batch ini sudah kedaluwarsa dan tidak dapat dikeluarkan.',
             ]);

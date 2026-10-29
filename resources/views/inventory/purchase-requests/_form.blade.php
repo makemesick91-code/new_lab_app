@@ -17,7 +17,7 @@
         <div>
             <label for="request-date" class="block text-sm font-medium text-gray-700">Tanggal Permintaan <span class="text-red-600">*</span></label>
             <input id="request-date" type="date" name="request_date" required
-                   value="{{ old('request_date', optional($purchaseRequest?->request_date)->format('Y-m-d') ?? now()->toDateString()) }}"
+                   value="{{ old('request_date', optional($purchaseRequest?->request_date)->format('Y-m-d') ?? app(\App\Modules\Inventory\Support\InventoryBusinessCalendar::class)->todayString()) }}"
                    class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500">
             @error('request_date')
                 <p class="mt-1 text-sm text-red-600">{{ $message }}</p>

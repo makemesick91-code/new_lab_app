@@ -745,3 +745,18 @@ it('excludes zero-grand-total invoice from receivable export', function () {
     expect($csv)->toContain($active->invoice_number);
     expect($csv)->not->toContain($zeroInvoice->invoice_number);
 });
+
+it('neutralises a formula in a patient name in the receivables export', function () {
+    // SECURITY-F3: the receivables export carries patient names.
+    $this->actingAs($this->cashier);
+    $invoice = makeReceivableInvoice($this->branch, $this->cashier, 10);
+    $invoice->patient->update(['name' => '=HYPERLINK("http://x.invalid","klik")']);
+
+    $csv = preg_replace('/^\xEF\xBB\xBF/', '', $this->get(route('rme.cashier.receivables.export'))->streamedContent());
+    $cells = collect(preg_split("/\r\n|\n/", trim($csv)))->flatMap(fn (string $l) => str_getcsv($l));
+
+    expect($cells)->toContain('\'=HYPERLINK("http://x.invalid","klik")')
+        ->and($cells->first(fn ($c) => str_starts_with((string) $c, '=')))->toBeNull()
+        // Amounts stay numeric (decision D20).
+        ->and($cells->first(fn ($c) => str_starts_with((string) $c, "'") && preg_match('/^\'[-+]?\d/', (string) $c)))->toBeNull();
+});
