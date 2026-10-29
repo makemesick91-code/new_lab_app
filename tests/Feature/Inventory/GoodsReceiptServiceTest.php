@@ -13,6 +13,8 @@ use App\Modules\Inventory\Services\PurchaseOrderService;
 use Database\Seeders\BranchSeeder;
 use Illuminate\Validation\ValidationException;
 
+require_once __DIR__.'/helpers.php';
+
 beforeEach(function () {
     seedAccessControl();
     test()->seed(BranchSeeder::class);
@@ -24,89 +26,6 @@ beforeEach(function () {
     $this->purchaseOrderService = app(PurchaseOrderService::class);
     $this->actingAs($this->manager);
 });
-
-function grBranchFixtures(object $test): array
-{
-    $supplier = Supplier::factory()->create(['branch_id' => $test->branch->id]);
-    $product = Product::factory()->create(['branch_id' => $test->branch->id]);
-    $location = InventoryLocation::factory()->create(['branch_id' => $test->branch->id]);
-
-    return compact('supplier', 'product', 'location');
-}
-
-function grPurchaseOrderPayload(
-    int $supplierId,
-    int $productId,
-    int $locationId,
-    float $quantity = 10,
-    float $unitPrice = 2500,
-): array {
-    return [
-        'order_date' => now()->toDateString(),
-        'supplier_id' => $supplierId,
-        'items' => [
-            [
-                'product_id' => $productId,
-                'supplier_id' => $supplierId,
-                'inventory_location_id' => $locationId,
-                'quantity_ordered' => $quantity,
-                'unit_price' => $unitPrice,
-                'estimated_arrival_date' => now()->toDateString(),
-            ],
-        ],
-    ];
-}
-
-function advancePoToSent(object $test, PurchaseOrder $purchaseOrder): PurchaseOrder
-{
-    $submitted = $test->purchaseOrderService->submit($purchaseOrder, $test->manager);
-    $approved = $test->purchaseOrderService->approve($submitted, $test->manager);
-
-    return $test->purchaseOrderService->markAsSent($approved, $test->manager);
-}
-
-function createSentPurchaseOrderWithItem(
-    object $test,
-    float $quantity = 10,
-    float $unitPrice = 2500,
-): array {
-    ['supplier' => $supplier, 'product' => $product, 'location' => $location] = grBranchFixtures($test);
-
-    $purchaseOrder = $test->purchaseOrderService->createDraft(
-        grPurchaseOrderPayload($supplier->id, $product->id, $location->id, $quantity, $unitPrice),
-        $test->manager,
-    );
-
-    $sent = advancePoToSent($test, $purchaseOrder);
-    $poItem = $sent->items()->first();
-
-    return compact('supplier', 'product', 'location', 'purchaseOrder', 'sent', 'poItem');
-}
-
-function goodsReceiptPayload(
-    int $purchaseOrderId,
-    int $poItemId,
-    int $productId,
-    int $locationId,
-    float $acceptedQty = 5,
-    float $rejectedQty = 0,
-    array $overrides = [],
-): array {
-    return array_merge([
-        'purchase_order_id' => $purchaseOrderId,
-        'receipt_date' => now()->toDateString(),
-        'items' => [
-            [
-                'purchase_order_item_id' => $poItemId,
-                'product_id' => $productId,
-                'inventory_location_id' => $locationId,
-                'received_qty' => $acceptedQty + $rejectedQty,
-                'accepted_qty' => $acceptedQty,
-                'rejected_qty' => $rejectedQty,
-            ],
-        ],
-    ], $overrides);
-}
 
 it('creates goods receipt from receivable purchase order', function () {
     ['sent' => $po, 'poItem' => $poItem, 'product' => $product, 'location' => $location] = createSentPurchaseOrderWithItem($this);

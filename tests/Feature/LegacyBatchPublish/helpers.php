@@ -29,6 +29,10 @@ use App\Modules\LegacyOdontogram\Services\LegacyOdontogramPublishService;
 use App\Modules\LegacyRme\Models\LegacyRmeImport;
 use App\Modules\LegacyRme\Services\LegacyRmePublishService;
 
+// The fixtures below call the lodo* and lbr* helpers; declare that here so this file works on its own.
+require_once __DIR__.'/../LegacyOdontogram/helpers.php';
+require_once __DIR__.'/../LegacyBatchReview/helpers.php';
+
 if (! function_exists('lbpRmeAdapter')) {
     function lbpRmeAdapter(): LegacyRmeBatchPublishAdapter
     {

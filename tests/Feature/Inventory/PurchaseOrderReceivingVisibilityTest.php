@@ -7,6 +7,8 @@ use App\Modules\Inventory\Services\GoodsReceiptService;
 use App\Modules\Inventory\Services\PurchaseOrderService;
 use Database\Seeders\BranchSeeder;
 
+require_once __DIR__.'/helpers.php';
+
 beforeEach(function () {
     test()->seed(BranchSeeder::class);
     seedAccessControl();

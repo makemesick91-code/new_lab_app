@@ -5,6 +5,8 @@ use App\Support\Android\AndroidReleaseGovernanceScanner;
 use App\Support\Android\KotlinSourceScanner;
 use Illuminate\Support\Facades\Process;
 
+require_once __DIR__.'/helpers.php';
+
 uses()->group('DoctorDevice', 'Android', 'Security');
 
 /**
@@ -22,20 +24,6 @@ uses()->group('DoctorDevice', 'Android', 'Security');
  * delete the control. Every absence assertion here has a presence assertion
  * beside it.
  */
-function androidScanner(): AndroidReleaseGovernanceScanner
-{
-    return app(AndroidReleaseGovernanceScanner::class);
-}
-
-function androidCheck(string $id): array
-{
-    $checks = collect(androidScanner()->scan()['checks'])->keyBy('id');
-
-    expect($checks->has($id))->toBeTrue("Check {$id} disappeared from the scanner.");
-
-    return $checks->get($id);
-}
-
 // ---------------------------------------------------------------------------
 // The five decisions Phase 3 left open
 // ---------------------------------------------------------------------------

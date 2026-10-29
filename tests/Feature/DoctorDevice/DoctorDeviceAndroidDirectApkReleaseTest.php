@@ -3,6 +3,8 @@
 use App\Support\Android\AndroidReleaseArtifactVerifier;
 use App\Support\Android\SignerFingerprintResolver;
 
+require_once __DIR__.'/helpers.php';
+
 uses()->group('DoctorDevice', 'Android', 'Security');
 
 /**

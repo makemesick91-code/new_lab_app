@@ -10,6 +10,8 @@ use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Schema;
 
+require_once __DIR__.'/helpers.php';
+
 beforeEach(function () {
     test()->seed(BranchSeeder::class);
     seedAccessControl();

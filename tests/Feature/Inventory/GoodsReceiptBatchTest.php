@@ -3,16 +3,16 @@
 use App\Modules\Branch\Models\Branch;
 use App\Modules\Inventory\Models\GoodsReceipt;
 use App\Modules\Inventory\Models\InventoryBatch;
-use App\Modules\Inventory\Models\InventoryLocation;
 use App\Modules\Inventory\Models\InventoryMovement;
 use App\Modules\Inventory\Models\Product;
-use App\Modules\Inventory\Models\Supplier;
 use App\Modules\Inventory\Services\GoodsReceiptService;
 use App\Modules\Inventory\Services\PurchaseOrderService;
 use Database\Seeders\BranchSeeder;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
+
+require_once __DIR__.'/helpers.php';
 
 beforeEach(function () {
     $this->withoutMiddleware(ValidateCsrfToken::class);
@@ -27,62 +27,6 @@ beforeEach(function () {
     $this->purchaseOrderService = app(PurchaseOrderService::class);
     $this->actingAs($this->manager);
 });
-
-function grBatchPayload(
-    int $purchaseOrderId,
-    int $poItemId,
-    int $productId,
-    int $locationId,
-    float $acceptedQty = 5,
-    array $batchOverrides = [],
-    array $overrides = [],
-): array {
-    return array_merge([
-        'purchase_order_id' => $purchaseOrderId,
-        'receipt_date' => now()->toDateString(),
-        'items' => [
-            array_merge([
-                'purchase_order_item_id' => $poItemId,
-                'product_id' => $productId,
-                'inventory_location_id' => $locationId,
-                'received_qty' => $acceptedQty,
-                'accepted_qty' => $acceptedQty,
-                'rejected_qty' => 0,
-                'batch_mode' => 'new',
-                'auto_batch' => false,
-                'batch_number' => 'B-GR-001',
-                'lot_number' => 'LOT-GR-01',
-                'batch_received_date' => now()->toDateString(),
-                'expiry_date' => now()->addYear()->toDateString(),
-            ], $batchOverrides),
-        ],
-    ], $overrides);
-}
-
-function createSentPurchaseOrderWithBatchProduct(object $test, float $quantity = 10): array
-{
-    $supplier = Supplier::factory()->create(['branch_id' => $test->branch->id]);
-    $product = Product::factory()->requiresBatchTracking()->create(['branch_id' => $test->branch->id]);
-    $location = InventoryLocation::factory()->create(['branch_id' => $test->branch->id]);
-
-    $purchaseOrder = $test->purchaseOrderService->createDraft([
-        'order_date' => now()->toDateString(),
-        'supplier_id' => $supplier->id,
-        'items' => [[
-            'product_id' => $product->id,
-            'inventory_location_id' => $location->id,
-            'quantity_ordered' => $quantity,
-            'unit_price' => 2500,
-        ]],
-    ], $test->manager);
-
-    $submitted = $test->purchaseOrderService->submit($purchaseOrder, $test->manager);
-    $approved = $test->purchaseOrderService->approve($submitted, $test->manager);
-    $sent = $test->purchaseOrderService->markAsSent($approved, $test->manager);
-    $poItem = $sent->items()->first();
-
-    return compact('supplier', 'product', 'location', 'sent', 'poItem');
-}
 
 it('rejects goods receipt store when batch-tracked product has no expiry date with auto batch', function () {
     ['sent' => $po, 'poItem' => $poItem, 'product' => $product, 'location' => $location] = createSentPurchaseOrderWithBatchProduct($this);
