@@ -9,6 +9,7 @@ use App\Modules\Inventory\Models\InventoryMovement;
 use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Models\PurchaseOrder;
 use App\Modules\Inventory\Models\PurchaseOrderItem;
+use App\Modules\Inventory\Support\InventoryBusinessCalendar;
 use Illuminate\Contracts\Validation\Validator;
 
 trait ValidatesGoodsReceiptInput
@@ -78,7 +79,7 @@ trait ValidatesGoodsReceiptInput
     protected function goodsReceiptHeaderRules(bool $requirePurchaseOrder): array
     {
         $rules = [
-            'receipt_date' => ['required', 'date', 'before_or_equal:today'],
+            'receipt_date' => ['required', 'date', 'before_or_equal:'.app(InventoryBusinessCalendar::class)->todayString()],
             'supplier_delivery_number' => ['nullable', 'string', 'max:100'],
             'supplier_invoice_number' => ['nullable', 'string', 'max:100'],
             'notes' => ['nullable', 'string', 'max:2000'],
@@ -89,7 +90,7 @@ trait ValidatesGoodsReceiptInput
             'apply_default_batch_to_all' => ['nullable', 'boolean'],
             'default_batch_number' => ['nullable', 'string', 'max:100'],
             'default_lot_number' => ['nullable', 'string', 'max:100'],
-            'default_batch_received_date' => ['nullable', 'date', 'before_or_equal:today'],
+            'default_batch_received_date' => ['nullable', 'date', 'before_or_equal:'.app(InventoryBusinessCalendar::class)->todayString()],
             'default_expiry_date' => ['nullable', 'date'],
         ];
 

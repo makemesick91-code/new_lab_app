@@ -6,6 +6,7 @@ use App\Modules\Branch\Services\BranchContext;
 use App\Modules\Inventory\Models\InventoryBatch;
 use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Services\AutoBatchNumberService;
+use App\Modules\Inventory\Support\InventoryBusinessCalendar;
 use Illuminate\Contracts\Validation\Validator;
 
 trait ValidatesGoodsReceiptBatchInput
@@ -21,7 +22,7 @@ trait ValidatesGoodsReceiptBatchInput
             'items.*.inventory_batch_id' => ['nullable', 'integer', 'exists:inv_inventory_batches,id'],
             'items.*.batch_number' => ['nullable', 'string', 'max:100'],
             'items.*.lot_number' => ['nullable', 'string', 'max:100'],
-            'items.*.batch_received_date' => ['nullable', 'date', 'before_or_equal:today'],
+            'items.*.batch_received_date' => ['nullable', 'date', 'before_or_equal:'.app(InventoryBusinessCalendar::class)->todayString()],
             'items.*.expiry_date' => ['nullable', 'date'],
         ];
     }

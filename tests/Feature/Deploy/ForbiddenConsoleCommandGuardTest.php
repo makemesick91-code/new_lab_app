@@ -182,3 +182,23 @@ it('records the one form it cannot reach, so nobody mistakes it for coverage', f
     expect($source)->toContain('It does not stop a REPL started');
     expect($source)->toContain('WHAT IT DOES NOT DO, STATED PLAINLY');
 });
+
+it('does not ship the REPL to production: tinker and psysh are development dependencies only', function () {
+    // SECURITY-F6-TINKER-REQUIRE-DEV-1. Production installs with --no-dev, so a
+    // package that is only in require-dev never reaches the host and there is no
+    // `tinker` command to refuse. The guard above stays as the second layer.
+    $composer = json_decode((string) file_get_contents(base_path('composer.json')), true);
+    $lock = json_decode((string) file_get_contents(base_path('composer.lock')), true);
+
+    expect($composer['require'])->not->toHaveKey('laravel/tinker')
+        ->and($composer['require'])->not->toHaveKey('psy/psysh')
+        ->and($composer['require-dev'])->toHaveKey('laravel/tinker');
+
+    $production = array_column($lock['packages'], 'name');
+    $development = array_column($lock['packages-dev'], 'name');
+
+    expect($production)->not->toContain('laravel/tinker')
+        ->and($production)->not->toContain('psy/psysh')
+        ->and($development)->toContain('laravel/tinker')
+        ->and($development)->toContain('psy/psysh');
+});

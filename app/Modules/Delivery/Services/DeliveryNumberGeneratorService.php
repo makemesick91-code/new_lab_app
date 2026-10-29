@@ -3,16 +3,18 @@
 namespace App\Modules\Delivery\Services;
 
 use App\Modules\Delivery\Interfaces\DeliveryRepositoryInterface;
+use App\Support\Clinical\ClinicalClock;
 
 class DeliveryNumberGeneratorService
 {
     public function __construct(
         private readonly DeliveryRepositoryInterface $deliveries,
+        private readonly ClinicalClock $clock,
     ) {}
 
     public function generate(): string
     {
-        $year = now()->format('Y');
+        $year = $this->clock->today()->format('Y');
         $latest = $this->deliveries->latestDeliveryNumberForYear($year);
         $next = 1;
 

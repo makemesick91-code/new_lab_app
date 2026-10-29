@@ -6,9 +6,11 @@ use App\Models\User;
 use App\Modules\Branch\Models\Branch;
 use App\Modules\Branch\Services\BranchContext;
 use App\Modules\Branch\Services\BranchService;
+use App\Modules\ClinicOversight\Support\ClinicalDayWindow;
 use App\Modules\LabOrder\Models\LabOrder;
 use App\Modules\LabOrder\Models\LabOrderStatusLog;
 use App\Modules\LabOrder\Workflow\LabWorkflowState;
+use App\Support\Clinical\ClinicalClock;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 
@@ -33,6 +35,7 @@ class LabWorkflowOperationalDashboardService
         private readonly BranchContext $branchContext,
         private readonly BranchService $branches,
         private readonly LabWorkflowResolver $resolver,
+        private readonly ClinicalClock $clock,
     ) {}
 
     /**
@@ -223,11 +226,18 @@ class LabWorkflowOperationalDashboardService
 
     private function deliveredTodayCount(bool $branchConstrained, ?int $effectiveBranchId, ?string $from, ?string $to): int
     {
+        // SECURITY-F4C (D16): "today" is the clinic day. delivered_at is a UTC instant, so a date
+        // comparison counted the UTC day, which runs 08:00-08:00 WITA: it missed deliveries made
+        // after clinic midnight and still counted the previous clinic day's late ones.
+        $clinicDay = ClinicalDayWindow::today($this->clock);
+
         return LabOrder::query()
             ->where('workflow_version', LabOrder::WORKFLOW_V2)
             ->where('status', LabWorkflowState::DELIVERED)
             ->when($branchConstrained, fn ($q) => $q->where('branch_id', $effectiveBranchId))
-            ->whereHas('deliveryTask', fn ($q) => $q->whereDate('delivered_at', today()))
+            ->whereHas('deliveryTask', fn ($q) => $q
+                ->where('delivered_at', '>=', $clinicDay->startUtcString())
+                ->where('delivered_at', '<', $clinicDay->endUtcString()))
             ->count();
     }
 

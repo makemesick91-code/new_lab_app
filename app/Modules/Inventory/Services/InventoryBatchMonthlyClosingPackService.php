@@ -10,6 +10,8 @@ use App\Modules\Inventory\Models\InventoryBatch;
 use App\Modules\Inventory\Models\InventoryBatchActionLog;
 use App\Modules\Inventory\Models\InventoryBatchDisposalRequest;
 use App\Modules\Inventory\Models\InventoryMovement;
+use App\Modules\Inventory\Support\InventoryBusinessCalendar;
+use App\Support\Export\CsvCell;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Support\Carbon;
@@ -41,6 +43,7 @@ class InventoryBatchMonthlyClosingPackService
         private readonly InventoryReportService $reports,
         private readonly InventoryBatchDisposalReportService $disposalReport,
         private readonly BatchExpiryStatusService $expiryStatus,
+        private readonly InventoryBusinessCalendar $calendar,
     ) {}
 
     /**
@@ -50,8 +53,8 @@ class InventoryBatchMonthlyClosingPackService
     public function prepareFilters(array $filters, ?User $user = null): array
     {
         $user ??= Auth::user();
-        $year = (int) ($filters['year'] ?? now()->year);
-        $month = (int) ($filters['month'] ?? now()->month);
+        $year = (int) ($filters['year'] ?? $this->calendar->today()->year);
+        $month = (int) ($filters['month'] ?? $this->calendar->today()->month);
         $period = Carbon::create($year, $month, 1);
 
         $filters['year'] = $year;
@@ -162,7 +165,7 @@ class InventoryBatchMonthlyClosingPackService
             'created_or_event_date',
         ];
 
-        $filename = 'closing-bulanan-governance-batch-'.($filters['year'] ?? now()->year).'-'.str_pad((string) ($filters['month'] ?? now()->month), 2, '0', STR_PAD_LEFT).'.csv';
+        $filename = 'closing-bulanan-governance-batch-'.($filters['year'] ?? $this->calendar->today()->year).'-'.str_pad((string) ($filters['month'] ?? $this->calendar->today()->month), 2, '0', STR_PAD_LEFT).'.csv';
 
         return response()->streamDownload(function () use ($pack, $period, $headers) {
             $handle = fopen('php://output', 'w');
@@ -171,26 +174,26 @@ class InventoryBatchMonthlyClosingPackService
             }
 
             fwrite($handle, "\xEF\xBB\xBF");
-            fputcsv($handle, $headers);
+            fputcsv($handle, CsvCell::row($headers));
 
             foreach ($pack['expiry_risk_rows'] as $row) {
-                fputcsv($handle, $this->mapExpiryExportRow($row, $period));
+                fputcsv($handle, CsvCell::row($this->mapExpiryExportRow($row, $period)));
             }
 
             foreach ($pack['action_log_rows'] as $row) {
-                fputcsv($handle, $this->mapActionLogExportRow($row, $period));
+                fputcsv($handle, CsvCell::row($this->mapActionLogExportRow($row, $period)));
             }
 
             foreach ($pack['disposal_rows'] as $row) {
-                fputcsv($handle, $this->mapDisposalExportRow($row, $period));
+                fputcsv($handle, CsvCell::row($this->mapDisposalExportRow($row, $period)));
             }
 
             foreach ($pack['ledger_evidence_rows'] as $row) {
-                fputcsv($handle, $this->mapLedgerExportRow($row, $period));
+                fputcsv($handle, CsvCell::row($this->mapLedgerExportRow($row, $period)));
             }
 
             foreach ($pack['exception_rows'] as $row) {
-                fputcsv($handle, $this->mapExceptionExportRow($row, $period));
+                fputcsv($handle, CsvCell::row($this->mapExceptionExportRow($row, $period)));
             }
 
             fclose($handle);
@@ -609,8 +612,8 @@ class InventoryBatchMonthlyClosingPackService
      */
     private function periodLabel(array $filters): string
     {
-        $year = (int) ($filters['year'] ?? now()->year);
-        $month = (int) ($filters['month'] ?? now()->month);
+        $year = (int) ($filters['year'] ?? $this->calendar->today()->year);
+        $month = (int) ($filters['month'] ?? $this->calendar->today()->month);
         $months = $this->monthOptions();
 
         return ($months[$month] ?? (string) $month).' '.$year;

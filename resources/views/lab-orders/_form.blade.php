@@ -50,7 +50,7 @@
         </div>
         <div>
             <label class="block text-sm font-medium text-ink">Tanggal Order</label>
-            <input type="date" name="order_date" value="{{ old('order_date', optional($order?->order_date)->format('Y-m-d') ?? now()->format('Y-m-d')) }}" class="mt-1 block w-full rounded-md border-hairline text-sm" />
+            <input type="date" name="order_date" value="{{ old('order_date', optional($order?->order_date)->format('Y-m-d') ?? app(\App\Support\Clinical\ClinicalClock::class)->todayString()) }}" class="mt-1 block w-full rounded-md border-hairline text-sm" />
         </div>
         <div>
             <label class="block text-sm font-medium text-ink">Tenggat</label>

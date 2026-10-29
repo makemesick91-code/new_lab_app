@@ -4,6 +4,7 @@ namespace App\Modules\Inventory\Models;
 
 use App\Models\User;
 use App\Modules\Branch\Models\Branch;
+use App\Modules\Inventory\Support\InventoryBusinessCalendar;
 use Database\Factories\InventoryBatchFactory;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -100,7 +101,7 @@ class InventoryBatch extends Model
     {
         $asOfDate = $asOfDate instanceof Carbon
             ? $asOfDate->toDateString()
-            : ($asOfDate ?? now()->toDateString());
+            : ($asOfDate ?? app(InventoryBusinessCalendar::class)->todayString());
 
         return $query->where(function (Builder $query) use ($asOfDate) {
             $query->whereNull('expiry_date')

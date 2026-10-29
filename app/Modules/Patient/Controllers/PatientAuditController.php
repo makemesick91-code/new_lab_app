@@ -8,6 +8,7 @@ use App\Modules\Patient\Interfaces\PatientRepositoryInterface;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\Patient\Services\PatientDataCompletenessService;
 use App\Modules\Patient\Services\PatientRmGapReviewService;
+use App\Support\Export\CsvCell;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -75,7 +76,7 @@ class PatientAuditController extends Controller
         return response()->streamDownload(function () use ($exportRows) {
             echo "\xEF\xBB\xBF";
             $handle = fopen('php://output', 'w');
-            fputcsv($handle, [
+            fputcsv($handle, CsvCell::row([
                 'branch',
                 'rm_number',
                 'patient_name',
@@ -84,12 +85,12 @@ class PatientAuditController extends Controller
                 'duplicate_risk_summary',
                 'created_at',
                 'updated_at',
-            ]);
+            ]));
 
             foreach ($exportRows as $row) {
                 /** @var Patient $patient */
                 $patient = $row['patient'];
-                fputcsv($handle, [
+                fputcsv($handle, CsvCell::row([
                     $patient->branch?->name ?? '',
                     $patient->medical_record_number ?? '',
                     $patient->name ?? '',
@@ -98,7 +99,7 @@ class PatientAuditController extends Controller
                     implode('; ', $row['duplicate_reasons']),
                     $patient->created_at?->format('Y-m-d H:i') ?? '',
                     $patient->updated_at?->format('Y-m-d H:i') ?? '',
-                ]);
+                ]));
             }
 
             fclose($handle);

@@ -68,7 +68,7 @@
 
             <div>
                 <label for="received_date" class="text-sm font-semibold text-gray-800">Tanggal Terima</label>
-                <input id="received_date" type="date" name="received_date" value="{{ old('received_date', now()->toDateString()) }}" class="mt-2 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                <input id="received_date" type="date" name="received_date" value="{{ old('received_date', app(\App\Modules\Inventory\Support\InventoryBusinessCalendar::class)->todayString()) }}" class="mt-2 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
                 @error('received_date')
                     <p class="mt-1 text-xs font-medium text-rose-600">{{ $message }}</p>
                 @enderror

@@ -18,6 +18,8 @@ use App\Modules\Inventory\Models\InventoryMovement;
 use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Models\Supplier;
 use App\Modules\Inventory\Requests\InventoryReportFilterRequest;
+use App\Modules\Inventory\Support\InventoryBusinessCalendar;
+use App\Support\Export\CsvCell;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator as LengthAwarePaginatorContract;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Carbon;
@@ -43,6 +45,7 @@ class InventoryReportService
         private readonly InventoryLocationRepositoryInterface $locations,
         private readonly InventoryBatchRepositoryInterface $batches,
         private readonly InventoryAnalyticsRepositoryInterface $analytics,
+        private readonly InventoryBusinessCalendar $calendar,
     ) {}
 
     public function getCurrentStockReport(array $filters): LengthAwarePaginatorContract
@@ -66,8 +69,8 @@ class InventoryReportService
     public function getStockCardReport(array $filters): array
     {
         $branchId = $this->reportBranchId($filters);
-        $dateFrom = (string) ($filters['date_from'] ?? now()->startOfMonth()->toDateString());
-        $dateTo = (string) ($filters['date_to'] ?? now()->toDateString());
+        $dateFrom = (string) ($filters['date_from'] ?? $this->calendar->today()->startOfMonth()->toDateString());
+        $dateTo = (string) ($filters['date_to'] ?? $this->calendar->todayString());
         $perPage = $this->resolveReportPerPage($filters);
 
         if (empty($filters['product_id'])) {
@@ -141,8 +144,8 @@ class InventoryReportService
     public function getStockMutationReport(array $filters): LengthAwarePaginatorContract
     {
         $branchId = $this->reportBranchId($filters);
-        $dateFrom = (string) ($filters['date_from'] ?? now()->startOfMonth()->toDateString());
-        $dateTo = (string) ($filters['date_to'] ?? now()->toDateString());
+        $dateFrom = (string) ($filters['date_from'] ?? $this->calendar->today()->startOfMonth()->toDateString());
+        $dateTo = (string) ($filters['date_to'] ?? $this->calendar->todayString());
         $perPage = $this->resolveReportPerPage($filters);
         $rows = $this->movements->getStockMutationReport($branchId, $filters, $dateFrom, $dateTo, $perPage);
 
@@ -213,7 +216,7 @@ class InventoryReportService
     {
         $reportType = (string) $filters['report_type'];
         $export = $this->buildExportPayload($reportType, $filters);
-        $filename = 'inventory-'.$reportType.'-'.now()->toDateString().'.csv';
+        $filename = 'inventory-'.$reportType.'-'.$this->calendar->todayString().'.csv';
 
         return response()->streamDownload(function () use ($export) {
             $handle = fopen('php://output', 'w');
@@ -223,15 +226,15 @@ class InventoryReportService
             }
 
             fwrite($handle, "\xEF\xBB\xBF");
-            fputcsv($handle, $export['headers']);
+            fputcsv($handle, CsvCell::row($export['headers']));
 
             foreach ($export['rows'] as $row) {
-                fputcsv($handle, $row);
+                fputcsv($handle, CsvCell::row($row));
             }
 
             if ($export['capped']) {
                 fputcsv($handle, []);
-                fputcsv($handle, ['CATATAN', 'Export dibatasi '.self::EXPORT_ROW_CAP.' baris. Persempit filter untuk melihat sisa data.']);
+                fputcsv($handle, CsvCell::row(['CATATAN', 'Export dibatasi '.self::EXPORT_ROW_CAP.' baris. Persempit filter untuk melihat sisa data.']));
             }
 
             fclose($handle);
@@ -447,8 +450,8 @@ class InventoryReportService
         }
 
         if (in_array($reportType, ['stock_card', 'mutation'], true)) {
-            $filters['date_from'] = (string) ($filters['date_from'] ?? now()->startOfMonth()->toDateString());
-            $filters['date_to'] = (string) ($filters['date_to'] ?? now()->toDateString());
+            $filters['date_from'] = (string) ($filters['date_from'] ?? $this->calendar->today()->startOfMonth()->toDateString());
+            $filters['date_to'] = (string) ($filters['date_to'] ?? $this->calendar->todayString());
         }
 
         return $filters;

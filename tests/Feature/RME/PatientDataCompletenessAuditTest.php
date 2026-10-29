@@ -184,3 +184,15 @@ it('exports CSV without the full KTP and with the expected headers', function ()
         ->and($csv)->not->toContain('7371017777000456')
         ->and($csv)->not->toContain('ktp');
 });
+
+it('neutralises a formula in a patient name in the audit export', function () {
+    // SECURITY-F3: the audit export carries patient names.
+    completePatient($this->branch, ['name' => '-2+3 Pasien Formula']);
+
+    $csv = preg_replace('/^\xEF\xBB\xBF/', '', $this->actingAs(userWith(['manage patients']))
+        ->get(route('rme.patients.audit.export'))->streamedContent());
+    $cells = collect(preg_split("/\r\n|\n/", trim($csv)))->flatMap(fn (string $l) => str_getcsv($l));
+
+    expect($cells)->toContain("'-2+3 Pasien Formula")
+        ->and($cells)->not->toContain('-2+3 Pasien Formula');
+});

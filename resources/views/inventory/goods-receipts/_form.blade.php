@@ -4,7 +4,7 @@
     $goodsReceipt = $goodsReceipt ?? null;
     $purchaseOrder = $purchaseOrder ?? ($goodsReceipt?->purchaseOrder);
     $isEdit = $goodsReceipt !== null;
-    $receiptDateDefault = old('receipt_date', optional($goodsReceipt?->receipt_date)->format('Y-m-d') ?? now()->toDateString());
+    $receiptDateDefault = old('receipt_date', optional($goodsReceipt?->receipt_date)->format('Y-m-d') ?? app(\App\Modules\Inventory\Support\InventoryBusinessCalendar::class)->todayString());
     $batchesByProduct = $batchesByProduct ?? [];
 
     $mapItem = function ($item) use ($receiptDateDefault) {
@@ -183,7 +183,7 @@
                 id="receipt-date"
                 type="date"
                 name="receipt_date"
-                value="{{ old('receipt_date', optional($goodsReceipt?->receipt_date)->format('Y-m-d') ?? now()->toDateString()) }}"
+                value="{{ old('receipt_date', optional($goodsReceipt?->receipt_date)->format('Y-m-d') ?? app(\App\Modules\Inventory\Support\InventoryBusinessCalendar::class)->todayString()) }}"
                 required
                 class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500"
             >

@@ -20,13 +20,13 @@
             <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 <div>
                     <label for="year" class="block text-sm font-medium text-gray-700">Tahun</label>
-                    <input id="year" name="year" type="number" min="2020" value="{{ $filters['year'] ?? now()->year }}" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500">
+                    <input id="year" name="year" type="number" min="2020" value="{{ $filters['year'] ?? app(\App\Modules\Inventory\Support\InventoryBusinessCalendar::class)->today()->year }}" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500">
                 </div>
                 <div>
                     <label for="month" class="block text-sm font-medium text-gray-700">Bulan</label>
                     <select id="month" name="month" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500">
                         @foreach ($filterOptions['months'] as $monthValue => $monthLabel)
-                            <option value="{{ $monthValue }}" @selected((int) ($filters['month'] ?? now()->month) === $monthValue)>{{ $monthLabel }}</option>
+                            <option value="{{ $monthValue }}" @selected((int) ($filters['month'] ?? app(\App\Modules\Inventory\Support\InventoryBusinessCalendar::class)->today()->month) === $monthValue)>{{ $monthLabel }}</option>
                         @endforeach
                     </select>
                 </div>

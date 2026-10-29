@@ -3,14 +3,15 @@
 namespace App\Modules\RmeDashboard\Controllers;
 
 use App\Http\Controllers\Controller;
+use App\Modules\ClinicOversight\Support\ClinicalDayWindow;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\ClinicVisit\Services\ClinicVisitService;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\MedicalRecord\Services\MedicalRecordService;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Models\RmePayment;
+use App\Support\Clinical\ClinicalClock;
 use Illuminate\Http\Request;
-use Illuminate\Support\Carbon;
 use Illuminate\View\View;
 
 /**
@@ -37,6 +38,7 @@ class RmeDashboardController extends Controller
     public function __construct(
         private readonly ClinicVisitService $visits,
         private readonly MedicalRecordService $medicalRecords,
+        private readonly ClinicalClock $clock,
     ) {}
 
     public function index(Request $request): View
@@ -54,9 +56,15 @@ class RmeDashboardController extends Controller
 
         $branchIds = $selectedBranchId !== null ? [$selectedBranchId] : $allowedBranchIds;
 
-        $today = Carbon::today();
-        $monthStart = Carbon::now()->startOfMonth();
-        $monthEnd = Carbon::now()->endOfMonth();
+        // SECURITY-F4A: the clinic day and month (Asia/Makassar), never the UTC
+        // ones — between 00:00 and 08:00 WITA those name the previous day.
+        // DATE columns compare against clinic dates; TIMESTAMP columns against
+        // the UTC instants that bound the clinic period (half-open).
+        $today = ClinicalDayWindow::today($this->clock);
+        $monthStart = $this->clock->today()->startOfMonth();
+        $monthEnd = $monthStart->endOfMonth();
+        $monthStartUtc = $monthStart->utc()->format('Y-m-d H:i:s');
+        $nextMonthStartUtc = $monthStart->addMonth()->utc()->format('Y-m-d H:i:s');
 
         $metrics = [
             'visits_today' => $this->visits->visitsTodayCount($actor, $selectedBranchId),
@@ -78,7 +86,8 @@ class RmeDashboardController extends Controller
             'medical_records_finalized_month' => MedicalRecord::query()
                 ->whereIn('branch_id', $branchIds)
                 ->where('status', MedicalRecord::STATUS_FINAL)
-                ->whereBetween('finalized_at', [$monthStart, $monthEnd])
+                ->where('finalized_at', '>=', $monthStartUtc)
+                ->where('finalized_at', '<', $nextMonthStartUtc)
                 ->count(),
             'cashier_pending' => ClinicVisit::query()
                 ->whereIn('branch_id', $branchIds)
@@ -92,7 +101,8 @@ class RmeDashboardController extends Controller
                 ->count(),
             'payments_today_total' => (float) RmePayment::query()
                 ->whereIn('branch_id', $branchIds)
-                ->whereDate('paid_at', $today->toDateString())
+                ->where('paid_at', '>=', $today->startUtcString())
+                ->where('paid_at', '<', $today->endUtcString())
                 ->sum('amount'),
         ];
 

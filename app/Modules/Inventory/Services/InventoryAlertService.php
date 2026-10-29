@@ -8,6 +8,7 @@ use App\Modules\Inventory\Interfaces\InventoryLocationRepositoryInterface;
 use App\Modules\Inventory\Interfaces\InventoryMovementRepositoryInterface;
 use App\Modules\Inventory\Models\InventoryBatch;
 use App\Modules\Inventory\Models\Product;
+use App\Modules\Inventory\Support\InventoryBusinessCalendar;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
 use Illuminate\Validation\ValidationException;
@@ -31,6 +32,7 @@ class InventoryAlertService
         private readonly InventoryBatchService $batchService,
         private readonly BatchExpiryStatusService $expiryStatus,
         private readonly BranchContext $branchContext,
+        private readonly InventoryBusinessCalendar $calendar,
     ) {}
 
     public function effectiveReorderPoint(Product $product): float
@@ -147,7 +149,7 @@ class InventoryAlertService
         $branchId = $branchId ?? $this->branchContext->requireId();
         $this->assertLocationInBranch($branchId, $locationId);
 
-        $today = now()->startOfDay();
+        $today = $this->calendar->today();
 
         $alerts = $this->batches
             ->batchesWithDerivedStockForAlerts($branchId, $locationId)

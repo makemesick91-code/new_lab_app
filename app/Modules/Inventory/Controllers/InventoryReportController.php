@@ -8,6 +8,7 @@ use App\Modules\Inventory\Controllers\Concerns\RendersInventoryViews;
 use App\Modules\Inventory\Models\InventoryMovement;
 use App\Modules\Inventory\Requests\InventoryReportFilterRequest;
 use App\Modules\Inventory\Services\InventoryReportService;
+use App\Modules\Inventory\Support\InventoryBusinessCalendar;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Contracts\View\View;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
@@ -22,6 +23,7 @@ class InventoryReportController extends Controller
     public function __construct(
         private readonly InventoryReportService $reports,
         private readonly BranchContext $branchContext,
+        private readonly InventoryBusinessCalendar $calendar,
     ) {}
 
     public function index(InventoryReportFilterRequest $request): View|Response
@@ -87,6 +89,6 @@ class InventoryReportController extends Controller
             'branch' => $selectedBranch,
             'printedAt' => now(),
             'printedBy' => $request->user(),
-        ])->download('checklist-refill-stok-ruangan-'.now()->toDateString().'.pdf');
+        ])->download('checklist-refill-stok-ruangan-'.$this->calendar->todayString().'.pdf');
     }
 }
