@@ -8,6 +8,7 @@ use App\Modules\Inventory\Enums\InventoryBatchActionType;
 use App\Modules\Inventory\Enums\InventoryBatchDisposalRequestStatus;
 use App\Modules\Inventory\Enums\InventoryBatchDisposalRequestType;
 use App\Modules\Inventory\Models\InventoryBatchDisposalRequest;
+use App\Support\Export\CsvCell;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
@@ -190,15 +191,15 @@ class InventoryBatchDisposalReportService
             }
 
             fwrite($handle, "\xEF\xBB\xBF");
-            fputcsv($handle, $headers);
+            fputcsv($handle, CsvCell::row($headers));
 
             foreach ($rows as $row) {
-                fputcsv($handle, $this->mapExportRow($row));
+                fputcsv($handle, CsvCell::row($this->mapExportRow($row)));
             }
 
             if ($capped) {
                 fputcsv($handle, []);
-                fputcsv($handle, ['CATATAN', 'Export dibatasi '.self::EXPORT_ROW_CAP.' baris. Persempit filter untuk melihat sisa data.']);
+                fputcsv($handle, CsvCell::row(['CATATAN', 'Export dibatasi '.self::EXPORT_ROW_CAP.' baris. Persempit filter untuk melihat sisa data.']));
             }
 
             fclose($handle);

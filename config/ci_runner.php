@@ -706,6 +706,50 @@ return [
          * token in both critical-gate variants.
          */
         'tests/Feature/Deploy/SecretFilePermissionHardeningTest.php',
+        /*
+         * SECURITY-G7B-APP-KEY-REENCRYPTION-1 — every encrypted model cast is in
+         * the rotation registry, values under a previous application key are
+         * rewritten and verified, and nothing is written while any value decrypts
+         * with no configured key. A rename that dropped this suite from the gate
+         * would let a new encrypted column silently keep a retired key alive.
+         * Selected by the `AppKeyReencryption` token in both critical variants.
+         */
+        'tests/Feature/Security/AppKeyReencryptionTest.php',
+        /*
+         * SECURITY-G7B-APP-KEY-REENCRYPTION-1 — every file that keys an HMAC on
+         * the current application key is registered with its rotation
+         * behaviour, and the doctor login ticket and device pairing code issued
+         * under a previous key are refused (not honoured, not a 500) after
+         * rotation. Selected by the `AppKeyReencryption` token in both variants.
+         */
+        'tests/Feature/Security/AppKeyReencryptionCurrentKeyConsumersTest.php',
+        /*
+         * SECURITY-G7B-APP-KEY-REENCRYPTION-1 — encrypted cookies and signed
+         * URLs made with a previous application key keep working until that key
+         * is retired, and are then rejected cleanly (absent cookie, invalid
+         * signature, never a 500). The retire step depends on both halves.
+         * Selected by the `AppKeyReencryption` token in both variants.
+         */
+        'tests/Feature/Security/AppKeyReencryptionFrameworkDependenciesTest.php',
+        /*
+         * SECURITY-G7B-APP-KEY-REENCRYPTION-1 — the recovery paths: every value
+         * reads with no previous key once re-encryption is complete; SATUSEHAT
+         * snapshots migrate across chunks byte for byte; a backup restored after
+         * the old key was retired is refused (nothing written) and recovered with
+         * the escrowed key; a rollback after a complete or interrupted
+         * re-encryption moves values back; a rollback that drops the new key is
+         * refused. Selected by the `AppKeyReencryption` token in both variants.
+         */
+        'tests/Feature/Security/AppKeyReencryptionRecoveryTest.php',
+        /*
+         * SECURITY-DEPENDENCY-UPDATES-1 — every package patched for a published
+         * advisory stays at or above its first fixed release in composer.lock
+         * and package-lock.json, and on the major the application was built
+         * for. The audit commands need a live advisory feed; this is the
+         * offline half that a lock regression cannot pass. Selected by the
+         * `DependencySecurityFloor` token in both critical-gate variants.
+         */
+        'tests/Feature/Security/DependencySecurityFloorTest.php',
 
         // FEATURE-DOCTOR-TRUSTED-ANDROID-DEVICE-LOCK-1 Phase 1 — a Doctor is
         // confined to the ACTIVE patients of the treatment room they are online
@@ -1235,6 +1279,78 @@ return [
         // Selected by the `FoundationGovernance` token; declared so a rename
         // cannot drop it.
         'tests/Feature/Foundation/FoundationGovernanceEvaluationMemoTest.php',
+
+        // CICD-COMPOSER-CACHE-RELEASE-GATES-1 — every GitHub-hosted job that
+        // runs `composer install` restores Composer's download cache first, keyed
+        // on composer.lock; nothing caches vendor/, and the self-hosted runner
+        // keeps its own persistent cache. A job added without the cache is not
+        // an error anywhere else, only a slower run that also fails whenever
+        // Packagist is unreachable. Selected by the `Cicd` token; declared so a
+        // rename cannot drop it.
+        'tests/Feature/Cicd/ComposerCacheCoverageTest.php',
+
+        // SECURITY-F1-CLOSE-PUBLIC-REGISTRATION-1 — there is no public
+        // self-registration, and an authenticated user without a role reaches
+        // only their own profile and notifications (decision D1). Reopening the
+        // route, or an authenticated route that forgets to authorize, is silent:
+        // it renders a 200. Selected by the `PublicRegistrationClosed` token in
+        // BOTH critical variants; declared so a rename cannot drop it.
+        'tests/Feature/Auth/PublicRegistrationClosedTest.php',
+
+        // SECURITY-F2-DENY-SELF-DELETION-1 — a user cannot delete their own
+        // account (decision D2). The removed DELETE /profile hard-deleted the
+        // user row, nulling clinical attribution and cascading audit trails —
+        // silently, with a redirect. Selected by the `AccountSelfDeletionDenied`
+        // token in BOTH critical variants; declared so a rename cannot drop it.
+        'tests/Feature/Auth/AccountSelfDeletionDeniedTest.php',
+
+        // SECURITY-F7-SATUSEHAT-RESET-GUARD-SELECTION-1 — the SATUSEHAT
+        // synthetic-pilot reset force-deletes visits, records, invoices and
+        // patients. It is scoped to the synthetic branch and aborts on real
+        // data, and these two suites prove it — but no critical-gate token
+        // selected them, so a scoping regression could merge with every
+        // required gate green and hard-delete real clinical rows in production.
+        // Selected by the `Satusehat4aSyntheticRehearsal` and
+        // `Satusehat4aRemediationLifecycle` tokens in BOTH critical variants;
+        // declared so a rename cannot drop them.
+        'tests/Feature/Satusehat/Satusehat4aSyntheticRehearsalTest.php',
+        'tests/Feature/Satusehat/Satusehat4aRemediationLifecycleTest.php',
+
+        // SECURITY-F3-CSV-CELL-GUARD-1 — one rule for every CSV cell, and a scan
+        // that fails when a file starts writing CSV without it. A formula in a
+        // patient or product name becomes live in the spreadsheet a user opens;
+        // the export still downloads with a 200. Selected by the
+        // `CsvFormulaInjectionGuard` token in BOTH critical variants; declared so
+        // a rename cannot drop it.
+        'tests/Feature/Security/CsvFormulaInjectionGuardTest.php',
+
+        // SECURITY-F4A1-CLINIC-CALENDAR-CLINICAL-RECORDS-1 (part of SECURITY-F4A) — clinical record dates on the clinic calendar
+        // (Asia/Makassar). A UTC "today" names the previous
+        // clinic day for eight hours of every day; the screens still render, so
+        // the error is silent. Selected by the `RmeClinicCalendarBoundary` token
+        // in BOTH critical variants; declared so a rename cannot drop it.
+        'tests/Feature/RME/RmeClinicCalendarBoundaryClinicalRecordsTest.php',
+
+        // SECURITY-F4A2-CLINIC-CALENDAR-FINANCIAL-DASHBOARDS-1 (part of SECURITY-F4A) — financial screens on the clinic calendar
+        // (Asia/Makassar). A UTC "today" names the previous
+        // clinic day for eight hours of every day; the screens still render, so
+        // the error is silent. Selected by the `RmeClinicCalendarBoundary` token
+        // in BOTH critical variants; declared so a rename cannot drop it.
+        'tests/Feature/RME/RmeClinicCalendarBoundaryFinancialDashboardsTest.php',
+
+        // SECURITY-F4A3-CLINIC-CALENDAR-SATUSEHAT-ADOPTION-1 (part of SECURITY-F4A) — the SATUSEHAT diagnosis adoption default period ends on
+        // the clinic date (Asia/Makassar). A UTC "today" names the previous
+        // clinic day for eight hours of every day; the screens still render, so
+        // the error is silent. Selected by the `RmeClinicCalendarBoundary` token
+        // in BOTH critical variants; declared so a rename cannot drop it.
+        'tests/Feature/RME/RmeClinicCalendarBoundarySatusehatAdoptionTest.php',
+
+        // SECURITY-F4C-CLINIC-CALENDAR-LAB-ORDERS-1 (owner decision D16) — lab order dates, order and
+        // delivery numbering, the due-date floor and "delivered today" on the clinic calendar
+        // (Asia/Makassar). A UTC "today" named the previous clinic day for eight hours of every day;
+        // the screens still render, so the error is silent. Selected by the `LabClinicCalendarBoundary`
+        // token in BOTH critical variants; declared so a rename cannot drop it.
+        'tests/Feature/LabWorkflow/LabClinicCalendarBoundaryTest.php',
 
         // SECURITY-F4B1-CLINIC-CALENDAR-INVENTORY-LEDGER-1 (part of SECURITY-F4B, owner decision D15) — stock movement and document dates, document numbers, the outbound expiry guard and receipt-date validation
         // on the clinic calendar (Asia/Makassar). A UTC "today" named the previous clinic day for eight

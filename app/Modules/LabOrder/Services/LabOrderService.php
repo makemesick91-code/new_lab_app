@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Modules\LabOrder\Interfaces\LabOrderRepositoryInterface;
 use App\Modules\LabOrder\Models\AuditLog;
 use App\Modules\LabOrder\Models\LabOrder;
+use App\Support\Clinical\ClinicalClock;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -21,6 +22,7 @@ class LabOrderService
         private readonly StatusLogService $statusLogs,
         private readonly AuditLogService $auditLogs,
         private readonly LabWorkflowResolver $workflowResolver,
+        private readonly ClinicalClock $clock,
     ) {}
 
     public function list(array $filters = [], int $perPage = 10): LengthAwarePaginator
@@ -44,7 +46,7 @@ class LabOrderService
         $this->workflowResolver->assertLegacyCreationAllowed();
 
         return DB::transaction(function () use ($data, $actor) {
-            $orderDate = $data['order_date'] ?? now()->toDateString();
+            $orderDate = $data['order_date'] ?? $this->clock->todayString();
 
             $order = $this->labOrders->create([
                 'order_number' => $this->orderNumbers->generate($orderDate),

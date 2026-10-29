@@ -2687,3 +2687,18 @@ it('preserves selected product location and category filters in csv export', fun
         ->not->toContain('Export Filter Hidden Location')
         ->not->toContain('Export Filter Hidden Category');
 });
+
+it('neutralises a formula in a product name in the inventory report export', function () {
+    // SECURITY-F3: product names are typed by users and reach the export.
+    createReportStockRow($this->branch, [
+        'product_code' => 'EXP-FORMULA',
+        'product_name' => '+SUM(1,2) Produk Formula',
+    ]);
+
+    $csv = preg_replace('/^\xEF\xBB\xBF/', '', $this->actingAs(userWith(['view_inventory']))
+        ->get(route('inventory.reports.export', ['report_type' => 'current_stock']))->streamedContent());
+    $cells = collect(preg_split("/\r\n|\n/", trim($csv)))->flatMap(fn (string $l) => str_getcsv($l));
+
+    expect($cells)->toContain("'+SUM(1,2) Produk Formula")
+        ->and($cells)->not->toContain('+SUM(1,2) Produk Formula');
+});
