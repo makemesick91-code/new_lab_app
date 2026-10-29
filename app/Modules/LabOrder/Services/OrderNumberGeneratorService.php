@@ -3,6 +3,7 @@
 namespace App\Modules\LabOrder\Services;
 
 use App\Modules\LabOrder\Interfaces\LabOrderRepositoryInterface;
+use App\Support\Clinical\ClinicalClock;
 use Illuminate\Support\Carbon;
 
 /**
@@ -14,11 +15,12 @@ class OrderNumberGeneratorService
 {
     public function __construct(
         private readonly LabOrderRepositoryInterface $labOrders,
+        private readonly ClinicalClock $clock,
     ) {}
 
     public function generate(?string $orderDate = null): string
     {
-        $year = Carbon::parse($orderDate ?? now())->format('Y');
+        $year = Carbon::parse($orderDate ?? $this->clock->todayString())->format('Y');
 
         $latest = $this->labOrders->latestOrderNumberForYear($year);
         $sequence = $latest ? ((int) substr($latest, -6)) + 1 : 1;

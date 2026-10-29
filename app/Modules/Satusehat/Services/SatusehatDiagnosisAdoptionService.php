@@ -12,6 +12,7 @@ use App\Modules\MedicalRecord\Models\MedicalRecordDiagnosis;
 use App\Modules\MedicalRecord\Services\DiagnosisRolloutService;
 use App\Modules\Satusehat\Models\SatusehatCandidate;
 use App\Modules\Satusehat\Models\SatusehatDataQualityIssue;
+use App\Support\Clinical\ClinicalClock;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -38,6 +39,7 @@ class SatusehatDiagnosisAdoptionService
     public function __construct(
         private readonly BranchService $branches,
         private readonly DiagnosisRolloutService $rollout,
+        private readonly ClinicalClock $clock,
     ) {}
 
     /**
@@ -205,7 +207,7 @@ class SatusehatDiagnosisAdoptionService
     {
         $maxDays = (int) config('clinical_diagnosis_rollout.adoption.max_period_days', 366);
 
-        $to = $this->parseDate($filters['to'] ?? null) ?? Carbon::today();
+        $to = $this->parseDate($filters['to'] ?? null) ?? Carbon::parse($this->clock->todayString())->startOfDay();
         $from = $this->parseDate($filters['from'] ?? null) ?? $to->copy()->subDays(29);
 
         if ($from->greaterThan($to)) {

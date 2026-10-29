@@ -180,7 +180,7 @@
                         @endforeach
                     </x-ui.select>
                     <x-ui.input type="date" id="due_date" name="due_date" label="Tenggat" required
-                                :value="old('due_date', now()->addDays(7)->toDateString())" min="{{ now()->toDateString() }}" />
+                                :value="old('due_date', app(\App\Support\Clinical\ClinicalClock::class)->today()->addDays(7)->toDateString())" min="{{ app(\App\Support\Clinical\ClinicalClock::class)->todayString() }}" />
                     <x-ui.textarea id="notes" name="notes" label="Catatan (opsional)" rows="3">{{ old('notes') }}</x-ui.textarea>
                     <div class="flex justify-end">
                         <x-ui.button type="submit" variant="primary">Konversi ke Lab Order</x-ui.button>

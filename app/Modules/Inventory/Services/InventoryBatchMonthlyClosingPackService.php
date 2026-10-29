@@ -11,6 +11,7 @@ use App\Modules\Inventory\Models\InventoryBatchActionLog;
 use App\Modules\Inventory\Models\InventoryBatchDisposalRequest;
 use App\Modules\Inventory\Models\InventoryMovement;
 use App\Modules\Inventory\Support\InventoryBusinessCalendar;
+use App\Support\Export\CsvCell;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Support\Carbon;
@@ -173,26 +174,26 @@ class InventoryBatchMonthlyClosingPackService
             }
 
             fwrite($handle, "\xEF\xBB\xBF");
-            fputcsv($handle, $headers);
+            fputcsv($handle, CsvCell::row($headers));
 
             foreach ($pack['expiry_risk_rows'] as $row) {
-                fputcsv($handle, $this->mapExpiryExportRow($row, $period));
+                fputcsv($handle, CsvCell::row($this->mapExpiryExportRow($row, $period)));
             }
 
             foreach ($pack['action_log_rows'] as $row) {
-                fputcsv($handle, $this->mapActionLogExportRow($row, $period));
+                fputcsv($handle, CsvCell::row($this->mapActionLogExportRow($row, $period)));
             }
 
             foreach ($pack['disposal_rows'] as $row) {
-                fputcsv($handle, $this->mapDisposalExportRow($row, $period));
+                fputcsv($handle, CsvCell::row($this->mapDisposalExportRow($row, $period)));
             }
 
             foreach ($pack['ledger_evidence_rows'] as $row) {
-                fputcsv($handle, $this->mapLedgerExportRow($row, $period));
+                fputcsv($handle, CsvCell::row($this->mapLedgerExportRow($row, $period)));
             }
 
             foreach ($pack['exception_rows'] as $row) {
-                fputcsv($handle, $this->mapExceptionExportRow($row, $period));
+                fputcsv($handle, CsvCell::row($this->mapExceptionExportRow($row, $period)));
             }
 
             fclose($handle);

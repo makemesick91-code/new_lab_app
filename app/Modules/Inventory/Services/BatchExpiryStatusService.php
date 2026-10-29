@@ -2,6 +2,7 @@
 
 namespace App\Modules\Inventory\Services;
 
+use App\Modules\Inventory\Support\InventoryBusinessCalendar;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Carbon;
 
@@ -17,6 +18,10 @@ class BatchExpiryStatusService
 
     public const NEAR_EXPIRY_THRESHOLD_DAYS = 90;
 
+    public function __construct(
+        private readonly InventoryBusinessCalendar $calendar,
+    ) {}
+
     public function thresholdDays(): int
     {
         return self::NEAR_EXPIRY_THRESHOLD_DAYS;
@@ -30,7 +35,7 @@ class BatchExpiryStatusService
             return self::STATUS_NO_EXPIRY;
         }
 
-        $today = now()->startOfDay();
+        $today = $this->calendar->today();
 
         if ($expiry->lt($today)) {
             return self::STATUS_EXPIRED;
@@ -61,7 +66,7 @@ class BatchExpiryStatusService
             return 'Tanpa tanggal kedaluwarsa';
         }
 
-        $today = now()->startOfDay();
+        $today = $this->calendar->today();
         $days = (int) $today->diffInDays($expiry, false);
 
         if ($days < 0) {
@@ -97,7 +102,7 @@ class BatchExpiryStatusService
 
     public function nearExpiryThresholdDate(): Carbon
     {
-        return now()->startOfDay()->addDays(self::NEAR_EXPIRY_THRESHOLD_DAYS);
+        return $this->calendar->today()->addDays(self::NEAR_EXPIRY_THRESHOLD_DAYS);
     }
 
     private function normalizeExpiryDate(CarbonInterface|string|null $expiryDate): ?Carbon

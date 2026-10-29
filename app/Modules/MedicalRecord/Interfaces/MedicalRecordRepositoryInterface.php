@@ -29,7 +29,8 @@ interface MedicalRecordRepositoryInterface
     public function countFinalizedTodayByBranch(int $branchId, string $date): int;
 
     /** @param array<int, int> $branchIds */
-    public function countFinalizedTodayByBranches(array $branchIds, string $date): int;
+    /** Final records with finalized_at in the half-open UTC range [$startUtc, $endUtc). */
+    public function countFinalizedInRangeByBranches(array $branchIds, string $startUtc, string $endUtc): int;
 
     /** @param array<string, mixed> $data */
     public function create(array $data): MedicalRecord;
