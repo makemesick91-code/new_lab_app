@@ -141,6 +141,12 @@ Nomor ADR berikutnya yang tersedia: **0013**.
   [F4BC-PRODUCTION-RELEASE-REPORT](operations/release-cicd-phase2-2026-10-29/F4BC-PRODUCTION-RELEASE-REPORT.md),
   [G7B-FINAL-READINESS-REPORT](operations/release-cicd-phase2-2026-10-29/G7B-FINAL-READINESS-REPORT.md),
   [G7B-ESCROW-TOOLS](operations/release-cicd-phase2-2026-10-29/G7B-ESCROW-TOOLS.md).
+- CI/CD Fase 2 (2026-10-30; durasi workflow −60%, paralel diukur tetapi belum diaktifkan):
+  [CICD-PHASE2-FINAL-SUMMARY](operations/release-cicd-phase2-2026-10-29/CICD-PHASE2-FINAL-SUMMARY.md),
+  [CICD-PHASE2-BASELINE](operations/release-cicd-phase2-2026-10-29/CICD-PHASE2-BASELINE.md),
+  [CICD-SLOW-TEST-PROFILING](operations/release-cicd-phase2-2026-10-29/CICD-SLOW-TEST-PROFILING.md),
+  [CICD-EVIDENCE-ISOLATION-REPORT](operations/release-cicd-phase2-2026-10-29/CICD-EVIDENCE-ISOLATION-REPORT.md),
+  [CICD-PARALLEL-TESTING-BENCHMARK](operations/release-cicd-phase2-2026-10-29/CICD-PARALLEL-TESTING-BENCHMARK.md).
 - Backup & DR: [backup-dr-restore-rehearsal-runbook](runbooks/backup-dr-restore-rehearsal-runbook.md),
   [roll-5-backup-restore-drill-runbook](runbooks/roll-5-backup-restore-drill-runbook.md),
   [backup-disaster-recovery-automation-governance](architecture/backup-disaster-recovery-automation-governance.md).
