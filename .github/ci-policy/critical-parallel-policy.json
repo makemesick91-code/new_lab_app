@@ -1,0 +1,42 @@
+{
+  "_comment": [
+    "CI-PERF-04-CONTROLLED-PARALLEL-TESTING — the single canonical, machine-readable state of",
+    "parallel test execution inside the NSF-R011 Critical Test Gate (both runner variants).",
+    "",
+    "status OFF  : every pull_request, push and schedule run executes the critical filter",
+    "              SEQUENTIALLY with the exact pre-CI-PERF-04 command line. The repository variable",
+    "              CI_CRITICAL_TEST_WORKERS is IGNORED while OFF, so flipping a variable can never",
+    "              activate parallelism on its own.",
+    "status ACTIVE: the worker count comes from CI_CRITICAL_TEST_WORKERS (or default_workers).",
+    "              Setting ACTIVE is a reviewed change to this file AND needs explicit owner",
+    "              activation approval recorded in the CI-PERF-04 report.",
+    "",
+    "Evaluation path (allowed while OFF): a manual workflow_dispatch with the input",
+    "critical_test_workers set to an allowed value. It never runs on a merge/PR event, records",
+    "itself as an evaluation run, and additionally captures JUnit and resource samples.",
+    "",
+    "Anything unreadable, unknown or out of range resolves to SEQUENTIAL (1 worker): sequential",
+    "is the known-good gate, so failing toward it can never weaken the gate."
+  ],
+  "status": "OFF",
+  "allowed_statuses": ["OFF", "ACTIVE"],
+  "allowed_worker_counts": [1, 2, 4],
+  "default_workers": 1,
+  "max_workers": 4,
+  "max_workers_basis": "GitHub-hosted ubuntu-latest measured 4 vCPU / 15.98 GB (CI-PERF-03); 4 workers already saturate the CPU (peak 99-100%).",
+  "repository_variable": "CI_CRITICAL_TEST_WORKERS",
+  "dispatch_input": "critical_test_workers",
+  "governance_document": "docs/operations/security-ci-2026-10-30/CI-PERF-04-CONTROLLED-PARALLEL-TESTING.md",
+  "rule_mirror": ".cursor/rules/212-critical-gate-controlled-parallel-testing.mdc",
+  "activation": {
+    "requires": "status ACTIVE committed through a reviewed PR, plus explicit owner activation approval",
+    "forbidden": "activating parallelism by repository variable alone, or as a side effect of an unrelated sprint"
+  },
+  "reason_codes": {
+    "off": "CRITICAL_PARALLELISM_OFF",
+    "active": "CRITICAL_PARALLELISM_ACTIVE",
+    "evaluation": "CRITICAL_PARALLELISM_EVALUATION_DISPATCH",
+    "invalid": "INVALID_WORKER_COUNT_SEQUENTIAL",
+    "unresolved": "POLICY_UNRESOLVED_SEQUENTIAL"
+  }
+}

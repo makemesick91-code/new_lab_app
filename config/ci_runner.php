@@ -1395,6 +1395,14 @@ return [
         // critical tests in every 2- and 4-worker run, 14 suites when run alone). Selected by the
         // `Cicd` token in BOTH critical variants; declared so a rename cannot drop it.
         'tests/Feature/Cicd/ParallelTestHelperResolutionContractTest.php',
+
+        // CI-PERF-04 — controlled parallel testing. Pins that the committed parallel policy is OFF,
+        // that pull_request/push/schedule resolve to the exact pre-CI-PERF-04 sequential command
+        // (the repository variable is ignored while OFF), that every uncertainty fails toward
+        // sequential, that both critical variants carry identical CI-PERF-04 steps, that the Full
+        // Suite stays sequential, and that the warning contract reads ParaTest's ANSI-styled summary
+        // without hiding a failure. Selected by the `Cicd` token in BOTH critical variants.
+        'tests/Feature/Cicd/CriticalGateControlledParallelismContractTest.php',
     ],
 
     /*

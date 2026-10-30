@@ -103,6 +103,16 @@ final class CriticalGateWarningContract
     {
         $matches = [];
 
+        // CI-PERF-04 — ParaTest's parallel printer renders the `Tests:` summary
+        // with forced terminal styling (SGR colour codes and a cursor-up before
+        // `Parallel:`), ignoring NO_COLOR and `--colors=never`. Unnormalised, the
+        // anchored match below finds no summary and the contract reports NO_GO
+        // for a fully green parallel run. Strip ECMA-48 control sequences IN
+        // MEMORY only — the evidence log on disk is never rewritten, and the
+        // counts themselves are untouched, so a failure or warning hidden inside
+        // colour codes is still counted.
+        $log = $this->stripTerminalControlSequences($log);
+
         if (preg_match_all('/^[^\S\n]*Tests:[^\n]*/m', $log, $matches) === 0) {
             return ['found' => false, 'line' => null, 'counts' => [], 'total' => 0];
         }
@@ -240,5 +250,17 @@ final class CriticalGateWarningContract
         }
 
         return $result;
+    }
+
+    /**
+     * Remove ECMA-48 control sequences (CSI `ESC [ … final-byte`, e.g. SGR colour
+     * codes and cursor movement) and lone OSC/ESC prefixes from a captured log.
+     *
+     * Only formatting bytes are removed; every printable character, digit and
+     * word the test runner wrote survives, so the summary counts are unchanged.
+     */
+    public function stripTerminalControlSequences(string $text): string
+    {
+        return (string) preg_replace('/\x1B(?:\[[0-?]*[ -\/]*[@-~]|\][^\x07]*\x07|[@-_])/', '', $text);
     }
 }

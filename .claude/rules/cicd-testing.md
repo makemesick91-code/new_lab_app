@@ -175,6 +175,13 @@ code, then the canonical rule, and report the drift.
   build an explicit PATH (`stubRuntimeBin()`), never the host's bin directories; local `pint --dirty --test` checks
   only changed files while the quality gate checks the whole repository. Source: archive
   `CI-TEMP-FULL-SUITE-SCHEDULE-GATE`, `91-…` (rule 16), archive `CICD-CTRL-3`.
+- **AIR-CIT-33** Critical Gate parallelism is governed by the committed policy
+  `.github/ci-policy/critical-parallel-policy.json` (`OFF`): pull_request/push/schedule run sequentially with the exact
+  pre-CI-PERF-04 command and ignore `CI_CRITICAL_TEST_WORKERS`; the only parallel path is a labelled evaluation
+  `workflow_dispatch` (`critical_test_workers`); every uncertainty fails toward 1 worker; both critical variants carry
+  identical steps; worker databases are dropped before a parallel run; the warning contract strips terminal styling in
+  memory (ParaTest's summary is ANSI-styled). Activation = reviewed `ACTIVE` change + explicit owner approval. Source:
+  `212-…`.
 
 ## Current posture (snapshot 2026-10-25 — verify before relying on it)
 
@@ -207,6 +214,7 @@ code, then the canonical rule, and report the drift.
 | `.cursor/rules/125-final-pre-full-suite-readiness-gate.mdc` | Readiness audits measure, never repair |
 | `.cursor/rules/126-authoritative-full-suite-and-final-closure.mdc` | One attempt per authorization, tree identity |
 | `.cursor/rules/130-raw-sql-driver-parity-and-gate-selection.mdc` | Backslash literals on pgsql, SQLite ≠ PostgreSQL |
+| `.cursor/rules/212-critical-gate-controlled-parallel-testing.mdc` | Critical Gate parallel policy (OFF), evaluation dispatch, worker DBs |
 | `.cursor/rules/testing-expert.mdc` | General test standards |
 | `.cursor/rules/112-monitoring-baseline-zero-known-failures.mdc` | Host-capacity-independent monitoring tests |
 | `.cursor/rules/59-cicd-enterprise-gate.mdc` | ENT-10 enterprise CI/CD gate |
