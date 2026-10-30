@@ -11,6 +11,10 @@ owner sudah lengkap dan diukur ulang hari ini pada rilis produksi `fb3726c5`. Ro
 produksi **tidak** dijalankan. Tiga syarat gate bergantung pada owner dan belum terpenuhi: custodian kedua,
 keputusan retensi, dan persetujuan eksekusi.
 
+> **Pembaruan 2026-10-30 (sore):** owner menunjuk custodian 2 (Jene Monika, Supervisor RME). Custodian 1 masih
+> menunggu konfirmasi formal. `SECOND_CUSTODIAN` kini `APPOINTED`, belum `VERIFIED`; rotasi tetap NO-GO. Lihat
+> [G7B-CUSTODIAN-APPOINTMENT](G7B-CUSTODIAN-APPOINTMENT.md). Isi halaman ini tidak diubah.
+
 Halaman ini melanjutkan [G7B-FINAL-READINESS-REPORT](../release-cicd-phase2-2026-10-29/G7B-FINAL-READINESS-REPORT.md)
 dan tidak menggantikan bukti di sana. Kembali ke [00-INDEX](../../00-INDEX.md). Halaman terkait:
 [G7B-ENV-COPY-INVENTORY](G7B-ENV-COPY-INVENTORY.md) (inventaris per salinan),
