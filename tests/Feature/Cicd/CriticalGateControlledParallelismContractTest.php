@@ -139,7 +139,7 @@ it('fails toward sequential for every out-of-range or hostile worker count', fun
         ->and($decision['critical_parallel_mode'])->toBe('sequential')
         ->and($decision['critical_test_extra_args'])->toBe('')
         ->and($decision['critical_parallel_reason'])->toBe('INVALID_WORKER_COUNT_SEQUENTIAL');
-})->with(['0', '3', '8', '16', '-1', 'abc', '2; rm -rf /', '4 --filter=Nothing', '$(id)']);
+})->with(['0', '3', '8', '16', '-1', 'abc', '2; rm -rf /', '4 --filter=Nothing', '$(id)', '0004', '18446744073709551618', '18446744073709551620']);
 
 it('fails toward sequential when the policy cannot be read unambiguously', function (?string $contents) {
     $path = $contents === null ? '/nonexistent/critical-parallel-policy.json' : cp04TempPolicy($contents);
@@ -230,6 +230,23 @@ it('never lets terminal styling hide a failure or a warning', function () {
     $red = "  \e[90mTests:\e[39m    \e[31;1m1 failed\e[39;22m\e[90m,\e[39m \e[33;1m2 warnings\e[39;22m\e[90m,\e[39m \e[32;1m11 passed\e[39;22m\n";
 
     expect($contract->parseSummary($red)['counts'])->toBe(['failed' => 1, 'warnings' => 2, 'passed' => 11]);
+});
+
+it('never lets a hyperlink sequence swallow the authoritative summary', function () {
+    // Independent review: an OSC that ignored its ESC \\ terminator ran to a later BEL
+    // and deleted the real `Tests:` line, leaving an earlier green one to decide.
+    $contract = new CriticalGateWarningContract;
+    $log = "Tests: 10 passed\n\e]8;;https://example.test\e\\link\e]8;;\e\\\nTests: 3 warnings, 10 passed\n\x07\n";
+
+    expect($contract->parseSummary($log)['counts'])->toBe(['warnings' => 3, 'passed' => 10]);
+});
+
+it('keeps the counts next to a malformed escape sequence', function () {
+    // Independent review: a malformed CSI must lose only its ESC and introducer,
+    // never the digit or word beside it.
+    $contract = new CriticalGateWarningContract;
+
+    expect($contract->parseSummary("Tests: \e[2 warnings, 10 passed\n")['counts'])->toBe(['warnings' => 2, 'passed' => 10]);
 });
 
 it('evaluates a styled parallel log to the same verdict as a plain one and leaves the file untouched', function () {

@@ -483,6 +483,9 @@ jobs:
         shell: bash
         env:
           CRITICAL_TEST_EXTRA_ARGS: ${{ steps.critical_parallel.outputs.critical_test_extra_args }}
+          CRITICAL_TEST_WORKERS: ${{ steps.critical_parallel.outputs.critical_test_workers }}
+          CRITICAL_PARALLEL_MODE: ${{ steps.critical_parallel.outputs.critical_parallel_mode }}
+          CRITICAL_PARALLEL_REASON: ${{ steps.critical_parallel.outputs.critical_parallel_reason }}
         run: |
           set +e
           # NOTE: --filter is a case-insensitive match against the full
@@ -497,7 +500,7 @@ jobs:
           {
             echo "runner=github-hosted"
             echo "critical_test_exit_status=${TEST_STATUS}"
-            echo "critical_test_workers=${{ steps.critical_parallel.outputs.critical_test_workers }} mode=${{ steps.critical_parallel.outputs.critical_parallel_mode }} reason=${{ steps.critical_parallel.outputs.critical_parallel_reason }}"
+            echo "critical_test_workers=${CRITICAL_TEST_WORKERS} mode=${CRITICAL_PARALLEL_MODE} reason=${CRITICAL_PARALLEL_REASON}"
             sed 's/\x1b\[[0-9;?]*[A-Za-z]//g' storage/ci-evidence/nsf-r011-critical-tests.log | grep -aE '^\s*(Tests:|Fatal error)' | tail -2
           } | tee -a "$GITHUB_STEP_SUMMARY"
           if grep -qa 'Allowed memory size' storage/ci-evidence/nsf-r011-critical-tests.log; then
@@ -799,6 +802,9 @@ jobs:
         shell: bash
         env:
           CRITICAL_TEST_EXTRA_ARGS: ${{ steps.critical_parallel.outputs.critical_test_extra_args }}
+          CRITICAL_TEST_WORKERS: ${{ steps.critical_parallel.outputs.critical_test_workers }}
+          CRITICAL_PARALLEL_MODE: ${{ steps.critical_parallel.outputs.critical_parallel_mode }}
+          CRITICAL_PARALLEL_REASON: ${{ steps.critical_parallel.outputs.critical_parallel_reason }}
         run: |
           set +e
           bash scripts/ci/self-hosted-php.sh php artisan test --filter='FoundationGovernance|Nsf7|NsfGovernance|DmoGovernance|Dmo3|Dq31|Dq3SourceDocumentBatch|Dq2BatchGovernance|Dq1|RmeDoctorCashierCompletionGate|RmeRoomAssignmentGate|MedicalRecordFinalization|CashierBilling|RmePayment|PatientOutstandingReceivableCarryOver|PatientCentricRmWorkspace|RmeVisitConsent|RmeExamConsentOdontogramHistory|LegacyOdontogram|RmeReceiptOnePage|MedicalRecordPageActions|MedicalRecordPrintOdontogramSeparation|RmePrintPatientVisitDuplicate|Odontogram|RepositoryArtifactHygiene|LegacyRme|LegacyMassUpload|UnifiedMedicalRecord|LegacyPatient|LegacyImportHub|LegacyBatchReview|LegacyBatchPublish|ClinicalClock|FrontOffice|PatientEarliestNativeRmeDateResolver|RuntimeIdentityIsolation|DeployHarden|FeatureFlag|Cicd|Devflow|PilotPerformanceSnapshot|MonitoringLogSource|RestoreDrill|ClinicalEvidence|DailyBranch|BranchChange|RmeReportTodayDefault|NewVisitPatientSearch|NewVisitGlobalPatientLookup|QueueProducerConsumerParity|TelkomasBranchCode|SunuBranchCode|SunuClinicRoom|DoctorAccountLink|RmePreConsentFirstPageUiGate|DoctorRoomScoped|DoctorDevice|DoctorAccess|DoctorPwaWebAuthn|ProductionShellCommandGuard|ForbiddenConsoleCommand|Pwa|ObservabilityConsole|ObservabilityTelemetry|PatientMerge|PatientKtp|PrivateDatabaseDump|RmeInvoiceRedesign|RmeBillingRefund|RmeBillingDispute|VisitTypeServerDerivation|VisitDetailClinicalSectionOrder|ClinicOversight|RmeInvoiceCorrection|RmeTariffAuthority|RmeManualPricing|RmeInvoiceExplicitActor|ClinicVisitBranchAuthority|ActiveAccountSession|ClinicVisitPatientSelection|CrossBranchKontrol|ClinicVisitRegistrationConcurrency|PatientOutstandingReceivableCarryOver|RmeControlVisitReceivableCarryOverPayment|SecretFilePermissionHardening|DependencySecurityFloor|AppKeyReencryption|PublicRegistrationClosed|AccountSelfDeletionDenied|Satusehat4aSyntheticRehearsal|Satusehat4aRemediationLifecycle|CsvFormulaInjectionGuard|RmeClinicCalendarBoundary|LabClinicCalendarBoundary|InventoryClinicCalendarBoundary' \
@@ -808,7 +814,7 @@ jobs:
           {
             echo "runner=self-hosted/daengtisia-ci"
             echo "critical_test_exit_status=${TEST_STATUS}"
-            echo "critical_test_workers=${{ steps.critical_parallel.outputs.critical_test_workers }} mode=${{ steps.critical_parallel.outputs.critical_parallel_mode }} reason=${{ steps.critical_parallel.outputs.critical_parallel_reason }}"
+            echo "critical_test_workers=${CRITICAL_TEST_WORKERS} mode=${CRITICAL_PARALLEL_MODE} reason=${CRITICAL_PARALLEL_REASON}"
             sed 's/\x1b\[[0-9;?]*[A-Za-z]//g' storage/ci-evidence/nsf-r011-critical-tests.log | grep -aE '^\s*(Tests:|Fatal error)' | tail -2
           } | tee -a "$GITHUB_STEP_SUMMARY"
           if grep -qa 'Allowed memory size' storage/ci-evidence/nsf-r011-critical-tests.log; then

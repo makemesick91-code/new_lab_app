@@ -107,7 +107,9 @@ fi
 # and within max_workers. 1 is always valid.
 valid_workers() {
     local n="$1"
-    [[ "$n" =~ ^[0-9]+$ ]] || return 1
+    # At most three digits: arithmetic on a longer string can overflow and wrap
+    # into an allowed count (independent review, CI-PERF-04).
+    [[ "$n" =~ ^[0-9]{1,3}$ ]] || return 1
     n=$((10#$n))
     [[ "$n" -ge 1 ]] || return 1
     [[ "$n" -eq 1 ]] && return 0

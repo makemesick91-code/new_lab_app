@@ -261,6 +261,12 @@ final class CriticalGateWarningContract
      */
     public function stripTerminalControlSequences(string $text): string
     {
-        return (string) preg_replace('/\x1B(?:\[[0-?]*[ -\/]*[@-~]|\][^\x07]*\x07|[@-_])/', '', $text);
+        // Only WELL-FORMED sequences are removed: a CSI must be parameters
+        // [0-9;?] followed directly by a letter (what SGR colours and cursor
+        // moves are), and an OSC stops at BEL, ESC \ or the end of the line.
+        // Anything malformed loses only its ESC and introducer byte, so a
+        // digit or a word next to it — a failure or warning count — can never
+        // be swallowed (independent review, CI-PERF-04).
+        return (string) preg_replace('/\x1B(?:\[[0-9;?]*[A-Za-z]|\][^\x07\x1B\n]*(?:\x07|\x1B\\\\)?|[@-_])/', '', $text);
     }
 }

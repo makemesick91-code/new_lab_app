@@ -58,3 +58,11 @@ parallel run would have been reported NO_GO.
    filter only.
 10. **No test is excluded to gain speed.** A parallel run must report the same test count as the
     sequential run on the same SHA; a faster run with fewer tests or corrupted evidence is a failure.
+11. **An evaluation run never shares a SHA with a pull request head.** A dispatched run reports a check
+    named "NSF-R011 Critical Test Gate" on its commit, the same name as the merge gate. Run evaluations on
+    an evaluation-marker commit (an empty commit on top of the candidate, so the tree is identical and the
+    SHA is not), and base every merge decision on the `pull_request` run of the exact head, cited by run
+    ID — never on "the latest green check" for that SHA (independent review, CI-PERF-04).
+12. **The warning contract strips only well-formed sequences.** CSI = parameters `[0-9;?]` then a letter;
+    OSC ends at BEL, `ESC \` or end of line. A malformed sequence loses only its ESC and introducer, so a
+    neighbouring count is never swallowed.

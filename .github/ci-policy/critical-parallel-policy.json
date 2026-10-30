@@ -14,6 +14,8 @@
     "Evaluation path (allowed while OFF): a manual workflow_dispatch with the input",
     "critical_test_workers set to an allowed value. It never runs on a merge/PR event, records",
     "itself as an evaluation run, and additionally captures JUnit and resource samples.",
+    "Run it on an evaluation-marker commit (empty commit, identical tree) so its checks never land on a",
+    "pull request head; merge decisions cite the pull_request run ID.",
     "",
     "Anything unreadable, unknown or out of range resolves to SEQUENTIAL (1 worker): sequential",
     "is the known-good gate, so failing toward it can never weaken the gate."
