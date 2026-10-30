@@ -88,3 +88,35 @@ before the old one can be removed.
     That means: 0 values depend on it, the backup retention window for pre-rotation
     dumps is covered by sealed custody, and no other copy of the environment file
     still carries it as the live key.
+
+## Custody, inventory and the production release gate (G7-B gate closure, 2026-10-30)
+
+12. **Two independently accountable custodians before any production rotation.** One
+    IT custodian and one management custodian, each holding one independently
+    encrypted escrow copy under their own passphrase. A custodian is appointed only
+    by an explicit owner decision recorded in the G7-B report; a proposal is not an
+    appointment. **An Android APK signing-key custody assignment (rules 145/146) is
+    never evidence of application-key custody** — different key, different scope, and
+    its "Custodian 2/3" are storage media, not people.
+13. **Recovery is two-person.** The holder of a passphrase types it at the GPG prompt;
+    the root operator runs the tool. When the IT custodian is also the operator, the
+    management custodian witnesses and signs the custody log. Passphrases never pass
+    through chat, argv or files.
+14. **The environment-copy inventory is per copy and covers archives.** Every copy
+    carrying a key line — plain files, empty templates, and members inside tar/zip
+    archives — gets an opaque id. The id→path mapping lives only in a root-only
+    manifest on the host (dir 0700, file 0600); a public document carries ids, classes,
+    modes, months and key states only, never a path or a filename. "Is it needed?" is
+    answered by checking every on-host database dump's ciphertext MACs in memory
+    against each distinct key, never by assumption.
+15. **The production rotation gate is a conjunction.** Rotation may execute only when
+    SECOND_CUSTODIAN=VERIFIED, ENV_COPY_INVENTORY=VERIFIED, RETENTION_DECISION=APPROVED,
+    OLD_KEY_RECOVERY=VERIFIED, NEW_KEY_RECOVERY=VERIFIED, REENCRYPTION_TEST=PASS,
+    ROLLBACK_TEST=PASS, BACKUP_RESTORE=PASS and PRODUCTION_EXECUTION_APPROVAL=EXPLICIT.
+    One unmet condition is NO-GO. A rehearsal with machine-generated passphrases proves
+    the tool, not the custody: OLD_KEY_RECOVERY is verified only from the real
+    custodians' copies.
+16. **Rehearse on a disposable copy, never on production.** The A0→R2 rehearsal restores
+    the newest pre-deploy backup into a scratch database, passes keys through the process
+    environment only, and drops the scratch database on every exit path. Production
+    configuration, database and the active environment file are never written.
