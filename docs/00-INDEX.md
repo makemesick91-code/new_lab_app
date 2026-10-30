@@ -141,6 +141,10 @@ Nomor ADR berikutnya yang tersedia: **0013**.
   [F4BC-PRODUCTION-RELEASE-REPORT](operations/release-cicd-phase2-2026-10-29/F4BC-PRODUCTION-RELEASE-REPORT.md),
   [G7B-FINAL-READINESS-REPORT](operations/release-cicd-phase2-2026-10-29/G7B-FINAL-READINESS-REPORT.md),
   [G7B-ESCROW-TOOLS](operations/release-cicd-phase2-2026-10-29/G7B-ESCROW-TOOLS.md).
+- Penutupan gate keamanan G7-B (2026-10-30; rotasi produksi tetap NO-GO, custodian kedua BLOCKED):
+  [G7B-SECURITY-GATE-CLOSURE](operations/security-ci-2026-10-30/G7B-SECURITY-GATE-CLOSURE.md),
+  [G7B-ENV-COPY-INVENTORY](operations/security-ci-2026-10-30/G7B-ENV-COPY-INVENTORY.md),
+  [G7B-SECURITY-GATE-TOOLS](operations/security-ci-2026-10-30/G7B-SECURITY-GATE-TOOLS.md).
 - CI/CD Fase 2 (2026-10-30; durasi workflow −60%, paralel diukur tetapi belum diaktifkan):
   [CICD-PHASE2-FINAL-SUMMARY](operations/release-cicd-phase2-2026-10-29/CICD-PHASE2-FINAL-SUMMARY.md),
   [CICD-PHASE2-BASELINE](operations/release-cicd-phase2-2026-10-29/CICD-PHASE2-BASELINE.md),

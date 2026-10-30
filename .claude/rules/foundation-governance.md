@@ -195,6 +195,11 @@ code, then the canonical rule, and report the drift.
   key only when `previous_key_values = 0` and `undecryptable = 0`. Never print, log or commit a key value; the HMAC users
   (doctor login ticket/challenge, device pairing code, payment intent) fail closed after rotation. Source:
   `.cursor/rules/210-…`.
+- **AIR-FND-36** Production application-key rotation needs two owner-appointed custodians (IT + management),
+  a per-copy environment inventory that includes archive members (id→path mapping root-only on the host), an approved
+  retention decision, recovery verified from the real custodians' escrow copies, passing re-encryption/rollback/backup
+  rehearsals on a disposable copy, and a separate explicit execution approval. Any unmet condition is NO-GO. An Android
+  signing-key custody assignment is never evidence of application-key custody. Source: `.cursor/rules/210-…` rules 12–16.
 
 ## Current posture (snapshot 2026-10-25 — verify before relying on it)
 
