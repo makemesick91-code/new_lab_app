@@ -36,6 +36,22 @@ on:
           - repository-default
           - github-hosted
           - self-hosted
+      # CI-PERF-04-CONTROLLED-PARALLEL-TESTING — EVALUATION input only. Selects the
+      # ParaTest worker count for the NSF-R011 critical filter on THIS manual run,
+      # labels the run as an evaluation, and adds JUnit + resource sampling. It is
+      # never consulted on pull_request / push / schedule; while the committed
+      # policy (.github/ci-policy/critical-parallel-policy.json) is OFF those runs
+      # stay sequential with the exact pre-CI-PERF-04 command line.
+      critical_test_workers:
+        description: 'CI-PERF-04 evaluation: critical filter ParaTest workers'
+        type: choice
+        required: false
+        default: repository-default
+        options:
+          - repository-default
+          - '1'
+          - '2'
+          - '4'
   schedule:
     - cron: '0 2 * * 0'
 
@@ -420,6 +436,41 @@ jobs:
       - name: Run migrations
         run: php artisan migrate --force
 
+      # CI-PERF-04-CONTROLLED-PARALLEL-TESTING — resolve the critical filter's
+      # worker count. Fails toward SEQUENTIAL: with the committed policy OFF every
+      # pull_request / push / schedule run resolves to 1 worker and an EMPTY extra
+      # argument list, i.e. the exact pre-CI-PERF-04 command. Identical in both
+      # runner variants (rule 91).
+      - name: Resolve critical test parallelism (CI-PERF-04)
+        id: critical_parallel
+        if: ${{ needs.classify.outputs.run_critical_tests != 'false' }}
+        shell: bash
+        env:
+          CRITICAL_EVENT: ${{ github.event_name }}
+          CRITICAL_DISPATCH_WORKERS: ${{ inputs.critical_test_workers }}
+          CRITICAL_REPOSITORY_WORKERS: ${{ vars.CI_CRITICAL_TEST_WORKERS }}
+        run: |
+          bash scripts/ci/resolve-critical-parallelism.sh --event "$CRITICAL_EVENT" \
+            --dispatch-workers "$CRITICAL_DISPATCH_WORKERS" \
+            --repository-workers "$CRITICAL_REPOSITORY_WORKERS" --github-output
+
+      # Persistent PostgreSQL (developer machine, self-hosted runner) can still hold
+      # worker databases from an earlier run; four concurrent first migrations over
+      # them exhaust the shared lock table (SQLSTATE 53200, CI-PERF-03 finding 2).
+      # Dropping exactly <DB_DATABASE>_test_1..N first is the proven mitigation.
+      - name: Provision parallel worker databases (CI-PERF-04)
+        if: ${{ needs.classify.outputs.run_critical_tests != 'false' && steps.critical_parallel.outputs.critical_test_workers != '1' }}
+        shell: bash
+        env:
+          CI_PHP_RUNNER: php
+          CRITICAL_TEST_WORKERS: ${{ steps.critical_parallel.outputs.critical_test_workers }}
+        run: bash scripts/ci/prepare-parallel-test-databases.sh "$CRITICAL_TEST_WORKERS"
+
+      - name: Start resource sampler (CI-PERF-04 evaluation)
+        if: ${{ needs.classify.outputs.run_critical_tests != 'false' && steps.critical_parallel.outputs.critical_parallel_evaluation == 'true' }}
+        shell: bash
+        run: bash scripts/ci/sample-critical-resources.sh start
+
       - name: Run critical regression tests
         # CICD-CTRL-1: runs for every profile EXCEPT a proven docs-only change.
         # Any uncertainty leaves run_critical_tests unset/true, so this runs.
@@ -430,6 +481,11 @@ jobs:
         # captured explicitly so evidence is still written before it propagates.
         if: ${{ needs.classify.outputs.run_critical_tests != 'false' }}
         shell: bash
+        env:
+          CRITICAL_TEST_EXTRA_ARGS: ${{ steps.critical_parallel.outputs.critical_test_extra_args }}
+          CRITICAL_TEST_WORKERS: ${{ steps.critical_parallel.outputs.critical_test_workers }}
+          CRITICAL_PARALLEL_MODE: ${{ steps.critical_parallel.outputs.critical_parallel_mode }}
+          CRITICAL_PARALLEL_REASON: ${{ steps.critical_parallel.outputs.critical_parallel_reason }}
         run: |
           set +e
           # NOTE: --filter is a case-insensitive match against the full
@@ -438,13 +494,14 @@ jobs:
           # not only class names. That is deliberate here (wider is the safe
           # direction); do not prune it assuming class-name matching.
           php artisan test --filter='FoundationGovernance|Nsf7|NsfGovernance|DmoGovernance|Dmo3|Dq31|Dq3SourceDocumentBatch|Dq2BatchGovernance|Dq1|RmeDoctorCashierCompletionGate|RmeRoomAssignmentGate|MedicalRecordFinalization|CashierBilling|RmePayment|PatientOutstandingReceivableCarryOver|PatientCentricRmWorkspace|RmeVisitConsent|RmeExamConsentOdontogramHistory|LegacyOdontogram|RmeReceiptOnePage|MedicalRecordPageActions|MedicalRecordPrintOdontogramSeparation|RmePrintPatientVisitDuplicate|Odontogram|RepositoryArtifactHygiene|LegacyRme|LegacyMassUpload|UnifiedMedicalRecord|LegacyPatient|LegacyImportHub|LegacyBatchReview|LegacyBatchPublish|ClinicalClock|FrontOffice|PatientEarliestNativeRmeDateResolver|RuntimeIdentityIsolation|DeployHarden|FeatureFlag|Cicd|Devflow|PilotPerformanceSnapshot|MonitoringLogSource|RestoreDrill|ClinicalEvidence|DailyBranch|BranchChange|RmeReportTodayDefault|NewVisitPatientSearch|NewVisitGlobalPatientLookup|QueueProducerConsumerParity|TelkomasBranchCode|SunuBranchCode|SunuClinicRoom|DoctorAccountLink|RmePreConsentFirstPageUiGate|DoctorRoomScoped|DoctorDevice|DoctorAccess|DoctorPwaWebAuthn|ProductionShellCommandGuard|ForbiddenConsoleCommand|Pwa|ObservabilityConsole|ObservabilityTelemetry|PatientMerge|PatientKtp|PrivateDatabaseDump|RmeInvoiceRedesign|RmeBillingRefund|RmeBillingDispute|VisitTypeServerDerivation|VisitDetailClinicalSectionOrder|ClinicOversight|RmeInvoiceCorrection|RmeTariffAuthority|RmeManualPricing|RmeInvoiceExplicitActor|ClinicVisitBranchAuthority|ActiveAccountSession|ClinicVisitPatientSelection|CrossBranchKontrol|ClinicVisitRegistrationConcurrency|PatientOutstandingReceivableCarryOver|RmeControlVisitReceivableCarryOverPayment|SecretFilePermissionHardening|DependencySecurityFloor|AppKeyReencryption|PublicRegistrationClosed|AccountSelfDeletionDenied|Satusehat4aSyntheticRehearsal|Satusehat4aRemediationLifecycle|CsvFormulaInjectionGuard|RmeClinicCalendarBoundary|LabClinicCalendarBoundary|InventoryClinicCalendarBoundary' \
-            2>&1 | tee storage/ci-evidence/nsf-r011-critical-tests.log
+            $CRITICAL_TEST_EXTRA_ARGS 2>&1 | tee storage/ci-evidence/nsf-r011-critical-tests.log
           TEST_STATUS="${PIPESTATUS[0]}"
           set -e
           {
             echo "runner=github-hosted"
             echo "critical_test_exit_status=${TEST_STATUS}"
-            grep -aE '^\s*(Tests:|Fatal error)' storage/ci-evidence/nsf-r011-critical-tests.log | tail -2
+            echo "critical_test_workers=${CRITICAL_TEST_WORKERS} mode=${CRITICAL_PARALLEL_MODE} reason=${CRITICAL_PARALLEL_REASON}"
+            sed 's/\x1b\[[0-9;?]*[A-Za-z]//g' storage/ci-evidence/nsf-r011-critical-tests.log | grep -aE '^\s*(Tests:|Fatal error)' | tail -2
           } | tee -a "$GITHUB_STEP_SUMMARY"
           if grep -qa 'Allowed memory size' storage/ci-evidence/nsf-r011-critical-tests.log; then
             echo "::error::CI runtime ran out of memory — zero tests may have executed."
@@ -470,6 +527,11 @@ jobs:
           set -e
           echo "critical_gate_warning_contract_exit_status=${CONTRACT_STATUS}" | tee -a "$GITHUB_STEP_SUMMARY"
           exit "$CONTRACT_STATUS"
+
+      - name: Stop resource sampler (CI-PERF-04 evaluation)
+        if: ${{ always() && steps.critical_parallel.outputs.critical_parallel_evaluation == 'true' }}
+        shell: bash
+        run: bash scripts/ci/sample-critical-resources.sh stop
 
       - name: Note skipped critical regression tests (docs-only change)
         if: ${{ needs.classify.outputs.run_critical_tests == 'false' }}
@@ -697,22 +759,63 @@ jobs:
       - name: Run migrations
         run: bash scripts/ci/self-hosted-php.sh php artisan migrate --force
 
+      # CI-PERF-04-CONTROLLED-PARALLEL-TESTING — resolve the critical filter's
+      # worker count. Fails toward SEQUENTIAL: with the committed policy OFF every
+      # pull_request / push / schedule run resolves to 1 worker and an EMPTY extra
+      # argument list, i.e. the exact pre-CI-PERF-04 command. Identical in both
+      # runner variants (rule 91).
+      - name: Resolve critical test parallelism (CI-PERF-04)
+        id: critical_parallel
+        if: ${{ needs.classify.outputs.run_critical_tests != 'false' }}
+        shell: bash
+        env:
+          CRITICAL_EVENT: ${{ github.event_name }}
+          CRITICAL_DISPATCH_WORKERS: ${{ inputs.critical_test_workers }}
+          CRITICAL_REPOSITORY_WORKERS: ${{ vars.CI_CRITICAL_TEST_WORKERS }}
+        run: |
+          bash scripts/ci/resolve-critical-parallelism.sh --event "$CRITICAL_EVENT" \
+            --dispatch-workers "$CRITICAL_DISPATCH_WORKERS" \
+            --repository-workers "$CRITICAL_REPOSITORY_WORKERS" --github-output
+
+      # Persistent PostgreSQL (developer machine, self-hosted runner) can still hold
+      # worker databases from an earlier run; four concurrent first migrations over
+      # them exhaust the shared lock table (SQLSTATE 53200, CI-PERF-03 finding 2).
+      # Dropping exactly <DB_DATABASE>_test_1..N first is the proven mitigation.
+      - name: Provision parallel worker databases (CI-PERF-04)
+        if: ${{ needs.classify.outputs.run_critical_tests != 'false' && steps.critical_parallel.outputs.critical_test_workers != '1' }}
+        shell: bash
+        env:
+          CI_PHP_RUNNER: bash scripts/ci/self-hosted-php.sh php
+          CRITICAL_TEST_WORKERS: ${{ steps.critical_parallel.outputs.critical_test_workers }}
+        run: bash scripts/ci/prepare-parallel-test-databases.sh "$CRITICAL_TEST_WORKERS"
+
+      - name: Start resource sampler (CI-PERF-04 evaluation)
+        if: ${{ needs.classify.outputs.run_critical_tests != 'false' && steps.critical_parallel.outputs.critical_parallel_evaluation == 'true' }}
+        shell: bash
+        run: bash scripts/ci/sample-critical-resources.sh start
+
       - name: Run critical regression tests
         # Identical filter to the GitHub-hosted variant — the gate is equivalent,
         # only the infrastructure differs.
         if: ${{ needs.classify.outputs.run_critical_tests != 'false' }}
         # Identical strict exit propagation to the GitHub-hosted variant.
         shell: bash
+        env:
+          CRITICAL_TEST_EXTRA_ARGS: ${{ steps.critical_parallel.outputs.critical_test_extra_args }}
+          CRITICAL_TEST_WORKERS: ${{ steps.critical_parallel.outputs.critical_test_workers }}
+          CRITICAL_PARALLEL_MODE: ${{ steps.critical_parallel.outputs.critical_parallel_mode }}
+          CRITICAL_PARALLEL_REASON: ${{ steps.critical_parallel.outputs.critical_parallel_reason }}
         run: |
           set +e
           bash scripts/ci/self-hosted-php.sh php artisan test --filter='FoundationGovernance|Nsf7|NsfGovernance|DmoGovernance|Dmo3|Dq31|Dq3SourceDocumentBatch|Dq2BatchGovernance|Dq1|RmeDoctorCashierCompletionGate|RmeRoomAssignmentGate|MedicalRecordFinalization|CashierBilling|RmePayment|PatientOutstandingReceivableCarryOver|PatientCentricRmWorkspace|RmeVisitConsent|RmeExamConsentOdontogramHistory|LegacyOdontogram|RmeReceiptOnePage|MedicalRecordPageActions|MedicalRecordPrintOdontogramSeparation|RmePrintPatientVisitDuplicate|Odontogram|RepositoryArtifactHygiene|LegacyRme|LegacyMassUpload|UnifiedMedicalRecord|LegacyPatient|LegacyImportHub|LegacyBatchReview|LegacyBatchPublish|ClinicalClock|FrontOffice|PatientEarliestNativeRmeDateResolver|RuntimeIdentityIsolation|DeployHarden|FeatureFlag|Cicd|Devflow|PilotPerformanceSnapshot|MonitoringLogSource|RestoreDrill|ClinicalEvidence|DailyBranch|BranchChange|RmeReportTodayDefault|NewVisitPatientSearch|NewVisitGlobalPatientLookup|QueueProducerConsumerParity|TelkomasBranchCode|SunuBranchCode|SunuClinicRoom|DoctorAccountLink|RmePreConsentFirstPageUiGate|DoctorRoomScoped|DoctorDevice|DoctorAccess|DoctorPwaWebAuthn|ProductionShellCommandGuard|ForbiddenConsoleCommand|Pwa|ObservabilityConsole|ObservabilityTelemetry|PatientMerge|PatientKtp|PrivateDatabaseDump|RmeInvoiceRedesign|RmeBillingRefund|RmeBillingDispute|VisitTypeServerDerivation|VisitDetailClinicalSectionOrder|ClinicOversight|RmeInvoiceCorrection|RmeTariffAuthority|RmeManualPricing|RmeInvoiceExplicitActor|ClinicVisitBranchAuthority|ActiveAccountSession|ClinicVisitPatientSelection|CrossBranchKontrol|ClinicVisitRegistrationConcurrency|PatientOutstandingReceivableCarryOver|RmeControlVisitReceivableCarryOverPayment|SecretFilePermissionHardening|DependencySecurityFloor|AppKeyReencryption|PublicRegistrationClosed|AccountSelfDeletionDenied|Satusehat4aSyntheticRehearsal|Satusehat4aRemediationLifecycle|CsvFormulaInjectionGuard|RmeClinicCalendarBoundary|LabClinicCalendarBoundary|InventoryClinicCalendarBoundary' \
-            2>&1 | tee storage/ci-evidence/nsf-r011-critical-tests.log
+            $CRITICAL_TEST_EXTRA_ARGS 2>&1 | tee storage/ci-evidence/nsf-r011-critical-tests.log
           TEST_STATUS="${PIPESTATUS[0]}"
           set -e
           {
             echo "runner=self-hosted/daengtisia-ci"
             echo "critical_test_exit_status=${TEST_STATUS}"
-            grep -aE '^\s*(Tests:|Fatal error)' storage/ci-evidence/nsf-r011-critical-tests.log | tail -2
+            echo "critical_test_workers=${CRITICAL_TEST_WORKERS} mode=${CRITICAL_PARALLEL_MODE} reason=${CRITICAL_PARALLEL_REASON}"
+            sed 's/\x1b\[[0-9;?]*[A-Za-z]//g' storage/ci-evidence/nsf-r011-critical-tests.log | grep -aE '^\s*(Tests:|Fatal error)' | tail -2
           } | tee -a "$GITHUB_STEP_SUMMARY"
           if grep -qa 'Allowed memory size' storage/ci-evidence/nsf-r011-critical-tests.log; then
             echo "::error::CI runtime ran out of memory — zero tests may have executed."
@@ -733,6 +836,11 @@ jobs:
           set -e
           echo "critical_gate_warning_contract_exit_status=${CONTRACT_STATUS}" | tee -a "$GITHUB_STEP_SUMMARY"
           exit "$CONTRACT_STATUS"
+
+      - name: Stop resource sampler (CI-PERF-04 evaluation)
+        if: ${{ always() && steps.critical_parallel.outputs.critical_parallel_evaluation == 'true' }}
+        shell: bash
+        run: bash scripts/ci/sample-critical-resources.sh stop
 
       - name: Note skipped critical regression tests (docs-only change)
         if: ${{ needs.classify.outputs.run_critical_tests == 'false' }}

@@ -1,0 +1,68 @@
+---
+description: CI-PERF-04-CONTROLLED-PARALLEL-TESTING — the NSF-R011 Critical Gate runs its filter sequentially unless the committed policy .github/ci-policy/critical-parallel-policy.json is ACTIVE; while OFF, pull_request/push/schedule keep the exact pre-CI-PERF-04 command line and the repository variable is ignored; parallelism is reachable only through a labelled evaluation workflow_dispatch; every uncertainty fails toward sequential; both critical variants carry identical steps; the warning contract reads ParaTest's ANSI-styled summary without ever hiding a failure.
+globs:
+  - ".github/ci-policy/critical-parallel-policy.json"
+  - ".github/workflows/foundation-evidence-gates.yml"
+  - "scripts/ci/resolve-critical-parallelism.sh"
+  - "scripts/ci/prepare-parallel-test-databases.sh"
+  - "scripts/ci/sample-critical-resources.sh"
+  - "app/Support/Cicd/CriticalGateWarningContract.php"
+  - "tests/Feature/Cicd/CriticalGateControlledParallelismContractTest.php"
+alwaysApply: false
+---
+
+# Critical Gate controlled parallel testing
+
+## Why
+
+CI-PERF-03 measured ParaTest at 2 and 4 workers on the exact critical filter: 9/9 CI jobs green,
+0 flaky, median 852 s at 4 workers against 1,884 s serial. It also found three conditions that
+made parallelism unsafe to switch on blindly: helpers borrowed across test files (fixed in
+CI-PERF-03), PostgreSQL lock-table exhaustion when worker databases pre-exist (SQLSTATE 53200), and
+an unverified warning contract. CI-PERF-04 found the third one was real: ParaTest prints its
+`Tests:` summary with forced terminal styling, the contract found no summary, and a fully green
+parallel run would have been reported NO_GO.
+
+## Rules
+
+1. **One committed switch.** `.github/ci-policy/critical-parallel-policy.json` `status` is the only
+   switch. `OFF` = every pull_request, push and schedule run executes the critical filter
+   sequentially with the exact pre-CI-PERF-04 command line (the resolver emits an EMPTY argument
+   list). Activation means a reviewed PR setting `ACTIVE` **and** explicit owner activation
+   approval recorded in the CI-PERF-04 report.
+2. **A variable flip never activates.** `CI_CRITICAL_TEST_WORKERS` is ignored while the policy is
+   `OFF`. It only chooses the worker count once the committed policy is `ACTIVE`.
+3. **Evaluation is a labelled manual run.** While `OFF`, the only parallel path is a
+   `workflow_dispatch` with `critical_test_workers` set to an allowed count. It is never a merge
+   gate, it is reported as `CRITICAL_PARALLELISM_EVALUATION_DISPATCH`, and it adds JUnit and resource
+   sampling. Never cite an evaluation run as the gate's verdict for a merge.
+4. **Fail toward sequential.** Unreadable policy, an unknown or duplicated status, a missing worker
+   list, a non-numeric, zero, negative, out-of-list or above-`max_workers` count → 1 worker, no
+   extra arguments. Sequential is the known-good gate: failing toward it can only make the gate
+   slower, never weaker or different.
+5. **Workers are bounded by measured capacity.** `allowed_worker_counts` = 1, 2, 4 and `max_workers`
+   = 4 because the GitHub-hosted runner measured 4 vCPU and 4 workers already saturate it. Raise
+   them only with new runner measurements.
+6. **Both critical variants stay identical.** The resolve, provisioning and sampler steps and the
+   `$CRITICAL_TEST_EXTRA_ARGS` continuation are byte-identical in `critical_test_gate` and
+   `critical_test_gate_self_hosted` except the PHP runner prefix (rule 91). The filter line itself is
+   untouched.
+7. **Drop worker databases before a parallel run.** `<DB_DATABASE>_test_1..N` are dropped first
+   (only those names, only with `APP_ENV=testing`), because pre-existing worker databases exhaust
+   PostgreSQL's lock table when N workers run their first `migrate:fresh` together.
+   `--recreate-databases` is not a substitute on this stack.
+8. **The warning contract normalises styling in memory only.** ECMA-48 control sequences are stripped
+   before parsing; the evidence log on disk is never rewritten; a failure or warning inside colour
+   codes is still counted.
+9. **The Full Suite and the selective module gate stay sequential.** CI-PERF-04 covers the critical
+   filter only.
+10. **No test is excluded to gain speed.** A parallel run must report the same test count as the
+    sequential run on the same SHA; a faster run with fewer tests or corrupted evidence is a failure.
+11. **An evaluation run never shares a SHA with a pull request head.** A dispatched run reports a check
+    named "NSF-R011 Critical Test Gate" on its commit, the same name as the merge gate. Run evaluations on
+    an evaluation-marker commit (an empty commit on top of the candidate, so the tree is identical and the
+    SHA is not), and base every merge decision on the `pull_request` run of the exact head, cited by run
+    ID — never on "the latest green check" for that SHA (independent review, CI-PERF-04).
+12. **The warning contract strips only well-formed sequences.** CSI = parameters `[0-9;?]` then a letter;
+    OSC ends at BEL, `ESC \` or end of line. A malformed sequence loses only its ESC and introducer, so a
+    neighbouring count is never swallowed.
