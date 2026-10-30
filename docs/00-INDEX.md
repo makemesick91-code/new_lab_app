@@ -145,7 +145,7 @@ Nomor ADR berikutnya yang tersedia: **0013**.
   [G7B-SECURITY-GATE-CLOSURE](operations/security-ci-2026-10-30/G7B-SECURITY-GATE-CLOSURE.md),
   [G7B-ENV-COPY-INVENTORY](operations/security-ci-2026-10-30/G7B-ENV-COPY-INVENTORY.md),
   [G7B-SECURITY-GATE-TOOLS](operations/security-ci-2026-10-30/G7B-SECURITY-GATE-TOOLS.md).
-- Penunjukan custodian G7-B dan persiapan escrow dual-custodian (2026-10-30; custodian 2 ditunjuk, custodian 1 menunggu konfirmasi formal, seremoni belum dijalankan, rotasi tetap NO-GO):
+- Penunjukan custodian G7-B dan persiapan escrow dual-custodian (2026-10-30; custodian 2 ditunjuk, custodian 1 menunggu konfirmasi formal, seremoni belum dijalankan, rotasi tetap NO-GO; runbook memuat prosedur pergantian custodian):
   [G7B-CUSTODIAN-APPOINTMENT](operations/security-ci-2026-10-30/G7B-CUSTODIAN-APPOINTMENT.md),
   [G7B-ESCROW-CEREMONY-RUNBOOK](operations/security-ci-2026-10-30/G7B-ESCROW-CEREMONY-RUNBOOK.md).
 - Full Suite otoritatif terkendali (2026-10-30, satu run atas izin owner, PASS 11.953 lulus / 0 gagal):

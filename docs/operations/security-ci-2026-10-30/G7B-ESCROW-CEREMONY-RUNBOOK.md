@@ -10,7 +10,9 @@ kb_updated: 2026-10-30
 prosedur seremoni yang sudah diaudit di
 [G7B-FINAL-READINESS-REPORT](../release-cicd-phase2-2026-10-29/G7B-FINAL-READINESS-REPORT.md), dengan peran
 bernama dari keputusan owner 2026-10-30 ([G7B-CUSTODIAN-APPOINTMENT](G7B-CUSTODIAN-APPOINTMENT.md)).
-Satu-satunya tambahan adalah **langkah 0** (uji pinentry dengan key sekali pakai). Tool tidak diubah.
+Ada dua tambahan terhadap prosedur yang diaudit: **langkah 0** (uji pinentry dengan key sekali pakai) dan
+bagian **[Pergantian custodian](#pergantian-custodian)** (revisi 2026-10-30, diselaraskan dengan pernyataan
+Custodian 2 dan surat pengesahan Custodian 1). Tool tidak diubah.
 Kembali ke [00-INDEX](../../00-INDEX.md).
 
 > Runbook ini dijalankan **oleh manusia** di terminal biasa. Sesi AI atau otomasi tidak boleh menjalankan
@@ -235,8 +237,8 @@ Satu baris per aksi. **Jangan** pernah menulis key, passphrase, atau isi file en
 | Kolom | Isi |
 |---|---|
 | Waktu | Tanggal dan jam WITA |
-| Aksi | `latihan` / `seal` / `verify` / `pemisahan` / `recovery-check` / `pindah-media` / `bersih-host` |
-| Label salinan | `custodian-1-it` atau `custodian-2-manajemen` |
+| Aksi | `latihan` / `seal` / `verify` / `pemisahan` / `recovery-check` / `pindah-media` / `bersih-host`; untuk pergantian juga `penunjukan-pengganti` / `kesesuaian-identitas` / `serah-media` / `berita-acara` / `pemusnahan` / `gagal` |
+| Label salinan | `custodian-1-it`, `custodian-2-manajemen`, atau label pengganti `<slot>-pengganti-<YYYYMMDD>` |
 | Operator | Nama |
 | Custodian yang mengetik passphrase | Nama |
 | Saksi | Nama |
@@ -254,4 +256,151 @@ Satu baris per aksi. **Jangan** pernah menulis key, passphrase, atau isi file en
 - Custodian membawa media, operator menyalin ciphertext dan manifest ke direktori 0700 baru di host,
   mencocokkan sha256 dengan manifest, lalu menjalankan langkah 5 untuk salinan itu saja. Setelahnya
   dilakukan langkah 7 untuk direktori tersebut.
-- Pergantian custodian berarti seal ulang untuk custodian baru, lalu pemusnahan salinan lama yang dicatat.
+- Pergantian custodian mengikuti bagian [Pergantian custodian](#pergantian-custodian). Untuk salinan
+  pengganti, hitungan 90 hari dimulai dari tanggal seal salinan pengganti.
+
+## Pergantian custodian
+
+Bagian ini berlaku bila salah satu custodian tidak lagi menjabat.
+
+**Prinsip: custody lama tetap berlaku sampai penggantinya terverifikasi.** Selama penggantian belum PASS,
+custodian lama tetap menyimpan dan menjaga medianya, dan status salinan lama di catatan custody tidak
+berubah. Media lama tidak pernah dimusnahkan lebih dulu untuk "memberi tempat" bagi pengganti.
+
+Keselarasan dengan dokumen Word di luar repository: pernyataan Custodian 2 (butir 9) dan surat pengesahan
+Custodian 1 menyatakan bahwa media lama **hanya boleh** dimusnahkan setelah salinan custodian pengganti
+lulus seal, verify, dan recovery check, dan bahwa custodian lama tetap menyimpan medianya sampai saat itu.
+Bagian ini memuat ketentuan yang sama dan menambahkan dua syarat lagi sebelum pemusnahan: serah terima media
+baru yang tercatat dan berita acara yang ditandatangani. Kedua dokumen Word menyebut syarat minimum, jadi
+tambahan ini tidak bertentangan dengannya. Dokumen Word tidak diubah.
+
+### Syarat sebelum pergantian
+
+1. **Penunjukan resmi.** Owner menunjuk custodian pengganti secara tertulis dan bertanggal, dengan menyebut
+   slot yang diganti (`custodian-1-it` atau `custodian-2-manajemen`) dan nama penggantinya. Usulan bukan
+   penunjukan (aturan 210 no. 12 dan 17).
+2. **Satu slot per seremoni.** Custodian yang tetap menjabat menjadi saksi untuk semua langkah milik
+   pengganti. Bila kedua custodian harus diganti sekaligus, berhenti: prosedur ini tidak mencakup kasus itu
+   dan perlu keputusan owner tersendiri.
+3. **Data catatan custody tersedia.** Identitas key (16 hex) dan sha256 ciphertext lengkap dari salinan yang
+   diganti dan dari salinan custodian yang tetap diambil dari catatan custody. Media keduanya tidak perlu
+   dibawa ke host.
+4. **Syarat umum tetap berlaku.** Syarat 2, 5, 6, dan 7 pada [Syarat sebelum mulai](#syarat-sebelum-mulai)
+   berlaku, dengan custodian pengganti di posisi custodian yang diganti: custodian pengganti hadir secara
+   fisik, membawa media offline miliknya sendiri yang kosong dan berlabel (disimpan terpisah dari media
+   custodian yang tetap), dan memakai passphrase kuat miliknya sendiri.
+5. **Operator host.** Bila slot yang diganti adalah custodian 1 yang juga operator host, owner menunjuk
+   operator host untuk seremoni ini sebelum mulai.
+6. Custodian lama **tidak** perlu hadir dan passphrase-nya **tidak** diperlukan, karena seal memakai key
+   aktif di host. Custodian lama hanya diperlukan untuk menyerahkan media lama di langkah P10.
+
+### Variabel tambahan
+
+```bash
+L=<slot>-pengganti-<YYYYMMDD>     # contoh: custodian-2-manajemen-pengganti-20270115
+I=<identitas key salinan yang diganti, 16 hex, dari catatan custody>
+S_LAMA=<sha256 ciphertext salinan yang diganti, dari catatan custody>
+S_TETAP=<sha256 ciphertext salinan custodian yang tetap, dari catatan custody>
+```
+
+Label pengganti selalu baru, tidak memakai ulang label lama, supaya manifest salinan pengganti tidak bisa
+tertukar dengan salinan lama di catatan custody. `D` adalah direktori kerja baru untuk seremoni ini.
+
+### Langkah
+
+**P1 — Pemeriksaan dan unggah tool.** Jalankan [Sebelum mulai](#sebelum-mulai--pemeriksaan-baca-saja) dan
+[Langkah 1](#langkah-1--unggah-tool). Hasil wajibnya sama.
+
+**P2 — Uji pinentry.** Jalankan [Langkah 0](#langkah-0--uji-pinentry-dengan-key-sekali-pakai) dengan custodian
+pengganti mengetik passphrase latihan. Hasil wajibnya sama, diakhiri `LATIHAN_DIHAPUS`.
+
+**P3 — Seal.** Custodian pengganti mengetik passphrase sungguhan. Custodian yang tetap menyaksikan hasil,
+bukan passphrase:
+
+```bash
+ssh -t "$H" "bash $D/$T --mode seal --custodian $L --env $E --out $D/$L.gpg"
+```
+
+Hasil wajib: `SEALED custodian=<label pengganti> identity=<16 hex> ciphertext_sha256=<awalan>…`.
+
+**P4 — Verify.** Custodian pengganti mengetik passphrase-nya:
+
+```bash
+ssh -t "$H" "bash $D/$T --mode verify --in $D/$L.gpg --env $E"
+```
+
+Hasil wajib: `VERIFY MATCH custodian=<label pengganti> — escrowed key == live key`.
+
+**P5 — Kesesuaian identitas.** Salinan pengganti harus memuat key yang sama dengan salinan yang diganti,
+dalam ciphertext yang berbeda dari kedua salinan yang tercatat:
+
+```bash
+ssh "$H" "cd $D && python3 -I - $L.gpg.manifest $I $S_LAMA $S_TETAP" <<'PY'
+import json, sys
+m = json.load(open(sys.argv[1]))
+ident, s_lama, s_tetap = sys.argv[2:5]
+print('identitas_sama=%s ciphertext_baru=%s' % (
+    m['key_identity'] == ident,
+    m['ciphertext_sha256'] not in (s_lama, s_tetap),
+))
+PY
+```
+
+Hasil wajib: `identitas_sama=True ciphertext_baru=True`. Kalau identitas berbeda, misalnya karena key sudah
+dirotasi sejak salinan lama disegel, salinan pengganti **tidak** menggantikan salinan lama. Ikuti
+[Kalau gagal](#kalau-gagal).
+
+**P6 — Recovery check independen.** Hanya salinan pengganti dan passphrase custodian pengganti yang dipakai.
+Salinan lama dan salinan custodian yang tetap tidak dibawa ke host dan tidak dibuka:
+
+```bash
+ssh -t "$H" "bash $D/$T --mode recovery-check --in $D/$L.gpg --env $E --app-dir $A"
+```
+
+Hasil wajib sama dengan [Langkah 5](#langkah-5--recovery-check-per-salinan): baris `A0` dengan semua nilai
+tidak terbaca, baris `A` dengan previous sama dengan total dan tidak terbaca 0, lalu `RECOVERY CHECK PASS`.
+Setelah run, pastikan 0 database `dms_g7b%`.
+
+**P7 — Pindah ke media pengganti dan serah terima.** Jalankan [Langkah 6](#langkah-6--pindah-ke-media-custodian)
+untuk satu salinan, `$L.gpg` dan `$L.gpg.manifest`, langsung ke media custodian pengganti. Hasil wajib:
+`<label pengganti> COCOK`. Lepas media dengan aman dan serahkan ke custodian pengganti di hadapan saksi.
+Catat serah terima: waktu, penerima, saksi, jenis dan label fisik media, dan sha256 ciphertext lengkap.
+
+**P8 — Bersihkan host.** Jalankan [Langkah 7](#langkah-7--bersihkan-host) untuk `$L.gpg`, `$L.gpg.manifest`,
+dan `$D/$T`, per path. Hasil wajib: `HOST_BERSIH` dan `0`.
+
+**P9 — Berita acara.** Buat berita acara pergantian custodian di luar repository. Isinya:
+
+- dasar penunjukan custodian pengganti (tanggal dan penanda tangan);
+- slot yang diganti, nama custodian lama, dan nama custodian pengganti;
+- hasil P2 sampai P8, termasuk identitas key dan sha256 ciphertext lengkap salinan pengganti;
+- catatan serah terima media baru;
+- pernyataan bahwa penggantian PASS dan media lama boleh dimusnahkan.
+
+Berita acara ditandatangani oleh owner atau pejabat yang diberi wewenang owner, custodian pengganti,
+custodian yang tetap sebagai saksi, dan operator host. Tanggal ditulis tangan pada hari penandatanganan.
+Berita acara tidak memuat key, passphrase, isi file environment, atau alamat host.
+
+**P10 — Pemusnahan media lama.** Baru boleh dilakukan setelah P2 sampai P8 semuanya PASS **dan** berita acara
+P9 sudah ditandatangani. Custodian lama menyerahkan medianya. Sebelum dimusnahkan, sha256 file di media itu
+boleh dicocokkan dengan sha256 salinan lama di catatan custody, supaya yang dimusnahkan memang salinan itu.
+Media dimusnahkan secara fisik di hadapan saksi, karena menghapus file di media flash tidak menjamin datanya
+hilang. Catat waktu, cara, pelaksana, dan saksi, lalu tandai salinan lama `DIMUSNAHKAN` di catatan custody.
+Sejak itu slot tersebut dipegang oleh salinan pengganti.
+
+### Kalau gagal
+
+Penggantian gagal bila salah satu hasil wajib P2 sampai P8 tidak tercapai, atau berita acara P9 belum
+ditandatangani. Dalam keadaan itu:
+
+1. Berhenti. **Jangan musnahkan media lama.**
+2. Hapus salinan pengganti dan manifest-nya dari host per path, lalu pastikan 0 database `dms_g7b%`. Bila
+   salinan pengganti sudah tersalin ke media baru, salinan itu tidak berlaku: hapus file itu dari media dan
+   catat penghapusannya.
+3. Custody lama tetap berlaku. Custodian lama tetap menyimpan dan menjaga medianya, dan status salinan lama
+   di catatan custody tidak berubah, sampai ada salinan pengganti yang lulus seluruh langkah di atas.
+4. Catat kegagalan di catatan custody dengan aksi `gagal` dan baris keluaran tool yang relevan, tanpa key dan
+   passphrase, lalu laporkan ke owner.
+5. Bila media lama tidak dapat diserahkan (hilang, rusak, atau custodian lama tidak dapat dihubungi), catat
+   dan laporkan ke owner. Penggantian tetap dapat dinyatakan PASS bila P2 sampai P9 PASS, tetapi pemusnahan
+   tidak dapat dicatat. Salinan yang tidak kembali tetap menjadi risiko yang perlu diputuskan owner.
