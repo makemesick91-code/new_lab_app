@@ -152,3 +152,19 @@ Custodian 1 (IT) = Raushan Fikri Ridha — **proposed, pending formal owner conf
     0 `dms_g7b%` databases. Until then the record says NOT EXECUTED, never a projected PASS.
     Even then the report authorises nothing: rotation still needs a retention decision, a
     window outside clinic and cashier hours, and a separate explicit execution approval.
+21. **A custodian is replaced, never left vacant: the old copy outlives every failure.**
+    Replacing one custodian needs, in order: a dated, written owner appointment of the
+    successor naming the slot; a new copy sealed under the successor's own passphrase with
+    a new label; `verify` MATCH against the live key; the new copy's key identity equal to
+    the identity recorded for the copy it replaces, with a ciphertext different from both
+    recorded copies; an independent `recovery-check` of the new copy alone with the
+    successor's passphrase; transfer to the successor's own offline media with a matching
+    sha256 and a recorded hand-over; and a signed handover report (berita acara). The old
+    media is destroyed physically, witnessed and recorded, only after every step passes.
+    Any failure keeps the old custody in force: the old custodian keeps the media, the
+    failed copy is removed by path, and the owner is told. A key identity that differs
+    from the recorded one (for example after a rotation) means the new copy replaces
+    nothing. One slot per ceremony; replacing both custodians at once is out of scope and
+    needs its own owner decision. The custodians' signed Word statements set the minimum
+    (destroy only after seal, verify and recovery-check pass); the runbook may add steps,
+    never remove one. Steps: `G7B-ESCROW-CEREMONY-RUNBOOK.md` § Pergantian custodian.

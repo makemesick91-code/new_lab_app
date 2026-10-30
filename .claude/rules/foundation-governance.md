@@ -206,6 +206,11 @@ code, then the canonical rule, and report the drift.
   sha256-verified file with `ssh -t` (never `bash -s` on stdin) after a throwaway-key pinentry test. Write the final
   G7-B readiness report only after both copies pass; it never authorises rotation. Current: custodian 2 Jene Monika
   APPOINTED 2026-10-30, custodian 1 pending formal confirmation. Source: `.cursor/rules/210-…` rules 17–20.
+- **AIR-FND-38** Replacing a G7-B custodian keeps the old custody in force until the successor's copy is
+  appointed, sealed, `verify` MATCH, identity-equal to the recorded copy it replaces, independently `recovery-check`
+  PASS, handed over on the successor's own media and recorded in a signed berita acara; only then is the old media
+  destroyed, witnessed. Any failure: stop, remove the failed copy by path, keep the old media. One slot at a time.
+  Source: `.cursor/rules/210-…` rule 21.
 
 ## Current posture (snapshot 2026-10-25 — verify before relying on it)
 
