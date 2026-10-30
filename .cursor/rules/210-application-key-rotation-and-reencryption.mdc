@@ -120,3 +120,35 @@ before the old one can be removed.
     the newest pre-deploy backup into a scratch database, passes keys through the process
     environment only, and drops the scratch database on every exit path. Production
     configuration, database and the active environment file are never written.
+
+## Custodian appointment and the escrow ceremony (G7-B, 2026-10-30)
+
+Owner decision 2026-10-30: **custodian 2 (management) = Jene Monika, Supervisor RME — APPOINTED.**
+Custodian 1 (IT) = Raushan Fikri Ridha — **proposed, pending formal owner confirmation.** Record:
+`docs/operations/security-ci-2026-10-30/G7B-CUSTODIAN-APPOINTMENT.md`; ceremony steps:
+`docs/operations/security-ci-2026-10-30/G7B-ESCROW-CEREMONY-RUNBOOK.md`.
+
+17. **Appointed is not verified.** A custodian moves PROPOSED → APPOINTED (owner decision,
+    dated) → SEALED (own copy sealed, `verify` MATCH against the live key) → VERIFIED (own
+    copy passes `recovery-check` with the custodian's own passphrase). The gate's
+    SECOND_CUSTODIAN / PRIMARY_CUSTODIAN conditions count only VERIFIED. A proposal or an
+    appointment never satisfies them, and a sealed copy alone never does either.
+18. **The ceremony is human.** No AI or automation session seals, verifies or
+    recovery-checks a real escrow copy, and no one types, dictates or stores a passphrase on
+    a custodian's behalf. An agent session has no terminal for the prompt; it may only run
+    the read-only pre-checks. Machine-generated passphrases exist only inside `--mode
+    rehearse`. During passphrase entry no screen recording, screen sharing, remote desktop
+    or assistant session is active on the operator's terminal.
+19. **Run the escrow tool from a sha256-verified file with `ssh -t`, never through
+    stdin.** The tool names `GPG_TTY` only when its stdin is a terminal; `bash -s < tool`
+    leaves pinentry without a terminal. Both production rehearsals used loopback
+    passphrases, so the interactive pinentry path had never run on the host: the ceremony
+    first seals and verifies a throwaway random key with a practice passphrase (step 0),
+    then destroys it, before the live key is touched.
+20. **The final G7-B readiness report follows evidence, not intent.** It is written only after
+    both custodians' copies are sealed, `verify` MATCH, show the same key identity with
+    different ciphertext, pass `recovery-check` each with their own passphrase, sit on
+    separate offline media with a matching sha256, and the host holds 0 escrow files and
+    0 `dms_g7b%` databases. Until then the record says NOT EXECUTED, never a projected PASS.
+    Even then the report authorises nothing: rotation still needs a retention decision, a
+    window outside clinic and cashier hours, and a separate explicit execution approval.

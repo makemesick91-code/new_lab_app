@@ -200,6 +200,12 @@ code, then the canonical rule, and report the drift.
   retention decision, recovery verified from the real custodians' escrow copies, passing re-encryption/rollback/backup
   rehearsals on a disposable copy, and a separate explicit execution approval. Any unmet condition is NO-GO. An Android
   signing-key custody assignment is never evidence of application-key custody. Source: `.cursor/rules/210-…` rules 12–16.
+- **AIR-FND-37** A G7-B custodian counts for the rotation gate only when VERIFIED (own copy sealed, `verify` MATCH,
+  `recovery-check` PASS with the custodian's own passphrase); PROPOSED or APPOINTED never counts. The escrow ceremony is
+  human: no agent seals, verifies or recovery-checks a real copy or handles a passphrase. Run the escrow tool from a
+  sha256-verified file with `ssh -t` (never `bash -s` on stdin) after a throwaway-key pinentry test. Write the final
+  G7-B readiness report only after both copies pass; it never authorises rotation. Current: custodian 2 Jene Monika
+  APPOINTED 2026-10-30, custodian 1 pending formal confirmation. Source: `.cursor/rules/210-…` rules 17–20.
 
 ## Current posture (snapshot 2026-10-25 — verify before relying on it)
 
