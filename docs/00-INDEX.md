@@ -147,6 +147,8 @@ Nomor ADR berikutnya yang tersedia: **0013**.
   [G7B-SECURITY-GATE-TOOLS](operations/security-ci-2026-10-30/G7B-SECURITY-GATE-TOOLS.md).
 - Full Suite otoritatif terkendali (2026-10-30, satu run atas izin owner, PASS 11.953 lulus / 0 gagal):
   [FULL-SUITE-CONTROLLED-AUTHORITATIVE-1](operations/security-ci-2026-10-30/FULL-SUITE-CONTROLLED-AUTHORITATIVE-1.md).
+- CI-PERF-04 pengujian paralel terkendali di Critical Gate (2026-10-30; dibangun dan dievaluasi, 4 worker 2,50× lebih cepat, tetap OFF tanpa persetujuan aktivasi owner):
+  [CI-PERF-04-CONTROLLED-PARALLEL-TESTING](operations/security-ci-2026-10-30/CI-PERF-04-CONTROLLED-PARALLEL-TESTING.md).
 - CI/CD Fase 2 (2026-10-30; durasi workflow −60%, paralel diukur tetapi belum diaktifkan):
   [CICD-PHASE2-FINAL-SUMMARY](operations/release-cicd-phase2-2026-10-29/CICD-PHASE2-FINAL-SUMMARY.md),
   [CICD-PHASE2-BASELINE](operations/release-cicd-phase2-2026-10-29/CICD-PHASE2-BASELINE.md),
