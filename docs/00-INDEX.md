@@ -145,6 +145,8 @@ Nomor ADR berikutnya yang tersedia: **0013**.
   [G7B-SECURITY-GATE-CLOSURE](operations/security-ci-2026-10-30/G7B-SECURITY-GATE-CLOSURE.md),
   [G7B-ENV-COPY-INVENTORY](operations/security-ci-2026-10-30/G7B-ENV-COPY-INVENTORY.md),
   [G7B-SECURITY-GATE-TOOLS](operations/security-ci-2026-10-30/G7B-SECURITY-GATE-TOOLS.md).
+- Full Suite otoritatif terkendali (2026-10-30, satu run atas izin owner, PASS 11.953 lulus / 0 gagal):
+  [FULL-SUITE-CONTROLLED-AUTHORITATIVE-1](operations/security-ci-2026-10-30/FULL-SUITE-CONTROLLED-AUTHORITATIVE-1.md).
 - CI/CD Fase 2 (2026-10-30; durasi workflow −60%, paralel diukur tetapi belum diaktifkan):
   [CICD-PHASE2-FINAL-SUMMARY](operations/release-cicd-phase2-2026-10-29/CICD-PHASE2-FINAL-SUMMARY.md),
   [CICD-PHASE2-BASELINE](operations/release-cicd-phase2-2026-10-29/CICD-PHASE2-BASELINE.md),
