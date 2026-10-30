@@ -464,6 +464,14 @@ other scope they remain PENDING. D4, D5, D6, D18, D25 and D26 (refund, settlemen
 reversal, patient credit) are untouched and remain PENDING.
 D28 (above) is an interim enforcement of an owner instruction, not a decision of
 D21g or D22 — both stay PENDING.
+
+*Since 2026-10-31 (`PREPARATION-RME-BILLING-REFUND-REQUEST-APPROVAL-1`, rule 213):* a decision
+package for refund request & approval (Sprint 4/7) is written in
+`docs/decisions/rme-refund-request-approval-owner-decision-package.md` as proposals **RF-1 … RF-14**
+(RF-1 ↔ D4, RF-2 ↔ D18, RF-9 ↔ D5, RF-10 ↔ D25, RF-12 ↔ D6, RF-13 ↔ D26; the others are new
+questions). **None is approved.** D4, D5, D6, D18, D25 and D26 stay
+`PENDING_OWNER_DECISION`. The task brief's Sprint 4/Sprint 5 split is an owner task instruction about
+scope and is not recorded as an approval of D18.
 See `docs/sprints/feature-rme-invoice-correction-receipt-foundation-1.md` §3 for
 their text. Decision codes are per register — the KTP-OCR "D7" is a different decision.
 
