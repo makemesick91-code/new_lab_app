@@ -188,6 +188,10 @@ code, then the canonical rule, and report the drift.
 - GLOBAL TEMPORARY FULL-SUITE POLICY: `status: ACTIVE` in `.github/ci-policy/full-suite-policy.json`. The consolidated
   closure (tag `authoritative-consolidated-full-suite-2-final-program-closure-go`) did **not** retire it. Fix sprints
   report `FULL_SUITE_STATUS = SKIPPED_BY_GLOBAL_TEMPORARY_POLICY` and `FULL_SUITE_EXECUTION_COUNT = 0`.
+- 2026-10-30: the owner authorised ONE controlled Full Suite under the still-ACTIVE policy. Run `40981123068` on
+  `23868da0` (dispatched on a dedicated ref so a base push could not cancel it): `1 risky, 5 skipped, 11953 passed`,
+  0 failed — **PASS**. That authorisation is consumed; a new run needs a new owner authorisation. Evidence:
+  `docs/operations/security-ci-2026-10-30/FULL-SUITE-CONTROLLED-AUTHORITATIVE-1.md`.
 - Critical filter measured 2026-10-26: 84 tokens, byte-identical in both variants; `critical_gate_mandatory_suites`
   holds 163 entries; `expected_warning_count` = 0.
 - Runner routing defaults to `github-hosted`. The self-hosted runner in service runs native mode (host PHP 8.3, native
