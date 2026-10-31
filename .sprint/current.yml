@@ -1,25 +1,25 @@
-# SECURITY-F4B4-CLINIC-CALENDAR-INVENTORY-ANALYTICS-1 — part 4 of 4 of audit item F-4b, owner decision D15 (2026-10-28):
-# inventory business dates use the clinic calendar (Asia/Makassar, UTC+8). A UTC "today" named the
-# previous clinic day between 00:00 and 08:00 WITA. This part: analytics windows, dead-stock and aging days, and the daily summary date.
-# One seam, App\Modules\Inventory\Support\InventoryBusinessCalendar, delegates to ClinicalClock.
-# F-4b moves 24 application files; sprint:scope-audit caps a RUNTIME_FIX at 10, so it is split by
-# concern rather than reclassified. Event timestamps stay UTC instants; entered business dates are
-# kept as entered; no stored date is rewritten and no backfill runs. No migration, no route, no permission.
+# FIX-CLINIC-OVERSIGHT-DATE-RANGE-TEST-DETERMINISM-1 — test-only CI regression fix, owner approved 2026-10-31.
+# ClinicOversightDashboardDateRangeTest "intersects the branch filter with the range and fails closed on a forged
+# branch" created its invoice visit without a visit_date, so covVisit() used the clinical TODAY, while it asserted
+# against the fixed range 2026-10-12..2026-10-30 WITA. It passed only while the WITA date lay inside that range and
+# has failed every NSF-R011 critical gate since 2026-10-31 00:00 WITA (= 2026-10-30 16:00 UTC). The visit date is now
+# pinned to 2026-10-15, the clinic day of its payment. No assertion changed (95 tests / 1260 assertions identical).
+# No app/, config/, database/, routes/, resources/, scripts/ or CI workflow change. No deploy; no GO tag (CG-16).
 # Carried forward: LEGACY-RME-PROGRAM-CLOSURE-1 stays CLOSED and inherited.
-id: SECURITY-F4B4-CLINIC-CALENDAR-INVENTORY-ANALYTICS-1
+id: FIX-CLINIC-OVERSIGHT-DATE-RANGE-TEST-DETERMINISM-1
 type: RUNTIME_FIX
-module: Inventory
-title: "Inventory analytics on the clinic calendar: periods, dead stock, aging and summary dates"
+module: TEST_INFRASTRUCTURE
+title: "Clinic Oversight date-range test no longer depends on the day it runs"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
-runtime_change: true
+runtime_change: false
 schema_change: false
 frontend_change: false
-security_impact: true
+security_impact: false
 branch_isolation_impact: false
 ledger_impact: false
-deploy_required: true
+deploy_required: false
 browser_required: false
-test_profiles: [focused, security_regression]
-go_tag: security-f4b4-clinic-calendar-inventory-analytics-1-go
-inherits_parent_go: security-f8c-env-copy-backup-classification-1-go
+test_profiles: [focused, clinic_oversight]
+go_tag: fix-clinic-oversight-date-range-test-determinism-1-go
+inherits_parent_go: post-audit-f4bc-release-1-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
