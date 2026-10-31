@@ -115,12 +115,32 @@ authority from request input or deadlocks against the correction, payment, dispu
 
 ## 5. Production posture after deploy
 
-* Three new tables, all empty. Flag OFF ⇒ every refund route 404, every service call refused, the cashier
-  page unchanged (no query).
+* Three new tables, all empty. Flag OFF ⇒ every operational refund route 404, every service call refused, the
+  cashier page unchanged (no query). The read-only oversight pages stay reachable for their readers and show
+  an empty list (decision 8).
 * Permissions seeded, but nobody can act: the pilot identity allowlist is empty and the flag is off.
 * Activation is a separate decision with the RF-3 order: Sprint 2 GO → F-17 deployed and verified →
   post-payment correction activated → a real OPEN obligation → a real Front Office maker and an
   independently identified reviewer with verified human separation → the Owner's activation approval.
+
+### 5a. Deploy evidence (2026-10-31)
+
+| Item | Value |
+|---|---|
+| Merge | PR #569, squash `9826bd69`, tree `a158e048` == candidate `7896c5bf` |
+| CI | run 41185486202 on `7896c5bf`: Classifier, Quality, Critical (7230 passed, 0 failed), Selective, Android, NSF-9, NSF-10 all SUCCESS; Full Suite SKIPPED by the standing policy (not a pass) |
+| First CI run | `0ae1a92e` failed the critical gate on two governance pins (§4) — fixed in `7896c5bf`; the exact gate filter was then run locally on PostgreSQL 16: 7225 passed, 5 skipped (GD-guarded legacy PDF tests; GD is installed in CI) |
+| Deploy | `scripts/deploy-vps-runner.sh start` on the VPS: exit=0, `DEPLOY OK: 20261031-093605`, `DEPLOY_HEAD_TARGET_MATCH=YES` |
+| Backup | `pre_auto_deploy_20261031-093605.sql` (32 MB, 0640) before migrating |
+| Migrations | `2026_10_31_200001…200003` ran (batch 89); 13 CHECKs incl. `trx_rme_refund_req_revoke_not_maker_chk`; 0 rows in all three tables |
+| RBAC | `PermissionSeeder` → `RoleSeeder` → `permission:cache-reset`: exactly 7 grants added (Front Office request; Supervisor RME and Kepala Cabang approve; Owner `view_billing_correction_oversight`; Super Admin request/approve and the pre-existing `manage_rme_billing_dispute_reviewers` it lacked), **0 removed**; the manually created `Tester RME` role is not touched by `RoleSeeder` |
+| Flags | `rme.billing_refund_request` OFF (default, no override); `rme.invoice_postpayment_correction` OFF; `rme.invoice_correction` unchanged (pre-payment SPN4 pilot) |
+| Reconciliation | financial fingerprint identical before and after (8 invoices Rp 12.548.000; 9 payments Rp 10.548.000; 1 pre-payment correction APPLIED; 0 obligations; audit max id unchanged) — only the new tables and the migration count differ |
+| Health | `/login`, `/health/live`, `/health/ready`, `/health/lb` 200 over the canonical domain; refund pages 302 to login for a guest; services active; 0 failed jobs; 0 new application errors |
+| GO tag | `feature-rme-billing-refund-request-approval-1-implementation-go` @ `9826bd69`, exact match on the VPS — an IMPLEMENTATION GO with the flag OFF, not a refund feature GO and not a pilot activation |
+
+Preceded the same day by `HARDENING-RME-OWNER-REFERENCE-REGISTRY-1` (PR #568, `61450801`, tag
+`hardening-rme-owner-reference-registry-1-go`), deployed and verified first as RF-3 requires.
 
 ## 6. Rollback
 

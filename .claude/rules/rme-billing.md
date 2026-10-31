@@ -237,7 +237,8 @@ code, then the canonical rule, and report the drift.
 - Receipt snapshots written by every payment regardless of flags; none observed live as of 2026-10-26.
 - Dispute hold live on all branches; one SPN4 reviewer designation as of 2026-10-25. Payment idempotency live; older
   payments have no submission row. Pricing MANUAL everywhere; strict tariff mode and price exceptions OFF.
-- **Built, flag OFF:** refund request & approval (rule 215; D4 via RF-1, D18 via RF-2). **Not built:** refund
+- **Deployed, flag OFF:** refund request & approval (rule 215; D4 via RF-1, D18 via RF-2; runtime `9826bd69`, 2026-10-31;
+  identity allowlist EMPTY, nobody can act); Owner reference registry (rule 214, `61450801`). **Not built:** refund
   settlement (D5/D25 approved as Sprint 5 policy), reversal (D26 excluded), patient credit (D6 excluded), Rp0
   adjustment (Kontrol/Konsultasi). **PENDING owner decisions:** D21c discount policy, D21g Rp0 lines, D22 Rp0 zombie
   completion, D24 `paid_at` backdating. A historical Rp0 UNPAID SPN4 invoice stays untouched.
