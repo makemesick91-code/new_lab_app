@@ -89,7 +89,9 @@ decisions: `docs/decisions/rme-refund-request-approval-owner-decision-package.md
 
 ## E. Never
 
-* Settle, pay out, credit, reverse or net anything, or add a settlement route, permission, method or status.
+* Settle, pay out, credit, reverse or net anything from the REQUEST service. Since rule 216
+  (FEATURE-RME-REFUND-SETTLEMENT-1) the payout is a separate capability with its own service, permission
+  (`settle_rme_refund`, no role), flag and routes; only it may move APPROVED → SETTLED.
 * Grant `request_rme_refund` beyond Front Office, or `approve_rme_refund` to Owner, Finance Klinik, Data
   Analyst, Doctor, Perawat, Kasir, Front Office or Admin Klinik. Owner gets `view_billing_correction_oversight`
   only (RF-8a), never `export_oversight_data`.

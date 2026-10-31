@@ -26,12 +26,15 @@ use App\Models\User;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Models\RmeInvoiceCorrection;
 use App\Modules\RmeInvoice\Models\RmeRefundRequest;
+use App\Modules\RmeInvoice\Models\RmeRefundSettlement;
 use App\Modules\RmeInvoice\Services\RmeBillingDisputeService;
 use App\Modules\RmeInvoice\Services\RmeInvoiceCorrectionService;
 use App\Modules\RmeInvoice\Services\RmePaymentService;
 use App\Modules\RmeInvoice\Services\RmeRefundRequestService;
+use App\Modules\RmeInvoice\Services\RmeRefundSettlementService;
 use App\Modules\User\Services\UserService;
 use Illuminate\Contracts\Console\Kernel;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 
 $payload = json_decode((string) base64_decode((string) ($argv[1] ?? ''), true), true);
@@ -104,6 +107,31 @@ try {
                 RmeInvoice::query()->findOrFail((int) $step['invoice']),
                 User::query()->findOrFail((int) $step['actor']),
                 (array) $step['data'],
+            ),
+            // FEATURE-RME-REFUND-SETTLEMENT-1 — the payout races
+            // (RmeRefundSettlementConcurrencyTest): the REAL settlement service
+            // holding its invoice / obligation / request / settlement locks.
+            'start_settlement' => app(RmeRefundSettlementService::class)->start(
+                RmeRefundRequest::query()->findOrFail((int) $step['request']),
+                User::query()->findOrFail((int) $step['actor']),
+                (array) $step['data'],
+            ),
+            'confirm_settlement' => app(RmeRefundSettlementService::class)->confirm(
+                RmeRefundSettlement::query()->findOrFail((int) $step['settlement']),
+                User::query()->findOrFail((int) $step['actor']),
+                (array) $step['data'],
+                isset($step['evidence']) ? new UploadedFile((string) $step['evidence'], basename((string) $step['evidence']), null, null, true) : null,
+            ),
+            'report_settlement_unknown' => app(RmeRefundSettlementService::class)->reportUnknown(
+                RmeRefundSettlement::query()->findOrFail((int) $step['settlement']),
+                User::query()->findOrFail((int) $step['actor']),
+                ['outcome_note' => (string) $step['note']],
+            ),
+            'abort_settlement' => app(RmeRefundSettlementService::class)->abort(
+                RmeRefundSettlement::query()->findOrFail((int) $step['settlement']),
+                User::query()->findOrFail((int) $step['actor']),
+                (array) $step['data'],
+                isset($step['evidence']) ? new UploadedFile((string) $step['evidence'], basename((string) $step['evidence']), null, null, true) : null,
             ),
             default => throw new InvalidArgumentException('Unknown race step '.(string) $step['kind']),
         };

@@ -432,3 +432,15 @@ implementasi transaksi keuangan lain, dan **bukan** izin aktivasi.
   sebelum refund menjadi konsumen keduanya.
 * **Aktivasi refund** = keputusan Owner tersendiri (RF-3 langkah 6), dengan identitas pilot nyata (RF-1a).
 * **Sprint 5:** penunjukan aktor pembayar (RF-10), implementasi metode dan bukti (RF-9), aturan waktu (RF-11).
+
+### 7.7 Catatan implementasi Sprint 5 (FEATURE-RME-REFUND-SETTLEMENT-1, 2026-10-31)
+
+| Keputusan | Implementasi | Status |
+|---|---|---|
+| **RF-9 (D5) = C** | Metode `BANK_TRANSFER` dan `CASH` saja, masing-masing dengan bukti sesuai metode (bukti transfer bank; tanda terima bertanda tangan penerima). Hanya 4 digit terakhir rekening yang disimpan. Tidak ada API bank. | `IMPLEMENTED`, flag OFF |
+| **RF-10 (D25) = B** | Pembayar ≠ penyetuju di service dan CHECK PostgreSQL; pembuat boleh menjadi pembayar bila ditunjuk tersendiri. Izin `settle_rme_refund` tidak diberikan ke peran mana pun (termasuk `*` Super Admin); daftar pembayar `pilot.settlers` kosong. | `IMPLEMENTED`; **penunjukan pembayar: `PENDING_OWNER_DESIGNATION`** |
+| **RF-11** | `settled_at` = waktu server; tidak ada isian tanggal oleh pengguna dan tidak ada rentang mundur. Waktu transfer sebenarnya ada di bukti. | `IMPLEMENTED` |
+
+Yang masih memerlukan keputusan Owner sebelum aktivasi: (1) nama orang yang ditunjuk sebagai pembayar per
+cabang, (2) pelatihan SOP `docs/runbooks/rme-refund-settlement-sop.md`, (3) persetujuan aktivasi tersendiri
+(`ACTIVATION-RME-REFUND-SETTLEMENT-1`). Implementasi tidak menunjuk siapa pun.

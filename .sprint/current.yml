@@ -1,27 +1,27 @@
-# FEATURE-RME-BILLING-REFUND-REQUEST-APPROVAL-1 — rule 215, Sprint 4/7. The refund REQUEST and its decision
-# for an OPEN overpayment obligation (owner decisions RF-1…RF-14, RF-1a, RF-8a of 2026-10-31). Never money:
-# settlement is Sprint 5. Front Office maker at its working branch; reviewer Super Admin / Supervisor RME /
-# Kepala Cabang by role and server-resolved branch scope; maker != checker per account. Owner reference
-# consumed in the shared registry (rule 214, second consumer); patient reference in its own registry.
-# Three additive migrations. Flag rme.billing_refund_request default OFF; pilot SPN4 with an EMPTY identity
-# allowlist, so nothing is activated and nobody can act.
-# Type FOUNDATION_SPRINT: the change spans four modules (RmeInvoice, AccessControl, ClinicOversight,
-# PatientMerge), so the stricter cross-module profile applies (audit level 3).
+# FEATURE-RME-REFUND-SETTLEMENT-1 — rule 216, Sprint 5/7. Records that the money of an APPROVED refund
+# request actually left the clinic (owner decisions RF-9 C, RF-10 B, RF-11 of 2026-10-31). Bank transfer and
+# cash only, method-specific evidence, server time, full amount only. Settler != approver per account
+# (service + PostgreSQL CHECK); settle_rme_refund held by NO role (not even Super Admin's '*') and the settler
+# designation list ships EMPTY, so nobody can settle. Net received = payments - SETTLED refunds, adopted by
+# every balance reader in one change (RFS-1); incoming payments are never written. Two additive migrations.
+# Flag rme.billing_refund_settlement default OFF and requires rme.billing_refund_request.
+# Type FOUNDATION_SPRINT: the change spans RmeInvoice, ClinicOversight, Reporting, RmeDashboard,
+# AccessControl and two foundation services, so the stricter cross-module profile applies (audit level 3).
 # Carried forward: LEGACY-RME-PROGRAM-CLOSURE-1 stays CLOSED and inherited.
-id: FEATURE-RME-BILLING-REFUND-REQUEST-APPROVAL-1
+id: FEATURE-RME-REFUND-SETTLEMENT-1
 type: FOUNDATION_SPRINT
 module: RmeInvoice
-title: "Refund request & approval: decide whether an overpayment is paid back, never pay it"
+title: "Refund settlement: record that approved refund money left the clinic, with evidence and separation of duties"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 runtime_change: true
 schema_change: true
 frontend_change: true
 security_impact: true
 branch_isolation_impact: true
-ledger_impact: false
+ledger_impact: true
 deploy_required: true
 browser_required: false
 test_profiles: [focused, cross_module_regression, security_regression]
-go_tag: feature-rme-billing-refund-request-approval-1-implementation-go
-inherits_parent_go: hardening-rme-owner-reference-registry-1-go
+go_tag: feature-rme-refund-settlement-1-implementation-go
+inherits_parent_go: feature-rme-billing-refund-request-approval-1-implementation-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1

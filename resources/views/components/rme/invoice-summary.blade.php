@@ -13,6 +13,9 @@
 @php
     $paidAmount = $invoice->paidAmount();
     $remainingAmount = $invoice->remainingAmount();
+    // FEATURE-RME-REFUND-SETTLEMENT-1 — "Sudah Dibayar" stays the gross money received;
+    // a refund already paid back is stated beside it so the balance reads correctly.
+    $refundedAmount = $invoice->settledRefundAmount();
 
     $summaryStatusLabels = [
         'DRAFT'   => 'Draft',
@@ -42,6 +45,9 @@
     <div class="ui-card p-5">
         <p class="text-xs font-medium uppercase tracking-wide text-ink-soft">Sudah Dibayar</p>
         <p class="mt-2 text-2xl font-bold tabular-nums text-success-700">Rp {{ number_format($paidAmount, 0, ',', '.') }}</p>
+        @if ($refundedAmount > 0)
+            <p class="mt-1 text-xs text-ink-soft" data-invoice-refunded>Termasuk Rp {{ number_format($refundedAmount, 0, ',', '.') }} yang telah dikembalikan (refund dibayarkan).</p>
+        @endif
     </div>
     <div class="ui-card p-5">
         <p class="text-xs font-medium uppercase tracking-wide text-ink-soft">Sisa Tagihan</p>

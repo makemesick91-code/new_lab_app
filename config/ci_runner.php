@@ -419,6 +419,16 @@ return [
         'tests/Feature/RmeRefundRequest/RmeRefundRequestAuthorityTest.php',
         'tests/Feature/RmeRefundRequest/RmeRefundRequestReferenceTest.php',
         'tests/Feature/RmeRefundRequest/RmeRefundRequestConcurrencyTest.php',
+        // FEATURE-RME-REFUND-SETTLEMENT-1 (rule 216) — recording that APPROVED refund
+        // money actually left the clinic: settler ≠ approver, deny-all designation,
+        // evidence, net received (RFS-1) across every receivable reader, and the
+        // PostgreSQL races and backstops. Selected by the `RmeRefundSettlement` token
+        // in BOTH critical-gate variants.
+        'tests/Feature/RmeRefundSettlement/RmeRefundSettlementLifecycleTest.php',
+        'tests/Feature/RmeRefundSettlement/RmeRefundSettlementAuthorityTest.php',
+        'tests/Feature/RmeRefundSettlement/RmeRefundSettlementLedgerTest.php',
+        'tests/Feature/RmeRefundSettlement/RmeRefundSettlementReviewHardeningTest.php',
+        'tests/Feature/RmeRefundSettlement/RmeRefundSettlementConcurrencyTest.php',
         // ACTIVATION-RME-INVOICE-CORRECTION-PREPAYMENT-2 (rule 195) — owner D1a
         // (approve applies, atomically), maker != checker != applier per account,
         // the fail-closed SPN4 pilot allowlist, the D1/D1b RoleSeeder grants, the

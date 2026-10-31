@@ -72,6 +72,9 @@ final class RmeRefundRequestRefused extends RuntimeException
 
     public const PATIENT_REFERENCE_REUSED = 'REFUND_PATIENT_REFERENCE_REUSED';
 
+    /** FEATURE-RME-REFUND-SETTLEMENT-1 — an approved request with a payout in flight is never revoked. */
+    public const SETTLEMENT_IN_PROGRESS = 'REFUND_SETTLEMENT_IN_PROGRESS';
+
     public function __construct(
         public readonly string $reasonCode,
         string $message,

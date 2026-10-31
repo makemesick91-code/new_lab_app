@@ -118,12 +118,14 @@ it('exposes the oversight Billing Correction area as GET-only, gated by its own 
     $routes = collect(Route::getRoutes()->getRoutes())->filter(fn ($r) => str_starts_with((string) $r->getName(), 'oversight.billing-corrections.'));
     // FEATURE-RME-POSTPAYMENT-INVOICE-CORRECTION-1 (PP-9) adds the two read-only
     // overpayment obligation pages; rule 215 (RF-8) adds the two read-only
-    // refund request pages. Every route in the area stays GET-only.
-    expect($routes)->toHaveCount(11)
+    // refund request pages; rule 216 (RFS-6) adds the two read-only refund
+    // settlement pages. Every route in the area stays GET-only.
+    expect($routes)->toHaveCount(13)
         ->and($routes->map(fn ($r) => (string) $r->getName())->values()->all())
         ->toContain(
             'oversight.billing-corrections.obligations.index', 'oversight.billing-corrections.obligations.show',
             'oversight.billing-corrections.refund-requests.index', 'oversight.billing-corrections.refund-requests.show',
+            'oversight.billing-corrections.refund-settlements.index', 'oversight.billing-corrections.refund-settlements.show',
         );
 
     foreach ($routes as $route) {
@@ -136,19 +138,29 @@ it('declares no reversal, credit, settlement or Rp0 capability and enables only 
     expect(RmeInvoiceCorrectionType::ENABLED)->toBe([RmeInvoiceCorrectionType::PRE_PAYMENT]);
 
     $names = collect(Route::getRoutes()->getRoutes())->map(fn ($r) => (string) $r->getName())->filter(fn ($n) => str_contains($n, 'invoice-correction') || str_contains($n, 'billing-correction'));
-    foreach (['reverse', 'reversal', 'credit', 'settle', 'payout', 'disburse'] as $forbidden) {
+    foreach (['reverse', 'reversal', 'credit', 'payout', 'disburse'] as $forbidden) {
         expect($names->filter(fn ($n) => str_contains($n, $forbidden))->all())->toBe([], $forbidden);
     }
 
-    // Rule 215 adds a refund REQUEST and its approval — never a payout. The only
-    // refund names in the correction area are the two read-only oversight pages,
-    // and the only refund permissions are the request and the approval.
+    // SUPERSEDED in part by FEATURE-RME-REFUND-SETTLEMENT-1 (rule 216): a refund
+    // payout now exists, but the correction area only READS it — the two "settle"
+    // names allowed here are the read-only oversight pages, never a mutation.
+    expect($names->filter(fn ($n) => str_contains($n, 'settle'))->sort()->values()->all())->toBe([
+        'oversight.billing-corrections.refund-settlements.index',
+        'oversight.billing-corrections.refund-settlements.show',
+    ]);
+
+    // Rule 215 adds a refund REQUEST and its approval; rule 216 adds the payout as a
+    // separate capability with its own permission. The only refund names in the
+    // correction area are the four read-only oversight pages.
     expect($names->filter(fn ($n) => str_contains($n, 'refund'))->sort()->values()->all())->toBe([
         'oversight.billing-corrections.refund-requests.index',
         'oversight.billing-corrections.refund-requests.show',
+        'oversight.billing-corrections.refund-settlements.index',
+        'oversight.billing-corrections.refund-settlements.show',
     ]);
     expect(Permission::where('name', 'like', '%refund%')->pluck('name')->sort()->values()->all())
-        ->toBe(['approve_rme_refund', 'request_rme_refund']);
+        ->toBe(['approve_rme_refund', 'request_rme_refund', 'settle_rme_refund']);
 });
 
 it('keeps the state machine closed: terminal states have no outgoing edge and only SUBMITTED/APPROVED are active', function () {

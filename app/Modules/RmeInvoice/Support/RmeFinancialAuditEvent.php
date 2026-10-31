@@ -11,6 +11,7 @@ use App\Modules\RmeInvoice\Models\RmePayment;
 use App\Modules\RmeInvoice\Models\RmePaymentSubmission;
 use App\Modules\RmeInvoice\Models\RmeReceiptSnapshot;
 use App\Modules\RmeInvoice\Models\RmeRefundRequest;
+use App\Modules\RmeInvoice\Models\RmeRefundSettlement;
 
 /**
  * FEATURE-RME-BILLING-REFUND-1 / Phase 0 (audit BCF-02) — the vocabulary and
@@ -469,6 +470,9 @@ final class RmeFinancialAuditEvent
     /** An OPEN obligation recorded because a correction brought the total below the money received. */
     public const ACTION_OVERPAYMENT_OBLIGATION_OPENED = 'RME_OVERPAYMENT_OBLIGATION_OPENED';
 
+    /** FEATURE-RME-REFUND-SETTLEMENT-1 (RFS-4): the obligation was paid back (OPEN → SETTLED). */
+    public const ACTION_OVERPAYMENT_OBLIGATION_SETTLED = 'RME_OVERPAYMENT_OBLIGATION_SETTLED';
+
     /**
      * @return array<string, mixed>
      */
@@ -523,6 +527,9 @@ final class RmeFinancialAuditEvent
 
     public const ACTION_REFUND_REQUEST_REFUSED = 'RME_REFUND_REQUEST_REFUSED';
 
+    /** FEATURE-RME-REFUND-SETTLEMENT-1 — written only by the settlement transaction. */
+    public const ACTION_REFUND_REQUEST_SETTLED = 'RME_REFUND_REQUEST_SETTLED';
+
     /** @var array<string, string> status reached => audit action */
     public const REFUND_REQUEST_ACTIONS = [
         'REQUESTED' => self::ACTION_REFUND_REQUEST_SUBMITTED,
@@ -530,6 +537,7 @@ final class RmeFinancialAuditEvent
         'REJECTED' => self::ACTION_REFUND_REQUEST_REJECTED,
         'CANCELLED' => self::ACTION_REFUND_REQUEST_CANCELLED,
         'STALE' => self::ACTION_REFUND_REQUEST_STALE,
+        'SETTLED' => self::ACTION_REFUND_REQUEST_SETTLED,
     ];
 
     /**
@@ -551,6 +559,55 @@ final class RmeFinancialAuditEvent
             'invoice_version' => (int) $request->invoice_version,
             'from_status' => $fromStatus,
             'to_status' => (string) $request->status,
+        ], $extra);
+    }
+
+    // FEATURE-RME-REFUND-SETTLEMENT-1 (rule 216) — the record that money owed back
+    // actually left the clinic. Payloads are ids, cents, codes and the evidence hash:
+    // never the bank reference, bank name, account digits, recipient, note or reason
+    // text, nor any patient identity.
+    public const ENTITY_REFUND_SETTLEMENT = 'trx_rme_refund_settlements';
+
+    public const ACTION_REFUND_SETTLEMENT_STARTED = 'RME_REFUND_SETTLEMENT_STARTED';
+
+    public const ACTION_REFUND_SETTLEMENT_OUTCOME_UNKNOWN = 'RME_REFUND_SETTLEMENT_OUTCOME_UNKNOWN';
+
+    public const ACTION_REFUND_SETTLEMENT_SETTLED = 'RME_REFUND_SETTLEMENT_SETTLED';
+
+    public const ACTION_REFUND_SETTLEMENT_ABORTED = 'RME_REFUND_SETTLEMENT_ABORTED';
+
+    public const ACTION_REFUND_SETTLEMENT_REFUSED = 'RME_REFUND_SETTLEMENT_REFUSED';
+
+    /** Opening a private disbursement proof is itself audited. */
+    public const ACTION_REFUND_SETTLEMENT_EVIDENCE_VIEWED = 'RME_REFUND_SETTLEMENT_EVIDENCE_VIEWED';
+
+    /** @var array<string, string> status reached => audit action */
+    public const REFUND_SETTLEMENT_ACTIONS = [
+        'DISBURSING' => self::ACTION_REFUND_SETTLEMENT_STARTED,
+        'OUTCOME_UNKNOWN' => self::ACTION_REFUND_SETTLEMENT_OUTCOME_UNKNOWN,
+        'SETTLED' => self::ACTION_REFUND_SETTLEMENT_SETTLED,
+        'ABORTED' => self::ACTION_REFUND_SETTLEMENT_ABORTED,
+    ];
+
+    /**
+     * @param  array<string, int|string|null>  $extra
+     * @return array<string, mixed>
+     */
+    public static function refundSettlementPayload(RmeRefundSettlement $settlement, ?string $fromStatus, array $extra = []): array
+    {
+        return array_merge([
+            'refund_settlement_id' => (int) $settlement->id,
+            'settlement_number' => $settlement->settlement_number,
+            'refund_request_id' => (int) $settlement->rme_refund_request_id,
+            'overpayment_obligation_id' => (int) $settlement->rme_overpayment_obligation_id,
+            'rme_invoice_id' => (int) $settlement->rme_invoice_id,
+            'branch_id' => (int) $settlement->branch_id,
+            'amount_cents' => RmeInvoiceDocument::toCents($settlement->amount),
+            'method' => (string) $settlement->method,
+            'approved_by' => (int) $settlement->approved_by,
+            'from_status' => $fromStatus,
+            'to_status' => (string) $settlement->status,
+            'evidence_sha256' => $settlement->evidence_sha256,
         ], $extra);
     }
 

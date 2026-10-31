@@ -120,13 +120,13 @@ class OwnerDashboardKpiService
         $receivableInvoices = $this->invoiceQuery($branchIds)
             ->whereIn('status', [RmeInvoice::STATUS_UNPAID, RmeInvoice::STATUS_PARTIAL])
             ->where('grand_total', '>', 0)
-            ->withSum('payments', 'amount')
+            ->withNetReceived()
             ->get(['id', 'status', 'grand_total']);
 
         $activeReceivable = 0.0;
         $unpaidInvoiceCount = 0;
         foreach ($receivableInvoices as $invoice) {
-            $remaining = max(0, round((float) $invoice->grand_total - (float) ($invoice->payments_sum_amount ?? 0), 2));
+            $remaining = max(0, round((float) $invoice->grand_total - $invoice->aggregatedNetReceived(), 2));
             if ($remaining > 0) {
                 $activeReceivable += $remaining;
                 $unpaidInvoiceCount++;
@@ -201,11 +201,11 @@ class OwnerDashboardKpiService
             $receivableInvoices = $this->invoiceQuery([$branch->id])
                 ->whereIn('status', [RmeInvoice::STATUS_UNPAID, RmeInvoice::STATUS_PARTIAL])
                 ->where('grand_total', '>', 0)
-                ->withSum('payments', 'amount')
+                ->withNetReceived()
                 ->get(['id', 'grand_total']);
 
             $receivable = (float) $receivableInvoices->sum(
-                fn (RmeInvoice $i): float => max(0, round((float) $i->grand_total - (float) ($i->payments_sum_amount ?? 0), 2)),
+                fn (RmeInvoice $i): float => max(0, round((float) $i->grand_total - $i->aggregatedNetReceived(), 2)),
             );
 
             $followUpDue = $this->invoiceQuery([$branch->id])
@@ -280,7 +280,7 @@ class OwnerDashboardKpiService
         $invoices = $this->invoiceQuery($branchIds)
             ->whereIn('status', [RmeInvoice::STATUS_UNPAID, RmeInvoice::STATUS_PARTIAL])
             ->where('grand_total', '>', 0)
-            ->withSum('payments', 'amount')
+            ->withNetReceived()
             ->with(['patient:id,name', 'branch:id,name', 'clinicVisit:id,visit_date'])
             ->latest('id')
             ->limit(50)
@@ -288,7 +288,7 @@ class OwnerDashboardKpiService
 
         return $invoices
             ->map(function (RmeInvoice $invoice): array {
-                $remaining = max(0, round((float) $invoice->grand_total - (float) ($invoice->payments_sum_amount ?? 0), 2));
+                $remaining = max(0, round((float) $invoice->grand_total - $invoice->aggregatedNetReceived(), 2));
 
                 return [
                     'patient_name' => $invoice->patient?->name ?? 'Pasien',

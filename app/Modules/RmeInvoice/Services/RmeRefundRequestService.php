@@ -12,6 +12,7 @@ use App\Modules\RmeInvoice\Interfaces\RmeInvoiceCorrectionRepositoryInterface;
 use App\Modules\RmeInvoice\Interfaces\RmeInvoiceRepositoryInterface;
 use App\Modules\RmeInvoice\Interfaces\RmeOverpaymentObligationRepositoryInterface;
 use App\Modules\RmeInvoice\Interfaces\RmeRefundRequestRepositoryInterface;
+use App\Modules\RmeInvoice\Interfaces\RmeRefundSettlementRepositoryInterface;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Models\RmeOverpaymentObligation;
 use App\Modules\RmeInvoice\Models\RmeRefundRequest;
@@ -94,6 +95,7 @@ class RmeRefundRequestService
         private readonly ActiveAccountResolver $accounts,
         private readonly ClinicalClock $clock,
         private readonly AuditLogService $auditLogs,
+        private readonly RmeRefundSettlementRepositoryInterface $settlements,
     ) {}
 
     // ─── Read side ──────────────────────────────────────────────────────────
@@ -186,7 +188,9 @@ class RmeRefundRequestService
             'approve' => $reviews && $request->status === RmeRefundRequestStatus::REQUESTED,
             'reject' => $reviews && $request->status === RmeRefundRequestStatus::REQUESTED,
             'withdraw' => $isMaker && $request->status === RmeRefundRequestStatus::REQUESTED,
-            'revoke' => $reviews && $request->status === RmeRefundRequestStatus::APPROVED,
+            // FEATURE-RME-REFUND-SETTLEMENT-1: never offered once a payout was claimed.
+            'revoke' => $reviews && $request->status === RmeRefundRequestStatus::APPROVED
+                && $this->settlements->holdingForRequest((int) $request->id) === null,
         ];
     }
 
@@ -529,6 +533,13 @@ class RmeRefundRequestService
                         throw $this->refused(RmeRefundRequestRefused::SELF_DECISION_FORBIDDEN, 'Pengaju tidak dapat mencabut persetujuan permintaannya sendiri.', (int) $locked->id, (int) $locked->rme_invoice_id);
                     }
                     $this->assertReviewer($account, $locked);
+
+                    // FEATURE-RME-REFUND-SETTLEMENT-1 — a claimed payout means money may
+                    // already have left: the approval it relies on is never withdrawn
+                    // under it. Lock order continues request → settlement.
+                    if ($this->settlements->holdingForRequest((int) $locked->id, lock: true) !== null) {
+                        throw $this->refused(RmeRefundRequestRefused::SETTLEMENT_IN_PROGRESS, 'Pembayaran refund ini sedang diproses atau sudah dibayarkan; persetujuannya tidak dapat dicabut.', (int) $locked->id, (int) $locked->rme_invoice_id);
+                    }
                 } else {
                     throw $this->refused(RmeRefundRequestRefused::INVALID_TRANSITION, 'Permintaan refund ini sudah selesai dan tidak dapat dibatalkan.', (int) $locked->id, (int) $locked->rme_invoice_id);
                 }
@@ -796,7 +807,7 @@ class RmeRefundRequestService
             throw $this->refused(RmeRefundRequestRefused::INVOICE_VERSION_CHANGED, 'Tagihan ini telah berubah sejak kewajiban pengembalian dicatat.', $requestId, $invoiceId);
         }
 
-        $overpaid = RmeInvoiceLedger::overpaidCents(RmeInvoiceLedger::grandTotalCents($invoice), RmeInvoiceLedger::paidCents($invoice));
+        $overpaid = RmeInvoiceLedger::overpaidCents(RmeInvoiceLedger::grandTotalCents($invoice), RmeInvoiceLedger::netReceivedCents($invoice));
         if ($overpaid !== RmeRefundRequestSnapshot::cents($obligation->amount)) {
             throw $this->refused(RmeRefundRequestRefused::LEDGER_MISMATCH, 'Kelebihan bayar menurut catatan pembayaran tidak sama dengan kewajiban pengembalian.', $requestId, $invoiceId);
         }

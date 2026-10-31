@@ -1394,9 +1394,8 @@ class RmePaymentService
 
     private function remainingForInvoice(RmeInvoice $invoice): float
     {
-        $grandTotal = round((float) $invoice->grand_total, 2);
-        $paidBefore = round((float) $invoice->paidAmount(), 2);
-        $remainingBefore = max(0, round($grandTotal - $paidBefore, 2));
+        // RFS-1: the same definition every payment path caps with (remainingAmount()).
+        $remainingBefore = round($invoice->remainingAmount(), 2);
 
         if ($remainingBefore <= 0) {
             throw ValidationException::withMessages([
@@ -1435,7 +1434,9 @@ class RmePaymentService
     {
         $newStatus = RmeInvoiceLedger::statusAfterMoneyReceived(
             RmeInvoiceLedger::grandTotalCents($invoice),
-            RmeInvoiceLedger::paidCents($invoice),
+            // RFS-1: NET received, so a settled refund never makes a later
+            // payment look like an overpayment of an already-balanced invoice.
+            RmeInvoiceLedger::netReceivedCents($invoice),
         );
 
         $this->invoices->update($invoice, ['status' => $newStatus]);

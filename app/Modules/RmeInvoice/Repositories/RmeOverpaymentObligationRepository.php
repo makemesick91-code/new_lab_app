@@ -63,6 +63,17 @@ final class RmeOverpaymentObligationRepository implements RmeOverpaymentObligati
         return $obligation;
     }
 
+    public function markSettled(RmeOverpaymentObligation $obligation, int $settlementId, \DateTimeInterface $settledAt): RmeOverpaymentObligation
+    {
+        $obligation->forceFill([
+            'status' => RmeOverpaymentObligation::STATUS_SETTLED,
+            'settled_at' => $settledAt,
+            'rme_refund_settlement_id' => $settlementId,
+        ])->save();
+
+        return $obligation;
+    }
+
     public function recordEvent(array $data): RmeOverpaymentObligationEvent
     {
         return RmeOverpaymentObligationEvent::create($data);

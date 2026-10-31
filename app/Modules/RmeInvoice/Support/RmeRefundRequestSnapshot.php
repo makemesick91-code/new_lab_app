@@ -28,7 +28,8 @@ final class RmeRefundRequestSnapshot
             'invoice_version' => (int) ($invoice->correction_version ?? 0),
             'invoice_status' => (string) $invoice->status,
             'grand_total_cents' => RmeInvoiceLedger::grandTotalCents($invoice),
-            'paid_cents' => RmeInvoiceLedger::paidCents($invoice),
+            // RFS-1: NET received; equal to gross until a refund is settled.
+            'paid_cents' => RmeInvoiceLedger::netReceivedCents($invoice),
             'payment_ids' => $paymentIds,
             'obligation_id' => (int) $obligation->id,
             'obligation_amount_cents' => self::cents($obligation->amount),
