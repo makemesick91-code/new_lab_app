@@ -863,7 +863,7 @@ D25, D26 (refund, settlement, reversal, patient credit — Sprint 4/7 and 5/7).
 | Financial adjustment | — | a correction never writes a payment, refund, reversal or settlement row (rule 189/206) |
 | Overpayment | PP-3 vs "no negative receivable" (rule 206 §12) | consistent: an OPEN obligation is separate from the receivable |
 | Refund request/approval | D4, D5, D18 PENDING *(2026-10-25; since 2026-10-31 D4, D5 and D18 are answered — see their entries)* | PP-3 creates the obligation only; no refund path (Sprint 4/7) |
-| Refund settlement | D25 PENDING *(2026-10-25; since 2026-10-31 answered as Sprint 5 policy, settlement actor pending)* | none (Sprint 5/7) |
+| Refund settlement | D25 PENDING *(2026-10-25; since 2026-10-31 answered as Sprint 5 policy, settlement actor pending)* | none (Sprint 5/7) *(since 2026-10-31: implemented and deployed, rule 216, runtime `a550e00d`, flag OFF, settler list EMPTY — the settler designation is still the Owner's)* |
 | Laboratory | PP-8 vs D23 pre-payment refusal | consistent: refused on both types |
 | Branch visibility | PP-6/PP-9 vs OD-1a, `ClinicOversightScope` | consistent: invoice branch owns correction, obligation and balance; oversight read-only |
 | Activation order | PP-10 vs Sprint 2 NO_GO | activation blocked; implementation with the flag OFF allowed |

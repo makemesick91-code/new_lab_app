@@ -444,3 +444,8 @@ implementasi transaksi keuangan lain, dan **bukan** izin aktivasi.
 Yang masih memerlukan keputusan Owner sebelum aktivasi: (1) nama orang yang ditunjuk sebagai pembayar per
 cabang, (2) pelatihan SOP `docs/runbooks/rme-refund-settlement-sop.md`, (3) persetujuan aktivasi tersendiri
 (`ACTIVATION-RME-REFUND-SETTLEMENT-1`). Implementasi tidak menunjuk siapa pun.
+
+Dideploy 2026-10-31: runtime `a550e00d` (PR #571), tag `feature-rme-refund-settlement-1-implementation-go`,
+flag `rme.billing_refund_settlement` OFF, izin `settle_rme_refund` dipegang 0 peran dan 0 akun, daftar pembayar
+kosong, 0 pembayaran refund tercatat, sidik jari keuangan produksi tidak berubah. Bukti lengkap:
+`docs/sprints/feature-rme-refund-settlement-1.md` bagian *Evidence*.
