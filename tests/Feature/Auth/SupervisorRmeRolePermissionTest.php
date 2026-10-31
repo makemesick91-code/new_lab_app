@@ -135,6 +135,9 @@ const SUPERVISOR_RME_PERMISSIONS = [
     // because admitting a doctor with NO device proof is a strictly stronger
     // act than authorizing a device.
     'grant_doctor_break_glass_access',
+    // FEATURE-RME-BILLING-REFUND-REQUEST-APPROVAL-1 (owner RF-1, 2026-10-31) — refund
+    // REVIEW within its authorized scope. Never the maker: no request_rme_refund.
+    'approve_rme_refund',
 ];
 
 it('creates the Supervisor RME role after seeding', function () {

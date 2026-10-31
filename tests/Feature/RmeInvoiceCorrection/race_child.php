@@ -25,8 +25,11 @@ declare(strict_types=1);
 use App\Models\User;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Models\RmeInvoiceCorrection;
+use App\Modules\RmeInvoice\Models\RmeRefundRequest;
+use App\Modules\RmeInvoice\Services\RmeBillingDisputeService;
 use App\Modules\RmeInvoice\Services\RmeInvoiceCorrectionService;
 use App\Modules\RmeInvoice\Services\RmePaymentService;
+use App\Modules\RmeInvoice\Services\RmeRefundRequestService;
 use App\Modules\User\Services\UserService;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Support\Facades\DB;
@@ -78,6 +81,29 @@ try {
                 RmeInvoice::query()->findOrFail((int) $step['invoice']),
                 User::query()->findOrFail((int) $step['actor']),
                 (array) $step['form'],
+            ),
+            // FEATURE-RME-BILLING-REFUND-REQUEST-APPROVAL-1 — the refund races
+            // (RmeRefundRequestConcurrencyTest): the REAL refund service holding its
+            // invoice / obligation / request locks and its registry claims.
+            'submit_refund' => app(RmeRefundRequestService::class)->submit(
+                RmeInvoice::query()->findOrFail((int) $step['invoice']),
+                User::query()->findOrFail((int) $step['actor']),
+                (array) $step['data'],
+            ),
+            'approve_refund' => app(RmeRefundRequestService::class)->approve(
+                RmeRefundRequest::query()->findOrFail((int) $step['request']),
+                User::query()->findOrFail((int) $step['actor']),
+                [],
+            ),
+            'cancel_refund' => app(RmeRefundRequestService::class)->cancel(
+                RmeRefundRequest::query()->findOrFail((int) $step['request']),
+                User::query()->findOrFail((int) $step['actor']),
+                ['cancel_reason' => (string) $step['reason']],
+            ),
+            'report_dispute' => app(RmeBillingDisputeService::class)->report(
+                RmeInvoice::query()->findOrFail((int) $step['invoice']),
+                User::query()->findOrFail((int) $step['actor']),
+                (array) $step['data'],
             ),
             default => throw new InvalidArgumentException('Unknown race step '.(string) $step['kind']),
         };

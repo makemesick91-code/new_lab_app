@@ -41,6 +41,9 @@ final class PatientOwnedRecordRegistry
         // amount, status, source correction and events are untouched (the model
         // refuses any other write; merge re-points through the query builder).
         'trx_rme_overpayment_obligations' => ['column' => 'patient_id', 'label' => 'Kewajiban Kelebihan Bayar', 'group' => 'invoices'],
+        // FEATURE-RME-BILLING-REFUND-REQUEST-APPROVAL-1 (rule 215) — a refund request is
+        // re-pointed like its obligation; its amount, decision and events are untouched.
+        'trx_rme_refund_requests' => ['column' => 'patient_id', 'label' => 'Permintaan Refund', 'group' => 'invoices'],
         'trx_rme_prescriptions' => ['column' => 'patient_id', 'label' => 'Resep', 'group' => 'prescriptions'],
         'trx_rme_prescription_whatsapp_deliveries' => ['column' => 'patient_id', 'label' => 'Pengiriman Resep WhatsApp', 'group' => 'prescriptions'],
         'trx_rme_visit_consents' => ['column' => 'patient_id', 'label' => 'Persetujuan Tindakan', 'group' => 'consents'],

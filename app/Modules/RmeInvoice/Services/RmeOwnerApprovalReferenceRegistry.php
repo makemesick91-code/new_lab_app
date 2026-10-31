@@ -20,7 +20,8 @@ use LogicException;
  *   POST_PAYMENT_CORRECTION_INVOICE — the invoice; a resubmission on the same
  *     invoice repeats its reference (PP-2);
  *   REFUND_REQUEST — one refund request; a new request needs a new reference
- *     (owner decision RF-6). Reserved here; no refund consumer exists yet.
+ *     (owner decision RF-6). Consumed by RmeRefundRequestService::submit()
+ *     (FEATURE-RME-BILLING-REFUND-REQUEST-APPROVAL-1, rule 215).
  *
  * Contract for a consumer:
  *   - call consume() INSIDE the transaction that records the decision, AFTER

@@ -71,6 +71,9 @@ class OversightAuditService
     /** FEATURE-RME-POSTPAYMENT-INVOICE-CORRECTION-1 — an overpayment obligation opened read-only (PP-9). */
     public const OVERPAYMENT_OBLIGATION_VIEWED = 'OVERSIGHT_OVERPAYMENT_OBLIGATION_VIEWED';
 
+    /** FEATURE-RME-BILLING-REFUND-REQUEST-APPROVAL-1 — a refund request opened read-only (RF-8). */
+    public const REFUND_REQUEST_VIEWED = 'OVERSIGHT_REFUND_REQUEST_VIEWED';
+
     public const DATA_EXPORTED = 'OVERSIGHT_DATA_EXPORTED';
 
     public const DATA_PRINTED = 'OVERSIGHT_DATA_PRINTED';

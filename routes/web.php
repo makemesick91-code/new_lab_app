@@ -18,6 +18,7 @@ use App\Modules\ClinicOversight\Controllers\OversightDashboardController;
 use App\Modules\ClinicOversight\Controllers\OversightLegacyArchiveController;
 use App\Modules\ClinicOversight\Controllers\OversightMonitoringController;
 use App\Modules\ClinicOversight\Controllers\OversightOverpaymentObligationController;
+use App\Modules\ClinicOversight\Controllers\OversightRefundRequestController;
 use App\Modules\ClinicRoom\Controllers\ClinicRoomController;
 use App\Modules\ClinicVisit\Controllers\ClinicVisitController;
 use App\Modules\Consent\Controllers\RmeVisitConsentController;
@@ -127,6 +128,7 @@ use App\Modules\RmeInvoice\Controllers\RmeInvoiceController;
 use App\Modules\RmeInvoice\Controllers\RmeInvoiceCorrectionController;
 use App\Modules\RmeInvoice\Controllers\RmePaymentController;
 use App\Modules\RmeInvoice\Controllers\RmeReceivableFollowUpController;
+use App\Modules\RmeInvoice\Controllers\RmeRefundRequestController;
 use App\Modules\RmeInvoice\Controllers\RmeReportController;
 use App\Modules\RmeOnlineContext\Controllers\BranchChangeRequestController;
 use App\Modules\RmeOnlineContext\Controllers\OnlineContextController;
@@ -1424,6 +1426,37 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
     });
 
     /*
+    | FEATURE-RME-BILLING-REFUND-REQUEST-APPROVAL-1 (Sprint 4/7, rule 215) — refund
+    | REQUEST and decision. Never money: no settlement route exists (TDD RR-SEC-11).
+    | Three layers: route permission, controller 404 when the flag is off or the
+    | record is out of scope, and RmeRefundRequestService, which re-asserts the
+    | role, the branch scope, the pilot and maker != checker on every mutation.
+    */
+    Route::middleware('permission:request_rme_refund|approve_rme_refund')->group(function () {
+        Route::get('refund-requests', [RmeRefundRequestController::class, 'index'])->name('refund-requests.index');
+        Route::get('refund-requests/{refundRequest}', [RmeRefundRequestController::class, 'show'])
+            ->whereNumber('refundRequest')->name('refund-requests.show');
+        // Withdraw (the maker, REQUESTED) or revoke (a reviewer, APPROVED) — the
+        // service decides which, from the request's state and the actor.
+        Route::post('refund-requests/{refundRequest}/cancel', [RmeRefundRequestController::class, 'cancel'])
+            ->whereNumber('refundRequest')->name('refund-requests.cancel');
+
+        Route::middleware('permission:request_rme_refund')->group(function () {
+            Route::get('cashier/{clinicVisit}/billing/{rmeInvoice}/refund-requests/create', [RmeRefundRequestController::class, 'create'])
+                ->name('refund-requests.create');
+            Route::post('cashier/{clinicVisit}/billing/{rmeInvoice}/refund-requests', [RmeRefundRequestController::class, 'store'])
+                ->name('refund-requests.store');
+        });
+
+        Route::middleware('permission:approve_rme_refund')->group(function () {
+            Route::post('refund-requests/{refundRequest}/approve', [RmeRefundRequestController::class, 'approve'])
+                ->whereNumber('refundRequest')->name('refund-requests.approve');
+            Route::post('refund-requests/{refundRequest}/reject', [RmeRefundRequestController::class, 'reject'])
+                ->whereNumber('refundRequest')->name('refund-requests.reject');
+        });
+    });
+
+    /*
     | IMPLEMENTATION-RME-BILLING-DISPUTE-ESCALATION-OPS-OQ-1 (owner OPS-OQ-1, rule
     | 203) — billing disputes, ALL branches. Three layers, each refusing on its own:
     |   1. route middleware — the dispute read door (a read permission, or rule 204
@@ -2556,6 +2589,10 @@ Route::middleware('auth')->prefix('oversight')->name('oversight.')->group(functi
         Route::get('overpayment-obligations', [OversightOverpaymentObligationController::class, 'index'])->name('obligations.index');
         Route::get('overpayment-obligations/{obligation}', [OversightOverpaymentObligationController::class, 'show'])
             ->whereNumber('obligation')->name('obligations.show');
+        // FEATURE-RME-BILLING-REFUND-REQUEST-APPROVAL-1 (RF-8/RF-8a) — refund requests, read-only.
+        Route::get('refund-requests', [OversightRefundRequestController::class, 'index'])->name('refund-requests.index');
+        Route::get('refund-requests/{refundRequest}', [OversightRefundRequestController::class, 'show'])
+            ->whereNumber('refundRequest')->name('refund-requests.show');
         Route::middleware('permission:export_oversight_data')->group(function () {
             Route::get('export', [OversightBillingCorrectionController::class, 'export'])->name('export');
             Route::get('print', [OversightBillingCorrectionController::class, 'print'])->name('print');

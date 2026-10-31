@@ -27,6 +27,13 @@ interface RmeOverpaymentObligationRepositoryInterface
 
     public function find(int $id): ?RmeOverpaymentObligation;
 
+    /**
+     * FEATURE-RME-BILLING-REFUND-REQUEST-APPROVAL-1 — SELECT … FOR UPDATE by id, for
+     * the refund decision that locks the request's OWN obligation (design §5 step 2).
+     * Take it after the invoice lock and before the refund request lock.
+     */
+    public function findForUpdate(int $id): ?RmeOverpaymentObligation;
+
     public function forCorrection(int $correctionId): ?RmeOverpaymentObligation;
 
     /** @return Collection<int, RmeOverpaymentObligation> */

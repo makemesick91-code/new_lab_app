@@ -79,6 +79,11 @@
     // and service refuse on their own.
     $invoiceCorrectionEnabled = $user !== null
         && app(\App\Modules\RmeInvoice\Support\RmeInvoiceCorrectionFeatureGuard::class)->enabled();
+    // FEATURE-RME-BILLING-REFUND-REQUEST-APPROVAL-1 (rule 215) — the refund
+    // request queue appears only while `rme.billing_refund_request` is ON
+    // (default OFF). Courtesy only: routes, policy and service refuse on their own.
+    $refundRequestEnabled = $user !== null
+        && app(\App\Modules\RmeInvoice\Support\RmeRefundRequestFeatureGuard::class)->enabled();
 
     $showLabGroup = $user && (
         $user->canAny(['view_lab_orders', 'manage_lab_orders', 'view_production', 'manage_production', 'view_quality_control', 'manage_quality_control', 'view_delivery', 'manage_delivery', 'create_lab_branch_requests', 'manage_lab_pickups'])
@@ -424,6 +429,23 @@
                     </div>
                 </div>
             @endcan
+
+            {{-- FEATURE-RME-BILLING-REFUND-REQUEST-APPROVAL-1 (rule 215) — refund request
+                 and approval. A separate block, outside the RME group: Kepala Cabang
+                 reviews refunds without holding any clinic-visit permission. Gated
+                 by the same two permissions as the route group, and only while the
+                 capability flag is ON. A request is not a payout. --}}
+            @if ($refundRequestEnabled)
+                @canany(['request_rme_refund', 'approve_rme_refund'])
+                    <div>
+                        <p class="menu-group-title pt-2">Refund RME</p>
+                        <div class="mt-1 space-y-1">
+                            <a href="{{ route('rme.refund-requests.index') }}" data-sidebar-link="refund-requests"
+                               class="menu-subitem {{ request()->routeIs('rme.refund-requests.*') ? $linkActive : $linkIdle }}">Pengajuan Refund</a>
+                        </div>
+                    </div>
+                @endcanany
+            @endif
 
             {{-- DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1 — a doctor's permanent
                  home branch and temporary branch cover.

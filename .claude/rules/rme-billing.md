@@ -10,6 +10,9 @@ paths:
   - "resources/views/oversight/**"
   - "config/rme_invoice.php"
   - "config/rme_invoice_correction.php"
+  - "config/rme_refund.php"
+  - "resources/views/rme/refund-requests/**"
+  - "tests/Feature/RmeRefundRequest/**"
   - "config/rme_tariff_authority.php"
   - "tests/Feature/RmeBillingDispute/**"
   - "tests/Feature/RmeInvoiceCorrection/**"
@@ -269,6 +272,7 @@ code, then the canonical rule, and report the drift.
 | `.cursor/rules/206-rme-postpayment-invoice-correction-preparation.mdc` | Post-payment foundations; PP-1…PP-10 ratified |
 | `.cursor/rules/207-rme-postpayment-invoice-correction.mdc` | Post-payment correction, obligations, receipt snapshots |
 | `.cursor/rules/214-rme-owner-reference-registry.mdc` | Owner reference registry: one reference, one decision scope, enforced by the database |
+| `.cursor/rules/215-rme-billing-refund-request-approval.mdc` | Refund request & approval (Sprint 4/7): decides, never pays; Front Office maker, role+branch reviewer, flag OFF |
 | `.cursor/rules/109-rme-exam-consent-odontogram-history.mdc` | Consent gates exam finish, not payment |
 | `.cursor/rules/92-feature-flag-runtime-override.mdc` | Flag environment overrides captured at config build |
 

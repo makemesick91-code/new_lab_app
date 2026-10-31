@@ -63,9 +63,19 @@ it('gives an EMPTY branch set for an area the user does not hold, independent of
     foreach (['Kasir', 'Finance', 'Owner'] as $role) {
         $user = covUser($role);
         foreach (ClinicOversightScope::VIEW_PERMISSIONS as $area) {
+            // RF-8a (rule 215): Owner holds exactly ONE oversight area — the
+            // read-only Billing Correction view. Every other area stays empty.
+            if ($role === 'Owner' && $area === ClinicOversightScope::PERMISSION_BILLING_CORRECTION) {
+                expect($scope->branchIdsFor($user, $area))->toContain($this->branchA->id, $this->branchB->id);
+
+                continue;
+            }
             expect($scope->branchIdsFor($user, $area))->toBe([], "{$role} / {$area}");
         }
     }
+
+    // RF-8a is read-only: no export, so no print/PDF/CSV route opens for Owner.
+    expect(covUser('Owner')->can(ClinicOversightScope::PERMISSION_EXPORT))->toBeFalse();
 });
 
 it('answers nothing from the services to a caller without the area permission', function () {

@@ -540,6 +540,18 @@ $registry = [
             'dependencies' => [],
             'rollback_action' => 'Resolve every active POST_PAYMENT correction first (approve, reject or cancel - reject and cancel are not gated by this flag) because an active correction blocks payment of its invoice. Then set the environment override to false and rebuild the config cache as the runtime user. Nothing is deleted or reverted: applied post-payment corrections stay applied, and their frozen documents, receipt snapshots, OPEN overpayment obligations, events and audit rows remain readable. An OPEN obligation is money the clinic owes and must never be removed by a rollback.',
         ],
+        'rme.billing_refund_request' => [
+            'name' => 'RME Refund Request & Approval',
+            'description' => 'MUTATION capability for REQUESTING and DECIDING the pay-back of an OPEN overpayment obligation (Sprint 4/7, owner decisions RF-1 to RF-14 of 2026-10-31, rule 215). A Front Office account at its assigned working branch files a request for the FULL obligation amount (server-derived, RF-4), with a mandatory case-specific Owner approval reference consumed in the shared registry (rule 214) and a mandatory patient request reference (RF-5). A reviewer who is not the maker - Super Admin (every active RME branch), Supervisor RME (its authorized scope) or Kepala Cabang (its own managed branch) - approves or rejects it; an approved request may be revoked before settlement. A billing dispute on the invoice refuses both submission and approval (RF-7). APPROVED never means money left the clinic: no settlement, payment, reversal, patient credit, ledger or KPI change exists in this capability, and the obligation, invoice, items, payments and receipts are never written. Pilot SPN4 only (RF-3) with a source-controlled identity allowlist that ships EMPTY (RF-1a), so even with this flag on nobody can act until verified identities are recorded. While this flag is off every refund route answers 404 and every service call is refused.',
+            'default' => false,
+            'env_key' => 'FEATURE_RME_BILLING_REFUND_REQUEST',
+            'owner' => 'rme',
+            'risk_level' => 'critical',
+            'rollout_status' => 'implemented',
+            'review_target' => 'ACTIVATION-RME-BILLING-REFUND-REQUEST-APPROVAL-1',
+            'dependencies' => [],
+            'rollback_action' => 'Withdraw or revoke every REQUESTED or APPROVED refund request through the service first (the release paths need the flag on), then set the environment override to false and rebuild the config cache as the runtime user. Nothing is deleted: refund requests, their events, the consumed Owner and patient references and the audit rows remain readable, and no money has moved, so the rollback is non-financial. Never edit or delete a refund row to undo a decision.',
+        ],
     ],
 ];
 

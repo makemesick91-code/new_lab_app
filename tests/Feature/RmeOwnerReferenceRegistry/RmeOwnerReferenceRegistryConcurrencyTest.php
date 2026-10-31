@@ -61,6 +61,11 @@ const RORC_WRITER = 'rorc_race_writer';
 
 /** Tables this suite writes to, in child-before-parent delete order. */
 const RORC_TABLES = [
+    // FEATURE-RME-BILLING-REFUND-REQUEST-APPROVAL-1: refund rows reference the
+    // obligation, invoice and users with RESTRICT, so they go first.
+    'trx_rme_refund_request_events',
+    'trx_rme_refund_patient_references',
+    'trx_rme_refund_requests',
     'trx_rme_owner_approval_references',
     'sys_audit_logs',
     'trx_satusehat_audit_logs',

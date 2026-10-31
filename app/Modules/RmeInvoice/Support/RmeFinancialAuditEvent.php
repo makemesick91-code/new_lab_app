@@ -10,6 +10,7 @@ use App\Modules\RmeInvoice\Models\RmeOverpaymentObligation;
 use App\Modules\RmeInvoice\Models\RmePayment;
 use App\Modules\RmeInvoice\Models\RmePaymentSubmission;
 use App\Modules\RmeInvoice\Models\RmeReceiptSnapshot;
+use App\Modules\RmeInvoice\Models\RmeRefundRequest;
 
 /**
  * FEATURE-RME-BILLING-REFUND-1 / Phase 0 (audit BCF-02) — the vocabulary and
@@ -504,6 +505,53 @@ final class RmeFinancialAuditEvent
             'invoice_version' => (int) $obligation->invoice_version,
             'status' => (string) $obligation->status,
         ];
+    }
+
+    // FEATURE-RME-BILLING-REFUND-REQUEST-APPROVAL-1 (rule 215) — a refund REQUEST and
+    // its decision. No action here records money leaving the clinic.
+    public const ENTITY_REFUND_REQUEST = 'trx_rme_refund_requests';
+
+    public const ACTION_REFUND_REQUEST_SUBMITTED = 'RME_REFUND_REQUEST_SUBMITTED';
+
+    public const ACTION_REFUND_REQUEST_APPROVED = 'RME_REFUND_REQUEST_APPROVED';
+
+    public const ACTION_REFUND_REQUEST_REJECTED = 'RME_REFUND_REQUEST_REJECTED';
+
+    public const ACTION_REFUND_REQUEST_CANCELLED = 'RME_REFUND_REQUEST_CANCELLED';
+
+    public const ACTION_REFUND_REQUEST_STALE = 'RME_REFUND_REQUEST_STALE';
+
+    public const ACTION_REFUND_REQUEST_REFUSED = 'RME_REFUND_REQUEST_REFUSED';
+
+    /** @var array<string, string> status reached => audit action */
+    public const REFUND_REQUEST_ACTIONS = [
+        'REQUESTED' => self::ACTION_REFUND_REQUEST_SUBMITTED,
+        'APPROVED' => self::ACTION_REFUND_REQUEST_APPROVED,
+        'REJECTED' => self::ACTION_REFUND_REQUEST_REJECTED,
+        'CANCELLED' => self::ACTION_REFUND_REQUEST_CANCELLED,
+        'STALE' => self::ACTION_REFUND_REQUEST_STALE,
+    ];
+
+    /**
+     * Ids, cents and codes only: never a name, NIK, RM number, note, patient
+     * reference or Owner reference text (TDD RR-PRIV-01).
+     *
+     * @param  array<string, int|string|null>  $extra
+     * @return array<string, mixed>
+     */
+    public static function refundRequestPayload(RmeRefundRequest $request, ?string $fromStatus, array $extra = []): array
+    {
+        return array_merge([
+            'refund_request_id' => (int) $request->id,
+            'request_number' => $request->request_number,
+            'rme_invoice_id' => (int) $request->rme_invoice_id,
+            'overpayment_obligation_id' => (int) $request->rme_overpayment_obligation_id,
+            'branch_id' => (int) $request->branch_id,
+            'amount_cents' => RmeInvoiceDocument::toCents($request->amount),
+            'invoice_version' => (int) $request->invoice_version,
+            'from_status' => $fromStatus,
+            'to_status' => (string) $request->status,
+        ], $extra);
     }
 
     private static function money(mixed $value): float
