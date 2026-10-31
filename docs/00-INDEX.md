@@ -99,11 +99,12 @@ sprint (termasuk arsip `CLAUDE.md`), bagian yang lebih baru dan **secara eksplis
 | [0010](adr/0010-android-direct-apk-signing-and-distribution.md) | Distribusi APK langsung dengan signing mandiri |
 | [0011](adr/0011-doctor-device-authorization-and-app-only-login.md) | Otorisasi device dokter & login khusus aplikasi |
 | [0012](adr/0012-rme-postpayment-invoice-correction.md) | Koreksi tagihan RME setelah pembayaran |
+| [0013](adr/0013-rme-refund-request-approval.md) | Pengajuan & persetujuan refund RME (Sprint 4/7; dibangun, flag OFF — rule 215) |
 
 Register keputusan owner (bukan format ADR):
 [rme-billing-correction-owner-decisions](decisions/rme-billing-correction-owner-decisions.md),
 [rme-postpayment-correction-owner-decision-proposals](decisions/rme-postpayment-correction-owner-decision-proposals.md).
-Nomor ADR berikutnya yang tersedia: **0013**.
+Nomor ADR berikutnya yang tersedia: **0014**.
 
 ### Spesifikasi fitur dan catatan sprint
 

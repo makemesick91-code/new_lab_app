@@ -87,5 +87,20 @@ never deleted to make a rollback pass.
 ## 6. Not done
 
 * No activation of post-payment correction; PP-10 unchanged.
-* No refund consumer (Sprint 4/7, after its decision package is merged).
+* No refund consumer (Sprint 4/7, after its decision package is merged). *Since added: the refund request is the
+  registry's second consumer (rule 215, PR #569).*
 * No change to the application key, the environment file, custody media or G7-B.
+
+## 7. Deploy evidence (2026-10-31)
+
+| Item | Value |
+|---|---|
+| Merge | PR #568, squash `61450801`, tree `dacd9104` == candidate `15d98300` |
+| CI | run 41175295090 on `15d98300`: all required gates SUCCESS (Critical 7090 passed, 0 failed); Full Suite SKIPPED by the standing policy (not a pass) |
+| Deploy | `scripts/deploy-vps-runner.sh start` on the VPS: exit=0, `DEPLOY OK: 20261031-065951`, `DEPLOY_HEAD_TARGET_MATCH=YES` |
+| Backup | `pre_auto_deploy_20261031-065951.sql` (32 MB, 0640) before migrating |
+| Migration | `2026_10_31_100001` ran (batch 88); 6 constraints (primary key, foreign key to `users`, unique fold, 3 CHECKs) and 3 indexes present; 0 claims (production holds no post-payment correction, so the backfill had nothing to register) |
+| Readiness | `rme:invoice-correction-readiness` (as the runtime user): `OWNER_REFERENCE_REGISTRY present=yes claims=0 unregistered_post_payment_corrections=0`, Decision GO |
+| Reconciliation | financial fingerprint identical before and after — only the new table and the migration count differ |
+| Health | `/login`, `/health/*` 200 over the canonical domain; services active; 0 failed jobs; 0 new application errors |
+| GO tag | `hardening-rme-owner-reference-registry-1-go` @ `61450801`, exact match on the VPS |
