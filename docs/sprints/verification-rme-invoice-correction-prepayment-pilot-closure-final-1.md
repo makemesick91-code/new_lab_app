@@ -259,7 +259,7 @@ bukan cacat kode, dan diserahkan ke Owner.
 | `devflow:base-ref-check --strict`, `sprint:manifest-check`, `sprint:scope-audit` | exit 0; basis kanonik `938aee25` (ref lokal basis usang `9eabff07`, remote menang) |
 | `foundation:devflow-check --strict`, `foundation:shared-service-audit --strict`, `foundation:roadmap-check --strict` | GO / GO (10/10) / GO |
 | `foundation:ci-runtime-control-check --strict`, `foundation:security-compliance-check`, `foundation:enterprise-documentation-check`, `foundation:cicd-enterprise-gate-check` | GO 6/6 · GO 9/9 · GO 21/21 · GO 10/10 pada DB termigrasi — **identik dengan basis yang belum disentuh**. Dijalankan pertama tanpa tabel (SQLite `:memory:`) ketiganya FAIL karena tabel audit tidak ada: kesalahan lingkungan, bukan regresi |
-| Classifier CI (`scripts/ci/resolve-gates.sh`) | `gate_profile=unknown_high_risk` (berkas `.mdc` bukan Markdown) → semua gerbang wajib berjalan |
+| Classifier CI (`scripts/ci/resolve-gates.sh --head HEAD` pada commit kandidat) | `gate_profile=docs_only`, `run_critical_tests=false` — sama dengan classifier di CI. Gerbang kualitas, NSF-9, dan NSF-10 tetap wajib; langkah uji kritis dilewati sesuai CICD-CTRL-1 (dilewati bukan lulus). Catatan: menjalankan classifier sebelum commit memberi diff kosong dan hasil fail-closed `unknown_high_risk` — itu bukan klasifikasi diff ini |
 | CI wajib | pada SHA kandidat persis di PR (bukan di dokumen ini, karena dokumen ini ada di dalam pohon yang diuji) |
 | Full Suite | `SKIPPED_NOT_PASS` — kebijakan sementara global AKTIF, tidak ada otorisasi |
 
