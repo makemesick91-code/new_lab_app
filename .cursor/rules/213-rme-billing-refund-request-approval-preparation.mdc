@@ -1,0 +1,126 @@
+---
+description: PREPARATION-RME-BILLING-REFUND-REQUEST-APPROVAL-1 — preparation contract for RME refund request & approval (Sprint 4/7). Refund stays NOT_IMPLEMENTED and NOT_ACTIVE; on 2026-10-31 the owner answered RF-1 … RF-14, RF-1a and RF-8a (D4, D5, D6, D18, D25, D26 recorded), so the owner-side implementation precondition is met; repository gates and the F-17 registry still sequence the build. Records the verified foundations a future implementation must reuse (obligation is the only refundable source, obligation row immutable, invoice → obligation → request lock order, payments append-only, intent pattern) and what must never happen.
+globs: app/Modules/RmeInvoice/**, docs/adr/0013-rme-refund-request-approval.md, docs/architecture/rme-refund-request-approval-design.md, docs/architecture/rme-refund-request-approval-migration-plan.md, docs/architecture/rme-refund-request-approval-threat-model.md, docs/architecture/rme-refund-request-approval-tdd-matrix.md, docs/architecture/rme-refund-financial-reconciliation-contract.md, docs/decisions/rme-refund-request-approval-owner-decision-package.md, docs/operations/rme-refund-request-approval-release-gate-checklist.md, docs/operations/rme-refund-request-approval-sop-draft.md, docs/sprints/preparation-rme-billing-refund-request-approval-1.md
+alwaysApply: false
+---
+
+# RME refund request & approval — preparation (rule 213)
+
+Labels: **VERIFIED** (read from source or production in this task), **PROPOSED** (design awaiting the
+owner), **PENDING** (register code still open). Nothing labelled PROPOSED is policy. Do not implement,
+enable or report it as active.
+
+Documents: ADR 0013 · `docs/architecture/rme-refund-request-approval-design.md` ·
+`docs/decisions/rme-refund-request-approval-owner-decision-package.md` ·
+`docs/sprints/preparation-rme-billing-refund-request-approval-1.md`.
+
+## A. Status (VERIFIED, 2026-10-31, production runtime `fb3726c5`)
+
+1. Refund is **NOT_IMPLEMENTED and NOT_ACTIVE**: no table, route, permission, service, flag or document,
+   in code and in production. `config/rme_invoice.php` `refund_terms` is printed text only.
+2. **Owner answers of 2026-10-31** (register entries D4, D18, RF-4, audit permanence; mapping in the
+   decision package §7) — `OWNER_POLICY_APPROVED`, `REPOSITORY_POLICY_RECORDED`, nothing built:
+   **D4 via RF-1** — maker = Front Office at its assigned working branch only (never Kasir or Admin Klinik
+   through inherited permissions); reviewers = Super Admin (all branches), Supervisor RME (authorized scope),
+   Kepala Cabang (own managed branch, narrow permission, no broad RME access); a mandatory case-specific
+   Owner approval reference on every request, before processing, linked to invoice and obligation, never
+   reused, validated in application and database; no self-approval. **D18 via RF-2 = A** (separation only).
+   **RF-4 = A** (no partial refund). **Audit permanent.** *Second owner answer the same day (package §7.4,
+   register "Second owner answer"):* every remaining recommendation approved, with modifications —
+   **RF-1a** no automatic reuse of the Sprint 2 pilot pair, verified human separation or
+   `PILOT_ACTIVATION = NO_GO`; **RF-3** flag `rme.billing_refund_request` default OFF, pilot SPN4, activation
+   order Sprint 2 GO → F-17 verified → Sprint 3 activated → real OPEN obligation → staff confirmed → owner
+   activation; **RF-5 = B** patient request reference mandatory, unique per obligation; **RF-6** a NEW Owner
+   reference on every new request after rejection, withdrawal or revocation; **RF-7** refused at submit and
+   approval while a dispute is active; **RF-8/RF-8a** read-only oversight, Owner gets
+   `view_billing_correction_oversight` only; **RF-9 (D5) = C**, **RF-10 (D25) = B**, **RF-11** server time,
+   no backdating — all Sprint 5 policy, none built; **RF-12 (D6)**, **RF-13 (D26)** exclusions; **RF-14**
+   printed terms stay SOP. Contradiction report: package §7.5, `OWNER_DECISION_SYNC = PASS`.
+3. Production holds **0** overpayment obligations; `rme.invoice_postpayment_correction` is OFF and its
+   activation is blocked by PP-10. A refund implementation would have nothing to consume until then.
+4. Sprint 4 implementation is **no longer blocked by an owner decision** (RF-1 … RF-8 and RF-8a answered
+   2026-10-31). It is sequenced by repository gates: the date-determinism fix PR and this decision package
+   merged through legitimate review; then the correction side of the F-17 registry deployed and verified
+   before refund becomes its second consumer. Implementation ships with the flag OFF; activation is a
+   separate owner decision (RF-3).
+5. Finding F-17 (the post-payment correction's Owner-reference non-reuse rule needs a database-backed
+   guarantee; analysis kept in a private security record, never in this public repository) is a separate
+   security hardening, `HARDENING-RME-OWNER-REFERENCE-REGISTRY-1`, sequenced **before any activation of
+   post-payment correction** (task instruction 2026-10-31, not an owner register decision). It is not fixed
+   in runtime by this preparation; since 2026-10-31 it is **IN_REVIEW** in Draft PR #568 (rule 214 on that
+   branch) — not merged, not deployed.
+
+## B. Foundations a future implementation MUST reuse (VERIFIED)
+
+1. The only ledger-justified amount owed back in the system today is an `OPEN` row of
+   `trx_rme_overpayment_obligations`, produced only by `RmeInvoiceCorrectionService::openObligation()`
+   inside an applied POST_PAYMENT correction (every payment is capped at the remaining balance). Never
+   derive a refundable amount from input or from a payment. *(That a refund consumes only obligations —
+   and not, e.g., the printed Kawat Gigi refund case — is PROPOSED, RF-13/RF-14.)*
+2. The obligation row is **immutable** (model refuses every update except the one-time number, and every
+   delete); its status CHECK admits only `OPEN`. A refund implementation must read and lock it and never
+   write it in Sprint 4; a status transition belongs to Sprint 5 through one narrow, enumerated, evented path.
+3. Every invoice-row mutator locks `trx_rme_invoices` `FOR UPDATE` first (corrections and disputes through
+   `findForUpdate()`, payments through `RmeInvoice::query()->lockForUpdate()`); corrections then lock
+   correction → obligation. A refund must take the invoice lock first; the order invoice → obligation →
+   refund request is PROPOSED (§C).
+4. Payments are append-only (AIR-RMB-06); a refund never writes, re-amounts or deletes one.
+5. Idempotency follows rule 205 (HMAC intent, UNIQUE key, fingerprint, replay = original), but with a
+   **refund-specific** HMAC context bound to the obligation id — a payment intent must not validate as a
+   refund intent.
+6. Maker ≠ checker per account in the service under the locks, Super Admin included (AIR-RMB-18);
+   `can()` is necessary but not sufficient because `Gate::before` grants Super Admin everything.
+7. Branch = the obligation's = the invoice's branch (never a request `branch_id`); `RmeWorkingBranchScope`
+   from the persisted actor; out of scope answers 404.
+8. Explicit `User` actor through `RmeBillingActorGuard` / `ActiveAccountResolver`, re-read after the locks.
+9. New tables with `patient_id` join `PatientOwnedRecordRegistry`; new tables with FKs to obligations or
+   payments join every PostgreSQL race cleanup list.
+10. Post-payment correction refuses an Owner reference used on another invoice, case-folded, scanning
+    corrections only (`postPaymentReferenceUsedOnOtherInvoice()`); its hardening is F-17. Any new
+    consumer of Owner references must be checked against it in **both** directions, case-folded.
+
+## C. Design — follows the 2026-10-31 owner answers (RF-1 … RF-14); not built
+
+`trx_rme_refund_requests` + append-only events; states `REQUESTED → APPROVED | REJECTED | CANCELLED |
+STALE`; lock order invoice → obligation (the request's own) → request; amount = obligation amount
+[RF-4 = A, approved]; mandatory case-specific Owner reference **on the request, at submit** [RF-1,
+approved] (column NOT NULL) that has never been recorded, case-folded, on any refund or any post-payment
+correction, backed by a shared consumed-reference registry whose folded key is UNIQUE and bound to one
+scope (the invoice for a correction — PP-2 same-invoice resubmission preserved — or the refund request),
+consumed at submit with `INSERT … ON CONFLICT DO NOTHING` plus a scope check after all row locks (never by
+catching a unique violation); the reviewer verifies it and never supplies a new one;
+**maker authority = the Front Office role at the actor's working branch, checked in the service** (a
+permission alone is not enough: Super Admin holds everything via `Gate::before`); **reviewer authority =
+role + server-resolved branch scope** (Super Admin all branches, Supervisor RME authorized scope, Kepala
+Cabang own managed branch) [RF-1, approved]; seeing a branch is still never authority; rejection keeps the
+obligation `OPEN` and a new request needs a NEW Owner reference [RF-6]; a mandatory patient request
+reference consumed in its own registry scoped to one obligation [RF-5 = B]; refused at submit and approval
+while a billing dispute is active [RF-7]; separate default-OFF flag `rme.billing_refund_request`, pilot SPN4,
+pilot identity list empty by default [RF-3, RF-1a]; oversight read-only through `ClinicOversightScope`, Owner
+granted `view_billing_correction_oversight` only [RF-8, RF-8a]. Sprint 5 adds settlement (UNIQUE per request
+and per obligation), the obligation `OPEN → SETTLED` transition and the ledger term
+`Σ payments − Σ settled refunds`.
+
+## D. Never
+
+* Build or seed a settlement table, permission, route, button, method or status in Sprint 4.
+* Write, edit or delete a payment, invoice, item, receipt snapshot, document version or obligation from
+  refund code; relax the obligation model guard in Sprint 4.
+* Treat `APPROVED` as money paid, or print a refund document before settlement exists.
+* Accept a payment as the subject of a refund (a payment-entry error is a reversal, D26), create patient
+  credit (D6) or offset one invoice against another without an owner decision.
+* Record a recommended option, a brief's default or this rule as an owner approval.
+* Accept an Owner reference that any other refund or post-payment correction has consumed, or compare
+  references case-sensitively.
+* Admit a refund request from anyone but Front Office at its working branch — not Kasir or Admin Klinik
+  through inherited permissions, not Super Admin or Supervisor RME through their wider grants; give
+  Kepala Cabang anything beyond the narrow refund approval permission.
+* Create an invoice, payment, correction, obligation or refund request in production to prove a rule.
+* Build refund runtime before the decision package is merged through legitimate review, or make refund a
+  consumer of the Owner-reference registry before the correction side of that registry (F-17) is deployed
+  and verified.
+* Reuse an Owner reference on a new refund request (RF-6), reuse a patient request reference across
+  obligations (RF-5), or admit a pilot account by inheritance from the Sprint 2 pair (RF-1a).
+* Grant Owner anything beyond `view_billing_correction_oversight` (RF-8a); enable `rme.billing_refund_request`
+  without the RF-3 activation order and a separate owner decision.
+* Touch the application key, the environment file, custody media or G7-B state from billing work.

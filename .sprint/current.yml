@@ -1,19 +1,17 @@
-# FIX-CLINIC-OVERSIGHT-DATE-RANGE-TEST-DETERMINISM-1 — test-only CI regression fix, owner approved 2026-10-31.
-# ClinicOversightDashboardDateRangeTest "intersects the branch filter with the range and fails closed on a forged
-# branch" created its invoice visit without a visit_date, so covVisit() used the clinical TODAY, while it asserted
-# against the fixed range 2026-10-12..2026-10-30 WITA. It passed only while the WITA date lay inside that range and
-# has failed every NSF-R011 critical gate since 2026-10-31 00:00 WITA (= 2026-10-30 16:00 UTC). The visit date is now
-# pinned to 2026-10-15, the clinic day of its payment. No assertion changed (95 tests / 1260 assertions identical).
-# Second fix, owner approved 2026-10-31 for InventoryAnalyticsServiceTest only: "groups monthly outbound value trend
-# by month" used plain subMonth()/subMonths(), which on the 31st (and on 29-31 March) overflow into the CURRENT month,
-# so last month's outbound was counted as this month's (800 instead of 500). The fixture now uses the NoOverflow
-# variants; expected values unchanged (25 tests / 109 assertions identical).
-# No app/, config/, database/, routes/, resources/, scripts/ or CI workflow change. No deploy; no GO tag (CG-16).
+# PREPARATION-RME-BILLING-REFUND-REQUEST-APPROVAL-1 — program DAENGTISIAMS-RME-BILLING-CORRECTION,
+# preparation of Sprint 4/7 (refund request & approval). Documentation and governance text only:
+# current-state audit (repository + read-only production), owner decision package RF-1…RF-14,
+# design, migration plan, threat model, TDD matrix, reconciliation contract, release gates, SOP draft,
+# ADR 0013 and rule 213. No runtime code, no migration, no permission, no route, no flag, no deploy.
+# Owner answers 2026-10-31 recorded: first D4 via RF-1, D18 via RF-2 = A, RF-4 = A, no self-approval,
+# permanent audit; then every remaining recommendation with modifications (RF-1a, RF-3, RF-5…RF-14; D5, D6,
+# D25, D26). The owner-side implementation precondition is met; the build is sequenced by repository gates
+# and the F-17 registry; settlement is NOT_AUTHORIZED in Sprint 4. G7-B state is untouched.
 # Carried forward: LEGACY-RME-PROGRAM-CLOSURE-1 stays CLOSED and inherited.
-id: FIX-CLINIC-OVERSIGHT-DATE-RANGE-TEST-DETERMINISM-1
-type: RUNTIME_FIX
-module: TEST_INFRASTRUCTURE
-title: "Clinic Oversight date-range and Inventory monthly-trend tests no longer depend on the day they run"
+id: PREPARATION-RME-BILLING-REFUND-REQUEST-APPROVAL-1
+type: DOCS_ONLY
+module: RmeInvoice
+title: "RME refund request & approval (Sprint 4/7) prepared: audit, owner decision package, design and contracts — nothing built, nothing enabled"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 runtime_change: false
 schema_change: false
@@ -23,7 +21,7 @@ branch_isolation_impact: false
 ledger_impact: false
 deploy_required: false
 browser_required: false
-test_profiles: [focused, clinic_oversight, inventory]
-go_tag: fix-clinic-oversight-date-range-test-determinism-1-go
+test_profiles: []
+go_tag: preparation-rme-billing-refund-request-approval-1-go
 inherits_parent_go: post-audit-f4bc-release-1-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
