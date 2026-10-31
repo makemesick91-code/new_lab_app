@@ -156,9 +156,11 @@ Retention: a reference stays consumed for its scope whatever later happens to th
 (rejected, stale, cancelled) — the same as today's correction check, which scans post-payment corrections of
 every status.
 
-Existing data: production holds 0 post-payment corrections (2026-10-31), so no backfill is needed; the
-migration must assert that and refuse to run if any post-payment correction carries a reference without a
-registry row.
+Existing data: production holds 0 post-payment corrections (re-verified read-only 2026-10-31), so nothing is
+backfilled there. As implemented (Draft PR #568), the migration backfills consistent existing post-payment
+corrections — one claim per folded reference, scoped to its invoice, attributed to the earliest submission —
+and **refuses** to run when one reference is recorded on more than one invoice or a stored reference is
+outside the alphabet; it never picks a winner.
 
 **Sequencing.** The correction half of this registry is the separate hardening
 `HARDENING-RME-OWNER-REFERENCE-REGISTRY-1` (finding F-17), to ship **before** any activation of

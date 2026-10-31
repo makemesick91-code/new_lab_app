@@ -337,11 +337,11 @@ or enabled.
 |---|---|
 | ID | `HARDENING-RME-OWNER-REFERENCE-REGISTRY-1` |
 | Type | security hardening (runtime change + one additive migration) — **not** part of Sprint 4 |
-| Status | **NOT_STARTED** |
+| Status | **IN_REVIEW** — implemented in Draft PR #568 (branch `hardening/rme-owner-reference-registry-1`, rule 214 on that branch); not merged, not deployed (2026-10-31) |
 | Sequencing | must be merged, deployed and verified **before any activation of `rme.invoice_postpayment_correction`** (task instruction of the 2026-10-31 documentation review; not an owner register decision) |
 | Problem | the enforcement of PP-2's "no reuse on another invoice" needs a database-backed guarantee; analysis kept in the private security record, not in this public repository |
 | Policy needed | none — it enforces the already-ratified PP-2 rule and preserves its same-invoice resubmission |
 | Scope | the scope-keyed registry of migration plan §2a with the correction as its first consumer; the friendly application check stays; refund consumption is **not** included (Sprint 4 implementation adds it later) |
 | Acceptance | RR-REF-08, RR-REF-10…RR-REF-14 adapted to corrections, on PostgreSQL 16; same-invoice resubmission still accepted; a case variant on another invoice refused; no `25P02`; existing correction suites green |
-| Data | production holds 0 post-payment corrections, so no backfill; the migration refuses to run if one exists without a registry row |
+| Data | production holds 0 post-payment corrections (re-verified read-only 2026-10-31), so nothing is backfilled there; as implemented, the migration backfills consistent existing post-payment corrections and **refuses** to run when one reference is recorded on more than one invoice |
 | Exposure today | latent: `rme.invoice_postpayment_correction` is OFF in production and 0 post-payment corrections exist |

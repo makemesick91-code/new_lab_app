@@ -45,9 +45,10 @@ Documents: ADR 0013 · `docs/architecture/rme-refund-request-approval-design.md`
    separate owner decision (RF-3).
 5. Finding F-17 (the post-payment correction's Owner-reference non-reuse rule needs a database-backed
    guarantee; analysis kept in a private security record, never in this public repository) is a separate
-   security hardening, `HARDENING-RME-OWNER-REFERENCE-REGISTRY-1`, NOT_STARTED, sequenced **before any
-   activation of post-payment correction** (task instruction 2026-10-31, not an owner register decision).
-   It is not fixed in runtime by this preparation.
+   security hardening, `HARDENING-RME-OWNER-REFERENCE-REGISTRY-1`, sequenced **before any activation of
+   post-payment correction** (task instruction 2026-10-31, not an owner register decision). It is not fixed
+   in runtime by this preparation; since 2026-10-31 it is **IN_REVIEW** in Draft PR #568 (rule 214 on that
+   branch) — not merged, not deployed.
 
 ## B. Foundations a future implementation MUST reuse (VERIFIED)
 
