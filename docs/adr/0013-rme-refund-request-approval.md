@@ -1,9 +1,9 @@
 # ADR 0013 — Pengajuan & persetujuan refund RME (Sprint 4/7)
 
-* Status: **PROPOSED — desain persiapan, BUKAN kode.** Pada 2026-10-31 Owner menjawab RF-1 (D4,
-  kecuali RF-1a), RF-2 (D18, sebatas pemisahan), RF-4 dan audit permanen (register; paket keputusan §7).
-  Implementasi tetap `BLOCKED_BY_OWNER_DECISION`: RF-3, RF-5, RF-6, RF-7, RF-8 masih
-  `PENDING_OWNER_DECISION`.
+* Status: **DITERIMA SEBAGAI DESAIN — BELUM KODE.** Pada 2026-10-31 Owner menjawab seluruh RF-1 … RF-14,
+  RF-1a dan RF-8a (register: D4, D5, D6, D18, D25, D26; paket keputusan §7.1 dan §7.4). Dari sisi
+  keputusan Owner implementasi tidak lagi terblokir; gerbang repositori dan F-17 tetap berlaku (paket
+  §7.6). Tidak ada yang dibangun atau diaktifkan.
 * Tanggal: 2026-10-31 (WITA)
 * Tugas: `PREPARATION-RME-BILLING-REFUND-REQUEST-APPROVAL-1` (program
   `DAENGTISIAMS-RME-BILLING-CORRECTION`, persiapan Sprint 4/7)
@@ -39,21 +39,26 @@ setelah bayar OFF, dan aktivasinya diblokir PP-10.
    Pembuat: hanya Front Office di cabang kerja yang ditugaskan (bukan Kasir/Admin Klinik lewat izin
    warisan; Super Admin dan Supervisor RME bukan pembuat). Peninjau: Super Admin — semua cabang RME aktif;
    Supervisor RME — cakupan sah; Kepala Cabang — cabang yang dikelolanya, dengan izin sempit tanpa akses
-   RME luas. Melihat cabang tetap bukan otoritas. Lingkup pilot **[RF-3, PENDING]**.
+   RME luas. Melihat cabang tetap bukan otoritas. Lingkup pilot SPN4 **[RF-3, disetujui]**; identitas pilot
+   tidak mewarisi pasangan Sprint 2 dan wajib terpisah secara manusia **[RF-1a, disetujui]**.
 7. **Referensi persetujuan Owner per kasus wajib pada setiap pengajuan**, sebelum diproses, terkait
    tagihan dan kewajiban **[RF-1, disetujui Owner 2026-10-31]**; satu referensi = satu keputusan:
    dibandingkan tanpa membedakan huruf besar/kecil terhadap semua refund **dan** semua koreksi setelah
    bayar, dua arah, dengan tabel bersama referensi terpakai sebagai cadangan database; divalidasi di
-   aplikasi dan database. Pemakaian ulang pada pengajuan ulang: default tidak boleh, sampai RF-6.
-8. **Penolakan tidak menghapus utang**; kewajiban tetap `OPEN` **[RF-6, PENDING]**. Audit permanen:
+   aplikasi dan database. Pengajuan baru sesudah penolakan, penarikan, atau pencabutan wajib membawa
+   referensi Owner **baru** **[RF-6, disetujui]**. Referensi permintaan pasien wajib, unik per kewajiban
+   **[RF-5 = B, disetujui]**.
+8. **Penolakan tidak menghapus utang**; kewajiban tetap `OPEN` **[RF-6, disetujui]**. Audit permanen:
    pengajuan dan peristiwanya tidak pernah dihapus atau diubah **[disetujui Owner 2026-10-31]**.
-9. **Refund ditolak selama ada laporan ketidaksesuaian aktif** **[RF-7]**.
+9. **Refund ditolak selama ada laporan ketidaksesuaian aktif**, saat pengajuan dan saat persetujuan
+   **[RF-7, disetujui]**.
 10. **Idempotensi** dengan intent HMAC khusus refund yang terikat pada kewajiban; pengulangan persis
     mengembalikan hasil asli.
 11. **Flag terpisah** `rme.billing_refund_request` default OFF; pilot SPN4; aktivasi menunggu Sprint 2
-    closure, aktivasi Sprint 3, dan satu kewajiban nyata **[RF-3]**.
+    closure, F-17 terverifikasi, aktivasi Sprint 3, satu kewajiban nyata, staf terkonfirmasi, dan
+    keputusan aktivasi Owner **[RF-3, disetujui]**.
 12. **Tanpa** saldo kredit pasien **[RF-12]**, pembalikan pembayaran **[RF-13]**, offset antartagihan,
-    atau penegakan sistem atas ketentuan tercetak **[RF-14]**.
+    atau penegakan sistem atas ketentuan tercetak **[RF-14]** — semuanya disetujui Owner 2026-10-31.
 
 ## Konsekuensi
 

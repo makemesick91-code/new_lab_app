@@ -101,6 +101,8 @@ Layer: **F** = feature (SQLite + PostgreSQL), **PG** = PostgreSQL 16 only, **S**
 | RR-ELIG-04 | Active correction on the invoice (defensive) | U | `REFUND_CORRECTION_ACTIVE` |
 | RR-ELIG-05 | Branch outside the pilot | F | `REFUND_PILOT_SCOPE_DENIED` |
 | RR-ELIG-06 | Invoice not `PAID` | U | `REFUND_INVOICE_NOT_PAID` |
+| RR-ELIG-07 | Flag ON, pilot branch, but the pilot identity list is empty (shipped default) or does not name the actor [RF-1a] | F | `REFUND_PILOT_IDENTITY_DENIED`; the Sprint 2 pair is not admitted by inheritance |
+| RR-ELIG-08 | Dispute opened after submit, before approval [RF-7: submission **and** approval] | F | approval refused `REFUND_INVOICE_DISPUTED`; dispute, hold and correction state unchanged |
 
 ### Owner reference
 
@@ -114,7 +116,7 @@ Layer: **F** = feature (SQLite + PostgreSQL), **PG** = PostgreSQL 16 only, **S**
 | RR-REF-06 | Reference already recorded on a post-payment correction of **another** invoice | F | `REFUND_OWNER_REFERENCE_REUSED` |
 | RR-REF-07 | Case variant of a used reference (`REF-1` vs `ref-1`), on a refund and on a correction | F + PG | refused; backstop holds |
 | RR-REF-08 | Reverse direction and race: a post-payment correction submitted with a reference already used by a refund; two concurrent submissions on different invoices with one reference | F + PG | `CORRECTION_OWNER_APPROVAL_REFERENCE_REUSED`; exactly one consumer wins (registry UNIQUE) |
-| RR-REF-09 | A rejected or revoked request's reference offered for the re-filed request | F | `REFUND_OWNER_REFERENCE_REUSED` (default until the owner decides reuse with RF-6) |
+| RR-REF-09 | A rejected, withdrawn or revoked request's reference offered for the re-filed request | F | `REFUND_OWNER_REFERENCE_REUSED` [RF-6, approved 2026-10-31: a new request carries a NEW Owner reference] |
 | RR-REF-10 | **PP-2 preserved**: a post-payment correction resubmitted on the **same** invoice after `REJECTED`/`STALE` with the same reference (and a case variant of it) | F | accepted; registry row unchanged (scope = that invoice) |
 | RR-REF-11 | Two sessions, two invoices, case variants of one reference, submitted concurrently | PG | exactly one scope owns the key; the loser is refused with an application exception, never `25P02`; no deadlock |
 | RR-REF-12 | Consuming transaction rolled back after the registry insert (refusal later in the same transaction) | PG | no registry row remains; the reference can be used by its legitimate scope afterwards |
@@ -146,7 +148,11 @@ Layer: **F** = feature (SQLite + PostgreSQL), **PG** = PostgreSQL 16 only, **S**
 |---|---|---|---|
 | RR-PAT-01 | Reference used by a request for a different obligation (also case variant) | F | `REFUND_PATIENT_REFERENCE_REUSED` |
 | RR-PAT-02 | Same reference on a re-filed request for the same obligation after `REJECTED` | F | accepted |
-| RR-PAT-03 | NIK-shaped / malformed reference | F | `REFUND_PATIENT_REFERENCE_INVALID` |
+| RR-PAT-03 | NIK-shaped / malformed reference (also split by separators; < 6 or > 120 characters) | F | `REFUND_PATIENT_REFERENCE_INVALID` |
+| RR-PAT-04 | **Missing** patient reference [RF-5 = B: mandatory] | F | `REFUND_PATIENT_REFERENCE_REQUIRED`; no request row, no registry row |
+| RR-PAT-05 | Same patient reference on a re-filed request for the same obligation after `CANCELLED` or `STALE` (per-obligation contract, package §7.5 K-1) while the Owner reference is new | F | accepted; patient-reference registry row unchanged |
+| RR-PAT-06 | Two sessions, two obligations, case variants of one patient reference, concurrently | PG | exactly one obligation owns the key; the loser is refused with an application exception, never `25P02`; no deadlock with the Owner-reference registry (fixed order) |
+| RR-PAT-07 | DB backstop: request row without a patient reference, or with one shorter than 6 characters; registry row with an unfolded key | PG | NOT NULL / CHECK violation |
 
 ### Concurrency (PostgreSQL 16, two real sessions)
 
@@ -181,16 +187,18 @@ Layer: **F** = feature (SQLite + PostgreSQL), **PG** = PostgreSQL 16 only, **S**
 | RR-PRIV-02 | Oversight list/export: NIK masked, CSV formula-injection safe | F | holds |
 | RR-PRIV-03 | Error messages leak no other branch's existence | F | holds |
 | RR-CLK-01 | Request number month from `ClinicalClock` across 00:00–08:00 WITA on the 1st | F | WITA month |
-| RR-OVS-01 | Finance Klinik / Data Analyst (and Owner only if RF-8 grants it `view_billing_correction_oversight`): GET-only; every write route 403/404; without the grant Owner gets 403 on the oversight pages | F | holds |
+| RR-OVS-01 | Finance Klinik, Data Analyst and Owner (Owner holds `view_billing_correction_oversight` by RF-8a, approved 2026-10-31): GET-only; every write route 403/404 | F | holds |
 | RR-LIFE-09 | Revoke `APPROVED` by an account that is not a reviewer for the invoice's branch | F | `REFUND_REVIEWER_NOT_AUTHORIZED` |
 | RR-LIFE-10 | Approve/reject/cancel lock the request's own obligation; a request whose obligation id differs from the invoice's open obligation is refused | U/F | `REFUND_OBLIGATION_CHANGED` |
 | RR-OVS-02 | Out-of-scope oversight detail | F | 404 |
 | RR-OVS-03 | KPI Omzet and piutang unchanged by `APPROVED` requests | F | holds |
+| RR-OVS-04 | Owner after the RF-8a grant: CSV, list print, per-correction print and PDF routes refused (no `export_oversight_data`); every refund write route refused; Owner holds no maker, reviewer, settlement, pricing or invoice-correction permission | F | 403 / 404; permission set equals the seeder plus the one grant |
+| RR-OVS-05 | "Disetujui — belum dibayar" shown apart from revenue, receivables, cash and bank figures; attribution = source invoice branch [RF-8] | F | holds |
 
 ## 3. PostgreSQL 16 obligations
 
-`RR-SOD-04`, `RR-AMT-05`, `RR-REF-03` (backstop), `RR-REF-05`, `RR-REF-07` (backstop), `RR-REF-08`, `RR-REF-11`…`RR-REF-14`, all `RR-CONC-*`, and the migration
-constraint presence test run on PostgreSQL 16. Add both new tables to every race-suite cleanup list that
+`RR-SOD-04`, `RR-AMT-05`, `RR-REF-03` (backstop), `RR-REF-05`, `RR-REF-07` (backstop), `RR-REF-08`, `RR-REF-11`…`RR-REF-14`, `RR-PAT-06`, `RR-PAT-07`, all `RR-CONC-*`, and the migration
+constraint presence test run on PostgreSQL 16. Add the three new tables to every race-suite cleanup list that
 already names `trx_rme_overpayment_obligations` or `trx_rme_payments`.
 
 ## 4. Mutation targets (minimum)
@@ -198,6 +206,6 @@ already names `trx_rme_overpayment_obligations` or `trx_rme_payments`.
 Remove each and require at least one failing test: the maker ≠ checker comparison; the Front Office
 maker-role check; the reviewer role + branch-scope check (each of Super Admin, Supervisor RME, Kepala
 Cabang); the Owner reference requirement at submit; the case-folding of the reference comparison; the cross-engine
-(correction ↔ refund) reference check in each direction; the registry insert; the declared-amount comparison; the snapshot hash comparison;
+(correction ↔ refund) reference check in each direction; the registry insert; the patient reference requirement and its per-obligation scope check; the pilot identity check; the declared-amount comparison; the snapshot hash comparison;
 the dispute check; the flag guard; the lock on the obligation; the `STALE` commit. Revert by file copy,
 never `git checkout --`.

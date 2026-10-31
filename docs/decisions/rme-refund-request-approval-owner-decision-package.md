@@ -1,9 +1,10 @@
 # Paket Keputusan Owner — Refund RME: Pengajuan & Persetujuan (Sprint 4/7)
 
-> **Status (diperbarui 2026-10-31): SEBAGIAN DIJAWAB OWNER.** RF-1 (D4), RF-2 (D18, sebatas
-> pemisahan persetujuan dari pembayaran) dan RF-4 telah dinyatakan Owner, ditambah dua aturan lintas
-> (tanpa persetujuan diri sendiri; audit permanen) — rekonsiliasi lengkap di **§7**. Semua item lain
-> tetap **USULAN**, tidak disetujui. Implementasi Sprint 4 tetap terblokir (lihat §7.3).
+> **Status (diperbarui 2026-10-31): DIJAWAB OWNER — RF-1 … RF-14, RF-1a dan RF-8a.** Jawaban pertama
+> (RF-1/D4, RF-2/D18, RF-4, tanpa persetujuan diri sendiri, audit permanen) ada di **§7.1**; jawaban
+> kedua pada hari yang sama menyetujui seluruh rekomendasi paket dengan perubahan yang dicatat di
+> **§7.4**; laporan kontradiksi di **§7.5**. Dari sisi keputusan Owner, syarat implementasi §6 terpenuhi;
+> yang tersisa adalah gerbang repositori dan teknis (**§7.6**). Tidak ada yang dibangun atau diaktifkan.
 > Dokumen ini disiapkan oleh `PREPARATION-RME-BILLING-REFUND-REQUEST-APPROVAL-1`
 > (program `DAENGTISIAMS-RME-BILLING-CORRECTION`, Sprint 4/7) pada 2026-10-31 (WITA).
 > Kolom "Rekomendasi teknis" adalah rekomendasi, **bukan persetujuan Owner**. Sebuah usulan
@@ -363,7 +364,11 @@ diaktifkan; refund tidak diaktifkan; data finansial produksi tidak diubah.
 5. Akun yang memegang dua peran (mis. Front Office dan Kepala Cabang) boleh mengajukan dan meninjau,
    **tetapi tidak pengajuan yang sama**.
 
-### 7.3 Yang tetap PENDING
+### 7.3 Yang tetap PENDING setelah jawaban pertama
+
+*Catatan sejarah: seluruh daftar di bawah dijawab oleh jawaban kedua pada hari yang sama (§7.4). Teks dibiarkan
+seperti saat dicatat.*
+
 
 * **RF-1a** — identitas pilot (tanda merah `HUMAN_SEPARATION` Sprint 2 belum selesai).
 * **Pemakaian ulang referensi pada pengajuan ulang** untuk kewajiban yang sama setelah ditolak atau
@@ -375,3 +380,55 @@ diaktifkan; refund tidak diaktifkan; data finansial produksi tidak diubah.
   dan RF-8 belum.
 * Hardening F-17 (`HARDENING-RME-OWNER-REFERENCE-REGISTRY-1`) tetap terpisah dan **NOT_STARTED**; koreksi
   setelah bayar tetap OFF.
+
+### 7.4 Jawaban Owner kedua 2026-10-31 — seluruh rekomendasi disetujui, dengan perubahan
+
+**Sumber (S3).** "Master Execution Prompt — Sprint 4/7 — Refund Request & Approval — Owner Decisions Approved"
+2026-10-31 (WITA), bagian 7: *"The Owner now expressly approves the recommendations contained in the
+canonical Sprint 4 refund decision package"*, dengan perubahan per kode. Dicatat apa adanya — tanpa tanda
+tangan, nomor dokumen, waktu, atau bukti persetujuan yang dikarang. Persetujuan kebijakan **bukan** izin
+implementasi transaksi keuangan lain, dan **bukan** izin aktivasi.
+
+| Kode | Keputusan Owner (isi) | Terhadap rekomendasi paket | Status |
+|---|---|---|---|
+| **RF-1 (D4)** | Seperti §7.1 O-1…O-4 (pembuat hanya Front Office di cabang kerjanya; peninjau Super Admin — semua cabang, Supervisor RME — cakupan sah, Kepala Cabang — cabangnya sendiri dengan izin sempit; referensi Owner wajib **saat pengajuan**, diverifikasi peninjau dan **tidak** diganti peninjau; pembuat ≠ peninjau) | opsi berbasis peran, bukan A | `OWNER_POLICY_APPROVED` |
+| **RF-1a** | Pasangan pilot 29/1 **tidak** dipakai ulang otomatis; kasus #42 tidak memenuhi kriteria penerimaan pra-otorisasi. Pilot refund mensyaratkan pembuat Front Office nyata yang ditugaskan, peninjau yang diidentifikasi terpisah, identitas akun berbeda, pemisahan manusia yang **terverifikasi**, otorisasi cabang nyata, persetujuan Owner sebelumnya yang nyata, dan persetujuan aktivasi yang berlaku. Bila identitas tidak dapat dibuktikan: `PILOT_ACTIVATION = NO_GO`. Tanpa penugasan operator palsu, tanpa pilot sintetis di produksi | lebih ketat dari rekomendasi | `OWNER_POLICY_APPROVED` (`NO_AUTOMATIC_PILOT_PAIR_REUSE`, `REAL_HUMAN_SEPARATION_REQUIRED`) |
+| **RF-2 (D18)** | **A**: persetujuan tidak pernah memindahkan uang; Sprint 4 tanpa rute, izin, tombol, proses, atau transaksi pembayaran keluar; pembayaran keluar = Sprint 5 | = rekomendasi | `OWNER_POLICY_APPROVED` |
+| **RF-3** | Flag terpisah `rme.billing_refund_request`, default OFF, gagal-tertutup; pilot SPN4 kecuali Owner kelak mengubahnya secara sah. Urutan aktivasi: (1) Sprint 2 Full Prepayment Pilot GO; (2) F-17 dideploy dan terverifikasi; (3) Sprint 3 diizinkan dan diaktifkan tersendiri; (4) minimal satu kewajiban kelebihan bayar `OPEN` yang **nyata**; (5) pembuat Front Office dan peninjau independen terkonfirmasi; (6) persetujuan aktivasi refund oleh Owner. Flag tidak dinyalakan selama implementasi Sprint 4; pilot tidak diperluas | = rekomendasi, urutan ditambah langkah (2) dan (5) | `OWNER_POLICY_APPROVED` |
+| **RF-4** | **A**: refund penuh; satu pengajuan = seluruh jumlah kewajiban `OPEN` yang otoritatif, dihitung server; tanpa refund sebagian, tanpa pemutihan utang, tanpa offset kredit otomatis | = rekomendasi | `OWNER_POLICY_APPROVED` |
+| **RF-5** | **B**: referensi permintaan pasien **wajib** (6–120 karakter; tanpa NIK atau varian nomor identitas yang jelas), selain alasan dan kewajiban; tanpa pengumpulan nomor rekening di Sprint 4; tidak boleh dipakai ulang untuk kewajiban lain; pengajuan ulang yang sah untuk kewajiban yang **sama** setelah ditolak boleh memakai referensi yang sama. Referensi pasien ≠ referensi Owner — kontrak keunikannya berbeda | = rekomendasi | `OWNER_POLICY_APPROVED` |
+| **RF-6** | Penolakan: hanya pengajuan itu, alasan wajib, klaim asli tetap, kewajiban tetap `OPEN`, utang tidak dihapus atau dianggap lunas. Penarikan oleh pembuat: hanya saat `REQUESTED`, alasan diaudit, terotorisasi. Pencabutan `APPROVED` yang belum dibayar: hanya lewat alur tingkat peninjau, oleh akun **selain** pembuat, dengan cakupan cabang yang benar dan alasan diaudit. Setelah benar-benar dibayar (Sprint 5): tidak ada pembatalan/pencabutan biasa. **Aturan pengajuan ulang yang lebih aman:** pengajuan baru sesudah penolakan, penarikan, atau pencabutan **wajib membawa referensi persetujuan Owner yang BARU**; referensi lama tidak dapat mengotorisasi keputusan refund baru. Referensi pasien yang sama boleh dipakai lagi untuk kewajiban yang sama sesuai RF-5 | = rekomendasi + aturan referensi | `OWNER_POLICY_APPROVED` |
+| **RF-7** | Pengajuan **dan** persetujuan refund ditolak selama tagihan sumbernya punya laporan ketidaksesuaian aktif (`REFUND_INVOICE_DISPUTED`); perilaku OPS-OQ-1 dipertahankan; dispute tidak diselesaikan otomatis, hold pembayaran tidak dilepas, status koreksi tidak diubah; ketergantungan penyelesaian dispute dicatat (§7.5 K-7), mesin dispute tidak diubah | = rekomendasi | `OWNER_POLICY_APPROVED` |
+| **RF-8** | Oversight baca-saja atas pengajuan refund; "disetujui — belum dibayar" ditampilkan terpisah dari omzet, piutang, kas, dan saldo bank; persetujuan tidak mengubah KPI; atribusi = cabang tagihan sumber; tidak ada netting pendapatan karena persetujuan | = rekomendasi | `OWNER_POLICY_APPROVED` |
+| **RF-8a** | Owner diberi **hanya** izin yang sudah ada `view_billing_correction_oversight` — **bukan** `export_oversight_data`, dan bukan izin pembuat, peninjau, pembayaran keluar, harga, koreksi tagihan, atau tulis RME umum. Rute yang dilindungi diperiksa ulang sebelum diterapkan; tanpa NIK atau detail pasien tanpa batas | = rekomendasi | `OWNER_POLICY_APPROVED` (izin diterapkan pada sprint implementasi) |
+| **RF-9 (D5)** | **C** sebagai kebijakan Sprint 5: transfer bank dan tunai, bukti sesuai metode; nomor rekening = data sensitif; referensi bank dan bukti pembayaran milik alur pembayaran keluar; tidak ada transfer, pembayaran tunai, atau settlement di Sprint 4; pengelompokan akhir bulan tetap SOP operasional | = rekomendasi | `OWNER_POLICY_APPROVED`, implementasi Sprint 5 PENDING |
+| **RF-10 (D25)** | **B**: pembayar ≠ penyetuju; pembuat boleh menjadi pembayar hanya bila kelak memenuhi syarat izin pembayaran keluar dan semua kontrol lulus. Tidak menunjuk pembayar dan tidak memberi izin pembayaran keluar kepada peran mana pun | = rekomendasi (minimum) | `OWNER_POLICY_APPROVED`, aktor pembayaran keluar PENDING |
+| **RF-11** | Waktu pembayaran keluar milik Sprint 5: cap waktu server, tanggal laporan WITA, tidak pernah di masa depan, **tanpa** penanggalan mundur oleh pengguna kecuali diizinkan tersendiri (rentang mundur **tidak** ditetapkan, sehingga tidak dikarang) | lebih ketat dari usulan (tidak ada rentang mundur) | `OWNER_POLICY_APPROVED` (aturan konservatif) |
+| **RF-12 (D6)** | Tanpa saldo kredit pasien, tanpa offset antartagihan, tanpa memakai kelebihan bayar untuk tagihan lain; sistem kredit butuh otorisasi tersendiri | = rekomendasi | `OWNER_POLICY_APPROVED_EXCLUSION` |
+| **RF-13 (D26)** | Pembalikan pembayaran bukan refund; pembayaran salah/ganda butuh alur pembalikan dan otorisasi tersendiri; Sprint 4 hanya menerima kewajiban `OPEN` dari koreksi yang memenuhi syarat | = rekomendasi | `OWNER_POLICY_APPROVED_EXCLUSION` |
+| **RF-14** | Ketentuan refund tercetak (Kawat Gigi, akhir bulan) tetap SOP operasional; tidak ada tenggat sistem yang dikarang atau ditegakkan otomatis di Sprint 4; teks kontraktual tercetak tidak dihapus tanpa keputusan tersendiri | = rekomendasi | `OWNER_POLICY_APPROVED` |
+
+### 7.5 Laporan kontradiksi
+
+| # | Titik | Temuan | Penyelesaian |
+|---|---|---|---|
+| K-1 | RF-5 vs desain §9 | Teks Owner menyebut pengajuan ulang "setelah ditolak"; desain juga mengizinkan pengulangan referensi pasien sesudah `CANCELLED`/`STALE` untuk kewajiban yang sama | Bukan konflik: kontrak keunikan RF-5 adalah **per kewajiban** ("tidak boleh dipakai ulang untuk kewajiban lain") dengan alasan "permintaan pasien yang sama", yang juga berlaku sesudah penarikan atau kedaluwarsa. Referensi pasien tidak mengotorisasi apa pun; otorisasinya adalah referensi Owner, yang selalu baru (RF-6). Owner dapat mempersempitnya kelak |
+| K-2 | RF-6 vs PP-2 | Refund: referensi Owner baru untuk setiap pengajuan baru. Koreksi setelah bayar (PP-2): pengajuan ulang pada **tagihan yang sama** boleh mengulang referensinya | Bukan konflik: dua kontrak, dua cakupan registri (`REFUND_REQUEST` per pengajuan; `POST_PAYMENT_CORRECTION_INVOICE` per tagihan). Keduanya dipertahankan; tidak ada referensi yang dapat berpindah antar-alur |
+| K-3 | RF-1a vs PP-1/D1e | Pasangan 29/1 adalah identitas pilot koreksi | Tidak diubah untuk koreksi. Refund tidak mewarisinya; tanda merah `HUMAN_SEPARATION` Sprint 2 tetap ada dan tidak ditulis ulang. Kronologi kasus #42 dipertahankan apa adanya |
+| K-4 | RF-3 vs usulan paket | Owner menambah F-17 terverifikasi dan konfirmasi staf ke urutan aktivasi | Urutan Owner dipakai; usulan paket adalah himpunan bagiannya |
+| K-5 | RF-11 vs usulan paket | Paket membuka kemungkinan rentang mundur yang diputuskan Owner | Owner memilih tanpa rentang mundur kecuali diizinkan tersendiri. D24/D27 (`paid_at` pembayaran masuk) tetap PENDING — bidang dan domain lain |
+| K-6 | RF-8a vs PP-9 | PP-9 menyebut Owner sebagai pembaca, tetapi Owner tidak memegang izinnya | Diselesaikan RF-8a. Diperiksa ulang pada kode 2026-10-31: grup rute `view_billing_correction_oversight` = 9 rute, **semuanya GET**; 4 di antaranya (CSV, cetak daftar, cetak dan PDF per koreksi) juga mensyaratkan `export_oversight_data`, sehingga Owner tanpa ekspor mencapai 5 rute baca (daftar, pasien, detail koreksi, daftar dan detail kewajiban). §3 RF-8a ("Ekspor tidak ikut") tetap benar |
+| K-7 | RF-7 vs mesin dispute | Selama kewajiban `OPEN`, PP-3 menolak koreksi berikutnya, sehingga dispute yang diajukan sesudah kewajiban terbentuk hanya dapat diselesaikan sebagai `ORIGINAL_CONFIRMED_CORRECT` | Ketergantungan dicatat, mesin dispute **tidak** diubah; pasien menunggu sampai dispute selesai (model ancaman §3) |
+| K-8 | D4 teks asli | "Super Admin required for refund" | Digantikan jawaban Owner RF-1 (sudah dicatat di register D4) |
+| K-9 | RF-10 vs RF-1 | Pembuat (Front Office) boleh menjadi pembayar kelak | Bukan konflik: Sprint 4 tidak memberi izin pembayaran keluar kepada siapa pun; aktor pembayar ditetapkan sebelum Sprint 5 |
+
+**Hasil: `OWNER_DECISION_SYNC = PASS`; kontradiksi yang belum terselesaikan: 0.**
+
+### 7.6 Yang tersisa — bukan keputusan kebijakan Sprint 4
+
+* **Syarat §6 terpenuhi dari sisi Owner** (RF-1 … RF-8 dan RF-8a terjawab). Implementasi tetap menunggu
+  gerbang repositori dan teknis: PR #567 (perbaikan tes tanggal) dan paket ini digabung melalui review yang
+  sah; sisi koreksi dari registri F-17 (`HARDENING-RME-OWNER-REFERENCE-REGISTRY-1`) dideploy dan diverifikasi
+  sebelum refund menjadi konsumen keduanya.
+* **Aktivasi refund** = keputusan Owner tersendiri (RF-3 langkah 6), dengan identitas pilot nyata (RF-1a).
+* **Sprint 5:** penunjukan aktor pembayar (RF-10), implementasi metode dan bukti (RF-9), aturan waktu (RF-11).

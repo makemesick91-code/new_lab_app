@@ -8,15 +8,15 @@
 
 | ☐ | Gate | Evidence |
 |---|---|---|
-| ☐ | RF-1 (D4) approval authority answered, incl. RF-1a pilot identities — **RF-1 answered 2026-10-31 (register entry D4); RF-1a still PENDING** | register entry `OWNER_POLICY_APPROVED` |
+| ☐ | RF-1 (D4) approval authority answered, incl. RF-1a pilot identities — **RF-1 answered 2026-10-31 (register entry D4); RF-1a answered the same day (no automatic reuse of the pilot pair)** | register entry `OWNER_POLICY_APPROVED` |
 | ☐ | RF-2 (D18) approval ≠ settlement answered — **answered 2026-10-31 (RF-2 = A, separation only)** | register entry D18 |
-| ☐ | RF-3 scope, flag, pilot, activation order answered | register entry |
+| ☐ | RF-3 scope, flag, pilot, activation order answered — **answered 2026-10-31** | register entry "remaining RF answers" |
 | ☐ | RF-4 full vs partial answered — **answered 2026-10-31 (RF-4 = A, no partial refund)** | register entry "Refund amount" |
-| ☐ | RF-5 evidence at request answered | register entry |
-| ☐ | RF-6 rejection/cancellation semantics answered | register entry |
-| ☐ | RF-7 dispute interaction answered | register entry |
-| ☐ | RF-8 visibility/reporting answered | register entry |
-| ☐ | RF-12, RF-13, RF-14 scope exclusions confirmed | register entry |
+| ☐ | RF-5 evidence at request answered — **answered 2026-10-31 (RF-5 = B, patient reference mandatory)** | register entry "remaining RF answers" |
+| ☐ | RF-6 rejection/cancellation semantics answered — **answered 2026-10-31 (new Owner reference on every new request)** | register entry "remaining RF answers" |
+| ☐ | RF-7 dispute interaction answered — **answered 2026-10-31** | register entry "remaining RF answers" |
+| ☐ | RF-8 visibility/reporting answered, incl. RF-8a — **answered 2026-10-31** | register entry "remaining RF answers" |
+| ☐ | RF-12, RF-13, RF-14 scope exclusions confirmed — **confirmed 2026-10-31 (D6, D26 exclusions)** | register entries D6, D26 |
 | ☐ | Design, migration plan, threat model, TDD matrix updated to the options actually approved | diff |
 
 No signature, reference or date is invented; a "recommended" option is never recorded as approved.
@@ -51,7 +51,7 @@ No signature, reference or date is invented; a "recommended" option is never rec
 
 ## RG-3 — Activation prerequisites (blocks enabling the flag)
 
-Rows marked [RF-n] follow the recommended option and must be rewritten to the option the owner approves.
+Rows follow RF-3 as approved on 2026-10-31 (activation order (1)–(6)).
 
 | ☐ | Gate | Evidence |
 |---|---|---|
@@ -60,6 +60,7 @@ Rows marked [RF-n] follow the recommended option and must be rewritten to the op
 | ☐ | Sprint 3 (post-payment correction) activated by its own owner decision (PP-10) [RF-3] | register + flag state |
 | ☐ | At least one **real** OPEN obligation exists, caught not created | read-only SQL |
 | ☐ | Per-branch staffing measured: ≥ 1 maker and ≥ 1 different checker account active at the pilot branch | read-only report |
+| ☐ | Real pilot identities named with **verified** human separation; the pilot identity list filled only then [RF-1a] — otherwise `PILOT_ACTIVATION = NO_GO` | register entry + reviewed config change |
 | ☐ | RFI-1…RFI-3 PASS on production | probe output |
 | ☐ | Owner activation decision for refund request/approval recorded | register entry |
 

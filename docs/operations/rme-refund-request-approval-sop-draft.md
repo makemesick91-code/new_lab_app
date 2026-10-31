@@ -3,8 +3,9 @@
 > **DRAFT. Belum berlaku. Fitur belum dibangun dan belum aktif.** SOP ini disiapkan oleh
 > `PREPARATION-RME-BILLING-REFUND-REQUEST-APPROVAL-1` dan harus diperbarui mengikuti keputusan Owner
 > RF-1…RF-8 (`docs/decisions/rme-refund-request-approval-owner-decision-package.md`) sebelum dipakai.
-> Bagian bertanda **[RF-n]** bergantung pada keputusan itu. Per 2026-10-31 Owner sudah menjawab RF-1, RF-2,
-> RF-4 dan audit permanen (paket §7); bagian yang bertanda selain itu masih menunggu.
+> Bagian bertanda **[RF-n]** mengikuti keputusan itu. Per 2026-10-31 Owner sudah menjawab seluruh RF-1 …
+> RF-14 (paket §7.1 dan §7.4). SOP ini tetap **draft** sampai fiturnya dibangun dan diaktifkan dengan
+> keputusan Owner tersendiri.
 
 ## 1. Kapan refund boleh diajukan
 
@@ -34,7 +35,9 @@ Owner yang baru untuk kasus ini** — pengajuan tanpa referensi itu ditolak sist
 3. Isi alasan dengan jelas (tanpa NIK, tanpa nomor rekening), lalu isi **referensi persetujuan Owner**
    untuk kasus ini — bukan referensi koreksi sumbernya, dan bukan referensi yang pernah dipakai untuk
    koreksi atau refund lain (sistem menolaknya, termasuk yang hanya berbeda huruf besar/kecil). **[RF-1]**
-4. Isi **referensi permintaan pasien** (misalnya nomor formulir permintaan refund). **[RF-5]**
+4. Isi **referensi permintaan pasien** (misalnya nomor formulir permintaan refund) — **wajib**, 6–120
+   karakter, tanpa NIK; tidak boleh dipakai untuk kewajiban lain. Jangan meminta nomor rekening pasien
+   pada tahap ini. **[RF-5, disetujui]**
 5. Kirim satu kali. Bila halaman lambat, **jangan** menekan ulang; muat ulang halaman tagihan untuk
    melihat apakah pengajuan sudah tercatat.
 
@@ -48,7 +51,9 @@ sedang diproses.
 3. **Setujui** hanya bila pengajuan membawa referensi persetujuan Owner untuk kasus ini dan datanya benar.
    Peninjau **tidak** memasukkan referensi baru; referensi sudah dicantumkan saat pengajuan. **[RF-1]**
 4. **Tolak** dengan catatan bila data tidak benar. Penolakan **tidak menghapus utang** kepada pasien;
-   pengajuan baru dapat dibuat setelah data diperbaiki. **[RF-6]**
+   pengajuan baru dapat dibuat setelah data diperbaiki, dengan **referensi persetujuan Owner yang baru**
+   (referensi permintaan pasien boleh sama untuk kewajiban yang sama). **[RF-6, disetujui]**
+5. Bila tagihan sedang memiliki laporan ketidaksesuaian aktif, persetujuan juga ditolak sistem. **[RF-7]**
 
 ## 4. Arti status
 

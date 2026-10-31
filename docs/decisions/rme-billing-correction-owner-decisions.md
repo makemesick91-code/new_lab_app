@@ -473,7 +473,10 @@ Owner Decision Addendum), recorded as stated and mapped by substance in the refu
 This is a role-based, branch-scoped answer — not option A (per-account designation), B, C or D of the
 package. Still PENDING: **RF-1a** (pilot identities; the Sprint 2 `HUMAN_SEPARATION` red flag is
 unresolved) and whether a request re-filed for the **same** obligation after rejection or revocation may
-repeat its reference (decided with RF-6; until then a re-filed request needs a new reference). F-17
+repeat its reference (decided with RF-6; until then a re-filed request needs a new reference).
+*Both answered the same day — see "Refund request & approval — remaining RF answers" below: RF-1a = no
+automatic reuse of the pilot pair, real human separation required; RF-6 = every new request carries a new
+Owner reference.* F-17
 (`HARDENING-RME-OWNER-REFERENCE-REGISTRY-1`) stays a separate hardening, NOT_STARTED. Nothing is built;
 refund stays NOT_ACTIVE; post-payment correction stays OFF.
 
@@ -481,7 +484,8 @@ refund stays NOT_ACTIVE; post-payment correction stays OFF.
 
 Owner statement "settlement terpisah": an approved refund never moves money; paying it out is a separate
 record, permission, action and actor (Sprint 5). Recorded **for the separation only** — who may pay (D25,
-RF-10) and how (D5, RF-9) stay PENDING.
+RF-10) and how (D5, RF-9) stay PENDING. *Answered as Sprint 5 policy the same day (entries D5 and D25
+below); the settlement actor is still not appointed.*
 
 ### Refund amount — no partial refund (RF-4 = A) — `OWNER_POLICY_APPROVED`, `REPOSITORY_POLICY_RECORDED` (2026-10-31)
 
@@ -492,6 +496,90 @@ no partial refund (options B and C refused).
 
 Refund requests and their events are permanent audit records: append-only, never deleted, never edited in
 place; financial history stays immutable.
+
+### Second owner answer of 2026-10-31 — all package recommendations approved, with modifications
+
+Source: "Master Execution Prompt — Sprint 4/7 — Refund Request & Approval — Owner Decisions Approved"
+(2026-10-31, WITA), section 7: the owner *"expressly approves the recommendations contained in the canonical
+Sprint 4 refund decision package"*, with the per-code modifications below. Recorded as stated; no signature,
+document number or timestamp is invented, and no earlier approval is created retroactively. Mapping and
+contradiction report: refund decision package §7.4 and §7.5. A policy approval is **not**
+`TECHNICAL_ENFORCEMENT_DEPLOYED`: nothing below is built, deployed or enabled.
+
+### D5 — Refund method (via RF-9 = C) — `OWNER_POLICY_APPROVED`, `SPRINT_5_IMPLEMENTATION_PENDING` (2026-10-31)
+
+Settlement methods are **bank transfer** and **cash**, each with its own proof. Bank-account data is
+sensitive. Bank reference and payment evidence belong to the settlement workflow (Sprint 5). Sprint 4
+implements no transfer, cash payout or settlement. End-of-month disbursement stays an operational SOP
+unless an exact scheduling contract is approved separately.
+
+### D6 — Patient credit balance (via RF-12) — `OWNER_POLICY_APPROVED_EXCLUSION` (2026-10-31)
+
+No patient credit ledger, no cross-invoice offset, no use of an overpayment to pay another invoice. A
+future patient-credit system requires its own authorization.
+
+### D25 — Settler ≠ approver (via RF-10 = B) — `OWNER_POLICY_APPROVED`, `SETTLEMENT_ACTOR_PENDING` (2026-10-31)
+
+The account that pays out a refund must differ from the account that approved it. The maker may be the
+payer only if separately eligible under future settlement permissions and only after every control passes.
+This appoints no payer and grants no settlement privilege to Front Office or any other role; the settlement
+actor is resolved before Sprint 5 activation.
+
+### D26 — Payment reversal (via RF-13) — `OWNER_POLICY_APPROVED_EXCLUSION` (2026-10-31)
+
+A payment reversal is not a refund. A wrongly recorded or duplicated payment needs a separate reversal
+workflow and authorization. Sprint 4 accepts only authoritative OPEN overpayment obligations created by the
+eligible correction workflow — never a payment.
+
+### Refund request & approval — remaining RF answers — `OWNER_POLICY_APPROVED` (2026-10-31)
+
+* **RF-1a — `NO_AUTOMATIC_PILOT_PAIR_REUSE`, `REAL_HUMAN_SEPARATION_REQUIRED`.** Pilot accounts 29 and 1 are
+  not reused automatically; historical case #42 does not satisfy the pre-authorization acceptance criteria
+  and keeps its true audit chronology. A refund pilot needs a real assigned Front Office maker, an
+  independently identified eligible reviewer, distinct accounts, verified human separation, real branch
+  authorization, a real prior Owner approval and a current activation approval; otherwise
+  `PILOT_ACTIVATION = NO_GO`. No fake operator assignment, no synthetic production pilot.
+* **RF-3** — separate flag `rme.billing_refund_request`, default OFF, fail closed; pilot SPN4. Activation
+  order: (1) Sprint 2 Full Prepayment Pilot GO; (2) F-17 deployed and verified; (3) Sprint 3 post-payment
+  correction separately authorized and activated; (4) at least one real OPEN overpayment obligation;
+  (5) authorized Front Office maker and independent reviewer confirmed; (6) separate Owner approval of
+  refund activation. The flag is not enabled during Sprint 4 implementation and the pilot is not widened.
+* **RF-5 = B** — a patient refund-request reference is mandatory in addition to the reason and the
+  obligation: 6–120 characters, no NIK or obvious identity-number variant, no bank-account collection in
+  Sprint 4. It is never reused for a **different** obligation; a legitimate re-filed request for the
+  **same** obligation may repeat it. It is not an Owner approval reference — the two have different
+  uniqueness contracts.
+* **RF-6** — a rejection rejects only that request, needs a reason, keeps the original claim, leaves the
+  obligation OPEN and neither forgives nor settles it. The maker may withdraw only a `REQUESTED` request,
+  with an audited reason. An `APPROVED`, unsettled request may be revoked only through a checker-level
+  workflow, by an account other than the maker, in the right branch scope, with an audited reason. Once
+  settled (Sprint 5) there is no ordinary cancellation or revocation. **Every new request after a
+  rejection, withdrawal or revocation carries a NEW Owner approval reference**; an earlier reference never
+  authorizes a new refund decision. (PP-2's same-invoice resubmission rule for post-payment corrections is
+  a different contract and is unchanged.)
+* **RF-7** — refund submission **and** approval are refused while the source invoice has an active billing
+  dispute (`REFUND_INVOICE_DISPUTED`). OPS-OQ-1 behaviour is preserved; nothing settles the dispute,
+  releases a payment hold or changes correction state. The resolution dependency (a dispute filed after the
+  obligation opened can only resolve as `ORIGINAL_CONFIRMED_CORRECT` while PP-3 holds) is recorded, not
+  engineered away.
+* **RF-8** — refund requests are visible read-only in oversight; approved-but-unsettled refunds are shown
+  apart from revenue, receivables, cash and bank balances; approval moves no KPI; attribution = source
+  invoice branch; no revenue netting on approval.
+* **RF-8a** — Owner receives only the existing `view_billing_correction_oversight` (not
+  `export_oversight_data`, and no maker, reviewer, settlement, pricing, invoice-correction or general RME
+  write permission). Re-verified 2026-10-31: the permission gates 9 GET routes, 4 of which also require
+  `export_oversight_data`. The grant is applied by the implementation sprint after a production-vs-seeder
+  diff; until then Owner still lacks it.
+* **RF-11** — settlement timestamps are a Sprint 5 matter: authoritative server time, WITA reporting dates,
+  never future-dated, and **no user-entered backdating** unless separately authorized (no window is
+  defined, so none is invented). D24/D27 (incoming-payment `paid_at`) are unchanged.
+* **RF-14** — printed refund conditions (Kawat Gigi, end of month) stay operational SOP; no system deadline
+  is invented or enforced in Sprint 4; printed contractual text is not removed without a separate decision.
+
+With RF-1 … RF-8 and RF-8a answered, the decision package's §6 precondition for Sprint 4 implementation is
+met **on the owner side**. Implementation still waits on repository gates (the date-determinism fix PR and
+the decision package merged through legitimate review) and on the correction side of the F-17 registry
+being deployed before refund becomes its second consumer. Refund stays NOT_IMPLEMENTED and NOT_ACTIVE.
 
 ## Pending decisions (unchanged)
 
@@ -517,6 +605,11 @@ approval (RF-1, role-based and branch-scoped, mandatory Owner reference; RF-1a s
 answered for the separation of approval from settlement (RF-2 = A). **D5, D6, D25 and D26 remain
 `PENDING_OWNER_DECISION`**, as do RF-3, RF-5, RF-6, RF-7, RF-8, RF-8a, RF-11 and RF-14. Refund remains
 NOT_IMPLEMENTED and NOT_ACTIVE; Sprint 4 implementation stays blocked until RF-1 … RF-8 are answered.
+*Since the second owner answer of 2026-10-31 (entries above):* **D5** `OWNER_POLICY_APPROVED`
+(`SPRINT_5_IMPLEMENTATION_PENDING`), **D6** and **D26** `OWNER_POLICY_APPROVED_EXCLUSION`, **D25**
+`OWNER_POLICY_APPROVED` (`SETTLEMENT_ACTOR_PENDING`); RF-1a, RF-3, RF-5, RF-6, RF-7, RF-8, RF-8a, RF-11 and
+RF-14 approved. Still PENDING in this register: D2, D3, D8, D9, D11–D17, D20, D22–D24, D27 for every scope
+not already answered (D21c, D21g, D22 unchanged). Refund remains NOT_IMPLEMENTED and NOT_ACTIVE.
 See `docs/sprints/feature-rme-invoice-correction-receipt-foundation-1.md` §3 for
 their text. Decision codes are per register — the KTP-OCR "D7" is a different decision.
 
@@ -768,8 +861,8 @@ D25, D26 (refund, settlement, reversal, patient credit — Sprint 4/7 and 5/7).
 | Approval authority | PP-2 vs D1e | consistent: same two accounts, same per-account maker≠checker |
 | Financial adjustment | — | a correction never writes a payment, refund, reversal or settlement row (rule 189/206) |
 | Overpayment | PP-3 vs "no negative receivable" (rule 206 §12) | consistent: an OPEN obligation is separate from the receivable |
-| Refund request/approval | D4, D5, D18 PENDING *(2026-10-25; since 2026-10-31 D4 and D18 are answered — see their entries — and D5 stays PENDING)* | PP-3 creates the obligation only; no refund path (Sprint 4/7) |
-| Refund settlement | D25 PENDING | none (Sprint 5/7) |
+| Refund request/approval | D4, D5, D18 PENDING *(2026-10-25; since 2026-10-31 D4, D5 and D18 are answered — see their entries)* | PP-3 creates the obligation only; no refund path (Sprint 4/7) |
+| Refund settlement | D25 PENDING *(2026-10-25; since 2026-10-31 answered as Sprint 5 policy, settlement actor pending)* | none (Sprint 5/7) |
 | Laboratory | PP-8 vs D23 pre-payment refusal | consistent: refused on both types |
 | Branch visibility | PP-6/PP-9 vs OD-1a, `ClinicOversightScope` | consistent: invoice branch owns correction, obligation and balance; oversight read-only |
 | Activation order | PP-10 vs Sprint 2 NO_GO | activation blocked; implementation with the flag OFF allowed |

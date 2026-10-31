@@ -1,5 +1,5 @@
 ---
-description: PREPARATION-RME-BILLING-REFUND-REQUEST-APPROVAL-1 — preparation contract for RME refund request & approval (Sprint 4/7). Refund stays NOT_IMPLEMENTED and NOT_ACTIVE; owner answered D4 (RF-1, except RF-1a), D18 (RF-2 = A, separation only), RF-4 = A and audit permanence on 2026-10-31; D5, D6, D25, D26 and the other RF items remain PENDING. Records the verified foundations a future implementation must reuse (obligation is the only refundable source, obligation row immutable, invoice → obligation → request lock order, payments append-only, intent pattern) and what must never happen.
+description: PREPARATION-RME-BILLING-REFUND-REQUEST-APPROVAL-1 — preparation contract for RME refund request & approval (Sprint 4/7). Refund stays NOT_IMPLEMENTED and NOT_ACTIVE; on 2026-10-31 the owner answered RF-1 … RF-14, RF-1a and RF-8a (D4, D5, D6, D18, D25, D26 recorded), so the owner-side implementation precondition is met; repository gates and the F-17 registry still sequence the build. Records the verified foundations a future implementation must reuse (obligation is the only refundable source, obligation row immutable, invoice → obligation → request lock order, payments append-only, intent pattern) and what must never happen.
 globs: app/Modules/RmeInvoice/**, docs/adr/0013-rme-refund-request-approval.md, docs/architecture/rme-refund-request-approval-design.md, docs/architecture/rme-refund-request-approval-migration-plan.md, docs/architecture/rme-refund-request-approval-threat-model.md, docs/architecture/rme-refund-request-approval-tdd-matrix.md, docs/architecture/rme-refund-financial-reconciliation-contract.md, docs/decisions/rme-refund-request-approval-owner-decision-package.md, docs/operations/rme-refund-request-approval-release-gate-checklist.md, docs/operations/rme-refund-request-approval-sop-draft.md, docs/sprints/preparation-rme-billing-refund-request-approval-1.md
 alwaysApply: false
 ---
@@ -25,13 +25,24 @@ Documents: ADR 0013 · `docs/architecture/rme-refund-request-approval-design.md`
    Kepala Cabang (own managed branch, narrow permission, no broad RME access); a mandatory case-specific
    Owner approval reference on every request, before processing, linked to invoice and obligation, never
    reused, validated in application and database; no self-approval. **D18 via RF-2 = A** (separation only).
-   **RF-4 = A** (no partial refund). **Audit permanent.** Still **PENDING**: D5, D6, D25, D26, RF-1a, RF-3,
-   RF-5, RF-6, RF-7, RF-8, RF-8a, RF-9 … RF-14, and reference reuse on a re-filed request (default: a new
-   reference). The task brief's Sprint 4/5 split is still an owner task instruction, not policy.
+   **RF-4 = A** (no partial refund). **Audit permanent.** *Second owner answer the same day (package §7.4,
+   register "Second owner answer"):* every remaining recommendation approved, with modifications —
+   **RF-1a** no automatic reuse of the Sprint 2 pilot pair, verified human separation or
+   `PILOT_ACTIVATION = NO_GO`; **RF-3** flag `rme.billing_refund_request` default OFF, pilot SPN4, activation
+   order Sprint 2 GO → F-17 verified → Sprint 3 activated → real OPEN obligation → staff confirmed → owner
+   activation; **RF-5 = B** patient request reference mandatory, unique per obligation; **RF-6** a NEW Owner
+   reference on every new request after rejection, withdrawal or revocation; **RF-7** refused at submit and
+   approval while a dispute is active; **RF-8/RF-8a** read-only oversight, Owner gets
+   `view_billing_correction_oversight` only; **RF-9 (D5) = C**, **RF-10 (D25) = B**, **RF-11** server time,
+   no backdating — all Sprint 5 policy, none built; **RF-12 (D6)**, **RF-13 (D26)** exclusions; **RF-14**
+   printed terms stay SOP. Contradiction report: package §7.5, `OWNER_DECISION_SYNC = PASS`.
 3. Production holds **0** overpayment obligations; `rme.invoice_postpayment_correction` is OFF and its
    activation is blocked by PP-10. A refund implementation would have nothing to consume until then.
-4. Sprint 4 implementation is **BLOCKED_BY_OWNER_DECISION** until RF-1…RF-8 (and RF-8a) are answered;
-   on 2026-10-31 RF-1 (except RF-1a), RF-2 and RF-4 are answered, RF-3, RF-5, RF-6, RF-7, RF-8 are not.
+4. Sprint 4 implementation is **no longer blocked by an owner decision** (RF-1 … RF-8 and RF-8a answered
+   2026-10-31). It is sequenced by repository gates: the date-determinism fix PR and this decision package
+   merged through legitimate review; then the correction side of the F-17 registry deployed and verified
+   before refund becomes its second consumer. Implementation ships with the flag OFF; activation is a
+   separate owner decision (RF-3).
 5. Finding F-17 (the post-payment correction's Owner-reference non-reuse rule needs a database-backed
    guarantee; analysis kept in a private security record, never in this public repository) is a separate
    security hardening, `HARDENING-RME-OWNER-REFERENCE-REGISTRY-1`, NOT_STARTED, sequenced **before any
@@ -67,7 +78,7 @@ Documents: ADR 0013 · `docs/architecture/rme-refund-request-approval-design.md`
     corrections only (`postPaymentReferenceUsedOnOtherInvoice()`); its hardening is F-17. Any new
     consumer of Owner references must be checked against it in **both** directions, case-folded.
 
-## C. Design — PROPOSED where not answered; RF-1, RF-2, RF-4 follow the 2026-10-31 owner answers
+## C. Design — follows the 2026-10-31 owner answers (RF-1 … RF-14); not built
 
 `trx_rme_refund_requests` + append-only events; states `REQUESTED → APPROVED | REJECTED | CANCELLED |
 STALE`; lock order invoice → obligation (the request's own) → request; amount = obligation amount
@@ -81,9 +92,11 @@ catching a unique violation); the reviewer verifies it and never supplies a new 
 permission alone is not enough: Super Admin holds everything via `Gate::before`); **reviewer authority =
 role + server-resolved branch scope** (Super Admin all branches, Supervisor RME authorized scope, Kepala
 Cabang own managed branch) [RF-1, approved]; seeing a branch is still never authority; rejection keeps the
-obligation `OPEN` [RF-6, PENDING]; refused while a billing dispute is active
-[RF-7]; separate default-OFF flag `rme.billing_refund_request` and pilot SPN4 [RF-3]; oversight read-only
-through `ClinicOversightScope` (Owner needs a grant, RF-8a). Sprint 5 adds settlement (UNIQUE per request
+obligation `OPEN` and a new request needs a NEW Owner reference [RF-6]; a mandatory patient request
+reference consumed in its own registry scoped to one obligation [RF-5 = B]; refused at submit and approval
+while a billing dispute is active [RF-7]; separate default-OFF flag `rme.billing_refund_request`, pilot SPN4,
+pilot identity list empty by default [RF-3, RF-1a]; oversight read-only through `ClinicOversightScope`, Owner
+granted `view_billing_correction_oversight` only [RF-8, RF-8a]. Sprint 5 adds settlement (UNIQUE per request
 and per obligation), the obligation `OPEN → SETTLED` transition and the ledger term
 `Σ payments − Σ settled refunds`.
 
@@ -102,5 +115,11 @@ and per obligation), the obligation `OPEN → SETTLED` transition and the ledger
   through inherited permissions, not Super Admin or Supervisor RME through their wider grants; give
   Kepala Cabang anything beyond the narrow refund approval permission.
 * Create an invoice, payment, correction, obligation or refund request in production to prove a rule.
-* Build refund tables before RF-1…RF-8 are answered (a dormant financial surface of undecided shape).
+* Build refund runtime before the decision package is merged through legitimate review, or make refund a
+  consumer of the Owner-reference registry before the correction side of that registry (F-17) is deployed
+  and verified.
+* Reuse an Owner reference on a new refund request (RF-6), reuse a patient request reference across
+  obligations (RF-5), or admit a pilot account by inheritance from the Sprint 2 pair (RF-1a).
+* Grant Owner anything beyond `view_billing_correction_oversight` (RF-8a); enable `rme.billing_refund_request`
+  without the RF-3 activation order and a separate owner decision.
 * Touch the application key, the environment file, custody media or G7-B state from billing work.

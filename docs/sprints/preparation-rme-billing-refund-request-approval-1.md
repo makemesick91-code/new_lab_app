@@ -9,7 +9,7 @@ Program `DAENGTISIAMS-RME-BILLING-CORRECTION` · **Sprint 4/7 — refund request
 | Canonical base | `feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report` @ `f60d8232` |
 | Production runtime | `fb3726c5`, tree `e25afb7a`, tag `post-audit-f4bc-release-1-go` (re-verified this task) |
 | Runtime change | **none** — no code, migration, permission, route, flag, seeder or deploy |
-| Owner decisions | written: D4, D5, D6, D18, D25, D26 **PENDING**, RF-1…RF-14 proposed. **Since 2026-10-31:** D4 (RF-1, except RF-1a), D18 (RF-2 = A, separation only), RF-4 = A, no self-approval and permanent audit `OWNER_POLICY_APPROVED`; D5, D6, D25, D26 and the other RF items still PENDING (§3.9) |
+| Owner decisions | written: D4, D5, D6, D18, D25, D26 **PENDING**, RF-1…RF-14 proposed. **Since 2026-10-31:** all answered in two owner statements — D4, D18, D5, D25 `OWNER_POLICY_APPROVED`, D6 and D26 `OWNER_POLICY_APPROVED_EXCLUSION`, RF-1 … RF-14, RF-1a, RF-8a approved with modifications (§3.9, §3.10) |
 
 ## Deliverables
 
@@ -306,6 +306,28 @@ re-filed request (default: a new reference, decided with RF-6), RF-3, RF-5, RF-6
 RF-14, and D5, D6, D25, D26. Implementation stays **BLOCKED_BY_OWNER_DECISION** (package §6 needs RF-1 …
 RF-8). F-17 stays a separate hardening, NOT_STARTED; post-payment correction stays OFF; refund stays
 NOT_ACTIVE.
+
+### 3.10 Second owner answer (2026-10-31)
+
+A third owner statement the same day — the Sprint 4 "Master Execution Prompt", section 7 — approved every
+recommendation of the decision package, with modifications. Mapping: decision package §7.4; contradiction
+report §7.5 (9 points, 0 unresolved, `OWNER_DECISION_SYNC = PASS`); register entries D5, D6, D25, D26 and
+"Refund request & approval — remaining RF answers". Nothing invented: no signature, document number,
+timestamp or retroactive approval.
+
+| Area | What changed in the documents |
+|---|---|
+| RF-1a | refund does not inherit the Sprint 2 pair; pilot identity list ships empty; verified human separation or `PILOT_ACTIVATION = NO_GO`; new threat-model wording T-21, test RR-ELIG-07 |
+| RF-3 | activation order now includes F-17 verified and staff confirmed (release gate RG-3 gains a pilot-identity row) |
+| RF-5 = B | patient request reference `NOT NULL` + CHECK; its own registry `trx_rme_refund_patient_references` scoped to one obligation (migration plan §2b); new code `REFUND_PATIENT_REFERENCE_REQUIRED`; threat T-28; tests RR-PAT-04…07 |
+| RF-6 | a new request after rejection, withdrawal or revocation carries a NEW Owner reference (RR-REF-09 now asserts the approved rule, not a default) |
+| RF-7 | refused at approval as well as submit (design §7.2 step 7a, RR-ELIG-08) |
+| RF-8 / RF-8a | Owner gets `view_billing_correction_oversight` only; route set re-verified on code (9 GET routes, 4 also need `export_oversight_data`); threat T-29; tests RR-OVS-04, RR-OVS-05 |
+| RF-9 … RF-14 | Sprint 5 policy and scope exclusions recorded; nothing built |
+
+TDD grows from 102 to **110** IDs, all unique. The owner-side precondition of package §6 is met; the build
+is still sequenced by repository gates and by the F-17 registry (package §7.6). Nothing is built, deployed
+or enabled.
 
 ---
 
