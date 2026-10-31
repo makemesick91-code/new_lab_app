@@ -134,11 +134,42 @@ bypass, mass assignment and lock ordering — all SAFE.
 
 ## 7. CI, merge, deploy
 
-PENDING.
+- PR #574, candidate `816bdd1c` (tree `3171daf7`). CI run `41248090496` on that exact SHA: **success** —
+  CICD-CTRL Gate Classifier, NSF-R012 Quality Gate, CICD-CTRL Selective Module Gate, NSF-R011 Critical Test
+  Gate (7413 passed, `critical_test_exit_status=0`; the log shows `PASS` for `RmeZeroValueClosureTest`,
+  `RmeZeroValueClosureReportingTest` and `RmeZeroValueClosureConcurrencyTest`), NSF-9 Release Safety &
+  Automated Smoke Gate, NSF-10 Release Evidence Gate, Phase 3 Android Clinic App Gate. The second NSF-R011
+  Critical row is the inactive runner variant (exactly one runs by design).
+- **NSF-R011 Full Suite Gate: SKIPPED** on the pull request under the standing temporary policy. Skipped is
+  **not** a pass; no full-suite result is claimed.
+- Squash-merged as **`4520a276`**; merge tree `3171daf7` is byte-identical to the CI-validated candidate.
+- Deployed **inside the VPS** with `bash scripts/deploy-vps-runner.sh start` (detached, pid 500161, log
+  `deploy-20261031-232655`): `exit=0`, `DEPLOY OK: 20261031-232657`,
+  `DEPLOY_HEAD_TARGET_MATCH=YES (4520a276…)`, migration `2026_11_01_100001` DONE (32 ms), deploy gates GO,
+  runtime isolation 107 GO / 0 FAIL / 0 SKIP.
 
-## 8. Production verification
+## 8. Production verification (read-only, 2026-11-01)
 
-PENDING.
+| Check | Result |
+|---|---|
+| Production HEAD / tree | `4520a276` / `3171daf7` = merge commit; only untracked path is the preserved `storage/runtime-home/` (2026-09-05) |
+| Migration | `2026_11_01_100001` Ran, batch 91; 0 pending |
+| Schema | `trx_rme_invoices_no_charge_chk`, `_no_charge_zero_chk`, `_zero_value_category_chk`, `_zero_value_closed_by_fk` present |
+| Flag | `rme.zero_value_closure` **enabled=false** (default) |
+| Sprint 3 / 4 / 5 flags | `rme.invoice_postpayment_correction`, `rme.billing_refund_request`, `rme.billing_refund_settlement` all **false** — unchanged |
+| Sprint 2 pilot flag | `rme.invoice_correction` enabled via env — unchanged (not touched) |
+| Financial fingerprint | 9 invoices / Rp24.548.000 (PAID 7, PARTIAL 1, UNPAID 1); 10 payments / Rp22.548.000 — **identical to the pre-deploy baseline** |
+| Historical invoices | #36 UNPAID Rp0, #42 PAID Rp5.000.000, #43 PAID Rp12.000.000 — untouched |
+| NO_CHARGE rows / provenance columns set | **0** (no closure was performed; no fake Rp0 consultation created) |
+| Refund settlements | 0 |
+| Route | `rme.cashier.zero-value-closure.store` registered; a guest POST answers 419 (CSRF), never 500 |
+| Health over `https://daengtisia.online` | `/login`, `/health/live`, `/health/ready`, `/health/lb` all **200** |
+| Services | php8.3-fpm, nginx, queue worker **active**; `queue:failed` — no failed jobs |
+| Application log | `laravel.log` **1 443 432 bytes before and after** the deploy — zero new bytes, zero new errors |
+
+The capability is **deployed but inert**: with the flag off the route and FormRequest answer 404, the service
+refuses, and every cashier page renders as before. Activation is
+`ACTIVATION-RME-RP0-CONTROL-CONSULTATION-1`, a separate Owner decision.
 
 ## 9. Residuals
 
