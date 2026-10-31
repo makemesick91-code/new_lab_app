@@ -252,20 +252,25 @@ it('groups monthly outbound value trend by month', function () {
     // flake that failed on the first two days of every month and passed on the
     // other twenty-eight. Today is still in the current month, so the grouping this
     // test is actually about is unchanged, and the expected 500.0 is unchanged.
+    //
+    // "Previous month" uses the NoOverflow variants. Plain subMonth() on the 31st
+    // (or on 29-31 March) names a day the shorter month does not have and Carbon
+    // rolls it forward into the CURRENT month, so last month's 300 was counted as
+    // this month's (800) and both rows resolved to the same month.
     $location = InventoryLocation::factory()->create(['branch_id' => $this->branch->id]);
     $product = Product::factory()->create(['branch_id' => $this->branch->id, 'average_cost' => 100]);
 
     createMovementWithDate($this->branch, $product, $location, now()->startOfMonth()->toDateString(), qtyIn: 20);
     createMovementWithDate($this->branch, $product, $location, now()->toDateString(), qtyOut: 5);
-    createMovementWithDate($this->branch, $product, $location, now()->subMonth()->startOfMonth()->addDays(3)->toDateString(), qtyOut: 3);
+    createMovementWithDate($this->branch, $product, $location, now()->subMonthNoOverflow()->startOfMonth()->addDays(3)->toDateString(), qtyOut: 3);
 
     $trend = $this->analytics->getMonthlyOutboundValueTrend($this->branch->id, [
-        'date_from' => now()->subMonths(2)->startOfMonth()->toDateString(),
+        'date_from' => now()->subMonthsNoOverflow(2)->startOfMonth()->toDateString(),
         'date_to' => now()->toDateString(),
     ]);
 
     $currentMonth = now()->format('Y-m');
-    $previousMonth = now()->subMonth()->format('Y-m');
+    $previousMonth = now()->subMonthNoOverflow()->format('Y-m');
 
     $currentRow = collect($trend)->firstWhere('month', $currentMonth);
     $previousRow = collect($trend)->firstWhere('month', $previousMonth);
