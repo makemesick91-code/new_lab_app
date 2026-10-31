@@ -269,6 +269,7 @@ code, then the canonical rule, and report the drift.
 | `.cursor/rules/206-rme-postpayment-invoice-correction-preparation.mdc` | Post-payment foundations; PP-1…PP-10 ratified |
 | `.cursor/rules/207-rme-postpayment-invoice-correction.mdc` | Post-payment correction, obligations, receipt snapshots |
 | `.cursor/rules/213-rme-billing-refund-request-approval-preparation.mdc` | Refund request/approval prepared, not built; owner answered RF-1…RF-14 on 2026-10-31 (D4/D5/D6/D18/D25/D26); flag OFF, F-17 first |
+| `.cursor/rules/214-rme-owner-reference-registry.mdc` | Owner reference registry: one reference, one decision scope, enforced by the database |
 | `.cursor/rules/109-rme-exam-consent-odontogram-history.mdc` | Consent gates exam finish, not payment |
 | `.cursor/rules/92-feature-flag-runtime-override.mdc` | Flag environment overrides captured at config build |
 

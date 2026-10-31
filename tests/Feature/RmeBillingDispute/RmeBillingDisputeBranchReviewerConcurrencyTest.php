@@ -77,6 +77,7 @@ const RBRC_WRITER = 'rbrc_race_writer';
 
 /** Tables this suite writes to, in child-before-parent delete order. */
 const RBRC_TABLES = [
+    'trx_rme_owner_approval_references', // HARDENING-RME-OWNER-REFERENCE-REGISTRY-1: child of users only
     'sys_audit_logs',
     'trx_satusehat_audit_logs',
     'trx_satusehat_candidates',

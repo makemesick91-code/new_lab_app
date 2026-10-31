@@ -66,6 +66,7 @@ const RIC_WRITER = 'ric_concurrency_writer';
 
 /** Tables this suite writes to, in child-before-parent delete order. */
 const RIC_TABLES = [
+    'trx_rme_owner_approval_references', // HARDENING-RME-OWNER-REFERENCE-REGISTRY-1: child of users only
     'sys_audit_logs',
     // A successful payment completes the visit, and completion files a
     // SATUSEHAT candidate (rule 191's accepted-payment race proves that path).

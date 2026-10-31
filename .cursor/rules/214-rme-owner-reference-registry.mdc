@@ -1,0 +1,93 @@
+---
+description: HARDENING-RME-OWNER-REFERENCE-REGISTRY-1 — the database-backed registry of consumed Owner approval references (decision PP-2). One reference authorises one financial decision scope; consumed with INSERT … ON CONFLICT DO NOTHING plus a scope check, inside the deciding transaction, after every row lock. Post-payment correction is the first consumer; refund requests are the planned second. Post-payment correction stays OFF; nothing is activated by this rule.
+globs: app/Modules/RmeInvoice/Services/RmeOwnerApprovalReferenceRegistry.php, app/Modules/RmeInvoice/Services/RmeInvoiceCorrectionService.php, app/Modules/RmeInvoice/Repositories/RmeOwnerApprovalReferenceRepository.php, app/Modules/RmeInvoice/Models/RmeOwnerApprovalReference.php, database/migrations/2026_10_31_100001_create_trx_rme_owner_approval_references_table.php, tests/Feature/RmeOwnerReferenceRegistry/**
+alwaysApply: false
+---
+
+# Owner approval reference registry (rule 214)
+
+Sprint record: `docs/sprints/hardening-rme-owner-reference-registry-1.md`. The detailed security analysis
+behind this hardening is kept in a private security record, never in this public repository.
+
+## A. What it guarantees
+
+1. **One Owner approval reference, one decision scope** (decision PP-2). The table
+   `trx_rme_owner_approval_references` holds one row per reference, keyed by its **case-folded** form
+   (UNIQUE `trx_rme_owner_ref_folded_uq`), bound for good to the first scope that consumed it.
+2. Scopes: `POST_PAYMENT_CORRECTION_INVOICE` (the invoice — a resubmission on the **same** invoice after
+   `REJECTED`, `CANCELLED` or `STALE` repeats its reference, PP-2; once a correction it authorised is
+   `APPROVED`/`APPLIED` the reference is **spent** and that invoice refuses it too, rule 207 §10a) and
+   `REFUND_REQUEST` (one refund
+   request; reserved — no refund consumer exists yet). A reference claimed by one scope is refused by
+   every other scope and every other workflow.
+3. It holds under real concurrency on PostgreSQL: of two transactions that consume one reference for two
+   scopes, exactly one owns it; the other is refused with an application exception.
+
+## B. How a consumer must use it
+
+1. Normalize first (`RmeInvoiceCorrectionApprovalReference::normalize()`), then call
+   `RmeOwnerApprovalReferenceRegistry::consume($reference, $scope, $scopeId, $actor)`:
+   * **inside** the transaction that records the decision — it refuses outside one (fail closed);
+   * **after every domain row lock** the transaction takes, and at most one reference per transaction
+     (the registry key is then the last lock, so no wait cycle can form);
+   * treat `false` as a refusal and **throw**, so the claim rolls back with the decision.
+2. **Never** catch a unique violation to detect reuse: on PostgreSQL that aborts the transaction
+   (`25P02`). The repository uses `INSERT … ON CONFLICT (reference_folded) DO NOTHING`, which never raises.
+3. READ COMMITTED only: the registry refuses REPEATABLE READ and SERIALIZABLE, where the read after a
+   conflict could miss the committed owner.
+4. Keep the consumer's own application check (for example `postPaymentReferenceUsedOnOtherInvoice()`) —
+   it gives the clear message; the registry is the guarantee across scopes. Within ONE scope the
+   consumer enforces spending itself, under its own scope lock (post-payment:
+   `postPaymentReferenceSpentOnInvoice()` under the invoice lock).
+4a. Every reuse refusal — application check or registry — returns ONE message, so a maker cannot tell
+   which kind of decision already holds a reference.
+5. Re-verify at the decision that relies on the reference: post-payment approval refuses
+   (`CORRECTION_OWNER_APPROVAL_REFERENCE_INVALID`) a correction whose reference the registry does not bind
+   to its invoice (`belongsTo()`), under the invoice and correction locks.
+
+## C. Data rules
+
+1. **Append-only.** No `updated_at`, no soft delete; the model refuses update and delete; `down()` refuses
+   while a claim exists. A claim is never released, moved or reused — whatever later happens to the
+   decision it authorised.
+2. **Folding** is `strtolower()` of the normalized ASCII reference — complete because the alphabet is ASCII.
+   Separators are **not** canonicalized (`OWN-001` ≠ `OWN_001`); the owner issuing references from one
+   sequence is the governance control.
+3. PostgreSQL CHECKs: folded key `^[a-z0-9._:/-]{6,120}$`, scope type in the two known values, scope id
+   `> 0`. SQLite carries the UNIQUE only.
+4. The migration **backfills** existing post-payment corrections (one claim per folded reference, scoped to
+   its invoice, attributed to the earliest submission) and **refuses to run** when one reference is
+   recorded on more than one invoice, or a stored reference is outside the alphabet — a human decides; the
+   migration never picks a winner. Production had 0 post-payment corrections on 2026-10-31.
+5. `rme:invoice-correction-readiness` reports `OWNER_REFERENCE_REGISTRY present / claims /
+   unregistered_post_payment_corrections`; a missing table or an unregistered post-payment correction is a
+   **FAIL** (`OWNER_REFERENCE_REGISTRY_MISSING`, `OWNER_REFERENCE_UNREGISTERED`).
+
+## D. Tests
+
+`tests/Feature/RmeOwnerReferenceRegistry/RmeOwnerReferenceRegistryTest.php` (SQLite and PostgreSQL) and
+`RmeOwnerReferenceRegistryConcurrencyTest.php` (PostgreSQL 16, the REAL correction service in a second
+session through `tests/Feature/RmeInvoiceCorrection/race_child.php`, step `submit_correction`). Selected by
+the `RmeOwnerReferenceRegistry` token in **both** critical-gate variants and declared in
+`config/ci_runner.php` `critical_gate_mandatory_suites`. Every PostgreSQL race suite that writes
+corrections deletes `trx_rme_owner_approval_references` first in its cleanup list (it references `users`
+with RESTRICT).
+
+## D2. Residuals (recorded, not hidden)
+
+* Pre-payment corrections are outside the registry (they move no money back); the post-payment path is
+  the one guarded.
+* Separator and spelling variants are distinct keys (C.2); the owner's single reference sequence is the
+  control.
+* Append-only is enforced by the model and `down()`; a direct query-builder write is not blocked by the
+  database. Never write the table outside `RmeOwnerApprovalReferenceRepository::insertIfAbsent()`.
+
+## E. Never
+
+* Activate `rme.invoice_postpayment_correction` because this registry is deployed — activation is PP-10
+  and the owner's separate decision.
+* Add a consumer that skips `consume()`, consumes before its row locks, consumes two references in one
+  transaction, or ignores a `false` result.
+* Delete, update, re-scope or "release" a claim, or seed one by hand on production.
+* Publish the detailed security analysis in this repository.
+* Touch the application key, the environment file, custody media or G7-B state from this work.

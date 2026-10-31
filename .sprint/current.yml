@@ -1,27 +1,25 @@
-# PREPARATION-RME-BILLING-REFUND-REQUEST-APPROVAL-1 — program DAENGTISIAMS-RME-BILLING-CORRECTION,
-# preparation of Sprint 4/7 (refund request & approval). Documentation and governance text only:
-# current-state audit (repository + read-only production), owner decision package RF-1…RF-14,
-# design, migration plan, threat model, TDD matrix, reconciliation contract, release gates, SOP draft,
-# ADR 0013 and rule 213. No runtime code, no migration, no permission, no route, no flag, no deploy.
-# Owner answers 2026-10-31 recorded: first D4 via RF-1, D18 via RF-2 = A, RF-4 = A, no self-approval,
-# permanent audit; then every remaining recommendation with modifications (RF-1a, RF-3, RF-5…RF-14; D5, D6,
-# D25, D26). The owner-side implementation precondition is met; the build is sequenced by repository gates
-# and the F-17 registry; settlement is NOT_AUTHORIZED in Sprint 4. G7-B state is untouched.
+# HARDENING-RME-OWNER-REFERENCE-REGISTRY-1 — rule 214. The database-backed registry of consumed Owner
+# approval references (decision PP-2): one reference authorises one financial decision scope (the invoice
+# for a post-payment correction; a refund request later). Consumed with INSERT … ON CONFLICT DO NOTHING plus
+# a scope check inside the deciding transaction, after every row lock; re-verified at approval; reported by
+# rme:invoice-correction-readiness. Additive migration with a backfill that refuses conflicting data.
+# Post-payment correction stays OFF (PP-10 unchanged); refund is not built; nothing is activated.
+# The detailed security analysis is kept in a private record, not in this public repository.
 # Carried forward: LEGACY-RME-PROGRAM-CLOSURE-1 stays CLOSED and inherited.
-id: PREPARATION-RME-BILLING-REFUND-REQUEST-APPROVAL-1
-type: DOCS_ONLY
+id: HARDENING-RME-OWNER-REFERENCE-REGISTRY-1
+type: SECURITY_FIX
 module: RmeInvoice
-title: "RME refund request & approval (Sprint 4/7) prepared: audit, owner decision package, design and contracts — nothing built, nothing enabled"
+title: "Owner approval reference registry: one reference, one decision scope, enforced by the database"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
-runtime_change: false
-schema_change: false
+runtime_change: true
+schema_change: true
 frontend_change: false
-security_impact: false
+security_impact: true
 branch_isolation_impact: false
 ledger_impact: false
-deploy_required: false
+deploy_required: true
 browser_required: false
-test_profiles: []
-go_tag: preparation-rme-billing-refund-request-approval-1-go
+test_profiles: [focused, security_regression]
+go_tag: hardening-rme-owner-reference-registry-1-go
 inherits_parent_go: post-audit-f4bc-release-1-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1

@@ -62,10 +62,11 @@ records what was built.
     signed the form behind it; never report it as proof.
 10a. Case-specific: a reference already recorded on a POST_PAYMENT correction of
     ANOTHER invoice is refused (`CORRECTION_OWNER_APPROVAL_REFERENCE_REUSED`,
-    case-insensitive); the same invoice may reuse it after STALE/REJECT/CANCEL.
-    Residuals, recorded not hidden: a phone number of ≤12 digits is not caught by the
-    digit rule; two simultaneous submissions on two different invoices with one
-    reference are not serialised by a database constraint (one maker account).
+    case-insensitive); the same invoice may reuse it only after STALE/REJECT/CANCEL,
+    never once a correction it authorised was APPROVED/APPLIED. The cross-invoice
+    guarantee is database-backed by the consumed-reference registry (rule 214).
+    Residual, recorded not hidden: a phone number of ≤12 digits is not caught by the
+    digit rule.
 
 ## E. Money (PP-3, PP-4)
 11. The status after application is `RmeInvoiceLedger::statusAfterMoneyReceived()` — the

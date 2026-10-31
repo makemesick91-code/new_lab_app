@@ -65,6 +65,13 @@ class RmeInvoiceCorrectionReadinessCommand extends Command
             $this->line('APPLICATION='.$report['application_authority']);
             $this->line('POSITIVE_UNPAID_UNSETTLED_INVOICES_IN_PILOT='.$report['positive_unpaid_unsettled_invoices_in_pilot']);
             $this->line('POSTPAYMENT_STATE='.$report['post_payment']['state'].' FLAG_ENABLED='.($report['post_payment']['flag_enabled'] ? 'true' : 'false').' OWNER_APPROVAL_REFERENCE='.$report['post_payment']['owner_approval_reference']);
+            $registry = $report['post_payment']['owner_reference_registry'];
+            $this->line(sprintf(
+                'OWNER_REFERENCE_REGISTRY present=%s claims=%s unregistered_post_payment_corrections=%s',
+                $registry['present'] ? 'yes' : 'no',
+                $registry['claims'] ?? '-',
+                $registry['unregistered_post_payment_corrections'] ?? '-',
+            ));
             foreach ($report['post_payment']['open_overpayment_obligations_by_branch'] as $code => $row) {
                 $this->line(sprintf('OPEN_OVERPAYMENT_OBLIGATIONS %s=%d amount=%s', $code, $row['count'], $row['amount']));
             }

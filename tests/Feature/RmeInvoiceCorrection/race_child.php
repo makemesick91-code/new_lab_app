@@ -66,6 +66,14 @@ try {
                 User::query()->findOrFail((int) $step['actor']),
                 null,
             ),
+            // HARDENING-RME-OWNER-REFERENCE-REGISTRY-1 — a post-payment submission
+            // holding its invoice lock and its Owner-reference claim
+            // (RmeOwnerReferenceRegistryConcurrencyTest).
+            'submit_correction' => app(RmeInvoiceCorrectionService::class)->submit(
+                RmeInvoice::query()->findOrFail((int) $step['invoice']),
+                User::query()->findOrFail((int) $step['actor']),
+                (array) $step['data'],
+            ),
             'pay_invoice' => app(RmePaymentService::class)->pay(
                 RmeInvoice::query()->findOrFail((int) $step['invoice']),
                 User::query()->findOrFail((int) $step['actor']),
