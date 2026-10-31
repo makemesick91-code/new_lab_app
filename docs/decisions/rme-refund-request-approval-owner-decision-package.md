@@ -1,6 +1,9 @@
 # Paket Keputusan Owner — Refund RME: Pengajuan & Persetujuan (Sprint 4/7)
 
-> **Status: USULAN. Tidak satu pun keputusan di bawah ini disetujui.**
+> **Status (diperbarui 2026-10-31): SEBAGIAN DIJAWAB OWNER.** RF-1 (D4), RF-2 (D18, sebatas
+> pemisahan persetujuan dari pembayaran) dan RF-4 telah dinyatakan Owner, ditambah dua aturan lintas
+> (tanpa persetujuan diri sendiri; audit permanen) — rekonsiliasi lengkap di **§7**. Semua item lain
+> tetap **USULAN**, tidak disetujui. Implementasi Sprint 4 tetap terblokir (lihat §7.3).
 > Dokumen ini disiapkan oleh `PREPARATION-RME-BILLING-REFUND-REQUEST-APPROVAL-1`
 > (program `DAENGTISIAMS-RME-BILLING-CORRECTION`, Sprint 4/7) pada 2026-10-31 (WITA).
 > Kolom "Rekomendasi teknis" adalah rekomendasi, **bukan persetujuan Owner**. Sebuah usulan
@@ -45,10 +48,10 @@ Label mengikuti register: `OWNER_POLICY_APPROVED` · `REPOSITORY_POLICY_RECORDED
 
 | Kode | Pokok | Status | Bukti |
 |---|---|---|---|
-| **D4** | Otoritas persetujuan refund | **`PENDING_OWNER_DECISION`** | register "Pending decisions": "D4, D5, D6, D18, D25 and D26 … remain PENDING" |
+| **D4** | Otoritas persetujuan refund | **`OWNER_POLICY_APPROVED`, `REPOSITORY_POLICY_RECORDED`** (2026-10-31, lewat RF-1; sub-pertanyaan RF-1a tetap PENDING) | register, entri "D4 — refund approval authority"; §7 |
 | **D5** | Metode refund | **`PENDING_OWNER_DECISION`** | idem; teks tercetak "dikembalikan di akhir bulan" adalah teks dokumen, bukan keputusan register |
 | **D6** | Saldo kredit pasien | **`PENDING_OWNER_DECISION`** | idem |
-| **D18** | Pemisahan persetujuan dan pembayaran | **`PENDING_OWNER_DECISION`** | idem; lihat catatan §2.1 |
+| **D18** | Pemisahan persetujuan dan pembayaran | **`OWNER_POLICY_APPROVED`, `REPOSITORY_POLICY_RECORDED`** sebatas pemisahan (2026-10-31, lewat RF-2 = A); siapa yang membayar tetap D25/RF-10, PENDING | register, entri "D18"; §2.1, §7 |
 | **D25** | Pembayar ≠ penyetuju | **`PENDING_OWNER_DECISION`** | idem |
 | **D26** | Pembalikan pembayaran | **`PENDING_OWNER_DECISION`** | idem |
 
@@ -74,6 +77,10 @@ Itu adalah **instruksi lingkup tugas** dari Owner (seperti D28 `OWNER_TASK_INSTR
 desain ini mematuhinya. Itu **tidak** dicatat sebagai persetujuan kebijakan D18, karena D18 juga
 menyangkut siapa boleh membayar dan bagaimana — hal yang dijawab RF-2 dan RF-10. Status D18
 tetap `PENDING_OWNER_DECISION` sampai Owner menyatakannya.
+
+*Diperbarui 2026-10-31:* Owner menyatakan **"settlement terpisah"**, yang menjawab RF-2 = A. D18
+dicatat `OWNER_POLICY_APPROVED` **sebatas pemisahan persetujuan dari pembayaran keluar**. Siapa yang
+boleh membayar (D25/RF-10) dan bagaimana (D5/RF-9) tetap `PENDING_OWNER_DECISION`.
 
 ---
 
@@ -313,3 +320,58 @@ setuju; RF-8a = ya/tidak; RF-12/13/14 = setuju; RF-9/10/11 = tunda sampai Sprint
 Jawaban dicatat apa adanya di register, tanpa tanda tangan, referensi, atau waktu yang
 dikarang. **Implementasi Sprint 4 dapat dimulai hanya setelah RF-1, RF-2, RF-3, RF-4, RF-5,
 RF-6, RF-7 dan RF-8 dijawab.**
+
+---
+
+## 7. Jawaban Owner 2026-10-31 dan rekonsiliasi
+
+**Sumber.** Dua pernyataan Owner pada 2026-10-31 (WITA) yang disampaikan dalam brief tugas:
+(S1) bagian keputusan Owner dalam brief `FIX-CLINIC-OVERSIGHT-DATE-RANGE-TEST-DETERMINISM-1`, dan
+(S2) "Sprint 4 Owner Decision Addendum" (Decision A dan Decision B). Dicatat apa adanya — tanpa tanda
+tangan, referensi, atau waktu yang dikarang, dan tanpa bukti persetujuan berlaku surut. Penomoran Owner
+di S1 ("RF-1 … RF-6") **tidak** sama dengan penomoran paket ini; pemetaan di bawah mengikuti **isi**.
+
+### 7.1 Pemetaan
+
+| # | Pernyataan Owner (isi) | Sumber | Item paket | Status |
+|---|---|---|---|---|
+| O-1 | Hanya **Front Office** yang mengajukan refund, dan hanya untuk **cabang kerja yang ditugaskan**. Akun Kasir dan Admin Klinik biasa **tidak** memperoleh wewenang pembuat lewat izin warisan | S1, S2-B | sisi pembuat RF-1; mengganti usulan desain "Kasir, Front Office" | `OWNER_POLICY_APPROVED` |
+| O-2 | Peninjau (setuju/tolak): **Super Admin** — semua cabang; **Supervisor RME** — cabang dalam cakupan sah; **Kepala Cabang** — hanya cabang yang dikelolanya, dengan izin refund yang sempit dan **tanpa** akses RME luas | S1, S2-B | RF-1 (D4), sisi pemeriksa — opsi **berbasis peran dengan cakupan cabang** (bukan A/B/C/D) | `OWNER_POLICY_APPROVED` |
+| O-3 | **Tidak ada persetujuan oleh diri sendiri**; pemisahan pembuat-pemeriksa dipertahankan | S1, S2-B | klausul pembuat ≠ pemeriksa di RF-1 (pemisahan yang sama berlaku pada pencabutan, tetapi apakah pencabutan ada adalah RF-6, PENDING) | `OWNER_POLICY_APPROVED` |
+| O-4 | Setiap pengajuan refund wajib membawa **referensi persetujuan Owner** yang sah, spesifik kasus dan dapat diaudit; persetujuan Owner **mendahului** pemrosesan pengajuan; referensi **terkait dengan tagihan dan kewajiban kelebihan bayar** yang bersangkutan; **tidak dipakai ulang** untuk keputusan finansial lain menurut kontrak keunikan; divalidasi di **aplikasi dan database** | S2-A | RF-1, bagian referensi = **opsi A** (bukan B) | `OWNER_POLICY_APPROVED` |
+| O-5 | **Settlement terpisah** — persetujuan bukan pembayaran | S1 | RF-2 (D18) = **A** | `OWNER_POLICY_APPROVED` (sebatas pemisahan) |
+| O-6 | **Refund sebagian tidak diperbolehkan** | S1 | RF-4 = **A** | `OWNER_POLICY_APPROVED` |
+| O-7 | **Audit permanen** | S1 | prinsip desain (event append-only, tanpa hapus, riwayat finansial tidak diubah) — bukan RF bernomor | `OWNER_POLICY_APPROVED` |
+
+S2 juga menegaskan, tanpa kebijakan baru: hardening F-17 tetap terpisah; koreksi setelah bayar **tidak**
+diaktifkan; refund tidak diaktifkan; data finansial produksi tidak diubah.
+
+### 7.2 Konsekuensi desain yang mengikuti (bukan kebijakan baru)
+
+1. **Referensi Owner ada sejak pengajuan.** Pembuat mencantumkannya saat mengajukan; kolomnya `NOT NULL`;
+   referensi dikonsumsi di registri bersama saat pengajuan dibuat; peninjau memverifikasinya dan **tidak**
+   memasukkan referensi baru. Desain sebelumnya (referensi saat persetujuan) diganti.
+2. **Wewenang pembuat diperiksa dari peran, bukan izin saja.** `Gate::before` memberi Super Admin semua
+   izin dan Supervisor RME memegang banyak izin RME; keduanya **bukan** pembuat. Service memeriksa peran
+   Front Office + cabang kerja akun. Izin `request_rme_refund` hanya diberikan kepada Front Office dan tidak
+   diturunkan dari `manage_rme_billing`.
+3. **Wewenang peninjau = peran + cakupan cabang yang diselesaikan server**, tidak pernah dari `branch_id`
+   permintaan: Super Admin → semua cabang RME aktif; Supervisor RME → cakupan sah akun itu; Kepala Cabang →
+   cabang yang dikelolanya. Kepala Cabang hanya menerima `approve_rme_refund` dan halaman tinjau yang sempit.
+4. **Melihat cabang tetap bukan wewenang.** Owner, Finance Klinik, Data Analyst dan peran lain tidak
+   meninjau refund.
+5. Akun yang memegang dua peran (mis. Front Office dan Kepala Cabang) boleh mengajukan dan meninjau,
+   **tetapi tidak pengajuan yang sama**.
+
+### 7.3 Yang tetap PENDING
+
+* **RF-1a** — identitas pilot (tanda merah `HUMAN_SEPARATION` Sprint 2 belum selesai).
+* **Pemakaian ulang referensi pada pengajuan ulang** untuk kewajiban yang sama setelah ditolak atau
+  dicabut. Default desain sampai Owner memutuskan bersama RF-6: **tidak boleh** — pengajuan ulang membawa
+  referensi baru.
+* **RF-3, RF-5, RF-6, RF-7, RF-8, RF-8a**, serta **RF-9 (D5), RF-10 (D25), RF-11, RF-12 (D6), RF-13 (D26),
+  RF-14**. D5, D6, D25 dan D26 tetap `PENDING_OWNER_DECISION`.
+* **Implementasi Sprint 4 tetap terblokir**: §6 mensyaratkan RF-1 … RF-8 terjawab; RF-3, RF-5, RF-6, RF-7
+  dan RF-8 belum.
+* Hardening F-17 (`HARDENING-RME-OWNER-REFERENCE-REGISTRY-1`) tetap terpisah dan **NOT_STARTED**; koreksi
+  setelah bayar tetap OFF.

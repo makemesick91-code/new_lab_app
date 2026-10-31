@@ -3,7 +3,8 @@
 > **DRAFT. Belum berlaku. Fitur belum dibangun dan belum aktif.** SOP ini disiapkan oleh
 > `PREPARATION-RME-BILLING-REFUND-REQUEST-APPROVAL-1` dan harus diperbarui mengikuti keputusan Owner
 > RF-1…RF-8 (`docs/decisions/rme-refund-request-approval-owner-decision-package.md`) sebelum dipakai.
-> Bagian bertanda **[RF-n]** bergantung pada keputusan itu.
+> Bagian bertanda **[RF-n]** bergantung pada keputusan itu. Per 2026-10-31 Owner sudah menjawab RF-1, RF-2,
+> RF-4 dan audit permanen (paket §7); bagian yang bertanda selain itu masih menunggu.
 
 ## 1. Kapan refund boleh diajukan
 
@@ -22,12 +23,17 @@ Refund **bukan** untuk:
 Bila tagihan sedang memiliki **laporan ketidaksesuaian aktif**, refund tidak dapat diajukan sampai
 laporan itu selesai. **[RF-7]**
 
-## 2. Mengajukan (kasir / front office yang ditunjuk untuk cabang ini)
+## 2. Mengajukan (hanya Front Office, untuk cabang kerja yang ditugaskan) **[RF-1, disetujui]**
+
+Kasir dan Admin Klinik **tidak** mengajukan refund. Sebelum mengajukan, minta **referensi persetujuan
+Owner yang baru untuk kasus ini** — pengajuan tanpa referensi itu ditolak sistem.
 
 1. Buka tagihan pasien di cabang Anda. Pastikan statusnya menampilkan kewajiban kelebihan bayar.
 2. Tekan **Ajukan Refund**. Jumlah sudah diisi sistem dan **tidak dapat diubah** — jumlahnya sama
-   dengan kewajiban. **[RF-4]**
-3. Isi alasan dengan jelas (tanpa NIK, tanpa nomor rekening).
+   dengan kewajiban; tidak ada refund sebagian. **[RF-4, disetujui]**
+3. Isi alasan dengan jelas (tanpa NIK, tanpa nomor rekening), lalu isi **referensi persetujuan Owner**
+   untuk kasus ini — bukan referensi koreksi sumbernya, dan bukan referensi yang pernah dipakai untuk
+   koreksi atau refund lain (sistem menolaknya, termasuk yang hanya berbeda huruf besar/kecil). **[RF-1]**
 4. Isi **referensi permintaan pasien** (misalnya nomor formulir permintaan refund). **[RF-5]**
 5. Kirim satu kali. Bila halaman lambat, **jangan** menekan ulang; muat ulang halaman tagihan untuk
    melihat apakah pengajuan sudah tercatat.
@@ -35,13 +41,12 @@ laporan itu selesai. **[RF-7]**
 Tidak ada uang yang diserahkan kepada pasien pada tahap ini. Sampaikan kepada pasien bahwa permintaannya
 sedang diproses.
 
-## 3. Memeriksa (pemeriksa yang ditunjuk untuk cabang ini)
+## 3. Meninjau (Super Admin — semua cabang; Supervisor RME — cakupannya; Kepala Cabang — cabangnya sendiri) **[RF-1, disetujui]**
 
 1. Anda **tidak boleh** memeriksa pengajuan yang Anda buat sendiri — sistem akan menolak.
 2. Periksa: pasien, tagihan, jumlah, alasan, referensi permintaan pasien, dan riwayat koreksi sumbernya.
-3. **Setujui** hanya bila ada **referensi persetujuan Owner yang baru untuk kasus ini** — bukan referensi
-   koreksi sumbernya, dan bukan referensi yang pernah dipakai untuk koreksi atau refund lain (sistem
-   menolak referensi terpakai, termasuk yang hanya berbeda huruf besar/kecil). **[RF-1]**
+3. **Setujui** hanya bila pengajuan membawa referensi persetujuan Owner untuk kasus ini dan datanya benar.
+   Peninjau **tidak** memasukkan referensi baru; referensi sudah dicantumkan saat pengajuan. **[RF-1]**
 4. **Tolak** dengan catatan bila data tidak benar. Penolakan **tidak menghapus utang** kepada pasien;
    pengajuan baru dapat dibuat setelah data diperbaiki. **[RF-6]**
 

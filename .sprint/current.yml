@@ -3,8 +3,9 @@
 # current-state audit (repository + read-only production), owner decision package RF-1…RF-14,
 # design, migration plan, threat model, TDD matrix, reconciliation contract, release gates, SOP draft,
 # ADR 0013 and rule 213. No runtime code, no migration, no permission, no route, no flag, no deploy.
-# D4, D5, D6, D18, D25, D26 stay PENDING; implementation is BLOCKED_BY_OWNER_DECISION; settlement is
-# NOT_AUTHORIZED. G7-B state is untouched.
+# Owner answers 2026-10-31 recorded (D4 via RF-1 except RF-1a, D18 via RF-2 = A, RF-4 = A, no self-approval,
+# permanent audit); D5, D6, D25, D26 and RF-1a, RF-3, RF-5…RF-14 stay PENDING; implementation is
+# BLOCKED_BY_OWNER_DECISION; settlement is NOT_AUTHORIZED. G7-B state is untouched.
 # Carried forward: LEGACY-RME-PROGRAM-CLOSURE-1 stays CLOSED and inherited.
 id: PREPARATION-RME-BILLING-REFUND-REQUEST-APPROVAL-1
 type: DOCS_ONLY

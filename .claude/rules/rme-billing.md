@@ -268,7 +268,7 @@ code, then the canonical rule, and report the drift.
 | `.cursor/rules/205-rme-payment-submission-idempotency-financial-integrity.mdc` | Payment intent, replay, decide-under-lock |
 | `.cursor/rules/206-rme-postpayment-invoice-correction-preparation.mdc` | Post-payment foundations; PP-1…PP-10 ratified |
 | `.cursor/rules/207-rme-postpayment-invoice-correction.mdc` | Post-payment correction, obligations, receipt snapshots |
-| `.cursor/rules/213-rme-billing-refund-request-approval-preparation.mdc` | Refund request/approval prepared, not built; D4/D5/D6/D18/D25/D26 PENDING |
+| `.cursor/rules/213-rme-billing-refund-request-approval-preparation.mdc` | Refund request/approval prepared, not built; owner answered D4 (RF-1), D18 (RF-2 = A), RF-4 on 2026-10-31; D5/D6/D25/D26 PENDING |
 | `.cursor/rules/109-rme-exam-consent-odontogram-history.mdc` | Consent gates exam finish, not payment |
 | `.cursor/rules/92-feature-flag-runtime-override.mdc` | Flag environment overrides captured at config build |
 

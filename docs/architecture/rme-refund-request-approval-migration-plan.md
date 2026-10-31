@@ -45,7 +45,7 @@
 | `decided_by` | FK users RESTRICT nullable | |
 | `decided_at` | timestamptz nullable | |
 | `decision_note` | text nullable | required for `REJECTED` |
-| `owner_approval_reference` | string(120) nullable | required for `APPROVED` [RF-1] |
+| `owner_approval_reference` | string(120) **NOT NULL** | required on every request, at submit [RF-1, approved 2026-10-31] |
 | `cancelled_by` | FK users RESTRICT nullable | |
 | `cancelled_at` | timestamptz nullable | |
 | `cancel_reason` | text nullable | required for `CANCELLED` |
@@ -64,7 +64,7 @@ CHECK (amount > 0)
 CHECK (amount = obligation_amount_snapshot)                                  -- [RF-4 A]
 CHECK (decided_by IS NULL OR decided_by <> requested_by)                     -- maker ≠ checker backstop
 CHECK (status NOT IN ('APPROVED','REJECTED') OR (decided_by IS NOT NULL AND decided_at IS NOT NULL))
-CHECK (status <> 'APPROVED' OR owner_approval_reference IS NOT NULL)        -- [RF-1 A]
+CHECK (length(btrim(owner_approval_reference)) >= 6)                         -- [RF-1, approved]; NOT NULL on the column
 CHECK (status <> 'REJECTED' OR decision_note IS NOT NULL)
 CHECK (status <> 'CANCELLED' OR (cancelled_by IS NOT NULL AND cancel_reason IS NOT NULL))
 CHECK (status <> 'STALE' OR stale_reason_code IS NOT NULL)
@@ -74,8 +74,7 @@ CREATE UNIQUE INDEX trx_rme_refund_req_one_active_uq
   ON trx_rme_refund_requests (rme_overpayment_obligation_id)
   WHERE status IN ('REQUESTED','APPROVED');
 CREATE UNIQUE INDEX trx_rme_refund_req_owner_ref_uq
-  ON trx_rme_refund_requests (lower(owner_approval_reference))
-  WHERE owner_approval_reference IS NOT NULL;                                  -- non-reuse, case-folded [RF-1]
+  ON trx_rme_refund_requests (lower(owner_approval_reference));               -- non-reuse, case-folded [RF-1]
 ```
 
 The index is on `lower(...)` because the correction engine compares references case-folded; an index on
@@ -84,8 +83,9 @@ the raw column would admit `REF-1` and `ref-1` as two approvals.
 Cross-table rules (enforced in the service, tested; §2a backstops the first):
 the refund Owner reference has never been recorded — case-folded — on any post-payment correction or any
 other refund, and a post-payment correction must likewise refuse a reference already recorded on a refund;
-`request.branch_id = obligation.branch_id = invoice.branch_id`; the cancelling account of an `APPROVED` row
-is not the maker and is on the branch checker list [RF-6]; the patient request reference [RF-5] has not been
+`request.branch_id = obligation.branch_id = invoice.branch_id`; the maker holds the Front Office role and
+that branch is its working branch, and the deciding or cancelling account of an `APPROVED` row is not the
+maker and is a reviewer authorised for that branch (role + server-resolved scope) [RF-1, approved; RF-6]; the patient request reference [RF-5] has not been
 used — case-folded — by a request for a **different** obligation (a re-filed request for the same
 obligation is the same patient request and may repeat it), which no single index can express, so it has no
 database backstop.
@@ -126,7 +126,7 @@ occurrence would break that ratified behaviour. The registry therefore binds eac
 | Consumer | Scope | Effect |
 |---|---|---|
 | Post-payment correction submit | (`POST_PAYMENT_CORRECTION_INVOICE`, invoice id) | resubmission on the same invoice is accepted; any other invoice is refused |
-| Refund approval | (`REFUND_REQUEST`, refund request id) | a re-filed request after revoke needs a new reference; a correction reference can never approve a refund, and the reverse |
+| Refund request submit | (`REFUND_REQUEST`, refund request id) | consumed when the request is filed [RF-1, approved]; a re-filed request after rejection or revoke needs a new reference (default until RF-6); a correction reference can never back a refund, and the reverse |
 
 **Consumption algorithm** — one helper used by both engines, inside the consuming transaction, **after all
 domain row locks are held**, at most one reference per transaction:
@@ -194,7 +194,7 @@ codebase has no trigger precedent, so it is offered for review rather than assum
 | PostgreSQL race-suite cleanup lists: add both tables to every list that already names `trx_rme_overpayment_obligations` (7 files today) and to any list that names `trx_rme_payments` | otherwise RESTRICT FKs fail cleanup on PostgreSQL only |
 | `RepositoryServiceProvider` bindings | CG-04 |
 | `config/feature_flags.php`: `rme.billing_refund_request` default OFF, risk `critical`, env override captured at config build | CG-08, rule 92 |
-| `config/rme_refund.php`: source-controlled pilot branches and **per-branch** maker/checker lists, no `env()`, fail-closed | RF-1, RF-3; follows the source-control and fail-closed conventions of `config/rme_invoice_correction.php`, but that file holds one global maker list and one global checker list, so the per-branch structure is new |
+| `config/rme_refund.php`: source-controlled pilot branches [RF-3, PENDING], no `env()`, fail-closed. Maker and reviewer authority are role + branch scope (RF-1, approved), not account lists | RF-1, RF-3; follows the source-control and fail-closed conventions of `config/rme_invoice_correction.php`, but that file holds one global maker list and one global checker list, so the per-branch structure is new |
 | `PermissionSeeder` (+ grouping), `RoleSeeder` | permissions `request_rme_refund`, `approve_rme_refund` only |
 | `.claude/rules/rme-billing.md` paths | add the new test directory and config file |
 

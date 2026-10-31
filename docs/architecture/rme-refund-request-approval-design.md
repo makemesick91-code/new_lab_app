@@ -61,12 +61,12 @@ asserts the route table holds no settlement route (TDD `RR-SEC-11`).
 
 ```mermaid
 stateDiagram-v2
-  [*] --> REQUESTED: submit (maker; obligation OPEN; amount = obligation, server-derived)
-  REQUESTED --> APPROVED: approve (checker ≠ maker; Owner reference [RF-1]; re-validated under lock)
-  REQUESTED --> REJECTED: reject (checker ≠ maker; note required) — obligation stays OPEN [RF-6]
+  [*] --> REQUESTED: submit (Front Office maker at its working branch; Owner reference; obligation OPEN; amount = obligation, server-derived)
+  REQUESTED --> APPROVED: approve (reviewer ≠ maker, role + branch scope [RF-1]; Owner reference already on the request; re-validated under lock)
+  REQUESTED --> REJECTED: reject (reviewer ≠ maker; note required) — obligation stays OPEN [RF-6]
   REQUESTED --> CANCELLED: withdraw (maker; reason)
   REQUESTED --> STALE: financial state changed since submit (detected under lock)
-  APPROVED --> CANCELLED: revoke before settlement (checker-tier ≠ maker; reason) [RF-6]
+  APPROVED --> CANCELLED: revoke before settlement (reviewer ≠ maker; reason) [RF-6]
   APPROVED --> STALE: obligation no longer matches (defensive; cannot occur while PP-3 holds)
 ```
 
@@ -160,11 +160,14 @@ of one obligation the same signature and make any nonce acceptable.
 
 ### 7.1 Submit
 1. Flag guard (`REFUND_REQUEST_NOT_ENABLED`); resolve actor (persisted, active, not soft-deleted,
-   effective `request_rme_refund`).
+   effective `request_rme_refund`) **and the Front Office role** [RF-1, approved 2026-10-31] — a permission
+   alone is not enough, because Super Admin holds every permission and Supervisor RME holds many, and
+   neither is a maker ⇒ `REFUND_MAKER_NOT_AUTHORIZED`.
 2. Intent: `keyFrom(token, obligationId)` → null ⇒ `REFUND_INTENT_INVALID`.
 3. Transaction, §5 locks.
-4. Branch: `I.branch_id ∈ RmeWorkingBranchScope(actor)` else **404**; pilot branch and maker allowlist
-   for that branch [RF-3] else `REFUND_PILOT_SCOPE_DENIED` / `REFUND_PILOT_IDENTITY_DENIED`.
+4. Branch: `I.branch_id ∈ RmeWorkingBranchScope(actor)` — for Front Office its assigned working branch
+   [RF-1, approved] — else **404**; pilot scope [RF-3, PENDING] else `REFUND_PILOT_SCOPE_DENIED` /
+   `REFUND_PILOT_IDENTITY_DENIED`.
 5. Replay: a request (in any state, terminal included) with the same `intent_key` → same requester + same
    fingerprint ⇒ return that request unchanged, whatever its current status, and write nothing; otherwise
    `REFUND_INTENT_REUSED`. A rejected request is therefore never re-filed by a replay; a new request
@@ -175,43 +178,54 @@ of one obligation the same signature and make any nonce acceptable.
    (jsonb: invoice id, version, grand total cents, paid cents, payment count, obligation id/amount/
    version) and its SHA-256, reason code `OVERPAYMENT_AFTER_CORRECTION`, reason note, patient request
    reference [RF-5], intent key, fingerprint.
+8a. Owner approval reference [RF-1, approved 2026-10-31]: required on **every** request
+   (`REFUND_OWNER_REFERENCE_REQUIRED`), valid (`RmeInvoiceCorrectionApprovalReference::normalize()`, else
+   `REFUND_OWNER_REFERENCE_INVALID`) and — compared **case-folded** — never recorded before on **any** refund
+   request or on **any** post-payment correction (else `REFUND_OWNER_REFERENCE_REUSED`). It is stored on the
+   row (`NOT NULL`), linked to the invoice and obligation the row names, and consumed in the shared registry
+   with scope (`REFUND_REQUEST`, this request's id) in the same transaction, after all row locks (§7.2
+   step 7 explains the registry). The Owner approval therefore precedes any processing of the request.
 9. Number `RMEREF-{Ym of ClinicalClock}-{id:06d}` assigned after insert (unique; no lock-free MAX+1).
 10. Event `null → REQUESTED`; audit `ACTION_REFUND_REQUEST_SUBMITTED` inside the transaction.
 11. Refusal: audited after rollback with its code (AIR-RMB-08).
 
 ### 7.2 Approve
-1. Flag, actor (effective `approve_rme_refund`), reference normalized.
+1. Flag, actor (effective `approve_rme_refund`). The reviewer supplies **no** reference.
 2. Transaction, §5 locks on the request's invoice and obligation.
 3. Status must be `REQUESTED`. `APPROVED` by the same decider with the same fingerprint ⇒ no-op (original
    result); `APPROVED`/`REJECTED` otherwise ⇒ `REFUND_REQUEST_ALREADY_DECIDED`; `CANCELLED`/`STALE` ⇒
    `REFUND_INVALID_TRANSITION`.
 4. **Maker ≠ checker per account, in the service, Super Admin included:**
    `request.requested_by !== actor.id` ⇒ `REFUND_SELF_APPROVAL_FORBIDDEN`. DB CHECK is the backstop.
-5. Branch scope + checker allowlist for **the invoice's** branch [RF-1, RF-3] (§8).
+5. Reviewer authority for **the invoice's** branch [RF-1, approved 2026-10-31] (§8): the actor holds a
+   reviewer role and that branch lies in the role's server-resolved scope — Super Admin: every active RME
+   branch; Supervisor RME: its legitimate authorized scope; Kepala Cabang: its own managed branch — else
+   `REFUND_REVIEWER_NOT_AUTHORIZED` (out of every scope ⇒ 404). Pilot scope [RF-3, PENDING].
 6. Re-validate §4 and recompute the snapshot hash. Mismatch ⇒ transition to `STALE` (committed) and
    refuse with `REFUND_REQUEST_STALE`.
-7. Owner reference [RF-1]: present and valid (`RmeInvoiceCorrectionApprovalReference::normalize()`), and
-   — compared **case-folded** — never recorded before on **any** refund request or on **any** post-payment
-   correction (any invoice, the source correction included) ⇒ else `REFUND_OWNER_REFERENCE_*`. One Owner
-   approval authorises exactly one decision. The same check must be added in the other direction: a
+7. Owner reference [RF-1, approved]: the request's own reference, captured at submit (§7.1 step 8a), is
+   present and its registry row is scoped to **this** request (defensive re-check) ⇒ else
+   `REFUND_OWNER_REFERENCE_INVALID`. It was checked at submit, case-folded, against **any** refund request
+   and **any** post-payment correction (any invoice, the source correction included). One Owner approval
+   authorises exactly one decision. The same check must be added in the other direction: a
    post-payment correction must refuse a reference already recorded on a refund (today its check scans
    corrections only). Backstop: one shared registry of consumed Owner references, folded key UNIQUE, each
    reference bound to one scope — the invoice for a post-payment correction (so PP-2's same-invoice
    resubmission after `STALE`/`REJECTED` still works), the refund request for a refund approval — consumed
    with `INSERT … ON CONFLICT DO NOTHING` followed by a scope comparison, after all row locks, in the same
-   transaction (migration plan §2a). A revoked approval does not release its reference; re-approval needs a
-   new one.
+   transaction (migration plan §2a). A revoked or rejected request does not release its reference; a
+   re-filed request needs a new one (default until the owner decides reuse together with RF-6).
 8. Transition `APPROVED`; event; audit. **No write to obligation, invoice, items, payments, receipts.**
 
 ### 7.3 Reject
-`REQUESTED → REJECTED` by an account with `approve_rme_refund` that is not the maker
+`REQUESTED → REJECTED` by a reviewer authorised as in §7.2 step 5 that is not the maker
 (`REFUND_SELF_DECISION_FORBIDDEN`), decision note required (10–1000 chars, never in audit payloads).
 The obligation stays `OPEN` [RF-6].
 
 ### 7.4 Cancel
 * `REQUESTED → CANCELLED` by the maker, reason required.
-* `APPROVED → CANCELLED` by a checker-tier account that is not the maker **and is on the checker list for
-  the invoice's branch**, reason required [RF-6]. The service enforces both; there is no database CHECK on
+* `APPROVED → CANCELLED` by a reviewer that is not the maker **and is authorised for the invoice's branch**
+  (§7.2 step 5), reason required [RF-6, PENDING]. The service enforces both; there is no database CHECK on
   `cancelled_by` (it may legitimately equal the maker for a `REQUESTED` withdrawal).
   (Sprint 5 adds: refused once a settlement exists.)
 
@@ -225,28 +239,30 @@ layer that binds Super Admin, because `Gate::before` grants Super Admin every ab
 | Effective permission (`$actor->can(...)`) | service (necessary, **not sufficient**: true for Super Admin by `Gate::before`) |
 | Branch of the action = the obligation's branch = the invoice's branch; never a request `branch_id` | service, from locked rows |
 | Actor's `RmeWorkingBranchScope` contains that branch; out of scope ⇒ 404 (existence does not leak) | service + controller |
-| **Per-branch authority** [RF-1 option A, PENDING]: the actor is on the maker/checker list **for that branch** (pilot: a new source-controlled per-branch structure — the correction config holds one global maker list and one global checker list, so this is new, not a mirror; later: a per-(account, branch) designation table). Options C and D of RF-1 are role-based and would replace this row | service |
+| **Role + branch authority** [RF-1, `OWNER_POLICY_APPROVED` 2026-10-31]: maker = Front Office at its assigned working branch; reviewer = Super Admin (all active RME branches), Supervisor RME (its authorized scope) or Kepala Cabang (its own managed branch), the scope always resolved server-side from the persisted account | service |
 | Maker ≠ checker per account, Super Admin included | service under lock + DB CHECK |
-| Owner reference mandatory at approval [RF-1] | service + DB CHECK |
+| Owner reference mandatory on every request, before processing [RF-1, approved] | service + `NOT NULL` + shared registry |
 
-**Multi-branch access is not authority** (task brief; the mechanism is RF-1 option A). An account whose
-scope reaches several branches (Super Admin, Supervisor RME, Owner) may act on a refund only for a branch
-where it is explicitly listed. Being able to *see* an SPN4 invoice from another branch, or holding
-`approve_rme_refund` via `'*'`, never admits an approval. If the owner elects a role-based option, the
-brief's rule still needs a branch-bound mechanism and RF-1 must say which.
+**Multi-branch access is not authority** (task brief). Authority comes only from the owner-approved role
+and its scope (RF-1, 2026-10-31): Super Admin reviews for every active RME branch because the owner
+granted that, not because it can see them; Supervisor RME and Kepala Cabang review only inside their
+scope. Being able to *see* an invoice of another branch never admits an action, and holding a permission
+through `'*'` or a wide grant never makes an account a maker. Owner, Finance Klinik and Data Analyst read
+oversight only.
 
 ### 8.1 Proposed role/permission matrix [RF-1, RF-3, RF-8]
 
 | Capability | Permission | Held by (proposed) | Effective authority |
 |---|---|---|---|
-| File a request | `request_rme_refund` | Kasir, Front Office (mirrors `request_rme_invoice_correction`) | + per-branch maker list |
-| Approve / reject / revoke | `approve_rme_refund` | **no operational role** (Super Admin only through `'*'`) — mirrors `review_rme_billing_disputes` | + per-branch checker list + Owner reference |
+| File a request | `request_rme_refund` | **Front Office only** [RF-1, approved] — never Kasir or Admin Klinik, and never derived from `manage_rme_billing` | + Front Office role checked in the service + assigned working branch |
+| Approve / reject / revoke | `approve_rme_refund` | Supervisor RME, **Kepala Cabang** (this permission and a narrow review page only — no other RME permission), Super Admin through `'*'` [RF-1, approved] | + reviewer role + server-resolved branch scope; the Owner reference is already on the request |
 | Withdraw own request | `request_rme_refund` | as above | maker of that row only |
 | Read on the invoice | existing `manage_rme_billing` | cashier roles | invoice in working scope |
 | Oversight read | existing `view_billing_correction_oversight` (+ `export_oversight_data`) | Finance Klinik, Data Analyst (they hold it today). **Owner does not** — the billing-correction oversight route group is gated on that permission, so Owner visibility requires granting Owner the permission (RF-8a), which also exposes the existing correction and obligation oversight pages to Owner. Recommended grant: that one permission only — not `export_oversight_data`, no write permission (the area has 9 routes, all GET) | `ClinicOversightScope` (all RME branches except MAIN), GET-only |
 | Settlement | — | **none in Sprint 4** | — |
 
-Never granted: `approve_rme_refund` to Owner, Finance Klinik, Data Analyst, Doctor, Perawat, Kasir;
+Never granted: `approve_rme_refund` to Owner, Finance Klinik, Data Analyst, Doctor, Perawat, Kasir,
+Front Office, Admin Klinik; `request_rme_refund` to anyone but Front Office;
 any refund permission to the lab `Finance` role (separate domain, AIR-RMB-01). Before seeding, diff
 production grants against `RoleSeeder::ROLE_PERMISSIONS` (`syncPermissions` removes what is missing);
 seed `PermissionSeeder` → `RoleSeeder` → `permission:cache-reset`.
@@ -258,7 +274,8 @@ human separation is not and is never claimed (CG-07). The Sprint 2 pair carries
 
 ## 9. Refusal codes (stable, machine-readable)
 
-`REFUND_REQUEST_NOT_ENABLED`, `REFUND_PILOT_SCOPE_DENIED`, `REFUND_PILOT_IDENTITY_DENIED`,
+`REFUND_REQUEST_NOT_ENABLED`, `REFUND_MAKER_NOT_AUTHORIZED`, `REFUND_REVIEWER_NOT_AUTHORIZED`,
+`REFUND_PILOT_SCOPE_DENIED`, `REFUND_PILOT_IDENTITY_DENIED`,
 `REFUND_ACTOR_UNUSABLE`, `REFUND_INTENT_INVALID`, `REFUND_INTENT_REUSED`, `REFUND_OBLIGATION_NOT_FOUND`
 (rendered 404), `REFUND_OBLIGATION_NOT_OPEN`, `REFUND_OBLIGATION_CHANGED`, `REFUND_INVOICE_VERSION_CHANGED`,
 `REFUND_LEDGER_MISMATCH`, `REFUND_INVOICE_NOT_PAID`, `REFUND_CORRECTION_ACTIVE`, `REFUND_INVOICE_DISPUTED`,
@@ -304,7 +321,7 @@ contract §3 so that Sprint 4 does not design itself into a corner.
 | Defect found before activation | Leave flag OFF; fix forward | none (no rows) |
 | Defect after activation | First withdraw/revoke every `REQUESTED`/`APPROVED` row through the service (the release paths need the flag ON), then flag OFF (routes 404, service refuses). If rows must stay, they remain inert while OFF; no money has moved — the same order AIR-RMB-23 requires for active corrections | none; obligations untouched |
 | Need to roll code back | Redeploy previous GO tag; migrations stay (additive). `down()` refuses while rows exist | none |
-| Wrongly approved request | Revoke `APPROVED → CANCELLED` (checker-tier, reason) before any settlement exists | event appended; obligation stays OPEN |
+| Wrongly approved request | Revoke `APPROVED → CANCELLED` (authorised reviewer ≠ maker, reason) before any settlement exists | event appended; obligation stays OPEN |
 
 Because Sprint 4 never moves money and never writes the obligation, invoice or payments, every rollback
 is non-financial. Never delete or edit a refund row or event to "undo" a decision.

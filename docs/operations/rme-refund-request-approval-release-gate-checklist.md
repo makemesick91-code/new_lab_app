@@ -8,10 +8,10 @@
 
 | ☐ | Gate | Evidence |
 |---|---|---|
-| ☐ | RF-1 (D4) approval authority answered, incl. RF-1a pilot identities | register entry `OWNER_POLICY_APPROVED` |
-| ☐ | RF-2 (D18) approval ≠ settlement answered | register entry |
+| ☐ | RF-1 (D4) approval authority answered, incl. RF-1a pilot identities — **RF-1 answered 2026-10-31 (register entry D4); RF-1a still PENDING** | register entry `OWNER_POLICY_APPROVED` |
+| ☐ | RF-2 (D18) approval ≠ settlement answered — **answered 2026-10-31 (RF-2 = A, separation only)** | register entry D18 |
 | ☐ | RF-3 scope, flag, pilot, activation order answered | register entry |
-| ☐ | RF-4 full vs partial answered | register entry |
+| ☐ | RF-4 full vs partial answered — **answered 2026-10-31 (RF-4 = A, no partial refund)** | register entry "Refund amount" |
 | ☐ | RF-5 evidence at request answered | register entry |
 | ☐ | RF-6 rejection/cancellation semantics answered | register entry |
 | ☐ | RF-7 dispute interaction answered | register entry |
@@ -67,7 +67,7 @@ Rows marked [RF-n] follow the recommended option and must be rewritten to the op
 
 | ☐ | Gate | Evidence |
 |---|---|---|
-| ☐ | One real request filed by the pilot maker, decided by a different pilot checker with a case-specific Owner reference | refund request id, events |
+| ☐ | One real request filed by a Front Office maker of the pilot branch with a case-specific Owner reference, decided by a different authorised reviewer | refund request id, events |
 | ☐ | Reconciliation contract §4 deltas match exactly | form |
 | ☐ | No money moved; obligation `OPEN`; KPIs unchanged | read-only SQL |
 | ☐ | Evidence files contain ids and cents only — no patient identity | review |

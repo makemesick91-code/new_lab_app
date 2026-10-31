@@ -9,7 +9,7 @@ Program `DAENGTISIAMS-RME-BILLING-CORRECTION` · **Sprint 4/7 — refund request
 | Canonical base | `feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report` @ `f60d8232` |
 | Production runtime | `fb3726c5`, tree `e25afb7a`, tag `post-audit-f4bc-release-1-go` (re-verified this task) |
 | Runtime change | **none** — no code, migration, permission, route, flag, seeder or deploy |
-| Owner decisions | D4, D5, D6, D18, D25, D26 **PENDING**; RF-1…RF-14 **proposed, none approved** |
+| Owner decisions | written: D4, D5, D6, D18, D25, D26 **PENDING**, RF-1…RF-14 proposed. **Since 2026-10-31:** D4 (RF-1, except RF-1a), D18 (RF-2 = A, separation only), RF-4 = A, no self-approval and permanent audit `OWNER_POLICY_APPROVED`; D5, D6, D25, D26 and the other RF items still PENDING (§3.9) |
 
 ## Deliverables
 
@@ -136,12 +136,15 @@ Full text: `docs/decisions/rme-refund-request-approval-owner-decision-package.md
 
 | Decision | Status |
 |---|---|
-| D4, D5, D6, D18, D25, D26 | `PENDING_OWNER_DECISION` |
+| D4 (via RF-1, except RF-1a) | `OWNER_POLICY_APPROVED`, `REPOSITORY_POLICY_RECORDED` (2026-10-31, §3.9) |
+| D18 (via RF-2 = A, separation of approval from settlement only) | `OWNER_POLICY_APPROVED`, `REPOSITORY_POLICY_RECORDED` (2026-10-31, §3.9) |
+| D5, D6, D25, D26 | `PENDING_OWNER_DECISION` |
 | D16, D24, D27 (dependencies) | `PENDING_OWNER_DECISION` |
 | PP-2, PP-3, PP-6, PP-9, PP-10, OPS-OQ-1 (dependencies) | `OWNER_POLICY_APPROVED`, `REPOSITORY_POLICY_RECORDED` |
-| RF-1…RF-8 (block Sprint 4 implementation) | proposed, **none approved** |
+| RF-1…RF-8 (block Sprint 4 implementation) | **RF-1, RF-2, RF-4 answered 2026-10-31**; RF-1a, RF-3, RF-5, RF-6, RF-7, RF-8, RF-8a proposed, not approved |
 | RF-9…RF-11 (block Sprint 5) | proposed, **none approved** |
 | RF-12…RF-14 (scope exclusions) | proposed, **none approved** |
+| No self-approval; audit permanent (cross-cutting) | `OWNER_POLICY_APPROVED`, `REPOSITORY_POLICY_RECORDED` (2026-10-31) |
 
 ---
 
@@ -219,7 +222,9 @@ PRODUCTION_DEPLOYMENT           = NOT_EXECUTED
 G7_B_STATUS                     = UNCHANGED
 ```
 
-Sprint 4 is **not** complete: only its preparation is.
+Sprint 4 is **not** complete: only its preparation is. *(The owner-decision line above is superseded in part
+by §3.9: on 2026-10-31 the owner answered RF-1, RF-2, RF-4 and two cross-cutting rules. Implementation stays
+blocked.)*
 
 ### 3.6 Owner decisions required, in order
 
@@ -268,6 +273,39 @@ was approved by this review.
 | Changed files against base `f60d8232` | 15, all documentation, rules or the sprint manifest; no `app/`, `config/`, `database/`, `routes/`, `tests/`, `.github/` or `scripts/` path |
 | Public-repository scan re-run after the edit | 1 498 non-empty added lines: 0 IP addresses, e-mail addresses, URLs, runs of 13+ digits, phone numbers, host or server identifiers, database names, environment-file references or personal names. Remaining keyword hits reviewed one by one and all benign: 7 "token" hits are the refund intent-token design (6) and one CI filter-token name (1); 4 bank hits are privacy rules (no account number is collected); 2 SSH hits state that SSH configuration is not changed |
 | Owner decisions | D4, D5, D6, D18, D25, D26 and RF-1…RF-14 still PENDING |
+
+### 3.9 Owner decision reconciliation (2026-10-31)
+
+Two owner statements arrived on 2026-10-31 (WITA) in task briefs: the decisions section of the
+`FIX-CLINIC-OVERSIGHT-DATE-RANGE-TEST-DETERMINISM-1` brief, and the Sprint 4 Owner Decision Addendum
+(Decision A — Owner approval reference; Decision B — refund approval scope). They were mapped to this
+package **by substance**, not by number (the first statement numbered its items "RF-1 … RF-6" differently
+from this package). Full mapping: decision package §7; register entries D4, D18, "Refund amount" and
+"Refund audit permanence". No signature, reference, date or approval evidence was invented.
+
+| Owner statement | Package item | Status |
+|---|---|---|
+| Maker = Front Office, assigned working branch only; never Kasir or Admin Klinik through inherited permissions | RF-1, maker side | `OWNER_POLICY_APPROVED` |
+| Reviewers = Super Admin (all branches), Supervisor RME (authorized scope), Kepala Cabang (own managed branch, narrow permission, no broad RME access) | RF-1 (D4), reviewer side — role-based, branch-scoped (not option A, B, C or D) | `OWNER_POLICY_APPROVED` |
+| Mandatory case-specific Owner approval reference on every request, before processing, linked to invoice and obligation, never reused for another financial decision, validated in application and database | RF-1, reference = option A | `OWNER_POLICY_APPROVED` |
+| No self-approval; maker-checker kept | RF-1 clause (the same separation would bind a revocation, whose existence is RF-6, PENDING) | `OWNER_POLICY_APPROVED` |
+| Settlement separate | RF-2 (D18) = A, separation only | `OWNER_POLICY_APPROVED` |
+| No partial refund | RF-4 = A | `OWNER_POLICY_APPROVED` |
+| Permanent audit | design invariant (append-only, no delete) | `OWNER_POLICY_APPROVED` |
+
+**Design changes that follow** (written into the design, migration plan, threat model, TDD matrix, ADR 0013,
+SOP draft, release gate and rule 213): the Owner reference moves from approval to **submit** (column
+`NOT NULL`, consumed in the shared registry at submit; the reviewer verifies, never supplies one); maker
+authority is the **Front Office role** at the actor's working branch, checked in the service (Super Admin
+and Supervisor RME hold wide permissions and are not makers); reviewer authority is **role + server-resolved
+branch scope**; two new refusal codes `REFUND_MAKER_NOT_AUTHORIZED`, `REFUND_REVIEWER_NOT_AUTHORIZED`; two
+new threats T-26, T-27; TDD grows from 88 to **102** IDs (RR-REF-15, RR-REF-16, RR-ROLE-01…12), all unique.
+
+**Still PENDING:** RF-1a (pilot identities, Sprint 2 `HUMAN_SEPARATION` red flag), reference reuse on a
+re-filed request (default: a new reference, decided with RF-6), RF-3, RF-5, RF-6, RF-7, RF-8, RF-8a, RF-9 …
+RF-14, and D5, D6, D25, D26. Implementation stays **BLOCKED_BY_OWNER_DECISION** (package §6 needs RF-1 …
+RF-8). F-17 stays a separate hardening, NOT_STARTED; post-payment correction stays OFF; refund stays
+NOT_ACTIVE.
 
 ---
 
