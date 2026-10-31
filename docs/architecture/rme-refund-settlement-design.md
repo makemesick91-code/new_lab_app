@@ -99,7 +99,7 @@ separately designated (RF-10 B).
 ## 6. Concurrency and lock order
 
 invoice → obligation → refund request → settlement, then the actor re-read. Proven on PostgreSQL 16 by
-`RmeRefundSettlementConcurrencyTest` (14 races + 6 database backstops) with the real service in a second
+`RmeRefundSettlementConcurrencyTest` (14 races + 8 database backstops) with the real service in a second
 session (`tests/Feature/RmeInvoiceCorrection/race_child.php`).
 
 ## 7. Reporting (RFS-6)

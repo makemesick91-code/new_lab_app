@@ -62,7 +62,38 @@ Superseded contracts updated in place, with the reason recorded: `RmeInvoiceCorr
 * Activation is `ACTIVATION-RME-REFUND-SETTLEMENT-1`, after the refund request flag is live, the Owner names
   a settler per branch, and the SOP is trained.
 
-## Evidence
+## Evidence (2026-10-31, times WITA = UTC+8)
 
-Recorded after merge and deploy in the evidence commit (CI run, merge SHA, deploy result, production
-verification, GO tag).
+| Item | Value |
+|---|---|
+| Candidate | `1b59d4dd4e4288c5b5efb3079b504107897bada6`, tree `656ae3a87e7439eeaa05e6b98ce2d54fc2345f5f` |
+| CI (pull_request) | run `41199606329` success on the candidate: Classifier, NSF-R012 Quality, NSF-R011 Critical, Selective Module, NSF-9, NSF-10, Phase 3 Android all success; the self-hosted Critical variant skipped by design |
+| Full Suite | **SKIPPED** — not run on the PR event; on the post-merge push run `41204004884` the classifier recorded `full_suite_authorized=false`, `TEMPORARY_FULL_SUITE_POLICY_ACTIVE`. No PASS is claimed |
+| Review | independent security review (no CRITICAL/HIGH); GitHub approval **not recorded** — the repository has one collaborator and no second reviewer was invented |
+| Merge | PR #571 squash → `a550e00d7eef303d6f76a290d493c6ab48a35aa1`, tree `656ae3a8…` = candidate tree; parent `c96366b9` |
+| Deploy | inside the VPS, `scripts/deploy-vps-runner.sh start`: `exit=0`, `DEPLOY OK: 20261031-130558`, `DEPLOY_HEAD_TARGET_MATCH=YES`, snapshot cleaned; migrations `2026_10_31_300001` and `300002` ran; runtime isolation 107 GO / 0 FAIL. The one smoke warning (`http://127.0.0.1/login` 404) is the known co-tenant on the loopback; the domain answers 200 |
+| Post-deploy | `PermissionSeeder` (as `daengtisiams`, `firstOrCreate` only) + `permission:cache-reset`. `RoleSeeder` **not** run: no role grant changes |
+| GO tag | `feature-rme-refund-settlement-1-implementation-go` (tag object `ea5942e4`) → `a550e00d`, exact match at the VPS HEAD |
+
+Production verification (read-only; PostgreSQL in a read-only transaction; no tinker):
+
+* Schema: both tables present, 0 settlements, 0 settlement events; 28 `trx_rme_refund_stl_*` constraints and
+  13 indexes; the not-approver CHECK, the composite approver FK, the reference-key CHECK, the SETTLED proof
+  CHECKs, the request `(id, decided_by)` unique and the obligation settlement FK all present; one-per-request,
+  one-per-obligation, reference and evidence uniques are partial; the request, request-event and obligation
+  status CHECKs admit `SETTLED`.
+* Authority: 189 permissions; `settle_rme_refund` held by **0 roles and 0 users**; Super Admin still 188 grants;
+  `pilot.settlers = []`, `pilot.branch_codes = [SPN4]` → `SETTLEMENT_AUTHORIZATION = DENY_ALL`.
+* Flags: `rme.billing_refund_settlement`, `rme.billing_refund_request` and `rme.invoice_postpayment_correction`
+  all **OFF** (default).
+* Money: the financial fingerprint (payments 9 / 10.548.000,00 / max id 50; invoices 8 / 12.548.000,00 / max id 42;
+  PAID 6, PARTIAL 1, UNPAID 1; items, receipts, document versions, corrections, obligations, refund requests) is
+  **byte-identical** before and after the deploy.
+* Runtime: `/login`, `/health/live`, `/health/ready`, `/health/lb` 200 over `https://daengtisia.online`; settlement
+  and oversight surfaces answer a guest 302; `/storage/*` 403; `laravel.log` 1.443.432 bytes / 164 ERROR before and
+  after (0 new); no failed jobs; nginx, php8.3-fpm and the queue worker active; env pilot, debug off, maintenance off.
+* Not exercised live (no production credentials are used for a smoke test, and no settlement may be created): the
+  authenticated flag-off 404 and the settler refusal. They are proven by `RmeRefundSettlementAuthorityTest`.
+
+Posture: `SPRINT5_IMPLEMENTATION_GO / FLAG_OFF / PRODUCTION_VERIFIED`; `SETTLEMENT_ACTOR_ACTIVATION =
+PENDING_OWNER_DESIGNATION`. This is not activation and not a full feature GO.
