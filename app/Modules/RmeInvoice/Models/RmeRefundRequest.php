@@ -69,6 +69,18 @@ class RmeRefundRequest extends Model
             if ($request->isDirty('request_number') && $request->getOriginal('request_number') !== null) {
                 throw new LogicException(sprintf('RME refund request #%d already has a number.', (int) $request->getKey()));
             }
+
+            // Defence in depth: the service decides transitions, but no caller may
+            // write an edge the state machine does not have (e.g. CANCELLED → APPROVED).
+            if ($request->isDirty('status')
+                && ! RmeRefundRequestStatus::canTransition((string) $request->getOriginal('status'), (string) $request->status)) {
+                throw new LogicException(sprintf(
+                    'RME refund request #%d cannot move from %s to %s.',
+                    (int) $request->getKey(),
+                    (string) $request->getOriginal('status'),
+                    (string) $request->status,
+                ));
+            }
         });
 
         static::deleting(function (RmeRefundRequest $request): void {

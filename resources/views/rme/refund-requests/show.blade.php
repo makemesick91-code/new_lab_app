@@ -23,7 +23,7 @@
             </x-ui.alert>
         @endif
 
-        @include('rme.refund-requests.partials.detail')
+        @include('rme.refund-requests.partials.detail', ['showCaseDetail' => true])
 
         @if ($actions['approve'] || $actions['reject'])
             <x-ui.card data-refund-decide>

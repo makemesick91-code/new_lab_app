@@ -12,10 +12,12 @@ use App\Modules\RmeInvoice\Models\RmeRefundRequest;
 use App\Modules\RmeInvoice\Services\RmeInvoiceCorrectionService;
 use App\Modules\RmeInvoice\Services\RmeOwnerApprovalReferenceRegistry;
 use App\Modules\RmeInvoice\Support\RmeInvoiceCorrectionStatus;
+use App\Modules\RmeInvoice\Support\RmeInvoiceCorrectionType;
 use App\Modules\RmeInvoice\Support\RmeRefundRequestRefused as R;
 use App\Modules\RmeInvoice\Support\RmeRefundRequestStatus as S;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 uses(RefreshDatabase::class);
 
@@ -225,4 +227,41 @@ it('RR-REF-17: a registry row alone — with no refund and no correction carryin
 
     expect(RmeRefundRequest::count())->toBe($before)
         ->and(DB::table('trx_rme_refund_patient_references')->count())->toBe(0);
+});
+
+it('RR-REF-18: a reference carried by a PRE-payment correction — which the registry never records — still refuses the refund', function () {
+    [$invoice, $obligation] = rrrObligation();
+
+    // A pre-payment correction may carry an Owner reference without consuming
+    // the registry (rule 214 consumes it for post-payment scopes only), so the
+    // application check against every correction type is the only guard here.
+    $reference = 'OWNER-REF-PREPAYMENT-ONLY-01';
+    $unpaid = ricInvoice();
+    test()->actingAs(test()->maker);
+    $correction = app(RmeInvoiceCorrectionService::class)->submit($unpaid, test()->maker, [
+        'reason' => 'Harga tambal salah input oleh kasir.',
+        'lines' => ricLinesReducing($unpaid),
+        'owner_approval_reference' => $reference,
+    ]);
+
+    expect($correction->correction_type)->toBe(RmeInvoiceCorrectionType::PRE_PAYMENT)
+        ->and($correction->owner_approval_reference)->toBe($reference)
+        ->and(DB::table('trx_rme_owner_approval_references')->whereRaw('reference_folded = ?', [mb_strtolower($reference)])->exists())->toBeFalse();
+
+    rrrRefused(fn () => rrrSubmit($invoice, $obligation, ['owner_approval_reference' => strtolower($reference)]), R::OWNER_REFERENCE_REUSED);
+});
+
+it('RR-REF-19: a pre-payment correction cannot record an Owner reference a refund already spent', function () {
+    [$invoice, $obligation] = rrrObligation();
+    $reference = 'OWNER-REF-SPENT-BY-REFUND-01';
+    rrrSubmit($invoice, $obligation, ['owner_approval_reference' => $reference]);
+
+    $unpaid = ricInvoice();
+    test()->actingAs(test()->maker);
+
+    expect(fn () => app(RmeInvoiceCorrectionService::class)->submit($unpaid, test()->maker, [
+        'reason' => 'Harga tambal salah input oleh kasir.',
+        'lines' => ricLinesReducing($unpaid),
+        'owner_approval_reference' => strtolower($reference),
+    ]))->toThrow(ValidationException::class, 'CORRECTION_OWNER_APPROVAL_REFERENCE_REUSED');
 });

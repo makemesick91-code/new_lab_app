@@ -76,7 +76,10 @@ with RESTRICT).
 ## D2. Residuals (recorded, not hidden)
 
 * Pre-payment corrections are outside the registry (they move no money back); the post-payment path is
-  the one guarded.
+  the one guarded. Since rule 215 a pre-payment correction is refused a reference the registry already holds
+  (`isClaimed()`), and a refund is refused a reference any correction carries. The truly concurrent case — a
+  pre-payment correction and a registry consumer committing the same reference at the same instant — is not
+  serialized by the database and stays a recorded residual.
 * Separator and spelling variants are distinct keys (C.2); the owner's single reference sequence is the
   control.
 * Append-only is enforced by the model and `down()`; a direct query-builder write is not blocked by the

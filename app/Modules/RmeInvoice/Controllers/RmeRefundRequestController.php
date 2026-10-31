@@ -54,8 +54,7 @@ class RmeRefundRequestController extends Controller
     public function show(Request $request, int $refundRequest): View
     {
         abort_unless($this->refunds->capabilityEnabled(), 404);
-        $record = $this->refunds->find($refundRequest);
-        abort_if($record === null || ! $this->refunds->mayView($request->user(), (int) $record->branch_id), 404);
+        $record = $this->findVisibleOr404($refundRequest, $request);
 
         return view('rme.refund-requests.show', [
             'refund' => $record->loadMissing(['branch', 'invoice', 'obligation', 'requester', 'decider', 'canceller']),
@@ -86,16 +85,21 @@ class RmeRefundRequestController extends Controller
         return $this->guarded(function () use ($request, $rmeInvoice) {
             $refund = $this->refunds->submit($rmeInvoice, $request->user(), $request->validated());
 
-            return redirect()->route('rme.refund-requests.show', $refund->id)
-                ->with('success', 'Permintaan refund '.$refund->request_number.' diajukan dan menunggu persetujuan.');
+            // A replayed submission returns the original, which may already be decided.
+            $message = $refund->status === RmeRefundRequestStatus::REQUESTED
+                ? 'Permintaan refund '.$refund->request_number.' diajukan dan menunggu persetujuan.'
+                : 'Permintaan refund '.$refund->request_number.' sudah tercatat sebelumnya (status: '.RmeRefundRequestStatus::label($refund->status).').';
+
+            return redirect()->route('rme.refund-requests.show', $refund->id)->with('success', $message);
         });
     }
 
     public function approve(DecideRmeRefundRequestRequest $request, int $refundRequest): RedirectResponse
     {
-        $record = $this->findOr404($refundRequest);
-
-        return $this->guarded(function () use ($request, $record) {
+        return $this->guarded(function () use ($request, $refundRequest) {
+            // Account authority first, then scope: neither answer depends on whether the id exists.
+            $this->refunds->assertReviewerAccount($request->user());
+            $record = $this->findVisibleOr404($refundRequest, $request);
             $this->refunds->approve($record, $request->user(), $request->validated());
 
             return redirect()->route('rme.refund-requests.show', $record->id)
@@ -105,9 +109,10 @@ class RmeRefundRequestController extends Controller
 
     public function reject(DecideRmeRefundRequestRequest $request, int $refundRequest): RedirectResponse
     {
-        $record = $this->findOr404($refundRequest);
-
-        return $this->guarded(function () use ($request, $record) {
+        return $this->guarded(function () use ($request, $refundRequest) {
+            // Account authority first, then scope: neither answer depends on whether the id exists.
+            $this->refunds->assertReviewerAccount($request->user());
+            $record = $this->findVisibleOr404($refundRequest, $request);
             $this->refunds->reject($record, $request->user(), $request->validated());
 
             return redirect()->route('rme.refund-requests.show', $record->id)
@@ -117,9 +122,8 @@ class RmeRefundRequestController extends Controller
 
     public function cancel(DecideRmeRefundRequestRequest $request, int $refundRequest): RedirectResponse
     {
-        $record = $this->findOr404($refundRequest);
-
-        return $this->guarded(function () use ($request, $record) {
+        return $this->guarded(function () use ($request, $refundRequest) {
+            $record = $this->findVisibleOr404($refundRequest, $request);
             $this->refunds->cancel($record, $request->user(), $request->validated());
 
             return redirect()->route('rme.refund-requests.show', $record->id)
@@ -127,10 +131,11 @@ class RmeRefundRequestController extends Controller
         });
     }
 
-    private function findOr404(int $id): RmeRefundRequest
+    /** Missing and out of scope are the same answer: 404 (rule 215 §B.6). */
+    private function findVisibleOr404(int $id, Request $request): RmeRefundRequest
     {
         $record = $this->refunds->find($id);
-        abort_if($record === null, 404);
+        abort_if($record === null || ! $this->refunds->mayView($request->user(), (int) $record->branch_id), 404);
 
         return $record;
     }

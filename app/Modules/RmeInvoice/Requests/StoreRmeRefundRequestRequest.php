@@ -24,7 +24,11 @@ class StoreRmeRefundRequestRequest extends FormRequest
         $invoice = $this->route('rmeInvoice');
         $visit = $this->route('clinicVisit');
         abort_unless($invoice instanceof RmeInvoice && $visit instanceof ClinicVisit && $invoice->belongsToVisit($visit), 404);
-        abort_unless(app(RmeRefundRequestService::class)->capabilityEnabled(), 404);
+        $refunds = app(RmeRefundRequestService::class);
+        abort_unless($refunds->capabilityEnabled(), 404);
+        // Out of scope is "not found", decided before any field is validated, so
+        // a validation error never reveals that another branch's invoice exists.
+        abort_unless($refunds->mayView($this->user(), (int) $invoice->branch_id), 404);
 
         return true;
     }

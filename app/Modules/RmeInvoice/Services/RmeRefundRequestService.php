@@ -400,7 +400,12 @@ class RmeRefundRequestService
                     throw $this->ownerReferenceReused((int) $invoice->id);
                 }
 
-                throw $this->refused(RmeRefundRequestRefused::ACTIVE_REQUEST_EXISTS, 'Kewajiban ini sudah memiliki permintaan refund yang aktif.', null, (int) $invoice->id);
+                if (str_contains($message, 'trx_rme_refund_req_one_active_uq') || str_contains($message, 'rme_overpayment_obligation_id')) {
+                    throw $this->refused(RmeRefundRequestRefused::ACTIVE_REQUEST_EXISTS, 'Kewajiban ini sudah memiliki permintaan refund yang aktif.', null, (int) $invoice->id);
+                }
+
+                // Any other unique violation is not a business outcome: never label it as one.
+                throw $e;
             }
         });
     }
@@ -410,11 +415,14 @@ class RmeRefundRequestService
     /** @param  array<string, mixed>  $data  decision_note (optional). A reference here is ignored. */
     public function approve(RmeRefundRequest $request, User $reviewer, array $data = []): RmeRefundRequest
     {
-        $note = $this->optionalNote($data['decision_note'] ?? null, (int) $request->id, (int) $request->rme_invoice_id);
-
-        [$result, $stale] = $this->audited('approve', $reviewer, (int) $request->id, (int) $request->rme_invoice_id, function () use ($request, $reviewer, $note) {
+        [$result, $stale] = $this->audited('approve', $reviewer, (int) $request->id, (int) $request->rme_invoice_id, function () use ($request, $reviewer, $data) {
             $this->feature->assertEnabled();
-            $this->assertReviewerAuthority($this->assertUsable($reviewer, (int) $request->id, (int) $request->rme_invoice_id), $request);
+            $account = $this->assertUsable($reviewer, (int) $request->id, (int) $request->rme_invoice_id);
+            $this->assertReviewerAuthority($account, $request);
+            // Scope before any input check, so a refusal never reveals that an
+            // out-of-scope request exists (rule 215 §B.6).
+            $this->assertVisible($account, $request);
+            $note = $this->optionalNote($data['decision_note'] ?? null, (int) $request->id, (int) $request->rme_invoice_id);
 
             return DB::transaction(function () use ($request, $reviewer, $note) {
                 [$invoice, $obligation, $locked, $actor] = $this->lockForDecision($request, $reviewer);
@@ -465,7 +473,9 @@ class RmeRefundRequestService
     {
         return $this->audited('reject', $reviewer, (int) $request->id, (int) $request->rme_invoice_id, function () use ($request, $reviewer, $data) {
             $this->feature->assertEnabled();
-            $this->assertReviewerAuthority($this->assertUsable($reviewer, (int) $request->id, (int) $request->rme_invoice_id), $request);
+            $account = $this->assertUsable($reviewer, (int) $request->id, (int) $request->rme_invoice_id);
+            $this->assertReviewerAuthority($account, $request);
+            $this->assertVisible($account, $request);
             $note = $this->note($data['decision_note'] ?? null, 'decision_note', (int) $request->rme_invoice_id, (int) $request->id);
 
             return DB::transaction(function () use ($request, $reviewer, $note) {
@@ -503,7 +513,7 @@ class RmeRefundRequestService
     {
         return $this->audited('cancel', $actor, (int) $request->id, (int) $request->rme_invoice_id, function () use ($request, $actor, $data) {
             $this->feature->assertEnabled();
-            $this->assertUsable($actor, (int) $request->id, (int) $request->rme_invoice_id);
+            $this->assertVisible($this->assertUsable($actor, (int) $request->id, (int) $request->rme_invoice_id), $request);
             $reason = $this->note($data['cancel_reason'] ?? null, 'cancel_reason', (int) $request->rme_invoice_id, (int) $request->id);
 
             return DB::transaction(function () use ($request, $actor, $reason) {
@@ -630,9 +640,38 @@ class RmeRefundRequestService
      * scope. It depends on the account only — never on the record — so refusing
      * here reveals nothing about another branch.
      */
+    /**
+     * Account-level reviewer authority, decided before any record is read (the
+     * controller calls it first, so the answer never depends on whether the
+     * requested id exists).
+     */
+    public function assertReviewerAccount(User $reviewer): void
+    {
+        $this->audited('approve', $reviewer, null, null, function () use ($reviewer) {
+            $account = $this->assertUsable($reviewer, null, null);
+            if (! $this->isReviewerAccount($account)) {
+                throw $this->refused(RmeRefundRequestRefused::REVIEWER_NOT_AUTHORIZED, 'Akun Anda tidak berwenang memutuskan permintaan refund.', null, null);
+            }
+        });
+    }
+
+    /** A read-only, pre-lock scope check: out of scope is "not found". */
+    private function assertVisible(User $account, RmeRefundRequest $request): void
+    {
+        if (! $this->mayView($account, (int) $request->branch_id)) {
+            throw RmeRefundRequestRefused::notFound((int) $request->rme_invoice_id, (int) $request->id);
+        }
+    }
+
+    /** The one definition of an account that may decide: a reviewer role with a non-empty scope. */
+    private function isReviewerAccount(User $account): bool
+    {
+        return $this->holdsReviewerRole($account) && $this->reviewerBranchIds($account) !== [];
+    }
+
     private function assertReviewerAuthority(User $account, RmeRefundRequest $request): void
     {
-        if (! $this->holdsReviewerRole($account) || $this->reviewerBranchIds($account) === []) {
+        if (! $this->isReviewerAccount($account)) {
             throw $this->refused(RmeRefundRequestRefused::REVIEWER_NOT_AUTHORIZED, 'Akun Anda tidak berwenang memutuskan permintaan refund.', (int) $request->id, (int) $request->rme_invoice_id);
         }
     }

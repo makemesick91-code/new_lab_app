@@ -115,6 +115,23 @@ final class RmeOwnerApprovalReferenceRegistry
         return $owner !== null && $owner['scope_type'] === $scopeType && $owner['scope_id'] === $scopeId;
     }
 
+    /**
+     * Read-only: does ANY scope already hold this reference? Used by a decision
+     * that records a reference without consuming the registry (a pre-payment
+     * correction, rule 214 D2) so it cannot repeat one a registry-backed decision
+     * already spent. A malformed reference is held by nobody.
+     */
+    public function isClaimed(string $normalizedReference): bool
+    {
+        try {
+            $folded = self::fold($normalizedReference);
+        } catch (InvalidArgumentException) {
+            return false;
+        }
+
+        return $this->references->scopeOf($folded) !== null;
+    }
+
     private function assertScope(string $scopeType, int $scopeId): void
     {
         if (! in_array($scopeType, self::SCOPES, true) || $scopeId <= 0) {

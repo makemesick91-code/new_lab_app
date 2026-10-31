@@ -180,9 +180,11 @@ code, then the canonical rule, and report the drift.
   `refreshInvoiceStatus()`), not gated by any switch; a failure aborts the payment — never add a skip-if-table-missing
   bypass. An older-version receipt renders from its snapshot stamped "DIREVISI"; integrity failure → 409. Source:
   rule 207 §F.
-- **AIR-RMB-35** Refund is not built: no table, route, permission or service. `refund_terms` in
+- **AIR-RMB-35** Refund REQUEST & approval is built (rule 215, flag `rme.billing_refund_request` OFF, identity allowlist
+  EMPTY): it decides whether an OPEN obligation is paid back and never moves money. Refund SETTLEMENT is not built: no
+  payout, reversal, credit, settlement route, permission, method or status (Sprint 5). `refund_terms` in
   `config/rme_invoice.php` is printed text only. Never manufacture a refundable balance; a payment-entry error is a
-  reversal, not a refund (D26); never tag prerequisites as the refund feature. Source: rule 189 §1–§2.
+  reversal, not a refund (D26). Source: rule 189 §1–§2, rule 215.
 
 ### Oversight and reports
 
@@ -235,9 +237,10 @@ code, then the canonical rule, and report the drift.
 - Receipt snapshots written by every payment regardless of flags; none observed live as of 2026-10-26.
 - Dispute hold live on all branches; one SPN4 reviewer designation as of 2026-10-25. Payment idempotency live; older
   payments have no submission row. Pricing MANUAL everywhere; strict tariff mode and price exceptions OFF.
-- **Not built:** refund, reversal, patient credit, settlement, Rp0 adjustment (Kontrol/Konsultasi). **PENDING owner
-  decisions:** D21c discount policy, D21g Rp0 lines, D22 Rp0 zombie completion, D24 `paid_at` backdating, refund set
-  D4/D5/D6/D18/D25/D26. A historical Rp0 UNPAID SPN4 invoice stays untouched.
+- **Built, flag OFF:** refund request & approval (rule 215; D4 via RF-1, D18 via RF-2). **Not built:** refund
+  settlement (D5/D25 approved as Sprint 5 policy), reversal (D26 excluded), patient credit (D6 excluded), Rp0
+  adjustment (Kontrol/Konsultasi). **PENDING owner decisions:** D21c discount policy, D21g Rp0 lines, D22 Rp0 zombie
+  completion, D24 `paid_at` backdating. A historical Rp0 UNPAID SPN4 invoice stays untouched.
 - Open owner questions: a correction settling a PARTIAL invoice leaves no LUNAS receipt; whether a pre-payment approval
   reference becomes mandatory.
 - Residuals: `branchIdsFor(null)` still answers every RME branch (`RmeInvoiceController::rmeBranches()` and

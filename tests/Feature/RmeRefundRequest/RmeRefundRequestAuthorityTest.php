@@ -16,6 +16,7 @@ use App\Modules\RmeInvoice\Support\RmeFinancialAuditEvent;
 use App\Modules\RmeInvoice\Support\RmeRefundRequestRefused as R;
 use App\Modules\RmeInvoice\Support\RmeRefundRequestStatus as S;
 use Database\Seeders\RoleSeeder;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
@@ -330,4 +331,124 @@ it('RR-NAV-02: hides the refund queue from an account holding neither refund per
     $this->actingAs($viewer->fresh())->get(route('dashboard'))
         ->assertOk()->assertDontSee('data-sidebar-link="refund-requests"', false);
     $this->actingAs($viewer->fresh())->get(route('rme.refund-requests.index'))->assertForbidden();
+});
+
+// ─── Security review hardening (independent review of 2026-10-31) ─────────
+
+it('RR-SR-01: the checker sees the case — requester, reason and both references — on the operational page only', function () {
+    [, , $request] = rrrFiled();
+
+    test()->actingAs(test()->supervisor)->get(route('rme.refund-requests.show', $request->id))
+        ->assertOk()
+        ->assertSee('data-refund-case', false)
+        ->assertSee(test()->frontOffice->name)
+        ->assertSee($request->reason_note)
+        ->assertSee($request->owner_approval_reference)
+        ->assertSee($request->patient_request_reference);
+
+    // Oversight readers see the facts and the staff names, never the free text or references.
+    test()->actingAs(userInRole('Finance Klinik'))->get(route('oversight.billing-corrections.refund-requests.show', $request->id))
+        ->assertOk()
+        ->assertSee(test()->frontOffice->name)
+        ->assertDontSee('data-refund-case', false)
+        ->assertDontSee($request->reason_note)
+        ->assertDontSee($request->owner_approval_reference)
+        ->assertDontSee($request->patient_request_reference);
+});
+
+it('RR-SR-02: an out-of-scope reviewer gets 404 even with an invalid note — input is never checked before scope', function () {
+    [, , $request] = rrrFiled();
+    $other = rrrOtherBranch();
+    $head = userInRole('Kepala Cabang');
+    $head->forceFill(['branch_id' => $other->id])->save();
+    rrrDesignate(reviewers: [$head]);
+
+    rrrNotFound(fn () => rrrApprove($request, $head, ['decision_note' => 'pendek']));
+    rrrNotFound(fn () => rrrReject($request, $head, 'pendek'));
+    test()->actingAs($head)->post(route('rme.refund-requests.approve', $request->id), ['decision_note' => 'pendek'])->assertNotFound();
+    test()->actingAs($head)->post(route('rme.refund-requests.reject', $request->id), ['decision_note' => 'pendek'])->assertNotFound();
+    expect($request->fresh()->status)->toBe(S::REQUESTED);
+});
+
+it('RR-SR-03: a Front Office account of another branch gets 404 on cancel, whatever the reason it sends', function () {
+    [, , $request] = rrrFiled();
+    $foreignMaker = userInRole('Front Office');
+    rmeMakeFrontOfficeActive($foreignMaker, rrrOtherBranch());
+
+    test()->actingAs($foreignMaker)->post(route('rme.refund-requests.cancel', $request->id), ['cancel_reason' => 'pendek'])->assertNotFound();
+    rrrNotFound(fn () => rrrCancel($request, $foreignMaker, 'pendek'));
+    expect($request->fresh()->status)->toBe(S::REQUESTED);
+});
+
+it('RR-SR-04: a permission holder without reviewer authority gets the same answer for a real and a missing id', function () {
+    [, , $request] = rrrFiled();
+    $granted = userWith(['approve_rme_refund']);
+
+    $real = test()->actingAs($granted)->post(route('rme.refund-requests.approve', $request->id));
+    $missing = test()->actingAs($granted)->post(route('rme.refund-requests.approve', 999999));
+
+    $real->assertStatus(302)->assertSessionHasErrors('refund');
+    $missing->assertStatus(302)->assertSessionHasErrors('refund');
+    expect(session('errors')->first('refund'))->toContain(R::REVIEWER_NOT_AUTHORIZED)
+        ->and($request->fresh()->status)->toBe(S::REQUESTED);
+});
+
+it('RR-SR-05: filing on another branch\'s invoice is 404 before any field is validated', function () {
+    [$invoice] = rrrObligation();
+    $visit = $invoice->clinicVisit;
+    $foreignMaker = userInRole('Front Office');
+    rmeMakeFrontOfficeActive($foreignMaker, rrrOtherBranch());
+
+    test()->actingAs($foreignMaker)->post(route('rme.refund-requests.store', [$visit, $invoice]), [])->assertNotFound();
+    // Control: the in-scope maker reaches validation with the same empty payload.
+    test()->actingAs(test()->frontOffice)->post(route('rme.refund-requests.store', [$visit, $invoice]), [])
+        ->assertStatus(302)->assertSessionHasErrors('obligation_id');
+    expect(RmeRefundRequest::query()->count())->toBe(0);
+});
+
+it('RR-SR-06: the model refuses an edge the state machine does not have', function () {
+    [, , $request] = rrrFiled();
+    rrrCancel($request);
+
+    $cancelled = $request->fresh();
+    expect(fn () => $cancelled->forceFill(['status' => S::APPROVED])->save())->toThrow(LogicException::class)
+        ->and($request->fresh()->status)->toBe(S::CANCELLED);
+});
+
+it('RR-SR-07: PostgreSQL refuses a decided request revoked by its own maker', function () {
+    if (DB::getDriverName() !== 'pgsql') {
+        test()->markTestSkipped('PostgreSQL CHECK constraint.');
+    }
+
+    [, , $request] = rrrFiled();
+    rrrApprove($request);
+
+    $thrown = null;
+    try {
+        DB::transaction(fn () => DB::table('trx_rme_refund_requests')->where('id', $request->id)->update([
+            'status' => S::CANCELLED,
+            'cancelled_by' => $request->requested_by,
+            'cancelled_at' => now(),
+            'cancel_reason' => 'Pembuat mencabut persetujuan sendiri.',
+        ]));
+    } catch (QueryException $e) {
+        $thrown = $e->getMessage();
+    }
+
+    expect($thrown)->toContain('trx_rme_refund_req_revoke_not_maker_chk')
+        ->and($request->fresh()->status)->toBe(S::APPROVED);
+});
+
+it('RR-SR-08: a replayed submission of a decided request says so instead of "filed"', function () {
+    [$invoice, $obligation] = rrrObligation();
+    $data = rrrData($invoice, $obligation);
+    $route = route('rme.refund-requests.store', [$invoice->clinicVisit, $invoice]);
+
+    test()->actingAs(test()->frontOffice)->post($route, $data)->assertRedirect();
+    $request = RmeRefundRequest::query()->sole();
+    rrrApprove($request);
+
+    test()->actingAs(test()->frontOffice)->post($route, $data)->assertRedirect(route('rme.refund-requests.show', $request->id))
+        ->assertSessionHas('success', fn (string $m) => str_contains($m, 'sudah tercatat sebelumnya'));
+    expect(RmeRefundRequest::query()->count())->toBe(1);
 });

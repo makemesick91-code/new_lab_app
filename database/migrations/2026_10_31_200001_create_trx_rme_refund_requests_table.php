@@ -74,6 +74,8 @@ return new class extends Migration
             'trx_rme_refund_req_amount_chk CHECK (amount > 0)',
             'trx_rme_refund_req_amount_snapshot_chk CHECK (amount = obligation_amount_snapshot)',
             'trx_rme_refund_req_maker_checker_chk CHECK (decided_by IS NULL OR decided_by <> requested_by)',
+            // The maker may withdraw its own undecided request, never revoke a decided one.
+            'trx_rme_refund_req_revoke_not_maker_chk CHECK (decided_by IS NULL OR cancelled_by IS NULL OR cancelled_by <> requested_by)',
             "trx_rme_refund_req_decided_chk CHECK (status NOT IN ('APPROVED','REJECTED') OR (decided_by IS NOT NULL AND decided_at IS NOT NULL))",
             'trx_rme_refund_req_owner_ref_chk CHECK (length(btrim(owner_approval_reference)) BETWEEN 6 AND 120)',
             'trx_rme_refund_req_patient_ref_chk CHECK (length(btrim(patient_request_reference)) BETWEEN 6 AND 120)',
