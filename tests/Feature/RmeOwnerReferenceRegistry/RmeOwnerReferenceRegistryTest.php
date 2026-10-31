@@ -22,6 +22,7 @@ declare(strict_types=1);
 
 use App\Modules\RmeInvoice\Models\RmeInvoiceCorrection;
 use App\Modules\RmeInvoice\Models\RmeOwnerApprovalReference;
+use App\Modules\RmeInvoice\Models\RmePayment;
 use App\Modules\RmeInvoice\Services\RmeInvoiceCorrectionReadinessService;
 use App\Modules\RmeInvoice\Services\RmeInvoiceCorrectionService;
 use App\Modules\RmeInvoice\Services\RmeOwnerApprovalReferenceRegistry;
@@ -91,6 +92,67 @@ it('keeps PP-2: the same invoice may repeat its reference, in any case, after a 
             'scope_type' => RmeOwnerApprovalReferenceRegistry::SCOPE_POST_PAYMENT_CORRECTION_INVOICE,
             'scope_id' => (int) $invoice->id,
         ]);
+});
+
+it('refuses to repeat a reference on the same invoice once a correction it authorised was applied (rule 207 §10a)', function () {
+    $invoice = rppPaidInvoice(200000);
+    $first = rppSubmit($invoice, lines: ricLinesReducing($invoice->fresh(), '150000'), reference: rppReference('40'));
+    expect(ricApprove($first->fresh())->status)->toBe(RmeInvoiceCorrectionStatus::APPLIED);
+
+    // A spent reference cannot authorise a second decision, in any case.
+    rppExpectRefusal(
+        fn () => rppSubmit($invoice->fresh(), lines: ricLinesReducing($invoice->fresh(), '100000'), reference: strtolower(rppReference('40'))),
+        'CORRECTION_OWNER_APPROVAL_REFERENCE_REUSED',
+    );
+    expect(RmeInvoiceCorrection::query()->where('rme_invoice_id', $invoice->id)->count())->toBe(1);
+
+    // Control: the invoice is still correctable with a NEW reference, so the
+    // refusal was about the reference and nothing else.
+    $next = rppSubmit($invoice->fresh(), lines: ricLinesReducing($invoice->fresh(), '100000'), reference: rppReference('41'));
+    expect($next->status)->toBe(RmeInvoiceCorrectionStatus::SUBMITTED);
+});
+
+it('keeps PP-2 after STALE: the same invoice may repeat its reference on a resubmission', function () {
+    $invoice = rppPaidInvoice(200000);
+    $first = rppSubmit($invoice, reference: rppReference('42'));
+
+    RmePayment::factory()->create([
+        'branch_id' => $invoice->branch_id,
+        'rme_invoice_id' => $invoice->id,
+        'clinic_visit_id' => $invoice->clinic_visit_id,
+        'patient_id' => $invoice->patient_id,
+        'amount' => 50000,
+    ]);
+    rppExpectRefusal(fn () => ricApprove($first->fresh()), 'CORRECTION_STALE:PAYMENT_RECORDED');
+    expect($first->fresh()->status)->toBe(RmeInvoiceCorrectionStatus::STALE);
+
+    $second = rppSubmit($invoice->fresh(), reference: rppReference('42'));
+
+    expect($second->status)->toBe(RmeInvoiceCorrectionStatus::SUBMITTED)
+        ->and(rorrOwnerOf(rppReference('42')))->toBe([
+            'scope_type' => RmeOwnerApprovalReferenceRegistry::SCOPE_POST_PAYMENT_CORRECTION_INVOICE,
+            'scope_id' => (int) $invoice->id,
+        ]);
+});
+
+it('keeps the reference of a rejected correction bound to its invoice: the registry alone refuses another invoice', function () {
+    $a = rppPaidInvoice(200000);
+    $first = rppSubmit($a, reference: rppReference('43'));
+    app(RmeInvoiceCorrectionService::class)->reject($first->fresh(), test()->checker, 'Harga belum sesuai, ajukan ulang.');
+
+    $b = rppPaidInvoice(200000);
+
+    // Straight to the registry, past every application check: retention is the
+    // registry's own property, not a side effect of the correction scan.
+    $claimed = DB::transaction(fn () => rorrRegistry()->consume(
+        rppReference('43'),
+        RmeOwnerApprovalReferenceRegistry::SCOPE_POST_PAYMENT_CORRECTION_INVOICE,
+        (int) $b->id,
+        test()->maker,
+    ));
+
+    expect($claimed)->toBeFalse()
+        ->and(rorrOwnerOf(rppReference('43'))['scope_id'])->toBe((int) $a->id);
 });
 
 it('refuses a reference the registry binds to another invoice even when no correction row is visible', function () {

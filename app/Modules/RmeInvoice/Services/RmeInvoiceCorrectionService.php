@@ -103,6 +103,13 @@ use LogicException;
  */
 class RmeInvoiceCorrectionService
 {
+    /**
+     * One message for every reuse refusal, whichever layer refused: naming the
+     * kind of decision that already holds the reference would tell a maker
+     * something about another case.
+     */
+    private const OWNER_REFERENCE_REUSED_MESSAGE = '[CORRECTION_OWNER_APPROVAL_REFERENCE_REUSED] Referensi persetujuan Owner ini sudah dipakai untuk keputusan lain. Setiap kasus memerlukan referensi persetujuannya sendiri.';
+
     public const REASON_MIN = 10;
 
     public const REASON_MAX = 1000;
@@ -398,13 +405,18 @@ class RmeInvoiceCorrectionService
                         ]);
                     }
 
-                    // A reference is CASE-specific: one recorded on a post-payment
-                    // correction of another invoice cannot authorise this one. The
-                    // same invoice may reuse it (a resubmission after STALE/REJECT).
+                    // A reference is CASE-specific (rule 207 §10a): one recorded on a
+                    // post-payment correction of another invoice cannot authorise this
+                    // one, and on THIS invoice it may be repeated only by a
+                    // resubmission after STALE/REJECT/CANCEL — never once a decision
+                    // it authorised was approved and applied. Both checks run under
+                    // the invoice lock taken above, so they cannot race on this
+                    // invoice; the registry below backs the cross-invoice half.
                     if ($type === RmeInvoiceCorrectionType::POST_PAYMENT
-                        && $this->corrections->postPaymentReferenceUsedOnOtherInvoice($approvalReference, (int) $locked->id)) {
+                        && ($this->corrections->postPaymentReferenceUsedOnOtherInvoice($approvalReference, (int) $locked->id)
+                            || $this->corrections->postPaymentReferenceSpentOnInvoice($approvalReference, (int) $locked->id))) {
                         throw ValidationException::withMessages([
-                            'owner_approval_reference' => '[CORRECTION_OWNER_APPROVAL_REFERENCE_REUSED] Referensi persetujuan Owner ini sudah dipakai untuk koreksi tagihan lain. Setiap kasus memerlukan referensi persetujuannya sendiri.',
+                            'owner_approval_reference' => self::OWNER_REFERENCE_REUSED_MESSAGE,
                         ]);
                     }
 
@@ -476,7 +488,7 @@ class RmeInvoiceCorrectionService
                             $maker,
                         )) {
                         throw ValidationException::withMessages([
-                            'owner_approval_reference' => '[CORRECTION_OWNER_APPROVAL_REFERENCE_REUSED] Referensi persetujuan Owner ini sudah dipakai untuk keputusan lain. Setiap kasus memerlukan referensi persetujuannya sendiri.',
+                            'owner_approval_reference' => self::OWNER_REFERENCE_REUSED_MESSAGE,
                         ]);
                     }
 

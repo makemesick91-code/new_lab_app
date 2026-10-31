@@ -37,6 +37,16 @@ return new class extends Migration
 
     public function up(): void
     {
+        // A post-payment correction committed while the backfill reads would be
+        // left unregistered (approval would then refuse it and readiness FAIL —
+        // safe, but avoidable). SHARE mode blocks writers of the source table for
+        // the duration of this migration's transaction only; readers continue.
+        if (DB::connection()->getDriverName() === 'pgsql'
+            && DB::transactionLevel() > 0
+            && Schema::hasTable('trx_rme_invoice_corrections')) {
+            DB::statement('LOCK TABLE trx_rme_invoice_corrections IN SHARE MODE');
+        }
+
         $claims = $this->existingClaims();
 
         Schema::create(self::TABLE, function (Blueprint $table) {

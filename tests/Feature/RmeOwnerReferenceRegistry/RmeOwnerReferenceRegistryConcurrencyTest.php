@@ -317,16 +317,23 @@ it('G1: refuses the second of two concurrent submissions on two invoices that sh
     ]);
 
     $refusal = null;
+    $started = microtime(true);
     try {
         // Case variant: the fold, not the spelling, is the key.
         app(RmeInvoiceCorrectionService::class)->submit($b->fresh(), $fx['maker'], rorcData($b, strtolower($reference)));
     } catch (ValidationException $e) {
         $refusal = (string) json_encode($e->errors());
     }
+    $waited = microtime(true) - $started;
 
     rorcJoin($handle);
 
-    expect($refusal)->toContain('CORRECTION_OWNER_APPROVAL_REFERENCE_REUSED')
+    // The application check is a plain read and cannot see the competitor's
+    // uncommitted correction, so it lets the submission through; the only
+    // statement that can make this session wait on the other is the registry
+    // INSERT on the shared key. Having waited proves the registry refused it.
+    expect($waited)->toBeGreaterThan(1.0)
+        ->and($refusal)->toContain('CORRECTION_OWNER_APPROVAL_REFERENCE_REUSED')
         ->and(rorcPostPaymentCorrectionsWith($reference))->toBe(1)
         ->and(RmeInvoiceCorrection::query()->where('rme_invoice_id', $b->id)->count())->toBe(0)
         ->and(rorcOwnerScopeId($reference))->toBe((int) $a->id)
@@ -352,8 +359,13 @@ it('G3: the refusal is an application exception and the connection keeps working
 
     rorcJoin($handle);
 
+    // The code matters: the submit path turns any unique violation into
+    // CORRECTION_ALREADY_ACTIVE, so only REUSED shows that ON CONFLICT kept the
+    // transaction alive rather than a violation being translated after it died.
     expect($thrown)->toBeInstanceOf(ValidationException::class)
         ->and($thrown)->not->toBeInstanceOf(QueryException::class)
+        ->and((string) json_encode($thrown->errors()))->toContain('CORRECTION_OWNER_APPROVAL_REFERENCE_REUSED')
+        ->and((string) json_encode($thrown->errors()))->not->toContain('CORRECTION_ALREADY_ACTIVE')
         ->and(DB::transactionLevel())->toBe(0)
         ->and((int) DB::selectOne('SELECT 1 AS one')->one)->toBe(1);
 

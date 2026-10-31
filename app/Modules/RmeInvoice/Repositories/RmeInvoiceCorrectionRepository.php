@@ -220,6 +220,16 @@ class RmeInvoiceCorrectionRepository implements RmeInvoiceCorrectionRepositoryIn
             ->exists();
     }
 
+    public function postPaymentReferenceSpentOnInvoice(string $reference, int $invoiceId): bool
+    {
+        return RmeInvoiceCorrection::query()
+            ->where('correction_type', RmeInvoiceCorrectionType::POST_PAYMENT)
+            ->where('rme_invoice_id', $invoiceId)
+            ->whereIn('status', [RmeInvoiceCorrectionStatus::APPROVED, RmeInvoiceCorrectionStatus::APPLIED])
+            ->whereRaw('lower(owner_approval_reference) = ?', [mb_strtolower($reference)])
+            ->exists();
+    }
+
     public function documentVersionsForInvoice(int $invoiceId): Collection
     {
         return RmeInvoiceDocumentVersion::query()

@@ -15,7 +15,9 @@ behind this hardening is kept in a private security record, never in this public
    `trx_rme_owner_approval_references` holds one row per reference, keyed by its **case-folded** form
    (UNIQUE `trx_rme_owner_ref_folded_uq`), bound for good to the first scope that consumed it.
 2. Scopes: `POST_PAYMENT_CORRECTION_INVOICE` (the invoice — a resubmission on the **same** invoice after
-   `REJECTED`, `CANCELLED` or `STALE` repeats its reference, PP-2) and `REFUND_REQUEST` (one refund
+   `REJECTED`, `CANCELLED` or `STALE` repeats its reference, PP-2; once a correction it authorised is
+   `APPROVED`/`APPLIED` the reference is **spent** and that invoice refuses it too, rule 207 §10a) and
+   `REFUND_REQUEST` (one refund
    request; reserved — no refund consumer exists yet). A reference claimed by one scope is refused by
    every other scope and every other workflow.
 3. It holds under real concurrency on PostgreSQL: of two transactions that consume one reference for two
@@ -34,7 +36,11 @@ behind this hardening is kept in a private security record, never in this public
 3. READ COMMITTED only: the registry refuses REPEATABLE READ and SERIALIZABLE, where the read after a
    conflict could miss the committed owner.
 4. Keep the consumer's own application check (for example `postPaymentReferenceUsedOnOtherInvoice()`) —
-   it gives the clear message; the registry is the guarantee.
+   it gives the clear message; the registry is the guarantee across scopes. Within ONE scope the
+   consumer enforces spending itself, under its own scope lock (post-payment:
+   `postPaymentReferenceSpentOnInvoice()` under the invoice lock).
+4a. Every reuse refusal — application check or registry — returns ONE message, so a maker cannot tell
+   which kind of decision already holds a reference.
 5. Re-verify at the decision that relies on the reference: post-payment approval refuses
    (`CORRECTION_OWNER_APPROVAL_REFERENCE_INVALID`) a correction whose reference the registry does not bind
    to its invoice (`belongsTo()`), under the invoice and correction locks.
@@ -66,6 +72,15 @@ the `RmeOwnerReferenceRegistry` token in **both** critical-gate variants and dec
 `config/ci_runner.php` `critical_gate_mandatory_suites`. Every PostgreSQL race suite that writes
 corrections deletes `trx_rme_owner_approval_references` first in its cleanup list (it references `users`
 with RESTRICT).
+
+## D2. Residuals (recorded, not hidden)
+
+* Pre-payment corrections are outside the registry (they move no money back); the post-payment path is
+  the one guarded.
+* Separator and spelling variants are distinct keys (C.2); the owner's single reference sequence is the
+  control.
+* Append-only is enforced by the model and `down()`; a direct query-builder write is not blocked by the
+  database. Never write the table outside `RmeOwnerApprovalReferenceRepository::insertIfAbsent()`.
 
 ## E. Never
 

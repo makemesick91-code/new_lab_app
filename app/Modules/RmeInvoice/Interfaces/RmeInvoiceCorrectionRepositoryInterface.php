@@ -102,6 +102,15 @@ interface RmeInvoiceCorrectionRepositoryInterface
      */
     public function postPaymentReferenceUsedOnOtherInvoice(string $reference, int $invoiceId): bool;
 
+    /**
+     * HARDENING-RME-OWNER-REFERENCE-REGISTRY-1 — whether this reference already
+     * authorised an APPROVED or APPLIED post-payment correction of THIS invoice.
+     * Rule 207 §10a lets the same invoice repeat a reference only on a
+     * resubmission after STALE/REJECT/CANCEL; a reference that was spent on a
+     * decision cannot authorise a second one. Call it under the invoice lock.
+     */
+    public function postPaymentReferenceSpentOnInvoice(string $reference, int $invoiceId): bool;
+
     /** @return Collection<int, RmeInvoiceDocumentVersion> */
     public function documentVersionsForInvoice(int $invoiceId): Collection;
 

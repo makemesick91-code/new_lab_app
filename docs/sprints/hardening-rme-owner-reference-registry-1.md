@@ -49,8 +49,8 @@ the first, clear message.
 
 | Suite | Cases | Where |
 |---|---|---|
-| `tests/Feature/RmeOwnerReferenceRegistry/RmeOwnerReferenceRegistryTest.php` | 22 — registration in the invoice scope; PP-2 resubmission (case variant, after cancel and reject); refusal by the registry alone; cross-workflow refusal both ways; refusal leaves no claim; rollback releases nothing it did not commit; pre-payment untouched; fail-closed outside a transaction and on malformed input; append-only; approval verifies the claim (missing / mis-scoped); backfill; conflicting data refuses the migration; `down()` refuses with claims; readiness GO and FAIL | SQLite and PostgreSQL 16 |
-| `tests/Feature/RmeOwnerReferenceRegistry/RmeOwnerReferenceRegistryConcurrencyTest.php` | 8 — G1 first commits → second refused; G2 first rolls back → second wins; G3 refusal is an application exception, connection keeps working (no 25P02); G4 REPEATABLE READ refused; G5 CHECKs (unfolded key, unknown scope, zero id) and UNIQUE | PostgreSQL 16 only, REAL service in a second session (`race_child.php`, new step `submit_correction`) |
+| `tests/Feature/RmeOwnerReferenceRegistry/RmeOwnerReferenceRegistryTest.php` | 25 — a reference spent on an applied correction is refused on the same invoice (with a control on a new reference); PP-2 resubmission after STALE; a rejected correction's claim refuses another invoice through the registry alone; registration in the invoice scope; PP-2 resubmission (case variant, after cancel and reject); refusal by the registry alone; cross-workflow refusal both ways; refusal leaves no claim; rollback releases nothing it did not commit; pre-payment untouched; fail-closed outside a transaction and on malformed input; append-only; approval verifies the claim (missing / mis-scoped); backfill; conflicting data refuses the migration; `down()` refuses with claims; readiness GO and FAIL | SQLite and PostgreSQL 16 |
+| `tests/Feature/RmeOwnerReferenceRegistry/RmeOwnerReferenceRegistryConcurrencyTest.php` | 8 — G1 first commits → second refused, and the loser is shown to have WAITED on the shared key (only the registry insert can make it wait); G2 first rolls back → second wins; G3 refusal is an application exception carrying `…_REUSED` (not the unique-violation translation), connection keeps working (no 25P02); G4 REPEATABLE READ refused; G5 CHECKs (unfolded key, unknown scope, zero id) and UNIQUE | PostgreSQL 16 only, REAL service in a second session (`race_child.php`, new step `submit_correction`) |
 
 TDD: the plain suite was run first against the unmodified code (21 failed, 1 passed — the passing one is
 the existing approval path, kept as a regression guard).
@@ -61,6 +61,22 @@ Every PostgreSQL race suite that writes corrections now deletes the registry fir
 CI selection: token `RmeOwnerReferenceRegistry` in **both** NSF-R011 critical-gate variants; both suites
 declared in `config/ci_runner.php` `critical_gate_mandatory_suites` (CG-19 — the existing
 `RmeInvoiceCorrection` token does not match these class names).
+
+## 4a. Independent security review (2026-10-31)
+
+No CRITICAL or HIGH finding. Fixed in this pull request:
+
+| Severity | Finding | Fix |
+|---|---|---|
+| MEDIUM | A reference that authorised an applied post-payment correction could authorise another one on the same invoice; rule 207 §10a allows repetition only after STALE/REJECT/CANCEL | `postPaymentReferenceSpentOnInvoice()` under the invoice lock in `submit()`; regression test + mutation (killed) |
+| LOW | Two concurrency tests could pass without proving the registry refused | G1 asserts the loser waited; G3 asserts the code |
+| LOW | Rule 207 §10a still described the cross-invoice race as unguarded | rewritten, points at rule 214 |
+| INFO | Two reuse messages revealed which kind of decision holds a reference | one message for every reuse refusal |
+| INFO | The backfill read the source table unlocked | `LOCK TABLE … IN SHARE MODE` inside the migration's transaction (PostgreSQL) |
+
+Recorded as residuals in rule 214 §D2: pre-payment references outside the registry; separator variants as
+distinct keys; append-only enforced by the model, not by a database trigger. The detailed analysis stays in
+the private security record.
 
 ## 5. Rollback
 
