@@ -181,7 +181,12 @@ it('keeps the merged front office role equal to the union of its legacy roles', 
         ->merge(RoleSeeder::ROLE_PERMISSIONS[FrontOfficeRole::LEGACY_KASIR])
         ->unique()->sort()->values()->all();
 
+    // FEATURE-RME-BILLING-REFUND-REQUEST-APPROVAL-1 (rule 215, RF-1): the union's
+    // one named exception — permissions Front Office holds and neither legacy role
+    // does — lives in RoleSeeder::FRONT_OFFICE_ONLY_PERMISSIONS, so it cannot grow
+    // silently. FrontOfficeRoleTest pins its contents.
     $frontOffice = collect(RoleSeeder::ROLE_PERMISSIONS[FrontOfficeRole::NAME])
+        ->diff(RoleSeeder::FRONT_OFFICE_ONLY_PERMISSIONS)
         ->unique()->sort()->values()->all();
 
     expect($frontOffice)->toBe($union)

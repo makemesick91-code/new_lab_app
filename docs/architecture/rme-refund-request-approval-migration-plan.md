@@ -4,6 +4,8 @@
 > RF-1…RF-8 (`docs/decisions/rme-refund-request-approval-owner-decision-package.md`). Columns marked
 > **[RF-n]** change with that decision. Design: `docs/architecture/rme-refund-request-approval-design.md`.
 
+> **Update 2026-10-31:** implemented by `FEATURE-RME-BILLING-REFUND-REQUEST-APPROVAL-1` (rule 215) — the three migrations exist as `2026_10_31_200001…200003` (13 CHECKs on the request table, every `down()` refuses with rows). It ships with the flag `rme.billing_refund_request` OFF and an EMPTY pilot identity allowlist: built, not activated. Where this document reads as future or proposed, it records the state before implementation; decisions taken while implementing are in `docs/sprints/feature-rme-billing-refund-request-approval-1.md` §3–§4b.
+
 ## 1. Principles (CG-09, AIR-RMB-41)
 
 * Additive only. Production runs `php artisan migrate --force` through the deploy runner after its

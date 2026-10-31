@@ -16,6 +16,10 @@ Labels as in rule 188: **IMPLEMENTED** (shipped by this sprint), **PROPOSED** (d
 > remains structurally blocked exactly as §2 says.
 
 ## 1. Refund is NOT implemented — IMPLEMENTED status
+> **Forward reference (2026-10-31):** Sprint 4/7 built the refund REQUEST and approval (rule 215), deployed with
+> the flag OFF and nobody able to act. Refund SETTLEMENT (paying money back) is still NOT implemented, so refund is
+> still never "active". `feature-rme-billing-refund-1-go` stays reserved for the operational feature; Sprint 4 tags
+> `feature-rme-billing-refund-request-approval-1-implementation-go`, which is not that tag.
 - No refund table, model, route, permission, service, UI, document or report exists. Never report refund as active.
 - `feature-rme-billing-refund-1-go` is reserved for the operational refund feature. Phase 0 shipped under
   `feature-rme-billing-refund-1-phase-0-financial-prerequisites-go`. Never tag scaffolding or prerequisites as the

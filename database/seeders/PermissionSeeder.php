@@ -437,6 +437,16 @@ class PermissionSeeder extends Seeder
         'approve_rme_invoice_correction',
         'apply_rme_invoice_correction',
         'view_billing_correction_oversight',
+        // FEATURE-RME-BILLING-REFUND-REQUEST-APPROVAL-1 (Sprint 4/7, rule 215; owner
+        // RF-1) — the refund REQUEST and its decision. Never money: settlement is
+        // Sprint 5 and has no permission yet (no orphan permission).
+        //   request_rme_refund — file / withdraw one's own request (Front Office only)
+        //   approve_rme_refund — approve, reject or revoke another's request
+        //                        (Supervisor RME, Kepala Cabang; Super Admin via '*')
+        // Holding either is necessary, never sufficient: the service also checks
+        // the role and its server-resolved branch scope, and maker != checker.
+        'request_rme_refund',
+        'approve_rme_refund',
         // IMPLEMENTATION-RME-BILLING-DISPUTE-ESCALATION-OPS-OQ-1 (owner OPS-OQ-1,
         // rule 203) — billing disputes. REPORTING reuses manage_rme_billing (the
         // accounts that could collect a known-wrong amount are the ones that can

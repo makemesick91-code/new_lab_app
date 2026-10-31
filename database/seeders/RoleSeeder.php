@@ -14,6 +14,18 @@ class RoleSeeder extends Seeder
      * Super Admin is granted every permission. The remaining roles receive only
      * the coarse permissions relevant to their domain. Run after PermissionSeeder.
      */
+    /**
+     * Permissions Front Office holds WITHOUT inheriting them from Kasir or Admin
+     * Klinik. Front Office is otherwise exactly their union (FrontOfficeRoleTest);
+     * an owner decision that names Front Office alone lands here, and nowhere else.
+     *
+     * FEATURE-RME-BILLING-REFUND-REQUEST-APPROVAL-1 (owner RF-1, 2026-10-31): the
+     * refund maker is Front Office only — never Kasir, never Admin Klinik.
+     */
+    public const FRONT_OFFICE_ONLY_PERMISSIONS = [
+        'request_rme_refund',
+    ];
+
     public const ROLE_PERMISSIONS = [
         'Super Admin' => '*', // all permissions
         // FIX-ADMIN-LAB-LAB-ONLY-ACCESS (2026-07-11) — Admin Lab is a LAB-ONLY
@@ -311,6 +323,11 @@ class RoleSeeder extends Seeder
         'Owner' => [
             'view dashboard',
             'view_owner_dashboard',
+            // FEATURE-RME-BILLING-REFUND-REQUEST-APPROVAL-1 (owner RF-8a, 2026-10-31) —
+            // READ the billing-correction oversight area (corrections, obligations,
+            // refund requests). Deliberately NOT export_oversight_data and no write
+            // permission: Owner is never a refund maker, reviewer or payer.
+            'view_billing_correction_oversight',
             // LAB-PROD-2 — executive cross-branch operational KPI (read-only)
             'view_lab_operational_analytics',
             // LAB-PROD-3 — executive cross-branch capacity planning (read-only)
@@ -468,6 +485,10 @@ class RoleSeeder extends Seeder
             // A may approve Front Office B's request, never their own.
             'request_rme_invoice_correction',
             'approve_rme_invoice_correction',
+            // FEATURE-RME-BILLING-REFUND-REQUEST-APPROVAL-1 (owner RF-1, 2026-10-31) —
+            // the refund MAKER is Front Office only: never Kasir or Admin Klinik, so
+            // this is the one permission of FRONT_OFFICE_ONLY_PERMISSIONS below.
+            'request_rme_refund',
         ],
         'Perawat' => [
             'view dashboard',
@@ -504,6 +525,12 @@ class RoleSeeder extends Seeder
             'view_inventory',
             'view_purchase_request',
             'manage_purchase_request',
+            // FEATURE-RME-BILLING-REFUND-REQUEST-APPROVAL-1 (owner RF-1, 2026-10-31) —
+            // the refund REVIEW of its own managed branch (users.branch_id), and
+            // nothing else of RME: no visit, medical record, cashier or billing
+            // permission. The service resolves the branch from the persisted
+            // account and refuses every other branch.
+            'approve_rme_refund',
         ],
         // Hotfix — Supervisor RME: full access to the entire RME module only.
         // Aggregates every permission that gates an RME route (clinic visits,
@@ -514,6 +541,9 @@ class RoleSeeder extends Seeder
         // Control, Owner/branch dashboards, and system settings.
         'Supervisor RME' => [
             'view dashboard',
+            // FEATURE-RME-BILLING-REFUND-REQUEST-APPROVAL-1 (owner RF-1) — refund
+            // REVIEW within its authorized scope; never the maker (no request_rme_refund).
+            'approve_rme_refund',
             // Patient registration/edit + KTP scan documents (RME entry point)
             'manage patients',
             // FEATURE-PATIENT-DUPLICATE-RESOLUTION-MERGE-1 — duplicate patient resolution.

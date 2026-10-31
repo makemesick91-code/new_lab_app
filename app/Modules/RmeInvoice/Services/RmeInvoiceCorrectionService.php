@@ -420,6 +420,18 @@ class RmeInvoiceCorrectionService
                         ]);
                     }
 
+                    // A pre-payment correction may carry an optional reference without
+                    // consuming the registry (rule 214 D2). It still may not repeat one a
+                    // registry-backed decision — a post-payment correction or a refund
+                    // request (rule 215) — already spent.
+                    if ($type === RmeInvoiceCorrectionType::PRE_PAYMENT
+                        && $approvalReference !== null
+                        && $this->ownerReferences->isClaimed($approvalReference)) {
+                        throw ValidationException::withMessages([
+                            'owner_approval_reference' => self::OWNER_REFERENCE_REUSED_MESSAGE,
+                        ]);
+                    }
+
                     $original = RmeInvoiceSnapshot::capture($locked);
 
                     // REVISION-RME-MANUAL-PRICING-AUTHORITY-1 (owner D21, revised):

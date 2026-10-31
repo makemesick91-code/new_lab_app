@@ -62,9 +62,18 @@ it('grants exactly the union of the two legacy roles, no more and no less', func
     $frontOffice = collect(RoleSeeder::ROLE_PERMISSIONS[FrontOfficeRole::NAME])
         ->unique()->sort()->values();
 
+    // FEATURE-RME-BILLING-REFUND-REQUEST-APPROVAL-1 (owner RF-1, 2026-10-31): the
+    // refund maker is Front Office ONLY — never Kasir or Admin Klinik. That is the
+    // one named exception to the union, kept in a constant so it cannot grow
+    // silently; the union itself is unchanged.
+    $frontOfficeOnly = collect(RoleSeeder::FRONT_OFFICE_ONLY_PERMISSIONS)->sort()->values();
+    expect($frontOfficeOnly->all())->toBe(['request_rme_refund'])
+        ->and($union->intersect($frontOfficeOnly)->all())->toBe([]);
+
     // Derived from the other two lists on purpose: a permission added to
     // Admin Klinik or Kasir later must not silently skip the merged role.
-    expect($frontOffice->all())->toBe($union->all())
+    expect($frontOffice->diff($frontOfficeOnly)->values()->all())->toBe($union->all())
+        ->and($frontOffice->intersect($frontOfficeOnly)->values()->all())->toBe($frontOfficeOnly->all())
         // REVISION-LEGACY-VISIT-BOUND-PREVERIFIED-INGESTION-1 added `verify_legacy_dates_at_ingestion` to Admin Klinik and Front Office;
         // Admin Klinik 20 -> 21, Kasir unchanged, so the union is 21 -> 22.
         //
@@ -88,7 +97,7 @@ it('grants exactly the union of the two legacy roles, no more and no less', func
 
     // And the seeded role really carries them, not just the array.
     expect(Role::findByName(FrontOfficeRole::NAME)->permissions->pluck('name')->sort()->values()->all())
-        ->toBe($union->all());
+        ->toBe($union->merge($frontOfficeOnly)->sort()->values()->all());
 });
 
 it('reuses the existing role row rather than creating a second one', function () {
@@ -103,7 +112,8 @@ it('reuses the existing role row rather than creating a second one', function ()
     expect(Role::where('name', FrontOfficeRole::NAME)->count())->toBe(1)
         ->and(Role::where('name', FrontOfficeRole::NAME)->first()->id)->toBe($before->id)
         // Rule 195: 25 -> 27 (request + approve invoice correction).
-        ->and(Role::findByName(FrontOfficeRole::NAME)->permissions)->toHaveCount(27);
+        // Rule 215 (RF-1): 27 -> 28 — `request_rme_refund`, Front Office only.
+        ->and(Role::findByName(FrontOfficeRole::NAME)->permissions)->toHaveCount(28);
 });
 
 // ─── The daily branch lock. The load-bearing property. ─────────────────────

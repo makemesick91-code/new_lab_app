@@ -13,6 +13,8 @@
 > D24–D26 are new in this sprint (see `docs/sprints/feature-rme-billing-refund-1.md` §4). Codes are per-register:
 > the KTP-OCR consent "D7" is a different decision and is unrelated to receipt policy D7 here.
 
+> **Update 2026-10-31:** implemented by `FEATURE-RME-BILLING-REFUND-REQUEST-APPROVAL-1` (rule 215) — the request and approval half of this proposal; settlement is not built. It ships with the flag `rme.billing_refund_request` OFF and an EMPTY pilot identity allowlist: built, not activated. Where this document reads as future or proposed, it records the state before implementation; decisions taken while implementing are in `docs/sprints/feature-rme-billing-refund-request-approval-1.md` §3–§4b.
+
 ---
 
 ## 1. Why refund execution is not built yet — the structural finding

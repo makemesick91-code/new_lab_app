@@ -9,6 +9,8 @@
 > Prepared by `PREPARATION-RME-BILLING-REFUND-REQUEST-APPROVAL-1` against canonical base
 > `f60d8232`, production runtime `fb3726c5` (tag `post-audit-f4bc-release-1-go`).
 
+> **Update 2026-10-31:** implemented by `FEATURE-RME-BILLING-REFUND-REQUEST-APPROVAL-1` (rule 215) — It ships with the flag `rme.billing_refund_request` OFF and an EMPTY pilot identity allowlist: built, not activated. Where this document reads as future or proposed, it records the state before implementation; decisions taken while implementing are in `docs/sprints/feature-rme-billing-refund-request-approval-1.md` §3–§4b.
+
 Companion documents: migration plan `docs/architecture/rme-refund-request-approval-migration-plan.md`,
 threat model `docs/architecture/rme-refund-request-approval-threat-model.md`, TDD matrix
 `docs/architecture/rme-refund-request-approval-tdd-matrix.md`, reconciliation contract

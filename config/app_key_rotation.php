@@ -43,6 +43,7 @@ return [
         'app/Modules/DoctorDevice/Services/DoctorAppLoginService.php' => 'doctor login ticket (60 s) and challenge (120 s): an in-flight login is refused and retried',
         'app/Modules/DoctorDevice/Services/DoctorDeviceEnrollmentService.php' => 'device pairing code (15 min): an unexpired code is refused and re-issued',
         'app/Modules/RmeInvoice/Support/RmePaymentIntent.php' => 'payment form intent: a form opened before rotation is refused on submit and reopened, never paid twice',
+        'app/Modules/RmeInvoice/Support/RmeRefundRequestIntent.php' => 'refund request form intent: a form opened before rotation is refused on submit (REFUND_INTENT_INVALID) and reopened; only the nonce is stored, so no filed request depends on the key and none is filed twice',
     ],
 
 ];

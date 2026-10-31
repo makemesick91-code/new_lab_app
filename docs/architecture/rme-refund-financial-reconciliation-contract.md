@@ -5,6 +5,8 @@
 > (`docs/operations/rme-invoice-correction-financial-reconciliation.md`, ledger invariants FI-1…FI-4 in
 > `RmeInvoiceCorrectionService`) and does not replace it. Amounts are compared in **integer cents**.
 
+> **Update 2026-10-31:** implemented by `FEATURE-RME-BILLING-REFUND-REQUEST-APPROVAL-1` (rule 215) — the request side of this contract is implemented; settlement (Sprint 5) is not. It ships with the flag `rme.billing_refund_request` OFF and an EMPTY pilot identity allowlist: built, not activated. Where this document reads as future or proposed, it records the state before implementation; decisions taken while implementing are in `docs/sprints/feature-rme-billing-refund-request-approval-1.md` §3–§4b.
+
 ## 1. Sources of truth
 
 | Fact | Source | Mutable? |

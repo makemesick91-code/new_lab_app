@@ -4,6 +4,8 @@
 > unmodified base. Design: `docs/architecture/rme-refund-request-approval-design.md`; threat IDs:
 > `docs/architecture/rme-refund-request-approval-threat-model.md`.
 
+> **Update 2026-10-31:** implemented by `FEATURE-RME-BILLING-REFUND-REQUEST-APPROVAL-1` (rule 215) — each row is implemented as a test of the same id in `tests/Feature/RmeRefundRequest/`. It ships with the flag `rme.billing_refund_request` OFF and an EMPTY pilot identity allowlist: built, not activated. Where this document reads as future or proposed, it records the state before implementation; decisions taken while implementing are in `docs/sprints/feature-rme-billing-refund-request-approval-1.md` §3–§4b.
+
 ## 1. Rules for this suite
 
 * Synthetic data only, built through the canonical services — never production data, never a fabricated

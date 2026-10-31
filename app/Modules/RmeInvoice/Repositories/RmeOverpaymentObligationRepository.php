@@ -26,6 +26,11 @@ final class RmeOverpaymentObligationRepository implements RmeOverpaymentObligati
         return $query->first();
     }
 
+    public function findForUpdate(int $id): ?RmeOverpaymentObligation
+    {
+        return RmeOverpaymentObligation::query()->whereKey($id)->lockForUpdate()->first();
+    }
+
     public function find(int $id): ?RmeOverpaymentObligation
     {
         return RmeOverpaymentObligation::query()

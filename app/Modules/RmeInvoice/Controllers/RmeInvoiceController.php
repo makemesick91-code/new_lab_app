@@ -16,6 +16,7 @@ use App\Modules\RmeInvoice\Services\RmeControlReceivableService;
 use App\Modules\RmeInvoice\Services\RmeInvoiceCorrectionService;
 use App\Modules\RmeInvoice\Services\RmeInvoiceService;
 use App\Modules\RmeInvoice\Services\RmePaymentService;
+use App\Modules\RmeInvoice\Services\RmeRefundRequestService;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
 use App\Modules\Treatment\Services\TreatmentService;
 use App\Support\Clinical\ClinicalClock;
@@ -41,6 +42,7 @@ class RmeInvoiceController extends Controller
         private readonly RmeInvoiceCorrectionService $corrections,
         private readonly RmePaymentService $payments,
         private readonly RmeBillingDisputeService $disputes,
+        private readonly RmeRefundRequestService $refunds,
         private readonly ClinicalClock $clock,
     ) {}
 
@@ -569,6 +571,8 @@ SQL;
             // refuses under the invoice row lock) and the dispute panel.
             'disputeHold' => $invoice->isPayable() ? $this->payments->activeDisputeHolding($invoice) : null,
             'disputePanel' => $this->disputes->panelFor($invoice, request()->user()),
+            // FEATURE-RME-BILLING-REFUND-REQUEST-APPROVAL-1 — no query while the flag is off.
+            'refundPanel' => $this->refunds->panelFor($invoice, request()->user()),
         ]);
     }
 }

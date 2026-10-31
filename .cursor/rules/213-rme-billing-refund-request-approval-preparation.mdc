@@ -1,10 +1,15 @@
 ---
-description: PREPARATION-RME-BILLING-REFUND-REQUEST-APPROVAL-1 — preparation contract for RME refund request & approval (Sprint 4/7). Refund stays NOT_IMPLEMENTED and NOT_ACTIVE; on 2026-10-31 the owner answered RF-1 … RF-14, RF-1a and RF-8a (D4, D5, D6, D18, D25, D26 recorded), so the owner-side implementation precondition is met; repository gates and the F-17 registry still sequence the build. Records the verified foundations a future implementation must reuse (obligation is the only refundable source, obligation row immutable, invoice → obligation → request lock order, payments append-only, intent pattern) and what must never happen.
+description: PREPARATION-RME-BILLING-REFUND-REQUEST-APPROVAL-1 — preparation contract for RME refund request & approval (Sprint 4/7). Since implemented by rule 215 (request & approval built, flag OFF, nobody able to act; settlement still NOT_IMPLEMENTED; refund NOT_ACTIVE); on 2026-10-31 the owner answered RF-1 … RF-14, RF-1a and RF-8a (D4, D5, D6, D18, D25, D26 recorded), so the owner-side implementation precondition is met; repository gates and the F-17 registry still sequence the build. Records the verified foundations a future implementation must reuse (obligation is the only refundable source, obligation row immutable, invoice → obligation → request lock order, payments append-only, intent pattern) and what must never happen.
 globs: app/Modules/RmeInvoice/**, docs/adr/0013-rme-refund-request-approval.md, docs/architecture/rme-refund-request-approval-design.md, docs/architecture/rme-refund-request-approval-migration-plan.md, docs/architecture/rme-refund-request-approval-threat-model.md, docs/architecture/rme-refund-request-approval-tdd-matrix.md, docs/architecture/rme-refund-financial-reconciliation-contract.md, docs/decisions/rme-refund-request-approval-owner-decision-package.md, docs/operations/rme-refund-request-approval-release-gate-checklist.md, docs/operations/rme-refund-request-approval-sop-draft.md, docs/sprints/preparation-rme-billing-refund-request-approval-1.md
 alwaysApply: false
 ---
 
 # RME refund request & approval — preparation (rule 213)
+
+> **Forward reference (2026-10-31):** the preparation recorded here was IMPLEMENTED by
+> `FEATURE-RME-BILLING-REFUND-REQUEST-APPROVAL-1` — rule 215 is the canonical rule for the built feature (flag
+> `rme.billing_refund_request` OFF, identity allowlist EMPTY). Where this file says "not built", read it as the
+> state on the day it was written.
 
 Labels: **VERIFIED** (read from source or production in this task), **PROPOSED** (design awaiting the
 owner), **PENDING** (register code still open). Nothing labelled PROPOSED is policy. Do not implement,

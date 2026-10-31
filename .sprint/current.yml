@@ -1,25 +1,27 @@
-# HARDENING-RME-OWNER-REFERENCE-REGISTRY-1 — rule 214. The database-backed registry of consumed Owner
-# approval references (decision PP-2): one reference authorises one financial decision scope (the invoice
-# for a post-payment correction; a refund request later). Consumed with INSERT … ON CONFLICT DO NOTHING plus
-# a scope check inside the deciding transaction, after every row lock; re-verified at approval; reported by
-# rme:invoice-correction-readiness. Additive migration with a backfill that refuses conflicting data.
-# Post-payment correction stays OFF (PP-10 unchanged); refund is not built; nothing is activated.
-# The detailed security analysis is kept in a private record, not in this public repository.
+# FEATURE-RME-BILLING-REFUND-REQUEST-APPROVAL-1 — rule 215, Sprint 4/7. The refund REQUEST and its decision
+# for an OPEN overpayment obligation (owner decisions RF-1…RF-14, RF-1a, RF-8a of 2026-10-31). Never money:
+# settlement is Sprint 5. Front Office maker at its working branch; reviewer Super Admin / Supervisor RME /
+# Kepala Cabang by role and server-resolved branch scope; maker != checker per account. Owner reference
+# consumed in the shared registry (rule 214, second consumer); patient reference in its own registry.
+# Three additive migrations. Flag rme.billing_refund_request default OFF; pilot SPN4 with an EMPTY identity
+# allowlist, so nothing is activated and nobody can act.
+# Type FOUNDATION_SPRINT: the change spans four modules (RmeInvoice, AccessControl, ClinicOversight,
+# PatientMerge), so the stricter cross-module profile applies (audit level 3).
 # Carried forward: LEGACY-RME-PROGRAM-CLOSURE-1 stays CLOSED and inherited.
-id: HARDENING-RME-OWNER-REFERENCE-REGISTRY-1
-type: SECURITY_FIX
+id: FEATURE-RME-BILLING-REFUND-REQUEST-APPROVAL-1
+type: FOUNDATION_SPRINT
 module: RmeInvoice
-title: "Owner approval reference registry: one reference, one decision scope, enforced by the database"
+title: "Refund request & approval: decide whether an overpayment is paid back, never pay it"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 runtime_change: true
 schema_change: true
-frontend_change: false
+frontend_change: true
 security_impact: true
-branch_isolation_impact: false
+branch_isolation_impact: true
 ledger_impact: false
 deploy_required: true
 browser_required: false
-test_profiles: [focused, security_regression]
-go_tag: hardening-rme-owner-reference-registry-1-go
-inherits_parent_go: post-audit-f4bc-release-1-go
+test_profiles: [focused, cross_module_regression, security_regression]
+go_tag: feature-rme-billing-refund-request-approval-1-implementation-go
+inherits_parent_go: hardening-rme-owner-reference-registry-1-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1

@@ -20,7 +20,8 @@ use LogicException;
  *   POST_PAYMENT_CORRECTION_INVOICE — the invoice; a resubmission on the same
  *     invoice repeats its reference (PP-2);
  *   REFUND_REQUEST — one refund request; a new request needs a new reference
- *     (owner decision RF-6). Reserved here; no refund consumer exists yet.
+ *     (owner decision RF-6). Consumed by RmeRefundRequestService::submit()
+ *     (FEATURE-RME-BILLING-REFUND-REQUEST-APPROVAL-1, rule 215).
  *
  * Contract for a consumer:
  *   - call consume() INSIDE the transaction that records the decision, AFTER
@@ -112,6 +113,23 @@ final class RmeOwnerApprovalReferenceRegistry
         $owner = $this->references->scopeOf($folded);
 
         return $owner !== null && $owner['scope_type'] === $scopeType && $owner['scope_id'] === $scopeId;
+    }
+
+    /**
+     * Read-only: does ANY scope already hold this reference? Used by a decision
+     * that records a reference without consuming the registry (a pre-payment
+     * correction, rule 214 D2) so it cannot repeat one a registry-backed decision
+     * already spent. A malformed reference is held by nobody.
+     */
+    public function isClaimed(string $normalizedReference): bool
+    {
+        try {
+            $folded = self::fold($normalizedReference);
+        } catch (InvalidArgumentException) {
+            return false;
+        }
+
+        return $this->references->scopeOf($folded) !== null;
     }
 
     private function assertScope(string $scopeType, int $scopeId): void

@@ -275,6 +275,7 @@
         @include('rme.cashier.partials.invoice-correction-panel', ['panel' => $correctionPanel, 'visit' => $visit, 'invoice' => $invoice])
 
         @include('rme.cashier.partials.billing-dispute-panel', ['panel' => $disputePanel, 'visit' => $visit, 'invoice' => $invoice])
+        @include('rme.cashier.partials.refund-request-panel', ['panel' => $refundPanel ?? ['enabled' => false], 'visit' => $visit, 'invoice' => $invoice])
 
     </div>
 </x-settings-shell>

@@ -1,5 +1,5 @@
 ---
-description: HARDENING-RME-OWNER-REFERENCE-REGISTRY-1 — the database-backed registry of consumed Owner approval references (decision PP-2). One reference authorises one financial decision scope; consumed with INSERT … ON CONFLICT DO NOTHING plus a scope check, inside the deciding transaction, after every row lock. Post-payment correction is the first consumer; refund requests are the planned second. Post-payment correction stays OFF; nothing is activated by this rule.
+description: HARDENING-RME-OWNER-REFERENCE-REGISTRY-1 — the database-backed registry of consumed Owner approval references (decision PP-2). One reference authorises one financial decision scope; consumed with INSERT … ON CONFLICT DO NOTHING plus a scope check, inside the deciding transaction, after every row lock. Post-payment correction is the first consumer; refund requests are the second (rule 215). Post-payment correction stays OFF; nothing is activated by this rule.
 globs: app/Modules/RmeInvoice/Services/RmeOwnerApprovalReferenceRegistry.php, app/Modules/RmeInvoice/Services/RmeInvoiceCorrectionService.php, app/Modules/RmeInvoice/Repositories/RmeOwnerApprovalReferenceRepository.php, app/Modules/RmeInvoice/Models/RmeOwnerApprovalReference.php, database/migrations/2026_10_31_100001_create_trx_rme_owner_approval_references_table.php, tests/Feature/RmeOwnerReferenceRegistry/**
 alwaysApply: false
 ---
@@ -18,7 +18,7 @@ behind this hardening is kept in a private security record, never in this public
    `REJECTED`, `CANCELLED` or `STALE` repeats its reference, PP-2; once a correction it authorised is
    `APPROVED`/`APPLIED` the reference is **spent** and that invoice refuses it too, rule 207 §10a) and
    `REFUND_REQUEST` (one refund
-   request; reserved — no refund consumer exists yet). A reference claimed by one scope is refused by
+   request, consumed at refund submit — rule 215). A reference claimed by one scope is refused by
    every other scope and every other workflow.
 3. It holds under real concurrency on PostgreSQL: of two transactions that consume one reference for two
    scopes, exactly one owns it; the other is refused with an application exception.
@@ -76,7 +76,10 @@ with RESTRICT).
 ## D2. Residuals (recorded, not hidden)
 
 * Pre-payment corrections are outside the registry (they move no money back); the post-payment path is
-  the one guarded.
+  the one guarded. Since rule 215 a pre-payment correction is refused a reference the registry already holds
+  (`isClaimed()`), and a refund is refused a reference any correction carries. The truly concurrent case — a
+  pre-payment correction and a registry consumer committing the same reference at the same instant — is not
+  serialized by the database and stays a recorded residual.
 * Separator and spelling variants are distinct keys (C.2); the owner's single reference sequence is the
   control.
 * Append-only is enforced by the model and `down()`; a direct query-builder write is not blocked by the

@@ -4,6 +4,8 @@
 > evidence named in the "Evidence" column; a WATCH is reported as WATCH (CG-21). Design:
 > `docs/architecture/rme-refund-request-approval-design.md`.
 
+> **Update 2026-10-31:** implemented by `FEATURE-RME-BILLING-REFUND-REQUEST-APPROVAL-1` (rule 215) — the boxes stay unchecked until each gate is passed with evidence. It ships with the flag `rme.billing_refund_request` OFF and an EMPTY pilot identity allowlist: built, not activated. Where this document reads as future or proposed, it records the state before implementation; decisions taken while implementing are in `docs/sprints/feature-rme-billing-refund-request-approval-1.md` §3–§4b.
+
 ## RG-0 — Owner decisions (blocks implementation)
 
 | ☐ | Gate | Evidence |

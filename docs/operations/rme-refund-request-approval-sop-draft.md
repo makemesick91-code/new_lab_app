@@ -7,6 +7,8 @@
 > RF-14 (paket §7.1 dan §7.4). SOP ini tetap **draft** sampai fiturnya dibangun dan diaktifkan dengan
 > keputusan Owner tersendiri.
 
+> **Pembaruan 2026-10-31:** fitur sudah dibangun (`FEATURE-RME-BILLING-REFUND-REQUEST-APPROVAL-1`, rule 215) tetapi **belum aktif** — flag `rme.billing_refund_request` OFF dan daftar identitas pilot kosong. SOP ini tetap draf dan belum berlaku sampai keputusan aktivasi Owner.
+
 ## 1. Kapan refund boleh diajukan
 
 Refund hanya untuk **kelebihan bayar yang sudah tercatat oleh sistem**: tagihan berstatus Lunas yang

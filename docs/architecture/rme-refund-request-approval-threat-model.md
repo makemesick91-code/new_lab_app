@@ -4,6 +4,8 @@
 > implementation must carry and the test that proves it (`docs/architecture/rme-refund-request-approval-tdd-matrix.md`).
 > Design: `docs/architecture/rme-refund-request-approval-design.md`.
 
+> **Update 2026-10-31:** implemented by `FEATURE-RME-BILLING-REFUND-REQUEST-APPROVAL-1` (rule 215) — every control named here is implemented and tested, and an independent security review found no CRITICAL or HIGH issue. It ships with the flag `rme.billing_refund_request` OFF and an EMPTY pilot identity allowlist: built, not activated. Where this document reads as future or proposed, it records the state before implementation; decisions taken while implementing are in `docs/sprints/feature-rme-billing-refund-request-approval-1.md` §3–§4b.
+
 ## 1. Assets and trust boundaries
 
 | Asset | Why it matters |

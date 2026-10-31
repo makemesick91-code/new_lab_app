@@ -63,6 +63,9 @@ never be cited as production behaviour), **PENDING_OWNER_DECISION** (see audit �
   a later audit proves the snapshot insufficient.
 
 ## 6. Refund capability — CURRENT: none
+> **Forward reference (2026-10-31):** the refund REQUEST and its approval now exist (rule 215, flag
+> `rme.billing_refund_request` OFF, identity allowlist EMPTY). They decide, never pay: refund SETTLEMENT still
+> does not exist, and the invariant below still holds.
 - No refund table, status, permission, route, service or report exists.
 - `config/rme_invoice.php` `refund_terms` is owner-approved PRINTED text (Kawat Gigi ≤ 2×24 jam; payout at month end)
   that the system does not implement. Never treat printed terms as system behaviour.

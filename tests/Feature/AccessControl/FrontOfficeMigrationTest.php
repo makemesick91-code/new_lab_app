@@ -56,7 +56,8 @@ it('reports both legacy roles as migratable candidates', function () {
         // FEATURE-LEGACY-PATIENT-DOCUMENT-COMPLETENESS-1 added `view_legacy_patient_archive_completeness` to both (union 22 -> 23).
         // FEATURE-PATIENT-DUPLICATE-RESOLUTION-MERGE-1 added `view_patient_duplicate_resolution` and `request_patient_merge` to Admin Klinik and Front Office (union 23 -> 25).
         // ACTIVATION-RME-INVOICE-CORRECTION-PREPAYMENT-2 (rule 195, owner D1/D1b) added `request_rme_invoice_correction` (Kasir) and `approve_rme_invoice_correction` (Admin Klinik) — both in the union (25 -> 27).
-        ->and($report['expected_permission_count'])->toBe(27)
+        // FEATURE-RME-BILLING-REFUND-REQUEST-APPROVAL-1 (rule 215, RF-1) added `request_rme_refund` to Front Office ONLY (27 -> 28).
+        ->and($report['expected_permission_count'])->toBe(28)
         ->and($report['migratable'])->toBe(2)
         ->and($report['blocked'])->toBe(0);
 });

@@ -1,0 +1,100 @@
+---
+description: FEATURE-RME-BILLING-REFUND-REQUEST-APPROVAL-1 (Sprint 4/7) — the refund REQUEST and its decision for an OPEN overpayment obligation. Owner decisions RF-1…RF-14 (2026-10-31). Never money: settlement is Sprint 5. Flag rme.billing_refund_request default OFF; pilot SPN4 with an EMPTY identity allowlist, so nobody can act until verified identities are recorded.
+globs: app/Modules/RmeInvoice/Services/RmeRefundRequestService.php, app/Modules/RmeInvoice/Support/RmeRefundRequest*.php, app/Modules/RmeInvoice/Models/RmeRefund*.php, app/Modules/RmeInvoice/Repositories/RmeRefundRequestRepository.php, app/Modules/RmeInvoice/Controllers/RmeRefundRequestController.php, app/Modules/ClinicOversight/Controllers/OversightRefundRequestController.php, config/rme_refund.php, database/migrations/2026_10_31_2000*.php, resources/views/rme/refund-requests/**, tests/Feature/RmeRefundRequest/**
+alwaysApply: false
+---
+
+# Refund request & approval (rule 215)
+
+Sprint record: `docs/sprints/feature-rme-billing-refund-request-approval-1.md`. Design, migration plan, threat
+model, TDD matrix and reconciliation contract: `docs/architecture/rme-refund-request-approval-*.md`. Owner
+decisions: `docs/decisions/rme-refund-request-approval-owner-decision-package.md` §7.4.
+
+## A. What a refund request is
+
+1. A request decides **whether** an OPEN overpayment obligation will be paid back. It **never moves money**:
+   no settlement, payment, reversal, patient credit, ledger or KPI change exists here (RF-2, RF-12, RF-13).
+2. **APPROVED never means money left the clinic.** The screen says "DISETUJUI — BELUM DIBAYARKAN"; there is
+   no print or voucher. Oversight reports approved-unsettled requests apart from revenue, receivables,
+   cash and bank, attributed to the source invoice's branch (RF-8).
+3. The obligation, invoice, items, payments, receipts and document versions are **never written** by a
+   refund action (asserted byte-for-byte by RR-LIFE-02).
+4. Full refund only: the amount is the obligation amount, server-derived; a declared amount that differs is
+   refused (`REFUND_OBLIGATION_CHANGED`), never capped or rounded (RF-4).
+
+## B. Authority (RF-1, RF-1a)
+
+1. **Maker = Front Office only**, at its ASSIGNED working branch (the online context). An account exempt from
+   the working context (Owner, Super Admin, Supervisor RME) has no working branch and is never a maker.
+   `request_rme_refund` is the one entry of `RoleSeeder::FRONT_OFFICE_ONLY_PERMISSIONS` — never Kasir or
+   Admin Klinik.
+2. **Reviewer** = Super Admin (every active RME branch), Supervisor RME (its authorized scope), Kepala Cabang
+   (its own `users.branch_id`). Kepala Cabang holds `approve_rme_refund` and nothing else of RME.
+   Supervisor RME is exempt from the working context, so its authorized scope resolves to **every active RME
+   branch** — the same as Super Admin. That is the existing governance-tier model, not a widening; narrowing
+   it is an owner decision, not a code tweak.
+3. A permission is necessary, **never sufficient**: the service checks the ROLE and the BRANCH itself,
+   because Super Admin holds every permission through `Gate::before`.
+4. **Maker ≠ checker per account, Super Admin included**, in the service under the locks, with a CHECK
+   (`decided_by <> requested_by`) as the backstop.
+5. Revoking an APPROVED request: a reviewer authorised for the branch that is not the maker.
+   Withdrawing a REQUESTED request: its maker only.
+6. Out of every scope ⇒ 404 (existence never leaks); a non-reviewer actor ⇒ `REFUND_REVIEWER_NOT_AUTHORIZED`
+   (decided on the account, before any record is read). Order, for every decision and for filing:
+   **account authority → scope (404) → input**. No note, reason or form field is validated before the scope
+   check, so a validation error can never reveal that another branch's request or invoice exists.
+7. Pilot (RF-3): `config/rme_refund.php` — SPN4 only, identity allowlist **EMPTY by default**. The Sprint 2
+   maker/checker pair is NOT inherited. Filling it is an activation step with verified human separation;
+   otherwise `PILOT_ACTIVATION = NO_GO`.
+
+## C. References (RF-1, RF-5, RF-6)
+
+1. Every request carries a case-specific **Owner approval reference**, recorded at submit, consumed in the
+   shared registry (rule 214) with scope `REFUND_REQUEST` = this request. It must never have been recorded —
+   case-folded — on any refund or any invoice correction. A reviewer supplies no reference and verifies the
+   request's own (`belongsTo`). The reverse holds too: a pre-payment correction (which records an optional
+   reference without consuming the registry) is refused a reference the registry already holds.
+2. Every new request after a rejection, withdrawal, revocation or staleness needs a **NEW** Owner reference.
+3. A **patient request reference** (6–120, no NIK-shaped value) is mandatory and consumed in
+   `trx_rme_refund_patient_references`, scoped to the obligation: a re-filed request for the SAME obligation
+   may repeat it; any other obligation is refused.
+4. Registries are claimed last, in fixed order (Owner, then patient), with `INSERT … ON CONFLICT DO NOTHING`
+   plus an owner comparison — never by catching a unique violation.
+
+## D. Concurrency and staleness
+
+1. Lock order, no exceptions: **invoice → obligation → refund request**, then the actor re-read
+   (`ActiveAccountResolver`, the linearization point). A refund never locks a correction or payment row.
+2. A unique violation is translated at the transaction boundary (`REFUND_ACTIVE_REQUEST_EXISTS`,
+   `REFUND_OWNER_REFERENCE_REUSED`, or a replay), never caught and continued (PostgreSQL 25P02).
+3. Approval re-validates eligibility and the snapshot hash under the locks; a mismatch COMMITS `STALE` and
+   refuses (`REFUND_REQUEST_STALE`). An active billing dispute refuses submission AND approval (RF-7) and is
+   never a reason for STALE.
+4. Idempotency: a HMAC intent bound to the obligation (`rme-refund-request|v1|nonce|obligation_id`); an exact
+   replay returns the original whatever its state, and the screen says it was recorded before; a different
+   form under the same intent is refused. The intent is signed with the application key, so it is registered
+   in `config/app_key_rotation.php` (current-key-only consumer): a rotation only invalidates open forms.
+5. The state machine is enforced three times: the service, the model `updating` hook (`canTransition`), and
+   PostgreSQL CHECKs (13 on `trx_rme_refund_requests`, including maker ≠ checker and "the maker never revokes
+   a decided request"). An unrecognised unique violation is re-thrown, never labelled as a business outcome.
+
+## D2. Visibility
+
+1. The decision page shows the case: requester, the maker's reason, the Owner reference and the patient
+   request reference, and any decision or cancellation note — so the checker decides on the case, not on an
+   amount. The system cannot prove the Owner's signature; the screen says so.
+2. Oversight pages (Finance Klinik, Data Analyst, Owner) show the facts and staff names, **never** the free
+   text or the references. They are read-only and, like the correction and obligation oversight pages, are
+   **not** gated by the flag: records stay auditable after a rollback.
+
+## E. Never
+
+* Settle, pay out, credit, reverse or net anything, or add a settlement route, permission, method or status.
+* Grant `request_rme_refund` beyond Front Office, or `approve_rme_refund` to Owner, Finance Klinik, Data
+  Analyst, Doctor, Perawat, Kasir, Front Office or Admin Klinik. Owner gets `view_billing_correction_oversight`
+  only (RF-8a), never `export_oversight_data`.
+* Turn the flag on to demonstrate the screens, fill the identity allowlist without verified separation, or
+  reuse pilot users 29/1 by inheritance.
+* Edit or delete a refund row or event to undo a decision; correct by withdraw/revoke and a new request.
+* Activate `rme.billing_refund_request` before Sprint 2 GO, post-payment correction activation, a real OPEN
+  obligation, staffed maker + reviewer, and the Owner's activation approval (RF-3 order).
