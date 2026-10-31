@@ -60,6 +60,13 @@ interface RmeInvoiceRepositoryInterface
      */
     public function findForUpdate(int $id): ?RmeInvoice;
 
+    /**
+     * FEATURE-RME-RP0-CONTROL-CONSULTATION-1 (rule 217) — move a LOCKED, eligible
+     * Rp0 invoice to NO_CHARGE. Used ONLY by RmePaymentService::closeZeroValueInvoice()
+     * inside the transaction that holds the invoice row lock. Writes no amount.
+     */
+    public function closeAsNoCharge(RmeInvoice $invoice, string $category, int $closedBy): RmeInvoice;
+
     /** @param array<string, mixed> $data */
     public function createItem(array $data): RmeInvoiceItem;
 

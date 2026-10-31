@@ -147,6 +147,20 @@ class RmeInvoiceRepository implements RmeInvoiceRepositoryInterface
         return RmeInvoice::query()->lockForUpdate()->find($id);
     }
 
+    public function closeAsNoCharge(RmeInvoice $invoice, string $category, int $closedBy): RmeInvoice
+    {
+        // forceFill: the closure columns are deliberately not fillable. Only the
+        // status and the three provenance columns move — never an amount.
+        $invoice->forceFill([
+            'status' => RmeInvoice::STATUS_NO_CHARGE,
+            'zero_value_category' => $category,
+            'zero_value_closed_by' => $closedBy,
+            'zero_value_closed_at' => now(),
+        ])->save();
+
+        return $invoice->refresh();
+    }
+
     public function createItem(array $data): RmeInvoiceItem
     {
         return RmeInvoiceItem::create($data);

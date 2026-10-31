@@ -13,4 +13,11 @@ interface RmePaymentRepositoryInterface
     public function forInvoice(RmeInvoice $invoice): Collection;
 
     public function latestPaymentNumberForMonth(string $month): ?string;
+
+    /**
+     * FEATURE-RME-RP0-CONTROL-CONSULTATION-1 (rule 217) — every payment row ever
+     * recorded against the invoice, soft-deleted ones INCLUDED: an invoice that
+     * ever held money is never "free".
+     */
+    public function countForInvoice(int $invoiceId): int;
 }

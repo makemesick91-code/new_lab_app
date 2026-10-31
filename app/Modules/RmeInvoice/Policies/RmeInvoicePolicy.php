@@ -42,6 +42,18 @@ class RmeInvoicePolicy
         return $this->canManage($user) && $this->withinWorkingBranchScope($user, $invoice->branch_id);
     }
 
+    /**
+     * FEATURE-RME-RP0-CONTROL-CONSULTATION-1 (rule 217, owner decision S6-D3) —
+     * "Selesai Tanpa Biaya" belongs to the cashier who may settle this invoice:
+     * the same permission and working-branch scope as pay(). The HTTP door only;
+     * RmePaymentService::closeZeroValueInvoice() re-checks the persisted account
+     * and decides eligibility, which no Gate::before bypass can reach.
+     */
+    public function closeZeroValue(User $user, RmeInvoice $invoice): bool
+    {
+        return $this->canManage($user) && $this->withinWorkingBranchScope($user, $invoice->branch_id);
+    }
+
     public function viewReceipt(User $user, RmeInvoice $invoice): bool
     {
         return $this->canManage($user) && $this->withinWorkingBranchScope($user, $invoice->branch_id);

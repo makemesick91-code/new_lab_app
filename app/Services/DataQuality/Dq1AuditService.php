@@ -621,7 +621,16 @@ class Dq1AuditService
             ->where('grand_total', '<', 0)
             ->count();
 
-        return $invalidStatus + $paidWithBalance + $negativeTotals;
+        // Rule 217: NO_CHARGE means no payment row was ever recorded. The query
+        // builder ignores soft deletes, so a soft-deleted payment counts too.
+        $noChargeWithPayments = Schema::hasTable('trx_rme_payments')
+            ? (int) DB::table('trx_rme_invoices as i')
+                ->where('i.status', RmeInvoice::STATUS_NO_CHARGE)
+                ->whereExists(fn ($query) => $query->select(DB::raw(1))->from('trx_rme_payments as p')->whereColumn('p.rme_invoice_id', 'i.id'))
+                ->count()
+            : 0;
+
+        return $invalidStatus + $paidWithBalance + $negativeTotals + $noChargeWithPayments;
     }
 
     private function countOrphanMedicalRecords(): int

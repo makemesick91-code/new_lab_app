@@ -124,7 +124,7 @@ return [
         'trx_inventory_movements',
     ],
 
-    'rme_invoice_statuses' => ['DRAFT', 'UNPAID', 'PARTIAL', 'PAID', 'VOID'],
+    'rme_invoice_statuses' => ['DRAFT', 'UNPAID', 'PARTIAL', 'PAID', 'VOID', 'NO_CHARGE'], // NO_CHARGE: rule 217 (Sprint 6/7)
 
     'documentation' => [
         'primary' => 'docs/architecture/dq-1-acid-constraint-data-quality-audit.md',

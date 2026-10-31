@@ -25,6 +25,9 @@ use App\Modules\RmeInvoice\Support\RmePaymentDeclaredView;
 use App\Modules\RmeInvoice\Support\RmePaymentIntent;
 use App\Modules\RmeInvoice\Support\RmePaymentIntentRefused;
 use App\Modules\RmeInvoice\Support\RmePaymentSubmissionReplayed;
+use App\Modules\RmeInvoice\Support\RmeZeroValueClosureFeatureGuard;
+use App\Modules\RmeInvoice\Support\RmeZeroValueEligibility;
+use App\Modules\RmeInvoice\Support\RmeZeroValueEligibilityResult;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
 use Carbon\CarbonImmutable;
 use Closure;
@@ -56,6 +59,8 @@ class RmePaymentService
         private readonly RmeBillingDisputeRepositoryInterface $disputes,
         private readonly RmePaymentSubmissionService $submissionIntents,
         private readonly RmeReceiptSnapshotService $receiptSnapshots,
+        private readonly RmeZeroValueEligibility $zeroValueEligibility,
+        private readonly RmeZeroValueClosureFeatureGuard $zeroValueFlag,
     ) {}
 
     /**
@@ -183,6 +188,139 @@ class RmePaymentService
         $this->generateLabCandidatesIfPaid($payment->rme_invoice_id, $cashier);
 
         return $payment;
+    }
+
+    /**
+     * FEATURE-RME-RP0-CONTROL-CONSULTATION-1 (rule 217, Sprint 6/7) — "Selesai
+     * Tanpa Biaya": close a LEGITIMATE Rp0 invoice of a Konsultasi Dokter or a
+     * Kontrol visit, and complete its visit, WITHOUT recording any payment.
+     *
+     * It lives here, beside pay(), on purpose: it is the other way a cashier
+     * settles an invoice, so it takes the SAME invoice row lock and inherits the
+     * SAME cashier guards by construction — active branch, usable persisted
+     * account, billing permission, working branch (assertCashierMayCollect), the
+     * D10 correction hold and the rule 203 dispute hold (assertNoPaymentHold). A
+     * separate service would have had to restate them and could drift.
+     *
+     * Under the lock: the invoice is re-read, an already-closed invoice is
+     * answered as it stands (idempotent, no second audit row), the visit is
+     * re-read under its own lock, and eligibility is decided on the locked rows
+     * by RmeZeroValueEligibility (owner decisions S6-D1/D6: consultation lines,
+     * or any free line of a server-derived Kontrol; never a discount, never the
+     * voucher, never a corrected invoice, never a visit that is no longer
+     * cashier_pending). Then, in one transaction: invoice → NO_CHARGE with its
+     * provenance, visit → completed, one audit row.
+     *
+     * Never written: a payment row, a receipt, a refund, an obligation, a lab
+     * candidate, or any amount. Super Admin's Gate::before bypass does not reach
+     * here — eligibility is a business rule, not a permission.
+     */
+    public function closeZeroValueInvoice(RmeInvoice $invoice, User $cashier): RmeInvoice
+    {
+        if (! $this->zeroValueFlag->enabled()) {
+            throw $this->zeroValueRefusal(RmeZeroValueEligibility::notEnabled());
+        }
+
+        try {
+            return DB::transaction(function () use ($invoice, $cashier): RmeInvoice {
+                $locked = RmeInvoice::query()->lockForUpdate()->findOrFail($invoice->id);
+
+                $this->assertCashierMayCollect($locked, $cashier);
+
+                // Idempotent replay: answered only to an account that STILL has the
+                // authority (checked above), and never written twice.
+                if ($locked->isNoCharge()) {
+                    return $locked;
+                }
+
+                $this->assertNoPaymentHold($locked);
+
+                $visit = ClinicVisit::query()->lockForUpdate()->find($locked->clinic_visit_id);
+                if ($visit === null) {
+                    throw ValidationException::withMessages([
+                        'zero_value' => 'Kunjungan klinik tidak ditemukan untuk invoice ini.',
+                    ]);
+                }
+
+                $locked->load(['items.treatment' => fn ($query) => $query->withTrashed()->with(['category' => fn ($category) => $category->withTrashed()])]);
+                $paymentCount = $this->payments->countForInvoice((int) $locked->id);
+
+                $result = $this->zeroValueEligibility->evaluate($locked, $visit, $paymentCount);
+                if (! $result->eligible()) {
+                    throw $this->zeroValueRefusal($result);
+                }
+
+                $account = $this->actors->resolveUsable($cashier);
+                $closed = $this->invoices->closeAsNoCharge($locked, (string) $result->category(), (int) $account?->id);
+                $this->visitService->transitionStatus($visit, ClinicVisit::STATUS_COMPLETED);
+
+                $this->auditLogs->log(
+                    RmeFinancialAuditEvent::ENTITY_INVOICE,
+                    (int) $closed->id,
+                    RmeFinancialAuditEvent::ACTION_INVOICE_ZERO_VALUE_CLOSED,
+                    ['status' => RmeInvoice::STATUS_UNPAID, 'visit_status' => ClinicVisit::STATUS_CASHIER_PENDING],
+                    RmeFinancialAuditEvent::zeroValueClosedPayload($closed, $locked->items, $visit, $paymentCount),
+                    $account,
+                );
+
+                return $closed;
+            });
+        } catch (RmeInvoicePaymentDisputed $disputed) {
+            throw ValidationException::withMessages(['zero_value' => $disputed->operatorMessage()]);
+        } catch (RmeInvoicePaymentBlocked $blocked) {
+            throw ValidationException::withMessages(['zero_value' => $blocked->operatorMessage()]);
+        } catch (ValidationException $refused) {
+            // The inherited guards (assertCashierMayCollect, transitionStatus)
+            // answer under their own keys, which the cashier page does not
+            // render. One key, so no refusal is ever silent; the messages are
+            // kept verbatim.
+            if (array_keys($refused->errors()) === ['zero_value']) {
+                throw $refused;
+            }
+
+            throw ValidationException::withMessages([
+                'zero_value' => collect($refused->errors())->flatten()->unique()->values()->all(),
+            ]);
+        }
+    }
+
+    /**
+     * FEATURE-RME-RP0-CONTROL-CONSULTATION-1 — the cashier page's view of the
+     * closure (display only, no lock; the service above decides under the lock).
+     *
+     * @return array{enabled: bool, applies: bool, eligible: bool, category: ?string, message: ?string}
+     */
+    public function zeroValueClosurePanel(RmeInvoice $invoice): array
+    {
+        $enabled = $this->zeroValueFlag->enabled();
+        $applies = $enabled
+            && $invoice->status === RmeInvoice::STATUS_UNPAID
+            && RmeInvoiceLedger::grandTotalCents($invoice) === 0;
+
+        if (! $applies) {
+            return ['enabled' => $enabled, 'applies' => false, 'eligible' => false, 'category' => null, 'message' => null];
+        }
+
+        // Same relation shape the service decides on: soft-deleted treatments and
+        // categories included, so the page never disagrees with the locked decision.
+        $invoice->load(['items.treatment' => fn ($query) => $query->withTrashed()->with(['category' => fn ($category) => $category->withTrashed()])]);
+        $visit = $invoice->clinicVisit;
+        $result = $visit === null
+            ? RmeZeroValueEligibilityResult::refuse(RmeZeroValueEligibility::VISIT_NOT_PENDING, 'Kunjungan klinik tidak ditemukan untuk invoice ini.')
+            : $this->zeroValueEligibility->evaluate($invoice, $visit, $this->payments->countForInvoice((int) $invoice->id));
+
+        return [
+            'enabled' => true,
+            'applies' => true,
+            'eligible' => $result->eligible(),
+            'category' => $result->category(),
+            'message' => $result->message(),
+        ];
+    }
+
+    private function zeroValueRefusal(RmeZeroValueEligibilityResult $result): ValidationException
+    {
+        return ValidationException::withMessages(['zero_value' => (string) $result->message()]);
     }
 
     /**

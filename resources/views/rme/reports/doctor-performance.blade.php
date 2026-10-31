@@ -160,6 +160,7 @@
                                 <th class="px-3 py-2 text-left">Tindakan / Perawatan</th>
                                 <th class="px-3 py-2 text-right">Jumlah Item</th>
                                 <th class="px-3 py-2 text-right">Item pada Invoice Lunas</th>
+                                <th class="px-3 py-2 text-right">Item Tanpa Biaya (Rp0)</th>
                                 <th class="px-3 py-2 text-right">Nilai Ditagih</th>
                             </tr>
                         </thead>
@@ -169,6 +170,7 @@
                                     <td class="px-3 py-2 font-medium text-navy">{{ $row['treatment_name'] }}</td>
                                     <td class="px-3 py-2 text-right tabular-nums text-ink">{{ format_number_id($row['item_count']) }}</td>
                                     <td class="px-3 py-2 text-right tabular-nums text-ink">{{ format_number_id($row['paid_item_count']) }}</td>
+                                    <td class="px-3 py-2 text-right tabular-nums text-ink">{{ format_number_id($row['no_charge_item_count'] ?? 0) }}</td>
                                     <td class="px-3 py-2 text-right tabular-nums text-ink">{{ format_currency_id($row['billed']) }}</td>
                                 </tr>
                             @endforeach

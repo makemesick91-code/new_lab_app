@@ -27,7 +27,7 @@ class DoctorPerformanceReportRequest extends FormRequest
             'branch_id' => ['nullable', 'integer', 'exists:mst_branches,id'],
             'doctor_id' => ['nullable', 'integer', 'exists:mst_doctors,id'],
             'treatment_id' => ['nullable', 'integer', 'exists:mst_treatments,id'],
-            'status' => ['nullable', 'string', 'in:PAID,PARTIAL,UNPAID'],
+            'status' => ['nullable', 'string', 'in:PAID,PARTIAL,UNPAID,NO_CHARGE'], // NO_CHARGE: rule 217
         ];
     }
 

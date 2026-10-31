@@ -36,11 +36,17 @@ class OversightMonitoringRepository implements OversightMonitoringRepositoryInte
         ClinicRoom::TYPE_CONSULTATION_ROOM,
     ];
 
-    /** An issued invoice — a DRAFT is not yet billed, a VOID is not billed. */
+    /**
+     * An issued invoice — a DRAFT is not yet billed, a VOID is not billed. A
+     * NO_CHARGE invoice (rule 217) was issued and closed at Rp0: the treatment
+     * happened, so it stays visible after closure instead of vanishing from the
+     * day it was performed on.
+     */
     public const BILLED_INVOICE_STATUSES = [
         RmeInvoice::STATUS_UNPAID,
         RmeInvoice::STATUS_PARTIAL,
         RmeInvoice::STATUS_PAID,
+        RmeInvoice::STATUS_NO_CHARGE,
     ];
 
     public const UNFINISHED_STATUSES = [

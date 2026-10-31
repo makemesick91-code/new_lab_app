@@ -248,9 +248,12 @@ code, then the canonical rule, and report the drift.
 - **Deployed, flag OFF:** refund request & approval (rule 215; D4 via RF-1, D18 via RF-2; runtime `9826bd69`, 2026-10-31;
   identity allowlist EMPTY, nobody can act); refund settlement (rule 216; D5 via RF-9, D25 via RF-10; runtime
   `a550e00d`, 2026-10-31; settler list EMPTY, permission held by no role, nobody can settle); Owner reference
-  registry (rule 214, `61450801`). **Not built:** reversal (D26 excluded), patient credit (D6 excluded), Rp0
-  adjustment (Kontrol/Konsultasi). **PENDING owner decisions:** D21c discount policy, D21g Rp0 lines, D22 Rp0 zombie
-  completion, D24 `paid_at` backdating. A historical Rp0 UNPAID SPN4 invoice stays untouched.
+  registry (rule 214, `61450801`); **"Selesai Tanpa Biaya"** (rule 217, Sprint 6/7, owner decisions S6-D1…S6-D8
+  of 2026-11-01): a legitimate Rp0 Konsultasi / Kontrol invoice closes to the terminal status `NO_CHARGE` (never
+  PAID, no payment row) and completes its visit — flag `rme.zero_value_closure` OFF, activation a separate Owner
+  decision. **Not built:** reversal (D26 excluded), patient credit (D6 excluded). **PENDING owner decisions:** D21c
+  discount policy, D21g/D22 for Rp0 **issuance**, vouchers and any Rp0 correction (answered for the closure scope
+  only; D28 unchanged), D24 `paid_at` backdating. The historical Rp0 UNPAID SPN4 invoice #36 stays untouched (S6-D2).
 - Open owner questions: a correction settling a PARTIAL invoice leaves no LUNAS receipt; whether a pre-payment approval
   reference becomes mandatory.
 - Residuals: `branchIdsFor(null)` still answers every RME branch (`RmeInvoiceController::rmeBranches()` and
@@ -287,6 +290,8 @@ code, then the canonical rule, and report the drift.
 | `.cursor/rules/213-rme-billing-refund-request-approval-preparation.mdc` | Refund request/approval preparation; owner answered RF-1…RF-14 on 2026-10-31 (D4/D5/D6/D18/D25/D26). Implemented by rule 215 |
 | `.cursor/rules/214-rme-owner-reference-registry.mdc` | Owner reference registry: one reference, one decision scope, enforced by the database |
 | `.cursor/rules/215-rme-billing-refund-request-approval.mdc` | Refund request & approval (Sprint 4/7): decides, never pays; Front Office maker, role+branch reviewer, flag OFF |
+| `.cursor/rules/216-rme-refund-settlement.mdc` | Refund settlement (Sprint 5/7): records money out; settler ≠ approver; flag OFF, settler list EMPTY |
+| `.cursor/rules/217-rme-rp0-consultation-control.mdc` | Konsultasi & Kontrol Rp0 (Sprint 6/7): "Selesai Tanpa Biaya" → `NO_CHARGE`, no payment; flag OFF |
 | `.cursor/rules/109-rme-exam-consent-odontogram-history.mdc` | Consent gates exam finish, not payment |
 | `.cursor/rules/92-feature-flag-runtime-override.mdc` | Flag environment overrides captured at config build |
 

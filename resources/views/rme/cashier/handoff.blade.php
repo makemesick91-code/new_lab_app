@@ -20,6 +20,7 @@
             'UNPAID' => ['Belum Dibayar', 'warning'],
             'PARTIAL' => ['Partial', 'info'],
             'PAID' => ['Lunas', 'success'],
+            'NO_CHARGE' => ['Tanpa Biaya', 'info'], // rule 217
             'VOID' => ['Dibatalkan', 'danger'],
         ];
     @endphp
@@ -151,6 +152,10 @@
                                         @if ($invoice)
                                             @php [$payLabel, $payTone] = $paymentStatusLabel[$invoice->status] ?? [$invoice->status, 'neutral']; @endphp
                                             <x-ui.badge :tone="$payTone">{{ $payLabel }}</x-ui.badge>
+                                            {{-- Rule 217 (S6-D5): a Rp0 invoice is not "waiting for money". --}}
+                                            @if (($zeroValueClosureEnabled ?? false) && $invoice->status === 'UNPAID' && (float) $invoice->grand_total === 0.0)
+                                                <span class="mt-0.5 block text-xs text-info-700" data-handoff-zero-value>Rp0 — buka untuk cek Selesai Tanpa Biaya</span>
+                                            @endif
                                         @else
                                             <span class="text-xs text-ink-muted">Belum ditagih</span>
                                         @endif

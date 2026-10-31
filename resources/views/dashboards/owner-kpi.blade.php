@@ -42,6 +42,8 @@
         ['key' => 'low_stock_items', 'label' => 'Low Stock', 'value' => $lowStockDisplay],
         ['key' => 'stock_value', 'label' => 'Nilai Stok', 'value' => $stockValueDisplay],
         ['key' => 'collection_rate', 'label' => 'Tingkat Penagihan', 'value' => $rateDisplay],
+        // Rule 217 (S6-D5): legitimate Rp0 visits — clinical activity, zero revenue.
+        ['key' => 'rp0_visits', 'label' => 'Kunjungan Tanpa Biaya (Rp0)', 'value' => format_number_id($metrics['rp0_visits'] ?? 0).' · Konsultasi '.format_number_id($metrics['rp0_consultations'] ?? 0).' · Kontrol '.format_number_id($metrics['rp0_controls'] ?? 0)],
     ];
 
     $hasAnyData = ($metrics['total_visits'] ?? 0) > 0

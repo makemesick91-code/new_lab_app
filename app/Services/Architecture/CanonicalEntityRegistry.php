@@ -114,11 +114,12 @@ class CanonicalEntityRegistry
                 'name' => 'RME Billing and Payment',
                 'domain' => 'cashier',
                 'entities' => ['RME Invoice', 'RME Payment', 'Clinic Visit', 'Receivable'],
-                'status_flow' => ['DRAFT', 'UNPAID', 'PARTIAL', 'PAID', 'VOID'],
+                'status_flow' => ['DRAFT', 'UNPAID', 'PARTIAL', 'PAID', 'VOID', 'NO_CHARGE'],
                 'branch_scope' => true,
                 'critical_rules' => [
                     'Requires finalized RM + consent + cashier_pending visit',
                     'Any payment > 0 completes visit; partial creates piutang',
+                    'A legitimate Rp0 Konsultasi/Kontrol closes NO_CHARGE without a payment (rule 217)',
                     'Optional receivable carry-over via payment_batch_uuid',
                 ],
             ],

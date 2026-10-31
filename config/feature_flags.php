@@ -564,6 +564,18 @@ $registry = [
             'dependencies' => ['rme.billing_refund_request'],
             'rollback_action' => 'First resolve every DISBURSING or OUTCOME_UNKNOWN settlement through the service (confirm with evidence, or abort with the no-money attestation), because an in-flight claim means money may already have left. Then set the environment override to false and rebuild the config cache as the runtime user. Nothing is deleted or reverted: SETTLED settlements, their evidence files, events and audit rows, and the SETTLED requests and obligations remain readable and keep reducing net received. Never edit or delete a settlement row, never re-open a settled obligation, and never pay out again to undo a rollback.',
         ],
+        'rme.zero_value_closure' => [
+            'name' => 'RME Zero-Value Closure (Selesai Tanpa Biaya)',
+            'description' => 'MUTATION capability (Sprint 6/7, owner decisions S6-D1..S6-D8 of 2026-11-01, rule 217) to close a LEGITIMATE Rp0 invoice of a Konsultasi Dokter or a Kontrol visit without fabricating a payment. The branch cashier presses "Selesai Tanpa Biaya"; under the invoice row lock the server checks that the original total is Rp0, the invoice is UNPAID with no payment, no correction and no active billing dispute, the visit is cashier_pending, and every line is genuinely free (unit price 0, no discount, never the TRT-FREESC voucher) and is a consultation line, or the visit is a server-derived Kontrol. The invoice becomes the terminal status NO_CHARGE (not PAID), the visit becomes completed in the same transaction, and one audit row is written. No payment, refund, obligation or receivable is written or erased. While this flag is off the closure route answers 404, every service call is refused and every page renders exactly as before.',
+            'default' => false,
+            'env_key' => 'FEATURE_RME_ZERO_VALUE_CLOSURE',
+            'owner' => 'rme',
+            'risk_level' => 'high',
+            'rollout_status' => 'implemented',
+            'review_target' => 'ACTIVATION-RME-RP0-CONTROL-CONSULTATION-1',
+            'dependencies' => [],
+            'rollback_action' => 'Set the environment override to false and rebuild the config cache as the runtime user. Nothing is reverted: NO_CHARGE invoices stay NO_CHARGE, their visits stay completed, and their audit rows remain. Never set a NO_CHARGE invoice back to UNPAID by hand and never record a payment to stand in for a closure.',
+        ],
     ],
 ];
 
