@@ -11,6 +11,8 @@ use App\Modules\Doctor\Services\DoctorIdentityResolver;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Models\RmeInvoiceItem;
 use App\Modules\RmeInvoice\Models\RmePayment;
+use App\Modules\RmeInvoice\Models\RmeRefundSettlement;
+use App\Modules\RmeInvoice\Support\RmeRefundSettlementStatus;
 use App\Modules\Treatment\Models\Treatment;
 use Illuminate\Contracts\Database\Query\Builder as BuilderContract;
 use Illuminate\Database\Eloquent\Builder;
@@ -27,7 +29,9 @@ use Spatie\Permission\PermissionRegistrar;
  * the doctor who HANDLED the visit (canonical `trx_clinic_visits.doctor_id`). The
  * "total paid" figure is exact — it sums `trx_rme_payments.amount` for the
  * doctor's visits (payments are per-invoice/per-visit, so no proportional
- * allocation is needed). Lab invoices/payments are never touched.
+ * allocation is needed), MINUS refunds actually paid back (SETTLED refund
+ * settlements, FEATURE-RME-REFUND-SETTLEMENT-1 RFS-1: net received). Lab
+ * invoices/payments are never touched.
  *
  * Visibility tiers (server-side, IDOR-safe):
  *   - `all`      : `view_doctor_performance_report` — every doctor, all RME
@@ -379,6 +383,7 @@ class DoctorPerformanceReportService
         $paid = (float) RmePayment::query()
             ->whereIn('clinic_visit_id', $this->visitIdSubquery($scope))
             ->sum('amount');
+        $paid = round($paid - (float) $this->settledRefundsQuery($scope)->sum('trx_rme_refund_settlements.amount'), 2);
 
         return [
             'visits' => $visits,
@@ -425,13 +430,19 @@ class DoctorPerformanceReportService
             ->groupBy('trx_clinic_visits.doctor_id')
             ->pluck('paid', 'doctor_id');
 
+        $refundedByDoctor = $this->settledRefundsQuery($scope)
+            ->whereNotNull('trx_clinic_visits.doctor_id')
+            ->selectRaw('trx_clinic_visits.doctor_id as doctor_id, SUM(trx_rme_refund_settlements.amount) as refunded')
+            ->groupBy('trx_clinic_visits.doctor_id')
+            ->pluck('refunded', 'doctor_id');
+
         $doctors = Doctor::query()
             ->whereIn('id', $visitAgg->keys()->all())
             ->pluck('name', 'id');
 
-        return $visitAgg->map(function ($row, $doctorId) use ($billedByDoctor, $paidByDoctor, $doctors): array {
+        return $visitAgg->map(function ($row, $doctorId) use ($billedByDoctor, $paidByDoctor, $refundedByDoctor, $doctors): array {
             $billed = (float) ($billedByDoctor[$doctorId] ?? 0);
-            $paid = (float) ($paidByDoctor[$doctorId] ?? 0);
+            $paid = round((float) ($paidByDoctor[$doctorId] ?? 0) - (float) ($refundedByDoctor[$doctorId] ?? 0), 2);
 
             return [
                 'doctor_id' => (int) $doctorId,
@@ -542,6 +553,14 @@ class DoctorPerformanceReportService
             ->groupBy(fn ($row) => Carbon::parse($row->visit_date)->toDateString())
             ->map(fn (Collection $rows) => (float) $rows->sum('amount'));
 
+        // Net of refunds actually paid back, attributed to the visit's date (RFS-1).
+        $this->settledRefundsQuery($scope)
+            ->get(['trx_clinic_visits.visit_date as visit_date', 'trx_rme_refund_settlements.amount as amount'])
+            ->groupBy(fn ($row) => Carbon::parse($row->visit_date)->toDateString())
+            ->each(function (Collection $rows, string $date) use (&$paidByDate): void {
+                $paidByDate[$date] = round((float) ($paidByDate[$date] ?? 0) - (float) $rows->sum('amount'), 2);
+            });
+
         $treatmentNames = Treatment::query()
             ->whereIn('id', $items->pluck('treatment_id')->filter()->unique()->all())
             ->pluck('name', 'id');
@@ -631,5 +650,20 @@ class DoctorPerformanceReportService
             RmeInvoice::STATUS_PARTIAL => 'Sebagian',
             RmeInvoice::STATUS_UNPAID => 'Belum dibayar',
         ];
+    }
+
+    /**
+     * SETTLED refund settlements of the invoices of the visits in scope, joined to
+     * the visit (for doctor and date attribution). RFS-1: money paid back.
+     *
+     * @return Builder<RmeRefundSettlement>
+     */
+    private function settledRefundsQuery(array $scope): Builder
+    {
+        return RmeRefundSettlement::query()
+            ->join('trx_rme_invoices', 'trx_rme_invoices.id', '=', 'trx_rme_refund_settlements.rme_invoice_id')
+            ->join('trx_clinic_visits', 'trx_clinic_visits.id', '=', 'trx_rme_invoices.clinic_visit_id')
+            ->where('trx_rme_refund_settlements.status', RmeRefundSettlementStatus::SETTLED)
+            ->whereIn('trx_clinic_visits.id', $this->visitIdSubquery($scope));
     }
 }

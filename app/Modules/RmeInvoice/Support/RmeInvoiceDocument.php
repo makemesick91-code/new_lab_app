@@ -92,6 +92,9 @@ final class RmeInvoiceDocument
         $total = self::toCents($invoice->grand_total);
         $paid = self::toCents($invoice->paidAmount());
         $remaining = self::toCents($invoice->remainingAmount());
+        // FEATURE-RME-REFUND-SETTLEMENT-1 (RFS-1): remaining is measured against NET
+        // received; a settled refund is money given back, not still received.
+        $refunded = self::toCents($invoice->settledRefundAmount());
 
         if ($lineGrossSum !== $gross) {
             $discrepancies[] = 'subtotal_mismatch';
@@ -102,7 +105,7 @@ final class RmeInvoiceDocument
         if ($gross - $discountTotal !== $total) {
             $discrepancies[] = 'grand_total_mismatch';
         }
-        if ($remaining !== max(0, $total - $paid)) {
+        if ($remaining !== max(0, $total - ($paid - $refunded))) {
             $discrepancies[] = 'remaining_mismatch';
         }
 
@@ -173,7 +176,10 @@ final class RmeInvoiceDocument
         $discountTotal = (int) ($totals['discount_total_cents'] ?? 0);
         $total = (int) ($totals['grand_total_cents'] ?? 0);
         $paid = (int) ($totals['paid_cents'] ?? 0);
-        $remaining = (int) ($snapshot['receipt']['outstanding_cents'] ?? max(0, $total - $paid));
+        // FEATURE-RME-REFUND-SETTLEMENT-1: refunds settled before this receipt (key
+        // present only when non-zero, so every older snapshot reads exactly as before).
+        $refunded = (int) ($totals['refunded_cents'] ?? 0);
+        $remaining = (int) ($snapshot['receipt']['outstanding_cents'] ?? max(0, $total - ($paid - $refunded)));
 
         if ($lineGrossSum !== $gross) {
             $discrepancies[] = 'subtotal_mismatch';
@@ -184,7 +190,7 @@ final class RmeInvoiceDocument
         if ($gross - $discountTotal !== $total) {
             $discrepancies[] = 'grand_total_mismatch';
         }
-        if ($remaining !== max(0, $total - $paid)) {
+        if ($remaining !== max(0, $total - ($paid - $refunded))) {
             $discrepancies[] = 'remaining_mismatch';
         }
 

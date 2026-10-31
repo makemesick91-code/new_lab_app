@@ -125,7 +125,8 @@
                     @forelse ($invoices as $invoice)
                         @php
                             $paidAmount = (float) $invoice->payments->sum('amount');
-                            $remainingAmount = max(0, round((float) $invoice->grand_total - $paidAmount, 2));
+                            // RFS-1: the balance is measured against NET received.
+                            $remainingAmount = max(0, round((float) $invoice->grand_total - $invoice->aggregatedNetReceived(), 2));
                             $statusLabel = match ($invoice->status) {
                                 'PARTIAL' => 'Cicilan / Sebagian',
                                 'UNPAID' => 'Belum Dibayar',

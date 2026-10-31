@@ -5,6 +5,7 @@ namespace App\Services\DataQuality;
 use App\Modules\Inventory\Models\StockTransfer;
 use App\Modules\Patient\Services\PatientDataCompletenessService;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
+use App\Modules\RmeInvoice\Support\RmeInvoiceLedger;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -599,15 +600,19 @@ class Dq1AuditService
             ->whereRaw("status NOT IN ({$statusList})")
             ->count();
 
+        // RFS-1: a PAID invoice is measured against NET received (payments −
+        // settled refunds), so a refund paid out can never hide a real balance.
+        $netPaid = Schema::hasTable('trx_rme_refund_settlements')
+            ? RmeInvoiceLedger::netReceivedTotalsQuery()
+            : DB::table('trx_rme_payments')->select('rme_invoice_id')->selectRaw('SUM(amount) AS paid_total')->groupBy('rme_invoice_id');
         $paidWithBalanceQuery = DB::table('trx_rme_invoices as i')
-            ->leftJoin('trx_rme_payments as p', 'p.rme_invoice_id', '=', 'i.id')
+            ->leftJoinSub($netPaid, 'np', 'np.rme_invoice_id', '=', 'i.id')
             ->where('i.status', RmeInvoice::STATUS_PAID)
             ->when(
                 Schema::hasColumn('trx_rme_invoices', 'deleted_at'),
                 fn ($query) => $query->whereNull('i.deleted_at'),
             )
-            ->groupBy('i.id', 'i.grand_total')
-            ->havingRaw('i.grand_total - COALESCE(SUM(p.amount), 0) > 0.01')
+            ->whereRaw('i.grand_total - COALESCE(np.paid_total, 0) > 0.01')
             ->select('i.id');
 
         $paidWithBalance = (int) DB::query()->fromSub($paidWithBalanceQuery, 'anomalies')->count();

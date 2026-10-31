@@ -6,6 +6,7 @@ use App\Modules\ClinicOversight\Interfaces\OversightKpiRepositoryInterface;
 use App\Modules\ClinicOversight\Support\ClinicalDateRange;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
+use App\Modules\RmeInvoice\Support\RmeInvoiceLedger;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
 
@@ -106,11 +107,9 @@ class OversightKpiRepository implements OversightKpiRepositoryInterface
         }
 
         // Valid accumulated payments per invoice — soft-deleted payments are
-        // not money received. One grouped sub-select, joined once.
-        $paid = DB::table('trx_rme_payments')
-            ->selectRaw('rme_invoice_id, SUM(amount) AS paid_total')
-            ->whereNull('deleted_at')
-            ->groupBy('rme_invoice_id');
+        // not money received — minus SETTLED refunds (RFS-1: net received).
+        // One grouped sub-select, joined once.
+        $paid = RmeInvoiceLedger::netReceivedTotalsQuery(excludeDeletedPayments: true);
 
         $rows = DB::table('trx_rme_invoices as i')
             ->leftJoinSub($paid, 'pp', 'pp.rme_invoice_id', '=', 'i.id')

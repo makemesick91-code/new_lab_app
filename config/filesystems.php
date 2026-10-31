@@ -117,6 +117,19 @@ return [
             'report' => false,
         ],
 
+        // FEATURE-RME-REFUND-SETTLEMENT-1 (rule 216) — refund disbursement proof
+        // (bank transfer receipts, signed cash handover acknowledgments). Private,
+        // never served, read only through the policy-checked settlement controller.
+        // Declared in DMS_PRIVATE_PATHS (rule 209).
+        'rme_refund_settlement_evidence' => [
+            'driver' => 'local',
+            'root' => storage_path('app/rme-refund-settlement-private'),
+            'serve' => false,
+            'visibility' => 'private',
+            'throw' => true,
+            'report' => false,
+        ],
+
         // FIX-04b — legacy ODONTOGRAM chart archive. Its own private disk, kept
         // separate from the legacy RME archive so the two capabilities can be
         // retained, audited and (if ever needed) purged independently.

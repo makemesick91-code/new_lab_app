@@ -19,6 +19,7 @@ use App\Modules\ClinicOversight\Controllers\OversightLegacyArchiveController;
 use App\Modules\ClinicOversight\Controllers\OversightMonitoringController;
 use App\Modules\ClinicOversight\Controllers\OversightOverpaymentObligationController;
 use App\Modules\ClinicOversight\Controllers\OversightRefundRequestController;
+use App\Modules\ClinicOversight\Controllers\OversightRefundSettlementController;
 use App\Modules\ClinicRoom\Controllers\ClinicRoomController;
 use App\Modules\ClinicVisit\Controllers\ClinicVisitController;
 use App\Modules\Consent\Controllers\RmeVisitConsentController;
@@ -129,6 +130,7 @@ use App\Modules\RmeInvoice\Controllers\RmeInvoiceCorrectionController;
 use App\Modules\RmeInvoice\Controllers\RmePaymentController;
 use App\Modules\RmeInvoice\Controllers\RmeReceivableFollowUpController;
 use App\Modules\RmeInvoice\Controllers\RmeRefundRequestController;
+use App\Modules\RmeInvoice\Controllers\RmeRefundSettlementController;
 use App\Modules\RmeInvoice\Controllers\RmeReportController;
 use App\Modules\RmeOnlineContext\Controllers\BranchChangeRequestController;
 use App\Modules\RmeOnlineContext\Controllers\OnlineContextController;
@@ -1457,6 +1459,35 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
     });
 
     /*
+    | FEATURE-RME-REFUND-SETTLEMENT-1 (Sprint 5/7, rule 216) — recording that an
+    | APPROVED refund was actually paid out. Three layers: route permission (the
+    | settle permission for every mutation; reviewers may read), controller 404
+    | when the capability is off or the record is out of scope, and
+    | RmeRefundSettlementService, which re-asserts the designation, the branch,
+    | settler != approver and the starter rule under the locks on every mutation.
+    */
+    Route::middleware('permission:settle_rme_refund|approve_rme_refund')->group(function () {
+        Route::get('refund-settlements', [RmeRefundSettlementController::class, 'index'])->name('refund-settlements.index');
+        Route::get('refund-settlements/{settlement}', [RmeRefundSettlementController::class, 'show'])
+            ->whereNumber('settlement')->name('refund-settlements.show');
+        Route::get('refund-settlements/{settlement}/evidence', [RmeRefundSettlementController::class, 'evidence'])
+            ->whereNumber('settlement')->name('refund-settlements.evidence');
+
+        Route::middleware('permission:settle_rme_refund')->group(function () {
+            Route::get('refund-requests/{refundRequest}/settlement/create', [RmeRefundSettlementController::class, 'create'])
+                ->whereNumber('refundRequest')->name('refund-settlements.create');
+            Route::post('refund-requests/{refundRequest}/settlements', [RmeRefundSettlementController::class, 'store'])
+                ->whereNumber('refundRequest')->name('refund-settlements.store');
+            Route::post('refund-settlements/{settlement}/confirm', [RmeRefundSettlementController::class, 'confirm'])
+                ->whereNumber('settlement')->name('refund-settlements.confirm');
+            Route::post('refund-settlements/{settlement}/outcome-unknown', [RmeRefundSettlementController::class, 'outcomeUnknown'])
+                ->whereNumber('settlement')->name('refund-settlements.outcome-unknown');
+            Route::post('refund-settlements/{settlement}/abort', [RmeRefundSettlementController::class, 'abort'])
+                ->whereNumber('settlement')->name('refund-settlements.abort');
+        });
+    });
+
+    /*
     | IMPLEMENTATION-RME-BILLING-DISPUTE-ESCALATION-OPS-OQ-1 (owner OPS-OQ-1, rule
     | 203) — billing disputes, ALL branches. Three layers, each refusing on its own:
     |   1. route middleware — the dispute read door (a read permission, or rule 204
@@ -2593,6 +2624,10 @@ Route::middleware('auth')->prefix('oversight')->name('oversight.')->group(functi
         Route::get('refund-requests', [OversightRefundRequestController::class, 'index'])->name('refund-requests.index');
         Route::get('refund-requests/{refundRequest}', [OversightRefundRequestController::class, 'show'])
             ->whereNumber('refundRequest')->name('refund-requests.show');
+        // FEATURE-RME-REFUND-SETTLEMENT-1 (RFS-6) — refund payouts and net received, read-only.
+        Route::get('refund-settlements', [OversightRefundSettlementController::class, 'index'])->name('refund-settlements.index');
+        Route::get('refund-settlements/{settlement}', [OversightRefundSettlementController::class, 'show'])
+            ->whereNumber('settlement')->name('refund-settlements.show');
         Route::middleware('permission:export_oversight_data')->group(function () {
             Route::get('export', [OversightBillingCorrectionController::class, 'export'])->name('export');
             Route::get('print', [OversightBillingCorrectionController::class, 'print'])->name('print');

@@ -84,6 +84,10 @@
     // (default OFF). Courtesy only: routes, policy and service refuse on their own.
     $refundRequestEnabled = $user !== null
         && app(\App\Modules\RmeInvoice\Support\RmeRefundRequestFeatureGuard::class)->enabled();
+    // FEATURE-RME-REFUND-SETTLEMENT-1 (rule 216) — refund payouts appear only while
+    // `rme.billing_refund_settlement` AND the request capability are ON.
+    $refundSettlementEnabled = $user !== null
+        && app(\App\Modules\RmeInvoice\Support\RmeRefundSettlementFeatureGuard::class)->enabled();
 
     $showLabGroup = $user && (
         $user->canAny(['view_lab_orders', 'manage_lab_orders', 'view_production', 'manage_production', 'view_quality_control', 'manage_quality_control', 'view_delivery', 'manage_delivery', 'create_lab_branch_requests', 'manage_lab_pickups'])
@@ -442,6 +446,20 @@
                         <div class="mt-1 space-y-1">
                             <a href="{{ route('rme.refund-requests.index') }}" data-sidebar-link="refund-requests"
                                class="menu-subitem {{ request()->routeIs('rme.refund-requests.*') ? $linkActive : $linkIdle }}">Pengajuan Refund</a>
+                        </div>
+                    </div>
+                @endcanany
+            @endif
+            {{-- FEATURE-RME-REFUND-SETTLEMENT-1 (rule 216) — refund payouts. Courtesy
+                 only: the designation, branch and settler != approver rules are
+                 enforced by the service. --}}
+            @if ($refundSettlementEnabled)
+                @canany(['settle_rme_refund', 'approve_rme_refund'])
+                    <div>
+                        <p class="menu-group-title pt-2">Pembayaran Refund</p>
+                        <div class="mt-1 space-y-1">
+                            <a href="{{ route('rme.refund-settlements.index') }}" data-sidebar-link="refund-settlements"
+                               class="menu-subitem {{ request()->routeIs('rme.refund-settlements.*') ? $linkActive : $linkIdle }}">Pembayaran Refund</a>
                         </div>
                     </div>
                 @endcanany

@@ -17,6 +17,7 @@ use App\Modules\RmeInvoice\Services\RmeInvoiceCorrectionService;
 use App\Modules\RmeInvoice\Services\RmeInvoiceService;
 use App\Modules\RmeInvoice\Services\RmePaymentService;
 use App\Modules\RmeInvoice\Services\RmeRefundRequestService;
+use App\Modules\RmeInvoice\Support\RmeInvoiceLedger;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
 use App\Modules\Treatment\Services\TreatmentService;
 use App\Support\Clinical\ClinicalClock;
@@ -272,7 +273,8 @@ class RmeInvoiceController extends Controller
     {
         return $query
             ->where('grand_total', '>', 0)
-            ->whereRaw('trx_rme_invoices.grand_total > (SELECT COALESCE(SUM(amount), 0) FROM trx_rme_payments WHERE trx_rme_payments.rme_invoice_id = trx_rme_invoices.id)');
+            // RFS-1: measured against NET received (a settled refund is money given back).
+            ->whereRaw('trx_rme_invoices.grand_total > '.RmeInvoiceLedger::netReceivedSql('trx_rme_invoices.id'));
     }
 
     /**
@@ -284,6 +286,8 @@ class RmeInvoiceController extends Controller
         return $this->applyActiveReceivableConstraint(
             RmeInvoice::query()
                 ->with(['branch', 'patient', 'clinicVisit', 'payments', 'latestFollowUp.user'])
+                // RFS-1: one grouped aggregate for NET received (payments − settled refunds).
+                ->withNetReceived()
                 ->whereIn('status', [RmeInvoice::STATUS_UNPAID, RmeInvoice::STATUS_PARTIAL])
         )
             ->whereIn('branch_id', $activeBranchIds)
@@ -367,9 +371,8 @@ class RmeInvoiceController extends Controller
 
     private function receivableRemaining(RmeInvoice $invoice): float
     {
-        $paidAmount = (float) $invoice->payments->sum('amount');
-
-        return max(0, round((float) $invoice->grand_total - $paidAmount, 2));
+        // RFS-1: NET received, from the receivableQuery() aggregate (no query per row).
+        return max(0, round((float) $invoice->grand_total - $invoice->aggregatedNetReceived(), 2));
     }
 
     /**
@@ -396,12 +399,10 @@ class RmeInvoiceController extends Controller
             ->toBase();
     }
 
+    /** RFS-1: NET received per invoice (payments − settled refunds). */
     private function receivablePaymentTotalsQuery()
     {
-        return DB::table('trx_rme_payments')
-            ->select('rme_invoice_id')
-            ->selectRaw('SUM(amount) AS paid_total')
-            ->groupBy('rme_invoice_id');
+        return RmeInvoiceLedger::netReceivedTotalsQuery();
     }
 
     /**

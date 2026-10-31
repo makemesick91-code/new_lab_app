@@ -289,15 +289,18 @@ use App\Modules\RmeInvoice\Interfaces\RmePaymentRepositoryInterface;
 use App\Modules\RmeInvoice\Interfaces\RmePaymentSubmissionRepositoryInterface;
 use App\Modules\RmeInvoice\Interfaces\RmeReceiptSnapshotRepositoryInterface;
 use App\Modules\RmeInvoice\Interfaces\RmeRefundRequestRepositoryInterface;
+use App\Modules\RmeInvoice\Interfaces\RmeRefundSettlementRepositoryInterface;
 use App\Modules\RmeInvoice\Models\RmeBillingDispute;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Models\RmeInvoiceCorrection;
 use App\Modules\RmeInvoice\Models\RmeInvoiceDocumentVersion;
 use App\Modules\RmeInvoice\Models\RmeRefundRequest;
+use App\Modules\RmeInvoice\Models\RmeRefundSettlement;
 use App\Modules\RmeInvoice\Policies\RmeBillingDisputePolicy;
 use App\Modules\RmeInvoice\Policies\RmeInvoiceCorrectionPolicy;
 use App\Modules\RmeInvoice\Policies\RmeInvoicePolicy;
 use App\Modules\RmeInvoice\Policies\RmeRefundRequestPolicy;
+use App\Modules\RmeInvoice\Policies\RmeRefundSettlementPolicy;
 use App\Modules\RmeInvoice\Repositories\RmeBillingDisputeRepository;
 use App\Modules\RmeInvoice\Repositories\RmeBillingDisputeReviewerRepository;
 use App\Modules\RmeInvoice\Repositories\RmeInvoiceCorrectionRepository;
@@ -308,6 +311,7 @@ use App\Modules\RmeInvoice\Repositories\RmePaymentRepository;
 use App\Modules\RmeInvoice\Repositories\RmePaymentSubmissionRepository;
 use App\Modules\RmeInvoice\Repositories\RmeReceiptSnapshotRepository;
 use App\Modules\RmeInvoice\Repositories\RmeRefundRequestRepository;
+use App\Modules\RmeInvoice\Repositories\RmeRefundSettlementRepository;
 use App\Modules\RmeOnlineContext\Interfaces\BranchChangeRequestRepositoryInterface;
 use App\Modules\RmeOnlineContext\Interfaces\DailyBranchContextRepositoryInterface;
 use App\Modules\RmeOnlineContext\Interfaces\UserOnlineContextRepositoryInterface;
@@ -473,6 +477,7 @@ class RepositoryServiceProvider extends ServiceProvider
         RmeOverpaymentObligationRepositoryInterface::class => RmeOverpaymentObligationRepository::class,
         RmeOwnerApprovalReferenceRepositoryInterface::class => RmeOwnerApprovalReferenceRepository::class,
         RmeRefundRequestRepositoryInterface::class => RmeRefundRequestRepository::class,
+        RmeRefundSettlementRepositoryInterface::class => RmeRefundSettlementRepository::class,
         RmeReceiptSnapshotRepositoryInterface::class => RmeReceiptSnapshotRepository::class,
         // IMPLEMENTATION-RME-BILLING-DISPUTE-ESCALATION-OPS-OQ-1 (rule 203).
         RmeBillingDisputeRepositoryInterface::class => RmeBillingDisputeRepository::class,
@@ -593,6 +598,7 @@ class RepositoryServiceProvider extends ServiceProvider
         RmeInvoiceDocumentVersion::class => RmeInvoiceCorrectionPolicy::class,
         RmeBillingDispute::class => RmeBillingDisputePolicy::class,
         RmeRefundRequest::class => RmeRefundRequestPolicy::class,
+        RmeRefundSettlement::class => RmeRefundSettlementPolicy::class,
         TreatmentCategory::class => TreatmentCategoryPolicy::class,
         Treatment::class => TreatmentPolicy::class,
         Tariff::class => TariffPolicy::class,

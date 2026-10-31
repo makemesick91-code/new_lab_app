@@ -15,6 +15,7 @@ use App\Modules\RmeInvoice\Support\RmeFinancialAuditEvent;
 use App\Modules\RmeInvoice\Support\RmeInvoiceDocument;
 use App\Modules\RmeInvoice\Support\RmeInvoiceLedger;
 use App\Modules\RmeInvoice\Support\RmeInvoiceSnapshot;
+use App\Modules\RmeInvoice\Support\RmeRefundSettlementStatus;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use LogicException;
@@ -126,11 +127,21 @@ final class RmeReceiptSnapshotService
         $paidCents = array_sum(array_column($payments, 'amount_cents'));
         $grandCents = (int) $document['totals']['grand_total_cents'];
 
+        // FEATURE-RME-REFUND-SETTLEMENT-1 (RFS-1) — refunds settled on this invoice
+        // before this payment gave money back: the ledger right after the payment is
+        // measured against NET received. The key is written only when non-zero, so
+        // every receipt of an invoice without a settled refund is byte-identical.
+        $refundedCents = $this->refundedBefore($invoice, $payment);
+        $netCents = $paidCents - $refundedCents;
+
         $document['payments'] = $payments;
         $document['totals']['paid_cents'] = $paidCents;
+        if ($refundedCents > 0) {
+            $document['totals']['refunded_cents'] = $refundedCents;
+        }
         // The status the ledger had right after this payment — the same helper the
         // payment path uses, so a reconstruction cannot disagree with an issuance.
-        $document['invoice']['status'] = RmeInvoiceLedger::statusAfterMoneyReceived($grandCents, $paidCents);
+        $document['invoice']['status'] = RmeInvoiceLedger::statusAfterMoneyReceived($grandCents, $netCents);
 
         $document['receipt'] = [
             'receipt_schema_version' => self::SCHEMA_VERSION,
@@ -140,7 +151,7 @@ final class RmeReceiptSnapshotService
             'paid_at' => $payment->paid_at?->toIso8601String(),
             'payment_method_id' => $payment->payment_method_id !== null ? (int) $payment->payment_method_id : null,
             'payment_batch_uuid' => $payment->payment_batch_uuid,
-            'outstanding_cents' => RmeInvoiceLedger::outstandingCents($grandCents, $paidCents),
+            'outstanding_cents' => RmeInvoiceLedger::outstandingCents($grandCents, $netCents),
             // Display labels as printed, so a later rename of a payment method or
             // a cashier account never rewrites an issued receipt. (A reconstruction
             // freezes the labels of the moment it ran and is labelled as such.)
@@ -230,5 +241,22 @@ final class RmeReceiptSnapshotService
         if (DB::transactionLevel() < 1) {
             throw new LogicException('Receipt snapshots are written only inside the transaction that records the fact they describe.');
         }
+    }
+
+    /**
+     * Σ SETTLED refund settlements of the invoice settled at or before this payment
+     * was recorded, in cents. A payment can only follow a settlement after an upward
+     * correction re-opened a balance, so the two never share an instant in practice;
+     * the bound keeps a later reconstruction of an OLDER receipt from counting a
+     * refund that happened after it.
+     */
+    private function refundedBefore(RmeInvoice $invoice, RmePayment $payment): int
+    {
+        $at = $payment->created_at ?? now();
+
+        return RmeInvoiceDocument::toCents(round((float) $invoice->refundSettlements()
+            ->where('status', RmeRefundSettlementStatus::SETTLED)
+            ->where('settled_at', '<=', $at)
+            ->sum('amount'), 2));
     }
 }

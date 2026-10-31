@@ -8,6 +8,7 @@ use App\Modules\Invoice\Models\Invoice;
 use App\Modules\Invoice\Models\Payment;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Models\RmePayment;
+use App\Modules\RmeInvoice\Support\RmeInvoiceLedger;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -198,12 +199,9 @@ SQL;
             ->toBase();
     }
 
+    /** RFS-1: NET received per invoice (valid payments − settled refunds). */
     private function receivablePaymentTotalsQuery()
     {
-        return DB::table('trx_rme_payments')
-            ->select('rme_invoice_id')
-            ->selectRaw('SUM(amount) AS paid_total')
-            ->whereNull('deleted_at')
-            ->groupBy('rme_invoice_id');
+        return RmeInvoiceLedger::netReceivedTotalsQuery(excludeDeletedPayments: true);
     }
 }

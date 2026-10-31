@@ -26,8 +26,19 @@ class RoleSeeder extends Seeder
         'request_rme_refund',
     ];
 
+    /**
+     * FEATURE-RME-REFUND-SETTLEMENT-1 (rule 216; owner RF-10, 2026-10-31) — permissions
+     * granted to NO role, and kept out of Super Admin's '*' grant. Gate::before still
+     * answers can() true for Super Admin, so this is not what stops a payout: the
+     * explicit owner designation of a person (config/rme_refund_settlement.php
+     * pilot.settlers, shipped empty) is. No role carries the capability by seeding.
+     */
+    public const NO_ROLE_PERMISSIONS = [
+        'settle_rme_refund',
+    ];
+
     public const ROLE_PERMISSIONS = [
-        'Super Admin' => '*', // all permissions
+        'Super Admin' => '*', // all permissions except NO_ROLE_PERMISSIONS
         // FIX-ADMIN-LAB-LAB-ONLY-ACCESS (2026-07-11) — Admin Lab is a LAB-ONLY
         // operational role. It receives ONLY permissions inside the Lab module and
         // Lab Workflow V2 (orders, cabang requests, pickup oversight, receive at
@@ -798,11 +809,24 @@ class RoleSeeder extends Seeder
                 'guard_name' => 'web',
             ]);
 
-            if ($permissions === '*') {
-                $role->syncPermissions(PermissionSeeder::PERMISSIONS);
-            } else {
-                $role->syncPermissions($permissions);
-            }
+            $role->syncPermissions(self::grantsFor($permissions));
         }
+    }
+
+    /**
+     * The permissions a ROLE_PERMISSIONS entry actually grants: '*' is every seeded
+     * permission except NO_ROLE_PERMISSIONS. The one expansion of '*' — the seeder,
+     * the access-control seed snapshot and its tests all read it here.
+     *
+     * @param  '*'|list<string>  $declared
+     * @return list<string>
+     */
+    public static function grantsFor(string|array $declared): array
+    {
+        if ($declared === '*') {
+            return array_values(array_diff(array_unique(PermissionSeeder::PERMISSIONS), self::NO_ROLE_PERMISSIONS));
+        }
+
+        return array_values($declared);
     }
 }

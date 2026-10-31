@@ -74,6 +74,9 @@ class OversightAuditService
     /** FEATURE-RME-BILLING-REFUND-REQUEST-APPROVAL-1 — a refund request opened read-only (RF-8). */
     public const REFUND_REQUEST_VIEWED = 'OVERSIGHT_REFUND_REQUEST_VIEWED';
 
+    /** FEATURE-RME-REFUND-SETTLEMENT-1 — a refund settlement opened read-only (RFS-6). */
+    public const REFUND_SETTLEMENT_VIEWED = 'OVERSIGHT_REFUND_SETTLEMENT_VIEWED';
+
     public const DATA_EXPORTED = 'OVERSIGHT_DATA_EXPORTED';
 
     public const DATA_PRINTED = 'OVERSIGHT_DATA_PRINTED';

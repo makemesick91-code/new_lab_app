@@ -8,6 +8,7 @@ use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\LabOrder\Models\LabCaseCandidate;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\Patient\Models\Patient;
+use App\Modules\RmeInvoice\Support\RmeRefundSettlementStatus;
 use Database\Factories\RmeInvoiceFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -122,6 +123,12 @@ class RmeInvoice extends Model
         return $this->hasMany(RmePayment::class);
     }
 
+    /** FEATURE-RME-REFUND-SETTLEMENT-1 — refund payouts recorded on this invoice. */
+    public function refundSettlements(): HasMany
+    {
+        return $this->hasMany(RmeRefundSettlement::class, 'rme_invoice_id');
+    }
+
     public function labCaseCandidates(): HasMany
     {
         return $this->hasMany(LabCaseCandidate::class, 'rme_invoice_id');
@@ -189,14 +196,53 @@ class RmeInvoice extends Model
         $this->grand_total = $subtotal - $discountTotal;
     }
 
+    /** GROSS money received: Σ incoming payments, never reduced by a refund. */
     public function paidAmount(): float
     {
         return (float) $this->payments()->sum('amount');
     }
 
+    /**
+     * FEATURE-RME-REFUND-SETTLEMENT-1 (RFS-1) — money verifiably paid back on this
+     * invoice: Σ SETTLED refund settlements. An in-flight, unknown or aborted
+     * settlement is not money out.
+     */
+    public function settledRefundAmount(): float
+    {
+        return (float) $this->refundSettlements()->where('status', RmeRefundSettlementStatus::SETTLED)->sum('amount');
+    }
+
+    /**
+     * RFS-1 for list queries: eager aggregates of gross payments and SETTLED refunds,
+     * read back with aggregatedNetReceived() (one grouped query, no N+1).
+     */
+    public function scopeWithNetReceived($query)
+    {
+        return $query
+            ->withSum('payments', 'amount')
+            ->withSum(['refundSettlements as settled_refunds_sum_amount' => fn ($q) => $q->where('status', RmeRefundSettlementStatus::SETTLED)], 'amount');
+    }
+
+    /** NET received from the scopeWithNetReceived() aggregates. */
+    public function aggregatedNetReceived(): float
+    {
+        return round((float) ($this->payments_sum_amount ?? 0) - (float) ($this->settled_refunds_sum_amount ?? 0), 2);
+    }
+
+    /** RFS-1 — net received = gross payments − settled refunds. */
+    public function netReceivedAmount(): float
+    {
+        return round($this->paidAmount() - $this->settledRefundAmount(), 2);
+    }
+
+    /**
+     * What is still receivable: max(0, total − NET received). A settled refund gave
+     * money back, so it can never be counted again as paying a later balance
+     * (e.g. after an upward post-payment correction).
+     */
     public function remainingAmount(): float
     {
-        return max(0, round((float) $this->grand_total - $this->paidAmount(), 2));
+        return max(0, round((float) $this->grand_total - $this->netReceivedAmount(), 2));
     }
 
     public function isPaid(): bool

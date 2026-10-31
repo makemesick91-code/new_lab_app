@@ -40,7 +40,7 @@ function snapshotTestOracle(): array
     $permissions = array_values(array_unique(PermissionSeeder::PERMISSIONS));
     $grants = [];
     foreach (RoleSeeder::ROLE_PERMISSIONS as $role => $granted) {
-        foreach (array_unique($granted === '*' ? $permissions : $granted) as $permission) {
+        foreach (array_unique(RoleSeeder::grantsFor($granted)) as $permission) {
             $grants[] = [$role, 'web', $permission, 'web'];
         }
     }
@@ -85,12 +85,11 @@ it('lets every role resolve exactly its declared permissions after a restore', f
     seedAccessControl();
     expect(AccessControlSeedSnapshot::lastPath())->toBe(AccessControlSeedSnapshot::PATH_SNAPSHOT);
 
-    $all = array_values(array_unique(PermissionSeeder::PERMISSIONS));
     foreach (RoleSeeder::ROLE_PERMISSIONS as $role => $granted) {
         $user = User::factory()->create();
         $user->assignRole($role);
 
-        $expected = array_values(array_unique($granted === '*' ? $all : $granted));
+        $expected = array_values(array_unique(RoleSeeder::grantsFor($granted)));
         sort($expected);
         $actual = $user->getAllPermissions()->pluck('name')->sort()->values()->all();
 

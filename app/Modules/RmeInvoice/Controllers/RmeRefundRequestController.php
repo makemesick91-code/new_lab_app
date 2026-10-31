@@ -11,6 +11,7 @@ use App\Modules\RmeInvoice\Models\RmeRefundRequest;
 use App\Modules\RmeInvoice\Requests\DecideRmeRefundRequestRequest;
 use App\Modules\RmeInvoice\Requests\StoreRmeRefundRequestRequest;
 use App\Modules\RmeInvoice\Services\RmeRefundRequestService;
+use App\Modules\RmeInvoice\Services\RmeRefundSettlementService;
 use App\Modules\RmeInvoice\Support\RmeRefundRequestIntent;
 use App\Modules\RmeInvoice\Support\RmeRefundRequestRefused;
 use App\Modules\RmeInvoice\Support\RmeRefundRequestSnapshot;
@@ -32,6 +33,7 @@ class RmeRefundRequestController extends Controller
 
     public function __construct(
         private readonly RmeRefundRequestService $refunds,
+        private readonly RmeRefundSettlementService $settlements,
     ) {}
 
     public function index(Request $request): View
@@ -60,6 +62,9 @@ class RmeRefundRequestController extends Controller
             'refund' => $record->loadMissing(['branch', 'invoice', 'obligation', 'requester', 'decider', 'canceller']),
             'events' => $this->refunds->eventsFor($record),
             'actions' => $this->refunds->actionsFor($record, $request->user()),
+            // FEATURE-RME-REFUND-SETTLEMENT-1: the payout status beside the decision,
+            // so an APPROVED request is never read as money already paid.
+            'settlementPanel' => $this->settlements->panelFor($record, $request->user()),
         ]);
     }
 

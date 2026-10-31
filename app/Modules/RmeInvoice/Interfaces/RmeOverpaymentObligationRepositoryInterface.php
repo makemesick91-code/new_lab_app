@@ -44,6 +44,13 @@ interface RmeOverpaymentObligationRepositoryInterface
 
     public function assignNumber(RmeOverpaymentObligation $obligation, string $number): RmeOverpaymentObligation;
 
+    /**
+     * FEATURE-RME-REFUND-SETTLEMENT-1 (RFS-4) — the one-time OPEN → SETTLED move,
+     * written only by the settlement transaction while it holds the obligation
+     * lock. Writes status, settled_at and rme_refund_settlement_id, nothing else.
+     */
+    public function markSettled(RmeOverpaymentObligation $obligation, int $settlementId, \DateTimeInterface $settledAt): RmeOverpaymentObligation;
+
     /** @param array<string, mixed> $data */
     public function recordEvent(array $data): RmeOverpaymentObligationEvent;
 

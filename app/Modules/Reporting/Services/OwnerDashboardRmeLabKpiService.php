@@ -127,13 +127,13 @@ class OwnerDashboardRmeLabKpiService
 
         return $branches->map(function (Branch $branch) use ($today): array {
             $receivableInvoices = $this->rmeReceivableQuery([$branch->id])
-                ->withSum('payments', 'amount')
+                ->withNetReceived()
                 ->get(['id', 'status', 'grand_total']);
 
             $remaining = (float) $receivableInvoices->sum(
                 fn (RmeInvoice $invoice): float => max(
                     0,
-                    round((float) $invoice->grand_total - (float) ($invoice->payments_sum_amount ?? 0), 2),
+                    round((float) $invoice->grand_total - $invoice->aggregatedNetReceived(), 2),
                 ),
             );
 
@@ -236,13 +236,13 @@ class OwnerDashboardRmeLabKpiService
         // aggregate query (withSum) to avoid per-invoice N+1.
         $receivableInvoices = $this->rmeInvoiceQuery($branchIds)
             ->whereIn('status', [RmeInvoice::STATUS_UNPAID, RmeInvoice::STATUS_PARTIAL])
-            ->withSum('payments', 'amount')
+            ->withNetReceived()
             ->get(['id', 'status', 'grand_total']);
 
         $rmeReceivableTotalRemaining = (float) $receivableInvoices->sum(
             fn (RmeInvoice $invoice): float => max(
                 0,
-                round((float) $invoice->grand_total - (float) ($invoice->payments_sum_amount ?? 0), 2),
+                round((float) $invoice->grand_total - $invoice->aggregatedNetReceived(), 2),
             ),
         );
 
