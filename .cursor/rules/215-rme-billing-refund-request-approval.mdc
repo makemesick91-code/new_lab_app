@@ -72,7 +72,8 @@ decisions: `docs/decisions/rme-refund-request-approval-owner-decision-package.md
    never a reason for STALE.
 4. Idempotency: a HMAC intent bound to the obligation (`rme-refund-request|v1|nonce|obligation_id`); an exact
    replay returns the original whatever its state, and the screen says it was recorded before; a different
-   form under the same intent is refused.
+   form under the same intent is refused. The intent is signed with the application key, so it is registered
+   in `config/app_key_rotation.php` (current-key-only consumer): a rotation only invalidates open forms.
 5. The state machine is enforced three times: the service, the model `updating` hook (`canTransition`), and
    PostgreSQL CHECKs (13 on `trx_rme_refund_requests`, including maker ≠ checker and "the maker never revokes
    a decided request"). An unrecognised unique violation is re-thrown, never labelled as a business outcome.

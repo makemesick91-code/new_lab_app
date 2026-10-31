@@ -77,7 +77,17 @@ Changed existing tests (each pinned the "no refund yet" state and now pins the n
 holds exactly the Billing Correction oversight area, never export — RF-8a), `RmeInvoiceCorrectionGovernanceTest`
 (Owner among the oversight readers; 11 GET-only oversight routes; the only refund names are the two oversight
 pages and the only refund permissions are request and approve; still no reversal, credit, settle, payout or
-disburse route), and the cleanup lists of 7 race suites.
+disburse route), `LegacyPatientArchiveCompletenessAccessTest` (the second copy of the Front Office union pin,
+now naming `FRONT_OFFICE_ONLY_PERMISSIONS` as its one exception), and the cleanup lists of 7 race suites.
+
+`RmeRefundRequestIntent` signs its form token with the application key, so it is registered in
+`config/app_key_rotation.php` as a current-key-only consumer: a form opened before a key rotation is refused on
+submit (`REFUND_INTENT_INVALID`) and reopened; only the nonce is stored, so nothing filed depends on the key.
+
+**CI, first run (PR #569, `0ae1a92e`):** the critical gate failed on exactly those two governance pins —
+`LegacyPatientArchiveCompletenessAccessTest` and `AppKeyReencryptionCurrentKeyConsumersTest` — which the local
+directory regression did not reach (a directory run is not the gate's filter). Both fixed; the gate's exact
+filter was then run locally on PostgreSQL 16 before pushing again.
 
 ### 4a. Mutation
 
