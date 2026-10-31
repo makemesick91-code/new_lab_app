@@ -842,6 +842,39 @@ Read-only measurement by `VERIFICATION-RME-INVOICE-CORRECTION-PREPAYMENT-PILOT-C
   (`OPERATIONAL_OR_EVIDENCE_BLOCKED`); the full tag does not exist. No approval was requested or
   recorded retroactively.
 
+### Addendum 2026-10-31 — Owner clarification for invoice #43 (`UPDATE-SPRINT2-CASE43-OWNER-CLARIFICATION-1`)
+
+Status: `OWNER_RETROSPECTIVE_ATTESTATION` — recorded as stated, made after the submit
+(14:38:52 UTC). It is **not** a written approval from before the submit and is not entered
+into the correction's reason, note or reference fields. No decision is made or changed.
+
+The Owner states:
+
+1. The patient visit was real; the patient was physically present.
+2. The pricing error came from using a different rate card.
+3. Owner approval was given before 2026-10-31 22:38:52 WITA.
+4. Account identities: user 29 = Admin Klinik; user 1 = IT; user 21 = drg. Aisyah.
+
+Recorded result (evidence: §19 of
+`docs/sprints/verification-rme-invoice-correction-prepayment-pilot-closure-final-1.md`):
+
+- Visit: `OWNER_CONFIRMED_REAL`.
+- Pricing: `OWNER_EXPLAINED_RATE_CARD_DIFFERENCE`. SPN4 holds no tariff row and no rate-card
+  document is in the system; no tariff is set or inferred from this statement.
+- Pre-submission approval: `OWNER_ATTESTED_EVIDENCE_PENDING_VERIFICATION`. The original record
+  from the clinic's official channel, with that channel's own timestamp, the invoice reference,
+  Rp9.000.000 → Rp12.000.000 and the change, is still required (rule 196 §32, §49–§50). The
+  invoice existed only from 22:38:27 WITA, 25 s before the submit.
+- Accounts: `OWNER_IDENTIFIED`, consistent with the system — 29 "Admin Sunu" (Front Office),
+  1 "IT Support" (Super Admin + Owner), 21 "drg Aisyah" (Doctor, the visit's doctor). Account
+  separation is system-verified; human separation for #43 is `OWNER_ATTESTED_DISTINCT`, not
+  system-verifiable. A shared network address is not read as evidence either way.
+- Role note for the Owner: the IT account (user 1) holds the `Owner` role; its checker approval
+  is not the Owner's case approval. Whether it should keep that role is the Owner's
+  least-privilege decision; no role was changed.
+- Unchanged: financial reconciliation `PASS_RECONSTRUCTED`; live observation not performed;
+  case #42's `RED_FLAG_UNRESOLVED`; Full Prepayment Pilot GO = **NO_GO**; no tag.
+
 ## Ratification of PP-1 … PP-10 (2026-10-25)
 
 **Status:** `OWNER_POLICY_APPROVED` · `REPOSITORY_POLICY_RECORDED`. **Not**

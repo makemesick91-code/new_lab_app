@@ -136,6 +136,7 @@ code, then the canonical rule, and report the drift.
   controls; never act as an operator to manufacture `PILOT_LIVE`. The only full-closure tag is
   `verification-rme-invoice-correction-prepayment-pilot-1-go`. Unobserved real cases (#42, #43) reconcile as
   `PASS (RECONSTRUCTED)` but never accumulate into a GO; a probe reading GO after a case is state, not observation.
+  An Owner's after-the-fact statement is `OWNER_RETROSPECTIVE_ATTESTATION`, never the approval itself.
   Source: rules 196 (§9, §10), 202.
 
 ### Billing disputes (OPS-OQ-1, all branches)

@@ -1,5 +1,5 @@
 ---
-description: VERIFICATION-RME-INVOICE-CORRECTION-PREPAYMENT-PILOT-1 — how the live SPN4 pre-payment invoice correction pilot is verified and when it may be closed. Six-rung state ladder (PILOT_READY → PILOT_ACTIVE → PILOT_LIVE → AUTHENTICATED_VERIFIED → FINANCIAL_CORRECTION_VERIFIED → FULL_ACTIVATION_GO), the evidence each rung needs, the full-GO tag contract, and why an eligible real case can only be caught, never created. Extends rule 195; changes no runtime behaviour. §7 (PILOT-2, 2026-10-23) governs later re-verification runs: one closure tag, re-measure never inherit, no patient held for a case, only a live session is login evidence, and the Rp0 invoice ban is procedural. §8 (PILOT-CLOSURE, 2026-10-24): a genuinely wrong invoice held by an OPS-OQ-1 dispute stays an eligible case after the patient leaves, the dispute is resolved from the applied correction, and the payment-idempotency audit result. §9 (REAL-CASE-42, 2026-10-25): a real case done without a verifier reconciles afterwards (PASS RECONSTRUCTED) but cannot reach the live-observation rungs; case Owner approval must pre-exist the submit and the checker holding the Owner role does not merge the two controls; order by server time not paid_at; the runtime that ran a case comes from the deploy log. §10 (CLOSURE-FINAL-1, 2026-10-31): a second unobserved case (RMECOR-202610-000002) reconciles but stays NO_GO — unobserved cases never accumulate; a live probe after a case is state, not observation; verifier absence is measured from the SSH journal; an upward correction needs the same case approval; warning signs go to the Owner, never adjudicated.
+description: VERIFICATION-RME-INVOICE-CORRECTION-PREPAYMENT-PILOT-1 — how the live SPN4 pre-payment invoice correction pilot is verified and when it may be closed. Six-rung state ladder (PILOT_READY → PILOT_ACTIVE → PILOT_LIVE → AUTHENTICATED_VERIFIED → FINANCIAL_CORRECTION_VERIFIED → FULL_ACTIVATION_GO), the evidence each rung needs, the full-GO tag contract, and why an eligible real case can only be caught, never created. Extends rule 195; changes no runtime behaviour. §7 (PILOT-2, 2026-10-23) governs later re-verification runs: one closure tag, re-measure never inherit, no patient held for a case, only a live session is login evidence, and the Rp0 invoice ban is procedural. §8 (PILOT-CLOSURE, 2026-10-24): a genuinely wrong invoice held by an OPS-OQ-1 dispute stays an eligible case after the patient leaves, the dispute is resolved from the applied correction, and the payment-idempotency audit result. §9 (REAL-CASE-42, 2026-10-25): a real case done without a verifier reconciles afterwards (PASS RECONSTRUCTED) but cannot reach the live-observation rungs; case Owner approval must pre-exist the submit and the checker holding the Owner role does not merge the two controls; order by server time not paid_at; the runtime that ran a case comes from the deploy log. §10 (CLOSURE-FINAL-1, 2026-10-31): a second unobserved case (RMECOR-202610-000002) reconciles but stays NO_GO — unobserved cases never accumulate; a live probe after a case is state, not observation; verifier absence is measured from the SSH journal; an upward correction needs the same case approval; warning signs go to the Owner, never adjudicated; an Owner's later statement is OWNER_RETROSPECTIVE_ATTESTATION, never the approval (§49–§52).
 globs: app/Modules/RmeInvoice/**, app/Console/Commands/RmeInvoiceCorrectionReadinessCommand.php, config/rme_invoice_correction.php, docs/sprints/verification-rme-invoice-correction-prepayment-pilot-1.md, docs/sprints/verification-rme-invoice-correction-prepayment-pilot-2.md, docs/sprints/verification-rme-invoice-correction-prepayment-pilot-closure.md, docs/sprints/verification-rme-invoice-correction-prepayment-pilot-real-case-42-1.md, docs/sprints/verification-rme-invoice-correction-prepayment-pilot-closure-final-1.md, docs/decisions/rme-billing-correction-owner-decisions.md
 alwaysApply: false
 ---
@@ -357,3 +357,30 @@ Outcome: financial reconciliation PASS (RECONSTRUCTED), `OWNER_CASE_APPROVAL=UNV
     log in themselves; the Owner establishes who operates each account. Whether to accept
     reconstructed evidence instead is an Owner decision that needs its own rule — no verification
     run may lower the standard.
+49. **An Owner's after-the-fact statement is `OWNER_RETROSPECTIVE_ATTESTATION`, never the
+    approval itself** (added by `UPDATE-SPRINT2-CASE43-OWNER-CLARIFICATION-1`, 2026-10-31). The
+    Owner attested for invoice #43 that the visit was real, the price error came from a different
+    rate card, approval was given before the submit, and who operated accounts 29, 1 and 21.
+    Record it as stated, labelled as an attestation, in the register and the sprint report. It does
+    not satisfy §32 and is never written into a correction's reason, note, reference, audit row or
+    timestamp. This is the §33 boundary: recording what the Owner says now is allowed; producing,
+    drafting or back-dating the approval is not.
+50. **Verifying an attested pre-submission approval needs the original record and its own
+    timeline.** The record must come from the clinic's sanctioned channel, carry that channel's
+    timestamp before the submit, and identify the case (invoice reference or an equivalent
+    unambiguous identification), the original and proposed totals and the change. Check the
+    chronology against server time: invoice #43 existed only from 22:38:27 WITA, 25 s before the
+    submit, so an approval naming the invoice must fall in that window, or an earlier approval must
+    identify the same case by other means. Until then: `OWNER_ATTESTED_EVIDENCE_PENDING_VERIFICATION`.
+    Even when verified, it closes only the approval gap — never the observation gap (§31, §41).
+51. **Owner-identified accounts are recorded, then checked against the system — not the other
+    way round.** For #43 the Owner's labels match the system (29 "Admin Sunu", Front Office;
+    1 "IT Support", Super Admin + Owner; 21 "drg Aisyah", Doctor and the visit's doctor). Human
+    separation for that case becomes `OWNER_ATTESTED_DISTINCT`, still not system-verifiable; a
+    shared network address is evidence of nothing either way. An attestation about one case does
+    not rewrite another case's finding (case #42 stays `RED_FLAG_UNRESOLVED`).
+52. **The checker account holding the `Owner` role is an IT account.** Per the Owner, user 1 is
+    IT. That settles §32's question for this pilot: the checker's approval is never the Owner's
+    case approval, which must arrive as separate evidence from the Owner. Whether the IT account
+    should keep the `Owner` role is the Owner's least-privilege decision — record it, never change
+    roles from a verification run.

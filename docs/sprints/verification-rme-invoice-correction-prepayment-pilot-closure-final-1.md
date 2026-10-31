@@ -23,6 +23,11 @@ mendahului pengajuan**, dan **pemisahan manusianya kembali bertanda bahaya**. Ka
 tidak dapat menutup pilot (rule 196 §31, §32, §41). Tugas ini tidak membuat, mengubah, atau
 mengulang transaksi apa pun.
 
+**Addendum §19 (klarifikasi Owner, 2026-10-31):** Owner menyatakan kunjungan nyata, kesalahan
+harga karena rate card berbeda, persetujuan diberikan sebelum pengajuan, dan mengidentifikasi
+akun 29/1/21. Dicatat sebagai `OWNER_RETROSPECTIVE_ATTESTATION`; bukti persetujuan asli masih
+`PENDING_VERIFICATION`; Sprint 2 tetap NO_GO.
+
 Semua waktu UTC kecuali ditandai WITA (UTC+8). Tidak ada identitas pasien, nomor KTP/NIK,
 rincian tindakan, alamat IP, atau user-agent lengkap di dokumen ini.
 
@@ -360,4 +365,107 @@ SPRINT5_FLAG=OFF
 MAIN_PROGRAM_PROGRESS=1/7
 FINAL_DECISION=OPERATIONAL_BLOCKED
 RULE196_CLASSIFICATION=OPERATIONAL_OR_EVIDENCE_BLOCKED
+```
+
+## 19. Addendum resmi — klarifikasi Owner atas tagihan #43 (2026-10-31, `UPDATE-SPRINT2-CASE43-OWNER-CLARIFICATION-1`)
+
+Bagian 1–18 di atas adalah keadaan yang diukur sebelum klarifikasi ini dan **tidak diubah**.
+Addendum ini mencatat pernyataan Owner, memisahkannya dari bukti, dan memverifikasi bagian
+yang dapat diverifikasi secara read-only. Tidak ada invoice, pembayaran, audit, timestamp,
+atau dokumen RME pasien yang disentuh.
+
+### 19.1 Pernyataan Owner (dicatat apa adanya)
+
+1. Kunjungan pasien adalah nyata; pasien benar-benar hadir di klinik.
+2. Kesalahan harga terjadi karena penggunaan rate card yang berbeda.
+3. Persetujuan Owner telah diberikan sebelum 31 Oktober 2026 pukul 22.38.52 WITA.
+4. Identitas akun: user 29 = Admin Klinik; user 1 = IT; user 21 = drg. Aisyah.
+
+Sifat pernyataan ini: **`OWNER_RETROSPECTIVE_ATTESTATION`** — pernyataan Owner yang dibuat
+SETELAH pengajuan (14:38:52 UTC) tentang hal-hal sebelum pengajuan. Ini **bukan** bukti
+persetujuan tertulis yang berasal dari sebelum pengajuan (rule 196 §32–§33, §49).
+
+### 19.2 Verifikasi read-only
+
+| Pernyataan | Yang dapat diverifikasi sistem | Status |
+|---|---|---|
+| Kunjungan nyata | rantai klinis lengkap di server (kunjungan, consent bertanda tangan dokter, odontogram, tulisan tangan, rekam medis final); kehadiran fisik tidak dapat dibuktikan basis data | `OWNER_CONFIRMED_REAL` |
+| Selisih rate card | SPN4 memiliki **0** baris `mst_tariffs` aktif; tidak ada dokumen rate card di sistem. Tidak ada tarif yang ditetapkan atau dikarang oleh tugas ini. Koreksi ini menaikkan harga, bukan diskon, sehingga kebijakan diskon D21c tidak tersentuh | `OWNER_EXPLAINED_RATE_CARD_DIFFERENCE` — harga yang benar belum didukung dokumen |
+| Persetujuan sebelum 22:38:52 WITA | `owner_approval_reference` NULL, `decision_note` kosong, alasan tanpa referensi, registry referensi Owner 0 klaim, tidak ada catatan di repositori. Bukti asli di kanal resmi klinik **tidak tersedia** bagi tugas ini | `OWNER_ATTESTED_EVIDENCE_PENDING_VERIFICATION` |
+| User 29 = Admin Klinik | akun "Admin Sunu", aktif, peran sistem **Front Office** (gabungan tugas Admin Klinik + Kasir, D1b), identitas pilot maker; dapat mengajukan dan menyetujui menurut izin, tetapi hanya mengajukan menurut D1e | `OWNER_IDENTIFIED` — sesuai |
+| User 1 = IT | akun "IT Support", aktif, peran sistem **Super Admin + Owner**, identitas pilot checker | `OWNER_IDENTIFIED` — lihat catatan peran §19.4 |
+| User 21 = drg. Aisyah | akun "drg Aisyah", aktif, peran **Doctor**, terhubung ke master dokter #24 yang merupakan dokter kunjungan #64; tanpa izin koreksi | `OWNER_IDENTIFIED` — sesuai |
+
+### 19.3 Kronologi yang harus dipenuhi bukti asli
+
+Tagihan #43 baru ada sejak **22:38:27 WITA** dan koreksi diajukan **22:38:52 WITA**.
+Persetujuan kasus menurut formulir rule 202 memuat referensi tagihan, nominal asal, nominal
+usulan, rincian perubahan, dan alasan. Karena itu bukti asli harus menunjukkan, dari kanal
+resmi dan dengan timestamp kanal itu sendiri, salah satu dari:
+
+- persetujuan yang menyebut tagihan #43 / `RME-202610-000009` dan diberikan dalam jendela
+  25 detik 22:38:27–22:38:52 WITA; atau
+- persetujuan yang diberikan lebih awal dan mengidentifikasi kasus yang sama dengan cara lain
+  (kunjungan, pasien, tindakan), dengan nominal Rp9.000.000 → Rp12.000.000 yang sama.
+
+Ini adalah syarat pembuktian, bukan keraguan atas pernyataan Owner. Bukti diserahkan sebagai
+teks dengan timestamp kanal (bukan tangkapan layar mentah, rule 202), tanpa identitas pasien,
+dan checker (akun 1) menyatakan bahwa ia menerimanya langsung dari Owner sebelum menyetujui
+pukul 22:41:11 WITA. Tugas ini tidak membuat referensi, tanggal, tanda tangan, atau dokumen apa
+pun, dan tidak menulis apa pun ke kolom alasan, catatan, atau referensi koreksi.
+
+### 19.4 Pemisahan manusia dan peran
+
+- **Akun berbeda (29 ≠ 1): terverifikasi sistem.** Pemisahan manusia untuk kasus #43 kini
+  **`OWNER_ATTESTED_DISTINCT`** (Admin Klinik dan IT adalah dua orang menurut Owner). Sistem
+  tetap tidak dapat memverifikasinya; alamat jaringan yang sama untuk akun 29, 1, dan 21
+  **bukan** bukti bahwa satu orang memakai semua akun — konsisten dengan jaringan klinik yang
+  sama — dan tidak dibaca sebagai bukti ke arah mana pun.
+- Tanda bahaya kasus #42 (`RED_FLAG_UNRESOLVED`) **tidak diubah**: temuan itu spesifik pada
+  sidik peramban kasus tersebut, dan klarifikasi ini diberikan untuk kasus #43.
+- **Catatan peran (untuk Owner, bukan tindakan tugas ini):** akun IT (user 1) memegang peran
+  sistem `Owner`. Karena itu, persetujuan checker oleh akun 1 tidak boleh dibaca sebagai
+  persetujuan Owner — klarifikasi ini menegaskan bahwa checker adalah IT, sehingga persetujuan
+  Owner harus datang dari Owner sendiri sebagai bukti terpisah (rule 196 §32). Apakah akun IT
+  tetap perlu memegang peran `Owner` adalah keputusan least-privilege Owner. Tidak ada peran
+  yang diubah.
+- Akun 1 sebagai checker adalah penunjukan Owner D1d/D1e dan tetap berlaku.
+
+### 19.5 Yang tidak berubah
+
+- Rekonsiliasi keuangan tetap **`PASS_RECONSTRUCTED`**.
+- Kekurangan observasi langsung tetap: baseline segar, `PILOT_LIVE` untuk kasus,
+  `AUTHENTICATED_VERIFIED`, dan D10 menurut state tidak terjadi dan tidak dapat dibuat
+  belakangan (rule 196 §31, §41). Pernyataan Owner tidak menggantikan observasi.
+- Sprint 2: **NO_GO**, tanpa GO tag.
+
+### 19.6 Tindak lanjut Owner yang tersisa
+
+1. Serahkan bukti asli persetujuan dari kanal resmi (syarat §19.3). Jika terverifikasi,
+   status persetujuan kasus #43 menjadi `PRE_SUBMISSION_APPROVAL_VERIFIED` — kasus tetap tidak
+   menutup pilot karena observasi langsungnya tidak ada.
+2. Jika tersedia, dokumen rate card SPN4 yang menjadi dasar harga Rp12.000.000.
+3. Tinjau apakah akun IT perlu memegang peran `Owner`.
+4. Kasus berikutnya: IT menjalankan probe dan baseline segar SEBELUM maker mengajukan.
+
+### 19.7 Status addendum
+
+```text
+TASK=UPDATE-SPRINT2-CASE43-OWNER-CLARIFICATION-1
+CASE43_OWNER_CLARIFICATION=RECORDED
+CASE43_CLARIFICATION_NATURE=OWNER_RETROSPECTIVE_ATTESTATION
+CASE43_VISIT=OWNER_CONFIRMED_REAL
+CASE43_PRICING_ERROR=OWNER_EXPLAINED_RATE_CARD_DIFFERENCE
+CASE43_RATE_CARD_DOCUMENT=NOT_PROVIDED
+CASE43_PRE_SUBMISSION_APPROVAL=OWNER_ATTESTED_EVIDENCE_PENDING_VERIFICATION
+CASE43_ORIGINAL_APPROVAL_EVIDENCE=NOT_AVAILABLE_TO_TASK
+CASE43_ACCOUNT_IDENTITIES=OWNER_IDENTIFIED
+CASE43_ACCOUNT_SEPARATION=SYSTEM_VERIFIED
+CASE43_HUMAN_SEPARATION=OWNER_ATTESTED_DISTINCT_NOT_SYSTEM_VERIFIABLE
+CASE43_FINANCIAL_RECONCILIATION=PASS_RECONSTRUCTED
+CASE43_LIVE_OBSERVATION=NOT_PERFORMED
+CASE42_HUMAN_SEPARATION=RED_FLAG_UNRESOLVED
+SPRINT2_FULL_PILOT_GO=NO_GO
+SPRINT2_PENDING=LIVE_OBSERVATION_AND_REQUIRED_EVIDENCE
+SPRINT2_GO_TAG=NONE
 ```
