@@ -408,7 +408,9 @@ it('produces exactly the single-day figures when start equals end', function () 
  * ---------------------------------------------------------------------- */
 
 it('intersects the branch filter with the range and fails closed on a forged branch', function () {
-    $inv = covInvoice(covVisit($this->branchB, covPatient()), RmeInvoice::STATUS_PAID, '70000');
+    // The visit date is pinned inside R. covVisit() defaults to the clinical TODAY, which lies inside R only
+    // from 2026-10-12 to 2026-10-30 WITA; the pinned date matches the payment's clinic day (2026-10-15).
+    $inv = covInvoice(covVisit($this->branchB, covPatient(), ['visit_date' => '2026-10-15']), RmeInvoice::STATUS_PAID, '70000');
     covPayment($inv, '70000.00', '2026-10-15 02:00:00');
     covVisit($this->branchA, covPatient(), ['visit_date' => '2026-10-15']);
 
