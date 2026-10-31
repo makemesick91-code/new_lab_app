@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Modules\Branch\Services\BranchService;
 use App\Modules\RmeInvoice\Interfaces\RmeInvoiceCorrectionRepositoryInterface;
 use App\Modules\RmeInvoice\Interfaces\RmeOverpaymentObligationRepositoryInterface;
+use App\Modules\RmeInvoice\Interfaces\RmeOwnerApprovalReferenceRepositoryInterface;
 use App\Modules\RmeInvoice\Support\RmeInvoiceCorrectionFeatureGuard;
 use App\Modules\RmeInvoice\Support\RmeInvoiceCorrectionPermission;
 use App\Modules\RmeInvoice\Support\RmeInvoiceCorrectionPilotIdentity;
@@ -86,6 +87,7 @@ class RmeInvoiceCorrectionReadinessService
         private readonly RmeInvoiceCorrectionPilotIdentity $identity,
         private readonly RmeInvoicePostPaymentCorrectionFeatureGuard $postPaymentGuard,
         private readonly RmeOverpaymentObligationRepositoryInterface $obligations,
+        private readonly RmeOwnerApprovalReferenceRepositoryInterface $ownerReferences,
     ) {}
 
     /**
@@ -157,6 +159,17 @@ class RmeInvoiceCorrectionReadinessService
             $findings[] = ['level' => self::WATCH, 'code' => 'OVERPAYMENT_OBLIGATIONS_OPEN', 'detail' => (string) array_sum(array_column($openObligations, 'count'))];
         }
 
+        // HARDENING-RME-OWNER-REFERENCE-REGISTRY-1 — every post-payment correction's
+        // reference must be claimed by the registry for its own invoice. A gap is
+        // a FAIL: approval refuses such a correction, and it would mean the
+        // database guarantee does not cover data already stored.
+        $registry = $this->ownerReferenceRegistry();
+        if (! $registry['present']) {
+            $findings[] = ['level' => self::FAIL, 'code' => 'OWNER_REFERENCE_REGISTRY_MISSING', 'detail' => 'trx_rme_owner_approval_references is absent: run the migration'];
+        } elseif ($registry['unregistered_post_payment_corrections'] > 0) {
+            $findings[] = ['level' => self::FAIL, 'code' => 'OWNER_REFERENCE_UNREGISTERED', 'detail' => (string) $registry['unregistered_post_payment_corrections']];
+        }
+
         $users = [];
         foreach (array_values(array_unique(array_merge($userIds, array_filter([$makerId, $checkerId])))) as $id) {
             $users[(int) $id] = $this->userCapability((int) $id, $admittedIds, $branchCodes);
@@ -202,12 +215,29 @@ class RmeInvoiceCorrectionReadinessService
                 'flag_enabled' => $this->postPaymentGuard->enabled(),
                 'flag' => RmeInvoicePostPaymentCorrectionFeatureGuard::FLAG,
                 'owner_approval_reference' => 'MANDATORY (PP-2 / PP-7)',
+                'owner_reference_registry' => $registry,
                 'open_overpayment_obligations_by_branch' => $this->byCodeSummary($openObligations, $branchCodes),
             ],
             'users' => array_values($users),
             'maker_checker_pair' => $pair,
             'findings' => $findings,
             'decision' => $decision,
+        ];
+    }
+
+    /**
+     * @return array{present: bool, claims: int|null, unregistered_post_payment_corrections: int|null}
+     */
+    private function ownerReferenceRegistry(): array
+    {
+        if (! $this->ownerReferences->exists()) {
+            return ['present' => false, 'claims' => null, 'unregistered_post_payment_corrections' => null];
+        }
+
+        return [
+            'present' => true,
+            'claims' => $this->ownerReferences->count(),
+            'unregistered_post_payment_corrections' => $this->ownerReferences->unregisteredPostPaymentCorrectionCount(),
         ];
     }
 

@@ -129,6 +129,7 @@ class RmeInvoiceCorrectionService
         private readonly RmeInvoicePostPaymentCorrectionFeatureGuard $postPaymentGuard,
         private readonly RmeReceiptSnapshotService $receiptSnapshots,
         private readonly RmeOverpaymentObligationRepositoryInterface $obligations,
+        private readonly RmeOwnerApprovalReferenceRegistry $ownerReferences,
     ) {}
 
     // ─── Reads ──────────────────────────────────────────────────────────────
@@ -460,6 +461,24 @@ class RmeInvoiceCorrectionService
                     $this->recordTransition($correction, null, $maker, [
                         'line_count' => count($proposal['lines']),
                     ]);
+
+                    // HARDENING-RME-OWNER-REFERENCE-REGISTRY-1 (rule 214) — the
+                    // database guarantee behind the check above: the registry
+                    // key is shared across invoices and workflows, so exactly one
+                    // decision scope ever owns the reference, also under
+                    // concurrency. Last lock of the transaction; a refusal rolls
+                    // the claim back with the correction.
+                    if ($type === RmeInvoiceCorrectionType::POST_PAYMENT
+                        && ! $this->ownerReferences->consume(
+                            (string) $approvalReference,
+                            RmeOwnerApprovalReferenceRegistry::SCOPE_POST_PAYMENT_CORRECTION_INVOICE,
+                            (int) $locked->id,
+                            $maker,
+                        )) {
+                        throw ValidationException::withMessages([
+                            'owner_approval_reference' => '[CORRECTION_OWNER_APPROVAL_REFERENCE_REUSED] Referensi persetujuan Owner ini sudah dipakai untuk keputusan lain. Setiap kasus memerlukan referensi persetujuannya sendiri.',
+                        ]);
+                    }
 
                     return $correction;
                 });
@@ -1185,6 +1204,19 @@ class RmeInvoiceCorrectionService
         if ($correction->isPostPayment() && trim((string) $correction->owner_approval_reference) === '') {
             throw ValidationException::withMessages([
                 'correction' => '[CORRECTION_OWNER_APPROVAL_REFERENCE_REQUIRED] Koreksi tagihan yang sudah dibayar wajib mencantumkan referensi persetujuan Owner untuk kasus ini.',
+            ]);
+        }
+
+        // HARDENING-RME-OWNER-REFERENCE-REGISTRY-1 — defence in depth: the
+        // reference this approval relies on must be claimed by the registry for
+        // THIS invoice. Read under the invoice + correction locks.
+        if ($correction->isPostPayment() && ! $this->ownerReferences->belongsTo(
+            trim((string) $correction->owner_approval_reference),
+            RmeOwnerApprovalReferenceRegistry::SCOPE_POST_PAYMENT_CORRECTION_INVOICE,
+            (int) $correction->rme_invoice_id,
+        )) {
+            throw ValidationException::withMessages([
+                'correction' => '[CORRECTION_OWNER_APPROVAL_REFERENCE_INVALID] Referensi persetujuan Owner koreksi ini tidak tercatat untuk tagihan ini.',
             ]);
         }
     }

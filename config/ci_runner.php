@@ -402,6 +402,15 @@ return [
         'tests/Feature/RmeInvoiceCorrection/RmeInvoiceCorrectionPostPaymentLifecycleTest.php',
         'tests/Feature/RmeInvoiceCorrection/RmeInvoiceCorrectionPostPaymentAccessTest.php',
         'tests/Feature/RmeInvoiceCorrection/RmeInvoiceCorrectionPostPaymentConcurrencyTest.php',
+        // HARDENING-RME-OWNER-REFERENCE-REGISTRY-1 (rule 214) — the database-backed
+        // registry behind PP-2: one Owner approval reference, one decision scope.
+        // The concurrency suite proves on PostgreSQL, with the REAL correction
+        // service in a second session, that two submissions on two invoices
+        // cannot both consume one reference. The `RmeInvoiceCorrection` token does
+        // not match these class names, so they carry the new
+        // `RmeOwnerReferenceRegistry` token in BOTH critical-gate variants.
+        'tests/Feature/RmeOwnerReferenceRegistry/RmeOwnerReferenceRegistryTest.php',
+        'tests/Feature/RmeOwnerReferenceRegistry/RmeOwnerReferenceRegistryConcurrencyTest.php',
         // ACTIVATION-RME-INVOICE-CORRECTION-PREPAYMENT-2 (rule 195) — owner D1a
         // (approve applies, atomically), maker != checker != applier per account,
         // the fail-closed SPN4 pilot allowlist, the D1/D1b RoleSeeder grants, the

@@ -1,18 +1,18 @@
-# SECURITY-F4B4-CLINIC-CALENDAR-INVENTORY-ANALYTICS-1 — part 4 of 4 of audit item F-4b, owner decision D15 (2026-10-28):
-# inventory business dates use the clinic calendar (Asia/Makassar, UTC+8). A UTC "today" named the
-# previous clinic day between 00:00 and 08:00 WITA. This part: analytics windows, dead-stock and aging days, and the daily summary date.
-# One seam, App\Modules\Inventory\Support\InventoryBusinessCalendar, delegates to ClinicalClock.
-# F-4b moves 24 application files; sprint:scope-audit caps a RUNTIME_FIX at 10, so it is split by
-# concern rather than reclassified. Event timestamps stay UTC instants; entered business dates are
-# kept as entered; no stored date is rewritten and no backfill runs. No migration, no route, no permission.
+# HARDENING-RME-OWNER-REFERENCE-REGISTRY-1 — rule 214. The database-backed registry of consumed Owner
+# approval references (decision PP-2): one reference authorises one financial decision scope (the invoice
+# for a post-payment correction; a refund request later). Consumed with INSERT … ON CONFLICT DO NOTHING plus
+# a scope check inside the deciding transaction, after every row lock; re-verified at approval; reported by
+# rme:invoice-correction-readiness. Additive migration with a backfill that refuses conflicting data.
+# Post-payment correction stays OFF (PP-10 unchanged); refund is not built; nothing is activated.
+# The detailed security analysis is kept in a private record, not in this public repository.
 # Carried forward: LEGACY-RME-PROGRAM-CLOSURE-1 stays CLOSED and inherited.
-id: SECURITY-F4B4-CLINIC-CALENDAR-INVENTORY-ANALYTICS-1
-type: RUNTIME_FIX
-module: Inventory
-title: "Inventory analytics on the clinic calendar: periods, dead stock, aging and summary dates"
+id: HARDENING-RME-OWNER-REFERENCE-REGISTRY-1
+type: SECURITY_FIX
+module: RmeInvoice
+title: "Owner approval reference registry: one reference, one decision scope, enforced by the database"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 runtime_change: true
-schema_change: false
+schema_change: true
 frontend_change: false
 security_impact: true
 branch_isolation_impact: false
@@ -20,6 +20,6 @@ ledger_impact: false
 deploy_required: true
 browser_required: false
 test_profiles: [focused, security_regression]
-go_tag: security-f4b4-clinic-calendar-inventory-analytics-1-go
-inherits_parent_go: security-f8c-env-copy-backup-classification-1-go
+go_tag: hardening-rme-owner-reference-registry-1-go
+inherits_parent_go: post-audit-f4bc-release-1-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
