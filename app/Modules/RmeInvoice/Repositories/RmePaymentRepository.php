@@ -29,4 +29,9 @@ class RmePaymentRepository implements RmePaymentRepositoryInterface
             ->where('payment_number', 'like', 'RMEPAY-'.$month.'-%')
             ->max('payment_number');
     }
+
+    public function countForInvoice(int $invoiceId): int
+    {
+        return RmePayment::withTrashed()->where('rme_invoice_id', $invoiceId)->count();
+    }
 }

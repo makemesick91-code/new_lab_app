@@ -332,6 +332,10 @@ it('exposes no route that edits an RME invoice or its items outside the correcti
         'rme.cashier.payment.store',
         'rme.cashier.receivables.follow-ups.store',
         'rme.cashier.store',
+        // FEATURE-RME-RP0-CONTROL-CONSULTATION-1 (rule 217) — a STATUS transition of a
+        // legitimate Rp0 invoice to NO_CHARGE, like payment.store; it never touches an
+        // item or an amount (the item/total mutators test below still holds).
+        'rme.cashier.zero-value-closure.store',
         'rme.invoice-corrections.apply',
         'rme.invoice-corrections.approve',
         'rme.invoice-corrections.cancel',

@@ -10,6 +10,7 @@ use App\Modules\LabOrder\Models\LabOrder;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Models\RmePayment;
+use App\Modules\RmeInvoice\Support\RmeZeroValueCategory;
 use App\Support\Clinical\ClinicalClock;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
@@ -154,6 +155,17 @@ class OwnerDashboardKpiService
 
         $collectionRate = $billable > 0 ? min(100.0, round(($totalRevenue / $billable) * 100, 1)) : null;
 
+        // FEATURE-RME-RP0-CONTROL-CONSULTATION-1 (rule 217, S6-D5) — legitimate
+        // Rp0 visits closed "Tanpa Biaya" in the period: clinical activity with
+        // zero revenue. They never enter revenue, receivables or unpaid counts
+        // (NO_CHARGE is neither PAID nor UNPAID/PARTIAL), and are reported here.
+        $rp0Closed = $this->invoiceQuery($branchIds)
+            ->where('status', RmeInvoice::STATUS_NO_CHARGE)
+            ->whereBetween('zero_value_closed_at', [$from, $to])
+            ->selectRaw('zero_value_category, COUNT(*) AS aggregate')
+            ->groupBy('zero_value_category')
+            ->pluck('aggregate', 'zero_value_category');
+
         return [
             'total_visits' => $totalVisits,
             'new_patients' => $newPatients,
@@ -166,6 +178,9 @@ class OwnerDashboardKpiService
             'stock_value' => $inventory['stock_value'],
             'stock_available' => $inventory['available'],
             'collection_rate' => $collectionRate,
+            'rp0_visits' => (int) $rp0Closed->sum(),
+            'rp0_consultations' => (int) ($rp0Closed[RmeZeroValueCategory::CONSULTATION] ?? 0),
+            'rp0_controls' => (int) ($rp0Closed[RmeZeroValueCategory::CONTROL] ?? 0),
             'today' => $today,
         ];
     }

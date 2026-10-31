@@ -479,6 +479,9 @@ class DoctorPerformanceReportService
             ->selectRaw('trx_rme_invoice_items.treatment_id as treatment_id')
             ->selectRaw('COUNT(*) as item_count')
             ->selectRaw('SUM(CASE WHEN trx_rme_invoices.status = ? THEN 1 ELSE 0 END) as paid_item_count', [RmeInvoice::STATUS_PAID])
+            // FEATURE-RME-RP0-CONTROL-CONSULTATION-1 (rule 217, S6-D5) — a free
+            // consultation / Kontrol is reported beside "Lunas", never inside it.
+            ->selectRaw('SUM(CASE WHEN trx_rme_invoices.status = ? THEN 1 ELSE 0 END) as no_charge_item_count', [RmeInvoice::STATUS_NO_CHARGE])
             ->selectRaw('SUM(trx_rme_invoice_items.subtotal) as billed')
             ->groupBy('trx_rme_invoice_items.treatment_id')
             ->get();
@@ -498,6 +501,7 @@ class DoctorPerformanceReportService
                 : 'Tindakan manual / bebas',
             'item_count' => (int) $row->item_count,
             'paid_item_count' => (int) $row->paid_item_count,
+            'no_charge_item_count' => (int) $row->no_charge_item_count,
             'billed' => (float) $row->billed,
         ])->sortByDesc('billed')->values()->all();
     }
@@ -649,6 +653,7 @@ class DoctorPerformanceReportService
             RmeInvoice::STATUS_PAID => 'Lunas',
             RmeInvoice::STATUS_PARTIAL => 'Sebagian',
             RmeInvoice::STATUS_UNPAID => 'Belum dibayar',
+            RmeInvoice::STATUS_NO_CHARGE => 'Tanpa Biaya',
         ];
     }
 

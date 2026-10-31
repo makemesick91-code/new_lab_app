@@ -122,6 +122,11 @@ never be cited as production behaviour), **PENDING_OWNER_DECISION** (see audit �
   Rp0 payment row (D22).
 - CURRENT: an Rp0 invoice can never become PAID and stays UNPAID forever (production invoice #36); it is counted as
   "unpaid" by the Owner/RME dashboards (BCF-05).
+- **[FORWARD 2026-11-01 — rule 217]** The APPROVED_SCOPE above is now built as a CLOSURE (not an
+  adjustment): "Selesai Tanpa Biaya" moves a legitimate Rp0 Konsultasi / Kontrol invoice to the terminal
+  status `NO_CHARGE` with no payment row (owner decisions S6-D1…S6-D8; answers D21g/D22 for that scope
+  only). Flag `rme.zero_value_closure` OFF. BCF-05 is resolved for closed invoices; issuance of Rp0 lines
+  is unchanged, and D28 still refuses any correction of a Rp0 original.
 
 ## 13. Cross-branch financial authorization — CURRENT
 - Cashier/policy scope = `RmeWorkingBranchScope` (context-bound roles pinned to their working branch; non-context roles

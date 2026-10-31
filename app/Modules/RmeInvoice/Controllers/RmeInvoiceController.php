@@ -18,6 +18,7 @@ use App\Modules\RmeInvoice\Services\RmeInvoiceService;
 use App\Modules\RmeInvoice\Services\RmePaymentService;
 use App\Modules\RmeInvoice\Services\RmeRefundRequestService;
 use App\Modules\RmeInvoice\Support\RmeInvoiceLedger;
+use App\Modules\RmeInvoice\Support\RmeZeroValueClosureFeatureGuard;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
 use App\Modules\Treatment\Services\TreatmentService;
 use App\Support\Clinical\ClinicalClock;
@@ -111,6 +112,8 @@ class RmeInvoiceController extends Controller
             'total' => $queue['total'],
             'groupKeys' => CashierHandoffStatusService::QUEUE_GROUPS,
             'groupMeta' => CashierHandoffStatusService::META,
+            // FEATURE-RME-RP0-CONTROL-CONSULTATION-1 (rule 217) — display only.
+            'zeroValueClosureEnabled' => app(RmeZeroValueClosureFeatureGuard::class)->enabled(),
         ]);
     }
 
@@ -556,6 +559,7 @@ SQL;
             'payments.cashier',
             'labCaseCandidates.convertedLabOrder',
             'labCaseCandidates.treatment',
+            'zeroValueClosedBy',
         ]);
 
         return view('rme.cashier.show', [
@@ -574,6 +578,9 @@ SQL;
             'disputePanel' => $this->disputes->panelFor($invoice, request()->user()),
             // FEATURE-RME-BILLING-REFUND-REQUEST-APPROVAL-1 — no query while the flag is off.
             'refundPanel' => $this->refunds->panelFor($invoice, request()->user()),
+            // FEATURE-RME-RP0-CONTROL-CONSULTATION-1 (rule 217) — display only;
+            // `applies` is false while the flag is off (no extra query then).
+            'zeroValueClosure' => $this->payments->zeroValueClosurePanel($invoice),
         ]);
     }
 }

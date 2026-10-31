@@ -429,6 +429,14 @@ return [
         'tests/Feature/RmeRefundSettlement/RmeRefundSettlementLedgerTest.php',
         'tests/Feature/RmeRefundSettlement/RmeRefundSettlementReviewHardeningTest.php',
         'tests/Feature/RmeRefundSettlement/RmeRefundSettlementConcurrencyTest.php',
+        // FEATURE-RME-RP0-CONTROL-CONSULTATION-1 (rule 217) — "Selesai Tanpa Biaya":
+        // a legitimate Rp0 Konsultasi / Kontrol closes to NO_CHARGE with no payment
+        // row; eligibility, holds, branch, idempotency, reporting and the PostgreSQL
+        // races. Selected by the `RmeZeroValueClosure` token in BOTH critical-gate
+        // variants.
+        'tests/Feature/RmeZeroValueClosure/RmeZeroValueClosureTest.php',
+        'tests/Feature/RmeZeroValueClosure/RmeZeroValueClosureReportingTest.php',
+        'tests/Feature/RmeZeroValueClosure/RmeZeroValueClosureConcurrencyTest.php',
         // ACTIVATION-RME-INVOICE-CORRECTION-PREPAYMENT-2 (rule 195) — owner D1a
         // (approve applies, atomically), maker != checker != applier per account,
         // the fail-closed SPN4 pilot allowlist, the D1/D1b RoleSeeder grants, the

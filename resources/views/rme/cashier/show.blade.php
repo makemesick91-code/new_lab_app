@@ -6,6 +6,7 @@
             'PARTIAL' => 'Cicilan / Sebagian',
             'PAID'    => 'Lunas',
             'VOID'    => 'Dibatalkan',
+            'NO_CHARGE' => 'Tanpa Biaya',
         ];
         $invoiceStatusTone = [
             'DRAFT'  => 'info',
@@ -13,7 +14,16 @@
             'PARTIAL' => 'warning',
             'PAID'    => 'success',
             'VOID'    => 'danger',
+            'NO_CHARGE' => 'info',
         ];
+        // FEATURE-RME-RP0-CONTROL-CONSULTATION-1 (rule 217) — "Selesai Tanpa Biaya".
+        // `applies` is false while the flag is off, so the page is unchanged then.
+        $zeroValue = $zeroValueClosure ?? ['applies' => false, 'eligible' => false, 'category' => null, 'message' => null];
+        $zeroValueApplies = (bool) ($zeroValue['applies'] ?? false);
+        // Only an ELIGIBLE Rp0 invoice trades "Bayar" for "Selesai Tanpa Biaya". An
+        // ineligible one keeps the payment entry it always had (a Kontrol's
+        // carry-over collection starts there), so no visit is left stranded.
+        $zeroValueEligible = $zeroValueApplies && (bool) ($zeroValue['eligible'] ?? false);
 
         $paidAmount = $invoice->paidAmount();
         $remainingAmount = $invoice->remainingAmount();
@@ -33,11 +43,11 @@
             <x-slot:breadcrumb>Rekam Medis Elektronik</x-slot:breadcrumb>
             <x-slot:actions>
                 <x-ui.button variant="secondary" :href="route('rme.cashier.index')">&larr; Kembali ke Daftar</x-ui.button>
-                @if ($invoice->isPayable() && empty($paymentBlock) && empty($disputeHold))
+                @if ($invoice->isPayable() && ! $zeroValueEligible && empty($paymentBlock) && empty($disputeHold))
                     <x-ui.button variant="primary" :href="route('rme.cashier.payment.create', [$visit, $invoice])">
                         {{ $invoice->isPartial() ? 'Bayar Cicilan' : 'Bayar Sekarang' }}
                     </x-ui.button>
-                @elseif ($invoice->isPayable())
+                @elseif ($invoice->isPayable() && (! empty($paymentBlock) || ! empty($disputeHold)))
                     <x-ui.button variant="primary" :disabled="true" data-payment-blocked-button>Pembayaran Ditahan</x-ui.button>
                 @endif
                 @if ($invoice->status === 'PAID')
@@ -59,6 +69,58 @@
                 Tagihan ini sedang dalam peninjauan karena terdapat ketidaksesuaian nominal
                 ({{ $disputeHold->dispute_number }}). Pembayaran sementara tidak dapat diproses.
                 Silakan hubungi penanggung jawab cabang.
+            </x-ui.alert>
+        @endif
+
+        {{-- FEATURE-RME-RP0-CONTROL-CONSULTATION-1 (rule 217) — "Selesai Tanpa Biaya". Display only:
+             the service decides eligibility again under the invoice row lock. --}}
+        @error('zero_value')
+            <x-ui.alert variant="danger" title="Selesai Tanpa Biaya ditolak" data-zero-value-error>
+                {{ $message }}
+            </x-ui.alert>
+        @enderror
+
+        @if ($zeroValueApplies)
+            @if ($zeroValueEligible && empty($paymentBlock) && empty($disputeHold))
+                @can('closeZeroValue', $invoice)
+                    <x-ui.card title="Selesai Tanpa Biaya" data-zero-value-closure-panel>
+                        <p class="text-sm text-ink-soft">
+                            Tagihan ini bernilai <strong>Rp0</strong> dan memenuhi syarat
+                            <strong>{{ \App\Modules\RmeInvoice\Support\RmeZeroValueCategory::label($zeroValue['category'] ?? null) }}</strong>.
+                            Menyelesaikannya <strong>tidak mencatat pembayaran</strong>, tidak menambah pendapatan, dan tidak membuat piutang.
+                            Status tagihan menjadi <strong>Tanpa Biaya</strong> (bukan Lunas) dan kunjungan menjadi selesai.
+                        </p>
+                        @if ($hasCarryOver)
+                            <p class="mt-2 text-sm text-warning-700">
+                                Piutang kunjungan sebelumnya tidak ikut ditutup. Tagih melalui tagihan asalnya.
+                            </p>
+                        @endif
+                        <form method="POST" action="{{ route('rme.cashier.zero-value-closure.store', [$visit, $invoice]) }}" class="mt-4 space-y-3" data-zero-value-closure-form>
+                            @csrf
+                            <label class="flex items-start gap-2 text-sm text-ink">
+                                <input type="checkbox" name="acknowledged" value="1" class="mt-0.5 rounded border-hairline" required>
+                                <span>Saya memastikan pasien <strong>tidak dikenakan biaya</strong> untuk kunjungan ini.</span>
+                            </label>
+                            @error('acknowledged')
+                                <p class="text-sm text-danger-700">{{ $message }}</p>
+                            @enderror
+                            <x-ui.button type="submit" variant="primary">Selesai Tanpa Biaya</x-ui.button>
+                        </form>
+                    </x-ui.card>
+                @endcan
+            @elseif (! ($zeroValue['eligible'] ?? false))
+                <x-ui.alert variant="warning" title="Tagihan Rp0 tidak dapat diselesaikan tanpa biaya" data-zero-value-ineligible>
+                    {{ $zeroValue['message'] ?? '' }}
+                </x-ui.alert>
+            @endif
+        @endif
+
+        @if ($invoice->isNoCharge())
+            <x-ui.alert variant="info" title="Diselesaikan Tanpa Biaya" data-zero-value-closed>
+                {{ \App\Modules\RmeInvoice\Support\RmeZeroValueCategory::label($invoice->zero_value_category) }}
+                &mdash; oleh {{ $invoice->zeroValueClosedBy?->name ?? '-' }}
+                pada {{ $invoice->zero_value_closed_at?->timezone(config('clinical.timezone', 'Asia/Makassar'))->format('d/m/Y H:i') }} WITA.
+                Tidak ada pembayaran yang dicatat untuk tagihan ini.
             </x-ui.alert>
         @endif
 

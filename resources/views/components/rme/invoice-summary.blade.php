@@ -22,6 +22,7 @@
         'UNPAID'  => 'Belum Dibayar',
         'PARTIAL' => 'Cicilan / Sebagian',
         'PAID'    => 'Lunas',
+        'NO_CHARGE' => 'Tanpa Biaya', // rule 217
         'VOID'    => 'Dibatalkan',
     ];
     $summaryStatusTone = [
@@ -29,6 +30,7 @@
         'UNPAID'  => 'warning',
         'PARTIAL' => 'warning',
         'PAID'    => 'success',
+        'NO_CHARGE' => 'info',
         'VOID'    => 'danger',
     ];
 

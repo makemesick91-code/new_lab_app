@@ -31,12 +31,23 @@ class RmeInvoice extends Model
 
     public const STATUS_VOID = 'VOID';
 
+    /**
+     * FEATURE-RME-RP0-CONTROL-CONSULTATION-1 (rule 217, owner decision S6-D2) —
+     * "Tanpa Biaya": a LEGITIMATE Rp0 invoice of a Konsultasi Dokter or a Kontrol
+     * closed by the explicit "Selesai Tanpa Biaya" action. Terminal. It is NOT
+     * PAID (no money was received, no payment row exists, no receipt, no lab
+     * candidate) and it is NOT a receivable. Only
+     * RmePaymentService::closeZeroValueInvoice() writes it.
+     */
+    public const STATUS_NO_CHARGE = 'NO_CHARGE';
+
     public const STATUSES = [
         self::STATUS_DRAFT,
         self::STATUS_UNPAID,
         self::STATUS_PARTIAL,
         self::STATUS_PAID,
         self::STATUS_VOID,
+        self::STATUS_NO_CHARGE,
     ];
 
     protected $table = 'trx_rme_invoices';
@@ -70,6 +81,11 @@ class RmeInvoice extends Model
             // NOT fillable: only RmeInvoiceCorrectionService::apply() moves it,
             // through the repository, under the invoice row lock.
             'correction_version' => 'integer',
+            // FEATURE-RME-RP0-CONTROL-CONSULTATION-1 — deliberately NOT fillable:
+            // written only by the zero-value closure, through the repository,
+            // under the invoice row lock (PostgreSQL CHECKs bind them to NO_CHARGE).
+            'zero_value_closed_by' => 'integer',
+            'zero_value_closed_at' => 'datetime',
         ];
     }
 
@@ -111,6 +127,12 @@ class RmeInvoice extends Model
     public function cashier(): BelongsTo
     {
         return $this->belongsTo(User::class, 'cashier_id');
+    }
+
+    /** FEATURE-RME-RP0-CONTROL-CONSULTATION-1 — who closed a NO_CHARGE invoice. */
+    public function zeroValueClosedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'zero_value_closed_by');
     }
 
     public function items(): HasMany
@@ -253,6 +275,12 @@ class RmeInvoice extends Model
     public function isPartial(): bool
     {
         return $this->status === self::STATUS_PARTIAL;
+    }
+
+    /** FEATURE-RME-RP0-CONTROL-CONSULTATION-1 — closed "Tanpa Biaya" (never PAID). */
+    public function isNoCharge(): bool
+    {
+        return $this->status === self::STATUS_NO_CHARGE;
     }
 
     public function isPayable(): bool

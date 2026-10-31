@@ -120,6 +120,9 @@ content stays in force.
     Rp0 privilege and no new Rp0 block (D21g / D11 / D22 pending). Correction: every NEW Rp0 line or total
     refused (`CORRECTION_RP0_NOT_PERMITTED`), consultation included. The approved Rp0 ADJUSTMENT scope
     (Kontrol / Konsultasi Dokter, rule 188 §12) is a separate, NOT built workflow — `RP0_ADJUSTMENT=NOT_ACTIVE`.
+    **[FORWARD 2026-11-01 — rule 217]** Built as a CLOSURE, not a correction: a legitimate Rp0 Konsultasi /
+    Kontrol invoice can be closed `NO_CHARGE` ("Selesai Tanpa Biaya", flag OFF). A correction still never
+    creates a Rp0 line or total, and manual pricing at issuance is unchanged.
 
 ## 18. Existing Rp0 legacy preservation
 23. Historical Rp0 invoices (production #36, `TRT-CONS`, UNPAID) are never deleted or rewritten.

@@ -203,3 +203,11 @@ check before the identity allowlist is asked) — see §L.
 - Rule 197 §14 / rule 200 §E — an unusable correction actor is refused by
   `assertActor()` (`ACTOR_UNUSABLE`) before the identity allowlist
   (`PILOT_IDENTITY_ACTOR_UNUSABLE`) is reached.
+
+## Forward reference (2026-11-01) — rule 217
+
+Owner decision S6-D4 KEEPS this guard: D28 is unchanged. Rule 217 adds a separate path for a legitimate
+Rp0 Konsultasi / Kontrol invoice — closure to the terminal status `NO_CHARGE` ("Selesai Tanpa Biaya"),
+which writes no amount and is not a correction. A `NO_CHARGE` invoice is not `UNPAID`, so the correction
+service refuses it as well. D21g and D22 are answered for that closure scope only; for Rp0 issuance,
+vouchers and any Rp0 correction they stay PENDING, and this guard stays the boundary.

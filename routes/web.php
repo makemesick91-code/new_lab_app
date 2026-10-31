@@ -132,6 +132,7 @@ use App\Modules\RmeInvoice\Controllers\RmeReceivableFollowUpController;
 use App\Modules\RmeInvoice\Controllers\RmeRefundRequestController;
 use App\Modules\RmeInvoice\Controllers\RmeRefundSettlementController;
 use App\Modules\RmeInvoice\Controllers\RmeReportController;
+use App\Modules\RmeInvoice\Controllers\RmeZeroValueClosureController;
 use App\Modules\RmeOnlineContext\Controllers\BranchChangeRequestController;
 use App\Modules\RmeOnlineContext\Controllers\OnlineContextController;
 use App\Modules\Satusehat\Controllers\SatusehatBranchGovernanceController;
@@ -1372,6 +1373,9 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
         Route::get('cashier/{clinicVisit}/billing/{rmeInvoice}', [RmeInvoiceController::class, 'show'])->name('cashier.show');
         Route::get('cashier/{clinicVisit}/billing/{rmeInvoice}/payment/create', [RmePaymentController::class, 'create'])->name('cashier.payment.create');
         Route::post('cashier/{clinicVisit}/billing/{rmeInvoice}/payment', [RmePaymentController::class, 'store'])->name('cashier.payment.store');
+        // FEATURE-RME-RP0-CONTROL-CONSULTATION-1 (rule 217) — "Selesai Tanpa Biaya";
+        // 404 while rme.zero_value_closure is off (decided in the controller).
+        Route::post('cashier/{clinicVisit}/billing/{rmeInvoice}/zero-value-closure', [RmeZeroValueClosureController::class, 'store'])->name('cashier.zero-value-closure.store');
         Route::get('cashier/{clinicVisit}/billing/{rmeInvoice}/receipt', [RmePaymentController::class, 'receipt'])->name('cashier.receipt.show');
         // FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-06 — the same kwitansi as a
         // single-page PDF. Same policy (viewReceipt), same paid-only rule, same

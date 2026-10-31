@@ -6,6 +6,7 @@ use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Models\RmeInvoiceCorrection;
 use App\Modules\RmeInvoice\Models\RmeInvoiceDocumentVersion;
+use App\Modules\RmeInvoice\Models\RmeInvoiceItem;
 use App\Modules\RmeInvoice\Models\RmeOverpaymentObligation;
 use App\Modules\RmeInvoice\Models\RmePayment;
 use App\Modules\RmeInvoice\Models\RmePaymentSubmission;
@@ -126,6 +127,61 @@ final class RmeFinancialAuditEvent
             'invoice_paid_before' => self::money($paidBefore),
             'invoice_paid_after' => self::money($paidBefore + $amount),
             'reference_recorded' => filled($payment->reference_number),
+        ];
+    }
+
+    // ─── FEATURE-RME-RP0-CONTROL-CONSULTATION-1 (rule 217) ────────────────────
+    //
+    // "Selesai Tanpa Biaya": written inside the transaction that moves the
+    // invoice to NO_CHARGE and the visit to completed, so a rolled-back closure
+    // leaves no row. PII-free; it records that NO money moved.
+
+    public const ACTION_INVOICE_ZERO_VALUE_CLOSED = 'RME_INVOICE_ZERO_VALUE_CLOSED';
+
+    /**
+     * FEATURE-RME-RP0-CONTROL-CONSULTATION-1 (rule 217). The eligibility inputs
+     * are SNAPSHOTTED here — treatment and category codes, prices, the lab flag,
+     * the visit type and its parent — because master data can be edited after
+     * the closure and the audit row must still explain the decision. Codes and
+     * ids only: free-text line descriptions may name a patient and are left out.
+     *
+     * @param  iterable<RmeInvoiceItem>  $items
+     * @return array<string, mixed>
+     */
+    public static function zeroValueClosedPayload(RmeInvoice $invoice, iterable $items, ClinicVisit $visit, int $paymentCount): array
+    {
+        $lines = [];
+        foreach ($items as $item) {
+            $treatment = $item->treatment;
+            $lines[] = [
+                'rme_invoice_item_id' => (int) $item->id,
+                'treatment_id' => $item->treatment_id !== null ? (int) $item->treatment_id : null,
+                'treatment_code' => $treatment?->code !== null ? (string) $treatment->code : null,
+                'category_code' => $treatment?->category?->code !== null ? (string) $treatment->category->code : null,
+                'requires_lab' => $treatment !== null ? (bool) $treatment->requires_lab : null,
+                'unit_price' => self::money($item->unit_price),
+                'discount' => self::money($item->discount),
+            ];
+        }
+
+        return [
+            'rme_invoice_id' => (int) $invoice->id,
+            'invoice_number' => $invoice->invoice_number !== null ? (string) $invoice->invoice_number : null,
+            'branch_id' => (int) $invoice->branch_id,
+            'clinic_visit_id' => (int) $invoice->clinic_visit_id,
+            'patient_id' => (int) $invoice->patient_id,
+            'status' => (string) $invoice->status,
+            'zero_value_category' => (string) $invoice->zero_value_category,
+            'zero_value_closed_by' => (int) $invoice->zero_value_closed_by,
+            'zero_value_closed_at' => $invoice->zero_value_closed_at?->toIso8601String(),
+            'grand_total' => self::money($invoice->grand_total),
+            'item_count' => count($lines),
+            'payment_count' => $paymentCount,
+            'visit_type' => $visit->visit_type !== null ? (string) $visit->visit_type : null,
+            'follow_up_of_visit_id' => $visit->follow_up_of_visit_id !== null ? (int) $visit->follow_up_of_visit_id : null,
+            'parent_visit_status' => $visit->follow_up_of_visit_id !== null ? $visit->followUpOf?->status : null,
+            'lines' => $lines,
+            'visit_status_after' => ClinicVisit::STATUS_COMPLETED,
         ];
     }
 
