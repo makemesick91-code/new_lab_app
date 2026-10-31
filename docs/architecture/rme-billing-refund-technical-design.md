@@ -1,5 +1,12 @@
 # RME Billing Refund — Technical Design (FEATURE-RME-BILLING-REFUND-1)
 
+> **Superseded in part (2026-10-31) by `docs/architecture/rme-refund-request-approval-design.md`**
+> (`PREPARATION-RME-BILLING-REFUND-REQUEST-APPROVAL-1`, rule 213). This document predates overpayment
+> obligations (rule 207). Its §2.1 single table carrying request, decision AND settlement, and its §4
+> refundable balance derived from `Σ payments − grand_total` minus commitments, are replaced by an
+> obligation-consuming request table (Sprint 4) and a separate settlement record (Sprint 5). §1 (refund
+> consumes an overpayment; a payment-entry error is a reversal) still holds. Kept as history.
+>
 > **Status: PROPOSED. Not implemented. Not activated.** Nothing in this document is production behaviour.
 > Production behaviour is in rule 188 (CURRENT) and rule 189 (Phase 0, implemented).
 > Decision codes D1–D23 are the register in `docs/AUDIT-RME-BILLING-CORRECTION-PAYMENT-REFUND-FOUNDATION-1.md` §26.
