@@ -13,6 +13,9 @@ paths:
   - "config/rme_refund.php"
   - "resources/views/rme/refund-requests/**"
   - "tests/Feature/RmeRefundRequest/**"
+  - "config/rme_refund_settlement.php"
+  - "resources/views/rme/refund-settlements/**"
+  - "tests/Feature/RmeRefundSettlement/**"
   - "config/rme_tariff_authority.php"
   - "tests/Feature/RmeBillingDispute/**"
   - "tests/Feature/RmeInvoiceCorrection/**"
@@ -180,11 +183,13 @@ code, then the canonical rule, and report the drift.
   `refreshInvoiceStatus()`), not gated by any switch; a failure aborts the payment — never add a skip-if-table-missing
   bypass. An older-version receipt renders from its snapshot stamped "DIREVISI"; integrity failure → 409. Source:
   rule 207 §F.
-- **AIR-RMB-35** Refund REQUEST & approval is built (rule 215, flag `rme.billing_refund_request` OFF, identity allowlist
-  EMPTY): it decides whether an OPEN obligation is paid back and never moves money. Refund SETTLEMENT is not built: no
-  payout, reversal, credit, settlement route, permission, method or status (Sprint 5). `refund_terms` in
-  `config/rme_invoice.php` is printed text only. Never manufacture a refundable balance; a payment-entry error is a
-  reversal, not a refund (D26). Source: rule 189 §1–§2, rule 215.
+- **AIR-RMB-35** Refund REQUEST & approval (rule 215, flag `rme.billing_refund_request` OFF) decides whether an OPEN
+  obligation is paid back and never moves money; APPROVED ≠ paid. Refund SETTLEMENT (rule 216, flag
+  `rme.billing_refund_settlement` OFF, needs the request flag too) records that the money left: settler ≠ approver,
+  bank/cash with evidence, server time, full amount only. `settle_rme_refund` is held by NO role (Super Admin passes
+  `can()` only via Gate::before) and `pilot.settlers` ships EMPTY (deny-all) — the designation is the gate. Net received = payments − SETTLED refunds
+  (`RmeInvoiceLedger::netReceived*`) in EVERY balance reader; payments are never written. No credit, partial,
+  reversal or bank API; a payment-entry error is a reversal (D26). Source: rule 189 §1–§2, rules 215–216.
 
 ### Oversight and reports
 

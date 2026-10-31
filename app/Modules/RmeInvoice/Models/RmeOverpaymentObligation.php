@@ -18,20 +18,31 @@ use LogicException;
  *
  * Created once, atomically, by the transaction that applies the correction; the
  * amount is derived by the server (`max(0, paid − new total)`). It is NOT a refund:
- * no money leaves the system in this release and the obligation stays OPEN until
- * the refund sprints exist. It is never updated (except the one-time number
- * assignment) and never deleted.
+ * the obligation records what is owed; the refund request (Sprint 4) decides to pay
+ * it back and the refund settlement (Sprint 5, rule 216) records that it was paid.
+ *
+ * It is never updated except (a) the one-time number assignment and (b) the
+ * one-time OPEN → SETTLED move written by the settlement transaction, which sets
+ * settled_at and rme_refund_settlement_id and nothing else. A SETTLED obligation is
+ * frozen and never re-opens; it is never deleted.
  */
 class RmeOverpaymentObligation extends Model
 {
     public const STATUS_OPEN = 'OPEN';
 
-    /** Statuses this release can write. Later sprints widen it additively. */
-    public const STATUSES = [self::STATUS_OPEN];
+    /** FEATURE-RME-REFUND-SETTLEMENT-1 (RFS-4): the refund was verified as paid out. */
+    public const STATUS_SETTLED = 'SETTLED';
+
+    /** Statuses this release can write. */
+    public const STATUSES = [self::STATUS_OPEN, self::STATUS_SETTLED];
 
     public const LABELS = [
         self::STATUS_OPEN => 'Kelebihan Bayar — Belum Dikembalikan',
+        self::STATUS_SETTLED => 'Kelebihan Bayar — Telah Dikembalikan',
     ];
+
+    /** The only columns the settlement transaction may write, once, on an OPEN row. */
+    public const SETTLEMENT_COLUMNS = ['status', 'settled_at', 'rme_refund_settlement_id'];
 
     protected $table = 'trx_rme_overpayment_obligations';
 
@@ -51,12 +62,23 @@ class RmeOverpaymentObligation extends Model
     protected static function booted(): void
     {
         static::updating(function (RmeOverpaymentObligation $obligation): void {
-            // The only permitted write after insert: assigning the number, once,
-            // to a row that has none (the number embeds the id).
+            // The permitted writes after insert: assigning the number, once, to a
+            // row that has none (the number embeds the id); and the one-time
+            // OPEN → SETTLED move of the settlement transaction (RFS-4).
             $dirty = array_keys($obligation->getDirty());
             $onlyNumber = array_diff($dirty, ['obligation_number', 'updated_at']) === [];
 
-            if (! $onlyNumber || $obligation->getOriginal('obligation_number') !== null) {
+            if ($onlyNumber && $obligation->getOriginal('obligation_number') === null) {
+                return;
+            }
+
+            $settling = $obligation->getOriginal('status') === self::STATUS_OPEN
+                && $obligation->status === self::STATUS_SETTLED
+                && array_diff($dirty, array_merge(self::SETTLEMENT_COLUMNS, ['updated_at'])) === []
+                && $obligation->settled_at !== null
+                && (int) $obligation->rme_refund_settlement_id > 0;
+
+            if (! $settling) {
                 throw new LogicException(sprintf('RME overpayment obligation #%d is immutable.', (int) $obligation->getKey()));
             }
         });
@@ -77,12 +99,19 @@ class RmeOverpaymentObligation extends Model
             'amount' => 'decimal:2',
             'invoice_version' => 'integer',
             'created_by' => 'integer',
+            'settled_at' => 'datetime',
+            'rme_refund_settlement_id' => 'integer',
         ];
     }
 
     public function isOpen(): bool
     {
         return $this->status === self::STATUS_OPEN;
+    }
+
+    public function isSettled(): bool
+    {
+        return $this->status === self::STATUS_SETTLED;
     }
 
     public function label(): string
@@ -108,6 +137,11 @@ class RmeOverpaymentObligation extends Model
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    public function settlement(): BelongsTo
+    {
+        return $this->belongsTo(RmeRefundSettlement::class, 'rme_refund_settlement_id');
     }
 
     public function events(): HasMany

@@ -438,8 +438,8 @@ class PermissionSeeder extends Seeder
         'apply_rme_invoice_correction',
         'view_billing_correction_oversight',
         // FEATURE-RME-BILLING-REFUND-REQUEST-APPROVAL-1 (Sprint 4/7, rule 215; owner
-        // RF-1) — the refund REQUEST and its decision. Never money: settlement is
-        // Sprint 5 and has no permission yet (no orphan permission).
+        // RF-1) — the refund REQUEST and its decision. Never money (settlement is
+        // the separate permission below).
         //   request_rme_refund — file / withdraw one's own request (Front Office only)
         //   approve_rme_refund — approve, reject or revoke another's request
         //                        (Supervisor RME, Kepala Cabang; Super Admin via '*')
@@ -447,6 +447,14 @@ class PermissionSeeder extends Seeder
         // the role and its server-resolved branch scope, and maker != checker.
         'request_rme_refund',
         'approve_rme_refund',
+        // FEATURE-RME-REFUND-SETTLEMENT-1 (Sprint 5/7, rule 216; owner RF-9/RF-10)
+        // — record that an APPROVED refund was actually paid out. Granted to NO
+        // operational role (the Owner has not appointed the settler role; Super
+        // Admin holds it through '*'). Necessary, never sufficient: the account
+        // must also be explicitly designated for the branch in
+        // config/rme_refund_settlement.php (ships EMPTY) and is never the
+        // request's approver.
+        'settle_rme_refund',
         // IMPLEMENTATION-RME-BILLING-DISPUTE-ESCALATION-OPS-OQ-1 (owner OPS-OQ-1,
         // rule 203) — billing disputes. REPORTING reuses manage_rme_billing (the
         // accounts that could collect a known-wrong amount are the ones that can

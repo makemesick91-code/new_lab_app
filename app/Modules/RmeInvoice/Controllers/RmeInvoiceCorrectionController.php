@@ -152,8 +152,9 @@ class RmeInvoiceCorrectionController extends Controller
             // FEATURE-RME-POSTPAYMENT-INVOICE-CORRECTION-1 — the ledger the cashier
             // sees on a post-payment form (display only; the service re-reads it
             // under the lock).
-            'paidCents' => RmeInvoiceLedger::paidCents($invoice),
-            'outstandingCents' => RmeInvoiceLedger::outstandingCents(RmeInvoiceLedger::grandTotalCents($invoice), RmeInvoiceLedger::paidCents($invoice)),
+            // RFS-1: NET money received (gross payments − settled refunds).
+            'paidCents' => RmeInvoiceLedger::netReceivedCents($invoice),
+            'outstandingCents' => RmeInvoiceLedger::outstandingCents(RmeInvoiceLedger::grandTotalCents($invoice), RmeInvoiceLedger::netReceivedCents($invoice)),
         ]);
     }
 

@@ -25,6 +25,26 @@
 
         @include('rme.refund-requests.partials.detail', ['showCaseDetail' => true])
 
+        @if (($settlementPanel['enabled'] ?? false) === true)
+            <x-ui.card data-refund-settlement-panel>
+                <h2 class="text-sm font-semibold text-ink">Pembayaran refund</h2>
+                @if ($settlementPanel['holding'] !== null)
+                    <p class="mt-1 text-sm">
+                        <a class="font-mono text-brand-700 hover:underline" href="{{ route('rme.refund-settlements.show', $settlementPanel['holding']->id) }}">{{ $settlementPanel['holding']->settlement_number }}</a>
+                        &middot; {{ \App\Modules\RmeInvoice\Support\RmeRefundSettlementStatus::label($settlementPanel['holding']->status) }}
+                    </p>
+                @elseif ($settlementPanel['can_start'])
+                    <p class="mt-1 text-xs text-ink-soft">Disetujui belum berarti dibayarkan. Mulai pencatatan pembayaran saat Anda akan membayarkan refund ini.</p>
+                    <div class="mt-2"><x-ui.button size="sm" :href="route('rme.refund-settlements.create', $refund->id)">Bayarkan Refund</x-ui.button></div>
+                @else
+                    <p class="mt-1 text-xs text-ink-soft" data-refund-settlement-none>Belum ada pembayaran tercatat untuk permintaan ini.</p>
+                @endif
+                @if ($settlementPanel['settlements']->where('status', \App\Modules\RmeInvoice\Support\RmeRefundSettlementStatus::ABORTED)->isNotEmpty())
+                    <p class="mt-2 text-xs text-ink-muted">Ada pembayaran yang dibatalkan (tidak ada uang keluar) untuk permintaan ini.</p>
+                @endif
+            </x-ui.card>
+        @endif
+
         @if ($actions['approve'] || $actions['reject'])
             <x-ui.card data-refund-decide>
                 <form method="POST" action="{{ route('rme.refund-requests.approve', $refund->id) }}" class="space-y-2" data-refund-approve>

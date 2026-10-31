@@ -115,6 +115,7 @@ class PermissionGroupingService
                 'apply_rme_invoice_correction',
                 'request_rme_refund',
                 'approve_rme_refund',
+                'settle_rme_refund',
                 'view_billing_correction_oversight',
                 // IMPLEMENTATION-RME-BILLING-DISPUTE-ESCALATION-OPS-OQ-1 (rule 203)
                 // — billing dispute review (granted to no operational role) and
@@ -304,6 +305,7 @@ class PermissionGroupingService
         'apply_rme_invoice_correction' => 'Terapkan koreksi tagihan RME yang sudah disetujui; dokumen asli dibekukan sebagai versi v0.',
         'request_rme_refund' => 'Ajukan atau tarik permintaan refund atas kewajiban pengembalian kelebihan bayar di cabang kerja sendiri (Front Office; tidak pernah memutuskan, tidak memindahkan uang).',
         'approve_rme_refund' => 'Setujui, tolak, atau cabut permintaan refund milik akun lain dalam lingkup cabang peran (tidak pernah permintaan sendiri, tidak memindahkan uang).',
+        'settle_rme_refund' => 'Catat bahwa refund yang disetujui benar-benar dibayarkan (transfer bank atau tunai, dengan bukti). Hanya untuk akun yang ditunjuk per cabang; tidak pernah refund yang disetujui sendiri.',
         'view_billing_correction_oversight' => 'Lihat daftar dan riwayat koreksi tagihan di semua cabang RME — hanya baca, tanpa mengajukan/menyetujui.',
         'review_rme_billing_disputes' => 'Tinjau, eskalasi ke Owner, dan selesaikan laporan ketidaksesuaian tagihan RME di cabang kerja (tidak dapat mengubah, membatalkan atau mengoreksi tagihan).',
         'view_rme_billing_disputes' => 'Lihat daftar dan riwayat laporan ketidaksesuaian tagihan RME — hanya baca.',

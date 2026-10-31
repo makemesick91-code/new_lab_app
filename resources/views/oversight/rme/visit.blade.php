@@ -142,7 +142,8 @@
         @else
             @php
                 $paid = (float) $invoice->payments->sum('amount');
-                $remaining = max(0, round((float) $invoice->grand_total - $paid, 2));
+                // RFS-1: the balance is measured against NET received (a settled refund is money given back).
+                $remaining = $invoice->remainingAmount();
             @endphp
             <dl class="mb-3 grid grid-cols-1 gap-3 text-sm sm:grid-cols-4">
                 <div><dt class="text-xs text-ink-soft">No. Invoice</dt><dd class="font-mono text-navy">{{ $invoice->invoice_number }}</dd></div>

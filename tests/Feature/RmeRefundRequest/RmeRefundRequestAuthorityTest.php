@@ -291,12 +291,24 @@ it('RR-SEC-07: status, decision and Owner reference are not mass-assignable', fu
     expect($request->isDirty(['status', 'decided_by', 'owner_approval_reference']))->toBeFalse();
 });
 
-it('RR-SEC-11: no settlement route, permission, service method or status exists', function () {
-    $names = collect(Route::getRoutes()->getRoutes())->map(fn ($r) => (string) $r->getName().' '.$r->uri())->implode("\n");
-    expect($names)->not->toMatch('/refund[^\n]*(settle|payout|pay\b)/i')
-        ->and(collect(Permission::all())->pluck('name')->filter(fn ($n) => str_contains($n, 'refund') && str_contains($n, 'settle')))->toBeEmpty()
-        ->and(method_exists(RmeRefundRequestService::class, 'settle'))->toBeFalse()
-        ->and(S::ALL)->not->toContain('SETTLED');
+it('RR-SEC-11: approval never settles — payout is a separate capability, route set and permission', function () {
+    // SUPERSEDED in part by FEATURE-RME-REFUND-SETTLEMENT-1 (rule 216): SETTLED now
+    // exists, but the refund REQUEST service can never reach it. Only the separate
+    // settlement service moves APPROVED → SETTLED, behind its own permission.
+    expect(method_exists(RmeRefundRequestService::class, 'settle'))->toBeFalse()
+        ->and(method_exists(RmeRefundRequestService::class, 'pay'))->toBeFalse()
+        ->and(S::canTransition(S::REQUESTED, S::SETTLED))->toBeFalse()
+        ->and(S::TRANSITIONS[S::APPROVED])->toContain(S::SETTLED);
+
+    $payoutRoutes = collect(Route::getRoutes()->getRoutes())
+        ->filter(fn ($r) => preg_match('/refund[^\n]*(settle|payout|pay\b)/i', (string) $r->getName().' '.$r->uri()) === 1);
+    expect($payoutRoutes)->not->toBeEmpty();
+    foreach ($payoutRoutes as $route) {
+        expect($route->getActionName())->toContain('RefundSettlementController');
+    }
+
+    expect(collect(Permission::all())->pluck('name')->filter(fn ($n) => str_contains($n, 'refund') && str_contains($n, 'settle'))->values()->all())
+        ->toBe(['settle_rme_refund']);
 });
 
 it('RR-SEC-12: the refund service reads no session, request, auth or BranchContext', function () {

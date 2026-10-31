@@ -552,6 +552,18 @@ $registry = [
             'dependencies' => [],
             'rollback_action' => 'Withdraw or revoke every REQUESTED or APPROVED refund request through the service first (the release paths need the flag on), then set the environment override to false and rebuild the config cache as the runtime user. Nothing is deleted: refund requests, their events, the consumed Owner and patient references and the audit rows remain readable, and no money has moved, so the rollback is non-financial. Never edit or delete a refund row to undo a decision.',
         ],
+        'rme.billing_refund_settlement' => [
+            'name' => 'RME Refund Settlement',
+            'description' => 'MUTATION capability for RECORDING that money owed back on an APPROVED refund request actually left the clinic (Sprint 5/7, owner decisions RF-9 C, RF-10 B and RF-11 of 2026-10-31, rule 216). A designated settler who is not the request approver claims the payout (DISBURSING), pays outside the system by bank transfer or cash, and confirms it with the method-specific proof: a bank reference, the destination bank and the last four digits of the account plus a transfer receipt, or a handover number, the recipient relation and the signed handover acknowledgment. Confirmation moves the settlement, the request and the obligation to SETTLED in one transaction at server time and reduces net received (RFS-1); incoming payments are never written. An uncertain transfer is held as OUTCOME_UNKNOWN until reconciled with evidence, never retried automatically. Full amount only. Requires rme.billing_refund_request as well. Pilot SPN4 with a source-controlled settler designation list that ships EMPTY, because the Owner has not appointed the settler role, so even with both flags on nobody can settle. While this flag is off every operational settlement route answers 404 and every service call is refused; the read-only oversight pages stay readable.',
+            'default' => false,
+            'env_key' => 'FEATURE_RME_BILLING_REFUND_SETTLEMENT',
+            'owner' => 'rme',
+            'risk_level' => 'critical',
+            'rollout_status' => 'implemented',
+            'review_target' => 'ACTIVATION-RME-REFUND-SETTLEMENT-1',
+            'dependencies' => ['rme.billing_refund_request'],
+            'rollback_action' => 'First resolve every DISBURSING or OUTCOME_UNKNOWN settlement through the service (confirm with evidence, or abort with the no-money attestation), because an in-flight claim means money may already have left. Then set the environment override to false and rebuild the config cache as the runtime user. Nothing is deleted or reverted: SETTLED settlements, their evidence files, events and audit rows, and the SETTLED requests and obligations remain readable and keep reducing net received. Never edit or delete a settlement row, never re-open a settled obligation, and never pay out again to undo a rollback.',
+        ],
     ],
 ];
 

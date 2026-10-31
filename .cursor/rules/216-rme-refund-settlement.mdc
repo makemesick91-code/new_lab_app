@@ -1,0 +1,111 @@
+---
+description: FEATURE-RME-REFUND-SETTLEMENT-1 (Sprint 5/7) — recording that the money of an APPROVED refund request actually left the clinic. Owner decisions RF-9 C (bank transfer + cash, method-specific evidence), RF-10 B (settler ≠ approver), RF-11 (server time). Flag rme.billing_refund_settlement default OFF; the settlement permission is held by no role and the settler list ships EMPTY, so nobody can settle until the Owner designates a person.
+globs: app/Modules/RmeInvoice/Services/RmeRefundSettlementService.php, app/Modules/RmeInvoice/Support/RmeRefundSettlement*.php, app/Modules/RmeInvoice/Support/RmeInvoiceLedger.php, app/Modules/RmeInvoice/Models/RmeRefundSettlement*.php, app/Modules/RmeInvoice/Repositories/RmeRefundSettlementRepository.php, app/Modules/RmeInvoice/Controllers/RmeRefundSettlementController.php, app/Modules/ClinicOversight/Controllers/OversightRefundSettlementController.php, config/rme_refund_settlement.php, database/migrations/2026_10_31_3000*.php, resources/views/rme/refund-settlements/**, tests/Feature/RmeRefundSettlement/**
+alwaysApply: false
+---
+
+# Refund settlement (rule 216)
+
+Sprint record: `docs/sprints/feature-rme-refund-settlement-1.md`. Design, threat model and reconciliation
+contract: `docs/architecture/rme-refund-settlement-design.md`. Operator SOP (Indonesian):
+`docs/runbooks/rme-refund-settlement-sop.md`. Rule 215 owns the request and its decision; this rule owns the
+payout record only.
+
+## A. What a settlement is
+
+1. A settlement records that the money of an **APPROVED** refund request left the clinic. Approval is never
+   payment and payment is never inferred from approval (RF-2, D18). The system is **not connected to any
+   bank**: it never moves money, never calls a bank API and never retries a transfer.
+2. States: `DISBURSING` (a settler claimed the payout) → `SETTLED` (verified, evidence attached) |
+   `OUTCOME_UNKNOWN` (reconciliation required) | `ABORTED` (money did not move). `OUTCOME_UNKNOWN` → `SETTLED`
+   or `ABORTED` only, with evidence. `SETTLED` and `ABORTED` are terminal; a row is never edited or deleted.
+3. Only `SETTLED` changes money facts. In one transaction it moves the obligation `OPEN → SETTLED` and the
+   request `APPROVED → SETTLED`; the invoice stays `PAID`; incoming payments, items, receipts and document
+   versions are **never written** (RFS-4, RFS-5; asserted byte-for-byte by RS-LED-01).
+4. Full refund only (RF-4): the amount is the approved request amount, re-derived under the lock; a different
+   declared amount is refused (`AMOUNT_MISMATCH`), never capped, split or rounded. No partial, write-off,
+   patient credit (RF-12) or cross-invoice offset; a payment-entry error is a reversal, never a refund (D26).
+5. Methods (RF-9 C): `BANK_TRANSFER` (bank reference, destination bank name, last four account digits, bank
+   proof) and `CASH` (handover number, recipient relation, receipt signed by the recipient). A generated
+   receipt or a pending transfer is not proof. No other method exists.
+
+## B. Net received (RFS-1) — one definition everywhere
+
+1. **Net received = Σ payments − Σ SETTLED refund settlements.** Remaining = `max(0, grand_total − net)`;
+   overpaid = `max(0, net − grand_total)`.
+2. The single definition lives in `RmeInvoiceLedger` (`netReceivedCents`, `netReceivedTotalsQuery`,
+   `netReceivedSql`) and `RmeInvoice` (`netReceivedAmount`, `remainingAmount`, `scopeWithNetReceived`).
+   `paidAmount()` / `paidCents()` stay GROSS for display and the payments-unchanged invariant only.
+3. Every receivable, status and correction reader uses net: payment caps, post-payment correction (an upward
+   correction after a settled refund creates an outstanding balance, a downward one a new obligation sized
+   against net), refund eligibility, receipts (`totals.refunded_cents`), document integrity, the cashier
+   receivable list (summary, aging, per-row balance) and export, the oversight visit page, the doctor
+   performance report (money received is net of refunds paid back), RME dashboard, oversight KPIs, DMO metrics,
+   DQ audit and owner dashboards. "Sudah Dibayar" labels stay gross and state the refund beside them. A new
+   reader that sums `trx_rme_payments` for a balance is a defect — no partial migration of financial
+   semantics.
+4. Reporting (RFS-6) keeps gross incoming (payments by `paid_at`), refund outflow (SETTLED by `settled_at`) and
+   net apart for a WITA period, attributed to the invoice branch. Open obligations, approved-unpaid requests
+   and in-flight payouts are point-in-time liabilities, never added to or deducted from a money total.
+
+## C. Authority (RF-10 B)
+
+1. A settler needs ALL of: a usable active account, `settle_rme_refund`, an explicit designation in
+   `config/rme_refund_settlement.php` `pilot.settlers` (`['user_id' => int, 'branch_codes' => [...]]`) for the
+   request's branch, the branch in `pilot.branch_codes`, and the flag on. Owner, Finance Klinik and Data
+   Analyst are never settlers, whatever they hold.
+2. `settle_rme_refund` is granted to **no role** — `RoleSeeder::NO_ROLE_PERMISSIONS` keeps it out of Super
+   Admin's `*` grant (`RoleSeeder::grantsFor()` is the one expansion of `*`). `Gate::before` still answers
+   `can()` true for Super Admin, so the **designation is the gate**, never the permission: the settler list
+   ships **empty** (`SETTLEMENT_AUTHORIZATION = DENY_ALL`). A malformed entry, a duplicate user, an unknown
+   code or MAIN voids the whole list. UI buttons follow `isSettlerAccount()`, never `@can`.
+3. **Settler ≠ approver**, per account, checked in the service and backed by a PostgreSQL CHECK on every actor
+   column. `Gate::before` cannot bypass it. The maker may settle only when separately designated. Account
+   inequality is not proof of human independence; the SOP says so.
+4. **Only the settler who started may abort — from any state** — because only the person who made the transfer
+   can say no money left; letting another settler abort would release the request for a second payout of money
+   that was in fact sent. From `DISBURSING` only the starter may confirm; any designated settler may escalate to
+   `OUTCOME_UNKNOWN` and, from there, confirm with the bank's proof. A revoked designation stops the next
+   action. Out of the settler's branches is "not found", including a `store` on a request id it cannot see.
+5. Reading: settlers and refund reviewers of the branch. Oversight readers get GET-only pages without the
+   proof file. Evidence downloads are policy-checked, `no-store`, `nosniff`, sandboxed.
+
+## D. Integrity
+
+1. Lock order: invoice → obligation → refund request → settlement, then the actor re-read. A settlement never
+   takes a lock another refund path takes in reverse order.
+2. Idempotency: a dedicated HMAC intent (`RmeRefundSettlementIntent`, bound to the request id) with a
+   fingerprint of request, settler, method and amount; an exact replay returns the original row, a reuse with
+   different facts is refused. Registered in `config/app_key_rotation.php`.
+3. Database backstops: one live (non-ABORTED) settlement per request and per obligation; a reference settles
+   once by its **key** (letters and digits, upper case — `referenceKey()`), across methods, so re-spelling
+   cannot prove a second refund; an evidence hash settles once; `approved_by` is bound to the request's
+   `decided_by` by a composite FK, so the never-the-approver CHECK compares against the real approver;
+   amount > 0; status and method constrained; every terminal state carries its proof columns. Unique
+   violations are translated at the transaction boundary. One evidence file proves one fact in ANY state:
+   proof that money did not move is never reusable as proof that it did.
+4. Time (RF-11): `settled_at` is server time; there is no user-entered date and no backdating window. External
+   transfer timing lives in the evidence, never in a column.
+5. Evidence lives on the private disk `rme_refund_settlement_evidence` (listed in `DMS_PRIVATE_PATHS`), PDF/JPEG/
+   PNG only, content-sniffed, SHA-256 bound. PDF active content (JavaScript, Launch, embedded files, forms
+   submission, encryption …) is refused by a **heuristic** that also reads `#xx` name escapes and every
+   Flate-compressed stream within a decompression budget — not a sanitizer, which is why the download is
+   always an attachment with a sandbox CSP. A failed confirmation or abort removes the file.
+6. Audit: `RmeFinancialAuditEvent` refund-settlement actions carry ids, amount, method, statuses and the
+   evidence hash — never the reference, bank name, account digits, recipient or free text. A database failure
+   inside the service is replaced by a message with SQLSTATE and ids only (no `previous`), so its bindings
+   never reach a log.
+7. Disputes and active corrections block start and confirm; a held claim blocks revoking the approval
+   (`REFUND_SETTLEMENT_IN_PROGRESS`).
+
+## E. Never
+
+* Settle on approval, auto-settle, call a bank, retry an uncertain transfer, or mark money returned without
+  evidence and the settler's attestation.
+* Write, negate or soft-delete an incoming payment to represent a refund; issue credit; split an amount.
+* Grant `settle_rme_refund` to a role, fill `pilot.settlers` without the Owner's written designation of a
+  person, or designate the approver.
+* Store a full account number, bank credential, patient identity or free text in an audit payload or a log.
+* Edit or delete a settlement or its events; correct with abort (before money moved) or a new request.
+* Turn `rme.billing_refund_settlement` on before the refund request flag is live, an Owner-designated settler
+  exists, the SOP is trained, and the Owner approves activation (separate gate: ACTIVATION-RME-REFUND-SETTLEMENT-1).

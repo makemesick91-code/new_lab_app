@@ -464,7 +464,9 @@ class RmeInvoiceCorrectionService
                         'original_grand_total' => RmeInvoiceSnapshot::centsToDecimal($originalTotal),
                         'proposed_grand_total' => RmeInvoiceSnapshot::centsToDecimal($proposedTotal),
                         'difference_amount' => RmeInvoiceSnapshot::centsToDecimal($proposedTotal - $originalTotal),
-                        'paid_total_at_request' => RmeInvoiceSnapshot::centsToDecimal((int) $original['totals']['paid_cents']),
+                        // RFS-1: NET money received (gross payments − settled refunds),
+                        // the figure a post-payment correction is measured against.
+                        'paid_total_at_request' => RmeInvoiceSnapshot::centsToDecimal(RmeInvoiceLedger::netReceivedCents($locked)),
                         'requested_by' => (int) $maker->id,
                         'requested_at' => now(),
                         'idempotency_key' => $key,
@@ -822,8 +824,12 @@ class RmeInvoiceCorrectionService
             throw new LogicException(sprintf('Correction #%d changed the payment ledger of its invoice.', (int) $correction->id));
         }
 
-        $outstandingCents = RmeInvoiceLedger::outstandingCents($grandTotal, $paidCents);
-        $overpaidCents = RmeInvoiceLedger::overpaidCents($grandTotal, $paidCents);
+        // FEATURE-RME-REFUND-SETTLEMENT-1 (RFS-1/RFS-2) — the balance is measured
+        // against NET money received: a refund already settled on this invoice gave
+        // money back and must never count again as received.
+        $netCents = RmeInvoiceLedger::netReceivedCents($invoice);
+        $outstandingCents = RmeInvoiceLedger::outstandingCents($grandTotal, $netCents);
+        $overpaidCents = RmeInvoiceLedger::overpaidCents($grandTotal, $netCents);
         $obligation = null;
 
         if (! $postPayment) {
@@ -841,7 +847,7 @@ class RmeInvoiceCorrectionService
 
             // PP-3 / PP-4 — the status is re-derived from the invoice's own ledger
             // by the helper every payment uses: paid >= total => PAID, else PARTIAL.
-            $statusAfter = RmeInvoiceLedger::statusAfterMoneyReceived($grandTotal, $paidCents);
+            $statusAfter = RmeInvoiceLedger::statusAfterMoneyReceived($grandTotal, $netCents);
             $invoice = $this->invoices->update($invoice, ['status' => $statusAfter]);
 
             if ($overpaidCents > 0) {
@@ -887,7 +893,7 @@ class RmeInvoiceCorrectionService
         ], $postPayment ? [
             'invoice_status_before' => $statusBefore,
             'invoice_status_after' => $statusAfter,
-            'paid_total' => round($paidCents / 100, 2),
+            'paid_total' => round($netCents / 100, 2),
             'outstanding_after' => round($outstandingCents / 100, 2),
             'overpaid_after' => round($overpaidCents / 100, 2),
             'overpayment_obligation_id' => $obligation?->id !== null ? (int) $obligation->id : null,
@@ -1265,7 +1271,8 @@ class RmeInvoiceCorrectionService
         }
 
         $grandCents = RmeInvoiceLedger::grandTotalCents($invoice);
-        $paidCents = RmeInvoiceLedger::paidCents($invoice);
+        // RFS-1: NET received — a settled refund is not an overpayment.
+        $paidCents = RmeInvoiceLedger::netReceivedCents($invoice);
 
         // Fail closed on a ledger that does not explain its own status: a
         // correction is reviewed against figures, and figures that disagree with

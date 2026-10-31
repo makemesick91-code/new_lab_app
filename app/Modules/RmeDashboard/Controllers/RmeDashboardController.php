@@ -10,6 +10,7 @@ use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\MedicalRecord\Services\MedicalRecordService;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Models\RmePayment;
+use App\Modules\RmeInvoice\Support\RmeInvoiceLedger;
 use App\Support\Clinical\ClinicalClock;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -97,7 +98,7 @@ class RmeDashboardController extends Controller
                 ->whereIn('branch_id', $branchIds)
                 ->whereIn('status', [RmeInvoice::STATUS_UNPAID, RmeInvoice::STATUS_PARTIAL])
                 ->where('grand_total', '>', 0)
-                ->whereRaw('trx_rme_invoices.grand_total > (SELECT COALESCE(SUM(amount), 0) FROM trx_rme_payments WHERE rme_invoice_id = trx_rme_invoices.id)')
+                ->whereRaw('trx_rme_invoices.grand_total > '.RmeInvoiceLedger::netReceivedSql('trx_rme_invoices.id'))
                 ->count(),
             'payments_today_total' => (float) RmePayment::query()
                 ->whereIn('branch_id', $branchIds)
