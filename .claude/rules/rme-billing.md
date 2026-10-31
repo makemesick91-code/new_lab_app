@@ -134,7 +134,9 @@ code, then the canonical rule, and report the drift.
 - **AIR-RMB-25** Pilot proof follows the rule-196 ladder; never collapse rungs. A real case is caught, never created;
   the case-specific Owner approval must pre-exist the submit; a checker holding the Owner role does not merge the two
   controls; never act as an operator to manufacture `PILOT_LIVE`. The only full-closure tag is
-  `verification-rme-invoice-correction-prepayment-pilot-1-go`. Source: rules 196, 202.
+  `verification-rme-invoice-correction-prepayment-pilot-1-go`. Unobserved real cases (#42, #43) reconcile as
+  `PASS (RECONSTRUCTED)` but never accumulate into a GO; a probe reading GO after a case is state, not observation.
+  Source: rules 196 (§9, §10), 202.
 
 ### Billing disputes (OPS-OQ-1, all branches)
 

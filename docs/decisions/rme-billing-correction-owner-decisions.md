@@ -817,6 +817,31 @@ Sprint 2 closure verification may evaluate it.
   the Owner is asked to establish who operated each account. Account separation
   (29 ≠ 1) holds.
 
+## Production observation, 2026-10-31 — second real correction, evaluated (no decision made or changed)
+
+Read-only measurement by `VERIFICATION-RME-INVOICE-CORRECTION-PREPAYMENT-PILOT-CLOSURE-FINAL-1`
+(rule 196 §10). Evidence:
+`docs/sprints/verification-rme-invoice-correction-prepayment-pilot-closure-final-1.md`.
+
+- `RMECOR-202610-000002` — invoice #43 (SPN4), `PRE_PAYMENT`, `APPLIED`; Rp9.000.000 →
+  Rp12.000.000 (upward); submitted by user 29 at 2026-10-31 14:38:52 UTC, 25 s after the
+  invoice; approved and applied by user 1 at 14:41:11–12 UTC (D1a); payment #51 Rp12.000.000
+  at 14:41:32 UTC; runtime `a550e00d`. The run began measuring at 14:49:11 UTC.
+- Financial reconciliation: **PASS (RECONSTRUCTED)** — v0/v1 integrity hashes hold, the
+  fingerprint at request equals v0, v1 equals the proposal and the live invoice, every global
+  delta since the Sprint 5 baseline is attributed.
+- **Case-specific Owner approval: `UNVERIFIED`** — no `owner_approval_reference`, an empty
+  decision note, and a reason ("salah harga pada card rate") without a reference. The branch
+  holds no tariff row for the treatment, so "card rate" cannot be checked in the system.
+- **Human separation: `RED_FLAG_UNRESOLVED`** — maker, checker and treating-doctor sessions on
+  one network address; zero verifier SSH sessions to the VPS during the case window.
+- Warning signs recorded for the Owner (not adjudicated): visit-to-payment in 6 min 21 s,
+  correction 25 s after the invoice, 22:35 WITA on a Saturday, completion just before the
+  closure task began.
+- Activation steps 6–7 stay **NOT DONE**; Full Prepayment Pilot GO = **NO_GO**
+  (`OPERATIONAL_OR_EVIDENCE_BLOCKED`); the full tag does not exist. No approval was requested or
+  recorded retroactively.
+
 ## Ratification of PP-1 … PP-10 (2026-10-25)
 
 **Status:** `OWNER_POLICY_APPROVED` · `REPOSITORY_POLICY_RECORDED`. **Not**
