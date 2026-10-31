@@ -250,8 +250,9 @@ code, then the canonical rule, and report the drift.
   `a550e00d`, 2026-10-31; settler list EMPTY, permission held by no role, nobody can settle); Owner reference
   registry (rule 214, `61450801`); **"Selesai Tanpa Biaya"** (rule 217, Sprint 6/7, owner decisions S6-D1…S6-D8
   of 2026-11-01): a legitimate Rp0 Konsultasi / Kontrol invoice closes to the terminal status `NO_CHARGE` (never
-  PAID, no payment row) and completes its visit — flag `rme.zero_value_closure` OFF, activation a separate Owner
-  decision. **Not built:** reversal (D26 excluded), patient credit (D6 excluded). **PENDING owner decisions:** D21c
+  PAID, no payment row) and completes its visit — runtime `4520a276`, 2026-11-01, flag `rme.zero_value_closure`
+  OFF, activation a separate Owner decision; S6-Q1/S6-Q2 fail-closed narrowings await owner confirmation, S6-Q3
+  open. **Not built:** reversal (D26 excluded), patient credit (D6 excluded). **PENDING owner decisions:** D21c
   discount policy, D21g/D22 for Rp0 **issuance**, vouchers and any Rp0 correction (answered for the closure scope
   only; D28 unchanged), D24 `paid_at` backdating. The historical Rp0 UNPAID SPN4 invoice #36 stays untouched (S6-D2).
 - Open owner questions: a correction settling a PARTIAL invoice leaves no LUNAS receipt; whether a pre-payment approval

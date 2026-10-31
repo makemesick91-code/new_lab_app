@@ -6,6 +6,9 @@ alwaysApply: false
 
 # Konsultasi & Kontrol Rp0 — "Selesai Tanpa Biaya" (rule 217)
 
+**Status:** deployed 2026-11-01, runtime `4520a276` (GO tag
+`feature-rme-rp0-control-consultation-1-implementation-go`), production-verified, flag **OFF**.
+
 Sprint record: `docs/sprints/feature-rme-rp0-control-consultation-1.md`. Owner decision package and
 answers: `docs/decisions/rme-rp0-control-consultation-owner-decision-package.md`; register entry
 "S6-D1 … S6-D8" in `docs/decisions/rme-billing-correction-owner-decisions.md`. Cashier SOP (Indonesian):
