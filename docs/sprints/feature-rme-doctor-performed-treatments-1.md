@@ -158,6 +158,7 @@ Substitute evidence is §7.2 (1511-test PostgreSQL regression), not a Full Suite
 | Candidate | `3ef71b11`, tree `150679aa` |
 | PR | #581, squash-merged as **`931c716c`**, merge tree `150679aa` = candidate tree |
 | CI (exact candidate) | run `41310871424` — classifier, NSF-R012 quality, NSF-R011 critical (**7 638 passed, 42 029 assertions, 0 skipped, exit 0, expected warnings 0**; all six `RmePerformedTreatment` suites selected, races run on PostgreSQL), selective module, NSF-9, NSF-10, Android gate: all success. The second critical row is the inactive runner variant, skipped by design |
+| CI (post-merge, base push on `931c716c`) | run `41316311260` — critical gate **7 638 passed, 42 029 assertions, exit 0**; quality, selective, NSF-9, NSF-10, Android success; Full Suite step not run (`full_suite_defer_reason=TEMPORARY_FULL_SUITE_POLICY_ACTIVE`) |
 | Full Suite | classifier `required`; deferred by the global temporary policy → **`FULL_SUITE=SKIPPED_NOT_PASS`** |
 | S2-V2 window | active corrections **0** at 14:28:04 UTC immediately before the deploy and 0 after — the window was free |
 | Deploy | `bash scripts/deploy-vps-runner.sh start` **inside the VPS** → `deploy-20261101-142815`, **exit=0, `DEPLOY OK: 20261101-142817`**, `DEPLOY_HEAD_TARGET_MATCH=YES (931c716c)`, snapshot trusted and cleaned, migration `2026_11_02_100001` DONE, deploy gates GO, runtime isolation 107 GO / 0 FAIL, secret file permissions GO |
