@@ -257,8 +257,8 @@ code, then the canonical rule, and report the drift.
   valid Kontrol; flag-gated Kontrol issuance guard; batch-path #36 residual resolved for closable invoices; read-only
   oversight "Tanpa Biaya (Rp0)"; S6-D3 preserved (no creator ≠ closer) — runtime `ba33f9bb`, deployed and verified
   2026-11-01, flag still OFF; MEDIUM-1 NARROWED, not closed. **Rule 218 (owner CB-Q1/Q2/Q3, 2026-11-01):** a
-  DETECTIVE clinical vs billing cross-check is recorded with every NO_CHARGE closure and shown in oversight; it never
-  refuses; MEDIUM-1 `PARTIALLY_MITIGATED`, structured doctor input deferred to its own sprint. **Not built:** reversal (D26 excluded), patient credit (D6 excluded). **PENDING owner decisions:** D21c
+  DETECTIVE clinical vs billing cross-check is recorded with every NO_CHARGE closure and shown in oversight; a signal
+  never refuses (a fault fails closed) — runtime `1043b815`, deployed 2026-11-01, flag OFF; MEDIUM-1 `PARTIALLY_MITIGATED`, structured doctor input deferred to its own sprint. **Not built:** reversal (D26 excluded), patient credit (D6 excluded). **PENDING owner decisions:** D21c
   discount policy, D21g/D22 for Rp0 **issuance**, vouchers and any Rp0 correction (answered for the closure scope
   only; D28 unchanged), D24 `paid_at` backdating. The historical Rp0 UNPAID SPN4 invoice #36 stays untouched (S6-D2).
 - Open owner questions: a correction settling a PARTIAL invoice leaves no LUNAS receipt; whether a pre-payment approval

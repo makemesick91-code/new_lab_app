@@ -11,7 +11,8 @@
 - Enforcement: **detective only** — by owner decision, not by omission. No signal ever refuses a closure; only a
   fault in the evaluator itself does (it fails closed, rule 218 §5).
 - MEDIUM-1: **`PARTIALLY_MITIGATED`** — never `CLOSED` (rule 218 §8).
-- Deployment / production verification / GO tag: recorded in §8 by the evidence commit.
+- Deployed and production-verified 2026-11-01 (runtime `1043b815`); GO tag
+  `hardening-rme-rp0-clinical-billing-consistency-1-go` — §8. Flag still **OFF**.
 
 ## 2. Baseline (verified before any change)
 
@@ -117,4 +118,22 @@ Independent security review: **0 CRITICAL, 0 HIGH**.
 
 ## 8. Release evidence
 
-Recorded by the evidence commit after merge, deploy and production verification.
+| Fact | Value |
+|---|---|
+| Candidate | `aa7bc7b4`, tree `5d4a0855` |
+| PR | #578, squash-merged as **`1043b815`**, merge tree `5d4a0855` = candidate tree |
+| CI (exact candidate) | run `41284566776` — classifier, NSF-R012 quality, NSF-R011 critical (**7 516 passed, 41 520 assertions, exit 0**; both new suites selected), selective module, NSF-9, NSF-10, Android gate: all success. The second critical row is the inactive runner variant, skipped by design |
+| Full Suite | classifier `required`; deferred by the global temporary policy → **SKIPPED, not PASS** |
+| Deploy | `bash scripts/deploy-vps-runner.sh start` inside the VPS → `deploy-20261101-080904`, **exit=0, `DEPLOY OK: 20261101-080906`**, `DEPLOY_HEAD_TARGET_MATCH=YES`, snapshot trusted and cleaned, "Nothing to migrate", deploy gates 10/10 GO, runtime isolation 107 GO / 0 FAIL |
+| Production HEAD / tree | `1043b815` / `5d4a0855`, tracked tree clean |
+| Read-only fingerprint (session forced read-only), 08:08:35 → 08:11:01 UTC | **byte-identical before and after**: 10 invoices / Rp31 548 000 (PAID 7, PARTIAL 1, UNPAID 2), 10 payments / Rp22 548 000, NO_CHARGE 0, zero-value closure audit rows 0, `sys_audit_logs` max id 1669, #36/#42/#43 row hashes unchanged, invoice-item hash unchanged, failed_jobs 0, jobs 0 |
+| Business activity between the 05:20 audit and the deploy | one real correction applied to invoice **#44** (SPN4) at 07:41 UTC (15:41 WITA) through the live correction pilot — the reason the invoice total reads Rp31 548 000 here and Rp31 048 000 in §3. Not caused by this task; #36/#42/#43 untouched |
+| `laravel.log` | 1 443 432 bytes, last write 2026-10-29 — **zero new bytes** |
+| Domain health (`https://daengtisia.online`) | `/login`, `/health/live`, `/health/ready`, `/health/lb` 200; guest `oversight/billing-corrections/zero-value-closures` and `/rme/cashier` 302 |
+| Flags | `rme.zero_value_closure`, `rme.billing_refund_request`, `rme.billing_refund_settlement` all **false** |
+| Runtime | 825 routes, both zero-value routes present; php8.3-fpm, nginx, queue worker active; env pilot, debug OFF, maintenance OFF |
+| Deploy smoke | 6 passed, 1 warning — the known co-tenant shadow on `http://127.0.0.1/login` (404); the domain returns 200 |
+| GO tag | `hardening-rme-rp0-clinical-billing-consistency-1-go`, tag object `38b5f6df` → `1043b815`; local, GitHub and VPS (`git describe --exact-match`) agree |
+
+The GO tag means the detective cross-check is deployed and verified with the flag OFF. It does not activate
+"Selesai Tanpa Biaya", does not mean the Full Suite passed, and does not close MEDIUM-1.
