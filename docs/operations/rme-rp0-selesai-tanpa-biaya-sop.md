@@ -53,6 +53,13 @@ berbayar mungkin dilakukan:
   hilang. Ini berarti *mungkin* ada tindakan — bukan bukti bahwa tindakan dilakukan pada kunjungan ini. Pada
   Kontrol, odontogram sebelumnya biasanya milik kunjungan asal; peringatan menyebutkannya, karena tindakan itu
   mungkin sudah dilakukan dan ditagih di sana.
+- **dokter mencatat tindakan** di "Tindakan Dilakukan" (rule 219, hanya bila fitur itu aktif) dan tindakan itu
+  bukan layanan gratis yang disetujui serta tidak ada di tagihan. Ini catatan dokter sendiri — tanda paling kuat.
+  Panel "Ringkasan Klinis (Dokter)" menampilkan "Tindakan Dokter" dengan label "Belum ada di tagihan".
+
+Catatan: bila dokter menyatakan **"Tidak Ada Tindakan"**, kunjungan dicatat sebagai **Kontrol operasional**. Itu
+**bukan** izin otomatis untuk "Selesai Tanpa Biaya" — syarat Kontrol Rp0 tetap kunjungan terdaftar sebagai Kontrol
+dengan kunjungan asal yang nyata (S6-Q1), dan baris tagihan tetap layanan gratis yang disetujui (S6-Q3).
 
 Ini **peringatan, bukan penolakan** (keputusan Owner CB-Q2) — tombol tetap ada. Sebelum menekannya:
 

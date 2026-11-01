@@ -23,6 +23,10 @@ class PatientMergeOwnershipRepository implements PatientMergeOwnershipRepository
         'trx_medical_record_handwritings' => ['medical_record_id', 'trx_medical_records'],
         'trx_medical_record_handwriting_pages' => ['medical_record_id', 'trx_medical_records'],
         'trx_medical_record_diagnoses' => ['medical_record_id', 'trx_medical_records'],
+        // FEATURE-RME-DOCTOR-PERFORMED-TREATMENTS-1 (rule 219) — the doctor's structured
+        // record follows its visit; listed so merge activity detection sees it.
+        'trx_rme_performed_treatments' => ['clinic_visit_id', 'trx_clinic_visits'],
+        'trx_rme_treatment_declarations' => ['clinic_visit_id', 'trx_clinic_visits'],
     ];
 
     /** Parent columns whose moved ids every child row must have moved with. */

@@ -2,6 +2,7 @@
 
 namespace App\Modules\Odontogram\Requests;
 
+use App\Modules\Odontogram\Support\FdiToothNumbers;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
 
@@ -92,18 +93,6 @@ class UpdateOdontogramPlaceholderRequest extends FormRequest
      */
     private function validFdiNumbers(): array
     {
-        $numbers = [];
-        foreach ([1, 2, 3, 4] as $quadrant) {
-            for ($i = 1; $i <= 8; $i++) {
-                $numbers[] = (string) ($quadrant * 10 + $i);
-            }
-        }
-        foreach ([5, 6, 7, 8] as $quadrant) {
-            for ($i = 1; $i <= 5; $i++) {
-                $numbers[] = (string) ($quadrant * 10 + $i);
-            }
-        }
-
-        return $numbers;
+        return FdiToothNumbers::all();
     }
 }

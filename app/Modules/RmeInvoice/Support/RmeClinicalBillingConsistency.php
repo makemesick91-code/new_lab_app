@@ -6,6 +6,7 @@ namespace App\Modules\RmeInvoice\Support;
 
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Odontogram\Models\Odontogram;
+use App\Modules\PerformedTreatment\Support\RmePerformedTreatmentEvidence;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Services\RmeClinicalBillingConsistencyService;
 use App\Modules\Treatment\Models\Treatment;
@@ -54,6 +55,14 @@ final class RmeClinicalBillingConsistency
 {
     public const VERSION = 1;
 
+    /**
+     * FEATURE-RME-DOCTOR-PERFORMED-TREATMENTS-1 (rule 219) — the snapshot shape
+     * when the doctor's structured record was consulted (capability ON): version 1
+     * plus `doctor_evidence`. With the capability OFF the snapshot stays version 1,
+     * byte for byte (rule 218 CBC_FLAG_OFF_UNCHANGED).
+     */
+    public const VERSION_WITH_DOCTOR_EVIDENCE = 2;
+
     public const STATUS_REVIEW_REQUIRED = 'REVIEW_REQUIRED';
 
     public const STATUS_INSUFFICIENT_STRUCTURED_EVIDENCE = 'INSUFFICIENT_STRUCTURED_EVIDENCE';
@@ -76,9 +85,18 @@ final class RmeClinicalBillingConsistency
 
     public const SIGNAL_REGISTERED_TREATMENT_NOT_BILLED = 'CBC_REGISTERED_TREATMENT_NOT_BILLED';
 
+    /**
+     * Rule 219 — the treating doctor recorded a performed treatment that is not an
+     * approved free service on this visit, and no invoice line carries its identity.
+     * The strongest signal (authoritative clinical source, CB-Q1) — and still
+     * DETECTIVE: no owner decision has approved a blocking contract (CB-Q2).
+     */
+    public const SIGNAL_PERFORMED_TREATMENT_NOT_BILLED = 'CBC_PERFORMED_TREATMENT_NOT_BILLED';
+
     public const SIGNALS = [
         self::SIGNAL_ODONTOGRAM_PROCEDURE_CHANGE,
         self::SIGNAL_REGISTERED_TREATMENT_NOT_BILLED,
+        self::SIGNAL_PERFORMED_TREATMENT_NOT_BILLED,
     ];
 
     /** Tooth statuses whose appearance on a tooth suggests a procedure was performed. */
@@ -95,6 +113,7 @@ final class RmeClinicalBillingConsistency
         ?Treatment $registered,
         ?Odontogram $current,
         ?Odontogram $baseline,
+        ?RmePerformedTreatmentEvidence $doctor = null,
     ): RmeClinicalBillingConsistencyResult {
         if (RmeInvoiceDocument::toCents($invoice->grand_total) !== 0) {
             return RmeClinicalBillingConsistencyResult::notApplicable();
@@ -130,6 +149,16 @@ final class RmeClinicalBillingConsistency
             $signals[] = self::SIGNAL_ODONTOGRAM_PROCEDURE_CHANGE;
         }
 
+        // ─── Signal 3 (rule 219): the doctor's structured record ─────────────
+        // Null while the capability is OFF: nothing below runs and the snapshot
+        // keeps its version 1 shape. The other two signals stay independent — a
+        // "no treatment" declaration never silences a chart change.
+        $doctorEvidence = $doctor?->snapshot($billedTreatmentIds, $validControl);
+
+        if ($doctorEvidence !== null && $doctorEvidence['unbilled_performed_count'] > 0) {
+            $signals[] = self::SIGNAL_PERFORMED_TREATMENT_NOT_BILLED;
+        }
+
         return RmeClinicalBillingConsistencyResult::evaluated(
             $signals,
             [
@@ -146,12 +175,14 @@ final class RmeClinicalBillingConsistency
                     ? (int) $baseline->clinic_visit_id === (int) $visit->follow_up_of_visit_id
                     : null,
                 'procedure_change_tooth_count' => $changed,
+                ...($doctorEvidence !== null ? ['doctor_evidence' => $doctorEvidence] : []),
             ],
             [
                 'registered_treatment_name' => in_array(self::SIGNAL_REGISTERED_TREATMENT_NOT_BILLED, $signals, true)
                     ? (string) $registered?->name
                     : null,
             ],
+            $doctorEvidence !== null ? self::VERSION_WITH_DOCTOR_EVIDENCE : self::VERSION,
         );
     }
 
@@ -215,6 +246,7 @@ final class RmeClinicalBillingConsistency
             // Worded to claim no more than the signal proves (independent review F4/F5).
             self::SIGNAL_REGISTERED_TREATMENT_NOT_BILLED => 'Tindakan Awal bukan layanan gratis dan tidak ditagih',
             self::SIGNAL_ODONTOGRAM_PROCEDURE_CHANGE => 'Status gigi berubah sejak odontogram sebelumnya',
+            self::SIGNAL_PERFORMED_TREATMENT_NOT_BILLED => 'Tindakan yang dicatat dokter tidak ada di tagihan',
             default => $signal,
         };
     }

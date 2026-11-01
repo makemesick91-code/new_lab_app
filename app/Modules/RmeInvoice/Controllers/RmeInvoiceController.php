@@ -7,6 +7,7 @@ use App\Modules\Branch\Models\Branch;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\ClinicVisit\Services\ClinicVisitService;
 use App\Modules\Patient\Services\CrossBranchPatientLookupService;
+use App\Modules\PerformedTreatment\Services\RmePerformedTreatmentService;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Models\RmeReceivableFollowUp;
 use App\Modules\RmeInvoice\Requests\CreateRmeInvoiceRequest;
@@ -46,6 +47,7 @@ class RmeInvoiceController extends Controller
         private readonly RmeBillingDisputeService $disputes,
         private readonly RmeRefundRequestService $refunds,
         private readonly ClinicalClock $clock,
+        private readonly RmePerformedTreatmentService $performedTreatments,
     ) {}
 
     /** @return array<int, string> */
@@ -532,6 +534,9 @@ SQL;
         return view('rme.cashier.create', [
             'visit' => $clinicVisit->load($this->cashierVisitRelations()),
             'treatments' => $this->treatments->listActive(),
+            // FEATURE-RME-DOCTOR-PERFORMED-TREATMENTS-1 (rule 219) — what the doctor
+            // recorded as performed (display only; null while the capability is OFF).
+            'doctorPerformedTreatments' => $this->performedTreatments->cashierProjectionFor($clinicVisit, null),
         ]);
     }
 
@@ -565,6 +570,10 @@ SQL;
         return view('rme.cashier.show', [
             'visit' => $clinicVisit->load(array_merge($this->cashierVisitRelations(), ['followUpOf'])),
             'invoice' => $invoice,
+            // FEATURE-RME-DOCTOR-PERFORMED-TREATMENTS-1 (rule 219) — the doctor's record
+            // matched to this invoice by treatment identity (display only, never a
+            // refusal; null while the capability is OFF).
+            'doctorPerformedTreatments' => $this->performedTreatments->cashierProjectionFor($clinicVisit, $invoice),
             'labCaseCandidates' => $invoice->labCaseCandidates,
             'payableSummary' => $this->carryOver->getControlPayableSummary($rmeInvoice),
             // FEATURE-RME-INVOICE-CORRECTION-RECEIPT-FOUNDATION-1 — no query while

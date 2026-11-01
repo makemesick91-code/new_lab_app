@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Modules\ClinicOversight\Repositories;
 
 use App\Modules\ClinicOversight\Interfaces\OversightZeroValueClosureRepositoryInterface;
+use App\Modules\PerformedTreatment\Support\RmePerformedTreatmentState;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Support\RmeClinicalBillingConsistency;
 use App\Modules\RmeInvoice\Support\RmeFinancialAuditEvent;
@@ -33,6 +34,9 @@ class OversightZeroValueClosureRepository implements OversightZeroValueClosureRe
     private const CONSISTENCY_STATUS_PATH = 'za.new_values->clinical_billing_consistency->status';
 
     private const CONSISTENCY_SIGNALS_PATH = 'za.new_values->clinical_billing_consistency->signals';
+
+    /** Rule 219 — the doctor's declaration state recorded with the closure (snapshot v2 only). */
+    private const DOCTOR_STATE_PATH = 'za.new_values->clinical_billing_consistency->doctor_evidence->state';
 
     public function paginate(array $branchIds, array $filters, string $startUtc, string $endExclusiveUtc, int $perPage = 25): LengthAwarePaginator
     {
@@ -87,6 +91,11 @@ class OversightZeroValueClosureRepository implements OversightZeroValueClosureRe
                     fn ($signal) => in_array($signal, RmeClinicalBillingConsistency::SIGNALS, true),
                 )),
                 'procedure_change_tooth_count' => (int) ($snapshot['procedure_change_tooth_count'] ?? 0),
+                // Rule 219 — the doctor's structured record AT closure; null when the
+                // capability was off (snapshot v1) or the value is not in the vocabulary.
+                'doctor_state' => in_array($snapshot['doctor_evidence']['state'] ?? null, RmePerformedTreatmentState::STATES, true)
+                    ? (string) $snapshot['doctor_evidence']['state']
+                    : null,
             ];
         }
 
@@ -138,6 +147,11 @@ class OversightZeroValueClosureRepository implements OversightZeroValueClosureRe
                     ->whereJsonContains(self::CONSISTENCY_SIGNALS_PATH, RmeClinicalBillingConsistency::SIGNAL_REGISTERED_TREATMENT_NOT_BILLED))->count(),
                 'signal_odontogram' => (int) $base()->whereExists(fn ($q) => $this->closureAudit($q)
                     ->whereJsonContains(self::CONSISTENCY_SIGNALS_PATH, RmeClinicalBillingConsistency::SIGNAL_ODONTOGRAM_PROCEDURE_CHANGE))->count(),
+                // Rule 219 — doctor-recorded evidence (snapshot v2).
+                'signal_performed' => (int) $base()->whereExists(fn ($q) => $this->closureAudit($q)
+                    ->whereJsonContains(self::CONSISTENCY_SIGNALS_PATH, RmeClinicalBillingConsistency::SIGNAL_PERFORMED_TREATMENT_NOT_BILLED))->count(),
+                'doctor_no_treatment' => (int) $base()->whereExists(fn ($q) => $this->closureAudit($q)
+                    ->where(self::DOCTOR_STATE_PATH, RmePerformedTreatmentState::NO_TREATMENT_DECLARED))->count(),
             ],
             'anomalies' => [
                 // Informational, permitted by S6-D3 (no second approval): the same

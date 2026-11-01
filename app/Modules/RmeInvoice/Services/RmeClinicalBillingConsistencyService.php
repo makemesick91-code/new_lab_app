@@ -7,6 +7,7 @@ namespace App\Modules\RmeInvoice\Services;
 use App\Modules\Branch\Services\BranchService;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Odontogram\Interfaces\OdontogramRepositoryInterface;
+use App\Modules\PerformedTreatment\Services\RmePerformedTreatmentService;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Support\RmeClinicalBillingConsistency;
 use App\Modules\RmeInvoice\Support\RmeClinicalBillingConsistencyResult;
@@ -38,6 +39,7 @@ class RmeClinicalBillingConsistencyService
     public function __construct(
         private readonly OdontogramRepositoryInterface $odontograms,
         private readonly BranchService $branches,
+        private readonly RmePerformedTreatmentService $performedTreatments,
     ) {}
 
     public function evaluate(RmeInvoice $invoice, ClinicVisit $visit): RmeClinicalBillingConsistencyResult
@@ -65,6 +67,10 @@ class RmeClinicalBillingConsistencyService
         $baseline = $current === null ? null
             : $this->odontograms->latestChartedBeforeVisit($this->branches->rmeEnabledIds(), $visit);
 
-        return RmeClinicalBillingConsistency::evaluate($invoice, $visit, $registered, $current, $baseline);
+        // Rule 219 — the doctor's structured record of THIS visit; null while the
+        // capability is OFF, which keeps the evaluation exactly as before.
+        $doctor = $this->performedTreatments->evidenceFor($visit);
+
+        return RmeClinicalBillingConsistency::evaluate($invoice, $visit, $registered, $current, $baseline, $doctor);
     }
 }

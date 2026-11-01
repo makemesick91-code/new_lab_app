@@ -933,6 +933,12 @@
             'canUpdate' => $canUpdate ?? (auth()->user()?->can('update', $medicalRecord) ?? false),
         ])
 
+        {{-- FEATURE-RME-DOCTOR-PERFORMED-TREATMENTS-1 (rule 219) — "Tindakan
+             Dilakukan", after the diagnosis. Absent while the capability is OFF. --}}
+        @if (($performedTreatments ?? null) !== null)
+            @include('rme.visits.medical-record.partials.performed-treatments')
+        @endif
+
         {{-- FIX-PRE-68-45 Scope A — relocated "Buku RM Pasien" sheet navigation
              (Sprint 64.0). Moved below the handwriting canvas so the doctor sees
              the handwritten RME first; sheet switching still works as before. --}}

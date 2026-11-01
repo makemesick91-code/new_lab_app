@@ -111,6 +111,9 @@
             <div><dt class="text-xs text-ink-soft">Belum dievaluasi</dt><dd class="text-lg font-semibold text-ink" data-zv-cbc-not-evaluated>{{ $summary['consistency']['not_evaluated'] }}</dd></div>
             <div><dt class="text-xs text-ink-soft">Tindakan Awal berbayar tidak ditagih</dt><dd class="text-lg font-semibold text-ink" data-zv-cbc-signal-registered>{{ $summary['consistency']['signal_registered'] }}</dd></div>
             <div><dt class="text-xs text-ink-soft">Odontogram: tindakan baru</dt><dd class="text-lg font-semibold text-ink" data-zv-cbc-signal-odontogram>{{ $summary['consistency']['signal_odontogram'] }}</dd></div>
+            {{-- Rule 219 — the treating doctor's structured record, as recorded at closure. --}}
+            <div><dt class="text-xs text-ink-soft">Tindakan dokter tidak ditagih</dt><dd class="text-lg font-semibold {{ $summary['consistency']['signal_performed'] > 0 ? 'text-warning-700' : 'text-ink' }}" data-zv-cbc-signal-performed>{{ $summary['consistency']['signal_performed'] }}</dd></div>
+            <div><dt class="text-xs text-ink-soft">Dokter: tidak ada tindakan (Kontrol operasional)</dt><dd class="text-lg font-semibold text-ink" data-zv-dpt-no-treatment>{{ $summary['consistency']['doctor_no_treatment'] }}</dd></div>
         </dl>
         <p class="mt-2 text-xs text-ink-soft">
             Pemeriksaan ini bersifat <strong>detektif</strong> (keputusan Owner CB-Q2): sinyal tidak pernah menolak penutupan.
@@ -220,6 +223,9 @@
                             @foreach ($row->consistency['signals'] as $signal)
                                 <span class="block text-xs text-ink-soft" data-zv-cbc-signal="{{ $signal }}">{{ RmeClinicalBillingConsistency::signalLabel($signal) }}</span>
                             @endforeach
+                            @if ($row->consistency['doctor_state'] !== null)
+                                <span class="block text-xs text-ink-soft" data-zv-dpt-state="{{ $row->consistency['doctor_state'] }}">{{ \App\Modules\PerformedTreatment\Support\RmePerformedTreatmentState::label($row->consistency['doctor_state']) }}</span>
+                            @endif
                         </td>
                     </tr>
                 @empty

@@ -254,6 +254,8 @@ use App\Modules\PaymentMethod\Interfaces\PaymentMethodRepositoryInterface;
 use App\Modules\PaymentMethod\Models\PaymentMethod;
 use App\Modules\PaymentMethod\Policies\PaymentMethodPolicy;
 use App\Modules\PaymentMethod\Repositories\PaymentMethodRepository;
+use App\Modules\PerformedTreatment\Interfaces\RmePerformedTreatmentRepositoryInterface;
+use App\Modules\PerformedTreatment\Repositories\RmePerformedTreatmentRepository;
 use App\Modules\Prescription\Interfaces\RmePrescriptionRepositoryInterface;
 use App\Modules\Prescription\Models\RmePrescription;
 use App\Modules\Prescription\Policies\RmePrescriptionPolicy;
@@ -462,6 +464,8 @@ class RepositoryServiceProvider extends ServiceProvider
         ClinicalDiagnosisRepositoryInterface::class => ClinicalDiagnosisRepository::class,
         // Sprint 20 Phase 1.3.1
         OdontogramRepositoryInterface::class => OdontogramRepository::class,
+        // FEATURE-RME-DOCTOR-PERFORMED-TREATMENTS-1 (rule 219)
+        RmePerformedTreatmentRepositoryInterface::class => RmePerformedTreatmentRepository::class,
         RmePrescriptionRepositoryInterface::class => RmePrescriptionRepository::class,
         // FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-01 — signed consent as the payment gate
         RmeVisitConsentRepositoryInterface::class => RmeVisitConsentRepository::class,

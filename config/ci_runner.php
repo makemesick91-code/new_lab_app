@@ -448,6 +448,18 @@ return [
         // per closure, no free text; same `RmeZeroValueClosure` token.
         'tests/Feature/RmeZeroValueClosure/RmeZeroValueClosureClinicalConsistencyTest.php',
         'tests/Feature/RmeZeroValueClosure/RmeZeroValueClosureClinicalConsistencyOversightTest.php',
+        // FEATURE-RME-DOCTOR-PERFORMED-TREATMENTS-1 (rule 219) — the treating
+        // doctor's structured "Tindakan Dilakukan" record: treating-doctor-only,
+        // consent + in_progress under the visit row lock, empty != "Tidak Ada
+        // Tindakan", operational KONTROL != NO_CHARGE, append-only voids, rule 218
+        // detective signal, flag OFF unchanged, PostgreSQL races A-M. Selected by
+        // the `RmePerformedTreatment` token in BOTH critical-gate variants.
+        'tests/Feature/RmePerformedTreatment/RmePerformedTreatmentRecordingTest.php',
+        'tests/Feature/RmePerformedTreatment/RmePerformedTreatmentControlClassificationTest.php',
+        'tests/Feature/RmePerformedTreatment/RmePerformedTreatmentBillingConsistencyTest.php',
+        'tests/Feature/RmePerformedTreatment/RmePerformedTreatmentSecurityTest.php',
+        'tests/Feature/RmePerformedTreatment/RmePerformedTreatmentRegressionTest.php',
+        'tests/Feature/RmePerformedTreatment/RmePerformedTreatmentConcurrencyTest.php',
         // ACTIVATION-RME-INVOICE-CORRECTION-PREPAYMENT-2 (rule 195) — owner D1a
         // (approve applies, atomically), maker != checker != applier per account,
         // the fail-closed SPN4 pilot allowlist, the D1/D1b RoleSeeder grants, the

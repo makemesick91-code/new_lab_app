@@ -576,6 +576,18 @@ $registry = [
             'dependencies' => [],
             'rollback_action' => 'Set the environment override to false and rebuild the config cache as the runtime user. Nothing is reverted: NO_CHARGE invoices stay NO_CHARGE, their visits stay completed, and their audit rows remain. Never set a NO_CHARGE invoice back to UNPAID by hand and never record a payment to stand in for a closure.',
         ],
+        'rme.doctor_performed_treatments' => [
+            'name' => 'RME Doctor Performed Treatments (Tindakan Dilakukan)',
+            'description' => 'MUTATION capability (FEATURE-RME-DOCTOR-PERFORMED-TREATMENTS-1, rule 219; owner decisions CB-Q1 and DPT-Q1 revised and approved) giving the TREATING doctor a structured "Tindakan Dilakukan" record on the RME page: either the procedures actually performed at the visit (stable treatment identity, quantity, FDI teeth; append-only, a mistake is voided with a reason) or an explicit "Tidak Ada Tindakan" declaration, which classifies the visit as OPERATIONAL KONTROL. An empty list is NOT_RECORDED, never Kontrol. Authoring needs the examination authority, the treating linked active doctor of the visit, the room gate, the consented in_progress encounter and the visit row lock; after "Selesai Pemeriksaan" it is read-only. The declaration never rewrites visit_type, never creates a parent visit, never makes anything free (Rp0 eligibility stays rule 217), never completes the examination and never creates an invoice, price, payment, lab work or SATUSEHAT resource. With this flag ON the record also feeds the rule 218 clinical vs billing cross-check (new detective signal CBC_PERFORMED_TREATMENT_NOT_BILLED, snapshot version 2) and the cashier projection; no blocking contract is active. While this flag is off every write route answers 404, every service call is refused, the RME and cashier pages render exactly as before, and the rule 218 snapshot keeps its version 1 shape.',
+            'default' => false,
+            'env_key' => 'FEATURE_RME_DOCTOR_PERFORMED_TREATMENTS',
+            'owner' => 'rme',
+            'risk_level' => 'high',
+            'rollout_status' => 'implemented',
+            'review_target' => 'ACTIVATION-RME-DOCTOR-PERFORMED-TREATMENTS-1',
+            'dependencies' => [],
+            'rollback_action' => 'Set the environment override to false and rebuild the config cache as the runtime user. Nothing is deleted: recorded rows and declarations stay as clinical evidence (read-only, never consulted while off), and the rule 218 cross-check returns to its version 1 snapshot.',
+        ],
     ],
 ];
 

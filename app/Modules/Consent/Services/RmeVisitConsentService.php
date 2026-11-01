@@ -7,6 +7,7 @@ use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\ClinicVisit\Services\ActiveEncounterResolver;
 use App\Modules\Consent\Interfaces\RmeVisitConsentRepositoryInterface;
 use App\Modules\Consent\Models\RmeVisitConsent;
+use App\Modules\PerformedTreatment\Support\RmePerformedTreatmentRefusal;
 use App\Modules\Prescription\Services\PrescriptionCanvasDecoder;
 use App\Modules\RME\Services\DoctorPatientScopeService;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
@@ -345,6 +346,57 @@ class RmeVisitConsentService
         }
 
         return true;
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Performed-treatment authoring authority (rule 219)
+    |--------------------------------------------------------------------------
+    */
+
+    /**
+     * FEATURE-RME-DOCTOR-PERFORMED-TREATMENTS-1 (rule 219) — the doctor's
+     * structured record of what was PERFORMED ("Tindakan Dilakukan") states the
+     * treatment itself, so it takes the FULL RME authority — including the signed
+     * consent — and, because a row belongs to ONE visit like an odontogram, the
+     * exact chart-identity condition too:
+     *
+     *   1. the patient HAS a single current `in_progress` encounter;
+     *   2. the actor may work on that encounter (branch + clinical scope);
+     *   3. the visit being written IS that encounter (else it is history);
+     *   4. a valid signed consent exists for THAT encounter.
+     *
+     * Anything else fails closed. The treating-doctor identity and the visit row
+     * lock are asserted by RmePerformedTreatmentService on top of this. Reads are
+     * never gated here.
+     */
+    public function assertPerformedTreatmentAuthoringAllowed(?ClinicVisit $visit, ?User $actor = null): ClinicVisit
+    {
+        if ($visit === null) {
+            throw RmePerformedTreatmentRefusal::exception(RmePerformedTreatmentRefusal::ENCOUNTER_NOT_ACTIVE);
+        }
+
+        $encounter = app(ActiveEncounterResolver::class)->currentFor($visit->patient_id);
+
+        if ($encounter === null) {
+            throw RmePerformedTreatmentRefusal::exception(RmePerformedTreatmentRefusal::ENCOUNTER_NOT_ACTIVE);
+        }
+
+        $actor ??= Auth::user();
+
+        if (! $actor instanceof User || ! $this->actorMayWorkOnEncounter($actor, $encounter)) {
+            throw RmePerformedTreatmentRefusal::exception(RmePerformedTreatmentRefusal::ACTOR_NOT_AUTHORIZED);
+        }
+
+        if ((int) $encounter->id !== (int) $visit->id) {
+            throw RmePerformedTreatmentRefusal::exception(RmePerformedTreatmentRefusal::ENCOUNTER_NOT_ACTIVE);
+        }
+
+        if (! $this->hasValidConsent($encounter)) {
+            throw RmePerformedTreatmentRefusal::exception(RmePerformedTreatmentRefusal::CONSENT_REQUIRED);
+        }
+
+        return $encounter;
     }
 
     /**

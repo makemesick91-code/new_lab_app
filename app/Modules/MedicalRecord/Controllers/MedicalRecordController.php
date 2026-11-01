@@ -23,6 +23,7 @@ use App\Modules\MedicalRecord\Services\UnifiedMedicalRecordIndexService;
 use App\Modules\MedicalRecord\Support\UnifiedMedicalRecordSource;
 use App\Modules\Patient\Interfaces\PatientRepositoryInterface;
 use App\Modules\Patient\Services\CrossBranchPatientLookupService;
+use App\Modules\PerformedTreatment\Services\RmePerformedTreatmentService;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -421,6 +422,12 @@ class MedicalRecordController extends Controller
             // SATUSEHAT-4B — branch-scoped rollout state for the active sheet
             // (drives the informational/warning/pilot banner + override form).
             'diagnosisEnforcement' => $this->diagnosisRollout->enforcementStateFor($activeSheet),
+            // FEATURE-RME-DOCTOR-PERFORMED-TREATMENTS-1 (rule 219) — the treating
+            // doctor's "Tindakan Dilakukan" record of the ACTIVE SHEET's visit; null
+            // while the capability is OFF, so the page renders exactly as before.
+            // Authoring controls mirror the service authority (never a permission).
+            'performedTreatments' => app(RmePerformedTreatmentService::class)
+                ->workspaceFor($activeVisit, $request->user()),
             // LEGACY-RME-PDF-HISTORY-1 — native RME history + published legacy
             // archive as one read-only patient-centric history.
             'clinicalHistory' => $clinicalHistory,

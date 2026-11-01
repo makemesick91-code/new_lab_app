@@ -5,6 +5,7 @@ paths:
   - "app/Modules/Odontogram/**"
   - "app/Modules/Consent/**"
   - "app/Modules/Prescription/**"
+  - "app/Modules/PerformedTreatment/**"
   - "app/Modules/RME/**"
   - "app/Modules/RmeDashboard/**"
   - "app/Modules/Treatment/**"
@@ -12,6 +13,7 @@ paths:
   - "resources/views/rme/**"
   - "tests/Feature/RME/**"
   - "tests/Feature/Clinical/**"
+  - "tests/Feature/RmePerformedTreatment/**"
 ---
 
 # RME clinical workflow — domain rules
@@ -204,6 +206,13 @@ editable) → Persetujuan Tindakan Medis (RME + finish unlocked) → RME + Odont
   and "Saya sendiri" copies the patient's `mst_patients` identity, which typed input cannot override. Source:
   `.cursor/rules/100-rme-consent-payment-gate-print-ownership.mdc` §3; `RmeVisitConsentService`.
 
+- **AIR-RMC-36** Record performed treatments only through `RmePerformedTreatmentService` (rule 219): the treating
+  doctor of the visit (linked active `mst_doctors` = `visit.doctor_id`), `in_progress`, signed consent, visit row
+  locked first, append-only rows voided with a reason. An empty list is `NOT_RECORDED`; only an explicit
+  "Tidak Ada Tindakan" is operational KONTROL, which never rewrites `visit_type`, never creates a parent visit and
+  never makes anything free (rule 217 decides Rp0). The record never transitions the visit. Flag
+  `rme.doctor_performed_treatments` OFF.
+
 ## Current posture (snapshot 2026-10-25 — verify before relying on it)
 
 - Live in production: pre-consent odontogram charting, consent-gated RME authoring and "Selesai Pemeriksaan",
@@ -238,6 +247,7 @@ editable) → Persetujuan Tindakan Medis (RME + finish unlocked) → RME + Odont
 | `.cursor/rules/185-rme-visit-detail-invoice-registration-ux.mdc` | Visit detail order, invoice document, server-derived visit type |
 | `.cursor/rules/199-rme-clinic-visit-branch-authority.mdc` | Explicit-actor clinic visit service, aggregates, fail-closed reads |
 | `.cursor/rules/200-rme-active-user-patient-selection-cross-branch-control.mdc` | Active accounts, registration guard, edit allow-list, OD-1 |
+| `.cursor/rules/219-rme-doctor-performed-treatments.mdc` | Doctor "Tindakan Dilakukan": structured record, "Tidak Ada Tindakan" = operational KONTROL ≠ NO_CHARGE, detective |
 
 ## History
 
