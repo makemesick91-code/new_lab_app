@@ -110,6 +110,7 @@ use App\Modules\PatientMerge\Controllers\PatientMergeHistoryController;
 use App\Modules\PatientMerge\Controllers\PatientMergeOverviewController;
 use App\Modules\PatientMerge\Controllers\PatientMergeReviewController;
 use App\Modules\PaymentMethod\Controllers\PaymentMethodController;
+use App\Modules\PerformedTreatment\Controllers\RmePerformedTreatmentController;
 use App\Modules\Prescription\Controllers\RmePrescriptionCanvasController;
 use App\Modules\Prescription\Controllers\RmePrescriptionController;
 use App\Modules\Production\Controllers\AssignmentController as ProductionAssignmentController;
@@ -1251,6 +1252,22 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
             Route::middleware('permission:override_diagnosis_requirement')
                 ->post('visits/{clinicVisit}/medical-record/{medicalRecord}/diagnosis-override', [DiagnosisRolloutController::class, 'override'])
                 ->name('visits.medical-record.diagnosis-override');
+        });
+
+        // FEATURE-RME-DOCTOR-PERFORMED-TREATMENTS-1 (rule 219; owner CB-Q1, DPT-Q1) —
+        // the treating doctor's structured "Tindakan Dilakukan" record. Gated on the
+        // examination authority (never Admin Klinik or Kasir) and the room gate; the
+        // FormRequests answer 404 while `rme.doctor_performed_treatments` is OFF, and
+        // the service binds the TREATING doctor, the consented live encounter and the
+        // visit row lock. No GET route: the section renders on the RME page.
+        Route::middleware(['permission:complete_rme_examination', 'visit.room'])->group(function () {
+            Route::post('visits/{clinicVisit}/performed-treatments/declaration', [RmePerformedTreatmentController::class, 'declare'])
+                ->name('visits.performed-treatments.declaration');
+            Route::post('visits/{clinicVisit}/performed-treatments', [RmePerformedTreatmentController::class, 'store'])
+                ->name('visits.performed-treatments.store');
+            Route::post('visits/{clinicVisit}/performed-treatments/{performedTreatment}/void', [RmePerformedTreatmentController::class, 'void'])
+                ->whereNumber('performedTreatment')
+                ->name('visits.performed-treatments.void');
         });
 
         // SATUSEHAT-4A — bounded ACTIVE-only master diagnosis autocomplete for

@@ -53,6 +53,11 @@ and `Treatment`/`RmeInvoiceItem` runs only through framework base classes.
 source to confirm either. They belong to the CB-Q1 sprint, together with the decision on what a confirmed
 discrepancy does to NO_CHARGE.
 
+**Since rule 219 (FEATURE-RME-DOCTOR-PERFORMED-TREATMENTS-1):** the CB-Q1 source exists (the doctor's structured
+"Tindakan Dilakukan" record, flag `rme.doctor_performed_treatments`, OFF), but it is optional and its blocking
+contract is DPT-Q2 (pending). So both statuses are STILL never produced — even with the doctor record on, a
+"Tidak Ada Tindakan" declaration does not make the answer `CONSISTENT`.
+
 ## 4. Signals (deterministic; structured server rows only)
 
 - `CBC_REGISTERED_TREATMENT_NOT_BILLED` — the visit's registered treatment is NOT an approved free service,
@@ -72,6 +77,13 @@ discrepancy does to NO_CHARGE.
   cashier may see a count derived from another branch's chart (independent review F3) — through
   `OdontogramRepositoryInterface::latestChartedBeforeVisit()` — never ad hoc SQL from the billing module. An empty
   branch set fails closed.
+- `CBC_PERFORMED_TREATMENT_NOT_BILLED` (rule 219) — only when `rme.doctor_performed_treatments` is ON: an ACTIVE
+  (not voided) treatment in the treating doctor's structured record is not an approved free service (the SAME
+  per-line predicate at Rp0) and no invoice line carries its treatment id. The evidence comes from
+  `RmePerformedTreatmentService::evidenceFor()` — never ad hoc SQL — and the snapshot becomes **version 2** with a
+  `doctor_evidence` block (state, operational category, declaration version, performed/unbilled counts and ids).
+  With that flag OFF the evaluator receives `null`: version 1, byte for byte. A "Tidak Ada Tindakan" declaration
+  never silences the other two signals.
 - Free text — RME notes, odontogram notes, descriptions — is never read, matched or copied.
 
 ## 5. Where it runs (never a second ledger, never a write of its own)
@@ -121,13 +133,14 @@ narrow that — changing what a cashier may see of the clinical record is a prod
 - Tindakan Awal is often legitimately different from what was done (production 6/10), so its signal is noisy.
 - The baseline search is bounded; its edge cases can only MISS a signal, never raise a false one (security
   review F7, accepted). The detail is kept in the private security record, not in this public repository.
-- Detective only: nothing prevents the closure. Closing this needs the CB-Q1 structured doctor input and a new
-  owner decision on the blocking contract.
+- Detective only: nothing prevents the closure. The CB-Q1 structured doctor input now exists (rule 219) but is
+  OFF, optional at completion (DPT-Q3) and detective; preventing the closure needs the blocking contract (DPT-Q2).
+  MEDIUM-1 therefore stays `PARTIALLY_MITIGATED`.
 - **No remediation path exists in the app (pre-existing, recorded 2026-11-01).** When a warning is right — a paid
   procedure was performed but the visit's invoice was already issued at Rp0 — there is no way to bill it: a
   Rp0-original invoice is never corrected (D28, rule 201), an RME invoice has no void, and a visit has one active
   invoice. The SOP therefore says: do not close, escalate as an incident; the visit waits for an owner decision
-  (D21g/D28). This is an input to the CB-Q1 sprint, not something this rule may decide.
+  (D21g/D28). Carried as DPT-Q7 (pending) in `docs/decisions/rme-doctor-performed-treatments-owner-decision-package.md`.
 
 ## 9. Flag, deployment, rollback
 

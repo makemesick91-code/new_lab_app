@@ -42,6 +42,15 @@ interface ClinicVisitRepositoryInterface
 
     public function findInBranch(int $branchId, int $id): ?ClinicVisit;
 
+    /**
+     * FEATURE-RME-DOCTOR-PERFORMED-TREATMENTS-1 (rule 219) — the visit row,
+     * re-read under a row lock (SELECT … FOR UPDATE) inside the caller's
+     * transaction. The serialization point of every clinical write that must
+     * observe the committed examination status (a status UPDATE takes the same
+     * row lock). Not branch-filtered: the caller authorized the visit first.
+     */
+    public function lockForUpdate(int $id): ?ClinicVisit;
+
     public function nextQueueNumber(int $branchId, Carbon $visitDate): int;
 
     public function countTodayByBranch(int $branchId, string $date): int;

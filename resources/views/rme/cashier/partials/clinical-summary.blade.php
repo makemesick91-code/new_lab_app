@@ -171,4 +171,48 @@
             @endif
         </div>
     @endif
+
+    {{-- FEATURE-RME-DOCTOR-PERFORMED-TREATMENTS-1 (rule 219) — what the TREATING
+         doctor recorded as performed, matched to the bill by treatment identity.
+         Display only: never a refusal, never a price (D21). A tooth COUNT, never a
+         tooth number or a note. Absent while the capability is OFF. --}}
+    @if (($doctorPerformedTreatments ?? null) !== null)
+        @php $dpt = $doctorPerformedTreatments; @endphp
+        <div class="mt-4 border-t border-hairline pt-4" data-dpt-cashier-projection data-dpt-state="{{ $dpt['state'] }}">
+            <div class="mb-2 flex flex-wrap items-center gap-2">
+                <h4 class="text-sm font-semibold text-gray-900">Tindakan Dokter</h4>
+                <x-ui.badge :tone="$dpt['state'] === 'NOT_RECORDED' ? 'neutral' : 'success'">{{ $dpt['state_label'] }}</x-ui.badge>
+                @if ($dpt['operational_category'] !== null)
+                    <x-ui.badge tone="info">{{ $dpt['operational_category_label'] }}</x-ui.badge>
+                @endif
+            </div>
+            @if (count($dpt['rows']) > 0)
+                <ul class="space-y-1 text-sm">
+                    @foreach ($dpt['rows'] as $dptRow)
+                        <li class="flex flex-wrap items-center gap-2">
+                            <span class="font-mono text-xs text-gray-500">{{ $dptRow['code'] }}</span>
+                            <span class="text-gray-900">{{ $dptRow['name'] }}</span>
+                            <span class="text-gray-500">× {{ $dptRow['quantity'] }}@if ($dptRow['tooth_count'] > 0) · {{ $dptRow['tooth_count'] }} gigi @endif</span>
+                            @if ($dptRow['billed'] === true)
+                                <x-ui.badge tone="success">Ada di tagihan</x-ui.badge>
+                            @elseif ($dptRow['unbilled'])
+                                <x-ui.badge tone="warning" data-dpt-unbilled>Belum ada di tagihan</x-ui.badge>
+                            @endif
+                        </li>
+                    @endforeach
+                </ul>
+            @elseif ($dpt['state'] === 'NO_TREATMENT_DECLARED')
+                <p class="text-sm text-gray-600">Dokter menyatakan tidak ada tindakan medis (kategori operasional KONTROL). Kategori ini tidak otomatis membuat kunjungan gratis.</p>
+            @else
+                <p class="text-sm italic text-gray-500">Dokter belum mencatat tindakan yang dilakukan.</p>
+            @endif
+            @if ($dpt['unbilled_count'] > 0)
+                <p class="mt-2 text-sm text-warning-700" data-dpt-unbilled-notice>
+                    Ada tindakan yang dicatat dokter tetapi belum ada di tagihan. Konfirmasikan dengan dokter sebelum
+                    menyelesaikan tagihan. Jika tagihan asli Rp0 dan tindakan berbayar memang dilakukan, jangan tutup
+                    "Selesai Tanpa Biaya" — eskalasikan sebagai insiden.
+                </p>
+            @endif
+        </div>
+    @endif
 </x-ui.card>

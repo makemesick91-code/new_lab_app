@@ -102,11 +102,12 @@ sprint (termasuk arsip `CLAUDE.md`), bagian yang lebih baru dan **secara eksplis
 | [0013](adr/0013-rme-refund-request-approval.md) | Pengajuan & persetujuan refund RME (Sprint 4/7; dibangun, flag OFF — rule 215) |
 | [0014](adr/0014-rme-zero-value-closure.md) | "Selesai Tanpa Biaya": status terminal NO_CHARGE, bukan pembayaran (Sprint 6/7; flag OFF — rule 217) |
 | [0015](adr/0015-rme-clinical-billing-consistency.md) | Cek konsistensi klinis vs tagihan Rp0: detektif, karena belum ada catatan tindakan terstruktur (rule 218) |
+| [0016](adr/0016-rme-doctor-performed-treatments.md) | Tindakan Dilakukan dokter terstruktur; "Tidak Ada Tindakan" = Kontrol operasional, bukan NO_CHARGE (rule 219) |
 
 Register keputusan owner (bukan format ADR):
 [rme-billing-correction-owner-decisions](decisions/rme-billing-correction-owner-decisions.md),
 [rme-postpayment-correction-owner-decision-proposals](decisions/rme-postpayment-correction-owner-decision-proposals.md).
-Nomor ADR berikutnya yang tersedia: **0016**.
+Nomor ADR berikutnya yang tersedia: **0017**.
 
 ### Spesifikasi fitur dan catatan sprint
 

@@ -693,6 +693,36 @@ not activated; invoices #36, #42, #43 untouched; `rme.zero_value_closure` OFF.
 Pemeriksaan"; whether a CONFIRMED discrepancy refuses NO_CHARGE or requires a written reason; who may resolve it;
 edit rules after completion; whether SATUSEHAT Procedure moves from the invoice line to the clinical input.
 
+### DPT-Q1 — "Tidak Ada Tindakan" is operational KONTROL — `OWNER_POLICY_REVISED_AND_APPROVED`, `REPOSITORY_POLICY_RECORDED`, `TECHNICAL_ENFORCEMENT_IMPLEMENTED_FLAG_OFF` (2026-11-01)
+
+**Provenance.** Stated as an owner decision in the execution brief of `FEATURE-RME-DOCTOR-PERFORMED-TREATMENTS-1`
+(2026-11-01), which builds the CB-Q1 input under CB-Q3. The brief records it as revised and approved; no signed
+artefact exists and none is claimed. Implementation: rule 219, ADR 0016.
+
+| Code | Status | Owner answer (normalised) |
+|---|---|---|
+| DPT-Q1 | `OWNER_POLICY_REVISED_AND_APPROVED` | On the RME page the treating doctor either records the treatments performed ("Ada Tindakan") or explicitly declares that none was performed ("Tidak Ada Tindakan"). An explicit "Tidak Ada Tindakan" classifies the visit as **operational KONTROL**. An empty list is **not** a declaration: it is `NOT_RECORDED`. |
+
+**Boundaries of DPT-Q1 (normative, rule 219 §2–§3):**
+
+- `EMPTY_TREATMENT_LIST != NO_TREATMENT_DECLARATION`; historical visits stay `NOT_RECORDED` — no backfill.
+- Operational KONTROL is a classification for operations and reporting. It never rewrites
+  `trx_clinic_visits.visit_type`, never creates or infers a parent visit, and **never** makes a visit free:
+  `OPERATIONAL_CONTROL != AUTOMATIC_NO_CHARGE`. A Kontrol `NO_CHARGE` still needs S6-Q1 (registered Kontrol with a
+  real examined parent of the same patient) and S6-Q3 (approved free lines).
+- The record is clinical evidence only: no price, no amount, no payment, no receivable effect (D21 manual pricing
+  and D28 unchanged).
+- It feeds rule 218 as a **detective** input (signal `CBC_PERFORMED_TREATMENT_NOT_BILLED`). CB-Q2 is unchanged:
+  no signal refuses a closure; `CONSISTENT` and `CONFIRMED_DISCREPANCY` are still never answered.
+
+**Consequences.** MEDIUM-1 stays **`PARTIALLY_MITIGATED`**: the authoritative source of CB-Q1 now exists, but it is
+behind a flag that is OFF, it is optional at examination completion, and it is detective.
+
+**The CB-Q1 open items are not decided by DPT-Q1.** They are carried as DPT-Q2 … DPT-Q10 in
+`docs/decisions/rme-doctor-performed-treatments-owner-decision-package.md` (blocking contract, mandatory declaration
+at completion, post-completion amendment, picker scope, reporting, D28 recovery, activation, covering doctor,
+SATUSEHAT Procedure source). All are `PENDING_OWNER_DECISION`.
+
 ## Pending decisions (unchanged)
 
 D2, D3, D4, D5, D6, D8, D9, D11, D12, D13, D14, D15, D16, D17, D18, D20, D22, D23,

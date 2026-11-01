@@ -205,3 +205,17 @@ Sprint record: `docs/sprints/hardening-rme-rp0-closure-owner-decisions-and-paid-
    and close them "Selesai Tanpa Biaya" first. Never complete such a visit by SQL.
 9. **Correction path.** A pre-payment correction cannot add a Rp0 line, and a corrected invoice is refused by
    the closure (`INVOICE_CORRECTED`), so corrections never reach `NO_CHARGE`.
+
+## 10. Doctor declaration "Tidak Ada Tindakan" (rule 219, DPT-Q1) — operational KONTROL is NOT NO_CHARGE
+
+Since `FEATURE-RME-DOCTOR-PERFORMED-TREATMENTS-1` the treating doctor can declare "Tidak Ada Tindakan"; that
+classifies the visit as **operational KONTROL** (`RmeOperationalVisitCategory::CONTROL`). It changes nothing in
+this rule:
+
+- `OPERATIONAL_CONTROL != AUTOMATIC_NO_CHARGE`. `RmeZeroValueEligibility` never reads the doctor record; a
+  Kontrol `NO_CHARGE` still needs a registered `visit_type = control` with a REAL examined parent of the same
+  patient (S6-Q1) and approved free lines (S6-Q3).
+- The declaration never rewrites `visit_type`, never creates or infers a parent visit, never zeroes an invoice.
+- A parentless visit declared "Tidak Ada Tindakan" can only close Rp0 as a Konsultasi on its own merits.
+- An empty treatment list is `NOT_RECORDED`, never a declaration.
+- The doctor record reaches closures only as rule 218 evidence (detective, snapshot v2).

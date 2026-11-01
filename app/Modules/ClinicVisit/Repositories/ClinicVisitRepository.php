@@ -131,6 +131,11 @@ class ClinicVisitRepository implements ClinicVisitRepositoryInterface
         return ClinicVisit::query()->where('branch_id', $branchId)->find($id);
     }
 
+    public function lockForUpdate(int $id): ?ClinicVisit
+    {
+        return ClinicVisit::query()->whereKey($id)->lockForUpdate()->first();
+    }
+
     public function nextQueueNumber(int $branchId, Carbon $visitDate): int
     {
         $lastQueueNumber = ClinicVisit::query()

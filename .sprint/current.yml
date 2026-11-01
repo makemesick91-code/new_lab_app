@@ -1,21 +1,21 @@
-# HARDENING-RME-RP0-CLINICAL-BILLING-CONSISTENCY-1 — rule 218, follow-up of rule 217 §8 (security finding MEDIUM-1).
-# Clinical source audit: DaengtisiaMS holds no structured record of a PERFORMED treatment (RME = handwriting,
-# odontogram = tooth-condition chart, 0 structured diagnoses in production, Tindakan Awal absent from 6/10 legit bills).
-# Owner decisions of 2026-11-01 (in-session): CB-Q1 structured doctor input is the authoritative evidence; CB-Q2 every
-# signal is DETECTIVE ONLY (never refuses); CB-Q3 the doctor input is a separate sprint. So this sprint adds a pure
-# clinical vs billing cross-check, snapshotted into the existing closure audit row, a non-blocking cashier notice and
-# read-only oversight counts/filters. It never answers CONSISTENT or CONFIRMED_DISCREPANCY. MEDIUM-1 = PARTIALLY_MITIGATED.
-# No migration, no new permission, no route, no new flag. Flag rme.zero_value_closure stays OFF.
-# Type FOUNDATION_SPRINT: the change spans RmeInvoice (closure, panel), Odontogram (one repository read) and the
-# ClinicOversight read area, so the stricter cross-module profile applies.
+# FEATURE-RME-DOCTOR-PERFORMED-TREATMENTS-1 — rule 219, implements owner decisions CB-Q1 (structured doctor input is the
+# authoritative evidence of a performed treatment) and CB-Q3 (separate sprint), plus DPT-Q1 (REVISED AND APPROVED):
+# an EXPLICIT "Tidak Ada Tindakan" declaration makes the visit OPERATIONAL KONTROL; an empty list is NOT_RECORDED.
+# Operational Kontrol never rewrites visit_type, never creates a parent visit and never makes anything free — rule 217
+# still decides Rp0 (S6-Q1/S6-Q3). The record feeds rule 218 as a DETECTIVE input (new signal
+# CBC_PERFORMED_TREATMENT_NOT_BILLED, snapshot v2); CB-Q2 stays in force, no blocking contract is approved.
+# Two additive tables (one migration), no new permission, no seeder, new flag rme.doctor_performed_treatments OFF.
+# Type FOUNDATION_SPRINT: spans PerformedTreatment (new), Consent (authoring authority), ClinicVisit (policy, row lock),
+# RmeInvoice (rule 218, cashier panel), ClinicOversight (read-only counts) and PatientMerge (activity registry).
+# MEDIUM-1 (rule 218 §8) stays PARTIALLY_MITIGATED: the authoritative source exists but is OFF, optional and detective.
 # Carried forward: LEGACY-RME-PROGRAM-CLOSURE-1 stays CLOSED and inherited.
-id: HARDENING-RME-RP0-CLINICAL-BILLING-CONSISTENCY-1
+id: FEATURE-RME-DOCTOR-PERFORMED-TREATMENTS-1
 type: FOUNDATION_SPRINT
-module: RmeInvoice
-title: "Hardening Rp0: cek konsistensi klinis vs tagihan (detektif, keputusan Owner CB-Q1/Q2/Q3)"
+module: PerformedTreatment
+title: "Tindakan Dilakukan dokter (terstruktur) + Tidak Ada Tindakan = Kontrol operasional (CB-Q1, DPT-Q1)"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 runtime_change: true
-schema_change: false
+schema_change: true
 frontend_change: true
 security_impact: true
 branch_isolation_impact: true
@@ -23,6 +23,6 @@ ledger_impact: true
 deploy_required: true
 browser_required: false
 test_profiles: [focused, cross_module_regression, security_regression]
-go_tag: hardening-rme-rp0-clinical-billing-consistency-1-go
-inherits_parent_go: hardening-rme-rp0-closure-owner-decisions-and-paid-treatment-1-go
+go_tag: feature-rme-doctor-performed-treatments-1-implementation-go
+inherits_parent_go: hardening-rme-rp0-clinical-billing-consistency-1-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1

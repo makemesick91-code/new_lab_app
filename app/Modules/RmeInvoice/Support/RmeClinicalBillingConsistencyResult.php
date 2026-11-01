@@ -25,6 +25,7 @@ final class RmeClinicalBillingConsistencyResult
         private readonly array $signals,
         private readonly array $evidence,
         private readonly array $display,
+        private readonly int $version = RmeClinicalBillingConsistency::VERSION,
     ) {}
 
     public static function notApplicable(): self
@@ -37,7 +38,7 @@ final class RmeClinicalBillingConsistencyResult
      * @param  array<string, int|bool|string|null>  $evidence
      * @param  array<string, string|null>  $display
      */
-    public static function evaluated(array $signals, array $evidence, array $display = []): self
+    public static function evaluated(array $signals, array $evidence, array $display = [], int $version = RmeClinicalBillingConsistency::VERSION): self
     {
         $signals = array_values(array_unique($signals));
         sort($signals);
@@ -49,6 +50,7 @@ final class RmeClinicalBillingConsistencyResult
             $signals,
             $evidence,
             $display,
+            $version,
         );
     }
 
@@ -93,7 +95,7 @@ final class RmeClinicalBillingConsistencyResult
     public function snapshot(): array
     {
         return [
-            'version' => RmeClinicalBillingConsistency::VERSION,
+            'version' => $this->version,
             'status' => $this->status,
             'signals' => $this->signals,
             ...$this->evidence,

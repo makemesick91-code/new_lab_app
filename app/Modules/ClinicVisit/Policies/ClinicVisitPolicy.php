@@ -124,6 +124,34 @@ class ClinicVisitPolicy
     }
 
     /**
+     * FEATURE-RME-DOCTOR-PERFORMED-TREATMENTS-1 (rule 219) — may this user author
+     * the structured "Tindakan Dilakukan" record of this visit?
+     *
+     * The examination-completion authority (`complete_rme_examination`: Doctor,
+     * Perawat, Supervisor RME — never Admin Klinik or Kasir), the working branch,
+     * the doctor ROOM guard of an active visit (rule 138 — unlike
+     * completeExamination, writing the clinical record of a live encounter is
+     * room-bound) and the clinical patient scope. This is the permission layer
+     * only: RmePerformedTreatmentService additionally requires the TREATING linked
+     * doctor, the consented live encounter and the visit row lock, which binds
+     * Super Admin too (Gate::before never reaches a business rule).
+     */
+    public function recordPerformedTreatments(User $user, ClinicVisit $visit): Response|bool
+    {
+        if (! $user->can('complete_rme_examination') || ! $this->withinWorkingBranchScope($user, $visit->branch_id)) {
+            return false;
+        }
+
+        $room = app(DoctorRoomScopeService::class)->authorizeActiveVisitRoom($user, $visit);
+
+        if ($room !== true) {
+            return $room;
+        }
+
+        return app(DoctorPatientScopeService::class)->authorizeVisitAccess($user, $visit);
+    }
+
+    /**
      * FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1 (FIX-07) — may this user drive the
      * action controls on the visit DETAIL page?
      *
