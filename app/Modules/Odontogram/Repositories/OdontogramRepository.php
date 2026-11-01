@@ -140,4 +140,42 @@ class OdontogramRepository implements OdontogramRepositoryInterface
 
         return $query->get();
     }
+
+    public function latestChartedBeforeVisit(array $branchIds, ClinicVisit $visit): ?Odontogram
+    {
+        if ($branchIds === []) {
+            // Fail closed, as patientHistoryForBranches() does.
+            return null;
+        }
+
+        $date = $visit->visit_date?->toDateString();
+        if ($date === null) {
+            return null;
+        }
+
+        return Odontogram::query()
+            ->join('trx_clinic_visits', 'trx_clinic_visits.id', '=', 'trx_odontograms.clinic_visit_id')
+            ->whereIn('trx_odontograms.branch_id', $branchIds)
+            ->whereIn('trx_clinic_visits.branch_id', $branchIds)
+            ->where('trx_clinic_visits.patient_id', (int) $visit->patient_id)
+            ->whereNull('trx_clinic_visits.deleted_at')
+            ->where('trx_clinic_visits.id', '!=', (int) $visit->id)
+            // STRICTLY earlier by (clinical date, id). whereDate keeps the comparison
+            // a calendar comparison on both drivers (SQLite stores the date cast as a
+            // datetime string, PostgreSQL as a date).
+            ->where(fn ($q) => $q
+                ->whereDate('trx_clinic_visits.visit_date', '<', $date)
+                ->orWhere(fn ($same) => $same
+                    ->whereDate('trx_clinic_visits.visit_date', '=', $date)
+                    ->where('trx_clinic_visits.id', '<', (int) $visit->id)))
+            // Same portable predicate as patientHistoryForBranches(): an empty draft
+            // carries tooth_map_payload = NULL; an empty teeth map is filtered below.
+            ->whereNotNull('trx_odontograms.tooth_map_payload')
+            ->orderByDesc('trx_clinic_visits.visit_date')
+            ->orderByDesc('trx_clinic_visits.id')
+            ->select('trx_odontograms.*')
+            ->limit(10)
+            ->get()
+            ->first(fn (Odontogram $chart) => $chart->hasRecordedTeeth());
+    }
 }

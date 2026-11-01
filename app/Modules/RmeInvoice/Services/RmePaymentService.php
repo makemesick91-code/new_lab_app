@@ -40,6 +40,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use PDOException;
+use Throwable;
 
 class RmePaymentService
 {
@@ -61,6 +62,7 @@ class RmePaymentService
         private readonly RmeReceiptSnapshotService $receiptSnapshots,
         private readonly RmeZeroValueEligibility $zeroValueEligibility,
         private readonly RmeZeroValueClosureFeatureGuard $zeroValueFlag,
+        private readonly RmeClinicalBillingConsistencyService $clinicalConsistency,
     ) {}
 
     /**
@@ -121,7 +123,7 @@ class RmePaymentService
                 ? CarbonImmutable::instance($value)
                 : CarbonImmutable::parse($value)
             )->setTimezone(config('app.timezone'));
-        } catch (\Throwable) {
+        } catch (Throwable) {
             throw ValidationException::withMessages([
                 'paid_at' => 'Waktu pembayaran tidak valid.',
             ]);
@@ -251,6 +253,27 @@ class RmePaymentService
                     throw $this->zeroValueRefusal($result);
                 }
 
+                // HARDENING-RME-RP0-CLINICAL-BILLING-CONSISTENCY-1 (rule 218) — the
+                // clinical vs billing cross-check, decided on the LOCKED rows and
+                // recorded in the audit row below. DETECTIVE ONLY (owner CB-Q2): its
+                // answer never refuses, and it is read after eligibility so it can
+                // never make an ineligible invoice closable either.
+                //
+                // A FAULT is different from an answer (independent review F2): if the
+                // cross-check cannot run, the closure FAILS CLOSED with a clear refusal
+                // instead of a 500, so no NO_CHARGE is ever written without its
+                // snapshot. Nothing is caught and continued inside this transaction —
+                // on PostgreSQL a failed statement has already aborted it.
+                try {
+                    $consistency = $this->clinicalConsistency->evaluate($locked, $visit);
+                } catch (Throwable $fault) {
+                    Log::warning('rme.zero_value_closure.consistency_fault', ['rme_invoice_id' => (int) $locked->id, 'exception' => $fault::class]);
+
+                    throw ValidationException::withMessages([
+                        'zero_value' => 'Pemeriksaan konsistensi klinis tidak dapat dijalankan, sehingga tagihan belum diselesaikan. Coba lagi; bila berulang, laporkan ke penanggung jawab cabang.',
+                    ]);
+                }
+
                 $account = $this->actors->resolveUsable($cashier);
                 $closed = $this->invoices->closeAsNoCharge($locked, (string) $result->category(), (int) $account?->id);
                 $this->visitService->transitionStatus($visit, ClinicVisit::STATUS_COMPLETED);
@@ -260,7 +283,7 @@ class RmePaymentService
                     (int) $closed->id,
                     RmeFinancialAuditEvent::ACTION_INVOICE_ZERO_VALUE_CLOSED,
                     ['status' => RmeInvoice::STATUS_UNPAID, 'visit_status' => ClinicVisit::STATUS_CASHIER_PENDING],
-                    RmeFinancialAuditEvent::zeroValueClosedPayload($closed, $locked->items, $visit, $paymentCount),
+                    RmeFinancialAuditEvent::zeroValueClosedPayload($closed, $locked->items, $visit, $paymentCount, $consistency->snapshot()),
                     $account,
                 );
 
@@ -289,7 +312,11 @@ class RmePaymentService
      * FEATURE-RME-RP0-CONTROL-CONSULTATION-1 — the cashier page's view of the
      * closure (display only, no lock; the service above decides under the lock).
      *
-     * @return array{enabled: bool, applies: bool, eligible: bool, category: ?string, message: ?string}
+     * `consistency` (rule 218) is present whenever the closure applies: null on an
+     * ineligible invoice (it is refused for its own reason), otherwise the
+     * cross-check the cashier notice renders. It is a notice, never a refusal.
+     *
+     * @return array{enabled: bool, applies: bool, eligible: bool, category: ?string, message: ?string, consistency?: ?array{status: string, requires_review: bool, signals: list<string>, registered_treatment_name: ?string, procedure_change_tooth_count: int}}
      */
     public function zeroValueClosurePanel(RmeInvoice $invoice): array
     {
@@ -310,12 +337,32 @@ class RmePaymentService
             ? RmeZeroValueEligibilityResult::refuse(RmeZeroValueEligibility::VISIT_NOT_PENDING, 'Kunjungan klinik tidak ditemukan untuk invoice ini.')
             : $this->zeroValueEligibility->evaluate($invoice, $visit, $this->payments->countForInvoice((int) $invoice->id));
 
+        // Display only, no transaction open: a fault renders no notice rather than
+        // taking the cashier page down (independent review F2). The closure itself
+        // re-evaluates under the lock and fails closed on a fault.
+        $consistency = null;
+        if ($visit !== null && $result->eligible()) {
+            try {
+                $consistency = $this->clinicalConsistency->evaluate($invoice, $visit);
+            } catch (Throwable $fault) {
+                Log::warning('rme.zero_value_closure.consistency_panel_fault', ['rme_invoice_id' => (int) $invoice->id, 'exception' => $fault::class]);
+            }
+        }
+
         return [
             'enabled' => true,
             'applies' => true,
             'eligible' => $result->eligible(),
             'category' => $result->category(),
             'message' => $result->message(),
+            'consistency' => $consistency === null ? null : [
+                'status' => $consistency->status(),
+                'requires_review' => $consistency->requiresReview(),
+                'signals' => $consistency->signals(),
+                'registered_treatment_name' => $consistency->displayValue('registered_treatment_name'),
+                'procedure_change_tooth_count' => (int) ($consistency->evidence()['procedure_change_tooth_count'] ?? 0),
+                'baseline_is_control_parent' => (bool) ($consistency->evidence()['baseline_is_control_parent'] ?? false),
+            ],
         ];
     }
 
@@ -1258,7 +1305,7 @@ class RmePaymentService
                 RmeFinancialAuditEvent::paymentBlockedByDisputePayload($invoice, $disputed, $paymentPath),
                 $cashier,
             );
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             Log::error('RME payment dispute-hold refusal could not be audited.', [
                 'invoice_id' => $disputed->invoiceId,
                 'dispute_id' => $disputed->disputeId,
@@ -1335,7 +1382,7 @@ class RmePaymentService
                 RmeFinancialAuditEvent::paymentBlockedByCorrectionPayload($invoice, $blocked, $paymentPath),
                 $cashier,
             );
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             Log::error('RME payment correction-block refusal could not be audited.', [
                 'invoice_id' => $blocked->invoiceId,
                 'correction_id' => $blocked->correctionId,
@@ -1376,7 +1423,7 @@ class RmePaymentService
                 RmeFinancialAuditEvent::paymentVersionRefusedPayload($invoice, $conflict, $paymentPath),
                 $cashier,
             );
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             Log::error('RME payment version refusal could not be audited.', [
                 'invoice_id' => $conflict->invoiceId,
                 'reason' => $conflict->reasonCode,
@@ -1714,7 +1761,7 @@ class RmePaymentService
             if ($invoice?->isPaid()) {
                 app(RmeLabIntegrationService::class)->generateForPaidInvoice($invoice, $cashier);
             }
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             Log::warning('Lab case candidate generation failed after RME payment', [
                 'rme_invoice_id' => $invoiceId,
                 'error' => $e->getMessage(),

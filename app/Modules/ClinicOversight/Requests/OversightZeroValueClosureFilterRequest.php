@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Modules\ClinicOversight\Requests;
 
+use App\Modules\RmeInvoice\Support\RmeClinicalBillingConsistency;
 use App\Modules\RmeInvoice\Support\RmeZeroValueCategory;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -35,6 +36,9 @@ class OversightZeroValueClosureFilterRequest extends FormRequest
             'visit_number' => ['nullable', 'string', 'max:64'],
             'date_from' => ['nullable', 'date_format:Y-m-d'],
             'date_to' => ['nullable', 'date_format:Y-m-d'],
+            // Rule 218 — only what a closure can actually record, plus "not evaluated".
+            'consistency_status' => ['nullable', Rule::in([...RmeClinicalBillingConsistency::RECORDED_STATUSES, RmeClinicalBillingConsistency::STATUS_NOT_EVALUATED])],
+            'consistency_signal' => ['nullable', Rule::in(RmeClinicalBillingConsistency::SIGNALS)],
         ];
     }
 
@@ -53,6 +57,8 @@ class OversightZeroValueClosureFilterRequest extends FormRequest
             'creator_id' => $int('creator_id'),
             'invoice_number' => $str('invoice_number'),
             'visit_number' => $str('visit_number'),
+            'consistency_status' => $str('consistency_status'),
+            'consistency_signal' => $str('consistency_signal'),
         ];
     }
 }

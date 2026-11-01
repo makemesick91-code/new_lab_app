@@ -658,6 +658,40 @@ be > Rp0); D21c; Sprint 2 NO_GO; Sprint 3–5 not activated; invoices #36, #42, 
 the runtime of `HARDENING-RME-RP0-CLOSURE-OWNER-DECISIONS-AND-PAID-TREATMENT-1` was merged, deployed and verified
 on production (rule 217 §9.7). The flag stays OFF either way.
 
+### CB-Q1, CB-Q2, CB-Q3 — clinical vs billing consistency of Konsultasi & Kontrol Rp0 (MEDIUM-1) — `OWNER_POLICY_APPROVED`, `REPOSITORY_POLICY_RECORDED` (2026-11-01)
+
+**Provenance.** In-session answers of the Owner to `HARDENING-RME-RP0-CLINICAL-BILLING-CONSISTENCY-1`
+(2026-11-01, 13:2x WITA), each the recommended option among those presented, after the clinical source authority
+audit was shown. No signed artefact exists; none is claimed.
+
+**The finding the questions answered (measured, read-only, production 2026-11-01 05:20 UTC / 13:20 WITA).**
+DaengtisiaMS holds no structured record of a treatment the doctor PERFORMED: the RME is handwriting (an image),
+the odontogram is a tooth-condition chart whose only "perawatan" column is free text, a structured diagnosis is a
+diagnosis (0 rows in production), and the registered treatment ("Tindakan Awal") is a triage choice — absent from
+the bill on 6 of 10 legitimately paid production invoices. The only structured procedure identity is the invoice
+line the cashier chooses (D21); SATUSEHAT reuses it as its Procedure source.
+
+| Code | Status | Owner answer (normalised) |
+|---|---|---|
+| CB-Q1 | `OWNER_POLICY_APPROVED` | The authoritative evidence that a treatment was performed is a **structured doctor input** ("Tindakan Dilakukan", chosen from the treatment master on the RME page). It is the only source that can establish a CONFIRMED discrepancy. Tindakan Awal is NOT authoritative evidence. |
+| CB-Q2 | `OWNER_POLICY_APPROVED` | Until that input exists, every clinical vs billing signal on a Rp0 invoice is **DETECTIVE ONLY**: "Selesai Tanpa Biaya" stays allowed; the signal is recorded with the closure, shown in the Oversight "Tanpa Biaya (Rp0)" view and as a non-blocking notice on the cashier panel. No written-reason requirement, no block. Consistent with S6-D3 (no second approval). |
+| CB-Q3 | `OWNER_POLICY_APPROVED` | The structured doctor input is built in a **separate sprint**, because it changes the Mulai/Selesai Pemeriksaan clinical workflow. This sprint builds only the detective control, the decision record and the rules. |
+
+**Consequences.** MEDIUM-1 stays **`PARTIALLY_MITIGATED`**, never `CLOSED`: a performed paid procedure billed as
+"Konsultasi Dokter" Rp0 is now *visible* when a structured signal exists, but it is not *prevented*, and a
+procedure written only by hand raises no signal at all. Preventive enforcement (a CONFIRMED_DISCREPANCY that
+refuses NO_CHARGE) needs CB-Q1's input and a new owner decision on its blocking contract.
+
+**Unchanged:** S6-D1…S6-D8, S6-Q1…S6-Q3b, D21 manual pricing, D21c, D21g, D22, D28; Sprint 2 NO_GO; Sprint 3–5
+not activated; invoices #36, #42, #43 untouched; `rme.zero_value_closure` OFF.
+
+**Technical enforcement is a separate status:** `TECHNICAL_ENFORCEMENT_PENDING_DEPLOY` until the runtime of
+`HARDENING-RME-RP0-CLINICAL-BILLING-CONSISTENCY-1` is merged, deployed and production-verified (rule 218 §9).
+
+**Open for the CB-Q1 sprint (not decided):** whether the structured input is mandatory before "Selesai
+Pemeriksaan"; whether a CONFIRMED discrepancy refuses NO_CHARGE or requires a written reason; who may resolve it;
+edit rules after completion; whether SATUSEHAT Procedure moves from the invoice line to the clinical input.
+
 ## Pending decisions (unchanged)
 
 D2, D3, D4, D5, D6, D8, D9, D11, D12, D13, D14, D15, D16, D17, D18, D20, D22, D23,
