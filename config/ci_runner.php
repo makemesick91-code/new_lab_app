@@ -442,6 +442,12 @@ return [
         // read-only Rp0 oversight; same `RmeZeroValueClosure` token.
         'tests/Feature/RmeZeroValueClosure/RmeZeroValueClosureHardeningTest.php',
         'tests/Feature/RmeZeroValueClosure/RmeZeroValueClosureOversightTest.php',
+        // HARDENING-RME-RP0-CLINICAL-BILLING-CONSISTENCY-1 (rule 218) — the
+        // DETECTIVE clinical vs billing cross-check (owner CB-Q2): never refuses,
+        // never relaxes eligibility, never says CONSISTENT/CONFIRMED, one snapshot
+        // per closure, no free text; same `RmeZeroValueClosure` token.
+        'tests/Feature/RmeZeroValueClosure/RmeZeroValueClosureClinicalConsistencyTest.php',
+        'tests/Feature/RmeZeroValueClosure/RmeZeroValueClosureClinicalConsistencyOversightTest.php',
         // ACTIVATION-RME-INVOICE-CORRECTION-PREPAYMENT-2 (rule 195) — owner D1a
         // (approve applies, atomically), maker != checker != applier per account,
         // the fail-closed SPN4 pilot allowlist, the D1/D1b RoleSeeder grants, the

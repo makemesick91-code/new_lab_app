@@ -1,0 +1,139 @@
+---
+description: HARDENING-RME-RP0-CLINICAL-BILLING-CONSISTENCY-1 — the clinical vs billing cross-check of "Selesai Tanpa Biaya" (rule 217). DaengtisiaMS holds no structured record of a PERFORMED treatment, so the cross-check is DETECTIVE ONLY (owner CB-Q2): it records REVIEW_REQUIRED / INSUFFICIENT_STRUCTURED_EVIDENCE in the closure audit row and in oversight; a signal never refuses (only a fault in the check itself fails the closure closed). It never answers CONSISTENT or CONFIRMED_DISCREPANCY. The authoritative structured doctor input (CB-Q1) is a separate sprint (CB-Q3). MEDIUM-1 = PARTIALLY_MITIGATED.
+globs: app/Modules/RmeInvoice/Support/RmeClinicalBillingConsistency*.php, app/Modules/RmeInvoice/Services/RmeClinicalBillingConsistencyService.php, app/Modules/RmeInvoice/Services/RmePaymentService.php, app/Modules/RmeInvoice/Support/RmeFinancialAuditEvent.php, app/Modules/Odontogram/Repositories/OdontogramRepository.php, app/Modules/ClinicOversight/Repositories/OversightZeroValueClosureRepository.php, app/Modules/ClinicOversight/Requests/OversightZeroValueClosureFilterRequest.php, resources/views/rme/cashier/show.blade.php, resources/views/oversight/billing-corrections/zero-value-closures-index.blade.php, tests/Feature/RmeZeroValueClosure/**
+alwaysApply: false
+---
+
+# Clinical vs billing consistency of Rp0 closures (rule 218)
+
+**Status:** implementation complete; deployment status recorded in §9.
+
+Sprint record: `docs/sprints/hardening-rme-rp0-clinical-billing-consistency-1.md`. Owner decisions: "CB-Q1 …
+CB-Q3" in `docs/decisions/rme-billing-correction-owner-decisions.md`. ADR:
+`docs/adr/0015-rme-clinical-billing-consistency.md`. Extends rule 217 (§8 residual "MEDIUM-1"); where they
+disagree about the cross-check, this rule wins. Rule 217's eligibility is unchanged.
+
+## 1. Clinical source authority (the finding — re-measure before relying on it)
+
+The clinical record holds **no structured record of a treatment the doctor performed**:
+
+| Source | What it is | Evidence of a performed, billable treatment? |
+|---|---|---|
+| Handwritten RME (primary doctor input) | an image | no — not machine-verifiable |
+| SOAP / notes fields | free text, hidden from the doctor UI | no — free text is never interpreted |
+| Odontogram `tooth_map_payload.teeth.*.status` | tooth CONDITION chart (`normal, caries, missing, filling, crown, root_treated`) | no — a status change versus the previous chart is a **signal**, not proof |
+| Odontogram `additional_note` ("perawatan" column), `summary_notes` | free text | no — never read |
+| Structured diagnosis (`trx_medical_record_diagnoses`) | a diagnosis | no — a diagnosis is not a treatment |
+| Registered treatment (`initial_treatment_id`, "Tindakan Awal") | registration triage | no — a **signal**; absent from the bill on 6/10 legitimate production invoices |
+| Legacy RME / odontogram PDF | historical archive | no |
+| Invoice line (`trx_rme_invoice_items.treatment_id`) | the cashier's choice under D21 | it is the only structured procedure identity; SATUSEHAT reuses it — it is financial, not clinical proof |
+
+Graphify confirms the disconnection: every path between `MedicalRecord`/`Odontogram`/`MedicalRecordDiagnosis`
+and `Treatment`/`RmeInvoiceItem` runs only through framework base classes.
+
+## 2. Owner decisions (2026-11-01)
+
+- **CB-Q1** — the authoritative evidence will be a **structured doctor input** ("Tindakan Dilakukan"). Tindakan
+  Awal is never authoritative.
+- **CB-Q2** — until then every signal is **detective only**: the closure stays allowed, the signal is recorded
+  and surfaced. No block, no mandatory reason (S6-D3 preserved).
+- **CB-Q3** — the structured doctor input is a **separate sprint** (it changes the examination workflow).
+
+## 3. The vocabulary — one answer, three statuses
+
+`RmeClinicalBillingConsistency::evaluate()` is pure and is the single answer. Branch on the CODE.
+
+- `REVIEW_REQUIRED` — at least one signal fired.
+- `INSUFFICIENT_STRUCTURED_EVIDENCE` — none fired. **This is not "consistent"**: the handwritten record is
+  never machine-checked, so silence proves nothing. Never render it as "sesuai" or "OK".
+- `NOT_APPLICABLE` — the invoice total is not Rp0; it is paid normally and the cross-check never runs.
+- `NOT_EVALUATED` — an oversight label only: a NO_CHARGE closure whose audit row carries no cross-check.
+
+**`CONSISTENT` and `CONFIRMED_DISCREPANCY` are never produced and never filterable**: there is no authoritative
+source to confirm either. They belong to the CB-Q1 sprint, together with the decision on what a confirmed
+discrepancy does to NO_CHARGE.
+
+## 4. Signals (deterministic; structured server rows only)
+
+- `CBC_REGISTERED_TREATMENT_NOT_BILLED` — the visit's registered treatment is NOT an approved free service,
+  decided by the SAME per-line predicate as the closure (`RmeZeroValueEligibility::lineRefusalCode($t, 0, 0,
+  $validControl)` — so the Kontrol service counts as free only on a VALID Kontrol), and no invoice line carries
+  that treatment id. Soft-deleted master data included.
+- `CBC_ODONTOGRAM_PROCEDURE_CHANGE` — this visit's chart records a tooth as `filling`, `crown`, `root_treated` or
+  `missing`, and the patient's most recent chart **strictly earlier** (owning visit `visit_date`, then id) recorded
+  the **same tooth** with a different status. A tooth the earlier chart did not record is unknown, not normal, and
+  is never counted; a first chart has no baseline; a new `caries` is a finding, not a procedure; a soft-deleted
+  chart is ignored; a later visit's chart is never the baseline; another patient's chart is never read. It says the
+  status CHANGED since the previous chart, not that the procedure happened at THIS visit: on a Kontrol the previous
+  chart is usually the parent visit's (a filling done and billed there, charted as caries before treatment, reads as
+  a change), so the snapshot records `baseline_is_control_parent` and the notice says so (independent review F4).
+- The baseline is read across the active RME branch set — an ENGINEERING choice, not an owner decision (patient
+  history is cross-branch in the doctor workspace; only a count and ids leave the service), so a branch-pinned
+  cashier may see a count derived from another branch's chart (independent review F3) — through
+  `OdontogramRepositoryInterface::latestChartedBeforeVisit()` — never ad hoc SQL from the billing module. An empty
+  branch set fails closed.
+- Free text — RME notes, odontogram notes, descriptions — is never read, matched or copied.
+
+## 5. Where it runs (never a second ledger, never a write of its own)
+
+- **Closure** (`RmePaymentService::closeZeroValueInvoice`): evaluated on the LOCKED invoice and visit, AFTER
+  eligibility passed — so it can never make an ineligible invoice closable — and recorded in the existing audit
+  row `RME_INVOICE_ZERO_VALUE_CLOSED` under `clinical_billing_consistency` (version, status, signals, registered
+  treatment id/code/free/billed, odontogram id, baseline id, `baseline_is_control_parent`, changed-tooth count). Its
+  ANSWER never refuses. A FAULT (the cross-check cannot run) fails the closure CLOSED with a clear `zero_value`
+  refusal — never a 500, and never a NO_CHARGE without its snapshot; nothing is caught-and-continued inside the
+  transaction (independent review F2). It adds no lock and no write. The clinical inputs are stable at
+  `cashier_pending` (rule 109 CORRECTIVE-03 forbids authoring this visit's chart; an earlier chart is read-only;
+  the registered treatment comes from the locked visit row; invoice lines change only by a correction, which the
+  closure refuses); master data and a branch's RME status are read unlocked, at their committed state. An
+  idempotent replay writes no second snapshot. A later edit of the visit or master data never rewrites it.
+- **Cashier panel** (`zeroValueClosurePanel`, flag ON, eligible invoice only): a non-blocking warning
+  (`data-zero-value-consistency-notice`) naming the registered treatment and a tooth COUNT — never a tooth number
+  or a note. It tells the cashier to ask the doctor and, if a paid procedure WAS done at this visit, NOT to close
+  and to escalate as an incident — never to "bill it above Rp0", which is impossible for a Rp0-original invoice
+  (D28; independent review F1). The closure form stays. A fault renders no notice and logs a code-only warning.
+  With the flag OFF the panel and page are exactly as before.
+- **Oversight** "Tanpa Biaya (Rp0)": per-row status + signal labels, counts (`data-zv-cbc-*`), filters
+  `consistency_status` / `consistency_signal` validated against the recorded vocabulary. Read from the audit
+  snapshot (the state AT closure), portable JSON-path queries, same gate/permission/branch scope, GET only, no
+  patient identity, no tooth number, no note, no export, no mutation, no new permission.
+- **Never**: a payment, receipt, refund, obligation, correction, invoice line, price, lab candidate, revenue or
+  receivable change. A finding is not a financial adjustment.
+
+## 6. Invariants (each pinned by a test, SQLite + PostgreSQL 16)
+
+`CBC_ANSWER_NEVER_REFUSES` (CB-Q2) · `CBC_FAULT_FAILS_CLOSED` · `CBC_NEVER_RELAXES_ELIGIBILITY` · `CBC_NEVER_CONSISTENT_OR_CONFIRMED` ·
+`CBC_NO_FREE_TEXT` · `CBC_SNAPSHOT_AT_CLOSURE` · `CBC_ONE_SNAPSHOT_PER_CLOSURE` · `CBC_NO_FINANCIAL_WRITE` ·
+`CBC_NO_ACTOR` (Super Admin gets the same answer) · `CBC_FLAG_OFF_UNCHANGED` · `CBC_BASELINE_STRICTLY_EARLIER_SAME_PATIENT_RME_BRANCH`.
+Rule 217 §4 financial invariants are unchanged.
+
+## 7. Privacy
+
+The audit snapshot holds codes, ids, booleans and one count. The cashier notice adds a master-data treatment name
+and a count. **Recorded, not changed:** the cashier page's pre-existing clinical summary partial (Sprint 62,
+`e48c6450`) already shows the cashier this visit's odontogram including its notes; this rule does not widen or
+narrow that — changing what a cashier may see of the clinical record is a product decision.
+
+## 8. Residual risk (MEDIUM-1 = `PARTIALLY_MITIGATED`, never `CLOSED`)
+
+- A procedure written only in the handwritten RME raises no signal.
+- A procedure on a tooth the previous chart did not record, or on a first visit, raises no odontogram signal.
+- Tindakan Awal is often legitimately different from what was done (production 6/10), so its signal is noisy.
+- The baseline search is bounded; its edge cases can only MISS a signal, never raise a false one (security
+  review F7, accepted). The detail is kept in the private security record, not in this public repository.
+- Detective only: nothing prevents the closure. Closing this needs the CB-Q1 structured doctor input and a new
+  owner decision on the blocking contract.
+- **No remediation path exists in the app (pre-existing, recorded 2026-11-01).** When a warning is right — a paid
+  procedure was performed but the visit's invoice was already issued at Rp0 — there is no way to bill it: a
+  Rp0-original invoice is never corrected (D28, rule 201), an RME invoice has no void, and a visit has one active
+  invoice. The SOP therefore says: do not close, escalate as an incident; the visit waits for an owner decision
+  (D21g/D28). This is an input to the CB-Q1 sprint, not something this rule may decide.
+
+## 9. Flag, deployment, rollback
+
+- Reuses `rme.zero_value_closure` (OFF). No new flag. The read-only oversight additions render regardless and read
+  `NOT_EVALUATED`/0 until a closure exists.
+- No migration, no seeder, no permission, no route.
+- Rollback = revert the commit; snapshots already written stay in their audit rows (harmless, never read for a
+  decision). Activation stays `ACTIVATION-RME-RP0-CONTROL-CONSULTATION-1`, a separate owner decision.
+- Status: `TECHNICAL_ENFORCEMENT_PENDING_DEPLOY` — updated by the evidence record after deploy.

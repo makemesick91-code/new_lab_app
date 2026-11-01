@@ -127,8 +127,11 @@ Rollback = flag off; closed invoices stay closed.
   cashier still chooses each line's treatment under D21 and nothing reconciles it with the medical record or
   odontogram, so a performed paid procedure can still be billed as "Konsultasi Dokter" Rp0 (or left off); and what is
   free depends on master-data category (`manage_clinic_master_data`, in practice Super Admin). Control: detective
-  only — the oversight "Tanpa Biaya (Rp0)" breakdown and self-issued count. Recommended follow-up (not built): an
-  oversight cross-check of NO_CHARGE visits whose clinical record shows a procedure. Historical text: Under D21 the unit price is typed by the
+  only — the oversight "Tanpa Biaya (Rp0)" breakdown and self-issued count. ~~Recommended follow-up (not built): an
+  oversight cross-check of NO_CHARGE visits whose clinical record shows a procedure.~~ **BUILT 2026-11-01 as rule
+  218** (`HARDENING-RME-RP0-CLINICAL-BILLING-CONSISTENCY-1`, owner CB-Q1/Q2/Q3): a DETECTIVE clinical vs billing
+  cross-check recorded with every closure and shown in oversight; a signal never refuses (a fault fails closed). MEDIUM-1 is now
+  `PARTIALLY_MITIGATED` (rule 218 §8), still not closed. Historical text: Under D21 the unit price is typed by the
   cashier, and the Kontrol link is chosen at registration, so one branch account can still bill a
   non-consultation treatment at Rp0 on a Kontrol and close it. Rule §2.6 removes the cancelled and
   never-examined parent; the rest is policy, not code. Mitigations available to the Owner, none decided:

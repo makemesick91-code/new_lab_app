@@ -42,6 +42,34 @@ disengketakan. Pastikan sebelum menekan tombol.
 6. Hasil: status tagihan **"Tanpa Biaya"** (bukan "Lunas"), kunjungan **selesai**, **tidak ada pembayaran** dan
    **tidak ada kwitansi**.
 
+### Peringatan "Periksa dulu: mungkin ada tindakan berbayar" (rule 218)
+
+Kartu "Selesai Tanpa Biaya" dapat menampilkan peringatan kuning bila sistem menemukan tanda bahwa tindakan
+berbayar mungkin dilakukan:
+
+- **Tindakan Awal** kunjungan ini bukan layanan gratis yang disetujui (Konsultasi Dokter / Kontrol) dan tidak ada
+  di tagihan; dan/atau
+- **status gigi berubah** dibanding odontogram sebelumnya menjadi tambalan, mahkota, perawatan saluran akar, atau
+  hilang. Ini berarti *mungkin* ada tindakan — bukan bukti bahwa tindakan dilakukan pada kunjungan ini. Pada
+  Kontrol, odontogram sebelumnya biasanya milik kunjungan asal; peringatan menyebutkannya, karena tindakan itu
+  mungkin sudah dilakukan dan ditagih di sana.
+
+Ini **peringatan, bukan penolakan** (keputusan Owner CB-Q2) — tombol tetap ada. Sebelum menekannya:
+
+1. Konfirmasi ke dokter apakah tindakan berbayar memang dilakukan.
+2. Bila **ya**: **jangan** selesaikan tanpa biaya, dan jangan mengubah apa pun sendiri. Laporkan ke penanggung
+   jawab cabang sebagai insiden (formulir di bagian "Jika terjadi kesalahan"). Saat ini **tidak ada cara di
+   aplikasi** untuk menambah tindakan berbayar pada tagihan yang sudah dibuat Rp0: tagihan Rp0 asli tidak dapat
+   dikoreksi (D28, rule 201), tagihan RME tidak dapat dibatalkan, dan satu kunjungan hanya punya satu tagihan
+   aktif. Tagihan tetap terbuka dan kunjungan tetap menunggu kasir sampai ada keputusan Owner.
+3. Bila **tidak** (mis. Tindakan Awal berubah setelah pemeriksaan): lanjutkan langkah di atas.
+
+Pencegahan terbaik ada **sebelum** tagihan dibuat: bila dokter melakukan tindakan berbayar, tagih tindakan itu
+dengan harga lebih dari Rp0 sejak awal (S6-Q3).
+
+Hasil pemeriksaan ini **tersimpan bersama penutupan** dan terlihat oleh Oversight. Tidak adanya peringatan
+**tidak** berarti tagihan pasti sesuai rekam medis — RME tulisan tangan tidak dapat diperiksa sistem.
+
 ## Jika ditolak
 
 Pesan penolakan selalu memuat kode, misalnya `[ZERO_VALUE_LINE_NOT_FREE]`.

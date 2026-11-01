@@ -1,4 +1,5 @@
 @php
+    use App\Modules\RmeInvoice\Support\RmeClinicalBillingConsistency;
     use App\Modules\RmeInvoice\Support\RmeZeroValueCategory;
 @endphp
 {{-- HARDENING-RME-RP0-CLOSURE-OWNER-DECISIONS-AND-PAID-TREATMENT-1 (rule 217 §9) —
@@ -66,6 +67,23 @@
                 @endforeach
             </x-ui.select>
         </div>
+        {{-- Rule 218 — the clinical vs billing cross-check recorded at closure. --}}
+        <div class="w-full md:w-52">
+            <x-ui.select name="consistency_status" label="Cek klinis">
+                <option value="">Semua</option>
+                @foreach ([...RmeClinicalBillingConsistency::RECORDED_STATUSES, RmeClinicalBillingConsistency::STATUS_NOT_EVALUATED] as $status)
+                    <option value="{{ $status }}" @selected(($filters['consistency_status'] ?? null) === $status)>{{ RmeClinicalBillingConsistency::statusLabel($status) }}</option>
+                @endforeach
+            </x-ui.select>
+        </div>
+        <div class="w-full md:w-56">
+            <x-ui.select name="consistency_signal" label="Sinyal">
+                <option value="">Semua</option>
+                @foreach (RmeClinicalBillingConsistency::SIGNALS as $signal)
+                    <option value="{{ $signal }}" @selected(($filters['consistency_signal'] ?? null) === $signal)>{{ RmeClinicalBillingConsistency::signalLabel($signal) }}</option>
+                @endforeach
+            </x-ui.select>
+        </div>
         <div class="w-full md:w-48">
             <x-ui.input name="invoice_number" label="No. invoice" :value="$filters['invoice_number'] ?? ''" />
         </div>
@@ -85,6 +103,20 @@
             <div><dt class="text-xs text-ink-soft">Anomali: ada baris pembayaran</dt><dd class="text-lg font-semibold {{ $summary['anomalies']['with_payment_rows'] > 0 ? 'text-danger-700' : 'text-ink' }}" data-zv-payment-anomaly>{{ $summary['anomalies']['with_payment_rows'] }}</dd></div>
         </dl>
         <p class="mt-2 text-xs text-ink-soft">"Dibuat &amp; ditutup akun yang sama" bersifat informasi — diizinkan keputusan Owner S6-D3 (tanpa persetujuan kedua). Anomali baris pembayaran seharusnya selalu 0.</p>
+
+        <h3 class="mt-5 text-sm font-semibold text-ink">Cek klinis vs tagihan (dicatat saat penutupan)</h3>
+        <dl class="mt-2 grid grid-cols-2 gap-3 md:grid-cols-5" data-zv-cbc-summary>
+            <div><dt class="text-xs text-ink-soft">Perlu ditinjau</dt><dd class="text-lg font-semibold {{ $summary['consistency']['review_required'] > 0 ? 'text-warning-700' : 'text-ink' }}" data-zv-cbc-review>{{ $summary['consistency']['review_required'] }}</dd></div>
+            <div><dt class="text-xs text-ink-soft">Tanpa sinyal</dt><dd class="text-lg font-semibold text-ink" data-zv-cbc-insufficient>{{ $summary['consistency']['insufficient'] }}</dd></div>
+            <div><dt class="text-xs text-ink-soft">Belum dievaluasi</dt><dd class="text-lg font-semibold text-ink" data-zv-cbc-not-evaluated>{{ $summary['consistency']['not_evaluated'] }}</dd></div>
+            <div><dt class="text-xs text-ink-soft">Tindakan Awal berbayar tidak ditagih</dt><dd class="text-lg font-semibold text-ink" data-zv-cbc-signal-registered>{{ $summary['consistency']['signal_registered'] }}</dd></div>
+            <div><dt class="text-xs text-ink-soft">Odontogram: tindakan baru</dt><dd class="text-lg font-semibold text-ink" data-zv-cbc-signal-odontogram>{{ $summary['consistency']['signal_odontogram'] }}</dd></div>
+        </dl>
+        <p class="mt-2 text-xs text-ink-soft">
+            Pemeriksaan ini bersifat <strong>detektif</strong> (keputusan Owner CB-Q2): sinyal tidak pernah menolak penutupan.
+            "Tanpa sinyal" <strong>bukan</strong> berarti tagihan sesuai rekam medis &mdash; RME tulisan tangan tidak dapat diperiksa mesin,
+            dan catatan tindakan dokter yang terstruktur baru akan dibangun pada sprint terpisah (CB-Q1/CB-Q3).
+        </p>
     </x-ui.card>
 
     <div class="grid gap-4 md:grid-cols-2">
@@ -159,6 +191,7 @@
                     <th class="px-4 py-3 text-left font-medium text-ink-soft">Dokter</th>
                     <th class="px-4 py-3 text-left font-medium text-ink-soft">Pembuat tagihan</th>
                     <th class="px-4 py-3 text-left font-medium text-ink-soft">Kasir penutup</th>
+                    <th class="px-4 py-3 text-left font-medium text-ink-soft">Cek klinis</th>
                 </tr>
             </thead>
             <tbody class="divide-y divide-hairline">
@@ -182,9 +215,15 @@
                                 <span class="block text-xs text-ink-soft" data-zv-self-issued-row>akun yang sama</span>
                             @endif
                         </td>
+                        <td class="px-4 py-3 text-ink" data-zv-cbc-status="{{ $row->consistency['status'] }}">
+                            <span class="{{ $row->consistency['status'] === RmeClinicalBillingConsistency::STATUS_REVIEW_REQUIRED ? 'font-semibold text-warning-700' : 'text-ink-soft' }}">{{ RmeClinicalBillingConsistency::statusLabel($row->consistency['status']) }}</span>
+                            @foreach ($row->consistency['signals'] as $signal)
+                                <span class="block text-xs text-ink-soft" data-zv-cbc-signal="{{ $signal }}">{{ RmeClinicalBillingConsistency::signalLabel($signal) }}</span>
+                            @endforeach
+                        </td>
                     </tr>
                 @empty
-                    <tr><td colspan="9" class="px-4 py-6 text-center text-ink-soft">Belum ada tagihan Tanpa Biaya pada periode ini.</td></tr>
+                    <tr><td colspan="10" class="px-4 py-6 text-center text-ink-soft">Belum ada tagihan Tanpa Biaya pada periode ini.</td></tr>
                 @endforelse
             </tbody>
         </x-ui.table>

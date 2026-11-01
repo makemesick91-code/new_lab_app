@@ -145,10 +145,15 @@ final class RmeFinancialAuditEvent
      * the closure and the audit row must still explain the decision. Codes and
      * ids only: free-text line descriptions may name a patient and are left out.
      *
+     * HARDENING-RME-RP0-CLINICAL-BILLING-CONSISTENCY-1 (rule 218) appends the
+     * clinical vs billing cross-check under `clinical_billing_consistency` — also
+     * codes, ids, booleans and one count (RmeClinicalBillingConsistencyResult::snapshot).
+     *
      * @param  iterable<RmeInvoiceItem>  $items
+     * @param  array<string, mixed>|null  $clinicalConsistency
      * @return array<string, mixed>
      */
-    public static function zeroValueClosedPayload(RmeInvoice $invoice, iterable $items, ClinicVisit $visit, int $paymentCount): array
+    public static function zeroValueClosedPayload(RmeInvoice $invoice, iterable $items, ClinicVisit $visit, int $paymentCount, ?array $clinicalConsistency = null): array
     {
         $lines = [];
         foreach ($items as $item) {
@@ -182,6 +187,7 @@ final class RmeFinancialAuditEvent
             'parent_visit_status' => $visit->follow_up_of_visit_id !== null ? $visit->followUpOf?->status : null,
             'lines' => $lines,
             'visit_status_after' => ClinicVisit::STATUS_COMPLETED,
+            ...($clinicalConsistency !== null ? ['clinical_billing_consistency' => $clinicalConsistency] : []),
         ];
     }
 
