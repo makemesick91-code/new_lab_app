@@ -256,7 +256,9 @@ code, then the canonical rule, and report the drift.
   (mixed invoice ≠ NO_CHARGE); approved free services = `consultation` category + reserved `control` category on a
   valid Kontrol; flag-gated Kontrol issuance guard; batch-path #36 residual resolved for closable invoices; read-only
   oversight "Tanpa Biaya (Rp0)"; S6-D3 preserved (no creator ≠ closer) — runtime `ba33f9bb`, deployed and verified
-  2026-11-01, flag still OFF; MEDIUM-1 NARROWED, not closed. **Not built:** reversal (D26 excluded), patient credit (D6 excluded). **PENDING owner decisions:** D21c
+  2026-11-01, flag still OFF; MEDIUM-1 NARROWED, not closed. **Rule 218 (owner CB-Q1/Q2/Q3, 2026-11-01):** a
+  DETECTIVE clinical vs billing cross-check is recorded with every NO_CHARGE closure and shown in oversight; it never
+  refuses; MEDIUM-1 `PARTIALLY_MITIGATED`, structured doctor input deferred to its own sprint. **Not built:** reversal (D26 excluded), patient credit (D6 excluded). **PENDING owner decisions:** D21c
   discount policy, D21g/D22 for Rp0 **issuance**, vouchers and any Rp0 correction (answered for the closure scope
   only; D28 unchanged), D24 `paid_at` backdating. The historical Rp0 UNPAID SPN4 invoice #36 stays untouched (S6-D2).
 - Open owner questions: a correction settling a PARTIAL invoice leaves no LUNAS receipt; whether a pre-payment approval
@@ -297,6 +299,7 @@ code, then the canonical rule, and report the drift.
 | `.cursor/rules/215-rme-billing-refund-request-approval.mdc` | Refund request & approval (Sprint 4/7): decides, never pays; Front Office maker, role+branch reviewer, flag OFF |
 | `.cursor/rules/216-rme-refund-settlement.mdc` | Refund settlement (Sprint 5/7): records money out; settler ≠ approver; flag OFF, settler list EMPTY |
 | `.cursor/rules/217-rme-rp0-consultation-control.mdc` | Konsultasi & Kontrol Rp0 (Sprint 6/7): "Selesai Tanpa Biaya" → `NO_CHARGE`, no payment; flag OFF; §9 hardening (S6-Q1/Q2/Q3) |
+| `.cursor/rules/218-rme-clinical-billing-consistency.mdc` | Clinical vs billing cross-check of Rp0 closures: detective only (CB-Q2), never CONSISTENT/CONFIRMED, audit-snapshotted |
 | `.cursor/rules/109-rme-exam-consent-odontogram-history.mdc` | Consent gates exam finish, not payment |
 | `.cursor/rules/92-feature-flag-runtime-override.mdc` | Flag environment overrides captured at config build |
 

@@ -6,6 +6,8 @@ namespace App\Modules\ClinicOversight\Repositories;
 
 use App\Modules\ClinicOversight\Interfaces\OversightZeroValueClosureRepositoryInterface;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
+use App\Modules\RmeInvoice\Support\RmeClinicalBillingConsistency;
+use App\Modules\RmeInvoice\Support\RmeFinancialAuditEvent;
 use App\Modules\RmeInvoice\Support\RmeZeroValueCategory;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Query\Builder;
@@ -16,9 +18,22 @@ use Illuminate\Support\Facades\DB;
  * read-only queries over NO_CHARGE invoices. Query builder, portable across
  * PostgreSQL and SQLite (no string_agg): the per-invoice treatment list is read in
  * ONE extra query for the ids on the current page.
+ *
+ * HARDENING-RME-RP0-CLINICAL-BILLING-CONSISTENCY-1 (rule 218) — the clinical vs
+ * billing cross-check of each closure is read from the closure's own audit row
+ * (`sys_audit_logs.new_values.clinical_billing_consistency`), i.e. AS DECIDED AT
+ * CLOSURE, immune to later master-data edits. One extra query per page; filters and
+ * counts use Laravel's JSON-path syntax, which compiles on PostgreSQL (jsonb) and
+ * SQLite alike. A closure whose row carries no RECORDED status reads NOT_EVALUATED —
+ * never as "no signal" — with the same definition for the row label, the count and
+ * the filter, so they can never disagree.
  */
 class OversightZeroValueClosureRepository implements OversightZeroValueClosureRepositoryInterface
 {
+    private const CONSISTENCY_STATUS_PATH = 'za.new_values->clinical_billing_consistency->status';
+
+    private const CONSISTENCY_SIGNALS_PATH = 'za.new_values->clinical_billing_consistency->signals';
+
     public function paginate(array $branchIds, array $filters, string $startUtc, string $endExclusiveUtc, int $perPage = 25): LengthAwarePaginator
     {
         $page = $this->base($branchIds, $filters, $startUtc, $endExclusiveUtc)
@@ -59,6 +74,22 @@ class OversightZeroValueClosureRepository implements OversightZeroValueClosureRe
             $row->creator_is_closer = $row->creator_id !== null && (int) $row->creator_id === (int) $row->closer_id;
         }
 
+        $snapshots = $this->consistencySnapshots($ids);
+        foreach ($page->items() as $row) {
+            $snapshot = $snapshots[(int) $row->id] ?? null;
+            $status = is_array($snapshot) && in_array($snapshot['status'] ?? null, RmeClinicalBillingConsistency::RECORDED_STATUSES, true)
+                ? (string) $snapshot['status']
+                : RmeClinicalBillingConsistency::STATUS_NOT_EVALUATED;
+            $row->consistency = [
+                'status' => $status,
+                'signals' => array_values(array_filter(
+                    is_array($snapshot['signals'] ?? null) ? $snapshot['signals'] : [],
+                    fn ($signal) => in_array($signal, RmeClinicalBillingConsistency::SIGNALS, true),
+                )),
+                'procedure_change_tooth_count' => (int) ($snapshot['procedure_change_tooth_count'] ?? 0),
+            ];
+        }
+
         return $page;
     }
 
@@ -95,6 +126,19 @@ class OversightZeroValueClosureRepository implements OversightZeroValueClosureRe
                 ->selectRaw('it.treatment_id AS id, t.name AS name, COUNT(*) AS items, COUNT(DISTINCT i.id) AS invoices')
                 ->orderByDesc('items')
                 ->get()->map(fn ($r) => ['id' => $r->id !== null ? (int) $r->id : null, 'name' => (string) ($r->name ?? '(teks bebas)'), 'items' => (int) $r->items, 'invoices' => (int) $r->invoices])->all(),
+            // Rule 218 — the cross-check as recorded at closure (detective, CB-Q2).
+            'consistency' => [
+                'review_required' => (int) $base()->whereExists(fn ($q) => $this->closureAudit($q)
+                    ->where(self::CONSISTENCY_STATUS_PATH, RmeClinicalBillingConsistency::STATUS_REVIEW_REQUIRED))->count(),
+                'insufficient' => (int) $base()->whereExists(fn ($q) => $this->closureAudit($q)
+                    ->where(self::CONSISTENCY_STATUS_PATH, RmeClinicalBillingConsistency::STATUS_INSUFFICIENT_STRUCTURED_EVIDENCE))->count(),
+                'not_evaluated' => (int) $base()->whereNotExists(fn ($q) => $this->closureAudit($q)
+                    ->whereIn(self::CONSISTENCY_STATUS_PATH, RmeClinicalBillingConsistency::RECORDED_STATUSES))->count(),
+                'signal_registered' => (int) $base()->whereExists(fn ($q) => $this->closureAudit($q)
+                    ->whereJsonContains(self::CONSISTENCY_SIGNALS_PATH, RmeClinicalBillingConsistency::SIGNAL_REGISTERED_TREATMENT_NOT_BILLED))->count(),
+                'signal_odontogram' => (int) $base()->whereExists(fn ($q) => $this->closureAudit($q)
+                    ->whereJsonContains(self::CONSISTENCY_SIGNALS_PATH, RmeClinicalBillingConsistency::SIGNAL_ODONTOGRAM_PROCEDURE_CHANGE))->count(),
+            ],
             'anomalies' => [
                 // Informational, permitted by S6-D3 (no second approval): the same
                 // account issued the invoice and closed it.
@@ -151,6 +195,54 @@ class OversightZeroValueClosureRepository implements OversightZeroValueClosureRe
             // Exact references, compared case-insensitively — no LIKE, so no wildcard
             // or escape-character handling is needed (rule 130).
             ->when($filters['invoice_number'] ?? null, fn (Builder $q, $v) => $q->whereRaw('UPPER(i.invoice_number) = ?', [mb_strtoupper((string) $v)]))
-            ->when($filters['visit_number'] ?? null, fn (Builder $q, $v) => $q->whereRaw('UPPER(v.visit_number) = ?', [mb_strtoupper((string) $v)]));
+            ->when($filters['visit_number'] ?? null, fn (Builder $q, $v) => $q->whereRaw('UPPER(v.visit_number) = ?', [mb_strtoupper((string) $v)]))
+            // Rule 218 — narrow by the cross-check recorded at closure. The values were
+            // validated against the recorded vocabulary by the FormRequest.
+            ->when($filters['consistency_status'] ?? null, fn (Builder $q, $v) => $v === RmeClinicalBillingConsistency::STATUS_NOT_EVALUATED
+                ? $q->whereNotExists(fn ($e) => $this->closureAudit($e)->whereIn(self::CONSISTENCY_STATUS_PATH, RmeClinicalBillingConsistency::RECORDED_STATUSES))
+                : $q->whereExists(fn ($e) => $this->closureAudit($e)->where(self::CONSISTENCY_STATUS_PATH, (string) $v)))
+            ->when($filters['consistency_signal'] ?? null, fn (Builder $q, $v) => $q->whereExists(fn ($e) => $this->closureAudit($e)
+                ->whereJsonContains(self::CONSISTENCY_SIGNALS_PATH, (string) $v)));
+    }
+
+    /** The closure audit row(s) of invoice `i`, as a correlated sub-query `za`. */
+    private function closureAudit($query)
+    {
+        return $query->select(DB::raw(1))
+            ->from('sys_audit_logs as za')
+            ->where('za.entity_type', RmeFinancialAuditEvent::ENTITY_INVOICE)
+            ->whereColumn('za.entity_id', 'i.id')
+            ->where('za.action', RmeFinancialAuditEvent::ACTION_INVOICE_ZERO_VALUE_CLOSED);
+    }
+
+    /**
+     * The cross-check snapshot of each closed invoice, read in ONE query. The closure
+     * writes exactly one row per invoice (idempotent); should a second ever exist,
+     * the latest wins.
+     *
+     * @param  list<int>  $invoiceIds
+     * @return array<int, array<string, mixed>|null>
+     */
+    private function consistencySnapshots(array $invoiceIds): array
+    {
+        if ($invoiceIds === []) {
+            return [];
+        }
+
+        $snapshots = [];
+        DB::table('sys_audit_logs')
+            ->where('entity_type', RmeFinancialAuditEvent::ENTITY_INVOICE)
+            ->where('action', RmeFinancialAuditEvent::ACTION_INVOICE_ZERO_VALUE_CLOSED)
+            ->whereIn('entity_id', $invoiceIds)
+            ->orderBy('id')
+            ->get(['entity_id', 'new_values'])
+            ->each(function ($row) use (&$snapshots): void {
+                $values = is_string($row->new_values) ? json_decode($row->new_values, true) : (array) $row->new_values;
+                $snapshots[(int) $row->entity_id] = is_array($values) && is_array($values['clinical_billing_consistency'] ?? null)
+                    ? $values['clinical_billing_consistency']
+                    : null;
+            });
+
+        return $snapshots;
     }
 }

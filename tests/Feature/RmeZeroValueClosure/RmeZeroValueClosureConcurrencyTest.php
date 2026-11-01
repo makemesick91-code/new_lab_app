@@ -344,7 +344,56 @@ it('A: two racing closures write exactly one NO_CHARGE transition and one audit 
         ->and($fx['invoice']->fresh()->status)->toBe(RmeInvoice::STATUS_NO_CHARGE)
         ->and(rzvcAudits($fx['invoice']))->toBe(1)
         ->and(rzvcPayments($fx['invoice']))->toBe(0)
-        ->and(ClinicVisit::query()->find($fx['invoice']->clinic_visit_id)->status)->toBe(ClinicVisit::STATUS_COMPLETED);
+        ->and(ClinicVisit::query()->find($fx['invoice']->clinic_visit_id)->status)->toBe(ClinicVisit::STATUS_COMPLETED)
+        // Rule 218 — the one audit row carries the one cross-check snapshot.
+        ->and(rzvcSnapshot($fx['invoice'])['status'] ?? null)->toBe('INSUFFICIENT_STRUCTURED_EVIDENCE');
+});
+
+/** The rule 218 cross-check snapshot of the (single) closure audit row. */
+function rzvcSnapshot(RmeInvoice $invoice): ?array
+{
+    $raw = DB::table('sys_audit_logs')
+        ->where('action', RmeFinancialAuditEvent::ACTION_INVOICE_ZERO_VALUE_CLOSED)
+        ->where('entity_id', $invoice->id)
+        ->sole()->new_values;
+    $values = is_string($raw) ? json_decode($raw, true) : (array) $raw;
+
+    return $values['clinical_billing_consistency'] ?? null;
+}
+
+// ─── M (rule 218): a Tindakan Awal edit racing the closure ───────────────────
+
+it('M: a Tindakan Awal edit holding the visit row commits first; the waiting closure records the COMMITTED value, still closes, and writes one snapshot', function () {
+    $fx = rzvcFixture();
+    $category = TreatmentCategory::query()->where('code', 'preventive')->first()
+        ?? TreatmentCategory::factory()->create(['code' => 'preventive', 'name' => 'Preventif']);
+    $scaling = Treatment::factory()->create([
+        'name' => 'Scaling '.uniqid(), 'treatment_category_id' => $category->id, 'is_active' => true, 'requires_lab' => false,
+    ]);
+
+    // The competing transaction takes the VISIT row lock the closure needs second
+    // (after the invoice lock) and holds it while it changes the registered treatment.
+    $handle = rzvcCompeting([[
+        'kind' => 'select',
+        'sql' => 'UPDATE trx_clinic_visits SET initial_treatment_id = ? WHERE id = ?',
+        'bindings' => [(int) $scaling->id, (int) $fx['invoice']->clinic_visit_id],
+    ]]);
+
+    test()->actingAs($fx['cashier']);
+    $race = rzvcRace(fn () => app(RmePaymentService::class)->closeZeroValueInvoice($fx['invoice']->fresh(), $fx['cashier']));
+    rzvcJoin($handle);
+
+    expect($race['waited'])->toBeGreaterThan(1.0)
+        // Detective (CB-Q2): the signal never refuses.
+        ->and($race['refusal'])->toBeNull()
+        ->and($fx['invoice']->fresh()->status)->toBe(RmeInvoice::STATUS_NO_CHARGE)
+        ->and(rzvcAudits($fx['invoice']))->toBe(1)
+        ->and(rzvcPayments($fx['invoice']))->toBe(0)
+        ->and(rzvcSnapshot($fx['invoice']))->toMatchArray([
+            'status' => 'REVIEW_REQUIRED',
+            'signals' => ['CBC_REGISTERED_TREATMENT_NOT_BILLED'],
+            'registered_treatment_id' => (int) $scaling->id,
+        ]);
 });
 
 // ─── B / C: closure vs billing dispute ───────────────────────────────────────

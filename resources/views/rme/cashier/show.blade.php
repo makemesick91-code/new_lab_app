@@ -24,6 +24,11 @@
         // ineligible one keeps the payment entry it always had (a Kontrol's
         // carry-over collection starts there), so no visit is left stranded.
         $zeroValueEligible = $zeroValueApplies && (bool) ($zeroValue['eligible'] ?? false);
+        // HARDENING-RME-RP0-CLINICAL-BILLING-CONSISTENCY-1 (rule 218) — the
+        // clinical vs billing cross-check, decided by the service. A notice only:
+        // it never removes the closure form (owner decision CB-Q2).
+        $zeroValueConsistency = $zeroValueEligible ? ($zeroValue['consistency'] ?? null) : null;
+        $zeroValueNeedsReview = (bool) ($zeroValueConsistency['requires_review'] ?? false);
 
         $paidAmount = $invoice->paidAmount();
         $remainingAmount = $invoice->remainingAmount();
@@ -94,6 +99,30 @@
                             <p class="mt-2 text-sm text-warning-700">
                                 Piutang kunjungan sebelumnya tidak ikut ditutup. Tagih melalui tagihan asalnya.
                             </p>
+                        @endif
+                        @if ($zeroValueNeedsReview)
+                            <div class="mt-4">
+                                <x-ui.alert variant="warning" title="Periksa dulu: mungkin ada tindakan berbayar" data-zero-value-consistency-notice>
+                                    <ul class="list-disc space-y-1 pl-5">
+                                        @if (! empty($zeroValueConsistency['registered_treatment_name']))
+                                            <li>Tindakan Awal kunjungan ini, <strong>{{ $zeroValueConsistency['registered_treatment_name'] }}</strong>, bukan layanan gratis yang disetujui (Konsultasi Dokter / Kontrol) dan tidak ada di tagihan.</li>
+                                        @endif
+                                        @if (($zeroValueConsistency['procedure_change_tooth_count'] ?? 0) > 0)
+                                            <li>Status <strong data-zero-value-consistency-tooth-count>{{ $zeroValueConsistency['procedure_change_tooth_count'] }}</strong> gigi berubah dibanding odontogram sebelumnya menjadi tambalan, mahkota, perawatan saluran akar, atau hilang &mdash; mungkin ada tindakan.
+                                                @if ($zeroValueConsistency['baseline_is_control_parent'] ?? false)
+                                                    Odontogram sebelumnya adalah kunjungan asal Kontrol ini, jadi tindakan itu mungkin sudah dilakukan dan ditagih di sana.
+                                                @endif
+                                            </li>
+                                        @endif
+                                    </ul>
+                                    <p class="mt-2" data-zero-value-consistency-escalation>
+                                        Ini peringatan, bukan penolakan. Tanyakan ke dokter apakah tindakan berbayar dilakukan <strong>pada kunjungan ini</strong>.
+                                        Jika <strong>ya</strong>: <strong>jangan</strong> selesaikan tanpa biaya dan jangan mengubah apa pun sendiri &mdash; laporkan ke penanggung jawab cabang sebagai insiden.
+                                        Tagihan yang sudah dibuat Rp0 tidak dapat dikoreksi di aplikasi; kunjungan menunggu keputusan Owner.
+                                        Hasil pemeriksaan ini tersimpan bersama penutupan dan terlihat di Oversight.
+                                    </p>
+                                </x-ui.alert>
+                            </div>
                         @endif
                         <form method="POST" action="{{ route('rme.cashier.zero-value-closure.store', [$visit, $invoice]) }}" class="mt-4 space-y-3" data-zero-value-closure-form>
                             @csrf

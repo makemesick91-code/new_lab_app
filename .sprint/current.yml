@@ -1,18 +1,18 @@
-# HARDENING-RME-RP0-CLOSURE-OWNER-DECISIONS-AND-PAID-TREATMENT-1 — rule 217 §9, Sprint 6/7 hardening.
-# Owner decisions of 2026-11-01: S6-Q1 (valid Kontrol parent) and S6-Q2 (no NO_CHARGE for a lab line) APPROVED;
-# S6-Q3 REVISED AND APPROVED (a Kontrol may be Rp0; a normally paid treatment on it is billed > Rp0 and paid
-# normally; a mixed invoice is never NO_CHARGE); S6-Q3a (approved free services = consultation category + reserved
-# control category on a valid Kontrol) and S6-Q3b (Kontrol-only, flag-gated Rp0 issuance guard). Also: the batch
-# path no longer completes a visit whose own Rp0 invoice is closable (#36 pattern), and a read-only oversight list
-# of NO_CHARGE closures. No migration, no new permission, no new flag. Flag rme.zero_value_closure stays OFF.
-# S6-D3 preserved (branch cashier closes, no second approval). Sprint 2 stays NO_GO; Sprint 3/4/5 flags stay OFF.
-# Type FOUNDATION_SPRINT: the change spans RmeInvoice (issuance, payment batch paths, eligibility) and the
+# HARDENING-RME-RP0-CLINICAL-BILLING-CONSISTENCY-1 — rule 218, follow-up of rule 217 §8 (security finding MEDIUM-1).
+# Clinical source audit: DaengtisiaMS holds no structured record of a PERFORMED treatment (RME = handwriting,
+# odontogram = tooth-condition chart, 0 structured diagnoses in production, Tindakan Awal absent from 6/10 legit bills).
+# Owner decisions of 2026-11-01 (in-session): CB-Q1 structured doctor input is the authoritative evidence; CB-Q2 every
+# signal is DETECTIVE ONLY (never refuses); CB-Q3 the doctor input is a separate sprint. So this sprint adds a pure
+# clinical vs billing cross-check, snapshotted into the existing closure audit row, a non-blocking cashier notice and
+# read-only oversight counts/filters. It never answers CONSISTENT or CONFIRMED_DISCREPANCY. MEDIUM-1 = PARTIALLY_MITIGATED.
+# No migration, no new permission, no route, no new flag. Flag rme.zero_value_closure stays OFF.
+# Type FOUNDATION_SPRINT: the change spans RmeInvoice (closure, panel), Odontogram (one repository read) and the
 # ClinicOversight read area, so the stricter cross-module profile applies.
 # Carried forward: LEGACY-RME-PROGRAM-CLOSURE-1 stays CLOSED and inherited.
-id: HARDENING-RME-RP0-CLOSURE-OWNER-DECISIONS-AND-PAID-TREATMENT-1
+id: HARDENING-RME-RP0-CLINICAL-BILLING-CONSISTENCY-1
 type: FOUNDATION_SPRINT
 module: RmeInvoice
-title: "Hardening Konsultasi & Kontrol Rp0: keputusan Owner S6-Q1/Q2/Q3, tindakan berbayar pada Kontrol"
+title: "Hardening Rp0: cek konsistensi klinis vs tagihan (detektif, keputusan Owner CB-Q1/Q2/Q3)"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 runtime_change: true
 schema_change: false
@@ -23,6 +23,6 @@ ledger_impact: true
 deploy_required: true
 browser_required: false
 test_profiles: [focused, cross_module_regression, security_regression]
-go_tag: hardening-rme-rp0-closure-owner-decisions-and-paid-treatment-1-go
-inherits_parent_go: feature-rme-rp0-control-consultation-1-implementation-go
+go_tag: hardening-rme-rp0-clinical-billing-consistency-1-go
+inherits_parent_go: hardening-rme-rp0-closure-owner-decisions-and-paid-treatment-1-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1

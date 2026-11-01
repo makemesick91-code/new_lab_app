@@ -49,4 +49,18 @@ interface OdontogramRepositoryInterface
         ?Closure $scope = null,
         int $limit = 50,
     ): Collection;
+
+    /**
+     * HARDENING-RME-RP0-CLINICAL-BILLING-CONSISTENCY-1 (rule 218) — the patient's
+     * most recent chart STRICTLY EARLIER than $visit (by the owning visit's
+     * clinical date, then id), that actually records teeth: the baseline the
+     * clinical vs billing cross-check compares this visit's chart with.
+     *
+     * Unlike patientHistoryForBranches() it never returns a LATER visit's chart,
+     * and it never returns $visit's own. Branch scoping is required, as there: an
+     * empty set fails closed (null), never "all".
+     *
+     * @param  array<int, int>  $branchIds  the active RME branch set
+     */
+    public function latestChartedBeforeVisit(array $branchIds, ClinicVisit $visit): ?Odontogram;
 }
