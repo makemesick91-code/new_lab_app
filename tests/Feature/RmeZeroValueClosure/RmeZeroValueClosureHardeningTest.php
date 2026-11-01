@@ -519,4 +519,3 @@ it('RP0-REV-18e: a Kontrol whose OWN invoice still has a balance never gets the 
 
     expect($control->clinicVisit->fresh()->status)->toBe(ClinicVisit::STATUS_CASHIER_PENDING);
 })->with(['flag ON' => true, 'flag OFF' => false]);
-

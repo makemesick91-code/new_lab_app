@@ -140,4 +140,3 @@ it('lists only NO_CHARGE invoices — on PostgreSQL the CHECK forbids closure pr
         ->toMatch('/data-zv-total>\s*2\s*</')
         ->not->toContain($other->invoice_number);
 });
-
