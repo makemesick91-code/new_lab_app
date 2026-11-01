@@ -94,4 +94,88 @@ paid line free.
 
 ## 6. Evidence
 
-Filled in by the evidence commit after CI, merge, deploy and production verification.
+**Owner decisions:** `S6-Q1=OWNER_POLICY_APPROVED`, `S6-Q2=OWNER_POLICY_APPROVED`,
+`S6-Q3=OWNER_POLICY_REVISED_AND_APPROVED`, S6-Q3a / S6-Q3b approved in-session. `RULES_SYNC=PASS`,
+`OWNER_DECISION_REGISTER=UPDATED`, `RULE_CONTRADICTIONS=0` — every superseded statement is marked in place and
+dated, never deleted.
+
+### Tests (local)
+
+| Run | Result |
+|---|---|
+| TDD red before the change | 9 failed / 21 passed. Every failure was old behaviour: the closure succeeded, issuance was accepted, or the visit completed. |
+| Rp0 suites, SQLite (final code) | 105 passed, 12 skipped (PG-only races) |
+| Broad financial regression, **PostgreSQL 16.15** (final code) | **3937 passed, 0 failed, 0 skipped**, 15 846 assertions, exit 0 |
+| New oversight suite on PG16 (including the CHECK branch) | 10 passed |
+| PG16 races A–L (Rp0) | 12/12 passed |
+| Mutation | **29 mutants, 29 killed, 0 survivors**; residue 0 |
+| DEVFLOW | 11/11 GO (manifest, scope 2 modules, devflow, shared-service, ci-runtime-control, security-compliance, cicd-enterprise, ui-governance, roadmap, base-ref, self-hosted-runner) |
+| Static | repo-wide pint, `git diff --check`, `view:cache` clean |
+
+**Mutation detail.** The first pass left one survivor, M23 (the oversight NO_CHARGE status filter removed).
+On PostgreSQL it is equivalent, because the CHECK `trx_rme_invoices_no_charge_chk` binds the closure
+provenance to the status. A two-way test then killed it: on PG the CHECK refuses that state, and elsewhere
+the filter holds.
+
+**PG16 concurrency — the 10 required scenarios:**
+
+| Scenario | Race |
+|---|---|
+| Two closures | A |
+| Batch vs closure | E, G, H |
+| Dispute | B, C |
+| Deactivation | D |
+| Rollback | F |
+| Branch switch | I |
+| Mixed batch vs direct parent payment | J |
+| Deadlock | K |
+| Patient merge | L |
+
+`DOUBLE_COMPLETION=0`, `FAKE_PAYMENTS=0`, `UNAUTHORIZED_NO_CHARGE=0`, `UNEXPLAINED_FINANCIAL_DELTA=0`,
+`CRITICAL_DEADLOCKS=0`.
+
+### Security review (independent)
+
+`OPEN_CRITICAL=0`, `OPEN_HIGH=0`, `OPEN_RELEASE_BLOCKING_MEDIUM=0`.
+
+- **Fixed before merge:**
+  - MEDIUM — the issuance guard could be bypassed with a 100% discount. It now checks the **net** value of each line.
+  - LOW — the issuance guard and the closure used different predicates. They now share one, `lineRefusalCode()`, and an invalid parent is refused at issuance.
+  - LOW — the next-step message showed with the flag OFF. It is now driven by the service predicate.
+  - INFO — the docblock was corrected.
+- **Documented:** LOW — a held visit can be stranded on rollback (rule 217 §9.8).
+- **MEDIUM-1 is NARROWED, not closed.** The severity is unchanged (§5).
+
+### CI, merge, deploy
+
+- **CI:** run `41269675695` on candidate `535f1df9` succeeded. Classifier, NSF-R012 Quality, NSF-R011 Critical,
+  CICD-CTRL Selective Module, NSF-9, NSF-10 and the Android gate all passed. The second Critical variant was
+  skipped by design.
+- **Full Suite: `SKIPPED_NOT_PASS`.** The global temporary policy is ACTIVE and no authorisation was given.
+- **Merge:** PR #576 was squash-merged as **`ba33f9bb`**. Its tree `2d1b684b` is identical to the candidate tree.
+- **Deploy:** run inside the VPS via `scripts/deploy-vps-runner.sh start`. Result: `DEPLOY_EXIT_CODE=0`,
+  `DEPLOY_STATUS=DEPLOY_OK` (20261101-043411), `DEPLOY_HEAD_TARGET_MATCH=YES`, `PRODUCTION_SHA_MATCH=YES`.
+  - Production HEAD/tree = `ba33f9bb` / `2d1b684b`.
+  - `Nothing to migrate`.
+  - Runtime isolation: 107 GO.
+  - Automated smoke GO. The `127.0.0.1/login` 404 warning is the known co-tenant shadow.
+
+### Production verification (read-only, 2026-11-01 04:35 UTC / 12:35 WITA)
+
+| Check | Before deploy (02:45 UTC) | After deploy |
+|---|---|---|
+| Invoices (count / total) | 10 / 31 048 000 | 10 / 31 048 000 |
+| Payments (count / total) | 10 / 22 548 000 | 10 / 22 548 000 |
+| #36 / #42 / #43 | UNPAID 0 / PAID 5 000 000 / PAID 12 000 000 | unchanged (correction versions 0/1/1) |
+| NO_CHARGE invoices | 0 | 0 |
+| failed_jobs | 0 | 0 |
+| `laravel.log` bytes | 1 443 432 | 1 443 432 (delta 0) |
+
+- **Flags:**
+  - `rme.zero_value_closure`, `rme.invoice_postpayment_correction`, `rme.billing_refund_request` and `rme.billing_refund_settlement` are all OFF.
+  - `rme.invoice_correction` is unchanged (env).
+- **Route:** `oversight.billing-corrections.zero-value-closures.index` is registered (GET/HEAD only). A guest gets 302.
+- **Health:** `/login`, `/health/live`, `/health/ready` and `/health/lb` all return 200. nginx, PHP-FPM and the queue worker are active.
+- **Invoice #44** was created at 01:58 UTC, before the baseline and the deploy. It is genuine clinic activity and was not touched.
+- **No master data was created.** The reserved `control` category does not exist in production (0 rows).
+- **Nothing was activated, backfilled or written.** Sprint 2 stays NO_GO; Sprint 3–5 stay OFF.

@@ -193,7 +193,7 @@ Sprint record: `docs/sprints/hardening-rme-rp0-closure-owner-decisions-and-paid-
 6. **Mistakes.** NO_CHARGE stays terminal; there is no reversal. The incident procedure is in the SOP
    (`docs/operations/rme-rp0-selesai-tanpa-biaya-sop.md` §"Jika terjadi kesalahan"); recovery needs a separate
    owner decision. Never edit a NO_CHARGE invoice by SQL as an ordinary fix.
-7. **Status.** `TECHNICAL_ENFORCEMENT_DEPLOYED` is recorded only after production verification; the flag
+7. **Status.** `TECHNICAL_ENFORCEMENT_DEPLOYED` — runtime `ba33f9bb` (tree `2d1b684b`, PR #576), deployed 2026-11-01 04:34 UTC (12:34 WITA), production-verified, tag `hardening-rme-rp0-closure-owner-decisions-and-paid-treatment-1-go`. The flag
    stays OFF until `ACTIVATION-RME-RP0-CONTROL-CONSULTATION-1`.
 8. **Rollback after activation (independent review LOW).** A visit held at `cashier_pending` by §9.4 becomes
    unreachable if the flag is switched OFF (the closure button disappears and a Rp0 invoice cannot be paid), and
