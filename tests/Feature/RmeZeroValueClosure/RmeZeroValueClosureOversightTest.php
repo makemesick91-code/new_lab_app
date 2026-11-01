@@ -14,6 +14,7 @@ use App\Models\User;
 use App\Modules\Branch\Models\Branch;
 use App\Modules\RmeInvoice\Models\RmePayment;
 use App\Modules\RmeInvoice\Support\RmeZeroValueCategory;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Spatie\Permission\Middleware\PermissionMiddleware;
 
@@ -118,3 +119,25 @@ it('keeps the controller gate as a second layer when the route permission middle
         ->get(route('oversight.billing-corrections.zero-value-closures.index'))
         ->assertForbidden();
 });
+
+it('lists only NO_CHARGE invoices — on PostgreSQL the CHECK forbids closure provenance on any other status, elsewhere the status filter still holds', function () {
+    $other = rzvInvoice(rzvNewVisit(), [rzvLine(test()->consultation, 100000, 0, 'Konsultasi')]);
+    $write = fn () => DB::table('trx_rme_invoices')->where('id', $other->id)->update([
+        'zero_value_category' => RmeZeroValueCategory::CONSULTATION,
+        'zero_value_closed_by' => test()->cashier->id,
+        'zero_value_closed_at' => now(),
+    ]);
+
+    if (DB::connection()->getDriverName() === 'pgsql') {
+        expect(fn () => DB::transaction($write))->toThrow(QueryException::class);
+
+        return;
+    }
+
+    $write();
+
+    expect(rzoPage('Owner')->getContent())
+        ->toMatch('/data-zv-total>\s*2\s*</')
+        ->not->toContain($other->invoice_number);
+});
+
