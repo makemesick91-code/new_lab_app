@@ -255,7 +255,8 @@ code, then the canonical rule, and report the drift.
   REVISED AND APPROVED — a Kontrol may be Rp0 but a normally paid treatment on it is billed > Rp0 and paid normally
   (mixed invoice ≠ NO_CHARGE); approved free services = `consultation` category + reserved `control` category on a
   valid Kontrol; flag-gated Kontrol issuance guard; batch-path #36 residual resolved for closable invoices; read-only
-  oversight "Tanpa Biaya (Rp0)"; S6-D3 preserved (no creator ≠ closer). **Not built:** reversal (D26 excluded), patient credit (D6 excluded). **PENDING owner decisions:** D21c
+  oversight "Tanpa Biaya (Rp0)"; S6-D3 preserved (no creator ≠ closer) — runtime `ba33f9bb`, deployed and verified
+  2026-11-01, flag still OFF; MEDIUM-1 NARROWED, not closed. **Not built:** reversal (D26 excluded), patient credit (D6 excluded). **PENDING owner decisions:** D21c
   discount policy, D21g/D22 for Rp0 **issuance**, vouchers and any Rp0 correction (answered for the closure scope
   only; D28 unchanged), D24 `paid_at` backdating. The historical Rp0 UNPAID SPN4 invoice #36 stays untouched (S6-D2).
 - Open owner questions: a correction settling a PARTIAL invoice leaves no LUNAS receipt; whether a pre-payment approval
