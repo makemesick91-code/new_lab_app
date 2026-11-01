@@ -205,10 +205,11 @@ class RmePaymentService
      * Under the lock: the invoice is re-read, an already-closed invoice is
      * answered as it stands (idempotent, no second audit row), the visit is
      * re-read under its own lock, and eligibility is decided on the locked rows
-     * by RmeZeroValueEligibility (owner decisions S6-D1/D6: consultation lines,
-     * or any free line of a server-derived Kontrol; never a discount, never the
-     * voucher, never a corrected invoice, never a visit that is no longer
-     * cashier_pending). Then, in one transaction: invoice → NO_CHARGE with its
+     * by RmeZeroValueEligibility (owner decisions S6-D1/D6, hardened by S6-Q1/Q2/Q3
+     * — rule 217 §9: an approved free service only — the consultation category on
+     * any visit, the reserved control category on a VALID Kontrol; never a discount,
+     * never the voucher, never a lab line, never a corrected invoice, never a visit
+     * that is no longer cashier_pending). Then, in one transaction: invoice → NO_CHARGE with its
      * provenance, visit → completed, one audit row.
      *
      * Never written: a payment row, a receipt, a refund, an obligation, a lab
@@ -909,6 +910,7 @@ class RmePaymentService
             $this->completeVisitAfterCashierBatch(
                 $currentVisit,
                 paymentMade: $allocatedToParent > 0 || $allocatedToControl > 0,
+                currentInvoice: $currentInvoice,
             );
 
             $result = new RmeControlPaymentResult(
@@ -1623,6 +1625,10 @@ class RmePaymentService
             return;
         }
 
+        if ($this->heldForZeroValueClosure($controlInvoice, $controlVisit)) {
+            return;
+        }
+
         if ($controlVisit->status === ClinicVisit::STATUS_CASHIER_PENDING) {
             $this->visitService->transitionStatus($controlVisit, ClinicVisit::STATUS_COMPLETED);
         }
@@ -1640,15 +1646,64 @@ class RmePaymentService
      * The Sprint 62.1 doctor→cashier gate is untouched: this only runs after
      * payable and branch assertions inside allocateVisitPayment().
      */
-    private function completeVisitAfterCashierBatch(ClinicVisit $visit, bool $paymentMade): void
+    private function completeVisitAfterCashierBatch(ClinicVisit $visit, bool $paymentMade, RmeInvoice $currentInvoice): void
     {
         if (! $paymentMade) {
+            return;
+        }
+
+        if ($this->heldForZeroValueClosure($currentInvoice, $visit)) {
             return;
         }
 
         if ($visit->status === ClinicVisit::STATUS_CASHIER_PENDING) {
             $this->visitService->transitionStatus($visit, ClinicVisit::STATUS_COMPLETED);
         }
+    }
+
+    /**
+     * HARDENING-RME-RP0-CLOSURE-OWNER-DECISIONS-AND-PAID-TREATMENT-1 — the batch
+     * residual (#36 pattern, rule 217 §8). A cashier batch that paid only OTHER
+     * invoices (a parent or a carried-over receivable) used to complete the current
+     * visit while its own Rp0 invoice stayed UNPAID — after which "Selesai Tanpa
+     * Biaya" could never run (visit no longer cashier_pending). When that Rp0 invoice
+     * is one the closure CAN close, the visit is left cashier_pending so the explicit,
+     * authorized action closes it. The parent payment itself is untouched and
+     * attributed to the parent; nothing here marks the current invoice PAID or
+     * NO_CHARGE.
+     *
+     * Only the closable case is held: an ineligible Rp0 invoice keeps the existing
+     * completion, and with `rme.zero_value_closure` OFF nothing changes at all.
+     * Called inside the batch transaction, with the invoices already locked.
+     */
+    /**
+     * Read-only — whether $visit is waiting at cashier_pending because its own Rp0
+     * invoice is closable "Selesai Tanpa Biaya": the SAME predicate the batch paths
+     * hold the visit on, so the cashier's next-step message can never claim a hold
+     * that did not happen (e.g. with the flag OFF, or a non-zero invoice).
+     */
+    public function isHeldForZeroValueClosure(RmeInvoice $invoice, ClinicVisit $visit): bool
+    {
+        return $visit->status === ClinicVisit::STATUS_CASHIER_PENDING
+            && $this->heldForZeroValueClosure($invoice, $visit);
+    }
+
+    private function heldForZeroValueClosure(RmeInvoice $invoice, ClinicVisit $visit): bool
+    {
+        if (! $this->zeroValueFlag->enabled()) {
+            return false;
+        }
+
+        $invoice->refresh();
+        if ($invoice->status !== RmeInvoice::STATUS_UNPAID || RmeInvoiceLedger::grandTotalCents($invoice) !== 0) {
+            return false;
+        }
+
+        $invoice->load(['items.treatment' => fn ($query) => $query->withTrashed()->with(['category' => fn ($category) => $category->withTrashed()])]);
+
+        return $this->zeroValueEligibility
+            ->evaluate($invoice, $visit, $this->payments->countForInvoice((int) $invoice->id))
+            ->eligible();
     }
 
     private function generateLabCandidatesIfPaid(int $invoiceId, User $cashier): void

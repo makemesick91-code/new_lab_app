@@ -119,13 +119,16 @@ it('exposes the oversight Billing Correction area as GET-only, gated by its own 
     // FEATURE-RME-POSTPAYMENT-INVOICE-CORRECTION-1 (PP-9) adds the two read-only
     // overpayment obligation pages; rule 215 (RF-8) adds the two read-only
     // refund request pages; rule 216 (RFS-6) adds the two read-only refund
-    // settlement pages. Every route in the area stays GET-only.
-    expect($routes)->toHaveCount(13)
+    // settlement pages; rule 217 §9 (HARDENING-RME-RP0-CLOSURE-OWNER-DECISIONS-
+    // AND-PAID-TREATMENT-1) adds the read-only "Tanpa Biaya (Rp0)" list. Every route
+    // in the area stays GET-only.
+    expect($routes)->toHaveCount(14)
         ->and($routes->map(fn ($r) => (string) $r->getName())->values()->all())
         ->toContain(
             'oversight.billing-corrections.obligations.index', 'oversight.billing-corrections.obligations.show',
             'oversight.billing-corrections.refund-requests.index', 'oversight.billing-corrections.refund-requests.show',
             'oversight.billing-corrections.refund-settlements.index', 'oversight.billing-corrections.refund-settlements.show',
+            'oversight.billing-corrections.zero-value-closures.index',
         );
 
     foreach ($routes as $route) {

@@ -319,6 +319,9 @@
                             {{-- FEATURE-RME-POSTPAYMENT-INVOICE-CORRECTION-1 (PP-9) — read-only. --}}
                             <a href="{{ route('oversight.billing-corrections.obligations.index') }}"
                                class="menu-subitem {{ request()->routeIs('oversight.billing-corrections.obligations.*') ? $linkActive : $linkIdle }}">Kewajiban Kelebihan Bayar</a>
+                            {{-- HARDENING-RME-RP0-CLOSURE-OWNER-DECISIONS-AND-PAID-TREATMENT-1 (rule 217 §9) — read-only. --}}
+                            <a href="{{ route('oversight.billing-corrections.zero-value-closures.index') }}"
+                               class="menu-subitem {{ request()->routeIs('oversight.billing-corrections.zero-value-closures.*') ? $linkActive : $linkIdle }}">Tanpa Biaya (Rp0)</a>
                         </div>
                     @endcan
                 </div>

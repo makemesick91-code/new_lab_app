@@ -7,6 +7,7 @@ namespace App\Modules\RmeInvoice\Support;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Models\RmeInvoiceItem;
+use App\Modules\Treatment\Models\Treatment;
 
 /**
  * FEATURE-RME-RP0-CONTROL-CONSULTATION-1 (rule 217) — the single answer to "is
@@ -25,13 +26,21 @@ use App\Modules\RmeInvoice\Models\RmeInvoiceItem;
  *  - D28 / S6-D4 — this is not a correction; it never changes an amount.
  *  - #36 (S6-D2) — a visit that is no longer cashier_pending is never closed.
  *
- * Narrowed after the independent security review (both fail closed, recorded in
- * rule 217 as pending owner confirmation, never as an owner decision):
+ * Narrowed after the independent security review, both APPROVED by the Owner on
+ * 2026-11-01 as S6-Q1 and S6-Q2 (originally recorded as pending confirmation):
  *  - a Kontrol must follow a REAL examined visit of the same patient — the parent
  *    exists, is not soft-deleted, and reached cashier_pending or completed. A link
  *    to a cancelled or never-examined visit is a label, not a follow-up;
  *  - a line that requires lab work is never closed free: NO_CHARGE generates no
  *    lab candidate, so closing it would silently drop the lab work.
+ *
+ * HARDENING (owner S6-Q3 revised, 2026-11-01) — supersedes the S6-D1 sub-decision
+ * "every free line of a Kontrol is eligible". A Rp0 line must be an APPROVED FREE
+ * SERVICE on every visit, Kontrol included: a `consultation` category treatment
+ * anywhere, a `control` (Kontrol service) category treatment only on a VALID
+ * Kontrol. A normally paid treatment at Rp0, a free-text line, or a renamed
+ * description is never free — whoever closes it. {@see isApprovedFreeTreatment()}
+ * is the single answer, used here and by the issuance guard.
  */
 final class RmeZeroValueEligibility
 {
@@ -78,10 +87,121 @@ final class RmeZeroValueEligibility
     }
 
     /**
+     * The single answer to "is this treatment an approved FREE service?" (owner
+     * S6-Q3a). Decided from the treatment's identity and master-data category, never
+     * from a description: a free-text line (no treatment) is never free. The
+     * `control` category counts only when $validControl — a Kontrol whose parent was
+     * really examined — so the Kontrol link alone cannot make anything free.
+     */
+    public static function isApprovedFreeTreatment(?Treatment $treatment, bool $validControl): bool
+    {
+        $categoryCode = $treatment?->category?->code;
+        if ($categoryCode === null) {
+            return false;
+        }
+
+        $approved = array_map('strval', (array) config('rme_zero_value_closure.consultation_category_codes', []));
+        if ($validControl) {
+            $approved = [...$approved, ...array_map('strval', (array) config('rme_zero_value_closure.control_service_category_codes', []))];
+        }
+
+        return in_array((string) $categoryCode, $approved, true);
+    }
+
+    /**
+     * HARDENING S6-Q3b — the ISSUANCE guard. On a server-derived Kontrol, every line
+     * whose NET value is Rp0 (priced at Rp0 or discounted down to it) must be a line
+     * the closure would accept — decided by the SAME per-line predicate
+     * (lineRefusalCode) — and the Kontrol itself must be valid (S6-Q1). A normally
+     * paid treatment is billed at a positive net price instead. Returns the operator
+     * message (with its stable code) of the first offending line, or null when every
+     * line may be issued. Pure: the caller hands in the treatments it already loaded.
+     *
+     * @param  list<array{treatment_id: int|null, unit_price_cents: int, discount_cents: int, subtotal_cents: int}>  $lines
+     * @param  array<int, Treatment>  $treatments  keyed by id, soft-deleted included
+     */
+    public static function issuanceRefusal(ClinicVisit $visit, array $lines, array $treatments): ?string
+    {
+        if (! self::isControlVisit($visit)) {
+            return null;
+        }
+
+        $validControl = self::followsExaminedVisit($visit);
+
+        foreach ($lines as $line) {
+            // A line that still carries a positive NET value is billed and paid
+            // normally. Only a line that comes out at Rp0 — priced at Rp0 OR
+            // discounted down to Rp0 — must be one the closure would accept.
+            if ((int) $line['subtotal_cents'] !== 0) {
+                continue;
+            }
+
+            // S6-Q1: on a Kontrol whose parent is not valid, NO line may be Rp0 —
+            // the closure refuses such an invoice whole, so issuing it at Rp0
+            // would leave an invoice nobody can pay or close.
+            if (! $validControl) {
+                return self::issuanceMessage(self::CONTROL_PARENT_INVALID);
+            }
+
+            $treatment = $line['treatment_id'] !== null ? ($treatments[(int) $line['treatment_id']] ?? null) : null;
+            $code = self::lineRefusalCode($treatment, (int) $line['unit_price_cents'], (int) $line['discount_cents'], true);
+
+            if ($code !== null) {
+                return self::issuanceMessage($code);
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * HARDENING (independent review LOW-3) — ONE per-line answer, shared by the
+     * closure (evaluate) and the issuance guard, so the two can never disagree about
+     * a Rp0 line. Returns the stable refusal code, or null when the line is an
+     * approved free service priced at Rp0 without a discount.
+     */
+    public static function lineRefusalCode(?Treatment $treatment, int $unitPriceCents, int $discountCents, bool $validControl): ?string
+    {
+        if ($unitPriceCents !== 0 || $discountCents !== 0) {
+            return self::LINE_NOT_FREE;
+        }
+
+        $excluded = array_map('strval', (array) config('rme_zero_value_closure.excluded_treatment_codes', []));
+
+        if ($treatment !== null && in_array((string) $treatment->code, $excluded, true)) {
+            return self::VOUCHER_EXCLUDED;
+        }
+
+        if ($treatment !== null && (bool) $treatment->requires_lab) {
+            return self::LAB_LINE_EXCLUDED;
+        }
+
+        if (! self::isApprovedFreeTreatment($treatment, $validControl)) {
+            return self::CATEGORY_NOT_ELIGIBLE;
+        }
+
+        return null;
+    }
+
+    /** Operator message of an ISSUANCE refusal on a Kontrol, carrying its stable code. */
+    private static function issuanceMessage(string $code): string
+    {
+        $text = match ($code) {
+            self::CONTROL_PARENT_INVALID => 'Kunjungan Kontrol ini tidak terhubung ke kunjungan sebelumnya yang sudah diperiksa, sehingga tidak ada item yang boleh Rp0. Beri harga lebih dari Rp0, atau laporkan ke penanggung jawab cabang.',
+            self::LINE_NOT_FREE => 'Pada kunjungan Kontrol, item tidak boleh menjadi Rp0 karena diskon. Layanan Kontrol dan Konsultasi Dokter diberi harga Rp0 langsung; tindakan lain wajib diberi harga lebih dari Rp0.',
+            self::VOUCHER_EXCLUDED => 'Pada kunjungan Kontrol, voucher tidak boleh dipakai untuk membuat item Rp0.',
+            self::LAB_LINE_EXCLUDED => 'Pada kunjungan Kontrol, tindakan yang memerlukan pekerjaan lab tidak boleh Rp0. Tagih dengan harga lebih dari Rp0 agar dibayar dan permintaan lab dibuat seperti biasa.',
+            default => 'Pada kunjungan Kontrol, hanya layanan Kontrol dan Konsultasi Dokter yang boleh Rp0. Tindakan lain yang normalnya berbayar wajib diberi harga lebih dari Rp0.',
+        };
+
+        return '['.$code.'] '.$text;
+    }
+
+    /**
      * The parent is read through the default relation, so a soft-deleted parent
      * reads as missing — fail closed.
      */
-    private static function followsExaminedVisit(ClinicVisit $visit): bool
+    public static function followsExaminedVisit(ClinicVisit $visit): bool
     {
         $visit->loadMissing('followUpOf');
         $parent = $visit->followUpOf;
@@ -128,36 +248,35 @@ final class RmeZeroValueEligibility
         if ($control && ! self::followsExaminedVisit($visit)) {
             return RmeZeroValueEligibilityResult::refuse(self::CONTROL_PARENT_INVALID, 'Kunjungan Kontrol ini tidak terhubung ke kunjungan sebelumnya yang sudah diperiksa, sehingga tidak dapat diselesaikan tanpa biaya.');
         }
-        $excluded = array_map('strval', (array) config('rme_zero_value_closure.excluded_treatment_codes', []));
-        $consultationCategories = array_map('strval', (array) config('rme_zero_value_closure.consultation_category_codes', []));
 
+        // From here $control means a VALID Kontrol: an invalid parent was refused above.
         foreach ($items as $item) {
             /** @var RmeInvoiceItem $item */
-            if (RmeInvoiceDocument::toCents($item->unit_price) !== 0 || RmeInvoiceDocument::toCents($item->discount) !== 0) {
-                return RmeZeroValueEligibilityResult::refuse(self::LINE_NOT_FREE, 'Ada item yang menjadi Rp0 karena diskon. Diskon bukan layanan gratis dan tidak dapat diselesaikan tanpa biaya.');
-            }
+            $code = self::lineRefusalCode(
+                $item->treatment,
+                RmeInvoiceDocument::toCents($item->unit_price),
+                RmeInvoiceDocument::toCents($item->discount),
+                $control,
+            );
 
-            $treatment = $item->treatment;
-
-            if ($treatment !== null && in_array((string) $treatment->code, $excluded, true)) {
-                return RmeZeroValueEligibilityResult::refuse(self::VOUCHER_EXCLUDED, 'Voucher tidak termasuk layanan yang dapat diselesaikan tanpa biaya.');
-            }
-
-            if ($treatment !== null && (bool) $treatment->requires_lab) {
-                return RmeZeroValueEligibilityResult::refuse(self::LAB_LINE_EXCLUDED, 'Ada item yang memerlukan pekerjaan lab. Selesai Tanpa Biaya tidak membuat permintaan lab, sehingga item ini harus diproses melalui pembayaran.');
-            }
-
-            if ($control) {
-                continue;
-            }
-
-            $categoryCode = $treatment?->category?->code;
-
-            if ($categoryCode === null || ! in_array((string) $categoryCode, $consultationCategories, true)) {
-                return RmeZeroValueEligibilityResult::refuse(self::CATEGORY_NOT_ELIGIBLE, 'Di luar kunjungan Kontrol, hanya Konsultasi Dokter yang dapat diselesaikan tanpa biaya.');
+            if ($code !== null) {
+                return RmeZeroValueEligibilityResult::refuse($code, self::closureMessage($code, $control));
             }
         }
 
         return RmeZeroValueEligibilityResult::forCategory($control ? RmeZeroValueCategory::CONTROL : RmeZeroValueCategory::CONSULTATION);
+    }
+
+    /** Operator message of a CLOSURE refusal for a per-line code (unchanged wording). */
+    private static function closureMessage(string $code, bool $control): string
+    {
+        return match ($code) {
+            self::LINE_NOT_FREE => 'Ada item yang menjadi Rp0 karena diskon. Diskon bukan layanan gratis dan tidak dapat diselesaikan tanpa biaya.',
+            self::VOUCHER_EXCLUDED => 'Voucher tidak termasuk layanan yang dapat diselesaikan tanpa biaya.',
+            self::LAB_LINE_EXCLUDED => 'Ada item yang memerlukan pekerjaan lab. Selesai Tanpa Biaya tidak membuat permintaan lab, sehingga item ini harus diproses melalui pembayaran.',
+            default => $control
+                ? 'Pada kunjungan Kontrol, hanya layanan Kontrol dan Konsultasi Dokter yang boleh Rp0. Tindakan lain yang normalnya berbayar wajib ditagih dengan harga lebih dari Rp0 dan dibayar seperti biasa.'
+                : 'Di luar kunjungan Kontrol, hanya Konsultasi Dokter yang dapat diselesaikan tanpa biaya.',
+        };
     }
 }

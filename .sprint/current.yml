@@ -1,21 +1,21 @@
-# FEATURE-RME-RP0-CONTROL-CONSULTATION-1 — rule 217, Sprint 6/7. "Selesai Tanpa Biaya": a LEGITIMATE Rp0
-# invoice of a Konsultasi Dokter or a server-derived Kontrol visit is closed by the branch cashier to the terminal
-# status NO_CHARGE (never PAID) and its visit is completed in the same transaction, without any payment row
-# (owner decisions S6-D1 … S6-D8 of 2026-11-01). Eligibility is a pure evaluator over source-controlled lists;
-# the closure sits beside RmePaymentService::pay() so it inherits every cashier and hold guard. One additive
-# migration (three PostgreSQL CHECKs). No new permission. Flag rme.zero_value_closure default OFF; activation is a
-# separate Owner decision. D28 unchanged. Sprint 2 stays NO_GO (deferred by Owner prioritisation, not closed);
-# Sprint 3/4/5 flags stay OFF.
-# Type FOUNDATION_SPRINT: the change spans RmeInvoice, ClinicVisit (completion), Reporting (Owner KPI) and the
-# DQ1 data-quality foundation, so the stricter cross-module profile applies.
+# HARDENING-RME-RP0-CLOSURE-OWNER-DECISIONS-AND-PAID-TREATMENT-1 — rule 217 §9, Sprint 6/7 hardening.
+# Owner decisions of 2026-11-01: S6-Q1 (valid Kontrol parent) and S6-Q2 (no NO_CHARGE for a lab line) APPROVED;
+# S6-Q3 REVISED AND APPROVED (a Kontrol may be Rp0; a normally paid treatment on it is billed > Rp0 and paid
+# normally; a mixed invoice is never NO_CHARGE); S6-Q3a (approved free services = consultation category + reserved
+# control category on a valid Kontrol) and S6-Q3b (Kontrol-only, flag-gated Rp0 issuance guard). Also: the batch
+# path no longer completes a visit whose own Rp0 invoice is closable (#36 pattern), and a read-only oversight list
+# of NO_CHARGE closures. No migration, no new permission, no new flag. Flag rme.zero_value_closure stays OFF.
+# S6-D3 preserved (branch cashier closes, no second approval). Sprint 2 stays NO_GO; Sprint 3/4/5 flags stay OFF.
+# Type FOUNDATION_SPRINT: the change spans RmeInvoice (issuance, payment batch paths, eligibility) and the
+# ClinicOversight read area, so the stricter cross-module profile applies.
 # Carried forward: LEGACY-RME-PROGRAM-CLOSURE-1 stays CLOSED and inherited.
-id: FEATURE-RME-RP0-CONTROL-CONSULTATION-1
+id: HARDENING-RME-RP0-CLOSURE-OWNER-DECISIONS-AND-PAID-TREATMENT-1
 type: FOUNDATION_SPRINT
 module: RmeInvoice
-title: "Konsultasi dan Kontrol Rp0: Selesai Tanpa Biaya (NO_CHARGE), tanpa pembayaran palsu"
+title: "Hardening Konsultasi & Kontrol Rp0: keputusan Owner S6-Q1/Q2/Q3, tindakan berbayar pada Kontrol"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 runtime_change: true
-schema_change: true
+schema_change: false
 frontend_change: true
 security_impact: true
 branch_isolation_impact: true
@@ -23,6 +23,6 @@ ledger_impact: true
 deploy_required: true
 browser_required: false
 test_profiles: [focused, cross_module_regression, security_regression]
-go_tag: feature-rme-rp0-control-consultation-1-implementation-go
-inherits_parent_go: feature-rme-refund-settlement-1-implementation-go
+go_tag: hardening-rme-rp0-closure-owner-decisions-and-paid-treatment-1-go
+inherits_parent_go: feature-rme-rp0-control-consultation-1-implementation-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1

@@ -58,19 +58,27 @@ it('closes a legitimate Rp0 Konsultasi Dokter on a new visit as NO_CHARGE and co
         ->and(rzvClosureAudits($closed))->toBe(1);
 });
 
-it('closes a legitimate Rp0 Kontrol, where every line of the server-derived Kontrol visit may be free (S6-D1 sub-decision)', function () {
-    $visit = rzvControlVisit();
-    $invoice = rzvInvoice($visit, [
+// SUPERSEDED 2026-11-01 — this test used to assert the S6-D1 sub-decision "every free
+// line of a Kontrol is eligible" by CLOSING exactly this invoice. The Owner revised it
+// (S6-Q3): a Kontrol never makes a normally paid treatment or a free-text line free.
+// The same invoice is now refused at issuance (flag ON) and, issued the way production
+// still allows with the flag OFF, refused at the closure. Kept, inverted, so the old
+// behaviour can never come back unnoticed.
+it('SUPERSEDED S6-D1 sub-decision: a Kontrol no longer makes every free line eligible (owner S6-Q3 revised)', function () {
+    $lines = [
         rzvLine(test()->consultation),
         rzvLine(test()->treatment2, 0, 0, 'Kontrol pasca tambal'),
         rzvLine(null, 0, 0, 'Cek jahitan (teks bebas)'),
-    ]);
+    ];
 
-    $closed = rzvClose($invoice);
+    expect(fn () => rzvInvoice(rzvControlVisit(), $lines))->toThrow(ValidationException::class);
 
-    expect($closed->status)->toBe(RmeInvoice::STATUS_NO_CHARGE)
-        ->and($closed->zero_value_category)->toBe(RmeZeroValueCategory::CONTROL)
-        ->and($visit->fresh()->status)->toBe(ClinicVisit::STATUS_COMPLETED)
+    $visit = rzvControlVisit();
+    $invoice = rzvIssueWhileOff($visit, $lines);
+
+    expect(rzvRefusal($invoice))->toContain(RmeZeroValueEligibility::CATEGORY_NOT_ELIGIBLE)
+        ->and($invoice->fresh()->status)->toBe(RmeInvoice::STATUS_UNPAID)
+        ->and($visit->fresh()->status)->toBe(ClinicVisit::STATUS_CASHIER_PENDING)
         ->and(DB::table('trx_rme_payments')->where('rme_invoice_id', $invoice->id)->count())->toBe(0);
 });
 
@@ -137,13 +145,18 @@ it('refuses a Rp0 reached by a full discount: a discount is not a free service (
 });
 
 it('refuses a full discount on a Kontrol visit as well', function () {
-    $invoice = rzvInvoice(rzvControlVisit(), [rzvLine(test()->treatment2, 200000, 200000, 'Tambal')]);
+    // HARDENING (2026-11-01, independent review): with the flag ON such a Kontrol
+    // invoice is refused at issuance (RP0-REV-12/12b); issued the way production
+    // allows with the flag OFF, the closure refuses it.
+    $invoice = rzvIssueWhileOff(rzvControlVisit(), [rzvLine(test()->treatment2, 200000, 200000, 'Tambal')]);
 
     expect(rzvRefusal($invoice))->toContain(RmeZeroValueEligibility::LINE_NOT_FREE);
 });
 
 it('refuses the TRT-FREESC voucher on any visit, Kontrol included (S6-D6)', function () {
-    $onControl = rzvInvoice(rzvControlVisit(), [rzvLine(test()->consultation), rzvLine(test()->voucher, 0, 0, 'Voucher scaling')]);
+    // On a Kontrol the voucher at Rp0 is already refused at issuance (S6-Q3b); issued
+    // the way production allows with the flag OFF, the closure refuses it as well.
+    $onControl = rzvIssueWhileOff(rzvControlVisit(), [rzvLine(test()->consultation), rzvLine(test()->voucher, 0, 0, 'Voucher scaling')]);
     $onNew = rzvInvoice(rzvNewVisit(), [rzvLine(test()->voucher, 0, 0, 'Voucher scaling')]);
 
     expect(rzvRefusal($onControl))->toContain(RmeZeroValueEligibility::VOUCHER_EXCLUDED)
@@ -484,7 +497,13 @@ it('refuses a free line that requires lab work, even on a Kontrol', function () 
     $lab = Treatment::factory()->create([
         'code' => 'TRT-RZV-LAB', 'name' => 'Remake Crown', 'is_active' => true, 'requires_lab' => true,
     ]);
-    $invoice = rzvInvoice(rzvControlVisit(), [rzvLine(test()->consultation), rzvLine($lab, 0, 0, 'Remake crown garansi')]);
+    $lines = [rzvLine(test()->consultation), rzvLine($lab, 0, 0, 'Remake crown garansi')];
+
+    // Refused at issuance on a Kontrol (S6-Q3b) ...
+    expect(fn () => rzvInvoice(rzvControlVisit(), $lines))->toThrow(ValidationException::class);
+
+    // ... and at the closure when issued with the flag OFF (S6-Q2).
+    $invoice = rzvIssueWhileOff(rzvControlVisit(), $lines);
 
     expect(rzvRefusal($invoice))->toContain(RmeZeroValueEligibility::LAB_LINE_EXCLUDED)
         ->and($invoice->fresh()->status)->toBe(RmeInvoice::STATUS_UNPAID);

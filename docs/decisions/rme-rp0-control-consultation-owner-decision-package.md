@@ -199,7 +199,7 @@ disentuh; D21c, D21g, D22, D11, D28 tidak berubah statusnya.
 
 | Kode | Jawaban |
 |---|---|
-| S6-D1 | **A** — Konsultasi Dokter + Kontrol. **Sub-keputusan:** di kunjungan Kontrol **semua baris** boleh Rp0 (bukan hanya Konsultasi). |
+| S6-D1 | **A** — Konsultasi Dokter + Kontrol. **Sub-keputusan:** ~~di kunjungan Kontrol **semua baris** boleh Rp0 (bukan hanya Konsultasi)~~ — **DIGANTIKAN 2026-11-01 oleh S6-Q3 (revisi), lihat §10.** |
 | S6-D2 | **A** — aksi eksplisit "Selesai Tanpa Biaya" → status `NO_CHARGE`; invoice historis #36 dibiarkan. |
 | S6-D3 | **A** — kasir cabang, kelayakan diperiksa sistem, tanpa persetujuan kedua. |
 | S6-D4 | **A** — D28 tetap. |
@@ -211,3 +211,19 @@ disentuh; D21c, D21g, D22, D11, D28 tidak berubah statusnya.
 Status per keputusan: `OWNER_POLICY_APPROVED` + `REPOSITORY_POLICY_RECORDED`.
 `TECHNICAL_ENFORCEMENT_DEPLOYED` hanya ditambahkan setelah verifikasi produksi — dan flag tetap OFF.
 Aktivasi produksi = keputusan Owner terpisah (`ACTIVATION-RME-RP0-CONTROL-CONSULTATION-1`).
+
+## 10. Hardening — jawaban Owner atas S6-Q1, S6-Q2, S6-Q3 (2026-11-01)
+
+Sumber: brief Owner `HARDENING-RME-RP0-CLOSURE-OWNER-DECISIONS-AND-PAID-TREATMENT-1` (S6-Q1/Q2/Q3) dan jawaban
+Owner di sesi yang sama (S6-Q3a, S6-Q3b). Dicatat di register; tidak ada artefak bertanda tangan.
+
+| Kode | Status | Jawaban |
+|---|---|---|
+| S6-Q1 | `OWNER_POLICY_APPROVED` | Kontrol sah hanya bila kunjungan induknya nyata, pasien yang sama, sudah diperiksa, tidak dibatalkan/dihapus — ditentukan server. |
+| S6-Q2 | `OWNER_POLICY_APPROVED` | Baris lab tidak pernah ditutup `NO_CHARGE`; lab memakai penagihan normal dan pembuatan kandidat lab. |
+| S6-Q3 | `OWNER_POLICY_REVISED_AND_APPROVED` | Kontrol boleh Rp0. Tindakan tambahan yang normalnya berbayar wajib > Rp0, masuk total, dibayar normal. Invoice campuran Rp0 + berbayar = pembayaran biasa, bukan `NO_CHARGE`. Link Kontrol tidak pernah membuat tindakan berbayar menjadi gratis. |
+| S6-Q3a | `OWNER_POLICY_APPROVED` | Layanan gratis yang sah: kategori `consultation` (semua kunjungan) + kategori khusus `control` (hanya pada Kontrol sah). Tidak ada master data dibuat. |
+| S6-Q3b | `OWNER_POLICY_APPROVED` | Guard penerbitan Rp0 hanya untuk kunjungan Kontrol dan mengikuti flag. Penerbitan Rp0 di kunjungan lain tetap D21g PENDING. |
+
+Revisi S6-Q3 **menggantikan** rekomendasi pemisahan pembuat ≠ penutup ("creator ≠ closer"); **S6-D3 tetap**
+(kasir cabang menutup, tanpa persetujuan kedua). Flag tetap OFF.

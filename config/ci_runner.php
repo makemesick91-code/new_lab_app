@@ -437,6 +437,11 @@ return [
         'tests/Feature/RmeZeroValueClosure/RmeZeroValueClosureTest.php',
         'tests/Feature/RmeZeroValueClosure/RmeZeroValueClosureReportingTest.php',
         'tests/Feature/RmeZeroValueClosure/RmeZeroValueClosureConcurrencyTest.php',
+        // HARDENING-RME-RP0-CLOSURE-OWNER-DECISIONS-AND-PAID-TREATMENT-1 (rule 217 §9) —
+        // the revised S6-Q3 eligibility, issuance guard, batch residual and the
+        // read-only Rp0 oversight; same `RmeZeroValueClosure` token.
+        'tests/Feature/RmeZeroValueClosure/RmeZeroValueClosureHardeningTest.php',
+        'tests/Feature/RmeZeroValueClosure/RmeZeroValueClosureOversightTest.php',
         // ACTIVATION-RME-INVOICE-CORRECTION-PREPAYMENT-2 (rule 195) — owner D1a
         // (approve applies, atomically), maker != checker != applier per account,
         // the fail-closed SPN4 pilot allowlist, the D1/D1b RoleSeeder grants, the

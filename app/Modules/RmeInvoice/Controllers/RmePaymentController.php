@@ -183,7 +183,7 @@ class RmePaymentController extends Controller
 
             return redirect()
                 ->route('rme.cashier.show', [$clinicVisit, $freshInvoice ?? $rmeInvoice])
-                ->with('status', 'Pembayaran berhasil dicatat. No. Kwitansi: '.$receiptNumber)
+                ->with('status', $this->heldForZeroValueClosureMessage($clinicVisit, $freshInvoice ?? $rmeInvoice, $receiptNumber) ?? 'Pembayaran berhasil dicatat. No. Kwitansi: '.$receiptNumber)
                 ->with('payment_allocation', $allocation);
         }
 
@@ -214,9 +214,11 @@ class RmePaymentController extends Controller
                     ->with('payment_allocation', $allocation);
             }
 
+            $receiptNumber = $result->primaryPayment()?->payment_number ?? '-';
+
             return redirect()
                 ->route('rme.cashier.show', [$clinicVisit, $freshInvoice ?? $rmeInvoice])
-                ->with('status', 'Pembayaran berhasil dicatat, visit selesai dan sisa tagihan masuk piutang. No. Kwitansi: '.($result->primaryPayment()?->payment_number ?? '-'))
+                ->with('status', $this->heldForZeroValueClosureMessage($clinicVisit, $freshInvoice ?? $rmeInvoice, $receiptNumber) ?? 'Pembayaran berhasil dicatat, visit selesai dan sisa tagihan masuk piutang. No. Kwitansi: '.$receiptNumber)
                 ->with('payment_allocation', $allocation);
         }
 
@@ -446,5 +448,23 @@ class RmePaymentController extends Controller
             'frozenBranch' => (object) array_merge(['name' => null, 'address' => null, 'phone' => null, 'code' => null], (array) ($document['branch'] ?? [])),
             'frozenCashierName' => isset($receipt['labels']['cashier_name']) ? (string) $receipt['labels']['cashier_name'] : null,
         ];
+    }
+
+    /**
+     * Rule 217 §9 (batch residual) — a batch that paid only earlier receivables leaves
+     * the visit cashier_pending when its own Rp0 invoice is closable "Tanpa Biaya".
+     * Tell the cashier the next step instead of announcing a completed visit — only
+     * when the service's own hold predicate says so (flag ON, Rp0, closable).
+     */
+    private function heldForZeroValueClosureMessage(ClinicVisit $clinicVisit, RmeInvoice $invoice, string $receiptNumber): ?string
+    {
+        $visit = $clinicVisit->fresh();
+
+        if ($visit === null || ! $this->service->isHeldForZeroValueClosure($invoice->fresh() ?? $invoice, $visit)) {
+            return null;
+        }
+
+        return 'Pembayaran piutang sebelumnya tercatat. No. Kwitansi: '.$receiptNumber
+            .'. Tagihan Rp0 kunjungan ini belum selesai — selesaikan dengan "Selesai Tanpa Biaya".';
     }
 }

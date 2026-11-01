@@ -13,7 +13,10 @@ use App\Modules\RmeInvoice\Models\RmeInvoiceItem;
 use App\Modules\RmeInvoice\Support\RmeFinancialAuditEvent;
 use App\Modules\RmeInvoice\Support\RmeInvoicePricingRefusal;
 use App\Modules\RmeInvoice\Support\RmeInvoiceSnapshot;
+use App\Modules\RmeInvoice\Support\RmeZeroValueClosureFeatureGuard;
+use App\Modules\RmeInvoice\Support\RmeZeroValueEligibility;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
+use App\Modules\Treatment\Models\Treatment;
 use App\Support\Clinical\ClinicalClock;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
@@ -34,6 +37,7 @@ class RmeInvoiceService
         private readonly RmeInvoicePricingService $pricing,
         private readonly ClinicalClock $clinicalClock,
         private readonly RmeBillingActorGuard $actors,
+        private readonly RmeZeroValueClosureFeatureGuard $zeroValueFlag,
     ) {}
 
     /**
@@ -281,6 +285,8 @@ class RmeInvoiceService
                     $this->clinicalClock->todayString(),
                 );
 
+                $this->assertKontrolLinesIssuable($visit, $pricing['lines']);
+
                 $invoiceNumber = $this->numberGenerator->generate();
 
                 $invoice = $this->invoices->create([
@@ -371,6 +377,57 @@ class RmeInvoiceService
                 'code' => $refusal->refusalCode,
                 'exception' => $e::class,
             ]);
+        }
+    }
+
+    /**
+     * HARDENING-RME-RP0-CLOSURE-OWNER-DECISIONS-AND-PAID-TREATMENT-1 (owner S6-Q3,
+     * revised; S6-Q3b) — on a server-derived Kontrol a normally paid treatment is
+     * billed at a positive price: a Rp0 line must be an approved free service and
+     * never need lab work. Decided on the server-priced lines (never a submitted
+     * total), BEFORE an invoice number is drawn, so a refused invoice consumes none.
+     *
+     * Gated on `rme.zero_value_closure`: with the flag OFF issuance is exactly what
+     * production does today (D21 manual pricing unchanged). Scoped to Kontrol only —
+     * Rp0 issuance on other visits stays D21g, PENDING.
+     *
+     * @param  list<array<string, mixed>>  $lines
+     */
+    private function assertKontrolLinesIssuable(ClinicVisit $visit, array $lines): void
+    {
+        if (! $this->zeroValueFlag->enabled() || ! RmeZeroValueEligibility::isControlVisit($visit)) {
+            return;
+        }
+
+        $ids = collect($lines)
+            ->filter(fn (array $line) => (int) $line['subtotal_cents'] === 0 && $line['treatment_id'] !== null)
+            ->map(fn (array $line) => (int) $line['treatment_id'])
+            ->unique()
+            ->values()
+            ->all();
+
+        $treatments = $ids === []
+            ? []
+            : Treatment::withTrashed()
+                ->with(['category' => fn ($category) => $category->withTrashed()])
+                ->whereIn('id', $ids)
+                ->get()
+                ->keyBy('id')
+                ->all();
+
+        $refusal = RmeZeroValueEligibility::issuanceRefusal(
+            $visit,
+            array_map(fn (array $line) => [
+                'treatment_id' => $line['treatment_id'] !== null ? (int) $line['treatment_id'] : null,
+                'unit_price_cents' => (int) $line['unit_price_cents'],
+                'discount_cents' => (int) $line['discount_cents'],
+                'subtotal_cents' => (int) $line['subtotal_cents'],
+            ], array_values($lines)),
+            $treatments,
+        );
+
+        if ($refusal !== null) {
+            throw ValidationException::withMessages(['items' => $refusal]);
         }
     }
 }

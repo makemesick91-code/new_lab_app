@@ -40,20 +40,21 @@ Evaluated on the LOCKED invoice and visit. Refusal codes are stable; branch on t
    reached by discount is a discount, not a free service — D21c stays PENDING.
 3. **Never the voucher** `TRT-FREESC`, on any visit, Kontrol included (`ZERO_VALUE_VOUCHER_EXCLUDED`).
 4. **Kontrol** = `visit_type = control` AND `follow_up_of_visit_id` set (server-derived, never a client
-   field): every free line is eligible (owner sub-decision). **Any other visit:** every line must be a
+   field): ~~every free line is eligible (owner sub-decision)~~ — **SUPERSEDED 2026-11-01 by S6-Q3
+   (revised), see §9:** on a Kontrol only an approved free service may be Rp0. **Any other visit:** every line must be a
    treatment in a consultation category (`consultation`); a free-text line or another treatment is
    refused (`ZERO_VALUE_CATEGORY_NOT_ELIGIBLE`). Eligibility comes from `treatment_id` + category,
    never from a description.
 5. The lists are source-controlled in `config/rme_zero_value_closure.php` with NO environment read.
    Widening them is a reviewed code change that needs a new owner decision.
-6. **Narrowed after the independent security review — fail closed, PENDING owner confirmation (not an
-   owner decision):**
+6. **Narrowed after the independent security review** — originally recorded as pending owner
+   confirmation; **both APPROVED by the Owner on 2026-11-01 as S6-Q1 and S6-Q2 (§9)**:
    - a Kontrol must follow a REAL examined visit of the same patient: the parent exists, is not
      soft-deleted, and is `cashier_pending` or `completed` (`ZERO_VALUE_CONTROL_PARENT_INVALID`). A link
      to a cancelled or never-examined visit is a label, not a follow-up;
    - a line whose treatment `requires_lab` is never closed free (`ZERO_VALUE_LAB_LINE_EXCLUDED`):
      `NO_CHARGE` generates no lab candidate, so closing it would silently drop the lab work.
-   Relaxing either needs an explicit owner answer.
+   Relaxing either needs a new owner decision.
 
 ## 3. The transaction (S6-D2, S6-D3, S6-D7)
 
@@ -120,7 +121,14 @@ Rollback = flag off; closed invoices stay closed.
 
 ## 8. Residuals (recorded, not decided)
 
-- **Operator-controlled inputs (security review MEDIUM-1).** Under D21 the unit price is typed by the
+- **Operator-controlled inputs (security review MEDIUM-1) — NARROWED 2026-11-01 by S6-Q3 (§9), NOT closed;
+  severity unchanged (MEDIUM, not release-blocking under S6-D3/D21).** The named vector — a Kontrol link making a
+  normally paid treatment free — is closed by code and tests. What remains (independent hardening review): the
+  cashier still chooses each line's treatment under D21 and nothing reconciles it with the medical record or
+  odontogram, so a performed paid procedure can still be billed as "Konsultasi Dokter" Rp0 (or left off); and what is
+  free depends on master-data category (`manage_clinic_master_data`, in practice Super Admin). Control: detective
+  only — the oversight "Tanpa Biaya (Rp0)" breakdown and self-issued count. Recommended follow-up (not built): an
+  oversight cross-check of NO_CHARGE visits whose clinical record shows a procedure. Historical text: Under D21 the unit price is typed by the
   cashier, and the Kontrol link is chosen at registration, so one branch account can still bill a
   non-consultation treatment at Rp0 on a Kontrol and close it. Rule §2.6 removes the cancelled and
   never-examined parent; the rest is policy, not code. Mitigations available to the Owner, none decided:
@@ -129,9 +137,68 @@ Rollback = flag off; closed invoices stay closed.
 - **Irreversible by design.** `NO_CHARGE` is terminal; correction, refund and dispute refuse it and there
   is no void. A mistaken closure has no in-app undo — this is why the cashier must acknowledge it.
 
-The existing Kontrol batch path (`completeControlVisitIfSettled`) can still complete a Rp0 Kontrol visit
+**RESOLVED 2026-11-01 for every closable invoice (§9.4).** Historical text: The existing Kontrol batch path (`completeControlVisitIfSettled`) can still complete a Rp0 Kontrol visit
 when the patient pays an unrelated parent receivable from the Kontrol cashier page; that invoice then
 stays `UNPAID` (the #36 pattern) and is no longer closable (visit not pending). With the flag on, the
 cashier page offers the closure INSTEAD of the payment button for an eligible Rp0 invoice, and tells the
 cashier to collect the parent receivable from its own invoice. Changing the batch path itself needs an
 owner decision.
+
+## 9. HARDENING 2026-11-01 — owner S6-Q1, S6-Q2, S6-Q3 (revised) (`HARDENING-RME-RP0-CLOSURE-OWNER-DECISIONS-AND-PAID-TREATMENT-1`)
+
+Sprint record: `docs/sprints/hardening-rme-rp0-closure-owner-decisions-and-paid-treatment-1.md`. Register:
+"S6-Q1 … S6-Q3b" in `docs/decisions/rme-billing-correction-owner-decisions.md`. Where this section and
+§2–§8 disagree, **this section wins**.
+
+1. **Decisions.** S6-Q1 (Kontrol parent must be real, same patient, examined, not cancelled/deleted,
+   server-derived) and S6-Q2 (no NO_CHARGE for a lab line) — `OWNER_POLICY_APPROVED`. S6-Q3 —
+   `OWNER_POLICY_REVISED_AND_APPROVED`: a Kontrol may be Rp0; an additional treatment that is normally paid
+   is billed at a **positive** price and paid normally; a mixed Rp0 + paid invoice is never NO_CHARGE.
+   S6-Q3a: the approved free services are the `consultation` category (any visit) and the reserved
+   `control` category (the Kontrol service — on a VALID Kontrol only; no master-data treatment uses it yet,
+   production records the Kontrol service as Konsultasi Dokter). S6-Q3b: the issuance guard applies to
+   Kontrol visits only and follows the flag. **The S6-Q3 revision SUPERSEDES the earlier "creator ≠ closer"
+   recommendation (S6-Q3 open option)**: eligibility, not a second account, is the control; S6-D3 (the branch
+   cashier closes, no second approval) is preserved.
+2. **Eligibility.** `RmeZeroValueEligibility::isApprovedFreeTreatment()` is the single answer, used by the
+   closure and by the issuance guard. Decided from the treatment identity and its master-data category —
+   never a description; a free-text line is never free; the Kontrol link alone never makes anything free.
+   A paid line makes the total positive (`ZERO_VALUE_TOTAL_NOT_ZERO`); a normally paid treatment at Rp0 is
+   `ZERO_VALUE_CATEGORY_NOT_ELIGIBLE`; a lab line `ZERO_VALUE_LAB_LINE_EXCLUDED`; a discount to zero stays
+   `ZERO_VALUE_LINE_NOT_FREE` (D21c unchanged). No new refusal code. Super Admin and any other account
+   receive the same answer.
+3. **Issuance guard (S6-Q3b).** `RmeInvoiceService::create()` — after server pricing, before an invoice
+   number is drawn — refuses (`items`, message carries the stable code) on a server-derived Kontrol every line
+   whose **net** value is Rp0 (priced at Rp0 **or discounted down to it**) that the closure would not accept,
+   decided by the SAME per-line predicate `RmeZeroValueEligibility::lineRefusalCode()` (discount, voucher, lab,
+   category); and any net-Rp0 line on a Kontrol whose parent is not valid (S6-Q1) — otherwise the invoice could be
+   neither paid (amount > 0) nor closed. A line with a positive net value is billed and paid normally. **Flag-gated**: with `rme.zero_value_closure` OFF issuance is exactly
+   production today. Non-Kontrol Rp0 issuance stays D21g, PENDING. D21 manual pricing is unchanged: no tariff
+   is required; a paid treatment's price is whatever the authorized cashier types, but it must be > Rp0.
+4. **Batch residual (#36 pattern) resolved.** `completeControlVisitIfSettled()` and
+   `completeVisitAfterCashierBatch()` no longer complete a visit whose OWN invoice is an UNPAID Rp0 invoice the
+   closure can close: the visit stays `cashier_pending` and the cashier presses "Selesai Tanpa Biaya". The
+   parent payment is unchanged and attributed only to the parent; nothing marks the current invoice PAID or
+   NO_CHARGE. An ineligible Rp0 invoice keeps the existing completion (only the closable case is held);
+   flag OFF changes nothing. The payment page tells the cashier the next step. Historical invoices (#36,
+   #42, #43) are not backfilled.
+5. **Oversight (read-only).** `GET oversight/billing-corrections/zero-value-closures`
+   (`oversight.billing-corrections.zero-value-closures.index`), the billing-correction oversight area: same
+   gate (`clinic-oversight.view-billing-corrections`), permission (`view_billing_correction_oversight`) and
+   branch scope (`ClinicOversightScope`, a filter only narrows). Filters: branch, period (WITA), category,
+   treatment, doctor, closing cashier, invoice creator, invoice/visit reference (exact). Totals, per
+   branch / cashier / doctor / treatment, and anomalies (same account issued and closed — informational,
+   allowed by S6-D3; a NO_CHARGE invoice with a payment row — must be 0). No patient identity, no export,
+   no mutation, no new permission.
+6. **Mistakes.** NO_CHARGE stays terminal; there is no reversal. The incident procedure is in the SOP
+   (`docs/operations/rme-rp0-selesai-tanpa-biaya-sop.md` §"Jika terjadi kesalahan"); recovery needs a separate
+   owner decision. Never edit a NO_CHARGE invoice by SQL as an ordinary fix.
+7. **Status.** `TECHNICAL_ENFORCEMENT_DEPLOYED` is recorded only after production verification; the flag
+   stays OFF until `ACTIVATION-RME-RP0-CONTROL-CONSULTATION-1`.
+8. **Rollback after activation (independent review LOW).** A visit held at `cashier_pending` by §9.4 becomes
+   unreachable if the flag is switched OFF (the closure button disappears and a Rp0 invoice cannot be paid), and
+   also if its parent is later soft-deleted or master data changes the line's category / `requires_lab`. Before
+   switching the flag OFF, find the `cashier_pending` visits whose invoice is Rp0 on the cashier handoff board
+   and close them "Selesai Tanpa Biaya" first. Never complete such a visit by SQL.
+9. **Correction path.** A pre-payment correction cannot add a Rp0 line, and a corrected invoice is refused by
+   the closure (`INVOICE_CORRECTED`), so corrections never reach `NO_CHARGE`.

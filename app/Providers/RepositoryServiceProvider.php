@@ -20,11 +20,13 @@ use App\Modules\ClinicOversight\Interfaces\OversightBillingCorrectionRepositoryI
 use App\Modules\ClinicOversight\Interfaces\OversightClinicalRecordRepositoryInterface;
 use App\Modules\ClinicOversight\Interfaces\OversightKpiRepositoryInterface;
 use App\Modules\ClinicOversight\Interfaces\OversightMonitoringRepositoryInterface;
+use App\Modules\ClinicOversight\Interfaces\OversightZeroValueClosureRepositoryInterface;
 use App\Modules\ClinicOversight\Policies\ClinicOversightPolicy;
 use App\Modules\ClinicOversight\Repositories\OversightBillingCorrectionRepository;
 use App\Modules\ClinicOversight\Repositories\OversightClinicalRecordRepository;
 use App\Modules\ClinicOversight\Repositories\OversightKpiRepository;
 use App\Modules\ClinicOversight\Repositories\OversightMonitoringRepository;
+use App\Modules\ClinicOversight\Repositories\OversightZeroValueClosureRepository;
 use App\Modules\ClinicRoom\Interfaces\ClinicRoomRepositoryInterface;
 use App\Modules\ClinicRoom\Models\ClinicRoom;
 use App\Modules\ClinicRoom\Policies\ClinicRoomPolicy;
@@ -483,6 +485,7 @@ class RepositoryServiceProvider extends ServiceProvider
         RmeBillingDisputeRepositoryInterface::class => RmeBillingDisputeRepository::class,
         RmeBillingDisputeReviewerRepositoryInterface::class => RmeBillingDisputeReviewerRepository::class,
         OversightBillingCorrectionRepositoryInterface::class => OversightBillingCorrectionRepository::class,
+        OversightZeroValueClosureRepositoryInterface::class => OversightZeroValueClosureRepository::class,
         // LEGACY-RME-PDF-1A — legacy (historical) RME PDF archive
         LegacyRmeImportRepositoryInterface::class => LegacyRmeImportRepository::class,
         LegacyRmeRecordRepositoryInterface::class => LegacyRmeRecordRepository::class,

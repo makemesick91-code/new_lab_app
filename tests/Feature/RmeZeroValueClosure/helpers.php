@@ -167,3 +167,19 @@ if (! function_exists('rzvSetup')) {
         ];
     }
 }
+
+if (! function_exists('rzvIssueWhileOff')) {
+    /**
+     * Issue an invoice while the flag is OFF — exactly today's production issuance,
+     * which the S6-Q3b Kontrol issuance guard does not touch — then switch it back ON.
+     * Used to put an invoice the guard would refuse in front of the CLOSURE.
+     */
+    function rzvIssueWhileOff(ClinicVisit $visit, array $lines): RmeInvoice
+    {
+        rzvFlag(false);
+        $invoice = rzvInvoice($visit, $lines);
+        rzvFlag(true);
+
+        return $invoice;
+    }
+}

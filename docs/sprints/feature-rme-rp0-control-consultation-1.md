@@ -4,6 +4,11 @@
 **Owner decisions:** S6-D1 … S6-D8 (2026-11-01) — `docs/decisions/rme-rp0-control-consultation-owner-decision-package.md`
 **ADR:** `docs/adr/0014-rme-zero-value-closure.md` · **SOP:** `docs/operations/rme-rp0-selesai-tanpa-biaya-sop.md`
 
+> **Forward pointer (2026-11-01):** hardened by `HARDENING-RME-RP0-CLOSURE-OWNER-DECISIONS-AND-PAID-TREATMENT-1`
+> (`docs/sprints/hardening-rme-rp0-closure-owner-decisions-and-paid-treatment-1.md`, rule 217 §9). S6-Q1/S6-Q2 were
+> approved; S6-Q3 was revised, which superseded the S6-D1 sub-decision "every free line of a Kontrol". This record
+> is kept as written.
+
 ## 1. Priority and tracker
 
 The Owner deferred Sprint 2 and asked for Sprint 6. That is a prioritisation, not an approval of D21g,
