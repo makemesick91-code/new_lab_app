@@ -989,6 +989,49 @@ Recorded result (evidence: §19 of
 - Unchanged: financial reconciliation `PASS_RECONSTRUCTED`; live observation not performed;
   case #42's `RED_FLAG_UNRESOLVED`; Full Prepayment Pilot GO = **NO_GO**; no tag.
 
+## Production observation, 2026-11-01 — case #44 decided under observation; S2-V1, S2-V2
+
+Evidence: `docs/sprints/verification-rme-invoice-correction-prepayment-pilot-case-44-1.md`;
+rule 196 §11 (§53–§62). Changes no runtime behaviour.
+
+Correction `RMECOR-202611-000003` (invoice #44 SPN4, Rp6.500.000 → Rp7.000.000, +Rp500.000,
+reason "salah ketik", `owner_approval_reference` NULL) was submitted by account 29 at 09:59:19 WITA,
+44 s after the invoice, and decided by account 1 at 15:41:11 WITA (APPROVED and APPLIED in one
+transaction) under observation. Decision-step reconciliation: PASS (observed). Full Prepayment
+Pilot GO = **NO_GO** (`NO_GO_OPERATIONAL_BLOCKED`); no tag.
+
+### Owner statements on case #44 — `OWNER_RETROSPECTIVE_ATTESTATION` (in session, 2026-11-01)
+
+Recorded as stated, after the submit. Not entered into any correction field.
+
+1. A written Owner approval for this case existed before the submit (09:59:19 WITA).
+2. The Owner instructed IT to approve; IT held the approval "to use it to close Sprint 2".
+
+Recorded result:
+
+- Pre-submission approval: `OWNER_ATTESTED_EVIDENCE_PENDING_VERIFICATION` (rule 196 §32, §50).
+  The approval note entered by the checker is the field label "Catatan Persetujuan", not a
+  reference (§58).
+- The hold kept the patient's payment blocked by D10 for 5 h 41 min 52 s. Rule 196 §8 / §21 and
+  Owner directive item 16 forbid delaying a payment to keep a case in the pilot window, so case #44
+  is `NOT_ELIGIBLE_FOR_CLOSURE` (§53). This is a statement about the case, not about any person.
+
+### S2-V1 — authorized verifier — `OWNER_POLICY_APPROVED`, `REPOSITORY_POLICY_RECORDED` (in session, 2026-11-01)
+
+Question: who is the authorized verifier that observes the checker's decision on a pilot case
+(Owner directive item 15)? Answer chosen: **the Owner witnesses directly**; IT captures the
+server-side evidence (probe, fresh baseline, login and session rows, reconciliation) over the
+canonical SSH path. The verifier is engaged before the submit for any case meant to close the
+pilot. IT acting as checker (account 1) is never the Owner's case approval (directive item 14).
+
+### S2-V2 — deploys while a correction is active — `OWNER_POLICY_APPROVED`, `REPOSITORY_POLICY_RECORDED` (in session, 2026-11-01)
+
+Question: may an unrelated runtime deploy proceed while a pilot correction is `SUBMITTED` or
+`APPROVED`? Answer chosen: **only in a window coordinated with the checker** — the checker does
+not act during the deploy; the correction's status and `active_corrections` are confirmed
+immediately before and after; the runtime SHA is recorded on both sides. With no active correction
+the window is free. Rule 196 §60.
+
 ## Ratification of PP-1 … PP-10 (2026-10-25)
 
 **Status:** `OWNER_POLICY_APPROVED` · `REPOSITORY_POLICY_RECORDED`. **Not**

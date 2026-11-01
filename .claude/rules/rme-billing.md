@@ -137,7 +137,9 @@ code, then the canonical rule, and report the drift.
   `verification-rme-invoice-correction-prepayment-pilot-1-go`. Unobserved real cases (#42, #43) reconcile as
   `PASS (RECONSTRUCTED)` but never accumulate into a GO; a probe reading GO after a case is state, not observation.
   An Owner's after-the-fact statement is `OWNER_RETROSPECTIVE_ATTESTATION`, never the approval itself.
-  Source: rules 196 (§9, §10), 202.
+  A case kept open to serve the pilot is disqualified even if its decision is observed (#44); observation starts
+  before the submit; the Owner witnesses as verifier (S2-V1); no deploy overlaps a live correction (S2-V2).
+  Source: rules 196 (§9, §10, §11), 202.
 
 ### Billing disputes (OPS-OQ-1, all branches)
 

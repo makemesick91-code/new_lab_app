@@ -212,3 +212,30 @@ flowchart TD
     E -- Ya --> F["14 pemeriksaan PASS<br/>RECONCILIATION_RESULT = PASS"]
     E -- Tidak --> G["FAIL — berhenti, simpan bukti,<br/>insiden R, jangan tambal data"]
 ```
+
+## 6. Protokol verifikator (rule 196 §11, keputusan Owner S2-V1)
+
+Verifikator yang berwenang: **Owner menyaksikan langsung**; IT merekam bukti dari server
+melalui jalur SSH kanonik. Verifikator hadir **sebelum** Maker mengajukan. Bila tidak bisa,
+kasus tetap diproses dan tidak dipakai untuk penutupan pilot.
+
+1. **Sebelum submit.** Baca dulu tabel koreksi (`active_corrections`, §3.2). Jalankan probe
+   `--maker=29 --checker=1` sebagai pengguna runtime. Penutupan pilot butuh `LIVE_NOW=yes`
+   dan Decision GO.
+2. **"Siap" dicek di server, bukan dari jawaban.** Setiap operator login sendiri. IT memastikan
+   ada `POST /login` milik akun itu dan baris sesi baru di tabel `sessions`. Alamat jaringan
+   hanya dihitung, tidak pernah dicetak. Jawaban "siap" tanpa sesi di server berarti belum siap.
+3. **Baseline segar** (§3.1 dan §3.2) diambil **tepat sebelum** submit, lalu sekali lagi tepat
+   sebelum keputusan Checker. Catat waktu server (`now()`) dan sha256 berkas hasilnya.
+4. **Aba-aba.** IT memberi aba-aba hanya setelah butir 2 dan 3 selesai. Checker memutuskan
+   **segera** dan mengisi catatan persetujuan dengan rujukan Owner yang sudah ada. Label
+   kolom ("Catatan Persetujuan") bukan rujukan.
+5. **Sesudah keputusan.** Ukur ulang dan hitung baris audit **per aksi**. Membuka layar koreksi
+   menulis baris `OVERSIGHT_BILLING_CORRECTION_VIEWED`; baris itu bukan selisih keuangan. Cek
+   `integrityHolds()` v0/v1 dengan skrip read-only. Pastikan juga tagihan, item, dan pembayaran
+   lain tidak berubah.
+6. **Jangan menahan pembayaran.** Kasus yang dibiarkan menunggu demi pilot tidak sah untuk
+   penutupan (rule 196 §8, §53), walaupun keputusannya teramati.
+7. **Deploy (S2-V2).** Selama ada koreksi `SUBMITTED`/`APPROVED`, deploy hanya boleh dalam
+   jendela yang disepakati dengan Checker. Status koreksi dicek sebelum dan sesudah deploy, dan
+   SHA runtime dicatat di kedua sisi.
