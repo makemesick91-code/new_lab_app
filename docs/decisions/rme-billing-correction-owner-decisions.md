@@ -693,7 +693,7 @@ not activated; invoices #36, #42, #43 untouched; `rme.zero_value_closure` OFF.
 Pemeriksaan"; whether a CONFIRMED discrepancy refuses NO_CHARGE or requires a written reason; who may resolve it;
 edit rules after completion; whether SATUSEHAT Procedure moves from the invoice line to the clinical input.
 
-### DPT-Q1 — "Tidak Ada Tindakan" is operational KONTROL — `OWNER_POLICY_REVISED_AND_APPROVED`, `REPOSITORY_POLICY_RECORDED`, `TECHNICAL_ENFORCEMENT_IMPLEMENTED_FLAG_OFF` (2026-11-01)
+### DPT-Q1 — "Tidak Ada Tindakan" is operational KONTROL — `OWNER_POLICY_REVISED_AND_APPROVED`, `REPOSITORY_POLICY_RECORDED`, `TECHNICAL_ENFORCEMENT_DEPLOYED_FLAG_OFF` (2026-11-01)
 
 **Provenance.** Stated as an owner decision in the execution brief of `FEATURE-RME-DOCTOR-PERFORMED-TREATMENTS-1`
 (2026-11-01), which builds the CB-Q1 input under CB-Q3. The brief records it as revised and approved; no signed
@@ -717,6 +717,9 @@ artefact exists and none is claimed. Implementation: rule 219, ADR 0016.
 
 **Consequences.** MEDIUM-1 stays **`PARTIALLY_MITIGATED`**: the authoritative source of CB-Q1 now exists, but it is
 behind a flag that is OFF, it is optional at examination completion, and it is detective.
+
+**Technical enforcement:** `TECHNICAL_ENFORCEMENT_DEPLOYED_FLAG_OFF` — runtime `931c716c` (PR #581) merged,
+deployed and production-verified on 2026-11-01 (rule 219 §14); `rme.doctor_performed_treatments` stays OFF.
 
 **The CB-Q1 open items are not decided by DPT-Q1.** They are carried as DPT-Q2 … DPT-Q10 in
 `docs/decisions/rme-doctor-performed-treatments-owner-decision-package.md` (blocking contract, mandatory declaration

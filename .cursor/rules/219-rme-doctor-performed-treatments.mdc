@@ -185,6 +185,8 @@ are untouched.
   `down()` refuses while rows exist.
 - Activation = `ACTIVATION-RME-DOCTOR-PERFORMED-TREATMENTS-1`, a separate owner decision (DPT-Q8), independent of
   `rme.zero_value_closure` (also OFF).
-- Status: `IMPLEMENTATION_COMPLETE_FLAG_OFF` until the sprint record §Deployment records the deployed runtime.
+- Status: `TECHNICAL_ENFORCEMENT_DEPLOYED_FLAG_OFF` — runtime `931c716c` (tree `150679aa`, PR #581) deployed
+  2026-11-01 14:28 UTC (22:28 WITA), production-verified, GO tag `feature-rme-doctor-performed-treatments-1-implementation-go`
+  (evidence: sprint record §8). The flag stays OFF.
 - MEDIUM-1 (rule 218 §8) stays `PARTIALLY_MITIGATED`: the authoritative source now EXISTS but is OFF, optional,
   and detective. Never claim it closed.
