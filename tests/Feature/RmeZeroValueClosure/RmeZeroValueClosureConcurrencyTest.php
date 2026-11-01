@@ -51,12 +51,13 @@ use App\Modules\RmeInvoice\Services\RmeBillingDisputeService;
 use App\Modules\RmeInvoice\Services\RmePaymentService;
 use App\Modules\RmeInvoice\Support\RmeBillingDisputeReason;
 use App\Modules\RmeInvoice\Support\RmeFinancialAuditEvent;
-use App\Modules\RmeInvoice\Support\RmeZeroValueEligibility;
+use App\Modules\RmeOnlineContext\Services\UserOnlineContextService;
 use App\Modules\Treatment\Models\Treatment;
 use App\Modules\TreatmentCategory\Models\TreatmentCategory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
+use Spatie\Permission\Models\Role;
 
 require_once __DIR__.'/helpers.php';
 
@@ -70,6 +71,9 @@ const RZVC_TABLES = [
     'trx_rme_refund_patient_references',
     'trx_rme_refund_requests',
     'trx_rme_owner_approval_references', // HARDENING-RME-OWNER-REFERENCE-REGISTRY-1: child of users only
+    // HARDENING (rule 217 §9) race I: a context-bound Kasir's daily and online contexts (FK users, branches).
+    'trx_daily_branch_contexts',
+    'trx_user_online_contexts',
     'sys_audit_logs',
     'trx_satusehat_audit_logs',
     'trx_satusehat_candidates',
@@ -99,6 +103,7 @@ const RZVC_TABLES = [
     'mst_treatment_categories',
     'mst_branches',
     'users',
+    'roles', // race I creates the Kasir role when the database carries no seeded roles
 ];
 
 beforeEach(function () {
@@ -131,6 +136,10 @@ afterEach(function () {
     $newDoctorIds = $writer->table('mst_doctors')->where('id', '>', $this->watermarks['mst_doctors'])->pluck('id');
     $writer->table('mst_doctor_branches')->whereIn('doctor_id', $newDoctorIds)->delete();
     $writer->table('model_has_permissions')
+        ->where('model_type', User::class)
+        ->where('model_id', '>', $this->watermarks['users'])
+        ->delete();
+    $writer->table('model_has_roles')
         ->where('model_type', User::class)
         ->where('model_id', '>', $this->watermarks['users'])
         ->delete();
@@ -398,7 +407,7 @@ it('D: a closure waiting on the invoice lock while the cashier is deactivated is
 
 // ─── E: closure vs a Kontrol batch payment on the same Rp0 invoice ──────────
 
-it('E: a closure waiting on a Kontrol batch that pays the parent receivable never doubles the completion or invents a payment', function () {
+it('E: a Kontrol batch that pays the parent commits first, the visit is HELD, and the waiting closure then closes it (rule 217 §9)', function () {
     $fx = rzvcFixture();
     $parentVisit = rzvcVisit($fx);
     $parent = rzvcInvoice($fx, $parentVisit, 500000);
@@ -416,16 +425,18 @@ it('E: a closure waiting on a Kontrol batch that pays the parent receivable neve
     $race = rzvcRace(fn () => app(RmePaymentService::class)->closeZeroValueInvoice($control->fresh(), $fx['cashier']));
     rzvcJoin($handle);
 
-    // The batch committed first: the parent is paid by the cashier's real money,
-    // and the existing Kontrol rule completed the visit. The closure, decided
-    // after it under the same lock, finds the visit no longer cashier_pending.
+    // HARDENING (rule 217 §9): before, the batch completed the Kontrol visit around
+    // its UNPAID Rp0 invoice (the #36 pattern) and this closure was refused
+    // VISIT_NOT_PENDING. Now the batch leaves the closable visit cashier_pending, so
+    // the closure — decided after it under the same lock — closes it, once.
     expect($race['waited'])->toBeGreaterThan(1.0)
-        ->and($race['refusal'])->toContain(RmeZeroValueEligibility::VISIT_NOT_PENDING)
+        ->and($race['refusal'])->toBeNull()
         ->and(rzvcPayments($control))->toBe(0)
         ->and(rzvcPayments($parent))->toBe(1)
         ->and($parent->fresh()->status)->toBe(RmeInvoice::STATUS_PAID)
-        ->and($control->fresh()->status)->toBe(RmeInvoice::STATUS_UNPAID)
-        ->and(rzvcAudits($control))->toBe(0);
+        ->and($control->fresh()->status)->toBe(RmeInvoice::STATUS_NO_CHARGE)
+        ->and(ClinicVisit::query()->find($control->clinic_visit_id)->status)->toBe(ClinicVisit::STATUS_COMPLETED)
+        ->and(rzvcAudits($control))->toBe(1);
 });
 
 it('F: a closure waiting on a closure that rolls back succeeds once', function () {
@@ -440,4 +451,191 @@ it('F: a closure waiting on a closure that rolls back succeeds once', function (
         ->and($race['refusal'])->toBeNull()
         ->and($fx['invoice']->fresh()->status)->toBe(RmeInvoice::STATUS_NO_CHARGE)
         ->and(rzvcAudits($fx['invoice']))->toBe(1);
+});
+
+// ─── HARDENING (rule 217 §9) — the remaining §15 scenarios ──────────────────
+
+/** @param array<string, mixed> $fx */
+function rzvcMixedInvoice(array $fx, ClinicVisit $visit, int $paidPrice): RmeInvoice
+{
+    $invoice = rzvcInvoice($fx, $visit, 0);
+    $category = TreatmentCategory::query()->where('code', 'preventive')->first()
+        ?? TreatmentCategory::factory()->create(['code' => 'preventive', 'name' => 'Preventif']);
+    $scaling = Treatment::factory()->create(['name' => 'Scaling '.uniqid(), 'treatment_category_id' => $category->id, 'is_active' => true, 'requires_lab' => false]);
+
+    DB::table('trx_rme_invoice_items')->insert([
+        'rme_invoice_id' => $invoice->id, 'treatment_id' => $scaling->id, 'description' => 'Scaling', 'qty' => 1,
+        'unit_price' => $paidPrice, 'discount' => 0, 'subtotal' => $paidPrice, 'created_at' => now(), 'updated_at' => now(),
+    ]);
+    DB::table('trx_rme_invoices')->where('id', $invoice->id)->update(['subtotal' => $paidPrice, 'grand_total' => $paidPrice]);
+
+    return $invoice->fresh();
+}
+
+it('G: an ordinary carry-over batch that pays a prior receivable commits first; the new visit is held and the waiting closure closes it', function () {
+    $fx = rzvcFixture();
+    $prior = rzvcInvoice($fx, rzvcVisit($fx), 500000);
+    $current = $fx['invoice'];
+    $form = rmeDeclaredPaymentForm($current, [
+        'amount' => 500000, 'paid_at' => now()->format('Y-m-d H:i:s'),
+        'invoice_versions' => [$current->id => 0, $prior->id => 0],
+    ]);
+
+    $handle = rzvcCompeting([[
+        'kind' => 'pay_visit', 'invoice' => (int) $current->id, 'actor' => (int) $fx['cashier']->id, 'form' => $form, 'selected' => [(int) $prior->id],
+    ]]);
+
+    test()->actingAs($fx['cashier']);
+    $race = rzvcRace(fn () => app(RmePaymentService::class)->closeZeroValueInvoice($current->fresh(), $fx['cashier']));
+    rzvcJoin($handle);
+
+    expect($race['waited'])->toBeGreaterThan(1.0)
+        ->and($race['refusal'])->toBeNull()
+        ->and(rzvcPayments($current))->toBe(0)
+        ->and(rzvcPayments($prior))->toBe(1)
+        ->and($prior->fresh()->status)->toBe(RmeInvoice::STATUS_PAID)
+        ->and($current->fresh()->status)->toBe(RmeInvoice::STATUS_NO_CHARGE)
+        ->and(rzvcAudits($current))->toBe(1);
+});
+
+it('H: a closure commits first; a Kontrol batch waiting on it is refused and writes nothing — the parent stays collectible from its own invoice', function () {
+    $fx = rzvcFixture();
+    $parentVisit = rzvcVisit($fx);
+    $parent = rzvcInvoice($fx, $parentVisit, 500000);
+    $control = rzvcInvoice($fx, rzvcVisit($fx, $parentVisit), 0);
+    $form = rmeDeclaredPaymentForm($control, [
+        'amount' => 500000, 'paid_at' => now()->format('Y-m-d H:i:s'),
+        'invoice_versions' => [$control->id => 0, $parent->id => 0],
+    ]);
+
+    $handle = rzvcCompeting([rzvcCloseStep($control, $fx['cashier'])]);
+
+    test()->actingAs($fx['cashier']);
+    $race = rzvcRace(fn () => app(RmePaymentService::class)->allocateControlPayment($control->fresh(), $fx['cashier'], $form));
+    rzvcJoin($handle);
+
+    expect($race['waited'])->toBeGreaterThan(1.0)
+        ->and($race['refusal'])->not->toBeNull()
+        ->and($control->fresh()->status)->toBe(RmeInvoice::STATUS_NO_CHARGE)
+        ->and(rzvcPayments($control, $parent))->toBe(0)
+        ->and(rzvcAudits($control))->toBe(1);
+
+    // The parent receivable is collected from the parent's own invoice.
+    app(RmePaymentService::class)->pay($parent->fresh(), $fx['cashier'], rmeDeclaredPaymentForm($parent->fresh(), [
+        'amount' => 500000, 'paid_at' => now()->format('Y-m-d H:i:s'),
+        'invoice_versions' => [$parent->id => 0, $control->id => 0],
+    ]));
+    expect($parent->fresh()->status)->toBe(RmeInvoice::STATUS_PAID);
+});
+
+it('I: a closure waiting while the Kasir\'s working branch is switched away (daily authority) is refused on the re-read scope', function () {
+    $fx = rzvcFixture();
+    Role::findOrCreate('Kasir', 'web');
+    $kasir = userWith(['manage_rme_billing', 'view_clinic_visits']);
+    $kasir->assignRole('Kasir');
+    app(UserOnlineContextService::class)->startKasirSession($kasir, (int) $fx['branch']->id);
+    $elsewhere = Branch::factory()->create(['code' => 'ZD'.random_int(100, 999), 'is_rme_enabled' => true, 'is_active' => true]);
+
+    $handle = rzvcCompeting([
+        ['kind' => 'select', 'sql' => 'SELECT id FROM trx_rme_invoices WHERE id = ? FOR UPDATE', 'bindings' => [(int) $fx['invoice']->id]],
+        // The effect of an APPROVED daily branch switch (BranchChangeApprovalService):
+        // the daily context is the branch authority (FEATURE-DAILY-BRANCH-CONTEXT-
+        // LOCK-1); the online row follows it. Moving only the online row would not
+        // move the scope at all — by design.
+        ['kind' => 'select', 'sql' => 'UPDATE trx_daily_branch_contexts SET current_branch_id = ? WHERE user_id = ? RETURNING id', 'bindings' => [(int) $elsewhere->id, (int) $kasir->id]],
+        ['kind' => 'select', 'sql' => 'UPDATE trx_user_online_contexts SET branch_id = ? WHERE user_id = ? RETURNING id', 'bindings' => [(int) $elsewhere->id, (int) $kasir->id]],
+    ]);
+
+    test()->actingAs($kasir);
+    $race = rzvcRace(fn () => app(RmePaymentService::class)->closeZeroValueInvoice($fx['invoice']->fresh(), $kasir));
+    rzvcJoin($handle);
+
+    expect($race['waited'])->toBeGreaterThan(1.0)
+        ->and($race['refusal'])->not->toBeNull()
+        ->and($fx['invoice']->fresh()->status)->toBe(RmeInvoice::STATUS_UNPAID)
+        ->and(rzvcAudits($fx['invoice']))->toBe(0);
+});
+
+it('J: a mixed Kontrol batch (Rp0 Kontrol + paid treatment) and a direct parent payment never double-collect the parent', function () {
+    $fx = rzvcFixture();
+    $parentVisit = rzvcVisit($fx);
+    $parent = rzvcInvoice($fx, $parentVisit, 500000);
+    $control = rzvcMixedInvoice($fx, rzvcVisit($fx, $parentVisit), 250000);
+    $batch = rmeDeclaredPaymentForm($control, [
+        'amount' => 750000, 'paid_at' => now()->format('Y-m-d H:i:s'),
+        'invoice_versions' => [$control->id => 0, $parent->id => 0],
+    ]);
+    $direct = rmeDeclaredPaymentForm($parent, [
+        'amount' => 500000, 'paid_at' => now()->format('Y-m-d H:i:s'),
+        'invoice_versions' => [$parent->id => 0, $control->id => 0],
+    ]);
+
+    $handle = rzvcCompeting([[
+        'kind' => 'pay_control', 'invoice' => (int) $control->id, 'actor' => (int) $fx['cashier']->id, 'form' => $batch,
+    ]]);
+
+    test()->actingAs($fx['cashier']);
+    $race = rzvcRace(fn () => app(RmePaymentService::class)->pay($parent->fresh(), $fx['cashier'], $direct));
+    rzvcJoin($handle);
+
+    expect($race['waited'])->toBeGreaterThan(1.0)
+        ->and($race['refusal'])->not->toBeNull()
+        ->and(rzvcPayments($parent))->toBe(1)
+        ->and(rzvcPayments($control))->toBe(1)
+        ->and((float) DB::table('trx_rme_payments')->where('rme_invoice_id', $parent->id)->sum('amount'))->toEqual(500000.0)
+        ->and($parent->fresh()->status)->toBe(RmeInvoice::STATUS_PAID)
+        ->and($control->fresh()->status)->toBe(RmeInvoice::STATUS_PAID);
+});
+
+it('K: a parent receivable payment and the Kontrol Rp0 closure run together without a deadlock, each touching only its own invoice', function () {
+    $fx = rzvcFixture();
+    $parentVisit = rzvcVisit($fx);
+    $parent = rzvcInvoice($fx, $parentVisit, 500000);
+    $control = rzvcInvoice($fx, rzvcVisit($fx, $parentVisit), 0);
+    $form = rmeDeclaredPaymentForm($parent, [
+        'amount' => 500000, 'paid_at' => now()->format('Y-m-d H:i:s'),
+        'invoice_versions' => [$parent->id => 0, $control->id => 0],
+    ]);
+
+    $handle = rzvcCompeting([[
+        'kind' => 'pay', 'invoice' => (int) $parent->id, 'actor' => (int) $fx['cashier']->id, 'form' => $form,
+    ]]);
+
+    test()->actingAs($fx['cashier']);
+    $race = rzvcRace(fn () => app(RmePaymentService::class)->closeZeroValueInvoice($control->fresh(), $fx['cashier']));
+    rzvcJoin($handle);
+
+    expect($race['refusal'])->toBeNull()
+        ->and($parent->fresh()->status)->toBe(RmeInvoice::STATUS_PAID)
+        ->and($control->fresh()->status)->toBe(RmeInvoice::STATUS_NO_CHARGE)
+        ->and(rzvcPayments($parent))->toBe(1)
+        ->and(rzvcPayments($control))->toBe(0)
+        ->and(rzvcAudits($control))->toBe(1);
+});
+
+it('L: a patient-merge ownership re-point (the merge\'s row writes) waiting ahead of the closure leaves one consistent NO_CHARGE on the canonical patient', function () {
+    // Simulates PatientMergeExecutionService's registry-driven UPDATE of patient_id
+    // on visits and invoices, in one transaction holding those rows — not the whole
+    // merge workflow (cases, approvals), which is out of the closure's lock path.
+    $fx = rzvcFixture();
+    $parentVisit = rzvcVisit($fx);
+    $control = rzvcInvoice($fx, rzvcVisit($fx, $parentVisit), 0);
+    $canonical = Patient::factory()->create(['branch_id' => $fx['branch']->id]);
+    $old = (int) $fx['patient']->id;
+
+    $handle = rzvcCompeting([
+        ['kind' => 'select', 'sql' => 'UPDATE trx_rme_invoices SET patient_id = ? WHERE patient_id = ? RETURNING id', 'bindings' => [(int) $canonical->id, $old]],
+        ['kind' => 'select', 'sql' => 'UPDATE trx_clinic_visits SET patient_id = ? WHERE patient_id = ? RETURNING id', 'bindings' => [(int) $canonical->id, $old]],
+    ]);
+
+    test()->actingAs($fx['cashier']);
+    $race = rzvcRace(fn () => app(RmePaymentService::class)->closeZeroValueInvoice($control->fresh(), $fx['cashier']));
+    rzvcJoin($handle);
+
+    expect($race['waited'])->toBeGreaterThan(1.0)
+        ->and($race['refusal'])->toBeNull()
+        ->and($control->fresh()->status)->toBe(RmeInvoice::STATUS_NO_CHARGE)
+        ->and((int) $control->fresh()->patient_id)->toBe((int) $canonical->id)
+        ->and(rzvcPayments($control))->toBe(0)
+        ->and(rzvcAudits($control))->toBe(1);
 });

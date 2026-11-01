@@ -251,8 +251,11 @@ code, then the canonical rule, and report the drift.
   registry (rule 214, `61450801`); **"Selesai Tanpa Biaya"** (rule 217, Sprint 6/7, owner decisions S6-D1…S6-D8
   of 2026-11-01): a legitimate Rp0 Konsultasi / Kontrol invoice closes to the terminal status `NO_CHARGE` (never
   PAID, no payment row) and completes its visit — runtime `4520a276`, 2026-11-01, flag `rme.zero_value_closure`
-  OFF, activation a separate Owner decision; S6-Q1/S6-Q2 fail-closed narrowings await owner confirmation, S6-Q3
-  open. **Not built:** reversal (D26 excluded), patient credit (D6 excluded). **PENDING owner decisions:** D21c
+  OFF, activation a separate Owner decision. **Hardening 2026-11-01 (rule 217 §9):** S6-Q1/S6-Q2 APPROVED, S6-Q3
+  REVISED AND APPROVED — a Kontrol may be Rp0 but a normally paid treatment on it is billed > Rp0 and paid normally
+  (mixed invoice ≠ NO_CHARGE); approved free services = `consultation` category + reserved `control` category on a
+  valid Kontrol; flag-gated Kontrol issuance guard; batch-path #36 residual resolved for closable invoices; read-only
+  oversight "Tanpa Biaya (Rp0)"; S6-D3 preserved (no creator ≠ closer). **Not built:** reversal (D26 excluded), patient credit (D6 excluded). **PENDING owner decisions:** D21c
   discount policy, D21g/D22 for Rp0 **issuance**, vouchers and any Rp0 correction (answered for the closure scope
   only; D28 unchanged), D24 `paid_at` backdating. The historical Rp0 UNPAID SPN4 invoice #36 stays untouched (S6-D2).
 - Open owner questions: a correction settling a PARTIAL invoice leaves no LUNAS receipt; whether a pre-payment approval
@@ -292,7 +295,7 @@ code, then the canonical rule, and report the drift.
 | `.cursor/rules/214-rme-owner-reference-registry.mdc` | Owner reference registry: one reference, one decision scope, enforced by the database |
 | `.cursor/rules/215-rme-billing-refund-request-approval.mdc` | Refund request & approval (Sprint 4/7): decides, never pays; Front Office maker, role+branch reviewer, flag OFF |
 | `.cursor/rules/216-rme-refund-settlement.mdc` | Refund settlement (Sprint 5/7): records money out; settler ≠ approver; flag OFF, settler list EMPTY |
-| `.cursor/rules/217-rme-rp0-consultation-control.mdc` | Konsultasi & Kontrol Rp0 (Sprint 6/7): "Selesai Tanpa Biaya" → `NO_CHARGE`, no payment; flag OFF |
+| `.cursor/rules/217-rme-rp0-consultation-control.mdc` | Konsultasi & Kontrol Rp0 (Sprint 6/7): "Selesai Tanpa Biaya" → `NO_CHARGE`, no payment; flag OFF; §9 hardening (S6-Q1/Q2/Q3) |
 | `.cursor/rules/109-rme-exam-consent-odontogram-history.mdc` | Consent gates exam finish, not payment |
 | `.cursor/rules/92-feature-flag-runtime-override.mdc` | Flag environment overrides captured at config build |
 

@@ -20,6 +20,7 @@ use App\Modules\ClinicOversight\Controllers\OversightMonitoringController;
 use App\Modules\ClinicOversight\Controllers\OversightOverpaymentObligationController;
 use App\Modules\ClinicOversight\Controllers\OversightRefundRequestController;
 use App\Modules\ClinicOversight\Controllers\OversightRefundSettlementController;
+use App\Modules\ClinicOversight\Controllers\OversightZeroValueClosureController;
 use App\Modules\ClinicRoom\Controllers\ClinicRoomController;
 use App\Modules\ClinicVisit\Controllers\ClinicVisitController;
 use App\Modules\Consent\Controllers\RmeVisitConsentController;
@@ -2630,6 +2631,8 @@ Route::middleware('auth')->prefix('oversight')->name('oversight.')->group(functi
             ->whereNumber('refundRequest')->name('refund-requests.show');
         // FEATURE-RME-REFUND-SETTLEMENT-1 (RFS-6) — refund payouts and net received, read-only.
         Route::get('refund-settlements', [OversightRefundSettlementController::class, 'index'])->name('refund-settlements.index');
+        // HARDENING-RME-RP0-CLOSURE-OWNER-DECISIONS-AND-PAID-TREATMENT-1 (rule 217 §9) — "Tanpa Biaya" closures, read-only.
+        Route::get('zero-value-closures', [OversightZeroValueClosureController::class, 'index'])->name('zero-value-closures.index');
         Route::get('refund-settlements/{settlement}', [OversightRefundSettlementController::class, 'show'])
             ->whereNumber('settlement')->name('refund-settlements.show');
         Route::middleware('permission:export_oversight_data')->group(function () {

@@ -59,6 +59,8 @@ try {
             ]),
             'deactivate_user' => app(UserService::class)->deactivate($user($step, 'user')),
             'pay_control' => app(RmePaymentService::class)->allocateControlPayment($invoice($step), $user($step), (array) $step['form']),
+            'pay' => app(RmePaymentService::class)->pay($invoice($step), $user($step), (array) $step['form']),
+            'pay_visit' => app(RmePaymentService::class)->allocateVisitPayment($invoice($step), $user($step), (array) $step['form'], array_map('intval', (array) $step['selected'])),
             default => throw new InvalidArgumentException('Unknown race step '.(string) $step['kind']),
         };
     }

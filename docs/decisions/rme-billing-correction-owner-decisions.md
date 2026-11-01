@@ -45,6 +45,7 @@ A decision is only as far along as the last label that is evidenced. A brief's
 | 2026-10-31 | **Refund request & approval (Sprint 4/7): D4 via RF-1 — maker Front Office at its assigned working branch only; reviewers Super Admin (all branches), Supervisor RME (authorized scope), Kepala Cabang (own managed branch, narrow permission); MANDATORY case-specific Owner approval reference on every request, before processing, linked to invoice and obligation, never reused for another financial decision, validated in application and database; no self-approval. D18 via RF-2 = A (approval is not settlement; separation only). RF-4 = A (no partial refund). Audit permanent** | `OWNER_POLICY_APPROVED`, `REPOSITORY_POLICY_RECORDED` — nothing built, refund NOT_ACTIVE | owner statements in the brief of `FIX-CLINIC-OVERSIGHT-DATE-RANGE-TEST-DETERMINISM-1` and the Sprint 4 Owner Decision Addendum (2026-10-31); mapping in `docs/decisions/rme-refund-request-approval-owner-decision-package.md` §7 |
 | 2026-10-31 | **Refund request & approval implemented (rule 215); Owner reference registry deployed (rule 214)** — RF-1 … RF-14, RF-1a and RF-8a enforced in code: Front Office maker at its working branch; reviewers by role and server-resolved branch (Supervisor RME's authorized scope resolves to every RME branch — the existing governance tier, recorded, not widened); maker ≠ checker per account; mandatory case-specific Owner reference consumed in the shared registry, also refused on a pre-payment correction once spent; patient request reference in its own registry; full refund only; dispute refuses submission and approval. Flag `rme.billing_refund_request` OFF; pilot SPN4 with an EMPTY identity allowlist; settlement NOT built | `OWNER_POLICY_APPROVED`, `REPOSITORY_POLICY_RECORDED`, `TECHNICAL_ENFORCEMENT_DEPLOYED` — refund: 2026-10-31, runtime `9826bd69`, tag `feature-rme-billing-refund-request-approval-1-implementation-go`, **flag OFF, identity allowlist EMPTY, not activated**; registry: 2026-10-31, runtime `61450801`, tag `hardening-rme-owner-reference-registry-1-go` | `FEATURE-RME-BILLING-REFUND-REQUEST-APPROVAL-1` and `HARDENING-RME-OWNER-REFERENCE-REGISTRY-1`; implementation decisions in `docs/sprints/feature-rme-billing-refund-request-approval-1.md` §3 |
 | 2026-11-01 | **S6-D1 … S6-D8 — Konsultasi & Kontrol Rp0, "Selesai Tanpa Biaya" (Sprint 6/7)**: only Konsultasi Dokter and server-derived Kontrol are legitimately Rp0 (every free line of a Kontrol; consultation lines elsewhere); explicit action → terminal `NO_CHARGE`, no payment row, visit completed in the same transaction; invoice #36 left untouched; the branch cashier closes, eligibility system-checked, no second approval; D28 kept; reported as clinical visits with zero revenue, never unpaid/receivable/Lunas; vouchers, discounts, corrections, write-offs excluded; every RME branch; flag OFF with a separate activation decision. **Answers D21g and D22 for this closure scope only** | `OWNER_POLICY_APPROVED`, `REPOSITORY_POLICY_RECORDED`, `TECHNICAL_ENFORCEMENT_DEPLOYED` (runtime `4520a276`, production-verified 2026-11-01) — flag `rme.zero_value_closure` **OFF**, not activated | owner answers recorded in-session for `FEATURE-RME-RP0-CONTROL-CONSULTATION-1` (decision dialog of 2026-11-01, no signed artefact; none fabricated); package `docs/decisions/rme-rp0-control-consultation-owner-decision-package.md` |
+| 2026-11-01 | **HARDENING S6-Q1, S6-Q2, S6-Q3 (revised), S6-Q3a, S6-Q3b — Konsultasi & Kontrol Rp0 (Sprint 6/7 hardening)**: S6-Q1 (valid Kontrol parent: real, same patient, examined, not cancelled/deleted, server-derived) and S6-Q2 (no NO_CHARGE for a lab line; lab uses normal billing and lab-candidate generation) approved; S6-Q3 revised: a Kontrol may be Rp0, an additional normally paid treatment is billed > Rp0 and paid normally, a mixed invoice is never NO_CHARGE, a Kontrol link never makes a paid treatment free. S6-Q3a: approved free services = `consultation` category (any visit) + reserved `control` category (valid Kontrol only). S6-Q3b: the Rp0 issuance guard applies to Kontrol visits only and follows the flag. **Supersedes the S6-D1 sub-decision ("every free line of a Kontrol") and the S6-Q3 open option "creator ≠ closer"; S6-D3 preserved** | `OWNER_POLICY_APPROVED` (S6-Q1, S6-Q2) / `OWNER_POLICY_REVISED_AND_APPROVED` (S6-Q3), `REPOSITORY_POLICY_RECORDED` — `TECHNICAL_ENFORCEMENT_DEPLOYED` only after production verification of `HARDENING-RME-RP0-CLOSURE-OWNER-DECISIONS-AND-PAID-TREATMENT-1`; flag `rme.zero_value_closure` **OFF** | owner brief of `HARDENING-RME-RP0-CLOSURE-OWNER-DECISIONS-AND-PAID-TREATMENT-1` (S6-Q1/Q2/Q3) and the in-session answers of 2026-11-01 (S6-Q3a, S6-Q3b); no signed artefact, none fabricated |
 
 The earlier D21 text is kept below, marked SUPERSEDED, as the record of what was
 decided and enforced between 2026-10-17 and 2026-10-20. It is never deleted.
@@ -595,7 +596,7 @@ prior instruction to defer Sprint 2 and begin Sprint 6 is a prioritisation, reco
 
 | Code | Owner answer (normalised) | Register mapping |
 |---|---|---|
-| S6-D1 | Only **Konsultasi Dokter** (`TRT-CONS`, treatment category `consultation`) and **Kontrol** (`visit_type = control` derived server-side from `follow_up_of_visit_id`) may be legitimately Rp0. **Sub-decision:** on a Kontrol visit EVERY free line is eligible; on any other visit only consultation lines. Eligibility comes from `treatment_id` + category, never from a description. | Answers **D21g** for the closure scope; answers the D11 question "Rp0 per item" for closure (every line must be free). |
+| S6-D1 | Only **Konsultasi Dokter** (`TRT-CONS`, treatment category `consultation`) and **Kontrol** (`visit_type = control` derived server-side from `follow_up_of_visit_id`) may be legitimately Rp0. **Sub-decision:** ~~on a Kontrol visit EVERY free line is eligible~~ — **SUPERSEDED 2026-11-01 by S6-Q3 (revised), see below**; on any other visit only consultation lines. Eligibility comes from `treatment_id` + category, never from a description. | Answers **D21g** for the closure scope; answers the D11 question "Rp0 per item" for closure (every line must be free). |
 | S6-D2 | Explicit **"Selesai Tanpa Biaya"** action; server checks eligibility; invoice → terminal **`NO_CHARGE`** ("Tanpa Biaya", NOT "Lunas"), no payment row; visit `cashier_pending → completed` in the same transaction. Zero balance ≠ examination done ≠ visit done ≠ money received. Historical invoice **#36 stays as it is**. | Answers **D22** (Rp0 zombie completion) for this scope. |
 | S6-D3 | The **branch cashier** (`manage_rme_billing` + working-branch scope) closes; eligibility is system-checked; audited; **no second approval**. Super Admin's bypass never reaches eligibility. | New. |
 | S6-D4 | **D28 stays.** A `NO_CHARGE` invoice can never be corrected; any path to charge a patient after a Rp0 is a separate sprint and decision. | D28 unchanged. |
@@ -608,10 +609,13 @@ prior instruction to defer Sprint 2 and begin Sprint 6 is a prioritisation, reco
 invoice is created — unchanged, D21g for issuance), vouchers, any Rp0 correction path (D28 holds),
 the discount policy (D21c), and the completion of a Rp0 Kontrol whose visit is completed by an
 unrelated parent-receivable payment (the #36 pattern — the invoice stays UNPAID; recorded as a
-residual, not decided).
+residual, not decided). *Update 2026-11-01:* Rp0 issuance on a **Kontrol** is now governed (S6-Q3b) and
+the #36 pattern is resolved for every closable invoice — see the hardening section below; issuance on any
+other visit stays D21g, PENDING.
 
-**Engineering narrowings after the independent security review — NOT owner decisions, PENDING owner
-confirmation.** Both fail closed (they only refuse more), so they stay inside the approved policy; relaxing
+**Engineering narrowings after the independent security review** — recorded here at the time as NOT owner
+decisions, PENDING owner confirmation; **S6-Q1 and S6-Q2 were APPROVED and S6-Q3 REVISED AND APPROVED by the
+Owner on 2026-11-01 (section below).** The original text is kept unchanged as history: Both fail closed (they only refuse more), so they stay inside the approved policy; relaxing
 either needs an explicit owner answer:
 
 - **S6-Q1** — a Kontrol qualifies only when its parent visit exists, is not deleted, belongs to the same
@@ -624,6 +628,35 @@ either needs an explicit owner answer:
   under D21 and S6-D3, so a single branch account can still label a non-consultation treatment as a free
   Kontrol. Options for the Owner: a per-cashier NO_CHARGE drilldown, a time window on the parent visit,
   or creator ≠ closer. None is decided.
+
+### S6-Q1, S6-Q2, S6-Q3 (revised), S6-Q3a, S6-Q3b — hardening of Konsultasi & Kontrol Rp0 — `OWNER_POLICY_APPROVED` / `OWNER_POLICY_REVISED_AND_APPROVED`, `REPOSITORY_POLICY_RECORDED` (2026-11-01)
+
+**Provenance.** S6-Q1, S6-Q2 and the revised S6-Q3 are stated in the owner brief of
+`HARDENING-RME-RP0-CLOSURE-OWNER-DECISIONS-AND-PAID-TREATMENT-1` (2026-11-01, WITA). S6-Q3a and S6-Q3b are the
+owner's in-session answers of the same day, each the recommended option among those presented. No signed
+artefact exists; none is claimed.
+
+| Code | Status | Owner answer (normalised) |
+|---|---|---|
+| S6-Q1 | `OWNER_POLICY_APPROVED` | A Kontrol is valid only with a real, same-patient, examined (`cashier_pending`/`completed`), non-cancelled, non-deleted parent visit, derived server-side. Otherwise it is not a valid Kontrol for Rp0 closure. |
+| S6-Q2 | `OWNER_POLICY_APPROVED` | A lab line is never closed by `NO_CHARGE`; lab work uses normal billing and lab-candidate generation, even on a Kontrol. |
+| S6-Q3 | `OWNER_POLICY_REVISED_AND_APPROVED` | A Kontrol may be Rp0. An additional treatment that is normally paid must be > Rp0, included in the total and paid normally. A mixed Rp0 + paid invoice uses regular payment and is never `NO_CHARGE`. A Kontrol link never makes a paid treatment free. Rp0 on a normally paid treatment without separate special authorization is not allowed. |
+| S6-Q3a | `OWNER_POLICY_APPROVED` | Approved free services = the `consultation` category on any visit, plus the reserved `control` category (the Kontrol service) on a valid Kontrol only. No master data is created by the sprint. |
+| S6-Q3b | `OWNER_POLICY_APPROVED` | The Rp0 issuance guard applies to Kontrol visits only and follows `rme.zero_value_closure`. Rp0 issuance on any other visit stays D21g, PENDING. |
+
+**Supersessions (dated, explicit).** S6-Q3 supersedes the S6-D1 sub-decision "on a Kontrol visit every
+free line is eligible". **The final S6-Q3 revision also supersedes the earlier unconditional maker–closer
+separation recommendation (the "creator ≠ closer" option of the open S6-Q3) for Kontrol visits that contain
+other treatments**: the control is eligibility, not a second account. **S6-D3 is preserved** — the branch
+cashier closes, eligibility is system-checked, no second approval.
+
+**Unchanged:** S6-D2, S6-D4 (D28), S6-D5, S6-D6, S6-D7, S6-D8 (flag OFF, separate activation decision); D21
+manual pricing (no tariff mandate — a paid treatment's price is typed by the authorized cashier, it must only
+be > Rp0); D21c; Sprint 2 NO_GO; Sprint 3–5 not activated; invoices #36, #42, #43 untouched.
+
+**Technical enforcement is a separate status.** It is recorded as `TECHNICAL_ENFORCEMENT_DEPLOYED` only after
+the runtime of `HARDENING-RME-RP0-CLOSURE-OWNER-DECISIONS-AND-PAID-TREATMENT-1` is merged, deployed and verified
+on production (rule 217 §9.7). The flag stays OFF either way.
 
 ## Pending decisions (unchanged)
 
