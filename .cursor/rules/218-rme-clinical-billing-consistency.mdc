@@ -136,4 +136,5 @@ narrow that — changing what a cashier may see of the clinical record is a prod
 - No migration, no seeder, no permission, no route.
 - Rollback = revert the commit; snapshots already written stay in their audit rows (harmless, never read for a
   decision). Activation stays `ACTIVATION-RME-RP0-CONTROL-CONSULTATION-1`, a separate owner decision.
-- Status: `TECHNICAL_ENFORCEMENT_PENDING_DEPLOY` — updated by the evidence record after deploy.
+- Status: `TECHNICAL_ENFORCEMENT_DEPLOYED_FLAG_OFF` — runtime `1043b815` deployed and production-verified
+  2026-11-01, GO tag `hardening-rme-rp0-clinical-billing-consistency-1-go` (evidence: sprint record §8).

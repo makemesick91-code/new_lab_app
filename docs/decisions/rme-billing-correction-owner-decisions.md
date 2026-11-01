@@ -685,8 +685,9 @@ refuses NO_CHARGE) needs CB-Q1's input and a new owner decision on its blocking 
 **Unchanged:** S6-D1…S6-D8, S6-Q1…S6-Q3b, D21 manual pricing, D21c, D21g, D22, D28; Sprint 2 NO_GO; Sprint 3–5
 not activated; invoices #36, #42, #43 untouched; `rme.zero_value_closure` OFF.
 
-**Technical enforcement is a separate status:** `TECHNICAL_ENFORCEMENT_PENDING_DEPLOY` until the runtime of
-`HARDENING-RME-RP0-CLINICAL-BILLING-CONSISTENCY-1` is merged, deployed and production-verified (rule 218 §9).
+**Technical enforcement is a separate status:** `TECHNICAL_ENFORCEMENT_DEPLOYED_FLAG_OFF` — the runtime of
+`HARDENING-RME-RP0-CLINICAL-BILLING-CONSISTENCY-1` (`1043b815`) was merged, deployed and production-verified on
+2026-11-01 (rule 218 §9); `rme.zero_value_closure` stays OFF.
 
 **Open for the CB-Q1 sprint (not decided):** whether the structured input is mandatory before "Selesai
 Pemeriksaan"; whether a CONFIRMED discrepancy refuses NO_CHARGE or requires a written reason; who may resolve it;
