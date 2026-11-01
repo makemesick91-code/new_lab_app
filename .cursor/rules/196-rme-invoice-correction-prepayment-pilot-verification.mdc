@@ -1,6 +1,6 @@
 ---
-description: VERIFICATION-RME-INVOICE-CORRECTION-PREPAYMENT-PILOT-1 — how the live SPN4 pre-payment invoice correction pilot is verified and when it may be closed. Six-rung state ladder (PILOT_READY → PILOT_ACTIVE → PILOT_LIVE → AUTHENTICATED_VERIFIED → FINANCIAL_CORRECTION_VERIFIED → FULL_ACTIVATION_GO), the evidence each rung needs, the full-GO tag contract, and why an eligible real case can only be caught, never created. Extends rule 195; changes no runtime behaviour. §7 (PILOT-2, 2026-10-23) governs later re-verification runs: one closure tag, re-measure never inherit, no patient held for a case, only a live session is login evidence, and the Rp0 invoice ban is procedural. §8 (PILOT-CLOSURE, 2026-10-24): a genuinely wrong invoice held by an OPS-OQ-1 dispute stays an eligible case after the patient leaves, the dispute is resolved from the applied correction, and the payment-idempotency audit result. §9 (REAL-CASE-42, 2026-10-25): a real case done without a verifier reconciles afterwards (PASS RECONSTRUCTED) but cannot reach the live-observation rungs; case Owner approval must pre-exist the submit and the checker holding the Owner role does not merge the two controls; order by server time not paid_at; the runtime that ran a case comes from the deploy log. §10 (CLOSURE-FINAL-1, 2026-10-31): a second unobserved case (RMECOR-202610-000002) reconciles but stays NO_GO — unobserved cases never accumulate; a live probe after a case is state, not observation; verifier absence is measured from the SSH journal; an upward correction needs the same case approval; warning signs go to the Owner, never adjudicated; an Owner's later statement is OWNER_RETROSPECTIVE_ATTESTATION, never the approval (§49–§52).
-globs: app/Modules/RmeInvoice/**, app/Console/Commands/RmeInvoiceCorrectionReadinessCommand.php, config/rme_invoice_correction.php, docs/sprints/verification-rme-invoice-correction-prepayment-pilot-1.md, docs/sprints/verification-rme-invoice-correction-prepayment-pilot-2.md, docs/sprints/verification-rme-invoice-correction-prepayment-pilot-closure.md, docs/sprints/verification-rme-invoice-correction-prepayment-pilot-real-case-42-1.md, docs/sprints/verification-rme-invoice-correction-prepayment-pilot-closure-final-1.md, docs/decisions/rme-billing-correction-owner-decisions.md
+description: VERIFICATION-RME-INVOICE-CORRECTION-PREPAYMENT-PILOT-1 — how the live SPN4 pre-payment invoice correction pilot is verified and when it may be closed. Six-rung state ladder (PILOT_READY → PILOT_ACTIVE → PILOT_LIVE → AUTHENTICATED_VERIFIED → FINANCIAL_CORRECTION_VERIFIED → FULL_ACTIVATION_GO), the evidence each rung needs, the full-GO tag contract, and why an eligible real case can only be caught, never created. Extends rule 195; changes no runtime behaviour. §7 (PILOT-2, 2026-10-23) governs later re-verification runs: one closure tag, re-measure never inherit, no patient held for a case, only a live session is login evidence, and the Rp0 invoice ban is procedural. §8 (PILOT-CLOSURE, 2026-10-24): a genuinely wrong invoice held by an OPS-OQ-1 dispute stays an eligible case after the patient leaves, the dispute is resolved from the applied correction, and the payment-idempotency audit result. §9 (REAL-CASE-42, 2026-10-25): a real case done without a verifier reconciles afterwards (PASS RECONSTRUCTED) but cannot reach the live-observation rungs; case Owner approval must pre-exist the submit and the checker holding the Owner role does not merge the two controls; order by server time not paid_at; the runtime that ran a case comes from the deploy log. §10 (CLOSURE-FINAL-1, 2026-10-31): a second unobserved case (RMECOR-202610-000002) reconciles but stays NO_GO — unobserved cases never accumulate; a live probe after a case is state, not observation; verifier absence is measured from the SSH journal; an upward correction needs the same case approval; warning signs go to the Owner, never adjudicated; an Owner's later statement is OWNER_RETROSPECTIVE_ATTESTATION, never the approval (§49–§52). §11 (case #44, 2026-11-01): a case kept open to serve the pilot is disqualified however well its decision is observed; decide promptly once authorized; observation must start before the submit; the Owner is the designated verifier (S2-V1); confirm every ready against the server; a label is not a reference; deploys never overlap a live correction (S2-V2) (§53–§62).
+globs: app/Modules/RmeInvoice/**, app/Console/Commands/RmeInvoiceCorrectionReadinessCommand.php, config/rme_invoice_correction.php, docs/sprints/verification-rme-invoice-correction-prepayment-pilot-1.md, docs/sprints/verification-rme-invoice-correction-prepayment-pilot-2.md, docs/sprints/verification-rme-invoice-correction-prepayment-pilot-closure.md, docs/sprints/verification-rme-invoice-correction-prepayment-pilot-real-case-42-1.md, docs/sprints/verification-rme-invoice-correction-prepayment-pilot-closure-final-1.md, docs/sprints/verification-rme-invoice-correction-prepayment-pilot-case-44-1.md, docs/decisions/rme-billing-correction-owner-decisions.md
 alwaysApply: false
 ---
 
@@ -384,3 +384,46 @@ Outcome: financial reconciliation PASS (RECONSTRUCTED), `OWNER_CASE_APPROVAL=UNV
     case approval, which must arrive as separate evidence from the Owner. Whether the IT account
     should keep the `Owner` role is the Owner's least-privilege decision — record it, never change
     roles from a verification run.
+
+## 11. A held case with an observed decision (added by VERIFICATION-RME-INVOICE-CORRECTION-PREPAYMENT-PILOT case #44, 2026-11-01)
+Evidence: `docs/sprints/verification-rme-invoice-correction-prepayment-pilot-case-44-1.md`.
+Third real correction: `RMECOR-202611-000003`, invoice #44 SPN4, Rp6.500.000 → Rp7.000.000 (UPWARD,
++Rp500.000, reason "salah ketik", no Owner reference), submitted by account 29 at 09:59:19 WITA, 44 s after the
+invoice; decided and applied by account 1 at 15:41:11 WITA under observation. Outcome: decision-step
+reconciliation PASS (observed), `SPRINT2 = NO_GO_OPERATIONAL_BLOCKED`, no tag.
+
+53. **A case kept open to serve the pilot is disqualified, however well its decision is observed.** The checker's
+    approval of #44 was held for 5 h 41 min 52 s "to be used to close Sprint 2" (Owner, in session); D10 blocked the
+    patient's payment the whole time. That is the §8 "delaying a patient's payment" whoever orders it. The case is
+    classified `NOT_ELIGIBLE_FOR_CLOSURE`; its observed evidence is kept, never promoted to a rung.
+54. **A decided case is processed promptly.** Once the Owner has authorized a submitted correction, the checker
+    decides without waiting for a verifier, a deploy, a closure run or anything else. If the verifier cannot be
+    present, the decision is taken anyway and the case is reconciled afterwards (`PASS (RECONSTRUCTED)`). Losing a
+    case to the pilot is always acceptable; holding a patient's payment is not.
+55. **Observation starts before the submit or it is not closure evidence.** A case whose submit was unobserved can
+    have its decision observed (fresh pre-decision baseline, the checker's live login, D10 by state, atomic apply,
+    reconciliation) — report that as `OBSERVED_DECISION_UNOBSERVED_SUBMIT`. `PILOT_LIVE`, the maker's
+    `AUTHENTICATED_VERIFIED` and the pre-submit baseline stay `NOT_REACHED` by name (§31, §41).
+56. **The verifier is designated by the Owner (S2-V1): the Owner witnesses the decision; IT captures server-side
+    evidence over the canonical SSH path.** The verifier must be engaged before the submit. IT acting as checker
+    (account 1) never makes IT's action the Owner's case approval (directive item 14, §52).
+57. **The verifier confirms every "ready" against the server, never against the reply.** On 2026-11-01 the first
+    "ready" arrived while the server held no authenticated session (account 1's last activity was 3 h earlier, past
+    the session lifetime). The go-ahead is given only after the operator's own `POST /login` and a fresh session row
+    are visible, and a final capture is taken immediately before the decision.
+58. **A placeholder is not a reference.** The approval note "Catatan Persetujuan" is the field's label. A
+    reference counts only when it identifies the Owner's pre-existing authorization (reference string, channel and
+    time); an empty, label-only or generic note leaves `OWNER_CASE_APPROVAL` where §32 puts it.
+59. **Count audit rows by action, not by total.** The decision of #44 added 7 audit rows: 4 belong to the correction
+    (APPROVED, 2 × DOCUMENT_VERSION_ISSUED, APPLIED) and 3 are the checker's `OVERSIGHT_BILLING_CORRECTION_VIEWED`
+    read rows. A total-only comparison would read the views as an unexplained delta.
+60. **Deploys never overlap a live correction (S2-V2).** While a correction is `SUBMITTED` or `APPROVED`, a deploy
+    runs only in a window agreed with the checker: confirm `active_corrections` and the correction's status
+    immediately before and after, and record the runtime SHA on both sides so a later decision is attributed to its
+    runtime (§35). With no active correction the window is free.
+61. **Re-measure the active-correction count first.** A measurement that reports invoice totals but not
+    `active_corrections` can miss a live case: on 2026-11-01 a reading at 13:20 WITA recorded #44 among the UNPAID
+    invoices without noticing its correction was SUBMITTED. Every run reads the correction table before anything
+    else.
+62. Case #44 does not change §48: the next closure still needs the whole §21 procedure on a new real case, and it
+    still counts under the one tag `verification-rme-invoice-correction-prepayment-pilot-1-go`.
