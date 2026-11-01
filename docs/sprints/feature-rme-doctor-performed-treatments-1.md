@@ -150,3 +150,29 @@ Filled in only as measured. Nothing is pre-filled. Times WITA (UTC+8), 2026-11-0
 ### 7.7 Full Suite
 `FULL_SUITE=SKIPPED_NOT_PASS` — the Full Suite was not requested and the temporary global policy is ACTIVE (CG-18).
 Substitute evidence is §7.2 (1511-test PostgreSQL regression), not a Full Suite pass.
+
+## 8. Release evidence
+
+| Fact | Value |
+|---|---|
+| Candidate | `3ef71b11`, tree `150679aa` |
+| PR | #581, squash-merged as **`931c716c`**, merge tree `150679aa` = candidate tree |
+| CI (exact candidate) | run `41310871424` — classifier, NSF-R012 quality, NSF-R011 critical (**7 638 passed, 42 029 assertions, 0 skipped, exit 0, expected warnings 0**; all six `RmePerformedTreatment` suites selected, races run on PostgreSQL), selective module, NSF-9, NSF-10, Android gate: all success. The second critical row is the inactive runner variant, skipped by design |
+| CI (post-merge, base push on `931c716c`) | run `41316311260` — critical gate **7 638 passed, 42 029 assertions, exit 0**; quality, selective, NSF-9, NSF-10, Android success; Full Suite step not run (`full_suite_defer_reason=TEMPORARY_FULL_SUITE_POLICY_ACTIVE`) |
+| Full Suite | classifier `required`; deferred by the global temporary policy → **`FULL_SUITE=SKIPPED_NOT_PASS`** |
+| S2-V2 window | active corrections **0** at 14:28:04 UTC immediately before the deploy and 0 after — the window was free |
+| Deploy | `bash scripts/deploy-vps-runner.sh start` **inside the VPS** → `deploy-20261101-142815`, **exit=0, `DEPLOY OK: 20261101-142817`**, `DEPLOY_HEAD_TARGET_MATCH=YES (931c716c)`, snapshot trusted and cleaned, migration `2026_11_02_100001` DONE, deploy gates GO, runtime isolation 107 GO / 0 FAIL, secret file permissions GO |
+| Production HEAD / tree | `931c716c` / `150679aa`, tracked tree clean |
+| Read-only fingerprint (session forced read-only) 13:22:35, 14:28:04 (pre-deploy), 14:30:13 UTC (post-deploy) | **byte-identical** on every financial and clinical line: 10 invoices / Rp31 548 000 (PAID 7, PARTIAL 1, UNPAID 2), 10 payments / Rp22 548 000, NO_CHARGE closure audits 0, `sys_audit_logs` max id 1669, #36/#42/#43/#44 row hash, invoice-item hash (11 rows), payment hash, visit type/parent hash (11 visits), 10 medical records, 9 odontograms, failed_jobs 0, jobs 0. Only change: the two new tables exist |
+| New tables | 0 declarations, 0 performed rows; 6 CHECK constraints, 2 UNIQUE constraints, 8 FKs; no patient/branch/price column |
+| Flags | `rme.doctor_performed_treatments` **false** (default); `rme.zero_value_closure`, `rme.invoice_postpayment_correction`, `rme.billing_refund_request`, `rme.billing_refund_settlement` false; `rme.invoice_correction` true — the pre-existing SPN4 pilot, unchanged by this sprint |
+| Routes | the three `rme.visits.performed-treatments.*` POST routes registered; guest POST answers 419, no 500 |
+| `laravel.log` | 1 443 432 bytes, last write 2026-10-29 — **zero new bytes** |
+| Domain health (`https://daengtisia.online`) | `/login`, `/health/live`, `/health/ready`, `/health/lb` 200; guest `/rme/visits`, `/rme/cashier`, `oversight/billing-corrections/zero-value-closures` 302 |
+| Runtime | php8.3-fpm, nginx, queue worker active; 0 pending migrations; no failed jobs |
+| GO tag | `feature-rme-doctor-performed-treatments-1-implementation-go`, tag object `7e910ac3` → `931c716c`; local, GitHub and VPS (`git describe --exact-match`) agree |
+
+The GO tag means the structured doctor record is deployed and verified with its flag OFF. It does not activate
+the feature, does not activate NO_CHARGE, does not make operational KONTROL free, does not mean the Full Suite
+passed, and does not close MEDIUM-1 (`PARTIALLY_MITIGATED`). Activation is `ACTIVATION-RME-DOCTOR-PERFORMED-TREATMENTS-1`
+(owner DPT-Q8).
