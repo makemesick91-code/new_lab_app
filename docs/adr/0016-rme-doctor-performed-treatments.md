@@ -56,3 +56,19 @@ explicit "Selesai Pemeriksaan" (rule 109), room and patient scope (rule 138), on
 - D28 still has no recovery path for a recorded paid treatment on a Rp0-original invoice (DPT-Q7).
 - Two more tables enter patient-merge activity detection; neither carries a patient FK.
 - Rollback is the flag; rows are clinical evidence and are never dropped.
+
+## Addendum — Owner ratification of DPT-Q2 … DPT-Q10 (2026-11-02)
+
+The decision above is unchanged; this addendum records what the Owner answered afterwards
+(`RATIFICATION-RME-DOCTOR-PERFORMED-TREATMENTS-OWNER-DECISIONS-1`, package
+`docs/decisions/rme-doctor-performed-treatments-owner-decision-package.md`, rule 219 §15):
+
+- **DPT-Q2 / DPT-Q3 (approved STAGED).** The pilot keeps the declaration optional and the cross-check detective;
+  a mandatory declaration and a NO_CHARGE block are later stages with explicit preconditions. The Consequences
+  line "until DPT-Q2 and DPT-Q3 are answered" now reads: until their LATER STAGES are activated.
+- **DPT-Q4 / DPT-Q7 (direction approved).** A controlled amendment workflow and a controlled D28 recovery are
+  needed; neither is built nor authorized, so the read-only and "no recovery path" consequences still hold.
+- **DPT-Q5, DPT-Q6, DPT-Q9, DPT-Q10 (approved).** They confirm the behaviour this ADR already chose.
+- **DPT-Q8 (approved; designation SPN4).** Because the flag is a single global switch, activating one branch needs
+  a fail-closed, server-side, source-controlled branch allowlist enforced at the service — built by
+  `ACTIVATION-RME-DOCTOR-PERFORMED-TREATMENTS-1`, never replaced by hiding the card.
