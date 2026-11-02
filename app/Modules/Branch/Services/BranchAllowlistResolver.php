@@ -16,6 +16,9 @@ use App\Modules\Branch\Support\BranchCodeAlias;
  *   1. inspect(): is the declared list well formed, and which CANONICAL codes does
  *      it name? A list that is not a list of non-empty strings is MALFORMED as a
  *      whole (never "the good entries"), and MAIN is reported, never admitted.
+ *      "Strict" is about SHAPE: each code is still trimmed and upper-cased and a
+ *      deprecated alias canonicalized (BranchCodeAlias::canonicalize), which can
+ *      only ever name the branch whose stored code IS that canonical code.
  *   2. liveBranchIds(): which ACTIVE, RME-enabled branches carry those canonical
  *      codes EXACTLY (an alias-coded branch, a prefix or an inactive branch never
  *      matches)?
@@ -70,7 +73,10 @@ final class BranchAllowlistResolver
 
     /**
      * Canonical code => id of every active RME-enabled branch whose stored code
-     * IS one of the given canonical codes (one query).
+     * IS one of the given canonical codes (one query). A code carried by MORE than
+     * one live branch is dropped (fail closed) rather than resolved to whichever
+     * row came last — unreachable through the branch forms (code is unique), but a
+     * seeded or hand-edited duplicate must not read as a single admitted branch.
      *
      * @param  list<string>  $canonicalCodes
      * @return array<string, int>
@@ -82,17 +88,25 @@ final class BranchAllowlistResolver
         }
 
         $ids = [];
+        $collided = [];
 
         foreach ($this->branches->listRmeEnabled() as $branch) {
             // Only the DECLARED side is canonicalized: the live branch must carry
             // the canonical code itself, so an alias-coded branch never matches.
             $code = BranchCodeAlias::normalize((string) $branch->code);
 
-            if ($code !== null && $code !== Branch::MAIN_CODE && in_array($code, $canonicalCodes, true)) {
-                $ids[$code] = (int) $branch->id;
+            if ($code === null || $code === Branch::MAIN_CODE || ! in_array($code, $canonicalCodes, true)) {
+                continue;
             }
+
+            if (isset($ids[$code])) {
+                $collided[$code] = true;
+            }
+
+            $ids[$code] = (int) $branch->id;
         }
 
+        $ids = array_diff_key($ids, $collided);
         ksort($ids);
 
         return $ids;

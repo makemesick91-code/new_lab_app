@@ -22,6 +22,7 @@ use App\Modules\PerformedTreatment\Models\RmeTreatmentDeclaration;
 use App\Modules\PerformedTreatment\Support\RmePerformedTreatmentFeatureGuard;
 use App\Modules\PerformedTreatment\Support\RmePerformedTreatmentPilotScope;
 use App\Modules\PerformedTreatment\Support\RmePerformedTreatmentRefusal;
+use App\Modules\PerformedTreatment\Support\RmePerformedTreatmentState;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Models\RmePayment;
 use App\Modules\RmeInvoice\Support\RmeFinancialAuditEvent;
@@ -171,6 +172,15 @@ it('ACT-DPT-006e canonicalizes a deprecated alias (SUN4 → SPN4) but never admi
     expect(dptpScope()->admittedBranchIds())->toBe([]);
 });
 
+it('ACT-DPT-006f fails closed when two live branches normalize to the listed code (seeded duplicate)', function () {
+    Branch::factory()->create(['code' => 'SPN4', 'is_rme_enabled' => true, 'is_active' => true]);
+    Branch::factory()->create(['code' => 'spn4', 'is_rme_enabled' => true, 'is_active' => true]);
+    dptPilot(['SPN4']);
+
+    expect(dptpScope()->configurationStatus())->toBe(RmePerformedTreatmentPilotScope::STATUS_UNRESOLVED)
+        ->and(dptpScope()->admittedBranchIds())->toBe([]);
+});
+
 it('ACT-DPT-007 admits nothing when the listed branch is inactive or not RME-enabled', function (array $state) {
     $this->branch->update($state);
     $visit = dptEncounter();
@@ -227,7 +237,9 @@ it('ACT-DPT-011 enforces the pilot at the service boundary, re-read under the vi
 
     $refusal = dptRefusal(fn () => dptService()->record($stale, dptpPayload($this->scaling) + ['tooth_numbers' => []], $this->doctorUser));
 
-    expect($refusal)->not->toBeNull()
+    // The CODE matters: another layer (the policy's working-branch scope) would also
+    // refuse, with a different code, and would hide a missing under-lock re-read.
+    expect($refusal)->toContain('['.RmePerformedTreatmentRefusal::BRANCH_NOT_IN_PILOT.']')
         ->and(RmePerformedTreatment::query()->count())->toBe(0);
 });
 
@@ -250,8 +262,16 @@ it('ACT-DPT-012b keeps recorded rows when the allowlist is narrowed after activa
 
     dptPilot([]);
 
+    // The row stays as evidence, but no PUBLIC read surfaces it while the capability
+    // is not live for this visit (security review LOW-1).
     expect($row->fresh()->status)->toBe(RmePerformedTreatment::STATUS_PERFORMED)
-        ->and(dptService()->workspaceFor($visit->fresh(), $this->doctorUser))->toBeNull();
+        ->and(dptService()->workspaceFor($visit->fresh(), $this->doctorUser))->toBeNull()
+        ->and(dptService()->stateFor($visit->fresh()))->toBe(RmePerformedTreatmentState::NOT_RECORDED)
+        ->and(dptService()->historyFor($visit->fresh()))->toHaveCount(0);
+
+    dptPilot([(string) $this->branch->code]);
+    expect(dptService()->stateFor($visit->fresh()))->toBe(RmePerformedTreatmentState::HAS_PERFORMED_TREATMENTS)
+        ->and(dptService()->historyFor($visit->fresh()))->toHaveCount(1);
 });
 
 // ─── Policy and initial-pilot behaviour ──────────────────────────────────────
@@ -334,6 +354,10 @@ it('reports READY_NOT_ARMED with the flag OFF and a valid single-branch allowlis
         ->and($report['pilot']['configuration_status'])->toBe(RmePerformedTreatmentPilotScope::STATUS_VALID)
         ->and($report['pilot']['admitted_branch_codes'])->toBe([(string) $this->branch->code])
         ->and([RmePerformedTreatment::query()->count(), AuditLog::query()->count()])->toBe($before);
+
+    // Asserting "on" against an OFF flag must fail — the activation ceremony relies on it.
+    expect(Artisan::call('rme:performed-treatment-readiness', ['--json' => true, '--expect' => 'on']))->toBe(1)
+        ->and(Artisan::call('rme:performed-treatment-readiness', ['--json' => true, '--expect' => 'off']))->toBe(0);
 });
 
 it('reports ARMED with the flag ON, every other RME branch DENIED, and enforces --expect', function () {

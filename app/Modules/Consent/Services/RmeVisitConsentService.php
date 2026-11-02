@@ -574,11 +574,15 @@ class RmeVisitConsentService
      *
      * ACTIVATION-RME-DOCTOR-PERFORMED-TREATMENTS-1 (rule 219 §12a, LOW-2 closed) —
      * the void takes the VISIT row lock first, the same lock and the same order
-     * (visit → consent) as every clinical write that re-checks the consent under
-     * it (RmePerformedTreatmentService). A write therefore commits under a consent
-     * that is still valid, or waits and then sees it voided — never a row written
-     * under a consent that is void at commit. The consent is re-read under the
-     * lock, so two concurrent voids of one consent cannot both succeed.
+     * (visit → consent) as the clinical writes that re-check the consent UNDER
+     * that lock — today only RmePerformedTreatmentService. Such a write commits
+     * under a consent that is still valid, or waits and then sees it voided —
+     * never a row written under a consent that is void at commit. RME handwriting
+     * and odontogram authoring take no visit row lock, so this void does not
+     * serialize against them (pre-existing; this method has no production caller,
+     * and a sprint adding one must close that too — rule 219 §12a). The consent is
+     * re-read under the lock, so two concurrent voids of one consent cannot both
+     * succeed.
      */
     public function void(RmeVisitConsent $consent, User $operator, string $reason): RmeVisitConsent
     {

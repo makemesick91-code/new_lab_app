@@ -246,9 +246,18 @@ class RmePerformedTreatmentService
     |--------------------------------------------------------------------------
     */
 
-    /** The visit's declaration state (a pure read of committed rows). */
+    /**
+     * The visit's declaration state (a pure read of committed rows). Outside the
+     * live capability (flag OFF or not the pilot branch) it is NOT_RECORDED: a row
+     * kept from before a narrowing is evidence, never a live state (security
+     * review LOW-1 — no public read is ungated).
+     */
     public function stateFor(ClinicVisit $visit): string
     {
+        if (! $this->enabledFor($visit)) {
+            return RmePerformedTreatmentState::NOT_RECORDED;
+        }
+
         return RmePerformedTreatmentState::derive(
             $this->rows->declarationFor((int) $visit->id)?->declaration_type,
             $this->rows->activeCount((int) $visit->id),
@@ -265,9 +274,18 @@ class RmePerformedTreatmentService
         return RmePerformedTreatmentState::operationalCategory($this->stateFor($visit));
     }
 
-    /** @return Collection<int, RmePerformedTreatment> */
+    /**
+     * The visit's rows, voided included — empty outside the live capability, like
+     * every other read (security review LOW-1).
+     *
+     * @return Collection<int, RmePerformedTreatment>
+     */
     public function historyFor(ClinicVisit $visit): Collection
     {
+        if (! $this->enabledFor($visit)) {
+            return new Collection;
+        }
+
         return $this->rows->historyFor((int) $visit->id);
     }
 
