@@ -164,10 +164,15 @@ are untouched.
 
 ## 12a. Residuals (independent security review 2026-11-01 — recorded, not hidden)
 
-- **Consent voided concurrently (LOW, pre-existing class).** `RmeVisitConsentService::void()` locks neither the
-  visit nor the consent row, so a void committing between the post-lock consent check and this transaction's commit
-  can leave a row written under a consent that is void at commit. The same class already affects RME and odontogram
-  authoring; the fix belongs to the consent module (lock the visit row in `void()`), not to this record.
+- ~~**Consent voided concurrently (LOW, pre-existing class).**~~ **CLOSED by `ACTIVATION-RME-DOCTOR-PERFORMED-TREATMENTS-1`.**
+  Re-assessed first: `RmeVisitConsentService::void()` has **no production caller** (no route, controller or command),
+  so the race was latent, not reachable. It was closed anyway, before any caller exists: `void()` now takes the
+  **visit row lock first** (`visit → consent`, the same order as every clinical write that re-checks the consent
+  under that lock) and re-reads the consent under it. A write commits under a still-valid consent or waits and sees it
+  voided; two voids of one consent cannot both succeed (PostgreSQL 16 races N1–N3). **Rule for any future void entry
+  point:** go through this method — never void a consent row directly. RME handwriting and odontogram authoring do
+  not take the visit row lock before their consent check; with no void caller that is unreachable, and any sprint
+  that adds a void UI must re-check them.
 - **Super Admin who is also the visit's linked doctor (INFO).** `Gate::before` passes the policy, so the room guard
   is skipped for that one account; rule 138 exempts Super Admin from room scope by design. Branch and patient scope
   are still enforced by the consent authority, and the treating-doctor identity still applies.
@@ -191,6 +196,15 @@ are untouched.
   `down()` refuses while rows exist.
 - Activation = `ACTIVATION-RME-DOCTOR-PERFORMED-TREATMENTS-1`, independent of `rme.zero_value_closure` (also OFF).
   **DPT-Q8 (approved 2026-11-02):** one pilot branch, **SPN4**, behind a fail-closed server-side allowlist (§15).
+- **Activation ceremony (pilot):** deploy with the flag OFF → `rme:performed-treatment-readiness --expect=off` reads
+  `READY_NOT_ARMED`, `SPN4=ADMITTED`, every other RME branch `DENIED` → set `FEATURE_RME_DOCTOR_PERFORMED_TREATMENTS=true`
+  with an inode-preserving one-line edit → `config:cache` as the runtime user → probe `--expect=on` reads `ARMED`.
+  `--expect=on` proves ONE valid branch is admitted, not WHICH: the ceremony must also read `admitted=SPN4` and
+  `BRANCH SPN4=ADMITTED` with every other branch `DENIED`. Never turn the flag ON on a deployment whose allowlist is
+  not `VALID`.
+- **Rollback (flag-first):** flag OFF (or remove the line) → `config:cache` as the runtime user → probe `--expect=off`.
+  Authoring stops everywhere at once; rows, declarations and audit stay (clinical evidence, never deleted or edited).
+  Narrowing the allowlist is a reviewed commit, never a host edit — the file reads no environment.
 - Status: `TECHNICAL_ENFORCEMENT_DEPLOYED_FLAG_OFF` — runtime `931c716c` (tree `150679aa`, PR #581) deployed
   2026-11-01 14:28 UTC (22:28 WITA), production-verified, GO tag `feature-rme-doctor-performed-treatments-1-implementation-go`
   (evidence: sprint record §8). The flag stays OFF.
@@ -235,3 +249,28 @@ SATUSEHAT_PROCEDURE_SOURCE=INVOICE_LINES    MEDIUM-1=PARTIALLY_MITIGATED
 6. **States are separate.** At ratification: `OWNER_POLICY_APPROVED` + `REPOSITORY_POLICY_RECORDED`; technical
    enforcement of the allowlist, production activation and operational acceptance are recorded only by the
    activation sprint, each with its own evidence.
+
+### 15a. Technical enforcement of the pilot (ACTIVATION-RME-DOCTOR-PERFORMED-TREATMENTS-1)
+
+- **Allowlist:** `config/rme_performed_treatment.php` → `pilot.branch_codes = ['SPN4']`, source-controlled, **reads no
+  environment** (a test asserts it). Approval metadata `pilot.approval.decision = DPT-Q8`.
+- **Reader:** `App\Modules\PerformedTreatment\Support\RmePerformedTreatmentPilotScope` on top of the shared strict
+  `App\Modules\Branch\Services\BranchAllowlistResolver`. Statuses `VALID`, `EMPTY`, `MALFORMED` (not a list of
+  strings — the whole list, never "the good entries"), `MAIN_LISTED`, `TOO_MANY_BRANCHES` (`MAX_PILOT_BRANCHES = 1`),
+  `UNRESOLVED` (no active RME-enabled branch carries the code). Anything but `VALID` admits **nothing**. Codes are
+  canonicalized (SUN4 → SPN4); the live branch must carry the canonical code exactly.
+- **Enforcement points:** `RmePerformedTreatmentService::authorize()` (refusal `DPT_BRANCH_NOT_IN_PILOT`, decided
+  BEFORE actor resolution so Gate::before cannot skip it) and `lockAuthorizedEncounter()` (the branch of the LOCKED row,
+  PostgreSQL race O); `enabledFor($visit)` gates `workspaceFor`, `evidenceFor` (→ cashier projection and rule 218
+  snapshot v2) and `operationalCategoryFor`; the three FormRequests answer **404** through
+  `EnsuresPerformedTreatmentAdmission` (outside the pilot the routes look exactly like flag OFF);
+  `ClinicVisitPolicy::recordPerformedTreatments` returns false (defence in depth for `@can`). The branch is the visit's,
+  never a request value (`branch_id` in a POST is ignored — ACT-DPT-009).
+- **Probe:** `php artisan rme:performed-treatment-readiness [--json] [--expect=on|off]` — read-only, refuses root,
+  counts only (no patient identity). Verdicts `READY_NOT_ARMED`, `ARMED`, `NOT_ARMED_INVALID_CONFIGURATION`,
+  `ARMED_INVALID_CONFIGURATION`; exit 1 on an invalid allowlist or an unmet `--expect`.
+- **Invariants added** (pinned by `RmePerformedTreatmentPilotScopeTest` + races N1–N3, O):
+  `DPT_PILOT_FAIL_CLOSED` · `DPT_PILOT_ONE_BRANCH` · `DPT_PILOT_SERVICE_AUTHORITY` · `DPT_PILOT_LOCKED_BRANCH` ·
+  `DPT_PILOT_NO_SUPER_ADMIN_BYPASS` · `DPT_PILOT_NO_REQUEST_BRANCH` · `DPT_CONSENT_VOID_SERIALIZES`.
+- **Unchanged:** treating-doctor identity, consent gate, room guard, append-only voids, no status transition, no
+  financial write, `rme.zero_value_closure` OFF, SATUSEHAT source, D21, D28.

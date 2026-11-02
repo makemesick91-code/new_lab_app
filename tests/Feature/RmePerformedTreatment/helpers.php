@@ -39,6 +39,18 @@ if (! function_exists('dptSetup')) {
     }
 
     /**
+     * ACTIVATION-RME-DOCTOR-PERFORMED-TREATMENTS-1 (rule 219 §15, owner DPT-Q8) —
+     * set the source-controlled pilot allowlist. The flag alone is a global switch;
+     * this list decides WHERE an ON flag reaches. Production ships ['SPN4'].
+     *
+     * @param  mixed  $codes  normally list<string>; malformed values are tested on purpose
+     */
+    function dptPilot(mixed $codes): void
+    {
+        config()->set('rme_performed_treatment.pilot.branch_codes', $codes);
+    }
+
+    /**
      * The zero-value fixture (branch, patient, doctor master, cashier, Konsultasi
      * Dokter, voucher) plus: a treatment room, the doctor's account linked to the
      * doctor record and online in that room, a lab treatment, a reserved Kontrol
@@ -70,6 +82,8 @@ if (! function_exists('dptSetup')) {
         $t->doctorUser = rmeMakeDoctorOnline($t->doctor, $t->branch, $t->room);
 
         dptFlag(true);
+        // The fixture branch is the pilot branch of these suites (rule 219 §15).
+        dptPilot([(string) $t->branch->code]);
     }
 
     /**

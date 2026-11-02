@@ -16,6 +16,14 @@ silang dengan tagihan hanya **peringatan** — tidak pernah menolak pembayaran a
   **"Selesai Pemeriksaan"**. Setelah pemeriksaan selesai, catatan hanya dapat dibaca.
 - Mencatat tindakan **tidak** menyelesaikan pemeriksaan. Tekan "Selesai Pemeriksaan" seperti biasa.
 
+## Yang dicatat: yang DILAKUKAN, bukan yang direncanakan
+
+- Catat hanya tindakan yang **benar-benar dilakukan** pada kunjungan ini. Rencana perawatan, tindakan untuk kunjungan
+  berikutnya, atau rujukan **bukan** tindakan dilakukan.
+- Beberapa tindakan berbeda → satu baris per tindakan. Tindakan yang sama pada beberapa gigi → satu baris dengan
+  jumlah dan nomor gigi FDI yang sesuai (nomor gigi opsional bila tidak relevan).
+- Catatan ini **tidak menentukan harga**. Kasir tetap menetapkan tagihan (D21); dokter tidak perlu menghitung biaya.
+
 ## Langkah
 
 1. Buka halaman RME kunjungan, kartu **"Tindakan Dilakukan"**.
@@ -50,6 +58,12 @@ meminta perubahan lewat database, dan jangan meminta akun lain mencatat atas nam
   kunjungan Konsultasi/Kontrol tanpa prosedur, "Tidak Ada Tindakan" adalah jawaban yang benar.
 - Hanya dokter yang **resmi tercatat** pada kunjungan yang boleh mencatat (DPT-Q9). Bila dokter lain yang benar-benar
   menangani, kunjungan harus lebih dulu dialihkan kepadanya lewat alur resmi — bukan dicatat oleh akun lain.
+
+## Melaporkan kesalahan atau kendala
+
+- Fitur tidak muncul di SPN4, tombol menolak dengan kode `[DPT_…]`, atau hasil tampak salah: catat kode yang tampil,
+  nomor kunjungan, dan waktu (WITA), lalu laporkan ke penanggung jawab cabang dan IT. Jangan mencoba lewat akun lain.
+- Kode `[DPT_BRANCH_NOT_IN_PILOT]` berarti kunjungan bukan di cabang pilot — itu perilaku yang benar, bukan kerusakan.
 
 ## Bila tindakan dokter tidak ada di tagihan
 

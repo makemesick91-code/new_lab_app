@@ -55,4 +55,12 @@ interface RmePerformedTreatmentRepositoryInterface
 
     /** @return Collection<int, Treatment> */
     public function selectableTreatments(array $excludedCategoryCodes, array $excludedCodes): Collection;
+
+    /**
+     * Estate-wide counts for the read-only readiness probe — numbers only, no
+     * patient, visit or treatment identity.
+     *
+     * @return array{declarations: int, no_treatment_declarations: int, performed: int, voided: int}
+     */
+    public function totals(): array;
 }

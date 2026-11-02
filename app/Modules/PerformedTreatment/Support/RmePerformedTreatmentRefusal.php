@@ -18,6 +18,13 @@ final class RmePerformedTreatmentRefusal
 
     public const NOT_ENABLED = 'DPT_NOT_ENABLED';
 
+    /**
+     * ACTIVATION-RME-DOCTOR-PERFORMED-TREATMENTS-1 (rule 219 §15) — the flag is ON
+     * but the visit's branch is not the approved pilot branch (or the allowlist is
+     * invalid, which admits nothing).
+     */
+    public const BRANCH_NOT_IN_PILOT = 'DPT_BRANCH_NOT_IN_PILOT';
+
     public const ENCOUNTER_NOT_ACTIVE = 'DPT_ENCOUNTER_NOT_ACTIVE';
 
     public const CONSENT_REQUIRED = 'DPT_CONSENT_REQUIRED';
@@ -53,6 +60,7 @@ final class RmePerformedTreatmentRefusal
     {
         $text = match ($code) {
             self::NOT_ENABLED => 'Pencatatan Tindakan Dilakukan belum diaktifkan.',
+            self::BRANCH_NOT_IN_PILOT => 'Pencatatan Tindakan Dilakukan belum diaktifkan untuk cabang kunjungan ini.',
             self::ENCOUNTER_NOT_ACTIVE => 'Tindakan hanya dapat dicatat saat kunjungan ini sedang dalam pemeriksaan (sudah "Mulai Pemeriksaan" dan belum "Selesai Pemeriksaan").',
             self::CONSENT_REQUIRED => 'Tindakan kunjungan ini belum dapat dicatat karena Persetujuan Tindakan Medis belum ditandatangani.',
             self::ACTOR_NOT_AUTHORIZED => 'Anda tidak berwenang mencatat tindakan untuk pemeriksaan pasien ini.',

@@ -18,6 +18,8 @@ declare(strict_types=1);
 use App\Models\User;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\ClinicVisit\Services\ClinicVisitService;
+use App\Modules\Consent\Models\RmeVisitConsent;
+use App\Modules\Consent\Services\RmeVisitConsentService;
 use App\Modules\PerformedTreatment\Models\RmePerformedTreatment;
 use App\Modules\PerformedTreatment\Services\RmePerformedTreatmentService;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
@@ -62,6 +64,7 @@ try {
             'complete_examination' => app(ClinicVisitService::class)->transitionStatus($visit($step), ClinicVisit::STATUS_CASHIER_PENDING, $user($step)),
             'close_zero_value' => app(RmePaymentService::class)->closeZeroValueInvoice(RmeInvoice::query()->findOrFail((int) $step['invoice']), $user($step)),
             'deactivate_user' => app(UserService::class)->deactivate($user($step, 'user')),
+            'void_consent' => app(RmeVisitConsentService::class)->void(RmeVisitConsent::query()->findOrFail((int) $step['consent']), $user($step), (string) $step['reason']),
             default => throw new InvalidArgumentException('Unknown race step '.(string) $step['kind']),
         };
     }

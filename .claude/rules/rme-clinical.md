@@ -214,6 +214,10 @@ editable) → Persetujuan Tindakan Medis (RME + finish unlocked) → RME + Odont
   `rme.doctor_performed_treatments` default OFF. DPT-Q2…Q10 ratified 2026-11-02 (rule 219 §15): pilot SPN4 ONLY,
   behind a fail-closed server-side branch allowlist (a global ON alone is never a pilot); declaration optional;
   cross-check detective; covering doctor must first be the visit's assigned doctor; no post-completion edit path.
+  The allowlist is `config/rme_performed_treatment.php` (no env read) read only through
+  `RmePerformedTreatmentPilotScope`; ask `RmePerformedTreatmentService::enabledFor($visit)`, never the bare flag; a
+  write re-decides it on the LOCKED visit row. Verify with `rme:performed-treatment-readiness --expect=on|off`.
+  Consent void = `RmeVisitConsentService::void()` only (visit row lock first).
 
 ## Current posture (snapshot 2026-10-25 — verify before relying on it)
 

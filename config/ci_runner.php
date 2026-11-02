@@ -460,6 +460,11 @@ return [
         'tests/Feature/RmePerformedTreatment/RmePerformedTreatmentSecurityTest.php',
         'tests/Feature/RmePerformedTreatment/RmePerformedTreatmentRegressionTest.php',
         'tests/Feature/RmePerformedTreatment/RmePerformedTreatmentConcurrencyTest.php',
+        // ACTIVATION-RME-DOCTOR-PERFORMED-TREATMENTS-1 (rule 219 §15) — the one-branch
+        // pilot: fail-closed allowlist at the service (re-read under the visit
+        // lock), request 404, policy, page, cashier projection, rule 218 evidence
+        // and the read-only readiness probe; same `RmePerformedTreatment` token.
+        'tests/Feature/RmePerformedTreatment/RmePerformedTreatmentPilotScopeTest.php',
         // ACTIVATION-RME-INVOICE-CORRECTION-PREPAYMENT-2 (rule 195) — owner D1a
         // (approve applies, atomically), maker != checker != applier per account,
         // the fail-closed SPN4 pilot allowlist, the D1/D1b RoleSeeder grants, the

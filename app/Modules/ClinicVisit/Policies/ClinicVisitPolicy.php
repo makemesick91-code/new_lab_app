@@ -4,6 +4,7 @@ namespace App\Modules\ClinicVisit\Policies;
 
 use App\Models\User;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
+use App\Modules\PerformedTreatment\Support\RmePerformedTreatmentPilotScope;
 use App\Modules\RME\Services\DoctorPatientScopeService;
 use App\Modules\RME\Services\DoctorRoomScopeService;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
@@ -139,6 +140,14 @@ class ClinicVisitPolicy
     public function recordPerformedTreatments(User $user, ClinicVisit $visit): Response|bool
     {
         if (! $user->can('complete_rme_examination') || ! $this->withinWorkingBranchScope($user, $visit->branch_id)) {
+            return false;
+        }
+
+        // ACTIVATION-RME-DOCTOR-PERFORMED-TREATMENTS-1 (rule 219 §15) — outside the
+        // approved pilot branch nobody records, so the presentation `can()` agrees
+        // with the service. Defence in depth only: Gate::before lets a Super Admin
+        // past this line, and the service decides the pilot again where it cannot.
+        if (! app(RmePerformedTreatmentPilotScope::class)->admits($visit->branch_id !== null ? (int) $visit->branch_id : null)) {
             return false;
         }
 
