@@ -55,7 +55,8 @@ discrepancy does to NO_CHARGE.
 
 **Since rule 219 (FEATURE-RME-DOCTOR-PERFORMED-TREATMENTS-1):** the CB-Q1 source exists (the doctor's structured
 "Tindakan Dilakukan" record, flag `rme.doctor_performed_treatments`, OFF), but it is optional and its blocking
-contract is DPT-Q2 (pending). So both statuses are STILL never produced — even with the doctor record on, a
+contract is DPT-Q2 (approved STAGED 2026-11-02: detective during the pilot, blocking only later and NOT implemented).
+So both statuses are STILL never produced — even with the doctor record on, a
 "Tidak Ada Tindakan" declaration does not make the answer `CONSISTENT`.
 
 ## 4. Signals (deterministic; structured server rows only)
@@ -134,13 +135,15 @@ narrow that — changing what a cashier may see of the clinical record is a prod
 - The baseline search is bounded; its edge cases can only MISS a signal, never raise a false one (security
   review F7, accepted). The detail is kept in the private security record, not in this public repository.
 - Detective only: nothing prevents the closure. The CB-Q1 structured doctor input now exists (rule 219) but is
-  OFF, optional at completion (DPT-Q3) and detective; preventing the closure needs the blocking contract (DPT-Q2).
+  optional at completion (DPT-Q3, mandatory only as a STAGED target), detective, and admitted on the SPN4 pilot
+  only (DPT-Q8); preventing the closure needs the blocking contract (DPT-Q2, STAGED, not implemented).
   MEDIUM-1 therefore stays `PARTIALLY_MITIGATED`.
 - **No remediation path exists in the app (pre-existing, recorded 2026-11-01).** When a warning is right — a paid
   procedure was performed but the visit's invoice was already issued at Rp0 — there is no way to bill it: a
   Rp0-original invoice is never corrected (D28, rule 201), an RME invoice has no void, and a visit has one active
   invoice. The SOP therefore says: do not close, escalate as an incident; the visit waits for an owner decision
-  (D21g/D28). Carried as DPT-Q7 (pending) in `docs/decisions/rme-doctor-performed-treatments-owner-decision-package.md`.
+  (D21g/D28). DPT-Q7 (direction approved 2026-11-02): a dedicated controlled recovery is needed but no operation
+is authorized — proposal `docs/decisions/rme-d28-recovery-proposal.md` (`PROPOSAL_NOT_APPROVED`).
 
 ## 9. Flag, deployment, rollback
 

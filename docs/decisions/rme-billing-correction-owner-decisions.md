@@ -18,6 +18,13 @@ Three facts are kept apart and never merged:
 | `REPOSITORY_POLICY_RECORDED` | The policy is written into this repository (this file, a rule). |
 | `TECHNICAL_ENFORCEMENT_DEPLOYED` | Code enforcing it is merged, deployed and verified on production. |
 
+Since DPT-Q8 (2026-11-02) two further labels are used for an activation, and also kept apart:
+
+| Label | Meaning |
+|---|---|
+| `PRODUCTION_ACTIVATED` | The capability's flag is ON in production for the approved scope only, and verified. |
+| `OPERATIONAL_ACCEPTANCE_VERIFIED` | A real operator used it in real work and the server-side evidence was read. |
+
 A decision is only as far along as the last label that is evidenced. A brief's
 "recommended default" or a proposal column is never an approval.
 
@@ -46,6 +53,10 @@ A decision is only as far along as the last label that is evidenced. A brief's
 | 2026-10-31 | **Refund request & approval implemented (rule 215); Owner reference registry deployed (rule 214)** — RF-1 … RF-14, RF-1a and RF-8a enforced in code: Front Office maker at its working branch; reviewers by role and server-resolved branch (Supervisor RME's authorized scope resolves to every RME branch — the existing governance tier, recorded, not widened); maker ≠ checker per account; mandatory case-specific Owner reference consumed in the shared registry, also refused on a pre-payment correction once spent; patient request reference in its own registry; full refund only; dispute refuses submission and approval. Flag `rme.billing_refund_request` OFF; pilot SPN4 with an EMPTY identity allowlist; settlement NOT built | `OWNER_POLICY_APPROVED`, `REPOSITORY_POLICY_RECORDED`, `TECHNICAL_ENFORCEMENT_DEPLOYED` — refund: 2026-10-31, runtime `9826bd69`, tag `feature-rme-billing-refund-request-approval-1-implementation-go`, **flag OFF, identity allowlist EMPTY, not activated**; registry: 2026-10-31, runtime `61450801`, tag `hardening-rme-owner-reference-registry-1-go` | `FEATURE-RME-BILLING-REFUND-REQUEST-APPROVAL-1` and `HARDENING-RME-OWNER-REFERENCE-REGISTRY-1`; implementation decisions in `docs/sprints/feature-rme-billing-refund-request-approval-1.md` §3 |
 | 2026-11-01 | **S6-D1 … S6-D8 — Konsultasi & Kontrol Rp0, "Selesai Tanpa Biaya" (Sprint 6/7)**: only Konsultasi Dokter and server-derived Kontrol are legitimately Rp0 (every free line of a Kontrol; consultation lines elsewhere); explicit action → terminal `NO_CHARGE`, no payment row, visit completed in the same transaction; invoice #36 left untouched; the branch cashier closes, eligibility system-checked, no second approval; D28 kept; reported as clinical visits with zero revenue, never unpaid/receivable/Lunas; vouchers, discounts, corrections, write-offs excluded; every RME branch; flag OFF with a separate activation decision. **Answers D21g and D22 for this closure scope only** | `OWNER_POLICY_APPROVED`, `REPOSITORY_POLICY_RECORDED`, `TECHNICAL_ENFORCEMENT_DEPLOYED` (runtime `4520a276`, production-verified 2026-11-01) — flag `rme.zero_value_closure` **OFF**, not activated | owner answers recorded in-session for `FEATURE-RME-RP0-CONTROL-CONSULTATION-1` (decision dialog of 2026-11-01, no signed artefact; none fabricated); package `docs/decisions/rme-rp0-control-consultation-owner-decision-package.md` |
 | 2026-11-01 | **HARDENING S6-Q1, S6-Q2, S6-Q3 (revised), S6-Q3a, S6-Q3b — Konsultasi & Kontrol Rp0 (Sprint 6/7 hardening)**: S6-Q1 (valid Kontrol parent: real, same patient, examined, not cancelled/deleted, server-derived) and S6-Q2 (no NO_CHARGE for a lab line; lab uses normal billing and lab-candidate generation) approved; S6-Q3 revised: a Kontrol may be Rp0, an additional normally paid treatment is billed > Rp0 and paid normally, a mixed invoice is never NO_CHARGE, a Kontrol link never makes a paid treatment free. S6-Q3a: approved free services = `consultation` category (any visit) + reserved `control` category (valid Kontrol only). S6-Q3b: the Rp0 issuance guard applies to Kontrol visits only and follows the flag. **Supersedes the S6-D1 sub-decision ("every free line of a Kontrol") and the S6-Q3 open option "creator ≠ closer"; S6-D3 preserved** | `OWNER_POLICY_APPROVED` (S6-Q1, S6-Q2) / `OWNER_POLICY_REVISED_AND_APPROVED` (S6-Q3), `REPOSITORY_POLICY_RECORDED`, `TECHNICAL_ENFORCEMENT_DEPLOYED` (runtime `ba33f9bb` (tree `2d1b684b`, PR #576), deployed 2026-11-01 04:34 UTC (12:34 WITA), production-verified, tag `hardening-rme-rp0-closure-owner-decisions-and-paid-treatment-1-go`) — flag `rme.zero_value_closure` **OFF**, not activated | owner brief of `HARDENING-RME-RP0-CLOSURE-OWNER-DECISIONS-AND-PAID-TREATMENT-1` (S6-Q1/Q2/Q3) and the in-session answers of 2026-11-01 (S6-Q3a, S6-Q3b); no signed artefact, none fabricated |
+| 2026-11-01 | **CB-Q1, CB-Q2, CB-Q3** — structured doctor input is the authoritative clinical evidence; detective only until then; built in a separate sprint | `OWNER_POLICY_APPROVED`, `REPOSITORY_POLICY_RECORDED`, `TECHNICAL_ENFORCEMENT_DEPLOYED` (detective cross-check, runtime `1043b815`, rule 218) — `rme.zero_value_closure` **OFF** | in-session answers of 2026-11-01 (section "CB-Q1, CB-Q2, CB-Q3" below) |
+| 2026-11-01 | **DPT-Q1** — an explicit "Tidak Ada Tindakan" is operational KONTROL; an empty list is NOT_RECORDED; operational KONTROL ≠ NO_CHARGE | `OWNER_POLICY_REVISED_AND_APPROVED`, `REPOSITORY_POLICY_RECORDED`, `TECHNICAL_ENFORCEMENT_DEPLOYED_FLAG_OFF` (runtime `931c716c`, rule 219) | execution brief of `FEATURE-RME-DOCTOR-PERFORMED-TREATMENTS-1` |
+| 2026-11-02 | **DPT-Q2 … DPT-Q10 ratified** — Q2 detective in the pilot, blocking later (STAGED); Q3 declaration mandatory as target, optional in the pilot (STAGED); Q4 controlled auditable amendment (direction; not built); Q5 Konsultasi/Kontrol stay out of the picker; Q6 operational Kontrol ≠ registration Kontrol, no restatement; Q7 controlled D28 recovery needed (direction; no operation authorized); Q8 one pilot branch, optional, detective, independent of NO_CHARGE; Q9 officially assigned treating doctor only; Q10 SATUSEHAT Procedure source unchanged | `OWNER_POLICY_APPROVED` (Q2, Q3 `…_STAGED`; Q4, Q7 direction only), `REPOSITORY_POLICY_RECORDED` — **not** `PRODUCTION_ACTIVATED` at ratification | Owner statement in the brief of `RATIFICATION-RME-DOCTOR-PERFORMED-TREATMENTS-OWNER-DECISIONS-1` (received 2026-11-01 ≈ 23:50 WITA; no signed artefact, none fabricated); package `docs/decisions/rme-doctor-performed-treatments-owner-decision-package.md` |
+| 2026-11-02 | **DPT-Q8 designation** — pilot branch **SPN4 (Cabang Sunu)**; cohort = every officially assigned treating doctor at SPN4 (no extra identity allowlist); training `OWNER_ATTESTED`; activation immediately after the activation deploy is verified | `OWNER_DESIGNATION_RECORDED`, `REPOSITORY_POLICY_RECORDED` — activation is recorded in rule 219 §15, never here by inference | in-session answers of the Owner, 2026-11-02 ≈ 05:05 WITA (answer arrival time); no signed artefact, none fabricated |
 
 The earlier D21 text is kept below, marked SUPERSEDED, as the record of what was
 decided and enforced between 2026-10-17 and 2026-10-20. It is never deleted.
@@ -724,7 +735,34 @@ deployed and production-verified on 2026-11-01 (rule 219 §14); `rme.doctor_perf
 **The CB-Q1 open items are not decided by DPT-Q1.** They are carried as DPT-Q2 … DPT-Q10 in
 `docs/decisions/rme-doctor-performed-treatments-owner-decision-package.md` (blocking contract, mandatory declaration
 at completion, post-completion amendment, picker scope, reporting, D28 recovery, activation, covering doctor,
-SATUSEHAT Procedure source). All are `PENDING_OWNER_DECISION`.
+SATUSEHAT Procedure source). ~~All are `PENDING_OWNER_DECISION`.~~ *(true until 2026-11-02; superseded by the
+ratification below.)*
+
+### DPT-Q2 … DPT-Q10 — ratified (2026-11-02)
+
+**Provenance.** The Owner approved, in principle, the recommendations previously presented for DPT-Q2 … DPT-Q10,
+by an explicit statement in the execution brief of `RATIFICATION-RME-DOCTOR-PERFORMED-TREATMENTS-OWNER-DECISIONS-1`
+(received 2026-11-01 ≈ 23:50 WITA). The pilot branch, cohort, training status and window of DPT-Q8 were then asked
+in-session and answered on 2026-11-02 ≈ 05:05 WITA. No signed artefact exists; none is claimed. The full per-question
+record (approved policy, scope, runtime, deferred enforcement, dependencies, activation status) is the package.
+
+| Code | Status | Owner answer (normalised) |
+|---|---|---|
+| DPT-Q2 | `OWNER_POLICY_APPROVED_STAGED` | Detective during the pilot (detect, warn, record, show to oversight; never block NO_CHARGE). Later, with reliable clinical evidence and an approved exception procedure, a CONFIRMED paid-treatment discrepancy should block an unauthorized NO_CHARGE. Preconditions before any block: DPT-Q3 active, ≥ 1 month of production data with the flag ON, documented acceptance criteria (not yet defined), an approved exception procedure, a validated contract. |
+| DPT-Q3 | `OWNER_POLICY_APPROVED_STAGED` | Target: "Ada Tindakan" or "Tidak Ada Tindakan" declared before "Selesai Pemeriksaan". Pilot: optional, completion gate unchanged. Activation needs a successful pilot, trained doctors, a safe plan for in-progress visits at the boundary, passing regression/concurrency tests and a specific rollout authorization. |
+| DPT-Q4 | `OWNER_POLICY_APPROVED` (direction) | Authorized post-completion amendments through a controlled, auditable workflow that keeps the original reconstructable; no silent overwrite, no hard delete. Actors, reason, approval, versioning, invoice relation, history, audit, consent and financial effects are open — not built in the pilot. |
+| DPT-Q5 | `OWNER_POLICY_APPROVED` | Konsultasi and Kontrol are services, not procedures; they stay out of the picker; free text never bypasses the exclusion; "Tidak Ada Tindakan" is truthful on such a visit. |
+| DPT-Q6 | `OWNER_POLICY_APPROVED` | Operational Kontrol ≠ `visit_type = control` ≠ NO_CHARGE; no historical rewrite, no KPI restatement; existing reporting during the pilot; any KPI redefinition needs a documented reporting contract. |
+| DPT-Q7 | `OWNER_POLICY_APPROVED` (direction) | A dedicated, controlled recovery is needed for an incorrect Rp0 ORIGINAL; no operation is authorized; D28 stays; proposal `docs/decisions/rme-d28-recovery-proposal.md` (`PROPOSAL_NOT_APPROVED`). |
+| DPT-Q8 | `OWNER_POLICY_APPROVED` + designation | One pilot branch — **SPN4** — independent of `rme.zero_value_closure` (OFF); optional; detective; enforced by a fail-closed server-side allowlist (a global flag alone is not a pilot). |
+| DPT-Q9 | `OWNER_POLICY_APPROVED` | Only the officially assigned treating doctor (`visit.doctor_id`) records; a covering doctor must first be assigned through the canonical workflow; no impersonation; any handover workflow is a separate design. |
+| DPT-Q10 | `OWNER_POLICY_APPROVED` | SATUSEHAT Procedure source (invoice lines) unchanged during the pilot; no auto-submission. |
+
+**Consequences.** MEDIUM-1 stays **`PARTIALLY_MITIGATED`**. Nothing financial changes: D21, D21c, D21g, D22, D28,
+disputes, corrections, refunds and `rme.zero_value_closure` (OFF) are untouched. Invoices #36, #42, #43, #44 untouched.
+
+**Technical enforcement and activation are separate statuses** and are recorded in rule 219 §14–§15 by the
+activation sprint `ACTIVATION-RME-DOCTOR-PERFORMED-TREATMENTS-1` only once evidenced.
 
 ## Pending decisions (unchanged)
 
