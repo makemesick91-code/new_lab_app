@@ -1,5 +1,5 @@
 ---
-description: FEATURE-RME-DOCTOR-PERFORMED-TREATMENTS-1 — the treating doctor's structured "Tindakan Dilakukan" record (owner CB-Q1, CB-Q3) and DPT-Q1 (revised and approved): an EXPLICIT "Tidak Ada Tindakan" makes the visit OPERATIONAL KONTROL; an empty list is NOT_RECORDED. Operational Kontrol never rewrites visit_type, never creates a parent visit and never makes anything free (rule 217 still decides Rp0). The record feeds rule 218 as a DETECTIVE input (CBC_PERFORMED_TREATMENT_NOT_BILLED); no blocking contract is approved. Flag rme.doctor_performed_treatments default OFF.
+description: FEATURE-RME-DOCTOR-PERFORMED-TREATMENTS-1 — the treating doctor's structured "Tindakan Dilakukan" record (owner CB-Q1, CB-Q3) and DPT-Q1 (revised and approved): an EXPLICIT "Tidak Ada Tindakan" makes the visit OPERATIONAL KONTROL; an empty list is NOT_RECORDED. Operational Kontrol never rewrites visit_type, never creates a parent visit and never makes anything free (rule 217 still decides Rp0). The record feeds rule 218 as a DETECTIVE input (CBC_PERFORMED_TREATMENT_NOT_BILLED); no blocking contract is implemented (DPT-Q2 approved STAGED). DPT-Q2…Q10 ratified 2026-11-02; DPT-Q8 pilot = SPN4 only behind a fail-closed server-side allowlist. Flag rme.doctor_performed_treatments default OFF.
 globs: app/Modules/PerformedTreatment/**, app/Modules/Consent/Services/RmeVisitConsentService.php, app/Modules/ClinicVisit/Policies/ClinicVisitPolicy.php, app/Modules/RmeInvoice/Support/RmeClinicalBillingConsistency*.php, app/Modules/RmeInvoice/Services/RmeClinicalBillingConsistencyService.php, app/Modules/ClinicOversight/Repositories/OversightZeroValueClosureRepository.php, resources/views/rme/visits/medical-record/partials/performed-treatments.blade.php, resources/views/rme/cashier/partials/clinical-summary.blade.php, database/migrations/2026_11_02_100001_*.php, tests/Feature/RmePerformedTreatment/**
 alwaysApply: false
 ---
@@ -8,8 +8,8 @@ alwaysApply: false
 
 **Status:** see §14. Sprint record: `docs/sprints/feature-rme-doctor-performed-treatments-1.md`. ADR:
 `docs/adr/0016-rme-doctor-performed-treatments.md`. Owner decisions: "CB-Q1 … CB-Q3" and "DPT-Q1" in
-`docs/decisions/rme-billing-correction-owner-decisions.md`; open questions DPT-Q2 … DPT-Q10 in
-`docs/decisions/rme-doctor-performed-treatments-owner-decision-package.md`. Extends rule 218 (a new clinical
+`docs/decisions/rme-billing-correction-owner-decisions.md`; DPT-Q2 … DPT-Q10 (ratified 2026-11-02, several STAGED)
+in `docs/decisions/rme-doctor-performed-treatments-owner-decision-package.md` — §15 below is their normative summary. Extends rule 218 (a new clinical
 input) and rule 217 (the Kontrol distinction); where they disagree about the doctor's record, this rule wins.
 Rule 217 eligibility and D28 are unchanged.
 
@@ -67,7 +67,8 @@ historical visit without data stays `NOT_RECORDED`; nothing is backfilled or rec
 4. **Service** (`RmePerformedTreatmentService`, the single authority): the **treating doctor** — an active account
    with the Doctor role, linked (`DoctorIdentityResolver`) to an ACTIVE doctor record that IS the visit's
    `doctor_id`. A nurse, the front office, a cashier and Super Admin (Gate::before never reaches a business rule)
-   are refused; there is no impersonation path. A covering doctor is DPT-Q9 (pending).
+   are refused; there is no impersonation path. **DPT-Q9 (approved 2026-11-02):** only the OFFICIALLY assigned
+   treating doctor records; a covering doctor must first become the visit's doctor through the canonical workflow.
 5. **Encounter:** `RmeVisitConsentService::assertPerformedTreatmentAuthoringAllowed()` — single current
    `in_progress` encounter, actor may work on it, the visit IS that encounter, valid signed consent. Odontogram
    pre-consent authoring (rule 134) is unchanged and does not extend here.
@@ -93,10 +94,12 @@ PostgreSQL 16 by `RmePerformedTreatmentConcurrencyTest` (races A–M).
 - Authoring is possible only between "Mulai Pemeriksaan" + signed consent and "Selesai Pemeriksaan".
 - Recording or declaring **never** changes the visit status (the service does not depend on
   `ClinicVisitService`). Only the existing guarded `rme.visits.transition` completes the examination.
-- **No new mandatory gate:** completion does not require a declaration (DPT-Q3, pending). Making it mandatory is a
-  change in `ClinicVisitService::transitionStatus()` after an owner decision, never while the flag is OFF.
-- After completion the record is **read-only**. A post-completion amendment workflow is DPT-Q4 (pending); there is
-  no edit path, no hard delete, no SQL fix.
+- **No new mandatory gate:** completion does not require a declaration. **DPT-Q3 (approved STAGED 2026-11-02)**
+  makes it the TARGET, but it stays optional in the pilot; making it mandatory is a change in
+  `ClinicVisitService::transitionStatus()` that needs the §15 preconditions and a specific rollout authorization.
+- After completion the record is **read-only**. **DPT-Q4 (direction approved 2026-11-02)** permits a controlled,
+  auditable amendment workflow — NOT built; until its own engineering contract ships there is no edit path, no hard
+  delete, no SQL fix.
 - A mistake inside the encounter is **voided** with a reason (kept on the row; the audit records its length only)
   and re-recorded. "Ada Tindakan" → "Tidak Ada Tindakan" requires voiding every row first.
 
@@ -104,8 +107,8 @@ PostgreSQL 16 by `RmePerformedTreatmentConcurrencyTest` (races A–M).
 
 Selectable = active, not soft-deleted, not in the approved-free SERVICE categories (`consultation`, `control` —
 rule 217 config, reused, never copied) and not an excluded code (voucher `TRT-FREESC`). A Konsultasi/Kontrol is a
-service, not a "tindakan", so "Tidak Ada Tindakan" stays truthful on a Konsultasi/Kontrol visit (engineering
-choice; DPT-Q5 asks the owner to confirm). Matching is by `treatment_id` only; snapshots keep the historical
+service, not a "tindakan", so "Tidak Ada Tindakan" stays truthful on a Konsultasi/Kontrol visit (**DPT-Q5,
+approved 2026-11-02** — confirms the engineering choice; free text never bypasses it: there is no free-text field). Matching is by `treatment_id` only; snapshots keep the historical
 meaning when master data changes. Teeth follow `App\Modules\Odontogram\Support\FdiToothNumbers` (shared with the
 odontogram request); teeth are optional; a treatment never rewrites the odontogram and an odontogram change never
 creates a treatment.
@@ -123,8 +126,9 @@ the evaluator:
 - the other two signals stay independent (a "no treatment" declaration never silences a chart change).
 
 With the flag OFF the evaluator gets `null`: snapshot version 1, byte for byte. **Still never** `CONSISTENT` or
-`CONFIRMED_DISCREPANCY`, and **a signal never refuses** a closure. A blocking contract
-(`CONFIRMED_PAID_TREATMENT_NOT_BILLED → NO_CHARGE_DENIED`) is DPT-Q2 (pending).
+`CONFIRMED_DISCREPANCY`, and **a signal never refuses** a closure. **DPT-Q2 (approved STAGED 2026-11-02):** detective
+during the pilot; a blocking contract (`CONFIRMED_PAID_TREATMENT_NOT_BILLED → NO_CHARGE_DENIED`) is the later stage
+and needs every §15 precondition — it is NOT implemented.
 
 ## 9. Cashier and oversight (display only)
 
@@ -133,14 +137,16 @@ With the flag OFF the evaluator gets `null`: snapshot version 1, byte for byte. 
   non-blocking notice. It changes no price (D21), refuses nothing, and gives the cashier no clinical write.
 - Oversight "Tanpa Biaya (Rp0)" shows the doctor state recorded at closure (`data-zv-dpt-state`) and counts
   (`data-zv-cbc-signal-performed`, `data-zv-dpt-no-treatment`) — the authorized reporting surface for the
-  operational category. Historic KPIs are not redefined (DPT-Q6, pending).
+  operational category. Historic KPIs are not redefined (**DPT-Q6, approved 2026-11-02**: no restatement; a KPI
+  change needs a documented reporting contract).
 
 ## 10. D28 and incidents
 
 If a doctor-recorded paid procedure is found on a visit whose ORIGINAL invoice is Rp0, D28 (rule 201) still
 forbids correcting it; there is no RME void and one active invoice per visit. SOP: do not close "Selesai Tanpa
 Biaya", log an incident, escalate to the Owner. No SQL correction, no unauthorized void, no fake payment, no
-replacement invoice, no write-off. A recovery mechanism is DPT-Q7 (pending).
+replacement invoice, no write-off. **DPT-Q7 (direction approved 2026-11-02):** a dedicated controlled recovery is
+needed, but NO operation is authorized; proposal `docs/decisions/rme-d28-recovery-proposal.md` (not approved).
 
 ## 11. Audit and privacy
 
@@ -152,8 +158,8 @@ row per mutation; a replay or a no-op re-declaration writes none.
 ## 12. Patient merge, SATUSEHAT, legacy, print
 
 Both tables are registered in `PatientMergeOwnershipRepository::CHILD_TABLES` (activity detection); they carry no
-patient FK, so the merge registry is unaffected. SATUSEHAT still maps Procedures from invoice lines — moving the
-source is DPT-Q10 (pending). Legacy RME/odontogram and the RME print composition (rule 127)
+patient FK, so the merge registry is unaffected. SATUSEHAT still maps Procedures from invoice lines — **DPT-Q10
+(approved 2026-11-02): unchanged during the pilot**, no auto-submission. Legacy RME/odontogram and the RME print composition (rule 127)
 are untouched.
 
 ## 12a. Residuals (independent security review 2026-11-01 — recorded, not hidden)
@@ -183,10 +189,49 @@ are untouched.
 - Deploy: `php artisan migrate --force` (one additive migration). No seeder, no permission, no role change.
 - Rollback: flag OFF + config cache rebuild as the runtime user. Rows stay (clinical evidence, never dropped);
   `down()` refuses while rows exist.
-- Activation = `ACTIVATION-RME-DOCTOR-PERFORMED-TREATMENTS-1`, a separate owner decision (DPT-Q8), independent of
-  `rme.zero_value_closure` (also OFF).
+- Activation = `ACTIVATION-RME-DOCTOR-PERFORMED-TREATMENTS-1`, independent of `rme.zero_value_closure` (also OFF).
+  **DPT-Q8 (approved 2026-11-02):** one pilot branch, **SPN4**, behind a fail-closed server-side allowlist (§15).
 - Status: `TECHNICAL_ENFORCEMENT_DEPLOYED_FLAG_OFF` — runtime `931c716c` (tree `150679aa`, PR #581) deployed
   2026-11-01 14:28 UTC (22:28 WITA), production-verified, GO tag `feature-rme-doctor-performed-treatments-1-implementation-go`
   (evidence: sprint record §8). The flag stays OFF.
 - MEDIUM-1 (rule 218 §8) stays `PARTIALLY_MITIGATED`: the authoritative source now EXISTS but is OFF, optional,
   and detective. Never claim it closed.
+
+## 15. Owner ratification DPT-Q2 … DPT-Q10 and the pilot scope (2026-11-02)
+
+Source: Owner statement in the brief of `RATIFICATION-RME-DOCTOR-PERFORMED-TREATMENTS-OWNER-DECISIONS-1`; pilot
+designation answered in-session 2026-11-02 ≈ 05:05 WITA. No signed artefact; none claimed. Per-question record:
+the decision package.
+
+**Pilot behaviour (normative):**
+
+```text
+PILOT_BRANCH=SPN4 (Cabang Sunu)            COHORT=every officially assigned treating doctor at SPN4
+DECLARATION=OPTIONAL                        EXAMINATION_COMPLETION_GATE=UNCHANGED
+NO_TREATMENT_CLASSIFICATION=OPERATIONAL_CONTROL (never visit_type, never a parent, never NO_CHARGE)
+CLINICAL_BILLING_MODE=DETECTIVE             rme.zero_value_closure=OFF
+AMENDMENT_AFTER_COMPLETION=NOT_BUILT        D28_RECOVERY=NOT_AUTHORIZED
+SATUSEHAT_PROCEDURE_SOURCE=INVOICE_LINES    MEDIUM-1=PARTIALLY_MITIGATED
+```
+
+1. **A global flag is not a pilot.** `rme.doctor_performed_treatments` is one global switch; ON by itself would
+   expose every RME branch. Activation therefore REQUIRES a fail-closed, server-side, source-controlled branch
+   allowlist enforced at the service (the mutation authority) and mirrored at the request, policy, page, cashier
+   projection and rule 218 evidence. Empty / invalid / MAIN / inactive / non-RME → admits nothing. More than one
+   branch without a new Owner decision is an invalid configuration. A Super Admin bypass never widens it.
+2. **The designation is this capability's own.** SPN4 being the invoice-correction (D1c) and refund (RF-3) pilot
+   branch authorizes nothing here; each capability carries its own allowlist.
+3. **Training is `OWNER_ATTESTED`.** The Owner stated it was done; there is no attendance record and none is claimed.
+4. **STAGED decisions and their preconditions.**
+   - DPT-Q3 mandatory declaration needs: a successful pilot, trained doctors, a safe plan for visits already
+     `in_progress` at the switch-on boundary, regression + PostgreSQL concurrency tests, a specific rollout
+     authorization.
+   - DPT-Q2 blocking needs: DPT-Q3 active, ≥ 1 month of production data with the flag ON, documented acceptance
+     criteria for "reliable clinical evidence" (NOT yet defined — an Owner decision), an approved exception
+     procedure, and a validated contract for `CONSISTENT` / `CONFIRMED_DISCREPANCY`.
+5. **Never inferred:** that the declaration is mandatory, that NO_CHARGE is blocked, that an amendment exists, that a
+   D28 recovery exists, that any branch other than SPN4 is approved, that the SATUSEHAT source moved, or that
+   MEDIUM-1 is closed.
+6. **States are separate.** At ratification: `OWNER_POLICY_APPROVED` + `REPOSITORY_POLICY_RECORDED`; technical
+   enforcement of the allowlist, production activation and operational acceptance are recorded only by the
+   activation sprint, each with its own evidence.

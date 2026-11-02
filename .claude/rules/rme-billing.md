@@ -260,7 +260,9 @@ code, then the canonical rule, and report the drift.
   oversight "Tanpa Biaya (Rp0)"; S6-D3 preserved (no creator ≠ closer) — runtime `ba33f9bb`, deployed and verified
   2026-11-01, flag still OFF; MEDIUM-1 NARROWED, not closed. **Rule 218 (owner CB-Q1/Q2/Q3, 2026-11-01):** a
   DETECTIVE clinical vs billing cross-check is recorded with every NO_CHARGE closure and shown in oversight; a signal
-  never refuses (a fault fails closed) — runtime `1043b815`, deployed 2026-11-01, flag OFF; MEDIUM-1 `PARTIALLY_MITIGATED`. **Rule 219 (CB-Q1 input, DPT-Q1, 2026-11-01):** the treating doctor's structured "Tindakan Dilakukan" record (flag `rme.doctor_performed_treatments`, OFF) feeds rule 218 as signal `CBC_PERFORMED_TREATMENT_NOT_BILLED` (snapshot v2); "Tidak Ada Tindakan" = operational KONTROL, which is NEVER NO_CHARGE; still detective, MEDIUM-1 still `PARTIALLY_MITIGATED`. **Not built:** reversal (D26 excluded), patient credit (D6 excluded). **PENDING owner decisions:** D21c
+  never refuses (a fault fails closed) — runtime `1043b815`, deployed 2026-11-01, flag OFF; MEDIUM-1 `PARTIALLY_MITIGATED`. **Rule 219 (CB-Q1 input, DPT-Q1, 2026-11-01):** the treating doctor's structured "Tindakan Dilakukan" record (flag `rme.doctor_performed_treatments`, OFF) feeds rule 218 as signal `CBC_PERFORMED_TREATMENT_NOT_BILLED` (snapshot v2); "Tidak Ada Tindakan" = operational KONTROL, which is NEVER NO_CHARGE; still detective, MEDIUM-1 still `PARTIALLY_MITIGATED`. **DPT-Q2…Q10 ratified 2026-11-02:** NO_CHARGE blocking by
+  doctor evidence is a STAGED later step (not implemented); D28 recovery direction approved but no operation
+  authorized; pilot SPN4 only (rule 219 §15). **Not built:** reversal (D26 excluded), patient credit (D6 excluded). **PENDING owner decisions:** D21c
   discount policy, D21g/D22 for Rp0 **issuance**, vouchers and any Rp0 correction (answered for the closure scope
   only; D28 unchanged), D24 `paid_at` backdating. The historical Rp0 UNPAID SPN4 invoice #36 stays untouched (S6-D2).
 - Open owner questions: a correction settling a PARTIAL invoice leaves no LUNAS receipt; whether a pre-payment approval
