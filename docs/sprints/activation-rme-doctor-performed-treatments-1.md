@@ -209,4 +209,96 @@ mengunci consent dulu), PII probe, pelemahan identitas dokter/consent/ruangan, d
 
 ## 9. Bukti rilis
 
-Diisi oleh commit evidence setelah merge, deploy, dan seremoni aktivasi.
+Semua waktu UTC; WITA = UTC+8.
+
+### 9.1 CI otoritatif (PR #584, head `7a417407`, run `41391755825`)
+
+| Gate | Hasil |
+|---|---|
+| CICD-CTRL Gate Classifier | pass |
+| NSF-R012 Quality Gate | pass |
+| NSF-R011 Critical Test Gate | pass — `Tests: 7674 passed (42193 assertions)`, `critical_test_exit_status=0` (dibaca dari log, bukan dari tanda centang) |
+| CICD-CTRL Selective Module Gate | pass |
+| NSF-9 Release Safety & Automated Smoke Gate | pass |
+| NSF-10 Release Evidence Gate | pass |
+| Phase 3 Android Clinic App Gate | pass |
+| NSF-R011 Full Suite Gate | **SKIPPED — bukan PASS** (kebijakan sementara Full Suite aktif; tidak di-dispatch) |
+
+### 9.2 Merge
+
+Squash merge PR #584 → `89711151b1969c5e82e4b21f09cc6be23362c4f3`. `MERGE_TREE == CANDIDATE_TREE` =
+`de94afd32cf5b005f2843334d3d8e4c46b4da349`. Fase A (ratifikasi) sebelumnya: PR #583 → `df248f36`.
+
+### 9.3 Deploy (di dalam VPS)
+
+`bash scripts/deploy-vps-runner.sh start` dijalankan di `srv1730088`, tanpa pre-pull. Produksi sebelumnya
+`931c716c`; checkout tracked bersih (satu-satunya entri `?? storage/runtime-home/`, dipertahankan).
+
+| Bukti | Nilai |
+|---|---|
+| Status runner | `exit=0` |
+| Log | `DEPLOY OK: 20261102-061351`, `DEPLOY_HEAD_TARGET_MATCH=YES (89711151…)`, `immutable-exec rc=0`, `DEPLOY_SNAPSHOT_CLEANED=YES` |
+| HEAD / tree produksi | `89711151` / `de94afd3` — identik dengan merge |
+| Migrasi | tidak ada migrasi di sprint ini |
+| Smoke | 6 passed, 1 warning `SMOKE-HTTP-HEALTH` `http://127.0.0.1/login` 404 = bayangan co-tenant nginx yang sudah diketahui; lewat `https://daengtisia.online` `/login`, `/health/live`, `/health/ready`, `/health/lb` semuanya 200 |
+| Layanan | `php8.3-fpm`, `nginx`, `daengtisiams-queue-worker` aktif; `queue:failed` kosong |
+
+### 9.4 Pemeriksaan flag OFF pasca-deploy
+
+`runuser -u daengtisiams -- php artisan rme:performed-treatment-readiness --expect=off` → exit 0:
+
+```
+VERDICT=READY_NOT_ARMED
+FLAG_ENABLED=false env_resolution=default
+ZERO_VALUE_CLOSURE_ENABLED=false
+PILOT configuration=VALID declared=SPN4 admitted=SPN4 max=1 decision=DPT-Q8
+BRANCH ATG3=DENIED
+BRANCH LDK2=DENIED
+BRANCH SPN4=ADMITTED
+BRANCH TLK1=DENIED
+RECORDS declarations=0 no_treatment=0 performed=0 voided=0
+```
+
+### 9.5 Seremoni aktivasi (Owner: "segera setelah deploy terverifikasi")
+
+| Langkah | Bukti |
+|---|---|
+| File env sebelum | inode `796156`, `640 root:daengtisiams`, 110 baris, berakhir newline, 0 baris `FEATURE_RME_DOCTOR_PERFORMED_TREATMENTS` |
+| Edit | satu baris di-append (`FEATURE_RME_DOCTOR_PERFORMED_TREATMENTS=true`), tanpa salinan cadangan file rahasia |
+| File env sesudah | inode `796156` (sama), `640 root:daengtisiams` (sama), 111 baris; runtime user masih dapat membaca |
+| Cache | `config:clear` + `config:cache` sebagai `daengtisiams`; `bootstrap/cache/config.php` milik `daengtisiams:daengtisiams` |
+| Waktu armed | 2026-11-02 ≈ 06:24 UTC (≈ 14:24 WITA) |
+| Probe `--expect=on` | exit 0, `VERDICT=ARMED`, `FLAG_ENABLED=true env_resolution=env`, `admitted=SPN4`, `SPN4=ADMITTED`, `TLK1/LDK2/ATG3=DENIED`, `ZERO_VALUE_CLOSURE_ENABLED=false` |
+| `foundation:feature-flags` | `rme.doctor_performed_treatments enabled=true via=env captured=yes`; `rme.zero_value_closure enabled=false` |
+
+### 9.6 Sidik jari finansial (read-only, `default_transaction_read_only = on`)
+
+Diambil empat kali — baseline (04:30 UTC), pra-deploy, pasca-deploy, pasca-aktivasi (06:25 UTC). Keempatnya
+**identik byte demi byte** (diff kosong), termasuk total audit: invoice 10 / 31.548.000, pembayaran 10 / 22.548.000,
+koreksi 3 APPLIED, refund/settlement/obligation/dispute 0, tabel DPT 0, consent 11 (0 void), invoice #36/#42/#43/#44
+status dan `updated_at` tidak berubah. `laravel.log` tetap 1.443.432 byte / 164 ERROR (tidak ada error baru).
+
+### 9.7 Penerimaan klinis nyata
+
+Pada 06:25 UTC hari aktivasi tidak ada kunjungan di cabang mana pun (`visit_date` = hari klinis ini: 0 baris) dan
+belum ada catatan DPT. Tidak ada pasien, dokter, atau tindakan sintetis yang dibuat dan tidak ada dokter yang
+diperankan. Karena itu:
+
+```
+PILOT_CONFIGURATION=ACTIVE (SPN4 only)
+REAL_CLINICAL_ACCEPTANCE=NOT_PERFORMED
+OPERATIONAL_ACCEPTANCE_VERIFIED=NO
+OPERATIONAL_GO=NOT_REACHED
+GO_TAG activation-rme-doctor-performed-treatments-1-pilot-go = NOT CREATED
+MEDIUM-1 (rule 218 §8) = PARTIALLY_MITIGATED
+```
+
+Penerimaan dicatat ketika seorang dokter SPN4 yang ditugaskan memakai "Tindakan Dilakukan" pada encounter nyata
+dan jejak server (`trx_rme_treatment_declarations` / `trx_rme_performed_treatments` / `sys_audit_logs`) dibaca,
+dengan sidik jari finansial tetap identik. Baru setelah itu tag GO pilot boleh dibuat.
+
+### 9.8 Rollback
+
+Flag-first: hapus baris (atau set `false`) → `config:cache` sebagai `daengtisiams` → probe `--expect=off`. Baris klinis
+dan audit tetap tersimpan. Rollback tidak dilatih di produksi pada sprint ini (mekanismenya sama dengan aktivasi
+di atas dan diuji otomatis); melatihnya akan menjadi toggle produksi yang tidak diminta.

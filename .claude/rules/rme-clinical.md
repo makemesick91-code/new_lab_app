@@ -211,7 +211,8 @@ editable) → Persetujuan Tindakan Medis (RME + finish unlocked) → RME + Odont
   locked first, append-only rows voided with a reason. An empty list is `NOT_RECORDED`; only an explicit
   "Tidak Ada Tindakan" is operational KONTROL, which never rewrites `visit_type`, never creates a parent visit and
   never makes anything free (rule 217 decides Rp0). The record never transitions the visit. Flag
-  `rme.doctor_performed_treatments` default OFF. DPT-Q2…Q10 ratified 2026-11-02 (rule 219 §15): pilot SPN4 ONLY,
+  `rme.doctor_performed_treatments` default OFF; ARMED in production since 2026-11-02 06:24 UTC for SPN4 only
+  (operational acceptance not yet verified, rule 219 §14). DPT-Q2…Q10 ratified 2026-11-02 (rule 219 §15): pilot SPN4 ONLY,
   behind a fail-closed server-side branch allowlist (a global ON alone is never a pilot); declaration optional;
   cross-check detective; covering doctor must first be the visit's assigned doctor; no post-completion edit path.
   The allowlist is `config/rme_performed_treatment.php` (no env read) read only through

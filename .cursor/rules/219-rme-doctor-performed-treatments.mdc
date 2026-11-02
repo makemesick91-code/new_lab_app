@@ -205,9 +205,17 @@ are untouched.
 - **Rollback (flag-first):** flag OFF (or remove the line) → `config:cache` as the runtime user → probe `--expect=off`.
   Authoring stops everywhere at once; rows, declarations and audit stay (clinical evidence, never deleted or edited).
   Narrowing the allowlist is a reviewed commit, never a host edit — the file reads no environment.
-- Status: `TECHNICAL_ENFORCEMENT_DEPLOYED_FLAG_OFF` — runtime `931c716c` (tree `150679aa`, PR #581) deployed
+- Status (history): `TECHNICAL_ENFORCEMENT_DEPLOYED_FLAG_OFF` — runtime `931c716c` (tree `150679aa`, PR #581) deployed
   2026-11-01 14:28 UTC (22:28 WITA), production-verified, GO tag `feature-rme-doctor-performed-treatments-1-implementation-go`
-  (evidence: sprint record §8). The flag stays OFF.
+  (evidence: sprint record §8).
+- **Status (current): `PRODUCTION_ACTIVATED` for SPN4 only; `OPERATIONAL_ACCEPTANCE_VERIFIED` NOT reached.** Runtime
+  `89711151` (tree `de94afd3`, PR #584) deployed 2026-11-02 06:13 UTC (14:13 WITA), probe `--expect=off` read
+  `READY_NOT_ARMED` / `admitted=SPN4`; flag armed 06:24 UTC (14:24 WITA) by one appended env line (inode, mode and
+  owner preserved) + `config:cache` as `daengtisiams`; probe `--expect=on` reads `ARMED`, `SPN4=ADMITTED`,
+  `TLK1/LDK2/ATG3=DENIED`, `rme.zero_value_closure` OFF; financial fingerprint byte-identical before and after.
+  No real SPN4 encounter had used it when this was written, so the pilot GO tag
+  `activation-rme-doctor-performed-treatments-1-pilot-go` is NOT created. Evidence:
+  `docs/sprints/activation-rme-doctor-performed-treatments-1.md` §9.
 - MEDIUM-1 (rule 218 §8) stays `PARTIALLY_MITIGATED`: the authoritative source now EXISTS but is OFF, optional,
   and detective. Never claim it closed.
 
