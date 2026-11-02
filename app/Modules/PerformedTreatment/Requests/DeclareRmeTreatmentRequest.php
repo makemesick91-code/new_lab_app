@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Modules\PerformedTreatment\Requests;
 
 use App\Modules\PerformedTreatment\Models\RmeTreatmentDeclaration;
-use App\Modules\PerformedTreatment\Support\RmePerformedTreatmentFeatureGuard;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -16,9 +15,11 @@ use Illuminate\Validation\Rule;
  */
 class DeclareRmeTreatmentRequest extends FormRequest
 {
+    use EnsuresPerformedTreatmentAdmission;
+
     protected function prepareForValidation(): void
     {
-        abort_unless(app(RmePerformedTreatmentFeatureGuard::class)->enabled(), 404);
+        $this->ensurePerformedTreatmentAdmission();
     }
 
     public function authorize(): bool

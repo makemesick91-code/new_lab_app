@@ -3,6 +3,7 @@
 namespace App\Modules\Consent\Services;
 
 use App\Models\User;
+use App\Modules\ClinicVisit\Interfaces\ClinicVisitRepositoryInterface;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\ClinicVisit\Services\ActiveEncounterResolver;
 use App\Modules\Consent\Interfaces\RmeVisitConsentRepositoryInterface;
@@ -39,6 +40,7 @@ class RmeVisitConsentService
         private readonly RmeVisitConsentNumberGeneratorService $numbers,
         private readonly PrescriptionCanvasDecoder $canvas,
         private readonly ClinicalClock $clock,
+        private readonly ClinicVisitRepositoryInterface $visits,
     ) {}
 
     /*
@@ -569,6 +571,14 @@ class RmeVisitConsentService
     /**
      * Correction path. A signed consent is never edited or deleted; it is
      * voided, with a reason, and a fresh one is signed in its place.
+     *
+     * ACTIVATION-RME-DOCTOR-PERFORMED-TREATMENTS-1 (rule 219 §12a, LOW-2 closed) —
+     * the void takes the VISIT row lock first, the same lock and the same order
+     * (visit → consent) as every clinical write that re-checks the consent under
+     * it (RmePerformedTreatmentService). A write therefore commits under a consent
+     * that is still valid, or waits and then sees it voided — never a row written
+     * under a consent that is void at commit. The consent is re-read under the
+     * lock, so two concurrent voids of one consent cannot both succeed.
      */
     public function void(RmeVisitConsent $consent, User $operator, string $reason): RmeVisitConsent
     {
@@ -585,6 +595,15 @@ class RmeVisitConsentService
         }
 
         return DB::transaction(function () use ($consent, $operator, $reason): RmeVisitConsent {
+            $this->visits->lockForUpdate((int) $consent->clinic_visit_id);
+            $consent->refresh();
+
+            if ($consent->isVoided()) {
+                throw ValidationException::withMessages([
+                    'consent' => 'Persetujuan ini sudah dibatalkan.',
+                ]);
+            }
+
             $consent->forceFill([
                 'voided_at' => $this->clock->now(),
                 'voided_by' => $operator->id,

@@ -37,6 +37,8 @@ use App\Modules\Clinic\Models\Clinic;
 use App\Modules\ClinicRoom\Models\ClinicRoom;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\ClinicVisit\Services\ClinicVisitService;
+use App\Modules\Consent\Models\RmeVisitConsent;
+use App\Modules\Consent\Services\RmeVisitConsentService;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\LabOrder\Models\AuditLog;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
@@ -168,6 +170,10 @@ function dptcFixture(): array
     $fx['doctorUser'] = rmeMakeDoctorOnline($fx['doctor'], $fx['branch'], $fx['room']);
     $fx['visit'] = dptcVisit($fx);
 
+    // The fixture branch is the pilot branch of this suite (rule 219 §15); the
+    // competing child process receives the same allowlist through its payload.
+    config()->set('rme_performed_treatment.pilot.branch_codes', [(string) $fx['branch']->code]);
+
     return $fx;
 }
 
@@ -226,7 +232,10 @@ function dptcCompeting(array $steps, float $hold = 2.0): array
     $payload = base64_encode((string) json_encode([
         'steps' => $steps,
         'hold' => $hold,
-        'config' => ['feature_flags.flags' => config('feature_flags.flags')],
+        'config' => [
+            'feature_flags.flags' => config('feature_flags.flags'),
+            'rme_performed_treatment.pilot.branch_codes' => config('rme_performed_treatment.pilot.branch_codes'),
+        ],
     ]));
 
     $env = [
@@ -548,5 +557,77 @@ it('DPT-RACE-M a second encounter opened behind the visit lock is seen after the
 
     expect($race['waited'])->toBeGreaterThan(1.0)
         ->and($race['refusal'])->toContain(RmePerformedTreatmentRefusal::ENCOUNTER_NOT_ACTIVE)
+        ->and(dptcRows($fx['visit']))->toBe(0);
+});
+
+// ─── N / O: ACTIVATION-RME-DOCTOR-PERFORMED-TREATMENTS-1 (rule 219 §12a, §15) ──
+
+function dptcConsentId(ClinicVisit $visit): int
+{
+    return (int) RmeVisitConsent::query()->where('clinic_visit_id', $visit->id)->whereNull('voided_at')->value('id');
+}
+
+it('DPT-RACE-N1 a save waiting behind a consent VOID is refused — never a row written under a consent void at commit (LOW-2 closed)', function () {
+    $fx = dptcFixture();
+    $consentId = dptcConsentId($fx['visit']);
+    $handle = dptcCompeting([['kind' => 'void_consent', 'consent' => $consentId, 'actor' => $fx['doctorUser']->id, 'reason' => 'Uji race persetujuan.']]);
+
+    test()->actingAs($fx['doctorUser']);
+    $race = dptcRace(fn () => dptcSvc()->record($fx['visit']->fresh(), dptcData($fx['scaling']), $fx['doctorUser']));
+    dptcJoin($handle);
+
+    expect($race['waited'])->toBeGreaterThan(1.0)
+        ->and($race['refusal'])->toContain(RmePerformedTreatmentRefusal::CONSENT_REQUIRED)
+        ->and(dptcRows($fx['visit']))->toBe(0)
+        ->and(RmeVisitConsent::query()->findOrFail($consentId)->voided_at)->not->toBeNull();
+});
+
+it('DPT-RACE-N2 a consent VOID waiting behind a save serializes after it — the row was written under a then-valid consent', function () {
+    $fx = dptcFixture();
+    $consentId = dptcConsentId($fx['visit']);
+    $handle = dptcCompeting([['kind' => 'record', 'visit' => $fx['visit']->id, 'actor' => $fx['doctorUser']->id, 'data' => dptcData($fx['scaling'])]]);
+
+    $race = dptcRace(fn () => app(RmeVisitConsentService::class)->void(
+        RmeVisitConsent::query()->findOrFail($consentId), $fx['doctorUser'], 'Uji race persetujuan.',
+    ));
+    dptcJoin($handle);
+
+    expect($race['waited'])->toBeGreaterThan(1.0)
+        ->and($race['refusal'])->toBeNull()
+        ->and(dptcRows($fx['visit']))->toBe(1)
+        ->and(RmeVisitConsent::query()->findOrFail($consentId)->voided_at)->not->toBeNull();
+});
+
+it('DPT-RACE-N3 two concurrent voids of one consent cannot both succeed', function () {
+    $fx = dptcFixture();
+    $consentId = dptcConsentId($fx['visit']);
+    $handle = dptcCompeting([['kind' => 'void_consent', 'consent' => $consentId, 'actor' => $fx['doctorUser']->id, 'reason' => 'Void pertama.']]);
+
+    $race = dptcRace(fn () => app(RmeVisitConsentService::class)->void(
+        RmeVisitConsent::query()->findOrFail($consentId), $fx['doctorUser'], 'Void kedua.',
+    ));
+    dptcJoin($handle);
+
+    expect($race['waited'])->toBeGreaterThan(1.0)
+        ->and($race['refusal'])->toContain('sudah dibatalkan')
+        ->and(RmeVisitConsent::query()->findOrFail($consentId)->void_reason)->toBe('Void pertama.');
+});
+
+it('DPT-RACE-O a branch change committed behind the visit lock is seen after the lock — no write outside the pilot', function () {
+    $fx = dptcFixture();
+    $other = Model::withoutEvents(fn () => Branch::factory()->create([
+        'code' => 'DO'.random_int(100, 999), 'is_rme_enabled' => true, 'is_active' => true,
+    ]));
+    $handle = dptcCompeting([
+        ['kind' => 'select', 'sql' => 'SELECT id FROM trx_clinic_visits WHERE id = ? FOR UPDATE', 'bindings' => [$fx['visit']->id]],
+        ['kind' => 'statement', 'sql' => 'UPDATE trx_clinic_visits SET branch_id = ? WHERE id = ?', 'bindings' => [$other->id, $fx['visit']->id]],
+    ]);
+
+    test()->actingAs($fx['doctorUser']);
+    $race = dptcRace(fn () => dptcSvc()->record($fx['visit']->fresh(), dptcData($fx['scaling']), $fx['doctorUser']));
+    dptcJoin($handle);
+
+    expect($race['waited'])->toBeGreaterThan(1.0)
+        ->and($race['refusal'])->toContain(RmePerformedTreatmentRefusal::BRANCH_NOT_IN_PILOT)
         ->and(dptcRows($fx['visit']))->toBe(0);
 });

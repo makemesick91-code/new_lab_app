@@ -20,6 +20,7 @@ use App\Modules\PerformedTreatment\Support\RmeOperationalVisitCategory;
 use App\Modules\PerformedTreatment\Support\RmePerformedTreatmentAuditEvent;
 use App\Modules\PerformedTreatment\Support\RmePerformedTreatmentEvidence;
 use App\Modules\PerformedTreatment\Support\RmePerformedTreatmentFeatureGuard;
+use App\Modules\PerformedTreatment\Support\RmePerformedTreatmentPilotScope;
 use App\Modules\PerformedTreatment\Support\RmePerformedTreatmentRefusal;
 use App\Modules\PerformedTreatment\Support\RmePerformedTreatmentState;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
@@ -55,6 +56,11 @@ use Illuminate\Validation\ValidationException;
  * creates a parent visit, and never makes anything free (rule 217 decides Rp0).
  * An empty list is NOT_RECORDED, never KONTROL.
  *
+ * WHERE. Only on the approved pilot branch (rule 219 §15, owner DPT-Q8): the flag
+ * is a global switch, so every write, the RME-page section, the cashier projection
+ * and the rule 218 evidence also require the VISIT's branch to be admitted by
+ * RmePerformedTreatmentPilotScope — re-read under the visit row lock for a write.
+ *
  * NEVER. This service changes no visit status (it does not depend on
  * ClinicVisitService), creates no invoice, price, payment, lab work or SATUSEHAT
  * resource, and reads no free text.
@@ -71,11 +77,22 @@ class RmePerformedTreatmentService
         private readonly DoctorIdentityResolver $doctors,
         private readonly RmeVisitConsentService $consent,
         private readonly AuditLogService $audit,
+        private readonly RmePerformedTreatmentPilotScope $pilot,
     ) {}
 
+    /** The global switch only. Never the answer for a visit — use enabledFor(). */
     public function enabled(): bool
     {
         return $this->feature->enabled();
+    }
+
+    /**
+     * Is the capability live for THIS visit: flag ON and the visit's branch admitted
+     * by the pilot allowlist (rule 219 §15). Every read surface asks this.
+     */
+    public function enabledFor(ClinicVisit $visit): bool
+    {
+        return $this->enabled() && $this->pilot->admits($visit->branch_id !== null ? (int) $visit->branch_id : null);
     }
 
     /*
@@ -241,7 +258,7 @@ class RmePerformedTreatmentService
     /** The operational category (DPT-Q1) — null while the capability is OFF or nothing was declared. */
     public function operationalCategoryFor(ClinicVisit $visit): ?string
     {
-        if (! $this->enabled()) {
+        if (! $this->enabledFor($visit)) {
             return null;
         }
 
@@ -257,7 +274,7 @@ class RmePerformedTreatmentService
     /** The read-only clinical input of rule 218 and the cashier projection; null while OFF. */
     public function evidenceFor(ClinicVisit $visit): ?RmePerformedTreatmentEvidence
     {
-        if (! $this->enabled()) {
+        if (! $this->enabledFor($visit)) {
             return null;
         }
 
@@ -296,7 +313,7 @@ class RmePerformedTreatmentService
      */
     public function workspaceFor(ClinicVisit $visit, User $viewer): ?array
     {
-        if (! $this->enabled()) {
+        if (! $this->enabledFor($visit)) {
             return null;
         }
 
@@ -406,6 +423,12 @@ class RmePerformedTreatmentService
             throw RmePerformedTreatmentRefusal::exception(RmePerformedTreatmentRefusal::NOT_ENABLED);
         }
 
+        // Before any actor resolution: a Super Admin passes every policy through
+        // Gate::before, so the pilot must be decided here, where it cannot.
+        if (! $this->pilot->admits($visit->branch_id !== null ? (int) $visit->branch_id : null)) {
+            throw RmePerformedTreatmentRefusal::exception(RmePerformedTreatmentRefusal::BRANCH_NOT_IN_PILOT);
+        }
+
         $account = $this->actors->resolveForVisit($actor, self::ABILITY, $visit);
 
         if ($account === null) {
@@ -437,6 +460,12 @@ class RmePerformedTreatmentService
 
         if ($locked === null || $locked->status !== ClinicVisit::STATUS_IN_PROGRESS) {
             throw RmePerformedTreatmentRefusal::exception(RmePerformedTreatmentRefusal::ENCOUNTER_NOT_ACTIVE);
+        }
+
+        // The pilot is decided again on the LOCKED row: the branch the write lands
+        // on is the one committed now, never the one a caller's model carried.
+        if (! $this->pilot->admits($locked->branch_id !== null ? (int) $locked->branch_id : null)) {
+            throw RmePerformedTreatmentRefusal::exception(RmePerformedTreatmentRefusal::BRANCH_NOT_IN_PILOT);
         }
 
         if (! $this->consent->hasValidConsent($locked)) {

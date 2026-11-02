@@ -134,4 +134,15 @@ class RmePerformedTreatmentRepository implements RmePerformedTreatmentRepository
             ->whereNotIn('code', $excludedCodes)
             ->whereHas('category', fn (Builder $q) => $q->whereNotIn('code', $excludedCategoryCodes));
     }
+
+    public function totals(): array
+    {
+        return [
+            'declarations' => RmeTreatmentDeclaration::query()->count(),
+            'no_treatment_declarations' => RmeTreatmentDeclaration::query()
+                ->where('declaration_type', RmeTreatmentDeclaration::TYPE_NO_TREATMENT)->count(),
+            'performed' => RmePerformedTreatment::query()->where('status', RmePerformedTreatment::STATUS_PERFORMED)->count(),
+            'voided' => RmePerformedTreatment::query()->where('status', RmePerformedTreatment::STATUS_VOIDED)->count(),
+        ];
+    }
 }
