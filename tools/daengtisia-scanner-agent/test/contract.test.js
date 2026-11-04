@@ -13,11 +13,21 @@ test('GET /health returns valid JSON with contract fields', async () => {
     assert.strictEqual(res.json.ok, true);
     assert.strictEqual(res.json.backend, 'mock');
     assert.strictEqual(res.json.ready, true);
-    assert.strictEqual(res.json.version, '0.1.0');
+    assert.strictEqual(res.json.version, require('../package.json').version);
     assert.ok(typeof res.json.device === 'string' && res.json.device.length > 0);
   } finally {
     await s.close();
   }
+});
+
+// The rollout reads /health's version on each clinic PC to tell a hardened agent
+// from the prototype. 0.1.0 is the pre-hardening build, which trusted the frozen
+// address over plain http; reporting it from hardened code would make an
+// unremediated PC look done.
+test('the hardened agent never reports the pre-hardening version', () => {
+  const { VERSION } = require('../src/config');
+  assert.notStrictEqual(VERSION, '0.1.0');
+  assert.strictEqual(VERSION, require('../package.json').version);
 });
 
 test('POST /scan (mock) returns ok, mime_type, filename and base64', async () => {

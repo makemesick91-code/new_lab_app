@@ -34,7 +34,8 @@ rebinding). This runbook installs that version and sets the correct origin on ea
    ```bash
    curl -s http://127.0.0.1:17661/health
    ```
-   Record the `version` field. If the agent does not answer, it is not running; note that and continue.
+   Record the `version` field. `0.1.0` is the pre-hardening prototype; `0.2.0` is the hardened agent. If the agent
+   does not answer, it is not running; note that and continue.
 3. Back up the agent folder by copying it to a sibling folder named `daengtisia-scanner-agent-backup-<YYYYMMDD>`.
 
 ## Install
@@ -69,7 +70,7 @@ Run on the PC itself. Windows 10 and later include `curl.exe`.
 | V2 | `curl -s -H "Origin: http://<frozen address>" http://127.0.0.1:17661/health`, using the address listed under `DMS_FROZEN_LEGACY_ADDRESSES` in `deploy/production-host.conf` | `403` and `"error":"ORIGIN_NOT_ALLOWED"` |
 | V3 | `curl -s -H "Origin: https://www.daengtisia.online" http://127.0.0.1:17661/health` | `403` and `"error":"ORIGIN_NOT_ALLOWED"` |
 | V4 | `curl -s -H "Host: attacker.example:17661" http://127.0.0.1:17661/health` | `403` and `"error":"HOST_NOT_ALLOWED"` |
-| V5 | `curl -s http://127.0.0.1:17661/health` | `200`, the new `version` |
+| V5 | `curl -s http://127.0.0.1:17661/health` | `200` and `"version":"0.2.0"` (a `0.1.0` answer means the old agent is still running) |
 | V6 | In DaengtisiaMS on that PC (`https://daengtisia.online`), open the new-patient KTP section and press **Periksa scanner** — **do not press Scan** | `Scanner terhubung` |
 
 All six must pass. Record them per PC with the date and time in WITA.

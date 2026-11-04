@@ -11,7 +11,9 @@ const fs = require('fs');
 const path = require('path');
 const { classifyOrigins } = require('./cors');
 
-const VERSION = '0.1.0';
+// 0.2.0 = trusted-origin hardening (DMS-SCANNER-AGENT-TRUSTED-ORIGIN-HARDENING-1). 0.1.0 is the
+// pre-hardening prototype: a PC still reporting 0.1.0 trusts the frozen address over http.
+const VERSION = '0.2.0';
 
 const SUPPORTED_BACKENDS = ['mock', 'sane', 'naps2', 'wia'];
 

@@ -165,7 +165,7 @@ SCANNER_AGENT_BACKEND=wia
 ### `GET /health`
 
 ```json
-{ "ok": true, "device": "Mock Daengtisia Scanner", "version": "0.1.0", "backend": "mock", "ready": true }
+{ "ok": true, "device": "Mock Daengtisia Scanner", "version": "0.2.0", "backend": "mock", "ready": true }
 ```
 
 ### `GET /devices` (optional helper)
