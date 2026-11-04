@@ -5,6 +5,7 @@ paths:
   - "resources/views/patient-merge/**"
   - "resources/views/settings/patients/**"
   - "resources/js/ktp-*.js"
+  - "tools/daengtisia-scanner-agent/**"
   - "resources/js/patient-combobox.js"
   - "config/patient_*.php"
   - "tests/Feature/Patient/**"
@@ -202,3 +203,15 @@ time, CG-13 never fabricate a patient, CG-20 PostgreSQL verification matter most
 
 Verbatim sprint records: `docs/sprints/claude-md-archive/04-patient-identity.md`. Grep by sprint id; never read a whole
 file.
+
+### Scanner agent (clinic PCs)
+
+- **AIR-PAT-32** The local scanner agent (`tools/daengtisia-scanner-agent/`) trusts a configured origin only when it
+  is exactly `https://<fully qualified DNS name>` (production: `https://daengtisia.online`); plain-http and
+  IP-address origins — the frozen Hostinger address included — are refused at startup, whether from the
+  environment or an override. A request carrying an untrusted `Origin` gets `403 ORIGIN_NOT_ALLOWED` and a `Host`
+  that is not the loopback interface on the accepting port gets `403 HOST_NOT_ALLOWED`, both before any route runs,
+  so a foreign page can neither read nor trigger a KTP scan. Tests read the frozen address from
+  `deploy/production-host.conf`, never a literal. Installed agents are changed only through
+  `docs/runbooks/scanner-agent-trusted-origin-rollout.md`, one PC at a time, verified with `/health` — never by
+  scanning a real KTP. Source: `docs/sprints/dms-scanner-agent-trusted-origin-hardening-1.md`.

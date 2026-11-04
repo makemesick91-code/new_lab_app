@@ -80,8 +80,11 @@ test('disallowed cross-origin gets no Access-Control-Allow-Origin header', async
       headers: { Origin: 'http://evil.example.com' },
     });
     assert.strictEqual(res.headers['access-control-allow-origin'], undefined);
-    // Body still served (CORS is enforced by the browser), but no wildcard.
-    assert.strictEqual(res.status, 200);
+    // DMS-DEV-INFRA-REMEDIATION-2: the agent no longer serves the body and
+    // relies on the browser to hide it. A request from an untrusted origin is
+    // refused outright, so a foreign page cannot trigger the scanner either.
+    assert.strictEqual(res.status, 403);
+    assert.strictEqual(res.json.error, 'ORIGIN_NOT_ALLOWED');
   } finally {
     await s.close();
   }

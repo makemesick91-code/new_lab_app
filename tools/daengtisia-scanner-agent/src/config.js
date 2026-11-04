@@ -9,6 +9,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { classifyOrigins } = require('./cors');
 
 const VERSION = '0.1.0';
 
@@ -50,11 +51,11 @@ function toInt(value, fallback) {
   return Number.isFinite(n) ? n : fallback;
 }
 
-function parseOrigins(raw) {
+function splitOrigins(raw) {
   if (!raw) return [];
   return raw
     .split(',')
-    .map((o) => o.trim().replace(/\/+$/, '')) // drop trailing slashes
+    .map((o) => o.trim())
     .filter(Boolean);
 }
 
@@ -74,14 +75,20 @@ function getConfig(overrides = {}) {
     backend = 'mock';
   }
 
+  const origins = classifyOrigins(
+    overrides.allowedOrigins || splitOrigins(env.SCANNER_AGENT_ALLOWED_ORIGINS)
+  );
+
   const config = {
     version: VERSION,
     host: overrides.host || env.SCANNER_AGENT_HOST || '127.0.0.1',
     port: toInt(overrides.port || env.SCANNER_AGENT_PORT, 17661),
     backend,
-    allowedOrigins:
-      overrides.allowedOrigins ||
-      parseOrigins(env.SCANNER_AGENT_ALLOWED_ORIGINS),
+    // Only https:// DNS-name origins (and loopback) are trusted; everything
+    // else is refused here, whether it came from the environment or from an
+    // override, and reported at startup (see src/cors.js).
+    allowedOrigins: origins.accepted,
+    rejectedOrigins: origins.rejected,
     timeoutMs: toInt(overrides.timeoutMs || env.SCANNER_AGENT_TIMEOUT_MS, 30000),
     mockImage: overrides.mockImage || env.SCANNER_AGENT_MOCK_IMAGE || null,
     device: overrides.device || env.SCANNER_AGENT_DEVICE || null,

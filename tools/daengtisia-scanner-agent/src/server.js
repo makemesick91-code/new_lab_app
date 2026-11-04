@@ -15,7 +15,7 @@
 
 const http = require('http');
 const { getConfig } = require('./config');
-const { corsHeaders } = require('./cors');
+const { corsHeaders, isOriginAllowed, isHostAllowed } = require('./cors');
 const { sendJson, sendError } = require('./response');
 const scanService = require('./scan-service');
 
@@ -61,6 +61,22 @@ function logLine(message) {
 function createServer(config = getConfig()) {
   const server = http.createServer(async (req, res) => {
     const origin = req.headers.origin;
+
+    // DNS rebinding: the Host must name the loopback interface this request
+    // arrived on. Refused before any route runs, with no CORS headers.
+    if (!isHostAllowed(req.headers.host, req.socket.localPort, config)) {
+      logLine(`refused ${req.method} — Host not allowed`);
+      sendError(res, 403, 'HOST_NOT_ALLOWED', 'Host permintaan tidak diizinkan.', {});
+      return;
+    }
+    // A request that carries an Origin the agent does not trust never reaches
+    // a route: a foreign page may neither read a scan nor trigger the scanner.
+    if (origin !== undefined && !isOriginAllowed(origin, config)) {
+      logLine(`refused ${req.method} — Origin not allowed: ${String(origin).slice(0, 100)}`);
+      sendError(res, 403, 'ORIGIN_NOT_ALLOWED', 'Origin tidak diizinkan untuk scanner agent ini.', {});
+      return;
+    }
+
     const cors = corsHeaders(origin, config);
 
     let url;
@@ -174,6 +190,10 @@ function start(config = getConfig()) {
     );
     if (config.host === '0.0.0.0') {
       logLine('WARNING: bound to 0.0.0.0 — this exposes the agent beyond localhost.');
+    }
+    logLine(`trusted origins: ${config.allowedOrigins.join(', ') || '(loopback only)'}`);
+    for (const refused of config.rejectedOrigins || []) {
+      logLine(`WARNING: refused configured origin ${refused.value} — ${refused.reason}`);
     }
   });
   return server;

@@ -1,23 +1,16 @@
-# DMS-POST-MIGRATION-DEV-INFRA-ALIGNMENT-1 — align development instructions with the NEW production host.
-# Production moved from Hostinger (srv1730088, 145.79.13.224, now WRITE-FROZEN) to Biznet Gio (DaengtisiaMS,
-# 139.190.106.38) on 2026-11-03. CLAUDE.md CG-14, eight live runbooks and the deploy runner's header still named the
-# frozen host and the alias daengtisiams-vps (which resolves to Hostinger as root); the retired deploy-vps.yml would
-# have keyscanned and SSHed to whatever the domain resolves to — now live production.
-# Adds: deploy/production-host.conf (single public authority), scripts/production-target-check.sh (workstation
-# positive identity check; no network without --remote), docs/runbooks/production-host-identity.md, rule 220,
-# AIR-DEP-31, ProductionHostIdentityGuardTest (25 cases, mandatory critical suite), a fail-closed deploy-vps.yml and a
-# comment-aware remote-access guard in SelfHostedRunnerScanner. Scanner-agent test fixtures repointed to the real
-# production origin.
-# NOT in this sprint (separate deploy-chain PR, owner authorization required): on-host root/identity/toolchain
-# preflight, host-bound runner status, provision try-restart. NO production deploy, migration, restart or config
-# change. Node/npm absent on Biznet is a recorded first-deploy blocker. Backup services untouched.
-# Type SECURITY_FIX: host-key trust, CI-to-production path closure and production identity are security controls.
-# frontend_change=true only because tools/daengtisia-scanner-agent/test/*.js changed; no application asset changed.
+# DMS-SCANNER-AGENT-TRUSTED-ORIGIN-HARDENING-1 (mission DMS-DEV-INFRA-REMEDIATION-2, Task B).
+# The local scanner agent (tools/daengtisia-scanner-agent) trusted any configured origin, including the frozen
+# Hostinger address over plain http; executed requests from untrusted origins (CORS only hid the answer); and never
+# checked Host (DNS rebinding). Now: only https://<DNS name> origins are trusted (refused at startup otherwise),
+# untrusted Origin -> 403 before any route, non-loopback Host -> 403. Tests read the frozen address from
+# deploy/production-host.conf. No clinic PC changed (rollout runbook only); no server runtime, schema, permission or
+# deploy change. The example configuration file stays an owner action (environment-style files are out of scope).
+# frontend_change=true only because tools/daengtisia-scanner-agent/*.js changed; no application asset changed.
 # Carried forward: LEGACY-RME-PROGRAM-CLOSURE-1 stays CLOSED and inherited.
-id: DMS-POST-MIGRATION-DEV-INFRA-ALIGNMENT-1
+id: DMS-SCANNER-AGENT-TRUSTED-ORIGIN-HARDENING-1
 type: SECURITY_FIX
-module: Deploy
-title: "Post-migration dev/infra alignment — Biznet is production, Hostinger is write-frozen"
+module: Patient
+title: "Scanner agent trusts only the production DNS name; untrusted origin and rebinding Host refused"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 runtime_change: false
 schema_change: false
@@ -28,5 +21,5 @@ ledger_impact: false
 deploy_required: false
 browser_required: false
 test_profiles: [focused, security_regression]
-go_tag: dms-post-migration-dev-infra-alignment-1-go
+go_tag: dms-scanner-agent-trusted-origin-hardening-1-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
