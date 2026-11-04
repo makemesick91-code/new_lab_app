@@ -1,0 +1,72 @@
+---
+description: DMS-POST-MIGRATION-DEV-INFRA-ALIGNMENT-1 — production is the Biznet Gio host DaengtisiaMS (139.190.106.38), reached only as dmsadmin through the pinned alias daengtisiams-biznet-prod after a positive identity check; the Hostinger host srv1730088 (145.79.13.224) and the alias daengtisiams-vps are WRITE-FROZEN legacy. Strict host-key checking is never relaxed, no workflow opens a remote session, and the deploy chain never starts a background unit.
+globs:
+  - "deploy/production-host.conf"
+  - "scripts/production-target-check.sh"
+  - "scripts/deploy-*.sh"
+  - "scripts/rollback-vps.sh"
+  - ".github/workflows/*.yml"
+  - "docs/runbooks/*.md"
+  - "tests/Feature/Cicd/ProductionHostIdentityGuardTest.php"
+alwaysApply: false
+---
+
+# Production host identity — Biznet is production, Hostinger is frozen (rule 220)
+
+**Sprint record:** `docs/sprints/dms-post-migration-dev-infra-alignment-1.md`.
+**Authority:** `deploy/production-host.conf`. **Guide:** `docs/runbooks/production-host-identity.md`.
+**Enforced by:** `tests/Feature/Cicd/ProductionHostIdentityGuardTest.php`, `scripts/production-target-check.sh`,
+`App\Support\Cicd\SelfHostedRunnerScanner::deployIsolationPosture()`.
+
+## 1. Which host is production
+
+1. Production is the Biznet Gio host `DaengtisiaMS` at `139.190.106.38`, app at `/var/www/asia-dental-lab-v2`,
+   canonical URL `https://daengtisia.online`. DNS for the domain resolves to that address since 2026-11-03.
+2. The Hostinger host `srv1730088` at `145.79.13.224` is WRITE-FROZEN: a historical migration source only. Never
+   deploy, migrate, restart, write, back up from or restore to it, and never reactivate it.
+3. "Biznet" alone does not mean production. The heavy CI runner `daengtisia-ci-biznet` is also a Biznet machine and
+   is never a deploy target. Production is only the host named in item 1 above.
+4. `deploy/production-host.conf` is the one authority. A host change edits that file first, in a reviewed change;
+   the guard suite then fails until CLAUDE.md CG-14, this rule and the guide agree.
+
+## 2. Reaching it
+
+5. The only production alias is `daengtisiams-biznet-prod`: `dmsadmin@139.190.106.38`, `StrictHostKeyChecking yes`,
+   a dedicated known-hosts file holding exactly the pinned ED25519 key. Root has no SSH login; commands that need
+   root run through `sudo -n`. The application runtime identity stays `daengtisiams`
+   (`deploy/runtime-identity.conf`).
+6. The alias `daengtisiams-vps` points at the frozen Hostinger host as root. Its name misleads, so it is never a
+   production alias. Older documents that tell you to connect through that alias record the Hostinger era;
+   translate them through the guide and never replay them.
+7. Before any sensitive operation (write, restart, migrate, deploy, rollback, secret or clinical read) run
+   `bash scripts/production-target-check.sh --remote` and proceed only on `PRODUCTION_TARGET=VERIFIED`. The check
+   never accepts or refreshes a host key, and it opens no connection without `--remote`.
+
+## 3. Host-key trust
+
+8. Never set `StrictHostKeyChecking` to `no` or `accept-new` for production, never use `/dev/null` as its known-hosts
+   file, and never enable `UpdateHostKeys` or `VerifyHostKeyDNS` for it.
+9. Never seed or refresh a production host key with `ssh-keyscan`, because trust-on-first-use accepts whatever
+   answers.
+10. A host-key mismatch is a stop-and-escalate event. Confirm the new fingerprint out of band with the owner, then
+   update `deploy/production-host.conf` and the pinned file in the same reviewed change.
+
+## 4. CI and the deploy chain
+
+11. No GitHub workflow opens a remote session to any server, reads a `VPS_*` secret or names a deploy or rollback
+   program (`config/ci_runner.php` `forbidden_workflow_remote_access_markers`, judged on executable lines). The
+   retired `deploy-vps.yml` fails closed. It stays only because the CICD-CTRL-3 layer inspects it.
+12. Deploys run on the production host through the detached runner (CG-15). On Biznet that means
+   `sudo -n bash scripts/deploy-vps-runner.sh start`. The first Biznet deploy needs explicit owner approval and the
+   readiness checklist in the guide's §6 closed.
+13. The deploy and rollback programs restart only `php8.3-fpm` and reload only `nginx`. They never enable, start or
+   restart the queue worker, a backup timer or any other `daengtisiams-*` unit. Those are owner-controlled; the
+   worker is intentionally off on Biznet.
+
+## 5. Records
+
+14. Historical sprint records, evidence files and the CLAUDE.md archive keep their Hostinger names. They describe what
+   was true when written and are never bulk-rewritten to the new host.
+15. Facts in the authority file are public: the address is in DNS and the host-key fingerprint is offered to every
+   client. Keep host security posture details, such as sudo policy or daemon configuration, out of this public
+   repository, in the owner's private records.

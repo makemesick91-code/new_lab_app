@@ -1,5 +1,13 @@
 # VPS Deploy & Rollback Runbook (ENT-15)
 
+> **Production target (since 2026-11-03):** Biznet host `DaengtisiaMS` (`139.190.106.38`), reached with
+> `ssh daengtisiams-biznet-prod` as `dmsadmin`; privileged steps run through `sudo -n`. The Hostinger host
+> `srv1730088` is WRITE-FROZEN. Prove the target first: `bash scripts/production-target-check.sh --remote`
+> (`docs/runbooks/production-host-identity.md`).
+>
+> **No deploy has run on Biznet yet.** The first one needs explicit owner approval and the readiness checklist
+> in `docs/runbooks/production-host-identity.md` §6 closed (Node/npm are not installed there).
+
 Durable governance: `docs/architecture/enterprise-documentation-runbook-governance.md`.
 Verified by: `php artisan foundation:enterprise-documentation-check --strict`.
 
@@ -17,17 +25,18 @@ the **deploy and rollback** topics.
 ## Prerequisites
 
 - Merged PR into the base branch and an annotated GO tag on the merge commit.
-- `ssh daengtisiams-vps` reaches `/var/www/asia-dental-lab-v2`.
+- `ssh daengtisiams-biznet-prod` reaches `/var/www/asia-dental-lab-v2` and
+  `bash scripts/production-target-check.sh --remote` reports `PRODUCTION_TARGET=VERIFIED`.
 - CI required gates green; local `foundation:cicd-enterprise-gate-check --strict`
   and `foundation:deployment-rollback-check --strict` both GO.
 
 ## Safe Commands
 
-**One canonical deploy command. It runs ON the production VPS and nowhere else.**
+**One canonical deploy command. It runs ON the production host, as root through `sudo -n`, and nowhere else.**
 
 ```
-ssh daengtisiams-vps 'cd /var/www/asia-dental-lab-v2 && bash scripts/deploy-vps-runner.sh start'
-ssh daengtisiams-vps 'cd /var/www/asia-dental-lab-v2 && bash scripts/deploy-vps-runner.sh status'
+ssh daengtisiams-biznet-prod 'cd /var/www/asia-dental-lab-v2 && sudo -n bash scripts/deploy-vps-runner.sh start'
+ssh daengtisiams-biznet-prod 'cd /var/www/asia-dental-lab-v2 && sudo -n bash scripts/deploy-vps-runner.sh status'
 ```
 
 **A manual pre-pull is NOT required (DEPLOY-HARDEN-1).** A production checkout
@@ -61,7 +70,7 @@ Rollback to a prior GO tag (same lock/pin/snapshot protection, backup-first, no
 data restore):
 
 ```
-ssh daengtisiams-vps 'cd /var/www/asia-dental-lab-v2 && bash scripts/rollback-vps.sh <prior-go-tag>'
+ssh daengtisiams-biznet-prod 'cd /var/www/asia-dental-lab-v2 && sudo -n bash scripts/rollback-vps.sh <prior-go-tag>'
 ```
 
 The operator's tag is resolved to one exact commit **before** any mutation, and
@@ -71,26 +80,11 @@ their modern form even when the target predates them.
 
 Migration on the VPS is always `php artisan migrate --force` and never destructive.
 
-### One-time transition (DEPLOY-HARDEN-1 release only)
+### One-time transition (DEPLOY-HARDEN-1 release only) — historical
 
-A host still running the pre-DEPLOY-HARDEN-1 launcher has no bootstrap in its
-checkout, so the new deploy script would abort (fail closed — it never falls back
-to the unsafe path). For that single release, run the target's own deployment
-payload from a root-controlled path outside the checkout:
-
-```
-ssh daengtisiams-vps 'cd /var/www/asia-dental-lab-v2 \
-  && git fetch --no-tags origin <base-branch> \
-  && install -d -m 0700 /root/dh1-bootstrap \
-  && git archive --format=tar <MERGE_SHA> -- scripts | tar -x -C /root/dh1-bootstrap \
-  && DEPLOY_SCRIPT=/root/dh1-bootstrap/scripts/deploy-vps.sh \
-     bash /root/dh1-bootstrap/scripts/deploy-vps-runner.sh start'
-```
-
-This mutates nothing in the working tree, reads only tracked bytes of the merged
-commit, and hands over to the same immutable bootstrap. Afterwards the canonical
-in-tree command above is the permanent path and this transition is never needed
-again.
+This one-time bootstrap was run on the Hostinger host for the DEPLOY-HARDEN-1 release (2026-08-15) and is never
+needed again: Biznet already carries `scripts/deploy-immutable-exec.sh`. The original procedure is preserved in
+`docs/sprints/deploy-harden-1-immutable-deployment-entrypoint-self-update-safety.md`.
 
 ## Forbidden Commands
 
@@ -149,9 +143,9 @@ Never run these during deploy or rollback on the pilot/production VPS:
   migrated or checked out. Identify the holder and wait for it:
 
   ```
-  ssh daengtisiams-vps 'flock -n /run/daengtisiams-deploy/deploy.lock -c true \
+  ssh daengtisiams-biznet-prod 'sudo -n flock -n /run/daengtisiams-deploy/deploy.lock -c true \
     && echo "lock FREE" || echo "lock HELD"'
-  ssh daengtisiams-vps 'cd /var/www/asia-dental-lab-v2 && bash scripts/deploy-vps-runner.sh status'
+  ssh daengtisiams-biznet-prod 'cd /var/www/asia-dental-lab-v2 && sudo -n bash scripts/deploy-vps-runner.sh status'
   ```
 
   The lock **file** existing on disk is normal and does not mean the lock is
@@ -178,7 +172,7 @@ Never run these during deploy or rollback on the pilot/production VPS:
 - Private storage: the deploy log prints `Private storage paths (live + target)`
   and the isolation gate reports every listed path as private. Spot-check one
   path with `runuser -u www-data -- test -r storage/app/clinical-evidence-private`
-  (must fail) and `runuser -u daengtisiams -- test -r <same path>` (must succeed).
+  (must fail) and `sudo -n runuser -u daengtisiams -- test -r <same path>` (must succeed).
 - Configuration cache (SECURITY-F8B-CONFIG-CACHE-PRIVATE-1): `bootstrap/cache`
   holds the database password and the application key once `config:cache` runs,
   so it is a private path too. `runuser -u www-data -- test -r

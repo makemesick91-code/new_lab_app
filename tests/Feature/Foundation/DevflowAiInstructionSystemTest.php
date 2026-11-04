@@ -138,7 +138,9 @@ function aiCriticalGlobalRules(): array
         'CG-11' => ['KTP/NIK', 'masked', 'consent document', 'ClinicalEvidenceStorage', 'private'],
         'CG-12' => ['ClinicalClock', 'Asia/Makassar', 'WITA'],
         'CG-13' => ['fabricate', 'dry run', '--apply'],
-        'CG-14' => ['srv1730088', 'https://daengtisia.online', 'tinker', 'daengtisiams'],
+        // DMS-POST-MIGRATION-DEV-INFRA-ALIGNMENT-1: production is Biznet; the
+        // Hostinger host must stay named as frozen, never as the target.
+        'CG-14' => ['139.190.106.38', 'daengtisiams-biznet-prod', 'deploy/production-host.conf', 'production-target-check.sh', 'WRITE-FROZEN', 'StrictHostKeyChecking', 'https://daengtisia.online', 'tinker', 'daengtisiams'],
         'CG-15' => ['bash scripts/deploy-vps-runner.sh start', 'on the VPS', 'exit=0', 'DEPLOY OK', 'PermissionSeeder'],
         'CG-16' => ['go_tag', '-go', 'Never move, recreate or delete an existing tag', '--no-tags', 'fetch tags explicitly'],
         'CG-17' => ['exact candidate SHA', 'Skipped is not passed', 'paths-ignore'],

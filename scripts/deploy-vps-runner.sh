@@ -20,10 +20,14 @@ set -euo pipefail
 #   bash scripts/deploy-vps-runner.sh status     # print the final exit status
 #   bash scripts/deploy-vps-runner.sh run        # start + follow + report (SSH-safe: log survives a dropped pipe)
 #
-# Recommended remote invocation (survives a dropped SSH pipe):
-#   ssh daengtisiams-vps 'cd /var/www/asia-dental-lab-v2 && bash scripts/deploy-vps-runner.sh start'
-#   ssh daengtisiams-vps 'cd /var/www/asia-dental-lab-v2 && bash scripts/deploy-vps-runner.sh follow'
-#   ssh daengtisiams-vps 'cd /var/www/asia-dental-lab-v2 && bash scripts/deploy-vps-runner.sh status'
+# Recommended remote invocation (survives a dropped SSH pipe). Production is the
+# Biznet host reached as the admin account, so the runner runs as root through
+# `sudo -n`. Prove the target first (scripts/production-target-check.sh --remote)
+# and see docs/runbooks/production-host-identity.md — the frozen Hostinger host and
+# its old alias are never a deploy target:
+#   ssh daengtisiams-biznet-prod 'cd /var/www/asia-dental-lab-v2 && sudo -n bash scripts/deploy-vps-runner.sh start'
+#   ssh daengtisiams-biznet-prod 'cd /var/www/asia-dental-lab-v2 && sudo -n bash scripts/deploy-vps-runner.sh follow'
+#   ssh daengtisiams-biznet-prod 'cd /var/www/asia-dental-lab-v2 && sudo -n bash scripts/deploy-vps-runner.sh status'
 
 APP_DIR="${APP_DIR:-/var/www/asia-dental-lab-v2}"
 # DEPLOY-HARDEN-1: overridable so the one-time transition (and any future

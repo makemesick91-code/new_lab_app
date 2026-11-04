@@ -94,13 +94,22 @@ it covers. When you plan work in a domain before opening any of its files, read 
 
 ### Production and deployment
 
-- **CG-14 Production identity.** VPS `srv1730088`, app at `/var/www/asia-dental-lab-v2`, reached with
-  `ssh daengtisiams-vps`. Canonical URL `https://daengtisia.online`; the bare IP and localhost do not reach the app
-  (a co-tenant and nginx's unknown-host default server answer them), so never verify there. PHP-FPM runs as `daengtisiams` on PHP 8.3; the host's default CLI PHP belongs to
-  the co-tenant. Never run `php artisan tinker` or psysh on production: it writes ERROR lines that hold monitoring at
-  WATCH for 24 hours. Production checks are read-only unless the task explicitly authorises a mutation.
-- **CG-15 Deploy.** Deploy only with `bash scripts/deploy-vps-runner.sh start`, executed **on the VPS** in the app
-  directory, never on a workstation or a CI runner. A deploy is complete only when its status file reports `exit=0`
+- **CG-14 Production identity.** Production is the Biznet Gio host `DaengtisiaMS` (`139.190.106.38`), app at
+  `/var/www/asia-dental-lab-v2`, reached only with `ssh daengtisiams-biznet-prod` as the admin `dmsadmin` (root has
+  no SSH login; privileged steps run through `sudo -n`). Authority: `deploy/production-host.conf`. Before any
+  sensitive operation prove the target with `bash scripts/production-target-check.sh --remote` and proceed only on
+  `PRODUCTION_TARGET=VERIFIED`. The Hostinger host `srv1730088` (`145.79.13.224`) is WRITE-FROZEN legacy, a
+  historical migration source only: never deploy, migrate, restart or write there, and never treat the alias
+  `daengtisiams-vps` (it points at Hostinger) as production. Keep `StrictHostKeyChecking yes` with the pinned host key;
+  a changed key is a stop-and-escalate event, never something to accept or re-fetch with `ssh-keyscan`. Canonical URL
+  `https://daengtisia.online`; the bare IP and localhost reach nginx's unknown-host default server, so never verify
+  there. PHP-FPM runs as `daengtisiams` on PHP 8.3. Never run `php artisan tinker` or psysh on production: it writes
+  ERROR lines that hold monitoring at WATCH for 24 hours. Production checks are read-only unless the task explicitly
+  authorises a mutation. Guide: `docs/runbooks/production-host-identity.md`.
+- **CG-15 Deploy.** Deploy only with `bash scripts/deploy-vps-runner.sh start`, executed **on the VPS** (as root
+  through `sudo -n`) in the app directory, never on a workstation or a CI runner. The first deploy on a new host needs
+  explicit owner approval and a closed readiness checklist (`docs/runbooks/production-host-identity.md` §6; Biznet has
+  not yet run one). A deploy is complete only when its status file reports `exit=0`
   and its log reports `DEPLOY OK`; the SSH pipe may drop while the detached runner carries on. The runner takes the
   backup, pins the SHA and runs from an immutable snapshot, so never pre-pull or hand-edit the production tree. After
   a permission change run `PermissionSeeder`, then `RoleSeeder`, then `permission:cache-reset`. Rebuild config

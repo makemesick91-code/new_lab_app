@@ -1466,6 +1466,16 @@ return [
         // Suite stays sequential, and that the warning contract reads ParaTest's ANSI-styled summary
         // without hiding a failure. Selected by the `Cicd` token in BOTH critical variants.
         'tests/Feature/Cicd/CriticalGateControlledParallelismContractTest.php',
+
+        // DMS-POST-MIGRATION-DEV-INFRA-ALIGNMENT-1 — production is the Biznet
+        // host and the Hostinger host is write-frozen. Pins the single host
+        // authority, CG-14, every live runbook and script (no instruction to
+        // reach the frozen host, no relaxed host-key checking), every workflow
+        // (no remote session, the retired deploy workflow fails closed), the
+        // deploy chain's systemctl allowlist, and the workstation identity check
+        // exercised offline. Selected by the `Cicd` token in BOTH critical
+        // variants; declared so that selection is enforced, not incidental.
+        'tests/Feature/Cicd/ProductionHostIdentityGuardTest.php',
     ],
 
     /*
@@ -1644,6 +1654,26 @@ return [
         'deploy-vps-runner.sh',
         'deploy-vps.sh',
         'rollback-vps.sh',
+    ],
+
+    /*
+     * DMS-POST-MIGRATION-DEV-INFRA-ALIGNMENT-1 — no GitHub workflow may open a
+     * remote session to a server. The retired deploy workflow used to keyscan
+     * whatever host answered (trust on first use) and pipe the deploy program
+     * over SSH to a secret-named host; once DNS moved to the new production
+     * host, a single manual dispatch would have targeted live clinics. Matched
+     * against EXECUTABLE workflow lines only (YAML comments are ignored), so a
+     * workflow may still explain what it must never do.
+     */
+    'forbidden_workflow_remote_access_markers' => [
+        'ssh-keyscan',
+        'StrictHostKeyChecking',
+        'UserKnownHostsFile',
+        'secrets.VPS_',
+        'ssh ',
+        'scp ',
+        'rsync ',
+        "'bash -s'",
     ],
 
     /*

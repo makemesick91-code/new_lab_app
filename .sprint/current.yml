@@ -1,34 +1,32 @@
-# ACTIVATION-RME-DOCTOR-PERFORMED-TREATMENTS-1 — rule 219 §15, implements owner decision DPT-Q8 (ratified 2026-11-02 by
-# RATIFICATION-RME-DOCTOR-PERFORMED-TREATMENTS-OWNER-DECISIONS-1, merge df248f36): activate the doctor's
-# "Tindakan Dilakukan" record on ONE pilot branch — SPN4 (Cabang Sunu), designated by the Owner in-session.
-# The flag rme.doctor_performed_treatments is a single GLOBAL switch, so the pilot is a FAIL-CLOSED, SERVER-SIDE,
-# source-controlled branch allowlist (config/rme_performed_treatment.php, no env read) enforced by
-# RmePerformedTreatmentService (authorize + re-read under the visit row lock) and mirrored at the FormRequests (404),
-# ClinicVisitPolicy, the RME page, the cashier projection and the rule 218 evidence. Empty / malformed / MAIN /
-# unknown / more than one branch admits NOTHING. New read-only probe rme:performed-treatment-readiness.
-# LOW-2 (rule 219 §12a) closed: RmeVisitConsentService::void() takes the visit row lock first (visit → consent) and
-# re-reads the consent under it — proven on PostgreSQL 16 (races N1–N3). The method has no production caller today.
-# Pilot behaviour: declaration OPTIONAL (DPT-Q3 staged), cross-check DETECTIVE (DPT-Q2 staged),
-# rme.zero_value_closure stays OFF, no financial write, SATUSEHAT source unchanged (DPT-Q10).
-# No migration, no permission, no seeder, no role change, no frontend asset change.
-# Type FOUNDATION_SPRINT: spans PerformedTreatment, Consent (void lock order), ClinicVisit (policy), Branch (shared
-# allowlist resolver) and a console probe.
-# MEDIUM-1 (rule 218 §8) stays PARTIALLY_MITIGATED: the source is now live on one branch, optional and detective.
+# DMS-POST-MIGRATION-DEV-INFRA-ALIGNMENT-1 — align development instructions with the NEW production host.
+# Production moved from Hostinger (srv1730088, 145.79.13.224, now WRITE-FROZEN) to Biznet Gio (DaengtisiaMS,
+# 139.190.106.38) on 2026-11-03. CLAUDE.md CG-14, eight live runbooks and the deploy runner's header still named the
+# frozen host and the alias daengtisiams-vps (which resolves to Hostinger as root); the retired deploy-vps.yml would
+# have keyscanned and SSHed to whatever the domain resolves to — now live production.
+# Adds: deploy/production-host.conf (single public authority), scripts/production-target-check.sh (workstation
+# positive identity check; no network without --remote), docs/runbooks/production-host-identity.md, rule 220,
+# AIR-DEP-31, ProductionHostIdentityGuardTest (25 cases, mandatory critical suite), a fail-closed deploy-vps.yml and a
+# comment-aware remote-access guard in SelfHostedRunnerScanner. Scanner-agent test fixtures repointed to the real
+# production origin.
+# NOT in this sprint (separate deploy-chain PR, owner authorization required): on-host root/identity/toolchain
+# preflight, host-bound runner status, provision try-restart. NO production deploy, migration, restart or config
+# change. Node/npm absent on Biznet is a recorded first-deploy blocker. Backup services untouched.
+# Type SECURITY_FIX: host-key trust, CI-to-production path closure and production identity are security controls.
+# frontend_change=true only because tools/daengtisia-scanner-agent/test/*.js changed; no application asset changed.
 # Carried forward: LEGACY-RME-PROGRAM-CLOSURE-1 stays CLOSED and inherited.
-id: ACTIVATION-RME-DOCTOR-PERFORMED-TREATMENTS-1
-type: FOUNDATION_SPRINT
-module: PerformedTreatment
-title: "Aktivasi pilot satu cabang (SPN4) Tindakan Dilakukan — allowlist cabang server-side fail-closed (DPT-Q8)"
+id: DMS-POST-MIGRATION-DEV-INFRA-ALIGNMENT-1
+type: SECURITY_FIX
+module: Deploy
+title: "Post-migration dev/infra alignment — Biznet is production, Hostinger is write-frozen"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
-runtime_change: true
+runtime_change: false
 schema_change: false
-frontend_change: false
+frontend_change: true
 security_impact: true
-branch_isolation_impact: true
+branch_isolation_impact: false
 ledger_impact: false
-deploy_required: true
+deploy_required: false
 browser_required: false
-test_profiles: [focused, cross_module_regression, security_regression]
-go_tag: activation-rme-doctor-performed-treatments-1-pilot-go
-inherits_parent_go: feature-rme-doctor-performed-treatments-1-implementation-go
+test_profiles: [focused, security_regression]
+go_tag: dms-post-migration-dev-infra-alignment-1-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1

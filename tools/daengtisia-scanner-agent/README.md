@@ -79,7 +79,11 @@ receives the temp token**.
 
 > **CORS note:** the agent must allow the DaengtisiaMS origin. Set
 > `SCANNER_AGENT_ALLOWED_ORIGINS` to your DaengtisiaMS URL(s). Local dev origins
-> (`localhost` / `127.0.0.1`, any port) are always allowed.
+> (`localhost` / `127.0.0.1`, any port) are always allowed. The production origin
+> is `https://daengtisia.online` only. Production moved to a new server on
+> 2026-11-03, so remove any origin that names a bare server address left over from
+> the old host: a stale address may be reassigned to a stranger, whose pages
+> could then drive this agent.
 
 > **Security note:** the agent is **localhost-only by default** (binds
 > `127.0.0.1`). Do not expose it to the public network or bind `0.0.0.0`.

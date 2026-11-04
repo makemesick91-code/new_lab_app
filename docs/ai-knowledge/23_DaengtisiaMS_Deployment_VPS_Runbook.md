@@ -7,7 +7,10 @@ Checklist deploy aman ke VPS pilot: backup, pull, build, migrate, cache, permiss
 Deploy ke VPS **tidak** boleh `migrate:fresh`/`db:wipe`. Selalu backup DB dulu. Path contoh: `/var/www/asia-dental-lab-v2`.
 
 ## Konteks DaengtisiaMS
-Production-adjacent pilot di Hostinger VPS. Branch baseline berubah per sprint — verifikasi tag/commit sebelum deploy.
+Produksi sejak 2026-11-03: host Biznet Gio `DaengtisiaMS` (`139.190.106.38`), akses `ssh daengtisiams-biznet-prod`
+sebagai `dmsadmin` dengan `sudo -n`. Host Hostinger `srv1730088` (`145.79.13.224`) WRITE-FROZEN — jangan pernah
+deploy ke sana. Acuan identitas host: `docs/runbooks/production-host-identity.md`. Riwayat di bawah ini berasal dari era Hostinger.
+Branch baseline berubah per sprint — verifikasi tag/commit sebelum deploy.
 
 ## File / Area Repo Terkait
 - `docs/pilot/vps_pilot_deployment_checklist.md`

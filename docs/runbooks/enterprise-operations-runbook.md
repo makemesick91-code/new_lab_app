@@ -20,7 +20,8 @@ queue_outbox, and health** topics.
 
 ## Prerequisites
 
-- SSH access to the VPS pilot (`ssh daengtisiams-vps`) at `/var/www/asia-dental-lab-v2`.
+- SSH access to production (`ssh daengtisiams-biznet-prod`, admin `dmsadmin`, privileged steps through `sudo -n`)
+  at `/var/www/asia-dental-lab-v2`, with the target proven first (`docs/runbooks/production-host-identity.md`).
 - Super Admin (for the Developer Console at `GET /dev-console`).
 - The application runtime is up (`php artisan up`).
 

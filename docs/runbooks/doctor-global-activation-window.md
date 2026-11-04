@@ -65,7 +65,7 @@ be folded into a Half A window.
 |---|---|---|
 | 1 | Window scheduled, operators present | outside this document |
 | 2 | Owner APPLY approval recorded | outside this document — **hard gate** |
-| 3 | Rollback owner identified and reachable by SSH | `srv1730088` |
+| 3 | Rollback owner identified and reachable by SSH | `DaengtisiaMS` via `ssh daengtisiams-biznet-prod`, target proven with `bash scripts/production-target-check.sh --remote` |
 | 4 | Decide the lease order (§3 or §4 below) | — |
 
 ---
@@ -82,11 +82,11 @@ Expect `200` and `status: ok` with every component `ok`. An IP request returns `
 to HTTPS — that is the redirect, not a failure.
 
 ```bash
-ssh daengtisiams-vps
+ssh daengtisiams-biznet-prod
 cd /var/www/asia-dental-lab-v2
-git rev-parse HEAD && git describe --exact-match HEAD
-runuser -u daengtisiams -- php artisan migrate:status | grep -c Pending   # expect 0
-runuser -u daengtisiams -- php artisan queue:failed                        # expect none
+sudo -n git rev-parse HEAD && sudo -n git describe --exact-match HEAD
+sudo -n runuser -u daengtisiams -- php artisan migrate:status | grep -c Pending   # expect 0
+sudo -n runuser -u daengtisiams -- php artisan queue:failed                        # expect none
 ```
 
 ---
@@ -129,11 +129,11 @@ For each row with `released_at IS NULL`, decide:
 
 ```bash
 # dry run FIRST — writes nothing
-runuser -u daengtisiams -- php artisan doctor:session-force-logout \
+sudo -n runuser -u daengtisiams -- php artisan doctor:session-force-logout \
     --doctor=<mst_doctors.id> --actor=<id|email> --reason="<10-1000 chars>"
 
 # then, only after reading the dry run
-runuser -u daengtisiams -- php artisan doctor:session-force-logout \
+sudo -n runuser -u daengtisiams -- php artisan doctor:session-force-logout \
     --doctor=<mst_doctors.id> --actor=<id|email> --reason="<10-1000 chars>" --apply
 ```
 
@@ -158,10 +158,10 @@ Read-only. **No destructive backup** — hashes and watermarks, not dumps.
 
 ```bash
 cd /var/www/asia-dental-lab-v2
-runuser -u daengtisiams -- php artisan android:phase4a-pilot-scope --json  > /tmp/pre-scope.json
-runuser -u daengtisiams -- php artisan foundation:feature-flags   --json  > /tmp/pre-flags.json
-runuser -u daengtisiams -- php artisan doctor:estate-resilience   --json  > /tmp/pre-estate.json
-runuser -u daengtisiams -- php artisan doctor:fleet-readiness     --json  > /tmp/pre-fleet.json
+sudo -n runuser -u daengtisiams -- php artisan android:phase4a-pilot-scope --json  > /tmp/pre-scope.json
+sudo -n runuser -u daengtisiams -- php artisan foundation:feature-flags   --json  > /tmp/pre-flags.json
+sudo -n runuser -u daengtisiams -- php artisan doctor:estate-resilience   --json  > /tmp/pre-estate.json
+sudo -n runuser -u daengtisiams -- php artisan doctor:fleet-readiness     --json  > /tmp/pre-fleet.json
 sha256sum /tmp/pre-*.json
 stat -c '%s' storage/logs/laravel.log          # LOG_WATERMARK
 ```
@@ -186,13 +186,13 @@ member. That is by design, not a missing variable.
 FEATURE_DOCTOR_SINGLE_ACTIVE_SESSION=true
 
 # 2. realize it
-runuser -u daengtisiams -- php artisan optimize:clear
-runuser -u daengtisiams -- php artisan config:cache
-runuser -u daengtisiams -- php artisan route:cache
-runuser -u daengtisiams -- php artisan view:cache
+sudo -n runuser -u daengtisiams -- php artisan optimize:clear
+sudo -n runuser -u daengtisiams -- php artisan config:cache
+sudo -n runuser -u daengtisiams -- php artisan route:cache
+sudo -n runuser -u daengtisiams -- php artisan view:cache
 
 # 3. verify EFFECTIVE state, not the file
-runuser -u daengtisiams -- php artisan foundation:feature-flags --json
+sudo -n runuser -u daengtisiams -- php artisan foundation:feature-flags --json
 ```
 
 Never run these as `root` or `www-data`. The deploy script refuses those users by
@@ -216,7 +216,7 @@ locked doctor's lists are narrowed **at once**, while no open session is evicted
 > own decision and not part of a Half-A window.
 >
 > Read the live values before following either section:
-> `runuser -u daengtisiams -- php artisan foundation:feature-flags --json`.
+> `sudo -n runuser -u daengtisiams -- php artisan foundation:feature-flags --json`.
 
 ---
 

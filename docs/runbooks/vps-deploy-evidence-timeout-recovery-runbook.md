@@ -1,5 +1,13 @@
 # Runbook — VPS Deploy Evidence Timeout / SSH Broken-Pipe Recovery
 
+> **Production target (since 2026-11-03):** Biznet host `DaengtisiaMS` (`139.190.106.38`), reached with
+> `ssh daengtisiams-biznet-prod` as `dmsadmin`; privileged steps run through `sudo -n`. The Hostinger host
+> `srv1730088` is WRITE-FROZEN. Prove the target first: `bash scripts/production-target-check.sh --remote`
+> (`docs/runbooks/production-host-identity.md`).
+>
+> **No deploy has run on Biznet yet.** The first one needs explicit owner approval and the readiness checklist
+> in `docs/runbooks/production-host-identity.md` §6 closed (Node/npm are not installed there).
+
 **Owner:** Foundation / Ops. **Governance:** `foundation:runtime-hardening-check`.
 
 ## Problem
@@ -23,13 +31,13 @@ mandatory gates and evidence checks must pass first).
 
 ```bash
 # 1. Start the deploy detached (returns immediately; safe if the pipe drops):
-ssh daengtisiams-vps 'cd /var/www/asia-dental-lab-v2 && bash scripts/deploy-vps-runner.sh start'
+ssh daengtisiams-biznet-prod 'cd /var/www/asia-dental-lab-v2 && sudo -n bash scripts/deploy-vps-runner.sh start'
 
 # 2. Follow progress (re-runnable; reconnect any time):
-ssh daengtisiams-vps 'cd /var/www/asia-dental-lab-v2 && bash scripts/deploy-vps-runner.sh follow'
+ssh daengtisiams-biznet-prod 'cd /var/www/asia-dental-lab-v2 && sudo -n bash scripts/deploy-vps-runner.sh follow'
 
 # 3. Confirm final status:
-ssh daengtisiams-vps 'cd /var/www/asia-dental-lab-v2 && bash scripts/deploy-vps-runner.sh status'
+ssh daengtisiams-biznet-prod 'cd /var/www/asia-dental-lab-v2 && sudo -n bash scripts/deploy-vps-runner.sh status'
 ```
 
 `status` prints `final exit=0` + `DEPLOY RUNNER OK` on success, or
@@ -41,10 +49,10 @@ ssh daengtisiams-vps 'cd /var/www/asia-dental-lab-v2 && bash scripts/deploy-vps-
 The deploy keeps running server-side. Reconnect and:
 
 ```bash
-ssh daengtisiams-vps 'cd /var/www/asia-dental-lab-v2 && bash scripts/deploy-vps-runner.sh follow'
+ssh daengtisiams-biznet-prod 'cd /var/www/asia-dental-lab-v2 && sudo -n bash scripts/deploy-vps-runner.sh follow'
 # or inspect the raw log directly:
-ssh daengtisiams-vps 'tail -n 120 /var/www/asia-dental-lab-v2/storage/logs/deploy-runner/latest.log'
-ssh daengtisiams-vps 'cat /var/www/asia-dental-lab-v2/storage/logs/deploy-runner/latest.status'
+ssh daengtisiams-biznet-prod 'sudo -n tail -n 120 /var/www/asia-dental-lab-v2/storage/logs/deploy-runner/latest.log'
+ssh daengtisiams-biznet-prod 'sudo -n cat /var/www/asia-dental-lab-v2/storage/logs/deploy-runner/latest.status'
 ```
 
 ## Verify final status

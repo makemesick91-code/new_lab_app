@@ -19,7 +19,8 @@ security_pii** topics.
 ## Prerequisites
 
 - Local: a working app environment and the foundation commands registered.
-- VPS: `ssh daengtisiams-vps`, deploy already run (which captures the artifacts).
+- Production: `ssh daengtisiams-biznet-prod` (`docs/runbooks/production-host-identity.md`), deploy already run (which captures the artifacts). No
+  deploy has run on Biznet yet, so any evidence there was copied from the Hostinger host — check its timestamps.
 
 ## Safe Commands
 

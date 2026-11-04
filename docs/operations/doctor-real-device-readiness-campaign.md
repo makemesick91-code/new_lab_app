@@ -117,8 +117,8 @@ the device sits at a different branch.
 Machine side (all twelve passed on 2026-09-13, but **re-run it**: state moves):
 
 ```bash
-ssh daengtisiams-vps 'cd /var/www/asia-dental-lab-v2 && \
-  runuser -u daengtisiams -- php artisan doctor:fleet-readiness --json' \
+ssh daengtisiams-biznet-prod 'cd /var/www/asia-dental-lab-v2 && \
+  sudo -n runuser -u daengtisiams -- php artisan doctor:fleet-readiness --json' \
   | python3 -c "import json,sys; r=json.load(sys.stdin); \
       row=[d for d in r['doctors'] if d['user_id']==USER_ID][0]; print(json.dumps(row, indent=2))"
 ```
@@ -161,14 +161,14 @@ Enrol (example: user 14):
 # on the VPS, in /var/www/asia-dental-lab-v2
 #   singular stays 18; the plural carries the union
 sed -i 's/^ANDROID_PILOT_ENFORCEMENT_DOCTOR_USER_IDS=.*/ANDROID_PILOT_ENFORCEMENT_DOCTOR_USER_IDS=9,15,14/' .env
-runuser -u daengtisiams -- php artisan config:clear
-runuser -u daengtisiams -- php artisan config:cache
+sudo -n runuser -u daengtisiams -- php artisan config:clear
+sudo -n runuser -u daengtisiams -- php artisan config:cache
 ```
 
 Verify **effective** runtime immediately:
 
 ```bash
-runuser -u daengtisiams -- php artisan android:phase4a-pilot-scope
+sudo -n runuser -u daengtisiams -- php artisan android:phase4a-pilot-scope
 ```
 
 Required:
@@ -249,7 +249,7 @@ surviving lease 8 if it still exists.
 Verify the proof landed and qualifies:
 
 ```bash
-runuser -u daengtisiams -- php artisan doctor:fleet-readiness --json
+sudo -n runuser -u daengtisiams -- php artisan doctor:fleet-readiness --json
 # that doctor's row must show:
 #   real_device_login_proven : true
 #   qualifying_device_ids    : [<the tablet used>]
@@ -282,9 +282,9 @@ If a ceremony fails for any campaign doctor:
 
 ```bash
 sed -i 's/^ANDROID_PILOT_ENFORCEMENT_DOCTOR_USER_IDS=.*/ANDROID_PILOT_ENFORCEMENT_DOCTOR_USER_IDS=9,15/' .env
-runuser -u daengtisiams -- php artisan config:clear
-runuser -u daengtisiams -- php artisan config:cache
-runuser -u daengtisiams -- php artisan android:phase4a-pilot-scope   # expect 9,15,18
+sudo -n runuser -u daengtisiams -- php artisan config:clear
+sudo -n runuser -u daengtisiams -- php artisan config:cache
+sudo -n runuser -u daengtisiams -- php artisan android:phase4a-pilot-scope   # expect 9,15,18
 ```
 
 - Verify the doctor is no longer locked out.
