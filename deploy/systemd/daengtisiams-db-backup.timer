@@ -1,30 +1,51 @@
 [Unit]
 # Daily schedule for daengtisiams-db-backup.service (ENT-12).
 #
-# The host clock is UTC; the clinics operate in WITA (UTC+8). 19:00 UTC is
-# 03:00 WITA — after the last clinic closes and before the first opens, so a
-# dump never competes with clinical traffic. It is also 30 minutes before the
-# existing weekly daengtisiams-pilot-snapshot.timer (Sat 19:30 UTC), so the two
-# never overlap.
-Description=Daily DaengtisiaMS database backup (ENT-12)
+# 18:30 UTC is 02:30 WITA (UTC+8) — after the last clinic closes and before the
+# first opens, so a dump never competes with clinical traffic. The UTC suffix is
+# explicit so the schedule does not move if the host timezone ever changes.
+#
+# This is the schedule VERIFIED on the Biznet production host on 2026-11-04
+# (DMS-DEV-INFRA-ALIGNMENT-PR-COMPLETION-1). The repository previously said
+# 19:00 UTC / 03:00 WITA, so a reinstall from here would have silently moved the
+# production backup. The repository records production; it does not reschedule
+# it. Changing this value is an owner decision about the production backup
+# window, never a side effect of an unrelated change.
+#
+# The BK-2 encrypted package timer (daengtisiams-bk2-package.timer, host-only,
+# OnCalendar=*-*-* 02:30:00 Asia/Makassar) is scheduled for the same minute: it
+# fires at 18:30:00 UTC and this timer up to 60 s later (RandomizedDelaySec). The
+# two may run concurrently and that is acceptable — both only read the database.
+# Measured 2026-11-03: BK-2 18:30:00-18:30:09 UTC, db-backup 18:30:27-18:30:28 UTC.
+#
+# The two have DIFFERENT recovery roles and neither replaces the other:
+#   - this timer (repo-managed, scripts/backup-vps.sh) keeps the verified
+#     ON-SERVER restore point: the dump scripts/restore_postgres.sh restores
+#     from and the backup-freshness signal the monitoring/readiness gates read.
+#     It prunes by retention (config/backup_dr.php) while keeping a minimum.
+#   - BK-2 (host-only) is the only ENCRYPTED, OFF-SERVER, full-recovery copy
+#     for disaster recovery. It never prunes.
+# Never disable, reschedule or prune one on the grounds that the other ran.
+Description=Daily DaengtisiaMS database backup (ENT-12, 02:30 WITA = 18:30 UTC)
 
 [Timer]
-OnCalendar=*-*-* 19:00:00
+OnCalendar=*-*-* 18:30:00 UTC
 
 # Persistent=true is the point of using a timer rather than cron: if the host
-# was down or rebooting at 19:00, systemd runs the missed backup as soon as it
-# is up again instead of silently skipping a day.
+# was down or rebooting at 18:30 UTC, systemd runs the missed backup as soon as
+# it is up again instead of silently skipping a day.
 Persistent=true
 
-# Small spread so a backup never starts at the exact same instant as any other
-# scheduled work on this shared host.
-RandomizedDelaySec=300
+# Small spread (matches production) so a backup never starts at the exact same
+# instant as any other scheduled work on this host.
+RandomizedDelaySec=60
 
 # Firing precision only. This does NOT prevent overlap — that comes free from
 # systemd, which will not re-run a service whose previous activation is still
 # running. Loosening the accuracy simply lets systemd batch this wake-up with
 # other timers instead of holding a precise-to-the-microsecond alarm.
 AccuracySec=1min
+
 Unit=daengtisiams-db-backup.service
 
 [Install]
