@@ -214,7 +214,9 @@ code, then the canonical rule, and report the drift.
 - **AIR-FND-39** Development, deployment and controlled testing are allowed on Biznet production (owner policy
   2026-11-04). Production testing goes through the running application with dedicated test identities and marked
   synthetic records; never run a test suite, seeder, factory or development migration against the production database.
-  Testing on operational clinic devices is frozen, and clinic reopening is a separate owner decision. Source:
+  Testing on operational clinic devices is frozen, and clinic reopening is a separate owner decision. The current
+  database is classified a TESTING database (owner, 2026-11-05): no test-data flag or report exclusion is needed, but
+  never reset or bulk-delete it without an approved procedure, and keep every privacy rule. Source:
   `.cursor/rules/221-full-development-production-testing-policy.mdc`,
   `docs/governance/full-development-production-testing-policy.md`.
 

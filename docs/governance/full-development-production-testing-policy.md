@@ -1,6 +1,6 @@
 ---
 kb_status: current
-kb_verified_against: 6f22beb7
+kb_verified_against: 75eeac7d
 kb_updated: 2026-11-05
 ---
 
@@ -15,9 +15,48 @@ kb_updated: 2026-11-05
 | Canonical rule mirror | `.cursor/rules/221-full-development-production-testing-policy.mdc` |
 | Always-loaded pointer | `CLAUDE.md` CG-13 and CG-14 |
 | Production baseline when recorded | commit `6f22beb7` (tag `dms-biznet-first-production-deploy-infra-1-go`), measured on the host |
+| Database classification | **TESTING DATABASE**: every current record belongs to the testing phase. Owner directive `DMS-CURRENT-DATABASE-TESTING-CLASSIFICATION-1`, 2026-11-05 (§0) |
 
 > **Canonical status:** FULL DEVELOPMENT ENABLED — PRODUCTION TESTING ALLOWED — OPERATIONAL DEVICE TESTING FROZEN.
 > Clinic reopening is a separate owner decision. This policy does not reopen anything.
+
+## 0. Current database classification
+
+The System Owner has declared, with authority, that **all current DaengtisiaMS database records are testing data**
+(directive `DMS-CURRENT-DATABASE-TESTING-CLASSIFICATION-1`, 2026-11-05).
+
+1. **Classification.** Biznet is the production *infrastructure* (CG-14), but its application database is still in the
+   development and testing phase. It is classified as a **TESTING DATABASE**. Every existing record belongs to the
+   testing phase. On the owner's declaration, no operational clinical data exists in the current system.
+2. **Reports.** Current reports (owner KPI, doctor performance, receivables, inventory, estate and readiness figures)
+   are testing results, not operational performance.
+3. **What it does not change.** Development and controlled testing on Biznet stay authorised. Testing on operational
+   clinic devices stays frozen (§4), and clinic reopening stays a separate owner decision (§8).
+4. **No test-data isolation feature now.** No `is_test` column, test-only branch or operational-report exclusion
+   system is required to separate current records. Reassess this only when the go-live transition is prepared (item 8).
+5. **Database safety.** The classification does not authorise destructive operations. Preserve the existing database
+   contents, the schema and migration history, application audit evidence, the immutable inventory movement history,
+   and the backup and recovery systems. On Biznet, never run `migrate:fresh`, `db:wipe`, table truncation or
+   unrestricted record deletion. Any reset or replacement of the database needs its own separately approved procedure.
+6. **Privacy still applies in full.** "Testing data" does not mean the records hold no personal or sensitive
+   information. Treat every record as potentially real personal data: KTP/NIK masking, private clinical-evidence
+   storage, least-disclosure reporting and §3.1 apply unchanged (CG-11).
+7. **History is preserved.** Earlier records that describe pilot operations, readiness ceremonies, legacy migrations
+   or go-live events are kept exactly as written. Under this classification, the data they produced belongs to the
+   testing phase.
+8. **Future go-live.** Before any operational use, a separate **database transition plan** must be prepared and
+   approved by the owner. It must cover:
+   - disposition of the testing data;
+   - preparation of the operational database;
+   - initial master data;
+   - clinical-record and MRN continuity where applicable;
+   - branch configuration;
+   - user roles and permissions;
+   - data integrity;
+   - backup and recovery;
+   - operational readiness.
+
+   No operational cutover is performed now.
 
 ## 1. What this policy replaces
 
@@ -28,6 +67,8 @@ kb_updated: 2026-11-05
 | "Production migrations: still blocked" | Same record, §2 | Allowed **only** as part of a deploy (`migrate --force` after the runner's backup) |
 | "No development migrations, seeders or tests against the production database" | Same record, §7 rule 3 | Narrowed, not removed. Controlled functional testing through the running application is allowed. Automated suites, seeders, factories and development migrations still never touch the production database (§3). |
 | "Synthetic data belongs in tests" | `CLAUDE.md` CG-13 | Synthetic data is also allowed in controlled production testing, under §3 |
+| "Production is a single VPS pilot that serves real patient data" | `CLAUDE.md` introduction | Replaced on 2026-11-05: production infrastructure with a testing database (§0) |
+| "Test records must not contaminate operational reports; read decision reports with test ids excluded" | This policy, §3.9 and R1 as merged in PR #591 | Replaced on 2026-11-05: every current record is testing data, so no exclusion applies (§0.4) |
 
 Historical records were not rewritten. The private record keeps its original text, and this table is the supersession
 note. Restrictions the directive did not lift stay in force: the Hostinger write freeze, the pilot-only doctor-device
@@ -66,9 +107,9 @@ authorises a mutation, and a test task authorises only the records it declares.
 8. **External systems.** Test records must not reach an external production system. SATUSEHAT submission and WhatsApp
    delivery stay disabled. A task that needs either needs its own decision.
 9. **Isolation and reports.** Respect `BranchContext`, doctor assignments and permissions exactly as real users do.
-   Test records must not contaminate operational reports (owner KPI, doctor performance, inventory, receivables).
-   There is **no technical test-data flag** in the schema today (§10), so the evidence must list the test record ids,
-   and reports used for decisions must be read with those ids excluded.
+   The whole current database is a testing database (§0), so reports need no test-record exclusion and no test-data
+   flag is required. Still record the ids of what a test created (rule 2): the go-live transition plan accounts for
+   the testing data (§0.8).
 10. **Test data is not operational evidence.** A synthetic production record proves that the software behaves. It never
     stands in for real-world proof: a doctor's real-device readiness ceremony, a legacy migration wave, pilot
     acceptance, or stability under clinical load. CG-13's ban on fabricated evidence is unchanged.
@@ -177,10 +218,11 @@ Laravel maintenance mode is not used to enforce the device freeze.
 
 | # | Risk | Mitigation now | Owner follow-up |
 |---|---|---|---|
-| R1 | No schema-level test-data flag, so test records can surface in reports and analytics | Marking, recorded ids, and decision reports read with test ids excluded | Decide whether a dedicated test branch or a flag is worth building |
+| R1 | No schema-level test-data flag | **Not required now.** The owner classified the whole current database as testing data (§0.4), so there are no operational records to separate | Reassess when the go-live database transition plan is prepared (§0.8) |
 | R2 | A registered test device inflates estate and readiness counters | Name it as a test device, record its id, and report readiness with and without it | Decide on an exclusion mechanism if test devices multiply |
 | R3 | Dedicated devices may not represent every operational device | Write down untested compatibility | Procure test hardware that matches the clinic estate |
 | R4 | Cashier and RME verification leave permanent ledger and audit rows | Synthetic identities and canonical void/cancel; never delete | None; this is by design |
-| R5 | A deploy now happens more often against a live clinical database | Runner backup, canonical runner, high-risk changes need specific approval | Watch BK-2 health before each deploy |
+| R5 | Deploys now happen more often against a database whose contents must be preserved (testing data that may hold real personal information) | Runner backup, canonical runner, high-risk changes need specific approval | Watch BK-2 health before each deploy |
 | R6 | The superseded `DMS-OPERATIONAL-LOCK-RME-DEVELOPMENT-20261104` text was never recorded, so its full content is unknown | Superseded by name; this document is the authority from now on | None |
 | R7 | Deploys become routine, so a merge to the base branch is in effect a release candidate | The §6 workflow (review, required CI, host-side tip check) and specific approval for high-risk changes | The owner may still require a per-deploy instruction at any time by saying so |
+| R8 | The testing classification is a declaration, not a measurement. Earlier records describe live pilot use and legacy archives of real patients, so the data can still hold real personal information | Privacy rules apply in full (§0.6); nothing is deleted or reset (§0.5) | Settle the disposition of this data in the go-live transition plan (§0.8) |
