@@ -13,9 +13,10 @@
 # window, never a side effect of an unrelated change.
 #
 # The BK-2 encrypted package timer (daengtisiams-bk2-package.timer, host-only,
-# OnCalendar=*-*-* 02:30:00 Asia/Makassar) fires at the same instant. The two
-# overlap by design on the current host; both are read-only against the
-# database.
+# OnCalendar=*-*-* 02:30:00 Asia/Makassar) is scheduled for the same minute: it
+# fires at 18:30:00 UTC and this timer up to 60 s later (RandomizedDelaySec). The
+# two may run concurrently and that is acceptable — both only read the database.
+# Measured 2026-11-03: BK-2 18:30:00-18:30:09 UTC, db-backup 18:30:27-18:30:28 UTC.
 Description=Daily DaengtisiaMS database backup (ENT-12, 02:30 WITA = 18:30 UTC)
 
 [Timer]
