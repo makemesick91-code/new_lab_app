@@ -206,12 +206,18 @@ file.
 
 ### Scanner agent (clinic PCs)
 
-- **AIR-PAT-32** The local scanner agent (`tools/daengtisia-scanner-agent/`) trusts a configured origin only when it
-  is exactly `https://<fully qualified DNS name>` (production: `https://daengtisia.online`); plain-http and
-  IP-address origins — the frozen Hostinger address included — are refused at startup, whether from the
-  environment or an override. A request carrying an untrusted `Origin` gets `403 ORIGIN_NOT_ALLOWED` and a `Host`
-  that is not the loopback interface on the accepting port gets `403 HOST_NOT_ALLOWED`, both before any route runs,
-  so a foreign page can neither read nor trigger a KTP scan. Tests read the frozen address from
-  `deploy/production-host.conf`, never a literal. Installed agents are changed only through
+- **AIR-PAT-32** The local scanner agent (`tools/daengtisia-scanner-agent/`) trusts an explicit, exact allowlist and
+  nothing else. A configured origin is trusted only when it is exactly `https://<fully qualified DNS name>`
+  (production: `https://daengtisia.online`); plain-http, IP-address (the frozen Hostinger address included),
+  wildcard and `null` origins are refused at startup, whether from the environment or an override. **Loopback is never
+  trusted implicitly**: a loopback origin is trusted only with `SCANNER_AGENT_MODE=development` AND an explicit entry,
+  and an unknown mode means production (never on a clinic PC). The request `Origin` is matched byte-for-byte. A
+  request carrying an untrusted `Origin` gets `403 ORIGIN_NOT_ALLOWED`, one carrying no `Origin` gets
+  `403 ORIGIN_REQUIRED` everywhere except the read-only `GET /health`, and a `Host` that is not the loopback
+  interface on the accepting port gets `403 HOST_NOT_ALLOWED` — all before any route runs, so a foreign page can
+  neither read nor trigger a KTP scan. `Origin` is a browser statement, not authentication against local software
+  (recorded residual). Agent version `0.2.0`; `0.1.0` is the prototype. Tests read the frozen address from
+  `deploy/production-host.conf`, never a literal, and run in the required quality gate via `npm run test:js`
+  (pinned by `ScannerAgentRequiredCiCoverageTest`). Installed agents are changed only through
   `docs/runbooks/scanner-agent-trusted-origin-rollout.md`, one PC at a time, verified with `/health` — never by
   scanning a real KTP. Source: `docs/sprints/dms-scanner-agent-trusted-origin-hardening-1.md`.

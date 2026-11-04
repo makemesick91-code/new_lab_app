@@ -13,17 +13,22 @@ The scanner agent runs on the Front Office PC and hands a scanned KTP image to w
   list does not contain, so the page cannot read the agent's answer.
 - **It is a KTP-exfiltration risk.** The old address can be reassigned to anyone. A page served from it would be a
   trusted origin able to pull scans from the agent.
+- **Any local page was trusted.** The prototype always trusted `localhost` / `127.0.0.1` on any port, configured or
+  not, and served a scan to any request that carried no `Origin` at all.
 
-The hardened agent (DMS-SCANNER-AGENT-TRUSTED-ORIGIN-HARDENING-1) refuses plain-http and IP-address origins by
-itself, refuses a request from an untrusted origin before any scan, and refuses a non-loopback `Host` (DNS
-rebinding). This runbook installs that version and sets the correct origin on each PC.
+The hardened agent 0.2.0 (DMS-SCANNER-AGENT-TRUSTED-ORIGIN-HARDENING-1, DMS-POSTMIGRATION-PR-INTEGRATION-1)
+trusts an explicit, exact allowlist only: it refuses plain-http, IP-address, wildcard and `null` origins by itself,
+never trusts loopback implicitly, refuses a request from an untrusted origin and a request without `Origin` (except
+the read-only `/health`) before any scan, and refuses a non-loopback `Host` (DNS rebinding). This runbook installs
+that version and sets the correct origin on each PC.
 
 ## Rules
 
 - One PC at a time, outside clinic hours or with that branch's Front Office present.
 - Never scan a real KTP to test. The `/health` checks below prove the origin gate, because the agent applies the same
-  gate to `/health` and `/scan` (covered by `test/trusted-origin.test.js`). A real scan also uploads the image to
-  production's temporary KTP storage.
+  gate to `/health` and `/scan` (covered by `test/trusted-origin.test.js` and `test/explicit-allowlist.test.js`). A
+  real scan also uploads the image to production's temporary KTP storage. None of V1–V8 below calls `/scan`, so none
+  of them can trigger a scan even on a PC still running the old agent.
 - Never copy patient data, scan images or the PC's local configuration file off the PC.
 - Record results with a non-identifying PC label (for example `LDK2-FO-1`), never a patient name.
 
@@ -52,13 +57,16 @@ rebinding). This runbook installs that version and sets the correct origin on ea
    ```
    SCANNER_AGENT_ALLOWED_ORIGINS=https://daengtisia.online
    ```
-   No `www`, no `http://`, no trailing slash, no server address. Keep `SCANNER_AGENT_HOST=127.0.0.1`.
+   No `www`, no `http://`, no trailing slash, no server address, no `localhost`. Keep
+   `SCANNER_AGENT_HOST=127.0.0.1`. `SCANNER_AGENT_MODE` must be absent or `production` — **never** `development` on
+   a clinic PC.
 4. Start the agent. Its first lines must include:
    ```
+   mode: production
    trusted origins: https://daengtisia.online
    ```
-   and no `WARNING: refused configured origin` line. A refused line means the file still lists an old origin: remove
-   it and restart.
+   and no `WARNING:` line. `WARNING: refused configured origin` means the file still lists an old or local origin:
+   remove it and restart. `WARNING: unknown SCANNER_AGENT_MODE` means a typo: fix it and restart.
 
 ## Verify (no patient data)
 
@@ -72,8 +80,10 @@ Run on the PC itself. Windows 10 and later include `curl.exe`.
 | V4 | `curl -s -H "Host: attacker.example:17661" http://127.0.0.1:17661/health` | `403` and `"error":"HOST_NOT_ALLOWED"` |
 | V5 | `curl -s http://127.0.0.1:17661/health` | `200` and `"version":"0.2.0"` (a `0.1.0` answer means the old agent is still running) |
 | V6 | In DaengtisiaMS on that PC (`https://daengtisia.online`), open the new-patient KTP section and press **Periksa scanner** — **do not press Scan** | `Scanner terhubung` |
+| V7 | `curl -s -H "Origin: http://localhost:8000" http://127.0.0.1:17661/health` | `403` and `"error":"ORIGIN_NOT_ALLOWED"` (a `200` means loopback is still trusted implicitly — the old agent) |
+| V8 | `curl -s http://127.0.0.1:17661/devices` (no `Origin`) | `403` and `"error":"ORIGIN_REQUIRED"` (a device list means the old agent, which serves Origin-less requests) |
 
-All six must pass. Record them per PC with the date and time in WITA.
+All eight must pass. Record them per PC with the date and time in WITA.
 
 ## Roll back (per PC)
 
@@ -82,5 +92,5 @@ the old origin list too, so record the PC as **not remediated**.
 
 ## Done when
 
-Every Front Office PC that runs the agent has a V1–V6 record, and the repository example configuration no longer
-names the old address (owner action — the assistant's permission scope excludes environment-style files).
+Every Front Office PC that runs the agent has a V1–V8 record. (The repository example configuration already trusts
+only `https://daengtisia.online` — DMS-POSTMIGRATION-PR-INTEGRATION-1, owner-approved.)

@@ -46,7 +46,6 @@ test('only an https origin on a DNS name is trusted', () => {
     ['https://daengtisia.online/', 'https://daengtisia.online'],
     ['  https://DAENGTISIA.online  ', 'https://daengtisia.online'],
     ['https://daengtisia.online:443', 'https://daengtisia.online'],
-    ['http://localhost:8000', 'http://localhost:8000'],
   ];
   for (const [raw, canonical] of accepted) {
     const r = classifyOrigin(raw);
@@ -63,6 +62,11 @@ test('only an https origin on a DNS name is trusted', () => {
     'https://user:pw@daengtisia.online': 'carries credentials',
     'https://intranet': 'not a fully qualified DNS name',
     'not-a-url': 'not a URL',
+    // Loopback is never trusted implicitly, and in production mode not even
+    // when listed (DMS-POSTMIGRATION-PR-INTEGRATION-1).
+    'http://localhost:8000': 'a loopback origin',
+    'http://127.0.0.1:8000': 'a loopback origin',
+    'https://localhost': 'a loopback origin',
   };
   for (const [raw, reason] of Object.entries(refused)) {
     const r = classifyOrigin(raw);
@@ -162,8 +166,9 @@ test('a rebinding Host is refused before any scan', async () => {
       assert.strictEqual(res.json.error, 'HOST_NOT_ALLOWED');
       assert.strictEqual(res.json.base64, undefined);
     }
-    // A native client on this PC (no Origin) using the loopback name still works.
-    const ok = await request(s.port, { method: 'GET', path: '/health', headers: { Host: `localhost:${s.port}` } });
+    // A native client on this PC (no Origin) using the loopback name may still
+    // read the readiness check — and only that (see explicit-allowlist.test.js).
+    const ok = await request(s.port, { method: 'GET', path: '/health', origin: null, headers: { Host: `localhost:${s.port}` } });
     assert.strictEqual(ok.status, 200);
   } finally {
     await s.close();

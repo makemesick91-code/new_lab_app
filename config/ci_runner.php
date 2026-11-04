@@ -1477,6 +1477,14 @@ return [
         // variants; declared so that selection is enforced, not incidental.
         'tests/Feature/Cicd/ProductionHostIdentityGuardTest.php',
 
+        // DMS-POSTMIGRATION-PR-INTEGRATION-1 — the scanner agent's security
+        // suite (explicit allowlist, no implicit loopback, Origin required,
+        // rebinding Host refused, zero scans on refusal) runs only through
+        // `npm run test:js` in the always-on quality gate. Pins the test:js glob,
+        // the unconditional step and its pipefail, so none can silently lapse.
+        // Selected by the `Cicd` token in BOTH critical variants.
+        'tests/Feature/Cicd/ScannerAgentRequiredCiCoverageTest.php',
+
         // DMS-POST-MIGRATION-DEV-INFRA-ALIGNMENT-1 (deploy chain) — the deploy
         // and rollback refuse, before their first mutation, any host that is not
         // the declared production host (the frozen Hostinger host first), any
@@ -1621,6 +1629,14 @@ return [
         // DEV-AI-CLAUDE-MEMORY-OPTIMIZATION-1 — the AI instruction-system contract in the
         // always-on NSF-R012 quality gate (the only gate an instructions-only change reaches).
         'AI instruction system contract',
+
+        // DMS-POSTMIGRATION-PR-INTEGRATION-1 — `npm run test:js | tee` runs the
+        // scanner agent's security suite (the only tests that prove an untrusted
+        // origin, a missing Origin or a rebinding Host never reaches the KTP
+        // scanner). The step was safe only because it happened to declare
+        // `shell: bash`; unregistered, deleting that line would have turned every
+        // JS test into a non-gating step without any check noticing.
+        'JavaScript unit tests',
     ],
 
     /*

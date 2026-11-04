@@ -9,7 +9,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { classifyOrigins } = require('./cors');
+const { classifyOrigins, resolveMode } = require('./cors');
 
 // 0.2.0 = trusted-origin hardening (DMS-SCANNER-AGENT-TRUSTED-ORIGIN-HARDENING-1). 0.1.0 is the
 // pre-hardening prototype: a PC still reporting 0.1.0 trusts the frozen address over http.
@@ -77,8 +77,15 @@ function getConfig(overrides = {}) {
     backend = 'mock';
   }
 
+  // production (default) or development. An unknown value falls back to
+  // production: a typo must never widen which origins are trusted.
+  const mode = resolveMode(
+    overrides.mode !== undefined ? overrides.mode : env.SCANNER_AGENT_MODE
+  );
+
   const origins = classifyOrigins(
-    overrides.allowedOrigins || splitOrigins(env.SCANNER_AGENT_ALLOWED_ORIGINS)
+    overrides.allowedOrigins || splitOrigins(env.SCANNER_AGENT_ALLOWED_ORIGINS),
+    mode.mode
   );
 
   const config = {
@@ -86,9 +93,12 @@ function getConfig(overrides = {}) {
     host: overrides.host || env.SCANNER_AGENT_HOST || '127.0.0.1',
     port: toInt(overrides.port || env.SCANNER_AGENT_PORT, 17661),
     backend,
-    // Only https:// DNS-name origins (and loopback) are trusted; everything
-    // else is refused here, whether it came from the environment or from an
-    // override, and reported at startup (see src/cors.js).
+    mode: mode.mode,
+    modeWarning: mode.warning,
+    // Only the explicitly listed https:// DNS-name origins are trusted (plus
+    // explicitly listed loopback origins in development mode — never
+    // implicitly); everything else is refused here, whether it came from the
+    // environment or from an override, and reported at startup (src/cors.js).
     allowedOrigins: origins.accepted,
     rejectedOrigins: origins.rejected,
     timeoutMs: toInt(overrides.timeoutMs || env.SCANNER_AGENT_TIMEOUT_MS, 30000),

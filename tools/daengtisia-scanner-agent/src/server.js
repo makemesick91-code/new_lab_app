@@ -15,7 +15,7 @@
 
 const http = require('http');
 const { getConfig } = require('./config');
-const { corsHeaders, isOriginAllowed, isHostAllowed } = require('./cors');
+const { corsHeaders, isOriginAllowed, isHostAllowed, originRequired, MODE_DEVELOPMENT } = require('./cors');
 const { sendJson, sendError } = require('./response');
 const scanService = require('./scan-service');
 
@@ -88,6 +88,16 @@ function createServer(config = getConfig()) {
     }
     const pathname = url.pathname.replace(/\/+$/, '') || '/';
     const method = req.method;
+
+    // A request with no Origin did not come from a browser page (a browser
+    // always sends Origin on a cross-origin fetch and on every POST). It may
+    // read GET /health — readiness and version only — and nothing else, so it
+    // can never reach the scanner (DMS-POSTMIGRATION-PR-INTEGRATION-1).
+    if (origin === undefined && originRequired(method, pathname)) {
+      logLine(`refused ${method} ${pathname} — Origin required`);
+      sendError(res, 403, 'ORIGIN_REQUIRED', 'Permintaan tanpa Origin tidak diizinkan untuk endpoint ini.', {});
+      return;
+    }
 
     // CORS preflight for any route.
     if (method === 'OPTIONS') {
@@ -191,7 +201,14 @@ function start(config = getConfig()) {
     if (config.host === '0.0.0.0') {
       logLine('WARNING: bound to 0.0.0.0 — this exposes the agent beyond localhost.');
     }
-    logLine(`trusted origins: ${config.allowedOrigins.join(', ') || '(loopback only)'}`);
+    logLine(`mode: ${config.mode}`);
+    if (config.modeWarning) {
+      logLine(`WARNING: ${config.modeWarning}`);
+    }
+    if (config.mode === MODE_DEVELOPMENT) {
+      logLine('WARNING: development mode — listed loopback origins are trusted. Never use this mode on a clinic PC.');
+    }
+    logLine(`trusted origins: ${config.allowedOrigins.join(', ') || '(none — every browser request is refused)'}`);
     for (const refused of config.rejectedOrigins || []) {
       logLine(`WARNING: refused configured origin ${refused.value} — ${refused.reason}`);
     }
