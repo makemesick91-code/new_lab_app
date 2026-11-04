@@ -17,6 +17,15 @@
 # fires at 18:30:00 UTC and this timer up to 60 s later (RandomizedDelaySec). The
 # two may run concurrently and that is acceptable — both only read the database.
 # Measured 2026-11-03: BK-2 18:30:00-18:30:09 UTC, db-backup 18:30:27-18:30:28 UTC.
+#
+# The two have DIFFERENT recovery roles and neither replaces the other:
+#   - this timer (repo-managed, scripts/backup-vps.sh) keeps the verified
+#     ON-SERVER restore point: the dump scripts/restore_postgres.sh restores
+#     from and the backup-freshness signal the monitoring/readiness gates read.
+#     It prunes by retention (config/backup_dr.php) while keeping a minimum.
+#   - BK-2 (host-only) is the only ENCRYPTED, OFF-SERVER, full-recovery copy
+#     for disaster recovery. It never prunes.
+# Never disable, reschedule or prune one on the grounds that the other ran.
 Description=Daily DaengtisiaMS database backup (ENT-12, 02:30 WITA = 18:30 UTC)
 
 [Timer]
