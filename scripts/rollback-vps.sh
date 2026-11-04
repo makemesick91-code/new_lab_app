@@ -97,6 +97,27 @@ echo "Execution source:         ${BASH_SOURCE[0]} (immutable snapshot)"
 echo "Pinned rollback target:   ${ROLLBACK_TARGET_SHA} (${TARGET_REF})"
 # ────────────────────────────────────────────────────────────────────────────
 
+# ─── DMS-POST-MIGRATION-DEV-INFRA-ALIGNMENT-1 production host preflight ─────
+# Same gate as the deploy, before the first mutation. The snapshot is taken from
+# the CURRENT code, so the authority is present even when the rollback target
+# predates it.
+# shellcheck source=lib/production-host-preflight.sh
+source "${DEPLOY_TOOLS_DIR}/scripts/lib/production-host-preflight.sh"
+if ! dms_production_host_preflight "${DEPLOY_TOOLS_DIR}/deploy/production-host.conf" \
+     "$(id -u)" "$(hostname)" "$(hostname -I 2>/dev/null || true)"; then
+  echo "FATAL: production host preflight failed — nothing was backed up, checked out or migrated — NOT GO" >&2
+  exit 2
+fi
+if ! dms_production_toolchain_versions \
+     "$(node --version 2>/dev/null || true)" \
+     "$(npm --version 2>/dev/null || true)" \
+     "$(php -r 'echo PHP_VERSION;' 2>/dev/null || true)" \
+     "$(COMPOSER_ALLOW_SUPERUSER=1 composer --version --no-ansi --no-interaction 2>/dev/null | sed -n '1p' || true)"; then
+  echo "FATAL: production toolchain versions do not match CI — nothing was backed up, checked out or migrated — NOT GO" >&2
+  exit 2
+fi
+# ────────────────────────────────────────────────────────────────────────────
+
 # ─── INFRA-SEC-RUNTIME-1 explicit runtime identity resolution ───────────────
 # Resolved BEFORE the checkout, on purpose. The rollback target may predate this
 # sprint and therefore may not contain deploy/runtime-identity.conf at all — but

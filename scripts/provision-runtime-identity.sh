@@ -172,7 +172,8 @@ if [ "$MODE" = "rollback" ]; then
   step "Reload services"
   run systemctl reload "$DMS_FPM_SERVICE"
   run systemctl reload nginx
-  run systemctl restart "$DMS_QUEUE_SERVICE"
+  # try-restart: a rollback must not start a worker the owner keeps stopped.
+  run systemctl try-restart "$DMS_QUEUE_SERVICE"
   ( cd "$APP_DIR" && run php artisan up ) || true
 
   echo
@@ -352,8 +353,12 @@ for unit in ${DMS_BACKGROUND_SERVICES:-}; do
 done
 
 run systemctl daemon-reload
-run systemctl restart "$DMS_QUEUE_SERVICE"
-note "queue worker restarted under ${RUNTIME_USER}"
+# try-restart, never restart: `restart` STARTS a stopped unit, and the queue
+# worker's running state is an owner decision (on Biznet it is intentionally off,
+# reopening condition C5). try-restart applies the new identity to a running
+# worker and leaves a stopped one stopped (DMS-POST-MIGRATION-DEV-INFRA-ALIGNMENT-1).
+run systemctl try-restart "$DMS_QUEUE_SERVICE"
+note "queue worker restarted under ${RUNTIME_USER} if it was running (a stopped worker stays stopped)"
 
 # ── 6. Rebuild the Laravel cache as the new runtime identity ────────────────
 step "Runtime cache rebuild"
