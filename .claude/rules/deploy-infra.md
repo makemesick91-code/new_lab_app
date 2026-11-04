@@ -100,10 +100,10 @@ code, then the canonical rule, and report the drift.
   `.cursor/rules/176-private-database-dump-creation.mdc`.
 - **AIR-DEP-15** `scripts/backup-vps.sh` runs `pg_dump` → `foundation:backup-verify` → prune by
   `BACKUP_DR_RETENTION_DAYS` while keeping `min_retained_backups` (`config/backup_dr.php`). It is scheduled by
-  `deploy/systemd/daengtisiams-db-backup.{service,timer}` (`OnCalendar=*-*-* 19:00:00` UTC = 03:00 WITA,
-  `Persistent=true`, `User=daengtisiams`), never through Laravel's scheduler: production has no `schedule:run`
-  invoker, so a scheduled task silently never fires. Source: `.cursor/rules/61-backup-disaster-recovery-automation.mdc`,
-  archive `FIX-SUNU-GO-LIVE-BLOCKERS-1`.
+  `deploy/systemd/daengtisiams-db-backup.{service,timer}` (`OnCalendar=*-*-* 18:30:00 UTC` = 02:30 WITA, as
+  verified on Biznet 2026-11-04; `Persistent=true`, `User=daengtisiams`), never through Laravel's scheduler:
+  production has no `schedule:run` invoker, so a scheduled task silently never fires. Source:
+  `.cursor/rules/61-backup-disaster-recovery-automation.mdc`, archive `FIX-SUNU-GO-LIVE-BLOCKERS-1`.
 - **AIR-DEP-16** Restores run as the `postgres` superuser with the dump streamed on stdin (dumps are not readable by
   that account), `ON_ERROR_STOP=1`, single transaction and checked `PIPESTATUS`; never grant the app role superuser.
   `scripts/restore_postgres.sh` refuses the production database without `--force-production` plus a typed
