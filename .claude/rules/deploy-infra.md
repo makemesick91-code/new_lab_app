@@ -198,6 +198,14 @@ code, then the canonical rule, and report the drift.
   chain restarts only PHP-FPM and reloads only nginx; it never starts the queue worker or a timer. Historical sprint
   records keep their Hostinger names and are not rewritten. Source:
   `.cursor/rules/220-production-host-identity-biznet.mdc`.
+- **AIR-DEP-32** `scripts/deploy-vps.sh` and `scripts/rollback-vps.sh` run `dms_production_host_preflight`
+  (`scripts/lib/production-host-preflight.sh`, from the snapshot) before the secret file, the backup and the checkout:
+  the host must match `deploy/production-host.conf` positively, never carry a frozen hostname or address, run as
+  root, and have the whole toolchain (Node and npm included — `npm ci` runs after the checkout). Observed values are
+  parameters (`id -u`, `hostname`, `hostname -I`); there is no environment override. Runner status is host-bound
+  through a sidecar `.host` file; an unbound or foreign status exits `4`, never OK. `provision-runtime-identity.sh`
+  uses `systemctl try-restart` for the queue worker so a stopped worker stays stopped. Source:
+  `.cursor/rules/220-production-host-identity-biznet.mdc` §4.
 
 ## Current posture (snapshot 2026-11-04, read-only inspection — verify before relying on it)
 

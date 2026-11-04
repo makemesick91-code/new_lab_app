@@ -41,7 +41,11 @@ ssh daengtisiams-biznet-prod 'cd /var/www/asia-dental-lab-v2 && sudo -n bash scr
 ```
 
 `status` prints `final exit=0` + `DEPLOY RUNNER OK` on success, or
-`DEPLOY RUNNER FAILED` otherwise. Do NOT treat a deploy as GO until you see
+`DEPLOY RUNNER FAILED` otherwise. A status is proof only on the host that wrote it:
+a status with no host binding (written before host binding existed, or copied in a
+migration — Biznet inherited Hostinger's) prints `DEPLOY RUNNER STATUS UNBOUND`, and
+one recorded on a different host prints `DEPLOY RUNNER STATUS FOREIGN`; both exit `4`
+and are never GO. Do NOT treat a deploy as GO until you see
 `exit=0`.
 
 ## If SSH disconnects mid-deploy

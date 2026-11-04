@@ -42,6 +42,13 @@ DEPLOY_LOG_FILE="${DEPLOY_LOG_FILE:-${RUN_DIR}/deploy-${STAMP}.log}"
 DEPLOY_STATUS_FILE="${DEPLOY_STATUS_FILE:-${RUN_DIR}/deploy-${STAMP}.status}"
 LATEST_LOG_LINK="${RUN_DIR}/latest.log"
 LATEST_STATUS_LINK="${RUN_DIR}/latest.status"
+# DMS-POST-MIGRATION-DEV-INFRA-ALIGNMENT-1: every status file is bound to the host
+# that wrote it through a sidecar `.host` file. The storage tree was copied from
+# Hostinger to Biznet in the migration, so Biznet inherited Hostinger's
+# `latest.status: exit=0` — and `status` reported DEPLOY RUNNER OK on a host
+# where no deploy had ever run. The `exit=N` status format itself is unchanged.
+DEPLOY_HOST_FILE="${DEPLOY_STATUS_FILE%.status}.host"
+LATEST_HOST_LINK="${RUN_DIR}/latest.host"
 
 cd "$APP_DIR"
 mkdir -p "$RUN_DIR"
@@ -51,8 +58,10 @@ action="${1:-run}"
 start_detached() {
   : > "$DEPLOY_LOG_FILE"
   rm -f "$DEPLOY_STATUS_FILE"
+  printf 'host=%s\n' "$(hostname)" > "$DEPLOY_HOST_FILE"
   ln -sf "$(basename "$DEPLOY_LOG_FILE")" "$LATEST_LOG_LINK"
   ln -sf "$(basename "$DEPLOY_STATUS_FILE")" "$LATEST_STATUS_LINK"
+  ln -sf "$(basename "$DEPLOY_HOST_FILE")" "$LATEST_HOST_LINK"
 
   # Detach fully: setsid + nohup so a dropped SSH pipe cannot signal the deploy.
   # The subshell records the REAL exit code of scripts/deploy-vps.sh so a broken
@@ -97,8 +106,25 @@ print_status() {
     echo "deploy-runner: status pending (deploy still running or never started)"
     return 3
   fi
-  local line
+  local line host_file resolved this_host recorded
   line="$(cat "$status")"
+
+  # A status proves a deploy only on the host that recorded it.
+  resolved="$(readlink -f -- "$status" 2>/dev/null || printf '%s' "$status")"
+  host_file="${resolved%.status}.host"
+  this_host="$(hostname)"
+  if [ ! -s "$host_file" ]; then
+    echo "deploy-runner: ${status} carries no host binding — it predates host binding or was copied from another host; it is NOT evidence of a deploy on ${this_host}"
+    echo "DEPLOY RUNNER STATUS UNBOUND — do NOT treat as GO"
+    return 4
+  fi
+  recorded="$(sed -n 's/^host=//p' "$host_file" | head -n 1)"
+  if [ "$recorded" != "$this_host" ]; then
+    echo "deploy-runner: ${status} was recorded on '${recorded:-<unknown>}', this host is '${this_host}'"
+    echo "DEPLOY RUNNER STATUS FOREIGN — do NOT treat as GO"
+    return 4
+  fi
+  echo "deploy-runner: recorded on ${recorded}"
   echo "deploy-runner: final ${line}"
   case "$line" in
     "exit=0") echo "DEPLOY RUNNER OK"; return 0 ;;

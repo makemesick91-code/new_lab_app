@@ -60,6 +60,20 @@ The deploy scripts do not assert root, production identity or the toolchain befo
 invocation would fail part-way, not refuse cleanly; as non-root, the lock root falls back to world-writable
 `/var/lock`. These are blockers D3 and D4, and they belong to the separate deploy-chain PR.
 
+## 3a. Deploy-chain change (PR B — stacked, owner authorisation required)
+
+| Area | Change |
+|---|---|
+| `scripts/lib/production-host-preflight.sh` (new) | `dms_production_host_preflight`: positive identity against the authority, refusal of the frozen host (hostname or address), root required, canonical toolchain required (`git composer node npm php pg_dump runuser nginx systemctl`). Every observed value is a parameter; there is no environment override |
+| `scripts/deploy-vps.sh`, `scripts/rollback-vps.sh` | call the preflight from the snapshot immediately after the snapshot assertion — before identity resolution, the secret file, the backup and the checkout; a refusal exits `2` |
+| `scripts/deploy-vps-runner.sh` | each run writes a sidecar `.host` file; `status` refuses an unbound or foreign status with exit `4`. The `exit=N` format is unchanged |
+| `scripts/provision-runtime-identity.sh` | `systemctl try-restart` for the queue worker (both the apply and the rollback path) |
+| `config/deployment_entrypoint.php` | preflight library and authority declared as execution-closure members |
+| Tests | `tests/Feature/Deploy/DeployHardenProductionHostPreflightTest.php`, declared mandatory |
+
+Behaviour change, stated plainly: the next deploy or rollback on Biznet **refuses** until Node and npm are
+installed (D1). On a host that is not `DaengtisiaMS` it refuses always. No application runtime changes.
+
 ## 4. Verification
 
 - `ProductionHostIdentityGuardTest` 25/25 + `DevflowAiInstructionSystemTest` + `DedicatedSelfHostedRunnerTest`:
@@ -73,6 +87,10 @@ invocation would fail part-way, not refuse cleanly; as non-root, the lock root f
 - Scanner agent `node --test`: 15/15.
 - The workstation check against the real configuration: `daengtisiams-biznet-prod` VERIFIED, both static and
   `--remote`. `daengtisiams-vps` NOT_VERIFIED on 10 counts.
+- PR B: `Deploy` + `Cicd` + ENT-11 + POST-ENT + AI-instruction suites — 617 passed / 0 failed / 0 skipped.
+  Mutation **13 killed / 0 survived**: root, frozen hostname, frozen address, any-hostname, tool check, the verdict
+  ignored, the call dropped (deploy and rollback), binding skipped, binding never written, the worker restarted,
+  `$HOSTNAME` trusted, the toolchain emptied.
 - Full Suite: **not run** (GLOBAL TEMPORARY FULL-SUITE POLICY ACTIVE — deferred, never reported as passed).
 
 ## 5. Residuals and owner actions

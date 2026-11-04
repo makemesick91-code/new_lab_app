@@ -1476,6 +1476,14 @@ return [
         // exercised offline. Selected by the `Cicd` token in BOTH critical
         // variants; declared so that selection is enforced, not incidental.
         'tests/Feature/Cicd/ProductionHostIdentityGuardTest.php',
+
+        // DMS-POST-MIGRATION-DEV-INFRA-ALIGNMENT-1 (deploy chain) — the deploy
+        // and rollback refuse, before their first mutation, any host that is not
+        // the declared production host (the frozen Hostinger host first), any
+        // non-root run and any missing tool (Node is absent on Biznet); runner
+        // status is host-bound; the provisioner never starts the queue worker.
+        // Selected by the `DeployHarden` token; declared so it stays enforced.
+        'tests/Feature/Deploy/DeployHardenProductionHostPreflightTest.php',
     ],
 
     /*

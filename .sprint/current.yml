@@ -8,9 +8,11 @@
 # AIR-DEP-31, ProductionHostIdentityGuardTest (25 cases, mandatory critical suite), a fail-closed deploy-vps.yml and a
 # comment-aware remote-access guard in SelfHostedRunnerScanner. Scanner-agent test fixtures repointed to the real
 # production origin.
-# NOT in this sprint (separate deploy-chain PR, owner authorization required): on-host root/identity/toolchain
-# preflight, host-bound runner status, provision try-restart. NO production deploy, migration, restart or config
-# change. Node/npm absent on Biznet is a recorded first-deploy blocker. Backup services untouched.
+# PR B (stacked on PR A, deploy-chain behaviour change, owner authorization required before merge): on-host
+# root/identity/toolchain preflight (scripts/lib/production-host-preflight.sh) in deploy + rollback before the first
+# mutation, host-bound runner status (sidecar .host, unbound/foreign exit 4), provision try-restart for the queue
+# worker. NO production deploy, migration, restart or config change. Node/npm absent on Biznet is a recorded
+# first-deploy blocker — with PR B the next deploy refuses cleanly on it. Backup services untouched.
 # Type SECURITY_FIX: host-key trust, CI-to-production path closure and production identity are security controls.
 # frontend_change=true only because tools/daengtisia-scanner-agent/test/*.js changed; no application asset changed.
 # Carried forward: LEGACY-RME-PROGRAM-CLOSURE-1 stays CLOSED and inherited.

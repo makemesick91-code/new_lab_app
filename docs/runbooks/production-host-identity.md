@@ -97,16 +97,17 @@ All of them must be closed, with explicit owner approval, before the first Bizne
 | # | Blocker | Effect if ignored | Closure |
 |---|---|---|---|
 | D1 | Node.js / npm are not installed on Biznet | the deploy fails at `npm ci` **after** the checkout and `composer install`, leaving new PHP code with stale built assets and unmigrated schema | owner-approved install of Node 22 (the CI version; `package.json` needs ≥ 20), or a reviewed change in how assets are built |
-| D2 | `storage/logs/deploy-runner/latest.status` on Biznet is Hostinger's `exit=0` from 2026-11-02 | `deploy-vps-runner.sh status` reports **DEPLOY RUNNER OK** for a deploy that never ran on this host | host-bound runner status (separate deploy-chain PR) |
-| D3 | The deploy has no explicit root / production-identity / toolchain preflight | a non-root or wrong-host invocation fails mid-run instead of refusing cleanly before the first mutation | on-host preflight (separate deploy-chain PR) |
-| D4 | `provision-runtime-identity.sh --apply` does `systemctl restart` on the queue worker | it would **start** the intentionally stopped worker (reopening condition C5) | `try-restart` (separate deploy-chain PR) |
+| D2 | `storage/logs/deploy-runner/latest.status` on Biznet is Hostinger's `exit=0` from 2026-11-02 | `deploy-vps-runner.sh status` reports **DEPLOY RUNNER OK** for a deploy that never ran on this host | **closed in the deploy-chain change** (`deploy-vps-runner.sh` binds every status to the host that wrote it; an unbound or foreign status returns `4`, never OK) — effective once merged and deployed |
+| D3 | The deploy has no explicit root / production-identity / toolchain preflight | a non-root or wrong-host invocation fails mid-run instead of refusing cleanly before the first mutation | **closed in the deploy-chain change** (`scripts/lib/production-host-preflight.sh`, run by deploy and rollback before the secret file, the backup and the checkout; refuses the frozen host, any other host, non-root, and a missing tool) — effective once merged and deployed |
+| D4 | `provision-runtime-identity.sh --apply` does `systemctl restart` on the queue worker | it would **start** the intentionally stopped worker (reopening condition C5) | **closed in the deploy-chain change** (`systemctl try-restart`: a running worker picks up the identity, a stopped one stays stopped) |
 | D5 | The installed `daengtisiams-db-backup` units differ from `deploy/systemd/` (Biznet runs at 18:30 UTC, the repo says 19:00 UTC) | a reinstall from the repo would silently move the backup schedule | owner decision; backup services are not changed by this sprint |
 | D6 | The deploy's evidence base URL is `http://127.0.0.1` | the loopback answers 404 (default server), as on Hostinger | known warning, not a blocker; verify over the canonical URL |
 
 The privileged form of the canonical command on Biznet is
 `ssh daengtisiams-biznet-prod 'cd /var/www/asia-dental-lab-v2 && sudo -n bash scripts/deploy-vps-runner.sh start'`.
-It is written here so nobody improvises a different one. Do not run it until D1–D4 are closed and the owner has
-approved the deploy.
+It is written here so nobody improvises a different one. Do not run it until D1 is closed, the deploy-chain change
+(D2–D4) is merged, and the owner has approved the deploy. Once the preflight is in place, a run with D1 still open
+refuses before any mutation with `required tool 'node' is not installed`; that is the intended outcome, not a fault.
 
 ## 7. What stays true from the Hostinger era
 

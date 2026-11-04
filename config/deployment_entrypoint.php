@@ -179,6 +179,11 @@ return [
             // verifier to merge the target release's private paths.
             'scripts/lib/private-paths.sh',
             'deploy/runtime-identity.conf',
+            // DMS-POST-MIGRATION-DEV-INFRA-ALIGNMENT-1: the on-host production
+            // preflight and the host authority it reads, both taken from the
+            // snapshot (never the mutable tree) before the first mutation.
+            'scripts/lib/production-host-preflight.sh',
+            'deploy/production-host.conf',
         ],
         // The live runtime identity authority is overlaid onto the snapshot
         // after the export: rolling the CODE back must never roll the RUNTIME

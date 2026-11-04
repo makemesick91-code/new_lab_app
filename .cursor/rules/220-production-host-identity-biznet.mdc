@@ -62,6 +62,14 @@ alwaysApply: false
 13. The deploy and rollback programs restart only `php8.3-fpm` and reload only `nginx`. They never enable, start or
    restart the queue worker, a backup timer or any other `daengtisiams-*` unit. Those are owner-controlled; the
    worker is intentionally off on Biznet.
+13a. Before their first mutation, the deploy and the rollback run `dms_production_host_preflight` from the snapshot:
+   positive host identity from `deploy/production-host.conf`, refusal of any frozen hostname or address, root, and
+   the full toolchain. A refusal means nothing was backed up, checked out or migrated. Never add an environment
+   variable that lets a run skip or shorten it.
+13b. A runner status is proof only on the host that recorded it (sidecar `.host` file). `UNBOUND` and `FOREIGN`
+   statuses exit `4` and are never GO.
+13c. The provisioner applies an identity change to the queue worker with `systemctl try-restart`, never
+   `restart`, `start` or `enable`.
 
 ## 5. Records
 
