@@ -11,7 +11,7 @@ const { createServer } = require('../src/server');
 function startTestServer(overrides = {}) {
   const config = getConfig({
     backend: 'mock',
-    allowedOrigins: ['http://145.79.13.224', 'http://localhost:8000'],
+    allowedOrigins: ['https://daengtisia.online', 'http://localhost:8000'],
     ...overrides,
   });
   const server = createServer(config);

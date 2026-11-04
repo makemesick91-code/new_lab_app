@@ -151,6 +151,10 @@ class SelfHostedRunnerScanner
             }
         }
 
+        foreach ($this->remoteAccessMarkersIn($workflow) as $marker) {
+            $issues[] = "the CI workflow must never open a remote session (found '{$marker}')";
+        }
+
         // Every job that migrates must guard the database first.
         foreach ($this->jobsMigratingWithoutGuard($workflow) as $job) {
             $issues[] = "job '{$job}' runs migrations without asserting a non-production database first";
@@ -207,7 +211,54 @@ class SelfHostedRunnerScanner
             $issues[] = 'the deploy workflow must never run on a self-hosted runner';
         }
 
+        // DMS-POST-MIGRATION-DEV-INFRA-ALIGNMENT-1: the deploy workflow is
+        // retired and fails closed. It must never again name a deploy or
+        // rollback program, nor open a remote session to any server.
+        $executable = $this->executableWorkflowLines($deploy);
+        foreach ((array) config('ci_runner.forbidden_ci_production_commands', []) as $command) {
+            if (is_string($command) && $command !== '' && str_contains($executable, $command)) {
+                $issues[] = "the retired deploy workflow must never invoke '{$command}'";
+            }
+        }
+
+        foreach ($this->remoteAccessMarkersIn($deploy) as $marker) {
+            $issues[] = "the retired deploy workflow must never open a remote session (found '{$marker}')";
+        }
+
         return ['ok' => $issues === [], 'issues' => $issues];
+    }
+
+    /**
+     * Remote-access markers present on executable (non-comment) workflow lines.
+     *
+     * @return list<string>
+     */
+    public function remoteAccessMarkersIn(string $workflow): array
+    {
+        $executable = $this->executableWorkflowLines($workflow);
+        $found = [];
+
+        foreach ((array) config('ci_runner.forbidden_workflow_remote_access_markers', []) as $marker) {
+            if (is_string($marker) && $marker !== '' && str_contains($executable, $marker)) {
+                $found[] = $marker;
+            }
+        }
+
+        return $found;
+    }
+
+    /**
+     * The workflow with full-line YAML comments removed. A workflow may explain
+     * what it must never do; only the lines GitHub executes are judged.
+     */
+    private function executableWorkflowLines(string $workflow): string
+    {
+        $lines = preg_split('/\R/', $workflow) ?: [];
+
+        return implode("\n", array_filter(
+            $lines,
+            static fn (string $line): bool => ! str_starts_with(ltrim($line), '#'),
+        ));
     }
 
     /**

@@ -1,7 +1,9 @@
 # Runbook — DaengtisiaMS Dedicated Runtime Identity & Co-Tenant Isolation
 
 **Sprint:** INFRA-SEC-RUNTIME-1
-**Applies to:** production VPS `srv1730088`, `/var/www/asia-dental-lab-v2`
+**Applies to:** production host `DaengtisiaMS` (Biznet Gio, `139.190.106.38`), `/var/www/asia-dental-lab-v2`.
+Written on the Hostinger host `srv1730088`, which is now WRITE-FROZEN; its co-tenant sections describe that
+host — Biznet runs no co-tenant application. Host identity and access: `docs/runbooks/production-host-identity.md`.
 **Authority:** `deploy/runtime-identity.conf` — the single source of truth for
 the DaengtisiaMS runtime identity.
 
@@ -176,8 +178,8 @@ Something wrote runtime artefacts as the wrong identity (classically: a root-run
 chown -R daengtisiams:daengtisiams storage bootstrap/cache
 find storage bootstrap/cache -type d -exec chmod 2775 {} +
 find storage bootstrap/cache -type f -exec chmod 0664 {} +
-runuser -u daengtisiams -- php artisan optimize:clear
-runuser -u daengtisiams -- php artisan config:cache
+sudo -n runuser -u daengtisiams -- php artisan optimize:clear
+sudo -n runuser -u daengtisiams -- php artisan config:cache
 systemctl reload php8.3-fpm
 ```
 

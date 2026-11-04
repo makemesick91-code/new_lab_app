@@ -18,7 +18,9 @@ objectives: RTO 60 minutes, RPO 1440 minutes, retention 14 days.
 
 ## Prerequisites
 
-- `ssh daengtisiams-vps` at `/var/www/asia-dental-lab-v2`.
+- `ssh daengtisiams-biznet-prod` (Biznet production, `dmsadmin`; privileged steps through `sudo -n`) at
+  `/var/www/asia-dental-lab-v2`. Prove the target first with `bash scripts/production-target-check.sh --remote`
+  (`docs/runbooks/production-host-identity.md`). The Hostinger host `srv1730088` is WRITE-FROZEN — never restore to or back up from it.
 - A distinct scratch database name for rehearsal (must differ from production).
 - Sufficient disk under `storage/app/backups/`.
 - **Root (or the local PostgreSQL superuser OS account) for any restore.** Backups

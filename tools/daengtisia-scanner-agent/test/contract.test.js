@@ -108,14 +108,14 @@ test('CORS preflight (OPTIONS) succeeds for an allowed origin', async () => {
       method: 'OPTIONS',
       path: '/scan',
       headers: {
-        Origin: 'http://145.79.13.224',
+        Origin: 'https://daengtisia.online',
         'Access-Control-Request-Method': 'POST',
       },
     });
     assert.strictEqual(res.status, 204);
     assert.strictEqual(
       res.headers['access-control-allow-origin'],
-      'http://145.79.13.224'
+      'https://daengtisia.online'
     );
     assert.match(res.headers['access-control-allow-methods'] || '', /POST/);
   } finally {
@@ -124,7 +124,7 @@ test('CORS preflight (OPTIONS) succeeds for an allowed origin', async () => {
 });
 
 test('CORS allows local dev origin even when not explicitly listed', async () => {
-  const s = await startTestServer({ allowedOrigins: ['http://145.79.13.224'] });
+  const s = await startTestServer({ allowedOrigins: ['https://daengtisia.online'] });
   try {
     const res = await request(s.port, {
       path: '/health',

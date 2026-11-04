@@ -1,32 +1,36 @@
-name: Deploy VPS Pilot
+name: Deploy VPS Pilot (retired — fails closed)
+
+# RETIRED by DMS-POST-MIGRATION-DEV-INFRA-ALIGNMENT-1 (2026-11-04).
+#
+# This workflow used to open an SSH session to the host named by a repository
+# secret, trust whatever host key answered (a keyscan, i.e. trust on first use)
+# and pipe the deploy program over the connection. Three things made that
+# unacceptable once production moved to Biznet Gio:
+#   - the secret named the domain, and DNS for the domain now points at the new
+#     production host, so a manual dispatch would have targeted live clinics;
+#   - trust on first use accepts a substituted host without any review;
+#   - CG-15 forbids deploying from a workstation or a CI runner at all.
+#
+# Production deploys run ON the production host through the detached runner, as
+# documented in docs/runbooks/production-host-identity.md. This file stays only
+# because the CICD-CTRL-3 governance layer inspects it (config/ci_runner.php
+# `files.deploy_workflow`); SelfHostedRunnerScanner::deployIsolationPosture
+# fails if it ever opens a remote session, reads a VPS secret or names a deploy
+# or rollback program again.
 
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   deploy:
-    name: Deploy to VPS Pilot
+    name: Production deploy is not available from CI
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup SSH
+      - name: Refuse — production deploys run on the production host only
         run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/daengtisiams_actions_deploy
-          chmod 600 ~/.ssh/daengtisiams_actions_deploy
-          ssh-keyscan -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts
-
-      - name: Test SSH connection
-        run: |
-          ssh -i ~/.ssh/daengtisiams_actions_deploy \
-            "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" \
-            "whoami && hostname && cd /var/www/asia-dental-lab-v2 && git status -sb"
-
-      - name: Deploy
-        run: |
-          ssh -i ~/.ssh/daengtisiams_actions_deploy \
-            "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" \
-            'bash -s' < scripts/deploy-vps.sh
+          echo "::error::Production deploys are not available from GitHub Actions."
+          echo "::error::Follow docs/runbooks/production-host-identity.md on the production host."
+          exit 1

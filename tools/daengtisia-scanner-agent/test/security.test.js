@@ -73,7 +73,7 @@ test('scan base64 contains no line breaks', async () => {
 });
 
 test('disallowed cross-origin gets no Access-Control-Allow-Origin header', async () => {
-  const s = await startTestServer({ allowedOrigins: ['http://145.79.13.224'] });
+  const s = await startTestServer({ allowedOrigins: ['https://daengtisia.online'] });
   try {
     const res = await request(s.port, {
       path: '/health',

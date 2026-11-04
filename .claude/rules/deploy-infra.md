@@ -122,7 +122,8 @@ code, then the canonical rule, and report the drift.
 - **AIR-DEP-18** The deploy installs neither the pool file nor the nginx include. Install the pool with the isolated
   `install -o root -g root -m 0644` step, `php-fpm8.3 -t`, reload; add the include to the DaengtisiaMS 443 server block
   only, `nginx -t`, reload. Verify with `nginx -T | grep client_max_body_size` and `php-fpm8.3 -tt`, never `php -i`
-  (the host CLI PHP belongs to the co-tenant). Source: archive `BUGFIX-MASS-UPLOAD-REQUEST-ENTITY-TOO-LARGE-1`,
+  (it reports the CLI SAPI and its own ini, not the FPM pool; on Hostinger the CLI PHP also belonged to the
+  co-tenant). Source: archive `BUGFIX-MASS-UPLOAD-REQUEST-ENTITY-TOO-LARGE-1`,
   `.cursor/rules/130-raw-sql-driver-parity-and-gate-selection.mdc` (R3).
 - **AIR-DEP-19** `set_time_limit()` replaces and restarts the limit, so it may only raise: read
   `ini_get('max_execution_time')` and return when it is `0` (unlimited — the CLI default) or already at least the
@@ -174,7 +175,8 @@ code, then the canonical rule, and report the drift.
   cache and `sync` queue are warnings on the single VPS, never errors; runtime writes stay inside
   `allowed_local_write_paths` (`config/runtime_portability.php`). Source: archive `STATELESS-1`.
 - **AIR-DEP-28** Verify production over the canonical URL (CG-14). The NSF-9 loopback `/login` probe returns 404 because
-  a co-tenant answers it — a known warning, not a regression. `systemctl reload nginx` is graceful, so re-verify after
+  nginx's unknown-host default server answers the loopback (on Hostinger a co-tenant did too) — a known warning, not a
+  regression. `systemctl reload nginx` is graceful, so re-verify after
   workers cycle; `grep -r` does not follow the symlinks in `sites-enabled`, so read `nginx -T` before filing a missing
   directive. Source: `121-clinical-…` (traps), `121-final-…` (R11).
 - **AIR-DEP-29** Every private local disk and every dump or evidence-manifest directory is listed in
@@ -186,11 +188,26 @@ code, then the canonical rule, and report the drift.
   application key into `bootstrap/cache/config.php`, so the directory is as secret as the environment file. It is the
   only private path outside `storage/`, admitted by exact name in `scripts/lib/private-paths.sh`; the isolation gate
   fails when another account can read it. Source: `.cursor/rules/211-config-cache-private.mdc`.
+- **AIR-DEP-31** Production is the Biznet host `DaengtisiaMS` (`139.190.106.38`); `deploy/production-host.conf` is
+  the single authority and `docs/runbooks/production-host-identity.md` explains it. Reach it only through
+  `daengtisiams-biznet-prod` as `dmsadmin` (root has no SSH login; privileged steps use `sudo -n`) after
+  `scripts/production-target-check.sh` reports `PRODUCTION_TARGET=VERIFIED`. The Hostinger host `srv1730088`
+  (`145.79.13.224`) and the alias `daengtisiams-vps` are frozen legacy: never a deploy, migrate, restart or write
+  target. Never relax `StrictHostKeyChecking`, never seed a host key with `ssh-keyscan`, and no workflow opens a
+  remote session (`forbidden_workflow_remote_access_markers`; the retired `deploy-vps.yml` fails closed). The deploy
+  chain restarts only PHP-FPM and reloads only nginx; it never starts the queue worker or a timer. Historical sprint
+  records keep their Hostinger names and are not rewritten. Source:
+  `.cursor/rules/220-production-host-identity-biznet.mdc`.
 
-## Current posture (snapshot 2026-10-25 — verify before relying on it)
+## Current posture (snapshot 2026-11-04, read-only inspection — verify before relying on it)
 
-- Production runs as `daengtisiams` on the PHP 8.3 pool; the co-tenant keeps its own newer-PHP pool as `www-data`.
-  Accepted residuals: any `www-data` process can reach the FastCGI socket (connect ≠ read), and root reads everything.
+- Production is Biznet `DaengtisiaMS` (Ubuntu 24.04, PostgreSQL 16.15 local). The app runs as `daengtisiams` on the
+  PHP 8.3 pool; PHP 8.3 is the only PHP installed and the default `www` pool is retired, so there is no co-tenant.
+  The queue worker unit is installed but disabled (reopening condition C5); the db-backup and BK-2 timers are
+  enabled; the installed db-backup units differ from `deploy/systemd/` (owner decision). No deploy has run on Biznet
+  yet and Node/npm are not installed there — see `docs/runbooks/production-host-identity.md` §6 before the first one.
+- Accepted residuals carried from Hostinger: any `www-data` process (nginx) can reach the FastCGI socket
+  (connect ≠ read), and root reads everything.
 - Live upload limits since 2026-10-03: nginx `512m`, pool `500M`/`512M`/`900`/`256M`. The DB backup timer is versioned
   in the repo; whether it is installed on the host is an operator step — check `systemctl` before assuming backups are
   scheduled.
@@ -215,6 +232,7 @@ code, then the canonical rule, and report the drift.
 | `.cursor/rules/59-cicd-enterprise-gate.mdc` | ENT-10 gate, cache-clear order |
 | `.cursor/rules/133-dedicated-queue-producer-consumer-contract.mdc` | Worker unit queue list |
 | `.cursor/rules/121-final-stabilization-residual-audit.mdc` | Public-disk scan, `/storage/` deny, rule pins |
+| `.cursor/rules/220-production-host-identity-biznet.mdc` | Biznet production identity, frozen Hostinger, host-key trust |
 
 ## History
 
