@@ -210,6 +210,12 @@ Session lease, branch lock, fleet readiness and global activation live in `.clau
   a grant never switches enforcement off: for a lost tablet grant break-glass to that doctor, never disarm the flags for
   the fleet. Revoking a grant ends its open session on the next request. Source: archive
   REVISION-DOCTOR-PWA-WEBAUTHN-ONLY-ACCESS-1 (Stages 2–3); `DoctorBreakGlassService`, `DoctorAppLoginGate`.
+- **AIR-DDA-42** Operational clinic devices (doctors' clinical tablets, Front Office, cashier and clinic-admin PCs,
+  operational Scanner Agent installs) are frozen for development and UAT testing: no feature testing, debugging,
+  experimental APK or test transaction on them. Test on dedicated devices that go through the normal enrolment and
+  approval paths, never by bypassing enforcement or widening the pilot cohort or `global_permitted`. Name a
+  production-registered test device as one and report estate/fleet readiness with and without it. Source:
+  `.cursor/rules/221-full-development-production-testing-policy.mdc`.
 
 ## Current posture (snapshot 2026-10-25 — verify before relying on it)
 

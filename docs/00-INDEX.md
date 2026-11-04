@@ -168,7 +168,9 @@ Nomor ADR berikutnya yang tersedia: **0017**.
 - CI/CD: [ci-runtime-control-runbook](runbooks/ci-runtime-control-runbook.md),
   [self-hosted-runner](runbooks/self-hosted-runner.md),
   [cicd-enterprise-gate-governance](architecture/cicd-enterprise-gate-governance.md),
-  [global-temporary-full-suite-policy](governance/global-temporary-full-suite-policy.md).
+  [global-temporary-full-suite-policy](governance/global-temporary-full-suite-policy.md),
+  [full-development-production-testing-policy](governance/full-development-production-testing-policy.md)
+  (pengembangan dan pengujian terkontrol di produksi diizinkan; pengujian di perangkat klinik operasional dibekukan).
 - Queue, cache, storage, observability:
   [queue-producer-consumer-contract](architecture/queue-producer-consumer-contract.md),
   [queue-worker-activation-runbook](runbooks/queue-worker-activation-runbook.md),

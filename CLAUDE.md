@@ -89,8 +89,11 @@ it covers. When you plan work in a domain before opening any of its files, read 
   (`Asia/Makassar`); `config/app.php` stays UTC for technical instants. Never derive a clinical date from
   `Carbon::today()` or `now()`. Report clinic-local times as WITA (UTC+8).
 - **CG-13 Never fabricate records.** No fake patient, visit, consent, invoice, payment or archive to produce evidence;
-  synthetic data belongs in tests. Lifecycle changes go through the canonical services and commands (dry run first,
-  then `--apply`), never through raw SQL or a REPL.
+  synthetic data belongs in tests, or in controlled production testing under rule 221: dedicated test identities,
+  clearly marked, never written into a real patient's record, no real financial transaction made only to test, and
+  never presented as operational proof (real-device readiness, migration waves, pilot acceptance, clinical load).
+  Lifecycle changes go through the canonical services and commands (dry run first, then `--apply`), never through raw
+  SQL or a REPL.
 
 ### Production and deployment
 
@@ -105,7 +108,11 @@ it covers. When you plan work in a domain before opening any of its files, read 
   `https://daengtisia.online`; the bare IP and localhost reach nginx's unknown-host default server, so never verify
   there. PHP-FPM runs as `daengtisiams` on PHP 8.3. Never run `php artisan tinker` or psysh on production: it writes
   ERROR lines that hold monitoring at WATCH for 24 hours. Production checks are read-only unless the task explicitly
-  authorises a mutation. Guide: `docs/runbooks/production-host-identity.md`.
+  authorises a mutation. Guide: `docs/runbooks/production-host-identity.md`. Development, deployment and controlled
+  testing on this host are allowed under the owner policy `docs/governance/full-development-production-testing-policy.md`
+  (rule 221); never point a test suite, seeder, factory or development migration at the production database. Testing
+  on operational clinic devices is frozen (use dedicated test devices), and clinic reopening stays a separate owner
+  decision.
 - **CG-15 Deploy.** Deploy only with `bash scripts/deploy-vps-runner.sh start`, executed **on the VPS** (as root
   through `sudo -n`) in the app directory, never on a workstation or a CI runner. The first deploy on a new host needs
   explicit owner approval and a closed readiness checklist (`docs/runbooks/production-host-identity.md` §6). Biznet's

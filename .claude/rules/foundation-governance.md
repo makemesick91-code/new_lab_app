@@ -211,6 +211,12 @@ code, then the canonical rule, and report the drift.
   PASS, handed over on the successor's own media and recorded in a signed berita acara; only then is the old media
   destroyed, witnessed. Any failure: stop, remove the failed copy by path, keep the old media. One slot at a time.
   Source: `.cursor/rules/210-…` rule 21.
+- **AIR-FND-39** Development, deployment and controlled testing are allowed on Biznet production (owner policy
+  2026-11-04). Production testing goes through the running application with dedicated test identities and marked
+  synthetic records; never run a test suite, seeder, factory or development migration against the production database.
+  Testing on operational clinic devices is frozen, and clinic reopening is a separate owner decision. Source:
+  `.cursor/rules/221-full-development-production-testing-policy.mdc`,
+  `docs/governance/full-development-production-testing-policy.md`.
 
 ## Current posture (snapshot 2026-10-25 — verify before relying on it)
 
@@ -253,6 +259,7 @@ code, then the canonical rule, and report the drift.
 | `.cursor/rules/adlms-architect.mdc` | Always-on architecture, branch and inventory basics |
 | `.cursor/rules/107-global-temporary-full-suite-policy.mdc` | Full Suite deferred for fix sprints |
 | `.cursor/rules/210-application-key-rotation-and-reencryption.mdc` | Application key rotation, re-encryption, previous-key retirement |
+| `.cursor/rules/221-full-development-production-testing-policy.mdc` | Production development and testing allowed; operational device testing frozen |
 
 ## History
 
