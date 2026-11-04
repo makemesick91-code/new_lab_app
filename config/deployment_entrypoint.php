@@ -193,10 +193,17 @@ return [
 
     // The operator interface must stay a single canonical command, and starting
     // it must never be mistaken for a finished deployment.
+    //
+    // DMS-DEV-INFRA-REMEDIATION-2 (B-R1): the completion criterion moved from
+    // "exit=0 and DEPLOY OK" to the run's own six-fact evidence — `verify
+    // <deploy-id>` reporting DEPLOY RUNNER OK. exit=0 and DEPLOY OK are still
+    // necessary but no longer sufficient (a copied status file has both), so
+    // the runner must name the stronger criterion, not the old one.
     'runner_expectations' => [
         'required_markers' => [
             'deploy-runner: started detached',
-            'deployment is NOT complete until exit=0 and DEPLOY OK',
+            'deployment is NOT complete; do NOT treat as GO until',
+            'reports DEPLOY RUNNER OK',
         ],
         'canonical_command' => 'bash scripts/deploy-vps-runner.sh start',
     ],

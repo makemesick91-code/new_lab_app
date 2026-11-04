@@ -1,5 +1,6 @@
 <?php
 
+use App\Support\Deploy\DeploymentEntrypointScanner;
 use Symfony\Component\Process\Process;
 
 uses()->group('Deploy', 'Security', 'ReleaseSafety');
@@ -709,4 +710,25 @@ it('checks toolchain versions in the deploy and the rollback right after the pre
 it('declares this suite mandatory for the critical gate', function () {
     expect(config('ci_runner.critical_gate_mandatory_suites'))
         ->toContain('tests/Feature/Deploy/DeployHardenRunnerEvidenceContractTest.php');
+});
+
+it('keeps the DEPLOY-HARDEN-1 operator interface green under the verify-based completion criterion', function () {
+    // The governed markers are substrings of the runner, checked by the
+    // DEPLOY-HARDEN-1 scanner in the critical gate's governance step. This pins
+    // the same posture inside the suite, so a reworded launch message fails
+    // here rather than only after the full critical run.
+    $posture = app(DeploymentEntrypointScanner::class)->runnerPosture();
+
+    expect($posture['ok'])->toBeTrue()
+        ->and($posture['launcher_start_is_not_completion'])->toBeTrue()
+        ->and($posture['issues'])->toBe([]);
+
+    $markers = (array) config('deployment_entrypoint.runner_expectations.required_markers');
+    $runner = (string) file_get_contents(base_path('scripts/deploy-vps-runner.sh'));
+
+    // The completion criterion the operator is told about is the six-fact
+    // verification, never exit=0 alone.
+    expect(implode("\n", $markers))->toContain('reports DEPLOY RUNNER OK')
+        ->not->toContain('until exit=0');
+    expect($runner)->not->toContain('NOT complete until exit=0');
 });
