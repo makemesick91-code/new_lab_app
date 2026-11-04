@@ -1,8 +1,9 @@
 # DMS-BIZNET-POST-GO-DOCUMENTATION-CLOSURE-1 (2026-11-04). Documentation, rules and governance tests only, after the
 # first Biznet production deploy (deploy 20261104-151042, commit 6f22beb7, GO tag
-# dms-biznet-first-production-deploy-infra-1-go). CLAUDE.md CG-15 no longer says Biznet was never deployed; it requires
-# a written owner authorization naming the commit, proof by `verify <deploy-id>`, a host-side check of the base-branch
-# tip (the runner pins the tip at launch) and code-only rollback. CG-16 gains ONE narrow, registered exception (a single
+# dms-biznet-first-production-deploy-infra-1-go). CLAUDE.md CG-15 no longer says Biznet was never deployed; later
+# deploys follow §6b under the owner's current release governance (no new per-deploy authorization rule is invented),
+# with proof by `verify <deploy-id>`, a host-side check of the base-branch tip (the runner pins the tip at launch) and
+# code-only rollback. CG-16 gains ONE narrow, registered exception (a single
 # deploy releasing more than one sprint, tag named by the owner in writing) with docs/governance/go-tag-exceptions.md
 # as the registry. The production-host-identity guide marks §6 closed and §6a executed (step-2 count corrected to
 # 510 − 2 = 508) and adds §6b for every later deploy. Rules: deploy-infra AIR-DEP-33/34, rule 220 §4 items 12/13d/13f.

@@ -218,8 +218,8 @@ code, then the canonical rule, and report the drift.
   with `verify <id>` → `DEPLOY RUNNER OK` (§6b), and `verify-transition` refuses it (`NOT-TRANSITION`).
   Source: `.cursor/rules/220-production-host-identity-biznet.mdc` §4.
 - **AIR-DEP-34** The runner deploys the **tip of the base branch at launch**; nothing passes it a commit. Before
-  `start`, confirm from the host (`git ls-remote origin refs/heads/<base>`) that the tip is the commit the owner
-  authorized, and push nothing to the base between the authorization and `start`. A docs or evidence commit pushed
+  `start`, confirm from the host (`git ls-remote origin refs/heads/<base>`) that the tip is the commit approved for
+  release, and push nothing to the base between that approval and `start`. A docs or evidence commit pushed
   after a GO commit is therefore the next deploy's target, not the deployed runtime. Source:
   `.cursor/rules/220-production-host-identity-biznet.mdc` §4.
 

@@ -113,7 +113,7 @@ known warning — the deploy's own loopback smoke reports `404`, and the canonic
 The privileged form of the canonical command on Biznet is
 `ssh daengtisiams-biznet-prod 'cd /var/www/asia-dental-lab-v2 && sudo -n bash scripts/deploy-vps-runner.sh start'`.
 It is written here so nobody improvises a different one. It is the only deploy command; run it only as part of §6b,
-under a written owner authorization that names the commit. A run whose preflight refuses (wrong host, non-root, a
+with the approval the owner's current release governance requires. A run whose preflight refuses (wrong host, non-root, a
 missing tool or a toolchain version that differs from CI) stops before any mutation; that is the intended outcome,
 not a fault.
 
@@ -204,7 +204,8 @@ quarantine directory to the runtime user, with modes unchanged; the manifest has
 ## 6b. Every Biznet deploy after the first (current procedure)
 
 **Preconditions (all, or stop).**
-- A written owner authorization that names the commit.
+- The approval the owner's current release governance requires, and the exact commit it approves. Step 2 compares
+  that commit with what the runner will deploy.
 - Required CI green on that exact commit. A skipped Full Suite is reported as deferred, never as passed (CG-17, CG-18).
 - Outside the backup window 18:25–18:40 UTC (02:25–02:40 WITA).
 - One operator, with no other deploy, rollback or quarantine running.

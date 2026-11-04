@@ -143,7 +143,7 @@ function aiCriticalGlobalRules(): array
         'CG-14' => ['139.190.106.38', 'daengtisiams-biznet-prod', 'deploy/production-host.conf', 'production-target-check.sh', 'WRITE-FROZEN', 'StrictHostKeyChecking', 'https://daengtisia.online', 'tinker', 'daengtisiams'],
         // DMS-BIZNET-POST-GO-DOCUMENTATION-CLOSURE-1: Biznet has been deployed, every run is
         // proven by identifier, the runner deploys the base tip at launch, and rollback is code-only.
-        'CG-15' => ['bash scripts/deploy-vps-runner.sh start', 'on the VPS', 'exit=0', 'DEPLOY OK', 'PermissionSeeder', 'written owner authorization', '20261104-151042', 'verify <deploy-id>', 'DEPLOY RUNNER OK', 'base-branch tip', 'rollback-vps.sh', 'never an automatic data restore'],
+        'CG-15' => ['bash scripts/deploy-vps-runner.sh start', 'on the VPS', 'exit=0', 'DEPLOY OK', 'PermissionSeeder', 'explicit owner approval', 'current release governance', '20261104-151042', 'verify <deploy-id>', 'DEPLOY RUNNER OK', 'base-branch tip', 'rollback-vps.sh', 'never an automatic data restore'],
         // The one GO-tag naming exception is explicit, narrow and registered.
         'CG-16' => ['go_tag', '-go', 'Never move, recreate or delete an existing tag', '--no-tags', 'fetch tags explicitly', 'more than one sprint', 'in writing', 'docs/governance/go-tag-exceptions.md', 'Nothing else is an exception'],
         'CG-17' => ['exact candidate SHA', 'Skipped is not passed', 'paths-ignore'],

@@ -53,9 +53,10 @@ two superseded tags, and the registry records that gap rather than modifying the
 
 ## 4. Documentation corrected
 
-- `CLAUDE.md` CG-15: removed "Biznet has not yet run one". It now records the first deploy and requires a written
-  owner authorization naming the commit. Every run must be proven with `verify <deploy-id>`. The base tip is pinned
-  at launch. Rollback is code-only.
+- `CLAUDE.md` CG-15: removed "Biznet has not yet run one". It now records the first deploy and sends later deploys
+  through §6b under the owner's current release governance. Every run must be proven with `verify <deploy-id>`. The
+  base tip is pinned at launch. Rollback is code-only. CG-15 deliberately adds **no** new per-deploy authorization
+  rule: who approves a later deploy is the owner's release governance to state, not this documentation's.
 - `CLAUDE.md` CG-16: the narrow exception and the registry pointer.
 - `docs/runbooks/production-host-identity.md`: §6 marked closed with blocker status. §6a marked executed and kept as
   history, with its step-2 count corrected (entries outside the `deploy-*`/`latest.*` contract are excluded: 510 − 2

@@ -107,11 +107,11 @@ it covers. When you plan work in a domain before opening any of its files, read 
   ERROR lines that hold monitoring at WATCH for 24 hours. Production checks are read-only unless the task explicitly
   authorises a mutation. Guide: `docs/runbooks/production-host-identity.md`.
 - **CG-15 Deploy.** Deploy only with `bash scripts/deploy-vps-runner.sh start`, executed **on the VPS** (as root
-  through `sudo -n`) in the app directory, never on a workstation or a CI runner. Every deploy needs a written owner
-  authorization naming the commit; the first deploy on a new host also needs a closed readiness checklist
-  (`docs/runbooks/production-host-identity.md` §6). Biznet's first deploy ran on 2026-11-04 (deploy `20261104-151042`,
-  commit `6f22beb7`); follow §6b for every later one. The runner pins the base-branch tip at launch, so confirm from the
-  host that the tip is the authorized commit and push nothing to the base before `start`. A deploy is complete only
+  through `sudo -n`) in the app directory, never on a workstation or a CI runner. The first deploy on a new host needs
+  explicit owner approval and a closed readiness checklist (`docs/runbooks/production-host-identity.md` §6). Biznet's
+  first deploy ran on 2026-11-04 (deploy `20261104-151042`, commit `6f22beb7`); later deploys follow §6b under the
+  owner's current release governance. The runner pins the base-branch tip at launch, so confirm from the host that the
+  tip is the commit approved for release and push nothing to the base before `start`. A deploy is complete only
   when its status file reports `exit=0` and its log reports `DEPLOY OK`, proven with `verify <deploy-id>` →
   `DEPLOY RUNNER OK` (never read `latest.status` raw); the SSH pipe may drop while the detached runner carries on. The
   runner takes the backup, pins the SHA and runs from an immutable snapshot, so never pre-pull or hand-edit the
