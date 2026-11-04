@@ -78,12 +78,18 @@ receives the temp token**.
 5. Click **Scan KTP** (calls `POST /scan`), preview appears, then upload.
 
 > **CORS note:** the agent must allow the DaengtisiaMS origin. Set
-> `SCANNER_AGENT_ALLOWED_ORIGINS` to your DaengtisiaMS URL(s). Local dev origins
-> (`localhost` / `127.0.0.1`, any port) are always allowed. The production origin
-> is `https://daengtisia.online` only. Production moved to a new server on
-> 2026-11-03, so remove any origin that names a bare server address left over from
-> the old host: a stale address may be reassigned to a stranger, whose pages
-> could then drive this agent.
+> `SCANNER_AGENT_ALLOWED_ORIGINS=https://daengtisia.online` — exactly that, no
+> `www`, no `http`, no trailing path. Nothing else is trusted: loopback origins
+> (`localhost` / `127.0.0.1` / `[::1]`) are **never** trusted implicitly, and are
+> trusted at all only on a developer workstation running with
+> `SCANNER_AGENT_MODE=development` **and** listing the exact local origin
+> (DMS-POSTMIGRATION-PR-INTEGRATION-1). Since DMS-DEV-INFRA-REMEDIATION-2
+> the agent itself **refuses** any configured origin that is not
+> `https://<DNS name>` — a plain-http origin or a bare server address (such as
+> the old host's, left over from before the 2026-11-03 move) is dropped at
+> startup with a `WARNING: refused configured origin` line, because an address
+> can be reassigned to a stranger whose pages could then drive this agent.
+> Clinic-PC rollout: `docs/runbooks/scanner-agent-trusted-origin-rollout.md`.
 
 > **Security note:** the agent is **localhost-only by default** (binds
 > `127.0.0.1`). Do not expose it to the public network or bind `0.0.0.0`.
@@ -162,7 +168,7 @@ SCANNER_AGENT_BACKEND=wia
 ### `GET /health`
 
 ```json
-{ "ok": true, "device": "Mock Daengtisia Scanner", "version": "0.1.0", "backend": "mock", "ready": true }
+{ "ok": true, "device": "Mock Daengtisia Scanner", "version": "0.2.0", "backend": "mock", "ready": true }
 ```
 
 ### `GET /devices` (optional helper)
@@ -206,7 +212,8 @@ agent intentionally does **no** image resizing (no heavy deps).
 | `SCANNER_AGENT_HOST` | `127.0.0.1` | Bind address (keep loopback). |
 | `SCANNER_AGENT_PORT` | `17661` | Listen port. |
 | `SCANNER_AGENT_BACKEND` | `mock` | `mock` \| `sane` \| `naps2` \| `wia`. |
-| `SCANNER_AGENT_ALLOWED_ORIGINS` | _(empty)_ | Comma-separated DaengtisiaMS origins. |
+| `SCANNER_AGENT_ALLOWED_ORIGINS` | _(empty)_ | Comma-separated DaengtisiaMS origins — an exact allowlist; only `https://<DNS name>` is trusted (production: `https://daengtisia.online`). Empty = every browser request is refused. |
+| `SCANNER_AGENT_MODE` | `production` | `production` \| `development`. Only `development` lets a **listed** loopback origin be trusted; any other value means production. Never `development` on a clinic PC. |
 | `SCANNER_AGENT_TIMEOUT_MS` | `30000` | Scanner command timeout. |
 | `SCANNER_AGENT_DPI` | `200` | Default resolution. |
 | `SCANNER_AGENT_QUALITY` | `82` | Default JPEG quality hint. |
@@ -226,8 +233,31 @@ See [`.env.example`](.env.example).
 
 - **Loopback only** by default (`127.0.0.1`). The agent warns loudly if bound to
   `0.0.0.0`.
-- **CORS:** only configured DaengtisiaMS origins + local dev origins are echoed;
-  **no wildcard** when an allow list is set.
+- **Explicit allowlist only.** Nothing is trusted implicitly — not even
+  loopback. A configured origin is trusted only when it is
+  `https://<fully qualified DNS name>`; plain-http, IP-address, wildcard (`*`)
+  and opaque (`null`) origins are refused at startup. A loopback origin is
+  trusted only in `SCANNER_AGENT_MODE=development` and only when listed.
+- **Exact matching.** The request `Origin` is compared byte-for-byte with the
+  allowlist (no case-folding, trailing slash or default port); only that exact
+  origin is echoed, **never a wildcard**.
+- **Untrusted origins are refused, not just hidden.** A request carrying an
+  `Origin` the agent does not trust gets `403 ORIGIN_NOT_ALLOWED` before any
+  route runs, so a foreign web page can neither read a scan nor trigger the
+  scanner (a `text/plain` POST needs no CORS preflight).
+- **DNS-rebinding defence.** The `Host` header must name the loopback interface
+  (`127.0.0.1`, `localhost`, `[::1]`) on the port the agent accepted the
+  connection on; anything else gets `403 HOST_NOT_ALLOWED`.
+- **No Origin, no scan.** A request without an `Origin` (curl, a native
+  client) may read `GET /health` — readiness and version only, no image — and
+  gets `403 ORIGIN_REQUIRED` everywhere else. A browser always sends `Origin`
+  on a cross-origin fetch and on every POST, so the DaengtisiaMS page is not
+  affected.
+- **What this does not protect.** `Origin` is a statement made by the browser.
+  It stops other web pages; it is **not** authentication against a program
+  already running on this PC, which can send any header. Such a program can
+  also reach the scanner hardware directly. Protecting against local software
+  would need a per-PC pairing secret, which this agent does not have.
 - Only `document_type: "ktp"` is accepted; unknown methods/paths return JSON
   404/405.
 - **No persistent patient data.** Temp scan files (NAPS2/WIA) are deleted after
@@ -248,7 +278,9 @@ npm test
 ```
 
 Covers the contract response shapes and security behaviour (loopback bind, body
-limit, CORS, no path leak, no base64 in logs). Uses Node's built-in
+limit, explicit allowlist, Origin required, DNS rebinding, zero scans on a
+refused request, no path leak, no base64 in logs). CI runs it in the required
+NSF-R012 quality gate through `npm run test:js`. Uses Node's built-in
 `node:test` — no test dependencies.
 
 ---

@@ -1,29 +1,22 @@
-# DMS-POST-MIGRATION-DEV-INFRA-ALIGNMENT-1 — align development instructions with the NEW production host.
-# Production moved from Hostinger (srv1730088, 145.79.13.224, now WRITE-FROZEN) to Biznet Gio (DaengtisiaMS,
-# 139.190.106.38) on 2026-11-03. CLAUDE.md CG-14, eight live runbooks and the deploy runner's header still named the
-# frozen host and the alias daengtisiams-vps (which resolves to Hostinger as root); the retired deploy-vps.yml would
-# have keyscanned and SSHed to whatever the domain resolves to — now live production.
-# Adds: deploy/production-host.conf (single public authority), scripts/production-target-check.sh (workstation
-# positive identity check; no network without --remote), docs/runbooks/production-host-identity.md, rule 220,
-# AIR-DEP-31, ProductionHostIdentityGuardTest (25 cases, mandatory critical suite), a fail-closed deploy-vps.yml and a
-# comment-aware remote-access guard in SelfHostedRunnerScanner. Scanner-agent test fixtures repointed to the real
-# production origin.
-# PR B (stacked on PR A, deploy-chain behaviour change, owner authorization required before merge): on-host
-# root/identity/toolchain preflight (scripts/lib/production-host-preflight.sh) in deploy + rollback before the first
-# mutation, host-bound runner status (sidecar .host, unbound/foreign exit 4), provision try-restart for the queue
-# worker. NO production deploy, migration, restart or config change. Node/npm absent on Biznet is a recorded
-# first-deploy blocker — with PR B the next deploy refuses cleanly on it. Backup services untouched.
-# Review remediation (DMS-DEV-INFRA-REMEDIATION-2): B-R1 six-fact runner evidence contract
-# (scripts/lib/deploy-runner-evidence.sh, verify <id>, runbook guard); B-R2 owner-selected Option A
-# (scripts/deploy-runner-quarantine-stale-status.sh, verify-transition, production-host-identity.md §6a; NOT executed);
-# toolchain version gate (Node 22 / npm >= 10 / PHP 8.3 / Composer 2) in deploy + rollback.
-# Type SECURITY_FIX: host-key trust, CI-to-production path closure and production identity are security controls.
-# frontend_change=true only because tools/daengtisia-scanner-agent/test/*.js changed; no application asset changed.
+# DMS-SCANNER-AGENT-TRUSTED-ORIGIN-HARDENING-1 (missions DMS-DEV-INFRA-REMEDIATION-2 Task B and
+# DMS-POSTMIGRATION-PR-INTEGRATION-1). The local scanner agent (tools/daengtisia-scanner-agent) trusted any configured
+# origin, including the frozen Hostinger address over plain http; ALWAYS trusted any loopback origin
+# (localhost / 127.0.0.1, any port) even when unconfigured; executed requests that carried no Origin at all; executed
+# requests from untrusted origins (CORS only hid the answer); and never checked Host (DNS rebinding).
+# Now: an explicit, exact allowlist only. Configured origins must be https://<DNS name>; loopback origins are trusted
+# only when SCANNER_AGENT_MODE=development AND explicitly listed; wildcards, the opaque origin "null", IP addresses
+# and plain-http non-loopback origins are refused at startup. An untrusted Origin -> 403 before any route; a request
+# without Origin -> 403 for everything except the read-only GET /health (no image, no scan); a non-loopback Host ->
+# 403. Agent version 0.2.0 (0.1.0 = the pre-hardening prototype). The example configuration now trusts only
+# https://daengtisia.online (owner-approved) and the production-host guard's residual set is empty.
+# Tests read the frozen address from deploy/production-host.conf. No clinic PC changed (rollout runbook only); no
+# server runtime, schema, permission or deploy change.
+# frontend_change=true only because tools/daengtisia-scanner-agent/*.js changed; no application asset changed.
 # Carried forward: LEGACY-RME-PROGRAM-CLOSURE-1 stays CLOSED and inherited.
-id: DMS-POST-MIGRATION-DEV-INFRA-ALIGNMENT-1
+id: DMS-SCANNER-AGENT-TRUSTED-ORIGIN-HARDENING-1
 type: SECURITY_FIX
-module: Deploy
-title: "Post-migration dev/infra alignment — Biznet is production, Hostinger is write-frozen"
+module: Patient
+title: "Scanner agent trusts only an explicit exact allowlist; implicit loopback, missing Origin and rebinding Host refused"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 runtime_change: false
 schema_change: false
@@ -34,5 +27,5 @@ ledger_impact: false
 deploy_required: false
 browser_required: false
 test_profiles: [focused, security_regression]
-go_tag: dms-post-migration-dev-infra-alignment-1-go
+go_tag: dms-scanner-agent-trusted-origin-hardening-1-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1

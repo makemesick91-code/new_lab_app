@@ -13,11 +13,21 @@ test('GET /health returns valid JSON with contract fields', async () => {
     assert.strictEqual(res.json.ok, true);
     assert.strictEqual(res.json.backend, 'mock');
     assert.strictEqual(res.json.ready, true);
-    assert.strictEqual(res.json.version, '0.1.0');
+    assert.strictEqual(res.json.version, require('../package.json').version);
     assert.ok(typeof res.json.device === 'string' && res.json.device.length > 0);
   } finally {
     await s.close();
   }
+});
+
+// The rollout reads /health's version on each clinic PC to tell a hardened agent
+// from the prototype. 0.1.0 is the pre-hardening build, which trusted the frozen
+// address over plain http; reporting it from hardened code would make an
+// unremediated PC look done.
+test('the hardened agent never reports the pre-hardening version', () => {
+  const { VERSION } = require('../src/config');
+  assert.notStrictEqual(VERSION, '0.1.0');
+  assert.strictEqual(VERSION, require('../package.json').version);
 });
 
 test('POST /scan (mock) returns ok, mime_type, filename and base64', async () => {
@@ -123,17 +133,20 @@ test('CORS preflight (OPTIONS) succeeds for an allowed origin', async () => {
   }
 });
 
-test('CORS allows local dev origin even when not explicitly listed', async () => {
+// DMS-POSTMIGRATION-PR-INTEGRATION-1: this test used to assert the opposite —
+// "CORS allows local dev origin even when not explicitly listed". Implicit
+// loopback trust is prohibited: any program on the PC can serve a page from
+// localhost, so being local is not a reason to hand it a KTP scan.
+test('a loopback origin that is not listed is refused, not implicitly trusted', async () => {
   const s = await startTestServer({ allowedOrigins: ['https://daengtisia.online'] });
   try {
     const res = await request(s.port, {
       path: '/health',
       headers: { Origin: 'http://127.0.0.1:5173' },
     });
-    assert.strictEqual(
-      res.headers['access-control-allow-origin'],
-      'http://127.0.0.1:5173'
-    );
+    assert.strictEqual(res.status, 403);
+    assert.strictEqual(res.json.error, 'ORIGIN_NOT_ALLOWED');
+    assert.strictEqual(res.headers['access-control-allow-origin'], undefined);
   } finally {
     await s.close();
   }

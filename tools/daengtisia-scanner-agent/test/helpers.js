@@ -4,14 +4,21 @@ const http = require('http');
 const { getConfig } = require('../src/config');
 const { createServer } = require('../src/server');
 
+// The one origin the production DaengtisiaMS page runs on. The test client
+// sends it by default because that is what the legitimate browser does; a test
+// that needs another origin, or none at all, says so explicitly.
+const PRODUCTION_ORIGIN = 'https://daengtisia.online';
+
 /**
- * Start a server with a test config (mock backend, known allowed origin) on an
- * ephemeral port bound to 127.0.0.1. Returns { server, port, close }.
+ * Start a server with a test config (mock backend, production mode, only the
+ * production origin trusted) on an ephemeral port bound to 127.0.0.1.
+ * Returns { server, port, close }.
  */
 function startTestServer(overrides = {}) {
   const config = getConfig({
     backend: 'mock',
-    allowedOrigins: ['https://daengtisia.online', 'http://localhost:8000'],
+    mode: 'production',
+    allowedOrigins: [PRODUCTION_ORIGIN],
     ...overrides,
   });
   const server = createServer(config);
@@ -31,10 +38,16 @@ function startTestServer(overrides = {}) {
 
 /**
  * Minimal HTTP request helper. Returns { status, headers, json, raw }.
+ *
+ * `origin` defaults to the production origin (the legitimate browser). Pass
+ * `origin: null` to send NO Origin header (a native client or curl). An Origin
+ * given in `headers` always wins.
  */
-function request(port, { method = 'GET', path = '/', headers = {}, body } = {}) {
+function request(port, { method = 'GET', path = '/', headers = {}, body, origin = PRODUCTION_ORIGIN } = {}) {
   return new Promise((resolve, reject) => {
     const data = body !== undefined ? Buffer.from(body) : null;
+    const hasOrigin = Object.keys(headers).some((h) => h.toLowerCase() === 'origin');
+    const originHeader = !hasOrigin && origin !== null ? { Origin: origin } : {};
     const req = http.request(
       {
         host: '127.0.0.1',
@@ -43,6 +56,7 @@ function request(port, { method = 'GET', path = '/', headers = {}, body } = {}) 
         path,
         headers: {
           ...(data ? { 'Content-Type': 'application/json', 'Content-Length': data.length } : {}),
+          ...originHeader,
           ...headers,
         },
       },
@@ -67,4 +81,4 @@ function request(port, { method = 'GET', path = '/', headers = {}, body } = {}) 
   });
 }
 
-module.exports = { startTestServer, request };
+module.exports = { startTestServer, request, PRODUCTION_ORIGIN };

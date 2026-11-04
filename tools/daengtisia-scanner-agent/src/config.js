@@ -9,8 +9,11 @@
 
 const fs = require('fs');
 const path = require('path');
+const { classifyOrigins, resolveMode } = require('./cors');
 
-const VERSION = '0.1.0';
+// 0.2.0 = trusted-origin hardening (DMS-SCANNER-AGENT-TRUSTED-ORIGIN-HARDENING-1). 0.1.0 is the
+// pre-hardening prototype: a PC still reporting 0.1.0 trusts the frozen address over http.
+const VERSION = '0.2.0';
 
 const SUPPORTED_BACKENDS = ['mock', 'sane', 'naps2', 'wia'];
 
@@ -50,11 +53,11 @@ function toInt(value, fallback) {
   return Number.isFinite(n) ? n : fallback;
 }
 
-function parseOrigins(raw) {
+function splitOrigins(raw) {
   if (!raw) return [];
   return raw
     .split(',')
-    .map((o) => o.trim().replace(/\/+$/, '')) // drop trailing slashes
+    .map((o) => o.trim())
     .filter(Boolean);
 }
 
@@ -74,14 +77,30 @@ function getConfig(overrides = {}) {
     backend = 'mock';
   }
 
+  // production (default) or development. An unknown value falls back to
+  // production: a typo must never widen which origins are trusted.
+  const mode = resolveMode(
+    overrides.mode !== undefined ? overrides.mode : env.SCANNER_AGENT_MODE
+  );
+
+  const origins = classifyOrigins(
+    overrides.allowedOrigins || splitOrigins(env.SCANNER_AGENT_ALLOWED_ORIGINS),
+    mode.mode
+  );
+
   const config = {
     version: VERSION,
     host: overrides.host || env.SCANNER_AGENT_HOST || '127.0.0.1',
     port: toInt(overrides.port || env.SCANNER_AGENT_PORT, 17661),
     backend,
-    allowedOrigins:
-      overrides.allowedOrigins ||
-      parseOrigins(env.SCANNER_AGENT_ALLOWED_ORIGINS),
+    mode: mode.mode,
+    modeWarning: mode.warning,
+    // Only the explicitly listed https:// DNS-name origins are trusted (plus
+    // explicitly listed loopback origins in development mode — never
+    // implicitly); everything else is refused here, whether it came from the
+    // environment or from an override, and reported at startup (src/cors.js).
+    allowedOrigins: origins.accepted,
+    rejectedOrigins: origins.rejected,
     timeoutMs: toInt(overrides.timeoutMs || env.SCANNER_AGENT_TIMEOUT_MS, 30000),
     mockImage: overrides.mockImage || env.SCANNER_AGENT_MOCK_IMAGE || null,
     device: overrides.device || env.SCANNER_AGENT_DEVICE || null,

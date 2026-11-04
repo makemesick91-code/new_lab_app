@@ -15,7 +15,7 @@
 
 const http = require('http');
 const { getConfig } = require('./config');
-const { corsHeaders } = require('./cors');
+const { corsHeaders, isOriginAllowed, isHostAllowed, originRequired, MODE_DEVELOPMENT } = require('./cors');
 const { sendJson, sendError } = require('./response');
 const scanService = require('./scan-service');
 
@@ -61,6 +61,22 @@ function logLine(message) {
 function createServer(config = getConfig()) {
   const server = http.createServer(async (req, res) => {
     const origin = req.headers.origin;
+
+    // DNS rebinding: the Host must name the loopback interface this request
+    // arrived on. Refused before any route runs, with no CORS headers.
+    if (!isHostAllowed(req.headers.host, req.socket.localPort, config)) {
+      logLine(`refused ${req.method} — Host not allowed`);
+      sendError(res, 403, 'HOST_NOT_ALLOWED', 'Host permintaan tidak diizinkan.', {});
+      return;
+    }
+    // A request that carries an Origin the agent does not trust never reaches
+    // a route: a foreign page may neither read a scan nor trigger the scanner.
+    if (origin !== undefined && !isOriginAllowed(origin, config)) {
+      logLine(`refused ${req.method} — Origin not allowed: ${String(origin).slice(0, 100)}`);
+      sendError(res, 403, 'ORIGIN_NOT_ALLOWED', 'Origin tidak diizinkan untuk scanner agent ini.', {});
+      return;
+    }
+
     const cors = corsHeaders(origin, config);
 
     let url;
@@ -72,6 +88,16 @@ function createServer(config = getConfig()) {
     }
     const pathname = url.pathname.replace(/\/+$/, '') || '/';
     const method = req.method;
+
+    // A request with no Origin did not come from a browser page (a browser
+    // always sends Origin on a cross-origin fetch and on every POST). It may
+    // read GET /health — readiness and version only — and nothing else, so it
+    // can never reach the scanner (DMS-POSTMIGRATION-PR-INTEGRATION-1).
+    if (origin === undefined && originRequired(method, pathname)) {
+      logLine(`refused ${method} ${pathname} — Origin required`);
+      sendError(res, 403, 'ORIGIN_REQUIRED', 'Permintaan tanpa Origin tidak diizinkan untuk endpoint ini.', {});
+      return;
+    }
 
     // CORS preflight for any route.
     if (method === 'OPTIONS') {
@@ -174,6 +200,17 @@ function start(config = getConfig()) {
     );
     if (config.host === '0.0.0.0') {
       logLine('WARNING: bound to 0.0.0.0 — this exposes the agent beyond localhost.');
+    }
+    logLine(`mode: ${config.mode}`);
+    if (config.modeWarning) {
+      logLine(`WARNING: ${config.modeWarning}`);
+    }
+    if (config.mode === MODE_DEVELOPMENT) {
+      logLine('WARNING: development mode — listed loopback origins are trusted. Never use this mode on a clinic PC.');
+    }
+    logLine(`trusted origins: ${config.allowedOrigins.join(', ') || '(none — every browser request is refused)'}`);
+    for (const refused of config.rejectedOrigins || []) {
+      logLine(`WARNING: refused configured origin ${refused.value} — ${refused.reason}`);
     }
   });
   return server;
