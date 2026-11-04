@@ -118,7 +118,9 @@ print_status() {
     echo "DEPLOY RUNNER STATUS UNBOUND — do NOT treat as GO"
     return 4
   fi
-  recorded="$(sed -n 's/^host=//p' "$host_file" | head -n 1)"
+  # First `host=` line only, without a pipe: under pipefail a `| head` can turn a
+  # SIGPIPE into a silent exit, and a status reporter must never die quietly.
+  recorded="$(sed -n '/^host=/{s/^host=//p;q;}' "$host_file")"
   if [ "$recorded" != "$this_host" ]; then
     echo "deploy-runner: ${status} was recorded on '${recorded:-<unknown>}', this host is '${this_host}'"
     echo "DEPLOY RUNNER STATUS FOREIGN — do NOT treat as GO"
