@@ -331,13 +331,11 @@ it('keeps the frozen legacy address out of code and configuration', function () 
         }
     }
 
-    // One recorded residual: the scanner-agent example configuration, which this
-    // sprint could not edit (environment-style files are outside its permission
-    // scope). It is an owner action in the sprint record. Exact set on purpose:
-    // a NEW reference to the frozen host fails here, and so does forgetting to
-    // shrink this list once the residual is fixed.
+    // The scanner-agent example configuration was the one recorded residual; it
+    // now names https://daengtisia.online (DMS-DEV-INFRA-REMEDIATION-2). Exact
+    // set on purpose: any NEW reference to the frozen host fails here.
     sort($hits);
-    expect($hits)->toBe(['tools/daengtisia-scanner-agent/.env.example']);
+    expect($hits)->toBe([]);
 });
 
 it('keeps every workflow free of remote sessions and production deploy programs', function () {
