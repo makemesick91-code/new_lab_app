@@ -2,7 +2,9 @@
 
 DaengtisiaMS (Daengtisia Management System) is a multi-branch dental clinic and dental lab platform: a Laravel
 modular monolith (`app/Modules/*`), PostgreSQL 16 in CI and production, Blade + Tailwind + Alpine. Production is a
-single VPS pilot that serves real patient data.
+single Biznet VPS. By owner declaration (2026-11-05) its database is a TESTING database with no operational clinical
+use yet: preserve it, never reset it without an approved procedure, and treat every record as sensitive personal data
+(rule 221).
 
 This file holds only what every session needs. Until 2026-10-26 it also carried 240 sprint records
 (1.56 MB, ~659K tokens loaded into every session). Those records now live, verbatim, in the archive below.

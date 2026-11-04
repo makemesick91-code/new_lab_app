@@ -1,12 +1,13 @@
 ---
-description: DMS-FULL-DEVELOPMENT-PRODUCTION-TESTING-20261104 (ACTIVE) — full development, deployment and controlled testing are allowed, including on Biznet production; testing on operational clinic devices is frozen (dedicated test devices only); clinic reopening stays a separate owner decision.
+description: DMS-FULL-DEVELOPMENT-PRODUCTION-TESTING-20261104 (ACTIVE) — full development, deployment and controlled testing are allowed, including on Biznet production, whose current database the owner classified as a TESTING database (2026-11-05; preserve it, no reset without an approved procedure); testing on operational clinic devices is frozen (dedicated test devices only); clinic reopening stays a separate owner decision.
 globs:
 alwaysApply: true
 ---
 
 # Full development & production testing policy (rule 221) — **ACTIVE**
 
-**Authority:** System Owner directive `DMS-FULL-DEVELOPMENT-PRODUCTION-TESTING-20261104` (2026-11-04).
+**Authority:** System Owner directive `DMS-FULL-DEVELOPMENT-PRODUCTION-TESTING-20261104` (2026-11-04), amended by
+`DMS-CURRENT-DATABASE-TESTING-CLASSIFICATION-1` (2026-11-05, rule 19).
 **Canonical record:** `docs/governance/full-development-production-testing-policy.md`.
 **Supersedes:** the conflicting testing restrictions of `DMS-OPERATIONAL-LOCK-RME-DEVELOPMENT-20261104` (named by
 the owner; no copy was ever recorded), the deploy and production-testing freeze rows of the private
@@ -26,8 +27,9 @@ development-resumption record, and the "synthetic data belongs in tests" clause 
    default).
 5. Use dedicated test identities and synthetic data. Never use a real patient's data without a separate lawful and
    authorised basis. Never modify an existing patient, clinical, financial or inventory record for a test.
-6. Mark every record a test creates as test data and record its ids. Never create a real financial transaction only
-   to test.
+6. Name every record a test creates so it reads as test data, and record its ids (the go-live transition plan
+   accounts for them). No `is_test` column, test-only branch or report-exclusion system is required (rule 19). Never
+   create a real financial transaction only to test.
 7. Cleanup goes through the canonical lifecycle (cancel/void, dry run then `--apply`). Never delete or rewrite
    protected history, truncate a business table, delete an inventory ledger row, or run `migrate:fresh` / `db:wipe`.
 8. Test records never reach an external production system. SATUSEHAT and WhatsApp stay disabled.
@@ -57,3 +59,14 @@ development-resumption record, and the "synthetic data belongs in tests" clause 
     maintenance mode is not used to enforce the device freeze.
 18. Unchanged and still binding: the Hostinger write freeze (rule 220), the GLOBAL TEMPORARY FULL-SUITE POLICY
     (rule 107, CG-18), CG-04 to CG-13, and the backup protections.
+19. **Current database = TESTING DATABASE** (owner declaration, 2026-11-05).
+    - Every current record belongs to the testing phase, and no operational clinical data exists. Current reports
+      are testing results, not operational performance.
+    - Do not build a test-data classification feature to separate current records. Reassess only when preparing the
+      go-live transition.
+    - The classification authorises no destruction. Preserve the database contents, the schema and migration
+      history, audit evidence, inventory movements and backups. Never run `migrate:fresh`, `db:wipe`, truncation or
+      unrestricted deletion on Biznet. A reset or replacement needs its own approved procedure.
+    - Testing data may still hold real personal information, so every privacy rule applies (CG-11).
+    - Historical records stay as written.
+    - Operational use needs a separate, owner-approved database transition plan (policy §0.8). No cutover now.
