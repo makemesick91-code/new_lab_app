@@ -141,8 +141,11 @@ function aiCriticalGlobalRules(): array
         // DMS-POST-MIGRATION-DEV-INFRA-ALIGNMENT-1: production is Biznet; the
         // Hostinger host must stay named as frozen, never as the target.
         'CG-14' => ['139.190.106.38', 'daengtisiams-biznet-prod', 'deploy/production-host.conf', 'production-target-check.sh', 'WRITE-FROZEN', 'StrictHostKeyChecking', 'https://daengtisia.online', 'tinker', 'daengtisiams'],
-        'CG-15' => ['bash scripts/deploy-vps-runner.sh start', 'on the VPS', 'exit=0', 'DEPLOY OK', 'PermissionSeeder'],
-        'CG-16' => ['go_tag', '-go', 'Never move, recreate or delete an existing tag', '--no-tags', 'fetch tags explicitly'],
+        // DMS-BIZNET-POST-GO-DOCUMENTATION-CLOSURE-1: Biznet has been deployed, every run is
+        // proven by identifier, the runner deploys the base tip at launch, and rollback is code-only.
+        'CG-15' => ['bash scripts/deploy-vps-runner.sh start', 'on the VPS', 'exit=0', 'DEPLOY OK', 'PermissionSeeder', 'written owner authorization', '20261104-151042', 'verify <deploy-id>', 'DEPLOY RUNNER OK', 'base-branch tip', 'rollback-vps.sh', 'never an automatic data restore'],
+        // The one GO-tag naming exception is explicit, narrow and registered.
+        'CG-16' => ['go_tag', '-go', 'Never move, recreate or delete an existing tag', '--no-tags', 'fetch tags explicitly', 'more than one sprint', 'in writing', 'docs/governance/go-tag-exceptions.md', 'Nothing else is an exception'],
         'CG-17' => ['exact candidate SHA', 'Skipped is not passed', 'paths-ignore'],
         'CG-18' => ['GLOBAL TEMPORARY FULL-SUITE POLICY', 'never as passed', '--all-required', '--regression'],
         'CG-19' => ['--filter', 'both', 'critical_gate_mandatory_suites'],
@@ -203,6 +206,52 @@ it('keeps the Foundation-First lock and every critical global rule with its cont
             expect(str_contains($body, $phrase))->toBeTrue("{$id} lost its required content: {$phrase}");
         }
     }
+});
+
+it('keeps the CG-16 GO-tag exception narrow, explicit and registered', function () {
+    // DMS-BIZNET-POST-GO-DOCUMENTATION-CLOSURE-1. CG-16 names a GO tag by the manifest
+    // go_tag; the only exception is a single deploy releasing more than one sprint, with
+    // the tag named by the owner in writing. Every such tag must be registered, and each
+    // sprint tag it supersedes is recorded so it can never be backfilled later.
+    $registry = (string) file_get_contents(base_path('docs/governance/go-tag-exceptions.md'));
+    $pattern = (string) config('devflow.manifest.go_tag_regex');
+    // Prose wraps across lines; the rule's wording is checked on whitespace-normalised text.
+    $prose = preg_replace('/\s+/', ' ', $registry);
+
+    expect($pattern)->not->toBe('')
+        ->and($prose)->toContain('more than one sprint')
+        ->and($prose)->toContain('in writing')
+        ->and($prose)->toContain('Nothing else is an exception')
+        ->and($prose)->toContain('A single-sprint deploy uses its manifest `go_tag`');
+
+    $sections = preg_split('/^### `/m', $registry);
+    array_shift($sections);
+    expect($sections)->not->toBeEmpty('the registry must list every owner-named release tag');
+
+    $superseded = [];
+    foreach ($sections as $section) {
+        $tag = strtok($section, '`');
+        expect(preg_match($pattern, $tag))->toBe(1, "registered tag {$tag} must match the go_tag pattern");
+
+        expect(preg_match('/\| Tag object \| `([0-9a-f]{40})`/', $section))->toBe(1, "{$tag}: tag object must be an exact SHA")
+            ->and(preg_match('/\| Target commit \| `([0-9a-f]{40})`/', $section))->toBe(1, "{$tag}: target must be an exact SHA")
+            ->and(preg_match('/\| Authorization \| [A-Z0-9-]+-\d+, .*written/', $section))->toBe(1, "{$tag}: needs a written owner authorization")
+            ->and($section)->toContain('| Superseded tags created | none |');
+
+        preg_match_all('/\| Superseded `go_tag` \| `([^`]+)` \|/', $section, $m);
+        expect(count($m[1]))->toBeGreaterThanOrEqual(2, "{$tag}: the exception requires more than one sprint");
+        foreach ($m[1] as $old) {
+            expect(preg_match($pattern, $old))->toBe(1, "{$tag}: superseded {$old} must be a go_tag")
+                ->and($old)->not->toBe($tag);
+            $superseded[] = $old;
+        }
+    }
+
+    // A superseded sprint tag is never re-declared by a later manifest.
+    $manifest = Yaml::parseFile(base_path('.sprint/current.yml'));
+    $declared = (string) ($manifest['go_tag'] ?? '');
+    expect($declared === '' || ! in_array($declared, $superseded, true))
+        ->toBeTrue("the manifest re-declares the superseded go_tag {$declared}");
 });
 
 it('names every domain rule file in CLAUDE.md and ships exactly those files', function () {

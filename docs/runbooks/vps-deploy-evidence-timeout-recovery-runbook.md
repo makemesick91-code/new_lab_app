@@ -85,10 +85,17 @@ ssh daengtisiams-biznet-prod 'cd /var/www/asia-dental-lab-v2 && sudo -n bash scr
 Never read `latest.status` raw (`cat`, `less`, a file manager) to decide GO: its
 `exit=0` may be another host's, another run's, or a pre-binding runner's.
 
-## The first Biznet deploy (one time only)
+## The first Biznet deploy (one time only — DONE 2026-11-04)
 
-The runner already in the Biznet checkout predates the binding record, so the
-first deploy it launches is `UNBOUND` by design. Follow
+**Completed.** The first Biznet deploy, `20261104-151042`, ran on 2026-11-04 and
+printed `TRANSITION DEPLOY VERIFIED`. The production tree now holds the binding
+runner, so `verify-transition` refuses every later run (`NOT-TRANSITION`). Use
+`verify <deploy-id>` as above and
+`docs/runbooks/production-host-identity.md` §6b. The steps below are kept as
+the record of what that one deploy did.
+
+The runner that was in the Biznet checkout predated the binding record, so the
+first deploy it launched was `UNBOUND` by design. It followed
 `docs/runbooks/production-host-identity.md` §6a exactly:
 
 1. Quarantine the copied pre-binding evidence with
@@ -104,7 +111,7 @@ Every later deploy is bound and must report `DEPLOY RUNNER OK` from `verify`.
 ## Verify final status
 
 - `sudo -n bash scripts/deploy-vps-runner.sh verify <deploy-id>` → `DEPLOY RUNNER OK`
-  (for the first Biznet deploy only: `verify-transition` → `TRANSITION DEPLOY VERIFIED`).
+  (the one-time `verify-transition` path was used for the first Biznet deploy, `20261104-151042`, and no longer applies).
 - `php artisan release:evidence-check --profile=vps` → GO.
 - Smoke over `https://daengtisia.online`: `/health/live`, `/health/ready`, `/health/lb` → 200; `/login` → 200.
 

@@ -57,8 +57,9 @@ alwaysApply: false
    program (`config/ci_runner.php` `forbidden_workflow_remote_access_markers`, judged on executable lines). The
    retired `deploy-vps.yml` fails closed. It stays only because the CICD-CTRL-3 layer inspects it.
 12. Deploys run on the production host through the detached runner (CG-15). On Biznet that means
-   `sudo -n bash scripts/deploy-vps-runner.sh start`. The first Biznet deploy needs explicit owner approval and the
-   readiness checklist in the guide's §6 closed.
+   `sudo -n bash scripts/deploy-vps-runner.sh start`. Every deploy needs a written owner authorization that names the
+   commit. The first Biznet deploy ran on 2026-11-04 (deploy `20261104-151042`, commit `6f22beb7`) after the guide's
+   §6 readiness checklist was closed; every later deploy follows the guide's §6b.
 13. The deploy and rollback programs restart only `php8.3-fpm` and reload only `nginx`. They never enable, start or
    restart the queue worker, a backup timer or any other `daengtisiams-*` unit. Those are owner-controlled; the
    worker is intentionally off on Biznet.
@@ -72,9 +73,13 @@ alwaysApply: false
    `DEPLOY OK` in the run's own log). Everything else exits `4` (`UNBOUND`, `FOREIGN`, `FROZEN`, `NOT-PRODUCTION`,
    `INCOMPATIBLE`, `INCOMPLETE`, `MISMATCHED`, `MALFORMED`, `UNVERIFIED`, `STALE`) and is never GO. Verify a run by
    its identifier (`deploy-vps-runner.sh verify <id>`); never read `latest.status` raw.
-13d. The first Biznet deploy follows owner-selected Option A (`docs/runbooks/production-host-identity.md` §6a):
+13d. The first Biznet deploy followed owner-selected Option A (`docs/runbooks/production-host-identity.md` §6a):
    quarantine the copied pre-binding evidence (move, never delete; manifest-verified), deploy, then prove that one
-   unbound run with `verify-transition <id> <MERGE_SHA>`. Never copy an old status back, never edit evidence.
+   unbound run with `verify-transition <id> <MERGE_SHA>`. It ran once, on 2026-11-04 (508 entries quarantined,
+   deploy `20261104-151042` → `TRANSITION DEPLOY VERIFIED`). It is never run again: every later run is bound and
+   proven with `verify <id>`. Never copy an old status back, never edit evidence, never reverse the quarantine by hand.
+13f. The runner pins the tip of the base branch at launch, not a commit passed to it. Before `start`, confirm from
+   the host that the tip is the owner-authorized commit, and push nothing to the base in between.
 13e. The deploy and the rollback refuse a toolchain whose versions differ from CI (Node 22, npm ≥ 10, PHP CLI 8.3,
    Composer 2) before any mutation; Ubuntu's archive Node 18 is refused.
 13c. The provisioner applies an identity change to the queue worker with `systemctl try-restart`, never
