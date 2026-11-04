@@ -1,16 +1,22 @@
-# DMS-SCANNER-AGENT-TRUSTED-ORIGIN-HARDENING-1 (mission DMS-DEV-INFRA-REMEDIATION-2, Task B).
-# The local scanner agent (tools/daengtisia-scanner-agent) trusted any configured origin, including the frozen
-# Hostinger address over plain http; executed requests from untrusted origins (CORS only hid the answer); and never
-# checked Host (DNS rebinding). Now: only https://<DNS name> origins are trusted (refused at startup otherwise),
-# untrusted Origin -> 403 before any route, non-loopback Host -> 403. Tests read the frozen address from
-# deploy/production-host.conf. No clinic PC changed (rollout runbook only); no server runtime, schema, permission or
-# deploy change. The example configuration file stays an owner action (environment-style files are out of scope).
+# DMS-SCANNER-AGENT-TRUSTED-ORIGIN-HARDENING-1 (missions DMS-DEV-INFRA-REMEDIATION-2 Task B and
+# DMS-POSTMIGRATION-PR-INTEGRATION-1). The local scanner agent (tools/daengtisia-scanner-agent) trusted any configured
+# origin, including the frozen Hostinger address over plain http; ALWAYS trusted any loopback origin
+# (localhost / 127.0.0.1, any port) even when unconfigured; executed requests that carried no Origin at all; executed
+# requests from untrusted origins (CORS only hid the answer); and never checked Host (DNS rebinding).
+# Now: an explicit, exact allowlist only. Configured origins must be https://<DNS name>; loopback origins are trusted
+# only when SCANNER_AGENT_MODE=development AND explicitly listed; wildcards, the opaque origin "null", IP addresses
+# and plain-http non-loopback origins are refused at startup. An untrusted Origin -> 403 before any route; a request
+# without Origin -> 403 for everything except the read-only GET /health (no image, no scan); a non-loopback Host ->
+# 403. Agent version 0.2.0 (0.1.0 = the pre-hardening prototype). The example configuration now trusts only
+# https://daengtisia.online (owner-approved) and the production-host guard's residual set is empty.
+# Tests read the frozen address from deploy/production-host.conf. No clinic PC changed (rollout runbook only); no
+# server runtime, schema, permission or deploy change.
 # frontend_change=true only because tools/daengtisia-scanner-agent/*.js changed; no application asset changed.
 # Carried forward: LEGACY-RME-PROGRAM-CLOSURE-1 stays CLOSED and inherited.
 id: DMS-SCANNER-AGENT-TRUSTED-ORIGIN-HARDENING-1
 type: SECURITY_FIX
 module: Patient
-title: "Scanner agent trusts only the production DNS name; untrusted origin and rebinding Host refused"
+title: "Scanner agent trusts only an explicit exact allowlist; implicit loopback, missing Origin and rebinding Host refused"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 runtime_change: false
 schema_change: false
