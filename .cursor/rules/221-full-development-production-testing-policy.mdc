@@ -1,0 +1,57 @@
+---
+description: DMS-FULL-DEVELOPMENT-PRODUCTION-TESTING-20261104 (ACTIVE) — full development, deployment and controlled testing are allowed, including on Biznet production; testing on operational clinic devices is frozen (dedicated test devices only); clinic reopening stays a separate owner decision.
+globs:
+alwaysApply: true
+---
+
+# Full development & production testing policy (rule 221) — **ACTIVE**
+
+**Authority:** System Owner directive `DMS-FULL-DEVELOPMENT-PRODUCTION-TESTING-20261104` (2026-11-04).
+**Canonical record:** `docs/governance/full-development-production-testing-policy.md`.
+**Supersedes:** the conflicting testing restrictions of `DMS-OPERATIONAL-LOCK-RME-DEVELOPMENT-20261104` (named by
+the owner; no copy was ever recorded), the deploy and production-testing freeze rows of the private
+development-resumption record, and the "synthetic data belongs in tests" clause of `CLAUDE.md` CG-13.
+**In force:** for the whole RME revision programme, until the owner changes it.
+
+## Rules
+
+1. Development is allowed locally, in CI, on isolated staging, and on Biznet production. Production changes arrive
+   only through branch → PR → required CI → merge → canonical deploy runner on the host. Never edit the live tree.
+2. Testing is allowed in all four environments. Production testing means controlled functional verification through
+   the running application: smoke, roles and permissions, RME, odontogram, consent, prescription, cashier integration,
+   browser compatibility, and Android integration on dedicated test devices.
+3. Never run a Pest/PHPUnit suite, seeder, factory or development migration on the production host or against the
+   production database. Never run `php artisan tinker` or psysh there.
+4. A production test task declares its scope first and authorises only the records it declares (CG-14 read-only
+   default).
+5. Use dedicated test identities and synthetic data. Never use a real patient's data without a separate lawful and
+   authorised basis. Never modify an existing patient, clinical, financial or inventory record for a test.
+6. Mark every record a test creates as test data and record its ids. Never create a real financial transaction only
+   to test.
+7. Cleanup goes through the canonical lifecycle (cancel/void, dry run then `--apply`). Never delete or rewrite
+   protected history, truncate a business table, delete an inventory ledger row, or run `migrate:fresh` / `db:wipe`.
+8. Test records never reach an external production system. SATUSEHAT and WhatsApp stay disabled.
+9. Synthetic production data proves behaviour, never operational reality. It never counts as real-device readiness,
+   a migration wave, pilot acceptance or clinical-load proof (CG-13).
+10. **Operational clinic devices are frozen for development and UAT testing**: doctors' clinical tablets, Front Office,
+    cashier and clinic-admin PCs, operational Scanner Agent installs. No feature or acceptance testing, no debugging,
+    no experimental APK, no test transactions from them, no repeat UAT there. Approved-release rollout, installation
+    inventory and integrity checks stay allowed and never start a clinical test transaction.
+11. Device testing uses dedicated test devices that represent the operational target. A test device with
+    trusted-device access goes through normal enrolment and approval; never bypass enforcement, and never widen the
+    doctor-device pilot cohort or `global_permitted` for testing.
+12. A production-registered test device is named as one and its id recorded. Report estate and fleet readiness with
+    and without it.
+13. A test that passed on a representative dedicated device is not repeated as UAT on operational devices. Write down
+    the untested compatibility of any operational hardware the tests did not represent.
+14. Production deploys are allowed under release governance (CG-15). Destructive database changes, irreversible
+    migrations, doctor-device enforcement changes and significant security changes need a specific risk review and
+    owner approval. This policy names no commit; any per-deploy authorization CG-15 requires still applies.
+15. Queue worker, scheduler and KTP cleanup timer stay OFF until each is enabled on its own after review, backup check
+    and monitoring. BK-2 and db-backup stay ON.
+16. RME revision outcomes are RME REVISION GO / PARTIAL GO / NO-GO under the policy's eight criteria. The programme
+    closes with `DMS_RME_FINAL_DEVELOPMENT_AND_PRODUCTION_VERIFICATION_REPORT.md`.
+17. **No GO, verification result or policy reopens the clinics.** Reopening is a separate owner decision. Laravel
+    maintenance mode is not used to enforce the device freeze.
+18. Unchanged and still binding: the Hostinger write freeze (rule 220), the GLOBAL TEMPORARY FULL-SUITE POLICY
+    (rule 107, CG-18), CG-04 to CG-13, and the backup protections.
