@@ -133,6 +133,9 @@ Nomor ADR berikutnya yang tersedia: **0017**.
   [vps-deploy-evidence-timeout-recovery-runbook](runbooks/vps-deploy-evidence-timeout-recovery-runbook.md),
   [release-evidence-smoke-runbook](runbooks/release-evidence-smoke-runbook.md),
   [enterprise-operations-runbook](runbooks/enterprise-operations-runbook.md).
+- Host produksi Biznet dan deploy pertama `6f22beb7` (2026-11-04, deploy `20261104-151042`):
+  [production-host-identity](runbooks/production-host-identity.md) (§6 ditutup, §6a riwayat, §6b prosedur deploy
+  berikutnya), [dms-biznet-post-go-documentation-closure-1](sprints/dms-biznet-post-go-documentation-closure-1.md).
 - Keamanan runtime: [dedicated-runtime-identity-runbook](runbooks/dedicated-runtime-identity-runbook.md),
   [production-secret-file-permissions-runbook](runbooks/production-secret-file-permissions-runbook.md),
   [security-pii-compliance-hardening-governance](architecture/security-pii-compliance-hardening-governance.md).
@@ -204,6 +207,8 @@ Nomor ADR berikutnya yang tersedia: **0017**.
 
 - [release-history](knowledge-base/release-history.md): diturunkan dari GO tag git (421 GO tag per 2026-10-25).
 - [sprint_history](sprint_history.md): hanya mencakup sampai **2026-06-28**.
+- [go-tag-exceptions](governance/go-tag-exceptions.md): registri pengecualian sempit CG-16 (tag rilis yang dinamai
+  owner untuk satu deploy yang merilis lebih dari satu sprint).
 
 ## Di luar vault (buka di editor, bukan di Obsidian)
 

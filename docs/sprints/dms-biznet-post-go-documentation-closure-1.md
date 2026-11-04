@@ -65,6 +65,7 @@ two superseded tags, and the registry records that gap rather than modifying the
 - `.claude/rules/deploy-infra.md` (AIR-DEP-33 tail, new AIR-DEP-34, current posture) and
   `.cursor/rules/220-production-host-identity-biznet.mdc` (§4 items 12 and 13d, new 13f).
 - New `docs/governance/go-tag-exceptions.md`.
+- `docs/00-INDEX.md`: links the Biznet host guide, this record and the GO-tag exception registry.
 
 Historical Hostinger records are not rewritten (rule 220 §14).
 
