@@ -1484,6 +1484,14 @@ return [
         // status is host-bound; the provisioner never starts the queue worker.
         // Selected by the `DeployHarden` token; declared so it stays enforced.
         'tests/Feature/Deploy/DeployHardenProductionHostPreflightTest.php',
+
+        // DMS-DEV-INFRA-REMEDIATION-2: a deploy is proven by six facts (host,
+        // time, identifier, target, runner, result), never by a bare exit=0;
+        // copied Hostinger evidence is refused; Option A quarantine moves and
+        // never deletes; the first deploy is provable only after it; the
+        // toolchain must match CI's versions. Selected by the `DeployHarden`
+        // token; declared so it stays enforced.
+        'tests/Feature/Deploy/DeployHardenRunnerEvidenceContractTest.php',
     ],
 
     /*

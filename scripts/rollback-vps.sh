@@ -108,6 +108,14 @@ if ! dms_production_host_preflight "${DEPLOY_TOOLS_DIR}/deploy/production-host.c
   echo "FATAL: production host preflight failed — nothing was backed up, checked out or migrated — NOT GO" >&2
   exit 2
 fi
+if ! dms_production_toolchain_versions \
+     "$(node --version 2>/dev/null || true)" \
+     "$(npm --version 2>/dev/null || true)" \
+     "$(php -r 'echo PHP_VERSION;' 2>/dev/null || true)" \
+     "$(COMPOSER_ALLOW_SUPERUSER=1 composer --version --no-ansi --no-interaction 2>/dev/null | sed -n '1p' || true)"; then
+  echo "FATAL: production toolchain versions do not match CI — nothing was backed up, checked out or migrated — NOT GO" >&2
+  exit 2
+fi
 # ────────────────────────────────────────────────────────────────────────────
 
 # ─── INFRA-SEC-RUNTIME-1 explicit runtime identity resolution ───────────────

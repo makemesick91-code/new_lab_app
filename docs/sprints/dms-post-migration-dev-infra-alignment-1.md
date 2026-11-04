@@ -74,6 +74,19 @@ invocation would fail part-way, not refuse cleanly; as non-root, the lock root f
 Behaviour change, stated plainly: the next deploy or rollback on Biznet **refuses** until Node and npm are
 installed (D1). On a host that is not `DaengtisiaMS` it refuses always. No application runtime changes.
 
+## 3b. Review remediation (DMS-DEV-INFRA-REMEDIATION-2, 2026-11-04)
+
+The PR B review returned CHANGES REQUIRED on two findings. Both are closed in PR B itself.
+
+| Finding | Change |
+|---|---|
+| **B-R1** the timeout runbook used a raw `cat latest.status` / "`exit=0`" as the GO criterion, which bypasses the host binding | `scripts/lib/deploy-runner-evidence.sh` (new): a run counts only when host identity, UTC start/finish, deployment identifier, target commit, runner version and result all agree. `deploy-vps-runner.sh` writes the binding record, adds `verify <deploy-id>` and fixes `follow` (it used to take the action name as the log path). The runbook now names `verify <deploy-id>` as the only GO evidence; a guard test refuses any live runbook that reads `latest.status` raw as a criterion |
+| **B-R2** the first Biznet deploy is launched by the pre-binding runner already on the host | Owner-selected **Option A**: `scripts/deploy-runner-quarantine-stale-status.sh` (new; dry run by default; identity + root + deploy-lock gates; moves into `quarantine/pre-binding-<stamp>/` with a verified SHA-256 manifest; never deletes) and `deploy-vps-runner.sh verify-transition <id> <MERGE_SHA>`. Exact procedure: `docs/runbooks/production-host-identity.md` §6a. **Not executed** |
+| Task D (readiness) | `dms_production_toolchain_versions` in the preflight library, called by deploy and rollback right after the preflight: Node 22, npm ≥ 10, PHP CLI 8.3, Composer 2 (CI's versions) |
+
+Test: `tests/Feature/Deploy/DeployHardenRunnerEvidenceContractTest.php` (declared mandatory); the three runner cases
+in `DeployHardenProductionHostPreflightTest` were moved to the new contract (a host line alone is no longer evidence).
+
 ## 4. Verification
 
 - `ProductionHostIdentityGuardTest` 25/25 + `DevflowAiInstructionSystemTest` + `DedicatedSelfHostedRunnerTest`:
@@ -102,7 +115,8 @@ installed (D1). On a host that is not `DaengtisiaMS` it refuses always. No appli
 2. Delete the now-unused GitHub secrets `VPS_HOST`, `VPS_USER` and `VPS_SSH_KEY` (repository settings).
 3. Rename or remove the workstation alias `daengtisiams-vps` (local SSH configuration). It still points at Hostinger
    as root, with `StrictHostKeyChecking ask`.
-4. First Biznet deploy: close D1–D4 (§3), then take a separate owner approval. D5 (backup unit drift) is an owner
+4. First Biznet deploy: close D1–D4 (§3), follow §6a of `production-host-identity.md` (Option A), then take a
+   separate owner approval. D5 (backup unit drift) is an owner
    decision; backup services are untouched here.
 5. GO tag `dms-post-migration-dev-infra-alignment-1-go` is not created. CG-16 requires merge, deploy and production
    verification, and no deploy is authorised.

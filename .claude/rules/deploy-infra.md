@@ -202,10 +202,19 @@ code, then the canonical rule, and report the drift.
   (`scripts/lib/production-host-preflight.sh`, from the snapshot) before the secret file, the backup and the checkout:
   the host must match `deploy/production-host.conf` positively, never carry a frozen hostname or address, run as
   root, and have the whole toolchain (Node and npm included — `npm ci` runs after the checkout). Observed values are
-  parameters (`id -u`, `hostname`, `hostname -I`); there is no environment override. Runner status is host-bound
-  through a sidecar `.host` file; an unbound or foreign status exits `4`, never OK. `provision-runtime-identity.sh`
-  uses `systemctl try-restart` for the queue worker so a stopped worker stays stopped. Source:
-  `.cursor/rules/220-production-host-identity-biznet.mdc` §4.
+  parameters (`id -u`, `hostname`, `hostname -I`); there is no environment override. The toolchain must also be
+  CI's versions (`dms_production_toolchain_versions`: Node 22, npm ≥ 10, PHP CLI 8.3, Composer 2), checked right
+  after the preflight and before any mutation. `provision-runtime-identity.sh` uses `systemctl try-restart` for the
+  queue worker so a stopped worker stays stopped. Source: `.cursor/rules/220-production-host-identity-biznet.mdc` §4.
+- **AIR-DEP-33** A bare `exit=N` is never proof of a deploy. `deploy-vps-runner.sh` writes a binding record
+  (`deploy-<id>.host`: host, `deploy_id`, UTC `started_at`/`finished_at`, `runner_contract=2`, runner SHA-256,
+  `result_exit`) and `verify <id>` / `status` (`scripts/lib/deploy-runner-evidence.sh`) accept a success only when
+  host identity, timestamps, identifier, target commit (one pin, the deploy's HEAD == target, checkout still there),
+  runner version and result (status == record, preflight GO + DEPLOY OK in the run's own log) all agree; anything
+  else exits `4` with a named verdict. Never read `latest.status` raw as a GO criterion. The first Biznet deploy
+  follows owner-selected Option A (`production-host-identity.md` §6a): quarantine the copied evidence with
+  `deploy-runner-quarantine-stale-status.sh` (move, never delete), deploy, then `verify-transition <id> <MERGE_SHA>`.
+  Source: `.cursor/rules/220-production-host-identity-biznet.mdc` §4.
 
 ## Current posture (snapshot 2026-11-04, read-only inspection — verify before relying on it)
 

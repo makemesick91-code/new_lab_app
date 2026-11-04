@@ -204,8 +204,11 @@ it('reports a status as proof only on the host that recorded it', function (?str
 })->with([
     'unbound (copied from Hostinger)' => [null, 'exit=0', 4, 'DEPLOY RUNNER STATUS UNBOUND'],
     'recorded on another host' => ['host=srv1730088', 'exit=0', 4, 'DEPLOY RUNNER STATUS FOREIGN'],
-    'recorded here, succeeded' => ['host={this}', 'exit=0', 0, 'DEPLOY RUNNER OK'],
-    'recorded here, failed' => ['host={this}', 'exit=1', 1, 'DEPLOY RUNNER FAILED'],
+    // DMS-DEV-INFRA-REMEDIATION-2: a host line alone is no longer evidence. It
+    // says where, not when, what or which runner; the full six-fact contract is
+    // exercised in DeployHardenRunnerEvidenceContractTest.
+    'recorded here, host line only, exit=0' => ['host={this}', 'exit=0', 4, 'do NOT treat as GO'],
+    'recorded here, host line only, exit=1' => ['host={this}', 'exit=1', 4, 'do NOT treat as GO'],
 ]);
 
 it('never reports OK for an unbound status even when it says exit=0', function () {
@@ -230,13 +233,19 @@ it('binds a fresh run to this host end to end', function () {
         usleep(100_000);
     }
 
+    // The record now carries the whole evidence contract, host first.
     $host = (string) file_get_contents("{$app}/storage/logs/deploy-runner/latest.host");
-    expect($host)->toBe('host='.trim((string) gethostname())."\n");
+    expect($host)->toStartWith('host='.trim((string) gethostname())."\n")
+        ->and($host)->toContain('runner_contract=2')
+        ->and($host)->toContain('result_exit=0');
 
+    // A run proves nothing against a checkout that declares no production host:
+    // this tree has no deploy/production-host.conf, and the payload printed no
+    // preflight or DEPLOY OK. The positive path is in the contract suite.
     $result = dhpRunner($app, 'status');
-    expect($result['exit'])->toBe(0, $result['output'])
-        ->and($result['output'])->toContain('recorded on '.trim((string) gethostname()))
-        ->and($result['output'])->toContain('DEPLOY RUNNER OK');
+    expect($result['exit'])->toBe(4, $result['output'])
+        ->and($result['output'])->toContain('DEPLOY RUNNER STATUS UNVERIFIED')
+        ->and($result['output'])->not->toContain('DEPLOY RUNNER OK');
 });
 
 it('never starts the queue worker from the provisioner', function () {

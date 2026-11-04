@@ -66,8 +66,17 @@ alwaysApply: false
    positive host identity from `deploy/production-host.conf`, refusal of any frozen hostname or address, root, and
    the full toolchain. A refusal means nothing was backed up, checked out or migrated. Never add an environment
    variable that lets a run skip or shorten it.
-13b. A runner status is proof only on the host that recorded it (sidecar `.host` file). `UNBOUND` and `FOREIGN`
-   statuses exit `4` and are never GO.
+13b. A runner status is proof only when SIX facts agree (`scripts/lib/deploy-runner-evidence.sh`): production host
+   identity, UTC start/finish, deployment identifier, target commit (one pin, the deploy's HEAD == target, checkout
+   still at it), runner version (`runner_contract=2` + runner SHA-256) and result (status == record, preflight GO and
+   `DEPLOY OK` in the run's own log). Everything else exits `4` (`UNBOUND`, `FOREIGN`, `FROZEN`, `NOT-PRODUCTION`,
+   `INCOMPATIBLE`, `INCOMPLETE`, `MISMATCHED`, `MALFORMED`, `UNVERIFIED`, `STALE`) and is never GO. Verify a run by
+   its identifier (`deploy-vps-runner.sh verify <id>`); never read `latest.status` raw.
+13d. The first Biznet deploy follows owner-selected Option A (`docs/runbooks/production-host-identity.md` §6a):
+   quarantine the copied pre-binding evidence (move, never delete; manifest-verified), deploy, then prove that one
+   unbound run with `verify-transition <id> <MERGE_SHA>`. Never copy an old status back, never edit evidence.
+13e. The deploy and the rollback refuse a toolchain whose versions differ from CI (Node 22, npm ≥ 10, PHP CLI 8.3,
+   Composer 2) before any mutation; Ubuntu's archive Node 18 is refused.
 13c. The provisioner applies an identity change to the queue worker with `systemctl try-restart`, never
    `restart`, `start` or `enable`.
 

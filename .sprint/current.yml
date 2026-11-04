@@ -13,6 +13,10 @@
 # mutation, host-bound runner status (sidecar .host, unbound/foreign exit 4), provision try-restart for the queue
 # worker. NO production deploy, migration, restart or config change. Node/npm absent on Biznet is a recorded
 # first-deploy blocker — with PR B the next deploy refuses cleanly on it. Backup services untouched.
+# Review remediation (DMS-DEV-INFRA-REMEDIATION-2): B-R1 six-fact runner evidence contract
+# (scripts/lib/deploy-runner-evidence.sh, verify <id>, runbook guard); B-R2 owner-selected Option A
+# (scripts/deploy-runner-quarantine-stale-status.sh, verify-transition, production-host-identity.md §6a; NOT executed);
+# toolchain version gate (Node 22 / npm >= 10 / PHP 8.3 / Composer 2) in deploy + rollback.
 # Type SECURITY_FIX: host-key trust, CI-to-production path closure and production identity are security controls.
 # frontend_change=true only because tools/daengtisia-scanner-agent/test/*.js changed; no application asset changed.
 # Carried forward: LEGACY-RME-PROGRAM-CLOSURE-1 stays CLOSED and inherited.
