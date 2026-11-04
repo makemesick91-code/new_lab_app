@@ -44,9 +44,11 @@ development-resumption record, and the "synthetic data belongs in tests" clause 
     and without it.
 13. A test that passed on a representative dedicated device is not repeated as UAT on operational devices. Write down
     the untested compatibility of any operational hardware the tests did not represent.
-14. Production deploys are allowed under release governance (CG-15). Destructive database changes, irreversible
-    migrations, doctor-device enforcement changes and significant security changes need a specific risk review and
-    owner approval. This policy names no commit; any per-deploy authorization CG-15 requires still applies.
+14. Production deploys are allowed. This policy's workflow is the release governance CG-15 refers to: the commit
+    approved for release is the reviewed, CI-green base tip, confirmed from the host before `start`. Ordinary deploys
+    need no separate per-deploy owner instruction. Destructive database changes, irreversible migrations,
+    doctor-device enforcement changes, significant security changes, and the first deploy on a new host need a
+    specific owner approval.
 15. Queue worker, scheduler and KTP cleanup timer stay OFF until each is enabled on its own after review, backup check
     and monitoring. BK-2 and db-backup stay ON.
 16. RME revision outcomes are RME REVISION GO / PARTIAL GO / NO-GO under the policy's eight criteria. The programme

@@ -125,8 +125,10 @@ Production deployment is **allowed**. It is no longer frozen, and it runs under 
 The following still need a **specific risk review and owner approval** before they deploy: destructive database
 changes, irreversible migrations, changes to doctor-device enforcement, and significant production security changes.
 
-This policy authorises deployment as an activity. It does not name a commit. Where CG-15 requires a per-deploy written
-authorization naming the commit, that requirement still applies.
+This workflow *is* the owner's current release governance that CG-15 points to. The commit approved for release is the
+base-branch tip that passed review and the required CI. Confirm it from the host before `start`, because the runner
+pins the tip at launch. Ordinary deploys need no separate per-deploy owner instruction. Two things still do: the
+high-risk changes listed above, and the first deploy on a new host (CG-15).
 
 **Background services.** The queue worker, the Laravel scheduler and the KTP cleanup timer are OFF. The db-backup and
 BK-2 backup timers are ON. Turning on any one service needs a dependency review, a security review, an operational
@@ -181,4 +183,4 @@ Laravel maintenance mode is not used to enforce the device freeze.
 | R4 | Cashier and RME verification leave permanent ledger and audit rows | Synthetic identities and canonical void/cancel; never delete | None; this is by design |
 | R5 | A deploy now happens more often against a live clinical database | Runner backup, canonical runner, high-risk changes need specific approval | Watch BK-2 health before each deploy |
 | R6 | The superseded `DMS-OPERATIONAL-LOCK-RME-DEVELOPMENT-20261104` text was never recorded, so its full content is unknown | Superseded by name; this document is the authority from now on | None |
-| R7 | Whether "allowed under release governance" also waives a per-deploy written commit authorization is not stated in the directive | CG-15's own wording governs | Owner to confirm if standing per-deploy authorization is intended |
+| R7 | Deploys become routine, so a merge to the base branch is in effect a release candidate | The §6 workflow (review, required CI, host-side tip check) and specific approval for high-risk changes | The owner may still require a per-deploy instruction at any time by saying so |
