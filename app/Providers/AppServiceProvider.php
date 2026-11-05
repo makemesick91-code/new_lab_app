@@ -24,6 +24,7 @@ use App\Support\Devflow\DevflowScanner;
 use App\Support\Devflow\GitChangeInspector;
 use App\Support\Devflow\SharedFoundationScanner;
 use App\Support\Foundation\GovernanceEvaluation;
+use App\Support\Routing\DatabaseRouteKey;
 use Illuminate\Auth\Events\Login;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Console\Events\CommandStarting;
@@ -127,6 +128,11 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // DMS-RME-REVISION-PROGRAM-1 / R-01 — global route patterns apply only
+        // to routes defined AFTER they are registered, so this runs before the
+        // route files load (see DatabaseRouteKey).
+        DatabaseRouteKey::register();
+
         $this->registerDoctorAppLoginRateLimiters();
         $this->registerKtpScanRateLimiter();
         $this->registerPatientDocumentRateLimiter();

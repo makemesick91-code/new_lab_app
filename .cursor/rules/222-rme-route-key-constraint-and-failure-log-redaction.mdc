@@ -1,0 +1,63 @@
+---
+description: DMS-RME-REVISION-PROGRAM-1 — (R-01) a route parameter bound to a bigint database key is constrained by App\Support\Routing\DatabaseRouteKey before it can reach a query, so a segment that is not a key answers 404, never an HTTP 500 with an ERROR line; no route may add a looser per-route constraint that overrides it. (R-02) a caught exception is logged through the canonical TelemetryRedactor, never as a raw getMessage(), because a QueryException message carries interpolated bindings and PostgreSQL DETAIL rows.
+globs: app/Support/Routing/**, app/Providers/AppServiceProvider.php, routes/web.php, app/Modules/RmeInvoice/Services/RmePaymentService.php, app/Modules/Observability/Support/TelemetryRedactor.php, tests/Feature/RME/ClinicVisitRouteKeyConstraintTest.php, tests/Feature/RME/RmePaymentLabCandidateFailureLogPrivacyTest.php
+alwaysApply: false
+---
+
+# RME route keys and failure-log redaction (rule 222)
+
+**Status:** GO scope of `DMS-RME-REVISION-PROGRAM-1` (2026-11-05). Sprint record:
+`docs/sprints/dms-rme-revision-program-1.md`. Owner approval: the two revisions below, recorded in that sprint doc
+(CG-22). Policy: rule 221 §7 (RME revision programme). Category under the Foundation-First Sprint Lock: hotfix /
+security / monitoring, all allowed before Foundation GO; the lock itself is unchanged.
+
+## 1. R-01 — a route key that is not a database key never reaches the database
+
+1. `{clinicVisit}` is constrained globally by `App\Support\Routing\DatabaseRouteKey::PATTERN`
+   (`[1-9][0-9]{0,17}`: 1–18 digits, no sign, no leading zero). Every key an identity column issues is in that
+   range, and 18 nines is below the bigint ceiling, so PostgreSQL can always cast what the router lets through.
+2. Why: implicit model binding runs `where "id" = '<segment>'`. On PostgreSQL a non-integer segment raises
+   SQLSTATE 22P02 and a number beyond bigint raises 22003, so the request answered HTTP 500 and wrote an ERROR line
+   instead of a 404. SQLite compares loosely and finds no row, so the defect is invisible on SQLite. It was live in
+   production, where every such line holds the monitoring log signal at WATCH.
+3. `DatabaseRouteKey::register()` runs first in `AppServiceProvider::boot()`. A global pattern applies only to
+   routes defined after it is registered; the compiled collection that `route:cache` writes carries it.
+4. **Never add a per-route constraint for a parameter `DatabaseRouteKey` governs.** A route-level `where` /
+   `whereNumber` OVERRIDES the global pattern. Four visit-bound legacy-archive routes carried
+   `->whereNumber('clinicVisit')` (`[0-9]+`), which still admits a number beyond bigint; they were removed. One
+   authority per parameter.
+5. Extending the constraint to another integer route parameter means adding its name to
+   `DatabaseRouteKey::CONSTRAINED_PARAMETERS`; nothing else.
+6. Follow-up, NOT done (owner approved R-01 for `{clinicVisit}` only): the same unconstrained-key weakness exists on
+   other integer-bound RME parameters (`rmeInvoice`, `medicalRecord`, `rmePrescription`, `consent`, `odontogram`,
+   and others), and on the five `oversight/rme/visits/{visit}` routes, whose `whereNumber('visit')` plus an
+   `int $visit` controller signature still fail on a number beyond the integer range. Extending it needs its own
+   owner approval.
+
+## 2. R-02 — a caught exception is logged through the canonical redactor
+
+1. Log a caught exception's text only through
+   `App\Modules\Observability\Support\TelemetryRedactor::exceptionMessage()`, plus the exception class. Never
+   `$e->getMessage()` raw into a log context.
+2. Why: a `QueryException` message ends with ` (Connection: …, SQL: …)` with every binding interpolated, and
+   PostgreSQL adds `DETAIL: Key (col)=(value)` / `Failing row contains (…)` lines carrying row values. A raw message
+   can therefore write clinical values into the application log (CG-11). The redactor keeps the driver's error text
+   (SQLSTATE included) and strips the rest.
+3. Applied to the post-payment lab-candidate failure warning in `RmePaymentService`. That failure is still logged
+   and still never rolls the payment back (Sprint 21 Phase 21.2, unchanged).
+4. Reuse the redactor; never write another message sanitiser. A second copy drifts: the older
+   `Str::before(…, ' (Connection:')` pattern strips the SQL tail but not the DETAIL row.
+5. Limit, stated not hidden: the redactor removes quoted literals, NIK/phone digit runs, Nomor RM and dates; it
+   cannot recognise an UNQUOTED free-text name in a non-database message. No current throw site under lab-candidate
+   generation produces one. A new throw site that interpolates patient text must quote it or not include it.
+
+## 3. Regression protection
+
+- `tests/Feature/RME/ClinicVisitRouteKeyConstraintTest.php`: every `{clinicVisit}` route and the compiled
+  (cacheable) collection carry the pattern; guests and signed-in users get 404 with no ERROR for a non-key segment;
+  the legacy-archive routes keep no looser override; real keys still work.
+- `tests/Feature/RME/RmePaymentLabCandidateFailureLogPrivacyTest.php`: no binding, DETAIL row, SQL tail or synthetic
+  clinical value in the warning; SQLSTATE and exception class kept; payment not rolled back.
+- Both are declared in `config/ci_runner.php` `critical_gate_mandatory_suites` and selected in BOTH critical
+  variants (`ClinicVisitRouteKey`, `RmePayment`). The behavioural 404/500 cases are load-bearing on PostgreSQL 16,
+  which the critical gate uses.

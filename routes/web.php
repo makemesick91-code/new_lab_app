@@ -1204,22 +1204,23 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
          | LEGACY-RME-SOD-1 stays armed and the uploader never certifies their
          | own document — the checker uses the existing archive screens.
          */
+        // DMS-RME-REVISION-PROGRAM-1 / R-01 — `{clinicVisit}` is constrained
+        // globally by App\Support\Routing\DatabaseRouteKey. These routes used
+        // to add `->whereNumber('clinicVisit')` (`[0-9]+`), which OVERRIDES the
+        // global pattern and still admits a number beyond bigint (a 500 on
+        // PostgreSQL); a second, looser authority is how that gap survived.
         Route::middleware('permission:verify_legacy_dates_at_ingestion')->group(function () {
             Route::get('visits/{clinicVisit}/legacy-archive/rme', [VisitBoundLegacyIngestionController::class, 'createRme'])
-                ->name('visits.legacy-archive.rme.create')
-                ->whereNumber('clinicVisit');
+                ->name('visits.legacy-archive.rme.create');
 
             Route::post('visits/{clinicVisit}/legacy-archive/rme', [VisitBoundLegacyIngestionController::class, 'storeRme'])
-                ->name('visits.legacy-archive.rme.store')
-                ->whereNumber('clinicVisit');
+                ->name('visits.legacy-archive.rme.store');
 
             Route::get('visits/{clinicVisit}/legacy-archive/odontogram', [VisitBoundLegacyIngestionController::class, 'createOdontogram'])
-                ->name('visits.legacy-archive.odontogram.create')
-                ->whereNumber('clinicVisit');
+                ->name('visits.legacy-archive.odontogram.create');
 
             Route::post('visits/{clinicVisit}/legacy-archive/odontogram', [VisitBoundLegacyIngestionController::class, 'storeOdontogram'])
-                ->name('visits.legacy-archive.odontogram.store')
-                ->whereNumber('clinicVisit');
+                ->name('visits.legacy-archive.odontogram.store');
         });
 
         // Hotfix Sprint 60.8 — doctor examination requires an assigned treatment

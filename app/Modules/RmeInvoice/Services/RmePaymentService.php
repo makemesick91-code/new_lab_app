@@ -7,6 +7,7 @@ use App\Modules\Branch\Services\BranchService;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\ClinicVisit\Services\ClinicVisitService;
 use App\Modules\LabOrder\Services\AuditLogService;
+use App\Modules\Observability\Support\TelemetryRedactor;
 use App\Modules\RmeInvoice\Interfaces\RmeBillingDisputeRepositoryInterface;
 use App\Modules\RmeInvoice\Interfaces\RmeInvoiceCorrectionRepositoryInterface;
 use App\Modules\RmeInvoice\Interfaces\RmeInvoiceRepositoryInterface;
@@ -63,6 +64,7 @@ class RmePaymentService
         private readonly RmeZeroValueEligibility $zeroValueEligibility,
         private readonly RmeZeroValueClosureFeatureGuard $zeroValueFlag,
         private readonly RmeClinicalBillingConsistencyService $clinicalConsistency,
+        private readonly TelemetryRedactor $redactor,
     ) {}
 
     /**
@@ -1762,9 +1764,17 @@ class RmePaymentService
                 app(RmeLabIntegrationService::class)->generateForPaidInvoice($invoice, $cashier);
             }
         } catch (Throwable $e) {
+            // DMS-RME-REVISION-PROGRAM-1 / R-02 — never the raw message. A
+            // QueryException ends with " (Connection: …, SQL: …)" with every
+            // binding interpolated, and PostgreSQL adds DETAIL / "Failing row
+            // contains" lines with row values, so a failed insert would write
+            // clinical values into the log (CG-11). The canonical redactor
+            // keeps the driver's error text (SQLSTATE included); the class name
+            // says which failure it was.
             Log::warning('Lab case candidate generation failed after RME payment', [
                 'rme_invoice_id' => $invoiceId,
-                'error' => $e->getMessage(),
+                'exception' => $e::class,
+                'error' => $this->redactor->exceptionMessage($e),
             ]);
         }
     }

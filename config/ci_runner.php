@@ -1408,6 +1408,21 @@ return [
         // in BOTH critical variants; declared so a rename cannot drop it.
         'tests/Feature/RME/RmeClinicCalendarBoundarySatusehatAdoptionTest.php',
 
+        // DMS-RME-REVISION-PROGRAM-1 / R-01 — a `{clinicVisit}` segment that is
+        // not a database key answered HTTP 500 with an ERROR line on
+        // PostgreSQL (live in production: three such lines). The constraint is
+        // global and four routes carried a looser override, so a regression is
+        // one route definition away and fails silently on SQLite. Selected by
+        // the `ClinicVisitRouteKey` token in BOTH critical variants.
+        'tests/Feature/RME/ClinicVisitRouteKeyConstraintTest.php',
+
+        // DMS-RME-REVISION-PROGRAM-1 / R-02 — the post-payment lab-candidate
+        // failure warning must never carry query bindings or PostgreSQL DETAIL
+        // rows (CG-11). Nothing else exercises that log line, and a reverted
+        // redaction produces no error, only a leak. Selected by the existing
+        // `RmePayment` token in BOTH critical variants.
+        'tests/Feature/RME/RmePaymentLabCandidateFailureLogPrivacyTest.php',
+
         // SECURITY-F4C-CLINIC-CALENDAR-LAB-ORDERS-1 (owner decision D16) — lab order dates, order and
         // delivery numbering, the due-date floor and "delivered today" on the clinic calendar
         // (Asia/Makassar). A UTC "today" named the previous clinic day for eight hours of every day;
