@@ -198,6 +198,7 @@ time, CG-13 never fabricate a patient, CG-20 PostgreSQL verification matter most
 | `.cursor/rules/92-telkomas-branch-code-canonical.mdc` | RM branch-code aliases and canonicalization |
 | `.cursor/rules/168-legacy-patient-staged-verification-cancel.mdc` | Legacy patient CSV staging and commit |
 | `.cursor/rules/169-legacy-patient-rollback-identity-reservation.mdc` | Rolled-back batches still reserve NIK and RM |
+| `.cursor/rules/222-rme-route-key-constraint-and-failure-log-redaction.mdc` | Patient master and patient document route keys constrained (404, never 500) |
 
 ## History
 
@@ -221,3 +222,10 @@ file.
   (pinned by `ScannerAgentRequiredCiCoverageTest`). Installed agents are changed only through
   `docs/runbooks/scanner-agent-trusted-origin-rollout.md`, one PC at a time, verified with `/health` — never by
   scanning a real KTP. Source: `docs/sprints/dms-scanner-agent-trusted-origin-hardening-1.md`.
+
+### Master data route keys
+
+- **AIR-PAT-33** The `settings.patients.*` `{patient}` routes and both `{document}` routes carry
+  `DatabaseRouteKey::PATTERN` per route (the resource via `Route::resource(...)->where([...])`), never `whereNumber`:
+  `[0-9]+` let overflow reach PostgreSQL (500) and a leading-zero alias stream or DELETE a real KTP document.
+  `patient` is generic: never global. Source: `.cursor/rules/222-rme-route-key-constraint-and-failure-log-redaction.mdc` §1.12–§1.13.

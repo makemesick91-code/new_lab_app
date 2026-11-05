@@ -247,15 +247,28 @@ Route::middleware('auth')->prefix('settings')->name('settings.')->group(function
         ->name('doctors.account-links.')
         ->group(function () {
             Route::get('/', [DoctorAccountLinkController::class, 'index'])->name('index');
-            Route::post('{doctor}', [DoctorAccountLinkController::class, 'store'])->name('store');
-            Route::delete('{doctor}', [DoctorAccountLinkController::class, 'destroy'])->name('destroy');
+            Route::post('{doctor}', [DoctorAccountLinkController::class, 'store'])->name('store')
+                ->where('doctor', DatabaseRouteKey::PATTERN);
+            Route::delete('{doctor}', [DoctorAccountLinkController::class, 'destroy'])->name('destroy')
+                ->where('doctor', DatabaseRouteKey::PATTERN);
         });
 
     // Doctors (TASK-0202)
+    //
+    // DMS-RME-REVISION-PROGRAM-4 / R-23 — `{doctor}` binds mst_doctors.id
+    // (bigint, implicit binding). Unconstrained, a non-key segment reached
+    // `where "id" = '<segment>'` and PostgreSQL answered 22P02/22003 (HTTP
+    // 500 plus an ERROR line) for ANY signed-in account, because binding runs
+    // before the permission middleware; a leading-zero alias opened, updated
+    // or deactivated a real doctor. `doctor` is a generic name, so it is
+    // constrained per route with DatabaseRouteKey::PATTERN (rule 222 §1.6).
     Route::middleware('permission:manage doctors')->group(function () {
-        Route::resource('doctors', DoctorController::class)->except(['show']);
-        Route::patch('doctors/{doctor}/activate', [DoctorController::class, 'activate'])->name('doctors.activate');
-        Route::patch('doctors/{doctor}/deactivate', [DoctorController::class, 'deactivate'])->name('doctors.deactivate');
+        Route::resource('doctors', DoctorController::class)->except(['show'])
+            ->where(['doctor' => DatabaseRouteKey::PATTERN]);
+        Route::patch('doctors/{doctor}/activate', [DoctorController::class, 'activate'])->name('doctors.activate')
+            ->where('doctor', DatabaseRouteKey::PATTERN);
+        Route::patch('doctors/{doctor}/deactivate', [DoctorController::class, 'deactivate'])->name('doctors.deactivate')
+            ->where('doctor', DatabaseRouteKey::PATTERN);
     });
 
     // Patients (TASK-0203)
@@ -274,9 +287,20 @@ Route::middleware('auth')->prefix('settings')->name('settings.')->group(function
             Route::delete('{batch}', [LegacyPatientImportController::class, 'destroy'])->name('destroy');
         });
 
-        Route::resource('patients', PatientController::class)->except(['show']);
-        Route::patch('patients/{patient}/activate', [PatientController::class, 'activate'])->name('patients.activate');
-        Route::patch('patients/{patient}/deactivate', [PatientController::class, 'deactivate'])->name('patients.deactivate');
+        // DMS-RME-REVISION-PROGRAM-4 / R-17 — `{patient}` binds mst_patients.id
+        // (bigint, implicit binding). Unconstrained, a non-key segment (a
+        // pasted Nomor RM, `abc`) reached `where "id" = '<segment>'`: PostgreSQL
+        // 22P02/22003, HTTP 500 plus an ERROR line, for any signed-in account
+        // (binding runs before `permission:manage patients`); a leading-zero
+        // alias opened, updated or deactivated a real patient. `patient` is a
+        // generic name (the oversight route resolves it as an `int`), so each
+        // route takes DatabaseRouteKey::PATTERN, never a global pattern.
+        Route::resource('patients', PatientController::class)->except(['show'])
+            ->where(['patient' => DatabaseRouteKey::PATTERN]);
+        Route::patch('patients/{patient}/activate', [PatientController::class, 'activate'])->name('patients.activate')
+            ->where('patient', DatabaseRouteKey::PATTERN);
+        Route::patch('patients/{patient}/deactivate', [PatientController::class, 'deactivate'])->name('patients.deactivate')
+            ->where('patient', DatabaseRouteKey::PATTERN);
 
         // Sprint 61.1 — Direct KTP Scanner Capture & Compression.
         // Temp upload (patient may not exist yet) + private document access.
@@ -292,16 +316,23 @@ Route::middleware('auth')->prefix('settings')->name('settings.')->group(function
         // admits the request; the per-document, per-branch decision is made in
         // the controller by PatientDocumentAccessService (404 when refused).
         // Throttled so a denied-request loop cannot flood the audit trail.
-        // Both keys are numeric-only: on PostgreSQL a non-numeric `{patient}`
+        // Both keys are database keys: on PostgreSQL a non-numeric `{patient}`
         // (e.g. a Nomor RM) would reach `where id = '…'` and fail the bigint
         // cast with a 500 that writes the RM into the error log; constrained,
         // it never matches and answers 404 like any other unknown document.
+        //
+        // DMS-RME-REVISION-PROGRAM-4 / R-17, R-18 — these carried
+        // `whereNumber` (`[0-9]+`), which still admitted a number beyond bigint
+        // (22003: HTTP 500 plus an ERROR line) and a leading-zero alias that
+        // streamed — and on DELETE removed — a real KTP image under a
+        // non-canonical URL. Both now take DatabaseRouteKey::PATTERN
+        // (mst_patients.id, mst_patient_documents.id, both bigint).
         Route::get('patients/{patient}/documents/{document}', [PatientDocumentController::class, 'show'])
-            ->whereNumber(['patient', 'document'])
+            ->where(['patient' => DatabaseRouteKey::PATTERN, 'document' => DatabaseRouteKey::PATTERN])
             ->middleware('throttle:patient-document')
             ->name('patients.documents.show');
         Route::delete('patients/{patient}/documents/{document}', [PatientDocumentController::class, 'destroy'])
-            ->whereNumber(['patient', 'document'])
+            ->where(['patient' => DatabaseRouteKey::PATTERN, 'document' => DatabaseRouteKey::PATTERN])
             ->middleware('throttle:patient-document')
             ->name('patients.documents.destroy');
     });
@@ -365,6 +396,13 @@ Route::middleware('auth')->prefix('settings')->name('settings.')->group(function
     // so the surface 404s) and the policy (which adds the per-row branch scope)
     // on every action. `create` is declared before the numeric `{import}`
     // routes so the static segment is never captured as an id.
+    //
+    // DMS-RME-REVISION-PROGRAM-4 / R-16 — `{import}` is an `int` argument
+    // looked up as stg_rme_legacy_imports.id (bigint). `whereNumber` admitted
+    // a number beyond PHP's integer (TypeError: HTTP 500 plus an ERROR line)
+    // and a leading-zero alias that opened, retried or cancelled a real
+    // import, so each route reuses DatabaseRouteKey::PATTERN (rule 222 §1.6:
+    // `import` is a generic name, constrained per route, never globally).
     Route::prefix('rme/legacy-imports')->name('rme.legacy-imports.')->group(function () {
         Route::get('/', [LegacyRmeImportController::class, 'index'])
             ->name('index')
@@ -379,15 +417,15 @@ Route::middleware('auth')->prefix('settings')->name('settings.')->group(function
             ->middleware('permission:create_legacy_rme_imports');
 
         Route::middleware('permission:view_legacy_rme_imports|create_legacy_rme_imports')->group(function () {
-            Route::get('{import}', [LegacyRmeImportController::class, 'show'])->name('show')->whereNumber('import');
-            Route::get('{import}/status', [LegacyRmeImportController::class, 'status'])->name('status')->whereNumber('import');
-            Route::get('{import}/source', [LegacyRmeImportController::class, 'source'])->name('source')->whereNumber('import');
-            Route::get('{import}/pages/{page}', [LegacyRmeImportController::class, 'page'])->name('pages.show')->whereNumber('import')->where('page', DatabaseRouteKey::PAGE_NUMBER_PATTERN);
+            Route::get('{import}', [LegacyRmeImportController::class, 'show'])->name('show')->where('import', DatabaseRouteKey::PATTERN);
+            Route::get('{import}/status', [LegacyRmeImportController::class, 'status'])->name('status')->where('import', DatabaseRouteKey::PATTERN);
+            Route::get('{import}/source', [LegacyRmeImportController::class, 'source'])->name('source')->where('import', DatabaseRouteKey::PATTERN);
+            Route::get('{import}/pages/{page}', [LegacyRmeImportController::class, 'page'])->name('pages.show')->where('import', DatabaseRouteKey::PATTERN)->where('page', DatabaseRouteKey::PAGE_NUMBER_PATTERN);
         });
 
         Route::middleware('permission:create_legacy_rme_imports')->group(function () {
-            Route::post('{import}/retry', [LegacyRmeImportController::class, 'retry'])->name('retry')->whereNumber('import');
-            Route::post('{import}/cancel', [LegacyRmeImportController::class, 'cancel'])->name('cancel')->whereNumber('import');
+            Route::post('{import}/retry', [LegacyRmeImportController::class, 'retry'])->name('retry')->where('import', DatabaseRouteKey::PATTERN);
+            Route::post('{import}/cancel', [LegacyRmeImportController::class, 'cancel'])->name('cancel')->where('import', DatabaseRouteKey::PATTERN);
         });
 
         // LEGACY-RME-PDF-1C — review-before-publish. Each stage carries its own
@@ -396,12 +434,12 @@ Route::middleware('auth')->prefix('settings')->name('settings.')->group(function
         // gate (PUBLISHED is only reachable from REVIEWED).
         Route::post('{import}/review', [LegacyRmeImportController::class, 'review'])
             ->name('review')
-            ->whereNumber('import')
+            ->where('import', DatabaseRouteKey::PATTERN)
             ->middleware('permission:review_legacy_rme_imports');
 
         Route::post('{import}/publish', [LegacyRmeImportController::class, 'publish'])
             ->name('publish')
-            ->whereNumber('import')
+            ->where('import', DatabaseRouteKey::PATTERN)
             ->middleware('permission:publish_legacy_rme_imports');
     });
 
@@ -418,6 +456,8 @@ Route::middleware('auth')->prefix('settings')->name('settings.')->group(function
     // so the whole surface 404s) and the policy (which adds the per-row branch
     // scope) on every action. `create` is declared before the numeric
     // `{import}` routes so the static segment is never captured as an id.
+    // `{import}` (stg_odontogram_legacy_imports.id, bigint) takes
+    // DatabaseRouteKey::PATTERN for the same reason as the group above (R-16).
     Route::prefix('rme/legacy-odontograms')->name('rme.legacy-odontograms.')->group(function () {
         Route::get('/', [LegacyOdontogramImportController::class, 'index'])
             ->name('index')
@@ -432,13 +472,13 @@ Route::middleware('auth')->prefix('settings')->name('settings.')->group(function
             ->middleware('permission:create_legacy_odontogram_imports');
 
         Route::middleware('permission:view_legacy_odontogram_imports|create_legacy_odontogram_imports')->group(function () {
-            Route::get('{import}', [LegacyOdontogramImportController::class, 'show'])->name('show')->whereNumber('import');
-            Route::get('{import}/pages/{page}', [LegacyOdontogramImportController::class, 'page'])->name('pages.show')->whereNumber('import')->where('page', DatabaseRouteKey::PAGE_NUMBER_PATTERN);
+            Route::get('{import}', [LegacyOdontogramImportController::class, 'show'])->name('show')->where('import', DatabaseRouteKey::PATTERN);
+            Route::get('{import}/pages/{page}', [LegacyOdontogramImportController::class, 'page'])->name('pages.show')->where('import', DatabaseRouteKey::PATTERN)->where('page', DatabaseRouteKey::PAGE_NUMBER_PATTERN);
         });
 
         Route::middleware('permission:create_legacy_odontogram_imports')->group(function () {
-            Route::post('{import}/retry', [LegacyOdontogramImportController::class, 'retry'])->name('retry')->whereNumber('import');
-            Route::post('{import}/cancel', [LegacyOdontogramImportController::class, 'cancel'])->name('cancel')->whereNumber('import');
+            Route::post('{import}/retry', [LegacyOdontogramImportController::class, 'retry'])->name('retry')->where('import', DatabaseRouteKey::PATTERN);
+            Route::post('{import}/cancel', [LegacyOdontogramImportController::class, 'cancel'])->name('cancel')->where('import', DatabaseRouteKey::PATTERN);
         });
 
         // Review and publish carry their own named permissions so the two
@@ -446,12 +486,12 @@ Route::middleware('auth')->prefix('settings')->name('settings.')->group(function
         // and the transition gate (PUBLISHED is only reachable from REVIEWED).
         Route::post('{import}/review', [LegacyOdontogramImportController::class, 'review'])
             ->name('review')
-            ->whereNumber('import')
+            ->where('import', DatabaseRouteKey::PATTERN)
             ->middleware('permission:review_legacy_odontogram_imports');
 
         Route::post('{import}/publish', [LegacyOdontogramImportController::class, 'publish'])
             ->name('publish')
-            ->whereNumber('import')
+            ->where('import', DatabaseRouteKey::PATTERN)
             ->middleware('permission:publish_legacy_odontogram_imports');
     });
 
@@ -1053,8 +1093,11 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
      | `inventory.purchase-requests.workflow`: the literal-segment routes
      | (`doctor-branch-locks/new`, `doctor-branch-locks/requests/…`) are
      | declared BEFORE `doctor-branch-locks/{doctor}/release-session`, and that
-     | `{doctor}` segment carries whereNumber, so the literal `requests` can
-     | never be captured as a doctor id.
+     | `{doctor}` segment carries DatabaseRouteKey::PATTERN (digits only), so
+     | the literal `requests` can never be captured as a doctor id.
+     | DMS-RME-REVISION-PROGRAM-4 / R-23 replaced its `whereNumber`: `[0-9]+`
+     | still admitted a number beyond bigint (22003, HTTP 500 plus an ERROR
+     | line) and a leading-zero alias of a real doctor.
      |
      | These are `permission:` middlewares (the Spatie alias registered at
      | bootstrap/app.php), not `can:` gates: this sprint introduces permissions,
@@ -1115,7 +1158,7 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
     Route::middleware('permission:release_doctor_session_leases')->group(function () {
         Route::post('doctor-branch-locks/{doctor}/release-session', [DoctorBranchLockController::class, 'releaseSession'])
             ->name('doctor-branch-locks.release-session')
-            ->whereNumber('doctor');
+            ->where('doctor', DatabaseRouteKey::PATTERN);
     });
 
     /*
@@ -1672,15 +1715,25 @@ Route::middleware('auth')->prefix('rme/patient-merge')->name('patient-merge.')->
 // `can:satusehat.access` is applied to the whole group, so every current and
 // future satusehat.* route is denied to any other role at the route layer,
 // regardless of which per-feature permission it also declares.
+//
+// DMS-RME-REVISION-PROGRAM-4 / R-19..R-22 — `{candidate}`, `{mapping}`,
+// `{identifier}` (implicit binding) and `{issue}` (`int` argument) all name a
+// bigint `id()` key. Implicit binding runs BEFORE `can:satusehat.access`, so an
+// unconstrained non-key segment reached `where "id" = '<segment>'` and
+// PostgreSQL answered 22P02/22003 (HTTP 500 plus an ERROR line) for ANY
+// signed-in account, not only Super Admin; `{issue}` overflowed its `int`
+// argument (TypeError); and a leading-zero alias reached — and could
+// deactivate, approve or acknowledge — a real record. Each is a generic name,
+// so every route takes DatabaseRouteKey::PATTERN per route (rule 222 §1.6).
 Route::middleware(['auth', 'can:satusehat.access'])->prefix('rme/satusehat')->name('satusehat.')->group(function () {
     Route::middleware('permission:view_satusehat_submissions|review_satusehat_submissions|send_satusehat_submissions')->group(function () {
         Route::get('submissions', [SatusehatSubmissionController::class, 'index'])->name('submissions.index');
         Route::post('submissions/bulk', [SatusehatSubmissionController::class, 'bulk'])->name('submissions.bulk');
-        Route::get('submissions/{candidate}', [SatusehatSubmissionController::class, 'show'])->name('submissions.show');
-        Route::get('submissions/{candidate}/preview', [SatusehatSubmissionController::class, 'preview'])->name('submissions.preview');
-        Route::post('submissions/{candidate}/refresh', [SatusehatSubmissionController::class, 'refresh'])->name('submissions.refresh');
-        Route::post('submissions/{candidate}/approve', [SatusehatSubmissionController::class, 'approve'])->name('submissions.approve');
-        Route::post('submissions/{candidate}/exclude', [SatusehatSubmissionController::class, 'exclude'])->name('submissions.exclude');
+        Route::get('submissions/{candidate}', [SatusehatSubmissionController::class, 'show'])->where('candidate', DatabaseRouteKey::PATTERN)->name('submissions.show');
+        Route::get('submissions/{candidate}/preview', [SatusehatSubmissionController::class, 'preview'])->where('candidate', DatabaseRouteKey::PATTERN)->name('submissions.preview');
+        Route::post('submissions/{candidate}/refresh', [SatusehatSubmissionController::class, 'refresh'])->where('candidate', DatabaseRouteKey::PATTERN)->name('submissions.refresh');
+        Route::post('submissions/{candidate}/approve', [SatusehatSubmissionController::class, 'approve'])->where('candidate', DatabaseRouteKey::PATTERN)->name('submissions.approve');
+        Route::post('submissions/{candidate}/exclude', [SatusehatSubmissionController::class, 'exclude'])->where('candidate', DatabaseRouteKey::PATTERN)->name('submissions.exclude');
 
         // SATUSEHAT-2 — outbound submission batches. Queuing requires the send
         // permission (re-checked server-side) AND the runtime gateway enabled;
@@ -1697,12 +1750,12 @@ Route::middleware(['auth', 'can:satusehat.access'])->prefix('rme/satusehat')->na
         Route::get('mappings', [SatusehatMappingController::class, 'index'])->name('mappings.index');
         Route::get('mappings/create', [SatusehatMappingController::class, 'create'])->name('mappings.create');
         Route::post('mappings', [SatusehatMappingController::class, 'store'])->name('mappings.store');
-        Route::get('mappings/{mapping}', [SatusehatMappingController::class, 'show'])->name('mappings.show');
-        Route::post('mappings/{mapping}/review', [SatusehatMappingController::class, 'review'])->name('mappings.review');
+        Route::get('mappings/{mapping}', [SatusehatMappingController::class, 'show'])->where('mapping', DatabaseRouteKey::PATTERN)->name('mappings.show');
+        Route::post('mappings/{mapping}/review', [SatusehatMappingController::class, 'review'])->where('mapping', DatabaseRouteKey::PATTERN)->name('mappings.review');
         // SATUSEHAT-3 — human verification stamp (required before profile-family activate).
-        Route::post('mappings/{mapping}/verify', [SatusehatMappingController::class, 'verify'])->name('mappings.verify');
-        Route::post('mappings/{mapping}/activate', [SatusehatMappingController::class, 'activate'])->name('mappings.activate');
-        Route::post('mappings/{mapping}/deprecate', [SatusehatMappingController::class, 'deprecate'])->name('mappings.deprecate');
+        Route::post('mappings/{mapping}/verify', [SatusehatMappingController::class, 'verify'])->where('mapping', DatabaseRouteKey::PATTERN)->name('mappings.verify');
+        Route::post('mappings/{mapping}/activate', [SatusehatMappingController::class, 'activate'])->where('mapping', DatabaseRouteKey::PATTERN)->name('mappings.activate');
+        Route::post('mappings/{mapping}/deprecate', [SatusehatMappingController::class, 'deprecate'])->where('mapping', DatabaseRouteKey::PATTERN)->name('mappings.deprecate');
     });
 
     Route::middleware('permission:manage_satusehat_settings')->group(function () {
@@ -1713,10 +1766,10 @@ Route::middleware(['auth', 'can:satusehat.access'])->prefix('rme/satusehat')->na
     Route::middleware('permission:manage_satusehat_settings')->group(function () {
         Route::get('identifiers', [SatusehatIdentifierController::class, 'index'])->name('identifiers.index');
         Route::post('identifiers', [SatusehatIdentifierController::class, 'store'])->name('identifiers.store');
-        Route::post('identifiers/{identifier}/deactivate', [SatusehatIdentifierController::class, 'deactivate'])->name('identifiers.deactivate');
+        Route::post('identifiers/{identifier}/deactivate', [SatusehatIdentifierController::class, 'deactivate'])->where('identifier', DatabaseRouteKey::PATTERN)->name('identifiers.deactivate');
         // SATUSEHAT-2 — verify an existing IHS identifier against the sandbox
         // (GET-by-id; refused while the integration is disabled).
-        Route::post('identifiers/{identifier}/verify', [SatusehatIdentifierController::class, 'verify'])->name('identifiers.verify');
+        Route::post('identifiers/{identifier}/verify', [SatusehatIdentifierController::class, 'verify'])->where('identifier', DatabaseRouteKey::PATTERN)->name('identifiers.verify');
     });
 
     // SATUSEHAT-4A — credential-independent operational readiness & data-quality
@@ -1726,21 +1779,22 @@ Route::middleware(['auth', 'can:satusehat.access'])->prefix('rme/satusehat')->na
     Route::middleware('permission:view_satusehat_readiness|manage_satusehat_remediation')->group(function () {
         Route::get('readiness', [SatusehatReadinessController::class, 'index'])->name('readiness.index');
         Route::get('readiness/issues', [SatusehatReadinessController::class, 'issues'])->name('readiness.issues');
-        Route::get('readiness/issues/{issue}', [SatusehatReadinessController::class, 'issueShow'])->name('readiness.issues.show');
+        Route::get('readiness/issues/{issue}', [SatusehatReadinessController::class, 'issueShow'])->where('issue', DatabaseRouteKey::PATTERN)->name('readiness.issues.show');
     });
 
     Route::middleware('permission:manage_satusehat_remediation')->group(function () {
         Route::post('readiness/recalculate', [SatusehatReadinessController::class, 'recalculate'])->name('readiness.recalculate');
-        Route::post('readiness/issues/{issue}/acknowledge', [SatusehatRemediationController::class, 'acknowledge'])->name('readiness.issues.acknowledge');
-        Route::post('readiness/issues/{issue}/assign', [SatusehatRemediationController::class, 'assign'])->name('readiness.issues.assign');
-        Route::post('readiness/issues/{issue}/start', [SatusehatRemediationController::class, 'start'])->name('readiness.issues.start');
-        Route::post('readiness/issues/{issue}/request-review', [SatusehatRemediationController::class, 'requestReview'])->name('readiness.issues.request-review');
-        Route::post('readiness/issues/{issue}/resolve', [SatusehatRemediationController::class, 'resolve'])->name('readiness.issues.resolve');
-        Route::post('readiness/issues/{issue}/reopen', [SatusehatRemediationController::class, 'reopen'])->name('readiness.issues.reopen');
+        Route::post('readiness/issues/{issue}/acknowledge', [SatusehatRemediationController::class, 'acknowledge'])->where('issue', DatabaseRouteKey::PATTERN)->name('readiness.issues.acknowledge');
+        Route::post('readiness/issues/{issue}/assign', [SatusehatRemediationController::class, 'assign'])->where('issue', DatabaseRouteKey::PATTERN)->name('readiness.issues.assign');
+        Route::post('readiness/issues/{issue}/start', [SatusehatRemediationController::class, 'start'])->where('issue', DatabaseRouteKey::PATTERN)->name('readiness.issues.start');
+        Route::post('readiness/issues/{issue}/request-review', [SatusehatRemediationController::class, 'requestReview'])->where('issue', DatabaseRouteKey::PATTERN)->name('readiness.issues.request-review');
+        Route::post('readiness/issues/{issue}/resolve', [SatusehatRemediationController::class, 'resolve'])->where('issue', DatabaseRouteKey::PATTERN)->name('readiness.issues.resolve');
+        Route::post('readiness/issues/{issue}/reopen', [SatusehatRemediationController::class, 'reopen'])->where('issue', DatabaseRouteKey::PATTERN)->name('readiness.issues.reopen');
     });
 
     Route::middleware('permission:manage_satusehat_readiness_waivers')
         ->post('readiness/issues/{issue}/waive', [SatusehatRemediationController::class, 'waive'])
+        ->where('issue', DatabaseRouteKey::PATTERN)
         ->name('readiness.issues.waive');
 
     // SATUSEHAT-4A — master clinical diagnosis governance (clinical reference
@@ -1785,9 +1839,9 @@ Route::middleware(['auth', 'can:satusehat.access'])->prefix('rme/satusehat')->na
 
     Route::middleware('permission:manage_satusehat_branch_remediation')->group(function () {
         Route::post('branches/{branch}/recalculate', [SatusehatBranchReadinessController::class, 'recalculate'])->whereNumber('branch')->name('branches.recalculate');
-        Route::post('branches/issues/{issue}/assign', [SatusehatBranchReadinessController::class, 'assignIssue'])->whereNumber('issue')->name('branches.issues.assign');
-        Route::post('branches/issues/{issue}/escalate', [SatusehatBranchReadinessController::class, 'escalateIssue'])->whereNumber('issue')->name('branches.issues.escalate');
-        Route::post('branches/issues/{issue}/review', [SatusehatBranchReadinessController::class, 'reviewIssue'])->whereNumber('issue')->name('branches.issues.review');
+        Route::post('branches/issues/{issue}/assign', [SatusehatBranchReadinessController::class, 'assignIssue'])->where('issue', DatabaseRouteKey::PATTERN)->name('branches.issues.assign');
+        Route::post('branches/issues/{issue}/escalate', [SatusehatBranchReadinessController::class, 'escalateIssue'])->where('issue', DatabaseRouteKey::PATTERN)->name('branches.issues.escalate');
+        Route::post('branches/issues/{issue}/review', [SatusehatBranchReadinessController::class, 'reviewIssue'])->where('issue', DatabaseRouteKey::PATTERN)->name('branches.issues.review');
     });
 
     Route::middleware('permission:configure_satusehat_internal_pilot')->group(function () {
@@ -1920,15 +1974,21 @@ Route::middleware('auth')->group(function () {
 | Admin Lab queue of LabCaseCandidate records generated from paid RME invoices.
 | Phase 21.4 adds explicit conversion to LabOrder.
 */
+// DMS-RME-REVISION-PROGRAM-4 / R-19 — `{candidate}` binds
+// trx_lab_case_candidates.id (bigint); it takes DatabaseRouteKey::PATTERN so a
+// non-key segment is a 404, never a 22P02/22003 HTTP 500, and a leading-zero
+// alias never reaches (or converts) a real candidate.
 Route::middleware('auth')->prefix('lab')->name('lab-')->group(function () {
     Route::get('case-candidates', [LabCaseCandidateController::class, 'index'])
         ->name('case-candidates.index')
         ->middleware('permission:view_lab_orders|manage_lab_orders');
     Route::get('case-candidates/{candidate}', [LabCaseCandidateController::class, 'show'])
         ->name('case-candidates.show')
+        ->where('candidate', DatabaseRouteKey::PATTERN)
         ->middleware('permission:view_lab_orders|manage_lab_orders');
     Route::post('case-candidates/{candidate}/convert', [LabCaseCandidateController::class, 'convert'])
         ->name('case-candidates.convert')
+        ->where('candidate', DatabaseRouteKey::PATTERN)
         ->middleware('permission:create_lab_orders|manage_lab_orders');
 });
 

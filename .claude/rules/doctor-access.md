@@ -190,6 +190,10 @@ ceremonies and the login gate's proof mechanics belong to the sibling `.claude/r
   legacy archives never widen a doctor's reach beyond native RME. Owner, Super Admin and Supervisor RME are exempt
   through `shouldApplyDoctorScope()`. Source: `99-legacy-rme-doctor-clinical-branch-context.mdc`; archive
   LEGACY-RME-PDF-ROLL-2 (authorization defect).
+- **AIR-DAC-41** Every `{doctor}` route (`settings.doctors.*` incl. account links, and
+  `rme.doctor-branch-locks.release-session`) carries `DatabaseRouteKey::PATTERN` per route, never `whereNumber`. It
+  still rejects the literal `requests`, so the ordering trap stays closed. Route validation changes no device,
+  branch-lock, cover or session rule. Source: `.cursor/rules/222-rme-route-key-constraint-and-failure-log-redaction.mdc` §1.12–§1.13.
 
 ## Current posture (snapshot 2026-10-25 — verify before relying on it)
 
@@ -234,6 +238,7 @@ ceremonies and the login gate's proof mechanics belong to the sibling `.claude/r
 | `.cursor/rules/162-sunu-go-live-blocker-closure.mdc` | Break-glass revoke releases its lease |
 | `.cursor/rules/200-rme-active-user-patient-selection-cross-branch-control.mdc` | Deactivated account ends session and releases lease |
 | `.cursor/rules/93-doctor-pwa-webauthn.mdc` | WebAuthn device login (sibling domain) |
+| `.cursor/rules/222-rme-route-key-constraint-and-failure-log-redaction.mdc` | Doctor route keys constrained (404, never 500) |
 
 ## History
 

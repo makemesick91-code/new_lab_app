@@ -210,8 +210,9 @@ mass upload, batch review/publish, visit-bound date attestation and single-activ
 - **AIR-LRM-39** Every legacy archive `{record}` route (19) carries `->where('record', DatabaseRouteKey::PATTERN)` and
   every `{page}` route (6) `->where('page', DatabaseRouteKey::PAGE_NUMBER_PATTERN)`, per route (generic names, never
   global, never `whereNumber`). `{page}` is a 1-based page number compared against an int4 `page_number`, so it uses
-  the 9-digit page pattern, not the 18-digit key pattern; `0` and `01` are 404. `{import}` keeps its `whereNumber`
-  (residual, not approved). Source: `222-rme-route-key-constraint-and-failure-log-redaction.mdc` §1.10–§1.11.
+  the 9-digit page pattern, not the 18-digit key pattern; `0` and `01` are 404. The 14 import routes' `{import}`
+  carries `DatabaseRouteKey::PATTERN` too (Program 4, R-16), not `whereNumber`. Source:
+  `222-rme-route-key-constraint-and-failure-log-redaction.mdc` §1.10–§1.12.
 
 ## Current posture (snapshot 2026-10-25 — verify before relying on it)
 
@@ -254,7 +255,7 @@ mass upload, batch review/publish, visit-bound date attestation and single-activ
 | `.cursor/rules/92-telkomas-branch-code-canonical.mdc` | `TLK1` canonical; shared alias mechanics |
 | `.cursor/rules/136-sunu-branch-code-canonical.mdc` | `SPN4` canonical, `SUN4` alias |
 | `.cursor/rules/171-legacy-batch-review-publish.mdc` | Batch review/publish over the canonical lifecycle |
-| `.cursor/rules/222-rme-route-key-constraint-and-failure-log-redaction.mdc` | Archive `{record}` key and `{page}` number route constraints (404, never 500) |
+| `.cursor/rules/222-rme-route-key-constraint-and-failure-log-redaction.mdc` | Archive `{record}`, import `{import}` key and `{page}` number route constraints (404, never 500) |
 
 ## History
 

@@ -1,22 +1,20 @@
-# DMS-RME-REVISION-PROGRAM-3 (2026-11-05). Continuation of DMS-RME-REVISION-PROGRAM-1/2 under rule 221 §7. The owner
-# approved, in the mission brief of 2026-11-05, exactly the seven route-key follow-ups Program 2 recorded in rule 222
-# §1.10 (CG-22: recorded, not inferred):
-#   R-09  `{diagnosis}` (7 routes, two models, both bigint `id()`), R-12 `{handwriting}` (2) and R-13
-#         `{handwritingPage}` (2) took any segment: on PostgreSQL a non-key segment answered HTTP 500 with an ERROR
-#         line, also for a user holding no permission (binding runs before the permission middleware).
-#   R-10  `{receiptSnapshot}` (1, `int` argument) used `whereNumber`: overflow answered 500 and a leading-zero alias
-#         reprinted a real receipt.
-#   R-09/R-10/R-12/R-13 are domain names: now constrained globally by App\Support\Routing\DatabaseRouteKey.
-#   R-11  oversight `{patient}` (1), R-14 `{record}` (19) and R-15 `{page}` (6) are generic names, constrained per
-#         route. `{page}` is a page number compared against an int4 column, so it uses the new
-#         DatabaseRouteKey::PAGE_NUMBER_PATTERN; an 11-to-18-digit page answered 500 (22003) under `whereNumber`.
+# DMS-RME-REVISION-PROGRAM-4 (2026-11-05). Continuation of DMS-RME-REVISION-PROGRAM-1/2/3 under rule 221 §7. The owner
+# approved, in the mission brief of 2026-11-05, exactly the eight route-parameter groups Program 3 recorded as residual
+# in rule 222 §1.12 (CG-22: recorded, not inferred) as AUDIT TARGETS, to be corrected only where a defect is verified:
+#   R-16 `{import}` (14, `int` argument, whereNumber), R-17 settings `{patient}` (7), R-18 `{document}` (2),
+#   R-19 `{candidate}` (7, two models), R-20 `{mapping}` (5), R-21 `{issue}` (11, `int` argument),
+#   R-22 `{identifier}` (2), R-23 `{doctor}` (8).
+# Audit result: all eight bind a bigint `id()` key with no custom route key; all eight were defective on PostgreSQL 16
+# (227 HTTP 500s across the matrix; a leading-zero alias opened every record type, deactivated a SATUSEHAT identifier,
+# a patient and a doctor, and deleted a KTP document). Every name is generic, so each is constrained per route with
+# DatabaseRouteKey::PATTERN; the global list stays at ten names.
 # The Foundation-First Sprint Lock stays ACTIVE; this is an allowed category (security fix). No schema, permission,
-# policy or frontend change. Full Suite deferred (CG-18), not passed.
+# policy, controller, service or frontend change. Full Suite deferred (CG-18), not passed.
 # Carried forward: LEGACY-RME-PROGRAM-CLOSURE-1 stays CLOSED and inherited.
-id: DMS-RME-REVISION-PROGRAM-3
+id: DMS-RME-REVISION-PROGRAM-4
 type: SECURITY_FIX
 module: Rme
-title: "RME route-key hardening for diagnosis, receipt snapshot, oversight patient, handwriting and legacy archive"
+title: "Route-key hardening for legacy import, patient master, patient document, candidate, mapping, issue, identifier and doctor routes"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 runtime_change: true
 schema_change: false
@@ -27,5 +25,5 @@ ledger_impact: false
 deploy_required: true
 browser_required: false
 test_profiles: [focused, security_regression]
-go_tag: dms-rme-revision-program-3-go
+go_tag: dms-rme-revision-program-4-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1

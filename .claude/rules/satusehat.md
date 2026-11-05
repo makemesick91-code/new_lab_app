@@ -178,6 +178,10 @@ code, then the canonical rule, and report the drift.
   together with `satusehat.environment` = `sandbox` (`SATUSEHAT_ENV`), enforced by
   `SatusehatServiceProvider::externalGatewayAllowed()` and `SatusehatHostGuard::assertAllowedBaseUrl()`. Keep both until a
   separately approved production campaign. Source: `84-satusehat-sandbox-api-adapter.mdc` §1.
+- **AIR-SSH-38** `{candidate}`, `{mapping}`, `{identifier}` and `{issue}` (23 SATUSEHAT routes; bigint keys, the
+  identifier a database key, not an IHS id) carry `->where('<name>', DatabaseRouteKey::PATTERN)` per route, never
+  `whereNumber`. Implicit binding runs before `can:satusehat.access`, so without it any signed-in account got a
+  500, and a leading-zero alias deactivated a real identifier. Source: `.cursor/rules/222-rme-route-key-constraint-and-failure-log-redaction.mdc` §1.12–§1.13.
 
 ## Current posture (snapshot 2026-10-25 — verify before relying on it)
 
@@ -210,6 +214,7 @@ code, then the canonical rule, and report the drift.
 | `.cursor/rules/87-satusehat-4b-structured-diagnosis-adoption-terminology-rollout.mdc` | Terminology lifecycle, rollout modes, override, Condition preview |
 | `.cursor/rules/88-satusehat-4c-branch-readiness-internal-pilot.mdc` | Branch readiness score, pilot approval, thresholds |
 | `.cursor/rules/89-satusehat-4d-multi-branch-readiness.mdc` | Waves, promotion, change control, UAT sign-off |
+| `.cursor/rules/222-rme-route-key-constraint-and-failure-log-redaction.mdc` | Candidate, mapping, identifier and issue route keys constrained (404, never 500) |
 
 ## History
 
