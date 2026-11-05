@@ -30,14 +30,35 @@ final class DatabaseRouteKey
     public const PATTERN = '[1-9][0-9]{0,17}';
 
     /**
-     * Parameters constrained today. The owner approved R-01 for the clinic
-     * visit routes only; the same unconstrained-key weakness on the other RME
-     * parameters (`rmeInvoice`, `medicalRecord`, `rmePrescription`, …) is a
-     * recorded follow-up, and extending it means adding a name here.
+     * Parameters constrained globally. Each is a domain-specific name, and
+     * every route carrying it binds a bigint `id()` primary key:
+     *
+     *   clinicVisit      DMS-RME-REVISION-PROGRAM-1 / R-01
+     *   rmeInvoice       DMS-RME-REVISION-PROGRAM-2 / R-03
+     *   medicalRecord    DMS-RME-REVISION-PROGRAM-2 / R-04
+     *   rmePrescription  DMS-RME-REVISION-PROGRAM-2 / R-05
+     *   consent          DMS-RME-REVISION-PROGRAM-2 / R-06
+     *   odontogram       DMS-RME-REVISION-PROGRAM-2 / R-07
+     *
+     * A GENERIC name (`visit`, `patient`, `record`, `page`) is never added
+     * here: it may later name another identifier type (the oversight lookup
+     * already resolves a visit by its string visit number), and a global
+     * numeric pattern would silently 404 that route. Constrain a generic name
+     * per route with `->where('<name>', DatabaseRouteKey::PATTERN)` instead
+     * (R-08), never with `whereNumber`, whose `[0-9]+` admits overflow.
+     *
+     * Extending this list needs owner approval (rule 222).
      *
      * @var list<string>
      */
-    public const CONSTRAINED_PARAMETERS = ['clinicVisit'];
+    public const CONSTRAINED_PARAMETERS = [
+        'clinicVisit',
+        'rmeInvoice',
+        'medicalRecord',
+        'rmePrescription',
+        'consent',
+        'odontogram',
+    ];
 
     public static function register(): void
     {
