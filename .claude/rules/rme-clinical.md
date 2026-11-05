@@ -220,7 +220,8 @@ editable) → Persetujuan Tindakan Medis (RME + finish unlocked) → RME + Odont
   write re-decides it on the LOCKED visit row. Verify with `rme:performed-treatment-readiness --expect=on|off`.
   Consent void = `RmeVisitConsentService::void()` only (visit row lock first).
 
-- **AIR-RMC-37** `{clinicVisit}`, `{medicalRecord}`, `{rmePrescription}`, `{consent}` and `{odontogram}` are
+- **AIR-RMC-37** `{clinicVisit}`, `{medicalRecord}`, `{rmePrescription}`, `{consent}`, `{odontogram}`, `{diagnosis}`,
+  `{handwriting}` and `{handwritingPage}` (the page ROW's key, not a page index) are
   constrained globally by `App\Support\Routing\DatabaseRouteKey` (registered first in `AppServiceProvider::boot()`),
   so a segment that is not a bigint key answers 404 instead of an HTTP 500 with an ERROR line on PostgreSQL (for any
   signed-in account: binding runs before the permission middleware). Never add a per-route `where`/`whereNumber` for
@@ -262,7 +263,7 @@ editable) → Persetujuan Tindakan Medis (RME + finish unlocked) → RME + Odont
 | `.cursor/rules/199-rme-clinic-visit-branch-authority.mdc` | Explicit-actor clinic visit service, aggregates, fail-closed reads |
 | `.cursor/rules/200-rme-active-user-patient-selection-cross-branch-control.mdc` | Active accounts, registration guard, edit allow-list, OD-1 |
 | `.cursor/rules/219-rme-doctor-performed-treatments.mdc` | Doctor "Tindakan Dilakukan": structured record, "Tidak Ada Tindakan" = operational KONTROL ≠ NO_CHARGE, detective |
-| `.cursor/rules/222-rme-route-key-constraint-and-failure-log-redaction.mdc` | Visit, medical-record, prescription, consent and odontogram route keys constrained (404, never 500); caught exceptions logged through the redactor |
+| `.cursor/rules/222-rme-route-key-constraint-and-failure-log-redaction.mdc` | Visit, medical-record, prescription, consent, odontogram, diagnosis and handwriting route keys constrained (404, never 500); caught exceptions logged through the redactor |
 
 ## History
 
