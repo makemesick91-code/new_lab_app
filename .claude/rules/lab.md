@@ -185,6 +185,9 @@ code, then the canonical rule, and report the drift.
   CI through the Selective Module Gate `--filter='Lab'` when the classifier sets `run_lab_tests`. Source:
   `74-lab-technician-assignment-upload-compression.mdc`, archive `LAB-WORKFLOW-V2`,
   `FIX-LAB-ANALYTICS-MEDIAN-LATENESS-DAY-BOUNDARY-1`.
+- **AIR-LAB-34** `lab-case-candidates.{show,convert}` constrain `{candidate}` with `DatabaseRouteKey::PATTERN` (bigint
+  `trx_lab_case_candidates.id`), so a non-key segment is a 404, never a 22P02 500, and an alias never converts a real
+  candidate. Source: `.cursor/rules/222-rme-route-key-constraint-and-failure-log-redaction.mdc` §1.12–§1.13.
 
 ## Current posture (snapshot 2026-10-25 — verify before relying on it)
 
@@ -212,6 +215,7 @@ code, then the canonical rule, and report the drift.
 | `.cursor/rules/79-lab-ops-readiness-technician-external-lab.mdc` | Technician master governance, external lab provisioning |
 | `.cursor/rules/80-lab-operational-analytics-kpi.mdc` | KPI contract, SLA deadline, analytics authorization tiers |
 | `.cursor/rules/81-lab-technician-capacity-planning.mdc` | Capacity planning as read-only decision support |
+| `.cursor/rules/222-rme-route-key-constraint-and-failure-log-redaction.mdc` | Lab case candidate route key constrained (404, never 500) |
 
 ## History
 

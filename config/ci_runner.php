@@ -1469,6 +1469,15 @@ return [
         // the `LegacyArchiveRouteKey` token in BOTH critical variants.
         'tests/Feature/LegacyRme/LegacyArchiveRouteKeyConstraintTest.php',
 
+        // DMS-RME-REVISION-PROGRAM-4 / R-16..R-23 — the 57 `{import}`,
+        // settings `{patient}`, `{document}`, `{candidate}`, `{mapping}`,
+        // `{issue}`, `{identifier}` and `{doctor}` routes, by name. Unconstrained
+        // or under `whereNumber` a non-key segment answered 500 (22P02, 22003,
+        // TypeError) for ANY signed-in account, and a leading-zero alias opened,
+        // deactivated or DELETED a real record (measured on PostgreSQL 16).
+        // Selected by the `RemainingRouteKey` token in BOTH critical variants.
+        'tests/Feature/RME/RemainingRouteKeyConstraintTest.php',
+
         // SECURITY-F4C-CLINIC-CALENDAR-LAB-ORDERS-1 (owner decision D16) — lab order dates, order and
         // delivery numbering, the due-date floor and "delivered today" on the clinic calendar
         // (Asia/Makassar). A UTC "today" named the previous clinic day for eight hours of every day;

@@ -1,17 +1,18 @@
 ---
-description: DMS-RME-REVISION-PROGRAM-1/2/3 — (R-01, R-03..R-15) a route parameter that names a database key or a page number is constrained by App\Support\Routing\DatabaseRouteKey before it can reach a query or an `int` argument, so a segment that is not an identifier answers 404, never an HTTP 500 with an ERROR line, and never a leading-zero alias of a real record; no route may add a looser per-route constraint that overrides it. (R-02) a caught exception is logged through the canonical TelemetryRedactor, never as a raw getMessage(), because a QueryException message carries interpolated bindings and PostgreSQL DETAIL rows.
-globs: app/Support/Routing/**, app/Providers/AppServiceProvider.php, routes/web.php, app/Modules/RmeInvoice/Services/RmePaymentService.php, app/Modules/Observability/Support/TelemetryRedactor.php, app/Modules/ClinicOversight/Controllers/OversightClinicalRecordController.php, app/Modules/ClinicOversight/Controllers/OversightLegacyArchiveController.php, app/Modules/LegacyRme/Controllers/LegacyRmeRecordController.php, app/Modules/LegacyOdontogram/Controllers/LegacyOdontogramRecordController.php, app/Modules/RmeInvoice/Controllers/RmePaymentController.php, tests/Feature/RME/ClinicVisitRouteKeyConstraintTest.php, tests/Feature/RME/RmeRecordRouteKeyConstraintTest.php, tests/Feature/RME/RmeChildRecordRouteKeyConstraintTest.php, tests/Feature/RmeInvoiceCorrection/RmeReceiptSnapshotRouteKeyConstraintTest.php, tests/Feature/ClinicOversight/OversightVisitRouteKeyConstraintTest.php, tests/Feature/ClinicOversight/OversightRecordRouteKeyConstraintTest.php, tests/Feature/LegacyRme/LegacyArchiveRouteKeyConstraintTest.php, tests/Feature/RME/RmePaymentLabCandidateFailureLogPrivacyTest.php
+description: DMS-RME-REVISION-PROGRAM-1/2/3/4 — (R-01, R-03..R-23) a route parameter that names a database key or a page number is constrained by App\Support\Routing\DatabaseRouteKey before it can reach a query or an `int` argument, so a segment that is not an identifier answers 404, never an HTTP 500 with an ERROR line, and never a leading-zero alias of a real record; no route may add a looser per-route constraint that overrides it. (R-02) a caught exception is logged through the canonical TelemetryRedactor, never as a raw getMessage(), because a QueryException message carries interpolated bindings and PostgreSQL DETAIL rows.
+globs: app/Support/Routing/**, app/Providers/AppServiceProvider.php, routes/web.php, app/Modules/RmeInvoice/Services/RmePaymentService.php, app/Modules/Observability/Support/TelemetryRedactor.php, app/Modules/ClinicOversight/Controllers/OversightClinicalRecordController.php, app/Modules/ClinicOversight/Controllers/OversightLegacyArchiveController.php, app/Modules/LegacyRme/Controllers/LegacyRmeRecordController.php, app/Modules/LegacyOdontogram/Controllers/LegacyOdontogramRecordController.php, app/Modules/RmeInvoice/Controllers/RmePaymentController.php, tests/Feature/RME/ClinicVisitRouteKeyConstraintTest.php, tests/Feature/RME/RmeRecordRouteKeyConstraintTest.php, tests/Feature/RME/RmeChildRecordRouteKeyConstraintTest.php, tests/Feature/RmeInvoiceCorrection/RmeReceiptSnapshotRouteKeyConstraintTest.php, tests/Feature/ClinicOversight/OversightVisitRouteKeyConstraintTest.php, tests/Feature/ClinicOversight/OversightRecordRouteKeyConstraintTest.php, tests/Feature/LegacyRme/LegacyArchiveRouteKeyConstraintTest.php, tests/Feature/RME/RemainingRouteKeyConstraintTest.php, tests/Feature/RME/RmePaymentLabCandidateFailureLogPrivacyTest.php
 alwaysApply: false
 ---
 
 # RME route keys and failure-log redaction (rule 222)
 
-**Status:** GO scope of `DMS-RME-REVISION-PROGRAM-1` (R-01, R-02), `DMS-RME-REVISION-PROGRAM-2` (R-03..R-08) and
-`DMS-RME-REVISION-PROGRAM-3` (R-09..R-15), all 2026-11-05. Sprint records: `docs/sprints/dms-rme-revision-program-1.md`,
-`docs/sprints/dms-rme-revision-program-2.md`, `docs/sprints/dms-rme-revision-program-3.md`. Owner approval: each
+**Status:** GO scope of `DMS-RME-REVISION-PROGRAM-1` (R-01, R-02), `DMS-RME-REVISION-PROGRAM-2` (R-03..R-08),
+`DMS-RME-REVISION-PROGRAM-3` (R-09..R-15) and `DMS-RME-REVISION-PROGRAM-4` (R-16..R-23), all 2026-11-05. Sprint records:
+`docs/sprints/dms-rme-revision-program-1.md`, `docs/sprints/dms-rme-revision-program-2.md`,
+`docs/sprints/dms-rme-revision-program-3.md`, `docs/sprints/dms-rme-revision-program-4.md`. Owner approval: each
 revision below, recorded in its sprint doc (CG-22). Policy: rule 221 §7 (RME revision programme). Category under the
 Foundation-First Sprint Lock: hotfix / security / monitoring, all allowed before Foundation GO; the lock itself is
-unchanged. Program 3 EXTENDS this rule (same contract, more parameters); it supersedes nothing.
+unchanged. Programs 3 and 4 EXTEND this rule (same contract, more parameters); neither supersedes anything.
 
 ## 1. R-01, R-03..R-15 — a route identifier that is not an identifier never reaches the database
 
@@ -72,8 +73,8 @@ unchanged. Program 3 EXTENDS this rule (same contract, more parameters); it supe
    unaffected.
 10. Program 3 per-route constraints (generic names, `int` arguments, measured 2026-11-05):
     - R-11 `{patient}` — the ONE oversight route `oversight.rme.patients.show` (`int $patient` → `mst_patients.id`):
-      `DatabaseRouteKey::PATTERN`. The other `{patient}` routes (`settings.patients.*`, master data) are NOT
-      constrained by this programme (residual, §1.12).
+      `DatabaseRouteKey::PATTERN`. The other `{patient}` routes (`settings.patients.*`, master data) were
+      constrained later by Program 4 (R-17, §1.12).
     - R-14 `{record}` — all 19 legacy archive routes (`rme.legacy-records.*` ×6, `rme.legacy-odontograms.*` ×4,
       `oversight.legacy.*` ×9; `int $record` → `trx_rme_legacy_records.id` / `trx_odontogram_legacy_records.id`):
       `DatabaseRouteKey::PATTERN`.
@@ -88,10 +89,38 @@ unchanged. Program 3 EXTENDS this rule (same contract, more parameters); it supe
     `PAGE_NUMBER_PATTERN` is `[1-9][0-9]{0,8}`: page 1 up to 999,999,999, always inside int4 and PHP's integer, `0`
     and a leading zero refused, a well-formed page beyond the document's last page a 404 from the lookup. Before
     reusing either pattern for a new parameter, check the COLUMN TYPE it is compared against, not only the PHP type.
-12. Still open (measured 2026-11-05, NOT approved, NOT done): `{import}` (`whereNumber` + `int $import`) on the
-    legacy import routes, `{document}` and the `settings.patients.*` `{patient}` routes (master data), and the
-    non-clinical RME-area parameters `{candidate}`, `{mapping}`, `{issue}`, `{identifier}`, `{doctor}`. Each needs its
-    identifier type verified and its own owner approval. Inventory: `docs/sprints/dms-rme-revision-program-3.md` §9.
+12. Program 4 per-route constraints (R-16..R-23, generic names, measured 2026-11-05 on the live collection — 57
+    parameter uses, every key a bigint `id()`, no model overriding its route key, so all take
+    `DatabaseRouteKey::PATTERN`; pinned on route NAMES in `RemainingRouteKeyConstraintTest`):
+
+    | Rev | Parameter | Routes | Key | Was |
+    |---|---|---|---|---|
+    | R-16 | `{import}` | 14 `settings.rme.legacy-imports.*` / `legacy-odontograms.*` | `int $import` → `stg_rme_legacy_imports.id`, `stg_odontogram_legacy_imports.id` | `whereNumber` |
+    | R-17 | `{patient}` | 7 `settings.patients.*` (+ the R-11 oversight route) | `mst_patients.id`, implicit | none / `whereNumber` |
+    | R-18 | `{document}` | 2 `settings.patients.documents.*` | `mst_patient_documents.id`, implicit | `whereNumber` |
+    | R-19 | `{candidate}` | 5 `satusehat.submissions.*`, 2 `lab-case-candidates.*` | `trx_satusehat_candidates.id`, `trx_lab_case_candidates.id` (two models) | none |
+    | R-20 | `{mapping}` | 5 `satusehat.mappings.*` | `mst_satusehat_code_mappings.id`, implicit | none |
+    | R-21 | `{issue}` | 8 `satusehat.readiness.issues.*`, 3 `satusehat.branches.issues.*` | `int $issue` → `trx_satusehat_data_quality_issues.id` | none / `whereNumber` |
+    | R-22 | `{identifier}` | 2 `satusehat.identifiers.*` | `mst_satusehat_entity_identifiers.id`, implicit (a database key, not an external IHS id) | none |
+    | R-23 | `{doctor}` | 7 `settings.doctors.*` (incl. account links), `rme.doctor-branch-locks.release-session` | `mst_doctors.id`, implicit | none / `whereNumber` |
+
+    Measured on PostgreSQL 16.15 before the change: 227 HTTP 500s (22P02, 22003, TypeError) across the matrix, and a
+    leading-zero alias that OPENED every record type, DEACTIVATED a SATUSEHAT identifier, a patient and a doctor, and
+    DELETED a KTP document. Use the resource form `Route::resource(...)->where(['<name>' => DatabaseRouteKey::PATTERN])`
+    for a resource; `PendingResourceRegistration::where()` applies it to every member route.
+13. **Implicit binding also runs BEFORE `can:` (Laravel's `Authorize` middleware).** The SATUSEHAT group is gated by
+    `can:satusehat.access` (Super Admin only), yet an unconstrained model-bound segment answered 500 to ANY signed-in
+    account, because `SubstituteBindings` sorts ahead of `Authorize` in the middleware priority. A group-level gate is
+    not a substitute for a route-key constraint. With the constraint the order of §1.8 holds for `can:` too.
+14. **Constraining a key parameter also hardens a static sibling.** Several `whereNumber` constraints doubled as
+    disambiguators (`create` before `{import}`, `requests` before `{doctor}`). `PATTERN` rejects letters too, so the
+    disambiguation is kept; never replace such a constraint with nothing.
+15. Still open (measured 2026-11-05, NOT approved, NOT done): every other route parameter is outside this rule's
+    approved scope. Unconstrained or under `whereNumber` on 2026-11-05 (route uses): `labOrder` 22, `batch` 17,
+    `branch` 17, `wave` 16, `labV2Order` 15, `product` 13, `doctorDevice` 11, `registration` 10, `correction` 8,
+    `delivery` 8, `refundRequest` 7, `settlement` 6, and further inventory, lab, master-data and doctor-access names.
+    Each needs its key type verified (a UUID or page number is not a bigint key) and its own owner approval.
+    Inventory: `docs/sprints/dms-rme-revision-program-4.md` §9.
 
 ## 2. R-02 — a caught exception is logged through the canonical redactor
 
@@ -137,9 +166,20 @@ unchanged. Program 3 EXTENDS this rule (same contract, more parameters); it supe
 - `tests/Feature/LegacyRme/LegacyArchiveRouteKeyConstraintTest.php` (R-14, R-15): the 19 `{record}` and 6 `{page}`
   routes, by name, with the right pattern (live and compiled); the page pattern stays inside int4; guest and signed-in
   404 with no ERROR, including the import page routes; canonical opens, aliases 404; VOID and permission unchanged.
+- `tests/Feature/RME/RemainingRouteKeyConstraintTest.php` (R-16..R-23): the 57 routes, by name, carry the canonical
+  pattern (live and compiled), none of the eight names is global and the global list stays at ten; 9 segment classes
+  answer 404 with no ERROR for a guest and (one per test) a Super Admin; letters and overflow answer 404 for an
+  account holding no permission; at the ROUTER, for every route, the canonical key routes and `01`, `007` and an
+  18-digit leading-zero alias match nothing (independent of fixtures and flags: a disarmed capability or a missing
+  record also answers 404 and would hide an alias that still routes); on a REAL record per domain the canonical key
+  opens and no alias deactivates, cancels, converts, acknowledges or deletes anything; the permission and Super Admin
+  gates are unchanged.
 - `tests/Feature/RME/RmePaymentLabCandidateFailureLogPrivacyTest.php`: no binding, DETAIL row, SQL tail or synthetic
   clinical value in the warning; SQLSTATE and exception class kept; payment not rolled back.
-- All eight are declared in `config/ci_runner.php` `critical_gate_mandatory_suites` and selected in BOTH critical
+- All nine are declared in `config/ci_runner.php` `critical_gate_mandatory_suites` and selected in BOTH critical
   variants (`ClinicVisitRouteKey`, `RmeRecordRouteKey`, `RmeChildRecordRouteKey`, `RmeReceiptSnapshotRouteKey`,
-  `OversightVisitRouteKey`, `OversightRecordRouteKey`, `LegacyArchiveRouteKey`, `RmePayment`). The behavioural
+  `OversightVisitRouteKey`, `OversightRecordRouteKey`, `LegacyArchiveRouteKey`, `RemainingRouteKey`, `RmePayment`).
+  The critical gate loads every selected suite into ONE process: a top-level helper `function` name repeated across
+  suites is a fatal redeclare that stops the whole gate (Program 4 hit `rrkNonKeySegments()`), so each suite uses its
+  own prefix (`p4rk*` here). The behavioural
   404/500 cases are load-bearing on PostgreSQL 16, which the critical gate uses.

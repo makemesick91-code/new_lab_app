@@ -73,7 +73,9 @@ final class DatabaseRouteKey
      * already resolves a visit by its string visit number), and a global
      * numeric pattern would silently 404 that route. Constrain a generic name
      * per route with `->where('<name>', DatabaseRouteKey::PATTERN)` instead
-     * (R-08, R-11, R-14), or with PAGE_NUMBER_PATTERN for a page number
+     * (R-08, R-11, R-14, and Program 4's R-16..R-23: `import`, settings
+     * `patient`, `document`, `candidate`, `mapping`, `issue`, `identifier`,
+     * `doctor`), or with PAGE_NUMBER_PATTERN for a page number
      * (R-15), never with `whereNumber`, whose `[0-9]+` admits overflow. A
      * route-level constraint on a name listed here OVERRIDES the global one,
      * so a route carrying one of these names never adds its own.
