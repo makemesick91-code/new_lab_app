@@ -10,7 +10,12 @@
         $canUpdate = auth()->user()?->can('update', $medicalRecord) ?? false;
         $canFinalize = auth()->user()?->can('finalize', $medicalRecord) ?? false;
         // Sprint 59 — handwriting and notes remain editable after finalization.
-        $canEditHandwriting = $canUpdate;
+        // DMS-RME-REVISION-PROGRAM-5 (CW5-04, AIR-RMC-25) — editable means the
+        // CAPABILITY, not the `update` permission alone: before the encounter is
+        // consented the editor, the "+ Tambah Halaman RM" control and the
+        // diagnosis forms opened onto a write the service refuses.
+        $canAuthorRmeNow = (bool) ($canAuthorRme ?? false);
+        $canEditHandwriting = $canUpdate && $canAuthorRmeNow;
         $savedHandwriting = $medicalRecord->latestHandwriting();
         $hasHandwriting = $hasRequiredHandwriting ?? false;
         $hasLegacySoap = filled($medicalRecord->subjective)
@@ -87,7 +92,18 @@
                     // silently retargeting it at a different visit.
                     $examVisitInFocus = $clinicVisit->id === ($sourceVisit?->id ?? $workspaceVisit->id);
                 @endphp
-                @if ($examVisitInFocus && $clinicVisit->status === \App\Modules\ClinicVisit\Models\ClinicVisit::STATUS_IN_PROGRESS)
+                @php
+                    // DMS-RME-REVISION-PROGRAM-5 (CW5-03) — the same three facts
+                    // Detail Kunjungan asks before offering this button: the
+                    // transition ability (doctor room guard), the completion
+                    // ability, and a signed consent. Asking only the second offered
+                    // a form the server refuses.
+                    $finishOffered = $examVisitInFocus
+                        && $clinicVisit->status === \App\Modules\ClinicVisit\Models\ClinicVisit::STATUS_IN_PROGRESS
+                        && (auth()->user()?->can('transition', $clinicVisit) ?? false)
+                        && app(\App\Modules\Consent\Services\RmeVisitConsentService::class)->hasValidConsent($clinicVisit);
+                @endphp
+                @if ($finishOffered)
                     @can('completeExamination', $clinicVisit)
                         <form method="POST" action="{{ route('rme.visits.transition', $clinicVisit) }}">
                             @csrf
@@ -125,6 +141,18 @@
                         Rekam medis hanya dapat ditulis saat pasien sedang diperiksa. Mulai
                         pemeriksaan dari halaman kunjungan terlebih dahulu. Riwayat rekam medis,
                         arsip RME lama dan odontogram pasien tetap dapat dibaca.
+                    </p>
+                </x-ui.alert>
+            @elseif (app(\App\Modules\Consent\Services\RmeVisitConsentService::class)->hasValidConsent($activeEncounter))
+                {{-- DMS-RME-REVISION-PROGRAM-5 (CW5-05) — the encounter IS consented,
+                     so the reason is this account, not the signature. Never tell
+                     the front office to fetch a consent that already exists. --}}
+                <x-ui.alert variant="info" title="Hanya dapat dibaca">
+                    <p class="max-w-2xl text-sm">
+                        Rekam medis pemeriksaan yang sedang berjalan
+                        (Kunjungan #{{ $activeEncounter->visit_number }}) ditulis oleh tenaga
+                        klinis yang memeriksa pasien. Akun ini dapat membaca rekam medis,
+                        arsip RME lama dan odontogram pasien.
                     </p>
                 </x-ui.alert>
             @else
@@ -930,7 +958,7 @@
 
         {{-- SATUSEHAT-4A — structured diagnosis card (explicit entry only). --}}
         @include('rme.visits.medical-record.partials.structured-diagnoses', [
-            'canUpdate' => $canUpdate ?? (auth()->user()?->can('update', $medicalRecord) ?? false),
+            'canUpdate' => ($canUpdate ?? (auth()->user()?->can('update', $medicalRecord) ?? false)) && $canAuthorRmeNow,
         ])
 
         {{-- FEATURE-RME-DOCTOR-PERFORMED-TREATMENTS-1 (rule 219) — "Tindakan

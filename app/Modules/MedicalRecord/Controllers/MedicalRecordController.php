@@ -453,7 +453,15 @@ class MedicalRecordController extends Controller
     {
         $patientId = $clinicVisit->patient_id;
         $canonicalVisit = $workspace->resolveCanonicalWorkspaceVisit($patientId) ?? $clinicVisit;
-        $sourceVisitId = $request->integer('source_visit_id') ?: $clinicVisit->id;
+        // DMS-RME-REVISION-PROGRAM-5 (CW5-06, AIR-RMC-23) — the source visit is
+        // recorded on the new sheet, so it goes through the same IDOR check the
+        // show page applies: same patient, RME branch. Another patient's visit, or
+        // an id that does not exist (an FK violation and an HTTP 500 on
+        // PostgreSQL), falls back to the visit in the URL.
+        $sourceVisitId = $workspace->resolveSourceVisit(
+            (int) $patientId,
+            $request->integer('source_visit_id') ?: null,
+        )?->id ?? $clinicVisit->id;
 
         $patientHasSheets = MedicalRecord::query()
             ->where('patient_id', $patientId)

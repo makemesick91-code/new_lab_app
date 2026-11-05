@@ -33,13 +33,16 @@ class RmeVisitConsentController extends Controller
     {
         $this->authorize('create', [RmeVisitConsent::class, $clinicVisit]);
 
-        // Signing is only meaningful once the doctor has handed the patient to
-        // the cashier. Refuse early with an explanation rather than presenting a
-        // form the server would reject on submit.
+        // Signing is only meaningful DURING the examination (AIR-RMC-06: the
+        // visit is `in_progress`). Refuse early with the real rule rather than
+        // presenting a form the server would reject on submit.
+        // DMS-RME-REVISION-PROGRAM-5 (CW5-08) — the previous message told the
+        // operator to wait until the doctor FINISHED, which is exactly the moment
+        // consent stops being signable.
         if (! $this->consents->isSignable($clinicVisit)) {
             return redirect()
                 ->route('rme.visits.show', $clinicVisit)
-                ->with('error', 'Persetujuan tindakan medis baru dapat ditandatangani setelah dokter menyelesaikan pemeriksaan.');
+                ->with('error', 'Persetujuan tindakan medis hanya dapat ditandatangani selama pemeriksaan berlangsung: dokter menekan "Mulai Pemeriksaan" terlebih dahulu, dan setelah "Selesai Pemeriksaan" persetujuan tidak dapat lagi ditandatangani untuk kunjungan ini.');
         }
 
         $existing = $this->consents->validConsentFor($clinicVisit);
@@ -69,7 +72,9 @@ class RmeVisitConsentController extends Controller
 
         return redirect()
             ->route('rme.consents.show', $consent)
-            ->with('status', 'Persetujuan tindakan medis berhasil ditandatangani. Pembayaran kini dapat diproses.');
+            // CW5-08 — consent unlocks the examination record, not the payment
+            // (AIR-RMC-11: the cashier never consults consent).
+            ->with('status', 'Persetujuan tindakan medis berhasil ditandatangani. Rekam medis pemeriksaan ini kini dapat ditulis.');
     }
 
     public function show(RmeVisitConsent $consent): View

@@ -198,8 +198,9 @@ class ClinicVisitPolicy
         // a role of its own. `Front Office` now joins `Admin Klinik` in it, so
         // the merged role keeps exactly the visit authority its holders have
         // today rather than widening on the way across.
-        return $user->hasAnyRole(FrontOfficeRole::VISIT_FRONT_DESK_ONLY)
-            && ! $user->hasAnyRole(['Doctor', 'Perawat', 'Supervisor RME', 'Super Admin']);
+        // DMS-RME-REVISION-PROGRAM-5 — the tier is defined once, in
+        // FrontOfficeRole, and the clinical-record authority reads the same method.
+        return FrontOfficeRole::isVisitFrontDeskOnly($user);
     }
 
     private function canView(User $user): bool

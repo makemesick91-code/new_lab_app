@@ -51,6 +51,19 @@ interface ClinicVisitRepositoryInterface
      */
     public function lockForUpdate(int $id): ?ClinicVisit;
 
+    /**
+     * DMS-RME-REVISION-PROGRAM-5 (rule 223 §1) — the same row lock at the
+     * strength the visit's own status/room/consent decisions need:
+     * FOR NO KEY UPDATE. It conflicts with itself and with FOR UPDATE (so it
+     * serialises against lockForUpdate() callers and against another
+     * transition), but NOT with the FOR KEY SHARE every foreign-key INSERT
+     * takes on this parent row — so diagnoses, payments, consents and
+     * odontograms written against the visit are never blocked by it and cannot
+     * deadlock with it (the 40P01 RmeInvoiceService::create() records). SQLite
+     * compiles any lock clause to nothing.
+     */
+    public function lockForStatusDecision(int $id): ?ClinicVisit;
+
     public function nextQueueNumber(int $branchId, Carbon $visitDate): int;
 
     public function countTodayByBranch(int $branchId, string $date): int;

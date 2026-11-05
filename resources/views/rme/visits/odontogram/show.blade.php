@@ -193,6 +193,18 @@
                     </x-ui.button>
                 </div>
             </x-ui.alert>
+        @elseif (! ($odontogramAuthoringAllowed ?? false)
+            && (auth()->user()?->can('update', $odontogram) ?? false)
+            && app(\App\Modules\ClinicVisit\Services\ActiveEncounterResolver::class)->isCurrentEncounter($clinicVisit))
+            {{-- DMS-RME-REVISION-PROGRAM-5 (CW5-05) — this IS the live
+                 encounter's chart, so "past visit" would be the wrong reason: the
+                 account itself may not chart it (e.g. the front office). --}}
+            <x-ui.alert variant="info" title="Hanya dapat dibaca">
+                <p class="text-sm">
+                    Odontogram pemeriksaan yang sedang berjalan dicatat oleh tenaga klinis
+                    yang memeriksa pasien. Akun ini dapat membaca odontogram dan riwayatnya.
+                </p>
+            </x-ui.alert>
         @elseif (! ($odontogramAuthoringAllowed ?? false) && (auth()->user()?->can('update', $odontogram) ?? false))
             {{-- Not the live encounter: this chart is clinical evidence of a past
                  visit, and consent signed today does not reopen it. --}}

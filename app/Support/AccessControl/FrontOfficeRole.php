@@ -2,6 +2,8 @@
 
 namespace App\Support\AccessControl;
 
+use App\Models\User;
+
 /**
  * DAENGTISIAMS-SUNU-FINAL-RELEASE-CANDIDATE-1 / D2 — the merged front-desk role.
  *
@@ -119,4 +121,28 @@ final class FrontOfficeRole
      * described this tier a sprint before the tier had a role of its own.
      */
     public const VISIT_FRONT_DESK_ONLY = [self::LEGACY_ADMIN_CLINIC, self::NAME];
+
+    /**
+     * Roles whose holder keeps clinical authority even while also holding a
+     * front-desk role ("holding a clinical role as well keeps full access").
+     */
+    public const CLINICAL_ROLES = ['Doctor', 'Perawat', 'Supervisor RME', 'Super Admin'];
+
+    /**
+     * Is this account's clinic-visit authority front-desk only?
+     *
+     * The single definition of the tier. `ClinicVisitPolicy` uses it to make the
+     * visit detail read-only for the front office (FIX-07), and since
+     * DMS-RME-REVISION-PROGRAM-5 (CW5-05) `RmeVisitConsentService` uses it to
+     * refuse that tier the clinical record itself: the front office registers,
+     * places and bills patients, and never authors the examination it did not
+     * perform (rule 134 §1 and §7, rule 108 §12, DPT-064). Both read this one
+     * method so the page that hides a control and the server that refuses it can
+     * never disagree about who the front office is.
+     */
+    public static function isVisitFrontDeskOnly(User $user): bool
+    {
+        return $user->hasAnyRole(self::VISIT_FRONT_DESK_ONLY)
+            && ! $user->hasAnyRole(self::CLINICAL_ROLES);
+    }
 }

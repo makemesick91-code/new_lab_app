@@ -13,6 +13,7 @@ use App\Modules\ClinicVisit\Requests\TransitionStatusRequest;
 use App\Modules\ClinicVisit\Requests\UpdateClinicVisitRequest;
 use App\Modules\ClinicVisit\Services\ClinicVisitPrintDataBuilder;
 use App\Modules\ClinicVisit\Services\ClinicVisitService;
+use App\Modules\Consent\Services\RmeVisitConsentService;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\LegacyRme\Services\LegacyRmePatientHistoryService;
 use App\Modules\MedicalRecord\Services\MedicalRecordService;
@@ -378,7 +379,24 @@ class ClinicVisitController extends Controller
             // Hotfix Sprint 60.8 — branch-scoped active rooms for the inline
             // room-assignment selector when the visit still has no room.
             'rooms' => $this->visits->activeRoomsForBranch((int) $clinicVisit->branch_id),
+            // DMS-RME-REVISION-PROGRAM-5 (CW5-02, AIR-RMC-25) — "Buat Rekam Medis"
+            // follows the CAPABILITY, never `can('create', MedicalRecord)` alone:
+            // offered only when THIS visit is the authorized, consented encounter.
+            // Presentation only, and deliberately STRICTER than the server:
+            // MedicalRecordService::createDraft() asserts the patient-level
+            // authority (an authorized, consented encounter exists), and whether a
+            // sheet may target a sibling visit is an open owner decision (sprint
+            // doc OD-5-6). The page never offers more than the server accepts.
+            'canCreateRecordHere' => $this->recordAuthorableHere($clinicVisit),
         ]);
+    }
+
+    private function recordAuthorableHere(ClinicVisit $clinicVisit): bool
+    {
+        $encounter = app(RmeVisitConsentService::class)
+            ->resolveAuthorizedEncounter((int) $clinicVisit->patient_id, request()->user());
+
+        return $encounter !== null && (int) $encounter->getKey() === (int) $clinicVisit->getKey();
     }
 
     public function edit(ClinicVisit $clinicVisit): View

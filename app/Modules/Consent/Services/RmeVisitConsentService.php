@@ -12,6 +12,7 @@ use App\Modules\PerformedTreatment\Support\RmePerformedTreatmentRefusal;
 use App\Modules\Prescription\Services\PrescriptionCanvasDecoder;
 use App\Modules\RME\Services\DoctorPatientScopeService;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
+use App\Support\AccessControl\FrontOfficeRole;
 use App\Support\Clinical\ClinicalClock;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
@@ -407,6 +408,16 @@ class RmeVisitConsentService
      */
     private function actorMayWorkOnEncounter(User $actor, ClinicVisit $encounter): bool
     {
+        // DMS-RME-REVISION-PROGRAM-5 (CW5-05) — the front office never authors the
+        // clinical record. `manage_clinic_visits` is the registration and queue
+        // permission it needs for its own work, and holding it was enough to chart
+        // the active odontogram and write the RME on a consented encounter. Every
+        // authoring assertion and every UI capability predicate reads this method,
+        // so the refusal and the hidden control are one decision.
+        if (FrontOfficeRole::isVisitFrontDeskOnly($actor)) {
+            return false;
+        }
+
         if (! app(RmeWorkingBranchScope::class)->allows($actor, $encounter->branch_id)) {
             return false;
         }
@@ -501,6 +512,22 @@ class RmeVisitConsentService
             $relationship,
             $isSelf,
         ): RmeVisitConsent {
+            // DMS-RME-REVISION-PROGRAM-5 (CW5-07) — assertSignable() at the top
+            // read the copy the request loaded. Take the visit row lock (the same
+            // lock, in the same order, as void() and transitionStatus()) and decide
+            // the window again on the persisted row, BEFORE any signature file is
+            // written, so a cancel or a finish that committed in the meantime
+            // leaves neither a consent nor an orphaned image behind.
+            $current = $this->visits->lockForStatusDecision((int) $visit->getKey());
+
+            if ($current === null) {
+                throw ValidationException::withMessages([
+                    'clinic_visit_id' => 'Kunjungan tidak ditemukan.',
+                ]);
+            }
+
+            $this->assertSignable($current);
+
             $consentNumber = $this->numbers->generate();
             $directory = trim((string) config('rme_consent.signature_directory', 'rme-consents'), '/');
             $folder = $directory.'/'.$consentNumber;
@@ -516,7 +543,10 @@ class RmeVisitConsentService
 
             // The treating doctor comes from the visit, never from the request.
             // Whoever operates the tablet cannot nominate a different doctor.
-            $doctor = $visit->doctor;
+            // CW5-07 — read from the LOCKED row, so a room re-assignment that
+            // committed before the lock cannot leave the consent naming the
+            // previous doctor.
+            $doctor = $current->doctor;
 
             return $this->consents->create([
                 'consent_number' => $consentNumber,

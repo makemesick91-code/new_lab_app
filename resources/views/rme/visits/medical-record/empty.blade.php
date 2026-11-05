@@ -131,6 +131,17 @@
                         arsip RME lama dan odontogram pasien tetap dapat dibaca.
                     </p>
                 </x-ui.alert>
+            @elseif (app(\App\Modules\Consent\Services\RmeVisitConsentService::class)->hasValidConsent($activeEncounter))
+                {{-- DMS-RME-REVISION-PROGRAM-5 (CW5-05) — the encounter IS
+                     consented, so the reason is this account, not the signature. --}}
+                <x-ui.alert variant="info" title="Hanya dapat dibaca">
+                    <p class="max-w-2xl text-sm">
+                        Rekam medis pemeriksaan yang sedang berjalan
+                        (Kunjungan #{{ $activeEncounter->visit_number }}) ditulis oleh tenaga
+                        klinis yang memeriksa pasien. Akun ini dapat membaca rekam medis,
+                        arsip RME lama dan odontogram pasien.
+                    </p>
+                </x-ui.alert>
             @else
                 <x-ui.alert variant="warning" title="Persetujuan Tindakan Medis belum ditandatangani">
                     <div class="flex flex-wrap items-start justify-between gap-3">
