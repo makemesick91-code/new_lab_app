@@ -2,7 +2,8 @@
 
 - **Programme:** RME revision programme under owner policy `DMS-FULL-DEVELOPMENT-PRODUCTION-TESTING-20261104`
   (rule 221 §7), mission `DMS-RME-REVISION-PROGRAM-1` (P0), 2026-11-05.
-- **Status:** IN PROGRESS — updated at each gate below.
+- **Status:** **RME REVISION GO** for R-01 and R-02 (policy §7) — merged, deployed to Biznet production and
+  production-verified on 2026-11-05; GO tag `dms-rme-revision-program-1-go`. Full Suite deferred (CG-18), not passed.
 - **Base:** `feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report` @ `746150d2` (verified from
   `origin` after fetch; production was at `6f22beb7`, three docs-only commits behind, 0 runtime paths).
 - **Branch:** `feature/dms-rme-revision-program-1`.
@@ -211,7 +212,69 @@ Quality: whole-repository `pint --test` passes; `git diff --check` clean. Full S
 
 ## 8. CI, merge, deploy and production verification
 
-(Filled in from measured results.)
+All times UTC; WITA is UTC+8.
+
+### 8.1 CI and merge
+
+| Step | Evidence |
+|---|---|
+| PR | #593, head `2c58448d` |
+| PR CI | run `41970969120`, conclusion success. Critical gate: `Tests: 7826 passed (43082 assertions)` (previous baseline 7797 + 29 new), `critical_test_exit_status=0`, warning contract 0. Selective module gate 1608 / 700 (1 skipped) / 983 / 696 passed. Classifier `unknown_high_risk` (every gate ran). |
+| Merge | squash, 2026-11-05 05:53:57 → `db42515592eaa802fff722e9eeaef97c8eaa2920`, parent `746150d2`; merge tree `beb4f179` equals the candidate tree |
+| Post-merge CI | push run `41976884939` on `db425155`, conclusion success; critical gate again `7826 passed (43082 assertions)`, exit 0; NSF-9, NSF-10, quality, selective and Android gates success |
+| Full Suite | skipped on both runs: `full_suite_authorized=false`, `full_suite_defer_reason` `FULL_SUITE_NOT_ENABLED_FOR_EVENT` (PR) and `TEMPORARY_FULL_SUITE_POLICY_ACTIVE` (push). **Deferred, not passed** (CG-18). |
+
+### 8.2 Production deployment (runbook §6b)
+
+| Step | Evidence |
+|---|---|
+| Target proof | `production-target-check.sh --remote` → `PRODUCTION_TARGET=VERIFIED` (07:00) |
+| Base tip from the host | `ls-remote` on the production host printed `db425155` |
+| Backup preflight | DB backup and BK-2 package last run 2026-11-04 18:30, both `Result=success`; off-server pull success; outside the 02:25–02:40 WITA window |
+| Concurrency | no deploy or rollback process running; no other Claude session reachable |
+| Runner | `deploy-vps-runner.sh start` executed **on the VPS**: deploy id `20261105-070059`, started 07:00:59, finished 07:02:35 |
+| Result | `exit=0`, `DEPLOY_HEAD_TARGET_MATCH=YES`, `DEPLOY OK`, snapshot cleaned; NSF-9 smoke 6 passed, 1 warning (the known loopback `127.0.0.1/login` 404, D6) |
+| Deploy-id verify | `verify 20261105-070059` → `target_commit=db425155 (checkout HEAD matches)`, `final exit=0`, **`DEPLOY RUNNER OK`** |
+| Rollback reference | previous production commit `6f22beb7` (code only, `scripts/rollback-vps.sh`) |
+
+### 8.3 Production verification (read-only, canonical URL)
+
+- Production HEAD `db425155`, tree `beb4f179`, clean tracked tree; maintenance OFF; environment `pilot`, debug OFF;
+  0 pending migrations.
+- `https://daengtisia.online` `/login`, `/health/live`, `/health/ready`, `/health/lb` → 200; `/storage/<probe>` → 403.
+- **R-01 live:** guest requests for `/rme/visits/abc`, `/rme/visits/{VISIT_ID}` (encoded), `12abc`, `0`, `007` and a
+  20-digit number → **404**; `/rme/cashier/abc/billing/create` → **404**; an 18-digit key still matches the route and
+  redirects the guest to login (302). Before the fix such segments matched the route. The signed-in 500 path is
+  covered by the critical gate on PostgreSQL 16; no signed-in production probe was made.
+- The rebuilt route cache carries the constraint.
+- **R-02 deployed:** the lab-candidate failure warning calls the canonical redactor; no raw `getMessage()` remains in
+  it. Not exercised in production: it needs a forced failure after a real payment, which is not a permitted production
+  test. Proven by the critical-gate suite.
+- Application log byte-identical before and after the deploy and the probes (no new line of any level).
+- Service units unchanged against the pre-deploy baseline: queue worker and KTP cleanup timer disabled and inactive,
+  no scheduler cron, DB-backup and BK-2 timers enabled and active.
+- No schema, permission, feature-flag or seeder change was deployed: the release diff touches no migration,
+  seeder or `config/feature_flags.php`. The flags enabled after the deploy are the existing owner-set ones.
+
+### 8.4 GO tag
+
+Annotated `dms-rme-revision-program-1-go`, tag object `742879cf`, peels to `db425155`; pushed, and the remote tag
+read from the production host peels to the production HEAD.
+
+### 8.5 RME REVISION GO criteria (policy §7)
+
+| # | Criterion | R-01 / R-02 |
+|---|---|---|
+| 1 | Implementation complete | Yes (§4) |
+| 2 | Required development tests pass | Yes: 29/29 new, 5,038 regression, 0 failed (§6) |
+| 3 | Applicable CI passes | Yes (§8.1) |
+| 4 | Permissions and branch isolation validated | Yes: no permission change; branch-isolation and RBAC suites in the regression |
+| 5 | Relevant dedicated-device testing | Not applicable: server-side routing and logging only, no device- or UI-facing change |
+| 6 | Required production verification | Yes (§8.3) |
+| 7 | No critical regression | Yes: log unchanged, health 200, units unchanged |
+| 8 | Evidence documented | This record |
+
+A revision GO does not authorise reopening the clinics (policy §8).
 
 ## 9. Residuals and follow-ups
 
