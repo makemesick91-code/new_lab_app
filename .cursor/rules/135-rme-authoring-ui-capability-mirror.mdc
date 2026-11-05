@@ -131,3 +131,11 @@ consistency fix.
   before-start still refused, other-Doctor and non-Doctor still refused,
   historical visits still closed, and another visit's or another patient's
   consent never unlocking the control.
+
+## 8. Extended by rule 223 (DMS-RME-REVISION-PROGRAM-5)
+
+The same mirror now covers the surfaces this rule did not reach: Detail Kunjungan
+"Buat Rekam Medis" (`canCreateRecordHere`), the Rekam Medis page "Selesai
+Pemeriksaan" (`transition` + `completeExamination` + signed consent), and the
+handwriting editor, "+ Tambah Halaman RM" and diagnosis forms (`canAuthorRme`).
+See `223-rme-clinical-workflow-integrity.mdc` §2.

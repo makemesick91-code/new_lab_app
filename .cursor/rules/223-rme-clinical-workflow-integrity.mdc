@@ -1,0 +1,89 @@
+---
+description: DMS-RME-REVISION-PROGRAM-5 — clinical workflow integrity. A visit's status, room and consent window are decided on the LOCKED visit row, never on the copy a request loaded; every RME authoring control mirrors the server capability (Detail Kunjungan "Buat Rekam Medis", Rekam Medis "Selesai Pemeriksaan", handwriting editor, diagnosis forms); the front-desk-only tier never authors the clinical record; a new sheet's source visit is IDOR-validated.
+globs: app/Modules/ClinicVisit/Services/ClinicVisitService.php, app/Modules/Consent/Services/RmeVisitConsentService.php, app/Modules/Consent/Controllers/RmeVisitConsentController.php, app/Modules/ClinicVisit/Controllers/ClinicVisitController.php, app/Modules/ClinicVisit/Policies/ClinicVisitPolicy.php, app/Modules/MedicalRecord/Controllers/MedicalRecordController.php, app/Support/AccessControl/FrontOfficeRole.php, resources/views/rme/visits/show.blade.php, resources/views/rme/visits/medical-record/show.blade.php, tests/Feature/RME/RmeClinicalWorkflowIntegrityTest.php
+alwaysApply: false
+---
+
+# RME clinical workflow integrity (rule 223)
+
+**Status:** GO scope of `DMS-RME-REVISION-PROGRAM-5` (2026-11-06). Sprint record:
+`docs/sprints/dms-rme-revision-program-5.md`. Owner approval: the mission brief of 2026-11-06 authorised an audit of
+the clinical workflow CW-01..CW-11 and the correction of VERIFIED defects only, recorded in the sprint doc (CG-22).
+Category under the Foundation-First Sprint Lock: clinical correctness / security fix; the lock is unchanged.
+
+This rule EXTENDS, and supersedes nothing in, rules 109, 134, 135 and 199. Where it narrows a statement in one of
+them, the narrowing is stated below and the older rule carries a pointer here.
+
+## 1. A transition is decided on the locked row (CW5-01)
+
+1. `ClinicVisitService::transitionStatus()` takes `ClinicVisitRepositoryInterface::lockForStatusDecision()` (FOR NO
+   KEY UPDATE) on the visit inside its transaction and re-evaluates `ClinicVisit::VALID_TRANSITIONS` (and, for
+   `cashier_pending`, the signed consent) on THAT row before writing; the write goes to the locked row and the
+   caller's instance is refreshed.
+1a. Lock strength is FOR NO KEY UPDATE, never FOR UPDATE: it conflicts with itself and with FOR UPDATE (so it
+   serialises against another transition, `void()` and `RmePerformedTreatmentService`), but not with the FOR KEY
+   SHARE every foreign-key INSERT takes on the visit — diagnoses, payments, consents and odontograms written against
+   the visit are never blocked and cannot deadlock with it (the 40P01 `RmeInvoiceService::create()` records).
+2. The early checks on the caller's copy stay (they give the fast, familiar refusal); they are never the authority.
+3. Why: two requests overlapping by milliseconds both read `in_progress` and both passed the map; the last commit
+   won. A cancelled visit came back `cashier_pending` (billable, with `cancelled_at` still set), or a visit already
+   at the cashier became `cancelled` — an edge the map does not have. Reproduced deterministically by acting on a
+   stale instance after another write committed.
+4. `assignRoom()` re-checks `isTerminal()` on the locked row: a cancel that committed in the meantime never
+   receives a room, a doctor and a patient–doctor assignment.
+5. `RmeVisitConsentService::sign()` takes the same visit lock first and re-asserts `assertSignable()` on the locked
+   row BEFORE any signature file is written, so a cancel or finish committed in the meantime leaves neither a consent
+   nor an orphaned image.
+6. Lock order is one row, the visit, first — the row `void()` and `RmePerformedTreatmentService` lock. Never lock
+   another clinical row before the visit inside these paths.
+6a. Known residual (not changed): the caller's abilities (`transition`, `completeExamination`) are asked on the
+   pre-lock copy; only status and consent are re-decided under the lock. A concurrent double submit now gets a
+   visible "transition not allowed" refusal instead of silently re-writing `started_at`.
+7. This closes rule 199 §27b (`transitionStatus(completed)` without a row lock).
+
+## 2. Every RME authoring control mirrors the capability (CW5-02..04)
+
+Extends rule 135 and AIR-RMC-25 to the surfaces the 2026-09 fix did not reach:
+
+8. Detail Kunjungan "Buat Rekam Medis": the controller passes `canCreateRecordHere` — true only when
+   `RmeVisitConsentService::resolveAuthorizedEncounter()` returns THIS visit. Otherwise the button renders disabled
+   with the reason and there is no `<form>`.
+9. Rekam Medis page "Selesai Pemeriksaan": offered only with the `transition` ability (doctor room guard),
+   `completeExamination` and a signed consent — the same three facts Detail Kunjungan asks.
+10. Rekam Medis page handwriting editor, "+ Tambah Halaman RM" and the structured-diagnosis forms follow
+    `canAuthorRme`, never `can('update', $medicalRecord)` alone.
+11. When the encounter IS consented but this account may not author (§3), the page says so ("Hanya dapat dibaca");
+    it never tells the user to fetch a consent that already exists.
+
+## 3. The front office never authors the clinical record (CW5-05)
+
+12. `FrontOfficeRole::isVisitFrontDeskOnly()` is the single definition of the tier (`Admin Klinik`, `Front Office`
+    without a clinical role). `ClinicVisitPolicy` and `RmeVisitConsentService::actorMayWorkOnEncounter()` both read it.
+13. A front-desk-only account is refused the active RME and the active odontogram at the canonical authority, which
+    every authoring assertion and every capability predicate reads (RME, odontogram, performed treatments). The
+    tier keeps everything it does: registration, queue, room placement, consent signing, cashier work, reading.
+14. Holding a clinical role (`Doctor`, `Perawat`, `Supervisor RME`, `Super Admin`) as well keeps full authority.
+15. Why: `manage_clinic_visits` is the registration permission the front office needs, and holding it was enough to
+    chart the odontogram and write the RME on a consented encounter by direct request — against rule 134 §1 ("Doctor
+    authorization"), §7 ("non-Doctor still refused"), rule 108 §12 and DPT-064.
+16. NOT decided here (recorded as owner decisions in the sprint doc): whether `Perawat` / `Supervisor RME` may author,
+    and whether the front office may start or cancel an examination. Do not widen §13 to "non-Doctor" without one.
+
+## 4. A new sheet's source visit is validated (CW5-06)
+
+17. `MedicalRecordController::store()` resolves `source_visit_id` through
+    `PatientRmWorkspaceResolver::resolveSourceVisit()` (same patient, RME branch) before storing it or echoing it into
+    the redirect; anything else falls back to the visit in the URL. Never store a request-supplied visit id raw: a
+    foreign patient's visit was recorded as a sheet's source, and a nonexistent id was an FK violation (HTTP 500).
+
+## 5. Messages state the real rule (CW5-08)
+
+18. The consent create refusal states the signing window (only while the examination runs); the success message
+    says the RECORD may now be written, never that payment may proceed (AIR-RMC-11).
+
+## 6. Testing
+
+19. `tests/Feature/RME/RmeClinicalWorkflowIntegrityTest.php` pins all of the above, is selected by the
+    `RmeClinicalWorkflowIntegrity` token in BOTH critical-gate variants and is declared in `config/ci_runner.php`
+    `critical_gate_mandatory_suites`. Race tests act on a stale instance after another write committed (the exact
+    interleaving of two requests); the lock itself is asserted on PostgreSQL (`FOR UPDATE` on `trx_clinic_visits`).

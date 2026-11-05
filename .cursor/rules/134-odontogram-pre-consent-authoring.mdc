@@ -154,3 +154,10 @@ general form — a permission check is not a capability check.
   "Mulai Pemeriksaan" still refused, non-Doctor and other-Doctor still refused,
   historical native and published Legacy still immutable, no consent or status
   side effect from a save, and pre-consent charting surviving the signature.
+- **DMS-RME-REVISION-PROGRAM-5 (rule 223 §3).** "Non-Doctor still refused" was
+  pinned only with a cashier, whom the route middleware refuses before this
+  authority runs; an Admin Klinik holding `manage_clinic_visits` could chart by
+  direct request. The front-desk-only tier is now refused at
+  `RmeVisitConsentService::actorMayWorkOnEncounter()` and pinned in
+  `RmeClinicalWorkflowIntegrityTest`. Whether Perawat / Supervisor RME may chart
+  is an open owner decision, not settled by this rule.

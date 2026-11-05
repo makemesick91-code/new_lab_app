@@ -227,6 +227,21 @@ editable) → Persetujuan Tindakan Medis (RME + finish unlocked) → RME + Odont
   signed-in account: binding runs before the permission middleware). Never add a per-route `where`/`whereNumber` for
   a governed parameter: it overrides the global pattern. A generic name is constrained per route, never globally.
   Source: `.cursor/rules/222-rme-route-key-constraint-and-failure-log-redaction.mdc` §1.
+- **AIR-RMC-38** Decide a visit's status, room and consent window on the LOCKED row:
+  `transitionStatus()`, `assignRoom()` and `RmeVisitConsentService::sign()` take
+  `ClinicVisitRepositoryInterface::lockForStatusDecision()` (FOR NO KEY UPDATE, never FOR UPDATE: FK inserts must not
+  wait or deadlock) and re-check the map / `isTerminal()` / `assertSignable()` on that row before writing (a stale
+  copy let a cancelled visit come back billable). Lock the visit row first, always.
+  Source: `.cursor/rules/223-rme-clinical-workflow-integrity.mdc` §1.
+- **AIR-RMC-39** Detail Kunjungan "Buat Rekam Medis" (`canCreateRecordHere`), the Rekam Medis page "Selesai
+  Pemeriksaan" (`transition` + `completeExamination` + signed consent), the handwriting editor and the diagnosis forms
+  (`canAuthorRme`) follow the capability, never a permission alone. Source: rule 223 §2.
+- **AIR-RMC-40** The front-desk-only tier (`FrontOfficeRole::isVisitFrontDeskOnly()`: Admin Klinik / Front Office
+  without a clinical role) never authors the active RME or odontogram; the refusal sits in
+  `RmeVisitConsentService::actorMayWorkOnEncounter()`. Perawat/Supervisor RME authoring and front-office exam start
+  are owner decisions, not settled here. Source: rule 223 §3.
+- **AIR-RMC-41** Store a new sheet's `source_visit_id` only after `PatientRmWorkspaceResolver::resolveSourceVisit()`;
+  never a raw request id. Source: rule 223 §4.
 
 ## Current posture (snapshot 2026-10-25 — verify before relying on it)
 
@@ -264,6 +279,7 @@ editable) → Persetujuan Tindakan Medis (RME + finish unlocked) → RME + Odont
 | `.cursor/rules/200-rme-active-user-patient-selection-cross-branch-control.mdc` | Active accounts, registration guard, edit allow-list, OD-1 |
 | `.cursor/rules/219-rme-doctor-performed-treatments.mdc` | Doctor "Tindakan Dilakukan": structured record, "Tidak Ada Tindakan" = operational KONTROL ≠ NO_CHARGE, detective |
 | `.cursor/rules/222-rme-route-key-constraint-and-failure-log-redaction.mdc` | Visit, medical-record, prescription, consent, odontogram, diagnosis and handwriting route keys constrained (404, never 500); caught exceptions logged through the redactor |
+| `.cursor/rules/223-rme-clinical-workflow-integrity.mdc` | Locked-row status/room/consent decisions; capability-mirrored RME controls; front office never authors; validated sheet source |
 
 ## History
 

@@ -1478,6 +1478,16 @@ return [
         // Selected by the `RemainingRouteKey` token in BOTH critical variants.
         'tests/Feature/RME/RemainingRouteKeyConstraintTest.php',
 
+        // DMS-RME-REVISION-PROGRAM-5 (rule 223) — clinical workflow integrity:
+        // status, room and consent window decided on the LOCKED visit row (a
+        // stale copy let a cancelled visit come back billable); RME controls
+        // mirror the capability; the front-desk-only tier never authors the
+        // clinical record (an Admin Klinik PATCH had charted an odontogram); a
+        // new sheet's source visit is IDOR-validated (a nonexistent id was a 500).
+        // No existing token matches the file, so the new
+        // `RmeClinicalWorkflowIntegrity` token is in BOTH critical variants.
+        'tests/Feature/RME/RmeClinicalWorkflowIntegrityTest.php',
+
         // SECURITY-F4C-CLINIC-CALENDAR-LAB-ORDERS-1 (owner decision D16) — lab order dates, order and
         // delivery numbering, the due-date floor and "delivered today" on the clinic calendar
         // (Asia/Makassar). A UTC "today" named the previous clinic day for eight hours of every day;

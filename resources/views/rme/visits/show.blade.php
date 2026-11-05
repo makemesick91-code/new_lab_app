@@ -396,10 +396,32 @@
                 <p class="text-sm text-gray-500 mb-3">Rekam medis belum dibuat.</p>
                 @if ($visit->status !== \App\Modules\ClinicVisit\Models\ClinicVisit::STATUS_CANCELLED)
                     @can('create', [\App\Modules\MedicalRecord\Models\MedicalRecord::class, $visit])
-                        <form method="POST" action="{{ route('rme.visits.medical-record.store', $visit) }}">
-                            @csrf
-                            <x-ui.button type="submit" variant="primary">Buat Rekam Medis</x-ui.button>
-                        </form>
+                        {{-- DMS-RME-REVISION-PROGRAM-5 (CW5-02, AIR-RMC-25) — the
+                             permission alone is not the act. The form exists only
+                             when the controller's capability says this visit is the
+                             authorized, consented encounter; otherwise the control
+                             is shown disabled with the reason and no form. --}}
+                        @if ($canCreateRecordHere ?? false)
+                            <form method="POST" action="{{ route('rme.visits.medical-record.store', $visit) }}">
+                                @csrf
+                                <x-ui.button type="submit" variant="primary">Buat Rekam Medis</x-ui.button>
+                            </form>
+                        @else
+                            {{-- Navigation stays: the workspace (history, legacy
+                                 archive, and the consent guidance) is readable
+                                 without an authorized encounter. --}}
+                            <div class="flex flex-wrap items-center gap-2">
+                                <x-ui.button type="button" variant="primary" disabled>Buat Rekam Medis</x-ui.button>
+                                <x-ui.button variant="secondary" :href="route('rme.visits.medical-record.show', $visit)">
+                                    Buka Rekam Medis Pasien
+                                </x-ui.button>
+                            </div>
+                            <p class="mt-2 text-xs text-gray-500">
+                                Rekam medis hanya dibuat untuk pemeriksaan yang sedang berjalan, oleh tenaga
+                                klinis yang memeriksa, setelah Persetujuan Tindakan Medis kunjungan tersebut
+                                ditandatangani.
+                            </p>
+                        @endif
                     @endcan
                 @endif
             @endif

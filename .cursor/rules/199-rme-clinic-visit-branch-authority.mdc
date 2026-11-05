@@ -150,6 +150,8 @@ change what the shared resolver answers for null.
     92 → 152 statements as visits go 10 → 40). Not touched.
 27b. `transitionStatus(completed)` reads `status === cashier_pending` on the
     in-memory model without a row lock; the payment service holds its own lock.
+    **[CLOSED by rule 223 §1 (DMS-RME-REVISION-PROGRAM-5): every transition is
+    re-decided on the locked visit row.]**
 27c. `show` / `edit` still render for a deactivated account with a live session
     (policy-only surfaces, rule 198 §30a).
     **[CLOSED by rule 200 §E22.]**

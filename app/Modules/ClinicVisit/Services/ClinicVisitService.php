@@ -295,6 +295,17 @@ class ClinicVisitService
         $doctorId = $this->onlineContext->resolveDoctorIdForRoom((int) $visit->branch_id, $room->id);
 
         return DB::transaction(function () use ($visit, $room, $doctorId, $account) {
+            // CW5-01 — the terminal check above read the caller's copy; a cancel
+            // committed in the meantime must not receive a room, a doctor and a
+            // patient–doctor assignment. Decide again on the locked row.
+            $locked = $this->visits->lockForStatusDecision((int) $visit->getKey());
+
+            if ($locked === null || $locked->isTerminal()) {
+                throw ValidationException::withMessages([
+                    'clinic_room_id' => 'Kunjungan yang sudah selesai atau dibatalkan tidak dapat diubah ruangannya.',
+                ]);
+            }
+
             $updated = $this->visits->update($visit, [
                 'clinic_room_id' => $room->id,
                 'doctor_id' => $doctorId,
@@ -897,26 +908,72 @@ class ClinicVisitService
         }
 
         return DB::transaction(function () use ($visit, $newStatus) {
+            // DMS-RME-REVISION-PROGRAM-5 (CW5-01) — the checks above read the copy
+            // the caller loaded, which a concurrent request may already have moved
+            // on (a cancel racing "Selesai Pemeriksaan", a start racing a cancel).
+            // An unconditional UPDATE from that copy let the last commit win: a
+            // cancelled visit came back billable, or a visit at the cashier became
+            // cancelled — an edge the map does not have. The decision is therefore
+            // repeated on the LOCKED row, and the write goes to that row.
+            $locked = $this->visits->lockForStatusDecision((int) $visit->getKey());
+
+            if ($locked === null) {
+                throw ValidationException::withMessages([
+                    'status' => 'Kunjungan tidak ditemukan.',
+                ]);
+            }
+
+            $this->assertTransitionAllowedOnLockedRow($locked, $newStatus);
+
             $timestamps = [];
 
-            if ($newStatus === ClinicVisit::STATUS_WAITING && $visit->check_in_at === null) {
+            if ($newStatus === ClinicVisit::STATUS_WAITING && $locked->check_in_at === null) {
                 $timestamps['check_in_at'] = now();
             }
 
-            if ($newStatus === ClinicVisit::STATUS_IN_PROGRESS && $visit->started_at === null) {
+            if ($newStatus === ClinicVisit::STATUS_IN_PROGRESS && $locked->started_at === null) {
                 $timestamps['started_at'] = now();
             }
 
-            if ($newStatus === ClinicVisit::STATUS_COMPLETED && $visit->completed_at === null) {
+            if ($newStatus === ClinicVisit::STATUS_COMPLETED && $locked->completed_at === null) {
                 $timestamps['completed_at'] = now();
             }
 
-            if ($newStatus === ClinicVisit::STATUS_CANCELLED && $visit->cancelled_at === null) {
+            if ($newStatus === ClinicVisit::STATUS_CANCELLED && $locked->cancelled_at === null) {
                 $timestamps['cancelled_at'] = now();
             }
 
-            return $this->visits->update($visit, array_merge(['status' => $newStatus], $timestamps));
+            $this->visits->update($locked, array_merge(['status' => $newStatus], $timestamps));
+
+            // Callers keep using the instance they passed in (the payment service
+            // reads it after completing the visit), so it reflects the write.
+            return $visit->refresh();
         });
+    }
+
+    /**
+     * CW5-01 — the transition rule, evaluated on the row this transaction holds.
+     *
+     * Same map, same consent prerequisite and same wording as the early checks in
+     * transitionStatus(); only the source of truth differs. A visit that moved
+     * while the request was in flight is refused with the state it is actually in.
+     */
+    private function assertTransitionAllowedOnLockedRow(ClinicVisit $locked, string $newStatus): void
+    {
+        $allowed = ClinicVisit::VALID_TRANSITIONS[$locked->status] ?? [];
+
+        if (! in_array($newStatus, $allowed, true)) {
+            throw ValidationException::withMessages([
+                'status' => "Transisi status dari '{$locked->status}' ke '{$newStatus}' tidak diizinkan.",
+            ]);
+        }
+
+        if ($newStatus === ClinicVisit::STATUS_CASHIER_PENDING
+            && ! app(RmeVisitConsentService::class)->hasValidConsent($locked)) {
+            throw ValidationException::withMessages([
+                'status' => 'Pemeriksaan belum dapat diselesaikan karena Persetujuan Tindakan Medis belum ditandatangani. Lengkapi persetujuan terlebih dahulu.',
+            ]);
+        }
     }
 
     /**
