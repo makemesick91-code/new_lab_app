@@ -157,6 +157,7 @@ use App\Modules\Treatment\Controllers\TreatmentController;
 use App\Modules\TreatmentCategory\Controllers\TreatmentCategoryController;
 use App\Modules\User\Controllers\UserController;
 use App\Modules\WaReminderTemplate\Controllers\WaReminderTemplateController;
+use App\Support\Routing\DatabaseRouteKey;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
@@ -2592,8 +2593,13 @@ Route::middleware('auth')->prefix('oversight')->name('oversight.')->group(functi
         Route::get('rme/lookup', [OversightClinicalRecordController::class, 'lookup'])->name('rme.lookup');
         Route::get('rme/patients/{patient}', [OversightClinicalRecordController::class, 'patient'])
             ->whereNumber('patient')->name('rme.patients.show');
+        // DMS-RME-REVISION-PROGRAM-2 / R-08 — `visit` is a generic parameter
+        // name, so it is constrained per route (never globally) with the
+        // canonical bigint-key pattern. `whereNumber` (`[0-9]+`) admitted a
+        // number beyond PHP's integer range (TypeError on `int $visit`, HTTP
+        // 500) and a leading-zero alias that opened a real visit.
         Route::get('rme/visits/{visit}', [OversightClinicalRecordController::class, 'visit'])
-            ->whereNumber('visit')->name('rme.visits.show');
+            ->where('visit', DatabaseRouteKey::PATTERN)->name('rme.visits.show');
         Route::get('rme/handwritings/{handwriting}/image', [OversightClinicalRecordController::class, 'handwritingImage'])
             ->whereNumber('handwriting')->name('rme.handwritings.image');
         Route::get('rme/handwriting-pages/{handwritingPage}/image', [OversightClinicalRecordController::class, 'handwritingPageImage'])
@@ -2611,13 +2617,13 @@ Route::middleware('auth')->prefix('oversight')->name('oversight.')->group(functi
         Route::middleware('permission:export_oversight_data')->group(function () {
             Route::get('rme/export', [OversightClinicalRecordController::class, 'export'])->name('rme.export');
             Route::get('rme/visits/{visit}/print', [OversightClinicalRecordController::class, 'print'])
-                ->whereNumber('visit')->name('rme.visits.print');
+                ->where('visit', DatabaseRouteKey::PATTERN)->name('rme.visits.print');
             Route::get('rme/visits/{visit}/pdf', [OversightClinicalRecordController::class, 'pdf'])
-                ->whereNumber('visit')->name('rme.visits.pdf');
+                ->where('visit', DatabaseRouteKey::PATTERN)->name('rme.visits.pdf');
             Route::get('rme/visits/{visit}/odontogram/print', [OversightClinicalRecordController::class, 'odontogramPrint'])
-                ->whereNumber('visit')->name('rme.visits.odontogram.print');
+                ->where('visit', DatabaseRouteKey::PATTERN)->name('rme.visits.odontogram.print');
             Route::get('rme/visits/{visit}/prescription/print', [OversightClinicalRecordController::class, 'prescriptionPrint'])
-                ->whereNumber('visit')->name('rme.visits.prescription.print');
+                ->where('visit', DatabaseRouteKey::PATTERN)->name('rme.visits.prescription.print');
 
             Route::get('legacy-rme/{record}/source', [OversightLegacyArchiveController::class, 'rmeSource'])
                 ->whereNumber('record')->name('legacy.rme.source');

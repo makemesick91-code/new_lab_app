@@ -242,6 +242,12 @@ code, then the canonical rule, and report the drift.
   bindings and PostgreSQL DETAIL rows (CG-11). The failure still never rolls the payment back. Source:
   `.cursor/rules/222-rme-route-key-constraint-and-failure-log-redaction.mdc` §2.
 
+- **AIR-RMB-46** `{rmeInvoice}` (15 cashier, correction, refund, dispute and receivable routes) is constrained globally
+  by `App\Support\Routing\DatabaseRouteKey`; the five `oversight/rme/visits/{visit}` routes carry
+  `->where('visit', DatabaseRouteKey::PATTERN)` per route, because `visit` is a generic name (never global, never
+  `whereNumber`, which let a number beyond PHP's integer range 500 on `int $visit` and a leading-zero alias open a
+  real visit). Source: `.cursor/rules/222-rme-route-key-constraint-and-failure-log-redaction.mdc` §1.6–§1.8.
+
 ## Current posture (snapshot 2026-10-25 — verify before relying on it)
 
 - `rme.invoice_correction` **ON** as a pilot (SPN4, one maker + one checker), `PILOT_ACTIVE`, probe WATCH. Full pilot
@@ -312,7 +318,7 @@ code, then the canonical rule, and report the drift.
 | `.cursor/rules/219-rme-doctor-performed-treatments.mdc` | Doctor "Tindakan Dilakukan" record: clinical evidence only, no price; feeds rule 218 (detective); operational KONTROL ≠ NO_CHARGE |
 | `.cursor/rules/109-rme-exam-consent-odontogram-history.mdc` | Consent gates exam finish, not payment |
 | `.cursor/rules/92-feature-flag-runtime-override.mdc` | Flag environment overrides captured at config build |
-| `.cursor/rules/222-rme-route-key-constraint-and-failure-log-redaction.mdc` | Caught exceptions logged through the redactor; cashier visit route keys constrained |
+| `.cursor/rules/222-rme-route-key-constraint-and-failure-log-redaction.mdc` | Caught exceptions logged through the redactor; cashier visit, invoice and oversight visit route keys constrained |
 
 ## History
 

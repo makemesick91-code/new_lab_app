@@ -1,20 +1,20 @@
-# DMS-RME-REVISION-PROGRAM-1 (2026-11-05). The owner's RME revision programme under rule 221 §7. No owner-approved
-# list of RME revisions existed anywhere, so a targeted audit produced the inventory and the owner approved, on
-# 2026-11-05, exactly two revisions that correct breaches of existing canonical rules (CG-22: recorded, not inferred):
-#   R-01  a `{clinicVisit}` segment that is not a database key (`abc`, a pasted `{VISIT_ID}`, a number beyond
-#         bigint) reached the query and answered HTTP 500 with an ERROR line on PostgreSQL. Now constrained globally
-#         by App\Support\Routing\DatabaseRouteKey and answered 404; four routes whose looser `whereNumber` overrode
-#         the global pattern lost that override.
-#   R-02  the lab-candidate failure warning logged the raw exception message, which for a database error carries
-#         interpolated bindings and PostgreSQL DETAIL rows (CG-11). It now goes through the canonical
-#         TelemetryRedactor and records the exception class.
-# The Foundation-First Sprint Lock stays ACTIVE by owner decision; both revisions are allowed categories (hotfix,
-# security, monitoring). No schema, permission, policy or frontend change. Full Suite deferred (CG-18), not passed.
+# DMS-RME-REVISION-PROGRAM-2 (2026-11-05). Continuation of DMS-RME-REVISION-PROGRAM-1 under rule 221 §7. The owner
+# approved, in the mission brief of 2026-11-05, exactly the six route-key follow-ups Program 1 recorded in rule 222
+# §1.6 (CG-22: recorded, not inferred):
+#   R-03..R-07  `{rmeInvoice}` (15 routes), `{medicalRecord}` (7), `{rmePrescription}` (4), `{consent}` (3) and
+#               `{odontogram}` (3) bind a bigint `id()` and took any segment. On PostgreSQL a non-key segment answered
+#               HTTP 500 with an ERROR line -- also for a user holding no permission, because implicit binding runs
+#               before the permission middleware. Now constrained globally by App\Support\Routing\DatabaseRouteKey.
+#   R-08        the five `oversight/rme/visits/{visit}` routes used `whereNumber` with an `int $visit` controller
+#               argument: a number beyond PHP's integer range answered 500, and a leading-zero alias opened a real
+#               visit. `visit` is a generic name, so it is constrained per route with DatabaseRouteKey::PATTERN.
+# The Foundation-First Sprint Lock stays ACTIVE; this is an allowed category (security fix). No schema, permission,
+# policy or frontend change. Full Suite deferred (CG-18), not passed.
 # Carried forward: LEGACY-RME-PROGRAM-CLOSURE-1 stays CLOSED and inherited.
-id: DMS-RME-REVISION-PROGRAM-1
+id: DMS-RME-REVISION-PROGRAM-2
 type: SECURITY_FIX
-module: ClinicVisit
-title: "RME revision programme: visit route keys constrained (no 500 on a non-key segment); lab-candidate failure log redacted"
+module: Rme
+title: "RME route-key hardening for invoice, medical record, prescription, consent, odontogram and oversight"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 runtime_change: true
 schema_change: false
@@ -25,5 +25,5 @@ ledger_impact: false
 deploy_required: true
 browser_required: false
 test_profiles: [focused, security_regression]
-go_tag: dms-rme-revision-program-1-go
+go_tag: dms-rme-revision-program-2-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1

@@ -1423,6 +1423,23 @@ return [
         // `RmePayment` token in BOTH critical variants.
         'tests/Feature/RME/RmePaymentLabCandidateFailureLogPrivacyTest.php',
 
+        // DMS-RME-REVISION-PROGRAM-2 / R-03..R-07 — a non-key segment on an
+        // invoice, medical record, prescription, consent or odontogram route
+        // reached the bigint query and answered HTTP 500 with an ERROR line on
+        // PostgreSQL, also for a user holding no permission (binding runs
+        // before the permission middleware). Every route carrying the five
+        // parameters, the compiled (cached) matcher and the behavioural 404
+        // are pinned here. Selected by the `RmeRecordRouteKey` token in BOTH
+        // critical variants.
+        'tests/Feature/RME/RmeRecordRouteKeyConstraintTest.php',
+
+        // DMS-RME-REVISION-PROGRAM-2 / R-08 — the oversight visit routes'
+        // `whereNumber` admitted a number beyond PHP's integer range (500 on
+        // `int $visit`) and a leading-zero alias that opened a real clinical
+        // record. Selected by the `OversightVisitRouteKey` token in BOTH
+        // critical variants.
+        'tests/Feature/ClinicOversight/OversightVisitRouteKeyConstraintTest.php',
+
         // SECURITY-F4C-CLINIC-CALENDAR-LAB-ORDERS-1 (owner decision D16) — lab order dates, order and
         // delivery numbering, the due-date floor and "delivered today" on the clinic calendar
         // (Asia/Makassar). A UTC "today" named the previous clinic day for eight hours of every day;

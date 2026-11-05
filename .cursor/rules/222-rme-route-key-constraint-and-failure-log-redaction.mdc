@@ -1,20 +1,33 @@
 ---
-description: DMS-RME-REVISION-PROGRAM-1 — (R-01) a route parameter bound to a bigint database key is constrained by App\Support\Routing\DatabaseRouteKey before it can reach a query, so a segment that is not a key answers 404, never an HTTP 500 with an ERROR line; no route may add a looser per-route constraint that overrides it. (R-02) a caught exception is logged through the canonical TelemetryRedactor, never as a raw getMessage(), because a QueryException message carries interpolated bindings and PostgreSQL DETAIL rows.
-globs: app/Support/Routing/**, app/Providers/AppServiceProvider.php, routes/web.php, app/Modules/RmeInvoice/Services/RmePaymentService.php, app/Modules/Observability/Support/TelemetryRedactor.php, tests/Feature/RME/ClinicVisitRouteKeyConstraintTest.php, tests/Feature/RME/RmePaymentLabCandidateFailureLogPrivacyTest.php
+description: DMS-RME-REVISION-PROGRAM-1/2 — (R-01, R-03..R-08) a route parameter bound to a bigint database key is constrained by App\Support\Routing\DatabaseRouteKey before it can reach a query, so a segment that is not a key answers 404, never an HTTP 500 with an ERROR line; no route may add a looser per-route constraint that overrides it. (R-02) a caught exception is logged through the canonical TelemetryRedactor, never as a raw getMessage(), because a QueryException message carries interpolated bindings and PostgreSQL DETAIL rows.
+globs: app/Support/Routing/**, app/Providers/AppServiceProvider.php, routes/web.php, app/Modules/RmeInvoice/Services/RmePaymentService.php, app/Modules/Observability/Support/TelemetryRedactor.php, app/Modules/ClinicOversight/Controllers/OversightClinicalRecordController.php, tests/Feature/RME/ClinicVisitRouteKeyConstraintTest.php, tests/Feature/RME/RmeRecordRouteKeyConstraintTest.php, tests/Feature/ClinicOversight/OversightVisitRouteKeyConstraintTest.php, tests/Feature/RME/RmePaymentLabCandidateFailureLogPrivacyTest.php
 alwaysApply: false
 ---
 
 # RME route keys and failure-log redaction (rule 222)
 
-**Status:** GO scope of `DMS-RME-REVISION-PROGRAM-1` (2026-11-05). Sprint record:
-`docs/sprints/dms-rme-revision-program-1.md`. Owner approval: the two revisions below, recorded in that sprint doc
+**Status:** GO scope of `DMS-RME-REVISION-PROGRAM-1` (R-01, R-02) and `DMS-RME-REVISION-PROGRAM-2` (R-03..R-08),
+both 2026-11-05. Sprint records: `docs/sprints/dms-rme-revision-program-1.md`,
+`docs/sprints/dms-rme-revision-program-2.md`. Owner approval: each revision below, recorded in its sprint doc
 (CG-22). Policy: rule 221 §7 (RME revision programme). Category under the Foundation-First Sprint Lock: hotfix /
 security / monitoring, all allowed before Foundation GO; the lock itself is unchanged.
 
-## 1. R-01 — a route key that is not a database key never reaches the database
+## 1. R-01, R-03..R-08 — a route key that is not a database key never reaches the database
 
-1. `{clinicVisit}` is constrained globally by `App\Support\Routing\DatabaseRouteKey::PATTERN`
-   (`[1-9][0-9]{0,17}`: 1–18 digits, no sign, no leading zero). Every key an identity column issues is in that
+1. These parameters are constrained globally by `App\Support\Routing\DatabaseRouteKey::PATTERN`. Each is
+   domain-specific and every route carrying it binds a bigint `id()` primary key implicitly (no model overrides the
+   route key; there is no explicit `Route::bind`):
+
+   | Parameter | Routes | Key | Revision |
+   |---|---|---|---|
+   | `clinicVisit` | 44 | `trx_clinic_visits.id` | R-01 (Program 1) |
+   | `rmeInvoice` | 15 | `trx_rme_invoices.id` | R-03 |
+   | `medicalRecord` | 7 | `trx_medical_records.id` | R-04 |
+   | `rmePrescription` | 4 | `trx_rme_prescriptions.id` | R-05 |
+   | `consent` | 3 | `trx_rme_visit_consents.id` | R-06 |
+   | `odontogram` | 3 | `trx_odontograms.id` | R-07 |
+
+   The pattern is `[1-9][0-9]{0,17}`: 1–18 digits, no sign, no leading zero. Every key an identity column issues is in that
    range, and 18 nines is below the bigint ceiling, so PostgreSQL can always cast what the router lets through.
 2. Why: implicit model binding runs `where "id" = '<segment>'`. On PostgreSQL a non-integer segment raises
    SQLSTATE 22P02 and a number beyond bigint raises 22003, so the request answered HTTP 500 and wrote an ERROR line
@@ -26,13 +39,30 @@ security / monitoring, all allowed before Foundation GO; the lock itself is unch
    `whereNumber` OVERRIDES the global pattern. Four visit-bound legacy-archive routes carried
    `->whereNumber('clinicVisit')` (`[0-9]+`), which still admits a number beyond bigint; they were removed. One
    authority per parameter.
-5. Extending the constraint to another integer route parameter means adding its name to
-   `DatabaseRouteKey::CONSTRAINED_PARAMETERS`; nothing else.
-6. Follow-up, NOT done (owner approved R-01 for `{clinicVisit}` only): the same unconstrained-key weakness exists on
-   other integer-bound RME parameters (`rmeInvoice`, `medicalRecord`, `rmePrescription`, `consent`, `odontogram`,
-   and others), and on the five `oversight/rme/visits/{visit}` routes, whose `whereNumber('visit')` plus an
-   `int $visit` controller signature still fail on a number beyond the integer range. Extending it needs its own
-   owner approval.
+5. Extending the global constraint to another DOMAIN-SPECIFIC parameter means adding its name to
+   `DatabaseRouteKey::CONSTRAINED_PARAMETERS`; nothing else. Before adding one, prove from the code that every route
+   carrying the name binds a bigint key, and that no route overrides it.
+6. **A GENERIC parameter name is never constrained globally** (`visit`, `patient`, `record`, `page`, `branch`, …): it
+   may later name another identifier type, and a global numeric pattern would silently 404 that route. The oversight
+   lookup already resolves a visit by its string visit number. Constrain a generic name per route with
+   `->where('<name>', DatabaseRouteKey::PATTERN)`, reusing the constant (never a copied regex), and never with
+   `whereNumber`, whose `[0-9]+` admits a number beyond bigint or PHP's integer range plus a leading-zero alias.
+7. R-08: the five `oversight/rme/visits/{visit}` routes now carry `->where('visit', DatabaseRouteKey::PATTERN)`.
+   They are not model-bound: the controller takes `int $visit`. Under `whereNumber` a number beyond PHP's integer
+   range failed the `int` conversion (TypeError, HTTP 500 plus ERROR), and `0<id>` cast to the real id, so a
+   non-canonical URL opened — and audited — a real clinical record. 18 digits always fits a PHP integer.
+8. **Implicit binding runs BEFORE the route's permission middleware.** So the unconstrained defect was reachable by
+   any authenticated account, including one holding no permission, and a well-formed key that names no record is a
+   404 from binding for everyone (the permission gate only ever sees a real record). The constraint keeps both
+   orders intact: real record without permission → 403, no such record → 404, non-key segment → 404. Do not
+   "fix" the binding order to make a permission 403 appear first.
+9. A tightened constraint also tightens `PostAuthenticationRedirectService::matchGetRoute()`: an intended URL that
+   no longer matches a route falls back to the default landing. That is the intended direction.
+10. Still open (measured 2026-11-05, NOT approved, NOT done): RME-area parameters that remain unconstrained or use
+    `whereNumber` — among them `{diagnosis}` (7 routes, none) inside the medical-record routes,
+    `{receiptSnapshot}` (`whereNumber` + `int` argument) on the receipt reprint route, and the other oversight
+    parameters (`{patient}`, `{handwriting}`, `{handwritingPage}`, `{record}`, `{page}`, all `whereNumber`). Each
+    needs its identifier type verified and its own owner approval. Inventory: `docs/sprints/dms-rme-revision-program-2.md`.
 
 ## 2. R-02 — a caught exception is logged through the canonical redactor
 
@@ -56,8 +86,15 @@ security / monitoring, all allowed before Foundation GO; the lock itself is unch
 - `tests/Feature/RME/ClinicVisitRouteKeyConstraintTest.php`: every `{clinicVisit}` route and the compiled
   (cacheable) collection carry the pattern; guests and signed-in users get 404 with no ERROR for a non-key segment;
   the legacy-archive routes keep no looser override; real keys still work.
+- `tests/Feature/RME/RmeRecordRouteKeyConstraintTest.php` (R-03..R-07): the global list is exactly the six names and
+  excludes `visit`; every route carrying the five parameters, the compiled collection and Symfony's cached matcher
+  carry the pattern; 13 non-key segment classes answer 404 with no ERROR for a guest and (one segment per test — a
+  failed statement aborts the PostgreSQL transaction) for a signed-in user; the permission order of §1.8.
+- `tests/Feature/ClinicOversight/OversightVisitRouteKeyConstraintTest.php` (R-08): the five routes carry the
+  canonical pattern (live and compiled); overflow and the leading-zero alias are 404 with a positive control; the
+  in-branch visit still opens, an out-of-branch one is 404, the reader permission gate is unchanged.
 - `tests/Feature/RME/RmePaymentLabCandidateFailureLogPrivacyTest.php`: no binding, DETAIL row, SQL tail or synthetic
   clinical value in the warning; SQLSTATE and exception class kept; payment not rolled back.
-- Both are declared in `config/ci_runner.php` `critical_gate_mandatory_suites` and selected in BOTH critical
-  variants (`ClinicVisitRouteKey`, `RmePayment`). The behavioural 404/500 cases are load-bearing on PostgreSQL 16,
+- All four are declared in `config/ci_runner.php` `critical_gate_mandatory_suites` and selected in BOTH critical
+  variants (`ClinicVisitRouteKey`, `RmeRecordRouteKey`, `OversightVisitRouteKey`, `RmePayment`). The behavioural 404/500 cases are load-bearing on PostgreSQL 16,
   which the critical gate uses.
