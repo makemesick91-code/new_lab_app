@@ -1,28 +1,29 @@
-# DMS-BIZNET-POST-GO-DOCUMENTATION-CLOSURE-1 (2026-11-04). Documentation, rules and governance tests only, after the
-# first Biznet production deploy (deploy 20261104-151042, commit 6f22beb7, GO tag
-# dms-biznet-first-production-deploy-infra-1-go). CLAUDE.md CG-15 no longer says Biznet was never deployed; later
-# deploys follow §6b under the owner's current release governance (no new per-deploy authorization rule is invented),
-# with proof by `verify <deploy-id>`, a host-side check of the base-branch tip (the runner pins the tip at launch) and
-# code-only rollback. CG-16 gains ONE narrow, registered exception (a single
-# deploy releasing more than one sprint, tag named by the owner in writing) with docs/governance/go-tag-exceptions.md
-# as the registry. The production-host-identity guide marks §6 closed and §6a executed (step-2 count corrected to
-# 510 − 2 = 508) and adds §6b for every later deploy. Rules: deploy-infra AIR-DEP-33/34, rule 220 §4 items 12/13d/13f.
-# Tests are strengthened only (DevflowAiInstructionSystemTest, ProductionHostIdentityGuardTest).
-# No runtime, schema, configuration or production change; not deployed; no GO tag is created for this change (rule 184
-# §32, CG-16) and the existing release tag is not modified.
+# DMS-RME-REVISION-PROGRAM-1 (2026-11-05). The owner's RME revision programme under rule 221 §7. No owner-approved
+# list of RME revisions existed anywhere, so a targeted audit produced the inventory and the owner approved, on
+# 2026-11-05, exactly two revisions that correct breaches of existing canonical rules (CG-22: recorded, not inferred):
+#   R-01  a `{clinicVisit}` segment that is not a database key (`abc`, a pasted `{VISIT_ID}`, a number beyond
+#         bigint) reached the query and answered HTTP 500 with an ERROR line on PostgreSQL. Now constrained globally
+#         by App\Support\Routing\DatabaseRouteKey and answered 404; four routes whose looser `whereNumber` overrode
+#         the global pattern lost that override.
+#   R-02  the lab-candidate failure warning logged the raw exception message, which for a database error carries
+#         interpolated bindings and PostgreSQL DETAIL rows (CG-11). It now goes through the canonical
+#         TelemetryRedactor and records the exception class.
+# The Foundation-First Sprint Lock stays ACTIVE by owner decision; both revisions are allowed categories (hotfix,
+# security, monitoring). No schema, permission, policy or frontend change. Full Suite deferred (CG-18), not passed.
 # Carried forward: LEGACY-RME-PROGRAM-CLOSURE-1 stays CLOSED and inherited.
-id: DMS-BIZNET-POST-GO-DOCUMENTATION-CLOSURE-1
-type: INFRA_RELEASE
-module: Deploy
-title: "Post-GO documentation closure — Biznet deploy recorded, verify-by-identifier, CG-16 narrow exception registry"
+id: DMS-RME-REVISION-PROGRAM-1
+type: SECURITY_FIX
+module: ClinicVisit
+title: "RME revision programme: visit route keys constrained (no 500 on a non-key segment); lab-candidate failure log redacted"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
-runtime_change: false
+runtime_change: true
 schema_change: false
 frontend_change: false
-security_impact: false
+security_impact: true
 branch_isolation_impact: false
 ledger_impact: false
-deploy_required: false
+deploy_required: true
 browser_required: false
-test_profiles: [focused]
+test_profiles: [focused, security_regression]
+go_tag: dms-rme-revision-program-1-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1

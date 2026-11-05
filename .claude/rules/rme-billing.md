@@ -237,6 +237,11 @@ code, then the canonical rule, and report the drift.
   `pay` policy and `belongsToVisit` before validation, so a cashier at another branch learns nothing about a
   correction. Source: rule 185 §8, §11; `.cursor/rules/191-rme-invoice-correction-prepayment-activation.mdc` §9a.
 
+- **AIR-RMB-45** The post-payment lab-candidate failure warning logs the exception class and
+  `TelemetryRedactor::exceptionMessage()`, never a raw `getMessage()`: a QueryException carries interpolated
+  bindings and PostgreSQL DETAIL rows (CG-11). The failure still never rolls the payment back. Source:
+  `.cursor/rules/222-rme-route-key-constraint-and-failure-log-redaction.mdc` §2.
+
 ## Current posture (snapshot 2026-10-25 — verify before relying on it)
 
 - `rme.invoice_correction` **ON** as a pilot (SPN4, one maker + one checker), `PILOT_ACTIVE`, probe WATCH. Full pilot
@@ -307,6 +312,7 @@ code, then the canonical rule, and report the drift.
 | `.cursor/rules/219-rme-doctor-performed-treatments.mdc` | Doctor "Tindakan Dilakukan" record: clinical evidence only, no price; feeds rule 218 (detective); operational KONTROL ≠ NO_CHARGE |
 | `.cursor/rules/109-rme-exam-consent-odontogram-history.mdc` | Consent gates exam finish, not payment |
 | `.cursor/rules/92-feature-flag-runtime-override.mdc` | Flag environment overrides captured at config build |
+| `.cursor/rules/222-rme-route-key-constraint-and-failure-log-redaction.mdc` | Caught exceptions logged through the redactor; cashier visit route keys constrained |
 
 ## History
 
