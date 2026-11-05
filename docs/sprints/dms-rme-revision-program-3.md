@@ -166,6 +166,10 @@ Results:
 | Dependency regression: 43 dependent files + all Program 1/2 route-key and redaction suites (51 files) | PostgreSQL 16.15 | 1540 | 1535 | 0 | 5 |
 | Focused governance: `tests/Feature/{Architecture,Cicd,Foundation}` + legacy closure contract + runbook command guard | PostgreSQL 16.15 | 1347 | 1343 | 1 → 0 | 3 |
 
+- Provenance of the PostgreSQL green figure: the first green run (19:40 WITA) had 1 failure — the receipt "guest"
+  test, which was not a guest (§3). After that test was corrected, the dependency-regression run (19:47 WITA) contains
+  all 625 cases (115 + 6 + 149 + 150 + 205) with 0 failures; that run is the PostgreSQL evidence for the 625/625 row.
+  CI then ran the same suites on PostgreSQL inside the critical gate (§8).
 - The 5 regression skips are `LegacyRmeClinicalReadPrintTest` PDF-export cases guarded by `extension_loaded('gd')`
   (no GD locally; CI installs it). The 3 focused skips are environment guards (Redis runtime disabled; two
   non-pgsql-connection cases that skip on PostgreSQL). One test was marked risky in the focused run; it is not a
