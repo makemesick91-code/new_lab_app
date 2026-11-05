@@ -212,17 +212,27 @@ code, then the canonical rule, and report the drift.
   host identity, timestamps, identifier, target commit (one pin, the deploy's HEAD == target, checkout still there),
   runner version and result (status == record, preflight GO + DEPLOY OK in the run's own log) all agree; anything
   else exits `4` with a named verdict. Never read `latest.status` raw as a GO criterion. The first Biznet deploy
-  follows owner-selected Option A (`production-host-identity.md` §6a): quarantine the copied evidence with
+  followed owner-selected Option A (`production-host-identity.md` §6a): quarantine the copied evidence with
   `deploy-runner-quarantine-stale-status.sh` (move, never delete), deploy, then `verify-transition <id> <MERGE_SHA>`.
+  That ran once, on 2026-11-04 (deploy `20261104-151042`, `TRANSITION DEPLOY VERIFIED`). Every later deploy is proven
+  with `verify <id>` → `DEPLOY RUNNER OK` (§6b), and `verify-transition` refuses it (`NOT-TRANSITION`).
   Source: `.cursor/rules/220-production-host-identity-biznet.mdc` §4.
+- **AIR-DEP-34** The runner deploys the **tip of the base branch at launch**; nothing passes it a commit. Before
+  `start`, confirm from the host (`git ls-remote origin refs/heads/<base>`) that the tip is the commit approved for
+  release, and push nothing to the base between that approval and `start`. A docs or evidence commit pushed
+  after a GO commit is therefore the next deploy's target, not the deployed runtime. Source:
+  `.cursor/rules/220-production-host-identity-biznet.mdc` §4.
 
 ## Current posture (snapshot 2026-11-04, read-only inspection — verify before relying on it)
 
 - Production is Biznet `DaengtisiaMS` (Ubuntu 24.04, PostgreSQL 16.15 local). The app runs as `daengtisiams` on the
   PHP 8.3 pool; PHP 8.3 is the only PHP installed and the default `www` pool is retired, so there is no co-tenant.
   The queue worker unit is installed but disabled (reopening condition C5); the db-backup and BK-2 timers are
-  enabled; the installed db-backup units differ from `deploy/systemd/` (owner decision). No deploy has run on Biznet
-  yet and Node/npm are not installed there — see `docs/runbooks/production-host-identity.md` §6 before the first one.
+  enabled; the installed db-backup units differ from `deploy/systemd/` (owner decision). The first Biznet deploy ran
+  on 2026-11-04 (`6f22beb7`, deploy `20261104-151042`, 0 migrations); Node 22 and npm 10 are installed outside the OS
+  package manager, so their security updates are manual. Later deploys follow
+  `docs/runbooks/production-host-identity.md` §6b. Deployment GO is not a claim about clinical load: the clinics were
+  closed during that verification.
 - Accepted residuals carried from Hostinger: any `www-data` process (nginx) can reach the FastCGI socket
   (connect ≠ read), and root reads everything.
 - Live upload limits since 2026-10-03: nginx `512m`, pool `500M`/`512M`/`900`/`256M`. The DB backup timer is versioned

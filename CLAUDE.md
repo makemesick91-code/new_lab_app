@@ -117,16 +117,24 @@ it covers. When you plan work in a domain before opening any of its files, read 
   decision.
 - **CG-15 Deploy.** Deploy only with `bash scripts/deploy-vps-runner.sh start`, executed **on the VPS** (as root
   through `sudo -n`) in the app directory, never on a workstation or a CI runner. The first deploy on a new host needs
-  explicit owner approval and a closed readiness checklist (`docs/runbooks/production-host-identity.md` §6; Biznet has
-  not yet run one). A deploy is complete only when its status file reports `exit=0`
-  and its log reports `DEPLOY OK`; the SSH pipe may drop while the detached runner carries on. The runner takes the
-  backup, pins the SHA and runs from an immutable snapshot, so never pre-pull or hand-edit the production tree. After
-  a permission change run `PermissionSeeder`, then `RoleSeeder`, then `permission:cache-reset`. Rebuild config
-  caches as the runtime user. If you edit the environment file, re-assert `root:daengtisiams 0640`.
+  explicit owner approval and a closed readiness checklist (`docs/runbooks/production-host-identity.md` §6). Biznet's
+  first deploy ran on 2026-11-04 (deploy `20261104-151042`, commit `6f22beb7`); later deploys follow §6b under the
+  owner's current release governance. The runner pins the base-branch tip at launch, so confirm from the host that the
+  tip is the commit approved for release and push nothing to the base before `start`. A deploy is complete only
+  when its status file reports `exit=0` and its log reports `DEPLOY OK`, proven with `verify <deploy-id>` →
+  `DEPLOY RUNNER OK` (never read `latest.status` raw); the SSH pipe may drop while the detached runner carries on. The
+  runner takes the backup, pins the SHA and runs from an immutable snapshot, so never pre-pull or hand-edit the
+  production tree. Rollback is `scripts/rollback-vps.sh <commit>` on the host: code only, never an automatic data
+  restore, and never delete a backup or the rollback database. After a permission change run `PermissionSeeder`, then
+  `RoleSeeder`, then `permission:cache-reset`. Rebuild config caches as the runtime user. If you edit the environment
+  file, re-assert `root:daengtisiams 0640`.
 - **CG-16 GO tags.** Annotated, named by the lowercase `go_tag` declared in `.sprint/current.yml` (ending `-go`),
   created only after merge, deploy and production verification. Never move, recreate or delete an existing tag.
   The deploy fetches with `--no-tags`, so fetch tags explicitly before checking a GO tag against the VPS HEAD. A
-  docs-only evidence commit after the GO commit is not deployed.
+  docs-only evidence commit after the GO commit is not deployed. One narrow exception: when a single production
+  deploy releases more than one sprint, the owner may name the release tag in writing; it still matches the `-go`
+  pattern and is registered in `docs/governance/go-tag-exceptions.md`, which lists the superseded `go_tag` values
+  (also named in the tag message); those are not created. Nothing else is an exception.
 
 ### CI and testing
 

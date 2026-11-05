@@ -423,6 +423,45 @@ it('pins the guide to the same host the authority declares', function () {
     }
 });
 
+it('records the first Biznet deploy and sends every later one through verify by identifier', function () {
+    // DMS-BIZNET-POST-GO-DOCUMENTATION-CLOSURE-1. The first Biznet deploy ran on
+    // 2026-11-04 and was proven once with verify-transition. Documents that still say
+    // Biznet was never deployed send an operator back into a one-time path the runner
+    // now refuses, so the stale claims must not return.
+    $claude = (string) file_get_contents(base_path('CLAUDE.md'));
+    preg_match('/- \*\*CG-15 .*?(?=\n- \*\*CG-16)/s', $claude, $m);
+    $cg15 = preg_replace('/\s+/', ' ', $m[0] ?? '');
+    $guide = (string) file_get_contents(base_path('docs/runbooks/production-host-identity.md'));
+    $flat = preg_replace('/\s+/', ' ', $guide);
+
+    expect($cg15)->toContain('20261104-151042')
+        ->toContain('verify <deploy-id>')
+        ->not->toContain('not yet run one');
+
+    expect($flat)->toContain('first deploy verified 2026-11-04')
+        ->toContain('EXECUTED 2026-11-04')
+        ->toContain('## 6b. Every Biznet deploy after the first')
+        ->toContain('deploy-vps-runner.sh verify <deploy-id>')
+        ->toContain('never use `verify-transition` again')
+        ->toContain('outside the `deploy-*` / `latest.*` contract')
+        ->not->toContain('NOT YET PROVEN')
+        ->not->toContain('NOT yet executed')
+        ->not->toContain('has **never run on Biznet**');
+
+    // The §6b steps keep the safety order: identity, base tip, backups, start, prove.
+    $order = array_map(fn (string $needle) => strpos($flat, $needle), [
+        'production-target-check.sh --remote` → `PRODUCTION_TARGET=VERIFIED` (§3)',
+        'tip of the base branch at launch',
+        'Check backup protection',
+        '**Start** with the canonical command',
+        '**Prove it by its identifier:**',
+    ]);
+    expect($order)->not->toContain(false);
+    $sorted = $order;
+    sort($sorted);
+    expect($order)->toBe($sorted);
+});
+
 it('verifies a correctly pinned production alias without touching the network', function () {
     if (! phiToolsAvailable()) {
         $this->markTestSkipped('bash, ssh and ssh-keygen are required to exercise the workstation check.');

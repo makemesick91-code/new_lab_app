@@ -1,31 +1,28 @@
-# DMS-SCANNER-AGENT-TRUSTED-ORIGIN-HARDENING-1 (missions DMS-DEV-INFRA-REMEDIATION-2 Task B and
-# DMS-POSTMIGRATION-PR-INTEGRATION-1). The local scanner agent (tools/daengtisia-scanner-agent) trusted any configured
-# origin, including the frozen Hostinger address over plain http; ALWAYS trusted any loopback origin
-# (localhost / 127.0.0.1, any port) even when unconfigured; executed requests that carried no Origin at all; executed
-# requests from untrusted origins (CORS only hid the answer); and never checked Host (DNS rebinding).
-# Now: an explicit, exact allowlist only. Configured origins must be https://<DNS name>; loopback origins are trusted
-# only when SCANNER_AGENT_MODE=development AND explicitly listed; wildcards, the opaque origin "null", IP addresses
-# and plain-http non-loopback origins are refused at startup. An untrusted Origin -> 403 before any route; a request
-# without Origin -> 403 for everything except the read-only GET /health (no image, no scan); a non-loopback Host ->
-# 403. Agent version 0.2.0 (0.1.0 = the pre-hardening prototype). The example configuration now trusts only
-# https://daengtisia.online (owner-approved) and the production-host guard's residual set is empty.
-# Tests read the frozen address from deploy/production-host.conf. No clinic PC changed (rollout runbook only); no
-# server runtime, schema, permission or deploy change.
-# frontend_change=true only because tools/daengtisia-scanner-agent/*.js changed; no application asset changed.
+# DMS-BIZNET-POST-GO-DOCUMENTATION-CLOSURE-1 (2026-11-04). Documentation, rules and governance tests only, after the
+# first Biznet production deploy (deploy 20261104-151042, commit 6f22beb7, GO tag
+# dms-biznet-first-production-deploy-infra-1-go). CLAUDE.md CG-15 no longer says Biznet was never deployed; later
+# deploys follow §6b under the owner's current release governance (no new per-deploy authorization rule is invented),
+# with proof by `verify <deploy-id>`, a host-side check of the base-branch tip (the runner pins the tip at launch) and
+# code-only rollback. CG-16 gains ONE narrow, registered exception (a single
+# deploy releasing more than one sprint, tag named by the owner in writing) with docs/governance/go-tag-exceptions.md
+# as the registry. The production-host-identity guide marks §6 closed and §6a executed (step-2 count corrected to
+# 510 − 2 = 508) and adds §6b for every later deploy. Rules: deploy-infra AIR-DEP-33/34, rule 220 §4 items 12/13d/13f.
+# Tests are strengthened only (DevflowAiInstructionSystemTest, ProductionHostIdentityGuardTest).
+# No runtime, schema, configuration or production change; not deployed; no GO tag is created for this change (rule 184
+# §32, CG-16) and the existing release tag is not modified.
 # Carried forward: LEGACY-RME-PROGRAM-CLOSURE-1 stays CLOSED and inherited.
-id: DMS-SCANNER-AGENT-TRUSTED-ORIGIN-HARDENING-1
-type: SECURITY_FIX
-module: Patient
-title: "Scanner agent trusts only an explicit exact allowlist; implicit loopback, missing Origin and rebinding Host refused"
+id: DMS-BIZNET-POST-GO-DOCUMENTATION-CLOSURE-1
+type: INFRA_RELEASE
+module: Deploy
+title: "Post-GO documentation closure — Biznet deploy recorded, verify-by-identifier, CG-16 narrow exception registry"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 runtime_change: false
 schema_change: false
-frontend_change: true
-security_impact: true
+frontend_change: false
+security_impact: false
 branch_isolation_impact: false
 ledger_impact: false
 deploy_required: false
 browser_required: false
-test_profiles: [focused, security_regression]
-go_tag: dms-scanner-agent-trusted-origin-hardening-1-go
+test_profiles: [focused]
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1

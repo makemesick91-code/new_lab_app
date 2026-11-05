@@ -88,11 +88,13 @@ ssh daengtisiams-biznet-prod 'hostname; hostname -I'      # expect DaengtisiaMS 
   account (`runuser -u daengtisiams -- php artisan …`). They never run as `dmsadmin`, and never as root.
 - `php artisan tinker` and psysh stay forbidden on production -- never (CG-14).
 
-## 6. Deploying to Biznet — readiness (NOT YET PROVEN)
+## 6. Deploying to Biznet — readiness (CLOSED; first deploy verified 2026-11-04)
 
-The deploy runner (`scripts/deploy-vps-runner.sh`) has **never run on Biznet**. The scripts were written for the
-Hostinger host, where the deploy ran as root. Read-only inspection of Biznet on 2026-11-04 found these blockers.
-All of them must be closed, with explicit owner approval, before the first Biznet deploy.
+Biznet is the production environment, and the deploy runner (`scripts/deploy-vps-runner.sh`) has run on it: the first
+Biznet deploy, `20261104-151042`, released commit `6f22beb7` on 2026-11-04 and was proven with `verify-transition`
+(§6a). The scripts were first written for the Hostinger host, where the deploy ran as root. Read-only inspection of
+Biznet on 2026-11-04 found the blockers below; they had to be closed, with explicit owner approval, before that first
+deploy. The table is kept as the record of how each one was closed. Every later deploy follows §6b.
 
 | # | Blocker | Effect if ignored | Closure |
 |---|---|---|---|
@@ -103,18 +105,24 @@ All of them must be closed, with explicit owner approval, before the first Bizne
 | D5 | The installed `daengtisiams-db-backup` units differ from `deploy/systemd/` (Biznet runs at 18:30 UTC, the repo says 19:00 UTC) | a reinstall from the repo would silently move the backup schedule | owner decision; backup services are not changed by this sprint |
 | D6 | The deploy's evidence base URL is `http://127.0.0.1` | the loopback answers 404 (default server), as on Hostinger | known warning, not a blocker; verify over the canonical URL |
 
+**Status after the first deploy (2026-11-04):** D1 closed by the owner-approved install of Node 22 and npm 10 (installed
+outside the OS package manager, so its security updates are applied by hand); D2 closed by the §6a quarantine; D3 and
+D4 closed by the deploy-chain change, which is now in the production tree; D5 remains an owner decision; D6 remains a
+known warning — the deploy's own loopback smoke reports `404`, and the canonical URL is verified separately.
+
 The privileged form of the canonical command on Biznet is
 `ssh daengtisiams-biznet-prod 'cd /var/www/asia-dental-lab-v2 && sudo -n bash scripts/deploy-vps-runner.sh start'`.
-It is written here so nobody improvises a different one. Do not run it until D1 is closed, the deploy-chain change
-(D2–D4) is merged, §6a has been followed, and the owner has approved the deploy. Once the preflight is in place, a
-run with D1 still open refuses before any mutation with `required tool 'node' is not installed`; that is the
-intended outcome, not a fault.
+It is written here so nobody improvises a different one. It is the only deploy command; run it only as part of §6b,
+with the approval the owner's current release governance requires. A run whose preflight refuses (wrong host, non-root, a
+missing tool or a toolchain version that differs from CI) stops before any mutation; that is the intended outcome,
+not a fault.
 
-## 6a. The first Biznet deploy — owner-selected Option A (procedure; NOT yet executed)
+## 6a. The first Biznet deploy — owner-selected Option A (EXECUTED 2026-11-04; historical record)
 
 The owner chose **Option A** on 2026-11-04 (DMS-DEV-INFRA-REMEDIATION-2): quarantine the copied pre-binding
-evidence before the first deploy, then prove that deploy with `verify-transition`. **Nothing here has been run.**
-Each numbered step that touches production needs the first-deploy authorization (CG-15).
+evidence before the first deploy, then prove that deploy with `verify-transition`. **This procedure ran once, on
+2026-11-04 (execution record below). Do not run it again**: the production tree now holds the binding runner, so
+`verify-transition` refuses every later run (`NOT-TRANSITION`) and every later deploy follows §6b.
 
 **Why it is needed.** The Biznet checkout is at the pre-migration commit, whose runner reads `latest.status` raw. The
 first deploy is launched by that runner, so it writes no binding record and the new runner reports it `UNBOUND` —
@@ -147,8 +155,9 @@ or quarantine running.
    ssh daengtisiams-biznet-prod 'sudo -n bash /root/dms-quarantine-bundle/scripts/deploy-runner-quarantine-stale-status.sh'
    ```
    Expect `PRODUCTION HOST PREFLIGHT: GO`, one `would move:` line per copied file plus `latest.status` and
-   `latest.log`, and `QUARANTINE DRY RUN`. The planned count must equal the step-0 file count (no file is bound yet).
-   Anything else: stop.
+   `latest.log`, and `QUARANTINE DRY RUN`. The planned count must equal the step-0 entry count minus the entries
+   outside the `deploy-*` / `latest.*` contract, which the tool leaves in place by design and no runner reads (no file
+   is bound yet). On Biznet that was 510 − 2 (`post-ent.status`, `post-ent.log`) = **508**. Anything else: stop.
 3. **Apply.** Same command with `--apply`. Expect `QUARANTINE COMPLETE: <n> entr(y/ies) preserved in
    …/quarantine/pre-binding-<UTC stamp>` (manifest verified, nothing deleted). The files keep their content and
    timestamps; `MANIFEST.tsv` lists every SHA-256 and `QUARANTINE.complete` is written last.
@@ -180,6 +189,57 @@ included) writes a binding record and is proven with `verify <deploy-id>` → `D
 
 **What never happens.** No evidence file is deleted or edited; the quarantine is not reversed by hand; nobody copies
 an old `exit=0` back into place; the frozen host is never contacted.
+
+**Execution record (2026-11-04, DMS-BIZNET-FIRST-PRODUCTION-DEPLOYMENT-GO-1).** Step 0: 510 entries (508 files and 2
+links). Step 2: plan 508, with both `post-ent.*` excluded. Step 3: `QUARANTINE COMPLETE: 508` at 15:09:05 UTC into
+`storage/logs/deploy-runner/quarantine/pre-binding-20261104T150905Z/`; each moved entry was checked against an
+independent pre-move listing (identical content and metadata), and both `post-ent.*` files stayed unchanged in
+place. Step 4: `status pending`, rc 3. Step 5: deploy `20261104-151042`, pinned target `6f22beb7`, `Nothing to
+migrate.`, status `exit=0` and `DEPLOY OK` at 15:12:28 UTC. Step 6: `TRANSITION DEPLOY VERIFIED`. Step 7: canonical
+URL `200` on `/login` and the three health checks, VPS release evidence GO. GO tag
+`dms-biznet-first-production-deploy-infra-1-go` (an owner-named release tag, registered in
+`docs/governance/go-tag-exceptions.md`). The deploy's ownership normalization later re-owned the root-created
+quarantine directory to the runtime user, with modes unchanged; the manifest hash was re-verified as unchanged.
+
+## 6b. Every Biznet deploy after the first (current procedure)
+
+**Preconditions (all, or stop).**
+- The approval the owner's current release governance requires, and the exact commit it approves. Step 2 compares
+  that commit with what the runner will deploy.
+- Required CI green on that exact commit. A skipped Full Suite is reported as deferred, never as passed (CG-17, CG-18).
+- Outside the backup window 18:25–18:40 UTC (02:25–02:40 WITA).
+- One operator, with no other deploy, rollback or quarantine running.
+
+1. **Prove the target:** `bash scripts/production-target-check.sh --remote` → `PRODUCTION_TARGET=VERIFIED` (§3).
+   Never deploy on the strength of an alias name alone.
+2. **Confirm what will be deployed.** The runner pins the **tip of the base branch at launch**, not a commit you pass
+   in. Confirm that tip from the host itself, and push nothing to the base between the authorization and `start`:
+   ```bash
+   ssh daengtisiams-biznet-prod 'cd /var/www/asia-dental-lab-v2 && sudo -n git -c safe.directory=/var/www/asia-dental-lab-v2 ls-remote origin refs/heads/feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report'
+   ```
+   It must print the authorized commit. Otherwise stop.
+3. **Check backup protection (read-only):** the host-only BK-2 status check in the owner's private backup runbook must
+   report both the on-server and the off-server copy healthy. The deploy takes and verifies its own database dump
+   before the checkout. Never delete BK-1, BK-2,
+   the historical Hostinger backups or the rollback database as part of a deploy.
+4. **Start** with the canonical command (§6), and write down the `deploy_id` from `log=…/deploy-<deploy-id>.log`. The
+   launcher returning is not completion; wait for the status file (`… deploy-vps-runner.sh follow`, or poll the log).
+5. **Prove it by its identifier:**
+   ```bash
+   ssh daengtisiams-biznet-prod 'cd /var/www/asia-dental-lab-v2 && sudo -n bash scripts/deploy-vps-runner.sh verify <deploy-id>'
+   ```
+   It must print `DEPLOY RUNNER OK`. Any other verdict (exit `4`) is not GO. Never read `latest.status` raw, and
+   never use `verify-transition` again (§6a).
+6. **Smoke over the canonical URL** (`/login`, `/health/live`, `/health/ready`, `/health/lb` → 200; `/storage/…` →
+   403). The deploy's own loopback smoke reporting `404` is D6, not a result.
+7. **Confirm nothing else moved:** the queue worker, the scheduler and the KTP cleanup timer keep their owner-set state
+   (the deploy restarts only `php8.3-fpm` and reloads only `nginx`), and the backup timers stay enabled.
+8. **GO tag** per CG-16, after production verification; fetch tags explicitly first.
+
+**Rollback** is `ssh daengtisiams-biznet-prod 'cd /var/www/asia-dental-lab-v2 && sudo -n bash scripts/rollback-vps.sh <commit>'`,
+following `docs/runbooks/vps-deploy-rollback-runbook.md`. It runs the same host preflight, takes a verified database
+dump first and moves code only. It never restores data. A data restore is a separate, explicitly owner-approved
+operation, and an older dump is never restored over newer clinical data.
 
 ## 7. What stays true from the Hostinger era
 
