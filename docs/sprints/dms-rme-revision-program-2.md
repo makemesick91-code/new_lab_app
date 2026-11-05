@@ -3,7 +3,8 @@
 - **Programme:** RME revision programme under owner policy `DMS-FULL-DEVELOPMENT-PRODUCTION-TESTING-20261104`
   (rule 221 §7), mission `DMS-RME-REVISION-PROGRAM-2` (P0, SECURITY_FIX), 2026-11-05. Continuation of
   [[dms-rme-revision-program-1]].
-- **Status:** implemented and tested; CI, merge, deployment and GO are recorded in §8 once they happen.
+- **Status:** **RME REVISION GO** for R-03..R-08 (policy §7) — merged, deployed to Biznet production and
+  production-verified on 2026-11-05; GO tag `dms-rme-revision-program-2-go`. Full Suite deferred (CG-18), not passed.
 - **Base:** `feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report` @ `c8c056e4` (verified from
   `origin` after fetch; `devflow:base-ref-check --strict` resolved the canonical remote). Production was at
   `db425155` (Program 1 GO); the base is one docs-only commit (#594) ahead.
@@ -175,7 +176,71 @@ Mutation evidence (each applied by copy, verified to have changed the file, reve
 
 ## 8. CI, merge, deploy and production verification
 
-_Recorded after the release._
+Times are UTC with WITA (UTC+8) where the runbook uses it.
+
+### 8.1 CI and merge
+
+| Step | Evidence |
+|---|---|
+| PR | #595, head `358c3464` (tree `75c9afce`) |
+| PR CI | run `41995243993`, conclusion success. Critical gate step: `Tests: 8092 passed (43651 assertions)`, `critical_test_exit_status=0` (Program 1 baseline 7,826 + the 266 new tests, as the local selection proof predicted). Selective module gate: Inventory 1,608; Lab 700 (1 skipped, as in Program 1); UI 983; Permission 708 (696 + the 12 new tests named for permission). Quality, Android, NSF-9, NSF-10 success. Classifier `unknown_high_risk`: every gate ran. The second critical variant is the inactive runner and skips by design. |
+| Merge | squash 2026-11-05 09:34:57 UTC (17:34:57 WITA), `--match-head-commit 358c3464` → `e4766cbd4323557735b3dda74b740a1bdd1c0c54`, parent `c8c056e4`; merge tree `75c9afce` equals the tested candidate tree |
+| Post-merge CI | push run `42003564110` on `e4766cbd`, conclusion success; critical gate again `8092 passed (43651 assertions)`, exit 0 |
+| Full Suite | skipped on both runs: `full_suite_authorized=false`, `full_suite_defer_reason` `FULL_SUITE_NOT_ENABLED_FOR_EVENT` (PR) and `TEMPORARY_FULL_SUITE_POLICY_ACTIVE` (push). **Deferred, not passed** (CG-18). |
+
+### 8.2 Production deployment (runbook §6b)
+
+| Step | Evidence |
+|---|---|
+| Target proof | `production-target-check.sh --remote` → `PRODUCTION_TARGET=VERIFIED` (pinned host key, hostname `DaengtisiaMS`, `139.190.106.38`, admin `dmsadmin`), re-proved at 18:28 WITA |
+| Base tip from the host | `ls-remote` on the production host printed `e4766cbd`, the CI-green release commit |
+| Backup preflight | `dms-bk2-status`: newest package `BK2-20261104T183002Z`, `package_last_result=OK`, `db_backup_last_result=success`; off-server pull `ON_SERVER=OK OFF_SERVER=OK pending=0`; deploy at 18:29 WITA, outside the 02:25–02:40 window |
+| Concurrency | no deploy or rollback process on the host; both peer sessions offline; no open PR against the base |
+| Runner | `deploy-vps-runner.sh start` executed **on the VPS**: deploy id `20261105-102909`, 10:29:09 → 10:30:47 UTC |
+| Result | `exit=0`; lock acquired; target pinned `e4766cbd`; immutable snapshot trusted and cleaned; pre-deploy dump `pre_auto_deploy_20261105-102910.sql` NSF-10-verified before migrate; `Nothing to migrate`; runtime isolation 107 GO / 0 FAIL; NSF-9 smoke 6 passed, 1 warning (the known loopback `127.0.0.1/login` 404, D6); `DEPLOY_HEAD_TARGET_MATCH=YES`; `DEPLOY OK` |
+| Deploy-id verify | `verify 20261105-102909` → `target_commit=e4766cbd (checkout HEAD matches)`, `final exit=0`, **`DEPLOY RUNNER OK`** |
+| Rollback reference | previous production commit `db425155` (code only, `scripts/rollback-vps.sh`) |
+
+### 8.3 Production verification (read-only, canonical URL, guest)
+
+A route that does not match answers 404 before any middleware runs, so guest requests prove the fix directly: no
+test identity was used, no patient record was opened, no clinical or financial row was touched.
+
+| Check | Result |
+|---|---|
+| Production HEAD / tree | `e4766cbd` / `75c9afce`, clean |
+| `/login`, `/health/live`, `/health/ready`, `/health/lb` | 200 |
+| `/storage/…` | 403 |
+| R-03 `/rme/cashier/1/billing/{abc, %7BINVOICE_ID%7D, 99999999999999999999}`, `/rme/cashier/receivables/abc/follow-ups/create`, `POST …/billing/1.5/payment` | 404, no session cookie |
+| R-04 `PATCH /rme/visits/1/medical-record/abc`, `POST …/medical-record/1e3/finalize` | 404, no session cookie |
+| R-05 `/rme/prescriptions/abc/print` | 404, no session cookie |
+| R-06 `/rme/consents/{abc, 007}`, `/rme/consents/abc/signature/patient` | 404, no session cookie |
+| R-07 `/rme/odontograms/{abc, 99999999999999999999}/print` | 404, no session cookie |
+| R-08 `/oversight/rme/visits/{99999999999999999999, 0123, 0}`, `/oversight/rme/visits/abc/pdf` | 404, no session cookie |
+| R-01 regression `/rme/visits/abc` | 404 |
+| Well-formed controls `/rme/cashier/1/billing/42`, `/rme/consents/42`, `/rme/prescriptions/42/print`, `/rme/odontograms/42/print`, `/oversight/rme/visits/42`, `/rme/visits/42` | 302 to login: the routes still match real keys |
+| Invalid percent-encoding `%ZZ` | **400 from nginx**, before PHP. Shown by nginx's static page (no charset, nginx footer), identical for a path the application never served. The application's own answer for `%ZZ` is 404 (proven in the suite, which bypasses nginx). Recorded as an edge rejection, not as the 404 originally expected. |
+| Application log | 1,467,295 bytes / 166 ERROR lines before the deploy, after the deploy, and after every probe: **0 new bytes** |
+| Services | php8.3-fpm, nginx, PostgreSQL active; queue worker inactive and disabled (owner state); BK-2 and db-backup timers enabled; no scheduler unit; no deploy process left |
+
+### 8.4 GO tag
+
+Annotated `dms-rme-revision-program-2-go`, tag object `73dea54a`, peels to `e4766cbd`; pushed, and the remote tag
+read from the production host peels to the production HEAD: **GO TAG TARGET = VERIFIED PRODUCTION RELEASE SHA**.
+This evidence commit is docs-only and is not deployed; the tag does not move.
+
+### 8.5 RME REVISION GO criteria (policy §7)
+
+| Criterion | Result |
+|---|---|
+| Approved scope implemented | R-03..R-08 all implemented (none needed "no code change") |
+| Tests first, red then green | red 266 / 145 failed on untouched code; green 295 / 0 |
+| No regression | 5,006 regression + 1,146 governance tests, 0 failed |
+| Authorization and branch isolation unchanged | pinned by test and by the untouched-code probe (§3) |
+| CI on the exact SHA | PR and post-merge runs success; Full Suite deferred |
+| Deployed by the runner on the VPS | `20261105-102909`, `DEPLOY RUNNER OK` |
+| Production verified | §8.3 |
+| Rules synchronised | §7 |
 
 ## 9. Residuals and follow-ups (not approved, not done)
 
