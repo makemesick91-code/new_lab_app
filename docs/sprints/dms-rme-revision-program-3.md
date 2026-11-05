@@ -3,8 +3,9 @@
 - **Programme:** RME revision programme under owner policy `DMS-FULL-DEVELOPMENT-PRODUCTION-TESTING-20261104`
   (rule 221 §7), mission `DMS-RME-REVISION-PROGRAM-3` (P0, SECURITY_FIX), 2026-11-05. Continuation of
   [[dms-rme-revision-program-1]] and [[dms-rme-revision-program-2]].
-- **Status:** implementation and local verification complete; CI, merge, deploy and production verification are
-  recorded in §8 once they have happened. Full Suite deferred (CG-18), not passed.
+- **Status:** **FINAL GO** — merged (PR #597, `c7531932`), deployed on Biznet (deploy `20261105-131831`),
+  production verified, GO tag `dms-rme-revision-program-3-go` on the deployed commit (§8). Full Suite deferred
+  (CG-18), not passed.
 - **Base:** `feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report` @ `e48fc774` (verified from
   `origin` after fetch; `devflow:base-ref-check --strict` resolved the canonical remote; the local base ref was stale
   at `9eabff07` and was not used). Production runs `e4766cbd` (Program 2 GO); the base is one docs-only commit (#596)
@@ -200,7 +201,50 @@ FOUNDATION RULE SYNC — GO: `DevflowAiInstructionSystemTest` 16/16, `LegacyRmeP
 
 ## 8. CI, merge, deploy and production verification
 
-Recorded after release (§8 is completed by the evidence update, as in Program 2).
+Recorded after release (docs-only evidence update; this commit is not deployed and the GO tag does not move).
+
+**CI** — run `42024573797` on the exact candidate `7058279637fe878c4eaeaaec32a9299e5fd9ed15`: CICD-CTRL Classifier,
+NSF-R012 Quality, NSF-R011 Critical Test Gate, CICD-CTRL Selective Module, NSF-9 Release Safety & Automated Smoke,
+NSF-10 Release Evidence and Phase 3 Android Clinic App Gate all **success**. Critical gate: `8512 passed (44626
+assertions)` in 3570.96s, read from the step log. The self-hosted critical variant was skipped by design (exactly one
+variant runs). **Full Suite: DEFERRED, not passed** — classifier `temporary_full_suite_policy_active=true`,
+`full_suite_authorized=false`, `full_suite_defer_reason=FULL_SUITE_NOT_ENABLED_FOR_EVENT`; `run_full_suite=required`
+is a risk signal, not an authorisation (CG-18). The post-merge push run `42034369872` defers it again with
+`TEMPORARY_FULL_SUITE_POLICY_ACTIVE`.
+
+**Merge** — PR #597 squash-merged with `--match-head-commit` as `c753193275a5d982bac07ea7347fecfe52e3019d`; merge tree
+`f42949ac6c98b48792d035a4310cba9e318a3b53` equals the candidate tree; parent `e48fc774`. No other open PR against the
+base; both peer sessions offline.
+
+**Pre-deploy** (21:17–21:19 WITA, outside the 02:25–02:40 backup window): `production-target-check.sh --remote` →
+`PRODUCTION_TARGET=VERIFIED` (Biznet 139.190.106.38, pinned host key); on-host `ls-remote` of the base = merge SHA;
+production HEAD `e4766cbd` with a clean tracked tree; no deploy process; BK-2 package and db-backup last
+`Result=success`; off-server pull `ON_SERVER=OK OFF_SERVER=OK pending=0`; log baseline 1,467,295 bytes / 166 ERROR.
+
+**Deploy** — on the Biznet VPS via `sudo -n bash scripts/deploy-vps-runner.sh start`, deploy id `20261105-131831`
+(13:18:31–13:20:07 UTC): lock acquired, target pinned to the merge SHA, snapshot trusted, pre-deploy backup
+`pre_auto_deploy_20261105-131832.sql` (NSF-10 backup verify 9/9 GO), `Nothing to migrate.`, runtime isolation
+107 GO / 0 FAIL, `DEPLOY_HEAD_TARGET_MATCH=YES`, `exit=0`, `DEPLOY OK`, snapshot cleaned; `verify 20261105-131831`
+→ `DEPLOY RUNNER OK`. The four deploy warnings are byte-for-byte the same set as Program 2's deploy `20261105-102909`
+(risky flags enabled by deliberate env override, PgBouncer not running, local-profile evidence chain, loopback
+`127.0.0.1/login` 404 from the co-tenant default server); none is new.
+
+**Production verification** (guest, over `https://daengtisia.online`):
+
+| Probe set | Before | After |
+|---|---|---|
+| 20 malformed segments across R-09..R-15 | matched routes: 302 to login, 405, 419 | **404, 0 cookies** (router refusal before any session) |
+| 5 well-formed controls | 302 to login | 302 to login (unchanged) |
+| `/login`, `/health/live`, `/health/ready`, `/health/lb` | 200 | 200 |
+| `/storage/<synthetic>` | 403 | 403 |
+| `laravel.log` | 1,467,295 bytes / 166 ERROR | 1,467,295 bytes / 166 ERROR (zero new) |
+
+Production HEAD/tree = merge SHA/tree; `No pending migrations`; environment `pilot`, debug OFF, maintenance OFF;
+nginx, php8.3-fpm and postgresql active; queue worker inactive/disabled as before; backup timers unchanged; no deploy
+process left behind. No authenticated request, no test suite and no write was run against production.
+
+**GO tag** — annotated `dms-rme-revision-program-3-go` on `c753193275a5d982bac07ea7347fecfe52e3019d`; from the
+production host the remote tag peels to the production HEAD (`REMOTE GO TAG TARGET = VERIFIED PRODUCTION HEAD`).
 
 ## 9. Residuals and follow-ups (not approved, not done)
 
