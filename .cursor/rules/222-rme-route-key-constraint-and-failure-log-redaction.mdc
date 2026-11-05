@@ -169,8 +169,10 @@ unchanged. Programs 3 and 4 EXTEND this rule (same contract, more parameters); n
 - `tests/Feature/RME/RemainingRouteKeyConstraintTest.php` (R-16..R-23): the 57 routes, by name, carry the canonical
   pattern (live and compiled), none of the eight names is global and the global list stays at ten; 9 segment classes
   answer 404 with no ERROR for a guest and (one per test) a Super Admin; letters and overflow answer 404 for an
-  account holding no permission; on a REAL record per domain the canonical key opens, every leading-zero alias is
-  404, and no alias deactivates, cancels, converts, acknowledges or deletes anything; the permission and Super Admin
+  account holding no permission; at the ROUTER, for every route, the canonical key routes and `01`, `007` and an
+  18-digit leading-zero alias match nothing (independent of fixtures and flags: a disarmed capability or a missing
+  record also answers 404 and would hide an alias that still routes); on a REAL record per domain the canonical key
+  opens and no alias deactivates, cancels, converts, acknowledges or deletes anything; the permission and Super Admin
   gates are unchanged.
 - `tests/Feature/RME/RmePaymentLabCandidateFailureLogPrivacyTest.php`: no binding, DETAIL row, SQL tail or synthetic
   clinical value in the warning; SQLSTATE and exception class kept; payment not rolled back.

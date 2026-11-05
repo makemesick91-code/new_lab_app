@@ -12,10 +12,12 @@ use App\Modules\Satusehat\Models\SatusehatCodeMapping;
 use App\Modules\Satusehat\Models\SatusehatDataQualityIssue;
 use App\Modules\Satusehat\Models\SatusehatEntityIdentifier;
 use App\Support\Routing\DatabaseRouteKey;
+use Illuminate\Http\Request;
 use Illuminate\Log\Events\MessageLogged;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Storage;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 /*
 |--------------------------------------------------------------------------
@@ -325,12 +327,39 @@ it('never answers 500 for the longest key the pattern admits when it names nothi
         ->getStatusCode();
 
     // The router admits this key, so the route's own order decides the
-    // answer: a lookup 404 on most routes, and a validation redirect (302)
-    // where a FormRequest validates the body before the lookup runs (the
-    // readiness assign and waive actions). Either way PostgreSQL can cast
-    // the key, so it is never a 500 and never an ERROR line.
-    expect($status)->toBeIn([404, 302])
+    // answer: a lookup 404, except on the two readiness actions whose
+    // FormRequest validates the (empty) body before the lookup runs and so
+    // redirects (302). Measured on PostgreSQL 16.15. Either way PostgreSQL can
+    // cast the key, so it is never a 500 and never an ERROR line.
+    $validatesFirst = in_array($template, [
+        '/rme/satusehat/readiness/issues/{S}/assign',
+        '/rme/satusehat/readiness/issues/{S}/waive',
+    ], true);
+
+    expect($status)->toBe($validatesFirst ? 302 : 404)
         ->and($errors->getArrayCopy())->toBe([]);
+})->with('p4rk_routes');
+
+it('never routes a leading-zero alias of a key, while the canonical key still routes', function (string $method, string $template) {
+    // Router-level proof for EVERY route, independent of any controller,
+    // fixture or feature flag (a disarmed capability or a missing record
+    // would also answer 404 and hide an alias that still routes).
+    $routes = app('router')->getRoutes();
+
+    $canonical = $routes->match(Request::create(p4rkUrl($template, '1'), strtoupper($method)));
+    expect($canonical->getName())->not->toBeNull();
+
+    foreach (['01', '007', '0'.str_repeat('9', 17)] as $alias) {
+        $matched = null;
+
+        try {
+            $matched = $routes->match(Request::create(p4rkUrl($template, $alias), strtoupper($method)))->getName();
+        } catch (NotFoundHttpException) {
+            // Expected: no route claims the alias.
+        }
+
+        expect($matched)->toBeNull("{$template} routed the alias {$alias} to {$matched}");
+    }
 })->with('p4rk_routes');
 
 /*
@@ -521,6 +550,9 @@ it('R-23 opens a doctor only at its canonical key and keeps the permission gate'
 
     $activeBefore = (bool) $doctor->fresh()->is_active;
     $this->patch('/settings/doctors/0'.$doctor->id.'/deactivate')->assertNotFound();
+    // While the branch lock is disarmed this route answers the capability 404
+    // for every key, alias or not, so this request proves nothing on its own
+    // about the alias; the router-level alias test above is the proof.
     $this->post('/rme/doctor-branch-locks/0'.$doctor->id.'/release-session', ['reason' => 'Uji kunci rute: alias.'])->assertNotFound();
     expect((bool) $doctor->fresh()->is_active)->toBe($activeBefore);
 

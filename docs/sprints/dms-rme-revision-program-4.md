@@ -139,14 +139,37 @@ unaffected (`route()` does not validate `wheres`), so every link built from a re
 
 ### 5.1 Independent review
 
-See §8 — the reviewer, its mechanism and its findings are recorded with the release evidence, because the review ran
-on the final diff.
+**Mechanism.** A separate `code-review-limited` reviewer agent with its own context, given the commit and the
+questions but not this document's conclusions. Program 3's attempt was refused by auto mode; the cause was found
+this time: the context-mode plugin's PreToolUse hook appends a `<context_window_protection>` block to the Agent prompt
+*after* auto mode has classified the call, so the classifier declines to cover an input it did not see. Re-issuing the
+call with the hook-rewritten input lets auto mode review exactly what runs. No hook or protection was disabled.
+
+**Scope.** Commit `c919658a`, read-only. The reviewer loaded the old and new `routes/web.php` into separate route
+collections and compared them route by route, including 5,963 probe URIs × 5 methods.
+
+**Result: no CRITICAL, HIGH or MEDIUM finding; not release-blocking.**
+
+| # | Severity | Finding | Disposition |
+|---|---|---|---|
+| F1 | LOW | The R-23 release-session alias request cannot fail on the old code: the disarmed branch-lock capability answers 404 for every key | Fixed: a router-level test now proves, for EVERY route, that `01`, `007` and an 18-digit leading-zero alias match no route while the canonical key does (56 cases, RED 56/56 on the base routes); the release-session request is kept and commented as not a proof |
+| F2 | LOW | Alias-with-a-real-record coverage is one or two routes per family | Fixed by the same router-level test (all 56 templates) |
+| F3 | LOW | `toBeIn([404, 302])` accepted a 302 on every route | Fixed: 302 only on the two readiness actions whose FormRequest validates first (measured), 404 everywhere else |
+| F4 | INFO | `Route::resource(...)->where()` also stamps index/create/store, which carry no such parameter | No effect (confirmed by the probe comparison); kept |
+| F5 | INFO | A malformed key is now 404 before `auth`/permission, so a guest gets 404 instead of a login redirect | Intended (rule 222 §1.8) |
+| F6 | INFO | 89 `whereNumber` uses remain on other parameters | Out of scope; §9 |
+
+Also confirmed by the reviewer: every one of the 75 `route()` call sites for these routes passes a model or an integer
+key; no hardcoded URL in `resources/js`; 818 routes before and after with identical names, actions and middleware; no
+probe resolves to a different named route; the critical-gate filter only gains a token.
 
 ## 6. Tests
 
 | Run | Engine | Result |
 |---|---|---|
-| `RemainingRouteKeyConstraintTest` (new) | PostgreSQL 16.15 | 741 passed, 0 failed, 0 skipped (1,582 assertions) |
+| `RemainingRouteKeyConstraintTest` (new, after review) | PostgreSQL 16.15 | 797 passed, 0 failed, 0 skipped |
+| Router-level alias test (added after review) on the BASE routes | PostgreSQL 16.15 | RED 56 of 56 (a `01` alias routed on every template) |
+| `RemainingRouteKeyConstraintTest` (before review) | PostgreSQL 16.15 | 741 passed, 0 failed, 0 skipped (1,582 assertions) |
 | Same | SQLite (phpunit default) | 741 passed, 0 failed, 0 skipped |
 | All nine rule-222 suites in ONE process (the critical gate's shape) | PostgreSQL 16.15 | 1,456 passed, 0 failed, 0 skipped |
 | Dependency regression: every feature test file that names a changed route or URI (75 files, Browser suites excluded — no browser leg) | PostgreSQL 16.15 | 1,979 passed, 0 failed, 0 skipped (8,701 assertions) |
@@ -161,7 +184,7 @@ trap.
 
 **CI selection (CG-19).** The suite is declared in `config/ci_runner.php` `critical_gate_mandatory_suites` and selected
 by the `RemainingRouteKey` token, added to BOTH critical variants (the two filter strings are byte-identical).
-`pest --list-tests` with the exact CI filter lists all 741 cases among 9,256.
+`pest --list-tests` with the exact CI filter listed all 741 cases among 9,256 (before the review's 56 additions).
 
 **Full Suite.** `sprint:test-plan` escalates to the full required suite. The temporary Full-Suite policy (CG-18) is
 ACTIVE, so it is **DEFERRED**, not passed.
