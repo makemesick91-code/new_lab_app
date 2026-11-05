@@ -175,6 +175,19 @@ PostgreSQL: no caught-and-continued database error; refusals are `ValidationExce
   `RmeTariffAuthority`, `Cicd`, `Foundation/DevflowAiInstructionSystemTest` → **6,115 passed / 0 failed / 0 skipped,
   25,676 assertions** (counted from JUnit). The payment → `completed` path through the new locked re-check is covered
   there (RmePayment*, RmeZeroValueClosure, the DPT two-process race suite).
+- **First CI run was red, and the cause was my regression scope.** Run `42104745874` (critical gate, `98f3a503`):
+  2 failed / 9,331 passed, both in `tests/Feature/LegacyRme/LegacyRmeDoctorWorkspaceInlinePagesTest.php` — a suite
+  that renders the Rekam Medis page and that my directory-based regression did not include (the CI gate selects by
+  name filter, not by directory). Both tests asserted the handwriting editor (`id="rme-canvas"`, the unsaved-work
+  guard) on a **registered visit with no consent**, where every save is refused server-side — exactly the UI/server
+  mismatch CW5-04 removes. The premise was superseded, not the assertion relaxed: both tests now build the state the
+  clinic would (`rmeActiveConsentedEncounter()`), so "editable" means "writable"; CW5-04 in the new suite pins the
+  negative. Afterwards every test file that renders the visit detail, Rekam Medis or odontogram page and sat outside
+  the first regression (LegacyRme ×4, DoctorDevice ×3, MasterData ×1, Sprint38 ×1, Ui ×2) was run on PostgreSQL
+  16.15: **333 passed / 0 failed / 0 skipped, 1,100 assertions**. Dusk browser tests that touch these pages
+  (`RmePreConsentFirstPageBrowserTest`, `OdontogramPreConsentEditBrowserTest`, smoke suites) drive a Doctor through a
+  started encounter and real consent signing, which this change leaves unchanged; they are not part of any CI gate and
+  were **not run** here.
 - Local gates: `pint --test` 0 · `git diff --check` clean · `view:cache` compiles · `sprint:manifest-check` GO ·
   `sprint:scope-audit --strict` GO · `foundation:devflow-check --strict` GO · `foundation:shared-service-audit
   --strict` GO · `foundation:ci-runtime-control-check --strict` GO · `foundation:security-compliance-check` GO ·

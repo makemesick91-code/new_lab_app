@@ -467,6 +467,12 @@ it('offers zoom and fullscreen reading controls on an archive page', function ()
 
 it('keeps the native page editable and the add-page action native-only', function () {
     $f = lrwip1Fixture();
+    // DMS-RME-REVISION-PROGRAM-5 (CW5-04, rule 223 §2): the handwriting editor is
+    // offered only to an account the server lets write the current RME, i.e. during
+    // a started, consented encounter. This test used to render the editor on a
+    // REGISTERED visit with no consent, where every save is refused server-side; it
+    // now builds the encounter the clinic would, so "editable" means writable.
+    rmeActiveConsentedEncounter($f['visit']);
     $canonicalSheet = MedicalRecord::where('clinic_visit_id', $f['visit']->getKey())->firstOrFail();
     $handwritingEndpoint = route('rme.visits.medical-record.handwriting.store', [$f['visit'], $canonicalSheet]);
 
@@ -488,6 +494,9 @@ it('keeps the native page editable and the add-page action native-only', functio
 
 it('warns before discarding unsaved handwriting instead of losing it silently', function () {
     $f = lrwip1Fixture();
+    // DMS-RME-REVISION-PROGRAM-5 (CW5-04): the unsaved-work guard ships with the
+    // editor, which now renders only for an author of a consented encounter.
+    rmeActiveConsentedEncounter($f['visit']);
 
     $this->actingAs($f['user'])
         ->get(route('rme.visits.medical-record.show', $f['visit']))
