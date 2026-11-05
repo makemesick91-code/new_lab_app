@@ -3,7 +3,8 @@
 - **Programme:** RME revision programme under owner policy `DMS-FULL-DEVELOPMENT-PRODUCTION-TESTING-20261104`
   (rule 221 §7), mission `DMS-RME-REVISION-PROGRAM-4` (P0, SECURITY_AUDIT / SECURITY_FIX), 2026-11-05. Continuation of
   [[dms-rme-revision-program-1]], [[dms-rme-revision-program-2]] and [[dms-rme-revision-program-3]].
-- **Status:** implemented and tested; CI, merge, deploy and production verification are recorded in §8.
+- **Status:** **FINAL GO** — merged (#599 → `bb82475e`), deployed to Biznet production (deploy `20261105-164743`)
+  and verified; GO tag `dms-rme-revision-program-4-go` → `bb82475e`. Evidence in §8. Full Suite DEFERRED (CG-18).
 - **Base:** `feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report` @ `545e8c05` (verified from
   `origin` after fetch; `devflow:base-ref-check --strict` resolved the canonical remote; the local base ref was stale
   at `9eabff07` and was not used). Production ran `c7531932` (Program 3 GO), read from the Biznet host before work
@@ -206,7 +207,71 @@ change: no billing route is in scope. `CLAUDE.md` is unchanged: no global rule c
 
 ## 8. CI, merge, deploy and production verification
 
-Recorded after the release (evidence commit).
+Recorded after the release in a docs-only evidence commit. This commit is not deployed, and the GO tag does not
+point at it.
+
+**CI (exact candidate `d90426aa`, run 42057100879).** Every required gate succeeded:
+
+| Gate | Result |
+|---|---|
+| NSF-R011 Critical Test Gate | `Tests: 9309 passed (46442 assertions)`, `critical_test_exit_status=0`, `expected_warning_count=0`. `RemainingRouteKeyConstraintTest` ran 797 cases, 0 failed, counted from the job log. The second Critical row is the inactive runner variant and is skipped by design |
+| NSF-R012 Quality, CICD-CTRL Classifier, CICD-CTRL Selective Module | success |
+| NSF-9 Release Safety, NSF-10 Release Evidence | success |
+| Phase 3 Android Clinic App Gate | Attempt 1 failed before any test ran: the Gradle 9.1.0 distribution download from github.com returned HTTP 504. The diff touches no Android file. A re-run of the failed job on the same SHA passed every step, including "Assert the security contracts actually ran" |
+
+The Full Suite was not run. **FULL SUITE — DEFERRED** under CG-18; it is not reported as passed.
+
+**Merge.** PR #599 was squash-merged with `--match-head-commit d90426aa`. The merge commit is `bb82475e`, with parent
+`545e8c05` (the base did not move). Its tree `29e1c2c0` is identical to the tested candidate's tree.
+
+**Pre-deploy gate (2026-11-05 16:47 UTC, outside the 18:25–18:40 UTC backup window).**
+
+- `production-target-check.sh --remote` returned `PRODUCTION_TARGET=VERIFIED`, re-run immediately before the start.
+- The host's `ls-remote` showed the base at `bb82475e`. Production HEAD was `c7531932`, the checkout was clean and no
+  deploy process was running.
+- `dms-bk2-status` reported `ON_SERVER=OK`, `OFF_SERVER=OK`, 4 of 4 packages acknowledged and no alerts.
+- `laravel.log` measured 1,467,295 bytes with 166 ERROR lines.
+
+**Deploy.** `deploy-vps-runner.sh start` ran on the Biznet host and was assigned deploy ID `20261105-164743`.
+
+- The run finished at 16:49:20 UTC with `exit=0`, `DEPLOY_HEAD_TARGET_MATCH=YES (bb82475e)`, `DEPLOY OK` and
+  `immutable-exec rc=0`.
+- Migrations reported "Nothing to migrate", with backup before migrate and `migrate --force` only.
+- The pre-deploy backup is `pre_auto_deploy_20261105-164744.sql` (32,746,151 bytes); NSF-10 backup verify returned
+  9/9 GO.
+- Runtime isolation was 107 GO / 0 FAIL, and secret file permissions were GO.
+- `verify 20261105-164743` reported **DEPLOY RUNNER OK**: target commit `bb82475e`, checkout HEAD matching, final
+  `exit=0`.
+
+The `DEPLOY OK` line carries `deploy-vps.sh`'s own stamp (`164744`, taken one second after the runner's). It is in
+the runner's log for this deploy ID; it is one deploy.
+
+Two deploy gates reported WATCH. Both appear in Program 3's deploy log as well, so neither is new to this release:
+
+- `SMOKE-HTTP-HEALTH`: a loopback probe of `127.0.0.1/login` returns 404 on this host, while `/login` returns 200
+  over the canonical domain.
+- `PGRUNTIME-PGBOUNCER-PROBE`: PgBouncer is not installed, which the check marks non-blocking because routing cutover
+  is disabled.
+
+**Production verification (over `https://daengtisia.online`).**
+
+- **Release:** HEAD and tree equal the release (`bb82475e` / `29e1c2c0`), and the checkout is clean.
+- **GO tag:** `git describe --exact-match HEAD` returns `dms-rme-revision-program-4-go`.
+- **Guest probe matrix: 57 of 57 pass.** Before the deploy, 36 of the 44 malformed or alias probes matched a route
+  (302/419). After it, all 44 answer 404 and set no cookie, because the router rejects them before a session
+  starts. All 13 controls still match: a well-formed key redirects to login, POST answers 419, and static siblings
+  are reachable.
+- **Health:** `/login`, `/health/live`, `/health/ready` and `/health/lb` all return 200, and every readiness
+  component reports `ok`. `/storage/<probe>` returns 403.
+- **Log:** `laravel.log` is byte-identical (1,467,295 bytes, 166 ERROR), so the deploy and the 57 probes wrote no
+  log line.
+- **Services:** nginx, php8.3-fpm, postgresql and both backup timers are active. 0 migrations are pending and no
+  deploy process remains. The environment is pilot with debug OFF and maintenance OFF.
+- **Queue worker:** the unit is disabled and has never been active on this host. That was already the posture before
+  this release, and it is unchanged.
+
+**GO tag.** The annotated tag `dms-rme-revision-program-4-go` (tag object `727f5624`) targets `bb82475e`, the
+verified production release. It exists on origin and resolves on the production host. No other tag was moved.
 
 ## 9. Residuals and follow-ups (not approved, not done)
 
