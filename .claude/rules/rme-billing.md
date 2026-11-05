@@ -247,6 +247,7 @@ code, then the canonical rule, and report the drift.
   `->where('visit', DatabaseRouteKey::PATTERN)` per route, because `visit` is a generic name (never global, never
   `whereNumber`, which let a number beyond PHP's integer range 500 on `int $visit` and a leading-zero alias open a
   real visit). Source: `.cursor/rules/222-rme-route-key-constraint-and-failure-log-redaction.mdc` §1.6–§1.8.
+- **AIR-RMB-47** `{receiptSnapshot}` is global (no `whereNumber`); oversight `{patient}` is per route. Rule 222 §1.10.
 
 ## Current posture (snapshot 2026-10-25 — verify before relying on it)
 
@@ -318,7 +319,7 @@ code, then the canonical rule, and report the drift.
 | `.cursor/rules/219-rme-doctor-performed-treatments.mdc` | Doctor "Tindakan Dilakukan" record: clinical evidence only, no price; feeds rule 218 (detective); operational KONTROL ≠ NO_CHARGE |
 | `.cursor/rules/109-rme-exam-consent-odontogram-history.mdc` | Consent gates exam finish, not payment |
 | `.cursor/rules/92-feature-flag-runtime-override.mdc` | Flag environment overrides captured at config build |
-| `.cursor/rules/222-rme-route-key-constraint-and-failure-log-redaction.mdc` | Caught exceptions logged through the redactor; cashier visit, invoice and oversight visit route keys constrained |
+| `.cursor/rules/222-rme-route-key-constraint-and-failure-log-redaction.mdc` | Caught exceptions logged through the redactor; cashier visit, invoice, receipt and oversight visit/patient route keys constrained |
 
 ## History
 

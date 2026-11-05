@@ -382,7 +382,7 @@ Route::middleware('auth')->prefix('settings')->name('settings.')->group(function
             Route::get('{import}', [LegacyRmeImportController::class, 'show'])->name('show')->whereNumber('import');
             Route::get('{import}/status', [LegacyRmeImportController::class, 'status'])->name('status')->whereNumber('import');
             Route::get('{import}/source', [LegacyRmeImportController::class, 'source'])->name('source')->whereNumber('import');
-            Route::get('{import}/pages/{page}', [LegacyRmeImportController::class, 'page'])->name('pages.show')->whereNumber('import')->whereNumber('page');
+            Route::get('{import}/pages/{page}', [LegacyRmeImportController::class, 'page'])->name('pages.show')->whereNumber('import')->where('page', DatabaseRouteKey::PAGE_NUMBER_PATTERN);
         });
 
         Route::middleware('permission:create_legacy_rme_imports')->group(function () {
@@ -433,7 +433,7 @@ Route::middleware('auth')->prefix('settings')->name('settings.')->group(function
 
         Route::middleware('permission:view_legacy_odontogram_imports|create_legacy_odontogram_imports')->group(function () {
             Route::get('{import}', [LegacyOdontogramImportController::class, 'show'])->name('show')->whereNumber('import');
-            Route::get('{import}/pages/{page}', [LegacyOdontogramImportController::class, 'page'])->name('pages.show')->whereNumber('import')->whereNumber('page');
+            Route::get('{import}/pages/{page}', [LegacyOdontogramImportController::class, 'page'])->name('pages.show')->whereNumber('import')->where('page', DatabaseRouteKey::PAGE_NUMBER_PATTERN);
         });
 
         Route::middleware('permission:create_legacy_odontogram_imports')->group(function () {
@@ -921,22 +921,28 @@ Route::middleware('auth')->prefix('rme/legacy-records')->name('rme.legacy-record
     // reader (doctor). Neither implies the other and neither implies
     // review/publish/void; branch scope still decides WHICH records are
     // reachable, so a doctor only ever sees their own branch's archive.
+    //
+    // DMS-RME-REVISION-PROGRAM-3 / R-14, R-15 — `record` and `page` are
+    // generic names, constrained per route: `{record}` with the bigint-key
+    // pattern, `{page}` with the page-number pattern (int4 `page_number`).
+    // `whereNumber` admitted an overflow (HTTP 500), a leading-zero alias that
+    // opened a real archive or page, and an out-of-int4 page (22003, HTTP 500).
     Route::middleware('permission:view_legacy_rme_imports|view_legacy_rme_archive')->group(function () {
-        Route::get('{record}', [LegacyRmeRecordController::class, 'show'])->name('show')->whereNumber('record');
-        Route::get('{record}/source', [LegacyRmeRecordController::class, 'source'])->name('source')->whereNumber('record');
-        Route::get('{record}/pages/{page}', [LegacyRmeRecordController::class, 'page'])->name('pages.show')->whereNumber('record')->whereNumber('page');
+        Route::get('{record}', [LegacyRmeRecordController::class, 'show'])->name('show')->where('record', DatabaseRouteKey::PATTERN);
+        Route::get('{record}/source', [LegacyRmeRecordController::class, 'source'])->name('source')->where('record', DatabaseRouteKey::PATTERN);
+        Route::get('{record}/pages/{page}', [LegacyRmeRecordController::class, 'page'])->name('pages.show')->where('record', DatabaseRouteKey::PATTERN)->where('page', DatabaseRouteKey::PAGE_NUMBER_PATTERN);
 
         // Print is a Blade view for window.print(); export streams a dompdf
         // download. Both are GET reads of an archive the caller may already
         // open, and both refuse a VOIDed record exactly like `source`.
-        Route::get('{record}/print', [LegacyRmeRecordController::class, 'print'])->name('print')->whereNumber('record');
-        Route::get('{record}/export', [LegacyRmeRecordController::class, 'export'])->name('export')->whereNumber('record');
+        Route::get('{record}/print', [LegacyRmeRecordController::class, 'print'])->name('print')->where('record', DatabaseRouteKey::PATTERN);
+        Route::get('{record}/export', [LegacyRmeRecordController::class, 'export'])->name('export')->where('record', DatabaseRouteKey::PATTERN);
     });
 
     // Retracting is a state change with its own named permission — never
     // folded into the read group.
     Route::middleware('permission:void_legacy_rme_imports')->group(function () {
-        Route::post('{record}/void', [LegacyRmeRecordController::class, 'void'])->name('void')->whereNumber('record');
+        Route::post('{record}/void', [LegacyRmeRecordController::class, 'void'])->name('void')->where('record', DatabaseRouteKey::PATTERN);
     });
 });
 
@@ -960,16 +966,19 @@ Route::middleware('auth')->prefix('rme/legacy-odontograms')->name('rme.legacy-od
     // Neither implies the other and neither implies review/publish/void; branch
     // scope still decides WHICH records are reachable, and a doctor
     // additionally needs a real treating relationship with the patient.
+    //
+    // DMS-RME-REVISION-PROGRAM-3 / R-14, R-15 — same per-route constraints as
+    // the legacy RME archive routes above.
     Route::middleware('permission:view_legacy_odontogram_imports|view_legacy_odontogram_archive')->group(function () {
-        Route::get('{record}', [LegacyOdontogramRecordController::class, 'show'])->name('show')->whereNumber('record');
-        Route::get('{record}/source', [LegacyOdontogramRecordController::class, 'source'])->name('source')->whereNumber('record');
-        Route::get('{record}/pages/{page}', [LegacyOdontogramRecordController::class, 'page'])->name('pages.show')->whereNumber('record')->whereNumber('page');
+        Route::get('{record}', [LegacyOdontogramRecordController::class, 'show'])->name('show')->where('record', DatabaseRouteKey::PATTERN);
+        Route::get('{record}/source', [LegacyOdontogramRecordController::class, 'source'])->name('source')->where('record', DatabaseRouteKey::PATTERN);
+        Route::get('{record}/pages/{page}', [LegacyOdontogramRecordController::class, 'page'])->name('pages.show')->where('record', DatabaseRouteKey::PATTERN)->where('page', DatabaseRouteKey::PAGE_NUMBER_PATTERN);
     });
 
     // Retracting is a state change with its own named permission — never folded
     // into the read group.
     Route::middleware('permission:void_legacy_odontogram_records')->group(function () {
-        Route::post('{record}/void', [LegacyOdontogramRecordController::class, 'void'])->name('void')->whereNumber('record');
+        Route::post('{record}/void', [LegacyOdontogramRecordController::class, 'void'])->name('void')->where('record', DatabaseRouteKey::PATTERN);
     });
 });
 
@@ -1404,8 +1413,13 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
         Route::get('cashier/{clinicVisit}/billing/{rmeInvoice}/receipt/pdf', [RmePaymentController::class, 'receiptPdf'])->name('cashier.receipt.pdf');
         // FEATURE-RME-POSTPAYMENT-INVOICE-CORRECTION-1 (PP-5) — reprint one issued
         // receipt from its immutable snapshot (GET-only, same viewReceipt policy).
+        // DMS-RME-REVISION-PROGRAM-3 / R-10 — `receiptSnapshot` is constrained
+        // GLOBALLY by DatabaseRouteKey. The former whereNumber() here overrode
+        // it with `[0-9]+`, which admitted an overflow (TypeError on
+        // `int $receiptSnapshot`, HTTP 500 even for a guest) and a leading-zero
+        // alias that reprinted a real receipt.
         Route::get('cashier/{clinicVisit}/billing/{rmeInvoice}/receipts/{receiptSnapshot}', [RmePaymentController::class, 'receiptSnapshot'])
-            ->whereNumber('receiptSnapshot')->name('cashier.receipt-snapshots.show');
+            ->name('cashier.receipt-snapshots.show');
     });
 
     /*
@@ -2591,8 +2605,13 @@ Route::middleware('auth')->prefix('oversight')->name('oversight.')->group(functi
     Route::middleware('permission:view_clinical_records_readonly')->group(function () {
         Route::get('rme', [OversightClinicalRecordController::class, 'index'])->name('rme.index');
         Route::get('rme/lookup', [OversightClinicalRecordController::class, 'lookup'])->name('rme.lookup');
+        // DMS-RME-REVISION-PROGRAM-3 / R-11 — `patient` is a generic name, so it
+        // is constrained on this route only (never globally: the settings
+        // patient routes are outside this revision). `whereNumber` admitted an
+        // overflow (TypeError on `int $patient`, HTTP 500) and a leading-zero
+        // alias that opened — and audited — a real patient's history.
         Route::get('rme/patients/{patient}', [OversightClinicalRecordController::class, 'patient'])
-            ->whereNumber('patient')->name('rme.patients.show');
+            ->where('patient', DatabaseRouteKey::PATTERN)->name('rme.patients.show');
         // DMS-RME-REVISION-PROGRAM-2 / R-08 — `visit` is a generic parameter
         // name, so it is constrained per route (never globally) with the
         // canonical bigint-key pattern. `whereNumber` (`[0-9]+`) admitted a
@@ -2600,19 +2619,29 @@ Route::middleware('auth')->prefix('oversight')->name('oversight.')->group(functi
         // 500) and a leading-zero alias that opened a real visit.
         Route::get('rme/visits/{visit}', [OversightClinicalRecordController::class, 'visit'])
             ->where('visit', DatabaseRouteKey::PATTERN)->name('rme.visits.show');
+        // DMS-RME-REVISION-PROGRAM-3 / R-12, R-13 — `handwriting` and
+        // `handwritingPage` are constrained GLOBALLY by DatabaseRouteKey; a
+        // per-route whereNumber() here would override that with `[0-9]+`
+        // (rule 222 §1.4), so these routes carry no constraint of their own.
         Route::get('rme/handwritings/{handwriting}/image', [OversightClinicalRecordController::class, 'handwritingImage'])
-            ->whereNumber('handwriting')->name('rme.handwritings.image');
+            ->name('rme.handwritings.image');
         Route::get('rme/handwriting-pages/{handwritingPage}/image', [OversightClinicalRecordController::class, 'handwritingPageImage'])
-            ->whereNumber('handwritingPage')->name('rme.handwriting-pages.image');
+            ->name('rme.handwriting-pages.image');
 
+        // DMS-RME-REVISION-PROGRAM-3 / R-14, R-15 — `record` and `page` are
+        // generic names, constrained per route. `{record}` is a bigint archive
+        // key (DatabaseRouteKey::PATTERN); `{page}` is a 1-based page number
+        // compared against an int4 column (DatabaseRouteKey::PAGE_NUMBER_PATTERN).
         Route::get('legacy-rme/{record}', [OversightLegacyArchiveController::class, 'rmeShow'])
-            ->whereNumber('record')->name('legacy.rme.show');
+            ->where('record', DatabaseRouteKey::PATTERN)->name('legacy.rme.show');
         Route::get('legacy-rme/{record}/pages/{page}', [OversightLegacyArchiveController::class, 'rmePage'])
-            ->whereNumber(['record', 'page'])->name('legacy.rme.pages.show');
+            ->where(['record' => DatabaseRouteKey::PATTERN, 'page' => DatabaseRouteKey::PAGE_NUMBER_PATTERN])
+            ->name('legacy.rme.pages.show');
         Route::get('legacy-odontogram/{record}', [OversightLegacyArchiveController::class, 'odontogramShow'])
-            ->whereNumber('record')->name('legacy.odontogram.show');
+            ->where('record', DatabaseRouteKey::PATTERN)->name('legacy.odontogram.show');
         Route::get('legacy-odontogram/{record}/pages/{page}', [OversightLegacyArchiveController::class, 'odontogramPage'])
-            ->whereNumber(['record', 'page'])->name('legacy.odontogram.pages.show');
+            ->where(['record' => DatabaseRouteKey::PATTERN, 'page' => DatabaseRouteKey::PAGE_NUMBER_PATTERN])
+            ->name('legacy.odontogram.pages.show');
 
         Route::middleware('permission:export_oversight_data')->group(function () {
             Route::get('rme/export', [OversightClinicalRecordController::class, 'export'])->name('rme.export');
@@ -2626,15 +2655,15 @@ Route::middleware('auth')->prefix('oversight')->name('oversight.')->group(functi
                 ->where('visit', DatabaseRouteKey::PATTERN)->name('rme.visits.prescription.print');
 
             Route::get('legacy-rme/{record}/source', [OversightLegacyArchiveController::class, 'rmeSource'])
-                ->whereNumber('record')->name('legacy.rme.source');
+                ->where('record', DatabaseRouteKey::PATTERN)->name('legacy.rme.source');
             Route::get('legacy-rme/{record}/print', [OversightLegacyArchiveController::class, 'rmePrint'])
-                ->whereNumber('record')->name('legacy.rme.print');
+                ->where('record', DatabaseRouteKey::PATTERN)->name('legacy.rme.print');
             Route::get('legacy-rme/{record}/pdf', [OversightLegacyArchiveController::class, 'rmePdf'])
-                ->whereNumber('record')->name('legacy.rme.pdf');
+                ->where('record', DatabaseRouteKey::PATTERN)->name('legacy.rme.pdf');
             Route::get('legacy-odontogram/{record}/source', [OversightLegacyArchiveController::class, 'odontogramSource'])
-                ->whereNumber('record')->name('legacy.odontogram.source');
+                ->where('record', DatabaseRouteKey::PATTERN)->name('legacy.odontogram.source');
             Route::get('legacy-odontogram/{record}/print', [OversightLegacyArchiveController::class, 'odontogramPrint'])
-                ->whereNumber('record')->name('legacy.odontogram.print');
+                ->where('record', DatabaseRouteKey::PATTERN)->name('legacy.odontogram.print');
         });
     });
 

@@ -30,6 +30,25 @@ final class DatabaseRouteKey
     public const PATTERN = '[1-9][0-9]{0,17}';
 
     /**
+     * DMS-RME-REVISION-PROGRAM-3 / R-15 — a 1-based PAGE NUMBER, not a key.
+     *
+     * The legacy archive `{page}` segment is compared against a `page_number`
+     * column declared `unsignedInteger`, which PostgreSQL stores as a 4-byte
+     * `integer` (ceiling 2,147,483,647). PATTERN admits 18 digits, so reusing it
+     * here would still let an 11-to-18-digit page through PHP's `int` and into
+     * an int4 comparison, where PostgreSQL raises SQLSTATE 22003 (HTTP 500).
+     *
+     * 1 to 9 digits, no sign, no leading zero: page 1 up to 999,999,999, which
+     * always fits int4 and PHP's integer. Page numbering starts at 1 (the
+     * rasterizer numbers pages from 1), so `0` is not a page. A well-formed
+     * number beyond the document's last page is a 404 from the lookup.
+     *
+     * Apply it per route (`page` is a generic name, rule 222 §1.6):
+     * `->where('page', DatabaseRouteKey::PAGE_NUMBER_PATTERN)`.
+     */
+    public const PAGE_NUMBER_PATTERN = '[1-9][0-9]{0,8}';
+
+    /**
      * Parameters constrained globally. Each is a domain-specific name, and
      * every route carrying it binds a bigint `id()` primary key:
      *
@@ -39,13 +58,25 @@ final class DatabaseRouteKey
      *   rmePrescription  DMS-RME-REVISION-PROGRAM-2 / R-05
      *   consent          DMS-RME-REVISION-PROGRAM-2 / R-06
      *   odontogram       DMS-RME-REVISION-PROGRAM-2 / R-07
+     *   diagnosis        DMS-RME-REVISION-PROGRAM-3 / R-09  (two models, both
+     *                    bigint `id()`: trx_medical_record_diagnoses on the
+     *                    medical-record routes, mst_clinical_diagnoses on the
+     *                    terminology routes)
+     *   receiptSnapshot  DMS-RME-REVISION-PROGRAM-3 / R-10  (`int` argument,
+     *                    looked up by key)
+     *   handwriting      DMS-RME-REVISION-PROGRAM-3 / R-12
+     *   handwritingPage  DMS-RME-REVISION-PROGRAM-3 / R-13  (the page ROW's
+     *                    key, not a page index)
      *
      * A GENERIC name (`visit`, `patient`, `record`, `page`) is never added
      * here: it may later name another identifier type (the oversight lookup
      * already resolves a visit by its string visit number), and a global
      * numeric pattern would silently 404 that route. Constrain a generic name
      * per route with `->where('<name>', DatabaseRouteKey::PATTERN)` instead
-     * (R-08), never with `whereNumber`, whose `[0-9]+` admits overflow.
+     * (R-08, R-11, R-14), or with PAGE_NUMBER_PATTERN for a page number
+     * (R-15), never with `whereNumber`, whose `[0-9]+` admits overflow. A
+     * route-level constraint on a name listed here OVERRIDES the global one,
+     * so a route carrying one of these names never adds its own.
      *
      * Extending this list needs owner approval (rule 222).
      *
@@ -58,6 +89,10 @@ final class DatabaseRouteKey
         'rmePrescription',
         'consent',
         'odontogram',
+        'diagnosis',
+        'receiptSnapshot',
+        'handwriting',
+        'handwritingPage',
     ];
 
     public static function register(): void

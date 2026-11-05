@@ -207,6 +207,11 @@ mass upload, batch review/publish, visit-bound date attestation and single-activ
   compared date; state a doctor's practice branch on the doctor master; Doctor-role HTTP tests need
   `withoutMiddleware(EnsureRmeOnlineContext::class)`; give fixtures distinct PDF bytes. Source: archive
   `LEGACY-RME-PDF-1B`, `LEGACY-RME-PDF-HISTORY-1A`, `99-legacy-rme-doctor-clinical-branch-context.mdc`.
+- **AIR-LRM-39** Every legacy archive `{record}` route (19) carries `->where('record', DatabaseRouteKey::PATTERN)` and
+  every `{page}` route (6) `->where('page', DatabaseRouteKey::PAGE_NUMBER_PATTERN)`, per route (generic names, never
+  global, never `whereNumber`). `{page}` is a 1-based page number compared against an int4 `page_number`, so it uses
+  the 9-digit page pattern, not the 18-digit key pattern; `0` and `01` are 404. `{import}` keeps its `whereNumber`
+  (residual, not approved). Source: `222-rme-route-key-constraint-and-failure-log-redaction.mdc` §1.10–§1.11.
 
 ## Current posture (snapshot 2026-10-25 — verify before relying on it)
 
@@ -249,6 +254,7 @@ mass upload, batch review/publish, visit-bound date attestation and single-activ
 | `.cursor/rules/92-telkomas-branch-code-canonical.mdc` | `TLK1` canonical; shared alias mechanics |
 | `.cursor/rules/136-sunu-branch-code-canonical.mdc` | `SPN4` canonical, `SUN4` alias |
 | `.cursor/rules/171-legacy-batch-review-publish.mdc` | Batch review/publish over the canonical lifecycle |
+| `.cursor/rules/222-rme-route-key-constraint-and-failure-log-redaction.mdc` | Archive `{record}` key and `{page}` number route constraints (404, never 500) |
 
 ## History
 

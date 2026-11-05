@@ -133,12 +133,19 @@ function rrkUrl(string $template, ClinicVisit $visit, string $segment): string
 }
 
 it('governs exactly the approved RME record parameters globally', function () {
-    // clinicVisit (Program 1 / R-01) plus the five approved here. The generic
+    // clinicVisit (Program 1 / R-01), the five approved here, and the four
+    // domain names Program 3 approved (R-09 diagnosis, R-10 receiptSnapshot,
+    // R-12 handwriting, R-13 handwritingPage; pinned in
+    // tests/Feature/RME/RmeChildRecordRouteKeyConstraintTest.php). The generic
     // `visit` name is deliberately NOT global (R-08 constrains it per route):
     // the oversight lookup already resolves visits by a string visit number,
     // so a global numeric `visit` pattern could silently 404 a future route.
     expect(DatabaseRouteKey::CONSTRAINED_PARAMETERS)
-        ->toEqualCanonicalizing(['clinicVisit', ...array_keys(rrkGovernedParameters())])
+        ->toEqualCanonicalizing([
+            'clinicVisit',
+            ...array_keys(rrkGovernedParameters()),
+            'diagnosis', 'receiptSnapshot', 'handwriting', 'handwritingPage',
+        ])
         ->not->toContain('visit');
 });
 

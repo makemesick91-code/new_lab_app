@@ -1440,6 +1440,35 @@ return [
         // critical variants.
         'tests/Feature/ClinicOversight/OversightVisitRouteKeyConstraintTest.php',
 
+        // DMS-RME-REVISION-PROGRAM-3 / R-09, R-12, R-13 — a `{diagnosis}`,
+        // `{handwriting}` or `{handwritingPage}` segment that is not a key
+        // reached the bigint query and answered HTTP 500 with an ERROR line on
+        // PostgreSQL, also for a user holding no permission. The global list,
+        // the compiled (cached) matcher and the behavioural 404 are pinned
+        // here. Selected by the `RmeChildRecordRouteKey` token in BOTH
+        // critical variants.
+        'tests/Feature/RME/RmeChildRecordRouteKeyConstraintTest.php',
+
+        // DMS-RME-REVISION-PROGRAM-3 / R-10 — the receipt reprint route's
+        // `whereNumber` admitted an overflow (500 on `int $receiptSnapshot`)
+        // and a leading-zero alias that reprinted a real issued receipt.
+        // Selected by the `RmeReceiptSnapshotRouteKey` token in BOTH critical
+        // variants.
+        'tests/Feature/RmeInvoiceCorrection/RmeReceiptSnapshotRouteKeyConstraintTest.php',
+
+        // DMS-RME-REVISION-PROGRAM-3 / R-11..R-15 — the oversight patient,
+        // handwriting image and legacy archive routes' `whereNumber` admitted
+        // an overflow (500), a leading-zero alias that opened and AUDITED a
+        // real record, and an out-of-int4 page number (22003, 500). Selected
+        // by the `OversightRecordRouteKey` token in BOTH critical variants.
+        'tests/Feature/ClinicOversight/OversightRecordRouteKeyConstraintTest.php',
+
+        // DMS-RME-REVISION-PROGRAM-3 / R-14, R-15 — every `{record}` and
+        // `{page}` legacy archive route, by name, with the right pattern for
+        // its identifier type (bigint key vs int4 page number). Selected by
+        // the `LegacyArchiveRouteKey` token in BOTH critical variants.
+        'tests/Feature/LegacyRme/LegacyArchiveRouteKeyConstraintTest.php',
+
         // SECURITY-F4C-CLINIC-CALENDAR-LAB-ORDERS-1 (owner decision D16) — lab order dates, order and
         // delivery numbering, the due-date floor and "delivered today" on the clinic calendar
         // (Asia/Makassar). A UTC "today" named the previous clinic day for eight hours of every day;
