@@ -57,10 +57,13 @@ use Illuminate\Validation\ValidationException;
  *
  * FILES. Publishing promotes metadata; it moves no bytes. 1B already stores the
  * source PDF and every rendered page under an opaque, private, per-import
- * directory that is never rewritten, and the staging row is soft-deleted rather
- * than erased — so the published record simply points at the same private
- * paths. Nothing to copy means nothing to compensate for when a transaction
- * rolls back, and no orphan file can be produced by a failed publish.
+ * directory that is never rewritten, and the staging row stays in place at
+ * PUBLISHED (nothing soft-deletes an import) — so the published record simply
+ * points at the same private paths. Nothing to copy means nothing to compensate
+ * for when a transaction rolls back, and no orphan file can be produced by a
+ * failed publish. The flip side (DMS-RME-REVISION-PROGRAM-7): the staging
+ * screens stream those same bytes, so they must refuse them once the record is
+ * VOIDed — LegacyRmeImportController::assertBytesNotRetracted().
  */
 class LegacyRmePublishService
 {
@@ -387,7 +390,7 @@ class LegacyRmePublishService
                 'normalized_content_hash' => $locked->normalized_content_hash,
                 // SOURCE-RM-BINDING-1 — carried onto the immutable record, so it
                 // can answer "what patient did this document claim to be about?"
-                // without joining the staging row publishing soft-deletes.
+                // without joining the staging row.
                 'source_rm_raw' => $locked->source_rm_raw,
                 'source_rm_normalized' => $locked->source_rm_normalized,
                 'page_count' => $pages->count(),

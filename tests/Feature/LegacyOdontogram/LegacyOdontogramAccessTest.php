@@ -173,6 +173,47 @@ it('stops streaming the bytes of a VOIDed record while keeping the row readable'
         ->assertOk();
 });
 
+it('stops streaming a VOIDed record\'s pages through the staging screen too (DMS-RME-REVISION-PROGRAM-7)', function () {
+    // Publishing reuses the staging import's page images, so refusing them on
+    // the record route alone left the same bytes reachable from the intake
+    // screen. Rule 174 §6: if the viewer refuses a record, no other door shows it.
+    $published = lodoPublished();
+    $record = $published['record'];
+    $importId = (int) $record->source_import_id;
+
+    // Positive control: before the void the staging evidence is readable.
+    $this->actingAs(superAdmin())
+        ->get(route('settings.rme.legacy-odontograms.pages.show', [$importId, 1]))
+        ->assertOk();
+
+    app(LegacyOdontogramVoidService::class)->void(
+        $record,
+        'Dokumen ternyata milik pasien lain, ditarik dan akan diunggah ulang.',
+        lodoOperator(),
+    );
+
+    // Super Admin: Gate::before bypasses the policy, so the controller must refuse.
+    $this->actingAs(superAdmin())
+        ->get(route('settings.rme.legacy-odontograms.pages.show', [$importId, 1]))
+        ->assertNotFound();
+
+    $this->actingAs(superAdmin())
+        ->get(route('settings.rme.legacy-odontograms.pages.show', [$importId, 1]).'?variant=thumbnail')
+        ->assertNotFound();
+
+    $this->actingAs(lodoOperator())
+        ->get(route('settings.rme.legacy-odontograms.pages.show', [$importId, 1]))
+        ->assertNotFound();
+
+    // Retracted, not erased: the staging row stays auditable, says why its
+    // pages are gone, and no longer embeds images that would only 404.
+    $this->actingAs(superAdmin())
+        ->get(route('settings.rme.legacy-odontograms.show', $importId))
+        ->assertOk()
+        ->assertSee('Arsip telah di-VOID')
+        ->assertDontSee(route('settings.rme.legacy-odontograms.pages.show', [$importId, 1]), false);
+});
+
 it('never renders KTP or NIK on any archive surface', function () {
     $published = lodoPublished();
 

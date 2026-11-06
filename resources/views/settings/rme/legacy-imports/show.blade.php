@@ -253,12 +253,19 @@
             @endcan
         @endif
 
+        @if ($bytesRetracted)
+            <x-ui.alert variant="warning" title="Arsip telah di-VOID">
+                Berkas PDF sumber dan gambar halaman arsip ini tidak lagi ditayangkan. Catatan impor dan alasan VOID tetap dapat diaudit.
+            </x-ui.alert>
+        @else
         <x-ui.card title="Dokumen Sumber">
             <x-ui.button variant="secondary" :href="route('settings.rme.legacy-imports.source', $import->getKey())" target="_blank" rel="noopener">
                 Buka PDF Sumber
             </x-ui.button>
         </x-ui.card>
+        @endif
 
+        @unless ($bytesRetracted)
         <x-ui.card :title="'Halaman ('.$pages->count().')'">
             @if ($pages->isEmpty())
                 <x-ui.empty-state
@@ -289,5 +296,6 @@
                 </div>
             @endif
         </x-ui.card>
+        @endunless
     </div>
 </x-settings-shell>

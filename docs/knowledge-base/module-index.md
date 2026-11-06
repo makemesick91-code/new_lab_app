@@ -14,7 +14,9 @@ membahasnya. Kembali ke [00-INDEX](../00-INDEX.md).
 Indeks ini adalah **snapshot hasil turunan**, bukan dokumen yang ditulis tangan per modul.
 Dibuat pada 2026-10-25 terhadap commit `572a32a9`. Pada 2026-11-06 tautan rule 224 dan
 [dms-rme-revision-program-6](../sprints/dms-rme-revision-program-6.md) ditambahkan ke `MedicalRecord`,
-`Odontogram` dan `Prescription`; jumlah file dan dokumen tidak diturunkan ulang.
+`Odontogram` dan `Prescription`; jumlah file dan dokumen tidak diturunkan ulang. Pada 2026-11-06
+(lagi) rule 225 dan [dms-rme-revision-program-7](../sprints/dms-rme-revision-program-7.md) ditambahkan ke `ClinicVisit`, `MedicalRecord`, `RME`,
+`LegacyRme` dan `LegacyOdontogram` dengan cara yang sama.
 
 - **Jumlah file PHP** dihitung dari `app/Modules/<Modul>/`.
 - **"N dokumen menyebut path modul ini"** menghitung dokumen di `docs/` dan `.cursor/rules/`
@@ -44,15 +46,15 @@ bukti, kata kunci nama berkas untuk tautan), lalu perbarui `kb_verified_against`
 ### `ClinicVisit`
 
 - Kode: `app/Modules/ClinicVisit/` — 16 file PHP; 51 dokumen menyebut path modul ini.
-- Rule durable (`.cursor/rules/`, di luar vault): `100-new-visit-patient-search-combobox.mdc`, `101-new-visit-global-patient-identity-lookup.mdc`, `199-rme-clinic-visit-branch-authority.mdc`
-- Sprint terbaru: [audit-rme-clinic-visit-branch-authority-1](../sprints/audit-rme-clinic-visit-branch-authority-1.md), [bugfix-new-visit-patient-search-runtime-1](../sprints/bugfix-new-visit-patient-search-runtime-1.md), [revision-new-visit-global-patient-lookup-1](../sprints/revision-new-visit-global-patient-lookup-1.md) — total 4 dokumen sprint
+- Rule durable (`.cursor/rules/`, di luar vault): `100-new-visit-patient-search-combobox.mdc`, `101-new-visit-global-patient-identity-lookup.mdc`, `199-rme-clinic-visit-branch-authority.mdc`, `225-rme-concurrent-first-write-and-void-staging-integrity.mdc`
+- Sprint terbaru: [dms-rme-revision-program-7](../sprints/dms-rme-revision-program-7.md), [audit-rme-clinic-visit-branch-authority-1](../sprints/audit-rme-clinic-visit-branch-authority-1.md), [bugfix-new-visit-patient-search-runtime-1](../sprints/bugfix-new-visit-patient-search-runtime-1.md), [revision-new-visit-global-patient-lookup-1](../sprints/revision-new-visit-global-patient-lookup-1.md) — total 4 dokumen sprint
 - Ringkasan `ai-knowledge` (snapshot, cek [status](doc-status-registry.md)): [08_DaengtisiaMS_RME_Workflow](../ai-knowledge/08_DaengtisiaMS_RME_Workflow.md), [10_DaengtisiaMS_Visit_Medical_Record_Rules](../ai-knowledge/10_DaengtisiaMS_Visit_Medical_Record_Rules.md)
 
 ### `MedicalRecord`
 
 - Kode: `app/Modules/MedicalRecord/` — 43 file PHP; 36 dokumen menyebut path modul ini.
-- Rule durable (`.cursor/rules/`, di luar vault): `127-rme-print-composition-no-duplicate-patient-card.mdc`, `173-unified-medical-record-index.mdc`, `224-rme-clinical-evidence-write-integrity.mdc`
-- Sprint terbaru: [dms-rme-revision-program-6](../sprints/dms-rme-revision-program-6.md), [feature-rme-medical-records-unified-native-legacy-1](../sprints/feature-rme-medical-records-unified-native-legacy-1.md), [fix-rme-print-remove-patient-visit-duplicate-1](../sprints/fix-rme-print-remove-patient-visit-duplicate-1.md), [uix-11-rme-medical-record-odontogram-print-bundle-polish](../sprints/uix-11-rme-medical-record-odontogram-print-bundle-polish.md)
+- Rule durable (`.cursor/rules/`, di luar vault): `127-rme-print-composition-no-duplicate-patient-card.mdc`, `173-unified-medical-record-index.mdc`, `224-rme-clinical-evidence-write-integrity.mdc`, `225-rme-concurrent-first-write-and-void-staging-integrity.mdc`
+- Sprint terbaru: [dms-rme-revision-program-7](../sprints/dms-rme-revision-program-7.md), [dms-rme-revision-program-6](../sprints/dms-rme-revision-program-6.md), [feature-rme-medical-records-unified-native-legacy-1](../sprints/feature-rme-medical-records-unified-native-legacy-1.md), [fix-rme-print-remove-patient-visit-duplicate-1](../sprints/fix-rme-print-remove-patient-visit-duplicate-1.md), [uix-11-rme-medical-record-odontogram-print-bundle-polish](../sprints/uix-11-rme-medical-record-odontogram-print-bundle-polish.md)
 - Ringkasan `ai-knowledge` (snapshot, cek [status](doc-status-registry.md)): [08_DaengtisiaMS_RME_Workflow](../ai-knowledge/08_DaengtisiaMS_RME_Workflow.md), [10_DaengtisiaMS_Visit_Medical_Record_Rules](../ai-knowledge/10_DaengtisiaMS_Visit_Medical_Record_Rules.md)
 
 ### `Odontogram`
@@ -78,7 +80,8 @@ bukti, kata kunci nama berkas untuk tautan), lalu perbarui `kb_verified_against`
 ### `RME`
 
 - Kode: `app/Modules/RME/` — 4 file PHP; 10 dokumen menyebut path modul ini.
-- Rule durable (`.cursor/rules/`, di luar vault): `138-doctor-room-scoped-access-and-print-deny.mdc`
+- Rule durable (`.cursor/rules/`, di luar vault): `138-doctor-room-scoped-access-and-print-deny.mdc`, `225-rme-concurrent-first-write-and-void-staging-integrity.mdc`
+- Sprint terbaru: [dms-rme-revision-program-7](../sprints/dms-rme-revision-program-7.md)
 - Ringkasan `ai-knowledge` (snapshot, cek [status](doc-status-registry.md)): [08_DaengtisiaMS_RME_Workflow](../ai-knowledge/08_DaengtisiaMS_RME_Workflow.md)
 
 ### `RmeDashboard`
@@ -206,15 +209,15 @@ bukti, kata kunci nama berkas untuk tautan), lalu perbarui `kb_verified_against`
 ### `LegacyRme`
 
 - Kode: `app/Modules/LegacyRme/` — 97 file PHP; 42 dokumen menyebut path modul ini.
-- Rule durable (`.cursor/rules/`, di luar vault): `100-legacy-rme-activation-states.mdc`, `100-legacy-rme-production-migration-wave.mdc`, `101-legacy-rme-import-lifecycle-cli.mdc`, `102-legacy-rme-separation-of-duties.mdc` — dan 14 lainnya
+- Rule durable (`.cursor/rules/`, di luar vault): `100-legacy-rme-activation-states.mdc`, `100-legacy-rme-production-migration-wave.mdc`, `101-legacy-rme-import-lifecycle-cli.mdc`, `102-legacy-rme-separation-of-duties.mdc` — dan 14 lainnya, `225-rme-concurrent-first-write-and-void-staging-integrity.mdc`
 - Desain / ADR / runbook / operasi: [legacy-rme-pdf-rollout-runbook](../runbooks/legacy-rme-pdf-rollout-runbook.md), [legacy-rme-routine-batch-operator-checklist](../runbooks/legacy-rme-routine-batch-operator-checklist.md), [legacy-rme-steady-state-operations-runbook](../runbooks/legacy-rme-steady-state-operations-runbook.md), [legacy-rme-migration-operations-runbook](../runbooks/legacy-rme-migration-operations-runbook.md), [0008-legacy-rme-pdf-archive-foundation](../adr/0008-legacy-rme-pdf-archive-foundation.md)
-- Sprint terbaru: [feature-legacy-rme-odontogram-mass-upload-1](../sprints/feature-legacy-rme-odontogram-mass-upload-1.md), [fix-legacy-rme-routine-ops-1](../sprints/fix-legacy-rme-routine-ops-1.md), [legacy-rme-program-closure-1-final-program-audit-production-steady-state](../sprints/legacy-rme-program-closure-1-final-program-audit-production-steady-state.md) — total 26 dokumen sprint
+- Sprint terbaru: [dms-rme-revision-program-7](../sprints/dms-rme-revision-program-7.md), [feature-legacy-rme-odontogram-mass-upload-1](../sprints/feature-legacy-rme-odontogram-mass-upload-1.md), [fix-legacy-rme-routine-ops-1](../sprints/fix-legacy-rme-routine-ops-1.md), [legacy-rme-program-closure-1-final-program-audit-production-steady-state](../sprints/legacy-rme-program-closure-1-final-program-audit-production-steady-state.md) — total 26 dokumen sprint
 
 ### `LegacyOdontogram`
 
 - Kode: `app/Modules/LegacyOdontogram/` — 41 file PHP; 14 dokumen menyebut path modul ini.
-- Rule durable (`.cursor/rules/`, di luar vault): `111-legacy-odontogram-native-reference-cutoff.mdc`, `131-legacy-odontogram-patient-lookup.mdc`, `132-legacy-odontogram-native-optional.mdc`, `174-legacy-odontogram-read-scope.mdc`
-- Sprint terbaru: [fix-legacy-odontogram-cross-branch-read-scope-1](../sprints/fix-legacy-odontogram-cross-branch-read-scope-1.md), [bugfix-legacy-odontogram-queue-consumer-1](../sprints/bugfix-legacy-odontogram-queue-consumer-1.md), [legacy-odontogram-native-reference-cutoff-1](../sprints/legacy-odontogram-native-reference-cutoff-1.md) — total 5 dokumen sprint
+- Rule durable (`.cursor/rules/`, di luar vault): `111-legacy-odontogram-native-reference-cutoff.mdc`, `131-legacy-odontogram-patient-lookup.mdc`, `132-legacy-odontogram-native-optional.mdc`, `174-legacy-odontogram-read-scope.mdc`, `225-rme-concurrent-first-write-and-void-staging-integrity.mdc`
+- Sprint terbaru: [dms-rme-revision-program-7](../sprints/dms-rme-revision-program-7.md), [fix-legacy-odontogram-cross-branch-read-scope-1](../sprints/fix-legacy-odontogram-cross-branch-read-scope-1.md), [bugfix-legacy-odontogram-queue-consumer-1](../sprints/bugfix-legacy-odontogram-queue-consumer-1.md), [legacy-odontogram-native-reference-cutoff-1](../sprints/legacy-odontogram-native-reference-cutoff-1.md) — total 5 dokumen sprint
 
 ## SATUSEHAT
 

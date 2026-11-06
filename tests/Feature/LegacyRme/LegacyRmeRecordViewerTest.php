@@ -16,6 +16,7 @@ use App\Modules\LegacyRme\Models\LegacyRmeRecord;
 use App\Modules\LegacyRme\Services\LegacyRmeImportProcessingService;
 use App\Modules\LegacyRme\Services\LegacyRmeImportService;
 use App\Modules\LegacyRme\Services\LegacyRmePublishService;
+use App\Modules\LegacyRme\Services\LegacyRmeVoidService;
 use App\Modules\LegacyRme\Services\Pdf\FakeLegacyRmePdfInspector;
 use App\Modules\LegacyRme\Services\Pdf\FakeLegacyRmePdfRasterizer;
 use App\Modules\LegacyRme\Support\LegacyRmeAuditEvent;
@@ -363,6 +364,46 @@ it('stops streaming the bytes of a voided archive but keeps the row auditable', 
         ->get(route('rme.legacy-records.show', $record->getKey()))
         ->assertOk()
         ->assertSee('Salah pasien.');
+});
+
+it('stops streaming a voided archive through the staging screens too (DMS-RME-REVISION-PROGRAM-7)', function () {
+    // Publishing moves no bytes: the record serves the staging import's own
+    // source PDF and page images. Stopping only the record routes therefore
+    // left the same bytes one URL away, on the intake screens. Rule 93 §7: a
+    // VOIDed archive stops serving bytes — source, pages, print and export.
+    $record = lrme1cHttpPublished(1);
+    $importId = (int) $record->source_import_id;
+    $admin = superAdmin();
+
+    // Positive control: before the void the staging evidence is readable.
+    $this->actingAs($admin)
+        ->get(route('settings.rme.legacy-imports.source', $importId))
+        ->assertOk();
+
+    app(LegacyRmeVoidService::class)->void($record, 'Dokumen ternyata milik pasien lain, ditarik.', $admin);
+
+    // Super Admin specifically: Gate::before bypasses every policy, so only a
+    // check in the controller binds the actor who operates this capability.
+    $this->actingAs($admin)
+        ->get(route('settings.rme.legacy-imports.source', $importId))
+        ->assertNotFound();
+
+    $this->actingAs($admin)
+        ->get(route('settings.rme.legacy-imports.pages.show', [$importId, 1]))
+        ->assertNotFound();
+
+    $this->actingAs($admin)
+        ->get(route('settings.rme.legacy-imports.pages.show', [$importId, 1]).'?variant=thumbnail')
+        ->assertNotFound();
+
+    // Retracted, not erased: the staging row itself stays auditable, says why
+    // its evidence is gone, and no longer links bytes that would only 404.
+    $this->actingAs($admin)
+        ->get(route('settings.rme.legacy-imports.show', $importId))
+        ->assertOk()
+        ->assertSee('Arsip telah di-VOID')
+        ->assertDontSee(route('settings.rme.legacy-imports.source', $importId), false)
+        ->assertDontSee(route('settings.rme.legacy-imports.pages.show', [$importId, 1]), false);
 });
 
 it('audits a real page view but not every gallery thumbnail', function () {

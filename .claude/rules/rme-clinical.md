@@ -252,6 +252,11 @@ editable) → Persetujuan Tindakan Medis (RME + finish unlocked) → RME + Odont
   `$rmePrescription`); a mismatch injects an empty model. `ClinicalEvidenceStorage::dataUri()` is null for an absent,
   unreadable or non-PNG object and print renders "Gambar halaman ini tidak tersedia." instead of an empty `<img>`.
   Source: rule 224 §6–7.
+- **AIR-RMC-44** A racing insert that may lose a unique index runs in a nested `DB::transaction()` (SAVEPOINT); catch
+  `UniqueConstraintViolationException` outside it, then re-read the winner (`?? throw`). Never re-read inside the
+  aborted transaction (25P02). Visit numbers are read only after `lockVisitSequence($branchId)` (advisory lock
+  92_001, per branch) and `withTrashed()` (the unique indexes hold soft-deleted visits); a row lock cannot serialise
+  `MAX + 1`. Source: `.cursor/rules/225-rme-concurrent-first-write-and-void-staging-integrity.mdc` §1–4.
 
 ## Current posture (snapshot 2026-10-25 — verify before relying on it)
 
@@ -291,6 +296,7 @@ editable) → Persetujuan Tindakan Medis (RME + finish unlocked) → RME + Odont
 | `.cursor/rules/222-rme-route-key-constraint-and-failure-log-redaction.mdc` | Visit, medical-record, prescription, consent, odontogram, diagnosis and handwriting route keys constrained (404, never 500); caught exceptions logged through the redactor |
 | `.cursor/rules/223-rme-clinical-workflow-integrity.mdc` | Locked-row status/room/consent decisions; capability-mirrored RME controls; front office never authors; validated sheet source |
 | `.cursor/rules/224-rme-clinical-evidence-write-integrity.mdc` | Evidence row + object as one unit (validate first, compensate, fresh keys, parent-row lock); canvas route binding; honest print for missing/unreadable/non-PNG objects; closes R5-3 |
+| `.cursor/rules/225-rme-concurrent-first-write-and-void-staging-integrity.mdc` | Savepoint-adopt for racing first writes (assignment, draft book); per-branch visit numbering lock; closes R5-1, R5-2, R6-1 |
 
 ## History
 

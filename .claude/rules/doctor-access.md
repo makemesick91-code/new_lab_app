@@ -189,7 +189,8 @@ ceremonies and the login gate's proof mechanics belong to the sibling `.claude/r
   `trx_rme_patient_doctor_assignments` row or a visit with that doctor); the same branch alone never authorizes, and
   legacy archives never widen a doctor's reach beyond native RME. Owner, Super Admin and Supervisor RME are exempt
   through `shouldApplyDoctorScope()`. Source: `99-legacy-rme-doctor-clinical-branch-context.mdc`; archive
-  LEGACY-RME-PDF-ROLL-2 (authorization defect).
+  LEGACY-RME-PDF-ROLL-2 (authorization defect). Every raw `whereExists` over `trx_clinic_visits` in that service
+  excludes soft-deleted visits, so a list never offers what the per-record check refuses (rule 225 §5).
 - **AIR-DAC-41** Every `{doctor}` route (`settings.doctors.*` incl. account links, and
   `rme.doctor-branch-locks.release-session`) carries `DatabaseRouteKey::PATTERN` per route, never `whereNumber`. It
   still rejects the literal `requests`, so the ordering trap stays closed. Route validation changes no device,
@@ -239,6 +240,7 @@ ceremonies and the login gate's proof mechanics belong to the sibling `.claude/r
 | `.cursor/rules/200-rme-active-user-patient-selection-cross-branch-control.mdc` | Deactivated account ends session and releases lease |
 | `.cursor/rules/93-doctor-pwa-webauthn.mdc` | WebAuthn device login (sibling domain) |
 | `.cursor/rules/222-rme-route-key-constraint-and-failure-log-redaction.mdc` | Doctor route keys constrained (404, never 500) |
+| `.cursor/rules/225-rme-concurrent-first-write-and-void-staging-integrity.mdc` | Visit list scope excludes soft-deleted visits; D1 lease in-flight race recorded |
 
 ## History
 

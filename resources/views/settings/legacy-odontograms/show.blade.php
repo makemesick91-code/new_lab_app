@@ -127,6 +127,11 @@
             </x-ui.alert>
         @endif
 
+        @if ($bytesRetracted)
+            <x-ui.alert variant="warning" title="Arsip telah di-VOID">
+                Gambar halaman arsip ini tidak lagi ditayangkan. Catatan impor dan alasan VOID tetap dapat diaudit.
+            </x-ui.alert>
+        @else
         <x-ui.card title="Halaman Hasil Render" description="Periksa setiap halaman sebelum mempublikasikan.">
             @if ($pages->isEmpty())
                 <x-ui.empty-state
@@ -151,6 +156,7 @@
                 </div>
             @endif
         </x-ui.card>
+        @endif
 
         @can('publish', $import)
             @if ($isReviewed)

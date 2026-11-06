@@ -422,6 +422,13 @@ class ClinicVisitService
             // "today" list this sprint makes the default.
             $visitDate = Carbon::parse($this->clock->todayString());
 
+            // DMS-RME-REVISION-PROGRAM-7 / R5-2 — number the visit under this
+            // branch's numbering lock, held until this registration commits, so
+            // a concurrent registration at the same branch reads the numbers
+            // only after this visit exists (it used to read the same maximum and
+            // answer HTTP 500 on the unique index). Other branches never wait.
+            $this->visits->lockVisitSequence($branchId);
+
             $queueNumber = $this->visits->nextQueueNumber($branchId, $visitDate);
             $visitNumber = $this->generateUniqueVisitNumber($branchId, $visitDate);
 
@@ -526,9 +533,13 @@ class ClinicVisitService
         $branchCode = $this->resolveVisitBranchCode($branchId);
         $prefix = 'VIS-'.$branchCode.'-'.$visitDate->format('Ymd').'-';
 
-        $maxSequence = ClinicVisit::query()
+        // Read under lockVisitSequence() (taken by create()), never FOR UPDATE:
+        // a row lock here serialised nothing on the day's first registration
+        // and held every same-day visit row of the branch until commit.
+        // withTrashed(): the unique index on visit_number still holds a
+        // soft-deleted visit's number, so the MAX must see it too.
+        $maxSequence = ClinicVisit::withTrashed()
             ->where('visit_number', 'like', $prefix.'%')
-            ->lockForUpdate()
             ->pluck('visit_number')
             ->map(function (string $visitNumber) use ($prefix): int {
                 $suffix = str_replace($prefix, '', $visitNumber);
@@ -542,7 +553,7 @@ class ClinicVisitService
         do {
             $candidate = $prefix.str_pad((string) $sequence, 3, '0', STR_PAD_LEFT);
             $sequence++;
-        } while (ClinicVisit::query()->where('visit_number', $candidate)->exists());
+        } while (ClinicVisit::withTrashed()->where('visit_number', $candidate)->exists());
 
         return $candidate;
     }

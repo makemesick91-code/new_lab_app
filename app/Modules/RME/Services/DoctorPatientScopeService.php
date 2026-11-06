@@ -355,10 +355,17 @@ class DoctorPatientScopeService
                     ->where('pda.doctor_id', $doctorId)
                     ->whereNull('pda.unassigned_at');
             })->orWhereExists(function ($sub) use ($doctorId) {
+                // A raw subquery does not inherit the model's SoftDeletes scope.
+                // A soft-deleted visit is no relationship: the per-record
+                // predicate (doctorHasPatientAccess) already says so, so the list
+                // must too, or it offers visits whose detail answers 403
+                // (DMS-RME-REVISION-PROGRAM-7; its two siblings were fixed in
+                // 4f69d8d7, this one was missed).
                 $sub->selectRaw('1')
                     ->from('trx_clinic_visits as own_visit')
                     ->whereColumn('own_visit.patient_id', 'trx_clinic_visits.patient_id')
-                    ->where('own_visit.doctor_id', $doctorId);
+                    ->where('own_visit.doctor_id', $doctorId)
+                    ->whereNull('own_visit.deleted_at');
             });
         });
     }
