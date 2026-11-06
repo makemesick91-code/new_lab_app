@@ -4,8 +4,10 @@
   (rule 221 §7), mission `DMS-RME-REVISION-PROGRAM-8A` (P0, SECURITY_FIX / CRITICAL_HOTFIX / CI_COVERAGE_HARDENING),
   2026-11-07. Corrective sprint for the NO-GO of [[dms-rme-revision-program-8]] (Stage A readiness audit). Continuation
   of [[dms-rme-revision-program-1]] … [[dms-rme-revision-program-7]].
-- **Status:** IMPLEMENTATION COMPLETE, reviewed (0 blocking findings) and verified locally; release gated on two owner
-  items (§6). Not merged, not deployed, no GO tag. Full Suite deferred under CG-18, not claimed.
+- **Status:** **GO** — merged (PR #608 → `c0e12382`, tree `e6baa722`, identical to the CI-validated candidate
+  `adbd0122`), deployed to Biznet (`20261106-230625`, `DEPLOY RUNNER OK`), verified in production, and tagged
+  `dms-rme-revision-program-8a-go` (§6). Full Suite deferred under CG-18, not claimed. **This is not final readiness
+  GO**: Program 8 must be re-audited, and P8-N2, the numbering class and the owner-decision register remain open.
 - **Base:** `feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report` @ `6eefa719` (PR #607, the
   Program 8 audit record, merged at the start of this sprint). Production ran `9352457e` (Program 7 GO, deploy
   `20261106-134517`), read from the Biznet host before work began.
@@ -129,6 +131,7 @@ labels passing tests "warnings").
 |---|---|---|
 | P8-N1 suite, base code | PHP 8.5.4 / SQLite | **RED: 29 cases, 16 failed** — every authorisation and scope assertion; all 13 positive controls and neutrality pins passed |
 | P8-N1 suite, fixed | PHP 8.5.4 / SQLite | GREEN 29/29 (85 assertions) |
+| P8-N1 suite after the review fixes (RX-06, RX-25 policy-only dataset, RX-26 added), with the strengthened P8-N3 guard | PHP 8.5.4 / SQLite | GREEN: prescription suite 33/33; strengthened suites together 45/45 |
 | P8A-RX-17 corrected assertion, base code | PHP 8.5.4 / SQLite | RED (re-proven after the first marker proved to be a test defect: the store route shares its URL with the page's own GET route) |
 | P8-N3 suites, base template | PHP 8.5.4 / SQLite | **RED: 5 failed** (the old `ClinicRoomTest` passes on 8.5; the new version-independent assertions do not) |
 | P8-N3 suites, base template | official PHP 8.3.6 | RED: 7 failed incl. the original `ClinicRoomTest` create page (ParseError, HTTP 500) |
@@ -138,7 +141,8 @@ labels passing tests "warnings").
 | New suites + evidence-write integrity + PG-only evidence-lock concurrency | **PostgreSQL 16.15 + PHP 8.3.33** | 67 cases, 0 failed, 0 skipped |
 | Dependency regression: `tests/Feature/{RME,ClinicMasterData,AccessControl,ClinicOversight,Storage,Ui,Sprint41,Branch}` + `SupervisorRmeRolePermissionTest` | **PostgreSQL 16.15 + PHP 8.3.33** | **4,283 cases, 0 failed, 0 skipped** (14,124 assertions) |
 | `tests/Feature/Cicd` + `DevflowAiInstructionSystemTest` (after the workflow and registry edits) | host PHP 8.5.4 | 386 cases, 0 failed, 0 skipped |
-| Critical-gate selection, exact filter string from the workflow, both variants | `pest --list-tests` | 9,609 each (Program 8: 9,431; +178 = 39 + 136 + 3); every declared suite fully selected in both |
+| Critical-gate selection, exact filter string from the workflow, both variants | `pest --list-tests` | 9,609 each (Program 8: 9,431; +178 = 39 + 136 + 3); every declared suite fully selected in both. Measured before the review added test cases; CI then ran 9,615 (next row) |
+| Required CI on the merged candidate `adbd0122`, run 42301244552 | GitHub-hosted, NSF-R011 critical gate | **9,615 passed (47,545 assertions), 0 failed**, `critical_test_exit_status=0`; all six new or declared suites appear in the log. Classifier, NSF-R012, Selective Module, NSF-9, NSF-10 and the Android gate green; Full Suite gate skipped (CG-18) |
 | P8-N3 suites, base template, **`short_open_tag` Off** (ini file mounted into the CI image's scan dir) | PHP 8.3.33 | **RED: 5 failed — and the original `ClinicRoomTest` PASSES** (HTTP 200 with leaked source: the old suite is blind to the production symptom; the new ini-independent assertions are not) |
 | Same, fixed template | PHP 8.3.33, Off | GREEN 26/26 |
 | Mutation matrix (11 mutants: policy, service, authority, tier constant, both guard checks), restore by copy, tree verified identical | PHP 8.5.4 | **11 killed, 0 survived** |
@@ -211,6 +215,29 @@ invariant, so the window between publication and deployment should be as short a
   - Host `dms-bk2-status` (21:59:25 UTC): `offsite_packages_acked=6`, `offsite_packages_pending=0`,
     `offsite_newest_acked=BK2-20261106T183001Z`, which equals `package_newest`. §6b step 3 is satisfied.
 
+**Release evidence (2026-11-06 UTC; 2026-11-07 WITA).**
+
+| Step | Result |
+|---|---|
+| Merge | PR #608 squash-merged as `c0e12382`, tree `e6baa722` = candidate tree; the merge's push run deferred the Full Suite (`full_suite_authorized=false`, `TEMPORARY_FULL_SUITE_POLICY_ACTIVE`) |
+| Preconditions (§6b 1–3), 23:06 UTC | `PRODUCTION_TARGET=VERIFIED`; host `ls-remote` of the base = `c0e12382`; `ON_SERVER=OK`, `OFF_SERVER=OK`, pending 0, alerts none; no other deploy running; outside 18:25–18:40 UTC |
+| Deploy, run on the Biznet host | `deploy-vps-runner.sh start` → `20261106-230625`; status `exit=0`; log `DEPLOY_HEAD_TARGET_MATCH=YES (c0e12382…)`, `DEPLOY OK`; `verify 20261106-230625` → `DEPLOY RUNNER OK` (target matches checkout HEAD, final exit 0). Deploy smoke 6 passed, 1 warning: the known loopback `404` (D6) |
+| Canonical smoke | `/login`, `/health/live`, `/health/ready`, `/health/lb` → 200; `/storage/…` → 403; `/settings/clinic-rooms/create` unauthenticated → 302 |
+| Code on the host | HEAD/tree `c0e12382`/`e6baa722`, clean; `PrescriptionAuthoringAuthority` present and called by the policy and the service; the clinic-room form has no inline PHP directive |
+| Compiled views (`php8.3 -l`, `short_open_tag` Off as in production) | 537 views, **0 glued open tags** (1 before the deploy), 0 lint failures |
+| Nothing else moved | no pending migrations; queue worker inactive/disabled, scheduler and KTP timers not installed, backup timers enabled — all as before |
+| Data integrity (read-only transaction) | the 20-table count baseline, the newest prescription and room rows and the migration batch are **identical** before and after the deploy |
+| Log | `laravel.log` byte-identical (166 ERROR lines, last written 2026-11-03): 0 new errors |
+| GO tag | `dms-rme-revision-program-8a-go`, annotated, object `4a74734a` → `c0e12382`, created after production verification with tags fetched first |
+
+**Security verification bound.** The behavioural proof of P8-N1 is the CI run on the identical tree. Production was
+not used to test it: no prescription was written, no Pest ran against production, and no REPL was used. What
+production proves is that the deployed tree is the tested tree, and that the authority is wired into both
+enforcement points.
+
 ## 7. Cleanup
 
-Pending (the release is not complete).
+Mission-owned resources only. Done after the GO tag: the PostgreSQL 16 container and its network (which held the
+disposable Dusk database), the isolated PHP 8.3.6 tree copy, the scratch scripts and JUnit copies, and the Dusk
+server container. Kept: the private evidence package, and the worktree until this evidence PR merges. The protected
+vault, other worktrees and stashes were not touched. No production resource was created, so none was removed.
