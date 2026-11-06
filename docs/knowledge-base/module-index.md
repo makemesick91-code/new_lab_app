@@ -16,7 +16,8 @@ Dibuat pada 2026-10-25 terhadap commit `572a32a9`. Pada 2026-11-06 tautan rule 2
 [dms-rme-revision-program-6](../sprints/dms-rme-revision-program-6.md) ditambahkan ke `MedicalRecord`,
 `Odontogram` dan `Prescription`; jumlah file dan dokumen tidak diturunkan ulang. Pada 2026-11-06
 (lagi) rule 225 dan [dms-rme-revision-program-7](../sprints/dms-rme-revision-program-7.md) ditambahkan ke `ClinicVisit`, `MedicalRecord`, `RME`,
-`LegacyRme` dan `LegacyOdontogram` dengan cara yang sama.
+`LegacyRme` dan `LegacyOdontogram` dengan cara yang sama. Audit kesiapan akhir
+[dms-rme-revision-program-8](../sprints/dms-rme-revision-program-8.md) (Stage A, NO-GO) ditambahkan ke `RME`.
 
 - **Jumlah file PHP** dihitung dari `app/Modules/<Modul>/`.
 - **"N dokumen menyebut path modul ini"** menghitung dokumen di `docs/` dan `.cursor/rules/`
@@ -81,7 +82,7 @@ bukti, kata kunci nama berkas untuk tautan), lalu perbarui `kb_verified_against`
 
 - Kode: `app/Modules/RME/` — 4 file PHP; 10 dokumen menyebut path modul ini.
 - Rule durable (`.cursor/rules/`, di luar vault): `138-doctor-room-scoped-access-and-print-deny.mdc`, `225-rme-concurrent-first-write-and-void-staging-integrity.mdc`
-- Sprint terbaru: [dms-rme-revision-program-7](../sprints/dms-rme-revision-program-7.md)
+- Sprint terbaru: [dms-rme-revision-program-8](../sprints/dms-rme-revision-program-8.md), [dms-rme-revision-program-7](../sprints/dms-rme-revision-program-7.md)
 - Ringkasan `ai-knowledge` (snapshot, cek [status](doc-status-registry.md)): [08_DaengtisiaMS_RME_Workflow](../ai-knowledge/08_DaengtisiaMS_RME_Workflow.md)
 
 ### `RmeDashboard`

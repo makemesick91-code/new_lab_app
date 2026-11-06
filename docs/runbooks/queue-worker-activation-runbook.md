@@ -41,8 +41,13 @@ list changed — for example when a module adds a dedicated queue — copy it ag
 sudo cp deploy/systemd/daengtisiams-queue-worker.service \
   /etc/systemd/system/daengtisiams-queue-worker.service
 sudo systemctl daemon-reload
-sudo systemctl restart daengtisiams-queue-worker.service
+sudo systemctl try-restart daengtisiams-queue-worker.service
 ```
+
+`try-restart` restarts the unit only if it is already running. A plain `restart`
+**starts a stopped unit**, so on a host where the worker is deliberately off it
+would activate the worker as a side effect of re-installing its file
+(DMS-RME-REVISION-PROGRAM-7 OPS-01; corrected in DMS-RME-REVISION-PROGRAM-8).
 
 Then confirm what systemd actually runs, not what the repository says:
 
@@ -93,13 +98,19 @@ evidence of which side was actually broken. Confirm recovery by watching
 
 ## Restart after a code deploy
 
-The deploy signals a graceful restart; the running worker finishes its current
-job then exits and systemd restarts it:
+The deploy does **not** signal a restart: no script under `scripts/` runs
+`queue:restart` (verified in DMS-RME-REVISION-PROGRAM-8). A running worker
+therefore keeps executing the previous release's code until `--max-time`
+recycles it. When the worker is running, signal a graceful restart yourself;
+the worker finishes its current job, exits, and systemd (`Restart=always`)
+starts it again on the new code:
 
 ```bash
 php artisan queue:restart
-sudo systemctl restart daengtisiams-queue-worker.service
 ```
+
+Do not add `systemctl restart` here: on a host where the worker is
+deliberately off it would start the worker.
 
 ## Check status
 
@@ -143,9 +154,16 @@ sudo systemctl stop daengtisiams-queue-worker.service
 sudo systemctl disable daengtisiams-queue-worker.service
 ```
 
-Disabling the worker is always safe: there are currently no business
-`ShouldQueue` jobs, so nothing is lost — pending jobs simply wait in the
-`jobs` table until a worker runs again.
+Disabling the worker loses no data — pending jobs wait in the `jobs` table
+until a worker runs again — but it is **not** free of consequences. Business
+jobs do exist: the Legacy RME and Legacy Odontogram PDF renders
+(`ProcessLegacyRmePdfImport`, `ProcessLegacyOdontogramPdfImport`) and the three
+SATUSEHAT jobs. While no worker runs, a new legacy import stays `QUEUED` and
+keeps occupying the patient's single-active-document slot. Recover by restoring
+the consumer and letting the existing job drain (see above), never by retrying
+or editing the status. Before a first activation, review the open findings in
+DMS-RME-REVISION-PROGRAM-7 §3.6 (`retry_after` and `TimeoutStopSec` are below
+the render timeout).
 
 ## Expected
 
