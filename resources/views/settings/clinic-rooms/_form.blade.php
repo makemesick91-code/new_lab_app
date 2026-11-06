@@ -1,5 +1,6 @@
-@php($room = $room ?? null)
+{{-- P8-N3: a single PHP block only. Never mix the inline and the block form of the PHP directive in one template: Blade pairs them and emits invalid PHP (rule 226). --}}
 @php
+    $room = $room ?? null;
     $typeLabels = [
         'treatment_room' => 'Ruang Perawatan',
         'consultation_room' => 'Ruang Konsultasi',

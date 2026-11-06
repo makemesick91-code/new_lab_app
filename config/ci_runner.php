@@ -157,6 +157,16 @@ return [
         // contended, so without this token the cardinality invariant is proven
         // nowhere.
         'DoctorAccess',
+
+        // DMS-RME-REVISION-PROGRAM-8A (rule 226) — the prescription suites, the
+        // ClinicMasterData suites and the repo-wide compiled-Blade guard matched
+        // no token before, so P8-N1 and P8-N3 were provable only in the deferred
+        // Full Suite (Program 8 §2.4). Each token is the narrowest that selects
+        // its suites (measured with --list-tests: 39, 136 and 3 tests, zero
+        // unrelated files).
+        'RmePrescription',
+        'ClinicMasterData',
+        'BladePhpDirectivePairing',
     ],
 
     /*
@@ -1513,6 +1523,20 @@ return [
         'tests/Feature/RME/RmeConcurrentFirstWriteIntegrityTest.php',
         'tests/Feature/RME/RmeConcurrentFirstWriteLockTest.php',
         'tests/Feature/RME/DoctorPatientScopeTest.php',
+
+        // DMS-RME-REVISION-PROGRAM-8A (rule 226) — P8-N1: a prescription write
+        // follows the clinical authoring authority (front-desk-only tier never;
+        // working branch only; re-asserted in the service). P8-N3: no Blade
+        // template compiles to an open tag glued to the next character (ParseError
+        // on PHP 8.3.33, HTTP 500), proven per template and repo-wide. Selected by
+        // `RmePrescription`, `ClinicMasterData` and `BladePhpDirectivePairing` in
+        // BOTH critical variants; declared so a rename cannot drop them.
+        'tests/Feature/RME/RmePrescriptionAuthoringAuthorityTest.php',
+        'tests/Feature/RME/RmePrescriptionTest.php',
+        'tests/Feature/ClinicMasterData/ClinicRoomTest.php',
+        'tests/Feature/ClinicMasterData/ClinicRoomFormTemplateTest.php',
+        'tests/Feature/ClinicMasterData/ClinicMasterDataPermissionTest.php',
+        'tests/Feature/Ui/BladePhpDirectivePairingTest.php',
 
         // SECURITY-F4C-CLINIC-CALENDAR-LAB-ORDERS-1 (owner decision D16) — lab order dates, order and
         // delivery numbering, the due-date floor and "delivered today" on the clinic calendar

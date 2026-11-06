@@ -257,6 +257,11 @@ editable) → Persetujuan Tindakan Medis (RME + finish unlocked) → RME + Odont
   aborted transaction (25P02). Visit numbers are read only after `lockVisitSequence($branchId)` (advisory lock
   92_001, per branch) and `withTrashed()` (the unique indexes hold soft-deleted visits); a row lock cannot serialise
   `MAX + 1`. Source: `.cursor/rules/225-rme-concurrent-first-write-and-void-staging-integrity.mdc` §1–4.
+- **AIR-RMC-45** A prescription write (create, update, R/ canvas, doctor-signature canvas) follows the clinical authoring
+  authority: never the front-desk-only tier, only inside the actor's working branch (`RmeWorkingBranchScope::allows()`),
+  doctor-patient scope for a Doctor. `PrescriptionAuthoringAuthority` is the single predicate; the policy reads it and
+  `RmePrescriptionService` re-asserts it before any lock or canvas write. No consent or room rule (OD-7-2 stays open).
+  Source: `.cursor/rules/226-rme-prescription-authoring-authority-and-blade-php-pairing.mdc` §1.
 
 ## Current posture (snapshot 2026-10-25 — verify before relying on it)
 
@@ -297,6 +302,7 @@ editable) → Persetujuan Tindakan Medis (RME + finish unlocked) → RME + Odont
 | `.cursor/rules/223-rme-clinical-workflow-integrity.mdc` | Locked-row status/room/consent decisions; capability-mirrored RME controls; front office never authors; validated sheet source |
 | `.cursor/rules/224-rme-clinical-evidence-write-integrity.mdc` | Evidence row + object as one unit (validate first, compensate, fresh keys, parent-row lock); canvas route binding; honest print for missing/unreadable/non-PNG objects; closes R5-3 |
 | `.cursor/rules/225-rme-concurrent-first-write-and-void-staging-integrity.mdc` | Savepoint-adopt for racing first writes (assignment, draft book); per-branch visit numbering lock; closes R5-1, R5-2, R6-1 |
+| `.cursor/rules/226-rme-prescription-authoring-authority-and-blade-php-pairing.mdc` | Prescription writes follow the clinical authoring authority (front desk never, working branch only); Blade never mixes inline and block PHP; closes P8-N1, P8-N3 |
 
 ## History
 

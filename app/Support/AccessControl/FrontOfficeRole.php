@@ -136,9 +136,11 @@ final class FrontOfficeRole
      * DMS-RME-REVISION-PROGRAM-5 (CW5-05) `RmeVisitConsentService` uses it to
      * refuse that tier the clinical record itself: the front office registers,
      * places and bills patients, and never authors the examination it did not
-     * perform (rule 134 §1 and §7, rule 108 §12, DPT-064). Both read this one
-     * method so the page that hides a control and the server that refuses it can
-     * never disagree about who the front office is.
+     * perform (rule 134 §1 and §7, rule 108 §12, DPT-064). Since
+     * DMS-RME-REVISION-PROGRAM-8A (P8-N1) `PrescriptionAuthoringAuthority` uses
+     * it to refuse that tier the prescription as well (rule 226). All of them
+     * read this one method so the page that hides a control and the server that
+     * refuses it can never disagree about who the front office is.
      */
     public static function isVisitFrontDeskOnly(User $user): bool
     {

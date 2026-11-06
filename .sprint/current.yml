@@ -1,32 +1,35 @@
-# DMS-RME-REVISION-PROGRAM-7 (2026-11-06). Continuation of DMS-RME-REVISION-PROGRAM-1..6 under rule 221 §7. The owner
-# approved, in the mission brief of 2026-11-06, an audit of doctor access (DA-01..04), the cashier integration
-# (CI-01..04) and the legacy archives (LR-01..04), the closure of the reliability residuals R5-1, R5-2 and R6-1
-# (REL-01..03), and a read-only queue/scheduler readiness report (OPS-01), with correction of VERIFIED defects only
-# (CG-22: findings that need a product decision are recorded, not inferred).
-# Verified and corrected (each reproduced RED on PostgreSQL 16 against the untouched base daace3df first):
-#   P7-REL-01 (R5-1) a racing doctor assignment re-read inside an aborted transaction (25P02 -> HTTP 500);
-#   P7-REL-03 (R6-1) two first handwriting saves raced UNIQUE(clinic_visit_id) (wrong refusal or HTTP 500);
-#   P7-REL-02 (R5-2) visit numbering was MAX+1 under a row lock that serialises nothing (duplicate -> HTTP 500);
-#   P7-LR-01 a VOIDed legacy archive kept streaming its bytes through the staging screens;
-#   P7-DA-02 (latent) the doctor visit list scope counted soft-deleted visits.
-# Plus documentation drift (rule 223 §19, rme-billing residual, two false comments). No schema, migration,
-# permission, route, JS/CSS or production package change; no flag, enforcement scope, branch lock, queue worker or
-# scheduler change. Foundation-First Sprint Lock stays ACTIVE (allowed category: clinical correctness / security fix).
-# Full Suite deferred (CG-18), not passed.
+# DMS-RME-REVISION-PROGRAM-8A (2026-11-07). Corrective sprint for the release blockers found by the
+# DMS-RME-REVISION-PROGRAM-8 Stage A readiness audit (NO-GO, PR #607 -> 6eefa719). Approved by the system owner in
+# the mission brief of 2026-11-07, scope limited to: P8-N1 (prescription authoring authority, HIGH), P8-N3
+# (clinic-room Blade template, MEDIUM), the critical-gate coverage gap for the Prescription and ClinicMasterData
+# suites, their tests, and the rule/doc synchronisation they need (CG-22: findings needing a product decision are
+# recorded, not inferred).
+# Verified and corrected (each reproduced RED against the untouched base first):
+#   P8-N1 the prescription write path (policy create/update + service) did not apply the clinical authoring
+#         authority rule 223 §3 already requires for the RME and odontogram: front-desk-only refusal and the
+#         working-branch write scope; now one predicate (PrescriptionAuthoringAuthority) read by the policy and
+#         re-asserted in the service (CG-06). Mechanism detail stays in the private security record.
+#   P8-N3 settings/clinic-rooms/_form mixed the inline and block PHP directive: ParseError/HTTP 500 with
+#         short_open_tag On (CI), template source rendered as text with it Off (production). Folded into one block;
+#         repo-wide compiled-view guard (glued-tag signature + real parse).
+#   CI-8A the Prescription and ClinicMasterData suites were not selected by the NSF-R011 critical gate.
+# No schema, migration, permission, role, route, JS/CSS or package change; no flag, enforcement scope, branch lock,
+# queue worker or scheduler change. Foundation-First Sprint Lock stays ACTIVE (allowed category: security fix /
+# clinical correctness). Full Suite deferred (CG-18), not passed.
 # Carried forward: LEGACY-RME-PROGRAM-CLOSURE-1 stays CLOSED and inherited.
-id: DMS-RME-REVISION-PROGRAM-7
+id: DMS-RME-REVISION-PROGRAM-8A
 type: SECURITY_FIX
 module: Rme
-title: "Concurrent first writes adopt the winner from a savepoint, per-branch visit numbering lock, VOIDed archive bytes refused on staging screens"
+title: "Prescription writes follow the clinical authoring authority; clinic-room form compiles on every PHP 8.3 patch; Prescription and ClinicMasterData suites in the critical gate"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 runtime_change: true
 schema_change: false
 frontend_change: true
 security_impact: true
-branch_isolation_impact: false
+branch_isolation_impact: true
 ledger_impact: false
 deploy_required: true
 browser_required: false
 test_profiles: [focused, security_regression]
-go_tag: dms-rme-revision-program-7-go
+go_tag: dms-rme-revision-program-8a-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1

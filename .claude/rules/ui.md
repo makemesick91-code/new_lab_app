@@ -157,6 +157,11 @@ Detailed standard (Indonesian/English): `docs/ui/daengtisiams-ui-governance.md`,
   surfaces authorized to show them (the RME consent document, the policy-gated KTP archive viewer) stay as they are. Adopt the
   standard incrementally — converge a legacy view when you modify it, never in a one-sprint mass migration. Source:
   governance doc rules 11–12; rule 30; archive UIX-2…UIX-8.
+- **AIR-UI-31** One PHP block per Blade template (or only the inline form): Blade pairs an inline opener with a later
+  block closer — even one written inside a Blade comment — and leaves the directive inside compiled PHP: a ParseError
+  (HTTP 500) when `short_open_tag` is On (CI), the template source printed as text when it is Off (production).
+  `BladePhpDirectivePairingTest` compiles every template and fails on a glued open tag or a compiled view that does
+  not parse. Source: `.cursor/rules/226-rme-prescription-authoring-authority-and-blade-php-pairing.mdc` §2.
 
 ## Current posture (snapshot 2026-10-25 — verify before relying on it)
 
@@ -183,6 +188,7 @@ Detailed standard (Indonesian/English): `docs/ui/daengtisiams-ui-governance.md`,
 | `.cursor/rules/121-clinical-evidence-private-storage.mdc` | Inline print images; Blade comment-in-`@php` trap |
 | `.cursor/rules/135-rme-authoring-ui-capability-mirror.mdc` | Controls mirror server capability; disabled-with-reason |
 | `.cursor/rules/93-doctor-pwa-webauthn.mdc` | `@push`/`@stack` requirement for authentication layouts |
+| `.cursor/rules/226-rme-prescription-authoring-authority-and-blade-php-pairing.mdc` | Never mix the inline and block PHP directive in one template; compiled-view guard |
 
 ## History
 

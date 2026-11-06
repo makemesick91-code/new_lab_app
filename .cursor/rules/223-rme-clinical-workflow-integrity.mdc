@@ -58,7 +58,8 @@ Extends rule 135 and AIR-RMC-25 to the surfaces the 2026-09 fix did not reach:
 ## 3. The front office never authors the clinical record (CW5-05)
 
 12. `FrontOfficeRole::isVisitFrontDeskOnly()` is the single definition of the tier (`Admin Klinik`, `Front Office`
-    without a clinical role). `ClinicVisitPolicy` and `RmeVisitConsentService::actorMayWorkOnEncounter()` both read it.
+    without a clinical role). `ClinicVisitPolicy` and `RmeVisitConsentService::actorMayWorkOnEncounter()` both read it
+    (and, since rule 226, `PrescriptionAuthoringAuthority`).
 13. A front-desk-only account is refused the active RME and the active odontogram at the canonical authority, which
     every authoring assertion and every capability predicate reads (RME, odontogram, performed treatments). The
     tier keeps everything it does: registration, queue, room placement, consent signing, cashier work, reading.
@@ -68,6 +69,9 @@ Extends rule 135 and AIR-RMC-25 to the surfaces the 2026-09 fix did not reach:
     authorization"), §7 ("non-Doctor still refused"), rule 108 §12 and DPT-064.
 16. NOT decided here (recorded as owner decisions in the sprint doc): whether `Perawat` / `Supervisor RME` may author,
     and whether the front office may start or cancel an examination. Do not widen §13 to "non-Doctor" without one.
+16a. EXTENDED by rule 226 (DMS-RME-REVISION-PROGRAM-8A, P8-N1): the prescription, its R/ canvas and its doctor-signature
+    canvas are under §13 as well — the front-desk-only tier never writes them, and writes are scoped to the working
+    branch. Single definition: `PrescriptionAuthoringAuthority`. §16 is unchanged.
 
 ## 4. A new sheet's source visit is validated (CW5-06)
 

@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Modules\Branch\Services\BranchService;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Prescription\Models\RmePrescription;
+use App\Modules\Prescription\Services\PrescriptionAuthoringAuthority;
 use App\Modules\RME\Services\DoctorPatientScopeService;
 use Illuminate\Auth\Access\Response;
 
@@ -45,7 +46,9 @@ class RmePrescriptionPolicy
 
     public function create(User $user, ClinicVisit $clinicVisit): Response|bool
     {
-        if (! $this->canManage($user) || ! $this->belongsToActiveBranch($clinicVisit->branch_id)) {
+        if (! $this->canManage($user)
+            || ! $this->belongsToActiveBranch($clinicVisit->branch_id)
+            || ! $this->mayAuthorAt($user, $clinicVisit->branch_id)) {
             return false;
         }
 
@@ -68,7 +71,9 @@ class RmePrescriptionPolicy
 
     public function update(User $user, RmePrescription $prescription): Response|bool
     {
-        if (! $this->canManage($user) || ! $this->belongsToActiveBranch($prescription->branch_id)) {
+        if (! $this->canManage($user)
+            || ! $this->belongsToActiveBranch($prescription->branch_id)
+            || ! $this->mayAuthorAt($user, $prescription->branch_id)) {
             return false;
         }
 
@@ -83,6 +88,17 @@ class RmePrescriptionPolicy
     private function canManage(User $user): bool
     {
         return $user->can('manage_clinic_visits');
+    }
+
+    /**
+     * DMS-RME-REVISION-PROGRAM-8A / P8-N1 — the WRITE abilities follow the
+     * clinical authoring authority (rule 223 §3, rule 226): never the
+     * front-desk-only tier, and only inside the actor's working branch. The read
+     * abilities above keep their existing scope (P8-N2 is an owner decision).
+     */
+    private function mayAuthorAt(User $user, ?int $branchId): bool
+    {
+        return app(PrescriptionAuthoringAuthority::class)->permitsActorAtBranch($user, $branchId);
     }
 
     private function belongsToActiveBranch(?int $branchId): bool
