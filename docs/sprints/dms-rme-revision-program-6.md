@@ -3,8 +3,8 @@
 - **Programme:** RME revision programme under owner policy `DMS-FULL-DEVELOPMENT-PRODUCTION-TESTING-20261104`
   (rule 221 §7), mission `DMS-RME-REVISION-PROGRAM-6` (P0, CLINICAL_INTEGRITY_AUDIT / SECURITY_FIX / CRITICAL_HOTFIX),
   2026-11-06. Continuation of [[dms-rme-revision-program-1]] … [[dms-rme-revision-program-5]].
-- **Status:** IN PROGRESS — implementation and local verification complete; CI, merge, deploy, production
-  verification and GO tag recorded in §8 as they happen.
+- **Status:** GO — merged (#603, `91131671`), deployed to the Biznet production host (`20261106-052449`, `DEPLOY
+  RUNNER OK`), verified, tagged `dms-rme-revision-program-6-go`. Full Suite deferred under CG-18, not claimed.
 - **Base:** `feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report` @ `c78f15dc` (resolved from
   `origin` after fetch; `devflow:base-ref-check --strict` → `BASE_SOURCE=remote_tracking_ref`; the local base ref was
   stale at `9eabff07` and was not used). Production ran `9479b0ed` (Program 5 GO), read from the Biznet host before
@@ -219,8 +219,78 @@ every closed status, and one for an in-progress control save that proves the lis
 
 ## 8. CI, merge, deploy and production verification
 
-(Recorded as it happens.)
+Times UTC; clinic time is WITA (UTC+8).
+
+**CI.** Run 42160724290 on PR head `b1284dc3`. Every required gate succeeded:
+- Quality, Classifier and Android Gate;
+- NSF-R011 Critical: `Tests: 9385 passed (46714 assertions)`, `critical_test_exit_status=0`;
+- Selective Module, NSF-9 and NSF-10.
+
+The second Critical row is skipped by design, because exactly one runner variant runs. The Full Suite job was
+skipped under CG-18: not run, not claimed.
+
+**Merge.** Squash-merged with `--match-head-commit b1284dc3` as
+`9113167104d0409a617579a14ec2239dadd470d1`; its parent is `c78f15dc`.
+- The merge tree `671763cd` is identical to the candidate tree.
+- The post-merge push run 42168184443 on `91131671` succeeded on the same jobs.
+
+**Pre-deploy.**
+- `production-target-check.sh --remote` → `PRODUCTION_TARGET=VERIFIED`.
+- Production was on `9479b0ed` (Program 5 GO), tracked tree clean.
+- No deploy process was running, and it was 13:24 WITA, outside the 02:25–02:40 backup window.
+- Last scheduled backup: `Result=success`.
+
+**Deploy.** `ssh daengtisiams-biznet-prod 'cd /var/www/asia-dental-lab-v2 && sudo -n bash
+scripts/deploy-vps-runner.sh start'`, which executed on the Biznet host. deploy_id `20261106-052449`, 05:24:49–05:26:28.
+
+| Item | Result |
+|---|---|
+| Lock, target pin, snapshot trust | `DEPLOY_LOCK_ACQUIRED=YES`, `DEPLOY_TARGET_PINNED=91131671…`, `DEPLOY_SNAPSHOT_TRUSTED=PASS` |
+| Pre-deploy backup | `pre_auto_deploy_20261106-052451.sql`, backup-verify GO |
+| Migrations | `Nothing to migrate.` |
+| Runtime isolation | 107 GO / 0 FAIL / 0 SKIP |
+| Secret file permissions | GO |
+| Final status | `exit=0`, `DEPLOY OK`, `DEPLOY_HEAD_TARGET_MATCH=YES`, snapshot cleaned |
+| `verify 20261106-052449` | `final exit=0`, `DEPLOY RUNNER OK` |
+
+Two governance WATCHes appear in the log, both pre-existing:
+- the feature-flag check reports risky flags that are deliberately enabled;
+- the smoke probe gets 404 on `http://127.0.0.1/login`, because nginx's catch-all server answers loopback. The
+  canonical domain returns 200.
+
+**Production verification.** All checks were read-only.
+
+| Check | Result |
+|---|---|
+| VPS HEAD / tree | `91131671` / `671763cd`, 0 tracked dirty files |
+| `/login`, `/health/live`, `/health/ready`, `/health/lb` over `https://daengtisia.online` | 200 ×4 |
+| `/storage/<synthetic>` | 403 |
+| Guest GET on visits, medical record, odontogram, prescription, visit print, handwriting image, handwriting page image, prescription canvas, prescription print, odontogram print | 302 → `/login` on all ten |
+| Clinical counts (read-only transaction, 16 rows incl. handwriting, odontogram, prescription, consent, invoice, payment, legacy, audit max id) | Identical to the pre-deploy baseline |
+| Private clinical evidence / public objects | 34 / 0, unchanged |
+| `laravel.log` | Byte-identical to the baseline (1,467,295 bytes, 166 ERROR lines); no new log files |
+| Pending migrations, failed jobs | 0, 0 |
+| Feature flags, doctor enforcement scope | Unchanged; pilot `[9,15,18]`, global enforcement false |
+| Fix code on disk | Handwriting lock, PNG prefix check, canvas binding argument, print "not available" state all present |
+
+The queue worker unit is `disabled` and has never run on this host. That is the posture before and after this
+deploy, and it was left alone: the mission does not activate disabled services.
+
+**Not verified in production:**
+- Authenticated clinical workflows. Clinic devices are frozen, no clinical evidence was created to make a smoke test
+  pass, and no patient record was opened.
+- Clinical-load stability, because clinic operations are closed.
+
+**GO tag.** `dms-rme-revision-program-6-go`: annotated, on `9113167104d0409a617579a14ec2239dadd470d1`.
+- Local peel, remote peel and VPS HEAD agree.
+- This evidence commit is docs-only. It is not deployed and is not the tag target.
 
 ## 9. Cleanup
 
-(Recorded at the end.)
+| Resource | Disposition |
+|---|---|
+| Local PostgreSQL 16 test container `dms-p6-pg16` (tmpfs, no volume) | Removed; Docker volume count 106 before and after |
+| Mission worktree and branches | Removed after this evidence PR merges |
+| Scratch files | Session scratchpad only; contained no patient data |
+| Production | No mission process left running. The deploy lock, deploy logs, backups, timers, BK-1/BK-2, rollback databases and existing GO tags were all preserved |
+| Protected vault worktree and primary checkout | Untouched |
