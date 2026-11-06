@@ -3,8 +3,9 @@
 - **Programme:** RME revision programme under owner policy `DMS-FULL-DEVELOPMENT-PRODUCTION-TESTING-20261104`
   (rule 221 §7), mission `DMS-RME-REVISION-PROGRAM-7` (P0, SECURITY_FIX / CLINICAL_INTEGRITY / RELIABILITY_AUDIT),
   2026-11-06. Continuation of [[dms-rme-revision-program-1]] … [[dms-rme-revision-program-6]].
-- **Status:** IN PROGRESS — implementation and regression on the branch; CI, merge, deploy, production verification
-  and the GO tag are recorded in §8 once they happen. Full Suite deferred under CG-18, not claimed.
+- **Status:** GO — merged (#605, `9352457e`), deployed to the Biznet production host (`20261106-134517`, `DEPLOY
+  RUNNER OK`), verified read-only, tagged `dms-rme-revision-program-7-go`. Full Suite deferred under CG-18, not
+  claimed.
 - **Base:** `feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report` @ `daace3df` (resolved from
   `origin` after fetch). Production ran `91131671` (Program 6 GO, deploy `20261106-052449`), read from the Biznet host
   before work began; the base was one docs-only commit (#604) ahead of it.
@@ -276,9 +277,72 @@ New rule 225; cross-references in rules 93 §7, 174 §6, 223 §19 (drift), 224 (
 |---|---|---|
 | 42194218143 | `baba5b01` | Superseded by the review fixes and cancelled (Classifier, Quality, Selective Module and Android gates had passed) |
 | 42198790347 | `6bf1865e` | **FAILED** — NSF-R011 Critical Test Gate: 2 failed, 9,429 passed. Both failures were `CriticalGateControlledParallelismContractTest` ("appends the resolved arguments after the untouched filter in both variants"): it pins that the critical filter ENDS with `InventoryClinicCalendarBoundary'`, and this sprint had appended its two tokens after it. No product test failed. Fixed by moving the tokens before the trailing calendar-boundary tokens (filter content unchanged otherwise); all of `tests/Feature/Cicd` then passed locally (386 passed, 0 failed). New domain rule AIR-CIT-34 records the trap |
+| 42208632145 | `09eaa2c3` | **SUCCESS** — Classifier, Quality, Android, Selective Module, NSF-R011 Critical (`Tests: 9431 passed (46877 assertions)`, `critical_test_exit_status=0`, warning contract exit 0, 4,100 s), NSF-9, NSF-10. The second Critical row is skipped by design (one runner variant runs); Full Suite skipped under CG-18 — not run, not claimed |
+| 42217869687 | `9352457e` (post-merge push) | **SUCCESS** on the same jobs |
 
-Recorded as the run completes.
+### 8.2 Merge
+
+Squash-merged through the REST API with the head guard `sha=09eaa2c3` as
+`9352457e38a0130ecb9482a9faf46443a0dfdb3a`; parent `daace3df`. The merge tree `2f607586` is identical to the
+CI-tested candidate tree. Peer sessions were offline and no other PR targeted the base.
+
+### 8.3 Pre-deploy (times UTC; clinic time WITA = UTC+8)
+
+- `production-target-check.sh --remote` → `PRODUCTION_TARGET=VERIFIED`.
+- Production on `91131671` (Program 6 GO), tracked tree clean, no deploy process running, 21:45 WITA (outside
+  02:25–02:40), last scheduled backup `Result=success` (2026-11-05 18:30:41 UTC).
+- Fresh baseline immediately before the deploy: all 25 counts identical to the 08:23 UTC baseline;
+  `laravel.log` 1,467,295 bytes / 166 `ERROR`.
+
+### 8.4 Deploy
+
+`ssh daengtisiams-biznet-prod 'cd /var/www/asia-dental-lab-v2 && sudo -n bash scripts/deploy-vps-runner.sh start'`,
+executed on the Biznet host. deploy_id `20261106-134517`, 13:45:17–13:46:50.
+
+| Item | Result |
+|---|---|
+| Lock, target pin, snapshot trust | `DEPLOY_LOCK_ACQUIRED=YES`, `DEPLOY_TARGET_PINNED=9352457e…`, `DEPLOY_SNAPSHOT_TRUSTED=PASS` |
+| Pre-deploy backup | `pre_auto_deploy_20261106-134519.sql` |
+| Migrations | `Nothing to migrate.` |
+| Runtime isolation | 107 GO / 0 FAIL / 0 SKIP |
+| Secret file permissions | GO |
+| Final status | `exit=0`, `DEPLOY OK`, `DEPLOY_HEAD_TARGET_MATCH=YES`, snapshot cleaned |
+| `verify 20261106-134517` | `final exit=0`, `DEPLOY RUNNER OK` |
+
+Four warnings in the log, the identical set the Program 6 deploy (`20261106-052449`) logged: risky flags
+deliberately enabled, PgBouncer not installed (routing cutover disabled), the local-profile release-evidence chain,
+and the smoke probe's 404 on `http://127.0.0.1/login` (nginx's catch-all answers loopback; the domain returns 200).
+
+### 8.5 Production verification (read-only)
+
+| Check | Result |
+|---|---|
+| VPS HEAD / tree | `9352457e` / `2f607586`, 0 tracked dirty files |
+| `/login`, `/health/live`, `/health/ready`, `/health/lb` over `https://daengtisia.online` | 200 ×4 |
+| `/storage/<synthetic>` | 403 |
+| Guest GET on `/rme/visits`, `/rme/patient-queue`, legacy RME staging source and page, legacy odontogram staging page, published legacy record source | 302 → `/login` on all six |
+| Data counts (25 tables incl. patients, visits, assignments, leases, device authorizations, medical records, handwriting, invoices, payments, lab, legacy, odontograms, consents, prescriptions, inventory movements, audit, jobs) | Identical to the pre-deploy baseline |
+| `laravel.log` | Byte-identical (1,467,295 bytes, 166 `ERROR`); no new log files |
+| Pending migrations, failed jobs | 0, 0 |
+| Feature flags, doctor enforcement scope | Unchanged (diffed against the pre-deploy snapshot); pilot `[9,15,18]`, global enforcement false |
+| Queue worker, scheduler, timers | Worker inactive/disabled, pilot snapshot timer inactive/disabled, backup timer active/enabled — unchanged |
+| Legacy WAVE-4 | ACTIVE, accepting, 0 pending render jobs — unchanged |
+| Fix code on disk | Numbering lock and `withTrashed()` reads, both savepoint catches, both staging VOID guards present |
+
+**Not verified in production:** authenticated clinical workflows (no approved identity; clinic devices are frozen),
+and the races themselves (reproducing them would mean concurrent writes on production data). They are proven by the
+PostgreSQL 16 tests in §6.
+
+### 8.6 GO tag
+
+Annotated `dms-rme-revision-program-7-go` (object `c6dcbc90`) on `9352457e`, the verified production release SHA.
+This record is a docs-only follow-up and is not deployed; the tag stays on the runtime release.
 
 ## 9. Cleanup
 
-Recorded at the end.
+- Throwaway PostgreSQL container `dms-p7-pg16` (no mounts) removed; Docker volume count unchanged (106); other
+  containers belong to earlier work and were left alone.
+- No mission-owned Pest, Docker, Graphify or SSH process left running; every CI monitor ended.
+- JUnit and test artifacts were moved to the private evidence package and removed from the worktree by exact path.
+- The mission worktree and its merged branches are removed after this record merges; the private cleanup report
+  records the final state.
