@@ -255,7 +255,8 @@ editable) → Persetujuan Tindakan Medis (RME + finish unlocked) → RME + Odont
 - **AIR-RMC-44** A racing insert that may lose a unique index runs in a nested `DB::transaction()` (SAVEPOINT); catch
   `UniqueConstraintViolationException` outside it, then re-read the winner (`?? throw`). Never re-read inside the
   aborted transaction (25P02). Visit numbers are read only after `lockVisitSequence($branchId)` (advisory lock
-  92_001, per branch); a row lock cannot serialise `MAX + 1`. Source: `.cursor/rules/225-rme-concurrent-first-write-and-void-staging-integrity.mdc` §1–4.
+  92_001, per branch) and `withTrashed()` (the unique indexes hold soft-deleted visits); a row lock cannot serialise
+  `MAX + 1`. Source: `.cursor/rules/225-rme-concurrent-first-write-and-void-staging-integrity.mdc` §1–4.
 
 ## Current posture (snapshot 2026-10-25 — verify before relying on it)
 

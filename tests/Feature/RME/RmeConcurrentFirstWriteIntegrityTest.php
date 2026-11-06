@@ -26,9 +26,12 @@ declare(strict_types=1);
 | its insert. That is deterministic (no timing), and it lets every fixture use
 | the ordinary seeded test data.
 |
-| The 25P02 half of R5-1 is only observable on PostgreSQL (SQLite does not abort
-| a transaction on a failed statement), which is the driver CI's critical gate
-| and production use. Every other property here holds on both drivers.
+| The R5-1 race needs PostgreSQL twice over: the active-assignment unique index
+| is PARTIAL (WHERE unassigned_at IS NULL) and its migration creates it only on
+| pgsql, and only PostgreSQL aborts a transaction on a failed statement (25P02).
+| On SQLite the loser's insert simply succeeds, so those three tests skip there
+| (p7RequiresPartialAssignmentIndex). PostgreSQL is the driver of CI's critical
+| gate and of production. Every other property here holds on both drivers.
 */
 
 use App\Modules\Branch\Models\Branch;
@@ -75,6 +78,14 @@ beforeEach(function () {
 // --------------------------------------------------------------------------
 // Fixtures
 // --------------------------------------------------------------------------
+
+/** The R5-1 race exists only where the partial unique index exists (pgsql). */
+function p7RequiresPartialAssignmentIndex(): void
+{
+    if (DB::connection()->getDriverName() !== 'pgsql') {
+        test()->markTestSkipped('The active-assignment unique index is created only on PostgreSQL; without it there is no R5-1 race to adopt.');
+    }
+}
 
 /**
  * Insert a competing ACTIVE assignment for this patient and doctor the moment
@@ -232,6 +243,8 @@ function p7Canvas(int $seed): string
 // --------------------------------------------------------------------------
 
 it('adopts a concurrent auto-assignment instead of aborting the transaction that triggered it (R5-1)', function () {
+    p7RequiresPartialAssignmentIndex();
+
     $visit = ClinicVisit::factory()->create([
         'branch_id' => $this->rmeBranch->id,
         'patient_id' => Patient::factory()->create(['branch_id' => $this->rmeBranch->id])->id,
@@ -257,6 +270,8 @@ it('adopts a concurrent auto-assignment instead of aborting the transaction that
 });
 
 it('adopts a concurrent assignment on the manual assign path too (R5-1, createActiveAssignment)', function () {
+    p7RequiresPartialAssignmentIndex();
+
     $patient = Patient::factory()->create(['branch_id' => $this->rmeBranch->id]);
 
     $rival = p7RivalAssignmentAfterCheck($patient->id, $this->doctor->id, $this->rmeBranch->id);
@@ -270,6 +285,8 @@ it('adopts a concurrent assignment on the manual assign path too (R5-1, createAc
 });
 
 it('still assigns the room when a concurrent assignment of the same doctor commits first (R5-1, end to end)', function () {
+    p7RequiresPartialAssignmentIndex();
+
     $room = ClinicRoom::factory()->create([
         'branch_id' => $this->rmeBranch->id,
         'status' => ClinicRoom::STATUS_ACTIVE,
@@ -389,4 +406,32 @@ it('numbers consecutive registrations at one branch 1, 2 with matching visit num
         ->and($second->queue_number)->toBe(2)
         ->and($first->visit_number)->toEndWith('-001')
         ->and($second->visit_number)->toEndWith('-002');
+});
+
+it('numbers past a soft-deleted visit, because the unique indexes still hold its numbers (R5-2)', function () {
+    // Both unique indexes on trx_clinic_visits (visit_number; branch_id +
+    // visit_date + queue_number) are full indexes: a soft-deleted visit keeps
+    // its numbers. A MAX that skips it hands the next registration a number
+    // the index refuses, an HTTP 500 with no concurrency at all.
+    rmeMakeDoctorOnline($this->doctor, $this->rmeBranch);
+    $this->actingAs($this->manager);
+
+    $register = fn (): ClinicVisit => app(ClinicVisitService::class)->create([
+        'patient_mode' => 'existing',
+        'patient_id' => Patient::factory()->create(['branch_id' => $this->rmeBranch->id])->id,
+        'branch_id' => $this->rmeBranch->id,
+        'doctor_id' => $this->doctor->id,
+        'clinic_id' => null,
+        'visit_type' => ClinicVisit::VISIT_TYPE_NEW,
+    ], $this->manager);
+
+    $register();
+    $removed = $register();
+    $removed->delete();
+
+    $next = $register();
+
+    expect(ClinicVisit::withTrashed()->whereKey($removed->id)->first()?->trashed())->toBeTrue()
+        ->and($next->queue_number)->toBe(3)
+        ->and($next->visit_number)->toEndWith('-003');
 });

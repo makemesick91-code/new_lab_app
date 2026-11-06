@@ -75,6 +75,7 @@
 | P7-REL-03 (R6-1) | Two first handwriting saves raced `UNIQUE(clinic_visit_id)` on the draft insert | Wrong refusal ("record already exists") or 23505 → HTTP 500; the page was lost | `createDraftOn()`: insert in a SAVEPOINT; the canonical-book path adopts the winner, `createDraft()` keeps its refusal |
 | P7-REL-02 (R5-2) | `MAX + 1` numbering read under a `LIMIT 1 FOR UPDATE`, which serialises nothing on the day's first registration and hands PostgreSQL waiters the same top row | Two registrations at one branch computed the same queue/visit number → HTTP 500 | `lockVisitSequence($branchId)`: `pg_advisory_xact_lock(92_001, branch_id)` before either read; the useless row locks removed |
 | P7-LR-01 | A VOIDed legacy archive kept streaming its source PDF and pages through the STAGING routes (publishing moves no bytes) | Retracted clinical evidence still downloadable by Super Admin, Supervisor RME and in-branch operators (rule 93 §7, rule 174 §6) | Staging `source()`/`page()` answer 404 when the produced record's `isVoided()` holds; the staging screen shows a VOID notice instead of the links |
+| P7-REL-02b (latent, found by review) | The numbering reads skipped soft-deleted visits, but both unique indexes are full and still hold their numbers | After a visit is soft-deleted, the next registration at that branch that day is handed its number → HTTP 500 with no concurrency (no application delete path exists; data repair only) | `withTrashed()` on `nextQueueNumber()` and on `generateUniqueVisitNumber()` (MAX and its `exists()` loop) |
 | P7-DA-02 (latent) | `applyVisitScopeForDoctor()`'s `own_visit` subquery counted soft-deleted visits | A list could offer a visit whose detail answers 403 (no delete path exists today; reachable only via data repair) | `whereNull('own_visit.deleted_at')`, matching its two siblings fixed in `4f69d8d7` |
 
 ### 3.2 Verified safe (no code change)
@@ -120,6 +121,12 @@ sha256 not verified on read).
   written when the request finishes. A second login in that instant finds no row, judges the fresh lease dead
   (`IncumbentSessionProbe`), releases it as `dead_session_reclaimed` and wins; the first browser is evicted on its
   next request. Needs two concurrent logins (or a double submit); recorded as OD-7-7.
+- **R7-1 (LOW, from review).** R6-1 is closed for two first saves on the same canonical visit. A patient with no
+  book has no canonical visit, so each save falls back to its own context visit: two simultaneous first saves
+  opened from two different visits write two books. Needs per-patient serialisation and a lock-order review.
+- **R7-2 (latent, from review).** A soft-deleted medical record still occupies `UNIQUE(clinic_visit_id)`; a first
+  save on that visit answers HTTP 500 (nothing persisted). No delete path exists; restore-versus-refuse is a product
+  decision.
 - `RmePaymentService::closeZeroValueInvoice()` locks the visit `FOR UPDATE` where rule 223 §1a prescribes FOR NO KEY
   UPDATE. No lock cycle found; behind `rme.zero_value_closure` (OFF).
 - Authoring is still checked outside any lock (rule 224, INFO-6); R6-1 was closed by savepoint-adopt, not by a visit
@@ -154,8 +161,8 @@ sha256 not verified on read).
 | `app/Modules/RME/Services/PatientDoctorAssignmentService.php` | `createOrAdoptActive()` + `activeAssignment()`; both assignment paths use them; catch narrowed to `UniqueConstraintViolationException` |
 | `app/Modules/MedicalRecord/Services/MedicalRecordService.php` | `createDraftOn($visit, $by, $data, adoptExisting)`: savepoint insert; adopt on the canonical path, refuse on `createDraft()`; `draftAlreadyExists()` |
 | `app/Modules/ClinicVisit/Support/ClinicVisitSequenceLock.php` | **New.** Namespace `92_001`, `keyFor(branchId)` |
-| `app/Modules/ClinicVisit/Interfaces/ClinicVisitRepositoryInterface.php`, `Repositories/ClinicVisitRepository.php` | `lockVisitSequence()`; `nextQueueNumber()` row lock removed |
-| `app/Modules/ClinicVisit/Services/ClinicVisitService.php` | `create()` takes the numbering lock first; `generateUniqueVisitNumber()` row lock removed |
+| `app/Modules/ClinicVisit/Interfaces/ClinicVisitRepositoryInterface.php`, `Repositories/ClinicVisitRepository.php` | `lockVisitSequence()`; `nextQueueNumber()` row lock removed and reads `withTrashed()` |
+| `app/Modules/ClinicVisit/Services/ClinicVisitService.php` | `create()` takes the numbering lock first; `generateUniqueVisitNumber()` row lock removed; MAX and `exists()` read `withTrashed()` |
 | `app/Modules/LegacyRme/Controllers/LegacyRmeImportController.php`, `app/Modules/LegacyOdontogram/Controllers/LegacyOdontogramImportController.php` | Staging byte routes answer 404 for a VOIDed record; `show()` passes `bytesRetracted` |
 | `resources/views/settings/rme/legacy-imports/show.blade.php`, `resources/views/settings/legacy-odontograms/show.blade.php` | VOID notice replaces the source link and page grid |
 | `app/Modules/LegacyRme/Services/LegacyRmePublishService.php` | Two false comments corrected (no behaviour change) |
@@ -176,6 +183,21 @@ oracles, other byte paths, sibling subqueries, test vacuity, PII). Result: **no 
 | INFO-1 | Staging guards test `isVoided()`; the record routes test `isPublished()`. Equivalent today (a record is PUBLISHED or VOID) | Recorded |
 | INFO-2 | `UnifiedMedicalRecordIndexRepository`'s date filter subquery over `trx_clinic_visits` has no `deleted_at` clause; it filters a record's own visit by date and is not an authorization scope | Recorded |
 | INFO-3 | A loser whose winner is unassigned between the failed insert and the re-read rethrows the unique violation (HTTP 500, nothing persisted) | Recorded; needs three concurrent requests |
+
+**Independent review (the `code-review` skill, high effort, against PR #605 at `baba5b01`)** — run as a fork with
+none of this sprint's conclusions. Nine findings; each was re-checked against the code before acting:
+
+| # | Finding | Verified | Disposition |
+|---|---|---|---|
+| 1 | The three R5-1 race tests fail on SQLite: the partial active-assignment index is created only on pgsql; the file header claimed both drivers | Yes (migration creates it under `getDriverName() === 'pgsql'`). CI and production run pgsql, so CI was not affected | **Fixed**: those three tests skip off PostgreSQL with the reason; header corrected |
+| 2 | Numbering MAX skipped soft-deleted visits while both unique indexes are full | Yes — reproduced RED (`UniqueConstraintViolationException`) | **Fixed** (P7-REL-02b, `withTrashed()`), new test |
+| 3 | A soft-deleted medical record blocks the draft insert and the catch rethrows (HTTP 500) | Yes, latent (no delete path) | **Recorded** R7-2 (product decision: restore vs refuse) |
+| 4 | Two first saves from two different visits of a book-less patient create two books | Yes (`resolveCanonicalWorkspaceVisit() ?? $contextVisit`) | **Recorded** R7-1; R6-1's closure scoped to the same canonical visit in rules 224/225 and here |
+| 5 | Advisory-lock acquisition duplicated (ClinicVisit and legacy slot) | Yes | **Recorded** follow-up (a shared helper adds an app file; the SECURITY_FIX scope gate is at its limit) |
+| 6 | Savepoint-adopt pattern now in three services | Yes | **Recorded** follow-up, same reason |
+| 7 | `PatientDoctorAssignmentService` queries its model directly (CG-04) | Yes, pre-existing (base did the same; this change consolidated it) | **Recorded** follow-up |
+| 8 | `ClinicVisitSequenceLock` imported a LegacyImport class only for a docblock `@see` | Yes (pint had turned the FQCN into an import) | **Fixed**: plain-text reference, import removed |
+| 9 | The canonical path looks the draft up twice | Yes (micro-cost, one indexed query) | **Recorded** INFO |
 
 Checked SAFE: savepoint nesting is always inside an outer transaction; the catch runs after `ROLLBACK TO SAVEPOINT`;
 READ COMMITTED makes the committed winner visible; the active-assignment index is the partial unique the catch
@@ -203,6 +225,8 @@ or PII.
 | Final tree (after the scope reduction and the two test hardenings): `LegacyRme`, `LegacyOdontogram`, the two new suites, `DoctorPatientScopeTest` | **1,380 passed, 0 failed, 0 skipped** (3,941 assertions) |
 | Governance on the host (git available): `DevflowAiInstructionSystemTest`, `CriticalGateSuiteCoverageTest`, `LegacyRmeProgramClosureContractTest` | 16 + 14 + 10 passed, 0 failed |
 | `pest --list-tests` under the exact critical filter (2,300 characters; both variants identical) | 9,433 tests listed; selects 8 + 4 new concurrency tests, 32 `DoctorPatientScopeTest`, and the new legacy staging cases |
+| After the independent review's fixes: every test file that registers a visit or asserts numbering (93 files) + the lock suite, PostgreSQL 16 | **1,730 passed, 0 failed, 0 skipped** (7,311 assertions) |
+| The two new suites on SQLite (host) | 6 passed, 7 skipped with a stated reason (the 3 R5-1 race tests need the pgsql-only partial index; the 4 lock tests need advisory locks) |
 | pint (changed PHP), `git diff --check`, `view:cache` | pass, clean, cached |
 
 Counts come from JUnit: the worktree has no environment file, so Pest prints every test as a warning (the
@@ -230,7 +254,11 @@ copy and checked byte-identical by sha256.
 | M12 | Legacy odontogram staging view keeps the page grid after VOID | KILLED |
 | M13 | Test mutant: the R5-1 end-to-end race never injects its rival | KILLED — proves that test cannot pass vacuously |
 
-Final: 13 distinct mutants (M7–M9 run twice), 12 killed, 1 equivalent (M2), 0 real survivors. Blade mutants clear the compiled views on apply
+| M14 | Queue-number MAX skips soft-deleted visits again | KILLED |
+| M15 | Visit-number MAX skips soft-deleted visits (its `exists()` loop still sees them) | SURVIVED — equivalent: the loop independently steps past a soft-deleted number; deliberate redundancy |
+| M16 | Visit-number MAX **and** its `exists()` loop both skip soft-deleted visits | KILLED — so the protection is covered |
+
+Final: 16 distinct mutants (M7–M9 run twice), 14 killed, 2 equivalent (M2, M15), 0 real survivors. Blade mutants clear the compiled views on apply
 and stamp the restored file's mtime (a `copy2` restore keeps the old mtime and Blade would keep serving the mutant).
 
 ## 7. Foundation rule synchronisation

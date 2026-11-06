@@ -170,7 +170,9 @@ class ClinicVisitRepository implements ClinicVisitRepositoryInterface
         // same top row back. Serialisation comes from lockVisitSequence(), which
         // the caller takes first; a FOR UPDATE here only made every same-day
         // visit row block other writers until the registration committed.
-        $lastQueueNumber = ClinicVisit::query()
+        // withTrashed(): UNIQUE(branch_id, visit_date, queue_number) still holds
+        // a soft-deleted visit's number, so the MAX must see it too.
+        $lastQueueNumber = ClinicVisit::withTrashed()
             ->where('branch_id', $branchId)
             ->whereDate('visit_date', $visitDate->toDateString())
             ->orderByDesc('queue_number')

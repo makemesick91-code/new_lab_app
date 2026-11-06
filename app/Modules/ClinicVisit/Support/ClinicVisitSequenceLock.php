@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Modules\ClinicVisit\Support;
 
-use App\Modules\LegacyImport\Support\LegacyDocumentSlotLock;
 use InvalidArgumentException;
 
 /**
@@ -26,8 +25,9 @@ use InvalidArgumentException;
  * the choice and the insert one step per branch. Registrations at different
  * branches never wait for each other.
  *
- * KEY DERIVATION — EXACT, NEVER A HASH (same convention as
- * {@see LegacyDocumentSlotLock})
+ * KEY DERIVATION — EXACT, NEVER A HASH (the same convention as the legacy
+ * document slot lock, App\Modules\LegacyImport\Support\LegacyDocumentSlotLock;
+ * named here as text only, so ClinicVisit takes no dependency on LegacyImport)
  * ------------------------------------------------------------------------------
  * `pg_advisory_xact_lock(int4, int4)`:
  *

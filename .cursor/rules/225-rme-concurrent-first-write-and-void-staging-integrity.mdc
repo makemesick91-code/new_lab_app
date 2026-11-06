@@ -58,7 +58,10 @@ Every defect below was reproduced RED on PostgreSQL 16 against the untouched bas
    and is a no-op on drivers without advisory locks. Another branch never waits. The numbering reads carry no row
    lock: `FOR UPDATE` there only held every same-day visit row of the branch.
 4. **A row lock cannot serialise a `MAX + 1`.** Use an advisory lock (or a lock on a parent row that always exists)
-   for any "next number" computed from existing rows. BCF-07 (invoice and payment numbers) has the same shape and is
+   for any "next number" computed from existing rows. **And the MAX must see every row the unique index sees:** both
+   `trx_clinic_visits` unique indexes are full (not partial), so a soft-deleted visit keeps its numbers and the
+   numbering reads use `withTrashed()` (`nextQueueNumber()`, `generateUniqueVisitNumber()` incl. its `exists()`
+   loop); skipping it hands out a number the index refuses, an HTTP 500 with no concurrency at all. BCF-07 (invoice and payment numbers) has the same shape and is
    recorded, not fixed (see below).
 5. **A raw subquery scope excludes soft-deleted rows explicitly.** Every `whereExists` over `trx_clinic_visits` in a
    scope service adds `whereNull('<alias>.deleted_at')`, so a list never offers what the per-record predicate refuses.
@@ -88,6 +91,16 @@ Every defect below was reproduced RED on PostgreSQL 16 against the untouched bas
   row yet, so a second login at that instant can judge it dead (`IncumbentSessionProbe`) and evict the first. A fix
   (a grace period for a fresh lease, or deny on the lost-race branch) changes the rule 153 contract and needs its own
   two-connection test; deferred as an owner item.
+- **R7-1 (LOW).** R6-1 is closed for two first saves on the SAME canonical visit. When the patient has no book yet,
+  `resolveCanonicalWorkspaceVisit()` finds none and each save falls back to its OWN context visit, so two
+  simultaneous first saves opened from two different visits of the same patient write two books (different
+  `clinic_visit_id`, no unique collision). Needs a per-patient serialisation and a lock-order review; recorded.
+- **R7-2 (latent).** A soft-deleted medical record still occupies `UNIQUE(clinic_visit_id)`; `findByVisitId()` skips
+  it, so a first save on that visit rethrows the unique violation (HTTP 500, nothing persisted). No application path
+  deletes a medical record today; restoring versus refusing is a product decision.
+- **Follow-ups (refactor, outside a SECURITY_FIX's scope).** The savepoint-adopt pattern now exists in three
+  services and the transaction-scoped advisory acquisition in two; a shared helper would stop them drifting.
+  `PatientDoctorAssignmentService` queries its model directly (pre-existing; CG-04 wants a repository).
 - **BCF-07.** Invoice and payment numbers are month-wide `MAX + 1` with no lock against unique columns. Two cashiers
   at the same moment: the second answers HTTP 500, nothing is persisted, a resubmit succeeds. Known open finding
   (rule 188), owner decision.

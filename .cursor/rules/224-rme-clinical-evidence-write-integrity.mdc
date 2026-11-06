@@ -95,7 +95,8 @@ Every defect below was reproduced RED on PostgreSQL 16 against the untouched bas
   follow-up so the fix can carry its own two-connection test rather than ride in untested.
   **CLOSED by DMS-RME-REVISION-PROGRAM-7** (rule 225): the draft insert runs in a SAVEPOINT and the loser adopts the
   winner's book, so the page lands and nothing answers 500. Closed by savepoint-adopt, NOT by the visit lock, so the
-  check-then-write interleaving noted below stays recorded.
+  check-then-write interleaving noted below stays recorded. Closed for the SAME canonical visit only; two first saves
+  opened from two different visits of a book-less patient are R7-1 (rule 225).
 - **Latent lock-order hazard.** A handwriting save holds the medical-record row FOR NO KEY UPDATE. A future path that
   takes the visit row FOR UPDATE and then writes the medical record (the Program 5 shape) would deadlock against it.
   Any new writer that touches both rows takes the visit first, then the record — rule 223 §1.
