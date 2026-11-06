@@ -105,4 +105,9 @@ class MedicalRecordRepository implements MedicalRecordRepositoryInterface
 
         return $medicalRecord->refresh();
     }
+
+    public function lockForHandwriting(int $id): ?MedicalRecord
+    {
+        return MedicalRecord::query()->whereKey($id)->lock('for no key update')->first();
+    }
 }

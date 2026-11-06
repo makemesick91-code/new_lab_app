@@ -51,8 +51,15 @@
                     <p class="handwriting-saved-at">
                         Halaman {{ $rmPage['page_number'] }} &mdash; Tersimpan pada {{ $rmPage['saved_at']?->format('d/m/Y H:i') }}
                     </p>
-                    <img src="{{ $rmPage['preview_url'] }}"
-                         alt="RME Tulisan Tangan Halaman {{ $rmPage['page_number'] }}">
+                    {{-- DMS-RME-REVISION-PROGRAM-6 / P6-PDF-01 — a page that was recorded
+                         but whose stored image is missing, unreadable or damaged prints an
+                         honest notice, never an empty <img>. Nothing is fabricated. --}}
+                    @if (filled($rmPage['preview_url']))
+                        <img src="{{ $rmPage['preview_url'] }}"
+                             alt="RME Tulisan Tangan Halaman {{ $rmPage['page_number'] }}">
+                    @else
+                        <p class="field-empty">Gambar halaman ini tidak tersedia.</p>
+                    @endif
                 @endforeach
             @else
                 <p class="field-empty">Belum ada handwriting RM.</p>

@@ -30,8 +30,11 @@ class OdontogramService
         // Perawat, so without this a context-bound operator would read a patient's
         // odontogram findings from every branch in the RME estate.
         private readonly RmeWorkingBranchScope $workingBranchScope,
-        // CORRECTIVE-03 — the active odontogram is a clinical workspace, so it
-        // now carries the same signed-consent authority as the RME beside it.
+        // Rule 134 — the active odontogram's single authoring authority is
+        // assertOdontogramAuthoringAllowed(): a live in_progress encounter, an
+        // actor who may work on it, and the chart belonging to it. It carries NO
+        // consent condition (CORRECTIVE-03's consent gate was superseded; the
+        // doctor charts before consent and consent then gates the RME).
         private readonly RmeVisitConsentService $consents,
     ) {}
 
@@ -209,8 +212,9 @@ class OdontogramService
      * FIX-01 — the FIRST clinical write for a visit that has no chart yet.
      *
      * This is the create-on-mutation entry point that replaces creation-on-view.
-     * Consent is asserted BEFORE the row is created, not after: otherwise an
-     * unconsented submission would still persist an empty chart and then fail,
+     * The authoring authority (rule 134) is asserted BEFORE the row is created,
+     * not after: otherwise a refused submission would still persist an empty
+     * chart and then fail,
      * reintroducing through the write path exactly the side effect this fix
      * removes from the read path.
      *
@@ -248,9 +252,10 @@ class OdontogramService
      * The bare create primitive — NOT a clinical write entry point.
      *
      * FIX-01 — it has ZERO production callers and must keep having none. It
-     * checks the RME branch but deliberately does NOT assert consent, so
-     * calling it from application code would recreate exactly the defect this
-     * sprint removed: a `trx_odontograms` row inserted with no signed consent.
+     * checks the RME branch but deliberately does NOT assert the authoring
+     * authority, so calling it from application code would recreate exactly the
+     * defect this sprint removed: a `trx_odontograms` row inserted for a visit
+     * nobody may chart.
      * Use {@see self::saveForVisit()} for any real write.
      *
      * It survives only because three tests pin its own behaviour and several
@@ -292,9 +297,8 @@ class OdontogramService
              * any time. Sprint 59 removed the FINALIZATION lock, and that part
              * stands: a finalized chart on the LIVE encounter is still revisable.
              * What it may no longer do is reach back into a previous encounter's
-             * chart, and it may not record anything at all before the patient has
-             * signed. The chart being written must be the live, consented
-             * encounter's own chart.
+             * chart. The chart being written must be the live encounter's own
+             * chart (rule 134: charting does NOT wait for the signed consent).
              *
              * The status/finalized_at/finalized_by columns keep their meaning and
              * are untouched.
@@ -327,10 +331,10 @@ class OdontogramService
                 ]);
             }
 
-            // CORRECTIVE-03 — finalizing a chart is a clinical write, so it needs
-            // the same authorized, consented, live encounter. Asserted BEFORE the
-            // already-finalized short circuit, so an unconsented caller cannot use
-            // the idempotent path to probe which charts exist.
+            // Finalizing a chart is a clinical write, so it needs the same
+            // authorized, live encounter (rule 134; no consent condition).
+            // Asserted BEFORE the already-finalized short circuit, so a refused
+            // caller cannot use the idempotent path to probe which charts exist.
             $this->consents->assertOdontogramAuthoringAllowed($odontogram->clinicVisit, $user);
 
             if ($odontogram->isFinalized()) {

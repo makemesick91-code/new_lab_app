@@ -41,13 +41,14 @@ class OdontogramController extends Controller
          * READ.
          *
          * This used to call getOrCreateForVisit(), so every GET — including one
-         * by a view-only operator, and one on a visit whose consent forbids
-         * authoring — INSERTed an empty trx_odontograms row. Viewing is not a
+         * by a view-only operator, and one on a visit nobody may author —
+         * INSERTed an empty trx_odontograms row. Viewing is not a
          * clinical act and must leave no clinical record behind.
          *
          * draftForVisit() returns the saved chart, or an UNSAVED instance when
          * nothing has been charted yet. The first real write goes through
-         * store() below, which creates the row only after consent passes.
+         * store() below, which creates the row only after the authoring
+         * authority passes (rule 134 — no consent condition).
          */
         $odontogram = $this->service->draftForVisit($clinicVisit);
 
@@ -162,7 +163,8 @@ class OdontogramController extends Controller
      *
      * Authorized with the `author` ability — the WRITE-level counterpart of
      * `create`, which is only view-level and is what the read page uses. The
-     * service then re-asserts the signed consent before inserting anything.
+     * service then re-asserts the authoring authority (live encounter, actor,
+     * chart; rule 134 — no consent condition) before inserting anything.
      */
     public function store(UpdateOdontogramPlaceholderRequest $request, ClinicVisit $clinicVisit): RedirectResponse
     {

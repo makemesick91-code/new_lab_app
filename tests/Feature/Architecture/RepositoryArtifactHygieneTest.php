@@ -98,17 +98,18 @@ it('no longer tracks the asia_dental_lab artifact and ignores it if it reappears
 });
 
 /*
- * POST-RME-ODONTOGRAM-STABILIZATION-1 / FIX-01 — the consent-free create
- * primitive must stay out of production code.
+ * POST-RME-ODONTOGRAM-STABILIZATION-1 / FIX-01 — the ungated create primitive
+ * must stay out of production code.
  *
  * `OdontogramService::getOrCreateForVisit()` checks the RME branch but does NOT
- * assert consent, unlike `saveForVisit()`. It survives only as a test fixture
+ * assert the authoring authority (rule 134: live encounter, actor, chart — no
+ * consent condition), unlike `saveForVisit()`. It survives only as a test fixture
  * primitive. Raised by adversarial review: a docblock saying "no production
  * caller" is a convention, and this sprint's whole thesis is that a
  * documented-but-reachable create path is what produced the defect. So the
  * claim is enforced here instead.
  */
-it('keeps the consent-free odontogram create primitive out of production code', function () {
+it('keeps the ungated odontogram create primitive out of production code', function () {
     $offenders = [];
 
     $iterator = new RecursiveIteratorIterator(
@@ -135,8 +136,8 @@ it('keeps the consent-free odontogram create primitive out of production code', 
     }
 
     expect($offenders)->toBe([],
-        'getOrCreateForVisit() does not assert consent and must not be called from application code. '
-        .'Use OdontogramService::saveForVisit(), which gates the insert on a signed consent. Offenders: '
+        'getOrCreateForVisit() does not assert the authoring authority and must not be called from application code. '
+        .'Use OdontogramService::saveForVisit(), which gates the insert on assertOdontogramAuthoringAllowed(). Offenders: '
         .implode(', ', $offenders)
     );
 });

@@ -1,25 +1,26 @@
-# DMS-RME-REVISION-PROGRAM-5 (2026-11-06). Continuation of DMS-RME-REVISION-PROGRAM-1..4 under rule 221 §7. The owner
-# approved, in the mission brief of 2026-11-06, an audit of the clinical workflow CW-01..CW-11 (registration, queue,
-# doctor/room, Mulai Pemeriksaan, consent timing, RME authoring, pre-consent odontogram, UI/server parity, Selesai
-# Pemeriksaan, cashier handoff, history) with correction of VERIFIED defects only (CG-22: findings that need a new
-# product decision are recorded, not inferred).
-# Verified and corrected (each reproduced RED on PostgreSQL 16 first):
-#   CW5-01 status transition and room assignment decided on the LOCKED visit row (a stale copy let a cancelled visit
-#          come back billable, or cancel a visit already at the cashier — AIR-RMC-01);
-#   CW5-02/03/04 Detail Kunjungan "Buat Rekam Medis", the Rekam Medis page "Selesai Pemeriksaan", the handwriting
-#          editor and the diagnosis forms follow the capability, not a permission alone (AIR-RMC-25, rule 135);
-#   CW5-05 the front-desk-only tier (Admin Klinik, Front Office) is refused clinical authoring at the canonical
-#          authority (rule 134 §1/§7, rule 108 §12, DPT-064) — an Admin Klinik PATCH had charted an odontogram;
-#   CW5-06 a new sheet's source_visit_id is IDOR-validated (AIR-RMC-23; a nonexistent id was an HTTP 500);
-#   CW5-07 consent signing decided on the locked visit row (AIR-RMC-06);
-#   CW5-08 consent pages state the real signing window and no longer promise payment (AIR-RMC-06, AIR-RMC-11).
-# No schema, migration, permission, route or JS/CSS change. Foundation-First Sprint Lock stays ACTIVE (allowed
-# category: clinical correctness / security fix). Full Suite deferred (CG-18), not passed.
+# DMS-RME-REVISION-PROGRAM-6 (2026-11-06). Continuation of DMS-RME-REVISION-PROGRAM-1..5 under rule 221 §7. The owner
+# approved, in the mission brief of 2026-11-06, an audit of handwriting (HW-01/02), the native odontogram (OD-01),
+# prescriptions (RX-01), RME/odontogram/prescription print and PDF (PDF-01..03) and clinical evidence storage (SEC-01),
+# with correction of VERIFIED defects only (CG-22: findings that need a product decision are recorded, not inferred).
+# Verified and corrected (each reproduced RED on PostgreSQL 16 against the untouched base c78f15dc first):
+#   P6-HW-01 a blank/invalid canvas created the canonical medical-record draft before validation (R5-3);
+#   P6-HW-02 the handwriting object was written before its row with no compensation (R5-3);
+#   P6-HW-03 a second-granular object key built from the RAW page let a refused or concurrent save replace committed
+#            bytes and let two pages share one object;
+#   P6-HW-04 saves of one book were not serialised (duplicate page-1 rows; page-N unique race -> HTTP 500);
+#   P6-RX-01 a prescription update wrote the R/ canvas before decoding the signature; no failure removed a canvas;
+#   P6-RX-02 a double-submitted prescription create raced UNIQUE(clinic_visit_id) into an HTTP 500;
+#   P6-RX-03 the canvas route never bound its prescription, so stored canvases never loaded on screen;
+#   P6-PDF-01/02 print embedded an empty <img>, threw an HTTP 500 on an unreadable object, embedded non-PNG bytes.
+# Plus documentation drift (odontogram comments still describing the superseded consent gate) and coverage gaps
+# closed for the odontogram authority matrix. No schema, migration, permission, route, JS/CSS or production package
+# change. Foundation-First Sprint Lock stays ACTIVE (allowed category: clinical correctness / security fix). Full Suite
+# deferred (CG-18), not passed.
 # Carried forward: LEGACY-RME-PROGRAM-CLOSURE-1 stays CLOSED and inherited.
-id: DMS-RME-REVISION-PROGRAM-5
+id: DMS-RME-REVISION-PROGRAM-6
 type: SECURITY_FIX
 module: Rme
-title: "Clinical workflow audit: locked status transitions, capability-mirrored RME controls, front-office authoring refusal, validated sheet source"
+title: "Clinical evidence integrity: handwriting and prescription row+object as one unit, serialised saves, bound canvas route, honest print"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 runtime_change: true
 schema_change: false
@@ -30,5 +31,5 @@ ledger_impact: false
 deploy_required: true
 browser_required: false
 test_profiles: [focused, security_regression]
-go_tag: dms-rme-revision-program-5-go
+go_tag: dms-rme-revision-program-6-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1

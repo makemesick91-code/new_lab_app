@@ -3,7 +3,9 @@
 namespace App\Support\Storage;
 
 use Illuminate\Contracts\Filesystem\Filesystem;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Throwable;
 
 /**
  * STORAGE-PUBLIC-CLINICAL-EVIDENCE-1 — the single storage authority for native
@@ -29,6 +31,13 @@ final class ClinicalEvidenceStorage
      * @var list<string>
      */
     public const FORBIDDEN_DISKS = ['public'];
+
+    /**
+     * The same prefix every writer checks (MedicalRecordHandwritingController,
+     * PrescriptionCanvasDecoder), so the reader never hides an object the
+     * writers accepted.
+     */
+    private const PNG_PREFIX = "\x89PNG";
 
     public static function diskName(): string
     {
@@ -58,6 +67,14 @@ final class ClinicalEvidenceStorage
      *
      * Returns null when the object is absent — a caller must render an honest
      * "not available" state rather than a broken image.
+     *
+     * DMS-RME-REVISION-PROGRAM-6 / P6-PDF-02 — also null when the object cannot
+     * be read or is not a PNG. The disk is configured with 'throw' => true, so
+     * a read fault after exists() used to escape into the print/PDF render as
+     * an HTTP 500; and any bytes were labelled image/png, so a corrupt object
+     * printed as a broken image. Every caller embeds a PNG canvas (handwriting,
+     * prescription, doctor signature), whose writers refuse non-PNG input, so a
+     * non-PNG object is damaged evidence, never a legitimate other format.
      */
     public static function dataUri(?string $path): ?string
     {
@@ -71,11 +88,27 @@ final class ClinicalEvidenceStorage
 
         $disk = self::disk();
 
-        if (! $disk->exists($path)) {
+        try {
+            if (! $disk->exists($path)) {
+                return null;
+            }
+
+            $bytes = (string) $disk->get($path);
+        } catch (Throwable $e) {
+            Log::warning('A stored clinical evidence object could not be read.', [
+                'type' => $e::class,
+            ]);
+
             return null;
         }
 
-        return 'data:image/png;base64,'.base64_encode((string) $disk->get($path));
+        if (! str_starts_with($bytes, self::PNG_PREFIX)) {
+            Log::warning('A stored clinical evidence object is not a PNG image.');
+
+            return null;
+        }
+
+        return 'data:image/png;base64,'.base64_encode($bytes);
     }
 
     public static function exists(?string $path): bool

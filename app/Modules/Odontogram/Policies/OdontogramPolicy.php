@@ -65,9 +65,11 @@ class OdontogramPolicy
      * clinical write and therefore requires canManage(), matching
      * {@see self::update()} — the ability a revision of the same chart needs.
      *
-     * Consent is NOT checked here. RmeVisitConsentService is the authority for
-     * that and the service asserts it before the insert, so this stays a pure
-     * permission + branch + patient-scope decision.
+     * The encounter is NOT checked here.
+     * RmeVisitConsentService::assertOdontogramAuthoringAllowed() is the
+     * authority for that (live encounter, actor, chart; rule 134 — no consent
+     * condition) and the service asserts it before the insert, so this stays a
+     * pure permission + branch + patient-scope decision.
      */
     public function author(User $user, ClinicVisit $clinicVisit): Response|bool
     {

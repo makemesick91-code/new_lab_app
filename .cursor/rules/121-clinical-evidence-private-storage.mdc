@@ -49,3 +49,10 @@ the gap silently.
 - `systemctl reload nginx` is graceful: a request right after the reload can be
   served by an old worker on the old config. Re-verify after workers cycle.
 - Grepping only `disk('public')` misses `storeAs(..., 'public')`.
+
+## Later amendment (rule 224, DMS-RME-REVISION-PROGRAM-6)
+
+How evidence is WRITTEN (row and object as one unit, validate first, fresh random-suffixed keys, compensation on
+failure, parent-row lock) is owned by `.cursor/rules/224-rme-clinical-evidence-write-integrity.mdc`. This rule stays
+authoritative for WHERE evidence lives. `ClinicalEvidenceStorage::dataUri()` now also returns null for an unreadable or
+non-PNG object, so print renders the honest "not available" notice instead of a broken image or an HTTP 500.

@@ -8,9 +8,9 @@ use App\Modules\Consent\Services\RmeVisitConsentService;
 use App\Modules\MedicalRecord\Interfaces\MedicalRecordHandwritingRepositoryInterface;
 use App\Modules\MedicalRecord\Interfaces\MedicalRecordRepositoryInterface;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
+use App\Modules\MedicalRecord\Services\MedicalRecordHandwritingService;
 use App\Modules\MedicalRecord\Services\MedicalRecordService;
 use App\Modules\MedicalRecord\Services\PatientRmWorkspaceResolver;
-use App\Support\Storage\ClinicalEvidenceStorage;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -33,6 +33,7 @@ class MedicalRecordHandwritingController extends Controller
         PatientRmWorkspaceResolver $workspace,
         MedicalRecordService $medicalRecordService,
         RmeVisitConsentService $consents,
+        MedicalRecordHandwritingService $handwritingService,
     ): RedirectResponse {
         $pageNumber = (int) ($request->input('page_number') ?? 1);
 
@@ -53,41 +54,27 @@ class MedicalRecordHandwritingController extends Controller
             || $medicalRecord->id === $canonicalRecord->id
             || $pageNumber >= $this->handwritings->nextPageNumber($medicalRecord->id);
 
-        if ($isNewCanonicalPage) {
-            $canonicalRecord = $medicalRecordService->getOrCreateCanonicalMedicalRecord(
-                $clinicVisit,
-                Auth::id(),
-                $clinicVisit->id,
-            );
-            $medicalRecord = $canonicalRecord;
-            $clinicVisit = $canonicalVisit;
+        /*
+         * DMS-RME-REVISION-PROGRAM-6 / P6-HW-01 (closes R5-3) — nothing is written
+         * until the canvas is validated. The canonical draft used to be created
+         * here, before validation, so a blank or invalid canvas left an empty
+         * book behind on the patient's earliest visit. When the patient has no
+         * book yet it is now created inside the save transaction below, after
+         * validation; the authoring gate is asserted first, exactly as
+         * getOrCreateCanonicalMedicalRecord() asserted it first before.
+         */
+        $needsCanonicalDraft = $isNewCanonicalPage && $canonicalRecord === null;
+
+        if ($needsCanonicalDraft) {
+            $consents->assertRmeAuthoringAllowedForPatient($clinicVisit->patient_id);
+        } else {
+            if ($isNewCanonicalPage) {
+                $medicalRecord = $canonicalRecord;
+                $clinicVisit = $canonicalVisit;
+            }
+
+            $this->assertWritableTarget($medicalRecord, $clinicVisit, $consents);
         }
-
-        abort_if($medicalRecord->clinic_visit_id !== $clinicVisit->id, 404);
-
-        $this->authorize('update', $medicalRecord);
-
-        /*
-         * FIX-02 — handwriting is RME content, so it is gated exactly like the
-         * rest of the record. This controller writes through the repository
-         * rather than MedicalRecordService, so the gate is asserted here too;
-         * without it the "edit an existing page in place" branch would reach a
-         * write without ever passing a service-layer check.
-         *
-         * Every visit involved is checked: the live encounter, the visit the doctor
-         * navigated from, and the visit that owns the record being written.
-         */
-        /*
-         * FIX-02 / CORRECTIVE-02 — POSITIVE authority, resolved from server state.
-         *
-         * Neither the {clinicVisit} route parameter, nor source_visit_id, nor the
-         * record's own clinic_visit_id can establish the right to write: the first
-         * two are request input and the third points at wherever Sprint 64.0.2
-         * chose to store the bytes, which for a returning patient is an old
-         * terminal visit. The only sound question is whether this patient has an
-         * authorized, consented examination happening now.
-         */
-        $consents->assertRmeAuthoringAllowedForPatient($medicalRecord->patient_id);
 
         // Sprint 59 — handwriting RM is revisable after finalization. The
         // previous immutability lock is removed so doctors can correct or
@@ -102,33 +89,35 @@ class MedicalRecordHandwritingController extends Controller
             'page_number' => ['nullable', 'integer', 'min:1'],
         ]);
 
-        // page_number already read above for canonical routing
-
         // The PNG is decoded, validated and blank-guarded identically for every
         // page (Sprint 59.1 guard applies per page), before any storage/DB write.
         $decoded = $this->decodeHandwriting($request->input('handwriting_data'));
 
-        $path = sprintf(
-            'handwritings/%d/%d/handwriting_p%d_%s.png',
-            $clinicVisit->branch_id,
-            $clinicVisit->id,
-            max($pageNumber, 1),
-            now()->format('YmdHis'),
+        $saved = $handwritingService->save(
+            function () use ($needsCanonicalDraft, $medicalRecord, $clinicVisit, $canonicalVisit, $medicalRecordService, $consents): array {
+                if (! $needsCanonicalDraft) {
+                    return [$medicalRecord, $clinicVisit];
+                }
+
+                $draft = $medicalRecordService->getOrCreateCanonicalMedicalRecord(
+                    $clinicVisit,
+                    Auth::id(),
+                    $clinicVisit->id,
+                );
+
+                // A refusal here rolls the draft back with the rest of the save.
+                $this->assertWritableTarget($draft, $canonicalVisit, $consents);
+
+                return [$draft, $canonicalVisit];
+            },
+            $pageNumber,
+            $decoded,
+            Auth::id(),
         );
 
-        // STORAGE-PUBLIC-CLINICAL-EVIDENCE-1 — clinical evidence is written to
-        // the private clinical disk. It must never reach the 'public' disk,
-        // which the web server serves without authentication.
-        ClinicalEvidenceStorage::disk()->put($path, $decoded);
-
-        $hash = hash('sha256', $decoded);
-
-        if ($pageNumber <= 1) {
-            $this->savePageOne($clinicVisit, $medicalRecord, $path, $hash);
-            $focusPage = 1;
-        } else {
-            $focusPage = $this->savePage($clinicVisit, $medicalRecord, $pageNumber, $path, $hash);
-        }
+        $medicalRecord = $saved['medical_record'];
+        $clinicVisit = $saved['storage_visit'];
+        $focusPage = $saved['page_number'];
 
         $handwritingBook = $workspace->orderedHandwritingBookForPatient($medicalRecord->patient_id);
         $virtualFocus = $handwritingBook->first(
@@ -150,6 +139,40 @@ class MedicalRecordHandwritingController extends Controller
             ], fn ($v) => $v !== null && $v !== ''))
             ->with('status', 'Tulisan tangan RME berhasil disimpan.')
             ->with('focus_rm_page', $focusVirtualPage);
+    }
+
+    /**
+     * The record must belong to the visit that stores it, the actor must be
+     * allowed to update it, and the patient must have an authorized, consented
+     * examination in progress.
+     */
+    private function assertWritableTarget(MedicalRecord $medicalRecord, ClinicVisit $storageVisit, RmeVisitConsentService $consents): void
+    {
+        abort_if($medicalRecord->clinic_visit_id !== $storageVisit->id, 404);
+
+        $this->authorize('update', $medicalRecord);
+
+        /*
+         * FIX-02 — handwriting is RME content, so it is gated exactly like the
+         * rest of the record. The write goes through MedicalRecordHandwritingService,
+         * not MedicalRecordService, so the gate is asserted here too; without it
+         * the "edit an existing page in place" branch would reach a write without
+         * ever passing a service-layer check.
+         *
+         * Every visit involved is checked: the live encounter, the visit the doctor
+         * navigated from, and the visit that owns the record being written.
+         */
+        /*
+         * FIX-02 / CORRECTIVE-02 — POSITIVE authority, resolved from server state.
+         *
+         * Neither the {clinicVisit} route parameter, nor source_visit_id, nor the
+         * record's own clinic_visit_id can establish the right to write: the first
+         * two are request input and the third points at wherever Sprint 64.0.2
+         * chose to store the bytes, which for a returning patient is an old
+         * terminal visit. The only sound question is whether this patient has an
+         * authorized, consented examination happening now.
+         */
+        $consents->assertRmeAuthoringAllowedForPatient($medicalRecord->patient_id);
     }
 
     /**
@@ -180,71 +203,6 @@ class MedicalRecordHandwritingController extends Controller
         }
 
         return $decoded;
-    }
-
-    /**
-     * Page 1 — legacy read-through. Writes the legacy single-row table exactly as
-     * before so every existing reader (print/receipt/tests) keeps working.
-     */
-    private function savePageOne(ClinicVisit $clinicVisit, MedicalRecord $medicalRecord, string $path, string $hash): void
-    {
-        $existing = $this->handwritings->findByMedicalRecordId($medicalRecord->id);
-
-        if ($existing !== null) {
-            $this->handwritings->update($existing, [
-                'handwriting_path' => $path,
-                'handwriting_hash' => $hash,
-                'saved_at' => now(),
-            ]);
-        } else {
-            $this->handwritings->create([
-                'medical_record_id' => $medicalRecord->id,
-                'clinic_visit_id' => $clinicVisit->id,
-                'branch_id' => $clinicVisit->branch_id,
-                'doctor_id' => $clinicVisit->doctor_id,
-                'handwriting_path' => $path,
-                'handwriting_hash' => $hash,
-                'saved_at' => now(),
-                'created_by' => Auth::id(),
-            ]);
-        }
-    }
-
-    /**
-     * Page 2+ — additive pages table. The requested page is clamped to the next
-     * addable page so the doctor can never skip a page or write an arbitrary high
-     * number, and saving here never touches Page 1 (or any sibling page).
-     */
-    private function savePage(ClinicVisit $clinicVisit, MedicalRecord $medicalRecord, int $pageNumber, string $path, string $hash): int
-    {
-        $maxAllowed = $this->handwritings->nextPageNumber($medicalRecord->id);
-        $pageNumber = min($pageNumber, $maxAllowed);
-
-        $existing = $this->handwritings->findPageByMedicalRecordIdAndPage($medicalRecord->id, $pageNumber);
-
-        if ($existing !== null) {
-            $this->handwritings->updatePage($existing, [
-                'handwriting_path' => $path,
-                'handwriting_hash' => $hash,
-                'saved_at' => now(),
-                'updated_by' => Auth::id(),
-            ]);
-        } else {
-            $this->handwritings->createPage([
-                'medical_record_id' => $medicalRecord->id,
-                'clinic_visit_id' => $clinicVisit->id,
-                'branch_id' => $clinicVisit->branch_id,
-                'doctor_id' => $clinicVisit->doctor_id,
-                'page_number' => $pageNumber,
-                'handwriting_path' => $path,
-                'handwriting_hash' => $hash,
-                'saved_at' => now(),
-                'created_by' => Auth::id(),
-                'updated_by' => Auth::id(),
-            ]);
-        }
-
-        return $pageNumber;
     }
 
     /**
