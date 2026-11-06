@@ -121,6 +121,8 @@ RED: **16 failed / 4 passed** (the four are the deliberate regression controls 0
 - R5-2 Two concurrent registrations at one branch on one day can compute the same `queue_number`
   (`UNIQUE(branch_id, visit_date, queue_number)` refuses the second → HTTP 500).
 - R5-3 Handwriting store commits a draft before authorization/validation and writes the file before the DB row.
+  **CLOSED by DMS-RME-REVISION-PROGRAM-6** (P6-HW-01..04, rule 224; `docs/sprints/dms-rme-revision-program-6.md`).
+  Re-measured there: it was not availability-only — a refused same-second save also replaced committed bytes.
 - Documentation drift (code comments only): `OdontogramService`/`OdontogramController`/`OdontogramPolicy` comments
   still say consent gates the odontogram; `RmeInvoiceService` comment says finalize moves the visit;
   `RmeVisitConsentService::requiresConsentBeforeRmeAuthoring()` has no callers.

@@ -24,15 +24,22 @@ class RmePrescriptionCanvasController extends Controller
 
     private const KINDS = ['prescription', 'signature'];
 
-    public function show(RmePrescription $prescription, string $kind): StreamedResponse
+    /**
+     * DMS-RME-REVISION-PROGRAM-6 / P6-RX-03 — the argument MUST be named after
+     * the route segment `{rmePrescription}`. Implicit binding matches by name;
+     * under the old name `$prescription` it never ran, the container injected an
+     * EMPTY model, the policy refused it and the stored canvases never loaded on
+     * the prescription page (print was unaffected: it embeds them inline).
+     */
+    public function show(RmePrescription $rmePrescription, string $kind): StreamedResponse
     {
-        $this->authorize('view', $prescription);
+        $this->authorize('view', $rmePrescription);
 
         abort_unless(in_array($kind, self::KINDS, true), 404);
 
         $path = $kind === 'signature'
-            ? $prescription->doctor_signature_canvas_path
-            : $prescription->prescription_canvas_path;
+            ? $rmePrescription->doctor_signature_canvas_path
+            : $rmePrescription->prescription_canvas_path;
 
         abort_if($path === null || $path === '', 404);
 

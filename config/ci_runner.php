@@ -1488,6 +1488,19 @@ return [
         // `RmeClinicalWorkflowIntegrity` token is in BOTH critical variants.
         'tests/Feature/RME/RmeClinicalWorkflowIntegrityTest.php',
 
+        // DMS-RME-REVISION-PROGRAM-6 (rule 224) — clinical evidence integrity: a
+        // handwriting page or prescription canvas row and its private object are
+        // one unit (validated before any write, compensated on failure, never a
+        // reused second-granular key, saves serialised on the parent row); the
+        // canvas route binds its record; print never embeds a missing,
+        // unreadable or non-PNG object. Selected by the existing
+        // `ClinicalEvidence` token (write/lock suites) and `Odontogram` token
+        // (authority matrix) in BOTH critical variants; declared so a rename
+        // cannot drop them.
+        'tests/Feature/RME/RmeClinicalEvidenceWriteIntegrityTest.php',
+        'tests/Feature/RME/RmeClinicalEvidenceWriteLockConcurrencyTest.php',
+        'tests/Feature/RME/RmeOdontogramAuthorityMatrixTest.php',
+
         // SECURITY-F4C-CLINIC-CALENDAR-LAB-ORDERS-1 (owner decision D16) — lab order dates, order and
         // delivery numbering, the due-date floor and "delivered today" on the clinic calendar
         // (Asia/Makassar). A UTC "today" named the previous clinic day for eight hours of every day;

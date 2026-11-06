@@ -1,0 +1,108 @@
+---
+description: DMS-RME-REVISION-PROGRAM-6 — clinical evidence write integrity. A handwriting page or prescription canvas is a database row AND an object on the private clinical disk, and the two are one unit: validated before anything is written, written under a fresh unique key, compensated when the row does not commit, and serialised on the parent row. The canvas route binds its record. Print/PDF never embeds a missing, unreadable or non-PNG object. Closes Program 5 residual R5-3.
+globs: app/Modules/MedicalRecord/Services/MedicalRecordHandwritingService.php, app/Modules/MedicalRecord/Controllers/MedicalRecordHandwritingController.php, app/Modules/MedicalRecord/Repositories/MedicalRecordRepository.php, app/Modules/Prescription/Services/RmePrescriptionService.php, app/Modules/Prescription/Controllers/RmePrescriptionCanvasController.php, app/Support/Storage/ClinicalEvidenceStorage.php, resources/views/rme/visits/partials/print-body.blade.php, tests/Feature/RME/RmeClinicalEvidenceWriteIntegrityTest.php, tests/Feature/RME/RmeClinicalEvidenceWriteLockConcurrencyTest.php, tests/Feature/RME/RmeOdontogramAuthorityMatrixTest.php
+alwaysApply: false
+---
+
+# RME clinical evidence write integrity (rule 224)
+
+**Status:** GO scope of `DMS-RME-REVISION-PROGRAM-6` (2026-11-06). Sprint record:
+`docs/sprints/dms-rme-revision-program-6.md`. Owner approval: the mission brief of 2026-11-06 authorised an audit of
+handwriting, odontogram, prescription and print/PDF, and the correction of VERIFIED defects only (CG-22). Category
+under the Foundation-First Sprint Lock: clinical correctness / security fix; the lock is unchanged. Extends rule 121
+(where evidence lives) with how it is written; rule 121 stays authoritative for the private disk.
+
+## What happened
+
+Every defect below was reproduced RED on PostgreSQL 16 against the untouched base (`c78f15dc`) before it was fixed.
+
+- **P6-HW-01 (R5-3, first half).** The handwriting store created the patient's canonical medical-record draft before
+  validating the canvas. A blank or invalid canvas left an empty book on the patient's earliest visit — the ordinary
+  first-save path, because the canonical visit often has no record yet.
+- **P6-HW-02 (R5-3, second half).** The object was written before the row, outside any transaction, with no
+  compensation: a failed row write left an orphaned object.
+- **P6-HW-03.** The object key was second-granular and built from the RAW request page number, not the clamped page
+  actually written. A refused or concurrent save in the same second replaced bytes a committed row pointed at (the
+  stored sha256 then described bytes that were gone), and two pages could name one object.
+- **P6-HW-04.** Saves of one book were not serialised: Page 1 has no unique index, so two concurrent first saves
+  inserted two rows; two concurrent saves of a new Page N raced `UNIQUE(medical_record_id, page_number)` → HTTP 500.
+- **P6-RX-01.** A prescription update wrote the R/ canvas, then decoded the signature; a refused signature left the
+  R/ object orphaned (and, in the same second, overwrote the committed canvas). No failure removed a written canvas.
+- **P6-RX-02.** A double-submitted prescription create raced `UNIQUE(clinic_visit_id)` into an HTTP 500.
+- **P6-RX-03.** `prescriptions/{rmePrescription}/canvas/{kind}` was handled by `show(RmePrescription $prescription,
+  ...)`. Implicit binding matches by NAME, so it never ran: the container injected an empty model, the policy refused
+  it, and the stored canvases never loaded on the prescription page. Print was unaffected (it embeds inline).
+- **P6-PDF-01/02.** A recorded page whose object is missing printed `<img src="">`; an unreadable object threw out of
+  the print (the disk has `'throw' => true`) as an HTTP 500; any bytes were labelled `image/png`.
+
+## The rules
+
+1. **Row and object are one unit.** A clinical evidence write validates and decodes every canvas first, then, inside
+   one `DB::transaction`, creates any parent draft, authorizes, locks, chooses the target, writes the object and
+   writes the row. An exception raised while the transaction body is still running removes the object(s) this call
+   wrote. A database rollback never undoes a filesystem write, so compensation is explicit
+   (`MedicalRecordHandwritingService::save()`, `RmePrescriptionService::create()/update()`).
+1a. **Compensate only before the body finished.** Once the body has returned, the COMMIT itself (or an `afterCommit`
+   callback) may still throw, and at that point the outcome is unknown: the row may already reference the object.
+   Each service sets `$bodyDone = true` as the body's last statement and compensates only while it is false. Leaving
+   an orphan is recoverable; deleting a committed object destroys clinical evidence. When in doubt, keep the object.
+2. **Nothing is written before validation.** Never create a medical-record draft, a page row or an object for a
+   request that has not passed validation and authorization. A draft that must exist for the write is created inside
+   the write's transaction, so a later refusal rolls it back.
+3. **Every write is a fresh object.** Object keys carry a random suffix (`bin2hex(random_bytes(8))`) after the
+   timestamp, and are built from the page actually written (after clamping), never from request input. A key is never
+   reused, so removing an uncommitted object can never destroy committed evidence.
+4. **Never delete committed evidence.** A replaced page or canvas keeps its previous object (history, as before);
+   only the object written by a call that did not commit is removed. Never bulk-delete or rewrite existing keys.
+5. **Serialise on the parent row, FOR NO KEY UPDATE.** A handwriting save locks its medical-record row
+   (`MedicalRecordRepositoryInterface::lockForHandwriting()`); a prescription create locks its visit row
+   (`ClinicVisitRepositoryInterface::lockForStatusDecision()`, visit row first — rule 223 §1). Never FOR UPDATE: the
+   child insert's foreign key takes FOR KEY SHARE on that row.
+6. **Bind route models by name.** A controller argument for a route model must be named after the route segment
+   (`{rmePrescription}` → `$rmePrescription`). A mismatch silently injects an empty model.
+7. **Print is honest.** `ClinicalEvidenceStorage::dataUri()` returns null for an absent, unreadable or non-PNG object
+   (every caller embeds a PNG canvas whose writer refuses non-PNG input). `print-body` renders "Gambar halaman ini tidak
+   tersedia." for a recorded page with no embeddable image — never an empty `<img>`, never fabricated content.
+8. **Unchanged.** Handwriting stays the primary input; SOAP stays hidden; the consent gate
+   (`assertRmeAuthoringAllowedForPatient()`) and the odontogram's pre-consent authority (rule 134) are untouched;
+   prescriptions stay outside the consent gate; Doctor RME/odontogram print denial (rule 138) and prescription print
+   are unchanged; print/PDF still embed inline (rule 121).
+
+## Traps
+
+- An arrow function (`fn () =>`) captures by VALUE. A list of written keys built inside a transaction closure must be
+  captured by reference (`function () use (&$written)`), or the compensation never sees what was written.
+- Proving a lock needs a probe that cannot pass vacuously: probe FOR NO KEY UPDATE NOWAIT (a FOR UPDATE probe is
+  blocked by the child insert's KEY SHARE even with no lock), on committed rows over a separate connection, with a
+  sanity probe beside it (`RmeClinicalEvidenceWriteLockConcurrencyTest`).
+- `Storage::fake()` does not inherit `'throw' => true`; reproduce a read fault with a mocked disk, not `chmod`.
+- A row-count assertion cannot prove an authority is asserted BEFORE an insert that runs inside a transaction: a
+  later refusal rolls the insert back and leaves the same zero rows. Count the attempt (a model `creating` listener)
+  and pair it with a positive control that proves the listener fires (mutation M12).
+
+## Recorded, not changed
+
+- **OD-6-1** Two devices adding the same new page number at once now resolve last-writer-wins (the second save updates
+  the page the first created), exactly like editing an existing page; before, the second answered HTTP 500. The client
+  cannot distinguish "add" from "edit" (both post `page_number`); page-level optimistic concurrency is a product
+  decision.
+- **R6-1** Two simultaneous FIRST saves for a patient with no book still race `UNIQUE(clinic_visit_id)` on the draft
+  insert (`MedicalRecordService::createDraft()` is a plain create). The loser answers HTTP 500, but persists nothing:
+  its transaction rolls back the draft and its compensation removes its object. A retry writes into the winner's book.
+  This is pre-existing, needs two devices saving a patient's very first page within the same instant, and was not in
+  the mission's verified-defect list. The independent review audited the obvious fix (lock the canonical visit FOR NO
+  KEY UPDATE before resolving the draft) and found it deadlock-safe against today's lock orders; it is deferred to a
+  follow-up so the fix can carry its own two-connection test rather than ride in untested.
+- **Latent lock-order hazard.** A handwriting save holds the medical-record row FOR NO KEY UPDATE. A future path that
+  takes the visit row FOR UPDATE and then writes the medical record (the Program 5 shape) would deadlock against it.
+  Any new writer that touches both rows takes the visit first, then the record — rule 223 §1.
+- Consent signature streams send no explicit `Cache-Control: no-store` (LOW hardening; no canonical rule requires it).
+- `ClinicalEvidenceStorage::FORBIDDEN_DISKS` is not enforced at runtime; the governance scan is the enforcement.
+- The stored sha256 is not verified on read.
+- `dataUri()` logs a warning (exception class only, never the key or bytes) when an object cannot be read or is not a
+  PNG, so a damaged object is visible in the log while the print shows the honest placeholder.
+- Status-code precedence shifted in two shapes (a new canonical page on an existing book now answers 404/403 before
+  the authoring refusal; with no book, canvas validation 422 precedes the draft's policy 403). No write is reachable
+  either way.
+- Authoring is still checked outside any lock (existing behaviour on every authoring path): a consent void or status
+  transition can interleave between the check and the write. The R6-1 visit-lock follow-up would close it.

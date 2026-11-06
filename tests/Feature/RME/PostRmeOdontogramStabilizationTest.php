@@ -102,7 +102,10 @@ it('a view-only operator can read the chart and still creates no row', function 
     expect(stabRowCount($visit))->toBe(0);
 });
 
-it('an unsigned encounter renders the chart read-only and creates no row', function () {
+// DMS-RME-REVISION-PROGRAM-6 — renamed: under rule 134 an unsigned in-progress
+// encounter is chartable, not read-only; what this pins is that OPENING it
+// writes nothing.
+it('opening the chart on an unsigned in-progress encounter creates no row', function () {
     $visit = stabVisit(ClinicVisit::STATUS_IN_PROGRESS);
 
     $this->actingAs($this->doctorUser)

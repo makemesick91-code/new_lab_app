@@ -242,6 +242,16 @@ editable) → Persetujuan Tindakan Medis (RME + finish unlocked) → RME + Odont
   are owner decisions, not settled here. Source: rule 223 §3.
 - **AIR-RMC-41** Store a new sheet's `source_visit_id` only after `PatientRmWorkspaceResolver::resolveSourceVisit()`;
   never a raw request id. Source: rule 223 §4.
+- **AIR-RMC-42** A handwriting page or prescription canvas row and its private object are one unit: validate first,
+  then in one transaction (draft if needed, authorize, lock the parent row FOR NO KEY UPDATE, write a fresh
+  random-suffixed object, write the row); any failure removes only the object this call wrote. Never create a draft
+  before validation, never reuse or rebuild a key from request input, never delete committed evidence
+  (`MedicalRecordHandwritingService::save()`, `RmePrescriptionService`). Source:
+  `.cursor/rules/224-rme-clinical-evidence-write-integrity.mdc` §1–5.
+- **AIR-RMC-43** Name a controller's route-model argument after its route segment (`{rmePrescription}` →
+  `$rmePrescription`); a mismatch injects an empty model. `ClinicalEvidenceStorage::dataUri()` is null for an absent,
+  unreadable or non-PNG object and print renders "Gambar halaman ini tidak tersedia." instead of an empty `<img>`.
+  Source: rule 224 §6–7.
 
 ## Current posture (snapshot 2026-10-25 — verify before relying on it)
 
@@ -280,6 +290,7 @@ editable) → Persetujuan Tindakan Medis (RME + finish unlocked) → RME + Odont
 | `.cursor/rules/219-rme-doctor-performed-treatments.mdc` | Doctor "Tindakan Dilakukan": structured record, "Tidak Ada Tindakan" = operational KONTROL ≠ NO_CHARGE, detective |
 | `.cursor/rules/222-rme-route-key-constraint-and-failure-log-redaction.mdc` | Visit, medical-record, prescription, consent, odontogram, diagnosis and handwriting route keys constrained (404, never 500); caught exceptions logged through the redactor |
 | `.cursor/rules/223-rme-clinical-workflow-integrity.mdc` | Locked-row status/room/consent decisions; capability-mirrored RME controls; front office never authors; validated sheet source |
+| `.cursor/rules/224-rme-clinical-evidence-write-integrity.mdc` | Evidence row + object as one unit (validate first, compensate, fresh keys, parent-row lock); canvas route binding; honest print for missing/unreadable/non-PNG objects; closes R5-3 |
 
 ## History
 

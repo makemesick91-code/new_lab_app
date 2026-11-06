@@ -37,4 +37,11 @@ interface MedicalRecordRepositoryInterface
 
     /** @param array<string, mixed> $data */
     public function update(MedicalRecord $medicalRecord, array $data): MedicalRecord;
+
+    /**
+     * DMS-RME-REVISION-PROGRAM-6 / P6-HW-04 — lock one record's row FOR NO KEY
+     * UPDATE so saves of the same handwriting book are serialised. Never FOR
+     * UPDATE: a page insert's foreign key takes FOR KEY SHARE on this row.
+     */
+    public function lockForHandwriting(int $id): ?MedicalRecord;
 }
