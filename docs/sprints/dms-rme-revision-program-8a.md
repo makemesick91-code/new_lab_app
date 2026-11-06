@@ -24,7 +24,9 @@
 |---|---|---|
 | Corrective sprint | Approved: P8-N1, P8-N3, critical-gate coverage for Prescription and ClinicMasterData, their tests, rule/doc sync | System-owner mission brief, 2026-11-07 |
 | PR #607 (Program 8 audit record) | Merge if permitted: merged `6eefa719` (docs-only, CI green, head pinned) | Same brief §1 |
-| Production deploy of P8-N1 | Rule 221 §14 "significant security change" gate applies (it withdraws write capability from live production roles). The brief does NOT waive it. | Rule 221 §14; brief §0 |
+| Production deploy of P8-N1 | Rule 221 §14 "significant security change" gate applies (it withdraws write capability from live production roles); the brief did not waive it, so it was asked separately. **Approved: deploy.** | Owner answer, 2026-11-07 (session question "Deploy P8-N1") |
+| Publication timing (review F6) | **Hold the PR until the BK-2 off-server copy is healthy**, so publication and deploy are back-to-back | Owner answer, 2026-11-07 |
+| BK-2 custodian action | Owner unlocked and mounted the BK-2 HDD (re-opened under the canonical mapping name after the first attempt used a non-canonical one); then instructed: publish, CI, merge, deploy on the VPS, verify, tag, cleanup; no backup-gate bypass, no Full Suite | Owner answers and message, 2026-11-07 |
 | Not authorised | Full Suite, clinic reopening, queue worker / scheduler, global doctor-device enforcement, any open owner decision | Brief §0, CG-18 |
 
 ### 1.2 Authority read before any change
@@ -195,6 +197,19 @@ Two preconditions stand before production, and neither is waived by a green buil
 
 Publication timing (review F6) goes to the owner with item 1: the public pull request describes the corrected
 invariant, so the window between publication and deployment should be as short as the required CI allows.
+
+**Resolution (2026-11-07):**
+
+- Item 1: the owner approved the deploy (§1.1).
+- Item 2: the custodian unlocked the HDD. The first mount used a non-canonical dm-crypt name, so the identity chain
+  refused it; the check was NOT loosened. The custodian re-opened the volume under the canonical name, and then:
+  - `hdd-identity-check.sh` reported `IDENTITY OK`, every link from disk serial to mount point verified.
+  - The canonical pull (`dms-bk2-pull.service`, 21:58:49 UTC) reported `ON_SERVER=OK OFF_SERVER=OK pending=0
+    synced=2 failed=0`. Both packages (`BK2-20261105T183000Z`, `BK2-20261106T183001Z`) passed the manifest
+    size+SHA-256 check, the O_DIRECT platter re-read (10/10 each) and the decrypt-verify (8/8 each, plaintext
+    SHA-256 matching the server).
+  - Host `dms-bk2-status` (21:59:25 UTC): `offsite_packages_acked=6`, `offsite_packages_pending=0`,
+    `offsite_newest_acked=BK2-20261106T183001Z`, which equals `package_newest`. §6b step 3 is satisfied.
 
 ## 7. Cleanup
 
