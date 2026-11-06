@@ -173,7 +173,14 @@ An independent reviewer read the full diff (`git diff` against the base) without
 |---|---|
 | `tests/Feature/RME` + `tests/Feature/Storage` + `tests/Feature/ClinicOversight` (before review fixes) | 3,566 passed, 0 failed, 0 skipped (974.9 s) |
 | The three Program 6 suites (after review and mutation fixes) | 52 passed, 0 failed, 0 skipped |
-| Exact CI critical filter (both variants identical, 2,268 chars), final code | recorded below |
+| Exact CI critical filter (both variants identical, 2,268 chars), final code `a0bcb6e5`, PHP 8.3.33 container on PostgreSQL 16 | 9,385 tests: 9,334 passed, 15 skipped (14 `ProductionHostIdentityGuardTest` + 1 `PrivateDatabaseDumpCreationTest` host-identity guards), 36 failed — all harness artefacts, see next row |
+| The 13 suites holding those 36 failures, re-run on the host (git available, uid 1000 has a name) | 312 passed, 0 failed, 0 skipped |
+
+The 36 container failures were all of one kind: the container cannot read the worktree's `.git` (the file points at
+the primary checkout, which is not mounted), and uid 1000 has no user name inside it (`id: cannot find name`). None
+of them was an assertion about Program 6 behaviour. `RepositoryArtifactHygieneTest` is the only one of the 13 suites
+this change touches (comment and test-text edits), and it passes on the host. All 52 Program 6 tests ran inside the
+critical filter and passed.
 
 ### 6.3 Mutation matrix
 
