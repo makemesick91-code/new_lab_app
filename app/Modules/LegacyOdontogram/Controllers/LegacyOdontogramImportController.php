@@ -215,6 +215,10 @@ class LegacyOdontogramImportController extends Controller
             ]),
             'pages' => $this->imports->pagesFor($staged),
             'record' => $staged->record,
+
+            // DMS-RME-REVISION-PROGRAM-7 — page() refuses a VOIDed archive's
+            // pages, so the screen says so instead of rendering images that 404.
+            'bytesRetracted' => $staged->record?->isVoided() === true,
         ]);
     }
 
@@ -230,6 +234,12 @@ class LegacyOdontogramImportController extends Controller
 
         $staged = $this->resolve($request, $import);
         $this->authorize('viewFile', $staged);
+
+        // DMS-RME-REVISION-PROGRAM-7 — rule 174 §6 / rule 93 §7: the published
+        // record serves these same page images, so a VOIDed archive's pages are
+        // refused here too. In the controller because Gate::before hands Super
+        // Admin every policy ability.
+        abort_if($staged->record?->isVoided() === true, 404);
 
         $pageRecord = $this->imports->findPage($staged, $page);
 

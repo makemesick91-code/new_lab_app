@@ -8,7 +8,7 @@ use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\RME\Models\PatientDoctorAssignment;
-use Illuminate\Database\QueryException;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -23,35 +23,22 @@ class PatientDoctorAssignmentService
         }
 
         return DB::transaction(function () use ($visit, $actor) {
-            $existing = PatientDoctorAssignment::query()
-                ->where('patient_id', $visit->patient_id)
-                ->where('doctor_id', $visit->doctor_id)
-                ->whereNull('unassigned_at')
-                ->lockForUpdate()
-                ->first();
+            $existing = $this->activeAssignment((int) $visit->patient_id, (int) $visit->doctor_id, lock: true);
 
             if ($existing !== null) {
                 return $existing;
             }
 
-            try {
-                return PatientDoctorAssignment::query()->create([
-                    'patient_id' => $visit->patient_id,
-                    'doctor_id' => $visit->doctor_id,
-                    'branch_id' => $visit->branch_id,
-                    'source_visit_id' => $visit->id,
-                    'assigned_by' => $actor?->id,
-                    'assigned_at' => now(),
-                    'assignment_type' => PatientDoctorAssignment::TYPE_AUTO_VISIT,
-                    'notes' => 'Auto-assigned from queue room assignment',
-                ]);
-            } catch (QueryException) {
-                return PatientDoctorAssignment::query()
-                    ->where('patient_id', $visit->patient_id)
-                    ->where('doctor_id', $visit->doctor_id)
-                    ->whereNull('unassigned_at')
-                    ->first();
-            }
+            return $this->createOrAdoptActive([
+                'patient_id' => $visit->patient_id,
+                'doctor_id' => $visit->doctor_id,
+                'branch_id' => $visit->branch_id,
+                'source_visit_id' => $visit->id,
+                'assigned_by' => $actor?->id,
+                'assigned_at' => now(),
+                'assignment_type' => PatientDoctorAssignment::TYPE_AUTO_VISIT,
+                'notes' => 'Auto-assigned from queue room assignment',
+            ]);
         });
     }
 
@@ -145,37 +132,67 @@ class PatientDoctorAssignmentService
             $reason,
             $notes,
         ) {
-            $existing = PatientDoctorAssignment::query()
-                ->where('patient_id', $patient->id)
-                ->where('doctor_id', $doctor->id)
-                ->whereNull('unassigned_at')
-                ->lockForUpdate()
-                ->first();
+            $existing = $this->activeAssignment((int) $patient->id, (int) $doctor->id, lock: true);
 
             if ($existing !== null) {
                 return $existing;
             }
 
-            try {
-                return PatientDoctorAssignment::query()->create([
-                    'patient_id' => $patient->id,
-                    'doctor_id' => $doctor->id,
-                    'from_doctor_id' => $fromDoctor?->id,
-                    'branch_id' => $branch?->id ?? $patient->branch_id,
-                    'source_visit_id' => $sourceVisit?->id,
-                    'assigned_by' => $actor?->id,
-                    'assigned_at' => now(),
-                    'assignment_type' => $assignmentType,
-                    'reason' => $reason,
-                    'notes' => $notes,
-                ]);
-            } catch (QueryException) {
-                return PatientDoctorAssignment::query()
-                    ->where('patient_id', $patient->id)
-                    ->where('doctor_id', $doctor->id)
-                    ->whereNull('unassigned_at')
-                    ->firstOrFail();
-            }
+            return $this->createOrAdoptActive([
+                'patient_id' => $patient->id,
+                'doctor_id' => $doctor->id,
+                'from_doctor_id' => $fromDoctor?->id,
+                'branch_id' => $branch?->id ?? $patient->branch_id,
+                'source_visit_id' => $sourceVisit?->id,
+                'assigned_by' => $actor?->id,
+                'assigned_at' => now(),
+                'assignment_type' => $assignmentType,
+                'reason' => $reason,
+                'notes' => $notes,
+            ]);
         });
+    }
+
+    /**
+     * DMS-RME-REVISION-PROGRAM-7 / R5-1 — insert the active assignment, or adopt
+     * the one a concurrent request committed first.
+     *
+     * The existence check above locks nothing when there is no row yet, so two
+     * concurrent requests can both decide "none" and both insert. The partial
+     * unique index (patient, doctor) WHERE unassigned_at IS NULL refuses the
+     * loser. The loser used to catch that and query again in the SAME
+     * transaction — but PostgreSQL aborts a transaction on any failed statement,
+     * so the follow-up query answered 25P02 and the room assignment that called
+     * this answered HTTP 500.
+     *
+     * The insert therefore runs in its own savepoint (the nested
+     * DB::transaction). When it fails, Laravel rolls back to the savepoint
+     * BEFORE rethrowing, so the connection is usable again by the time the
+     * catch runs — the pattern DoctorSessionLeaseService already uses.
+     *
+     * Only a unique violation is a race to adopt, and only when the winner's row
+     * is really there. Anything else (a foreign key, a NOT NULL) used to be
+     * swallowed and reported as success; it now surfaces.
+     *
+     * @param  array<string, mixed>  $attributes
+     */
+    private function createOrAdoptActive(array $attributes): PatientDoctorAssignment
+    {
+        try {
+            return DB::transaction(fn (): PatientDoctorAssignment => PatientDoctorAssignment::query()->create($attributes));
+        } catch (UniqueConstraintViolationException $lostRace) {
+            return $this->activeAssignment((int) $attributes['patient_id'], (int) $attributes['doctor_id'], lock: true)
+                ?? throw $lostRace;
+        }
+    }
+
+    private function activeAssignment(int $patientId, int $doctorId, bool $lock): ?PatientDoctorAssignment
+    {
+        return PatientDoctorAssignment::query()
+            ->where('patient_id', $patientId)
+            ->where('doctor_id', $doctorId)
+            ->whereNull('unassigned_at')
+            ->when($lock, fn ($query) => $query->lockForUpdate())
+            ->first();
     }
 }

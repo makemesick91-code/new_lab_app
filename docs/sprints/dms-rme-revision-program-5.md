@@ -118,8 +118,10 @@ RED: **16 failed / 4 passed** (the four are the deliberate regression controls 0
 
 - R5-1 `PatientDoctorAssignmentService::ensureAssignedFromVisit()` catches a unique violation and re-queries inside
   the same PostgreSQL transaction (25P02 → HTTP 500) — reachable only by a concurrent duplicate assignment.
+  **CLOSED by DMS-RME-REVISION-PROGRAM-7** (savepoint-adopt, rule 225; `docs/sprints/dms-rme-revision-program-7.md`).
 - R5-2 Two concurrent registrations at one branch on one day can compute the same `queue_number`
   (`UNIQUE(branch_id, visit_date, queue_number)` refuses the second → HTTP 500).
+  **CLOSED by DMS-RME-REVISION-PROGRAM-7** (per-branch advisory numbering lock, rule 225).
 - R5-3 Handwriting store commits a draft before authorization/validation and writes the file before the DB row.
   **CLOSED by DMS-RME-REVISION-PROGRAM-6** (P6-HW-01..04, rule 224; `docs/sprints/dms-rme-revision-program-6.md`).
   Re-measured there: it was not availability-only — a refused same-second save also replaced committed bytes.

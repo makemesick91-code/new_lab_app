@@ -11,6 +11,7 @@ use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\RME\Services\DoctorPatientScopeService;
 use App\Support\Clinical\ClinicalClock;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -94,17 +95,48 @@ class MedicalRecordService
 
     public function createDraft(ClinicVisit $clinicVisit, ?int $recordedBy = null, array $data = []): MedicalRecord
     {
-        return DB::transaction(function () use ($clinicVisit, $recordedBy, $data) {
+        return $this->createDraftOn($clinicVisit, $recordedBy, $data, adoptExisting: false);
+    }
+
+    /**
+     * DMS-RME-REVISION-PROGRAM-7 / R6-1 — one draft per visit, concurrency-safe.
+     *
+     * `$adoptExisting` states what the CALLER means by a draft that already
+     * exists, so a concurrent request gets exactly the answer a sequential one
+     * would have:
+     *
+     *  - false (createDraft — "add a sheet to this visit"): a second sheet for
+     *    the same visit is refused with the existing duplicate message.
+     *  - true (getOrCreateCanonicalMedicalRecord — "the patient's book"): the
+     *    book a concurrent first save just created IS this patient's book, so
+     *    the page is written into it.
+     *
+     * The existence check below locks nothing when there is no row, so two
+     * concurrent first saves both used to find "none". The loser then either
+     * found the winner's draft at this check (and was refused, losing the
+     * doctor's page) or raced UNIQUE(clinic_visit_id) on the insert and answered
+     * HTTP 500. The insert now runs in its own savepoint: Laravel rolls back to
+     * it BEFORE rethrowing, so the transaction is usable when the catch runs and
+     * the committed winner can be read. This adds no lock, so the lock order of
+     * rule 223 §1 / rule 224 is unchanged.
+     */
+    private function createDraftOn(ClinicVisit $clinicVisit, ?int $recordedBy, array $data, bool $adoptExisting): MedicalRecord
+    {
+        return DB::transaction(function () use ($clinicVisit, $recordedBy, $data, $adoptExisting) {
             if (! $this->isActiveRmeBranch($clinicVisit->branch_id)) {
                 throw ValidationException::withMessages([
                     'clinic_visit_id' => 'Kunjungan tidak berada di cabang RME aktif.',
                 ]);
             }
 
-            if ($this->medicalRecords->findByVisitId($clinicVisit->id) !== null) {
-                throw ValidationException::withMessages([
-                    'clinic_visit_id' => 'Rekam medis sudah ada untuk kunjungan ini.',
-                ]);
+            $existing = $this->medicalRecords->findByVisitId($clinicVisit->id);
+
+            if ($existing !== null) {
+                if ($adoptExisting) {
+                    return $existing;
+                }
+
+                throw $this->draftAlreadyExists();
             }
 
             /*
@@ -129,7 +161,7 @@ class MedicalRecordService
                 ? (int) $data['source_visit_id']
                 : $clinicVisit->id;
 
-            return $this->medicalRecords->create(array_merge($safe, [
+            $attributes = array_merge($safe, [
                 'clinic_visit_id' => $clinicVisit->id,
                 'canonical_visit_id' => $this->workspace->pickCanonicalVisitId($clinicVisit),
                 'source_visit_id' => $sourceVisitId,
@@ -139,8 +171,29 @@ class MedicalRecordService
                 'doctor_id' => $clinicVisit->doctor_id,
                 'status' => MedicalRecord::STATUS_DRAFT,
                 'recorded_by' => $recordedBy,
-            ]));
+            ]);
+
+            try {
+                return DB::transaction(fn (): MedicalRecord => $this->medicalRecords->create($attributes));
+            } catch (UniqueConstraintViolationException $lostRace) {
+                // Only the one-draft-per-visit race is answered here, and only
+                // when the winner's row is really there; anything else surfaces.
+                $winner = $this->medicalRecords->findByVisitId($clinicVisit->id) ?? throw $lostRace;
+
+                if ($adoptExisting) {
+                    return $winner;
+                }
+
+                throw $this->draftAlreadyExists();
+            }
         });
+    }
+
+    private function draftAlreadyExists(): ValidationException
+    {
+        return ValidationException::withMessages([
+            'clinic_visit_id' => 'Rekam medis sudah ada untuk kunjungan ini.',
+        ]);
     }
 
     public function finalize(MedicalRecord $medicalRecord): MedicalRecord
@@ -279,9 +332,11 @@ class MedicalRecordService
             return $existing;
         }
 
-        return $this->createDraft($canonicalVisit, $recordedBy, array_filter([
+        // R6-1 — a concurrent first save may create the book between the lookup
+        // above and the insert; that book is this patient's book, so adopt it.
+        return $this->createDraftOn($canonicalVisit, $recordedBy, array_filter([
             'source_visit_id' => $sourceVisitId ?? $contextVisit->id,
-        ], fn ($v) => $v !== null));
+        ], fn ($v) => $v !== null), adoptExisting: true);
     }
 
     public function requiresHandwritingBeforeFinal(): bool

@@ -37,7 +37,9 @@ alwaysApply: false
 
 7. **A VOIDed archive stops serving bytes.** Source, pages, print and export all
    refuse it. The row itself stays readable so the metadata and the reason
-   remain auditable — retracted, not erased.
+   remain auditable — retracted, not erased. This includes the STAGING screens:
+   publishing moves no bytes, so the import's source and pages are the same
+   files and refuse too (the record's `isVoided()`, rule 225 §6).
 
 8. **Reading is a different permission from operating.**
    `view_legacy_rme_imports` is the intake operator; `view_legacy_rme_archive`

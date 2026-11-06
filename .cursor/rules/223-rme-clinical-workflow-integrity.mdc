@@ -86,4 +86,5 @@ Extends rule 135 and AIR-RMC-25 to the surfaces the 2026-09 fix did not reach:
 19. `tests/Feature/RME/RmeClinicalWorkflowIntegrityTest.php` pins all of the above, is selected by the
     `RmeClinicalWorkflowIntegrity` token in BOTH critical-gate variants and is declared in `config/ci_runner.php`
     `critical_gate_mandatory_suites`. Race tests act on a stale instance after another write committed (the exact
-    interleaving of two requests); the lock itself is asserted on PostgreSQL (`FOR UPDATE` on `trx_clinic_visits`).
+    interleaving of two requests); the lock itself is asserted on PostgreSQL (`FOR NO KEY UPDATE` on `trx_clinic_visits`, CW5-01f; this line said
+    `FOR UPDATE` until DMS-RME-REVISION-PROGRAM-7 corrected the drift — §1a is the authority).

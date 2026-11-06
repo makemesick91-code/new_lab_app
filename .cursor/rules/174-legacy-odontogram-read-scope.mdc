@@ -34,6 +34,7 @@ alwaysApply: false
 6. One scope, every door: record viewer + private source/pages, staging-import
    viewer (by import id), patient history, unified medical-record index, batch
    adapters. If the viewer refuses a record, no list may show it, and vice versa.
+   A VOIDed record's pages are refused through the staging viewer too (rule 225 §6).
 7. Out-of-scope is **404**, never 403 (anti-enumeration). An in-scope doctor
    without a treating relationship is 403 (existing convention).
 8. The private viewer is the final enforcement boundary; lists are a courtesy.

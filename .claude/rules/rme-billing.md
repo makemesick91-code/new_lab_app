@@ -280,7 +280,7 @@ code, then the canonical rule, and report the drift.
 - Open owner questions: a correction settling a PARTIAL invoice leaves no LUNAS receipt; whether a pre-payment approval
   reference becomes mandatory.
 - Residuals: `branchIdsFor(null)` still answers every RME branch (`RmeInvoiceController::rmeBranches()` and
-  `RmeReportController` rely on `auth`); the lab-candidate failure log carries the raw exception message.
+  `RmeReportController` rely on `auth`); a failed lab-candidate generation has no retry (OD-7-5, rule 225).
 
 ## Canonical rules — read the relevant one before changing this area
 

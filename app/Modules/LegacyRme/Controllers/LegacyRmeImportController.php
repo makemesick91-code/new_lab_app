@@ -248,6 +248,11 @@ class LegacyRmeImportController extends Controller
                 $actor,
             ),
             'separationMessage' => $this->separation->message(LegacyRmeLifecycleAction::PUBLISH),
+
+            // DMS-RME-REVISION-PROGRAM-7 — the bytes of a VOIDed archive are no
+            // longer served (source() / page() refuse them), so the screen says
+            // so instead of rendering links and thumbnails that would 404.
+            'bytesRetracted' => $this->bytesRetracted($record),
         ]);
     }
 
@@ -280,6 +285,7 @@ class LegacyRmeImportController extends Controller
 
         $record = $this->resolve($request, $import);
         $this->authorize('viewFile', $record);
+        $this->assertBytesNotRetracted($record);
 
         $path = (string) $record->source_pdf_path;
 
@@ -304,6 +310,7 @@ class LegacyRmeImportController extends Controller
 
         $record = $this->resolve($request, $import);
         $this->authorize('viewFile', $record);
+        $this->assertBytesNotRetracted($record);
 
         // Nested ownership: the page is looked up THROUGH its import, so a page
         // number can never reach another import's rendered output.
@@ -461,5 +468,29 @@ class LegacyRmeImportController extends Controller
     private function assertFeatureEnabled(): void
     {
         abort_unless($this->feature->migrationEnabled(), 404);
+    }
+
+    /**
+     * DMS-RME-REVISION-PROGRAM-7 — rule 93 §7: a VOIDed archive stops serving
+     * bytes. Publishing moved no bytes, so the published record serves this
+     * import's own source and pages; refusing them on the record routes alone
+     * left them one URL away, here. Enforced in the controller, not the policy,
+     * because the single global Gate::before hands Super Admin every ability —
+     * and Super Admin is who operates this capability. 404, as the record
+     * viewer answers for a voided archive.
+     */
+    private function assertBytesNotRetracted(LegacyRmeImport $import): void
+    {
+        abort_if($this->bytesRetracted($import), 404);
+    }
+
+    /**
+     * Whether the archive this import produced has been VOIDed. The record's own
+     * isVoided() is the one predicate; the import row and its metadata stay
+     * readable — retracted, not erased.
+     */
+    private function bytesRetracted(LegacyRmeImport $import): bool
+    {
+        return $import->record?->isVoided() === true;
     }
 }

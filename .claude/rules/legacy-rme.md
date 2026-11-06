@@ -109,6 +109,7 @@ mass upload, batch review/publish, visit-bound date attestation and single-activ
 - **AIR-LRM-20** A VOIDed record stops streaming source, pages, print and export, enforced in the controller (not
   only the policy) because `Gate::before` gives Super Admin every ability; the row stays readable. Every rule that
   must hold for Super Admin is enforced in the service/controller and tested as Super Admin. Source: `93-legacy-rme-void-clinical-read.mdc`, `90-legacy-rme-pdf-archive.mdc` (rule 37).
+  The staging source/page routes refuse too (the record's `isVoided()`): publishing moves no bytes. Source: rule 225 §6.
 
 ### Separation of duties
 
@@ -256,6 +257,7 @@ mass upload, batch review/publish, visit-bound date attestation and single-activ
 | `.cursor/rules/136-sunu-branch-code-canonical.mdc` | `SPN4` canonical, `SUN4` alias |
 | `.cursor/rules/171-legacy-batch-review-publish.mdc` | Batch review/publish over the canonical lifecycle |
 | `.cursor/rules/222-rme-route-key-constraint-and-failure-log-redaction.mdc` | Archive `{record}`, import `{import}` key and `{page}` number route constraints (404, never 500) |
+| `.cursor/rules/225-rme-concurrent-first-write-and-void-staging-integrity.mdc` | VOIDed archive bytes refused on the staging screens (RME and odontogram) |
 
 ## History
 

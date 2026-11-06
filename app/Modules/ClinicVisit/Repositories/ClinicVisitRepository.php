@@ -4,9 +4,12 @@ namespace App\Modules\ClinicVisit\Repositories;
 
 use App\Modules\ClinicVisit\Interfaces\ClinicVisitRepositoryInterface;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
+use App\Modules\ClinicVisit\Support\ClinicVisitSequenceLock;
 use Carbon\Carbon;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
+use LogicException;
 
 class ClinicVisitRepository implements ClinicVisitRepositoryInterface
 {
@@ -141,13 +144,36 @@ class ClinicVisitRepository implements ClinicVisitRepositoryInterface
         return ClinicVisit::query()->whereKey($id)->lock('for no key update')->first();
     }
 
+    public function lockVisitSequence(int $branchId): void
+    {
+        [$classId, $objectId] = ClinicVisitSequenceLock::keyFor($branchId);
+
+        // A transaction-scoped advisory lock taken outside a transaction is
+        // released at the end of that single statement and protects nothing.
+        if (DB::transactionLevel() < 1) {
+            throw new LogicException('The visit sequence lock must be taken inside a transaction.');
+        }
+
+        $connection = DB::connection();
+
+        if ($connection->getDriverName() !== 'pgsql') {
+            return;
+        }
+
+        $connection->statement('select pg_advisory_xact_lock(?, ?)', [$classId, $objectId]);
+    }
+
     public function nextQueueNumber(int $branchId, Carbon $visitDate): int
     {
+        // R5-2 — no row lock: on the day's first registration there is no row
+        // to lock, and with rows present PostgreSQL hands a waiting reader the
+        // same top row back. Serialisation comes from lockVisitSequence(), which
+        // the caller takes first; a FOR UPDATE here only made every same-day
+        // visit row block other writers until the registration committed.
         $lastQueueNumber = ClinicVisit::query()
             ->where('branch_id', $branchId)
             ->whereDate('visit_date', $visitDate->toDateString())
             ->orderByDesc('queue_number')
-            ->lockForUpdate()
             ->value('queue_number');
 
         return ((int) $lastQueueNumber) + 1;

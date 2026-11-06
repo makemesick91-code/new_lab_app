@@ -16,6 +16,7 @@ use App\Modules\Patient\Models\Patient;
 use App\Modules\Patient\Services\CrossBranchPatientLookupService;
 use App\Modules\Prescription\Models\RmePrescription;
 use App\Modules\RME\Models\PatientDoctorAssignment;
+use App\Modules\RME\Services\DoctorPatientScopeService;
 use App\Modules\RME\Services\PatientDoctorAssignmentService;
 use App\Modules\Treatment\Models\Treatment;
 use Database\Seeders\BranchSeeder;
@@ -184,6 +185,24 @@ it('hides unrelated patients from doctor visit list', function () {
     $response->assertOk()
         ->assertSee('Pasien Milik Dokter A')
         ->assertDontSee('Pasien Orang Lain');
+});
+
+it('never counts a soft-deleted visit as the relationship that lists a patient (DMS-RME-REVISION-PROGRAM-7)', function () {
+    // Doctor A's ONLY link to the patient is a visit that was later soft-deleted;
+    // there is no assignment. The per-record predicate already refuses A (a
+    // deleted visit is no relationship), so the LIST must not offer the
+    // patient's other visits either: the list and the detail decide alike.
+    $patient = scopePatient();
+    $gone = scopeVisit($patient, test()->doctorA, ['status' => ClinicVisit::STATUS_COMPLETED]);
+    $other = scopeVisit($patient, test()->doctorB, ['status' => ClinicVisit::STATUS_COMPLETED]);
+    $gone->delete();
+
+    $scope = app(DoctorPatientScopeService::class);
+    $listed = $scope->applyVisitScopeForUser(test()->doctorAUser, ClinicVisit::query())->pluck('id');
+
+    expect(PatientDoctorAssignment::query()->where('patient_id', $patient->id)->exists())->toBeFalse()
+        ->and($scope->doctorCanAccessPatient(test()->doctorAUser, $patient))->toBeFalse()
+        ->and($listed)->not->toContain($other->id);
 });
 
 it('forbids doctor opening unrelated visit detail by direct url', function () {

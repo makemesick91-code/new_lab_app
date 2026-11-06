@@ -122,9 +122,13 @@ GET/PATCH rme.visits.odontogram.* → OdontogramService → RmeVisitConsentServi
   defect list. The independent review audited the obvious fix (lock the canonical visit `FOR NO KEY UPDATE` before
   resolving the draft) and found it deadlock-safe against today's lock orders; it is deferred so it can ship with its
   own two-connection test rather than untested.
+  **CLOSED by DMS-RME-REVISION-PROGRAM-7** (rule 225): the draft insert runs in a SAVEPOINT and the loser adopts the
+  winner's book, so the page lands and nothing answers 500. Closed by savepoint-adopt, NOT by the visit lock, so the
+  check-then-write interleaving noted below stays recorded.
 - **R6-2** `ClinicalEvidenceStorage::FORBIDDEN_DISKS` is not enforced at runtime (the governance scan is the
   enforcement); the stored sha256 is not verified on read.
-- R5-1 and R5-2 stay open (not in scope, not changed). **R5-3 is CLOSED** by P6-HW-01..04 (forward reference added
+- R5-1 and R5-2 stayed open here (not in scope, not changed); both are **CLOSED by DMS-RME-REVISION-PROGRAM-7**
+  (rule 225). **R5-3 is CLOSED** by P6-HW-01..04 (forward reference added
   to the Program 5 record; the original finding is unchanged).
 
 ## 4. Implementation

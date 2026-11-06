@@ -1,0 +1,97 @@
+---
+description: DMS-RME-REVISION-PROGRAM-7 — concurrent first writes and VOID staging integrity. A racing insert that loses a unique index adopts the winner from a SAVEPOINT (never re-reads inside an aborted PostgreSQL transaction); visit numbering is serialised per branch by a transaction-scoped advisory lock; a raw scope subquery excludes soft-deleted visits; a VOIDed legacy archive stops streaming bytes through the staging screens too. Closes Program 5 residuals R5-1 and R5-2 and Program 6 residual R6-1.
+globs: app/Modules/RME/Services/PatientDoctorAssignmentService.php, app/Modules/MedicalRecord/Services/MedicalRecordService.php, app/Modules/ClinicVisit/Services/ClinicVisitService.php, app/Modules/ClinicVisit/Repositories/ClinicVisitRepository.php, app/Modules/ClinicVisit/Support/ClinicVisitSequenceLock.php, app/Modules/RME/Services/DoctorPatientScopeService.php, app/Modules/LegacyRme/Controllers/LegacyRmeImportController.php, app/Modules/LegacyOdontogram/Controllers/LegacyOdontogramImportController.php, tests/Feature/RME/RmeConcurrentFirstWriteIntegrityTest.php, tests/Feature/RME/RmeConcurrentFirstWriteLockTest.php
+alwaysApply: false
+---
+
+# RME concurrent first writes and VOID staging integrity (rule 225)
+
+**Status:** GO scope of `DMS-RME-REVISION-PROGRAM-7` (2026-11-06). Sprint record:
+`docs/sprints/dms-rme-revision-program-7.md`. Owner approval: the mission brief of 2026-11-06 authorised an audit of
+doctor access, the cashier integration and the legacy archives, plus the reliability residuals R5-1, R5-2 and R6-1,
+with correction of VERIFIED defects only (CG-22). Category under the Foundation-First Sprint Lock: clinical
+correctness / security fix; the lock is unchanged. Extends rule 223 (visit row lock order) and rule 224 (evidence
+write integrity); both stay authoritative for what they cover.
+
+## What happened
+
+Every defect below was reproduced RED on PostgreSQL 16 against the untouched base (`daace3df`) before it was fixed.
+
+- **R5-1.** `PatientDoctorAssignmentService` caught a unique violation on the active-assignment index and re-read the
+  winner inside the same transaction. PostgreSQL had already aborted that transaction (`SQLSTATE 25P02`), so the
+  re-read failed and room assignment answered HTTP 500. Reachable by two concurrent assignments of one doctor to one
+  patient (two front-desk screens, or a double submit).
+- **R6-1.** Two simultaneous first handwriting saves for a patient with no book raced `UNIQUE(clinic_visit_id)` on
+  the draft insert. The loser answered the wrong refusal ("record already exists") or HTTP 500 (23505), and the
+  doctor's page was lost even though the book now existed.
+- **R5-2.** `nextQueueNumber()` and `generateUniqueVisitNumber()` read `MAX + 1` under `ORDER BY … LIMIT 1 FOR
+  UPDATE`. That serialises nothing: on the day's first registration there is no row to lock, and with rows present
+  PostgreSQL hands a waiting reader the same top row back. Two registrations at one branch computed the same numbers
+  and the second answered HTTP 500 on the unique index.
+- **VOID staging bytes.** Publishing moves no bytes, so a published legacy record and its staging import share one
+  source PDF and one set of page images. VOID writes only the record row; the staging import keeps status PUBLISHED,
+  and the staging `source()`/`page()` actions never asked whether the produced record was VOID. A VOIDed archive
+  therefore kept streaming through `settings.rme.legacy-imports.{source,pages.show}` and
+  `settings.rme.legacy-odontograms.pages.show` (violating rule 93 §7 and rule 174 §6). Two comments in
+  `LegacyRmePublishService` claimed the staging row "is soft-deleted"; it is not, and that false belief hid the gap.
+- **D2 (latent).** `DoctorPatientScopeService::applyVisitScopeForDoctor()` built its `own_visit` relationship
+  subquery without `whereNull('own_visit.deleted_at')`. Its two sibling scopes were fixed in `4f69d8d7`; this one was
+  missed. A raw subquery does not inherit `SoftDeletes`. No delete path exists for `ClinicVisit` today, so it is
+  reachable only through data repair.
+
+## The rules
+
+1. **Never run a statement after a failed one inside the same PostgreSQL transaction.** A unique violation aborts
+   the whole transaction (25P02 for every later statement). A racing insert that may lose runs in a nested
+   `DB::transaction()` (a SAVEPOINT); the `UniqueConstraintViolationException` is caught OUTSIDE it, and only then is
+   the winner re-read. Re-read with `?? throw $lostRace`, so a missing winner never becomes a silent success. Catch
+   `UniqueConstraintViolationException`, never `QueryException`: any other failure (a foreign key, a NOT NULL) must
+   surface. This is the pattern `DoctorSessionLeaseService` already used; `PatientDoctorAssignmentService::
+   createOrAdoptActive()` and `MedicalRecordService::createDraftOn()` now use it too.
+2. **Adopt only where the caller wants the existing row.** The canonical-book path (`getOrCreateCanonicalMedicalRecord`)
+   adopts the winning draft and the page is written into it; `createDraft()` (the explicit "new sheet" action) keeps
+   refusing with "Rekam medis sudah ada untuk kunjungan ini." whether it lost at the check or at the insert.
+3. **Number visits under the branch numbering lock.** `ClinicVisitService::create()` calls
+   `ClinicVisitRepositoryInterface::lockVisitSequence($branchId)` BEFORE it reads the queue number or the visit number.
+   The lock is `pg_advisory_xact_lock(92_001, branch_id)` (`ClinicVisitSequenceLock`, never renumber the namespace;
+   the legacy document slot uses 91_001/91_002). It is transaction-scoped, refuses to be taken outside a transaction,
+   and is a no-op on drivers without advisory locks. Another branch never waits. The numbering reads carry no row
+   lock: `FOR UPDATE` there only held every same-day visit row of the branch.
+4. **A row lock cannot serialise a `MAX + 1`.** Use an advisory lock (or a lock on a parent row that always exists)
+   for any "next number" computed from existing rows. BCF-07 (invoice and payment numbers) has the same shape and is
+   recorded, not fixed (see below).
+5. **A raw subquery scope excludes soft-deleted rows explicitly.** Every `whereExists` over `trx_clinic_visits` in a
+   scope service adds `whereNull('<alias>.deleted_at')`, so a list never offers what the per-record predicate refuses.
+6. **A VOIDed archive serves no bytes anywhere.** The produced record's own `isVoided()` is the one predicate
+   (`$import->record?->isVoided() === true`); every staging route that streams a source PDF, a page image or a
+   thumbnail answers 404 when it is true, enforced in the controller (Super Admin bypasses policies via
+   `Gate::before`): `LegacyRmeImportController::assertBytesNotRetracted()`, `LegacyOdontogramImportController::page()`. The staging screen still renders the row and its VOID notice, so the import stays
+   auditable. A new byte route on either staging controller adds the same guard.
+7. **Unchanged.** Room isolation, consent-gated RME authoring, pre-consent odontogram authoring (rule 134), doctor
+   print denial (rule 138), the visit row lock order and strength (rule 223 §1, FOR NO KEY UPDATE), the evidence
+   write unit (rule 224), manual cashier pricing, payment idempotency (rule 205) and the legacy lifecycle.
+
+## Traps
+
+- Reproduce a race deterministically by injecting the winner's row between the check and the insert, outside the
+  inner savepoint (a `DB::listen` hook or a repository decorator that inserts on the Nth lookup). Timing-based
+  two-process tests are flaky and prove nothing when they pass.
+- Advisory locks are server-global, so a separate probe connection can observe one held inside the
+  `RefreshDatabase` transaction. Prove waiting with `SET LOCAL lock_timeout` and SQLSTATE 55P03, and pair every
+  "held" assertion with a "free for another key" assertion so the probe cannot pass vacuously
+  (`RmeConcurrentFirstWriteLockTest`, PostgreSQL only; it skips elsewhere).
+- SQLite compiles `lockForUpdate()` and advisory locks to nothing. A green SQLite run says nothing about a lock.
+
+## Recorded, not changed
+
+- **D1 (LOW, verified by reading, not reproduced).** A lease minted by a login still in flight has no `sessions`
+  row yet, so a second login at that instant can judge it dead (`IncumbentSessionProbe`) and evict the first. A fix
+  (a grace period for a fresh lease, or deny on the lost-race branch) changes the rule 153 contract and needs its own
+  two-connection test; deferred as an owner item.
+- **BCF-07.** Invoice and payment numbers are month-wide `MAX + 1` with no lock against unique columns. Two cashiers
+  at the same moment: the second answers HTTP 500, nothing is persisted, a resubmit succeeds. Known open finding
+  (rule 188), owner decision.
+- `RmePaymentService::closeZeroValueInvoice()` locks the visit `FOR UPDATE` where rule 223 §1a prescribes FOR NO KEY
+  UPDATE. No cycle found; the path is behind `rme.zero_value_closure` (OFF).
+- Owner decisions OD-7-1…OD-7-6 in the sprint record (Kontrol completion path-dependence, prescription room isolation,
+  doctor legacy print/export, doctor Legacy Odontogram read, lab-candidate retry, mass-upload batch policy scope).

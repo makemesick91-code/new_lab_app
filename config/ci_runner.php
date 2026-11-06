@@ -1501,6 +1501,19 @@ return [
         'tests/Feature/RME/RmeClinicalEvidenceWriteLockConcurrencyTest.php',
         'tests/Feature/RME/RmeOdontogramAuthorityMatrixTest.php',
 
+        // DMS-RME-REVISION-PROGRAM-7 (rule 225) — a concurrent first write never
+        // answers HTTP 500: a racing duplicate doctor assignment and a racing
+        // first handwriting draft are inserted in a savepoint and the committed
+        // winner is adopted (R5-1, R6-1); visit numbering is serialised per
+        // branch by a transaction-scoped advisory lock (R5-2, PostgreSQL-only
+        // lock proofs). No existing token matched, so `RmeConcurrentFirstWrite`
+        // is in BOTH critical variants. `DoctorPatientScope` was added too: the
+        // doctor list scope must not count a soft-deleted visit (list/detail
+        // parity), and that suite matched no token before.
+        'tests/Feature/RME/RmeConcurrentFirstWriteIntegrityTest.php',
+        'tests/Feature/RME/RmeConcurrentFirstWriteLockTest.php',
+        'tests/Feature/RME/DoctorPatientScopeTest.php',
+
         // SECURITY-F4C-CLINIC-CALENDAR-LAB-ORDERS-1 (owner decision D16) — lab order dates, order and
         // delivery numbering, the due-date floor and "delivered today" on the clinic calendar
         // (Asia/Makassar). A UTC "today" named the previous clinic day for eight hours of every day;

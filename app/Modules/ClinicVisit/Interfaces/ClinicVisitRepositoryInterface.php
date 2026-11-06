@@ -64,6 +64,16 @@ interface ClinicVisitRepositoryInterface
      */
     public function lockForStatusDecision(int $id): ?ClinicVisit;
 
+    /**
+     * DMS-RME-REVISION-PROGRAM-7 / R5-2 — take this branch's visit-numbering
+     * lock for the rest of the current transaction. Must be called inside a
+     * transaction and BEFORE the queue number or visit number is read; another
+     * registration at the same branch then waits here until this one commits.
+     * A no-op on drivers without advisory locks (SQLite serialises writers).
+     */
+    public function lockVisitSequence(int $branchId): void;
+
+    /** The day's next queue number. Correct only under lockVisitSequence(). */
     public function nextQueueNumber(int $branchId, Carbon $visitDate): int;
 
     public function countTodayByBranch(int $branchId, string $date): int;
