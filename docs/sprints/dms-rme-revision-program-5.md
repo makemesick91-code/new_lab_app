@@ -3,8 +3,9 @@
 - **Programme:** RME revision programme under owner policy `DMS-FULL-DEVELOPMENT-PRODUCTION-TESTING-20261104`
   (rule 221 §7), mission `DMS-RME-REVISION-PROGRAM-5` (P0, CLINICAL_AUDIT / CRITICAL_HOTFIX / SECURITY_FIX),
   2026-11-06. Continuation of [[dms-rme-revision-program-1]] … [[dms-rme-revision-program-4]].
-- **Status:** IN PROGRESS — implementation and local verification complete; CI, merge, deploy and production
-  evidence are recorded in §8 as they land.
+- **Status:** **GO** — merged (`9479b0ed`), deployed to Biznet (deploy `20261105-224743`, `DEPLOY RUNNER OK`),
+  verified in production, tagged `dms-rme-revision-program-5-go`. Full Suite deferred (CG-18), not passed.
+  Ten owner decisions (§3.3) and three residuals (§3.4) remain open by design.
 - **Base:** `feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report` @ `0989dadd` (resolved from
   `origin` after fetch; `devflow:base-ref-check --strict` → `BASE_SOURCE=remote_tracking_ref`; the local base ref was
   stale at `9eabff07` and was not used). Production ran `bb82475e` (Program 4 GO), read from the Biznet host before
@@ -209,8 +210,55 @@ PostgreSQL: no caught-and-continued database error; refusals are `ValidationExce
 
 ## 8. CI, merge, deploy and production verification
 
-Pending.
+- **PR #601, run `42104745874` on `98f3a503`: failure** — critical gate 2 failed / 9,331 passed, both in
+  `LegacyRmeDoctorWorkspaceInlinePagesTest` (see §6). Corrected in `1ff4c4fe`.
+- **PR #601, run `42116301066` on `1ff4c4fe`: success.** Critical gate step *Run critical regression tests*:
+  `Tests: 9333 passed (46520 assertions)`, `critical_test_exit_status=0`; this program's suite and the corrected
+  workspace suite are both listed PASS. Governance audit, Quality, Classifier, Selective Module, Android, NSF-9 and
+  NSF-10 succeeded. The second critical row is the inactive runner variant, skipped by design (CG-17: read the step).
+- **Full Suite: DEFERRED** — `full_suite_authorized=false`, `full_suite_defer_reason=FULL_SUITE_NOT_ENABLED_FOR_EVENT`
+  (CG-18). Not run, not passed.
+- **Merge:** squash-merged with `--match-head-commit 1ff4c4fe` → **`9479b0ed`**. Merge tree `33bd9c68` is
+  byte-identical to the CI-validated candidate tree; its parent is the base `0989dadd`, unchanged since the mission
+  began. Peer sessions were offline.
+- **Post-merge base run `42124332436` on `9479b0ed` (push): success** — critical gate `Tests: 9333 passed (46520
+  assertions)`, `critical_test_exit_status=0`; Selective Module, Android, NSF-9, NSF-10 succeeded; Full Suite skipped
+  with `full_suite_defer_reason=TEMPORARY_FULL_SUITE_POLICY_ACTIVE` (deferred, not passed).
+- **Predeploy (06:47 WITA, outside the 02:25–02:40 backup window):** `production-target-check.sh --remote` →
+  `PRODUCTION_TARGET=VERIFIED` (Biznet `139.190.106.38`, pinned host key); the host's `ls-remote` showed the base tip
+  `9479b0ed`; production ran `bb82475e` with no tracked drift and no deploy in progress. Last scheduled database backup
+  02:30 WITA exited 0.
+- **Deploy `20261105-224743`**, started on the Biznet host with `sudo -n bash scripts/deploy-vps-runner.sh start`.
+  Terminal status `exit=0`, log `DEPLOY OK`, snapshot cleaned. `verify 20261105-224743` →
+  `target_commit=9479b0ed (checkout HEAD matches)`, `final exit=0`, **`DEPLOY RUNNER OK`**. Backup before checkout
+  `pre_auto_deploy_20261105-224745.sql` (NSF-10 verify 9/9 GO); `Nothing to migrate`; runtime isolation 107 GO / 0
+  FAIL; auth landing smoke GO. Three WATCH lines were already present before this release and do not block it:
+  `FLAG-RISKY-NOT-ENABLED` (it lists the same deliberately enabled flags as before), `PGRUNTIME-PGBOUNCER-PROBE`
+  (PgBouncer routing is disabled), `SMOKE-HTTP-HEALTH` (the loopback probe reaches the co-tenant default server).
+- **Production verification:** HEAD `9479b0ed`, tree `33bd9c68`. `https://daengtisia.online` `/login`,
+  `/health/live`, `/health/ready`, `/health/lb` → 200 (every readiness component `ok`); `/storage/<probe>` → 403;
+  guest RME routes → 302, no 500. `laravel.log` is byte-identical to the pre-deploy baseline, so the deploy logged
+  **0 new errors**. 0 pending migrations, 0 failed jobs. The same 14 flags are enabled; nginx and php8.3-fpm active;
+  queue worker still disabled; backup timers unchanged; pilot, debug OFF, maintenance OFF; environment file
+  `root:daengtisiams 0640`.
+- **Not exercised on production, by design:** the authenticated clinical scenarios (start examination, consent,
+  authoring, finish). Clinic devices are frozen, there is no production test identity, and no real patient record may
+  be touched to manufacture evidence; the 24-test suite and the 9,333-test critical gate on PostgreSQL prove them.
+- **GO tag:** annotated **`dms-rme-revision-program-5-go`** (tag object `76ab6f23`) → `9479b0ed`, created after merge,
+  deploy, production verification and the post-merge run; pushed and confirmed on `origin`; the Biznet HEAD equals
+  the peeled tag (compared with `ls-remote`, the production repository was not fetched). This evidence commit is
+  docs-only, is not deployed, and the tag does not move.
 
 ## 9. Cleanup
 
-Pending.
+- Local throwaway PostgreSQL 16.15 container `dms-p5-pg16`: stopped; it ran with auto-remove on tmpfs and no mounts,
+  so no container or volume remains. Pre-existing dangling volumes were not this mission's and were left untouched.
+- Feature branch `feature/dms-rme-revision-program-5`: deleted on `origin` and locally after the merge tree was
+  proven identical to the candidate tree.
+- Session scratch files (CI logs, JUnit copies, the local test environment script, screenshots, browser profile)
+  removed by exact path. JUnit results are kept only in the private evidence store, outside every repository.
+- No test process remained; no mission-owned process on the Biznet host (the deploy runner exited and cleaned its
+  snapshot). Hostinger was not contacted. The protected Obsidian vault worktree and the primary checkout were not
+  touched.
+- After this evidence PR merges, the mission worktree and the `docs/dms-rme-revision-program-5-evidence` branch are
+  removed.
