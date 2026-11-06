@@ -17,7 +17,9 @@ Dibuat pada 2026-10-25 terhadap commit `572a32a9`. Pada 2026-11-06 tautan rule 2
 `Odontogram` dan `Prescription`; jumlah file dan dokumen tidak diturunkan ulang. Pada 2026-11-06
 (lagi) rule 225 dan [dms-rme-revision-program-7](../sprints/dms-rme-revision-program-7.md) ditambahkan ke `ClinicVisit`, `MedicalRecord`, `RME`,
 `LegacyRme` dan `LegacyOdontogram` dengan cara yang sama. Audit kesiapan akhir
-[dms-rme-revision-program-8](../sprints/dms-rme-revision-program-8.md) (Stage A, NO-GO) ditambahkan ke `RME`.
+[dms-rme-revision-program-8](../sprints/dms-rme-revision-program-8.md) (Stage A, NO-GO) ditambahkan ke `RME`. Pada
+2026-11-07 rule 226 dan sprint korektif [dms-rme-revision-program-8a](../sprints/dms-rme-revision-program-8a.md)
+ditambahkan ke `Prescription` dan `ClinicRoom`.
 
 - **Jumlah file PHP** dihitung dari `app/Modules/<Modul>/`.
 - **"N dokumen menyebut path modul ini"** menghitung dokumen di `docs/` dan `.cursor/rules/`
@@ -74,8 +76,9 @@ bukti, kata kunci nama berkas untuk tautan), lalu perbarui `kb_verified_against`
 
 ### `Prescription`
 
-- Kode: `app/Modules/Prescription/` — 20 file PHP; 1 dokumen menyebut path modul ini.
-- ⚠️ **GAP**: tidak ada ADR, desain, runbook, rule, atau dokumen sprint yang namanya merujuk modul ini. Baca kodenya langsung.
+- Kode: `app/Modules/Prescription/` — 21 file PHP; 1 dokumen menyebut path modul ini.
+- Rule durable (`.cursor/rules/`, di luar vault): `226-rme-prescription-authoring-authority-and-blade-php-pairing.mdc` (otoritas penulisan resep)
+- Sprint terbaru: [dms-rme-revision-program-8a](../sprints/dms-rme-revision-program-8a.md)
 - Lihat juga (namanya tidak merujuk modul ini, jadi status GAP tetap): rule `224-rme-clinical-evidence-write-integrity.mdc` dan `121-clinical-evidence-private-storage.mdc` untuk kanvas resep dan tanda tangan; [dms-rme-revision-program-6](../sprints/dms-rme-revision-program-6.md) untuk audit resep.
 
 ### `RME`
@@ -101,8 +104,8 @@ bukti, kata kunci nama berkas untuk tautan), lalu perbarui `kb_verified_against`
 ### `ClinicRoom`
 
 - Kode: `app/Modules/ClinicRoom/` — 8 file PHP; 4 dokumen menyebut path modul ini.
-- Rule durable (`.cursor/rules/`, di luar vault): `137-branch-room-provisioning.mdc`
-- Sprint terbaru: [revision-sunu-add-room-a-b-1](../sprints/revision-sunu-add-room-a-b-1.md)
+- Rule durable (`.cursor/rules/`, di luar vault): `137-branch-room-provisioning.mdc`, `226-rme-prescription-authoring-authority-and-blade-php-pairing.mdc` (form ruangan, §2)
+- Sprint terbaru: [dms-rme-revision-program-8a](../sprints/dms-rme-revision-program-8a.md), [revision-sunu-add-room-a-b-1](../sprints/revision-sunu-add-room-a-b-1.md)
 - Ringkasan `ai-knowledge` (snapshot, cek [status](doc-status-registry.md)): [10_DaengtisiaMS_Visit_Medical_Record_Rules](../ai-knowledge/10_DaengtisiaMS_Visit_Medical_Record_Rules.md)
 
 ### `Clinic`

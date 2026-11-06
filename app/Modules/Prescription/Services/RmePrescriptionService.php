@@ -24,6 +24,7 @@ class RmePrescriptionService
         private readonly PrescriptionCanvasDecoder $canvasDecoder,
         private readonly ClinicalClock $clock,
         private readonly ClinicVisitRepositoryInterface $visits,
+        private readonly PrescriptionAuthoringAuthority $authority,
     ) {}
 
     public function showDataForVisit(ClinicVisit $clinicVisit): array
@@ -99,6 +100,12 @@ class RmePrescriptionService
     private function createWithinTransaction(ClinicVisit $clinicVisit, array $payload, User $user, array &$written): RmePrescription
     {
         $this->assertRmeBranch($clinicVisit->branch_id);
+
+        // DMS-RME-REVISION-PROGRAM-8A / P8-N1 — re-assert the authoring authority
+        // here as well as in the policy (CG-06): a caller that never passes
+        // through the policy is refused before any lock is taken or any canvas
+        // is decoded or written.
+        $this->authority->assertPermits($user, $clinicVisit);
 
         // Lock the visit row first, always (rule 223 §1).
         $this->visits->lockForStatusDecision($clinicVisit->id);
@@ -192,6 +199,9 @@ class RmePrescriptionService
         $this->assertRmeBranch($prescription->branch_id);
         $prescription->loadMissing('clinicVisit');
         $visit = $prescription->clinicVisit;
+
+        // P8-N1 — same re-assertion as create(), before either canvas is written.
+        $this->authority->assertPermits($user, $visit);
 
         $updates = [
             'prescribed_by_name' => $payload['prescribed_by_name'],

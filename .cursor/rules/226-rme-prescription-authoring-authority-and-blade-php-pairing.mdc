@@ -1,0 +1,75 @@
+---
+description: DMS-RME-REVISION-PROGRAM-8A — prescription writes follow the clinical authoring authority (front-desk-only tier never authors; writes scoped to the working branch; one predicate read by the policy and re-asserted in the service), a Blade template never mixes the inline and block PHP directive (compiled-view guard across resources/views), and the Prescription and ClinicMasterData suites run in the critical gate. Closes P8-N1 and P8-N3.
+globs: app/Modules/Prescription/Services/PrescriptionAuthoringAuthority.php, app/Modules/Prescription/Policies/RmePrescriptionPolicy.php, app/Modules/Prescription/Services/RmePrescriptionService.php, resources/views/**/*.blade.php, tests/Feature/RME/RmePrescriptionAuthoringAuthorityTest.php, tests/Feature/ClinicMasterData/ClinicRoomFormTemplateTest.php, tests/Feature/Ui/BladePhpDirectivePairingTest.php
+alwaysApply: false
+---
+
+# Prescription authoring authority and Blade PHP-directive pairing (rule 226)
+
+**Status:** GO scope of `DMS-RME-REVISION-PROGRAM-8A` (2026-11-07). Sprint record:
+`docs/sprints/dms-rme-revision-program-8a.md`. Owner approval: the system-owner mission brief of 2026-11-07 authorised
+a corrective sprint for the Program 8 release blockers P8-N1 and P8-N3 and the critical-gate coverage gap, verified
+defects only (CG-22). Category under the Foundation-First Sprint Lock: security fix / clinical correctness.
+
+This rule EXTENDS rule 223 §3 (CW5-05) to the prescription. It supersedes nothing; rule 223 §3 still owns the
+front-desk-only tier for the RME and the odontogram, and its §16 owner decisions are unchanged.
+
+## 1. A prescription is authored like the rest of the clinical record (P8-N1)
+
+1. The prescription, its R/ canvas and its doctor-signature canvas are clinical documents printed under the visit
+   doctor's name. Their write abilities (`RmePrescriptionPolicy::create`, `::update`) follow the clinical authoring
+   authority, never `manage_clinic_visits` alone (that is the front office's registration permission, rule 223 §15).
+2. `App\Modules\Prescription\Services\PrescriptionAuthoringAuthority` is the single definition:
+   - the front-desk-only tier (`FrontOfficeRole::isVisitFrontDeskOnly()`) never writes a prescription;
+   - a write is scoped to the actor's WORKING branch through `RmeWorkingBranchScope::allows()` — the per-record
+     guard the visit's own write authority uses. Context-bound roles (Perawat, Admin Klinik, Kasir) write only in the
+     branch they work in and fail closed without a context; every other actor — governance roles and Doctors alike —
+     keeps the full active RME set (the per-record guard deliberately does not apply the doctor branch lock, exactly
+     as `ClinicVisitPolicy` does; a Doctor is narrowed by the doctor-patient scope instead), so this only ever narrows;
+   - the doctor-patient scope still binds a Doctor;
+   - the actor is a usable account (`ActiveAccountResolver::isUsable()`).
+3. The policy asks `permitsActorAtBranch()` and then `DoctorPatientScopeService::authorizeVisitAccess()` (which
+   carries its own deny message). `RmePrescriptionService::create()` / `::update()` re-assert the whole predicate
+   through `assertPermits()` before any lock is taken or any canvas is decoded or written (CG-06): a caller that never
+   passes through the policy — a job, a command, a future controller — is refused the same way and leaves no object.
+4. The predicate mirrors `RmeVisitConsentService::actorMayWorkOnEncounter()` on purpose and adds nothing that method's
+   callers add: prescriptions carry NO consent prerequisite and NO room rule. Adding either is product policy.
+5. The prescription editor on the page follows the same capability (`can('create', …)` already decides `canManage`),
+   so the UI never offers a write the server refuses (rule 135). Reading a prescription is unchanged.
+6. Identity of the record comes from the server: `created_by` / `updated_by` are the acting account, `doctor_id`,
+   `patient_id` and `branch_id` come from the visit; request values for those fields are ignored.
+7. NOT decided here (owner decisions, recorded in the sprint doc): whether Perawat / Supervisor RME may author
+   prescriptions (rule 223 §16); prescription room isolation (OD-7-2); whether a prescription may be amended after its
+   visit completed (OD-8A-1); a prescription audit trail (OD-8A-2); the read-scope hardening P8-N2 (read abilities are
+   untouched here). `RmePrescriptionAuthoringAuthorityTest` pins today's answer for Perawat (RX-05), Supervisor RME
+   (RX-06), OD-7-2 (RX-51) and OD-8A-1 (RX-50) so this rule is provably neutral on them.
+7a. Known non-authoring write: the first print stamps `printed_at` (once; nothing else) through `markPrinted()`, under
+    the read-level `print` ability. It is metadata, not authorship, and stays with the read abilities (P8-N2).
+
+## 2. A Blade template never mixes the inline and the block PHP directive (P8-N3)
+
+8. Blade stores raw PHP blocks before it compiles anything else AND before it strips comments, pairing the first PHP
+   directive opener with the next block closer. A template that uses the inline (parenthesised) form above a block form
+   therefore compiles to an open tag immediately followed by `(`, with the literal directive inside it.
+9. What PHP does with that is decided by `short_open_tag`, not by the PHP version. With it On (the default when no
+   php.ini is loaded: the CI image PHP 8.3.33 and the official 8.3.6 image) `<?` opens PHP and the literal directive
+   is a ParseError (HTTP 500); with it Off (production's php.ini, and the workstation's PHP 8.5) the glued tag is not
+   an open tag and the template source is printed as text with HTTP 200. Measured 2026-11-07: the same PHP 8.5 binary
+   flips between the two with `-d short_open_tag`. The defect is in the template either way.
+10. Use one PHP block per template (or only inline forms). Never write the directive tokens inside a Blade comment
+    either: the raw-block pass sees them before comments are removed.
+11. `tests/Feature/Ui/BladePhpDirectivePairingTest.php` compiles every template under `resources/views` with the real
+    compiler and applies two checks, because neither alone covers every shape: an open tag glued to the next
+    character (the only signal when `short_open_tag` is Off, where that shape parses), and a real parse of the compiled
+    view (`token_get_all(…, TOKEN_PARSE)`, which catches a spaced inline opener and a closer hidden in a later Blade
+    comment). 517 templates, 0 hits on either check under both settings at 2026-11-07; positive controls cover all three
+    shapes. Do not weaken it into a source grep: it would miss a mis-pair created by a comment.
+
+## 3. Critical-gate coverage (CI-8A)
+
+12. The prescription suites and the ClinicMasterData suites run in the NSF-R011 critical gate: tokens `RmePrescription`
+    (selects exactly `RmePrescriptionTest` + `RmePrescriptionAuthoringAuthorityTest`), `ClinicMasterData` (exactly the
+    eight suites of `tests/Feature/ClinicMasterData`, zero unrelated files, measured with `--list-tests`) and
+    `BladePhpDirectivePairing`, in BOTH runner variants, placed before the pinned calendar-boundary tail (rule 212,
+    AIR-CIT-34). The security-critical suites are declared in `config/ci_runner.php` `critical_gate_mandatory_suites`
+    (rule 120), so a rename fails the gate instead of dropping out.

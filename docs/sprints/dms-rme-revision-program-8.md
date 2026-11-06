@@ -4,6 +4,11 @@
 MEDIUM) need a separate corrective sprint before the final candidate can be frozen. No Full Suite was requested or
 run. No application, test or CI semantics changed. No deploy. No GO tag.
 
+> **Forward reference (2026-11-07, added by the corrective sprint; the verdict above is unchanged history).** P8-N1,
+> P8-N3 and the §2.4 coverage gap are corrected in [[dms-rme-revision-program-8a]] (rule 226) — see that record for
+> its own release status. Closing them does not turn this NO-GO into a GO: the owner decisions, the BK-2 off-server
+> delivery, the restore drill and the dedicated-device test still stand, and final readiness must be re-run.
+
 | Verdict | Value |
 |---|---|
 | Engineering programme verdict | **DMS-RME-REVISION-PROGRAM-8 — NO-GO** (readiness gate failed on a verified release blocker) |
