@@ -91,10 +91,15 @@ Every defect below was reproduced RED on PostgreSQL 16 against the untouched bas
   row yet, so a second login at that instant can judge it dead (`IncumbentSessionProbe`) and evict the first. A fix
   (a grace period for a fresh lease, or deny on the lost-race branch) changes the rule 153 contract and needs its own
   two-connection test; deferred as an owner item.
-- **R7-1 (LOW).** R6-1 is closed for two first saves on the SAME canonical visit. When the patient has no book yet,
-  `resolveCanonicalWorkspaceVisit()` finds none and each save falls back to its OWN context visit, so two
-  simultaneous first saves opened from two different visits of the same patient write two books (different
-  `clinic_visit_id`, no unique collision). Needs a per-patient serialisation and a lock-order review; recorded.
+- **R7-1 (LOW → narrowed; CORRECTED by DMS-RME-REVISION-PROGRAM-8).** R6-1 is closed for two first saves on the SAME
+  canonical visit. The original wording here ("when the patient has no book yet, `resolveCanonicalWorkspaceVisit()`
+  finds none and each save falls back to its own context visit") was wrong: that resolver returns the patient's
+  earliest non-cancelled RME visit **whether or not a medical record exists**, and is null only when the patient has
+  no eligible visit at all — which cannot coincide with a passing authoring gate (it requires an in-progress RME
+  visit). Two concurrent first saves therefore target the same canonical visit and converge through
+  savepoint-adopt. What remains: the earliest eligible visit changing between the two requests, and a patient merge
+  that leaves the book on a later visit while the earliest has none (the next save opens a second sheet). Both are
+  recorded, not reproduced; no per-patient serialisation is required for the described race.
 - **R7-2 (latent).** A soft-deleted medical record still occupies `UNIQUE(clinic_visit_id)`; `findByVisitId()` skips
   it, so a first save on that visit rethrows the unique violation (HTTP 500, nothing persisted). No application path
   deletes a medical record today; restoring versus refusing is a product decision.

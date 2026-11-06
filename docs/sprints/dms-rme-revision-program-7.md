@@ -125,6 +125,9 @@ sha256 not verified on read).
 - **R7-1 (LOW, from review).** R6-1 is closed for two first saves on the same canonical visit. A patient with no
   book has no canonical visit, so each save falls back to its own context visit: two simultaneous first saves
   opened from two different visits write two books. Needs per-patient serialisation and a lock-order review.
+  *Forward reference (DMS-RME-REVISION-PROGRAM-8): this description is inaccurate — the canonical workspace visit
+  exists whether or not a book does, so the described race converges; see the corrected R7-1 in rule 225 and
+  [dms-rme-revision-program-8](dms-rme-revision-program-8.md).*
 - **R7-2 (latent, from review).** A soft-deleted medical record still occupies `UNIQUE(clinic_visit_id)`; a first
   save on that visit answers HTTP 500 (nothing persisted). No delete path exists; restore-versus-refuse is a product
   decision.
