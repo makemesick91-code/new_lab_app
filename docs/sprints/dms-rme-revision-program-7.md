@@ -270,7 +270,14 @@ New rule 225; cross-references in rules 93 §7, 174 §6, 223 §19 (drift), 224 (
 
 ## 8. CI, merge, deploy and production verification
 
-Recorded when they happen.
+### 8.1 CI
+
+| Run | SHA | Result |
+|---|---|---|
+| 42194218143 | `baba5b01` | Superseded by the review fixes and cancelled (Classifier, Quality, Selective Module and Android gates had passed) |
+| 42198790347 | `6bf1865e` | **FAILED** — NSF-R011 Critical Test Gate: 2 failed, 9,429 passed. Both failures were `CriticalGateControlledParallelismContractTest` ("appends the resolved arguments after the untouched filter in both variants"): it pins that the critical filter ENDS with `InventoryClinicCalendarBoundary'`, and this sprint had appended its two tokens after it. No product test failed. Fixed by moving the tokens before the trailing calendar-boundary tokens (filter content unchanged otherwise); all of `tests/Feature/Cicd` then passed locally (386 passed, 0 failed). New domain rule AIR-CIT-34 records the trap |
+
+Recorded as the run completes.
 
 ## 9. Cleanup
 

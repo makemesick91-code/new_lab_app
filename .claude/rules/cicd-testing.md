@@ -182,6 +182,11 @@ code, then the canonical rule, and report the drift.
   identical steps; worker databases are dropped before a parallel run; the warning contract strips terminal styling in
   memory (ParaTest's summary is ANSI-styled). Activation = reviewed `ACTIVE` change + explicit owner approval. Source:
   `212-…`.
+- **AIR-CIT-34** A new critical-filter token goes BEFORE the trailing `…|InventoryClinicCalendarBoundary'`:
+  `CriticalGateControlledParallelismContractTest` pins that the filter ends with it, followed by
+  `$CRITICAL_TEST_EXTRA_ARGS`, in both variants. After any workflow edit run all of `tests/Feature/Cicd` on the host
+  (git needed), not only the coverage test. Source: DMS-RME-REVISION-PROGRAM-7 (CI run 42198790347 failed 2 tests on
+  a token appended after the tail).
 
 ## Current posture (snapshot 2026-10-25 — verify before relying on it)
 
