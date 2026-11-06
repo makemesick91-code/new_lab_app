@@ -1,7 +1,7 @@
 ---
 kb_status: snapshot
 kb_verified_against: 572a32a9
-kb_updated: 2026-10-25
+kb_updated: 2026-11-06
 ---
 
 # Indeks Modul DaengtisiaMS
@@ -12,7 +12,9 @@ membahasnya. Kembali ke [00-INDEX](../00-INDEX.md).
 ## Cara indeks ini dibuat
 
 Indeks ini adalah **snapshot hasil turunan**, bukan dokumen yang ditulis tangan per modul.
-Dibuat pada 2026-10-25 terhadap commit `572a32a9`.
+Dibuat pada 2026-10-25 terhadap commit `572a32a9`. Pada 2026-11-06 tautan rule 224 dan
+[dms-rme-revision-program-6](../sprints/dms-rme-revision-program-6.md) ditambahkan ke `MedicalRecord`,
+`Odontogram` dan `Prescription`; jumlah file dan dokumen tidak diturunkan ulang.
 
 - **Jumlah file PHP** dihitung dari `app/Modules/<Modul>/`.
 - **"N dokumen menyebut path modul ini"** menghitung dokumen di `docs/` dan `.cursor/rules/`
@@ -49,15 +51,15 @@ bukti, kata kunci nama berkas untuk tautan), lalu perbarui `kb_verified_against`
 ### `MedicalRecord`
 
 - Kode: `app/Modules/MedicalRecord/` — 43 file PHP; 36 dokumen menyebut path modul ini.
-- Rule durable (`.cursor/rules/`, di luar vault): `127-rme-print-composition-no-duplicate-patient-card.mdc`, `173-unified-medical-record-index.mdc`
-- Sprint terbaru: [feature-rme-medical-records-unified-native-legacy-1](../sprints/feature-rme-medical-records-unified-native-legacy-1.md), [fix-rme-print-remove-patient-visit-duplicate-1](../sprints/fix-rme-print-remove-patient-visit-duplicate-1.md), [uix-11-rme-medical-record-odontogram-print-bundle-polish](../sprints/uix-11-rme-medical-record-odontogram-print-bundle-polish.md)
+- Rule durable (`.cursor/rules/`, di luar vault): `127-rme-print-composition-no-duplicate-patient-card.mdc`, `173-unified-medical-record-index.mdc`, `224-rme-clinical-evidence-write-integrity.mdc`
+- Sprint terbaru: [dms-rme-revision-program-6](../sprints/dms-rme-revision-program-6.md), [feature-rme-medical-records-unified-native-legacy-1](../sprints/feature-rme-medical-records-unified-native-legacy-1.md), [fix-rme-print-remove-patient-visit-duplicate-1](../sprints/fix-rme-print-remove-patient-visit-duplicate-1.md), [uix-11-rme-medical-record-odontogram-print-bundle-polish](../sprints/uix-11-rme-medical-record-odontogram-print-bundle-polish.md)
 - Ringkasan `ai-knowledge` (snapshot, cek [status](doc-status-registry.md)): [08_DaengtisiaMS_RME_Workflow](../ai-knowledge/08_DaengtisiaMS_RME_Workflow.md), [10_DaengtisiaMS_Visit_Medical_Record_Rules](../ai-knowledge/10_DaengtisiaMS_Visit_Medical_Record_Rules.md)
 
 ### `Odontogram`
 
 - Kode: `app/Modules/Odontogram/` — 8 file PHP; 19 dokumen menyebut path modul ini.
 - Rule durable (`.cursor/rules/`, di luar vault): `109-rme-exam-consent-odontogram-history.mdc`, `110-post-rme-odontogram-stabilization.mdc`, `134-odontogram-pre-consent-authoring.mdc`
-- Sprint terbaru: [feature-legacy-rme-odontogram-mass-upload-1](../sprints/feature-legacy-rme-odontogram-mass-upload-1.md), [revision-rme-consent-odontogram-preconsent-edit-1](../sprints/revision-rme-consent-odontogram-preconsent-edit-1.md), [post-rme-odontogram-stabilization-1](../sprints/post-rme-odontogram-stabilization-1.md) — total 6 dokumen sprint
+- Sprint terbaru: [dms-rme-revision-program-6](../sprints/dms-rme-revision-program-6.md), [feature-legacy-rme-odontogram-mass-upload-1](../sprints/feature-legacy-rme-odontogram-mass-upload-1.md), [revision-rme-consent-odontogram-preconsent-edit-1](../sprints/revision-rme-consent-odontogram-preconsent-edit-1.md), [post-rme-odontogram-stabilization-1](../sprints/post-rme-odontogram-stabilization-1.md) — total 6 dokumen sprint
 - Ringkasan `ai-knowledge` (snapshot, cek [status](doc-status-registry.md)): [11_DaengtisiaMS_Odontogram_Rules](../ai-knowledge/11_DaengtisiaMS_Odontogram_Rules.md)
 
 ### `Consent`
@@ -71,6 +73,7 @@ bukti, kata kunci nama berkas untuk tautan), lalu perbarui `kb_verified_against`
 
 - Kode: `app/Modules/Prescription/` — 20 file PHP; 1 dokumen menyebut path modul ini.
 - ⚠️ **GAP**: tidak ada ADR, desain, runbook, rule, atau dokumen sprint yang namanya merujuk modul ini. Baca kodenya langsung.
+- Lihat juga (namanya tidak merujuk modul ini, jadi status GAP tetap): rule `224-rme-clinical-evidence-write-integrity.mdc` dan `121-clinical-evidence-private-storage.mdc` untuk kanvas resep dan tanda tangan; [dms-rme-revision-program-6](../sprints/dms-rme-revision-program-6.md) untuk audit resep.
 
 ### `RME`
 
