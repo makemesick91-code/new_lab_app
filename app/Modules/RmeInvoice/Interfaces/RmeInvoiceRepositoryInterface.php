@@ -40,6 +40,9 @@ interface RmeInvoiceRepositoryInterface
 
     public function hasActiveInvoiceForVisit(int $clinicVisitId): bool;
 
+    /** DMS-RME-REVISION-PROGRAM-8B / D2 — the month's number sequence lock (inside a transaction). */
+    public function lockNumberSequence(string $month): void;
+
     public function latestInvoiceNumberForMonth(string $month): ?string;
 
     /** @param array<string, mixed> $data */

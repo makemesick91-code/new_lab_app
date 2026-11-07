@@ -24,6 +24,10 @@ class RmeVisitConsentNumberGeneratorService
     public function generate(): string
     {
         $month = $this->clock->today()->format('Ym');
+
+        // DMS-RME-REVISION-PROGRAM-8B / D2 — take the month's sequence lock
+        // before reading the highest number (rule 225 pattern).
+        $this->consents->lockNumberSequence($month);
         $latest = $this->consents->latestConsentNumberForMonth($month);
         $next = 1;
 

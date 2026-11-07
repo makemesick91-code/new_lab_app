@@ -12,6 +12,9 @@ interface RmePaymentRepositoryInterface
 
     public function forInvoice(RmeInvoice $invoice): Collection;
 
+    /** DMS-RME-REVISION-PROGRAM-8B / D2 — the month's number sequence lock (inside a transaction). */
+    public function lockNumberSequence(string $month): void;
+
     public function latestPaymentNumberForMonth(string $month): ?string;
 
     /**

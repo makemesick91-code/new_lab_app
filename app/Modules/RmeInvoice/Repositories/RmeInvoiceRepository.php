@@ -6,6 +6,7 @@ use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\RmeInvoice\Interfaces\RmeInvoiceRepositoryInterface;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Models\RmeInvoiceItem;
+use App\Support\Database\DocumentNumberSequenceLock;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
 
@@ -115,9 +116,24 @@ class RmeInvoiceRepository implements RmeInvoiceRepositoryInterface
             ->exists();
     }
 
+    /**
+     * DMS-RME-REVISION-PROGRAM-8B / D2 — serialise the month's invoice numbering
+     * (rule 225 pattern). Must be called inside the transaction that inserts the
+     * invoice, before {@see latestInvoiceNumberForMonth()}.
+     */
+    public function lockNumberSequence(string $month): void
+    {
+        DocumentNumberSequenceLock::acquire(DocumentNumberSequenceLock::RME_INVOICE, $month);
+    }
+
+    /**
+     * The highest invoice number issued this month, soft-deleted rows included:
+     * UNIQUE(invoice_number) still holds a trashed row's number, so ignoring it
+     * would hand that number out again and wedge the month on a 500 (P8-N4).
+     */
     public function latestInvoiceNumberForMonth(string $month): ?string
     {
-        return RmeInvoice::query()
+        return RmeInvoice::withTrashed()
             ->where('invoice_number', 'like', 'RME-'.$month.'-%')
             ->max('invoice_number');
     }
