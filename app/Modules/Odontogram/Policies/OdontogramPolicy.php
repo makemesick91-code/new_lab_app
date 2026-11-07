@@ -8,13 +8,14 @@ use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Odontogram\Models\Odontogram;
 use App\Modules\RME\Services\DoctorPatientScopeService;
 use App\Modules\RME\Services\DoctorRoomScopeService;
+use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
 use Illuminate\Auth\Access\Response;
 
 class OdontogramPolicy
 {
     public function view(User $user, Odontogram $odontogram): Response|bool
     {
-        if (! $this->canView($user) || ! $this->belongsToActiveBranch($odontogram->branch_id)) {
+        if (! $this->canView($user) || ! $this->mayReadDocumentAt($user, $odontogram->branch_id)) {
             return false;
         }
 
@@ -33,7 +34,7 @@ class OdontogramPolicy
             return $printGuard;
         }
 
-        if (! $this->canView($user) || ! $this->belongsToActiveBranch($odontogram->branch_id)) {
+        if (! $this->canView($user) || ! $this->mayReadDocumentAt($user, $odontogram->branch_id)) {
             return false;
         }
 
@@ -42,7 +43,7 @@ class OdontogramPolicy
 
     public function create(User $user, ClinicVisit $clinicVisit): Response|bool
     {
-        if (! $this->canView($user) || ! $this->belongsToActiveBranch($clinicVisit->branch_id)) {
+        if (! $this->canView($user) || ! $this->mayReadDocumentAt($user, $clinicVisit->branch_id)) {
             return false;
         }
 
@@ -125,6 +126,16 @@ class OdontogramPolicy
         }
 
         return false;
+    }
+
+    /**
+     * DMS-RME-REVISION-PROGRAM-8B / D1 — the clinical DOCUMENT read scope:
+     * the front desk and the cashier read only their working branch, everyone
+     * else keeps the RME-enabled set (RmeWorkingBranchScope::allowsClinicalDocument()).
+     */
+    private function mayReadDocumentAt(User $user, ?int $branchId): bool
+    {
+        return app(RmeWorkingBranchScope::class)->allowsClinicalDocument($user, $branchId);
     }
 
     private function canView(User $user): bool

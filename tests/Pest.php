@@ -308,6 +308,26 @@ function userWith(array $permissions): User
 }
 
 /**
+ * DMS-RME-REVISION-PROGRAM-8B — an account holding a clinical role.
+ *
+ * The clinical document read scope (rule 227 §1) distinguishes clinicians from
+ * the branch-pinned front desk and cashier by role, so suites that need "a
+ * clinician" take this instead of a role-less permission fixture. Supervisor
+ * RME is used because it is a clinical role that is neither context-bound nor
+ * doctor-scoped. Created if the suite did not seed the roles, so the helper
+ * never depends on the seeder.
+ *
+ * @param  array<int, string>  $permissions
+ */
+function rmeClinicalAuthor(array $permissions = ['view_clinic_visits', 'manage_clinic_visits']): User
+{
+    $user = userWith($permissions);
+    $user->assignRole(Role::findOrCreate('Supervisor RME', 'web'));
+
+    return $user->fresh();
+}
+
+/**
  * A user assigned to a seeded role (no Super Admin bypass).
  */
 function userInRole(string $role): User
