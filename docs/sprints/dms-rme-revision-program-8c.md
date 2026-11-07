@@ -81,6 +81,31 @@ live-encounter predicate). Mutation: 12 mutants, **12 killed, 0 survived** (lock
 policy, signer refusal off on create / update, `maySign` always true, payload and pixel bounds off, update audit off,
 audit lists bookkeeping fields, consent signature cacheable, canvas offered to every manager), reverted by copy.
 
+### Independent security review (owner decision 2026-11-08: wait for it; no waiver)
+
+The Program 8/8A mechanism (re-issue the hook-rewritten `Agent` input once) cannot work as installed:
+`context-mode` 1.0.162 `hooks/core/routing.mjs` (Agent branch) appends its routing block to every call
+unconditionally, so the re-issued input is rewritten again and never matches what auto mode reviewed. No hook was
+disabled and no permission was changed. The review therefore ran in a **separate headless session** (`claude -p`,
+clean context, read-only by construction: `--permission-mode plan`, Edit/Write/Agent/web disallowed, only Read, Grep,
+Glob and read-only `git` subcommands allowed, no MCP servers; `--bare` deliberately not used, so every hook stayed on).
+The brief carried the requirements and file pointers, never the implementing session's findings.
+
+**Round 1:** session `3ec032fd-3036-4d95-9314-7e3395cd52e8`, model `claude-opus-5`, inspected HEAD `37b9b4f5`
+(PR1 `3296f585` + PR2) — **`INDEPENDENT_REVIEW_VERDICT=PASS`**, no CRITICAL, no HIGH, no access path widened.
+Each finding was verified against source:
+
+| Id | Sev | Finding | Disposition |
+|---|---|---|---|
+| F1 | MEDIUM | A live account holding `manage_clinic_visits` with no clinical role would lose RME authoring at deploy (availability) | **Disproved by read-only production census:** 26 active holders, 0 direct grants, the 8 without a clinical role are all exactly `Front Office` — already refused by the front-desk predicate before 8C. No code change |
+| F2 | LOW | `markPrinted()` stamps `printed_at` on a closed prescription | Already declared in rule 228 §8.3 (print bookkeeping, not an amendment); no change |
+| F3 | LOW | `assertPermits()` decided on the pre-lock copy (AIR-RMC-38) | **Fixed**: re-asserted on the locked row in create and update; R-01/R-02 move the room underneath a stale copy |
+| F4 | LOW | `MAX_PIXELS` 4.19M ≈ 9.7× the largest canvas; the blank scan is O(w·h) | **Fixed**: `MAX_DIMENSION` 2048, `MAX_PIXELS` 1,048,576; R-03 with positive controls at 900×480 and the 700×220 consent canvas |
+| F5 | LOW | The signature limit lived only in the FormRequests | **Fixed**: `decode(..., maxLength:)` — callers may only tighten; R-04 |
+| F6 | INFO | Pre-existing: the blank check skips non-RGBA PNGs | Recorded (rule 228 §15) |
+| F7 | INFO | The clinic-oversight prescription print is outside `RmePrescriptionPolicy` | Recorded (rule 228 §1.4) |
+| F8 | INFO | `rmeClinicalReader()` inherits the seeded Owner permissions | Recorded (rule 228 §15) |
+
 ## 3. Release
 
 Filled in at release.

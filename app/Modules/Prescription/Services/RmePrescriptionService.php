@@ -185,6 +185,11 @@ class RmePrescriptionService
         // already closed here.
         $lockedVisit = $this->assertDocumentOpen($this->visits->lockForStatusDecision($clinicVisit->id));
 
+        // Independent review F3 (AIR-RMC-38) — the authority is decided again on
+        // the LOCKED row: a room move or status change committed between the
+        // pre-lock check above and this lock is seen here, not missed.
+        $this->authority->assertPermits($user, $lockedVisit);
+
         if ($this->prescriptions->findByClinicVisit($clinicVisit->id) !== null) {
             throw ValidationException::withMessages([
                 'clinic_visit_id' => 'Resep untuk kunjungan ini sudah ada. Gunakan Edit Resep.',
@@ -213,7 +218,11 @@ class RmePrescriptionService
             'prescription_canvas_data',
         );
         $signatureBytes = $maySign
-            ? $this->canvasDecoder->decode($payload['doctor_signature_canvas_data'] ?? null, 'doctor_signature_canvas_data')
+            ? $this->canvasDecoder->decode(
+                $payload['doctor_signature_canvas_data'] ?? null,
+                'doctor_signature_canvas_data',
+                maxLength: PrescriptionCanvasDecoder::MAX_SIGNATURE_PAYLOAD_LENGTH,
+            )
             : null;
 
         if ($prescriptionBytes === null) {
@@ -325,6 +334,9 @@ class RmePrescriptionService
         // create() always has — rule 223 §1).
         $lockedVisit = $this->assertDocumentOpen($this->visits->lockForStatusDecision($visit->id));
 
+        // Independent review F3 (AIR-RMC-38) — re-decided on the locked row, as in create().
+        $this->authority->assertPermits($user, $lockedVisit);
+
         // DMS-RME-REVISION-PROGRAM-8B / D6 — re-derived on every update from the
         // prescription's OWN doctor and patient (the visit's when the row never
         // recorded one), never from the request. Using the prescription's
@@ -361,6 +373,7 @@ class RmePrescriptionService
         $signatureBytes = $this->canvasDecoder->decode(
             $payload['doctor_signature_canvas_data'] ?? null,
             'doctor_signature_canvas_data',
+            maxLength: PrescriptionCanvasDecoder::MAX_SIGNATURE_PAYLOAD_LENGTH,
         );
 
         if ($prescriptionBytes !== null) {

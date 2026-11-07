@@ -29,6 +29,7 @@ use App\Modules\Prescription\Models\RmePrescription;
 use App\Modules\Prescription\Services\PrescriptionCanvasDecoder;
 use App\Modules\Prescription\Services\RmePrescriptionService;
 use App\Support\Storage\ClinicalEvidenceStorage;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 
@@ -363,4 +364,62 @@ it('I5-07 offers the signature canvas only to the named doctor', function () {
 
 it('I6-01 no longer exposes the uncalled RME-wide MedicalRecordService::paginate()', function () {
     expect(method_exists(MedicalRecordService::class, 'paginate'))->toBeFalse();
+});
+
+/*
+|--------------------------------------------------------------------------
+| R — fixes for the independent review (session 3ec032fd, round 1)
+|--------------------------------------------------------------------------
+*/
+
+it('R-01 (F3) re-decides the authority on the locked visit row on create, so a concurrent room move is not missed', function () {
+    $visit = priVisit($this);
+    $otherRoom = ClinicRoom::factory()->create(['branch_id' => $this->branch->id, 'status' => ClinicRoom::STATUS_ACTIVE]);
+
+    // Another request moved the patient to another room after this one loaded the visit.
+    ClinicVisit::query()->whereKey($visit->id)->update(['clinic_room_id' => $otherRoom->id]);
+
+    expect(fn () => app(RmePrescriptionService::class)->create($visit, priForm(), $this->namedDoctor))
+        ->toThrow(AuthorizationException::class);
+
+    expect(RmePrescription::query()->where('clinic_visit_id', $visit->id)->exists())->toBeFalse();
+});
+
+it('R-02 (F3) re-decides the authority on the locked visit row on update', function () {
+    $visit = priVisit($this);
+    $prescription = priPrescription($visit)->load('clinicVisit');
+    $otherRoom = ClinicRoom::factory()->create(['branch_id' => $this->branch->id, 'status' => ClinicRoom::STATUS_ACTIVE]);
+
+    ClinicVisit::query()->whereKey($visit->id)->update(['clinic_room_id' => $otherRoom->id]);
+
+    expect(fn () => app(RmePrescriptionService::class)->update($prescription, priForm(['doctor_signature_canvas_data' => null]), $this->namedDoctor))
+        ->toThrow(AuthorizationException::class);
+
+    expect($prescription->fresh()->allergy_note)->toBe('ALERGI ASLI');
+});
+
+it('R-03 (F4) keeps the pixel cap close to the canvases the application draws', function () {
+    $decoder = app(PrescriptionCanvasDecoder::class);
+
+    expect(fn () => $decoder->decode(priOversizedPng(1100, 1000), 'prescription_canvas_data'))
+        ->toThrow(ValidationException::class, 'Ukuran gambar melebihi batas yang diizinkan.');
+
+    // Positive controls: the prescription R/ canvas and the consent signature canvas.
+    expect($decoder->decode(priOversizedPng(900, 480), 'prescription_canvas_data'))->toBeString()
+        ->and($decoder->decode(priOversizedPng(700, 220), 'consenter_signature_data'))->toBeString();
+});
+
+it('R-04 (F5) bounds the signature by its own limit inside the decoder, not only in the request', function () {
+    $visit = priVisit($this);
+
+    expect(fn () => app(RmePrescriptionService::class)->create($visit, priForm([
+        'doctor_signature_canvas_data' => 'data:image/png;base64,'.str_repeat('A', PrescriptionCanvasDecoder::MAX_SIGNATURE_PAYLOAD_LENGTH + 1),
+    ]), $this->namedDoctor))->toThrow(ValidationException::class, 'Ukuran gambar melebihi batas yang diizinkan.');
+
+    // A caller may only tighten the decoder bound, never loosen it.
+    expect(fn () => app(PrescriptionCanvasDecoder::class)->decode(
+        'data:image/png;base64,'.str_repeat('A', PrescriptionCanvasDecoder::MAX_PAYLOAD_LENGTH),
+        'prescription_canvas_data',
+        maxLength: PrescriptionCanvasDecoder::MAX_PAYLOAD_LENGTH * 10,
+    ))->toThrow(ValidationException::class, 'Ukuran gambar melebihi batas yang diizinkan.');
 });

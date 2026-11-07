@@ -29,6 +29,10 @@ This rule EXTENDS rules 138, 226 and 227. Where they differ, this rule wins:
    the route and the policy is refused the same way (CG-06).
 3. Post-examination and historical visits (cashier_pending, completed, cancelled) are never room-restricted, and an
    account that is not doctor-scoped (Supervisor RME, Owner, Super Admin) is unaffected.
+4. Not covered (recorded so this rule is not read as total): the clinic-oversight print surface
+   (`clinic-oversight.rme.visits.prescription.print`, `OversightClinicalRecordController`) renders the same document
+   under its own `clinic-oversight.*` abilities, outside `RmePrescriptionPolicy`, so neither this room scope nor the
+   §5 read allowlist applies to it. It is read-only, audited and separately governed (independent review F7).
 
 ## 2. The live-encounter write authority is room scoped (OD-5-7)
 
@@ -85,6 +89,9 @@ Owner decision, taken after the reviewer combined OD-8A-1 and OD-8A-2 into one H
 2. `RmePrescriptionPolicy::create()` / `update()` refuse it (403 with the reason), and `RmePrescriptionService`
    re-decides it on the visit row it holds FOR NO KEY UPDATE (`update()` now takes that lock first, as `create()`
    always did — rule 223 §1). Super Admin's `Gate::before` skips the policy; the service still refuses (CG-06).
+   The whole authoring authority (`assertPermits()`: branch, doctor-patient scope, room) is re-decided on that locked
+   row as well (AIR-RMC-38; independent review F3), so a room move committed between the pre-lock check and the lock
+   is not missed.
 3. Reading, printing and sending a closed prescription are unchanged. Printing still stamps `printed_at` — print
    bookkeeping, not an amendment of the clinical content.
 
@@ -100,9 +107,13 @@ without `_path`): never a value, never patient data, never a storage key. A refu
 1. The FormRequests cap the R/ payload at `PrescriptionCanvasDecoder::MAX_PAYLOAD_LENGTH` (3,500,000) and the
    signature at `MAX_SIGNATURE_PAYLOAD_LENGTH` (1,000,000). The application's own fixed canvases (900×480 and 400×140)
    stay far below both.
-2. The decoder applies `MAX_PAYLOAD_LENGTH` again before decoding, requires a real IHDR as the first chunk, refuses a
-   declared size above `MAX_DIMENSION` (4096) per side or `MAX_PIXELS` (4,194,304), and inflates the image data
-   bounded by the declared size — a small, highly compressed payload cannot ask for a huge decode.
+2. The decoder applies `MAX_PAYLOAD_LENGTH` (or a tighter per-field `maxLength` a caller passes — the prescription
+   service passes the signature limit; a caller can only tighten it) again before decoding, requires a real IHDR as
+   the first chunk, refuses a declared size above `MAX_DIMENSION` (2048) per side or `MAX_PIXELS` (1,048,576, about
+   2.4x the largest canvas drawn — independent review F4, F5), and inflates the image data bounded by the declared
+   size — a small, highly compressed payload cannot ask for a huge decode.
+3. The decoder is SHARED with `RmeVisitConsentService` (consent signatures, 700×220 canvases), so these bounds apply
+   to consent signatures too.
 
 ## 11. The consent signature is not cached (OD-6-2)
 
@@ -141,6 +152,11 @@ declared in `config/ci_runner.php` `critical_gate_mandatory_suites`.
   follows §5. Fix in the next code-bearing sprint (kept out of 8C PR2 by the 10-file scope limit).
 - An independent (non-self) security review of PR1 and PR2 is still owed — the reviewer agent was blocked by an
   input-rewriting hook in this session.
+- Pre-existing, INFO (independent review F6): the blank-image check skips any PNG that is not 8-bit RGBA, so such a
+  PNG is never refused as blank. Harmless for the signature (the signer is identity-bound); not changed in 8C.
+- Test hygiene, INFO (F8): `rmeClinicalReader()` attaches the seeded Owner role, which carries Owner's other
+  read/report permissions in suites that seed roles. Today's negative tests keep their meaning (Owner holds no
+  `manage_clinic_visits`); a dedicated permission-free allowlisted role would be cleaner.
 - OWNER DECISION OPEN: an unsigned prescription (content written by another clinician, signature not yet added by
   the named doctor) prints without a signature image and could be sent. Whether print and the (disabled) WhatsApp
   hand-off should be refused until the named doctor signs was not part of the 2026-11-07 decisions and is not
