@@ -8,6 +8,9 @@ run. No application, test or CI semantics changed. No deploy. No GO tag.
 > P8-N3 and the §2.4 coverage gap are corrected in [[dms-rme-revision-program-8a]] (rule 226) — see that record for
 > its own release status. Closing them does not turn this NO-GO into a GO: the owner decisions, the BK-2 off-server
 > delivery, the restore drill and the dedicated-device test still stand, and final readiness must be re-run.
+>
+> **Forward reference (2026-11-07, re-audit).** Final readiness was re-run on the 8A release in
+> [[dms-rme-revision-program-8-readiness-reaudit]]. This record's NO-GO stays unchanged as history.
 
 | Verdict | Value |
 |---|---|
