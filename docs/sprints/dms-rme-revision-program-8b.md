@@ -3,7 +3,9 @@
 - **Programme:** RME revision programme under owner policy `DMS-FULL-DEVELOPMENT-PRODUCTION-TESTING-20261104`
   (rule 221 §7), mission `DMS-RME-REVISION-PROGRAM-8B`, 2026-11-07. Corrective sprint for the owner decisions of
   [[dms-rme-revision-program-8-readiness-reaudit]] (readiness NO-GO). Continuation of [[dms-rme-revision-program-8a]].
-- **Status:** IN PROGRESS — this record is completed with the release evidence in §7.
+- **Status:** RELEASED — deployed to the Biznet production host (deploy `20261107-121845`); GO tag
+  `dms-rme-revision-program-8b-go` on the deployed runtime `fce68541`. This record is a documentation commit and is not
+  deployed. Full Suite and clinic reopening remain not authorised.
 - **Base:** `feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report` @ `88843b26` (PR #610, the
   re-audit record). Production ran `c0e12382` (Program 8A GO, deploy `20261106-230625`), read from the Biznet host
   before work began; `88843b26` differs from it by documentation only.
@@ -146,4 +148,77 @@ ignored. Regression results, CI and release evidence: §7.
 
 ## 7. Release evidence
 
-Filled in at release.
+### 7.1 Pull requests and trees
+
+| PR | Head (CI) | Merge | Merge tree = tested tree |
+|---|---|---|---|
+| #611 PR1 D2 | `8d7e5c26` | squash `7fe04390` | yes (`34373994`) |
+| #614 PR2 D1 (replaces #612) | `2c8e7191` | merge commit `71df6bee` | yes (`26f7d445`) |
+| #615 PR3 D6 + D7 (replaces #613) | `ed8ab639` | squash `fce68541` | yes (`6d1c5160`) |
+
+The deployed runtime `fce68541` has exactly the application, configuration, route, resource, test, database, CI and
+rule paths of the change set that ran the PostgreSQL regression (byte-for-byte; only the split record differs).
+
+### 7.2 Continuous integration (exact heads)
+
+Every required gate passed on each merged head: classifier, quality (NSF-R012), critical tests (NSF-R011), selective
+module, NSF-9 release safety and smoke, NSF-10 release evidence, Android gate. Critical gate counts read from the job
+logs, with `critical_test_exit_status=0` and an expected warning count of 0 each time:
+
+| Head | Critical gate |
+|---|---|
+| `8d7e5c26` (#611) | 9,635 passed (47,605 assertions) |
+| `a0920c9f` (#612, superseded; same tree as `2c8e7191`) | 9,651 passed (47,677 assertions) |
+| `2c8e7191` (#614) | 9,651 passed (47,677 assertions) |
+| `5e2bd175` (#613, superseded; code identical to `ed8ab639`) | 9,668 passed (47,830 assertions); NSF-10 cancelled when superseded |
+| `ed8ab639` (#615) | 9,668 passed (47,830 assertions) |
+| `fce68541` (deployed runtime, post-merge run on the base) | 9,668 passed (47,830 assertions) |
+
+The NSF-R011 Full Suite gate was skipped on every run by the standing deferral (CG-18). That is not a pass.
+
+### 7.3 Regression outside CI
+
+| Run | Tests | Failures | Skips |
+|---|---|---|---|
+| PostgreSQL 16.15 + PHP 8.3.33, run 1 (full 8B set) | 5,574 | 19 (fixtures, fixed) | — |
+| PostgreSQL 16.15 + PHP 8.3.33, run 2 | 2,664 | 0 | 0 |
+| PostgreSQL 16.15 + PHP 8.3.33, run 3 (RME, access control, legacy, storage, doctor access, auth, oversight) | 5,880 | 0 | 0 |
+| SQLite, PR1 state | 681 | 0 | 58 (PostgreSQL-only) |
+| SQLite, PR2 state (same directories as run 3) | 5,863 | 0 | 44 (PostgreSQL-only, GD) |
+| SQLite, PR3 governance + changed suites | 1,203 | 0 | 19 (PostgreSQL-only) |
+
+The 19 run-1 failures were role-less test accounts authoring prescriptions; D7 refuses them by design, so the fixtures
+moved to `rmeClinicalAuthor()` — no assertion was weakened. The critical gate filter was checked with `--list-tests`
+in both runner variants: all four 8B suites are selected (16 + 20 + 8 + 9 cases).
+
+### 7.4 Review
+
+Independent security review: no CRITICAL or HIGH finding. One actionable finding (an archived doctor or patient
+master row would have blanked the printed identity) was fixed with a test; the other limits are recorded in §2.1, §2.3
+and the D3 matrix. DEVFLOW: manifest GO on every PR; scope audit GO for each PR against its parent (§1.3).
+
+### 7.5 Deployment (Biznet production host)
+
+| Check | Result |
+|---|---|
+| Target check | `PRODUCTION_TARGET=VERIFIED` (pinned host key, production hostname and address) |
+| Preflight | host saw merge `fce68541`; no other deploy; 48 GB free; BK-2 `ON_SERVER=OK OFF_SERVER=OK pending=0`; outside the 02:25–02:40 WITA window |
+| Runner | `deploy-vps-runner.sh start` on the VPS, deploy `20261107-121845`, 12:18:44–12:20:22 UTC (20:18–20:20 WITA) |
+| Result | `DEPLOY OK`, `DEPLOY_HEAD_TARGET_MATCH=YES`, `verify` → final exit 0, `DEPLOY RUNNER OK` |
+| Backup | pre-deploy database backup written before the code changed (33 MB) |
+| Smoke | 6 passed, 1 warning: the bare-loopback `/login` probe answers 404 because a co-tenant owns that path — verified over the domain instead |
+| Production state | HEAD `fce68541`, tree `6d1c5160`, no tracked change; no pending migration; queue worker inactive and disabled (unchanged); doctor enforcement pilot scope unchanged, global enforcement false |
+| Domain | `/login`, `/health/live`, `/health/ready`, `/health/lb` 200; protected pages 302 for a guest; `/storage/` 403 |
+| Application log | size unchanged across the deploy and every read (no new error) |
+
+### 7.6 GO tag
+
+Annotated tag `dms-rme-revision-program-8b-go` (tag object `98b209cb`) on the deployed runtime `fce68541`, created
+after the post-merge run on that exact commit passed every required gate.
+
+### 7.7 What is still open
+
+- D3: 21 owner decisions remain (private matrix); nothing beyond D1/D2/D6/D7 was implemented.
+- D4: `DEDICATED_DEVICE_VERIFICATION = BLOCKED` until the dedicated device and test identity are provided.
+- D5: WAVE-4 closure (Option A) or a dated extension awaits the owner; nothing was executed.
+- Full Suite and clinic reopening are not authorised.
