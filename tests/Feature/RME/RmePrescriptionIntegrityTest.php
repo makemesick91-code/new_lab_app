@@ -99,6 +99,34 @@ function priOversizedPng(int $width, int $height): string
     return 'data:image/png;base64,'.base64_encode("\x89PNG\r\n\x1a\n".$chunk.$idatChunk.$iend);
 }
 
+/**
+ * A real, fully decodable RGBA canvas of the given size: transparent except one
+ * opaque pixel in the middle, so the blank check decodes every row up to it and
+ * finds it non-blank (independent review round 2: a header-only fixture survives
+ * only because the blank check bails on a truncated stream).
+ */
+function priRealCanvasPng(int $width, int $height): string
+{
+    $transparent = str_repeat("\xff\xff\xff\x00", $width);
+    $raw = '';
+
+    for ($y = 0; $y < $height; $y++) {
+        $line = $y === intdiv($height, 2)
+            ? substr_replace($transparent, "\x00\x00\x00\xff", intdiv($width, 2) * 4, 4)
+            : $transparent;
+        $raw .= "\0".$line;
+    }
+
+    $chunk = static fn (string $type, string $data): string => pack('N', strlen($data)).$type.$data.pack('N', crc32($type.$data));
+
+    return 'data:image/png;base64,'.base64_encode(
+        "\x89PNG\r\n\x1a\n"
+        .$chunk('IHDR', pack('NNCCCCC', $width, $height, 8, 6, 0, 0, 0))
+        .$chunk('IDAT', gzcompress($raw))
+        .$chunk('IEND', '')
+    );
+}
+
 /*
 |--------------------------------------------------------------------------
 | I1 — lock after completion (OD-8A-1)
@@ -404,9 +432,17 @@ it('R-03 (F4) keeps the pixel cap close to the canvases the application draws', 
     expect(fn () => $decoder->decode(priOversizedPng(1100, 1000), 'prescription_canvas_data'))
         ->toThrow(ValidationException::class, 'Ukuran gambar melebihi batas yang diizinkan.');
 
-    // Positive controls: the prescription R/ canvas and the consent signature canvas.
-    expect($decoder->decode(priOversizedPng(900, 480), 'prescription_canvas_data'))->toBeString()
-        ->and($decoder->decode(priOversizedPng(700, 220), 'consenter_signature_data'))->toBeString();
+    // Positive controls: REAL, fully decoded canvases at the sizes the application
+    // draws — prescription R/ 900x480, prescription signature 400x140, consent 700x220.
+    expect($decoder->decode(priRealCanvasPng(900, 480), 'prescription_canvas_data'))->toBeString()
+        ->and($decoder->decode(priRealCanvasPng(400, 140), 'doctor_signature_canvas_data'))->toBeString()
+        ->and($decoder->decode(priRealCanvasPng(700, 220), 'consenter_signature_data'))->toBeString();
+});
+
+it('R-05 (F4, round 2) refuses a side above MAX_DIMENSION even when the pixel count is under MAX_PIXELS', function () {
+    // 3000 x 300 = 900,000 pixels (< 1,048,576), so only the per-side cap can refuse it.
+    expect(fn () => app(PrescriptionCanvasDecoder::class)->decode(priOversizedPng(3000, 300), 'prescription_canvas_data'))
+        ->toThrow(ValidationException::class, 'Ukuran gambar melebihi batas yang diizinkan.');
 });
 
 it('R-04 (F5) bounds the signature by its own limit inside the decoder, not only in the request', function () {

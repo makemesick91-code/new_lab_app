@@ -29,9 +29,9 @@ This rule EXTENDS rules 138, 226 and 227. Where they differ, this rule wins:
    the route and the policy is refused the same way (CG-06).
 3. Post-examination and historical visits (cashier_pending, completed, cancelled) are never room-restricted, and an
    account that is not doctor-scoped (Supervisor RME, Owner, Super Admin) is unaffected.
-4. Not covered (recorded so this rule is not read as total): the clinic-oversight print surface
-   (`clinic-oversight.rme.visits.prescription.print`, `OversightClinicalRecordController`) renders the same document
-   under its own `clinic-oversight.*` abilities, outside `RmePrescriptionPolicy`, so neither this room scope nor the
+4. Not covered (recorded so this rule is not read as total): the clinic-oversight print surface (route
+   `oversight.rme.visits.prescription.print`, `OversightClinicalRecordController`) renders the same document under its
+   own `clinic-oversight.*` gate abilities, outside `RmePrescriptionPolicy`, so neither this room scope nor the
    §5 read allowlist applies to it. It is read-only, audited and separately governed (independent review F7).
 
 ## 2. The live-encounter write authority is room scoped (OD-5-7)
@@ -112,8 +112,10 @@ without `_path`): never a value, never patient data, never a storage key. A refu
    the first chunk, refuses a declared size above `MAX_DIMENSION` (2048) per side or `MAX_PIXELS` (1,048,576, about
    2.4x the largest canvas drawn — independent review F4, F5), and inflates the image data bounded by the declared
    size — a small, highly compressed payload cannot ask for a huge decode.
-3. The decoder is SHARED with `RmeVisitConsentService` (consent signatures, 700×220 canvases), so these bounds apply
-   to consent signatures too.
+3. The decoder is SHARED with `RmeVisitConsentService` (consent signatures, 700×220 canvases): the IHDR, dimension,
+   pixel and inflate bounds and the generic 3,500,000 payload bound apply to consent signatures too. The tighter
+   1,000,000 signature payload limit does NOT yet apply to them (no request `max`, no `maxLength` passed) — open LOW,
+   §15.
 
 ## 11. The consent signature is not cached (OD-6-2)
 
@@ -150,8 +152,11 @@ declared in `config/ci_runner.php` `critical_gate_mandatory_suites`.
 - Two docblocks still describe the pre-8C "everyone else keeps the RME-enabled set" read scope
   (`OdontogramPolicy::mayReadDocumentAt()`, `MedicalRecordPolicy::mayReadDocumentAt()`); comment only — the code
   follows §5. Fix in the next code-bearing sprint (kept out of 8C PR2 by the 10-file scope limit).
-- An independent (non-self) security review of PR1 and PR2 is still owed — the reviewer agent was blocked by an
-  input-rewriting hook in this session.
+- Independent review: done in two rounds in an isolated read-only session (round 1 `3ec032fd…` on `37b9b4f5`,
+  round 2 `f05066c9…` on `979e267b`), both PASS — sprint record §2.
+- OPEN LOW (round 2): consent signature fields (`StoreRmeVisitConsentRequest`, `RmeVisitConsentService::sign()`) are
+  bounded by the generic 3.5M payload and the pixel caps but not by the 1M signature limit. Fix in the next
+  code-bearing sprint (two more `app/` files would exceed 8C PR2's 10-file scope limit).
 - Pre-existing, INFO (independent review F6): the blank-image check skips any PNG that is not 8-bit RGBA, so such a
   PNG is never refused as blank. Harmless for the signature (the signer is identity-bound); not changed in 8C.
 - Test hygiene, INFO (F8): `rmeClinicalReader()` attaches the seeded Owner role, which carries Owner's other

@@ -97,7 +97,7 @@ Each finding was verified against source:
 
 | Id | Sev | Finding | Disposition |
 |---|---|---|---|
-| F1 | MEDIUM | A live account holding `manage_clinic_visits` with no clinical role would lose RME authoring at deploy (availability) | **Disproved by read-only production census:** 26 active holders, 0 direct grants, the 8 without a clinical role are all exactly `Front Office` — already refused by the front-desk predicate before 8C. No code change |
+| F1 | MEDIUM | A live account holding `manage_clinic_visits` with no clinical role would lose RME authoring at deploy (availability) | **Disproved by read-only production census** (below): the 8 holders without a clinical role are all exactly `Front Office`, a tier already refused live-encounter authoring at base `3b283ce5` (`isVisitFrontDeskOnly()`) — confirmed in code by round 2. No code change |
 | F2 | LOW | `markPrinted()` stamps `printed_at` on a closed prescription | Already declared in rule 228 §8.3 (print bookkeeping, not an amendment); no change |
 | F3 | LOW | `assertPermits()` decided on the pre-lock copy (AIR-RMC-38) | **Fixed**: re-asserted on the locked row in create and update; R-01/R-02 move the room underneath a stale copy |
 | F4 | LOW | `MAX_PIXELS` 4.19M ≈ 9.7× the largest canvas; the blank scan is O(w·h) | **Fixed**: `MAX_DIMENSION` 2048, `MAX_PIXELS` 1,048,576; R-03 with positive controls at 900×480 and the 700×220 consent canvas |
@@ -106,6 +106,28 @@ Each finding was verified against source:
 | F7 | INFO | The clinic-oversight prescription print is outside `RmePrescriptionPolicy` | Recorded (rule 228 §1.4) |
 | F8 | INFO | `rmeClinicalReader()` inherits the seeded Owner permissions | Recorded (rule 228 §15) |
 
+**Production census behind F1** — Biznet production, `sudo -n -u postgres psql` inside `BEGIN READ ONLY … ROLLBACK`,
+counts only, 2026-11-08 01:59 WITA. Effective holders of `manage_clinic_visits` / `view_clinic_visits` (direct
+`model_has_permissions` ∪ role `model_has_roles`→`role_has_permissions`), active and not deleted:
+27 holders, **0 direct grants**, 26 hold `manage_clinic_visits`, 8 of them with no clinical role — role set exactly
+`Front Office`; **0 unclassified readers** (every holder is a Doctor, Front Office, Owner, Owner+Super Admin, Perawat
+or Supervisor RME account, so the §5 read allowlist removes no live reader); `Tester RME` holders 0.
+
+**Round 2:** session `f05066c9-e87f-4436-bc4d-1f83d1796877`, model `claude-opus-5`, inspected HEAD `979e267b` (the fix
+commit) — **`INDEPENDENT_REVIEW_VERDICT=PASS`**. F3, F4, F5 CLOSED; F1, F2, F6, F7, F8 accepted as recorded; no access
+path widened (the decoder bound can only be tightened, the locked-row re-check keeps the refusal type). New:
+
+| Sev | Finding | Disposition |
+|---|---|---|
+| LOW | Consent signature fields bounded by the generic 3.5M payload but not the 1M signature limit; rule §10.3 read wider than the code | Rule 228 §10.3 corrected; recorded OPEN for the next code sprint (two more `app/` files would exceed PR2's 10-file scope limit) |
+| INFO | Route name in §1.4 was the ability namespace | Corrected to `oversight.rme.visits.prescription.print` |
+| INFO | No test isolated `MAX_DIMENSION` | R-05 (3000×300 — under `MAX_PIXELS`) |
+| INFO | R-03 positive controls were header-only | Replaced by real, fully decoded canvases at 900×480, 400×140, 700×220 |
+| INFO | §15 still said the review was owed | Updated |
+| INFO | F1 census lacked query and timestamp, and a read-permission line | Recorded above |
+
+The commit after round 2 changes tests and docs only — `git diff --stat 979e267b HEAD -- app routes config resources
+database` is empty — so round 2's verdict covers the shipped code.
 ## 3. Release
 
 Filled in at release.
