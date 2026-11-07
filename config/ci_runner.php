@@ -168,8 +168,9 @@ return [
         'ClinicMasterData',
         'BladePhpDirectivePairing',
 
-        // DMS-RME-REVISION-PROGRAM-8B PR1 (rule 227 §4) — D2 serialised
-        // invoice/payment/consent numbering.
+        // DMS-RME-REVISION-PROGRAM-8B (rule 227) — PR2 D1 clinical document
+        // read scope; PR1 D2 serialised invoice/payment/consent numbering.
+        'RmeClinicalDocumentReadScope',
         'RmeDocumentNumberSequenceLock',
     ],
 
@@ -1541,6 +1542,11 @@ return [
         'tests/Feature/ClinicMasterData/ClinicRoomFormTemplateTest.php',
         'tests/Feature/ClinicMasterData/ClinicMasterDataPermissionTest.php',
         'tests/Feature/Ui/BladePhpDirectivePairingTest.php',
+
+        // DMS-RME-REVISION-PROGRAM-8B PR2 (rule 227 §1) — D1: clinical documents
+        // read under the document scope (front desk and cashier only in their
+        // working branch). Declared so a rename cannot drop it.
+        'tests/Feature/RME/RmeClinicalDocumentReadScopeTest.php',
 
         // DMS-RME-REVISION-PROGRAM-8B PR1 (rule 227 §4) — D2: invoice/payment/
         // consent numbers serialised per sequence and month, soft-deleted

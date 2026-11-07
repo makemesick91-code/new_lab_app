@@ -8,6 +8,7 @@ use App\Modules\ClinicVisit\Interfaces\ClinicVisitRepositoryInterface;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Prescription\Interfaces\RmePrescriptionRepositoryInterface;
 use App\Modules\Prescription\Models\RmePrescription;
+use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
 use App\Support\Clinical\ClinicalClock;
 use App\Support\Storage\ClinicalEvidenceStorage;
 use Illuminate\Support\Collection;
@@ -25,12 +26,20 @@ class RmePrescriptionService
         private readonly ClinicalClock $clock,
         private readonly ClinicVisitRepositoryInterface $visits,
         private readonly PrescriptionAuthoringAuthority $authority,
+        private readonly RmeWorkingBranchScope $workingBranch,
     ) {}
 
-    public function showDataForVisit(ClinicVisit $clinicVisit): array
+    /**
+     * DMS-RME-REVISION-PROGRAM-8B / D1 — the history list beside the form is a
+     * clinical document read too, so it follows the viewer's document scope:
+     * the front desk and the cashier see only their working branch's
+     * prescriptions. The viewer is required so no caller can fall back to the
+     * whole estate by omission.
+     */
+    public function showDataForVisit(ClinicVisit $clinicVisit, User $viewer): array
     {
         $clinicVisit->loadMissing(['patient', 'doctor', 'branch', 'medicalRecord']);
-        $branchIds = $this->branches->rmeEnabledIds();
+        $branchIds = $this->workingBranch->clinicalDocumentBranchIdsFor($viewer);
 
         $prescription = $this->prescriptions->findByClinicVisit($clinicVisit->id);
         $history = $this->prescriptions->historyForPatient(

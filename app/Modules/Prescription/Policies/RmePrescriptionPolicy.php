@@ -8,6 +8,7 @@ use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Prescription\Models\RmePrescription;
 use App\Modules\Prescription\Services\PrescriptionAuthoringAuthority;
 use App\Modules\RME\Services\DoctorPatientScopeService;
+use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
 use Illuminate\Auth\Access\Response;
 
 class RmePrescriptionPolicy
@@ -19,7 +20,7 @@ class RmePrescriptionPolicy
 
     public function view(User $user, RmePrescription $prescription): Response|bool
     {
-        if (! $this->canView($user) || ! $this->belongsToActiveBranch($prescription->branch_id)) {
+        if (! $this->canView($user) || ! $this->mayReadDocumentAt($user, $prescription->branch_id)) {
             return false;
         }
 
@@ -37,7 +38,7 @@ class RmePrescriptionPolicy
 
     public function viewForVisit(User $user, ClinicVisit $clinicVisit): Response|bool
     {
-        if (! $this->canView($user) || ! $this->belongsToActiveBranch($clinicVisit->branch_id)) {
+        if (! $this->canView($user) || ! $this->mayReadDocumentAt($user, $clinicVisit->branch_id)) {
             return false;
         }
 
@@ -78,6 +79,16 @@ class RmePrescriptionPolicy
         }
 
         return $this->view($user, $prescription);
+    }
+
+    /**
+     * DMS-RME-REVISION-PROGRAM-8B / D1 — the clinical DOCUMENT read scope:
+     * the front desk and the cashier read only their working branch, everyone
+     * else keeps the RME-enabled set (RmeWorkingBranchScope::allowsClinicalDocument()).
+     */
+    private function mayReadDocumentAt(User $user, ?int $branchId): bool
+    {
+        return app(RmeWorkingBranchScope::class)->allowsClinicalDocument($user, $branchId);
     }
 
     private function canView(User $user): bool
