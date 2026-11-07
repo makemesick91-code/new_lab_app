@@ -1,6 +1,6 @@
 ---
-description: DMS-RME-REVISION-PROGRAM-8C — the doctor room scope (rule 138) binds prescription reads/writes and the live-encounter RME/odontogram/performed-treatment write authority; only the clinical examination authority starts an examination (front desk keeps cancel); a finished examination keeps its doctor when the room changes; RME/odontogram authoring and cross-branch clinical-document read are role ALLOWLISTS. Closes OD-7-2, R8A-1, OD-5-7, OD-5-2, OD-5-3, D3-NEW-1, D3-NEW-4.
-globs: app/Modules/Prescription/Policies/RmePrescriptionPolicy.php, app/Modules/Prescription/Services/PrescriptionAuthoringAuthority.php, app/Modules/Consent/Services/RmeVisitConsentService.php, app/Modules/ClinicVisit/Policies/ClinicVisitPolicy.php, app/Modules/ClinicVisit/Controllers/ClinicVisitController.php, app/Modules/ClinicVisit/Services/ClinicVisitService.php, app/Modules/RmeOnlineContext/Services/RmeWorkingBranchScope.php, resources/views/rme/visits/show.blade.php
+description: DMS-RME-REVISION-PROGRAM-8C — the doctor room scope (rule 138) binds prescription reads/writes and the live-encounter RME/odontogram/performed-treatment write authority; only the clinical examination authority starts an examination (front desk keeps cancel); a finished examination keeps its doctor when the room changes; RME/odontogram authoring and cross-branch clinical-document read are role ALLOWLISTS; a prescription is read-only once its visit is completed or cancelled, every write is audited, canvases are bounded, the consent signature is no-store, and only the prescription's own doctor signs it. Closes OD-7-2, R8A-1, OD-5-7, OD-5-2, OD-5-3, D3-NEW-1, D3-NEW-4, OD-8A-1, OD-8A-2, P8R-S5, OD-6-2, D3-NEW-2, D3-NEW-6.
+globs: app/Modules/Prescription/Policies/RmePrescriptionPolicy.php, app/Modules/Prescription/Services/PrescriptionAuthoringAuthority.php, app/Modules/Prescription/Services/RmePrescriptionService.php, app/Modules/Prescription/Services/PrescriptionCanvasDecoder.php, app/Modules/Prescription/Requests/*.php, app/Modules/Prescription/Controllers/RmePrescriptionController.php, app/Modules/Consent/Controllers/RmeVisitConsentController.php, resources/views/rme/visits/prescription/show.blade.php, app/Modules/Consent/Services/RmeVisitConsentService.php, app/Modules/ClinicVisit/Policies/ClinicVisitPolicy.php, app/Modules/ClinicVisit/Controllers/ClinicVisitController.php, app/Modules/ClinicVisit/Services/ClinicVisitService.php, app/Modules/RmeOnlineContext/Services/RmeWorkingBranchScope.php, resources/views/rme/visits/show.blade.php
 alwaysApply: false
 ---
 
@@ -8,7 +8,8 @@ alwaysApply: false
 
 **Status:** scope of `DMS-RME-REVISION-PROGRAM-8C` (2026-11-07). Sprint record:
 `docs/sprints/dms-rme-revision-program-8c.md`. Owner decisions of the Program 8 owner-decision checkpoint
-(`DMS-RME-REVISION-PROGRAM-8-OWNER-OPERATIONAL-CLOSURE-1`, 2026-11-07): D3 Group 1 "FIX NOW", D3-NEW-4 "FIX NOW".
+(`DMS-RME-REVISION-PROGRAM-8-OWNER-OPERATIONAL-CLOSURE-1`, 2026-11-07): D3 Group 1 "FIX NOW", D3-NEW-4 "FIX NOW",
+D3 Group 2 "FIX NOW (lock after completion)", signature "named doctor signs only".
 Category under the Foundation-First Sprint Lock: security fix / clinical correctness.
 
 This rule EXTENDS rules 138, 226 and 227. Where they differ, this rule wins:
@@ -73,3 +74,74 @@ rule narrows them.
 `RmeClinicalWriteAuthorityTest` is selected by the new `RmeClinicalWriteAuthority` token in BOTH critical-gate filter
 variants; `RmeClinicalDocumentReadScopeAllowlistTest` is selected by the existing `RmeClinicalDocumentReadScope`
 token. Both are declared in `config/ci_runner.php` `critical_gate_mandatory_suites`.
+
+## 8. A closed visit's prescription is read-only (OD-8A-1)
+
+Owner decision, taken after the reviewer combined OD-8A-1 and OD-8A-2 into one HIGH: **lock after completion**.
+
+1. `PrescriptionAuthoringAuthority::documentLocked()` is the one definition: a prescription whose visit is
+   `completed` or `cancelled` is read-only for every account, Super Admin included. `cashier_pending` is not closed —
+   the doctor may still correct it before it is paid.
+2. `RmePrescriptionPolicy::create()` / `update()` refuse it (403 with the reason), and `RmePrescriptionService`
+   re-decides it on the visit row it holds FOR NO KEY UPDATE (`update()` now takes that lock first, as `create()`
+   always did — rule 223 §1). Super Admin's `Gate::before` skips the policy; the service still refuses (CG-06).
+3. Reading, printing and sending a closed prescription are unchanged. Printing still stamps `printed_at` — print
+   bookkeeping, not an amendment of the clinical content.
+
+## 9. Every prescription write is audited (OD-8A-2)
+
+One `sys_audit_logs` row per create (`RME_PRESCRIPTION_CREATED`) and per update (`RME_PRESCRIPTION_UPDATED`),
+`entity_type = trx_rme_prescriptions`, written in the SAME transaction as the write — a rolled-back write leaves no
+row. The payload is ids, the locked visit's status, the actor and the NAMES of the changed fields (canvas columns
+without `_path`): never a value, never patient data, never a storage key. A refused write writes nothing.
+
+## 10. Canvas payloads are bounded (P8R-S5)
+
+1. The FormRequests cap the R/ payload at `PrescriptionCanvasDecoder::MAX_PAYLOAD_LENGTH` (3,500,000) and the
+   signature at `MAX_SIGNATURE_PAYLOAD_LENGTH` (1,000,000). The application's own fixed canvases (900×480 and 400×140)
+   stay far below both.
+2. The decoder applies `MAX_PAYLOAD_LENGTH` again before decoding, requires a real IHDR as the first chunk, refuses a
+   declared size above `MAX_DIMENSION` (4096) per side or `MAX_PIXELS` (4,194,304), and inflates the image data
+   bounded by the declared size — a small, highly compressed payload cannot ask for a huge decode.
+
+## 11. The consent signature is not cached (OD-6-2)
+
+`RmeVisitConsentController::signature()` streams with `Cache-Control: private, no-store, max-age=0`, as the
+prescription canvases already do.
+
+## 12. Only the prescription's own doctor signs (D3-NEW-2, OD-5-1)
+
+1. `PrescriptionAuthoringAuthority::maySign()` — the account linked to the prescription's own `doctor_id` through
+   `DoctorIdentityResolver` (the one identity link) is the only one that may save the doctor-signature canvas.
+   Identity, not role: a Super Admin, Owner or Supervisor RME that is not that doctor is refused, and `Gate::before`
+   has nothing to bypass.
+2. Another clinician keeps content authoring (OD-5-1 kept): on create the signature is optional for them and the
+   prescription is stored unsigned; a submitted signature is refused before either canvas is decoded or written, and
+   on update the stored signature is never replaced by another account. The named doctor signs on create as before,
+   or adds the signature later with an update.
+3. The form offers the signature canvas only to that doctor (`canSign` from the controller — never decided in Blade);
+   anyone else sees the stored signature read-only or "Belum ditandatangani". Hiding it is not the boundary.
+4. An unsigned prescription prints without the signature image, under the doctor's name (unchanged print template).
+
+## 13. Removed: the uncalled RME-wide `MedicalRecordService::paginate()` (D3-NEW-6)
+
+It listed medical records across every RME branch with only the doctor scope applied and had no caller. It is gone,
+with its now-unused dependency. The repository's `paginateForBranches()` stays: it takes the branch set explicitly,
+so no caller can reach the estate by omission.
+
+## 14. Critical-gate coverage (PR2)
+
+`RmePrescriptionIntegrityTest` is selected by the existing `RmePrescription` token in BOTH critical-gate variants and
+declared in `config/ci_runner.php` `critical_gate_mandatory_suites`.
+
+## 15. Open after 8C (recorded, not done)
+
+- Two docblocks still describe the pre-8C "everyone else keeps the RME-enabled set" read scope
+  (`OdontogramPolicy::mayReadDocumentAt()`, `MedicalRecordPolicy::mayReadDocumentAt()`); comment only — the code
+  follows §5. Fix in the next code-bearing sprint (kept out of 8C PR2 by the 10-file scope limit).
+- An independent (non-self) security review of PR1 and PR2 is still owed — the reviewer agent was blocked by an
+  input-rewriting hook in this session.
+- OWNER DECISION OPEN: an unsigned prescription (content written by another clinician, signature not yet added by
+  the named doctor) prints without a signature image and could be sent. Whether print and the (disabled) WhatsApp
+  hand-off should be refused until the named doctor signs was not part of the 2026-11-07 decisions and is not
+  implemented. Do not add it without that decision.

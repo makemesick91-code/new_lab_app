@@ -44,9 +44,42 @@ controls passed before and after. Records: rule 228, `.claude/rules/rme-clinical
 "no room rule" superseded), supersession markers in rules 226 §1.4 and 227 §1.3. CI: token
 `RmeClinicalWriteAuthority` in both critical-gate variants; both suites declared mandatory.
 
-### PR2 — prescription and consent document integrity
+### PR2 — prescription and consent document integrity (rule 228 §8–§13)
 
-Filled in with PR2.
+| Row | Change | File |
+|---|---|---|
+| OD-8A-1 | **Lock after completion**: `PrescriptionAuthoringAuthority::documentLocked()` (completed / cancelled). The policy refuses create/update with the reason; the service re-decides it on the visit row it holds FOR NO KEY UPDATE (`update()` now takes that lock first, as `create()` always did). `cashier_pending` stays amendable | `PrescriptionAuthoringAuthority`, `RmePrescriptionPolicy`, `RmePrescriptionService` |
+| OD-8A-2 | One `sys_audit_logs` row per create / update (`RME_PRESCRIPTION_CREATED` / `_UPDATED`) in the same transaction: ids, locked visit status, actor, changed field NAMES — never a value, patient data or storage key | `RmePrescriptionService` |
+| P8R-S5 | FormRequest `max` on both canvases; the decoder re-applies the payload bound, requires a real IHDR, refuses a declared size above 4096 per side or 4,194,304 pixels, and inflates bounded by the declared size | `Store/UpdateRmePrescriptionRequest`, `PrescriptionCanvasDecoder` |
+| OD-6-2 | Consent signature stream `Cache-Control: private, no-store, max-age=0` | `RmeVisitConsentController` |
+| D3-NEW-2 / OD-5-1 | **Named doctor signs only**: `maySign()` (identity via `DoctorIdentityResolver`, role-free); another clinician writes content unsigned and can never save or replace the signature; the canvas is offered only to that doctor (`canSign` from the controller) | `PrescriptionAuthoringAuthority`, `RmePrescriptionService`, `RmePrescriptionController`, `prescription/show.blade.php` |
+| D3-NEW-6 | The uncalled RME-wide `MedicalRecordService::paginate()` and its now-unused dependency removed | `MedicalRecordService` |
+
+Nine `app/*.php` files (the scope limit is ten). Kept OUT on purpose, recorded in rule 228 §15: two comment-only
+docblocks in `OdontogramPolicy` / `MedicalRecordPolicy` that still describe the pre-8C read scope (the code follows
+§5) — PR1 self-review finding #6, fixed for `RmePrescriptionPolicy` here.
+
+RED evidence: 14 of 20 new tests failed on the PR1 head, each for the reason under test; I3-01 was then tightened to
+assert the size message (it had passed only because the padded payload failed the PNG check) and I3-01b added for
+the decoder-level bound. Records: rule 228 §8–§15, `.claude/rules/rme-clinical.md` AIR-RMC-53. CI: the existing
+`RmePrescription` token selects the suite; it is declared mandatory.
+
+Existing contracts revised, never deleted: authors who are not the visit's doctor send no signature (default forms in
+the authoring-authority, role-matrix and printed-identity suites); P8A-RX-50 now pins the refusal the owner decided;
+RX-01 is split (RX-01b: the named doctor writes both canvases); RX-17's positive control is split per account. Two
+fixtures (`prescriptionVisit`, `p6PrescriptionVisit`) gave the visit a room of ANOTHER branch, so the visit doctor
+could not be put online in it — they now use a room of the visit's own branch. Three tests could have passed for the
+wrong reason under the new rule (the signer refusal fires before the path they test); they now act as the visit's
+doctor and pin the exact message (`Area gambar kosong…`, `Resep untuk kunjungan ini sudah ada…`).
+
+Verification: SQLite — integrity 21/21, related suites (Prescription | Consent | MedicalRecord | DoctorPatientScope
+| clinical evidence | write authority | read scope | workspace | print | room scope) 726 run, 0 failed after the
+fixes, governance contracts 113/113. PostgreSQL 16.15 + PHP 8.3 — 185 + 56 run, 0 failed after the fixes,
+including both PostgreSQL-only concurrency suites (`RmeClinicalEvidenceWriteLockConcurrencyTest`, which caught the
+two signer-fixture failures SQLite skips, and `RmePerformedTreatmentConcurrencyTest`, which exercises PR1's
+live-encounter predicate). Mutation: 12 mutants, **12 killed, 0 survived** (lock off in authority / service /
+policy, signer refusal off on create / update, `maySign` always true, payload and pixel bounds off, update audit off,
+audit lists bookkeeping fields, consent signature cacheable, canvas offered to every manager), reverted by copy.
 
 ## 3. Release
 

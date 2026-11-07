@@ -114,6 +114,10 @@ class RmeVisitConsentController extends Controller
         return $disk->response($path, basename($path), [
             'Content-Type' => 'image/png',
             'X-Content-Type-Options' => 'nosniff',
+            // DMS-RME-REVISION-PROGRAM-8C (OD-6-2, rule 228 §11) — a patient's
+            // handwritten signature is never kept by a browser or shared cache,
+            // as the prescription canvases already are not.
+            'Cache-Control' => 'private, no-store, max-age=0',
         ]);
     }
 

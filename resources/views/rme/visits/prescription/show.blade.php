@@ -242,18 +242,35 @@
 
                     <div class="flex flex-col items-end">
                         <div class="w-full max-w-md">
-                            <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
-                                <label class="text-sm font-semibold text-gray-900">Tanda Tangan Dokter</label>
-                                <x-ui.button type="button" variant="secondary" id="clear-signature-canvas-btn" class="min-h-[44px]">
-                                    Bersihkan Tanda Tangan
-                                </x-ui.button>
-                            </div>
-                            <canvas id="signature-canvas"
-                                    width="400" height="140"
-                                    data-existing-src="{{ $sigCanvasSrc }}"
-                                    class="block w-full rounded-lg border-2 border-gray-300 bg-white cursor-crosshair touch-none"
-                                    style="max-width:100%;height:auto;"></canvas>
-                            <input type="hidden" name="doctor_signature_canvas_data" id="signature-canvas-data">
+                            {{-- DMS-RME-REVISION-PROGRAM-8C (D3-NEW-2, rule 228 §12): only the prescription's own
+                                 doctor draws the signature. Hiding the canvas is not the boundary — the service
+                                 refuses a signature from anyone else. --}}
+                            @if ($canSign)
+                                <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
+                                    <label class="text-sm font-semibold text-gray-900">Tanda Tangan Dokter</label>
+                                    <x-ui.button type="button" variant="secondary" id="clear-signature-canvas-btn" class="min-h-[44px]">
+                                        Bersihkan Tanda Tangan
+                                    </x-ui.button>
+                                </div>
+                                <canvas id="signature-canvas"
+                                        width="400" height="140"
+                                        data-existing-src="{{ $sigCanvasSrc }}"
+                                        class="block w-full rounded-lg border-2 border-gray-300 bg-white cursor-crosshair touch-none"
+                                        style="max-width:100%;height:auto;"></canvas>
+                                <input type="hidden" name="doctor_signature_canvas_data" id="signature-canvas-data">
+                            @else
+                                <label class="mb-2 block text-sm font-semibold text-gray-900">Tanda Tangan Dokter</label>
+                                @if ($sigCanvasSrc)
+                                    <img src="{{ $sigCanvasSrc }}" alt="Tanda tangan dokter"
+                                         class="block w-full rounded-lg border-2 border-gray-200 bg-white"
+                                         style="max-width:100%;height:auto;">
+                                @else
+                                    <p class="rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-center text-sm text-gray-600">
+                                        Belum ditandatangani.
+                                    </p>
+                                @endif
+                                <p class="mt-1 text-xs text-gray-500">Hanya dokter yang tercantum pada resep yang dapat menandatangani.</p>
+                            @endif
                             @error('doctor_signature_canvas_data')<p class="mt-1 text-sm text-rose-600">{{ $message }}</p>@enderror
                             {{-- FIX-PRE-68-45 Scope D — name of the doctor currently
                                  handling this visit, shown under the signature canvas.
@@ -464,6 +481,7 @@
             }
 
             const isUpdate = {{ $prescription ? 'true' : 'false' }};
+            const canSign = {{ $canSign ? 'true' : 'false' }};
             const rx = initPrescriptionCanvas('prescription-canvas', 'prescription-canvas-data', 'clear-prescription-canvas-btn', isUpdate);
             const sig = initPrescriptionCanvas('signature-canvas', 'signature-canvas-data', 'clear-signature-canvas-btn', isUpdate);
             const form = document.getElementById('prescription-form');
@@ -472,17 +490,21 @@
                 const rxData = rx?.serialize() ?? '';
                 const sigData = sig?.serialize() ?? '';
 
+                const sigInput = document.getElementById('signature-canvas-data');
+
                 if (!isUpdate) {
-                    if (!rx?.hasContent() || !sig?.hasContent()) {
+                    if (!rx?.hasContent() || (canSign && !sig?.hasContent())) {
                         e.preventDefault();
-                        window.alert('Area R/ dan tanda tangan dokter wajib diisi sebelum menyimpan.');
+                        window.alert(canSign
+                            ? 'Area R/ dan tanda tangan dokter wajib diisi sebelum menyimpan.'
+                            : 'Area R/ wajib diisi sebelum menyimpan.');
                         return;
                     }
-                    document.getElementById('prescription-canvas-data').value = rxData;
-                    document.getElementById('signature-canvas-data').value = sigData;
-                } else {
-                    document.getElementById('prescription-canvas-data').value = rxData;
-                    document.getElementById('signature-canvas-data').value = sigData;
+                }
+
+                document.getElementById('prescription-canvas-data').value = rxData;
+                if (sigInput) {
+                    sigInput.value = sigData;
                 }
             });
         })();

@@ -1571,6 +1571,10 @@ return [
         // 2026-11-07, D3 Group 1 and D3-NEW-4).
         'tests/Feature/RME/RmeClinicalWriteAuthorityTest.php',
         'tests/Feature/RME/RmeClinicalDocumentReadScopeAllowlistTest.php',
+        // 8C PR2 — prescription and consent document integrity (D3 Group 2 "lock
+        // after completion", signature "named doctor signs only"). Selected by the
+        // existing `RmePrescription` token.
+        'tests/Feature/RME/RmePrescriptionIntegrityTest.php',
 
         // SECURITY-F4C-CLINIC-CALENDAR-LAB-ORDERS-1 (owner decision D16) — lab order dates, order and
         // delivery numbering, the due-date floor and "delivered today" on the clinic calendar

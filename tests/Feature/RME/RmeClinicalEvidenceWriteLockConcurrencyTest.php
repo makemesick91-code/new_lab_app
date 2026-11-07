@@ -263,7 +263,9 @@ it('holds the visit row while a prescription is being created', function (): voi
             'prescription_date' => '2026-11-06',
             'patient_name_snapshot' => 'Pasien Integritas',
             'prescription_canvas_data' => $png,
-            'doctor_signature_canvas_data' => $png,
+            // DMS-RME-REVISION-PROGRAM-8C (rule 228 §12) — the author here is not the
+            // visit's doctor, so it writes the content only; the row lock under
+            // test is taken before the signature is ever considered.
         ], $user);
 
         expect(p6lProbeBlocked('trx_clinic_visits', $this->visitId))->toBeTrue();
@@ -283,14 +285,16 @@ it('answers a second prescription create with the existing contract, not a datab
         'prescription_date' => '2026-11-06',
         'patient_name_snapshot' => 'Pasien Integritas',
         'prescription_canvas_data' => $png,
-        'doctor_signature_canvas_data' => $png,
+        // 8C (rule 228 §12) — content only: the author is not the visit's doctor.
     ];
 
     app(RmePrescriptionService::class)->create($visit, $payload, $user);
     $objectsAfterFirst = Storage::disk('clinical_evidence')->allFiles();
 
+    // The "already exists" answer specifically, so a different refusal (the 8C
+    // signer or completion lock) cannot satisfy this assertion.
     expect(fn () => app(RmePrescriptionService::class)->create($visit->fresh(), $payload, $user))
-        ->toThrow(ValidationException::class);
+        ->toThrow(ValidationException::class, 'Resep untuk kunjungan ini sudah ada. Gunakan Edit Resep.');
 
     expect(Storage::disk('clinical_evidence')->allFiles())->toBe($objectsAfterFirst);
 });

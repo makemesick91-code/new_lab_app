@@ -160,8 +160,10 @@ it('C1-06 keeps a post-examination visit of another room readable (history is ne
 it('C1-07 does not room-scope a clinician who is not doctor-scoped (Supervisor RME)', function () {
     $supervisor = rmeClinicalAuthor();
 
+    // 8C PR2 (rule 228 §12) — the supervisor writes the content; the signature is
+    // the visit doctor's own, so none is sent.
     actingAs($supervisor)
-        ->post(route('rme.visits.prescription.store', $this->visitB), cwaForm())
+        ->post(route('rme.visits.prescription.store', $this->visitB), cwaForm(['doctor_signature_canvas_data' => null]))
         ->assertRedirect(route('rme.visits.prescription.show', $this->visitB));
 });
 

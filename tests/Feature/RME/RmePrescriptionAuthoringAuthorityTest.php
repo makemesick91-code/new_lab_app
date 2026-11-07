@@ -99,7 +99,10 @@ function p8arxForm(ClinicVisit $visit, array $overrides = []): array
         'pregnant_or_breastfeeding' => 'Tidak',
         'renal_function_issue' => 'Tidak',
         'prescription_canvas_data' => validPodSignatureData(),
-        'doctor_signature_canvas_data' => validPodSignatureData(),
+        // DMS-RME-REVISION-PROGRAM-8C (rule 228 §12) — content authoring: only the
+        // prescription's own doctor saves the signature (pinned in
+        // RmePrescriptionIntegrityTest I5), so the authors here send none. A test
+        // that needs the signature acts as rmePrescriptionSigner().
     ], $overrides);
 }
 
@@ -132,7 +135,11 @@ function p8arxFrontDesk(string $role, Branch $branch): User
 |--------------------------------------------------------------------------
 */
 
-it('P8A-RX-01 lets the clinician fixture create a prescription with both canvases', function () {
+// REVISED by DMS-RME-REVISION-PROGRAM-8C (rule 228 §12): this used to write both
+// canvases as the clinician fixture. Only the prescription's own doctor signs now,
+// so the fixture writes the R/ content (one object, no signature) and RX-01b pins
+// that the named doctor still writes both.
+it('P8A-RX-01 lets the clinician fixture create a prescription (content, unsigned)', function () {
     $visit = p8arxVisit($this->branchA, $this->doctorA);
 
     $this->actingAs($this->clinician)
@@ -141,6 +148,23 @@ it('P8A-RX-01 lets the clinician fixture create a prescription with both canvase
 
     $prescription = RmePrescription::where('clinic_visit_id', $visit->id)->firstOrFail();
     expect((int) $prescription->created_by)->toBe($this->clinician->id)
+        ->and($prescription->doctor_signature_canvas_path)->toBeNull()
+        ->and(p8arxObjectCount())->toBe(1);
+});
+
+it('P8A-RX-01b lets the prescription\'s own doctor create it with both canvases', function () {
+    $visit = p8arxVisit($this->branchA, $this->doctorA);
+    $signer = rmePrescriptionSigner($visit);
+
+    $this->actingAs($signer)
+        ->post(route('rme.visits.prescription.store', $visit), p8arxForm($visit, [
+            'doctor_signature_canvas_data' => validPodSignatureData(),
+        ]))
+        ->assertRedirect(route('rme.visits.prescription.show', $visit));
+
+    $prescription = RmePrescription::where('clinic_visit_id', $visit->id)->firstOrFail();
+    expect((int) $prescription->created_by)->toBe($signer->id)
+        ->and($prescription->doctor_signature_canvas_path)->not->toBeNull()
         ->and(p8arxObjectCount())->toBe(2);
 });
 
@@ -150,11 +174,15 @@ it('P8A-RX-02 lets the visit doctor create and then update their own prescriptio
     // visit's own treatment room; another room is refused (P8A-RX-51).
     $doctorUser = rmeMakeDoctorOnline($this->doctorA, $this->branchA, ClinicRoom::query()->findOrFail($visit->clinic_room_id));
 
+    // Rule 228 §12 — the visit's own doctor signs what they write.
     $this->actingAs($doctorUser)
-        ->post(route('rme.visits.prescription.store', $visit), p8arxForm($visit))
+        ->post(route('rme.visits.prescription.store', $visit), p8arxForm($visit, [
+            'doctor_signature_canvas_data' => validPodSignatureData(),
+        ]))
         ->assertRedirect(route('rme.visits.prescription.show', $visit));
 
     $prescription = RmePrescription::where('clinic_visit_id', $visit->id)->firstOrFail();
+    expect($prescription->doctor_signature_canvas_path)->not->toBeNull();
 
     $this->actingAs($doctorUser)
         ->patch(route('rme.prescriptions.update', $prescription), p8arxForm($visit, ['allergy_note' => 'Diperbarui dokter']))
@@ -320,8 +348,17 @@ it('P8A-RX-17 does not offer the front desk the prescription editor (UI mirrors 
         ->assertDontSee('name="doctor_signature_canvas_data"', false);
 
     // Positive control: the same page offers the editor to an authorised author,
-    // so the absence above cannot pass because the markers were renamed.
+    // so the absence above cannot pass because the markers were renamed. Since
+    // DMS-RME-REVISION-PROGRAM-8C (rule 228 §12) the signature input belongs to
+    // the prescription's own doctor, so each marker is controlled by the account
+    // that is offered it.
     $this->actingAs($this->clinician)
+        ->get(route('rme.visits.prescription.show', $visit))
+        ->assertOk()
+        ->assertSee('name="prescription_canvas_data"', false)
+        ->assertDontSee('name="doctor_signature_canvas_data"', false);
+
+    $this->actingAs(rmePrescriptionSigner($visit))
         ->get(route('rme.visits.prescription.show', $visit))
         ->assertOk()
         ->assertSee('name="prescription_canvas_data"', false)
@@ -549,15 +586,18 @@ it('P8A-RX-45 refuses a doctor outside the patient scope in the service', functi
 |--------------------------------------------------------------------------
 */
 
-it('P8A-RX-50 leaves a clinician able to amend the prescription of a completed visit (undecided, owner decision)', function () {
+// REVISED by DMS-RME-REVISION-PROGRAM-8C: this pinned the UNDECIDED state ("a
+// completed visit's prescription stays amendable"). The owner decided on
+// 2026-11-07 — lock after completion (rule 228 §8) — so it now pins the refusal.
+it('P8A-RX-50 refuses amending the prescription of a completed visit (owner decision: lock after completion)', function () {
     $visit = p8arxVisit($this->branchA, $this->doctorA, ['status' => ClinicVisit::STATUS_COMPLETED]);
     $prescription = p8arxPrescription($visit);
 
     $this->actingAs($this->clinician)
         ->patch(route('rme.prescriptions.update', $prescription), p8arxForm($visit, ['allergy_note' => 'Revisi klinisi']))
-        ->assertRedirect(route('rme.visits.prescription.show', $visit));
+        ->assertForbidden();
 
-    expect($prescription->fresh()->allergy_note)->toBe('Revisi klinisi');
+    expect($prescription->fresh()->allergy_note)->toBe('CATATAN ASLI');
 });
 
 it('P8A-RX-51 refuses a doctor writing the prescription of an active visit in another room (OD-7-2)', function () {

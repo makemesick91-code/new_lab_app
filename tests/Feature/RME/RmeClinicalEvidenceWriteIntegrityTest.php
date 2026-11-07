@@ -38,6 +38,7 @@
 
 use App\Modules\Branch\Models\Branch;
 use App\Modules\Clinic\Models\Clinic;
+use App\Modules\ClinicRoom\Models\ClinicRoom;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
@@ -298,12 +299,16 @@ function p6PrescriptionVisit(object $test): ClinicVisit
 {
     Branch::query()->whereKey($test->branch->id)->update(['is_rme_enabled' => true]);
     $doctor = Doctor::factory()->create(['name' => 'drg. Integritas']);
-    rmeMakeDoctorOnline($doctor, Branch::query()->findOrFail($test->branch->id));
+    // DMS-RME-REVISION-PROGRAM-8C — a room of the visit's OWN branch (the factory
+    // default belongs to another branch), so the visit doctor can be online in it.
+    $room = ClinicRoom::factory()->create(['branch_id' => $test->branch->id, 'status' => ClinicRoom::STATUS_ACTIVE]);
+    rmeMakeDoctorOnline($doctor, Branch::query()->findOrFail($test->branch->id), $room);
 
     return ClinicVisit::factory()->inProgress()->create([
         'branch_id' => $test->branch->id,
         'patient_id' => Patient::factory()->create(['branch_id' => $test->branch->id])->id,
         'doctor_id' => $doctor->id,
+        'clinic_room_id' => $room->id,
     ]);
 }
 
@@ -319,6 +324,9 @@ function p6PrescriptionForm(ClinicVisit $visit, array $canvases): array
 
 it('leaves no orphaned canvas when a prescription update is refused after the R/ canvas decoded', function () {
     $visit = p6PrescriptionVisit($this);
+    // DMS-RME-REVISION-PROGRAM-8C (rule 228 §12) — only the visit's own doctor saves
+    // the signature, so the decode/write paths under test are reached as that doctor.
+    $signer = rmePrescriptionSigner($visit);
     $prescription = RmePrescription::factory()->withStoredCanvases()->create([
         'clinic_visit_id' => $visit->id,
         'branch_id' => $visit->branch_id,
@@ -328,12 +336,14 @@ it('leaves no orphaned canvas when a prescription update is refused after the R/
     $objectsBefore = p6StoredObjects();
     $pathsBefore = [$prescription->prescription_canvas_path, $prescription->doctor_signature_canvas_path];
 
-    $this->actingAs($this->manager)
+    $this->actingAs($signer)
         ->patch(route('rme.prescriptions.update', $prescription), p6PrescriptionForm($visit, [
             'prescription_canvas_data' => p6PngDataUri(3),
             'doctor_signature_canvas_data' => p6BlankCanvas(),
         ]))
-        ->assertSessionHasErrors('doctor_signature_canvas_data');
+        // The decode refusal, not the 8C signer refusal: the signer is the visit's
+        // own doctor, so the R/-decoded-then-signature-refused path is reached.
+        ->assertSessionHasErrors(['doctor_signature_canvas_data' => 'Area gambar kosong tidak dapat disimpan.']);
 
     $prescription->refresh();
     expect(p6StoredObjects())->toBe($objectsBefore)
@@ -342,12 +352,15 @@ it('leaves no orphaned canvas when a prescription update is refused after the R/
 
 it('leaves no orphaned canvases when the prescription row cannot be written', function () {
     $visit = p6PrescriptionVisit($this);
+    // DMS-RME-REVISION-PROGRAM-8C (rule 228 §12) — only the visit's own doctor saves
+    // the signature, so the decode/write paths under test are reached as that doctor.
+    $signer = rmePrescriptionSigner($visit);
 
     RmePrescription::creating(function (): void {
         throw new RuntimeException('p6: injected prescription-row failure');
     });
 
-    $this->actingAs($this->manager)
+    $this->actingAs($signer)
         ->post(route('rme.visits.prescription.store', $visit), p6PrescriptionForm($visit, [
             'prescription_canvas_data' => p6PngDataUri(4),
             'doctor_signature_canvas_data' => p6PngDataUri(5),
@@ -361,8 +374,11 @@ it('leaves no orphaned canvases when the prescription row cannot be written', fu
 it('never lets a refused prescription update overwrite the committed canvas in the same second', function () {
     Carbon::setTestNow(Carbon::parse('2026-11-06 03:00:00', 'UTC'));
     $visit = p6PrescriptionVisit($this);
+    // DMS-RME-REVISION-PROGRAM-8C (rule 228 §12) — only the visit's own doctor saves
+    // the signature, so the decode/write paths under test are reached as that doctor.
+    $signer = rmePrescriptionSigner($visit);
 
-    $this->actingAs($this->manager)
+    $this->actingAs($signer)
         ->post(route('rme.visits.prescription.store', $visit), p6PrescriptionForm($visit, [
             'prescription_canvas_data' => p6PngDataUri(6),
             'doctor_signature_canvas_data' => p6PngDataUri(7),
@@ -373,12 +389,14 @@ it('never lets a refused prescription update overwrite the committed canvas in t
     $committed = (string) Storage::disk('clinical_evidence')->get($prescription->prescription_canvas_path);
     expect($committed)->toBe(p6PngBytes(6));
 
-    $this->actingAs($this->manager)
+    $this->actingAs($signer)
         ->patch(route('rme.prescriptions.update', $prescription), p6PrescriptionForm($visit, [
             'prescription_canvas_data' => p6PngDataUri(8),
             'doctor_signature_canvas_data' => p6BlankCanvas(),
         ]))
-        ->assertSessionHasErrors('doctor_signature_canvas_data');
+        // The decode refusal, not the 8C signer refusal: the signer is the visit's
+        // own doctor, so the R/-decoded-then-signature-refused path is reached.
+        ->assertSessionHasErrors(['doctor_signature_canvas_data' => 'Area gambar kosong tidak dapat disimpan.']);
 
     $prescription->refresh();
     expect((string) Storage::disk('clinical_evidence')->get($prescription->prescription_canvas_path))->toBe(p6PngBytes(6));
@@ -389,8 +407,11 @@ it('never lets a prescription update whose row write fails overwrite the committ
     // the fresh random key keeps the committed object intact.
     Carbon::setTestNow(Carbon::parse('2026-11-06 03:00:00', 'UTC'));
     $visit = p6PrescriptionVisit($this);
+    // DMS-RME-REVISION-PROGRAM-8C (rule 228 §12) — only the visit's own doctor saves
+    // the signature, so the decode/write paths under test are reached as that doctor.
+    $signer = rmePrescriptionSigner($visit);
 
-    $this->actingAs($this->manager)
+    $this->actingAs($signer)
         ->post(route('rme.visits.prescription.store', $visit), p6PrescriptionForm($visit, [
             'prescription_canvas_data' => p6PngDataUri(12),
             'doctor_signature_canvas_data' => p6PngDataUri(13),
@@ -404,7 +425,7 @@ it('never lets a prescription update whose row write fails overwrite the committ
         throw new RuntimeException('p6: injected prescription-update failure');
     });
 
-    $this->actingAs($this->manager)
+    $this->actingAs($signer)
         ->patch(route('rme.prescriptions.update', $prescription), p6PrescriptionForm($visit, [
             'prescription_canvas_data' => p6PngDataUri(14),
             'doctor_signature_canvas_data' => p6PngDataUri(15),
@@ -445,7 +466,9 @@ it('keeps the written object when the failure comes after the transaction body',
 it('streams the stored prescription and signature canvases to an authorized user', function (string $kind) {
     $visit = p6PrescriptionVisit($this);
 
-    $this->actingAs($this->manager)
+    // Rule 228 §12 — the signature is written by the visit's own doctor; the
+    // authorized READER below is unchanged.
+    $this->actingAs(rmePrescriptionSigner($visit))
         ->post(route('rme.visits.prescription.store', $visit), p6PrescriptionForm($visit, [
             'prescription_canvas_data' => p6PngDataUri(9),
             'doctor_signature_canvas_data' => p6PngDataUri(10),

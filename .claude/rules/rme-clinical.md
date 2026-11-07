@@ -226,13 +226,13 @@ editable) → Persetujuan Tindakan Medis (RME + finish unlocked) → RME + Odont
   so a segment that is not a bigint key answers 404 instead of an HTTP 500 with an ERROR line on PostgreSQL (for any
   signed-in account: binding runs before the permission middleware). Never add a per-route `where`/`whereNumber` for
   a governed parameter: it overrides the global pattern. A generic name is constrained per route, never globally.
-  Source: `.cursor/rules/222-rme-route-key-constraint-and-failure-log-redaction.mdc` §1.
+  Source: rule 222 §1.
 - **AIR-RMC-38** Decide a visit's status, room and consent window on the LOCKED row:
   `transitionStatus()`, `assignRoom()` and `RmeVisitConsentService::sign()` take
   `ClinicVisitRepositoryInterface::lockForStatusDecision()` (FOR NO KEY UPDATE, never FOR UPDATE: FK inserts must not
   wait or deadlock) and re-check the map / `isTerminal()` / `assertSignable()` on that row before writing (a stale
   copy let a cancelled visit come back billable). Lock the visit row first, always.
-  Source: `.cursor/rules/223-rme-clinical-workflow-integrity.mdc` §1.
+  Source: rule 223 §1.
 - **AIR-RMC-39** Detail Kunjungan "Buat Rekam Medis" (`canCreateRecordHere`), the Rekam Medis page "Selesai
   Pemeriksaan" (`transition` + `completeExamination` + signed consent), the handwriting editor and the diagnosis forms
   (`canAuthorRme`) follow the capability, never a permission alone. Source: rule 223 §2.
@@ -246,8 +246,7 @@ editable) → Persetujuan Tindakan Medis (RME + finish unlocked) → RME + Odont
   then in one transaction (draft if needed, authorize, lock the parent row FOR NO KEY UPDATE, write a fresh
   random-suffixed object, write the row); any failure removes only the object this call wrote. Never create a draft
   before validation, never reuse or rebuild a key from request input, never delete committed evidence
-  (`MedicalRecordHandwritingService::save()`, `RmePrescriptionService`). Source:
-  `.cursor/rules/224-rme-clinical-evidence-write-integrity.mdc` §1–5.
+  (`MedicalRecordHandwritingService::save()`, `RmePrescriptionService`). Source: rule 224 §1–5.
 - **AIR-RMC-43** Name a controller's route-model argument after its route segment (`{rmePrescription}` →
   `$rmePrescription`); a mismatch injects an empty model. `ClinicalEvidenceStorage::dataUri()` is null for an absent,
   unreadable or non-PNG object and print renders "Gambar halaman ini tidak tersedia." instead of an empty `<img>`.
@@ -256,11 +255,11 @@ editable) → Persetujuan Tindakan Medis (RME + finish unlocked) → RME + Odont
   `UniqueConstraintViolationException` outside it, then re-read the winner (`?? throw`). Never re-read inside the
   aborted transaction (25P02). Visit numbers are read only after `lockVisitSequence($branchId)` (advisory lock
   92_001, per branch) and `withTrashed()` (the unique indexes hold soft-deleted visits); a row lock cannot serialise
-  `MAX + 1`. Source: `.cursor/rules/225-rme-concurrent-first-write-and-void-staging-integrity.mdc` §1–4.
+  `MAX + 1`. Source: rule 225 §1–4.
 - **AIR-RMC-45** A prescription write (create, update, R/ canvas, doctor-signature canvas) follows the clinical authoring
   authority: never the front-desk-only tier, only inside the actor's working branch (`RmeWorkingBranchScope::allows()`),
   doctor-patient scope for a Doctor. `PrescriptionAuthoringAuthority` is the single predicate; the policy reads it and
-  `RmePrescriptionService` re-asserts it before any lock or canvas write. No consent rule (room: see AIR-RMC-50). Source: `.cursor/rules/226-rme-prescription-authoring-authority-and-blade-php-pairing.mdc` §1.
+  `RmePrescriptionService` re-asserts it before any lock or canvas write. No consent rule (room: AIR-RMC-50; lock, signer: AIR-RMC-53). Source: rule 226 §1.
 - **AIR-RMC-46** Clinical documents (MR + handwriting images, prescription page/canvas/print/history, odontogram) are
   read under `RmeWorkingBranchScope::allowsClinicalDocument()`: Kasir / Admin Klinik / Front Office only in their
   working branch (none without one); clinicians and Owner keep the RME set; never wider. Source: rule 227 §1.
@@ -277,6 +276,9 @@ editable) → Persetujuan Tindakan Medis (RME + finish unlocked) → RME + Odont
   `cashier_pending` room move keeps the doctor. Rule 228 §3–§4.
 - **AIR-RMC-52** RME/odontogram authoring needs a `FrontOfficeRole::CLINICAL_ROLES` role; cross-branch document read is
   `CROSS_BRANCH_DOCUMENT_READ_ROLES` (clinical + Owner), else none. Rule 228 §5.
+- **AIR-RMC-53** A completed/cancelled visit's prescription is read-only (`documentLocked()`: policy, and the service
+  under the visit lock); each write logs `RME_PRESCRIPTION_CREATED|UPDATED` (field names only); canvases are bounded;
+  only the prescription's own doctor (`maySign()`) saves the signature. Rule 228 §8–§13.
 
 ## Current posture (snapshot 2026-10-25 — verify before relying on it)
 
@@ -319,7 +321,7 @@ editable) → Persetujuan Tindakan Medis (RME + finish unlocked) → RME + Odont
 | `.cursor/rules/225-rme-concurrent-first-write-and-void-staging-integrity.mdc` | Savepoint-adopt for racing first writes (assignment, draft book); per-branch visit numbering lock; closes R5-1, R5-2, R6-1 |
 | `.cursor/rules/226-rme-prescription-authoring-authority-and-blade-php-pairing.mdc` | Prescription writes follow the clinical authoring authority (front desk never, working branch only); Blade never mixes inline and block PHP; closes P8-N1, P8-N3 |
 | `.cursor/rules/227-rme-clinical-document-read-scope-printed-identity-numbering.mdc` | Clinical document read scope; server-derived printed prescription identity; clinical-role authoring allowlist; serialised invoice/payment/consent numbers |
-| `.cursor/rules/228-rme-clinical-write-authority-and-prescription-integrity.mdc` | Room scope on prescriptions and live-encounter writes; clinical start-examination; doctor frozen after exam; role allowlists |
+| `.cursor/rules/228-rme-clinical-write-authority-and-prescription-integrity.mdc` | Room scope on prescriptions and live-encounter writes; clinical start-examination; doctor frozen after exam; role allowlists; prescription lock/audit/signer |
 
 ## History
 

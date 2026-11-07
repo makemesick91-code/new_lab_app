@@ -4,10 +4,12 @@
 # signature "named doctor signs only", D3-NEW-4 "FIX NOW".
 # Delivered as TWO pull requests because `sprint:scope-audit --strict` refuses more than 10 changed app/*.php files
 # under SECURITY_FIX (the Program 8B precedent; the type is not relabelled and no waiver is recorded):
-# PR1 (this) = clinical write authority + read allowlist (rule 228 §1-§5): OD-7-2/R8A-1 prescription room scope,
+# PR1 = clinical write authority + read allowlist (rule 228 §1-§5): OD-7-2/R8A-1 prescription room scope,
 # OD-5-7 live-encounter write room scope, OD-5-2 start-examination authority (front desk keeps cancel), OD-5-3 doctor
 # frozen after the examination, D3-NEW-1 RME/odontogram authoring allowlist, D3-NEW-4 cross-branch clinical-document
-# read allowlist. PR2 = prescription and consent document integrity. One deploy and the GO tag follow PR2.
+# read allowlist. PR2 (this) = prescription and consent document integrity (rule 228 §8-§13): OD-8A-1 lock after
+# completion, OD-8A-2 audit, P8R-S5 canvas bounds, OD-6-2 consent signature no-store, D3-NEW-2 named-doctor
+# signature, D3-NEW-6 dead RME-wide paginate removed. One deploy and the GO tag follow PR2.
 # No schema, migration, permission, role, route, JS/CSS or package change; no flag, enforcement scope, branch lock,
 # queue worker, scheduler or KTP timer change. Foundation-First Sprint Lock stays ACTIVE (allowed category: security
 # fix / clinical correctness). Full Suite deferred (CG-18), not passed.
@@ -15,7 +17,7 @@
 id: DMS-RME-REVISION-PROGRAM-8C
 type: SECURITY_FIX
 module: Rme
-title: "Clinical write authority: room scope on prescriptions and live-encounter writes, clinical start-examination authority, doctor frozen after the examination, authoring and document-read allowlists (8C PR1 of 2)"
+title: "Prescription and consent document integrity: lock after completion, audited writes, bounded canvases, no-store consent signature, named-doctor signature (8C PR2 of 2)"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 runtime_change: true
 schema_change: false

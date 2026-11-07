@@ -1,6 +1,7 @@
 <?php
 
 use App\Modules\Branch\Models\Branch;
+use App\Modules\ClinicRoom\Models\ClinicRoom;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\Patient\Models\Patient;
@@ -27,12 +28,17 @@ function prescriptionVisit(array $overrides = []): ClinicVisit
         'date_of_birth' => now()->subYears(32)->toDateString(),
     ]);
     $doctor = Doctor::factory()->create(['name' => 'drg. Andi Wijaya']);
-    rmeMakeDoctorOnline($doctor, Branch::query()->findOrFail($branchId));
+    // DMS-RME-REVISION-PROGRAM-8C — the visit sits in a room of its OWN branch and
+    // the doctor is online there (the factory default room belongs to a different
+    // branch), so rmePrescriptionSigner() can put the visit doctor in that room.
+    $room = ClinicRoom::factory()->create(['branch_id' => $branchId, 'status' => ClinicRoom::STATUS_ACTIVE]);
+    rmeMakeDoctorOnline($doctor, Branch::query()->findOrFail($branchId), $room);
 
     return ClinicVisit::factory()->inProgress()->create(array_merge([
         'branch_id' => $branchId,
         'patient_id' => $patient->id,
         'doctor_id' => $doctor->id,
+        'clinic_room_id' => $room->id,
     ], $overrides));
 }
 
@@ -109,8 +115,10 @@ it('authorized user can open prescription page with auto-filled defaults', funct
 });
 
 it('can store prescription with prescription and signature canvases', function () {
-    $manager = rmeClinicalAuthor(['manage_clinic_visits']);
     $visit = prescriptionVisit();
+    // DMS-RME-REVISION-PROGRAM-8C (rule 228 §12) — both canvases are written by the
+    // visit's own doctor; another author writes the R/ content only.
+    $manager = rmePrescriptionSigner($visit);
 
     $this->actingAs($manager)
         ->post(route('rme.visits.prescription.store', $visit), prescriptionFormPayload($visit))
@@ -139,6 +147,8 @@ it('can update an existing prescription', function () {
         ->patch(route('rme.prescriptions.update', $prescription), array_merge(
             prescriptionFormPayload($visit, ['prescribed_by_name' => 'drg. Baru']),
             prescriptionCanvasPayload(),
+            // Rule 228 §12 — a non-signing author amends the content only.
+            ['doctor_signature_canvas_data' => null],
         ))
         ->assertRedirect(route('rme.visits.prescription.show', $visit));
 
