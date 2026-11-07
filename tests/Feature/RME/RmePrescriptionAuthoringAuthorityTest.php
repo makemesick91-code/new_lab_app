@@ -51,8 +51,11 @@ beforeEach(function () {
     $this->doctorA = Doctor::factory()->withAllowedBranches([$this->branchA])->create(['name' => 'drg. Andi Wijaya']);
     $this->doctorB = Doctor::factory()->withAllowedBranches([$this->branchB])->create(['name' => 'drg. Budi Santoso']);
 
-    // The existing role-less fixture the prescription suites have always used.
-    $this->clinician = userWith(['view_clinic_visits', 'manage_clinic_visits']);
+    // The permission fixture the prescription suites have always used. Since
+    // DMS-RME-REVISION-PROGRAM-8B / D7 it also carries a clinical role: the
+    // role-less form of it is now refused, and that refusal is pinned in
+    // RmePrescriptionAuthoringRoleMatrixTest.
+    $this->clinician = rmeClinicalAuthor(['view_clinic_visits', 'manage_clinic_visits']);
 });
 
 function p8arxVisit(Branch $branch, Doctor $doctor, array $overrides = []): ClinicVisit

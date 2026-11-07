@@ -6,6 +6,8 @@ use App\Models\User;
 use App\Modules\Branch\Services\BranchService;
 use App\Modules\ClinicVisit\Interfaces\ClinicVisitRepositoryInterface;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
+use App\Modules\Doctor\Models\Doctor;
+use App\Modules\Patient\Models\Patient;
 use App\Modules\Prescription\Interfaces\RmePrescriptionRepositoryInterface;
 use App\Modules\Prescription\Models\RmePrescription;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
@@ -52,6 +54,42 @@ class RmePrescriptionService
             'prescription' => $prescription,
             'defaults' => $this->buildDefaults($clinicVisit),
             'history' => $history,
+        ];
+    }
+
+    /**
+     * DMS-RME-REVISION-PROGRAM-8B / D6 (P8R-S3) — the dentist and patient named
+     * on the printed prescription.
+     *
+     * Both used to be free-text request fields, so the drawn doctor signature
+     * sat above whatever name an authoring account typed. They now come only
+     * from the clinical records: the doctor and patient the visit (or the
+     * prescription itself) already points at. A prescription with no doctor is
+     * refused rather than printed under an invented or blank name.
+     *
+     * @return array{doctor_id: int, prescribed_by_name: string, patient_name_snapshot: string}
+     */
+    private function printedIdentity(?Doctor $doctor, ?Patient $patient): array
+    {
+        $doctorName = trim((string) $doctor?->name);
+        $patientName = trim((string) $patient?->name);
+
+        if ($doctor === null || $doctorName === '') {
+            throw ValidationException::withMessages([
+                'prescribed_by_name' => 'Dokter kunjungan belum ditetapkan. Resep hanya dapat disimpan atas nama dokter kunjungan.',
+            ]);
+        }
+
+        if ($patient === null || $patientName === '') {
+            throw ValidationException::withMessages([
+                'patient_name_snapshot' => 'Data pasien kunjungan tidak ditemukan.',
+            ]);
+        }
+
+        return [
+            'doctor_id' => (int) $doctor->getKey(),
+            'prescribed_by_name' => $doctorName,
+            'patient_name_snapshot' => $patientName,
         ];
     }
 
@@ -125,6 +163,17 @@ class RmePrescriptionService
             ]);
         }
 
+        // DMS-RME-REVISION-PROGRAM-8B / D6 — the printed identity comes from the
+        // visit's own doctor and patient, never from the request. Resolved
+        // before either canvas is decoded or written, so a refusal leaves
+        // nothing behind.
+        // Soft-deleted rows included: a doctor who left the clinic, or an archived
+        // patient record, still names the visits they belong to.
+        $identity = $this->printedIdentity(
+            $clinicVisit->doctor()->withTrashed()->first(),
+            $clinicVisit->patient()->withTrashed()->first(),
+        );
+
         $prescriptionBytes = $this->canvasDecoder->decode(
             $payload['prescription_canvas_data'] ?? null,
             'prescription_canvas_data',
@@ -156,10 +205,10 @@ class RmePrescriptionService
             'clinic_visit_id' => $clinicVisit->id,
             'medical_record_id' => $clinicVisit->medicalRecord?->id,
             'patient_id' => $clinicVisit->patient_id,
-            'doctor_id' => $clinicVisit->doctor_id,
-            'prescribed_by_name' => $payload['prescribed_by_name'],
+            'doctor_id' => $identity['doctor_id'],
+            'prescribed_by_name' => $identity['prescribed_by_name'],
             'prescription_date' => $payload['prescription_date'],
-            'patient_name_snapshot' => $payload['patient_name_snapshot'],
+            'patient_name_snapshot' => $identity['patient_name_snapshot'],
             'patient_age_snapshot' => $payload['patient_age_snapshot'] ?? null,
             'allergy_note' => $payload['allergy_note'] ?? null,
             'pregnant_or_breastfeeding' => $payload['pregnant_or_breastfeeding'] ?? null,
@@ -212,10 +261,21 @@ class RmePrescriptionService
         // P8-N1 — same re-assertion as create(), before either canvas is written.
         $this->authority->assertPermits($user, $visit);
 
+        // DMS-RME-REVISION-PROGRAM-8B / D6 — re-derived on every update from the
+        // prescription's OWN doctor and patient (the visit's when the row never
+        // recorded one), never from the request. Using the prescription's
+        // doctor keeps the printed name and `doctor_id` the same person.
+        // Soft-deleted rows included, as on create.
+        $identity = $this->printedIdentity(
+            $prescription->doctor()->withTrashed()->first() ?? $visit?->doctor()->withTrashed()->first(),
+            $prescription->patient()->withTrashed()->first() ?? $visit?->patient()->withTrashed()->first(),
+        );
+
         $updates = [
-            'prescribed_by_name' => $payload['prescribed_by_name'],
+            'doctor_id' => $identity['doctor_id'],
+            'prescribed_by_name' => $identity['prescribed_by_name'],
             'prescription_date' => $payload['prescription_date'],
-            'patient_name_snapshot' => $payload['patient_name_snapshot'],
+            'patient_name_snapshot' => $identity['patient_name_snapshot'],
             'patient_age_snapshot' => $payload['patient_age_snapshot'] ?? null,
             'allergy_note' => $payload['allergy_note'] ?? null,
             'pregnant_or_breastfeeding' => $payload['pregnant_or_breastfeeding'] ?? null,

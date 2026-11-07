@@ -6,6 +6,10 @@ the owner decisions that gate it are unanswered (P8-N2, the numbering class, the
 dedicated-device test cannot run (no dedicated device). No Full Suite was requested or run. No application, test or
 CI semantics changed. No deploy. No GO tag.
 
+**Forward reference (2026-11-07):** the owner answered D1–D7; D1, D2, D6 and D7 are implemented in
+[[dms-rme-revision-program-8b]]. This record is unchanged history; the readiness verdict after 8B belongs to the next
+re-audit, not here.
+
 This record re-runs [[dms-rme-revision-program-8]] (initial readiness, NO-GO — unchanged history) on the corrective
 release [[dms-rme-revision-program-8a]] (GO, `dms-rme-revision-program-8a-go`). A Program 8A GO is not
 `dms-rme-final-readiness-go`, and neither is this record.

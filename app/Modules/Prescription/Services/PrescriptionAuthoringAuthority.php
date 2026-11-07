@@ -35,6 +35,25 @@ use Illuminate\Auth\Access\AuthorizationException;
  * consented encounter): prescriptions have no consent prerequisite and no room
  * rule, and both would be new product policy (OD-7-2), not this fix.
  *
+ * DMS-RME-REVISION-PROGRAM-8B / D7 (P8R-S1, P8R-S2) adds two parts, so the
+ * predicate no longer leans on the route and the policy for anything:
+ *
+ *  0a. The actor holds the clinical write permission `manage_clinic_visits`
+ *      itself. Before this, a caller that skipped the route and the policy (a
+ *      job, a command, a future controller) was refused only for the reasons
+ *      above, and rule 226 §1.3's "refused the same way" overstated it.
+ *  0b. The actor holds a CLINICAL role ({@see self::AUTHORING_ROLES}). This is an
+ *      ALLOWLIST, deliberately: the front-desk refusal (part 1) is a denylist of
+ *      two named roles, so any OTHER role that is ever given
+ *      `manage_clinic_visits` — through RoleSeeder or through the role
+ *      management screen at runtime — would otherwise inherit prescription
+ *      authoring without anyone deciding it. Production already holds such a
+ *      role (manually created, permission granted, no holders today); a CI test
+ *      over RoleSeeder cannot see a runtime role, so only an allowlist closes
+ *      it. A new role that must write prescriptions is added here, on purpose,
+ *      with its own review. The allowlist subsumes part 1 for every current
+ *      role; part 1 stays as the named, canonical front-desk refusal.
+ *
  * The policy asks {@see permitsActorAtBranch()} and then the doctor-patient
  * scope itself (it carries its own deny message); the service re-asserts the
  * whole predicate through {@see assertPermits()} (CG-06), so a caller that never
@@ -46,6 +65,17 @@ final class PrescriptionAuthoringAuthority
 {
     public const REFUSAL_MESSAGE = 'Akun ini tidak berwenang menulis atau mengubah resep dokter pada kunjungan ini.';
 
+    /** The clinical write permission every author must hold itself (part 0a). */
+    public const WRITE_PERMISSION = 'manage_clinic_visits';
+
+    /**
+     * Part 0b — the only roles whose holders may author a prescription. The same
+     * clinical tier {@see FrontOfficeRole::CLINICAL_ROLES} names, so "who is
+     * clinical" has one definition. Pinned by
+     * tests/Feature/RME/RmePrescriptionAuthoringRoleMatrixTest.php.
+     */
+    public const AUTHORING_ROLES = FrontOfficeRole::CLINICAL_ROLES;
+
     public function __construct(
         private readonly RmeWorkingBranchScope $workingBranch,
         private readonly DoctorPatientScopeService $doctorScope,
@@ -53,12 +83,22 @@ final class PrescriptionAuthoringAuthority
     ) {}
 
     /**
-     * Parts 1 and 2: not the front-desk-only tier, and inside the actor's
-     * working branch scope.
+     * Parts 0a, 0b, 1 and 2: the write permission, a clinical role, not the
+     * front-desk-only tier, and inside the actor's working branch scope.
      */
     public function permitsActorAtBranch(User $actor, ?int $branchId): bool
     {
+        // `can()` goes through the Gate, so Super Admin's Gate::before answers
+        // here exactly as it does on the route.
+        if (! $actor->can(self::WRITE_PERMISSION)) {
+            return false;
+        }
+
         if (FrontOfficeRole::isVisitFrontDeskOnly($actor)) {
+            return false;
+        }
+
+        if (! $actor->hasAnyRole(self::AUTHORING_ROLES)) {
             return false;
         }
 

@@ -81,7 +81,8 @@ it('medical record can be final using factory state', function () {
 // --- Service layer tests (Sprint 20 Phase 1.2.2) ---
 
 it('service can create draft medical record for clinic visit', function () {
-    $user = User::factory()->create();
+    // DMS-RME-REVISION-PROGRAM-8B / D7 — the service re-asserts the write permission.
+    $user = userWith(['manage_clinic_visits']);
     $this->actingAs($user);
 
     $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
@@ -96,7 +97,8 @@ it('service can create draft medical record for clinic visit', function () {
 });
 
 it('createDraft creates medical record without SOAP fields', function () {
-    $user = User::factory()->create();
+    // DMS-RME-REVISION-PROGRAM-8B / D7 — the service re-asserts the write permission.
+    $user = userWith(['manage_clinic_visits']);
     $this->actingAs($user);
 
     $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
@@ -113,7 +115,8 @@ it('createDraft creates medical record without SOAP fields', function () {
 });
 
 it('createDraft copies branch_id, patient_id, doctor_id from clinic visit', function () {
-    $user = User::factory()->create();
+    // DMS-RME-REVISION-PROGRAM-8B / D7 — the service re-asserts the write permission.
+    $user = userWith(['manage_clinic_visits']);
     $this->actingAs($user);
 
     $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
@@ -128,7 +131,8 @@ it('createDraft copies branch_id, patient_id, doctor_id from clinic visit', func
 });
 
 it('createDraft ignores unsafe branch_id, patient_id, doctor_id, status, recorded_by in data', function () {
-    $user = User::factory()->create();
+    // DMS-RME-REVISION-PROGRAM-8B / D7 — the service re-asserts the write permission.
+    $user = userWith(['manage_clinic_visits']);
     $this->actingAs($user);
 
     $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
@@ -153,7 +157,8 @@ it('createDraft ignores unsafe branch_id, patient_id, doctor_id, status, recorde
 });
 
 it('createDraft prevents duplicate medical record for same visit', function () {
-    $user = User::factory()->create();
+    // DMS-RME-REVISION-PROGRAM-8B / D7 — the service re-asserts the write permission.
+    $user = userWith(['manage_clinic_visits']);
     $this->actingAs($user);
 
     $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
@@ -168,7 +173,8 @@ it('createDraft prevents duplicate medical record for same visit', function () {
 });
 
 it('service can finalize draft medical record', function () {
-    $user = User::factory()->create();
+    // DMS-RME-REVISION-PROGRAM-8B / D7 — the service re-asserts the write permission.
+    $user = userWith(['manage_clinic_visits']);
     $this->actingAs($user);
 
     $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
@@ -190,7 +196,8 @@ it('service can finalize draft medical record', function () {
 });
 
 it('finalize is idempotent when record is already final', function () {
-    $user = User::factory()->create();
+    // DMS-RME-REVISION-PROGRAM-8B / D7 — the service re-asserts the write permission.
+    $user = userWith(['manage_clinic_visits']);
     $this->actingAs($user);
 
     $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
@@ -227,7 +234,8 @@ it('finalize rejects record from another branch', function () {
 // --- Service: updateDraft (Sprint 20 Phase 1.2.3) ---
 
 it('updateDraft updates SOAP fields on draft record', function () {
-    $user = User::factory()->create();
+    // DMS-RME-REVISION-PROGRAM-8B / D7 — the service re-asserts the write permission.
+    $user = userWith(['manage_clinic_visits']);
     $this->actingAs($user);
 
     $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
@@ -250,7 +258,8 @@ it('updateDraft updates SOAP fields on draft record', function () {
 });
 
 it('updateDraft ignores unsafe fields', function () {
-    $user = User::factory()->create();
+    // DMS-RME-REVISION-PROGRAM-8B / D7 — the service re-asserts the write permission.
+    $user = userWith(['manage_clinic_visits']);
     $this->actingAs($user);
 
     $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
@@ -274,7 +283,8 @@ it('updateDraft ignores unsafe fields', function () {
 });
 
 it('updateDraft still edits a final record (Sprint 59)', function () {
-    $user = User::factory()->create();
+    // DMS-RME-REVISION-PROGRAM-8B / D7 — the service re-asserts the write permission.
+    $user = userWith(['manage_clinic_visits']);
     $this->actingAs($user);
 
     $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
@@ -633,7 +643,8 @@ it('final record remains editable from UI perspective (Sprint 59)', function () 
 // --- Metadata & finalization polish (Sprint 20 Phase 1.2.5) ---
 
 it('finalize sets finalized_at', function () {
-    $user = User::factory()->create();
+    // DMS-RME-REVISION-PROGRAM-8B / D7 — the service re-asserts the write permission.
+    $user = userWith(['manage_clinic_visits']);
     $this->actingAs($user);
 
     $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
@@ -660,7 +671,8 @@ it('finalize sets finalized_at', function () {
 });
 
 it('finalize does not overwrite finalized_at when already final', function () {
-    $user = User::factory()->create();
+    // DMS-RME-REVISION-PROGRAM-8B / D7 — the service re-asserts the write permission.
+    $user = userWith(['manage_clinic_visits']);
     $this->actingAs($user);
 
     $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();

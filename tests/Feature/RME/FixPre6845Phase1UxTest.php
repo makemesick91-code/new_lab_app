@@ -90,7 +90,8 @@ it('Scope A: Rekam Medis shows a Kembali ke Kunjungan button at the top and relo
 
 it('Scope D: Resep shows a Kembali ke Kunjungan button at the top and the handling doctor name under the signature canvas', function () {
     $visit = fix6845Visit();
-    $manager = userWith(['manage_clinic_visits']);
+    // DMS-RME-REVISION-PROGRAM-8B / D7 — the editor is offered to a clinical author.
+    $manager = rmeClinicalAuthor(['manage_clinic_visits']);
 
     $response = $this->actingAs($manager)
         ->get(route('rme.visits.prescription.show', [$visit, 'edit' => 1]))
