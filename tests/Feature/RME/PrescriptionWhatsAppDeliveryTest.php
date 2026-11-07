@@ -55,7 +55,7 @@ beforeEach(function () {
         'patient_id' => $this->patient->id,
     ]);
 
-    $this->sender = userWith(['view_clinic_visits', 'manage_clinic_visits', 'send_prescription_whatsapp']);
+    $this->sender = rmeClinicalAuthor(['view_clinic_visits', 'manage_clinic_visits', 'send_prescription_whatsapp']);
 });
 
 function fcoUseCloudApi(): void
@@ -241,7 +241,7 @@ it('refuses a second send unless the operator explicitly asks to resend', functi
 
 it('denies sending to a role without the prescription WhatsApp permission', function () {
     fcoUseCloudApi();
-    $viewer = userWith(['view_clinic_visits', 'manage_clinic_visits']);
+    $viewer = rmeClinicalReader(['view_clinic_visits']);
 
     $this->actingAs($viewer)
         ->post(route('rme.prescriptions.whatsapp.send', $this->prescription), ['confirm' => 1])

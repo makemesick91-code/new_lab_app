@@ -55,6 +55,16 @@ use App\Support\AccessControl\FrontOfficeRole;
  */
 class RmeWorkingBranchScope
 {
+    /**
+     * DMS-RME-REVISION-PROGRAM-8C (D3-NEW-4, rule 228) — the only roles whose
+     * holders read clinical documents across every RME branch: the clinical tier
+     * ({@see FrontOfficeRole::CLINICAL_ROLES}, because a patient's record book spans
+     * the branches the patient was treated in) and Owner. A new role that must read
+     * clinical documents across branches is added here, on purpose, with its own
+     * review. Pinned by tests/Feature/RME/RmeClinicalDocumentReadScopeAllowlistTest.php.
+     */
+    public const CROSS_BRANCH_DOCUMENT_READ_ROLES = [...FrontOfficeRole::CLINICAL_ROLES, 'Owner'];
+
     public function __construct(
         private readonly UserOnlineContextService $onlineContext,
         private readonly BranchService $branches,
@@ -226,8 +236,9 @@ class RmeWorkingBranchScope
      * context it reads none. Every other account keeps the full active
      * RME-enabled set it had before: clinicians (Doctor, Perawat, Supervisor
      * RME, Super Admin) stay cross-branch because a patient's record book spans
-     * the branches the patient was treated in, and the non-context-bound roles
-     * (Owner and the reporting roles) are unchanged.
+     * the branches the patient was treated in, and Owner is unchanged. Since
+     * DMS-RME-REVISION-PROGRAM-8C (D3-NEW-4) this is an allowlist
+     * ({@see self::CROSS_BRANCH_DOCUMENT_READ_ROLES}): any other account reads none.
      *
      * It only ever NARROWS: every answer is a subset of the RME-enabled set the
      * read abilities used before. The doctor branch lock does not reach it, for
@@ -244,6 +255,14 @@ class RmeWorkingBranchScope
 
         if ($this->narrowsClinicalDocumentReads($user)) {
             return $this->branchIdsFor($user);
+        }
+
+        // DMS-RME-REVISION-PROGRAM-8C (D3-NEW-4) — an ALLOWLIST, not "everyone
+        // else": an account that is neither a working-branch role nor on the
+        // cross-branch list (for example a role created at runtime and given
+        // view_clinic_visits) reads no clinical document until it is classified.
+        if (! $user->hasAnyRole(self::CROSS_BRANCH_DOCUMENT_READ_ROLES)) {
+            return [];
         }
 
         return $this->branches->rmeEnabledIds();

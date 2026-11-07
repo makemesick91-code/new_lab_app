@@ -18,8 +18,8 @@ beforeEach(function () {
 
     Branch::where('code', Branch::MAIN_CODE)->update(['is_rme_enabled' => false]);
     $this->branch = Branch::factory()->create(['code' => 'ATG3', 'is_rme_enabled' => true]);
-    $this->manager = userWith(['manage_clinic_visits', 'complete_rme_examination']);
-    $this->viewer = userWith(['view_clinic_visits']);
+    $this->manager = rmeClinicalAuthor(['manage_clinic_visits', 'complete_rme_examination']);
+    $this->viewer = rmeClinicalReader(['view_clinic_visits']);
 });
 
 /** Create a visit (default registered, roomed) for a patient. */

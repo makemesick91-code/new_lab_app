@@ -45,7 +45,7 @@ beforeEach(function () {
     Branch::where('code', Branch::MAIN_CODE)->update(['is_rme_enabled' => false]);
     $this->branch = Branch::factory()->create(['code' => 'ATG3', 'is_rme_enabled' => true]);
 
-    $this->clinician = userWith([
+    $this->clinician = rmeClinicalAuthor([
         'view_clinic_visits', 'manage_clinic_visits', 'complete_rme_examination', 'manage_rme_consents', 'view_rme_consents',
     ]);
     $this->patient = Patient::factory()->create(['branch_id' => $this->branch->id]);
@@ -407,11 +407,20 @@ it('CW5-05d keeps a clinician who also holds the front-office role able to autho
     expect(app(RmeVisitConsentService::class)->canAuthorOdontogramFor($visit, $clinician))->toBeTrue();
 });
 
-it('CW5-05e keeps the non-role clinician fixture authorized (regression for the existing suites)', function () {
+it('CW5-05e authorizes the clinical-role fixture and refuses a role-less permission holder (rule 228 §5)', function () {
+    // REVISED by DMS-RME-REVISION-PROGRAM-8C (D3-NEW-1). Until 8C this test pinned
+    // that a ROLE-LESS account holding manage_clinic_visits could author the RME
+    // ("the non-role clinician fixture"). The owner decided on 2026-11-07 that
+    // RME / odontogram authoring is the same clinical-role allowlist prescriptions
+    // use, so the shared fixture now carries a clinical role and the role-less
+    // form is refused — exactly as an unclassified production account would be.
     $visit = p5cwVisit(ClinicVisit::STATUS_IN_PROGRESS);
     rmeSignedConsentFor($visit);
 
-    expect(app(RmeVisitConsentService::class)->canAuthorRmeForPatient((int) $visit->patient_id, $this->clinician))->toBeTrue();
+    $service = app(RmeVisitConsentService::class);
+
+    expect($service->canAuthorRmeForPatient((int) $visit->patient_id, $this->clinician))->toBeTrue()
+        ->and($service->canAuthorRmeForPatient((int) $visit->patient_id, userWith(['view_clinic_visits', 'manage_clinic_visits'])))->toBeFalse();
 });
 
 /*

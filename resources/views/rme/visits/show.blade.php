@@ -66,6 +66,10 @@
                 @if ($canOperateVisit)
                 @can('transition', $visit)
                     @foreach ($validNextStatuses as $nextStatus)
+                        {{-- DMS-RME-REVISION-PROGRAM-8C (OD-5-2): starting the examination needs the clinical examination authority. --}}
+                        @if ($nextStatus === \App\Modules\ClinicVisit\Models\ClinicVisit::STATUS_IN_PROGRESS && auth()->user()?->cannot('startExamination', $visit))
+                            @continue
+                        @endif
                         <form method="POST" action="{{ route('rme.visits.transition', $visit) }}">
                             @csrf
                             <input type="hidden" name="status" value="{{ $nextStatus }}">

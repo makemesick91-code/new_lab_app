@@ -330,6 +330,23 @@ function rmeClinicalAuthor(array $permissions = ['view_clinic_visits', 'manage_c
 }
 
 /**
+ * DMS-RME-REVISION-PROGRAM-8C (rule 228 §5) — a READ-ONLY clinical-document
+ * viewer. Cross-branch clinical-document read is an allowlist of roles
+ * (`RmeWorkingBranchScope::CROSS_BRANCH_DOCUMENT_READ_ROLES`), so the role-less
+ * `userWith(['view_clinic_visits'])` fixture now reads no clinical document, as
+ * an unclassified production account would. This fixture carries Owner — the
+ * allowlisted role with no clinic-visit write permission — so a test about a
+ * reader who must NOT edit keeps its meaning.
+ */
+function rmeClinicalReader(array $permissions = ['view_clinic_visits']): User
+{
+    $user = userWith($permissions);
+    $user->assignRole(Role::findOrCreate('Owner', 'web'));
+
+    return $user->fresh();
+}
+
+/**
  * A user assigned to a seeded role (no Super Admin bypass).
  */
 function userInRole(string $role): User

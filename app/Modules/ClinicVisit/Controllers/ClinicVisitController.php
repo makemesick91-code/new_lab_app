@@ -429,6 +429,12 @@ class ClinicVisitController extends Controller
             $this->authorize('completeExamination', $clinicVisit);
         }
 
+        // DMS-RME-REVISION-PROGRAM-8C (OD-5-2) — starting the examination is a
+        // clinical act too; the front desk keeps cancel (no-show).
+        if ($newStatus === ClinicVisit::STATUS_IN_PROGRESS) {
+            $this->authorize('startExamination', $clinicVisit);
+        }
+
         $this->visits->transitionStatus($clinicVisit, $newStatus, $request->user());
 
         // Sprint 62.1 — "Selesai Pemeriksaan" handoff: a visit moved to

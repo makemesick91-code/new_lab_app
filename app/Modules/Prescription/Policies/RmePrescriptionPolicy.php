@@ -8,6 +8,7 @@ use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Prescription\Models\RmePrescription;
 use App\Modules\Prescription\Services\PrescriptionAuthoringAuthority;
 use App\Modules\RME\Services\DoctorPatientScopeService;
+use App\Modules\RME\Services\DoctorRoomScopeService;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
 use Illuminate\Auth\Access\Response;
 
@@ -26,9 +27,7 @@ class RmePrescriptionPolicy
 
         $visit = $prescription->clinicVisit;
 
-        return $visit !== null
-            ? app(DoctorPatientScopeService::class)->authorizeVisitAccess($user, $visit)
-            : false;
+        return $visit !== null ? $this->clinicalVisitAccess($user, $visit) : false;
     }
 
     public function print(User $user, RmePrescription $prescription): Response|bool
@@ -42,7 +41,7 @@ class RmePrescriptionPolicy
             return false;
         }
 
-        return app(DoctorPatientScopeService::class)->authorizeVisitAccess($user, $clinicVisit);
+        return $this->clinicalVisitAccess($user, $clinicVisit);
     }
 
     public function create(User $user, ClinicVisit $clinicVisit): Response|bool
@@ -53,7 +52,7 @@ class RmePrescriptionPolicy
             return false;
         }
 
-        return app(DoctorPatientScopeService::class)->authorizeVisitAccess($user, $clinicVisit);
+        return $this->clinicalVisitAccess($user, $clinicVisit);
     }
 
     /**
@@ -79,6 +78,24 @@ class RmePrescriptionPolicy
         }
 
         return $this->view($user, $prescription);
+    }
+
+    /**
+     * The doctor-patient scope (Sprint 66.2) and, since DMS-RME-REVISION-PROGRAM-8C
+     * (OD-7-2 / R8A-1, rule 228), the doctor ROOM scope of rule 138: a doctor never
+     * opens or writes the prescription of an ACTIVE visit of another treatment
+     * room. Post-examination and historical visits are never room-restricted
+     * (rule 138 §17), and accounts that are not doctor-scoped are unaffected.
+     */
+    private function clinicalVisitAccess(User $user, ClinicVisit $visit): Response|bool
+    {
+        $patientScope = app(DoctorPatientScopeService::class)->authorizeVisitAccess($user, $visit);
+
+        if ($patientScope instanceof Response ? $patientScope->denied() : ! $patientScope) {
+            return $patientScope;
+        }
+
+        return app(DoctorRoomScopeService::class)->authorizeActiveVisitRoom($user, $visit);
     }
 
     /**

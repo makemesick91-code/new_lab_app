@@ -32,10 +32,13 @@ beforeEach(function () {
     $this->branchB = Branch::factory()->create(['code' => 'UMB2', 'is_active' => true, 'is_rme_enabled' => true]);
 });
 
-/** Reads every legacy archive in every RME branch (governance tier) + native list. */
+/**
+ * Reads every legacy archive in every RME branch (governance tier) + native list.
+ * DMS-RME-REVISION-PROGRAM-8C — carries an allowlisted read role (rule 228 §5).
+ */
 function umiGovernor(): User
 {
-    return userWith([
+    return rmeClinicalReader([
         'view_clinic_visits',
         'view_legacy_rme_imports', 'review_legacy_rme_imports',
         'view_legacy_odontogram_imports', 'review_legacy_odontogram_imports',
@@ -305,7 +308,7 @@ it('lists no legacy-only patient to an actor without a legacy read permission', 
     $native = umiPatient($this->branchA, 'Terlihat Native');
     umiNative($native, $this->branchA);
 
-    $nativeReader = userWith(['view_clinic_visits']);
+    $nativeReader = rmeClinicalReader(['view_clinic_visits']);
 
     $response = $this->actingAs($nativeReader)->get(route('rme.medical-records.index'));
     $response->assertOk()->assertDontSee('Tidak Terlihat')->assertSee('Terlihat Native');
@@ -321,7 +324,7 @@ it('denies legacy inclusion on the permission alone, even when the branch scope 
     umiLegacyRme($legacy, $this->branchA);
     umiLegacyOdontogram($legacy, $this->branchA);
 
-    $reader = userWith(['view_clinic_visits']);
+    $reader = rmeClinicalReader(['view_clinic_visits']);
     $reader->forceFill(['branch_id' => $this->branchA->id])->save();
 
     expect(umiListedIds($reader->refresh()))->toBe([]);
@@ -365,7 +368,7 @@ it('keeps the legacy viewer itself policy-protected for an unrelated actor', fun
     $p = umiPatient($this->branchA, 'Viewer Terlindungi');
     $record = umiLegacyRme($p, $this->branchA);
 
-    $this->actingAs(userWith(['view_clinic_visits']))
+    $this->actingAs(rmeClinicalReader(['view_clinic_visits']))
         ->get(route('rme.legacy-records.show', $record->id))
         ->assertForbidden();
 });

@@ -1,33 +1,21 @@
-# DMS-RME-REVISION-PROGRAM-8B (2026-11-07). Corrective sprint for the owner decisions D1, D2, D6 and D7 of the
-# DMS-RME-REVISION-PROGRAM-8 readiness re-audit (NO-GO, PR #610 -> 88843b26), each answered "FIX NOW" by the system
-# owner on 2026-11-07. D3 (per-item review of the 55-row register), D4 (dedicated test device) and D5 (WAVE-4
-# reconciliation) are answered with proposals and evidence only; nothing outside D1/D2/D6/D7 is implemented
-# (CG-22: findings needing a product decision are recorded, not inferred).
-# Delivered as THREE pull requests (owner decision 2026-11-07, after `sprint:scope-audit --strict` returned NO-GO for
-# the combined 21-file change under SECURITY_FIX; the type was not relabelled and no waiver was recorded):
-# PR1 #611 = D2 numbering (scope GO, 2 modules), PR2 #614 (replaces #612) = D1 read scope (scope GO, 4 modules), PR3 (this) = D6
-# printed identity + D7 authoring allowlist + rule 227 and the records. One deploy and the single GO tag follow PR3.
-# Verified and corrected (each reproduced RED against the untouched base first, rule 227):
-#   D1 P8-N2 clinical documents (medical record + handwriting images, prescription page/canvas/print/history,
-#         odontogram page/view/print, unified medical-record index) were readable in any RME branch by the
-#         branch-pinned front desk and cashier; now read under one document scope (working branch for those
-#         roles, unchanged for clinicians and Owner, never wider than the RME set).
-#   D2 P8-N4 / OD-7-8 / OD-5-8 invoice, payment and consent numbers: month-wide MAX+1 without serialisation, and
-#         the invoice/payment MAX ignored soft-deleted rows held by the unique index; now an advisory lock per
-#         sequence and month (92_002/92_003/92_004) before the read, and withTrashed(). Nothing renumbered.
-#   D6 P8R-S3 printed prescription dentist and patient were free-text request fields; now server-derived from
-#         the visit / the prescription's own doctor and patient, refused when there is no doctor.
-#   D7 P8R-S1 / P8R-S2 the prescription authoring predicate re-asserts the write permission and is an allowlist
-#         of clinical roles (a runtime role holding manage_clinic_visits does not inherit it); the RME/odontogram
-#         predicate re-asserts the permission too. Role-matrix tests over every seeded role.
+# DMS-RME-REVISION-PROGRAM-8C (2026-11-07). Corrective sprint for owner decisions given at the Program 8
+# owner-decision checkpoint (DMS-RME-REVISION-PROGRAM-8-OWNER-OPERATIONAL-CLOSURE-1, 2026-11-07, recorded in
+# docs/sprints/dms-rme-revision-program-8c.md): D3 Group 1 "FIX NOW", D3 Group 2 "FIX NOW (lock after completion)",
+# signature "named doctor signs only", D3-NEW-4 "FIX NOW".
+# Delivered as TWO pull requests because `sprint:scope-audit --strict` refuses more than 10 changed app/*.php files
+# under SECURITY_FIX (the Program 8B precedent; the type is not relabelled and no waiver is recorded):
+# PR1 (this) = clinical write authority + read allowlist (rule 228 §1-§5): OD-7-2/R8A-1 prescription room scope,
+# OD-5-7 live-encounter write room scope, OD-5-2 start-examination authority (front desk keeps cancel), OD-5-3 doctor
+# frozen after the examination, D3-NEW-1 RME/odontogram authoring allowlist, D3-NEW-4 cross-branch clinical-document
+# read allowlist. PR2 = prescription and consent document integrity. One deploy and the GO tag follow PR2.
 # No schema, migration, permission, role, route, JS/CSS or package change; no flag, enforcement scope, branch lock,
-# queue worker or scheduler change. Foundation-First Sprint Lock stays ACTIVE (allowed category: security fix /
-# clinical and financial correctness). Full Suite deferred (CG-18), not passed.
+# queue worker, scheduler or KTP timer change. Foundation-First Sprint Lock stays ACTIVE (allowed category: security
+# fix / clinical correctness). Full Suite deferred (CG-18), not passed.
 # Carried forward: LEGACY-RME-PROGRAM-CLOSURE-1 stays CLOSED and inherited.
-id: DMS-RME-REVISION-PROGRAM-8B
+id: DMS-RME-REVISION-PROGRAM-8C
 type: SECURITY_FIX
 module: Rme
-title: "Server-derived printed prescription identity and a clinical-role prescription authoring allowlist (8B PR3 of 3; completes 8B with PR1 numbering and PR2 read scope)"
+title: "Clinical write authority: room scope on prescriptions and live-encounter writes, clinical start-examination authority, doctor frozen after the examination, authoring and document-read allowlists (8C PR1 of 2)"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 runtime_change: true
 schema_change: false
@@ -38,5 +26,5 @@ ledger_impact: false
 deploy_required: true
 browser_required: false
 test_profiles: [focused, security_regression]
-go_tag: dms-rme-revision-program-8b-go
+go_tag: dms-rme-revision-program-8c-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1

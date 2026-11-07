@@ -35,7 +35,7 @@ beforeEach(function () {
 
     // FIX-05 — closing an examination needs the clinical capability, not just
     // the broad manage_clinic_visits the front office also holds.
-    $this->doctorUser = userWith(['view_clinic_visits', 'manage_clinic_visits', 'complete_rme_examination']);
+    $this->doctorUser = rmeClinicalAuthor(['view_clinic_visits', 'manage_clinic_visits', 'complete_rme_examination']);
     $this->cashier = userWith(['manage_rme_billing']);
 
     // CORRECTIVE-02 condition 3 — an RME write needs a resolvable, authorized

@@ -26,6 +26,8 @@ owns the advisory-lock pattern §4 reuses.
 3. Every other account keeps exactly the RME-enabled set it had: clinicians (Doctor, Perawat, Supervisor RME, Super
    Admin) stay cross-branch because a patient's record book spans the branches they were treated in; Owner and the
    reporting roles are unchanged. A clinical role wins over a front-desk or cashier role on the same account.
+   **SUPERSEDED in part by rule 228 §5 (DMS-RME-REVISION-PROGRAM-8C, D3-NEW-4):** the cross-branch read is now an
+   allowlist (clinical roles + Owner); any other account reads no clinical document until it is classified.
 4. The scope only ever NARROWS. Every answer is a subset of `BranchService::rmeEnabledIds()`; a `null` user reads
    nothing. The doctor branch lock does not reach it (same reason as `allows()`), and the doctor-patient scope still
    applies on top in the policies.

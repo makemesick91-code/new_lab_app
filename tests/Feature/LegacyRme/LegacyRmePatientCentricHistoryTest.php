@@ -91,7 +91,7 @@ function lrmeh1Published(Patient $patient, string $date, array $overrides = []):
 /** An operator who works the RME workspace and may read the archive. */
 function lrmeh1WorkspaceUser(Patient $patient): User
 {
-    $user = userWith(['manage_clinic_visits', 'view_clinic_visits', 'view_legacy_rme_archive']);
+    $user = rmeClinicalAuthor(['manage_clinic_visits', 'view_clinic_visits', 'view_legacy_rme_archive']);
     $user->forceFill(['branch_id' => $patient->branch_id])->save();
 
     return $user->refresh();

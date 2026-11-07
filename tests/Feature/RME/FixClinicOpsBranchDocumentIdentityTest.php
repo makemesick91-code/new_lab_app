@@ -81,7 +81,7 @@ it('prints the odontogram with the record branch address, not a hardcoded one', 
         'branch_id' => $visit->branch_id,
     ]);
 
-    $viewer = userWith(['view_clinic_visits', 'manage_clinic_visits']);
+    $viewer = rmeClinicalAuthor(['view_clinic_visits', 'manage_clinic_visits']);
 
     $html = $this->actingAs($viewer)->get(route('rme.odontograms.print', $odontogram))->assertOk()->getContent();
 
@@ -100,7 +100,7 @@ it('prints the prescription with the record branch address', function () {
         'patient_id' => $visit->patient_id,
     ]);
 
-    $viewer = userWith(['view_clinic_visits', 'manage_clinic_visits']);
+    $viewer = rmeClinicalAuthor(['view_clinic_visits', 'manage_clinic_visits']);
 
     $html = $this->actingAs($viewer)->get(route('rme.prescriptions.print', $prescription))->assertOk()->getContent();
 
@@ -142,7 +142,7 @@ it('renders documents without inventing an address when the branch has none', fu
         'branch_id' => $visit->branch_id,
     ]);
 
-    $viewer = userWith(['view_clinic_visits', 'manage_clinic_visits']);
+    $viewer = rmeClinicalAuthor(['view_clinic_visits', 'manage_clinic_visits']);
 
     // No 500, and no placeholder address presented as if it were real data.
     $rx = $this->actingAs($viewer)->get(route('rme.prescriptions.print', $prescription))->assertOk()->getContent();

@@ -122,7 +122,7 @@ it('formatter builds one table row per touched tooth in ascending FDI order', fu
 // --- 6: empty odontogram renders a safe empty state ---
 
 it('empty odontogram renders the safe empty state without error', function () {
-    $manager = userWith(['manage_clinic_visits']);
+    $manager = rmeClinicalAuthor(['manage_clinic_visits']);
     $odontogram = structuredOdontogram([]);
 
     $out = app(OdontogramPrintFormatter::class)->format($odontogram);
@@ -138,7 +138,7 @@ it('empty odontogram renders the safe empty state without error', function () {
 // --- 7: standalone print includes visual, DMF-T, legend, and table ---
 
 it('standalone odontogram print includes the visual diagram, DMF-T, legend, and table', function () {
-    $manager = userWith(['manage_clinic_visits']);
+    $manager = rmeClinicalAuthor(['manage_clinic_visits']);
     $odontogram = structuredOdontogram([
         '11' => ['status' => 'caries', 'additional_note' => 'Tambal komposit'],
     ]);
@@ -157,7 +157,7 @@ it('standalone odontogram print includes the visual diagram, DMF-T, legend, and 
 // --- 8: the combined visit print does NOT compose the odontogram (FIX-05) ---
 
 it('combined visit print excludes the visual diagram, DMF-T, legend, and table', function () {
-    $manager = userWith(['manage_clinic_visits']);
+    $manager = rmeClinicalAuthor(['manage_clinic_visits']);
     $odontogram = structuredOdontogram([
         '11' => ['status' => 'caries', 'additional_condition' => 'BundleDiag', 'additional_note' => 'BundleCare'],
     ]);
@@ -180,7 +180,7 @@ it('combined visit print excludes the visual diagram, DMF-T, legend, and table',
 // --- 9: dompdf route still renders for a visit that has an odontogram ---
 
 it('visit PDF (dompdf) still renders for a visit that has an odontogram', function () {
-    $manager = userWith(['manage_clinic_visits']);
+    $manager = rmeClinicalAuthor(['manage_clinic_visits']);
     $odontogram = structuredOdontogram([
         '11' => ['status' => 'caries'],
         '36' => ['status' => 'missing'],
@@ -197,7 +197,7 @@ it('visit PDF (dompdf) still renders for a visit that has an odontogram', functi
 // --- 10: long table supports continuation header repeat ---
 
 it('long odontogram table renders all rows with a repeating header for continuation', function () {
-    $manager = userWith(['manage_clinic_visits']);
+    $manager = rmeClinicalAuthor(['manage_clinic_visits']);
 
     $teeth = [];
     foreach ([18, 17, 16, 15, 14, 13, 12, 11, 21, 22, 23, 24, 25, 26, 27, 28, 31, 32, 33, 34] as $fdi) {
@@ -219,7 +219,7 @@ it('long odontogram table renders all rows with a repeating header for continuat
 // --- 11: KTP / NIK is never rendered ---
 
 it('structured odontogram print never renders the patient KTP/NIK', function () {
-    $manager = userWith(['manage_clinic_visits']);
+    $manager = rmeClinicalAuthor(['manage_clinic_visits']);
 
     $patient = Patient::factory()->create(['ktp_number' => '7371091234560001']);
     $visit = ClinicVisit::factory()->create([

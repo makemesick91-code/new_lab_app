@@ -34,6 +34,7 @@
 //   - Reading: history, legacy archive and previous charts stay readable.
 
 use App\Modules\Branch\Models\Branch;
+use App\Modules\ClinicRoom\Models\ClinicRoom;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\ClinicVisit\Services\ClinicVisitService;
 use App\Modules\Consent\Interfaces\RmeVisitConsentRepositoryInterface;
@@ -57,10 +58,10 @@ beforeEach(function () {
     Branch::where('code', Branch::MAIN_CODE)->update(['is_rme_enabled' => false]);
     $this->branch = Branch::factory()->create(['code' => 'ATG3', 'is_rme_enabled' => true]);
 
-    $this->doctorUser = userWith([
+    $this->doctorUser = rmeClinicalAuthor([
         'view_clinic_visits', 'manage_clinic_visits', 'complete_rme_examination', 'manage_rme_consents',
     ]);
-    $this->viewer = userWith(['view_clinic_visits']);
+    $this->viewer = rmeClinicalReader(['view_clinic_visits']);
 
     $this->patient = Patient::factory()->create(['branch_id' => $this->branch->id]);
 });
@@ -402,13 +403,23 @@ it('does not offer the control to a DIFFERENT doctor, consent or no consent', fu
     $doctorA = pcfpLinkedDoctorUser();
     $doctorB = pcfpLinkedDoctorUser();
 
+    // DMS-RME-REVISION-PROGRAM-8C (rule 228 §2) — the treating doctor works in
+    // the encounter's own room; an active encounter is refused to a doctor with
+    // no live room (fail closed), as the visit page already was (rule 138).
+    $room = ClinicRoom::factory()->create([
+        'branch_id' => $this->branch->id,
+        'status' => ClinicRoom::STATUS_ACTIVE,
+    ]);
+
     $visit = ClinicVisit::factory()->create([
         'branch_id' => $this->branch->id,
         'patient_id' => $this->patient->id,
         'doctor_id' => $doctorA->doctorRecordId,
+        'clinic_room_id' => $room->id,
         'status' => ClinicVisit::STATUS_IN_PROGRESS,
     ]);
     rmeSignedConsentFor($visit);
+    rmeMakeDoctorOnline(Doctor::query()->findOrFail($doctorA->doctorRecordId), $this->branch, $room, $doctorA->user);
 
     expect(app(RmeVisitConsentService::class)->canAuthorRmeForPatient($this->patient->id, $doctorA->user))
         ->toBeTrue('the treating doctor keeps the capability')

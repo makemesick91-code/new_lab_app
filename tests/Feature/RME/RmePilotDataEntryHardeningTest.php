@@ -53,7 +53,7 @@ beforeEach(function () {
     $this->treatment = Treatment::factory()->create(['is_active' => true]);
     rmeMakeDoctorOnline($this->doctor, $this->atg3);
 
-    $this->admin = userWith(['view_clinic_visits', 'manage_clinic_visits', 'manage patients']);
+    $this->admin = rmeClinicalAuthor(['view_clinic_visits', 'manage_clinic_visits', 'manage patients']);
     $this->cashier = userWith(['manage_rme_billing']);
 });
 

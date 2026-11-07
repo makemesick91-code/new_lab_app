@@ -109,7 +109,7 @@ function lrwip1Published(Patient $patient, string $date, int $pages = 3, array $
 /** An RME workspace operator who may also read the archive. */
 function lrwip1WorkspaceUser(Patient $patient): User
 {
-    $user = userWith([
+    $user = rmeClinicalAuthor([
         'manage_clinic_visits',
         'view_clinic_visits',
         'view_legacy_rme_archive',

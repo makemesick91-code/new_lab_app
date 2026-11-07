@@ -28,7 +28,7 @@ function savedTablePreviewBranchId(): int
 // --- 1: visual preview still renders ---
 
 it('odontogram show page renders the visual preview section', function () {
-    $manager = userWith(['manage_clinic_visits']);
+    $manager = rmeClinicalAuthor(['manage_clinic_visits']);
     $visit = ClinicVisit::factory()->create(['branch_id' => savedTablePreviewBranchId()]);
     Odontogram::factory()->create([
         'clinic_visit_id' => $visit->id,
@@ -47,7 +47,7 @@ it('odontogram show page renders the visual preview section', function () {
 // --- 2: saved result table section renders below/near the preview ---
 
 it('odontogram show page renders the saved result table section', function () {
-    $manager = userWith(['manage_clinic_visits']);
+    $manager = rmeClinicalAuthor(['manage_clinic_visits']);
     $visit = ClinicVisit::factory()->create(['branch_id' => savedTablePreviewBranchId()]);
     Odontogram::factory()->create([
         'clinic_visit_id' => $visit->id,
@@ -64,7 +64,7 @@ it('odontogram show page renders the saved result table section', function () {
 // --- 3: the saved result table exposes the Daengtisia columns ---
 
 it('saved result table includes the GIGI / DIAGNOSA / PERAWATAN / DOKTER headers', function () {
-    $manager = userWith(['manage_clinic_visits']);
+    $manager = rmeClinicalAuthor(['manage_clinic_visits']);
     $visit = ClinicVisit::factory()->create(['branch_id' => savedTablePreviewBranchId()]);
     Odontogram::factory()->create([
         'clinic_visit_id' => $visit->id,
@@ -84,7 +84,7 @@ it('saved result table includes the GIGI / DIAGNOSA / PERAWATAN / DOKTER headers
 // --- 4: saved teeth + per-row values appear in the table ---
 
 it('saved teeth appear in the saved result table with diagnosis and treatment', function () {
-    $manager = userWith(['manage_clinic_visits']);
+    $manager = rmeClinicalAuthor(['manage_clinic_visits']);
     $visit = ClinicVisit::factory()->create(['branch_id' => savedTablePreviewBranchId()]);
     Odontogram::factory()->create([
         'clinic_visit_id' => $visit->id,
@@ -112,7 +112,7 @@ it('saved teeth appear in the saved result table with diagnosis and treatment', 
 // --- 5: KTP / NIK is never rendered on the show page ---
 
 it('saved result table preview never renders the patient KTP/NIK', function () {
-    $manager = userWith(['manage_clinic_visits']);
+    $manager = rmeClinicalAuthor(['manage_clinic_visits']);
     $patient = Patient::factory()->create(['ktp_number' => '7371091234560001']);
     $visit = ClinicVisit::factory()->create([
         'branch_id' => savedTablePreviewBranchId(),
@@ -134,7 +134,7 @@ it('saved result table preview never renders the patient KTP/NIK', function () {
 // --- 6: rendering the show page mutates nothing ---
 
 it('rendering the saved result table preview does not mutate odontogram data', function () {
-    $manager = userWith(['manage_clinic_visits']);
+    $manager = rmeClinicalAuthor(['manage_clinic_visits']);
     $visit = ClinicVisit::factory()->create(['branch_id' => savedTablePreviewBranchId()]);
     $odontogram = Odontogram::factory()->create([
         'clinic_visit_id' => $visit->id,
@@ -160,7 +160,7 @@ it('rendering the saved result table preview does not mutate odontogram data', f
 // --- 7: empty odontogram shows a safe empty state for the saved table ---
 
 it('saved result table shows a safe empty state when nothing is selected', function () {
-    $manager = userWith(['manage_clinic_visits']);
+    $manager = rmeClinicalAuthor(['manage_clinic_visits']);
     $visit = ClinicVisit::factory()->create(['branch_id' => savedTablePreviewBranchId()]);
 
     $this->actingAs($manager)

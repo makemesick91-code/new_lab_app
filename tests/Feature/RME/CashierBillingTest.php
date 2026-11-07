@@ -27,11 +27,11 @@ beforeEach(function () {
     $this->main = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
     $this->branch = Branch::factory()->create(['code' => 'ATG3', 'is_rme_enabled' => true]);
     $this->cashier = userWith(['manage_rme_billing']);
-    $this->unauthorized = userWith(['view_clinic_visits']);
+    $this->unauthorized = rmeClinicalReader(['view_clinic_visits']);
 
     // CORRECTIVE-02 condition 3 — a service-level RME write needs a resolvable,
     // authorized actor; individual tests override this.
-    $this->doctorUser = userWith(['view_clinic_visits', 'manage_clinic_visits', 'complete_rme_examination']);
+    $this->doctorUser = rmeClinicalAuthor(['view_clinic_visits', 'manage_clinic_visits', 'complete_rme_examination']);
     $this->actingAs($this->doctorUser);
 });
 

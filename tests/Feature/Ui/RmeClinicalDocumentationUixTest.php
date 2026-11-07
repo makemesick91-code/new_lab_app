@@ -27,7 +27,7 @@ beforeEach(function () {
     $this->rmeBranch = Branch::factory()->create([
         'code' => 'UIX11', 'name' => 'Cabang UIX11', 'is_active' => true, 'is_rme_enabled' => true,
     ]);
-    $this->manager = userWith(['manage_clinic_visits', 'view_clinic_visits']);
+    $this->manager = rmeClinicalAuthor(['manage_clinic_visits', 'view_clinic_visits']);
 });
 
 // ---------------------------------------------------------------------------

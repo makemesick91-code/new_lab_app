@@ -7,6 +7,7 @@
 //                consented, in_progress encounter. The absence of a blocker is
 //                never authority to write.
 
+use App\Models\User;
 use App\Modules\Branch\Models\Branch;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Consent\Services\RmeVisitConsentService;
@@ -32,7 +33,7 @@ beforeEach(function () {
     $this->branch = Branch::factory()->create(['code' => 'ATG3', 'is_rme_enabled' => true]);
     $this->otherBranch = Branch::factory()->create(['code' => 'SPN4', 'is_rme_enabled' => true]);
 
-    $this->doctorUser = userWith([
+    $this->doctorUser = rmeClinicalAuthor([
         'view_clinic_visits', 'manage_clinic_visits', 'complete_rme_examination', 'manage_rme_consents',
     ]);
     $this->cashier = userWith(['manage_rme_billing']);
@@ -251,8 +252,11 @@ it('does not let an out-of-branch actor author the encounter', function () {
     rmeSignedConsentFor($live);
     $record = corrRecord($live);
 
-    $outsider = userWith(['view_clinic_visits', 'manage_clinic_visits']);
-    rmeMakeKasirActive($outsider, $this->otherBranch);
+    // DMS-RME-REVISION-PROGRAM-8C — a Kasir is no longer a clinical author at
+    // all (rule 228 §5), so the branch rule is exercised with a clinical,
+    // context-bound author (Perawat) working in the OTHER branch.
+    $outsider = User::factory()->create();
+    rmeMakePerawatActive($outsider, $this->otherBranch);
 
     $this->actingAs($outsider);
 

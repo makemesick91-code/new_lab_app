@@ -105,7 +105,7 @@ it('keeps the same order for every role that may operate the visit', function (s
 ]);
 
 it('keeps the same order for a permission-only visit manager', function () {
-    $manager = userWith(['view_clinic_visits', 'manage_clinic_visits']);
+    $manager = rmeClinicalAuthor(['view_clinic_visits', 'manage_clinic_visits']);
 
     $html = $this->actingAs($manager)
         ->get(route('rme.visits.show', $this->visit))
@@ -116,7 +116,7 @@ it('keeps the same order for a permission-only visit manager', function () {
 });
 
 it('keeps every card working after the move: each still links to its own route', function () {
-    $manager = userWith(['view_clinic_visits', 'manage_clinic_visits']);
+    $manager = rmeClinicalAuthor(['view_clinic_visits', 'manage_clinic_visits']);
 
     $this->actingAs($manager)
         ->get(route('rme.visits.show', $this->visit))
@@ -137,7 +137,7 @@ it('still locks all three cards behind the room gate, in the same order', functi
         'status' => ClinicVisit::STATUS_REGISTERED,
     ]));
 
-    $html = $this->actingAs(userWith(['view_clinic_visits', 'manage_clinic_visits']))
+    $html = $this->actingAs(rmeClinicalAuthor(['view_clinic_visits', 'manage_clinic_visits']))
         ->get(route('rme.visits.show', $roomless))
         ->assertOk()
         ->getContent();

@@ -66,7 +66,7 @@ it('Scope A: Rekam Medis shows a Kembali ke Kunjungan button at the top and relo
         'doctor_id' => $visit->doctor_id,
     ]);
 
-    $manager = userWith(['view_clinic_visits']);
+    $manager = rmeClinicalReader(['view_clinic_visits']);
 
     $response = $this->actingAs($manager)
         ->get(route('rme.visits.medical-record.show', $visit))
@@ -108,7 +108,7 @@ it('Scope D: Resep shows a Kembali ke Kunjungan button at the top and the handli
 
 it('Scope D: Resep view mode shows the handling doctor even without an edit session', function () {
     $visit = fix6845Visit();
-    $viewer = userWith(['view_clinic_visits']);
+    $viewer = rmeClinicalReader(['view_clinic_visits']);
 
     $this->actingAs($viewer)
         ->get(route('rme.visits.prescription.show', $visit))

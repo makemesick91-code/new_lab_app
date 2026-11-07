@@ -57,7 +57,7 @@ it('drops a crafted branch filter outside the RME scope (IDOR-safe) and reports 
 
 it('counts overrides and rollout modes in the adoption metrics', function () {
     $configurer = userWith(['configure_diagnosis_rollout']);
-    $doctor = userWith(['override_diagnosis_requirement']);
+    $doctor = rmeClinicalAuthor(['override_diagnosis_requirement']);
     $ctx = ssMakeVisit(['visit_date' => now()->toDateString()]);
     // CORRECTIVE-03 — clinical content is written DURING a consented encounter.
     ssOpenEncounter($ctx);
