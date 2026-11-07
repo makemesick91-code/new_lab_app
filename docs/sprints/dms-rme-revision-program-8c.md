@@ -130,4 +130,87 @@ The commit after round 2 changes tests and docs only — `git diff --stat 979e26
 database` is empty — so round 2's verdict covers the shipped code.
 ## 3. Release
 
-Filled in at release.
+### 3.1 Pull requests, trees and CI (exact heads)
+
+| | PR | Head | Head tree | Squash merge | Merge tree | CI run (`pull_request`, exact head) |
+|---|---|---|---|---|---|---|
+| PR1 | #617 | `3296f585` | `ff338474` | `3627f506` | `ff338474` | `42388088890` success |
+| PR2 | #618 | `276d645f` | `022eb55f` | `b0c0bd62` | `022eb55f` | `42399264339` success |
+
+Each merge tree is byte-identical to the tree CI tested, so neither squash changed content. In both runs, the
+Classifier, NSF-R012 Quality, NSF-R011 Critical, CICD-CTRL Selective Module, Phase 3 Android, NSF-9 and NSF-10
+gates passed. The second `NSF-R011 Critical Test Gate` row is the inactive self-hosted variant (exactly one variant
+runs by design).
+
+**Full Suite: not run, not passed.** `NSF-R011 Full Suite Gate` was skipped on both PRs. The post-merge push run on
+`b0c0bd62` (`42404023534`) resolved `full_suite_authorized=false`, `full_suite_defer_reason=TEMPORARY_FULL_SUITE_POLICY_ACTIVE`
+and `policy_status=ACTIVE`, so the merge did not start it. The policy was not touched.
+
+The review ran on PR2 HEAD `979e267b`, and the round-2 verdict covers the shipped code: `git diff --stat 979e267b HEAD -- app
+routes config resources database` is empty on the merged tree (§2).
+
+### 3.2 Deployment (Biznet production host)
+
+One deploy for both PRs, run **on** the Biznet VPS with
+`sudo -n bash scripts/deploy-vps-runner.sh start` (detached; the SSH pipe is never the evidence).
+
+| Item | Value |
+|---|---|
+| Production target check | `PRODUCTION_TARGET=VERIFIED` (02:03 WITA, before the deploy) |
+| BK-2 before deploy | `ON_SERVER=OK OFF_SERVER=OK pending=0` (02:03 WITA) |
+| Production before | `fce68541` (Program 8B), clean tree |
+| Deploy id | `20261107-190050`, started 19:00:50Z, finished 19:02:24Z (03:00–03:02 WITA, 2026-11-08) |
+| Pre-deploy backup | `pre_auto_deploy_20261107-190051.sql` (server-side, taken before any change) |
+| Immutable entrypoint | `DEPLOY_LOCK_ACQUIRED=YES`, `DEPLOY_TARGET_PINNED=b0c0bd62…`, `DEPLOY_SNAPSHOT_TRUSTED=PASS`, executed from the `/run/daengtisiams-deploy/…` snapshot, `DEPLOY_SNAPSHOT_CLEANED=YES` |
+| Migrations | `Nothing to migrate.` (8C ships no migration) |
+| Secret file permissions / runtime isolation | GO / 107 GO, 0 FAIL, 0 SKIP |
+| Result | `final exit=0`, **`DEPLOY OK: 20261107-190051`**, `DEPLOY_HEAD_TARGET_MATCH=YES` |
+| Runner verification | `deploy-vps-runner.sh verify 20261107-190050`: target commit matches the checkout, **`DEPLOY RUNNER OK`** |
+| Automated smoke | 6 passed, 1 warning: the known loopback probe (`http://127.0.0.1/login` → 404, answered by the nginx `default_server`, not the application). Verified over the canonical domain instead |
+
+Two deploy-time WATCHes are pre-existing and not caused by 8C: `FLAG-RISKY-NOT-ENABLED` (it lists the risky flags
+enabled on purpose through environment overrides) and the release-safety evidence chain for the optional `local`
+profile.
+
+### 3.3 Production verification (read-only, 2026-11-08 WITA)
+
+No test was run on production, no REPL was opened, and nothing was written.
+
+| Check | Before | After |
+|---|---|---|
+| HEAD / tracked changes | `fce68541` / 0 | `b0c0bd62` / 0 |
+| `https://daengtisia.online` `/login`, `/health/live`, `/health/ready`, `/health/lb` | 200 ×4 | 200 ×4 |
+| Application log bytes / ERROR lines | 1,467,295 / 166 | 1,467,295 / 166 (**0 added**) |
+| Pending migrations / failed jobs / maintenance | 0 / 0 / OFF | 0 / 0 / OFF |
+| Queue worker | inactive / disabled | inactive / disabled (not started) |
+| KTP-cleanup or scheduler timers | none | none |
+| Legacy RME WAVE-4 | ACTIVE, 20 accepted = 20 published, 0 unexplained | unchanged |
+| Doctor enforcement scope | `pilot`, covered `[9,15,18]`, global false | unchanged, `verdict = GO` |
+| Feature flags | — | `doctor.branch_lock` false, `front_office.branch_device_lock` false, SATUSEHAT off; nothing changed by this release |
+
+8C code markers in the deployed checkout: `documentLocked()`, `maySign()`, `MAX_PIXELS = 1_048_576`, the
+`RME_PRESCRIPTION_UPDATED` audit action, the consent signature `private, no-store` header,
+`CROSS_BRANCH_DOCUMENT_READ_ROLES` and `ClinicVisitPolicy::startExamination()` are present.
+`MedicalRecordService::paginate()` is absent.
+
+### 3.4 After the deploy: BK-2 is WATCH
+
+At 03:07 WITA the official BK-2 pull reported `ON_SERVER=OK OFF_SERVER=PENDING pending=1 hdd=locked-or-not-mounted`.
+The pre-deploy backup is on the server but has not reached the encrypted backup HDD, because the HDD is locked.
+Unlocking it is custodian action. This session did not unlock it. The next pull after the custodian unlocks the HDD
+clears the pending item.
+
+### 3.5 GO tag
+
+The annotated tag **`dms-rme-revision-program-8c-go`** is on `b0c0bd62` (tree `022eb55f`), which is exactly the
+deployed runtime. Its peeled value matches on GitHub, and `git describe --exact-match HEAD` on the production host
+names it.
+
+One correction to the tag message: it cites PR1 as `#611`. The correct number is **`#617`**. The commit, tree and
+evidence are right. The tag was not moved or recreated, because GO tags are immutable and this record carries the
+correction.
+
+**Scope of this GO:** Program 8C's code, review, merge, deploy and production verification. It does **not** cover
+the authoritative Full Suite, clinic reopening, D4, D5 or the open residuals. It is **not**
+`dms-rme-final-readiness-go`, which was not created. For the parent checkpoint, see
+`docs/sprints/dms-rme-revision-program-8-owner-operational-closure.md`.
