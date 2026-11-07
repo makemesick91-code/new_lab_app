@@ -37,6 +37,9 @@ use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
+use Spatie\Permission\Models\Permission;
+use Spatie\Permission\Models\Role;
+use Spatie\Permission\PermissionRegistrar;
 
 const P6L_WRITER = 'p6_evidence_lock_writer';
 const P6L_PROBE = 'p6_evidence_lock_probe';
@@ -117,6 +120,8 @@ afterEach(function (): void {
         return;
     }
 
+    p6lRevokeClinicalAuthor($this);
+
     $w = DB::connection(P6L_WRITER);
     $w->table('trx_rme_prescriptions')->where('clinic_visit_id', $this->visitId ?? 0)->delete();
     $w->table('trx_medical_record_handwriting_pages')->where('medical_record_id', $this->recordId ?? 0)->delete();
@@ -131,6 +136,46 @@ afterEach(function (): void {
     DB::purge(P6L_WRITER);
     DB::purge(P6L_PROBE);
 });
+
+/**
+ * DMS-RME-REVISION-PROGRAM-8B / D7 — prescription authoring needs the write
+ * permission and a clinical role, and this suite runs on a COMMITTING
+ * connection (no RefreshDatabase rollback reaches it). So the role, the
+ * permission and the assignment are created here and removed by
+ * p6lRevokeClinicalAuthor() — only the rows this suite created.
+ */
+function p6lGrantClinicalAuthor(object $test, User $user): void
+{
+    $role = Role::findOrCreate('Supervisor RME', 'web');
+    $permission = Permission::findOrCreate('manage_clinic_visits', 'web');
+    $test->p6lCreatedRoleId = $role->wasRecentlyCreated ? (int) $role->id : null;
+    $test->p6lCreatedPermissionId = $permission->wasRecentlyCreated ? (int) $permission->id : null;
+
+    if (! $role->hasPermissionTo($permission)) {
+        $role->givePermissionTo($permission);
+    }
+
+    $user->assignRole($role);
+    app(PermissionRegistrar::class)->forgetCachedPermissions();
+}
+
+function p6lRevokeClinicalAuthor(object $test): void
+{
+    $w = DB::connection(P6L_WRITER);
+    $w->table('model_has_roles')->where('model_id', $test->userId ?? 0)->where('model_type', User::class)->delete();
+
+    if (($test->p6lCreatedRoleId ?? null) !== null) {
+        $w->table('role_has_permissions')->where('role_id', $test->p6lCreatedRoleId)->delete();
+        $w->table('roles')->where('id', $test->p6lCreatedRoleId)->delete();
+    }
+
+    if (($test->p6lCreatedPermissionId ?? null) !== null) {
+        $w->table('role_has_permissions')->where('permission_id', $test->p6lCreatedPermissionId)->delete();
+        $w->table('permissions')->where('id', $test->p6lCreatedPermissionId)->delete();
+    }
+
+    app(PermissionRegistrar::class)->forgetCachedPermissions();
+}
 
 function p6lProbeBlocked(string $table, int $id): bool
 {
@@ -209,6 +254,7 @@ it('keeps a repeated page-1 save to one row whose hash matches its object', func
 it('holds the visit row while a prescription is being created', function (): void {
     $visit = ClinicVisit::query()->findOrFail($this->visitId);
     $user = User::query()->findOrFail($this->userId);
+    p6lGrantClinicalAuthor($this, $user);
     $png = 'data:image/png;base64,'.base64_encode(p6lPng(7));
 
     DB::connection(P6L_WRITER)->transaction(function () use ($visit, $user, $png): void {
@@ -230,6 +276,7 @@ it('holds the visit row while a prescription is being created', function (): voi
 it('answers a second prescription create with the existing contract, not a database error', function (): void {
     $visit = ClinicVisit::query()->findOrFail($this->visitId);
     $user = User::query()->findOrFail($this->userId);
+    p6lGrantClinicalAuthor($this, $user);
     $png = 'data:image/png;base64,'.base64_encode(p6lPng(8));
     $payload = [
         'prescribed_by_name' => 'drg. Integritas',

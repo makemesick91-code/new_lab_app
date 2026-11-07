@@ -168,8 +168,11 @@ return [
         'ClinicMasterData',
         'BladePhpDirectivePairing',
 
-        // DMS-RME-REVISION-PROGRAM-8B (rule 227) — PR2 D1 clinical document
-        // read scope; PR1 D2 serialised invoice/payment/consent numbering.
+        // DMS-RME-REVISION-PROGRAM-8B (rule 227) — D1 clinical document read
+        // scope and D2 serialised invoice/payment/consent numbering. The two
+        // other 8B suites (RmePrescriptionPrintedIdentityTest,
+        // RmePrescriptionAuthoringRoleMatrixTest) are selected by the existing
+        // `RmePrescription` token, which therefore now selects four files.
         'RmeClinicalDocumentReadScope',
         'RmeDocumentNumberSequenceLock',
     ],
@@ -1543,16 +1546,18 @@ return [
         'tests/Feature/ClinicMasterData/ClinicMasterDataPermissionTest.php',
         'tests/Feature/Ui/BladePhpDirectivePairingTest.php',
 
-        // DMS-RME-REVISION-PROGRAM-8B PR2 (rule 227 §1) — D1: clinical documents
-        // read under the document scope (front desk and cashier only in their
-        // working branch). Declared so a rename cannot drop it.
+        // DMS-RME-REVISION-PROGRAM-8B (rule 227) — D1: clinical documents read
+        // under the document scope (front desk and cashier only in their working
+        // branch). D2: invoice/payment/consent numbers serialised per sequence
+        // and month, soft-deleted numbers never reissued (PostgreSQL cases skip
+        // on SQLite). D6: printed prescription identity server-derived. D7:
+        // prescription authoring is a clinical-role allowlist plus the write
+        // permission, re-asserted in the service. Declared so a rename cannot
+        // drop them.
         'tests/Feature/RME/RmeClinicalDocumentReadScopeTest.php',
-
-        // DMS-RME-REVISION-PROGRAM-8B PR1 (rule 227 §4) — D2: invoice/payment/
-        // consent numbers serialised per sequence and month, soft-deleted
-        // numbers never reissued (PostgreSQL cases skip on SQLite). Declared
-        // so a rename cannot drop it.
         'tests/Feature/RME/RmeDocumentNumberSequenceLockTest.php',
+        'tests/Feature/RME/RmePrescriptionPrintedIdentityTest.php',
+        'tests/Feature/RME/RmePrescriptionAuthoringRoleMatrixTest.php',
 
         // SECURITY-F4C-CLINIC-CALENDAR-LAB-ORDERS-1 (owner decision D16) — lab order dates, order and
         // delivery numbering, the due-date floor and "delivered today" on the clinic calendar

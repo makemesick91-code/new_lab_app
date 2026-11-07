@@ -418,6 +418,17 @@ class RmeVisitConsentService
             return false;
         }
 
+        // DMS-RME-REVISION-PROGRAM-8B / D7 (P8R-S1) — the clinical write
+        // permission is re-asserted here too, so this predicate no longer relies
+        // on the route alone: an account without it (Kasir, which is
+        // context-bound but not front-desk) is refused by the service and the
+        // UI capability, not just by the route middleware. Whether RME and
+        // odontogram authoring should also use a clinical-role allowlist, as
+        // prescriptions now do, is a separate owner decision (D3).
+        if (! $actor->can('manage_clinic_visits')) {
+            return false;
+        }
+
         if (! app(RmeWorkingBranchScope::class)->allows($actor, $encounter->branch_id)) {
             return false;
         }

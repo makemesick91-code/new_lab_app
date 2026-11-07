@@ -60,7 +60,8 @@ beforeEach(function () {
     Storage::fake('clinical_evidence');
 
     $this->branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
-    $this->manager = userWith(['manage_clinic_visits']);
+    // DMS-RME-REVISION-PROGRAM-8B / D7 — a clinical role, as a prescription author needs.
+    $this->manager = rmeClinicalAuthor(['manage_clinic_visits']);
     $this->viewer = userWith(['view_clinic_visits']);
 
     $this->clinic = Clinic::factory()->create();

@@ -117,7 +117,8 @@ it('getOrCreateForVisit rejects visit from another branch', function () {
 });
 
 it('updatePlaceholder updates summary_notes correctly', function () {
-    $user = User::factory()->create();
+    // DMS-RME-REVISION-PROGRAM-8B / D7 — the service re-asserts the write permission.
+    $user = userWith(['manage_clinic_visits']);
     $this->actingAs($user);
 
     $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
@@ -545,7 +546,8 @@ it('can update summary_notes and tooth_map_payload together', function () {
 // --- Service: finalize ---
 
 it('finalize sets status to finalized and records timestamp and user', function () {
-    $user = User::factory()->create();
+    // DMS-RME-REVISION-PROGRAM-8B / D7 — the service re-asserts the write permission.
+    $user = userWith(['manage_clinic_visits']);
     $this->actingAs($user);
 
     $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
@@ -563,7 +565,8 @@ it('finalize sets status to finalized and records timestamp and user', function 
 });
 
 it('finalize is idempotent for already-finalized odontogram', function () {
-    $user = User::factory()->create();
+    // DMS-RME-REVISION-PROGRAM-8B / D7 — the service re-asserts the write permission.
+    $user = userWith(['manage_clinic_visits']);
     $this->actingAs($user);
 
     $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();

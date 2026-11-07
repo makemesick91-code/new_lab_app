@@ -16,10 +16,12 @@ class StoreRmePrescriptionRequest extends FormRequest
      */
     public function rules(): array
     {
+        // DMS-RME-REVISION-PROGRAM-8B / D6 — `prescribed_by_name` and
+        // `patient_name_snapshot` are deliberately NOT accepted: the printed
+        // dentist and patient identity is derived server-side from the visit
+        // (RmePrescriptionService), so a submitted value has nowhere to land.
         return [
-            'prescribed_by_name' => ['required', 'string', 'max:255'],
             'prescription_date' => ['required', 'date'],
-            'patient_name_snapshot' => ['required', 'string', 'max:255'],
             'patient_age_snapshot' => ['nullable', 'string', 'max:50'],
             'allergy_note' => ['nullable', 'string', 'max:2000'],
             'pregnant_or_breastfeeding' => ['nullable', 'string', 'max:255'],
