@@ -8,6 +8,9 @@
   `adbd0122`), deployed to Biznet (`20261106-230625`, `DEPLOY RUNNER OK`), verified in production, and tagged
   `dms-rme-revision-program-8a-go` (§6). Full Suite deferred under CG-18, not claimed. **This is not final readiness
   GO**: Program 8 must be re-audited, and P8-N2, the numbering class and the owner-decision register remain open.
+- **Forward reference (2026-11-07):** the Program 8 re-audit ran on this release —
+  [[dms-rme-revision-program-8-readiness-reaudit]]. It re-verified P8-N1, P8-N3 and the coverage fix as closed; its
+  readiness verdict is recorded there, not here.
 - **Base:** `feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report` @ `6eefa719` (PR #607, the
   Program 8 audit record, merged at the start of this sprint). Production ran `9352457e` (Program 7 GO, deploy
   `20261106-134517`), read from the Biznet host before work began.
