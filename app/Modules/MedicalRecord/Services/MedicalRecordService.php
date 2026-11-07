@@ -8,9 +8,7 @@ use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Consent\Services\RmeVisitConsentService;
 use App\Modules\MedicalRecord\Interfaces\MedicalRecordRepositoryInterface;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
-use App\Modules\RME\Services\DoctorPatientScopeService;
 use App\Support\Clinical\ClinicalClock;
-use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -26,7 +24,6 @@ class MedicalRecordService
         // finalizing a clinical document must never move the visit through the
         // workflow, so this class does not even hold the ability to do it.
         private readonly PatientRmWorkspaceResolver $workspace,
-        private readonly DoctorPatientScopeService $doctorScope,
         private readonly DiagnosisRolloutService $diagnosisRollout,
         // FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 / FIX-02 — every write path
         // in this service asserts the consent gate before it touches a record.
@@ -42,22 +39,6 @@ class MedicalRecordService
     private function isActiveRmeBranch(?int $branchId): bool
     {
         return $branchId !== null && in_array($branchId, $this->branches->rmeEnabledIds(), true);
-    }
-
-    /** @param array<string, mixed> $filters */
-    public function paginate(array $filters = [], int $perPage = 15): LengthAwarePaginator
-    {
-        $user = Auth::user();
-        $scope = $user !== null
-            ? fn ($query) => $this->doctorScope->applyMedicalRecordScopeForUser($user, $query)
-            : null;
-
-        return $this->medicalRecords->paginateForBranches(
-            $this->branches->rmeEnabledIds(),
-            $filters,
-            $perPage,
-            $scope,
-        );
     }
 
     /**

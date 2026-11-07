@@ -74,7 +74,8 @@ function p8bpidForgedForm(): array
         'pregnant_or_breastfeeding' => 'Tidak',
         'renal_function_issue' => 'Tidak',
         'prescription_canvas_data' => validPodSignatureData(),
-        'doctor_signature_canvas_data' => validPodSignatureData(),
+        // DMS-RME-REVISION-PROGRAM-8C (rule 228 §12) — content authoring: only the
+        // prescription's own doctor saves the signature, so the authors here send none.
     ];
 }
 

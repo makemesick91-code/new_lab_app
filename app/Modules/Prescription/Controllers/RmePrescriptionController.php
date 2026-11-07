@@ -10,6 +10,7 @@ use App\Modules\Prescription\Models\RmePrescription;
 use App\Modules\Prescription\Requests\SendPrescriptionWhatsAppRequest;
 use App\Modules\Prescription\Requests\StoreRmePrescriptionRequest;
 use App\Modules\Prescription\Requests\UpdateRmePrescriptionRequest;
+use App\Modules\Prescription\Services\PrescriptionAuthoringAuthority;
 use App\Modules\Prescription\Services\PrescriptionWhatsAppDeliveryService;
 use App\Modules\Prescription\Services\RmePrescriptionService;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
@@ -22,6 +23,7 @@ class RmePrescriptionController extends Controller
 
     public function __construct(
         private readonly RmePrescriptionService $service,
+        private readonly PrescriptionAuthoringAuthority $authority,
     ) {}
 
     public function show(ClinicVisit $clinicVisit): View
@@ -47,6 +49,13 @@ class RmePrescriptionController extends Controller
             'history' => $data['history'],
             'adjacentVisits' => $adjacentVisits,
             'canManage' => $canManage,
+            // DMS-RME-REVISION-PROGRAM-8C (D3-NEW-2, rule 228 §12) — the signature
+            // canvas is offered only to the prescription's own doctor; the service
+            // refuses anyone else regardless.
+            'canSign' => $canManage && $this->authority->maySign(
+                request()->user(),
+                $prescription?->doctor_id ?? $clinicVisit->doctor_id,
+            ),
             'editMode' => $canManage && (request()->boolean('edit') || $data['prescription'] === null),
         ]);
     }

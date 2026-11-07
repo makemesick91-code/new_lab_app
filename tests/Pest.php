@@ -587,6 +587,21 @@ function rmeMakeDoctorOnline(
 }
 
 /**
+ * DMS-RME-REVISION-PROGRAM-8C (rule 228 §12) — the one account that may SIGN the
+ * visit's prescription: the account linked to the visit's own doctor, put online
+ * in the visit's own room (rule 228 §1 binds an active visit to the doctor's live
+ * room, so a signer in another room would be refused for the wrong reason). Use
+ * it wherever a test needs the doctor-signature canvas written; any other author
+ * writes the R/ content only.
+ */
+function rmePrescriptionSigner(ClinicVisit $visit): User
+{
+    $visit->loadMissing(['doctor', 'branch', 'clinicRoom']);
+
+    return rmeMakeDoctorOnline($visit->doctor, $visit->branch, $visit->clinicRoom)->fresh();
+}
+
+/**
  * Sprint 66.0 — activate admin klinik branch context for a user.
  */
 function rmeMakeAdminClinicActive(User $user, Branch $branch): void

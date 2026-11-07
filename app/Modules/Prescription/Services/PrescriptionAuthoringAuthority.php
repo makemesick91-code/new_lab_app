@@ -4,6 +4,7 @@ namespace App\Modules\Prescription\Services;
 
 use App\Models\User;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
+use App\Modules\Doctor\Services\DoctorIdentityResolver;
 use App\Modules\RME\Services\DoctorPatientScopeService;
 use App\Modules\RME\Services\DoctorRoomScopeService;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
@@ -70,6 +71,12 @@ final class PrescriptionAuthoringAuthority
 {
     public const REFUSAL_MESSAGE = 'Akun ini tidak berwenang menulis atau mengubah resep dokter pada kunjungan ini.';
 
+    /** Rule 228 §8 — {@see documentLocked()}. */
+    public const LOCKED_MESSAGE = 'Kunjungan sudah selesai atau dibatalkan. Resep tidak dapat diubah lagi.';
+
+    /** Rule 228 §12 — {@see maySign()}. */
+    public const SIGNATURE_REFUSAL_MESSAGE = 'Hanya dokter yang tercantum pada resep yang dapat menandatangani resep ini.';
+
     /** The clinical write permission every author must hold itself (part 0a). */
     public const WRITE_PERMISSION = 'manage_clinic_visits';
 
@@ -86,6 +93,7 @@ final class PrescriptionAuthoringAuthority
         private readonly DoctorPatientScopeService $doctorScope,
         private readonly ActiveAccountResolver $accounts,
         private readonly DoctorRoomScopeService $roomScope,
+        private readonly DoctorIdentityResolver $doctorIdentity,
     ) {}
 
     /**
@@ -134,5 +142,42 @@ final class PrescriptionAuthoringAuthority
         if (! $this->permits($actor, $visit)) {
             throw new AuthorizationException(self::REFUSAL_MESSAGE);
         }
+    }
+
+    /**
+     * DMS-RME-REVISION-PROGRAM-8C (OD-8A-1, rule 228 §8) — WHEN a prescription
+     * may still be written, as opposed to WHO may write it ({@see permits()}).
+     * Owner decision "lock after completion": once the visit is completed or
+     * cancelled the prescription is a closed clinical document and read-only for
+     * every account, Super Admin included. A visit waiting at the cashier is not
+     * closed yet, so the doctor can still correct it before it is paid.
+     *
+     * One definition: the policy asks it to refuse the request, and the service
+     * asks it again against the row it holds FOR NO KEY UPDATE.
+     */
+    public function documentLocked(ClinicVisit $visit): bool
+    {
+        return $visit->isTerminal();
+    }
+
+    /**
+     * DMS-RME-REVISION-PROGRAM-8C (D3-NEW-2, rule 228 §12) — only the account
+     * linked to the prescription's OWN doctor (`mst_doctors.user_id`, the one
+     * identity link {@see DoctorIdentityResolver}) may save the doctor-signature
+     * canvas. A drawn signature asserts that this dentist authorised the
+     * prescription; another clinician may write the content (OD-5-1), never the
+     * signature. Role-free on purpose: a Super Admin, an Owner or a Supervisor
+     * RME that is not that doctor is refused too — the check is identity, so
+     * `Gate::before` has nothing to bypass.
+     */
+    public function maySign(User $actor, ?int $doctorId): bool
+    {
+        if ($doctorId === null) {
+            return false;
+        }
+
+        $linked = $this->doctorIdentity->resolveForUser($actor);
+
+        return $linked !== null && (int) $linked->getKey() === $doctorId;
     }
 }

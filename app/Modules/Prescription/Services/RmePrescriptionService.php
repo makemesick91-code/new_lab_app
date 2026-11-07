@@ -7,12 +7,14 @@ use App\Modules\Branch\Services\BranchService;
 use App\Modules\ClinicVisit\Interfaces\ClinicVisitRepositoryInterface;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Doctor\Models\Doctor;
+use App\Modules\LabOrder\Services\AuditLogService;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\Prescription\Interfaces\RmePrescriptionRepositoryInterface;
 use App\Modules\Prescription\Models\RmePrescription;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
 use App\Support\Clinical\ClinicalClock;
 use App\Support\Storage\ClinicalEvidenceStorage;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -21,6 +23,28 @@ use Throwable;
 
 class RmePrescriptionService
 {
+    /** Rule 228 §9 — the audit entity and actions. */
+    public const AUDIT_TABLE = 'trx_rme_prescriptions';
+
+    public const AUDIT_CREATED = 'RME_PRESCRIPTION_CREATED';
+
+    public const AUDIT_UPDATED = 'RME_PRESCRIPTION_UPDATED';
+
+    /**
+     * The clinical content an audit row names. `updated_by` and the server-derived
+     * snapshots are bookkeeping, not an amendment, so they are not listed.
+     */
+    private const AUDITED_FIELDS = [
+        'prescription_date',
+        'patient_age_snapshot',
+        'allergy_note',
+        'pregnant_or_breastfeeding',
+        'renal_function_issue',
+        'notes',
+        'prescription_canvas_path',
+        'doctor_signature_canvas_path',
+    ];
+
     public function __construct(
         private readonly RmePrescriptionRepositoryInterface $prescriptions,
         private readonly BranchService $branches,
@@ -29,6 +53,7 @@ class RmePrescriptionService
         private readonly ClinicVisitRepositoryInterface $visits,
         private readonly PrescriptionAuthoringAuthority $authority,
         private readonly RmeWorkingBranchScope $workingBranch,
+        private readonly AuditLogService $auditLog,
     ) {}
 
     /**
@@ -154,8 +179,16 @@ class RmePrescriptionService
         // is decoded or written.
         $this->authority->assertPermits($user, $clinicVisit);
 
-        // Lock the visit row first, always (rule 223 §1).
-        $this->visits->lockForStatusDecision($clinicVisit->id);
+        // Lock the visit row first, always (rule 223 §1), and decide the
+        // completion lock (rule 228 §8) on the row we now hold, not on the copy
+        // the request brought: a visit completed by the cashier a moment ago is
+        // already closed here.
+        $lockedVisit = $this->assertDocumentOpen($this->visits->lockForStatusDecision($clinicVisit->id));
+
+        // Independent review F3 (AIR-RMC-38) — the authority is decided again on
+        // the LOCKED row: a room move or status change committed between the
+        // pre-lock check above and this lock is seen here, not missed.
+        $this->authority->assertPermits($user, $lockedVisit);
 
         if ($this->prescriptions->findByClinicVisit($clinicVisit->id) !== null) {
             throw ValidationException::withMessages([
@@ -174,18 +207,36 @@ class RmePrescriptionService
             $clinicVisit->patient()->withTrashed()->first(),
         );
 
+        // Rule 228 §12 — only the prescription's own doctor signs. Refused before
+        // either canvas is decoded, so an account that may not sign never has its
+        // signature payload parsed, let alone written.
+        $maySign = $this->authority->maySign($user, $identity['doctor_id']);
+        $this->assertSignatureAllowed($payload, $maySign);
+
         $prescriptionBytes = $this->canvasDecoder->decode(
             $payload['prescription_canvas_data'] ?? null,
             'prescription_canvas_data',
         );
-        $signatureBytes = $this->canvasDecoder->decode(
-            $payload['doctor_signature_canvas_data'] ?? null,
-            'doctor_signature_canvas_data',
-        );
+        $signatureBytes = $maySign
+            ? $this->canvasDecoder->decode(
+                $payload['doctor_signature_canvas_data'] ?? null,
+                'doctor_signature_canvas_data',
+                maxLength: PrescriptionCanvasDecoder::MAX_SIGNATURE_PAYLOAD_LENGTH,
+            )
+            : null;
 
-        if ($prescriptionBytes === null || $signatureBytes === null) {
+        if ($prescriptionBytes === null) {
             throw ValidationException::withMessages([
-                'prescription_canvas_data' => 'Area R/ dan tanda tangan dokter wajib diisi.',
+                'prescription_canvas_data' => 'Area R/ wajib diisi.',
+            ]);
+        }
+
+        // The named doctor still signs what they write themselves, as before. A
+        // nurse or supervisor writes the content and leaves the signature to that
+        // doctor, who adds it with an update.
+        if ($maySign && $signatureBytes === null) {
+            throw ValidationException::withMessages([
+                'doctor_signature_canvas_data' => 'Tanda tangan dokter wajib diisi.',
             ]);
         }
 
@@ -194,13 +245,17 @@ class RmePrescriptionService
             'prescription',
             $prescriptionBytes,
         );
-        $written[] = $signaturePath = $this->storeCanvas(
-            $clinicVisit,
-            'signature',
-            $signatureBytes,
-        );
+        $signaturePath = null;
 
-        return $this->prescriptions->create([
+        if ($signatureBytes !== null) {
+            $written[] = $signaturePath = $this->storeCanvas(
+                $clinicVisit,
+                'signature',
+                $signatureBytes,
+            );
+        }
+
+        $prescription = $this->prescriptions->create([
             'branch_id' => $clinicVisit->branch_id,
             'clinic_visit_id' => $clinicVisit->id,
             'medical_record_id' => $clinicVisit->medicalRecord?->id,
@@ -220,6 +275,19 @@ class RmePrescriptionService
             'created_by' => $user->id,
             'updated_by' => $user->id,
         ]);
+
+        $this->audit(
+            $prescription,
+            self::AUDIT_CREATED,
+            $lockedVisit,
+            $this->fieldNames(array_keys(array_filter(
+                Arr::only($prescription->getAttributes(), self::AUDITED_FIELDS),
+                static fn ($value) => $value !== null && $value !== '',
+            ))),
+            $user,
+        );
+
+        return $prescription;
     }
 
     /**
@@ -261,6 +329,14 @@ class RmePrescriptionService
         // P8-N1 — same re-assertion as create(), before either canvas is written.
         $this->authority->assertPermits($user, $visit);
 
+        // Rule 228 §8 — the completion lock, decided on the locked visit row
+        // (update() did not lock the visit before 8C; it now does, first, as
+        // create() always has — rule 223 §1).
+        $lockedVisit = $this->assertDocumentOpen($this->visits->lockForStatusDecision($visit->id));
+
+        // Independent review F3 (AIR-RMC-38) — re-decided on the locked row, as in create().
+        $this->authority->assertPermits($user, $lockedVisit);
+
         // DMS-RME-REVISION-PROGRAM-8B / D6 — re-derived on every update from the
         // prescription's OWN doctor and patient (the visit's when the row never
         // recorded one), never from the request. Using the prescription's
@@ -284,6 +360,11 @@ class RmePrescriptionService
             'updated_by' => $user->id,
         ];
 
+        // Rule 228 §12 — a signature may only come from the prescription's own
+        // doctor; refused before anything is decoded or written. The stored
+        // signature is never touched by another account's save.
+        $this->assertSignatureAllowed($payload, $this->authority->maySign($user, $identity['doctor_id']));
+
         // Decode (and so validate) BOTH canvases before writing either.
         $prescriptionBytes = $this->canvasDecoder->decode(
             $payload['prescription_canvas_data'] ?? null,
@@ -292,6 +373,7 @@ class RmePrescriptionService
         $signatureBytes = $this->canvasDecoder->decode(
             $payload['doctor_signature_canvas_data'] ?? null,
             'doctor_signature_canvas_data',
+            maxLength: PrescriptionCanvasDecoder::MAX_SIGNATURE_PAYLOAD_LENGTH,
         );
 
         if ($prescriptionBytes !== null) {
@@ -312,7 +394,94 @@ class RmePrescriptionService
             );
         }
 
-        return $this->prescriptions->update($prescription, $updates);
+        $changed = $this->changedFields($prescription, $updates);
+        $updated = $this->prescriptions->update($prescription, $updates);
+
+        $this->audit($updated, self::AUDIT_UPDATED, $lockedVisit, $changed, $user);
+
+        return $updated;
+    }
+
+    /**
+     * Rule 228 §8 — refuse when the locked visit is gone or closed. A
+     * ValidationException, so the form shows why instead of a bare 403 (the
+     * policy refuses the request itself before this is reached).
+     */
+    private function assertDocumentOpen(?ClinicVisit $locked): ClinicVisit
+    {
+        if ($locked === null || $this->authority->documentLocked($locked)) {
+            throw ValidationException::withMessages([
+                'clinic_visit_id' => PrescriptionAuthoringAuthority::LOCKED_MESSAGE,
+            ]);
+        }
+
+        return $locked;
+    }
+
+    /** Rule 228 §12 — a submitted signature from an account that may not sign is refused. */
+    private function assertSignatureAllowed(array $payload, bool $maySign): void
+    {
+        $submitted = $payload['doctor_signature_canvas_data'] ?? null;
+
+        if (! $maySign && $submitted !== null && $submitted !== '') {
+            throw ValidationException::withMessages([
+                'doctor_signature_canvas_data' => PrescriptionAuthoringAuthority::SIGNATURE_REFUSAL_MESSAGE,
+            ]);
+        }
+    }
+
+    /**
+     * The audited fields an update actually changes, compared with the casts
+     * applied (a date string equal to the stored date is not a change). Computed
+     * on a copy, so the row the repository writes is untouched.
+     *
+     * @param  array<string, mixed>  $updates
+     * @return list<string>
+     */
+    private function changedFields(RmePrescription $prescription, array $updates): array
+    {
+        $probe = (clone $prescription)->forceFill(Arr::only($updates, self::AUDITED_FIELDS));
+
+        return $this->fieldNames(array_keys($probe->getDirty()));
+    }
+
+    /**
+     * Canvas columns are named for what they hold, without the storage `_path`:
+     * the audit records THAT a canvas was written, never where.
+     *
+     * @param  list<string>  $columns
+     * @return list<string>
+     */
+    private function fieldNames(array $columns): array
+    {
+        $names = array_map(static fn (string $column) => preg_replace('/_path$/', '', $column), $columns);
+        sort($names);
+
+        return array_values($names);
+    }
+
+    /**
+     * Rule 228 §9 (OD-8A-2) — one sys_audit_logs row per prescription write, in
+     * the same transaction, so a rolled-back write leaves no row and a committed
+     * one always has its row. Ids, the visit status, the actor and the NAMES of
+     * the changed fields only: no value, no patient data, no storage key.
+     *
+     * @param  list<string>  $changedFields
+     */
+    private function audit(RmePrescription $prescription, string $action, ClinicVisit $visit, array $changedFields, User $user): void
+    {
+        $this->auditLog->log(
+            self::AUDIT_TABLE,
+            (int) $prescription->getKey(),
+            $action,
+            null,
+            [
+                'clinic_visit_id' => (int) $visit->getKey(),
+                'visit_status' => (string) $visit->status,
+                'changed_fields' => $changedFields,
+            ],
+            $user,
+        );
     }
 
     public function markPrinted(RmePrescription $prescription): RmePrescription

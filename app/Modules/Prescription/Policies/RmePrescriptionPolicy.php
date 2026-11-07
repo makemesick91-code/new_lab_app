@@ -52,6 +52,10 @@ class RmePrescriptionPolicy
             return false;
         }
 
+        if ($this->documentLocked($clinicVisit)) {
+            return Response::deny(PrescriptionAuthoringAuthority::LOCKED_MESSAGE);
+        }
+
         return $this->clinicalVisitAccess($user, $clinicVisit);
     }
 
@@ -77,7 +81,24 @@ class RmePrescriptionPolicy
             return false;
         }
 
+        $visit = $prescription->clinicVisit;
+
+        if ($visit === null || $this->documentLocked($visit)) {
+            return Response::deny(PrescriptionAuthoringAuthority::LOCKED_MESSAGE);
+        }
+
         return $this->view($user, $prescription);
+    }
+
+    /**
+     * DMS-RME-REVISION-PROGRAM-8C (OD-8A-1, rule 228 §8) — "lock after
+     * completion": a completed or cancelled visit's prescription is read-only.
+     * Super Admin's Gate::before skips this method, which is why the service
+     * asks the same question again under the visit row lock (CG-06).
+     */
+    private function documentLocked(ClinicVisit $visit): bool
+    {
+        return app(PrescriptionAuthoringAuthority::class)->documentLocked($visit);
     }
 
     /**
@@ -100,8 +121,10 @@ class RmePrescriptionPolicy
 
     /**
      * DMS-RME-REVISION-PROGRAM-8B / D1 — the clinical DOCUMENT read scope:
-     * the front desk and the cashier read only their working branch, everyone
-     * else keeps the RME-enabled set (RmeWorkingBranchScope::allowsClinicalDocument()).
+     * the front desk and the cashier read only their working branch; since
+     * DMS-RME-REVISION-PROGRAM-8C (D3-NEW-4, rule 228 §5) only the allowlisted
+     * roles (clinical + Owner) keep the RME-enabled set and any other account
+     * reads none (RmeWorkingBranchScope::allowsClinicalDocument()).
      */
     private function mayReadDocumentAt(User $user, ?int $branchId): bool
     {

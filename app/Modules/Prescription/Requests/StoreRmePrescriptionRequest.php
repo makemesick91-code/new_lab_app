@@ -2,6 +2,7 @@
 
 namespace App\Modules\Prescription\Requests;
 
+use App\Modules\Prescription\Services\PrescriptionCanvasDecoder;
 use Illuminate\Foundation\Http\FormRequest;
 
 class StoreRmePrescriptionRequest extends FormRequest
@@ -26,9 +27,25 @@ class StoreRmePrescriptionRequest extends FormRequest
             'allergy_note' => ['nullable', 'string', 'max:2000'],
             'pregnant_or_breastfeeding' => ['nullable', 'string', 'max:255'],
             'renal_function_issue' => ['nullable', 'string', 'max:255'],
-            'prescription_canvas_data' => ['required', 'string'],
-            'doctor_signature_canvas_data' => ['required', 'string'],
+            // DMS-RME-REVISION-PROGRAM-8C (P8R-S5, rule 228 §10) — bounded at the
+            // edge; the decoder applies its own limit for callers that skip this.
+            'prescription_canvas_data' => ['required', 'string', 'max:'.PrescriptionCanvasDecoder::MAX_PAYLOAD_LENGTH],
+            // Rule 228 §12 — optional here: only the prescription's own doctor may
+            // send it, and the service decides that (it is an identity, not a
+            // shape, so it cannot be decided in a request rule).
+            'doctor_signature_canvas_data' => ['nullable', 'string', 'max:'.PrescriptionCanvasDecoder::MAX_SIGNATURE_PAYLOAD_LENGTH],
             'notes' => ['nullable', 'string', 'max:2000'],
+        ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function messages(): array
+    {
+        return [
+            'prescription_canvas_data.max' => 'Ukuran gambar resep melebihi batas yang diizinkan.',
+            'doctor_signature_canvas_data.max' => 'Ukuran gambar tanda tangan melebihi batas yang diizinkan.',
         ];
     }
 }
