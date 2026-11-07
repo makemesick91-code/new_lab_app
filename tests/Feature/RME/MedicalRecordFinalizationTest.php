@@ -15,8 +15,8 @@ beforeEach(function () {
     seedAccessControl();
 
     $this->branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
-    $this->manager = userWith(['manage_clinic_visits', 'complete_rme_examination']);
-    $this->viewer = userWith(['view_clinic_visits']);
+    $this->manager = rmeClinicalAuthor(['manage_clinic_visits', 'complete_rme_examination']);
+    $this->viewer = rmeClinicalReader(['view_clinic_visits']);
 });
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

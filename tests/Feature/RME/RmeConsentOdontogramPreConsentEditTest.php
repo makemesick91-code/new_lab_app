@@ -54,7 +54,7 @@ beforeEach(function () {
     Branch::where('code', Branch::MAIN_CODE)->update(['is_rme_enabled' => false]);
     $this->branch = Branch::factory()->create(['code' => 'ATG3', 'is_rme_enabled' => true]);
 
-    $this->doctorUser = userWith([
+    $this->doctorUser = rmeClinicalAuthor([
         'view_clinic_visits', 'manage_clinic_visits', 'complete_rme_examination', 'manage_rme_consents',
     ]);
     $this->patient = Patient::factory()->create(['branch_id' => $this->branch->id]);
@@ -350,7 +350,7 @@ it('denies a view-only actor the active odontogram while consent is unsigned', f
     $visit = pceVisit(ClinicVisit::STATUS_IN_PROGRESS);
     $odontogram = pceOdontogram($visit);
 
-    $viewer = userWith(['view_clinic_visits']);
+    $viewer = rmeClinicalReader(['view_clinic_visits']);
 
     $this->actingAs($viewer)
         ->withoutMiddleware(EnsureRmeOnlineContext::class)
@@ -369,7 +369,7 @@ it('denies the odontogram write ability to an actor without manage_clinic_visits
     $visit = pceVisit(ClinicVisit::STATUS_IN_PROGRESS);
     $odontogram = pceOdontogram($visit);
 
-    $viewer = userWith(['view_clinic_visits']);
+    $viewer = rmeClinicalReader(['view_clinic_visits']);
 
     expect(Gate::forUser($viewer)->allows('update', $odontogram))->toBeFalse();
     expect(Gate::forUser($viewer)->allows('finalize', $odontogram))->toBeFalse();

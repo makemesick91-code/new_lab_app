@@ -45,7 +45,7 @@ beforeEach(function () {
     $this->branch = Branch::factory()->create(['code' => 'ATG3', 'is_rme_enabled' => true]);
     $this->otherBranch = Branch::factory()->create(['code' => 'SPN4', 'is_rme_enabled' => true]);
 
-    $this->doctorUser = userWith([
+    $this->doctorUser = rmeClinicalAuthor([
         'view_clinic_visits', 'manage_clinic_visits', 'complete_rme_examination', 'manage_rme_consents',
     ]);
     $this->cashier = userWith(['manage_rme_billing']);
@@ -513,7 +513,13 @@ it('still refuses payment from an actor without billing permission', function ()
     [$visit] = examBillableVisit($this->branch);
     $invoice = examInvoiceFor($visit, $this->cashier);
 
-    $this->actingAs($this->doctorUser)
+    // DMS-RME-REVISION-PROGRAM-8C — the shared clinician fixture now carries the
+    // Supervisor RME role (rule 228 §5), which holds billing; a Doctor-role
+    // clinician is the account without billing permission this test is about.
+    $clinician = userWith(['view_clinic_visits', 'manage_clinic_visits', 'complete_rme_examination']);
+    $clinician->assignRole('Doctor');
+
+    $this->actingAs($clinician)
         ->withoutMiddleware(EnsureRmeOnlineContext::class)
         ->get(route('rme.cashier.payment.create', [$visit, $invoice]))
         ->assertForbidden();

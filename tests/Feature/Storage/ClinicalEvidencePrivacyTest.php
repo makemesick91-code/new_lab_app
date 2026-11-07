@@ -53,7 +53,7 @@ beforeEach(function () {
     $this->app->useStoragePath($this->storageRoot);
 
     $this->branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
-    $this->manager = userWith(['manage_clinic_visits', 'view_clinic_visits']);
+    $this->manager = rmeClinicalAuthor(['manage_clinic_visits', 'view_clinic_visits']);
 
     $this->clinic = Clinic::factory()->create();
     $this->patient = Patient::factory()->create();

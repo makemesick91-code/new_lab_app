@@ -145,8 +145,10 @@ it('P8A-RX-01 lets the clinician fixture create a prescription with both canvase
 });
 
 it('P8A-RX-02 lets the visit doctor create and then update their own prescription', function () {
-    $doctorUser = rmeMakeDoctorOnline($this->doctorA, $this->branchA);
     $visit = p8arxVisit($this->branchA, $this->doctorA);
+    // DMS-RME-REVISION-PROGRAM-8C (rule 228 §1) — the doctor is online in the
+    // visit's own treatment room; another room is refused (P8A-RX-51).
+    $doctorUser = rmeMakeDoctorOnline($this->doctorA, $this->branchA, ClinicRoom::query()->findOrFail($visit->clinic_room_id));
 
     $this->actingAs($doctorUser)
         ->post(route('rme.visits.prescription.store', $visit), p8arxForm($visit))
@@ -558,13 +560,18 @@ it('P8A-RX-50 leaves a clinician able to amend the prescription of a completed v
     expect($prescription->fresh()->allergy_note)->toBe('Revisi klinisi');
 });
 
-it('P8A-RX-51 leaves a doctor writing the prescription of an active visit in another room unchanged (OD-7-2)', function () {
+it('P8A-RX-51 refuses a doctor writing the prescription of an active visit in another room (OD-7-2)', function () {
+    // REVISED by DMS-RME-REVISION-PROGRAM-8C (rule 228 §1). Until 8C this test
+    // pinned that prescriptions carried no room rule ("left unchanged, OD-7-2
+    // open"); the owner decided OD-7-2 on 2026-11-07 and the room scope now binds
+    // prescriptions exactly as it binds the visit, the RME and the odontogram.
     $doctorUser = rmeMakeDoctorOnline($this->doctorA, $this->branchA);
-    // The doctor's online room differs from the visit's room; prescription room
-    // isolation is owner decision OD-7-2 and is deliberately not added here.
+    // The doctor's online room differs from the visit's room.
     $visit = p8arxVisit($this->branchA, $this->doctorA);
 
     $this->actingAs($doctorUser)
         ->post(route('rme.visits.prescription.store', $visit), p8arxForm($visit))
-        ->assertRedirect(route('rme.visits.prescription.show', $visit));
+        ->assertForbidden();
+
+    expect(RmePrescription::where('clinic_visit_id', $visit->id)->exists())->toBeFalse();
 });

@@ -260,8 +260,7 @@ editable) → Persetujuan Tindakan Medis (RME + finish unlocked) → RME + Odont
 - **AIR-RMC-45** A prescription write (create, update, R/ canvas, doctor-signature canvas) follows the clinical authoring
   authority: never the front-desk-only tier, only inside the actor's working branch (`RmeWorkingBranchScope::allows()`),
   doctor-patient scope for a Doctor. `PrescriptionAuthoringAuthority` is the single predicate; the policy reads it and
-  `RmePrescriptionService` re-asserts it before any lock or canvas write. No consent or room rule (OD-7-2 stays open).
-  Source: `.cursor/rules/226-rme-prescription-authoring-authority-and-blade-php-pairing.mdc` §1.
+  `RmePrescriptionService` re-asserts it before any lock or canvas write. No consent rule (room: see AIR-RMC-50). Source: `.cursor/rules/226-rme-prescription-authoring-authority-and-blade-php-pairing.mdc` §1.
 - **AIR-RMC-46** Clinical documents (MR + handwriting images, prescription page/canvas/print/history, odontogram) are
   read under `RmeWorkingBranchScope::allowsClinicalDocument()`: Kasir / Admin Klinik / Front Office only in their
   working branch (none without one); clinicians and Owner keep the RME set; never wider. Source: rule 227 §1.
@@ -272,6 +271,12 @@ editable) → Persetujuan Tindakan Medis (RME + finish unlocked) → RME + Odont
   authors use `rmeClinicalAuthor()`. Source: rule 227 §3.
 - **AIR-RMC-49** RME invoice / payment / consent numbers are read after `lockNumberSequence($month)` (advisory 92_002 /
   92_003 / 92_004, objid YYYYMM, never renumbered) and invoice/payment MAX counts soft-deleted rows. Source: rule 227 §4.
+- **AIR-RMC-50** The doctor room scope (rule 138) binds prescriptions and the live-encounter write predicate
+  (`actorMayWorkOnEncounter`): never an ACTIVE visit of another room; history unaffected. Rule 228 §1–§2.
+- **AIR-RMC-51** Only `ClinicVisitPolicy::startExamination()` moves a visit to `in_progress` (front desk keeps cancel); a
+  `cashier_pending` room move keeps the doctor. Rule 228 §3–§4.
+- **AIR-RMC-52** RME/odontogram authoring needs a `FrontOfficeRole::CLINICAL_ROLES` role; cross-branch document read is
+  `CROSS_BRANCH_DOCUMENT_READ_ROLES` (clinical + Owner), else none. Rule 228 §5.
 
 ## Current posture (snapshot 2026-10-25 — verify before relying on it)
 
@@ -314,6 +319,7 @@ editable) → Persetujuan Tindakan Medis (RME + finish unlocked) → RME + Odont
 | `.cursor/rules/225-rme-concurrent-first-write-and-void-staging-integrity.mdc` | Savepoint-adopt for racing first writes (assignment, draft book); per-branch visit numbering lock; closes R5-1, R5-2, R6-1 |
 | `.cursor/rules/226-rme-prescription-authoring-authority-and-blade-php-pairing.mdc` | Prescription writes follow the clinical authoring authority (front desk never, working branch only); Blade never mixes inline and block PHP; closes P8-N1, P8-N3 |
 | `.cursor/rules/227-rme-clinical-document-read-scope-printed-identity-numbering.mdc` | Clinical document read scope; server-derived printed prescription identity; clinical-role authoring allowlist; serialised invoice/payment/consent numbers |
+| `.cursor/rules/228-rme-clinical-write-authority-and-prescription-integrity.mdc` | Room scope on prescriptions and live-encounter writes; clinical start-examination; doctor frozen after exam; role allowlists |
 
 ## History
 

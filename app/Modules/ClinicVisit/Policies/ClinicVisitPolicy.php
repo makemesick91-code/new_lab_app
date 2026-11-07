@@ -125,6 +125,22 @@ class ClinicVisitPolicy
     }
 
     /**
+     * DMS-RME-REVISION-PROGRAM-8C (OD-5-2, rule 228) — "Mulai Pemeriksaan".
+     *
+     * Starting an examination opens the clinical encounter the record, the
+     * consent and the odontogram are written against, so it needs the same
+     * clinical examination authority that closes it ({@see completeExamination()}:
+     * `complete_rme_examination`, held by Doctor, Perawat and Supervisor RME;
+     * Super Admin via Gate::before), not the broad `manage_clinic_visits` the
+     * front office holds for registration and room placement. Cancelling a
+     * no-show stays with the front desk: it is not gated here.
+     */
+    public function startExamination(User $user, ClinicVisit $visit): Response|bool
+    {
+        return $this->completeExamination($user, $visit);
+    }
+
+    /**
      * FEATURE-RME-DOCTOR-PERFORMED-TREATMENTS-1 (rule 219) — may this user author
      * the structured "Tindakan Dilakukan" record of this visit?
      *

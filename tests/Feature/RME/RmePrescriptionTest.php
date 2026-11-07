@@ -58,7 +58,7 @@ function prescriptionFormPayload(ClinicVisit $visit, array $overrides = []): arr
 }
 
 it('visit detail shows Resep Dokter menu card', function () {
-    $manager = userWith(['view_clinic_visits']);
+    $manager = rmeClinicalReader(['view_clinic_visits']);
     $visit = prescriptionVisit();
 
     $this->actingAs($manager)
@@ -69,7 +69,7 @@ it('visit detail shows Resep Dokter menu card', function () {
 });
 
 it('prescription page shows workflow tab Resep Dokter', function () {
-    $manager = userWith(['manage_clinic_visits']);
+    $manager = rmeClinicalAuthor(['manage_clinic_visits']);
     $visit = prescriptionVisit();
 
     $this->actingAs($manager)
@@ -149,7 +149,7 @@ it('can update an existing prescription', function () {
 });
 
 it('can print prescription with fields and canvas images', function () {
-    $viewer = userWith(['view_clinic_visits']);
+    $viewer = rmeClinicalReader(['view_clinic_visits']);
     $visit = prescriptionVisit();
     $prescription = RmePrescription::factory()->withStoredCanvases()->create([
         'clinic_visit_id' => $visit->id,
@@ -191,7 +191,7 @@ it('can print prescription with fields and canvas images', function () {
 
 it('denies prescription access for visit outside active RME branch set', function () {
     $nonRmeBranch = Branch::factory()->create(['is_rme_enabled' => false, 'is_active' => true]);
-    $manager = userWith(['manage_clinic_visits']);
+    $manager = rmeClinicalAuthor(['manage_clinic_visits']);
     $visit = prescriptionVisit(['branch_id' => $nonRmeBranch->id]);
 
     $this->actingAs($manager)
@@ -201,7 +201,7 @@ it('denies prescription access for visit outside active RME branch set', functio
 
 it('denies print for prescription outside active RME branch set', function () {
     $nonRmeBranch = Branch::factory()->create(['is_rme_enabled' => false, 'is_active' => true]);
-    $viewer = userWith(['view_clinic_visits']);
+    $viewer = rmeClinicalReader(['view_clinic_visits']);
     $visit = prescriptionVisit(['branch_id' => $nonRmeBranch->id]);
     $prescription = RmePrescription::factory()->withStoredCanvases()->create([
         'clinic_visit_id' => $visit->id,
@@ -215,7 +215,7 @@ it('denies print for prescription outside active RME branch set', function () {
 });
 
 it('shows patient prescription history from other visits', function () {
-    $manager = userWith(['manage_clinic_visits']);
+    $manager = rmeClinicalAuthor(['manage_clinic_visits']);
     $visitA = prescriptionVisit();
     $visitB = prescriptionVisit(['patient_id' => $visitA->patient_id]);
 
@@ -236,7 +236,7 @@ it('shows patient prescription history from other visits', function () {
 });
 
 it('view-only user can open prescription page but cannot store', function () {
-    $viewer = userWith(['view_clinic_visits']);
+    $viewer = rmeClinicalReader(['view_clinic_visits']);
     $visit = prescriptionVisit();
 
     $this->actingAs($viewer)

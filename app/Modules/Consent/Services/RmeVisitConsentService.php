@@ -11,6 +11,7 @@ use App\Modules\Consent\Models\RmeVisitConsent;
 use App\Modules\PerformedTreatment\Support\RmePerformedTreatmentRefusal;
 use App\Modules\Prescription\Services\PrescriptionCanvasDecoder;
 use App\Modules\RME\Services\DoctorPatientScopeService;
+use App\Modules\RME\Services\DoctorRoomScopeService;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
 use App\Support\AccessControl\FrontOfficeRole;
 use App\Support\Clinical\ClinicalClock;
@@ -422,14 +423,30 @@ class RmeVisitConsentService
         // permission is re-asserted here too, so this predicate no longer relies
         // on the route alone: an account without it (Kasir, which is
         // context-bound but not front-desk) is refused by the service and the
-        // UI capability, not just by the route middleware. Whether RME and
-        // odontogram authoring should also use a clinical-role allowlist, as
-        // prescriptions now do, is a separate owner decision (D3).
+        // UI capability, not just by the route middleware.
         if (! $actor->can('manage_clinic_visits')) {
             return false;
         }
 
+        // DMS-RME-REVISION-PROGRAM-8C (D3-NEW-1, rule 228) — a clinical-role
+        // ALLOWLIST, the same one prescriptions use (rule 227 §3). The front-desk
+        // refusal above is a denylist of two named roles, so any other role ever
+        // given manage_clinic_visits (through RoleSeeder or the role screen at
+        // runtime) would otherwise inherit RME, odontogram and performed-treatment
+        // authoring without anyone deciding it.
+        if (! $actor->hasAnyRole(FrontOfficeRole::CLINICAL_ROLES)) {
+            return false;
+        }
+
         if (! app(RmeWorkingBranchScope::class)->allows($actor, $encounter->branch_id)) {
+            return false;
+        }
+
+        // DMS-RME-REVISION-PROGRAM-8C (OD-5-7, rule 228) — the doctor ROOM scope
+        // of rule 138. The current-RME write is keyed on the patient's canonical
+        // record book, so it never reached the visit's own room guard; the live
+        // encounter resolved here is what the room rule protects.
+        if (app(DoctorRoomScopeService::class)->deniesActiveVisitOutsideRoom($actor, $encounter)) {
             return false;
         }
 

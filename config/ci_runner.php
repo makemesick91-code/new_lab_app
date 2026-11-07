@@ -175,6 +175,13 @@ return [
         // `RmePrescription` token, which therefore now selects four files.
         'RmeClinicalDocumentReadScope',
         'RmeDocumentNumberSequenceLock',
+
+        // DMS-RME-REVISION-PROGRAM-8C (rule 228) — clinical write authority:
+        // prescription + live-encounter room scope, start-examination authority,
+        // doctor freeze after the examination, RME/odontogram allowlist. The
+        // read-allowlist suite is selected by the existing
+        // `RmeClinicalDocumentReadScope` token.
+        'RmeClinicalWriteAuthority',
     ],
 
     /*
@@ -1558,6 +1565,12 @@ return [
         'tests/Feature/RME/RmeDocumentNumberSequenceLockTest.php',
         'tests/Feature/RME/RmePrescriptionPrintedIdentityTest.php',
         'tests/Feature/RME/RmePrescriptionAuthoringRoleMatrixTest.php',
+
+        // DMS-RME-REVISION-PROGRAM-8C (rule 228) — the clinical write authority
+        // and the cross-branch clinical-document read allowlist (owner decisions
+        // 2026-11-07, D3 Group 1 and D3-NEW-4).
+        'tests/Feature/RME/RmeClinicalWriteAuthorityTest.php',
+        'tests/Feature/RME/RmeClinicalDocumentReadScopeAllowlistTest.php',
 
         // SECURITY-F4C-CLINIC-CALENDAR-LAB-ORDERS-1 (owner decision D16) — lab order dates, order and
         // delivery numbering, the due-date floor and "delivered today" on the clinic calendar

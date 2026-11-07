@@ -306,12 +306,19 @@ class ClinicVisitService
                 ]);
             }
 
-            $updated = $this->visits->update($visit, [
-                'clinic_room_id' => $room->id,
-                'doctor_id' => $doctorId,
-            ]);
+            // DMS-RME-REVISION-PROGRAM-8C (OD-5-3, rule 228) — once the
+            // examination is finished (cashier_pending) the doctor who examined
+            // the patient stays the visit's doctor: moving the visit to another
+            // room only moves the room. Rewriting it here moved doctor-performance
+            // and income attribution, and the printed identity, to whoever was
+            // online in the new room (or to nobody).
+            $examinationFinished = ! in_array($locked->status, ClinicVisit::PRE_EXAM_STATUSES, true);
 
-            if ($doctorId !== null) {
+            $updated = $this->visits->update($visit, $examinationFinished
+                ? ['clinic_room_id' => $room->id]
+                : ['clinic_room_id' => $room->id, 'doctor_id' => $doctorId]);
+
+            if ($doctorId !== null && ! $examinationFinished) {
                 $this->patientDoctorAssignments->ensureAssignedFromVisit($updated->fresh(), $account);
             }
 
@@ -879,6 +886,15 @@ class ClinicVisitService
         // AUTHORITY-1 the actor is the explicit one resolved above — a null actor
         // has already been refused — and the cashier-owned `completed`
         // transition is untouched.
+        // DMS-RME-REVISION-PROGRAM-8C (OD-5-2, rule 228) — "Mulai Pemeriksaan"
+        // opens the clinical encounter, so it is a clinical act enforced here as
+        // well as at the route. The front desk keeps cancel (no-show).
+        if ($newStatus === ClinicVisit::STATUS_IN_PROGRESS && $account->cannot('startExamination', $visit)) {
+            throw ValidationException::withMessages([
+                'status' => 'Anda tidak berwenang memulai pemeriksaan. Tindakan ini dilakukan oleh tenaga klinis.',
+            ]);
+        }
+
         if ($newStatus === ClinicVisit::STATUS_CASHIER_PENDING) {
             if ($account->cannot('completeExamination', $visit)) {
                 throw ValidationException::withMessages([

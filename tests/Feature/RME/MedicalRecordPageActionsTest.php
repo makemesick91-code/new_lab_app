@@ -67,7 +67,7 @@ function mrPageWithHandwriting(array $recordAttrs = []): ClinicVisit
 // ── FIX-02: information hierarchy ───────────────────────────────────────────
 
 it('orders the medical record page as visit info, handwritten RME, then documents', function () {
-    $manager = userWith(['view_clinic_visits', 'manage_clinic_visits']);
+    $manager = rmeClinicalAuthor(['view_clinic_visits', 'manage_clinic_visits']);
     $visit = mrPageVisit();
 
     $html = $this->actingAs($manager)
@@ -89,7 +89,7 @@ it('orders the medical record page as visit info, handwritten RME, then document
 
 it('keeps the patient RME documents rail on the page after moving it down', function () {
     // FIX-02 is placement only — the rail must still be rendered, not dropped.
-    $manager = userWith(['view_clinic_visits', 'manage_clinic_visits']);
+    $manager = rmeClinicalAuthor(['view_clinic_visits', 'manage_clinic_visits']);
     $visit = mrPageVisit();
 
     $this->actingAs($manager)
@@ -101,7 +101,7 @@ it('keeps the patient RME documents rail on the page after moving it down', func
 // ── FIX-03: Finalisasi relocation ───────────────────────────────────────────
 
 it('renders Finalisasi above the handwritten RME workspace', function () {
-    $manager = userWith(['view_clinic_visits', 'manage_clinic_visits']);
+    $manager = rmeClinicalAuthor(['view_clinic_visits', 'manage_clinic_visits']);
     $visit = mrPageWithHandwriting(['status' => MedicalRecord::STATUS_DRAFT]);
 
     $html = $this->actingAs($manager)
@@ -117,7 +117,7 @@ it('renders Finalisasi above the handwritten RME workspace', function () {
 });
 
 it('renders exactly one Finalisasi control — moved, not duplicated', function () {
-    $manager = userWith(['view_clinic_visits', 'manage_clinic_visits']);
+    $manager = rmeClinicalAuthor(['view_clinic_visits', 'manage_clinic_visits']);
     $visit = mrPageWithHandwriting(['status' => MedicalRecord::STATUS_DRAFT]);
     $record = MedicalRecord::where('clinic_visit_id', $visit->id)->firstOrFail();
 
@@ -133,7 +133,7 @@ it('renders exactly one Finalisasi control — moved, not duplicated', function 
 
 it('still requires handwriting before offering Finalisasi', function () {
     // The Sprint 20 rule is unchanged: no handwriting PNG, no finalization.
-    $manager = userWith(['view_clinic_visits', 'manage_clinic_visits']);
+    $manager = rmeClinicalAuthor(['view_clinic_visits', 'manage_clinic_visits']);
     $visit = mrPageVisit(['status' => MedicalRecord::STATUS_DRAFT]);
     $record = MedicalRecord::where('clinic_visit_id', $visit->id)->firstOrFail();
 
@@ -148,7 +148,7 @@ it('still requires handwriting before offering Finalisasi', function () {
 });
 
 it('does not offer Finalisasi to a user who cannot finalize', function () {
-    $viewer = userWith(['view_clinic_visits']);
+    $viewer = rmeClinicalReader(['view_clinic_visits']);
     $visit = mrPageWithHandwriting(['status' => MedicalRecord::STATUS_DRAFT]);
     $record = MedicalRecord::where('clinic_visit_id', $visit->id)->firstOrFail();
 
@@ -162,7 +162,7 @@ it('does not offer Finalisasi to a user who cannot finalize', function () {
 });
 
 it('shows the finalized state message instead of the action once final', function () {
-    $manager = userWith(['view_clinic_visits', 'manage_clinic_visits']);
+    $manager = rmeClinicalAuthor(['view_clinic_visits', 'manage_clinic_visits']);
     $visit = mrPageWithHandwriting([
         'status' => MedicalRecord::STATUS_FINAL,
         'finalized_at' => now(),
@@ -177,7 +177,7 @@ it('shows the finalized state message instead of the action once final', functio
 // ── FIX-04: Cetak RME relocation ────────────────────────────────────────────
 
 it('renders Cetak RME on the medical record page for an authorized user', function () {
-    $manager = userWith(['view_clinic_visits', 'manage_clinic_visits']);
+    $manager = rmeClinicalAuthor(['view_clinic_visits', 'manage_clinic_visits']);
     $visit = mrPageVisit();
 
     $this->actingAs($manager)
@@ -188,7 +188,7 @@ it('renders Cetak RME on the medical record page for an authorized user', functi
 });
 
 it('renders Cetak RME above the handwritten RME workspace', function () {
-    $manager = userWith(['view_clinic_visits', 'manage_clinic_visits']);
+    $manager = rmeClinicalAuthor(['view_clinic_visits', 'manage_clinic_visits']);
     $visit = mrPageVisit();
 
     $html = $this->actingAs($manager)
@@ -201,7 +201,7 @@ it('renders Cetak RME above the handwritten RME workspace', function () {
 
 it('reuses the existing print route rather than a new endpoint', function () {
     // FIX-04 relocates a button. It must not introduce a second print backend.
-    $manager = userWith(['view_clinic_visits', 'manage_clinic_visits']);
+    $manager = rmeClinicalAuthor(['view_clinic_visits', 'manage_clinic_visits']);
     $visit = mrPageVisit();
 
     $this->actingAs($manager)

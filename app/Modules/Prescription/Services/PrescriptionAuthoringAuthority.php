@@ -5,6 +5,7 @@ namespace App\Modules\Prescription\Services;
 use App\Models\User;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\RME\Services\DoctorPatientScopeService;
+use App\Modules\RME\Services\DoctorRoomScopeService;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
 use App\Support\AccessControl\ActiveAccountResolver;
 use App\Support\AccessControl\FrontOfficeRole;
@@ -32,8 +33,12 @@ use Illuminate\Auth\Access\AuthorizationException;
  *
  * This mirrors `RmeVisitConsentService::actorMayWorkOnEncounter()` on purpose
  * and deliberately does NOT add what that method's callers add (a live,
- * consented encounter): prescriptions have no consent prerequisite and no room
- * rule, and both would be new product policy (OD-7-2), not this fix.
+ * consented encounter): prescriptions have no consent prerequisite.
+ *
+ * DMS-RME-REVISION-PROGRAM-8C (OD-7-2 / R8A-1, rule 228) adds the doctor ROOM
+ * scope of rule 138 (part 4): a doctor never writes the prescription of an
+ * ACTIVE visit of another treatment room. History (cashier_pending and later) is
+ * never room-restricted, and an account that is not doctor-scoped is unaffected.
  *
  * DMS-RME-REVISION-PROGRAM-8B / D7 (P8R-S1, P8R-S2) adds two parts, so the
  * predicate no longer leans on the route and the policy for anything:
@@ -80,6 +85,7 @@ final class PrescriptionAuthoringAuthority
         private readonly RmeWorkingBranchScope $workingBranch,
         private readonly DoctorPatientScopeService $doctorScope,
         private readonly ActiveAccountResolver $accounts,
+        private readonly DoctorRoomScopeService $roomScope,
     ) {}
 
     /**
@@ -107,7 +113,7 @@ final class PrescriptionAuthoringAuthority
 
     /**
      * The whole predicate: a usable (persisted, active, non-deleted) account,
-     * parts 1 and 2, and the doctor-patient scope.
+     * parts 0-2, the doctor-patient scope and the doctor room scope (part 4).
      */
     public function permits(User $actor, ?ClinicVisit $visit): bool
     {
@@ -116,7 +122,8 @@ final class PrescriptionAuthoringAuthority
         }
 
         return $this->permitsActorAtBranch($actor, $visit->branch_id)
-            && $this->doctorScope->doctorCanAccessVisit($actor, $visit);
+            && $this->doctorScope->doctorCanAccessVisit($actor, $visit)
+            && ! $this->roomScope->deniesActiveVisitOutsideRoom($actor, $visit);
     }
 
     /**

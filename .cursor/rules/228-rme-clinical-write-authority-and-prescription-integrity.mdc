@@ -1,0 +1,75 @@
+---
+description: DMS-RME-REVISION-PROGRAM-8C — the doctor room scope (rule 138) binds prescription reads/writes and the live-encounter RME/odontogram/performed-treatment write authority; only the clinical examination authority starts an examination (front desk keeps cancel); a finished examination keeps its doctor when the room changes; RME/odontogram authoring and cross-branch clinical-document read are role ALLOWLISTS. Closes OD-7-2, R8A-1, OD-5-7, OD-5-2, OD-5-3, D3-NEW-1, D3-NEW-4.
+globs: app/Modules/Prescription/Policies/RmePrescriptionPolicy.php, app/Modules/Prescription/Services/PrescriptionAuthoringAuthority.php, app/Modules/Consent/Services/RmeVisitConsentService.php, app/Modules/ClinicVisit/Policies/ClinicVisitPolicy.php, app/Modules/ClinicVisit/Controllers/ClinicVisitController.php, app/Modules/ClinicVisit/Services/ClinicVisitService.php, app/Modules/RmeOnlineContext/Services/RmeWorkingBranchScope.php, resources/views/rme/visits/show.blade.php
+alwaysApply: false
+---
+
+# Clinical write authority and prescription integrity (rule 228)
+
+**Status:** scope of `DMS-RME-REVISION-PROGRAM-8C` (2026-11-07). Sprint record:
+`docs/sprints/dms-rme-revision-program-8c.md`. Owner decisions of the Program 8 owner-decision checkpoint
+(`DMS-RME-REVISION-PROGRAM-8-OWNER-OPERATIONAL-CLOSURE-1`, 2026-11-07): D3 Group 1 "FIX NOW", D3-NEW-4 "FIX NOW".
+Category under the Foundation-First Sprint Lock: security fix / clinical correctness.
+
+This rule EXTENDS rules 138, 226 and 227. Where they differ, this rule wins:
+
+- rule 226 §1 and rule 227 §3 said prescriptions carry "no room rule" (OD-7-2 open) — §1 below adds it;
+- rule 227 §1.3 said every account that is not a context-bound non-clinical one keeps the RME-wide document read —
+  §5 below narrows that to an allowlist;
+- rule 138's room scope bound the visit, the RME page and the odontogram — §1 and §2 extend it to prescriptions and
+  to the live-encounter write authority. Its §17 boundary (history is never room-hidden) is unchanged.
+
+## 1. Prescriptions follow the doctor room scope (OD-7-2, R8A-1)
+
+1. `RmePrescriptionPolicy` (`view`, `print`, `viewForVisit`, `create`, `update`) applies the doctor-patient scope and
+   then `DoctorRoomScopeService::authorizeActiveVisitRoom()`: a doctor never opens or writes the prescription of an
+   ACTIVE visit (registered / waiting / in_progress) of another treatment room.
+2. `PrescriptionAuthoringAuthority::permits()` re-asserts it (`deniesActiveVisitOutsideRoom()`), so a caller that skips
+   the route and the policy is refused the same way (CG-06).
+3. Post-examination and historical visits (cashier_pending, completed, cancelled) are never room-restricted, and an
+   account that is not doctor-scoped (Supervisor RME, Owner, Super Admin) is unaffected.
+
+## 2. The live-encounter write authority is room scoped (OD-5-7)
+
+1. `RmeVisitConsentService::actorMayWorkOnEncounter()` — the single predicate behind current-RME writes, handwriting,
+   odontogram charting and performed treatments — refuses a doctor whose live room is not the encounter's room. The
+   current-RME write is keyed on the patient's canonical record book, so it never reached the visit's room guard.
+2. A doctor with no live room context is refused on an ACTIVE encounter (fail closed), as rule 138 already refuses the
+   visit page itself.
+
+## 3. Starting an examination is a clinical act (OD-5-2)
+
+1. `ClinicVisitPolicy::startExamination()` is the clinical examination authority (`complete_rme_examination` + working
+   branch + doctor-patient scope — the same as `completeExamination()`). The controller authorizes it for
+   `in_progress`, and `ClinicVisitService::transitionStatus()` re-asserts it for every caller.
+2. The front desk keeps CANCEL (a no-show): `cancelled` is not gated by it.
+3. The visit page offers "Mulai Pemeriksaan" only to an account that holds the ability; hiding it is not the boundary.
+
+## 4. A finished examination keeps its doctor (OD-5-3)
+
+`ClinicVisitService::assignRoom()` on a `cashier_pending` visit moves only the room; `doctor_id` and the
+patient-doctor assignment stay with the doctor who examined. Pre-examination placement still resolves the online
+doctor of the room exactly as before. Terminal visits stay refused.
+
+## 5. Role allowlists, not denylists (D3-NEW-1, D3-NEW-4)
+
+1. RME / odontogram / performed-treatment authoring requires a role in `FrontOfficeRole::CLINICAL_ROLES` (the same list
+   prescriptions use, rule 227 §3) on top of `manage_clinic_visits`. A role created at runtime and given
+   `manage_clinic_visits` (production holds one, `Tester RME`, no holders) does not inherit authoring.
+2. Cross-branch clinical-document READ is `RmeWorkingBranchScope::CROSS_BRANCH_DOCUMENT_READ_ROLES` (clinical roles +
+   Owner). The context-bound front desk and cashier keep their working branch (rule 227 §1.2); any other account reads
+   NO clinical document until it is classified. A new role that must read across branches is added on purpose.
+3. Every seeded role that holds a clinic-visit permission is classified — pinned by
+   `RmeClinicalDocumentReadScopeAllowlistTest` A-05.
+
+## 6. Not changed by §1–§5
+
+No schema, migration, permission, role, route or package change. No flag, enforcement scope, branch lock, queue
+worker, scheduler or KTP timer change. The Program 8B foundations (rule 227 §1–§4) are unchanged except where this
+rule narrows them.
+
+## 7. Critical-gate coverage (CI-8C)
+
+`RmeClinicalWriteAuthorityTest` is selected by the new `RmeClinicalWriteAuthority` token in BOTH critical-gate filter
+variants; `RmeClinicalDocumentReadScopeAllowlistTest` is selected by the existing `RmeClinicalDocumentReadScope`
+token. Both are declared in `config/ci_runner.php` `critical_gate_mandatory_suites`.

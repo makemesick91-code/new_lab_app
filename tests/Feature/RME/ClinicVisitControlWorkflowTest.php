@@ -21,8 +21,8 @@ beforeEach(function () {
     $this->doctor = Doctor::factory()->create();
     $this->treatment = Treatment::factory()->create(['is_active' => true]);
     rmeMakeDoctorOnline($this->doctor, $this->rmeBranch);
-    $this->manager = userWith(['manage_clinic_visits', 'view_clinic_visits']);
-    $this->viewer = userWith(['view_clinic_visits']);
+    $this->manager = rmeClinicalAuthor(['manage_clinic_visits', 'view_clinic_visits']);
+    $this->viewer = rmeClinicalReader(['view_clinic_visits']);
     $this->patient = Patient::factory()->create([
         'medical_record_number' => 'DG-RME1-2026-0001',
         'branch_id' => $this->rmeBranch->id,
@@ -40,7 +40,7 @@ function makeParentVisit(Patient $patient, Branch $branch, Doctor $doctor, Treat
         'visit_type' => ClinicVisit::VISIT_TYPE_NEW,
         'queue_number' => 1,
         'visit_number' => 'VIS-PARENT-'.uniqid(),
-        'created_by' => userWith(['manage_clinic_visits'])->id,
+        'created_by' => rmeClinicalAuthor(['manage_clinic_visits'])->id,
     ]);
 }
 
@@ -160,7 +160,7 @@ it('rejects follow_up_of_visit_id from different patient', function () {
 it('rejects control visit in new patient mode', function () {
     $parent = makeParentVisit($this->patient, $this->rmeBranch, $this->doctor, $this->treatment);
 
-    $this->actingAs(userWith(['manage_clinic_visits', 'manage patients']))
+    $this->actingAs(rmeClinicalAuthor(['manage_clinic_visits', 'manage patients']))
         ->post(route('rme.visits.store'), [
             'patient_mode' => 'new',
             'visit_type' => ClinicVisit::VISIT_TYPE_CONTROL,

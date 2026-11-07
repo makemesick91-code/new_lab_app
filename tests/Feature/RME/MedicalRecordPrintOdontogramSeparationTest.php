@@ -48,7 +48,7 @@ function visitWithOdontogramForSeparation(array $teeth, array $odontogramAttrs =
 // --- 1–5: the odontogram is absent from the RME print composition ---
 
 it('rme print does not render the odontogram section when an odontogram exists', function () {
-    $manager = userWith(['manage_clinic_visits']);
+    $manager = rmeClinicalAuthor(['manage_clinic_visits']);
     $visit = visitWithOdontogramForSeparation(['11' => ['status' => 'caries']]);
 
     $this->actingAs($manager)
@@ -61,7 +61,7 @@ it('rme print does not render the odontogram section when an odontogram exists',
 });
 
 it('rme print does not render odontogram tooth rows, conditions or DMF-T', function () {
-    $manager = userWith(['manage_clinic_visits']);
+    $manager = rmeClinicalAuthor(['manage_clinic_visits']);
     $visit = visitWithOdontogramForSeparation([
         '11' => [
             'status' => 'caries',
@@ -81,7 +81,7 @@ it('rme print does not render odontogram tooth rows, conditions or DMF-T', funct
 });
 
 it('rme print no longer renders the odontogram empty-state placeholder', function () {
-    $manager = userWith(['manage_clinic_visits']);
+    $manager = rmeClinicalAuthor(['manage_clinic_visits']);
     $visit = ClinicVisit::factory()->create(['branch_id' => mainRmeBranchIdForSeparation()]);
 
     // The section is gone entirely, so a visit without an odontogram no longer
@@ -97,7 +97,7 @@ it('rme pdf export does not render the odontogram section either', function () {
         test()->markTestSkipped('poppler-utils (pdftotext) is not installed.');
     }
 
-    $manager = userWith(['manage_clinic_visits']);
+    $manager = rmeClinicalAuthor(['manage_clinic_visits']);
     $visit = visitWithOdontogramForSeparation([
         '11' => ['status' => 'caries', 'additional_note' => 'SEPARATION_PDF_MARKER'],
     ]);
@@ -139,7 +139,7 @@ it('rme pdf export does not render the odontogram section either', function () {
 });
 
 it('rme print still renders its own medical record content', function () {
-    $manager = userWith(['manage_clinic_visits']);
+    $manager = rmeClinicalAuthor(['manage_clinic_visits']);
     $visit = visitWithOdontogramForSeparation(['11' => ['status' => 'caries']]);
 
     // FIX-RME-PRINT-REMOVE-PATIENT-VISIT-DUPLICATE-1 — SUPERSEDES the earlier
@@ -160,7 +160,7 @@ it('rme print still renders its own medical record content', function () {
 // --- 6–9: the standalone odontogram print is untouched ---
 
 it('standalone odontogram print still renders the selected-results table', function () {
-    $manager = userWith(['manage_clinic_visits']);
+    $manager = rmeClinicalAuthor(['manage_clinic_visits']);
     $visit = ClinicVisit::factory()->create(['branch_id' => mainRmeBranchIdForSeparation()]);
     $odontogram = Odontogram::factory()->create([
         'clinic_visit_id' => $visit->id,
@@ -176,7 +176,7 @@ it('standalone odontogram print still renders the selected-results table', funct
 });
 
 it('standalone odontogram print still renders the condition label and DMF-T', function () {
-    $manager = userWith(['manage_clinic_visits']);
+    $manager = rmeClinicalAuthor(['manage_clinic_visits']);
     $visit = ClinicVisit::factory()->create(['branch_id' => mainRmeBranchIdForSeparation()]);
     $odontogram = Odontogram::factory()->create([
         'clinic_visit_id' => $visit->id,
@@ -192,7 +192,7 @@ it('standalone odontogram print still renders the condition label and DMF-T', fu
 });
 
 it('standalone odontogram print still hides the raw payload', function () {
-    $manager = userWith(['manage_clinic_visits']);
+    $manager = rmeClinicalAuthor(['manage_clinic_visits']);
     $visit = ClinicVisit::factory()->create(['branch_id' => mainRmeBranchIdForSeparation()]);
     $odontogram = Odontogram::factory()->create([
         'clinic_visit_id' => $visit->id,
@@ -208,7 +208,7 @@ it('standalone odontogram print still hides the raw payload', function () {
 });
 
 it('standalone odontogram print still renders a legacy payload without extra keys', function () {
-    $manager = userWith(['manage_clinic_visits']);
+    $manager = rmeClinicalAuthor(['manage_clinic_visits']);
     $visit = ClinicVisit::factory()->create(['branch_id' => mainRmeBranchIdForSeparation()]);
     $odontogram = Odontogram::factory()->create([
         'clinic_visit_id' => $visit->id,
@@ -228,7 +228,7 @@ it('standalone odontogram print still renders a legacy payload without extra key
 // --- 10: the RME print still refuses to leak the raw payload ---
 
 it('rme print does not show raw tooth_map_payload JSON', function () {
-    $manager = userWith(['manage_clinic_visits']);
+    $manager = rmeClinicalAuthor(['manage_clinic_visits']);
     $visit = visitWithOdontogramForSeparation([
         '11' => ['status' => 'caries', 'additional_condition' => 'X', 'additional_note' => 'Y'],
     ]);

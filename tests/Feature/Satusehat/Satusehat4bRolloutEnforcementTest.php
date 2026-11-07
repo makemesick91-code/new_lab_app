@@ -129,7 +129,9 @@ it('an ACTIVE primary satisfies the pilot gate; a deprecated-terminology primary
 it('a reasoned emergency override unblocks finalization, is audited, and expires', function () {
     $svc = app(MedicalRecordService::class);
     $configurer = userWith(['configure_diagnosis_rollout']);
-    $doctor = userWith(['override_diagnosis_requirement']);
+    // DMS-RME-REVISION-PROGRAM-8C — the override is an RME authoring act, which
+    // is a clinical-role allowlist (rule 228 §5).
+    $doctor = rmeClinicalAuthor(['override_diagnosis_requirement']);
 
     $ctx = s4bFinalizableCtx();
     s4bRollout()->setMode($ctx['branch'], DiagnosisRolloutSetting::MODE_PILOT_ENFORCED, 'pilot enforcement cabang ini', $configurer);

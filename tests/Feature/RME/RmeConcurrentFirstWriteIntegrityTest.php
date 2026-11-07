@@ -70,7 +70,7 @@ beforeEach(function () {
         'is_active' => true,
         'is_rme_enabled' => true,
     ]);
-    $this->manager = userWith(['view_clinic_visits', 'manage_clinic_visits']);
+    $this->manager = rmeClinicalAuthor(['view_clinic_visits', 'manage_clinic_visits']);
     $this->clinic = Clinic::factory()->create();
     $this->doctor = Doctor::factory()->create(['name' => 'drg. Serentak']);
 });

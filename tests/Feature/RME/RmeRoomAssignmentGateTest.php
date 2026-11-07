@@ -31,7 +31,7 @@ beforeEach(function () {
     $this->tkm = Branch::factory()->create(['code' => 'TKM7', 'name' => 'Cabang Telkomas', 'is_active' => true, 'is_rme_enabled' => true]);
 
     $this->doctor = Doctor::factory()->create(['name' => 'drg. Uji']);
-    $this->admin = userWith(['view_clinic_visits', 'manage_clinic_visits']);
+    $this->admin = rmeClinicalAuthor(['view_clinic_visits', 'manage_clinic_visits']);
     $this->cashier = userWith(['manage_rme_billing']);
 });
 

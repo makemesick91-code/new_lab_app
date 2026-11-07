@@ -40,6 +40,8 @@ the read-scope item §1.7 left open (P8-N2). Where the two rules differ, rule 22
    passes through the policy — a job, a command, a future controller — is refused the same way and leaves no object.
 4. The predicate mirrors `RmeVisitConsentService::actorMayWorkOnEncounter()` on purpose and adds nothing that method's
    callers add: prescriptions carry NO consent prerequisite and NO room rule. Adding either is product policy.
+   **SUPERSEDED in part by rule 228 §1 (DMS-RME-REVISION-PROGRAM-8C, owner decision 2026-11-07):** prescriptions now
+   follow the doctor room scope; they still carry no consent prerequisite.
 5. The prescription editor on the page follows the same capability (`can('create', …)` already decides `canManage`),
    so the UI never offers a write the server refuses (rule 135). Reading a prescription is unchanged.
 6. Identity of the record comes from the server: `created_by` / `updated_by` are the acting account, `doctor_id`,
