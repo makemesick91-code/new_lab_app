@@ -5,6 +5,7 @@ namespace App\Modules\RmeOnlineContext\Services;
 use App\Models\User;
 use App\Modules\Branch\Services\BranchService;
 use App\Modules\DoctorAccess\Services\DoctorEffectiveBranchResolver;
+use App\Support\AccessControl\FrontOfficeRole;
 
 /**
  * FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1 — the single canonical answer to
@@ -210,5 +211,65 @@ class RmeWorkingBranchScope
         }
 
         return in_array((int) $branchId, $this->branchIdsFor($user), true);
+    }
+
+    /**
+     * DMS-RME-REVISION-PROGRAM-8B / D1 (P8-N2) — the branches whose clinical
+     * DOCUMENTS this user may read: the medical record and its handwriting
+     * images, the prescription with its canvases and print, and the odontogram
+     * with its print.
+     *
+     * Owner decision D1 (a): a context-bound account that holds NO clinical role
+     * (Kasir, Admin Klinik, Front Office — the front desk and the cashier) reads
+     * clinical documents only in the branch it is working in, exactly as it
+     * already reads the visit itself through {@see allows()}; without a working
+     * context it reads none. Every other account keeps the full active
+     * RME-enabled set it had before: clinicians (Doctor, Perawat, Supervisor
+     * RME, Super Admin) stay cross-branch because a patient's record book spans
+     * the branches the patient was treated in, and the non-context-bound roles
+     * (Owner and the reporting roles) are unchanged.
+     *
+     * It only ever NARROWS: every answer is a subset of the RME-enabled set the
+     * read abilities used before. The doctor branch lock does not reach it, for
+     * the same reason it does not reach {@see allows()}. The doctor-patient
+     * scope still applies on top, in the policies.
+     *
+     * @return array<int, int>
+     */
+    public function clinicalDocumentBranchIdsFor(?User $user): array
+    {
+        if ($user === null) {
+            return [];
+        }
+
+        if ($this->narrowsClinicalDocumentReads($user)) {
+            return $this->branchIdsFor($user);
+        }
+
+        return $this->branches->rmeEnabledIds();
+    }
+
+    /**
+     * DMS-RME-REVISION-PROGRAM-8B / D1 — the per-record guard for a clinical
+     * document of the given branch. See {@see clinicalDocumentBranchIdsFor()}.
+     */
+    public function allowsClinicalDocument(?User $user, ?int $branchId): bool
+    {
+        if ($branchId === null) {
+            return false;
+        }
+
+        return in_array((int) $branchId, $this->clinicalDocumentBranchIdsFor($user), true);
+    }
+
+    /**
+     * True for a context-bound account with no clinical role — the only tier
+     * D1 narrows. A clinical role wins over a front-desk or cashier role on the
+     * same account, as it does in {@see FrontOfficeRole::isVisitFrontDeskOnly()}.
+     */
+    private function narrowsClinicalDocumentReads(User $user): bool
+    {
+        return $this->isContextBound($user)
+            && ! $user->hasAnyRole(FrontOfficeRole::CLINICAL_ROLES);
     }
 }

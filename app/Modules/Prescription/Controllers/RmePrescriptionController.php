@@ -28,7 +28,7 @@ class RmePrescriptionController extends Controller
     {
         $this->authorize('viewForVisit', [RmePrescription::class, $clinicVisit]);
 
-        $data = $this->service->showDataForVisit($clinicVisit);
+        $data = $this->service->showDataForVisit($clinicVisit, request()->user());
         $adjacentVisits = app(ClinicVisitService::class)->adjacentVisits($clinicVisit);
         $canManage = auth()->user()?->can('create', [RmePrescription::class, $clinicVisit]) ?? false;
         $prescription = $data['prescription'];

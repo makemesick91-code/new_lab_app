@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Modules\MedicalRecord\Services;
 
 use App\Models\User;
-use App\Modules\Branch\Services\BranchService;
 use App\Modules\LegacyOdontogram\Policies\LegacyOdontogramRecordPolicy;
 use App\Modules\LegacyOdontogram\Services\LegacyOdontogramPatientHistoryService;
 use App\Modules\LegacyOdontogram\Support\LegacyOdontogramWorkspaceScope;
@@ -17,6 +16,7 @@ use App\Modules\MedicalRecord\Support\UnifiedMedicalRecordScope;
 use App\Modules\MedicalRecord\Support\UnifiedMedicalRecordSource;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\RME\Services\DoctorPatientScopeService;
+use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
@@ -30,8 +30,11 @@ use Illuminate\Support\Collection;
  * odontogram. The envelope for each source is the one that source's canonical
  * reader already uses — this service composes them and invents none:
  *
- *  - native   : RME-enabled branches + {@see DoctorPatientScopeService}
- *               (unchanged from the record list this page used to be);
+ *  - native   : {@see RmeWorkingBranchScope::clinicalDocumentBranchIdsFor()} +
+ *               {@see DoctorPatientScopeService} — the RME-enabled set, narrowed to
+ *               the working branch for the front desk and the cashier
+ *               (DMS-RME-REVISION-PROGRAM-8B / D1, the same scope the record
+ *               itself is read under);
  *  - legacy   : {@see LegacyRmeRecordPolicy::READ_PERMISSIONS} + {@see LegacyRmeWorkspaceScope};
  *  - odonto   : {@see LegacyOdontogramRecordPolicy::READ_PERMISSIONS} + {@see LegacyOdontogramWorkspaceScope}.
  *
@@ -42,12 +45,12 @@ class UnifiedMedicalRecordIndexService
 {
     public function __construct(
         private readonly UnifiedMedicalRecordIndexRepositoryInterface $repository,
-        private readonly BranchService $branches,
         private readonly DoctorPatientScopeService $doctorScope,
         private readonly LegacyRmeWorkspaceScope $legacyRmeScope,
         private readonly LegacyOdontogramWorkspaceScope $legacyOdontogramScope,
         private readonly LegacyRmePatientHistoryService $legacyRmeHistory,
         private readonly LegacyOdontogramPatientHistoryService $legacyOdontogramHistory,
+        private readonly RmeWorkingBranchScope $workingBranch,
     ) {}
 
     public function scopeFor(User $user): UnifiedMedicalRecordScope
@@ -56,7 +59,7 @@ class UnifiedMedicalRecordIndexService
         $legacyOdontogramReadable = $user->canAny(LegacyOdontogramRecordPolicy::READ_PERMISSIONS);
 
         return new UnifiedMedicalRecordScope(
-            nativeBranchIds: array_values($this->branches->rmeEnabledIds()),
+            nativeBranchIds: array_values($this->workingBranch->clinicalDocumentBranchIdsFor($user)),
             legacyRmeReadable: $legacyRmeReadable,
             legacyRmeBranchIds: $legacyRmeReadable ? array_values($this->legacyRmeScope->branchIdsFor($user)) : [],
             legacyRmeIncludesUnscoped: $legacyRmeReadable && $this->legacyRmeScope->includesUnscopedRowsFor($user),
