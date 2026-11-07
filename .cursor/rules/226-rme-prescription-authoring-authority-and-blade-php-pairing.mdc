@@ -14,6 +14,12 @@ defects only (CG-22). Category under the Foundation-First Sprint Lock: security 
 This rule EXTENDS rule 223 §3 (CW5-05) to the prescription. It supersedes nothing; rule 223 §3 still owns the
 front-desk-only tier for the RME and the odontogram, and its §16 owner decisions are unchanged.
 
+**Extended by rule 227 (`DMS-RME-REVISION-PROGRAM-8B`, 2026-11-07).** §1.3 below claimed a caller that skips the policy
+is "refused the same way"; until 8B the service predicate did not re-check the write permission (P8R-S1), so the claim
+was an overstatement. Rule 227 §3 adds the permission and a clinical-role allowlist to the predicate, which makes §1.3
+true. Rule 227 §2 adds the printed dentist and patient names to §1.6's server-derived identity, and rule 227 §1 decides
+the read-scope item §1.7 left open (P8-N2). Where the two rules differ, rule 227 wins.
+
 ## 1. A prescription is authored like the rest of the clinical record (P8-N1)
 
 1. The prescription, its R/ canvas and its doctor-signature canvas are clinical documents printed under the visit

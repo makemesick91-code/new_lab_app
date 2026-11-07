@@ -308,14 +308,16 @@ function userWith(array $permissions): User
 }
 
 /**
- * DMS-RME-REVISION-PROGRAM-8B — an account holding a clinical role.
+ * DMS-RME-REVISION-PROGRAM-8B / D7 — a clinical prescription author.
  *
- * The clinical document read scope (rule 227 §1) distinguishes clinicians from
- * the branch-pinned front desk and cashier by role, so suites that need "a
- * clinician" take this instead of a role-less permission fixture. Supervisor
- * RME is used because it is a clinical role that is neither context-bound nor
- * doctor-scoped. Created if the suite did not seed the roles, so the helper
- * never depends on the seeder.
+ * Prescription authoring is an allowlist of clinical roles
+ * (PrescriptionAuthoringAuthority::AUTHORING_ROLES), so the role-less
+ * permission fixture `userWith([...manage_clinic_visits])` is now refused, as a
+ * runtime role holding that permission would be. Suites that need "an account
+ * that may write a prescription" take this instead. Supervisor RME is used
+ * because it is a clinical role that is neither context-bound nor doctor-scoped,
+ * which is exactly what the role-less fixture used to stand for. Created if the
+ * suite did not seed the roles, so the helper never depends on the seeder.
  *
  * @param  array<int, string>  $permissions
  */

@@ -1,0 +1,114 @@
+---
+description: DMS-RME-REVISION-PROGRAM-8B — clinical documents are read under a document scope (front desk and cashier only in their working branch, clinicians cross-branch, never wider than the RME set); the printed prescription dentist and patient come from the clinical records, never the request; prescription authoring is an allowlist of clinical roles plus the write permission re-asserted in the service; RME invoice, payment and consent numbers are serialised per sequence and month with an advisory lock and count soft-deleted rows. Closes P8-N2, P8R-S1, P8R-S2, P8R-S3, P8-N4, OD-7-8, OD-5-8.
+globs: app/Modules/RmeOnlineContext/Services/RmeWorkingBranchScope.php, app/Modules/MedicalRecord/Policies/MedicalRecordPolicy.php, app/Modules/Prescription/Policies/RmePrescriptionPolicy.php, app/Modules/Odontogram/Policies/OdontogramPolicy.php, app/Modules/MedicalRecord/Services/UnifiedMedicalRecordIndexService.php, app/Modules/Prescription/Services/PrescriptionAuthoringAuthority.php, app/Modules/Prescription/Services/RmePrescriptionService.php, app/Modules/Prescription/Requests/*.php, app/Modules/Consent/Services/RmeVisitConsentService.php, app/Support/Database/DocumentNumberSequenceLock.php, app/Modules/RmeInvoice/Services/*NumberGeneratorService.php, app/Modules/Consent/Services/RmeVisitConsentNumberGeneratorService.php, resources/views/rme/visits/prescription/*.blade.php
+alwaysApply: false
+---
+
+# Clinical document read scope, printed prescription identity, authoring allowlist and document numbering (rule 227)
+
+**Status:** scope of `DMS-RME-REVISION-PROGRAM-8B` (2026-11-07). Sprint record:
+`docs/sprints/dms-rme-revision-program-8b.md`. Owner decisions D1, D2, D6 and D7 of the Program 8 readiness re-audit,
+each answered "FIX NOW" on 2026-11-07. Category under the Foundation-First Sprint Lock: security fix / clinical
+correctness / financial correctness.
+
+This rule EXTENDS rule 226. Where they differ, this rule wins: rule 226 §1.3 ("refused the same way") was an overclaim
+until §3 below, §1.6 now also covers the printed names (§2), and §1.7 no longer lists P8-N2 as undecided (§1). Rule 225
+owns the advisory-lock pattern §4 reuses.
+
+## 1. Clinical documents have their own read scope (D1, P8-N2)
+
+1. The medical record and its handwriting images, the prescription (page, R/ and signature canvases, print, history
+   list beside the form) and the odontogram (page, view, print) are read under
+   `RmeWorkingBranchScope::clinicalDocumentBranchIdsFor()` / `::allowsClinicalDocument()`. Nothing else decides it.
+2. A context-bound account that holds NO clinical role — Kasir, Admin Klinik, Front Office — reads clinical documents
+   only in its working branch, and none without a working context (fail closed: an empty scope, never MAIN, never the
+   whole estate). That is the same scope the visit itself is read under.
+3. Every other account keeps exactly the RME-enabled set it had: clinicians (Doctor, Perawat, Supervisor RME, Super
+   Admin) stay cross-branch because a patient's record book spans the branches they were treated in; Owner and the
+   reporting roles are unchanged. A clinical role wins over a front-desk or cashier role on the same account.
+4. The scope only ever NARROWS. Every answer is a subset of `BranchService::rmeEnabledIds()`; a `null` user reads
+   nothing. The doctor branch lock does not reach it (same reason as `allows()`), and the doctor-patient scope still
+   applies on top in the policies.
+5. The unified medical-record index's native rows use the same scope, so a list never shows a record its reader
+   cannot open. `RmePrescriptionService::showDataForVisit()` takes the viewer as a REQUIRED argument so no caller can
+   fall back to the whole estate by omission.
+6. Write abilities are not changed by this section; writes are governed by the authoring authorities (rule 223 §3,
+   rule 226, §3 below).
+7. Consequence, accepted with D1: a front-desk account cannot open the RM workspace of a patient whose canonical record
+   (Sprint 64.0.2 — the pages live on the earliest visit's record) belongs to another branch. Its own branch's "Cetak RME"
+   (governed by `ClinicVisitPolicy::print`) is unchanged.
+8. The read-only oversight module (`view_clinical_records_readonly`, Finance Klinik / Data Analyst) has its own branch
+   scope (rule 186) and is not changed here.
+8a. Handwriting is attributed to the branch that owns the patient's canonical record book, not to the branch of the
+    encounter it was written in: Sprint 64.0.2 stores every page on the canonical record and stamps the page with that
+    record's branch, and no page carries its encounter branch. So the document scope of a handwriting image is the
+    canonical record's branch. Changing that needs a recorded encounter branch per page (a schema change) and is an
+    owner decision (D3), not part of D1.
+8b. Not covered by D1 (recorded for D3): the RM workspace still lists other branches' sheet metadata (visit numbers,
+    dates, page timestamps) to a front-desk account whose canonical record is in its own branch — the bytes are
+    refused; and D1 narrows the context-bound non-clinical roles only, so a non-context-bound role created at runtime
+    keeps the previous RME-wide read (never wider than before).
+
+## 2. The printed prescription names come from the clinical records (D6, P8R-S3)
+
+9. `prescribed_by_name` and `patient_name_snapshot` are NOT request fields. Both FormRequests do not accept them; the
+   form shows them read-only with no input; `old()` is never used for them.
+10. `RmePrescriptionService` derives them server-side: on create from the visit's doctor and patient (and `doctor_id`
+    from that same doctor); on update from the prescription's OWN doctor and patient, falling back to the visit's only
+    when the row never recorded one, so the printed name and `doctor_id` are always the same person (a later room
+    re-assignment that rewrites the visit doctor, OD-5-3, does not change who the prescription was written under).
+11. A prescription is refused when there is no doctor (or no patient) to name — before any canvas is decoded or
+    written. Never print under an invented or blank name.
+11a. The snapshot is read through the soft-deleted rows too (`withTrashed()`): a doctor or patient whose master record
+     was archived still names their past visits' prescriptions.
+11b. D6 fixes WHO IS NAMED, not WHO SIGNS: an authoring role other than the named doctor (a nurse, a covering
+     dentist) may still draw the signature canvas printed above the visit doctor's name; only `created_by` records the
+     real author. Restricting the signature to the named doctor conflicts with OD-5-1 (Perawat / Supervisor RME may
+     author) and is an owner decision (D3).
+12. The print renders the stored snapshot. Existing rows are not rewritten by a deploy (production 2026-11-07: 2 rows,
+    both snapshots already equal to their relations); a row is re-derived only when it is next updated.
+
+## 3. Prescription authoring is an allowlist plus the permission, in the service (D7, P8R-S1, P8R-S2)
+
+13. `PrescriptionAuthoringAuthority::permitsActorAtBranch()` requires, in order: the write permission
+    `manage_clinic_visits` itself (`can()`, so `Gate::before` still answers for Super Admin); not the front-desk-only
+    tier; a role in `AUTHORING_ROLES` (= `FrontOfficeRole::CLINICAL_ROLES`: Doctor, Perawat, Supervisor RME, Super
+    Admin); the working branch. The policy and the service both read it, so rule 226 §1.3 is now true.
+14. It is an ALLOWLIST on purpose. The front-desk refusal is a denylist of two roles; a role created at runtime on the
+    role screen and given `manage_clinic_visits` (production holds one such role, no holders) would otherwise inherit
+    prescription authoring with nobody deciding it. A CI test over RoleSeeder cannot see a runtime role. A new role that
+    must write prescriptions is added to the allowlist on purpose, with its own review.
+15. Role-less accounts holding the permission directly are refused (production 2026-11-07: zero direct grants of
+    `manage_clinic_visits`). Test suites that need a prescription author use `rmeClinicalAuthor()`.
+16. `RmeVisitConsentService::actorMayWorkOnEncounter()` (RME and odontogram authoring) re-asserts the same write
+    permission, so Kasir — context-bound but not front-desk — is refused by the service and the UI capability, not only
+    by the route. Whether RME/odontogram authoring also takes the role allowlist is an owner decision (D3), not made
+    here.
+17. `RmePrescriptionAuthoringRoleMatrixTest` pins the full matrix over every seeded role, a runtime-created role, a
+    role-less account, a clinical role without the permission, direct service calls, and a classification guard: every
+    RoleSeeder role holding `manage_clinic_visits` is clinical or front desk.
+
+## 4. RME invoice, payment and consent numbers are serialised (D2, P8-N4, OD-7-8, OD-5-8)
+
+18. `RME-YYYYMM-NNNNNN`, `RMEPAY-YYYYMM-NNNNNN` and `CONSENT-YYYYMM-NNNNNN` are each chosen after
+    `DocumentNumberSequenceLock::acquire()` — `pg_advisory_xact_lock(namespace, YYYYMM)` — taken through the
+    repository's `lockNumberSequence($month)` before the month's highest number is read. Namespaces: 92_002 invoice,
+    92_003 payment, 92_004 consent (92_001 is the visit sequence, 91_xxx the legacy slot). NEVER renumber one: during a
+    rolling deploy an old and a new process would take different locks for the same month.
+19. Outside a transaction the lock is a `LogicException`, not a silent no-op; on a non-PostgreSQL driver it is a no-op
+    (SQLite serialises writers at the file level). The objid is the exact integer YYYYMM, never a hash.
+20. Invoice and payment MAX reads use `withTrashed()`: the UNIQUE indexes still hold a soft-deleted row's number, so
+    ignoring it would reissue that number and wedge the whole month on HTTP 500. Consents have no soft delete; a voided
+    consent keeps its number.
+21. Nothing is renumbered. Every issued number keeps its value; the month prefixes are unchanged (the invoice and
+    payment prefixes still use `now()` — P8R-S6 is a D3 item).
+22. Lock order is unchanged and deadlock-free: every caller already holds its row locks (visit, invoice) before the
+    generator runs, and the three namespaces never wait for each other.
+
+## 5. Critical-gate coverage (CI-8B)
+
+23. The four suites are declared in `config/ci_runner.php` `critical_gate_mandatory_suites` and selected in BOTH
+    critical-gate variants (rule 120, CG-19): new tokens `RmeClinicalDocumentReadScope` and
+    `RmeDocumentNumberSequenceLock` (before the pinned calendar-boundary tail, rule 212); `RmePrescriptionPrintedIdentity`
+    and `RmePrescriptionAuthoringRoleMatrix` are selected by the existing `RmePrescription` token, which now selects four
+    files instead of rule 226 §12's two. The lock suite's PostgreSQL cases SKIP on SQLite; they ran on PostgreSQL 16.15.

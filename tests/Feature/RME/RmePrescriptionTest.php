@@ -82,7 +82,7 @@ it('prescription page shows workflow tab Resep Dokter', function () {
 });
 
 it('authorized user can open prescription page with auto-filled defaults', function () {
-    $manager = userWith(['manage_clinic_visits']);
+    $manager = rmeClinicalAuthor(['manage_clinic_visits']);
     $visit = prescriptionVisit();
 
     /*
@@ -100,13 +100,16 @@ it('authorized user can open prescription page with auto-filled defaults', funct
     $this->actingAs($manager)
         ->get(route('rme.visits.prescription.show', [$visit, 'edit' => 1]))
         ->assertOk()
-        ->assertSee('value="'.e($visit->doctor->name).'"', false)
-        ->assertSee('value="'.e($visit->patient->name).'"', false)
+        // DMS-RME-REVISION-PROGRAM-8B / D6 — shown read-only, never as input.
+        ->assertSee('data-server-derived="doctor">'.e($visit->doctor->name).'<', false)
+        ->assertSee('data-server-derived="patient">'.e($visit->patient->name).'<', false)
+        ->assertDontSee('name="prescribed_by_name"', false)
+        ->assertDontSee('name="patient_name_snapshot"', false)
         ->assertSee('32', false);
 });
 
 it('can store prescription with prescription and signature canvases', function () {
-    $manager = userWith(['manage_clinic_visits']);
+    $manager = rmeClinicalAuthor(['manage_clinic_visits']);
     $visit = prescriptionVisit();
 
     $this->actingAs($manager)
@@ -122,7 +125,7 @@ it('can store prescription with prescription and signature canvases', function (
 });
 
 it('can update an existing prescription', function () {
-    $manager = userWith(['manage_clinic_visits']);
+    $manager = rmeClinicalAuthor(['manage_clinic_visits']);
     $visit = prescriptionVisit();
     $prescription = RmePrescription::factory()->withStoredCanvases()->create([
         'clinic_visit_id' => $visit->id,
@@ -139,7 +142,10 @@ it('can update an existing prescription', function () {
         ))
         ->assertRedirect(route('rme.visits.prescription.show', $visit));
 
-    expect($prescription->fresh()->prescribed_by_name)->toBe('drg. Baru');
+    // DMS-RME-REVISION-PROGRAM-8B / D6 — the request's 'drg. Baru' has nowhere
+    // to land: the printed name is re-derived from the prescription's doctor.
+    expect($prescription->fresh()->prescribed_by_name)->toBe($visit->doctor->name)
+        ->and($prescription->fresh()->prescribed_by_name)->not->toBe('drg. Baru');
 });
 
 it('can print prescription with fields and canvas images', function () {

@@ -21,7 +21,8 @@ Dibuat pada 2026-10-25 terhadap commit `572a32a9`. Pada 2026-11-06 tautan rule 2
 2026-11-07 rule 226 dan sprint korektif [dms-rme-revision-program-8a](../sprints/dms-rme-revision-program-8a.md)
 ditambahkan ke `Prescription` dan `ClinicRoom`. Audit ulang kesiapan
 [dms-rme-revision-program-8-readiness-reaudit](../sprints/dms-rme-revision-program-8-readiness-reaudit.md) ditambahkan
-ke `RME` dan `Prescription`.
+ke `RME` dan `Prescription`. Rule 227 dan sprint korektif
+[dms-rme-revision-program-8b](../sprints/dms-rme-revision-program-8b.md) ditambahkan ke `Prescription` dan `RME`.
 
 - **Jumlah file PHP** dihitung dari `app/Modules/<Modul>/`.
 - **"N dokumen menyebut path modul ini"** menghitung dokumen di `docs/` dan `.cursor/rules/`
@@ -79,15 +80,15 @@ bukti, kata kunci nama berkas untuk tautan), lalu perbarui `kb_verified_against`
 ### `Prescription`
 
 - Kode: `app/Modules/Prescription/` — 21 file PHP; 1 dokumen menyebut path modul ini.
-- Rule durable (`.cursor/rules/`, di luar vault): `226-rme-prescription-authoring-authority-and-blade-php-pairing.mdc` (otoritas penulisan resep)
-- Sprint terbaru: [dms-rme-revision-program-8-readiness-reaudit](../sprints/dms-rme-revision-program-8-readiness-reaudit.md), [dms-rme-revision-program-8a](../sprints/dms-rme-revision-program-8a.md)
+- Rule durable (`.cursor/rules/`, di luar vault): `226-rme-prescription-authoring-authority-and-blade-php-pairing.mdc` (otoritas penulisan resep), `227-rme-clinical-document-read-scope-printed-identity-numbering.mdc` (cakupan baca dokumen klinis, identitas cetak resep, penomoran)
+- Sprint terbaru: [dms-rme-revision-program-8b](../sprints/dms-rme-revision-program-8b.md), [dms-rme-revision-program-8-readiness-reaudit](../sprints/dms-rme-revision-program-8-readiness-reaudit.md), [dms-rme-revision-program-8a](../sprints/dms-rme-revision-program-8a.md)
 - Lihat juga (namanya tidak merujuk modul ini, jadi status GAP tetap): rule `224-rme-clinical-evidence-write-integrity.mdc` dan `121-clinical-evidence-private-storage.mdc` untuk kanvas resep dan tanda tangan; [dms-rme-revision-program-6](../sprints/dms-rme-revision-program-6.md) untuk audit resep.
 
 ### `RME`
 
 - Kode: `app/Modules/RME/` — 4 file PHP; 10 dokumen menyebut path modul ini.
 - Rule durable (`.cursor/rules/`, di luar vault): `138-doctor-room-scoped-access-and-print-deny.mdc`, `225-rme-concurrent-first-write-and-void-staging-integrity.mdc`
-- Sprint terbaru: [dms-rme-revision-program-8-readiness-reaudit](../sprints/dms-rme-revision-program-8-readiness-reaudit.md), [dms-rme-revision-program-8](../sprints/dms-rme-revision-program-8.md), [dms-rme-revision-program-7](../sprints/dms-rme-revision-program-7.md)
+- Sprint terbaru: [dms-rme-revision-program-8b](../sprints/dms-rme-revision-program-8b.md), [dms-rme-revision-program-8-readiness-reaudit](../sprints/dms-rme-revision-program-8-readiness-reaudit.md), [dms-rme-revision-program-8](../sprints/dms-rme-revision-program-8.md)
 - Ringkasan `ai-knowledge` (snapshot, cek [status](doc-status-registry.md)): [08_DaengtisiaMS_RME_Workflow](../ai-knowledge/08_DaengtisiaMS_RME_Workflow.md)
 
 ### `RmeDashboard`

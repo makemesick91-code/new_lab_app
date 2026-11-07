@@ -289,8 +289,11 @@ it('accepts a consent whose documentation answer is TIDAK and still opens RME au
     expect($consent->documentation_consent)->toBeFalse();
     expect($consent->allowsDocumentationPublication())->toBeFalse();
 
-    // Refusing publication does not block RME authoring...
-    expect(app(RmeVisitConsentService::class)->canAuthorRmeForPatient($visit->patient_id, $this->consentOperator))
+    // Refusing publication does not block RME authoring... DMS-RME-REVISION-PROGRAM-8B
+    // / D7: asked of a clinical author. The consent operator here is the cashier,
+    // which does not hold the clinical write permission and is now refused RME
+    // authoring by the service itself — that refusal is not what this test is about.
+    expect(app(RmeVisitConsentService::class)->canAuthorRmeForPatient($visit->patient_id, rmeClinicalAuthor()))
         ->toBeTrue();
 
     // ...nor the cashier, once the doctor has finished.

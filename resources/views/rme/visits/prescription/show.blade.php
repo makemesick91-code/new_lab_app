@@ -6,18 +6,21 @@
         $branchAddress = (string) ($branch?->address ?? '');
         $branchPhone = (string) ($branch?->phone ?? '');
         $formValues = $prescription ? [
-            'prescribed_by_name' => old('prescribed_by_name', $prescription->prescribed_by_name),
+            // DMS-RME-REVISION-PROGRAM-8B / D6 — the printed dentist and patient
+            // names are not form input. They are shown here exactly as stored
+            // (server-derived), never from old() or the request.
+            'prescribed_by_name' => $prescription->prescribed_by_name,
             'prescription_date' => old('prescription_date', $prescription->prescription_date?->format('Y-m-d')),
-            'patient_name_snapshot' => old('patient_name_snapshot', $prescription->patient_name_snapshot),
+            'patient_name_snapshot' => $prescription->patient_name_snapshot,
             'patient_age_snapshot' => old('patient_age_snapshot', $prescription->patient_age_snapshot),
             'allergy_note' => old('allergy_note', $prescription->allergy_note),
             'pregnant_or_breastfeeding' => old('pregnant_or_breastfeeding', $prescription->pregnant_or_breastfeeding),
             'renal_function_issue' => old('renal_function_issue', $prescription->renal_function_issue),
             'notes' => old('notes', $prescription->notes),
         ] : [
-            'prescribed_by_name' => old('prescribed_by_name', $defaults['prescribed_by_name']),
+            'prescribed_by_name' => $defaults['prescribed_by_name'],
             'prescription_date' => old('prescription_date', $defaults['prescription_date']),
-            'patient_name_snapshot' => old('patient_name_snapshot', $defaults['patient_name_snapshot']),
+            'patient_name_snapshot' => $defaults['patient_name_snapshot'],
             'patient_age_snapshot' => old('patient_age_snapshot', $defaults['patient_age_snapshot']),
             'allergy_note' => old('allergy_note', $defaults['allergy_note']),
             'pregnant_or_breastfeeding' => old('pregnant_or_breastfeeding', $defaults['pregnant_or_breastfeeding']),
@@ -171,10 +174,9 @@
 
                     <div class="grid gap-4 sm:grid-cols-2">
                         <div>
-                            <label for="prescribed_by_name" class="block text-sm font-medium text-gray-700">Dari Dokter</label>
-                            <input type="text" name="prescribed_by_name" id="prescribed_by_name" required
-                                   value="{{ $formValues['prescribed_by_name'] }}"
-                                   class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-teal-500 focus:ring-teal-500 text-base py-2.5">
+                            <span class="block text-sm font-medium text-gray-700">Dari Dokter</span>
+                            <p id="prescribed_by_name" class="mt-1 block w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-base text-gray-900" data-server-derived="doctor">{{ $formValues['prescribed_by_name'] !== '' ? $formValues['prescribed_by_name'] : 'Dokter kunjungan belum ditetapkan' }}</p>
+                            <p class="mt-1 text-xs text-gray-500">Diambil dari dokter kunjungan; tidak dapat diubah di formulir ini.</p>
                             @error('prescribed_by_name')<p class="mt-1 text-sm text-rose-600">{{ $message }}</p>@enderror
                         </div>
                         <div>
@@ -185,10 +187,9 @@
                             @error('prescription_date')<p class="mt-1 text-sm text-rose-600">{{ $message }}</p>@enderror
                         </div>
                         <div>
-                            <label for="patient_name_snapshot" class="block text-sm font-medium text-gray-700">Nama Pasien</label>
-                            <input type="text" name="patient_name_snapshot" id="patient_name_snapshot" required
-                                   value="{{ $formValues['patient_name_snapshot'] }}"
-                                   class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-teal-500 focus:ring-teal-500 text-base py-2.5">
+                            <span class="block text-sm font-medium text-gray-700">Nama Pasien</span>
+                            <p id="patient_name_snapshot" class="mt-1 block w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-base text-gray-900" data-server-derived="patient">{{ $formValues['patient_name_snapshot'] }}</p>
+                            <p class="mt-1 text-xs text-gray-500">Diambil dari data pasien kunjungan; tidak dapat diubah di formulir ini.</p>
                             @error('patient_name_snapshot')<p class="mt-1 text-sm text-rose-600">{{ $message }}</p>@enderror
                         </div>
                         <div>

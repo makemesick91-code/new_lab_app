@@ -1,14 +1,25 @@
 # DMS-RME-REVISION-PROGRAM-8B (2026-11-07). Corrective sprint for the owner decisions D1, D2, D6 and D7 of the
 # DMS-RME-REVISION-PROGRAM-8 readiness re-audit (NO-GO, PR #610 -> 88843b26), each answered "FIX NOW" by the system
-# owner on 2026-11-07. Delivered as THREE pull requests (owner decision 2026-11-07, after `sprint:scope-audit
-# --strict` returned NO-GO for the combined 21-file change under SECURITY_FIX): PR1 = D2 numbering, PR2 = D1 clinical
-# document read scope, PR3 = D6 printed identity + D7 authoring allowlist + rules and records. One deploy and the
-# single GO tag dms-rme-revision-program-8b-go follow the last merge.
-# THIS PR (PR2, D1 — P8-N2): clinical documents (medical record + handwriting images, prescription
-# page/canvas/print/history, odontogram page/view/print, unified medical-record index) were readable in any
-# RME branch by the branch-pinned front desk and cashier; now read under one document scope (working branch
-# for those roles, unchanged for clinicians and Owner, never wider than the RME set). Write abilities
-# unchanged. Reproduced RED against the untouched base first. Stacked on PR1.
+# owner on 2026-11-07. D3 (per-item review of the 55-row register), D4 (dedicated test device) and D5 (WAVE-4
+# reconciliation) are answered with proposals and evidence only; nothing outside D1/D2/D6/D7 is implemented
+# (CG-22: findings needing a product decision are recorded, not inferred).
+# Delivered as THREE pull requests (owner decision 2026-11-07, after `sprint:scope-audit --strict` returned NO-GO for
+# the combined 21-file change under SECURITY_FIX; the type was not relabelled and no waiver was recorded):
+# PR1 #611 = D2 numbering (scope GO, 2 modules), PR2 #612 = D1 read scope (scope GO, 4 modules), PR3 (this) = D6
+# printed identity + D7 authoring allowlist + rule 227 and the records. One deploy and the single GO tag follow PR3.
+# Verified and corrected (each reproduced RED against the untouched base first, rule 227):
+#   D1 P8-N2 clinical documents (medical record + handwriting images, prescription page/canvas/print/history,
+#         odontogram page/view/print, unified medical-record index) were readable in any RME branch by the
+#         branch-pinned front desk and cashier; now read under one document scope (working branch for those
+#         roles, unchanged for clinicians and Owner, never wider than the RME set).
+#   D2 P8-N4 / OD-7-8 / OD-5-8 invoice, payment and consent numbers: month-wide MAX+1 without serialisation, and
+#         the invoice/payment MAX ignored soft-deleted rows held by the unique index; now an advisory lock per
+#         sequence and month (92_002/92_003/92_004) before the read, and withTrashed(). Nothing renumbered.
+#   D6 P8R-S3 printed prescription dentist and patient were free-text request fields; now server-derived from
+#         the visit / the prescription's own doctor and patient, refused when there is no doctor.
+#   D7 P8R-S1 / P8R-S2 the prescription authoring predicate re-asserts the write permission and is an allowlist
+#         of clinical roles (a runtime role holding manage_clinic_visits does not inherit it); the RME/odontogram
+#         predicate re-asserts the permission too. Role-matrix tests over every seeded role.
 # No schema, migration, permission, role, route, JS/CSS or package change; no flag, enforcement scope, branch lock,
 # queue worker or scheduler change. Foundation-First Sprint Lock stays ACTIVE (allowed category: security fix /
 # clinical and financial correctness). Full Suite deferred (CG-18), not passed.
@@ -16,11 +27,11 @@
 id: DMS-RME-REVISION-PROGRAM-8B
 type: SECURITY_FIX
 module: Rme
-title: "Clinical documents follow the working-branch read scope (8B PR2 of 3)"
+title: "Server-derived printed prescription identity and a clinical-role prescription authoring allowlist (8B PR3 of 3; completes 8B with PR1 numbering and PR2 read scope)"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 runtime_change: true
 schema_change: false
-frontend_change: false
+frontend_change: true
 security_impact: true
 branch_isolation_impact: true
 ledger_impact: false
