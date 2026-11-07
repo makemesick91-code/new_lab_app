@@ -167,6 +167,10 @@ return [
         'RmePrescription',
         'ClinicMasterData',
         'BladePhpDirectivePairing',
+
+        // DMS-RME-REVISION-PROGRAM-8B PR1 (rule 227 §4) — D2 serialised
+        // invoice/payment/consent numbering.
+        'RmeDocumentNumberSequenceLock',
     ],
 
     /*
@@ -1537,6 +1541,12 @@ return [
         'tests/Feature/ClinicMasterData/ClinicRoomFormTemplateTest.php',
         'tests/Feature/ClinicMasterData/ClinicMasterDataPermissionTest.php',
         'tests/Feature/Ui/BladePhpDirectivePairingTest.php',
+
+        // DMS-RME-REVISION-PROGRAM-8B PR1 (rule 227 §4) — D2: invoice/payment/
+        // consent numbers serialised per sequence and month, soft-deleted
+        // numbers never reissued (PostgreSQL cases skip on SQLite). Declared
+        // so a rename cannot drop it.
+        'tests/Feature/RME/RmeDocumentNumberSequenceLockTest.php',
 
         // SECURITY-F4C-CLINIC-CALENDAR-LAB-ORDERS-1 (owner decision D16) — lab order dates, order and
         // delivery numbering, the due-date floor and "delivered today" on the clinic calendar

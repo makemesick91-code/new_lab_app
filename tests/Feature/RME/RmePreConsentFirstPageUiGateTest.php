@@ -532,6 +532,8 @@ it('never turns a fault in the capability path into an actionable control', func
             throw new RuntimeException('not used');
         }
 
+        public function lockNumberSequence(string $month): void {}
+
         public function latestConsentNumberForMonth(string $month): ?string
         {
             return null;

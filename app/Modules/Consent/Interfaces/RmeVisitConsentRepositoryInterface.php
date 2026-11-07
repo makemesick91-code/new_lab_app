@@ -27,5 +27,8 @@ interface RmeVisitConsentRepositoryInterface
      * The most recent consent number issued in a given YYYYMM period, used to
      * derive the next sequence value.
      */
+    /** DMS-RME-REVISION-PROGRAM-8B / D2 — the month's number sequence lock (inside a transaction). */
+    public function lockNumberSequence(string $month): void;
+
     public function latestConsentNumberForMonth(string $month): ?string;
 }

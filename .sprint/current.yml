@@ -1,35 +1,30 @@
-# DMS-RME-REVISION-PROGRAM-8A (2026-11-07). Corrective sprint for the release blockers found by the
-# DMS-RME-REVISION-PROGRAM-8 Stage A readiness audit (NO-GO, PR #607 -> 6eefa719). Approved by the system owner in
-# the mission brief of 2026-11-07, scope limited to: P8-N1 (prescription authoring authority, HIGH), P8-N3
-# (clinic-room Blade template, MEDIUM), the critical-gate coverage gap for the Prescription and ClinicMasterData
-# suites, their tests, and the rule/doc synchronisation they need (CG-22: findings needing a product decision are
-# recorded, not inferred).
-# Verified and corrected (each reproduced RED against the untouched base first):
-#   P8-N1 the prescription write path (policy create/update + service) did not apply the clinical authoring
-#         authority rule 223 §3 already requires for the RME and odontogram: front-desk-only refusal and the
-#         working-branch write scope; now one predicate (PrescriptionAuthoringAuthority) read by the policy and
-#         re-asserted in the service (CG-06). Mechanism detail stays in the private security record.
-#   P8-N3 settings/clinic-rooms/_form mixed the inline and block PHP directive: ParseError/HTTP 500 with
-#         short_open_tag On (CI), template source rendered as text with it Off (production). Folded into one block;
-#         repo-wide compiled-view guard (glued-tag signature + real parse).
-#   CI-8A the Prescription and ClinicMasterData suites were not selected by the NSF-R011 critical gate.
+# DMS-RME-REVISION-PROGRAM-8B (2026-11-07). Corrective sprint for the owner decisions D1, D2, D6 and D7 of the
+# DMS-RME-REVISION-PROGRAM-8 readiness re-audit (NO-GO, PR #610 -> 88843b26), each answered "FIX NOW" by the system
+# owner on 2026-11-07. Delivered as THREE pull requests (owner decision 2026-11-07, after `sprint:scope-audit
+# --strict` returned NO-GO for the combined 21-file change under SECURITY_FIX): PR1 = D2 numbering, PR2 = D1 clinical
+# document read scope, PR3 = D6 printed identity + D7 authoring allowlist + rules and records. One deploy and the
+# single GO tag dms-rme-revision-program-8b-go follow the last merge.
+# THIS PR (PR1, D2 — P8-N4 / OD-7-8 / OD-5-8): invoice, payment and consent numbers were month-wide MAX+1
+# without serialisation, and the invoice/payment MAX ignored soft-deleted rows held by the unique index; now an
+# advisory lock per sequence and month (92_002/92_003/92_004) before the read, and withTrashed(). Nothing
+# renumbered; prefixes unchanged. Reproduced RED against the untouched base first.
 # No schema, migration, permission, role, route, JS/CSS or package change; no flag, enforcement scope, branch lock,
 # queue worker or scheduler change. Foundation-First Sprint Lock stays ACTIVE (allowed category: security fix /
-# clinical correctness). Full Suite deferred (CG-18), not passed.
+# clinical and financial correctness). Full Suite deferred (CG-18), not passed.
 # Carried forward: LEGACY-RME-PROGRAM-CLOSURE-1 stays CLOSED and inherited.
-id: DMS-RME-REVISION-PROGRAM-8A
+id: DMS-RME-REVISION-PROGRAM-8B
 type: SECURITY_FIX
 module: Rme
-title: "Prescription writes follow the clinical authoring authority; clinic-room form compiles on every PHP 8.3 patch; Prescription and ClinicMasterData suites in the critical gate"
+title: "Serialised invoice, payment and consent numbers (8B PR1 of 3)"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 runtime_change: true
 schema_change: false
-frontend_change: true
+frontend_change: false
 security_impact: true
-branch_isolation_impact: true
+branch_isolation_impact: false
 ledger_impact: false
 deploy_required: true
 browser_required: false
 test_profiles: [focused, security_regression]
-go_tag: dms-rme-revision-program-8a-go
+go_tag: dms-rme-revision-program-8b-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
