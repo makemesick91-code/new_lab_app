@@ -15,6 +15,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
+use Mockery\MockInterface;
 
 /**
  * DMS-RME-REVISION-PROGRAM-8D — consent signatures carry the signature payload
@@ -223,12 +224,25 @@ it('A-01 caps both consent signature fields at exactly the signature payload len
     }
 });
 
+/**
+ * The REAL decoder, recording its calls: without the request bound it would
+ * accept the oversized canvas, so "nothing written" below is earned by the
+ * request, not by a stub that returns null (independent review, INFO).
+ */
+function csbRecordingDecoder(): MockInterface
+{
+    $decoder = Mockery::mock(PrescriptionCanvasDecoder::class)->makePartial();
+    test()->instance(PrescriptionCanvasDecoder::class, $decoder);
+
+    return $decoder;
+}
+
 it('A-02 refuses an oversized consenter signature at the request, before anything is decoded or written', function () {
     csbExistingReceivable();
     $visit = csbVisit();
     $visitBefore = $visit->fresh()->getAttributes();
     $financeBefore = csbFinanceSnapshot();
-    $decoder = $this->spy(PrescriptionCanvasDecoder::class);
+    $decoder = csbRecordingDecoder();
 
     $this->actingAs($this->operator)
         ->from(route('rme.visits.show', $visit))
@@ -247,7 +261,7 @@ it('A-03 refuses an oversized doctor signature at the request even beside a vali
     $visit = csbVisit();
     $visitBefore = $visit->fresh()->getAttributes();
     $financeBefore = csbFinanceSnapshot();
-    $decoder = $this->spy(PrescriptionCanvasDecoder::class);
+    $decoder = csbRecordingDecoder();
 
     $this->actingAs($this->operator)
         ->from(route('rme.visits.show', $visit))
@@ -319,15 +333,22 @@ it('B-02 refuses an oversized optional doctor signature in the service, writing 
     csbAssertNothingWritten($visit, $visitBefore, $financeBefore);
 });
 
-it('B-03 applies the signature bound before decoding, so an over-long payload is refused for its size', function () {
+it('B-03 applies the signature bound before decoding, inclusive at exactly the limit', function () {
     $visit = csbVisit();
     $prefix = 'data:image/png;base64,';
-    $overLong = $prefix.str_repeat('A', PrescriptionCanvasDecoder::MAX_SIGNATURE_PAYLOAD_LENGTH + 1 - strlen($prefix));
+    $limit = PrescriptionCanvasDecoder::MAX_SIGNATURE_PAYLOAD_LENGTH;
+    $atLimit = $prefix.str_repeat('A', $limit - strlen($prefix));
+    $overLong = $prefix.str_repeat('A', $limit + 1 - strlen($prefix));
 
-    expect(strlen($overLong))->toBe(PrescriptionCanvasDecoder::MAX_SIGNATURE_PAYLOAD_LENGTH + 1);
+    expect(strlen($atLimit))->toBe($limit)
+        ->and(strlen($overLong))->toBe($limit + 1);
 
     foreach (['consenter_signature', 'doctor_signature'] as $field) {
-        expect(csbSignErrors($visit, $this->operator, [$field => $overLong]))
+        // Exactly the limit passes the size check and is refused only as an
+        // invalid image; one more character is refused for its size.
+        expect(csbSignErrors($visit, $this->operator, [$field => $atLimit]))
+            ->toBe([$field => ['Data gambar tidak valid.']])
+            ->and(csbSignErrors($visit, $this->operator, [$field => $overLong]))
             ->toBe([$field => ['Ukuran gambar melebihi batas yang diizinkan.']]);
     }
 

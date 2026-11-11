@@ -117,10 +117,11 @@ without `_path`): never a value, never patient data, never a storage key. A refu
    size — a small, highly compressed payload cannot ask for a huge decode.
 3. The decoder is SHARED with `RmeVisitConsentService` (consent signatures, 700×220 canvases): the IHDR, dimension,
    pixel and inflate bounds apply to consent signatures too. Since `DMS-RME-REVISION-PROGRAM-8D` both consent
-   signature fields (`consenter_signature`, `doctor_signature`) also carry `MAX_SIGNATURE_PAYLOAD_LENGTH` (1,000,000
-   characters of the submitted data URI — characters, not decoded bytes) twice: as `max:` in
-   `StoreRmeVisitConsentRequest`, and as the decoder `maxLength` in `RmeVisitConsentService::sign()`, so a caller
-   that skips the request is bounded the same way. The check runs before the visit lock, the consent number, any
+   signature fields (`consenter_signature`, `doctor_signature`) also carry `MAX_SIGNATURE_PAYLOAD_LENGTH` (1,000,000,
+   measured on the submitted data URI, not on the decoded image: the request's string `max` counts characters, the
+   decoder's `strlen` counts bytes, which is the same for a base64 data URI and stricter for anything else) twice:
+   as `max:` in `StoreRmeVisitConsentRequest`, and as the decoder `maxLength` in `RmeVisitConsentService::sign()`, so
+   a caller that skips the request is bounded the same way. The check runs before the visit lock, the consent number, any
    object write or any row, so a refused signature leaves nothing behind. Pinned by
    `RmeVisitConsentSignatureBoundTest` (selected by `RmeVisitConsent` in BOTH critical-gate variants; declared in
    `critical_gate_mandatory_suites`). The consenter signature stays required and the doctor signature optional.
@@ -153,9 +154,10 @@ so no caller can reach the estate by omission.
 ## 14. Critical-gate coverage (PR2)
 
 `RmePrescriptionIntegrityTest` is selected by the existing `RmePrescription` token in BOTH critical-gate variants and
-declared in `config/ci_runner.php` `critical_gate_mandatory_suites`.
+declared in `config/ci_runner.php` `critical_gate_mandatory_suites`. Since 8D, `RmeVisitConsentSignatureBoundTest`
+(§10.3) is selected by the existing `RmeVisitConsent` token in BOTH variants and declared there too.
 
-## 15. Open after 8C (recorded, not done)
+## 15. Open after 8C (recorded, not done; two items since closed by 8D)
 
 - CLOSED by `DMS-RME-REVISION-PROGRAM-8D`: the two docblocks that described the pre-8C "everyone else keeps the
   RME-enabled set" read scope (`OdontogramPolicy::mayReadDocumentAt()`, `MedicalRecordPolicy::mayReadDocumentAt()`)
