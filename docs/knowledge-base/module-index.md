@@ -26,7 +26,8 @@ ke `RME` dan `Prescription`. Rule 227 dan sprint korektif
 Pada 2026-11-12 rule 228, sprint korektif [dms-rme-revision-program-8c](../sprints/dms-rme-revision-program-8c.md), checkpoint
 owner [dms-rme-revision-program-8-owner-operational-closure](../sprints/dms-rme-revision-program-8-owner-operational-closure.md)
 dan audit bukti [dms-rme-revision-sprint-0-evidence-recovery](../sprints/dms-rme-revision-sprint-0-evidence-recovery.md)
-ditambahkan ke `Consent`, `Prescription` dan `RME` (rule 228 dan 8C belum tertaut di indeks ini sejak 2026-11-08).
+ditautkan sebagai berikut: rule 228 ke `Consent`, `Prescription` dan `RME`; 8C ke `Prescription` dan `RME`; checkpoint
+owner dan audit bukti ke `RME` saja (rule 228 dan 8C belum tertaut di indeks ini sejak 2026-11-08).
 
 - **Jumlah file PHP** dihitung dari `app/Modules/<Modul>/`.
 - **"N dokumen menyebut path modul ini"** menghitung dokumen di `docs/` dan `.cursor/rules/`
