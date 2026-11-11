@@ -1,6 +1,6 @@
 ---
 description: DMS-RME-REVISION-PROGRAM-8C — the doctor room scope (rule 138) binds prescription reads/writes and the live-encounter RME/odontogram/performed-treatment write authority; only the clinical examination authority starts an examination (front desk keeps cancel); a finished examination keeps its doctor when the room changes; RME/odontogram authoring and cross-branch clinical-document read are role ALLOWLISTS; a prescription is read-only once its visit is completed or cancelled, every write is audited, canvases are bounded, the consent signature is no-store, and only the prescription's own doctor signs it. Closes OD-7-2, R8A-1, OD-5-7, OD-5-2, OD-5-3, D3-NEW-1, D3-NEW-4, OD-8A-1, OD-8A-2, P8R-S5, OD-6-2, D3-NEW-2, D3-NEW-6.
-globs: app/Modules/Prescription/Policies/RmePrescriptionPolicy.php, app/Modules/Prescription/Services/PrescriptionAuthoringAuthority.php, app/Modules/Prescription/Services/RmePrescriptionService.php, app/Modules/Prescription/Services/PrescriptionCanvasDecoder.php, app/Modules/Prescription/Requests/*.php, app/Modules/Prescription/Controllers/RmePrescriptionController.php, app/Modules/Consent/Controllers/RmeVisitConsentController.php, resources/views/rme/visits/prescription/show.blade.php, app/Modules/Consent/Services/RmeVisitConsentService.php, app/Modules/ClinicVisit/Policies/ClinicVisitPolicy.php, app/Modules/ClinicVisit/Controllers/ClinicVisitController.php, app/Modules/ClinicVisit/Services/ClinicVisitService.php, app/Modules/RmeOnlineContext/Services/RmeWorkingBranchScope.php, resources/views/rme/visits/show.blade.php
+globs: app/Modules/Prescription/Policies/RmePrescriptionPolicy.php, app/Modules/Prescription/Services/PrescriptionAuthoringAuthority.php, app/Modules/Prescription/Services/RmePrescriptionService.php, app/Modules/Prescription/Services/PrescriptionCanvasDecoder.php, app/Modules/Prescription/Requests/*.php, app/Modules/Prescription/Controllers/RmePrescriptionController.php, app/Modules/Consent/Controllers/RmeVisitConsentController.php, resources/views/rme/visits/prescription/show.blade.php, app/Modules/Consent/Services/RmeVisitConsentService.php, app/Modules/Consent/Requests/StoreRmeVisitConsentRequest.php, app/Modules/ClinicVisit/Policies/ClinicVisitPolicy.php, app/Modules/ClinicVisit/Controllers/ClinicVisitController.php, app/Modules/ClinicVisit/Services/ClinicVisitService.php, app/Modules/RmeOnlineContext/Services/RmeWorkingBranchScope.php, resources/views/rme/visits/show.blade.php
 alwaysApply: false
 ---
 
@@ -11,6 +11,9 @@ alwaysApply: false
 (`DMS-RME-REVISION-PROGRAM-8-OWNER-OPERATIONAL-CLOSURE-1`, 2026-11-07): D3 Group 1 "FIX NOW", D3-NEW-4 "FIX NOW",
 D3 Group 2 "FIX NOW (lock after completion)", signature "named doctor signs only".
 Category under the Foundation-First Sprint Lock: security fix / clinical correctness.
+**Amended by `DMS-RME-REVISION-PROGRAM-8D` (2026-11-12, owner approval of the same date):** §10.3 (consent signatures
+carry the signature payload bound) and the two matching §15 items closed. Sprint record:
+`docs/sprints/dms-rme-revision-program-8d.md`.
 
 This rule EXTENDS rules 138, 226 and 227. Where they differ, this rule wins:
 
@@ -113,9 +116,14 @@ without `_path`): never a value, never patient data, never a storage key. A refu
    2.4x the largest canvas drawn — independent review F4, F5), and inflates the image data bounded by the declared
    size — a small, highly compressed payload cannot ask for a huge decode.
 3. The decoder is SHARED with `RmeVisitConsentService` (consent signatures, 700×220 canvases): the IHDR, dimension,
-   pixel and inflate bounds and the generic 3,500,000 payload bound apply to consent signatures too. The tighter
-   1,000,000 signature payload limit does NOT yet apply to them (no request `max`, no `maxLength` passed) — open LOW,
-   §15.
+   pixel and inflate bounds apply to consent signatures too. Since `DMS-RME-REVISION-PROGRAM-8D` both consent
+   signature fields (`consenter_signature`, `doctor_signature`) also carry `MAX_SIGNATURE_PAYLOAD_LENGTH` (1,000,000
+   characters of the submitted data URI — characters, not decoded bytes) twice: as `max:` in
+   `StoreRmeVisitConsentRequest`, and as the decoder `maxLength` in `RmeVisitConsentService::sign()`, so a caller
+   that skips the request is bounded the same way. The check runs before the visit lock, the consent number, any
+   object write or any row, so a refused signature leaves nothing behind. Pinned by
+   `RmeVisitConsentSignatureBoundTest` (selected by `RmeVisitConsent` in BOTH critical-gate variants; declared in
+   `critical_gate_mandatory_suites`). The consenter signature stays required and the doctor signature optional.
 
 ## 11. The consent signature is not cached (OD-6-2)
 
@@ -149,14 +157,14 @@ declared in `config/ci_runner.php` `critical_gate_mandatory_suites`.
 
 ## 15. Open after 8C (recorded, not done)
 
-- Two docblocks still describe the pre-8C "everyone else keeps the RME-enabled set" read scope
-  (`OdontogramPolicy::mayReadDocumentAt()`, `MedicalRecordPolicy::mayReadDocumentAt()`); comment only — the code
-  follows §5. Fix in the next code-bearing sprint (kept out of 8C PR2 by the 10-file scope limit).
+- CLOSED by `DMS-RME-REVISION-PROGRAM-8D`: the two docblocks that described the pre-8C "everyone else keeps the
+  RME-enabled set" read scope (`OdontogramPolicy::mayReadDocumentAt()`, `MedicalRecordPolicy::mayReadDocumentAt()`)
+  now describe the §5 allowlist. Comment only; the code already followed §5 and did not change.
 - Independent review: done in two rounds in an isolated read-only session (round 1 `3ec032fd…` on `37b9b4f5`,
   round 2 `f05066c9…` on `979e267b`), both PASS — sprint record §2.
-- OPEN LOW (round 2): consent signature fields (`StoreRmeVisitConsentRequest`, `RmeVisitConsentService::sign()`) are
-  bounded by the generic 3.5M payload and the pixel caps but not by the 1M signature limit. Fix in the next
-  code-bearing sprint (two more `app/` files would exceed 8C PR2's 10-file scope limit).
+- CLOSED by `DMS-RME-REVISION-PROGRAM-8D` (was OPEN LOW, round 2): the consent signature fields
+  (`StoreRmeVisitConsentRequest`, `RmeVisitConsentService::sign()`) now carry the 1,000,000-character signature
+  limit at the request and in the service — §10.3.
 - Pre-existing, INFO (independent review F6): the blank-image check skips any PNG that is not 8-bit RGBA, so such a
   PNG is never refused as blank. Harmless for the signature (the signer is identity-bound); not changed in 8C.
 - Test hygiene, INFO (F8): `rmeClinicalReader()` attaches the seeded Owner role, which carries Owner's other
