@@ -1,7 +1,8 @@
 # DMS-RME-REVISION-PROGRAM-8D — consent signature payload bound and read-scope docblocks
 
 **Date:** 2026-11-12 (WITA = UTC+8). **Type:** SECURITY_FIX. **Base:** `4a1930fc` (canonical base after the Sprint 0
-docs merge, #620; runtime still the Program 8C release `b0c0bd62`). **Rule amended:**
+docs merge, #620; last recorded production runtime: the Program 8C release `b0c0bd62`, not verified from this
+workstation). **Rule amended:**
 `.cursor/rules/228-rme-clinical-write-authority-and-prescription-integrity.mdc` §10.3, §15. **Source of the finding:**
 rule 228 §15 (8C independent review round 2, OPEN LOW) and
 [[dms-rme-revision-sprint-0-evidence-recovery]] §6 and §8.
@@ -37,13 +38,15 @@ enforcement. Approval to implement is not approval to merge or to deploy.
 | CI selection | The suite is declared in `critical_gate_mandatory_suites`; it is selected by the existing `RmeVisitConsent` token in BOTH critical-gate variants (no token added) | `config/ci_runner.php` |
 | Rules and docs | Rule 228 §10.3 rewritten, §14 lists the suite, both §15 items marked CLOSED, request added to its globs; rule 224's stale consent `no-store` line marked closed by 8C; AIR-RMC-53 names consent signatures; this record; module index; sprint manifest | `.cursor/rules/228-…`, `.cursor/rules/224-…`, `.claude/rules/rme-clinical.md`, `docs/knowledge-base/module-index.md`, `.sprint/current.yml` |
 
-**The unit is characters.** The bound is 1,000,000 characters of the submitted data URI (prefix included), the same
-length both Laravel's string `max` and the decoder's `strlen` measure. It is not 1 MiB and not an inferred binary
-size: the oversized test fixture decodes to about 840 KB and is still refused.
+**The unit.** The bound applies to the submitted data URI (prefix included), not to the decoded image: Laravel's
+string `max` counts characters at the request and the decoder's `strlen` counts bytes in the service, which is the
+same number for a base64 data URI and stricter for anything else. It is not 1 MiB and not an inferred binary size:
+the oversized test fixture decodes to about 840 KB and is still refused.
 
 **Fail-closed, nothing left behind.** Both decodes run before the transaction, so a refused signature is rejected
 before the visit row lock, the consent number, any object write on the private disk and any row. A refused attempt
-leaves the visit row, the consent table, the disk and the finance tables byte-identical (tests A-02, A-03, B-01, B-02).
+leaves the visit row's attributes, the consent table (no row), the disk (no object) and the finance tables' rows
+unchanged (tests A-02, A-03, B-01, B-02).
 
 **Deliberately unchanged:** the decoder (both constants, the IHDR, dimension and pixel caps, the blank check), the
 storage disk and paths (OD-5-9 stays open), consent wording and template versions, the consenter signature staying
@@ -55,7 +58,8 @@ signature authority, and the front end (the canvases already draw far below the 
 
 RED first, the new suite against the untouched code at `4a1930fc` (SQLite, JUnit): **13 tests, 6 failed, 7 passed**
 (51 assertions). Each failed for the reason it names: A-01 found no `max:1000000`; A-02 / A-03 saw the oversized
-payload pass the request (the decoder spy was reached); B-01 / B-02 saw `sign()` accept a valid 1.12M-character PNG;
+payload pass the request (the RED run used a null-returning decoder spy, which was reached; the tests now use the
+real decoder, and mutants M1, M2 and M5 show they still fail without the request bound); B-01 / B-02 saw `sign()` accept a valid 1.12M-character PNG;
 B-03 saw the over-long payload decoded and refused as "Data gambar tidak valid." instead of for its size. The seven
 that passed are the behaviour 8D must keep (near-bound acceptance, malformed / blank / missing refusals, 403, branch,
 timing gate).
@@ -84,7 +88,7 @@ round with the same result: **5 mutants, 5 killed, 0 survived**.
 | A-01 | Both fields carry `max:1000000`; exactly 1,000,000 characters passes, 1,000,001 fails with the request message |
 | A-02 / A-03 | An oversized consenter / doctor signature is refused at the request and nothing is written: consent rows, disk objects, the visit row and the finance tables (an existing receivable on another visit) are unchanged. The decoder is the REAL one, recording its calls (a pass-through partial mock): it is never reached, and without the request bound it would have accepted the canvas, so "nothing written" is earned by the request |
 | A-04 | Consenter and doctor signatures at the real consent canvas size, just under the bound, still sign over HTTP; the visit stays `in_progress` |
-| B-01 / B-02 | `RmeVisitConsentService::sign()` called directly refuses an oversized consenter / doctor signature with the decoder message, writes nothing, and consumes no consent number (the next valid consent is `…-000001`) |
+| B-01 / B-02 | `RmeVisitConsentService::sign()` called directly refuses an oversized consenter / doctor signature with the decoder message and writes nothing; B-01 also shows the next valid consent is `…-000001` |
 | B-03 | The service bound is inclusive: exactly 1,000,000 characters passes the size check (and is refused only as an invalid image), 1,000,001 is refused for its size before decoding (before 8D it was decoded and refused as "Data gambar tidak valid.") |
 | B-04 | Near-bound signatures still sign through the service; the doctor comes from the visit |
 | B-05 | Malformed, blank and missing signatures under the bound are still refused with their existing messages |
@@ -196,6 +200,14 @@ code-only rollback safe.
 | Rule 224 still lists consent-signature `no-store` as open | INFO (pre-existing doc drift) | Marked CLOSED by 8C (rule 228 §11) |
 | B-01's "no number consumed" adds nothing beyond "no row" (numbers are MAX-based) | INFO | Kept as documentation of the behaviour; not claimed as an extra guarantee |
 | Finance snapshot covers invoices and payments only | INFO | Accepted: no finance code is reachable from `sign()` |
+
+**Round 2** — the same reviewer, statically, on the review-round delta `1bbd6435..31446765` and this record: **PASS
+WITH FINDINGS — 0 CRITICAL, 0 HIGH, 0 MEDIUM.** It confirmed the real-decoder tests and the two-sided B-03 boundary
+(a 1,000,000-character payload decodes to 749,983 zero bytes and is refused only as invalid), the rule 228 / rule 224
+edits against the code, the §8 audit claims against the code, the record's internal arithmetic, and that every new
+module-index link resolves. Its two LOW and three INFO findings were all wording in this record (B-02 credited with
+the number check; the unit sentence in §2; "byte-identical"; the header stating the production runtime as fact; the
+RED line describing the old spy) and are corrected here. It could not re-run the counts reported in §3 and §5.
 
 **Pre-existing, outside 8D's approved scope — recorded for an owner decision, not fixed here:**
 
