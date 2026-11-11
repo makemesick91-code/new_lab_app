@@ -5,6 +5,11 @@
 **Previous checkpoint:** the Program 8 re-audit (verdict NO-GO, 0 code blockers, owner decisions D1–D7 and device
 outstanding). Program 8B closed D1, D2, D6 and D7.
 
+**Forward reference (2026-11-12):** the open register below was audited item by item in
+[[dms-rme-revision-sprint-0-evidence-recovery]] (PARTIAL_GO). Seven ids in its open register (R7-F, P8-FIX1, P8-SEED,
+OPS-SAT, R8A-3, RA-4, P8R-S4b) have no public definition, the detail of the decided D3-NEW-3/5 is also private, and
+RA-4 appears both as decided and as open. This record is unchanged history.
+
 This mission resolves what an owner checkpoint can resolve: D3, the Owner Decision Register; D4, dedicated
 real-device verification; and D5, Legacy WAVE-4 closure. It records the remaining items honestly as open rather than
 closed. **Silence was never treated as approval**, and no item is classified CLOSED, ACCEPTED or PASS unless the
