@@ -23,6 +23,10 @@ ditambahkan ke `Prescription` dan `ClinicRoom`. Audit ulang kesiapan
 [dms-rme-revision-program-8-readiness-reaudit](../sprints/dms-rme-revision-program-8-readiness-reaudit.md) ditambahkan
 ke `RME` dan `Prescription`. Rule 227 dan sprint korektif
 [dms-rme-revision-program-8b](../sprints/dms-rme-revision-program-8b.md) ditambahkan ke `Prescription` dan `RME`.
+Pada 2026-11-12 rule 228, sprint korektif [dms-rme-revision-program-8c](../sprints/dms-rme-revision-program-8c.md), checkpoint
+owner [dms-rme-revision-program-8-owner-operational-closure](../sprints/dms-rme-revision-program-8-owner-operational-closure.md)
+dan audit bukti [dms-rme-revision-sprint-0-evidence-recovery](../sprints/dms-rme-revision-sprint-0-evidence-recovery.md)
+ditambahkan ke `Consent`, `Prescription` dan `RME` (rule 228 dan 8C belum tertaut di indeks ini sejak 2026-11-08).
 
 - **Jumlah file PHP** dihitung dari `app/Modules/<Modul>/`.
 - **"N dokumen menyebut path modul ini"** menghitung dokumen di `docs/` dan `.cursor/rules/`
@@ -73,22 +77,22 @@ bukti, kata kunci nama berkas untuk tautan), lalu perbarui `kb_verified_against`
 ### `Consent`
 
 - Kode: `app/Modules/Consent/` — 8 file PHP; 5 dokumen menyebut path modul ini.
-- Rule durable (`.cursor/rules/`, di luar vault): `100-rme-consent-payment-gate-print-ownership.mdc`, `109-rme-exam-consent-odontogram-history.mdc`, `134-odontogram-pre-consent-authoring.mdc`, `180-ktp-ocr-consent-d7.mdc`
+- Rule durable (`.cursor/rules/`, di luar vault): `100-rme-consent-payment-gate-print-ownership.mdc`, `109-rme-exam-consent-odontogram-history.mdc`, `134-odontogram-pre-consent-authoring.mdc`, `180-ktp-ocr-consent-d7.mdc`, `228-rme-clinical-write-authority-and-prescription-integrity.mdc` (tanda tangan consent no-store; decoder kanvas bersama)
 - Sprint terbaru: [bugfix-rme-preconsent-first-page-ui-gate-1](../sprints/bugfix-rme-preconsent-first-page-ui-gate-1.md), [revision-rme-consent-odontogram-preconsent-edit-1](../sprints/revision-rme-consent-odontogram-preconsent-edit-1.md), [fix-rme-consent-workflow-print-ux-2](../sprints/fix-rme-consent-workflow-print-ux-2.md) — total 4 dokumen sprint
 - Ringkasan `ai-knowledge` (snapshot, cek [status](doc-status-registry.md)): [08_DaengtisiaMS_RME_Workflow](../ai-knowledge/08_DaengtisiaMS_RME_Workflow.md)
 
 ### `Prescription`
 
 - Kode: `app/Modules/Prescription/` — 21 file PHP; 1 dokumen menyebut path modul ini.
-- Rule durable (`.cursor/rules/`, di luar vault): `226-rme-prescription-authoring-authority-and-blade-php-pairing.mdc` (otoritas penulisan resep), `227-rme-clinical-document-read-scope-printed-identity-numbering.mdc` (cakupan baca dokumen klinis, identitas cetak resep, penomoran)
-- Sprint terbaru: [dms-rme-revision-program-8b](../sprints/dms-rme-revision-program-8b.md), [dms-rme-revision-program-8-readiness-reaudit](../sprints/dms-rme-revision-program-8-readiness-reaudit.md), [dms-rme-revision-program-8a](../sprints/dms-rme-revision-program-8a.md)
+- Rule durable (`.cursor/rules/`, di luar vault): `226-rme-prescription-authoring-authority-and-blade-php-pairing.mdc` (otoritas penulisan resep), `227-rme-clinical-document-read-scope-printed-identity-numbering.mdc` (cakupan baca dokumen klinis, identitas cetak resep, penomoran), `228-rme-clinical-write-authority-and-prescription-integrity.mdc` (cakupan ruang, kunci setelah kunjungan selesai, audit, penandatangan resep)
+- Sprint terbaru: [dms-rme-revision-program-8c](../sprints/dms-rme-revision-program-8c.md), [dms-rme-revision-program-8b](../sprints/dms-rme-revision-program-8b.md), [dms-rme-revision-program-8-readiness-reaudit](../sprints/dms-rme-revision-program-8-readiness-reaudit.md)
 - Lihat juga (namanya tidak merujuk modul ini, jadi status GAP tetap): rule `224-rme-clinical-evidence-write-integrity.mdc` dan `121-clinical-evidence-private-storage.mdc` untuk kanvas resep dan tanda tangan; [dms-rme-revision-program-6](../sprints/dms-rme-revision-program-6.md) untuk audit resep.
 
 ### `RME`
 
 - Kode: `app/Modules/RME/` — 4 file PHP; 10 dokumen menyebut path modul ini.
-- Rule durable (`.cursor/rules/`, di luar vault): `138-doctor-room-scoped-access-and-print-deny.mdc`, `225-rme-concurrent-first-write-and-void-staging-integrity.mdc`
-- Sprint terbaru: [dms-rme-revision-program-8b](../sprints/dms-rme-revision-program-8b.md), [dms-rme-revision-program-8-readiness-reaudit](../sprints/dms-rme-revision-program-8-readiness-reaudit.md), [dms-rme-revision-program-8](../sprints/dms-rme-revision-program-8.md)
+- Rule durable (`.cursor/rules/`, di luar vault): `138-doctor-room-scoped-access-and-print-deny.mdc`, `225-rme-concurrent-first-write-and-void-staging-integrity.mdc`, `228-rme-clinical-write-authority-and-prescription-integrity.mdc`
+- Sprint terbaru: [dms-rme-revision-sprint-0-evidence-recovery](../sprints/dms-rme-revision-sprint-0-evidence-recovery.md), [dms-rme-revision-program-8-owner-operational-closure](../sprints/dms-rme-revision-program-8-owner-operational-closure.md), [dms-rme-revision-program-8c](../sprints/dms-rme-revision-program-8c.md)
 - Ringkasan `ai-knowledge` (snapshot, cek [status](doc-status-registry.md)): [08_DaengtisiaMS_RME_Workflow](../ai-knowledge/08_DaengtisiaMS_RME_Workflow.md)
 
 ### `RmeDashboard`
