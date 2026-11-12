@@ -2,6 +2,7 @@
 
 namespace App\Modules\Consent\Requests;
 
+use App\Modules\Prescription\Services\PrescriptionCanvasDecoder;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -51,8 +52,12 @@ class StoreRmeVisitConsentRequest extends FormRequest
             // `required`, because `required` rejects the legitimate answer "0".
             'documentation_consent' => ['present', 'boolean'],
 
-            'consenter_signature' => ['required', 'string'],
-            'doctor_signature' => ['nullable', 'string'],
+            // DMS-RME-REVISION-PROGRAM-8D (rule 228 §10.3) — the signature
+            // payload bound at the edge, in characters of the data URI; the
+            // service passes the same limit to the decoder for callers that
+            // skip this request.
+            'consenter_signature' => ['required', 'string', 'max:'.PrescriptionCanvasDecoder::MAX_SIGNATURE_PAYLOAD_LENGTH],
+            'doctor_signature' => ['nullable', 'string', 'max:'.PrescriptionCanvasDecoder::MAX_SIGNATURE_PAYLOAD_LENGTH],
         ];
     }
 
@@ -68,6 +73,8 @@ class StoreRmeVisitConsentRequest extends FormRequest
             'documentation_consent.present' => 'Persetujuan dokumentasi/publikasi harus dipilih YA atau TIDAK.',
             'documentation_consent.boolean' => 'Persetujuan dokumentasi/publikasi harus dipilih YA atau TIDAK.',
             'consenter_signature.required' => 'Tanda tangan pemberi persetujuan wajib diisi.',
+            'consenter_signature.max' => 'Ukuran gambar tanda tangan melebihi batas yang diizinkan.',
+            'doctor_signature.max' => 'Ukuran gambar tanda tangan melebihi batas yang diizinkan.',
         ];
     }
 }

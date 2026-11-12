@@ -1575,6 +1575,10 @@ return [
         // after completion", signature "named doctor signs only"). Selected by the
         // existing `RmePrescription` token.
         'tests/Feature/RME/RmePrescriptionIntegrityTest.php',
+        // DMS-RME-REVISION-PROGRAM-8D (rule 228 §10.3) — consent signatures carry the signature
+        // payload bound at the request and in the service. Selected by the existing
+        // `RmeVisitConsent` token in BOTH critical variants; declared so a rename cannot drop it.
+        'tests/Feature/RME/RmeVisitConsentSignatureBoundTest.php',
 
         // SECURITY-F4C-CLINIC-CALENDAR-LAB-ORDERS-1 (owner decision D16) — lab order dates, order and
         // delivery numbering, the due-date floor and "delivered today" on the clinic calendar

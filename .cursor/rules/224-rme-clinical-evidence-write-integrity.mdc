@@ -101,7 +101,9 @@ Every defect below was reproduced RED on PostgreSQL 16 against the untouched bas
 - **Latent lock-order hazard.** A handwriting save holds the medical-record row FOR NO KEY UPDATE. A future path that
   takes the visit row FOR UPDATE and then writes the medical record (the Program 5 shape) would deadlock against it.
   Any new writer that touches both rows takes the visit first, then the record — rule 223 §1.
-- Consent signature streams send no explicit `Cache-Control: no-store` (LOW hardening; no canonical rule requires it).
+- CLOSED by DMS-RME-REVISION-PROGRAM-8C (OD-6-2, rule 228 §11): consent signature streams now send
+  `Cache-Control: private, no-store, max-age=0`. (Was: no explicit `no-store`, LOW hardening; the stale line was
+  found by the 8D independent review, 2026-11-12.)
 - `ClinicalEvidenceStorage::FORBIDDEN_DISKS` is not enforced at runtime; the governance scan is the enforcement.
 - The stored sha256 is not verified on read.
 - `dataUri()` logs a warning (exception class only, never the key or bytes) when an object cannot be read or is not a

@@ -277,8 +277,8 @@ editable) → Persetujuan Tindakan Medis (RME + finish unlocked) → RME + Odont
 - **AIR-RMC-52** RME/odontogram authoring needs a `FrontOfficeRole::CLINICAL_ROLES` role; cross-branch document read is
   `CROSS_BRANCH_DOCUMENT_READ_ROLES` (clinical + Owner), else none. Rule 228 §5.
 - **AIR-RMC-53** A completed/cancelled visit's prescription is read-only (`documentLocked()`: policy, and the service
-  under the visit lock); each write logs `RME_PRESCRIPTION_CREATED|UPDATED` (field names only); canvases are bounded;
-  only the prescription's own doctor (`maySign()`) saves the signature. Rule 228 §8–§13.
+  under the visit lock); each write logs `RME_PRESCRIPTION_CREATED|UPDATED` (field names only); canvases and consent
+  signatures are bounded; only the prescription's own doctor (`maySign()`) saves the signature. Rule 228 §8–§13.
 
 ## Current posture (snapshot 2026-10-25 — verify before relying on it)
 

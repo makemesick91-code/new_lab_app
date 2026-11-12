@@ -65,9 +65,14 @@ class MedicalRecordPolicy
     }
 
     /**
-     * DMS-RME-REVISION-PROGRAM-8B / D1 — the clinical DOCUMENT read scope:
-     * the front desk and the cashier read only their working branch, everyone
-     * else keeps the RME-enabled set (RmeWorkingBranchScope::allowsClinicalDocument()).
+     * DMS-RME-REVISION-PROGRAM-8B / D1 — the clinical DOCUMENT read scope, an
+     * allowlist since DMS-RME-REVISION-PROGRAM-8C (D3-NEW-4, rule 228 §5): the
+     * context-bound front desk and cashier read only their working branch; only
+     * RmeWorkingBranchScope::CROSS_BRANCH_DOCUMENT_READ_ROLES (the clinical roles
+     * and Owner) keep the RME-enabled set, never wider; any other account,
+     * including an unclassified role, reads none
+     * (RmeWorkingBranchScope::allowsClinicalDocument()). The doctor-patient scope
+     * still applies on top, in this policy.
      */
     private function mayReadDocumentAt(User $user, ?int $branchId): bool
     {

@@ -497,9 +497,13 @@ class RmeVisitConsentService
         }
 
         // The signature is the evidence. No signature, no consent.
+        // DMS-RME-REVISION-PROGRAM-8D (rule 228 §10.3) — both signatures carry
+        // the signature payload bound here too, so a caller that never passes
+        // through StoreRmeVisitConsentRequest is bounded the same way (CG-06).
         $consenterSignature = $this->canvas->decode(
             $data['consenter_signature'] ?? null,
             'consenter_signature',
+            maxLength: PrescriptionCanvasDecoder::MAX_SIGNATURE_PAYLOAD_LENGTH,
         );
 
         if ($consenterSignature === null) {
@@ -514,6 +518,7 @@ class RmeVisitConsentService
         $doctorSignature = $this->canvas->decode(
             $data['doctor_signature'] ?? null,
             'doctor_signature',
+            maxLength: PrescriptionCanvasDecoder::MAX_SIGNATURE_PAYLOAD_LENGTH,
         );
 
         $visit->loadMissing(['patient', 'doctor', 'branch']);
