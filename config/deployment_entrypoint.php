@@ -246,6 +246,7 @@ return [
                     '--target-sha is not accepted for a deploy',
                     '--snapshot-ref is not accepted for a deploy',
                     'runs only its own program',
+                    'only deploy/runtime-identity.conf may be overlaid',
                     'DMS_DEPLOY_APPROVED_SHA',
                 ],
             ],

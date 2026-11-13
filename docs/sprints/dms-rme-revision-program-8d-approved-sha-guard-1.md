@@ -174,6 +174,18 @@ unless stated:
 | 10 | LOW | GO tag name / release id not cross-checked | Tag name = approved commit's `go_tag`; approval path cross-checked in `verify` |
 | 11 | NIT | symlink blob could pass as evidence | Record and evidence must be regular files; test |
 
+**Round 2** (re-verification of `c20c1935`, same reviewer): fixes 2, 3, 4, 6, 7, 8 and 11 held under fresh attacks
+(including `diff.external`/`diff.orderFile` config and a deleted tree object for fix 2, and a real bootstrap → real
+`deploy-vps.sh` run with only the lock-root literal swapped to prove fix 4 refuses no legitimate run). New findings,
+fixed in the next commit:
+
+| # | Severity | Finding | Disposition |
+|---|---|---|---|
+| R2-1 | HIGH | `--overlay <file>:scripts/deploy-vps.sh` (or a library) replaced approved bytes after the export (proved) | Each role accepts only the `deploy/runtime-identity.conf` overlay, checked before the lock; test (legit overlay still passes) |
+| R2-2 | LOW | an absent local branch skipped the fast-forward check; the checkout would create it at the tip (proved) | Denied; test |
+| R2-3 | LOW | `verify` accepted any matching blob in the object store | The blob must be the approval file at the recorded commit, which must carry the approved commit; tests |
+| R2-4 | NIT | an interrupted guard could leave its private ref | The bootstrap's exit trap removes `refs/dms-release-approval/<pid>-*` |
+
 Test gaps it named were closed: ordering contracts ignore comment lines, the concurrency test waits for the lock
 holder instead of a timer (3/3 repeat runs green), and negative tests exist for each finding. The rollback ancestry
 refusal remains a static contract: `rollback-vps.sh`'s hand-over stage hard-codes the production path.

@@ -63,8 +63,8 @@ merge is never approval to deploy.
 8. The approved commit is an ancestor of the fetched tip, and every path changed between them (`git diff-tree`; a
    failed listing is a denial) is a release approval record or `docs/**/*.md`. Any other change means the approval
    no longer describes the branch: re-approve.
-9. Forward only: the running HEAD and the local branch are ancestors of (or equal to) the approved commit. Going back
-   is a rollback.
+9. Forward only: the running HEAD and the local branch (which must exist) are ancestors of (or equal to) the
+   approved commit. Going back is a rollback.
 
 ## 5. Where it runs
 
@@ -75,6 +75,7 @@ merge is never approval to deploy.
   hardening, the backup and the checkout, and again at the final HEAD check.
 - `deploy-immutable-exec.sh --role deploy`: requires `--branch`, `--release-id`, `--approved-sha`; refuses
   `--target-sha` and `--snapshot-ref`; runs only `scripts/deploy-vps.sh` (a rollback only `scripts/rollback-vps.sh`);
+  accepts no overlay but the live `deploy/runtime-identity.conf`;
   verifies the approval **inside the flock** and before the pin, the snapshot and any mutation; pins exactly the
   approved commit and prints `DEPLOY_APPROVED_SHA=` and `DEPLOY_APPROVAL_RECORD=`.
 - The snapshot stages of `deploy-vps.sh` and `rollback-vps.sh` trust the `DMS_DEPLOY_*` values only inside the
@@ -94,8 +95,9 @@ The record (`deploy-<id>.host`) adds `release_id`, `approved_sha`, `approval_rec
 `approval_blob`. `verify <id>` accepts a success only when the contract-2 facts hold **and** the pinned target and the
 checkout HEAD equal the record's `approved_sha`, the run's own log shows `RELEASE APPROVAL: GO`, exactly one
 `DEPLOY_APPROVED_SHA=` equal to it and exactly one `DEPLOY_APPROVAL_RECORD=` for the same approval path, and both
-approval blobs (record's and log's) exist as git objects whose `DMS_APPROVAL_RELEASE_ID` / `DMS_APPROVAL_TARGET_SHA`
-lines name this release and commit. It then prints `DEPLOY_APPROVED_TARGET_MATCH=YES (<sha>)`. Contract-2 records are
+approval blobs (record's and log's) exist as git objects, are the approval file at their recorded commit, that commit
+carries the approved commit, and their `DMS_APPROVAL_RELEASE_ID` / `DMS_APPROVAL_TARGET_SHA` lines name this release
+and commit. It then prints `DEPLOY_APPROVED_TARGET_MATCH=YES (<sha>)`. Contract-2 records are
 `INCOMPATIBLE`. (The tips may differ: approvals or docs may land between the runner's check and the bootstrap's.)
 
 ## 7. Bootstrap (the first deploy that carries the guard)

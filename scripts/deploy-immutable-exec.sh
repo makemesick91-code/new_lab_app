@@ -136,6 +136,14 @@ case "$ROLE:${PROGRAM_ARGV[0]}" in
   deploy:scripts/deploy-vps.sh|rollback:scripts/rollback-vps.sh) ;;
   *) deny "role '${ROLE}' runs only its own program, not '${PROGRAM_ARGV[0]}'" ;;
 esac
+# The only live file ever laid over the snapshot is the runtime identity
+# authority. An overlay of anything else (the program, a library, the host
+# authority) would replace approved bytes after the export (review, 8D PR2).
+for overlay in "${OVERLAY_FILES[@]:-}"; do
+  [ -n "$overlay" ] || continue
+  [ "${overlay#*:}" = "deploy/runtime-identity.conf" ] \
+    || deny "only deploy/runtime-identity.conf may be overlaid on the snapshot, not '${overlay#*:}'"
+done
 if [ "$ROLE" = "deploy" ]; then
   [ -z "$TARGET_SHA" ] || deny "--target-sha is not accepted for a deploy: the target is the commit the merged release approval approves (rule 229)"
   [ -z "$SNAPSHOT_REF" ] || deny "--snapshot-ref is not accepted for a deploy: the deployment program comes from the approved commit only (rule 229)"
@@ -232,6 +240,9 @@ cleanup() {
   local rc=$?
   [ "$CLEANUP_DONE" = "1" ] && return
   CLEANUP_DONE=1
+  # A private approval ref left behind by an interrupted guard (rule 229).
+  git -C "$APP_DIR" for-each-ref --format='%(refname)' "refs/dms-release-approval/$$-*" 2>/dev/null \
+    | while IFS= read -r ref; do git -C "$APP_DIR" update-ref -d "$ref" 2>/dev/null || true; done || true
   purge_snapshot "$SNAPSHOT_DIR"
   if [ ! -e "$SNAPSHOT_DIR" ]; then
     echo "DEPLOY_SNAPSHOT_CLEANED=YES"

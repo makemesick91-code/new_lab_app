@@ -204,14 +204,22 @@ dms_runner_assert_success_log() {
 }
 
 dms_runner_assert_approval_blob() {
-  # dms_runner_assert_approval_blob <app_dir> <blob> <release_id> <approved_sha>
+  # dms_runner_assert_approval_blob <app_dir> <blob> <release_id> <approved_sha> <tip> <path>
   # Rule 229: an approval named by evidence must exist as a git object in the
-  # (root-owned) object store and approve exactly this release and commit. The
-  # run directory is writable by the runtime user; the object store is not.
-  local app_dir="$1" blob="$2" release="$3" approved="$4" content
+  # (root-owned) object store, BE the approval file at <tip>:<path>, sit in a
+  # commit that descends from the approved commit, and approve exactly this
+  # release and commit. The run directory is writable by the runtime user; the
+  # object store is not.
+  local app_dir="$1" blob="$2" release="$3" approved="$4" tip="$5" path="$6" content at_path
   if ! dms_runner_valid_sha "$blob" \
      || [ "$(git -c safe.directory="$app_dir" -C "$app_dir" cat-file -t "$blob" 2>/dev/null)" != "blob" ]; then
     dms_runner_reject UNVERIFIED "approval blob '${blob}' is not an object in this repository — the evidence cites an approval git never held"
+    return 4
+  fi
+  at_path="$(git -c safe.directory="$app_dir" -C "$app_dir" rev-parse --verify --quiet "${tip}:${path}" 2>/dev/null)" || at_path=""
+  if [ "$at_path" != "$blob" ] \
+     || ! git -c safe.directory="$app_dir" -C "$app_dir" merge-base --is-ancestor "$approved" "$tip" 2>/dev/null; then
+    dms_runner_reject MISMATCHED "approval blob ${blob} is not the approval file ${path} of a commit (${tip}) that carries ${approved}"
     return 4
   fi
   content="$(git -c safe.directory="$app_dir" -C "$app_dir" cat-file blob "$blob" 2>/dev/null)" || content=""
@@ -231,7 +239,7 @@ dms_runner_assert_approval_log() {
   # the operator, not to the log, so these lines come from inside the deploy
   # lock. (The tip may differ from the record's: approvals or docs may land
   # between the runner's check and the bootstrap's.)
-  local log="$1" approved="$2" release="$3" approval_path="$4" app_dir="$5" count line log_path log_blob
+  local log="$1" approved="$2" release="$3" approval_path="$4" app_dir="$5" count line log_tip log_path log_blob
   if [ "$(dms_runner_count_lines '^RELEASE APPROVAL: GO$' "$log")" -lt 1 ]; then
     dms_runner_reject UNVERIFIED "the run's log carries no 'RELEASE APPROVAL: GO' — the deploy never proved its target was approved"
     return 4
@@ -248,17 +256,18 @@ dms_runner_assert_approval_log() {
   fi
   count="$(dms_runner_count_lines '^DEPLOY_APPROVAL_RECORD=' "$log")"
   line="$(sed -n '/^DEPLOY_APPROVAL_RECORD=/{s/^DEPLOY_APPROVAL_RECORD=//p;q;}' "$log")"
-  if [ "$count" != "1" ] || [[ ! "$line" =~ ^[0-9a-f]{40}:([^\ ]+)\ blob=([0-9a-f]{40})$ ]]; then
+  if [ "$count" != "1" ] || [[ ! "$line" =~ ^([0-9a-f]{40}):([^\ ]+)\ blob=([0-9a-f]{40})$ ]]; then
     dms_runner_reject UNVERIFIED "the run's log does not name exactly one approval record it verified"
     return 4
   fi
-  log_path="${BASH_REMATCH[1]}"
-  log_blob="${BASH_REMATCH[2]}"
+  log_tip="${BASH_REMATCH[1]}"
+  log_path="${BASH_REMATCH[2]}"
+  log_blob="${BASH_REMATCH[3]}"
   if [ "$log_path" != "$approval_path" ]; then
     dms_runner_reject MISMATCHED "the run's log verified ${log_path}, the record names ${approval_path}"
     return 4
   fi
-  dms_runner_assert_approval_blob "$app_dir" "$log_blob" "$release" "$approved" || return 4
+  dms_runner_assert_approval_blob "$app_dir" "$log_blob" "$release" "$approved" "$log_tip" "$log_path" || return 4
   return 0
 }
 
@@ -267,7 +276,7 @@ dms_runner_verify_run() {
   local run_dir="$1" id="$2" this_host="$3" authority="$4" app_dir="$5" now="$6"
   local status record log status_exit rc=0
   local rec_contract rec_host rec_id rec_started rec_finished rec_exit rec_runner_sha
-  local started_epoch finished_epoch target rec_release rec_approved rec_record rec_blob rec_path
+  local started_epoch finished_epoch target rec_release rec_approved rec_record rec_blob rec_path rec_tip rec_record_path
 
   if ! dms_runner_valid_id "$id"; then
     dms_runner_reject MALFORMED "deployment identifier '${id}' is not a runner identifier (YYYYmmdd-HHMMSS)"
@@ -328,7 +337,15 @@ dms_runner_verify_run() {
     return 4
   fi
   rec_path="deploy/release-approvals/${rec_release}.approval"
-  if [[ ! "$rec_record" =~ ^[0-9a-f]{40}:(.+)$ ]] || [ "${BASH_REMATCH[1]}" != "$rec_path" ] || ! dms_runner_valid_sha "$rec_blob"; then
+  # Capture the groups at once: any later [[ =~ ]] (dms_runner_valid_sha)
+  # replaces BASH_REMATCH.
+  rec_tip=""
+  rec_record_path=""
+  if [[ "$rec_record" =~ ^([0-9a-f]{40}):(.+)$ ]]; then
+    rec_tip="${BASH_REMATCH[1]}"
+    rec_record_path="${BASH_REMATCH[2]}"
+  fi
+  if [ -z "$rec_tip" ] || [ "$rec_record_path" != "$rec_path" ] || ! dms_runner_valid_sha "$rec_blob"; then
     dms_runner_reject INCOMPLETE "the record does not name the approval it verified for ${rec_release} (approval_record, approval_blob)"
     return 4
   fi
@@ -390,7 +407,7 @@ dms_runner_verify_run() {
   # 7. The approval, from the run's own log and from git (after the host and
   # target facts, so a copied foreign log is reported for what it fails first).
   dms_runner_assert_approval_log "$log" "$rec_approved" "$rec_release" "$rec_path" "$app_dir" || return 4
-  dms_runner_assert_approval_blob "$app_dir" "$rec_blob" "$rec_release" "$rec_approved" || return 4
+  dms_runner_assert_approval_blob "$app_dir" "$rec_blob" "$rec_release" "$rec_approved" "$rec_tip" "$rec_path" || return 4
   echo "deploy-runner: target_commit=${target} (checkout HEAD matches)"
   echo "DEPLOY_APPROVED_TARGET_MATCH=YES (${target})"
   echo "deploy-runner: final exit=0"

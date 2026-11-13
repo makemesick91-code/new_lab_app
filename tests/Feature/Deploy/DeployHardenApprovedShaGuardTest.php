@@ -780,3 +780,38 @@ it('refuses a direct run of the real deploy or rollback program with forged boot
     'rollback, no lock' => ['rollback', [], 2, 'is not in the trusted lock root'],
     'rollback, the real lock root but not its snapshot' => ['rollback', ['DMS_DEPLOY_LOCK_FILE' => '/run/daengtisiams-deploy/rollback.lock'], 2, "is not this run's trusted snapshot"],
 ]);
+
+it('lays only the live runtime identity over the snapshot, never approved bytes', function (string $rel, int $exit) {
+    r229RequiresTooling();
+    $s = r229Sandbox();
+    $live = "{$s['root']}/live-file";
+    file_put_contents($live, $rel === 'deploy/runtime-identity.conf'
+        ? "DMS_RUNTIME_USER=fixture\nDMS_RUNTIME_GROUP=fixture\n"
+        : "#!/usr/bin/env bash\necho UNAPPROVED BYTES RAN\nexit 0\n");
+
+    $r = r229Bootstrap($s, ['--release-id', $s['release'], '--approved-sha', $s['sha'], '--overlay', "{$live}:{$rel}"]);
+
+    expect($r['exit'])->toBe($exit, $r['output'])
+        ->and($r['output'])->not->toContain('UNAPPROVED BYTES RAN');
+    if ($exit === 77) {
+        expect($r['output'])->toContain('only deploy/runtime-identity.conf may be overlaid')
+            ->and($r['output'])->not->toContain('DEPLOY_LOCK_ACQUIRED');
+    } else {
+        expect($r['output'])->toContain("DEPLOY_HEAD_TARGET_MATCH=YES ({$s['sha']})");
+    }
+})->with([
+    'the runtime identity (the one legitimate overlay)' => ['deploy/runtime-identity.conf', 0],
+    'the deploy program' => ['scripts/deploy-vps.sh', 77],
+    'a deploy library' => ['scripts/lib/production-host-preflight.sh', 77],
+    'the host authority' => ['deploy/production-host.conf', 77],
+]);
+
+it('refuses before any mutation when the checkout has no local branch to fast-forward', function () {
+    r229RequiresTooling();
+    $s = r229Sandbox();
+    r229Git($s['app'], ['checkout', '-q', '--detach', $s['base']]);
+    r229Git($s['app'], ['branch', '-D', $s['branch']]);
+
+    r229Denied($r = r229Verify($s));
+    expect($r['output'])->toContain('has no local branch');
+});

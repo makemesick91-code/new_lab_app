@@ -348,10 +348,11 @@ dms_release_approval_verify_inner() {
   # The deploy checks out the local branch and fast-forwards it; a local branch
   # already past the target (e.g. after a rollback) would only fail after the
   # backup, so refuse it here, before anything happens.
-  if local_branch="$(dms_release_approval_git rev-parse --verify --quiet "refs/heads/${branch}^{commit}")"; then
-    dms_release_approval_git merge-base --is-ancestor "$local_branch" "$approved_sha" \
-      || { dms_release_approval_deny "the local branch ${branch} (${local_branch}) is not an ancestor of ${approved_sha} — it cannot be fast-forwarded to the approved commit"; return; }
-  fi
+  # An absent local branch would be created at the remote tip by that checkout.
+  local_branch="$(dms_release_approval_git rev-parse --verify --quiet "refs/heads/${branch}^{commit}")" \
+    || { dms_release_approval_deny "the checkout has no local branch ${branch} to fast-forward to the approved commit"; return; }
+  dms_release_approval_git merge-base --is-ancestor "$local_branch" "$approved_sha" \
+    || { dms_release_approval_deny "the local branch ${branch} (${local_branch}) is not an ancestor of ${approved_sha} — it cannot be fast-forwarded to the approved commit"; return; }
 
   DMS_RELEASE_APPROVED_SHA="$approved_sha"
   DMS_RELEASE_APPROVAL_TIP="$tip"
