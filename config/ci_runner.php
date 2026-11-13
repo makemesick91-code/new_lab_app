@@ -1672,6 +1672,15 @@ return [
         // toolchain must match CI's versions. Selected by the `DeployHarden`
         // token; declared so it stays enforced.
         'tests/Feature/Deploy/DeployHardenRunnerEvidenceContractTest.php',
+
+        // DMS-RME-REVISION-PROGRAM-8D-APPROVED-SHA-GUARD-1 (rule 229): a deploy
+        // lands only on the exact commit a merged release approval approves —
+        // checked by the runner before it launches anything and by the
+        // bootstrap inside the lock before the snapshot; no branch-tip
+        // substitution; evidence contract 3; forward-only; rollback stays on
+        // the deployed history. Selected by the `DeployHarden` token in BOTH
+        // critical variants; declared so it stays enforced.
+        'tests/Feature/Deploy/DeployHardenApprovedShaGuardTest.php',
     ],
 
     /*

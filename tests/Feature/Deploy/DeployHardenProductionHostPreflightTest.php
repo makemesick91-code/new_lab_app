@@ -220,29 +220,25 @@ it('never reports OK for an unbound status even when it says exit=0', function (
 });
 
 it('binds a fresh run to this host end to end', function () {
-    $app = tempArtifactDir('dhp-runner-live-');
-    $payload = tempArtifactFile('dhp-payload-');
-    file_put_contents($payload, "#!/usr/bin/env bash\necho payload-ran\nexit 0\n");
+    // Rule 229: the runner launches only an approved release, and only the
+    // deploy program shipped beside it. This program skips the bootstrap and
+    // prints nothing a deploy must print.
+    $s = r229Sandbox(['program' => "#!/usr/bin/env bash\necho payload-ran\nexit 0\n"]);
 
-    $start = dhpRunner($app, 'start', ['DEPLOY_SCRIPT' => $payload]);
+    $start = r229Runner($s, ['start', '--release-id', $s['release'], '--approved-sha', $s['sha']]);
     expect($start['exit'])->toBe(0, $start['output']);
-
-    $status = "{$app}/storage/logs/deploy-runner/latest.status";
-    $deadline = microtime(true) + 10;
-    while (microtime(true) < $deadline && ! (is_file($status) && filesize($status) > 0)) {
-        usleep(100_000);
-    }
+    preg_match('/deploy_id=(\d{8}-\d{6})/', $start['output'], $m);
+    expect(r229WaitForStatus($s['app'], $m[1]))->toBe('exit=0');
 
     // The record now carries the whole evidence contract, host first.
-    $host = (string) file_get_contents("{$app}/storage/logs/deploy-runner/latest.host");
+    $host = (string) file_get_contents("{$s['app']}/storage/logs/deploy-runner/latest.host");
     expect($host)->toStartWith('host='.trim((string) gethostname())."\n")
-        ->and($host)->toContain('runner_contract=2')
+        ->and($host)->toContain('runner_contract=3')
         ->and($host)->toContain('result_exit=0');
 
-    // A run proves nothing against a checkout that declares no production host:
-    // this tree has no deploy/production-host.conf, and the payload printed no
-    // preflight or DEPLOY OK. The positive path is in the contract suite.
-    $result = dhpRunner($app, 'status');
+    // A run proves nothing when its own log shows no approval, no production
+    // preflight and no DEPLOY OK. The positive path is in the contract suite.
+    $result = r229Runner($s, ['status']);
     expect($result['exit'])->toBe(4, $result['output'])
         ->and($result['output'])->toContain('DEPLOY RUNNER STATUS UNVERIFIED')
         ->and($result['output'])->not->toContain('DEPLOY RUNNER OK');

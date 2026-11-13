@@ -3,18 +3,26 @@
 # (PrescriptionCanvasDecoder::MAX_SIGNATURE_PAYLOAD_LENGTH) on both consent signature fields, as a FormRequest `max`
 # AND as the decoder `maxLength` in RmeVisitConsentService::sign(); (2) the two pre-8C read-scope docblocks
 # (MedicalRecordPolicy / OdontogramPolicy ::mayReadDocumentAt(), comment only); (3) regression tests; (4) rule 228
-# §10.3 and §15 synchronised. Closes the 8C round-2 OPEN LOW (rule 228 §15).
-# Not in scope (owner, 2026-11-12): P8R-S6 invoice/payment numbering (read-only audit only), unsigned-prescription
-# printing, OD-5-6, OD-5-9 consent storage, D4/D5, global device enforcement. No schema, migration, permission,
-# role, route, JS/CSS or package change; no flag, enforcement scope, branch lock, queue worker, scheduler or KTP timer
-# change. The decoder is unchanged. Foundation-First Sprint Lock stays ACTIVE (allowed category: security fix /
-# clinical correctness). Full Suite deferred (CG-18), not passed. Production deployment is NOT authorised by this
-# sprint's approval; the GO tag below is created only after a separately authorised deploy and its verification.
+# §10.3 and §15 synchronised. Closes the 8C round-2 OPEN LOW (rule 228 §15). Merged as PR #621 (dde7b9b6).
+#
+# PR2 of 8D (this manifest, 2026-11-14): DMS-RME-REVISION-PROGRAM-8D-APPROVED-SHA-GUARD-1, the exact approved release
+# SHA guard (rule 229), requested by the owner as part of the 8D production release. A production deploy names a
+# release and an exact commit and proceeds only when a release approval record merged on the base branch
+# (deploy/release-approvals/<release-id>.approval) approves exactly that commit: verified by the runner before it
+# launches anything and by the bootstrap inside the deploy lock before the snapshot, backup or checkout; the branch tip
+# is never substituted (DEPLOYMENT=DENIED, exit 77). Evidence contract 3, forward-only deploys, rollback targets on
+# the deployed history only, GO tag on the approved commit. Deploy tooling, authority, governance scanner and tests
+# only: no schema, migration, permission, role, route, JS/CSS or package change; no flag, enforcement scope, branch
+# lock, queue worker, scheduler or KTP timer change.
+#
+# Foundation-First Sprint Lock stays ACTIVE (allowed category: security fix). Full Suite deferred (CG-18), not passed.
+# Production deployment needs a separate owner approval of the exact merged release commit, recorded as its release
+# approval record; the GO tag below is created only after that deploy and its verification.
 # Carried forward: LEGACY-RME-PROGRAM-CLOSURE-1 stays CLOSED and inherited.
 id: DMS-RME-REVISION-PROGRAM-8D
 type: SECURITY_FIX
 module: Rme
-title: "Consent signature payload bound at the request and in the service; read-scope docblocks corrected (8D)"
+title: "Consent signature payload bound (8D PR1) and the exact approved release SHA deploy guard, rule 229 (8D PR2)"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 runtime_change: true
 schema_change: false

@@ -17,26 +17,10 @@
 
 use App\Support\Deploy\DeploymentEntrypointScanner;
 
+/** An approved release (rule 229) whose deploy program is the fixture. */
 function dh1LockSandbox(string $programBody): array
 {
-    $root = sys_get_temp_dir().'/dh1lock-'.bin2hex(random_bytes(6));
-    $app = $root.'/app';
-    $lock = $root.'/lock';
-
-    mkdir($app.'/scripts', 0700, true);
-    mkdir($app.'/deploy', 0700, true);
-    mkdir($lock, 0700, true);
-
-    copy(base_path('scripts/deploy-immutable-exec.sh'), $app.'/scripts/deploy-immutable-exec.sh');
-    file_put_contents($app.'/deploy/runtime-identity.conf', "DMS_RUNTIME_USER=fixture\nDMS_RUNTIME_GROUP=fixture\n");
-    file_put_contents($app.'/scripts/fixture-program.sh', $programBody);
-
-    $git = 'git -C '.escapeshellarg($app).' -c user.email=fixture@test -c user.name=fixture ';
-    shell_exec($git.'init -q . 2>&1');
-    shell_exec($git.'add -A 2>&1');
-    shell_exec($git.'commit -qm fixture 2>&1');
-
-    return ['root' => $root, 'app' => $app, 'lock' => $lock];
+    return r229Sandbox(['files' => ['scripts/fixture-program.sh' => $programBody], 'checkout' => 'release']);
 }
 
 function dh1LockCommand(array $sandbox): string
@@ -46,6 +30,9 @@ function dh1LockCommand(array $sandbox): string
         '--role', 'deploy',
         '--app-dir', $sandbox['app'],
         '--lock-dir', $sandbox['lock'],
+        '--branch', $sandbox['branch'],
+        '--release-id', $sandbox['release'],
+        '--approved-sha', $sandbox['sha'],
         '--', 'scripts/fixture-program.sh',
     ]));
 }

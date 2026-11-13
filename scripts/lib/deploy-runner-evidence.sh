@@ -23,7 +23,11 @@
 #      launched the run, plus the SHA-256 of that runner program;
 #   6. actual execution result  — the recorded exit code agrees with the status,
 #      and a success also carries the production preflight GO and DEPLOY OK in
-#      the run's OWN log (resolved by identifier, never through latest.log).
+#      the run's OWN log (resolved by identifier, never through latest.log);
+#   7. approved release (contract 3, rule 229) — the record names the release
+#      and the approved commit the runner verified before launch, and the run's
+#      own log shows the bootstrap's approval GO, exactly one approved commit
+#      equal to the record's, a pinned target equal to it and HEAD == it.
 #
 # Anything else is refused with a named verdict and return code 4. Nothing here
 # ever reports success for a run it could not prove.
@@ -37,9 +41,12 @@
 # 4 not evidence (unbound, foreign, frozen, mismatched, incomplete, stale ...).
 
 # The evidence contract this runner writes and accepts. Contract 1 is the
-# pre-binding runner (status file only, no record). Bump only together with the
-# writer, the verifier and the tests.
-DMS_RUNNER_EVIDENCE_CONTRACT=2
+# pre-binding runner (status file only, no record); contract 2 bound the run to
+# the host (DMS-DEV-INFRA-REMEDIATION-2); contract 3 also binds it to the
+# approved release (rule 229). A contract-2 record is INCOMPATIBLE: it predates
+# the approval and cannot prove the deployed commit was the approved one. Bump
+# only together with the writer, the verifier and the tests.
+DMS_RUNNER_EVIDENCE_CONTRACT=3
 
 # Clock skew tolerated between a recorded finish time and "now", in seconds.
 DMS_RUNNER_CLOCK_SKEW_SECONDS=300
@@ -196,12 +203,35 @@ dms_runner_assert_success_log() {
   printf '%s' "$target"
 }
 
+dms_runner_assert_approval_log() {
+  # dms_runner_assert_approval_log <log> <approved_sha>
+  # Rule 229: the run's own log must show the bootstrap approving exactly the
+  # commit the record names. The runner's pre-launch check printed to the
+  # operator, not to the log, so these lines come from inside the deploy lock.
+  local log="$1" approved="$2" count line
+  if [ "$(dms_runner_count_lines '^RELEASE APPROVAL: GO$' "$log")" -lt 1 ]; then
+    dms_runner_reject UNVERIFIED "the run's log carries no 'RELEASE APPROVAL: GO' — the deploy never proved its target was approved"
+    return 4
+  fi
+  count="$(dms_runner_count_lines '^DEPLOY_APPROVED_SHA=' "$log")"
+  if [ "$count" != "1" ]; then
+    dms_runner_reject UNVERIFIED "the run's log names ${count} approved commit(s); exactly one is required"
+    return 4
+  fi
+  line="$(sed -n '/^DEPLOY_APPROVED_SHA=/{s/^DEPLOY_APPROVED_SHA=//p;q;}' "$log")"
+  if [ "$line" != "$approved" ]; then
+    dms_runner_reject MISMATCHED "the run's log approved ${line:-<none>}, the record approved ${approved}"
+    return 4
+  fi
+  return 0
+}
+
 dms_runner_verify_run() {
   # dms_runner_verify_run <run_dir> <deploy_id> <this_host> <authority> <app_dir> <now_epoch>
   local run_dir="$1" id="$2" this_host="$3" authority="$4" app_dir="$5" now="$6"
   local status record log status_exit rc=0
   local rec_contract rec_host rec_id rec_started rec_finished rec_exit rec_runner_sha
-  local started_epoch finished_epoch target
+  local started_epoch finished_epoch target rec_release rec_approved
 
   if ! dms_runner_valid_id "$id"; then
     dms_runner_reject MALFORMED "deployment identifier '${id}' is not a runner identifier (YYYYmmdd-HHMMSS)"
@@ -234,6 +264,8 @@ dms_runner_verify_run() {
   rec_finished="$(dms_runner_kv "$record" finished_at)"
   rec_exit="$(dms_runner_kv "$record" result_exit)"
   rec_runner_sha="$(dms_runner_kv "$record" runner_sha256)"
+  rec_release="$(dms_runner_kv "$record" release_id)"
+  rec_approved="$(dms_runner_kv "$record" approved_sha)"
 
   # 1. Production host identity.
   if [ "$rec_host" != "$this_host" ]; then
@@ -250,6 +282,11 @@ dms_runner_verify_run() {
   fi
   if [[ ! "$rec_runner_sha" =~ ^[0-9a-f]{64}$ ]]; then
     dms_runner_reject INCOMPLETE "the record does not identify the runner program (runner_sha256)"
+    return 4
+  fi
+  # 7. Approved release (rule 229).
+  if [[ ! "$rec_release" =~ ^[a-z0-9][a-z0-9-]{2,79}$ ]] || ! dms_runner_valid_sha "$rec_approved"; then
+    dms_runner_reject INCOMPLETE "the record does not name the approved release and commit (release_id, approved_sha)"
     return 4
   fi
 
@@ -291,6 +328,7 @@ dms_runner_verify_run() {
   echo "deploy-runner: recorded on ${rec_host} (declared production host)"
   echo "deploy-runner: runner_contract=${rec_contract} runner_sha256=${rec_runner_sha}"
   echo "deploy-runner: started_at=${rec_started} finished_at=${rec_finished}"
+  echo "deploy-runner: release_id=${rec_release} approved_sha=${rec_approved}"
 
   if [ "$status_exit" != "0" ]; then
     echo "deploy-runner: final exit=${status_exit}"
@@ -298,12 +336,19 @@ dms_runner_verify_run() {
     return 1
   fi
 
-  # 4. Target commit, proven from the run's own log and the live checkout.
-  target="$(dms_runner_assert_success_log "$log" "$app_dir")" || {
+  # 4. Target commit, proven from the run's own log and the live checkout. The
+  # expected target is the approved commit: a run that pinned anything else is
+  # MISMATCHED, whatever else it proves.
+  target="$(dms_runner_assert_success_log "$log" "$app_dir" "$rec_approved")" || {
     printf '%s\n' "$target"
     return 4
   }
+
+  # 7. The approval, from the run's own log (after the host and target facts,
+  # so a copied foreign log is reported for what it fails first).
+  dms_runner_assert_approval_log "$log" "$rec_approved" || return 4
   echo "deploy-runner: target_commit=${target} (checkout HEAD matches)"
+  echo "DEPLOY_APPROVED_TARGET_MATCH=YES (${target})"
   echo "deploy-runner: final exit=0"
   echo "DEPLOY RUNNER OK"
   return 0

@@ -72,6 +72,14 @@ if [ -z "${DMS_DEPLOY_SNAPSHOT_DIR:-}" ]; then
     echo "FATAL: rollback target does not resolve to a commit: ${TARGET_REF}" >&2
     exit 2
   fi
+  # Rule 229 / DEPLOY-11: a rollback is target-specific and goes BACK along the
+  # deployed history only. A target that is not an ancestor of the running
+  # checkout (an unmerged branch, an unrelated object, a newer commit) is never
+  # rolled "back" to — moving forward is a deploy, and needs an approval.
+  if ! git merge-base --is-ancestor "$ROLLBACK_TARGET_SHA" HEAD; then
+    echo "FATAL: rollback target ${ROLLBACK_TARGET_SHA} is not an ancestor of the running checkout $(git rev-parse --verify HEAD) — refusing (rule 229)" >&2
+    exit 2
+  fi
   echo "ROLLBACK_TARGET_SHA=${ROLLBACK_TARGET_SHA}"
 
   exec bash "$IMMUTABLE_EXEC" \
@@ -161,6 +169,12 @@ echo "Current HEAD: ${CURRENT_HEAD}"
 echo "Current ref:  ${CURRENT_REF_DESC}"
 echo "Target ref:   ${TARGET_REF}"
 git status -sb
+# Re-asserted inside the lock, before the backup: the checkout may have moved
+# between the hand-over and here.
+if ! git merge-base --is-ancestor "$ROLLBACK_TARGET_SHA" "$CURRENT_HEAD"; then
+  echo "FATAL: rollback target ${ROLLBACK_TARGET_SHA} is not an ancestor of the running checkout ${CURRENT_HEAD} — nothing was backed up or checked out — NOT GO" >&2
+  exit 2
+fi
 
 echo "== Backup DB before rollback =="
 # SECURITY-FIX-DEPLOY-BACKUP-FILE-PERMISSIONS-1: the dump is created PRIVATE

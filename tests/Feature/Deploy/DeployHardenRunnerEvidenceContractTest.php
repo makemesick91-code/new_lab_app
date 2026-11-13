@@ -57,29 +57,50 @@ function dreTree(): array
         expect($r['exit'])->toBe(0, $r['output']);
     }
     $sha = trim(dreRun(['git', '-C', $app, 'rev-parse', 'HEAD'])['output']);
+    dreApproved($sha);
 
     return [$app, $runDir, $sha];
 }
 
-/** A complete, valid contract-2 binding record. */
+/**
+ * Rule 229: the commit the current test's run was approved for — the commit of
+ * the tree dreTree() just built, unless a test says otherwise.
+ */
+function dreApproved(?string $set = null): string
+{
+    static $approved = '';
+    if ($set !== null) {
+        $approved = $set;
+    }
+
+    return $approved;
+}
+
+/** A complete, valid contract-3 binding record (host-bound and approval-bound). */
 function dreRecord(string $id = DRE_ID, array $overrides = []): array
 {
     return array_merge([
         'host' => DRE_HOST,
         'deploy_id' => $id,
         'started_at' => dreIso(DRE_NOW - 600),
-        'runner_contract' => '2',
+        'runner_contract' => '3',
         'runner_sha256' => str_repeat('ab', 32),
         'program' => 'scripts/deploy-vps.sh',
+        'release_id' => 'dms-fixture-release',
+        'approved_sha' => dreApproved(),
         'finished_at' => dreIso(DRE_NOW - 300),
         'result_exit' => '0',
     ], $overrides);
 }
 
 /** The lines a successful deploy writes into its own log. */
-function dreSuccessLog(string $sha, string $host = DRE_HOST): array
+function dreSuccessLog(string $sha, string $host = DRE_HOST, ?string $approved = null): array
 {
+    $approved ??= dreApproved();
+
     return [
+        'RELEASE APPROVAL: GO',
+        "DEPLOY_APPROVED_SHA={$approved}",
         '== Production host preflight (before any mutation) ==',
         "PASS: hostname is the production host '{$host}'",
         'PRODUCTION HOST PREFLIGHT: GO',
@@ -151,7 +172,9 @@ it('accepts a run only when host, time, identifier, target, runner and result al
     expect($result['exit'])->toBe(0, $result['output'])
         ->and($result['output'])->toContain('deploy_id='.DRE_ID)
         ->and($result['output'])->toContain('recorded on '.DRE_HOST.' (declared production host)')
-        ->and($result['output'])->toContain('runner_contract=2 runner_sha256='.str_repeat('ab', 32))
+        ->and($result['output'])->toContain('runner_contract=3 runner_sha256='.str_repeat('ab', 32))
+        ->and($result['output'])->toContain("release_id=dms-fixture-release approved_sha={$sha}")
+        ->and($result['output'])->toContain("DEPLOY_APPROVED_TARGET_MATCH=YES ({$sha})")
         ->and($result['output'])->toContain('started_at='.dreIso(DRE_NOW - 600).' finished_at='.dreIso(DRE_NOW - 300))
         ->and($result['output'])->toContain("target_commit={$sha} (checkout HEAD matches)")
         ->and($result['output'])->toContain('DEPLOY RUNNER OK');
@@ -177,6 +200,19 @@ it('refuses a run whose evidence does not prove it', function (callable $mutate,
     // 5. Runner version.
     'pre-binding record (host only)' => [fn (array $r) => ['record' => ['host' => DRE_HOST]] + $r, 'INCOMPATIBLE'],
     'older evidence contract' => [fn (array $r) => ['record' => dreRecord(DRE_ID, ['runner_contract' => '1'])] + $r, 'INCOMPATIBLE'],
+    'host-bound but not approval-bound (contract 2)' => [fn (array $r) => ['record' => dreRecord(DRE_ID, ['runner_contract' => '2'])] + $r, 'INCOMPATIBLE'],
+    // 7. Approved release (rule 229).
+    'record names no approved commit' => [fn (array $r) => ['record' => dreRecord(DRE_ID, ['approved_sha' => null])] + $r, 'INCOMPLETE'],
+    'record names no release' => [fn (array $r) => ['record' => dreRecord(DRE_ID, ['release_id' => null])] + $r, 'INCOMPLETE'],
+    'record approved commit is abbreviated' => [fn (array $r, string $sha) => ['record' => dreRecord(DRE_ID, ['approved_sha' => substr($sha, 0, 12)])] + $r, 'INCOMPLETE'],
+    'log never shows the approval' => [fn (array $r, string $sha) => ['log' => array_values(array_diff(dreSuccessLog($sha), ['RELEASE APPROVAL: GO']))] + $r, 'UNVERIFIED'],
+    'log names no approved commit' => [fn (array $r, string $sha) => ['log' => array_values(array_diff(dreSuccessLog($sha), ["DEPLOY_APPROVED_SHA={$sha}"]))] + $r, 'UNVERIFIED'],
+    'log names two approved commits' => [fn (array $r, string $sha) => ['log' => array_merge(dreSuccessLog($sha), ['DEPLOY_APPROVED_SHA='.str_repeat('2', 40)])] + $r, 'UNVERIFIED'],
+    'log approved another commit than the record' => [fn (array $r, string $sha) => ['log' => dreSuccessLog($sha, DRE_HOST, str_repeat('3', 40))] + $r, 'MISMATCHED'],
+    'run pinned a commit other than the approved one' => [fn (array $r, string $sha) => [
+        'record' => dreRecord(DRE_ID, ['approved_sha' => str_repeat('4', 40)]),
+        'log' => dreSuccessLog($sha, DRE_HOST, str_repeat('4', 40)),
+    ] + $r, 'MISMATCHED'],
     'runner program not identified' => [fn (array $r) => ['record' => dreRecord(DRE_ID, ['runner_sha256' => null])] + $r, 'INCOMPLETE'],
     'runner hash is not a SHA-256' => [fn (array $r) => ['record' => dreRecord(DRE_ID, ['runner_sha256' => 'abc'])] + $r, 'INCOMPLETE'],
     // 3. Deployment identifier.
@@ -203,7 +239,8 @@ it('refuses a run whose evidence does not prove it', function (callable $mutate,
     'checkout has moved since the deploy' => [function (array $r, string $sha) {
         $other = str_repeat('f', 40);
 
-        return ['log' => dreSuccessLog($other)] + $r;
+        // Approved, pinned and deployed $other; the checkout is now elsewhere.
+        return ['log' => dreSuccessLog($other, DRE_HOST, $other), 'record' => dreRecord(DRE_ID, ['approved_sha' => $other])] + $r;
     }, 'STALE'],
 ]);
 
@@ -293,42 +330,40 @@ function dreWaitForStatus(string $runDir, string $id): void
 }
 
 it('binds a real run end to end and proves it by identifier', function () {
-    [$app, $runDir, $sha] = dreRunnerTree();
-    $payload = tempArtifactFile('dre-payload-');
-    file_put_contents($payload, "#!/usr/bin/env bash\nprintf '%s\\n' ".implode(' ', array_map('escapeshellarg', dreSuccessLog($sha, trim((string) gethostname())))).";\nexit 0\n");
+    // Rule 229: a run starts only for an approved release; the sandbox's deploy
+    // program hands over to the real bootstrap (tests/Pest.php r229Sandbox).
+    $s = r229Sandbox();
 
-    $start = dreRunner($app, ['start'], ['DEPLOY_SCRIPT' => $payload]);
+    $start = r229Runner($s, ['start', '--release-id', $s['release'], '--approved-sha', $s['sha']]);
     expect($start['exit'])->toBe(0, $start['output']);
     expect(preg_match('/deploy_id=(\d{8}-\d{6})/', $start['output'], $m))->toBe(1);
     $id = $m[1];
-    dreWaitForStatus($runDir, $id);
+    expect(r229WaitForStatus($s['app'], $id))->toBe('exit=0');
 
-    $record = (string) file_get_contents("{$runDir}/deploy-{$id}.host");
-    foreach (['host='.trim((string) gethostname()), "deploy_id={$id}", 'runner_contract=2', 'started_at=', 'finished_at=', 'result_exit=0'] as $line) {
+    $record = (string) file_get_contents("{$s['app']}/storage/logs/deploy-runner/deploy-{$id}.host");
+    foreach (['host='.trim((string) gethostname()), "deploy_id={$id}", 'runner_contract=3', 'started_at=', 'finished_at=', 'result_exit=0', "approved_sha={$s['sha']}"] as $line) {
         expect($record)->toContain($line);
     }
     expect($record)->toMatch('/^runner_sha256=[0-9a-f]{64}$/m')
         ->and($record)->toContain('runner_sha256='.hash_file('sha256', base_path('scripts/deploy-vps-runner.sh')));
 
     foreach ([['status'], ['verify', $id]] as $args) {
-        $result = dreRunner($app, $args);
+        $result = r229Runner($s, $args);
         expect($result['exit'])->toBe(0, $result['output'])
             ->and($result['output'])->toContain("deploy_id={$id}")
-            ->and($result['output'])->toContain("target_commit={$sha}")
+            ->and($result['output'])->toContain("target_commit={$s['sha']}")
             ->and($result['output'])->toContain('DEPLOY RUNNER OK');
     }
 });
 
 it('reports a real failing run as FAILED', function () {
-    [$app, $runDir] = dreRunnerTree();
-    $payload = tempArtifactFile('dre-payload-fail-');
-    file_put_contents($payload, "#!/usr/bin/env bash\necho 'FATAL: refused'\nexit 7\n");
+    $s = r229Sandbox(['program' => "#!/usr/bin/env bash\necho 'FATAL: refused'\nexit 7\n"]);
 
-    $start = dreRunner($app, ['start'], ['DEPLOY_SCRIPT' => $payload]);
+    $start = r229Runner($s, ['start', '--release-id', $s['release'], '--approved-sha', $s['sha']]);
     preg_match('/deploy_id=(\d{8}-\d{6})/', $start['output'], $m);
-    dreWaitForStatus($runDir, $m[1]);
+    expect(r229WaitForStatus($s['app'], $m[1]))->toBe('exit=7');
 
-    $result = dreRunner($app, ['verify', $m[1]]);
+    $result = r229Runner($s, ['verify', $m[1]]);
     expect($result['exit'])->toBe(1, $result['output'])
         ->and($result['output'])->toContain('DEPLOY RUNNER FAILED (exit=7)');
 });

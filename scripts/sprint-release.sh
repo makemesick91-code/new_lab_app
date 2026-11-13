@@ -13,7 +13,11 @@
 # SAFETY:
 #   * Dry-run is the DEFAULT (pass --dry-run to be explicit). Mutation requires --apply.
 #   * A GO tag is created ONLY after a successful deploy + smoke, and ONLY with
-#     an explicit --tag.
+#     an explicit --tag. It is created on the APPROVED commit, never on HEAD,
+#     and only when the checkout is at that commit.
+#   * Rule 229: --apply needs --release-id and --approved-sha. They are passed to
+#     the runner, which deploys nothing unless the merged release approval
+#     record approves exactly that commit.
 #   * No destructive DB reset command is ever issued here (see the forbidden
 #     marker registry in config/devflow.php; the literals are intentionally
 #     kept out of this script).
@@ -22,6 +26,7 @@
 #
 # Usage:
 #   scripts/sprint-release.sh [--dry-run|--apply] [--tag] [--manifest <path>] \
+#       [--release-id <id> --approved-sha <40-hex>] \
 #       [--go-tag <tag>] [--force-lock] [--rollback <tag>]
 #
 set -euo pipefail
@@ -32,6 +37,8 @@ FORCE_LOCK="false"
 MANIFEST=".sprint/current.yml"
 GO_TAG=""
 ROLLBACK_TARGET=""
+RELEASE_ID=""
+APPROVED_SHA=""
 
 LOCK_FILE="${DEVFLOW_LOCK_FILE:-storage/framework/devflow-release.lock}"
 STALE_AFTER="${DEVFLOW_LOCK_STALE_SECONDS:-3600}"
@@ -48,11 +55,20 @@ while [[ $# -gt 0 ]]; do
     --manifest)    MANIFEST="${2:?}"; shift 2 ;;
     --go-tag)      GO_TAG="${2:?}"; shift 2 ;;
     --rollback)    ROLLBACK_TARGET="${2:?}"; shift 2 ;;
+    --release-id)  RELEASE_ID="${2:?}"; shift 2 ;;
+    --approved-sha) APPROVED_SHA="${2:?}"; shift 2 ;;
     -h|--help)
       grep '^#' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) die "unknown argument: $1" ;;
   esac
 done
+
+# --- Rule 229: a release deploys one approved commit, named explicitly --------
+# Checked first, before the readiness check, the lock or anything else.
+if [[ "${APPLY}" == "true" && -z "${ROLLBACK_TARGET}" ]]; then
+  [[ -n "${RELEASE_ID}" && "${APPROVED_SHA}" =~ ^[0-9a-f]{40}$ ]] \
+    || die "--apply needs --release-id <id> and --approved-sha <full 40-character commit SHA> (rule 229) — DEPLOYMENT=DENIED"
+fi
 
 # --- Release lock -----------------------------------------------------------
 LOCK_ACQUIRED="false"
@@ -118,13 +134,14 @@ acquire_lock
 
 # 3. Deploy via the existing SSH-safe detached runner (backup + deploy + smoke).
 [[ -f scripts/deploy-vps-runner.sh ]] || die "deploy runner not found"
-log "deploying via scripts/deploy-vps-runner.sh (backup + deploy + smoke)"
-if ! bash scripts/deploy-vps-runner.sh run; then
+log "deploying ${RELEASE_ID} at ${APPROVED_SHA} via scripts/deploy-vps-runner.sh (backup + deploy + smoke)"
+if ! bash scripts/deploy-vps-runner.sh run --release-id "${RELEASE_ID}" --approved-sha "${APPROVED_SHA}"; then
   die "deploy runner did NOT report success — release aborted, NO tag created."
 fi
 log "deploy runner reported success (deploy + smoke OK)"
 
-# 4. GO tag — ONLY after a successful deploy + smoke, ONLY with --tag.
+# 4. GO tag — ONLY after a successful deploy + smoke, ONLY with --tag, and ONLY
+#    on the approved commit the checkout is verified to be at.
 if [[ "${DO_TAG}" == "true" ]]; then
   TAG="${GO_TAG}"
   if [[ -z "${TAG}" ]]; then
@@ -136,8 +153,11 @@ if [[ "${DO_TAG}" == "true" ]]; then
   if git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
     die "GO tag '${TAG}' already exists — refusing to move it."
   fi
-  log "creating annotated GO tag '${TAG}' at HEAD"
-  git tag -a "${TAG}" -m "DEVFLOW release ${TAG}"
+  DEPLOYED_HEAD="$(git rev-parse --verify 'HEAD^{commit}')"
+  [[ "${DEPLOYED_HEAD}" == "${APPROVED_SHA}" ]] \
+    || die "checkout is at ${DEPLOYED_HEAD}, not the approved ${APPROVED_SHA} — refusing to tag"
+  log "creating annotated GO tag '${TAG}' on the approved commit ${APPROVED_SHA}"
+  git tag -a "${TAG}" "${APPROVED_SHA}" -m "DEVFLOW release ${TAG} (${RELEASE_ID} at ${APPROVED_SHA})"
   log "GO tag created. Push it explicitly: git push origin ${TAG}"
 else
   log "deploy done. Tag was NOT created (pass --tag to create the GO tag after verifying smoke)."

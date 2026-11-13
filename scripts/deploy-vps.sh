@@ -12,6 +12,27 @@ fi
 BRANCH="feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 
+# ─── Rule 229: exact approved release SHA ───────────────────────────────────
+# A deploy names the release and the exact commit the owner approved. Both
+# stages (the in-tree hand-over and the snapshot copy) receive them as
+# arguments. Without them nothing is handed over, locked, backed up or checked
+# out: an unapproved target never enters the mutation path.
+#   bash scripts/deploy-vps.sh --release-id <release-id> --approved-sha <40-hex>
+RELEASE_ID=""
+APPROVED_SHA=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --release-id)   RELEASE_ID="${2:-}"; shift 2 || shift ;;
+    --approved-sha) APPROVED_SHA="${2:-}"; shift 2 || shift ;;
+    *) echo "FATAL: unknown argument: $1" >&2; echo "DEPLOYMENT=DENIED"; exit 77 ;;
+  esac
+done
+if [ -z "$RELEASE_ID" ] || [[ ! "$APPROVED_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+  echo "FATAL: a deploy needs --release-id <release-id> and --approved-sha <full 40-character commit SHA> (rule 229) — nothing was backed up, checked out or migrated" >&2
+  echo "DEPLOYMENT=DENIED"
+  exit 77
+fi
+
 cd "$APP_DIR"
 
 # ─── DEPLOY-HARDEN-1 immutable execution bootstrap ──────────────────────────
@@ -40,12 +61,16 @@ if [ -z "${DMS_DEPLOY_SNAPSHOT_DIR:-}" ]; then
     echo "       Refusing to deploy from a mutable working-tree script (DEPLOY-HARDEN-1)." >&2
     exit 2
   fi
+  # The bootstrap verifies the merged release approval inside the deploy lock
+  # and pins exactly the approved commit (never the branch tip).
   exec bash "$IMMUTABLE_EXEC" \
     --role deploy \
     --app-dir "$APP_DIR" \
     --branch "$BRANCH" \
+    --release-id "$RELEASE_ID" \
+    --approved-sha "$APPROVED_SHA" \
     --overlay "${APP_DIR}/deploy/runtime-identity.conf:deploy/runtime-identity.conf" \
-    -- scripts/deploy-vps.sh
+    -- scripts/deploy-vps.sh --release-id "$RELEASE_ID" --approved-sha "$APPROVED_SHA"
 fi
 
 # From here on we are the snapshot copy. Assert it rather than assume it: a
@@ -60,9 +85,20 @@ case "${BASH_SOURCE[0]}" in
 esac
 TARGET_SHA="${DMS_DEPLOY_TARGET_SHA:?immutable bootstrap must pin a target commit}"
 DEPLOY_TOOLS_DIR="$DMS_DEPLOY_SNAPSHOT_DIR"
+# Rule 229, re-asserted before the first mutation: the commit the bootstrap
+# pinned, the commit its approval check approved and the commit this run was
+# asked to deploy must be one and the same. No substitution.
+if [ "$TARGET_SHA" != "$APPROVED_SHA" ] \
+   || [ "${DMS_DEPLOY_APPROVED_SHA:-}" != "$APPROVED_SHA" ] \
+   || [ "${DMS_DEPLOY_RELEASE_ID:-}" != "$RELEASE_ID" ]; then
+  echo "FATAL: pinned target ${TARGET_SHA} is not the approved ${APPROVED_SHA} of release ${RELEASE_ID} — nothing was backed up, checked out or migrated — NOT GO" >&2
+  echo "DEPLOYMENT=DENIED"
+  exit 77
+fi
 echo "Deploy run id:     ${DMS_DEPLOY_RUN_ID:-unknown}"
 echo "Execution source:  ${BASH_SOURCE[0]} (immutable snapshot)"
-echo "Pinned target SHA: ${TARGET_SHA}"
+echo "Approved release:  ${RELEASE_ID}"
+echo "Pinned target SHA: ${TARGET_SHA} (approved)"
 # ────────────────────────────────────────────────────────────────────────────
 
 # ─── DMS-POST-MIGRATION-DEV-INFRA-ALIGNMENT-1 production host preflight ─────
@@ -504,7 +540,7 @@ as_runtime php artisan release:automated-smoke --base-url=http://127.0.0.1
 # `DEPLOY OK` is only ever emitted after every mandatory security, runtime and
 # health gate above has already passed.
 FINAL_HEAD="$(git rev-parse --verify HEAD)"
-if [ "$FINAL_HEAD" != "$TARGET_SHA" ]; then
+if [ "$FINAL_HEAD" != "$TARGET_SHA" ] || [ "$FINAL_HEAD" != "$APPROVED_SHA" ]; then
   echo "FATAL: final HEAD ${FINAL_HEAD} does not match the pinned target ${TARGET_SHA} — NOT GO" >&2
   exit 1
 fi
