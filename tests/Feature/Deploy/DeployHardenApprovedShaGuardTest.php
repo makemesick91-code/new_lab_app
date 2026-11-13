@@ -583,7 +583,7 @@ it('the bootstrap verifies the approval inside the lock and before the snapshot'
         ->and($pos('echo "DEPLOY_TARGET_PINNED='))->toBeLessThan($pos('git archive --format=tar'))
         ->and($bootstrap)->toContain('TARGET_SHA="$DMS_RELEASE_APPROVED_SHA"')
         ->and($pos('--snapshot-ref is not accepted for a deploy'))->toBeLessThan($pos('exec 9>"$LOCK_FILE"'))
-        ->and($pos("runs only its own program"))->toBeLessThan($pos('exec 9>"$LOCK_FILE"'));
+        ->and($pos('runs only its own program'))->toBeLessThan($pos('exec 9>"$LOCK_FILE"'));
 });
 
 it('the guard parses the approval record and never executes it', function () {

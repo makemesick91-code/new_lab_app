@@ -100,6 +100,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\ParallelTesting;
 use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\Models\Role;
+use Symfony\Component\Process\Process;
 use Tests\Support\AccessControlSeedSnapshot;
 
 /**
@@ -2260,7 +2261,7 @@ function aiProjectMemory(): string
  */
 function r229Git(string $dir, array $args): string
 {
-    $process = new Symfony\Component\Process\Process(
+    $process = new Process(
         array_merge(['git', '-C', $dir, '-c', 'user.email=r229@test', '-c', 'user.name=r229', '-c', 'commit.gpgsign=false'], $args),
     );
     $process->run();
@@ -2476,7 +2477,7 @@ function r229Push(array $sandbox, array $files, string $message): string
 /** @return array{exit: int, output: string} */
 function r229Run(array $command, array $env = [], ?string $cwd = null, int $timeout = 60): array
 {
-    $process = new Symfony\Component\Process\Process($command, $cwd, $env, null, $timeout);
+    $process = new Process($command, $cwd, $env, null, $timeout);
     $process->run();
 
     return ['exit' => (int) $process->getExitCode(), 'output' => $process->getOutput().$process->getErrorOutput()];
