@@ -1,0 +1,15 @@
+# DMS-RME-REVISION-PROGRAM-8D production release approval (rule 229).
+# Owner approval: docs/sprints/dms-rme-revision-program-8d.md section 11 (2026-11-13 22:38-22:40 UTC).
+# Window: after the SHA and its CI are verified; capped before the 2026-11-14 18:25 UTC backup window.
+DMS_APPROVAL_CONTRACT=1
+DMS_APPROVAL_RELEASE_ID=dms-rme-revision-program-8d
+DMS_APPROVAL_REPOSITORY=makemesick91-code/new_lab_app
+DMS_APPROVAL_HOST=DaengtisiaMS
+DMS_APPROVAL_BASE_BRANCH=feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
+DMS_APPROVAL_TARGET_SHA=82f1eeba1ec25c81db3cefa1d2b235d022973904
+DMS_APPROVAL_TARGET_TREE=1105b11115a609e2876b1a85286c12df1fa7ae0c
+DMS_APPROVAL_GO_TAG=dms-rme-revision-program-8d-go
+DMS_APPROVAL_APPROVED_BY=owner
+DMS_APPROVAL_APPROVED_AT=2026-11-13T22:40:00Z
+DMS_APPROVAL_NOT_AFTER=2026-11-14T18:25:00Z
+DMS_APPROVAL_EVIDENCE=docs/sprints/dms-rme-revision-program-8d.md

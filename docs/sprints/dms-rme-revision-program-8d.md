@@ -292,3 +292,24 @@ commit before 8D is deployed. That work is 8D PR2, recorded in
 `docs/sprints/dms-rme-revision-program-8d-approved-sha-guard-1.md` (rule 229). The 8D release SHA is therefore the
 merge commit of PR2, not `dde7b9b6`; it is deployed only after the owner's written approval of that exact SHA,
 recorded here and in `deploy/release-approvals/dms-rme-revision-program-8d.approval`. §9 above stays true until then.
+
+## 11. Owner release approval (CG-22) — 2026-11-13/14
+
+Recorded from the owner's answers in this session (2026-11-13 22:38–22:40 UTC = 2026-11-14 06:38–06:40 WITA), after
+PR #622 was squash-merged with the owner's separate merge approval (pinned to the tested head `ebd289e2`):
+
+| Item | Owner decision |
+|---|---|
+| Target | Biznet production `DaengtisiaMS` (`139.190.106.38`), `/var/www/asia-dental-lab-v2` |
+| Release SHA | `82f1eeba1ec25c81db3cefa1d2b235d022973904` (tree `1105b11115a609e2876b1a85286c12df1fa7ae0c`, identical to the tested PR head's tree; parent `dde7b9b6`) |
+| Scope | Sprint 8D: consent signature payload bound (PR1, #621) and the rule 229 exact approved release SHA guard (PR2, #622); the docs commits `15583586` and `4a1930fc` are in the delta from production `b0c0bd62` |
+| Window | "setelah SHA dan CI terverifikasi" — after the SHA and its CI are verified. No end was given; the approval record is capped at 2026-11-14 18:25 UTC (02:25 WITA on 11-15), before the next backup window, which is narrower than the approval, never wider |
+| Service interruption | Permitted (the deploy restarts `php8.3-fpm` and reloads nginx) |
+| Rollback authority | The owner decides first: on a failure after mutation, or a failed verification, the state is reported and a code-only rollback to `b0c0bd62` runs only after the owner's explicit go-ahead |
+| Clinical smoke | Read-only only: no production data is created or changed; write-path behaviour is evidenced by CI and the PostgreSQL suites, and reported as such |
+| Approval record | `deploy/release-approvals/dms-rme-revision-program-8d.approval` (rule 229), merged with this section; the owner authorized merging it as part of the deploy approval |
+
+The deploy follows `docs/runbooks/production-host-identity.md` §6c (the production checkout runs `b0c0bd62`, whose
+runner predates rule 229). It starts only after CI on `82f1eeba` is green on the exact SHA. Deployment, verification
+and the GO tag are recorded after the fact; until then the release is `APPROVED FOR DEPLOYMENT`, not deployed.
+
