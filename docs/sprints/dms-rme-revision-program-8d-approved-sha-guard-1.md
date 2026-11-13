@@ -214,4 +214,37 @@ static binary, SHA-256 verified against GitHub's published asset digest) with `-
 
 ## 9. Evidence
 
-(filled from the final local run before the PR is opened)
+Local runs on the PR head (code at `1d519184`; this section is the only later change), 2026-11-14, WSL2, PHP 8.3.6.
+Counts are Pest's own summary lines; a skip is reported as a skip, never as a pass.
+
+| Run | Database | Tests | Assertions | Failed | Skipped |
+|---|---|---|---|---|---|
+| `DeployHardenApprovedShaGuardTest` (new) | none | 107 | 491 | 0 | 0 |
+| `DeployHardenRunnerEvidenceContractTest` (contract 3) | none | 93 | 510 | 0 | 0 |
+| Deploy regression filter (`DeployHarden`, runtime identity, secrets, dumps, ENT-11, DH1, rollback check, shell guard, identity guard, AI-instruction contract) | SQLite | 468 | 4,676 | 0 | 1 |
+| DEVFLOW focused set (`sprint:test-plan` filters + the deploy filters above) | SQLite | 2,718 | 18,014 | 0 | 12 |
+| 8D suites of record (consent signature bound, consent gate/HTTP, prescription integrity, clinical write authority, document read scope + allowlist, number-sequence lock, evidence write-lock concurrency) | PostgreSQL 16.15, disposable schema (dropped) | 151 | 461 | 0 | 0 |
+
+Skips, all environmental and outside this change: `setfacl` absent (default-ACL dump test), Poppler absent (1),
+Redis disabled (1), and 9 PostgreSQL-only lock tests that skip on SQLite.
+
+**Governance (migrated disposable SQLite, `APP_ENV=local`):** `foundation:deployment-entrypoint-check` GO (with
+`approval_guard` ok), `foundation:deployment-rollback-check` GO, `deploy:forbidden-command-check` clean (11 scripts),
+`foundation:security-compliance-check` GO, `foundation:ci-runtime-control-check` GO, `foundation:devflow-check
+--strict` GO, `sprint:manifest-check` GO, `sprint:scope-audit --strict` GO, `foundation:shared-service-audit --strict`
+0 errors, `devflow:base-ref-check --strict` canonical base resolved.
+
+**ShellCheck 0.11.0** (`-x -P SCRIPTDIR`) on the seven changed scripts: no finding except two SC2329 notes on the
+bootstrap's trap handlers, identical on the untouched base.
+
+**Full Suite:** DEFERRED by the global temporary policy (CG-18). `sprint:test-plan` escalates this diff to the full
+required suite (categories `ci_cd`, `config`, `deployment`); it was not run and is not claimed.
+
+**Production, read-only, 2026-11-13 16:48 UTC (2026-11-14 00:48 WITA):** `production-target-check --remote` →
+`PRODUCTION_TARGET=VERIFIED`; HEAD `b0c0bd62`, 0 modified tracked files; nginx, `php8.3-fpm`, PostgreSQL active; FPM
+workers run as `daengtisiams`; 47 GB free; `/health/lb`, `/health/live`, `/health/ready`, `/login` → 200 and
+`/storage/…` → 403 on `https://daengtisia.online`; `migrate:status --pending` → none; BK-2 `ON_SERVER=OK`,
+`OFF_SERVER=OK`, 12/12 packages acknowledged off-server (newest `BK2-20261112T183001Z`), no alerts; no deploy,
+rollback or runner process. The release delta from `b0c0bd62` changes no migration, route, seeder, package or
+front-end asset, so a code-only rollback to `b0c0bd62` stays compatible. These are observations at that time, to be
+re-checked immediately before any deploy.
