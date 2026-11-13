@@ -293,6 +293,86 @@ class DeploymentEntrypointScanner
     }
 
     /**
+     * Rule 229 — the exact approved release SHA guard is wired at every point a
+     * deploy can enter the mutation path (runner, bootstrap, deploy program),
+     * the evidence contract binds the approved commit, the release wrapper tags
+     * the approved commit, rollback stays on the deployed history, and the host
+     * authority declares what the guard checks.
+     *
+     * @return array<string, mixed>
+     */
+    public function approvalGuardPosture(): array
+    {
+        $expect = (array) config('deployment_entrypoint.approval_guard_expectations', []);
+        $issues = [];
+
+        foreach ((array) ($expect['files'] ?? []) as $label => $spec) {
+            $path = (string) ($spec['path'] ?? '');
+            $full = $path !== '' ? base_path($path) : '';
+            if ($full === '' || ! is_file($full)) {
+                $issues[] = "{$label}: {$path} missing";
+
+                continue;
+            }
+            $contents = (string) file_get_contents($full);
+            $missing = $this->missingMarkers($contents, (array) ($spec['required_markers'] ?? []));
+            if ($missing !== []) {
+                $issues[] = "{$label}: missing approval-guard marker(s): ".implode(', ', $missing);
+            }
+            foreach ((array) ($spec['forbidden_markers'] ?? []) as $forbidden) {
+                if ((string) $forbidden !== '' && str_contains($contents, (string) $forbidden)) {
+                    $issues[] = "{$label}: forbidden marker present: {$forbidden}";
+                }
+            }
+        }
+
+        $authority = $this->authorityValues((string) ($expect['authority_file'] ?? ''));
+        foreach ((array) ($expect['required_authority_keys'] ?? []) as $key) {
+            if (($authority[(string) $key] ?? '') === '') {
+                $issues[] = "authority does not declare {$key}";
+            }
+        }
+
+        $branchMatches = false;
+        $prefix = (string) ($expect['deploy_branch_assignment_prefix'] ?? '');
+        $deployScript = $this->readEntrypoint('deploy_script') ?? '';
+        if ($prefix !== '' && preg_match('/^'.preg_quote($prefix, '/').'([^"]+)"$/m', $deployScript, $m) === 1) {
+            $branchMatches = $m[1] === ($authority['DMS_PRODUCTION_DEPLOY_BRANCH'] ?? null);
+        }
+        if (! $branchMatches) {
+            $issues[] = 'deploy-vps.sh pins a branch that is not the authority\'s DMS_PRODUCTION_DEPLOY_BRANCH';
+        }
+
+        return [
+            'ok' => $issues === [],
+            'deploy_branch_matches_authority' => $branchMatches,
+            'issues' => $issues,
+        ];
+    }
+
+    /**
+     * KEY=VALUE pairs of a shell-style authority file (last value wins, quotes
+     * stripped), the semantics of scripts/lib/production-host-preflight.sh.
+     *
+     * @return array<string, string>
+     */
+    private function authorityValues(string $relative): array
+    {
+        $full = $relative !== '' ? base_path($relative) : '';
+        if ($full === '' || ! is_file($full)) {
+            return [];
+        }
+        $values = [];
+        foreach (preg_split('/\R/', (string) file_get_contents($full)) ?: [] as $line) {
+            if (preg_match('/^([A-Z0-9_]+)=(.*)$/', $line, $m) === 1) {
+                $values[$m[1]] = trim($m[2], '"');
+            }
+        }
+
+        return $values;
+    }
+
+    /**
      * Release-safety posture: the pre-deploy gate list includes this gate.
      *
      * @return array<string, mixed>

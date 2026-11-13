@@ -26,8 +26,10 @@
 # HOW
 # ---
 #   acquire exclusive host lock (flock, root-controlled path)
-#     -> resolve + PIN the exact target SHA (a remote branch that moves after
-#        this point belongs to a LATER deployment, never this one)
+#     -> deploy: verify the merged release approval record for the requested
+#        release and PIN exactly the commit it approves (rule 229 — the branch
+#        tip is never substituted; a mismatch is DEPLOYMENT=DENIED, exit 77)
+#     -> rollback: PIN the exact commit the operator's ref resolved to
 #     -> materialise an immutable execution snapshot from the git OBJECT
 #        (git archive: tracked bytes of that commit, never the working tree)
 #     -> verify the snapshot trust boundary (root-owned, 0700, no symlink,
@@ -47,7 +49,8 @@
 # USAGE
 #   bash scripts/deploy-immutable-exec.sh \
 #       --role deploy --app-dir /var/www/app --branch <branch> \
-#       -- scripts/deploy-vps.sh
+#       --release-id <release-id> --approved-sha <40-hex> \
+#       -- scripts/deploy-vps.sh --release-id <release-id> --approved-sha <40-hex>
 #
 #   bash scripts/deploy-immutable-exec.sh \
 #       --role rollback --app-dir /var/www/app --snapshot-ref HEAD \
@@ -60,6 +63,8 @@ APP_DIR=""
 BRANCH=""
 TARGET_SHA=""
 SNAPSHOT_REF=""
+RELEASE_ID=""
+APPROVED_SHA=""
 RUN_ID=""
 declare -a OVERLAY_FILES=()
 declare -a PROGRAM_ARGV=()
@@ -70,8 +75,11 @@ usage: bash scripts/deploy-immutable-exec.sh --role <deploy|rollback> [options] 
 
   --role ROLE          deploy | rollback (scopes the lock and the snapshot dir)
   --app-dir DIR        application root (default: repository root of this file)
-  --branch BRANCH      deploy: remote branch whose tip becomes the pinned target
-  --target-sha SHA     pin an exact commit instead of resolving a branch tip
+  --branch BRANCH      deploy: the base branch the release approval is merged on
+  --release-id ID      deploy: the release whose approval record authorises it
+  --approved-sha SHA   deploy: the exact commit the operator expects; it must be
+                       the commit the merged approval record approves (rule 229)
+  --target-sha SHA     rollback only: pin this exact commit (refused for deploy)
   --snapshot-ref REF   git object the execution snapshot is exported from
                        (default: the pinned target for deploy, HEAD for rollback)
   --overlay SRC:REL    copy a LIVE host file into the snapshot at REL, after the
@@ -89,6 +97,8 @@ while [ $# -gt 0 ]; do
     --app-dir)      APP_DIR="${2:?--app-dir needs a value}"; shift 2 ;;
     --branch)       BRANCH="${2:?--branch needs a value}"; shift 2 ;;
     --target-sha)   TARGET_SHA="${2:?--target-sha needs a value}"; shift 2 ;;
+    --release-id)   RELEASE_ID="${2:?--release-id needs a value}"; shift 2 ;;
+    --approved-sha) APPROVED_SHA="${2:?--approved-sha needs a value}"; shift 2 ;;
     --snapshot-ref) SNAPSHOT_REF="${2:?--snapshot-ref needs a value}"; shift 2 ;;
     --overlay)      OVERLAY_FILES+=("${2:?--overlay needs SRC:REL}"); shift 2 ;;
     --run-id)       RUN_ID="${2:?--run-id needs a value}"; shift 2 ;;
@@ -108,6 +118,43 @@ case "$ROLE" in
 esac
 
 [ "${#PROGRAM_ARGV[@]}" -gt 0 ] || fatal "no program given after --"
+
+# ─── Rule 229: a deploy is bound to an approved release, never a branch tip ──
+# Checked here, before the lock, the snapshot or anything else: a deploy that
+# does not even name its approval never gets further. The approval itself is
+# verified inside the lock, below.
+deny() {
+  echo "immutable-exec: DENIED $*" >&2
+  echo "DEPLOYMENT=DENIED"
+  exit 77
+}
+# Each role runs exactly one program. A deploy's snapshot is always exported
+# from the approved commit itself: a --snapshot-ref would let an approved deploy
+# execute the deployment program of ANY other commit (independent review, 8D
+# PR2, finding 1).
+case "$ROLE:${PROGRAM_ARGV[0]}" in
+  deploy:scripts/deploy-vps.sh|rollback:scripts/rollback-vps.sh) ;;
+  *) deny "role '${ROLE}' runs only its own program, not '${PROGRAM_ARGV[0]}'" ;;
+esac
+# The only live file ever laid over the snapshot is the runtime identity
+# authority. An overlay of anything else (the program, a library, the host
+# authority) would replace approved bytes after the export (review, 8D PR2).
+for overlay in "${OVERLAY_FILES[@]:-}"; do
+  [ -n "$overlay" ] || continue
+  [ "${overlay#*:}" = "deploy/runtime-identity.conf" ] \
+    || deny "only deploy/runtime-identity.conf may be overlaid on the snapshot, not '${overlay#*:}'"
+done
+if [ "$ROLE" = "deploy" ]; then
+  [ -z "$TARGET_SHA" ] || deny "--target-sha is not accepted for a deploy: the target is the commit the merged release approval approves (rule 229)"
+  [ -z "$SNAPSHOT_REF" ] || deny "--snapshot-ref is not accepted for a deploy: the deployment program comes from the approved commit only (rule 229)"
+  [ -n "$BRANCH" ] || deny "a deploy needs --branch (the base branch the approval is merged on)"
+  [ -n "$RELEASE_ID" ] && [ -n "$APPROVED_SHA" ] \
+    || deny "a deploy needs --release-id and --approved-sha; an unapproved target never enters the mutation path (rule 229)"
+  [[ "$APPROVED_SHA" =~ ^[0-9a-f]{40}$ ]] || deny "--approved-sha '${APPROVED_SHA}' is not a full 40-character lowercase commit SHA"
+else
+  [ -z "$RELEASE_ID" ] && [ -z "$APPROVED_SHA" ] \
+    || fatal "--release-id/--approved-sha belong to a deploy; a rollback pins its target with --target-sha"
+fi
 
 PROGRAM_REL="${PROGRAM_ARGV[0]}"
 case "$PROGRAM_REL" in
@@ -193,6 +240,9 @@ cleanup() {
   local rc=$?
   [ "$CLEANUP_DONE" = "1" ] && return
   CLEANUP_DONE=1
+  # A private approval ref left behind by an interrupted guard (rule 229).
+  git -C "$APP_DIR" for-each-ref --format='%(refname)' "refs/dms-release-approval/$$-*" 2>/dev/null \
+    | while IFS= read -r ref; do git -C "$APP_DIR" update-ref -d "$ref" 2>/dev/null || true; done || true
   purge_snapshot "$SNAPSHOT_DIR"
   if [ ! -e "$SNAPSHOT_DIR" ]; then
     echo "DEPLOY_SNAPSHOT_CLEANED=YES"
@@ -210,10 +260,29 @@ trap 'exit 130' INT
 cd "$APP_DIR"
 
 # ─── Pin the exact target commit ────────────────────────────────────────────
-if [ -z "$TARGET_SHA" ] && [ -n "$BRANCH" ]; then
-  note "fetching origin ${BRANCH} (working tree untouched)"
-  git fetch --no-tags origin "$BRANCH"
-  TARGET_SHA="$(git rev-parse --verify "FETCH_HEAD^{commit}")"
+if [ "$ROLE" = "deploy" ]; then
+  # Rule 229. The approval guard and the authority it reads are taken from
+  # beside THIS program — the same trusted source as the bootstrap itself (the
+  # checkout before any mutation, or a bundle exported from the approved release
+  # object during the one-time bootstrap). It fetches the base branch (refs
+  # only), reads the approval record from the fetched commit object and
+  # approves exactly one commit. No snapshot, backup, checkout, migration or
+  # restart has happened yet; a denial leaves production untouched.
+  BOOTSTRAP_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+  APPROVAL_LIB="${BOOTSTRAP_ROOT}/scripts/lib/release-approval.sh"
+  APPROVAL_AUTHORITY="${BOOTSTRAP_ROOT}/deploy/production-host.conf"
+  [ -r "$APPROVAL_LIB" ] || deny "release approval guard missing: ${APPROVAL_LIB}"
+  # shellcheck source=lib/release-approval.sh
+  source "$APPROVAL_LIB"
+  approval_rc=0
+  dms_release_approval_verify "$APP_DIR" "$BRANCH" "$RELEASE_ID" "$APPROVED_SHA" \
+    "$APPROVAL_AUTHORITY" "$(hostname)" "$(date -u +%s)" || approval_rc=$?
+  if [ "$approval_rc" -ne 0 ] || [ "${DMS_RELEASE_APPROVED_SHA:-}" != "$APPROVED_SHA" ]; then
+    deny "release ${RELEASE_ID} is not approved for ${APPROVED_SHA} — nothing was backed up, checked out or migrated"
+  fi
+  TARGET_SHA="$DMS_RELEASE_APPROVED_SHA"
+  echo "DEPLOY_APPROVED_SHA=${TARGET_SHA}"
+  echo "DEPLOY_APPROVAL_RECORD=${DMS_RELEASE_APPROVAL_TIP}:${DMS_RELEASE_APPROVAL_PATH} blob=${DMS_RELEASE_APPROVAL_BLOB}"
 fi
 if [ -z "$TARGET_SHA" ]; then
   TARGET_SHA="$(git rev-parse --verify "HEAD^{commit}")"
@@ -224,7 +293,7 @@ TARGET_SHA="$(git rev-parse --verify "${TARGET_SHA}^{commit}")"
 
 # From here on the target is frozen. If origin advances while this deployment
 # runs, that newer commit belongs to the NEXT deployment; this one still lands
-# on exactly the commit pinned above.
+# on exactly the commit pinned above — for a deploy, the approved commit.
 note "target pinned ${TARGET_SHA}"
 echo "DEPLOY_TARGET_PINNED=${TARGET_SHA}"
 
@@ -320,6 +389,8 @@ export DMS_DEPLOY_TARGET_SHA="$TARGET_SHA"
 export DMS_DEPLOY_ROLE="$ROLE"
 export DMS_DEPLOY_APP_DIR="$APP_DIR"
 export DMS_DEPLOY_LOCK_FILE="$LOCK_FILE"
+export DMS_DEPLOY_RELEASE_ID="$RELEASE_ID"
+export DMS_DEPLOY_APPROVED_SHA="$APPROVED_SHA"
 
 # fd 9 (the lock) is closed in the child so the descriptor is not inherited by
 # composer/npm/php/systemctl and everything else the deploy spawns. The lock

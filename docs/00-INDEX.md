@@ -135,7 +135,12 @@ Nomor ADR berikutnya yang tersedia: **0017**.
   [enterprise-operations-runbook](runbooks/enterprise-operations-runbook.md).
 - Host produksi Biznet dan deploy pertama `6f22beb7` (2026-11-04, deploy `20261104-151042`):
   [production-host-identity](runbooks/production-host-identity.md) (§6 ditutup, §6a riwayat, §6b prosedur deploy
-  berikutnya), [dms-biznet-post-go-documentation-closure-1](sprints/dms-biznet-post-go-documentation-closure-1.md).
+  berikutnya, §6c bootstrap sekali jalan untuk guard SHA), [dms-biznet-post-go-documentation-closure-1](sprints/dms-biznet-post-go-documentation-closure-1.md).
+- Guard SHA rilis yang disetujui (rule 229, 2026-11-14): deploy produksi hanya mendarat di commit persis yang
+  disetujui oleh record `deploy/release-approvals/<release-id>.approval` yang sudah di-merge di base —
+  [dms-rme-revision-program-8d-approved-sha-guard-1](sprints/dms-rme-revision-program-8d-approved-sha-guard-1.md)
+  (desain, threat model, diagram), format record di `deploy/release-approvals/README.md`, aturan kanonik
+  `.cursor/rules/229-exact-approved-release-sha-guard.mdc`.
 - Keamanan runtime: [dedicated-runtime-identity-runbook](runbooks/dedicated-runtime-identity-runbook.md),
   [production-secret-file-permissions-runbook](runbooks/production-secret-file-permissions-runbook.md),
   [security-pii-compliance-hardening-governance](architecture/security-pii-compliance-hardening-governance.md).

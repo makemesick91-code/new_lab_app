@@ -39,38 +39,35 @@ function dh1RollbackScript(): string
 }
 
 /**
- * Build a throwaway git repository carrying the real bootstrap plus a synthetic
- * deployment program. Returns the sandbox root.
+ * Build a throwaway "production" checkout carrying the real bootstrap plus a
+ * synthetic deployment program, released as an APPROVED commit (rule 229:
+ * the bootstrap deploys nothing else). The checkout sits at that release, so
+ * the source/snapshot hash proof compares real bytes. Returns the r229 sandbox
+ * with `program` set.
  */
-function dh1Sandbox(string $programBody, string $programName = 'fixture-program.sh'): array
+function dh1Sandbox(string $programBody, array $files = []): array
 {
-    $root = sys_get_temp_dir().'/dh1-'.bin2hex(random_bytes(6));
-    $app = $root.'/app';
-    $lock = $root.'/lock';
+    // A deploy runs exactly one program, scripts/deploy-vps.sh (rule 229).
+    $sandbox = r229Sandbox(['program' => $programBody, 'files' => $files, 'checkout' => 'release']);
+    $sandbox['program'] = 'deploy-vps.sh';
 
-    mkdir($app.'/scripts', 0700, true);
-    mkdir($app.'/deploy', 0700, true);
-    mkdir($lock, 0700, true);
-
-    copy(base_path('scripts/deploy-immutable-exec.sh'), $app.'/scripts/deploy-immutable-exec.sh');
-    file_put_contents($app.'/deploy/runtime-identity.conf', "DMS_RUNTIME_USER=fixture\nDMS_RUNTIME_GROUP=fixture\n");
-    file_put_contents($app.'/scripts/'.$programName, $programBody);
-
-    $git = 'git -C '.escapeshellarg($app).' -c user.email=fixture@test -c user.name=fixture ';
-    shell_exec($git.'init -q . 2>&1');
-    shell_exec($git.'add -A 2>&1');
-    shell_exec($git.'commit -qm fixture 2>&1');
-
-    return ['root' => $root, 'app' => $app, 'lock' => $lock, 'program' => $programName];
+    return $sandbox;
 }
 
-function dh1RunBootstrap(array $sandbox, array $extraArgs = []): array
+/**
+ * Run the real bootstrap as a DEPLOY of the sandbox's approved release.
+ * `$approvedSha` overrides the commit the operator names.
+ */
+function dh1RunBootstrap(array $sandbox, array $extraArgs = [], ?string $approvedSha = null): array
 {
     $cmd = implode(' ', array_map('escapeshellarg', array_merge([
         'bash', $sandbox['app'].'/scripts/deploy-immutable-exec.sh',
         '--role', 'deploy',
         '--app-dir', $sandbox['app'],
         '--lock-dir', $sandbox['lock'],
+        '--branch', $sandbox['branch'],
+        '--release-id', $sandbox['release'],
+        '--approved-sha', $approvedSha ?? $sandbox['sha'],
     ], $extraArgs, ['--', 'scripts/'.$sandbox['program']])));
 
     $output = [];
@@ -242,7 +239,7 @@ test('a repository rewrite during a run cannot change the executing program', fu
 set -euo pipefail
 echo "MARKER_ORIGINAL_PAYLOAD"
 before="$(sha256sum "${BASH_SOURCE[0]}" | awk '{print $1}')"
-printf '#!/usr/bin/env bash\necho POISONED\n' > "${DMS_DEPLOY_APP_DIR}/scripts/fixture-program.sh"
+printf '#!/usr/bin/env bash\necho POISONED\n' > "${DMS_DEPLOY_APP_DIR}/scripts/deploy-vps.sh"
 after="$(sha256sum "${BASH_SOURCE[0]}" | awk '{print $1}')"
 [ "$before" = "$after" ] && echo "EXEC_SOURCE_IMMUTABLE=YES" || { echo "EXEC_SOURCE_IMMUTABLE=NO"; exit 9; }
 grep -q MARKER_ORIGINAL_PAYLOAD "${BASH_SOURCE[0]}" && echo "PAYLOAD_INTACT=YES"
@@ -261,40 +258,43 @@ SH);
 
         // The working-tree copy really was rewritten — the fixture proves
         // immutability of the RUNNING program, not absence of mutation.
-        expect(file_get_contents($sandbox['app'].'/scripts/fixture-program.sh'))->toContain('POISONED');
+        expect(file_get_contents($sandbox['app'].'/scripts/deploy-vps.sh'))->toContain('POISONED');
     } finally {
         dh1Cleanup($sandbox);
     }
 });
 
-test('a target pinned before the run wins over a newer commit', function () {
+test('the approved commit is pinned and run, never a newer branch tip', function () {
     dh1RequiresShellTooling();
 
+    // Rule 229 form of "a pinned target wins over a newer commit". The release
+    // carries version PINNED and is approved. The branch then moves twice.
     $sandbox = dh1Sandbox(<<<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
 echo "PROGRAM_VERSION=$(cat "$(dirname "${BASH_SOURCE[0]}")/version.txt")"
-SH);
+SH, ['scripts/version.txt' => "PINNED\n"]);
 
     try {
-        $git = 'git -C '.escapeshellarg($sandbox['app']).' -c user.email=fixture@test -c user.name=fixture ';
-        file_put_contents($sandbox['app'].'/scripts/version.txt', "PINNED\n");
-        shell_exec($git.'add -A 2>&1');
-        shell_exec($git.'commit -qm pinned 2>&1');
-        $pinned = trim((string) shell_exec($git.'rev-parse HEAD'));
+        // 1. Only another approval record lands: the target is still the
+        //    approved commit, not the tip.
+        $tip = r229Push($sandbox, ['deploy/release-approvals/dms-later-release.approval' => "# later\n"], 'a later approval');
+        $result = dh1RunBootstrap($sandbox);
 
-        // The branch advances after the pin — that commit belongs to a LATER
-        // deployment and must not retarget this one.
-        file_put_contents($sandbox['app'].'/scripts/version.txt', "NEWER\n");
-        shell_exec($git.'add -A 2>&1');
-        shell_exec($git.'commit -qm newer 2>&1');
+        expect($result['exit'])->toBe(0, $result['output'])
+            ->and($result['output'])->toContain('DEPLOY_TARGET_PINNED='.$sandbox['sha'])
+            ->and($result['output'])->not->toContain('DEPLOY_TARGET_PINNED='.$tip)
+            ->and($result['output'])->toContain('PROGRAM_VERSION=PINNED');
 
-        $result = dh1RunBootstrap($sandbox, ['--target-sha', $pinned]);
+        // 2. A newer CODE commit lands: the approval no longer describes the
+        //    branch, so nothing runs at all — neither version.
+        r229Push($sandbox, ['scripts/version.txt' => "NEWER\n"], 'a newer commit');
+        $denied = dh1RunBootstrap($sandbox);
 
-        expect($result['exit'])->toBe(0)
-            ->and($result['output'])->toContain('DEPLOY_TARGET_PINNED='.$pinned)
-            ->and($result['output'])->toContain('PROGRAM_VERSION=PINNED')
-            ->and($result['output'])->not->toContain('PROGRAM_VERSION=NEWER');
+        expect($denied['exit'])->toBe(77, $denied['output'])
+            ->and($denied['output'])->toContain('DEPLOYMENT=DENIED')
+            ->and($denied['output'])->not->toContain('DEPLOY_TARGET_PINNED=')
+            ->and($denied['output'])->not->toContain('PROGRAM_VERSION=');
     } finally {
         dh1Cleanup($sandbox);
     }
@@ -345,9 +345,10 @@ test('the bootstrap refuses a target commit it does not have', function () {
     $sandbox = dh1Sandbox("#!/usr/bin/env bash\necho SHOULD_NOT_RUN\n");
 
     try {
-        $result = dh1RunBootstrap($sandbox, ['--target-sha', str_repeat('0', 40)]);
+        $result = dh1RunBootstrap($sandbox, [], str_repeat('0', 40));
 
-        expect($result['exit'])->not->toBe(0)
+        expect($result['exit'])->toBe(77, $result['output'])
+            ->and($result['output'])->toContain('DEPLOYMENT=DENIED')
             ->and($result['output'])->not->toContain('SHOULD_NOT_RUN');
     } finally {
         dh1Cleanup($sandbox);

@@ -1,0 +1,166 @@
+---
+description: DMS-RME-REVISION-PROGRAM-8D-APPROVED-SHA-GUARD-1 — a production deploy lands only on the exact commit that a release approval record merged on the base branch approves (deploy/release-approvals/<release-id>.approval), named with --release-id/--approved-sha. The runner verifies before it writes or detaches anything; the bootstrap re-verifies inside the deploy lock before the snapshot, backup or checkout; the branch tip is never substituted (DEPLOYMENT=DENIED, exit 77). Evidence contract 3 binds record, log and HEAD to the approved commit; deploys are forward-only; rollback targets stay on the deployed history; the GO tag lands on the approved commit. Supersedes rule 220 §13f and AIR-DEP-34.
+globs:
+  - "scripts/lib/release-approval.sh"
+  - "scripts/deploy-vps-runner.sh"
+  - "scripts/deploy-immutable-exec.sh"
+  - "scripts/deploy-vps.sh"
+  - "scripts/lib/deploy-runner-evidence.sh"
+  - "scripts/sprint-release.sh"
+  - "scripts/rollback-vps.sh"
+  - "deploy/production-host.conf"
+  - "deploy/release-approvals/**"
+alwaysApply: false
+---
+
+# Exact approved release SHA (rule 229)
+
+**Status:** ACTIVE from `DMS-RME-REVISION-PROGRAM-8D-APPROVED-SHA-GUARD-1` (2026-11-14, Program 8D PR2). Sprint
+record: `docs/sprints/dms-rme-revision-program-8d-approved-sha-guard-1.md`. Supersedes rule 220 §13f and
+`.claude/rules/deploy-infra.md` AIR-DEP-34 ("the runner deploys the tip of the base branch at launch").
+
+## 1. The defect
+
+`deploy-immutable-exec.sh` pinned `FETCH_HEAD` of the base branch. The pin was immutable once taken, but nothing tied
+it to the commit the owner approved: a push between the approval and the fetch was deployed as if approved, and the
+only protection was an operator running `git ls-remote` by hand.
+
+## 2. The invariant
+
+`DEPLOYED_SHA == PINNED_SHA == APPROVED_SHA`, where `APPROVED_SHA` is named by the operator **and** by a release
+approval record merged on the base branch. If `RESOLVED_TARGET != APPROVED_TARGET` the answer is `DEPLOYMENT=DENIED`
+(exit 77). Nothing is ever substituted: not the branch tip, the running HEAD, a tag or an earlier approval.
+
+## 3. The approval record
+
+`deploy/release-approvals/<release-id>.approval`, KEY=VALUE, parsed by `scripts/lib/release-approval.sh` and never
+sourced or evaluated. Values are plain (`[A-Za-z0-9._:/+-]`); unknown, duplicate or missing keys are refused; at most
+4096 bytes. Keys (contract 1): `DMS_APPROVAL_CONTRACT`, `_RELEASE_ID`, `_REPOSITORY`, `_HOST`, `_BASE_BRANCH`,
+`_TARGET_SHA`, `_TARGET_TREE`, `_GO_TAG`, `_APPROVED_BY`, `_APPROVED_AT`, `_NOT_AFTER`, `_EVIDENCE`. The format and an
+example are in `deploy/release-approvals/README.md`.
+
+It is written only after the owner's explicit written approval of the exact merged commit (CG-22), committed together
+with that approval in the evidence document it names, and merged through a pull request. Approval to implement or to
+merge is never approval to deploy.
+
+## 4. What the guard checks (all, or DENIED)
+
+1. `--release-id` is a lowercase slug; `--approved-sha` is a full 40-character lowercase SHA (no abbreviation, ref,
+   tag or `HEAD`).
+2. This host is `DMS_PRODUCTION_HOSTNAME` and not a frozen host (`deploy/production-host.conf`).
+3. `origin` of the checkout normalises to `DMS_PRODUCTION_REPOSITORY`; an `OWNER/REPO` authority accepts only a
+   GitHub https/ssh URL (a local path spelling `OWNER/REPO` is refused).
+4. `git fetch --no-tags origin +refs/heads/<branch>:refs/dms-release-approval/<pid>-<rand>` — a private per-run ref,
+   removed on every path, never the shared `FETCH_HEAD` (another fetch on the host can overwrite that). The record
+   is read from the fetched commit **object** (`git cat-file blob`), never from the working tree, an environment
+   variable or another local file. Record and evidence must be regular-file tree entries (mode `100644`), not
+   symlinks. No `safe.directory` override.
+5. The record names this release, repository, host and branch; `TARGET_SHA` equals `--approved-sha`, is a commit
+   (not a tree, blob or tag), and its tree equals `TARGET_TREE`; `APPROVED_BY` is in
+   `DMS_PRODUCTION_RELEASE_APPROVERS`; `GO_TAG` ends `-go` and equals the approved commit's `.sprint/current.yml`.
+6. Validity: canonical UTC instants, `APPROVED_AT <= now + 300 s`, `now <= NOT_AFTER`, window at most 72 hours.
+7. `EVIDENCE` is a `docs/*.md` path present on the branch that quotes the full approved SHA.
+8. The approved commit is an ancestor of the fetched tip, and every path changed between them (`git diff-tree`; a
+   failed listing is a denial) is a release approval record or `docs/**/*.md`. Any other change means the approval
+   no longer describes the branch: re-approve.
+9. Forward only: the running HEAD and the local branch (which must exist) are ancestors of (or equal to) the
+   approved commit. Going back is a rollback.
+
+## 5. Where it runs
+
+- `deploy-vps-runner.sh start|run --release-id <id> --approved-sha <sha>`: `approve_or_deny` runs **before** the run
+  directory, log, record, links or the detached process exist. A refusal leaves nothing behind.
+- `deploy-vps.sh`: refuses without both arguments before the hand-over; passes them to the bootstrap and to its own
+  snapshot copy, which re-asserts `TARGET == APPROVED == DMS_DEPLOY_APPROVED_SHA` before the preflight, the secret
+  hardening, the backup and the checkout, and again at the final HEAD check.
+- `deploy-immutable-exec.sh --role deploy`: requires `--branch`, `--release-id`, `--approved-sha`; refuses
+  `--target-sha` and `--snapshot-ref`; runs only `scripts/deploy-vps.sh` (a rollback only `scripts/rollback-vps.sh`);
+  accepts no overlay but the live `deploy/runtime-identity.conf`;
+  verifies the approval **inside the flock** and before the pin, the snapshot and any mutation; pins exactly the
+  approved commit and prints `DEPLOY_APPROVED_SHA=` and `DEPLOY_APPROVAL_RECORD=`.
+- The snapshot stages of `deploy-vps.sh` and `rollback-vps.sh` trust the `DMS_DEPLOY_*` values only inside the
+  bootstrap's own snapshot: lock root `/run/daengtisiams-deploy` (or `/var/lock/…`), `<root>/<role>.lock`,
+  `<root>/<role>-<run id>` owned by the deploy identity with mode 0700, and the lock **held** (`flock -n` fails).
+- The guard and the authority it reads come from beside the executing program (the checkout, or the bundle of §7);
+  the deploy program is the one beside the runner. There is no `DEPLOY_SCRIPT` or other environment override.
+- `sprint-release.sh --apply` needs both arguments before the readiness check or its lock, passes them to `run`, and
+  creates the GO tag on the approved commit only when the checkout is at it, never on `HEAD`; the tag name is the
+  approved commit's own `go_tag` (`--go-tag` must equal it).
+- `rollback-vps.sh`: the target must be an ancestor of the running checkout, checked before the hand-over and again
+  inside the lock before the backup.
+
+## 6. Evidence contract 3
+
+The record (`deploy-<id>.host`) adds `release_id`, `approved_sha`, `approval_record` (`<tip>:<path>`) and
+`approval_blob`. `verify <id>` accepts a success only when the contract-2 facts hold **and** the pinned target and the
+checkout HEAD equal the record's `approved_sha`, the run's own log shows `RELEASE APPROVAL: GO`, exactly one
+`DEPLOY_APPROVED_SHA=` equal to it and exactly one `DEPLOY_APPROVAL_RECORD=` for the same approval path, and both
+approval blobs (record's and log's) exist as git objects, are the approval file at their recorded commit, that commit
+carries the approved commit, and their `DMS_APPROVAL_RELEASE_ID` / `DMS_APPROVAL_TARGET_SHA` lines name this release
+and commit. It then prints `DEPLOY_APPROVED_TARGET_MATCH=YES (<sha>)`. Contract-2 records are
+`INCOMPATIBLE`. (The tips may differ: approvals or docs may land between the runner's check and the bootstrap's.)
+
+## 7. Bootstrap (the first deploy that carries the guard)
+
+A production tree older than this rule holds a runner without the guard, which must not launch the release that
+installs it. The one-time procedure in `docs/runbooks/production-host-identity.md` §6c exports the approved commit's
+`scripts/` and `deploy/` with `git archive <approved-sha>` into a new root-only directory, checks the runner's
+SHA-256 against the commit object, and starts **that** runner with the same arguments. Every check above runs; nothing
+in the live checkout is edited by hand; no transitional bypass exists. From then on the in-tree runner is used.
+
+## 8. Trust model (what this does not prove)
+
+The guard **binds** a deploy to a content-addressed record on the canonical base branch. It does not
+**authenticate** a human, and nothing on the host can prove the record arrived through a reviewed pull request: the
+base branch has no GitHub protection (checked 2026-11-12), so anyone able to push to it can write a record, and
+`APPROVED_BY` is an attribution, not a signature. The governance is: record only after the owner's written approval
+of the full SHA, through a pull request the owner merges (CG-22). Account separation is verifiable, human separation
+is not (CG-07). Root on the production host is inside the trust boundary and can bypass any host-side check; the run
+directory under `storage/logs` is writable by the runtime user (contract 3 cross-checks git objects, which it is
+not). **Owner follow-ups (not blocking, recorded in the sprint doc):** branch protection or signed approval commits on
+the base; a root-owned run directory; one lock shared by deploy and rollback.
+
+## 9. Threats and where each is stopped
+
+| Threat | Stopped by | Test (`DeployHardenApprovedShaGuardTest`) |
+|---|---|---|
+| Branch moved before fetch | §4.8 diff rule | `refuses when the branch moved past…` |
+| Branch moved after the pin | pin = approved SHA, snapshot from it | `keeps the approved commit when the branch moves after the pin` |
+| Missing / wrong / unauthorised approval | §4.4–4.5 | `refuses a release with no merged approval record`, `refuses a record whose facts do not match` |
+| Expired, future or open-ended approval; replay | §4.6, §4.9 | `…facts do not match` (window cases), `never moves production backwards…` |
+| Malformed SHA; tree/blob/tag object | §4.1, §4.5 | `refuses an approved SHA that is not a full…`, `…names a tree or blob…` |
+| Unmerged commit | §4.8 ancestry | `refuses an approved commit that is not merged…` |
+| Record injection / forgery in the working tree | parser; object read | `refuses a record it would have to execute…`, `…no merged approval record` |
+| Detached runner launched unapproved | `approve_or_deny` first | `launches nothing for an unapproved start` |
+| Wrong host / repository | §4.2–4.3 | `refuses the wrong host…`, `refuses a checkout whose origin…` |
+| Forged or stale success evidence | contract 3 | `DeployHardenRunnerEvidenceContractTest` approval cases |
+| Concurrent deploys | flock, unchanged | `serialises two approved runs…`, `DeployHardenConcurrencyLockTest` |
+| GO tag on the wrong commit | §5 wrapper | `the release wrapper … tags the approved commit` |
+| Rollback to an invalid ref | §5 ancestry | `a rollback refuses a target outside the deployed history…` |
+
+## 10. DEPLOY-1…16 reconciled with existing identifiers
+
+| Invariant | Canonical home |
+|---|---|
+| DEPLOY-1 host identity verified | rule 220, AIR-DEP-31/32, CG-14 |
+| DEPLOY-2 exact owner-approved SHA | this rule §2–§4, AIR-DEP-35 |
+| DEPLOY-3 no mutable branch substitutes | this rule §2, §4.8 |
+| DEPLOY-4 runner executes on the VPS | CG-15, AIR-DEP-01 |
+| DEPLOY-5 immutable execution | rule 92-immutable-deployment-entrypoint, AIR-DEP-02/03 |
+| DEPLOY-6 single-writer lock | AIR-DEP-02 (flock, exit 75) |
+| DEPLOY-7 backup before checkout | AIR-DEP-05, AIR-DEP-14 |
+| DEPLOY-8 runtime identity isolated | AIR-DEP-09…11, rule 92-dedicated-runtime-identity |
+| DEPLOY-9 evidence = host + approved SHA + HEAD + success | AIR-DEP-33, this rule §6 |
+| DEPLOY-10 GO tag only after verification | CG-16, this rule §5 |
+| DEPLOY-11 rollback controlled, target-specific, verified | AIR-DEP-08, this rule §5 |
+| DEPLOY-12 no destructive production migration | CG-09, AIR-DEP-06 |
+| DEPLOY-13 no release with unresolved safety-critical findings | CG-17, CG-21 |
+| DEPLOY-14 temporary processes/artifacts reconciled | CG-20, runbook §6c step 7 |
+| DEPLOY-15 runtime data and clinical data never deleted in cleanup | CG-11, AIR-DEP-20/21 |
+| DEPLOY-16 deploy approval separate from implementation approval | CG-22, this rule §3 |
+
+## 11. Changing this area
+
+Edit the library, its integration points, `config/deployment_entrypoint.php` `approval_guard_expectations`
+(enforced by `DeploymentEntrypointScanner::approvalGuardPosture()`, rule `DH1-R011`) and the tests together. The
+suite is declared in `config/ci_runner.php` `critical_gate_mandatory_suites` and selected by the `DeployHarden` token.

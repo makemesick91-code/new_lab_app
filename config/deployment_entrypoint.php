@@ -205,7 +205,110 @@ return [
             'deployment is NOT complete; do NOT treat as GO until',
             'reports DEPLOY RUNNER OK',
         ],
-        'canonical_command' => 'bash scripts/deploy-vps-runner.sh start',
+        'canonical_command' => 'bash scripts/deploy-vps-runner.sh start --release-id <release-id> --approved-sha <approved-sha>',
+    ],
+
+    // DMS-RME-REVISION-PROGRAM-8D-APPROVED-SHA-GUARD-1 (rule 229) — exact
+    // approved release SHA. A deploy is bound to the commit a merged release
+    // approval record approves, verified from git objects by the runner before
+    // it launches anything and by the bootstrap inside the lock before the
+    // snapshot; the branch tip is never substituted. Each list is a set of
+    // literals that must stay in the named file; `forbidden_markers` must never
+    // reappear. DeploymentEntrypointScanner::approvalGuardPosture() enforces it.
+    'approval_guard_expectations' => [
+        'files' => [
+            'guard_library' => [
+                'path' => 'scripts/lib/release-approval.sh',
+                'required_markers' => [
+                    'dms_release_approval_verify',
+                    'deploy/release-approvals',
+                    'merge-base --is-ancestor',
+                    'DMS_APPROVAL_TARGET_TREE',
+                    'DMS_APPROVAL_NOT_AFTER',
+                    'only release approval records and documentation follow it',
+                    'no substitution',
+                    'DEPLOYMENT=DENIED',
+                    'RELEASE APPROVAL: GO',
+                    // Independent review (8D PR2): private fetch ref, fail-closed
+                    // listing, regular files only, GitHub-only origin.
+                    'refs/dms-release-approval/',
+                    'could not list the changes',
+                    'dms_release_approval_regular_file',
+                    'is not a GitHub URL',
+                ],
+            ],
+            'bootstrap' => [
+                'path' => 'scripts/deploy-immutable-exec.sh',
+                'required_markers' => [
+                    'dms_release_approval_verify',
+                    '--approved-sha',
+                    'DEPLOY_APPROVED_SHA=',
+                    '--target-sha is not accepted for a deploy',
+                    '--snapshot-ref is not accepted for a deploy',
+                    'runs only its own program',
+                    'only deploy/runtime-identity.conf may be overlaid',
+                    'DMS_DEPLOY_APPROVED_SHA',
+                ],
+            ],
+            'deploy_script' => [
+                'path' => 'scripts/deploy-vps.sh',
+                'required_markers' => [
+                    '--approved-sha "$APPROVED_SHA"',
+                    'DMS_DEPLOY_APPROVED_SHA',
+                    'DEPLOYMENT=DENIED',
+                    'not running under the deploy lock',
+                    "is not this run's trusted snapshot",
+                ],
+            ],
+            'runner_script' => [
+                'path' => 'scripts/deploy-vps-runner.sh',
+                'required_markers' => [
+                    'approve_or_deny',
+                    'dms_release_approval_verify',
+                    'approved_sha=',
+                    'DEPLOY_SCRIPT="${RUNNER_DIR}/deploy-vps.sh"',
+                ],
+                // The deploy program is never taken from the environment again.
+                'forbidden_markers' => [
+                    '${DEPLOY_SCRIPT:-',
+                ],
+            ],
+            'runner_evidence' => [
+                'path' => 'scripts/lib/deploy-runner-evidence.sh',
+                'required_markers' => [
+                    'DMS_RUNNER_EVIDENCE_CONTRACT=3',
+                    'dms_runner_assert_approval_log',
+                    'dms_runner_assert_approval_blob',
+                ],
+            ],
+            'release_wrapper' => [
+                'path' => 'scripts/sprint-release.sh',
+                'required_markers' => [
+                    '--approved-sha "${APPROVED_SHA}"',
+                    'git tag -a "${TAG}" "${APPROVED_SHA}"',
+                    'APPROVED_GO_TAG',
+                ],
+                'forbidden_markers' => [
+                    'GO tag \'${TAG}\' at HEAD',
+                ],
+            ],
+            'rollback_script' => [
+                'path' => 'scripts/rollback-vps.sh',
+                'required_markers' => [
+                    'merge-base --is-ancestor "$ROLLBACK_TARGET_SHA"',
+                    'not running under the rollback lock',
+                ],
+            ],
+        ],
+        // The host authority must declare the facts the guard checks.
+        'authority_file' => 'deploy/production-host.conf',
+        'required_authority_keys' => [
+            'DMS_PRODUCTION_REPOSITORY',
+            'DMS_PRODUCTION_DEPLOY_BRANCH',
+            'DMS_PRODUCTION_RELEASE_APPROVERS',
+        ],
+        // deploy-vps.sh pins its branch as a literal; it must be the authority's.
+        'deploy_branch_assignment_prefix' => 'BRANCH="',
     ],
 
     // Manual pre-pull must not be a permanent prerequisite: the entrypoint has

@@ -72,6 +72,14 @@ if [ -z "${DMS_DEPLOY_SNAPSHOT_DIR:-}" ]; then
     echo "FATAL: rollback target does not resolve to a commit: ${TARGET_REF}" >&2
     exit 2
   fi
+  # Rule 229 / DEPLOY-11: a rollback is target-specific and goes BACK along the
+  # deployed history only. A target that is not an ancestor of the running
+  # checkout (an unmerged branch, an unrelated object, a newer commit) is never
+  # rolled "back" to — moving forward is a deploy, and needs an approval.
+  if ! git merge-base --is-ancestor "$ROLLBACK_TARGET_SHA" HEAD; then
+    echo "FATAL: rollback target ${ROLLBACK_TARGET_SHA} is not an ancestor of the running checkout $(git rev-parse --verify HEAD) — refusing (rule 229)" >&2
+    exit 2
+  fi
   echo "ROLLBACK_TARGET_SHA=${ROLLBACK_TARGET_SHA}"
 
   exec bash "$IMMUTABLE_EXEC" \
@@ -90,6 +98,25 @@ case "${BASH_SOURCE[0]}" in
     exit 2
     ;;
 esac
+# Rule 229 (independent review, 8D PR2, finding 4): the DMS_DEPLOY_* values are
+# trusted only inside the bootstrap's own root-only snapshot with the rollback
+# lock held by the bootstrap — never when exported by hand.
+ROLLBACK_LOCK_ROOT="$(dirname -- "${DMS_DEPLOY_LOCK_FILE:-/nonexistent/rollback.lock}")"
+case "$ROLLBACK_LOCK_ROOT" in
+  /run/daengtisiams-deploy|/var/lock/daengtisiams-deploy) ;;
+  *) echo "FATAL: the rollback lock '${DMS_DEPLOY_LOCK_FILE:-}' is not in the trusted lock root — NOT GO" >&2; exit 2 ;;
+esac
+if [ "$DMS_DEPLOY_LOCK_FILE" != "${ROLLBACK_LOCK_ROOT}/rollback.lock" ] \
+   || [ "$DMS_DEPLOY_SNAPSHOT_DIR" != "${ROLLBACK_LOCK_ROOT}/rollback-${DMS_DEPLOY_RUN_ID:-}" ] \
+   || [ -L "$DMS_DEPLOY_SNAPSHOT_DIR" ] \
+   || [ "$(stat -c '%u %a' "$DMS_DEPLOY_SNAPSHOT_DIR" 2>/dev/null)" != "$(id -u) 700" ]; then
+  echo "FATAL: ${DMS_DEPLOY_SNAPSHOT_DIR} is not this run's trusted snapshot — NOT GO" >&2
+  exit 2
+fi
+if flock -n "$DMS_DEPLOY_LOCK_FILE" true 2>/dev/null; then
+  echo "FATAL: not running under the rollback lock — not launched by the bootstrap — NOT GO" >&2
+  exit 2
+fi
 ROLLBACK_TARGET_SHA="${DMS_DEPLOY_TARGET_SHA:?immutable bootstrap must pin a rollback target commit}"
 DEPLOY_TOOLS_DIR="$DMS_DEPLOY_SNAPSHOT_DIR"
 echo "Rollback run id:          ${DMS_DEPLOY_RUN_ID:-unknown}"
@@ -161,6 +188,12 @@ echo "Current HEAD: ${CURRENT_HEAD}"
 echo "Current ref:  ${CURRENT_REF_DESC}"
 echo "Target ref:   ${TARGET_REF}"
 git status -sb
+# Re-asserted inside the lock, before the backup: the checkout may have moved
+# between the hand-over and here.
+if ! git merge-base --is-ancestor "$ROLLBACK_TARGET_SHA" "$CURRENT_HEAD"; then
+  echo "FATAL: rollback target ${ROLLBACK_TARGET_SHA} is not an ancestor of the running checkout ${CURRENT_HEAD} — nothing was backed up or checked out — NOT GO" >&2
+  exit 2
+fi
 
 echo "== Backup DB before rollback =="
 # SECURITY-FIX-DEPLOY-BACKUP-FILE-PERMISSIONS-1: the dump is created PRIVATE

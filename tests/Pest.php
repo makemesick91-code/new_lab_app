@@ -100,6 +100,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\ParallelTesting;
 use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\Models\Role;
+use Symfony\Component\Process\Process;
 use Tests\Support\AccessControlSeedSnapshot;
 
 /**
@@ -2239,4 +2240,286 @@ function aiProjectMemory(): string
     }
 
     return implode("\n", $parts);
+}
+
+/*
+ * ─── Rule 229 — exact approved release SHA sandbox ─────────────────────────
+ *
+ * A disposable "production" checkout plus a bare `origin` for the deploy guard
+ * suites (tests/Feature/Deploy/DeployHarden*). Nothing here touches a server,
+ * root or a real deploy: the deploy program is a fixture that hands over to the
+ * REAL scripts/deploy-immutable-exec.sh with a private lock directory and then
+ * fast-forwards the sandbox checkout, exactly as scripts/deploy-vps.sh does.
+ *
+ * History on origin's base branch:
+ *   base  — what "production" runs now ('guarded': the real deploy chain is
+ *           already in the tree; 'legacy': a pre-guard runner, for the one-time
+ *           bootstrap of production-host-identity.md §6c)
+ *   sha   — the release commit (the real deploy chain + release.txt)
+ *   tip   — the merged release approval record for `sha` (+ its evidence doc)
+ * The checkout is left at `base`.
+ */
+function r229Git(string $dir, array $args): string
+{
+    $process = new Process(
+        array_merge(['git', '-C', $dir, '-c', 'user.email=r229@test', '-c', 'user.name=r229', '-c', 'commit.gpgsign=false'], $args),
+    );
+    $process->run();
+    if (! $process->isSuccessful()) {
+        throw new RuntimeException('git '.implode(' ', $args).' failed: '.$process->getErrorOutput());
+    }
+
+    return trim($process->getOutput());
+}
+
+/** @param array<string, string|null> $files relative path => contents (null deletes) */
+function r229Write(string $dir, array $files): void
+{
+    foreach ($files as $relative => $contents) {
+        $path = "{$dir}/{$relative}";
+        if ($contents === null) {
+            @unlink($path);
+
+            continue;
+        }
+        if (! is_dir(dirname($path))) {
+            mkdir(dirname($path), 0o700, true);
+        }
+        file_put_contents($path, $contents);
+    }
+}
+
+/** The deploy chain the release ships, copied from this repository. */
+function r229DeployChain(string $program): array
+{
+    $chain = ['scripts/deploy-vps.sh' => $program];
+    foreach ([
+        'scripts/deploy-immutable-exec.sh',
+        'scripts/deploy-vps-runner.sh',
+        'scripts/lib/release-approval.sh',
+        'scripts/lib/deploy-runner-evidence.sh',
+    ] as $relative) {
+        $chain[$relative] = (string) file_get_contents(base_path($relative));
+    }
+
+    return $chain;
+}
+
+/**
+ * A deploy program with scripts/deploy-vps.sh's shape: refuse without an
+ * approval, hand over to the real bootstrap, re-assert the approval from the
+ * snapshot, fast-forward to the pinned commit, verify HEAD, say DEPLOY OK.
+ * R229_DURING_RUN (test only) runs inside the snapshot stage, before the
+ * checkout — e.g. to move origin's branch mid-deploy.
+ */
+function r229FixtureProgram(string $branch, string $lock): string
+{
+    $b = escapeshellarg($branch);
+    $l = escapeshellarg($lock);
+
+    return <<<BASH
+#!/usr/bin/env bash
+set -euo pipefail
+BRANCH={$b}
+RELEASE_ID=""
+APPROVED_SHA=""
+while [ "\$#" -gt 0 ]; do
+  case "\$1" in
+    --release-id) RELEASE_ID="\$2"; shift 2 ;;
+    --approved-sha) APPROVED_SHA="\$2"; shift 2 ;;
+    *) echo "DEPLOYMENT=DENIED"; exit 77 ;;
+  esac
+done
+[ -n "\$RELEASE_ID" ] && [ -n "\$APPROVED_SHA" ] || { echo "DEPLOYMENT=DENIED"; exit 77; }
+if [ -z "\${DMS_DEPLOY_SNAPSHOT_DIR:-}" ]; then
+  SELF="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
+  exec bash "\$SELF/deploy-immutable-exec.sh" --role deploy --app-dir "\$PWD" --lock-dir {$l} \\
+    --branch "\$BRANCH" --release-id "\$RELEASE_ID" --approved-sha "\$APPROVED_SHA" \\
+    -- scripts/deploy-vps.sh --release-id "\$RELEASE_ID" --approved-sha "\$APPROVED_SHA"
+fi
+case "\${BASH_SOURCE[0]}" in "\${DMS_DEPLOY_SNAPSHOT_DIR}"/*) ;; *) exit 2 ;; esac
+if [ "\$DMS_DEPLOY_TARGET_SHA" != "\$APPROVED_SHA" ] || [ "\${DMS_DEPLOY_APPROVED_SHA:-}" != "\$APPROVED_SHA" ]; then
+  echo "DEPLOYMENT=DENIED"; exit 77
+fi
+echo "PRODUCTION HOST PREFLIGHT: GO"
+if [ -n "\${R229_DURING_RUN:-}" ]; then bash -c "\$R229_DURING_RUN"; fi
+if [ -n "\${R229_HOLD_SECONDS:-}" ]; then sleep "\$R229_HOLD_SECONDS"; fi
+git checkout -q "\$BRANCH"
+git merge -q --ff-only "\$DMS_DEPLOY_TARGET_SHA"
+HEAD_NOW="\$(git rev-parse --verify HEAD)"
+[ "\$HEAD_NOW" = "\$DMS_DEPLOY_TARGET_SHA" ] || { echo "FATAL: HEAD \$HEAD_NOW does not match the pinned target"; exit 1; }
+echo "DEPLOY_HEAD_TARGET_MATCH=YES (\${HEAD_NOW})"
+echo "DEPLOY OK: fixture"
+BASH;
+}
+
+/** A release approval record, KEY=VALUE, with `null` dropping a key. */
+function r229ApprovalRecord(array $fields): string
+{
+    $lines = ['# fixture release approval (rule 229)'];
+    foreach ($fields as $key => $value) {
+        if ($value !== null) {
+            $lines[] = "{$key}={$value}";
+        }
+    }
+
+    return implode("\n", $lines)."\n";
+}
+
+/**
+ * @param  array{production?: string, branch?: string, release?: string, go_tag?: string, approve?: bool,
+ *               approval?: array<string, string|null>, approval_raw?: string|null, evidence?: string|null,
+ *               program?: string|null, approvers?: string, files?: array<string, string>,
+ *               checkout?: string}  $options  `files` are added to the release commit;
+ *               `checkout` leaves the checkout at 'base' (default) or at the 'release'
+ */
+function r229Sandbox(array $options = []): array
+{
+    $root = tempArtifactDir('r229-');
+    $app = "{$root}/app";
+    $origin = "{$root}/origin.git";
+    $maint = "{$root}/maint";
+    $lock = "{$root}/lock";
+    mkdir($app, 0o700);
+    mkdir($lock, 0o700);
+
+    $host = trim((string) gethostname());
+    $branch = $options['branch'] ?? 'feature/r229-fixture-base';
+    $release = $options['release'] ?? 'dms-fixture-release';
+    $goTag = $options['go_tag'] ?? 'dms-fixture-release-go';
+    $repository = "{$root}/origin";
+    $authority = implode("\n", [
+        "DMS_PRODUCTION_HOSTNAME={$host}",
+        'DMS_FROZEN_LEGACY_HOSTNAMES="srv1730088"',
+        "DMS_PRODUCTION_REPOSITORY={$repository}",
+        "DMS_PRODUCTION_DEPLOY_BRANCH={$branch}",
+        'DMS_PRODUCTION_RELEASE_APPROVERS="'.($options['approvers'] ?? 'owner').'"',
+    ])."\n";
+    file_put_contents("{$root}/authority.conf", $authority);
+
+    $program = $options['program'] ?? r229FixtureProgram($branch, $lock);
+    $release_files = r229DeployChain($program) + [
+        'deploy/production-host.conf' => $authority,
+        'deploy/runtime-identity.conf' => "DMS_RUNTIME_USER=fixture\nDMS_RUNTIME_GROUP=fixture\n",
+        '.sprint/current.yml' => "id: R229-FIXTURE\ngo_tag: {$goTag}\n",
+    ] + ($options['files'] ?? []);
+
+    r229Git($app, ['init', '-q', '-b', $branch]);
+    if (($options['production'] ?? 'guarded') === 'legacy') {
+        // A pre-guard runner: it would deploy whatever it is pointed at. The
+        // bootstrap must never execute it.
+        r229Write($app, [
+            'scripts/deploy-vps-runner.sh' => "#!/usr/bin/env bash\necho 'LEGACY RUNNER EXECUTED' > \"\$PWD/legacy-runner-ran\"\nexit 99\n",
+            'release.txt' => "base\n",
+        ]);
+    } else {
+        r229Write($app, $release_files + ['release.txt' => "base\n"]);
+    }
+    r229Git($app, ['add', '-A']);
+    r229Git($app, ['commit', '-q', '-m', 'production base']);
+    $base = r229Git($app, ['rev-parse', 'HEAD']);
+
+    r229Write($app, $release_files + ['release.txt' => "release\n"]);
+    r229Git($app, ['add', '-A']);
+    r229Git($app, ['commit', '-q', '-m', 'the release']);
+    $sha = r229Git($app, ['rev-parse', 'HEAD']);
+    $tree = r229Git($app, ['rev-parse', 'HEAD^{tree}']);
+
+    r229Git($root, ['init', '-q', '--bare', $origin]);
+    r229Git($app, ['remote', 'add', 'origin', $origin]);
+    r229Git($app, ['push', '-q', 'origin', $branch]);
+    r229Git($app, ['reset', '-q', '--hard', ($options['checkout'] ?? 'base') === 'release' ? $sha : $base]);
+    r229Git($root, ['clone', '-q', '--branch', $branch, $origin, $maint]);
+
+    $sandbox = [
+        'root' => $root, 'app' => $app, 'origin' => $origin, 'maint' => $maint, 'lock' => $lock,
+        'host' => $host, 'branch' => $branch, 'release' => $release, 'go_tag' => $goTag,
+        'repository' => $repository, 'authority' => "{$root}/authority.conf",
+        'base' => $base, 'sha' => $sha, 'tree' => $tree, 'tip' => $sha,
+    ];
+
+    if ($options['approve'] ?? true) {
+        $evidence = 'docs/sprints/'.$release.'.md';
+        $record = $options['approval_raw'] ?? r229ApprovalRecord(array_merge([
+            'DMS_APPROVAL_CONTRACT' => '1',
+            'DMS_APPROVAL_RELEASE_ID' => $release,
+            'DMS_APPROVAL_REPOSITORY' => $repository,
+            'DMS_APPROVAL_HOST' => $host,
+            'DMS_APPROVAL_BASE_BRANCH' => $branch,
+            'DMS_APPROVAL_TARGET_SHA' => $sha,
+            'DMS_APPROVAL_TARGET_TREE' => $tree,
+            'DMS_APPROVAL_GO_TAG' => $goTag,
+            'DMS_APPROVAL_APPROVED_BY' => 'owner',
+            'DMS_APPROVAL_APPROVED_AT' => gmdate('Y-m-d\TH:i:s\Z', time() - 600),
+            'DMS_APPROVAL_NOT_AFTER' => gmdate('Y-m-d\TH:i:s\Z', time() + 3600),
+            'DMS_APPROVAL_EVIDENCE' => $evidence,
+        ], $options['approval'] ?? []));
+        $sandbox['tip'] = r229Push($sandbox, [
+            "deploy/release-approvals/{$release}.approval" => $record,
+            $evidence => $options['evidence'] ?? "# {$release}\n\nOwner approval: deploy `{$sha}` to production.\n",
+        ], 'approve the release');
+    }
+
+    return $sandbox;
+}
+
+/** Commit files on origin's base branch (as a merged pull request would) and return the new tip. */
+function r229Push(array $sandbox, array $files, string $message): string
+{
+    r229Write($sandbox['maint'], $files);
+    r229Git($sandbox['maint'], ['add', '-A']);
+    r229Git($sandbox['maint'], ['commit', '-q', '-m', $message]);
+    r229Git($sandbox['maint'], ['push', '-q', 'origin', $sandbox['branch']]);
+
+    return r229Git($sandbox['maint'], ['rev-parse', 'HEAD']);
+}
+
+/** @return array{exit: int, output: string} */
+function r229Run(array $command, array $env = [], ?string $cwd = null, int $timeout = 60): array
+{
+    $process = new Process($command, $cwd, $env, null, $timeout);
+    $process->run();
+
+    return ['exit' => (int) $process->getExitCode(), 'output' => $process->getOutput().$process->getErrorOutput()];
+}
+
+/** dms_release_approval_verify against the sandbox; any argument can be overridden. */
+function r229Verify(array $sandbox, array $overrides = []): array
+{
+    $args = array_merge([
+        'app' => $sandbox['app'],
+        'branch' => $sandbox['branch'],
+        'release' => $sandbox['release'],
+        'sha' => $sandbox['sha'],
+        'authority' => $sandbox['authority'],
+        'host' => $sandbox['host'],
+        'now' => (string) time(),
+    ], $overrides);
+
+    return r229Run([
+        'bash', '-c', 'set -euo pipefail; source "$1"; shift; rc=0; dms_release_approval_verify "$@" || rc=$?; echo "rc=${rc} approved=${DMS_RELEASE_APPROVED_SHA:-}"; exit "$rc"',
+        '_', base_path('scripts/lib/release-approval.sh'),
+        $args['app'], $args['branch'], $args['release'], $args['sha'], $args['authority'], $args['host'], $args['now'],
+    ]);
+}
+
+/** The runner of a sandbox — the in-tree one unless a bundle path is given. */
+function r229Runner(array $sandbox, array $args, array $env = [], ?string $runner = null): array
+{
+    return r229Run(
+        array_merge(['bash', $runner ?? "{$sandbox['app']}/scripts/deploy-vps-runner.sh"], $args),
+        array_merge(['APP_DIR' => $sandbox['app']], $env),
+        $sandbox['app'],
+    );
+}
+
+function r229WaitForStatus(string $app, string $id, int $seconds = 30): string
+{
+    $status = "{$app}/storage/logs/deploy-runner/deploy-{$id}.status";
+    $deadline = microtime(true) + $seconds;
+    while (microtime(true) < $deadline && ! (is_file($status) && filesize($status) > 0)) {
+        usleep(100_000);
+    }
+
+    return is_file($status) ? trim((string) file_get_contents($status)) : '';
 }

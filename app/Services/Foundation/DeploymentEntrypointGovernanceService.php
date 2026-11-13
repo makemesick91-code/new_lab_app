@@ -86,6 +86,11 @@ class DeploymentEntrypointGovernanceService
             ],
             [
                 'id' => 'DH1-R011',
+                'title' => 'A deploy lands only on the exact commit a merged release approval approves',
+                'description' => 'Rule 229. The runner (before it writes or detaches anything) and the bootstrap (inside the lock, before the snapshot, backup or checkout) verify deploy/release-approvals/<release-id>.approval from the fetched base-branch commit object: repository, host, branch, commit and tree, approver, validity window, evidence document quoting the commit, merged ancestry with only approval records after it, and a forward-only move. Any mismatch is DEPLOYMENT=DENIED (exit 77); the branch tip is never substituted. Evidence contract 3 binds the record, the log and HEAD to the approved commit; the GO tag is created on that commit; a rollback target must be an ancestor of the running checkout.',
+            ],
+            [
+                'id' => 'DH1-R011',
                 'title' => 'Rollback is self-update safe and reasserts the security foundations',
                 'description' => 'Rollback runs through the same lock/pin/snapshot mechanism, resolves the operator ref to one exact commit before mutating, and takes its snapshot from the CURRENT code so INFRA-SEC-ENV-1 secret hardening and the INFRA-SEC-RUNTIME-1 isolation verifier still run in their modern form even when the target predates them.',
             ],
@@ -114,6 +119,7 @@ class DeploymentEntrypointGovernanceService
         $bootstrap = $this->scanner->bootstrapPosture();
         $closure = $this->scanner->executionClosurePosture();
         $runner = $this->scanner->runnerPosture();
+        $approvalGuard = $this->scanner->approvalGuardPosture();
         $releaseSafety = $this->scanner->releaseSafetyPosture();
 
         $entrypoints = [];
@@ -131,6 +137,7 @@ class DeploymentEntrypointGovernanceService
             'bootstrap' => $bootstrap,
             'execution_closure' => $closure,
             'operator_interface' => $runner,
+            'approval_guard' => $approvalGuard,
         ] as $label => $posture) {
             foreach ((array) ($posture['issues'] ?? []) as $issue) {
                 $errors[] = "{$label}: {$issue}";
@@ -170,6 +177,7 @@ class DeploymentEntrypointGovernanceService
             'mutating_entrypoints' => $entrypoints,
             'execution_closure' => $closure,
             'operator_interface' => $runner,
+            'approval_guard' => $approvalGuard,
             'release_safety' => $releaseSafety,
             'deployment_rollback_governance_decision' => $rollbackDecision,
             'rules' => self::rules(),
