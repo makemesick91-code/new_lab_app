@@ -111,7 +111,7 @@ D4 closed by the deploy-chain change, which is now in the production tree; D5 re
 known warning — the deploy's own loopback smoke reports `404`, and the canonical URL is verified separately.
 
 The privileged form of the canonical command on Biznet is
-`ssh daengtisiams-biznet-prod 'cd /var/www/asia-dental-lab-v2 && sudo -n bash scripts/deploy-vps-runner.sh start'`.
+`ssh daengtisiams-biznet-prod 'cd /var/www/asia-dental-lab-v2 && sudo -n bash scripts/deploy-vps-runner.sh start --release-id <release-id> --approved-sha <APPROVED_SHA>'`.
 It is written here so nobody improvises a different one. It is the only deploy command; run it only as part of §6b,
 with the approval the owner's current release governance requires. A run whose preflight refuses (wrong host, non-root, a
 missing tool or a toolchain version that differs from CI) stops before any mutation; that is the intended outcome,
@@ -203,43 +203,102 @@ quarantine directory to the runtime user, with modes unchanged; the manifest has
 
 ## 6b. Every Biznet deploy after the first (current procedure)
 
+Rule 229 (`.cursor/rules/229-exact-approved-release-sha-guard.mdc`, 2026-11-14): a deploy lands only on the exact
+commit a release approval record merged on the base branch approves. The runner never deploys the branch tip.
+
 **Preconditions (all, or stop).**
-- The approval the owner's current release governance requires, and the exact commit it approves. Step 2 compares
-  that commit with what the runner will deploy.
-- Required CI green on that exact commit. A skipped Full Suite is reported as deferred, never as passed (CG-17, CG-18).
+- The release commit is merged and its required CI is green on that exact commit. A skipped Full Suite is reported
+  as deferred, never as passed (CG-17, CG-18). Write its full SHA down as `APPROVED_SHA`.
+- The owner's written approval of `APPROVED_SHA` for production (CG-22), recorded in the sprint document, and the
+  release approval record `deploy/release-approvals/<release-id>.approval` (format: `deploy/release-approvals/README.md`)
+  merged on the base after it. Nothing but approval records and `docs/**/*.md` may be merged after `APPROVED_SHA`.
+- The record's window (`DMS_APPROVAL_NOT_AFTER`, at most 72 hours) covers the deploy.
 - Outside the backup window 18:25–18:40 UTC (02:25–02:40 WITA).
 - One operator, with no other deploy, rollback or quarantine running.
+- The production checkout already carries the guard (`grep -c approve_or_deny scripts/deploy-vps-runner.sh` on the
+  host prints a non-zero count). If it prints `0`, follow §6c instead.
 
 1. **Prove the target:** `bash scripts/production-target-check.sh --remote` → `PRODUCTION_TARGET=VERIFIED` (§3).
    Never deploy on the strength of an alias name alone.
-2. **Confirm what will be deployed.** The runner pins the **tip of the base branch at launch**, not a commit you pass
-   in. Confirm that tip from the host itself, and push nothing to the base between the authorization and `start`:
+2. **Read the approval from the host (read-only).** Refs only; the working tree is not touched:
    ```bash
-   ssh daengtisiams-biznet-prod 'cd /var/www/asia-dental-lab-v2 && sudo -n git -c safe.directory=/var/www/asia-dental-lab-v2 ls-remote origin refs/heads/feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report'
+   ssh daengtisiams-biznet-prod 'cd /var/www/asia-dental-lab-v2 && sudo -n git fetch --no-tags origin feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report && sudo -n git show FETCH_HEAD:deploy/release-approvals/<release-id>.approval'
    ```
-   It must print the authorized commit. Otherwise stop.
+   It must name `APPROVED_SHA`, this host and the base branch. Otherwise stop.
 3. **Check backup protection (read-only):** the host-only BK-2 status check in the owner's private backup runbook must
    report both the on-server and the off-server copy healthy. The deploy takes and verifies its own database dump
-   before the checkout. Never delete BK-1, BK-2,
-   the historical Hostinger backups or the rollback database as part of a deploy.
-4. **Start** with the canonical command (§6), and write down the `deploy_id` from `log=…/deploy-<deploy-id>.log`. The
-   launcher returning is not completion; wait for the status file (`… deploy-vps-runner.sh follow`, or poll the log).
+   before the checkout. Never delete BK-1, BK-2, the historical Hostinger backups or the rollback database as part of
+   a deploy.
+4. **Start** with the approved release and commit, and write down the `deploy_id`:
+   ```bash
+   ssh daengtisiams-biznet-prod 'cd /var/www/asia-dental-lab-v2 && sudo -n bash scripts/deploy-vps-runner.sh start --release-id <release-id> --approved-sha <APPROVED_SHA>'
+   ```
+   The runner verifies the approval before it writes or launches anything and prints `RELEASE APPROVAL: GO`. A
+   refusal prints `DEPLOYMENT=DENIED`, exits `77` and leaves nothing behind: do not retry with a different commit;
+   fix the cause or get a new approval. The launcher returning is not completion; wait for the status file
+   (`… deploy-vps-runner.sh follow`, or poll the log). If the SSH pipe drops, reconnect and follow the same
+   `deploy_id`; never start a second deploy because a connection closed.
 5. **Prove it by its identifier:**
    ```bash
    ssh daengtisiams-biznet-prod 'cd /var/www/asia-dental-lab-v2 && sudo -n bash scripts/deploy-vps-runner.sh verify <deploy-id>'
    ```
-   It must print `DEPLOY RUNNER OK`. Any other verdict (exit `4`) is not GO. Never read `latest.status` raw, and
-   never use `verify-transition` again (§6a).
+   It must print `DEPLOY_APPROVED_TARGET_MATCH=YES (<APPROVED_SHA>)` and `DEPLOY RUNNER OK`. Any other verdict (exit
+   `4`) is not GO. Never read `latest.status` raw, and never use `verify-transition` again (§6a).
 6. **Smoke over the canonical URL** (`/login`, `/health/live`, `/health/ready`, `/health/lb` → 200; `/storage/…` →
    403). The deploy's own loopback smoke reporting `404` is D6, not a result.
 7. **Confirm nothing else moved:** the queue worker, the scheduler and the KTP cleanup timer keep their owner-set state
    (the deploy restarts only `php8.3-fpm` and reloads only `nginx`), and the backup timers stay enabled.
-8. **GO tag** per CG-16, after production verification; fetch tags explicitly first.
+8. **GO tag** per CG-16 on `APPROVED_SHA` itself, after production verification; fetch tags explicitly first.
 
 **Rollback** is `ssh daengtisiams-biznet-prod 'cd /var/www/asia-dental-lab-v2 && sudo -n bash scripts/rollback-vps.sh <commit>'`,
-following `docs/runbooks/vps-deploy-rollback-runbook.md`. It runs the same host preflight, takes a verified database
+following `docs/runbooks/vps-deploy-rollback-runbook.md`. The target must be an ancestor of the running checkout
+(rule 229); anything else is refused before the backup. It runs the same host preflight, takes a verified database
 dump first and moves code only. It never restores data. A data restore is a separate, explicitly owner-approved
 operation, and an older dump is never restored over newer clinical data.
+
+## 6c. The first deploy that carries the approved-SHA guard (one-time bootstrap)
+
+**Why.** A production checkout older than rule 229 holds a runner without the guard. That runner must not launch the
+release that installs the guard, and nothing in the live checkout may be edited by hand. Instead, the approved
+commit's own deploy chain is exported from the git object into a new root-only directory and **that** runner is
+started. It runs every rule 229 check; there is no transitional bypass. This is used once per host; afterwards §6b
+applies.
+
+**Preconditions.** All of §6b's, except the last one (the checkout does not carry the guard yet).
+
+0. **Record the starting state (read-only):** HEAD, a clean tracked tree, and `0` for the guard in the live runner:
+   ```bash
+   ssh daengtisiams-biznet-prod 'cd /var/www/asia-dental-lab-v2 && sudo -n git rev-parse HEAD && sudo -n git status --porcelain --untracked-files=no | wc -l && sudo -n grep -c approve_or_deny scripts/deploy-vps-runner.sh'
+   ```
+1. **Prove the target and read the approval** (§6b steps 1–3).
+2. **Export the approved chain from the object.** The directory must not exist yet; if it does, stop and inspect it,
+   never reuse an unknown copy:
+   ```bash
+   ssh daengtisiams-biznet-prod 'cd /var/www/asia-dental-lab-v2 && sudo -n git cat-file -e <APPROVED_SHA>^{commit} && sudo -n install -d -m 0700 /root/dms-release-<APPROVED_SHA> && sudo -n git archive <APPROVED_SHA> -- scripts deploy | sudo -n tar -x --no-same-owner -C /root/dms-release-<APPROVED_SHA>'
+   ```
+3. **Prove its provenance:** the exported runner is byte-identical to the commit object's:
+   ```bash
+   ssh daengtisiams-biznet-prod 'cd /var/www/asia-dental-lab-v2 && sudo -n sha256sum /root/dms-release-<APPROVED_SHA>/scripts/deploy-vps-runner.sh && sudo -n git cat-file blob <APPROVED_SHA>:scripts/deploy-vps-runner.sh | sha256sum'
+   ```
+   The two hashes must be equal. Otherwise stop.
+4. **Start the exported runner from the app directory:**
+   ```bash
+   ssh daengtisiams-biznet-prod 'cd /var/www/asia-dental-lab-v2 && sudo -n bash /root/dms-release-<APPROVED_SHA>/scripts/deploy-vps-runner.sh start --release-id <release-id> --approved-sha <APPROVED_SHA>'
+   ```
+   It launches the deploy program beside itself (the export), which hands over to the exported bootstrap; the
+   snapshot comes from `APPROVED_SHA`. Follow the `deploy_id` it prints (§6b step 4).
+5. **Prove it with the deployed in-tree runner**, which is now the guarded one: §6b step 5 (`verify <deploy-id>` →
+   `DEPLOY_APPROVED_TARGET_MATCH=YES` and `DEPLOY RUNNER OK`). The record's `program=` names the export.
+6. **Smoke, confirm nothing else moved, GO tag:** §6b steps 6–8.
+7. **Reconcile the export** only after step 5 reports `DEPLOY RUNNER OK` and no runner process remains
+   (`pgrep -af dms-deploy-runner` prints nothing). Remove exactly that directory, nothing else:
+   ```bash
+   ssh daengtisiams-biznet-prod 'sudo -n rm -rf -- /root/dms-release-<APPROVED_SHA>'
+   ```
+   If the deploy failed, keep the export until the failure is understood.
+
+**What never happens.** The live runner is not edited or replaced by hand; no `git pull` or hard reset is run in the
+production tree; the export is never taken from a workstation's object store; evidence files are never edited.
 
 ## 7. What stays true from the Hostinger era
 

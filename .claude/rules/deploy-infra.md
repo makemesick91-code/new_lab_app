@@ -207,8 +207,8 @@ code, then the canonical rule, and report the drift.
   after the preflight and before any mutation. `provision-runtime-identity.sh` uses `systemctl try-restart` for the
   queue worker so a stopped worker stays stopped. Source: `.cursor/rules/220-production-host-identity-biznet.mdc` §4.
 - **AIR-DEP-33** A bare `exit=N` is never proof of a deploy. `deploy-vps-runner.sh` writes a binding record
-  (`deploy-<id>.host`: host, `deploy_id`, UTC `started_at`/`finished_at`, `runner_contract=2`, runner SHA-256,
-  `result_exit`) and `verify <id>` / `status` (`scripts/lib/deploy-runner-evidence.sh`) accept a success only when
+  (`deploy-<id>.host`: host, `deploy_id`, UTC `started_at`/`finished_at`, `runner_contract=3`, runner SHA-256,
+  `release_id`, `approved_sha`, `result_exit`) and `verify <id>` / `status` (`scripts/lib/deploy-runner-evidence.sh`) accept a success only when
   host identity, timestamps, identifier, target commit (one pin, the deploy's HEAD == target, checkout still there),
   runner version and result (status == record, preflight GO + DEPLOY OK in the run's own log) all agree; anything
   else exits `4` with a named verdict. Never read `latest.status` raw as a GO criterion. The first Biznet deploy
@@ -217,11 +217,25 @@ code, then the canonical rule, and report the drift.
   That ran once, on 2026-11-04 (deploy `20261104-151042`, `TRANSITION DEPLOY VERIFIED`). Every later deploy is proven
   with `verify <id>` → `DEPLOY RUNNER OK` (§6b), and `verify-transition` refuses it (`NOT-TRANSITION`).
   Source: `.cursor/rules/220-production-host-identity-biznet.mdc` §4.
-- **AIR-DEP-34** The runner deploys the **tip of the base branch at launch**; nothing passes it a commit. Before
+- **AIR-DEP-34** **SUPERSEDED by AIR-DEP-35 (rule 229, 2026-11-14).** ~~The runner deploys the **tip of the base branch at launch**; nothing passes it a commit. Before
   `start`, confirm from the host (`git ls-remote origin refs/heads/<base>`) that the tip is the commit approved for
   release, and push nothing to the base between that approval and `start`. A docs or evidence commit pushed
-  after a GO commit is therefore the next deploy's target, not the deployed runtime. Source:
+  after a GO commit is therefore the next deploy's target, not the deployed runtime.~~ Source:
   `.cursor/rules/220-production-host-identity-biznet.mdc` §4.
+- **AIR-DEP-35** A deploy lands only on the exact commit a release approval record **merged on the base** approves:
+  `deploy-vps-runner.sh start --release-id <id> --approved-sha <40-hex>`, record
+  `deploy/release-approvals/<id>.approval`, written only after the owner's written approval of that full SHA (CG-22).
+  `scripts/lib/release-approval.sh` reads it from the fetched commit object (never the working tree), checks
+  repository, host, branch, commit and tree, approver (`DMS_PRODUCTION_RELEASE_APPROVERS`), a window of at most 72 h,
+  an evidence doc quoting the SHA, merged ancestry with only approval records or `docs/**/*.md` after it, and a
+  forward-only move. The runner checks before any launch artifact; the bootstrap re-checks inside the lock before the
+  snapshot (deploy refuses `--target-sha`). Any mismatch: `DEPLOYMENT=DENIED`, exit 77, never the tip. Evidence
+  contract 3 (`DEPLOY_APPROVED_TARGET_MATCH=YES`); GO tag on the approved commit; rollback targets must be ancestors
+  of HEAD. Deploys refuse `--snapshot-ref` and run only `scripts/deploy-vps.sh`; the guard fetches into a private
+  ref (never `FETCH_HEAD`); snapshot stages trust `DMS_DEPLOY_*` only with the bootstrap's lock held. The first
+  deploy carrying the guard uses the one-time bundle bootstrap (runbook §6c). Binding, not authentication: the base
+  is unprotected and root on the host is inside the trust boundary. Source:
+  `.cursor/rules/229-exact-approved-release-sha-guard.mdc`.
 
 ## Current posture (snapshot 2026-11-04, read-only inspection — verify before relying on it)
 
@@ -252,6 +266,7 @@ code, then the canonical rule, and report the drift.
 | `.cursor/rules/82-login-redirect-runtime-permissions.mdc` | Post-auth landing, runtime ownership, writable gates |
 | `.cursor/rules/92-dedicated-runtime-identity-co-tenant-isolation.mdc` | `daengtisiams` identity, FPM pool, isolation verifier |
 | `.cursor/rules/92-immutable-deployment-entrypoint.mdc` | Snapshot, flock, pinned SHA, `DEPLOY OK` |
+| `.cursor/rules/229-exact-approved-release-sha-guard.mdc` | Exact approved release SHA, approval record, contract 3, bootstrap |
 | `.cursor/rules/100-production-secret-file-permission-hardening.mdc` | Secret file mode and handling |
 | `.cursor/rules/121-clinical-evidence-private-storage.mdc` | Clinical evidence on private disks only |
 | `.cursor/rules/176-private-database-dump-creation.mdc` | Dumps private from creation |

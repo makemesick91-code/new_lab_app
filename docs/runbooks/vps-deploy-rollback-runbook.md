@@ -35,7 +35,11 @@ the **deploy and rollback** topics.
 **One canonical deploy command. It runs ON the production host, as root through `sudo -n`, and nowhere else.**
 
 ```
-ssh daengtisiams-biznet-prod 'cd /var/www/asia-dental-lab-v2 && sudo -n bash scripts/deploy-vps-runner.sh start'
+# Rule 229: <release-id> and the full <APPROVED_SHA> come from the release approval record merged on the base
+# (deploy/release-approvals/<release-id>.approval). Without an approved release the runner prints
+# DEPLOYMENT=DENIED (exit 77) and launches nothing. The first deploy that carries the guard uses
+# docs/runbooks/production-host-identity.md section 6c.
+ssh daengtisiams-biznet-prod 'cd /var/www/asia-dental-lab-v2 && sudo -n bash scripts/deploy-vps-runner.sh start --release-id <release-id> --approved-sha <APPROVED_SHA>'
 ssh daengtisiams-biznet-prod 'cd /var/www/asia-dental-lab-v2 && sudo -n bash scripts/deploy-vps-runner.sh status'
 ```
 

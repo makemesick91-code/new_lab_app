@@ -115,12 +115,14 @@ it covers. When you plan work in a domain before opening any of its files, read 
   (rule 221); never point a test suite, seeder, factory or development migration at the production database. Testing
   on operational clinic devices is frozen (use dedicated test devices), and clinic reopening stays a separate owner
   decision.
-- **CG-15 Deploy.** Deploy only with `bash scripts/deploy-vps-runner.sh start`, executed **on the VPS** (as root
-  through `sudo -n`) in the app directory, never on a workstation or a CI runner. The first deploy on a new host needs
-  explicit owner approval and a closed readiness checklist (`docs/runbooks/production-host-identity.md` §6). Biznet's
-  first deploy ran on 2026-11-04 (deploy `20261104-151042`, commit `6f22beb7`); later deploys follow §6b under the
-  owner's current release governance. The runner pins the base-branch tip at launch, so confirm from the host that the
-  tip is the commit approved for release and push nothing to the base before `start`. A deploy is complete only
+- **CG-15 Deploy.** Deploy only with `bash scripts/deploy-vps-runner.sh start --release-id <id> --approved-sha <sha>`,
+  executed **on the VPS** (as root through `sudo -n`) in the app directory, never on a workstation or a CI runner. The
+  first deploy on a new host needs explicit owner approval and a closed readiness checklist
+  (`docs/runbooks/production-host-identity.md` §6). Biznet's first deploy ran on 2026-11-04 (deploy `20261104-151042`,
+  commit `6f22beb7`); later deploys follow §6b under the owner's current release governance. Rule 229: the runner
+  deploys only the exact commit that a release approval record merged on the base names
+  (`deploy/release-approvals/<id>.approval`, recording the owner's written approval of that full SHA) and never
+  substitutes the base-branch tip; anything else is `DEPLOYMENT=DENIED`. A deploy is complete only
   when its status file reports `exit=0` and its log reports `DEPLOY OK`, proven with `verify <deploy-id>` →
   `DEPLOY RUNNER OK` (never read `latest.status` raw); the SSH pipe may drop while the detached runner carries on. The
   runner takes the backup, pins the SHA and runs from an immutable snapshot, so never pre-pull or hand-edit the

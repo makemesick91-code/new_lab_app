@@ -448,14 +448,21 @@ it('records the first Biznet deploy and sends every later one through verify by 
         ->not->toContain('NOT yet executed')
         ->not->toContain('has **never run on Biznet**');
 
-    // The §6b steps keep the safety order: identity, base tip, backups, start, prove.
+    // The §6b steps keep the safety order: identity, the merged approval (rule
+    // 229 replaced "confirm the base tip"), backups, start the approved release,
+    // prove.
     $order = array_map(fn (string $needle) => strpos($flat, $needle), [
         'production-target-check.sh --remote` → `PRODUCTION_TARGET=VERIFIED` (§3)',
-        'tip of the base branch at launch',
+        '**Read the approval from the host (read-only).**',
         'Check backup protection',
-        '**Start** with the canonical command',
+        '**Start** with the approved release and commit',
         '**Prove it by its identifier:**',
     ]);
+    $section6b = substr($flat, (int) strpos($flat, '## 6b.'), (int) strpos($flat, '## 6c.') - (int) strpos($flat, '## 6b.'));
+    expect($section6b)->toContain('--approved-sha <APPROVED_SHA>')
+        ->toContain('DEPLOYMENT=DENIED')
+        ->not->toContain('tip of the base branch at launch')
+        ->not->toContain('It must print the authorized commit');
     expect($order)->not->toContain(false);
     $sorted = $order;
     sort($sorted);

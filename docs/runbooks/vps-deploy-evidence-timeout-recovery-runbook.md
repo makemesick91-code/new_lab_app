@@ -56,8 +56,9 @@ Anything else exits `4` with a named verdict — `UNBOUND`, `FOREIGN`, `FROZEN`,
 
 ```bash
 # 1. Start the deploy detached (returns immediately; safe if the pipe drops).
-#    Note the deploy_id it prints.
-ssh daengtisiams-biznet-prod 'cd /var/www/asia-dental-lab-v2 && sudo -n bash scripts/deploy-vps-runner.sh start'
+#    Note the deploy_id it prints. Rule 229: the release must be approved by a merged
+#    deploy/release-approvals/<release-id>.approval record, or it is DEPLOYMENT=DENIED (exit 77).
+ssh daengtisiams-biznet-prod 'cd /var/www/asia-dental-lab-v2 && sudo -n bash scripts/deploy-vps-runner.sh start --release-id <release-id> --approved-sha <APPROVED_SHA>'
 
 # 2. Follow progress (re-runnable; reconnect any time):
 ssh daengtisiams-biznet-prod 'cd /var/www/asia-dental-lab-v2 && sudo -n bash scripts/deploy-vps-runner.sh follow'

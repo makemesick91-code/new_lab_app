@@ -284,3 +284,11 @@ and whether anyone outside the system reads the prefix.
   claimed. Sprint 0 stays `PARTIAL_GO`.
 - **Status:** `SPRINT_8D_IMPLEMENTATION_GO / PRODUCTION_RELEASE_PENDING` only once the PR's exact-head CI is green;
   see the PR for the CI record.
+
+## 10. PR2 — exact approved release SHA guard (2026-11-14)
+
+The owner asked, as part of the 8D production release, for the production deploy to be bound to an exact approved
+commit before 8D is deployed. That work is 8D PR2, recorded in
+`docs/sprints/dms-rme-revision-program-8d-approved-sha-guard-1.md` (rule 229). The 8D release SHA is therefore the
+merge commit of PR2, not `dde7b9b6`; it is deployed only after the owner's written approval of that exact SHA,
+recorded here and in `deploy/release-approvals/dms-rme-revision-program-8d.approval`. §9 above stays true until then.
