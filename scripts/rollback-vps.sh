@@ -98,6 +98,25 @@ case "${BASH_SOURCE[0]}" in
     exit 2
     ;;
 esac
+# Rule 229 (independent review, 8D PR2, finding 4): the DMS_DEPLOY_* values are
+# trusted only inside the bootstrap's own root-only snapshot with the rollback
+# lock held by the bootstrap — never when exported by hand.
+ROLLBACK_LOCK_ROOT="$(dirname -- "${DMS_DEPLOY_LOCK_FILE:-/nonexistent/rollback.lock}")"
+case "$ROLLBACK_LOCK_ROOT" in
+  /run/daengtisiams-deploy|/var/lock/daengtisiams-deploy) ;;
+  *) echo "FATAL: the rollback lock '${DMS_DEPLOY_LOCK_FILE:-}' is not in the trusted lock root — NOT GO" >&2; exit 2 ;;
+esac
+if [ "$DMS_DEPLOY_LOCK_FILE" != "${ROLLBACK_LOCK_ROOT}/rollback.lock" ] \
+   || [ "$DMS_DEPLOY_SNAPSHOT_DIR" != "${ROLLBACK_LOCK_ROOT}/rollback-${DMS_DEPLOY_RUN_ID:-}" ] \
+   || [ -L "$DMS_DEPLOY_SNAPSHOT_DIR" ] \
+   || [ "$(stat -c '%u %a' "$DMS_DEPLOY_SNAPSHOT_DIR" 2>/dev/null)" != "$(id -u) 700" ]; then
+  echo "FATAL: ${DMS_DEPLOY_SNAPSHOT_DIR} is not this run's trusted snapshot — NOT GO" >&2
+  exit 2
+fi
+if flock -n "$DMS_DEPLOY_LOCK_FILE" true 2>/dev/null; then
+  echo "FATAL: not running under the rollback lock — not launched by the bootstrap — NOT GO" >&2
+  exit 2
+fi
 ROLLBACK_TARGET_SHA="${DMS_DEPLOY_TARGET_SHA:?immutable bootstrap must pin a rollback target commit}"
 DEPLOY_TOOLS_DIR="$DMS_DEPLOY_SNAPSHOT_DIR"
 echo "Rollback run id:          ${DMS_DEPLOY_RUN_ID:-unknown}"

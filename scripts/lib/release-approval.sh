@@ -34,15 +34,19 @@
 # branch tip, the running HEAD, a tag or an earlier approval are never used
 # instead of the approved commit.
 #
-# TRUST MODEL (what this does and does not prove). The guard BINDS a deploy to a
-# reviewed, merged, content-addressed approval record; it does not AUTHENTICATE
-# a human. The record's integrity comes from the canonical remote (it reaches the
-# base branch only through a merged pull request, attributable to a GitHub
-# account) and from git's content addressing (the host reads the blob from the
-# fetched commit). Anyone with root on the production host is inside the trust
-# boundary and can bypass any check on that host; the guard stops mistakes,
-# races, stale approvals and unreviewed targets, not a malicious root. The
-# owner's decision itself is recorded in the sprint document (CG-22).
+# TRUST MODEL (what this does and does not prove). The guard BINDS a deploy to
+# an approval record on the canonical remote's base branch, read by content
+# address from the fetched commit; it does not AUTHENTICATE a human. The record
+# is attributable to whichever GitHub account put it on the base branch, and the
+# governance (rule 229) is that it arrives through a reviewed, merged pull
+# request after the owner's written approval — but nothing HERE can prove that:
+# anyone who can push to the base can write a record, and `APPROVED_BY` is an
+# attribution, not a signature. Branch protection on GitHub is what would make
+# the merge path enforceable. Anyone with root on the production host is inside
+# the trust boundary and can bypass any check on that host. The guard stops
+# mistakes, races, stale approvals and unreviewed targets; it is not proof that a
+# human approved. The owner's decision itself is recorded in the sprint document
+# (CG-22).
 #
 # Every observed value (app dir, branch, host, authority, clock) is a PARAMETER,
 # the convention of scripts/lib/production-host-preflight.sh, so the contract is
@@ -116,30 +120,59 @@ dms_release_approval_normalize_repository() {
 }
 
 dms_release_approval_git() {
-  # Trust for this one repository is scoped to this invocation (the runner and
-  # the bootstrap run as root over a root-owned checkout; the tests do not).
-  git -c safe.directory="$DMS_RELEASE_APPROVAL_GIT_DIR" -C "$DMS_RELEASE_APPROVAL_GIT_DIR" "$@"
+  # No safe.directory override: git's dubious-ownership refusal stays in force
+  # (the production checkout is root-owned and the guard runs as root).
+  git -C "$DMS_RELEASE_APPROVAL_GIT_DIR" "$@"
 }
 
-# The DMS_RELEASE_APPROV* results are read by the sourcing runner/bootstrap.
-# shellcheck disable=SC2034
+dms_release_approval_is_github_url() {
+  local url="${1%/}"
+  url="${url%.git}"
+  [[ "$url" =~ ^https://([^/@]+@)?github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ \
+     || "$url" =~ ^git@github\.com:[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ \
+     || "$url" =~ ^ssh://git@github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]
+}
+
+dms_release_approval_regular_file() {
+  # dms_release_approval_regular_file <commit> <path> — true only for a regular,
+  # non-executable file entry (a symlink's blob is its target text, not content).
+  local entry
+  entry="$(dms_release_approval_git ls-tree "$1" -- "$2" 2>/dev/null)" || return 1
+  [[ "$entry" == "100644 blob "* ]]
+}
+
 dms_release_approval_verify() {
   # dms_release_approval_verify <app_dir> <branch> <release_id> <approved_sha> <authority> <this_host> <now_epoch>
   #
   # On approval prints `RELEASE APPROVAL: GO` and the bound facts, and sets
   # DMS_RELEASE_APPROVED_SHA, DMS_RELEASE_APPROVAL_TIP, DMS_RELEASE_APPROVAL_BLOB
   # and DMS_RELEASE_APPROVAL_PATH for the caller.
+  #
+  # The base branch is fetched into a PRIVATE ref for this invocation, never read
+  # through the shared FETCH_HEAD that any other fetch on the host (a rollback's
+  # `git fetch --tags`) can overwrite between our fetch and our read. Everything
+  # after that read uses immutable object ids; the ref is removed on every path.
+  local rc=0
+  DMS_RELEASE_APPROVAL_GIT_DIR="$1"
+  DMS_RELEASE_APPROVAL_REF="refs/dms-release-approval/$$-${RANDOM}${RANDOM}"
+  dms_release_approval_verify_inner "$@" || rc=$?
+  dms_release_approval_git update-ref -d "$DMS_RELEASE_APPROVAL_REF" >/dev/null 2>&1 || true
+  return "$rc"
+}
+
+# The DMS_RELEASE_APPROV* results are read by the sourcing runner/bootstrap.
+# shellcheck disable=SC2034
+dms_release_approval_verify_inner() {
   local app_dir="$1" branch="$2" release_id="$3" approved_sha="$4" authority="$5" this_host="$6" now="$7"
   local prod_host frozen_hosts prod_repo approvers origin_url origin_repo
   local tip path blob size content line key value object_type tree changed head
-  local approved_epoch not_after_epoch manifest_tag evidence_blob
+  local approved_epoch not_after_epoch manifest_tag evidence_blob local_branch
   local -A record=()
 
   DMS_RELEASE_APPROVED_SHA=""
   DMS_RELEASE_APPROVAL_TIP=""
   DMS_RELEASE_APPROVAL_BLOB=""
   DMS_RELEASE_APPROVAL_PATH=""
-  DMS_RELEASE_APPROVAL_GIT_DIR="$app_dir"
 
   echo "== Release approval guard (rule 229) =="
 
@@ -176,17 +209,23 @@ dms_release_approval_verify() {
     dms_release_approval_deny "the checkout ${app_dir} has no 'origin' remote"
     return
   fi
+  # An OWNER/REPO authority is a GitHub repository: a local path that merely
+  # spells OWNER/REPO (a directory inside the checkout) is not it.
+  if [[ "$prod_repo" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] && ! dms_release_approval_is_github_url "$origin_url"; then
+    dms_release_approval_deny "origin '${origin_url}' is not a GitHub URL for the declared repository '${prod_repo}'"
+    return
+  fi
   origin_repo="$(dms_release_approval_normalize_repository "$origin_url")"
   [ "$origin_repo" = "$prod_repo" ] \
     || { dms_release_approval_deny "origin is '${origin_repo}', the declared production repository is '${prod_repo}'"; return; }
   echo "PASS: origin is the declared repository '${prod_repo}'"
 
   # ── 4. Resolve the base branch from the remote (refs only) ─────────────────
-  if ! dms_release_approval_git fetch --no-tags --quiet origin "refs/heads/${branch}"; then
+  if ! dms_release_approval_git fetch --no-tags --quiet origin "+refs/heads/${branch}:${DMS_RELEASE_APPROVAL_REF}"; then
     dms_release_approval_deny "could not fetch origin ${branch}"
     return
   fi
-  tip="$(dms_release_approval_git rev-parse --verify --quiet 'FETCH_HEAD^{commit}')" \
+  tip="$(dms_release_approval_git rev-parse --verify --quiet "${DMS_RELEASE_APPROVAL_REF}^{commit}")" \
     || { dms_release_approval_deny "the fetched ${branch} does not resolve to a commit"; return; }
   echo "Base branch tip:    ${tip} (origin ${branch})"
 
@@ -200,8 +239,8 @@ dms_release_approval_verify() {
     dms_release_approval_deny "no approval record ${path} on origin ${branch} at ${tip} — the release is not approved"
     return
   fi
-  [ "$(dms_release_approval_git cat-file -t "$blob" 2>/dev/null)" = "blob" ] \
-    || { dms_release_approval_deny "${path} at ${tip} is not a file"; return; }
+  dms_release_approval_regular_file "$tip" "$path" \
+    || { dms_release_approval_deny "${path} at ${tip} is not a regular file"; return; }
   size="$(dms_release_approval_git cat-file -s "$blob")"
   [ "$size" -le "$DMS_RELEASE_APPROVAL_MAX_BYTES" ] \
     || { dms_release_approval_deny "${path} is ${size} bytes; the limit is ${DMS_RELEASE_APPROVAL_MAX_BYTES}"; return; }
@@ -272,6 +311,8 @@ dms_release_approval_verify() {
     || { dms_release_approval_deny "evidence '${record[DMS_APPROVAL_EVIDENCE]}' is not a docs/*.md path"; return; }
   evidence_blob="$(dms_release_approval_git rev-parse --verify --quiet "${tip}:${record[DMS_APPROVAL_EVIDENCE]}")" \
     || { dms_release_approval_deny "evidence document ${record[DMS_APPROVAL_EVIDENCE]} is not on origin ${branch}"; return; }
+  dms_release_approval_regular_file "$tip" "${record[DMS_APPROVAL_EVIDENCE]}" \
+    || { dms_release_approval_deny "evidence document ${record[DMS_APPROVAL_EVIDENCE]} is not a regular file"; return; }
   # Read whole, then match: `cat-file | grep -q` under pipefail can turn an
   # early grep exit (SIGPIPE) into a false denial on a large document.
   value="$(dms_release_approval_git cat-file blob "$evidence_blob")" || value=""
@@ -281,7 +322,12 @@ dms_release_approval_verify() {
   # ── 9. The approved commit is merged; only approvals and docs follow it ───
   dms_release_approval_git merge-base --is-ancestor "$approved_sha" "$tip" \
     || { dms_release_approval_deny "approved SHA ${approved_sha} is not on origin ${branch} (not merged)"; return; }
-  changed="$(dms_release_approval_git diff --name-only --no-renames "$approved_sha" "$tip")"
+  # Plumbing, and a failure is a denial: an empty list from a failed diff would
+  # otherwise read as "nothing follows" (independent review, 8D PR2, finding 2).
+  if ! changed="$(dms_release_approval_git diff-tree -r --no-commit-id --name-only --no-renames "$approved_sha" "$tip")"; then
+    dms_release_approval_deny "could not list the changes between ${approved_sha} and ${tip}"
+    return
+  fi
   while IFS= read -r line; do
     [ -n "$line" ] || continue
     if [[ "$line" =~ ^deploy/release-approvals/[a-z0-9][a-z0-9-]{2,79}\.approval$ ]] \
@@ -299,6 +345,13 @@ dms_release_approval_verify() {
   fi
   dms_release_approval_git merge-base --is-ancestor "$head" "$approved_sha" \
     || { dms_release_approval_deny "the running checkout ${head} is not an ancestor of ${approved_sha} — a deploy never moves production backwards (use rollback-vps.sh)"; return; }
+  # The deploy checks out the local branch and fast-forwards it; a local branch
+  # already past the target (e.g. after a rollback) would only fail after the
+  # backup, so refuse it here, before anything happens.
+  if local_branch="$(dms_release_approval_git rev-parse --verify --quiet "refs/heads/${branch}^{commit}")"; then
+    dms_release_approval_git merge-base --is-ancestor "$local_branch" "$approved_sha" \
+      || { dms_release_approval_deny "the local branch ${branch} (${local_branch}) is not an ancestor of ${approved_sha} — it cannot be fast-forwarded to the approved commit"; return; }
+  fi
 
   DMS_RELEASE_APPROVED_SHA="$approved_sha"
   DMS_RELEASE_APPROVAL_TIP="$tip"

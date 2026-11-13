@@ -20,7 +20,8 @@ use App\Support\Deploy\DeploymentEntrypointScanner;
 /** An approved release (rule 229) whose deploy program is the fixture. */
 function dh1LockSandbox(string $programBody): array
 {
-    return r229Sandbox(['files' => ['scripts/fixture-program.sh' => $programBody], 'checkout' => 'release']);
+    // A deploy runs exactly one program, scripts/deploy-vps.sh (rule 229).
+    return r229Sandbox(['program' => $programBody, 'checkout' => 'release']);
 }
 
 function dh1LockCommand(array $sandbox): string
@@ -33,7 +34,7 @@ function dh1LockCommand(array $sandbox): string
         '--branch', $sandbox['branch'],
         '--release-id', $sandbox['release'],
         '--approved-sha', $sandbox['sha'],
-        '--', 'scripts/fixture-program.sh',
+        '--', 'scripts/deploy-vps.sh',
     ]));
 }
 

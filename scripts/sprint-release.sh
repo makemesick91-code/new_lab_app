@@ -143,13 +143,15 @@ log "deploy runner reported success (deploy + smoke OK)"
 # 4. GO tag — ONLY after a successful deploy + smoke, ONLY with --tag, and ONLY
 #    on the approved commit the checkout is verified to be at.
 if [[ "${DO_TAG}" == "true" ]]; then
-  TAG="${GO_TAG}"
-  if [[ -z "${TAG}" ]]; then
-    # Read straight out of the manifest. Booting the interactive REPL to
-    # read one YAML key is the forbidden command on the release path.
-    TAG="$(sed -n 's/^go_tag:[[:space:]]*//p' "${MANIFEST}" | tail -n1 | tr -d '[:space:]')"
-  fi
-  [[ -n "${TAG}" ]] || die "no go_tag resolved; pass --go-tag <tag>"
+  # Rule 229: the tag is the one the APPROVED commit's own manifest declares
+  # (the guard bound the approval record to it), read from the git object —
+  # never from the working tree. Booting the interactive REPL to read one YAML
+  # key is the forbidden command on the release path.
+  APPROVED_GO_TAG="$(git show "${APPROVED_SHA}:.sprint/current.yml" 2>/dev/null | sed -n 's/^go_tag:[[:space:]]*//p' | tail -n1 | tr -d '[:space:]')" || APPROVED_GO_TAG=""
+  [[ -n "${APPROVED_GO_TAG}" ]] || die "the approved commit ${APPROVED_SHA} declares no go_tag — refusing to tag"
+  TAG="${GO_TAG:-${APPROVED_GO_TAG}}"
+  [[ "${TAG}" == "${APPROVED_GO_TAG}" ]] \
+    || die "--go-tag ${TAG} is not the go_tag ${APPROVED_GO_TAG} the approved commit declares — refusing to tag"
   if git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
     die "GO tag '${TAG}' already exists — refusing to move it."
   fi

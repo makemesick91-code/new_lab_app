@@ -58,6 +58,7 @@ function dreTree(): array
     }
     $sha = trim(dreRun(['git', '-C', $app, 'rev-parse', 'HEAD'])['output']);
     dreApproved($sha);
+    dreApprovalBlob(dreWriteApprovalBlob($app, 'dms-fixture-release', $sha));
 
     return [$app, $runDir, $sha];
 }
@@ -76,6 +77,30 @@ function dreApproved(?string $set = null): string
     return $approved;
 }
 
+/** The approval blob (a real git object in the test tree) the current run cites. */
+function dreApprovalBlob(?string $set = null): string
+{
+    static $blob = '';
+    if ($set !== null) {
+        $blob = $set;
+    }
+
+    return $blob;
+}
+
+/** Store an approval record approving $release at $sha as a git object; returns its id. */
+function dreWriteApprovalBlob(string $app, string $release, string $sha): string
+{
+    $process = new Process(['git', '-C', $app, 'hash-object', '-w', '--stdin']);
+    $process->setInput("DMS_APPROVAL_CONTRACT=1\nDMS_APPROVAL_RELEASE_ID={$release}\nDMS_APPROVAL_TARGET_SHA={$sha}\n");
+    $process->mustRun();
+
+    return trim($process->getOutput());
+}
+
+const DRE_APPROVAL_TIP = 'cccccccccccccccccccccccccccccccccccccccc';
+const DRE_APPROVAL_PATH = 'deploy/release-approvals/dms-fixture-release.approval';
+
 /** A complete, valid contract-3 binding record (host-bound and approval-bound). */
 function dreRecord(string $id = DRE_ID, array $overrides = []): array
 {
@@ -88,6 +113,8 @@ function dreRecord(string $id = DRE_ID, array $overrides = []): array
         'program' => 'scripts/deploy-vps.sh',
         'release_id' => 'dms-fixture-release',
         'approved_sha' => dreApproved(),
+        'approval_record' => DRE_APPROVAL_TIP.':'.DRE_APPROVAL_PATH,
+        'approval_blob' => dreApprovalBlob(),
         'finished_at' => dreIso(DRE_NOW - 300),
         'result_exit' => '0',
     ], $overrides);
@@ -101,6 +128,7 @@ function dreSuccessLog(string $sha, string $host = DRE_HOST, ?string $approved =
     return [
         'RELEASE APPROVAL: GO',
         "DEPLOY_APPROVED_SHA={$approved}",
+        'DEPLOY_APPROVAL_RECORD='.DRE_APPROVAL_TIP.':'.DRE_APPROVAL_PATH.' blob='.dreApprovalBlob(),
         '== Production host preflight (before any mutation) ==',
         "PASS: hostname is the production host '{$host}'",
         'PRODUCTION HOST PREFLIGHT: GO',
@@ -209,6 +237,23 @@ it('refuses a run whose evidence does not prove it', function (callable $mutate,
     'log names no approved commit' => [fn (array $r, string $sha) => ['log' => array_values(array_diff(dreSuccessLog($sha), ["DEPLOY_APPROVED_SHA={$sha}"]))] + $r, 'UNVERIFIED'],
     'log names two approved commits' => [fn (array $r, string $sha) => ['log' => array_merge(dreSuccessLog($sha), ['DEPLOY_APPROVED_SHA='.str_repeat('2', 40)])] + $r, 'UNVERIFIED'],
     'log approved another commit than the record' => [fn (array $r, string $sha) => ['log' => dreSuccessLog($sha, DRE_HOST, str_repeat('3', 40))] + $r, 'MISMATCHED'],
+    'record names no approval' => [fn (array $r) => ['record' => dreRecord(DRE_ID, ['approval_record' => null])] + $r, 'INCOMPLETE'],
+    'record names another release\'s approval' => [fn (array $r) => ['record' => dreRecord(DRE_ID, ['approval_record' => DRE_APPROVAL_TIP.':deploy/release-approvals/dms-other-release.approval'])] + $r, 'INCOMPLETE'],
+    'record names no approval blob' => [fn (array $r) => ['record' => dreRecord(DRE_ID, ['approval_blob' => null])] + $r, 'INCOMPLETE'],
+    'log verified another approval file' => [fn (array $r, string $sha) => ['log' => str_replace(DRE_APPROVAL_PATH, 'deploy/release-approvals/dms-other-release.approval', dreSuccessLog($sha))] + $r, 'MISMATCHED'],
+    'log names no approval record' => [fn (array $r, string $sha) => ['log' => array_values(array_filter(dreSuccessLog($sha), fn ($l) => ! str_starts_with($l, 'DEPLOY_APPROVAL_RECORD=')))] + $r, 'UNVERIFIED'],
+    'log cites an approval git never held' => [fn (array $r, string $sha) => ['log' => str_replace(dreApprovalBlob(), str_repeat('6', 40), dreSuccessLog($sha))] + $r, 'UNVERIFIED'],
+    'record cites an approval git never held' => [fn (array $r) => ['record' => dreRecord(DRE_ID, ['approval_blob' => str_repeat('5', 40)])] + $r, 'UNVERIFIED'],
+    'the approval in git approves another commit' => [function (array $r, string $sha, string $app) {
+        $other = dreWriteApprovalBlob($app, 'dms-fixture-release', str_repeat('7', 40));
+
+        return ['record' => dreRecord(DRE_ID, ['approval_blob' => $other]), 'log' => str_replace(dreApprovalBlob(), $other, dreSuccessLog($sha))] + $r;
+    }, 'MISMATCHED'],
+    'the approval in git approves another release' => [function (array $r, string $sha, string $app) {
+        $other = dreWriteApprovalBlob($app, 'dms-other-release', $sha);
+
+        return ['record' => dreRecord(DRE_ID, ['approval_blob' => $other])] + $r;
+    }, 'MISMATCHED'],
     'run pinned a commit other than the approved one' => [fn (array $r, string $sha) => [
         'record' => dreRecord(DRE_ID, ['approved_sha' => str_repeat('4', 40)]),
         'log' => dreSuccessLog($sha, DRE_HOST, str_repeat('4', 40)),

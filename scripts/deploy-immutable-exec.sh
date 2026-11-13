@@ -128,8 +128,17 @@ deny() {
   echo "DEPLOYMENT=DENIED"
   exit 77
 }
+# Each role runs exactly one program. A deploy's snapshot is always exported
+# from the approved commit itself: a --snapshot-ref would let an approved deploy
+# execute the deployment program of ANY other commit (independent review, 8D
+# PR2, finding 1).
+case "$ROLE:${PROGRAM_ARGV[0]}" in
+  deploy:scripts/deploy-vps.sh|rollback:scripts/rollback-vps.sh) ;;
+  *) deny "role '${ROLE}' runs only its own program, not '${PROGRAM_ARGV[0]}'" ;;
+esac
 if [ "$ROLE" = "deploy" ]; then
   [ -z "$TARGET_SHA" ] || deny "--target-sha is not accepted for a deploy: the target is the commit the merged release approval approves (rule 229)"
+  [ -z "$SNAPSHOT_REF" ] || deny "--snapshot-ref is not accepted for a deploy: the deployment program comes from the approved commit only (rule 229)"
   [ -n "$BRANCH" ] || deny "a deploy needs --branch (the base branch the approval is merged on)"
   [ -n "$RELEASE_ID" ] && [ -n "$APPROVED_SHA" ] \
     || deny "a deploy needs --release-id and --approved-sha; an unapproved target never enters the mutation path (rule 229)"

@@ -463,9 +463,19 @@ it('serialises two approved runs: the second is refused by the lock before it pi
     $s = r229Sandbox();
     $approval = ['--release-id', $s['release'], '--approved-sha', $s['sha']];
 
-    $first = r229Runner($s, array_merge(['start'], $approval), ['R229_HOLD_SECONDS' => '5']);
+    $started = microtime(true);
+    $first = r229Runner($s, array_merge(['start'], $approval), ['R229_HOLD_SECONDS' => '8']);
     preg_match('/deploy_id=(\d{8}-\d{6})/', $first['output'], $a);
-    usleep(1_300_000); // the runner's identifier has one-second resolution
+    // Wait until the first run is demonstrably inside the locked critical
+    // section (its program has started), not for a fixed time.
+    $firstLog = "{$s['app']}/storage/logs/deploy-runner/deploy-{$a[1]}.log";
+    $deadline = microtime(true) + 30;
+    while (microtime(true) < $deadline && ! str_contains((string) @file_get_contents($firstLog), 'PRODUCTION HOST PREFLIGHT: GO')) {
+        usleep(100_000);
+    }
+    expect((string) @file_get_contents($firstLog))->toContain('PRODUCTION HOST PREFLIGHT: GO');
+    // The runner's identifier has one-second resolution.
+    usleep((int) max(0, 1_200_000 - (microtime(true) - $started) * 1_000_000));
     $second = r229Runner($s, array_merge(['start'], $approval));
     preg_match('/deploy_id=(\d{8}-\d{6})/', $second['output'], $b);
 
@@ -527,8 +537,17 @@ function r229Script(string $relative): string
     return (string) file_get_contents(base_path($relative));
 }
 
+/** The script without comment lines, so an ordering contract cannot be met by a comment. */
+function r229Code(string $relative): string
+{
+    return implode("\n", array_filter(
+        preg_split('/\R/', r229Script($relative)) ?: [],
+        fn (string $line): bool => ! str_starts_with(ltrim($line), '#'),
+    ));
+}
+
 it('the deploy program refuses before the hand-over and re-asserts the approval before its first mutation', function () {
-    $deploy = r229Script('scripts/deploy-vps.sh');
+    $deploy = r229Code('scripts/deploy-vps.sh');
     $pos = fn (string $needle) => strpos($deploy, $needle);
 
     expect($pos('echo "DEPLOYMENT=DENIED"'))->toBeLessThan($pos('exec bash "$IMMUTABLE_EXEC"'))
@@ -542,7 +561,7 @@ it('the deploy program refuses before the hand-over and re-asserts the approval 
 });
 
 it('the runner verifies the approval before it writes, links or detaches anything', function () {
-    $runner = r229Script('scripts/deploy-vps-runner.sh');
+    $runner = r229Code('scripts/deploy-vps-runner.sh');
     $body = substr($runner, (int) strpos($runner, 'start_detached() {'));
     $pos = fn (string $needle) => strpos($body, $needle);
 
@@ -555,32 +574,43 @@ it('the runner verifies the approval before it writes, links or detaches anythin
 });
 
 it('the bootstrap verifies the approval inside the lock and before the snapshot', function () {
-    $bootstrap = r229Script('scripts/deploy-immutable-exec.sh');
+    $bootstrap = r229Code('scripts/deploy-immutable-exec.sh');
     $pos = fn (string $needle) => strpos($bootstrap, $needle);
 
     expect($pos('--target-sha is not accepted for a deploy'))->toBeLessThan($pos('exec 9>"$LOCK_FILE"'))
         ->and($pos('flock -n 9'))->toBeLessThan($pos('dms_release_approval_verify "$APP_DIR"'))
         ->and($pos('dms_release_approval_verify "$APP_DIR"'))->toBeLessThan($pos('echo "DEPLOY_TARGET_PINNED='))
         ->and($pos('echo "DEPLOY_TARGET_PINNED='))->toBeLessThan($pos('git archive --format=tar'))
-        ->and($bootstrap)->toContain('TARGET_SHA="$DMS_RELEASE_APPROVED_SHA"');
+        ->and($bootstrap)->toContain('TARGET_SHA="$DMS_RELEASE_APPROVED_SHA"')
+        ->and($pos('--snapshot-ref is not accepted for a deploy'))->toBeLessThan($pos('exec 9>"$LOCK_FILE"'))
+        ->and($pos("runs only its own program"))->toBeLessThan($pos('exec 9>"$LOCK_FILE"'));
 });
 
 it('the guard parses the approval record and never executes it', function () {
     $lib = r229Script('scripts/lib/release-approval.sh');
 
-    expect($lib)->not->toMatch('/^\s*(source|\.)\s/m')
+    $code = r229Code('scripts/lib/release-approval.sh');
+
+    expect($code)->not->toContain('FETCH_HEAD')
+        ->and($code)->toContain('refs/dms-release-approval/')
+        ->and($code)->not->toContain('safe.directory')
+        ->and($lib)->not->toMatch('/^\s*(source|\.)\s/m')
         ->and($lib)->not->toContain('eval ')
         ->and($lib)->toContain('cat-file blob "$blob"')
         ->and($lib)->not->toContain('cat "$path"');
 });
 
 it('the release wrapper needs the approval and tags the approved commit, never HEAD', function () {
-    $wrapper = r229Script('scripts/sprint-release.sh');
+    $wrapper = r229Code('scripts/sprint-release.sh');
 
     expect($wrapper)->toContain('bash scripts/deploy-vps-runner.sh run --release-id "${RELEASE_ID}" --approved-sha "${APPROVED_SHA}"')
         ->and($wrapper)->toContain('git tag -a "${TAG}" "${APPROVED_SHA}"')
         ->and($wrapper)->toContain('[[ "${DEPLOYED_HEAD}" == "${APPROVED_SHA}" ]]')
-        ->and($wrapper)->not->toMatch('/git tag -a "\$\{TAG\}" -m/');
+        ->and($wrapper)->not->toMatch('/git tag -a "\$\{TAG\}" -m/')
+        // The tag name is the approved commit's own go_tag, from the git object.
+        ->and($wrapper)->toContain('git show "${APPROVED_SHA}:.sprint/current.yml"')
+        ->and($wrapper)->toContain('[[ "${TAG}" == "${APPROVED_GO_TAG}" ]]')
+        ->and($wrapper)->not->toContain('"${MANIFEST}" | tail -n1');
 });
 
 it('the release wrapper refuses --apply without an approval before touching anything', function (array $args) {
@@ -599,7 +629,7 @@ it('the release wrapper refuses --apply without an approval before touching anyt
 ]);
 
 it('a rollback refuses a target outside the deployed history, before the hand-over and before its backup', function () {
-    $rollback = r229Script('scripts/rollback-vps.sh');
+    $rollback = r229Code('scripts/rollback-vps.sh');
     $pos = fn (string $needle, int $offset = 0) => strpos($rollback, $needle, $offset);
     $first = $pos('git merge-base --is-ancestor "$ROLLBACK_TARGET_SHA" HEAD');
     $second = $pos('git merge-base --is-ancestor "$ROLLBACK_TARGET_SHA" "$CURRENT_HEAD"');
@@ -622,3 +652,131 @@ it('governance fails the moment any part of the guard is removed', function () {
     config()->set('deployment_entrypoint.approval_guard_expectations.required_authority_keys', ['DMS_NOT_DECLARED']);
     expect($scanner->approvalGuardPosture()['issues'])->toContain('authority does not declare DMS_NOT_DECLARED');
 });
+
+// ─── Independent review findings (8D PR2) — each one is a regression test ──
+
+it('refuses a deploy that would run a program from any commit but the approved one', function (string $case) {
+    r229RequiresTooling();
+    $s = r229Sandbox(['checkout' => 'release']);
+    $approval = ['--release-id', $s['release'], '--approved-sha', $s['sha']];
+    $args = [
+        'a snapshot of another commit' => array_merge($approval, ['--snapshot-ref', $s['base'], '--', 'scripts/deploy-vps.sh']),
+        'another program' => array_merge($approval, ['--', 'scripts/deploy-immutable-exec.sh']),
+        'the rollback program' => array_merge($approval, ['--', 'scripts/rollback-vps.sh']),
+    ][$case];
+
+    $r = r229Run(array_merge(['bash', "{$s['app']}/scripts/deploy-immutable-exec.sh", '--role', 'deploy',
+        '--app-dir', $s['app'], '--lock-dir', $s['lock'], '--branch', $s['branch']], $args), [], $s['app']);
+
+    expect($r['exit'])->toBe(77, $r['output'])
+        ->and($r['output'])->toContain('DEPLOYMENT=DENIED')
+        ->and($r['output'])->not->toContain('DEPLOY_LOCK_ACQUIRED')
+        ->and($r['output'])->not->toContain('DEPLOY_SNAPSHOT_CREATED');
+})->with(['a snapshot of another commit', 'another program', 'the rollback program']);
+
+it('denies when it cannot list what follows the approved commit (fail closed)', function () {
+    r229RequiresTooling();
+    $s = r229Sandbox();
+    r229Push($s, ['app/Unreviewed.php' => "<?php\n"], 'pushed after the approval');
+
+    // Fault injection: the listing fails. An empty list must never read as "nothing follows".
+    $r = r229Run([
+        'bash', '-c', 'source "$1"; shift; dms_release_approval_git() { [ "$1" = diff-tree ] && return 128; git -C "$DMS_RELEASE_APPROVAL_GIT_DIR" "$@"; }; rc=0; dms_release_approval_verify "$@" || rc=$?; exit "$rc"',
+        '_', base_path('scripts/lib/release-approval.sh'),
+        $s['app'], $s['branch'], $s['release'], $s['sha'], $s['authority'], $s['host'], (string) time(),
+    ]);
+
+    r229Denied($r);
+    expect($r['output'])->toContain('could not list the changes');
+});
+
+it('reads the branch through a private ref it always removes, never through FETCH_HEAD', function () {
+    r229RequiresTooling();
+    $s = r229Sandbox();
+    // A FETCH_HEAD pointing anywhere else changes nothing.
+    file_put_contents("{$s['app']}/.git/FETCH_HEAD", $s['base']."\t\tbranch 'aaa-unreviewed' of {$s['origin']}\n");
+
+    $go = r229Verify($s);
+    $denied = r229Verify($s, ['sha' => $s['base']]);
+
+    expect($go['exit'])->toBe(0, $go['output'])
+        ->and($denied['exit'])->toBe(77, $denied['output'])
+        ->and(r229Git($s['app'], ['for-each-ref', 'refs/dms-release-approval/']))->toBe('');
+});
+
+it('refuses a local origin that merely spells the GitHub repository', function () {
+    r229RequiresTooling();
+    $s = r229Sandbox();
+    file_put_contents($s['authority'], preg_replace('/^DMS_PRODUCTION_REPOSITORY=.*$/m', 'DMS_PRODUCTION_REPOSITORY=makemesick91-code/new_lab_app', (string) file_get_contents($s['authority'])));
+    r229Git($s['root'], ['clone', '-q', '--bare', $s['origin'], "{$s['app']}/makemesick91-code/new_lab_app.git"]);
+    r229Git($s['app'], ['remote', 'set-url', 'origin', 'makemesick91-code/new_lab_app.git']);
+
+    r229Denied($r = r229Verify($s));
+    expect($r['output'])->toContain('is not a GitHub URL for the declared repository');
+});
+
+it('refuses before any mutation when the local branch cannot be fast-forwarded to the approved commit', function () {
+    r229RequiresTooling();
+    $s = r229Sandbox();
+    // After a rollback the checkout is detached at an older commit, while the
+    // local branch still points past the commit being deployed.
+    $ahead = r229Git($s['app'], ['commit-tree', $s['sha'].'^{tree}', '-p', $s['sha'], '-m', 'local branch ahead']);
+    r229Git($s['app'], ['checkout', '-q', '--detach', $s['base']]);
+    r229Git($s['app'], ['branch', '-f', $s['branch'], $ahead]);
+
+    r229Denied($r = r229Verify($s));
+    expect($r['output'])->toContain('cannot be fast-forwarded to the approved commit');
+});
+
+it('refuses an approval record or evidence document that is a symlink', function (string $which) {
+    r229RequiresTooling();
+    $s = r229Sandbox(['approve' => false]);
+    $record = "deploy/release-approvals/{$s['release']}.approval";
+    $evidence = "docs/sprints/{$s['release']}.md";
+    r229Write($s['maint'], [
+        $record => r229ApprovalRecord(r229Fields($s)),
+        $evidence => "Owner approval: deploy `{$s['sha']}`.\n",
+    ]);
+    $link = $which === 'record' ? $record : $evidence;
+    unlink("{$s['maint']}/{$link}");
+    // A symlink's blob is its target text: here, text that would satisfy the check.
+    symlink($which === 'record' ? '../../docs/sprints/x' : $s['sha'], "{$s['maint']}/{$link}");
+    r229Git($s['maint'], ['add', '-A']);
+    r229Git($s['maint'], ['commit', '-q', '-m', 'symlinked approval']);
+    r229Git($s['maint'], ['push', '-q', 'origin', $s['branch']]);
+
+    r229Denied($r = r229Verify($s));
+    expect($r['output'])->toContain('is not a regular file');
+})->with(['record', 'evidence']);
+
+it('refuses a direct run of the real deploy or rollback program with forged bootstrap variables', function (string $program, array $lock, int $exit, string $reason) {
+    r229RequiresTooling();
+    $s = r229Sandbox();
+    $forged = str_repeat('b', 40);
+    $env = array_merge([
+        'DMS_DEPLOY_SNAPSHOT_DIR' => base_path(),
+        'DMS_DEPLOY_APP_DIR' => $s['app'],
+        'DMS_DEPLOY_TARGET_SHA' => $forged,
+        'DMS_DEPLOY_APPROVED_SHA' => $forged,
+        'DMS_DEPLOY_RELEASE_ID' => 'dms-forged-release',
+        'DMS_DEPLOY_RUN_ID' => 'forged',
+    ], $lock);
+    $args = $program === 'deploy'
+        ? ['bash', base_path('scripts/deploy-vps.sh'), '--release-id', 'dms-forged-release', '--approved-sha', $forged]
+        : ['bash', base_path('scripts/rollback-vps.sh'), $forged];
+
+    $r = r229Run($args, $env, $s['app']);
+
+    expect($r['exit'])->toBe($exit, $r['output'])
+        ->and($r['output'])->toContain($reason)
+        ->and($r['output'])->not->toContain('PRODUCTION HOST PREFLIGHT')
+        ->and($r['output'])->not->toContain('Pinned target SHA')
+        ->and($r['output'])->not->toContain('Backup DB')
+        ->and(r229Git($s['app'], ['rev-parse', 'HEAD']))->toBe($s['base']);
+})->with([
+    'deploy, no lock' => ['deploy', [], 77, 'is not in the trusted lock root'],
+    'deploy, a lock elsewhere' => ['deploy', ['DMS_DEPLOY_LOCK_FILE' => '/tmp/deploy.lock'], 77, 'is not in the trusted lock root'],
+    'deploy, the real lock root but not its snapshot' => ['deploy', ['DMS_DEPLOY_LOCK_FILE' => '/run/daengtisiams-deploy/deploy.lock'], 77, "is not this run's trusted snapshot"],
+    'rollback, no lock' => ['rollback', [], 2, 'is not in the trusted lock root'],
+    'rollback, the real lock root but not its snapshot' => ['rollback', ['DMS_DEPLOY_LOCK_FILE' => '/run/daengtisiams-deploy/rollback.lock'], 2, "is not this run's trusted snapshot"],
+]);

@@ -73,9 +73,12 @@ if [ -z "${DMS_DEPLOY_SNAPSHOT_DIR:-}" ]; then
     -- scripts/deploy-vps.sh --release-id "$RELEASE_ID" --approved-sha "$APPROVED_SHA"
 fi
 
-# From here on we are the snapshot copy. Assert it rather than assume it: a
-# forged environment variable must not be able to talk this script into running
-# the vulnerable in-tree path.
+# From here on we are the snapshot copy. Assert it rather than assume it: the
+# DMS_DEPLOY_* values below are trusted only when this really is the bootstrap's
+# snapshot, inside its root-only lock root, with the deploy lock HELD by the
+# bootstrap. Otherwise someone exported those variables by hand (independent
+# review, 8D PR2, finding 4) and nothing here may run. Root on the host can
+# still forge anything; this stops a mistaken or scripted direct invocation.
 case "${BASH_SOURCE[0]}" in
   "${DMS_DEPLOY_SNAPSHOT_DIR}"/*) ;;
   *)
@@ -83,6 +86,26 @@ case "${BASH_SOURCE[0]}" in
     exit 2
     ;;
 esac
+DEPLOY_LOCK_ROOT="$(dirname -- "${DMS_DEPLOY_LOCK_FILE:-/nonexistent/deploy.lock}")"
+case "$DEPLOY_LOCK_ROOT" in
+  /run/daengtisiams-deploy|/var/lock/daengtisiams-deploy) ;;
+  *) echo "FATAL: the deploy lock '${DMS_DEPLOY_LOCK_FILE:-}' is not in the trusted lock root — not the bootstrap's snapshot — NOT GO" >&2; echo "DEPLOYMENT=DENIED"; exit 77 ;;
+esac
+if [ "$DMS_DEPLOY_LOCK_FILE" != "${DEPLOY_LOCK_ROOT}/deploy.lock" ] \
+   || [ "$DMS_DEPLOY_SNAPSHOT_DIR" != "${DEPLOY_LOCK_ROOT}/deploy-${DMS_DEPLOY_RUN_ID:-}" ] \
+   || [ -L "$DMS_DEPLOY_SNAPSHOT_DIR" ] \
+   || [ "$(stat -c '%u %a' "$DMS_DEPLOY_SNAPSHOT_DIR" 2>/dev/null)" != "$(id -u) 700" ]; then
+  echo "FATAL: ${DMS_DEPLOY_SNAPSHOT_DIR} is not this run's trusted snapshot — NOT GO" >&2
+  echo "DEPLOYMENT=DENIED"
+  exit 77
+fi
+# The bootstrap holds the lock for the whole run; a lock we can take ourselves
+# means no bootstrap is holding it.
+if flock -n "$DMS_DEPLOY_LOCK_FILE" true 2>/dev/null; then
+  echo "FATAL: not running under the deploy lock — not launched by the bootstrap — NOT GO" >&2
+  echo "DEPLOYMENT=DENIED"
+  exit 77
+fi
 TARGET_SHA="${DMS_DEPLOY_TARGET_SHA:?immutable bootstrap must pin a target commit}"
 DEPLOY_TOOLS_DIR="$DMS_DEPLOY_SNAPSHOT_DIR"
 # Rule 229, re-asserted before the first mutation: the commit the bootstrap

@@ -45,10 +45,11 @@ function dh1RollbackScript(): string
  * the source/snapshot hash proof compares real bytes. Returns the r229 sandbox
  * with `program` set.
  */
-function dh1Sandbox(string $programBody, string $programName = 'fixture-program.sh', array $files = []): array
+function dh1Sandbox(string $programBody, array $files = []): array
 {
-    $sandbox = r229Sandbox(['files' => ['scripts/'.$programName => $programBody] + $files, 'checkout' => 'release']);
-    $sandbox['program'] = $programName;
+    // A deploy runs exactly one program, scripts/deploy-vps.sh (rule 229).
+    $sandbox = r229Sandbox(['program' => $programBody, 'files' => $files, 'checkout' => 'release']);
+    $sandbox['program'] = 'deploy-vps.sh';
 
     return $sandbox;
 }
@@ -238,7 +239,7 @@ test('a repository rewrite during a run cannot change the executing program', fu
 set -euo pipefail
 echo "MARKER_ORIGINAL_PAYLOAD"
 before="$(sha256sum "${BASH_SOURCE[0]}" | awk '{print $1}')"
-printf '#!/usr/bin/env bash\necho POISONED\n' > "${DMS_DEPLOY_APP_DIR}/scripts/fixture-program.sh"
+printf '#!/usr/bin/env bash\necho POISONED\n' > "${DMS_DEPLOY_APP_DIR}/scripts/deploy-vps.sh"
 after="$(sha256sum "${BASH_SOURCE[0]}" | awk '{print $1}')"
 [ "$before" = "$after" ] && echo "EXEC_SOURCE_IMMUTABLE=YES" || { echo "EXEC_SOURCE_IMMUTABLE=NO"; exit 9; }
 grep -q MARKER_ORIGINAL_PAYLOAD "${BASH_SOURCE[0]}" && echo "PAYLOAD_INTACT=YES"
@@ -257,7 +258,7 @@ SH);
 
         // The working-tree copy really was rewritten — the fixture proves
         // immutability of the RUNNING program, not absence of mutation.
-        expect(file_get_contents($sandbox['app'].'/scripts/fixture-program.sh'))->toContain('POISONED');
+        expect(file_get_contents($sandbox['app'].'/scripts/deploy-vps.sh'))->toContain('POISONED');
     } finally {
         dh1Cleanup($sandbox);
     }
@@ -272,7 +273,7 @@ test('the approved commit is pinned and run, never a newer branch tip', function
 #!/usr/bin/env bash
 set -euo pipefail
 echo "PROGRAM_VERSION=$(cat "$(dirname "${BASH_SOURCE[0]}")/version.txt")"
-SH, 'fixture-program.sh', ['scripts/version.txt' => "PINNED\n"]);
+SH, ['scripts/version.txt' => "PINNED\n"]);
 
     try {
         // 1. Only another approval record lands: the target is still the

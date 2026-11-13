@@ -205,7 +205,7 @@ return [
             'deployment is NOT complete; do NOT treat as GO until',
             'reports DEPLOY RUNNER OK',
         ],
-        'canonical_command' => 'bash scripts/deploy-vps-runner.sh start',
+        'canonical_command' => 'bash scripts/deploy-vps-runner.sh start --release-id <release-id> --approved-sha <approved-sha>',
     ],
 
     // DMS-RME-REVISION-PROGRAM-8D-APPROVED-SHA-GUARD-1 (rule 229) — exact
@@ -229,6 +229,12 @@ return [
                     'no substitution',
                     'DEPLOYMENT=DENIED',
                     'RELEASE APPROVAL: GO',
+                    // Independent review (8D PR2): private fetch ref, fail-closed
+                    // listing, regular files only, GitHub-only origin.
+                    'refs/dms-release-approval/',
+                    'could not list the changes',
+                    'dms_release_approval_regular_file',
+                    'is not a GitHub URL',
                 ],
             ],
             'bootstrap' => [
@@ -238,6 +244,8 @@ return [
                     '--approved-sha',
                     'DEPLOY_APPROVED_SHA=',
                     '--target-sha is not accepted for a deploy',
+                    '--snapshot-ref is not accepted for a deploy',
+                    'runs only its own program',
                     'DMS_DEPLOY_APPROVED_SHA',
                 ],
             ],
@@ -247,6 +255,8 @@ return [
                     '--approved-sha "$APPROVED_SHA"',
                     'DMS_DEPLOY_APPROVED_SHA',
                     'DEPLOYMENT=DENIED',
+                    'not running under the deploy lock',
+                    "is not this run's trusted snapshot",
                 ],
             ],
             'runner_script' => [
@@ -267,6 +277,7 @@ return [
                 'required_markers' => [
                     'DMS_RUNNER_EVIDENCE_CONTRACT=3',
                     'dms_runner_assert_approval_log',
+                    'dms_runner_assert_approval_blob',
                 ],
             ],
             'release_wrapper' => [
@@ -274,6 +285,7 @@ return [
                 'required_markers' => [
                     '--approved-sha "${APPROVED_SHA}"',
                     'git tag -a "${TAG}" "${APPROVED_SHA}"',
+                    'APPROVED_GO_TAG',
                 ],
                 'forbidden_markers' => [
                     'GO tag \'${TAG}\' at HEAD',
@@ -283,6 +295,7 @@ return [
                 'path' => 'scripts/rollback-vps.sh',
                 'required_markers' => [
                     'merge-base --is-ancestor "$ROLLBACK_TARGET_SHA"',
+                    'not running under the rollback lock',
                 ],
             ],
         ],
