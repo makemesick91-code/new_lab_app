@@ -228,7 +228,10 @@ commit a release approval record merged on the base branch approves. The runner 
 3. **Check backup protection (read-only):** the host-only BK-2 status check in the owner's private backup runbook must
    report both the on-server and the off-server copy healthy. The deploy takes and verifies its own database dump
    before the checkout. Never delete BK-1, BK-2, the historical Hostinger backups or the rollback database as part of
-   a deploy.
+   a deploy. Read the workstation verdict at the start of deploy work too (`bk2-status.sh`,
+   `docs/runbooks/bk2-offserver-workstation-recovery.md` §7, rule 230). If the HDD is detached, tell the owner early,
+   because the deploy's own package will wait on the server. A fail state or a `FAIL` result is a HOLD until the
+   owner decides.
 4. **Start** with the approved release and commit, and write down the `deploy_id`:
    ```bash
    ssh daengtisiams-biznet-prod 'cd /var/www/asia-dental-lab-v2 && sudo -n bash scripts/deploy-vps-runner.sh start --release-id <release-id> --approved-sha <APPROVED_SHA>'

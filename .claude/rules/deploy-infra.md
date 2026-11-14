@@ -238,6 +238,14 @@ code, then the canonical rule, and report the drift.
   reclassify it as documentation. Binding, not authentication: the base
   is unprotected and root on the host is inside the trust boundary. Source:
   `.cursor/rules/229-exact-approved-release-sha-guard.mdc`.
+- **AIR-DEP-36** The BK-2 workstation pull (`dms-bk2-pull.timer`) claims `result=OK`, exit 0 and a local
+  `OFF_SERVER=OK` only when that run proved the backup HDD's identity chain up to one read-write mount in **PID 1's**
+  mount namespace and confirmed every listed package on the HDD. Otherwise it reports `DEGRADED` (exit 75) or `FAIL`
+  (exit 1) with `warn`/`crit` alerts (HDD unavailable > 45 min, pending > 26 h, identity fail state). An absent, locked
+  or unmounted HDD is recoverable; a mismatch is fail-closed. Only the custodian unlocks, interactively, typing the
+  passphrase into cryptsetup's prompt. `bk2-status.sh` gives the verdict. HDD identifiers stay in the private tree,
+  never in this public repository. Source: `.cursor/rules/230-bk2-offserver-workstation-recovery.mdc`, runbook
+  `docs/runbooks/bk2-offserver-workstation-recovery.md`.
 
 ## Current posture (snapshot 2026-11-04, read-only inspection — verify before relying on it)
 
@@ -269,6 +277,7 @@ code, then the canonical rule, and report the drift.
 | `.cursor/rules/92-dedicated-runtime-identity-co-tenant-isolation.mdc` | `daengtisiams` identity, FPM pool, isolation verifier |
 | `.cursor/rules/92-immutable-deployment-entrypoint.mdc` | Snapshot, flock, pinned SHA, `DEPLOY OK` |
 | `.cursor/rules/229-exact-approved-release-sha-guard.mdc` | Exact approved release SHA, approval record, contract 3, bootstrap |
+| `.cursor/rules/230-bk2-offserver-workstation-recovery.mdc` | BK-2 workstation pull: HDD identity states, PID 1 mount, custodian unlock, result/alert semantics |
 | `.cursor/rules/100-production-secret-file-permission-hardening.mdc` | Secret file mode and handling |
 | `.cursor/rules/121-clinical-evidence-private-storage.mdc` | Clinical evidence on private disks only |
 | `.cursor/rules/176-private-database-dump-creation.mdc` | Dumps private from creation |

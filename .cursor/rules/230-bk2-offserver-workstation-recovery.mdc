@@ -1,0 +1,137 @@
+---
+description: DMS-BK2-BACKUP-RELIABILITY-WSL2-RECOVERY-1 — the BK-2 off-server copy on the WSL2 workstation survives Windows/WSL restarts without storing the LUKS passphrase. The backup HDD is proven link by link (disk model+serial+WWN, LUKS2 UUID, canonical dm-crypt name and dm uuid, ext4 UUID, exactly one rw mount of the filesystem root in PID 1's mount namespace) with explicit recoverable states (ABSENT, LOCKED, NOT_MOUNTED, NOT_IN_PID1_NS) apart from fail-closed ones (MISMATCH, WRONG_MAPPING, DUPLICATE_MOUNT, READ_ONLY, UNVERIFIABLE). Only the custodian unlocks, interactively, typing the passphrase into cryptsetup's own prompt. A pull reports OK (exit 0) and a local OFF_SERVER=OK only when that run verified every listed package on the HDD; otherwise DEGRADED (exit 75) or FAIL (exit 1). Alerts carry warn/crit levels and SLA thresholds. Identifiers stay in the owner's private tree, never in this public repository.
+globs:
+  - "docs/runbooks/bk2-offserver-workstation-recovery.md"
+  - "docs/runbooks/production-host-identity.md"
+  - "tests/Feature/Deploy/DeployHardenBk2OffServerRecoveryTest.php"
+alwaysApply: false
+---
+
+# BK-2 off-server workstation recovery (rule 230)
+
+**Status:** ACTIVE from `DMS-BK2-BACKUP-RELIABILITY-WSL2-RECOVERY-1` (2026-11-14). Sprint record:
+`docs/sprints/dms-bk2-backup-reliability-wsl2-recovery-1.md`. Operator procedure:
+`docs/runbooks/bk2-offserver-workstation-recovery.md`. Supersedes nothing; it refines how the workstation half of BK-2
+reports itself. The server half (`dms-bk2-status`, its ack ledger and thresholds) is unchanged.
+
+## 1. The defect
+
+The BK-2 pull runs on the owner's Windows 11 + WSL2 workstation (`dms-bk2-pull.timer`, every 30 minutes) and copies
+the server's encrypted packages onto an encrypted backup HDD. `wsl --mount` does not survive a Windows or WSL restart,
+so after every restart the HDD is detached until the custodian re-attaches and unlocks it. On 2026-11-13/14 that went
+unnoticed for hours (the 8D deploy preflight stopped on it):
+
+- a disk that was simply not attached was reported as `IDENTITY_MISMATCH`, the same word as a foreign device;
+- nothing alerted: desktop notifications were disabled in the system unit and no desktop session exists there;
+- the pull exited 0 when the HDD was unavailable, so systemd recorded every run as a success;
+- the local status copied `OFF_SERVER` from the server's ack ledger, so it could read `OK` with the HDD detached;
+- nothing proved that a custodian's mount was visible to PID 1, the namespace the timer is cloned from;
+- the custodian procedure (elevated attach, unlock, mount) existed only as habit.
+
+## 2. Where it lives
+
+The tooling is in the owner's **private** BK-2 tree on the workstation (the directory `ExecStart` of
+`dms-bk2-pull.service` names): `bin/` (pull, identity check, status, custodian helper), `etc/bk2.conf` (identity and
+thresholds), `tests/run-tests.sh`, and `releases/` (rollback snapshots). The HDD's serial, WWN, LUKS and ext4 UUIDs, the
+pull account and the key-escrow paths stay there. This repository is public: it carries only the invariants below and
+the procedure, never those values. The guard test fails on the shapes of the hardware identifiers. The account and
+escrow names are kept out by review, because a guard would have to publish them in order to detect them.
+
+## 3. Identity chain and states
+
+`hdd-identity-check.sh` is read-only and never unlocks or mounts. Its last line is always `HDD_STATE=<state>`, and every
+non-OK state is preceded by a `REASON:` line. Callers cross-check the state against the exit code; disagreement is
+`UNVERIFIABLE`.
+
+| State | Exit | Meaning | Who acts |
+|---|---|---|---|
+| `OK` | 0 | every link proven, including the mount as PID 1 sees it | nobody |
+| `ABSENT` | 2 | the disk is not attached to WSL (a leftover mapping or mount without it is `MISMATCH`) | custodian |
+| `LOCKED` | 2 | disk and LUKS2 partition proven; the canonical mapping is not open | custodian |
+| `NOT_MOUNTED` | 2 | mapping and ext4 proven; nothing mounted | custodian |
+| `NOT_IN_PID1_NS` | 2 | mounted only in the caller's mount namespace; the timer cannot see it | custodian, manually |
+| `MISMATCH` | 3 | any link differs: model, serial, WWN, LUKS UUID or parent disk, dm uuid, slaves, ext4 UUID, device, fstype, bind of a subdirectory | stop |
+| `WRONG_MAPPING` | 3 | the LUKS partition is open under another name or has an extra holder | stop |
+| `DUPLICATE_MOUNT` | 3 | stacked mounts on the mount point, or the filesystem also mounted elsewhere | stop |
+| `READ_ONLY` | 3 | mount or superblock is read-only (possible filesystem error); never repaired automatically | stop |
+| `UNVERIFIABLE` | 4 | configuration missing, or PID 1's mount table unreadable | stop |
+
+## 4. PID 1's mount namespace
+
+The mount is judged from `/proc/1/mountinfo` (world-readable), never from the caller's own table, because every
+systemd service starts from PID 1's namespace. The custodian helper mounts with `nsenter --target 1 --mount`, and the
+identity check then proves PID 1 sees exactly one read-write ext4 mount of the filesystem root at the mount point.
+
+## 5. Custodian unlock
+
+`bk2-custodian.sh attach` is the only recovery path, and only the custodian runs it:
+
+- it refuses without a terminal on stdin and stdout, and refuses to run as root (sudo is per step);
+- the LUKS passphrase is typed into cryptsetup's own prompt: no key file, no passphrase variable, nothing piped into
+  cryptsetup, no recovery key in any script;
+- every privileged step runs only after the identity check has proven the chain up to that step, the check runs again
+  after each step, and a step that makes no progress stops the procedure;
+- the Windows step runs elevated through UAC and finds the disk by serial and model again right before
+  `wsl --mount <disk> --bare`; more or fewer than one match attaches nothing;
+- it never formats, initialises, repairs or wipes anything;
+- it is idempotent: it does only the missing steps, then starts one pull and prints the status.
+
+`bk2-custodian.sh plan` and `windows-command` are read-only and show the exact commands.
+
+## 6. Result semantics
+
+A pull run writes `result=` and exits accordingly; neither ever claims more than that run verified.
+
+| Result | Exit | When |
+|---|---|---|
+| `OK` | 0 | server reachable, HDD `OK`, every listed package confirmed on the HDD this run, server `ON_SERVER=OK` and `OFF_SERVER=OK` |
+| `DEGRADED` | 75 | nothing failed, but the copy could not be confirmed: HDD unavailable, server unreachable, packages pending, server `WARN`. The unit shows failed. |
+| `FAIL` | 1 | identity in doubt, transfer or verification failure, an invalid HDD copy, server `FAIL` |
+
+The local `OFF_SERVER` is `OK` only under the `OK` conditions. Otherwise it is `UNVERIFIED` (HDD not available), `UNKNOWN`
+(server unreachable), `FAIL`, or the server's pending state. `server_OFF_SERVER` keeps the server's ack ledger next to
+it for reference. Acknowledgement rules are unchanged: a package is acked only after size and SHA-256 against the
+manifest, an O_DIRECT re-read, decryption through the escrow chain compared with the server's plaintext hashes, and the
+documents check.
+
+## 7. Delivered copies are re-confirmed
+
+Every run with the HDD available re-checks each listed package already on it: the `HDD_VERIFIED` record names the
+package, the manifest hash equals the server's list, and every file is present at its manifest size. At most every 24
+hours (and always before a re-ack), every listed package is re-hashed with O_DIRECT. A copy that fails is never
+counted, never re-acked, and raises `HDD_COPY_INVALID`.
+
+## 8. Alerts and SLA
+
+Each run writes `level=` (`none`, `warn` or `crit`) and `local_alerts=`, and logs `BK2_ALERT` to the journal at
+priority warning or crit (`journalctl -p warning -u dms-bk2-pull.service`).
+
+| Alert | Level |
+|---|---|
+| HDD `ABSENT`/`LOCKED`/`NOT_MOUNTED`/`NOT_IN_PID1_NS` | warn, crit after 45 minutes since the last run that saw it `OK` |
+| HDD identity fail state | crit |
+| oldest pending package older than 26 hours (the server's `DELAYED` threshold) or 72 hours (`STALE`) | crit |
+| server unreachable | warn, crit from the third consecutive run |
+| sync or verification failure, invalid HDD copy, destination not writable, server `FAIL` | crit |
+| server `WARN` or server alerts | warn |
+
+`bk2-status.sh` adds what a run cannot report about itself: a live identity check (so a restart is visible before the
+first timer run), the age of the last run (warn after 75 minutes, crit after 225 minutes while the timer is enabled),
+a disabled or inactive timer (crit), a run in progress, and leftovers (abandoned `.incoming-*` packages, stray BK-2
+gpg-agents, BK-2 temp directories). `--brief` prints nothing when all is well; that suits an interactive-shell banner.
+
+## 9. Deploy preflight
+
+`docs/runbooks/production-host-identity.md` §6b step 3 is unchanged as the gate: the host `dms-bk2-status` must report
+`ON_SERVER=OK` and `OFF_SERVER=OK`. Read the workstation verdict early as well. A detached HDD is reported to the owner
+before the preflight, because the deploy's own package will wait on the server. A fail state (`MISMATCH`,
+`WRONG_MAPPING`, `DUPLICATE_MOUNT`, `READ_ONLY`, `UNVERIFIABLE`) or a `FAIL` result is a HOLD until the owner decides.
+
+## 10. Never
+
+- Never store, print, pass or ask for the LUKS passphrase or a recovery key, in a script, a file, a log, a doc or a chat.
+- Never let an automated session unlock or attach the HDD; `attach` refuses without a terminal.
+- Never format, initialise, repair (`fsck`) or wipe the backup HDD, and never delete a verified package.
+- Never `wsl --mount` a disk chosen by number alone; the serial decides.
+- Never hand-edit `status.env`, and never treat a run's exit code or systemd's "success" as the verdict.
+- Never put the HDD identifiers, the pull account or the escrow paths into this repository.
