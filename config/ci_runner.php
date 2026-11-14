@@ -1681,6 +1681,15 @@ return [
         // the deployed history. Selected by the `DeployHarden` token in BOTH
         // critical variants; declared so it stays enforced.
         'tests/Feature/Deploy/DeployHardenApprovedShaGuardTest.php',
+
+        // DMS-BK2-BACKUP-RELIABILITY-WSL2-RECOVERY-1 (rule 230): the BK-2
+        // workstation contract the deploy preflight relies on (HDD identity
+        // states, result semantics that never claim the off-server copy from
+        // an exit code, the custodian-only unlock) and the guard that keeps
+        // the backup HDD's identifiers out of this public repository. Selected
+        // by the `DeployHarden` token in BOTH critical variants; declared so it
+        // stays enforced.
+        'tests/Feature/Deploy/DeployHardenBk2OffServerRecoveryTest.php',
     ],
 
     /*
