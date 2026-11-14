@@ -487,12 +487,13 @@ owner's decision (§13.4).
 | Offline backup custody of the signing key | NOT REQUIRED (`DMS-OFFLINE-CUSTODY-OPTIONAL-1`) |
 | BK-2 | SKIPPED (`DMS-BK2-MANUAL-ONLY-1`) |
 | Merge of PR #630 before the deploy | **done** — owner order "merge kemudian deploy"; merged pinned to `6e2191ef` |
-| Written approval of the exact release `d555c7dc5ddb46631c16cd957b86490d06634f7f` (tree `bedae8a1811482c81c6d22df7ebb22ef1f5de55f`) | pending — owner |
-| Record `dms-release-guard-trust-hardening-1-r2` signed by the owner | pending — owner |
+| Written approval of the exact release `d555c7dc5ddb46631c16cd957b86490d06634f7f` (tree `bedae8a1811482c81c6d22df7ebb22ef1f5de55f`) | **done** — the owner signed the r2 record naming this SHA, tree and host key (typed `APPROVE` in their own terminal), then wrote "Signed — approval r2 telah saya tandatangani secara manual." (2026-11-15 ~05:44 WITA) |
+| Record `dms-release-guard-trust-hardening-1-r2` signed by the owner | **done** — `APPROVED_AT=2026-11-14T21:43:29Z` (2026-11-15 05:43:29 WITA), window to `2026-11-15T21:43:29Z` (2026-11-16 05:43:29 WITA, 24 h); verified in §13.6 |
 | Production authorisation: trust anchor (§6d B), §6d deploy with its database dump, outside 02:25–02:40 WITA, no BK-2, no offline key copy | **given** — owner directive "PR #630 — UPDATED OWNER DIRECTIVE" items 6–8, effective once the approval is valid |
-| OD-1 acceptance, rollback authority and read-only smoke for the r2 deploy | pending — owner, with the SHA approval |
-| Merge of the approval PR (record, signature, this document) | after the SHA approval and the signature (owner directive item 5) |
-| GO tag `dms-release-guard-trust-hardening-1-go` after production verification | pending |
+| OD-1 acceptance, rollback authority and read-only smoke for the r2 deploy | **given** — owner, 2026-11-15: "OD-1 diterima untuk deploy r2 ini saja; rollback hanya atas persetujuan saya ke `82f1eeba…` dengan SHA penuh; smoke read-only; GO tag setelah verifikasi." OD-1 stays OPEN beyond this deploy |
+| Merge of the approval PR (record, signature, this document) | authorised by the owner only after every Critical Gate is green |
+| §6d deploy | authorised by the owner only after the approval is valid (merged), the trust anchor is installed and `trust-check` passes; never 02:25–02:40 WITA; pre-deploy database dump mandatory; no BK-2; rollback only on the owner's explicit approval |
+| GO tag `dms-release-guard-trust-hardening-1-go` after production verification | pending — only after production verification succeeds |
 
 ### 13.5 Post-merge CI on the release commit
 
@@ -501,3 +502,18 @@ Push run 43615293464 (Foundation Evidence Gates) on `d555c7dc5ddb46631c16cd957b8
 Quality Gate, Android Clinic App Gate, NSF-9 Release Safety & Automated Smoke Gate and NSF-10 Release Evidence Gate
 success; the second Critical Gate variant and the Selective Module Gate skipped by design; Full Suite DEFERRED
 (CG-18), not passed.
+
+### 13.6 Verification of the signed r2 record (2026-11-15, workstation, read-only)
+
+The owner ran the signing script in their own terminal; the assistant then read the record, its signature and the
+owner's PUBLIC key only. It never read the private key, never asked for the passphrase and never signed.
+
+| Check | Result |
+|---|---|
+| Record | `deploy/release-approvals/dms-release-guard-trust-hardening-1-r2.approval`, 1008 bytes, printable ASCII only, SHA-256 `5199c86d23f20bb63dd60e61f99955f96728926b72e2a5c38edabc22181bb96d`; names `d555c7dc5ddb46631c16cd957b86490d06634f7f`, tree `bedae8a1811482c81c6d22df7ebb22ef1f5de55f`, host key `SHA256:i3AsyL0oSwqSAwNfgv215Cl01i87buYtH5ugTe8O2bc`, GO tag `dms-release-guard-trust-hardening-1-go`, evidence this document |
+| Signature | `….approval.sig`, 318 bytes, armored, SHA-256 `4e76b7eb4834a699afb83c6c04f580eaa63e5e32746a65edb39d67b90fe78b10` |
+| Positive | `ssh-keygen -Y verify -I owner -n dms-release-approval` → `Good "dms-release-approval" signature for owner with ED25519 key SHA256:0WGGTlMDzLPGAhQaRG+Ag7BqoypSLinSNOHalZKtgt4` |
+| Negative controls | namespace `git`, principal `attacker`, and one changed byte in the record: each refused (exit 255) |
+| After commit | see the approval pull request: committed blobs byte-identical to the signed files, signature verified against the committed blob, guard-mirroring local check |
+
+The r2 record and signature are never edited: any change needs a new signature and, once spent, a new release id.
