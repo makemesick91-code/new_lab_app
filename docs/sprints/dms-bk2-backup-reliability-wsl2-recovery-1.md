@@ -3,10 +3,10 @@
 | Field | Value |
 |---|---|
 | Date | 2026-11-14 (WITA) |
-| Status | **WATCH**: merged as `b220a143` (#625). Restart drill 1 recovered a real restart live, but the HDD was attached before the first timer run after boot, so the failure leg (a `DEGRADED` run with a `BK2_ALERT`) is not proven live. The owner keeps WATCH until drill 2 (§8, §9) |
+| Status | **GO**: merged as `b220a143` (#625). Restart drill 2 (2026-11-14, boot 12:57:48 WITA) proved both legs live in one boot: before anything was attached, the first timer run after boot reported `DEGRADED` with `HDD_ABSENT`, a `BK2_ALERT` and unit exit 75; after `bk2-custodian.sh attach`, a run confirmed 13/13 with `OFF_SERVER=OK` on the workstation and the host (§9). Drill 1 had proven only the recovery leg (§8) |
 | Category | Foundation-First allowed category 5, *backup / restore / monitoring / CI-CD gates* |
 | Base | `feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report` at `32c4a760` |
-| Branch / PR | `ops/dms-bk2-backup-reliability-wsl2-recovery-1` / #625; drill-1 record `docs/dms-bk2-reliability-restart-drill-closure-1` (docs only) |
+| Branch / PR | `ops/dms-bk2-backup-reliability-wsl2-recovery-1` / #625; drill-1 record `docs/dms-bk2-reliability-restart-drill-closure-1` / #626 (docs only); drill-2 closure `docs/dms-bk2-reliability-restart-drill-2-closure-1` (docs only) |
 | Durable rule | `.cursor/rules/230-bk2-offserver-workstation-recovery.mdc`, index line `AIR-DEP-36` |
 | Runbook | `docs/runbooks/bk2-offserver-workstation-recovery.md` |
 | Production | untouched: no deploy, no server-side BK-2 change, read-only status checks only |
@@ -126,13 +126,13 @@ passed.
   checksums) and a private README.
 - **Not exercised live.** The `ABSENT` → `attach` → `OK` path after a real restart (open item 1), and a live alert. The
   HDD stayed attached throughout, and the tooling was never pointed at an artificially unavailable disk. Drill 1 (§8)
-  later proved the recovery path live; the live alert is still open.
+  later proved the recovery path live, and drill 2 (§9) the live alert as well.
 
 ## 7. Open items
 
 1. **Restart drill (owner).** Runbook §8: restart WSL or Windows, see `ABSENT` and a `DEGRADED` run with `HDD_ABSENT`,
    run `bk2-custodian.sh attach`, then see `OK`. It needs the custodian's passphrase and ends every WSL session, so an
-   AI session cannot run it. Drill 1 (§8) proved the recovery leg; drill 2 (§9) is open for the failure leg.
+   AI session cannot run it. Done: drill 1 (§8) proved the recovery leg, and drill 2 (§9) proved both legs.
 2. **Interactive banner (owner, optional).** Add the `bk2-status.sh --brief` line to the shell profile (runbook §2).
 3. **Merge (owner).** Done: squash-merged with the owner's approval as `b220a143` (§8.1).
 4. **Follow-up, not in scope.** Push the server's `DELAYED`/`STALE` alerts somewhere the owner sees them even when the
@@ -190,7 +190,9 @@ read-only wait loop and pass criteria for each leg (rule 230 §11).
 - The journal's `sudo` line for the unlock carries the LUKS partition's device path. This record summarises it without
   that path (rule 230 §2).
 
-## 9. Drill 2 (owner, open)
+## 9. Restart drill 2 (2026-11-14, WITA)
+
+### 9.1 Pass criteria (set after drill 1)
 
 The custodian runs runbook §8 again and **does not attach until the first timer run after boot has finished**. Drill 2
 passes when the journal of that boot shows both legs:
@@ -205,3 +207,47 @@ passes when the journal of that boot shows both legs:
 
 When both legs pass, a docs-only PR records drill 2 and closes the program as GO. Nothing is deployed, so there is no GO
 tag. The Full Suite stays deferred under CG-18.
+
+### 9.2 Evidence
+
+The custodian ran the drill on version `2026-11-14.2` and waited for the first timer run before attaching, as runbook §8
+step 3 requires. The restart ended the AI session, so a new session read the evidence afterwards, read-only: this
+boot's journal, `systemctl show`, `bk2-status.sh` and the host's status. Below are the `run end` and `BK2_ALERT` lines
+and the unit results. The `sudo` lines of the attach are summarised by time and program only, because the unlock line
+carries the partition's device path (rule 230 §11).
+
+| Runbook §8 step | Evidence | Result |
+|---|---|---|
+| Before | last run of the previous boot, 12:37:52–12:37:56: `run end result=OK level=none ON_SERVER=OK OFF_SERVER=OK server_OFF_SERVER=OK verified_on_hdd=13/13 pending=0 synced=0 failed=0 hdd=OK` | PASS |
+| Restart | `journalctl --list-boots`: the previous boot ended 12:56:09 and this one started 12:57:50; `uptime -s` 12:57:48 | PASS |
+| `ABSENT` before attaching | custodian: the HDD was `ABSENT` after boot. The first timer run confirms it on its own: `run start version=2026-11-14.2 server_reachable=yes hdd=ABSENT` | PASS |
+| First timer run after boot | the timer started at 12:57:50 and first fired at 13:03:01, 5 min 13 s after boot. No earlier run exists in this boot | PASS |
+| Reported: `run end` | 13:03:04: `run end result=DEGRADED level=warn ON_SERVER=OK OFF_SERVER=UNVERIFIED server_OFF_SERVER=OK verified_on_hdd=0/0 pending=0 synced=0 failed=0 hdd=ABSENT alerts=none local_alerts=HDD_ABSENT` | PASS |
+| Reported: alert | 13:03:04, journal priority 4 (warning), listed by `journalctl -p warning -u dms-bk2-pull.service`: `BK2_ALERT level=warn result=DEGRADED alerts=HDD_ABSENT hdd=ABSENT OFF_SERVER=UNVERIFIED` | PASS |
+| Reported: level | `warn` is the specified level here. The last run that saw the HDD `OK` began at 12:37:52, 25 minutes earlier, under the 45-minute `crit` threshold | PASS |
+| Reported: unit | 13:03:04: `Main process exited, code=exited, status=75/TEMPFAIL`, `Failed with result 'exit-code'`; custodian's `systemctl show`: `Result=exit-code`, `ExecMainStatus=75` | PASS |
+| Attach after the run ended | the custodian's report: `bk2-custodian.sh attach`, Windows attach through UAC. In the journal, the first privileged step of this boot is the unlock at 13:03:55, 51 s after the failure run ended; the mount in PID 1's namespace follows at 13:03:59 and the pull start at 13:04:00 | PASS |
+| Unlock | interactive, typed at cryptsetup's own prompt; no key file, nothing stored | PASS (custodian's report) |
+| Mount and identity | custodian: PID 1 mount namespace PASS, HDD identity PASS. Re-read at 13:06: `bk2-status.sh` shows `HDD (live, PID 1 view) OK` | PASS |
+| Recovered: `run end` | 13:04:01–13:04:05: `run start … hdd=OK`; `run end result=OK level=none ON_SERVER=OK OFF_SERVER=OK server_OFF_SERVER=OK verified_on_hdd=13/13 pending=0 synced=0 failed=0 hdd=OK alerts=none local_alerts=none` | PASS |
+| Recovered: unit | 13:04:06: `Deactivated successfully`; `systemctl show` re-read at 13:06: `Result=success`, `ExecMainStatus=0` | PASS |
+| Final workstation status | `bk2-status.sh` at 13:06: verdict `OK`, `OFF_SERVER=OK`, `server_OFF_SERVER=OK`, `ON_SERVER=OK`, `verified_on_hdd=13`, `listed_on_server=13`, `offsite_pending=0`, `local_alerts=none`, `server_alerts=none`; `--brief` silent with exit 0 | PASS |
+| Server | host `dms-bk2-status` at 13:07, after `PRODUCTION_TARGET=VERIFIED`, read-only: 13 of 13 packages acknowledged, 0 pending, `ON_SERVER=OK`, `OFF_SERVER=OK`, `alerts=none` | PASS |
+
+### 9.3 Audit after drill 2 (read-only)
+
+- The installed private tree matches its install checksums: 9 of 9 files `OK`.
+- The fixture harness `tests/run-tests.sh` passes again: 90 passed, 0 failed. It leaves no temp directory and no
+  gpg-agent behind.
+- No BK-2 process, gpg-agent, `cryptsetup` or `nsenter` is left running. Nobody holds the pull lock. There is no
+  `/tmp/dms-bk2-*` or `/tmp/bk2-*`, `bk2-status.sh` finds no leftovers, and `systemctl --failed` is empty.
+- The timer is enabled and active, and the unit is inactive between runs. The next run was due at 13:34.
+- This record summarises the attach's `sudo` lines without the device path (rule 230 §2, §11).
+
+### 9.4 Verdict
+
+**PASS.** Both legs of rule 230 §11 are proven live in the same boot. A real restart is reported by the first timer run,
+with a warning-level `BK2_ALERT` and a failed unit, before anyone acts. It is then recovered by the custodian's attach:
+every listed package is re-confirmed on the HDD, and the workstation and the host both read `OFF_SERVER=OK`. The program
+closes **GO**. Nothing is deployed, so there is no GO tag (CG-16). The Full Suite stays deferred under CG-18, not passed.
+Open items 2 (optional banner) and 4 (server alert push) stay with the owner, outside this program.

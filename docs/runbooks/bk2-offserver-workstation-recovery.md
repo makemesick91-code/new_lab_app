@@ -131,6 +131,8 @@ runs it. Do not run it while a deploy is in progress or about to start: the depl
    the final status. Copy only these. The journal's `sudo` line for the unlock carries the partition's device path,
    which stays private.
 
+Last full pass: drill 2 on 2026-11-14, both legs (sprint record §9).
+
 ## 9. Never
 
 - Never type, paste or store the LUKS passphrase or a recovery key anywhere but cryptsetup's own prompt.
