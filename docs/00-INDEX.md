@@ -140,7 +140,9 @@ Nomor ADR berikutnya yang tersedia: **0017**.
   disetujui oleh record `deploy/release-approvals/<release-id>.approval` yang sudah di-merge di base —
   [dms-rme-revision-program-8d-approved-sha-guard-1](sprints/dms-rme-revision-program-8d-approved-sha-guard-1.md)
   (desain, threat model, diagram), format record di `deploy/release-approvals/README.md`, aturan kanonik
-  `.cursor/rules/229-exact-approved-release-sha-guard.mdc`.
+  `.cursor/rules/229-exact-approved-release-sha-guard.mdc`. Pertama kali dipakai di produksi pada 2026-11-14 lewat
+  bootstrap §6c (deploy `20261114-011345`, GO tag `dms-rme-revision-program-8d-go`):
+  [dms-rme-revision-program-8d](sprints/dms-rme-revision-program-8d.md) §12. Deploy Biznet berikutnya memakai §6b.
 - Keamanan runtime: [dedicated-runtime-identity-runbook](runbooks/dedicated-runtime-identity-runbook.md),
   [production-secret-file-permissions-runbook](runbooks/production-secret-file-permissions-runbook.md),
   [security-pii-compliance-hardening-governance](architecture/security-pii-compliance-hardening-governance.md).
