@@ -3,13 +3,13 @@
 | Field | Value |
 |---|---|
 | Date | 2026-11-14 (WITA) |
-| Status | **OPEN**: pull request prepared; not merged, nothing deployed |
+| Status | **CLOSED**: PR #630 squash-merged (owner order) as `d555c7dc5ddb46631c16cd957b86490d06634f7f`; carried to production by release `dms-release-guard-trust-hardening-1-r2` (deploy `20261114-225508`, GO tag `dms-release-guard-trust-hardening-1-go`, evidence `docs/sprints/dms-release-guard-trust-hardening-1.md` §13) |
 | Category | Foundation-First allowed category 5, *backup / restore / monitoring / CI-CD gates* |
 | Base | `feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report` at `6c7d2c0e` |
-| Branch / PR | `docs/dms-bk2-manual-only-1` / see the pull request |
+| Branch / PR | `docs/dms-bk2-manual-only-1` / #630 (head `6e2191ef`, Critical Gate 9,959 passed; post-merge push run 43615293464 green) |
 | Durable rule | `.cursor/rules/232-bk2-manual-only-not-a-deploy-gate.mdc` (supersedes rule 230 §9), index line `AIR-DEP-38` |
-| Production | untouched: no deploy, no host change, no BK-2 run; the BK-2 and db-backup timers are not touched |
-| GO tag | none: nothing is deployed, so there is no `go_tag` |
+| Production | deployed with release r2 (rules, docs and one test only; no runtime change); no BK-2 run; the BK-2 and db-backup timers stay `active/enabled` |
+| GO tag | none of its own (no `go_tag`); it shipped inside `dms-release-guard-trust-hardening-1-go` |
 | BK-2 | `SKIPPED — DMS-BK2-MANUAL-ONLY-1 (Owner Directive)` |
 
 ## 1. Owner directive

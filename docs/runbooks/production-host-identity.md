@@ -336,7 +336,8 @@ accepted. Afterwards §6b applies. (Rolling back below this release restores the
 uses §6d again.)
 
 **Detect it (read-only):** `sudo -n grep -c 'DMS_RELEASE_APPROVAL_CONTRACT=2' scripts/lib/release-approval.sh` in the
-production checkout prints `0`.
+production checkout prints `0`. **Spent on Biznet:** deploy `20261114-225508` (2026-11-15, release `dms-release-guard-trust-hardening-1-r2`,
+`d555c7dc`) installed rule 231 there, and the marker now prints `1`: use §6b.
 
 **Owner-only steps, once, before the release is approved.** These are the owner's decisions and actions; an assistant
 prepares commands and records, it never holds or uses the signing key.
