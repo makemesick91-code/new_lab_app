@@ -19,6 +19,12 @@ alwaysApply: false
 record: `docs/sprints/dms-rme-revision-program-8d-approved-sha-guard-1.md`. Supersedes rule 220 §13f and
 `.claude/rules/deploy-infra.md` AIR-DEP-34 ("the runner deploys the tip of the base branch at launch").
 
+**PARTLY SUPERSEDED by rule 231** (`231-release-guard-trust-hardening.mdc`, DMS-RELEASE-GUARD-TRUST-HARDENING-1,
+2026-11-14) wherever a host runs a release that carries it: §3 approval contract 1 (now contract 2: signed, bound to
+the host key, single use), the per-role `<role>.lock` of §5 (now one `release.lock`), the evidence location and
+contract 3 of §6 (now contract 4 in a root-only directory outside the checkout), and the §8 owner follow-ups (all
+three addressed). Everything else here stays in force.
+
 ## 1. The defect
 
 `deploy-immutable-exec.sh` pinned `FETCH_HEAD` of the base branch. The pin was immutable once taken, but nothing tied
@@ -128,7 +134,9 @@ of the full SHA, through a pull request the owner merges (CG-22). Account separa
 is not (CG-07). Root on the production host is inside the trust boundary and can bypass any host-side check; the run
 directory under `storage/logs` is writable by the runtime user (contract 3 cross-checks git objects, which it is
 not). **Owner follow-ups (not blocking, recorded in the sprint doc):** branch protection or signed approval commits on
-the base; a root-owned run directory; one lock shared by deploy and rollback.
+the base; a root-owned run directory; one lock shared by deploy and rollback. **SUPERSEDED by rule 231:** signed
+approvals verified against a host trust anchor, a root-only evidence directory and one release lock are implemented
+there; branch protection remains a recommendation.
 
 ## 9. Threats and where each is stopped
 

@@ -332,6 +332,13 @@ class DeploymentEntrypointScanner
                 $issues[] = "authority does not declare {$key}";
             }
         }
+        // Rule 231: the trust anchor, the evidence directory and the host key file
+        // are fixed production facts, never relocatable by an edit to the authority.
+        foreach ((array) ($expect['pinned_authority_values'] ?? []) as $key => $value) {
+            if (($authority[(string) $key] ?? null) !== (string) $value) {
+                $issues[] = "authority declares {$key}=".($authority[(string) $key] ?? '<none>').", production pins {$value}";
+            }
+        }
 
         $branchMatches = false;
         $prefix = (string) ($expect['deploy_branch_assignment_prefix'] ?? '');

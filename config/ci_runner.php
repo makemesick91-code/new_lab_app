@@ -1690,6 +1690,15 @@ return [
         // by the `DeployHarden` token in BOTH critical variants; declared so it
         // stays enforced.
         'tests/Feature/Deploy/DeployHardenBk2OffServerRecoveryTest.php',
+
+        // DMS-RELEASE-GUARD-TRUST-HARDENING-1 (rule 231): approvals count only
+        // with the approver's SSH signature verified against the host's trust
+        // anchor, bound to the host key and spent by one completed deploy;
+        // runner evidence in a root-only directory outside the checkout
+        // (contract 4, INTERRUPTED); one release lock for deploy and rollback;
+        // rollback target resolution. Selected by the `DeployHarden` token in
+        // BOTH critical variants; declared so it stays enforced.
+        'tests/Feature/Deploy/DeployHardenReleaseGuardTrustTest.php',
     ],
 
     /*

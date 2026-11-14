@@ -34,19 +34,23 @@
 # branch tip, the running HEAD, a tag or an earlier approval are never used
 # instead of the approved commit.
 #
-# TRUST MODEL (what this does and does not prove). The guard BINDS a deploy to
-# an approval record on the canonical remote's base branch, read by content
-# address from the fetched commit; it does not AUTHENTICATE a human. The record
-# is attributable to whichever GitHub account put it on the base branch, and the
-# governance (rule 229) is that it arrives through a reviewed, merged pull
-# request after the owner's written approval — but nothing HERE can prove that:
-# anyone who can push to the base can write a record, and `APPROVED_BY` is an
-# attribution, not a signature. Branch protection on GitHub is what would make
-# the merge path enforceable. Anyone with root on the production host is inside
-# the trust boundary and can bypass any check on that host. The guard stops
-# mistakes, races, stale approvals and unreviewed targets; it is not proof that a
-# human approved. The owner's decision itself is recorded in the sprint document
-# (CG-22).
+# TRUST MODEL (rule 231, DMS-RELEASE-GUARD-TRUST-HARDENING-1). Approval
+# contract 2 AUTHENTICATES the approval instead of only binding it. The record
+# must carry a detached SSH signature (`<release-id>.approval.sig`, made with
+# `ssh-keygen -Y sign -n dms-release-approval`) over its exact bytes, by the
+# principal it names in APPROVED_BY, verifiable against the release trust
+# anchor: an allowed-signers file on the production host, OUTSIDE the
+# repository and the checkout, root-owned and provisioned by the owner. Write
+# access to the base branch is therefore no longer enough to approve a release:
+# the approver's private key is, and it never leaves the approver's workstation.
+# Anyone holding the approver's public key can re-check an approval offline with
+# the same `ssh-keygen -Y verify` command. The record is also bound to this
+# host's SSH host key (DMS_APPROVAL_HOST_KEY_SHA256 == the authority's pinned
+# fingerprint == the key this host actually presents), not only to a hostname
+# root can rename. Root on the production host remains inside the trust
+# boundary (it can replace the anchor or the code that reads it); a signature
+# proves which key approved, not which human held it (CG-07). The owner's
+# decision itself is still recorded in the sprint document (CG-22).
 #
 # Every observed value (app dir, branch, host, authority, clock) is a PARAMETER,
 # the convention of scripts/lib/production-host-preflight.sh, so the contract is
@@ -54,7 +58,13 @@
 #
 # Return codes of dms_release_approval_verify: 0 approved, 77 DENIED.
 
-DMS_RELEASE_APPROVAL_CONTRACT=1
+# The trusted-path checks ship beside this library. A missing helper is not a
+# crash here: dms_release_approval_verify denies (77) without it.
+# shellcheck source=trusted-path.sh
+source "$(dirname -- "${BASH_SOURCE[0]}")/trusted-path.sh" 2>/dev/null || true
+
+# Contract 1 (rule 229) was an unsigned record; it is refused, never upgraded.
+DMS_RELEASE_APPROVAL_CONTRACT=2
 DMS_RELEASE_APPROVAL_DIR="deploy/release-approvals"
 # Longest window an approval may span from approved_at to not_after.
 DMS_RELEASE_APPROVAL_MAX_VALIDITY_SECONDS=259200
@@ -62,8 +72,12 @@ DMS_RELEASE_APPROVAL_MAX_VALIDITY_SECONDS=259200
 DMS_RELEASE_APPROVAL_CLOCK_SKEW_SECONDS=300
 DMS_RELEASE_APPROVAL_MAX_BYTES=4096
 DMS_RELEASE_APPROVAL_DENIED=77
+# The SSH signature namespace: a signature made for any other purpose (git
+# commits, files) never verifies as a release approval, and vice versa.
+DMS_RELEASE_APPROVAL_SIGNATURE_NAMESPACE="dms-release-approval"
+DMS_RELEASE_APPROVAL_MAX_SIGNATURE_BYTES=4096
 
-DMS_RELEASE_APPROVAL_KEYS="DMS_APPROVAL_CONTRACT DMS_APPROVAL_RELEASE_ID DMS_APPROVAL_REPOSITORY DMS_APPROVAL_HOST DMS_APPROVAL_BASE_BRANCH DMS_APPROVAL_TARGET_SHA DMS_APPROVAL_TARGET_TREE DMS_APPROVAL_GO_TAG DMS_APPROVAL_APPROVED_BY DMS_APPROVAL_APPROVED_AT DMS_APPROVAL_NOT_AFTER DMS_APPROVAL_EVIDENCE"
+DMS_RELEASE_APPROVAL_KEYS="DMS_APPROVAL_CONTRACT DMS_APPROVAL_RELEASE_ID DMS_APPROVAL_REPOSITORY DMS_APPROVAL_HOST DMS_APPROVAL_HOST_KEY_SHA256 DMS_APPROVAL_BASE_BRANCH DMS_APPROVAL_TARGET_SHA DMS_APPROVAL_TARGET_TREE DMS_APPROVAL_GO_TAG DMS_APPROVAL_APPROVED_BY DMS_APPROVAL_APPROVED_AT DMS_APPROVAL_NOT_AFTER DMS_APPROVAL_EVIDENCE"
 
 dms_release_approval_valid_id() {
   [[ "${1:-}" =~ ^[a-z0-9][a-z0-9-]{2,79}$ ]]
@@ -133,6 +147,13 @@ dms_release_approval_is_github_url() {
      || "$url" =~ ^ssh://git@github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]
 }
 
+dms_release_approval_observed_host_key() {
+  # dms_release_approval_observed_host_key <authority> — the SHA-256
+  # fingerprint of the public host key this host presents to SSH clients
+  # (DMS_PRODUCTION_HOST_KEY_FILE). Prints nothing and fails when unreadable.
+  dms_trusted_host_key_fingerprint "$(dms_release_approval_authority_value "$1" DMS_PRODUCTION_HOST_KEY_FILE)"
+}
+
 dms_release_approval_regular_file() {
   # dms_release_approval_regular_file <commit> <path> — true only for a regular,
   # non-executable file entry (a symlink's blob is its target text, not content).
@@ -142,11 +163,16 @@ dms_release_approval_regular_file() {
 }
 
 dms_release_approval_verify() {
-  # dms_release_approval_verify <app_dir> <branch> <release_id> <approved_sha> <authority> <this_host> <now_epoch>
+  # dms_release_approval_verify <app_dir> <branch> <release_id> <approved_sha> <authority> <this_host> <now_epoch> <this_host_key> <deploy_uid>
+  #
+  # <this_host_key> is the observed SHA256 fingerprint of this host's SSH host
+  # key (dms_release_approval_observed_host_key); <deploy_uid> is `id -u` of the
+  # deploy identity, which the release trust anchor must be owned by (or root).
   #
   # On approval prints `RELEASE APPROVAL: GO` and the bound facts, and sets
-  # DMS_RELEASE_APPROVED_SHA, DMS_RELEASE_APPROVAL_TIP, DMS_RELEASE_APPROVAL_BLOB
-  # and DMS_RELEASE_APPROVAL_PATH for the caller.
+  # DMS_RELEASE_APPROVED_SHA, DMS_RELEASE_APPROVAL_TIP, DMS_RELEASE_APPROVAL_BLOB,
+  # DMS_RELEASE_APPROVAL_PATH, DMS_RELEASE_APPROVAL_SIGNATURE_BLOB,
+  # DMS_RELEASE_APPROVAL_SIGNER_KEY and DMS_RELEASE_APPROVAL_HOST_KEY.
   #
   # The base branch is fetched into a PRIVATE ref for this invocation, never read
   # through the shared FETCH_HEAD that any other fetch on the host (a rollback's
@@ -164,17 +190,26 @@ dms_release_approval_verify() {
 # shellcheck disable=SC2034
 dms_release_approval_verify_inner() {
   local app_dir="$1" branch="$2" release_id="$3" approved_sha="$4" authority="$5" this_host="$6" now="$7"
-  local prod_host frozen_hosts prod_repo approvers origin_url origin_repo
+  local this_host_key="${8:-}" deploy_uid="${9:-}"
+  local prod_host frozen_hosts prod_repo approvers origin_url origin_repo prod_host_key anchor
   local tip path blob size content line key value object_type tree changed head
   local approved_epoch not_after_epoch manifest_tag evidence_blob local_branch
+  local sig_path sig_blob sig_text verdict signer_key
   local -A record=()
 
   DMS_RELEASE_APPROVED_SHA=""
   DMS_RELEASE_APPROVAL_TIP=""
   DMS_RELEASE_APPROVAL_BLOB=""
   DMS_RELEASE_APPROVAL_PATH=""
+  DMS_RELEASE_APPROVAL_SIGNATURE_BLOB=""
+  DMS_RELEASE_APPROVAL_SIGNER_KEY=""
+  DMS_RELEASE_APPROVAL_HOST_KEY=""
 
-  echo "== Release approval guard (rule 229) =="
+  echo "== Release approval guard (rules 229 and 231) =="
+  declare -F dms_trusted_file >/dev/null \
+    || { dms_release_approval_deny "the trusted-path library (scripts/lib/trusted-path.sh) is missing beside the guard"; return; }
+  [[ "$deploy_uid" =~ ^[0-9]+$ ]] \
+    || { dms_release_approval_deny "the deploy identity '${deploy_uid}' is not a uid"; return; }
 
   # ── 1. What the operator asked for ─────────────────────────────────────────
   dms_release_approval_valid_id "$release_id" \
@@ -194,6 +229,8 @@ dms_release_approval_verify_inner() {
   frozen_hosts="$(dms_release_approval_authority_value "$authority" DMS_FROZEN_LEGACY_HOSTNAMES)"
   prod_repo="$(dms_release_approval_authority_value "$authority" DMS_PRODUCTION_REPOSITORY)"
   approvers="$(dms_release_approval_authority_value "$authority" DMS_PRODUCTION_RELEASE_APPROVERS)"
+  prod_host_key="$(dms_release_approval_authority_value "$authority" DMS_PRODUCTION_HOST_KEY_SHA256)"
+  anchor="$(dms_release_approval_authority_value "$authority" DMS_PRODUCTION_RELEASE_TRUST_ANCHOR)"
   [ -n "$prod_host" ] || { dms_release_approval_deny "the authority declares no production hostname"; return; }
   [ -n "$prod_repo" ] || { dms_release_approval_deny "the authority declares no production repository (DMS_PRODUCTION_REPOSITORY)"; return; }
   [ -n "$approvers" ] || { dms_release_approval_deny "the authority declares no release approver (DMS_PRODUCTION_RELEASE_APPROVERS)"; return; }
@@ -202,7 +239,13 @@ dms_release_approval_verify_inner() {
   done
   [ "$this_host" = "$prod_host" ] \
     || { dms_release_approval_deny "this host is '${this_host:-<empty>}', the declared production host is '${prod_host}'"; return; }
-  echo "PASS: host '${this_host}' is the declared production host"
+  # A hostname is a setting; the host key is the identity the workstation pins
+  # (CG-14). Both must be the declared production host's.
+  [[ "$prod_host_key" =~ ^SHA256:[A-Za-z0-9+/]{43}$ ]] \
+    || { dms_release_approval_deny "the authority pins no SHA256 host key fingerprint (DMS_PRODUCTION_HOST_KEY_SHA256)"; return; }
+  [ "$this_host_key" = "$prod_host_key" ] \
+    || { dms_release_approval_deny "this host presents host key '${this_host_key:-<unreadable>}', the declared production host key is '${prod_host_key}'"; return; }
+  echo "PASS: host '${this_host}' is the declared production host (host key ${prod_host_key})"
 
   # ── 3. Repository identity ─────────────────────────────────────────────────
   if ! origin_url="$(dms_release_approval_git remote get-url origin 2>/dev/null)"; then
@@ -248,7 +291,7 @@ dms_release_approval_verify_inner() {
 
   while IFS= read -r line || [ -n "$line" ]; do
     case "$line" in ''|'#'*) continue ;; esac
-    if [[ ! "$line" =~ ^(DMS_APPROVAL_[A-Z_]+)=([A-Za-z0-9._:/+-]+)$ ]]; then
+    if [[ ! "$line" =~ ^(DMS_APPROVAL_[A-Z0-9_]+)=([A-Za-z0-9._:/+-]+)$ ]]; then
       dms_release_approval_deny "${path} has a line that is not KEY=VALUE with a plain value: '${line:0:80}'"
       return
     fi
@@ -275,6 +318,8 @@ dms_release_approval_verify_inner() {
     || { dms_release_approval_deny "the record approves repository '${record[DMS_APPROVAL_REPOSITORY]}', this is '${prod_repo}'"; return; }
   [ "${record[DMS_APPROVAL_HOST]}" = "$prod_host" ] \
     || { dms_release_approval_deny "the record approves host '${record[DMS_APPROVAL_HOST]}', this is '${prod_host}'"; return; }
+  [ "${record[DMS_APPROVAL_HOST_KEY_SHA256]}" = "$prod_host_key" ] \
+    || { dms_release_approval_deny "the record approves host key '${record[DMS_APPROVAL_HOST_KEY_SHA256]}', this host's is '${prod_host_key}'"; return; }
   [ "${record[DMS_APPROVAL_BASE_BRANCH]}" = "$branch" ] \
     || { dms_release_approval_deny "the record approves branch '${record[DMS_APPROVAL_BASE_BRANCH]}', the deploy follows '${branch}'"; return; }
   [ "${record[DMS_APPROVAL_TARGET_SHA]}" = "$approved_sha" ] \
@@ -291,6 +336,47 @@ dms_release_approval_verify_inner() {
     | sed -n 's/^go_tag:[[:space:]]*//p' | tail -n 1 | tr -d '[:space:]')" || manifest_tag=""
   [ "$manifest_tag" = "${record[DMS_APPROVAL_GO_TAG]}" ] \
     || { dms_release_approval_deny "the record names GO tag '${record[DMS_APPROVAL_GO_TAG]}', the approved commit's .sprint/current.yml declares '${manifest_tag:-<none>}'"; return; }
+
+  # ── 6b. The approver's signature (rule 231) ─────────────────────────────────
+  # The record's exact bytes must carry a detached SSH signature, read from the
+  # same fetched commit, by the principal APPROVED_BY names, verifiable against
+  # the release trust anchor on THIS host (never a file from the repository).
+  sig_path="${path}.sig"
+  sig_blob="$(dms_release_approval_git rev-parse --verify --quiet "${tip}:${sig_path}")" \
+    || { dms_release_approval_deny "no signature ${sig_path} on origin ${branch} at ${tip} — an unsigned record is not an approval"; return; }
+  dms_release_approval_regular_file "$tip" "$sig_path" \
+    || { dms_release_approval_deny "${sig_path} at ${tip} is not a regular file"; return; }
+  size="$(dms_release_approval_git cat-file -s "$sig_blob")"
+  [ "$size" -le "$DMS_RELEASE_APPROVAL_MAX_SIGNATURE_BYTES" ] \
+    || { dms_release_approval_deny "${sig_path} is ${size} bytes; the limit is ${DMS_RELEASE_APPROVAL_MAX_SIGNATURE_BYTES}"; return; }
+  sig_text="$(dms_release_approval_git cat-file blob "$sig_blob")" || sig_text=""
+  [[ "$sig_text" == "-----BEGIN SSH SIGNATURE-----"* ]] \
+    || { dms_release_approval_deny "${sig_path} is not an armored SSH signature"; return; }
+  [ -n "$anchor" ] \
+    || { dms_release_approval_deny "the authority declares no release trust anchor (DMS_PRODUCTION_RELEASE_TRUST_ANCHOR)"; return; }
+  if ! value="$(dms_trusted_file "release trust anchor" "$anchor" "$deploy_uid" "$app_dir")"; then
+    dms_release_approval_deny "${value} — the owner provisions it (runbook production-host-identity.md section 6d)"
+    return
+  fi
+  command -v ssh-keygen >/dev/null 2>&1 \
+    || { dms_release_approval_deny "ssh-keygen is not installed; the signature cannot be verified"; return; }
+  # The record is streamed from the object store (exact bytes); so is the
+  # signature. A non-zero exit, from either side of the pipe, is a denial.
+  if ! verdict="$(dms_release_approval_git cat-file blob "$blob" \
+        | ssh-keygen -Y verify -f "$anchor" -I "${record[DMS_APPROVAL_APPROVED_BY]}" \
+            -n "$DMS_RELEASE_APPROVAL_SIGNATURE_NAMESPACE" \
+            -s <(dms_release_approval_git cat-file blob "$sig_blob") 2>&1)"; then
+    dms_release_approval_deny "the signature ${sig_path} does not verify for '${record[DMS_APPROVAL_APPROVED_BY]}' against the trust anchor ${anchor}: ${verdict//$'\n'/ }"
+    return
+  fi
+  signer_key=""
+  if [[ "$verdict" =~ Good\ \"${DMS_RELEASE_APPROVAL_SIGNATURE_NAMESPACE}\"\ signature\ for\ ([^ ]+)\ with\ ([A-Z0-9-]+)\ key\ (SHA256:[A-Za-z0-9+/]{43}) ]] \
+     && [ "${BASH_REMATCH[1]}" = "${record[DMS_APPROVAL_APPROVED_BY]}" ]; then
+    signer_key="${BASH_REMATCH[3]}"
+  fi
+  [ -n "$signer_key" ] \
+    || { dms_release_approval_deny "ssh-keygen accepted ${sig_path} but did not report a good signature by '${record[DMS_APPROVAL_APPROVED_BY]}' — refusing to guess"; return; }
+  echo "PASS: ${sig_path} is a good '${DMS_RELEASE_APPROVAL_SIGNATURE_NAMESPACE}' signature by '${record[DMS_APPROVAL_APPROVED_BY]}' (key ${signer_key}, anchor ${anchor})"
 
   # ── 7. Validity window (no stale or open-ended approval) ───────────────────
   approved_epoch="$(dms_release_approval_iso_epoch "${record[DMS_APPROVAL_APPROVED_AT]}")" \
@@ -330,7 +416,7 @@ dms_release_approval_verify_inner() {
   fi
   while IFS= read -r line; do
     [ -n "$line" ] || continue
-    if [[ "$line" =~ ^deploy/release-approvals/[a-z0-9][a-z0-9-]{2,79}\.approval$ ]] \
+    if [[ "$line" =~ ^deploy/release-approvals/[a-z0-9][a-z0-9-]{2,79}\.approval(\.sig)?$ ]] \
        || [[ "$line" =~ ^docs/[A-Za-z0-9._/-]+\.md$ && "$line" != *..* ]]; then
       continue
     fi
@@ -354,10 +440,16 @@ dms_release_approval_verify_inner() {
   dms_release_approval_git merge-base --is-ancestor "$local_branch" "$approved_sha" \
     || { dms_release_approval_deny "the local branch ${branch} (${local_branch}) is not an ancestor of ${approved_sha} — it cannot be fast-forwarded to the approved commit"; return; }
 
+  # ── 11. One approval, one completed deploy (rule 231) ──────────────────────
+  dms_release_approval_spent "$authority" "$app_dir" "$deploy_uid" "$release_id" || return
+
   DMS_RELEASE_APPROVED_SHA="$approved_sha"
   DMS_RELEASE_APPROVAL_TIP="$tip"
   DMS_RELEASE_APPROVAL_BLOB="$blob"
   DMS_RELEASE_APPROVAL_PATH="$path"
+  DMS_RELEASE_APPROVAL_SIGNATURE_BLOB="$sig_blob"
+  DMS_RELEASE_APPROVAL_SIGNER_KEY="$signer_key"
+  DMS_RELEASE_APPROVAL_HOST_KEY="$prod_host_key"
   echo "PASS: approved by '${record[DMS_APPROVAL_APPROVED_BY]}' at ${record[DMS_APPROVAL_APPROVED_AT]}, valid until ${record[DMS_APPROVAL_NOT_AFTER]}"
   echo "PASS: evidence ${record[DMS_APPROVAL_EVIDENCE]}; GO tag ${record[DMS_APPROVAL_GO_TAG]}"
   echo "RELEASE APPROVAL: GO"
@@ -371,4 +463,72 @@ dms_release_approval_in_words() {
     [ "$item" = "$needle" ] && return 0
   done
   return 1
+}
+
+dms_release_approval_spent() {
+  # dms_release_approval_spent <authority> <app_dir> <deploy_uid> <release_id>
+  #
+  # Rule 231 (closes the replay rule 229 §9 claimed and §4.9 did not stop: after a
+  # rollback, the forward-only check passes again). A RELEASE deploys once: it is
+  # spent by the first deploy it COMPLETED on this host, whichever signed version
+  # of its record that deploy used (an older, re-signed record of the same release
+  # cannot be replayed). Two trusted sources, both in the evidence directory: the
+  # spend record the bootstrap writes inside the release lock when the deploy
+  # program succeeds (spent/<release_id>.spent), and any runner record of that
+  # release with result_exit=0. A failed run spends nothing, so it can be retried
+  # inside the window; a re-deploy (for example after a rollback) needs a new
+  # owner approval under a new release id. Returns 0 when unspent, 77 otherwise.
+  local authority="$1" app_dir="$2" uid="$3" release_id="$4" dir why rec id
+  dir="$(dms_release_approval_authority_value "$authority" DMS_PRODUCTION_DEPLOY_EVIDENCE_DIR)"
+  [ -n "$dir" ] \
+    || { dms_release_approval_deny "the authority declares no deploy evidence directory (DMS_PRODUCTION_DEPLOY_EVIDENCE_DIR); spent approvals cannot be checked"; return; }
+  dms_release_approval_valid_id "$release_id" \
+    || { dms_release_approval_deny "release id '${release_id}' is not a release identifier"; return; }
+  if [ ! -e "$dir" ] && [ ! -L "$dir" ]; then
+    echo "PASS: release ${release_id} is unspent (no deploy evidence on this host yet)"
+    return 0
+  fi
+  if ! why="$(dms_trusted_dir "deploy evidence directory" "$dir" "$uid" "$app_dir")"; then
+    dms_release_approval_deny "${why} — spent approvals cannot be checked"
+    return
+  fi
+  rec="${dir}/spent/${release_id}.spent"
+  if [ -e "$rec" ] || [ -L "$rec" ]; then
+    id="$(sed -n '/^run_id=/{s/^run_id=//p;q;}' "$rec" 2>/dev/null)"
+    dms_release_approval_deny "release ${release_id} was already deployed on this host (spend record ${rec}, run ${id:-<unknown>}) — a release deploys once; a re-deploy (for example after a rollback) needs a new owner approval under a new release id"
+    return
+  fi
+  for rec in "$dir"/deploy-*.host; do
+    [ -f "$rec" ] && [ ! -L "$rec" ] || continue
+    [ "$(sed -n '/^release_id=/{s/^release_id=//p;q;}' "$rec")" = "$release_id" ] || continue
+    [ "$(sed -n '/^result_exit=/{s/^result_exit=//p;q;}' "$rec")" = "0" ] || continue
+    id="$(sed -n '/^deploy_id=/{s/^deploy_id=//p;q;}' "$rec")"
+    dms_release_approval_deny "release ${release_id} was already used by the completed deploy ${id:-<unknown>} — a release deploys once; a re-deploy (for example after a rollback) needs a new owner approval under a new release id"
+    return
+  done
+  echo "PASS: release ${release_id} is unspent on this host"
+  return 0
+}
+
+dms_release_approval_record_spent() {
+  # dms_release_approval_record_spent <authority> <app_dir> <deploy_uid> <release_id> <approved_sha> <blob> <run_id>
+  #
+  # Called by the bootstrap, INSIDE the release lock, after the deploy program
+  # succeeded: the spend record is written before the lock is released, by the
+  # process that actually deployed, whether or not a runner launched it. An
+  # exclusive create; a failure is reported, never fatal (the deploy is done).
+  local authority="$1" app_dir="$2" uid="$3" release_id="$4" approved="$5" blob="$6" run_id="$7" dir why rec
+  dir="$(dms_release_approval_authority_value "$authority" DMS_PRODUCTION_DEPLOY_EVIDENCE_DIR)"
+  if [ -z "$dir" ] || ! why="$(dms_trusted_dir_prepare "deploy evidence directory" "$dir" "$uid" "$app_dir")" \
+     || ! why="$(dms_trusted_dir_prepare "spend records" "${dir}/spent" "$uid" "$app_dir")"; then
+    echo "DEPLOY_APPROVAL_SPENT=NOT-RECORDED (${why:-no evidence directory declared})" >&2
+    return 1
+  fi
+  rec="${dir}/spent/${release_id}.spent"
+  if ! (umask 077 && set -C && printf 'release_id=%s\napproved_sha=%s\napproval_blob=%s\nrun_id=%s\nspent_at=%s\n' \
+        "$release_id" "$approved" "$blob" "$run_id" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$rec") 2>/dev/null; then
+    echo "DEPLOY_APPROVAL_SPENT=NOT-RECORDED (${rec} already exists or cannot be created)" >&2
+    return 1
+  fi
+  echo "DEPLOY_APPROVAL_SPENT=${rec}"
 }

@@ -27,7 +27,15 @@
 #   7. approved release (contract 3, rule 229) — the record names the release
 #      and the approved commit the runner verified before launch, and the run's
 #      own log shows the bootstrap's approval GO, exactly one approved commit
-#      equal to the record's, a pinned target equal to it and HEAD == it.
+#      equal to the record's, a pinned target equal to it and HEAD == it;
+#   8. trusted evidence (contract 4, rule 231) — the run directory is the deploy
+#      identity's own private directory OUTSIDE the checkout (never
+#      storage/logs, which the runtime user owns after every deploy), every
+#      evidence file is a regular file of the deploy identity, the record names
+#      that directory, this host's SSH host key, the approval's signature object
+#      and the key that signed it, and the run's own log shows the same signer.
+#      A run whose launcher is gone without a status is INTERRUPTED, never
+#      "pending" forever and never OK.
 #
 # Anything else is refused with a named verdict and return code 4. Nothing here
 # ever reports success for a run it could not prove.
@@ -38,15 +46,21 @@
 # environment variable that can talk a status past these checks.
 #
 # Return codes: 0 proven success, 1 proven failure, 3 pending (no status yet),
-# 4 not evidence (unbound, foreign, frozen, mismatched, incomplete, stale ...).
+# 4 not evidence (unbound, foreign, frozen, mismatched, incomplete, stale,
+# untrusted, tampered, interrupted ...).
+
+# shellcheck source=trusted-path.sh
+source "$(dirname -- "${BASH_SOURCE[0]}")/trusted-path.sh"
 
 # The evidence contract this runner writes and accepts. Contract 1 is the
 # pre-binding runner (status file only, no record); contract 2 bound the run to
 # the host (DMS-DEV-INFRA-REMEDIATION-2); contract 3 also binds it to the
-# approved release (rule 229). A contract-2 record is INCOMPATIBLE: it predates
-# the approval and cannot prove the deployed commit was the approved one. Bump
-# only together with the writer, the verifier and the tests.
-DMS_RUNNER_EVIDENCE_CONTRACT=3
+# approved release (rule 229); contract 4 also lives in a trusted directory and
+# binds the host key and the approval signature (rule 231). Earlier records are
+# INCOMPATIBLE: a contract-3 record sat in a runtime-writable directory and
+# names no signature. Bump only together with the writer, the verifier and the
+# tests.
+DMS_RUNNER_EVIDENCE_CONTRACT=4
 
 # Clock skew tolerated between a recorded finish time and "now", in seconds.
 DMS_RUNNER_CLOCK_SKEW_SECONDS=300
@@ -130,6 +144,59 @@ dms_runner_read_status() {
   } < "$status"
   [[ "$line" =~ ^exit=([0-9]{1,3})$ ]] || return 4
   printf '%s' "${BASH_REMATCH[1]}"
+}
+
+dms_runner_proc_start() {
+  # dms_runner_proc_start <pid> — the process start time (clock ticks since boot,
+  # /proc/<pid>/stat field 22). The command name (field 2) may hold spaces and
+  # parentheses, so the fields are counted after its LAST ')'.
+  local line="" rest
+  { IFS= read -r line < "/proc/${1}/stat"; } 2>/dev/null || return 1
+  rest="${line##*) }"
+  # shellcheck disable=SC2086
+  set -- $rest
+  [[ "${20:-}" =~ ^[0-9]+$ ]] || return 1
+  printf '%s' "${20}"
+}
+
+dms_runner_launcher_alive() {
+  # dms_runner_launcher_alive <pid> [<start_ticks>] [<deploy_uid>] — the detached
+  # launcher (`dms-deploy-runner`) of a run is still that very process: same
+  # pid, same start time (a reused pid has another), owned by the deploy
+  # identity, with the launcher's command line.
+  local pid="$1" start="${2:-}" uid="${3:-}" cmd="" now_start owner
+  [[ "$pid" =~ ^[0-9]{1,10}$ ]] || return 1
+  [ -r "/proc/${pid}/cmdline" ] || return 1
+  cmd="$(tr '\0' ' ' < "/proc/${pid}/cmdline" 2>/dev/null)" || return 1
+  [[ "$cmd" == *" dms-deploy-runner "* ]] || return 1
+  if [ -n "$uid" ]; then
+    owner="$(stat -c '%u' "/proc/${pid}" 2>/dev/null)" || return 1
+    [ "$owner" = "$uid" ] || return 1
+  fi
+  if [ -n "$start" ]; then
+    now_start="$(dms_runner_proc_start "$pid")" || return 1
+    [ "$now_start" = "$start" ] || return 1
+  fi
+  return 0
+}
+
+dms_runner_assert_trusted_run() {
+  # dms_runner_assert_trusted_run <run_dir> <app_dir> <deploy_uid> <file...>
+  # Rule 231: evidence counts only from the deploy identity's own private
+  # directory, and only as regular files of that identity.
+  local run_dir="$1" app_dir="$2" uid="$3" why entry
+  shift 3
+  if ! why="$(dms_trusted_dir "deploy evidence directory" "$run_dir" "$uid" "$app_dir")"; then
+    dms_runner_reject UNTRUSTED "${why} — evidence there could have been written by someone other than the deploy identity"
+    return 4
+  fi
+  for entry in "$@"; do
+    if ! why="$(dms_trusted_entry "$entry" "$uid")"; then
+      dms_runner_reject TAMPERED "${why}"
+      return 4
+    fi
+  done
+  return 0
 }
 
 dms_runner_assert_production_host() {
@@ -232,14 +299,14 @@ dms_runner_assert_approval_blob() {
 }
 
 dms_runner_assert_approval_log() {
-  # dms_runner_assert_approval_log <log> <approved_sha> <release_id> <approval_path> <app_dir>
+  # dms_runner_assert_approval_log <log> <approved_sha> <release_id> <approval_path> <app_dir> [<signer_key>]
   # Rule 229: the run's own log must show the bootstrap approving exactly the
   # commit the record names, from the same approval file, and that approval must
   # be a real git object approving it. The runner's pre-launch check printed to
   # the operator, not to the log, so these lines come from inside the deploy
   # lock. (The tip may differ from the record's: approvals or docs may land
   # between the runner's check and the bootstrap's.)
-  local log="$1" approved="$2" release="$3" approval_path="$4" app_dir="$5" count line log_tip log_path log_blob
+  local log="$1" approved="$2" release="$3" approval_path="$4" app_dir="$5" signer="${6:-}" count line log_tip log_path log_blob
   if [ "$(dms_runner_count_lines '^RELEASE APPROVAL: GO$' "$log")" -lt 1 ]; then
     dms_runner_reject UNVERIFIED "the run's log carries no 'RELEASE APPROVAL: GO' — the deploy never proved its target was approved"
     return 4
@@ -268,15 +335,47 @@ dms_runner_assert_approval_log() {
     return 4
   fi
   dms_runner_assert_approval_blob "$app_dir" "$log_blob" "$release" "$approved" "$log_tip" "$log_path" || return 4
+  # Rule 231: the bootstrap, inside the lock, verified the approval's signature
+  # with exactly the key the runner recorded before launch.
+  if [ -n "$signer" ]; then
+    count="$(dms_runner_count_lines '^DEPLOY_APPROVAL_SIGNER=' "$log")"
+    line="$(sed -n '/^DEPLOY_APPROVAL_SIGNER=/{s/^DEPLOY_APPROVAL_SIGNER=//p;q;}' "$log")"
+    if [ "$count" != "1" ] || [ "$line" != "$signer" ]; then
+      dms_runner_reject MISMATCHED "the run's log names ${count} approval signer(s) ('${line:-<none>}'); the record names ${signer}"
+      return 4
+    fi
+  fi
+  return 0
+}
+
+dms_runner_assert_signature_blob() {
+  # dms_runner_assert_signature_blob <app_dir> <sig_blob> <tip> <approval_path>
+  # The signature the runner verified is a real object, and IS <path>.sig at the
+  # recorded tip.
+  local app_dir="$1" blob="$2" tip="$3" path="$4" at_path
+  if ! dms_runner_valid_sha "$blob" \
+     || [ "$(git -c safe.directory="$app_dir" -C "$app_dir" cat-file -t "$blob" 2>/dev/null)" != "blob" ]; then
+    dms_runner_reject UNVERIFIED "approval signature '${blob}' is not an object in this repository"
+    return 4
+  fi
+  at_path="$(git -c safe.directory="$app_dir" -C "$app_dir" rev-parse --verify --quiet "${tip}:${path}.sig" 2>/dev/null)" || at_path=""
+  if [ "$at_path" != "$blob" ]; then
+    dms_runner_reject MISMATCHED "approval signature ${blob} is not ${path}.sig at ${tip}"
+    return 4
+  fi
   return 0
 }
 
 dms_runner_verify_run() {
-  # dms_runner_verify_run <run_dir> <deploy_id> <this_host> <authority> <app_dir> <now_epoch>
+  # dms_runner_verify_run <run_dir> <deploy_id> <this_host> <authority> <app_dir> <now_epoch> [<this_host_key>] [<this_boot_id>] [<deploy_uid>]
+  # The last three default to the observed values on this machine (the host
+  # key file the authority declares, the kernel boot id, `id -u`).
   local run_dir="$1" id="$2" this_host="$3" authority="$4" app_dir="$5" now="$6"
+  local this_host_key="${7:-}" this_boot="${8:-}" uid="${9:-}"
   local status record log status_exit rc=0
   local rec_contract rec_host rec_id rec_started rec_finished rec_exit rec_runner_sha
   local started_epoch finished_epoch target rec_release rec_approved rec_record rec_blob rec_path rec_tip rec_record_path
+  local rec_dir rec_host_key rec_sig_blob rec_signer rec_boot rec_pid rec_start prod_host_key log_blob
 
   if ! dms_runner_valid_id "$id"; then
     dms_runner_reject MALFORMED "deployment identifier '${id}' is not a runner identifier (YYYYmmdd-HHMMSS)"
@@ -285,9 +384,36 @@ dms_runner_verify_run() {
   status="${run_dir}/deploy-${id}.status"
   record="${run_dir}/deploy-${id}.host"
   log="${run_dir}/deploy-${id}.log"
+  [ -n "$uid" ] || uid="$(id -u)"
+  [ -n "$this_boot" ] || this_boot="$(dms_trusted_boot_id)" || this_boot=""
+  if [ -z "$this_host_key" ]; then
+    this_host_key="$(dms_trusted_host_key_fingerprint "$(dms_runner_authority_value "$authority" DMS_PRODUCTION_HOST_KEY_FILE)")" || this_host_key=""
+  fi
+
+  # 8. Trusted evidence (rule 231) — before a single byte of it is believed.
+  if [ ! -e "$run_dir" ] && [ ! -L "$run_dir" ]; then
+    echo "deploy-runner: no deploy evidence directory ${run_dir} on this host — deploy ${id} was never recorded here"
+    return 3
+  fi
+  dms_runner_assert_trusted_run "$run_dir" "$app_dir" "$uid" "$status" "$record" "$log" || return 4
+  if [ ! -e "$status" ] && [ ! -e "$record" ] && [ ! -e "$log" ]; then
+    dms_runner_reject NOT-FOUND "deploy ${id} is not recorded in ${run_dir}; runs launched before rule 231 kept their evidence in the checkout's storage/logs/deploy-runner (their verification is recorded in their sprint documents)"
+    return 4
+  fi
 
   status_exit="$(dms_runner_read_status "$status")" || rc=$?
   if [ "$rc" -eq 3 ]; then
+    rec_boot="$(dms_runner_kv "$record" boot_id)"
+    rec_pid="$(dms_runner_kv "$record" launcher_pid)"
+    rec_start="$(dms_runner_kv "$record" launcher_start)"
+    if [ -s "$record" ] && [ -n "$rec_boot" ] && [ -n "$this_boot" ] && [ "$rec_boot" != "$this_boot" ]; then
+      dms_runner_reject INTERRUPTED "deploy ${id} was launched before this host last restarted and never recorded a status — it is NOT evidence of a deploy; read its log, and make sure no deploy or rollback holds the release lock before acting"
+      return 4
+    fi
+    if [ -s "$record" ] && [ -n "$rec_pid" ] && ! dms_runner_launcher_alive "$rec_pid" "$rec_start" "$uid"; then
+      dms_runner_reject INTERRUPTED "the launcher of deploy ${id} (pid ${rec_pid}) is gone and no status was recorded — it is NOT evidence of a deploy; read its log, and make sure no deploy or rollback holds the release lock before acting"
+      return 4
+    fi
     echo "deploy-runner: status pending for deploy ${id} (deploy still running or never started)"
     return 3
   fi
@@ -313,6 +439,10 @@ dms_runner_verify_run() {
   rec_approved="$(dms_runner_kv "$record" approved_sha)"
   rec_record="$(dms_runner_kv "$record" approval_record)"
   rec_blob="$(dms_runner_kv "$record" approval_blob)"
+  rec_dir="$(dms_runner_kv "$record" evidence_dir)"
+  rec_host_key="$(dms_runner_kv "$record" host_key_sha256)"
+  rec_sig_blob="$(dms_runner_kv "$record" approval_signature_blob)"
+  rec_signer="$(dms_runner_kv "$record" approval_signer_key)"
 
   # 1. Production host identity.
   if [ "$rec_host" != "$this_host" ]; then
@@ -331,6 +461,16 @@ dms_runner_verify_run() {
     dms_runner_reject INCOMPLETE "the record does not identify the runner program (runner_sha256)"
     return 4
   fi
+  # 8. The record was written in THIS directory, on the host with THIS key.
+  if [ "$rec_dir" != "$run_dir" ]; then
+    dms_runner_reject MISMATCHED "the record was written in '${rec_dir:-<none>}', it is read from ${run_dir}"
+    return 4
+  fi
+  prod_host_key="$(dms_runner_authority_value "$authority" DMS_PRODUCTION_HOST_KEY_SHA256)"
+  if [[ ! "$rec_host_key" =~ ^SHA256:[A-Za-z0-9+/]{43}$ ]] || [ "$rec_host_key" != "$prod_host_key" ] || [ "$rec_host_key" != "$this_host_key" ]; then
+    dms_runner_reject FOREIGN "the record names host key '${rec_host_key:-<none>}'; the declared production key is '${prod_host_key:-<none>}' and this host presents '${this_host_key:-<unreadable>}'"
+    return 4
+  fi
   # 7. Approved release (rule 229).
   if [[ ! "$rec_release" =~ ^[a-z0-9][a-z0-9-]{2,79}$ ]] || ! dms_runner_valid_sha "$rec_approved"; then
     dms_runner_reject INCOMPLETE "the record does not name the approved release and commit (release_id, approved_sha)"
@@ -347,6 +487,10 @@ dms_runner_verify_run() {
   fi
   if [ -z "$rec_tip" ] || [ "$rec_record_path" != "$rec_path" ] || ! dms_runner_valid_sha "$rec_blob"; then
     dms_runner_reject INCOMPLETE "the record does not name the approval it verified for ${rec_release} (approval_record, approval_blob)"
+    return 4
+  fi
+  if ! dms_runner_valid_sha "$rec_sig_blob" || [[ ! "$rec_signer" =~ ^SHA256:[A-Za-z0-9+/]{43}$ ]]; then
+    dms_runner_reject INCOMPLETE "the record does not name the approval signature and its key (approval_signature_blob, approval_signer_key)"
     return 4
   fi
 
@@ -406,9 +550,18 @@ dms_runner_verify_run() {
 
   # 7. The approval, from the run's own log and from git (after the host and
   # target facts, so a copied foreign log is reported for what it fails first).
-  dms_runner_assert_approval_log "$log" "$rec_approved" "$rec_release" "$rec_path" "$app_dir" || return 4
+  dms_runner_assert_approval_log "$log" "$rec_approved" "$rec_release" "$rec_path" "$app_dir" "$rec_signer" || return 4
   dms_runner_assert_approval_blob "$app_dir" "$rec_blob" "$rec_release" "$rec_approved" "$rec_tip" "$rec_path" || return 4
+  dms_runner_assert_signature_blob "$app_dir" "$rec_sig_blob" "$rec_tip" "$rec_path" || return 4
+  # Rule 231: the bootstrap, inside the lock, verified the very record the runner
+  # verified before launch — not another signed version of the same release.
+  log_blob="$(sed -n '/^DEPLOY_APPROVAL_RECORD=/{s/^.* blob=//p;q;}' "$log")"
+  if [ "$log_blob" != "$rec_blob" ]; then
+    dms_runner_reject MISMATCHED "the bootstrap verified approval ${log_blob:-<none>}, the runner verified ${rec_blob} before launch"
+    return 4
+  fi
   echo "deploy-runner: target_commit=${target} (checkout HEAD matches)"
+  echo "deploy-runner: approval signed with ${rec_signer}; host key ${rec_host_key}; evidence ${run_dir}"
   echo "DEPLOY_APPROVED_TARGET_MATCH=YES (${target})"
   echo "deploy-runner: final exit=0"
   echo "DEPLOY RUNNER OK"
@@ -416,7 +569,7 @@ dms_runner_verify_run() {
 }
 
 dms_runner_verify_latest() {
-  # dms_runner_verify_latest <run_dir> <this_host> <authority> <app_dir> <now_epoch>
+  # dms_runner_verify_latest <run_dir> <this_host> <authority> <app_dir> <now_epoch> [<this_host_key>] [<this_boot_id>] [<deploy_uid>]
   local run_dir="$1" link="$1/latest.status" target base id
   if [ ! -e "$link" ] && [ ! -L "$link" ]; then
     echo "deploy-runner: status pending (deploy still running or never started on this host)"
@@ -433,7 +586,7 @@ dms_runner_verify_latest() {
     return 4
   fi
   id="${BASH_REMATCH[1]}"
-  dms_runner_verify_run "$run_dir" "$id" "$2" "$3" "$4" "$5"
+  dms_runner_verify_run "$run_dir" "$id" "$2" "$3" "$4" "$5" "${6:-}" "${7:-}" "${8:-}"
 }
 
 dms_runner_latest_quarantine() {
@@ -540,7 +693,11 @@ dms_runner_run_is_bound() {
   # dms_runner_run_is_bound <run_dir> <deploy_id> <this_host>
   local record="$1/deploy-$2.host"
   [ -s "$record" ] || return 1
-  [ "$(dms_runner_kv "$record" runner_contract)" = "$DMS_RUNNER_EVIDENCE_CONTRACT" ] || return 1
+  # Every contract from 2 on binds the run to its host; this is about binding,
+  # not about whether today's verifier accepts the run as GO.
+  local contract
+  contract="$(dms_runner_kv "$record" runner_contract)"
+  [[ "$contract" =~ ^[0-9]{1,3}$ ]] && [ "$contract" -ge 2 ] && [ "$contract" -le "$DMS_RUNNER_EVIDENCE_CONTRACT" ] || return 1
   [ "$(dms_runner_kv "$record" host)" = "$3" ] || return 1
   [ "$(dms_runner_kv "$record" deploy_id)" = "$2" ] || return 1
   return 0

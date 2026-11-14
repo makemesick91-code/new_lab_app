@@ -80,14 +80,17 @@ if [ "$apply" = "1" ]; then
     echo "QUARANTINE REFUSED: lock root ${LOCK_DIR} is not owned by this identity" >&2
     exit 1
   fi
+  # Rule 231: the release lock (deploy and rollback since rule 231) plus the
+  # pre-231 role locks.
+  exec 6>"${LOCK_DIR}/release.lock"
   exec 8>"${LOCK_DIR}/deploy.lock"
   exec 7>"${LOCK_DIR}/rollback.lock"
-  if ! flock -n 8 || ! flock -n 7; then
+  if ! flock -n 6 || ! flock -n 8 || ! flock -n 7; then
     echo "QUARANTINE BUSY: a deploy or rollback is running — nothing was moved" >&2
     exit 75
   fi
 elif [ -d "$LOCK_DIR" ]; then
-  for role in deploy rollback; do
+  for role in release deploy rollback; do
     if [ -e "${LOCK_DIR}/${role}.lock" ] && ! flock -n "${LOCK_DIR}/${role}.lock" true; then
       echo "QUARANTINE BUSY: a ${role} is running" >&2
       exit 75

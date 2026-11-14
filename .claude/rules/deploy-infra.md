@@ -32,8 +32,9 @@ code, then the canonical rule, and report the drift.
   `.cursor/rules/92-immutable-deployment-entrypoint.mdc`, `.cursor/rules/91-dedicated-self-hosted-ci-runner.mdc`, archive
   `DEPLOY-HARDEN-1`, `POST-ENT`, `LEGACY-RME-PROGRAM-CLOSURE-1`.
 - **AIR-DEP-02** `RUNNING_DEPLOY_PROGRAM != MUTABLE_REPOSITORY_FILE`. `deploy-vps.sh` hands off to
-  `scripts/deploy-immutable-exec.sh` before any mutation: `flock` on `/run/daengtisiams-deploy/<role>.lock` (fallback
-  `/var/lock/daengtisiams-deploy`), a second attempt exits `75` before backup, then `git archive <TARGET_SHA> -- scripts
+  `scripts/deploy-immutable-exec.sh` before any mutation: `flock` on `/run/daengtisiams-deploy/release.lock` — ONE lock
+  for deploy and rollback, plus the pre-231 `deploy.lock`/`rollback.lock` (rule 231; fallback root
+  `/var/lock/daengtisiams-deploy` only on a host without a writable `/run`), a second attempt exits `75` before backup, then `git archive <TARGET_SHA> -- scripts
   deploy` into a 0700 root-owned snapshot with the live `deploy/runtime-identity.conf` overlaid. Lock and snapshot
   never live under `storage/` or `bootstrap/cache`. Source: `92-immutable-deployment-entrypoint.mdc`.
 - **AIR-DEP-03** After the checkout every helper runs from the snapshot as `bash "${DEPLOY_TOOLS_DIR}/scripts/…"`; a new
@@ -59,8 +60,9 @@ code, then the canonical rule, and report the drift.
   deploy and rollback contracts; removing either fails `foundation:deployment-rollback-check`. Source:
   `.cursor/rules/100-production-secret-file-permission-hardening.mdc`, `.cursor/rules/92-dedicated-runtime-identity-co-tenant-isolation.mdc`,
   archive `FIX-LOGIN-REDIRECT-RUNTIME-PERMISSIONS`.
-- **AIR-DEP-08** `scripts/rollback-vps.sh <tag|commit>` resolves the ref to one exact SHA before mutating, takes its own
-  `rollback.lock`, builds its snapshot from the CURRENT code (so modern gates run against an older target), dumps the
+- **AIR-DEP-08** `scripts/rollback-vps.sh <tag|commit>` resolves the ref to one exact SHA before mutating (locally
+  first; only an unknown tag is fetched, alone, into a private ref; a hex-like name that is also a ref is refused as
+  ambiguous; never `--tags --prune` — rule 231), takes the shared `release.lock` (never alongside a deploy), builds its snapshot from the CURRENT code (so modern gates run against an older target), dumps the
   database before the checkout, and re-asserts secret and isolation invariants. Rollback never restores data: that is
   the separate, explicit `scripts/restore_postgres.sh`. Source: `60-…`, `92-immutable-deployment-entrypoint.mdc` (rule 20).
 
@@ -207,7 +209,8 @@ code, then the canonical rule, and report the drift.
   after the preflight and before any mutation. `provision-runtime-identity.sh` uses `systemctl try-restart` for the
   queue worker so a stopped worker stays stopped. Source: `.cursor/rules/220-production-host-identity-biznet.mdc` §4.
 - **AIR-DEP-33** A bare `exit=N` is never proof of a deploy. `deploy-vps-runner.sh` writes a binding record
-  (`deploy-<id>.host`: host, `deploy_id`, UTC `started_at`/`finished_at`, `runner_contract=3`, runner SHA-256,
+  (`deploy-<id>.host`, since rule 231 in the root-only `/var/lib/daengtisiams-deploy/runner`, contract 4 — see
+  AIR-DEP-37: host, `deploy_id`, UTC `started_at`/`finished_at`, `runner_contract`, runner SHA-256,
   `release_id`, `approved_sha`, `result_exit`) and `verify <id>` / `status` (`scripts/lib/deploy-runner-evidence.sh`) accept a success only when
   host identity, timestamps, identifier, target commit (one pin, the deploy's HEAD == target, checkout still there),
   runner version and result (status == record, preflight GO + DEPLOY OK in the run's own log) all agree; anything
@@ -235,8 +238,8 @@ code, then the canonical rule, and report the drift.
   ref (never `FETCH_HEAD`); snapshot stages trust `DMS_DEPLOY_*` only with the bootstrap's lock held. The one-time
   bootstrap (runbook §6c) is spent on Biznet (deploy `20261114-011345`, 2026-11-14): the in-tree runner there carries
   the guard, so use §6b. An approval-record PR runs the whole Critical Gate (`unknown_high_risk`, about an hour); never
-  reclassify it as documentation. Binding, not authentication: the base
-  is unprotected and root on the host is inside the trust boundary. Source:
+  reclassify it as documentation. Rule 229 alone was binding, not authentication; rule 231 (AIR-DEP-37) adds the
+  signature, the host key, single use, trusted evidence and the shared lock. Source:
   `.cursor/rules/229-exact-approved-release-sha-guard.mdc`.
 - **AIR-DEP-36** The BK-2 workstation pull (`dms-bk2-pull.timer`) claims `result=OK`, exit 0 and a local
   `OFF_SERVER=OK` only when that run proved the backup HDD's identity chain up to one read-write mount in **PID 1's**
@@ -248,6 +251,16 @@ code, then the canonical rule, and report the drift.
   with a `BK2_ALERT` before the custodian attaches (rule 230 §11). Drill 2 (2026-11-14) proved both legs live, and the
   program is GO, with no GO tag because nothing was deployed. Source:
   `.cursor/rules/230-bk2-offserver-workstation-recovery.mdc`, runbook `docs/runbooks/bk2-offserver-workstation-recovery.md`.
+
+- **AIR-DEP-37** Rule 231. Approval contract 2 adds `DMS_APPROVAL_HOST_KEY_SHA256` (= the pinned and presented host
+  key) and `<id>.approval.sig`, the approver's `ssh-keygen -Y sign -n dms-release-approval` signature over the exact
+  record, verified against the host trust anchor `/etc/daengtisiams/release-approvers.allowed_signers` (outside repo
+  and checkout, root-owned, owner-provisioned per runbook §6d; never commit an allowed-signers file or key). A
+  release id deploys once (spend record written inside the lock). Evidence contract 4 lives in root-only
+  `/var/lib/daengtisiams-deploy/runner`, runs are claimed with `set -C`, `verify` refuses
+  `UNTRUSTED`/`TAMPERED`/`FOREIGN` and reports killed runs `INTERRUPTED`. Deploy and rollback share `release.lock`;
+  a leftover git lock is FATAL. Rollback takes a full SHA or a tag, never an abbreviated SHA. Open (HIGH): the deploy still runs PHP and `chmod -R` as root over runtime-owned
+  `storage/` (DEPLOY-PRIVSEP). Source: `.cursor/rules/231-release-guard-trust-hardening.mdc`.
 
 ## Current posture (snapshot 2026-11-04, read-only inspection — verify before relying on it)
 
@@ -280,6 +293,7 @@ code, then the canonical rule, and report the drift.
 | `.cursor/rules/92-immutable-deployment-entrypoint.mdc` | Snapshot, flock, pinned SHA, `DEPLOY OK` |
 | `.cursor/rules/229-exact-approved-release-sha-guard.mdc` | Exact approved release SHA, approval record, contract 3, bootstrap |
 | `.cursor/rules/230-bk2-offserver-workstation-recovery.mdc` | BK-2 workstation pull: HDD identity states, PID 1 mount, custodian unlock, result/alert semantics |
+| `.cursor/rules/231-release-guard-trust-hardening.mdc` | Signed, host-key-bound, single-use approvals; trusted evidence (contract 4); one release lock; rollback resolution |
 | `.cursor/rules/100-production-secret-file-permission-hardening.mdc` | Secret file mode and handling |
 | `.cursor/rules/121-clinical-evidence-private-storage.mdc` | Clinical evidence on private disks only |
 | `.cursor/rules/176-private-database-dump-creation.mdc` | Dumps private from creation |

@@ -60,12 +60,24 @@ function dhpLinesOf(string $script, string $needle): array
     return $hits;
 }
 
-/** A temporary application tree for the runner, with a status already present. */
+/**
+ * A temporary application tree carrying the runner and its libraries, whose
+ * authority names THIS machine and a private evidence directory outside the
+ * tree (rule 231), with a status already present there.
+ */
 function dhpRunnerTree(?string $statusLine, ?string $hostLine): string
 {
     $app = tempArtifactDir('dhp-runner-');
-    $runDir = "{$app}/storage/logs/deploy-runner";
-    mkdir($runDir, 0o700, true);
+    $runDir = tempArtifactDir('dhp-evidence-');
+    foreach (['scripts/deploy-vps-runner.sh', 'scripts/lib/deploy-runner-evidence.sh', 'scripts/lib/release-approval.sh', 'scripts/lib/trusted-path.sh'] as $relative) {
+        if (! is_dir(dirname("{$app}/{$relative}"))) {
+            mkdir(dirname("{$app}/{$relative}"), 0o700, true);
+        }
+        copy(base_path($relative), "{$app}/{$relative}");
+    }
+    mkdir("{$app}/deploy", 0o700);
+    file_put_contents("{$app}/deploy/production-host.conf", 'DMS_PRODUCTION_HOSTNAME='.trim((string) gethostname())
+        ."\nDMS_FROZEN_LEGACY_HOSTNAMES=\"srv1730088\"\nDMS_PRODUCTION_DEPLOY_EVIDENCE_DIR={$runDir}\n");
 
     if ($statusLine !== null) {
         file_put_contents("{$runDir}/deploy-20261104-000000.status", $statusLine."\n");
@@ -80,7 +92,7 @@ function dhpRunnerTree(?string $statusLine, ?string $hostLine): string
 
 function dhpRunner(string $app, string $action, array $env = []): array
 {
-    return dhpRun(['bash', base_path('scripts/deploy-vps-runner.sh'), $action], null, array_merge(['APP_DIR' => $app], $env));
+    return dhpRun(['bash', "{$app}/scripts/deploy-vps-runner.sh", $action], null, array_merge(['APP_DIR' => $app], $env));
 }
 
 it('passes only on the declared production host, as root, with every tool present', function () {
@@ -228,12 +240,12 @@ it('binds a fresh run to this host end to end', function () {
     $start = r229Runner($s, ['start', '--release-id', $s['release'], '--approved-sha', $s['sha']]);
     expect($start['exit'])->toBe(0, $start['output']);
     preg_match('/deploy_id=(\d{8}-\d{6})/', $start['output'], $m);
-    expect(r229WaitForStatus($s['app'], $m[1]))->toBe('exit=0');
+    expect(r229WaitForStatus($s, $m[1]))->toBe('exit=0');
 
     // The record now carries the whole evidence contract, host first.
-    $host = (string) file_get_contents("{$s['app']}/storage/logs/deploy-runner/latest.host");
+    $host = (string) file_get_contents(r229EvidenceFile($s, 'latest.host'));
     expect($host)->toStartWith('host='.trim((string) gethostname())."\n")
-        ->and($host)->toContain('runner_contract=3')
+        ->and($host)->toContain('runner_contract=4')
         ->and($host)->toContain('result_exit=0');
 
     // A run proves nothing when its own log shows no approval, no production

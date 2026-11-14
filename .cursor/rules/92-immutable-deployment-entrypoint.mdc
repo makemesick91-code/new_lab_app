@@ -47,7 +47,10 @@ not theoretical: it cost two production releases a manual pre-pull rescue.
    last gate before `DEPLOY OK`.
 9. Exactly one deployment critical section at a time: `flock` on
    `/run/daengtisiams-deploy/<role>.lock`. A second attempt fails closed (exit
-   75) before backup, migration or checkout.
+   75) before backup, migration or checkout. **SUPERSEDED in part by rule 231
+   (2026-11-14):** the lock is now ONE `release.lock` shared by deploy and
+   rollback, with the pre-231 role locks still taken
+   (`231-release-guard-trust-hardening.mdc` §4).
 10. Lock and snapshot live under a root-controlled path — **never** under
     `storage/` or `bootstrap/cache`, which the runtime user can write.
 11. The advisory lock is authoritative. A lock file on disk, or a stale status

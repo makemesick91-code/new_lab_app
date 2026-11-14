@@ -39,6 +39,8 @@ the **deploy and rollback** topics.
 # (deploy/release-approvals/<release-id>.approval). Without an approved release the runner prints
 # DEPLOYMENT=DENIED (exit 77) and launches nothing. The first deploy that carries the guard uses
 # docs/runbooks/production-host-identity.md section 6c.
+# Rule 231: the record must also carry the approver's signature (<release-id>.approval.sig) that verifies against
+# the host's release trust anchor; the first deploy that carries rule 231 uses section 6d.
 ssh daengtisiams-biznet-prod 'cd /var/www/asia-dental-lab-v2 && sudo -n bash scripts/deploy-vps-runner.sh start --release-id <release-id> --approved-sha <APPROVED_SHA>'
 ssh daengtisiams-biznet-prod 'cd /var/www/asia-dental-lab-v2 && sudo -n bash scripts/deploy-vps-runner.sh status'
 ```
@@ -49,9 +51,12 @@ itself. Do not hand-pull before deploying.
 
 What happens inside one run:
 
-1. **Exclusive lock** — `flock` on `/run/daengtisiams-deploy/deploy.lock`
-   (root-controlled, never under `storage/`). A second deploy fails closed with
-   exit 75 before any backup, migration or checkout mutation.
+1. **Exclusive lock** — `flock` on `/run/daengtisiams-deploy/release.lock`
+   (root-controlled, never under `storage/`), the ONE lock shared by deploy and
+   rollback since rule 231; the older `deploy.lock` and `rollback.lock` are taken
+   too. A second deploy, or a rollback, fails closed with exit 75 before any
+   backup, migration or checkout mutation. Inside the lock, leftovers of a killed
+   run (snapshot directories, private refs) are reconciled first.
 2. **Exact target pinned** — the remote is fetched and `TARGET_SHA` frozen. If
    origin advances afterwards, that commit belongs to the NEXT deployment.
 3. **Immutable execution snapshot** — the deployment payload (`scripts/`,
@@ -111,14 +116,17 @@ Never run these during deploy or rollback on the pilot/production VPS:
 - Release-evidence VPS profile all GO (`release:evidence-check --profile=vps`).
 - Automated smoke result and the deployed GO tag exact-match at VPS HEAD.
 - DEPLOY-HARDEN-1 immutable-execution proof, printed by the run and kept in
-  `storage/logs/deploy-runner/deploy-<ts>.log`:
+  `/var/lib/daengtisiams-deploy/runner/deploy-<ts>.log` (rule 231: root-only, outside
+  the checkout; runs before rule 231 are in `storage/logs/deploy-runner/`):
   `DEPLOY_LOCK_ACQUIRED`, `DEPLOY_TARGET_PINNED`, `DEPLOY_RUN_ID`,
   `DEPLOY_SNAPSHOT_CREATED`, `DEPLOY_SNAPSHOT_TRUSTED`,
   `DEPLOY_EXECUTION_SOURCE`, `SOURCE_DEPLOY_SCRIPT_SHA256` /
   `SNAPSHOT_DEPLOY_SCRIPT_SHA256` (equal at capture time),
   `DEPLOY_HEAD_TARGET_MATCH`, `DEPLOY_SNAPSHOT_CLEANED`.
-- Deployment logs under `storage/logs/deploy-runner/` are audit evidence and are
-  retained. Execution snapshots are disposable and are removed on every exit.
+- Deployment logs under `/var/lib/daengtisiams-deploy/runner/` (and, for runs
+  before rule 231, `storage/logs/deploy-runner/`) are audit evidence and are
+  retained; never edit, move or delete them. Execution snapshots are disposable
+  and are removed on every exit (or by the next run, after a kill).
 
 ## Rollback / Fallback
 
@@ -142,19 +150,48 @@ Never run these during deploy or rollback on the pilot/production VPS:
   may hold a stale route cache; the script clears route/config cache before gates
   (ENT-8). Re-run once if a first-run governance flake appears.
 - `nginx -t` fails → do not reload; fix the config first.
-- **`BUSY another deploy is already running` (exit 75)** → a deployment already
-  holds the lock. This is correct, fail-closed behaviour: nothing was backed up,
-  migrated or checked out. Identify the holder and wait for it:
+- **`BUSY another deploy or rollback holds the release lock` (exit 75)** (before
+  rule 231: `BUSY another deploy is already running`) → a deploy or a rollback
+  already holds the lock. This is correct, fail-closed behaviour: nothing was
+  backed up, migrated or checked out. The message names the last recorded holder.
+  Identify it and wait for it:
 
   ```
-  ssh daengtisiams-biznet-prod 'sudo -n flock -n /run/daengtisiams-deploy/deploy.lock -c true \
+  ssh daengtisiams-biznet-prod 'sudo -n flock -n /run/daengtisiams-deploy/release.lock -c true \
     && echo "lock FREE" || echo "lock HELD"'
   ssh daengtisiams-biznet-prod 'cd /var/www/asia-dental-lab-v2 && sudo -n bash scripts/deploy-vps-runner.sh status'
   ```
 
+  The runner also refuses a second `start` (`BUSY deploy <id> is still running`,
+  exit 75) while the first run's launcher is alive, and records nothing for it.
+
   The lock **file** existing on disk is normal and does not mean the lock is
   held; `flock` is the authority. Never delete the lock file to "unstick" a
   deploy — a killed holder releases it automatically.
+- **`DEPLOY RUNNER STATUS INTERRUPTED`** → the run's launcher died (SIGKILL,
+  host restart) without a status. It is not evidence of a deploy and its approval
+  is not spent. Read its log to see how far it got; confirm the lock is free (as
+  above) and that no `dms-deploy-runner` process remains; then decide, with the
+  owner, between re-running the same approved release and a rollback. The next
+  run removes the dead run's snapshot by itself.
+- **`stale git lock …`** (exit 2, before any backup) → a run was killed during a
+  checkout or merge (`index.lock`, `HEAD.lock`, `packed-refs.lock`, `config.lock`
+  or a `refs/**/*.lock`), or a git command is running right now. Confirm no git
+  process runs on the host (`sudo -n pgrep -a git` prints nothing), inspect
+  `git status`, and only then remove exactly the file the message names, e.g.
+  `sudo -n rm -- /var/www/asia-dental-lab-v2/.git/index.lock`. Never remove one
+  while any git or deploy process is alive.
+- **`release <id> was already deployed on this host`** (exit 77) → a release
+  deploys once (the spend record is written inside the lock by the deploy that
+  completed it). A re-deploy of the same commit (for example after a rollback)
+  needs a new owner approval, recorded as a new signed record under a new release
+  id (e.g. `<release-id>-r2`).
+- **Rollback `is an abbreviated commit id and is ambiguous`** → pass the full
+  40-character commit SHA, or a GO tag name. Other names are looked up only as
+  tags (`refs/tags/<name>`), never as branches.
+- **`DEPLOY RUNNER STATUS NOT-FOUND`** → this deploy id is not in
+  `/var/lib/daengtisiams-deploy/runner`; runs launched before rule 231 kept their
+  evidence in `storage/logs/deploy-runner/` and were verified at the time.
 - **`immutable deployment bootstrap missing`** → the checkout predates
   DEPLOY-HARDEN-1. Use the one-time transition above. Never work around it by
   invoking the deploy script some other way; the refusal is deliberate.
