@@ -322,7 +322,7 @@ clean. `sprint:test-plan` escalates the diff to the full required suite (categor
 | TESTED | locally (§9.1) |
 | CI VERIFIED | yes — PR head `ae92a66f` (run 43570269130) and merge `d707a3e3` (push run 43579662147): Critical Gate 9,958 passed (49,241 assertions) each; Full Suite deferred (CG-18), not passed |
 | MERGED | yes — squash `d707a3e349408c049148ca7061dac018dd4a1669` on 2026-11-14 09:15 UTC, owner-authorised, pinned to `ae92a66f`; tree `ff52ee26` identical to the tested head's |
-| APPROVED FOR DEPLOYMENT | no — §12: owner signature, anchor, separate written approvals |
+| APPROVED FOR DEPLOYMENT | partly — the owner signed the release record (§12.4); still needs the approval PR merged, backup custody confirmed, the trust anchor and the owner's production authorisation (§12.3) |
 | DEPLOYED | no |
 | VERIFIED | no |
 | GO TAGGED | no |
@@ -415,10 +415,25 @@ The owner signs the record **file** in their own terminal (S8), and the signatur
 | Gate | Status |
 |---|---|
 | Signing key created, protected, fingerprint confirmed | **done** (owner, 2026-11-14) |
-| Offline backup custody of the signing key confirmed | pending — owner |
-| Record signed by the owner | pending — owner |
-| Written approval of `d707a3e349408c049148ca7061dac018dd4a1669` for production, window, service interruption, OD-1 acceptance, rollback authority, read-only clinical smoke | pending — owner |
+| Offline backup custody of the signing key confirmed | pending — owner (required before release) |
+| Record signed by the owner | **done** — 2026-11-14T11:57:40Z (19:57:40 WITA), by the owner in their own interactive terminal; window to 2026-11-15T11:57:40Z (2026-11-15 19:57:40 WITA); verified in §12.4 |
+| Written approval of the exact release `d707a3e349408c049148ca7061dac018dd4a1669` (tree `ff52ee26bb32de05272a08268c50650dcd922532`) | **done** — the owner's written statement "OWNER SIGNED APPROVAL — COMPLETED" (2026-11-14, after signing) quotes the SHA, tree, release id, signing fingerprint and window |
+| Production authorisation: service interruption, OD-1 acceptance for this deploy, rollback authority, read-only clinical smoke | pending — owner, separate from the signature |
 | Merge of the approval PR (record, signature, this document) | pending — owner |
 | Trust anchor `/etc/daengtisiams/release-approvers.allowed_signers` on the host (production change, §6d B) | pending — owner |
 | §6d deploy on the Biznet host | pending — owner |
 | GO tag `dms-release-guard-trust-hardening-1-go` after production verification | pending — owner |
+
+### 12.4 Verification of the signed record (2026-11-14, workstation, read-only)
+
+The owner ran the signing script; the assistant then read the record, its signature and the owner's PUBLIC key only.
+
+| Check | Result |
+|---|---|
+| Record | `deploy/release-approvals/dms-release-guard-trust-hardening-1.approval`, 1002 bytes, git blob `184a4c209c03268bd4545059fc9a01cf1b24ed9e`; the prepared template with `APPROVED_AT=2026-11-14T11:57:40Z`, `NOT_AFTER=2026-11-15T11:57:40Z` (24 h); printable ASCII, LF, no CR (S3) |
+| Signature | `….approval.sig`, 318 bytes, armored, git blob `f03c984bd5909f3f7db22a30c454a9212216684c` |
+| Positive | `ssh-keygen -Y verify -I owner -n dms-release-approval` → `Good "dms-release-approval" signature for owner with ED25519 key SHA256:0WGGTlMDzLPGAhQaRG+Ag7BqoypSLinSNOHalZKtgt4` |
+| Negative controls | namespace `git`, principal `attacker`, and one changed byte in the record: each refused (exit 255) |
+| After commit | the committed blobs are byte-identical to the signed files, the signature verifies against the committed blob, and the guard-mirroring local check passes (format, facts, window, evidence quotes the SHA, only approval records and docs follow the release commit) |
+
+The record and signature are never edited: any change needs a new signature (and, once spent, a new release id).
