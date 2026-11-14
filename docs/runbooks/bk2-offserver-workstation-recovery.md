@@ -93,10 +93,12 @@ at least once every 24 hours.
 
 ## 7. Before deploy work
 
-Section 6b step 3 of `docs/runbooks/production-host-identity.md` stays the gate: the host `dms-bk2-status` must show
-`ON_SERVER=OK` and `OFF_SERVER=OK`. Read `bk2-status.sh` at the start of deploy work as well. If the HDD is
-unavailable, tell the owner then, not at the preflight, because the deploy's own package will wait on the server. A
-fail state or a `FAIL` result is a HOLD until the owner decides.
+BK-2 is not a deploy gate (rule 232, owner directive `DMS-BK2-MANUAL-ONLY-1`, 2026-11-14). Section 6b step 3 of
+`docs/runbooks/production-host-identity.md` no longer waits on `ON_SERVER=OK` or `OFF_SERVER=OK`, and deploy work does
+not read `bk2-status.sh` or ask the owner to attach the HDD. The deploy's own verified dump is the required pre-deploy
+backup. Use this runbook when the owner explicitly orders a BK-2 check, recovery or drill; then a fail state or a
+`FAIL` result is reported to the owner, who decides. The pull timer keeps running unchanged, and its own alerts still
+report a detached or failing HDD.
 
 ## 8. Restart drill (owner)
 

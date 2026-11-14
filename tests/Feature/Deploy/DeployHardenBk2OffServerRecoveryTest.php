@@ -15,6 +15,10 @@ uses()->group('Deploy', 'ReleaseSafety', 'Backup');
  * identifiers out of the public tree. It checks shapes only and never contains
  * a real value. The pull account and the escrow file names are kept out by
  * review instead: a guard would have to publish them in order to detect them.
+ *
+ * DMS-BK2-MANUAL-ONLY-1 — rule 232 (owner directive, 2026-11-14): BK-2 is
+ * manual-only and no longer a deploy gate. It supersedes rule 230 §9; the
+ * deploy's own verified dump stays the mandatory pre-deploy backup.
  */
 function bk2r230Read(string $relative): string
 {
@@ -26,6 +30,7 @@ function bk2r230Read(string $relative): string
 
 const BK2R230_RULE = '.cursor/rules/230-bk2-offserver-workstation-recovery.mdc';
 const BK2R230_RUNBOOK = 'docs/runbooks/bk2-offserver-workstation-recovery.md';
+const BK2R232_RULE = '.cursor/rules/232-bk2-manual-only-not-a-deploy-gate.mdc';
 const BK2R230_STATES = [
     'OK', 'ABSENT', 'LOCKED', 'NOT_MOUNTED', 'NOT_IN_PID1_NS',
     'MISMATCH', 'WRONG_MAPPING', 'DUPLICATE_MOUNT', 'READ_ONLY', 'UNVERIFIABLE',
@@ -53,8 +58,48 @@ it('keeps the canonical rule, the runbook, the domain index and the deploy runbo
 
     $deploy = bk2r230Read('docs/runbooks/production-host-identity.md');
     expect($deploy)->toContain('**Check backup protection (read-only):**')
-        ->and($deploy)->toContain(BK2R230_RUNBOOK)
-        ->and($deploy)->toContain('A fail state or a `FAIL` result is a HOLD until the');
+        ->and($deploy)->toContain(BK2R230_RUNBOOK);
+});
+
+it('keeps BK-2 out of the deploy gate while the deploy\'s own dump stays mandatory (rule 232)', function () {
+    $rule = bk2r230Read(BK2R232_RULE);
+    expect($rule)->toContain('**Status:** ACTIVE')
+        ->and($rule)->toContain('alwaysApply: true')
+        ->and($rule)->toContain('docs/sprints/dms-bk2-manual-only-1.md')
+        ->and($rule)->toContain('BK2_POLICY=MANUAL_ONLY')
+        ->and($rule)->toContain('BK2_REQUIRED_FOR_GO_GATE=FALSE')
+        ->and($rule)->toContain('BK2_EXPLICIT_OWNER_AUTHORIZATION=REQUIRED')
+        ->and($rule)->toContain('**BLOCKED**')
+        ->and($rule)->toContain('`SKIPPED — DMS-BK2-MANUAL-ONLY-1 (Owner Directive)`');
+
+    bk2r230Read('docs/sprints/dms-bk2-manual-only-1.md');
+
+    $domain = bk2r230Read('.claude/rules/deploy-infra.md');
+    expect($domain)->toContain('**AIR-DEP-38**')
+        ->and($domain)->toContain('`'.BK2R232_RULE.'`');
+
+    // The deploy runbook names the runner's dump as the required backup and no
+    // longer waits on BK-2, in §6b step 3 or through §6d's inherited list.
+    $deploy = bk2r230Read('docs/runbooks/production-host-identity.md');
+    expect($deploy)->toContain('that dump is the required pre-deploy backup')
+        ->and($deploy)->toContain('(rule 232, owner directive `DMS-BK2-MANUAL-ONLY-1`, 2026-11-14)')
+        ->and($deploy)->not->toContain('report both the on-server and the off-server copy healthy')
+        ->and($deploy)->not->toContain('(BK-2, backup window');
+
+    expect(bk2r230Read(BK2R230_RULE))->toContain('**SUPERSEDED by rule 232**')
+        ->and(bk2r230Read(BK2R230_RULE))->not->toContain('is unchanged as the gate');
+    expect(bk2r230Read(BK2R230_RUNBOOK))->toContain('BK-2 is not a deploy gate (rule 232')
+        ->and(bk2r230Read(BK2R230_RUNBOOK))->not->toContain('stays the gate');
+
+    // The mandatory backup is real: the deploy aborts on a failed dump, and no
+    // deploy script consults BK-2.
+    $deployScript = bk2r230Read('scripts/deploy-vps.sh');
+    expect($deployScript)->toContain("set -euo pipefail\n")
+        ->and($deployScript)->toContain('pre_auto_deploy_')
+        ->and($deployScript)->toContain('dms_write_private_dump');
+    foreach (['scripts/deploy-vps.sh', 'scripts/deploy-vps-runner.sh'] as $script) {
+        expect(strtolower(bk2r230Read($script)))->not->toContain('bk2');
+    }
 });
 
 it('documents every HDD identity state, and only the four custodian-recoverable ones as recoverable', function () {
