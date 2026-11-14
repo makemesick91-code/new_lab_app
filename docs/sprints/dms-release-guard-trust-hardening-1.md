@@ -7,9 +7,10 @@ Record format: `deploy/release-approvals/README.md` · Recovery: `docs/runbooks/
 `dms-release-guard-trust-hardening-1-go`) · Base: `feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report`
 at `55990b3b` · Branch: `fix/dms-release-guard-trust-hardening-1`.
 
-**Status: MERGED (`d707a3e349408c049148ca7061dac018dd4a1669`, post-merge CI green) — release approval in preparation;
-not deployed, no GO tag.** Deployment needs the owner's signature on the release record, the trust anchor on the host,
-and the owner's separate written approvals (§12).
+**Status: GO** — released as r2: `d555c7dc5ddb46631c16cd957b86490d06634f7f` (the rule 231 merge `d707a3e3` plus rule 232,
+PR #630) deployed on Biznet production by §6d on 2026-11-15 06:55 WITA (deploy `20261114-225508`, `DEPLOY RUNNER OK`),
+verified, and tagged `dms-release-guard-trust-hardening-1-go`. The §12 approval of `d707a3e3` was voided by PR #630 and
+never deployed; §13 holds the r2 approval and the deploy evidence. OD-1 DEPLOY-PRIVSEP stays OPEN.
 
 ## 1. Owner request (CG-22)
 
@@ -322,10 +323,10 @@ clean. `sprint:test-plan` escalates the diff to the full required suite (categor
 | TESTED | locally (§9.1) |
 | CI VERIFIED | yes — PR head `ae92a66f` (run 43570269130) and merge `d707a3e3` (push run 43579662147): Critical Gate 9,958 passed (49,241 assertions) each; Full Suite deferred (CG-18), not passed |
 | MERGED | yes — squash `d707a3e349408c049148ca7061dac018dd4a1669` on 2026-11-14 09:15 UTC, owner-authorised, pinned to `ae92a66f`; tree `ff52ee26` identical to the tested head's |
-| APPROVED FOR DEPLOYMENT | partly — the owner signed the release record (§12.4); still needs the approval PR merged, backup custody confirmed, the trust anchor and the owner's production authorisation (§12.3) |
-| DEPLOYED | no |
-| VERIFIED | no |
-| GO TAGGED | no |
+| APPROVED FOR DEPLOYMENT | yes — as release r2 (§13): owner-signed record `dms-release-guard-trust-hardening-1-r2` for `d555c7dc`, merged in #631 (`ad835c7c`); the §12 record of `d707a3e3` was voided by #630 |
+| DEPLOYED | yes — §6d, deploy `20261114-225508`, 2026-11-14T22:55:08Z–22:56:34Z (§13.7) |
+| VERIFIED | yes — `verify` → `DEPLOY_APPROVED_TARGET_MATCH=YES`, `DEPLOY RUNNER OK`; smoke and posture unchanged (§13.7) |
+| GO TAGGED | yes — `dms-release-guard-trust-hardening-1-go` (annotated, object `39b5a4c9`) on `d555c7dc5ddb46631c16cd957b86490d06634f7f` |
 
 ## 11. Production release readiness
 
@@ -492,8 +493,8 @@ owner's decision (§13.4).
 | Production authorisation: trust anchor (§6d B), §6d deploy with its database dump, outside 02:25–02:40 WITA, no BK-2, no offline key copy | **given** — owner directive "PR #630 — UPDATED OWNER DIRECTIVE" items 6–8, effective once the approval is valid |
 | OD-1 acceptance, rollback authority and read-only smoke for the r2 deploy | **given** — owner, 2026-11-15: "OD-1 diterima untuk deploy r2 ini saja; rollback hanya atas persetujuan saya ke `82f1eeba…` dengan SHA penuh; smoke read-only; GO tag setelah verifikasi." OD-1 stays OPEN beyond this deploy |
 | Merge of the approval PR (record, signature, this document) | authorised by the owner only after every Critical Gate is green |
-| §6d deploy | authorised by the owner only after the approval is valid (merged), the trust anchor is installed and `trust-check` passes; never 02:25–02:40 WITA; pre-deploy database dump mandatory; no BK-2; rollback only on the owner's explicit approval |
-| GO tag `dms-release-guard-trust-hardening-1-go` after production verification | pending — only after production verification succeeds |
+| §6d deploy | authorised by the owner only after the approval is valid (merged), the trust anchor is installed and `trust-check` passes; never 02:25–02:40 WITA; pre-deploy database dump mandatory; no BK-2; rollback only on the owner's explicit approval — **done**, §13.7 |
+| GO tag `dms-release-guard-trust-hardening-1-go` after production verification | **done** — after the §13.7 verification; annotated tag object `39b5a4c9` on `d555c7dc` |
 
 ### 13.5 Post-merge CI on the release commit
 
@@ -514,6 +515,35 @@ owner's PUBLIC key only. It never read the private key, never asked for the pass
 | Signature | `….approval.sig`, 318 bytes, armored, SHA-256 `4e76b7eb4834a699afb83c6c04f580eaa63e5e32746a65edb39d67b90fe78b10` |
 | Positive | `ssh-keygen -Y verify -I owner -n dms-release-approval` → `Good "dms-release-approval" signature for owner with ED25519 key SHA256:0WGGTlMDzLPGAhQaRG+Ag7BqoypSLinSNOHalZKtgt4` |
 | Negative controls | namespace `git`, principal `attacker`, and one changed byte in the record: each refused (exit 255) |
-| After commit | see the approval pull request: committed blobs byte-identical to the signed files, signature verified against the committed blob, guard-mirroring local check |
+| After commit | committed blobs byte-identical to the signed files (record blob `bd95d640`, signature blob `43dee906`), signature verified against the committed blob, guard-mirroring local check passes; unchanged by the #631 squash merge `ad835c7c` |
 
 The r2 record and signature are never edited: any change needs a new signature and, once spent, a new release id.
+
+### 13.7 Deploy and production verification (2026-11-15, WITA)
+
+Approval PR #631: Critical Gate **9,959 passed** on head `ce230a5d` (run 43644650530), every other gate green, Full
+Suite DEFERRED; squash-merged pinned to that head as `ad835c7cea2f8dd5ae10d1f4681c93a5af83a06d` (tree identical; the
+record and signature blobs unchanged; only approval files and this document after `d555c7dc`).
+
+| Step (runbook §6d) | Result |
+|---|---|
+| Target | `PRODUCTION_TARGET=VERIFIED` |
+| B. Trust anchor | installed 06:53 WITA from the PUBLIC key only: `/etc/daengtisiams` `root:root 755`, `release-approvers.allowed_signers` `root:root 644`, one line, principal `owner`, namespace `dms-release-approval`, key `SHA256:0WGGTlMDzLPGAhQaRG+Ag7BqoypSLinSNOHalZKtgt4` (checked directly, not only through `trust-check`) |
+| 0. Starting state | HEAD `82f1eeba`, 0 tracked changes, rule 231 marker 0, no runner process |
+| 1. Approval on the host | `FETCH_HEAD` `ad835c7c`; the r2 record names `d555c7dc`, tree, host, host key, base, GO tag; `ssh-keygen -Y verify` against the anchor → `Good "dms-release-approval" signature for owner` |
+| 2–3. Export and provenance | `/root/dms-release-d555c7dc…` (`root:root 700`) from the commit object: **all 57 files** byte-identical to their blobs, no extra file, no symlink (runner SHA-256 `0ce231a2…`) |
+| 3. `trust-check` (export) | `TRUST_ANCHOR=OK`, `HOST_KEY=OK`, `EVIDENCE_DIR=ABSENT`, `RELEASE GUARD TRUST: READY` |
+| OD-1 indicators | clean: only the rule 229 runner's `latest.*` links under `storage/`; no owner other than root or the runtime user; `bootstrap/cache` from the 8D deploy; the five top-level `storage/*.php` are tracked; no untracked PHP outside compiled views |
+| 4. Start (06:55 WITA) | every guard check `PASS` (signature, SHA on base with only approval files and docs after it, release unspent, window, evidence) → `RELEASE APPROVAL: GO`; `deploy_id=20261114-225508`, program from the export |
+| Pre-deploy backup | `pre_auto_deploy_20261114-225509.sql`, 33,874,463 bytes, `0640`, PostgreSQL dump header and completion footer present; `Nothing to migrate` |
+| 5. `verify` (in-tree runner, rule 231) | `runner_contract=4`, `target_commit=d555c7dc… (checkout HEAD matches)`, signer and host key named, evidence `/var/lib/daengtisiams-deploy/runner`, `DEPLOY_APPROVED_TARGET_MATCH=YES (d555c7dc5ddb46631c16cd957b86490d06634f7f)`, `final exit=0`, **`DEPLOY RUNNER OK`**; the runner log ends `DEPLOY OK`. The loopback smoke `404` is D6, not a result |
+| 6. Smoke (`https://daengtisia.online`) | `/login`, `/health/live`, `/health/ready` (database, cache, queue, storage, object storage `ok`), `/health/lb` → 200; `/rme/visits`, `/rme/medical-records`, `/rme/medical-records/patients/0`, `/dashboard`, `/rme/consents/999999999`, `/rme/visits/999999999/consent/create` → 302 to `/login`; `/rme/consents/0`, `/rme/consents/abc`, `POST /rme/visits/0/consent` → 404; `/storage/x`, `/storage/logs/laravel.log` → 403 — the same as the 8D baseline |
+| 7. Nothing else moved | queue worker and KTP prune timer `inactive/disabled`; BK-2 package and database backup timers `active/enabled`; pilot snapshot timer `inactive/disabled`; only `php8.3-fpm` restarted (22:56:32 UTC); nginx and PostgreSQL not restarted; maintenance OFF; 0 pending migrations; no failed jobs; application log 1,467,295 bytes, 0 ERROR lines since the deploy start |
+| 8. GO tag | `dms-release-guard-trust-hardening-1-go`, annotated (object `39b5a4c9`), on `d555c7dc5ddb46631c16cd957b86490d06634f7f`; absent on origin before; pushed after the verification above |
+| 7 (reconcile). Export | `pgrep -af dms-deploy-runner` → none; `/root/dms-release-d555c7dc…` removed; `verify 20261114-225508` still `DEPLOY RUNNER OK` |
+
+Production now runs rule 231 (marker 1): later deploys use §6b. No rollback was needed or run. **BK-2:** `SKIPPED —
+DMS-BK2-MANUAL-ONLY-1 (Owner Directive)`; offline custody NOT REQUIRED (`DMS-OFFLINE-CUSTODY-OPTIONAL-1`).
+
+Open after the release: OD-1 DEPLOY-PRIVSEP (HIGH, pre-existing; accepted for this deploy only) and the §8c
+follow-ups (rollback by tag, comment bytes, `verify-transition`, the spend write, `trust-check` on an empty anchor).
