@@ -472,7 +472,7 @@ commit's `.sprint/current.yml` still declares `dms-release-guard-trust-hardening
 | Target | `PRODUCTION_TARGET=VERIFIED`; the host presents `SHA256:i3AsyL0oSwqSAwNfgv215Cl01i87buYtH5ugTe8O2bc` = `DMS_PRODUCTION_HOST_KEY_SHA256` |
 | Production before | HEAD `82f1eeba1ec25c81db3cefa1d2b235d022973904`, tracked tree clean, rule 229 present, rule 231 absent → **§6d**; trust anchor absent; 0 pending migrations |
 | Delta from production | 8 commits (`c548bc25`, `32c4a760`, `b220a143`, `03d64654`, `55990b3b`, `d707a3e3`, `6c7d2c0e`, `d555c7dc`). **No migrations.** Beyond §12.1's delta, r2 adds only rule 232 (rules, runbooks, docs, one deploy test) and the §12 approval files; no script or runtime change |
-| CI | PR #630 head `6e2191ef`: Critical Gate **9,959 passed** (run 43610023650), the rule 232 test among them; Full Suite DEFERRED (CG-18). Post-merge push run on `d555c7dc`: see §13.5 |
+| CI | PR #630 head `6e2191ef`: Critical Gate **9,959 passed** (run 43610023650), the rule 232 test among them; post-merge push run 43615293464 on `d555c7dc`: success, 9,959 passed (§13.5); Full Suite DEFERRED (CG-18) |
 | Rollback target | `82f1eeba1ec25c81db3cefa1d2b235d022973904`, code only, **by full SHA**, only on the owner's go-ahead; it restores the rule 229 guard (OD-2) |
 | BK-2 | `SKIPPED — DMS-BK2-MANUAL-ONLY-1 (Owner Directive)` |
 
@@ -496,4 +496,8 @@ owner's decision (§13.4).
 
 ### 13.5 Post-merge CI on the release commit
 
-Pending.
+Push run 43615293464 (Foundation Evidence Gates) on `d555c7dc5ddb46631c16cd957b86490d06634f7f`: **success**, finished
+2026-11-15 ~01:20 WITA. Critical Test Gate **9,959 passed** (49,276 assertions; the rule 232 test among them),
+Quality Gate, Android Clinic App Gate, NSF-9 Release Safety & Automated Smoke Gate and NSF-10 Release Evidence Gate
+success; the second Critical Gate variant and the Selective Module Gate skipped by design; Full Suite DEFERRED
+(CG-18), not passed.
