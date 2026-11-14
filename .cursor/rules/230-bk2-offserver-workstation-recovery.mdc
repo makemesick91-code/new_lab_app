@@ -14,6 +14,9 @@ alwaysApply: false
 `docs/runbooks/bk2-offserver-workstation-recovery.md`. Supersedes nothing; it refines how the workstation half of BK-2
 reports itself. The server half (`dms-bk2-status`, its ack ledger and thresholds) is unchanged.
 
+**Live proof:** WATCH. Restart drill 1 (2026-11-14) recovered a real restart, but the HDD was attached before the first
+timer run after boot, so the failure leg (§11) is not yet proven live. Drill 2 is open (sprint record §8–§9).
+
 ## 1. The defect
 
 The BK-2 pull runs on the owner's Windows 11 + WSL2 workstation (`dms-bk2-pull.timer`, every 30 minutes) and copies
@@ -135,3 +138,16 @@ before the preflight, because the deploy's own package will wait on the server. 
 - Never `wsl --mount` a disk chosen by number alone; the serial decides.
 - Never hand-edit `status.env`, and never treat a run's exit code or systemd's "success" as the verdict.
 - Never put the HDD identifiers, the pull account or the escrow paths into this repository.
+
+## 11. Restart drill
+
+A restart drill (runbook §8) proves two legs live, and only the custodian runs it:
+
+- **Reported.** Before anything is attached, the first timer run after boot logs `result=DEGRADED`, `hdd=ABSENT`,
+  `OFF_SERVER=UNVERIFIED` and an `HDD_ABSENT` alert, writes a `BK2_ALERT` journal line, and the unit exits 75.
+- **Recovered.** After `bk2-custodian.sh attach`, a run logs `result=OK` and `OFF_SERVER=OK` over every listed package,
+  and the host `dms-bk2-status` reports `ON_SERVER=OK` and `OFF_SERVER=OK`.
+
+Attaching before that first run ends hides the reported leg, and the drill does not count. Fixture tests support a
+drill but never replace it. A drill record copies the `run end` and `BK2_ALERT` lines and the unit results, never the
+`sudo` journal line of the unlock, which carries the partition's device path.

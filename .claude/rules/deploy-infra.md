@@ -244,8 +244,9 @@ code, then the canonical rule, and report the drift.
   (exit 1) with `warn`/`crit` alerts (HDD unavailable > 45 min, pending > 26 h, identity fail state). An absent, locked
   or unmounted HDD is recoverable; a mismatch is fail-closed. Only the custodian unlocks, interactively, typing the
   passphrase into cryptsetup's prompt. `bk2-status.sh` gives the verdict. HDD identifiers stay in the private tree,
-  never in this public repository. Source: `.cursor/rules/230-bk2-offserver-workstation-recovery.mdc`, runbook
-  `docs/runbooks/bk2-offserver-workstation-recovery.md`.
+  never in this public repository. A restart drill counts only when the first timer run after boot is seen `DEGRADED`
+  with a `BK2_ALERT` before the custodian attaches (rule 230 §11). Source:
+  `.cursor/rules/230-bk2-offserver-workstation-recovery.mdc`, runbook `docs/runbooks/bk2-offserver-workstation-recovery.md`.
 
 ## Current posture (snapshot 2026-11-04, read-only inspection — verify before relying on it)
 

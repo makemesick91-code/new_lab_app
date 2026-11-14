@@ -173,7 +173,8 @@ Nomor ADR berikutnya yang tersedia: **0017**.
   [CICD-EVIDENCE-ISOLATION-REPORT](operations/release-cicd-phase2-2026-10-29/CICD-EVIDENCE-ISOLATION-REPORT.md),
   [CICD-PARALLEL-TESTING-BENCHMARK](operations/release-cicd-phase2-2026-10-29/CICD-PARALLEL-TESTING-BENCHMARK.md).
 - Backup & DR: [backup-dr-restore-rehearsal-runbook](runbooks/backup-dr-restore-rehearsal-runbook.md),
-  [bk2-offserver-workstation-recovery](runbooks/bk2-offserver-workstation-recovery.md),
+  [bk2-offserver-workstation-recovery](runbooks/bk2-offserver-workstation-recovery.md)
+  (catatan sprint: [dms-bk2-backup-reliability-wsl2-recovery-1](sprints/dms-bk2-backup-reliability-wsl2-recovery-1.md)),
   [roll-5-backup-restore-drill-runbook](runbooks/roll-5-backup-restore-drill-runbook.md),
   [backup-disaster-recovery-automation-governance](architecture/backup-disaster-recovery-automation-governance.md).
 - CI/CD: [ci-runtime-control-runbook](runbooks/ci-runtime-control-runbook.md),
