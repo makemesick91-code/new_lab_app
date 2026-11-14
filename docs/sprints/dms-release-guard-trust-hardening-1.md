@@ -437,3 +437,83 @@ The owner ran the signing script; the assistant then read the record, its signat
 | After commit | the committed blobs are byte-identical to the signed files, the signature verifies against the committed blob, and the guard-mirroring local check passes (format, facts, window, evidence quotes the SHA, only approval records and docs follow the release commit) |
 
 The record and signature are never edited: any change needs a new signature (and, once spent, a new release id).
+
+## 13. Release r2: the same release after PR #630 (2026-11-15, WITA)
+
+### 13.1 Why a new release id
+
+§12 approves `d707a3e349408c049148ca7061dac018dd4a1669`. On 2026-11-14 the owner ordered PR #630 (rule 232,
+`DMS-BK2-MANUAL-ONLY-1`) merged **before** the deploy ("merge kemudian deploy"). PR #630 changes `.cursor/rules/`,
+`.claude/rules/` and `tests/` after `d707a3e3`, so rule 229 §4.8 refuses the §12 record on any tip that contains it.
+The §12 record, its signature and §12 itself stay exactly as merged (README "Lifetime"). Release r2 approves the new
+tip under the release id `dms-release-guard-trust-hardening-1-r2`; the GO tag is unchanged, because the release
+commit's `.sprint/current.yml` still declares `dms-release-guard-trust-hardening-1-go`.
+
+### 13.2 Owner policy changes recorded for r2
+
+- **`DMS-BK2-MANUAL-ONLY-1`** (owner directive, 2026-11-14; rule 232, PR #630): BK-2 is not a deploy gate. The §12.1
+  BK-2 row and its "re-checked before the deploy" note do not apply to the r2 deploy. **BK-2:** `SKIPPED —
+  DMS-BK2-MANUAL-ONLY-1 (Owner Directive)`.
+- **`DMS-OFFLINE-CUSTODY-OPTIONAL-1`** (owner policy, 2026-11-14/15): `OFFLINE_CUSTODY = NOT REQUIRED`. The §12.3 row
+  "Offline backup custody of the signing key confirmed — required before release" is superseded for r2 and later
+  releases; it is not edited. The owner accepts the risk that losing the only signing key stops releases until a
+  legitimate recovery or trust rotation. No script, host, CI or configuration gate checks offline custody (searched
+  `scripts/`, `deploy/`, `config/`, `.github/` and the deploy tests), so no gate needed changing. Still required: the
+  key stays with the owner only, the owner signs by hand, the record binds the full SHA, required CI is green, the
+  host trust anchor is installed (§6d B), and the deploy takes its own verified database dump.
+
+### 13.3 The release candidate (verified 2026-11-15 00:23 WITA, read-only)
+
+| Fact | Value |
+|---|---|
+| Release id / GO tag | `dms-release-guard-trust-hardening-1-r2` / `dms-release-guard-trust-hardening-1-go` (absent on origin) |
+| Release SHA | `d555c7dc5ddb46631c16cd957b86490d06634f7f` = origin base tip, PR #630 squash merge, parent `6c7d2c0e` |
+| Release tree | `bedae8a1811482c81c6d22df7ebb22ef1f5de55f` = tree of the tested PR head `6e2191ef` |
+| Target | `PRODUCTION_TARGET=VERIFIED`; the host presents `SHA256:i3AsyL0oSwqSAwNfgv215Cl01i87buYtH5ugTe8O2bc` = `DMS_PRODUCTION_HOST_KEY_SHA256` |
+| Production before | HEAD `82f1eeba1ec25c81db3cefa1d2b235d022973904`, tracked tree clean, rule 229 present, rule 231 absent → **§6d**; trust anchor absent; 0 pending migrations |
+| Delta from production | 8 commits (`c548bc25`, `32c4a760`, `b220a143`, `03d64654`, `55990b3b`, `d707a3e3`, `6c7d2c0e`, `d555c7dc`). **No migrations.** Beyond §12.1's delta, r2 adds only rule 232 (rules, runbooks, docs, one deploy test) and the §12 approval files; no script or runtime change |
+| CI | PR #630 head `6e2191ef`: Critical Gate **9,959 passed** (run 43610023650), the rule 232 test among them; post-merge push run 43615293464 on `d555c7dc`: success, 9,959 passed (§13.5); Full Suite DEFERRED (CG-18) |
+| Rollback target | `82f1eeba1ec25c81db3cefa1d2b235d022973904`, code only, **by full SHA**, only on the owner's go-ahead; it restores the rule 229 guard (OD-2) |
+| BK-2 | `SKIPPED — DMS-BK2-MANUAL-ONLY-1 (Owner Directive)` |
+
+**OD-1 DEPLOY-PRIVSEP.** §12.1's evaluation stands: r2 adds no root execution over runtime-writable paths. The
+indicators are re-checked immediately before the start. OD-1 stays OPEN; accepting it for the r2 deploy is the
+owner's decision (§13.4).
+
+### 13.4 Owner decisions for r2
+
+| Gate | Status |
+|---|---|
+| Offline backup custody of the signing key | NOT REQUIRED (`DMS-OFFLINE-CUSTODY-OPTIONAL-1`) |
+| BK-2 | SKIPPED (`DMS-BK2-MANUAL-ONLY-1`) |
+| Merge of PR #630 before the deploy | **done** — owner order "merge kemudian deploy"; merged pinned to `6e2191ef` |
+| Written approval of the exact release `d555c7dc5ddb46631c16cd957b86490d06634f7f` (tree `bedae8a1811482c81c6d22df7ebb22ef1f5de55f`) | **done** — the owner signed the r2 record naming this SHA, tree and host key (typed `APPROVE` in their own terminal), then wrote "Signed — approval r2 telah saya tandatangani secara manual." (2026-11-15 ~05:44 WITA) |
+| Record `dms-release-guard-trust-hardening-1-r2` signed by the owner | **done** — `APPROVED_AT=2026-11-14T21:43:29Z` (2026-11-15 05:43:29 WITA), window to `2026-11-15T21:43:29Z` (2026-11-16 05:43:29 WITA, 24 h); verified in §13.6 |
+| Production authorisation: trust anchor (§6d B), §6d deploy with its database dump, outside 02:25–02:40 WITA, no BK-2, no offline key copy | **given** — owner directive "PR #630 — UPDATED OWNER DIRECTIVE" items 6–8, effective once the approval is valid |
+| OD-1 acceptance, rollback authority and read-only smoke for the r2 deploy | **given** — owner, 2026-11-15: "OD-1 diterima untuk deploy r2 ini saja; rollback hanya atas persetujuan saya ke `82f1eeba…` dengan SHA penuh; smoke read-only; GO tag setelah verifikasi." OD-1 stays OPEN beyond this deploy |
+| Merge of the approval PR (record, signature, this document) | authorised by the owner only after every Critical Gate is green |
+| §6d deploy | authorised by the owner only after the approval is valid (merged), the trust anchor is installed and `trust-check` passes; never 02:25–02:40 WITA; pre-deploy database dump mandatory; no BK-2; rollback only on the owner's explicit approval |
+| GO tag `dms-release-guard-trust-hardening-1-go` after production verification | pending — only after production verification succeeds |
+
+### 13.5 Post-merge CI on the release commit
+
+Push run 43615293464 (Foundation Evidence Gates) on `d555c7dc5ddb46631c16cd957b86490d06634f7f`: **success**, finished
+2026-11-15 ~01:20 WITA. Critical Test Gate **9,959 passed** (49,276 assertions; the rule 232 test among them),
+Quality Gate, Android Clinic App Gate, NSF-9 Release Safety & Automated Smoke Gate and NSF-10 Release Evidence Gate
+success; the second Critical Gate variant and the Selective Module Gate skipped by design; Full Suite DEFERRED
+(CG-18), not passed.
+
+### 13.6 Verification of the signed r2 record (2026-11-15, workstation, read-only)
+
+The owner ran the signing script in their own terminal; the assistant then read the record, its signature and the
+owner's PUBLIC key only. It never read the private key, never asked for the passphrase and never signed.
+
+| Check | Result |
+|---|---|
+| Record | `deploy/release-approvals/dms-release-guard-trust-hardening-1-r2.approval`, 1008 bytes, printable ASCII only, SHA-256 `5199c86d23f20bb63dd60e61f99955f96728926b72e2a5c38edabc22181bb96d`; names `d555c7dc5ddb46631c16cd957b86490d06634f7f`, tree `bedae8a1811482c81c6d22df7ebb22ef1f5de55f`, host key `SHA256:i3AsyL0oSwqSAwNfgv215Cl01i87buYtH5ugTe8O2bc`, GO tag `dms-release-guard-trust-hardening-1-go`, evidence this document |
+| Signature | `….approval.sig`, 318 bytes, armored, SHA-256 `4e76b7eb4834a699afb83c6c04f580eaa63e5e32746a65edb39d67b90fe78b10` |
+| Positive | `ssh-keygen -Y verify -I owner -n dms-release-approval` → `Good "dms-release-approval" signature for owner with ED25519 key SHA256:0WGGTlMDzLPGAhQaRG+Ag7BqoypSLinSNOHalZKtgt4` |
+| Negative controls | namespace `git`, principal `attacker`, and one changed byte in the record: each refused (exit 255) |
+| After commit | see the approval pull request: committed blobs byte-identical to the signed files, signature verified against the committed blob, guard-mirroring local check |
+
+The r2 record and signature are never edited: any change needs a new signature and, once spent, a new release id.

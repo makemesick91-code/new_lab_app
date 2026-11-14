@@ -1,0 +1,16 @@
+# DMS-RELEASE-GUARD-TRUST-HARDENING-1 release r2 production approval (rules 229 and 231, contract 2).
+# Owner decisions: docs/sprints/dms-release-guard-trust-hardening-1.md section 13.
+# First deploy carrying rule 231: docs/runbooks/production-host-identity.md section 6d.
+DMS_APPROVAL_CONTRACT=2
+DMS_APPROVAL_RELEASE_ID=dms-release-guard-trust-hardening-1-r2
+DMS_APPROVAL_REPOSITORY=makemesick91-code/new_lab_app
+DMS_APPROVAL_HOST=DaengtisiaMS
+DMS_APPROVAL_HOST_KEY_SHA256=SHA256:i3AsyL0oSwqSAwNfgv215Cl01i87buYtH5ugTe8O2bc
+DMS_APPROVAL_BASE_BRANCH=feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
+DMS_APPROVAL_TARGET_SHA=d555c7dc5ddb46631c16cd957b86490d06634f7f
+DMS_APPROVAL_TARGET_TREE=bedae8a1811482c81c6d22df7ebb22ef1f5de55f
+DMS_APPROVAL_GO_TAG=dms-release-guard-trust-hardening-1-go
+DMS_APPROVAL_APPROVED_BY=owner
+DMS_APPROVAL_APPROVED_AT=2026-11-14T21:43:29Z
+DMS_APPROVAL_NOT_AFTER=2026-11-15T21:43:29Z
+DMS_APPROVAL_EVIDENCE=docs/sprints/dms-release-guard-trust-hardening-1.md
