@@ -6,7 +6,7 @@
 | Status | **WATCH**: implemented, tested and running live; the owner's restart drill (§7) and the merge are open |
 | Category | Foundation-First allowed category 5, *backup / restore / monitoring / CI-CD gates* |
 | Base | `feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report` at `32c4a760` |
-| Branch / PR | `ops/dms-bk2-backup-reliability-wsl2-recovery-1` / see the PR |
+| Branch / PR | `ops/dms-bk2-backup-reliability-wsl2-recovery-1` / #625 |
 | Durable rule | `.cursor/rules/230-bk2-offserver-workstation-recovery.mdc`, index line `AIR-DEP-36` |
 | Runbook | `docs/runbooks/bk2-offserver-workstation-recovery.md` |
 | Production | untouched: no deploy, no server-side BK-2 change, read-only status checks only |
