@@ -12,7 +12,9 @@ alwaysApply: false
 **Status:** ACTIVE from `DMS-BK2-BACKUP-RELIABILITY-WSL2-RECOVERY-1` (2026-11-14). Sprint record:
 `docs/sprints/dms-bk2-backup-reliability-wsl2-recovery-1.md`. Operator procedure:
 `docs/runbooks/bk2-offserver-workstation-recovery.md`. Supersedes nothing; it refines how the workstation half of BK-2
-reports itself. The server half (`dms-bk2-status`, its ack ledger and thresholds) is unchanged.
+reports itself. The server half (`dms-bk2-status`, its ack ledger and thresholds) is unchanged. **§9 (deploy preflight)
+is SUPERSEDED by rule 232** (`.cursor/rules/232-bk2-manual-only-not-a-deploy-gate.mdc`, 2026-11-14); the rest stays
+ACTIVE.
 
 **Live proof:** PASS (program GO, 2026-11-14). Restart drill 2 proved both legs of §11 live in one boot. Before anything
 was attached, the first timer run after boot reported `DEGRADED` with `HDD_ABSENT`, a warning-level `BK2_ALERT` and exit
@@ -127,10 +129,11 @@ gpg-agents, BK-2 temp directories). `--brief` prints nothing when all is well; t
 
 ## 9. Deploy preflight
 
-`docs/runbooks/production-host-identity.md` §6b step 3 is unchanged as the gate: the host `dms-bk2-status` must report
-`ON_SERVER=OK` and `OFF_SERVER=OK`. Read the workstation verdict early as well. A detached HDD is reported to the owner
-before the preflight, because the deploy's own package will wait on the server. A fail state (`MISMATCH`,
-`WRONG_MAPPING`, `DUPLICATE_MOUNT`, `READ_ONLY`, `UNVERIFIABLE`) or a `FAIL` result is a HOLD until the owner decides.
+**SUPERSEDED by rule 232** (`.cursor/rules/232-bk2-manual-only-not-a-deploy-gate.mdc`, owner directive
+`DMS-BK2-MANUAL-ONLY-1`, 2026-11-14). BK-2 is no longer a deploy gate: `docs/runbooks/production-host-identity.md`
+§6b step 3 does not wait on the host `dms-bk2-status` or the workstation verdict. When the owner explicitly orders a
+BK-2 check, the states and results above still apply; a fail state (`MISMATCH`, `WRONG_MAPPING`, `DUPLICATE_MOUNT`,
+`READ_ONLY`, `UNVERIFIABLE`) or a `FAIL` result is reported to the owner, who decides.
 
 ## 10. Never
 

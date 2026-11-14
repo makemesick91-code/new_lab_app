@@ -261,6 +261,13 @@ code, then the canonical rule, and report the drift.
   `UNTRUSTED`/`TAMPERED`/`FOREIGN` and reports killed runs `INTERRUPTED`. Deploy and rollback share `release.lock`;
   a leftover git lock is FATAL. Rollback takes a full SHA or a tag, never an abbreviated SHA. Open (HIGH): the deploy still runs PHP and `chmod -R` as root over runtime-owned
   `storage/` (DEPLOY-PRIVSEP). Source: `.cursor/rules/231-release-guard-trust-hardening.mdc`.
+- **AIR-DEP-38** Rule 232 (owner directive `DMS-BK2-MANUAL-ONLY-1`, 2026-11-14): BK-2 is manual-only and never a
+  sprint, GO/NO-GO or deploy gate. Runbook §6b step 3 no longer waits on the host BK-2 status or the workstation
+  verdict (supersedes rule 230 §9). No agent runs, triggers or schedules BK-2 without an explicit owner order about
+  BK-2; "deploy", "merge" or "GO" is not one. The deploy's own verified dump stays mandatory, the db-backup and BK-2
+  timers stay ON, existing BK-2 backups are never touched, and an operation whose only qualifying backup would be
+  BK-2 is BLOCKED. Sprint reports say `BK-2: SKIPPED — DMS-BK2-MANUAL-ONLY-1 (Owner Directive)`. Source:
+  `.cursor/rules/232-bk2-manual-only-not-a-deploy-gate.mdc`.
 
 ## Current posture (snapshot 2026-11-04, read-only inspection — verify before relying on it)
 
@@ -294,6 +301,7 @@ code, then the canonical rule, and report the drift.
 | `.cursor/rules/229-exact-approved-release-sha-guard.mdc` | Exact approved release SHA, approval record, contract 3, bootstrap |
 | `.cursor/rules/230-bk2-offserver-workstation-recovery.mdc` | BK-2 workstation pull: HDD identity states, PID 1 mount, custodian unlock, result/alert semantics |
 | `.cursor/rules/231-release-guard-trust-hardening.mdc` | Signed, host-key-bound, single-use approvals; trusted evidence (contract 4); one release lock; rollback resolution |
+| `.cursor/rules/232-bk2-manual-only-not-a-deploy-gate.mdc` | BK-2 manual-only: not a sprint, GO or deploy gate; runner dump stays mandatory; only an explicit owner order runs BK-2 |
 | `.cursor/rules/100-production-secret-file-permission-hardening.mdc` | Secret file mode and handling |
 | `.cursor/rules/121-clinical-evidence-private-storage.mdc` | Clinical evidence on private disks only |
 | `.cursor/rules/176-private-database-dump-creation.mdc` | Dumps private from creation |

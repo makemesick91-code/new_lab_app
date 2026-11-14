@@ -1,0 +1,64 @@
+---
+description: DMS-BK2-MANUAL-ONLY-1 (owner directive, ACTIVE from 2026-11-14) — BK-2 is skip-by-default and manual-only. It is never a sprint, GO/NO-GO or deploy gate, no agent creates, schedules, triggers or runs a BK-2 backup without an explicit Project Owner order, and generic "continue the sprint", "deploy", "merge" or "GO" instructions are not that order. The deploy's own verified pre-deploy database dump stays mandatory, existing automated backups (db-backup and the BK-2 timers) stay ON, existing BK-2 backups are never deleted or modified, and an operation whose only qualifying backup would be BK-2 is BLOCKED rather than forced. Supersedes rule 230 §9 (deploy preflight).
+globs:
+alwaysApply: true
+---
+
+# BK-2 is manual-only and not a deploy gate (rule 232)
+
+**Status:** ACTIVE from the owner directive `DMS-BK2-MANUAL-ONLY-1` (2026-11-14), until the Project Owner explicitly
+changes or revokes it. Sprint record: `docs/sprints/dms-bk2-manual-only-1.md`. **Supersedes** rule 230 §9 (deploy
+preflight) and the BK-2 wait in `docs/runbooks/production-host-identity.md` §6b step 3. The rest of rule 230 (how the
+BK-2 pull reports itself, HDD identity states, the custodian-only unlock) stays ACTIVE.
+
+```text
+BK2_POLICY=MANUAL_ONLY
+BK2_DEFAULT_ACTION=SKIP
+BK2_AUTO_EXECUTION=DISABLED
+BK2_REQUIRED_FOR_SPRINT=FALSE
+BK2_REQUIRED_FOR_GO_GATE=FALSE
+BK2_EXPLICIT_OWNER_AUTHORIZATION=REQUIRED
+```
+
+## 1. What an agent does not do
+
+- Create, schedule, trigger or run a BK-2 backup, pull, attach or drill.
+- Add a BK-2 step at the start or end of a sprint, or make BK-2 a GO/NO-GO criterion.
+- Wait on the host BK-2 status check or the workstation verdict before a deploy (runbook §6b step 3), or hold a deploy
+  because the backup HDD is detached.
+- Ask the owner again and again to confirm BK-2 or to attach the HDD.
+
+## 2. What counts as the owner's order
+
+Only an explicit instruction about BK-2 itself, for example "Jalankan backup BK-2.", "Buat backup BK-2 sekarang." or
+"Aktifkan kembali backup BK-2.". "Lanjutkan sprint", "deploy", "merge" and "GO" are **not** BK-2 orders, and neither is
+any other general instruction. Under such an order, rule 230 and `docs/runbooks/bk2-offserver-workstation-recovery.md`
+apply as written; only the custodian unlocks the HDD.
+
+## 3. What stays mandatory
+
+- The deploy's own database dump, taken and verified before the checkout. A failed dump stops the deploy
+  (`scripts/deploy-vps.sh` runs under `set -euo pipefail`); never bypass it.
+- The automated backups already running: the on-server db-backup timer and the BK-2 timers stay ON (rule 221). This
+  rule disables nothing, reschedules nothing and prunes nothing.
+- Backup verification and restore-readiness gates, and the rule that a deploy never deletes BK-1, BK-2, the historical
+  Hostinger backups or the rollback database.
+- Never delete or modify an existing BK-2 backup.
+
+If BK-2 would be the only backup that meets an operation's safety requirement, that operation is **BLOCKED** until
+the owner decides; the skip is never forced.
+
+## 4. Reporting
+
+A sprint report carries one line, which is not a failure and needs no follow-up while every other backup requirement
+is met:
+
+**BK-2:** `SKIPPED — DMS-BK2-MANUAL-ONLY-1 (Owner Directive)`
+
+Owner holds that merely involve the backup HDD (for example a key-custody hold) are separate owner decisions; this
+rule does not lift them.
+
+## 5. Enforcement
+
+`tests/Feature/Deploy/DeployHardenBk2OffServerRecoveryTest.php` keeps the deploy runbook, the BK-2 runbook, rule 230
+§9 and this rule in step. Domain index line: `.claude/rules/deploy-infra.md` AIR-DEP-38.
