@@ -232,8 +232,10 @@ code, then the canonical rule, and report the drift.
   snapshot (deploy refuses `--target-sha`). Any mismatch: `DEPLOYMENT=DENIED`, exit 77, never the tip. Evidence
   contract 3 (`DEPLOY_APPROVED_TARGET_MATCH=YES`); GO tag on the approved commit; rollback targets must be ancestors
   of HEAD. Deploys refuse `--snapshot-ref` and run only `scripts/deploy-vps.sh`; the guard fetches into a private
-  ref (never `FETCH_HEAD`); snapshot stages trust `DMS_DEPLOY_*` only with the bootstrap's lock held. The first
-  deploy carrying the guard uses the one-time bundle bootstrap (runbook §6c). Binding, not authentication: the base
+  ref (never `FETCH_HEAD`); snapshot stages trust `DMS_DEPLOY_*` only with the bootstrap's lock held. The one-time
+  bootstrap (runbook §6c) is spent on Biznet (deploy `20261114-011345`, 2026-11-14): the in-tree runner there carries
+  the guard, so use §6b. An approval-record PR runs the whole Critical Gate (`unknown_high_risk`, about an hour); never
+  reclassify it as documentation. Binding, not authentication: the base
   is unprotected and root on the host is inside the trust boundary. Source:
   `.cursor/rules/229-exact-approved-release-sha-guard.mdc`.
 

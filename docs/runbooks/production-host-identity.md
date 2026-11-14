@@ -264,6 +264,11 @@ commit's own deploy chain is exported from the git object into a new root-only d
 started. It runs every rule 229 check; there is no transitional bypass. This is used once per host; afterwards §6b
 applies.
 
+**Status on Biznet `DaengtisiaMS`: spent.** It ran once on 2026-11-14 (release `dms-rme-revision-program-8d`, deploy
+`20261114-011345`, `DEPLOY RUNNER OK`; `docs/sprints/dms-rme-revision-program-8d.md` §12). The in-tree runner there
+now carries the guard, so every later Biznet deploy follows §6b. §6c applies only to a host whose runner still prints
+`0` for the guard.
+
 **Preconditions.** All of §6b's, except the last one (the checkout does not carry the guard yet).
 
 0. **Record the starting state (read-only):** HEAD, a clean tracked tree, and `0` for the guard in the live runner:
@@ -291,7 +296,9 @@ applies.
    `DEPLOY_APPROVED_TARGET_MATCH=YES` and `DEPLOY RUNNER OK`). The record's `program=` names the export.
 6. **Smoke, confirm nothing else moved, GO tag:** §6b steps 6–8.
 7. **Reconcile the export** only after step 5 reports `DEPLOY RUNNER OK` and no runner process remains
-   (`pgrep -af dms-deploy-runner` prints nothing). Remove exactly that directory, nothing else:
+   (`pgrep -af dms-deploy-runner` prints nothing). Run that check as the only remote command, or write the pattern as
+   `[d]ms-deploy-runner`: inside a compound remote command, `pgrep -f` also matches the shell running it, because the
+   shell's own command line contains the text. Remove exactly that directory, nothing else:
    ```bash
    ssh daengtisiams-biznet-prod 'sudo -n rm -rf -- /root/dms-release-<APPROVED_SHA>'
    ```

@@ -269,6 +269,9 @@ and whether anyone outside the system reads the prefix.
 
 ## 9. Release, production and limits
 
+> **Historical (2026-11-12).** This section records the PR1 approval's limits. The release itself was approved in §11
+> and deployed, verified and GO tagged in §12.
+
 - **Production deployment: NOT AUTHORISED** by this sprint's approval. No deploy, no runner invocation, no SSH, no
   production read or write. `.github/workflows/deploy-vps.yml` is `workflow_dispatch` only, so neither the PR nor a
   merge can deploy. This workstation has no production SSH, so the production runtime is **NOT VERIFIED** here; the
@@ -313,3 +316,136 @@ The deploy follows `docs/runbooks/production-host-identity.md` §6c (the product
 runner predates rule 229). It starts only after CI on `82f1eeba` is green on the exact SHA. Deployment, verification
 and the GO tag are recorded after the fact; until then the release is `APPROVED FOR DEPLOYMENT`, not deployed.
 
+
+## 12. Release evidence (2026-11-14)
+
+The release in §11 is **DEPLOYED, VERIFIED and GO TAGGED**. Times are UTC; WITA is UTC+8. Everything below was
+observed in this session; nothing was inferred.
+
+### 12.1 Commits, trees and CI (exact SHAs)
+
+| Commit | Role | Tree | CI run | Result |
+|---|---|---|---|---|
+| `82f1eeba1ec25c81db3cefa1d2b235d022973904` | Release (PR #622 squash; PR1 #621 in its history) | `1105b111` (= tested PR head tree) | push `43520102881` | success |
+| `1692cdcd` | PR #623 head (approval record + §11) | `99b5b455` | pull_request `43521261706` | success, all 9 checks |
+| `c548bc25e33b06490640555596b9dcedb7462318` | PR #623 squash merge, base tip at deploy | `99b5b455` (= PR head tree) | push `43531013921` | success |
+
+In all three runs, "Run critical regression tests" executed, with `Tests: 9863 passed (48669 assertions)` and
+`DeployHardenApprovedShaGuardTest` PASS. The Classifier, NSF-R012 Quality, CICD-CTRL Selective Module, Phase 3 Android,
+NSF-9 and NSF-10 gates passed. The second `NSF-R011 Critical Test Gate` row is the inactive self-hosted variant.
+
+**Full Suite: DEFERRED, not run and not passed (CG-18).** `NSF-R011 Full Suite Gate` was skipped in every run; on the
+post-merge run it started and completed at the same instant (01:10:07). No run was cancelled.
+
+PR #623 took about 75 minutes, although it is documentation only. The classifier maps
+`deploy/release-approvals/*.approval` to no known category, so it fails closed to `unknown_high_risk` and runs the whole
+Critical Gate. That is correct and was not weakened (CG-17). See the follow-up in §12.7.
+
+### 12.2 Gate before mutation: BK-2 HOLD, then recovery
+
+| Time | Observation | Gate |
+|---|---|---|
+| 2026-11-13 22:28 → 2026-11-14 00:00 | Every workstation pull (`dms-bk2-pull.service`) reported `HDD identity FAIL: expected disk … is not attached` and then `ON_SERVER=OK OFF_SERVER=PENDING pending=1 hdd=IDENTITY_MISMATCH` | **HOLD** (runbook §6b step 3) |
+| 2026-11-14 00:00 | Host `dms-bk2-status`: 12 of 13 packages acknowledged; the newest package, `BK2-20261113T183000Z`, was pending | HOLD; production untouched |
+| 2026-11-14 00:10:15 | After the custodian re-attached and unlocked the encrypted backup HDD: `hdd=ok`, decrypt-verify 8/8, `ON_SERVER=OK OFF_SERVER=OK pending=0 synced=1 failed=0`, service `Result=success` | PASS |
+| 2026-11-14 00:11 and 01:13 | Host: `offsite_packages_acked=13`, `pending=0`, newest acknowledged `BK2-20261113T183000Z`, `alerts=none` | PASS |
+
+The last pull with `hdd=ok` ran at 17:32 UTC. No pull ran until 22:28 UTC, and that first pull after the workstation
+restart already found the HDD detached; the 18:30 UTC package was made during the gap. Attaching the HDD is a custodian
+action, and this session did not perform it.
+
+### 12.3 Final preflight (read-only, 01:12–01:13)
+
+- `production-target-check --remote` → `PRODUCTION_TARGET=VERIFIED`; `git ls-remote` of the base → `c548bc25`.
+- Workstation run of `scripts/lib/release-approval.sh` from the `82f1eeba` tree, against GitHub, with HEAD and the
+  local branch at `b0c0bd62` → `RELEASE APPROVAL: GO`, record blob `245e6e04`, no private ref left behind.
+- Host: HEAD `b0c0bd62`, tree `022eb55f`, 0 tracked changes; the live runner carries no guard (`approve_or_deny` count
+  0), so §6c applies. No export directory, no deploy, rollback or runner process, no snapshot directory, no private
+  ref. The host fetched `c548bc25` and read the record: target `82f1eeba`, host `DaengtisiaMS`, valid until
+  `2026-11-14T18:25:00Z`.
+- Baseline: `/login`, `/health/live`, `/health/ready`, `/health/lb` → 200; `/storage/x` → 403. Application log
+  1,467,295 bytes and 166 ERROR lines. No pending migrations, no failed jobs, maintenance OFF. Queue worker
+  inactive/disabled; KTP prune timer inactive/disabled; BK-2 package and database backup timers active/enabled.
+- Window: 01:13 UTC (09:13 WITA), outside the 18:25–18:40 UTC backup window and inside the approval record's window.
+
+### 12.4 Deployment: trusted bootstrap §6c, on the Biznet host
+
+| Item | Value |
+|---|---|
+| Export | `git archive 82f1eeba -- scripts deploy` into `/root/dms-release-82f1eeba…`, `root:root 0700` |
+| Provenance | Exported runner SHA-256 `2ffd722afef7d08cefc54fc390d8bbe60916c39cfcfbbe2c43bc0788d83477cd` equals the commit object's; all 53 exported files match their blob ids, with no extra file |
+| Start (01:13:44) | `sudo -n bash /root/dms-release-82f1eeba…/scripts/deploy-vps-runner.sh start --release-id dms-rme-revision-program-8d --approved-sha 82f1eeba…`, run from the app directory on the host |
+| Runner guard | `RELEASE APPROVAL: GO`, record `c548bc25:deploy/release-approvals/dms-rme-revision-program-8d.approval`, blob `245e6e04` |
+| Deploy id | **`20261114-011345`**, runner 01:13:46 → 01:15:33; status file `exit=0` |
+| Bootstrap | `DEPLOY_LOCK_ACQUIRED=YES`, `DEPLOY_APPROVED_SHA=82f1eeba…`, `DEPLOY_TARGET_PINNED=82f1eeba…`, `DEPLOY_SNAPSHOT_TRUSTED=PASS`, `DEPLOY_SNAPSHOT_CLEANED=YES` |
+| Pre-deploy backup | `pre_auto_deploy_20261114-011347.sql` (33,723,877 bytes, `daengtisiams:daengtisiams`, 0640) |
+| Migrations | `Nothing to migrate.` |
+| Runtime isolation | 107 GO / 0 FAIL / 0 SKIP; nginx configuration test successful |
+| Result | `DEPLOY_HEAD_TARGET_MATCH=YES (82f1eeba…)`, **`DEPLOY OK: 20261114-011347`** |
+| Verify (deployed in-tree runner, guard count 2) | `runner_contract=3`, runner SHA-256 `2ffd722a…`, `DEPLOY_APPROVED_TARGET_MATCH=YES (82f1eeba…)`, final exit 0, **`DEPLOY RUNNER OK`** |
+
+The deploy-time warnings are the same four as in the Program 8C deploy log (`20261107-190050`): `FLAG-RISKY-NOT-ENABLED`,
+`PGRUNTIME-PGBOUNCER-PROBE`, `RELEASE-SAFETY-EVIDENCE-CHAIN` (profile `local`) and `SMOKE-HTTP-HEALTH`. The last is the
+loopback probe that the nginx default server answers with 404 (D6). None is new.
+
+### 12.5 Production verification (read-only, 01:16–01:19)
+
+No test ran on production, no REPL was opened, and no data was written. Artisan commands ran as `daengtisiams`.
+
+| Check | Before | After |
+|---|---|---|
+| HEAD / tree / tracked changes | `b0c0bd62` / `022eb55f` / 0 | **`82f1eeba` / `1105b111` / 0** |
+| nginx, `php8.3-fpm`, PostgreSQL | active | active; FPM workers run as `daengtisiams` |
+| `/login`, `/health/live`, `/health/ready`, `/health/lb` | 200 ×4 | 200 ×4 |
+| Application log bytes / ERROR lines | 1,467,295 / 166 | 1,467,295 / 166 (**0 added**) |
+| Pending migrations / failed jobs / maintenance | none / none / OFF | none / none / OFF |
+| Queue worker; KTP prune timer; BK-2 and DB backup timers | inactive/disabled; inactive/disabled; active/enabled | unchanged |
+| BK-2 | 13/13, `ON_SERVER=OK OFF_SERVER=OK` | 13/13, `ON_SERVER=OK OFF_SERVER=OK` |
+
+8D code markers in the deployed checkout: `MAX_SIGNATURE_PAYLOAD_LENGTH` in `StoreRmeVisitConsentRequest` and in
+`RmeVisitConsentService`; `approve_or_deny` in `scripts/deploy-vps-runner.sh`; `approvalGuardPosture` in
+`DeploymentEntrypointScanner`; `scripts/lib/release-approval.sh` present.
+
+**Read-only clinical smoke, unauthenticated, over `https://daengtisia.online`.** No real identifier was used.
+- `/rme/visits`, `/rme/medical-records`, `/rme/medical-records/patients/0`, `/dashboard`,
+  `/rme/consents/999999999` and `/rme/visits/999999999/consent/create` → 302 to `/login`.
+- Malformed keys (`/rme/consents/0`, `/rme/consents/abc`, `POST /rme/visits/0/consent`) → 404. This is by design:
+  `App\Support\Routing\DatabaseRouteKey` (R-01) rejects them at the router before any middleware or query.
+- A missing numeric key also redirects to login, so the response does not reveal whether a record exists. A local
+  SQLite probe on this tree gave the same 302 for an existing and a missing visit. The probe file was deleted.
+- Write-path behaviour (the consent signature bound) is evidenced by CI and the PostgreSQL suites (§5), not by
+  production writes, as the owner decided in §11.
+
+**Security.**
+- `/storage/x` and `/storage/logs/laravel.log` → 403.
+- The environment file at the web root, `/.git/HEAD`, `/.git/config`, `/composer.json`, `/vendor/autoload.php` → 404.
+- `http://` → 301 to `https://`.
+- Session and XSRF cookies are `secure; samesite=lax`, and the session cookie is `httponly`.
+- TLS certificate `CN=daengtisia.online`, valid until 2027-01-15.
+
+### 12.6 GO tag and cleanup
+
+- **GO tag `dms-rme-revision-program-8d-go`**: annotated tag object `28e14ad0`, peeled to `82f1eeba`. Created at
+  2026-11-14 01:19:29 UTC, after the deploy and the verification above. Its tags were fetched first. The host's
+  `git ls-remote` of the peeled tag equals the production HEAD.
+- The export `/root/dms-release-82f1eeba…` was removed after `DEPLOY RUNNER OK` (§6c step 7). No `dms-release-*`
+  directory remains in `/root`. No deploy, rollback or runner process remains, no snapshot directory, no private ref,
+  and `deploy.lock` is free. `storage/runtime-home/`, backups and deploy logs were not touched.
+- The first removal attempt was skipped safely: a compound remote command containing the text `dms-deploy-runner` made
+  `pgrep -f` match its own shell. The runbook's single-command form is unaffected; §6c step 7 now notes this.
+- **Rollback readiness:** `b0c0bd62` is an ancestor of `82f1eeba`, and the delta has no migration, route, seeder or
+  asset, so a code-only rollback stays possible. Rollback runs only after the owner's go-ahead (§11).
+
+### 12.7 Scope and follow-ups
+
+This GO covers Program 8D's two pull requests, their merge, the guarded deploy and its read-only verification. It does
+**not** cover the authoritative Full Suite, clinic reopening or final RME readiness.
+
+Follow-ups for the owner, not blocking:
+1. **Classifier for approval records** (proposal). Add a `release_approval` category for
+   `deploy/release-approvals/*.approval` that runs the rule 229 suite and a format check instead of the whole Critical
+   Gate. It needs its own reviewed PR; it must not reclassify the file as documentation.
+2. **BK-2 HDD attachment.** After a workstation restart the encrypted HDD was not attached again, and the pull only
+   reports `IDENTITY_MISMATCH`, raising no alert. Check that it stays attached after workstation or WSL restarts.
+3. The rule 229 trust-model follow-ups stand: base branch protection or signed approvals, a root-owned run directory,
+   and one lock shared by deploy and rollback.

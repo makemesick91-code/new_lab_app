@@ -207,10 +207,15 @@ static binary, SHA-256 verified against GitHub's published asset digest) with `-
 |---|---|
 | IMPLEMENTED | yes (this PR) |
 | TESTED | locally, see §9 |
-| CI VERIFIED | pending (exact PR head) |
-| MERGED | pending owner merge decision |
-| APPROVED FOR DEPLOYMENT | pending written owner approval of the merge SHA + approval record PR |
-| DEPLOYED / VERIFIED / GO TAGGED | pending; recorded in the approval-record evidence update (docs-only, after the SHA) |
+| CI VERIFIED | yes: PR head `ebd289e2`, run `43474187534` success; merge commit `82f1eeba`, push run `43520102881` success (Critical 9,863 passed). Full Suite DEFERRED (CG-18) |
+| MERGED | yes: #622, squash, pinned to `ebd289e2` → `82f1eeba` (2026-11-13 22:32 UTC; tree `1105b111` = tested tree) |
+| APPROVED FOR DEPLOYMENT | yes: owner, 2026-11-13 22:40 UTC (`docs/sprints/dms-rme-revision-program-8d.md` §11); record merged as #623 → `c548bc25` |
+| DEPLOYED | yes: one-time bootstrap §6c on the Biznet host, deploy `20261114-011345`, `DEPLOY OK: 20261114-011347` |
+| VERIFIED | yes: in-tree runner `verify` → `DEPLOY_APPROVED_TARGET_MATCH=YES`, `DEPLOY RUNNER OK`; HEAD/tree `82f1eeba`/`1105b111`; health and read-only smoke (8D §12.5) |
+| GO TAGGED | yes: `dms-rme-revision-program-8d-go` (tag object `28e14ad0`) → `82f1eeba` |
+
+The guard's first production use is recorded in `docs/sprints/dms-rme-revision-program-8d.md` §12. From that deploy on,
+the Biznet in-tree runner carries the guard, so §6c is spent there and every later deploy follows runbook §6b.
 
 ## 9. Evidence
 

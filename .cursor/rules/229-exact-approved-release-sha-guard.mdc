@@ -108,6 +108,16 @@ installs it. The one-time procedure in `docs/runbooks/production-host-identity.m
 SHA-256 against the commit object, and starts **that** runner with the same arguments. Every check above runs; nothing
 in the live checkout is edited by hand; no transitional bypass exists. From then on the in-tree runner is used.
 
+**In force on Biznet since 2026-11-14.** The bootstrap ran once there: release `dms-rme-revision-program-8d`, deploy
+`20261114-011345`, approved commit `82f1eeba`, verified by the deployed in-tree runner (`DEPLOY_APPROVED_TARGET_MATCH=YES`,
+`DEPLOY RUNNER OK`) and GO tagged `dms-rme-revision-program-8d-go` (`docs/sprints/dms-rme-revision-program-8d.md` §12).
+The Biznet in-tree runner carries the guard, so §6c is spent there and every later deploy uses runbook §6b.
+
+**CI cost of an approval record.** The gate classifier maps `deploy/release-approvals/*.approval` to no known
+category, so an approval-record pull request fails closed to `unknown_high_risk` and runs the whole Critical Gate
+(about an hour). That is correct; never reclassify the record as documentation to save time (CG-17). A dedicated
+category is an open owner proposal (8D §12.7).
+
 ## 8. Trust model (what this does not prove)
 
 The guard **binds** a deploy to a content-addressed record on the canonical base branch. It does not
