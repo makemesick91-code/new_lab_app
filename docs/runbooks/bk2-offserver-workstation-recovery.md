@@ -100,15 +100,36 @@ fail state or a `FAIL` result is a HOLD until the owner decides.
 
 ## 8. Restart drill (owner)
 
-After any change to the BK-2 tooling, prove recovery end to end:
+After any change to the BK-2 tooling, prove both legs live (rule 230 §11): the restart is **reported** (the first
+timer run after boot fails with an alert) and then **recovered** (attach, then a run that confirms every package). The
+fixture tests do not replace either leg. The drill ends every WSL session, including AI sessions, so only the custodian
+runs it. Do not run it while a deploy is in progress or about to start: the deploy preflight needs `OFF_SERVER=OK`.
 
-1. `bk2-status.sh` reports `OK`.
-2. Restart WSL from PowerShell (`wsl --shutdown`, then open WSL again) or restart Windows. This ends every WSL
-   session, including AI sessions.
-3. Before attaching anything, `bk2-status.sh` reports `ABSENT`. The first timer run (about 5 minutes after boot) logs
-   `result=DEGRADED` with `HDD_ABSENT` and a `BK2_ALERT` journal line.
-4. `bk2-custodian.sh attach`, then `bk2-status.sh` reports `OK`.
-5. Note the boot time and the `run end` lines for the sprint record.
+1. **Before.** `bk2-status.sh` reports `OK`, and `systemctl is-active dms-bk2-pull.service` reports `inactive`.
+2. **Restart.** In Windows PowerShell run `wsl --shutdown`, then open WSL again (or restart Windows). `uptime -s` gives
+   the boot time.
+3. **Reported: do not attach yet.** `bk2-status.sh` reports the live HDD `ABSENT`, verdict `WARN`. Wait for the first
+   timer run after boot, 5 to 6 minutes after boot. This read-only loop returns when that run has ended; the other three
+   commands print the evidence:
+
+   ```bash
+   until journalctl -b -u dms-bk2-pull.service --no-pager | grep -q 'run end'; do sleep 20; done
+   journalctl -b -u dms-bk2-pull.service --no-pager | grep 'run end'
+   journalctl -b -p warning -u dms-bk2-pull.service --no-pager | grep BK2_ALERT
+   systemctl show dms-bk2-pull.service -p Result -p ExecMainStatus
+   ```
+
+   This leg passes when the run logs `result=DEGRADED`, `hdd=ABSENT`, `OFF_SERVER=UNVERIFIED` and
+   `local_alerts=HDD_ABSENT` (`level=warn`; `HDD_ABSENT_<N>m` at `level=crit` once 45 minutes have passed since a run
+   last saw the HDD `OK`), a `BK2_ALERT` line appears, and the unit shows `Result=exit-code` and `ExecMainStatus=75`.
+   Anything else is a drill failure. Record it and decide with the owner before attaching; a fail state follows
+   section 5. Attaching before this run ends hides the leg, and the drill does not count.
+4. **Recovered.** `bk2-custodian.sh attach` (section 3). This leg passes when `bk2-status.sh` reports verdict `OK`, the
+   last `run end` line shows `result=OK`, `OFF_SERVER=OK` and `verified_on_hdd=N/N`, `systemctl show` shows
+   `Result=success` and `ExecMainStatus=0`, and the host `dms-bk2-status` reports `ON_SERVER=OK` and `OFF_SERVER=OK`.
+5. **Record** for the sprint record: the boot time, both `run end` lines, the `BK2_ALERT` line, both unit results and
+   the final status. Copy only these. The journal's `sudo` line for the unlock carries the partition's device path,
+   which stays private.
 
 ## 9. Never
 
@@ -117,6 +138,7 @@ After any change to the BK-2 tooling, prove recovery end to end:
 - Never format, initialise, repair or wipe the backup HDD, and never delete a verified package.
 - Never attach a disk chosen by its Windows disk number alone; the serial decides.
 - Never hand-edit the pull's `status.env`, and never treat a run's exit code alone as success.
+- Never copy a `sudo` journal line of the unlock into a record or a doc: it carries the partition's device path.
 
 ## 10. Tooling tests and rollback
 
