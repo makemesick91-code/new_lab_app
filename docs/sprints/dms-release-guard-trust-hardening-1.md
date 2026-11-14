@@ -7,9 +7,9 @@ Record format: `deploy/release-approvals/README.md` · Recovery: `docs/runbooks/
 `dms-release-guard-trust-hardening-1-go`) · Base: `feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report`
 at `55990b3b` · Branch: `fix/dms-release-guard-trust-hardening-1`.
 
-**Status: IMPLEMENTED, TESTED locally, PR open — not merged, not deployed, no GO tag.** Merge needs the owner's merge
-decision; deployment needs the owner's trust anchor on the host, a separate written approval of the exact merged SHA
-and the owner's signature on its record (§11).
+**Status: MERGED (`d707a3e349408c049148ca7061dac018dd4a1669`, post-merge CI green) — release approval in preparation;
+not deployed, no GO tag.** Deployment needs the owner's signature on the release record, the trust anchor on the host,
+and the owner's separate written approvals (§12).
 
 ## 1. Owner request (CG-22)
 
@@ -241,6 +241,33 @@ anchor key and no error path that prints GO or OK. Its findings and their dispos
 | R10b | Launcher umask unpinned (≥ 022 under sudo); host-key binding cannot tell a disk-image clone; deleting a record does not revoke it before `NOT_AFTER` (single use and the window bound it); the git-lock refusal also fires while an operator's own `git status` holds `index.lock` | NIT | Accepted and documented (fail-closed or inside the stated boundary) |
 | R11 | Test gaps: collision path not exercised, spent-inside-lock untested, signer line unasserted | — | **Fixed**: deterministic planted-entry test, inside-lock and bootstrap-only spend tests, signer assertion |
 
+## 8c. Second independent review (merged code, before the release approval)
+
+On 2026-11-14, after the merge, a fresh agent reviewed the trust-critical scripts at `d707a3e3` adversarially. It was
+given the code and the threat model, not this document's conclusions. It ran the real `scripts/lib/release-approval.sh`
+against a throwaway origin, anchor and host key (OpenSSH 9.6p1; the temporary directory was deleted). **No way was
+found to obtain `RELEASE APPROVAL: GO` or a launched deploy without the approver's signing key**:
+
+- A good owner signature gave GO.
+- Each of these was DENIED: another key's signature, the owner's key under namespace `git`, a filename with a newline
+  or non-ASCII after the approved commit, release id `REL-X`, a present spend marker, and an evidence directory with
+  mode `0755`.
+- Record parsing and signature verification use the same blob id. The deployed commit is always the operator's
+  `--approved-sha`, exported from the object, so nothing pushed after it is deployed.
+
+These findings are NOT fixed in this release; each is a follow-up:
+
+| # | Finding | Severity | Disposition |
+|---|---|---|---|
+| S1 | A rollback given a tag name that the host never fetched (deploys fetch `--no-tags`) force-fetches that tag from origin. A pusher can create or move it to any ancestor of HEAD, including an unapproved intermediate commit, whose `composer`/`npm`/artisan steps the rollback then runs as root | MEDIUM | **Open — extends OD-2.** Until fixed, roll back only by a full 40-character SHA, never by a tag name |
+| S2 | Rolling back below rule 231 restores the unsigned rule 229 guard | LOW | Open — OD-2 (= R3) |
+| S3 | Comment lines in a record accept any bytes, so ESC/CR can make the displayed record differ from the signed one (a what-you-see-is-what-you-sign gap, not a GO bypass) | LOW | Open. Until fixed, every record is checked to be printable ASCII before the owner signs |
+| S4 | `verify-transition` still reads the runtime-writable legacy evidence in `storage/logs/deploy-runner` | LOW | Open: remove the action (the runbook already forbids its use) |
+| S5 | `deploy-immutable-exec.sh` ignores a failed spend write (`\|\| true`); only a direct, root-only `deploy-vps.sh` run has no other spend source | LOW | Open |
+| S6 | §6c/§6d export: `install -d` accepts an existing directory; the provenance step hashes only the runner | NIT | Open. Until fixed, the operator confirms the directory is absent and compares every exported file with its blob |
+| S7 | `trust-check` reports READY for an empty or malformed anchor (the deploy still fails closed); the runner's guard fetches outside the lock (operational denial only) | NIT | Open. Until fixed, the anchor fingerprint and line count are checked directly |
+| S8 | The documented signing command `git show … \| ssh-keygen -Y sign …` fails on a workstation where `DISPLAY` is set and no `ssh-askpass` exists (WSLg): with stdin a pipe, OpenSSH asks askpass, not the terminal (reproduced with a throwaway key: exit 255, "incorrect passphrase") | LOW (docs) | Open: correct §6d C and the record README to sign the file with stdin on the terminal, then verify against the committed blob (§12) |
+
 ## 9. Evidence
 
 ### 9.1 Local verification (this PR's head)
@@ -293,9 +320,9 @@ clean. `sprint:test-plan` escalates the diff to the full required suite (categor
 |---|---|
 | IMPLEMENTED | yes (this PR) |
 | TESTED | locally (§9.1) |
-| CI VERIFIED | pending |
-| MERGED | no — owner's merge decision |
-| APPROVED FOR DEPLOYMENT | no — needs anchor (§6d A–B), written approval of the exact merged SHA and the owner's signature (§6d C) |
+| CI VERIFIED | yes — PR head `ae92a66f` (run 43570269130) and merge `d707a3e3` (push run 43579662147): Critical Gate 9,958 passed (49,241 assertions) each; Full Suite deferred (CG-18), not passed |
+| MERGED | yes — squash `d707a3e349408c049148ca7061dac018dd4a1669` on 2026-11-14 09:15 UTC, owner-authorised, pinned to `ae92a66f`; tree `ff52ee26` identical to the tested head's |
+| APPROVED FOR DEPLOYMENT | no — §12: owner signature, anchor, separate written approvals |
 | DEPLOYED | no |
 | VERIFIED | no |
 | GO TAGGED | no |
@@ -335,3 +362,63 @@ untouched.
    the GO tag `dms-release-guard-trust-hardening-1-go` on the approved commit (CG-16).
 
 These observations are a snapshot; re-check them immediately before any deploy.
+
+## 12. Release candidate and owner approval (CG-22)
+
+### 12.1 The release candidate (verified 2026-11-14 11:16 UTC = 19:16 WITA, read-only)
+
+| Fact | Value |
+|---|---|
+| Release id / GO tag | `dms-release-guard-trust-hardening-1` / `dms-release-guard-trust-hardening-1-go` (absent on origin) |
+| Release SHA | `d707a3e349408c049148ca7061dac018dd4a1669` = origin base tip, PR #628 merge commit |
+| Release tree | `ff52ee26bb32de05272a08268c50650dcd922532` = tree of the tested PR head `ae92a66f` |
+| Target | Biznet production `DaengtisiaMS`, `/var/www/asia-dental-lab-v2`; `PRODUCTION_TARGET=VERIFIED`; the host presents `SHA256:i3AsyL0oSwqSAwNfgv215Cl01i87buYtH5ugTe8O2bc` (`/etc/ssh/ssh_host_ed25519_key.pub`) = `DMS_PRODUCTION_HOST_KEY_SHA256` |
+| Production before | HEAD `82f1eeba1ec25c81db3cefa1d2b235d022973904` (8D release), tracked tree clean, rule 229 present, rule 231 absent → **§6d** |
+| Delta from production | 6 commits (`c548bc25`, `32c4a760`, `b220a143`, `03d64654`, `55990b3b`, `d707a3e3`): deploy scripts, the deployment governance scanner, `config/ci_runner.php`, `config/deployment_entrypoint.php`, rules, tests, docs. **No migration, route, seeder, package, front-end asset or clinical code** |
+| CI | §10 (Critical Gate 9,958 passed on the PR head and on the merge commit; Full Suite deferred) |
+| Reviews | §8b and §8c: no CRITICAL or HIGH; no GO without the signing key |
+| Rollback target | `82f1eeba1ec25c81db3cefa1d2b235d022973904`, code only, **by full SHA** (S1), only on the owner's go-ahead; it restores the rule 229 guard (OD-2) |
+| BK-2 (09:14 UTC) | host `ON_SERVER=OK`, `OFF_SERVER=OK`, 13/13 acknowledged, 0 pending, alerts none; workstation verdict OK — re-checked before the deploy |
+
+**OD-1 DEPLOY-PRIVSEP, evaluated for this release (read-only, 09:30 UTC).** The risk is pre-existing (the 8D deploy ran
+the same root steps) and this release adds no root execution over runtime-writable paths; it moves runner evidence out
+of `storage/`, which removes A2. Exploitation needs code execution as the runtime user, whose shell is `nologin` and
+who has no sudo. Indicators on the host were clean:
+
+- The only symlinks under `storage/` and `bootstrap/cache` are the rule 229 runner's own `latest.*` links to sibling
+  evidence files.
+- No file there is owned by anyone but root or the runtime user.
+- Every `bootstrap/cache` file dates from the 8D deploy (2026-11-14 01:15 UTC).
+- The five `storage/*.php` files are tracked repository files from the original checkout.
+
+These checks are repeated immediately before the start. OD-1 stays OPEN; accepting it for this deploy is the owner's
+decision (§12.3).
+
+### 12.2 The approval record and its signature
+
+The owner's release signing key is a dedicated ED25519 key, passphrase-protected and held by the owner. The owner
+reported on 2026-11-14 that private and public key files are mode `600` and that `ssh-keygen -y` asks for the
+passphrase. Its public fingerprint, checked from the public half only, is
+`SHA256:0WGGTlMDzLPGAhQaRG+Ag7BqoypSLinSNOHalZKtgt4`. The assistant never read the private key, never asked for the
+passphrase and never signed. The key's location is private and is not recorded here.
+
+The record `deploy/release-approvals/dms-release-guard-trust-hardening-1.approval` (contract 2) names this
+candidate. `APPROVED_AT` is the moment the owner confirms and signs, and `NOT_AFTER` is that moment plus the window the
+owner chooses (at most 72 hours). Before the signature, the record is checked locally against the guard's format and
+fact rules and is printable ASCII only (S3).
+
+The owner signs the record **file** in their own terminal (S8), and the signature is then verified against the
+**committed** blob with the owner's public key, so the signed bytes are exactly the bytes the host reads.
+
+### 12.3 Owner decisions
+
+| Gate | Status |
+|---|---|
+| Signing key created, protected, fingerprint confirmed | **done** (owner, 2026-11-14) |
+| Offline backup custody of the signing key confirmed | pending — owner |
+| Record signed by the owner | pending — owner |
+| Written approval of `d707a3e349408c049148ca7061dac018dd4a1669` for production, window, service interruption, OD-1 acceptance, rollback authority, read-only clinical smoke | pending — owner |
+| Merge of the approval PR (record, signature, this document) | pending — owner |
+| Trust anchor `/etc/daengtisiams/release-approvers.allowed_signers` on the host (production change, §6d B) | pending — owner |
+| §6d deploy on the Biznet host | pending — owner |
+| GO tag `dms-release-guard-trust-hardening-1-go` after production verification | pending — owner |
