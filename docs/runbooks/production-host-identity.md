@@ -217,6 +217,12 @@ commit a release approval record merged on the base branch approves. The runner 
 - One operator, with no other deploy, rollback or quarantine running.
 - The production checkout already carries the guard (`grep -c approve_or_deny scripts/deploy-vps-runner.sh` on the
   host prints a non-zero count). If it prints `0`, follow §6c instead.
+- Rule 231 (`.cursor/rules/231-release-guard-trust-hardening.mdc`): the record is contract 2, names the host key
+  (`DMS_APPROVAL_HOST_KEY_SHA256`) and was **signed by the owner** — `deploy/release-approvals/<release-id>.approval.sig`
+  is merged with it (§6d step C). The host's trust anchor is installed and `trust-check` reports
+  `RELEASE GUARD TRUST: READY`. The production checkout already carries rule 231
+  (`sudo -n grep -c 'DMS_RELEASE_APPROVAL_CONTRACT=2' scripts/lib/release-approval.sh` prints a non-zero count); if it
+  prints `0`, follow §6d instead. An approval deploys once: a re-deploy needs a new signed record.
 
 1. **Prove the target:** `bash scripts/production-target-check.sh --remote` → `PRODUCTION_TARGET=VERIFIED` (§3).
    Never deploy on the strength of an alias name alone.
@@ -224,7 +230,13 @@ commit a release approval record merged on the base branch approves. The runner 
    ```bash
    ssh daengtisiams-biznet-prod 'cd /var/www/asia-dental-lab-v2 && sudo -n git fetch --no-tags origin feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report && sudo -n git show FETCH_HEAD:deploy/release-approvals/<release-id>.approval'
    ```
-   It must name `APPROVED_SHA`, this host and the base branch. Otherwise stop.
+   It must name `APPROVED_SHA`, this host and the base branch. Otherwise stop. With rule 231 in force, also confirm
+   the signature and the host's readiness (both read-only):
+   ```bash
+   # One sudo for the whole pipeline: sudo closes inherited descriptors, so a <(…) made outside it is unreadable.
+   ssh daengtisiams-biznet-prod 'cd /var/www/asia-dental-lab-v2 && sudo -n bash -c "git show FETCH_HEAD:deploy/release-approvals/<release-id>.approval | ssh-keygen -Y verify -f /etc/daengtisiams/release-approvers.allowed_signers -I owner -n dms-release-approval -s <(git show FETCH_HEAD:deploy/release-approvals/<release-id>.approval.sig)"'
+   ssh daengtisiams-biznet-prod 'cd /var/www/asia-dental-lab-v2 && sudo -n bash scripts/deploy-vps-runner.sh trust-check'
+   ```
 3. **Check backup protection (read-only):** the host-only BK-2 status check in the owner's private backup runbook must
    report both the on-server and the off-server copy healthy. The deploy takes and verifies its own database dump
    before the checkout. Never delete BK-1, BK-2, the historical Hostinger backups or the rollback database as part of
@@ -245,8 +257,10 @@ commit a release approval record merged on the base branch approves. The runner 
    ```bash
    ssh daengtisiams-biznet-prod 'cd /var/www/asia-dental-lab-v2 && sudo -n bash scripts/deploy-vps-runner.sh verify <deploy-id>'
    ```
-   It must print `DEPLOY_APPROVED_TARGET_MATCH=YES (<APPROVED_SHA>)` and `DEPLOY RUNNER OK`. Any other verdict (exit
-   `4`) is not GO. Never read `latest.status` raw, and never use `verify-transition` again (§6a).
+   It must print `DEPLOY_APPROVED_TARGET_MATCH=YES (<APPROVED_SHA>)` and `DEPLOY RUNNER OK` (with rule 231 also the
+   signer key, the host key and the evidence directory `/var/lib/daengtisiams-deploy/runner`). Any other verdict (exit
+   `4`: `UNTRUSTED`, `TAMPERED`, `FOREIGN`, `INTERRUPTED`, …) is not GO. Never read `latest.status` raw, and never use
+   `verify-transition` again (§6a).
 6. **Smoke over the canonical URL** (`/login`, `/health/live`, `/health/ready`, `/health/lb` → 200; `/storage/…` →
    403). The deploy's own loopback smoke reporting `404` is D6, not a result.
 7. **Confirm nothing else moved:** the queue worker, the scheduler and the KTP cleanup timer keep their owner-set state
@@ -309,6 +323,79 @@ now carries the guard, so every later Biznet deploy follows §6b. §6c applies o
 
 **What never happens.** The live runner is not edited or replaced by hand; no `git pull` or hard reset is run in the
 production tree; the export is never taken from a workstation's object store; evidence files are never edited.
+
+## 6d. The first deploy that carries rule 231 (one-time bootstrap)
+
+**Why.** Rule 231 makes an approval count only with the owner's SSH signature, verified against a trust anchor on the
+host, puts the runner's evidence in a root-only directory outside the checkout, and gives deploy and rollback one
+lock. A production checkout older than rule 231 verifies only unsigned contract-1 records and locks per role: its
+runner refuses the signed contract-2 record, and the new snapshot stage refuses its lock — both before any mutation.
+So the release that installs rule 231 is started, once, from its own deploy chain exported from the approved commit
+object, exactly as in §6c. Every rule 231 check runs; there is no transitional bypass and no unsigned record is ever
+accepted. Afterwards §6b applies. (Rolling back below this release restores the old guard; the next forward deploy then
+uses §6d again.)
+
+**Detect it (read-only):** `sudo -n grep -c 'DMS_RELEASE_APPROVAL_CONTRACT=2' scripts/lib/release-approval.sh` in the
+production checkout prints `0`.
+
+**Owner-only steps, once, before the release is approved.** These are the owner's decisions and actions; an assistant
+prepares commands and records, it never holds or uses the signing key.
+
+- **A. The signing key** — on the owner's own workstation, never on the server and never in the repository, protected
+  by a passphrase: `ssh-keygen -t ed25519 -C dms-release-approval -f <a private path of the owner's choosing>`. Keep its
+  public half; note its fingerprint (`ssh-keygen -l -E sha256 -f <public key>`). Losing the private key means
+  re-provisioning the anchor (step B) with a new key; a leaked key means removing its line from the anchor at once.
+- **B. The trust anchor on the host** — an owner-authorised production change (root; outside the checkout; no
+  application, database or service is touched). Build the line from the PUBLIC key only, then install it:
+  ```bash
+  printf 'owner namespaces="dms-release-approval" %s\n' "$(cat <public key>)" \
+    | ssh daengtisiams-biznet-prod 'sudo -n install -d -m 0755 -o root -g root /etc/daengtisiams && sudo -n tee /etc/daengtisiams/release-approvers.allowed_signers.new >/dev/null && sudo -n chown root:root /etc/daengtisiams/release-approvers.allowed_signers.new && sudo -n chmod 0644 /etc/daengtisiams/release-approvers.allowed_signers.new && sudo -n mv -f /etc/daengtisiams/release-approvers.allowed_signers.new /etc/daengtisiams/release-approvers.allowed_signers'
+  ssh daengtisiams-biznet-prod 'sudo -n stat -c "%U:%G %a %n" /etc/daengtisiams /etc/daengtisiams/release-approvers.allowed_signers && sudo -n cut -d" " -f3- /etc/daengtisiams/release-approvers.allowed_signers | ssh-keygen -l -E sha256 -f -'
+  ```
+  It must print `root:root 755` for the directory, `root:root 644` for the file, and the fingerprint noted in step A
+  (`ssh-keygen -l` reads keys, not allowed-signers lines, hence the `cut` to the key part of the line built above).
+  The anchor holds public keys only; it is not a secret, but it is never committed (the repository is public and the
+  anchor must not be replaceable by a commit).
+- **C. The signed approval** — after the release commit is merged and its CI is green, and after the owner's written
+  approval of the full SHA (CG-22, recorded in the evidence document), the record
+  `deploy/release-approvals/<release-id>.approval` is prepared with `DMS_APPROVAL_CONTRACT=2` and
+  `DMS_APPROVAL_HOST_KEY_SHA256` equal to `DMS_PRODUCTION_HOST_KEY_SHA256` (format: `deploy/release-approvals/README.md`)
+  and committed on the approval branch. The owner reviews it and signs the **committed blob** (exactly the bytes the
+  host will read; an editor's line endings in the working tree cannot creep in):
+  ```bash
+  git show HEAD:deploy/release-approvals/<release-id>.approval \
+    | ssh-keygen -Y sign -f <private key> -n dms-release-approval > deploy/release-approvals/<release-id>.approval.sig
+  ```
+  Record, signature and evidence document are merged together through a pull request. Any change to the record after
+  signing breaks the signature: sign again. Anyone holding the public key can check it independently:
+  `ssh-keygen -Y verify -f <allowed-signers file> -I owner -n dms-release-approval -s <release-id>.approval.sig < <release-id>.approval`.
+
+**Preconditions.** All of §6b's (BK-2, backup window, one operator, the approval window), except the last two (the
+checkout does not carry rule 231 yet), plus steps A–C done.
+
+0. **Record the starting state (read-only):** HEAD, a clean tracked tree, `0` for the rule 231 marker, the lock free:
+   ```bash
+   ssh daengtisiams-biznet-prod 'cd /var/www/asia-dental-lab-v2 && sudo -n git rev-parse HEAD && sudo -n git status --porcelain --untracked-files=no | wc -l && sudo -n grep -c "DMS_RELEASE_APPROVAL_CONTRACT=2" scripts/lib/release-approval.sh'
+   ```
+1. **Prove the target and read the approval** (§6b steps 1–3, including the signature check of §6b step 2). The
+   in-tree runner predates rule 231 and has no `trust-check` action; skip that line here — step 3 runs it from the export.
+2. **Export the approved chain from the object**, exactly as §6c step 2 (a new root-only `/root/dms-release-<APPROVED_SHA>`
+   that does not exist yet).
+3. **Prove its provenance** (§6c step 3) and the host's readiness from the export:
+   ```bash
+   ssh daengtisiams-biznet-prod 'cd /var/www/asia-dental-lab-v2 && sudo -n bash /root/dms-release-<APPROVED_SHA>/scripts/deploy-vps-runner.sh trust-check'
+   ```
+   It must print `TRUST_ANCHOR=OK`, `HOST_KEY=OK`, `EVIDENCE_DIR=ABSENT` (created on start) and
+   `RELEASE GUARD TRUST: READY`. Otherwise stop.
+4. **Start the exported runner from the app directory** (§6c step 4, same command). It writes its evidence to
+   `/var/lib/daengtisiams-deploy/runner/`; follow the `deploy_id` it prints with the exported runner's `follow`.
+5. **Prove it with the deployed in-tree runner**, which now carries rule 231: §6b step 5.
+6. **Smoke, confirm nothing else moved, GO tag:** §6b steps 6–8.
+7. **Reconcile the export** as §6c step 7.
+
+**What never happens.** No unsigned or contract-1 record is accepted; the anchor never comes from the repository; the
+evidence of earlier deploys in `storage/logs/deploy-runner/` is left exactly where it is (never moved, edited or
+deleted); the live runner is not edited by hand.
 
 ## 7. What stays true from the Hostinger era
 

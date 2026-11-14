@@ -25,7 +25,11 @@
 #
 # HOW
 # ---
-#   acquire exclusive host lock (flock, root-controlled path)
+#   acquire THE release lock (flock, root-controlled path) — one lock for deploy
+#     AND rollback (rule 231): they can never interleave. The pre-231 per-role
+#     locks are taken too, so a bootstrap from an older tree is still excluded
+#   reconcile what an interrupted run left behind (snapshots, private refs) and
+#     refuse a stale git index lock before anything is touched
 #     -> deploy: verify the merged release approval record for the requested
 #        release and PIN exactly the commit it approves (rule 229 — the branch
 #        tip is never substituted; a mismatch is DEPLOYMENT=DENIED, exit 77)
@@ -196,25 +200,45 @@ if [ "$LOCK_ROOT_OWNER" != "$(id -u)" ]; then
   fatal "lock root ${LOCK_DIR} is owned by uid ${LOCK_ROOT_OWNER}, not by this deploy identity ($(id -u))"
 fi
 
-LOCK_FILE="${LOCK_DIR}/${ROLE}.lock"
+# Rule 231: ONE lock for every role. A deploy and a rollback both rewrite the
+# checkout, rebuild vendor/ and the assets and restart PHP-FPM; interleaving
+# them leaves a tree neither of them describes.
+LOCK_FILE="${LOCK_DIR}/release.lock"
+HOLDER_FILE="${LOCK_DIR}/release.holder"
 SNAPSHOT_DIR="${LOCK_DIR}/${ROLE}-${RUN_ID}"
 
-# ─── Exclusive deployment lock ──────────────────────────────────────────────
+# ─── Exclusive release lock ─────────────────────────────────────────────────
 # flock is advisory but kernel-backed and, crucially, released automatically when
 # the holding process dies — a crashed or SIGTERM'd deploy can never leave a
 # permanently stuck lock the way a hand-rolled PID file does. The descriptor is
 # held by THIS process for the entire critical section, so the child deployment
-# program inherits the protection without being able to drop it.
+# program inherits the protection without being able to drop it. Every lock is
+# taken non-blocking, so no ordering can deadlock: any one busy means BUSY.
 command -v flock >/dev/null 2>&1 || fatal "flock is required for safe deployment serialisation but is not installed"
 
-exec 9>"$LOCK_FILE"
-if ! flock -n 9; then
-  echo "immutable-exec: BUSY another ${ROLE} is already running (lock: ${LOCK_FILE})" >&2
-  echo "immutable-exec: refusing to start a second ${ROLE} — no backup, no migration, no checkout was performed" >&2
+busy() {
+  echo "immutable-exec: BUSY $* — refusing to start a ${ROLE} (lock root: ${LOCK_DIR})" >&2
+  if [ -f "$HOLDER_FILE" ] && [ ! -L "$HOLDER_FILE" ]; then
+    echo "immutable-exec: last recorded holder: $(tr '\n' ' ' < "$HOLDER_FILE" 2>/dev/null)" >&2
+  fi
+  echo "immutable-exec: no backup, no migration, no checkout was performed" >&2
   exit 75
-fi
+}
+exec 9>"$LOCK_FILE"
+flock -n 9 || busy "another deploy or rollback holds the release lock"
+# Transition (rule 231): a bootstrap from a tree older than rule 231 locks only
+# ${role}.lock. Holding both role locks too keeps such a run and this one apart.
+exec 8>"${LOCK_DIR}/deploy.lock"
+flock -n 8 || busy "a pre-rule-231 deploy holds deploy.lock"
+exec 7>"${LOCK_DIR}/rollback.lock"
+flock -n 7 || busy "a pre-rule-231 rollback holds rollback.lock"
 note "lock acquired role=${ROLE} file=${LOCK_FILE}"
 echo "DEPLOY_LOCK_ACQUIRED=YES"
+echo "DEPLOY_LOCK_FILE=${LOCK_FILE}"
+# Who holds it, for the operator who meets BUSY. Informational only: the flock is
+# the authority, and a stale holder note after a crash means nothing.
+(umask 077 && printf 'role=%s\nrun_id=%s\npid=%s\nsince=%s\n' "$ROLE" "$RUN_ID" "$$" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "${HOLDER_FILE}.${RUN_ID}" \
+  && mv -f -- "${HOLDER_FILE}.${RUN_ID}" "$HOLDER_FILE") || true
 
 # ─── Guarded snapshot removal ───────────────────────────────────────────────
 # Every guard here exists because this function runs `rm -rf` as root: the path
@@ -244,6 +268,9 @@ cleanup() {
   git -C "$APP_DIR" for-each-ref --format='%(refname)' "refs/dms-release-approval/$$-*" 2>/dev/null \
     | while IFS= read -r ref; do git -C "$APP_DIR" update-ref -d "$ref" 2>/dev/null || true; done || true
   purge_snapshot "$SNAPSHOT_DIR"
+  if [ -f "$HOLDER_FILE" ] && grep -qxF "run_id=${RUN_ID}" "$HOLDER_FILE" 2>/dev/null; then
+    rm -f -- "$HOLDER_FILE"
+  fi
   if [ ! -e "$SNAPSHOT_DIR" ]; then
     echo "DEPLOY_SNAPSHOT_CLEANED=YES"
   else
@@ -258,6 +285,45 @@ trap 'exit 143' TERM
 trap 'exit 130' INT
 
 cd "$APP_DIR"
+
+# ─── Recovery after an interrupted run (rule 231) ───────────────────────────
+# With every lock held, no other bootstrap — of this tree or an older one — is
+# alive, so a snapshot left in the lock root belongs to a run that was killed
+# (SIGKILL, power loss: no trap ran). It is removed here, under the same guards
+# as our own. A private approval ref whose process is gone is removed too.
+for stale in "${LOCK_DIR}"/deploy-* "${LOCK_DIR}"/rollback-*; do
+  [ -e "$stale" ] || [ -L "$stale" ] || continue
+  name="${stale##*/}"
+  if [ -L "$stale" ] || [ ! -d "$stale" ] || [[ ! "$name" =~ ^(deploy|rollback)-[A-Za-z0-9._-]+$ ]]; then
+    echo "immutable-exec: leaving unexpected entry in the lock root untouched: ${stale}" >&2
+    continue
+  fi
+  rm -rf -- "$stale"
+  echo "DEPLOY_STALE_SNAPSHOT_RECONCILED=${name}"
+done
+while IFS= read -r ref; do
+  [[ "$ref" =~ ^refs/dms-(release-approval|rollback-target)/([0-9]+)- ]] || continue
+  [ -d "/proc/${BASH_REMATCH[2]}" ] && continue
+  git -C "$APP_DIR" update-ref -d "$ref" 2>/dev/null && echo "DEPLOY_STALE_APPROVAL_REF_RECONCILED=${ref}"
+done < <(git -C "$APP_DIR" for-each-ref --format='%(refname)' 'refs/dms-release-approval/' 'refs/dms-rollback-target/' 2>/dev/null || true)
+# A git lock left by a run killed mid-checkout or mid-merge (index, HEAD, a
+# branch ref, packed-refs, config) makes the NEXT run fail after its backup.
+# Refuse now, before anything: only an operator who has confirmed no git process
+# is running may remove it (runbook).
+GIT_DIR_PATH="$(git -C "$APP_DIR" rev-parse --absolute-git-dir 2>/dev/null)" || fatal "cannot resolve the git directory of ${APP_DIR}"
+STALE_GIT_LOCK=""
+for candidate in index.lock HEAD.lock packed-refs.lock config.lock; do
+  if [ -e "${GIT_DIR_PATH}/${candidate}" ] || [ -L "${GIT_DIR_PATH}/${candidate}" ]; then
+    STALE_GIT_LOCK="${GIT_DIR_PATH}/${candidate}"
+    break
+  fi
+done
+if [ -z "$STALE_GIT_LOCK" ] && [ -d "${GIT_DIR_PATH}/refs" ]; then
+  STALE_GIT_LOCK="$(find "${GIT_DIR_PATH}/refs" -name '*.lock' -print -quit 2>/dev/null || true)"
+fi
+if [ -n "$STALE_GIT_LOCK" ]; then
+  fatal "stale git lock ${STALE_GIT_LOCK} — an earlier run was interrupted during a checkout, or a git command is running now; nothing was backed up, checked out or migrated (recovery: vps-deploy-rollback-runbook.md, Troubleshooting)"
+fi
 
 # ─── Pin the exact target commit ────────────────────────────────────────────
 if [ "$ROLE" = "deploy" ]; then
@@ -276,13 +342,19 @@ if [ "$ROLE" = "deploy" ]; then
   source "$APPROVAL_LIB"
   approval_rc=0
   dms_release_approval_verify "$APP_DIR" "$BRANCH" "$RELEASE_ID" "$APPROVED_SHA" \
-    "$APPROVAL_AUTHORITY" "$(hostname)" "$(date -u +%s)" || approval_rc=$?
+    "$APPROVAL_AUTHORITY" "$(hostname)" "$(date -u +%s)" \
+    "$(dms_release_approval_observed_host_key "$APPROVAL_AUTHORITY" || true)" "$(id -u)" || approval_rc=$?
   if [ "$approval_rc" -ne 0 ] || [ "${DMS_RELEASE_APPROVED_SHA:-}" != "$APPROVED_SHA" ]; then
     deny "release ${RELEASE_ID} is not approved for ${APPROVED_SHA} — nothing was backed up, checked out or migrated"
   fi
+  # (Rule 231: the guard above also refused a release already spent by a
+  # completed deploy — checked here again inside the lock, against the trusted
+  # evidence directory, so a rollback cannot be undone by replaying it. The
+  # spend record itself is written below, still inside the lock.)
   TARGET_SHA="$DMS_RELEASE_APPROVED_SHA"
   echo "DEPLOY_APPROVED_SHA=${TARGET_SHA}"
   echo "DEPLOY_APPROVAL_RECORD=${DMS_RELEASE_APPROVAL_TIP}:${DMS_RELEASE_APPROVAL_PATH} blob=${DMS_RELEASE_APPROVAL_BLOB}"
+  echo "DEPLOY_APPROVAL_SIGNER=${DMS_RELEASE_APPROVAL_SIGNER_KEY}"
 fi
 if [ -z "$TARGET_SHA" ]; then
   TARGET_SHA="$(git rev-parse --verify "HEAD^{commit}")"
@@ -392,13 +464,21 @@ export DMS_DEPLOY_LOCK_FILE="$LOCK_FILE"
 export DMS_DEPLOY_RELEASE_ID="$RELEASE_ID"
 export DMS_DEPLOY_APPROVED_SHA="$APPROVED_SHA"
 
-# fd 9 (the lock) is closed in the child so the descriptor is not inherited by
-# composer/npm/php/systemctl and everything else the deploy spawns. The lock
-# itself stays held by THIS process for the whole critical section.
+# fds 7-9 (the locks) are closed in the child so the descriptors are not
+# inherited by composer/npm/php/systemctl and everything else the deploy spawns.
+# The locks themselves stay held by THIS process for the whole critical section.
 set +e
-bash "${SNAPSHOT_DIR}/${PROGRAM_REL}" "${PROGRAM_ARGV[@]:1}" 9>&-
+bash "${SNAPSHOT_DIR}/${PROGRAM_REL}" "${PROGRAM_ARGV[@]:1}" 7>&- 8>&- 9>&-
 PROGRAM_RC=$?
 set -e
+
+# Rule 231: a completed deploy spends its release, recorded HERE — inside the
+# release lock, by the process that deployed, before the lock is released — so
+# single use does not depend on the runner's record or its timing.
+if [ "$ROLE" = "deploy" ] && [ "$PROGRAM_RC" -eq 0 ]; then
+  dms_release_approval_record_spent "$APPROVAL_AUTHORITY" "$APP_DIR" "$(id -u)" "$RELEASE_ID" \
+    "$TARGET_SHA" "${DMS_RELEASE_APPROVAL_BLOB:-}" "$RUN_ID" || true
+fi
 
 note "program finished rc=${PROGRAM_RC}"
 exit "$PROGRAM_RC"

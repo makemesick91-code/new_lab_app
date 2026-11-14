@@ -22,7 +22,7 @@ uses()->group('Deploy', 'Security', 'ReleaseSafety');
  */
 function r229RequiresTooling(): void
 {
-    foreach (['git', 'flock', 'tar', 'setsid', 'sha256sum'] as $binary) {
+    foreach (['git', 'flock', 'tar', 'setsid', 'sha256sum', 'ssh-keygen'] as $binary) {
         if (trim((string) shell_exec('command -v '.escapeshellarg($binary).' 2>/dev/null')) === '') {
             test()->markTestSkipped("{$binary} is not available on this host");
         }
@@ -40,10 +40,11 @@ function r229Denied(array $result): void
 function r229Fields(array $s, array $overrides = []): array
 {
     return array_merge([
-        'DMS_APPROVAL_CONTRACT' => '1',
+        'DMS_APPROVAL_CONTRACT' => '2',
         'DMS_APPROVAL_RELEASE_ID' => $s['release'],
         'DMS_APPROVAL_REPOSITORY' => $s['repository'],
         'DMS_APPROVAL_HOST' => $s['host'],
+        'DMS_APPROVAL_HOST_KEY_SHA256' => $s['host_key'],
         'DMS_APPROVAL_BASE_BRANCH' => $s['branch'],
         'DMS_APPROVAL_TARGET_SHA' => $s['sha'],
         'DMS_APPROVAL_TARGET_TREE' => $s['tree'],
@@ -55,20 +56,28 @@ function r229Fields(array $s, array $overrides = []): array
     ], $overrides);
 }
 
-/** Merge a hand-written approval (and an evidence doc quoting $quote) onto origin. */
-function r229ApproveWith(array $s, string $record, string $quote): array
+/**
+ * Merge a hand-written approval (and an evidence doc quoting $quote) onto
+ * origin, signed by the approver (rule 231) unless $signer is null.
+ */
+function r229ApproveWith(array $s, string $record, string $quote, ?string $signer = 'owner'): array
 {
-    $s['tip'] = r229Push($s, [
+    $files = [
         "deploy/release-approvals/{$s['release']}.approval" => $record,
         "docs/sprints/{$s['release']}.md" => "# approval\n\nOwner approval: deploy `{$quote}`.\n",
-    ], 'approve');
+    ];
+    if ($signer !== null) {
+        $files["deploy/release-approvals/{$s['release']}.approval.sig"] = r229Sign($s[$signer.'_key'], $record);
+    }
+    $s['tip'] = r229Push($s, $files, 'approve');
 
     return $s;
 }
 
+/** Everything in the sandbox's deploy evidence directory (rule 231: outside the checkout). */
 function r229RunDirEntries(array $s): array
 {
-    $dir = "{$s['app']}/storage/logs/deploy-runner";
+    $dir = $s['evidence'];
 
     return is_dir($dir) ? array_values(array_diff(scandir($dir) ?: [], ['.', '..'])) : [];
 }
@@ -171,7 +180,8 @@ it('refuses a record whose facts do not match', function (array $fields, string 
     'a window that ends before it starts' => [['DMS_APPROVAL_APPROVED_AT' => '@now-60', 'DMS_APPROVAL_NOT_AFTER' => '@now-120'], 'ends'],
     'an impossible date' => [['DMS_APPROVAL_APPROVED_AT' => '2026-02-30T00:00:00Z'], 'is not a canonical UTC instant'],
     'a missing key' => [['DMS_APPROVAL_TARGET_TREE' => null], 'does not declare DMS_APPROVAL_TARGET_TREE'],
-    'another approval contract' => [['DMS_APPROVAL_CONTRACT' => '2'], 'approval contract'],
+    'the unsigned contract 1 of rule 229' => [['DMS_APPROVAL_CONTRACT' => '1'], "uses approval contract '1', this guard requires 2"],
+    'another host key' => [['DMS_APPROVAL_HOST_KEY_SHA256' => 'SHA256:'.str_repeat('A', 43)], 'approves host key'],
     'evidence outside docs' => [['DMS_APPROVAL_EVIDENCE' => 'README.md'], 'is not a docs/*.md path'],
     'evidence path traversal' => [['DMS_APPROVAL_EVIDENCE' => 'docs/../deploy/x.md'], 'is not a docs/*.md path'],
     'evidence document not on the branch' => [['DMS_APPROVAL_EVIDENCE' => 'docs/sprints/absent.md'], 'is not on origin'],
@@ -299,7 +309,7 @@ it('refuses an authority that does not declare what the guard checks', function 
     file_put_contents($s['authority'], $authority);
 
     r229Denied($r = r229Verify($s));
-})->with(['DMS_PRODUCTION_HOSTNAME', 'DMS_PRODUCTION_REPOSITORY', 'DMS_PRODUCTION_RELEASE_APPROVERS']);
+})->with(['DMS_PRODUCTION_HOSTNAME', 'DMS_PRODUCTION_REPOSITORY', 'DMS_PRODUCTION_RELEASE_APPROVERS', 'DMS_PRODUCTION_HOST_KEY_SHA256', 'DMS_PRODUCTION_RELEASE_TRUST_ANCHOR']);
 
 it('reads the canonical repository from every GitHub remote spelling, and nothing else', function (string $url, string $expected) {
     $r = r229Run(['bash', '-c', 'source "$1"; dms_release_approval_normalize_repository "$2"', '_', base_path('scripts/lib/release-approval.sh'), $url]);
@@ -351,6 +361,7 @@ it('refuses a deploy that names no approval before it takes the lock', function 
         ->and($r['output'])->toContain('DEPLOYMENT=DENIED')
         ->and($r['output'])->not->toContain('DEPLOY_LOCK_ACQUIRED')
         ->and($r['output'])->not->toContain('DEPLOY_TARGET_PINNED')
+        ->and(file_exists("{$s['lock']}/release.lock"))->toBeFalse()
         ->and(file_exists("{$s['lock']}/deploy.lock"))->toBeFalse();
 })->with(['no approval', 'no approved SHA', 'no release id', 'an explicit target instead', 'an abbreviated SHA']);
 
@@ -382,6 +393,7 @@ it('pins exactly the approved commit, carries it through the snapshot and lands 
         ->and($r['output'])->toContain('RELEASE APPROVAL: GO')
         ->and($r['output'])->toContain("DEPLOY_APPROVED_SHA={$s['sha']}")
         ->and($r['output'])->toContain("DEPLOY_APPROVAL_RECORD={$s['tip']}:deploy/release-approvals/{$s['release']}.approval blob=")
+        ->and($r['output'])->toContain('DEPLOY_APPROVAL_SIGNER='.r229Fingerprint($s['owner_key'].'.pub'))
         ->and(substr_count($r['output'], 'DEPLOY_TARGET_PINNED='))->toBe(1)
         ->and($r['output'])->toContain("DEPLOY_TARGET_PINNED={$s['sha']}")
         ->and($r['output'])->toContain("DEPLOY_HEAD_TARGET_MATCH=YES ({$s['sha']})")
@@ -440,10 +452,16 @@ it('binds an approved run to the approved commit and proves it by identifier', f
         ->and($start['output'])->toContain("release_id={$s['release']} approved_sha={$s['sha']}")
         ->and(preg_match('/deploy_id=(\d{8}-\d{6})/', $start['output'], $m))->toBe(1);
     $id = $m[1];
-    expect(r229WaitForStatus($s['app'], $id))->toBe('exit=0');
+    expect(r229WaitForStatus($s, $id))->toBe('exit=0');
 
-    $record = (string) file_get_contents("{$s['app']}/storage/logs/deploy-runner/deploy-{$id}.host");
-    expect($record)->toContain('runner_contract=3')
+    $record = (string) file_get_contents(r229EvidenceFile($s, "deploy-{$id}.host"));
+    expect($record)->toContain('runner_contract=4')
+        ->and($record)->toContain("evidence_dir={$s['evidence']}\n")
+        ->and($record)->toContain("host_key_sha256={$s['host_key']}\n")
+        ->and($record)->toContain('approval_signer_key='.r229Fingerprint($s['owner_key'].'.pub')."\n")
+        ->and($record)->toMatch('/^approval_signature_blob=[0-9a-f]{40}$/m')
+        ->and($record)->toMatch('/^launcher_pid=[0-9]+$/m')
+        ->and(is_dir("{$s['app']}/storage/logs/deploy-runner"))->toBeFalse('evidence was written into the checkout')
         ->and($record)->toContain("release_id={$s['release']}\n")
         ->and($record)->toContain("approved_sha={$s['sha']}\n")
         ->and($record)->toContain("approval_record={$s['tip']}:deploy/release-approvals/{$s['release']}.approval\n")
@@ -458,7 +476,7 @@ it('binds an approved run to the approved commit and proves it by identifier', f
         ->and(r229Git($s['app'], ['rev-parse', 'HEAD']))->toBe($s['sha']);
 });
 
-it('serialises two approved runs: the second is refused by the lock before it pins', function () {
+it('serialises two approved runs: the second start is refused while the first is running, and records nothing', function () {
     r229RequiresTooling();
     $s = r229Sandbox();
     $approval = ['--release-id', $s['release'], '--approved-sha', $s['sha']];
@@ -468,26 +486,26 @@ it('serialises two approved runs: the second is refused by the lock before it pi
     preg_match('/deploy_id=(\d{8}-\d{6})/', $first['output'], $a);
     // Wait until the first run is demonstrably inside the locked critical
     // section (its program has started), not for a fixed time.
-    $firstLog = "{$s['app']}/storage/logs/deploy-runner/deploy-{$a[1]}.log";
+    $firstLog = r229EvidenceFile($s, "deploy-{$a[1]}.log");
     $deadline = microtime(true) + 30;
     while (microtime(true) < $deadline && ! str_contains((string) @file_get_contents($firstLog), 'PRODUCTION HOST PREFLIGHT: GO')) {
         usleep(100_000);
     }
     expect((string) @file_get_contents($firstLog))->toContain('PRODUCTION HOST PREFLIGHT: GO');
-    // The runner's identifier has one-second resolution.
     usleep((int) max(0, 1_200_000 - (microtime(true) - $started) * 1_000_000));
+    $entries = r229RunDirEntries($s);
+
+    // Rule 231: the runner sees the first run's live launcher and refuses before
+    // it writes a record, a log or a latest.* link (the bootstrap's lock stays
+    // the authority; see DeployHardenReleaseGuardTrustTest for that layer).
     $second = r229Runner($s, array_merge(['start'], $approval));
-    preg_match('/deploy_id=(\d{8}-\d{6})/', $second['output'], $b);
+    expect($second['exit'])->toBe(75, $second['output'])
+        ->and($second['output'])->toContain("BUSY deploy {$a[1]} is still running")
+        ->and($second['output'])->not->toContain('started detached')
+        ->and(r229RunDirEntries($s))->toBe($entries)
+        ->and(readlink(r229EvidenceFile($s, 'latest.status')))->toBe("deploy-{$a[1]}.status");
 
-    expect(r229WaitForStatus($s['app'], $b[1]))->toBe('exit=75')
-        ->and(r229WaitForStatus($s['app'], $a[1]))->toBe('exit=0');
-    $secondLog = (string) file_get_contents("{$s['app']}/storage/logs/deploy-runner/deploy-{$b[1]}.log");
-    expect($secondLog)->toContain('BUSY another deploy is already running')
-        ->and($secondLog)->not->toContain('DEPLOY_TARGET_PINNED');
-
-    $verifySecond = r229Runner($s, ['verify', $b[1]]);
-    expect($verifySecond['exit'])->toBe(1, $verifySecond['output'])
-        ->and($verifySecond['output'])->toContain('DEPLOY RUNNER FAILED (exit=75)');
+    expect(r229WaitForStatus($s, $a[1]))->toBe('exit=0');
     expect(r229Runner($s, ['verify', $a[1]])['output'])->toContain('DEPLOY RUNNER OK');
 });
 
@@ -515,9 +533,9 @@ it('bootstraps the first guarded deploy from the approved release object without
     $start = r229Runner($s, ['start', '--release-id', $s['release'], '--approved-sha', $s['sha']], [], "{$bundle}/scripts/deploy-vps-runner.sh");
     expect($start['exit'])->toBe(0, $start['output']);
     preg_match('/deploy_id=(\d{8}-\d{6})/', $start['output'], $m);
-    expect(r229WaitForStatus($s['app'], $m[1]))->toBe('exit=0');
+    expect(r229WaitForStatus($s, $m[1]))->toBe('exit=0');
 
-    $record = (string) file_get_contents("{$s['app']}/storage/logs/deploy-runner/deploy-{$m[1]}.host");
+    $record = (string) file_get_contents(r229EvidenceFile($s, "deploy-{$m[1]}.host"));
     expect($record)->toContain("program={$bundle}/scripts/deploy-vps.sh\n")
         ->and(file_exists("{$s['app']}/legacy-runner-ran"))->toBeFalse('the legacy runner was executed')
         ->and(r229Git($s['app'], ['rev-parse', 'HEAD']))->toBe($s['sha'])
@@ -565,9 +583,14 @@ it('the runner verifies the approval before it writes, links or detaches anythin
     $body = substr($runner, (int) strpos($runner, 'start_detached() {'));
     $pos = fn (string $needle) => strpos($body, $needle);
 
-    expect($pos('approve_or_deny'))->toBeLessThan($pos('mkdir -p "$RUN_DIR"'))
-        ->and($pos('mkdir -p "$RUN_DIR"'))->toBeLessThan($pos(': > "$DEPLOY_LOG_FILE"'))
-        ->and($pos(': > "$DEPLOY_LOG_FILE"'))->toBeLessThan($pos('setsid nohup'))
+    // Rule 231: approval, then the trusted evidence directory, then the
+    // live-run refusal, then the exclusive claim of the run's files, then launch.
+    expect($pos('approve_or_deny'))->toBeLessThan($pos('trusted_run_dir_or_deny'))
+        ->and($pos('trusted_run_dir_or_deny'))->toBeLessThan($pos('refuse_live_run'))
+        ->and($pos('refuse_live_run'))->toBeLessThan($pos('claim_run_id'))
+        ->and($pos('claim_run_id'))->toBeLessThan($pos('setsid nohup'))
+        ->and($runner)->toContain('(umask 077 && set -C && : > "$DEPLOY_HOST_FILE")')
+        ->and($runner)->not->toContain('mkdir -p "$RUN_DIR"')
         ->and($runner)->toContain('DEPLOY_SCRIPT="${RUNNER_DIR}/deploy-vps.sh"')
         ->and($runner)->not->toContain('${DEPLOY_SCRIPT:-')
         ->and($runner)->toContain('bash "$program" --release-id "$release" --approved-sha "$approved"');
@@ -594,7 +617,10 @@ it('the guard parses the approval record and never executes it', function () {
     expect($code)->not->toContain('FETCH_HEAD')
         ->and($code)->toContain('refs/dms-release-approval/')
         ->and($code)->not->toContain('safe.directory')
-        ->and($lib)->not->toMatch('/^\s*(source|\.)\s/m')
+        // The only file it sources is its sibling library, by a constant path
+        // (rule 231); never the record, never anything from the environment.
+        ->and(substr_count($lib, 'source "$(dirname -- "${BASH_SOURCE[0]}")/trusted-path.sh"'))->toBe(1)
+        ->and(str_replace('source "$(dirname -- "${BASH_SOURCE[0]}")/trusted-path.sh"', '', $lib))->not->toMatch('/^\s*(source|\.)\s/m')
         ->and($lib)->not->toContain('eval ')
         ->and($lib)->toContain('cat-file blob "$blob"')
         ->and($lib)->not->toContain('cat "$path"');
@@ -683,7 +709,7 @@ it('denies when it cannot list what follows the approved commit (fail closed)', 
     $r = r229Run([
         'bash', '-c', 'source "$1"; shift; dms_release_approval_git() { [ "$1" = diff-tree ] && return 128; git -C "$DMS_RELEASE_APPROVAL_GIT_DIR" "$@"; }; rc=0; dms_release_approval_verify "$@" || rc=$?; exit "$rc"',
         '_', base_path('scripts/lib/release-approval.sh'),
-        $s['app'], $s['branch'], $s['release'], $s['sha'], $s['authority'], $s['host'], (string) time(),
+        $s['app'], $s['branch'], $s['release'], $s['sha'], $s['authority'], $s['host'], (string) time(), $s['host_key'], r229Uid(),
     ]);
 
     r229Denied($r);
@@ -733,8 +759,10 @@ it('refuses an approval record or evidence document that is a symlink', function
     $s = r229Sandbox(['approve' => false]);
     $record = "deploy/release-approvals/{$s['release']}.approval";
     $evidence = "docs/sprints/{$s['release']}.md";
+    $content = r229ApprovalRecord(r229Fields($s));
     r229Write($s['maint'], [
-        $record => r229ApprovalRecord(r229Fields($s)),
+        $record => $content,
+        "{$record}.sig" => r229Sign($s['owner_key'], $content),
         $evidence => "Owner approval: deploy `{$s['sha']}`.\n",
     ]);
     $link = $which === 'record' ? $record : $evidence;
@@ -749,10 +777,20 @@ it('refuses an approval record or evidence document that is a symlink', function
     expect($r['output'])->toContain('is not a regular file');
 })->with(['record', 'evidence']);
 
+/** The one lock root the bootstrap would pick for this user, and the other one (rule 231). */
+function r229LockRoots(): array
+{
+    $chosen = (is_dir('/run') && is_writable('/run')) ? '/run/daengtisiams-deploy' : '/var/lock/daengtisiams-deploy';
+
+    return [$chosen, $chosen === '/run/daengtisiams-deploy' ? '/var/lock/daengtisiams-deploy' : '/run/daengtisiams-deploy'];
+}
+
 it('refuses a direct run of the real deploy or rollback program with forged bootstrap variables', function (string $program, array $lock, int $exit, string $reason) {
     r229RequiresTooling();
     $s = r229Sandbox();
     $forged = str_repeat('b', 40);
+    [$root, $other] = r229LockRoots();
+    $lock = array_map(fn (string $v) => strtr($v, ['@root' => $root, '@other' => $other]), $lock);
     $env = array_merge([
         'DMS_DEPLOY_SNAPSHOT_DIR' => base_path(),
         'DMS_DEPLOY_APP_DIR' => $s['app'],
@@ -775,10 +813,16 @@ it('refuses a direct run of the real deploy or rollback program with forged boot
         ->and(r229Git($s['app'], ['rev-parse', 'HEAD']))->toBe($s['base']);
 })->with([
     'deploy, no lock' => ['deploy', [], 77, 'is not in the trusted lock root'],
-    'deploy, a lock elsewhere' => ['deploy', ['DMS_DEPLOY_LOCK_FILE' => '/tmp/deploy.lock'], 77, 'is not in the trusted lock root'],
-    'deploy, the real lock root but not its snapshot' => ['deploy', ['DMS_DEPLOY_LOCK_FILE' => '/run/daengtisiams-deploy/deploy.lock'], 77, "is not this run's trusted snapshot"],
+    'deploy, a lock elsewhere' => ['deploy', ['DMS_DEPLOY_LOCK_FILE' => '/tmp/release.lock'], 77, 'is not in the trusted lock root'],
+    // Rule 231: only the lock root the bootstrap would pick on this host — a
+    // second root would let two runs hold "the" lock at once.
+    'deploy, the other lock root' => ['deploy', ['DMS_DEPLOY_LOCK_FILE' => '@other/release.lock'], 77, 'is not in the trusted lock root'],
+    'deploy, a pre-231 role lock' => ['deploy', ['DMS_DEPLOY_LOCK_FILE' => '@root/deploy.lock'], 77, "is not this run's trusted snapshot"],
+    'deploy, the release lock but not its snapshot' => ['deploy', ['DMS_DEPLOY_LOCK_FILE' => '@root/release.lock'], 77, "is not this run's trusted snapshot"],
     'rollback, no lock' => ['rollback', [], 2, 'is not in the trusted lock root'],
-    'rollback, the real lock root but not its snapshot' => ['rollback', ['DMS_DEPLOY_LOCK_FILE' => '/run/daengtisiams-deploy/rollback.lock'], 2, "is not this run's trusted snapshot"],
+    'rollback, the other lock root' => ['rollback', ['DMS_DEPLOY_LOCK_FILE' => '@other/release.lock'], 2, 'is not in the trusted lock root'],
+    'rollback, a pre-231 role lock' => ['rollback', ['DMS_DEPLOY_LOCK_FILE' => '@root/rollback.lock'], 2, "is not this run's trusted snapshot"],
+    'rollback, the release lock but not its snapshot' => ['rollback', ['DMS_DEPLOY_LOCK_FILE' => '@root/release.lock'], 2, "is not this run's trusted snapshot"],
 ]);
 
 it('lays only the live runtime identity over the snapshot, never approved bytes', function (string $rel, int $exit) {

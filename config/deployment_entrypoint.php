@@ -235,6 +235,26 @@ return [
                     'could not list the changes',
                     'dms_release_approval_regular_file',
                     'is not a GitHub URL',
+                    // Rule 231 (DMS-RELEASE-GUARD-TRUST-HARDENING-1): signed
+                    // approvals verified against a host trust anchor outside the
+                    // repository, bound to the host key, spent by one deploy.
+                    'DMS_RELEASE_APPROVAL_CONTRACT=2',
+                    'ssh-keygen -Y verify',
+                    'dms-release-approval',
+                    'an unsigned record is not an approval',
+                    'DMS_APPROVAL_HOST_KEY_SHA256',
+                    'dms_trusted_file "release trust anchor"',
+                    'dms_release_approval_spent "$authority" "$app_dir" "$deploy_uid" "$release_id"',
+                ],
+            ],
+            'trusted_path_library' => [
+                'path' => 'scripts/lib/trusted-path.sh',
+                'required_markers' => [
+                    'dms_trusted_dir',
+                    'dms_trusted_ancestors',
+                    'dms_trusted_entry',
+                    'lies inside the application checkout',
+                    'readlink -m',
                 ],
             ],
             'bootstrap' => [
@@ -248,6 +268,18 @@ return [
                     'runs only its own program',
                     'only deploy/runtime-identity.conf may be overlaid',
                     'DMS_DEPLOY_APPROVED_SHA',
+                    // Rule 231: one lock for deploy and rollback, the pre-231
+                    // role locks held too, recovery of interrupted runs.
+                    'LOCK_FILE="${LOCK_DIR}/release.lock"',
+                    'exec 8>"${LOCK_DIR}/deploy.lock"',
+                    'exec 7>"${LOCK_DIR}/rollback.lock"',
+                    'DEPLOY_APPROVAL_SIGNER=',
+                    'DEPLOY_STALE_SNAPSHOT_RECONCILED',
+                    'stale git lock',
+                    'dms_release_approval_record_spent',
+                ],
+                'forbidden_markers' => [
+                    'LOCK_FILE="${LOCK_DIR}/${ROLE}.lock"',
                 ],
             ],
             'deploy_script' => [
@@ -258,6 +290,7 @@ return [
                     'DEPLOYMENT=DENIED',
                     'not running under the deploy lock',
                     "is not this run's trusted snapshot",
+                    '"${DEPLOY_LOCK_ROOT}/release.lock"',
                 ],
             ],
             'runner_script' => [
@@ -267,18 +300,33 @@ return [
                     'dms_release_approval_verify',
                     'approved_sha=',
                     'DEPLOY_SCRIPT="${RUNNER_DIR}/deploy-vps.sh"',
+                    // Rule 231: trusted evidence directory from the authority,
+                    // exclusive run claims, signer and host key recorded.
+                    'DMS_PRODUCTION_DEPLOY_EVIDENCE_DIR',
+                    'dms_trusted_dir_prepare',
+                    'claim_run_id',
+                    'set -C',
+                    'approval_signer_key=',
+                    'host_key_sha256=',
+                    'launcher_pid=',
+                    'launcher_start=',
                 ],
-                // The deploy program is never taken from the environment again.
+                // The deploy program is never taken from the environment again,
+                // and evidence never again lives in the runtime-writable tree.
                 'forbidden_markers' => [
                     '${DEPLOY_SCRIPT:-',
+                    'RUN_DIR="storage/logs/deploy-runner"',
                 ],
             ],
             'runner_evidence' => [
                 'path' => 'scripts/lib/deploy-runner-evidence.sh',
                 'required_markers' => [
-                    'DMS_RUNNER_EVIDENCE_CONTRACT=3',
+                    'DMS_RUNNER_EVIDENCE_CONTRACT=4',
                     'dms_runner_assert_approval_log',
                     'dms_runner_assert_approval_blob',
+                    'dms_runner_assert_trusted_run',
+                    'dms_runner_assert_signature_blob',
+                    'INTERRUPTED',
                 ],
             ],
             'release_wrapper' => [
@@ -297,6 +345,13 @@ return [
                 'required_markers' => [
                     'merge-base --is-ancestor "$ROLLBACK_TARGET_SHA"',
                     'not running under the rollback lock',
+                    '"${ROLLBACK_LOCK_ROOT}/release.lock"',
+                    'is ambiguous',
+                    'is an abbreviated commit id',
+                    'refs/tags/${TARGET_REF}^{commit}',
+                ],
+                'forbidden_markers' => [
+                    'git fetch --tags --prune origin',
                 ],
             ],
         ],
@@ -306,6 +361,18 @@ return [
             'DMS_PRODUCTION_REPOSITORY',
             'DMS_PRODUCTION_DEPLOY_BRANCH',
             'DMS_PRODUCTION_RELEASE_APPROVERS',
+            'DMS_PRODUCTION_HOST_KEY_SHA256',
+            'DMS_PRODUCTION_HOST_KEY_FILE',
+            'DMS_PRODUCTION_RELEASE_TRUST_ANCHOR',
+            'DMS_PRODUCTION_DEPLOY_EVIDENCE_DIR',
+        ],
+        // Rule 231: these facts are fixed for production. The trust anchor and the
+        // evidence directory live outside the checkout and outside anything the
+        // runtime user owns; the guard re-checks ownership and modes at run time.
+        'pinned_authority_values' => [
+            'DMS_PRODUCTION_HOST_KEY_FILE' => '/etc/ssh/ssh_host_ed25519_key.pub',
+            'DMS_PRODUCTION_RELEASE_TRUST_ANCHOR' => '/etc/daengtisiams/release-approvers.allowed_signers',
+            'DMS_PRODUCTION_DEPLOY_EVIDENCE_DIR' => '/var/lib/daengtisiams-deploy/runner',
         ],
         // deploy-vps.sh pins its branch as a literal; it must be the authority's.
         'deploy_branch_assignment_prefix' => 'BRANCH="',

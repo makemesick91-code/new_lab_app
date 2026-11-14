@@ -143,6 +143,13 @@ Nomor ADR berikutnya yang tersedia: **0017**.
   `.cursor/rules/229-exact-approved-release-sha-guard.mdc`. Pertama kali dipakai di produksi pada 2026-11-14 lewat
   bootstrap §6c (deploy `20261114-011345`, GO tag `dms-rme-revision-program-8d-go`):
   [dms-rme-revision-program-8d](sprints/dms-rme-revision-program-8d.md) §12. Deploy Biznet berikutnya memakai §6b.
+- Penguatan kepercayaan guard rilis (rule 231, 2026-11-14): record persetujuan kontrak 2 wajib ditandatangani owner
+  (`ssh-keygen -Y`, namespace `dms-release-approval`) dan diverifikasi terhadap trust anchor di host (di luar repo),
+  terikat ke host key SSH, sekali pakai; bukti runner kontrak 4 di direktori root-only di luar checkout; satu lock
+  untuk deploy dan rollback; status `INTERRUPTED` dan pemulihan run yang terputus —
+  [dms-release-guard-trust-hardening-1](sprints/dms-release-guard-trust-hardening-1.md) (audit, threat model,
+  diagram, keputusan owner yang masih terbuka termasuk DEPLOY-PRIVSEP), aturan kanonik
+  `.cursor/rules/231-release-guard-trust-hardening.mdc`. Deploy pertama yang membawanya memakai bootstrap §6d.
 - Keamanan runtime: [dedicated-runtime-identity-runbook](runbooks/dedicated-runtime-identity-runbook.md),
   [production-secret-file-permissions-runbook](runbooks/production-secret-file-permissions-runbook.md),
   [security-pii-compliance-hardening-governance](architecture/security-pii-compliance-hardening-governance.md).

@@ -23,8 +23,18 @@ uses()->group('Deploy', 'Security', 'ReleaseSafety');
  *
  * Every observed value is a parameter of scripts/lib/deploy-runner-evidence.sh,
  * so nothing here needs root, a server or a real deploy.
+ *
+ * Contract 4 (rule 231, DMS-RELEASE-GUARD-TRUST-HARDENING-1): the run directory
+ * is the deploy identity's own private directory outside the checkout, every
+ * evidence file is a regular file of that identity, and the record binds the
+ * host key, the directory and the approval's signature and signer.
  */
 const DRE_HOST = 'DaengtisiaMS';
+// The production authority's pinned host key (deploy/production-host.conf) —
+// passed as the observed key, as if verified on production.
+const DRE_HOST_KEY = 'SHA256:i3AsyL0oSwqSAwNfgv215Cl01i87buYtH5ugTe8O2bc';
+const DRE_SIGNER = 'SHA256:AbCdEfGhIjKlMnOpQrStUvWxYz0123456789+/AbCdE';
+const DRE_BOOT = '00000000-1111-2222-3333-444444444444';
 const DRE_FROZEN = 'srv1730088';
 const DRE_NOW = 1793000000; // 2026-10-26T... fixed clock for the verifier
 const DRE_ID = '20261104-020000';
@@ -46,12 +56,15 @@ function dreIso(int $epoch): string
     return gmdate('Y-m-d\TH:i:s\Z', $epoch);
 }
 
-/** A temporary checkout (git, one commit) with an empty runner directory. */
+/**
+ * A temporary checkout (git, one commit) and an empty runner directory OUTSIDE
+ * it, private to this uid (rule 231).
+ */
 function dreTree(): array
 {
     $app = tempArtifactDir('dre-app-');
-    $runDir = "{$app}/storage/logs/deploy-runner";
-    mkdir($runDir, 0o700, true);
+    $runDir = tempArtifactDir('dre-evidence-');
+    dreRunDir($runDir);
     foreach ([['init', '-q'], ['-c', 'user.email=dre@test', '-c', 'user.name=dre', 'commit', '-q', '--allow-empty', '-m', 'dre']] as $args) {
         $r = dreRun(array_merge(['git', '-C', $app], $args));
         expect($r['exit'])->toBe(0, $r['output']);
@@ -59,9 +72,47 @@ function dreTree(): array
     $sha = trim(dreRun(['git', '-C', $app, 'rev-parse', 'HEAD'])['output']);
     dreApproved($sha);
     dreApprovalBlob(dreWriteApprovalBlob($app, 'dms-fixture-release', $sha));
-    dreApprovalTip(dreWriteApprovalCommit($app, $sha, dreApprovalBlob()));
+    dreSignatureBlob(dreWriteBlob($app, "-----BEGIN SSH SIGNATURE-----\nfixture\n-----END SSH SIGNATURE-----\n"));
+    dreApprovalTip(dreWriteApprovalCommit($app, $sha, dreApprovalBlob(), dreSignatureBlob()));
 
     return [$app, $runDir, $sha];
+}
+
+/** The current test's run directory (the record's evidence_dir). */
+function dreRunDir(?string $set = null): string
+{
+    static $dir = '';
+    if ($set !== null) {
+        $dir = $set;
+    }
+
+    return $dir;
+}
+
+/** The approval signature blob the current run cites (rule 231). */
+function dreSignatureBlob(?string $set = null): string
+{
+    static $blob = '';
+    if ($set !== null) {
+        $blob = $set;
+    }
+
+    return $blob;
+}
+
+function dreWriteBlob(string $app, string $content): string
+{
+    $process = new Process(['git', '-C', $app, 'hash-object', '-w', '--stdin']);
+    $process->setInput($content);
+    $process->mustRun();
+
+    return trim($process->getOutput());
+}
+
+/** The observed values verify_run takes on production: host key, boot id, deploy uid. */
+function dreObserved(): array
+{
+    return [DRE_HOST_KEY, DRE_BOOT, trim((string) shell_exec('id -u'))];
 }
 
 /**
@@ -93,7 +144,7 @@ function dreApprovalBlob(?string $set = null): string
 function dreWriteApprovalBlob(string $app, string $release, string $sha, string $extra = ''): string
 {
     $process = new Process(['git', '-C', $app, 'hash-object', '-w', '--stdin']);
-    $process->setInput("DMS_APPROVAL_CONTRACT=1\nDMS_APPROVAL_RELEASE_ID={$release}\nDMS_APPROVAL_TARGET_SHA={$sha}\n{$extra}");
+    $process->setInput("DMS_APPROVAL_CONTRACT=2\nDMS_APPROVAL_RELEASE_ID={$release}\nDMS_APPROVAL_TARGET_SHA={$sha}\n{$extra}");
     $process->mustRun();
 
     return trim($process->getOutput());
@@ -113,31 +164,39 @@ function dreApprovalTip(?string $set = null): string
 }
 
 /**
- * A commit on top of $parent whose tree carries $blob at DRE_APPROVAL_PATH,
- * built with plumbing so the checkout's HEAD never moves.
+ * A commit on top of $parent whose tree carries $blob at DRE_APPROVAL_PATH (and
+ * $signature at its .sig), built with plumbing so the checkout's HEAD never moves.
  */
-function dreWriteApprovalCommit(string $app, string $parent, string $blob): string
+function dreWriteApprovalCommit(string $app, string $parent, string $blob, ?string $signature = null): string
 {
     $index = tempArtifactFile('dre-index-');
     @unlink($index);
     $env = ['GIT_INDEX_FILE' => $index];
     (new Process(['git', '-C', $app, 'read-tree', $parent], null, $env))->mustRun();
     (new Process(['git', '-C', $app, 'update-index', '--add', '--cacheinfo', "100644,{$blob},".DRE_APPROVAL_PATH], null, $env))->mustRun();
+    if ($signature !== null) {
+        (new Process(['git', '-C', $app, 'update-index', '--add', '--cacheinfo', "100644,{$signature},".DRE_APPROVAL_PATH.'.sig'], null, $env))->mustRun();
+    }
     $tree = trim((new Process(['git', '-C', $app, 'write-tree'], null, $env))->mustRun()->getOutput());
 
     return trim((new Process(['git', '-C', $app, '-c', 'user.email=dre@test', '-c', 'user.name=dre', 'commit-tree', $tree, '-p', $parent, '-m', 'approve'], null, $env))->mustRun()->getOutput());
 }
 
-/** A complete, valid contract-3 binding record (host-bound and approval-bound). */
+/** A complete, valid contract-4 binding record (host-, approval-, signature- and directory-bound). */
 function dreRecord(string $id = DRE_ID, array $overrides = []): array
 {
     return array_merge([
         'host' => DRE_HOST,
         'deploy_id' => $id,
         'started_at' => dreIso(DRE_NOW - 600),
-        'runner_contract' => '3',
+        'runner_contract' => '4',
         'runner_sha256' => str_repeat('ab', 32),
         'program' => 'scripts/deploy-vps.sh',
+        'evidence_dir' => dreRunDir(),
+        'host_key_sha256' => DRE_HOST_KEY,
+        'boot_id' => DRE_BOOT,
+        'approval_signature_blob' => dreSignatureBlob(),
+        'approval_signer_key' => DRE_SIGNER,
         'release_id' => 'dms-fixture-release',
         'approved_sha' => dreApproved(),
         'approval_record' => dreApprovalTip().':'.DRE_APPROVAL_PATH,
@@ -156,6 +215,7 @@ function dreSuccessLog(string $sha, string $host = DRE_HOST, ?string $approved =
         'RELEASE APPROVAL: GO',
         "DEPLOY_APPROVED_SHA={$approved}",
         'DEPLOY_APPROVAL_RECORD='.dreApprovalTip().':'.DRE_APPROVAL_PATH.' blob='.dreApprovalBlob(),
+        'DEPLOY_APPROVAL_SIGNER='.DRE_SIGNER,
         '== Production host preflight (before any mutation) ==',
         "PASS: hostname is the production host '{$host}'",
         'PRODUCTION HOST PREFLIGHT: GO',
@@ -193,9 +253,9 @@ function dreLib(string $function, array $args): array
     ));
 }
 
-function dreVerify(string $runDir, string $app, string $id = DRE_ID, string $host = DRE_HOST, int $now = DRE_NOW): array
+function dreVerify(string $runDir, string $app, string $id = DRE_ID, string $host = DRE_HOST, int $now = DRE_NOW, ?array $observed = null): array
 {
-    return dreLib('dms_runner_verify_run', [$runDir, $id, $host, base_path('deploy/production-host.conf'), $app, (string) $now]);
+    return dreLib('dms_runner_verify_run', array_merge([$runDir, $id, $host, base_path('deploy/production-host.conf'), $app, (string) $now], $observed ?? dreObserved()));
 }
 
 function dreVerifyTransition(string $runDir, string $app, string $expected, string $id = DRE_ID, string $host = DRE_HOST, int $now = DRE_NOW): array
@@ -227,7 +287,8 @@ it('accepts a run only when host, time, identifier, target, runner and result al
     expect($result['exit'])->toBe(0, $result['output'])
         ->and($result['output'])->toContain('deploy_id='.DRE_ID)
         ->and($result['output'])->toContain('recorded on '.DRE_HOST.' (declared production host)')
-        ->and($result['output'])->toContain('runner_contract=3 runner_sha256='.str_repeat('ab', 32))
+        ->and($result['output'])->toContain('runner_contract=4 runner_sha256='.str_repeat('ab', 32))
+        ->and($result['output'])->toContain('approval signed with '.DRE_SIGNER.'; host key '.DRE_HOST_KEY.'; evidence '.$runDir)
         ->and($result['output'])->toContain("release_id=dms-fixture-release approved_sha={$sha}")
         ->and($result['output'])->toContain("DEPLOY_APPROVED_TARGET_MATCH=YES ({$sha})")
         ->and($result['output'])->toContain('started_at='.dreIso(DRE_NOW - 600).' finished_at='.dreIso(DRE_NOW - 300))
@@ -256,6 +317,47 @@ it('refuses a run whose evidence does not prove it', function (callable $mutate,
     'pre-binding record (host only)' => [fn (array $r) => ['record' => ['host' => DRE_HOST]] + $r, 'INCOMPATIBLE'],
     'older evidence contract' => [fn (array $r) => ['record' => dreRecord(DRE_ID, ['runner_contract' => '1'])] + $r, 'INCOMPATIBLE'],
     'host-bound but not approval-bound (contract 2)' => [fn (array $r) => ['record' => dreRecord(DRE_ID, ['runner_contract' => '2'])] + $r, 'INCOMPATIBLE'],
+    'written to the runtime-writable directory (contract 3)' => [fn (array $r) => ['record' => dreRecord(DRE_ID, ['runner_contract' => '3'])] + $r, 'INCOMPATIBLE'],
+    // 8. Trusted evidence (rule 231).
+    'record written in another directory' => [fn (array $r) => ['record' => dreRecord(DRE_ID, ['evidence_dir' => '/var/www/app/storage/logs/deploy-runner'])] + $r, 'MISMATCHED'],
+    'record names no host key' => [fn (array $r) => ['record' => dreRecord(DRE_ID, ['host_key_sha256' => null])] + $r, 'FOREIGN'],
+    'record names another host key (copied from a clone)' => [fn (array $r) => ['record' => dreRecord(DRE_ID, ['host_key_sha256' => 'SHA256:'.str_repeat('Z', 43)])] + $r, 'FOREIGN'],
+    'record names no approval signature' => [fn (array $r) => ['record' => dreRecord(DRE_ID, ['approval_signature_blob' => null])] + $r, 'INCOMPLETE'],
+    'record names no signer key' => [fn (array $r) => ['record' => dreRecord(DRE_ID, ['approval_signer_key' => null])] + $r, 'INCOMPLETE'],
+    'log names another signer' => [fn (array $r, string $sha) => ['log' => str_replace(DRE_SIGNER, 'SHA256:'.str_repeat('Q', 43), dreSuccessLog($sha))] + $r, 'MISMATCHED'],
+    'log names no signer' => [fn (array $r, string $sha) => ['log' => array_values(array_filter(dreSuccessLog($sha), fn ($l) => ! str_starts_with($l, 'DEPLOY_APPROVAL_SIGNER=')))] + $r, 'MISMATCHED'],
+    'signature git never held' => [fn (array $r) => ['record' => dreRecord(DRE_ID, ['approval_signature_blob' => str_repeat('8', 40)])] + $r, 'UNVERIFIED'],
+    'the bootstrap verified another signed version of the record' => [function (array $r, string $sha, string $app) {
+        // Genuine, approving this release and commit, at a commit carrying it —
+        // but not the record the runner verified before launch.
+        $other = dreWriteApprovalBlob($app, 'dms-fixture-release', $sha, "# re-signed\n");
+        $tip = dreWriteApprovalCommit($app, $sha, $other, dreSignatureBlob());
+
+        return ['log' => str_replace(dreApprovalTip().':'.DRE_APPROVAL_PATH.' blob='.dreApprovalBlob(), "{$tip}:".DRE_APPROVAL_PATH." blob={$other}", dreSuccessLog($sha))] + $r;
+    }, 'MISMATCHED'],
+    'signature is not the .sig at the approval commit' => [fn (array $r, string $sha, string $app) => ['record' => dreRecord(DRE_ID, ['approval_signature_blob' => dreWriteBlob($app, "-----BEGIN SSH SIGNATURE-----\nother\n")])] + $r, 'MISMATCHED'],
+    'the run directory is group-writable' => [function (array $r) {
+        chmod(dreRunDir(), 0o770);
+
+        return $r;
+    }, 'UNTRUSTED'],
+    'the record is a symlink to a forged record' => [function (array $r) {
+        $forged = tempArtifactDir('dre-forged-').'/forged.host';
+        $lines = [];
+        foreach (dreRecord() as $k => $v) {
+            $lines[] = "{$k}={$v}";
+        }
+        file_put_contents($forged, implode("\n", $lines)."\n");
+        symlink($forged, dreRunDir().'/deploy-'.DRE_ID.'.host');
+
+        return ['record' => null] + $r;
+    }, 'TAMPERED'],
+    'the log is writable by others' => [function (array $r, string $sha) {
+        dreWriteRun(dreRunDir(), DRE_ID, null, null, dreSuccessLog($sha));
+        chmod(dreRunDir().'/deploy-'.DRE_ID.'.log', 0o666);
+
+        return ['log' => null] + $r;
+    }, 'TAMPERED'],
     // 7. Approved release (rule 229).
     'record names no approved commit' => [fn (array $r) => ['record' => dreRecord(DRE_ID, ['approved_sha' => null])] + $r, 'INCOMPLETE'],
     'record names no release' => [fn (array $r) => ['record' => dreRecord(DRE_ID, ['release_id' => null])] + $r, 'INCOMPLETE'],
@@ -345,6 +447,92 @@ it('reports pending when the run has no status yet', function () {
     expect(dreVerify($runDir, $app)['exit'])->toBe(3);
 });
 
+it('reports a run whose launcher is still alive as pending, and one whose launcher is gone as INTERRUPTED', function (string $case, int $exit, string $needle) {
+    [$app, $runDir] = dreTree();
+    $launcher = null;
+    $overrides = ['finished_at' => null, 'result_exit' => null];
+    if ($case === 'alive' || $case === 'reused pid') {
+        // A process shaped like the runner's detached launcher.
+        $launcher = new Process(['bash', '-c', 'sleep 30; :', 'dms-deploy-runner', 'x']);
+        $launcher->start();
+        $overrides['launcher_pid'] = (string) $launcher->getPid();
+        // The start time the runner records; a reused pid has another one.
+        $overrides['launcher_start'] = $case === 'alive' ? dreProcStart((int) $launcher->getPid()) : '1';
+    } elseif ($case === 'gone') {
+        // getPid() is null once a process has ended: take it while it runs.
+        $dead = new Process(['sleep', '0.2']);
+        $dead->start();
+        $overrides['launcher_pid'] = (string) $dead->getPid();
+        $dead->wait();
+    } elseif ($case === 'another boot') {
+        $overrides['boot_id'] = 'ffffffff-1111-2222-3333-444444444444';
+    } elseif ($case === 'not a launcher') {
+        $overrides['launcher_pid'] = (string) getmypid();
+    }
+    dreWriteRun($runDir, DRE_ID, null, dreRecord(DRE_ID, $overrides), ['half way']);
+
+    try {
+        $result = dreVerify($runDir, $app);
+    } finally {
+        $launcher?->stop(0);
+    }
+
+    expect($result['exit'])->toBe($exit, $result['output'])
+        ->and($result['output'])->toContain($needle)
+        ->and($result['output'])->not->toContain('DEPLOY RUNNER OK');
+})->with([
+    'the launcher is alive' => ['alive', 3, 'status pending'],
+    'the launcher is gone' => ['gone', 4, 'DEPLOY RUNNER STATUS INTERRUPTED'],
+    'the pid now belongs to another launcher-shaped process' => ['reused pid', 4, 'DEPLOY RUNNER STATUS INTERRUPTED'],
+    'the pid is reused by something else' => ['not a launcher', 4, 'DEPLOY RUNNER STATUS INTERRUPTED'],
+    'the host restarted since' => ['another boot', 4, 'DEPLOY RUNNER STATUS INTERRUPTED'],
+]);
+
+/** /proc/<pid>/stat field 22 (start time), counted after the command name's last ')'. */
+function dreProcStart(int $pid): string
+{
+    $stat = (string) file_get_contents("/proc/{$pid}/stat");
+    $fields = preg_split('/\s+/', trim(substr($stat, (int) strrpos($stat, ')') + 2))) ?: [];
+
+    return (string) ($fields[19] ?? '');
+}
+
+it('says a run it holds no evidence for is NOT-FOUND, never pending', function () {
+    [$app, $runDir] = dreTree();
+
+    $result = dreVerify($runDir, $app, '20261114-011345');
+
+    expect($result['exit'])->toBe(4, $result['output'])
+        ->and($result['output'])->toContain('DEPLOY RUNNER STATUS NOT-FOUND')
+        ->and($result['output'])->toContain('storage/logs/deploy-runner')
+        ->and($result['output'])->not->toContain('status pending');
+});
+
+it('refuses evidence kept inside the checkout or in a directory it does not own', function (string $case) {
+    [$app, , $sha] = dreTree();
+    $runDir = match ($case) {
+        'inside the checkout' => "{$app}/storage/logs/deploy-runner",
+        'a symlink to a private directory' => tempArtifactDir('dre-link-').'/runner',
+        'owned by another identity' => tempArtifactDir('dre-other-'),
+    };
+    if ($case === 'inside the checkout') {
+        mkdir($runDir, 0o700, true);
+    } elseif ($case === 'a symlink to a private directory') {
+        symlink(tempArtifactDir('dre-real-'), $runDir);
+    }
+    dreRunDir($runDir);
+    dreWriteRun($runDir, DRE_ID, "exit=0\n", dreRecord(), dreSuccessLog($sha));
+    [$key, $boot, $uid] = dreObserved();
+    // "Another identity": the verifier runs as a uid that does not own the directory.
+    $observed = [$key, $boot, $case === 'owned by another identity' ? (string) ((int) $uid + 1) : $uid];
+
+    $result = dreVerify($runDir, $app, observed: $observed);
+
+    expect($result['exit'])->toBe(4, $result['output'])
+        ->and($result['output'])->toContain('DEPLOY RUNNER STATUS UNTRUSTED')
+        ->and($result['output'])->not->toContain('DEPLOY RUNNER OK');
+})->with(['inside the checkout', 'a symlink to a private directory', 'owned by another identity']);
+
 it('refuses the exact evidence the migration copied, even though its target is HEAD', function () {
     // Hostinger's last deploy pinned the commit the copied Biznet checkout is
     // at, so the copied log passes "pinned target == HEAD". It is still not
@@ -354,7 +542,7 @@ it('refuses the exact evidence the migration copied, even though its target is H
     dreWriteRun($runDir, '20261102-061350', "exit=0\n", null, $hostingerLog);
     symlink('deploy-20261102-061350.status', "{$runDir}/latest.status");
 
-    $latest = dreLib('dms_runner_verify_latest', [$runDir, DRE_HOST, base_path('deploy/production-host.conf'), $app, (string) DRE_NOW]);
+    $latest = dreLib('dms_runner_verify_latest', array_merge([$runDir, DRE_HOST, base_path('deploy/production-host.conf'), $app, (string) DRE_NOW], dreObserved()));
     expect($latest['exit'])->toBe(4)->and($latest['output'])->toContain('DEPLOY RUNNER STATUS UNBOUND');
 
     // A forged record naming the production host does not rescue it either.
@@ -374,7 +562,7 @@ it('resolves latest.status only to a run inside the runner directory', function 
         symlink($link, "{$runDir}/latest.status");
     }
 
-    $result = dreLib('dms_runner_verify_latest', [$runDir, DRE_HOST, base_path('deploy/production-host.conf'), $app, (string) DRE_NOW]);
+    $result = dreLib('dms_runner_verify_latest', array_merge([$runDir, DRE_HOST, base_path('deploy/production-host.conf'), $app, (string) DRE_NOW], dreObserved()));
 
     expect($result['exit'])->toBe($exit, $result['output'])->and($result['output'])->toContain($needle);
 })->with([
@@ -421,10 +609,10 @@ it('binds a real run end to end and proves it by identifier', function () {
     expect($start['exit'])->toBe(0, $start['output']);
     expect(preg_match('/deploy_id=(\d{8}-\d{6})/', $start['output'], $m))->toBe(1);
     $id = $m[1];
-    expect(r229WaitForStatus($s['app'], $id))->toBe('exit=0');
+    expect(r229WaitForStatus($s, $id))->toBe('exit=0');
 
-    $record = (string) file_get_contents("{$s['app']}/storage/logs/deploy-runner/deploy-{$id}.host");
-    foreach (['host='.trim((string) gethostname()), "deploy_id={$id}", 'runner_contract=3', 'started_at=', 'finished_at=', 'result_exit=0', "approved_sha={$s['sha']}"] as $line) {
+    $record = (string) file_get_contents(r229EvidenceFile($s, "deploy-{$id}.host"));
+    foreach (['host='.trim((string) gethostname()), "deploy_id={$id}", 'runner_contract=4', 'started_at=', 'finished_at=', 'result_exit=0', "approved_sha={$s['sha']}", "evidence_dir={$s['evidence']}"] as $line) {
         expect($record)->toContain($line);
     }
     expect($record)->toMatch('/^runner_sha256=[0-9a-f]{64}$/m')
@@ -444,7 +632,7 @@ it('reports a real failing run as FAILED', function () {
 
     $start = r229Runner($s, ['start', '--release-id', $s['release'], '--approved-sha', $s['sha']]);
     preg_match('/deploy_id=(\d{8}-\d{6})/', $start['output'], $m);
-    expect(r229WaitForStatus($s['app'], $m[1]))->toBe('exit=7');
+    expect(r229WaitForStatus($s, $m[1]))->toBe('exit=7');
 
     $result = r229Runner($s, ['verify', $m[1]]);
     expect($result['exit'])->toBe(1, $result['output'])
@@ -609,7 +797,7 @@ it('turns the old false OK into pending', function () {
     dreQuarantine($runDir, true);
 
     expect(file_exists("{$runDir}/latest.status"))->toBeFalse();
-    $latest = dreLib('dms_runner_verify_latest', [$runDir, DRE_HOST, base_path('deploy/production-host.conf'), $app, (string) DRE_NOW]);
+    $latest = dreLib('dms_runner_verify_latest', array_merge([$runDir, DRE_HOST, base_path('deploy/production-host.conf'), $app, (string) DRE_NOW], dreObserved()));
     expect($latest['exit'])->toBe(3)->and($latest['output'])->toContain('status pending');
 });
 

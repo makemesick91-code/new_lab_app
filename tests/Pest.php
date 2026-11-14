@@ -2251,6 +2251,12 @@ function aiProjectMemory(): string
  * REAL scripts/deploy-immutable-exec.sh with a private lock directory and then
  * fast-forwards the sandbox checkout, exactly as scripts/deploy-vps.sh does.
  *
+ * Rule 231 (DMS-RELEASE-GUARD-TRUST-HARDENING-1): the sandbox also holds an
+ * ephemeral approver key and an intruder key, a release trust anchor naming
+ * only the approver, a fake SSH host key, and the deploy evidence directory —
+ * all OUTSIDE the checkout, as on production. Records are contract 2 and are
+ * signed with the approver key unless a test says otherwise.
+ *
  * History on origin's base branch:
  *   base  — what "production" runs now ('guarded': the real deploy chain is
  *           already in the tree; 'legacy': a pre-guard runner, for the one-time
@@ -2297,6 +2303,7 @@ function r229DeployChain(string $program): array
         'scripts/deploy-immutable-exec.sh',
         'scripts/deploy-vps-runner.sh',
         'scripts/lib/release-approval.sh',
+        'scripts/lib/trusted-path.sh',
         'scripts/lib/deploy-runner-evidence.sh',
     ] as $relative) {
         $chain[$relative] = (string) file_get_contents(base_path($relative));
@@ -2353,6 +2360,47 @@ echo "DEPLOY OK: fixture"
 BASH;
 }
 
+/** An ephemeral ed25519 key pair (no passphrase) in $dir: [private key path, public key line]. */
+function r229KeyPair(string $dir, string $name): array
+{
+    $key = "{$dir}/{$name}";
+    $r = r229Run(['ssh-keygen', '-q', '-t', 'ed25519', '-N', '', '-C', "r229-{$name}", '-f', $key]);
+    if ($r['exit'] !== 0) {
+        throw new RuntimeException('ssh-keygen failed: '.$r['output']);
+    }
+
+    return [$key, trim((string) file_get_contents("{$key}.pub"))];
+}
+
+/** The SHA256 fingerprint ssh-keygen reports for a public key file. */
+function r229Fingerprint(string $publicKeyFile): string
+{
+    $r = r229Run(['ssh-keygen', '-l', '-E', 'sha256', '-f', $publicKeyFile]);
+    if ($r['exit'] !== 0 || preg_match('/ (SHA256:[A-Za-z0-9+\/]{43}) /', $r['output'], $m) !== 1) {
+        throw new RuntimeException('ssh-keygen -l failed: '.$r['output']);
+    }
+
+    return $m[1];
+}
+
+/** A detached SSH signature over exactly $content, as the approver makes it (rule 231). */
+function r229Sign(string $privateKey, string $content, string $namespace = 'dms-release-approval'): string
+{
+    $process = new Process(['ssh-keygen', '-q', '-Y', 'sign', '-f', $privateKey, '-n', $namespace], null, null, $content, 30);
+    $process->run();
+    if (! $process->isSuccessful()) {
+        throw new RuntimeException('ssh-keygen -Y sign failed: '.$process->getErrorOutput());
+    }
+
+    return $process->getOutput();
+}
+
+/** The uid the sandbox's deploy runs as (the deploy identity of rule 231). */
+function r229Uid(): string
+{
+    return trim((string) shell_exec('id -u'));
+}
+
 /** A release approval record, KEY=VALUE, with `null` dropping a key. */
 function r229ApprovalRecord(array $fields): string
 {
@@ -2370,8 +2418,11 @@ function r229ApprovalRecord(array $fields): string
  * @param  array{production?: string, branch?: string, release?: string, go_tag?: string, approve?: bool,
  *               approval?: array<string, string|null>, approval_raw?: string|null, evidence?: string|null,
  *               program?: string|null, approvers?: string, files?: array<string, string>,
- *               checkout?: string}  $options  `files` are added to the release commit;
- *               `checkout` leaves the checkout at 'base' (default) or at the 'release'
+ *               checkout?: string, sign?: string|null, signature_raw?: string|null,
+ *               authority?: array<string, string|null>}  $options  `files` are added to the release commit;
+ *               `checkout` leaves the checkout at 'base' (default) or at the 'release'; `sign` names the
+ *               key that signs the record ('owner' by default, 'intruder', or null for no signature);
+ *               `authority` overrides (null drops) authority keys
  */
 function r229Sandbox(array $options = []): array
 {
@@ -2380,21 +2431,46 @@ function r229Sandbox(array $options = []): array
     $origin = "{$root}/origin.git";
     $maint = "{$root}/maint";
     $lock = "{$root}/lock";
+    $trust = "{$root}/trust";
     mkdir($app, 0o700);
     mkdir($lock, 0o700);
+    mkdir($trust, 0o700);
+    mkdir("{$root}/hostkey", 0o700);
+
+    // Rule 231: the approver signs, the anchor names only the approver, the host
+    // has its own key. None of it is in the checkout.
+    [$ownerKey, $ownerPub] = r229KeyPair($trust, 'owner');
+    [$intruderKey] = r229KeyPair($trust, 'intruder');
+    r229KeyPair("{$root}/hostkey", 'ssh_host_ed25519_key');
+    $hostKeyFile = "{$root}/hostkey/ssh_host_ed25519_key.pub";
+    $hostKey = r229Fingerprint($hostKeyFile);
+    $anchor = "{$trust}/release-approvers.allowed_signers";
+    file_put_contents($anchor, 'owner namespaces="dms-release-approval" '.$ownerPub."\n");
+    chmod($anchor, 0o644);
+    $evidenceDir = "{$root}/evidence";
 
     $host = trim((string) gethostname());
     $branch = $options['branch'] ?? 'feature/r229-fixture-base';
     $release = $options['release'] ?? 'dms-fixture-release';
     $goTag = $options['go_tag'] ?? 'dms-fixture-release-go';
     $repository = "{$root}/origin";
-    $authority = implode("\n", [
-        "DMS_PRODUCTION_HOSTNAME={$host}",
-        'DMS_FROZEN_LEGACY_HOSTNAMES="srv1730088"',
-        "DMS_PRODUCTION_REPOSITORY={$repository}",
-        "DMS_PRODUCTION_DEPLOY_BRANCH={$branch}",
-        'DMS_PRODUCTION_RELEASE_APPROVERS="'.($options['approvers'] ?? 'owner').'"',
-    ])."\n";
+    $authorityValues = array_merge([
+        'DMS_PRODUCTION_HOSTNAME' => $host,
+        'DMS_FROZEN_LEGACY_HOSTNAMES' => '"srv1730088"',
+        'DMS_PRODUCTION_REPOSITORY' => $repository,
+        'DMS_PRODUCTION_DEPLOY_BRANCH' => $branch,
+        'DMS_PRODUCTION_RELEASE_APPROVERS' => '"'.($options['approvers'] ?? 'owner').'"',
+        'DMS_PRODUCTION_HOST_KEY_SHA256' => $hostKey,
+        'DMS_PRODUCTION_HOST_KEY_FILE' => $hostKeyFile,
+        'DMS_PRODUCTION_RELEASE_TRUST_ANCHOR' => $anchor,
+        'DMS_PRODUCTION_DEPLOY_EVIDENCE_DIR' => $evidenceDir,
+    ], $options['authority'] ?? []);
+    $authority = '';
+    foreach ($authorityValues as $key => $value) {
+        if ($value !== null) {
+            $authority .= "{$key}={$value}\n";
+        }
+    }
     file_put_contents("{$root}/authority.conf", $authority);
 
     $program = $options['program'] ?? r229FixtureProgram($branch, $lock);
@@ -2436,15 +2512,18 @@ function r229Sandbox(array $options = []): array
         'host' => $host, 'branch' => $branch, 'release' => $release, 'go_tag' => $goTag,
         'repository' => $repository, 'authority' => "{$root}/authority.conf",
         'base' => $base, 'sha' => $sha, 'tree' => $tree, 'tip' => $sha,
+        'trust' => $trust, 'anchor' => $anchor, 'owner_key' => $ownerKey, 'intruder_key' => $intruderKey,
+        'host_key' => $hostKey, 'host_key_file' => $hostKeyFile, 'evidence' => $evidenceDir,
     ];
 
     if ($options['approve'] ?? true) {
         $evidence = 'docs/sprints/'.$release.'.md';
         $record = $options['approval_raw'] ?? r229ApprovalRecord(array_merge([
-            'DMS_APPROVAL_CONTRACT' => '1',
+            'DMS_APPROVAL_CONTRACT' => '2',
             'DMS_APPROVAL_RELEASE_ID' => $release,
             'DMS_APPROVAL_REPOSITORY' => $repository,
             'DMS_APPROVAL_HOST' => $host,
+            'DMS_APPROVAL_HOST_KEY_SHA256' => $hostKey,
             'DMS_APPROVAL_BASE_BRANCH' => $branch,
             'DMS_APPROVAL_TARGET_SHA' => $sha,
             'DMS_APPROVAL_TARGET_TREE' => $tree,
@@ -2454,10 +2533,16 @@ function r229Sandbox(array $options = []): array
             'DMS_APPROVAL_NOT_AFTER' => gmdate('Y-m-d\TH:i:s\Z', time() + 3600),
             'DMS_APPROVAL_EVIDENCE' => $evidence,
         ], $options['approval'] ?? []));
-        $sandbox['tip'] = r229Push($sandbox, [
+        $signer = array_key_exists('sign', $options) ? $options['sign'] : 'owner';
+        $files = [
             "deploy/release-approvals/{$release}.approval" => $record,
             $evidence => $options['evidence'] ?? "# {$release}\n\nOwner approval: deploy `{$sha}` to production.\n",
-        ], 'approve the release');
+        ];
+        $signature = $options['signature_raw'] ?? ($signer === null ? null : r229Sign($signer === 'intruder' ? $intruderKey : $ownerKey, $record));
+        if ($signature !== null) {
+            $files["deploy/release-approvals/{$release}.approval.sig"] = $signature;
+        }
+        $sandbox['tip'] = r229Push($sandbox, $files, 'approve the release');
     }
 
     return $sandbox;
@@ -2494,12 +2579,15 @@ function r229Verify(array $sandbox, array $overrides = []): array
         'authority' => $sandbox['authority'],
         'host' => $sandbox['host'],
         'now' => (string) time(),
+        'host_key' => $sandbox['host_key'],
+        'uid' => r229Uid(),
     ], $overrides);
 
     return r229Run([
-        'bash', '-c', 'set -euo pipefail; source "$1"; shift; rc=0; dms_release_approval_verify "$@" || rc=$?; echo "rc=${rc} approved=${DMS_RELEASE_APPROVED_SHA:-}"; exit "$rc"',
+        'bash', '-c', 'set -euo pipefail; source "$1"; shift; rc=0; dms_release_approval_verify "$@" || rc=$?; echo "rc=${rc} approved=${DMS_RELEASE_APPROVED_SHA:-}"; echo "signer=${DMS_RELEASE_APPROVAL_SIGNER_KEY:-}"; exit "$rc"',
         '_', base_path('scripts/lib/release-approval.sh'),
         $args['app'], $args['branch'], $args['release'], $args['sha'], $args['authority'], $args['host'], $args['now'],
+        $args['host_key'], $args['uid'],
     ]);
 }
 
@@ -2513,9 +2601,15 @@ function r229Runner(array $sandbox, array $args, array $env = [], ?string $runne
     );
 }
 
-function r229WaitForStatus(string $app, string $id, int $seconds = 30): string
+/** The sandbox's deploy evidence directory (rule 231: outside the checkout). */
+function r229EvidenceFile(array $sandbox, string $name): string
 {
-    $status = "{$app}/storage/logs/deploy-runner/deploy-{$id}.status";
+    return "{$sandbox['evidence']}/{$name}";
+}
+
+function r229WaitForStatus(array $sandbox, string $id, int $seconds = 30): string
+{
+    $status = r229EvidenceFile($sandbox, "deploy-{$id}.status");
     $deadline = microtime(true) + $seconds;
     while (microtime(true) < $deadline && ! (is_file($status) && filesize($status) > 0)) {
         usleep(100_000);

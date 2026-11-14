@@ -63,11 +63,45 @@ if [ -z "${DMS_DEPLOY_SNAPSHOT_DIR:-}" ]; then
     exit 2
   fi
 
-  # Resolve the operator's tag/branch/short-sha to ONE exact commit before any
-  # mutation. Fetching updates refs only; the working tree is untouched.
-  echo "== Fetch tags/refs =="
-  git fetch --tags --prune origin
-  ROLLBACK_TARGET_SHA="$(git rev-parse --verify "${TARGET_REF}^{commit}" 2>/dev/null || true)"
+  # Resolve the operator's tag or commit to ONE exact commit before any mutation.
+  # Rule 231: this runs OUTSIDE the release lock, so it mutates as little as
+  # possible. A rollback target must be an ancestor of the running checkout, so
+  # it is normally already here: resolve locally first and fetch nothing. Only a
+  # tag this host has never fetched is fetched — that one tag, into a private
+  # ref — never `--tags --prune` (one rewritten tag on the remote made that
+  # fetch fail and blocked every rollback; pruning rewrote shared refs while a
+  # deploy could be running).
+  ROLLBACK_TARGET_SHA=""
+  if [[ "$TARGET_REF" =~ ^[0-9a-f]{40}$ ]]; then
+    # A full commit SHA is an object name, never looked up as a ref (a ref may
+    # carry that name too), and never fetched: a rollback target is an ancestor
+    # of the running checkout, so it is already in this object store.
+    if [ "$(git cat-file -t "$TARGET_REF" 2>/dev/null)" = "commit" ]; then
+      ROLLBACK_TARGET_SHA="$TARGET_REF"
+    fi
+  elif [[ "$TARGET_REF" =~ ^[0-9a-fA-F]{4,39}$ ]]; then
+    # An abbreviated SHA is ambiguous by construction: a tag or branch with that
+    # name outranks the commit in `git rev-parse` (several such refs even hide
+    # from --symbolic-full-name). Refuse it; never fetch it.
+    echo "FATAL: rollback target '${TARGET_REF}' is an abbreviated commit id and is ambiguous — pass the full 40-character commit SHA, or a GO tag name (rule 231)" >&2
+    exit 2
+  elif [[ "$TARGET_REF" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*$ ]] && [[ "$TARGET_REF" != *..* ]] \
+       && git check-ref-format "refs/tags/${TARGET_REF}" 2>/dev/null; then
+    # Any other name is a TAG, resolved only as refs/tags/<name> — never a branch,
+    # a remote-tracking ref or an object prefix.
+    ROLLBACK_TARGET_SHA="$(git rev-parse --verify --quiet "refs/tags/${TARGET_REF}^{commit}" 2>/dev/null || true)"
+    if [ -z "$ROLLBACK_TARGET_SHA" ]; then
+      echo "== Fetch the target tag (refs only) =="
+      ROLLBACK_FETCH_REF="refs/dms-rollback-target/$$-${RANDOM}${RANDOM}"
+      if git fetch --no-tags --quiet origin "+refs/tags/${TARGET_REF}:${ROLLBACK_FETCH_REF}" 2>/dev/null; then
+        ROLLBACK_TARGET_SHA="$(git rev-parse --verify --quiet "${ROLLBACK_FETCH_REF}^{commit}" 2>/dev/null || true)"
+      fi
+      git update-ref -d "$ROLLBACK_FETCH_REF" >/dev/null 2>&1 || true
+    fi
+  else
+    echo "FATAL: rollback target '${TARGET_REF}' is not a full commit SHA or a plain tag name" >&2
+    exit 2
+  fi
   if [ -z "$ROLLBACK_TARGET_SHA" ]; then
     echo "FATAL: rollback target does not resolve to a commit: ${TARGET_REF}" >&2
     exit 2
@@ -101,12 +135,18 @@ esac
 # Rule 229 (independent review, 8D PR2, finding 4): the DMS_DEPLOY_* values are
 # trusted only inside the bootstrap's own root-only snapshot with the rollback
 # lock held by the bootstrap — never when exported by hand.
-ROLLBACK_LOCK_ROOT="$(dirname -- "${DMS_DEPLOY_LOCK_FILE:-/nonexistent/rollback.lock}")"
-case "$ROLLBACK_LOCK_ROOT" in
-  /run/daengtisiams-deploy|/var/lock/daengtisiams-deploy) ;;
-  *) echo "FATAL: the rollback lock '${DMS_DEPLOY_LOCK_FILE:-}' is not in the trusted lock root — NOT GO" >&2; exit 2 ;;
-esac
-if [ "$DMS_DEPLOY_LOCK_FILE" != "${ROLLBACK_LOCK_ROOT}/rollback.lock" ] \
+# Rule 231: the lock is THE release lock, shared with deploy, in the one lock
+# root the bootstrap picks on this host (/run unless the host has no writable
+# /run).
+ROLLBACK_LOCK_ROOT="/run/daengtisiams-deploy"
+if [ ! -d /run ] || [ ! -w /run ]; then
+  ROLLBACK_LOCK_ROOT="/var/lock/daengtisiams-deploy"
+fi
+if [ "$(dirname -- "${DMS_DEPLOY_LOCK_FILE:-/nonexistent/release.lock}")" != "$ROLLBACK_LOCK_ROOT" ]; then
+  echo "FATAL: the rollback lock '${DMS_DEPLOY_LOCK_FILE:-}' is not in the trusted lock root ${ROLLBACK_LOCK_ROOT} — NOT GO" >&2
+  exit 2
+fi
+if [ "$DMS_DEPLOY_LOCK_FILE" != "${ROLLBACK_LOCK_ROOT}/release.lock" ] \
    || [ "$DMS_DEPLOY_SNAPSHOT_DIR" != "${ROLLBACK_LOCK_ROOT}/rollback-${DMS_DEPLOY_RUN_ID:-}" ] \
    || [ -L "$DMS_DEPLOY_SNAPSHOT_DIR" ] \
    || [ "$(stat -c '%u %a' "$DMS_DEPLOY_SNAPSHOT_DIR" 2>/dev/null)" != "$(id -u) 700" ]; then
@@ -114,7 +154,7 @@ if [ "$DMS_DEPLOY_LOCK_FILE" != "${ROLLBACK_LOCK_ROOT}/rollback.lock" ] \
   exit 2
 fi
 if flock -n "$DMS_DEPLOY_LOCK_FILE" true 2>/dev/null; then
-  echo "FATAL: not running under the rollback lock — not launched by the bootstrap — NOT GO" >&2
+  echo "FATAL: not running under the rollback lock (the release lock) — not launched by the bootstrap — NOT GO" >&2
   exit 2
 fi
 ROLLBACK_TARGET_SHA="${DMS_DEPLOY_TARGET_SHA:?immutable bootstrap must pin a rollback target commit}"

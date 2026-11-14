@@ -92,7 +92,7 @@ test('a second concurrent deployment fails closed before any mutation', function
         $challenger = dh1LockRun($sandbox);
 
         expect($challenger['exit'])->toBe(75)
-            ->and($challenger['output'])->toContain('BUSY another deploy is already running')
+            ->and($challenger['output'])->toContain('BUSY another deploy or rollback holds the release lock')
             ->and($challenger['output'])->toContain('no backup, no migration, no checkout was performed')
             // Fail-closed means it never even built an execution payload.
             ->and($challenger['output'])->not->toContain('DEPLOY_SNAPSHOT_CREATED')
@@ -119,10 +119,15 @@ test('the lock is released after a successful deployment', function () {
         $first = dh1LockRun($sandbox);
         $second = dh1LockRun($sandbox);
 
+        // The second run takes the lock (never BUSY). Rule 231: the release it
+        // names was spent by the first run, so inside the lock it is refused
+        // before anything is pinned — a release deploys once.
         expect($first['exit'])->toBe(0)
-            ->and($second['exit'])->toBe(0)
             ->and($second['output'])->toContain('DEPLOY_LOCK_ACQUIRED=YES')
-            ->and($second['output'])->not->toContain('BUSY');
+            ->and($second['output'])->not->toContain('BUSY')
+            ->and($second['exit'])->toBe(77)
+            ->and($second['output'])->toContain('was already deployed on this host')
+            ->and($second['output'])->not->toContain('DEPLOY_TARGET_PINNED');
     } finally {
         dh1LockCleanup($sandbox);
     }
@@ -187,11 +192,18 @@ test('a leftover lock file with no holder does not block the next deployment', f
     }
 });
 
-test('deploy and rollback take separate role-scoped locks', function () {
-    // A rollback is a different critical section from a deploy; each serialises
-    // against itself. The lock file name is role-scoped.
-    expect(file_get_contents(base_path('scripts/deploy-immutable-exec.sh')))
-        ->toContain('LOCK_FILE="${LOCK_DIR}/${ROLE}.lock"');
+test('deploy and rollback share one release lock, and still honour the pre-231 role locks', function () {
+    // Rule 231 (DMS-RELEASE-GUARD-TRUST-HARDENING-1) supersedes the role-scoped
+    // locks of DEPLOY-HARDEN-1: a deploy and a rollback both rewrite the
+    // checkout, so they are ONE critical section. The role locks are held too, so
+    // a bootstrap from an older tree (which locks only its role) is excluded.
+    $bootstrap = (string) file_get_contents(base_path('scripts/deploy-immutable-exec.sh'));
+
+    expect($bootstrap)->toContain('LOCK_FILE="${LOCK_DIR}/release.lock"')
+        ->and($bootstrap)->not->toContain('LOCK_FILE="${LOCK_DIR}/${ROLE}.lock"')
+        ->and($bootstrap)->toContain('exec 8>"${LOCK_DIR}/deploy.lock"')
+        ->and($bootstrap)->toContain('exec 7>"${LOCK_DIR}/rollback.lock"')
+        ->and($bootstrap)->toContain('7>&- 8>&- 9>&-');
 });
 
 test('snapshot removal is path-guarded and symlink-safe', function () {

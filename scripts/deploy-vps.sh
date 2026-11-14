@@ -86,12 +86,19 @@ case "${BASH_SOURCE[0]}" in
     exit 2
     ;;
 esac
-DEPLOY_LOCK_ROOT="$(dirname -- "${DMS_DEPLOY_LOCK_FILE:-/nonexistent/deploy.lock}")"
-case "$DEPLOY_LOCK_ROOT" in
-  /run/daengtisiams-deploy|/var/lock/daengtisiams-deploy) ;;
-  *) echo "FATAL: the deploy lock '${DMS_DEPLOY_LOCK_FILE:-}' is not in the trusted lock root — not the bootstrap's snapshot — NOT GO" >&2; echo "DEPLOYMENT=DENIED"; exit 77 ;;
-esac
-if [ "$DMS_DEPLOY_LOCK_FILE" != "${DEPLOY_LOCK_ROOT}/deploy.lock" ] \
+# Rule 231: the lock is THE release lock, shared with rollback, in the one lock
+# root the bootstrap picks on this host (/run unless the host has no writable
+# /run) — a second, differently-rooted lock could let two runs overlap.
+DEPLOY_LOCK_ROOT="/run/daengtisiams-deploy"
+if [ ! -d /run ] || [ ! -w /run ]; then
+  DEPLOY_LOCK_ROOT="/var/lock/daengtisiams-deploy"
+fi
+if [ "$(dirname -- "${DMS_DEPLOY_LOCK_FILE:-/nonexistent/release.lock}")" != "$DEPLOY_LOCK_ROOT" ]; then
+  echo "FATAL: the deploy lock '${DMS_DEPLOY_LOCK_FILE:-}' is not in the trusted lock root ${DEPLOY_LOCK_ROOT} — not the bootstrap's snapshot — NOT GO" >&2
+  echo "DEPLOYMENT=DENIED"
+  exit 77
+fi
+if [ "$DMS_DEPLOY_LOCK_FILE" != "${DEPLOY_LOCK_ROOT}/release.lock" ] \
    || [ "$DMS_DEPLOY_SNAPSHOT_DIR" != "${DEPLOY_LOCK_ROOT}/deploy-${DMS_DEPLOY_RUN_ID:-}" ] \
    || [ -L "$DMS_DEPLOY_SNAPSHOT_DIR" ] \
    || [ "$(stat -c '%u %a' "$DMS_DEPLOY_SNAPSHOT_DIR" 2>/dev/null)" != "$(id -u) 700" ]; then
@@ -102,7 +109,7 @@ fi
 # The bootstrap holds the lock for the whole run; a lock we can take ourselves
 # means no bootstrap is holding it.
 if flock -n "$DMS_DEPLOY_LOCK_FILE" true 2>/dev/null; then
-  echo "FATAL: not running under the deploy lock — not launched by the bootstrap — NOT GO" >&2
+  echo "FATAL: not running under the deploy lock (the release lock) — not launched by the bootstrap — NOT GO" >&2
   echo "DEPLOYMENT=DENIED"
   exit 77
 fi

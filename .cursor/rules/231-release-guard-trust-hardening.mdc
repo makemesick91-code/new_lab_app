@@ -1,0 +1,172 @@
+---
+description: DMS-RELEASE-GUARD-TRUST-HARDENING-1 — the rule 229 release guard is made trustworthy. Approval contract 2 needs the approver's SSH signature (namespace dms-release-approval) over the exact record bytes, verified against a release trust anchor on the host, outside the repository, and binds the record to the host's SSH host key; a release id deploys once (spend record written inside the lock). Evidence contract 4 lives in the deploy identity's own directory outside the checkout (/var/lib/daengtisiams-deploy/runner), each run is claimed exclusively, tampered or interrupted evidence never verifies. Deploy and rollback share one lock (release.lock) and still take the pre-231 role locks. A rollback resolves a full SHA as an object and any other name only as a tag, locally first, and refuses abbreviated SHAs. Supersedes rule 229 §3 (contract 1), the §5 per-role locks, the §6 evidence location and the §8 owner follow-ups.
+globs:
+  - "scripts/lib/release-approval.sh"
+  - "scripts/lib/trusted-path.sh"
+  - "scripts/lib/deploy-runner-evidence.sh"
+  - "scripts/deploy-vps-runner.sh"
+  - "scripts/deploy-immutable-exec.sh"
+  - "scripts/deploy-vps.sh"
+  - "scripts/rollback-vps.sh"
+  - "scripts/deploy-runner-quarantine-stale-status.sh"
+  - "deploy/production-host.conf"
+  - "deploy/release-approvals/**"
+alwaysApply: false
+---
+
+# Release guard trust hardening (rule 231)
+
+**Status:** ACTIVE in code from `DMS-RELEASE-GUARD-TRUST-HARDENING-1` (2026-11-14). In force on a host only after
+that host deploys a release carrying it (runbook `docs/runbooks/production-host-identity.md` §6d; until then the host
+runs rule 229 as before). Sprint record: `docs/sprints/dms-release-guard-trust-hardening-1.md`. Extends rule 229
+(`229-exact-approved-release-sha-guard.mdc`), which stays in force except where this rule says otherwise.
+
+## 1. What rule 229 left open
+
+Rule 229 §8 recorded three owner follow-ups, and the independent audit of this sprint confirmed each as exploitable:
+
+1. **Approvals were bindings, not authentications.** Anyone able to push to the unprotected base could write a record
+   naming `APPROVED_BY=owner`.
+2. **Evidence lived in `storage/logs/deploy-runner`.** The deploy hands `storage/` to the runtime user, so a runtime
+   compromise could plant symlinks at predictable evidence paths (root then wrote through them: `/etc/sudoers`
+   clobber, owner lock-out) or rewrite a run's log and record into a forged `DEPLOY RUNNER OK`.
+3. **Deploy and rollback locked separately**, so both could rewrite the checkout at once.
+
+The audit also found replay of an approval after a rollback (§9 of rule 229 claimed it stopped; the forward-only check
+passes again), runs that stayed "pending" forever after a kill, deploy-id collisions in the same second, a tag named
+like an abbreviated SHA retargeting a rollback, and a `git fetch --tags --prune` outside the lock that a single
+rewritten remote tag turned into a permanent rollback failure.
+
+## 2. Approval contract 2 (signed, host-key-bound)
+
+`deploy/release-approvals/<release-id>.approval` keeps the rule 229 format and checks and adds:
+
+- `DMS_APPROVAL_CONTRACT=2` (contract 1 is refused, never upgraded) and `DMS_APPROVAL_HOST_KEY_SHA256` — it must equal
+  the authority's `DMS_PRODUCTION_HOST_KEY_SHA256` **and** the fingerprint of the key the host actually presents
+  (`DMS_PRODUCTION_HOST_KEY_FILE`). A hostname is a setting; the host key is the identity the workstation pins (CG-14).
+- `deploy/release-approvals/<release-id>.approval.sig`: a detached signature made by the approver with
+  `ssh-keygen -Y sign -n dms-release-approval` over the record's exact bytes, read from the same fetched commit object
+  (regular file, at most 4096 bytes, armored). The guard streams record and signature from git into
+  `ssh-keygen -Y verify -f <anchor> -I <APPROVED_BY> -n dms-release-approval`; any failure, or a verdict that does not
+  name a good signature by that principal, is `DEPLOYMENT=DENIED` (77). The key's fingerprint is printed and recorded.
+- After the approved commit only release approval records, their `.sig` files and `docs/**/*.md` may follow (rule 229
+  §4.8, widened by the `.sig`).
+
+**The release trust anchor** is `DMS_PRODUCTION_RELEASE_TRUST_ANCHOR`
+(`/etc/daengtisiams/release-approvers.allowed_signers` on production, pinned by `pinned_authority_values` in
+`config/deployment_entrypoint.php`): an OpenSSH allowed-signers file mapping each approver principal to their PUBLIC
+signing key, ideally restricted with `namespaces="dms-release-approval"`. It must be a regular file outside the
+checkout, canonical (no symlink anywhere in the path), owned by root or the deploy identity, not group/world-writable,
+under a chain of directories with the same property (`scripts/lib/trusted-path.sh`). The owner provisions it on the
+host (§6d); nothing in the repository can stand in for it. No allowed-signers file, private key or public key is ever
+committed.
+
+**What this proves.** A merged record approves a release only if the holder of a key the host's anchor trusts signed
+exactly those bytes — repository, host, host key, branch, commit, tree, GO tag, approver, window, evidence path. Push
+access to the base is no longer enough. Anyone holding the approver's public key can re-check an approval offline
+with the same `ssh-keygen -Y verify` command. **What it does not prove:** which human held the key (CG-07), or anything
+against root on the production host, who can replace the anchor or the code that reads it.
+
+**Single use.** A **release id** deploys once, whichever signed version of its record is used (a re-signed or
+restored older version cannot be replayed). The bootstrap writes `spent/<release-id>.spent` in the trusted evidence
+directory **inside the release lock** when the deploy program succeeds (exclusive create, so a deploy run without the
+runner spends it too); a runner record of that release with `result_exit=0` counts as well. `dms_release_approval_spent`
+checks both inside the guard, before the GO line, in the runner and again inside the lock. A failed run spends
+nothing; a re-deploy after a rollback needs a new owner approval under a new release id (e.g. `<release-id>-r2`).
+`verify` also requires the bootstrap to have verified the very record blob the runner verified before launch.
+
+## 3. Evidence contract 4 (trusted directory)
+
+- The runner's evidence directory is `DMS_PRODUCTION_DEPLOY_EVIDENCE_DIR` from the authority beside the runner
+  (`/var/lib/daengtisiams-deploy/runner` on production, pinned), never from the environment and never under the
+  checkout. It must be the deploy identity's own directory: canonical, outside the checkout, owned by exactly that uid,
+  mode `0700`, with trusted parents. The first `start` creates it (`umask 077`); an existing directory is never
+  chmod-ed or chown-ed into trust. Otherwise `start` is `DEPLOYMENT=DENIED` and creates nothing.
+- `start` refuses while another run's launcher is alive (exit 75, nothing recorded), then claims its identifier with
+  an exclusive create (`set -C`): a planted file or symlink — dangling ones included — is never written through, and a
+  second start in the same second takes the next identifier instead of truncating the first run's files.
+- The record adds `evidence_dir`, `host_key_sha256`, `boot_id`, `approval_signature_blob`, `approval_signer_key` and,
+  after the launch, `launcher_pid`; the bootstrap prints `DEPLOY_APPROVAL_SIGNER=` into the run's log.
+- `verify`/`status` check, before believing a byte: the directory is trusted (`UNTRUSTED`), each of status, record and
+  log is absent or a regular file of the deploy identity, not group/world-writable (`TAMPERED`); then the contract-3
+  facts, plus `evidence_dir` = the directory read, `host_key_sha256` = the pinned and the observed key (`FOREIGN`), the
+  signature object is `<record>.sig` at the recorded approval commit, and the log names exactly one signer equal to
+  the record's (`MISMATCHED`). Contract 1–3 records are `INCOMPATIBLE`.
+- A run with no status whose recorded boot id is not the current one, or whose launcher is no longer the same live
+  process (pid, start time from `/proc/<pid>/stat`, owner = deploy identity, `dms-deploy-runner` command line) is
+  `INTERRUPTED` (exit 4), never "pending" forever and never OK; `follow` stops waiting for it. Before acting on an
+  interrupted run, read its log and make sure nothing holds the release lock. An identifier with no evidence at all is
+  `NOT-FOUND` (exit 4), not "pending".
+- A claimed identifier is skipped when ANY entry (file, dangling symlink, FIFO) already exists under it; a claim that
+  cannot complete removes its own empty record.
+- Historical contract 1–3 evidence stays where it was (`storage/logs/deploy-runner`, never deleted); only the one-time
+  `verify-transition` still reads it.
+
+## 4. One release lock
+
+`deploy-immutable-exec.sh` takes `<lock root>/release.lock` for **both** roles, then the pre-231 `deploy.lock` and
+`rollback.lock` (so a bootstrap from an older tree, which locks only its role, is still excluded), all non-blocking:
+any one busy is `BUSY … no backup, no migration, no checkout` (exit 75), with the last recorded holder
+(`release.holder`, informational) printed. The snapshot stages of `deploy-vps.sh` and `rollback-vps.sh` require
+`DMS_DEPLOY_LOCK_FILE` = `<root>/release.lock`, held, in the ONE root the bootstrap picks on this host (`/run/…` unless
+the host has no writable `/run`), so a second, differently rooted lock can never let two runs overlap. The quarantine
+tool takes all three locks.
+
+**Recovery, inside the locks, before any mutation:** a snapshot directory left in the lock root by a killed run is
+removed (`DEPLOY_STALE_SNAPSHOT_RECONCILED=`), a private approval or rollback-target ref whose process is gone is
+removed, and a git lock left by a checkout or merge killed mid-way (`index.lock`, `HEAD.lock`, `packed-refs.lock`,
+`config.lock`, `refs/**/*.lock`) is a FATAL refusal (exit 2) — only an operator who has confirmed no git process runs
+removes it (deploy/rollback runbook, Troubleshooting).
+
+## 5. Rollback target resolution
+
+Outside the lock the rollback mutates as little as possible. A full 40-character SHA is an object name, checked with
+`git cat-file` and never looked up as a ref or fetched. An abbreviated SHA is refused as ambiguous (a tag named
+`3627f506` outranks the commit in `git rev-parse`, and a tag plus a branch of that name even hide from
+`--symbolic-full-name`). Any other name is a TAG, resolved only as `refs/tags/<name>`: locally first, and only an
+unknown tag is fetched — that one tag, `--no-tags`, into a private ref that is then removed. Never `--tags --prune`.
+The documented interface (`rollback-vps.sh <commit>` or a GO tag) and the rollback policy are unchanged:
+target-specific, an ancestor of the running checkout, code only, a verified dump first, never a data restore.
+
+## 6. Transition (the release that carries this rule)
+
+A host whose in-tree runner predates this rule verifies only contract-1 records and locks per role; its snapshot
+check would refuse this release's `release.lock` (fail-closed, before any mutation). So the first deploy that carries
+rule 231 follows the one-time bootstrap of runbook §6d: the owner provisions the trust anchor, signs the record, and
+the approved commit's own deploy chain is exported from the git object and started — every check above runs; there is
+no transitional bypass and no contract-1 acceptance. Rolling back below this release restores the old guard; the next
+forward deploy then uses §6d again.
+
+## 7. Threats and where each is stopped
+
+| Threat | Stopped by | Test |
+|---|---|---|
+| Pusher without the approver key writes or edits a record | §2 signature + host anchor | `DeployHardenReleaseGuardTrustTest`: `refuses an approval that the host cannot authenticate`, `stops a pusher who rewrites a signed record` |
+| Anchor swapped for one in the repo / writable / symlinked | §2 trusted-path checks | `trusts only an anchor that the deploy identity alone controls` |
+| Approval replayed on a clone with the same hostname | §2 host key | `binds the approval to the host key` |
+| Approval replayed after a rollback; another signed version of a deployed release | §2 single use per release id, spend record inside the lock | `spends an approval with the deploy it completes`, `cannot replay another signed version…`, `refuses a spent release inside the lock too…` |
+| Runtime user writes through evidence symlinks / forges evidence | §3 trusted directory, exclusive claim | `refuses to start when the evidence directory is not trusted`, `never writes through a file planted`, `never proves a run from evidence that was tampered with` |
+| Same-second deploy-id collision; planted entries; second start while one runs | §3 claim, live-run refusal | `never writes through, opens or reuses an entry planted at a run identifier`, `serialises two approved runs` (rule 229 suite) |
+| Deploy and rollback interleave; old bootstrap beside new | §4 one lock + role locks | `keeps a deploy and a rollback out of each other's critical section`, `still excludes a bootstrap from a tree older than rule 231` |
+| Killed run: stuck "pending", stale snapshot, stale refs, git locks; pid reuse | §3 INTERRUPTED, §4 recovery | `reports a killed run as INTERRUPTED…`, `refuses to start over a git lock…`, `removes the private approval refs…`, contract suite `…launcher is still alive…` |
+| Tag shadows a short SHA (one or two refs); rewritten remote tag blocks rollback | §5 | `resolves a rollback target locally, refuses ambiguity…` (9 cases) |
+| Anchor/evidence path relocated by an authority edit | `pinned_authority_values`, `DH1-R011` | `fails the posture check when the authority relocates a pinned trust path` |
+
+## 8. Out of scope — open owner decisions (sprint doc §8)
+
+- **DEPLOY-PRIVSEP (HIGH, pre-existing):** the deploy program runs PHP (`composer install` → `package:discover`,
+  `artisan migrate`, the gates) and `chown`/`chmod -R`/`find -exec chmod` as root over `storage/` and
+  `bootstrap/cache`, which the runtime user owns. A runtime compromise can therefore become root at the next deploy or
+  rollback (a planted `bootstrap/cache/routes-v7.php` is `require`d by root; a symlinked `storage/logs` turns the
+  private-path `chmod -R` host-wide). Rule 231 does not change this; its guarantees assume the runtime user cannot
+  escalate, which is false until a privilege-separation sprint lands.
+- **Rollback floor / deployed-history rollback:** the ancestor rule admits commits that were never deployed;
+  restricting rollback to verified deploys is a rollback-policy change.
+- **Branch protection** on the base remains recommended; it complements, and no longer substitutes for, signatures.
+
+## 9. Changing this area
+
+Edit the libraries, their integration points, `config/deployment_entrypoint.php` `approval_guard_expectations`
+(markers, `required_authority_keys`, `pinned_authority_values`; `DeploymentEntrypointScanner::approvalGuardPosture()`,
+rule `DH1-R011`) and the tests together. The suites are selected by the `DeployHarden` token and declared in
+`config/ci_runner.php` `critical_gate_mandatory_suites`.
