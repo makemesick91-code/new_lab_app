@@ -432,12 +432,19 @@ it('never writes through, opens or reuses an entry planted at a run identifier',
     }
     $before = scandir($s['evidence']);
 
-    $start = rgtStart($s);
+    try {
+        $start = rgtStart($s);
 
-    rgtDeniedRunner($start, 'could not claim a free deploy identifier');
-    expect((string) file_get_contents($victim))->toBe("untouched\n")
-        ->and(glob("{$s['root']}/dangling-*") ?: [])->toBe([])
-        ->and(scandir($s['evidence']))->toBe($before);
+        rgtDeniedRunner($start, 'could not claim a free deploy identifier');
+        expect((string) file_get_contents($victim))->toBe("untouched\n")
+            ->and(glob("{$s['root']}/dangling-*") ?: [])->toBe([])
+            ->and(scandir($s['evidence']))->toBe($before);
+    } finally {
+        // The shared temp cleanup removes files and directories, not FIFOs.
+        foreach (glob("{$s['evidence']}/deploy-*.status") ?: [] as $fifo) {
+            @unlink($fifo);
+        }
+    }
 })->skip(! function_exists('posix_mkfifo'), 'posix_mkfifo is not available');
 
 it('never proves a run from evidence that was tampered with after it finished', function (string $case, string $verdict) {
