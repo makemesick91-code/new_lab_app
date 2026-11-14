@@ -14,8 +14,10 @@ alwaysApply: false
 `docs/runbooks/bk2-offserver-workstation-recovery.md`. Supersedes nothing; it refines how the workstation half of BK-2
 reports itself. The server half (`dms-bk2-status`, its ack ledger and thresholds) is unchanged.
 
-**Live proof:** WATCH. Restart drill 1 (2026-11-14) recovered a real restart, but the HDD was attached before the first
-timer run after boot, so the failure leg (§11) is not yet proven live. Drill 2 is open (sprint record §8–§9).
+**Live proof:** PASS (program GO, 2026-11-14). Restart drill 2 proved both legs of §11 live in one boot. Before anything
+was attached, the first timer run after boot reported `DEGRADED` with `HDD_ABSENT`, a warning-level `BK2_ALERT` and exit
+75. After `attach`, a run confirmed every listed package, with `OFF_SERVER=OK` on the workstation and the host. Drill 1
+had proven only the recovery leg. Sprint record §8–§9.
 
 ## 1. The defect
 

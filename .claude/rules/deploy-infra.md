@@ -245,7 +245,8 @@ code, then the canonical rule, and report the drift.
   or unmounted HDD is recoverable; a mismatch is fail-closed. Only the custodian unlocks, interactively, typing the
   passphrase into cryptsetup's prompt. `bk2-status.sh` gives the verdict. HDD identifiers stay in the private tree,
   never in this public repository. A restart drill counts only when the first timer run after boot is seen `DEGRADED`
-  with a `BK2_ALERT` before the custodian attaches (rule 230 §11). Source:
+  with a `BK2_ALERT` before the custodian attaches (rule 230 §11). Drill 2 (2026-11-14) proved both legs live, and the
+  program is GO, with no GO tag because nothing was deployed. Source:
   `.cursor/rules/230-bk2-offserver-workstation-recovery.mdc`, runbook `docs/runbooks/bk2-offserver-workstation-recovery.md`.
 
 ## Current posture (snapshot 2026-11-04, read-only inspection — verify before relying on it)
