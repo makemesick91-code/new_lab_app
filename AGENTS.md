@@ -89,6 +89,12 @@ Before finalizing work:
   `bootstrap/cache` as root: use the runtime user (`.cursor/rules/233-deploy-privilege-separation.mdc`).
 - Release approvals are owner-signed and bound to the exact SHA (rules 229/231); BK-2 is manual-only (rule 232).
 
+## Developer toolchain (rule 234)
+
+- Check the workstation with `bash scripts/dev/toolchain-readiness-check.sh` (read-only); install missing tools only
+  as `docs/runbooks/dev-toolchain-readiness.md` says (owner-run, pinned, official sources). A missing tool's step is
+  NOT RUN, never passed.
+
 ## Output Format
 
 After every task, report:

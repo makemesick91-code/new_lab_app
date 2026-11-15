@@ -1,0 +1,32 @@
+---
+description: DMS developer toolchain readiness (rule 234, 2026-11-15) — a DEVFLOW session checks its workstation toolchain with the read-only scripts/dev/toolchain-readiness-check.sh, installs missing tools only through the Ubuntu archive or pipx from the official package at a pinned version older than two weeks (owner-run; sudo stays with the owner), never bootstraps pip or fetches binaries, never enables Graphify's hook integration without an owner decision, needs no MCP server for GitHub, filesystem, PostgreSQL, SSH or Obsidian, and reports a missing optional tool's step as NOT RUN, never as passed.
+globs: scripts/dev/toolchain-readiness-check.sh, docs/runbooks/dev-toolchain-readiness.md
+alwaysApply: false
+---
+
+# Developer toolchain readiness (rule 234)
+
+**Status:** ACTIVE from DMS-DEPLOY-PRIVSEP-HARDENING-1 (2026-11-15). Procedure, pinned versions and the component
+table: `docs/runbooks/dev-toolchain-readiness.md`. Sprint record: `docs/sprints/dms-deploy-privsep-hardening-1.md` §13.
+
+1. **Check first.** A session that needs more than the always-present tools runs
+   `bash scripts/dev/toolchain-readiness-check.sh` (read-only). `TOOLCHAIN_READINESS=MISSING` stops the dependent work;
+   an `OPTIONAL-MISSING` tool makes its step **NOT RUN**, reported as such, never as passed (CG-17).
+2. **Install only through a trusted mechanism, by the owner.** Ubuntu archive packages (`sudo apt-get install …`) or
+   `pipx install <official package>==<pinned version>`, the version at least two weeks old. Local `sudo` belongs to the
+   owner: the password is typed in the owner's own terminal, never in chat. Never bootstrap pip (`get-pip.py`), pipe an
+   install script into a shell, or fetch tool binaries through pip/npm wrappers.
+3. **Graphify** is `graphifyy` on PyPI (official source `github.com/Graphify-Labs/graphify`), pinned in the runbook.
+   Use `graphify update .` (AST only, no LLM) and the query commands of CG-23. `graphify install`,
+   `graphify claude install` and `graphify hook install` add a skill and hooks that intercept reads and edit
+   `CLAUDE.md`: owner decision only.
+4. **Plugins** come from the official marketplace (`claude-plugins-official`) through the owner-run `/plugin`
+   command; a plugin that adds hooks is the owner's decision.
+5. **No MCP server is required.** GitHub = `gh`, filesystem = built-in tools, PostgreSQL = `psql` on the workstation's
+   test database (never an MCP server against the production database), SSH = OpenSSH with the pinned host key
+   (CG-14), Obsidian = git worktree sync (CG-02), browser smoke = `curl` over the canonical URL.
+6. **Development tools never go on the production host.** It carries the runtime toolchain only
+   (`scripts/lib/production-host-preflight.sh`); Pest and PHPUnit are absent there (`composer --no-dev`).
+7. **Configuration stays where it belongs.** The repository holds the check, the runbook, skills, agents and rules;
+   the workstation holds packages, `~/.local/bin`, pipx venvs, `gh` credentials, SSH keys, plugins and the
+   assistant's private memory. No token, password, key or host-local identifier is committed (the repository is public).

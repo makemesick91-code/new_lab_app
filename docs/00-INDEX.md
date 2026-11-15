@@ -155,7 +155,12 @@ Nomor ADR berikutnya yang tersedia: **0017**.
   pernah menulis/chmod path di `storage/` atau `bootstrap/cache`, tree sumber diklaim root, gate drift hak akses,
   cek read-only `scripts/privsep-drift-check.sh` —
   [dms-deploy-privsep-hardening-1](sprints/dms-deploy-privsep-hardening-1.md) (audit, threat model, rehearsal),
-  aturan kanonik `.cursor/rules/233-deploy-privilege-separation.mdc`. Deploy memakai §6b (tanpa bootstrap).
+  aturan kanonik `.cursor/rules/233-deploy-privilege-separation.mdc`. Deploy memakai §6b (tanpa bootstrap); GO
+  2026-11-15 (deploy `20261115-063339`, tag `dms-deploy-privsep-hardening-1-go`).
+- Kesiapan toolchain workstation (rule 234): cek read-only `scripts/dev/toolchain-readiness-check.sh`, instalasi
+  hanya oleh owner dari sumber resmi dengan versi terpin —
+  [dev-toolchain-readiness](runbooks/dev-toolchain-readiness.md), aturan kanonik
+  `.cursor/rules/234-dev-toolchain-readiness.mdc`.
 - Keamanan runtime: [dedicated-runtime-identity-runbook](runbooks/dedicated-runtime-identity-runbook.md),
   [production-secret-file-permissions-runbook](runbooks/production-secret-file-permissions-runbook.md),
   [security-pii-compliance-hardening-governance](architecture/security-pii-compliance-hardening-governance.md).
