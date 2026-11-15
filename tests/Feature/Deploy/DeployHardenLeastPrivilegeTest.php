@@ -552,14 +552,57 @@ it('refuses trees a build could abuse at hand-over and claim', function (string 
     'an absolute tree' => ['handover', '', 'must be a plain relative path', 2],
     'a parent-escaping tree' => ['claim', 'true', '..must be a plain relative path', 2],
     'a symlinked tree at hand-over' => ['handover', 'mv vendor real && ln -s real vendor', 'is a symlink', 1],
-    'a hardlinked file at hand-over' => ['handover', 'ln vendor/pkg/a.php vendor/pkg/b.php', 'hardlinked file', 1],
+    'a hardlink reaching outside the tree at hand-over' => ['handover', 'ln vendor/pkg/a.php outside.php', 'with a link outside the tree', 1],
     'a FIFO at the claim' => ['claim', 'mkfifo vendor/pkg/fifo', 'FIFO', 1],
     'a setuid file at the claim' => ['claim', 'chmod 4755 vendor/pkg/a.php', 'setuid/setgid', 1],
     'a group-writable file at the claim' => ['claim', 'chmod 0664 vendor/pkg/a.php', 'writable by group or others', 1],
     'a world-writable directory at the claim' => ['claim', 'chmod 0777 vendor/pkg', 'writable by group or others', 1],
-    'a hardlinked file at the claim' => ['claim', 'ln vendor/pkg/a.php vendor/pkg/b.php', 'hardlinked file', 1],
+    'a hardlink reaching outside the tree at the claim' => ['claim', 'ln vendor/pkg/a.php outside.php', 'with a link outside the tree', 1],
     'a symlinked tree at the claim' => ['claim', 'mv vendor real && ln -s real vendor', 'missing or a symlink', 1],
 ]);
+
+it('counts only hardlinks with a name outside the tree', function () {
+    $dir = tempArtifactDir('lp-hardlinks-', 0o755);
+    mkdir("{$dir}/tree/esbuild/bin", 0o755, true);
+    mkdir("{$dir}/tree/@esbuild/linux-x64/bin", 0o755, true);
+    file_put_contents("{$dir}/tree/@esbuild/linux-x64/bin/esbuild", 'native');
+    link("{$dir}/tree/@esbuild/linux-x64/bin/esbuild", "{$dir}/tree/esbuild/bin/esbuild");
+    $count = fn () => trim(lpBash(lpSource('scripts/lib/build-privsep.sh').' _dms_build_escaping_hardlinks '.escapeshellarg("{$dir}/tree"))[1]);
+
+    // esbuild's install script links its launcher to the native binary: both
+    // names inside the tree — the build's own inode.
+    expect($count())->toBe('0');
+
+    file_put_contents("{$dir}/outside", 'host file');
+    link("{$dir}/outside", "{$dir}/tree/esbuild/planted");
+    expect($count())->toBe('1');
+
+    unlink("{$dir}/tree/esbuild/planted");
+    link("{$dir}/tree/esbuild/bin/esbuild", "{$dir}/third-name");
+    expect($count())->toBe('2');
+});
+
+it('hands over and claims a tree whose hardlinks stay inside it (the esbuild pattern)', function () {
+    $me = lpMe();
+    $app = tempArtifactDir('lp-build-app-', 0o755);
+    mkdir("{$app}/node_modules/esbuild/bin", 0o755, true);
+    mkdir("{$app}/node_modules/@esbuild/linux-x64/bin", 0o755, true);
+    file_put_contents("{$app}/node_modules/@esbuild/linux-x64/bin/esbuild", 'native');
+    link("{$app}/node_modules/@esbuild/linux-x64/bin/esbuild", "{$app}/node_modules/esbuild/bin/esbuild");
+    $log = tempArtifactDir('lp-chown-').'/log';
+    $stubs = lpStubs(['pgrep' => 'echo 0', 'chown' => 'echo "$*" >> '.escapeshellarg($log)]);
+    $env = ['PATH' => $stubs.':/usr/bin:/bin'];
+
+    [$exit, , $err] = lpBash(lpSource('scripts/lib/build-privsep.sh')." dms_build_handover {$me['user']} {$me['group']} node_modules", $env, $app);
+    expect($exit)->toBe(0, $err);
+
+    // The claim passes every refusal and reaches the chown; only the stubbed
+    // chown (which changes nothing) leaves the entries the test user's.
+    [$exit, , $err] = lpBash(lpSource('scripts/lib/build-privsep.sh')." dms_build_claim {$me['user']} node_modules", $env, $app);
+    expect($err)->not->toContain('hardlinked')
+        ->and($err)->toContain('still not root-owned')
+        ->and(file_get_contents($log))->toContain("-R -h root:root -- node_modules\n");
+});
 
 it('hands a tree over without following links and fails the claim closed until everything is root\'s', function () {
     $me = lpMe();

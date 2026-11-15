@@ -28,8 +28,9 @@
 #     the step ends systemd kills every process left in its cgroup, so no build
 #     process outlives the step.
 #   * After the step root CLAIMS the trees back (owner root:root). It refuses
-#     device nodes, FIFOs, sockets, setuid/setgid files, hardlinked files, an
-#     entry another identity owns and any entry writable by group or others —
+#     device nodes, FIFOs, sockets, setuid/setgid files, a hardlinked file with
+#     a link OUTSIDE the tree, an entry another identity owns and any entry
+#     writable by group or others —
 #     so, with no build process alive, nobody but root can change a tree while
 #     it is claimed.
 # Root never reads a file the build identity wrote and never executes its code.
@@ -63,6 +64,18 @@ _dms_build_trusted_chain() {
     [ "$path" = "/" ] && return 0
     path="$(dirname -- "$path")"
   done
+}
+
+# _dms_build_escaping_hardlinks <tree> — prints how many hardlinked files of
+# <tree> share their inode with a name OUTSIDE <tree> (fewer of the inode's
+# names inside the tree than its link count). A hardlink whose every name lies
+# inside the tree is the build's own — esbuild's install script links its
+# launcher to the native binary — and, with fs.protected_hardlinks=1 (required
+# by rule 233's preflight), the build identity can only hardlink inodes it owns.
+# A failed or partial walk can only lower the count found inside: it refuses.
+_dms_build_escaping_hardlinks() {
+  find "$1" -xdev -type f -links +1 -printf '%i %n\n' 2>/dev/null \
+    | sort | uniq -c | awk '$1 != $3 { n += $1 } END { print n + 0 }'
 }
 
 # dms_build_identity_check <build user> <build home> <runtime user> <runtime group>
@@ -143,7 +156,7 @@ dms_build_no_processes() {
 # root nor the build identity, or holds a hardlinked file; then gives every
 # root-owned entry to the build identity, without following a symlink.
 dms_build_handover() {
-  local user="${1:-}" group="${2:-}" uid tree
+  local user="${1:-}" group="${2:-}" uid tree n
   shift 2 || true
   uid="$(id -u -- "$user" 2>/dev/null || true)"
   if [ -z "$uid" ] || [ "$uid" = 0 ] || [ -z "$group" ] || [ "$#" -eq 0 ]; then
@@ -168,8 +181,9 @@ dms_build_handover() {
       _dms_build_err "${tree} holds an entry owned by neither root nor the build identity — run the privilege repair first"
       return 1
     fi
-    if [ -n "$(find "$tree" -xdev -type f -links +1 -print -quit 2>/dev/null)" ]; then
-      _dms_build_err "${tree} holds a hardlinked file — refusing to hand it to the build identity"
+    n="$(_dms_build_escaping_hardlinks "$tree")"
+    if [ "$n" -ne 0 ]; then
+      _dms_build_err "${tree} holds ${n} hardlinked file(s) with a link outside the tree — refusing to hand it to the build identity"
       return 1
     fi
     chown -R -h --from=0 "${user}:${group}" -- "$tree" || return 1
@@ -204,8 +218,8 @@ dms_build_claim() {
     [ "$n" -eq 0 ] || { _dms_build_err "${tree}: ${n} setuid/setgid file(s) — NOT GO"; return 1; }
     n="$(find "$tree" -xdev ! -type l -perm /022 -print 2>/dev/null | wc -l)"
     [ "$n" -eq 0 ] || { _dms_build_err "${tree}: ${n} entr(ies) writable by group or others — NOT GO"; return 1; }
-    n="$(find "$tree" -xdev -type f -links +1 -print 2>/dev/null | wc -l)"
-    [ "$n" -eq 0 ] || { _dms_build_err "${tree}: ${n} hardlinked file(s) — NOT GO"; return 1; }
+    n="$(_dms_build_escaping_hardlinks "$tree")"
+    [ "$n" -eq 0 ] || { _dms_build_err "${tree}: ${n} hardlinked file(s) with a link outside the tree — NOT GO"; return 1; }
     n="$(find "$tree" -xdev \( ! -uid 0 ! -uid "$uid" \) -print 2>/dev/null | wc -l)"
     [ "$n" -eq 0 ] || { _dms_build_err "${tree}: ${n} entr(ies) owned by another identity — NOT GO"; return 1; }
     # Every entry is root's or the build identity's, and none is writable by

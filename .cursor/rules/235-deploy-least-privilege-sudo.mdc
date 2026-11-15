@@ -55,7 +55,8 @@ GO is recorded in the sprint doc, not here.
    stub, private `/tmp` and `/dev`, no setuid, no capabilities, a 30-minute limit, and its cgroup killed when the step
    ends. Root hands `vendor/`, `node_modules/` and `public/build` over only while no build process runs and claims them
    back (`root:root`) before anything loads them, refusing device nodes, FIFOs, sockets, setuid/setgid files,
-   hardlinked files, foreign entries and any group/other-writable entry; `public/build` holds no symlink. Version
+   a hardlinked file with a name outside the tree (esbuild's own launcher↔binary link stays inside and is allowed),
+   foreign entries and any group/other-writable entry; `public/build` holds no symlink. Version
    probes run from `/`, composer with `--no-plugins`.
 5. **Runtime trees hold no trusted code.** Only `.gitignore`/`.gitkeep` placeholders are tracked under `storage/` and
    `bootstrap/cache` (rule 233 keeps root's own writes out of them).
