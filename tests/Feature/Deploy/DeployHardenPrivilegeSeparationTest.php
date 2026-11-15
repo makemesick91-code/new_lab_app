@@ -774,9 +774,13 @@ it('lets the runtime user read the root-owned checkout\'s git metadata for relea
     $git = 'git -C '.escapeshellarg($repo).' -c user.name=t -c user.email=t@example.invalid -c commit.gpgsign=false';
     exec($git.' init -q && '.$git.' commit -q --allow-empty -m t');
 
-    // git's own switch for "this repository belongs to someone else".
+    // git's own switch for "this repository belongs to someone else", with the
+    // machine's system and global git configuration ignored: a CI runner often
+    // trusts every directory there (safe.directory=*), which would hide the
+    // refusal this test depends on.
+    $isolated = "export GIT_TEST_ASSUME_DIFFERENT_OWNER=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null\n";
     $snippet = implode("\n", [
-        'export GIT_TEST_ASSUME_DIFFERENT_OWNER=1',
+        rtrim($isolated),
         'APP_DIR='.escapeshellarg($repo),
         'RUNTIME_USER='.escapeshellarg($me['user']),
         $m[0],
@@ -785,7 +789,7 @@ it('lets the runtime user read the root-owned checkout\'s git metadata for relea
     [$exit, $out, $err] = psRun($repo, $snippet);
     expect($exit)->toBe(0, $out.$err)->and(trim($out))->toMatch('/^[0-9a-f]{40}$/');
 
-    [$exit, $out] = psRun($repo, "export GIT_TEST_ASSUME_DIFFERENT_OWNER=1\ngit rev-parse --verify HEAD 2>&1 || true");
+    [$exit, $out] = psRun($repo, $isolated.'git rev-parse --verify HEAD 2>&1 || true');
     expect($out)->toContain('dubious ownership');
 })->with(['deploy' => ['scripts/deploy-vps.sh'], 'rollback' => ['scripts/rollback-vps.sh']]);
 
