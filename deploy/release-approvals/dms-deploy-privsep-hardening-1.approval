@@ -1,0 +1,16 @@
+# DMS-DEPLOY-PRIVSEP-HARDENING-1 production approval (rules 229 and 231, contract 2).
+# Owner decisions: docs/sprints/dms-deploy-privsep-hardening-1.md section 11.
+# Deploy procedure: docs/runbooks/production-host-identity.md section 6b.
+DMS_APPROVAL_CONTRACT=2
+DMS_APPROVAL_RELEASE_ID=dms-deploy-privsep-hardening-1
+DMS_APPROVAL_REPOSITORY=makemesick91-code/new_lab_app
+DMS_APPROVAL_HOST=DaengtisiaMS
+DMS_APPROVAL_HOST_KEY_SHA256=SHA256:i3AsyL0oSwqSAwNfgv215Cl01i87buYtH5ugTe8O2bc
+DMS_APPROVAL_BASE_BRANCH=feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
+DMS_APPROVAL_TARGET_SHA=9312818fc9115707b9e0b351ae805080be465b4a
+DMS_APPROVAL_TARGET_TREE=64b864c953777fcc02a5c4d2f1e279aa79bd5578
+DMS_APPROVAL_GO_TAG=dms-deploy-privsep-hardening-1-go
+DMS_APPROVAL_APPROVED_BY=owner
+DMS_APPROVAL_APPROVED_AT=2026-11-15T05:03:02Z
+DMS_APPROVAL_NOT_AFTER=2026-11-17T05:03:02Z
+DMS_APPROVAL_EVIDENCE=docs/sprints/dms-deploy-privsep-hardening-1.md

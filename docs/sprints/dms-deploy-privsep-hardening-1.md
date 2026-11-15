@@ -188,4 +188,59 @@ before it was opened:
 | Production deploy + verification | pending |
 | GO tag | pending |
 
+## 11. Release candidate and owner approval (CG-22, rules 229/231)
+
+### 11.1 CI and merge
+
+| Item | Value |
+|---|---|
+| PR | #633, head `102764016bdb6b6de14fd6b03919eb887d7f794b` |
+| PR CI, first head `0e3f1d4a` | run `43661220645` **failure**: Critical Test Gate 10,046 passed, **2 failed** — both datasets of the runtime-git test failed at the negative control, because the CI runner's global git configuration trusts every directory. Fixed in the test (system/global git configuration ignored), reproduced locally under a simulated `safe.directory=*` |
+| PR CI, head `10276401` | run `43667397715` **success**: Critical Test Gate **10,048 passed**, 0 failed (`DeployHardenPrivilegeSeparationTest` ran and passed); Selective Module, Quality, NSF-9, NSF-10, Android gates success; Full Suite **skipped = DEFERRED** (CG-18), not passed |
+| Merge | squash, pinned to the tested head: **`9312818fc9115707b9e0b351ae805080be465b4a`**, parent `46ac4d62`, tree `64b864c953777fcc02a5c4d2f1e279aa79bd5578` = tested head tree |
+| Post-merge push CI | run `43672760969` **success** on `9312818f…`: Critical Test Gate **10,048 passed**, 0 failed (`DeployHardenPrivilegeSeparationTest` 89/89); Selective Module, Quality, NSF-9, NSF-10, Android gates success; Full Suite **skipped = DEFERRED** (CG-18) |
+
+### 11.2 The owner's pre-approval checks (2026-11-15, verified on the unchanged base tip `9312818f…`)
+
+The owner first chose **Hold** (12:48 WITA) and asked for six checks before approving. Results:
+
+| # | Owner's check | Result |
+|---|---|---|
+| 1 | Why the Full Suite is deferred; any test short of the release gate | Deferred by the standing GLOBAL TEMPORARY FULL-SUITE POLICY (`.github/ci-policy/full-suite-policy.json`, status ACTIVE since 2026-08-19, rule 107), not by this sprint; reported deferred, never passed. Required gates green on the SHA (§11.1). Suites outside the Critical Gate, run locally on the identical tree `64b864c9…`: `DeployRuntimePermissionsScriptTest` 9/9 (also 9/9 in CI's Selective Module gate), `DeployAuthLandingSmokeCommandTest` 4, `DeploymentRollbackCheckCommandTest` 7, `Ent11DeploymentRollbackAutomationTest` 12, with the Deploy and ENT-12/15/16 suites: **655 passed, 0 failed** |
+| 2 | No Full Suite can modify the production database | Production PostgreSQL listens on `127.0.0.1`/`::1` only; Pest and PHPUnit are not installed in production (`composer --no-dev`); no CI runner on the VPS (rule 91); no workflow carries `ssh`/`scp`/the production host or a deploy/rollback script (`forbidden_workflow_remote_access_markers`); CI tests use their own PostgreSQL 16; the deploy scripts run no test suite |
+| 3 | Every DEPLOY-PRIVSEP security test PASS | In CI on the SHA: `DeployHardenPrivilegeSeparationTest` 89/89, `RuntimeIdentityIsolation` 30, `…PrivatePaths` 28, `PrivateDatabaseDumpCreation` 20, `SecretFilePermissionHardening` 27, `DeployHardenImmutableEntrypoint` 20, `…ReleaseGuardTrust` 59, `…ApprovedShaGuard` 114, `…ProductionHostPreflight` 20, `…RunnerEvidenceContract` 116, `…Bk2OffServerRecovery` 7 — 0 failed |
+| 4 | `deploy-vps-runner.sh` only on the Biznet VPS | Unchanged by this sprint; `dms_production_host_preflight` (deploy-vps.sh line 142, rollback line 173) requires `DaengtisiaMS`/`139.190.106.38`/root and refuses the frozen legacy host before any mutation; the signed record binds the host key; no CI job invokes a deploy or rollback script; started only through `ssh daengtisiams-biznet-prod 'sudo -n bash scripts/deploy-vps-runner.sh start …'` from the host's own checkout |
+| 5 | BK-2 SKIP; pre-deploy database backup mandatory | 0 BK-2 references in the deploy closure; dump (line 350) → `test -s` (356) → checkout (367) → migrate (420) → `backup-verify` (423) under `set -euo pipefail`: a failed dump stops the deploy before the checkout |
+| 6 | Rollback only with the owner's explicit approval | Nothing rolls back automatically (a failed deploy exits non-zero); `scripts/sprint-release.sh --rollback` is dry-run unless `--apply` and has no caller; a rollback runs only on the owner's explicit instruction naming the full target SHA |
+
+### 11.3 Owner approval (CG-22)
+
+**Given 2026-11-15T05:03:02Z (13:03:02 WITA)**, in reply to the re-submission above: the owner approved deploying
+**`9312818fc9115707b9e0b351ae805080be465b4a`** (tree `64b864c953777fcc02a5c4d2f1e279aa79bd5578`) to production on
+Biznet `DaengtisiaMS` through runbook §6b, under these conditions stated in the request: rollback only on the owner's
+explicit go-ahead, by full SHA (`d555c7dc5ddb46631c16cd957b86490d06634f7f`), code only; smoke read-only; the GO tag
+`dms-deploy-privsep-hardening-1-go` only after production verification; BK-2 skipped
+(`DMS-BK2-MANUAL-ONLY-1`); the deploy's own pre-deploy dump mandatory.
+
+Record: `deploy/release-approvals/dms-deploy-privsep-hardening-1.approval` (contract 2, window
+2026-11-15T05:03:02Z → 2026-11-17T05:03:02Z, 48 hours), printable ASCII only (rule 231 §8c S3), record blob
+`43ffffa45bfff378c1a683b530510ffcb21de7a6`.
+
+### 11.4 The owner's signature (verified on the workstation, read-only)
+
+The owner signed the record file in their own terminal with their own key (`ssh-keygen -Y sign`, namespace
+`dms-release-approval`; the file form, §8c S8) and reported "Signed" for release `dms-deploy-privsep-hardening-1`,
+SHA `9312818fc9115707b9e0b351ae805080be465b4a`, tree `64b864c953777fcc02a5c4d2f1e279aa79bd5578`. Signature blob
+`739d44ef3ae9224489c105156029464bec7de8f3`. Verified against the **committed** record blob with the owner's public key as principal `owner`:
+
+| Check | Result |
+|---|---|
+| Committed blob, principal `owner`, namespace `dms-release-approval` | `Good "dms-release-approval" signature for owner with ED25519 key SHA256:0WGGTlMDzLPGAhQaRG+Ag7BqoypSLinSNOHalZKtgt4` — the key in the host's trust anchor (`trust-check`, §11.1) |
+| Namespace `git` | refused (`Could not verify signature`, exit 255) |
+| Record with `NOT_AFTER` one second later | refused (exit 255) |
+| Principal `someone` | refused (exit 255) |
+| Record file vs committed blob | identical (`43ffffa4…`) |
+
+The allowed-signers file used for this check lived in the session scratchpad only; it was never committed.
+
 **BK-2:** `SKIPPED — DMS-BK2-MANUAL-ONLY-1 (Owner Directive)`
