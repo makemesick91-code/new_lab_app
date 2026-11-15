@@ -199,7 +199,7 @@ the last matching rule wins and sudo would never prompt; `sudo -k; sudo -v` does
 | Implemented, locally verified | §6 |
 | Reviewed | §8: no operator-to-root path; 1 HIGH, 2 MEDIUM, 6 LOW fixed before the PR |
 | PR / CI / merge | #636 merged `c7638a6f`; PR CI and post-merge CI green (§6) |
-| Release approval (owner signature) | owner approval 15:59:05Z (§11.3); signature pending |
+| Release approval (owner signature) | owner approval 15:59:05Z (§11.3), signature verified (§11.4); approval PR — pending |
 | One-time provisioning, rehearsal, deploy through the operator | pending (runbook §6f) |
 | Administrator's passwordless sudo retired (owner-gated) | pending |
 | Production verification, GO tag | pending |
@@ -251,6 +251,23 @@ only after production verification; a 48-hour record window.
 Record: `deploy/release-approvals/dms-deploy-privsep-phase-2.approval` (contract 2, window 2026-11-15T15:59:05Z →
 2026-11-17T15:59:05Z, 935 bytes, printable ASCII only). The owner signs the committed record with their own key; an
 assistant never holds or uses that key.
+
+### 11.4 The owner's signature (verified on the workstation, read-only)
+
+The owner signed the record file in their own terminal with their own key (`ssh-keygen -Y sign`, namespace
+`dms-release-approval`, file form) and reported "Signed". Signature blob `25fb3ab9dec7a503c8d0f96ad36144ecdbe9a4fe`.
+Verified against the **committed** record blob `52d8f8f432e5496247a2d088ef272aea2beac429` with the owner's public key
+as principal `owner`:
+
+| Check | Result |
+|---|---|
+| Record file vs committed blob | identical |
+| Committed blob, principal `owner`, namespace `dms-release-approval` | `Good "dms-release-approval" signature for owner with ED25519 key SHA256:0WGGTlMDzLPGAhQaRG+Ag7BqoypSLinSNOHalZKtgt4` — the key in the host's trust anchor |
+| Namespace `git` | refused (`namespace does not match`, exit 255) |
+| Record with `NOT_AFTER` one second later | refused (`incorrect signature`, exit 255) |
+| Principal `someone` | refused (exit 255) |
+
+The allowed-signers file used for this check lived in the session scratchpad only; it was never committed.
 
 ## 12. Deploy and production verification
 
