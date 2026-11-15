@@ -161,6 +161,34 @@ return [
             'dms_privsep_final_gate 0 0 "$RUNTIME_USER" "$RUNTIME_GROUP"',
             'composer install --no-dev --optimize-autoloader --no-scripts',
             'as_runtime php artisan package:discover --ansi',
+            // DMS-DEPLOY-PRIVSEP-PHASE-2 (rule 235): composer and npm run as the
+            // build identity in a sandboxed transient service, over trees root
+            // hands over and claims back; the version probes never load a
+            // composer plugin.
+            'source "${DEPLOY_TOOLS_DIR}/scripts/lib/build-privsep.sh"',
+            'dms_build_identity_check "$BUILD_USER" "$BUILD_HOME" "$RUNTIME_USER" "$RUNTIME_GROUP"',
+            'dms_build_handover "$BUILD_USER" "$BUILD_GROUP" vendor',
+            '"$BUILD_MASKS" composer install --no-dev --optimize-autoloader --no-scripts',
+            // Rule 235 (R4): root hashes pg_dump's bytes in its own staging copy.
+            'PGPASSWORD="${DB_PASSWORD}" dms_write_private_dump "${DUMP_STAGING}/dump.sql" pg_dump',
+            'DUMP_SHA256="$(sha256sum < "${DUMP_STAGING}/dump.sql" | cut -d\' \' -f1)"',
+            'dms_privsep_as_runtime_fn_from "${DUMP_STAGING}/dump.sql" "$RUNTIME_USER" "$DUMP_HELPERS" dms_write_private_dump "$BACKUP" cat',
+            'dms_build_claim "$BUILD_USER" vendor',
+            'dms_build_handover "$BUILD_USER" "$BUILD_GROUP" node_modules public/build',
+            '"$BUILD_MASKS" npm ci',
+            '"$BUILD_MASKS" npm run build',
+            'dms_build_claim "$BUILD_USER" node_modules public/build',
+            'dms_build_assert_no_symlinks public/build',
+            'composer --version --no-plugins',
+        ],
+        // Rule 235: a logical line that runs composer, npm, npx, node, yarn or
+        // pnpm must START with the build hand-off; anything else runs
+        // third-party code as root. Only the version probes are exempt.
+        'build_line_prefix' => '/^\s*(?:run\s+)?dms_build_run\b/',
+        'allowed_root_build_probes' => [
+            'composer --version',
+            'npm --version',
+            'node --version',
         ],
         // A `php` token (php, php8.3, /usr/bin/php — anywhere on the line,
         // behind timeout/nice/bash -c/backticks included) must be immediately
@@ -178,7 +206,7 @@ return [
         ],
         // A logical line that starts with one of these runs as the runtime
         // user, so the root-only file-command rule below does not apply to it.
-        'runtime_line_prefix' => '/^\s*(?:run\s+)?(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*(?:as_runtime|runtime_json|runuser\s+-u|dms_privsep_as_runtime(?:_fn)?|dms_privsep_runtime_output)\b/',
+        'runtime_line_prefix' => '/^\s*(?:run\s+)?(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*(?:as_runtime|runtime_json|runuser\s+-u|dms_privsep_as_runtime(?:_fn(?:_from)?)?|dms_privsep_runtime_output)\b/',
         // Root mutations a runtime-planted symlink can steer, on ANY logical
         // line (a redirect is opened by root's shell even behind as_runtime).
         'forbidden_line_patterns' => [
@@ -187,7 +215,10 @@ return [
             'root redirect into a runtime tree' => '/(?:^|[^<>])(?:\d|&)?>{1,2}\|?\s*["\']?(?:\$\{?APP_DIR\}?["\']?\/)?(?:storage\b|bootstrap\/cache)/',
             'root tee into a runtime tree' => '/\btee\b(?:\s+-\S+)*\s+["\']?(?:\$\{?APP_DIR\}?["\']?\/)?(?:storage\b|bootstrap\/cache)/',
             'root sources a runtime file' => '/(?:^|[;&|]\s*|\b(?:then|do|else)\s+)(?:source|\.)\s+["\']?(?:\$\{?APP_DIR\}?["\']?\/)?(?:storage\b|bootstrap\/cache)/',
-            'root dump helper (the dump must be written by the runtime user)' => '/(?:^|[;&|]\s*|\b(?:then|do|else)\s+)(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*dms_(?:prepare_private_backup_dir|write_private_dump)\b/',
+            // Rule 235 (R4): root writes ONE private copy, into this run's root-only
+            // snapshot directory (${DUMP_STAGING}), to hash pg_dump's bytes itself;
+            // the dump in the runtime tree is still written by the runtime user.
+            'root dump helper (the dump must be written by the runtime user)' => '/(?:^|[;&|]\s*|\b(?:then|do|else)\s+)(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*dms_(?:prepare_private_backup_dir\b|write_private_dump\b(?!\s+"\$\{DUMP_STAGING\}\/))/',
         ],
         // Root file commands that name a runtime tree, on lines that do not
         // start with a runtime hand-off.

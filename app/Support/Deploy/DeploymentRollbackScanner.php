@@ -323,6 +323,8 @@ class DeploymentRollbackScanner
         $allowedComposer = array_values(array_filter((array) ($contract['allowed_root_composer_without_no_scripts'] ?? [])));
         $anyLine = (array) ($contract['forbidden_line_patterns'] ?? []);
         $rootLine = (array) ($contract['forbidden_root_line_patterns'] ?? []);
+        $buildPrefix = (string) ($contract['build_line_prefix'] ?? '/(?!)/');
+        $allowedBuild = array_values(array_filter((array) ($contract['allowed_root_build_probes'] ?? [])));
 
         foreach ($this->logicalShellLines($contents) as [$number, $line]) {
             // php, php8.3, /usr/bin/php — wherever it appears on the line.
@@ -339,6 +341,19 @@ class DeploymentRollbackScanner
             if (preg_match('/(?<![\w.\/-])(?:\/[\w.\/-]*\/)?composer(?:\.phar)?(?:\s+-\S+)*\s+(?:install|update|upgrade|require|remove|reinstall|dump-autoload|dumpautoload|run-script|run|exec|create-project)\b/', $composerLine) === 1
                 && ! str_contains($composerLine, '--no-scripts')) {
                 $issues[] = "line {$number}: composer runs its scripts as root (add --no-scripts)";
+            }
+
+            // Rule 235: composer, npm, npx, node, yarn, pnpm, bun — wherever on
+            // the line — only behind the build identity's sandboxed hand-off.
+            // Each `;` / `&&` / `||` / `|` segment is judged on its own, so a
+            // second command chained after a hand-off is not covered by it.
+            $buildLine = str_replace($allowedBuild, '', $line);
+            foreach (preg_split('/\s*(?:&&|\|\||;|\|)\s*/', $buildLine) ?: [] as $segment) {
+                if (preg_match('/(?<![\w.\/-])(?:\/[\w.\/-]*\/)?(?:composer(?:\.phar)?|npm-cli\.js|npm|npx|nodejs|node|yarnpkg|yarn|pnpm|bun)(?=[\s\'"`;)|&]|$)/', $segment) === 1
+                    && preg_match($buildPrefix, $segment) !== 1) {
+                    $issues[] = "line {$number}: composer/npm runs as root (hand it to the build identity with dms_build_run)";
+                    break;
+                }
             }
 
             foreach ($anyLine as $label => $pattern) {

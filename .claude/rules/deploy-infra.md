@@ -109,7 +109,7 @@ code, then the canonical rule, and report the drift.
 - **AIR-DEP-16** Restores run as the `postgres` superuser with the dump streamed on stdin (dumps are not readable by
   that account), `ON_ERROR_STOP=1`, single transaction and checked `PIPESTATUS`; never grant the app role superuser.
   `scripts/restore_postgres.sh` refuses the production database without `--force-production` plus a typed
-  confirmation; `--yes` skips the typed confirmation and is used only with an explicit owner decision for that restore. `scripts/restore-rehearsal.sh` restores into `<db>_dr_rehearsal_<stamp>`, aborts if it equals the
+  confirmation (`--yes` only on an explicit owner decision); both restore tools need trusted digest evidence (AIR-DEP-40). `scripts/restore-rehearsal.sh` restores into `<db>_dr_rehearsal_<stamp>`, aborts if it equals the
   production name, and drops only that scratch database via a trap. Absent drill evidence stays WATCH. Source: `61-…`,
   archive `FIX-SUNU-GO-LIVE-BLOCKERS-1`, `.cursor/rules/125-final-pre-full-suite-readiness-gate.mdc` (§6).
 
@@ -192,7 +192,7 @@ code, then the canonical rule, and report the drift.
   fails when another account can read it. Source: `.cursor/rules/211-config-cache-private.mdc`.
 - **AIR-DEP-31** Production is the Biznet host `DaengtisiaMS` (`139.190.106.38`); `deploy/production-host.conf` is
   the single authority and `docs/runbooks/production-host-identity.md` explains it. Reach it only through
-  `daengtisiams-biznet-prod` as `dmsadmin` (root has no SSH login; privileged steps use `sudo -n`) after
+  `daengtisiams-biznet-deploy` (AIR-DEP-40) or `daengtisiams-biznet-prod` (`dmsadmin`) after
   `scripts/production-target-check.sh` reports `PRODUCTION_TARGET=VERIFIED`. The Hostinger host `srv1730088`
   (`145.79.13.224`) and the alias `daengtisiams-vps` are frozen legacy: never a deploy, migrate, restart or write
   target. Never relax `StrictHostKeyChecking`, never seed a host key with `ssh-keyscan`, and no workflow opens a
@@ -214,9 +214,8 @@ code, then the canonical rule, and report the drift.
   `release_id`, `approved_sha`, `result_exit`) and `verify <id>` / `status` (`scripts/lib/deploy-runner-evidence.sh`) accept a success only when
   host identity, timestamps, identifier, target commit (one pin, the deploy's HEAD == target, checkout still there),
   runner version and result (status == record, preflight GO + DEPLOY OK in the run's own log) all agree; anything
-  else exits `4` with a named verdict. Never read `latest.status` raw as a GO criterion. The one-time §6a transition
-  (`verify-transition`) ran on 2026-11-04 (deploy `20261104-151042`); every later deploy is proven with `verify <id>` →
-  `DEPLOY RUNNER OK` (§6b).
+  else exits `4` with a named verdict. Never read `latest.status` raw as a GO criterion. Every deploy is proven with `verify <id>` →
+  `DEPLOY RUNNER OK` (§6b; `verify-transition` is spent).
   Source: `.cursor/rules/220-production-host-identity-biznet.mdc` §4.
 - **AIR-DEP-34** **SUPERSEDED by AIR-DEP-35 (rule 229, 2026-11-14).** ~~The runner deployed the base-branch tip at
   launch.~~ Full text: `.cursor/rules/220-production-host-identity-biznet.mdc` §4.
@@ -230,11 +229,10 @@ code, then the canonical rule, and report the drift.
   snapshot (deploy refuses `--target-sha`). Any mismatch: `DEPLOYMENT=DENIED`, exit 77, never the tip. Evidence
   contract 3 (`DEPLOY_APPROVED_TARGET_MATCH=YES`); GO tag on the approved commit; rollback targets must be ancestors
   of HEAD. Deploys refuse `--snapshot-ref` and run only `scripts/deploy-vps.sh`; the guard fetches into a private
-  ref (never `FETCH_HEAD`); snapshot stages trust `DMS_DEPLOY_*` only with the bootstrap's lock held. The one-time
-  bootstrap (runbook §6c) is spent on Biznet (deploy `20261114-011345`, 2026-11-14): the in-tree runner there carries
-  the guard, so use §6b. An approval-record PR runs the whole Critical Gate (`unknown_high_risk`, about an hour); never
-  reclassify it as documentation. Rule 229 alone was binding, not authentication; rule 231 (AIR-DEP-37) adds the
-  signature, the host key, single use, trusted evidence and the shared lock. Source:
+  ref (never `FETCH_HEAD`); snapshot stages trust `DMS_DEPLOY_*` only with the bootstrap's lock held. The §6c bootstrap
+  is spent on Biznet: use §6b. An approval-record PR runs the whole Critical Gate (`unknown_high_risk`, about an hour); never
+  reclassify it as documentation. Rule 231 (AIR-DEP-37) adds signature, host key, single use and trusted evidence.
+  Source:
   `.cursor/rules/229-exact-approved-release-sha-guard.mdc`.
 - **AIR-DEP-36** The BK-2 workstation pull (`dms-bk2-pull.timer`) claims `result=OK`, exit 0 and a local
   `OFF_SERVER=OK` only when that run proved the backup HDD's identity chain up to one read-write mount in **PID 1's**
@@ -243,8 +241,7 @@ code, then the canonical rule, and report the drift.
   or unmounted HDD is recoverable; a mismatch is fail-closed. Only the custodian unlocks, interactively, typing the
   passphrase into cryptsetup's prompt. `bk2-status.sh` gives the verdict. HDD identifiers stay in the private tree,
   never in this public repository. A restart drill counts only when the first timer run after boot is seen `DEGRADED`
-  with a `BK2_ALERT` before the custodian attaches (rule 230 §11). Drill 2 (2026-11-14) proved both legs live, and the
-  program is GO, with no GO tag because nothing was deployed. Source:
+  with a `BK2_ALERT` before the custodian attaches (rule 230 §11). Source:
   `.cursor/rules/230-bk2-offserver-workstation-recovery.mdc`, runbook `docs/runbooks/bk2-offserver-workstation-recovery.md`.
 
 - **AIR-DEP-37** Rule 231. Approval contract 2 adds `DMS_APPROVAL_HOST_KEY_SHA256` (= the pinned and presented host
@@ -269,7 +266,11 @@ code, then the canonical rule, and report the drift.
   chmods a path in the runtime trees: it lchowns foreign entries (`find -execdir chown -h`; hardlinks/FIFOs/devices
   refused), claims top-down source entries others own/can write, sources the environment file only if
   root-only-writable. Modes: `dms_privsep_normalize_modes` (refuses root). Gate `DEPLOY_PRIVSEP=ENFORCED`; read-only
-  `scripts/privsep-drift-check.sh`; scanner `privilegeSeparationIssues()`. Rule 233.
+  `scripts/privsep-drift-check.sh`; scanner `privilegeSeparationIssues()`.
+- **AIR-DEP-40** Rule 235 (OD-6, R1/R2/R4). No passwordless unrestricted sudo: deploys and checks use
+  `daengtisiams-biznet-deploy` (forced command; sudo only for the root-owned operator entrypoint, allowlisted
+  requests); `dmsadmin` sudo needs its password (owner break-glass). composer/npm only via `dms_build_run`. Restores
+  need trusted digest evidence. Gate: `sudo-policy-check.sh` → `SUDO_POLICY=LEAST_PRIVILEGE`.
 
 ## Current posture (snapshot 2026-11-04, read-only inspection — verify before relying on it)
 
@@ -283,8 +284,7 @@ code, then the canonical rule, and report the drift.
   closed during that verification.
 - Accepted residuals carried from Hostinger: any `www-data` process (nginx) can reach the FastCGI socket
   (connect ≠ read), and root reads everything.
-- Upload limits: AIR-DEP-17. The DB backup timer is versioned in the repo; whether it is installed on the host is an operator step — check `systemctl` before assuming backups are
-  scheduled.
+- Upload limits: AIR-DEP-17.
 - Object storage disabled; clinical evidence on the local private disk; restore-drill evidence absent (honest WATCH).
 - Re-measured 2026-11-15: `DeployRuntimePermissionsScriptTest` and `DeployAuthLandingSmokeCommandTest` match no
   critical-gate token (Full Suite only); confirm with `pest --list-tests` before relying on CI for them.
@@ -303,6 +303,7 @@ code, then the canonical rule, and report the drift.
 | `.cursor/rules/231-release-guard-trust-hardening.mdc` | Signed, host-key-bound, single-use approvals; trusted evidence (contract 4); one release lock; rollback resolution |
 | `.cursor/rules/232-bk2-manual-only-not-a-deploy-gate.mdc` | BK-2 manual-only: not a sprint, GO or deploy gate; runner dump stays mandatory; only an explicit owner order runs BK-2 |
 | `.cursor/rules/233-deploy-privilege-separation.mdc` | No root PHP; no root path mutation of runtime trees; source claim; drift gate; deploy security baseline index |
+| `.cursor/rules/235-deploy-least-privilege-sudo.mdc` | Operator entrypoint; password-only admin; build sandbox; restore evidence |
 | `.cursor/rules/100-production-secret-file-permission-hardening.mdc` | Secret file mode and handling |
 | `.cursor/rules/121-clinical-evidence-private-storage.mdc` | Clinical evidence on private disks only |
 | `.cursor/rules/176-private-database-dump-creation.mdc` | Dumps private from creation |

@@ -188,6 +188,9 @@ return [
             // run-as-runtime helpers, drift repair and gates — sourced by both
             // scripts from the snapshot before the first mutation.
             'scripts/lib/runtime-privsep.sh',
+            // DMS-DEPLOY-PRIVSEP-PHASE-2 (rule 235): the build identity's
+            // hand-over, sandboxed run and claim for composer and npm.
+            'scripts/lib/build-privsep.sh',
         ],
         // The live runtime identity authority is overlaid onto the snapshot
         // after the export: rolling the CODE back must never roll the RUNTIME

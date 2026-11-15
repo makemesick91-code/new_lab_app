@@ -100,8 +100,9 @@ it covers. When you plan work in a domain before opening any of its files, read 
 ### Production and deployment
 
 - **CG-14 Production identity.** Production is the Biznet Gio host `DaengtisiaMS` (`139.190.106.38`), app at
-  `/var/www/asia-dental-lab-v2`, reached only with `ssh daengtisiams-biznet-prod` as the admin `dmsadmin` (root has
-  no SSH login; privileged steps run through `sudo -n`). Authority: `deploy/production-host.conf`. Before any
+  `/var/www/asia-dental-lab-v2`, reached only with `ssh daengtisiams-biznet-deploy` (the deploy operator: its key runs
+  only the allowlisted entrypoint actions, rule 235) or `ssh daengtisiams-biznet-prod` as the admin `dmsadmin`, whose
+  sudo needs the owner's password (break-glass; root has no SSH login). Authority: `deploy/production-host.conf`. Before any
   sensitive operation prove the target with `bash scripts/production-target-check.sh --remote` and proceed only on
   `PRODUCTION_TARGET=VERIFIED`. The Hostinger host `srv1730088` (`145.79.13.224`) is WRITE-FROZEN legacy, a
   historical migration source only: never deploy, migrate, restart or write there, and never treat the alias
@@ -116,7 +117,8 @@ it covers. When you plan work in a domain before opening any of its files, read 
   on operational clinic devices is frozen (use dedicated test devices), and clinic reopening stays a separate owner
   decision.
 - **CG-15 Deploy.** Deploy only with `bash scripts/deploy-vps-runner.sh start --release-id <id> --approved-sha <sha>`,
-  executed **on the VPS** (as root through `sudo -n`) in the app directory, never on a workstation or a CI runner. The
+  executed **on the VPS** in the app directory as root, reached through the operator entrypoint
+  (`ssh daengtisiams-biznet-deploy start …`, rule 235), never on a workstation or a CI runner. The
   first deploy on a new host needs explicit owner approval and a closed readiness checklist
   (`docs/runbooks/production-host-identity.md` §6). Biznet's first deploy ran on 2026-11-04 (deploy `20261104-151042`,
   commit `6f22beb7`); later deploys follow §6b under the owner's current release governance. Rule 229: the runner
@@ -127,7 +129,8 @@ it covers. When you plan work in a domain before opening any of its files, read 
   `DEPLOY RUNNER OK` (never read `latest.status` raw); the SSH pipe may drop while the detached runner carries on. The
   runner takes the backup, pins the SHA and runs from an immutable snapshot, so never pre-pull or hand-edit the
   production tree. Rule 233: deploy and rollback run every artisan command as the runtime user, never application PHP
-  as root, and never mutate `storage/` or `bootstrap/cache` by path as root. Rollback is `scripts/rollback-vps.sh <commit>` on the host: code only, never an automatic data
+  as root, and never mutate `storage/` or `bootstrap/cache` by path as root. Rule 235: composer and npm run only as
+  the sandboxed build identity, and no account holds passwordless sudo. Rollback is `scripts/rollback-vps.sh <commit>` on the host: code only, never an automatic data
   restore, and never delete a backup or the rollback database. After a permission change run `PermissionSeeder`, then
   `RoleSeeder`, then `permission:cache-reset`. Rebuild config caches as the runtime user. If you edit the environment
   file, re-assert `root:daengtisiams 0640`.

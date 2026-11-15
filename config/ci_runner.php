@@ -1707,6 +1707,14 @@ return [
         // by the `DeployHarden` token in BOTH critical variants; declared so it
         // stays enforced.
         'tests/Feature/Deploy/DeployHardenPrivilegeSeparationTest.php',
+        // DMS-DEPLOY-PRIVSEP-PHASE-2 (rule 235): the deploy operator may run only
+        // its root-owned entrypoint with allowlisted requests (OD-6); the sudo
+        // policy classifier and rendered rule; composer and npm only as the
+        // sandboxed build identity (R1); restores only of a dump whose digest
+        // matches trusted evidence (R4); nothing but placeholders tracked under
+        // the runtime trees (R2). Selected by the `DeployHarden` token in BOTH
+        // critical variants; declared so it stays enforced.
+        'tests/Feature/Deploy/DeployHardenLeastPrivilegeTest.php',
     ],
 
     /*

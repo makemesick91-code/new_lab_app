@@ -144,11 +144,14 @@ if ! dms_production_host_preflight "${DEPLOY_TOOLS_DIR}/deploy/production-host.c
   echo "FATAL: production host preflight failed — nothing was backed up, checked out or migrated — NOT GO" >&2
   exit 2
 fi
+# Rule 235: the version probes run from / so no project configuration is read,
+# and composer with --no-plugins — from the application directory even
+# `composer --version` can activate a plugin installed in vendor/ as root.
 if ! dms_production_toolchain_versions \
-     "$(node --version 2>/dev/null || true)" \
-     "$(npm --version 2>/dev/null || true)" \
+     "$(cd / && node --version 2>/dev/null || true)" \
+     "$(cd / && npm --version 2>/dev/null || true)" \
      "$(php -r 'echo PHP_VERSION;' 2>/dev/null || true)" \
-     "$(COMPOSER_ALLOW_SUPERUSER=1 composer --version --no-ansi --no-interaction 2>/dev/null | sed -n '1p' || true)"; then
+     "$(cd / && COMPOSER_ALLOW_SUPERUSER=1 composer --version --no-plugins --no-ansi --no-interaction 2>/dev/null | sed -n '1p' || true)"; then
   echo "FATAL: production toolchain versions do not match CI — nothing was backed up, checked out or migrated — NOT GO" >&2
   exit 2
 fi
@@ -200,6 +203,19 @@ if [ "$(id -gn "$RUNTIME_USER")" != "$RUNTIME_GROUP" ]; then
   exit 2
 fi
 echo "Runtime user: ${RUNTIME_USER}:${RUNTIME_GROUP} (explicit, from ${RUNTIME_IDENTITY_FILE})"
+
+# ─── DMS-DEPLOY-PRIVSEP-PHASE-2 (rule 235) build identity ───────────────────
+# composer and npm never run as root: they run as the build identity declared in
+# the host authority, inside a sandboxed transient service, over trees root
+# hands over and claims back (scripts/lib/build-privsep.sh). Checked before the
+# first mutation; a missing or privileged build identity is NOT GO. Read from
+# the immutable snapshot.
+# shellcheck source=lib/build-privsep.sh
+source "${DEPLOY_TOOLS_DIR}/scripts/lib/build-privsep.sh"
+BUILD_USER="$(dms_preflight_authority_value "${DEPLOY_TOOLS_DIR}/deploy/production-host.conf" DMS_PRODUCTION_BUILD_USER)"
+BUILD_HOME="$(dms_preflight_authority_value "${DEPLOY_TOOLS_DIR}/deploy/production-host.conf" DMS_PRODUCTION_BUILD_HOME)"
+dms_build_identity_check "$BUILD_USER" "$BUILD_HOME" "$RUNTIME_USER" "$RUNTIME_GROUP"
+BUILD_GROUP="$(id -gn -- "$BUILD_USER")"
 
 # ─── DMS-DEPLOY-PRIVSEP-HARDENING-1 (rule 233) privilege separation ─────────
 # The runtime user owns storage/ and bootstrap/cache, so anything root executes,
@@ -347,16 +363,31 @@ set +a
 
 BACKUP="storage/app/backups/deploy/pre_auto_deploy_${STAMP}.sql"
 
-PGPASSWORD="${DB_PASSWORD}" dms_privsep_as_runtime_fn "$RUNTIME_USER" "$DUMP_HELPERS" dms_write_private_dump "$BACKUP" pg_dump \
+# Rule 235 (R4): the digest the restore tools trust must be ROOT's own. Root
+# runs pg_dump (a root-owned binary; no application code) into a private file
+# in this run's root-only snapshot directory (the bootstrap removes it on every
+# exit), hashes THAT, and hands the runtime user the BYTES on a read-only stdin;
+# the runtime user writes its private dump into its tree exactly as before. A
+# runtime process can therefore no longer swap the dump before root hashes it.
+DUMP_STAGING="${DMS_DEPLOY_SNAPSHOT_DIR}/dump-staging"
+mkdir -m 0700 -- "$DUMP_STAGING"
+PGPASSWORD="${DB_PASSWORD}" dms_write_private_dump "${DUMP_STAGING}/dump.sql" pg_dump \
   -h "${DB_HOST:-127.0.0.1}" \
   -p "${DB_PORT:-5432}" \
   -U "${DB_USERNAME}" \
   -d "${DB_DATABASE}"
+DUMP_SHA256="$(sha256sum < "${DUMP_STAGING}/dump.sql" | cut -d' ' -f1)"
+dms_privsep_as_runtime_fn_from "${DUMP_STAGING}/dump.sql" "$RUNTIME_USER" "$DUMP_HELPERS" dms_write_private_dump "$BACKUP" cat
 
 as_runtime test -s "$BACKUP"
-# The digest lands in the root-only deploy log, so a later change to the dump
-# (which the runtime user owns) is detectable against this record.
-echo "Pre-deploy backup: ${BACKUP} sha256=$(as_runtime sha256sum -- "$BACKUP" | cut -d' ' -f1)"
+if [ "$(as_runtime sha256sum -- "$BACKUP" | cut -d' ' -f1)" != "$DUMP_SHA256" ]; then
+  echo "FATAL: the runtime user's copy of the dump differs from the bytes root hashed — NOT GO" >&2
+  exit 1
+fi
+rm -rf -- "$DUMP_STAGING"
+# The digest lands in the root-only deploy log: the restore tools compare a dump
+# against exactly this line (scripts/lib/restore-integrity.sh).
+echo "Pre-deploy backup: ${BACKUP} sha256=${DUMP_SHA256}"
 
 echo "== Advance checkout to the pinned target =="
 # Fast-forward the approved branch to the EXACT pinned commit instead of pulling
@@ -397,13 +428,17 @@ fi
 DMS_PRIVATE_PATHS="$EFFECTIVE_PRIVATE_PATHS"
 echo "Private storage paths (live + target): ${DMS_PRIVATE_PATHS}"
 
-echo "== Composer install =="
-# Rule 233: --no-scripts. composer runs as root (vendor/ is root's), and its
-# post-autoload-dump scripts boot the application — `@php artisan
-# package:discover` `require`s bootstrap/cache/*.php, which the runtime user
-# can rewrite. The two steps of composer.json's post-autoload-dump run below as
-# the runtime user instead (DeployHardenPrivilegeSeparationTest pins that list).
-composer install --no-dev --optimize-autoloader --no-scripts
+echo "== Composer install (build identity, rule 235) =="
+# Rule 233: --no-scripts — composer's post-autoload-dump scripts boot the
+# application (`@php artisan package:discover` `require`s bootstrap/cache/*.php,
+# which the runtime user can rewrite); its two steps run below as the runtime
+# user instead (DeployHardenPrivilegeSeparationTest pins that list).
+# Rule 235: composer itself runs as the build identity, sandboxed, writing only
+# vendor/; root claims vendor/ back before anything loads it.
+BUILD_MASKS="$(dms_build_env_masks "$APP_DIR")"
+dms_build_handover "$BUILD_USER" "$BUILD_GROUP" vendor
+dms_build_run "$BUILD_USER" "$BUILD_HOME" "$APP_DIR" "${APP_DIR}/vendor" "$BUILD_MASKS" composer install --no-dev --optimize-autoloader --no-scripts --no-interaction
+dms_build_claim "$BUILD_USER" vendor
 
 echo "== Composer post-autoload-dump (as the runtime user, rule 233) =="
 # Illuminate\Foundation\ComposerScripts::postAutoloadDump: drop the compiled
@@ -412,9 +447,15 @@ echo "== Composer post-autoload-dump (as the runtime user, rule 233) =="
 as_runtime rm -f -- bootstrap/cache/config.php bootstrap/cache/services.php bootstrap/cache/packages.php
 as_runtime php artisan package:discover --ansi
 
-echo "== NPM build =="
-npm ci
-npm run build
+echo "== NPM build (build identity, rule 235) =="
+# Every dependency's lifecycle scripts and the asset build (vite and its
+# plugins) run as the build identity, sandboxed, writing only node_modules/ and
+# public/build; root claims both back and the web server's tree carries no symlink.
+dms_build_handover "$BUILD_USER" "$BUILD_GROUP" node_modules public/build
+dms_build_run "$BUILD_USER" "$BUILD_HOME" "$APP_DIR" "${APP_DIR}/node_modules ${APP_DIR}/public/build" "$BUILD_MASKS" npm ci
+dms_build_run "$BUILD_USER" "$BUILD_HOME" "$APP_DIR" "${APP_DIR}/node_modules ${APP_DIR}/public/build" "$BUILD_MASKS" npm run build
+dms_build_claim "$BUILD_USER" node_modules public/build
+dms_build_assert_no_symlinks public/build
 
 echo "== Laravel migrate =="
 as_runtime php artisan migrate --force

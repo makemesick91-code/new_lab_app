@@ -88,6 +88,10 @@ Before finalizing work:
 - Never run application PHP (artisan, composer scripts) as root, and never chmod/chown/write a path in `storage/` or
   `bootstrap/cache` as root: use the runtime user (`.cursor/rules/233-deploy-privilege-separation.mdc`).
 - Release approvals are owner-signed and bound to the exact SHA (rules 229/231); BK-2 is manual-only (rule 232).
+- No account holds passwordless sudo (rule 235): deploys and read-only checks go through the deploy operator alias,
+  whose key runs only the root-owned entrypoint's allowlisted actions; the administrator's sudo needs the owner's
+  password (rollback, restore, provisioning). composer/npm run only as the sandboxed build identity; restores need
+  trusted digest evidence (`.cursor/rules/235-deploy-least-privilege-sudo.mdc`).
 
 ## Developer toolchain (rule 234)
 

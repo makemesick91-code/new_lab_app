@@ -194,7 +194,8 @@ it('accepts the separated forms the scripts actually use', function () {
         'as_runtime rm -f -- bootstrap/cache/x.php  # rm storage in a trailing comment',
         'mkdir -p /etc/x  # not storage/',
         'echo "# not a comment: storage"',
-        "composer install --no-dev --optimize-autoloader \\\n  --no-scripts",
+        // Rule 235: composer runs only behind the build identity's hand-off.
+        "dms_build_run \"\$BUILD_USER\" \"\$BUILD_HOME\" \"\$APP_DIR\" \"\${APP_DIR}/vendor\" \"\$BUILD_MASKS\" composer install --no-dev --optimize-autoloader \\\n  --no-scripts",
         'run runuser -u "$RUNTIME_USER" -- php artisan view:cache',
         'echo "$(php -r \'echo PHP_VERSION;\' 2>/dev/null || true)"',
         'echo "$(COMPOSER_ALLOW_SUPERUSER=1 composer --version --no-ansi 2>/dev/null)"',
@@ -260,9 +261,11 @@ it('creates the pre-deploy and pre-rollback dumps as the runtime user', function
 
     expect($code)->toContain('dms_privsep_as_runtime_fn "$RUNTIME_USER" "$DUMP_HELPERS" dms_prepare_private_backup_dir storage/app/backups')
         ->and($code)->toContain("dms_privsep_as_runtime_fn \"\$RUNTIME_USER\" \"\$DUMP_HELPERS\" dms_prepare_private_backup_dir storage/app/backups/{$dir}")
-        ->and($code)->toContain('PGPASSWORD="${DB_PASSWORD}" dms_privsep_as_runtime_fn "$RUNTIME_USER" "$DUMP_HELPERS" dms_write_private_dump "$BACKUP" pg_dump')
+        // Rule 235 (R4): root hashes pg_dump's bytes in its own staging copy and
+        // hands them to the runtime user, who still writes the dump in its tree.
+        ->and($code)->toContain('dms_privsep_as_runtime_fn_from "${DUMP_STAGING}/dump.sql" "$RUNTIME_USER" "$DUMP_HELPERS" dms_write_private_dump "$BACKUP" cat')
         ->and($code)->toContain('as_runtime test -s "$BACKUP"')
-        ->and($code)->toContain('sha256=$(as_runtime sha256sum -- "$BACKUP"');
+        ->and($code)->toContain('if [ "$(as_runtime sha256sum -- "$BACKUP" | cut -d\' \' -f1)" != "$DUMP_SHA256" ]; then');
     expect(preg_match('/^\s*dms_(prepare_private_backup_dir|write_private_dump)\b/m', $code))->toBe(0);
 })->with([
     'deploy' => ['scripts/deploy-vps.sh', 'deploy'],

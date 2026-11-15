@@ -86,6 +86,7 @@ mode, or adding the runtime user to a privileged group. The library is a closure
 |---|---|
 | Deploy runs only on the VPS from the immutable snapshot; never from a workstation or CI | CG-15, rule 92 immutable entrypoint, AIR-DEP-01/02 |
 | Least privilege; no root PHP; no recursive chmod/chown over runtime trees; drift detection | this rule |
+| No passwordless unrestricted sudo; operator entrypoint only; composer/npm as the sandboxed build identity; restore digest evidence; runtime trees hold no trusted code | rule 235 |
 | Exact approved SHA, owner-signed host-key-bound single-use approval, trust anchor | rules 229 and 231 |
 | Signing and SSH keys stay with the owner: never generated, held, logged or committed by an agent | rule 231, CG-11 |
 | Offline copy of the signing key is optional (owner policy `DMS-OFFLINE-CUSTODY-OPTIONAL-1`) | `docs/sprints/dms-release-guard-trust-hardening-1.md` §13.2 |

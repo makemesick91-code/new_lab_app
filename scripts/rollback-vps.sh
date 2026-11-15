@@ -175,11 +175,14 @@ if ! dms_production_host_preflight "${DEPLOY_TOOLS_DIR}/deploy/production-host.c
   echo "FATAL: production host preflight failed — nothing was backed up, checked out or migrated — NOT GO" >&2
   exit 2
 fi
+# Rule 235: the version probes run from / so no project configuration is read,
+# and composer with --no-plugins — from the application directory even
+# `composer --version` can activate a plugin installed in vendor/ as root.
 if ! dms_production_toolchain_versions \
-     "$(node --version 2>/dev/null || true)" \
-     "$(npm --version 2>/dev/null || true)" \
+     "$(cd / && node --version 2>/dev/null || true)" \
+     "$(cd / && npm --version 2>/dev/null || true)" \
      "$(php -r 'echo PHP_VERSION;' 2>/dev/null || true)" \
-     "$(COMPOSER_ALLOW_SUPERUSER=1 composer --version --no-ansi --no-interaction 2>/dev/null | sed -n '1p' || true)"; then
+     "$(cd / && COMPOSER_ALLOW_SUPERUSER=1 composer --version --no-plugins --no-ansi --no-interaction 2>/dev/null | sed -n '1p' || true)"; then
   echo "FATAL: production toolchain versions do not match CI — nothing was backed up, checked out or migrated — NOT GO" >&2
   exit 2
 fi
@@ -217,6 +220,17 @@ if [ "$(id -gn "$RUNTIME_USER")" != "$RUNTIME_GROUP" ]; then
   echo "FATAL: '${RUNTIME_USER}' primary group is '$(id -gn "$RUNTIME_USER")', expected '${RUNTIME_GROUP}' — NOT GO" >&2
   exit 2
 fi
+
+# ─── DMS-DEPLOY-PRIVSEP-PHASE-2 (rule 235) build identity ───────────────────
+# Same boundary as the deploy: composer and npm run as the build identity in a
+# sandboxed transient service, never as root. From the snapshot of the CURRENT
+# code, so a rollback to an older release still builds unprivileged.
+# shellcheck source=lib/build-privsep.sh
+source "${DEPLOY_TOOLS_DIR}/scripts/lib/build-privsep.sh"
+BUILD_USER="$(dms_preflight_authority_value "${DEPLOY_TOOLS_DIR}/deploy/production-host.conf" DMS_PRODUCTION_BUILD_USER)"
+BUILD_HOME="$(dms_preflight_authority_value "${DEPLOY_TOOLS_DIR}/deploy/production-host.conf" DMS_PRODUCTION_BUILD_HOME)"
+dms_build_identity_check "$BUILD_USER" "$BUILD_HOME" "$RUNTIME_USER" "$RUNTIME_GROUP"
+BUILD_GROUP="$(id -gn -- "$BUILD_USER")"
 
 # ─── DMS-DEPLOY-PRIVSEP-HARDENING-1 (rule 233) privilege separation ─────────
 # Same rule as the deploy: root never runs application PHP and never opens,
@@ -285,15 +299,29 @@ set +a
 
 BACKUP="storage/app/backups/rollback/pre_rollback_${STAMP}.sql"
 
-PGPASSWORD="${DB_PASSWORD}" dms_privsep_as_runtime_fn "$RUNTIME_USER" "$DUMP_HELPERS" dms_write_private_dump "$BACKUP" pg_dump \
+# Rule 235 (R4): the digest the restore tools trust must be ROOT's own. Root
+# runs pg_dump (a root-owned binary; no application code) into a private file
+# in this run's root-only snapshot directory (the bootstrap removes it on every
+# exit), hashes THAT, and hands the runtime user the BYTES on a read-only stdin;
+# the runtime user writes its private dump into its tree exactly as before. A
+# runtime process can therefore no longer swap the dump before root hashes it.
+DUMP_STAGING="${DMS_DEPLOY_SNAPSHOT_DIR}/dump-staging"
+mkdir -m 0700 -- "$DUMP_STAGING"
+PGPASSWORD="${DB_PASSWORD}" dms_write_private_dump "${DUMP_STAGING}/dump.sql" pg_dump \
   -h "${DB_HOST:-127.0.0.1}" \
   -p "${DB_PORT:-5432}" \
   -U "${DB_USERNAME}" \
   -d "${DB_DATABASE}"
+DUMP_SHA256="$(sha256sum < "${DUMP_STAGING}/dump.sql" | cut -d' ' -f1)"
+dms_privsep_as_runtime_fn_from "${DUMP_STAGING}/dump.sql" "$RUNTIME_USER" "$DUMP_HELPERS" dms_write_private_dump "$BACKUP" cat
 
 as_runtime test -s "$BACKUP"
-
-echo "Backup written: ${BACKUP} sha256=$(as_runtime sha256sum -- "$BACKUP" | cut -d' ' -f1)"
+if [ "$(as_runtime sha256sum -- "$BACKUP" | cut -d' ' -f1)" != "$DUMP_SHA256" ]; then
+  echo "FATAL: the runtime user's copy of the dump differs from the bytes root hashed — NOT GO" >&2
+  exit 1
+fi
+rm -rf -- "$DUMP_STAGING"
+echo "Backup written: ${BACKUP} sha256=${DUMP_SHA256}"
 
 echo "== Checkout pinned rollback target =="
 # The operator's ref was resolved to this exact commit before the lock-protected
@@ -319,18 +347,27 @@ echo "HEAD verified at pinned rollback target: ${ROLLED_BACK_SHA}"
 # user before the first runtime step needs them.
 dms_privsep_repair_runtime_ownership "$RUNTIME_USER" "$RUNTIME_GROUP" storage bootstrap/cache
 
-echo "== Composer install =="
+echo "== Composer install (build identity, rule 235) =="
 # Rule 233: --no-scripts, then composer.json's post-autoload-dump as the runtime
-# user — the same two steps the deploy runs.
-composer install --no-dev --optimize-autoloader --no-scripts
+# user — the same two steps the deploy runs. Rule 235: composer runs as the
+# build identity, sandboxed, writing only vendor/, which root claims back.
+BUILD_MASKS="$(dms_build_env_masks "$APP_DIR")"
+dms_build_handover "$BUILD_USER" "$BUILD_GROUP" vendor
+dms_build_run "$BUILD_USER" "$BUILD_HOME" "$APP_DIR" "${APP_DIR}/vendor" "$BUILD_MASKS" composer install --no-dev --optimize-autoloader --no-scripts --no-interaction
+dms_build_claim "$BUILD_USER" vendor
 
 echo "== Composer post-autoload-dump (as the runtime user, rule 233) =="
 as_runtime rm -f -- bootstrap/cache/config.php bootstrap/cache/services.php bootstrap/cache/packages.php
 as_runtime php artisan package:discover --ansi
 
-echo "== NPM build =="
-npm ci
-npm run build
+echo "== NPM build (build identity, rule 235) =="
+# The rolled-back release's dependency scripts and asset build run as the build
+# identity, sandboxed — the same boundary as the deploy.
+dms_build_handover "$BUILD_USER" "$BUILD_GROUP" node_modules public/build
+dms_build_run "$BUILD_USER" "$BUILD_HOME" "$APP_DIR" "${APP_DIR}/node_modules ${APP_DIR}/public/build" "$BUILD_MASKS" npm ci
+dms_build_run "$BUILD_USER" "$BUILD_HOME" "$APP_DIR" "${APP_DIR}/node_modules ${APP_DIR}/public/build" "$BUILD_MASKS" npm run build
+dms_build_claim "$BUILD_USER" node_modules public/build
+dms_build_assert_no_symlinks public/build
 
 echo "== NSF-10 backup verify =="
 as_runtime php artisan foundation:backup-verify --path="$BACKUP"
@@ -429,4 +466,4 @@ echo "ROLLBACK_HEAD_TARGET_MATCH=YES (${FINAL_HEAD})"
 
 echo "ROLLBACK OK: rolled back to ${TARGET_REF} (from ${CURRENT_REF_DESC}) at ${STAMP}"
 echo "Pre-rollback backup: ${BACKUP}"
-echo "To restore data (only if required, and explicitly): bash scripts/restore_postgres.sh <backup_file>"
+echo "To restore data (only if required, owner-approved, as the administrator): bash scripts/restore_postgres.sh --file <backup_file> --expected-sha256 <the sha256 printed above for that backup>"
