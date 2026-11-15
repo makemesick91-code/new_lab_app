@@ -148,6 +148,9 @@ timers, the release approval contract, the runner, the immutable bootstrap.
 | PR #636 CI, head `9fc67915` | run `43719716535` **success**: Critical Test Gate **10,218 passed**, 0 failed (`DeployHardenLeastPrivilegeTest` ran: PASS); Selective Module Gate **839 passed**; Quality, Android, NSF-9, NSF-10 gates passed; Full Suite skipped = DEFERRED |
 | Merge | squash, pinned to the tested head `9fc67915ad4881979ec6169fa743df95eb176770`: **`c7638a6f9ab52d6ae21ea538c86a6a2107887c29`**, parent `eb4f22bc`, tree `b04a6ad3…` = tested head tree |
 | Post-merge push CI on `c7638a6f…` | run `43725518536` **success** (14:39Z → 15:57Z): Critical Test Gate **10,218 passed**, 0 failed (`DeployHardenLeastPrivilegeTest` PASS); Selective Module, Quality, Android, NSF-9, NSF-10 gates success; Full Suite skipped = DEFERRED. Base tip still `c7638a6f…`, tree `b04a6ad3…` unchanged |
+| r2 fix PR #638, head `be0106f4` | run `43741198071` **success**: Critical Test Gate **10,220 passed**, 0 failed (`DeployHardenLeastPrivilegeTest` PASS, incl. the two hardlink tests); Selective, Quality, Android, NSF-9, NSF-10 passed; Full Suite skipped = DEFERRED |
+| r2 merge | squash, pinned to `be0106f47034bf5bc5f1fd7a216add4eb22c4c12`: **`92cb5572304c38e74aa5c48b146a9bcad0bc98e5`**, parent `861ded62`, tree `86e5b43cdf5281cadba4ddb606b7903df4d191b3` = tested head tree |
+| Post-merge push CI on `92cb5572…` | run `43748162075` **success** (18:41Z → 19:58Z): Critical Test Gate **10,220 passed**, 0 failed; Selective, Quality, Android, NSF-9, NSF-10 success; Full Suite skipped = DEFERRED. Base tip still `92cb5572…`, tree `86e5b43c…` unchanged |
 | Full Suite | **DEFERRED** (CG-18 global policy) — not passed |
 | Graphify 0.9.99 `graphify update .` | 58,628 nodes, 142,366 edges, 2,449 communities (rule 233's tree: 58,463 / 142,051 / 2,421); `graphify-out/` untracked |
 
@@ -227,6 +230,7 @@ the last matching rule wins and sudo would never prompt; `sudo -k; sudo -v` does
 | PR / CI / merge | #636 merged `c7638a6f`; PR CI and post-merge CI green (§6) |
 | Release approval (owner signature) | owner approval 15:59:05Z (§11.3), signature verified (§11.4); approval PR #637 merged `861ded62` |
 | First rehearsal (`c7638a6f`) | **FAILED** at the claim (esbuild hardlink pair) — deploy not started (§7.1); fix → release `-r2` |
+| r2 fix | PR #638 merged `92cb5572` (§6); post-merge CI green (§6) |
 | One-time provisioning, rehearsal, deploy through the operator | pending (runbook §6f) |
 | Administrator's passwordless sudo retired (owner-gated) | pending |
 | Production verification, GO tag | pending |
@@ -295,6 +299,19 @@ as principal `owner`:
 | Principal `someone` | refused (exit 255) |
 
 The allowed-signers file used for this check lived in the session scratchpad only; it was never committed.
+
+### 11.5 Release approval r2 of the exact SHA (2026-11-15T20:37:37Z)
+
+The `c7638a6f` release was not deployed (§7.1). After the fix PR #638 merged as `92cb5572…` and its post-merge CI run
+`43748162075` was green, the owner answered **"Approve 92cb5572…"** to: deploying
+**`92cb5572304c38e74aa5c48b146a9bcad0bc98e5`** (tree `86e5b43cdf5281cadba4ddb606b7903df4d191b3`; PR #638) to
+production on Biznet `DaengtisiaMS` as release `dms-deploy-privsep-phase-2-r2`, through runbook §6f, under the same
+conditions as §11.3 (provisioning and the OD-6 cutover as approved in §11.1–11.2; pre-deploy dump mandatory; BK-2
+skipped; rollback only on the owner's explicit go-ahead, by full SHA `9312818fc9115707b9e0b351ae805080be465b4a`,
+code only; read-only smoke; GO tag `dms-deploy-privsep-phase-2-go` only after production verification; 48-hour
+window). The `c7638a6f` record stays untouched and unused.
+
+Record: `deploy/release-approvals/dms-deploy-privsep-phase-2-r2.approval` (contract 2, window 2026-11-15T20:37:37Z → 2026-11-17T20:37:37Z).
 
 ## 12. Deploy and production verification
 
