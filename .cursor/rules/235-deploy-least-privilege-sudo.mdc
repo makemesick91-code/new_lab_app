@@ -44,7 +44,9 @@ GO is recorded in the sprint doc, not here.
    validates the words against the same allowlist, and as root re-validates, proves that it, every PATH entry, the
    program, the `scripts/`, `deploy/` and `.git` trees, every tool root runs (git, composer, node and its whole
    installation, npm, php, pg_dump, runuser, systemd-run, sudo, bash, env) are root-owned and not group/other-writable
-   (no symlinks), clears the environment (`env -i`) and runs exactly one in-tree program. Rollback, restore and every
+   (inside those trees a symlink is accepted only when its target is relative and every step of resolving it stays
+   inside the same tree, on its filesystem — r3: a stock Node.js install links `bin/npm` into its own `lib/`), clears
+   the environment (`env -i`) and runs exactly one in-tree program. Rollback, restore and every
    mutating host action are unreachable from it.
 4. **composer and npm never run as root.** Deploy and rollback run them only through `dms_build_run`: as the build
    identity (`DMS_PRODUCTION_BUILD_USER`: system account, no login shell, no sudo, in no runtime or administrative

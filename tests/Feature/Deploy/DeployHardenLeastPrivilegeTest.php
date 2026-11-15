@@ -246,7 +246,111 @@ it('trusts only root-owned, non-writable chains, trees and PATH entries', functi
     expect(lpBash($src." dms_operator_trusted_tree {$me['uid']} ".escapeshellarg($tree))[0])->toBe(1);
     chmod("{$tree}/lib/a.sh", 0o644);
     symlink('/etc/passwd', "{$tree}/lib/link");
-    expect(lpBash($src." dms_operator_trusted_tree {$me['uid']} ".escapeshellarg($tree))[0])->toBe(1);
+    [$exit, $out] = lpBash($src." dms_operator_trusted_tree {$me['uid']} ".escapeshellarg($tree));
+    expect($exit)->toBe(1)->and($out)->toContain('points outside it');
+});
+
+it('trusts a stock Node.js layout whose symlinks stay inside the tree (r3)', function () {
+    $me = lpMe();
+    $src = lpSource('scripts/deploy-operator-entrypoint.sh');
+    $check = fn (string $dir) => lpBash($src." dms_operator_trusted_tree {$me['uid']} ".escapeshellarg($dir));
+
+    // The production layout: bin/npm and bin/npx link into lib/; a directory link too.
+    $node = tempArtifactDir('lp-node-', 0o755);
+    foreach (['bin', 'lib', 'lib/node_modules', 'lib/node_modules/npm', 'lib/node_modules/npm/bin'] as $d) {
+        mkdir("{$node}/{$d}", 0o755);
+    }
+    foreach (['bin/node', 'lib/node_modules/npm/bin/npm-cli.js', 'lib/node_modules/npm/bin/npx-cli.js'] as $f) {
+        file_put_contents("{$node}/{$f}", 'x');
+        chmod("{$node}/{$f}", 0o755);
+    }
+    symlink('../lib/node_modules/npm/bin/npm-cli.js', "{$node}/bin/npm");
+    symlink('../lib/node_modules/npm/bin/npx-cli.js', "{$node}/bin/npx");
+    symlink('lib/node_modules', "{$node}/modules");
+    expect($check($node)[0])->toBe(0);
+
+    // A sibling whose name merely starts with the tree's name is outside it.
+    $sibling = "{$node}-evil";
+    mkdir($sibling, 0o755);
+    tempArtifactStore($sibling);
+    file_put_contents("{$sibling}/npm-cli.js", 'x');
+
+    // Still refused: a link that dangles or loops, and one that leaves the tree
+    // (absolute, through `..`, or into a same-prefix sibling).
+    foreach ([
+        ['../lib/missing.js', 'dangles'],
+        ['bad', 'dangles'],
+        ['/usr/bin', 'points outside it'],
+        ['../../', 'points outside it'],
+        ["{$sibling}/npm-cli.js", 'points outside it'],
+        ['../../'.basename($sibling).'/npm-cli.js', 'points outside it'],
+    ] as [$target, $why]) {
+        symlink($target, "{$node}/bin/bad");
+        [$exit, $out] = $check($node);
+        expect($exit)->toBe(1)->and($out)->toContain($why);
+        unlink("{$node}/bin/bad");
+    }
+    expect($check($node)[0])->toBe(0);
+
+    // A link that leaves the tree and comes back still refuses: the outside hop
+    // could be repointed later. Through an outside file link, an outside
+    // directory link, and through an in-tree directory link at another depth.
+    $out = tempArtifactDir('lp-node-out-', 0o755);
+    symlink("{$node}/lib/node_modules/npm/bin/npm-cli.js", "{$out}/hop");
+    symlink("{$node}/lib", "{$out}/dirhop");
+    mkdir("{$node}/a", 0o755);
+    mkdir("{$node}/a/b", 0o755);
+    symlink('../../lib', "{$node}/a/b/m");
+    expect($check($node)[0])->toBe(0);
+    foreach ([
+        'bin/bad' => '../../'.basename($out).'/hop',
+        'bin/bad2' => '../../'.basename($out).'/dirhop/node_modules/npm/bin/npm-cli.js',
+        'a/b/bad' => 'm/../../'.basename($out).'/hop',
+    ] as $name => $target) {
+        symlink($target, "{$node}/{$name}");
+        // It lands inside the tree, so a landing-only check would accept it.
+        expect(str_starts_with((string) realpath("{$node}/{$name}"), "{$node}/"))->toBeTrue($name);
+        [$exit, $out2] = $check($node);
+        expect($exit)->toBe(1)->and($out2)->toContain('points outside it');
+        unlink("{$node}/{$name}");
+    }
+    expect($check($node)[0])->toBe(0);
+
+    // A hop onto another filesystem (a mount below the tree, which find -xdev
+    // never walks) refuses: stat reports another device for lib/.
+    $stat = 'stat() { case "$*" in *"/lib"*) echo 2 ;; *) echo 1 ;; esac; };';
+    [$exit, $out2] = lpBash($src.$stat." dms_operator_trusted_tree {$me['uid']} ".escapeshellarg($node));
+    expect($exit)->toBe(1)->and($out2)->toContain('another filesystem');
+
+    // The tree itself must be a real directory, named by an absolute path.
+    $alias = tempArtifactDir('lp-node-alias-', 0o755);
+    symlink($node, "{$alias}/node");
+    [$exit, $out] = $check("{$alias}/node");
+    expect($exit)->toBe(1)->and($out)->toContain('is missing, not a directory, or a symlink');
+    [$exit, $out] = $check('relative/dir');
+    expect($exit)->toBe(1)->and($out)->toContain('is not absolute');
+
+    // A group-writable file next to the links still refuses.
+    chmod("{$node}/bin/node", 0o775);
+    [$exit, $out] = $check($node);
+    expect($exit)->toBe(1)->and($out)->toContain('foreign-owned or group/other-writable');
+});
+
+it('refuses when the symlink walk cannot finish (r3)', function () {
+    $me = lpMe();
+    $src = lpSource('scripts/deploy-operator-entrypoint.sh');
+    $tree = tempArtifactDir('lp-walk-', 0o755);
+
+    // The ownership walk succeeds, the symlink walk fails: the check refuses
+    // through find's own status, both with errexit on and inside the
+    // `if ! why="$(…)"` of dms_operator_require (errexit off), as production runs it.
+    $stub = 'find() { case " $* " in *" -print0 "*) return 3 ;; *) return 0 ;; esac; };';
+    $call = 'dms_operator_trusted_tree '.$me['uid'].' '.escapeshellarg($tree);
+    foreach ([$call, 'if ! why="$('.$call.')"; then echo "$why"; exit 1; fi; echo TRUSTED'] as $script) {
+        [$exit, $out] = lpBash($src.$stub.' '.$script);
+        expect($exit)->toBe(1)->and($out)->toContain("the symlink walk under {$tree} failed");
+    }
+    expect(lpBash($src.' '.$call)[0])->toBe(0);
 });
 
 it('reads no environment but the SSH request and reaches no break-glass program', function () {

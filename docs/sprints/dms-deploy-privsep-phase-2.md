@@ -180,6 +180,61 @@ inodes it owns. A host file linked into a tree is still refused (inside count 1 
 pattern passes hand-over and claim; escaping links are refused at both. The signed `c7638a6f` record is never
 edited; `r2` needs a new owner approval and signature of its own SHA.
 
+### 7.2 Runbook §6f for `92cb5572` (r2) — rehearsal PASS, operator provisioned, operator refused every action; deploy not started
+
+Approval PR #639 (record, signature, this doc) passed its CI on head `346ba003` (run `43759250169`: Critical Gate
+`Run critical regression tests` 10,220 passed, the docs-only skip step skipped; Full Suite deferred, CG-18) and merged
+as `fcafdd70` at 2026-11-15T21:50:59Z; only the record, its signature and this doc follow `92cb5572`.
+
+| Step (§6f) | Result |
+|---|---|
+| Target | `PRODUCTION_TARGET=VERIFIED` (pinned ED25519 only) |
+| Approval on the host | `FETCH_HEAD` `fcafdd70`; record SHA-256 `9108cae0…2891` equals the workstation's; `Good "dms-release-approval" signature for owner` against the host anchor; `trust-check` `RELEASE GUARD TRUST: READY`; HEAD `9312818f`, tracked tree clean |
+| Export `/root/dms-release-92cb5572…` | 74 files in the commit, 74 on disk, 0 mismatches; root `0700`; 0 group/other-writable, 0 non-root, 0 symlinks |
+| Build identity | dry run, then `--apply` (idempotent): home `root:root 0755`, `cache/` `0700` build-owned, `nologin`, own group only |
+| Rehearsal `--ref 92cb5572…` | **`BUILD_PRIVSEP_REHEARSAL=PASS`**: vendor 13,226 / node_modules 6,452 / public/build 19 entries, all root-owned and not writable; `MANIFEST_SHA256` `30fa536d…53b7` equal to live (`BUILD_OUTPUT_IDENTICAL_TO_LIVE=YES`); composer 7 s, npm 12 s; 0 build processes, 0 workspaces left |
+| Operator (`--operator`, dry run then `--apply`, 21:52:52Z) | account own group only, password locked; home and `.ssh` `root 0755`, one `restrict,command=` key `root 0644`; entrypoint `root:root 0755`, SHA-256 `92bb3b46…e772` equal to the commit blob; drop-in `20-dms-deploy-operator` `root 0440`; `visudo -c` OK; verdict `OPERATOR` |
+| Sudo boundary (`sudo -l -U`, `sudo -ll -U \| cat -A`) | allowed: `start --release-id … --approved-sha <40-hex>`, `follow`, `status`, `verify <id>`, `trust-check`, `drift-check`, `sudo-policy-check`, `posture`; refused: `/bin/bash`, `/usr/bin/bash`, `/usr/bin/id`, the bare entrypoint, `rollback <sha>`, `status; id`, a 1-character release id, a 41-hex SHA, `verify ../x`, `shell`, `sudoedit /etc/sudoers` |
+| SSH boundary (operator key) | no command, `id`, `status; id`, `rollback …`: `DEPLOY_OPERATOR=DENIED` exit 64; PTY refused; `-W` "administratively prohibited"; sftp and scp closed |
+| **`ssh … trust-check` (allowed action)** | **`untrusted: node installation: … is a symlink, foreign-owned or group/other-writable`, `DEPLOY_OPERATOR=DENIED`, exit 65** |
+
+Cause (read-only inspection): the host's Node.js installation (`/opt/nodejs/node-v22.23.4-linux-x64`, 5,866
+entries, 0 non-root, 0 group/other-writable) is a stock tarball holding three relative symlinks into its own `lib/`:
+`bin/npm`, `bin/npx`, `bin/corepack`. r2's `dms_operator_trusted_tree` refused **any** symlink, so the operator
+refused every action on every real host; the CI fixtures never modelled a Node installation. A read-only simulation
+of every root-side check of the installed entrypoint (sourced from the export, as root, `stat`/`find`/`readlink` and
+version probes only) found nothing else: entrypoint chain, PATH, the program chains of the runner and the drift
+check, the `scripts/`, `deploy/` and `.git` trees (0 symlinks each) and the 13 other tools PASS; the
+`sudo-policy-check` and `posture` programs are absent until this release is deployed (expected). Under the
+entrypoint's `env -i` environment git 2.43.0, node v22.23.4, npm 10.9.9, PHP 8.3.6, pg_dump 16.15, systemd 255,
+runuser and Composer 2.7.1 all answer.
+
+The deploy was **not** started; nothing was cut over: `10-dmsadmin` untouched, HEAD `9312818f`, tracked tree clean,
+`PRIVSEP_DRIFT=NONE`, no runner process. The export was removed. The operator account, its key, the entrypoint and
+its drop-in stay installed: they refuse every action (fail closed) until re-provisioned from r3, which reinstalls
+the entrypoint. The r2 record stays unspent and unused, never edited.
+
+Fix (release `dms-deploy-privsep-phase-2-r3`): `dms_operator_trusted_tree` keeps the ownership and mode walk (a
+symlink's own mode is meaningless and is no longer tested; its owner still is), refuses a tree that is itself a
+symlink or not absolute, and accepts a symlink only when **every step** of resolving it stays inside the tree
+(`dms_operator_link_inside`): the target is relative, and the link's directory followed by each target component in
+turn resolves (`readlink -z -e`, never trimmed) to the tree's canonical path or below it (`<root>/…`, so a
+same-prefix sibling is outside), on the tree's own filesystem (a mount below the tree, which `find -xdev` never
+walks, refuses). A dangling or looping link, an absolute target, a link leaving the tree through `..` or a sibling, a
+link that leaves and comes back, and a failed walk (find's status ends the list, deterministically under errexit on
+or off) all refuse.
+
+Independent review of the first r3 draft (landing-only check): 1 MEDIUM — a link that leaves the tree through an
+outside hop (`/tmp`, or a runtime-writable directory) and lands back inside was accepted, and the outside hop could
+be repointed during a deploy (not exploitable on the host: no symlink under `scripts/`, `deploy/`, `.git`, and the
+stock Node links stay inside); 1 LOW — a link into a mount below the tree; 1 test note — the walk-failure test reached
+a different branch than production. All three fixed as above. Tests: the stock Node layout passes; every refusal is
+pinned, including three leave-and-return shapes (outside file link, outside directory link, in-tree directory link
+at another depth), each of which a landing-only check accepts (mutation-tested: restricting the position check to the
+landing fails the suite; ignoring find's status fails it too). The final functions, run read-only on the host as
+root against the live `scripts/`, `deploy/` and `.git` trees, the 14 tools (Node's installation included), the
+entrypoint chain and the PATH, PASSED all 19. `r3` needs a new owner approval and signature of its own SHA.
+
 ## 8. Independent review
 
 A separate agent reviewed the uncommitted change adversarially, given the code and the goals only (read-only, no
@@ -231,7 +286,10 @@ the last matching rule wins and sudo would never prompt; `sudo -k; sudo -v` does
 | Release approval (owner signature) | owner approval 15:59:05Z (§11.3), signature verified (§11.4); approval PR #637 merged `861ded62` |
 | First rehearsal (`c7638a6f`) | **FAILED** at the claim (esbuild hardlink pair) — deploy not started (§7.1); fix → release `-r2` |
 | r2 fix | PR #638 merged `92cb5572` (§6); post-merge CI green (§6) |
-| One-time provisioning, rehearsal, deploy through the operator | pending (runbook §6f) |
+| r2 release approval | owner approval (§11.5), signature (§11.6); approval PR #639 merged `fcafdd70` |
+| §6f for r2 | rehearsal **PASS**, operator provisioned, boundary proven; the operator **refused every action** (Node.js symlinks) — deploy not started (§7.2); fix → release `-r3` |
+| r3 fix | pending (PR, CI, merge, post-merge CI) |
+| One-time provisioning, rehearsal, deploy through the operator | pending (runbook §6f, from r3) |
 | Administrator's passwordless sudo retired (owner-gated) | pending |
 | Production verification, GO tag | pending |
 
