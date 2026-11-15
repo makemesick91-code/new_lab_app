@@ -130,12 +130,56 @@ dms_operator_trusted_chain() {
   done
 }
 
-# dms_operator_trusted_tree <trusted uid> <dir> — no entry below <dir> is a
-# symlink, owned by another uid, or writable by group or others.
+# dms_operator_link_inside <root> <device> <link> — EVERY step of resolving the
+# link stays inside <root> on <root>'s filesystem: its target is relative, and
+# its directory followed by each component of the target in turn (the kernel's
+# own order) resolves to an existing entry that is <root> or below it, on
+# <device>. Checking only the final landing would accept a link that leaves the
+# tree and comes back through a hop someone else can repoint. Every link in the
+# tree gets this check, so links reached through other links are covered too.
+# Names are read NUL-delimited and never trimmed. Prints why on refusal.
+dms_operator_link_inside() {
+  local root="$1" dev="$2" link="$3" raw rest part path hop
+  IFS= read -r -d '' raw < <(readlink -z -- "$link") || { echo "dangles"; return 1; }
+  case "$raw" in /*) echo "points outside it (absolute target)"; return 1 ;; esac
+  path="${link%/*}"
+  rest="$raw"
+  while :; do
+    part="${rest%%/*}"
+    case "$rest" in */*) rest="${rest#*/}" ;; *) rest="" ;; esac
+    if [ -n "$part" ]; then
+      path="${path}/${part}"
+      IFS= read -r -d '' hop < <(readlink -z -e -- "$path") || { echo "dangles"; return 1; }
+      case "$hop" in "$root"|"$root"/*) ;; *) echo "points outside it"; return 1 ;; esac
+      [ "$(stat -c '%d' -- "$hop" 2>/dev/null)" = "$dev" ] || { echo "points outside it (another filesystem)"; return 1; }
+    fi
+    [ -n "$rest" ] || return 0
+  done
+}
+
+# dms_operator_trusted_tree <trusted uid> <dir> — <dir> is a real directory, no
+# entry below it is owned by another uid or (symlinks aside, whose mode is
+# meaningless) writable by group or others, and every symlink below it stays
+# inside it (dms_operator_link_inside). r3: a stock Node.js installation links
+# bin/npm, bin/npx and bin/corepack into its own lib/, so "no symlink at all"
+# refused every real host; a link that dangles or leaves the tree still refuses.
+# The symlink list ends with find's own status, so a failed walk refuses too.
 dms_operator_trusted_tree() {
-  local uid="$1" dir="$2" bad
-  bad="$(find "$dir" -xdev \( -type l -o ! -uid "$uid" -o -perm /022 \) -print -quit 2>/dev/null || echo "$dir")"
-  [ -z "$bad" ] || { echo "an entry under ${dir} is a symlink, foreign-owned or group/other-writable"; return 1; }
+  local uid="$1" dir="$2" bad root dev link why status walked=0
+  case "$dir" in /*) ;; *) echo "${dir} is not absolute"; return 1 ;; esac
+  if [ ! -d "$dir" ] || [ -L "$dir" ]; then echo "${dir} is missing, not a directory, or a symlink"; return 1; fi
+  bad="$(find "$dir" -xdev \( ! -uid "$uid" -o \( ! -type l -perm /022 \) \) -print -quit 2>/dev/null || echo "$dir")"
+  [ -z "$bad" ] || { echo "an entry under ${dir} is foreign-owned or group/other-writable"; return 1; }
+  root="$(readlink -e -- "$dir")" || { echo "${dir} cannot be resolved"; return 1; }
+  dev="$(stat -c '%d' -- "$root")" || { echo "${dir} cannot be inspected"; return 1; }
+  while IFS= read -r -d '' link; do
+    case "$link" in
+      DMS_FIND_STATUS=0) walked=1; continue ;;
+      DMS_FIND_STATUS=*) echo "the symlink walk under ${dir} failed"; return 1 ;;
+    esac
+    why="$(dms_operator_link_inside "$root" "$dev" "$link")" || { echo "a symlink under ${dir} ${why}"; return 1; }
+  done < <(if find "$dir" -xdev -type l -print0 2>/dev/null; then status=0; else status=$?; fi; printf 'DMS_FIND_STATUS=%s\0' "$status")
+  [ "$walked" = 1 ] || { echo "${dir} cannot be inspected"; return 1; }
 }
 
 # dms_operator_trusted_path <trusted uid> <PATH> — every PATH entry is a trusted chain.
