@@ -184,6 +184,10 @@ return [
             // snapshot (never the mutable tree) before the first mutation.
             'scripts/lib/production-host-preflight.sh',
             'deploy/production-host.conf',
+            // DMS-DEPLOY-PRIVSEP-HARDENING-1 (rule 233): privilege separation —
+            // run-as-runtime helpers, drift repair and gates — sourced by both
+            // scripts from the snapshot before the first mutation.
+            'scripts/lib/runtime-privsep.sh',
         ],
         // The live runtime identity authority is overlaid onto the snapshot
         // after the export: rolling the CODE back must never roll the RUNTIME

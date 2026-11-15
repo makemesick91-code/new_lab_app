@@ -75,6 +75,17 @@ step() { echo "== $1 =="; }
 note() { echo "    $1"; }
 die()  { echo "FATAL: $1" >&2; exit 1; }
 
+# DMS-DEPLOY-PRIVSEP-HARDENING-1 (rule 233): this script runs as root over
+# storage/ and bootstrap/cache, which the runtime identity owns (or, before the
+# cutover, the previous identity). It therefore never runs artisan as root and
+# never chowns or chmods those trees by path: ownership goes through the
+# race-free foreign-entry repair, modes are set by the runtime user, maintenance
+# mode is switched by the identity that owns storage/.
+# shellcheck source=lib/runtime-privsep.sh
+. "${SCRIPT_DIR}/lib/runtime-privsep.sh"
+read -r -a RUNTIME_TREES <<< "${DMS_RUNTIME_WRITABLE_PATHS:-storage bootstrap/cache}"
+read -r -a PRIVATE_PATHS <<< "${DMS_PRIVATE_PATHS:-}"
+
 # ── Preflight ───────────────────────────────────────────────────────────────
 step "Preflight"
 
@@ -125,7 +136,7 @@ if [ "$MODE" = "rollback" ]; then
   PREV_USER="${DMS_NGINX_CONNECT_USER:-www-data}"
   PREV_GROUP="${DMS_NGINX_CONNECT_GROUP:-www-data}"
 
-  ( cd "$APP_DIR" && run php artisan down --retry=30 ) || true
+  ( cd "$APP_DIR" && run dms_privsep_as_runtime "$RUNTIME_USER" php artisan down --retry=30 ) || true
 
   step "Restore the default shared pool"
   if [ -n "${DMS_FPM_DEFAULT_POOL_FILE:-}" ] && [ -e "${DMS_FPM_DEFAULT_POOL_FILE}.disabled" ]; then
@@ -161,20 +172,19 @@ if [ "$MODE" = "rollback" ]; then
   run systemctl daemon-reload
 
   step "Restore ownership + secret group"
-  for rel in ${DMS_RUNTIME_WRITABLE_PATHS:-}; do
-    [ -e "${APP_DIR}/${rel}" ] || continue
-    run chown -R "${PREV_USER}:${PREV_GROUP}" "${APP_DIR}/${rel}"
-  done
+  # Rule 233: the foreign-entry repair (lchown from inside each directory,
+  # never through a hardlink), not a root chown -R.
+  ( cd "$APP_DIR" && run dms_privsep_repair_runtime_ownership "$PREV_USER" "$PREV_GROUP" "${RUNTIME_TREES[@]}" )
   # INFRA-SEC-ENV-1 stays enforced: owner root, mode 0640, never world-readable.
   ( cd "$REPO_DIR" && run bash scripts/harden-secret-permissions.sh apply \
-      --app-dir "$APP_DIR" --owner root --group "$PREV_GROUP" )
+      --app-dir "$APP_DIR" --owner root --group "$PREV_GROUP" --runtime-user "$PREV_USER" )
 
   step "Reload services"
   run systemctl reload "$DMS_FPM_SERVICE"
   run systemctl reload nginx
   # try-restart: a rollback must not start a worker the owner keeps stopped.
   run systemctl try-restart "$DMS_QUEUE_SERVICE"
-  ( cd "$APP_DIR" && run php artisan up ) || true
+  ( cd "$APP_DIR" && run dms_privsep_as_runtime "$PREV_USER" php artisan up ) || true
 
   echo
   echo "RUNTIME IDENTITY ROLLBACK COMPLETE (${STAMP})"
@@ -258,53 +268,59 @@ step "Cutover"
 MAINTENANCE_ON=0
 lift_maintenance() {
   if [ "$MAINTENANCE_ON" -eq 1 ]; then
-    ( cd "$APP_DIR" && php artisan up ) || echo "WARNING: could not lift maintenance mode — run 'php artisan up' manually" >&2
+    ( cd "$APP_DIR" && dms_privsep_as_runtime "$RUNTIME_USER" php artisan up ) \
+      || echo "WARNING: could not lift maintenance mode — run artisan up as ${RUNTIME_USER} manually" >&2
     MAINTENANCE_ON=0
   fi
 }
 trap lift_maintenance EXIT
 
-if [ "$APPLY" -eq 1 ]; then
-  ( cd "$APP_DIR" && php artisan down --retry=30 ) && MAINTENANCE_ON=1
-  note "maintenance mode ON"
-else
-  echo "    DRY-RUN: php artisan down / up around the cutover"
-fi
-
 # 4a. Ownership of the runtime-writable paths ONLY. The application source tree
 #     is deliberately left root/deploy owned so the runtime cannot rewrite code.
-for rel in ${DMS_RUNTIME_WRITABLE_PATHS:-}; do
-  p="${APP_DIR}/${rel}"
-  [ -e "$p" ] || { note "skip missing ${rel}"; continue; }
-  run chown -R "${RUNTIME_USER}:${RUNTIME_GROUP}" "$p"
-  # setgid directories so new files inherit the runtime group. Never 0777.
-  run find "$p" -type d -exec chmod 2775 {} +
-  run find "$p" -type f -exec chmod 0664 {} +
-  note "ownership: ${rel} -> ${RUNTIME_USER}:${RUNTIME_GROUP}"
-done
+#     Rule 233: the runtime roots are proven to sit in root-only parents and
+#     handed over non-recursively; every foreign entry inside is lchowned from
+#     its own directory (a hardlink, device, FIFO or socket stops the run). This
+#     comes first, so the new identity can switch maintenance mode itself.
+( cd "$APP_DIR" && run dms_privsep_runtime_roots 0 "$RUNTIME_USER" "$RUNTIME_GROUP" "${RUNTIME_TREES[@]}" )
+( cd "$APP_DIR" && run dms_privsep_repair_runtime_ownership "$RUNTIME_USER" "$RUNTIME_GROUP" "${RUNTIME_TREES[@]}" )
+note "ownership: ${RUNTIME_TREES[*]} -> ${RUNTIME_USER}:${RUNTIME_GROUP}"
 
-# 4b. Private clinical storage must not be world-readable now that a distinct
-#     uid exists on this host that has no business reading it.
-for rel in ${DMS_PRIVATE_PATHS:-}; do
-  p="${APP_DIR}/${rel}"
-  [ -d "$p" ] || continue
-  run chmod -R o-rwx "$p"
-  note "private: ${rel} world access removed"
-done
+if [ "$APPLY" -eq 1 ]; then
+  ( cd "$APP_DIR" && dms_privsep_as_runtime "$RUNTIME_USER" php artisan down --retry=30 ) && MAINTENANCE_ON=1
+  note "maintenance mode ON"
+else
+  echo "    DRY-RUN: artisan down / up as ${RUNTIME_USER} around the cutover"
+fi
+
+# 4b. Modes, set BY THE RUNTIME USER (it can only change what it owns): setgid
+#     directories 2775 and files 0664 so new files inherit the runtime group,
+#     never 0777; the backup tree 2750/0640; private clinical storage never
+#     widened and stripped of every "other" bit now that a distinct uid exists
+#     on this host that has no business reading it.
+( cd "$APP_DIR" && run dms_privsep_as_runtime_fn "$RUNTIME_USER" "" dms_privsep_normalize_modes "${PRIVATE_PATHS[@]}" )
+note "modes: runtime trees normalized, private paths stripped of world access"
 
 # 4c. Secret group transition — delegated to the INFRA-SEC-ENV-1 helper, which
 #     owns the secret-permission invariant. This script never chmods a secret.
 ( cd "$REPO_DIR" && run bash scripts/harden-secret-permissions.sh apply \
-    --app-dir "$APP_DIR" --owner root --group "$RUNTIME_GROUP" )
+    --app-dir "$APP_DIR" --owner root --group "$RUNTIME_GROUP" --runtime-user "$RUNTIME_USER" )
 note "secret files: root:${RUNTIME_GROUP} 0640 (via INFRA-SEC-ENV-1 helper)"
 
 # 4d. Database dumps outside the storage tree. These contain the entire clinical
 #     database; the application runtime has no reason to read them and neither
 #     does the co-tenant.
+#     Rule 233: only inside a directory nobody but root can write, so the path
+#     cannot be swapped between the listing and the change.
 if [ -d "${APP_DIR}/backups" ]; then
-  run find "${APP_DIR}/backups" -maxdepth 1 -type f -name '*.sql' -exec chown root:root {} +
-  run find "${APP_DIR}/backups" -maxdepth 1 -type f -name '*.sql' -exec chmod 0640 {} +
-  note "legacy database dumps under backups/ restricted to root"
+  if _dms_privsep_trusted_dir 0 "${APP_DIR}/backups"; then
+    while IFS= read -r -d '' dump; do
+      run chown -h root:root "$dump"
+      run chmod 0640 "$dump"
+    done < <(find "${APP_DIR}/backups" -maxdepth 1 -type f -name '*.sql' -print0)
+    note "legacy database dumps under backups/ restricted to root"
+  else
+    note "backups/ is writable by another identity — left untouched; inspect by hand"
+  fi
 fi
 
 # 4e. Retire the shared default pool, then reload both services back to back.

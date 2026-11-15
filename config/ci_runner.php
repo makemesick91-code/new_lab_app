@@ -1699,6 +1699,14 @@ return [
         // rollback target resolution. Selected by the `DeployHarden` token in
         // BOTH critical variants; declared so it stays enforced.
         'tests/Feature/Deploy/DeployHardenReleaseGuardTrustTest.php',
+        // DMS-DEPLOY-PRIVSEP-HARDENING-1 (rule 233, OD-1 DEPLOY-PRIVSEP): the
+        // deploy and rollback never run application PHP as root and never
+        // mutate a runtime tree by path as root; foreign entries are repaired
+        // with lchown (never through a hardlink), modes are set by the runtime
+        // user, the source tree is claimed top-down, drift is gated. Selected
+        // by the `DeployHarden` token in BOTH critical variants; declared so it
+        // stays enforced.
+        'tests/Feature/Deploy/DeployHardenPrivilegeSeparationTest.php',
     ],
 
     /*

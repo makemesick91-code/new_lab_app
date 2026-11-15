@@ -97,6 +97,11 @@ class DeploymentRollbackScanner
             $issues[] = 'missing deploy evidence marker(s): '.implode(', ', $missingEvidence);
         }
 
+        $privilegeSeparation = $this->privilegeSeparationIssues($contents);
+        if ($privilegeSeparation !== []) {
+            $issues[] = 'privilege separation (rule 233): '.implode('; ', $privilegeSeparation);
+        }
+
         return [
             'file_present' => true,
             'ok' => $issues === [],
@@ -105,6 +110,7 @@ class DeploymentRollbackScanner
             'backup_before_migrate' => $backupBeforeMigrate,
             'cache_order_preserved' => $cacheOrder['ok'],
             'cache_rebuild_present' => $missingRebuild === [],
+            'privilege_separation' => $privilegeSeparation === [],
             'issues' => $issues,
         ];
     }
@@ -177,7 +183,13 @@ class DeploymentRollbackScanner
             $issues[] = 'missing rollback foundation gate(s): '.implode(', ', $missingGates);
         }
 
+        $privilegeSeparation = $this->privilegeSeparationIssues($contents);
+        if ($privilegeSeparation !== []) {
+            $issues[] = 'privilege separation (rule 233): '.implode('; ', $privilegeSeparation);
+        }
+
         return [
+            'privilege_separation' => $privilegeSeparation === [],
             'file_present' => true,
             'ok' => $issues === [],
             'fail_fast' => $failFastPresent,
@@ -281,6 +293,130 @@ class DeploymentRollbackScanner
             'pre_deploy_gate_ok' => $gatePresent,
             'issues' => $issues,
         ];
+    }
+
+    /**
+     * DMS-DEPLOY-PRIVSEP-HARDENING-1 (rule 233): a deploy or rollback script
+     * runs as root over trees the runtime user owns, so it must never execute
+     * application PHP as root (composer scripts included) and never mutate a
+     * runtime tree by path as root. Scans logical lines (continuations joined,
+     * comments dropped) against config('deployment_rollback.privilege_separation').
+     * A regression guard for reviewed code: it reads the script, it cannot see
+     * what a helper does at run time.
+     *
+     * @return list<string>
+     */
+    public function privilegeSeparationIssues(string $contents, bool $requireMarkers = true): array
+    {
+        $contract = (array) config('deployment_rollback.privilege_separation', []);
+        $issues = [];
+
+        if ($requireMarkers) {
+            foreach ($this->missingMarkers($contents, array_values((array) ($contract['required_markers'] ?? []))) as $marker) {
+                $issues[] = "missing marker: {$marker}";
+            }
+        }
+
+        $runtimePhpPrefix = (string) ($contract['runtime_php_prefix'] ?? '/(?!)/');
+        $runtimeLinePrefix = (string) ($contract['runtime_line_prefix'] ?? '/(?!)/');
+        $allowedPhp = array_values(array_filter((array) ($contract['allowed_root_php'] ?? [])));
+        $allowedComposer = array_values(array_filter((array) ($contract['allowed_root_composer_without_no_scripts'] ?? [])));
+        $anyLine = (array) ($contract['forbidden_line_patterns'] ?? []);
+        $rootLine = (array) ($contract['forbidden_root_line_patterns'] ?? []);
+
+        foreach ($this->logicalShellLines($contents) as [$number, $line]) {
+            // php, php8.3, /usr/bin/php — wherever it appears on the line.
+            $phpLine = str_replace($allowedPhp, '', $line);
+            preg_match_all('/(?<![\w.\/-])(?:\/[\w.\/-]*\/)?php(?:\d+(?:\.\d+)*)?(?=[\s\'"`;)|&]|$)/', $phpLine, $tokens, PREG_OFFSET_CAPTURE);
+            foreach ($tokens[0] as [, $offset]) {
+                if (preg_match($runtimePhpPrefix, substr($phpLine, 0, (int) $offset)) !== 1) {
+                    $issues[] = "line {$number}: application PHP runs as root (hand it to the runtime user with as_runtime)";
+                    break;
+                }
+            }
+
+            $composerLine = str_replace($allowedComposer, '', $line);
+            if (preg_match('/(?<![\w.\/-])(?:\/[\w.\/-]*\/)?composer(?:\.phar)?(?:\s+-\S+)*\s+(?:install|update|upgrade|require|remove|reinstall|dump-autoload|dumpautoload|run-script|run|exec|create-project)\b/', $composerLine) === 1
+                && ! str_contains($composerLine, '--no-scripts')) {
+                $issues[] = "line {$number}: composer runs its scripts as root (add --no-scripts)";
+            }
+
+            foreach ($anyLine as $label => $pattern) {
+                if (is_string($pattern) && $pattern !== '' && preg_match($pattern, $line) === 1) {
+                    $issues[] = "line {$number}: {$label}";
+                }
+            }
+
+            if (preg_match($runtimeLinePrefix, $line) !== 1) {
+                foreach ($rootLine as $label => $pattern) {
+                    if (is_string($pattern) && $pattern !== '' && preg_match($pattern, $line) === 1) {
+                        $issues[] = "line {$number}: {$label}";
+                    }
+                }
+            }
+        }
+
+        return $issues;
+    }
+
+    /**
+     * Logical shell lines: backslash continuations joined, blank and comment
+     * lines dropped, a trailing " # comment" outside quotes removed.
+     *
+     * @return list<array{0:int,1:string}> [first physical line number, text]
+     */
+    private function logicalShellLines(string $contents): array
+    {
+        $lines = [];
+        $buffer = '';
+        $start = 0;
+        foreach (preg_split('/\R/', $contents) ?: [] as $index => $physical) {
+            if ($buffer === '') {
+                $start = $index + 1;
+                if (preg_match('/^\s*#/', $physical) === 1) {
+                    continue;
+                }
+            }
+            if (preg_match('/\\\\$/', $physical) === 1) {
+                $buffer .= substr($physical, 0, -1).' ';
+
+                continue;
+            }
+            $line = $this->stripTrailingShellComment($buffer.$physical);
+            $buffer = '';
+            if (trim($line) !== '') {
+                $lines[] = [$start, $line];
+            }
+        }
+        if (trim($buffer) !== '') {
+            $lines[] = [$start, $this->stripTrailingShellComment($buffer)];
+        }
+
+        return $lines;
+    }
+
+    private function stripTrailingShellComment(string $line): string
+    {
+        $single = false;
+        $double = false;
+        $length = strlen($line);
+        for ($i = 0; $i < $length; $i++) {
+            $char = $line[$i];
+            if ($char === '\\' && ! $single) {
+                $i++;
+
+                continue;
+            }
+            if ($char === "'" && ! $double) {
+                $single = ! $single;
+            } elseif ($char === '"' && ! $single) {
+                $double = ! $double;
+            } elseif ($char === '#' && ! $single && ! $double && ($i === 0 || ctype_space($line[$i - 1]))) {
+                return rtrim(substr($line, 0, $i));
+            }
+        }
+
+        return $line;
     }
 
     /**

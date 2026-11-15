@@ -1,26 +1,28 @@
-# DMS-RELEASE-GUARD-TRUST-HARDENING-1 (2026-11-14). Owner-requested security hardening of the rule 229 release guard
-# (rule 231, docs/sprints/dms-release-guard-trust-hardening-1.md): (1) approval contract 2 — the owner's SSH signature
-# (ssh-keygen -Y, namespace dms-release-approval) over the exact record, verified against a release trust anchor on the
-# host outside the repository, bound to the host's SSH host key, spent by the deploy it completes; (2) evidence
-# contract 4 in a root-only directory outside the checkout (/var/lib/daengtisiams-deploy/runner), exclusive run claims,
-# UNTRUSTED/TAMPERED/INTERRUPTED verdicts; (3) one release lock for deploy and rollback (plus the pre-231 role locks),
-# recovery of interrupted runs inside it; (4) rollback target resolution without bulk fetch, refusing ambiguous names.
-# Deploy tooling, authority, governance scanner and tests only: no schema, migration, permission, role, route, JS/CSS
-# or package change; no flag, enforcement scope, branch lock, queue worker, scheduler or KTP timer change.
+# DMS-DEPLOY-PRIVSEP-HARDENING-1 (2026-11-15). Owner-ordered security hardening closing OD-1 DEPLOY-PRIVSEP (rule 231
+# §8, audit A10; accepted for the r2 deploy only): the deploy and rollback ran PHP (composer scripts, artisan migrate,
+# ~50 governance gates; the rollback's cache rebuild and smoke) and chown -R / chmod -R / find -exec chmod as ROOT over
+# storage/ and bootstrap/cache, which the runtime user owns, so a runtime compromise became root at the next deploy.
+# Rule 233 (docs/sprints/dms-deploy-privsep-hardening-1.md): every artisan command runs as the runtime user, composer
+# runs --no-scripts with its post-autoload-dump replayed as the runtime user, the dumps and evidence files are written
+# by the runtime user, root only lchowns foreign entries (find -execdir, never a hardlink) and claims top-down any
+# source entry another identity owns or can write, modes are set by the runtime user, a privilege-drift gate ends the
+# run NOT GO. Deploy tooling (provisioning included), authority, governance scanner, a read-only drift check and tests;
+# tailwind.config.js content globs only (generated CSS byte-identical). No schema, migration, permission, role, route,
+# JS or package change; no flag, enforcement scope, branch lock, queue worker, scheduler or timer change.
 #
 # Foundation-First Sprint Lock stays ACTIVE (allowed category: security fix / deployment). Full Suite deferred (CG-18),
-# not passed. Merge needs the owner's merge decision. Production deployment needs the owner's trust anchor on the host,
-# a separate written owner approval of the exact merged release commit and the owner's signature on its record; the
-# first deploy carrying rule 231 uses runbook production-host-identity.md section 6d. The GO tag below is created only
-# after that deploy and its verification.
+# not passed. Production deployment needs the owner's written approval of the exact merged release commit and the
+# owner's signature on its record (rule 231, runbook production-host-identity.md section 6b). The GO tag below is
+# created only after that deploy and its verification.
 #
-# Previous manifest: DMS-RME-REVISION-PROGRAM-8D (PR #621 dde7b9b6, PR #622 82f1eeba), deployed 2026-11-14 and GO
-# tagged dms-rme-revision-program-8d-go; its record stays in docs/sprints/dms-rme-revision-program-8d.md.
-# Carried forward: LEGACY-RME-PROGRAM-CLOSURE-1 stays CLOSED and inherited.
-id: DMS-RELEASE-GUARD-TRUST-HARDENING-1
+# Previous manifest: DMS-RELEASE-GUARD-TRUST-HARDENING-1 (rule 231; PR #628 d707a3e3, PR #630 d555c7dc), deployed
+# 2026-11-15 as release r2 and GO tagged dms-release-guard-trust-hardening-1-go; its record stays in
+# docs/sprints/dms-release-guard-trust-hardening-1.md. Carried forward: LEGACY-RME-PROGRAM-CLOSURE-1 stays CLOSED and
+# inherited.
+id: DMS-DEPLOY-PRIVSEP-HARDENING-1
 type: SECURITY_FIX
 module: Deploy
-title: "Release guard trust hardening (rule 231): signed host-key-bound single-use approvals, trusted runner evidence, one release lock"
+title: "Deploy privilege separation (rule 233): no root PHP, no root path mutation of runtime trees, source claim, drift gate"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 runtime_change: true
 schema_change: false
@@ -31,5 +33,5 @@ ledger_impact: false
 deploy_required: true
 browser_required: false
 test_profiles: [focused, security_regression]
-go_tag: dms-release-guard-trust-hardening-1-go
+go_tag: dms-deploy-privsep-hardening-1-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1

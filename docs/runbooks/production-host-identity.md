@@ -261,6 +261,15 @@ commit a release approval record merged on the base branch approves. The runner 
    signer key, the host key and the evidence directory `/var/lib/daengtisiams-deploy/runner`). Any other verdict (exit
    `4`: `UNTRUSTED`, `TAMPERED`, `FOREIGN`, `INTERRUPTED`, …) is not GO. Never read `latest.status` raw, and never use
    `verify-transition` again (§6a).
+
+   **Prove privilege separation (rule 233, read-only).** The run's own log carries
+   `DEPLOY_PRIVSEP_RUNTIME_FOREIGN_ENTRIES=0`, `DEPLOY_PRIVSEP_SOURCE_FOREIGN_ENTRIES=0` and `DEPLOY_PRIVSEP=ENFORCED`
+   before `DEPLOY OK`, and the drift check agrees afterwards:
+   ```bash
+   ssh daengtisiams-biznet-prod 'cd /var/www/asia-dental-lab-v2 && sudo -n bash scripts/privsep-drift-check.sh'
+   ```
+   It must print `PRIVSEP_DRIFT=NONE`. It changes nothing and runs no PHP; its summaries never print a file name. A
+   runtime write failure is never fixed by running a step as root or widening a mode (rule 233 §3).
 6. **Smoke over the canonical URL** (`/login`, `/health/live`, `/health/ready`, `/health/lb` → 200; `/storage/…` →
    403). The deploy's own loopback smoke reporting `404` is D6, not a result.
 7. **Confirm nothing else moved:** the queue worker, the scheduler and the KTP cleanup timer keep their owner-set state
@@ -271,7 +280,9 @@ commit a release approval record merged on the base branch approves. The runner 
 following `docs/runbooks/vps-deploy-rollback-runbook.md`. The target must be an ancestor of the running checkout
 (rule 229); anything else is refused before the backup. It runs the same host preflight, takes a verified database
 dump first and moves code only. It never restores data. A data restore is a separate, explicitly owner-approved
-operation, and an older dump is never restored over newer clinical data.
+operation, and an older dump is never restored over newer clinical data. Since rule 233 a rollback, like a deploy, runs
+every artisan command (and the dump) as the runtime user and ends with the same privilege-drift gate; its snapshot is
+the CURRENT code, so a rollback to a release older than rule 233 still runs separated.
 
 ## 6c. The first deploy that carries the approved-SHA guard (one-time bootstrap)
 

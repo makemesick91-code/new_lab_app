@@ -208,7 +208,8 @@ test('INFRA-SEC-ENV-1 and INFRA-SEC-RUNTIME-1 gates remain mandatory', function 
         expect($script)->toContain('harden-secret-permissions.sh')
             ->and($script)->toContain('verify-runtime-isolation.sh')
             ->and($script)->toContain('--require-host')
-            ->and($script)->toContain('chown -R "${RUNTIME_USER}:${RUNTIME_GROUP}"');
+            ->and($script)->toContain('dms_privsep_repair_runtime_ownership "$RUNTIME_USER" "$RUNTIME_GROUP"')
+            ->and($script)->not->toContain('chown -R');
     }
 });
 

@@ -213,6 +213,36 @@ getent passwd "$RUNTIME_USER" >/dev/null 2>&1 || {
   exit 2
 }
 echo "Runtime user: ${RUNTIME_USER}:${RUNTIME_GROUP} (explicit, from ${RUNTIME_IDENTITY_FILE})"
+if [ "$(id -gn "$RUNTIME_USER")" != "$RUNTIME_GROUP" ]; then
+  echo "FATAL: '${RUNTIME_USER}' primary group is '$(id -gn "$RUNTIME_USER")', expected '${RUNTIME_GROUP}' — NOT GO" >&2
+  exit 2
+fi
+
+# ─── DMS-DEPLOY-PRIVSEP-HARDENING-1 (rule 233) privilege separation ─────────
+# Same rule as the deploy: root never runs application PHP and never opens,
+# writes or chmods a path in the runtime trees. A rollback used to be the worst
+# case — it rebuilt the configuration cache (database password and application
+# key) and ran the smoke AS ROOT. The library comes from the snapshot of the
+# CURRENT code, so a rollback to a release that predates rule 233 still runs
+# separated.
+# shellcheck source=lib/runtime-privsep.sh
+source "${DEPLOY_TOOLS_DIR}/scripts/lib/runtime-privsep.sh"
+
+# The checkout belongs to root, so the runtime user's git (release evidence
+# records the commit and the GO tag) would stop at "dubious ownership". Trust
+# exactly this directory through command-scope configuration, the one scope git
+# accepts for safe.directory besides system and global.
+as_runtime() {
+  GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0="$APP_DIR" \
+    dms_privsep_as_runtime "$RUNTIME_USER" "$@"
+}
+
+echo "== Privilege separation preflight (rule 233) =="
+dms_privsep_prepare 0 0 "$RUNTIME_USER" "$RUNTIME_GROUP"
+
+# Rule 233: root sources the environment file below. Refuse one that another
+# identity could have written: repairing its mode would not repair its content.
+dms_privsep_assert_trusted_file 0 .env
 
 # DEPLOY-HARDEN-1: the isolation verifier and the identity authority now live in
 # the immutable execution snapshot created before any mutation, so the
@@ -241,10 +271,13 @@ echo "== Backup DB before rollback =="
 # never `pg_dump > file` followed by a chmod. The helper comes from the
 # immutable snapshot of the CURRENT code, so rolling back to a ref that predates
 # this fix still writes its pre-rollback dump privately.
+# Rule 233: written BY THE RUNTIME USER into its own backup tree, exactly as the
+# deploy does; root never opens a path there.
 # shellcheck source=lib/private-db-dump.sh
 source "${DEPLOY_TOOLS_DIR}/scripts/lib/private-db-dump.sh"
-dms_prepare_private_backup_dir storage/app/backups
-dms_prepare_private_backup_dir storage/app/backups/rollback
+DUMP_HELPERS="_dms_dump_err _dms_dump_assert_no_default_acl"
+dms_privsep_as_runtime_fn "$RUNTIME_USER" "$DUMP_HELPERS" dms_prepare_private_backup_dir storage/app/backups
+dms_privsep_as_runtime_fn "$RUNTIME_USER" "$DUMP_HELPERS" dms_prepare_private_backup_dir storage/app/backups/rollback
 
 set -a
 source .env
@@ -252,15 +285,15 @@ set +a
 
 BACKUP="storage/app/backups/rollback/pre_rollback_${STAMP}.sql"
 
-PGPASSWORD="${DB_PASSWORD}" dms_write_private_dump "$BACKUP" pg_dump \
+PGPASSWORD="${DB_PASSWORD}" dms_privsep_as_runtime_fn "$RUNTIME_USER" "$DUMP_HELPERS" dms_write_private_dump "$BACKUP" pg_dump \
   -h "${DB_HOST:-127.0.0.1}" \
   -p "${DB_PORT:-5432}" \
   -U "${DB_USERNAME}" \
   -d "${DB_DATABASE}"
 
-test -s "$BACKUP"
+as_runtime test -s "$BACKUP"
 
-echo "Backup written: ${BACKUP}"
+echo "Backup written: ${BACKUP} sha256=$(as_runtime sha256sum -- "$BACKUP" | cut -d' ' -f1)"
 
 echo "== Checkout pinned rollback target =="
 # The operator's ref was resolved to this exact commit before the lock-protected
@@ -281,77 +314,69 @@ if [ "$ROLLED_BACK_SHA" != "$ROLLBACK_TARGET_SHA" ]; then
 fi
 echo "HEAD verified at pinned rollback target: ${ROLLED_BACK_SHA}"
 
+# Rule 233: the checkout (root's git) writes the tracked files that live under
+# storage/ and creates any new tracked directory there. Hand them to the runtime
+# user before the first runtime step needs them.
+dms_privsep_repair_runtime_ownership "$RUNTIME_USER" "$RUNTIME_GROUP" storage bootstrap/cache
+
 echo "== Composer install =="
-composer install --no-dev --optimize-autoloader
+# Rule 233: --no-scripts, then composer.json's post-autoload-dump as the runtime
+# user — the same two steps the deploy runs.
+composer install --no-dev --optimize-autoloader --no-scripts
+
+echo "== Composer post-autoload-dump (as the runtime user, rule 233) =="
+as_runtime rm -f -- bootstrap/cache/config.php bootstrap/cache/services.php bootstrap/cache/packages.php
+as_runtime php artisan package:discover --ansi
 
 echo "== NPM build =="
 npm ci
 npm run build
 
 echo "== NSF-10 backup verify =="
-php artisan foundation:backup-verify --path="$BACKUP"
+as_runtime php artisan foundation:backup-verify --path="$BACKUP"
 
 echo "== Clear stale route/config cache before route-dependent gates (ENT-8) =="
 # Route-dependent governance gates (foundation:developer-console-check,
 # foundation:health-check) inspect the live route table. Clearing here — before
 # the gates, well before the cache-rebuild block below — makes those gates see
 # the routes of the rolled-back code.
-php artisan route:clear
-php artisan config:clear
+as_runtime php artisan route:clear
+as_runtime php artisan config:clear
 
 echo "== Foundation rollback governance gates (re-verify ENT-5..11) =="
-php artisan architecture:foundation-roadmap-check
-php artisan foundation:queue-retry-failed-job-check
-php artisan foundation:idempotency-outbox-check
-php artisan foundation:developer-console-check
-php artisan foundation:health-check
-php artisan foundation:security-compliance-check
-php artisan foundation:cicd-enterprise-gate-check
-php artisan foundation:deployment-rollback-check
-php artisan foundation:deployment-entrypoint-check
-php artisan foundation:release-safety-check
-php artisan architecture:foundation-governance-summary
+as_runtime php artisan architecture:foundation-roadmap-check
+as_runtime php artisan foundation:queue-retry-failed-job-check
+as_runtime php artisan foundation:idempotency-outbox-check
+as_runtime php artisan foundation:developer-console-check
+as_runtime php artisan foundation:health-check
+as_runtime php artisan foundation:security-compliance-check
+as_runtime php artisan foundation:cicd-enterprise-gate-check
+as_runtime php artisan foundation:deployment-rollback-check
+as_runtime php artisan foundation:deployment-entrypoint-check
+as_runtime php artisan foundation:release-safety-check
+as_runtime php artisan architecture:foundation-governance-summary
 
 echo "== Laravel cache rebuild =="
-php artisan optimize:clear
-php artisan config:cache
-php artisan route:cache
-php artisan view:cache
-php artisan event:cache
+as_runtime php artisan optimize:clear
+as_runtime php artisan config:cache
+as_runtime php artisan route:cache
+as_runtime php artisan view:cache
+as_runtime php artisan event:cache
 
 echo "== Permissions =="
 # Ownership follows the dedicated runtime identity resolved before the checkout,
 # never a hardcoded shared account.
-chown -R "${RUNTIME_USER}:${RUNTIME_GROUP}" storage bootstrap/cache
-# SECURITY-FIX-DEPLOY-BACKUP-FILE-PERMISSIONS-1: the backup tree is pruned from
-# the widening and set straight to its private modes (dirs 2750, files 0640),
-# so no database dump is ever 0664 inside a 2775 directory, even briefly.
-# SECURITY-F8-PRIVATE-STORAGE-PATHS-1: every declared private path is pruned
-# from the widening too, so clinical evidence is never 0664, even briefly; the
-# loop below sets those trees directly.
-private_prune=()
+#
+# Rule 233: root only hands foreign entries (a tracked file the checkout wrote)
+# to the runtime user — lchown from inside each entry's directory, never through
+# a hardlink — and every MODE is set by the runtime user itself
+# (dms_privsep_normalize_modes refuses root). The policy is the deploy's: the
+# backup tree 2750/0640 (SECURITY-FIX-DEPLOY-BACKUP-FILE-PERMISSIONS-1), every
+# declared private path never widened and stripped of "other"
+# (SECURITY-F8-PRIVATE-STORAGE-PATHS-1, INFRA-SEC-RUNTIME-1), the rest 2775/0664.
 read -r -a private_paths <<< "${DMS_PRIVATE_PATHS:-}"
-for rel in "${private_paths[@]}"; do
-  private_prune+=(-path "$rel" -prune -o)
-done
-find storage bootstrap/cache -path storage/app/backups -prune -o "${private_prune[@]}" -type d -exec chmod 2775 {} \;
-find storage bootstrap/cache -path storage/app/backups -prune -o "${private_prune[@]}" -type f -exec chmod 0664 {} \;
-if [ -d storage/app/backups ]; then
-  find storage/app/backups -type d -exec chmod 2750 {} +
-  find storage/app/backups -type f -exec chmod 0640 {} +
-fi
-
-# INFRA-SEC-RUNTIME-1: the normalization above makes the whole storage tree
-# world-readable (2775/0664). Private clinical storage must not inherit that, so
-# re-strip world access — otherwise a rollback would quietly re-expose lab
-# workflow evidence and patient documents to the co-tenant uid.
-# The private trees were not widened above, so the owner (the runtime) is given
-# read/write here; "other" loses everything.
-for rel in ${DMS_PRIVATE_PATHS:-}; do
-  [ -d "${APP_DIR}/${rel}" ] || continue
-  chmod -R u+rwX "${APP_DIR}/${rel}"
-  chmod -R o-rwx "${APP_DIR}/${rel}"
-done
+dms_privsep_repair_runtime_ownership "$RUNTIME_USER" "$RUNTIME_GROUP" storage bootstrap/cache
+dms_privsep_as_runtime_fn "$RUNTIME_USER" "" dms_privsep_normalize_modes "${private_paths[@]}"
 
 # ─── INFRA-SEC-ENV-1 ────────────────────────────────────────────────────────
 # Rolling back to an older ref must never restore a world-readable secret file.
@@ -361,8 +386,8 @@ done
 # DEPLOY-HARDEN-1: run from the immutable snapshot (current code), so a target
 # ref that predates INFRA-SEC-ENV-1 still gets the modern hardening applied.
 echo "== Harden + verify secret file permissions (INFRA-SEC-ENV-1) =="
-bash "${DEPLOY_TOOLS_DIR}/scripts/harden-secret-permissions.sh" apply --app-dir "$APP_DIR" --owner root --group "$RUNTIME_GROUP"
-if ! bash "${DEPLOY_TOOLS_DIR}/scripts/harden-secret-permissions.sh" verify --app-dir "$APP_DIR" --owner root --group "$RUNTIME_GROUP"; then
+bash "${DEPLOY_TOOLS_DIR}/scripts/harden-secret-permissions.sh" apply --app-dir "$APP_DIR" --owner root --group "$RUNTIME_GROUP" --runtime-user "$RUNTIME_USER"
+if ! bash "${DEPLOY_TOOLS_DIR}/scripts/harden-secret-permissions.sh" verify --app-dir "$APP_DIR" --owner root --group "$RUNTIME_GROUP" --runtime-user "$RUNTIME_USER"; then
   echo "FATAL: secret file permissions are unsafe after rollback — NOT GO" >&2
   exit 1
 fi
@@ -379,14 +404,21 @@ if ! bash "${DEPLOY_TOOLS_DIR}/scripts/verify-runtime-isolation.sh" \
   exit 1
 fi
 
+# ─── DMS-DEPLOY-PRIVSEP-HARDENING-1 (rule 233) privilege drift gate ─────────
+echo "== Verify privilege separation (rule 233) =="
+if ! dms_privsep_final_gate 0 0 "$RUNTIME_USER" "$RUNTIME_GROUP"; then
+  echo "FATAL: privilege separation is broken after the rollback — NOT GO" >&2
+  exit 1
+fi
+
 echo "== Restart services =="
 systemctl restart php8.3-fpm
 nginx -t
 systemctl reload nginx
 
 echo "== Smoke check =="
-php artisan about
-php artisan release:automated-smoke --base-url=http://127.0.0.1
+as_runtime php artisan about
+as_runtime php artisan release:automated-smoke --base-url=http://127.0.0.1
 
 FINAL_HEAD="$(git rev-parse --verify HEAD)"
 if [ "$FINAL_HEAD" != "$ROLLBACK_TARGET_SHA" ]; then

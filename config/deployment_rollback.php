@@ -69,9 +69,12 @@ return [
             // dedicated runtime identity. This replaced the previous
             // 'chown -R www-data:www-data' literal, which pinned the contract to
             // the account shared with the co-tenant application on the
-            // production host. The marker now proves the deploy chowns to the
-            // resolved identity rather than to any hardcoded shared account.
-            'chown -R "${RUNTIME_USER}:${RUNTIME_GROUP}"',
+            // production host.
+            // DMS-DEPLOY-PRIVSEP-HARDENING-1 (rule 233) replaced the root
+            // 'chown -R "${RUNTIME_USER}:${RUNTIME_GROUP}"' with the repair of
+            // foreign entries only (lchown, -execdir, never a hardlink); the
+            // marker still proves ownership goes to the resolved identity.
+            'dms_privsep_repair_runtime_ownership "$RUNTIME_USER" "$RUNTIME_GROUP"',
             // INFRA-SEC-ENV-1: the deploy must harden + fail-closed verify the
             // secret-bearing environment files on every run. Removing the call
             // fails this gate in CI and on the VPS, so a future deploy cannot
@@ -114,8 +117,9 @@ return [
         'required_markers' => [
             'php artisan release:automated-smoke',
             // INFRA-SEC-RUNTIME-1: rolling the CODE back must never roll the
-            // RUNTIME IDENTITY back onto the shared account.
-            'chown -R "${RUNTIME_USER}:${RUNTIME_GROUP}"',
+            // RUNTIME IDENTITY back onto the shared account. Rule 233: the
+            // ownership repair of foreign entries, never a root chown -R.
+            'dms_privsep_repair_runtime_ownership "$RUNTIME_USER" "$RUNTIME_GROUP"',
             'nginx -t',
             // INFRA-SEC-ENV-1: rolling back to an older ref must not restore a
             // world-readable secret file either.
@@ -130,6 +134,65 @@ return [
             'php artisan architecture:foundation-roadmap-check',
             'php artisan foundation:cicd-enterprise-gate-check',
             'php artisan foundation:deployment-rollback-check',
+        ],
+    ],
+
+    // DMS-DEPLOY-PRIVSEP-HARDENING-1 (rule 233, OD-1 DEPLOY-PRIVSEP) — privilege
+    // separation between the root deploy/rollback program and the runtime user,
+    // who owns storage/ and bootstrap/cache. Checked by
+    // DeploymentRollbackScanner::privilegeSeparationIssues() on BOTH scripts, so
+    // foundation:deployment-rollback-check fails in CI the moment root PHP or a
+    // root path mutation of a runtime tree comes back. It is a regression guard
+    // for reviewed code, not a runtime defence (on the VPS the check itself runs
+    // as the runtime user). Lines are scanned as LOGICAL lines: backslash
+    // continuations joined, comment lines and trailing comments dropped.
+    'privilege_separation' => [
+        'library' => 'scripts/lib/runtime-privsep.sh',
+        // Every script must source the library from the snapshot, prepare
+        // before the first mutation, refuse an environment file another
+        // identity could have written, normalize modes AS the runtime user,
+        // gate on drift, and run composer without its scripts.
+        'required_markers' => [
+            'source "${DEPLOY_TOOLS_DIR}/scripts/lib/runtime-privsep.sh"',
+            'dms_privsep_as_runtime "$RUNTIME_USER" "$@"',
+            'dms_privsep_prepare 0 0 "$RUNTIME_USER" "$RUNTIME_GROUP"',
+            'dms_privsep_assert_trusted_file 0 .env',
+            'dms_privsep_as_runtime_fn "$RUNTIME_USER" "" dms_privsep_normalize_modes',
+            'dms_privsep_final_gate 0 0 "$RUNTIME_USER" "$RUNTIME_GROUP"',
+            'composer install --no-dev --optimize-autoloader --no-scripts',
+            'as_runtime php artisan package:discover --ansi',
+        ],
+        // A `php` token (php, php8.3, /usr/bin/php — anywhere on the line,
+        // behind timeout/nice/bash -c/backticks included) must be immediately
+        // preceded by one of these runtime hand-offs; otherwise it runs as root.
+        'runtime_php_prefix' => '/(?:\bas_runtime|\bruntime_json\s+\S+|\brunuser\s+-u\s+\S+\s+--|\bdms_privsep_as_runtime\s+\S+)\s+$/',
+        // The only root PHP allowed: the toolchain probe, which loads no
+        // application code.
+        'allowed_root_php' => [
+            "php -r 'echo PHP_VERSION;'",
+        ],
+        // A composer subcommand that can run scripts needs --no-scripts on the
+        // same logical line; the version probe is the only other root composer.
+        'allowed_root_composer_without_no_scripts' => [
+            'composer --version',
+        ],
+        // A logical line that starts with one of these runs as the runtime
+        // user, so the root-only file-command rule below does not apply to it.
+        'runtime_line_prefix' => '/^\s*(?:run\s+)?(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*(?:as_runtime|runtime_json|runuser\s+-u|dms_privsep_as_runtime(?:_fn)?|dms_privsep_runtime_output)\b/',
+        // Root mutations a runtime-planted symlink can steer, on ANY logical
+        // line (a redirect is opened by root's shell even behind as_runtime).
+        'forbidden_line_patterns' => [
+            'recursive chmod/chown' => '/\b(?:chmod|chown|chgrp)\s+(?:-[A-Za-z]*R\b|--recursive\b)/',
+            'find -exec or xargs chmod/chown' => '/(?:-exec(?:dir)?|\bxargs(?:\s+-\S+)*)\s+(?:\S*\/)?(?:chmod|chown|chgrp)\b/',
+            'root redirect into a runtime tree' => '/(?:^|[^<>])(?:\d|&)?>{1,2}\|?\s*["\']?(?:\$\{?APP_DIR\}?["\']?\/)?(?:storage\b|bootstrap\/cache)/',
+            'root tee into a runtime tree' => '/\btee\b(?:\s+-\S+)*\s+["\']?(?:\$\{?APP_DIR\}?["\']?\/)?(?:storage\b|bootstrap\/cache)/',
+            'root sources a runtime file' => '/(?:^|[;&|]\s*|\b(?:then|do|else)\s+)(?:source|\.)\s+["\']?(?:\$\{?APP_DIR\}?["\']?\/)?(?:storage\b|bootstrap\/cache)/',
+            'root dump helper (the dump must be written by the runtime user)' => '/(?:^|[;&|]\s*|\b(?:then|do|else)\s+)(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*dms_(?:prepare_private_backup_dir|write_private_dump)\b/',
+        ],
+        // Root file commands that name a runtime tree, on lines that do not
+        // start with a runtime hand-off.
+        'forbidden_root_line_patterns' => [
+            'root file command on a runtime tree' => '/(?:^|[;&|(]\s*|\b(?:then|do|else|sudo|xargs|exec)\s+)(?:\S*\/)?(?:chmod|chown|chgrp|mkdir|rmdir|touch|cp|mv|rm|ln|install|truncate|rsync|dd|unlink|sed\s+-i)\b[^;&|]*?(?:\s|["\'=\/])(?:storage\b|bootstrap\/cache)/',
         ],
     ],
 

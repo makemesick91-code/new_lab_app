@@ -201,17 +201,46 @@ if [ "$(id -gn "$RUNTIME_USER")" != "$RUNTIME_GROUP" ]; then
 fi
 echo "Runtime user: ${RUNTIME_USER}:${RUNTIME_GROUP} (explicit, from ${RUNTIME_IDENTITY_FILE})"
 
-# Run a command as the PHP-FPM runtime user (direct when already that user).
+# ─── DMS-DEPLOY-PRIVSEP-HARDENING-1 (rule 233) privilege separation ─────────
+# The runtime user owns storage/ and bootstrap/cache, so anything root executes,
+# opens or chmods there is something a runtime compromise controls. Root
+# therefore never runs application PHP (every artisan command below runs as the
+# runtime user, composer runs --no-scripts), and never opens, writes or chmods a
+# path in the runtime trees: the runtime user writes the dump and the evidence
+# files and sets every mode there. Root only repairs ownership of entries found
+# foreign (lchown, from inside their directory, never through a hardlink) and
+# claims for itself any source path another identity owns or can write, before
+# it writes there. A run that ends with privilege drift is NOT GO. The library is
+# read from the immutable snapshot.
+# shellcheck source=lib/runtime-privsep.sh
+source "${DEPLOY_TOOLS_DIR}/scripts/lib/runtime-privsep.sh"
+
+# Run a command as the PHP-FPM runtime user — never as root (rule 233).
+# The checkout belongs to root, so the runtime user's git (release evidence
+# records the commit and the GO tag) would stop at "dubious ownership". Trust
+# exactly this directory through command-scope configuration, the one scope git
+# accepts for safe.directory besides system and global.
 as_runtime() {
-  if [ "$(id -un)" = "$RUNTIME_USER" ]; then
-    "$@"
-  else
-    runuser -u "$RUNTIME_USER" -- "$@"
-  fi
+  GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0="$APP_DIR" \
+    dms_privsep_as_runtime "$RUNTIME_USER" "$@"
 }
 
-# Ensure required Laravel runtime directories exist before ownership work.
-mkdir -p \
+# Run a command as the runtime user with its stdout written to a file that the
+# runtime user opens itself — root never opens a path in a runtime tree.
+runtime_json() {
+  GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0="$APP_DIR" \
+    dms_privsep_runtime_output "$RUNTIME_USER" "$@"
+}
+
+echo "== Privilege separation preflight (rule 233) =="
+dms_privsep_prepare 0 0 "$RUNTIME_USER" "$RUNTIME_GROUP"
+
+# Rule 233: root sources the environment file below. Refuse one that another
+# identity could have written: repairing its mode would not repair its content.
+dms_privsep_assert_trusted_file 0 .env
+
+# Ensure required Laravel runtime directories exist — created by the runtime user.
+as_runtime mkdir -p \
   storage/framework/cache/data \
   storage/framework/sessions \
   storage/framework/views \
@@ -220,68 +249,22 @@ mkdir -p \
 
 # Normalize ownership + safe modes (setgid dirs so new files inherit the group).
 # NEVER use a world-writable (0777) mode.
+#
+# Rule 233: root only hands foreign entries (a tracked file the checkout wrote,
+# an operator's leftover) to the runtime user — lchown from inside each entry's
+# directory, never through a hardlink. Every MODE is set by the runtime user
+# itself (dms_privsep_normalize_modes, which refuses root), so no symlink the
+# runtime plants can steer a chmod onto a host file.
+#
+# The mode policy is unchanged: storage and bootstrap/cache 2775/0664 except the
+# backup tree (2750/0640, SECURITY-FIX-DEPLOY-BACKUP-FILE-PERMISSIONS-1) and the
+# declared private paths, which are never widened and lose every "other" bit
+# (SECURITY-F8-PRIVATE-STORAGE-PATHS-1, INFRA-SEC-RUNTIME-1).
 normalize_runtime_ownership() {
-  # Exactly one owner: the explicitly declared dedicated runtime identity.
-  # There is deliberately no shared-account branch here any more — a deploy that
-  # cannot resolve a dedicated identity has already aborted above.
-  # Only the runtime-writable paths are touched; the application source tree
-  # stays deploy/root owned so the runtime can never rewrite its own code.
-  chown -R "${RUNTIME_USER}:${RUNTIME_GROUP}" storage bootstrap/cache
-  # SECURITY-FIX-DEPLOY-BACKUP-FILE-PERMISSIONS-1: the backup tree is PRUNED
-  # from the 2775/0664 widening below. Widening it first and re-restricting it
-  # afterwards (restrict_private_paths) still left every database dump 0664
-  # inside a 2775 directory for the duration of the find — a deploy-wide window
-  # on every dump on the host. The tree is set to its private modes directly.
-  #
-  # SECURITY-F8-PRIVATE-STORAGE-PATHS-1: every declared private path is pruned
-  # from the widening too, for the same reason. Widening clinical evidence to
-  # 0664 and stripping "other" a moment later left it world-readable for the
-  # length of the find on every deploy; restrict_private_paths now sets those
-  # trees directly.
-  local -a private_prune=() private_paths=()
-  local rel
+  local -a private_paths=()
   read -r -a private_paths <<< "${DMS_PRIVATE_PATHS:-}"
-  for rel in "${private_paths[@]}"; do
-    private_prune+=(-path "$rel" -prune -o)
-  done
-  find storage bootstrap/cache -path storage/app/backups -prune -o "${private_prune[@]}" -type d -exec chmod 2775 {} \;
-  find storage bootstrap/cache -path storage/app/backups -prune -o "${private_prune[@]}" -type f -exec chmod 0664 {} \;
-  restrict_backup_tree
-  restrict_private_paths
-}
-
-# Database dumps: directories 2750, files 0640 — never group-write, never any
-# access for "other". Matches scripts/lib/private-db-dump.sh.
-restrict_backup_tree() {
-  [ -d storage/app/backups ] || return 0
-  find storage/app/backups -type d -exec chmod 2750 {} +
-  find storage/app/backups -type f -exec chmod 0640 {} +
-}
-
-# INFRA-SEC-RUNTIME-1: the normalization above deliberately makes the whole
-# storage tree group-writable and world-readable (2775/0664) so the runtime can
-# work — but storage/app/private holds clinical evidence and must NOT inherit
-# that. Re-strip world access for every declared private path.
-#
-# This is called from INSIDE normalize_runtime_ownership, not beside it, because
-# the two must never drift apart: a deploy that normalized ownership without
-# re-restricting would silently hand the co-tenant uid read access to lab
-# workflow evidence, patient documents and the legacy import staging area — the
-# exact exposure this sprint closes — and would then fail the isolation gate
-# below with a confusing message instead of never happening.
-#
-# SECURITY-F8-PRIVATE-STORAGE-PATHS-1: these trees are no longer widened first,
-# so the owner (the runtime, after the chown above) is given read/write here —
-# the widening used to guarantee that. Group bits are left as found: the runtime
-# group has no other member, and the backup tree keeps its 2750/0640.
-restrict_private_paths() {
-  local rel p
-  for rel in ${DMS_PRIVATE_PATHS:-}; do
-    p="${APP_DIR}/${rel}"
-    [ -d "$p" ] || continue
-    chmod -R u+rwX "$p"
-    chmod -R o-rwx "$p"
-  done
+  dms_privsep_repair_runtime_ownership "$RUNTIME_USER" "$RUNTIME_GROUP" storage bootstrap/cache
+  dms_privsep_as_runtime_fn "$RUNTIME_USER" "" dms_privsep_normalize_modes "${private_paths[@]}"
 }
 
 # Fail-closed writable gate: every runtime path must be writable by the runtime
@@ -314,7 +297,7 @@ assert_runtime_writable() {
 # ever runs against a world-readable secret. Fail closed: an unsafe secret file
 # aborts the deploy (the helper exits non-zero and `set -e` stops us here).
 echo "== Harden secret file permissions (INFRA-SEC-ENV-1) =="
-bash "${DEPLOY_TOOLS_DIR}/scripts/harden-secret-permissions.sh" apply --app-dir "$APP_DIR" --owner root --group "$RUNTIME_GROUP"
+bash "${DEPLOY_TOOLS_DIR}/scripts/harden-secret-permissions.sh" apply --app-dir "$APP_DIR" --owner root --group "$RUNTIME_GROUP" --runtime-user "$RUNTIME_USER"
 # ────────────────────────────────────────────────────────────────────────────
 
 echo "== Current branch =="
@@ -340,12 +323,19 @@ echo "== Backup DB =="
 # SECURITY-FIX-DEPLOY-BACKUP-FILE-PERMISSIONS-1: the dump is created PRIVATE.
 # The helper wraps pg_dump in a `umask 077` subshell, so the redirect creates
 # the file 0600 before a single byte is written, and it is published unchanged
-# at 0600 once complete (restrict_backup_tree later sets 0640). The previous `pg_dump > file; chmod 0640` left the inode 0644
+# at 0600 once complete (the runtime-side normalization later sets 0640). The previous `pg_dump > file; chmod 0640` left the inode 0644
 # for the entire dump. The helper is read from the immutable snapshot.
+#
+# Rule 233: the backup tree belongs to the runtime user, so the directories and
+# the dump are created BY THE RUNTIME USER (the helper's functions are handed to
+# it from the snapshot). Root opening the dump path inside that tree is exactly
+# the redirect a planted symlink would steer. The runtime already holds the
+# database credentials, so pg_dump runs with the same database identity as before.
 # shellcheck source=lib/private-db-dump.sh
 source "${DEPLOY_TOOLS_DIR}/scripts/lib/private-db-dump.sh"
-dms_prepare_private_backup_dir storage/app/backups
-dms_prepare_private_backup_dir storage/app/backups/deploy
+DUMP_HELPERS="_dms_dump_err _dms_dump_assert_no_default_acl"
+dms_privsep_as_runtime_fn "$RUNTIME_USER" "$DUMP_HELPERS" dms_prepare_private_backup_dir storage/app/backups
+dms_privsep_as_runtime_fn "$RUNTIME_USER" "$DUMP_HELPERS" dms_prepare_private_backup_dir storage/app/backups/deploy
 # SECURITY-F8-PRIVATE-STORAGE-PATHS-1: private-path validation + union, used once
 # the checkout has advanced. Read from the immutable snapshot.
 # shellcheck source=lib/private-paths.sh
@@ -357,13 +347,16 @@ set +a
 
 BACKUP="storage/app/backups/deploy/pre_auto_deploy_${STAMP}.sql"
 
-PGPASSWORD="${DB_PASSWORD}" dms_write_private_dump "$BACKUP" pg_dump \
+PGPASSWORD="${DB_PASSWORD}" dms_privsep_as_runtime_fn "$RUNTIME_USER" "$DUMP_HELPERS" dms_write_private_dump "$BACKUP" pg_dump \
   -h "${DB_HOST:-127.0.0.1}" \
   -p "${DB_PORT:-5432}" \
   -U "${DB_USERNAME}" \
   -d "${DB_DATABASE}"
 
-test -s "$BACKUP"
+as_runtime test -s "$BACKUP"
+# The digest lands in the root-only deploy log, so a later change to the dump
+# (which the runtime user owns) is detectable against this record.
+echo "Pre-deploy backup: ${BACKUP} sha256=$(as_runtime sha256sum -- "$BACKUP" | cut -d' ' -f1)"
 
 echo "== Advance checkout to the pinned target =="
 # Fast-forward the approved branch to the EXACT pinned commit instead of pulling
@@ -379,6 +372,11 @@ if [ "$DEPLOYED_SHA" != "$TARGET_SHA" ]; then
   exit 1
 fi
 echo "HEAD verified at pinned target: ${DEPLOYED_SHA}"
+
+# Rule 233: the checkout (root's git) writes the tracked files that live under
+# storage/ and creates any new tracked directory there. Hand them to the runtime
+# user before the first runtime step needs them.
+dms_privsep_repair_runtime_ownership "$RUNTIME_USER" "$RUNTIME_GROUP" storage bootstrap/cache
 
 # SECURITY-F8-PRIVATE-STORAGE-PATHS-1: DMS_PRIVATE_PATHS was read from the LIVE
 # identity authority before the fast-forward, so private paths the target
@@ -400,17 +398,29 @@ DMS_PRIVATE_PATHS="$EFFECTIVE_PRIVATE_PATHS"
 echo "Private storage paths (live + target): ${DMS_PRIVATE_PATHS}"
 
 echo "== Composer install =="
-composer install --no-dev --optimize-autoloader
+# Rule 233: --no-scripts. composer runs as root (vendor/ is root's), and its
+# post-autoload-dump scripts boot the application — `@php artisan
+# package:discover` `require`s bootstrap/cache/*.php, which the runtime user
+# can rewrite. The two steps of composer.json's post-autoload-dump run below as
+# the runtime user instead (DeployHardenPrivilegeSeparationTest pins that list).
+composer install --no-dev --optimize-autoloader --no-scripts
+
+echo "== Composer post-autoload-dump (as the runtime user, rule 233) =="
+# Illuminate\Foundation\ComposerScripts::postAutoloadDump: drop the compiled
+# configuration, services and packages manifests so the next boot rebuilds them
+# from the new vendor/ — then rediscover the packages.
+as_runtime rm -f -- bootstrap/cache/config.php bootstrap/cache/services.php bootstrap/cache/packages.php
+as_runtime php artisan package:discover --ansi
 
 echo "== NPM build =="
 npm ci
 npm run build
 
 echo "== Laravel migrate =="
-php artisan migrate --force
+as_runtime php artisan migrate --force
 
 echo "== NSF-10 backup verify =="
-php artisan foundation:backup-verify --path="$BACKUP"
+as_runtime php artisan foundation:backup-verify --path="$BACKUP"
 
 echo "== Clear stale route/config cache before route-dependent gates (ENT-8) =="
 # Route-dependent governance gates (foundation:developer-console-check,
@@ -418,87 +428,85 @@ echo "== Clear stale route/config cache before route-dependent gates (ENT-8) =="
 # from a prior deploy can hide newly added routes during the gate phase (the
 # ENT-7 deploy hiccup). Clearing here — before the gates, well before the
 # cache-rebuild block below — makes those gates see the freshly deployed routes.
-php artisan route:clear
-php artisan config:clear
+as_runtime php artisan route:clear
+as_runtime php artisan config:clear
 
 echo "== Foundation deploy governance gates =="
-php artisan architecture:foundation-roadmap-check
-php artisan data-quality:dq1-audit --fail-on=error
-php artisan inventory:batch-governance-audit --fail-on=error
-php artisan inventory:source-document-batch-audit --fail-on=error
-php artisan inventory:ambiguous-batch-review-pack
-php artisan architecture:dmo-governance-check
-php artisan architecture:nsf-governance-check --include-observability
-php artisan foundation:feature-flags
-php artisan foundation:cache-governance-check
-php artisan foundation:cache-governance-check --json > storage/release-evidence/latest/cache-governance-check.json || true
-php artisan foundation:queue-governance-check
-php artisan foundation:queue-governance-check --json > storage/release-evidence/latest/queue-governance-check.json || true
-php artisan foundation:queue-retry-failed-job-check
-php artisan foundation:idempotency-outbox-check
-php artisan foundation:idempotency-outbox-check --json > storage/release-evidence/latest/idempotency-outbox-check.json || true
-php artisan foundation:developer-console-check
-php artisan foundation:developer-console-check --json > storage/release-evidence/latest/developer-console-check.json || true
-php artisan foundation:health-check
-php artisan foundation:health-check --json > storage/release-evidence/latest/health-check-check.json || true
-php artisan foundation:security-compliance-check
-php artisan foundation:security-compliance-check --json > storage/release-evidence/latest/security-compliance-check.json || true
-php artisan foundation:cicd-enterprise-gate-check
-php artisan foundation:cicd-enterprise-gate-check --json > storage/release-evidence/latest/cicd-enterprise-gate-check.json || true
-php artisan foundation:deployment-rollback-check
-php artisan foundation:deployment-rollback-check --json > storage/release-evidence/latest/deployment-rollback-check.json || true
-php artisan foundation:deployment-entrypoint-check
-php artisan foundation:deployment-entrypoint-check --json > storage/release-evidence/latest/deployment-entrypoint-check.json || true
-php artisan foundation:backup-dr-check
-php artisan foundation:backup-dr-check --json > storage/release-evidence/latest/backup-dr-check.json || true
-php artisan foundation:load-test-baseline-check
-php artisan foundation:load-test-baseline-check --json > storage/release-evidence/latest/load-test-baseline-check.json || true
-php artisan foundation:load-test-scale-projection-check
-php artisan foundation:load-test-scale-projection-check --json > storage/release-evidence/latest/load-test-scale-projection-check.json || true
-php artisan foundation:enterprise-documentation-check
-php artisan foundation:enterprise-documentation-check --json > storage/release-evidence/latest/enterprise-documentation-check.json || true
-php artisan foundation:enterprise-closure-check
-php artisan foundation:enterprise-closure-check --json > storage/release-evidence/latest/enterprise-closure-check.json || true
-php artisan foundation:ent-1-4-audit-check
-php artisan foundation:ent-1-4-audit-check --json > storage/release-evidence/latest/ent-1-4-audit-check.json || true
-php artisan foundation:queue-worker-runtime-check
-php artisan foundation:queue-worker-runtime-check --json > storage/release-evidence/latest/queue-worker-runtime-check.json || true
-php artisan foundation:runtime-hardening-check
-php artisan foundation:runtime-hardening-check --json > storage/release-evidence/latest/runtime-hardening-check.json || true
-php artisan foundation:devflow-check
-php artisan foundation:devflow-check --json > storage/release-evidence/latest/devflow-check.json || true
-php artisan foundation:shared-service-audit --json > storage/release-evidence/latest/shared-service-audit.json || true
-php artisan foundation:idempotency-audit
-php artisan foundation:idempotency-audit --json > storage/release-evidence/latest/idempotency-audit.json || true
-php artisan foundation:outbox-audit
-php artisan foundation:outbox-audit --json > storage/release-evidence/latest/outbox-audit.json || true
-php artisan foundation:db-performance-check
-php artisan foundation:db-performance-check --include-db-stats
-php artisan foundation:db-performance-check --include-db-stats --json > storage/release-evidence/latest/db-performance-check.json || true
-php artisan foundation:postgres-runtime-check
-php artisan foundation:postgres-runtime-check --include-db-stats
-php artisan foundation:postgres-runtime-check --include-db-stats --include-pgbouncer-probe || true
-php artisan foundation:postgres-runtime-check --include-db-stats --json > storage/release-evidence/latest/postgres-runtime-check.json || true
-php artisan foundation:reporting-summary-check
-php artisan foundation:reporting-summary-check --include-db-inventory
-php artisan foundation:reporting-summary-check --include-db-inventory --json > storage/release-evidence/latest/reporting-summary-check.json || true
-php artisan foundation:reporting-summary-refresh --dry-run
-php artisan foundation:reporting-summary-refresh --dry-run --json > storage/release-evidence/latest/reporting-summary-refresh-dry-run.json || true
-php artisan foundation:release-safety-check
-php artisan release:automated-smoke
-php artisan architecture:foundation-governance-summary
+as_runtime php artisan architecture:foundation-roadmap-check
+as_runtime php artisan data-quality:dq1-audit --fail-on=error
+as_runtime php artisan inventory:batch-governance-audit --fail-on=error
+as_runtime php artisan inventory:source-document-batch-audit --fail-on=error
+as_runtime php artisan inventory:ambiguous-batch-review-pack
+as_runtime php artisan architecture:dmo-governance-check
+as_runtime php artisan architecture:nsf-governance-check --include-observability
+as_runtime php artisan foundation:feature-flags
+as_runtime php artisan foundation:cache-governance-check
+runtime_json storage/release-evidence/latest/cache-governance-check.json php artisan foundation:cache-governance-check --json || true
+as_runtime php artisan foundation:queue-governance-check
+runtime_json storage/release-evidence/latest/queue-governance-check.json php artisan foundation:queue-governance-check --json || true
+as_runtime php artisan foundation:queue-retry-failed-job-check
+as_runtime php artisan foundation:idempotency-outbox-check
+runtime_json storage/release-evidence/latest/idempotency-outbox-check.json php artisan foundation:idempotency-outbox-check --json || true
+as_runtime php artisan foundation:developer-console-check
+runtime_json storage/release-evidence/latest/developer-console-check.json php artisan foundation:developer-console-check --json || true
+as_runtime php artisan foundation:health-check
+runtime_json storage/release-evidence/latest/health-check-check.json php artisan foundation:health-check --json || true
+as_runtime php artisan foundation:security-compliance-check
+runtime_json storage/release-evidence/latest/security-compliance-check.json php artisan foundation:security-compliance-check --json || true
+as_runtime php artisan foundation:cicd-enterprise-gate-check
+runtime_json storage/release-evidence/latest/cicd-enterprise-gate-check.json php artisan foundation:cicd-enterprise-gate-check --json || true
+as_runtime php artisan foundation:deployment-rollback-check
+runtime_json storage/release-evidence/latest/deployment-rollback-check.json php artisan foundation:deployment-rollback-check --json || true
+as_runtime php artisan foundation:deployment-entrypoint-check
+runtime_json storage/release-evidence/latest/deployment-entrypoint-check.json php artisan foundation:deployment-entrypoint-check --json || true
+as_runtime php artisan foundation:backup-dr-check
+runtime_json storage/release-evidence/latest/backup-dr-check.json php artisan foundation:backup-dr-check --json || true
+as_runtime php artisan foundation:load-test-baseline-check
+runtime_json storage/release-evidence/latest/load-test-baseline-check.json php artisan foundation:load-test-baseline-check --json || true
+as_runtime php artisan foundation:load-test-scale-projection-check
+runtime_json storage/release-evidence/latest/load-test-scale-projection-check.json php artisan foundation:load-test-scale-projection-check --json || true
+as_runtime php artisan foundation:enterprise-documentation-check
+runtime_json storage/release-evidence/latest/enterprise-documentation-check.json php artisan foundation:enterprise-documentation-check --json || true
+as_runtime php artisan foundation:enterprise-closure-check
+runtime_json storage/release-evidence/latest/enterprise-closure-check.json php artisan foundation:enterprise-closure-check --json || true
+as_runtime php artisan foundation:ent-1-4-audit-check
+runtime_json storage/release-evidence/latest/ent-1-4-audit-check.json php artisan foundation:ent-1-4-audit-check --json || true
+as_runtime php artisan foundation:queue-worker-runtime-check
+runtime_json storage/release-evidence/latest/queue-worker-runtime-check.json php artisan foundation:queue-worker-runtime-check --json || true
+as_runtime php artisan foundation:runtime-hardening-check
+runtime_json storage/release-evidence/latest/runtime-hardening-check.json php artisan foundation:runtime-hardening-check --json || true
+as_runtime php artisan foundation:devflow-check
+runtime_json storage/release-evidence/latest/devflow-check.json php artisan foundation:devflow-check --json || true
+runtime_json storage/release-evidence/latest/shared-service-audit.json php artisan foundation:shared-service-audit --json || true
+as_runtime php artisan foundation:idempotency-audit
+runtime_json storage/release-evidence/latest/idempotency-audit.json php artisan foundation:idempotency-audit --json || true
+as_runtime php artisan foundation:outbox-audit
+runtime_json storage/release-evidence/latest/outbox-audit.json php artisan foundation:outbox-audit --json || true
+as_runtime php artisan foundation:db-performance-check
+as_runtime php artisan foundation:db-performance-check --include-db-stats
+runtime_json storage/release-evidence/latest/db-performance-check.json php artisan foundation:db-performance-check --include-db-stats --json || true
+as_runtime php artisan foundation:postgres-runtime-check
+as_runtime php artisan foundation:postgres-runtime-check --include-db-stats
+as_runtime php artisan foundation:postgres-runtime-check --include-db-stats --include-pgbouncer-probe || true
+runtime_json storage/release-evidence/latest/postgres-runtime-check.json php artisan foundation:postgres-runtime-check --include-db-stats --json || true
+as_runtime php artisan foundation:reporting-summary-check
+as_runtime php artisan foundation:reporting-summary-check --include-db-inventory
+runtime_json storage/release-evidence/latest/reporting-summary-check.json php artisan foundation:reporting-summary-check --include-db-inventory --json || true
+as_runtime php artisan foundation:reporting-summary-refresh --dry-run
+runtime_json storage/release-evidence/latest/reporting-summary-refresh-dry-run.json php artisan foundation:reporting-summary-refresh --dry-run --json || true
+as_runtime php artisan foundation:release-safety-check
+as_runtime php artisan release:automated-smoke
+as_runtime php artisan architecture:foundation-governance-summary
 
 echo "== NSF-10 release evidence capture/check (vps profile) =="
-php artisan release:evidence-capture --profile=vps --base-url=http://127.0.0.1 --backup-path="$BACKUP"
-php artisan release:evidence-check --profile=vps
-php artisan foundation:release-safety-check --profile=vps
+as_runtime php artisan release:evidence-capture --profile=vps --base-url=http://127.0.0.1 --backup-path="$BACKUP"
+as_runtime php artisan release:evidence-check --profile=vps
+as_runtime php artisan foundation:release-safety-check --profile=vps
 
-echo "== Normalize runtime ownership before rebuilding cache as runtime user =="
-# The governance gates above ran as the deploy user (root) and wrote root-owned
-# cache/log files. Normalize FIRST so the runtime-user cache rebuild can clear
-# and overwrite them without a permission-denied abort.
-normalize_runtime_ownership
-
+# Rule 233: no normalization is needed before the cache rebuild any more. The
+# governance gates used to run as root and leave root-owned cache and log files
+# that the runtime user could not overwrite; every one of them now runs as the
+# runtime user, so nothing root-owned is created in the runtime trees.
 echo "== Laravel cache rebuild (as PHP-FPM runtime user) =="
 as_runtime php artisan optimize:clear
 as_runtime php artisan config:cache
@@ -531,8 +539,8 @@ fi
 # deploy has just rewritten. Re-reading a helper out of the freshly checked-out
 # working tree is the same self-modification defect one indirection removed.
 echo "== Verify secret file permissions (INFRA-SEC-ENV-1) =="
-bash "${DEPLOY_TOOLS_DIR}/scripts/harden-secret-permissions.sh" apply --app-dir "$APP_DIR" --owner root --group "$RUNTIME_GROUP"
-if ! bash "${DEPLOY_TOOLS_DIR}/scripts/harden-secret-permissions.sh" verify --app-dir "$APP_DIR" --owner root --group "$RUNTIME_GROUP"; then
+bash "${DEPLOY_TOOLS_DIR}/scripts/harden-secret-permissions.sh" apply --app-dir "$APP_DIR" --owner root --group "$RUNTIME_GROUP" --runtime-user "$RUNTIME_USER"
+if ! bash "${DEPLOY_TOOLS_DIR}/scripts/harden-secret-permissions.sh" verify --app-dir "$APP_DIR" --owner root --group "$RUNTIME_GROUP" --runtime-user "$RUNTIME_USER"; then
   echo "FATAL: secret file permissions are unsafe — NOT GO" >&2
   exit 1
 fi
@@ -551,6 +559,16 @@ if ! bash "${DEPLOY_TOOLS_DIR}/scripts/verify-runtime-isolation.sh" \
       --additional-private-paths "$DMS_PRIVATE_PATHS" \
       --require-host; then
   echo "FATAL: runtime identity isolation is broken — NOT GO" >&2
+  exit 1
+fi
+
+# ─── DMS-DEPLOY-PRIVSEP-HARDENING-1 (rule 233) privilege drift gate ─────────
+# Proves the run left no foreign-owned entry in the runtime trees (nothing root
+# created there survives) and no source entry that another identity owns or can
+# write. Read-only. A deploy that cannot prove it is NOT GO.
+echo "== Verify privilege separation (rule 233) =="
+if ! dms_privsep_final_gate 0 0 "$RUNTIME_USER" "$RUNTIME_GROUP"; then
+  echo "FATAL: privilege separation is broken after the deploy — NOT GO" >&2
   exit 1
 fi
 
