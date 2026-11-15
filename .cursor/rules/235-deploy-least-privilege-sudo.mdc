@@ -37,7 +37,8 @@ GO is recorded in the sprint doc, not here.
    `drift-check`, `sudo-policy-check`, `posture` — rendered by `dms_sudo_render_operator_rule` from
    `dms_sudo_operator_expressions`, never hand-written. No `ALL`, no wildcard, no shell or interpreter, no SETENV,
    no tag but NOPASSWD, no Chroot/Cwd, no command-specific Defaults, no `env_keep`/`runchroot`/`runcwd`, `env_reset`
-   and a rendered `secure_path` kept, run-as root only (no group).
+   and a rendered `secure_path` kept, run-as root only (no group). The expressions are sudo regular expressions:
+   the host needs sudo 1.9.10 or newer (Biznet: 1.9.15p5); provisioning refuses an older one before any change.
 3. **The entrypoint trusts nothing it is given.** It pins its own PATH first, reads no environment variable but
    `SSH_ORIGINAL_COMMAND`, splits it on single spaces after a strict character check (no shell, glob or expansion),
    validates the words against the same allowlist, and as root re-validates, proves that it, every PATH entry, the

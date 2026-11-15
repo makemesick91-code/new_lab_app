@@ -343,12 +343,23 @@ it('renders an operator rule that parses, holds only the entrypoint and classifi
     [, $verdict] = lpClassify(lpListing('opuser', [['file' => '/etc/sudoers.d/20-dms-deploy-operator', 'runas' => 'root', 'options' => '!authenticate', 'commands' => $commands]], LP_OP_DEFAULTS), 0);
     expect($verdict)->toBe('OPERATOR');
 
+    // sudo parses regular-expression arguments from 1.9.10 (production runs
+    // 1.9.15p5). Where this machine's sudo is older (some CI runners), visudo
+    // must refuse the rule for exactly that reason — which is why provisioning
+    // refuses an older sudo before it changes anything.
     if (trim((string) shell_exec('command -v visudo')) !== '') {
         $file = tempArtifactDir('lp-sudoers-').'/rule';
         file_put_contents($file, $rule);
         [$exit, $out, $err] = lpBash('visudo -c -f '.escapeshellarg($file));
-        expect($exit)->toBe(0, $out.$err);
+        preg_match('/(\d+\.\d+\.\d+)/', (string) shell_exec('visudo -V 2>/dev/null | head -n 1'), $version);
+        if (version_compare($version[1] ?? '0.0.0', '1.9.10', '>=')) {
+            expect($exit)->toBe(0, $out.$err);
+        } else {
+            expect($exit)->not->toBe(0)->and($out.$err)->toContain('regular expressions are not supported');
+        }
     }
+    expect(lpCode('scripts/provision-deploy-identities.sh'))
+        ->toContain("printf '%s\\n%s\\n' 1.9.10 \"\$sudo_version\" | sort -V -C");
 
     foreach (['Root', 'op user', 'x', 'a;b'] as $bad) {
         expect(lpBash(lpSource('scripts/lib/sudo-policy.sh').' dms_sudo_render_operator_rule '.escapeshellarg($bad).' '.LP_ENTRY)[0])->toBe(2);

@@ -159,6 +159,12 @@ provision_operator() {
   local home key_line key_type staged listing verdict keytmp
   echo "== Deploy operator =="
   [[ "$OPERATOR_USER" =~ ^[a-z][a-z0-9-]{2,31}$ ]] || die "--operator-user must be 3-32 characters of [a-z0-9-], starting with a letter"
+  # The rule's argument expressions are sudo regular expressions (sudo 1.9.10+).
+  local sudo_version
+  sudo_version="$(sudo -V | sed -n 's/^Sudo version \([0-9][0-9.]*\).*/\1/p' | head -n 1)"
+  if [ -z "$sudo_version" ] || ! printf '%s\n%s\n' 1.9.10 "$sudo_version" | sort -V -C; then
+    die "sudo ${sudo_version:-of unknown version} predates 1.9.10: it cannot parse the operator rule's regular expressions — nothing was changed"
+  fi
   case "$OPERATOR_USER" in
     root|"$ADMIN_USER"|"$BUILD_USER"|"$RUNTIME_USER"|www-data|postgres|nobody) die "--operator-user must be a dedicated account, not '${OPERATOR_USER}'" ;;
   esac

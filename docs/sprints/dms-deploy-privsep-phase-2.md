@@ -27,7 +27,7 @@ optional (`DMS-OFFLINE-CUSTODY-OPTIONAL-1`); no deployment in 02:25–02:40 WITA
 The brief's provisional ids OD-7/OD-8/OD-9 are the canonical rule 233 §9 residuals **R1**, **R2** and **R4**; this
 record uses those ids (no new finding ids were minted).
 
-## 2. Baseline (production, read-only, 2026-11-15 ≈19:00 WITA)
+## 2. Baseline (production, read-only, 2026-11-15, before implementation)
 
 `bash scripts/production-target-check.sh --remote` → `PRODUCTION_TARGET=VERIFIED` (host key
 `SHA256:i3As…O2bc`). The base tip equals the previous closure (`eb4f22bc`): nothing landed since rule 233's release.
@@ -133,9 +133,20 @@ dependency resolution, but changes the delivery model; left as a follow-up decis
 Unchanged: schema, migrations, permissions, roles, routes, JS/CSS sources, packages, flags, branch locks, queue worker,
 timers, the release approval contract, the runner, the immutable bootstrap.
 
-## 6. Tests and quality gates
+## 6. Tests and quality gates (local, WSL2, PHP 8.3.6)
 
-Pending (§6 is filled from the measured runs).
+| Gate | Result |
+|---|---|
+| New suite `DeployHardenLeastPrivilegeTest` | **all passed** (entrypoint allow/deny matrix incl. 32 hostile requests through the real gateway with a sudo tripwire; classifier matrix of 28 policies incl. every review bypass; rendered rule ↔ entrypoint agreement; `visudo -cf`; build hand-over/claim refusals; sandbox properties via a `systemd-run` stub; R4 evidence/staging/digest matrix; restore tools refuse missing evidence; storage placeholders; `--operator` target check offline) |
+| The 71 test files touching anything this change touches (deploy, rollback, restore, host authority, scanner, CI runner, rules, docs) | **1,552 tests**: 1,550 passed in the final run; 2 failed and were fixed — a pin on the old dump line (`SecretFilePermissionHardeningTest`, re-pointed to both private-creation calls) and the storage guard before the deletions were staged — and their suites re-run: **190 passed** |
+| Warnings | one per test file: phpdotenv probing the worktree's absent environment file (`tests/TestCase.php`), as on the untouched base; CI writes one |
+| ShellCheck 0.9.0 (`-x -P SCRIPTDIR`) | 8 new scripts: **0 findings**; every changed script reports exactly its base's codes (SC1091 info on the environment file; SC2119/SC2120 in `runtime-privsep.sh`, rule 233) |
+| Pint | passed |
+| `visudo -cf` on the rendered operator rule | `parsed OK` |
+| Rule 233 pins re-pointed (same intent) | `DeployHardenPrivilegeSeparationTest` (accepted composer form → the build hand-off; dump lines → root-hashed staging), `DeployHardenRunnerEvidenceContractTest` (probe block), `SecretFilePermissionHardeningTest` (both dump calls private) |
+| PR #636 CI, head `fbad4e2d` | run `43712846447`: Critical Test Gate **10,217 passed, 1 failed** — `visudo` on the CI runner predates sudo 1.9.10 and rejects regular-expression arguments ("regular expressions are not supported"); production and the workstation run 1.9.15p5 and parse the rule. Fixed: provisioning now refuses a sudo older than 1.9.10 before it changes anything, and the test requires `visudo` to accept the rule where sudo ≥ 1.9.10 and to refuse it for exactly that reason where it is older. Selective Module, Quality and Android gates passed |
+| Full Suite | **DEFERRED** (CG-18 global policy) — not passed |
+| Graphify 0.9.99 `graphify update .` | 58,628 nodes, 142,366 edges, 2,449 communities (rule 233's tree: 58,463 / 142,051 / 2,421); `graphify-out/` untracked |
 
 ## 8. Independent review
 
@@ -177,3 +188,15 @@ the last matching rule wins and sudo would never prompt; `sudo -k; sudo -v` does
 - `scripts/rollout-restore-drill.sh` (staging only, refuses production) restores as the application role without the
   digest check.
 - OD-2 (rollback floor) and rule 231 §8c S1–S8 stand; roll back by full SHA only.
+
+## 10. Release states
+
+| State | Evidence |
+|---|---|
+| Implemented, locally verified | §6 |
+| Reviewed | §8: no operator-to-root path; 1 HIGH, 2 MEDIUM, 6 LOW fixed before the PR |
+| PR / CI / merge | PR #636 — pending |
+| Release approval (owner signature) | pending |
+| One-time provisioning, rehearsal, deploy through the operator | pending (runbook §6f) |
+| Administrator's passwordless sudo retired (owner-gated) | pending |
+| Production verification, GO tag | pending |
