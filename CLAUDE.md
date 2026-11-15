@@ -168,6 +168,7 @@ it covers. When you plan work in a domain before opening any of its files, read 
   never read all of `docs/`, `docs/sprints/`, `.cursor/rules/` or the archive. When `graphify-out/graph.json` exists,
   use `graphify query "<question>"`, `graphify path "<A>" "<B>"` or `graphify explain "<concept>"` before raw reads;
   read `graphify-out/GRAPH_REPORT.md` only for broad architecture review; run `graphify update .` after code changes.
+  Check the toolchain with `bash scripts/dev/toolchain-readiness-check.sh` (rule 234); a missing tool's step is NOT RUN.
 - **CG-24 Do not grow this file.** A sprint closure record goes to `docs/sprints/<sprint-id>.md` (the
   `sprint-doc-writer` skill). A durable rule goes to `.cursor/rules/NNN-*.mdc`, plus one line in the matching
   `.claude/rules/<domain>.md`. The GO tag itself is the release record. Edit this file only when a

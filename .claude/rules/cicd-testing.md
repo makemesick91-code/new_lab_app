@@ -2,6 +2,7 @@
 paths:
   - ".github/**"
   - "scripts/ci/**"
+  - "scripts/dev/**"
   - "config/ci_*.php"
   - "config/cicd_enterprise_gate.php"
   - "app/Support/Cicd/**"
@@ -187,6 +188,11 @@ code, then the canonical rule, and report the drift.
   `$CRITICAL_TEST_EXTRA_ARGS`, in both variants. After any workflow edit run all of `tests/Feature/Cicd` on the host
   (git needed), not only the coverage test. Source: DMS-RME-REVISION-PROGRAM-7 (CI run 42198790347 failed 2 tests on
   a token appended after the tail).
+- **AIR-CIT-35** Rule 234: before tool-dependent DEVFLOW work run `bash scripts/dev/toolchain-readiness-check.sh`
+  (read-only). Missing tools are installed by the owner only (Ubuntu archive or `pipx` of the official package at a
+  pinned version ≥ two weeks old; never `get-pip.py` or binary-fetching wrappers); an optional tool's step is NOT RUN,
+  never passed. Graphify = `graphifyy` (pinned in `docs/runbooks/dev-toolchain-readiness.md`); its hook installers
+  need an owner decision. No MCP server is required. Source: `.cursor/rules/234-dev-toolchain-readiness.mdc`.
 
 ## Current posture (snapshot 2026-10-25 — verify before relying on it)
 
@@ -227,6 +233,7 @@ code, then the canonical rule, and report the drift.
 | `.cursor/rules/testing-expert.mdc` | General test standards |
 | `.cursor/rules/112-monitoring-baseline-zero-known-failures.mdc` | Host-capacity-independent monitoring tests |
 | `.cursor/rules/59-cicd-enterprise-gate.mdc` | ENT-10 enterprise CI/CD gate |
+| `.cursor/rules/234-dev-toolchain-readiness.mdc` | Workstation toolchain check, trusted owner-run installs, Graphify pin, no required MCP |
 
 ## History
 

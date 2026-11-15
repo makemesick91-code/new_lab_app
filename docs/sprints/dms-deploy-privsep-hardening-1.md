@@ -1,19 +1,19 @@
 # DMS-DEPLOY-PRIVSEP-HARDENING-1 — deploy privilege separation (rule 233)
 
 **Date:** 2026-11-15 (WITA). **Type:** security fix / deployment (Foundation-First Sprint Lock: allowed category).
-**Status:** IMPLEMENTED — review, CI, merge, release approval, deploy and GO pending (§10). Closes **OD-1
-DEPLOY-PRIVSEP** only after production verification.
+**Status:** **GO — PRODUCTION VERIFIED** (2026-11-15 14:35 WITA). **OD-1 DEPLOY-PRIVSEP is CLOSED**: the first
+production deploy of rule 233 ran with no application PHP as root and ended `DEPLOY_PRIVSEP=ENFORCED` (§12).
 
 | Item | Value |
 |---|---|
 | Base branch | `feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report` at `46ac4d6236dadc86b6f0f75d9480ffad7631b137` |
 | Production before | `d555c7dc5ddb46631c16cd957b86490d06634f7f` (rule 231 r2, deploy `20261114-225508`, GO `dms-release-guard-trust-hardening-1-go`) |
 | Branch | `fix/dms-deploy-privsep-hardening-1` |
-| Implementation PR / merge SHA | pending |
-| Release id / approval | pending (owner-signed, rule 231) |
-| Deploy id | pending |
-| GO tag | `dms-deploy-privsep-hardening-1-go` — only after production verification |
-| Durable rule | `.cursor/rules/233-deploy-privilege-separation.mdc`; index line AIR-DEP-39 in `.claude/rules/deploy-infra.md` |
+| Implementation PR / merge SHA | #633 → **`9312818fc9115707b9e0b351ae805080be465b4a`** (tree `64b864c9…`) |
+| Release id / approval | `dms-deploy-privsep-hardening-1`, owner-approved 2026-11-15T05:03:02Z, owner-signed; approval PR #634 → `834acb6a3fbf6bc3796e3f40f8c028f9f42f9a79` |
+| Deploy id | `20261115-063339` (runbook §6b, on the VPS) → `DEPLOY RUNNER OK` |
+| GO tag | **`dms-deploy-privsep-hardening-1-go`** (annotated, object `0c8f95b2…`) on `9312818f` = production HEAD |
+| Durable rules | `.cursor/rules/233-deploy-privilege-separation.mdc` (AIR-DEP-39 in `.claude/rules/deploy-infra.md`); `.cursor/rules/234-dev-toolchain-readiness.mdc` (AIR-CIT-35 in `.claude/rules/cicd-testing.md`) |
 
 ## 1. Owner request (CG-22)
 
@@ -183,10 +183,10 @@ before it was opened:
 |---|---|
 | Implemented, locally verified | §6, §7 |
 | Reviewed | §8: no CRITICAL/HIGH; 10 findings (4 MEDIUM, 6 LOW) fixed before the PR |
-| PR / CI / merge | pending |
-| Release approval (owner signature) | pending |
-| Production deploy + verification | pending |
-| GO tag | pending |
+| PR / CI / merge | #633 merged `9312818f`; PR and post-merge CI green (§11.1) |
+| Release approval (owner signature) | owner approval 05:03:02Z, signature verified (§11.3–11.4); #634 merged `834acb6a` |
+| Production deploy + verification | deploy `20261115-063339`, `DEPLOY RUNNER OK`, `DEPLOY_PRIVSEP=ENFORCED`, `PRIVSEP_DRIFT=NONE` (§12) |
+| GO tag | `dms-deploy-privsep-hardening-1-go` on `9312818f` (§12.4) |
 
 ## 11. Release candidate and owner approval (CG-22, rules 229/231)
 
@@ -242,5 +242,97 @@ SHA `9312818fc9115707b9e0b351ae805080be465b4a`, tree `64b864c953777fcc02a5c4d2f1
 | Record file vs committed blob | identical (`43ffffa4…`) |
 
 The allowed-signers file used for this check lived in the session scratchpad only; it was never committed.
+
+## 12. Deploy and production verification (2026-11-15, WITA)
+
+### 12.1 Before the start (read-only, 14:33 WITA)
+
+`PRODUCTION_TARGET=VERIFIED`. On the host: HEAD `d555c7dc…`, rule 231 in the in-tree runner (§6b, no bootstrap),
+fetched base tip `834acb6a…`; the record names `9312818f…`, this host and its host key; `ssh-keygen -Y verify` against
+`/etc/daengtisiams/release-approvers.allowed_signers` → `Good "dms-release-approval" signature for owner`;
+`trust-check` → `RELEASE GUARD TRUST: READY`; release lock idle; tracked tree clean. Baseline: `php8.3-fpm`, `nginx`,
+`postgresql` active; queue worker installed and disabled (C5); db-backup and BK-2 package timers on;
+`laravel.log` 166 ERROR lines (historic); runtime trees 0 foreign entries; source side the six `www-data` entries of
+§2; canonical URL `/login`, `/health/live`, `/health/ready`, `/health/lb` → 200, `/storage/…` → 403.
+
+### 12.2 The deploy
+
+`ssh daengtisiams-biznet-prod 'cd /var/www/asia-dental-lab-v2 && sudo -n bash scripts/deploy-vps-runner.sh start
+--release-id dms-deploy-privsep-hardening-1 --approved-sha 9312818fc9115707b9e0b351ae805080be465b4a'` — executed by
+the host's own in-tree runner, which re-ran the approval guard (every check PASS, `RELEASE APPROVAL: GO`) and
+detached deploy **`20261115-063339`** (06:33:39Z → 06:35:14Z). The program ran from the immutable snapshot
+(`/run/daengtisiams-deploy/deploy-…/scripts/deploy-vps.sh`). Log, in order:
+
+| Phase | Evidence |
+|---|---|
+| Privilege separation preflight (rule 233) | `PROTECTED_HARDLINKS=1`, `PROTECTED_SYMLINKS=1`; runtime foreign before repair `0`; **source claimed `6`** (the `www-data` entries under `public/`); `DEPLOY_PRIVSEP_TRUSTED_FILE` for the environment file |
+| Secret hardening | `SECRET FILE PERMISSIONS: GO` |
+| **Pre-deploy database dump (mandatory)** | written by the runtime user: `storage/app/backups/deploy/pre_auto_deploy_20261115-063340.sql`, sha256 `e854354f5d690f8eb430c7a91dd46d38effbc14f413eeae7987c4c3590efe8de` (33,879,825 bytes, `daengtisiams 0640`); `foundation:backup-verify` → `backup-verify.json` written. **BK-2 not run** (rule 232) |
+| Checkout | `HEAD verified at pinned target: 9312818f…`; post-checkout repair `0` |
+| Composer / npm | `--no-scripts`; post-autoload-dump as the runtime user; npm build as root into the claimed `public/build` |
+| Migrate | `Nothing to migrate.` (no schema change) |
+| Governance gates, evidence, cache rebuild, auth smoke | all as the runtime user; `DEPLOY AUTH LANDING SMOKE: GO` (runtime cache, permission cache, Admin Lab → `/lab/v2-orders`, Super Admin → `/dashboard`, both authorization matrices correct) |
+| Writable gates | CACHE, SESSION, VIEW CACHE, LOG, BOOTSTRAP CACHE: GO |
+| Isolation verifier | `RUNTIME ISOLATION SUMMARY: 107 GO / 0 FAIL / 0 SKIP` |
+| **Privilege drift gate** | **`DEPLOY_PRIVSEP_RUNTIME_FOREIGN_ENTRIES=0`**, **`DEPLOY_PRIVSEP_SOURCE_FOREIGN_ENTRIES=0`**, **`DEPLOY_PRIVSEP=ENFORCED`** |
+| Smoke (NSF-9) | 6 passed, 0 errors, 1 warning `SMOKE-HTTP-HEALTH` loopback 404 — the known D6 warning, identical in deploy `20261114-225508` (AIR-DEP-28); expected routes `login`, `dashboard`, `rme.visits.index`, `inventory.dashboard` exist |
+| End | `DEPLOY_HEAD_TARGET_MATCH=YES (9312818f…)`, `DEPLOY OK: 20261115-063340`; `exception`/`fatal error`/`permission denied` in the log: 0 |
+
+`deploy-vps-runner.sh verify 20261115-063339` → recorded on `DaengtisiaMS`, runner contract 4, release and approved SHA
+as above, `target_commit=9312818f… (checkout HEAD matches)`, approval key `SHA256:0WGG…tgt4`, host key
+`SHA256:i3As…O2bc`, `DEPLOY_APPROVED_TARGET_MATCH=YES`, final exit 0, **`DEPLOY RUNNER OK`**.
+
+### 12.3 Production verification (read-only, after the deploy)
+
+| Check | Result |
+|---|---|
+| `sudo -n bash scripts/privsep-drift-check.sh` | runtime `0`, source `0` foreign entries, kernel guards 1/1, **`PRIVSEP_DRIFT=NONE`** |
+| HEAD / tracked tree | `9312818f…`, clean |
+| Root-owned files in the runtime trees | 0; `bootstrap/cache/*.php` owned by `daengtisiams` (rebuilt by it) |
+| `public/build`, `public/assets`, `public/storage` | now `root:root` (755 / link); the web server identity can no longer rewrite the application's JavaScript |
+| Services and timers | unchanged from §12.1 (deploy restarted `php8.3-fpm` and reloaded `nginx` only) |
+| Application errors | `laravel.log` ERROR lines 166 → **166** (0 new) |
+| Release evidence | `deploy-runtime.json` records `commit: 9312818f` — git as the runtime user over the root-owned checkout (review R8 fix) |
+| Canonical URL (read-only GET) | `/login`, `/health/live`, `/health/ready`, `/health/lb` → 200; `/storage/…` → 403 |
+| RME / inventory / dashboard (unauthenticated GET; URIs from `route:list` run as the runtime user) | `/rme/visits` (auth + `view_clinic_visits\|manage_clinic_visits`), `/inventory/dashboard` (auth), `/dashboard` (auth + permission) → 302 to `/login` |
+| RME and inventory data integrity | deploy gates `DQ1-DATA-004` (RME invoice status/remaining) and `DQ3-SRC-008/009` (inventory batches) PASS |
+| Branch isolation | no branch, route, policy or service code changed in this release; the branch-isolation suites passed in the Critical Gate on `9312818f`; an authenticated production probe was **not run** (it would need a production session; no record was created to prove the deploy, CG-13) |
+
+### 12.4 GO tag
+
+Created after §12.2–12.3, per CG-16: annotated `dms-deploy-privsep-hardening-1-go` (object `0c8f95b2…`) on
+`9312818fc9115707b9e0b351ae805080be465b4a` = the approved commit = production HEAD; tags fetched explicitly first; the
+name was unused. Rollback was not needed and none was run (it stays the owner's decision, by full SHA).
+
+## 13. Toolchain readiness (owner request, 2026-11-15)
+
+Audited before the deploy at the owner's request; the release candidate was not touched.
+
+| Component | Before | Action | Version | Result |
+|---|---|---|---|---|
+| ShellCheck | missing | owner `sudo apt-get install shellcheck` | 0.9.0 | INSTALLED & VERIFIED — release vs base: 0 errors; introduced only SC2120/SC2119 (an intentional optional argument in `dms_privsep_kernel_guards`); deploy, rollback, runner, secret-hardening and drift scripts clean; all other findings pre-existing |
+| pipx | missing | owner `sudo apt-get install pipx` | 1.4.3 | INSTALLED & VERIFIED |
+| Graphify | missing | owner `pipx install graphifyy==0.9.99` (official `Graphify-Labs/graphify`) | 0.9.99 | INSTALLED & VERIFIED — `graphify update .` on the release tree: 58,463 nodes, 142,051 edges, 2,421 communities (AST only); the new symbols resolve to their lines |
+| Graphify hook installers | — | not run | — | NOT REQUIRED (owner decision; they intercept reads and edit `CLAUDE.md`) |
+| Superpowers plugin | not installed | official marketplace pin verified | — | BLOCKED — POLICY: owner-run `/plugin install superpowers@claude-plugins-official` |
+| Project and built-in skills (`limit-saver`, `superpowers-workflow`, `knowledge-base`, `sprint-doc-writer`, `code-review`, `security-review`, `dataviz`) | present | used | — | READY |
+| MCP (GitHub, filesystem, PostgreSQL, SSH, Obsidian, browser) | none | covered by `gh`, built-in tools, `psql`, OpenSSH, git, `curl` | — | NOT REQUIRED |
+
+Made permanent: rule 234 (`.cursor/rules/234-dev-toolchain-readiness.mdc`, AIR-CIT-35), the read-only
+`scripts/dev/toolchain-readiness-check.sh` with `DevflowToolchainReadinessCheckTest`, the runbook
+`docs/runbooks/dev-toolchain-readiness.md`, a CG-23 sentence and an AGENTS.md pointer. Workstation facts are kept out
+of the repository. A version probe of `ssh-keygen -h` started key generation and aborted at its prompt; `~/.ssh` was
+verified unchanged (no impact).
+
+## 14. Closure
+
+- **Rules:** 233 (privilege separation) and 234 (toolchain) ACTIVE; AIR-DEP-39, AIR-CIT-35; CG-15 and CG-23 one
+  sentence each; AGENTS.md pointers; runbook §6b step 5; index entries.
+- **Follow-ups (not GO blockers):** annotate SC2120 in `runtime-privsep.sh`; the restore tools should verify a dump's
+  digest against the deploy log (§9 R4); OD-6 (deploy account sudo), R1 (composer/npm as root) and R2 (tracked files
+  under `storage/`) are owner decisions; rule 231 §8c S1–S8 stand.
+- **Obsidian:** synchronised by a detached checkout of the closure merge in the vault worktree while Obsidian is closed
+  (CG-02) — recorded in the closure report.
+- **Graphify:** run on the release tree (§13); `graphify-out/` stays untracked.
 
 **BK-2:** `SKIPPED — DMS-BK2-MANUAL-ONLY-1 (Owner Directive)`
