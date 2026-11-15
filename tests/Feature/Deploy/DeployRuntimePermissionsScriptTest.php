@@ -53,17 +53,26 @@ test('deploy script runs cache commands as the runtime user', function () {
         expect($script)->toContain($marker);
     }
 
-    expect($script)->toContain('runuser -u "$RUNTIME_USER"');
+    // DMS-DEPLOY-PRIVSEP-HARDENING-1 (rule 233): as_runtime delegates to the
+    // privilege-separation library, whose runuser hop refuses uid 0.
+    $lib = (string) file_get_contents(base_path('scripts/lib/runtime-privsep.sh'));
+    expect($script)->toContain('dms_privsep_as_runtime "$RUNTIME_USER" "$@"')
+        ->and($lib)->toContain('hop=(runuser -u "$user" --)')
+        ->and($lib)->toContain('exec "${hop[@]}" "$@"')
+        ->and($lib)->toContain('refusing to run as');
 });
 
 test('deploy script normalizes ownership with safe modes and never chmod 777', function () {
     $script = deployScript();
+    $lib = (string) file_get_contents(base_path('scripts/lib/runtime-privsep.sh'));
 
-    expect($script)->toContain('chown -R "${RUNTIME_USER}:${RUNTIME_GROUP}" storage bootstrap/cache')
-        ->and($script)->toContain('chmod 2775')
-        ->and($script)->toContain('chmod 0664')
-        ->and($script)->not->toContain('chmod -R 777')
-        ->and($script)->not->toContain('chmod 777');
+    // Rule 233: root repairs only foreign ownership; the runtime user sets modes.
+    expect($script)->toContain('dms_privsep_repair_runtime_ownership "$RUNTIME_USER" "$RUNTIME_GROUP" storage bootstrap/cache')
+        ->and($script)->toContain('dms_privsep_as_runtime_fn "$RUNTIME_USER" "" dms_privsep_normalize_modes')
+        ->and($lib)->toContain('-exec chmod 2775 {} \;')
+        ->and($lib)->toContain('-exec chmod 0664 {} \;')
+        ->and($script.$lib)->not->toContain('chmod -R 777')
+        ->and($script.$lib)->not->toContain('chmod 777');
 });
 
 test('deploy script enforces mandatory writable gates that fail the deploy', function () {

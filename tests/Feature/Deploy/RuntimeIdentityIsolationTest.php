@@ -259,35 +259,38 @@ it('chowns only the runtime-writable paths to the resolved identity', function (
     foreach (['scripts/deploy-vps.sh', 'scripts/rollback-vps.sh'] as $script) {
         $body = isoRead($script);
 
-        expect($body)->toContain('chown -R "${RUNTIME_USER}:${RUNTIME_GROUP}" storage bootstrap/cache');
+        // DMS-DEPLOY-PRIVSEP-HARDENING-1 (rule 233): ownership goes to the
+        // resolved identity through the foreign-entry repair, never a root chown -R.
+        expect($body)->toContain('dms_privsep_repair_runtime_ownership "$RUNTIME_USER" "$RUNTIME_GROUP" storage bootstrap/cache');
         // No hardcoded shared-account ownership reset survives.
         expect($body)->not->toContain('chown -R www-data:www-data');
         // The application source tree is never recursively chowned.
-        expect(preg_match('/chown -R [^\n]*\s(\.|\/var\/www\/asia-dental-lab-v2)\s*$/m', $body))->toBe(0);
+        expect($body)->not->toContain('chown -R');
     }
 });
 
 it('re-restricts private clinical storage after normalizing ownership', function () {
-    // normalize_runtime_ownership makes the whole storage tree 2775/0664 so the
-    // runtime can work. storage/app/private must NOT inherit that: without the
-    // re-strip, every deploy would silently hand the co-tenant uid read access
-    // to lab workflow evidence and patient documents — the exact exposure this
-    // sprint closes — and would then fail the isolation gate.
+    // The normalization makes the whole storage tree 2775/0664 so the runtime
+    // can work. storage/app/private must NOT inherit that: without the re-strip,
+    // every deploy would silently hand the co-tenant uid read access to lab
+    // workflow evidence and patient documents — the exact exposure this sprint
+    // closes — and would then fail the isolation gate.
+    // Rule 233: the re-strip lives in the same runtime-side function as the
+    // widening (dms_privsep_normalize_modes), so the two can never drift apart.
+    $lib = isoRead('scripts/lib/runtime-privsep.sh');
+    preg_match('/^dms_privsep_normalize_modes\(\) \{\n.*?^\}$/ms', $lib, $m);
+    expect($m[0] ?? '')->toContain('chmod -R u+rwX,o-rwx')
+        ->and($m[0] ?? '')->toContain('-exec chmod 2775 {} \;');
+
     $deploy = isoRead('scripts/deploy-vps.sh');
-
-    expect($deploy)->toContain('restrict_private_paths')
-        ->and($deploy)->toContain('chmod -R o-rwx')
-        ->and($deploy)->toContain('DMS_PRIVATE_PATHS');
-
-    // It must be invoked from inside the normalizer, not merely defined beside
-    // it, so the two can never drift apart.
     $start = (int) strpos($deploy, 'normalize_runtime_ownership() {');
     $end = (int) strpos($deploy, "\n}", $start);
     $normalizer = substr($deploy, $start, $end - $start);
-    expect($normalizer)->toContain('restrict_private_paths');
+    expect($normalizer)->toContain('dms_privsep_normalize_modes')
+        ->and($normalizer)->toContain('DMS_PRIVATE_PATHS');
 
     $rollback = isoRead('scripts/rollback-vps.sh');
-    expect($rollback)->toContain('chmod -R o-rwx')
+    expect($rollback)->toContain('dms_privsep_normalize_modes')
         ->and($rollback)->toContain('DMS_PRIVATE_PATHS');
 });
 
@@ -389,7 +392,7 @@ it('pins the deployment and runtime-hardening contracts to the dedicated identit
     foreach (['deploy_expectations', 'rollback_expectations'] as $section) {
         $markers = (array) config("deployment_rollback.{$section}.required_markers");
         expect($markers)->toContain('verify-runtime-isolation.sh')
-            ->and($markers)->toContain('chown -R "${RUNTIME_USER}:${RUNTIME_GROUP}"')
+            ->and($markers)->toContain('dms_privsep_repair_runtime_ownership "$RUNTIME_USER" "$RUNTIME_GROUP"')
             ->and($markers)->not->toContain('chown -R www-data:www-data');
     }
 });

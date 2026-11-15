@@ -1,0 +1,97 @@
+---
+description: DMS-DEPLOY-PRIVSEP-HARDENING-1 (rule 233, closes OD-1 DEPLOY-PRIVSEP) — the deploy and rollback run as root but never execute application PHP as root (every artisan call runs as the runtime user, composer runs --no-scripts and its post-autoload-dump is replayed as the runtime user, the dump is written by the runtime user) and never open, write or chmod a path inside storage/ or bootstrap/cache. Root only lchowns foreign entries there (find -execdir, never a hardlink) and claims top-down any source entry another identity owns or can write; modes are set by the runtime user; a privilege-drift gate ends the run NOT GO. Enforced by scripts/lib/runtime-privsep.sh and DeploymentRollbackScanner::privilegeSeparationIssues().
+globs: scripts/deploy-vps.sh, scripts/rollback-vps.sh, scripts/lib/runtime-privsep.sh, scripts/harden-secret-permissions.sh, scripts/privsep-drift-check.sh, scripts/provision-runtime-identity.sh, tailwind.config.js, config/deployment_rollback.php, app/Support/Deploy/DeploymentRollbackScanner.php
+alwaysApply: false
+---
+
+# Deploy privilege separation (rule 233)
+
+**Status:** ACTIVE from DMS-DEPLOY-PRIVSEP-HARDENING-1 (2026-11-15). Sprint record:
+`docs/sprints/dms-deploy-privsep-hardening-1.md`. Closes **OD-1 DEPLOY-PRIVSEP** (rule 231 §8, audit A10), which the
+r2 release accepted for that deploy only. Production GO is recorded in the sprint doc, not here.
+
+## 1. The defect it closes
+
+The runtime user `daengtisiams` owns `storage/` and `bootstrap/cache`. The deploy ran composer's scripts
+(`artisan package:discover`), `artisan migrate` and about fifty governance gates **as root**, and the rollback even
+rebuilt the configuration cache and ran the smoke as root. Root therefore `require`d PHP the runtime can rewrite
+(`bootstrap/cache/*.php`, compiled views), unserialized cache entries it can write, appended to logs and redirected
+JSON into paths it can replace with a symlink, and ran `chown -R`, `chmod -R` and `find -exec chmod` over its trees (a
+symlinked private path made `chmod -R` host-wide). A runtime compromise became root at the next deploy or rollback.
+`harden-secret-permissions.sh` also chmodded dumps in the runtime-owned backup tree by path as root.
+
+## 2. Invariants
+
+1. **No application PHP as root.** In `scripts/deploy-vps.sh` and `scripts/rollback-vps.sh` every `php artisan` call
+   is `as_runtime …` or `runtime_json <file> …` (stdout opened by the runtime user). The only root PHP is the toolchain
+   probe `php -r 'echo PHP_VERSION;'`. `composer install` runs `--no-scripts`; composer.json's `post-autoload-dump`
+   (`ComposerScripts::postAutoloadDump` = drop `config.php`/`services.php`/`packages.php`, then
+   `package:discover --ansi`) is replayed as the runtime user. A new composer script must be mirrored there; a test
+   pins the list.
+2. **Root never opens, writes or chmods a path in a runtime tree.** The pre-deploy and pre-rollback dumps are written
+   by the runtime user (`dms_privsep_as_runtime_fn` hands it the snapshot's `private-db-dump.sh` functions; the SHA-256
+   goes to the root-only deploy log). Runtime directories are created by the runtime user. Every mode in the runtime
+   trees is set by `dms_privsep_normalize_modes`, which refuses root. The mode policy is unchanged: 2775/0664, backup
+   tree 2750/0640 (rule 176), private paths never widened and stripped of "other" (rule 209).
+3. **Root ownership repair is narrow and race-free.** Only entries not owned by the runtime user and group, only
+   directories, symlinks and single-link regular files, each `chown -h` from inside its own directory
+   (`find -execdir`). A foreign hardlinked file, device node, FIFO or socket stops the run for a human.
+   `fs.protected_hardlinks=1` and `fs.protected_symlinks=1` are preconditions. The two runtime roots are lchowned
+   non-recursively only after every directory above them is proven root-owned and not group/world-writable.
+4. **The source tree is root's.** Before root writes there (git checkout, composer, npm build), every source entry
+   another identity owns or can write (runtime trees and the environment files excluded) is claimed top-down:
+   `chown -h root:root`, group/other write stripped, never through a symlink. Found on Biznet: a `www-data`
+   `public/build` and `public/assets` — the web server's identity could rewrite the application's JavaScript.
+5. **Drift is gated.** `dms_privsep_prepare` runs before the first mutation; `dms_privsep_final_gate` runs after the
+   isolation verifier and before the restart. A run that leaves a foreign entry in a runtime tree or a non-root
+   source entry is NOT GO. Log markers: `DEPLOY_PRIVSEP_RUNTIME_FOREIGN_ENTRIES=0`,
+   `DEPLOY_PRIVSEP_SOURCE_FOREIGN_ENTRIES=0`, `DEPLOY_PRIVSEP=ENFORCED`. Summaries print owner, type and at most three
+   path segments, never a file name. Between deploys, `sudo -n bash scripts/privsep-drift-check.sh` reports the same
+   counts read-only (`PRIVSEP_DRIFT=NONE`).
+6. **Secret hardening drops privileges for dumps.** As root, `harden-secret-permissions.sh` chmods a dump only through
+   `runuser -u <--runtime-user>` and only when the runtime user owns it; any other unsafe dump is reported and fails
+   verification.
+7. **No shared descriptors, no trust in what the runtime could write.** A runtime process gets `/dev/null` as stdin
+   and a pipe (copied to the log by a root `cat`) as stdout/stderr; every other descriptor is closed — an inherited
+   log descriptor could be truncated and forged. Root sources the environment file only after
+   `dms_privsep_assert_trusted_file` on it (regular file, root-owned, no group/other write): a file another identity
+   could have written is NOT GO, never "repaired" and sourced. The runtime user's git trusts the root-owned checkout
+   through command-scope `safe.directory` (release evidence keeps its commit and GO tag).
+8. **Live trees, verified repairs.** Every walk of a runtime tree uses `-ignore_readdir_race`; the widening chmods one
+   entry at a time, so a session file PHP-FPM deletes mid-walk never fails a deploy. Repair and claim recount and are
+   NOT GO while anything is left; the claim refuses hardlinked files and special files like the repair. Ownership is
+   repaired again right after the checkout (root's git writes tracked files under `storage/`).
+9. **Root's other tools follow the same rule.** The asset build (root) never reads runtime-owned files: Tailwind scans
+   the framework view sources in `vendor/`, never `storage/framework/views` (generated CSS byte-identical).
+   `scripts/provision-runtime-identity.sh` uses the same repair, runtime-side modes and runtime-user `artisan down/up`.
+10. **Enforced by code.** `config/deployment_rollback.php` `privilege_separation` + `DeploymentRollbackScanner::
+   privilegeSeparationIssues()` fail `foundation:deployment-rollback-check` on logical lines (continuations joined,
+   comments dropped): any `php` token (wrappers, absolute paths, `php8.3`, `bash -c`) not handed to the runtime user,
+   composer that can run scripts without `--no-scripts`, recursive chmod/chown, `find -exec`/`xargs` chmod|chown, a
+   root redirect, `tee`, `source` or file command into a runtime tree, a root dump helper, or a missing marker. It is
+   a regression guard for reviewed code (on the VPS it runs as the runtime user). Suite:
+   `tests/Feature/Deploy/DeployHardenPrivilegeSeparationTest.php` (`DeployHarden` token, mandatory suite).
+
+## 3. Changing this area
+
+Edit `scripts/lib/runtime-privsep.sh`, both scripts, the `privilege_separation` contract and the suite together. A
+new privileged step must be justified as needing root (git, composer/npm writing root-owned trees, systemctl, nginx)
+and must not touch a runtime tree by path. Never "fix" a runtime write failure by running a step as root, widening a
+mode, or adding the runtime user to a privileged group. The library is a closure member
+(`config/deployment_entrypoint.php`) and is sourced only from the snapshot.
+
+## 4. Deploy security baseline (index — each item has ONE canonical authority)
+
+| Standing rule | Canonical authority |
+|---|---|
+| Deploy runs only on the VPS from the immutable snapshot; never from a workstation or CI | CG-15, rule 92 immutable entrypoint, AIR-DEP-01/02 |
+| Least privilege; no root PHP; no recursive chmod/chown over runtime trees; drift detection | this rule |
+| Exact approved SHA, owner-signed host-key-bound single-use approval, trust anchor | rules 229 and 231 |
+| Signing and SSH keys stay with the owner: never generated, held, logged or committed by an agent | rule 231, CG-11 |
+| Offline copy of the signing key is optional (owner policy `DMS-OFFLINE-CUSTODY-OPTIONAL-1`) | `docs/sprints/dms-release-guard-trust-hardening-1.md` §13.2 |
+| BK-2 manual-only, never a gate; the deploy's own dump stays mandatory | rule 232, rule 176 |
+| Production smoke is read-only; never fabricate records to prove a deploy | CG-13, CG-14 |
+| Rollback only on the owner's explicit decision, by full SHA, code only | CG-15, CG-22, rule 231 §8c S1 |
+| Deploy evidence: `verify <id>` → `DEPLOY RUNNER OK` plus this rule's markers | AIR-DEP-33, rule 231 contract 4 |
+| GO only after merge, deploy and production verification on the exact SHA | CG-16, CG-17 |
+| Graphify and docs follow architecture changes | CG-23, CG-24 |

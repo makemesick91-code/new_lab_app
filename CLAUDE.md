@@ -126,7 +126,8 @@ it covers. When you plan work in a domain before opening any of its files, read 
   when its status file reports `exit=0` and its log reports `DEPLOY OK`, proven with `verify <deploy-id>` →
   `DEPLOY RUNNER OK` (never read `latest.status` raw); the SSH pipe may drop while the detached runner carries on. The
   runner takes the backup, pins the SHA and runs from an immutable snapshot, so never pre-pull or hand-edit the
-  production tree. Rollback is `scripts/rollback-vps.sh <commit>` on the host: code only, never an automatic data
+  production tree. Rule 233: deploy and rollback run every artisan command as the runtime user, never application PHP
+  as root, and never mutate `storage/` or `bootstrap/cache` by path as root. Rollback is `scripts/rollback-vps.sh <commit>` on the host: code only, never an automatic data
   restore, and never delete a backup or the rollback database. After a permission change run `PermissionSeeder`, then
   `RoleSeeder`, then `permission:cache-reset`. Rebuild config caches as the runtime user. If you edit the environment
   file, re-assert `root:daengtisiams 0640`.

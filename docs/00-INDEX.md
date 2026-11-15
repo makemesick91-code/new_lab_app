@@ -150,6 +150,12 @@ Nomor ADR berikutnya yang tersedia: **0017**.
   [dms-release-guard-trust-hardening-1](sprints/dms-release-guard-trust-hardening-1.md) (audit, threat model,
   diagram, keputusan owner yang masih terbuka termasuk DEPLOY-PRIVSEP), aturan kanonik
   `.cursor/rules/231-release-guard-trust-hardening.mdc`. Deploy pertama yang membawanya memakai bootstrap §6d.
+- Pemisahan hak akses deploy (rule 233, 2026-11-15; menutup OD-1 DEPLOY-PRIVSEP): deploy dan rollback tidak pernah
+  menjalankan PHP aplikasi sebagai root (semua artisan sebagai user runtime, composer `--no-scripts`), root tidak
+  pernah menulis/chmod path di `storage/` atau `bootstrap/cache`, tree sumber diklaim root, gate drift hak akses,
+  cek read-only `scripts/privsep-drift-check.sh` —
+  [dms-deploy-privsep-hardening-1](sprints/dms-deploy-privsep-hardening-1.md) (audit, threat model, rehearsal),
+  aturan kanonik `.cursor/rules/233-deploy-privilege-separation.mdc`. Deploy memakai §6b (tanpa bootstrap).
 - Keamanan runtime: [dedicated-runtime-identity-runbook](runbooks/dedicated-runtime-identity-runbook.md),
   [production-secret-file-permissions-runbook](runbooks/production-secret-file-permissions-runbook.md),
   [security-pii-compliance-hardening-governance](architecture/security-pii-compliance-hardening-governance.md).

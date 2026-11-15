@@ -436,16 +436,21 @@ it('verifies the merged private path set on the host', function () {
 });
 
 it('prunes every declared private path from the storage widening in deploy and rollback', function (string $script) {
+    // DMS-DEPLOY-PRIVSEP-HARDENING-1 (rule 233): the widening lives in the
+    // privilege-separation library and runs as the runtime user; both scripts
+    // hand it the full declared private-path list.
     $code = preg_replace('/^\s*#.*$/m', '', f8Read($script));
+    expect($code)->toContain('read -r -a private_paths <<< "${DMS_PRIVATE_PATHS:-}"')
+        ->and($code)->toContain('dms_privsep_as_runtime_fn "$RUNTIME_USER" "" dms_privsep_normalize_modes "${private_paths[@]}"');
 
-    preg_match_all('/^\s*find storage bootstrap\/cache[^\n]*chmod (2775|0664)[^\n]*$/m', $code, $widenings);
+    $lib = preg_replace('/^\s*#.*$/m', '', f8Read('scripts/lib/runtime-privsep.sh'));
+    preg_match_all('/^\s*find storage bootstrap\/cache[^\n]*chmod (2775|0664)[^\n]*$/m', $lib, $widenings);
 
     expect($widenings[0])->toHaveCount(2);
     foreach ($widenings[0] as $line) {
-        expect($line)->toContain('-path storage/app/backups -prune -o "${private_prune[@]}"');
+        expect($line)->toContain('-path storage/app/backups -prune -o "${prune[@]}"');
     }
-    expect($code)->toContain('read -r -a private_paths <<< "${DMS_PRIVATE_PATHS:-}"')
-        ->and($code)->toContain('private_prune+=(-path "$rel" -prune -o)');
+    expect($lib)->toContain('prune+=(-path "$rel" -prune -o)');
 })->with([
     'deploy' => ['scripts/deploy-vps.sh'],
     'rollback' => ['scripts/rollback-vps.sh'],
@@ -455,10 +460,11 @@ it('prunes every declared private path from the storage widening in deploy and r
 
 it('never widens a private tree when the deploy normalizes storage', function () {
     $deploy = f8Read('scripts/deploy-vps.sh');
+    // The deploy's normalizer and the privilege-separation library it calls
+    // (rule 233); the fixture's owner stands in for the runtime user.
     $functions = implode("\n", [
+        '. '.escapeshellarg(base_path('scripts/lib/runtime-privsep.sh')),
         f8ShellFunction($deploy, 'normalize_runtime_ownership'),
-        f8ShellFunction($deploy, 'restrict_backup_tree'),
-        f8ShellFunction($deploy, 'restrict_private_paths'),
     ]);
 
     $app = f8StorageFixture();
@@ -475,7 +481,9 @@ it('never widens a private tree when a rollback normalizes storage', function ()
     expect($start)->not->toBeFalse()->and($end)->not->toBeFalse();
 
     $app = f8StorageFixture();
-    [$exit, $out] = f8RunNormalization($app, substr($rollback, (int) $start, (int) $end - (int) $start), f8FixturePrivatePaths());
+    $body = '. '.escapeshellarg(base_path('scripts/lib/runtime-privsep.sh'))."\n"
+        .substr($rollback, (int) $start, (int) $end - (int) $start);
+    [$exit, $out] = f8RunNormalization($app, $body, f8FixturePrivatePaths());
 
     expect($exit)->toBe(0, $out);
     f8AssertNormalizedTree($app, explode(' ', f8FixturePrivatePaths()));

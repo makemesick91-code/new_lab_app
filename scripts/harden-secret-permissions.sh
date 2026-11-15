@@ -42,6 +42,10 @@ set -euo pipefail
 #   --app-dir DIR    Application root (default: script's repository root)
 #   --owner USER     Expected owner  (verify: asserted; apply: chown target)
 #   --group GROUP    Expected group  (verify: asserted; apply: chown target)
+#   --runtime-user U The runtime account that owns the database backup tree.
+#                    Rule 233: as root, a dump with an unsafe mode is fixed by
+#                    THIS account (runuser), never by a root chmod through a
+#                    path in its tree; without it, root only reports the dump.
 #
 # EXIT CODES:
 #   0  safe
@@ -84,12 +88,14 @@ shift || true
 APP_DIR=""
 EXPECT_OWNER=""
 EXPECT_GROUP=""
+RUNTIME_USER=""
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --app-dir) APP_DIR="${2:-}"; shift 2 ;;
     --owner)   EXPECT_OWNER="${2:-}"; shift 2 ;;
     --group)   EXPECT_GROUP="${2:-}"; shift 2 ;;
+    --runtime-user) RUNTIME_USER="${2:-}"; shift 2 ;;
     *) echo "harden-secret-permissions: unknown option '$1'" >&2; exit 2 ;;
   esac
 done
@@ -152,11 +158,28 @@ list_data_backups() {
 
 # Strip the world/"other" bits from a data backup without touching owner/group,
 # so every account that legitimately reads it today keeps working.
+#
+# DMS-DEPLOY-PRIVSEP-HARDENING-1 (rule 233): the backup tree belongs to the
+# runtime user, who can swap any listed file — or a directory above it — for a
+# symlink between the listing and the chmod, and chmod follows it. As root, the
+# chmod is therefore done by the runtime user (runuser), who can only ever change
+# files it owns; a dump owned by anyone else is reported, never chmodded by
+# root, and the verification below still fails on its mode.
 harden_data_backup() {
-  local file="$1" actual
+  local file="$1" actual owner
   actual="$(stat -c '%a' "$file")"
-  if [ "$actual" != "$DATA_BACKUP_MODE" ] && [ "$actual" != "600" ]; then
+  if [ "$actual" = "$DATA_BACKUP_MODE" ] || [ "$actual" = "600" ]; then
+    return 0
+  fi
+  if [ "$(id -u)" != "0" ]; then
     chmod "0${DATA_BACKUP_MODE}" "$file"
+    return 0
+  fi
+  owner="$(stat -c '%U' "$file")"
+  if [ -n "$RUNTIME_USER" ] && [ "$RUNTIME_USER" != "root" ] && [ "$owner" = "$RUNTIME_USER" ]; then
+    runuser -u "$RUNTIME_USER" -- chmod "0${DATA_BACKUP_MODE}" -- "$file"
+  else
+    note "not changing $(basename "$file") (owner ${owner}): root never chmods inside the runtime-writable backup tree"
   fi
 }
 
@@ -260,7 +283,7 @@ case "$action" in
     ;;
   verify) ;;
   *)
-    echo "usage: bash scripts/harden-secret-permissions.sh {apply|verify} [--app-dir DIR] [--owner USER] [--group GROUP]" >&2
+    echo "usage: bash scripts/harden-secret-permissions.sh {apply|verify} [--app-dir DIR] [--owner USER] [--group GROUP] [--runtime-user USER]" >&2
     exit 2
     ;;
 esac

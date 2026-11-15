@@ -5,7 +5,13 @@ import forms from '@tailwindcss/forms';
 export default {
     content: [
         './vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php',
-        './storage/framework/views/*.php',
+        // DMS-DEPLOY-PRIVSEP-HARDENING-1 (rule 233): never './storage/framework/views/*.php'.
+        // Root runs this build, and the compiled views belong to the runtime user, who could
+        // plant a symlink there that root then reads (or blocks on). Every compiled view comes
+        // from resources/views or one of these root-owned framework view directories, so
+        // scanning the sources yields the same CSS.
+        './vendor/laravel/framework/src/Illuminate/Foundation/Exceptions/views/*.blade.php',
+        './vendor/laravel/framework/src/Illuminate/Notifications/resources/views/*.blade.php',
         './resources/views/**/*.blade.php',
         // Classes applied from JavaScript (e.g. the KTP scan region handles in
         // ktp-roi-ui.js) are purged unless the scripts are scanned too.

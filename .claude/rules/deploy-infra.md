@@ -77,9 +77,9 @@ code, then the canonical rule, and report the drift.
   `www-data` read access to secrets. The tracked queue-worker and background units declare `User=daengtisiams`.
   Source: `92-dedicated-runtime-identity-co-tenant-isolation.mdc`.
 - **AIR-DEP-11** The runtime writes only `storage/` and `bootstrap/cache/`; source, scripts and `vendor/` stay
-  root-owned and never `chown -R` the checkout. Directories `2775` (setgid), files `0664`, never `0777`. Cache commands
-  (`optimize:clear`, `config:cache`, `route:cache`, `view:cache`) run as the runtime user via `runuser`, and the
-  CACHE/SESSION/VIEW CACHE/LOG/BOOTSTRAP CACHE writable gates fail the deploy. Source: `82-…`, `92-dedicated-…`.
+  root-owned and never `chown -R` the checkout. Directories `2775` (setgid), files `0664`, never `0777`. Every artisan
+  command runs as the runtime user (rule 233, AIR-DEP-39), and the CACHE/SESSION/VIEW CACHE/LOG/BOOTSTRAP CACHE
+  writable gates fail the deploy. Source: `82-…`, `92-dedicated-…`.
 - **AIR-DEP-12** `scripts/provision-runtime-identity.sh` is idempotent and dry-run by default, validates `php-fpm -t`
   and `nginx -t` before any reload, and runs no database command. Its `--rollback` to the shared runtime is incident
   recovery that leaves INFRA-SEC-RUNTIME-1 WATCH/NO-GO. `verify-runtime-isolation.sh` runs with `--require-host` in
@@ -93,7 +93,7 @@ code, then the canonical rule, and report the drift.
   closed; prove access with `stat`/`namei`/`test -r`, never by printing contents; never recursive `chmod`. `sed -i`
   recreates the file as `root:root`, so re-assert after any edit. Source: `100-production-secret-file-permission-hardening.mdc`.
 - **AIR-DEP-14** Create every database dump through `scripts/lib/private-db-dump.sh` (`dms_write_private_dump`): umask
-  077 in a subshell, `.partial` with `noclobber`, atomic rename, published `0600`. The deploy's `restrict_backup_tree` then
+  077 in a subshell, `.partial` with `noclobber`, atomic rename, published `0600`. The runtime-side `dms_privsep_normalize_modes` then
   normalizes dumps to `0640` and directories to `2750` (runtime user and group): never "fix" that to `0600`, and never
   widen past `0640`. Backup
   directories are `2750` via `dms_prepare_private_backup_dir` (a default ACL is refused); the storage-wide normalization
@@ -214,17 +214,12 @@ code, then the canonical rule, and report the drift.
   `release_id`, `approved_sha`, `result_exit`) and `verify <id>` / `status` (`scripts/lib/deploy-runner-evidence.sh`) accept a success only when
   host identity, timestamps, identifier, target commit (one pin, the deploy's HEAD == target, checkout still there),
   runner version and result (status == record, preflight GO + DEPLOY OK in the run's own log) all agree; anything
-  else exits `4` with a named verdict. Never read `latest.status` raw as a GO criterion. The first Biznet deploy
-  followed owner-selected Option A (`production-host-identity.md` §6a): quarantine the copied evidence with
-  `deploy-runner-quarantine-stale-status.sh` (move, never delete), deploy, then `verify-transition <id> <MERGE_SHA>`.
-  That ran once, on 2026-11-04 (deploy `20261104-151042`, `TRANSITION DEPLOY VERIFIED`). Every later deploy is proven
-  with `verify <id>` → `DEPLOY RUNNER OK` (§6b), and `verify-transition` refuses it (`NOT-TRANSITION`).
+  else exits `4` with a named verdict. Never read `latest.status` raw as a GO criterion. The one-time §6a transition
+  (`verify-transition`) ran on 2026-11-04 (deploy `20261104-151042`); every later deploy is proven with `verify <id>` →
+  `DEPLOY RUNNER OK` (§6b).
   Source: `.cursor/rules/220-production-host-identity-biznet.mdc` §4.
-- **AIR-DEP-34** **SUPERSEDED by AIR-DEP-35 (rule 229, 2026-11-14).** ~~The runner deploys the **tip of the base branch at launch**; nothing passes it a commit. Before
-  `start`, confirm from the host (`git ls-remote origin refs/heads/<base>`) that the tip is the commit approved for
-  release, and push nothing to the base between that approval and `start`. A docs or evidence commit pushed
-  after a GO commit is therefore the next deploy's target, not the deployed runtime.~~ Source:
-  `.cursor/rules/220-production-host-identity-biznet.mdc` §4.
+- **AIR-DEP-34** **SUPERSEDED by AIR-DEP-35 (rule 229, 2026-11-14).** ~~The runner deployed the base-branch tip at
+  launch.~~ Full text: `.cursor/rules/220-production-host-identity-biznet.mdc` §4.
 - **AIR-DEP-35** A deploy lands only on the exact commit a release approval record **merged on the base** approves:
   `deploy-vps-runner.sh start --release-id <id> --approved-sha <40-hex>`, record
   `deploy/release-approvals/<id>.approval`, written only after the owner's written approval of that full SHA (CG-22).
@@ -259,8 +254,8 @@ code, then the canonical rule, and report the drift.
   release id deploys once (spend record written inside the lock). Evidence contract 4 lives in root-only
   `/var/lib/daengtisiams-deploy/runner`, runs are claimed with `set -C`, `verify` refuses
   `UNTRUSTED`/`TAMPERED`/`FOREIGN` and reports killed runs `INTERRUPTED`. Deploy and rollback share `release.lock`;
-  a leftover git lock is FATAL. Rollback takes a full SHA or a tag, never an abbreviated SHA. Open (HIGH): the deploy still runs PHP and `chmod -R` as root over runtime-owned
-  `storage/` (DEPLOY-PRIVSEP). Source: `.cursor/rules/231-release-guard-trust-hardening.mdc`.
+  a leftover git lock is FATAL. Rollback takes a full SHA or a tag, never an abbreviated SHA.
+  OD-1 DEPLOY-PRIVSEP: closed by rule 233 (AIR-DEP-39). Source: `.cursor/rules/231-release-guard-trust-hardening.mdc`.
 - **AIR-DEP-38** Rule 232 (owner directive `DMS-BK2-MANUAL-ONLY-1`, 2026-11-14): BK-2 is manual-only and never a
   sprint, GO/NO-GO or deploy gate. Runbook §6b step 3 no longer waits on the host BK-2 status or the workstation
   verdict (supersedes rule 230 §9). No agent runs, triggers or schedules BK-2 without an explicit owner order about
@@ -268,6 +263,13 @@ code, then the canonical rule, and report the drift.
   timers stay ON, existing BK-2 backups are never touched, and an operation whose only qualifying backup would be
   BK-2 is BLOCKED. Sprint reports say `BK-2: SKIPPED — DMS-BK2-MANUAL-ONLY-1 (Owner Directive)`. Source:
   `.cursor/rules/232-bk2-manual-only-not-a-deploy-gate.mdc`.
+- **AIR-DEP-39** Rule 233 (closes OD-1). Deploy, rollback and provisioning never run application PHP as root: artisan
+  only via `as_runtime`/`runtime_json`, `composer install --no-scripts` (post-autoload-dump replayed as the runtime
+  user), dumps written by it; it gets `/dev/null` and pipes, never root's descriptors. Root never opens, writes or
+  chmods a path in the runtime trees: it lchowns foreign entries (`find -execdir chown -h`; hardlinks/FIFOs/devices
+  refused), claims top-down source entries others own/can write, sources the environment file only if
+  root-only-writable. Modes: `dms_privsep_normalize_modes` (refuses root). Gate `DEPLOY_PRIVSEP=ENFORCED`; read-only
+  `scripts/privsep-drift-check.sh`; scanner `privilegeSeparationIssues()`. Rule 233.
 
 ## Current posture (snapshot 2026-11-04, read-only inspection — verify before relying on it)
 
@@ -281,13 +283,11 @@ code, then the canonical rule, and report the drift.
   closed during that verification.
 - Accepted residuals carried from Hostinger: any `www-data` process (nginx) can reach the FastCGI socket
   (connect ≠ read), and root reads everything.
-- Live upload limits since 2026-10-03: nginx `512m`, pool `500M`/`512M`/`900`/`256M`. The DB backup timer is versioned
-  in the repo; whether it is installed on the host is an operator step — check `systemctl` before assuming backups are
+- Upload limits: AIR-DEP-17. The DB backup timer is versioned in the repo; whether it is installed on the host is an operator step — check `systemctl` before assuming backups are
   scheduled.
 - Object storage disabled; clinical evidence on the local private disk; restore-drill evidence absent (honest WATCH).
-- Measured 2026-10-26 by token substring: `SecretFilePermissionHardeningTest`, `DeployRuntimePermissionsScriptTest` and
-  `DeployAuthLandingSmokeCommandTest` match no critical-gate token, so only the deferred Full Suite runs them — confirm
-  with `pest --list-tests` before relying on CI for those invariants.
+- Re-measured 2026-11-15: `DeployRuntimePermissionsScriptTest` and `DeployAuthLandingSmokeCommandTest` match no
+  critical-gate token (Full Suite only); confirm with `pest --list-tests` before relying on CI for them.
 
 ## Canonical rules — read the relevant one before changing this area
 
@@ -302,6 +302,7 @@ code, then the canonical rule, and report the drift.
 | `.cursor/rules/230-bk2-offserver-workstation-recovery.mdc` | BK-2 workstation pull: HDD identity states, PID 1 mount, custodian unlock, result/alert semantics |
 | `.cursor/rules/231-release-guard-trust-hardening.mdc` | Signed, host-key-bound, single-use approvals; trusted evidence (contract 4); one release lock; rollback resolution |
 | `.cursor/rules/232-bk2-manual-only-not-a-deploy-gate.mdc` | BK-2 manual-only: not a sprint, GO or deploy gate; runner dump stays mandatory; only an explicit owner order runs BK-2 |
+| `.cursor/rules/233-deploy-privilege-separation.mdc` | No root PHP; no root path mutation of runtime trees; source claim; drift gate; deploy security baseline index |
 | `.cursor/rules/100-production-secret-file-permission-hardening.mdc` | Secret file mode and handling |
 | `.cursor/rules/121-clinical-evidence-private-storage.mdc` | Clinical evidence on private disks only |
 | `.cursor/rules/176-private-database-dump-creation.mdc` | Dumps private from creation |

@@ -82,6 +82,13 @@ Before finalizing work:
 - Use Services for business logic.
 - Follow existing module conventions.
 
+## Deployment security (rule 233)
+
+- Deploy and rollback run only on the production VPS through `scripts/deploy-vps-runner.sh` (CLAUDE.md CG-15).
+- Never run application PHP (artisan, composer scripts) as root, and never chmod/chown/write a path in `storage/` or
+  `bootstrap/cache` as root: use the runtime user (`.cursor/rules/233-deploy-privilege-separation.mdc`).
+- Release approvals are owner-signed and bound to the exact SHA (rules 229/231); BK-2 is manual-only (rule 232).
+
 ## Output Format
 
 After every task, report:

@@ -260,11 +260,15 @@ it('routes every database dump through the private-creation helper', function (s
 })->with('pdd_dump_writers');
 
 it('keeps the backup tree out of the 0664/2775 storage widening in deploy and rollback', function (string $script) {
-    $code = preg_replace('/^\s*#.*$/m', '', (string) file_get_contents(base_path($script)));
+    // DMS-DEPLOY-PRIVSEP-HARDENING-1 (rule 233): both scripts delegate the mode
+    // normalization to the library, which runs it as the runtime user.
+    $script = preg_replace('/^\s*#.*$/m', '', (string) file_get_contents(base_path($script)));
+    expect($script)->toContain('dms_privsep_as_runtime_fn "$RUNTIME_USER" "" dms_privsep_normalize_modes');
 
+    $code = preg_replace('/^\s*#.*$/m', '', (string) file_get_contents(base_path('scripts/lib/runtime-privsep.sh')));
     preg_match_all('/^\s*find storage bootstrap\/cache[^\n]*chmod (2775|0664)[^\n]*$/m', $code, $widenings);
 
-    expect($widenings[0])->not->toBeEmpty();
+    expect($widenings[0])->toHaveCount(2);
     foreach ($widenings[0] as $line) {
         expect($line)->toContain('-path storage/app/backups -prune');
     }
