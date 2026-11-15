@@ -78,9 +78,15 @@ _dms_privsep_close_inherited_fds() {
 # compromised runtime (ftruncate works on an O_APPEND file); a pipe cannot.
 # The command's own exit status is returned.
 dms_privsep_as_runtime() {
-  local user="${1:-}" uid
+  _dms_privsep_as_runtime_reading /dev/null "$@"
+}
+
+# The body of dms_privsep_as_runtime with the runtime process's stdin opened
+# (read-only, by the caller) from <input> instead of /dev/null.
+_dms_privsep_as_runtime_reading() {
+  local input="${1:-/dev/null}" user="${2:-}" uid
   local -a hop=()
-  shift || true
+  shift 2 || true
   if [ -z "$user" ] || [ "$#" -eq 0 ]; then
     _dms_privsep_err "usage: dms_privsep_as_runtime <user> <command> [args...]"
     return 2
@@ -93,7 +99,7 @@ dms_privsep_as_runtime() {
   if [ "$(id -u)" != "$uid" ]; then
     hop=(runuser -u "$user" --)
   fi
-  ( umask 027 && _dms_privsep_close_inherited_fds && exec "${hop[@]}" "$@" ) </dev/null 2>&1 | cat
+  ( umask 027 && _dms_privsep_close_inherited_fds && exec "${hop[@]}" "$@" ) <"$input" 2>&1 | cat
   return "${PIPESTATUS[0]}"
 }
 
@@ -104,7 +110,29 @@ dms_privsep_as_runtime() {
 # definitions with `declare -f` (trusted bytes from the snapshot) and a fresh
 # bash running as the runtime user executes them.
 dms_privsep_as_runtime_fn() {
-  local user="${1:-}" helpers="${2:-}" fn="${3:-}" defs name
+  _dms_privsep_as_runtime_fn_reading /dev/null "$@"
+}
+
+# dms_privsep_as_runtime_fn_from <file> <user> "<helper functions>" <function> [args...]
+#
+# DMS-DEPLOY-PRIVSEP-PHASE-2 (rule 235, R4): as dms_privsep_as_runtime_fn, but
+# the runtime process reads <file> on stdin. Root opens <file> READ-ONLY; it is
+# the only one of root's descriptors the runtime process receives (a read-only
+# descriptor cannot be written or truncated). Used to hand the runtime user the
+# BYTES of a dump root has already hashed in its own private directory.
+dms_privsep_as_runtime_fn_from() {
+  local input="${1:-}"
+  if [ -z "$input" ] || [ -L "$input" ] || [ ! -f "$input" ]; then
+    _dms_privsep_err "dms_privsep_as_runtime_fn_from: '${input}' is not a regular file"
+    return 2
+  fi
+  shift
+  _dms_privsep_as_runtime_fn_reading "$input" "$@"
+}
+
+_dms_privsep_as_runtime_fn_reading() {
+  local input="${1:-/dev/null}" user="${2:-}" helpers="${3:-}" fn="${4:-}" defs name
+  shift || true
   if [ "$#" -lt 3 ] || [ -z "$fn" ]; then
     _dms_privsep_err "usage: dms_privsep_as_runtime_fn <user> \"<helper functions>\" <function> [args...]"
     return 2
@@ -119,7 +147,7 @@ dms_privsep_as_runtime_fn() {
     fi
     defs+=$'\n'"$(declare -f "$name")"
   done
-  dms_privsep_as_runtime "$user" bash -c "set -euo pipefail"$'\n'"${defs}"$'\n''"$@"' dms-privsep "$fn" "$@"
+  _dms_privsep_as_runtime_reading "$input" "$user" bash -c "set -euo pipefail"$'\n'"${defs}"$'\n''"$@"' dms-privsep "$fn" "$@"
 }
 
 # dms_privsep_runtime_output <user> <file> <command> [args...]

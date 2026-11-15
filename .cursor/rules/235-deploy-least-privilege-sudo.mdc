@@ -1,0 +1,114 @@
+---
+description: DMS-DEPLOY-PRIVSEP-PHASE-2 (rule 235, closes OD-6 and rule 233 §9 R1/R2/R4) — no account holds passwordless unrestricted sudo. Deploys and read-only checks run through a dedicated operator account whose only key is forced onto a root-owned entrypoint and whose only sudo right is that entrypoint with allowlisted, regex-bounded requests (validated again inside); the administrator keeps unrestricted sudo that needs its password (owner break-glass). composer and npm run as an unprivileged build identity in a sandboxed transient systemd service over trees root hands over and claims back. Restores stream only a root-only copy whose SHA-256 matches trusted evidence. Nothing but placeholders is tracked under the runtime trees.
+globs: scripts/deploy-operator-entrypoint.sh, scripts/provision-deploy-identities.sh, scripts/sudo-policy-check.sh, scripts/lib/sudo-policy.sh, scripts/lib/build-privsep.sh, scripts/build-privsep-rehearsal.sh, scripts/production-posture.sh, scripts/lib/restore-integrity.sh, scripts/restore_postgres.sh, scripts/restore-rehearsal.sh, scripts/deploy-vps.sh, scripts/rollback-vps.sh, deploy/production-host.conf
+alwaysApply: false
+---
+
+# Least-privilege deploy identities (rule 235)
+
+**Status:** ACTIVE from DMS-DEPLOY-PRIVSEP-PHASE-2 (2026-11-15). Sprint record:
+`docs/sprints/dms-deploy-privsep-phase-2.md`. Extends rule 233 (which keeps application PHP away from root). Production
+GO is recorded in the sprint doc, not here.
+
+## 1. The defects it closes
+
+- **OD-6.** The one SSH account used for deploys and checks held `(ALL) NOPASSWD: ALL` (a sudoers drop-in on top of
+  the group's password rule), and its key sat unencrypted on a workstation: that key was root on production.
+- **R1.** `composer install`, `npm ci` and `npm run build` ran as root on every deploy and rollback: every npm
+  dependency's lifecycle scripts and every vite plugin ran as root. Even the `composer --version` probe ran from the
+  application directory, where composer may activate a plugin installed in `vendor/`.
+- **R2.** Five development scripts that create records through model factories were tracked under `storage/`, which
+  the runtime user owns: root's checkout wrote them, and anyone could run them against production.
+- **R4.** Both superuser restore tools streamed a runtime-owned plain-SQL dump into psql: a dump changed after it was
+  written could run psql meta-commands as the PostgreSQL superuser's OS account. The digest the deploy logged was
+  computed by the runtime user over its own file, so a resident runtime process could swap the dump before it.
+
+## 2. Invariants
+
+1. **No passwordless unrestricted sudo, for any account.** The declared administrator (`DMS_PRODUCTION_ADMIN_USER`)
+   keeps unrestricted sudo **only with its password**: that is the owner-approved break-glass role (rollback,
+   restore, BK-2, the trust anchor, provisioning, any host change). Every other account has no sudo at all, except
+   the deploy operator.
+2. **The deploy operator runs one program.** A dedicated account (its name stays on the host and the workstation,
+   never in this repository) whose only authorized key is `restrict,command="<entrypoint>"`; its home, `.ssh` and
+   `authorized_keys` are root's, so it can change neither its key nor its options. Its only sudo right is the
+   root-owned `DMS_PRODUCTION_OPERATOR_ENTRYPOINT` with argument expressions that admit exactly
+   `start --release-id <id> --approved-sha <40-hex>`, `follow`, `status`, `verify <deploy-id>`, `trust-check`,
+   `drift-check`, `sudo-policy-check`, `posture` — rendered by `dms_sudo_render_operator_rule` from
+   `dms_sudo_operator_expressions`, never hand-written. No `ALL`, no wildcard, no shell or interpreter, no SETENV,
+   no tag but NOPASSWD, no Chroot/Cwd, no command-specific Defaults, no `env_keep`/`runchroot`/`runcwd`, `env_reset`
+   and a rendered `secure_path` kept, run-as root only (no group). The expressions are sudo regular expressions:
+   the host needs sudo 1.9.10 or newer (Biznet: 1.9.15p5); provisioning refuses an older one before any change.
+3. **The entrypoint trusts nothing it is given.** It pins its own PATH first, reads no environment variable but
+   `SSH_ORIGINAL_COMMAND`, splits it on single spaces after a strict character check (no shell, glob or expansion),
+   validates the words against the same allowlist, and as root re-validates, proves that it, every PATH entry, the
+   program, the `scripts/`, `deploy/` and `.git` trees, every tool root runs (git, composer, node and its whole
+   installation, npm, php, pg_dump, runuser, systemd-run, sudo, bash, env) are root-owned and not group/other-writable
+   (no symlinks), clears the environment (`env -i`) and runs exactly one in-tree program. Rollback, restore and every
+   mutating host action are unreachable from it.
+4. **composer and npm never run as root.** Deploy and rollback run them only through `dms_build_run`: as the build
+   identity (`DMS_PRODUCTION_BUILD_USER`: system account, no login shell, no sudo, in no runtime or administrative
+   group; its home is ROOT's and holds only `cache/`, the identity's 0700 cache, so a build can plant no SSH key,
+   forward or user unit; no build process may be running at the preflight) in a transient systemd service with a
+   clean environment, the filesystem read-only except the handed trees and `cache/`, the environment files the asset
+   build reads (`.env`, `.env.local`, `.env.production`, `.env.production.local`) masked by `/dev/null`, `storage/`, `bootstrap/cache` and `.git` inaccessible, loopback denied except the DNS
+   stub, private `/tmp` and `/dev`, no setuid, no capabilities, a 30-minute limit, and its cgroup killed when the step
+   ends. Root hands `vendor/`, `node_modules/` and `public/build` over only while no build process runs and claims them
+   back (`root:root`) before anything loads them, refusing device nodes, FIFOs, sockets, setuid/setgid files,
+   hardlinked files, foreign entries and any group/other-writable entry; `public/build` holds no symlink. Version
+   probes run from `/`, composer with `--no-plugins`.
+5. **Runtime trees hold no trusted code.** Only `.gitignore`/`.gitkeep` placeholders are tracked under `storage/` and
+   `bootstrap/cache` (rule 233 keeps root's own writes out of them).
+6. **A restore needs trusted digest evidence.** `scripts/restore_postgres.sh` and `scripts/restore-rehearsal.sh`
+   stream to psql only a root-only staging copy (read once by the dump's owner) whose SHA-256 equals either the one
+   `Pre-deploy backup:` line of that deploy's root-only log (`--deploy-id`; record must name this host and that
+   deploy; more or fewer lines refuse) or a digest the administrator passes from an independent record
+   (`--expected-sha256`: the rollback's own output, an off-server manifest — never a file beside the dump). That
+   logged digest is ROOT's: deploy and rollback run pg_dump as root into a private file in the run's root-only
+   snapshot directory, hash it there, hand the runtime user the bytes on a read-only stdin
+   (`dms_privsep_as_runtime_fn_from`) and refuse a runtime copy that differs. A fresh rehearsal snapshot is hashed
+   from root's own copy. Missing, ambiguous or mismatched evidence restores nothing.
+7. **Production restore and rollback stay owner decisions.** Neither is reachable by the operator; both need the
+   administrator's password (the owner) besides the existing guards (`--force-production` plus the typed
+   confirmation; rollback by full SHA, code only).
+8. **Fail closed, checked read-only.** `scripts/sudo-policy-check.sh` classifies every account from sudo's own long
+   listing and reports `SUDO_POLICY=LEAST_PRIVILEGE` only when all of the above hold, the installed entrypoint is the
+   in-tree one (`STALE` is a WATCH: re-provision) and `visudo -c` accepts the policy.
+
+## 3. Changing this area
+
+- A new operator action needs: the entrypoint allowlist, the sudo expressions (`dms_sudo_render_operator_rule`), the
+  tests that cross-check both, re-provisioning, and a read-only or release-guarded program. Never add a shell,
+  `rollback-vps.sh`, a restore tool or anything that writes outside the release guard.
+- Never hand-edit `/etc/sudoers.d`: re-render with `scripts/provision-deploy-identities.sh` (staged name with a dot,
+  `visudo -cf`, atomic move, whole-policy `visudo -c`, moved back out on failure).
+- A new build tool runs only through `dms_build_run`; the scanner (`build_line_prefix`) rejects any other line that
+  runs composer, npm, npx, node, yarn or pnpm. A build step that needs a new writable path names it explicitly.
+- Never restore from a digest you read from the runtime-owned tree.
+
+## 4. Operations
+
+- One-time provisioning and cutover: runbook `docs/runbooks/production-host-identity.md` §6f (export of the approved
+  release, `--build-identity`, `--operator`, build rehearsal, deploy through the operator, then — only after the owner
+  proved the administrator's password with `sudo -k; sudo -v` — `--retire-admin-nopasswd --admin-password-verified`).
+  `sudo -v` is the right proof: under the default `verifypw=all` it asks for the password while any of the account's
+  rules needs one, whereas `sudo -u root true` would still match the passwordless rule and prove nothing. The
+  retirement re-classifies the administrator's listing as it will be without the passwordless rule and refuses unless
+  that is `ADMIN_PASSWORD` (a password rule that reaches root; no `!authenticate`, `rootpw`, `targetpw`, `runaspw`).
+- Recovery if the operator path breaks: the administrator logs in (`daengtisiams-biznet-prod`) and uses sudo with its
+  password; if SSH itself is unavailable, the provider's web console with the same account. Root's password is locked
+  on this host, so the administrator's password is the recovery credential: the owner keeps it; it is never typed
+  into a chat, a file or a command line by an agent.
+
+## 5. Residual risks (owner-visible)
+
+- The build identity's package caches persist between deploys: a compromised build (malicious package) could poison
+  them for later builds. Bounded by the sandbox: it reaches vendor code the runtime runs anyway, never root.
+- Composer and npm still resolve dependencies on the host (lockfiles authoritative); CI-built, digest-verified
+  artifacts would remove host-side resolution but change the delivery model — a separate owner decision.
+- `scripts/rollout-restore-drill.sh` (staging only, refuses production) restores as the application role without the
+  digest check.
+- The CI scanner is a regression guard for reviewed code: it judges each `;`/`&&`/`||`/`|` segment, but deliberate
+  obfuscation (`n\pm`, a variable holding the tool name) is out of its reach — review covers that.
+- `follow` streams the deploy's output, build output included, to the operator's terminal as it is.
+- Account separation is verifiable; human separation is not (CG-07).

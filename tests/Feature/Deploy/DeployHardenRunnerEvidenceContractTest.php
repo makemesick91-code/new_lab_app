@@ -1003,10 +1003,12 @@ it('checks toolchain versions in the deploy and the rollback right after the pre
         ->and($versions)->toBeLessThan($first($checkoutMarker));
 
     $block = implode("\n", array_slice($lines, $versions, 8));
-    expect($block)->toContain('"$(node --version 2>/dev/null || true)"')
-        ->and($block)->toContain('"$(npm --version 2>/dev/null || true)"')
+    // Rule 235: the node/npm/composer probes run from / (no project
+    // configuration) and composer with --no-plugins (no vendor/ plugin as root).
+    expect($block)->toContain('"$(cd / && node --version 2>/dev/null || true)"')
+        ->and($block)->toContain('"$(cd / && npm --version 2>/dev/null || true)"')
         ->and($block)->toContain("\"\$(php -r 'echo PHP_VERSION;' 2>/dev/null || true)\"")
-        ->and($block)->toContain('composer --version --no-ansi --no-interaction')
+        ->and($block)->toContain('cd / && COMPOSER_ALLOW_SUPERUSER=1 composer --version --no-plugins --no-ansi --no-interaction')
         ->and($block)->toContain('exit 2');
 })->with([
     'deploy' => ['scripts/deploy-vps.sh', 'dms_write_private_dump', 'git checkout "$BRANCH"'],

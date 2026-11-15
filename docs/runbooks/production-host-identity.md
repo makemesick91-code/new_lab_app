@@ -27,7 +27,8 @@ before any command that could touch production.
 
 | Alias | Meaning | Use |
 |---|---|---|
-| `daengtisiams-biznet-prod` | Biznet production, `dmsadmin@139.190.106.38`, pinned host key | the only production alias |
+| `daengtisiams-biznet-deploy` | Biznet production, the restricted deploy operator (rule 235), same address and pinned host key | deploys and read-only checks: its key runs only the operator entrypoint's allowlisted actions |
+| `daengtisiams-biznet-prod` | Biznet production, `dmsadmin@139.190.106.38`, pinned host key | the administrator (break-glass): its sudo needs the owner's password since rule 235 |
 | `daengtisiams-vps` | **frozen Hostinger**, `root@145.79.13.224` | never — the name misleads; it was re-pointed at Hostinger before the DNS flip |
 
 Older documents that write `ssh daengtisiams-vps` describe the Hostinger era. Do not replay them. Translate them
@@ -44,6 +45,10 @@ Host daengtisiams-biznet-prod
   StrictHostKeyChecking yes
   UserKnownHostsFile ~/.ssh/known_hosts.d/daengtisiams-biznet-prod
 ```
+
+The deploy operator's entry has the same `HostName`, `StrictHostKeyChecking` and known-hosts lines; its `User` and
+`IdentityFile` name the operator account and its own key (kept on the workstation, never in this repository). Prove
+it with `bash scripts/production-target-check.sh --operator --remote`.
 
 ## 3. Prove the target before a sensitive operation
 
@@ -83,7 +88,18 @@ ssh daengtisiams-biznet-prod 'hostname; hostname -I'      # expect DaengtisiaMS 
 
 ## 5. Privilege model on Biznet
 
-- `dmsadmin` is the administrative login. Root has no SSH login. Commands that need root run as `sudo -n …`.
+- Rule 235 (`.cursor/rules/235-deploy-least-privilege-sudo.mdc`): no account holds passwordless sudo.
+- The **deploy operator** (`daengtisiams-biznet-deploy`) runs one program: its key is forced onto the root-owned
+  `/usr/local/sbin/dms-deploy-operator`, and sudo lets it run only that, with these requests:
+  `start --release-id <id> --approved-sha <sha>`, `follow`, `status`, `verify <deploy-id>`, `trust-check`,
+  `drift-check`, `sudo-policy-check`, `posture` (e.g. `ssh daengtisiams-biznet-deploy posture`). Nothing else —
+  no shell, no rollback, no restore.
+- `dmsadmin` is the administrative login (break-glass). Root has no SSH login and its password is locked. Since
+  rule 235 its sudo needs its password, which only the owner holds: run such steps in an interactive session
+  (`ssh -t daengtisiams-biznet-prod 'sudo …'`), never with `sudo -n` from a script, and never type the password into
+  a chat, a file or a command line. If SSH is unavailable, the provider's web console takes the same account.
+- composer and npm run as the build identity `daengtisiams-build` in a sandboxed transient service (rule 235), never
+  as root.
 - The application runtime identity is `daengtisiams` (`deploy/runtime-identity.conf`). Laravel cache rebuilds run as that
   account (`runuser -u daengtisiams -- php artisan …`). They never run as `dmsadmin`, and never as root.
 - `php artisan tinker` and psysh stay forbidden on production -- never (CG-14).
@@ -224,8 +240,11 @@ commit a release approval record merged on the base branch approves. The runner 
   (`sudo -n grep -c 'DMS_RELEASE_APPROVAL_CONTRACT=2' scripts/lib/release-approval.sh` prints a non-zero count); if it
   prints `0`, follow §6d instead. An approval deploys once: a re-deploy needs a new signed record.
 
-1. **Prove the target:** `bash scripts/production-target-check.sh --remote` → `PRODUCTION_TARGET=VERIFIED` (§3).
-   Never deploy on the strength of an alias name alone.
+1. **Prove the target:** `bash scripts/production-target-check.sh --remote` → `PRODUCTION_TARGET=VERIFIED` (§3), and
+   since rule 235 (§6f) the operator alias too: `bash scripts/production-target-check.sh --operator --remote`. Never
+   deploy on the strength of an alias name alone.
+   Since rule 235, steps 2–7 run through the operator alias; the `sudo -n` forms below are the pre-cutover history and
+   now need the administrator's password.
 2. **Read the approval from the host (read-only).** Refs only; the working tree is not touched:
    ```bash
    ssh daengtisiams-biznet-prod 'cd /var/www/asia-dental-lab-v2 && sudo -n git fetch --no-tags origin feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report && sudo -n git show FETCH_HEAD:deploy/release-approvals/<release-id>.approval'
@@ -237,6 +256,10 @@ commit a release approval record merged on the base branch approves. The runner 
    ssh daengtisiams-biznet-prod 'cd /var/www/asia-dental-lab-v2 && sudo -n bash -c "git show FETCH_HEAD:deploy/release-approvals/<release-id>.approval | ssh-keygen -Y verify -f /etc/daengtisiams/release-approvers.allowed_signers -I owner -n dms-release-approval -s <(git show FETCH_HEAD:deploy/release-approvals/<release-id>.approval.sig)"'
    ssh daengtisiams-biznet-prod 'cd /var/www/asia-dental-lab-v2 && sudo -n bash scripts/deploy-vps-runner.sh trust-check'
    ```
+   With the operator (rule 235): verify the merged record's signature on the workstation against the owner's public
+   key (`ssh-keygen -Y verify … -I owner -n dms-release-approval`, as the sprint docs record), then
+   `ssh daengtisiams-biznet-deploy trust-check`. The runner re-verifies the record on the host before it launches
+   anything.
 3. **Check backup protection (read-only):** the deploy takes and verifies its own database dump before the checkout;
    that dump is the required pre-deploy backup, and a failed dump stops the deploy before the checkout. BK-2 is
    **not** a deploy gate (rule 232, owner directive `DMS-BK2-MANUAL-ONLY-1`, 2026-11-14): do not wait on the host BK-2
@@ -248,6 +271,8 @@ commit a release approval record merged on the base branch approves. The runner 
    ```bash
    ssh daengtisiams-biznet-prod 'cd /var/www/asia-dental-lab-v2 && sudo -n bash scripts/deploy-vps-runner.sh start --release-id <release-id> --approved-sha <APPROVED_SHA>'
    ```
+   With the operator (rule 235): `ssh daengtisiams-biznet-deploy start --release-id <release-id> --approved-sha <APPROVED_SHA>`
+   (then `follow`). The entrypoint runs exactly the in-tree runner above, as root, on the VPS.
    The runner verifies the approval before it writes or launches anything and prints `RELEASE APPROVAL: GO`. A
    refusal prints `DEPLOYMENT=DENIED`, exits `77` and leaves nothing behind: do not retry with a different commit;
    fix the cause or get a new approval. The launcher returning is not completion; wait for the status file
@@ -270,6 +295,9 @@ commit a release approval record merged on the base branch approves. The runner 
    ```
    It must print `PRIVSEP_DRIFT=NONE`. It changes nothing and runs no PHP; its summaries never print a file name. A
    runtime write failure is never fixed by running a step as root or widening a mode (rule 233 §3).
+   With the operator (rule 235): `ssh daengtisiams-biznet-deploy verify <deploy-id>`, `… drift-check` and
+   `… sudo-policy-check` (must print `SUDO_POLICY=LEAST_PRIVILEGE`); the run's log also shows composer and npm as the
+   build identity. `… posture` gives HEAD, units, timers, locks and the application log's ERROR count for step 7.
 6. **Smoke over the canonical URL** (`/login`, `/health/live`, `/health/ready`, `/health/lb` → 200; `/storage/…` →
    403). The deploy's own loopback smoke reporting `404` is D6, not a result.
 7. **Confirm nothing else moved:** the queue worker, the scheduler and the KTP cleanup timer keep their owner-set state
@@ -277,7 +305,9 @@ commit a release approval record merged on the base branch approves. The runner 
 8. **GO tag** per CG-16 on `APPROVED_SHA` itself, after production verification; fetch tags explicitly first.
 
 **Rollback** is `ssh daengtisiams-biznet-prod 'cd /var/www/asia-dental-lab-v2 && sudo -n bash scripts/rollback-vps.sh <commit>'`,
-following `docs/runbooks/vps-deploy-rollback-runbook.md`. The target must be an ancestor of the running checkout
+following `docs/runbooks/vps-deploy-rollback-runbook.md`. Since rule 235 it is the administrator's break-glass step
+on the owner's explicit decision: `ssh -t daengtisiams-biznet-prod 'cd /var/www/asia-dental-lab-v2 && sudo bash scripts/rollback-vps.sh <full-sha>'`
+with the owner typing the password; the deploy operator cannot roll back. The target must be an ancestor of the running checkout
 (rule 229); anything else is refused before the backup. It runs the same host preflight, takes a verified database
 dump first and moves code only. It never restores data. A data restore is a separate, explicitly owner-approved
 operation, and an older dump is never restored over newer clinical data. Since rule 233 a rollback, like a deploy, runs
@@ -408,6 +438,41 @@ checkout does not carry rule 231 yet), plus steps A–C done.
 **What never happens.** No unsigned or contract-1 record is accepted; the anchor never comes from the repository; the
 evidence of earlier deploys in `storage/logs/deploy-runner/` is left exactly where it is (never moved, edited or
 deleted); the live runner is not edited by hand.
+
+## 6f. Least-privilege identities: one-time provisioning and cutover (rule 235)
+
+Run once per host, by the administrator, while its passwordless sudo still exists (on Biznet: the first release that
+carries rule 235). Each mutating step is dry-run first, then `--apply`; stop at the first refusal.
+
+1. **Export the approved release** (§6c step 2, the whole `scripts` and `deploy` trees) into a new root-only
+   `/root/dms-release-<APPROVED_SHA>` and prove every exported file byte-identical to the commit object (§6c step 3,
+   for each file). Everything below runs from that export, never from the working tree.
+2. **Build identity:** `sudo -n bash /root/dms-release-<APPROVED_SHA>/scripts/provision-deploy-identities.sh --build-identity`
+   (dry run), then with `--apply`.
+3. **Rehearse the unprivileged build** on a scratch export (the application is not touched):
+   `sudo -n bash /root/dms-release-<APPROVED_SHA>/scripts/build-privsep-rehearsal.sh --ref <APPROVED_SHA>` →
+   `BUILD_PRIVSEP_REHEARSAL=PASS`. A failure stops the cutover; the deploy would fail the same way.
+4. **Deploy operator:** the workstation creates the operator's own ED25519 key (its private half never leaves the
+   workstation); copy only the public half to the host, then
+   `… provision-deploy-identities.sh --operator --operator-user <name> --operator-key <public key file>` (dry run),
+   then with `--apply`. It ends with the operator's sudo verdict `OPERATOR`.
+5. **Prove the boundary (read-only):** as the administrator, `sudo -l -U <operator> <entrypoint> <args>` answers for
+   the positive requests and refuses the negative ones (a shell, `status; id`, rollback, any other command); over SSH
+   the operator key refuses a shell and every non-allowlisted request (`DEPLOY_OPERATOR=DENIED`, exit 64) and answers
+   `posture`. Add the workstation alias (§2) and run `production-target-check.sh --operator --remote`.
+6. **Deploy through the operator** (§6b steps 4–8 in their rule 235 form). This is the first proof that the restricted
+   path carries a real deploy, and the first deploy whose composer and npm run as the build identity. Then remove the
+   export (§6c step 7) and any rehearsal leftovers, while the administrator's root steps need no password yet.
+7. **Retire the administrator's passwordless sudo — only after the owner proved the password.** The owner, in their
+   own terminal: `ssh -t daengtisiams-biznet-prod 'sudo -k; sudo -v && echo ADMIN_PASSWORD_OK'` (`sudo -v` asks for
+   the password while any of the account's rules needs one; `sudo -u root true` would still match the passwordless
+   rule and prove nothing). Only after `ADMIN_PASSWORD_OK`: `… provision-deploy-identities.sh --retire-admin-nopasswd --admin-password-verified` (dry run,
+   then `--apply`); the drop-in is moved to `/root/sudoers-retired/`, never deleted. Then `sudo -k; sudo -n true` as
+   `dmsadmin` must fail ("a password is required") and `ssh daengtisiams-biznet-deploy sudo-policy-check` must print
+   `SUDO_POLICY=LEAST_PRIVILEGE`.
+8. **If anything breaks:** the administrator keeps sudo with the owner's password (SSH, or the provider's web console
+   with the same account); a retired drop-in is restored by moving it back under `visudo -c`. Never re-enable
+   passwordless sudo silently: record it as a deviation in the sprint doc.
 
 ## 7. What stays true from the Hostinger era
 

@@ -386,11 +386,17 @@ test('the deploy and rollback scripts create a dump private instead of tightenin
         $script = file_get_contents(base_path($path));
 
         $helperAt = strpos($script, 'lib/private-db-dump.sh');
-        $dumpAt = strpos($script, 'dms_write_private_dump "$BACKUP" pg_dump');
+        // DMS-DEPLOY-PRIVSEP-PHASE-2 (rule 235, R4): root's own staging copy of
+        // pg_dump's output and the runtime user's dump in its tree are BOTH
+        // created private by the helper.
+        $dumpAt = strpos($script, 'dms_write_private_dump "${DUMP_STAGING}/dump.sql" pg_dump');
+        $copyAt = strpos($script, 'dms_write_private_dump "$BACKUP" cat');
 
         expect($helperAt)->not->toBeFalse()
             ->and($dumpAt)->not->toBeFalse()
+            ->and($copyAt)->not->toBeFalse()
             ->and($helperAt)->toBeLessThan($dumpAt)
+            ->and($dumpAt)->toBeLessThan($copyAt)
             ->and($script)->not->toContain('chmod 0640 "$BACKUP"');
     }
 });

@@ -50,11 +50,39 @@
 # naming that helper, so that a rehearsal can never turn into a production
 # restore by accident.
 #
+# INTEGRITY (rule 235, DMS-DEPLOY-PRIVSEP-PHASE-2): psql only ever reads a
+# root-only staging copy whose SHA-256 matches trusted evidence
+# (scripts/lib/restore-integrity.sh). A fresh snapshot is written by pg_dump
+# straight into that root-only copy and hashed by root; the runtime-owned copy
+# kept for the backup check is written FROM it and never read back. A backup
+# passed in needs --deploy-id (its deploy's root-only log) or --expected-sha256
+# (an independent record the administrator holds); otherwise nothing is restored.
+#
 # Usage:
-#   bash scripts/restore-rehearsal.sh [backup_file.sql]
-# With no argument, the latest .sql backup in storage/app/backups/deploy is used.
-# Must be run as root (or as the PostgreSQL superuser OS account).
+#   bash scripts/restore-rehearsal.sh [<backup_file.sql> (--deploy-id <id> | --expected-sha256 <hex>)]
+# With no backup file, a fresh snapshot of the production database is taken.
+# Must be run as root.
 set -euo pipefail
+
+REHEARSE_FILE=""
+EVIDENCE_DEPLOY_ID=""
+EXPECTED_SHA256=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --deploy-id) EVIDENCE_DEPLOY_ID="${2:-}"; shift 2 ;;
+    --expected-sha256) EXPECTED_SHA256="${2:-}"; shift 2 ;;
+    -*) echo "usage: bash scripts/restore-rehearsal.sh [<backup_file.sql> (--deploy-id <id> | --expected-sha256 <hex>)]" >&2; exit 2 ;;
+    *) [ -z "$REHEARSE_FILE" ] || { echo "FATAL: one backup file at most" >&2; exit 2; }; REHEARSE_FILE="$1"; shift ;;
+  esac
+done
+if [ -n "$REHEARSE_FILE" ] && [ -z "$EVIDENCE_DEPLOY_ID" ] && [ -z "$EXPECTED_SHA256" ]; then
+  echo "FATAL: a passed backup needs trusted digest evidence: --deploy-id <the deploy that wrote it> or --expected-sha256 <digest from an independent record> (rule 235)" >&2
+  exit 2
+fi
+if [ -n "$EVIDENCE_DEPLOY_ID" ] && [ -n "$EXPECTED_SHA256" ]; then
+  echo "FATAL: pass --deploy-id OR --expected-sha256, not both" >&2
+  exit 2
+fi
 
 APP_DIR="${APP_DIR:-/var/www/asia-dental-lab-v2}"
 STAMP="$(date +%Y%m%d-%H%M%S)"
@@ -66,9 +94,27 @@ PG_SUPERUSER_ACCOUNT="${PG_SUPERUSER_ACCOUNT:-postgres}"
 
 cd "$APP_DIR"
 
+# Rule 235: root sources the environment file and loads two libraries; refuse any
+# of them (or a library's directory) that another identity could have written.
+for node in .env scripts/lib scripts/lib/trusted-path.sh scripts/lib/restore-integrity.sh; do
+  if [ -L "$node" ] || [ "$(stat -c '%u' -- "$node")" != 0 ] || [ $(( 8#$(stat -c '%a' -- "$node") & 8#022 )) -ne 0 ]; then
+    echo "FATAL: ${node} is a symlink, not root's, or writable by another identity — refusing to use it"
+    exit 1
+  fi
+done
+# shellcheck source=lib/trusted-path.sh
+. scripts/lib/trusted-path.sh
+# shellcheck source=lib/restore-integrity.sh
+. scripts/lib/restore-integrity.sh
+
 set -a
 source .env
 set +a
+
+STAGING_DIR="$(mktemp -d)"
+chmod 0700 -- "$STAGING_DIR"
+STAGED_BACKUP=""
+trap 'rm -rf -- "$STAGING_DIR"' EXIT
 
 # INFRA-SEC-RUNTIME-1: this drill needs root (to reach the PostgreSQL
 # superuser), but artisan must NOT run as root — it would leave root-owned
@@ -112,26 +158,44 @@ if [ "$SUPER_CHECK" != "t" ]; then
 fi
 
 echo "== Select backup to rehearse =="
-BACKUP_FILE="${1:-}"
+BACKUP_FILE="$REHEARSE_FILE"
 if [ -z "$BACKUP_FILE" ]; then
   echo "No backup passed; taking a fresh verified snapshot first."
   as_runtime mkdir -p "$BACKUP_DIR"
   BACKUP_FILE="${BACKUP_DIR}/rehearsal_source_${STAMP}.sql"
   # Snapshot over the peer socket as the superuser (no password anywhere in a
-  # process argument list), written THROUGH the runtime user so the dump keeps
-  # runtime ownership and 0640 instead of becoming a root-owned file.
+  # process argument list) into root's private staging copy; root hashes it.
+  STAGED_BACKUP="${STAGING_DIR}/dump.sql"
+  ( umask 077 && set -C && : > "$STAGED_BACKUP" )
+  as_superuser pg_dump -d "${DB_DATABASE}" > "$STAGED_BACKUP"
+  EXPECTED_SHA256="$(sha256sum < "$STAGED_BACKUP" | cut -d' ' -f1)"
+  # The runtime-owned copy (0640) the backup check reads is written FROM the
+  # staging copy and never read back by root or the superuser.
   as_runtime install -m 0640 /dev/null "$BACKUP_FILE"
-  set +o errexit
-  as_superuser pg_dump -d "${DB_DATABASE}" | as_runtime tee "$BACKUP_FILE" > /dev/null
-  SNAPSHOT_STATUS=("${PIPESTATUS[@]}")
-  set -o errexit
-  if [ "${SNAPSHOT_STATUS[0]:-1}" -ne 0 ] || [ "${SNAPSHOT_STATUS[1]:-1}" -ne 0 ]; then
-    echo "FATAL: could not take a fresh snapshot (pg_dump=${SNAPSHOT_STATUS[0]:-?} write=${SNAPSHOT_STATUS[1]:-?})."
-    exit 1
+  as_runtime tee "$BACKUP_FILE" < "$STAGED_BACKUP" > /dev/null
+  echo "Fresh snapshot: ${BACKUP_FILE} sha256=${EXPECTED_SHA256}"
+else
+  if [ -n "$EVIDENCE_DEPLOY_ID" ]; then
+    EVIDENCE_DIR_TRUSTED="$(sed -n 's/^[[:space:]]*DMS_PRODUCTION_DEPLOY_EVIDENCE_DIR=//p' deploy/production-host.conf | head -n 1 | sed 's/^"//; s/"$//')"
+    EVIDENCE="$(dms_restore_evidence_digest "$EVIDENCE_DIR_TRUSTED" "$EVIDENCE_DEPLOY_ID" "$(hostname)" "$APP_DIR" "$(id -u)")" || {
+      echo "FATAL: no trusted digest evidence for deploy ${EVIDENCE_DEPLOY_ID} — nothing was restored."
+      exit 1
+    }
+    if [ "$(realpath -e -- "$BACKUP_FILE")" != "$(realpath -e -- "${APP_DIR}/${EVIDENCE% *}")" ]; then
+      echo "FATAL: deploy ${EVIDENCE_DEPLOY_ID} recorded ${EVIDENCE% *}, not ${BACKUP_FILE} — nothing was restored."
+      exit 1
+    fi
+    EXPECTED_SHA256="${EVIDENCE##* }"
   fi
+  STAGED_BACKUP="$(dms_restore_stage_copy "$BACKUP_FILE" "$STAGING_DIR")" || {
+    echo "FATAL: could not stage a private copy of ${BACKUP_FILE} — nothing was restored."
+    exit 1
+  }
 fi
-
-test -s "$BACKUP_FILE"
+dms_restore_verify_copy "$STAGED_BACKUP" "$EXPECTED_SHA256" || {
+  echo "FATAL: integrity check failed — nothing was restored."
+  exit 1
+}
 
 echo "== Verify backup (NSF-10) =="
 as_runtime php artisan foundation:backup-verify --path="$BACKUP_FILE"
@@ -151,19 +215,15 @@ as_superuser createdb -O "${DB_USERNAME}" -T template0 -- "$REHEARSAL_DB"
 cleanup() {
   echo "== Drop scratch database: ${REHEARSAL_DB} =="
   as_superuser dropdb --if-exists -- "$REHEARSAL_DB" || true
+  rm -rf -- "$STAGING_DIR"
 }
 trap cleanup EXIT
 
 echo "== Restore backup into scratch database (never touches production) =="
-# The dump is streamed on stdin: it is mode 0640 owned by the runtime user, so
-# the superuser OS account cannot open the path, but it can read a pipe.
-BACKUP_OWNER="$(stat -c '%U' -- "$BACKUP_FILE")"
+# Only the verified root-only staging copy is streamed on stdin (the superuser
+# OS account cannot open it, but it can read a pipe).
 read_backup() {
-  if [ -r "$BACKUP_FILE" ]; then
-    cat -- "$BACKUP_FILE"
-  else
-    sudo -n -u "$BACKUP_OWNER" -- cat -- "$BACKUP_FILE"
-  fi
+  cat -- "$STAGED_BACKUP"
 }
 
 RESTORE_START="$(date +%s)"
@@ -223,7 +283,7 @@ PATIENT_COUNT="$(count_table mst_patients)"
 VISIT_COUNT="$(count_table trx_clinic_visits)"
 PAYMENT_COUNT="$(count_table trx_rme_payments)"
 
-BACKUP_SIZE="$(wc -c < "$BACKUP_FILE" | tr -d ' ')"
+BACKUP_SIZE="$(wc -c < "$STAGED_BACKUP" | tr -d ' ')"
 
 echo "== Write restore-rehearsal evidence =="
 # Written as the runtime user so the evidence file does not become root-owned.

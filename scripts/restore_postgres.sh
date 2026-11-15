@@ -78,22 +78,39 @@
 #   - Real exit-status propagation: ON_ERROR_STOP=1, pipefail, explicit
 #     PIPESTATUS inspection, and a post-restore verification. Success is printed
 #     only when the restore actually succeeded.
+#   - INTEGRITY (rule 235, DMS-DEPLOY-PRIVSEP-PHASE-2): no dump reaches psql
+#     unless its bytes match TRUSTED evidence (scripts/lib/restore-integrity.sh):
+#     the digest the deploy recorded in its root-only log (--deploy-id), or one
+#     the administrator passes from an independent record (--expected-sha256,
+#     e.g. the rollback's own output). The dump is copied once into a root-only
+#     staging file, verified there, and only that copy is restored. Missing or
+#     mismatched evidence refuses the restore. A dump the runtime user changed
+#     after it was written could otherwise run psql meta-commands as the
+#     PostgreSQL superuser's OS account.
 #
 # ---------------------------------------------------------------------------
 # USAGE
 # ---------------------------------------------------------------------------
 #   Restore into a NEW scratch/analysis database (safe, the common case):
 #     sudo bash scripts/restore_postgres.sh \
-#       --file storage/app/backups/deploy/<dump>.sql \
+#       --file storage/app/backups/deploy/<dump>.sql --deploy-id <YYYYmmdd-HHMMSS> \
 #       --target asia_dental_lab_scratch --create
 #
-#   Restore over PRODUCTION (disaster recovery only, irreversible):
+#   Restore over PRODUCTION (disaster recovery only, irreversible, owner-approved):
 #     sudo bash scripts/restore_postgres.sh \
-#       --file storage/app/backups/deploy/<dump>.sql --force-production
+#       --file storage/app/backups/deploy/<dump>.sql --deploy-id <YYYYmmdd-HHMMSS> --force-production
 #
 #   Options:
 #     --file <path>        Plain-text .sql dump to restore. May also be given as
 #                          the first positional argument (legacy form).
+#     --deploy-id <id>     The deploy that wrote the dump: its expected SHA-256 is
+#                          read from that deploy's root-only log, which must name
+#                          exactly this file (rule 235).
+#     --expected-sha256 <hex>
+#                          The dump's SHA-256 from an independent record the
+#                          administrator holds (the rollback's own output, an
+#                          off-server manifest) — never from a file beside the
+#                          dump. One of --deploy-id / --expected-sha256 is required.
 #     --target <db>        Database to restore INTO. Default: DB_DATABASE from
 #                          the application environment file (i.e. production),
 #                          which then requires --force-production.
@@ -162,6 +179,8 @@ CREATE_TARGET=0
 FORCE_PRODUCTION=0
 ASSUME_YES=0
 SINGLE_TRANSACTION=1
+EVIDENCE_DEPLOY_ID=""
+EXPECTED_SHA256=""
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -175,6 +194,10 @@ while [ "$#" -gt 0 ]; do
         --force-production) FORCE_PRODUCTION=1; shift ;;
         --yes|-y) ASSUME_YES=1; shift ;;
         --no-single-transaction) SINGLE_TRANSACTION=0; shift ;;
+        --deploy-id) EVIDENCE_DEPLOY_ID="${2:-}"; shift 2 ;;
+        --deploy-id=*) EVIDENCE_DEPLOY_ID="${1#*=}"; shift ;;
+        --expected-sha256) EXPECTED_SHA256="${2:-}"; shift 2 ;;
+        --expected-sha256=*) EXPECTED_SHA256="${1#*=}"; shift ;;
         --superuser-account) PG_SUPERUSER_ACCOUNT="${2:-}"; shift 2 ;;
         --superuser-account=*) PG_SUPERUSER_ACCOUNT="${1#*=}"; shift ;;
         -h|--help) usage; exit 0 ;;
@@ -193,6 +216,13 @@ cd "$APP_DIR"
 [ -n "$DUMP_FILE" ] || { usage >&2; die "no backup file given" 2; }
 [ -f "$DUMP_FILE" ] || die "backup file not found: ${DUMP_FILE}" 2
 [ -s "$DUMP_FILE" ] || die "backup file is empty: ${DUMP_FILE}" 2
+# Rule 235: exactly one source of trusted digest evidence, or no restore.
+if [ -n "$EVIDENCE_DEPLOY_ID" ] && [ -n "$EXPECTED_SHA256" ]; then
+    die "pass --deploy-id OR --expected-sha256, not both" 2
+fi
+if [ -z "$EVIDENCE_DEPLOY_ID" ] && [ -z "$EXPECTED_SHA256" ]; then
+    die "refusing to restore a dump without trusted digest evidence: pass --deploy-id <the deploy that wrote it> or --expected-sha256 <digest from an independent record> (rule 235)" 2
+fi
 
 PRODUCTION_DB="$(env_value DB_DATABASE || true)"
 [ -n "$PRODUCTION_DB" ] || die "could not read DB_DATABASE from ${ENV_FILE} (is it readable by $(id -un)?)" 2
@@ -268,15 +298,48 @@ if ! SUPER_CHECK="$(as_superuser psql -X -Atqc "SELECT usesuper FROM pg_user WHE
 fi
 [ "$SUPER_CHECK" = "t" ] || die "role reached via '${PG_SUPERUSER_ACCOUNT}' is not a superuser; the dump's CREATE EXTENSION / COMMENT ON EXTENSION statements would fail" 2
 
-# The dump is typically mode 0640 owned by the runtime user, so the postgres OS
-# account cannot open it. Stream it on stdin from an account that can read it.
+# ---------------------------------------------------------------------------
+# Integrity (rule 235): trusted digest, root-only staging copy, verify the copy.
+# ---------------------------------------------------------------------------
+# The two libraries come from this script's own tree; refuse them if anything
+# but root could have written them or their directory.
+LIB_DIR="${CANONICAL_APP_DIR}/scripts/lib"
+for lib in "${LIB_DIR}/trusted-path.sh" "${LIB_DIR}/restore-integrity.sh"; do
+    for node in "$lib" "$LIB_DIR"; do
+        if [ -L "$node" ] || [ "$(stat -c '%u' -- "$node")" != 0 ] || [ $(( 8#$(stat -c '%a' -- "$node") & 8#022 )) -ne 0 ]; then
+            die "${node} is a symlink, not root's, or writable by another identity — refusing to load ${lib}" 2
+        fi
+    done
+done
+# shellcheck source=lib/trusted-path.sh
+. "${LIB_DIR}/trusted-path.sh"
+# shellcheck source=lib/restore-integrity.sh
+. "${LIB_DIR}/restore-integrity.sh"
+
 DUMP_OWNER="$(stat -c '%U' -- "$DUMP_FILE")"
+if [ -n "$EVIDENCE_DEPLOY_ID" ]; then
+    EVIDENCE_DIR="$(sed -n 's/^[[:space:]]*DMS_PRODUCTION_DEPLOY_EVIDENCE_DIR=//p' "${CANONICAL_APP_DIR}/deploy/production-host.conf" | head -n 1 | sed 's/^"//; s/"$//')"
+    EVIDENCE="$(dms_restore_evidence_digest "$EVIDENCE_DIR" "$EVIDENCE_DEPLOY_ID" "$(hostname)" "$CANONICAL_APP_DIR" "$(id -u)")" \
+        || die "no trusted digest evidence for deploy ${EVIDENCE_DEPLOY_ID} — nothing was restored"
+    EVIDENCE_PATH="${EVIDENCE% *}"
+    EXPECTED_SHA256="${EVIDENCE##* }"
+    [ "$(realpath -e -- "$DUMP_FILE")" = "$(realpath -e -- "${CANONICAL_APP_DIR}/${EVIDENCE_PATH}")" ] \
+        || die "deploy ${EVIDENCE_DEPLOY_ID} recorded ${EVIDENCE_PATH}, not ${DUMP_FILE} — nothing was restored"
+    EVIDENCE_SOURCE="deploy-log:${EVIDENCE_DEPLOY_ID}"
+else
+    EVIDENCE_SOURCE="administrator-supplied"
+fi
+STAGING_DIR="$(mktemp -d)"
+chmod 0700 -- "$STAGING_DIR"
+trap 'rm -rf -- "$STAGING_DIR"' EXIT
+STAGED_DUMP="$(dms_restore_stage_copy "$DUMP_FILE" "$STAGING_DIR")" || die "could not stage a private copy of ${DUMP_FILE} — nothing was restored"
+dms_restore_verify_copy "$STAGED_DUMP" "$EXPECTED_SHA256" || die "integrity check failed — nothing was restored"
+echo "  evidence    : ${EVIDENCE_SOURCE}"
+
+# Only the verified root-only copy is ever streamed to psql (the postgres OS
+# account cannot open it; it reads the pipe).
 read_dump() {
-    if [ -r "$DUMP_FILE" ]; then
-        cat -- "$DUMP_FILE"
-    else
-        sudo -n -u "$DUMP_OWNER" -- cat -- "$DUMP_FILE"
-    fi
+    cat -- "$STAGED_DUMP"
 }
 
 echo "== Restore plan =="

@@ -1,28 +1,28 @@
-# DMS-DEPLOY-PRIVSEP-HARDENING-1 (2026-11-15). Owner-ordered security hardening closing OD-1 DEPLOY-PRIVSEP (rule 231
-# §8, audit A10; accepted for the r2 deploy only): the deploy and rollback ran PHP (composer scripts, artisan migrate,
-# ~50 governance gates; the rollback's cache rebuild and smoke) and chown -R / chmod -R / find -exec chmod as ROOT over
-# storage/ and bootstrap/cache, which the runtime user owns, so a runtime compromise became root at the next deploy.
-# Rule 233 (docs/sprints/dms-deploy-privsep-hardening-1.md): every artisan command runs as the runtime user, composer
-# runs --no-scripts with its post-autoload-dump replayed as the runtime user, the dumps and evidence files are written
-# by the runtime user, root only lchowns foreign entries (find -execdir, never a hardlink) and claims top-down any
-# source entry another identity owns or can write, modes are set by the runtime user, a privilege-drift gate ends the
-# run NOT GO. Deploy tooling (provisioning included), authority, governance scanner, a read-only drift check and tests;
-# tailwind.config.js content globs only (generated CSS byte-identical). No schema, migration, permission, role, route,
-# JS or package change; no flag, enforcement scope, branch lock, queue worker, scheduler or timer change.
+# DMS-DEPLOY-PRIVSEP-PHASE-2 (2026-11-15). Owner-ordered security hardening closing OD-6 (the deploy account held
+# unrestricted passwordless sudo, and its key sat unencrypted on a workstation) and the rule 233 §9 residuals R1
+# (composer/npm ran as root), R2 (tracked development scripts under storage/) and R4 (restores streamed an
+# unverified runtime-owned dump to the PostgreSQL superuser). Rule 235 (docs/sprints/dms-deploy-privsep-phase-2.md):
+# a dedicated deploy operator whose key is forced onto a root-owned entrypoint and whose only sudo right is that
+# entrypoint with allowlisted, regex-bounded requests; the administrator's sudo needs the owner's password
+# (break-glass); composer/npm as an unprivileged build identity in a sandboxed transient systemd service, trees handed
+# over and claimed back; restores only of a root-only copy whose SHA-256 matches trusted evidence; five dead
+# factory-based scripts removed from storage/. Deploy tooling, provisioning, authority, scanner, read-only checks and
+# tests. No schema, migration, permission, role, route, JS/CSS or package change; no flag, enforcement scope, branch
+# lock, queue worker, scheduler or timer change.
 #
 # Foundation-First Sprint Lock stays ACTIVE (allowed category: security fix / deployment). Full Suite deferred (CG-18),
 # not passed. Production deployment needs the owner's written approval of the exact merged release commit and the
-# owner's signature on its record (rule 231, runbook production-host-identity.md section 6b). The GO tag below is
-# created only after that deploy and its verification.
+# owner's signature on its record (rule 231); the one-time provisioning and cutover follow runbook
+# production-host-identity.md section 6f. The GO tag below is created only after that deploy and its verification.
 #
-# Previous manifest: DMS-RELEASE-GUARD-TRUST-HARDENING-1 (rule 231; PR #628 d707a3e3, PR #630 d555c7dc), deployed
-# 2026-11-15 as release r2 and GO tagged dms-release-guard-trust-hardening-1-go; its record stays in
-# docs/sprints/dms-release-guard-trust-hardening-1.md. Carried forward: LEGACY-RME-PROGRAM-CLOSURE-1 stays CLOSED and
+# Previous manifest: DMS-DEPLOY-PRIVSEP-HARDENING-1 (rule 233; PR #633 9312818f), deployed 2026-11-15 (deploy
+# 20261115-063339) and GO tagged dms-deploy-privsep-hardening-1-go; its record stays in
+# docs/sprints/dms-deploy-privsep-hardening-1.md. Carried forward: LEGACY-RME-PROGRAM-CLOSURE-1 stays CLOSED and
 # inherited.
-id: DMS-DEPLOY-PRIVSEP-HARDENING-1
+id: DMS-DEPLOY-PRIVSEP-PHASE-2
 type: SECURITY_FIX
 module: Deploy
-title: "Deploy privilege separation (rule 233): no root PHP, no root path mutation of runtime trees, source claim, drift gate"
+title: "Least-privilege deploy identities (rule 235): operator entrypoint only, password-only admin, sandboxed build, restore digest evidence"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 runtime_change: true
 schema_change: false
@@ -33,5 +33,5 @@ ledger_impact: false
 deploy_required: true
 browser_required: false
 test_profiles: [focused, security_regression]
-go_tag: dms-deploy-privsep-hardening-1-go
+go_tag: dms-deploy-privsep-phase-2-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1

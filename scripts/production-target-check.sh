@@ -21,7 +21,13 @@
 #
 # Usage:
 #   bash scripts/production-target-check.sh [--alias NAME] [--ssh-config FILE]
-#                                           [--authority FILE] [--remote]
+#                                           [--authority FILE] [--remote] [--operator]
+#
+# --operator (rule 235) checks the deploy operator alias instead
+# (DMS_PRODUCTION_DEPLOY_SSH_ALIAS): same address and pinned host key, a login
+# account that is neither root nor the administrator, and — with --remote — the
+# identity read through the operator's forced `posture` command (that key can
+# run nothing else).
 # Exit: 0 = PRODUCTION_TARGET=VERIFIED, 1 = NOT_VERIFIED, 2 = usage/tooling error.
 set -uo pipefail
 
@@ -30,11 +36,12 @@ AUTHORITY="${SCRIPT_DIR}/../deploy/production-host.conf"
 ALIAS=""
 SSH_CONFIG=""
 REMOTE=0
+OPERATOR=0
 
 usage() {
   cat >&2 <<'USAGE'
 usage: bash scripts/production-target-check.sh [--alias NAME] [--ssh-config FILE]
-                                              [--authority FILE] [--remote]
+                                              [--authority FILE] [--remote] [--operator]
 USAGE
   exit 2
 }
@@ -45,6 +52,7 @@ while [ $# -gt 0 ]; do
     --ssh-config) [ $# -ge 2 ] || usage; SSH_CONFIG="$2"; shift 2 ;;
     --authority) [ $# -ge 2 ] || usage; AUTHORITY="$2"; shift 2 ;;
     --remote) REMOTE=1; shift ;;
+    --operator) OPERATOR=1; shift ;;
     -h|--help) usage ;;
     *) echo "unknown argument: $1" >&2; usage ;;
   esac
@@ -72,6 +80,7 @@ PROD_HOSTNAME="$(authority_value DMS_PRODUCTION_HOSTNAME)"
 PROD_ADDRESS="$(authority_value DMS_PRODUCTION_ADDRESS)"
 PROD_ALIAS="$(authority_value DMS_PRODUCTION_SSH_ALIAS)"
 PROD_ADMIN="$(authority_value DMS_PRODUCTION_ADMIN_USER)"
+PROD_DEPLOY_ALIAS="$(authority_value DMS_PRODUCTION_DEPLOY_SSH_ALIAS)"
 PROD_KEY_SHA256="$(authority_value DMS_PRODUCTION_HOST_KEY_SHA256)"
 FROZEN_HOSTNAMES="$(authority_value DMS_FROZEN_LEGACY_HOSTNAMES)"
 FROZEN_ADDRESSES="$(authority_value DMS_FROZEN_LEGACY_ADDRESSES)"
@@ -84,7 +93,13 @@ for required in PROD_HOSTNAME PROD_ADDRESS PROD_ALIAS PROD_ADMIN PROD_KEY_SHA256
   fi
 done
 
-[ -n "$ALIAS" ] || ALIAS="$PROD_ALIAS"
+if [ "$OPERATOR" -eq 1 ] && [ -z "$PROD_DEPLOY_ALIAS" ]; then
+  echo "FATAL: authority ${AUTHORITY} does not declare DMS_PRODUCTION_DEPLOY_SSH_ALIAS — refusing to guess" >&2
+  exit 2
+fi
+if [ -z "$ALIAS" ]; then
+  if [ "$OPERATOR" -eq 1 ]; then ALIAS="$PROD_DEPLOY_ALIAS"; else ALIAS="$PROD_ALIAS"; fi
+fi
 
 FAILURES=0
 pass() { echo "PASS: $*"; }
@@ -145,7 +160,15 @@ else
   fail "alias resolves to '${R_HOST}', expected the pinned production address ${PROD_ADDRESS}"
 fi
 
-if [ "$R_USER" = "$PROD_ADMIN" ]; then
+if [ "$OPERATOR" -eq 1 ]; then
+  # The operator's account name stays on the host and the workstation; it only
+  # has to be neither root nor the administrator.
+  if [ -n "$R_USER" ] && [ "$R_USER" != "root" ] && [ "$R_USER" != "$PROD_ADMIN" ]; then
+    pass "login account is the deploy operator (neither root nor the administrator)"
+  else
+    fail "login account '${R_USER}' is root or the administrator — the deploy alias must use the restricted operator account"
+  fi
+elif [ "$R_USER" = "$PROD_ADMIN" ]; then
   pass "login account is the production admin '${PROD_ADMIN}'"
 else
   fail "login account is '${R_USER}', expected '${PROD_ADMIN}' (root has no SSH login on production)"
@@ -213,13 +236,21 @@ if [ "$REMOTE" -eq 1 ]; then
   if [ "$FAILURES" -ne 0 ]; then
     fail "remote identity check skipped: the static checks failed, so the alias is not safe to connect through"
   else
-    # Read-only: two commands that report identity and change nothing.
+    # Read-only: commands that report identity and change nothing. The
+    # operator's key is forced onto its entrypoint, so it asks for `posture`.
+    REMOTE_COMMAND='hostname; hostname -I'
+    [ "$OPERATOR" -eq 1 ] && REMOTE_COMMAND='posture'
     if REMOTE_OUT="$(ssh "${SSH_G_ARGS[@]}" \
           -o BatchMode=yes -o ConnectTimeout=15 \
           -o StrictHostKeyChecking=yes -o UpdateHostKeys=no \
-          "$ALIAS" 'hostname; hostname -I' 2>/dev/null)"; then
-      REMOTE_HOSTNAME="$(printf '%s\n' "$REMOTE_OUT" | sed -n 1p)"
-      REMOTE_ADDRESSES="$(printf '%s\n' "$REMOTE_OUT" | sed -n 2p)"
+          "$ALIAS" "$REMOTE_COMMAND" 2>/dev/null)"; then
+      if [ "$OPERATOR" -eq 1 ]; then
+        REMOTE_HOSTNAME="$(printf '%s\n' "$REMOTE_OUT" | sed -n 's/^HOST=//p' | head -n 1)"
+        REMOTE_ADDRESSES="$(printf '%s\n' "$REMOTE_OUT" | sed -n 's/^ADDRESSES=//p' | head -n 1)"
+      else
+        REMOTE_HOSTNAME="$(printf '%s\n' "$REMOTE_OUT" | sed -n 1p)"
+        REMOTE_ADDRESSES="$(printf '%s\n' "$REMOTE_OUT" | sed -n 2p)"
+      fi
       if [ "$REMOTE_HOSTNAME" = "$PROD_HOSTNAME" ]; then
         pass "remote hostname is '${PROD_HOSTNAME}'"
       else

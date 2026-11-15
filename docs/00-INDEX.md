@@ -161,6 +161,13 @@ Nomor ADR berikutnya yang tersedia: **0017**.
   hanya oleh owner dari sumber resmi dengan versi terpin —
   [dev-toolchain-readiness](runbooks/dev-toolchain-readiness.md), aturan kanonik
   `.cursor/rules/234-dev-toolchain-readiness.mdc`.
+- Hak akses deploy least-privilege (rule 235, 2026-11-15; menutup OD-6 serta residual rule 233 R1/R2/R4): tidak ada
+  akun dengan sudo tanpa password; deploy dan cek read-only lewat akun operator (`daengtisiams-biznet-deploy`) yang
+  kuncinya hanya menjalankan entrypoint root-owned dengan aksi allowlist; sudo admin butuh password owner
+  (break-glass); composer/npm sebagai build identity dalam sandbox systemd; restore hanya dengan bukti digest
+  terpercaya; cek read-only `scripts/sudo-policy-check.sh` —
+  [dms-deploy-privsep-phase-2](sprints/dms-deploy-privsep-phase-2.md), aturan kanonik
+  `.cursor/rules/235-deploy-least-privilege-sudo.mdc`, provisioning satu kali runbook §6f.
 - Keamanan runtime: [dedicated-runtime-identity-runbook](runbooks/dedicated-runtime-identity-runbook.md),
   [production-secret-file-permissions-runbook](runbooks/production-secret-file-permissions-runbook.md),
   [security-pii-compliance-hardening-governance](architecture/security-pii-compliance-hardening-governance.md).
