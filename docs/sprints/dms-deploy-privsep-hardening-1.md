@@ -223,7 +223,24 @@ explicit go-ahead, by full SHA (`d555c7dc5ddb46631c16cd957b86490d06634f7f`), cod
 (`DMS-BK2-MANUAL-ONLY-1`); the deploy's own pre-deploy dump mandatory.
 
 Record: `deploy/release-approvals/dms-deploy-privsep-hardening-1.approval` (contract 2, window
-2026-11-15T05:03:02Z → 2026-11-17T05:03:02Z, 48 hours), printable ASCII only (rule 231 §8c S3), signed by the
-owner with the owner's own key — pending at the time of writing.
+2026-11-15T05:03:02Z → 2026-11-17T05:03:02Z, 48 hours), printable ASCII only (rule 231 §8c S3), record blob
+`43ffffa45bfff378c1a683b530510ffcb21de7a6`.
+
+### 11.4 The owner's signature (verified on the workstation, read-only)
+
+The owner signed the record file in their own terminal with their own key (`ssh-keygen -Y sign`, namespace
+`dms-release-approval`; the file form, §8c S8) and reported "Signed" for release `dms-deploy-privsep-hardening-1`,
+SHA `9312818fc9115707b9e0b351ae805080be465b4a`, tree `64b864c953777fcc02a5c4d2f1e279aa79bd5578`. Signature blob
+`739d44ef3ae9224489c105156029464bec7de8f3`. Verified against the **committed** record blob with the owner's public key as principal `owner`:
+
+| Check | Result |
+|---|---|
+| Committed blob, principal `owner`, namespace `dms-release-approval` | `Good "dms-release-approval" signature for owner with ED25519 key SHA256:0WGGTlMDzLPGAhQaRG+Ag7BqoypSLinSNOHalZKtgt4` — the key in the host's trust anchor (`trust-check`, §11.1) |
+| Namespace `git` | refused (`Could not verify signature`, exit 255) |
+| Record with `NOT_AFTER` one second later | refused (exit 255) |
+| Principal `someone` | refused (exit 255) |
+| Record file vs committed blob | identical (`43ffffa4…`) |
+
+The allowed-signers file used for this check lived in the session scratchpad only; it was never committed.
 
 **BK-2:** `SKIPPED — DMS-BK2-MANUAL-ONLY-1 (Owner Directive)`
