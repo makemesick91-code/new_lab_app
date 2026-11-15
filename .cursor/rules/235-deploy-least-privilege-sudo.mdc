@@ -49,8 +49,8 @@ GO is recorded in the sprint doc, not here.
    identity (`DMS_PRODUCTION_BUILD_USER`: system account, no login shell, no sudo, in no runtime or administrative
    group; its home is ROOT's and holds only `cache/`, the identity's 0700 cache, so a build can plant no SSH key,
    forward or user unit; no build process may be running at the preflight) in a transient systemd service with a
-   clean environment, the filesystem read-only except the handed trees and `cache/`, every top-level environment
-   file masked by `/dev/null`, `storage/`, `bootstrap/cache` and `.git` inaccessible, loopback denied except the DNS
+   clean environment, the filesystem read-only except the handed trees and `cache/`, the environment files the asset
+   build reads (`.env`, `.env.local`, `.env.production`, `.env.production.local`) masked by `/dev/null`, `storage/`, `bootstrap/cache` and `.git` inaccessible, loopback denied except the DNS
    stub, private `/tmp` and `/dev`, no setuid, no capabilities, a 30-minute limit, and its cgroup killed when the step
    ends. Root hands `vendor/`, `node_modules/` and `public/build` over only while no build process runs and claims them
    back (`root:root`) before anything loads them, refusing device nodes, FIFOs, sockets, setuid/setgid files,

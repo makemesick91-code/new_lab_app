@@ -226,13 +226,17 @@ dms_build_assert_no_symlinks() {
 }
 
 # dms_build_env_masks <directory> — the environment files at the top of
-# <directory> (the build identity must neither read them nor fail on them).
+# <directory> that the asset build reads (vite and laravel-vite-plugin load
+# .env, .env.local, .env.<mode> and .env.<mode>.local; `vite build` runs in
+# mode production). Each is masked with /dev/null so the build neither reads
+# nor fails on it. Other environment files (backups) are root-only or
+# runtime-group files the build identity cannot open, and nothing reads them.
 dms_build_env_masks() {
-  local dir="${1:?}" entry
-  for entry in "$dir"/.env "$dir"/.env.*; do
-    [ -e "$entry" ] || [ -L "$entry" ] || continue
-    _dms_build_plain_path "$entry" || { _dms_build_err "environment file name '${entry}' is not plain"; return 1; }
-    printf '%s ' "$entry"
+  local dir="${1:?}" name
+  for name in .env .env.local .env.production .env.production.local; do
+    [ -e "${dir}/${name}" ] || [ -L "${dir}/${name}" ] || continue
+    _dms_build_plain_path "${dir}/${name}" || { _dms_build_err "environment file path '${dir}/${name}' is not plain"; return 1; }
+    printf '%s ' "${dir}/${name}"
   done
 }
 

@@ -619,17 +619,24 @@ it('refuses to run a build step as root, an unknown account or through an unplai
     ];
 });
 
-it('masks every environment file at the top of the application directory', function () {
+it('masks exactly the environment files the asset build reads, whatever else lies beside them', function () {
     $app = tempArtifactDir('lp-env-', 0o755);
-    foreach (['.env', '.env.production', '.env.backup-20261103', 'env.txt', '.envrc'] as $file) {
+    foreach (['.env', '.env.production', '.env.local', '.env.backup-20261103', '.env.odd:name', 'env.txt', '.envrc'] as $file) {
         file_put_contents("{$app}/{$file}", 'x');
     }
-    [, $out] = lpBash(lpSource('scripts/lib/build-privsep.sh').' dms_build_env_masks '.escapeshellarg($app));
+    [$exit, $out] = lpBash(lpSource('scripts/lib/build-privsep.sh').' dms_build_env_masks '.escapeshellarg($app));
     $masked = array_map('basename', preg_split('/\s+/', trim($out)) ?: []);
     sort($masked);
 
-    expect($masked)->toBe(['.env', '.env.backup-20261103', '.env.production']);
+    expect($exit)->toBe(0)->and($masked)->toBe(['.env', '.env.local', '.env.production']);
 });
+
+it('computes the build masks before the first mutation of deploy and rollback', function (string $script) {
+    $code = lpCode($script);
+
+    expect(strpos($code, 'BUILD_MASKS="$(dms_build_env_masks "$APP_DIR")"'))->toBeLessThan(strpos($code, 'dms_write_private_dump'))
+        ->and(substr_count($code, 'BUILD_MASKS="$('))->toBe(1);
+})->with(['deploy' => ['scripts/deploy-vps.sh'], 'rollback' => ['scripts/rollback-vps.sh']]);
 
 it('runs composer and npm only as the build identity in deploy and rollback, claimed before anything loads them', function (string $script, string $after) {
     $code = lpCode($script);

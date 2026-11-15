@@ -216,6 +216,7 @@ BUILD_USER="$(dms_preflight_authority_value "${DEPLOY_TOOLS_DIR}/deploy/producti
 BUILD_HOME="$(dms_preflight_authority_value "${DEPLOY_TOOLS_DIR}/deploy/production-host.conf" DMS_PRODUCTION_BUILD_HOME)"
 dms_build_identity_check "$BUILD_USER" "$BUILD_HOME" "$RUNTIME_USER" "$RUNTIME_GROUP"
 BUILD_GROUP="$(id -gn -- "$BUILD_USER")"
+BUILD_MASKS="$(dms_build_env_masks "$APP_DIR")"
 
 # ─── DMS-DEPLOY-PRIVSEP-HARDENING-1 (rule 233) privilege separation ─────────
 # The runtime user owns storage/ and bootstrap/cache, so anything root executes,
@@ -435,7 +436,6 @@ echo "== Composer install (build identity, rule 235) =="
 # user instead (DeployHardenPrivilegeSeparationTest pins that list).
 # Rule 235: composer itself runs as the build identity, sandboxed, writing only
 # vendor/; root claims vendor/ back before anything loads it.
-BUILD_MASKS="$(dms_build_env_masks "$APP_DIR")"
 dms_build_handover "$BUILD_USER" "$BUILD_GROUP" vendor
 dms_build_run "$BUILD_USER" "$BUILD_HOME" "$APP_DIR" "${APP_DIR}/vendor" "$BUILD_MASKS" composer install --no-dev --optimize-autoloader --no-scripts --no-interaction
 dms_build_claim "$BUILD_USER" vendor
