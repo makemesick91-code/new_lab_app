@@ -151,6 +151,32 @@ timers, the release approval contract, the runner, the immutable bootstrap.
 | Full Suite | **DEFERRED** (CG-18 global policy) — not passed |
 | Graphify 0.9.99 `graphify update .` | 58,628 nodes, 142,366 edges, 2,449 communities (rule 233's tree: 58,463 / 142,051 / 2,421); `graphify-out/` untracked |
 
+## 7. On-host build rehearsal
+
+### 7.1 First rehearsal of `c7638a6f` (ended 2026-11-15T17:20Z, 01:20 WITA) — FAILED, deploy not started
+
+After the approval PR (#637) merged (`861ded62`), runbook §6f ran on the host: target verified, the merged record's
+signature verified against the host anchor, `trust-check` READY; export of `c7638a6f` (72 files, 0 mismatches, 0
+extra, 0 symlinks; `git archive` left directories 0775 and files 0664 — group write removed inside the root-only
+0700 export before use); build identity provisioned (`daengtisiams-build`, uid 995, `nologin`, locked, own group
+only; home `root:root 0755` holding only `cache/` 0700). The rehearsal ran composer, `npm ci` and `vite build` as the
+build identity in the sandbox successfully (environment-file mask included), then **refused the claim**:
+`node_modules: 2 hardlinked file(s) — NOT GO`.
+
+Cause: esbuild's install script replaces `node_modules/esbuild/bin/esbuild` with a hardlink to
+`node_modules/@esbuild/linux-x64/bin/esbuild`. The live tree already held that pair (inode with 2 names, both inside
+`node_modules/`, from the old root `npm ci`), so the approved release would have failed at the hand-over of
+`node_modules/` — after the checkout and composer — leaving production half-updated. The deploy was **not** started;
+nothing was cut over. The export was removed; no rehearsal workspace, build process or transient unit remained;
+HEAD `9312818f`, tracked tree clean, `PRIVSEP_DRIFT=NONE`. The build identity and its 65 MB package cache stay (unused).
+
+Fix (release `dms-deploy-privsep-phase-2-r2`): hand-over and claim refuse only a hardlinked file whose inode has a
+name **outside** the tree (`_dms_build_escaping_hardlinks`: names found inside < link count); a pair inside the tree
+is the build's own, and with `fs.protected_hardlinks=1` (rule 233's preflight) the build identity can only hardlink
+inodes it owns. A host file linked into a tree is still refused (inside count 1 < link count 2). Tests: the esbuild
+pattern passes hand-over and claim; escaping links are refused at both. The signed `c7638a6f` record is never
+edited; `r2` needs a new owner approval and signature of its own SHA.
+
 ## 8. Independent review
 
 A separate agent reviewed the uncommitted change adversarially, given the code and the goals only (read-only, no
@@ -199,7 +225,8 @@ the last matching rule wins and sudo would never prompt; `sudo -k; sudo -v` does
 | Implemented, locally verified | §6 |
 | Reviewed | §8: no operator-to-root path; 1 HIGH, 2 MEDIUM, 6 LOW fixed before the PR |
 | PR / CI / merge | #636 merged `c7638a6f`; PR CI and post-merge CI green (§6) |
-| Release approval (owner signature) | owner approval 15:59:05Z (§11.3), signature verified (§11.4); approval PR — pending |
+| Release approval (owner signature) | owner approval 15:59:05Z (§11.3), signature verified (§11.4); approval PR #637 merged `861ded62` |
+| First rehearsal (`c7638a6f`) | **FAILED** at the claim (esbuild hardlink pair) — deploy not started (§7.1); fix → release `-r2` |
 | One-time provisioning, rehearsal, deploy through the operator | pending (runbook §6f) |
 | Administrator's passwordless sudo retired (owner-gated) | pending |
 | Production verification, GO tag | pending |
