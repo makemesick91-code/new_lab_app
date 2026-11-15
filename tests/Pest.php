@@ -1398,7 +1398,11 @@ function tempArtifactRemove(string $path): bool
         return false;
     }
 
-    if (is_link($path) || is_file($path)) {
+    // A symlink is removed itself, never followed. Any other non-directory — a
+    // regular file, a FIFO, a socket — is unlinked too: a FIFO a test created
+    // used to survive here and strand its whole directory chain in the
+    // temporary directory (DMS-DEPLOY-PRIVSEP-HARDENING-1).
+    if (is_link($path) || (file_exists($path) && ! is_dir($path))) {
         return @unlink($path);
     }
 

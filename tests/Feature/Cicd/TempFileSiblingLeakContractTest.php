@@ -259,6 +259,16 @@ it('never descends through a symlinked directory while removing a fixture', func
         ->and(file_exists($fileVictim))->toBeFalse();
 });
 
+it('removes a FIFO inside a fixture, so it cannot strand the directory', function () {
+    $dir = tempArtifactDir('fifo-fixture-');
+    mkdir($dir.'/nested', 0700);
+    expect(posix_mkfifo($dir.'/nested/pipe', 0600))->toBeTrue();
+
+    expect(tempArtifactRemove($dir))->toBeTrue()
+        ->and(file_exists($dir.'/nested/pipe'))->toBeFalse()
+        ->and(file_exists($dir))->toBeFalse();
+});
+
 it('refuses to remove anything outside the temporary directory', function () {
     // Confinement is a property of the code, not of every future caller's
     // discipline.
