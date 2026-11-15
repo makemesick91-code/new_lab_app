@@ -313,6 +313,14 @@ window). The `c7638a6f` record stays untouched and unused.
 
 Record: `deploy/release-approvals/dms-deploy-privsep-phase-2-r2.approval` (contract 2, window 2026-11-15T20:37:37Z → 2026-11-17T20:37:37Z).
 
+### 11.6 The owner's r2 signature (verified on the workstation, read-only)
+
+Owner-signed in their own terminal (`ssh-keygen -Y sign`, namespace `dms-release-approval`, file form); signature
+blob `3acd5a465e4ef065e986506e0608bd2b54b9ef71` over the committed record blob
+`af57da8ccfd6ee44fa7dbd31fb389c283c3eae36`: `Good "dms-release-approval" signature for owner with ED25519 key
+SHA256:0WGGTlMDzLPGAhQaRG+Ag7BqoypSLinSNOHalZKtgt4`. Refused (exit 255): namespace `git`; `NOT_AFTER` one second
+later; principal `someone`; and the `c7638a6f` signature against the r2 record.
+
 ## 12. Deploy and production verification
 
 ### 12.1 Pre-approval preflight (read-only, 2026-11-15T15:15Z, 23:15 WITA)
