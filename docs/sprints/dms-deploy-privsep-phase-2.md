@@ -8,7 +8,7 @@
 | Base branch | `feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report` at `eb4f22bcabc5b60d901d86d09b90b9ca3fcf113c` |
 | Production before | `9312818fc9115707b9e0b351ae805080be465b4a` (rule 233, deploy `20261115-063339`, GO `dms-deploy-privsep-hardening-1-go`) |
 | Branch | `fix/dms-deploy-privsep-phase-2` |
-| Implementation PR / merge SHA | pending |
+| Implementation PR / merge SHA | #636 → **`c7638a6f9ab52d6ae21ea538c86a6a2107887c29`** (tree `b04a6ad3df823f7fb9305a896b2eab7a64c78c97` = tested head tree) |
 | Release id / approval | pending (`dms-deploy-privsep-phase-2`) |
 | Deploy id | pending |
 | GO tag | `dms-deploy-privsep-phase-2-go` (declared in `.sprint/current.yml`; created only after production verification) |
@@ -145,6 +145,9 @@ timers, the release approval contract, the runner, the immutable bootstrap.
 | `visudo -cf` on the rendered operator rule | `parsed OK` |
 | Rule 233 pins re-pointed (same intent) | `DeployHardenPrivilegeSeparationTest` (accepted composer form → the build hand-off; dump lines → root-hashed staging), `DeployHardenRunnerEvidenceContractTest` (probe block), `SecretFilePermissionHardeningTest` (both dump calls private) |
 | PR #636 CI, head `fbad4e2d` | run `43712846447`: Critical Test Gate **10,217 passed, 1 failed** — `visudo` on the CI runner predates sudo 1.9.10 and rejects regular-expression arguments ("regular expressions are not supported"); production and the workstation run 1.9.15p5 and parse the rule. Fixed: provisioning now refuses a sudo older than 1.9.10 before it changes anything, and the test requires `visudo` to accept the rule where sudo ≥ 1.9.10 and to refuse it for exactly that reason where it is older. Selective Module, Quality and Android gates passed |
+| PR #636 CI, head `9fc67915` | run `43719716535` **success**: Critical Test Gate **10,218 passed**, 0 failed (`DeployHardenLeastPrivilegeTest` ran: PASS); Selective Module Gate **839 passed**; Quality, Android, NSF-9, NSF-10 gates passed; Full Suite skipped = DEFERRED |
+| Merge | squash, pinned to the tested head `9fc67915ad4881979ec6169fa743df95eb176770`: **`c7638a6f9ab52d6ae21ea538c86a6a2107887c29`**, parent `eb4f22bc`, tree `b04a6ad3…` = tested head tree |
+| Post-merge push CI on `c7638a6f…` | run `43725518536` **success** (14:39Z → 15:57Z): Critical Test Gate **10,218 passed**, 0 failed (`DeployHardenLeastPrivilegeTest` PASS); Selective Module, Quality, Android, NSF-9, NSF-10 gates success; Full Suite skipped = DEFERRED. Base tip still `c7638a6f…`, tree `b04a6ad3…` unchanged |
 | Full Suite | **DEFERRED** (CG-18 global policy) — not passed |
 | Graphify 0.9.99 `graphify update .` | 58,628 nodes, 142,366 edges, 2,449 communities (rule 233's tree: 58,463 / 142,051 / 2,421); `graphify-out/` untracked |
 
@@ -178,8 +181,8 @@ the last matching rule wins and sudo would never prompt; `sudo -k; sudo -v` does
 
 - **OD-6 cutover is owner-gated.** The administrator's passwordless rule is retired only after the owner proves the
   password in their own terminal (runbook §6f step 7); root's password is locked, so that password (and the
-  provider's web console) is the recovery path. The owner explicitly approves `dmsadmin` as the break-glass
-  administrator role (the brief's exception for an independently required administrative role).
+  provider's web console) is the recovery path. The owner approved `dmsadmin` as the break-glass administrator role
+  and proved the password over SSH and the console (§11.1–11.2).
 - Build caches persist between deploys (a poisoned cache reaches only vendor code the runtime already runs, never root).
 - Root's dump staging copy lives in the run's snapshot directory on the `/run` tmpfs (1.6 GB, 1.1 MB used; dump
   ≈ 34 MB on 2026-11-15): a database past ≈ 1.5 GB would stop the deploy — closed, before the checkout — until the
@@ -195,8 +198,100 @@ the last matching rule wins and sudo would never prompt; `sudo -k; sudo -v` does
 |---|---|
 | Implemented, locally verified | §6 |
 | Reviewed | §8: no operator-to-root path; 1 HIGH, 2 MEDIUM, 6 LOW fixed before the PR |
-| PR / CI / merge | PR #636 — pending |
-| Release approval (owner signature) | pending |
+| PR / CI / merge | #636 merged `c7638a6f`; PR CI and post-merge CI green (§6) |
+| Release approval (owner signature) | owner approval 15:59:05Z (§11.3), signature verified (§11.4); approval PR — pending |
 | One-time provisioning, rehearsal, deploy through the operator | pending (runbook §6f) |
 | Administrator's passwordless sudo retired (owner-gated) | pending |
 | Production verification, GO tag | pending |
+
+## 11. Owner decisions (CG-22)
+
+### 11.1 Administrator role and recovery path (2026-11-15T13:50Z, 21:50 WITA)
+
+Asked in the session (the brief allows unrestricted sudo to survive only as an explicitly approved, independent
+administrative role). The owner answered: **Admin role — "Approve password-only"**: `dmsadmin` stays the break-glass
+administrator with sudo that needs its password; the passwordless drop-in is moved to `/root/sudoers-retired/`, never
+deleted. **Recovery — "Yes, both"**: the owner knows the `dmsadmin` password and can log in to the Biznet Gio web
+console.
+
+### 11.2 OD-6 cutover approval (written, 2026-11-15, after 11.1)
+
+The owner reported verifying recovery manually: VPS `DaengtisiaMS`; SSH administrator login PASS; Biznet web console
+login PASS; user `dmsadmin`; administrator password SET & VERIFIED; `sudo -k` PASS; `sudo -v` over SSH PASS;
+`sudo -v` through the Biznet console PASS. This is the owner's proof required by runbook §6f step 7.
+
+The owner approved the OD-6 cutover under these conditions (translated; the owner wrote in Indonesian):
+
+1. Keep administrator access, password-only.
+2. Apply the restricted deployment operator as designed and tested.
+3. Validate the sudo configuration before and after the change.
+4. Do not remove the old sudo configuration until its replacement is verified.
+5. Prove that legitimate commands succeed and unauthorized ones are refused.
+6. Prove that no equivalent unrestricted sudo path exists.
+7. Prove that SSH and Biznet-console recovery keep working.
+8. Keep the release guard, the signed approval and rollback authorization.
+9. Never run BK-2.
+10. No GO tag until all CI, the deployment and production verification pass.
+
+"Continue the DEVFLOW automatically to GO when every gate is met. If the cutover fails, STOP; no rollback or risky
+recovery change without the owner's approval." The deploy of the merged release still needs the owner's written
+approval of its exact SHA and the owner's signature on its record (rule 231) — §11.3.
+
+### 11.3 Release approval of the exact SHA (2026-11-15T15:59:05Z, 23:59 WITA)
+
+Asked after post-merge CI run `43725518536` was green on the base tip, with the preflight of §12.1 and the residual
+risks of §9 presented. The owner answered **"Approve c7638a6f…"** to: deploying
+**`c7638a6f9ab52d6ae21ea538c86a6a2107887c29`** (tree `b04a6ad3df823f7fb9305a896b2eab7a64c78c97`; PR #636) to production on
+Biznet `DaengtisiaMS`, release id `dms-deploy-privsep-phase-2`, through runbook §6f, under these conditions: the
+one-time provisioning and the OD-6 cutover exactly as approved in §11.1–11.2; the pre-deploy database dump mandatory;
+BK-2 skipped (`DMS-BK2-MANUAL-ONLY-1`); rollback only on the owner's explicit go-ahead, by full SHA
+`9312818fc9115707b9e0b351ae805080be465b4a`, code only; read-only smoke; the GO tag `dms-deploy-privsep-phase-2-go`
+only after production verification; a 48-hour record window.
+
+Record: `deploy/release-approvals/dms-deploy-privsep-phase-2.approval` (contract 2, window 2026-11-15T15:59:05Z →
+2026-11-17T15:59:05Z, 935 bytes, printable ASCII only). The owner signs the committed record with their own key; an
+assistant never holds or uses that key.
+
+### 11.4 The owner's signature (verified on the workstation, read-only)
+
+The owner signed the record file in their own terminal with their own key (`ssh-keygen -Y sign`, namespace
+`dms-release-approval`, file form) and reported "Signed". Signature blob `25fb3ab9dec7a503c8d0f96ad36144ecdbe9a4fe`.
+Verified against the **committed** record blob `52d8f8f432e5496247a2d088ef272aea2beac429` with the owner's public key
+as principal `owner`:
+
+| Check | Result |
+|---|---|
+| Record file vs committed blob | identical |
+| Committed blob, principal `owner`, namespace `dms-release-approval` | `Good "dms-release-approval" signature for owner with ED25519 key SHA256:0WGGTlMDzLPGAhQaRG+Ag7BqoypSLinSNOHalZKtgt4` — the key in the host's trust anchor |
+| Namespace `git` | refused (`namespace does not match`, exit 255) |
+| Record with `NOT_AFTER` one second later | refused (`incorrect signature`, exit 255) |
+| Principal `someone` | refused (exit 255) |
+
+The allowed-signers file used for this check lived in the session scratchpad only; it was never committed.
+
+## 12. Deploy and production verification
+
+### 12.1 Pre-approval preflight (read-only, 2026-11-15T15:15Z, 23:15 WITA)
+
+**Workstation trust store.** `production-target-check.sh --remote` first reported `NOT_VERIFIED`: the workstation's
+known-hosts file had gained two extra entries for the production address at 21:45:42 WITA (RSA `SHA256:yexu…Ih4Q`,
+ECDSA `SHA256:6Vhf…6u5c`) during the owner's manual recovery check (an SSH login outside the alias, whose
+`UpdateHostKeys` default records the host's other key types after the pinned key authenticated it). The pinned
+ED25519 key was unchanged. Nothing was connected through the unverified alias. The owner chose the cleanup, verified
+all three host keys in the Biznet web console (all MATCH) and approved removing exactly those two entries: the file
+was backed up, the two lines removed, the pinned ED25519 line kept, no other host's key touched. The target check then
+reported `PRODUCTION_TARGET=VERIFIED`, and the host's own `/etc/ssh/ssh_host_{ed25519,rsa,ecdsa}_key.pub`
+fingerprints, read over the pinned channel, equal the pin and the two removed entries.
+
+| Check | Result |
+|---|---|
+| `trust-check` (in-tree runner) | `TRUST_ANCHOR=OK` (1 signer key), `HOST_KEY=OK (SHA256:i3As…O2bc)`, `EVIDENCE_DIR=OK`, **`RELEASE GUARD TRUST: READY`** |
+| HEAD / tracked tree | `9312818fc9115707b9e0b351ae805080be465b4a` / clean |
+| Release, deploy, rollback locks | idle |
+| Units / timers | `php8.3-fpm`, `nginx`, `postgresql` active; queue worker inactive+disabled (C5); db-backup and BK-2 package timers active; KTP-prune and pilot-snapshot timers disabled |
+| Application log | 166 ERROR lines (the rule 233 GO baseline) |
+| Privilege drift | `PRIVSEP_DRIFT=NONE` (runtime 0, source 0 foreign entries) |
+| Pending migrations | none |
+| Disk / `/run` | 48 G free / 1.6 G free |
+| Sudo (OD-6, before) | `/etc/sudoers.d/10-dmsadmin` = `dmsadmin ALL=(ALL) NOPASSWD:ALL`; operator and build accounts absent |
+
