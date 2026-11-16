@@ -264,6 +264,9 @@ editable) → Persetujuan Tindakan Medis (RME + finish unlocked) → RME + Odont
 - **AIR-RMC-53** A completed/cancelled visit's prescription is read-only (`documentLocked()`: policy, and the service
   under the visit lock); each write logs `RME_PRESCRIPTION_CREATED|UPDATED` (field names only); canvases and consent
   signatures are bounded; only the prescription's own doctor (`maySign()`) saves the signature. Rule 228 §8–§13.
+- **AIR-RMC-54** The doctor countersigns the PTM only via `RmeVisitConsentService::countersign()`: own insert-only
+  row (UNIQUE per consent), visit locked first, `in_progress`, live consent, linked active doctor = the visit's and the
+  consent's doctor (binds Super Admin), never the patient-signature capturer. No gate changes yet. Rule 241 §1.
 
 ## Current posture (snapshot 2026-11-17 — verify before relying on it)
 
@@ -308,6 +311,7 @@ editable) → Persetujuan Tindakan Medis (RME + finish unlocked) → RME + Odont
 | `.cursor/rules/228-rme-clinical-write-authority-and-prescription-integrity.mdc` | Room scope on writes; exam start; role allowlists; Rx lock/signer |
 | `.cursor/rules/237-rme-comprehensive-closure.mdc` | Clinic-month numbers; no-store; page bounds; signed Rx; consent integrity; lease; one RM book |
 | `.cursor/rules/243-rme-doctor-encounter-scope-downloads-fields.mdc` | Doctor encounter scope (flagged), no doctor downloads, doctor-visible fields |
+| `.cursor/rules/241-rme-ptm-double-signature.mdc` | PTM doctor countersignature: own record, identity, lock (gate in a later PR) |
 
 ## History
 
