@@ -266,8 +266,9 @@ editable) → Persetujuan Tindakan Medis (RME + finish unlocked) → RME + Odont
   under the visit lock); each write logs `RME_PRESCRIPTION_CREATED|UPDATED` (field names only); canvases and consent
   signatures are bounded; only the prescription's own doctor (`maySign()`) saves the signature. Rule 228 §8–§13.
 - **AIR-RMC-54** A scoped Doctor (rule 138 definition) is refused, 403 and audited, the PTM print `rme.consents.print`
-  and legacy print/export/source (`DoctorRoomScopeService::assertClinicalPrintAllowed()` after the policy); reading on
-  screen stays; prescription print unchanged; FO, Admin Klinik, Supervisor RME keep printing. Rule 243 §1.
+  and legacy print/export/source (`DoctorRoomScopeService::assertClinicalPrintAllowed()` after the policy; on the
+  oversight legacy doors controller + service only); reading on screen stays; prescription print unchanged; FO, Admin
+  Klinik, Supervisor RME keep printing. Rule 243 §1.
 
 ## Current posture (snapshot 2026-11-17 — verify before relying on it)
 

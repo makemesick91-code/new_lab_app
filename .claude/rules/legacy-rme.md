@@ -216,8 +216,10 @@ mass upload, batch review/publish, visit-bound date attestation and single-activ
   `222-rme-route-key-constraint-and-failure-log-redaction.mdc` §1.10–§1.12.
 - **AIR-LRM-40** Rule 93 §12 is REVISED for doctors (owner, 2026-11-17): a Doctor, dual-role included, gets 403
   (audited) on `rme.legacy-records.source`/`.print`/`.export`, `rme.legacy-odontograms.source`, the staging
-  `settings.rme.legacy-imports.source` and the `oversight.legacy.*` source/print/pdf doors; a VOIDed archive stays 404
-  first; doctors keep `show` and the page images and see no download control. Other readers unchanged. Source:
+  `settings.rme.legacy-imports.source` and the `oversight.legacy.*` source/print/pdf doors. A VOIDed archive never
+  reaches the rule (no doctor-print audit row) and answers as before: 404, except 403 to non-Super-Admin readers on
+  the two clinical `source` routes (`viewFile`). Doctors keep `show` and the page images and see no download control.
+  Other readers unchanged. Source:
   `.cursor/rules/243-rme-doctor-encounter-scope-downloads-fields.mdc` §1.
 
 ## Current posture (snapshot 2026-10-25 — verify before relying on it)

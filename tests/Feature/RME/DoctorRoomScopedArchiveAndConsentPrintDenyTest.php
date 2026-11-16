@@ -650,16 +650,84 @@ it('answers a VOID archive 404 to a doctor before any download rule, with no doc
     'legacy RME export' => ['rme.legacy-records.export'],
 ]);
 
-it('degrades a broken page image to the "no preview" message when the reader has no source PDF', function () {
+it('keeps page navigation when one page image fails for a reader with no source PDF', function () {
     $html = $this->followingRedirects()
         ->actingAs($this->doctor)
         ->get(route('rme.visits.medical-record.show', $this->visit))
         ->assertOk()
         ->getContent();
 
-    // The viewer's image fallback must switch to the 'pdf' mode unconditionally:
-    // with no source URL that mode renders the "no preview" message rather than
-    // leaving a broken <img> in a clinical viewer.
-    expect($html)->toContain('data-rme-legacy-no-preview')
-        ->and(preg_match("/fallBackToPdf\\(\\)\\s*\\{(?:\\s*\\/\\/[^\\n]*)*\\s*this\\.mode = 'pdf';/", $html))->toBe(1);
+    // Rule 243 §1.5 — a doctor has no source PDF to fall back to. A failed page
+    // image must say so for THAT page only and stay in the image mode, so the
+    // page navigation (rendered only in the image mode) keeps reaching the
+    // later pages. Mirrors legacy-archive-page.blade.php's per-page `failed`.
+    expect($html)->toContain('x-if="mode === \'image\' && doc.pageCount > 1"')
+        ->and($html)->toContain('x-if="mode === \'image\' && pageFailed"')
+        ->and($html)->toContain('data-rme-legacy-page-no-preview')
+        ->and($html)->toContain('x-show="! pageFailed"')
+        // The fallback only leaves the image mode when a source PDF exists…
+        ->and(preg_match("/fallBackToPdf\\(\\)\\s*\\{\\s*if \\(this\\.doc\\.sourceUrl\\) \\{\\s*this\\.mode = 'pdf';\\s*return;\\s*\\}\\s*this\\.pageFailed = true;/", $html))->toBe(1)
+        // …and the per-page flag is reset on open and on every page change.
+        ->and(preg_match('/openDocument\\(document\\)\\s*\\{[^}]*this\\.pageFailed = false;/', $html))->toBe(1)
+        ->and(preg_match('/prevPage\\(\\)\\s*\\{\\s*if \\(this\\.page > 1\\) \\{\\s*this\\.page -= 1;\\s*this\\.pageFailed = false;/', $html))->toBe(1)
+        ->and(preg_match('/nextPage\\(\\)\\s*\\{\\s*if \\(this\\.page < this\\.doc\\.pageCount\\) \\{\\s*this\\.page \\+= 1;\\s*this\\.pageFailed = false;/', $html))->toBe(1);
 });
+
+it('refuses a dual-role doctor the staging and oversight doors even when the policy and the gates are bypassed', function (string $route, string $subject, string $role) {
+    $model = $subject === 'staging' ? drsacpStagingImport($this->patient, $this->branch) : $this->{$subject};
+    $actor = drsacpDualRoleDoctor($role);
+
+    // Every policy, gate and route permission now answers yes: only the
+    // serving controller's call into DoctorRoomScopeService can refuse.
+    Gate::before(fn () => true);
+
+    $this->actingAs($actor)
+        ->withoutMiddleware(EnsureRmeOnlineContext::class)
+        ->get(route($route, $model->getKey()))
+        ->assertForbidden();
+})->with([
+    'staging source, Doctor + Front Office' => ['settings.rme.legacy-imports.source', 'staging', 'Front Office'],
+    'staging source, Doctor + Admin Klinik' => ['settings.rme.legacy-imports.source', 'staging', 'Admin Klinik'],
+    'oversight legacy RME source' => ['oversight.legacy.rme.source', 'legacyRme', 'Finance Klinik'],
+    'oversight legacy RME print' => ['oversight.legacy.rme.print', 'legacyRme', 'Finance Klinik'],
+    'oversight legacy RME pdf' => ['oversight.legacy.rme.pdf', 'legacyRme', 'Data Analyst'],
+    'oversight legacy odontogram source' => ['oversight.legacy.odontogram.source', 'legacyOdontogram', 'Data Analyst'],
+    'oversight legacy odontogram print' => ['oversight.legacy.odontogram.print', 'legacyOdontogram', 'Finance Klinik'],
+]);
+
+it('exempts Super Admin and a Doctor who is also Supervisor RME on the staging and oversight doors', function (string $route, string $subject, string $actorKind) {
+    if ($route === 'oversight.legacy.rme.pdf' && ! extension_loaded('gd')) {
+        $this->markTestSkipped('requires the GD extension (dompdf image decoding)');
+    }
+
+    $model = $subject === 'staging' ? drsacpStagingImport($this->patient, $this->branch) : $this->{$subject};
+
+    if ($actorKind === 'Super Admin') {
+        $actor = superAdmin();
+    } else {
+        // Supervisor RME exempts the account from the doctor rule (rule 138);
+        // an oversight door additionally needs an oversight role to be reachable.
+        $actor = $this->doctor;
+        $actor->assignRole('Supervisor RME');
+
+        if (str_starts_with($route, 'oversight.')) {
+            $actor->assignRole('Finance Klinik');
+        }
+
+        $actor = $actor->refresh();
+    }
+
+    $this->actingAs($actor)
+        ->withoutMiddleware(EnsureRmeOnlineContext::class)
+        ->get(route($route, $model->getKey()))
+        ->assertOk();
+
+    expect(DB::table('sys_audit_logs')->where('action', 'like', 'DOCTOR_PRINT_%')->count())->toBe(0);
+})->with([
+    'staging source' => ['settings.rme.legacy-imports.source', 'staging'],
+    'oversight legacy RME source' => ['oversight.legacy.rme.source', 'legacyRme'],
+    'oversight legacy RME print' => ['oversight.legacy.rme.print', 'legacyRme'],
+    'oversight legacy RME pdf' => ['oversight.legacy.rme.pdf', 'legacyRme'],
+    'oversight legacy odontogram source' => ['oversight.legacy.odontogram.source', 'legacyOdontogram'],
+    'oversight legacy odontogram print' => ['oversight.legacy.odontogram.print', 'legacyOdontogram'],
+])->with(['Super Admin', 'Doctor + Supervisor RME']);
