@@ -4,6 +4,7 @@ namespace App\Modules\Consent\Repositories;
 
 use App\Modules\Consent\Interfaces\RmeVisitConsentRepositoryInterface;
 use App\Modules\Consent\Models\RmeVisitConsent;
+use App\Modules\Consent\Models\RmeVisitConsentDoctorSignature;
 use App\Support\Database\DocumentNumberSequenceLock;
 use Illuminate\Support\Collection;
 use Illuminate\Support\LazyCollection;
@@ -32,6 +33,36 @@ class RmeVisitConsentRepository implements RmeVisitConsentRepositoryInterface
     public function create(array $attributes): RmeVisitConsent
     {
         return RmeVisitConsent::create($attributes);
+    }
+
+    public function validForVisits(array $clinicVisitIds): Collection
+    {
+        if ($clinicVisitIds === []) {
+            return new Collection;
+        }
+
+        // Latest live consent per visit, the same order validForVisit() uses.
+        return RmeVisitConsent::query()
+            ->with('doctorCountersignature')
+            ->whereIn('clinic_visit_id', $clinicVisitIds)
+            ->valid()
+            ->orderBy('signed_at')
+            ->orderBy('id')
+            ->get()
+            ->keyBy('clinic_visit_id')
+            ->toBase();
+    }
+
+    public function doctorSignatureFor(int $consentId): ?RmeVisitConsentDoctorSignature
+    {
+        return RmeVisitConsentDoctorSignature::query()
+            ->where('rme_visit_consent_id', $consentId)
+            ->first();
+    }
+
+    public function createDoctorSignature(array $attributes): RmeVisitConsentDoctorSignature
+    {
+        return RmeVisitConsentDoctorSignature::create($attributes);
     }
 
     /**

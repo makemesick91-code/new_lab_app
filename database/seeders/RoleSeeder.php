@@ -309,6 +309,9 @@ class RoleSeeder extends Seeder
             // signed PERSETUJUAN TINDAKAN MEDIS that gates RME payment.
             'view_rme_consents',
             'manage_rme_consents',
+            // DMS memo M1.1–M1.3, PR1 (rule 241 §1) — countersign the PTM of the
+            // doctor's own visit (identity, not role, is decided in the service).
+            'countersign_rme_consents',
             // FIX-PRE-68-45 Scope C — a doctor sees ONLY their own performance/income.
             'view_own_doctor_performance_report',
             // SATUSEHAT-4B — a doctor may use the reasoned, audited emergency

@@ -139,4 +139,18 @@
         border-top: 1px solid #111827;
         padding-top: 4px;
     }
+
+    /* Rule 241 §1 — an honest placeholder, never an empty image. */
+    .consent-signature-note {
+        display: block;
+        padding-top: 34px;
+        font-size: 10px;
+        font-style: italic;
+        color: #6B7280;
+    }
+
+    .consent-signature-meta {
+        font-size: 9px;
+        color: #374151;
+    }
 </style>

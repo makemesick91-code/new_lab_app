@@ -1380,6 +1380,17 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
             ->middleware('permission:void_rme_consents')
             ->where('consent', DatabaseRouteKey::PATTERN)
             ->name('consents.void');
+        // DMS memo M1.1–M1.3, PR1 (rule 241 §1) — the treating doctor's
+        // countersignature, own permission; identity and state in the service.
+        Route::get('consents/{consent}/countersign', [RmeVisitConsentController::class, 'countersignForm'])
+            ->middleware('permission:countersign_rme_consents')
+            ->middleware('cache.headers:private;no_store;max_age=0')
+            ->where('consent', DatabaseRouteKey::PATTERN)
+            ->name('consents.countersign.create');
+        Route::post('consents/{consent}/countersign', [RmeVisitConsentController::class, 'countersign'])
+            ->middleware('permission:countersign_rme_consents')
+            ->where('consent', DatabaseRouteKey::PATTERN)
+            ->name('consents.countersign');
         Route::get('consents/{consent}/signature/{kind}', [RmeVisitConsentController::class, 'signature'])
             ->middleware('permission:view_rme_consents|manage_rme_consents')
             ->name('consents.signature');

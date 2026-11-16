@@ -10,6 +10,15 @@
                     {{ $consent->isVoided() ? 'Dibatalkan' : 'Ditandatangani' }}
                 </x-ui.badge>
 
+                {{-- Rule 241 §1 — canCountersign is decided in the controller by the
+                     consent service (identity binds Super Admin); the route, the
+                     policy and the service decide again. --}}
+                @if ($canCountersign ?? false)
+                    <x-ui.button variant="primary" :href="route('rme.consents.countersign.create', $consent)" data-testid="consent-countersign-ptm">
+                        Tanda Tangani PTM
+                    </x-ui.button>
+                @endif
+
                 {{-- Rule 243 §1 — a Doctor reads the PTM here but never prints it;
                      the server refuses the print route too. --}}
                 @can('print', $consent)
@@ -80,6 +89,17 @@
                 <div>
                     <dt class="text-xs font-semibold uppercase tracking-wide text-ink-muted">Dicatat oleh</dt>
                     <dd class="mt-1 text-ink">{{ $consent->signedBy?->name ?? '—' }}</dd>
+                </div>
+                <div>
+                    <dt class="text-xs font-semibold uppercase tracking-wide text-ink-muted">Tanda Tangan Dokter</dt>
+                    <dd class="mt-1 text-ink" data-testid="consent-doctor-countersign-state">
+                        @if ($doctorCountersignature ?? null)
+                            Ditandatangani dokter {{ $doctorCountersignature->signed_at?->format('d/m/Y H:i') }} WITA
+                            &middot; {{ $doctorCountersignature->doctor?->name ?? '—' }}
+                        @else
+                            Belum ditandatangani dokter
+                        @endif
+                    </dd>
                 </div>
                 <div>
                     <dt class="text-xs font-semibold uppercase tracking-wide text-ink-muted">Persetujuan Dokumentasi/Publikasi</dt>

@@ -5,12 +5,14 @@ namespace App\Modules\Consent\Controllers;
 use App\Http\Controllers\Controller;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Consent\Models\RmeVisitConsent;
+use App\Modules\Consent\Requests\CountersignRmeVisitConsentRequest;
 use App\Modules\Consent\Requests\StoreRmeVisitConsentRequest;
 use App\Modules\Consent\Requests\VoidRmeVisitConsentRequest;
 use App\Modules\Consent\Services\RmeVisitConsentService;
 use App\Modules\RME\Services\DoctorRoomScopeService;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -92,7 +94,48 @@ class RmeVisitConsentController extends Controller
                 && (int) $consent->signed_by !== (int) request()->user()?->getKey()
                 && ! $consent->isVoided()
                 && $consent->clinicVisit?->status === ClinicVisit::STATUS_IN_PROGRESS,
+            // Rule 241 §1 — decided by the service (identity binds Super Admin,
+            // which Gate::before lets through every policy).
+            'canCountersign' => $this->consents->canCountersign($consent, request()->user()),
         ]);
+    }
+
+    /**
+     * DMS memo M1.1–M1.3, PR1 (rule 241 §1) — the treating doctor's
+     * countersignature form, reached from Ruang Perawatan ("Tanda Tangani PTM")
+     * or the consent page. Renders the signed document, so it answers no-store.
+     */
+    public function countersignForm(RmeVisitConsent $consent): View|RedirectResponse
+    {
+        $this->authorize('countersign', $consent);
+
+        if ($this->consents->doctorCountersignatureFor($consent) !== null) {
+            return redirect()
+                ->route('rme.consents.show', $consent)
+                ->with('status', RmeVisitConsentService::MESSAGE_COUNTERSIGN_DUPLICATE);
+        }
+
+        try {
+            // An AuthorizationException (identity, encounter scope) answers 403.
+            $this->consents->assertCountersignable($consent, request()->user());
+        } catch (ValidationException $refused) {
+            return redirect()
+                ->route('rme.consents.show', $consent)
+                ->with('error', collect($refused->errors())->flatten()->first());
+        }
+
+        return view('rme.consents.countersign', $this->documentData($consent));
+    }
+
+    public function countersign(CountersignRmeVisitConsentRequest $request, RmeVisitConsent $consent): RedirectResponse
+    {
+        $this->authorize('countersign', $consent);
+
+        $this->consents->countersign($consent, $request->user(), $request->validated());
+
+        return redirect()
+            ->route('rme.consents.show', $consent)
+            ->with('status', 'Persetujuan tindakan medis sudah ditandatangani dokter.');
     }
 
     /**
@@ -179,7 +222,8 @@ class RmeVisitConsentController extends Controller
      */
     private function documentData(RmeVisitConsent $consent): array
     {
-        $consent->loadMissing(['clinicVisit.branch', 'patient', 'doctor', 'signedBy', 'voidedBy']);
+        $consent->loadMissing(['clinicVisit.branch', 'patient', 'doctor', 'signedBy', 'voidedBy', 'doctorCountersignature.doctor']);
+        $countersignature = $consent->doctorCountersignature;
 
         return [
             'consent' => $consent,
@@ -188,6 +232,12 @@ class RmeVisitConsentController extends Controller
             'genderLabels' => (array) config('rme_consent.gender_labels', []),
             'consenterSignature' => $this->consents->signatureDataUri($consent->consenter_signature_path),
             'doctorSignature' => $this->consents->signatureDataUri($consent->doctor_signature_path),
+            // Rule 241 §1 — the doctor's countersignature (null when none; the
+            // image null when its object is absent or unreadable — rule 224 §7).
+            'doctorCountersignature' => $countersignature,
+            'doctorCountersignatureImage' => $countersignature !== null
+                ? $this->consents->signatureDataUri($countersignature->signature_path)
+                : null,
         ];
     }
 

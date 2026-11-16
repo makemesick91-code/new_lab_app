@@ -39,6 +39,7 @@ use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\ClinicVisit\Services\ClinicVisitService;
 use App\Modules\Consent\Interfaces\RmeVisitConsentRepositoryInterface;
 use App\Modules\Consent\Models\RmeVisitConsent;
+use App\Modules\Consent\Models\RmeVisitConsentDoctorSignature;
 use App\Modules\Consent\Services\RmeVisitConsentService;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
@@ -554,6 +555,22 @@ it('never turns a fault in the capability path into an actionable control', func
         public function signatureReferences(): LazyCollection
         {
             return LazyCollection::empty();
+        }
+
+        // Rule 241 §1 — the doctor countersignature reads and write; not on this path.
+        public function validForVisits(array $clinicVisitIds): Collection
+        {
+            return collect();
+        }
+
+        public function doctorSignatureFor(int $consentId): ?RmeVisitConsentDoctorSignature
+        {
+            return null;
+        }
+
+        public function createDoctorSignature(array $attributes): RmeVisitConsentDoctorSignature
+        {
+            throw new RuntimeException('not used');
         }
     });
 

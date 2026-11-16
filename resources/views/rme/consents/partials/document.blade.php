@@ -146,8 +146,23 @@
         </tr>
         <tr>
             <td class="consent-signature-cell consent-signature-box">
-                @if (! empty($doctorSignature))
+                {{-- Rule 241 §1 — the treating doctor's countersignature (its own
+                     insert-only record). Without one, the legacy optional drawing
+                     made on the capture form renders exactly as before (display
+                     history, never the countersignature step); with neither, the
+                     box says so instead of showing an empty image. --}}
+                @if ($doctorCountersignature ?? null)
+                    <div data-testid="consent-doctor-countersignature">
+                        @if (! empty($doctorCountersignatureImage))
+                            <img src="{{ $doctorCountersignatureImage }}" alt="Tanda tangan dokter (akun dokter)" class="consent-signature-image">
+                        @else
+                            <span class="consent-signature-note">Gambar tanda tangan dokter tidak tersedia.</span>
+                        @endif
+                    </div>
+                @elseif (! empty($doctorSignature))
                     <img src="{{ $doctorSignature }}" alt="Tanda tangan dokter" class="consent-signature-image">
+                @else
+                    <span class="consent-signature-note">Belum ditandatangani dokter</span>
                 @endif
             </td>
             <td class="consent-signature-cell consent-signature-box">
@@ -159,6 +174,11 @@
         <tr>
             <td class="consent-signature-cell consent-signature-name">
                 {{ $consent->doctor_name_snapshot ?: '—' }}
+                @if ($doctorCountersignature ?? null)
+                    <div class="consent-signature-meta">
+                        Ditandatangani dokter {{ $doctorCountersignature->signed_at?->format('d/m/Y H:i') }} WITA
+                    </div>
+                @endif
             </td>
             <td class="consent-signature-cell consent-signature-name">
                 {{ $consent->consenter_name ?: '—' }}

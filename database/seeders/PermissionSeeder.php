@@ -148,6 +148,9 @@ class PermissionSeeder extends Seeder
         // DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-5-8) — the supervised consent void.
         // Its own permission, never the signing one (Supervisor RME only).
         'void_rme_consents',
+        // DMS memo M1.1–M1.3, PR1 (rule 241 §1) — the treating doctor's
+        // countersignature on the PTM (Doctor only; identity decided in the service).
+        'countersign_rme_consents',
         // Sprint 20 Phase 1.10 — RME Cashier Billing
         'manage_rme_billing',
         // Sprint 58.6 — Doctor/Perawat treatment room worklist
