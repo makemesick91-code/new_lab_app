@@ -38,6 +38,13 @@ clinician already seeing patients keeps working.
 - **There is no idle reclaim.** A lease is reclaimable when the incumbent's server-side
   `sessions` row is **GONE**. `last_seen_at` is display and diagnostics. Reclaiming on a
   timer is eviction by the back door.
+- **A login still in flight is alive** (amended by DMS-RME-COMPREHENSIVE-CLOSURE-1, OD-7-7,
+  owner decision 2026-11-16; rule 237 §17). A lease claimed within
+  `doctor_access.lease.in_flight_grace_seconds` (30, literal) is live whatever the `sessions`
+  table says, because the claiming login writes its row only when its response ends. Without
+  this a concurrent second login read the first as dead, reclaimed, and evicted it — the one
+  outcome this rule forbids. It only ever REFUSES (never reclaims) and is not an idle timer:
+  after the window only the session store decides.
 - **The liveness window belongs to the session store and is never widened.** It is the same
   predicate `DatabaseSessionHandler::expired()` applies. Liveness is keyed on `user_id`, so
   **one** surviving session row keeps the incumbent alive.

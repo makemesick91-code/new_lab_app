@@ -39,6 +39,15 @@ framework's password defaults). A refused consent, prescription or RM page there
 or a handwriting page into the sessions table (CG-11; rule 121: clinical evidence lives on the private disk only).
 No form restores these fields with `old()`; a new canvas field is added to this list in the same change.
 
+## 17. A login still in flight is never evicted (OD-7-7) — owner decision 2026-11-16, amends rule 153
+
+`IncumbentSessionProbe::isLive()` treats a lease claimed within `doctor_access.lease.in_flight_grace_seconds` (30,
+literal, no env) as alive: the claiming login writes its `sessions` row only when its response ends, so a concurrent
+second login used to read the first as dead, reclaim the lease and evict the first browser — the outcome rule 153
+forbids. The contract is unchanged (refuse the second login, never evict the first); only the death predicate gained
+this in-flight clause, recorded in rule 153 and AIR-DAC-08. It never reclaims and is not an idle timer. Tests:
+`DoctorSingleSessionLeaseTest` OD-7-7 cases (token `DoctorAccess`); the dead-session tests step past the window.
+
 ## 4. Rendered clinical and patient-data documents are not stored by the browser
 
 Every route that renders a clinical or patient-data document carries the framework middleware

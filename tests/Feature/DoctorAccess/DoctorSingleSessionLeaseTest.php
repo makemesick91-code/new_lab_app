@@ -160,6 +160,18 @@ function dslAgeSessionRows(User $user, int $minutes): int
         ->update(['last_activity' => now()->subMinutes($minutes)->getTimestamp()]);
 }
 
+/**
+ * DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-7-7) — step past the in-flight window. A
+ * lease claimed moments ago belongs to a login whose session row is not written
+ * yet, so the probe holds it alive for `doctor_access.lease.in_flight_grace_seconds`.
+ * The scenarios below are about a doctor who comes back LATER (another device,
+ * an aged session), so they move the clock past that window first.
+ */
+function dslPastInFlightWindow(): void
+{
+    test()->travel((int) config('doctor_access.lease.in_flight_grace_seconds') + 1)->seconds();
+}
+
 /** How many audit rows carry this lease action? */
 function dslAuditCount(string $action): int
 {
@@ -416,6 +428,7 @@ test('an incumbent whose sessions row is gone is dead and is reclaimed at once',
 
     daLoginPost($user);
     $leaseA = daCurrentLease($user);
+    dslPastInFlightWindow();
     expect(DB::table('sessions')->where('user_id', $user->id)->count())->toBeGreaterThan(0);
 
     // The doctor finished on the ward tablet and walked to the office PC.
@@ -520,6 +533,7 @@ test('liveness is keyed on the account, so one surviving session row keeps the i
 
     daLoginPost($user);
     $leaseA = daCurrentLease($user);
+    dslPastInFlightWindow();
     expect($leaseA)->not->toBeNull();
 
     // THE ID THE LEASE RECORDED NAMES NO ROW. Not "a stale row" — none at all,
@@ -589,6 +603,7 @@ test('the only liveness window is the session store own expiry, mirrored exactly
 
     daLoginPost($user);
     $leaseA = daCurrentLease($user);
+    dslPastInFlightWindow();
 
     $lifetime = (int) config('session.lifetime');
     expect(dslAgeSessionRows($user, $lifetime + 1))->toBeGreaterThan(0);
@@ -1202,4 +1217,61 @@ test('U2b: an UNSET doctor never pays the branch-health read, which is the whole
     // because mst_branches is shared with the rest of the application and the
     // request pays for whatever else reads it.
     expect($countMatching($armed, 'mst_branches') - $countMatching($baseline, 'mst_branches'))->toBe(0);
+});
+
+/*
+|--------------------------------------------------------------------------
+| DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-7-7) — a login still in flight is never evicted
+|--------------------------------------------------------------------------
+|
+| Rule 153: refuse the second login, never evict the first. A lease claimed by a
+| login whose session row is not written yet used to read as DEAD, so a
+| concurrent second login reclaimed it and the first browser was evicted on its
+| next request. The probe now holds a just-claimed lease alive for the in-flight
+| window; after it, only the session store decides (no idle timer).
+*/
+
+test('OD-7-7 refuses a second login while the first login is still in flight, keeping the first lease', function () {
+    daArmDoctorAccess();
+    $user = daDoctorUser([daBranch()]);
+
+    daLoginPost($user);
+    $leaseA = daCurrentLease($user);
+
+    // The first login's session row is "not written yet": exactly the in-flight state.
+    daKillSessionsFor($user);
+
+    dslNewBrowser();
+    daLoginPost($user)->assertSessionHasErrors('email');
+    $this->assertGuest();
+
+    daAssertActiveLeaseCount(1, $user);
+    expect((int) daCurrentLease($user)->id)->toBe((int) $leaseA->id)
+        ->and($leaseA->fresh()->released_at)->toBeNull()
+        ->and(dslAuditCount(DoctorSessionLeaseService::ACTION_RECLAIMED))->toBe(0);
+});
+
+test('OD-7-7 lets the dead lease be reclaimed once the in-flight window has passed', function () {
+    daArmDoctorAccess();
+    $user = daDoctorUser([daBranch()]);
+
+    daLoginPost($user);
+    $leaseA = daCurrentLease($user);
+    daKillSessionsFor($user);
+
+    dslPastInFlightWindow();
+    dslNewBrowser();
+    daLoginPost($user);
+
+    $this->assertAuthenticatedAs($user);
+    expect($leaseA->fresh()->released_reason)->toBe(DoctorSessionLease::RELEASE_DEAD_SESSION_RECLAIMED);
+    daAssertActiveLeaseCount(1, $user);
+});
+
+test('OD-7-7 keeps the in-flight window a literal config value, never an environment override', function () {
+    $config = (string) file_get_contents(config_path('doctor_access.php'));
+
+    expect((int) config('doctor_access.lease.in_flight_grace_seconds'))->toBe(30)
+        // A literal integer on its own line: no env() lookup can widen it.
+        ->and($config)->toMatch("/^\\s*'in_flight_grace_seconds' => 30,\\s*$/m");
 });

@@ -52,7 +52,8 @@ ceremonies and the login gate's proof mechanics belong to the sibling `.claude/r
   cookie reaches no controller. Source: `153-doctor-single-active-session-lease.mdc`.
 - **AIR-DAC-08** A session carrying no lease token is never touched and never given a lease. An incumbent is dead only
   when no `sessions` row for its `user_id` survives inside the session store's own expiry predicate; never reclaim on
-  an idle timer (`last_seen_at` is display only). Source: `153-…`.
+  an idle timer (`last_seen_at` is display only). A lease claimed < `in_flight_grace_seconds` (30) ago is alive: its
+  login has not written its row yet (OD-7-7, rule 237 §17). Source: `153-…`.
 - **AIR-DAC-09** `DoctorSessionLeaseService::enabled()` requires `IncumbentSessionProbe::observable()`: on a
   non-`database` session driver the engine disarms rather than fail open or closed. Confirm `session.driver` before
   arming. Source: `153-…`.

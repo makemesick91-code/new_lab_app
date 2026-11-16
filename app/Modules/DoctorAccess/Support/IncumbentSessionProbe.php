@@ -72,6 +72,19 @@ class IncumbentSessionProbe
      */
     public function isLive(DoctorSessionLease $lease, ?string $excludeSessionId = null): bool
     {
+        // DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-7-7; amends rule 153's death
+        // predicate, contract unchanged) — a lease claimed moments ago is a login
+        // still IN FLIGHT: its sessions row is written only at the end of that
+        // login's response. Reading it as dead let a concurrent second login
+        // reclaim the lease and evict the first browser, the one outcome rule 153
+        // forbids ("refuse the second login, never evict the first"). This is no
+        // idle timer: once the window passes, only the sessions row decides.
+        $grace = max(0, (int) config('doctor_access.lease.in_flight_grace_seconds', 30));
+
+        if ($grace > 0 && $lease->claimed_at !== null && $lease->claimed_at->greaterThan(now()->subSeconds($grace))) {
+            return true;
+        }
+
         $lifetimeMinutes = (int) config('session.lifetime', 120);
 
         return DB::table('sessions')
