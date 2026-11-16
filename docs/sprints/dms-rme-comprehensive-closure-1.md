@@ -233,7 +233,8 @@ and production verification (§9.4). Nothing here is DEFERRED-as-resolved.
 | OD-5-10(b) | accepted by design if canonical | the oversight widgets scope through `scopedBranchIdsFor` (the canonical branch authority) | — | **ACCEPTED BY DESIGN** (condition met) |
 | OD-7-3 | keep allowed | unchanged; no widening of legacy odontogram or cross-branch access | — | BY DESIGN (owner) |
 | CC1-ODO | keep empty state | unchanged; covered by `StructuredOdontogramPrintTemplateTest` ("empty odontogram renders the safe empty state"), `OdontogramSavedResultTablePreviewTest` ("safe empty state"), `MedicalRecordPrintOdontogramSeparationTest` | — | **ACCEPTED BY DESIGN** (owner) |
-| CC1-PAT-1..4 | measure first | the read-only count (§10.2) is the owner's step; the patient-identity sprint follows the numbers | — | OPEN — HUMAN OPERATION |
+| CC1-PAT-1..4 | measure first | measured read-only by the owner on 2026-11-17 (§10.2: 1,522 patients, all canonical, 0 duplicates, unique index present); the automatic number is memo RM PR-2 (rule 244) | — | MEASURED; implementation in the memo wave |
+| CC1-CI-1 | found 2026-11-17 (CG-17) | a push run diffs only against `github.event.before`: when a Markdown-only commit lands on a base whose code push run was cancelled (`cancel-in-progress`), the green push run on the new tip ran no critical regression test; the release guard accepts it. Remedy used: a `workflow_dispatch` run on the exact SHA (classifier fails closed). A workflow change needs the `workflow` scope and is not made here | — | OPEN — RECORDED; owner decision on a workflow fix |
 | D4 | not available yet | readiness re-audit and ceremony procedure (§10.7) | — | **BLOCKED_EXTERNAL** |
 | D5 | valid human confirmation | confirmation template (§10.8) | — | OPEN — HUMAN OPERATION |
 | OPS-KTP | HUMAN OPERATION | §10.1 | — | OPEN — HUMAN OPERATION |
@@ -431,7 +432,7 @@ NSF-R011 Critical Test Gate, read from the job log (PostgreSQL, `DB_CONNECTION: 
 | Post-deploy, same window | §10.5 consent signature copy (dry run, then `--apply` with owner approval) — rule 121 has no read fallback |
 | Optional, owner approval | §10.6 lab backfill; `patient:rm-sequence-seed` is NOT needed until the automatic-number PR (memo RM PR-2) ships |
 | Excluded on purpose | memo M3.3 lock PRs (the lock ships only with its amendment path), PTM PR1–3 (one release), PR6 (needs the `workflow` scope) |
-| Post-merge CI | run 43967765523 on `c705f048` (the run on `82cb6e13` was cancelled by the #658 push) |
+| Post-merge CI | push run 43967765523 on `c705f048`: success, but the classifier diffed against the previous commit only (#658, Markdown) → `gate_profile=docs_only`, critical regression tests **SKIPPED** (CG-17: skipped is not passed). The push run on `82cb6e13` that would have run them was cancelled by the #658 push. Remedy: `workflow_dispatch` run 43968947617 on `c705f048` (no base → the classifier fails closed to the full critical gate) |
 
 ## 10. Owner actions prepared by this program
 
