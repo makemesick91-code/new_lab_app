@@ -31,6 +31,15 @@ use InvalidArgumentException;
  * This composer never invents a sequence; the manual RM number always comes
  * from the user/admin. Legacy/auto-sequence behavior lives in the separate
  * {@see PatientCodeGenerator} and is untouched.
+ *
+ * DMS-RME-COMPREHENSIVE-CLOSURE-1 / memo M4.1 (owner decision 2026-11-17, "Auto,
+ * read-only"; rule 244) — the Sprint 23.8 "manual, never generated" rule is
+ * SUPERSEDED for NEW registrations once rule 244 PR-2 activates the automatic
+ * number: {@see PatientRmNumberAllocator} then issues the sequence per branch and
+ * clinic year, padded to four digits ({@see self::formatSequence()}). It stays
+ * in force for an old paper-card number entered under the Supervisor RME
+ * exception, which is kept verbatim. compose() and parse() are unchanged, and no
+ * existing Nomor RM is ever rewritten.
  */
 class PatientMedicalRecordNumberService
 {
@@ -253,6 +262,75 @@ class PatientMedicalRecordNumberService
         // The value as supplied always stays in the set: a caller searching for
         // exactly what the operator typed must never lose that candidate.
         return array_values(array_unique(array_merge($numbers, [$value])));
+    }
+
+    /**
+     * Rule 244 §1 — the minimum width of an automatic sequence.
+     */
+    public const SEQUENCE_PAD_WIDTH = 4;
+
+    /**
+     * Rule 244 §1 — the widest numeric sequence the allocator and the seeding
+     * report read or spell (the allocator refuses at nine digits).
+     */
+    public const MAX_NUMERIC_DIGITS = 18;
+
+    /**
+     * Rule 244 §1 — an automatic sequence, zero-padded to four digits and never
+     * truncated: 7 → "0007", 12345 → "12345".
+     */
+    public function formatSequence(int $number): string
+    {
+        if ($number < 1) {
+            throw new InvalidArgumentException('An automatic RM sequence starts at 1.');
+        }
+
+        return str_pad((string) $number, self::SEQUENCE_PAD_WIDTH, '0', STR_PAD_LEFT);
+    }
+
+    /**
+     * Rule 244 §1 — the numeric value of a canonical Nomor RM's sequence
+     * ("0007" and "7" are both 7), or null when the value is not canonical or its
+     * sequence is not purely numeric ("7A", "REG-4").
+     */
+    public function numericSequenceOf(?string $medicalRecordNumber): ?int
+    {
+        $sequence = $this->parse($medicalRecordNumber)?->sequence;
+
+        if ($sequence === null || preg_match('/^\d{1,'.self::MAX_NUMERIC_DIGITS.'}$/', $sequence) !== 1) {
+            return null;
+        }
+
+        return (int) $sequence;
+    }
+
+    /**
+     * Rule 244 §1 — every spelling under which sequence `$number` may already have
+     * been issued for this branch and year: each equivalent branch code (the
+     * canonical code and its historical aliases, {@see BranchCodeAlias}) times
+     * every zero-padding width from the bare digits up to nine digits. A number
+     * is taken when ANY of these exists, so the allocator never reissues `0007`
+     * because `7` or `DG-TKM1-…-0007` is already on a card.
+     *
+     * @return list<string>
+     */
+    public function numericSpellings(string $branchCode, int|string $year, int $number): array
+    {
+        if ($number < 1) {
+            throw new InvalidArgumentException('An automatic RM sequence starts at 1.');
+        }
+
+        $digits = (string) $number;
+        $widest = max(9, strlen($digits));
+        $spellings = [];
+
+        foreach (BranchCodeAlias::equivalentCodes($branchCode) as $code) {
+            for ($width = strlen($digits); $width <= $widest; $width++) {
+                $spellings[] = $this->compose($code, $year, str_pad($digits, $width, '0', STR_PAD_LEFT));
+            }
+        }
+
+        return array_values(array_unique($spellings));
     }
 
     /**
