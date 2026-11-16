@@ -138,6 +138,32 @@ Expected on the single-VPS pilot: overall **WATCH** or **GO**. `queue_worker`
 UNKNOWN is expected (no reliable in-app source); `deploy_evidence`/`deploy_backup`
 turn GO once the first governed deploy has run on the box.
 
+## Storage capacity report (memo M6.2, rule 239)
+
+`php artisan storage:usage-report` (and `--json`) is read-only: it reports the free and total space of the filesystem
+holding `storage/`, the size and file count of every private disk, the clinical evidence disk by category
+(handwriting pages, prescriptions, PTM signatures, lab attachments, lab evidence, other), the database size and the
+backup directory. It prints sizes and counts only: no file name, object key, host path or patient detail. It writes
+nothing and always exits 0.
+
+Monthly measurement, from the owner's own terminal on the production host (the runtime user; the owner's admin
+password is needed for `sudo`):
+
+```bash
+cd /var/www/asia-dental-lab-v2
+sudo -u daengtisiams php artisan storage:usage-report --json > /tmp/storage-usage-$(date -u +%Y%m%d).json
+df -h /var/www/asia-dental-lab-v2
+```
+
+The backup directory is root-owned, so the report shows it as UNREADABLE when run as the runtime user; the owner reads
+its size with `sudo du -sh /var/www/asia-dental-lab-v2/storage/app/backups/deploy`.
+
+- **Growth projection:** keep each dated JSON; the projection is the linear trend of the recorded sizes per disk and
+  for the database (bytes per month), and "months until full" is the free space divided by that monthly growth.
+- **Cost estimate:** needs the owner's verified storage rate (the provider's contracted price per GiB or per volume
+  tier). No price is assumed in code or docs.
+- BK-2 is not part of this measurement and is never run for it (rule 232); the running backup is not changed.
+
 ## Rollback
 
 MON-1 is additive (config + service + command + read-only route/view + docs +

@@ -770,6 +770,11 @@ return [
         // for weeks precisely because nothing in CI asserted it. A control that
         // exists but is never selected by the gate is not a control.
         'tests/Feature/Storage/ClinicalEvidencePrivacyTest.php',
+        // DMS-RME-COMPREHENSIVE-CLOSURE-1 PR9 (rule 239, memo M6.2) — the
+        // read-only storage usage report prints sizes and counts only: no file
+        // name, object key, host path or patient detail, and it writes nothing.
+        // Selected by the existing `ClinicalEvidence` token in BOTH variants.
+        'tests/Feature/Storage/ClinicalEvidenceStorageUsageReportTest.php',
         /*
          * SECURITY-FIX-DEPLOY-BACKUP-FILE-PERMISSIONS-1 — database dumps must be
          * private from the instant of creation. This suite observes the mode AT

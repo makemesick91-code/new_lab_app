@@ -200,6 +200,7 @@ code, then the canonical rule, and report the drift.
 | `.cursor/rules/118-monitoring-undated-severity-escalation.mdc` | Undated and fresh errors share one ladder |
 | `.cursor/rules/175-observability-console.mdc` | Telemetry redaction, retention, console access |
 | `.cursor/rules/70-roll-5-1a-restore-drill-evidence.mdc` | Restore-drill evidence gating rollout Stage-1 |
+| `.cursor/rules/239-storage-usage-report.mdc` | Read-only storage usage report: sizes and counts only, owner-measured monthly |
 
 ## History
 

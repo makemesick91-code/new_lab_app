@@ -1,0 +1,35 @@
+---
+description: DMS-RME-COMPREHENSIVE-CLOSURE-1 (rule 239) — the read-only storage usage report (memo M6.2, owner decision 2026-11-17) prints sizes and counts only (free space, private disks, clinical evidence by category, database, backups), never a file name, key, host path or patient detail, and writes nothing; growth is the trend of monthly measurements and cost needs the owner's verified rate.
+globs: app/Support/Storage/StorageUsageReportService.php, app/Console/Commands/StorageUsageReportCommand.php, docs/runbooks/mon-1-foundation-monitoring-observability-runbook.md
+alwaysApply: false
+---
+
+# Storage usage report (rule 239)
+
+Sprint record: `docs/sprints/dms-rme-comprehensive-closure-1.md` §2c (owner decision 2026-11-17, memo M6.2 "Usage
+report + owner measurement").
+
+1. **Read-only.** `storage:usage-report` (`App\Support\Storage\StorageUsageReportService`) reads directory sizes,
+   free space and `pg_database_size(current_database())`. It writes no file, no database row and no log entry of its
+   own, and makes no network call. It always exits 0: an unexpected failure prints only the exception class, never its
+   message (which can carry a host path), and logs nothing.
+2. **Sizes and counts only.** A disk is named by its config key, the filesystem by a label. The clinical evidence
+   disk is broken down only by the prefixes the application itself writes (`handwritings`, `prescriptions`,
+   `rme-consents`, `lab-orders`, `lab-workflow-evidence`); anything else, a file at the root included, is `other`. No
+   file name, object key, consent number, host path or patient detail ever reaches the output (CG-11). A future
+   clinical category (e.g. clinical photos, memo M4.4) is added to `CLINICAL_CATEGORIES` by the change that writes it.
+3. **Unreadable is reported, never fatal, never zero.** A symbolic link is never followed, the top-level clinical
+   category walk included. A directory that cannot be listed is counted (`unreadable_dirs`), and an entry that cannot
+   be stat'ed or sized (deleted meanwhile, no search permission) is counted (`unreadable_entries`); the error message
+   never reaches the output. A figure that could not be measured is null in JSON and printed UNREADABLE, never 0: a
+   clinical category whose directory is unreadable, and every category when the clinical root cannot be listed. A disk
+   that is not local (e.g. S3), and then every clinical category, is `measurable: false`, printed NOT_MEASURABLE. The
+   root-owned backup directory reads as UNREADABLE for the runtime user and the owner measures it with `sudo du`.
+4. **Owner measurement, not automation.** The owner runs it monthly as the runtime user (runbook
+   `docs/runbooks/mon-1-foundation-monitoring-observability-runbook.md`, "Storage capacity report"). It is not added
+   to the deploy operator, the scheduler or a timer (privileged deploy scripts are out of scope). The growth projection
+   is the trend of the dated measurements; a cost estimate needs the owner's verified storage rate and is never
+   assumed. BK-2 is never run for it (rule 232) and the running backup is unchanged.
+5. **Tests:** `tests/Feature/Storage/ClinicalEvidenceStorageUsageReportTest.php` (SU-01..13), selected by the
+   existing `ClinicalEvidence` critical-gate token in both runner variants and declared in
+   `critical_gate_mandatory_suites` (CG-19).
