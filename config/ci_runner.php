@@ -1679,6 +1679,11 @@ return [
         // rename cannot drop them.
         'tests/Feature/RME/MedicalRecordFinalizationLockTest.php',
         'tests/Feature/RME/OdontogramFinalizedLockTest.php',
+        // Same rule, §4 (M3.3 PR2) — finalizing seals the handwriting book's pages; a sealed page is never
+        // overwritten (service + HTTP, Super Admin too, no object written), appending stays allowed, pages from
+        // before the rule follow the derived rule (ties lock). Selected by the existing `MedicalRecordFinalization`
+        // token in BOTH critical variants.
+        'tests/Feature/RME/MedicalRecordFinalizationPageSealTest.php',
 
         // SECURITY-F4C-CLINIC-CALENDAR-LAB-ORDERS-1 (owner decision D16) — lab order dates, order and
         // delivery numbering, the due-date floor and "delivered today" on the clinic calendar

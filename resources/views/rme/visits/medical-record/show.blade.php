@@ -323,6 +323,11 @@
             $activeSrc = $activeRmPage['preview_url'] ?? '';
             $activeHasContent = $activeRmPage['has_content'] ?? false;
             $activeSavedAt = $activeRmPage['saved_at'] ?? null;
+            // Rule 240 §4 (memo M3.3) — a page sealed by a finalized sheet is
+            // read-only; the controller asks MedicalRecordHandwritingService, the
+            // authority that refuses the overwrite. Adding a NEW page stays open.
+            $activePageSealed = (bool) ($activePageSealed ?? false);
+            $canEditActivePage = $canEditHandwriting && ! $activePageSealed;
         @endphp
 
         <x-ui.card
@@ -350,6 +355,15 @@
                     $handwritingRecord ?? $handwritingFormRecord,
                 ]);
                 $storagePageNumber = $activeRmPage['storage_page_number'] ?? $activePageNumber;
+                // Rule 240 §4 — on a sealed page the editor's only target is the
+                // next, new page of the book (what "+ Tambah Halaman RM" opens).
+                $editorFormAction = $activePageSealed
+                    ? $canonicalHandwritingFormAction
+                    : route('rme.visits.medical-record.handwriting.store', [$handwritingFormVisit, $handwritingFormRecord]);
+                $editorPageNumber = $activePageSealed ? $nextRmPageNumber : $storagePageNumber;
+                $editorRevision = $activePageSealed
+                    ? \App\Modules\MedicalRecord\Models\MedicalRecord::HANDWRITING_REVISION_NONE
+                    : ($activeRmPage['revision'] ?? '');
             @endphp
 
             <div
@@ -373,13 +387,17 @@
             @else
             <div id="rm-page-previews" class="mx-auto max-w-md touch-pan-y" data-active-page-type="native">
                 <figure
-                    class="rm-page-preview group relative rounded-lg border border-gray-300 bg-white p-2 touch-pan-y {{ $canEditHandwriting ? 'cursor-pointer transition hover:border-brand-500 hover:shadow' : '' }}"
+                    class="rm-page-preview group relative rounded-lg border border-gray-300 bg-white p-2 touch-pan-y {{ $canEditActivePage ? 'cursor-pointer transition hover:border-brand-500 hover:shadow' : '' }}"
                     data-page-number="{{ $activePageNumber }}"
                     data-storage-page="{{ $storagePageNumber }}"
-                    data-revision="{{ $activeRmPage['revision'] ?? '' }}"
-                    data-form-action="{{ route('rme.visits.medical-record.handwriting.store', [$handwritingFormVisit, $handwritingFormRecord]) }}"
+                    @if ($activePageSealed)
+                        data-sealed="1"
+                    @else
+                        data-revision="{{ $activeRmPage['revision'] ?? '' }}"
+                        data-form-action="{{ route('rme.visits.medical-record.handwriting.store', [$handwritingFormVisit, $handwritingFormRecord]) }}"
+                    @endif
                     data-existing-src="{{ $activeSrc }}"
-                    @if ($canEditHandwriting) role="button" tabindex="0" @endif
+                    @if ($canEditActivePage) role="button" tabindex="0" @endif
                 >
                     <figcaption class="mb-2 flex items-center justify-between text-xs">
                         <span class="font-semibold text-gray-700">Halaman {{ $activePageNumber }}</span>
@@ -387,6 +405,15 @@
                             <span class="text-gray-500">Tersimpan pada {{ $activeSavedAt?->format('d/m/Y H:i') }}</span>
                         @endif
                     </figcaption>
+
+                    @if ($activePageSealed)
+                        {{-- Rule 240 §4 — the wording equals
+                             MedicalRecordHandwritingService::MESSAGE_SEALED_PAGE (pinned by
+                             MedicalRecordFinalizationPageSealTest). --}}
+                        <p class="mb-2 rounded border border-gray-200 bg-gray-50 px-2 py-1 text-xs text-gray-700">
+                            Halaman RM ini sudah terkunci karena termasuk rekam medis yang telah final. Koreksi hanya melalui amandemen yang disetujui; tulis catatan baru pada halaman baru.
+                        </p>
+                    @endif
 
                     @if ($activeHasContent && $activeSrc)
                         <img src="{{ $activeSrc }}"
@@ -401,7 +428,7 @@
                         </div>
                     @endif
 
-                    @if ($canEditHandwriting)
+                    @if ($canEditActivePage)
                         <span class="pointer-events-none absolute inset-x-0 bottom-2 mx-auto w-fit rounded bg-black/60 px-2 py-0.5 text-[11px] text-white opacity-0 transition group-hover:opacity-100">
                             Klik untuk menulis
                         </span>
@@ -433,17 +460,17 @@
                             Tulisan tangan tersimpan halaman ini dimuat ke kanvas. Lanjutkan menulis untuk menambah coretan tanpa menghapus yang lama.
                         </p>
 
-                        <form method="POST" action="{{ route('rme.visits.medical-record.handwriting.store', [$handwritingFormVisit, $handwritingFormRecord]) }}" id="handwriting-form">
+                        <form method="POST" action="{{ $editorFormAction }}" id="handwriting-form">
                             @csrf
                             @if ($sourceVisit)
                                 <input type="hidden" name="source_visit_id" value="{{ $sourceVisit->id }}">
                             @endif
                             <input type="hidden" name="handwriting_data" id="handwriting-data-input">
-                            <input type="hidden" name="page_number" id="handwriting-page-input" value="{{ $storagePageNumber }}">
+                            <input type="hidden" name="page_number" id="handwriting-page-input" value="{{ $editorPageNumber }}">
                             {{-- DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-6-1) — the revision of the page
                                  this device loaded; a save over a page another device changed
                                  meanwhile is refused instead of replacing that drawing. --}}
-                            <input type="hidden" name="page_revision" id="handwriting-revision-input" value="{{ $activeRmPage['revision'] ?? '' }}">
+                            <input type="hidden" name="page_revision" id="handwriting-revision-input" value="{{ $editorRevision }}">
 
                             {{-- Sprint 60 — A4-portrait page canvas (900 x 1273,
                                  ≈ 1:1.414). One canvas = one RM page; overflow
@@ -751,6 +778,10 @@
 
                     // Read-only previews open the overlay for their own page.
                     document.querySelectorAll('#rm-page-previews .rm-page-preview').forEach(function (fig) {
+                        // Rule 240 §4 — a sealed page never opens the editor.
+                        if (fig.dataset.sealed === '1') {
+                            return;
+                        }
                         function open() {
                             const storagePage = parseInt(fig.dataset.storagePage, 10) || parseInt(fig.dataset.pageNumber, 10) || 1;
                             if (fig.dataset.formAction) {

@@ -132,6 +132,8 @@ it('viewer cannot save handwriting', function () {
         ->assertForbidden();
 });
 
+// Rule 240 §4 — still true, as an APPEND: the final sheet has no page 1 yet, so the
+// save writes a new page in the live encounter; only an existing sealed page refuses.
 it('can save handwriting on finalized medical record (Sprint 59)', function () {
     $this->record->update([
         'status' => MedicalRecord::STATUS_FINAL,
@@ -224,7 +226,10 @@ it('draft show page displays saved handwriting preview', function () {
         ->assertSee('Simpan Tulisan Tangan');
 });
 
-it('final show page displays saved handwriting preview and keeps the canvas editable (Sprint 59)', function () {
+// Rule 240 §4 (memo M3.3, owner decision 2026-11-17) — flipped from the Sprint 59
+// "keeps the canvas editable": finalizing sealed the saved page, which now renders
+// read-only; the canvas stays on the page only to write a NEW page (page 2).
+it('final show page displays the saved handwriting sealed, with the canvas only for a new page (rule 240 §4)', function () {
     $this->actingAs($this->manager)
         ->post(route('rme.visits.medical-record.handwriting.store', [$this->visit, $this->record]), [
             'handwriting_data' => validHandwritingData(),
@@ -234,13 +239,17 @@ it('final show page displays saved handwriting preview and keeps the canvas edit
 
     $handwriting = MedicalRecordHandwriting::where('medical_record_id', $this->record->id)->firstOrFail();
 
+    expect($handwriting->sealed_at)->not->toBeNull();
+
     $this->actingAs($this->manager)
         ->get(route('rme.visits.medical-record.show', $this->visit))
         ->assertOk()
         ->assertSee('RME Tulisan Tangan')
         ->assertSee('Tersimpan pada')
         ->assertSee($handwriting->previewUrl(), false)
-        // Sprint 59 — handwriting remains revisable after finalization.
+        ->assertSee('data-sealed="1"', false)
+        ->assertDontSee('Klik untuk menulis')
+        ->assertSee('id="handwriting-page-input" value="2"', false)
         ->assertSee('id="rme-canvas"', false)
         ->assertSee('Simpan Tulisan Tangan');
 });

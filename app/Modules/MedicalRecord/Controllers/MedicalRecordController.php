@@ -16,6 +16,7 @@ use App\Modules\MedicalRecord\Requests\FinalizeMedicalRecordRequest;
 use App\Modules\MedicalRecord\Requests\StoreMedicalRecordRequest;
 use App\Modules\MedicalRecord\Requests\UpdateMedicalRecordRequest;
 use App\Modules\MedicalRecord\Services\DiagnosisRolloutService;
+use App\Modules\MedicalRecord\Services\MedicalRecordHandwritingService;
 use App\Modules\MedicalRecord\Services\MedicalRecordService;
 use App\Modules\MedicalRecord\Services\PatientRmWorkspaceResolver;
 use App\Modules\MedicalRecord\Services\RmeWorkspaceDocumentPresenter;
@@ -369,6 +370,15 @@ class MedicalRecordController extends Controller
             ?? $activeSheet;
         $handwritingFormVisit = $handwritingFormRecord->clinicVisit ?? $activeVisit;
 
+        // Rule 240 §4 (memo M3.3) — a page sealed by a finalized sheet renders
+        // read-only, so the page never offers an overwrite the service refuses
+        // (rule 135). Presentation only; MedicalRecordHandwritingService::save()
+        // is the authority. An archive page is read-only anyway.
+        $activePageSealed = ! $isLegacyActivePage && app(MedicalRecordHandwritingService::class)->isPageSealed(
+            $handwritingFormRecord,
+            (int) ($activeRmPage['storage_page_number'] ?? $activeRmPage['page_number'] ?? 1),
+        );
+
         $rmPageNumbers = $workspacePages->pluck('workspaceIndex');
         if ($rmPageNumbers->isEmpty()) {
             $rmPageNumbers = collect([1]);
@@ -406,6 +416,7 @@ class MedicalRecordController extends Controller
             'handwritingRecord' => $handwritingRecord,
             'handwritingFormRecord' => $handwritingFormRecord,
             'handwritingFormVisit' => $handwritingFormVisit,
+            'activePageSealed' => $activePageSealed,
             'prevRmPage' => $prevRmPage,
             'nextRmPage' => $nextRmPage,
             'hasRequiredHandwriting' => $this->service->hasRequiredHandwriting($activeSheet),

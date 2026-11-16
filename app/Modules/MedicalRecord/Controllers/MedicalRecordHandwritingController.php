@@ -83,9 +83,11 @@ class MedicalRecordHandwritingController extends Controller
             $this->assertWritableTarget($medicalRecord, $clinicVisit, $consents);
         }
 
-        // Sprint 59 — handwriting RM is revisable after finalization. The
-        // previous immutability lock is removed so doctors can correct or
-        // append handwriting on any visit, including older finalized ones.
+        // Rule 240 §4 (memo M3.3, supersedes the Sprint 59 "handwriting RM is
+        // revisable after finalization") — a page sealed when a sheet was
+        // finalized is never overwritten; MedicalRecordHandwritingService::save()
+        // refuses it under the record lock. Appending a new page in the live,
+        // consented encounter stays allowed, onto the one book (R7-1).
 
         // Sprint 60 — 1 canvas = 1 RM page. `page_number` selects which RM page
         // is being saved. Page 1 is the legacy `trx_medical_record_handwritings`
@@ -112,9 +114,10 @@ class MedicalRecordHandwritingController extends Controller
                     // consent void or a finish committed meanwhile is seen. The
                     // canonical-draft path below asserts the same inside
                     // getOrCreateCanonicalMedicalRecord().
-                    $consents->assertRmeAuthoringAllowedForPatient($medicalRecord->patient_id);
+                    $encounter = $consents->assertRmeAuthoringAllowedForPatient($medicalRecord->patient_id);
 
-                    return [$medicalRecord, $clinicVisit];
+                    // Rule 240 §4 — the authorized encounter is the page's author.
+                    return [$medicalRecord, $clinicVisit, $encounter];
                 }
 
                 $draft = $medicalRecordService->getOrCreateCanonicalMedicalRecord(
@@ -128,9 +131,9 @@ class MedicalRecordHandwritingController extends Controller
                 $storageVisit = $draft->clinicVisit ?? $canonicalVisit;
 
                 // A refusal here rolls the draft back with the rest of the save.
-                $this->assertWritableTarget($draft, $storageVisit, $consents);
+                $encounter = $this->assertWritableTarget($draft, $storageVisit, $consents);
 
-                return [$draft, $storageVisit];
+                return [$draft, $storageVisit, $encounter];
             },
             $pageNumber,
             $decoded,
@@ -169,7 +172,7 @@ class MedicalRecordHandwritingController extends Controller
      * allowed to update it, and the patient must have an authorized, consented
      * examination in progress.
      */
-    private function assertWritableTarget(MedicalRecord $medicalRecord, ClinicVisit $storageVisit, RmeVisitConsentService $consents): void
+    private function assertWritableTarget(MedicalRecord $medicalRecord, ClinicVisit $storageVisit, RmeVisitConsentService $consents): ClinicVisit
     {
         abort_if($medicalRecord->clinic_visit_id !== $storageVisit->id, 404);
 
@@ -195,7 +198,7 @@ class MedicalRecordHandwritingController extends Controller
          * terminal visit. The only sound question is whether this patient has an
          * authorized, consented examination happening now.
          */
-        $consents->assertRmeAuthoringAllowedForPatient($medicalRecord->patient_id);
+        return $consents->assertRmeAuthoringAllowedForPatient($medicalRecord->patient_id);
     }
 
     /**

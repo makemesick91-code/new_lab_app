@@ -50,6 +50,9 @@ final class MedicalRecordHandwritingService
     /** DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-6-1) — a save over a page changed since this device loaded it. */
     public const MESSAGE_STALE_PAGE = 'Halaman telah diubah di perangkat lain. Muat ulang halaman sebelum menyimpan agar tulisan tidak tertimpa.';
 
+    /** Rule 240 §4 (memo M3.3) — an overwrite of a page sealed by a finalized sheet. */
+    public const MESSAGE_SEALED_PAGE = 'Halaman RM ini sudah terkunci karena termasuk rekam medis yang telah final. Koreksi hanya melalui amandemen yang disetujui; tulis catatan baru pada halaman baru.';
+
     public function __construct(
         private readonly MedicalRecordHandwritingRepositoryInterface $handwritings,
         private readonly MedicalRecordRepositoryInterface $medicalRecords,
@@ -69,7 +72,17 @@ final class MedicalRecordHandwritingService
      * instead of silently replacing that drawing. Null skips the comparison
      * (a caller that never loaded a page, e.g. the first save of a new book).
      *
-     * @param  Closure(): array{0: MedicalRecord, 1: ClinicVisit}  $resolveTarget
+     * Rule 240 §4 (memo M3.3, owner decision 2026-11-17) — after that compare and
+     * before any object is written, an overwrite of a SEALED page is refused
+     * (a page sealed when a sheet was finalized, or a page from before rule 240
+     * that a finalize already covered). Decided on the rows read under the record
+     * lock, inside this transaction, so it binds every caller, Super Admin
+     * included. A NEW page (an empty slot) is never sealed: appending in a live,
+     * consented encounter stays allowed (OD-5-6, R7-1). The optional third element
+     * `$resolveTarget` returns is the authorized encounter; it is stamped on the
+     * page as its author, because the page itself is stored on the book's visit.
+     *
+     * @param  Closure(): array{0: MedicalRecord, 1: ClinicVisit, 2?: ClinicVisit|null}  $resolveTarget
      * @return array{medical_record: MedicalRecord, storage_visit: ClinicVisit, page_number: int}
      */
     public function save(Closure $resolveTarget, int $requestedPage, string $png, ?int $actorId, ?string $expectedRevision = null): array
@@ -79,7 +92,7 @@ final class MedicalRecordHandwritingService
 
         try {
             return DB::transaction(function () use ($resolveTarget, $requestedPage, $png, $actorId, $expectedRevision, &$writtenKey, &$bodyDone): array {
-                [$medicalRecord, $storageVisit] = $resolveTarget();
+                [$medicalRecord, $storageVisit, $encounter] = array_pad($resolveTarget(), 3, null);
 
                 $this->medicalRecords->lockForHandwriting($medicalRecord->id);
 
@@ -94,14 +107,24 @@ final class MedicalRecordHandwritingService
                     ]);
                 }
 
+                // Rule 240 §4 — a sealed page is never overwritten; nothing has been
+                // written yet, so the refusal leaves no object and no row behind.
+                if ($this->handwritings->pageSlotLocked($medicalRecord->id, $page, (int) $medicalRecord->patient_id)) {
+                    throw ValidationException::withMessages([
+                        'handwriting_data' => self::MESSAGE_SEALED_PAGE,
+                    ]);
+                }
+
+                $authoredBy = $encounter instanceof ClinicVisit ? (int) $encounter->getKey() : null;
+
                 $writtenKey = $this->objectKey($storageVisit, $page);
                 ClinicalEvidenceStorage::disk()->put($writtenKey, $png);
                 $hash = hash('sha256', $png);
 
                 if ($page === 1) {
-                    $this->savePageOne($storageVisit, $medicalRecord, $writtenKey, $hash, $actorId);
+                    $this->savePageOne($storageVisit, $medicalRecord, $writtenKey, $hash, $actorId, $authoredBy);
                 } else {
-                    $this->savePage($storageVisit, $medicalRecord, $page, $writtenKey, $hash, $actorId);
+                    $this->savePage($storageVisit, $medicalRecord, $page, $writtenKey, $hash, $actorId, $authoredBy);
                 }
 
                 $bodyDone = true;
@@ -124,6 +147,16 @@ final class MedicalRecordHandwritingService
 
             throw $e;
         }
+    }
+
+    /**
+     * Rule 240 §4 — presentation twin of the refusal in save(): is this stored
+     * page sealed? The page renders read-only when it is, so the page offers no
+     * save the server would refuse (rule 135). Never the authority.
+     */
+    public function isPageSealed(MedicalRecord $medicalRecord, int $page): bool
+    {
+        return $this->handwritings->pageSlotLocked((int) $medicalRecord->getKey(), $page, (int) $medicalRecord->patient_id);
     }
 
     /** The page's revision as stored now (read under the record lock). */
@@ -156,7 +189,7 @@ final class MedicalRecordHandwritingService
      * Page 1 — legacy read-through row, written exactly as before so every
      * existing reader (print, receipt, workspace) keeps working.
      */
-    private function savePageOne(ClinicVisit $storageVisit, MedicalRecord $medicalRecord, string $path, string $hash, ?int $actorId): void
+    private function savePageOne(ClinicVisit $storageVisit, MedicalRecord $medicalRecord, string $path, string $hash, ?int $actorId, ?int $authoredBy): void
     {
         $existing = $this->handwritings->findByMedicalRecordId($medicalRecord->id);
 
@@ -165,7 +198,7 @@ final class MedicalRecordHandwritingService
                 'handwriting_path' => $path,
                 'handwriting_hash' => $hash,
                 'saved_at' => now(),
-            ]);
+            ] + $this->authoredStamp($authoredBy));
 
             return;
         }
@@ -179,7 +212,18 @@ final class MedicalRecordHandwritingService
             'handwriting_hash' => $hash,
             'saved_at' => now(),
             'created_by' => $actorId,
-        ]);
+        ] + $this->authoredStamp($authoredBy));
+    }
+
+    /**
+     * Rule 240 §4 — the encounter that wrote the page. Left untouched when the
+     * caller named none, so a known author is never erased.
+     *
+     * @return array<string, int>
+     */
+    private function authoredStamp(?int $authoredBy): array
+    {
+        return $authoredBy !== null ? ['authored_clinic_visit_id' => $authoredBy] : [];
     }
 
     /**
@@ -187,7 +231,7 @@ final class MedicalRecordHandwritingService
      * addable page, so a client can never skip a page or write an arbitrary
      * number, and saving here never touches Page 1 or a sibling page.
      */
-    private function savePage(ClinicVisit $storageVisit, MedicalRecord $medicalRecord, int $page, string $path, string $hash, ?int $actorId): void
+    private function savePage(ClinicVisit $storageVisit, MedicalRecord $medicalRecord, int $page, string $path, string $hash, ?int $actorId, ?int $authoredBy): void
     {
         $existing = $this->handwritings->findPageByMedicalRecordIdAndPage($medicalRecord->id, $page);
 
@@ -197,7 +241,7 @@ final class MedicalRecordHandwritingService
                 'handwriting_hash' => $hash,
                 'saved_at' => now(),
                 'updated_by' => $actorId,
-            ]);
+            ] + $this->authoredStamp($authoredBy));
 
             return;
         }
@@ -213,7 +257,7 @@ final class MedicalRecordHandwritingService
             'saved_at' => now(),
             'created_by' => $actorId,
             'updated_by' => $actorId,
-        ]);
+        ] + $this->authoredStamp($authoredBy));
     }
 
     /**

@@ -9,6 +9,7 @@ use App\Modules\ClinicVisit\Interfaces\ClinicVisitRepositoryInterface;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\ClinicVisit\Services\ActiveEncounterResolver;
 use App\Modules\Consent\Services\RmeVisitConsentService;
+use App\Modules\MedicalRecord\Interfaces\MedicalRecordHandwritingRepositoryInterface;
 use App\Modules\MedicalRecord\Interfaces\MedicalRecordRepositoryInterface;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Support\Clinical\ClinicalClock;
@@ -44,6 +45,8 @@ class MedicalRecordService
         private readonly ClinicalClock $clock,
         // R7-1 — the canonical visit row lock only; never a status transition.
         private readonly ClinicVisitRepositoryInterface $visits,
+        // Rule 240 §4 — finalize seals the handwriting book's pages.
+        private readonly MedicalRecordHandwritingRepositoryInterface $handwritings,
     ) {}
 
     /**
@@ -226,7 +229,7 @@ class MedicalRecordService
             // FIX-02 / CORRECTIVE-02 — finalization is a current-RME write, so it
             // needs the same authorized, consented, in-progress encounter. Inside
             // this transaction it locks the encounter's visit row first.
-            $this->consents->assertRmeAuthoringAllowedForPatient($medicalRecord->patient_id);
+            $encounter = $this->consents->assertRmeAuthoringAllowedForPatient($medicalRecord->patient_id);
 
             // Rule 240 §1 (memo M3.3) — re-decided on the sheet row, locked after
             // the visit (rule 223 §1 item 6): a finalize that committed after the caller
@@ -250,6 +253,22 @@ class MedicalRecordService
             // without an active primary diagnosis or a reasoned override;
             // informational/warning branches are never blocked here.
             $this->diagnosisRollout->assertFinalizationAllowed($locked);
+
+            /*
+             * Rule 240 §4 (memo M3.3, owner decision 2026-11-17) — finalizing seals
+             * the patient's handwriting pages as they stand, under the visit and
+             * sheet locks taken above (rule 223 §1 item 6): from now on a sealed page is
+             * never overwritten (MedicalRecordHandwritingService::save()); a
+             * correction is a supervised amendment. A new page written later
+             * stays writable until a sheet is finalized again. When the sheet is
+             * not the live encounter's own, the pages that encounter is still
+             * writing are spared; its own sheet's finalize seals them.
+             */
+            $this->handwritings->sealBookPages(
+                (int) $locked->patient_id,
+                (int) $locked->getKey(),
+                (int) $encounter->getKey() !== (int) $locked->clinic_visit_id ? (int) $encounter->getKey() : null,
+            );
 
             $finalized = $this->medicalRecords->update($locked, [
                 'status' => MedicalRecord::STATUS_FINAL,
