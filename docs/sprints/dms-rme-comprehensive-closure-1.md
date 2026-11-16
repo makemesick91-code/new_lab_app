@@ -421,6 +421,18 @@ NSF-R011 Critical Test Gate, read from the job log (PostgreSQL, `DB_CONNECTION: 
 | #656 | `e11074fe` | 43924269075 | 10,491 passed |
 | #657 | `85527d84` | 43920501415 | 10,486 passed |
 
+### 9.5 Release 2 — candidate (closure wave + rules headroom)
+
+| Item | Content |
+|---|---|
+| Candidate SHA | `c705f048377f558e872bba81b0f4f6e49d81efed` = the ten closure-wave squashes (§2a) + #658 (rules only) |
+| Migrations (additive) | `2026_11_17_100001_add_claim_nonce_hash_to_trx_doctor_session_leases_table` (#652), `2026_11_17_100001_create_mst_patient_rm_sequences_table` (#654, dormant) |
+| Permissions | `void_rme_consents` → Supervisor RME (#648); after deploy §10.4 |
+| Post-deploy, same window | §10.5 consent signature copy (dry run, then `--apply` with owner approval) — rule 121 has no read fallback |
+| Optional, owner approval | §10.6 lab backfill; `patient:rm-sequence-seed` is NOT needed until the automatic-number PR (memo RM PR-2) ships |
+| Excluded on purpose | memo M3.3 lock PRs (the lock ships only with its amendment path), PTM PR1–3 (one release), PR6 (needs the `workflow` scope) |
+| Post-merge CI | run 43967765523 on `c705f048` (the run on `82cb6e13` was cancelled by the #658 push) |
+
 ## 10. Owner actions prepared by this program
 
 ### 10.1 OPS-KTP — install the KTP temporary-scan prune timer (root, owner's admin password)
@@ -517,9 +529,12 @@ Expected: `CONFLICT=0`, `VERIFY_FAILED=0`, `CONSENT_SIGNATURE_MIGRATION=APPLIED`
 
 ### 10.6 Release 2 — lab candidate backfill (owner approval for `--apply`)
 
+Since #657 (rule 237 §18) `--apply` needs an explicit payment window in clinic dates (WITA); the dry run shows the
+counts per month to choose it from:
+
 ```bash
-php artisan rme:lab-candidates-backfill               # dry run: INVOICES=<n>
-php artisan rme:lab-candidates-backfill --apply       # only with the owner's approval
+php artisan rme:lab-candidates-backfill                                              # dry run: counts per month
+php artisan rme:lab-candidates-backfill --apply --paid-from=YYYY-MM-DD [--paid-to=YYYY-MM-DD]   # owner approval only
 ```
 
 ### 10.7 D4 — readiness re-audit and ceremony (BLOCKED_EXTERNAL)
