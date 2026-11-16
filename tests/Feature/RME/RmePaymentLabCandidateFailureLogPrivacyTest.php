@@ -5,6 +5,7 @@ use App\Modules\Branch\Models\Branch;
 use App\Modules\Branch\Services\BranchService;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
+use App\Modules\RmeInvoice\Interfaces\RmeInvoiceRepositoryInterface;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Models\RmePayment;
 use App\Modules\RmeInvoice\Services\RmeInvoiceService;
@@ -72,11 +73,11 @@ function lcfUnpaidInvoice(Branch $branch, User $cashier): RmeInvoice
 /** Make the post-payment lab hook fail with $failure. */
 function lcfFailLabGenerationWith(Throwable $failure): void
 {
-    app()->instance(RmeLabIntegrationService::class, new class($failure, app(BranchService::class)) extends RmeLabIntegrationService
+    app()->instance(RmeLabIntegrationService::class, new class($failure, app(BranchService::class), app(RmeInvoiceRepositoryInterface::class)) extends RmeLabIntegrationService
     {
-        public function __construct(private readonly Throwable $failure, BranchService $branches)
+        public function __construct(private readonly Throwable $failure, BranchService $branches, RmeInvoiceRepositoryInterface $invoices)
         {
-            parent::__construct($branches);
+            parent::__construct($branches, $invoices);
         }
 
         public function generateForPaidInvoice(RmeInvoice $invoice, ?User $actor = null): Collection
