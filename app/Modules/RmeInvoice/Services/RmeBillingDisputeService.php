@@ -21,6 +21,7 @@ use App\Modules\RmeInvoice\Support\RmeBillingDisputeReason;
 use App\Modules\RmeInvoice\Support\RmeBillingDisputeStatus;
 use App\Modules\RmeInvoice\Support\RmeBillingDisputeText;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
+use App\Support\Clinical\ClinicalClock;
 use Closure;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\QueryException;
@@ -86,6 +87,7 @@ class RmeBillingDisputeService
         private readonly AuditLogService $auditLogs,
         private readonly RmeBillingDisputeEscalationService $escalation,
         private readonly RmeBillingDisputeReviewerService $reviewers,
+        private readonly ClinicalClock $clock,
     ) {}
 
     // ─── Reads ───────────────────────────────────────────────────────────────
@@ -214,7 +216,7 @@ class RmeBillingDisputeService
 
                     $dispute = $this->disputes->assignNumber(
                         $dispute,
-                        'RMEDSP-'.now()->format('Ym').'-'.str_pad((string) $dispute->id, 6, '0', STR_PAD_LEFT),
+                        'RMEDSP-'.$this->clock->today()->format('Ym').'-'.str_pad((string) $dispute->id, 6, '0', STR_PAD_LEFT),
                     );
 
                     $this->record($dispute, RmeBillingDisputeEvent::TYPE_REPORTED, null, $reporter, null, [

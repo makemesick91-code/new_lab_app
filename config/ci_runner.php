@@ -1579,6 +1579,15 @@ return [
         // payload bound at the request and in the service. Selected by the existing
         // `RmeVisitConsent` token in BOTH critical variants; declared so a rename cannot drop it.
         'tests/Feature/RME/RmeVisitConsentSignatureBoundTest.php',
+        // DMS-RME-COMPREHENSIVE-CLOSURE-1 (rule 237) — a refused consent, prescription or RM page never
+        // copies a signature or a handwriting canvas into the session store (dontFlash, CG-11, rule 121),
+        // and an RM handwriting page has a bounded payload, declared size and inflate cost. Selected by
+        // the existing `RmeClinicalWriteAuthority` token in BOTH critical variants.
+        'tests/Feature/RME/RmeClinicalWriteAuthorityNoFlashTest.php',
+        'tests/Feature/RME/RmeClinicalWriteAuthorityHandwritingBoundTest.php',
+        // Same program — every route rendering a clinical or patient-data document answers
+        // `private, no-store`. Selected by the existing `RmeClinicalDocumentReadScope` token.
+        'tests/Feature/RME/RmeClinicalDocumentReadScopeNoStoreTest.php',
 
         // SECURITY-F4C-CLINIC-CALENDAR-LAB-ORDERS-1 (owner decision D16) — lab order dates, order and
         // delivery numbering, the due-date floor and "delivered today" on the clinic calendar

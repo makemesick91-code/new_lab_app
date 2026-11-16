@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Modules\LegacyOdontogram\Jobs\ProcessLegacyOdontogramPdfImport;
+use App\Modules\LegacyRme\Jobs\ProcessLegacyRmePdfImport;
 use App\Services\Foundation\QueueRetryFailedJobGovernanceService;
 use App\Support\Queue\QueueProducerConsumerContractScanner;
 use App\Support\Queue\QueueRetryFailedJobReadinessService;
@@ -365,4 +366,29 @@ it('keeps the approved worker queue list identical to what the unit consumes', f
 
     expect(config('enterprise_foundation_runtime_hardening.queue_worker.approved_queues'))
         ->toEqualCanonicalizing(contractScanner()->execStartQueues($unit));
+});
+
+/*
+| DMS-RME-COMPREHENSIVE-CLOSURE-1 (OPS-Q, DMS-RME-REVISION-PROGRAM-7 §3.6) — a job
+| that runs longer than `retry_after` is handed to a second worker while the first
+| is still rendering, and a stop timeout shorter than the job kills a render on
+| every restart. The legacy PDF renders are the longest jobs (240 s).
+*/
+it('OPS-Q keeps the worker timeout, every job timeout, the stop timeout and retry_after in a safe order', function () {
+    $jobTimeouts = [
+        (new ProcessLegacyRmePdfImport(1))->timeout,
+        (new ProcessLegacyOdontogramPdfImport(1))->timeout,
+    ];
+    $longestJob = max($jobTimeouts);
+
+    $unit = (string) file_get_contents(base_path('deploy/systemd/daengtisiams-queue-worker.service'));
+    preg_match('/^TimeoutStopSec=(\d+)$/m', $unit, $stop);
+    preg_match('/--timeout=(\d+)/', $unit, $worker);
+    $retryAfter = (int) config('queue.connections.database.retry_after');
+
+    expect($longestJob)->toBe(240)
+        ->and((int) ($worker[1] ?? 0))->toBe(120)
+        ->and((int) ($stop[1] ?? 0))->toBeGreaterThan($longestJob)
+        ->and($retryAfter)->toBeGreaterThan((int) $stop[1])
+        ->and($retryAfter)->toBeGreaterThan($longestJob);
 });

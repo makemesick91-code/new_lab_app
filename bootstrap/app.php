@@ -167,6 +167,22 @@ return Application::configure(basePath: dirname(__DIR__))
             ForbiddenProductionCommandException::class,
         ]);
 
+        // DMS-RME-COMPREHENSIVE-CLOSURE-1 — a refused clinical form must not
+        // copy a signature or a handwriting canvas into the session store. The
+        // framework flashes every input except passwords on a validation
+        // failure, so a consent, prescription or RM page refused for any reason
+        // used to leave the patient's signature image (up to 1M characters) or
+        // a whole handwriting page in the sessions table (CG-11, rule 121: that
+        // evidence lives only on the private disk). No form restores these
+        // fields with old(), so nothing a user sees changes.
+        $exceptions->dontFlash([
+            'consenter_signature',
+            'doctor_signature',
+            'prescription_canvas_data',
+            'doctor_signature_canvas_data',
+            'handwriting_data',
+        ]);
+
         // FEATURE-DEV-CONSOLE-OBSERVABILITY-1 — every rendered exception passes
         // through this hook, including the ones never reported (404, 403,
         // validation). It only NOTES the exception for this request's telemetry

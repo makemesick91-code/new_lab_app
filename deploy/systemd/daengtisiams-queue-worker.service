@@ -64,8 +64,12 @@ Restart=always
 RestartSec=5
 
 # Send SIGTERM and allow the current job to finish before SIGKILL.
+# DMS-RME-COMPREHENSIVE-CLOSURE-1 (OPS-Q): longer than the longest job timeout
+# (legacy PDF render 240 s), or a stop or restart kills a render mid-way.
+# Ordering, pinned by QueueProducerConsumerParityTest: worker --timeout (120)
+# < job timeout (240) < TimeoutStopSec (270) < queue retry_after (300).
 KillSignal=SIGTERM
-TimeoutStopSec=150
+TimeoutStopSec=270
 
 # Non-sensitive stdout/stderr to the journal only (no PII, no secrets).
 StandardOutput=journal

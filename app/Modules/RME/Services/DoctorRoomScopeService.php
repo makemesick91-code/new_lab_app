@@ -28,8 +28,12 @@ use Illuminate\Database\Eloquent\Builder;
  * reachable under the pre-existing Sprint 66.2 doctor-patient scope, so this
  * sprint can never hide clinical history from the doctor who created it.
  *
- * PRINT DENIAL (§18/§19). A Doctor may read and edit RME/Odontogram under the
- * existing lifecycle rules but may never print, export or download them.
+ * PRINT DENIAL (§18/§19). A Doctor may read and edit native RME/Odontogram under
+ * the existing lifecycle rules but may not print them: exactly the three routes of
+ * rule 138 §6 — `rme.visits.print`, `rme.visits.pdf`, `rme.odontograms.print`.
+ * Prescription printing is unaffected, and so are published LEGACY archives, whose
+ * read/print/export authority is rule 93-legacy-rme-void-clinical-read (OD-7-3:
+ * allowed by that rule; any change is an owner decision, not this class).
  *
  * "Is this a scoped Doctor" is delegated to {@see DoctorPatientScopeService} so
  * there is exactly one definition of it — Owner / Super Admin / Supervisor RME

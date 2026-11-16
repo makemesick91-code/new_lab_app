@@ -1,0 +1,93 @@
+---
+description: DMS-RME-COMPREHENSIVE-CLOSURE-1 (rule 237) — RME document numbers take the clinic month from ClinicalClock (P8R-S6); refused clinical forms never flash signatures or canvases into the session; every rendered clinical or patient-data document answers private, no-store; an RM handwriting page has a bounded payload, declared size and inflate cost; queue timing ordered worker < job < stop < retry_after (OPS-Q); legacy mass-upload batches read under their own type's archive scope (OD-7-6); deactivating or deleting an account drops its presence at once (OD-5-4); owner decisions of 2026-11-16 on OD-7-1 and unsigned prescription print.
+globs: app/Modules/RmeInvoice/Services/RmeInvoiceNumberGeneratorService.php, app/Modules/RmeInvoice/Services/RmePaymentNumberGeneratorService.php, app/Modules/RmeInvoice/Services/RmeInvoiceCorrectionService.php, app/Modules/RmeInvoice/Services/RmeBillingDisputeService.php, app/Modules/MedicalRecord/Services/HandwritingPayloadGuard.php, app/Modules/MedicalRecord/Controllers/MedicalRecordHandwritingController.php, app/Modules/LegacyImport/MassUpload/Policies/LegacyMassUploadBatchPolicy.php, app/Modules/LegacyImport/MassUpload/Controllers/LegacyMassUploadController.php, app/Modules/User/Services/UserService.php, bootstrap/app.php, routes/web.php, config/queue.php, deploy/systemd/daengtisiams-queue-worker.service
+alwaysApply: false
+---
+
+# RME comprehensive closure (rule 237)
+
+Sprint record: `docs/sprints/dms-rme-comprehensive-closure-1.md`. Owner decisions taken 2026-11-16 in the program
+session are recorded there (CG-22). This rule holds what later work must keep.
+
+## 1. Document numbers use the clinic month (P8R-S6, CG-12)
+
+1. `RME-YYYYMM-…` (invoice), `RMEPAY-YYYYMM-…` (payment), `RMECOR-YYYYMM-…` (correction), `RMEOVP-YYYYMM-…`
+   (overpayment obligation) and `RMEDSP-YYYYMM-…` (dispute) take YYYYMM from `ClinicalClock::today()`
+   (Asia/Makassar), exactly like `CONSENT-`, `RMEREF-` and `RMESTL-`. Never `now()`: from 00:00 to 07:59 WITA on the
+   1st, UTC is still on the previous month.
+2. In the two sequence generators one `$month` drives the advisory lock objid (rule 227 §4), the MAX read and the
+   prefix; they must never be computed separately.
+3. Nothing is renumbered (rule 227 §4.21). A number issued before this rule under the UTC label keeps it.
+4. Tests pin the boundary with `pinTestClock()` (UTC instants): 2026-11-30 15:59:59 → 202611, 16:00:00 → 202612,
+   2026-12-31 16:30 → 202701. Previous-month arithmetic in tests uses `createFromFormat('!Ym', …)`: a bare `Ym`
+   keeps today's day and overflows on the 29th–31st (CG-20).
+
+## 2. Owner decisions of 2026-11-16 (no code change)
+
+1. **OD-7-1 — code wins.** A Kontrol visit whose parent receivable is already cleared is paid through the ordinary
+   `pay()` path and completes on any payment > 0 like any visit. The hold-until-settled behaviour applies only on the
+   carry-over Kontrol paths (`allocateControlPayment`, `payControlInvoiceOnly` → `completeControlVisitIfSettled`).
+   AIR-RMB-04 was narrowed to say exactly that.
+2. **Unsigned prescription print — kept.** An unsigned prescription still prints without a signature image under the
+   doctor's name (rule 228 §12.4, §15). Refusing print for a missing signature needs a new owner decision.
+
+## 3. Clinical canvases never reach the session store
+
+`bootstrap/app.php` adds `consenter_signature`, `doctor_signature`, `prescription_canvas_data`,
+`doctor_signature_canvas_data` and `handwriting_data` to the exception handler's `dontFlash` (merged with the
+framework's password defaults). A refused consent, prescription or RM page therefore never copies a signature image
+or a handwriting page into the sessions table (CG-11; rule 121: clinical evidence lives on the private disk only).
+No form restores these fields with `old()`; a new canvas field is added to this list in the same change.
+
+## 4. Rendered clinical and patient-data documents are not stored by the browser
+
+Every route that renders a clinical or patient-data document carries the framework middleware
+`cache.headers:private;no_store;max_age=0`: `rme.visits.print`, `rme.visits.pdf`, `rme.odontograms.print`,
+`rme.prescriptions.print`, `rme.consents.print`, `rme.legacy-records.print`, `rme.legacy-records.export`,
+`oversight.rme.visits.print`, `oversight.rme.visits.pdf`, `oversight.rme.visits.odontogram.print`,
+`oversight.rme.visits.prescription.print`, `oversight.legacy.rme.print`, `oversight.legacy.rme.pdf`,
+`oversight.legacy.odontogram.print`, `rme.cashier.receipt.pdf`, `rme.cashier.receivables.export`,
+`rme.reports.patients.print`, `rme.reports.patients.export`, `rme.reports.payments.print`,
+`rme.reports.payments.export`, `rme.patients.audit.export`. A new print/PDF/export route of that kind gets the same
+middleware. Authorization is unchanged (route permission, policy, service).
+
+## 5. An RM handwriting page has bounded cost
+
+`HandwritingPayloadGuard` (the handwriting counterpart of rule 228 §10) is called by
+`MedicalRecordHandwritingController` before the blank check allocates anything: the request caps `handwriting_data`
+at `MAX_HANDWRITING_PAYLOAD_LENGTH` (8,000,000 characters) and the guard again; the IHDR must be the first chunk and
+the only one; the declared size is at most 2048 px a side and 2,097,152 pixels; the image data may inflate to at most
+`height × (1 + width × 8)` bytes, measured incrementally. Every bound sits above the worst case of the real 900 × 1273
+page canvas (about 6.1M characters stored uncompressed), so no drawn page is refused; a refusal happens before any
+write. A larger canvas needs these bounds raised in the same change.
+
+## 6. Queue timing order (OPS-Q)
+
+worker `--timeout` (120, the ENT-5 standard) < longest job timeout (legacy PDF render, `process_timeout` 180 + 60 =
+240) < unit `TimeoutStopSec` (270) < `queue.connections.database.retry_after` (300). A shorter `retry_after` hands a
+running render to a second worker; a shorter stop timeout kills it on every restart. The unit reaches the host only
+through provisioning (a root step); the environment file must not pin `DB_QUEUE_RETRY_AFTER` below 300. Activating
+the worker stays an owner decision.
+
+## 7. Authorization fixes (OD-7-6, OD-5-4)
+
+1. **OD-7-6.** A legacy mass-upload batch is read under the archive scope of its own `import_type`:
+   `LegacyMassUploadBatchPolicy::workspaceScopeFor()` returns `LegacyOdontogramWorkspaceScope` for an odontogram batch
+   and `LegacyRmeWorkspaceScope` otherwise (unknown types fail closed to RME). The batch list
+   (`LegacyMassUploadController::index`) asks the same method, so the list and the per-batch check cannot drift. The
+   creator still sees their own batch. Never scope one archive's batches with the other archive's governance set.
+2. **OD-5-4.** `UserService::deactivate()`, `update()` leaving the account inactive, and `delete()` call
+   `UserOnlineContextService::markOffline()` in the same transaction, so a deactivated doctor is at once not online,
+   not selectable, not auto-assigned and holds no room. Ending the session and releasing the lease still happen on that
+   account's next request (`EnsureAccountIsActive`, rule 200); nothing else changes.
+
+## 8. Tests and CI selection
+
+`RmeClinicalWriteAuthorityNoFlashTest` and `RmeClinicalWriteAuthorityHandwritingBoundTest` (existing token
+`RmeClinicalWriteAuthority`) and `RmeClinicalDocumentReadScopeNoStoreTest` (existing token
+`RmeClinicalDocumentReadScope`) are selected in BOTH critical-gate variants and declared in
+`critical_gate_mandatory_suites`; no workflow change was needed. The numbering cases live in `RmeDocumentNumberSequenceLockTest` (token
+`RmeDocumentNumberSequenceLock`) and the correction, obligation and dispute lifecycle suites (`RmeInvoiceCorrection`,
+`RmeBillingDispute`); the consent end-to-end flash case in `RmeVisitConsentSignatureBoundTest` (D-01); the queue
+order in `QueueProducerConsumerParityTest` (OPS-Q); OD-7-6 in `LegacyMassUploadWorkflowTest` (token
+`LegacyMassUpload`); OD-5-4 in `ActiveAccountSessionTest` (token `ActiveAccountSession`).

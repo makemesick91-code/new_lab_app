@@ -284,10 +284,8 @@ editable) → Persetujuan Tindakan Medis (RME + finish unlocked) → RME + Odont
 
 - Live in production: pre-consent odontogram charting, consent-gated RME authoring and "Selesai Pemeriksaan",
   consent-free payment, room gate, doctor room isolation and doctor RME/odontogram print denial.
-- No HTTP route voids a consent (`RmeVisitConsentService::void()` exists at service level only); a mistaken consent
-  is superseded by re-signing during the examination.
-- WhatsApp prescription delivery is OFF (`DisabledWhatsAppGateway` bound): HOLD / BLOCKED_EXTERNAL_DEPENDENCY until
-  Meta credentials and an approved template exist.
+- No HTTP route voids a consent (`void()` is service-only); the re-sign/correction flow is open (OD-5-8).
+- WhatsApp prescription delivery is OFF (`DisabledWhatsAppGateway`) until Meta credentials and a template exist.
 - Doctor branch lock (`doctor.branch_lock`) is OFF in production, so doctor reach is bounded by patient and room
   scope, not by branch (see `.claude/rules/doctor-access.md`).
 - Cross-branch and cross-doctor Kontrol is approved (owner decision OD-1, rule 200); receivable carry-over is
@@ -322,6 +320,7 @@ editable) → Persetujuan Tindakan Medis (RME + finish unlocked) → RME + Odont
 | `.cursor/rules/226-rme-prescription-authoring-authority-and-blade-php-pairing.mdc` | Prescription writes follow the clinical authoring authority (front desk never, working branch only); Blade never mixes inline and block PHP; closes P8-N1, P8-N3 |
 | `.cursor/rules/227-rme-clinical-document-read-scope-printed-identity-numbering.mdc` | Clinical document read scope; server-derived printed prescription identity; clinical-role authoring allowlist; serialised invoice/payment/consent numbers |
 | `.cursor/rules/228-rme-clinical-write-authority-and-prescription-integrity.mdc` | Room scope on prescriptions and live-encounter writes; clinical start-examination; doctor frozen after exam; role allowlists; prescription lock/audit/signer |
+| `.cursor/rules/237-rme-comprehensive-closure.mdc` | Clinic-month numbers; no canvas flash; no-store prints; RM page bounds; queue timing; owner decisions |
 
 ## History
 

@@ -50,8 +50,8 @@ code, then the canonical rule, and report the drift.
   `PARTIAL`/`PAID` and the remainder stays active piutang. Receivable reports key off invoice status/remaining, never
   visit status (supersedes Sprint 20 "full payment only"). Exception: on the Kontrol paths (`allocateControlPayment`,
   `payControlInvoiceOnly`) the Kontrol visit completes only when its own invoice has no remaining balance
-  (`completeControlVisitIfSettled`), so a Kontrol visit with a `PARTIAL` invoice stays `cashier_pending` (rule 207 §C7). Source: archive Hotfix RME Partial Payment Completes Visit,
-  rule 188 §3.
+  (`completeControlVisitIfSettled`): there a `PARTIAL` invoice keeps it `cashier_pending`; without carry-over `pay()`
+  completes it (OD-7-1, rule 237). Source: archive Hotfix RME Partial Payment Completes Visit, rule 188 §3.
 - **AIR-RMB-05** Carry-over collects the patient's older UNPAID/PARTIAL invoices without merging debt into the new
   invoice: server intersection of eligible ∩ submitted ids, FIFO, one payment row per invoice under a shared
   `payment_batch_uuid`, discovered only at the paying visit's own branch (`payingBranchIds()`, owner OD-1a). Another

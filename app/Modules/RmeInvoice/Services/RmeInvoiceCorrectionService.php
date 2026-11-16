@@ -36,6 +36,7 @@ use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
 use App\Modules\Tariff\Support\TariffPricingMode;
 use App\Modules\Treatment\Models\Treatment;
 use App\Support\AccessControl\ActiveAccountResolver;
+use App\Support\Clinical\ClinicalClock;
 use Closure;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\QueryException;
@@ -137,6 +138,7 @@ class RmeInvoiceCorrectionService
         private readonly RmeReceiptSnapshotService $receiptSnapshots,
         private readonly RmeOverpaymentObligationRepositoryInterface $obligations,
         private readonly RmeOwnerApprovalReferenceRegistry $ownerReferences,
+        private readonly ClinicalClock $clock,
     ) {}
 
     // ─── Reads ──────────────────────────────────────────────────────────────
@@ -477,7 +479,7 @@ class RmeInvoiceCorrectionService
 
                     $correction = $this->corrections->assignNumber(
                         $correction,
-                        'RMECOR-'.now()->format('Ym').'-'.str_pad((string) $correction->id, 6, '0', STR_PAD_LEFT),
+                        'RMECOR-'.$this->clock->today()->format('Ym').'-'.str_pad((string) $correction->id, 6, '0', STR_PAD_LEFT),
                     );
 
                     foreach ($proposal['lines'] as $line) {
@@ -931,7 +933,7 @@ class RmeInvoiceCorrectionService
 
         $obligation = $this->obligations->assignNumber(
             $obligation,
-            'RMEOVP-'.now()->format('Ym').'-'.str_pad((string) $obligation->id, 6, '0', STR_PAD_LEFT),
+            'RMEOVP-'.$this->clock->today()->format('Ym').'-'.str_pad((string) $obligation->id, 6, '0', STR_PAD_LEFT),
         );
 
         $this->obligations->recordEvent([

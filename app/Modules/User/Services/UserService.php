@@ -3,6 +3,7 @@
 namespace App\Modules\User\Services;
 
 use App\Models\User;
+use App\Modules\RmeOnlineContext\Services\UserOnlineContextService;
 use App\Modules\User\Interfaces\UserRepositoryInterface;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
@@ -16,6 +17,7 @@ class UserService
 {
     public function __construct(
         private readonly UserRepositoryInterface $users,
+        private readonly UserOnlineContextService $onlineContext,
     ) {}
 
     public function list(array $filters = [], int $perPage = 10): LengthAwarePaginator
@@ -72,13 +74,21 @@ class UserService
                 $user->syncRoles($role ? [$role] : []);
             }
 
+            if (! $user->is_active) {
+                $this->dropPresence($user);
+            }
+
             return $user;
         });
     }
 
     public function delete(User $user): bool
     {
-        return DB::transaction(fn () => $this->users->delete($user));
+        return DB::transaction(function () use ($user): bool {
+            $this->dropPresence($user);
+
+            return $this->users->delete($user);
+        });
     }
 
     public function activate(User $user): User
@@ -88,6 +98,26 @@ class UserService
 
     public function deactivate(User $user): User
     {
-        return $this->users->setActiveStatus($user, false);
+        return DB::transaction(function () use ($user): User {
+            $user = $this->users->setActiveStatus($user, false);
+            $this->dropPresence($user);
+
+            return $user;
+        });
+    }
+
+    /**
+     * DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-5-4) — an account that stops being
+     * usable stops being "online" in the same transaction. Before, only
+     * EnsureAccountIsActive dropped the presence, on that account's NEXT request,
+     * so for up to the presence window a deactivated doctor stayed selectable,
+     * auto-assignable and room-resolvable. markOffline() is the same call the
+     * logout and the next-request refusal make (it frees a doctor's room); it
+     * ends no session and releases no lease, which EnsureAccountIsActive still
+     * does on that account's next request (rule 200).
+     */
+    private function dropPresence(User $user): void
+    {
+        $this->onlineContext->markOffline($user);
     }
 }
