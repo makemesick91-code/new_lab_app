@@ -165,10 +165,21 @@ class ClinicVisitRepository implements ClinicVisitRepositoryInterface
 
     /**
      * DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-5-5) — `pg_advisory_xact_lock(92_005,
-     * patient id)`. 92_001 is the visit sequence and 92_002..92_004 the document
-     * numbers (DocumentNumberSequenceLock); NEVER RENUMBER this namespace — during a
-     * rolling deploy an old and a new process would take different locks for the
-     * same patient. Pinned by ClinicVisitRegistrationConcurrencyTest.
+     * patient id)`. NEVER RENUMBER this namespace — during a rolling deploy an old
+     * and a new process would take different locks for the same patient.
+     *
+     * Advisory lock namespace inventory (every classid the application uses; each
+     * belongs to exactly one lock, and a new lock takes the next unused value):
+     *
+     *     91_xxx  legacy document slots (LegacyDocumentSlotLock, 91_000 + type)
+     *     92_001  visit sequence (ClinicVisitSequenceLock, rule 225)
+     *     92_002  RME invoice number (DocumentNumberSequenceLock)
+     *     92_003  RME payment number (DocumentNumberSequenceLock)
+     *     92_004  visit consent number (DocumentNumberSequenceLock)
+     *     92_005  patient encounter decision (this lock)
+     *
+     * Value, uniqueness and this inventory are pinned by
+     * ClinicVisitRegistrationConcurrencyTest (OD-5-5).
      */
     public const PATIENT_ENCOUNTER_LOCK_NAMESPACE = 92_005;
 

@@ -32,9 +32,13 @@ use App\Modules\ClinicVisit\Interfaces\ClinicVisitRepositoryInterface;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\ClinicVisit\Repositories\ClinicVisitRepository;
 use App\Modules\ClinicVisit\Services\ClinicVisitRegistrationGuard;
+use App\Modules\ClinicVisit\Support\ClinicVisitSequenceLock;
+use App\Modules\LegacyImport\Support\LegacyDocumentSlotLock;
+use App\Support\Database\DocumentNumberSequenceLock;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
 use Illuminate\Validation\ValidationException;
 
 const CVRC_WRITER = 'cvrc_concurrency_writer';
@@ -235,6 +239,53 @@ function cvrcStatements(Closure $work): array
 it('OD-5-5 pins the patient encounter lock namespace apart from every other advisory lock', function (): void {
     expect(ClinicVisitRepository::PATIENT_ENCOUNTER_LOCK_NAMESPACE)->toBe(92_005)
         ->and([92_001, 92_002, 92_003, 92_004])->not->toContain(ClinicVisitRepository::PATIENT_ENCOUNTER_LOCK_NAMESPACE);
+
+    // Every advisory lock namespace the application uses, by value: no two locks
+    // share one (the legacy slots are computed from 91_000, the rest are 92_xxx).
+    $namespaces = array_merge(
+        array_values(LegacyDocumentSlotLock::NAMESPACES),
+        [ClinicVisitSequenceLock::NAMESPACE],
+        DocumentNumberSequenceLock::NAMESPACES,
+        [ClinicVisitRepository::PATIENT_ENCOUNTER_LOCK_NAMESPACE],
+    );
+    expect(array_values(array_unique($namespaces)))->toBe($namespaces);
+
+    // Every 92_xxx integer literal in app/, read from PHP tokens so comments never
+    // count: each namespace is declared exactly once, so a second lock that reuses
+    // 92_005 (or any other) as a literal fails here. The 92_005 declaration is the
+    // repository's constant.
+    $declared = [];
+    foreach (File::allFiles(app_path()) as $file) {
+        if ($file->getExtension() !== 'php') {
+            continue;
+        }
+
+        foreach (token_get_all($file->getContents()) as $token) {
+            if (is_array($token) && $token[0] === T_LNUMBER) {
+                $value = intval(str_replace('_', '', $token[1]), 0);
+
+                if ($value >= 92_000 && $value <= 92_999) {
+                    $declared[] = $value.' '.str_replace('\\', '/', $file->getRelativePathname());
+                }
+            }
+        }
+    }
+    sort($declared);
+
+    expect($declared)->toBe([
+        '92001 Modules/ClinicVisit/Support/ClinicVisitSequenceLock.php',
+        '92002 Support/Database/DocumentNumberSequenceLock.php',
+        '92003 Support/Database/DocumentNumberSequenceLock.php',
+        '92004 Support/Database/DocumentNumberSequenceLock.php',
+        '92005 Modules/ClinicVisit/Repositories/ClinicVisitRepository.php',
+    ]);
+
+    // The advisory lock namespace inventory (on the newest namespace's constant)
+    // names every one, so the next lock picks an unused value.
+    $inventory = (string) (new ReflectionClassConstant(ClinicVisitRepository::class, 'PATIENT_ENCOUNTER_LOCK_NAMESPACE'))->getDocComment();
+    foreach (['91_xxx', '92_001', '92_002', '92_003', '92_004', '92_005'] as $namespace) {
+        expect($inventory)->toContain($namespace);
+    }
 });
 
 it('OD-5-5 registration takes the patient encounter lock BEFORE it reads the in-progress set, and holds it', function (): void {

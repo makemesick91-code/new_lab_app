@@ -39,6 +39,7 @@ declare(strict_types=1);
 | `!Ym` (day 1) so it cannot overflow on the 29th-31st (CG-20).
 */
 
+use App\Modules\ClinicVisit\Repositories\ClinicVisitRepository;
 use App\Modules\ClinicVisit\Support\ClinicVisitSequenceLock;
 use App\Modules\Consent\Models\RmeVisitConsent;
 use App\Modules\Consent\Services\RmeVisitConsentNumberGeneratorService;
@@ -126,6 +127,8 @@ it('pins the three sequence namespaces and keeps them apart from every other adv
         ->and(DocumentNumberSequenceLock::NAMESPACES)->toBe([92_002, 92_003, 92_004])
         // 92_001 is the visit sequence (rule 225); 91_xxx is the legacy document slot.
         ->and(DocumentNumberSequenceLock::NAMESPACES)->not->toContain(ClinicVisitSequenceLock::NAMESPACE)
+        // 92_005 is the patient encounter decision lock (OD-5-5).
+        ->and(DocumentNumberSequenceLock::NAMESPACES)->not->toContain(ClinicVisitRepository::PATIENT_ENCOUNTER_LOCK_NAMESPACE)
         ->and(min(DocumentNumberSequenceLock::NAMESPACES))->toBeGreaterThan(91_999);
 });
 

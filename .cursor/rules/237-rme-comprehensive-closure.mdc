@@ -151,6 +151,9 @@ controller). Existing links are not touched. Billing already refused a cancelled
      (`MESSAGE_START_WHILE_IN_PROGRESS`). Registration alone could not prevent two open examinations: two visits
      registered while neither was in progress could both be started (independent review).
    No row-lock path holds the advisory lock, so it adds no cycle; never renumber 92_005 (pinned by a test).
+   Advisory lock namespaces, one lock each: 91_xxx legacy slots, 92_001 visit sequence, 92_002..92_004 the document
+   numbers, 92_005 this lock; the inventory lives on `ClinicVisitRepository::PATIENT_ENCOUNTER_LOCK_NAMESPACE`, and
+   the OD-5-5 pin fails if any 92_xxx literal in `app/` is declared twice or the inventory misses one.
    registered / waiting / cashier_pending visits do not block; a brand-new patient is never checked. The message may
    name a visit at another RME branch, as the OD-1 cross-branch follow-up already does.
 3. **R8A-2 for prescriptions.** `StoreRmePrescriptionRequest` / `UpdateRmePrescriptionRequest::authorize()` return the
