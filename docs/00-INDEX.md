@@ -168,6 +168,11 @@ Nomor ADR berikutnya yang tersedia: **0017**.
   terpercaya; cek read-only `scripts/sudo-policy-check.sh` —
   [dms-deploy-privsep-phase-2](sprints/dms-deploy-privsep-phase-2.md), aturan kanonik
   `.cursor/rules/235-deploy-least-privilege-sudo.mdc`, provisioning satu kali runbook §6f.
+- Persetujuan rilis langsung (rule 236, approval contract 3): owner menandatangani record kanonik secara lokal
+  (`scripts/release-approval-sign.sh`), operator mengirim lewat `submit-approval`; host memverifikasi tanda tangan,
+  SHA/tree persis dan CI commit target sendiri — tanpa branch/PR/commit/CI khusus approval —
+  [dms-release-approval-direct-1](sprints/dms-release-approval-direct-1.md), aturan kanonik
+  `.cursor/rules/236-direct-signed-release-approval.mdc`, runbook §6g.
 - Keamanan runtime: [dedicated-runtime-identity-runbook](runbooks/dedicated-runtime-identity-runbook.md),
   [production-secret-file-permissions-runbook](runbooks/production-secret-file-permissions-runbook.md),
   [security-pii-compliance-hardening-governance](architecture/security-pii-compliance-hardening-governance.md).

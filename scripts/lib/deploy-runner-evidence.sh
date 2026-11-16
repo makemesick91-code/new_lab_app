@@ -36,6 +36,15 @@
 #      and the key that signed it, and the run's own log shows the same signer.
 #      A run whose launcher is gone without a status is INTERRUPTED, never
 #      "pending" forever and never OK.
+#   9. direct approval (approval contract 3, DMS-RELEASE-APPROVAL-DIRECT-1) —
+#      a record with approval_contract=3 names a STORED approval instead of git
+#      objects: its id, the SHA-256 of the stored record and signature and the
+#      release's directory in the authority's approval store. The run's own log
+#      must name the same id, digests, signer and CI run (and no contract-2 record),
+#      and the store must still hold exactly those bytes (re-hashed, 0400, one
+#      link, a trusted 0700 directory). Records without approval_contract are
+#      contract-2 runs and verify exactly as before; the evidence contract
+#      stays 4 (the new fields are additive and discriminated).
 #
 # Anything else is refused with a named verdict and return code 4. Nothing here
 # ever reports success for a run it could not prove.
@@ -366,6 +375,113 @@ dms_runner_assert_signature_blob() {
   return 0
 }
 
+dms_runner_log_single() {
+  # dms_runner_log_single <log> <KEY> — the value of the ONE `KEY=` line of the
+  # log; returns 1 when the log holds none or more than one.
+  local log="$1" key="$2"
+  [ "$(dms_runner_count_lines "^${key}=" "$log")" = "1" ] || return 1
+  sed -n "/^${key}=/{s/^${key}=//p;q;}" "$log"
+}
+
+dms_runner_assert_direct_fields() {
+  # dms_runner_assert_direct_fields <authority> <release_id> <approval_id> <record_sha256> <signature_sha256> <store_path> <signer> <ci_run_id>
+  # A contract-3 record (DMS-RELEASE-APPROVAL-DIRECT-1) names the stored
+  # approval completely, in the release's directory of the authority's store,
+  # and the GitHub run whose required CI the runner verified.
+  local authority="$1" release="$2" id="$3" record_sha="$4" sig_sha="$5" store_path="$6" signer="$7" ci_run="${8:-}" store
+  if [[ ! "$id" =~ ^[0-9a-f]{32}$ ]] || [[ ! "$record_sha" =~ ^[0-9a-f]{64}$ ]] || [[ ! "$sig_sha" =~ ^[0-9a-f]{64}$ ]] \
+     || [[ ! "$signer" =~ ^SHA256:[A-Za-z0-9+/]{43}$ ]] || [[ ! "$ci_run" =~ ^[0-9]{1,20}$ ]]; then
+    dms_runner_reject INCOMPLETE "the record does not name the stored approval and CI run it verified (approval_id, approval_record_sha256, approval_signature_sha256, approval_signer_key, approval_ci_run_id)"
+    return 4
+  fi
+  store="$(dms_runner_authority_value "$authority" DMS_PRODUCTION_RELEASE_APPROVAL_STORE)"
+  if [ -z "$store" ] || [ "$store_path" != "${store}/${release}" ]; then
+    dms_runner_reject MISMATCHED "the record names the approval store path '${store_path:-<none>}', the authority's store for ${release} is '${store:+${store}/${release}}'"
+    return 4
+  fi
+  return 0
+}
+
+dms_runner_assert_direct_log() {
+  # dms_runner_assert_direct_log <log> <approved_sha> <approval_id> <record_sha256> <signature_sha256> <signer> <ci_run_id>
+  # The bootstrap, inside the lock, verified exactly the stored approval the
+  # runner verified before launch: one approved commit, contract 3, the same
+  # approval id, the same record and signature digests, the same signer, the
+  # same CI run — and no contract-2 approval record.
+  local log="$1" approved="$2" id="$3" record_sha="$4" sig_sha="$5" signer="$6" ci_run="${7:-}" key expected value
+  if [ "$(dms_runner_count_lines '^RELEASE APPROVAL: GO$' "$log")" -lt 1 ]; then
+    dms_runner_reject UNVERIFIED "the run's log carries no 'RELEASE APPROVAL: GO' — the deploy never proved its target was approved"
+    return 4
+  fi
+  if [ "$(dms_runner_count_lines '^DEPLOY_APPROVAL_RECORD=' "$log")" != "0" ]; then
+    dms_runner_reject MISMATCHED "the run's log names a contract-2 approval record, the record names stored approval ${id}"
+    return 4
+  fi
+  for key in DEPLOY_APPROVED_SHA DEPLOY_APPROVAL_CONTRACT DEPLOY_APPROVAL_ID DEPLOY_APPROVAL_RECORD_SHA256 DEPLOY_APPROVAL_SIGNATURE_SHA256 DEPLOY_APPROVAL_SIGNER DEPLOY_APPROVAL_CI_RUN_ID; do
+    case "$key" in
+      DEPLOY_APPROVED_SHA) expected="$approved" ;;
+      DEPLOY_APPROVAL_CONTRACT) expected="3" ;;
+      DEPLOY_APPROVAL_ID) expected="$id" ;;
+      DEPLOY_APPROVAL_RECORD_SHA256) expected="$record_sha" ;;
+      DEPLOY_APPROVAL_SIGNATURE_SHA256) expected="$sig_sha" ;;
+      DEPLOY_APPROVAL_CI_RUN_ID) expected="$ci_run" ;;
+      *) expected="$signer" ;;
+    esac
+    if ! value="$(dms_runner_log_single "$log" "$key")"; then
+      dms_runner_reject UNVERIFIED "the run's log does not name exactly one ${key}"
+      return 4
+    fi
+    if [ "$value" != "$expected" ]; then
+      dms_runner_reject MISMATCHED "the bootstrap verified ${key}=${value:-<none>}, the runner recorded ${expected} before launch"
+      return 4
+    fi
+  done
+  return 0
+}
+
+dms_runner_assert_direct_store() {
+  # dms_runner_assert_direct_store <store_path> <approval_id> <release_id> <approved_sha> <record_sha256> <signature_sha256> <app_dir> <deploy_uid>
+  # The stored approval still exists exactly as verified: the release's store
+  # directory is the deploy identity's own (0700, trusted chain, outside the
+  # checkout), the record and signature are single-link 0400 files of that
+  # identity whose SHA-256 equal the recorded digests, and the record approves
+  # this release at this commit under this approval id.
+  local dir="$1" id="$2" release="$3" approved="$4" record_sha="$5" sig_sha="$6" app_dir="$7" uid="$8"
+  local why file out owner mode links digest expected content
+  if ! why="$(dms_trusted_dir "release approval directory" "$dir" "$uid" "$app_dir")"; then
+    dms_runner_reject UNTRUSTED "${why} — the stored approval cannot be proven"
+    return 4
+  fi
+  for file in "${dir}/${id}.approval" "${dir}/${id}.sig"; do
+    if [ -L "$file" ] || [ ! -f "$file" ]; then
+      dms_runner_reject TAMPERED "the stored approval file ${file} is missing or is not a regular file"
+      return 4
+    fi
+    out="$(stat -c '%u %a %h' -- "$file" 2>/dev/null)" || out=""
+    read -r owner mode links <<< "$out"
+    if [ "${owner:-}" != "$uid" ] || [ "${mode:-}" != "400" ] || [ "${links:-}" != "1" ]; then
+      dms_runner_reject TAMPERED "the stored approval file ${file} is uid ${owner:-?} mode ${mode:-?} with ${links:-?} link(s); it must be the deploy identity's, 0400, one link"
+      return 4
+    fi
+    digest="$(sha256sum -- "$file" 2>/dev/null)" || digest=""
+    digest="${digest%% *}"
+    case "$file" in *.approval) expected="$record_sha" ;; *) expected="$sig_sha" ;; esac
+    if [ "$digest" != "$expected" ]; then
+      dms_runner_reject TAMPERED "${file} hashes to ${digest:-<unreadable>}, the run verified ${expected}"
+      return 4
+    fi
+  done
+  content="$(cat -- "${dir}/${id}.approval" 2>/dev/null)" || content=""
+  if ! grep -qxF -- "DMS_APPROVAL_CONTRACT=3" <<< "$content" \
+     || ! grep -qxF -- "DMS_APPROVAL_ID=${id}" <<< "$content" \
+     || ! grep -qxF -- "DMS_APPROVAL_RELEASE_ID=${release}" <<< "$content" \
+     || ! grep -qxF -- "DMS_APPROVAL_TARGET_SHA=${approved}" <<< "$content"; then
+    dms_runner_reject MISMATCHED "stored approval ${id} does not approve release ${release} at ${approved}"
+    return 4
+  fi
+  return 0
+}
+
 dms_runner_verify_run() {
   # dms_runner_verify_run <run_dir> <deploy_id> <this_host> <authority> <app_dir> <now_epoch> [<this_host_key>] [<this_boot_id>] [<deploy_uid>]
   # The last three default to the observed values on this machine (the host
@@ -376,6 +492,7 @@ dms_runner_verify_run() {
   local rec_contract rec_host rec_id rec_started rec_finished rec_exit rec_runner_sha
   local started_epoch finished_epoch target rec_release rec_approved rec_record rec_blob rec_path rec_tip rec_record_path
   local rec_dir rec_host_key rec_sig_blob rec_signer rec_boot rec_pid rec_start prod_host_key log_blob
+  local rec_acontract rec_aid rec_arecord_sha rec_asig_sha rec_astore rec_aci_run
 
   if ! dms_runner_valid_id "$id"; then
     dms_runner_reject MALFORMED "deployment identifier '${id}' is not a runner identifier (YYYYmmdd-HHMMSS)"
@@ -443,6 +560,14 @@ dms_runner_verify_run() {
   rec_host_key="$(dms_runner_kv "$record" host_key_sha256)"
   rec_sig_blob="$(dms_runner_kv "$record" approval_signature_blob)"
   rec_signer="$(dms_runner_kv "$record" approval_signer_key)"
+  # DMS-RELEASE-APPROVAL-DIRECT-1: which approval contract the run used. A
+  # record without it predates contract 3 and is a contract-2 run.
+  rec_acontract="$(dms_runner_kv "$record" approval_contract)"
+  rec_aid="$(dms_runner_kv "$record" approval_id)"
+  rec_arecord_sha="$(dms_runner_kv "$record" approval_record_sha256)"
+  rec_asig_sha="$(dms_runner_kv "$record" approval_signature_sha256)"
+  rec_astore="$(dms_runner_kv "$record" approval_store_path)"
+  rec_aci_run="$(dms_runner_kv "$record" approval_ci_run_id)"
 
   # 1. Production host identity.
   if [ "$rec_host" != "$this_host" ]; then
@@ -476,23 +601,35 @@ dms_runner_verify_run() {
     dms_runner_reject INCOMPLETE "the record does not name the approved release and commit (release_id, approved_sha)"
     return 4
   fi
-  rec_path="deploy/release-approvals/${rec_release}.approval"
-  # Capture the groups at once: any later [[ =~ ]] (dms_runner_valid_sha)
-  # replaces BASH_REMATCH.
-  rec_tip=""
-  rec_record_path=""
-  if [[ "$rec_record" =~ ^([0-9a-f]{40}):(.+)$ ]]; then
-    rec_tip="${BASH_REMATCH[1]}"
-    rec_record_path="${BASH_REMATCH[2]}"
-  fi
-  if [ -z "$rec_tip" ] || [ "$rec_record_path" != "$rec_path" ] || ! dms_runner_valid_sha "$rec_blob"; then
-    dms_runner_reject INCOMPLETE "the record does not name the approval it verified for ${rec_release} (approval_record, approval_blob)"
-    return 4
-  fi
-  if ! dms_runner_valid_sha "$rec_sig_blob" || [[ ! "$rec_signer" =~ ^SHA256:[A-Za-z0-9+/]{43}$ ]]; then
-    dms_runner_reject INCOMPLETE "the record does not name the approval signature and its key (approval_signature_blob, approval_signer_key)"
-    return 4
-  fi
+  case "$rec_acontract" in
+    3)
+      # Contract 3: a stored approval, bound by id and digests.
+      dms_runner_assert_direct_fields "$authority" "$rec_release" "$rec_aid" "$rec_arecord_sha" "$rec_asig_sha" "$rec_astore" "$rec_signer" "$rec_aci_run" || return 4
+      ;;
+    ''|2)
+      rec_path="deploy/release-approvals/${rec_release}.approval"
+      # Capture the groups at once: any later [[ =~ ]] (dms_runner_valid_sha)
+      # replaces BASH_REMATCH.
+      rec_tip=""
+      rec_record_path=""
+      if [[ "$rec_record" =~ ^([0-9a-f]{40}):(.+)$ ]]; then
+        rec_tip="${BASH_REMATCH[1]}"
+        rec_record_path="${BASH_REMATCH[2]}"
+      fi
+      if [ -z "$rec_tip" ] || [ "$rec_record_path" != "$rec_path" ] || ! dms_runner_valid_sha "$rec_blob"; then
+        dms_runner_reject INCOMPLETE "the record does not name the approval it verified for ${rec_release} (approval_record, approval_blob)"
+        return 4
+      fi
+      if ! dms_runner_valid_sha "$rec_sig_blob" || [[ ! "$rec_signer" =~ ^SHA256:[A-Za-z0-9+/]{43}$ ]]; then
+        dms_runner_reject INCOMPLETE "the record does not name the approval signature and its key (approval_signature_blob, approval_signer_key)"
+        return 4
+      fi
+      ;;
+    *)
+      dms_runner_reject INCOMPATIBLE "the record names approval contract '${rec_acontract}'; this verifier knows contracts 2 and 3"
+      return 4
+      ;;
+  esac
 
   # 3. Deployment identifier.
   if [ "$rec_id" != "$id" ]; then
@@ -550,15 +687,23 @@ dms_runner_verify_run() {
 
   # 7. The approval, from the run's own log and from git (after the host and
   # target facts, so a copied foreign log is reported for what it fails first).
-  dms_runner_assert_approval_log "$log" "$rec_approved" "$rec_release" "$rec_path" "$app_dir" "$rec_signer" || return 4
-  dms_runner_assert_approval_blob "$app_dir" "$rec_blob" "$rec_release" "$rec_approved" "$rec_tip" "$rec_path" || return 4
-  dms_runner_assert_signature_blob "$app_dir" "$rec_sig_blob" "$rec_tip" "$rec_path" || return 4
-  # Rule 231: the bootstrap, inside the lock, verified the very record the runner
-  # verified before launch — not another signed version of the same release.
-  log_blob="$(sed -n '/^DEPLOY_APPROVAL_RECORD=/{s/^.* blob=//p;q;}' "$log")"
-  if [ "$log_blob" != "$rec_blob" ]; then
-    dms_runner_reject MISMATCHED "the bootstrap verified approval ${log_blob:-<none>}, the runner verified ${rec_blob} before launch"
-    return 4
+  if [ "$rec_acontract" = "3" ]; then
+    # Contract 3 (DMS-RELEASE-APPROVAL-DIRECT-1): the bootstrap verified the
+    # same stored approval, and the store still holds exactly those bytes.
+    dms_runner_assert_direct_log "$log" "$rec_approved" "$rec_aid" "$rec_arecord_sha" "$rec_asig_sha" "$rec_signer" "$rec_aci_run" || return 4
+    dms_runner_assert_direct_store "$rec_astore" "$rec_aid" "$rec_release" "$rec_approved" "$rec_arecord_sha" "$rec_asig_sha" "$app_dir" "$uid" || return 4
+    echo "deploy-runner: approval contract 3, stored approval ${rec_aid} (record sha256 ${rec_arecord_sha}), required CI run ${rec_aci_run}"
+  else
+    dms_runner_assert_approval_log "$log" "$rec_approved" "$rec_release" "$rec_path" "$app_dir" "$rec_signer" || return 4
+    dms_runner_assert_approval_blob "$app_dir" "$rec_blob" "$rec_release" "$rec_approved" "$rec_tip" "$rec_path" || return 4
+    dms_runner_assert_signature_blob "$app_dir" "$rec_sig_blob" "$rec_tip" "$rec_path" || return 4
+    # Rule 231: the bootstrap, inside the lock, verified the very record the runner
+    # verified before launch — not another signed version of the same release.
+    log_blob="$(sed -n '/^DEPLOY_APPROVAL_RECORD=/{s/^.* blob=//p;q;}' "$log")"
+    if [ "$log_blob" != "$rec_blob" ]; then
+      dms_runner_reject MISMATCHED "the bootstrap verified approval ${log_blob:-<none>}, the runner verified ${rec_blob} before launch"
+      return 4
+    fi
   fi
   echo "deploy-runner: target_commit=${target} (checkout HEAD matches)"
   echo "deploy-runner: approval signed with ${rec_signer}; host key ${rec_host_key}; evidence ${run_dir}"

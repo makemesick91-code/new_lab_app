@@ -1,0 +1,76 @@
+---
+description: DMS-RELEASE-APPROVAL-DIRECT-1 (rule 236) — approval contract 3, direct signed release approval. Once active on the host, a production release needs no approval-only branch, commit, PR, CI run or merge. The owner signs a canonical record locally (scripts/release-approval-sign.sh); the deploy operator submits record + signature on stdin (`submit-approval --release-id <id>`); root verifies and stores them in the root-only approval store; `start` verifies the stored approval (signature against the host trust anchor, exact SHA/tree/host/host-key/repository/branch/scope/GO-tag binding, window ≤ 72 h on host time, release and approval id spent once, merged ancestry with only approvals/docs after the target, forward-only) AND the required CI of the exact commit, asked of GitHub by the host. Contract 2 stays accepted; nothing ever falls back from a stored approval to contract 2.
+globs: scripts/lib/release-approval.sh, scripts/release-approval-sign.sh, scripts/release-approval-submit.sh, scripts/release-approval-withdraw.sh, scripts/deploy-vps-runner.sh, scripts/deploy-immutable-exec.sh, scripts/lib/deploy-runner-evidence.sh, scripts/deploy-operator-entrypoint.sh, scripts/lib/sudo-policy.sh, deploy/production-host.conf, deploy/release-approvals/**
+alwaysApply: false
+---
+
+# Direct signed release approval — approval contract 3 (rule 236)
+
+**Status:** ACTIVE on a host once `DMS_PRODUCTION_RELEASE_APPROVAL_CONTRACTS` lists `3` there AND the operator
+entrypoint carries `submit-approval` (re-provisioned). Sprint record: `docs/sprints/dms-release-approval-direct-1.md`.
+**Partially supersedes** rule 229 §3 ("merged through a pull request") and §4.4 (record read from the fetched commit
+object) and rule 231's committed `.sig`, for releases approved under contract 3 only; both rules keep governing
+contract 2 and every check contract 3 reuses. "Approval contract 3" (this rule) is not rule 229's "evidence contract
+3" (runner evidence; still contract 4).
+
+## 1. The end state (permanent policy)
+
+| Setting | Value |
+|---|---|
+| `RELEASE_APPROVAL_MODE` | `DIRECT_SIGNED` (contract 3) |
+| `APPROVAL_ONLY_PR_REQUIRED` / `_COMMIT_` / `_CI_` | `FALSE` |
+| `OWNER_SIGNATURE_REQUIRED`, `EXACT_SHA_BINDING_REQUIRED` | `TRUE` |
+| `REQUIRED_CI_FOR_TARGET_SHA` | `TRUE` — verified by the host, never taken from the approval |
+| `VPS_TRUST_CHECK_REQUIRED`, `PRODUCTION_VERIFICATION_REQUIRED` | `TRUE` |
+| `BK2_POLICY` | `MANUAL_ONLY` (rule 232) |
+
+These describe the state after this rule's own release is production-verified and the operator re-provisioned; they
+never permit bypassing the guard that is active on the host.
+
+## 2. Invariants
+
+1. **The owner signs, on the owner's workstation, nothing else does.** `scripts/release-approval-sign.sh` builds the
+   canonical 14-line record (contract 3, a random 128-bit approval id, scope `production-deploy`, repository, host,
+   host key, branch, exact SHA and tree, GO tag from the commit's `.sprint/current.yml`, approver, window ≤ 72 h) from
+   the target commit's own tree, shows it with the window in UTC and WITA, reads YES only from the terminal, signs the
+   record file with `ssh-keygen -Y sign -n dms-release-approval` with ssh-agent excluded (the passphrase is typed),
+   verifies, and writes the bundle `~/DaengtisiaMS-release-approvals/<release>/<approval-id>.bundle` (0600). It never
+   commits, pushes, deploys or reads the private key beyond ssh-keygen. An assistant never runs it for the owner.
+2. **Submission is input, never trust.** `ssh daengtisiams-biznet-deploy submit-approval --release-id <id> < bundle`:
+   stdin only (≤ 8 KiB), strict canonical parse, signature/binding/window/unspent checks, one active approval per
+   release, refused while a deploy holds the release lock; root stores record, signature and receipt (0400) under
+   `DMS_PRODUCTION_RELEASE_APPROVAL_STORE` (root 0700, outside the checkout) by exclusive create and rename.
+3. **The deploy re-verifies everything.** `start` (runner) and the bootstrap (inside the lock) verify the stored
+   approval with every contract-2 binding that does not need a commit, plus the required CI: the latest push run of
+   `DMS_PRODUCTION_CI_WORKFLOW` on exactly the target SHA, branch and repository (no fork) completed with success; each
+   `DMS_PRODUCTION_CI_REQUIRED_JOBS` job succeeded (a skipped job never counts) and the critical job ran its tests
+   (`DMS_PRODUCTION_CI_REQUIRED_STEP`), never the docs-only skip (`DMS_PRODUCTION_CI_FORBIDDEN_STEP`). Network, HTTP or
+   parse failure is DENIED. The approval never vouches for CI. Before the CI calls the guard reads `GET /rate_limit`
+   (unauthenticated budget, 60/hour per host) and denies, naming the reset in UTC, when fewer than 2 + the caller's
+   reserve remain (0 for `start`/bootstrap); an unreadable answer denies. `check-approval --release-id <id>
+   --approved-sha <sha>` runs exactly this guard read-only (no claim, record, spend or launch; no ref, `FETCH_HEAD`
+   or remote-tracking change) with a reserve of 4, one check at a time and never during a deploy, rollback or
+   submission (non-blocking locks beside the release lock: BUSY, exit 75) — the way to prove a stored approval, and
+   to test contract 3 on production, without deploying.
+4. **No fallback, no replay.** A release with any stored approval is decided by it alone; exactly one active approval,
+   whose target equals `--approved-sha`. A release id and an approval id each deploy once; an expired approval needs a
+   new signature (never extended). The administrator can withdraw an approval
+   (`scripts/release-approval-withdraw.sh`, root only, never reachable by the operator).
+5. **Evidence binds the store.** The runner record carries `approval_contract=3`, the approval id, the record and
+   signature SHA-256, the store path and the verified CI run id; `verify` re-hashes the store files. The store is never
+   pruned or moved. The closure doc records the approval id and digests (off-host anchor).
+6. **Owner decision stays recorded (CG-22).** The signed record is the owner's written approval of the exact SHA; the
+   sprint doc records the decision and, at closure, the digests.
+
+## 3. Migration boundary
+
+The release that ships this rule is deployed under contract 2 (approval PR), from the host's current guard. Contract 3
+becomes usable only after that release is production-verified, GO-tagged and the operator re-provisioned (an
+administrator step with the owner's password, rule 235). Contract 2 records stay valid and verifiable; signed
+records are never edited. If contract 3 misbehaves, releases keep using contract 2 until it is fixed.
+
+## 4. Operations
+
+Runbook `docs/runbooks/production-host-identity.md` §6g. If the base branch's push run of the target was cancelled
+(`cancel-in-progress`), re-run it before submitting. An interrupted submission is cleared by re-running
+`submit-approval`.

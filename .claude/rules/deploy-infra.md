@@ -209,9 +209,8 @@ code, then the canonical rule, and report the drift.
   after the preflight and before any mutation. `provision-runtime-identity.sh` uses `systemctl try-restart` for the
   queue worker so a stopped worker stays stopped. Source: `.cursor/rules/220-production-host-identity-biznet.mdc` §4.
 - **AIR-DEP-33** A bare `exit=N` is never proof of a deploy. `deploy-vps-runner.sh` writes a binding record
-  (`deploy-<id>.host`, since rule 231 in the root-only `/var/lib/daengtisiams-deploy/runner`, contract 4 — see
-  AIR-DEP-37: host, `deploy_id`, UTC `started_at`/`finished_at`, `runner_contract`, runner SHA-256,
-  `release_id`, `approved_sha`, `result_exit`) and `verify <id>` / `status` (`scripts/lib/deploy-runner-evidence.sh`) accept a success only when
+  (`deploy-<id>.host` in the root-only `/var/lib/daengtisiams-deploy/runner`, contract 4; fields in rule 231 —
+  AIR-DEP-37) and `verify <id>` / `status` (`scripts/lib/deploy-runner-evidence.sh`) accept a success only when
   host identity, timestamps, identifier, target commit (one pin, the deploy's HEAD == target, checkout still there),
   runner version and result (status == record, preflight GO + DEPLOY OK in the run's own log) all agree; anything
   else exits `4` with a named verdict. Never read `latest.status` raw as a GO criterion. Every deploy is proven with `verify <id>` →
@@ -231,7 +230,7 @@ code, then the canonical rule, and report the drift.
   of HEAD. Deploys refuse `--snapshot-ref` and run only `scripts/deploy-vps.sh`; the guard fetches into a private
   ref (never `FETCH_HEAD`); snapshot stages trust `DMS_DEPLOY_*` only with the bootstrap's lock held. The §6c bootstrap
   is spent on Biznet: use §6b. An approval-record PR runs the whole Critical Gate (`unknown_high_risk`, about an hour); never
-  reclassify it as documentation. Rule 231 (AIR-DEP-37) adds signature, host key, single use and trusted evidence.
+  reclassify it as documentation (contract 2 only). Rule 231 (AIR-DEP-37) adds signature, host key, single use.
   Source:
   `.cursor/rules/229-exact-approved-release-sha-guard.mdc`.
 - **AIR-DEP-36** The BK-2 workstation pull (`dms-bk2-pull.timer`) claims `result=OK`, exit 0 and a local
@@ -251,8 +250,8 @@ code, then the canonical rule, and report the drift.
   release id deploys once (spend record written inside the lock). Evidence contract 4 lives in root-only
   `/var/lib/daengtisiams-deploy/runner`, runs are claimed with `set -C`, `verify` refuses
   `UNTRUSTED`/`TAMPERED`/`FOREIGN` and reports killed runs `INTERRUPTED`. Deploy and rollback share `release.lock`;
-  a leftover git lock is FATAL. Rollback takes a full SHA or a tag, never an abbreviated SHA.
-  OD-1 DEPLOY-PRIVSEP: closed by rule 233 (AIR-DEP-39). Source: `.cursor/rules/231-release-guard-trust-hardening.mdc`.
+  a leftover git lock is FATAL. Rollback takes a full SHA or a tag, never an abbreviated SHA. Source:
+  `.cursor/rules/231-release-guard-trust-hardening.mdc`.
 - **AIR-DEP-38** Rule 232 (owner directive `DMS-BK2-MANUAL-ONLY-1`, 2026-11-14): BK-2 is manual-only and never a
   sprint, GO/NO-GO or deploy gate. Runbook §6b step 3 no longer waits on the host BK-2 status or the workstation
   verdict (supersedes rule 230 §9). No agent runs, triggers or schedules BK-2 without an explicit owner order about
@@ -304,6 +303,7 @@ code, then the canonical rule, and report the drift.
 | `.cursor/rules/232-bk2-manual-only-not-a-deploy-gate.mdc` | BK-2 manual-only: not a sprint, GO or deploy gate; runner dump stays mandatory; only an explicit owner order runs BK-2 |
 | `.cursor/rules/233-deploy-privilege-separation.mdc` | No root PHP; no root path mutation of runtime trees; source claim; drift gate; deploy security baseline index |
 | `.cursor/rules/235-deploy-least-privilege-sudo.mdc` | Operator entrypoint; password-only admin; build sandbox; restore evidence |
+| `.cursor/rules/236-direct-signed-release-approval.mdc` | Approval contract 3: direct signed approval, host-verified CI |
 | `.cursor/rules/100-production-secret-file-permission-hardening.mdc` | Secret file mode and handling |
 | `.cursor/rules/121-clinical-evidence-private-storage.mdc` | Clinical evidence on private disks only |
 | `.cursor/rules/176-private-database-dump-creation.mdc` | Dumps private from creation |

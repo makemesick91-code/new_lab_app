@@ -485,6 +485,49 @@ the operator; administrator root steps need the owner's password.
    with the same account); a retired drop-in is restored by moving it back under `visudo -c`. Never re-enable
    passwordless sudo silently: record it as a deviation in the sprint doc.
 
+## 6g. Releases under approval contract 3 — direct signed approval (rule 236)
+
+Applies once the host lists contract `3` in `DMS_PRODUCTION_RELEASE_APPROVAL_CONTRACTS` and the operator entrypoint
+was re-provisioned with `submit-approval` (rule 236 §3). No approval branch, commit, PR, CI run or merge.
+
+0. **One-time activation (per host, after the release that carries rule 236 is deployed under contract 2 and
+   verified).** Until then the installed entrypoint is the previous one: `sudo-policy-check` reports
+   `DEPLOY_OPERATOR_ENTRYPOINT=STALE` (a WATCH; its three expressions are a subset of the five rendered ones, so the
+   operator still classifies `OPERATOR`) and `submit-approval`/`check-approval` are refused. The owner, in their own
+   terminal (the administrator's sudo needs the password since rule 235), stages the operator's public key in the
+   administrator's home and re-provisions from the deployed tree, dry run then apply, in one session:
+   `ssh daengtisiams-biznet-prod 'cat > ~/operator.pub' < <operator public key>` then
+   `ssh -t daengtisiams-biznet-prod 'cd /var/www/asia-dental-lab-v2 && sudo bash scripts/provision-deploy-identities.sh --operator --operator-user <operator> --operator-key ~/operator.pub && sudo bash scripts/provision-deploy-identities.sh --operator --operator-user <operator> --operator-key ~/operator.pub --apply && rm -f ~/operator.pub'`.
+   Then (no password): `ssh daengtisiams-biznet-deploy sudo-policy-check` → `DEPLOY_OPERATOR_ENTRYPOINT=CURRENT`,
+   `SUDO_POLICY=LEAST_PRIVILEGE`; `ssh daengtisiams-biznet-deploy trust-check` → `APPROVAL_CONTRACTS=2 3`,
+   `APPROVAL_STORE=ABSENT|OK`, `RELEASE GUARD TRUST: READY`. The first contract-3 approval is proven with
+   `check-approval` (step 4) before any contract-3 deploy.
+
+1. **Release commit:** implementation PR merged; its **post-merge push CI** green on the exact SHA (the host checks it
+   too). If a later push cancelled that run (`cancel-in-progress`), re-run it for the SHA first.
+2. **Owner approval and signature (owner only, own terminal):** the owner states the written approval of the full SHA
+   (CG-22, recorded in the sprint doc), then runs
+   `bash scripts/release-approval-sign.sh --release-id <id> --target-sha <SHA> --go-tag <go_tag> [--hours 48]`
+   from an up-to-date checkout. It shows the record and the window (UTC and WITA), asks YES on the terminal, signs
+   with the owner's key (passphrase typed; ssh-agent not used) and prints the bundle path, its digests and the submit
+   command. An assistant never runs it for the owner and never sees the key.
+3. **Prove the target:** `bash scripts/production-target-check.sh --operator --remote` → `VERIFIED`;
+   `ssh daengtisiams-biznet-deploy trust-check` → `APPROVAL_STORE=OK`, `RELEASE GUARD TRUST: READY`.
+4. **Submit:** `ssh daengtisiams-biznet-deploy submit-approval --release-id <id> < <bundle>` →
+   `RELEASE APPROVAL SUBMITTED: <approval-id>`. A refusal changes nothing; fix the cause (never edit a signed record —
+   sign a new one). Then prove it read-only:
+   `ssh daengtisiams-biznet-deploy check-approval --release-id <id> --approved-sha <SHA>` →
+   `RELEASE APPROVAL CHECK: GO` (the whole guard, CI included; nothing is claimed or launched). `BUSY` means a
+   deploy, rollback, submission or another check is running: run it again afterwards. A rate-limit denial names the
+   reset time (UTC); the check keeps 4 GitHub requests in reserve for the deploy.
+5. **Deploy, verify, smoke, GO:** §6b steps 4–8 through the operator (`start`, `follow`, `verify <deploy-id>` — the
+   run record names `approval_contract=3`, the approval id, digests and the CI run id). Outside 02:25–02:40 WITA.
+   The deploy's own pre-deploy dump stays mandatory; BK-2 is not a gate (rule 232).
+6. **Withdraw** (administrator, owner's password): `sudo bash scripts/release-approval-withdraw.sh --release-id <id>
+   --approval-id <hex>` — the approval can never deploy and no longer blocks a corrected one. Never prune or move the
+   store: proofs re-hash it.
+7. **Record:** the closure doc lists the approval id and the record/signature SHA-256 (off-host anchor).
+
 ## 7. What stays true from the Hostinger era
 
 - CG-15: deploy only through the runner, executed on the production host, complete only at `exit=0` plus `DEPLOY OK`.

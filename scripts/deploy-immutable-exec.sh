@@ -353,7 +353,18 @@ if [ "$ROLE" = "deploy" ]; then
   # spend record itself is written below, still inside the lock.)
   TARGET_SHA="$DMS_RELEASE_APPROVED_SHA"
   echo "DEPLOY_APPROVED_SHA=${TARGET_SHA}"
-  echo "DEPLOY_APPROVAL_RECORD=${DMS_RELEASE_APPROVAL_TIP}:${DMS_RELEASE_APPROVAL_PATH} blob=${DMS_RELEASE_APPROVAL_BLOB}"
+  if [ "${DMS_RELEASE_APPROVAL_VERIFIED_CONTRACT:-}" = "3" ]; then
+    # DMS-RELEASE-APPROVAL-DIRECT-1: the stored approval this lock verified,
+    # by id and digest; `verify` matches them to the runner's record.
+    echo "DEPLOY_APPROVAL_CONTRACT=3"
+    echo "DEPLOY_APPROVAL_ID=${DMS_RELEASE_APPROVAL_ID}"
+    echo "DEPLOY_APPROVAL_RECORD_SHA256=${DMS_RELEASE_APPROVAL_RECORD_SHA256}"
+    echo "DEPLOY_APPROVAL_SIGNATURE_SHA256=${DMS_RELEASE_APPROVAL_SIGNATURE_SHA256}"
+    echo "DEPLOY_APPROVAL_STORE_PATH=${DMS_RELEASE_APPROVAL_STORE_PATH}"
+    echo "DEPLOY_APPROVAL_CI_RUN_ID=${DMS_RELEASE_APPROVAL_VERIFIED_CI_RUN_ID}"
+  else
+    echo "DEPLOY_APPROVAL_RECORD=${DMS_RELEASE_APPROVAL_TIP}:${DMS_RELEASE_APPROVAL_PATH} blob=${DMS_RELEASE_APPROVAL_BLOB}"
+  fi
   echo "DEPLOY_APPROVAL_SIGNER=${DMS_RELEASE_APPROVAL_SIGNER_KEY}"
 fi
 if [ -z "$TARGET_SHA" ]; then
@@ -476,8 +487,10 @@ set -e
 # release lock, by the process that deployed, before the lock is released — so
 # single use does not depend on the runner's record or its timing.
 if [ "$ROLE" = "deploy" ] && [ "$PROGRAM_RC" -eq 0 ]; then
+  # A contract-3 approval also spends its approval id (DMS-RELEASE-APPROVAL-DIRECT-1).
   dms_release_approval_record_spent "$APPROVAL_AUTHORITY" "$APP_DIR" "$(id -u)" "$RELEASE_ID" \
-    "$TARGET_SHA" "${DMS_RELEASE_APPROVAL_BLOB:-}" "$RUN_ID" || true
+    "$TARGET_SHA" "${DMS_RELEASE_APPROVAL_BLOB:-}" "$RUN_ID" \
+    "${DMS_RELEASE_APPROVAL_ID:-}" "${DMS_RELEASE_APPROVAL_RECORD_SHA256:-}" || true
 fi
 
 note "program finished rc=${PROGRAM_RC}"

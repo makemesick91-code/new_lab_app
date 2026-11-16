@@ -1,4 +1,10 @@
-# Release approval records (rules 229 and 231)
+# Release approval records (rules 229, 231 and 236)
+
+> **Approval contract 3 (rule 236).** Where the production host accepts contract 3, a release is approved WITHOUT a
+> record in this directory: the owner signs a canonical record with `scripts/release-approval-sign.sh` and the deploy
+> operator submits it to the host's root-only approval store (`submit-approval`); the host also verifies the target's
+> CI itself. Runbook `docs/runbooks/production-host-identity.md` §6g. The contract 2 records below stay valid,
+> verifiable and are never edited.
 
 A production deploy lands only on the exact commit a record in this directory approves, and (rule 231) only when the
 approver signed that record with a key the production host trusts. The canonical rules are

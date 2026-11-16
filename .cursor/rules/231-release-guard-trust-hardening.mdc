@@ -14,6 +14,10 @@ globs:
 alwaysApply: false
 ---
 
+> **Rule 236:** under approval contract 3 the signature is submitted with the record to the host's approval store
+> instead of being committed as `<release-id>.approval.sig`; the anchor, namespace, principal, host-key binding and
+> single use below apply unchanged. See `.cursor/rules/236-direct-signed-release-approval.mdc`.
+
 # Release guard trust hardening (rule 231)
 
 **Status:** ACTIVE in code from `DMS-RELEASE-GUARD-TRUST-HARDENING-1` (2026-11-14). In force on a host only after

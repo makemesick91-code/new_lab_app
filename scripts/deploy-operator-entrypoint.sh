@@ -19,6 +19,10 @@
 #     environment and runs exactly one allowlisted action:
 #
 #       start --release-id <id> --approved-sha <40-hex>   deploy ONE owner-signed release (rules 229/231)
+#       check-approval --release-id <id> --approved-sha <40-hex>  the release guard only (read-only; rule 236)
+#       submit-approval --release-id <id>                 store ONE owner-signed contract-3 approval read
+#                                                         from stdin (scripts/release-approval-submit.sh,
+#                                                         DMS-RELEASE-APPROVAL-DIRECT-1); never deploys
 #       follow | status | verify <deploy-id> | trust-check  the runner's own read-only views
 #       drift-check                                         scripts/privsep-drift-check.sh (rule 233)
 #       sudo-policy-check                                   scripts/sudo-policy-check.sh (rule 235)
@@ -28,9 +32,11 @@
 # release trust anchor, provisioning, any shell. Those are break-glass actions
 # for the administrator account, whose sudo requires the owner's password.
 #
-# The only environment variable ever read is SSH_ORIGINAL_COMMAND (gateway
-# role). Paths are constants: an installed root program never takes a path, a
-# PATH entry or an option from its caller's environment.
+# The only environment variables ever read are SSH_ORIGINAL_COMMAND (gateway
+# role) and SUDO_USER (dispatcher role, set by sudo itself after env_reset; a
+# plain account name is handed to the approval submission for its receipt and
+# to nothing else). Paths are constants: an installed root program never takes
+# a path, a PATH entry or an option from its caller's environment.
 #
 # Exit codes: 0 the action's own success; the action's own code otherwise;
 # 64 not an allowlisted request; 65 an untrusted program, directory or PATH entry.
@@ -46,7 +52,7 @@ readonly DMS_OPERATOR_SAFE_PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bi
 # never through one the caller (sshd, sudo) supplied.
 export PATH="$DMS_OPERATOR_SAFE_PATH"
 # The programs the actions run as root, besides the in-tree scripts.
-readonly DMS_OPERATOR_TOOLS="bash env sudo git composer node npm php pg_dump runuser systemd-run sha256sum find stat"
+readonly DMS_OPERATOR_TOOLS="bash env sudo git composer node npm php pg_dump runuser systemd-run sha256sum find stat ssh-keygen python3 curl flock"
 
 # The same expressions as the rendered sudo rule, plus the 80-character bound
 # the release approval guard enforces (scripts/lib/release-approval.sh).
@@ -65,6 +71,8 @@ dms_operator_usage() {
   cat >&2 <<'USAGE'
 usage (through the deploy operator's SSH key):
   start --release-id <id> --approved-sha <40-hex>
+  check-approval --release-id <id> --approved-sha <40-hex>   (read-only guard run)
+  submit-approval --release-id <id>   (the signed approval bundle on stdin)
   follow | status | verify <YYYYmmdd-HHMMSS> | trust-check
   drift-check | sudo-policy-check | posture
 USAGE
@@ -80,10 +88,14 @@ dms_operator_validate() {
     verify)
       [ "$#" -eq 2 ] && [[ "$2" =~ $DMS_OPERATOR_RE_DEPLOY_ID ]]
       ;;
-    start)
+    start|check-approval)
       [ "$#" -eq 5 ] \
         && [ "$2" = "--release-id" ] && [[ "$3" =~ $DMS_OPERATOR_RE_RELEASE ]] \
         && [ "$4" = "--approved-sha" ] && [[ "$5" =~ $DMS_OPERATOR_RE_SHA ]]
+      ;;
+    submit-approval)
+      [ "$#" -eq 3 ] \
+        && [ "$2" = "--release-id" ] && [[ "$3" =~ $DMS_OPERATOR_RE_RELEASE ]]
       ;;
     *)
       return 1
@@ -211,7 +223,8 @@ dms_operator_trusted_tools() {
 # dms_operator_program <action> — the in-tree program an action runs.
 dms_operator_program() {
   case "$1" in
-    start|follow|status|verify|trust-check) echo scripts/deploy-vps-runner.sh ;;
+    start|check-approval|follow|status|verify|trust-check) echo scripts/deploy-vps-runner.sh ;;
+    submit-approval) echo scripts/release-approval-submit.sh ;;
     drift-check) echo scripts/privsep-drift-check.sh ;;
     sudo-policy-check) echo scripts/sudo-policy-check.sh ;;
     posture) echo scripts/production-posture.sh ;;
@@ -268,13 +281,21 @@ dms_operator_dispatch() {
   dms_operator_require dms_operator_trusted_tree 0 "${DMS_OPERATOR_APP_DIR}/.git"
   # shellcheck disable=SC2086 # a fixed, space-separated list of tool names
   dms_operator_require dms_operator_trusted_tools 0 $DMS_OPERATOR_TOOLS
-  # The runner receives the validated words; the read-only checks take none.
+  # The runner receives the validated words; the read-only checks take none;
+  # the approval submission takes `--release-id <id>` and its stdin (the
+  # bundle), plus the operator account sudo authenticated — sudo sets
+  # SUDO_USER itself after env_reset, and only a plain account name is passed
+  # on, for the submission receipt.
+  local submitter="${SUDO_USER:-}"
+  local -a submission=()
+  [[ "$submitter" =~ ^[a-z][a-z0-9-]{0,31}$ ]] || submitter="unknown"
   case "$action" in
     drift-check|sudo-policy-check|posture) set -- ;;
+    submit-approval) shift; submission=("SUDO_USER=${submitter}") ;;
   esac
   cd "$DMS_OPERATOR_APP_DIR"
   exec /usr/bin/env -i PATH="$DMS_OPERATOR_SAFE_PATH" HOME=/root USER=root LOGNAME=root SHELL=/usr/bin/bash \
-    LANG=C.UTF-8 /usr/bin/bash --noprofile --norc "${DMS_OPERATOR_APP_DIR}/${program}" "$@"
+    LANG=C.UTF-8 "${submission[@]}" /usr/bin/bash --noprofile --norc "${DMS_OPERATOR_APP_DIR}/${program}" "$@"
 }
 
 dms_operator_main() {

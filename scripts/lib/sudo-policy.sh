@@ -77,7 +77,9 @@ dms_sudo_operator_expressions() {
   printf '%s\n' \
     '^(status|follow|trust-check|drift-check|sudo-policy-check|posture)$' \
     '^verify [0-9]{8}-[0-9]{6}$' \
-    '^start --release-id [a-z0-9][a-z0-9-][a-z0-9-]+ --approved-sha [0-9a-f]{40}$'
+    '^start --release-id [a-z0-9][a-z0-9-][a-z0-9-]+ --approved-sha [0-9a-f]{40}$' \
+    '^submit-approval --release-id [a-z0-9][a-z0-9-][a-z0-9-]+$' \
+    '^check-approval --release-id [a-z0-9][a-z0-9-][a-z0-9-]+ --approved-sha [0-9a-f]{40}$'
 }
 
 # The PATH the operator's sudo runs the entrypoint with (rendered secure_path).

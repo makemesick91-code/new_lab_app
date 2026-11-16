@@ -252,6 +252,16 @@ return [
                     'DMS_APPROVAL_HOST_KEY_SHA256',
                     'dms_trusted_file "release trust anchor"',
                     'dms_release_approval_spent "$authority" "$app_dir" "$deploy_uid" "$release_id"',
+                    // DMS-RELEASE-APPROVAL-DIRECT-1: contract 3 — a stored,
+                    // owner-signed approval decides alone (no fallback), its
+                    // approval id is spent once, and the host checks the
+                    // required CI of the exact commit itself.
+                    'DMS_RELEASE_APPROVAL_DIRECT_CONTRACT=3',
+                    'dms_release_approval_direct_select',
+                    'dms_release_approval_parse_direct',
+                    'dms_release_approval_ci_verify "$prod_repo" "$approved_sha" "$branch"',
+                    'no fallback to another contract',
+                    'spent/approval-',
                 ],
             ],
             'trusted_path_library' => [
@@ -284,6 +294,11 @@ return [
                     'DEPLOY_STALE_SNAPSHOT_RECONCILED',
                     'stale git lock',
                     'dms_release_approval_record_spent',
+                    // DMS-RELEASE-APPROVAL-DIRECT-1: a contract-3 run names its
+                    // stored approval in the log and spends its approval id.
+                    'DEPLOY_APPROVAL_ID=',
+                    'DEPLOY_APPROVAL_CI_RUN_ID=',
+                    '"${DMS_RELEASE_APPROVAL_ID:-}" "${DMS_RELEASE_APPROVAL_RECORD_SHA256:-}"',
                 ],
                 'forbidden_markers' => [
                     'LOCK_FILE="${LOCK_DIR}/${ROLE}.lock"',
@@ -317,6 +332,12 @@ return [
                     'host_key_sha256=',
                     'launcher_pid=',
                     'launcher_start=',
+                    // DMS-RELEASE-APPROVAL-DIRECT-1: the record names the
+                    // approval contract and, for contract 3, the stored approval.
+                    'approval_contract=',
+                    'approval_record_sha256=',
+                    'approval_store_path=',
+                    'approval_ci_run_id=',
                 ],
                 // The deploy program is never taken from the environment again,
                 // and evidence never again lives in the runtime-writable tree.
@@ -334,6 +355,10 @@ return [
                     'dms_runner_assert_trusted_run',
                     'dms_runner_assert_signature_blob',
                     'INTERRUPTED',
+                    // DMS-RELEASE-APPROVAL-DIRECT-1: a contract-3 run is proven
+                    // by its log and by re-hashing the stored approval.
+                    'dms_runner_assert_direct_log',
+                    'dms_runner_assert_direct_store',
                 ],
             ],
             'release_wrapper' => [
@@ -372,6 +397,13 @@ return [
             'DMS_PRODUCTION_HOST_KEY_FILE',
             'DMS_PRODUCTION_RELEASE_TRUST_ANCHOR',
             'DMS_PRODUCTION_DEPLOY_EVIDENCE_DIR',
+            // DMS-RELEASE-APPROVAL-DIRECT-1 (contract 3).
+            'DMS_PRODUCTION_RELEASE_APPROVAL_CONTRACTS',
+            'DMS_PRODUCTION_RELEASE_APPROVAL_STORE',
+            'DMS_PRODUCTION_CI_WORKFLOW',
+            'DMS_PRODUCTION_CI_REQUIRED_JOBS',
+            'DMS_PRODUCTION_CI_REQUIRED_STEP',
+            'DMS_PRODUCTION_CI_FORBIDDEN_STEP',
         ],
         // Rule 231: these facts are fixed for production. The trust anchor and the
         // evidence directory live outside the checkout and outside anything the
@@ -380,6 +412,9 @@ return [
             'DMS_PRODUCTION_HOST_KEY_FILE' => '/etc/ssh/ssh_host_ed25519_key.pub',
             'DMS_PRODUCTION_RELEASE_TRUST_ANCHOR' => '/etc/daengtisiams/release-approvers.allowed_signers',
             'DMS_PRODUCTION_DEPLOY_EVIDENCE_DIR' => '/var/lib/daengtisiams-deploy/runner',
+            // DMS-RELEASE-APPROVAL-DIRECT-1: root's approval store, beside the evidence.
+            'DMS_PRODUCTION_RELEASE_APPROVAL_STORE' => '/var/lib/daengtisiams-deploy/approvals',
+            'DMS_PRODUCTION_CI_WORKFLOW' => '.github/workflows/foundation-evidence-gates.yml',
         ],
         // deploy-vps.sh pins its branch as a literal; it must be the authority's.
         'deploy_branch_assignment_prefix' => 'BRANCH="',
