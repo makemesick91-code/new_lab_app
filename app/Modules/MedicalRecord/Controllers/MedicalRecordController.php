@@ -483,17 +483,27 @@ class MedicalRecordController extends Controller
 
         $this->authorize('create', [MedicalRecord::class, $targetVisit]);
 
-        $existing = $this->medicalRecords->findByVisitId($targetVisit->id);
+        $data = array_merge($request->validated(), ['source_visit_id' => $sourceVisitId]);
 
-        if ($existing === null) {
-            $this->service->createDraft($targetVisit, auth()->id(), array_merge(
-                $request->validated(),
-                ['source_visit_id' => $sourceVisitId],
-            ));
-            $status = 'Rekam medis berhasil dibuat.';
+        if (! $patientHasSheets) {
+            // DMS-RME-COMPREHENSIVE-CLOSURE-1 (R7-1-FS) — the first sheet is the
+            // book: the service decides its visit under the canonical-visit lock and
+            // adopts a book a concurrent first save created; the policy is checked
+            // again on the visit it locked.
+            [, $created] = $this->service->startBook(
+                $clinicVisit,
+                auth()->id(),
+                $data,
+                fn (ClinicVisit $target) => $this->authorize('create', [MedicalRecord::class, $target]),
+            );
+        } elseif ($this->medicalRecords->findByVisitId($targetVisit->id) === null) {
+            $this->service->createDraft($targetVisit, auth()->id(), $data);
+            $created = true;
         } else {
-            $status = 'Rekam medis sudah ada untuk kunjungan ini.';
+            $created = false;
         }
+
+        $status = $created ? 'Rekam medis berhasil dibuat.' : 'Rekam medis sudah ada untuk kunjungan ini.';
 
         $redirectVisit = $workspace->resolveCanonicalWorkspaceVisit($patientId) ?? $targetVisit;
         $redirectParams = [$redirectVisit];

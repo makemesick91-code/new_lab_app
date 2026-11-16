@@ -5,6 +5,7 @@ namespace App\Modules\MedicalRecord\Services;
 use App\Modules\Branch\Services\BranchService;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
+use Closure;
 use Illuminate\Support\Collection;
 
 /**
@@ -74,24 +75,49 @@ class PatientRmWorkspaceResolver
     }
 
     /**
-     * Sprint 64.0.2 — the single handwriting RM book: the medical record attached
-     * to the patient's canonical (earliest non-cancelled RME) visit, if any.
+     * Sprint 64.0.2 — the single handwriting RM book of a patient.
      *
-     * DMS-RME-COMPREHENSIVE-CLOSURE-1 (R7-1) — when that visit holds no record,
-     * the book is the patient's self-anchored sheet (selfAnchoredBook()): the
-     * book stays where it was created after the visit holding it is cancelled, or
-     * after a patient merge puts an earlier visit in front of it. Answering "no
-     * book" there made the next save open a second book.
+     * DMS-RME-COMPREHENSIVE-CLOSURE-1 (R7-1, rule 237 §16) — the book is chosen by
+     * bookOn() against the patient's current canonical (earliest non-cancelled
+     * RME) visit. Answering "no book" after the visit holding it was cancelled,
+     * or after a merge put an earlier visit in front of it, made the next save
+     * open a second book.
      */
     public function canonicalMedicalRecord(int $patientId): ?MedicalRecord
     {
-        $visit = $this->resolveCanonicalWorkspaceVisit($patientId);
+        return $this->bookOn($patientId, $this->resolveCanonicalWorkspaceVisit($patientId));
+    }
 
-        $onCanonicalVisit = $visit === null ? null : MedicalRecord::query()
-            ->where('clinic_visit_id', $visit->id)
-            ->first();
+    /**
+     * DMS-RME-COMPREHENSIVE-CLOSURE-1 (R7-1) — THE book selector, shared with
+     * MedicalRecordService, which passes the canonical visit it has LOCKED.
+     *
+     * 1. The patient's earliest self-anchored sheet (selfAnchoredBook()) — the
+     *    sheet created AS the book — whatever the status of its visit now. A
+     *    later per-visit sheet ("Tambah Lembar RM") is anchored to an earlier
+     *    visit, so it never wins, even when it sits on the canonical visit after
+     *    the book's own visit was cancelled.
+     * 2. Only when the patient has no such sheet at all: the record on the given
+     *    canonical visit. That is the pre-Sprint-64.0.2 shape (a per-visit sheet
+     *    whose anchor visit never held a book); it is also the only record a
+     *    first save on that visit could adopt, because a visit holds one record.
+     *
+     * $recordOnVisit lets MedicalRecordService read step 2 through its repository;
+     * the selection itself stays here.
+     *
+     * @param  (Closure(int): ?MedicalRecord)|null  $recordOnVisit
+     */
+    public function bookOn(int $patientId, ?ClinicVisit $canonicalVisit, ?Closure $recordOnVisit = null): ?MedicalRecord
+    {
+        $book = $this->selfAnchoredBook($patientId);
 
-        return $onCanonicalVisit ?? $this->selfAnchoredBook($patientId);
+        if ($book !== null || $canonicalVisit === null) {
+            return $book;
+        }
+
+        return $recordOnVisit !== null
+            ? $recordOnVisit((int) $canonicalVisit->id)
+            : MedicalRecord::query()->where('clinic_visit_id', $canonicalVisit->id)->first();
     }
 
     /**
@@ -100,14 +126,15 @@ class PatientRmWorkspaceResolver
      * (clinic_visit_id = canonical_visit_id), whatever that visit's status now.
      * A later sheet of a multi-sheet patient is anchored to an earlier visit, so
      * it is never taken for the book. A sheet older than Sprint 64.0 whose
-     * workspace columns were never stamped (stampWorkspaceFields() is lazy)
-     * counts too: the earliest one is what stamping would anchor to itself.
+     * workspace columns were never stamped counts too: the earliest one is the
+     * book, and stampWorkspaceFields() anchors it to itself when it is stamped.
      */
     public function selfAnchoredBook(int $patientId): ?MedicalRecord
     {
         return MedicalRecord::query()
             ->select('trx_medical_records.*')
             ->join('trx_clinic_visits', 'trx_clinic_visits.id', '=', 'trx_medical_records.clinic_visit_id')
+            ->whereNull('trx_clinic_visits.deleted_at')
             ->whereIn('trx_medical_records.branch_id', $this->rmeBranchIds())
             ->where('trx_medical_records.patient_id', $patientId)
             ->where(fn ($anchor) => $anchor
@@ -237,9 +264,15 @@ class PatientRmWorkspaceResolver
         }
 
         if ($medicalRecord->canonical_visit_id === null) {
-            $medicalRecord->canonical_visit_id = $medicalRecord->clinicVisit
-                ? $this->pickCanonicalVisitId($medicalRecord->clinicVisit)
-                : ($this->resolveCanonicalWorkspaceVisit($medicalRecord->patient_id)?->id ?? $medicalRecord->clinic_visit_id);
+            // DMS-RME-COMPREHENSIVE-CLOSURE-1 (R7-1) — an unstamped sheet that IS the
+            // patient's book stays the book: it is anchored to its own visit. Anchoring
+            // it to an earlier visit (a merged one, or one without a sheet) would
+            // make the next save open a second book there.
+            $medicalRecord->canonical_visit_id = $this->canonicalMedicalRecord((int) $medicalRecord->patient_id)?->is($medicalRecord)
+                ? $medicalRecord->clinic_visit_id
+                : ($medicalRecord->clinicVisit
+                    ? $this->pickCanonicalVisitId($medicalRecord->clinicVisit)
+                    : ($this->resolveCanonicalWorkspaceVisit($medicalRecord->patient_id)?->id ?? $medicalRecord->clinic_visit_id));
         }
 
         if ($medicalRecord->sheet_number === null) {

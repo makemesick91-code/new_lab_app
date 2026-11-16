@@ -15,11 +15,16 @@ declare(strict_types=1);
 | and opened a second one — and an edit of an existing page was relocated into
 | that new book. No page was lost, but the book split.
 |
-| The patient's book is now the self-anchored sheet (clinic_visit_id =
-| canonical_visit_id, or a pre-Sprint-64.0 sheet never stamped) when the current
-| canonical visit has none; the first save decides the canonical visit on its
-| locked row (rule 223 §6), and pages are written on the book's own visit.
-| Rule 237 §16.
+| The patient's book is now the earliest self-anchored sheet (clinic_visit_id =
+| canonical_visit_id, or a pre-Sprint-64.0 sheet never stamped, which stamping
+| anchors to itself); a record on the canonical visit is the book only when no
+| such sheet exists. A first save — handwriting or "Buat Rekam Medis" — decides the
+| canonical visit on its locked row (rule 223 §6) and looks the book up with the
+| same selector; pages are written on the book's own visit. Rule 237 §16.
+|
+| R71-D and R71-G interleave a cancel and a concurrent first save on one
+| connection at the exact statements the lock guards; R71-F proves the lock itself
+| with a NOWAIT probe over a second connection on committed rows (rule 224 trap).
 |
 | Selected by the existing `RmeConcurrentFirstWrite` critical-gate token in both
 | runner variants and declared in critical_gate_mandatory_suites (CG-19). Helper
@@ -31,6 +36,7 @@ use App\Modules\Branch\Models\Branch;
 use App\Modules\Clinic\Models\Clinic;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\ClinicVisit\Services\ClinicVisitService;
+use App\Modules\Consent\Services\RmeVisitConsentService;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\MedicalRecord\Models\MedicalRecordHandwriting;
@@ -39,10 +45,14 @@ use App\Modules\MedicalRecord\Services\PatientRmWorkspaceResolver;
 use App\Modules\Patient\Models\Patient;
 use App\Support\Storage\ClinicalEvidenceStorage;
 use Database\Seeders\BranchSeeder;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 
 require_once __DIR__.'/../PatientMerge/helpers.php';
+
+const RBCV_WRITER = 'rbcv_book_lock_writer';
+const RBCV_PROBE = 'rbcv_book_lock_probe';
 
 beforeEach(function () {
     test()->seed(BranchSeeder::class);
@@ -99,6 +109,81 @@ function rbcvPageCount(MedicalRecord $record): int
 {
     return MedicalRecordHandwriting::query()->where('medical_record_id', $record->id)->count()
         + DB::table('trx_medical_record_handwriting_pages')->where('medical_record_id', $record->id)->count();
+}
+
+/** A pre-Sprint-64.0 sheet: the workspace columns were never stamped. */
+function rbcvUnstampedSheet(ClinicVisit $visit): MedicalRecord
+{
+    $sheet = MedicalRecord::factory()->create([
+        'clinic_visit_id' => $visit->id,
+        'patient_id' => $visit->patient_id,
+        'branch_id' => $visit->branch_id,
+        'doctor_id' => $visit->doctor_id,
+    ]);
+    $sheet->forceFill(['canonical_visit_id' => null, 'source_visit_id' => null, 'sheet_number' => null])->saveQuietly();
+
+    return $sheet->fresh();
+}
+
+function rbcvEdit(object $t, ClinicVisit $visit, MedicalRecord $record, string $text)
+{
+    return $t->actingAs($t->author)->patch(
+        route('rme.visits.medical-record.update', [$visit, $record]),
+        ['subjective' => $text],
+    );
+}
+
+/**
+ * Two statements of a first save, observed on the one test connection:
+ *  - the canonical-visit resolve (`status != cancelled … order by visit_date asc`), and
+ *  - the first book lookup after it (a `trx_medical_records` select joined to visits).
+ * $atResolve runs right after the first, $atLookup right after the second; both run
+ * once, and nothing they do re-enters the listener.
+ */
+function rbcvInterleave(callable $atResolve, callable $atLookup): object
+{
+    $state = (object) ['phase' => 0, 'busy' => false];
+
+    DB::listen(function ($query) use ($state, $atResolve, $atLookup): void {
+        if ($state->busy) {
+            return;
+        }
+        $sql = strtolower($query->sql);
+
+        if ($state->phase === 0 && str_contains($sql, 'from "trx_clinic_visits"')
+            && str_contains($sql, '"status" != ') && str_contains($sql, 'order by "visit_date" asc')) {
+            $state->busy = true;
+            $state->phase = 1;
+            $atResolve();
+            $state->busy = false;
+
+            return;
+        }
+
+        if ($state->phase === 1 && str_starts_with(ltrim($sql), 'select')
+            && str_contains($sql, 'from "trx_medical_records"') && str_contains($sql, 'join "trx_clinic_visits"')) {
+            $state->busy = true;
+            $state->phase = 2;
+            $atLookup();
+            $state->busy = false;
+        }
+    });
+
+    return $state;
+}
+
+function rbcvProbeBlocked(string $table, int $id): bool
+{
+    DB::purge(RBCV_PROBE);
+
+    try {
+        DB::connection(RBCV_PROBE)->transaction(fn () => DB::connection(RBCV_PROBE)
+            ->select("SELECT id FROM {$table} WHERE id = ? FOR NO KEY UPDATE NOWAIT", [$id]));
+    } catch (QueryException $e) {
+        return str_contains($e->getMessage(), '55P03') || str_contains(strtolower($e->getMessage()), 'could not obtain lock');
+    }
+
+    return false;
 }
 
 /*
@@ -167,33 +252,62 @@ it('R71-A3 converges a first-save adoption onto the existing book when the canon
         ->and(rbcvBooks($patient->id))->toHaveCount(1);
 });
 
-it('R71-D converges two first saves when the canonical visit is cancelled between one request\'s lookup and its insert', function () {
+it('R71-A4 keeps the book on the cancelled visit when a later sheet on the new canonical visit is anchored to it', function () {
+    $patient = Patient::factory()->create(['branch_id' => $this->branch->id]);
+    $noShow = rbcvVisit($patient, ClinicVisit::STATUS_REGISTERED, clinicalToday()->subDay()->toDateString());
+    $encounter = rbcvVisit($patient, ClinicVisit::STATUS_IN_PROGRESS, clinicalToday()->toDateString());
+    rmeActiveConsentedEncounter($encounter);
+
+    // The first sheet starts the book on the no-show; page 1 is drawn.
+    $this->actingAs($this->author)->post(route('rme.visits.medical-record.store', $encounter))->assertSessionHasNoErrors();
+    $book = rbcvBooks($patient->id)->sole();
+    rbcvSave($this, $noShow, $book, 1, 1)->assertSessionHasNoErrors();
+
+    // "Tambah Lembar RM" on today's encounter: a per-visit sheet anchored to the no-show.
+    $this->actingAs($this->author)->post(route('rme.visits.medical-record.store', $encounter))->assertSessionHasNoErrors();
+    $sheet = MedicalRecord::query()->where('clinic_visit_id', $encounter->id)->sole();
+    expect((int) $sheet->canonical_visit_id)->toBe((int) $noShow->id);
+
+    // The no-show is cancelled: today's encounter becomes the canonical visit and holds a sheet.
+    app(ClinicVisitService::class)->transitionStatus($noShow, ClinicVisit::STATUS_CANCELLED, $this->author);
+
+    expect((int) app(PatientRmWorkspaceResolver::class)->canonicalMedicalRecord($patient->id)?->id)->toBe((int) $book->id);
+
+    rbcvSave($this, $noShow->fresh(), $book, 2, 2)->assertSessionHasNoErrors();
+
+    expect(rbcvBooks($patient->id))->toHaveCount(2)
+        ->and(rbcvPageCount($book))->toBe(2)
+        ->and(rbcvPageCount($sheet))->toBe(0);
+});
+
+it('R71-D re-resolves a canonical visit cancelled before its lock, so a concurrent first save\'s book is adopted, not split', function () {
     $patient = Patient::factory()->create(['branch_id' => $this->branch->id]);
     $noShow = rbcvVisit($patient, ClinicVisit::STATUS_REGISTERED, clinicalToday()->subDay()->toDateString());
     $encounter = rbcvVisit($patient, ClinicVisit::STATUS_IN_PROGRESS, clinicalToday()->toDateString());
     rmeActiveConsentedEncounter($encounter);
     $this->actingAs($this->author);
     $service = app(MedicalRecordService::class);
-
-    // Request A has just read the no-show as the canonical visit. Before A writes,
-    // the front desk cancels the no-show and request B, which therefore resolves
-    // today's encounter as canonical, creates the book there.
-    $interleaved = false;
     $bookB = null;
-    DB::listen(function ($query) use (&$interleaved, &$bookB, $noShow, $encounter, $service): void {
-        $sql = strtolower($query->sql);
-        if ($interleaved || ! str_contains($sql, 'trx_clinic_visits') || ! str_contains($sql, 'order by "visit_date"')) {
-            return;
-        }
-        $interleaved = true;
-        app(ClinicVisitService::class)->transitionStatus($noShow->fresh(), ClinicVisit::STATUS_CANCELLED, test()->author);
-        $bookB = DB::transaction(fn () => $service->getOrCreateCanonicalMedicalRecord($encounter->fresh(), test()->author->id));
-    });
 
-    $bookA = DB::transaction(fn () => $service->getOrCreateCanonicalMedicalRecord($encounter, $this->author->id));
+    // Request A has just resolved the no-show as its canonical visit. Before A locks
+    // it, the front desk cancels the no-show (in production that cancel and A's lock
+    // serialise on the same row). After A's book lookup and before A's insert,
+    // request B — resolving today's encounter — creates its book there. A must lock
+    // the CURRENT canonical visit, find B's book on it and adopt it; a lock on the
+    // stale no-show would let A insert a second book.
+    $state = rbcvInterleave(
+        fn () => app(ClinicVisitService::class)->transitionStatus($noShow->fresh(), ClinicVisit::STATUS_CANCELLED, test()->author),
+        function () use (&$bookB, $service, $encounter): void {
+            $bookB = $service->getOrCreateCanonicalMedicalRecord($encounter->fresh(), test()->author->id);
+        },
+    );
 
-    expect($interleaved)->toBeTrue()
+    $bookA = $service->getOrCreateCanonicalMedicalRecord($encounter, $this->author->id);
+
+    expect($state->phase)->toBe(2)
+        ->and($bookB)->not->toBeNull()
         ->and((int) $bookA->id)->toBe((int) $bookB->id)
+        ->and((int) $bookA->clinic_visit_id)->toBe((int) $encounter->id)
         ->and(rbcvBooks($patient->id))->toHaveCount(1);
 });
 
@@ -225,6 +339,89 @@ it('R71-E locks the canonical visit row before the first book is inserted', func
     expect($lockAt)->not->toBeFalse()
         ->and($insertAt)->not->toBeFalse()
         ->and($lockAt)->toBeLessThan($insertAt);
+});
+
+it('R71-F holds the canonical visit row while the first book is created, so a cancel of that visit waits (two connections)', function () {
+    if (DB::connection()->getDriverName() !== 'pgsql') {
+        $this->markTestSkipped('Row-lock behaviour is only observable on PostgreSQL; SQLite compiles row locks to nothing.');
+    }
+
+    // Rows are committed over a separate connection, so a NOWAIT probe on a third
+    // connection sees the lock (RefreshDatabase hides uncommitted rows from it).
+    // FOR NO KEY UPDATE, the lock the cancel path takes, is the probe: the book's
+    // foreign-key KEY SHARE on the visit does not conflict with it, so the probe is
+    // blocked only by the lock under test (rule 224 trap).
+    $originalDefault = config('database.default');
+    $base = config('database.connections.'.$originalDefault);
+    config()->set('database.connections.'.RBCV_WRITER, $base);
+    config()->set('database.connections.'.RBCV_PROBE, $base);
+    DB::purge(RBCV_WRITER);
+    DB::purge(RBCV_PROBE);
+    config()->set('database.default', RBCV_WRITER);
+
+    $w = DB::connection(RBCV_WRITER);
+    $suffix = substr(uniqid(), -6);
+    $ids = [];
+
+    try {
+        $ids['branch'] = (int) $w->table('mst_branches')->insertGetId([
+            'code' => 'R7'.$suffix, 'name' => 'Cabang Buku '.$suffix, 'is_active' => true, 'is_rme_enabled' => true,
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+        $ids['user'] = (int) $w->table('users')->insertGetId([
+            'name' => 'Petugas '.$suffix, 'email' => 'rbcv-'.$suffix.'@example.test', 'password' => bcrypt('password'),
+            'is_active' => true, 'created_at' => now(), 'updated_at' => now(),
+        ]);
+        $ids['doctor'] = (int) $w->table('mst_doctors')->insertGetId([
+            'code' => 'R7D'.$suffix, 'name' => 'drg. Buku', 'created_at' => now(), 'updated_at' => now(),
+        ]);
+        $ids['patient'] = (int) $w->table('mst_patients')->insertGetId([
+            'name' => 'Pasien Buku', 'medical_record_number' => 'R7F-'.$suffix, 'branch_id' => $ids['branch'],
+            'is_active' => true, 'created_at' => now(), 'updated_at' => now(),
+        ]);
+        $visit = fn (string $status, string $date, int $queue): int => (int) $w->table('trx_clinic_visits')->insertGetId([
+            'visit_number' => 'VIS-R7F-'.$suffix.'-'.$queue, 'branch_id' => $ids['branch'], 'patient_id' => $ids['patient'],
+            'doctor_id' => $ids['doctor'], 'visit_date' => $date, 'queue_number' => $queue, 'status' => $status,
+            'visit_type' => ClinicVisit::VISIT_TYPE_NEW, 'created_by' => $ids['user'], 'created_at' => now(), 'updated_at' => now(),
+        ]);
+        $ids['noShow'] = $visit(ClinicVisit::STATUS_REGISTERED, clinicalToday()->subDay()->toDateString(), 1);
+        $ids['encounter'] = $visit(ClinicVisit::STATUS_IN_PROGRESS, clinicalToday()->toDateString(), 2);
+
+        // The authoring gate needs seeded roles and a signed consent, which a
+        // committing connection would leave behind; R71-A…D prove the gate through
+        // HTTP. Here only the lock is under test, so the gate answers the encounter.
+        $encounter = ClinicVisit::query()->findOrFail($ids['encounter']);
+        $consents = Mockery::mock(RmeVisitConsentService::class);
+        $consents->shouldReceive('assertRmeAuthoringAllowedForPatient')->andReturn($encounter);
+        app()->instance(RmeVisitConsentService::class, $consents);
+
+        // Sanity: nothing holds the canonical visit, so the probe is not always blocked.
+        expect(rbcvProbeBlocked('trx_clinic_visits', $ids['noShow']))->toBeFalse();
+
+        $blockedWhileCreating = null;
+        $w->transaction(function () use (&$blockedWhileCreating, $encounter, $ids): void {
+            app(MedicalRecordService::class)->getOrCreateCanonicalMedicalRecord($encounter, null);
+            $blockedWhileCreating = rbcvProbeBlocked('trx_clinic_visits', $ids['noShow']);
+        });
+
+        expect($blockedWhileCreating)->toBeTrue()
+            ->and(rbcvProbeBlocked('trx_clinic_visits', $ids['noShow']))->toBeFalse()
+            ->and($w->table('trx_medical_records')->where('patient_id', $ids['patient'])->pluck('clinic_visit_id')->map(fn ($id) => (int) $id)->all())
+            ->toBe([$ids['noShow']]);
+    } finally {
+        $w->table('trx_medical_records')->where('patient_id', $ids['patient'] ?? 0)->delete();
+        $w->table('trx_clinic_visits')->where('patient_id', $ids['patient'] ?? 0)->delete();
+        $w->table('mst_patients')->where('id', $ids['patient'] ?? 0)->delete();
+        $w->table('mst_doctors')->where('id', $ids['doctor'] ?? 0)->delete();
+        $w->table('users')->where('id', $ids['user'] ?? 0)->delete();
+        $w->table('mst_branches')->where('id', $ids['branch'] ?? 0)->delete();
+        DB::purge(RBCV_WRITER);
+        DB::purge(RBCV_PROBE);
+        // RefreshDatabase rolls back the DEFAULT connection's transaction at
+        // teardown; left on the writer, it would leave the seeded test transaction
+        // open and force a migrate:fresh that waits on it.
+        config()->set('database.default', $originalDefault);
+    }
 });
 
 /*
@@ -280,8 +477,50 @@ it('R71-B2 keeps writing into a book created before Sprint 64.0 (workspace colum
 
     rbcvSave($this, $bookVisit, $book, 1, 6)->assertSessionHasNoErrors();
 
+    // Editing and finalizing the book stamps its workspace columns. Stamping must
+    // anchor the book to its own visit, never to the earlier merged visit, or the
+    // next new page would open a second book there.
+    rbcvEdit($this, $bookVisit, $book, 'Anamnesis setelah penggabungan.')->assertSessionHasNoErrors();
+    $this->actingAs($this->author)
+        ->post(route('rme.visits.medical-record.finalize', [$bookVisit, $book]))
+        ->assertSessionHasNoErrors();
+
+    expect((int) $book->fresh()->canonical_visit_id)->toBe((int) $bookVisit->id);
+
+    rbcvSave($this, $bookVisit, $book, 2, 7)->assertSessionHasNoErrors();
+
     expect(rbcvBooks($canonical->id))->toHaveCount(1)
-        ->and(rbcvPageCount($book))->toBe(1);
+        ->and(rbcvPageCount($book))->toBe(2);
+});
+
+it('R71-B4 keeps one book for a legacy patient whose earliest visit has no sheet, across edits of the sheets', function () {
+    $patient = Patient::factory()->create(['branch_id' => $this->branch->id]);
+    rbcvVisit($patient, ClinicVisit::STATUS_COMPLETED, clinicalToday()->subDays(5)->toDateString());
+    $v1 = rbcvVisit($patient, ClinicVisit::STATUS_COMPLETED, clinicalToday()->subDays(4)->toDateString());
+    $v2 = rbcvVisit($patient, ClinicVisit::STATUS_COMPLETED, clinicalToday()->subDays(3)->toDateString());
+    $sheet1 = rbcvUnstampedSheet($v1);
+    $sheet2 = rbcvUnstampedSheet($v2);
+    $encounter = rbcvVisit($patient, ClinicVisit::STATUS_IN_PROGRESS, clinicalToday()->toDateString());
+    rmeActiveConsentedEncounter($encounter);
+    $resolver = app(PatientRmWorkspaceResolver::class);
+
+    // The earliest pre-64.0 sheet is the book.
+    expect((int) $resolver->canonicalMedicalRecord($patient->id)?->id)->toBe((int) $sheet1->id);
+    rbcvSave($this, $v1, $sheet1, 1, 1)->assertSessionHasNoErrors();
+
+    // Editing the book stamps it to itself; editing the later sheet anchors it to
+    // the earliest visit, as before.
+    rbcvEdit($this, $v1, $sheet1, 'Kontrol pasca pencabutan.')->assertSessionHasNoErrors();
+    rbcvEdit($this, $v2, $sheet2, 'Catatan lama.')->assertSessionHasNoErrors();
+
+    expect((int) $sheet1->fresh()->canonical_visit_id)->toBe((int) $v1->id)
+        ->and((int) $resolver->canonicalMedicalRecord($patient->id)?->id)->toBe((int) $sheet1->id);
+
+    rbcvSave($this, $v1, $sheet1, 2, 2)->assertSessionHasNoErrors();
+
+    expect(rbcvBooks($patient->id))->toHaveCount(2)
+        ->and(rbcvPageCount($sheet1))->toBe(2)
+        ->and(rbcvPageCount($sheet2))->toBe(0);
 });
 
 it('R71-B3 never takes a later sheet anchored to an earlier visit for the book', function () {
@@ -300,6 +539,55 @@ it('R71-B3 never takes a later sheet anchored to an earlier visit for the book',
     ]);
 
     expect(app(PatientRmWorkspaceResolver::class)->selfAnchoredBook($patient->id))->toBeNull();
+});
+
+/*
+| R7-1-FS — the "Buat Rekam Medis" first sheet starts the book under the same lock
+*/
+
+it('R71-G starts a first sheet under the canonical-visit lock: a cancel and a concurrent first handwriting save converge on one book', function () {
+    $patient = Patient::factory()->create(['branch_id' => $this->branch->id]);
+    $noShow = rbcvVisit($patient, ClinicVisit::STATUS_REGISTERED, clinicalToday()->subDay()->toDateString());
+    $encounter = rbcvVisit($patient, ClinicVisit::STATUS_IN_PROGRESS, clinicalToday()->toDateString());
+    rmeActiveConsentedEncounter($encounter);
+    $service = app(MedicalRecordService::class);
+
+    // "Buat Rekam Medis" has just resolved the no-show as the canonical visit; the
+    // front desk cancels it; after the first-sheet path looks for the book and
+    // before it inserts, a first handwriting save — resolving today's encounter —
+    // creates the book there. One book must result, not one on each visit.
+    $state = rbcvInterleave(
+        fn () => app(ClinicVisitService::class)->transitionStatus($noShow->fresh(), ClinicVisit::STATUS_CANCELLED, test()->author),
+        fn () => $service->getOrCreateCanonicalMedicalRecord($encounter->fresh(), test()->author->id),
+    );
+
+    // The path adopts that book and answers with the existing message.
+    $this->actingAs($this->author)
+        ->post(route('rme.visits.medical-record.store', $encounter))
+        ->assertSessionHasNoErrors()
+        ->assertSessionHas('status', 'Rekam medis sudah ada untuk kunjungan ini.');
+
+    expect($state->phase)->toBe(2)
+        ->and(rbcvBooks($patient->id))->toHaveCount(1)
+        ->and((int) rbcvBooks($patient->id)->sole()->clinic_visit_id)->toBe((int) $encounter->id);
+});
+
+it('R71-G2 still starts a first sheet on the earliest visit, self-anchored, with its SOAP fields', function () {
+    $patient = Patient::factory()->create(['branch_id' => $this->branch->id]);
+    $earliest = rbcvVisit($patient, ClinicVisit::STATUS_COMPLETED, clinicalToday()->subDays(5)->toDateString());
+    $encounter = rbcvVisit($patient, ClinicVisit::STATUS_IN_PROGRESS, clinicalToday()->toDateString());
+    rmeActiveConsentedEncounter($encounter);
+
+    $this->actingAs($this->author)
+        ->post(route('rme.visits.medical-record.store', $encounter), ['subjective' => 'Keluhan awal.'])
+        ->assertSessionHasNoErrors()
+        ->assertSessionHas('status', 'Rekam medis berhasil dibuat.');
+
+    $book = rbcvBooks($patient->id)->sole();
+
+    expect((int) $book->clinic_visit_id)->toBe((int) $earliest->id)
+        ->and((int) $book->canonical_visit_id)->toBe((int) $earliest->id)
+        ->and($book->subjective)->toBe('Keluhan awal.');
 });
 
 /*

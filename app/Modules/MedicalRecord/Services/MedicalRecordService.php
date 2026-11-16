@@ -334,14 +334,15 @@ class MedicalRecordService
              * DMS-RME-COMPREHENSIVE-CLOSURE-1 (R7-1) — one book per patient. The
              * canonical visit is decided on its LOCKED row (rule 223 §6: the visit
              * first), the lock the cancel path takes too, so a cancel of that visit
-             * and a first save serialise. The book is then looked up on that visit
-             * and, failing that, as the patient's self-anchored sheet, which may sit
-             * on a visit cancelled since or behind an earlier merged visit.
+             * and a first save serialise, and two first saves lock the same row.
+             * The book is then chosen by the resolver's selector against that
+             * locked visit: the patient's self-anchored sheet first (it may sit on a
+             * visit cancelled since, or behind an earlier merged visit), else the
+             * record on the locked visit.
              */
             $canonicalVisit = $this->lockCanonicalVisit($patientId) ?? $contextVisit;
 
-            $existing = $this->medicalRecords->findByVisitId($canonicalVisit->id)
-                ?? $this->workspace->selfAnchoredBook($patientId);
+            $existing = $this->workspace->bookOn($patientId, $canonicalVisit, $this->recordOnVisit(...));
 
             if ($existing !== null) {
                 return $existing;
@@ -353,6 +354,51 @@ class MedicalRecordService
                 'source_visit_id' => $sourceVisitId ?? $contextVisit->id,
             ], fn ($v) => $v !== null), adoptExisting: true);
         });
+    }
+
+    /**
+     * DMS-RME-COMPREHENSIVE-CLOSURE-1 (R7-1-FS, owner decision 2026-11-17) — the
+     * patient's FIRST sheet ("Buat Rekam Medis" with no sheet yet) starts the
+     * book under the same canonical-visit lock and with the same selector as the
+     * first handwriting save, so a cancel of the canonical visit and a concurrent
+     * first save converge on one book instead of one on each visit.
+     *
+     * The authoring gate runs first, as on the handwriting path, so both paths
+     * take the visit rows in the same order. The caller's policy check runs on the
+     * LOCKED target, which may differ from the visit it saw before the lock. An
+     * existing book is adopted (returned with false); otherwise the sheet is
+     * created on the locked canonical visit (true).
+     *
+     * @param  callable(ClinicVisit): void  $authorizeTarget
+     * @return array{0: MedicalRecord, 1: bool}
+     */
+    public function startBook(ClinicVisit $contextVisit, ?int $recordedBy, array $data, callable $authorizeTarget): array
+    {
+        $patientId = (int) $contextVisit->patient_id;
+
+        return DB::transaction(function () use ($contextVisit, $patientId, $recordedBy, $data, $authorizeTarget): array {
+            $this->consents->assertRmeAuthoringAllowedForPatient($patientId);
+
+            $target = $this->lockCanonicalVisit($patientId) ?? $contextVisit;
+
+            $authorizeTarget($target);
+
+            $book = $this->workspace->bookOn($patientId, $target, $this->recordOnVisit(...));
+
+            if ($book !== null) {
+                return [$book, false];
+            }
+
+            $sheet = $this->createDraftOn($target, $recordedBy, $data, adoptExisting: true);
+
+            return [$sheet, $sheet->wasRecentlyCreated];
+        });
+    }
+
+    /** R7-1 — step 2 of the book selector, read through this service's repository. */
+    private function recordOnVisit(int $clinicVisitId): ?MedicalRecord
+    {
+        return $this->medicalRecords->findByVisitId($clinicVisitId);
     }
 
     /**
