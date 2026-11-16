@@ -10,12 +10,15 @@ Full Suite deferred under the global temporary policy (CG-18): **not run, not pa
 ## 0. Status
 
 ```text
-PROGRAM_STATUS            = IN PROGRESS — PR1 #646 MERGED (daf2ac15, tree = tested head tree); PR2 rebased on it (§5–§6)
-RELEASE                   = NOT YET (needs merge, post-merge CI, owner-signed approval, deploy, verification)
-GO tag                    = NOT CREATED (dms-rme-comprehensive-closure-1-go, declared in .sprint/current.yml)
+PROGRAM_STATUS            = DEPLOYED / PRODUCTION VERIFIED / PROGRAM NO-GO — PENDING CLOSURE (owner, 2026-11-16, §2b)
+RELEASE 1                 = DEPLOYED + VERIFIED: cab3a4c1 (PR1 #646 + PR2 #647), deploy 20261116-141906 (§9.3)
+CLOSURE WAVE              = IN PROGRESS: PR #648, #649, #650, #651, #652, PR6, PR7b (§5.3, §9.4)
+GO tag                    = NOT CREATED (dms-rme-comprehensive-closure-1-go): withheld by the owner until every confirmed
+                            in-scope pending item is resolved and verified in production
 FULL_SUITE_STATUS         = SKIPPED_BY_GLOBAL_TEMPORARY_POLICY (execution count 0)
 BK-2                      = NOT RUN (manual-only directive, rule 232)
 GLOBAL DOCTOR ENFORCEMENT = UNCHANGED (not touched; no flag, cohort or scope change)
+SATUSEHAT                 = DISABLED (unchanged; Rule 88 §2 / AIR-SSH-04 kept until official activation)
 ```
 
 ## 1. Scope, authority, environment
@@ -61,6 +64,41 @@ not a follow-up"). They were implemented under that brief, and the owner then co
 |---|---|---|
 | after PR #646 CI | Squash-merge #646 pinned to the tested head `37828b4f`? | **Yes, squash-merge #646** |
 | same question set | Confirm OD-7-6, OD-5-4 and OD-5-10(a), implemented under the brief | **Confirm all three** |
+| after PR #647 CI | Squash-merge #647 pinned to the tested head `bf48e9d5`? | **Yes, squash-merge #647** |
+| after post-merge CI on `cab3a4c1` | Written approval of the release SHA `cab3a4c1082923d92b665238eb72034b4af13e34` | **Approve this release** |
+| after production verification | GO and the tag on `cab3a4c1` with the residual register? | **NO-GO for now** |
+
+### 2b. Owner decision NO-GO (2026-11-16) and the closure wave
+
+The owner recorded the program as **DEPLOYED / PRODUCTION VERIFIED / PROGRAM NO-GO — PENDING CLOSURE** and ordered
+the remaining pending work completed through the full DEVFLOW: "Jangan menganggap DEFERRED sebagai RESOLVED. Jangan
+mengubah scope secara diam-diam agar seluruh gate terlihat PASS." The GO tag waits until every confirmed in-scope
+pending item is resolved and production verification succeeds. The order named eight work items: D5-9 consent storage
+(OD-5-9), patient MRN audit and measurement, SATUSEHAT latent items without activation, the D4 ceremony with an
+authorized operator, D5 branch confirmation by valid human confirmation, the blank odontogram print, per-row
+authorization queries and the governance scanner. The constraints of the brief stay in force (no BK-2, runner on the
+VPS only, no global enforcement, no key or passphrase access, no automatic rollback, no fabricated evidence).
+
+Owner answers in the closure wave (structured question tool, 2026-11-16; verbatim labels, the owner's follow-up text
+summarised):
+
+| Item | Owner answer | Owner conditions (follow-up message) |
+|---|---|---|
+| R8A-2 (+ 8D finding 3) | **Fix** | authorization before validation, with negative tests |
+| OD-6-1 | **Fix with page revision** | optimistic concurrency per page, a reload message, two-device tests |
+| OD-5-8 | **Duplicate guard + supervised void** | a dedicated permission, a written reason, an audit trail, maker ≠ checker as the rules require, historical consents never deleted, re-sign only after a valid void, race and authorization tests |
+| OD-5-5 | **Refuse while in_progress** | an atomic check under a lock, a message naming the active visit, concurrency and regression tests |
+| OD-7-5 | **Backfill** | "Jangan menjalankan --apply pada production tanpa approval saya" |
+| OD-7-7 | free text | audit and fix without silently changing rule 153 |
+| R7-1 | free text | check the evidence; add or verify tests |
+| RA-1 | free text | accepted if the replacement CI on the same SHA is green |
+| OD-5-10(b) | free text | accepted by design if canonical |
+| OD-7-3 | **Keep allowed** | do not widen legacy odontogram access or cross-branch access |
+| D4 | **Not available yet** | never treat pilot devices or real doctor accounts as test-only; audit readiness; BLOCKED_EXTERNAL with the procedure if unavailable; no global enforcement |
+| OD-5-9 | NO-GO order, item 1 (supersedes answer 6 of §2) | "Audit dan implementasikan D5-9 Consent Storage sesuai aturan RME" |
+| CC1-ODO | **Keep empty state** | accepted by design, with references to the existing tests |
+| CC1-SAT-1a | **Keep canonical design** | Rule 88 §2 / AIR-SSH-04 kept; disabled until official activation; negative tests must prove nothing is sent while disabled |
+| CI workflow scope | **I will grant workflow scope** | least privilege; "Jangan meminta atau membaca token saya"; change no workflow beyond what is needed and reviewed; register the SATUSEHAT tests on the critical gate; Full Suite DEFERRED is never PASSED |
 
 ## 3. Historical items in the brief, verified
 
@@ -126,6 +164,37 @@ documented, owner-visible follow-up with its trigger), BY DESIGN.
 | CC1-RXPRINT-WRITE | printing a prescription sets `printed_at` on a GET | — | BY DESIGN (rule 226 §1.7a) | — |
 | CC1-LAB-FLASH | lab delivery POD signatures are flashed the same way | — | OUT OF SCOPE (lab module) — recorded for the lab owner | — |
 | CC1-LAB-UTC | lab `InvoiceNumberGeneratorService` / `PaymentNumberGeneratorService` still use the UTC month | — | OUT OF SCOPE (lab module) — same class as P8R-S6, recorded for the lab owner | — |
+
+### 4.3 Closure wave (after the NO-GO, §2b) — supersedes the matching §4.2 rows
+
+"Implemented" means code and tests are on a PR; an item counts as RESOLVED only after merge, post-merge CI, release
+and production verification (§9.4). Nothing here is DEFERRED-as-resolved.
+
+| Id | Owner basis | Change | PR | State |
+|---|---|---|---|---|
+| OD-5-9 (+ P8R-S4b) | NO-GO order, item 1 | consent signatures written through `ClinicalEvidenceStorage` (rule 121); read through `ClinicalEvidenceStorage::dataUri`, no fallback | #648 | implemented |
+| OD-5-9 copy phase | same | `rme:consent-signatures-migrate` (dry run default; `--apply` copies key for key, SHA-256 verified, never overwrites a CONFLICT, never deletes; counts only; one audit row) | #649 | implemented; production `--apply` needs the owner's approval (§10.5) |
+| CC1-ORPHAN | folded into OD-5-9 | a failure after the object writes removes the uncommitted objects (rule 224 compensation) | #648 | implemented |
+| OD-5-8 | duplicate guard + supervised void | one active consent per visit under the visit lock; void needs `void_rme_consents` (Supervisor RME), a 10–1000 character reason, voider ≠ signer inside the transaction, an `in_progress` visit; audit `RME_CONSENT_VOIDED`; the row is kept; re-sign only after the void | #648 | implemented |
+| R8A-2 (+ 8D finding 3) | fix | consent and prescription FormRequests authorize through `Gate::inspect` before validation; the HTTP signed-lock audit moved into the request | #648, #650 | implemented |
+| OD-6-1 | page revision | each handwriting page carries an opaque revision; a stale save is refused under the record lock before any object is written, with a reload message | #650 | implemented |
+| OD-5-5 | refuse while in_progress | a new visit is refused while the patient has an examination in progress, decided under the lock, naming the active visit | #650 | implemented |
+| OD-7-5 | backfill | `rme:lab-candidates-backfill` (dry run default; `--apply` per invoice under its row lock, idempotent, one audit row per invoice filled, counts only) | #650 | implemented; production `--apply` needs the owner's approval (§10.6) |
+| CC1-PERF | NO-GO order, item 7 | `DoctorIdentityResolver` memoised per routed request and cleared by `DoctorAccountLinkService` | #651 | implemented |
+| CC1-CG08 | NO-GO order, item 8 | `AndroidReleaseGovernanceScanner` reads flags through `FeatureFlagService` (CG-08) | #651 | implemented |
+| OD-7-7 | fix without silently changing rule 153 | lease in-flight grace (`doctor_access.lease.in_flight_grace_seconds`, 30 s); rule 153 and AIR-DAC-08 amended openly | #652 | implemented |
+| CC1-SAT-1b, OPS-SAT | NO-GO order, item 3 | excluding a candidate cancels its not-yet-sent items; the claim re-checks exclusion; `satusehat:retry-sweep` (a no-op while disabled) scheduled only while the gateway is enabled; negative tests prove nothing is sent and nothing is queued while disabled | PR6 | implemented; waits for the CI token (the workflow change needs the `workflow` scope the owner is granting) |
+| CC1-SAT-1a | keep canonical design | branch pilot approval stays as designed (Rule 88 §2, AIR-SSH-04) | — | BY DESIGN (owner) |
+| R7-1 | check evidence, add or verify tests | one handwriting book per patient after the book's visit is cancelled or a merge puts an earlier visit in front of it; the canonical visit is decided on its locked row | PR7b | implemented, tests running |
+| RA-1 | accepted if the replacement CI on the same SHA is green | run `42309524995` attempt 2 on `c0e12382`: critical gate **9,615 passed, 47,546 assertions, 0 failed** (PostgreSQL); Full Suite skipped (deferred) | — | **ACCEPTED** (condition met) |
+| OD-5-10(b) | accepted by design if canonical | the oversight widgets scope through `scopedBranchIdsFor` (the canonical branch authority) | — | **ACCEPTED BY DESIGN** (condition met) |
+| OD-7-3 | keep allowed | unchanged; no widening of legacy odontogram or cross-branch access | — | BY DESIGN (owner) |
+| CC1-ODO | keep empty state | unchanged; covered by `StructuredOdontogramPrintTemplateTest` ("empty odontogram renders the safe empty state"), `OdontogramSavedResultTablePreviewTest` ("safe empty state"), `MedicalRecordPrintOdontogramSeparationTest` | — | **ACCEPTED BY DESIGN** (owner) |
+| CC1-PAT-1..4 | measure first | the read-only count (§10.2) is the owner's step; the patient-identity sprint follows the numbers | — | OPEN — HUMAN OPERATION |
+| D4 | not available yet | readiness re-audit and ceremony procedure (§10.7) | — | **BLOCKED_EXTERNAL** |
+| D5 | valid human confirmation | confirmation template (§10.8) | — | OPEN — HUMAN OPERATION |
+| OPS-KTP | HUMAN OPERATION | §10.1 | — | OPEN — HUMAN OPERATION |
+| R7-F, P8-FIX1, P8-SEED, R8A-3, RA-4, D3-NEW-3, D3-NEW-5, RA-3, RA-5 | owner register | unchanged | — | OPEN — OWNER DEFINITION / DECISION |
 
 ## 5. Implementation
 
@@ -230,11 +299,33 @@ confirmed every intended behaviour A1–A6 and B1–B4 in code.
 | PR CI | run `43850156576` (pull_request): all required checks success; NSF-R011 Critical Test Gate on PostgreSQL **10,455 passed, 51,892 assertions, 0 failed** (the three new suites and every touched suite in the log); Full Suite Gate SKIPPED (CG-18, not passed) |
 | Merge | squash, `--match-head-commit 37828b4f`, owner approval §2a → `daf2ac15b0a0809b604126a69b7ea1de4797509d`; merge tree `e6553990` = tested head tree |
 
-Pending for the release: PR2, post-merge CI on the release SHA, owner approval and signature, deploy, verification. Release flow: PR → exact-head CI → owner merge approval → post-merge push CI on the exact merge SHA → owner's
+Release flow: PR → exact-head CI → owner merge approval → post-merge push CI on the exact merge SHA → owner's
 written approval of the full release SHA → owner signs locally (`scripts/release-approval-sign.sh`) →
 `submit-approval` → `check-approval` GO → `start` on the Biznet host through the deploy operator → `follow` →
 `verify <deploy-id>` (`DEPLOY RUNNER OK`) → read-only production verification → GO tag. Not inside 02:25–02:40 WITA.
-Deploy before 2026-11-30 16:00 UTC so P8R-S6 is live for the 2026-12-01 boundary.
+
+### 9.2 PR2 — #647
+
+| Item | Evidence |
+|---|---|
+| Tested head | `bf48e9d5` |
+| PR CI | run `43861427094`: required checks success; NSF-R011 Critical Test Gate on PostgreSQL **10,478 passed, 51,975 assertions, 0 failed**; Full Suite Gate SKIPPED (CG-18, not passed) |
+| Merge | squash, `--match-head-commit bf48e9d5`, owner approval §2a → `cab3a4c1082923d92b665238eb72034b4af13e34`; merge tree = tested head tree |
+| Post-merge push CI | run `43871132383` on `cab3a4c1`: every required job success; critical gate **10,478 passed, 51,975 assertions, 0 failed**; Full Suite Gate SKIPPED (deferred, not passed) |
+
+### 9.3 Release 1 — `dms-rme-comprehensive-closure-1` at `cab3a4c1` (P8R-S6 live before the 2026-12-01 boundary)
+
+| Item | Evidence |
+|---|---|
+| Pre-release posture (deploy operator, read-only) | `SUDO_POLICY=LEAST_PRIVILEGE`, `PRIVSEP_DRIFT=NONE`, operator entrypoint CURRENT |
+| Owner approval | written approval of the full SHA (§2a), then signed in the owner's own terminal (Contract 3, rule 236): approval id `2d1425769ef560eef5a23d64b2a052bb`, bundle SHA-256 `2aa6b428d28f24b7efa7baf18e80050b30c38ad71c4fb5f9c9ec0824f2e50bf5`, record SHA-256 `091033d67c463f1967ed1d968ee0cc195225f5c909b0ba30688f89eb449008ef`, valid until 2026-11-18T14:17:59Z. The key and passphrase never left the owner's terminal |
+| Approval check | `submit-approval`, then `check-approval` = GO |
+| Deploy | `start` on the Biznet host through the deploy operator (runner on the VPS, never local): deploy id **`20261116-141906`**, `final exit=0`, `DEPLOY_APPROVED_TARGET_MATCH=YES`, `DEPLOY OK`; `verify 20261116-141906` → **`DEPLOY RUNNER OK`** |
+| Migrations | none in this release |
+| Production verification (read-only) | HEAD = `cab3a4c1`; health / smoke 200 / 403 / 302 as expected; `LARAVEL_LOG_ERROR_LINES=166` = the baseline recorded at the last three GO closures (no new application errors); `PRIVSEP_DRIFT=NONE`; queue worker and timers unchanged |
+| Pre-deploy database dump | taken by the runner inside the deploy; the line itself sits in the root-only deploy log and is read by the owner (§10.3) |
+| Release id | spent; the next release uses a new id |
+| GO | **NO-GO (owner, §2b)** — no tag created |
 
 ## 10. Owner actions prepared by this program
 
@@ -279,6 +370,79 @@ WHERE p.deleted_at IS NULL;
 SELECT code, is_active, is_rme_enabled FROM mst_branches ORDER BY code;
 ROLLBACK;
 ```
+
+### 10.3 Release 1 — the pre-deploy dump line (root-only log, owner's admin password)
+
+The deploy operator replays only the summary of a finished deploy, and the full log is root-only. Read the dump and
+outcome lines from the owner's own terminal:
+
+```bash
+ssh -t daengtisiams-biznet-prod 'sudo grep -E "Pre-deploy backup|DEPLOY OK|DEPLOY_SNAPSHOT_CLEANED" /var/lib/daengtisiams-deploy/runner/deploy-20261116-141906.log'
+```
+
+### 10.4 Release 2 — permissions after deploy (runtime user, CG-15)
+
+PR #648 adds the permission `void_rme_consents` and grants it to Supervisor RME. After the release-2 deploy, as the
+runtime user in the app directory: `PermissionSeeder`, then `RoleSeeder`, then `permission:cache-reset`.
+
+### 10.5 Release 2 — consent signature copy (owner approval for `--apply`)
+
+Rule 121 has no read fallback: after release 2, a consent signed before it renders its signatures only once the copy
+has run. The copy belongs in the release window, right after verification. Dry run first; `--apply` only with the
+owner's approval, which is requested together with the release approval:
+
+```bash
+php artisan rme:consent-signatures-migrate            # dry run: counts only
+php artisan rme:consent-signatures-migrate --apply    # owner-approved: copies, verifies, never deletes
+```
+
+Expected: `CONFLICT=0`, `VERIFY_FAILED=0`, `CONSENT_SIGNATURE_MIGRATION=APPLIED`; a `MISSING` count is a WATCH
+(objects already unreadable before the run). Purging the old disk is a separate phase and a separate owner decision.
+
+### 10.6 Release 2 — lab candidate backfill (owner approval for `--apply`)
+
+```bash
+php artisan rme:lab-candidates-backfill               # dry run: INVOICES=<n>
+php artisan rme:lab-candidates-backfill --apply       # only with the owner's approval
+```
+
+### 10.7 D4 — readiness re-audit and ceremony (BLOCKED_EXTERNAL)
+
+The authoritative ceremony is `docs/operations/doctor-real-device-readiness-campaign.md` §13, with the D4 conditions
+of `dms-rme-revision-program-8-owner-operational-closure.md` (a dedicated device that is not an operational clinic
+tablet, enrolled through the canonical approval path with the Android Keystore proof and a device-bound passkey; a
+dedicated test doctor account linked one-to-one, never a real clinician's account). The owner's 2026-11-16 answer
+adds: pilot devices and real doctor accounts are never treated as test-only, and global enforcement stays off.
+
+Readiness re-audit, read-only, as the runtime user (counts and states only; keep doctor and device identifiers out of
+any shared evidence):
+
+```bash
+php artisan webauthn:readiness
+php artisan doctor:rollout-readiness | grep -E 'ENFORCEMENT_FLAG_ARMED|GLOBAL_ENFORCEMENT_ACTIVE'
+php artisan doctor:fleet-readiness
+php artisan doctor:estate-resilience
+```
+
+D4 stays BLOCKED_EXTERNAL until the owner names the dedicated device and the dedicated test doctor. `webauthn:readiness`
+ARMED means "configured", not "proven live".
+
+### 10.8 D5 — branch confirmation template (one per branch: SPN4, TLK1, LDK2, ATG3)
+
+A confirmation counts only when a person responsible at the branch gives it; it is recorded here by role, date and
+channel, never by personal name or patient detail (public repository):
+
+| Field | Value |
+|---|---|
+| Branch code | |
+| Confirmer's role at the branch | |
+| Date (WITA) and channel | |
+| Paper RME archives remaining at the branch | YES / NO |
+| If YES: approximate count and whether intake should continue | |
+| Recorded by | |
+
+After all four are recorded, the canonical closure path of the Program 8 owner checkpoint record (D5 section) runs
+step by step, dry run first, as the runtime user.
 
 ## 11. Graphify, Dataviz, Obsidian
 
