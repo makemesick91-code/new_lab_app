@@ -129,8 +129,12 @@ final class MedicalRecordHandwritingService
     /** The page's revision as stored now (read under the record lock). */
     private function currentRevision(MedicalRecord $medicalRecord, int $page): string
     {
+        // Page 1 is read with the SAME selector the page renders from
+        // (MedicalRecord::latestHandwriting(): saved_at desc, id desc). Two
+        // page-1 rows can exist (saves before the record lock existed); with a
+        // different order here every save would be refused as stale forever.
         $row = $page === 1
-            ? $this->handwritings->findByMedicalRecordId($medicalRecord->id)
+            ? $medicalRecord->latestHandwriting()
             : $this->handwritings->findPageByMedicalRecordIdAndPage($medicalRecord->id, $page);
 
         return MedicalRecord::handwritingRevision($row?->handwriting_path);

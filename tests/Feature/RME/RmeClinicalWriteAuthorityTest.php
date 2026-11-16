@@ -27,6 +27,7 @@ use App\Models\User;
 use App\Modules\Branch\Models\Branch;
 use App\Modules\ClinicRoom\Models\ClinicRoom;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
+use App\Modules\ClinicVisit\Services\ClinicVisitRegistrationGuard;
 use App\Modules\ClinicVisit\Services\ClinicVisitService;
 use App\Modules\Consent\Services\RmeVisitConsentService;
 use App\Modules\Doctor\Models\Doctor;
@@ -251,6 +252,52 @@ it('C3-04 keeps the front desk able to cancel a no-show', function () {
 
     expect($waiting->fresh()->status)->toBe(ClinicVisit::STATUS_CANCELLED);
 });
+
+/** A second visit of the SAME patient as `$first`, in the same room. */
+function cwaSecondVisitOf(object $t, ClinicVisit $first, string $status = ClinicVisit::STATUS_WAITING): ClinicVisit
+{
+    return ClinicVisit::factory()->create([
+        'branch_id' => $t->branch->id,
+        'patient_id' => $first->patient_id,
+        'doctor_id' => $t->doctorRecord->id,
+        'clinic_room_id' => $first->clinic_room_id,
+        'status' => $status,
+    ]);
+}
+
+it('C3-05 OD-5-5 refuses starting a second examination of the same patient, naming the open one', function () {
+    // Both registered while neither was in progress (registration allows it).
+    $first = cwaVisit($this, $this->roomA, ClinicVisit::STATUS_WAITING);
+    $second = cwaSecondVisitOf($this, $first);
+
+    actingAs($this->doctor)
+        ->post(route('rme.visits.transition', $first), ['status' => ClinicVisit::STATUS_IN_PROGRESS])
+        ->assertSessionHasNoErrors();
+
+    $message = sprintf(ClinicVisitRegistrationGuard::MESSAGE_START_WHILE_IN_PROGRESS, $first->visit_number);
+
+    actingAs($this->doctor)
+        ->post(route('rme.visits.transition', $second), ['status' => ClinicVisit::STATUS_IN_PROGRESS])
+        ->assertSessionHasErrors(['status' => $message]);
+
+    expect(fn () => app(ClinicVisitService::class)->transitionStatus($second->fresh(), ClinicVisit::STATUS_IN_PROGRESS, $this->doctor))
+        ->toThrow(ValidationException::class, $message);
+
+    expect($first->fresh()->status)->toBe(ClinicVisit::STATUS_IN_PROGRESS)
+        ->and($second->fresh()->status)->toBe(ClinicVisit::STATUS_WAITING);
+});
+
+it('C3-06 OD-5-5 lets the second examination start once the first is no longer in progress', function (string $status) {
+    $first = cwaVisit($this, $this->roomA, ClinicVisit::STATUS_IN_PROGRESS);
+    $second = cwaSecondVisitOf($this, $first);
+    $first->forceFill(['status' => $status])->save();
+
+    actingAs($this->doctor)
+        ->post(route('rme.visits.transition', $second), ['status' => ClinicVisit::STATUS_IN_PROGRESS])
+        ->assertSessionHasNoErrors();
+
+    expect($second->fresh()->status)->toBe(ClinicVisit::STATUS_IN_PROGRESS);
+})->with([ClinicVisit::STATUS_CASHIER_PENDING, ClinicVisit::STATUS_CANCELLED]);
 
 /*
 |--------------------------------------------------------------------------

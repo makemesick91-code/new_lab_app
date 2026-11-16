@@ -130,6 +130,20 @@ class MedicalRecord extends Model
         return $this->hasMany(MedicalRecordDiagnosis::class)->orderBy('diagnosis_role')->orderBy('id');
     }
 
+    /** DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-6-1) — the revision of a page that has no stored drawing. */
+    public const HANDWRITING_REVISION_NONE = 'none';
+
+    /**
+     * DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-6-1, owner decision 2026-11-16) — an
+     * opaque revision of one handwriting page. Every save writes a fresh object
+     * key (rule 224), so the key's digest changes on every save; the key itself
+     * never reaches a page (rule 121 §3). A page without a drawing is `none`.
+     */
+    public static function handwritingRevision(?string $path): string
+    {
+        return filled($path) ? sha1('rme-handwriting|'.$path) : self::HANDWRITING_REVISION_NONE;
+    }
+
     /**
      * Sprint 60 — unified, ordered RM page list for rendering previews and the
      * page editor. Index 0 is always Page 1 (the legacy read-through row, even
@@ -152,20 +166,6 @@ class MedicalRecord extends Model
      *                             linked image would silently render blank in
      *                             the exported PDF.
      */
-    /** DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-6-1) — the revision of a page that has no stored drawing. */
-    public const HANDWRITING_REVISION_NONE = 'none';
-
-    /**
-     * DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-6-1, owner decision 2026-11-16) — an
-     * opaque revision of one handwriting page. Every save writes a fresh object
-     * key (rule 224), so the key's digest changes on every save; the key itself
-     * never reaches a page (rule 121 §3). A page without a drawing is `none`.
-     */
-    public static function handwritingRevision(?string $path): string
-    {
-        return filled($path) ? sha1('rme-handwriting|'.$path) : self::HANDWRITING_REVISION_NONE;
-    }
-
     public function orderedHandwritingPages(bool $embedBinary = false): Collection
     {
         $legacy = $this->latestHandwriting();

@@ -183,3 +183,28 @@ it('HR-05 decides the revision only after taking the record row lock', function 
     expect($lockAt)->not->toBeFalse()
         ->and($revisionReadAt)->not->toBeFalse();
 });
+
+it('HR-06 compares page 1 with the very row the page renders when two page-1 rows exist', function () {
+    // Two page-1 rows (possible before the record lock existed) whose orders
+    // disagree: A was created last, B was saved last. The page renders B
+    // (MedicalRecord::latestHandwriting(): saved_at desc, id desc).
+    $row = fn (string $path, string $createdAt, string $savedAt) => DB::table('trx_medical_record_handwritings')->insertGetId([
+        'medical_record_id' => $this->record->id,
+        'clinic_visit_id' => $this->visit->id,
+        'branch_id' => $this->visit->branch_id,
+        'handwriting_path' => $path,
+        'handwriting_hash' => str_repeat('a', 64),
+        'saved_at' => $savedAt,
+        'created_at' => $createdAt,
+        'updated_at' => $createdAt,
+    ]);
+    $row('handwritings/hr06/a.png', now()->subMinutes(1)->toDateTimeString(), now()->subMinutes(30)->toDateTimeString());
+    $row('handwritings/hr06/b.png', now()->subMinutes(30)->toDateTimeString(), now()->subMinutes(1)->toDateTimeString());
+
+    $rendered = MedicalRecord::handwritingRevision($this->record->fresh()->latestHandwriting()?->handwriting_path);
+
+    expect($rendered)->toBe(MedicalRecord::handwritingRevision('handwritings/hr06/b.png'));
+
+    // A save that loaded the page as rendered is accepted, not refused forever.
+    rhrvSave($this, $this->deviceA, 1, 6, $rendered)->assertSessionHasNoErrors();
+});

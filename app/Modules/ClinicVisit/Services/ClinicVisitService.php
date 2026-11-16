@@ -958,6 +958,14 @@ class ClinicVisitService
 
             $this->assertTransitionAllowedOnLockedRow($locked, $newStatus);
 
+            // DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-5-5) — never two examinations in
+            // progress for one patient: "Mulai Pemeriksaan" is refused while another
+            // visit of the patient is in progress, decided under the patient's
+            // encounter lock taken after this visit's row lock (rule 223 §6).
+            if ($newStatus === ClinicVisit::STATUS_IN_PROGRESS) {
+                $this->registration->assertNoOtherExaminationInProgress($locked);
+            }
+
             $timestamps = [];
 
             if ($newStatus === ClinicVisit::STATUS_WAITING && $locked->check_in_at === null) {

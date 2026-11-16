@@ -73,6 +73,19 @@ interface ClinicVisitRepositoryInterface
      */
     public function lockVisitSequence(int $branchId): void;
 
+    /**
+     * DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-5-5) — take this patient's encounter
+     * decision lock for the rest of the current transaction: a transaction-scoped
+     * advisory lock (namespace PATIENT_ENCOUNTER_LOCK_NAMESPACE, objid = patient
+     * id). Registration and "Mulai Pemeriksaan" both take it before they read the
+     * patient's in-progress visits, so the two decisions serialise and the second
+     * sees the first committed. It is a resource no row-lock path holds, so it adds
+     * no lock cycle (registration: patient FOR SHARE, then this; a start: its visit
+     * FOR NO KEY UPDATE, then this). Must be called inside a transaction; a no-op on
+     * drivers without advisory locks (SQLite serialises writers).
+     */
+    public function lockPatientEncounterDecision(int $patientId): void;
+
     /** The day's next queue number. Correct only under lockVisitSequence(). */
     public function nextQueueNumber(int $branchId, Carbon $visitDate): int;
 

@@ -131,26 +131,33 @@ cancellation cannot commit between the check and the insert); `ClinicVisitServic
 offers one; the visit page offers no "Buat Kontrol" from a cancelled visit (`canStartKontrolFromHere`, decided in the
 controller). Existing links are not touched. Billing already refused a cancelled parent for the Rp0 Kontrol.
 
-## 15. Page revision, open examination, authorization order, lab backfill (PR4) — owner decisions 2026-11-16
+## 15. Page revision, open examination, authorization order (PR4) — owner decisions 2026-11-16
 
 1. **OD-6-1 page revision.** Every handwriting page carries `MedicalRecord::handwritingRevision()` (a digest of its
    object key — every save writes a fresh key, rule 224 — or `none` for a page without a drawing); the key itself never
    reaches a page (rule 121 §3). The form posts `page_revision` (`none` from "+ Tambah Halaman RM");
    `MedicalRecordHandwritingService::save()` compares it with the page as stored, under the record lock and before any
-   object is written, and refuses a different one with `MESSAGE_STALE_PAGE` (reload). A request without the field is
-   not compared. Nothing is silently replaced.
-2. **OD-5-5 no second open examination.** `ClinicVisitRegistrationGuard::assertNoExaminationInProgress()` — called in
-   `ClinicVisitService::create()` inside the registration transaction, reading each in-progress visit FOR SHARE —
-   refuses a new visit while the patient has a visit `in_progress`, naming that visit's number. registered / waiting /
-   cashier_pending visits do not block; a brand-new patient is never checked.
+   object is written, and refuses a different one with `MESSAGE_STALE_PAGE` (reload). Page 1 is read with the SAME
+   selector the page renders from (`MedicalRecord::latestHandwriting()`: `saved_at` desc, `id` desc), so two page-1
+   rows can never make every save stale. A request without the field is not compared. Nothing is silently replaced.
+2. **OD-5-5 never two examinations in progress.** Both decisions take the patient's encounter decision lock
+   (`ClinicVisitRepositoryInterface::lockPatientEncounterDecision()`, `pg_advisory_xact_lock(92_005, patient id)`)
+   BEFORE they read the patient's in-progress visits, so they serialise and the second sees the first committed:
+   - registration (`ClinicVisitRegistrationGuard::assertNoExaminationInProgress()`, in `ClinicVisitService::create()`):
+     patient FOR SHARE (merge guard), then this lock, then each in-progress visit FOR SHARE; a new visit is refused
+     while the patient has a visit `in_progress`, naming it (`MESSAGE_EXAMINATION_IN_PROGRESS`);
+   - "Mulai Pemeriksaan" (`assertNoOtherExaminationInProgress()`, in `transitionStatus()`): the visit row FOR NO KEY
+     UPDATE first (rule 223 §6), then this lock; refused while ANOTHER visit of the patient is in progress, naming it
+     (`MESSAGE_START_WHILE_IN_PROGRESS`). Registration alone could not prevent two open examinations: two visits
+     registered while neither was in progress could both be started (independent review).
+   No row-lock path holds the advisory lock, so it adds no cycle; never renumber 92_005 (pinned by a test).
+   registered / waiting / cashier_pending visits do not block; a brand-new patient is never checked. The message may
+   name a visit at another RME branch, as the OD-1 cross-branch follow-up already does.
 3. **R8A-2 for prescriptions.** `StoreRmePrescriptionRequest` / `UpdateRmePrescriptionRequest::authorize()` return the
    policy's `Gate::inspect()` response, so a refused account gets 403/404 whatever its payload. The signed-lock refusal
    writes its `RME_PRESCRIPTION_SIGNED_EDIT_REJECTED` row there (§9.3), since the controller is no longer reached.
-4. **OD-7-5 lab candidate backfill.** `rme:lab-candidates-backfill` (dry run unless `--apply`, `--limit`) runs the
-   idempotent `RmeLabIntegrationService::generateForPaidInvoice()` on PAID invoices of active RME branches that miss a
-   candidate for a lab-requiring item (`paidInvoiceIdsMissingCandidates()`), one invoice per transaction under the
-   invoice row lock, one `RME_LAB_CANDIDATES_BACKFILLED` audit row per invoice filled, counts only. `--apply` on
-   production needs the owner's approval.
-5. Tests: `RmeClinicalWriteAuthorityPageRevisionTest`, `RmePaymentLabCandidateBackfillTest`, the OD-5-5 cases in
-   `ClinicVisitPatientSelectionAuthorityTest` / `ClinicVisitRegistrationConcurrencyTest`, the R8A-2 cases in
-   `RmeClinicalWriteAuthorityTest` — all selected by existing tokens.
+4. The OD-7-5 lab candidate backfill is §18 (its own PR).
+5. Tests: `RmeClinicalWriteAuthorityPageRevisionTest` (HR-01…HR-06), the OD-5-5 cases in
+   `ClinicVisitPatientSelectionAuthorityTest`, `ClinicVisitRegistrationConcurrencyTest` (lock order, namespace pin)
+   and `RmeClinicalWriteAuthorityTest` (C3-05, C3-06), the R8A-2 cases in `RmeClinicalWriteAuthorityTest` — all
+   selected by existing tokens.
