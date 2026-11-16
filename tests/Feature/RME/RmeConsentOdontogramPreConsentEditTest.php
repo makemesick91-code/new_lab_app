@@ -43,13 +43,18 @@ use App\Modules\Odontogram\Models\Odontogram;
 use App\Modules\Odontogram\Services\OdontogramService;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\RmeOnlineContext\Middleware\EnsureRmeOnlineContext;
+use App\Support\Storage\ClinicalEvidenceStorage;
 use Database\Seeders\BranchSeeder;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 
 beforeEach(function () {
     test()->seed(BranchSeeder::class);
     seedAccessControl();
+    // CG-20 — signing writes signature objects to the clinical evidence disk
+    // (OD-5-9); never to the real one.
+    Storage::fake(ClinicalEvidenceStorage::diskName());
 
     Branch::where('code', Branch::MAIN_CODE)->update(['is_rme_enabled' => false]);
     $this->branch = Branch::factory()->create(['code' => 'ATG3', 'is_rme_enabled' => true]);

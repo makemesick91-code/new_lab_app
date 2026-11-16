@@ -99,6 +99,14 @@ class MedicalRecordHandwritingController extends Controller
         $saved = $handwritingService->save(
             function () use ($needsCanonicalDraft, $medicalRecord, $clinicVisit, $canonicalVisit, $medicalRecordService, $consents): array {
                 if (! $needsCanonicalDraft) {
+                    // DMS-RME-COMPREHENSIVE-CLOSURE-1 (rule 223 §6, rule 219 §12a) —
+                    // re-decided inside the save transaction, locking the encounter's
+                    // visit row BEFORE the record row (lockForHandwriting), so a
+                    // consent void or a finish committed meanwhile is seen. The
+                    // canonical-draft path below asserts the same inside
+                    // getOrCreateCanonicalMedicalRecord().
+                    $consents->assertRmeAuthoringAllowedForPatient($medicalRecord->patient_id);
+
                     return [$medicalRecord, $clinicVisit];
                 }
 

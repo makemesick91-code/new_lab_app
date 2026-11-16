@@ -309,6 +309,10 @@ function p6PrescriptionVisit(object $test): ClinicVisit
         'patient_id' => Patient::factory()->create(['branch_id' => $test->branch->id])->id,
         'doctor_id' => $doctor->id,
         'clinic_room_id' => $room->id,
+        // CG-20 — explicit, like the other visits of this file (1 in beforeEach,
+        // 2 above). The factory's random 1–999 collided with beforeEach's queue 1
+        // on (branch, clinical date) about once in 999 runs.
+        'queue_number' => 3,
     ]);
 }
 

@@ -70,6 +70,11 @@ class MedicalRecordDiagnosisService
         }
 
         return DB::transaction(function () use ($medicalRecord, $master, $role, $data, $actor) {
+            // DMS-RME-COMPREHENSIVE-CLOSURE-1 (rule 223 §6, rule 219 §12a) — re-decided
+            // inside the transaction: locks the encounter's visit row FIRST, so a
+            // consent void or a finish committed meanwhile is seen.
+            app(RmeVisitConsentService::class)->assertRmeAuthoringAllowedForPatient($medicalRecord->patient_id, $actor);
+
             /** @var MedicalRecord $record */
             $record = MedicalRecord::query()->lockForUpdate()->findOrFail($medicalRecord->id);
 
@@ -155,6 +160,11 @@ class MedicalRecordDiagnosisService
         }
 
         return DB::transaction(function () use ($medicalRecord, $diagnosis, $actor) {
+            // DMS-RME-COMPREHENSIVE-CLOSURE-1 (rule 223 §6, rule 219 §12a) — re-decided
+            // inside the transaction: locks the encounter's visit row FIRST, so a
+            // consent void or a finish committed meanwhile is seen.
+            app(RmeVisitConsentService::class)->assertRmeAuthoringAllowedForPatient($medicalRecord->patient_id, $actor);
+
             /** @var MedicalRecord $record */
             $record = MedicalRecord::query()->lockForUpdate()->findOrFail($medicalRecord->id);
 
@@ -220,6 +230,11 @@ class MedicalRecordDiagnosisService
         }
 
         DB::transaction(function () use ($medicalRecord, $diagnosis, $actor) {
+            // DMS-RME-COMPREHENSIVE-CLOSURE-1 (rule 223 §6, rule 219 §12a) — re-decided
+            // inside the transaction: locks the encounter's visit row FIRST, so a
+            // consent void or a finish committed meanwhile is seen.
+            app(RmeVisitConsentService::class)->assertRmeAuthoringAllowedForPatient($medicalRecord->patient_id, $actor);
+
             $code = $diagnosis->clinicalDiagnosis?->code;
             $diagnosis->delete();
 

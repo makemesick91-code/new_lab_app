@@ -484,7 +484,8 @@ it('RS-CONC-06: an outcome reported unknown while the confirmation waits — the
 
     expect($code)->toBeNull()
         ->and($settlement->fresh()->status)->toBe(S::SETTLED)
-        ->and(DB::table('trx_rme_refund_settlement_events')->where('rme_refund_settlement_id', $settlement->id)->pluck('to_status')->all())
+        // Ordered like the production event trail (occurred_at, id) — CG-20.
+        ->and(DB::table('trx_rme_refund_settlement_events')->where('rme_refund_settlement_id', $settlement->id)->orderBy('occurred_at')->orderBy('id')->pluck('to_status')->all())
         ->toBe([S::DISBURSING, S::OUTCOME_UNKNOWN, S::SETTLED]);
 });
 

@@ -2,8 +2,12 @@
 
 namespace App\Modules\Consent\Requests;
 
+use App\Modules\ClinicVisit\Models\ClinicVisit;
+use App\Modules\Consent\Models\RmeVisitConsent;
 use App\Modules\Prescription\Services\PrescriptionCanvasDecoder;
+use Illuminate\Auth\Access\Response;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
 
 /**
@@ -17,11 +21,21 @@ use Illuminate\Validation\Rule;
  */
 class StoreRmeVisitConsentRequest extends FormRequest
 {
-    public function authorize(): bool
+    /**
+     * DMS-RME-COMPREHENSIVE-CLOSURE-1 (R8A-2 / 8D finding 3, owner decision
+     * 2026-11-16) — the policy decides BEFORE the payload is validated, so a
+     * refused account gets its 403/404 whatever it sends, never a field error
+     * that depends on the payload. The controller asks the same policy again.
+     */
+    public function authorize(): Response
     {
-        // Authorisation is performed in the controller against the visit, where
-        // the bound model is available to the policy.
-        return true;
+        $visit = $this->route('clinicVisit');
+
+        if (! $visit instanceof ClinicVisit) {
+            return Response::denyAsNotFound();
+        }
+
+        return Gate::forUser($this->user())->inspect('create', [RmeVisitConsent::class, $visit]);
     }
 
     public function rules(): array

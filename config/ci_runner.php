@@ -1594,6 +1594,11 @@ return [
         // Same program — every route rendering a clinical or patient-data document answers
         // `private, no-store`. Selected by the existing `RmeClinicalDocumentReadScope` token.
         'tests/Feature/RME/RmeClinicalDocumentReadScopeNoStoreTest.php',
+        // Same program, PR3 — consent integrity: one valid consent per visit, the supervised void
+        // (own permission, maker ≠ checker, in progress only), signatures on the clinical evidence
+        // disk, authorization before validation, writes re-deciding consent under the visit lock.
+        // Selected by the existing `RmeVisitConsent` token in BOTH critical variants.
+        'tests/Feature/RME/RmeVisitConsentSupervisedVoidTest.php',
 
         // SECURITY-F4C-CLINIC-CALENDAR-LAB-ORDERS-1 (owner decision D16) — lab order dates, order and
         // delivery numbering, the due-date floor and "delivered today" on the clinic calendar

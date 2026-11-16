@@ -8,6 +8,7 @@ use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Models\RmePayment;
 use App\Modules\RmeInvoice\Services\RmeInvoiceService;
 use App\Modules\Treatment\Models\Treatment;
+use App\Support\Storage\ClinicalEvidenceStorage;
 use Database\Seeders\BranchSeeder;
 use Illuminate\Support\Facades\Storage;
 
@@ -23,6 +24,9 @@ beforeEach(function () {
     test()->seed(BranchSeeder::class);
     seedAccessControl();
     Storage::fake('local');
+    // CG-20 — signing writes signature objects to the clinical evidence disk
+    // (OD-5-9); never to the real one.
+    Storage::fake(ClinicalEvidenceStorage::diskName());
 
     $this->branch = Branch::factory()->create([
         'code' => 'CHT1',

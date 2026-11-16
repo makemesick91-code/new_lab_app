@@ -10,6 +10,7 @@ use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\Prescription\Services\PrescriptionCanvasDecoder;
 use App\Modules\RmeInvoice\Services\RmeInvoiceService;
 use App\Modules\Treatment\Models\Treatment;
+use App\Support\Storage\ClinicalEvidenceStorage;
 use Database\Seeders\BranchSeeder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -37,6 +38,8 @@ beforeEach(function () {
     test()->seed(BranchSeeder::class);
     seedAccessControl();
     Storage::fake('local');
+    // DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-5-9) — consent signatures live on the clinical evidence disk.
+    Storage::fake(ClinicalEvidenceStorage::diskName());
 
     $this->branch = Branch::factory()->create([
         'code' => 'CSB1',
@@ -168,7 +171,7 @@ function csbFinanceSnapshot(): array
 function csbAssertNothingWritten(ClinicVisit $visit, array $visitBefore, array $financeBefore): void
 {
     expect(DB::table('trx_rme_visit_consents')->count())->toBe(0)
-        ->and(Storage::disk('local')->allFiles())->toBe([])
+        ->and(Storage::disk(ClinicalEvidenceStorage::diskName())->allFiles())->toBe([])
         ->and($visit->fresh()->getAttributes())->toBe($visitBefore)
         ->and(csbFinanceSnapshot())->toBe($financeBefore);
 }
@@ -292,8 +295,8 @@ it('A-04 still signs over HTTP with consent-canvas-sized consenter and doctor si
     expect($consent->clinic_visit_id)->toBe($visit->id)
         ->and($consent->consenter_signature_path)->not->toBeNull()
         ->and($consent->doctor_signature_path)->not->toBeNull()
-        ->and(Storage::disk('local')->exists($consent->consenter_signature_path))->toBeTrue()
-        ->and(Storage::disk('local')->exists($consent->doctor_signature_path))->toBeTrue()
+        ->and(Storage::disk(ClinicalEvidenceStorage::diskName())->exists($consent->consenter_signature_path))->toBeTrue()
+        ->and(Storage::disk(ClinicalEvidenceStorage::diskName())->exists($consent->doctor_signature_path))->toBeTrue()
         // Signing never moves the visit (AIR-RMC-06).
         ->and($visit->fresh()->status)->toBe(ClinicVisit::STATUS_IN_PROGRESS);
 });
@@ -353,7 +356,7 @@ it('B-03 applies the signature bound before decoding, inclusive at exactly the l
     }
 
     expect(DB::table('trx_rme_visit_consents')->count())->toBe(0)
-        ->and(Storage::disk('local')->allFiles())->toBe([]);
+        ->and(Storage::disk(ClinicalEvidenceStorage::diskName())->allFiles())->toBe([]);
 });
 
 it('B-04 still signs in the service with near-bound consenter and doctor signatures', function () {
@@ -366,8 +369,8 @@ it('B-04 still signs in the service with near-bound consenter and doctor signatu
 
     $consent = RmeVisitConsent::sole();
 
-    expect(Storage::disk('local')->exists($consent->consenter_signature_path))->toBeTrue()
-        ->and(Storage::disk('local')->exists($consent->doctor_signature_path))->toBeTrue()
+    expect(Storage::disk(ClinicalEvidenceStorage::diskName())->exists($consent->consenter_signature_path))->toBeTrue()
+        ->and(Storage::disk(ClinicalEvidenceStorage::diskName())->exists($consent->doctor_signature_path))->toBeTrue()
         ->and($consent->doctor_id)->toBe($visit->doctor_id);
 });
 
@@ -386,7 +389,7 @@ it('B-05 keeps refusing malformed, blank and missing signatures under the bound'
         ->toBe(['consenter_signature' => ['Tanda tangan pemberi persetujuan wajib diisi.']]);
 
     expect(DB::table('trx_rme_visit_consents')->count())->toBe(0)
-        ->and(Storage::disk('local')->allFiles())->toBe([]);
+        ->and(Storage::disk(ClinicalEvidenceStorage::diskName())->allFiles())->toBe([]);
 });
 
 /*
@@ -406,7 +409,7 @@ it('C-01 still answers 403 to an account without the consent permission, whateve
     }
 
     expect(DB::table('trx_rme_visit_consents')->count())->toBe(0)
-        ->and(Storage::disk('local')->allFiles())->toBe([]);
+        ->and(Storage::disk(ClinicalEvidenceStorage::diskName())->allFiles())->toBe([]);
 });
 
 it('C-02 still refuses a valid consent from an operator pinned to another working branch', function () {
@@ -426,7 +429,7 @@ it('C-02 still refuses a valid consent from an operator pinned to another workin
         ->assertForbidden();
 
     expect(DB::table('trx_rme_visit_consents')->count())->toBe(0)
-        ->and(Storage::disk('local')->allFiles())->toBe([]);
+        ->and(Storage::disk(ClinicalEvidenceStorage::diskName())->allFiles())->toBe([]);
 });
 
 it('C-03 still refuses signing a visit that is no longer in progress, even with a valid signature', function () {
@@ -434,7 +437,7 @@ it('C-03 still refuses signing a visit that is no longer in progress, even with 
 
     expect(csbSignErrors($visit, $this->operator, []))->toHaveKey('clinic_visit_id');
     expect(DB::table('trx_rme_visit_consents')->count())->toBe(0)
-        ->and(Storage::disk('local')->allFiles())->toBe([]);
+        ->and(Storage::disk(ClinicalEvidenceStorage::diskName())->allFiles())->toBe([]);
 });
 
 it('D-01 (DMS-RME-COMPREHENSIVE-CLOSURE-1) keeps both signatures out of the session when the consent form is refused', function () {

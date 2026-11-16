@@ -313,7 +313,9 @@ it('RS-LIFE-09: the model refuses a forbidden edge, a rewrite of facts and a del
 it('RS-LIFE-10: every transition writes one event and one audit row, without bank or patient text', function () {
     $settled = rsConfirm(rsStart(rsApproved()));
 
-    expect(RmeRefundSettlementEvent::query()->where('rme_refund_settlement_id', $settled->id)->pluck('to_status')->all())
+    // Ordered like every production read of the event trail (occurred_at, id):
+    // without ORDER BY PostgreSQL may return the rows in any order (CG-20).
+    expect(RmeRefundSettlementEvent::query()->where('rme_refund_settlement_id', $settled->id)->orderBy('occurred_at')->orderBy('id')->pluck('to_status')->all())
         ->toBe([S::DISBURSING, S::SETTLED]);
 
     $actions = AuditLog::query()->where('entity_type', RmeFinancialAuditEvent::ENTITY_REFUND_SETTLEMENT)->pluck('action')->all();

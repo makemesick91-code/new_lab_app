@@ -8,6 +8,7 @@ use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\ClinicVisit\Services\ActiveEncounterResolver;
 use App\Modules\Consent\Interfaces\RmeVisitConsentRepositoryInterface;
 use App\Modules\Consent\Models\RmeVisitConsent;
+use App\Modules\LabOrder\Services\AuditLogService;
 use App\Modules\PerformedTreatment\Support\RmePerformedTreatmentRefusal;
 use App\Modules\Prescription\Services\PrescriptionCanvasDecoder;
 use App\Modules\RME\Services\DoctorPatientScopeService;
@@ -15,12 +16,16 @@ use App\Modules\RME\Services\DoctorRoomScopeService;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
 use App\Support\AccessControl\FrontOfficeRole;
 use App\Support\Clinical\ClinicalClock;
+use App\Support\Storage\ClinicalEvidenceStorage;
+use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Auth\Access\Response;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use Throwable;
 
 /**
  * FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-01.
@@ -37,12 +42,34 @@ use Illuminate\Validation\ValidationException;
  */
 class RmeVisitConsentService
 {
+    /** DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-5-8) — one valid consent per visit. */
+    public const MESSAGE_DUPLICATE = 'Kunjungan ini sudah memiliki persetujuan tindakan medis yang sah. Batalkan (void) persetujuan itu terlebih dahulu bila perlu ditandatangani ulang.';
+
+    public const MESSAGE_VOID_SELF = 'Persetujuan tidak dapat dibatalkan oleh akun yang mencatatnya. Pembatalan harus dilakukan oleh pengawas lain.';
+
+    public const MESSAGE_VOID_WINDOW = 'Persetujuan hanya dapat dibatalkan selama pemeriksaan kunjungan ini masih berlangsung.';
+
+    public const MESSAGE_VOID_PERMISSION = 'Akun ini tidak berwenang membatalkan persetujuan tindakan medis.';
+
+    public const VOID_PERMISSION = 'void_rme_consents';
+
+    public const MESSAGE_OUT_OF_SCOPE = 'Anda tidak memiliki akses ke persetujuan kunjungan ini.';
+
+    public const VOID_REASON_MIN = 10;
+
+    public const VOID_REASON_MAX = 1000;
+
+    public const AUDIT_TABLE = 'trx_rme_visit_consents';
+
+    public const AUDIT_VOIDED = 'RME_CONSENT_VOIDED';
+
     public function __construct(
         private readonly RmeVisitConsentRepositoryInterface $consents,
         private readonly RmeVisitConsentNumberGeneratorService $numbers,
         private readonly PrescriptionCanvasDecoder $canvas,
         private readonly ClinicalClock $clock,
         private readonly ClinicVisitRepositoryInterface $visits,
+        private readonly AuditLogService $auditLog,
     ) {}
 
     /*
@@ -239,6 +266,31 @@ class RmeVisitConsentService
             throw ValidationException::withMessages([
                 'consent' => 'Rekam medis kunjungan ini belum dapat ditulis karena Persetujuan Tindakan Medis belum ditandatangani.',
             ]);
+        }
+
+        // DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-5-8; rule 219 §12a, rule 223 §6) —
+        // inside a write transaction the encounter's visit row is locked FIRST and
+        // the decision re-made on it: a consent void (visit FOR UPDATE) or a finish
+        // committed meanwhile is seen, and one that comes later waits for this
+        // write. Every consent-gated RME write calls this at the top of its
+        // transaction, so the visit stays the first clinical row it locks. Outside a
+        // transaction (a page's pre-check) nothing is locked.
+        if (DB::transactionLevel() > 0) {
+            $locked = $this->visits->lockForStatusDecision((int) $encounter->getKey());
+
+            if ($locked === null || $locked->status !== ClinicVisit::STATUS_IN_PROGRESS) {
+                throw ValidationException::withMessages([
+                    'consent' => 'Rekam medis hanya dapat ditulis saat pasien sedang dalam pemeriksaan. Mulai pemeriksaan terlebih dahulu.',
+                ]);
+            }
+
+            if (! $this->hasValidConsent($locked)) {
+                throw ValidationException::withMessages([
+                    'consent' => 'Rekam medis kunjungan ini belum dapat ditulis karena Persetujuan Tindakan Medis belum ditandatangani.',
+                ]);
+            }
+
+            return $locked;
         }
 
         return $encounter;
@@ -533,136 +585,204 @@ class RmeVisitConsentService
         $relationship = (string) ($data['consenter_relationship'] ?? '');
         $isSelf = $relationship === 'self';
 
-        return DB::transaction(function () use (
-            $visit,
-            $operator,
-            $data,
-            $template,
-            $documentationConsent,
-            $consenterSignature,
-            $doctorSignature,
-            $patient,
-            $relationship,
-            $isSelf,
-        ): RmeVisitConsent {
-            // DMS-RME-REVISION-PROGRAM-5 (CW5-07) — assertSignable() at the top
-            // read the copy the request loaded. Take the visit row lock (the same
-            // lock, in the same order, as void() and transitionStatus()) and decide
-            // the window again on the persisted row, BEFORE any signature file is
-            // written, so a cancel or a finish that committed in the meantime
-            // leaves neither a consent nor an orphaned image behind.
-            $current = $this->visits->lockForStatusDecision((int) $visit->getKey());
+        // DMS-RME-COMPREHENSIVE-CLOSURE-1 (8D finding 1, rule 224 pattern) — every
+        // signature object this call writes, and whether the transaction body
+        // finished. A failure before that (second write, insert) removes them; a
+        // failure after it (the COMMIT outcome is unknown) keeps them.
+        $written = [];
+        $bodyDone = false;
 
-            if ($current === null) {
-                throw ValidationException::withMessages([
-                    'clinic_visit_id' => 'Kunjungan tidak ditemukan.',
-                ]);
+        try {
+            return DB::transaction(function () use (
+                $visit,
+                $operator,
+                $data,
+                $template,
+                $documentationConsent,
+                $consenterSignature,
+                $doctorSignature,
+                $patient,
+                $relationship,
+                $isSelf,
+                &$written,
+                &$bodyDone,
+            ): RmeVisitConsent {
+                $consent = $this->signWithinTransaction($visit, $operator, $data, $template, $documentationConsent, $consenterSignature, $doctorSignature, $patient, $relationship, $isSelf, $written);
+                $bodyDone = true;
+
+                return $consent;
+            });
+        } catch (Throwable $e) {
+            if (! $bodyDone) {
+                $this->discardUncommitted($written);
             }
 
-            $this->assertSignable($current);
+            throw $e;
+        }
+    }
 
-            $consentNumber = $this->numbers->generate();
-            $directory = trim((string) config('rme_consent.signature_directory', 'rme-consents'), '/');
-            $folder = $directory.'/'.$consentNumber;
+    /**
+     * @param  array<string, mixed>  $data
+     * @param  array<string, mixed>  $template
+     * @param  list<string>  $written  receives every signature key this call wrote
+     */
+    private function signWithinTransaction(
+        ClinicVisit $visit,
+        User $operator,
+        array $data,
+        array $template,
+        bool $documentationConsent,
+        string $consenterSignature,
+        ?string $doctorSignature,
+        $patient,
+        string $relationship,
+        bool $isSelf,
+        array &$written,
+    ): RmeVisitConsent {
+        // DMS-RME-REVISION-PROGRAM-5 (CW5-07) — assertSignable() at the top
+        // read the copy the request loaded. Take the visit row lock (the same
+        // lock, in the same order, as void() and transitionStatus()) and decide
+        // the window again on the persisted row, BEFORE any signature file is
+        // written, so a cancel or a finish that committed in the meantime
+        // leaves neither a consent nor an orphaned image behind.
+        $current = $this->visits->lockForStatusDecision((int) $visit->getKey());
 
-            $consenterPath = $folder.'/consenter-'.Str::random(12).'.png';
-            $this->disk()->put($consenterPath, $consenterSignature);
-
-            $doctorPath = null;
-            if ($doctorSignature !== null) {
-                $doctorPath = $folder.'/doctor-'.Str::random(12).'.png';
-                $this->disk()->put($doctorPath, $doctorSignature);
-            }
-
-            // The treating doctor comes from the visit, never from the request.
-            // Whoever operates the tablet cannot nominate a different doctor.
-            // CW5-07 — read from the LOCKED row, so a room re-assignment that
-            // committed before the lock cannot leave the consent naming the
-            // previous doctor.
-            $doctor = $current->doctor;
-
-            return $this->consents->create([
-                'consent_number' => $consentNumber,
-                'branch_id' => $visit->branch_id,
-                'clinic_visit_id' => $visit->id,
-                'patient_id' => $patient->id,
-                'doctor_id' => $doctor?->id,
-
-                'template_code' => $template['code'],
-                'template_version' => $template['version'],
-                'content_snapshot' => $this->snapshot($template),
-
-                'consenter_relationship' => $relationship,
-                'consenter_name' => $isSelf
-                    ? $patient->name
-                    : (string) ($data['consenter_name'] ?? ''),
-                'consenter_age' => $isSelf
-                    ? (string) ($patient->age() ?? '')
-                    : (string) ($data['consenter_age'] ?? ''),
-                'consenter_gender' => $isSelf
-                    ? $patient->gender
-                    : ($data['consenter_gender'] ?? null),
-                'consenter_address' => $isSelf
-                    ? $patient->address
-                    : ($data['consenter_address'] ?? null),
-                'consenter_identity_number' => $isSelf
-                    ? $patient->ktp_number
-                    : ($data['consenter_identity_number'] ?? null),
-
-                'patient_name_snapshot' => $patient->name,
-                'patient_age_snapshot' => (string) ($patient->age() ?? ''),
-                'patient_gender_snapshot' => $patient->gender,
-                'patient_address_snapshot' => $patient->address,
-                'patient_identity_number_snapshot' => $patient->ktp_number,
-                'medical_record_number_snapshot' => $patient->medical_record_number,
-
-                'medical_action' => (string) ($data['medical_action'] ?? ''),
-                'treatment_summary' => $data['treatment_summary'] ?? null,
-
-                'documentation_consent' => $documentationConsent,
-
-                'consenter_signature_path' => $consenterPath,
-                'doctor_signature_path' => $doctorPath,
-                'doctor_name_snapshot' => $doctor?->name,
-                'signed_location' => $template['location'] ?? null,
-                'signed_at' => $this->clock->now(),
-                'signed_by' => $operator->id,
+        if ($current === null) {
+            throw ValidationException::withMessages([
+                'clinic_visit_id' => 'Kunjungan tidak ditemukan.',
             ]);
-        });
+        }
+
+        // Before any signature object is written.
+        $this->assertOperatorWithinScope($operator, $current);
+
+        $this->assertSignable($current);
+
+        // DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-5-8, owner decision 2026-11-16) —
+        // one valid consent per visit, decided on the LOCKED visit row, so a
+        // double submit or two operators cannot both sign. A new signature is
+        // possible only after the valid one was voided (void(), supervised).
+        if ($this->validConsentFor($current) !== null) {
+            throw ValidationException::withMessages([
+                'consent' => self::MESSAGE_DUPLICATE,
+            ]);
+        }
+
+        $consentNumber = $this->numbers->generate();
+        $directory = trim((string) config('rme_consent.signature_directory', 'rme-consents'), '/');
+        $folder = $directory.'/'.$consentNumber;
+
+        $consenterPath = $folder.'/consenter-'.Str::random(12).'.png';
+        $this->disk()->put($consenterPath, $consenterSignature);
+        $written[] = $consenterPath;
+
+        $doctorPath = null;
+        if ($doctorSignature !== null) {
+            $doctorPath = $folder.'/doctor-'.Str::random(12).'.png';
+            $this->disk()->put($doctorPath, $doctorSignature);
+            $written[] = $doctorPath;
+        }
+
+        // The treating doctor comes from the visit, never from the request.
+        // Whoever operates the tablet cannot nominate a different doctor.
+        // CW5-07 — read from the LOCKED row, so a room re-assignment that
+        // committed before the lock cannot leave the consent naming the
+        // previous doctor.
+        $doctor = $current->doctor;
+
+        return $this->consents->create([
+            'consent_number' => $consentNumber,
+            'branch_id' => $visit->branch_id,
+            'clinic_visit_id' => $visit->id,
+            'patient_id' => $patient->id,
+            'doctor_id' => $doctor?->id,
+
+            'template_code' => $template['code'],
+            'template_version' => $template['version'],
+            'content_snapshot' => $this->snapshot($template),
+
+            'consenter_relationship' => $relationship,
+            'consenter_name' => $isSelf
+                ? $patient->name
+                : (string) ($data['consenter_name'] ?? ''),
+            'consenter_age' => $isSelf
+                ? (string) ($patient->age() ?? '')
+                : (string) ($data['consenter_age'] ?? ''),
+            'consenter_gender' => $isSelf
+                ? $patient->gender
+                : ($data['consenter_gender'] ?? null),
+            'consenter_address' => $isSelf
+                ? $patient->address
+                : ($data['consenter_address'] ?? null),
+            'consenter_identity_number' => $isSelf
+                ? $patient->ktp_number
+                : ($data['consenter_identity_number'] ?? null),
+
+            'patient_name_snapshot' => $patient->name,
+            'patient_age_snapshot' => (string) ($patient->age() ?? ''),
+            'patient_gender_snapshot' => $patient->gender,
+            'patient_address_snapshot' => $patient->address,
+            'patient_identity_number_snapshot' => $patient->ktp_number,
+            'medical_record_number_snapshot' => $patient->medical_record_number,
+
+            'medical_action' => (string) ($data['medical_action'] ?? ''),
+            'treatment_summary' => $data['treatment_summary'] ?? null,
+
+            'documentation_consent' => $documentationConsent,
+
+            'consenter_signature_path' => $consenterPath,
+            'doctor_signature_path' => $doctorPath,
+            'doctor_name_snapshot' => $doctor?->name,
+            'signed_location' => $template['location'] ?? null,
+            'signed_at' => $this->clock->now(),
+            'signed_by' => $operator->id,
+        ]);
     }
 
     /**
      * Correction path. A signed consent is never edited or deleted; it is
      * voided, with a reason, and a fresh one is signed in its place.
      *
-     * ACTIVATION-RME-DOCTOR-PERFORMED-TREATMENTS-1 (rule 219 §12a, LOW-2 closed) —
-     * the void takes the VISIT row lock first, the same lock and the same order
-     * (visit → consent) as the clinical writes that re-check the consent UNDER
-     * that lock — today only RmePerformedTreatmentService. Such a write commits
-     * under a consent that is still valid, or waits and then sees it voided —
-     * never a row written under a consent that is void at commit. RME handwriting
-     * and odontogram authoring take no visit row lock, so this void does not
-     * serialize against them (pre-existing; this method has no production caller,
-     * and a sprint adding one must close that too — rule 219 §12a). The consent is
-     * re-read under the lock, so two concurrent voids of one consent cannot both
-     * succeed.
+     * The void takes the VISIT row lock first (rule 223 §6) and re-reads the
+     * consent under it, so two voids of one consent cannot both succeed.
+     * DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-5-8) gave it its first production
+     * caller (`rme.consents.void`, supervised) and closed rule 219 §12a with it:
+     * every consent-gated RME write (sheet, page, diagnosis, override,
+     * finalize) now re-decides the consent under that same visit lock
+     * (assertRmeAuthoringAllowedForPatient() inside a transaction), so it either
+     * commits under a still-valid consent or waits and sees it voided.
+     * Odontogram charting does not depend on consent (AIR-RMC-14) and is
+     * unaffected.
      */
     public function void(RmeVisitConsent $consent, User $operator, string $reason): RmeVisitConsent
     {
+        $reason = trim($reason);
+
         if ($consent->isVoided()) {
             throw ValidationException::withMessages([
                 'consent' => 'Persetujuan ini sudah dibatalkan.',
             ]);
         }
 
-        if (trim($reason) === '') {
+        // DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-5-8, owner decision 2026-11-16) — the
+        // supervised void. A written reason of real length, the dedicated
+        // permission re-asserted here (CG-06; the route and the policy ask first).
+        if (mb_strlen($reason) < self::VOID_REASON_MIN || mb_strlen($reason) > self::VOID_REASON_MAX) {
             throw ValidationException::withMessages([
-                'void_reason' => 'Alasan pembatalan wajib diisi.',
+                'void_reason' => 'Alasan pembatalan wajib diisi, '.self::VOID_REASON_MIN.'–'.self::VOID_REASON_MAX.' karakter.',
+            ]);
+        }
+
+        if (! $operator->can(self::VOID_PERMISSION)) {
+            throw ValidationException::withMessages([
+                'consent' => self::MESSAGE_VOID_PERMISSION,
             ]);
         }
 
         return DB::transaction(function () use ($consent, $operator, $reason): RmeVisitConsent {
-            $this->visits->lockForUpdate((int) $consent->clinic_visit_id);
+            // The same lock, in the same order, as signWithinTransaction() and
+            // transitionStatus(): FOR NO KEY UPDATE (rule 223 §1a), visit first.
+            $visit = $this->visits->lockForStatusDecision((int) $consent->clinic_visit_id);
             $consent->refresh();
 
             if ($consent->isVoided()) {
@@ -671,11 +791,48 @@ class RmeVisitConsentService
                 ]);
             }
 
+            if ($visit !== null) {
+                $this->assertOperatorWithinScope($operator, $visit);
+            }
+
+            // Maker ≠ checker (CG-07), inside the transaction and identity-based,
+            // so it binds Super Admin too: the account that recorded the consent
+            // never voids it.
+            if ((int) $consent->signed_by === (int) $operator->getKey()) {
+                throw ValidationException::withMessages([
+                    'consent' => self::MESSAGE_VOID_SELF,
+                ]);
+            }
+
+            // Only while the examination is running: a void after "Selesai
+            // Pemeriksaan" would leave a finished record without a consent and no
+            // way to sign again (signing is only possible in_progress).
+            if ($visit === null || $visit->status !== ClinicVisit::STATUS_IN_PROGRESS) {
+                throw ValidationException::withMessages([
+                    'consent' => self::MESSAGE_VOID_WINDOW,
+                ]);
+            }
+
             $consent->forceFill([
                 'voided_at' => $this->clock->now(),
                 'voided_by' => $operator->id,
                 'void_reason' => $reason,
             ])->save();
+
+            // Ids and the reason's length only — the reason text stays on the
+            // consent row, never in the audit payload.
+            $this->auditLog->log(
+                self::AUDIT_TABLE,
+                (int) $consent->getKey(),
+                self::AUDIT_VOIDED,
+                null,
+                [
+                    'clinic_visit_id' => (int) $consent->clinic_visit_id,
+                    'signed_by' => (int) $consent->signed_by,
+                    'reason_length' => mb_strlen($reason),
+                ],
+                $operator,
+            );
 
             return $consent->refresh();
         });
@@ -687,27 +844,62 @@ class RmeVisitConsentService
     |--------------------------------------------------------------------------
     */
 
+    /**
+     * DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-5-9, rule 121 §1) — consent signatures
+     * are clinical evidence: they live where ClinicalEvidenceStorage says, never
+     * on a disk named here. Objects written before this change are copied there,
+     * key for key, by `rme:consent-signatures-migrate` (dry run, then --apply);
+     * there is no read fallback to the old disk (rule 121 §5).
+     */
     public function diskName(): string
     {
-        return (string) config('rme_consent.signature_disk', 'local');
+        return ClinicalEvidenceStorage::diskName();
     }
 
     public function disk()
     {
-        return Storage::disk($this->diskName());
+        return ClinicalEvidenceStorage::disk();
     }
 
     /**
      * Read a stored signature back as a data URI so a print/PDF template can
-     * embed it without the file ever gaining a public URL.
+     * embed it without the file ever gaining a public URL. Null when the object
+     * is absent, unreadable or not a PNG (an honest "not available").
      */
     public function signatureDataUri(?string $path): ?string
     {
-        if ($path === null || $path === '' || ! $this->disk()->exists($path)) {
-            return null;
-        }
+        return ClinicalEvidenceStorage::dataUri($path);
+    }
 
-        return 'data:image/png;base64,'.base64_encode((string) $this->disk()->get($path));
+    /**
+     * DMS-RME-COMPREHENSIVE-CLOSURE-1 (review F6, CG-06 third layer) — the
+     * branch and patient scope the policy asks (RmeWorkingBranchScope, then
+     * DoctorPatientScopeService), re-asserted on the locked visit so a caller
+     * that never passes through the policy (a command, a job, a script) is held
+     * to it too.
+     */
+    private function assertOperatorWithinScope(User $operator, ClinicVisit $visit): void
+    {
+        $patientScope = app(DoctorPatientScopeService::class)->authorizeVisitAccess($operator, $visit);
+
+        if (! app(RmeWorkingBranchScope::class)->allows($operator, $visit->branch_id)
+            || $patientScope === false
+            || ($patientScope instanceof Response && $patientScope->denied())) {
+            throw new AuthorizationException(self::MESSAGE_OUT_OF_SCOPE);
+        }
+    }
+
+    /** @param  list<string>  $keys */
+    private function discardUncommitted(array $keys): void
+    {
+        foreach ($keys as $key) {
+            try {
+                $this->disk()->delete($key);
+            } catch (Throwable $e) {
+                // A private orphan is the safe failure; never mask the original error.
+                Log::warning('An uncommitted consent signature object could not be removed.', ['type' => $e::class]);
+            }
+        }
     }
 
     /*

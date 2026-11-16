@@ -31,12 +31,17 @@ return [
     'default_template' => 'PERSETUJUAN_TINDAKAN_MEDIS',
 
     /*
-    | Where the signature PNGs live. This is a PRIVATE disk on purpose: a
-    | signed consent carries an identity number and a handwritten signature,
-    | so no public URL may ever exist for it. Files are served only through
-    | the policy-gated consent signature route.
+    | Where the signature PNGs live: the clinical evidence disk, through
+    | App\Support\Storage\ClinicalEvidenceStorage (rule 121 §1, OD-5-9 closed by
+    | DMS-RME-COMPREHENSIVE-CLOSURE-1). A signed consent carries an identity
+    | number and a handwritten signature, so no public URL may ever exist for it;
+    | files are served only through the policy-gated consent signature route.
+    |
+    | `legacy_signature_disk` names where signatures were written BEFORE that
+    | change. Only `rme:consent-signatures-migrate` reads it (copy phase, key
+    | for key, SHA-256 verified); no reader falls back to it (rule 121 §5).
     */
-    'signature_disk' => 'local',
+    'legacy_signature_disk' => 'local',
     'signature_directory' => 'rme-consents',
 
     /*
