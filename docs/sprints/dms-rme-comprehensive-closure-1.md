@@ -99,6 +99,29 @@ summarised):
 | CC1-ODO | **Keep empty state** | accepted by design, with references to the existing tests |
 | CC1-SAT-1a | **Keep canonical design** | Rule 88 §2 / AIR-SSH-04 kept; disabled until official activation; negative tests must prove nothing is sent while disabled |
 | CI workflow scope | **I will grant workflow scope** | least privilege; "Jangan meminta atau membaca token saya"; change no workflow beyond what is needed and reviewed; register the SATUSEHAT tests on the critical gate; Full Suite DEFERRED is never PASSED |
+| R7-1-FS | **Fix first-sheet race** (2026-11-17) | with focused, authorization, concurrency and regression tests |
+
+### 2c. Owner decisions on the internal memo of 2026-10-17 (2026-11-17)
+
+Asked through the structured question tool, then confirmed in three written owner decisions ("OWNER REQUIREMENTS
+DECISION", "OWNER DECISIONS M3/M4", "OWNER DECISIONS M4/M5/M6"). They revise earlier canonical rules on purpose;
+each revision is made explicitly in the rules after an impact analysis, never silently. Traceability:
+[[dms-rme-comprehensive-closure-1-memo-traceability]].
+
+| Memo item | Owner answer | Owner conditions (written decision) |
+|---|---|---|
+| M4.1 RM number | **Auto, read-only** | generated automatically, FO cannot edit it, DaengtisiaMS format kept, locking + database uniqueness, existing numbers never changed, Legacy RME compatibility kept, CC1-PAT-1 measured before implementation, safe overflow handling, the Sprint 23.8 manual-number rule revised explicitly |
+| M1.1–M1.3 PTM | **Both signatures gate writing** | patient signs through FO, doctor through the doctor dashboard; both required before RME and odontogram writing; "Mulai Pemeriksaan" before consent kept; permitted history reading stays; no clinical edit before both signatures are valid; consent audit trail and supervised void kept; affected canonical rules updated |
+| M2.1–M2.2 Doctor access | **Own encounter, history inside it** | a doctor handles only assigned encounters; relevant clinical history read-only during a legitimate service; never edit another doctor's encounter; after the service, access follows the encounters the doctor handled; a reassignment revokes the old access through valid state transitions; impact on Legacy RME, BranchContext, room assignment and session locking audited; regression and negative authorization tests |
+| Immediate | **All four**: hide payment totals, treatment on worklist, transfer reference required, fix first-sheet race | focused, authorization, concurrency and regression tests |
+| M3.1 Doctor fields | **Memo list + RM number** | name, RM number, place and date of birth, age, occupation, planned treatment; phone, WhatsApp, address, email and NIK hidden from doctor screens; NIK stays on the consent document where the rules require it |
+| M4.2 Required fields | **Core fields, NIK optional** | core administrative fields mandatory for new patients; NIK and KTP scan optional; existing patients never blocked by incomplete history; a controlled exception for patients without a phone number |
+| M2.4 Doctor downloads | **Deny archive + PTM print** | doctors read permitted archives but never print or download Legacy RME or the PTM; native RME / odontogram print stays denied; prescription print stays; an owner revision of rule 93 §12; FO / Admin Klinik keep a legitimate print path |
+| M3.3 After finalization | **Lock on finalize + amendment** | finalizing locks the RME sheet or odontogram at once; corrections only through a supervised amendment with reason, approval, version history and audit trail; payment changes stay with FO/Kasir maker-checker (reverses Sprint 59 editing of finalized records) |
+| M4.4 Clinical photos | **Build + split consent clause 8** | before / after / progress photos as clinical documentation; clinical documentation consent separated from publication / promotion; refusing publication never blocks care; private storage, authorization, BranchContext, audit trail, limited access; no automatic FO/Kasir access; the new consent version tested and historical consents never changed |
+| M5.1/M5.2 Payments | **Wait for the discussion** | current payment workflow kept; no supplementary invoice and no change to immutable invoices without a management decision; the approved transfer-reference validation done; additional lab fees, post-payment correction and roll-out expansion recorded as REQUIRES OWNER DECISION |
+| M6.2 Storage | **Usage report + owner measurement** | a read-only capacity report (database, private files, RME, PDF, clinical photos, free space), no patient information; growth projection and cost estimate from verified rates; no BK-2; the running production backup unchanged |
+| M6.1, C4 Organizational | **Record, do not block technical GO** | migration responsibility (IT and clinical side) and management UAT before all-branch roll-out are organizational gates; technical GO when every mandatory technical gate passes; all-branch roll-out stays HOLD until the organizational approvals exist; BUSINESS ROLLOUT APPROVED is never claimed without evidence |
 
 ## 3. Historical items in the brief, verified
 
