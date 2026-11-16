@@ -7,7 +7,10 @@ alwaysApply: false
 # Direct signed release approval — approval contract 3 (rule 236)
 
 **Status:** ACTIVE on a host once `DMS_PRODUCTION_RELEASE_APPROVAL_CONTRACTS` lists `3` there AND the operator
-entrypoint carries `submit-approval` (re-provisioned). Sprint record: `docs/sprints/dms-release-approval-direct-1.md`.
+entrypoint carries `submit-approval` (re-provisioned). **Biznet `DaengtisiaMS`: ACTIVE since 2026-11-16** (deploy
+`20261116-080258`, operator re-provisioned by the owner, proven by a withdrawn test approval; GO
+`dms-release-approval-direct-1-go`). Every later Biznet release follows runbook §6g. Sprint record:
+`docs/sprints/dms-release-approval-direct-1.md`.
 **Partially supersedes** rule 229 §3 ("merged through a pull request") and §4.4 (record read from the fetched commit
 object) and rule 231's committed `.sig`, for releases approved under contract 3 only; both rules keep governing
 contract 2 and every check contract 3 reuses. "Approval contract 3" (this rule) is not rule 229's "evidence contract

@@ -9,7 +9,10 @@ Deploy ke VPS **tidak** boleh `migrate:fresh`/`db:wipe`. Selalu backup DB dulu. 
 ## Konteks DaengtisiaMS
 Produksi sejak 2026-11-03: host Biznet Gio `DaengtisiaMS` (`139.190.106.38`). Sejak 2026-11-16 (rule 235) deploy dan
 cek read-only lewat operator `ssh daengtisiams-biznet-deploy <aksi>`; `ssh daengtisiams-biznet-prod` (`dmsadmin`) hanya
-break-glass: sudo-nya butuh password owner, tanpa `sudo -n`. Host Hostinger `srv1730088` (`145.79.13.224`) WRITE-FROZEN — jangan pernah
+break-glass: sudo-nya butuh password owner, tanpa `sudo -n`. Sejak 2026-11-16 (rule 236, contract 3) release tidak
+butuh PR approval: owner menandatangani record di workstation (`scripts/release-approval-sign.sh`), lalu
+`submit-approval`, `check-approval`, `start` lewat operator (runbook `production-host-identity.md` §6g); host sendiri
+memverifikasi CI SHA target ke GitHub. Host Hostinger `srv1730088` (`145.79.13.224`) WRITE-FROZEN — jangan pernah
 deploy ke sana. Acuan identitas host: `docs/runbooks/production-host-identity.md`. Riwayat di bawah ini berasal dari era Hostinger.
 Branch baseline berubah per sprint — verifikasi tag/commit sebelum deploy.
 
