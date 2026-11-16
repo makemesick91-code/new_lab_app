@@ -27,6 +27,7 @@ use App\Models\User;
 use App\Modules\Branch\Models\Branch;
 use App\Modules\ClinicRoom\Models\ClinicRoom;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
+use App\Modules\ClinicVisit\Services\ClinicVisitRegistrationGuard;
 use App\Modules\ClinicVisit\Services\ClinicVisitService;
 use App\Modules\Consent\Services\RmeVisitConsentService;
 use App\Modules\Doctor\Models\Doctor;
@@ -252,6 +253,52 @@ it('C3-04 keeps the front desk able to cancel a no-show', function () {
     expect($waiting->fresh()->status)->toBe(ClinicVisit::STATUS_CANCELLED);
 });
 
+/** A second visit of the SAME patient as `$first`, in the same room. */
+function cwaSecondVisitOf(object $t, ClinicVisit $first, string $status = ClinicVisit::STATUS_WAITING): ClinicVisit
+{
+    return ClinicVisit::factory()->create([
+        'branch_id' => $t->branch->id,
+        'patient_id' => $first->patient_id,
+        'doctor_id' => $t->doctorRecord->id,
+        'clinic_room_id' => $first->clinic_room_id,
+        'status' => $status,
+    ]);
+}
+
+it('C3-05 OD-5-5 refuses starting a second examination of the same patient, naming the open one', function () {
+    // Both registered while neither was in progress (registration allows it).
+    $first = cwaVisit($this, $this->roomA, ClinicVisit::STATUS_WAITING);
+    $second = cwaSecondVisitOf($this, $first);
+
+    actingAs($this->doctor)
+        ->post(route('rme.visits.transition', $first), ['status' => ClinicVisit::STATUS_IN_PROGRESS])
+        ->assertSessionHasNoErrors();
+
+    $message = sprintf(ClinicVisitRegistrationGuard::MESSAGE_START_WHILE_IN_PROGRESS, $first->visit_number);
+
+    actingAs($this->doctor)
+        ->post(route('rme.visits.transition', $second), ['status' => ClinicVisit::STATUS_IN_PROGRESS])
+        ->assertSessionHasErrors(['status' => $message]);
+
+    expect(fn () => app(ClinicVisitService::class)->transitionStatus($second->fresh(), ClinicVisit::STATUS_IN_PROGRESS, $this->doctor))
+        ->toThrow(ValidationException::class, $message);
+
+    expect($first->fresh()->status)->toBe(ClinicVisit::STATUS_IN_PROGRESS)
+        ->and($second->fresh()->status)->toBe(ClinicVisit::STATUS_WAITING);
+});
+
+it('C3-06 OD-5-5 lets the second examination start once the first is no longer in progress', function (string $status) {
+    $first = cwaVisit($this, $this->roomA, ClinicVisit::STATUS_IN_PROGRESS);
+    $second = cwaSecondVisitOf($this, $first);
+    $first->forceFill(['status' => $status])->save();
+
+    actingAs($this->doctor)
+        ->post(route('rme.visits.transition', $second), ['status' => ClinicVisit::STATUS_IN_PROGRESS])
+        ->assertSessionHasNoErrors();
+
+    expect($second->fresh()->status)->toBe(ClinicVisit::STATUS_IN_PROGRESS);
+})->with([ClinicVisit::STATUS_CASHIER_PENDING, ClinicVisit::STATUS_CANCELLED]);
+
 /*
 |--------------------------------------------------------------------------
 | C4 — the doctor is frozen once the examination is finished (OD-5-3)
@@ -409,4 +456,49 @@ it('OD-5-6 offers "Tambah Lembar RM" only for the current encounter, never for a
         ->get(route('rme.visits.medical-record.show', [$earlier, 'source_visit_id' => $encounter->id]))
         ->assertOk()
         ->assertSee('Tambah Lembar RM (Kunjungan #'.$encounter->visit_number.')', false);
+});
+
+/*
+|--------------------------------------------------------------------------
+| DMS-RME-COMPREHENSIVE-CLOSURE-1 (R8A-2) — authorization before validation
+|--------------------------------------------------------------------------
+|
+| Owner decision 2026-11-16: an account the policy refuses gets its 403/404
+| whatever payload it sends. Before, a malformed payload was answered with field
+| errors first, so the reply depended on the payload.
+*/
+
+it('R8A2-01 answers a refused create with 403 even for a malformed payload', function () {
+    // The doctor is scoped to room A; visit B is an active visit of room B.
+    actingAs($this->doctor)
+        ->post(route('rme.visits.prescription.store', $this->visitB), [])
+        ->assertForbidden();
+
+    expect(RmePrescription::query()->where('clinic_visit_id', $this->visitB->id)->exists())->toBeFalse();
+});
+
+it('R8A2-02 answers a refused update with 403 even for a malformed payload, writing nothing', function () {
+    $prescription = RmePrescription::factory()->withStoredCanvases()->unsigned()->create([
+        'clinic_visit_id' => $this->visitB->id,
+        'branch_id' => $this->visitB->branch_id,
+        'patient_id' => $this->visitB->patient_id,
+        'doctor_id' => $this->visitB->doctor_id,
+    ]);
+    $before = $prescription->fresh()->getAttributes();
+
+    actingAs($this->doctor)
+        ->patch(route('rme.prescriptions.update', $prescription), ['prescription_date' => 'not-a-date'])
+        ->assertForbidden();
+
+    expect($prescription->fresh()->getAttributes())->toBe($before);
+});
+
+it('R8A2-03 keeps validation for an authorised author and 404 for a visit that does not exist', function () {
+    actingAs($this->doctor)
+        ->post(route('rme.visits.prescription.store', $this->visitA), [])
+        ->assertSessionHasErrors('prescription_date');
+
+    actingAs($this->doctor)
+        ->post(route('rme.visits.prescription.store', 987654321), cwaForm())
+        ->assertNotFound();
 });

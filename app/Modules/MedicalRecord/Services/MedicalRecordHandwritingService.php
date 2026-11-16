@@ -10,6 +10,7 @@ use App\Support\Storage\ClinicalEvidenceStorage;
 use Closure;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\ValidationException;
 use Throwable;
 
 /**
@@ -46,6 +47,9 @@ use Throwable;
  */
 final class MedicalRecordHandwritingService
 {
+    /** DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-6-1) — a save over a page changed since this device loaded it. */
+    public const MESSAGE_STALE_PAGE = 'Halaman telah diubah di perangkat lain. Muat ulang halaman sebelum menyimpan agar tulisan tidak tertimpa.';
+
     public function __construct(
         private readonly MedicalRecordHandwritingRepositoryInterface $handwritings,
         private readonly MedicalRecordRepositoryInterface $medicalRecords,
@@ -56,16 +60,25 @@ final class MedicalRecordHandwritingService
      * it, and runs inside the transaction. `$png` is already decoded, validated
      * and blank-guarded.
      *
+     * DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-6-1, owner decision 2026-11-16) —
+     * optimistic concurrency per page. `$expectedRevision` is the revision the
+     * saving device loaded (MedicalRecord::handwritingRevision(), `none` for a
+     * page it opened as new). It is compared, under the record lock and before
+     * any object is written, with the page as stored now; a different revision
+     * means another device saved this page meanwhile, and the save is refused
+     * instead of silently replacing that drawing. Null skips the comparison
+     * (a caller that never loaded a page, e.g. the first save of a new book).
+     *
      * @param  Closure(): array{0: MedicalRecord, 1: ClinicVisit}  $resolveTarget
      * @return array{medical_record: MedicalRecord, storage_visit: ClinicVisit, page_number: int}
      */
-    public function save(Closure $resolveTarget, int $requestedPage, string $png, ?int $actorId): array
+    public function save(Closure $resolveTarget, int $requestedPage, string $png, ?int $actorId, ?string $expectedRevision = null): array
     {
         $writtenKey = null;
         $bodyDone = false;
 
         try {
-            return DB::transaction(function () use ($resolveTarget, $requestedPage, $png, $actorId, &$writtenKey, &$bodyDone): array {
+            return DB::transaction(function () use ($resolveTarget, $requestedPage, $png, $actorId, $expectedRevision, &$writtenKey, &$bodyDone): array {
                 [$medicalRecord, $storageVisit] = $resolveTarget();
 
                 $this->medicalRecords->lockForHandwriting($medicalRecord->id);
@@ -73,6 +86,13 @@ final class MedicalRecordHandwritingService
                 $page = $requestedPage <= 1
                     ? 1
                     : min($requestedPage, $this->handwritings->nextPageNumber($medicalRecord->id));
+
+                if ($expectedRevision !== null
+                    && ! hash_equals($this->currentRevision($medicalRecord, $page), $expectedRevision)) {
+                    throw ValidationException::withMessages([
+                        'handwriting_data' => self::MESSAGE_STALE_PAGE,
+                    ]);
+                }
 
                 $writtenKey = $this->objectKey($storageVisit, $page);
                 ClinicalEvidenceStorage::disk()->put($writtenKey, $png);
@@ -104,6 +124,20 @@ final class MedicalRecordHandwritingService
 
             throw $e;
         }
+    }
+
+    /** The page's revision as stored now (read under the record lock). */
+    private function currentRevision(MedicalRecord $medicalRecord, int $page): string
+    {
+        // Page 1 is read with the SAME selector the page renders from
+        // (MedicalRecord::latestHandwriting(): saved_at desc, id desc). Two
+        // page-1 rows can exist (saves before the record lock existed); with a
+        // different order here every save would be refused as stale forever.
+        $row = $page === 1
+            ? $medicalRecord->latestHandwriting()
+            : $this->handwritings->findPageByMedicalRecordIdAndPage($medicalRecord->id, $page);
+
+        return MedicalRecord::handwritingRevision($row?->handwriting_path);
     }
 
     private function objectKey(ClinicVisit $storageVisit, int $page): string

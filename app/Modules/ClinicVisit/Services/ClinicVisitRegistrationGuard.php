@@ -33,6 +33,11 @@ class ClinicVisitRegistrationGuard
 {
     public const MESSAGE_PATIENT = 'Pasien yang dipilih tidak tersedia untuk pendaftaran kunjungan.';
 
+    /** DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-5-5) — %s is the open visit's number. */
+    public const MESSAGE_EXAMINATION_IN_PROGRESS = 'Pasien ini masih dalam pemeriksaan pada kunjungan %s. Selesaikan atau batalkan pemeriksaan tersebut sebelum mendaftarkan kunjungan baru.';
+
+    public const MESSAGE_START_WHILE_IN_PROGRESS = 'Pasien ini masih dalam pemeriksaan pada kunjungan %s. Selesaikan atau batalkan pemeriksaan tersebut sebelum memulai pemeriksaan kunjungan ini.';
+
     public function __construct(
         private readonly ClinicVisitRepositoryInterface $visits,
         private readonly BranchService $branches,
@@ -132,6 +137,67 @@ class ClinicVisitRegistrationGuard
 
         // OD-1: no branch comparison, no doctor comparison. See the class note.
         return null;
+    }
+
+    /**
+     * DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-5-5, owner decision 2026-11-16) — no new
+     * visit while the patient has an examination in progress. A second open
+     * examination is exactly the state ActiveEncounterResolver fails closed on
+     * ("more than one examination in progress"), so registering one used to lead
+     * the clinic into a dead end only cancelling could leave. registered /
+     * waiting / cashier_pending visits do not block (policy unchanged).
+     *
+     * With `$lock` the patient's encounter decision lock is taken FIRST
+     * (ClinicVisitRepositoryInterface::lockPatientEncounterDecision — the lock a
+     * "Mulai Pemeriksaan" takes too), and only then is the in-progress set read,
+     * so a start committing meanwhile is waited for and then seen; each
+     * in-progress visit is re-read FOR SHARE, so a finish or a cancel committing
+     * meanwhile is waited for and then seen as well. The decision is made on
+     * committed state. The message may name a visit at another RME branch, as the
+     * OD-1 cross-branch follow-up already does.
+     */
+    public function assertNoExaminationInProgress(int $patientId, bool $lock = false): void
+    {
+        if ($lock) {
+            $this->visits->lockPatientEncounterDecision($patientId);
+        }
+
+        foreach (app(ActiveEncounterResolver::class)->activeFor($patientId) as $active) {
+            $current = $lock
+                ? $this->visits->findForRegistrationLink($this->branches->rmeEnabledIds(), (int) $active->getKey(), true)
+                : $active;
+
+            if ($current !== null && $current->status === ClinicVisit::STATUS_IN_PROGRESS) {
+                throw ValidationException::withMessages([
+                    'patient_id' => sprintf(self::MESSAGE_EXAMINATION_IN_PROGRESS, (string) $current->visit_number),
+                ]);
+            }
+        }
+    }
+
+    /**
+     * DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-5-5, independent review) — the other
+     * half of "never two examinations in progress": "Mulai Pemeriksaan" on
+     * `$locked` (already held FOR NO KEY UPDATE by the transition) is refused while
+     * another visit of the same patient is in progress. Registration alone could
+     * not prevent it — two visits registered while neither was in progress could
+     * both be started. Decided under the patient's encounter decision lock, so two
+     * concurrent starts (or a start and a registration) serialise and the second
+     * sees the first committed. Must be called inside the transition's transaction.
+     */
+    public function assertNoOtherExaminationInProgress(ClinicVisit $locked): void
+    {
+        $patientId = (int) $locked->patient_id;
+        $this->visits->lockPatientEncounterDecision($patientId);
+
+        $other = app(ActiveEncounterResolver::class)->activeFor($patientId)
+            ->first(fn (ClinicVisit $visit): bool => (int) $visit->getKey() !== (int) $locked->getKey());
+
+        if ($other !== null) {
+            throw ValidationException::withMessages([
+                'status' => sprintf(self::MESSAGE_START_WHILE_IN_PROGRESS, (string) $other->visit_number),
+            ]);
+        }
     }
 
     /** @param  array<string, mixed>  $data */

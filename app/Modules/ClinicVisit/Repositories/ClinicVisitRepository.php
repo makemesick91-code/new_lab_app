@@ -163,6 +163,47 @@ class ClinicVisitRepository implements ClinicVisitRepositoryInterface
         $connection->statement('select pg_advisory_xact_lock(?, ?)', [$classId, $objectId]);
     }
 
+    /**
+     * DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-5-5) — `pg_advisory_xact_lock(92_005,
+     * patient id)`. NEVER RENUMBER this namespace — during a rolling deploy an old
+     * and a new process would take different locks for the same patient.
+     *
+     * Advisory lock namespace inventory (every classid the application uses; each
+     * belongs to exactly one lock, and a new lock takes the next unused value):
+     *
+     *     91_xxx  legacy document slots (LegacyDocumentSlotLock, 91_000 + type)
+     *     92_001  visit sequence (ClinicVisitSequenceLock, rule 225)
+     *     92_002  RME invoice number (DocumentNumberSequenceLock)
+     *     92_003  RME payment number (DocumentNumberSequenceLock)
+     *     92_004  visit consent number (DocumentNumberSequenceLock)
+     *     92_005  patient encounter decision (this lock)
+     *
+     * Value, uniqueness and this inventory are pinned by
+     * ClinicVisitRegistrationConcurrencyTest (OD-5-5).
+     */
+    public const PATIENT_ENCOUNTER_LOCK_NAMESPACE = 92_005;
+
+    public function lockPatientEncounterDecision(int $patientId): void
+    {
+        if ($patientId < 1 || $patientId > ClinicVisitSequenceLock::MAX_OBJID) {
+            throw new LogicException('Patient id out of range for the encounter decision lock.');
+        }
+
+        // A transaction-scoped advisory lock taken outside a transaction is
+        // released at the end of that single statement and protects nothing.
+        if (DB::transactionLevel() < 1) {
+            throw new LogicException('The patient encounter lock must be taken inside a transaction.');
+        }
+
+        $connection = DB::connection();
+
+        if ($connection->getDriverName() !== 'pgsql') {
+            return;
+        }
+
+        $connection->statement('select pg_advisory_xact_lock(?, ?)', [self::PATIENT_ENCOUNTER_LOCK_NAMESPACE, $patientId]);
+    }
+
     public function nextQueueNumber(int $branchId, Carbon $visitDate): int
     {
         // R5-2 — no row lock: on the day's first registration there is no row

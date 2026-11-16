@@ -28,10 +28,18 @@ declare(strict_types=1);
 | test (same pattern as PatientMergeConcurrencyTest).
 */
 
+use App\Modules\ClinicVisit\Interfaces\ClinicVisitRepositoryInterface;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
+use App\Modules\ClinicVisit\Repositories\ClinicVisitRepository;
 use App\Modules\ClinicVisit\Services\ClinicVisitRegistrationGuard;
+use App\Modules\ClinicVisit\Support\ClinicVisitSequenceLock;
+use App\Modules\LegacyImport\Support\LegacyDocumentSlotLock;
+use App\Support\Database\DocumentNumberSequenceLock;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
+use Illuminate\Validation\ValidationException;
 
 const CVRC_WRITER = 'cvrc_concurrency_writer';
 const CVRC_PROBE = 'cvrc_concurrency_probe';
@@ -165,4 +173,174 @@ it('refuses a prior visit that a committed concurrent soft-delete removed before
         expect(app(ClinicVisitRegistrationGuard::class)->followUpViolation(cvrcLink($this->patientId, $this->priorId), lock: true))
             ->toBe(['follow_up_of_visit_id', 'Kunjungan sebelumnya harus berasal dari cabang RME yang valid.']);
     });
+});
+
+/*
+| DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-5-5) — no new visit while an examination is in progress,
+| decided on rows read FOR SHARE inside the registration transaction.
+*/
+
+it('OD-5-5 holds the in-progress visit FOR SHARE while refusing, so a finish or cancel waits for the decision', function (): void {
+    DB::connection(CVRC_WRITER)->table('trx_clinic_visits')->where('id', $this->priorId)->update(['status' => ClinicVisit::STATUS_IN_PROGRESS]);
+
+    DB::connection(CVRC_WRITER)->transaction(function (): void {
+        $refused = false;
+
+        try {
+            app(ClinicVisitRegistrationGuard::class)->assertNoExaminationInProgress($this->patientId, lock: true);
+        } catch (ValidationException $e) {
+            $refused = str_contains((string) collect($e->errors())->flatten()->first(), 'VIS-CVRC-');
+        }
+
+        expect($refused)->toBeTrue()
+            // A status change (FOR NO KEY UPDATE) must wait while the decision stands.
+            ->and(cvrcProbeBlocked('FOR NO KEY UPDATE', $this->priorId))->toBeTrue();
+    });
+
+    expect(cvrcProbeBlocked('FOR NO KEY UPDATE', $this->priorId))->toBeFalse();
+});
+
+it('OD-5-5 sees a finish committed before the registration and lets it through', function (): void {
+    DB::connection(CVRC_WRITER)->table('trx_clinic_visits')->where('id', $this->priorId)->update(['status' => ClinicVisit::STATUS_CASHIER_PENDING]);
+
+    DB::connection(CVRC_WRITER)->transaction(function (): void {
+        app(ClinicVisitRegistrationGuard::class)->assertNoExaminationInProgress($this->patientId, lock: true);
+
+        // Nothing in progress, nothing locked.
+        expect(cvrcProbeBlocked('FOR NO KEY UPDATE', $this->priorId))->toBeFalse();
+    });
+});
+
+/*
+| Independent review — the same lock serialises registration and "Mulai Pemeriksaan"
+*/
+
+/** Is the patient's encounter decision lock held by another transaction right now? */
+function cvrcEncounterLockHeld(int $patientId): bool
+{
+    DB::purge(CVRC_PROBE);
+
+    return DB::connection(CVRC_PROBE)->transaction(fn () => ! (bool) DB::connection(CVRC_PROBE)
+        ->selectOne('select pg_try_advisory_xact_lock(?, ?) as got', [ClinicVisitRepository::PATIENT_ENCOUNTER_LOCK_NAMESPACE, $patientId])->got);
+}
+
+/** @return list<string> lowercase SQL of every statement run by $work on the writer */
+function cvrcStatements(Closure $work): array
+{
+    $statements = [];
+    DB::connection(CVRC_WRITER)->listen(function (QueryExecuted $q) use (&$statements): void {
+        $statements[] = strtolower($q->sql);
+    });
+    $work();
+
+    return $statements;
+}
+
+it('OD-5-5 pins the patient encounter lock namespace apart from every other advisory lock', function (): void {
+    expect(ClinicVisitRepository::PATIENT_ENCOUNTER_LOCK_NAMESPACE)->toBe(92_005)
+        ->and([92_001, 92_002, 92_003, 92_004])->not->toContain(ClinicVisitRepository::PATIENT_ENCOUNTER_LOCK_NAMESPACE);
+
+    // Every advisory lock namespace the application uses, by value: no two locks
+    // share one (the legacy slots are computed from 91_000, the rest are 92_xxx).
+    $namespaces = array_merge(
+        array_values(LegacyDocumentSlotLock::NAMESPACES),
+        [ClinicVisitSequenceLock::NAMESPACE],
+        DocumentNumberSequenceLock::NAMESPACES,
+        [ClinicVisitRepository::PATIENT_ENCOUNTER_LOCK_NAMESPACE],
+    );
+    expect(array_values(array_unique($namespaces)))->toBe($namespaces);
+
+    // Every 92_xxx integer literal in app/, read from PHP tokens so comments never
+    // count: each namespace is declared exactly once, so a second lock that reuses
+    // 92_005 (or any other) as a literal fails here. The 92_005 declaration is the
+    // repository's constant.
+    $declared = [];
+    foreach (File::allFiles(app_path()) as $file) {
+        if ($file->getExtension() !== 'php') {
+            continue;
+        }
+
+        foreach (token_get_all($file->getContents()) as $token) {
+            if (is_array($token) && $token[0] === T_LNUMBER) {
+                $value = intval(str_replace('_', '', $token[1]), 0);
+
+                if ($value >= 92_000 && $value <= 92_999) {
+                    $declared[] = $value.' '.str_replace('\\', '/', $file->getRelativePathname());
+                }
+            }
+        }
+    }
+    sort($declared);
+
+    expect($declared)->toBe([
+        '92001 Modules/ClinicVisit/Support/ClinicVisitSequenceLock.php',
+        '92002 Support/Database/DocumentNumberSequenceLock.php',
+        '92003 Support/Database/DocumentNumberSequenceLock.php',
+        '92004 Support/Database/DocumentNumberSequenceLock.php',
+        '92005 Modules/ClinicVisit/Repositories/ClinicVisitRepository.php',
+    ]);
+
+    // The advisory lock namespace inventory (on the newest namespace's constant)
+    // names every one, so the next lock picks an unused value.
+    $inventory = (string) (new ReflectionClassConstant(ClinicVisitRepository::class, 'PATIENT_ENCOUNTER_LOCK_NAMESPACE'))->getDocComment();
+    foreach (['91_xxx', '92_001', '92_002', '92_003', '92_004', '92_005'] as $namespace) {
+        expect($inventory)->toContain($namespace);
+    }
+});
+
+it('OD-5-5 registration takes the patient encounter lock BEFORE it reads the in-progress set, and holds it', function (): void {
+    DB::connection(CVRC_WRITER)->transaction(function (): void {
+        $sql = cvrcStatements(fn () => app(ClinicVisitRegistrationGuard::class)->assertNoExaminationInProgress($this->patientId, lock: true));
+
+        $lockAt = collect($sql)->search(fn (string $s) => str_contains($s, 'pg_advisory_xact_lock'));
+        $readAt = collect($sql)->search(fn (string $s) => str_contains($s, 'trx_clinic_visits') && str_contains($s, 'status'));
+
+        expect($lockAt)->not->toBeFalse()
+            ->and($readAt)->not->toBeFalse()
+            ->and($lockAt)->toBeLessThan($readAt)
+            ->and(cvrcEncounterLockHeld($this->patientId))->toBeTrue();
+    });
+
+    expect(cvrcEncounterLockHeld($this->patientId))->toBeFalse();
+});
+
+it('OD-5-5 "Mulai Pemeriksaan" decides under the same lock, after its visit row lock, and refuses a second open examination', function (): void {
+    $w = DB::connection(CVRC_WRITER);
+    $w->table('trx_clinic_visits')->where('id', $this->priorId)->update(['status' => ClinicVisit::STATUS_IN_PROGRESS]);
+    $secondId = (int) $w->table('trx_clinic_visits')->insertGetId([
+        'visit_number' => 'VIS-CVRC2-'.uniqid(),
+        'branch_id' => $this->branchId,
+        'patient_id' => $this->patientId,
+        'visit_date' => now()->toDateString(),
+        'queue_number' => 2,
+        'status' => ClinicVisit::STATUS_WAITING,
+        'visit_type' => ClinicVisit::VISIT_TYPE_NEW,
+        'created_by' => $this->userId,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    $w->transaction(function () use ($secondId): void {
+        $refused = false;
+        $sql = cvrcStatements(function () use ($secondId, &$refused): void {
+            $locked = app(ClinicVisitRepositoryInterface::class)->lockForStatusDecision($secondId);
+
+            try {
+                app(ClinicVisitRegistrationGuard::class)->assertNoOtherExaminationInProgress($locked);
+            } catch (ValidationException $e) {
+                $refused = str_contains((string) collect($e->errors())->flatten()->first(), 'VIS-CVRC-');
+            }
+        });
+
+        $visitLockAt = collect($sql)->search(fn (string $s) => str_contains($s, 'trx_clinic_visits') && str_contains($s, 'for no key update'));
+        $encounterLockAt = collect($sql)->search(fn (string $s) => str_contains($s, 'pg_advisory_xact_lock'));
+        $readAt = collect($sql)->search(fn (string $s, int $i) => $i > (int) $encounterLockAt && str_contains($s, 'trx_clinic_visits') && str_contains($s, 'status'));
+
+        expect($refused)->toBeTrue()
+            ->and($visitLockAt)->toBeLessThan($encounterLockAt)
+            ->and($readAt)->not->toBeFalse()
+            ->and(cvrcEncounterLockHeld($this->patientId))->toBeTrue();
+    });
+
+    $w->table('trx_clinic_visits')->where('id', $secondId)->delete();
 });

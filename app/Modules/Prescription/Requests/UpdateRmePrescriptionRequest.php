@@ -2,14 +2,37 @@
 
 namespace App\Modules\Prescription\Requests;
 
+use App\Modules\Prescription\Models\RmePrescription;
+use App\Modules\Prescription\Services\PrescriptionAuthoringAuthority;
 use App\Modules\Prescription\Services\PrescriptionCanvasDecoder;
+use App\Modules\Prescription\Services\RmePrescriptionService;
+use Illuminate\Auth\Access\Response;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Support\Facades\Gate;
 
 class UpdateRmePrescriptionRequest extends FormRequest
 {
-    public function authorize(): bool
+    /**
+     * DMS-RME-COMPREHENSIVE-CLOSURE-1 (R8A-2) — authorization before validation.
+     * A refusal BECAUSE the named doctor signed (rule 237 §9) is recorded here,
+     * since the refusal now happens before the controller runs (rejections are
+     * audited outside policies); any other refusal writes nothing.
+     */
+    public function authorize(): Response
     {
-        return true;
+        $prescription = $this->route('rmePrescription');
+
+        if (! $prescription instanceof RmePrescription) {
+            return Response::denyAsNotFound();
+        }
+
+        $decision = Gate::forUser($this->user())->inspect('update', $prescription);
+
+        if ($decision->denied() && $decision->message() === PrescriptionAuthoringAuthority::SIGNED_CONTENT_LOCK_MESSAGE) {
+            app(RmePrescriptionService::class)->recordSignedEditRejection($prescription, $this->user());
+        }
+
+        return $decision;
     }
 
     /**

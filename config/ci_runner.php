@@ -1581,6 +1581,9 @@ return [
         // after completion", signature "named doctor signs only"). Selected by the
         // existing `RmePrescription` token.
         'tests/Feature/RME/RmePrescriptionIntegrityTest.php',
+        // DMS-RME-COMPREHENSIVE-CLOSURE-1 PR4 (rule 237 §15) — handwriting page revision (OD-6-1). Selected by
+        // the existing `RmeClinicalWriteAuthority` token in BOTH critical variants.
+        'tests/Feature/RME/RmeClinicalWriteAuthorityPageRevisionTest.php',
         // DMS-RME-REVISION-PROGRAM-8D (rule 228 §10.3) — consent signatures carry the signature
         // payload bound at the request and in the service. Selected by the existing
         // `RmeVisitConsent` token in BOTH critical variants; declared so a rename cannot drop it.

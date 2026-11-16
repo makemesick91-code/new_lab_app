@@ -417,6 +417,9 @@ class ClinicVisitService
             // this check and the insert that references it.
             if ($isExistingPatient) {
                 $this->registration->assertFollowUpLink($data, lock: true);
+                // DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-5-5) — no second visit while an
+                // examination is in progress, decided on rows read FOR SHARE.
+                $this->registration->assertNoExaminationInProgress((int) $data['patient_id'], lock: true);
             }
 
             unset($data['branch_id']);
@@ -954,6 +957,14 @@ class ClinicVisitService
             }
 
             $this->assertTransitionAllowedOnLockedRow($locked, $newStatus);
+
+            // DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-5-5) — never two examinations in
+            // progress for one patient: "Mulai Pemeriksaan" is refused while another
+            // visit of the patient is in progress, decided under the patient's
+            // encounter lock taken after this visit's row lock (rule 223 §6).
+            if ($newStatus === ClinicVisit::STATUS_IN_PROGRESS) {
+                $this->registration->assertNoOtherExaminationInProgress($locked);
+            }
 
             $timestamps = [];
 
