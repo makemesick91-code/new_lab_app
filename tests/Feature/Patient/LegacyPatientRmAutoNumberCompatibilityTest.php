@@ -155,7 +155,7 @@ function lpacAlias(Branch $branch, string $alias): void
 it('LP-01 stores an imported legacy number verbatim and leaves existing patients untouched', function (): void {
     $existing = Patient::factory()->create(['branch_id' => $this->sunu->id, 'medical_record_number' => 'DG-SUN4-2025-0003']);
 
-    $batch = $this->service->commit(lpacStage([lpacRow(['manual_rm_number' => '0042', 'name' => 'Impor Verbatim'])]), null);
+    $batch = $this->service->commit(lpacStage([lpacRow(['manual_rm_number' => '0042', 'name' => 'Impor Verbatim'])]), legacyPatientCommitterId());
 
     expect($batch->committed_rows)->toBe(1)
         ->and(Patient::query()->where('name', 'Impor Verbatim')->value('medical_record_number'))->toBe('DG-SPN4-2026-0042')
@@ -168,7 +168,7 @@ it('LP-02 lets the next automatic number step over an imported one: never reissu
         'seed_source' => PatientRmSequence::SOURCE_COMMAND, 'seeded_at' => now(),
     ]);
 
-    $this->service->commit(lpacStage([lpacRow(['manual_rm_number' => '42'])]), null);
+    $this->service->commit(lpacStage([lpacRow(['manual_rm_number' => '42'])]), legacyPatientCommitterId());
 
     expect(lpacRegister($this->sunu, 'Otomatis Setelah Impor')->medical_record_number)->toBe('DG-SPN4-2026-0043');
 });
@@ -226,7 +226,7 @@ it('LP-06 refuses the whole batch at confirmation when an automatic registration
     // Between preview and confirmation the allocator issues DG-SPN4-2026-0001.
     expect(lpacRegister($this->sunu, 'Otomatis Dulu')->medical_record_number)->toBe('DG-SPN4-2026-0001');
 
-    expect(fn () => $this->service->commit($batch, null))->toThrow(LegacyPatientImportBlockedException::class);
+    expect(fn () => $this->service->commit($batch, legacyPatientCommitterId()))->toThrow(LegacyPatientImportBlockedException::class);
 
     expect(Patient::query()->whereIn('name', ['Impor A', 'Impor B'])->exists())->toBeFalse()
         ->and($batch->refresh()->error_rows)->toBe(1);
@@ -249,7 +249,7 @@ it('LP-07 claims an existing number only under its branch-year counter lock, in 
 });
 
 it('LP-08 never touches another branch-year: an import into a past year leaves the current counter alone', function (): void {
-    $this->service->commit(lpacStage([lpacRow(['manual_rm_number' => '0500', 'timestamp' => '2024-08-01'])]), null);
+    $this->service->commit(lpacStage([lpacRow(['manual_rm_number' => '0500', 'timestamp' => '2024-08-01'])]), legacyPatientCommitterId());
 
     expect(Patient::query()->where('medical_record_number', 'DG-SPN4-2024-0500')->exists())->toBeTrue()
         ->and(PatientRmSequence::query()->where('branch_id', $this->sunu->id)->where('year', 2026)->exists())->toBeFalse()
@@ -301,7 +301,7 @@ it('LP-12 continues after the highest: a committed import raises the counter (ow
         'seed_source' => PatientRmSequence::SOURCE_COMMAND, 'seeded_at' => now(),
     ]);
 
-    $this->service->commit(lpacStage([lpacRow(['manual_rm_number' => '0050', 'name' => 'Impor Tinggi'])]), null);
+    $this->service->commit(lpacStage([lpacRow(['manual_rm_number' => '0050', 'name' => 'Impor Tinggi'])]), legacyPatientCommitterId());
 
     expect((int) PatientRmSequence::query()->where('branch_id', $this->sunu->id)->where('year', 2026)->value('last_number'))->toBe(50)
         ->and(lpacRegister($this->sunu, 'Otomatis Setelah Impor Tinggi')->medical_record_number)->toBe('DG-SPN4-2026-0051');
@@ -313,7 +313,7 @@ it('LP-13 never raises the counter for a number the allocator could never issue 
         'seed_source' => PatientRmSequence::SOURCE_COMMAND, 'seeded_at' => now(),
     ]);
 
-    $this->service->commit(lpacStage([lpacRow(['manual_rm_number' => '123456789', 'name' => 'Impor Raksasa'])]), null);
+    $this->service->commit(lpacStage([lpacRow(['manual_rm_number' => '123456789', 'name' => 'Impor Raksasa'])]), legacyPatientCommitterId());
 
     expect(Patient::query()->where('name', 'Impor Raksasa')->value('medical_record_number'))->toBe('DG-SPN4-2026-123456789')
         ->and((int) PatientRmSequence::query()->where('branch_id', $this->sunu->id)->where('year', 2026)->value('last_number'))->toBe(10)

@@ -5,6 +5,8 @@ namespace App\Modules\Patient\Services;
 use App\Models\User;
 use App\Modules\Branch\Interfaces\BranchRepositoryInterface;
 use App\Modules\Branch\Models\Branch;
+use App\Modules\Branch\Support\BranchCodeAlias;
+use App\Modules\LabOrder\Services\AuditLogService;
 use App\Modules\Patient\Exceptions\PatientRmNumberUnavailableException;
 use App\Modules\Patient\Interfaces\PatientRepositoryInterface;
 use App\Modules\Patient\Models\Patient;
@@ -17,6 +19,7 @@ use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
+use InvalidArgumentException;
 
 class PatientService
 {
@@ -33,11 +36,38 @@ class PatientService
      */
     private const SERVER_OWNED_IDENTITY_FIELDS = ['medical_record_number', 'manual_rm_number', 'registered_at'];
 
+    /**
+     * Rule 244 §4 (plan defaults 1 and 4) — the one permission that may store a
+     * typed Nomor RM: an old paper-card number at registration, and the legacy
+     * patient CSV commit. Supervisor RME; Super Admin through '*'.
+     */
+    public const PAPER_CARD_PERMISSION = 'register_patient_paper_card_rm';
+
+    /** Rule 244 §4 — the paper-card request fields; never read on the automatic path. */
+    public const PAPER_CARD_FIELDS = ['paper_card_year', 'paper_card_sequence', 'paper_card_reason'];
+
+    /** Rule 244 §4 — the written reason's bounds, enforced here for every actor. */
+    public const PAPER_CARD_REASON_MIN = 10;
+
+    public const PAPER_CARD_REASON_MAX = 500;
+
+    /** Rule 244 §4 — the oldest year a paper card may carry. */
+    public const PAPER_CARD_MIN_YEAR = 1900;
+
+    /** Rule 244 §4 — the audit action; its payload carries ids and the reason length only. */
+    public const AUDIT_PAPER_CARD_REGISTERED = 'PATIENT_RM_PAPER_CARD_REGISTERED';
+
+    /** Rule 244 §4 — no number in the message: the operator typed it, nobody else needs it. */
+    private const PAPER_CARD_TAKEN_MESSAGE = 'Nomor RM kartu lama ini sudah terdaftar (termasuk penulisan lain, pasien terhapus, atau alias penggabungan).';
+
     public function __construct(
         private readonly PatientRepositoryInterface $patients,
         // DMS-RME-COMPREHENSIVE-CLOSURE-1 / memo M4.1 (rule 244 §2) — the only
         // issuer of a new patient's Nomor RM.
         private readonly PatientRmNumberAllocator $rmAllocator,
+        // Rule 244 §4 — composes the paper-card number from its parts.
+        private readonly PatientMedicalRecordNumberService $rmNumbers,
+        private readonly AuditLogService $audit,
         private readonly BranchRepositoryInterface $branches,
         // FIX-03 — the clinical calendar authority for the registration day.
         private readonly ClinicalClock $clock,
@@ -106,7 +136,7 @@ class PatientService
      */
     public function create(array $data, ?User $actor = null): Patient
     {
-        foreach (self::SERVER_OWNED_IDENTITY_FIELDS as $field) {
+        foreach ([...self::SERVER_OWNED_IDENTITY_FIELDS, ...self::PAPER_CARD_FIELDS] as $field) {
             unset($data[$field]);
         }
 
@@ -135,6 +165,107 @@ class PatientService
             });
         } catch (PatientRmNumberUnavailableException $e) {
             throw ValidationException::withMessages(['medical_record_number' => $e->getMessage()]);
+        }
+    }
+
+    /**
+     * DMS-RME-COMPREHENSIVE-CLOSURE-1 / memo M4.1 (rule 244 §4; plan default 1,
+     * owner 2026-11-17) — register a patient under the Nomor RM printed on an
+     * old paper card, the only exception to the automatic number.
+     *
+     *  - Only an actor holding {@see self::PAPER_CARD_PERMISSION} (Supervisor
+     *    RME; Super Admin through '*') and `manage patients`, re-asserted here
+     *    whatever the route or form said (CG-06).
+     *  - A written reason of {@see self::PAPER_CARD_REASON_MIN}..
+     *    {@see self::PAPER_CARD_REASON_MAX} characters, a year from
+     *    {@see self::PAPER_CARD_MIN_YEAR} to the clinical year, a sequence of one
+     *    to eight digits that is not zero — enforced HERE, so they bind Super
+     *    Admin too (Gate::before only answers the permission question).
+     *  - The number is DG-{branch's canonical code}-{year}-{sequence as printed};
+     *    it is stored only after {@see PatientRmNumberAllocator::claimExisting()}
+     *    has locked that branch-year's counter and found it free in every
+     *    spelling (alias codes, padding, case, soft-deleted, merge aliases); the
+     *    claim raises the counter to it (continue after the highest). The branch
+     *    must be inside the actor's working-branch scope, as on the automatic path.
+     *  - Audited without the number and without the reason text: patient id,
+     *    branch id, actor id and the reason's length.
+     *  - `registered_at` is the clinical day the patient enters the system; the
+     *    card's own date is not invented.
+     */
+    public function createWithPaperCardNumber(array $data, User $actor, int $year, string $sequence, string $reason): Patient
+    {
+        if (! $actor->can(self::PAPER_CARD_PERMISSION) || ! $actor->can('manage patients')) {
+            throw new AuthorizationException('Nomor RM kartu lama hanya dapat didaftarkan oleh Supervisor RME.');
+        }
+
+        $reason = trim($reason);
+        $sequence = trim($sequence);
+        $reasonLength = mb_strlen($reason);
+        $today = $this->clock->today();
+
+        if ($reasonLength < self::PAPER_CARD_REASON_MIN || $reasonLength > self::PAPER_CARD_REASON_MAX) {
+            throw ValidationException::withMessages([
+                'paper_card_reason' => sprintf('Alasan wajib diisi, %d sampai %d karakter.', self::PAPER_CARD_REASON_MIN, self::PAPER_CARD_REASON_MAX),
+            ]);
+        }
+
+        if ($year < self::PAPER_CARD_MIN_YEAR || $year > (int) $today->format('Y')) {
+            throw ValidationException::withMessages(['paper_card_year' => 'Tahun pada kartu lama tidak valid.']);
+        }
+
+        if (preg_match('/^[0-9]{1,'.PatientRmNumberAllocator::MAX_DIGITS.'}$/', $sequence) !== 1 || (int) $sequence < 1) {
+            throw ValidationException::withMessages(['paper_card_sequence' => 'Nomor urut kartu lama hanya angka (1–8 digit) dan bukan nol.']);
+        }
+
+        foreach ([...self::SERVER_OWNED_IDENTITY_FIELDS, ...self::PAPER_CARD_FIELDS] as $field) {
+            unset($data[$field]);
+        }
+
+        $branch = $this->registrationBranch($data['branch_id'] ?? null);
+        $data['branch_id'] = (int) $branch->getKey();
+
+        // Rule 244 §2.1 (CG-05) — the same working-branch scope as the automatic path.
+        if (! $this->workingBranchScope->allows($actor, (int) $branch->getKey())) {
+            throw new AuthorizationException('Pasien baru hanya dapat didaftarkan di cabang tempat Anda bertugas.');
+        }
+
+        try {
+            return DB::transaction(function () use ($data, $branch, $actor, $year, $sequence, $reasonLength, $today): Patient {
+                $number = $this->rmNumbers->compose((string) BranchCodeAlias::canonicalize($branch->code), $year, $sequence);
+
+                if (! $this->rmAllocator->claimExisting($branch, $number)) {
+                    throw ValidationException::withMessages(['paper_card_sequence' => self::PAPER_CARD_TAKEN_MESSAGE]);
+                }
+
+                $data['registered_at'] = $today->toDateString();
+                $data['manual_rm_number'] = $sequence;
+                $data['medical_record_number'] = $number;
+
+                try {
+                    $patient = DB::transaction(fn (): Patient => $this->patients->create($data));
+                } catch (UniqueConstraintViolationException $e) {
+                    if (str_contains((string) ($e->errorInfo[2] ?? ''), 'ktp_number')) {
+                        throw ValidationException::withMessages(['ktp_number' => 'Nomor KTP sudah terdaftar pada pasien lain.']);
+                    }
+
+                    throw ValidationException::withMessages(['paper_card_sequence' => self::PAPER_CARD_TAKEN_MESSAGE]);
+                }
+
+                $this->audit->log('mst_patients', (int) $patient->getKey(), self::AUDIT_PAPER_CARD_REGISTERED, null, [
+                    'patient_id' => (int) $patient->getKey(),
+                    'branch_id' => (int) $branch->getKey(),
+                    'actor_user_id' => (int) $actor->getKey(),
+                    'reason_length' => $reasonLength,
+                ], $actor);
+
+                return $patient;
+            });
+        } catch (PatientRmNumberUnavailableException $e) {
+            throw ValidationException::withMessages(['paper_card_sequence' => $e->getMessage()]);
+        } catch (InvalidArgumentException) {
+            throw ValidationException::withMessages([
+                'paper_card_sequence' => 'Nomor RM kartu lama tidak dapat dibentuk untuk cabang ini. Hubungi Super Admin.',
+            ]);
         }
     }
 

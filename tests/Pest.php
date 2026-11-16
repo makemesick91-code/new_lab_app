@@ -100,6 +100,7 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\ParallelTesting;
 use Illuminate\Support\Facades\Storage;
+use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Symfony\Component\Process\Process;
 use Tests\Support\AccessControlSeedSnapshot;
@@ -307,6 +308,24 @@ function userWith(array $permissions): User
     $user->givePermissionTo($permissions);
 
     return $user;
+}
+
+/**
+ * DMS-RME-COMPREHENSIVE-CLOSURE-1 / memo M4.1 (rule 244 §4, plan default 4) —
+ * committing a legacy patient CSV batch needs the paper-card permission; the
+ * service refuses an anonymous or unpermitted committer. This is the id of a
+ * fresh account holding `manage patients` and that permission (created when a
+ * suite did not seed access control).
+ */
+function legacyPatientCommitterId(): int
+{
+    $permissions = ['manage patients', 'register_patient_paper_card_rm'];
+
+    foreach ($permissions as $name) {
+        Permission::findOrCreate($name, 'web');
+    }
+
+    return (int) userWith($permissions)->id;
 }
 
 /**

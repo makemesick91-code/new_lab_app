@@ -30,6 +30,7 @@ declare(strict_types=1);
 | Helper prefix `cvrs` is unique.
 */
 
+use App\Models\User;
 use App\Modules\Branch\Models\Branch;
 use App\Modules\Patient\Exceptions\LegacyPatientImportBlockedException;
 use App\Modules\Patient\Interfaces\PatientRmSequenceRepositoryInterface;
@@ -42,6 +43,7 @@ use Illuminate\Database\QueryException;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Spatie\Permission\PermissionRegistrar;
 
 const CVRS_WRITER = 'cvrs_sequence_writer';
 const CVRS_PROBE = 'cvrs_sequence_probe';
@@ -89,6 +91,15 @@ afterEach(function (): void {
         $w->table('mst_patients')->where('import_batch_id', $this->cvrsBatchId)->delete();
         $w->table('stg_legacy_patient_imports')->where('batch_id', $this->cvrsBatchId)->delete();
         $w->table('stg_legacy_patient_import_batches')->where('id', $this->cvrsBatchId)->delete();
+    }
+    // Rule 244 §4 (PR-3) — the committed committer account and, when this test
+    // created it, the paper-card permission row.
+    if (($this->cvrsCommitterId ?? null) !== null) {
+        $w->table('model_has_permissions')->where('model_id', $this->cvrsCommitterId)->delete();
+        $w->table('users')->where('id', $this->cvrsCommitterId)->delete();
+    }
+    if (($this->cvrsCreatedPermissionId ?? null) !== null) {
+        $w->table('permissions')->where('id', $this->cvrsCreatedPermissionId)->delete();
     }
     // PR-2 cases commit patients through the real registration path.
     $w->table('mst_patients')->where('branch_id', $this->branchId ?? 0)->delete();
@@ -339,6 +350,30 @@ it('makes an import claim wait for an in-flight registration, then refuse the nu
     freeTestClock();
 });
 
+/**
+ * Rule 244 §4 (PR-3) — a COMMITTED account holding the paper-card permission, so
+ * the legacy CSV commit on the probe connection accepts it as the committer.
+ */
+function cvrsCommitterId(): int
+{
+    config()->set('database.default', CVRS_WRITER);
+    $w = DB::connection(CVRS_WRITER);
+
+    if (! $w->table('permissions')->where('name', 'register_patient_paper_card_rm')->where('guard_name', 'web')->exists()) {
+        test()->cvrsCreatedPermissionId = (int) $w->table('permissions')->insertGetId([
+            'name' => 'register_patient_paper_card_rm', 'guard_name' => 'web', 'created_at' => now(), 'updated_at' => now(),
+        ]);
+    }
+
+    app(PermissionRegistrar::class)->forgetCachedPermissions();
+    $user = User::factory()->create();
+    $user->givePermissionTo('register_patient_paper_card_rm');
+    app(PermissionRegistrar::class)->forgetCachedPermissions();
+    test()->cvrsCommitterId = (int) $user->id;
+
+    return (int) $user->id;
+}
+
 /** A one-row legacy patient CSV for this branch and CVRS_YEAR. */
 function cvrsLegacyCsv(string $code, string $manual): UploadedFile
 {
@@ -367,6 +402,7 @@ it('makes the REAL legacy import commit wait for an in-flight registration, then
     $code = cvrsBranch()->code;
 
     // Staged and committed on the writer connection: the CSV claims 7, unpadded.
+    $committer = cvrsCommitterId();
     config()->set('database.default', CVRS_WRITER);
     $batch = app(LegacyPatientImportService::class)->parseAndStage(cvrsLegacyCsv($code, '7'), null);
     $this->cvrsBatchId = (int) $batch->id;
@@ -385,7 +421,7 @@ it('makes the REAL legacy import commit wait for an in-flight registration, then
     $started = microtime(true);
     $first = null;
     try {
-        app(LegacyPatientImportService::class)->commit(LegacyPatientImportBatch::query()->findOrFail($batch->id), null);
+        app(LegacyPatientImportService::class)->commit(LegacyPatientImportBatch::query()->findOrFail($batch->id), $committer);
     } catch (LegacyPatientImportBlockedException $e) {
         $first = $e;
     }
@@ -400,7 +436,7 @@ it('makes the REAL legacy import commit wait for an in-flight registration, then
     // Once the registration has committed, the commit refuses the same number.
     $second = null;
     try {
-        app(LegacyPatientImportService::class)->commit(LegacyPatientImportBatch::query()->findOrFail($batch->id), null);
+        app(LegacyPatientImportService::class)->commit(LegacyPatientImportBatch::query()->findOrFail($batch->id), $committer);
     } catch (LegacyPatientImportBlockedException $e) {
         $second = $e;
     }

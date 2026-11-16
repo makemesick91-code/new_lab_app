@@ -297,7 +297,7 @@ describe('legacy patient', function () {
         $branch = lihBranch();
         $batch = lihPatientBatch(3, (int) $branch->id);
 
-        app(LegacyPatientImportService::class)->commit($batch, null);
+        app(LegacyPatientImportService::class)->commit($batch, legacyPatientCommitterId());
 
         expect(Patient::query()->count())->toBe(3);
         expect(lihQuota()->consumedToday(LegacyImportType::LEGACY_PATIENT, (int) $branch->id))->toBe(3);
@@ -320,7 +320,7 @@ describe('legacy patient', function () {
 
         $batch = lihPatientBatch(3, (int) $branch->id);
 
-        expect(fn () => app(LegacyPatientImportService::class)->commit($batch, null))
+        expect(fn () => app(LegacyPatientImportService::class)->commit($batch, legacyPatientCommitterId()))
             ->toThrow(ValidationException::class);
 
         // Nothing landed: the reservation shares the commit transaction, so a
@@ -334,12 +334,12 @@ describe('legacy patient', function () {
         $branch = lihBranch();
         $batch = lihPatientBatch(2, (int) $branch->id);
 
-        app(LegacyPatientImportService::class)->commit($batch, null);
+        app(LegacyPatientImportService::class)->commit($batch, legacyPatientCommitterId());
         expect(lihQuota()->consumedToday(LegacyImportType::LEGACY_PATIENT, (int) $branch->id))->toBe(2);
 
         // Idempotent: a committed batch is a no-op, so a retried request cannot
         // be billed twice.
-        app(LegacyPatientImportService::class)->commit($batch->refresh(), null);
+        app(LegacyPatientImportService::class)->commit($batch->refresh(), legacyPatientCommitterId());
 
         expect(Patient::query()->count())->toBe(2);
         expect(lihQuota()->consumedToday(LegacyImportType::LEGACY_PATIENT, (int) $branch->id))->toBe(2);
@@ -363,7 +363,7 @@ describe('legacy patient', function () {
         $payload['medical_record_number'] = 'DG-LDK2-2024-00002';
         $second->update(['raw_payload' => $raw, 'normalized_payload' => $payload, 'matched_branch_id' => (int) $b->id]);
 
-        app(LegacyPatientImportService::class)->commit($batch->refresh(), null);
+        app(LegacyPatientImportService::class)->commit($batch->refresh(), legacyPatientCommitterId());
 
         expect(lihQuota()->consumedToday(LegacyImportType::LEGACY_PATIENT, (int) $a->id))->toBe(1);
         expect(lihQuota()->consumedToday(LegacyImportType::LEGACY_PATIENT, (int) $b->id))->toBe(1);
@@ -387,7 +387,7 @@ describe('legacy patient', function () {
             'medical_record_number' => 'DG-TLK1-2024-00001',
         ]);
 
-        expect(fn () => app(LegacyPatientImportService::class)->commit($batch, null))
+        expect(fn () => app(LegacyPatientImportService::class)->commit($batch, legacyPatientCommitterId()))
             ->toThrow(LegacyPatientImportBlockedException::class);
 
         expect(lihQuota()->consumedToday(LegacyImportType::LEGACY_PATIENT, (int) $branch->id))->toBe(0);

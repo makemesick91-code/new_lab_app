@@ -563,6 +563,11 @@ class RoleSeeder extends Seeder
             'approve_rme_refund',
             // Patient registration/edit + KTP scan documents (RME entry point)
             'manage patients',
+            // DMS-RME-COMPREHENSIVE-CLOSURE-1 / memo M4.1 (rule 244 §4, plan
+            // defaults 1 and 4) — old paper-card Nomor RM and the legacy patient
+            // CSV commit. Supervisor RME only (not Admin Klinik, so the Front
+            // Office = Admin Klinik + Kasir union is untouched).
+            'register_patient_paper_card_rm',
             // FEATURE-PATIENT-DUPLICATE-RESOLUTION-MERGE-1 — duplicate patient resolution.
             'view_patient_duplicate_resolution',
             'request_patient_merge',

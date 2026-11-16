@@ -219,6 +219,11 @@ code, then the canonical rule, and report the drift. Legacy RME archive internal
   intentional unique violation in a savepoint (25P02); fixture Nomor RM blocks stay disjoint
   (`legacyRmeArchivablePatient()` 1+, `lodoPatient()` 3000+, `lbpDisjointMedicalRecordNumber()` 7000+), never
   hardcoded; a `NULL` `tooth_map_payload` is an empty placeholder. Source: `171-….mdc`, `111-….mdc`.
+- **AIR-LIM-42** Committing a legacy patient CSV batch stores typed Nomor RM, so it needs
+  `register_patient_paper_card_rm` (Supervisor RME; Super Admin via `'*'`) on the route, the request and in
+  `LegacyPatientImportService::commit()` (null or unpermitted committer refused and audited); staging, review and
+  cancel stay with `manage patients`. Duplicate checks are spelling-aware and the commit locks every branch-year
+  counter it writes into. Tests commit through `legacyPatientCommitterId()`. Source: `244-…` §2.6, §4.4; `168-….mdc` 13.
 
 ## Current posture (snapshot 2026-10-25 — verify before relying on it)
 

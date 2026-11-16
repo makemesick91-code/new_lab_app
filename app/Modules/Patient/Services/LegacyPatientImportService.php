@@ -2,6 +2,7 @@
 
 namespace App\Modules\Patient\Services;
 
+use App\Models\User;
 use App\Modules\Branch\Models\Branch;
 use App\Modules\Branch\Support\BranchCodeAlias;
 use App\Modules\ClinicRoom\Models\ClinicRoom;
@@ -15,6 +16,7 @@ use App\Modules\Patient\Models\LegacyPatientImportBatch;
 use App\Modules\Patient\Models\LegacyPatientImportRow;
 use App\Modules\Patient\Models\Patient;
 use Carbon\Carbon;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
@@ -478,6 +480,16 @@ class LegacyPatientImportService
     public function commit(LegacyPatientImportBatch $batch, ?int $committedBy): LegacyPatientImportBatch
     {
         /*
+         * DMS-RME-COMPREHENSIVE-CLOSURE-1 / memo M4.1 (rule 244 §4; plan default
+         * 4, revises part of rule 168) — committing stores typed Nomor RM, which
+         * is the paper-card exception: the committing account must hold the
+         * paper-card permission. Re-asserted here, first, whatever the route and
+         * the request said (CG-06); an unknown or missing actor is refused, so no
+         * caller commits anonymously.
+         */
+        $this->assertMayCommit($batch, $committedBy);
+
+        /*
          * Re-confirming an already-confirmed batch is a no-op, not an error. A
          * double submit or a refreshed tab must never be able to import twice,
          * and must never look like a failure to an operator who already
@@ -742,6 +754,25 @@ class LegacyPatientImportService
         $this->auditBatch(self::AUDIT_COMMITTED, $batch, $committedBy);
 
         return $batch;
+    }
+
+    /**
+     * Rule 244 §4 — refuse a commit by an account without the paper-card
+     * permission, leaving an audit row of the refusal (ids and counts only).
+     *
+     * @throws AuthorizationException
+     */
+    private function assertMayCommit(LegacyPatientImportBatch $batch, ?int $committedBy): void
+    {
+        $actor = $committedBy !== null ? User::query()->find($committedBy) : null;
+
+        if ($actor !== null && $actor->can(PatientService::PAPER_CARD_PERMISSION)) {
+            return;
+        }
+
+        $this->auditBatch(self::AUDIT_CONFIRM_BLOCKED, $batch, $committedBy, ['reason' => 'paper_card_permission_missing']);
+
+        throw new AuthorizationException('Konfirmasi impor pasien legacy hanya dapat dilakukan oleh Supervisor RME (izin Nomor RM kartu lama).');
     }
 
     /**

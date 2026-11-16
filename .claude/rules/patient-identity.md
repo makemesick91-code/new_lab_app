@@ -241,3 +241,8 @@ file.
   paper card) is stored verbatim only after `claimExisting()` locked its branch-year counter, and the claim raises the
   counter (continue after the highest). A Nomor RM unique violation is retried up to 3 times (4 attempts) under the
   held lock, then 422. Source: `.cursor/rules/244-patient-rm-auto-number-core-fields.mdc` §2–§3.
+- **AIR-PAT-35** A typed Nomor RM (old paper card at Master Data registration, legacy CSV commit, pilot backup import)
+  needs `register_patient_paper_card_rm` (Supervisor RME; Super Admin via `'*'`): fields rendered only under `@can`,
+  a posted value refused (403), the permission re-asserted in `PatientService::createWithPaperCardNumber()` and
+  `LegacyPatientImportService::commit()`. The reason (10–500) and the number checks live in the service, so they bind
+  Super Admin; the audit holds ids and the reason length, never the number or reason. Source: `244-…` §4.

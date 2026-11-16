@@ -2,17 +2,39 @@
 
 namespace App\Modules\Patient\Requests;
 
+use App\Modules\Patient\Services\PatientService;
 use App\Modules\PatientMerge\Services\PatientRegistrationDuplicateCheck;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
+use App\Support\Clinical\ClinicalClock;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
 class StorePatientRequest extends FormRequest
 {
+    /**
+     * DMS-RME-COMPREHENSIVE-CLOSURE-1 / memo M4.1 (rule 244 §4) — a request that
+     * carries any paper-card field is the paper-card exception, and only an
+     * account holding the permission may send one (403 otherwise; the fields are
+     * never rendered for anyone else). The controller asks the policy and the
+     * service re-asserts it.
+     */
     public function authorize(): bool
     {
-        return true;
+        return ! $this->hasPaperCardInput()
+            || (bool) $this->user()?->can(PatientService::PAPER_CARD_PERMISSION);
+    }
+
+    /** Rule 244 §4 — whether any paper-card field was sent. */
+    public function hasPaperCardInput(): bool
+    {
+        foreach (PatientService::PAPER_CARD_FIELDS as $field) {
+            if ($this->filled($field)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -38,6 +60,20 @@ class StorePatientRequest extends FormRequest
                 'integer',
                 Rule::exists('mst_branches', 'id')->where('is_active', true)->where('is_rme_enabled', true),
                 Rule::in(app(RmeWorkingBranchScope::class)->branchIdsFor($this->user())),
+            ],
+            // Rule 244 §4 — the Supervisor RME paper-card exception: all three
+            // together or none (PatientService re-checks every bound).
+            'paper_card_year' => [
+                'nullable', 'required_with:paper_card_sequence,paper_card_reason', 'integer', 'digits:4',
+                'min:'.PatientService::PAPER_CARD_MIN_YEAR,
+                'max:'.app(ClinicalClock::class)->today()->format('Y'),
+            ],
+            'paper_card_sequence' => [
+                'nullable', 'required_with:paper_card_year,paper_card_reason', 'string', 'regex:/^[0-9]{1,8}$/', 'not_regex:/^0+$/',
+            ],
+            'paper_card_reason' => [
+                'nullable', 'required_with:paper_card_year,paper_card_sequence', 'string',
+                'min:'.PatientService::PAPER_CARD_REASON_MIN, 'max:'.PatientService::PAPER_CARD_REASON_MAX,
             ],
             'ktp_number' => ['nullable', 'string', 'max:16', Rule::unique('mst_patients', 'ktp_number')],
             'name' => ['required', 'string', 'max:150'],
@@ -79,6 +115,11 @@ class StorePatientRequest extends FormRequest
             'ktp_ocr_verified.required' => 'Konfirmasi bahwa data hasil baca KTP sudah dicocokkan dengan KTP asli sebelum menyimpan.',
             'branch_id.required' => 'Cabang RME wajib dipilih. Nomor RM dibuat otomatis untuk cabang tersebut.',
             'branch_id.in' => 'Pasien baru hanya dapat didaftarkan di cabang tempat Anda bertugas.',
+            'paper_card_year.*' => 'Tahun pada kartu lama wajib 4 digit dan tidak melewati tahun ini.',
+            'paper_card_sequence.*' => 'Nomor urut kartu lama wajib angka (1–8 digit) dan bukan nol.',
+            'paper_card_reason.required_with' => 'Alasan memakai Nomor RM kartu lama wajib diisi.',
+            'paper_card_reason.min' => 'Alasan minimal :min karakter.',
+            'paper_card_reason.max' => 'Alasan maksimal :max karakter.',
             'ktp_number.unique' => 'Nomor KTP sudah terdaftar pada pasien lain.',
         ];
     }

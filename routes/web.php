@@ -282,7 +282,10 @@ Route::middleware('auth')->prefix('settings')->name('settings.')->group(function
             Route::post('/', [LegacyPatientImportController::class, 'store'])->name('store');
             Route::get('{batch}', [LegacyPatientImportController::class, 'show'])->name('show');
             Route::get('{batch}/errors', [LegacyPatientImportController::class, 'errors'])->name('errors');
-            Route::post('{batch}/commit', [LegacyPatientImportController::class, 'commit'])->name('commit');
+            // Rule 244 §4 (plan default 4) — the commit stores typed Nomor RM:
+            // paper-card permission only (Supervisor RME; Super Admin via '*').
+            Route::post('{batch}/commit', [LegacyPatientImportController::class, 'commit'])->name('commit')
+                ->middleware('permission:register_patient_paper_card_rm');
             Route::post('{batch}/rollback', [LegacyPatientImportController::class, 'rollback'])->name('rollback');
             Route::delete('{batch}', [LegacyPatientImportController::class, 'destroy'])->name('destroy');
         });

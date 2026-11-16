@@ -77,9 +77,25 @@ class PatientController extends Controller
 
         $data = $request->validated();
         $ktpScanToken = $data['ktp_scan_token'] ?? null;
+        $paperCard = array_intersect_key($data, array_flip(PatientService::PAPER_CARD_FIELDS));
         unset($data['ktp_scan_token'], $data['duplicate_override_reason'], $data['ktp_ocr_applied'], $data['ktp_ocr_verified']);
+        $data = array_diff_key($data, $paperCard);
 
-        $patient = $this->patientService->create($data, $request->user());
+        // Rule 244 §4 — the Supervisor RME paper-card exception; every other
+        // registration takes the automatic number.
+        if ($request->hasPaperCardInput()) {
+            $this->authorize('registerWithPaperCardNumber', Patient::class);
+
+            $patient = $this->patientService->createWithPaperCardNumber(
+                $data,
+                $request->user(),
+                (int) $paperCard['paper_card_year'],
+                (string) $paperCard['paper_card_sequence'],
+                (string) $paperCard['paper_card_reason'],
+            );
+        } else {
+            $patient = $this->patientService->create($data, $request->user());
+        }
 
         // Rule 244 §2.8 — the automatic Nomor RM is shown once it exists (the
         // form never previews one).

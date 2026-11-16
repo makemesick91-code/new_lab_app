@@ -400,6 +400,15 @@ class PermissionSeeder extends Seeder
         'request_patient_merge',
         'approve_patient_merge',
 
+        // DMS-RME-COMPREHENSIVE-CLOSURE-1 / memo M4.1 (rule 244 §4; plan defaults
+        // 1 and 4, owner 2026-11-17) — the ONLY way to store a typed Nomor RM:
+        // registering a patient under an old paper-card number (with a written
+        // reason, claimed under the branch-year counter lock, audited without
+        // the number) and committing a legacy patient CSV batch. Granted to
+        // Supervisor RME only; Super Admin holds it through '*'. Everyone else
+        // gets the automatic number.
+        'register_patient_paper_card_rm',
+
         // FEATURE-FINANCE-KLINIK-DATA-ANALYST-ROLES-1 (rule 186) — the
         // read-only cross-branch OVERSIGHT surface used by the Finance Klinik
         // and Data Analyst roles. Four cohesive permissions, so the two roles

@@ -1,6 +1,6 @@
 ---
-description: DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M4.1/M4.2 (rule 244) — automatic Nomor RM per branch and clinic year (owner decision 2026-11-17 "Auto, read-only"); the counter row is locked FOR UPDATE inside the registration transaction; a number is never reissued in any spelling (alias codes, any padding, soft-deleted patients, merge aliases); existing numbers never rewritten; widens past 9999; MAIN refused; counters seeded by `patient:rm-sequence-seed` (dry run first, GREATEST, never lower). PR-2 (active): every new registration takes the number from the allocator (branch required, clinical year, posted number/sequence/date ignored, branch inside the actor's working-branch scope, a Nomor RM unique violation retried up to 3 times (4 attempts) under the held lock then 422); the free override and the UTC generator are retired; an edit never changes number, branch or registration date; "taken" compares the numeric value in any zero padding and case; the legacy CSV import claims its typed numbers with `claimExisting()` under the counter lock, and a successful claim raises the counter (continue after the highest). Revises the Sprint 23.8 manual-number rule explicitly (§3).
-globs: app/Modules/Patient/Services/PatientRmNumberAllocator.php, app/Modules/Patient/Services/PatientRmSequenceSeedService.php, app/Modules/Patient/Services/PatientMedicalRecordNumberService.php, app/Modules/Patient/Repositories/PatientRmSequenceRepository.php, app/Modules/Patient/Interfaces/PatientRmSequenceRepositoryInterface.php, app/Modules/Patient/Models/PatientRmSequence.php, app/Console/Commands/PatientRmSequenceSeedCommand.php, app/Modules/Patient/Services/PatientService.php, app/Modules/Patient/Requests/StorePatientRequest.php, app/Modules/Patient/Requests/UpdatePatientRequest.php, app/Modules/Patient/Services/LegacyPatientImportService.php, app/Modules/ClinicVisit/Requests/StoreClinicVisitRequest.php
+description: DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M4.1/M4.2 (rule 244) — automatic Nomor RM per branch and clinic year (owner decision 2026-11-17 "Auto, read-only"); the counter row is locked FOR UPDATE inside the registration transaction; a number is never reissued in any spelling (alias codes, any padding, soft-deleted patients, merge aliases); existing numbers never rewritten; widens past 9999; MAIN refused; counters seeded by `patient:rm-sequence-seed` (dry run first, GREATEST, never lower). PR-2 (active): every new registration takes the number from the allocator (branch required, clinical year, posted number/sequence/date ignored, branch inside the actor's working-branch scope, a Nomor RM unique violation retried up to 3 times (4 attempts) under the held lock then 422); the free override and the UTC generator are retired; an edit never changes number, branch or registration date; "taken" compares the numeric value in any zero padding and case; the legacy CSV import claims its typed numbers with `claimExisting()` under the counter lock, and a successful claim raises the counter (continue after the highest). Revises the Sprint 23.8 manual-number rule explicitly (§3). PR-3: a typed number (old paper card at Master Data registration, legacy CSV commit, pilot backup import) only under `register_patient_paper_card_rm` (Supervisor RME; Super Admin via '*'), with a reason, claimed under the counter lock, audited without the number (§4).
+globs: app/Modules/Patient/Services/PatientRmNumberAllocator.php, app/Modules/Patient/Services/PatientRmSequenceSeedService.php, app/Modules/Patient/Services/PatientMedicalRecordNumberService.php, app/Modules/Patient/Repositories/PatientRmSequenceRepository.php, app/Modules/Patient/Interfaces/PatientRmSequenceRepositoryInterface.php, app/Modules/Patient/Models/PatientRmSequence.php, app/Console/Commands/PatientRmSequenceSeedCommand.php, app/Modules/Patient/Services/PatientService.php, app/Modules/Patient/Requests/StorePatientRequest.php, app/Modules/Patient/Requests/UpdatePatientRequest.php, app/Modules/Patient/Services/LegacyPatientImportService.php, app/Modules/ClinicVisit/Requests/StoreClinicVisitRequest.php, app/Modules/Patient/Requests/ConfirmLegacyPatientImportRequest.php, app/Modules/Patient/Policies/PatientPolicy.php, app/Support/PilotImport/PilotBackupImportService.php
 alwaysApply: false
 ---
 
@@ -101,7 +101,7 @@ Source: the internal memo of 2026-10-17 (M4.1, M4.2) and the owner's written dec
    Baru: `StoreClinicVisitRequest` pins the pinned desk account's new patient to its working branch and
    `ClinicVisitService::resolveBranchId()` re-asserts the scope (403); it passes no actor to `create()`, whose null
    actor means "every active RME branch" (passing it would add `ClinicVisitService` to this PR — recorded).
-   **Every writer is governed except the pilot backup importer** (`rme:import-pilot-backup`), closed in PR-3.
+   **Every writer is governed** — the pilot backup importer (`rme:import-pilot-backup`) since PR-3 (§4.5).
 2. **Retired.** The free override (a full `medical_record_number` typed on the master form) and the UTC fallback
    generator (`PatientCodeGenerator`, a CG-12 deviation; deleted with `PatientCodeGenerationTest`, and the
    `config/patient.php` block emptied) are gone. Existing rows
@@ -183,3 +183,53 @@ auto-padded", and the composed value is checked for uniqueness by exact match. R
   PR-3 paper card), claimed under the counter lock.
 - Rule 110 §4's list of request-time pre-check sites (`StorePatientRequest`, `UpdatePatientRequest`,
   `StoreClinicVisitRequest`) no longer applies: those pre-checks were removed with the typed number.
+
+## 4. The paper-card exception and the legacy CSV commit (PR-3)
+
+1. **One permission for every typed number.** `register_patient_paper_card_rm`
+   (`PatientService::PAPER_CARD_PERMISSION`) is the only way to store a Nomor RM a person typed. `PermissionSeeder`
+   declares it; `RoleSeeder` grants it to **Supervisor RME** only (Super Admin through `'*'`; not Admin Klinik, so the
+   Front Office = Admin Klinik + Kasir union is unchanged); it is classified under Master Data in
+   `PermissionGroupingService`. Everyone else always receives the automatic number (§2).
+2. **Paper card at registration (default 1).** Master Data → Tambah Pasien only. Kunjungan → Pasien Baru stays
+   automatic for every role; a paper-card patient is registered in Master Data and then selected as an existing
+   patient. The three fields `paper_card_year`, `paper_card_sequence` and `paper_card_reason` (all or none):
+   - are rendered only under `@can('register_patient_paper_card_rm')` (rule 135 mirror);
+   - make `StorePatientRequest::authorize()` answer 403 to anyone without the permission (a posted value is refused,
+     never silently honoured); the controller then asks `PatientPolicy::registerWithPaperCardNumber`, and
+     `PatientService::createWithPaperCardNumber()` re-asserts the permission and `manage patients` (CG-06);
+   - bounds, enforced in the service so they bind **Super Admin** too (Gate::before only answers the permission
+     question): reason 10–500 characters after trim; year 1900..clinical year; sequence 1–8 digits, not zero;
+   - the branch must be inside the actor's working-branch scope, exactly as on the automatic path (§2.1).
+   The number is `DG-{branch canonical code}-{year}-{sequence as printed}` (leading zeros kept). It is stored only
+   after `PatientRmNumberAllocator::claimExisting()` locked that branch-year's counter and found no spelling taken
+   (alias codes, padding, case, soft-deleted patients, active merge aliases) — otherwise 422 on `paper_card_sequence`,
+   with no number in the message. MAIN, an unknown code and a code the format cannot carry are 422; nothing is
+   written. Like every claim (§2.6), a successful one raises the branch-year counter to the claimed value when it has
+   at most 8 digits (continue after the highest). `manual_rm_number` keeps the
+   printed sequence; `registered_at` is the clinical day of entry (the card's own date is never invented).
+3. **Audit.** One `PATIENT_RM_PAPER_CARD_REGISTERED` row (`mst_patients`, patient id) per registration, written in the
+   same transaction, whose payload is exactly `patient_id`, `branch_id`, `actor_user_id`, `reason_length` — never the
+   number, the year, the sequence or the reason text (the reason is required for accountability at the moment of
+   entry, but not stored, because free text can carry patient data).
+4. **Legacy patient CSV commit (default 4; revises part of rule 168).** Staging, review, revalidation and cancel stay
+   with `manage patients`. The commit needs the paper-card permission on three layers: the route
+   (`permission:register_patient_paper_card_rm`), `ConfirmLegacyPatientImportRequest::authorize()`, and
+   `LegacyPatientImportService::commit()`, which refuses — before anything else, with an `AuthorizationException` and a
+   `LEGACY_PATIENT_BATCH_CONFIRM_BLOCKED` audit row (`reason = paper_card_permission_missing`) — a committer id that is
+   null, unknown or unpermitted. The preview shows the commit form only to holders (others see who confirms).
+5. **Pilot backup importer.** `rme:import-pilot-backup` (`PilotBackupImportService`) no longer creates a patient whose
+   number is held in another spelling: a number no live patient holds exactly is claimed with `claimExisting()` under
+   the counter lock (live runs, which are transactional) or checked with `isTaken()` (dry run, or a code with no RME
+   branch); a taken one is skipped with a message that carries no number. An exact live match is still updated as
+   before (its number never changes).
+6. **Remaining writers.** None that stores a typed number outside the gates above. `StressSeedPatientsCommand` writes
+   synthetic `DG-{code}-2026-{8 digits}` rows directly and is refused outside local/stress/testing — a recorded residual,
+   never production.
+7. **Release.** PR-2 and PR-3 ship in ONE release (plan compatibility item 3): PR-2 alone would leave a legacy CSV
+   commit to every `manage patients` holder and no path for old cards. After the deploy run `PermissionSeeder`, then
+   `RoleSeeder`, then `permission:cache-reset`, as the runtime user. PR-3 adds no migration; PR-2's additive index
+   migration (§2.7) runs with the deploy's `php artisan migrate --force`.
+8. **Tests.** `tests/Feature/Patient/FrontOfficePatientRmPaperCardExceptionTest.php` (PC-01..PC-17) — token
+   `FrontOffice`, declared in `critical_gate_mandatory_suites`. The legacy CSV suites commit through
+   `legacyPatientCommitterId()` (tests/Pest.php), an account holding the permission.

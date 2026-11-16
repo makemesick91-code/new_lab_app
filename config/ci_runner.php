@@ -624,6 +624,10 @@ return [
         // BOTH critical variants.
         'tests/Feature/Patient/FrontOfficePatientRmAutoNumberTest.php',
         'tests/Feature/Patient/LegacyPatientRmAutoNumberCompatibilityTest.php',
+        // Rule 244 §4 (PR-3) — the Supervisor RME paper-card exception, the
+        // legacy CSV commit gate and the pilot importer claim. Selected by the
+        // existing `FrontOffice` token in BOTH critical variants.
+        'tests/Feature/Patient/FrontOfficePatientRmPaperCardExceptionTest.php',
 
         // DOCTOR-PWA-WEBAUTHN-1 — the browser device-credential login. A `|Pwa`
         // or `|DoctorDevice` token does not select it: --filter matches the test

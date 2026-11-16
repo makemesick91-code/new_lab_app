@@ -66,6 +66,33 @@
                     @error('medical_record_number')<p class="mt-1 text-xs text-rose-600">{{ $message }}</p>@enderror
                 </div>
             </div>
+            {{-- Rule 244 §4 (plan default 1) — the Supervisor RME paper-card
+                 exception. Rendered ONLY for an account the server would accept
+                 it from (rule 135 mirror); anyone else gets the automatic number
+                 and a posted value is refused with 403. --}}
+            @can('register_patient_paper_card_rm')
+                <details class="mt-3 rounded-md border border-amber-200 bg-amber-50/60 p-3" @if ($errors->hasAny(['paper_card_year', 'paper_card_sequence', 'paper_card_reason']) || old('paper_card_sequence')) open @endif>
+                    <summary class="cursor-pointer text-xs font-semibold text-amber-800">Pakai Nomor RM kartu kertas lama (khusus Supervisor RME)</summary>
+                    <p class="mt-2 text-xs text-gray-600">Hanya untuk pasien yang membawa kartu berobat lama. Nomor dibentuk dari cabang di atas: DG-{KODE}-{TAHUN KARTU}-{NOMOR URUT}, diperiksa terhadap semua penulisan yang sudah terdaftar, dan dicatat di audit tanpa nomornya.</p>
+                    <div class="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Tahun pada kartu</label>
+                            <input type="text" name="paper_card_year" inputmode="numeric" maxlength="4" value="{{ old('paper_card_year') }}" placeholder="mis. 2024" class="mt-1 block w-full rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500" />
+                            @error('paper_card_year')<p class="mt-1 text-xs text-rose-600">{{ $message }}</p>@enderror
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Nomor urut pada kartu</label>
+                            <input type="text" name="paper_card_sequence" inputmode="numeric" maxlength="8" value="{{ old('paper_card_sequence') }}" placeholder="mis. 0012" class="mt-1 block w-full rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500" />
+                            @error('paper_card_sequence')<p class="mt-1 text-xs text-rose-600">{{ $message }}</p>@enderror
+                        </div>
+                        <div class="sm:col-span-3">
+                            <label class="block text-sm font-medium text-gray-700">Alasan (10–500 karakter)</label>
+                            <textarea name="paper_card_reason" rows="2" maxlength="500" class="mt-1 block w-full rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">{{ old('paper_card_reason') }}</textarea>
+                            @error('paper_card_reason')<p class="mt-1 text-xs text-rose-600">{{ $message }}</p>@enderror
+                        </div>
+                    </div>
+                </details>
+            @endcan
         @endif
     </div>
     <div>

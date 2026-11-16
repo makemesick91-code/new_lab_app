@@ -5,12 +5,16 @@ namespace App\Support\PilotImport;
 use App\Modules\Branch\Models\Branch;
 use App\Modules\Clinic\Models\Clinic;
 use App\Modules\Doctor\Models\Doctor;
+use App\Modules\Patient\Exceptions\PatientRmNumberUnavailableException;
 use App\Modules\Patient\Models\Patient;
+use App\Modules\Patient\Services\PatientMedicalRecordNumberService;
+use App\Modules\Patient\Services\PatientRmNumberAllocator;
 use App\Modules\Tariff\Models\Tariff;
 use App\Modules\Treatment\Models\Treatment;
 use App\Modules\TreatmentCategory\Models\TreatmentCategory;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use InvalidArgumentException;
 
 class PilotBackupImportService
 {
@@ -41,6 +45,10 @@ class PilotBackupImportService
 
     public function __construct(
         private readonly PostgresCopyDumpReader $reader,
+        // DMS-RME-COMPREHENSIVE-CLOSURE-1 / memo M4.1 (rule 244 §4) — a number
+        // the backup brings in is claimed like any other typed Nomor RM.
+        private readonly PatientRmNumberAllocator $rmAllocator,
+        private readonly PatientMedicalRecordNumberService $rmNumbers,
     ) {}
 
     /**
@@ -372,6 +380,19 @@ class PilotBackupImportService
                 'date_of_birth' => $dob,
             ];
 
+        // Rule 244 §4 — a NEW number (no live patient holds exactly it) must not
+        // be held in another spelling (alias code, padding, case, a soft-deleted
+        // patient, a merge alias), and on a live run it is claimed under its
+        // branch-year counter lock, held until this import's transaction ends.
+        // An exact live match is still updated as before; its number never moves.
+        if ($mrn !== '' && ! Patient::query()->where('medical_record_number', $mrn)->exists()
+            && ! $this->numberIsClaimable($mrn, $dryRun)) {
+            return [
+                'action' => 'skipped',
+                'message' => 'Skipped a patient row: its Nomor RM is already held in another spelling (rule 244).',
+            ];
+        }
+
         if ($dryRun) {
             $existing = Patient::query()->where($unique)->first();
 
@@ -392,6 +413,29 @@ class PilotBackupImportService
             'action' => $patient->wasRecentlyCreated ? 'imported' : 'updated',
             'message' => null,
         ];
+    }
+
+    /**
+     * Rule 244 §4 — whether a typed number may be stored: claimed under its
+     * branch-year counter lock when it names a known RME branch and this is a
+     * live (transactional) run, otherwise checked in every spelling.
+     */
+    private function numberIsClaimable(string $mrn, bool $dryRun): bool
+    {
+        $code = $this->rmNumbers->branchCodeFrom(strtoupper($mrn));
+        $branch = $code !== null && $code !== Branch::MAIN_CODE
+            ? Branch::query()->where('code', $code)->first()
+            : null;
+
+        if ($branch !== null && ! $dryRun) {
+            try {
+                return $this->rmAllocator->claimExisting($branch, $mrn);
+            } catch (InvalidArgumentException|PatientRmNumberUnavailableException) {
+                // Not a number the allocator could ever issue: the spelling check below decides.
+            }
+        }
+
+        return ! $this->rmAllocator->isTaken($mrn);
     }
 
     /**

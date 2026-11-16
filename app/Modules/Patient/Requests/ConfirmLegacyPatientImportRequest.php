@@ -2,14 +2,15 @@
 
 namespace App\Modules\Patient\Requests;
 
+use App\Modules\Patient\Services\PatientService;
 use Illuminate\Foundation\Http\FormRequest;
 
 /**
  * REVISION-LEGACY-PATIENT-STAGED-VERIFICATION-CANCEL-1.
  *
- * The explicit confirmation step. Authorization is enforced by the route's
- * `permission:manage patients` group, as it is for every other action in this
- * workflow.
+ * The explicit confirmation step. Authorization: the route's
+ * `permission:manage patients` group, plus — since rule 244 §4 — the paper-card
+ * permission on the commit route, here and in the service.
  *
  * WHY AN ACKNOWLEDGEMENT FIELD AT ALL. Confirmation used to be a bare POST
  * behind a JavaScript `confirm()`, which means the only record that a human
@@ -27,9 +28,16 @@ use Illuminate\Foundation\Http\FormRequest;
  */
 class ConfirmLegacyPatientImportRequest extends FormRequest
 {
+    /**
+     * DMS-RME-COMPREHENSIVE-CLOSURE-1 / memo M4.1 (rule 244 §4; plan default 4,
+     * revises part of rule 168) — committing a batch stores typed Nomor RM, so it
+     * needs the paper-card permission (Supervisor RME; Super Admin through '*').
+     * Staging, review and cancel stay with `manage patients`. The route carries
+     * the same permission and LegacyPatientImportService::commit() re-asserts it.
+     */
     public function authorize(): bool
     {
-        return true;
+        return (bool) $this->user()?->can(PatientService::PAPER_CARD_PERMISSION);
     }
 
     public function rules(): array
