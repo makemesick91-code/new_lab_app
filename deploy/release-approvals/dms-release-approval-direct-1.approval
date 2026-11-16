@@ -1,0 +1,16 @@
+# DMS-RELEASE-APPROVAL-DIRECT-1 production approval (rules 229 and 231, contract 2; the release that ships rule 236).
+# Owner decision: docs/sprints/dms-release-approval-direct-1.md section 11.
+# Deploy procedure: docs/runbooks/production-host-identity.md section 6b (through the deploy operator), then 6g step 0.
+DMS_APPROVAL_CONTRACT=2
+DMS_APPROVAL_RELEASE_ID=dms-release-approval-direct-1
+DMS_APPROVAL_REPOSITORY=makemesick91-code/new_lab_app
+DMS_APPROVAL_HOST=DaengtisiaMS
+DMS_APPROVAL_HOST_KEY_SHA256=SHA256:i3AsyL0oSwqSAwNfgv215Cl01i87buYtH5ugTe8O2bc
+DMS_APPROVAL_BASE_BRANCH=feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
+DMS_APPROVAL_TARGET_SHA=312337b4f8bf993595ff315c78e90a12820c361c
+DMS_APPROVAL_TARGET_TREE=ef2a896b1ece12248870c0a0c1c801738d9808be
+DMS_APPROVAL_GO_TAG=dms-release-approval-direct-1-go
+DMS_APPROVAL_APPROVED_BY=owner
+DMS_APPROVAL_APPROVED_AT=2026-11-16T06:27:41Z
+DMS_APPROVAL_NOT_AFTER=2026-11-18T06:27:41Z
+DMS_APPROVAL_EVIDENCE=docs/sprints/dms-release-approval-direct-1.md
