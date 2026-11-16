@@ -1,10 +1,8 @@
 # DMS-RELEASE-APPROVAL-DIRECT-1 — direct signed release approval (contract 3)
 
 **Date:** 2026-11-16 (WITA). **Type:** security / release engineering (Foundation-First Sprint Lock: allowed category).
-**Status:** IMPLEMENTED — PR, CI, release (contract 2), operator re-provisioning and production test pending (§10).
-DMS-DEPLOY-PRIVSEP-PHASE-2 is GO (`dms-deploy-privsep-phase-2-go`, 2026-11-16), so the brief's §3/§17 precondition holds:
-this branch was rebased onto the base after that release (rule 229: nothing but approvals and Markdown may land
-between a release commit and its deploy).
+**Status:** MERGED (#643 → `312337b4`) — owner-approved for production under contract 2; signature, approval PR, deploy,
+operator re-provisioning and the contract-3 production test pending (§10, §11).
 
 ## 1. Owner request (CG-22)
 
@@ -232,9 +230,27 @@ pinned by `config/deployment_entrypoint.php`. Rules, runbooks and CLAUDE.md are 
 |---|---|
 | Implemented, locally verified | §5, §7 |
 | Reviewed | §8 |
-| PR / CI / merge / post-merge CI | pending |
-| Release approval (contract 2, owner-signed, approval PR) — the migration release | pending |
+| PR / CI / merge / post-merge CI | PR #643 run `43800039265`: Critical Test Gate **10,416 passed**, 0 failed (`DeployHardenDirectApprovalTest` ran); squash merge pinned to `5dd5ced7` → **`312337b4f8bf993595ff315c78e90a12820c361c`** (tree `ef2a896b1ece12248870c0a0c1c801738d9808be` = tested head tree); post-merge push run `43807868750` **success**, Critical Test Gate **10,416 passed**; Full Suite skipped = DEFERRED (CG-18) |
+| Release approval (contract 2, owner-signed, approval PR) — the migration release | owner approval 2026-11-16T06:27:41Z (§11.1); signature and approval PR pending |
 | Deploy through the operator (contract 2) | pending |
 | Operator re-provisioned (owner's password) → `submit-approval`, `check-approval` active | pending |
 | Production test of contract 3 (owner-signed test approval, `submit-approval`, `check-approval`, withdraw; no second deploy) | pending |
 | GO tag `dms-release-approval-direct-1-go` | pending |
+
+## 11. Owner decisions (CG-22)
+
+### 11.1 Release approval of the exact SHA (2026-11-16T06:27:41Z)
+
+After PR #643 merged as `312337b4…` and its post-merge CI run `43807868750` was green (Critical Gate 10,416 passed),
+and a read-only preflight through the operator (both targets `VERIFIED`, HEAD `75ac3578` clean,
+`RELEASE GUARD TRUST: READY`, `PRIVSEP_DRIFT=NONE`, `SUDO_POLICY=LEAST_PRIVILEGE`, locks idle, 166 ERROR lines), the
+owner answered **"Approve 312337b4"** to: deploying **`312337b4f8bf993595ff315c78e90a12820c361c`** (tree
+`ef2a896b1ece12248870c0a0c1c801738d9808be`; PR #643) to production on Biznet `DaengtisiaMS` as release
+`dms-release-approval-direct-1` — the last contract-2 approval PR — in this order: deploy through the operator under
+contract 2 (pre-deploy dump mandatory; BK-2 skipped); verify; the owner runs runbook §6g step 0 (re-provisions the
+operator with the administrator's password); the owner signs a contract-3 test approval, the assistant runs
+`submit-approval` and `check-approval`, then the owner withdraws it (no second deploy); GO tag
+`dms-release-approval-direct-1-go` only after all of that. Rollback only on the owner's explicit go-ahead, by full SHA
+`75ac3578808a8dd8c720bf38e98a86685183eb66`, code only. 48-hour window.
+
+Record: `deploy/release-approvals/dms-release-approval-direct-1.approval` (contract 2, window 2026-11-16T06:27:41Z → 2026-11-18T06:27:41Z).
