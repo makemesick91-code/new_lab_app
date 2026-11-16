@@ -336,6 +336,17 @@ a fast-forward commit carrying exactly the tested tree.
 A sequential merge simulation of all ten heads on the base is textually clean; combined rule-file sizes stay under the
 30,000-character budget (`rme-clinical.md` 29,973 — the next memo PR must condense it first).
 
+Local integrated run on the simulated merge tree `6882f001` (workstation, not a CI gate; reported as measured):
+
+| Run | Result |
+|---|---|
+| Governance suites (SQLite) | 0 failed |
+| Full critical filter (PostgreSQL 16, isolated schema) | 10,638 tests; 147 failed, all in the known local-environment classes: multi-process concurrency suites (payment submission, billing dispute ×2, performed treatment, refund settlement, refund request, zero-value closure, invoice correction ×3, owner reference registry, tariff provisioning — "competing transaction did not take its locks"), Poppler legacy batch suites (odontogram publish/review ×4), and one Observability diagnostics page |
+| Observability diagnostics page | the same failure reproduced on the untouched base `cab3a4c1` (`SQLSTATE[25P02]`) — local environment, not introduced by the wave |
+
+CI is the authority for these classes. Each PR's NSF-R011 Critical Test Gate ran on PostgreSQL on its final head with
+0 failures (§9.4).
+
 ## 9. Release and production
 
 ### 9.1 PR1 — #646
@@ -373,6 +384,20 @@ written approval of the full release SHA → owner signs locally (`scripts/relea
 | Pre-deploy database dump | taken by the runner inside the deploy; the line itself sits in the root-only deploy log and is read by the owner (§10.3) |
 | Release id | spent; the next release uses a new id |
 | GO | **NO-GO (owner, §2b)** — no tag created |
+
+### 9.4 Closure wave — CI on the final heads (before merge)
+
+NSF-R011 Critical Test Gate, read from the job log (PostgreSQL, `DB_CONNECTION: pgsql`; passes only, 0 failed):
+
+| PR | Final head | Workflow run | Critical gate |
+|---|---|---|---|
+| #648 | `803db2e4` | 43914546878 | 10,497 passed |
+| #649 | `71c1375c` | 43926359393 | 10,490 passed |
+| #652 | `daf88277` | 43926397404 | 10,485 passed |
+| #654 | `0aa2b771` | 43920506608 | 10,508 passed |
+| #655 | `af653175` | 43924260896 | 10,497 passed |
+| #656 | `e11074fe` | 43924269075 | 10,491 passed |
+| #657 | `85527d84` | 43920501415 | 10,486 passed |
 
 ## 10. Owner actions prepared by this program
 
