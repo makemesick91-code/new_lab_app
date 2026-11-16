@@ -1585,6 +1585,9 @@ return [
         // payload bound at the request and in the service. Selected by the existing
         // `RmeVisitConsent` token in BOTH critical variants; declared so a rename cannot drop it.
         'tests/Feature/RME/RmeVisitConsentSignatureBoundTest.php',
+        // DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-5-9, rule 237 §14) — the consent signature storage copy
+        // phase (key for key, SHA-256, never deletes). Selected by the existing `RmeVisitConsent` token.
+        'tests/Feature/RME/RmeVisitConsentSignatureStorageMigrationTest.php',
         // DMS-RME-COMPREHENSIVE-CLOSURE-1 (rule 237) — a refused consent, prescription or RM page never
         // copies a signature or a handwriting canvas into the session store (dontFlash, CG-11, rule 121),
         // and an RM handwriting page has a bounded payload, declared size and inflate cost. Selected by

@@ -49,6 +49,7 @@ use App\Modules\Patient\Models\Patient;
 use App\Modules\RmeOnlineContext\Middleware\EnsureRmeOnlineContext;
 use Database\Seeders\BranchSeeder;
 use Illuminate\Support\Collection;
+use Illuminate\Support\LazyCollection;
 use Illuminate\Validation\ValidationException;
 
 beforeEach(function () {
@@ -548,6 +549,11 @@ it('never turns a fault in the capability path into an actionable control', func
         public function latestConsentNumberForMonth(string $month): ?string
         {
             return null;
+        }
+
+        public function signatureReferences(): LazyCollection
+        {
+            return LazyCollection::empty();
         }
     });
 

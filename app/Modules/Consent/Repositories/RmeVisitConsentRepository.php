@@ -6,6 +6,7 @@ use App\Modules\Consent\Interfaces\RmeVisitConsentRepositoryInterface;
 use App\Modules\Consent\Models\RmeVisitConsent;
 use App\Support\Database\DocumentNumberSequenceLock;
 use Illuminate\Support\Collection;
+use Illuminate\Support\LazyCollection;
 
 class RmeVisitConsentRepository implements RmeVisitConsentRepositoryInterface
 {
@@ -50,5 +51,12 @@ class RmeVisitConsentRepository implements RmeVisitConsentRepositoryInterface
             ->where('consent_number', 'like', 'CONSENT-'.$month.'-%')
             ->orderByDesc('consent_number')
             ->value('consent_number');
+    }
+
+    public function signatureReferences(): LazyCollection
+    {
+        return RmeVisitConsent::query()
+            ->select(['id', 'consenter_signature_path', 'doctor_signature_path'])
+            ->lazyById(200);
     }
 }

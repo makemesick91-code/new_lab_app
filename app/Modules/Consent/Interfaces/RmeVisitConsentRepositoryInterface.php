@@ -4,6 +4,7 @@ namespace App\Modules\Consent\Interfaces;
 
 use App\Modules\Consent\Models\RmeVisitConsent;
 use Illuminate\Support\Collection;
+use Illuminate\Support\LazyCollection;
 
 interface RmeVisitConsentRepositoryInterface
 {
@@ -31,4 +32,13 @@ interface RmeVisitConsentRepositoryInterface
     public function lockNumberSequence(string $month): void;
 
     public function latestConsentNumberForMonth(string $month): ?string;
+
+    /**
+     * DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-5-9) — every stored signature reference,
+     * voided consents included (evidence), in id order, lazily: one row per
+     * consent with `id`, `consenter_signature_path`, `doctor_signature_path` only.
+     *
+     * @return LazyCollection<int, RmeVisitConsent>
+     */
+    public function signatureReferences(): LazyCollection;
 }
