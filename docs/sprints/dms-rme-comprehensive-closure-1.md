@@ -68,6 +68,25 @@ not a follow-up"). They were implemented under that brief, and the owner then co
 | after post-merge CI on `cab3a4c1` | Written approval of the release SHA `cab3a4c1082923d92b665238eb72034b4af13e34` | **Approve this release** |
 | after production verification | GO and the tag on `cab3a4c1` with the residual register? | **NO-GO for now** |
 
+Closure-wave merges (2026-11-17), each asked separately and pinned with `--match-head-commit` to the head whose
+critical gate is recorded in §9.4:
+
+| PR | Tested head | Owner answer | Squash commit on the base |
+|---|---|---|---|
+| #651 | `9697d00a` | **Yes, squash-merge #651** | `5f4e7b75` |
+| #652 | `daf88277` | **Yes, squash-merge #652** | `5f55e776` |
+| #648 | `803db2e4` | **Yes, squash-merge #648** | `f97b906e` |
+| #649 | `71c1375c` | **Yes, squash-merge #649** | `9f32bc83` |
+| #650 | `0d701e35` | **Yes, squash-merge #650** | `01426e72` |
+| #657 | `85527d84` | **Yes, squash-merge #657** | `0d265631` |
+| #653 | `f44453a5` | **Yes, squash-merge #653** | `22d9c872` |
+| #654 | `0aa2b771` | **Yes, squash-merge #654** | `07ebe300` |
+| #655 | `af653175` | **Yes, squash-merge #655** | `d62408fd` |
+| #656 | `e11074fe` | **Yes, squash-merge #656** | `82cb6e13` |
+
+The base tree after #649, after #654 and after #656 equals the sequential merge simulation exactly; the final tree
+`eb3035ad` is the tree of the locally integrated run (§8b).
+
 ### 2b. Owner decision NO-GO (2026-11-16) and the closure wave
 
 The owner recorded the program as **DEPLOYED / PRODUCTION VERIFIED / PROGRAM NO-GO — PENDING CLOSURE** and ordered
