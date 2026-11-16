@@ -26,10 +26,12 @@ use App\Modules\LabOrder\Models\AuditLog;
 use App\Modules\MedicalRecord\Services\MedicalRecordService;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\Prescription\Models\RmePrescription;
+use App\Modules\Prescription\Services\PrescriptionAuthoringAuthority;
 use App\Modules\Prescription\Services\PrescriptionCanvasDecoder;
 use App\Modules\Prescription\Services\RmePrescriptionService;
 use App\Support\Storage\ClinicalEvidenceStorage;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 
@@ -60,6 +62,18 @@ function priVisit(object $t, string $status = ClinicVisit::STATUS_IN_PROGRESS): 
         'doctor_id' => $t->doctorRecord->id,
         'clinic_room_id' => $t->room->id,
         'status' => $status,
+    ]);
+}
+
+/** DMS-RME-COMPREHENSIVE-CLOSURE-1 — content stored, the named doctor has not signed yet. */
+function priUnsignedPrescription(ClinicVisit $visit): RmePrescription
+{
+    return RmePrescription::factory()->withStoredCanvases()->unsigned()->create([
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $visit->branch_id,
+        'patient_id' => $visit->patient_id,
+        'doctor_id' => $visit->doctor_id,
+        'allergy_note' => 'ALERGI ASLI',
     ]);
 }
 
@@ -166,7 +180,8 @@ it('I1-03 refuses the same amendment at the service, under the visit row lock', 
 
 it('I1-04 still allows amending the prescription while the visit waits at the cashier', function () {
     $visit = priVisit($this, ClinicVisit::STATUS_CASHIER_PENDING);
-    $prescription = priPrescription($visit);
+    // Unsigned: a signed prescription is changed only by its own doctor (I7).
+    $prescription = priUnsignedPrescription($visit);
 
     actingAs($this->author)
         ->patch(route('rme.prescriptions.update', $prescription), priForm(['allergy_note' => 'Revisi sebelum bayar', 'doctor_signature_canvas_data' => null]))
@@ -212,7 +227,8 @@ it('I2-01 writes one audit row on create, attributed to the actor, without value
 
 it('I2-02 writes one audit row per update naming only the changed fields', function () {
     $visit = priVisit($this);
-    $prescription = priPrescription($visit);
+    // Unsigned: a signed prescription is changed only by its own doctor (I7).
+    $prescription = priUnsignedPrescription($visit);
 
     actingAs($this->author)
         ->patch(route('rme.prescriptions.update', $prescription), priForm([
@@ -343,14 +359,27 @@ it('I5-03 lets another clinician author the content without a signature', functi
         ->and($prescription->prescription_canvas_path)->not->toBeNull();
 });
 
-it('I5-04 refuses another clinician replacing the signature on update and keeps the old one', function () {
+it('I5-04 refuses another clinician adding a signature on update and stores none', function () {
     $visit = priVisit($this);
-    $prescription = priPrescription($visit);
-    $signature = $prescription->doctor_signature_canvas_path;
+    $prescription = priUnsignedPrescription($visit);
 
     actingAs($this->author)
         ->patch(route('rme.prescriptions.update', $prescription), priForm(['prescription_canvas_data' => null]))
         ->assertSessionHasErrors('doctor_signature_canvas_data');
+
+    expect($prescription->fresh()->doctor_signature_canvas_path)->toBeNull();
+});
+
+it('I5-04b refuses another clinician replacing the signature of a signed prescription and keeps the old one', function () {
+    $visit = priVisit($this);
+    $prescription = priPrescription($visit);
+    $signature = $prescription->doctor_signature_canvas_path;
+
+    // Since DMS-RME-COMPREHENSIVE-CLOSURE-1 the whole edit is refused (I7), not
+    // just the signature field.
+    actingAs($this->author)
+        ->patch(route('rme.prescriptions.update', $prescription), priForm(['prescription_canvas_data' => null]))
+        ->assertForbidden();
 
     expect($prescription->fresh()->doctor_signature_canvas_path)->toBe($signature);
 });
@@ -458,4 +487,196 @@ it('R-04 (F5) bounds the signature by its own limit inside the decoder, not only
         'prescription_canvas_data',
         maxLength: PrescriptionCanvasDecoder::MAX_PAYLOAD_LENGTH * 10,
     ))->toThrow(ValidationException::class, 'Ukuran gambar melebihi batas yang diizinkan.');
+});
+
+/*
+|--------------------------------------------------------------------------
+| I7 — DMS-RME-COMPREHENSIVE-CLOSURE-1: a signed prescription is locked to its doctor
+|--------------------------------------------------------------------------
+|
+| Owner decision 2026-11-16 ("lock after signing", amends rule 228 §12.2): once
+| the prescription's own doctor has signed, no other account may change it, so
+| the signature never sits under content the doctor did not see. Refused in the
+| policy, re-decided in the service on the row read under the visit lock, and
+| audited as a rejection; nothing is written. Unsigned content stays open to the
+| other clinicians (OD-5-1 kept: I1-04, I2-02).
+*/
+
+function priSignedEditRejections(): int
+{
+    return AuditLog::query()->where('entity_type', 'trx_rme_prescriptions')
+        ->where('action', RmePrescriptionService::AUDIT_SIGNED_EDIT_REJECTED)->count();
+}
+
+it('I7-01 refuses another clinician editing a signed prescription over HTTP, audits the refusal and writes nothing', function () {
+    $visit = priVisit($this);
+    $prescription = priPrescription($visit);
+    $before = $prescription->fresh()->getAttributes();
+
+    actingAs($this->author)
+        ->patch(route('rme.prescriptions.update', $prescription), priForm([
+            'allergy_note' => 'DIUBAH TANPA DOKTER',
+            'doctor_signature_canvas_data' => null,
+        ]))
+        ->assertForbidden();
+
+    $row = AuditLog::query()->where('action', RmePrescriptionService::AUDIT_SIGNED_EDIT_REJECTED)->sole();
+
+    expect($prescription->fresh()->getAttributes())->toBe($before)
+        ->and(AuditLog::query()->where('action', RmePrescriptionService::AUDIT_UPDATED)->count())->toBe(0)
+        ->and((int) $row->performed_by)->toBe($this->author->id)
+        ->and((int) $row->entity_id)->toBe((int) $prescription->id)
+        ->and(json_encode($row->new_values))->not->toContain('DIUBAH TANPA DOKTER')
+        ->and(json_encode($row->new_values))->not->toContain('Pasien Rahasia');
+});
+
+it('I7-02 lets the named doctor still correct a signed prescription', function () {
+    $visit = priVisit($this);
+    $prescription = priPrescription($visit);
+
+    actingAs($this->namedDoctor)
+        ->patch(route('rme.prescriptions.update', $prescription), priForm(['allergy_note' => 'Koreksi dokter']))
+        ->assertRedirect(route('rme.visits.prescription.show', $visit));
+
+    expect($prescription->fresh()->allergy_note)->toBe('Koreksi dokter')
+        ->and($prescription->fresh()->doctor_signature_canvas_path)->not->toBeNull()
+        ->and(priSignedEditRejections())->toBe(0);
+});
+
+it('I7-03 refuses the same edit in the service, for a caller that skips the route and the policy, and audits it', function () {
+    $visit = priVisit($this);
+    $prescription = priPrescription($visit);
+
+    expect(fn () => app(RmePrescriptionService::class)->update($prescription, priForm(['doctor_signature_canvas_data' => null]), $this->author))
+        ->toThrow(AuthorizationException::class);
+
+    expect($prescription->fresh()->allergy_note)->toBe('ALERGI ASLI')
+        ->and(priSignedEditRejections())->toBe(1);
+});
+
+it('I7-04 refuses Super Admin, which bypasses the policy, in the service', function () {
+    $visit = priVisit($this);
+    $prescription = priPrescription($visit);
+
+    actingAs(userInRole('Super Admin'))
+        ->patch(route('rme.prescriptions.update', $prescription), priForm(['allergy_note' => 'X', 'doctor_signature_canvas_data' => null]))
+        ->assertForbidden();
+
+    expect($prescription->fresh()->allergy_note)->toBe('ALERGI ASLI')
+        ->and(priSignedEditRejections())->toBe(1);
+});
+
+it('I7-05 sees a signature saved after the editor loaded the page (decided under the visit lock)', function () {
+    $visit = priVisit($this);
+    $prescription = priUnsignedPrescription($visit);
+    $stale = RmePrescription::query()->findOrFail($prescription->id);
+
+    // The named doctor signs in between: the editor's model still says unsigned.
+    actingAs($this->namedDoctor)
+        ->patch(route('rme.prescriptions.update', $prescription), priForm(['prescription_canvas_data' => null]))
+        ->assertRedirect();
+
+    expect($stale->doctor_signature_canvas_path)->toBeNull();
+    expect(fn () => app(RmePrescriptionService::class)->update($stale, priForm(['allergy_note' => 'TERLAMBAT', 'doctor_signature_canvas_data' => null]), $this->author))
+        ->toThrow(AuthorizationException::class);
+
+    expect($prescription->fresh()->allergy_note)->not->toBe('TERLAMBAT');
+});
+
+it('I7-06 offers "Edit Resep" on a signed prescription only to its own doctor', function () {
+    $visit = priVisit($this);
+    priPrescription($visit);
+
+    actingAs($this->author)->get(route('rme.visits.prescription.show', $visit))
+        ->assertOk()
+        ->assertDontSee('Edit Resep')
+        ->assertSee('data-testid="rx-signed-lock"', false);
+
+    actingAs($this->namedDoctor)->get(route('rme.visits.prescription.show', $visit))
+        ->assertOk()
+        ->assertSee('Edit Resep')
+        ->assertDontSee('data-testid="rx-signed-lock"', false);
+});
+
+it('I7-07 keeps an unsigned prescription editable by another clinician (OD-5-1)', function () {
+    $visit = priVisit($this);
+    $prescription = priUnsignedPrescription($visit);
+
+    actingAs($this->author)->get(route('rme.visits.prescription.show', $visit))
+        ->assertOk()->assertSee('Edit Resep');
+
+    actingAs($this->author)
+        ->patch(route('rme.prescriptions.update', $prescription), priForm(['allergy_note' => 'Isi perawat', 'doctor_signature_canvas_data' => null]))
+        ->assertRedirect(route('rme.visits.prescription.show', $visit));
+
+    expect($prescription->fresh()->allergy_note)->toBe('Isi perawat');
+});
+
+it('I7-08 refuses the named doctor signing over content changed since the page loaded, writing nothing', function () {
+    $visit = priVisit($this);
+    $prescription = priUnsignedPrescription($visit);
+    $seen = app(RmePrescriptionService::class)->contentVersion($prescription->fresh());
+
+    // Another clinician changes the content after the doctor's page loaded.
+    actingAs($this->author)
+        ->patch(route('rme.prescriptions.update', $prescription), priForm(['allergy_note' => 'Diubah perawat', 'doctor_signature_canvas_data' => null]))
+        ->assertRedirect();
+
+    actingAs($this->namedDoctor)
+        ->patch(route('rme.prescriptions.update', $prescription), priForm([
+            'prescription_canvas_data' => null,
+            'allergy_note' => 'Diubah perawat',
+            'content_version' => $seen,
+        ]))
+        ->assertSessionHasErrors(['doctor_signature_canvas_data' => RmePrescriptionService::MESSAGE_CONTENT_CHANGED_BEFORE_SIGNING]);
+
+    expect($prescription->fresh()->doctor_signature_canvas_path)->toBeNull();
+
+    // Reloaded: the current version is accepted.
+    actingAs($this->namedDoctor)
+        ->patch(route('rme.prescriptions.update', $prescription), priForm([
+            'prescription_canvas_data' => null,
+            'allergy_note' => 'Diubah perawat',
+            'content_version' => app(RmePrescriptionService::class)->contentVersion($prescription->fresh()),
+        ]))
+        ->assertRedirect(route('rme.visits.prescription.show', $visit));
+
+    expect($prescription->fresh()->doctor_signature_canvas_path)->not->toBeNull();
+});
+
+it('I7-09 renders the content version into the edit form', function () {
+    $visit = priVisit($this);
+    $prescription = priUnsignedPrescription($visit);
+
+    actingAs($this->namedDoctor)->get(route('rme.visits.prescription.show', [$visit, 'edit' => 1]))
+        ->assertOk()
+        ->assertSee('name="content_version" value="'.app(RmePrescriptionService::class)->contentVersion($prescription->fresh()).'"', false);
+});
+
+it('I7-10 decides the lock with the doctor the edit path derives (a row without doctor_id uses the visit doctor)', function () {
+    $visit = priVisit($this);
+    $prescription = priPrescription($visit);
+    $prescription->forceFill(['doctor_id' => null])->save();
+
+    $authority = app(PrescriptionAuthoringAuthority::class);
+
+    expect($authority->signedContentLocked($prescription->fresh(), $this->namedDoctor))->toBeFalse()
+        ->and($authority->signedContentLocked($prescription->fresh(), $this->author))->toBeTrue();
+});
+
+it('I7-11 refuses an out-of-scope doctor for scope, not for the signature, and audits nothing', function () {
+    $visit = priVisit($this);
+    $prescription = priPrescription($visit);
+    $otherRoom = ClinicRoom::factory()->create(['branch_id' => $this->branch->id, 'status' => ClinicRoom::STATUS_ACTIVE]);
+    $stranger = rmeMakeDoctorOnline(Doctor::factory()->withAllowedBranches([$this->branch])->create(), $this->branch, $otherRoom);
+
+    $decision = Gate::forUser($stranger)->inspect('update', $prescription);
+
+    expect($decision->denied())->toBeTrue()
+        ->and($decision->message())->not->toBe(PrescriptionAuthoringAuthority::SIGNED_CONTENT_LOCK_MESSAGE);
+
+    actingAs($stranger)
+        ->patch(route('rme.prescriptions.update', $prescription), priForm(['doctor_signature_canvas_data' => null]));
+
+    expect(priSignedEditRejections())->toBe(0);
 });

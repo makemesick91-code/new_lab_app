@@ -5,6 +5,7 @@ namespace App\Modules\Prescription\Services;
 use App\Models\User;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Doctor\Services\DoctorIdentityResolver;
+use App\Modules\Prescription\Models\RmePrescription;
 use App\Modules\RME\Services\DoctorPatientScopeService;
 use App\Modules\RME\Services\DoctorRoomScopeService;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
@@ -76,6 +77,9 @@ final class PrescriptionAuthoringAuthority
 
     /** Rule 228 §12 — {@see maySign()}. */
     public const SIGNATURE_REFUSAL_MESSAGE = 'Hanya dokter yang tercantum pada resep yang dapat menandatangani resep ini.';
+
+    /** DMS-RME-COMPREHENSIVE-CLOSURE-1 — a signed prescription is changed only by its own doctor. */
+    public const SIGNED_CONTENT_LOCK_MESSAGE = 'Resep sudah ditandatangani dokter. Hanya dokter yang tercantum pada resep yang dapat mengubahnya.';
 
     /** The clinical write permission every author must hold itself (part 0a). */
     public const WRITE_PERMISSION = 'manage_clinic_visits';
@@ -179,5 +183,27 @@ final class PrescriptionAuthoringAuthority
         $linked = $this->doctorIdentity->resolveForUser($actor);
 
         return $linked !== null && (int) $linked->getKey() === $doctorId;
+    }
+
+    /**
+     * DMS-RME-COMPREHENSIVE-CLOSURE-1 (owner decision 2026-11-16, "lock after
+     * signing"; amends rule 228 §12.2, rule 237 §9). Once the prescription's own
+     * doctor has signed it, the signature vouches for that content: any OTHER
+     * account may no longer change it. The named doctor may still correct it
+     * (and re-sign); the service refuses a signature over content changed since
+     * that doctor's page loaded (contentVersion). Identity, not role, exactly
+     * like maySign(): a Super Admin, Owner or Supervisor RME that is not that
+     * doctor is refused too. The doctor is the one the edit path itself derives:
+     * the prescription's own, else the visit's (a pre-8B row).
+     */
+    public function signedContentLocked(RmePrescription $prescription, User $actor): bool
+    {
+        if (! filled($prescription->doctor_signature_canvas_path)) {
+            return false;
+        }
+
+        $doctorId = $prescription->doctor_id ?? $prescription->clinicVisit?->doctor_id;
+
+        return ! $this->maySign($actor, $doctorId !== null ? (int) $doctorId : null);
     }
 }

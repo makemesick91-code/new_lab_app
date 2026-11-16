@@ -16,6 +16,9 @@ use Illuminate\Validation\ValidationException;
 
 class MedicalRecordService
 {
+    /** OD-5-6 — the refusal for a new sheet named on any visit but the authorized encounter. */
+    public const MESSAGE_SHEET_ONLY_ON_ENCOUNTER = 'Lembar RM baru hanya dapat dibuat pada kunjungan yang sedang diperiksa dengan persetujuan tindakan yang sah.';
+
     public function __construct(
         private readonly MedicalRecordRepositoryInterface $medicalRecords,
         private readonly BranchService $branches,
@@ -128,7 +131,25 @@ class MedicalRecordService
              * and is never the authority; the encounter is resolved from server
              * state. No active encounter => no write, full stop.
              */
-            $this->consents->assertRmeAuthoringAllowedForPatient($clinicVisit->patient_id);
+            $encounter = $this->consents->assertRmeAuthoringAllowedForPatient($clinicVisit->patient_id);
+
+            /*
+             * DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-5-6, owner decision 2026-11-16:
+             * "current encounter only"). Once the patient has an RM book, a NEW
+             * sheet ("Tambah Lembar RM") is created only on the authorized,
+             * consented encounter itself — never on another visit of the same
+             * patient named in the URL, which the visit page never offered and the
+             * server used to accept. The patient's first sheet still starts on the
+             * canonical visit the controller derives (Sprint 64.0.2), and the
+             * canonical-book path ($adoptExisting) is not a new sheet.
+             */
+            if (! $adoptExisting
+                && (int) $clinicVisit->getKey() !== (int) $encounter->getKey()
+                && $this->workspace->sheetsForPatient((int) $clinicVisit->patient_id)->isNotEmpty()) {
+                throw ValidationException::withMessages([
+                    'clinic_visit_id' => self::MESSAGE_SHEET_ONLY_ON_ENCOUNTER,
+                ]);
+            }
 
             $safe = array_intersect_key($data, array_flip([
                 'subjective', 'objective', 'assessment', 'plan', 'notes',

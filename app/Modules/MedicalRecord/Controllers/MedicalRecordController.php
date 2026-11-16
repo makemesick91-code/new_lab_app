@@ -299,8 +299,16 @@ class MedicalRecordController extends Controller
         $activeVisit = $activeSheet->clinicVisit;
         $activeVisit->loadMissing(['patient', 'doctor', 'initialTreatment', 'followUpOf', 'branch']);
 
-        // "Tambah Lembar RM" target — the source visit when it has no sheet yet.
-        $addSheetVisit = ($sourceVisit !== null && $sheets->firstWhere('clinic_visit_id', $sourceVisit->id) === null)
+        // "Tambah Lembar RM" target — the source visit when it has no sheet yet
+        // AND it is the patient's current examination (DMS-RME-COMPREHENSIVE-
+        // CLOSURE-1, OD-5-6): MedicalRecordService::createDraft() refuses a new
+        // sheet on any other visit, so the page never offers one. Before consent
+        // the button still renders disabled (addSheetConsentRequired below).
+        $currentEncounter = app(ActiveEncounterResolver::class)->currentFor($patientId);
+        $addSheetVisit = ($sourceVisit !== null
+            && $sheets->firstWhere('clinic_visit_id', $sourceVisit->id) === null
+            && $currentEncounter !== null
+            && (int) $currentEncounter->getKey() === (int) $sourceVisit->getKey())
             ? $sourceVisit
             : null;
 

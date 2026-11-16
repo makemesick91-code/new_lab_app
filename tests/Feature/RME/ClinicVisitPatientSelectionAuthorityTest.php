@@ -488,3 +488,64 @@ it('never lets the visit edit re-point the patient, the prior visit, the branch 
         ->and((int) $fresh->created_by)->toBe((int) $this->adminB->id)
         ->and($fresh->chief_complaint)->toBe('diperbarui');
 });
+
+/*
+|--------------------------------------------------------------------------
+| DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-5-10a) — a cancelled visit is no prior visit
+|--------------------------------------------------------------------------
+*/
+
+it('OD-5-10a refuses a cancelled prior visit over HTTP and at the service, writing nothing', function () {
+    $this->parent->forceFill(['status' => ClinicVisit::STATUS_CANCELLED])->save();
+    $payload = cpsaControl($this->b, $this->parent);
+    $before = ClinicVisit::query()->withTrashed()->count();
+
+    $this->actingAs($this->adminB)
+        ->post(route('rme.visits.store'), $payload)
+        ->assertSessionHasErrors(['follow_up_of_visit_id' => 'Kunjungan yang dibatalkan tidak dapat dipilih sebagai kunjungan sebelumnya.']);
+
+    cpsaRefused(fn () => $this->svc->create($payload, $this->adminB), 'follow_up_of_visit_id');
+
+    expect(ClinicVisit::query()->withTrashed()->count())->toBe($before)
+        ->and($this->parent->fresh()->status)->toBe(ClinicVisit::STATUS_CANCELLED);
+});
+
+it('OD-5-10a still accepts a Kontrol after a completed, a cashier-pending or an in-progress visit', function (string $status) {
+    $this->parent->forceFill(['status' => $status])->save();
+
+    $visit = $this->svc->create(cpsaControl($this->b, $this->parent), $this->adminB);
+
+    expect((int) $visit->follow_up_of_visit_id)->toBe((int) $this->parent->id);
+})->with([ClinicVisit::STATUS_COMPLETED, ClinicVisit::STATUS_CASHIER_PENDING, ClinicVisit::STATUS_IN_PROGRESS]);
+
+it('OD-5-10a never offers a cancelled visit in the prior-visit picker', function () {
+    $cancelled = ClinicVisit::factory()->create([
+        'branch_id' => $this->a->id,
+        'patient_id' => $this->patient->id,
+        'doctor_id' => $this->doctorA->id,
+        'status' => ClinicVisit::STATUS_CANCELLED,
+        'visit_date' => clinicalToday()->subDays(3)->toDateString(),
+    ]);
+
+    $ids = collect($this->actingAs($this->adminB)
+        ->getJson(route('rme.visits.patient-options', ['patient_id' => $this->patient->id]))
+        ->assertOk()
+        ->json('visits'))->pluck('id')->map(fn ($id) => (int) $id);
+
+    expect($ids)->toContain((int) $this->parent->id)
+        ->and($ids)->not->toContain((int) $cancelled->id);
+});
+
+it('OD-5-10a offers no "Buat Kontrol" from a cancelled visit and keeps it on a completed one', function () {
+    $this->actingAs($this->governance)
+        ->get(route('rme.visits.show', $this->parent))
+        ->assertOk()
+        ->assertSee('Buat Kontrol');
+
+    $this->parent->forceFill(['status' => ClinicVisit::STATUS_CANCELLED])->save();
+
+    $this->actingAs($this->governance)
+        ->get(route('rme.visits.show', $this->parent))
+        ->assertOk()
+        ->assertDontSee('Buat Kontrol');
+});

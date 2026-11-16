@@ -119,6 +119,17 @@ class ClinicVisitRegistrationGuard
             return ['follow_up_of_visit_id', 'Kunjungan sebelumnya harus milik pasien yang sama.'];
         }
 
+        // DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-5-10a) — a cancelled visit was never
+        // a clinical encounter, so nothing can be its follow-up. Billing already
+        // refuses a cancelled parent for the Rp0 Kontrol (RmeZeroValueEligibility:
+        // "a label, not a follow-up"); registration now agrees, and the picker no
+        // longer offers one (ClinicVisitService::patientVisitOptions). Read FOR
+        // SHARE under $lock, so a cancellation cannot commit between this check
+        // and the insert. Existing links are not touched.
+        if ($prior->status === ClinicVisit::STATUS_CANCELLED) {
+            return ['follow_up_of_visit_id', 'Kunjungan yang dibatalkan tidak dapat dipilih sebagai kunjungan sebelumnya.'];
+        }
+
         // OD-1: no branch comparison, no doctor comparison. See the class note.
         return null;
     }

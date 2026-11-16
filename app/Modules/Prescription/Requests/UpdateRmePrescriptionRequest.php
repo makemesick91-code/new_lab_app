@@ -35,6 +35,9 @@ class UpdateRmePrescriptionRequest extends FormRequest
             // shape, so it cannot be decided in a request rule).
             'doctor_signature_canvas_data' => ['nullable', 'string', 'max:'.PrescriptionCanvasDecoder::MAX_SIGNATURE_PAYLOAD_LENGTH],
             'notes' => ['nullable', 'string', 'max:2000'],
+            // DMS-RME-COMPREHENSIVE-CLOSURE-1 — the content version the page was
+            // rendered with; the service refuses a signature over newer content.
+            'content_version' => ['nullable', 'string', 'size:40'],
         ];
     }
 

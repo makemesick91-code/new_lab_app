@@ -111,7 +111,8 @@ it('prints the clinical identity and never the submitted text', function () {
 
 it('re-derives both names on update and replaces an earlier free-text name', function () {
     $visit = p8bpidVisit($this);
-    $prescription = RmePrescription::factory()->withStoredCanvases()->create([
+    // Unsigned: another clinician edits only unsigned content (rule 237 §9).
+    $prescription = RmePrescription::factory()->withStoredCanvases()->unsigned()->create([
         'clinic_visit_id' => $visit->id,
         'branch_id' => $visit->branch_id,
         'patient_id' => $visit->patient_id,

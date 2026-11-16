@@ -76,9 +76,14 @@ function p8arxVisit(Branch $branch, Doctor $doctor, array $overrides = []): Clin
     ], $overrides));
 }
 
-function p8arxPrescription(ClinicVisit $visit, array $overrides = []): RmePrescription
+function p8arxPrescription(ClinicVisit $visit, array $overrides = [], bool $signed = true): RmePrescription
 {
-    return RmePrescription::factory()->withStoredCanvases()->create(array_merge([
+    $factory = RmePrescription::factory()->withStoredCanvases();
+
+    // DMS-RME-COMPREHENSIVE-CLOSURE-1 — a signed prescription is changed only by
+    // its own doctor (rule 237 §9); tests of what another account may edit pass
+    // $signed = false.
+    return ($signed ? $factory : $factory->unsigned())->create(array_merge([
         'clinic_visit_id' => $visit->id,
         'branch_id' => $visit->branch_id,
         'patient_id' => $visit->patient_id,
@@ -466,9 +471,9 @@ it('P8A-RX-26 scopes both write abilities to the working branch in the policy', 
     $other = p8arxVisit($this->branchB, $this->doctorB);
 
     expect(Gate::forUser($perawat)->allows('create', [RmePrescription::class, $own]))->toBeTrue()
-        ->and(Gate::forUser($perawat)->allows('update', p8arxPrescription($own)))->toBeTrue()
+        ->and(Gate::forUser($perawat)->allows('update', p8arxPrescription($own, signed: false)))->toBeTrue()
         ->and(Gate::forUser($perawat)->denies('create', [RmePrescription::class, $other]))->toBeTrue()
-        ->and(Gate::forUser($perawat)->denies('update', p8arxPrescription($other)))->toBeTrue();
+        ->and(Gate::forUser($perawat)->denies('update', p8arxPrescription($other, signed: false)))->toBeTrue();
 });
 
 /*
@@ -503,7 +508,7 @@ it('P8A-RX-30 ignores request-supplied actor, doctor, patient and branch fields'
 
 it('P8A-RX-31 records the acting account as the updater, never a request value', function () {
     $visit = p8arxVisit($this->branchA, $this->doctorA);
-    $prescription = p8arxPrescription($visit);
+    $prescription = p8arxPrescription($visit, signed: false);
 
     $this->actingAs($this->clinician)
         ->patch(route('rme.prescriptions.update', $prescription), p8arxForm($visit, [

@@ -106,7 +106,7 @@
                         </x-ui.button>
                     @endcan
                 @endif
-                @if ($canOperateVisit)
+                @if ($canOperateVisit && ($canStartKontrolFromHere ?? true))
                 @can('create', \App\Modules\ClinicVisit\Models\ClinicVisit::class)
                     <x-ui.button variant="primary" :href="route('rme.visits.create', [
                         'patient_id' => $visit->patient_id,

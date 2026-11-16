@@ -69,6 +69,9 @@
                         <x-ui.button variant="primary" :href="route('rme.visits.prescription.show', [$clinicVisit, 'edit' => 1])">
                             Edit Resep
                         </x-ui.button>
+                    @elseif ($signedContentLocked ?? false)
+                        {{-- DMS-RME-COMPREHENSIVE-CLOSURE-1 — decided in the controller, shown here. --}}
+                        <span class="text-xs text-ink-muted" data-testid="rx-signed-lock">Resep sudah ditandatangani dokter; hanya dokter tersebut yang dapat mengubahnya.</span>
                     @endif
                 @elseif ($canManage)
                     <x-ui.button variant="primary" :href="route('rme.visits.prescription.show', [$clinicVisit, 'edit' => 1])">
@@ -170,6 +173,9 @@
                     @csrf
                     @if ($prescription)
                         @method('PATCH')
+                        {{-- DMS-RME-COMPREHENSIVE-CLOSURE-1 — the content this page shows; a
+                             signature over content changed since then is refused. --}}
+                        <input type="hidden" name="content_version" value="{{ $contentVersion ?? '' }}">
                     @endif
 
                     <div class="grid gap-4 sm:grid-cols-2">
