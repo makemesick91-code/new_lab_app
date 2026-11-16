@@ -1,7 +1,7 @@
 # DMS-DEPLOY-PRIVSEP-PHASE-2 — least-privilege deploy identities (rule 235)
 
-**Date:** 2026-11-15 (WITA). **Type:** security fix / deployment (Foundation-First Sprint Lock: allowed category).
-**Status:** IMPLEMENTED — release, deploy and production verification pending (§10).
+**Date:** 2026-11-15 → 2026-11-16 (WITA). **Type:** security fix / deployment (Foundation-First Sprint Lock: allowed category).
+**Status:** **COMPLETE / PRODUCTION VERIFIED / GO** (2026-11-16; §12). Full Suite deferred (CG-18), not passed.
 
 | Item | Value |
 |---|---|
@@ -9,9 +9,10 @@
 | Production before | `9312818fc9115707b9e0b351ae805080be465b4a` (rule 233, deploy `20261115-063339`, GO `dms-deploy-privsep-hardening-1-go`) |
 | Branch | `fix/dms-deploy-privsep-phase-2` |
 | Implementation PR / merge SHA | #636 → **`c7638a6f9ab52d6ae21ea538c86a6a2107887c29`** (tree `b04a6ad3df823f7fb9305a896b2eab7a64c78c97` = tested head tree) |
-| Release id / approval | pending (`dms-deploy-privsep-phase-2`) |
-| Deploy id | pending |
-| GO tag | `dms-deploy-privsep-phase-2-go` (declared in `.sprint/current.yml`; created only after production verification) |
+| Fix PRs / merge SHAs | r2 #638 → `92cb5572304c38e74aa5c48b146a9bcad0bc98e5`; r3 #640 → **`75ac3578808a8dd8c720bf38e98a86685183eb66`** (tree `d7a13105cbccb9be95d687d1cc646e04b39d18ef` = tested head tree) |
+| Release id / approval | **`dms-deploy-privsep-phase-2-r3`**, owner-approved and owner-signed, approval PR #641 → `ccbc313b` (unused, never edited: `dms-deploy-privsep-phase-2` #637, `-r2` #639) |
+| Deploy id | **`20261116-022520`** (through the deploy operator; `DEPLOY RUNNER OK`) |
+| GO tag | **`dms-deploy-privsep-phase-2-go`** → `75ac3578…` (annotated, tag object `35fd319b4afc1f225733f6608c8ebd251b9331cc`) |
 | Durable rule | `.cursor/rules/235-deploy-least-privilege-sudo.mdc` (AIR-DEP-40 in `.claude/rules/deploy-infra.md`; row in rule 233 §4) |
 
 ## 1. Owner request (CG-22)
@@ -151,8 +152,12 @@ timers, the release approval contract, the runner, the immutable bootstrap.
 | r2 fix PR #638, head `be0106f4` | run `43741198071` **success**: Critical Test Gate **10,220 passed**, 0 failed (`DeployHardenLeastPrivilegeTest` PASS, incl. the two hardlink tests); Selective, Quality, Android, NSF-9, NSF-10 passed; Full Suite skipped = DEFERRED |
 | r2 merge | squash, pinned to `be0106f47034bf5bc5f1fd7a216add4eb22c4c12`: **`92cb5572304c38e74aa5c48b146a9bcad0bc98e5`**, parent `861ded62`, tree `86e5b43cdf5281cadba4ddb606b7903df4d191b3` = tested head tree |
 | Post-merge push CI on `92cb5572…` | run `43748162075` **success** (18:41Z → 19:58Z): Critical Test Gate **10,220 passed**, 0 failed; Selective, Quality, Android, NSF-9, NSF-10 success; Full Suite skipped = DEFERRED. Base tip still `92cb5572…`, tree `86e5b43c…` unchanged |
+| r3 fix PR #640, head `fb943082` | run `43767942068` **success**: Critical Test Gate **10,222 passed**, 0 failed (both r3 tests ran: PASS); Selective, Quality, Android, NSF-9, NSF-10 passed; Full Suite skipped = DEFERRED |
+| r3 merge | squash, pinned to `fb94308259fc84315843aa5a03ce34322ab320f3`: **`75ac3578808a8dd8c720bf38e98a86685183eb66`**, parent `fcafdd70`, tree `d7a13105…` = tested head tree |
+| Post-merge push CI on `75ac3578…` | run `43773683512` **success**: Critical Test Gate **10,222 passed**, 0 failed (the second runner variant skipped, as on every post-merge run); Selective, Quality, Android, NSF-9, NSF-10 success; Full Suite skipped = DEFERRED |
+| Approval PR #641, head `d6224055` | run `43785839296` **success**: Critical Test Gate **10,222 passed** (docs-only skip step skipped: the tests ran) |
 | Full Suite | **DEFERRED** (CG-18 global policy) — not passed |
-| Graphify 0.9.99 `graphify update .` | 58,628 nodes, 142,366 edges, 2,449 communities (rule 233's tree: 58,463 / 142,051 / 2,421); `graphify-out/` untracked |
+| Graphify 0.9.99 `graphify update .` | 58,628 nodes, 142,366 edges, 2,449 communities (rule 233's tree: 58,463 / 142,051 / 2,421); at closure (`ccbc313b`, r3 included) 58,677 / 142,457 / 2,385 (§14); `graphify-out/` untracked |
 
 ## 7. On-host build rehearsal
 
@@ -263,10 +268,10 @@ the last matching rule wins and sudo would never prompt; `sudo -k; sudo -v` does
 
 ## 9. Residual risks and open owner decisions
 
-- **OD-6 cutover is owner-gated.** The administrator's passwordless rule is retired only after the owner proves the
-  password in their own terminal (runbook §6f step 7); root's password is locked, so that password (and the
-  provider's web console) is the recovery path. The owner approved `dmsadmin` as the break-glass administrator role
-  and proved the password over SSH and the console (§11.1–11.2).
+- **OD-6 cutover: done** (2026-11-16T02:28:48Z, §12.3). Every administrator root step now needs the owner's password:
+  root's password is locked, so that password (SSH, or the provider's web console) is the recovery path; the owner
+  proved both after the cutover. Agents can no longer run `sudo -n` on the host; read-only host checks go through the
+  operator (`posture`, `drift-check`, `sudo-policy-check`, `trust-check`).
 - Build caches persist between deploys (a poisoned cache reaches only vendor code the runtime already runs, never root).
 - Root's dump staging copy lives in the run's snapshot directory on the `/run` tmpfs (1.6 GB, 1.1 MB used; dump
   ≈ 34 MB on 2026-11-15): a database past ≈ 1.5 GB would stop the deploy — closed, before the checkout — until the
@@ -289,10 +294,10 @@ the last matching rule wins and sudo would never prompt; `sudo -k; sudo -v` does
 | r2 release approval | owner approval (§11.5), signature (§11.6); approval PR #639 merged `fcafdd70` |
 | §6f for r2 | rehearsal **PASS**, operator provisioned, boundary proven; the operator **refused every action** (Node.js symlinks) — deploy not started (§7.2); fix → release `-r3` |
 | r3 fix | PR #640 (CI run `43767942068`: Critical Gate 10,222 passed) merged `75ac3578`; post-merge CI run `43773683512` green (Critical Gate 10,222 passed; Full Suite deferred, CG-18) |
-| r3 release approval | owner approval 2026-11-16T00:56:39Z (§11.7), signature verified (§11.8); approval PR pending |
-| One-time provisioning, rehearsal, deploy through the operator | pending (runbook §6f, from r3) |
-| Administrator's passwordless sudo retired (owner-gated) | pending |
-| Production verification, GO tag | pending |
+| r3 release approval | owner approval 2026-11-16T00:56:39Z (§11.7), signature verified (§11.8); approval PR #641 merged `ccbc313b` |
+| One-time provisioning, rehearsal, deploy through the operator | **done** (§12.2): deploy `20261116-022520`, `DEPLOY RUNNER OK` |
+| Administrator's passwordless sudo retired (owner-gated) | **done** 02:28:48Z; `SUDO_POLICY=LEAST_PRIVILEGE`; owner `ADMIN_ROOT_OK` over SSH and console (§12.3) |
+| Production verification, GO tag | **done**: §12.2–12.4; `dms-deploy-privsep-phase-2-go` → `75ac3578` |
 
 ## 11. Owner decisions (CG-22)
 
@@ -430,3 +435,120 @@ fingerprints, read over the pinned channel, equal the pin and the two removed en
 | Disk / `/run` | 48 G free / 1.6 G free |
 | Sudo (OD-6, before) | `/etc/sudoers.d/10-dmsadmin` = `dmsadmin ALL=(ALL) NOPASSWD:ALL`; operator and build accounts absent |
 
+
+### 12.2 Runbook §6f for `75ac3578` (r3) and the deploy through the operator (2026-11-16)
+
+| Step | Result |
+|---|---|
+| Target | `PRODUCTION_TARGET=VERIFIED` (administrator alias) |
+| Approval on the host | `FETCH_HEAD` `ccbc313b`; record SHA-256 `0194ae95…0d72` equals the workstation's; `Good "dms-release-approval" signature for owner` against the host anchor; `RELEASE GUARD TRUST: READY`; HEAD `9312818f`, tracked tree clean |
+| Export `/root/dms-release-75ac3578…` | 76 files in the commit, 76 on disk, 0 mismatches (r2's record and signature are now in the tree); root `0700`; 0 writable, 0 non-root, 0 symlinks |
+| Build identity | dry run, `--apply` (idempotent) |
+| Rehearsal `--ref 75ac3578…` | **`BUILD_PRIVSEP_REHEARSAL=PASS`**: vendor 13,226 / node_modules 6,452 / public/build 19 entries, all root-owned and not writable; manifest `30fa536d…53b7` = live; composer 6 s, npm 15 s; 0 workspaces, 0 build processes left |
+| Operator re-provisioned (`--operator`, dry run then `--apply`) | existing account accepted (own group only, password locked); entrypoint reinstalled, SHA-256 `3b1e0121…2461` = the commit blob (carries `dms_operator_link_inside`); drop-in re-rendered `root 0440`; `visudo -c` OK; verdict `OPERATOR` |
+| Sudo boundary | `sudo -ll -U` lists exactly the three rendered expressions; **8/8** allowed, **11/11** refused (the §7.2 set) |
+| SSH boundary | no command, `id`, `status; id`, `rollback …` → `DEPLOY_OPERATOR=DENIED` exit 64; PTY refused; `-W` administratively prohibited; sftp and scp closed |
+| **`ssh … trust-check` (operator)** | **`RELEASE GUARD TRUST: READY`** (r2's refusal is gone) |
+| `production-target-check.sh --operator --remote` (before the deploy) | `NOT_VERIFIED`: its remote half asks `posture`, whose program arrives with this release (`…production-posture.sh is missing`). Deviation, recorded: the operator's target rested on the administrator alias's `VERIFIED`, the operator alias's static checks (same address, only the pinned ED25519 key, `StrictHostKeyChecking yes`) and the operator's `trust-check` (`HOST_KEY=OK`); the check was run again right after the deploy (below). Runbook §6f step 5 now says so |
+| Time | 10:24 WITA (outside the 02:25–02:40 WITA backup window) |
+| **`ssh … start --release-id dms-deploy-privsep-phase-2-r3 --approved-sha 75ac3578…`** | `RELEASE APPROVAL: GO` (signature, ancestry with only approvals and docs after the target, release unspent, window); deploy **`20261116-022520`**, 02:25:20Z → 02:27:06Z |
+| `verify 20261116-022520` (operator) | **`DEPLOY_APPROVED_TARGET_MATCH=YES (75ac3578…)`**, `final exit=0`, **`DEPLOY RUNNER OK`**; runner contract 4; signer key and host key recorded; status `exit=0` |
+| Deploy log (1,276 lines, read as root before the cutover) | `PRODUCTION HOST PREFLIGHT: GO`; `Pre-deploy backup: …pre_auto_deploy_20261116-022521.sql sha256=ba61d690…734e`; `== Composer install (build identity, rule 235) ==` (nothing to install), `== NPM build (build identity, rule 235) ==` (`npm ci` + `vite build`); post-autoload-dump as the runtime user; `Nothing to migrate`; runtime isolation 107 GO / 0 FAIL; `DEPLOY_PRIVSEP_RUNTIME_FOREIGN_ENTRIES=0`, `…SOURCE_FOREIGN_ENTRIES=0`, **`DEPLOY_PRIVSEP=ENFORCED`**; nginx test OK; **`DEPLOY OK`** |
+| Pre-deploy dump | 34,083,952 bytes, runtime-owned `0640`; SHA-256 recomputed as root = the logged digest |
+| `drift-check` / `posture` (operator) | `PRIVSEP_DRIFT=NONE` (0/0); HEAD `75ac3578…`, tracked 0; php8.3-fpm, nginx, postgresql active; queue worker inactive+disabled; db-backup and BK-2 package timers active; KTP-prune and pilot-snapshot timers disabled (all unchanged); locks IDLE; **166** ERROR lines (= baseline) |
+| `production-target-check.sh --operator --remote` (after) | **`PRODUCTION_TARGET=VERIFIED`** (hostname and address read through `posture`) |
+| Smoke (canonical URL) | `/login`, `/health/live`, `/health/ready`, `/health/lb` → 200; `/storage/`, a private storage path → 403 |
+| Build artifacts | manifest SHA-256 `30fa536d…53b7` (unchanged); `vendor/`, `node_modules/`, `public/build` 0 non-root or writable entries; `public/build` 0 symlinks (`node_modules` holds npm's 22 `.bin` links); 0 build processes; 0 transient units |
+| Export | removed after `DEPLOY RUNNER OK` with no runner process; 0 exports left |
+
+### 12.3 OD-6 cutover (2026-11-16T02:28:48Z)
+
+Before: `visudo -c` OK; `/etc/sudoers.d/10-dmsadmin` = `dmsadmin ALL=(ALL) NOPASSWD:ALL`; the administrator's password
+set (`P`); no cron, cron.d entry or systemd unit runs as the administrator; `sudo-policy-check` (operator) reported
+`SUDO_POLICY=VIOLATION` with exactly one violation, that rule (expected before the cutover).
+`provision-deploy-identities.sh --retire-admin-nopasswd --admin-password-verified` from the deployed tree: dry run,
+then `--apply` → the drop-in moved to `/root/sudoers-retired/10-dmsadmin.20261116T022848Z` (kept, not deleted), whole
+policy re-checked, `administrator sudo verdict: ADMIN_PASSWORD`, `ADMIN_NOPASSWD=RETIRED`.
+
+| Check after | Result |
+|---|---|
+| `sudo -k; sudo -n true` as the administrator | **refused**: `sudo: a password is required` (exit 1); `sudo -n -l` exit 1 |
+| `sudo-policy-check` (operator) | administrator `ADMIN_PASSWORD`, operator `OPERATOR`, 36 accounts without sudo, entrypoint `CURRENT`, 0 untrusted sudoers files, syntax OK, **0 violations, `SUDO_POLICY=LEAST_PRIVILEGE`** |
+| Operator still works | `trust-check` READY, `drift-check` NONE; a negative request still `DENIED` |
+| Target checks | administrator alias and operator alias both `PRODUCTION_TARGET=VERIFIED` |
+| Owner recovery (condition 7) | the owner, in their own terminal: `ssh -t daengtisiams-biznet-prod 'sudo -k; sudo -v && echo ADMIN_ROOT_OK'` → **`ADMIN_ROOT_OK`**; Biznet web console login and `sudo -k; sudo -v` → PASS ("ADMIN_ROOT_OK (SSH + console)") |
+
+OD-6 conditions (§11.2): 1 password-only administrator — met; 2 operator as designed and tested — met; 3 sudo
+validated before and after — met; 4 old rule removed only after its replacement carried a real deploy — met (moved,
+kept); 5 legitimate commands succeed, unauthorized refused — met (§12.2, above); 6 no equivalent unrestricted path —
+`SUDO_POLICY=LEAST_PRIVILEGE` over every account; 7 SSH and console recovery — proven by the owner; 8 release guard,
+signed approval and rollback authorization kept — met; 9 BK-2 never run — met; 10 GO only after CI, deploy and
+verification — met.
+
+### 12.4 GO
+
+Before the tag: tags fetched; `dms-deploy-privsep-phase-2-go` absent locally and on `origin`; `go_tag` in
+`75ac3578:.sprint/current.yml` = `dms-deploy-privsep-phase-2-go`; smoke 200 ×4 / 403; `posture` HEAD `75ac3578…`,
+locks IDLE, 166 ERROR lines. Annotated tag **`dms-deploy-privsep-phase-2-go`** (object `35fd319b…`) on
+**`75ac3578808a8dd8c720bf38e98a86685183eb66`** = the production HEAD, pushed and re-read from `origin`. BK-2: skipped
+(rule 232). Rollback: none.
+
+## 13. Permanent standards (owner brief, Phase P)
+
+The owner's 20 standing policies, each with ONE authority (rule 233 §4 is the index) and its enforcement. No new
+rule file was needed: the gaps were three index rows (host identity, finding evidence, temporary resources).
+
+| # | Policy | Authority | Enforced by |
+|---|---|---|---|
+| 1 | No unrestricted sudo for deploy accounts | rule 235 §2.1 | `sudo-policy-check.sh` (`SUDO_POLICY`); `DeployHardenLeastPrivilegeTest` classifier matrix |
+| 2 | Privileged execution only through allowlisted operations | rule 235 §2.2 | rendered sudo expressions + entrypoint allowlist, cross-checked by tests; host `sudo -l -U` probes |
+| 3 | Trusted root entrypoints protected against lower-privilege writes | rule 235 §2.3 | entrypoint chain/tree/tool trust walk (fail closed, exit 65); tests incl. r3 leave-and-return |
+| 4 | Privileged arguments validated | rule 235 §2.2–2.3 | strict request regex in the gateway and again as root; sudo regex arguments; 32 hostile requests in tests |
+| 5 | composer/npm never as root | rule 235 §2.4 | `dms_build_run` sandbox; CI scanner (`build_line_prefix`); deploy log sections |
+| 6 | Application PHP never as root | rule 233 | runtime privsep helpers; scanner; `DEPLOY_PRIVSEP=ENFORCED` |
+| 7 | Runtime storage never controls trusted code | rule 233, rule 235 §2.5 | placeholders-only guard test; source/runtime foreign-entry gates |
+| 8 | Restore requires integrity verification | rule 235 §2.6 | `restore-integrity.sh`; R4 evidence matrix tests |
+| 9 | Production restore needs explicit authorization | rule 235 §2.7 | not reachable by the operator; administrator password; `--force-production` + typed confirmation |
+| 10 | Rollback needs the owner's explicit decision | CG-15, CG-22, rule 231 §8c S1 | operator cannot roll back; full-SHA ancestor guard; administrator password |
+| 11 | Runners execute on the approved VPS | CG-15, rule 92, AIR-DEP-01/02 | production host preflight in every deploy; immutable snapshot bootstrap |
+| 12 | Host identity and release SHA verification mandatory | CG-14, rules 229/231 | `production-target-check.sh` (`--operator`); release guard `DEPLOYMENT=DENIED` |
+| 13 | Privilege drift fails closed | rule 233 | `privsep-drift-check.sh`; the deploy's final gate |
+| 14 | Pre-deploy database backup mandatory | rule 176, rule 235 §2.6 | the deploy stops before the checkout if the dump or its digest fails |
+| 15 | BK-2 manual-only | rule 232 | never a gate; not invoked by deploy or rollback |
+| 16 | Offline custody optional | `DMS-OFFLINE-CUSTODY-OPTIONAL-1` (rule 233 §4) | owner policy; no gate requires it |
+| 17 | Read-only production smoke | CG-13, CG-14 | runbook §6b step 6; no fabricated records |
+| 18 | GO tags only after production verification | CG-16, CG-17 | runbook §6b step 8; `verify` → `DEPLOY RUNNER OK` |
+| 19 | Security findings closed only on evidence | CG-21 | sprint doc evidence tables; review findings fixed before merge |
+| 20 | Temporary resources cleaned after the sprint | CG-20, CG-02 | closure cleanup with measured counts (§15) |
+
+## 14. Knowledge and architecture
+
+- **Graphify 0.9.99** (`graphify update .`, no LLM) on the closure tree `ccbc313b`: 58,628 → **58,677** nodes,
+  142,366 → **142,457** edges, 2,385 communities. Present: `deploy-operator-entrypoint.sh` (26 nodes, incl.
+  `dms_operator_link_inside`, `dms_operator_trusted_tree`, `dms_operator_dispatch`), `sudo-policy.sh`,
+  `sudo-policy-check.sh`, `provision-deploy-identities.sh`, `build-privsep.sh` (`dms_build_run`, `dms_build_claim`,
+  `dms_build_handover`, `_dms_build_escaping_hardlinks`), `build-privsep-rehearsal.sh`, `restore-integrity.sh`
+  (`dms_restore_evidence_digest`), `production-posture.sh`, `runtime-privsep.sh` (`dms_privsep_as_runtime_fn_from`).
+  Limit: for shell, Graphify extracts definitions within a file, not calls across sourced files (no edge
+  `deploy-vps.sh` → `dms_build_run`). `graphify-out/` is untracked.
+- **Dataviz:** a security-hardening summary (privileged operations before/after, allowed vs refused probes per channel,
+  the three release attempts, findings closed, production checks), measured data only, no host address, account name
+  or key material; palette validated with the dataviz validator (light and dark: all checks pass). Private artifact,
+  shared by the owner if wanted.
+- **Obsidian:** the vault worktree is synchronized to the closure merge commit after this PR merges (CG-02: detached
+  checkout, never an edit); the result is reported with the final report.
+- **Rules touched at closure:** rule 233 §4 (three index rows), runbook §6f (status; step 5 bootstrap ordering),
+  `docs/ai-knowledge/23_DaengtisiaMS_Deployment_VPS_Runbook.md` (access line). `CLAUDE.md` CG-14/CG-15, `AGENTS.md`,
+  rule 235 and AIR-DEP-40 already state the post-cutover model (PR #636) and are unchanged.
+
+## 15. Cleanup (measured before the closure PR)
+
+| Resource | Result |
+|---|---|
+| Worktrees | 4 removed (implementation/r2, r2 approval, r3, r3 approval; each clean, its PR merged); the closure worktree is removed after its merge; `~/Projects/dms-release-approval-direct-1` is the next sprint's (DMS-RELEASE-APPROVAL-DIRECT-1), kept |
+| Branches | 6 sprint branches deleted locally and on `origin` (#636–#641, each merged at its tested head); 0 left |
+| Temporary database schemas | 0 (none besides `public` in the local test database) |
+| Background processes | 0 (no CI watcher, test run, graph build or SSH session of this sprint) |
+| Workstation backups | the sprint's two (`~/.ssh` config before the operator alias; known-hosts before the approved key removal) removed after both target checks `VERIFIED`; two older ones from earlier sprints untouched |
+| Host | exports 0; rehearsal workspaces 0; build processes 0; transient units 0; deploy, release and rollback locks IDLE; `/root/sudoers-retired/` kept (recovery); the build identity's cache kept (in use) |
+| Deploy snapshot | **0 left**: the owner, with the administrator's password (the directory is root-only since the cutover), read `/run/daengtisiams-deploy` (no `deploy-…` snapshot directory) and the deploy log's tail (`DEPLOY_SNAPSHOT_CLEANED=YES`) |

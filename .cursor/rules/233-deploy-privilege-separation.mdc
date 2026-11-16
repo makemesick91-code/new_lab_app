@@ -88,6 +88,7 @@ mode, or adding the runtime user to a privileged group. The library is a closure
 | Least privilege; no root PHP; no recursive chmod/chown over runtime trees; drift detection | this rule |
 | No passwordless unrestricted sudo; operator entrypoint only; composer/npm as the sandboxed build identity; restore digest evidence; runtime trees hold no trusted code | rule 235 |
 | Exact approved SHA, owner-signed host-key-bound single-use approval, trust anchor | rules 229 and 231 |
+| Host identity proven before any sensitive operation (`production-target-check.sh --remote`, and `--operator` once the host runs rule 235) → `PRODUCTION_TARGET=VERIFIED` | CG-14, runbook `production-host-identity.md` §3 |
 | Signing and SSH keys stay with the owner: never generated, held, logged or committed by an agent | rule 231, CG-11 |
 | Offline copy of the signing key is optional (owner policy `DMS-OFFLINE-CUSTODY-OPTIONAL-1`) | `docs/sprints/dms-release-guard-trust-hardening-1.md` §13.2 |
 | BK-2 manual-only, never a gate; the deploy's own dump stays mandatory | rule 232, rule 176 |
@@ -95,4 +96,6 @@ mode, or adding the runtime user to a privileged group. The library is a closure
 | Rollback only on the owner's explicit decision, by full SHA, code only | CG-15, CG-22, rule 231 §8c S1 |
 | Deploy evidence: `verify <id>` → `DEPLOY RUNNER OK` plus this rule's markers | AIR-DEP-33, rule 231 contract 4 |
 | GO only after merge, deploy and production verification on the exact SHA | CG-16, CG-17 |
+| A security finding closes only on reproduced evidence (code, test, host read-out), never on a claim | CG-21 |
+| Every temporary resource a sprint creates (worktree, branch, schema, export, process, lock) has an owner that removes it at closure | CG-20, CG-02 |
 | Graphify and docs follow architecture changes | CG-23, CG-24 |
