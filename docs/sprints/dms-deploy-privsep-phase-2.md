@@ -288,7 +288,8 @@ the last matching rule wins and sudo would never prompt; `sudo -k; sudo -v` does
 | r2 fix | PR #638 merged `92cb5572` (§6); post-merge CI green (§6) |
 | r2 release approval | owner approval (§11.5), signature (§11.6); approval PR #639 merged `fcafdd70` |
 | §6f for r2 | rehearsal **PASS**, operator provisioned, boundary proven; the operator **refused every action** (Node.js symlinks) — deploy not started (§7.2); fix → release `-r3` |
-| r3 fix | pending (PR, CI, merge, post-merge CI) |
+| r3 fix | PR #640 (CI run `43767942068`: Critical Gate 10,222 passed) merged `75ac3578`; post-merge CI run `43773683512` green (Critical Gate 10,222 passed; Full Suite deferred, CG-18) |
+| r3 release approval | owner approval 2026-11-16T00:56:39Z (§11.7); owner signature pending; approval PR pending |
 | One-time provisioning, rehearsal, deploy through the operator | pending (runbook §6f, from r3) |
 | Administrator's passwordless sudo retired (owner-gated) | pending |
 | Production verification, GO tag | pending |
@@ -378,6 +379,22 @@ blob `3acd5a465e4ef065e986506e0608bd2b54b9ef71` over the committed record blob
 `af57da8ccfd6ee44fa7dbd31fb389c283c3eae36`: `Good "dms-release-approval" signature for owner with ED25519 key
 SHA256:0WGGTlMDzLPGAhQaRG+Ag7BqoypSLinSNOHalZKtgt4`. Refused (exit 255): namespace `git`; `NOT_AFTER` one second
 later; principal `someone`; and the `c7638a6f` signature against the r2 record.
+
+### 11.7 Release approval r3 of the exact SHA (2026-11-16T00:56:39Z)
+
+The r2 release was not deployed (§7.2). After the fix PR #640 merged as `75ac3578…` and its post-merge CI run
+`43773683512` was green (Critical Gate 10,222 passed), and a read-only preflight (target `VERIFIED`, HEAD `9312818f`
+clean, `RELEASE GUARD TRUST: READY`, `PRIVSEP_DRIFT=NONE`, no runner, 166 ERROR lines), the owner answered
+**"Approve 75ac3578"** to: deploying **`75ac3578808a8dd8c720bf38e98a86685183eb66`** (tree
+`d7a13105cbccb9be95d687d1cc646e04b39d18ef`; PR #640) to production on Biznet `DaengtisiaMS` as release
+`dms-deploy-privsep-phase-2-r3`, through runbook §6f, under the same conditions as §11.5 (re-provision the operator,
+which reinstalls the entrypoint; deploy through the operator; the OD-6 cutover as approved in §11.1–11.2, the
+administrator's drop-in retired only after verification; pre-deploy dump mandatory; BK-2 skipped; rollback only on
+the owner's explicit go-ahead, by full SHA `9312818fc9115707b9e0b351ae805080be465b4a`, code only; GO tag
+`dms-deploy-privsep-phase-2-go` only after production verification; 48-hour window). The r2 and `c7638a6f` records
+stay untouched and unused.
+
+Record: `deploy/release-approvals/dms-deploy-privsep-phase-2-r3.approval` (contract 2, window 2026-11-16T00:56:39Z → 2026-11-18T00:56:39Z).
 
 ## 12. Deploy and production verification
 

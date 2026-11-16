@@ -1,0 +1,16 @@
+# DMS-DEPLOY-PRIVSEP-PHASE-2 release r3 production approval (rules 229 and 231, contract 2).
+# Owner decisions: docs/sprints/dms-deploy-privsep-phase-2.md section 11.
+# Deploy procedure: docs/runbooks/production-host-identity.md section 6f.
+DMS_APPROVAL_CONTRACT=2
+DMS_APPROVAL_RELEASE_ID=dms-deploy-privsep-phase-2-r3
+DMS_APPROVAL_REPOSITORY=makemesick91-code/new_lab_app
+DMS_APPROVAL_HOST=DaengtisiaMS
+DMS_APPROVAL_HOST_KEY_SHA256=SHA256:i3AsyL0oSwqSAwNfgv215Cl01i87buYtH5ugTe8O2bc
+DMS_APPROVAL_BASE_BRANCH=feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
+DMS_APPROVAL_TARGET_SHA=75ac3578808a8dd8c720bf38e98a86685183eb66
+DMS_APPROVAL_TARGET_TREE=d7a13105cbccb9be95d687d1cc646e04b39d18ef
+DMS_APPROVAL_GO_TAG=dms-deploy-privsep-phase-2-go
+DMS_APPROVAL_APPROVED_BY=owner
+DMS_APPROVAL_APPROVED_AT=2026-11-16T00:56:39Z
+DMS_APPROVAL_NOT_AFTER=2026-11-18T00:56:39Z
+DMS_APPROVAL_EVIDENCE=docs/sprints/dms-deploy-privsep-phase-2.md
