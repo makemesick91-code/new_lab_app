@@ -102,8 +102,10 @@ owns the advisory-lock pattern §4 reuses.
 20. Invoice and payment MAX reads use `withTrashed()`: the UNIQUE indexes still hold a soft-deleted row's number, so
     ignoring it would reissue that number and wedge the whole month on HTTP 500. Consents have no soft delete; a voided
     consent keeps its number.
-21. Nothing is renumbered. Every issued number keeps its value; the month prefixes are unchanged (the invoice and
-    payment prefixes still use `now()` — P8R-S6 is a D3 item).
+21. Nothing is renumbered. Every issued number keeps its value. **P8R-S6 closed by DMS-RME-COMPREHENSIVE-CLOSURE-1
+    (rule 237 §1, owner decision 2026-11-16):** the invoice and payment month now comes from `ClinicalClock`, as the
+    consent month always did, so one `$month` (clinic month) drives the lock objid, the MAX read and the prefix. A
+    number issued before that release under the UTC label (00:00–07:59 WITA on a 1st) keeps it.
 22. Lock order is unchanged and deadlock-free: every caller already holds its row locks (visit, invoice) before the
     generator runs, and the three namespaces never wait for each other.
 

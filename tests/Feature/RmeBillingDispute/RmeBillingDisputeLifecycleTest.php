@@ -455,3 +455,18 @@ it('never notifies the reviewer of their own escalation (mutation M13)', functio
     expect(test()->reviewer->fresh()->notifications()->count())->toBe(1)
         ->and(test()->viewer->fresh()->notifications()->count())->toBe(1);
 });
+
+// ─── DMS-RME-COMPREHENSIVE-CLOSURE-1 (P8R-S6, CG-12) ─────────────────────────
+
+it('numbers a dispute in the clinic month, not the UTC month, at 00:30 WITA on the 1st', function () {
+    // 2026-11-30 16:30 UTC = 2026-12-01 00:30 WITA. Before the fix: RMEDSP-202611-….
+    pinTestClock('2026-11-30 16:30:00');
+
+    try {
+        $dispute = rbdReport(ricInvoice());
+
+        expect($dispute->dispute_number)->toBe('RMEDSP-202612-'.str_pad((string) $dispute->id, 6, '0', STR_PAD_LEFT));
+    } finally {
+        freeTestClock();
+    }
+});

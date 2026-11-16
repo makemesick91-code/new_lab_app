@@ -39,7 +39,10 @@ return [
             'connection' => env('DB_QUEUE_CONNECTION'),
             'table' => env('DB_QUEUE_TABLE', 'jobs'),
             'queue' => env('DB_QUEUE', 'default'),
-            'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 90),
+            // DMS-RME-COMPREHENSIVE-CLOSURE-1 (OPS-Q): longer than every job's own
+            // timeout (legacy PDF renders: process_timeout 180 + 60 = 240 s), or a
+            // render still running is handed to a second worker and done twice.
+            'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 300),
             'after_commit' => false,
         ],
 

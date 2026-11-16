@@ -32,6 +32,11 @@ declare(strict_types=1);
 |
 | Helper prefix `p8bnum` is unique because the critical gate loads every suite
 | into one process.
+|
+| DMS-RME-COMPREHENSIVE-CLOSURE-1 (P8R-S6, CG-12): the invoice and payment
+| months now come from ClinicalClock, as the consent month always did. The
+| helpers below follow the generators, and the previous-month arithmetic uses
+| `!Ym` (day 1) so it cannot overflow on the 29th-31st (CG-20).
 */
 
 use App\Modules\ClinicVisit\Support\ClinicVisitSequenceLock;
@@ -52,12 +57,22 @@ const P8BNUM_PROBE = 'p8bnum_sequence_lock_probe';
 
 function p8bnumInvoiceMonth(): string
 {
-    return now()->format('Ym');
+    // P8R-S6 — the clinic's month, exactly as the generators compute it.
+    return app(ClinicalClock::class)->today()->format('Ym');
 }
 
 function p8bnumConsentMonth(): string
 {
     return app(ClinicalClock::class)->today()->format('Ym');
+}
+
+/**
+ * The month before a YYYYMM month. `!Ym` resets the day to 1: a bare `Ym` keeps
+ * today's day, so on 2027-01-31 "202702 minus one month" overflowed to 202702.
+ */
+function p8bnumPreviousMonth(string $month): string
+{
+    return CarbonImmutable::createFromFormat('!Ym', $month)->subMonth()->format('Ym');
 }
 
 /** Run a generator the way production does: inside a transaction. */
@@ -90,6 +105,8 @@ function p8bnumLockFree(int $namespace, string $month): bool
 }
 
 afterEach(function () {
+    freeTestClock();
+
     if (config()->has('database.connections.'.P8BNUM_PROBE)) {
         DB::connection(P8BNUM_PROBE)->rollBack(0);
         DB::purge(P8BNUM_PROBE);
@@ -206,11 +223,59 @@ it('leaves every number already issued untouched', function () {
 
 it('ignores another month and malformed numbers when choosing the next one', function () {
     $month = p8bnumInvoiceMonth();
-    $previous = now()->copy()->startOfMonth()->subMonth()->format('Ym');
+    $previous = p8bnumPreviousMonth($month);
     RmeInvoice::factory()->create(['invoice_number' => 'RME-'.$previous.'-000900']);
     RmeInvoice::factory()->create(['invoice_number' => 'RME-'.$month.'-000010']);
 
     expect(p8bnumGenerate(RmeInvoiceNumberGeneratorService::class))->toBe('RME-'.$month.'-000011');
+});
+/*
+|--------------------------------------------------------------------------
+| The clinic's month (P8R-S6) — every driver
+|--------------------------------------------------------------------------
+|
+| UTC 16:00 is 00:00 WITA. Until DMS-RME-COMPREHENSIVE-CLOSURE-1 an invoice or
+| payment issued 00:00-07:59 WITA on the 1st carried the PREVIOUS month.
+*/
+
+dataset('p8bnum clinic month boundaries', [
+    'last UTC second of the clinic month' => ['2026-11-30 15:59:59', '202611'],
+    '00:00 WITA on the 1st (UTC still on the 30th)' => ['2026-11-30 16:00:00', '202612'],
+    '07:59:59 WITA on the 1st' => ['2026-11-30 23:59:59', '202612'],
+    '08:00 WITA on the 1st (UTC caught up)' => ['2026-12-01 00:00:00', '202612'],
+    'year rollover, 00:30 WITA on 1 January' => ['2026-12-31 16:30:00', '202701'],
+]);
+
+it('numbers invoices, payments and consents in the same clinic month (P8R-S6)', function (string $utcInstant, string $clinicMonth) {
+    pinTestClock($utcInstant);
+
+    expect(p8bnumInvoiceMonth())->toBe($clinicMonth)
+        ->and(p8bnumGenerate(RmeInvoiceNumberGeneratorService::class))->toBe('RME-'.$clinicMonth.'-000001')
+        ->and(p8bnumGenerate(RmePaymentNumberGeneratorService::class))->toBe('RMEPAY-'.$clinicMonth.'-000001')
+        ->and(p8bnumGenerate(RmeVisitConsentNumberGeneratorService::class))->toBe('CONSENT-'.$clinicMonth.'-000001');
+})->with('p8bnum clinic month boundaries');
+
+it('leaves a number issued under the old UTC label alone and starts the clinic month fresh (P8R-S6)', function () {
+    // 2026-12-01 00:30 WITA. Before the fix this instant produced RME-202611-000006.
+    pinTestClock('2026-11-30 16:30:00');
+    $old = RmeInvoice::factory()->create(['invoice_number' => 'RME-202611-000005']);
+    $oldPayment = RmePayment::factory()->create(['payment_number' => 'RMEPAY-202611-000005']);
+
+    expect(p8bnumGenerate(RmeInvoiceNumberGeneratorService::class))->toBe('RME-202612-000001')
+        ->and(p8bnumGenerate(RmePaymentNumberGeneratorService::class))->toBe('RMEPAY-202612-000001')
+        ->and($old->fresh()->invoice_number)->toBe('RME-202611-000005')
+        ->and($oldPayment->fresh()->payment_number)->toBe('RMEPAY-202611-000005');
+});
+
+it('computes the previous month without overflowing on the 29th to 31st (CG-20)', function () {
+    // 2027-02-01 00:30 WITA: the clinic month is 202702 while UTC is on 31 January.
+    pinTestClock('2027-01-31 16:30:00');
+
+    expect(p8bnumInvoiceMonth())->toBe('202702')
+        ->and(p8bnumPreviousMonth('202702'))->toBe('202701')
+        ->and(p8bnumPreviousMonth('202703'))->toBe('202702')
+        ->and(p8bnumPreviousMonth('202701'))->toBe('202612')
+        ->and(p8bnumPreviousMonth('202605'))->toBe('202604');
 });
 
 /*
@@ -282,7 +347,7 @@ it('waits for a concurrent writer that holds the same month', function (string $
 it('never makes one sequence wait for another, nor for another month', function (string $generator, int $namespace, string $table, string $clock) {
     p8bnumUsePgProbe($this);
     $month = $clock === 'consent' ? p8bnumConsentMonth() : p8bnumInvoiceMonth();
-    $previous = (string) ((int) CarbonImmutable::createFromFormat('Ym', $month)->startOfMonth()->subMonth()->format('Ym'));
+    $previous = p8bnumPreviousMonth($month);
 
     $probe = DB::connection(P8BNUM_PROBE);
     $probe->beginTransaction();
@@ -302,4 +367,34 @@ it('never makes one sequence wait for another, nor for another month', function 
     }
 
     expect($number)->toEndWith('-'.$month.'-000001');
+})->with('p8bnum sequences');
+
+it('locks the clinic month, not the UTC month, at 00:30 WITA on the 1st (P8R-S6)', function (string $generator, int $namespace, string $table, string $clock) {
+    p8bnumUsePgProbe($this);
+    pinTestClock('2026-11-30 16:30:00');
+
+    // A writer still holding the UTC month (202611) must not delay this one,
+    // and this one must take 202612 — the month its number carries.
+    $probe = DB::connection(P8BNUM_PROBE);
+    $probe->beginTransaction();
+    $probe->statement('select pg_advisory_xact_lock(?, ?)', [$namespace, 202611]);
+
+    $locked = [];
+    DB::listen(function (QueryExecuted $query) use (&$locked): void {
+        if ($query->connectionName !== P8BNUM_PROBE && str_contains(strtolower($query->sql), 'pg_advisory_xact_lock')) {
+            $locked[] = array_map('intval', $query->bindings);
+        }
+    });
+
+    DB::statement("set local lock_timeout = '400ms'");
+
+    try {
+        $number = p8bnumGenerate($generator);
+    } finally {
+        $probe->rollBack();
+    }
+
+    expect($number)->toEndWith('-202612-000001')
+        ->and($locked)->toContain([$namespace, 202612])
+        ->and($locked)->not->toContain([$namespace, 202611]);
 })->with('p8bnum sequences');

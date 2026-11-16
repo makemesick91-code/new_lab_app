@@ -161,9 +161,12 @@ jobs do exist: the Legacy RME and Legacy Odontogram PDF renders
 SATUSEHAT jobs. While no worker runs, a new legacy import stays `QUEUED` and
 keeps occupying the patient's single-active-document slot. Recover by restoring
 the consumer and letting the existing job drain (see above), never by retrying
-or editing the status. Before a first activation, review the open findings in
-DMS-RME-REVISION-PROGRAM-7 §3.6 (`retry_after` and `TimeoutStopSec` are below
-the render timeout).
+or editing the status. The DMS-RME-REVISION-PROGRAM-7 §3.6 timing finding (OPS-Q:
+`retry_after` and `TimeoutStopSec` below the 240 s render timeout) is fixed in the
+repository by DMS-RME-COMPREHENSIVE-CLOSURE-1: `retry_after` defaults to 300 s and
+the unit's `TimeoutStopSec` is 270 s. Before a first activation, re-install the
+unit from the release (it reaches the host only through provisioning, a root step)
+and confirm the environment file does not pin `DB_QUEUE_RETRY_AFTER` below 300.
 
 ## Expected
 

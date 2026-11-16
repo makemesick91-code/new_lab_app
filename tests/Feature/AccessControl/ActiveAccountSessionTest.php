@@ -36,6 +36,8 @@ use App\Modules\RmeOnlineContext\Middleware\EnsureRmeOnlineContext;
 use App\Modules\RmeOnlineContext\Middleware\TouchOnlineContextLastSeen;
 use App\Modules\RmeOnlineContext\Models\UserOnlineContext;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
+use App\Modules\RmeOnlineContext\Services\UserOnlineContextService;
+use App\Modules\User\Services\UserService;
 use App\Support\AccessControl\ActiveAccountResolver;
 use Database\Seeders\BranchSeeder;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -463,4 +465,96 @@ it('starts a fresh, unauthenticated session after a deactivated account is stopp
 
     expect(session()->getId())->not->toBe($sessionBefore)
         ->and(session()->has('aas-marker'))->toBeFalse();
+});
+
+/*
+|--------------------------------------------------------------------------
+| DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-5-4) — presence drops at deactivation
+|--------------------------------------------------------------------------
+|
+| Before: only EnsureAccountIsActive dropped a deactivated account's presence,
+| on that account's NEXT request, so a deactivated doctor stayed selectable,
+| auto-assignable and room-resolvable until then. Now the deactivation itself
+| drops it, in the same transaction, without waiting for the doctor.
+*/
+
+function aasOnlineDoctorFixture(): array
+{
+    test()->seed(BranchSeeder::class);
+    $branch = Branch::factory()->create(['is_active' => true, 'is_rme_enabled' => true]);
+    $room = ClinicRoom::factory()->create(['branch_id' => $branch->id, 'status' => ClinicRoom::STATUS_ACTIVE]);
+    $doctor = Doctor::factory()->withAllowedBranches([$branch])->create(['is_active' => true]);
+    $user = rmeMakeDoctorOnline($doctor, $branch, $room);
+
+    return [$user, $branch, $room, $doctor];
+}
+
+function aasOnlineDoctorIds(Branch $branch): array
+{
+    return app(UserOnlineContextService::class)
+        ->activeDoctorsForBranch((int) $branch->id)
+        ->pluck('id')
+        ->map(fn ($id) => (int) $id)
+        ->all();
+}
+
+it('OD-5-4 drops a doctor\'s presence the moment an administrator deactivates the account', function () {
+    [$user, $branch, $room, $doctor] = aasOnlineDoctorFixture();
+    [$otherUser, , , $otherDoctor] = aasOnlineDoctorFixture();
+    $admin = userWith(['manage users']);
+
+    expect(aasOnlineDoctorIds($branch))->toContain((int) $doctor->id);
+
+    // The doctor makes no further request: the drop must not wait for one.
+    $this->actingAs($admin)
+        ->patch(route('settings.users.deactivate', $user))
+        ->assertRedirect(route('settings.users.index'));
+
+    $context = UserOnlineContext::query()->where('user_id', $user->id)->firstOrFail();
+
+    expect($user->fresh()->is_active)->toBeFalse()
+        ->and($context->status)->toBe(UserOnlineContext::STATUS_OFFLINE)
+        ->and($context->clinic_room_id)->toBeNull()
+        ->and(aasOnlineDoctorIds($branch))->not->toContain((int) $doctor->id)
+        // Nobody else's presence moves.
+        ->and(UserOnlineContext::query()->where('user_id', $otherUser->id)->value('status'))->toBe(UserOnlineContext::STATUS_ONLINE);
+});
+
+it('OD-5-4 drops the presence when the account is saved inactive through the edit form path', function () {
+    [$user, $branch, , $doctor] = aasOnlineDoctorFixture();
+
+    app(UserService::class)->update($user, ['is_active' => false]);
+
+    expect(UserOnlineContext::query()->where('user_id', $user->id)->value('status'))->toBe(UserOnlineContext::STATUS_OFFLINE)
+        ->and(aasOnlineDoctorIds($branch))->not->toContain((int) $doctor->id);
+});
+
+it('OD-5-4 keeps the presence when an edit leaves the account active', function () {
+    [$user, $branch, , $doctor] = aasOnlineDoctorFixture();
+
+    app(UserService::class)->update($user, ['name' => 'Nama Diperbarui']);
+
+    expect(UserOnlineContext::query()->where('user_id', $user->id)->value('status'))->toBe(UserOnlineContext::STATUS_ONLINE)
+        ->and(aasOnlineDoctorIds($branch))->toContain((int) $doctor->id);
+});
+
+it('OD-5-4 drops the presence when the account is deleted', function () {
+    [$user, $branch, , $doctor] = aasOnlineDoctorFixture();
+
+    app(UserService::class)->delete($user);
+
+    expect(UserOnlineContext::query()->where('user_id', $user->id)->value('status'))->toBe(UserOnlineContext::STATUS_OFFLINE)
+        ->and(aasOnlineDoctorIds($branch))->not->toContain((int) $doctor->id);
+});
+
+it('OD-5-4 still refuses deactivation to an account without the user-management permission, changing nothing', function () {
+    [$user, $branch, , $doctor] = aasOnlineDoctorFixture();
+
+    $this->actingAs(userWith([]))
+        ->patch(route('settings.users.deactivate', $user))
+        ->assertForbidden();
+
+    expect($user->fresh()->is_active)->toBeTrue()
+        ->and(UserOnlineContext::query()->where('user_id', $user->id)->value('status'))->toBe(UserOnlineContext::STATUS_ONLINE)
+        ->and(aasOnlineDoctorIds($branch))->toContain((int) $doctor->id);
 });

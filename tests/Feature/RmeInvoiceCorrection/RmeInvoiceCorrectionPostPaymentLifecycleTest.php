@@ -676,3 +676,19 @@ it('records the fingerprint of the paid invoice the checker reviews', function (
     expect($correction->invoice_fingerprint)
         ->toBe(RmeInvoiceSnapshot::fingerprint(RmeInvoiceSnapshot::capture($invoice->fresh())));
 });
+
+// ─── DMS-RME-COMPREHENSIVE-CLOSURE-1 (P8R-S6, CG-12) ─────────────────────────
+
+it('numbers an overpayment obligation in the clinic month, not the UTC month, at 00:30 WITA on the 1st', function () {
+    // 2026-11-30 16:30 UTC = 2026-12-01 00:30 WITA. Before the fix: RMEOVP-202611-….
+    pinTestClock('2026-11-30 16:30:00');
+
+    try {
+        ricApprove(rppSubmit(rppPaidInvoice(500000)));
+        $obligation = RmeOverpaymentObligation::firstOrFail();
+
+        expect($obligation->obligation_number)->toBe('RMEOVP-202612-'.str_pad((string) $obligation->id, 6, '0', STR_PAD_LEFT));
+    } finally {
+        freeTestClock();
+    }
+});

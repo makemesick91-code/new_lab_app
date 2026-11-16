@@ -5,11 +5,15 @@ declare(strict_types=1);
 use App\Models\User;
 use App\Modules\LegacyImport\MassUpload\Models\LegacyMassUploadBatch;
 use App\Modules\LegacyImport\MassUpload\Models\LegacyMassUploadItem;
+use App\Modules\LegacyImport\MassUpload\Policies\LegacyMassUploadBatchPolicy;
 use App\Modules\LegacyImport\MassUpload\Support\LegacyMassUploadBatchStatus;
 use App\Modules\LegacyImport\MassUpload\Support\LegacyMassUploadItemStatus;
 use App\Modules\LegacyImport\MassUpload\Support\LegacyMassUploadReason;
+use App\Modules\LegacyImport\Support\LegacyImportType;
+use App\Modules\LegacyOdontogram\Support\LegacyOdontogramWorkspaceScope;
 use App\Modules\LegacyRme\Models\LegacyRmeImport;
 use App\Modules\LegacyRme\Services\LegacyRmeImportService;
+use App\Modules\LegacyRme\Support\LegacyRmeWorkspaceScope;
 use App\Modules\Patient\Models\Patient;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Bus;
@@ -374,4 +378,98 @@ it('does not list another operators out of scope batch', function (): void {
     $this->actingAs($mine)
         ->get(route('settings.rme.legacy-mass-imports.show', $foreign))
         ->assertForbidden();
+});
+
+/*
+|--------------------------------------------------------------------------
+| DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-7-6) — a batch is read under its own type's scope
+|--------------------------------------------------------------------------
+|
+| An odontogram batch used to be scoped by LegacyRmeWorkspaceScope, so an RME
+| archive governor read every branch's odontogram batches and an odontogram
+| governor was pinned to one branch. Each type now uses its own archive scope,
+| in the per-batch policy and in the batch list alike.
+*/
+
+function lmuScopeUser(array $permissions, string $branchCode = 'TLK1'): User
+{
+    $user = userWith($permissions);
+    $user->forceFill(['branch_id' => legacyRmeBranch($branchCode)->id])->save();
+
+    return $user->fresh();
+}
+
+function lmuForeignBatch(string $importType, string $name): LegacyMassUploadBatch
+{
+    return LegacyMassUploadBatch::factory()->preflightReady()->create([
+        'import_type' => $importType,
+        'origin_branch_id' => legacyRmeBranch('ATG3', 'Cabang Antang')->getKey(),
+        'package_original_name' => $name,
+    ]);
+}
+
+it('OD-7-6 refuses an RME archive governor another branch\'s ODONTOGRAM batch', function (): void {
+    $rmeGovernor = lmuScopeUser(['review_legacy_rme_imports', 'create_legacy_odontogram_imports']);
+    $odontogramBatch = lmuForeignBatch(LegacyImportType::LEGACY_ODONTOGRAM, 'odonto-antang.zip');
+    $rmeBatch = lmuForeignBatch(LegacyImportType::LEGACY_RME, 'rme-antang.zip');
+
+    expect($rmeGovernor->can('view', $odontogramBatch))->toBeFalse()
+        ->and($rmeGovernor->can('cancel', $odontogramBatch))->toBeFalse()
+        ->and($rmeGovernor->can('downloadReport', $odontogramBatch))->toBeFalse();
+
+    // Holding the RME upload permission too, the RME batch stays governed as before.
+    $rmeGovernor->givePermissionTo('create_legacy_rme_imports');
+    expect($rmeGovernor->fresh()->can('view', $rmeBatch))->toBeTrue();
+});
+
+it('OD-7-6 lets an odontogram archive governor read another branch\'s odontogram batch, and not an RME one', function (): void {
+    $odontogramGovernor = lmuScopeUser(['review_legacy_odontogram_imports', 'create_legacy_odontogram_imports', 'create_legacy_rme_imports']);
+    $odontogramBatch = lmuForeignBatch(LegacyImportType::LEGACY_ODONTOGRAM, 'odonto-antang.zip');
+    $rmeBatch = lmuForeignBatch(LegacyImportType::LEGACY_RME, 'rme-antang.zip');
+
+    expect($odontogramGovernor->can('view', $odontogramBatch))->toBeTrue()
+        // Odontogram governance never widens the RME archive.
+        ->and($odontogramGovernor->can('view', $rmeBatch))->toBeFalse();
+});
+
+it('OD-7-6 keeps a branch-pinned odontogram uploader to their own branch and their own batches', function (): void {
+    $uploader = lmuScopeUser(['create_legacy_odontogram_imports']);
+    $foreign = lmuForeignBatch(LegacyImportType::LEGACY_ODONTOGRAM, 'odonto-antang.zip');
+    $own = LegacyMassUploadBatch::factory()->preflightReady()->create([
+        'import_type' => LegacyImportType::LEGACY_ODONTOGRAM,
+        'created_by' => $uploader->getKey(),
+        'origin_branch_id' => legacyRmeBranch('ATG3', 'Cabang Antang')->getKey(),
+    ]);
+
+    expect($uploader->can('view', $foreign))->toBeFalse()
+        // The creator still reads the outcome of work they submitted.
+        ->and($uploader->can('view', $own))->toBeTrue();
+});
+
+it('OD-7-6 resolves the batch scope from the type, failing closed to the RME scope', function (): void {
+    $policy = app(LegacyMassUploadBatchPolicy::class);
+
+    expect($policy->workspaceScopeFor(LegacyImportType::LEGACY_ODONTOGRAM))
+        ->toBeInstanceOf(LegacyOdontogramWorkspaceScope::class)
+        ->and($policy->workspaceScopeFor(LegacyImportType::LEGACY_RME))
+        ->toBeInstanceOf(LegacyRmeWorkspaceScope::class)
+        ->and($policy->workspaceScopeFor('NOT_A_TYPE'))
+        ->toBeInstanceOf(LegacyRmeWorkspaceScope::class);
+});
+
+it('OD-7-6 lists odontogram batches under the odontogram scope over HTTP', function (): void {
+    lmuForeignBatch(LegacyImportType::LEGACY_ODONTOGRAM, 'odonto-antang.zip');
+
+    $odontogramGovernor = lmuScopeUser(['view_legacy_odontogram_imports', 'review_legacy_odontogram_imports', 'create_legacy_odontogram_imports']);
+    $rmeGovernor = lmuScopeUser(['view_legacy_odontogram_imports', 'review_legacy_rme_imports', 'create_legacy_odontogram_imports']);
+
+    $this->actingAs($odontogramGovernor)
+        ->get(route('settings.rme.legacy-mass-odontograms.index'))
+        ->assertOk()
+        ->assertSee('odonto-antang.zip', false);
+
+    $this->actingAs($rmeGovernor)
+        ->get(route('settings.rme.legacy-mass-odontograms.index'))
+        ->assertOk()
+        ->assertDontSee('odonto-antang.zip', false);
 });

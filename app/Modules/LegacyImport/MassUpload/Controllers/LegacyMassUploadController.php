@@ -9,13 +9,13 @@ use App\Modules\LegacyImport\MassUpload\Adapters\LegacyMassUploadAdapter;
 use App\Modules\LegacyImport\MassUpload\Exceptions\LegacyMassUploadPackageRejected;
 use App\Modules\LegacyImport\MassUpload\Models\LegacyMassUploadBatch;
 use App\Modules\LegacyImport\MassUpload\Models\LegacyMassUploadItem;
+use App\Modules\LegacyImport\MassUpload\Policies\LegacyMassUploadBatchPolicy;
 use App\Modules\LegacyImport\MassUpload\Requests\StoreLegacyMassUploadPackageRequest;
 use App\Modules\LegacyImport\MassUpload\Services\LegacyMassUploadBatchService;
 use App\Modules\LegacyImport\MassUpload\Services\LegacyMassUploadDispatchService;
 use App\Modules\LegacyImport\MassUpload\Services\LegacyMassUploadManifestParser;
 use App\Modules\LegacyImport\MassUpload\Services\LegacyMassUploadReportService;
 use App\Modules\LegacyImport\MassUpload\Support\LegacyMassUploadItemStatus;
-use App\Modules\LegacyRme\Support\LegacyRmeWorkspaceScope;
 use Illuminate\Contracts\View\View;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
@@ -44,7 +44,7 @@ abstract class LegacyMassUploadController extends Controller
         protected readonly LegacyMassUploadDispatchService $dispatcher,
         protected readonly LegacyMassUploadReportService $reports,
         protected readonly LegacyMassUploadManifestParser $manifests,
-        protected readonly LegacyRmeWorkspaceScope $scope,
+        protected readonly LegacyMassUploadBatchPolicy $policy,
     ) {}
 
     /** LegacyImportType constant this surface writes to. */
@@ -73,16 +73,19 @@ abstract class LegacyMassUploadController extends Controller
             // Branch isolation, plus the operator's own batches. A batch is a
             // work-queue row, so someone whose branch context changed mid-shift
             // must still be able to read the outcome of work they submitted.
+            // DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-7-6): the scope of THIS type,
+            // from the policy that decides each batch.
             ->where(function ($query) use ($request): void {
+                $scope = $this->policy->workspaceScopeFor($this->importType());
                 $query->where('created_by', $request->user()?->getKey());
 
-                $branchIds = $this->scope->branchIdsFor($request->user());
+                $branchIds = $scope->branchIdsFor($request->user());
 
                 if ($branchIds !== []) {
                     $query->orWhereIn('origin_branch_id', $branchIds);
                 }
 
-                if ($this->scope->includesUnscopedRowsFor($request->user())) {
+                if ($scope->includesUnscopedRowsFor($request->user())) {
                     $query->orWhereNull('origin_branch_id');
                 }
             })

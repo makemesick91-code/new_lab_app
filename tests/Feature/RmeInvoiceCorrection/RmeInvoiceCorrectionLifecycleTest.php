@@ -619,3 +619,19 @@ it('refuses moving a terminal correction status at the model layer', function ()
     expect(fn () => $correction->fresh()->forceFill(['status' => RmeInvoiceCorrectionStatus::SUBMITTED])->save())->toThrow(LogicException::class);
     expect($correction->fresh()->status)->toBe(RmeInvoiceCorrectionStatus::APPLIED);
 });
+
+// ─── DMS-RME-COMPREHENSIVE-CLOSURE-1 (P8R-S6, CG-12) ─────────────────────────
+
+it('numbers a correction in the clinic month, not the UTC month, at 00:30 WITA on the 1st', function () {
+    // 2026-11-30 16:30 UTC = 2026-12-01 00:30 WITA. Before the fix: RMECOR-202611-….
+    pinTestClock('2026-11-30 16:30:00');
+
+    try {
+        $correction = ricSubmit(ricInvoice());
+
+        expect($correction->correction_number)->toStartWith('RMECOR-202612-')
+            ->and($correction->correction_number)->toBe('RMECOR-202612-'.str_pad((string) $correction->id, 6, '0', STR_PAD_LEFT));
+    } finally {
+        freeTestClock();
+    }
+});

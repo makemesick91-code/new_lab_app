@@ -1,29 +1,33 @@
-# DMS-RELEASE-APPROVAL-DIRECT-1 (2026-11-16). Owner-ordered release-engineering change: approval contract 3 (rule
-# 236) — the owner signs a canonical release approval locally and the deploy operator submits it to the host's
-# root-only approval store, so a release needs no approval-only branch, commit, PR, CI run or merge; the host verifies
-# the signature, every exact binding and the target commit's CI (GitHub, critical tests actually run) itself. Deploy
-# tooling, authority, operator entrypoint, evidence and tests. No schema, migration, permission, role, route, JS/CSS
-# or package change.
+# DMS-RME-COMPREHENSIVE-CLOSURE-1 (2026-11-16). Owner-ordered comprehensive RME audit and remediation of every
+# confirmed pending RME item, under owner decisions taken 2026-11-16 (recorded in
+# docs/sprints/dms-rme-comprehensive-closure-1.md §2). Delivered as TWO implementation pull requests because
+# `sprint:scope-audit --strict` refuses more than 10 changed app/*.php files under SECURITY_FIX:
+# PR1 (this) = clinic-month document numbers (P8R-S6 + RMECOR/RMEOVP/RMEDSP), refused clinical forms never flash
+# signatures or canvases into the session, clinical and patient-data prints answer private no-store, handwriting
+# payload bounds, queue timing order (OPS-Q), OD-7-6 odontogram batch scope, OD-5-4 deactivated account presence,
+# OD-7-1 and unsigned-print rule text (rule 237 §1-§8).
+# PR2 = OD-5-6 sheet only on the consented encounter, OD-5-10(a) cancelled prior visit, prescription lock after
+# signing (rule 237 §9-§11).
+# One deploy and the GO tag follow PR2.
+# No schema, migration, permission, role or package change; no flag, enforcement scope, branch lock, queue worker
+# activation, scheduler or KTP timer change. Foundation-First Sprint Lock stays ACTIVE (allowed category: security fix /
+# clinical correctness). Full Suite deferred (CG-18), not passed.
 #
-# Foundation-First Sprint Lock stays ACTIVE (allowed category: security / deployment). Full Suite deferred (CG-18).
-# This release itself is approved under contract 2 (approval PR, rule 229/231); contract 3 is used only for later
-# releases, after this one is production-verified and the operator re-provisioned (rule 236 §3).
-#
-# Previous manifest: DMS-DEPLOY-PRIVSEP-PHASE-2 (rule 235); its record stays in docs/sprints/dms-deploy-privsep-phase-2.md.
+# Previous manifest: DMS-RELEASE-APPROVAL-DIRECT-1 (rule 236); its record stays in docs/sprints/dms-release-approval-direct-1.md.
 # Carried forward: LEGACY-RME-PROGRAM-CLOSURE-1 stays CLOSED and inherited.
-id: DMS-RELEASE-APPROVAL-DIRECT-1
+id: DMS-RME-COMPREHENSIVE-CLOSURE-1
 type: SECURITY_FIX
-module: Deploy
-title: "Direct signed release approval (rule 236): approval contract 3, host-verified CI, no approval-only PR"
+module: Rme
+title: "RME comprehensive closure PR1: clinic-month numbers, no canvas flash, no-store prints, handwriting bounds, queue timing, batch scope, deactivation presence (rule 237)"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 runtime_change: true
 schema_change: false
 frontend_change: false
 security_impact: true
-branch_isolation_impact: false
+branch_isolation_impact: true
 ledger_impact: false
 deploy_required: true
 browser_required: false
 test_profiles: [focused, security_regression]
-go_tag: dms-release-approval-direct-1-go
+go_tag: dms-rme-comprehensive-closure-1-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1

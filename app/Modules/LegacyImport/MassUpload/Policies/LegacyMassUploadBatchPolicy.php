@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Modules\LegacyImport\MassUpload\Models\LegacyMassUploadBatch;
 use App\Modules\LegacyImport\MassUpload\Support\LegacyMassUploadBatchStatus;
 use App\Modules\LegacyImport\Support\LegacyImportType;
+use App\Modules\LegacyOdontogram\Support\LegacyOdontogramWorkspaceScope;
 use App\Modules\LegacyRme\Support\LegacyRmeWorkspaceScope;
 
 /**
@@ -36,8 +37,26 @@ use App\Modules\LegacyRme\Support\LegacyRmeWorkspaceScope;
 class LegacyMassUploadBatchPolicy
 {
     public function __construct(
-        private readonly LegacyRmeWorkspaceScope $scope,
+        private readonly LegacyRmeWorkspaceScope $rmeScope,
+        private readonly LegacyOdontogramWorkspaceScope $odontogramScope,
     ) {}
+
+    /**
+     * DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-7-6) — the branch scope a batch of this
+     * type is read under. An odontogram batch follows the odontogram archive's
+     * own scope (LegacyOdontogramWorkspaceScope: same SHAPE, separate MEMBERSHIP),
+     * never the RME one: with the RME scope an RME-archive governor could read
+     * every branch's odontogram batches, and an odontogram governor was pinned to
+     * one branch. The batch list (LegacyMassUploadController::index) asks this
+     * method too, so the list and the per-batch check cannot drift apart.
+     * Unknown types fail closed to the RME scope, like uploadPermission().
+     */
+    public function workspaceScopeFor(string $importType): LegacyRmeWorkspaceScope|LegacyOdontogramWorkspaceScope
+    {
+        return $importType === LegacyImportType::LEGACY_ODONTOGRAM
+            ? $this->odontogramScope
+            : $this->rmeScope;
+    }
 
     /**
      * There is no type-free "view any mass upload" screen, so viewAny is only
@@ -104,7 +123,7 @@ class LegacyMassUploadBatchPolicy
 
     /**
      * Branch isolation, reusing the same scope object the single-item policies
-     * use so both answer the question identically.
+     * of the batch's own type use, so both answer the question identically.
      *
      * The creator is additionally always allowed to see their own batch. A
      * batch is an operator work-queue, and an operator whose branch context
@@ -119,7 +138,7 @@ class LegacyMassUploadBatchPolicy
             return true;
         }
 
-        return $this->scope->allows($user, $batch->origin_branch_id);
+        return $this->workspaceScopeFor((string) $batch->import_type)->allows($user, $batch->origin_branch_id);
     }
 
     /**

@@ -96,7 +96,7 @@ bukti, kata kunci nama berkas untuk tautan), lalu perbarui `kb_verified_against`
 
 - Kode: `app/Modules/RME/` — 4 file PHP; 10 dokumen menyebut path modul ini.
 - Rule durable (`.cursor/rules/`, di luar vault): `138-doctor-room-scoped-access-and-print-deny.mdc`, `225-rme-concurrent-first-write-and-void-staging-integrity.mdc`, `228-rme-clinical-write-authority-and-prescription-integrity.mdc`
-- Sprint terbaru: [dms-rme-revision-program-8d](../sprints/dms-rme-revision-program-8d.md), [dms-rme-revision-sprint-0-evidence-recovery](../sprints/dms-rme-revision-sprint-0-evidence-recovery.md), [dms-rme-revision-program-8-owner-operational-closure](../sprints/dms-rme-revision-program-8-owner-operational-closure.md)
+- Sprint terbaru: [dms-rme-comprehensive-closure-1](../sprints/dms-rme-comprehensive-closure-1.md) (audit RME menyeluruh, register pending kanonik, rule 237), [dms-rme-revision-program-8d](../sprints/dms-rme-revision-program-8d.md), [dms-rme-revision-sprint-0-evidence-recovery](../sprints/dms-rme-revision-sprint-0-evidence-recovery.md), [dms-rme-revision-program-8-owner-operational-closure](../sprints/dms-rme-revision-program-8-owner-operational-closure.md)
 - Ringkasan `ai-knowledge` (snapshot, cek [status](doc-status-registry.md)): [08_DaengtisiaMS_RME_Workflow](../ai-knowledge/08_DaengtisiaMS_RME_Workflow.md)
 
 ### `RmeDashboard`

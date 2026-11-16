@@ -436,3 +436,24 @@ it('C-03 still refuses signing a visit that is no longer in progress, even with 
     expect(DB::table('trx_rme_visit_consents')->count())->toBe(0)
         ->and(Storage::disk('local')->allFiles())->toBe([]);
 });
+
+it('D-01 (DMS-RME-COMPREHENSIVE-CLOSURE-1) keeps both signatures out of the session when the consent form is refused', function () {
+    $visit = csbVisit();
+
+    $this->actingAs($this->operator)
+        ->from(route('rme.visits.show', $visit))
+        ->post(route('rme.visits.consent.store', $visit), csbPayload([
+            'doctor_signature' => csbOversizedSignature(),
+        ]))
+        ->assertRedirect(route('rme.visits.show', $visit))
+        ->assertSessionHasErrors(['doctor_signature']);
+
+    $old = session()->getOldInput();
+
+    // The typed fields come back to the form; the patient's and the doctor's
+    // signature images never enter the session store (CG-11, rule 121).
+    expect($old)->toHaveKey('medical_action', 'Pencabutan gigi 36')
+        ->and($old)->not->toHaveKey('consenter_signature')
+        ->and($old)->not->toHaveKey('doctor_signature')
+        ->and(json_encode(session()->all()))->not->toContain('data:image/png;base64');
+});

@@ -975,8 +975,8 @@ Route::middleware('auth')->prefix('rme/legacy-records')->name('rme.legacy-record
         // Print is a Blade view for window.print(); export streams a dompdf
         // download. Both are GET reads of an archive the caller may already
         // open, and both refuse a VOIDed record exactly like `source`.
-        Route::get('{record}/print', [LegacyRmeRecordController::class, 'print'])->name('print')->where('record', DatabaseRouteKey::PATTERN);
-        Route::get('{record}/export', [LegacyRmeRecordController::class, 'export'])->name('export')->where('record', DatabaseRouteKey::PATTERN);
+        Route::get('{record}/print', [LegacyRmeRecordController::class, 'print'])->middleware('cache.headers:private;no_store;max_age=0')->name('print')->where('record', DatabaseRouteKey::PATTERN);
+        Route::get('{record}/export', [LegacyRmeRecordController::class, 'export'])->middleware('cache.headers:private;no_store;max_age=0')->name('export')->where('record', DatabaseRouteKey::PATTERN);
     });
 
     // Retracting is a state change with its own named permission — never
@@ -1349,7 +1349,7 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
         });
 
         Route::get('prescriptions/{rmePrescription}/print', [RmePrescriptionController::class, 'print'])
-            ->name('prescriptions.print');
+            ->middleware('cache.headers:private;no_store;max_age=0')->name('prescriptions.print');
         // FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1 (FIX-02) — server-to-server delivery
         // of the prescription over the official WhatsApp Business Platform.
         Route::post('prescriptions/{rmePrescription}/whatsapp', [RmePrescriptionController::class, 'sendWhatsApp'])
@@ -1374,7 +1374,7 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
             ->name('consents.show');
         Route::get('consents/{consent}/print', [RmeVisitConsentController::class, 'print'])
             ->middleware('permission:view_rme_consents|manage_rme_consents')
-            ->name('consents.print');
+            ->middleware('cache.headers:private;no_store;max_age=0')->name('consents.print');
         Route::get('consents/{consent}/signature/{kind}', [RmeVisitConsentController::class, 'signature'])
             ->middleware('permission:view_rme_consents|manage_rme_consents')
             ->name('consents.signature');
@@ -1401,15 +1401,15 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
 
         // Sprint 20 Phase 1.6 — Odontogram Print View
         Route::get('odontograms/{odontogram}/print', [OdontogramController::class, 'print'])
-            ->name('odontograms.print');
+            ->middleware('cache.headers:private;no_store;max_age=0')->name('odontograms.print');
 
         // Sprint 20 Phase 1.7 — RME Visit Print Bundle
         Route::get('visits/{clinicVisit}/print', [ClinicVisitController::class, 'print'])
-            ->name('visits.print');
+            ->middleware('cache.headers:private;no_store;max_age=0')->name('visits.print');
 
         // Sprint 21 Phase 21.6 — RME Visit PDF Export
         Route::get('visits/{clinicVisit}/pdf', [ClinicVisitController::class, 'pdf'])
-            ->name('visits.pdf');
+            ->middleware('cache.headers:private;no_store;max_age=0')->name('visits.pdf');
 
         Route::middleware(['permission:manage_clinic_visits', 'visit.room'])->group(function () {
             // POST-RME-ODONTOGRAM-STABILIZATION-1 / FIX-01 — the first save for
@@ -1436,7 +1436,7 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
         // Hotfix Sprint 60.7 — Doctor → Cashier sync queue (read-only visibility).
         Route::get('cashier/handoff', [RmeInvoiceController::class, 'handoff'])->name('cashier.handoff');
         Route::get('cashier/receivables', [RmeInvoiceController::class, 'receivables'])->name('cashier.receivables');
-        Route::get('cashier/receivables/export', [RmeInvoiceController::class, 'exportReceivables'])->name('cashier.receivables.export');
+        Route::get('cashier/receivables/export', [RmeInvoiceController::class, 'exportReceivables'])->middleware('cache.headers:private;no_store;max_age=0')->name('cashier.receivables.export');
         // Sprint 24 Phase 24.8 — RME receivable follow-up / reminder foundation
         Route::get('cashier/receivables/{rmeInvoice}/follow-ups/create', [RmeReceivableFollowUpController::class, 'create'])->name('cashier.receivables.follow-ups.create');
         Route::post('cashier/receivables/{rmeInvoice}/follow-ups', [RmeReceivableFollowUpController::class, 'store'])->name('cashier.receivables.follow-ups.store');
@@ -1453,7 +1453,7 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
         // single-page PDF. Same policy (viewReceipt), same paid-only rule, same
         // data; it exists so the one-page contract is measurable rather than
         // assumed.
-        Route::get('cashier/{clinicVisit}/billing/{rmeInvoice}/receipt/pdf', [RmePaymentController::class, 'receiptPdf'])->name('cashier.receipt.pdf');
+        Route::get('cashier/{clinicVisit}/billing/{rmeInvoice}/receipt/pdf', [RmePaymentController::class, 'receiptPdf'])->middleware('cache.headers:private;no_store;max_age=0')->name('cashier.receipt.pdf');
         // FEATURE-RME-POSTPAYMENT-INVOICE-CORRECTION-1 (PP-5) — reprint one issued
         // receipt from its immutable snapshot (GET-only, same viewReceipt policy).
         // DMS-RME-REVISION-PROGRAM-3 / R-10 — `receiptSnapshot` is constrained
@@ -1627,15 +1627,15 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
     Route::get('reports/patients', [RmeReportController::class, 'patients'])
         ->name('reports.patients')->middleware('permission:view_rme_patient_reports');
     Route::get('reports/patients/export', [RmeReportController::class, 'patientsExport'])
-        ->name('reports.patients.export')->middleware('permission:view_rme_patient_reports');
+        ->middleware('cache.headers:private;no_store;max_age=0')->name('reports.patients.export')->middleware('permission:view_rme_patient_reports');
     Route::get('reports/patients/print', [RmeReportController::class, 'patientsPrint'])
-        ->name('reports.patients.print')->middleware('permission:view_rme_patient_reports');
+        ->middleware('cache.headers:private;no_store;max_age=0')->name('reports.patients.print')->middleware('permission:view_rme_patient_reports');
     Route::get('reports/payments', [RmeReportController::class, 'payments'])
         ->name('reports.payments')->middleware('permission:view_rme_payment_reports');
     Route::get('reports/payments/export', [RmeReportController::class, 'paymentsExport'])
-        ->name('reports.payments.export')->middleware('permission:view_rme_payment_reports');
+        ->middleware('cache.headers:private;no_store;max_age=0')->name('reports.payments.export')->middleware('permission:view_rme_payment_reports');
     Route::get('reports/payments/print', [RmeReportController::class, 'paymentsPrint'])
-        ->name('reports.payments.print')->middleware('permission:view_rme_payment_reports');
+        ->middleware('cache.headers:private;no_store;max_age=0')->name('reports.payments.print')->middleware('permission:view_rme_payment_reports');
 
     // FIX-PRE-68-45 Scope C — Doctor Performance / Income report. Read-only.
     // Executive tier (view_doctor_performance_report) sees all doctors + RME
@@ -1651,7 +1651,7 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
     Route::get('patients/audit', [PatientAuditController::class, 'index'])
         ->name('patients.audit')->middleware('permission:view_rme_patient_reports|manage patients');
     Route::get('patients/audit/export', [PatientAuditController::class, 'export'])
-        ->name('patients.audit.export')->middleware('permission:view_rme_patient_reports|manage patients');
+        ->middleware('cache.headers:private;no_store;max_age=0')->name('patients.audit.export')->middleware('permission:view_rme_patient_reports|manage patients');
 });
 
 /*
@@ -2706,24 +2706,24 @@ Route::middleware('auth')->prefix('oversight')->name('oversight.')->group(functi
         Route::middleware('permission:export_oversight_data')->group(function () {
             Route::get('rme/export', [OversightClinicalRecordController::class, 'export'])->name('rme.export');
             Route::get('rme/visits/{visit}/print', [OversightClinicalRecordController::class, 'print'])
-                ->where('visit', DatabaseRouteKey::PATTERN)->name('rme.visits.print');
+                ->where('visit', DatabaseRouteKey::PATTERN)->middleware('cache.headers:private;no_store;max_age=0')->name('rme.visits.print');
             Route::get('rme/visits/{visit}/pdf', [OversightClinicalRecordController::class, 'pdf'])
-                ->where('visit', DatabaseRouteKey::PATTERN)->name('rme.visits.pdf');
+                ->where('visit', DatabaseRouteKey::PATTERN)->middleware('cache.headers:private;no_store;max_age=0')->name('rme.visits.pdf');
             Route::get('rme/visits/{visit}/odontogram/print', [OversightClinicalRecordController::class, 'odontogramPrint'])
-                ->where('visit', DatabaseRouteKey::PATTERN)->name('rme.visits.odontogram.print');
+                ->where('visit', DatabaseRouteKey::PATTERN)->middleware('cache.headers:private;no_store;max_age=0')->name('rme.visits.odontogram.print');
             Route::get('rme/visits/{visit}/prescription/print', [OversightClinicalRecordController::class, 'prescriptionPrint'])
-                ->where('visit', DatabaseRouteKey::PATTERN)->name('rme.visits.prescription.print');
+                ->where('visit', DatabaseRouteKey::PATTERN)->middleware('cache.headers:private;no_store;max_age=0')->name('rme.visits.prescription.print');
 
             Route::get('legacy-rme/{record}/source', [OversightLegacyArchiveController::class, 'rmeSource'])
                 ->where('record', DatabaseRouteKey::PATTERN)->name('legacy.rme.source');
             Route::get('legacy-rme/{record}/print', [OversightLegacyArchiveController::class, 'rmePrint'])
-                ->where('record', DatabaseRouteKey::PATTERN)->name('legacy.rme.print');
+                ->where('record', DatabaseRouteKey::PATTERN)->middleware('cache.headers:private;no_store;max_age=0')->name('legacy.rme.print');
             Route::get('legacy-rme/{record}/pdf', [OversightLegacyArchiveController::class, 'rmePdf'])
-                ->where('record', DatabaseRouteKey::PATTERN)->name('legacy.rme.pdf');
+                ->where('record', DatabaseRouteKey::PATTERN)->middleware('cache.headers:private;no_store;max_age=0')->name('legacy.rme.pdf');
             Route::get('legacy-odontogram/{record}/source', [OversightLegacyArchiveController::class, 'odontogramSource'])
                 ->where('record', DatabaseRouteKey::PATTERN)->name('legacy.odontogram.source');
             Route::get('legacy-odontogram/{record}/print', [OversightLegacyArchiveController::class, 'odontogramPrint'])
-                ->where('record', DatabaseRouteKey::PATTERN)->name('legacy.odontogram.print');
+                ->where('record', DatabaseRouteKey::PATTERN)->middleware('cache.headers:private;no_store;max_age=0')->name('legacy.odontogram.print');
         });
     });
 

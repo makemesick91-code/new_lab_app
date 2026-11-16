@@ -172,7 +172,7 @@ declared in `config/ci_runner.php` `critical_gate_mandatory_suites`. Since 8D, `
 - Test hygiene, INFO (F8): `rmeClinicalReader()` attaches the seeded Owner role, which carries Owner's other
   read/report permissions in suites that seed roles. Today's negative tests keep their meaning (Owner holds no
   `manage_clinic_visits`); a dedicated permission-free allowlisted role would be cleaner.
-- OWNER DECISION OPEN: an unsigned prescription (content written by another clinician, signature not yet added by
-  the named doctor) prints without a signature image and could be sent. Whether print and the (disabled) WhatsApp
-  hand-off should be refused until the named doctor signs was not part of the 2026-11-07 decisions and is not
-  implemented. Do not add it without that decision.
+- OWNER DECISION 2026-11-16 (DMS-RME-COMPREHENSIVE-CLOSURE-1, rule 237 §2): an unsigned prescription (content
+  written by another clinician, signature not yet added by the named doctor) **keeps printing** without a signature
+  image, under the doctor's name (§12.4); doctors may sign on paper. Do not refuse print or the (disabled) WhatsApp
+  hand-off for a missing signature without a new owner decision.

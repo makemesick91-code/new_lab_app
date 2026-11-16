@@ -8,6 +8,7 @@ use App\Modules\Consent\Services\RmeVisitConsentService;
 use App\Modules\MedicalRecord\Interfaces\MedicalRecordHandwritingRepositoryInterface;
 use App\Modules\MedicalRecord\Interfaces\MedicalRecordRepositoryInterface;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
+use App\Modules\MedicalRecord\Services\HandwritingPayloadGuard;
 use App\Modules\MedicalRecord\Services\MedicalRecordHandwritingService;
 use App\Modules\MedicalRecord\Services\MedicalRecordService;
 use App\Modules\MedicalRecord\Services\PatientRmWorkspaceResolver;
@@ -24,6 +25,7 @@ class MedicalRecordHandwritingController extends Controller
     public function __construct(
         private readonly MedicalRecordHandwritingRepositoryInterface $handwritings,
         private readonly MedicalRecordRepositoryInterface $medicalRecords,
+        private readonly HandwritingPayloadGuard $payloadGuard,
     ) {}
 
     public function store(
@@ -85,7 +87,8 @@ class MedicalRecordHandwritingController extends Controller
         // row (read-through, backward compatible); Page 2+ persist to the
         // additive pages table. Saving a higher page never touches Page 1.
         $request->validate([
-            'handwriting_data' => ['required', 'string'],
+            // DMS-RME-COMPREHENSIVE-CLOSURE-1 (rule 237 §5) — bounded at the edge.
+            'handwriting_data' => ['required', 'string', 'max:'.HandwritingPayloadGuard::MAX_HANDWRITING_PAYLOAD_LENGTH],
             'page_number' => ['nullable', 'integer', 'min:1'],
         ]);
 
@@ -181,6 +184,11 @@ class MedicalRecordHandwritingController extends Controller
      */
     private function decodeHandwriting(?string $raw): string
     {
+        // DMS-RME-COMPREHENSIVE-CLOSURE-1 (rule 237 §5) — the payload, then the
+        // size the PNG declares and what its data inflates to, are bounded
+        // before the blank check below allocates anything from them.
+        $this->payloadGuard->assertPayloadLength($raw);
+
         // Strip the data URI prefix if present (data:image/png;base64,...)
         $base64 = preg_replace('/^data:image\/\w+;base64,/', '', (string) $raw);
 
@@ -192,6 +200,8 @@ class MedicalRecordHandwritingController extends Controller
                 'handwriting_data' => 'Data tulisan tangan tidak valid atau kosong.',
             ]);
         }
+
+        $this->payloadGuard->assertBoundedPng($decoded);
 
         // Sprint 59.1 — never overwrite saved handwriting with an accidental
         // blank canvas. A fully transparent / uniform PNG is rejected before
@@ -246,7 +256,8 @@ class MedicalRecordHandwritingController extends Controller
             return false;
         }
 
-        $raw = @zlib_decode($idat);
+        // Bounded by the declared size, which HandwritingPayloadGuard capped.
+        $raw = @zlib_decode($idat, $height * (1 + $width * 8));
         if ($raw === false || $raw === '') {
             return false;
         }
