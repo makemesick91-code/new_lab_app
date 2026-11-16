@@ -39,6 +39,31 @@ framework's password defaults). A refused consent, prescription or RM page there
 or a handwriting page into the sessions table (CG-11; rule 121: clinical evidence lives on the private disk only).
 No form restores these fields with `old()`; a new canvas field is added to this list in the same change.
 
+## 17. A login still in flight is never evicted (OD-7-7) — owner decision 2026-11-16, amends rule 153
+
+`IncumbentSessionProbe::isLive()` treats a lease claimed within `doctor_access.lease.in_flight_grace_seconds` (30,
+literal, no env) as alive: the claiming login writes its `sessions` row only when its response ends, so a concurrent
+second login used to read the first as dead, reclaim the lease and evict the first browser — the outcome rule 153
+forbids. The contract is unchanged (refuse the second login, never evict the first); only the death predicate gained
+this in-flight clause, recorded in rule 153 and AIR-DAC-08. It never reclaims and is not an idle timer.
+
+The window binds to ANOTHER browser (independent review): a double tap in one browser sends two logins posting the same
+page's CSRF token, and the second used to be refused, locking the doctor out for the session lifetime. The lease
+now stores `claim_nonce_hash` (SHA-256 of the POSTED token, which VerifyCsrfToken proved equal to that browser's
+pre-login session token; the session's own token is regenerated before the Login event; additive nullable column, migration
+`2026_11_17_100001`); within the window a claimant with the same digest supersedes its own unwritten login (release
+reason `same_browser_resubmit`), any other browser is refused, after the window only the session store decides. The
+login form drops a second submit in the browser. Device-ticket redemption keeps its pre-check unchanged (a ticket is
+single-use). Tests: `DoctorSingleSessionLeaseTest` OD-7-7 cases (token `DoctorAccess`); the dead-session tests step
+past the window.
+
+Residual (not closed): two double-submit timings can still lock the doctor out for the session lifetime: (a) the second
+POST arrives after the first login regenerated the session and fails CSRF (419), and the browser is left without the
+first login's session cookie while that session stays alive; (b) the second POST claims first, the first then
+supersedes it as the same browser, and the browser keeps the second (released) response while the first's session
+stays alive. The server cannot tell an abandoned login session from a live second device. Mitigations: the login
+double-submit guard and the existing approver lease release (`admin_release`).
+
 ## 4. Rendered clinical and patient-data documents are not stored by the browser
 
 Every route that renders a clinical or patient-data document carries the framework middleware

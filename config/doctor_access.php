@@ -157,4 +157,15 @@ return [
         'max_estate_devices' => 500,
         'max_pairs' => 10000,
     ],
+
+    /*
+    | DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-7-7, owner decision 2026-11-16) — a lease
+    | claimed this many seconds ago or less belongs to a login still IN FLIGHT:
+    | its session row is written only when that login's response ends, so the
+    | probe must not read it as dead. Refuse the second login, never evict the
+    | first (rule 153). Literal integer, no env(), like every value in this file.
+    */
+    'lease' => [
+        'in_flight_grace_seconds' => 30,
+    ],
 ];

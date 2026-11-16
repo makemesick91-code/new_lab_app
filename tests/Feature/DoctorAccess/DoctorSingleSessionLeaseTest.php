@@ -85,6 +85,8 @@ use Illuminate\Contracts\Auth\Guard as GuardContract;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
+use Illuminate\Testing\TestResponse;
 
 use function Pest\Laravel\actingAs;
 
@@ -158,6 +160,18 @@ function dslAgeSessionRows(User $user, int $minutes): int
     return DB::table('sessions')
         ->where('user_id', (int) $user->id)
         ->update(['last_activity' => now()->subMinutes($minutes)->getTimestamp()]);
+}
+
+/**
+ * DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-7-7) — step past the in-flight window. A
+ * lease claimed moments ago belongs to a login whose session row is not written
+ * yet, so the probe holds it alive for `doctor_access.lease.in_flight_grace_seconds`.
+ * The scenarios below are about a doctor who comes back LATER (another device,
+ * an aged session), so they move the clock past that window first.
+ */
+function dslPastInFlightWindow(): void
+{
+    test()->travel((int) config('doctor_access.lease.in_flight_grace_seconds') + 1)->seconds();
 }
 
 /** How many audit rows carry this lease action? */
@@ -416,6 +430,7 @@ test('an incumbent whose sessions row is gone is dead and is reclaimed at once',
 
     daLoginPost($user);
     $leaseA = daCurrentLease($user);
+    dslPastInFlightWindow();
     expect(DB::table('sessions')->where('user_id', $user->id)->count())->toBeGreaterThan(0);
 
     // The doctor finished on the ward tablet and walked to the office PC.
@@ -520,6 +535,7 @@ test('liveness is keyed on the account, so one surviving session row keeps the i
 
     daLoginPost($user);
     $leaseA = daCurrentLease($user);
+    dslPastInFlightWindow();
     expect($leaseA)->not->toBeNull();
 
     // THE ID THE LEASE RECORDED NAMES NO ROW. Not "a stale row" — none at all,
@@ -589,6 +605,7 @@ test('the only liveness window is the session store own expiry, mirrored exactly
 
     daLoginPost($user);
     $leaseA = daCurrentLease($user);
+    dslPastInFlightWindow();
 
     $lifetime = (int) config('session.lifetime');
     expect(dslAgeSessionRows($user, $lifetime + 1))->toBeGreaterThan(0);
@@ -1202,4 +1219,135 @@ test('U2b: an UNSET doctor never pays the branch-health read, which is the whole
     // because mst_branches is shared with the rest of the application and the
     // request pays for whatever else reads it.
     expect($countMatching($armed, 'mst_branches') - $countMatching($baseline, 'mst_branches'))->toBe(0);
+});
+
+/*
+|--------------------------------------------------------------------------
+| DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-7-7) — a login still in flight is never evicted
+|--------------------------------------------------------------------------
+|
+| Rule 153: refuse the second login, never evict the first. A lease claimed by a
+| login whose session row is not written yet used to read as DEAD, so a
+| concurrent second login reclaimed it and the first browser was evicted on its
+| next request. The probe now holds a just-claimed lease alive for the in-flight
+| window; after it, only the session store decides (no idle timer).
+*/
+
+test('OD-7-7 refuses a second login while the first login is still in flight, keeping the first lease', function () {
+    daArmDoctorAccess();
+    $user = daDoctorUser([daBranch()]);
+
+    daLoginPost($user);
+    $leaseA = daCurrentLease($user);
+
+    // The first login's session row is "not written yet": exactly the in-flight state.
+    daKillSessionsFor($user);
+
+    dslNewBrowser();
+    daLoginPost($user)->assertSessionHasErrors('email');
+    $this->assertGuest();
+
+    daAssertActiveLeaseCount(1, $user);
+    expect((int) daCurrentLease($user)->id)->toBe((int) $leaseA->id)
+        ->and($leaseA->fresh()->released_at)->toBeNull()
+        ->and(dslAuditCount(DoctorSessionLeaseService::ACTION_RECLAIMED))->toBe(0);
+});
+
+test('OD-7-7 lets the dead lease be reclaimed once the in-flight window has passed', function () {
+    daArmDoctorAccess();
+    $user = daDoctorUser([daBranch()]);
+
+    daLoginPost($user);
+    $leaseA = daCurrentLease($user);
+    daKillSessionsFor($user);
+
+    dslPastInFlightWindow();
+    dslNewBrowser();
+    daLoginPost($user);
+
+    $this->assertAuthenticatedAs($user);
+    expect($leaseA->fresh()->released_reason)->toBe(DoctorSessionLease::RELEASE_DEAD_SESSION_RECLAIMED);
+    daAssertActiveLeaseCount(1, $user);
+});
+
+/** A login POST that carries the page's CSRF token, as a real browser form does. */
+function dslLoginWithToken(User $user, string $csrfToken): TestResponse
+{
+    return test()->post('/login', ['email' => $user->email, 'password' => 'password', '_token' => $csrfToken]);
+}
+
+test('OD-7-7 never locks the doctor out on a same-browser double submit while the first login is in flight', function () {
+    daArmDoctorAccess();
+    $user = daDoctorUser([daBranch()]);
+    // ONE browser: both POSTs of a double tap carry the token of the same page.
+    $pageToken = Str::random(40);
+
+    dslLoginWithToken($user, $pageToken);
+    $leaseA = daCurrentLease($user);
+    // The first login's session row is not written yet: in flight.
+    daKillSessionsFor($user);
+
+    dslNewBrowser();
+    dslLoginWithToken($user, $pageToken)->assertSessionHasNoErrors();
+
+    // The browser keeps the second response: it must be signed in, holding the
+    // one active lease, and its own first, unwritten login is superseded.
+    $this->assertAuthenticatedAs($user);
+    daAssertActiveLeaseCount(1, $user);
+    expect((int) daCurrentLease($user)->id)->not->toBe((int) $leaseA->id)
+        ->and($leaseA->fresh()->released_reason)->toBe(DoctorSessionLease::RELEASE_SAME_BROWSER_RESUBMIT);
+});
+
+test('OD-7-7 still refuses another browser inside the in-flight window, whatever token it posts', function () {
+    daArmDoctorAccess();
+    $user = daDoctorUser([daBranch()]);
+
+    dslLoginWithToken($user, Str::random(40));
+    $leaseA = daCurrentLease($user);
+    daKillSessionsFor($user);
+
+    dslNewBrowser();
+    dslLoginWithToken($user, Str::random(40))->assertSessionHasErrors('email');
+
+    $this->assertGuest();
+    expect((int) daCurrentLease($user)->id)->toBe((int) $leaseA->id)
+        ->and($leaseA->fresh()->released_at)->toBeNull();
+});
+
+test('OD-7-7 recognises the same browser only inside the in-flight window', function () {
+    daArmDoctorAccess();
+    $user = daDoctorUser([daBranch()]);
+    $pageToken = Str::random(40);
+
+    dslLoginWithToken($user, $pageToken);
+    $leaseA = daCurrentLease($user);
+    // The first login completed: its session row is live.
+
+    dslPastInFlightWindow();
+    dslNewBrowser();
+    dslLoginWithToken($user, $pageToken)->assertSessionHasErrors('email');
+
+    // After the window only the session store decides; nothing is superseded.
+    expect($leaseA->fresh()->released_at)->toBeNull();
+});
+
+test('OD-7-7 stores only a digest of the posted pre-login token, never the raw value', function () {
+    daArmDoctorAccess();
+    $user = daDoctorUser([daBranch()]);
+    $pageToken = Str::random(40);
+
+    dslLoginWithToken($user, $pageToken);
+    $lease = daCurrentLease($user);
+    $row = (array) DB::table('trx_doctor_session_leases')->where('id', $lease->id)->first();
+
+    expect($lease->claim_nonce_hash)->toBe(hash('sha256', $pageToken))
+        ->and(json_encode($row))->not->toContain($pageToken);
+});
+
+test('OD-7-7 keeps the in-flight window a literal config value, never an environment override', function () {
+    $config = (string) file_get_contents(config_path('doctor_access.php'));
+
+    expect((int) config('doctor_access.lease.in_flight_grace_seconds'))->toBe(30)
+        // A literal integer on its own line: no env() lookup can widen it.
+        ->and($config)->toMatch("/^\\s*'in_flight_grace_seconds' => 30,\\s*$/m");
 });
