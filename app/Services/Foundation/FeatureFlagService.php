@@ -57,6 +57,21 @@ class FeatureFlagService
     }
 
     /**
+     * DMS-RME-COMPREHENSIVE-CLOSURE-1 (CC1-CG08) — the default a flag's registry
+     * entry DECLARES, or null when it declares none (or not as a boolean).
+     * get() reads a missing default as false; a governance check that must
+     * prove "ships off" needs to tell the two apart.
+     */
+    public function declaredDefault(string $key): ?bool
+    {
+        $this->assertKnown($key);
+
+        $default = $this->definitions()[$key]['default'] ?? null;
+
+        return is_bool($default) ? $default : null;
+    }
+
+    /**
      * @return array<string, mixed>
      */
     public function metadata(string $key): array

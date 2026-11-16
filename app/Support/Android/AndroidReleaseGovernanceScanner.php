@@ -2,8 +2,10 @@
 
 namespace App\Support\Android;
 
+use App\Services\Foundation\FeatureFlagService;
 use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Support\Facades\Process;
+use InvalidArgumentException;
 
 /**
  * FEATURE-DOCTOR-TRUSTED-ANDROID-DEVICE-LOCK-1 Phase 3.5 — read-only posture
@@ -138,10 +140,12 @@ class AndroidReleaseGovernanceScanner
                     $checks,
                     fn (array $c): bool => $c['status'] === Phase4aPilotPreparationScanner::STATUS_NOT_APPLICABLE,
                 )),
-                'governance_phase' => (string) config(
-                    'android_release.enforcement.governance_phase',
-                    Phase4aPilotPreparationScanner::PHASE_4A,
-                ),
+                // CC1-CG08 — the phase this scanner APPLIES (an unrecognised value
+                // resolves to phase_4a, as inPhase4a() does), with the declared
+                // value beside it so a typo is visible rather than reported as if
+                // it were in force.
+                'governance_phase' => $this->effectiveGovernancePhase(),
+                'governance_phase_declared' => $this->declaredGovernancePhase(),
                 // Deliberately reported, never inferred. Phase 3.5 ended with
                 // no production key in existence, and saying otherwise would
                 // be the single most damaging thing this command could print.
@@ -1913,33 +1917,41 @@ class AndroidReleaseGovernanceScanner
         // not actually have. A missing or unreadable flag is a FAIL, not a pass:
         // an absence assertion over nothing proves nothing.
         $flagKey = (string) config('android_release.enforcement.flag_key');
-        $flagDefaultOff = null;
+        // DMS-RME-COMPREHENSIVE-CLOSURE-1 (CC1-CG08) — through the one flag
+        // authority (CG-08), which already reads dotted keys as literal array
+        // keys. "Off" needs BOTH a declared `default => false` (a missing default
+        // must never read as off) AND a runtime value that is off (an environment
+        // override counts). An undeclared flag stays a FAIL.
+        $flagState = 'undeclared';
 
         if ($flagKey !== '') {
-            $definition = config('feature_flags.flags.'.$flagKey);
-
-            // The key contains dots, so the dotted lookup above cannot reach it;
-            // the registry has to be read as a literal array key.
-            if (! is_array($definition)) {
-                $definition = (array) config('feature_flags.flags', []);
-                $definition = is_array($definition[$flagKey] ?? null) ? $definition[$flagKey] : null;
+            try {
+                $flags = app(FeatureFlagService::class);
+                $declared = $flags->declaredDefault($flagKey);
+                $flagState = match (true) {
+                    $declared === null => 'default_undeclared',
+                    $declared === false && $flags->get($flagKey)['enabled'] === false => 'off',
+                    default => 'on',
+                };
+            } catch (InvalidArgumentException) {
+                $flagState = 'undeclared';
             }
-
-            $flagDefaultOff = is_array($definition) ? (($definition['default'] ?? null) === false) : null;
         }
 
         $off = config('android_release.enforcement.active') === false
             && config('android_release.enforcement.doctor_browser_login_denied') === false
-            && $flagDefaultOff === true;
+            && $flagState === 'off';
 
         $checks[] = $this->check(
             'enforcement_off',
             $off ? 'PASS' : 'FAIL',
             $off
-                ? "Device enforcement is off, browser login is not denied, and the '{$flagKey}' flag defaults to false."
-                : ($flagDefaultOff === null
-                    ? "Enforcement flag '{$flagKey}' is not declared in the feature flag registry."
-                    : 'Configuration claims enforcement is active. It must ship off.'),
+                ? "Device enforcement is off, browser login is not denied, and the '{$flagKey}' flag defaults to false and is off at runtime."
+                : match ($flagState) {
+                    'undeclared' => "Enforcement flag '{$flagKey}' is not declared in the feature flag registry.",
+                    'default_undeclared' => "Enforcement flag '{$flagKey}' does not declare `default => false` in the feature flag registry.",
+                    default => 'Configuration claims enforcement is active. It must ship off.',
+                },
         );
 
         $token = (string) config('android_release.scanner.enforcement_coupling_token');
@@ -2482,17 +2494,25 @@ class AndroidReleaseGovernanceScanner
      */
     private function inPhase4a(): bool
     {
-        $declared = (string) config(
+        return $this->effectiveGovernancePhase() === Phase4aPilotPreparationScanner::PHASE_4A;
+    }
+
+    private function declaredGovernancePhase(): string
+    {
+        return (string) config(
             'android_release.enforcement.governance_phase',
             Phase4aPilotPreparationScanner::PHASE_4A,
         );
+    }
 
-        // Unrecognised resolves to phase_4a, so a typo tightens the audit.
-        if (! in_array($declared, Phase4aPilotPreparationScanner::GOVERNANCE_PHASES, true)) {
-            return true;
-        }
+    /** Unrecognised resolves to phase_4a, so a typo tightens the audit. */
+    private function effectiveGovernancePhase(): string
+    {
+        $declared = $this->declaredGovernancePhase();
 
-        return $declared === Phase4aPilotPreparationScanner::PHASE_4A;
+        return in_array($declared, Phase4aPilotPreparationScanner::GOVERNANCE_PHASES, true)
+            ? $declared
+            : Phase4aPilotPreparationScanner::PHASE_4A;
     }
 
     /**

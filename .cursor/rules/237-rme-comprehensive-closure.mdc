@@ -95,6 +95,26 @@ signing in `RmePrescriptionIntegrityTest` I7 (token `RmePrescription`) and `Doct
 `DoctorPatientScope`); OD-5-6 in `RmeClinicalWriteAuthorityTest` (token `RmeClinicalWriteAuthority`); OD-5-10(a) in
 `ClinicVisitPatientSelectionAuthorityTest` (token `ClinicVisitPatientSelection`).
 
+## 12. Per-request doctor identity and the flag authority (PR5)
+
+1. **CC1-PERF.** `DoctorIdentityResolver::resolveForUser()` memoises its answer in the current ROUTED HTTP request's
+   attributes, keyed by account id; outside a routed request (queue job, console command, direct service call)
+   nothing is memoised. `DoctorAccountLinkService` calls `forget()` after every link, relink and unlink. Measured on
+   PostgreSQL 16 (3 → 9 rows): the visit list went from 13 → 37 identity lookups (115 → 211 queries) to 1 → 1
+   (104 → 174), the patient queue from 7 → 19 (64 → 112) to 1 → 1 (58 → 94). Every per-row authorization answer is
+   unchanged. Never cache identity across requests or in a long-lived process.
+2. **CC1-CG08.** `AndroidReleaseGovernanceScanner` reads the enforcement flag through
+   `FeatureFlagService` (CG-08), never `config('feature_flags…')`. `enforcement_off` passes only when the registry
+   entry DECLARES `default => false` (`declaredDefault()`; a missing default never reads as off, FA-06) AND the
+   runtime value is off (an environment override counts, FA-07); an undeclared flag is still a FAIL. Its
+   summary reports `governance_phase` as the phase it applies (unrecognised → `phase_4a`) and the declared value as
+   `governance_phase_declared`.
+3. **CC1-ODO is not changed.** An empty saved odontogram prints the designed empty state ("Belum ada kondisi
+   odontogram yang dipilih.", Sprint 63.1 `StructuredOdontogramPrintTemplateTest` #6), not a blank chart. Refusing
+   empty-chart prints would reverse that tested decision and needs an owner decision first.
+4. Tests: `DoctorPatientScopeQueryBudgetTest` (token `DoctorPatientScope`), `DoctorDeviceAndroidFlagAuthorityTest`
+   (token `DoctorDevice`), both declared in `critical_gate_mandatory_suites`.
+
 ## 9. A signed prescription is changed only by its own doctor (owner decision 2026-11-16, amends rule 228 §12.2)
 
 1. `PrescriptionAuthoringAuthority::signedContentLocked()`: once `doctor_signature_canvas_path` is set, only the

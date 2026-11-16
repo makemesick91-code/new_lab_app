@@ -4,6 +4,7 @@ namespace App\Modules\Doctor\Services;
 
 use App\Models\User;
 use App\Modules\Doctor\Models\Doctor;
+use Illuminate\Http\Request;
 
 /**
  * FEATURE-DOCTOR-ACCOUNT-PERFORMANCE-INCOME-LINKAGE-1
@@ -27,6 +28,8 @@ use App\Modules\Doctor\Models\Doctor;
  */
 class DoctorIdentityResolver
 {
+    private const MEMO_PREFIX = 'dms.doctor_identity.';
+
     /**
      * The doctor this account represents, or null when the account has not been
      * linked. Soft-deleted doctor records are excluded by the model's global
@@ -34,9 +37,51 @@ class DoctorIdentityResolver
      */
     public function resolveForUser(User $user): ?Doctor
     {
-        return Doctor::query()
+        $request = $this->routedRequest();
+        $key = self::MEMO_PREFIX.$user->getKey();
+
+        if ($request !== null && $request->attributes->has($key)) {
+            return $request->attributes->get($key);
+        }
+
+        $doctor = Doctor::query()
             ->where('user_id', $user->id)
             ->first();
+
+        $request?->attributes->set($key, $doctor);
+
+        return $doctor;
+    }
+
+    /**
+     * Drop the memoised answer for an account (DoctorAccountLinkService calls
+     * this after every link, relink and unlink) so the same request never reads
+     * an identity it has just changed.
+     */
+    public function forget(int $userId): void
+    {
+        $this->routedRequest()?->attributes->remove(self::MEMO_PREFIX.$userId);
+    }
+
+    /**
+     * DMS-RME-COMPREHENSIVE-CLOSURE-1 (CC1-PERF) — the answer is memoised for the
+     * current ROUTED HTTP request only, keyed by account id. The visit list and
+     * the patient queue ask `can('update', $visit)` once per row, and every such
+     * check resolved the identity again (measured: 4 identical lookups per row on
+     * the visit list, 2 on the patient queue). Outside a routed request — a queue
+     * job, a console command, a direct service call — nothing is memoised, so a
+     * long-running worker can never keep a stale identity. Links only change
+     * through DoctorAccountLinkService, which clears the memo.
+     */
+    private function routedRequest(): ?Request
+    {
+        if (! app()->bound('request')) {
+            return null;
+        }
+
+        $request = app('request');
+
+        return $request instanceof Request && $request->route() !== null ? $request : null;
     }
 
     /**

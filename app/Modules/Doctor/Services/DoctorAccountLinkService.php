@@ -127,6 +127,7 @@ class DoctorAccountLinkService
             }
 
             $updated = $this->doctors->setLinkedUser($locked, (int) $user->id);
+            $this->forgetIdentities($previousUserId, (int) $user->id);
 
             $this->auditLog->log(
                 Doctor::class,
@@ -160,6 +161,7 @@ class DoctorAccountLinkService
             }
 
             $updated = $this->doctors->setLinkedUser($locked, null);
+            $this->forgetIdentities($previousUserId);
 
             $this->auditLog->log(
                 Doctor::class,
@@ -182,5 +184,20 @@ class DoctorAccountLinkService
     private function reject(string $message): never
     {
         throw ValidationException::withMessages(['user_id' => $message]);
+    }
+
+    /**
+     * DMS-RME-COMPREHENSIVE-CLOSURE-1 (CC1-PERF) — the identity resolver memoises
+     * per request; a link change must never be read back stale in that request.
+     */
+    private function forgetIdentities(?int ...$userIds): void
+    {
+        $resolver = app(DoctorIdentityResolver::class);
+
+        foreach ($userIds as $userId) {
+            if ($userId !== null) {
+                $resolver->forget($userId);
+            }
+        }
     }
 }
