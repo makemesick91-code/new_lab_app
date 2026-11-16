@@ -62,8 +62,10 @@ reproduced deterministically and are fixed.
    cancelled or re-pointed, choose the book with item 3 against the LOCKED visit, and only then create (savepoint-adopt,
    R6-1, unchanged): `getOrCreateCanonicalMedicalRecord()` (first handwriting save) and `startBook()` ("Buat Rekam
    Medis" for a patient with no sheet, R7-1-FS, owner decision 2026-11-17). Both run the authoring gate before the
-   lock, so the visit rows are taken in the same order; `startBook()` re-runs the caller's `create` policy on the
-   locked visit and answers an adopted book with the existing "Rekam medis sudah ada untuk kunjungan ini." message.
+   lock, so the visit rows are taken in the same order; `startBook()` takes the actor explicitly and itself re-asserts
+   the `create` policy for it on the locked visit (`Gate::forUser($actor)`, CG-06; never a caller-supplied check, so no
+   caller can skip it; tests R71-H, R71-H2) and answers an adopted book with the existing "Rekam medis sudah ada untuk
+   kunjungan ini." message.
 6. **The storage visit.** The handwriting controller writes a page on the book's own visit
    (`$canonicalRecord->clinicVisit`, and `$draft->clinicVisit` once the service has decided), which is the visit the
    show page already posts to.

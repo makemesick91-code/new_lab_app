@@ -25,6 +25,8 @@ declare(strict_types=1);
 | R71-D and R71-G interleave a cancel and a concurrent first save on one
 | connection at the exact statements the lock guards; R71-F proves the lock itself
 | with a NOWAIT probe over a second connection on committed rows (rule 224 trap).
+| R71-H / R71-H2 prove the first-sheet path re-asserts the `create` policy in the
+| service, for the actor it is given, on the visit it LOCKED (CG-06).
 |
 | Selected by the existing `RmeConcurrentFirstWrite` critical-gate token in both
 | runner variants and declared in critical_gate_mandatory_suites (CG-19). Helper
@@ -45,8 +47,10 @@ use App\Modules\MedicalRecord\Services\PatientRmWorkspaceResolver;
 use App\Modules\Patient\Models\Patient;
 use App\Support\Storage\ClinicalEvidenceStorage;
 use Database\Seeders\BranchSeeder;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Storage;
 
 require_once __DIR__.'/../PatientMerge/helpers.php';
@@ -170,6 +174,15 @@ function rbcvInterleave(callable $atResolve, callable $atLookup): object
     });
 
     return $state;
+}
+
+/** The MedicalRecord `create` policy refuses this one visit for every user. */
+function rbcvDenyCreateOn(ClinicVisit $visit): void
+{
+    Gate::before(fn ($user, string $ability, array $arguments = []) => $ability === 'create'
+        && ($arguments[0] ?? null) === MedicalRecord::class
+        && ($arguments[1] ?? null) instanceof ClinicVisit
+        && (int) $arguments[1]->getKey() === (int) $visit->getKey() ? false : null);
 }
 
 function rbcvProbeBlocked(string $table, int $id): bool
@@ -570,6 +583,45 @@ it('R71-G starts a first sheet under the canonical-visit lock: a cancel and a co
     expect($state->phase)->toBe(2)
         ->and(rbcvBooks($patient->id))->toHaveCount(1)
         ->and((int) rbcvBooks($patient->id)->sole()->clinic_visit_id)->toBe((int) $encounter->id);
+});
+
+it('R71-H re-asserts the create policy on the LOCKED visit, so a first sheet moved onto a refused visit is not created', function () {
+    $patient = Patient::factory()->create(['branch_id' => $this->branch->id]);
+    $noShow = rbcvVisit($patient, ClinicVisit::STATUS_REGISTERED, clinicalToday()->subDays(2)->toDateString());
+    $earlier = rbcvVisit($patient, ClinicVisit::STATUS_COMPLETED, clinicalToday()->subDay()->toDateString());
+    $encounter = rbcvVisit($patient, ClinicVisit::STATUS_IN_PROGRESS, clinicalToday()->toDateString());
+    rmeActiveConsentedEncounter($encounter);
+    // The policy allows the visit the controller checked (the no-show) and the URL
+    // visit (today's encounter), and refuses only the visit the service locks once
+    // the no-show is cancelled (the earlier visit).
+    rbcvDenyCreateOn($earlier);
+
+    $state = rbcvInterleave(
+        fn () => app(ClinicVisitService::class)->transitionStatus($noShow->fresh(), ClinicVisit::STATUS_CANCELLED, test()->author),
+        fn () => null,
+    );
+
+    $this->actingAs($this->author)
+        ->post(route('rme.visits.medical-record.store', $encounter))
+        ->assertForbidden();
+
+    expect($state->phase)->toBeGreaterThanOrEqual(1)
+        ->and($noShow->fresh()->status)->toBe(ClinicVisit::STATUS_CANCELLED)
+        ->and(rbcvBooks($patient->id))->toHaveCount(0);
+});
+
+it('R71-H2 never starts a book the policy refuses, whoever calls the service', function () {
+    // CG-06 — the service re-asserts the `create` policy for the actor it is given;
+    // a non-HTTP caller has no closure to pass and nothing to skip.
+    $patient = Patient::factory()->create(['branch_id' => $this->branch->id]);
+    $encounter = rbcvVisit($patient, ClinicVisit::STATUS_IN_PROGRESS, clinicalToday()->toDateString());
+    rmeActiveConsentedEncounter($encounter);
+    rbcvDenyCreateOn($encounter);
+
+    // No authenticated user: the service works from the actor it is handed.
+    expect(fn () => app(MedicalRecordService::class)->startBook($encounter, $this->author, []))
+        ->toThrow(AuthorizationException::class)
+        ->and(rbcvBooks($patient->id))->toHaveCount(0);
 });
 
 it('R71-G2 still starts a first sheet on the earliest visit, self-anchored, with its SOAP fields', function () {

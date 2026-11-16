@@ -487,15 +487,10 @@ class MedicalRecordController extends Controller
 
         if (! $patientHasSheets) {
             // DMS-RME-COMPREHENSIVE-CLOSURE-1 (R7-1-FS) — the first sheet is the
-            // book: the service decides its visit under the canonical-visit lock and
-            // adopts a book a concurrent first save created; the policy is checked
-            // again on the visit it locked.
-            [, $created] = $this->service->startBook(
-                $clinicVisit,
-                auth()->id(),
-                $data,
-                fn (ClinicVisit $target) => $this->authorize('create', [MedicalRecord::class, $target]),
-            );
+            // book: the service decides its visit under the canonical-visit lock,
+            // adopts a book a concurrent first save created, and re-asserts the
+            // policy for this user on the visit it locked.
+            [, $created] = $this->service->startBook($clinicVisit, $request->user(), $data);
         } elseif ($this->medicalRecords->findByVisitId($targetVisit->id) === null) {
             $this->service->createDraft($targetVisit, auth()->id(), $data);
             $created = true;
