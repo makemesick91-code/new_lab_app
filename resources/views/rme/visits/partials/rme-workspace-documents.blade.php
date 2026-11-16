@@ -210,7 +210,7 @@
                             <template x-if="mode === 'image'">
                                 <img
                                     x-bind:src="currentPageUrl()"
-                                    x-bind:style="'width:' + (zoom * 100) + '%'"
+                                    x-bind:style="{ width: (zoom * 100) + '%' }"
                                     x-show="! pageFailed"
                                     x-on:error="fallBackToPdf()"
                                     alt="Halaman arsip RME lama"

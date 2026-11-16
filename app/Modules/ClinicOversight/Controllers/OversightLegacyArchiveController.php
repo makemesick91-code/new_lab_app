@@ -231,7 +231,7 @@ class OversightLegacyArchiveController extends Controller
     /**
      * Rule 243 §1 — after the export gate (so only a reader who could export is
      * audited), refuse a Doctor through the one print-deny authority. There is
-     * no per-record policy here, so this is both the refusal and the re-check.
+     * no download/print policy here (the per-record read policy and the export gate do not apply the print-deny), so this is both the refusal and the re-check.
      */
     private function refuseDoctorDownload(Request $request, LegacyRmeRecord|LegacyOdontogramRecord $archive, string $action): void
     {

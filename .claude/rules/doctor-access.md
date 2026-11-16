@@ -202,7 +202,7 @@ ceremonies and the login gate's proof mechanics belong to the sibling `.claude/r
   oversight role) is refused, 403 and audited, the legacy RME print/export/source PDF, the legacy odontogram source
   PDF and the PTM print on every door (clinical, staging, oversight), through `DoctorRoomScopeService` only: policy
   `download`/`print` plus a controller re-assertion on the clinical, staging and consent doors; controller + service
-  only on the oversight doors (no per-record policy there; follow-up OD-MEMO-B-1). Doctors still read archives as
+  only on the oversight doors (no download/print policy there; follow-up OD-MEMO-B-1). Doctors still read archives as
   inline page images and print prescriptions. Not behind the encounter-scope flag. Source: `.cursor/rules/243-rme-doctor-encounter-scope-downloads-fields.mdc` §1.
 
 ## Current posture (snapshot 2026-10-25 — verify before relying on it)

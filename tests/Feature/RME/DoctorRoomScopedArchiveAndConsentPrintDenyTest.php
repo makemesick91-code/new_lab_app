@@ -665,6 +665,11 @@ it('keeps page navigation when one page image fails for a reader with no source 
         ->and($html)->toContain('x-if="mode === \'image\' && pageFailed"')
         ->and($html)->toContain('data-rme-legacy-page-no-preview')
         ->and($html)->toContain('x-show="! pageFailed"')
+        // A string :style replaces the whole style attribute on every zoom
+        // click and wipes x-show's display:none; the object form sets only
+        // the width, so a failed page never shows a broken image again.
+        ->and($html)->toContain('x-bind:style="{ width: (zoom * 100) + \'%\' }"')
+        ->and($html)->not->toContain('x-bind:style="\'width:\'')
         // The fallback only leaves the image mode when a source PDF exists…
         ->and(preg_match("/fallBackToPdf\\(\\)\\s*\\{\\s*if \\(this\\.doc\\.sourceUrl\\) \\{\\s*this\\.mode = 'pdf';\\s*return;\\s*\\}\\s*this\\.pageFailed = true;/", $html))->toBe(1)
         // …and the per-page flag is reset on open and on every page change.
@@ -673,7 +678,7 @@ it('keeps page navigation when one page image fails for a reader with no source 
         ->and(preg_match('/nextPage\\(\\)\\s*\\{\\s*if \\(this\\.page < this\\.doc\\.pageCount\\) \\{\\s*this\\.page \\+= 1;\\s*this\\.pageFailed = false;/', $html))->toBe(1);
 });
 
-it('refuses a dual-role doctor the staging and oversight doors even when the policy and the gates are bypassed', function (string $route, string $subject, string $role) {
+it('refuses a dual-role doctor the staging and oversight doors even when the policy and the gates are bypassed', function (string $route, string $subject, string $role, string $event) {
     $model = $subject === 'staging' ? drsacpStagingImport($this->patient, $this->branch) : $this->{$subject};
     $actor = drsacpDualRoleDoctor($role);
 
@@ -685,14 +690,17 @@ it('refuses a dual-role doctor the staging and oversight doors even when the pol
         ->withoutMiddleware(EnsureRmeOnlineContext::class)
         ->get(route($route, $model->getKey()))
         ->assertForbidden();
+
+    // The 403 is DoctorRoomScopeService's: it wrote exactly one audit row.
+    expect(drsacpAuditRows($event))->toHaveCount(1);
 })->with([
-    'staging source, Doctor + Front Office' => ['settings.rme.legacy-imports.source', 'staging', 'Front Office'],
-    'staging source, Doctor + Admin Klinik' => ['settings.rme.legacy-imports.source', 'staging', 'Admin Klinik'],
-    'oversight legacy RME source' => ['oversight.legacy.rme.source', 'legacyRme', 'Finance Klinik'],
-    'oversight legacy RME print' => ['oversight.legacy.rme.print', 'legacyRme', 'Finance Klinik'],
-    'oversight legacy RME pdf' => ['oversight.legacy.rme.pdf', 'legacyRme', 'Data Analyst'],
-    'oversight legacy odontogram source' => ['oversight.legacy.odontogram.source', 'legacyOdontogram', 'Data Analyst'],
-    'oversight legacy odontogram print' => ['oversight.legacy.odontogram.print', 'legacyOdontogram', 'Finance Klinik'],
+    'staging source, Doctor + Front Office' => ['settings.rme.legacy-imports.source', 'staging', 'Front Office', 'DOCTOR_PRINT_LEGACY_RME_REJECTED'],
+    'staging source, Doctor + Admin Klinik' => ['settings.rme.legacy-imports.source', 'staging', 'Admin Klinik', 'DOCTOR_PRINT_LEGACY_RME_REJECTED'],
+    'oversight legacy RME source' => ['oversight.legacy.rme.source', 'legacyRme', 'Finance Klinik', 'DOCTOR_PRINT_LEGACY_RME_REJECTED'],
+    'oversight legacy RME print' => ['oversight.legacy.rme.print', 'legacyRme', 'Finance Klinik', 'DOCTOR_PRINT_LEGACY_RME_REJECTED'],
+    'oversight legacy RME pdf' => ['oversight.legacy.rme.pdf', 'legacyRme', 'Data Analyst', 'DOCTOR_PRINT_LEGACY_RME_REJECTED'],
+    'oversight legacy odontogram source' => ['oversight.legacy.odontogram.source', 'legacyOdontogram', 'Data Analyst', 'DOCTOR_PRINT_LEGACY_ODONTOGRAM_REJECTED'],
+    'oversight legacy odontogram print' => ['oversight.legacy.odontogram.print', 'legacyOdontogram', 'Finance Klinik', 'DOCTOR_PRINT_LEGACY_ODONTOGRAM_REJECTED'],
 ]);
 
 it('exempts Super Admin and a Doctor who is also Supervisor RME on the staging and oversight doors', function (string $route, string $subject, string $actorKind) {

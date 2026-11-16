@@ -97,7 +97,7 @@
                      draggable="false"
                      x-show="!failed"
                      x-on:error="failed = true"
-                     x-bind:style="'width:' + (zoom * 100) + '%'"
+                     x-bind:style="{ width: (zoom * 100) + '%' }"
                      class="mx-auto block h-auto max-w-none select-none rounded bg-white shadow-sm" />
             @endif
 

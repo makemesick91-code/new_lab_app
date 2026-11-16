@@ -456,7 +456,9 @@ it('offers zoom and fullscreen reading controls on an archive page', function ()
         ->assertSee('data-legacy-zoom-reset', false)
         ->assertSee('data-legacy-fullscreen', false)
         // zoom genuinely drives the rendered width, it is not a decorative button
-        ->assertSee("'width:' + (zoom * 100) + '%'", false);
+        // (object form since rule 243 §1.5: a string :style replaced the whole
+        // style attribute and wiped x-show's display:none on a failed page)
+        ->assertSee("{ width: (zoom * 100) + '%' }", false);
 });
 
 /*

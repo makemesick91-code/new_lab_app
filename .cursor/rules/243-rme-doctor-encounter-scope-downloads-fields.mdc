@@ -78,7 +78,7 @@ added by their own PRs.
      `LegacyOdontogramRecordPolicy` and `LegacyRmeImportPolicy`, `print` on `RmeVisitConsentPolicy`), and the
      controller asks `assertClinicalPrintAllowed()` once more, so a bypassed policy (the global `Gate::before`, a
      regression) still cannot serve a doctor.
-   - **Oversight doors (no per-record policy layer):** after the route permission and the `clinic-oversight.export`
+   - **Oversight doors (no download/print policy; the per-record read policy and the `export` gate do not apply the print-deny):** after the route permission and the `clinic-oversight.export`
      gate, `OversightLegacyArchiveController` audits and calls `assertClinicalPrintAllowed()` itself — the controller
      and the service are the only doctor refusal there. A dedicated oversight ability is follow-up OD-MEMO-B-1.
 5. **Doctors still read.** `show` and the page-image routes keep serving a doctor who may read the archive (inline
