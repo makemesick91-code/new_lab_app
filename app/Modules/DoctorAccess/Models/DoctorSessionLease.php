@@ -74,14 +74,14 @@ class DoctorSessionLease extends Model
     public const RELEASE_DEAD_SESSION_RECLAIMED = 'dead_session_reclaimed';
 
     /** An approver cleared a stuck lease. `released_by_user_id` names them. */
+    public const RELEASE_ADMIN = 'admin_release';
+
     /**
      * DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-7-7) — the same browser logged in again
      * within the in-flight window (a double tap): its own first, still-unwritten
      * login is superseded. Nobody else is evicted.
      */
     public const RELEASE_SAME_BROWSER_RESUBMIT = 'same_browser_resubmit';
-
-    public const RELEASE_ADMIN = 'admin_release';
 
     /** The device session was torn down (revocation, proof no longer valid). */
     public const RELEASE_DEVICE_INVALIDATED = 'device_invalidated';

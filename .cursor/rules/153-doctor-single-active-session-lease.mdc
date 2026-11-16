@@ -53,6 +53,14 @@ clinician already seeing patients keeps working.
   first, still-unwritten login (release reason `same_browser_resubmit`); nobody else is evicted.
   Any other browser is still refused. Without this a double tap locked the doctor out for the
   session lifetime. The login form also drops a second submit in the browser (defence in depth).
+  **Residual (not closed):** two double-submit timings can still lock the doctor out for the
+  session lifetime: (a) the second POST arrives after the first login regenerated the session
+  and fails CSRF (419), and the browser is left without the first login's session cookie
+  while that session stays alive; (b) the second POST claims first, the first then supersedes
+  it as the same browser, and the browser keeps the second (released) response while the
+  first's session stays alive. The server cannot tell an abandoned login session from a live
+  second device, so it refuses. Mitigations: the login double-submit guard, and the existing
+  approver lease release (`admin_release`).
 - **The liveness window belongs to the session store and is never widened.** It is the same
   predicate `DatabaseSessionHandler::expired()` applies. Liveness is keyed on `user_id`, so
   **one** surviving session row keeps the incumbent alive.
