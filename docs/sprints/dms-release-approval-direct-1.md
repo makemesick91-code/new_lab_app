@@ -1,8 +1,8 @@
 # DMS-RELEASE-APPROVAL-DIRECT-1 — direct signed release approval (contract 3)
 
 **Date:** 2026-11-16 (WITA). **Type:** security / release engineering (Foundation-First Sprint Lock: allowed category).
-**Status:** MERGED (#643 → `312337b4`) — owner-approved for production under contract 2; signature, approval PR, deploy,
-operator re-provisioning and the contract-3 production test pending (§10, §11).
+**Status:** **COMPLETE / PRODUCTION VERIFIED / GO** (2026-11-16; §12–§13). Contract 3 is ACTIVE on Biznet. Full Suite
+deferred (CG-18), not passed.
 
 ## 1. Owner request (CG-22)
 
@@ -231,11 +231,11 @@ pinned by `config/deployment_entrypoint.php`. Rules, runbooks and CLAUDE.md are 
 | Implemented, locally verified | §5, §7 |
 | Reviewed | §8 |
 | PR / CI / merge / post-merge CI | PR #643 run `43800039265`: Critical Test Gate **10,416 passed**, 0 failed (`DeployHardenDirectApprovalTest` ran); squash merge pinned to `5dd5ced7` → **`312337b4f8bf993595ff315c78e90a12820c361c`** (tree `ef2a896b1ece12248870c0a0c1c801738d9808be` = tested head tree); post-merge push run `43807868750` **success**, Critical Test Gate **10,416 passed**; Full Suite skipped = DEFERRED (CG-18) |
-| Release approval (contract 2, owner-signed, approval PR) — the migration release | owner approval 2026-11-16T06:27:41Z (§11.1), signature verified (§11.2); approval PR pending |
-| Deploy through the operator (contract 2) | pending |
-| Operator re-provisioned (owner's password) → `submit-approval`, `check-approval` active | pending |
-| Production test of contract 3 (owner-signed test approval, `submit-approval`, `check-approval`, withdraw; no second deploy) | pending |
-| GO tag `dms-release-approval-direct-1-go` | pending |
+| Release approval (contract 2, owner-signed, approval PR) — the migration release | owner approval 2026-11-16T06:27:41Z (§11.1), signature verified (§11.2); approval PR #644 (run `43819408141`: Critical Gate 10,416 passed) merged `b135a928` — the last contract-2 approval PR |
+| Deploy through the operator (contract 2) | **done**: deploy `20261116-080258`, `DEPLOY RUNNER OK` (§12) |
+| Operator re-provisioned (owner's password) → `submit-approval`, `check-approval` active | **done** by the owner (runbook §6g step 0); entrypoint `CURRENT` (§13.1) |
+| Production test of contract 3 (owner-signed test approval, `submit-approval`, `check-approval`, withdraw; no second deploy) | **done**: `RELEASE APPROVAL CHECK: GO`; 5 negatives DENIED; withdrawn and DENIED since (§13.2–13.4) |
+| GO tag `dms-release-approval-direct-1-go` | **done**: annotated, object `e169873078e88c1e77ec88d955e5ad1c4f04099e` → `312337b4…` = production HEAD (§12.3) |
 
 ## 11. Owner decisions (CG-22)
 
@@ -262,3 +262,120 @@ blob `b405c9fcbc45cc02537e51c2bc2e0af631b85c7b` over the committed record blob
 `01402f59de2967ccc8efc603317677ff1460273a`: `Good "dms-release-approval" signature for owner with ED25519 key
 SHA256:0WGGTlMDzLPGAhQaRG+Ag7BqoypSLinSNOHalZKtgt4`. Refused (exit 255): namespace `git`; principal `someone`;
 `NOT_AFTER` one second later; and Phase 2's r3 signature against this record.
+
+## 12. Deploy and production verification (2026-11-16)
+
+### 12.1 Before the start
+
+Approval PR #644 merged as `b135a928` (only the record, its signature and this doc after `312337b4`). Both target
+checks `PRODUCTION_TARGET=VERIFIED`; the merged record's signature verified on the workstation (`Good … for owner`);
+`trust-check` (operator) `RELEASE GUARD TRUST: READY`; HEAD `75ac3578`, locks idle; 16:02 WITA.
+
+### 12.2 Deploy `20261116-080258` (through the operator)
+
+| Check | Result |
+|---|---|
+| `start --release-id dms-release-approval-direct-1 --approved-sha 312337b4…` | contract 2 guard on the host: signature by `owner` against the anchor, only approvals/docs after the target, release unspent, window → `RELEASE APPROVAL: GO`; 08:02:58Z → 08:04:42Z |
+| `verify 20261116-080258` (operator) | **`DEPLOY_APPROVED_TARGET_MATCH=YES (312337b4…)`**, `final exit=0`, **`DEPLOY RUNNER OK`** |
+| Deploy log (the owner read it as root, §13.1) | `Pre-deploy backup: …pre_auto_deploy_20261116-080259.sql sha256=58f37ff5b380184afa4c157c572453e9a3135ea86ced997391320ce6c79ef745`; `DEPLOY OK: 20261116-080259`; `DEPLOY_SNAPSHOT_CLEANED=YES` |
+| `follow` (operator) | composer and npm as the build identity; `DEPLOY_PRIVSEP=ENFORCED` |
+| `drift-check` / `posture` | `PRIVSEP_DRIFT=NONE`; HEAD `312337b4…`, tracked 0; units and timers unchanged; locks IDLE; **166** ERROR lines (= baseline) |
+| `trust-check` | `APPROVAL_CONTRACTS=2 3`, `APPROVAL_STORE=ABSENT` (nothing submitted yet), `RELEASE GUARD TRUST: READY` |
+| `sudo-policy-check` | `DEPLOY_OPERATOR_ENTRYPOINT=STALE` (expected until §13.1), 0 violations, `SUDO_POLICY=LEAST_PRIVILEGE` |
+| `check-approval` before re-provisioning | refused by the old entrypoint (`DEPLOY_OPERATOR=DENIED`) |
+| Smoke (canonical URL) | `/login`, `/health/live`, `/health/ready`, `/health/lb` → 200; `/storage/` → 403 |
+| `production-target-check.sh --operator --remote` | `VERIFIED` |
+| BK-2 | skipped (rule 232) |
+
+### 12.3 GO
+
+After §13: tags fetched; `dms-release-approval-direct-1-go` absent locally and on `origin`; `go_tag` in
+`312337b4:.sprint/current.yml` = `dms-release-approval-direct-1-go`; annotated tag (object `e1698730…`) on
+**`312337b4f8bf993595ff315c78e90a12820c361c`** = production HEAD, pushed and re-read from `origin`. Rollback: none.
+
+## 13. Contract 3 activation and production proof (no second deploy)
+
+### 13.1 Activation (runbook §6g step 0, the owner)
+
+The owner staged the operator's public key and ran the provisioning dry run and `--apply` from the deployed tree with
+the administrator's password: `operator key: 256 SHA256:bJxg…moEM`, existing account accepted, entrypoint
+reinstalled, drop-in re-rendered, `operator sudo verdict: OPERATOR`, `PROVISION_DEPLOY_IDENTITIES=APPLIED`. Then
+(operator): `DEPLOY_OPERATOR_ENTRYPOINT=CURRENT`, 0 violations, `SUDO_POLICY=LEAST_PRIVILEGE`; `trust-check`
+`APPROVAL_CONTRACTS=2 3`, `RELEASE GUARD TRUST: READY`.
+
+### 13.2 A signed test approval, submitted and checked
+
+The owner ran `scripts/release-approval-sign.sh --release-id dms-release-approval-direct-1-c3-test --target-sha
+312337b4… --go-tag dms-release-approval-direct-1-go --hours 2` in their own terminal (YES typed, passphrase typed):
+approval id `4fab3c0183e1211ac4b79dab8a00198c`, window 08:10:40Z → 10:10:40Z, bundle SHA-256 `c1c8c7ac…2bf3`
+(re-hashed on the workstation before submission: equal), record SHA-256 `fb6b62e3…fd65`.
+
+| Step (operator) | Result |
+|---|---|
+| `submit-approval --release-id dms-release-approval-direct-1-c3-test < bundle` | `PASS: a good 'dms-release-approval' signature by 'owner'`; **`RELEASE APPROVAL SUBMITTED: 4fab3c01…`**; record SHA-256 `fb6b62e3…fd65` (= the helper's), signature SHA-256 `c708ad71…7938`; stored under `/var/lib/daengtisiams-deploy/approvals/<release>/`; "Nothing was deployed" |
+| `check-approval --release-id … --approved-sha 312337b4…` | contract 3 selected from the store; host and host key, repository, signature against the anchor, merged with only approvals/docs after the target, release and approval id unspent, **`GitHub API rate limit — 60 of 60 requests left (needs 2, reserve 4)`**, **required CI — push run `43807868750` on `312337b4…` completed with success, required jobs succeeded, `Run critical regression tests` ran**, window → **`RELEASE APPROVAL CHECK: GO — read-only: nothing was claimed, recorded or launched`** |
+
+### 13.3 Negative tests on production (each refused before anything was stored or launched)
+
+| Attempt | Result |
+|---|---|
+| The same bundle again (replay) | `DENIED — approval 4fab3c01… is already stored` |
+| The bundle with its window moved +1 h | `DENIED — the signature does not verify for 'owner' against the trust anchor` |
+| The bundle under another release id | `DENIED — the record names release '…-c3-test', the submission is for '…-c3-other'` |
+| `check-approval` with another SHA (`75ac3578…`) | `DENIED — the active stored approval … approves 312337b4…` (no fallback to contract 2) |
+| `check-approval` of the spent contract-2 release | `DENIED — release dms-release-approval-direct-1 was already deployed on this host` |
+
+HEAD stayed `312337b4…`, locks idle.
+
+### 13.4 Withdrawal (the owner, administrator's password)
+
+`sudo bash scripts/release-approval-withdraw.sh --release-id dms-release-approval-direct-1-c3-test --approval-id
+4fab3c01…` → `RELEASE APPROVAL WITHDRAWN`, `withdrawn_by=dmsadmin`. Afterwards `check-approval` →
+`DENIED — … has stored approvals but none is active (4fab3c01… withdrawn …)`; `trust-check` `APPROVAL_STORE=OK`,
+`READY`; `PRIVSEP_DRIFT=NONE`; `SUDO_POLICY=LEAST_PRIVILEGE`; smoke 200/403. The store keeps the record, signature,
+receipt and withdrawal marker (evidence; never pruned). The owner's bundle stays in their home directory.
+
+## 14. Permanent policy (owner brief §21)
+
+Rule 236 §1 holds the end state; each setting is enforced, not only documented:
+
+| Setting | Enforced by |
+|---|---|
+| `RELEASE_APPROVAL_MODE=DIRECT_SIGNED` | host authority `DMS_PRODUCTION_RELEASE_APPROVAL_CONTRACTS="2 3"`; runbook §6g; CLAUDE.md CG-15; AGENTS.md |
+| `APPROVAL_ONLY_PR_REQUIRED` / `_COMMIT_` / `_CI_` `=FALSE` | the stored approval is read from the root-only store, not a commit (§13.2 proved a deploy-grade GO with no approval PR) |
+| `OWNER_SIGNATURE_REQUIRED=TRUE` | `ssh-keygen -Y verify` against the host trust anchor on submit, check, `start` and the bootstrap; tampered window refused (§13.3) |
+| `EXACT_SHA_BINDING_REQUIRED=TRUE` | record binds SHA and tree; `--approved-sha` must equal it (§13.3, wrong SHA refused) |
+| `REQUIRED_CI_FOR_TARGET_SHA=TRUE` | `dms_release_approval_ci_verify` (host → GitHub; critical step must have run; docs-only, pending, failed or unreachable → DENIED) |
+| `VPS_TRUST_CHECK_REQUIRED=TRUE` | `trust-check` reports the store and contracts; NOT READY on an untrusted store |
+| `PRODUCTION_VERIFICATION_REQUIRED=TRUE` | `verify <deploy-id>` re-hashes a contract-3 run's stored approval; CG-16 GO only after verification |
+| `BK2_POLICY=MANUAL_ONLY` | rule 232 (unchanged; never a gate) |
+
+Tests: `DeployHardenDirectApprovalTest` (187, a critical-gate mandatory suite, filter token `DeployHarden`) and the
+updated `DeployHardenLeastPrivilegeTest`. Contract 2 stays accepted as the fallback path when contract 3 misbehaves
+(rule 236 §3); the previous mechanism is not removed.
+
+## 15. Knowledge and architecture
+
+- **Rules:** rule 236 (new; Biznet status), rules 229 and 231 (partial-supersession notes), `CLAUDE.md` CG-15,
+  `AGENTS.md`, `.claude/rules/deploy-infra.md` (rule index row), runbook §6g (incl. step 0),
+  `deploy/release-approvals/README.md`, `docs/00-INDEX.md`, `docs/ai-knowledge/23_…` (contract-3 line, at closure).
+- **Graphify 0.9.99** (`graphify update .`, no LLM) on the closure tree `b135a928`: 58,677 → **58,932** nodes,
+  142,457 → **143,244** edges, 2,530 communities. Present: `release-approval-sign.sh`, `release-approval-submit.sh`,
+  `release-approval-withdraw.sh`, `release-approval.sh` (45 nodes: `dms_release_approval_submit`, `_ci_verify`,
+  `_ci_budget`, `_store_scan`, `_direct_select`, `_withdraw`), `deploy-runner-evidence.sh`
+  (`dms_runner_assert_direct_store`), `deploy-vps-runner.sh` (`check_approval_lock`, `check_approval_cleanup`). Shell
+  calls across sourced files are not extracted (Graphify limit). `graphify-out/` untracked.
+- **Dataviz, Obsidian:** a Dataviz page with the
+  measured approval-PR lead times — #637 77 min, #639 72 min, #641 61 min, #644 73 min open → merge, Critical Gate
+  54–70 min — against contract 3, which needs no PR or CI wait); Obsidian synced to the closure merge (closure report).
+
+## 16. Cleanup (measured before the closure PR)
+
+| Resource | Result |
+|---|---|
+| Worktrees | implementation and approval worktrees removed (both clean, PRs #643 and #644 merged at their tested heads); the closure worktree is removed after its merge |
+| Branches | `fix/dms-release-approval-direct-1` and the approval branch deleted locally and on `origin`; 0 left |
+| Processes | no CI watcher, test run, graph build or SSH session of this sprint left running |
+| Host | deploy, release and rollback locks IDLE; `DEPLOY_SNAPSHOT_CLEANED=YES` (the owner's read-out, §12.2); no runner process |
+| Approval artifacts | the store's test approval (record, signature, receipt, withdrawal marker) and the spent records stay as evidence; the owner's test bundle stays in the owner's home; the tampered copy used in §13.3 was created in the session scratchpad and deleted at once |
+| Scratchpad tools | the contract-2 signing helper used for the approval PRs lived only in the session scratchpad; contract 3 uses `scripts/release-approval-sign.sh` |
