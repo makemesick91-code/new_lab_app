@@ -84,6 +84,22 @@ function rptrStore(object $t, ClinicVisit $visit, RmeInvoice $invoice, array $fo
     return $t->actingAs($t->cashier)->post(route('rme.cashier.payment.store', [$visit, $invoice]), $form);
 }
 
+function rptrExpectReferenceRefusal(ValidationException $e): void
+{
+    expect($e->errors())->toHaveKey('reference_number')
+        ->and($e->errors()['reference_number'])->toBe([PaymentMethod::MESSAGE_TRANSFER_REFERENCE_REQUIRED]);
+}
+
+/** The reference field's initial Alpine state on the ordinary payment form. */
+function rptrReferenceInitialState(string $html): ?bool
+{
+    if (! preg_match('/x-data="\{ requiresReference: (true|false) \}"\s+x-on:rme-payment-method-changed\.window/', $html, $m)) {
+        return null;
+    }
+
+    return $m[1] === 'true';
+}
+
 it('TR-01 refuses a Bank Transfer payment without a reference and records nothing', function () {
     [$visit, $invoice] = rptrUnpaidInvoice($this);
 
@@ -137,11 +153,13 @@ it('TR-05 decides from the server-side method record, never from a client-suppli
 it('TR-06 re-asserts the rule in the service, so no payment path can insert a transfer without a reference', function () {
     [, $invoice] = rptrUnpaidInvoice($this);
 
+    // The refusal must be THIS rule's (its key and message), not any other
+    // ValidationException the payment path can raise.
     expect(fn () => app(RmePaymentService::class)->pay(
         $invoice,
         $this->cashier,
         rptrForm($invoice, $this->transfer, null),
-    ))->toThrow(ValidationException::class);
+    ))->toThrow(fn (ValidationException $e) => rptrExpectReferenceRefusal($e));
 
     expect(RmePayment::query()->where('rme_invoice_id', $invoice->id)->count())->toBe(0);
 });
@@ -157,4 +175,50 @@ it('TR-07 marks the transfer method as needing a reference on the payment form',
     expect($html)->toMatch('/value="'.$this->transfer->id.'"[^>]*data-requires-reference="1"/')
         ->and($html)->toMatch('/value="'.$this->cash->id.'"[^>]*data-requires-reference="0"/')
         ->and($html)->toContain('wajib untuk Transfer Bank');
+});
+
+it('TR-08 fails closed for a soft-deleted transfer method: the stored row still demands the reference', function () {
+    [, $invoice] = rptrUnpaidInvoice($this);
+    $this->transfer->delete();
+
+    expect(PaymentMethod::query()->find($this->transfer->id))->toBeNull()
+        ->and(PaymentMethod::withTrashed()->find($this->transfer->id)?->trashed())->toBeTrue()
+        ->and(PaymentMethod::idRequiresTransferReference($this->transfer->id))->toBeTrue()
+        ->and(PaymentMethod::idRequiresTransferReference($this->cash->id))->toBeFalse();
+
+    expect(fn () => app(RmePaymentService::class)->pay(
+        $invoice,
+        $this->cashier,
+        rptrForm($invoice, $this->transfer, null),
+    ))->toThrow(fn (ValidationException $e) => rptrExpectReferenceRefusal($e));
+
+    expect(RmePayment::query()->where('rme_invoice_id', $invoice->id)->count())->toBe(0);
+});
+
+it('TR-09 starts the reference field from the server-rendered selection after a validation redirect', function () {
+    [$visit, $invoice] = rptrUnpaidInvoice($this);
+    $create = route('rme.cashier.payment.create', [$visit, $invoice]);
+    $store = route('rme.cashier.payment.store', [$visit, $invoice]);
+
+    expect(rptrReferenceInitialState($this->actingAs($this->cashier)->get($create)->assertOk()->getContent()))->toBeFalse();
+
+    // A Bank Transfer refused for its missing reference comes back with the
+    // transfer still selected, so the field must start as required.
+    $html = $this->actingAs($this->cashier)->from($create)->followingRedirects()
+        ->post($store, rptrForm($invoice, $this->transfer, null))
+        ->assertOk()
+        ->getContent();
+
+    expect($html)->toContain(PaymentMethod::MESSAGE_TRANSFER_REFERENCE_REQUIRED)
+        ->and($html)->toMatch('/value="'.$this->transfer->id.'"[^>]*data-requires-reference="1"[^>]*selected/')
+        ->and(rptrReferenceInitialState($html))->toBeTrue();
+
+    // A cash payment refused for another reason comes back with cash selected: not required.
+    $cashHtml = $this->actingAs($this->cashier)->from($create)->followingRedirects()
+        ->post($store, rptrForm($invoice, $this->cash, null, 0))
+        ->assertOk()
+        ->getContent();
+
+    expect($cashHtml)->toMatch('/value="'.$this->cash->id.'"[^>]*data-requires-reference="0"[^>]*selected/')
+        ->and(rptrReferenceInitialState($cashHtml))->toBeFalse();
 });

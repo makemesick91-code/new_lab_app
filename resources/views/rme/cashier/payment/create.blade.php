@@ -376,7 +376,7 @@
                         class="block w-full max-w-xs rounded-md border-hairline shadow-sm text-sm focus:ring-brand-500 focus:border-brand-500 @error('payment_method_id') border-danger @enderror">
                         <option value="" data-requires-reference="0">— Pilih Metode —</option>
                         @foreach ($paymentMethods as $method)
-                            <option value="{{ $method->id }}" data-requires-reference="{{ $method->requiresTransferReference() ? '1' : '0' }}" {{ old('payment_method_id') == $method->id ? 'selected' : '' }}>
+                            <option value="{{ $method->id }}" data-requires-reference="{{ in_array((int) $method->id, $referenceRequiredMethodIds, true) ? '1' : '0' }}" {{ old('payment_method_id') == $method->id ? 'selected' : '' }}>
                                 {{ $method->name }}
                             </option>
                         @endforeach
@@ -423,8 +423,10 @@
                     @enderror
                 </div>
 
-                {{-- Reference Number (rule 238 §3: required for Bank Transfer) --}}
-                <div x-data="{ requiresReference: false }"
+                {{-- Reference Number (rule 238 §3: required for Bank Transfer). It starts in
+                     the state of the method the select renders as selected (the old
+                     one after a validation redirect), as the controller decided. --}}
+                <div x-data="{ requiresReference: @js($referenceRequiredOnLoad) }"
                     x-on:rme-payment-method-changed.window="requiresReference = $event.detail.requiresReference">
                     <label for="reference_number" class="block text-sm font-medium text-ink mb-1">
                         No. Referensi
@@ -550,7 +552,7 @@
                                     class="block w-full rounded-md border-hairline text-sm shadow-sm focus:border-brand-500 focus:ring-brand-500">
                                     <option value="" data-requires-reference="0">— Pilih Metode —</option>
                                     @foreach ($paymentMethods as $method)
-                                        <option value="{{ $method->id }}" data-requires-reference="{{ $method->requiresTransferReference() ? '1' : '0' }}">{{ $method->name }}</option>
+                                        <option value="{{ $method->id }}" data-requires-reference="{{ in_array((int) $method->id, $referenceRequiredMethodIds, true) ? '1' : '0' }}">{{ $method->name }}</option>
                                     @endforeach
                                 </select>
                             </div>
@@ -565,6 +567,7 @@
                                 <input type="datetime-local" name="paid_at" id="co_paid_at" value="{{ now()->format('Y-m-d\TH:i') }}"
                                     class="block w-full rounded-md border-hairline text-sm shadow-sm focus:border-brand-500 focus:ring-brand-500">
                             </div>
+                            {{-- Its select restores no old selection: it always renders the placeholder, which needs no reference. --}}
                             <div x-data="{ requiresReference: false }"
                                 x-on:rme-co-payment-method-changed.window="requiresReference = $event.detail.requiresReference">
                                 <label for="co_reference_number" class="mb-1 block text-sm font-medium text-ink">No. Referensi <span class="text-danger" x-show="requiresReference" x-cloak>*</span> <span class="text-xs text-ink-muted">(wajib untuk Transfer Bank)</span></label>

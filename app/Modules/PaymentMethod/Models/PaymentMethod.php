@@ -47,7 +47,9 @@ class PaymentMethod extends Model
 
     /**
      * Rule 238 §3 — decided from the stored method record, never from anything
-     * the client sends about the method.
+     * the client sends about the method. Fails closed: a soft-deleted transfer
+     * method still demands its reference (withTrashed), so retiring a method
+     * can never open a path that records a transfer without one.
      */
     public static function idRequiresTransferReference(mixed $paymentMethodId): bool
     {
@@ -55,7 +57,7 @@ class PaymentMethod extends Model
             return false;
         }
 
-        return (bool) self::query()->whereKey((int) $paymentMethodId)->first()?->requiresTransferReference();
+        return (bool) self::withTrashed()->whereKey((int) $paymentMethodId)->first()?->requiresTransferReference();
     }
 
     protected static function newFactory(): PaymentMethodFactory

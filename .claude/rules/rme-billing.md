@@ -80,9 +80,8 @@ code, then the canonical rule, and report the drift.
   Unusable actor → empty list, null lookup, or 403 on create. Source: rule 197 §E, rule 198.
 - **AIR-RMB-12** Cashier scope = `RmeWorkingBranchScope` asked of the persisted actor; the invoice branch is the
   visit's, a submitted `branch_id` only narrows. Issuing is branch-bounded (`RmeInvoicePolicy::create(User,
-  ?ClinicVisit)` + service `allows()` on the locked visit). A read out of scope answers 404; issuing an invoice out of
-  scope is refused with 403. Never pass `null` to
-  `branchIdsFor()` — it answers every RME branch. Source: rule 194 §27a, rule 198 §30.
+  ?ClinicVisit)` + service `allows()` on the locked visit). Out of scope, a read answers 404 and issuing 403. Never
+  pass `null` to `branchIdsFor()` — it answers every RME branch. Source: rule 194 §27a, rule 198 §30.
 
 ### Pricing (owner D21 revised: manual cashier pricing)
 
@@ -235,18 +234,17 @@ code, then the canonical rule, and report the drift.
 - **AIR-RMB-44** A receipt is never stamped LUNAS while a balance remains or the reconciliation fails: a remaining
   balance prints DIBAYAR SEBAGIAN, a mismatch prints a visible warning. `CreateRmePaymentRequest::authorize()` runs the
   `pay` policy and `belongsToVisit` before validation, so a cashier at another branch learns nothing about a
-  correction. Source: rule 185 §8, §11; `.cursor/rules/191-rme-invoice-correction-prepayment-activation.mdc` §9a.
+  correction. Source: rule 185 §8, §11; rule 191 §9a.
 
 - **AIR-RMB-45** The post-payment lab-candidate failure warning logs the exception class and
   `TelemetryRedactor::exceptionMessage()`, never a raw `getMessage()`: a QueryException carries interpolated
-  bindings and PostgreSQL DETAIL rows (CG-11). The failure still never rolls the payment back. Source:
-  `.cursor/rules/222-rme-route-key-constraint-and-failure-log-redaction.mdc` §2.
+  bindings and PostgreSQL DETAIL rows (CG-11). The failure still never rolls the payment back. Source: rule 222 §2.
 
 - **AIR-RMB-46** `{rmeInvoice}` (15 cashier, correction, refund, dispute and receivable routes) is constrained globally
   by `App\Support\Routing\DatabaseRouteKey`; the five `oversight/rme/visits/{visit}` routes carry
   `->where('visit', DatabaseRouteKey::PATTERN)` per route, because `visit` is a generic name (never global, never
   `whereNumber`, which let a number beyond PHP's integer range 500 on `int $visit` and a leading-zero alias open a
-  real visit). Source: `.cursor/rules/222-rme-route-key-constraint-and-failure-log-redaction.mdc` §1.6–§1.8.
+  real visit). Source: rule 222 §1.6–§1.8.
 - **AIR-RMB-47** `{receiptSnapshot}` is global (no `whereNumber`); oversight `{patient}` is per route. Rule 222 §1.10.
 
 ## Current posture (snapshot 2026-10-25 — verify before relying on it)
@@ -320,6 +318,7 @@ code, then the canonical rule, and report the drift.
 | `.cursor/rules/109-rme-exam-consent-odontogram-history.mdc` | Consent gates exam finish, not payment |
 | `.cursor/rules/92-feature-flag-runtime-override.mdc` | Flag environment overrides captured at config build |
 | `.cursor/rules/222-rme-route-key-constraint-and-failure-log-redaction.mdc` | Caught exceptions logged through the redactor; cashier visit, invoice, receipt and oversight visit/patient route keys constrained |
+| `.cursor/rules/238-rme-memo-2026-10-17-alignment.mdc` | Bank Transfer payment needs its reference (stored method, fail closed, re-asserted at the insert); dashboard totals need payment authority |
 
 ## History
 

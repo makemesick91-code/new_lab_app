@@ -61,10 +61,24 @@ class RmePaymentController extends Controller
                 ->getVisitPayableSummary($rmeInvoice)['outstanding_receivables'];
         }
 
+        // Rule 238 §3 — which methods need a transfer reference is decided here
+        // from the stored records; the form only renders it. After a validation
+        // redirect the ordinary form re-selects the old method, so its reference
+        // field starts in that method's state (the server still enforces it).
+        $paymentMethods = $this->paymentMethods->listActive();
+        $referenceRequiredMethodIds = $paymentMethods
+            ->filter(fn (PaymentMethod $method): bool => $method->requiresTransferReference())
+            ->map(fn (PaymentMethod $method): int => (int) $method->id)
+            ->values()
+            ->all();
+
         return view('rme.cashier.payment.create', [
             'visit' => $clinicVisit->load(['patient', 'doctor', 'followUpOf']),
             'invoice' => $rmeInvoice->load(['items.treatment', 'cashier', 'payments.paymentMethod', 'payments.cashier']),
-            'paymentMethods' => $this->paymentMethods->listActive(),
+            'paymentMethods' => $paymentMethods,
+            'referenceRequiredMethodIds' => $referenceRequiredMethodIds,
+            'referenceRequiredOnLoad' => is_numeric($request->old('payment_method_id'))
+                && in_array((int) $request->old('payment_method_id'), $referenceRequiredMethodIds, true),
             'payableSummary' => $payableSummary,
             'outstandingReceivables' => $outstandingReceivables,
             // FEATURE-RME-BRANCH-TARIFF-AUTHORITY-1 — D10 display only; the
