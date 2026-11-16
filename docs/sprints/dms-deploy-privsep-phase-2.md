@@ -289,7 +289,7 @@ the last matching rule wins and sudo would never prompt; `sudo -k; sudo -v` does
 | r2 release approval | owner approval (§11.5), signature (§11.6); approval PR #639 merged `fcafdd70` |
 | §6f for r2 | rehearsal **PASS**, operator provisioned, boundary proven; the operator **refused every action** (Node.js symlinks) — deploy not started (§7.2); fix → release `-r3` |
 | r3 fix | PR #640 (CI run `43767942068`: Critical Gate 10,222 passed) merged `75ac3578`; post-merge CI run `43773683512` green (Critical Gate 10,222 passed; Full Suite deferred, CG-18) |
-| r3 release approval | owner approval 2026-11-16T00:56:39Z (§11.7); owner signature pending; approval PR pending |
+| r3 release approval | owner approval 2026-11-16T00:56:39Z (§11.7), signature verified (§11.8); approval PR pending |
 | One-time provisioning, rehearsal, deploy through the operator | pending (runbook §6f, from r3) |
 | Administrator's passwordless sudo retired (owner-gated) | pending |
 | Production verification, GO tag | pending |
@@ -395,6 +395,14 @@ the owner's explicit go-ahead, by full SHA `9312818fc9115707b9e0b351ae805080be46
 stay untouched and unused.
 
 Record: `deploy/release-approvals/dms-deploy-privsep-phase-2-r3.approval` (contract 2, window 2026-11-16T00:56:39Z → 2026-11-18T00:56:39Z).
+
+### 11.8 The owner's r3 signature (verified on the workstation, read-only)
+
+Owner-signed in their own terminal (`ssh-keygen -Y sign`, namespace `dms-release-approval`, file form); signature
+blob `dbd55c9cdc39addb00317b65b24cd2144ef7f46b` over the committed record blob
+`badc4dc72a7b5dda46f44e9888ec75f1cb76588e`: `Good "dms-release-approval" signature for owner with ED25519 key
+SHA256:0WGGTlMDzLPGAhQaRG+Ag7BqoypSLinSNOHalZKtgt4`. Refused (exit 255): namespace `git`; principal `someone`;
+`NOT_AFTER` one second later; and the r2 signature against the r3 record.
 
 ## 12. Deploy and production verification
 
