@@ -1570,6 +1570,12 @@ return [
         // and the cross-branch clinical-document read allowlist (owner decisions
         // 2026-11-07, D3 Group 1 and D3-NEW-4).
         'tests/Feature/RME/RmeClinicalWriteAuthorityTest.php',
+        // Same program, PR5 (rule 237 §12) — a doctor's identity is resolved once per request on the
+        // visit list and the patient queue (CC1-PERF; existing `DoctorPatientScope` token), and the
+        // Android governance scanner reads the enforcement flag only through FeatureFlagService
+        // (CC1-CG08, CG-08; existing `DoctorDevice` token).
+        'tests/Feature/RME/DoctorPatientScopeQueryBudgetTest.php',
+        'tests/Feature/DoctorDevice/DoctorDeviceAndroidFlagAuthorityTest.php',
         'tests/Feature/RME/RmeClinicalDocumentReadScopeAllowlistTest.php',
         // 8C PR2 — prescription and consent document integrity (D3 Group 2 "lock
         // after completion", signature "named doctor signs only"). Selected by the
