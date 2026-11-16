@@ -412,3 +412,12 @@ note; a large override count from the measurement would make reconciliation a se
 | M1.x PTM + v2026.2 + clinical photos | **Accept defaults; the owner sends the clause 8/9 wording** — the template PR waits for the owner's text; the doctor-signature and gate PRs do not depend on it |
 | M2.1/M2.2/M2.4/M3.1 doctor scope, downloads, fields | **Accept all defaults** (encounter scope behind its flag, OFF until a reviewed dry run, doctor UAT and an owner decision) |
 | M4.1/M4.2 RM number + required fields | **Accept all defaults** (the production measurement runs before the automatic-number PR merges) |
+
+### Applied during implementation (2026-11-17)
+
+| Plan | Point | Applied |
+|---|---|---|
+| M4.1 | default 3 "continue after the highest" | applied literally after the PR-2 review: a successful claim (CSV import, later the paper card) raises the branch-year counter to the claimed number under the same lock (oversized numbers excluded as in the seed); the skip loop stays as a safety net. A skip-only design made the result depend on timing, walked claimed blocks under the lock and could reissue a purged number |
+| M4.1 | CC1-PAT-2 | the master-form branch must be allowed by `RmeWorkingBranchScope` (the request may only narrow, CG-05), fixed in PR-2 |
+| M2.4 | OD-MEMO-B-1 (residual, LOW) | a Doctor who also holds Finance Klinik / Data Analyst can still print NATIVE RME / odontogram through `oversight.rme.visits.*` (rule 138 §6 surface, pre-existing); the oversight doctor refusal on the legacy doors is one layer (controller + service). Follow-up: a dedicated oversight ability |
+| M3.3, M1.x, M4.1 | release constraint | each stacked series (M3.3 PR1–PR5, PTM PR1–PR3, RM PR-2–PR-3) merges back-to-back only after the whole series is reviewed and green, so the base never carries half a series |
