@@ -15,7 +15,6 @@ use App\Modules\Prescription\Services\PrescriptionWhatsAppDeliveryService;
 use App\Modules\Prescription\Services\RmePrescriptionService;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
-use Illuminate\Support\Facades\Gate;
 use Illuminate\View\View;
 
 class RmePrescriptionController extends Controller
@@ -117,16 +116,8 @@ class RmePrescriptionController extends Controller
 
     public function update(UpdateRmePrescriptionRequest $request, RmePrescription $rmePrescription): RedirectResponse
     {
-        // DMS-RME-COMPREHENSIVE-CLOSURE-1 — when the policy refuses BECAUSE the
-        // prescription is signed by its own doctor, the refusal is recorded here
-        // (rejections are audited from controllers, never policies). Any other
-        // refusal (closed visit, branch, permission) writes nothing, as before.
-        $decision = Gate::inspect('update', $rmePrescription);
-
-        if ($decision->denied() && $decision->message() === PrescriptionAuthoringAuthority::SIGNED_CONTENT_LOCK_MESSAGE) {
-            $this->service->recordSignedEditRejection($rmePrescription, $request->user());
-        }
-
+        // The signed-lock refusal (and its rejection audit) happens in
+        // UpdateRmePrescriptionRequest::authorize(), before validation (R8A-2).
         $this->authorize('update', $rmePrescription);
 
         $this->service->update(

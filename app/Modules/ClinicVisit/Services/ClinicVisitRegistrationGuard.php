@@ -33,6 +33,9 @@ class ClinicVisitRegistrationGuard
 {
     public const MESSAGE_PATIENT = 'Pasien yang dipilih tidak tersedia untuk pendaftaran kunjungan.';
 
+    /** DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-5-5) — %s is the open visit's number. */
+    public const MESSAGE_EXAMINATION_IN_PROGRESS = 'Pasien ini masih dalam pemeriksaan pada kunjungan %s. Selesaikan atau batalkan pemeriksaan tersebut sebelum mendaftarkan kunjungan baru.';
+
     public function __construct(
         private readonly ClinicVisitRepositoryInterface $visits,
         private readonly BranchService $branches,
@@ -132,6 +135,33 @@ class ClinicVisitRegistrationGuard
 
         // OD-1: no branch comparison, no doctor comparison. See the class note.
         return null;
+    }
+
+    /**
+     * DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-5-5, owner decision 2026-11-16) — no new
+     * visit while the patient has an examination in progress. A second open
+     * examination is exactly the state ActiveEncounterResolver fails closed on
+     * ("more than one examination in progress"), so registering one used to lead
+     * the clinic into a dead end only cancelling could leave. registered /
+     * waiting / cashier_pending visits do not block (policy unchanged).
+     *
+     * With `$lock` each in-progress visit is re-read FOR SHARE inside the
+     * registration transaction: a finish or a cancel committing meanwhile is
+     * waited for and then seen, so the decision is made on committed state.
+     */
+    public function assertNoExaminationInProgress(int $patientId, bool $lock = false): void
+    {
+        foreach (app(ActiveEncounterResolver::class)->activeFor($patientId) as $active) {
+            $current = $lock
+                ? $this->visits->findForRegistrationLink($this->branches->rmeEnabledIds(), (int) $active->getKey(), true)
+                : $active;
+
+            if ($current !== null && $current->status === ClinicVisit::STATUS_IN_PROGRESS) {
+                throw ValidationException::withMessages([
+                    'patient_id' => sprintf(self::MESSAGE_EXAMINATION_IN_PROGRESS, (string) $current->visit_number),
+                ]);
+            }
+        }
     }
 
     /** @param  array<string, mixed>  $data */

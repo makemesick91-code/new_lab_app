@@ -77,4 +77,38 @@ class RmeLabIntegrationService
             ]
         );
     }
+
+    /**
+     * DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-7-5, owner decision 2026-11-16) — the
+     * PAID invoices of the active RME branches that still have a lab-requiring
+     * item without its candidate: what a failed generation after a payment left
+     * behind (RmePaymentService logs it and keeps the payment). Read-only; the
+     * backfill command feeds them to generateForPaidInvoice(), which is
+     * idempotent per item.
+     *
+     * @return Collection<int, int>
+     */
+    public function paidInvoiceIdsMissingCandidates(?int $limit = null): Collection
+    {
+        $branchIds = $this->branches->rmeEnabledIds();
+
+        if ($branchIds === []) {
+            return collect();
+        }
+
+        return RmeInvoice::query()
+            ->where('status', RmeInvoice::STATUS_PAID)
+            ->whereIn('branch_id', $branchIds)
+            ->whereHas('items', fn ($items) => $items
+                ->whereNotNull('treatment_id')
+                ->whereHas('treatment', fn ($treatment) => $treatment->where('requires_lab', true))
+                ->whereNotExists(fn ($candidate) => $candidate
+                    ->selectRaw('1')
+                    ->from('trx_lab_case_candidates')
+                    ->whereColumn('trx_lab_case_candidates.rme_invoice_item_id', 'trx_rme_invoice_items.id')))
+            ->orderBy('id')
+            ->when($limit !== null, fn ($query) => $query->limit($limit))
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id);
+    }
 }

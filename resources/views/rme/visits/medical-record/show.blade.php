@@ -403,6 +403,7 @@
                     class="rm-page-preview group relative rounded-lg border border-gray-300 bg-white p-2 touch-pan-y {{ $canEditHandwriting ? 'cursor-pointer transition hover:border-brand-500 hover:shadow' : '' }}"
                     data-page-number="{{ $activePageNumber }}"
                     data-storage-page="{{ $storagePageNumber }}"
+                    data-revision="{{ $activeRmPage['revision'] ?? '' }}"
                     data-form-action="{{ route('rme.visits.medical-record.handwriting.store', [$handwritingFormVisit, $handwritingFormRecord]) }}"
                     data-existing-src="{{ $activeSrc }}"
                     @if ($canEditHandwriting) role="button" tabindex="0" @endif
@@ -466,6 +467,10 @@
                             @endif
                             <input type="hidden" name="handwriting_data" id="handwriting-data-input">
                             <input type="hidden" name="page_number" id="handwriting-page-input" value="{{ $storagePageNumber }}">
+                            {{-- DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-6-1) — the revision of the page
+                                 this device loaded; a save over a page another device changed
+                                 meanwhile is refused instead of replacing that drawing. --}}
+                            <input type="hidden" name="page_revision" id="handwriting-revision-input" value="{{ $activeRmPage['revision'] ?? '' }}">
 
                             {{-- Sprint 60 — A4-portrait page canvas (900 x 1273,
                                  ≈ 1:1.414). One canvas = one RM page; overflow
@@ -544,6 +549,7 @@
                     const form = document.getElementById('handwriting-form');
                     const input = document.getElementById('handwriting-data-input');
                     const pageInput = document.getElementById('handwriting-page-input');
+                    const revisionInput = document.getElementById('handwriting-revision-input');
                     const overlay = document.getElementById('rm-editor-overlay');
                     const pageLabel = document.getElementById('editor-page-label');
 
@@ -777,6 +783,9 @@
                             if (fig.dataset.formAction) {
                                 form.action = fig.dataset.formAction;
                             }
+                            if (revisionInput) {
+                                revisionInput.value = fig.dataset.revision || '';
+                            }
                             openEditor(storagePage, fig.dataset.existingSrc || '');
                         }
                         fig.addEventListener('click', function (e) {
@@ -798,6 +807,10 @@
                             const nextPage = parseInt(addBtn.dataset.nextPage, 10) || 2;
                             if (addBtn.dataset.formAction) {
                                 form.action = addBtn.dataset.formAction;
+                            }
+                            // A brand-new page: another device adding it first is a conflict.
+                            if (revisionInput) {
+                                revisionInput.value = 'none';
                             }
                             openEditor(nextPage, '');
                         });

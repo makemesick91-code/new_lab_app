@@ -152,6 +152,20 @@ class MedicalRecord extends Model
      *                             linked image would silently render blank in
      *                             the exported PDF.
      */
+    /** DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-6-1) — the revision of a page that has no stored drawing. */
+    public const HANDWRITING_REVISION_NONE = 'none';
+
+    /**
+     * DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-6-1, owner decision 2026-11-16) — an
+     * opaque revision of one handwriting page. Every save writes a fresh object
+     * key (rule 224), so the key's digest changes on every save; the key itself
+     * never reaches a page (rule 121 §3). A page without a drawing is `none`.
+     */
+    public static function handwritingRevision(?string $path): string
+    {
+        return filled($path) ? sha1('rme-handwriting|'.$path) : self::HANDWRITING_REVISION_NONE;
+    }
+
     public function orderedHandwritingPages(bool $embedBinary = false): Collection
     {
         $legacy = $this->latestHandwriting();
@@ -161,6 +175,7 @@ class MedicalRecord extends Model
             'is_legacy' => true,
             'preview_url' => $embedBinary ? $legacy?->previewDataUri() : $legacy?->previewUrl(),
             'saved_at' => $legacy?->saved_at,
+            'revision' => self::handwritingRevision($legacy?->handwriting_path),
             // Deliberately unchanged semantics: "a page was recorded", not "the
             // binary is currently readable". Keeping this as a path check avoids
             // a disk stat per page and preserves existing Sprint 60 behaviour.
@@ -173,6 +188,7 @@ class MedicalRecord extends Model
                 'is_legacy' => false,
                 'preview_url' => $embedBinary ? $page->previewDataUri() : $page->previewUrl(),
                 'saved_at' => $page->saved_at,
+                'revision' => self::handwritingRevision($page->handwriting_path),
                 'has_content' => filled($page->handwriting_path),
             ]);
         }

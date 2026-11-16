@@ -32,6 +32,7 @@ use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\ClinicVisit\Services\ClinicVisitRegistrationGuard;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 const CVRC_WRITER = 'cvrc_concurrency_writer';
 const CVRC_PROBE = 'cvrc_concurrency_probe';
@@ -164,5 +165,41 @@ it('refuses a prior visit that a committed concurrent soft-delete removed before
     DB::connection(CVRC_WRITER)->transaction(function (): void {
         expect(app(ClinicVisitRegistrationGuard::class)->followUpViolation(cvrcLink($this->patientId, $this->priorId), lock: true))
             ->toBe(['follow_up_of_visit_id', 'Kunjungan sebelumnya harus berasal dari cabang RME yang valid.']);
+    });
+});
+
+/*
+| DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-5-5) — no new visit while an examination is in progress,
+| decided on rows read FOR SHARE inside the registration transaction.
+*/
+
+it('OD-5-5 holds the in-progress visit FOR SHARE while refusing, so a finish or cancel waits for the decision', function (): void {
+    DB::connection(CVRC_WRITER)->table('trx_clinic_visits')->where('id', $this->priorId)->update(['status' => ClinicVisit::STATUS_IN_PROGRESS]);
+
+    DB::connection(CVRC_WRITER)->transaction(function (): void {
+        $refused = false;
+
+        try {
+            app(ClinicVisitRegistrationGuard::class)->assertNoExaminationInProgress($this->patientId, lock: true);
+        } catch (ValidationException $e) {
+            $refused = str_contains((string) collect($e->errors())->flatten()->first(), 'VIS-CVRC-');
+        }
+
+        expect($refused)->toBeTrue()
+            // A status change (FOR NO KEY UPDATE) must wait while the decision stands.
+            ->and(cvrcProbeBlocked('FOR NO KEY UPDATE', $this->priorId))->toBeTrue();
+    });
+
+    expect(cvrcProbeBlocked('FOR NO KEY UPDATE', $this->priorId))->toBeFalse();
+});
+
+it('OD-5-5 sees a finish committed before the registration and lets it through', function (): void {
+    DB::connection(CVRC_WRITER)->table('trx_clinic_visits')->where('id', $this->priorId)->update(['status' => ClinicVisit::STATUS_CASHIER_PENDING]);
+
+    DB::connection(CVRC_WRITER)->transaction(function (): void {
+        app(ClinicVisitRegistrationGuard::class)->assertNoExaminationInProgress($this->patientId, lock: true);
+
+        // Nothing in progress, nothing locked.
+        expect(cvrcProbeBlocked('FOR NO KEY UPDATE', $this->priorId))->toBeFalse();
     });
 });

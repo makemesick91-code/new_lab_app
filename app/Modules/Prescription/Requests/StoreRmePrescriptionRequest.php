@@ -2,14 +2,29 @@
 
 namespace App\Modules\Prescription\Requests;
 
+use App\Modules\ClinicVisit\Models\ClinicVisit;
+use App\Modules\Prescription\Models\RmePrescription;
 use App\Modules\Prescription\Services\PrescriptionCanvasDecoder;
+use Illuminate\Auth\Access\Response;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Support\Facades\Gate;
 
 class StoreRmePrescriptionRequest extends FormRequest
 {
-    public function authorize(): bool
+    /**
+     * DMS-RME-COMPREHENSIVE-CLOSURE-1 (R8A-2, owner decision 2026-11-16) — the
+     * policy decides BEFORE the payload is validated, so a refused account gets
+     * its 403/404 whatever it sends. The controller and the service decide again.
+     */
+    public function authorize(): Response
     {
-        return true;
+        $visit = $this->route('clinicVisit');
+
+        if (! $visit instanceof ClinicVisit) {
+            return Response::denyAsNotFound();
+        }
+
+        return Gate::forUser($this->user())->inspect('create', [RmePrescription::class, $visit]);
     }
 
     /**

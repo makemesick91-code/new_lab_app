@@ -410,3 +410,48 @@ it('OD-5-6 offers "Tambah Lembar RM" only for the current encounter, never for a
         ->assertOk()
         ->assertSee('Tambah Lembar RM (Kunjungan #'.$encounter->visit_number.')', false);
 });
+
+/*
+|--------------------------------------------------------------------------
+| DMS-RME-COMPREHENSIVE-CLOSURE-1 (R8A-2) — authorization before validation
+|--------------------------------------------------------------------------
+|
+| Owner decision 2026-11-16: an account the policy refuses gets its 403/404
+| whatever payload it sends. Before, a malformed payload was answered with field
+| errors first, so the reply depended on the payload.
+*/
+
+it('R8A2-01 answers a refused create with 403 even for a malformed payload', function () {
+    // The doctor is scoped to room A; visit B is an active visit of room B.
+    actingAs($this->doctor)
+        ->post(route('rme.visits.prescription.store', $this->visitB), [])
+        ->assertForbidden();
+
+    expect(RmePrescription::query()->where('clinic_visit_id', $this->visitB->id)->exists())->toBeFalse();
+});
+
+it('R8A2-02 answers a refused update with 403 even for a malformed payload, writing nothing', function () {
+    $prescription = RmePrescription::factory()->withStoredCanvases()->unsigned()->create([
+        'clinic_visit_id' => $this->visitB->id,
+        'branch_id' => $this->visitB->branch_id,
+        'patient_id' => $this->visitB->patient_id,
+        'doctor_id' => $this->visitB->doctor_id,
+    ]);
+    $before = $prescription->fresh()->getAttributes();
+
+    actingAs($this->doctor)
+        ->patch(route('rme.prescriptions.update', $prescription), ['prescription_date' => 'not-a-date'])
+        ->assertForbidden();
+
+    expect($prescription->fresh()->getAttributes())->toBe($before);
+});
+
+it('R8A2-03 keeps validation for an authorised author and 404 for a visit that does not exist', function () {
+    actingAs($this->doctor)
+        ->post(route('rme.visits.prescription.store', $this->visitA), [])
+        ->assertSessionHasErrors('prescription_date');
+
+    actingAs($this->doctor)
+        ->post(route('rme.visits.prescription.store', 987654321), cwaForm())
+        ->assertNotFound();
+});

@@ -130,3 +130,27 @@ still disabled until consent.
 cancellation cannot commit between the check and the insert); `ClinicVisitService::patientVisitOptions()` never
 offers one; the visit page offers no "Buat Kontrol" from a cancelled visit (`canStartKontrolFromHere`, decided in the
 controller). Existing links are not touched. Billing already refused a cancelled parent for the Rp0 Kontrol.
+
+## 15. Page revision, open examination, authorization order, lab backfill (PR4) — owner decisions 2026-11-16
+
+1. **OD-6-1 page revision.** Every handwriting page carries `MedicalRecord::handwritingRevision()` (a digest of its
+   object key — every save writes a fresh key, rule 224 — or `none` for a page without a drawing); the key itself never
+   reaches a page (rule 121 §3). The form posts `page_revision` (`none` from "+ Tambah Halaman RM");
+   `MedicalRecordHandwritingService::save()` compares it with the page as stored, under the record lock and before any
+   object is written, and refuses a different one with `MESSAGE_STALE_PAGE` (reload). A request without the field is
+   not compared. Nothing is silently replaced.
+2. **OD-5-5 no second open examination.** `ClinicVisitRegistrationGuard::assertNoExaminationInProgress()` — called in
+   `ClinicVisitService::create()` inside the registration transaction, reading each in-progress visit FOR SHARE —
+   refuses a new visit while the patient has a visit `in_progress`, naming that visit's number. registered / waiting /
+   cashier_pending visits do not block; a brand-new patient is never checked.
+3. **R8A-2 for prescriptions.** `StoreRmePrescriptionRequest` / `UpdateRmePrescriptionRequest::authorize()` return the
+   policy's `Gate::inspect()` response, so a refused account gets 403/404 whatever its payload. The signed-lock refusal
+   writes its `RME_PRESCRIPTION_SIGNED_EDIT_REJECTED` row there (§9.3), since the controller is no longer reached.
+4. **OD-7-5 lab candidate backfill.** `rme:lab-candidates-backfill` (dry run unless `--apply`, `--limit`) runs the
+   idempotent `RmeLabIntegrationService::generateForPaidInvoice()` on PAID invoices of active RME branches that miss a
+   candidate for a lab-requiring item (`paidInvoiceIdsMissingCandidates()`), one invoice per transaction under the
+   invoice row lock, one `RME_LAB_CANDIDATES_BACKFILLED` audit row per invoice filled, counts only. `--apply` on
+   production needs the owner's approval.
+5. Tests: `RmeClinicalWriteAuthorityPageRevisionTest`, `RmePaymentLabCandidateBackfillTest`, the OD-5-5 cases in
+   `ClinicVisitPatientSelectionAuthorityTest` / `ClinicVisitRegistrationConcurrencyTest`, the R8A-2 cases in
+   `RmeClinicalWriteAuthorityTest` — all selected by existing tokens.

@@ -417,6 +417,9 @@ class ClinicVisitService
             // this check and the insert that references it.
             if ($isExistingPatient) {
                 $this->registration->assertFollowUpLink($data, lock: true);
+                // DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-5-5) — no second visit while an
+                // examination is in progress, decided on rows read FOR SHARE.
+                $this->registration->assertNoExaminationInProgress((int) $data['patient_id'], lock: true);
             }
 
             unset($data['branch_id']);

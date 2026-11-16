@@ -90,6 +90,8 @@ class MedicalRecordHandwritingController extends Controller
             // DMS-RME-COMPREHENSIVE-CLOSURE-1 (rule 237 §5) — bounded at the edge.
             'handwriting_data' => ['required', 'string', 'max:'.HandwritingPayloadGuard::MAX_HANDWRITING_PAYLOAD_LENGTH],
             'page_number' => ['nullable', 'integer', 'min:1'],
+            // DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-6-1) — the revision this device loaded.
+            'page_revision' => ['nullable', 'string', 'max:64'],
         ]);
 
         // The PNG is decoded, validated and blank-guarded identically for every
@@ -116,6 +118,7 @@ class MedicalRecordHandwritingController extends Controller
             $pageNumber,
             $decoded,
             Auth::id(),
+            $request->filled('page_revision') ? (string) $request->input('page_revision') : null,
         );
 
         $medicalRecord = $saved['medical_record'];

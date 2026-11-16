@@ -510,13 +510,14 @@ it('OD-5-10a refuses a cancelled prior visit over HTTP and at the service, writi
         ->and($this->parent->fresh()->status)->toBe(ClinicVisit::STATUS_CANCELLED);
 });
 
-it('OD-5-10a still accepts a Kontrol after a completed, a cashier-pending or an in-progress visit', function (string $status) {
+it('OD-5-10a still accepts a Kontrol after a completed or a cashier-pending visit', function (string $status) {
     $this->parent->forceFill(['status' => $status])->save();
 
     $visit = $this->svc->create(cpsaControl($this->b, $this->parent), $this->adminB);
 
     expect((int) $visit->follow_up_of_visit_id)->toBe((int) $this->parent->id);
-})->with([ClinicVisit::STATUS_COMPLETED, ClinicVisit::STATUS_CASHIER_PENDING, ClinicVisit::STATUS_IN_PROGRESS]);
+    // An in-progress parent is now refused for another reason: OD-5-5 below.
+})->with([ClinicVisit::STATUS_COMPLETED, ClinicVisit::STATUS_CASHIER_PENDING]);
 
 it('OD-5-10a never offers a cancelled visit in the prior-visit picker', function () {
     $cancelled = ClinicVisit::factory()->create([
@@ -548,4 +549,58 @@ it('OD-5-10a offers no "Buat Kontrol" from a cancelled visit and keeps it on a c
         ->get(route('rme.visits.show', $this->parent))
         ->assertOk()
         ->assertDontSee('Buat Kontrol');
+});
+
+/*
+|--------------------------------------------------------------------------
+| DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-5-5) — no new visit while an examination is in progress
+|--------------------------------------------------------------------------
+*/
+
+it('OD-5-5 refuses a new visit while the patient has an examination in progress, over HTTP and at the service', function () {
+    $this->parent->forceFill(['status' => ClinicVisit::STATUS_IN_PROGRESS])->save();
+    $payload = cpsaPayload($this->b, $this->patient);
+    $before = ClinicVisit::query()->withTrashed()->count();
+    $message = sprintf(ClinicVisitRegistrationGuard::MESSAGE_EXAMINATION_IN_PROGRESS, $this->parent->visit_number);
+
+    $this->actingAs($this->adminB)
+        ->post(route('rme.visits.store'), $payload)
+        ->assertSessionHasErrors(['patient_id' => $message]);
+
+    cpsaRefused(fn () => $this->svc->create($payload, $this->adminB), 'patient_id');
+
+    expect(ClinicVisit::query()->withTrashed()->count())->toBe($before);
+});
+
+it('OD-5-5 keeps registered, waiting and cashier-pending visits from blocking a new registration', function (string $status) {
+    $this->parent->forceFill(['status' => $status])->save();
+
+    $visit = $this->svc->create(cpsaPayload($this->b, $this->patient), $this->adminB);
+
+    expect((int) $visit->patient_id)->toBe((int) $this->patient->id);
+})->with([ClinicVisit::STATUS_REGISTERED, ClinicVisit::STATUS_WAITING, ClinicVisit::STATUS_CASHIER_PENDING]);
+
+it('OD-5-5 accepts the registration once the examination is finished or cancelled', function (string $status) {
+    $this->parent->forceFill(['status' => ClinicVisit::STATUS_IN_PROGRESS])->save();
+    expect(fn () => $this->svc->create(cpsaPayload($this->b, $this->patient), $this->adminB))->toThrow(ValidationException::class);
+
+    $this->parent->forceFill(['status' => $status])->save();
+
+    expect((int) $this->svc->create(cpsaPayload($this->b, $this->patient), $this->adminB)->patient_id)->toBe((int) $this->patient->id);
+})->with([ClinicVisit::STATUS_CASHIER_PENDING, ClinicVisit::STATUS_CANCELLED]);
+
+it('OD-5-5 never blocks a brand-new patient, even with an in-progress patient id smuggled alongside', function () {
+    $this->parent->forceFill(['status' => ClinicVisit::STATUS_IN_PROGRESS])->save();
+
+    $visit = $this->svc->create([
+        'patient_mode' => 'new',
+        'patient_id' => $this->patient->id,
+        'branch_id' => $this->b->id,
+        'visit_type' => ClinicVisit::VISIT_TYPE_NEW,
+        'initial_treatment_id' => $this->treatment->id,
+        'new_patient' => ['name' => 'Pasien Baru OD55', 'branch_id' => $this->b->id, 'manual_rm_number' => '9955'],
+    ], $this->adminB);
+
+    expect((int) $visit->patient_id)->not->toBe((int) $this->patient->id)
+        ->and(Patient::query()->whereKey($visit->patient_id)->value('name'))->toBe('Pasien Baru OD55');
 });
