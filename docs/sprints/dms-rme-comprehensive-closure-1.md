@@ -313,6 +313,29 @@ confirmed every intended behaviour A1–A6 and B1–B4 in code.
 | F10 | INFO | PR2 depends on PR1 (manifest, dontFlash, token) | PR2 rebased on the merged PR1 |
 | F11 | INFO | receipt PDF and patient/payment reports lacked no-store; lab numbers use UTC; I7-05 tests the refresh | no-store extended to 7 more routes; lab item recorded out of scope (§4.2); I7-05 kept as the refresh test |
 
+### 8b. Closure wave — independent review rounds (2026-11-17)
+
+Each PR was reviewed by a separate read-only session given the code and the rules, not the author's conclusions.
+Every finding was fixed RED-first (or recorded with a reason) in a follow-up commit, and every follow-up commit was
+re-reviewed by another separate session. Force-push was refused by the session's safety policy, so each fix landed as
+a fast-forward commit carrying exactly the tested tree.
+
+| PR | Round 1 (HIGH / MEDIUM / LOW+INFO) | Notable | Re-review | Final head |
+|---|---|---|---|---|
+| #648 consent integrity | 0 / 0 / 9 | scope re-check inside `sign()`/`void()`; Super Admin void form; two CI nondeterminism failures (an unordered event read; a random queue number colliding with queue 1, reproduced on `cab3a4c1`) | all resolved | `803db2e4` |
+| #649 signature copy | 0 / 3 / 1 | failed write leaked an object key; unreadable object empty-copied; root refusal; a PHP fatal found by the integrated critical run | resolved; fail-closed root check added | `71c1375c` |
+| #650 page revision, OD-5-5 | 0 / 1 / 4 | two examinations could still be open at once via "Mulai Pemeriksaan" — per-patient advisory lock 92_005 in both paths, no lock cycle; backfill split to #657 | resolved; namespace inventory pinned | `0d701e35` |
+| #651 identity memo, scanner | 0 / 0 / 2 | flag with no declared default passed | resolved | `9697d00a` |
+| #652 lease in-flight grace | 0 / 1 / 0 | same-browser double submit locked the doctor out — hashed CSRF claim nonce + double-submit guard | resolved; two timings remain a recorded residual (rule 153, rule 237 §17) | `daf88277` |
+| #653 one RM book | 0 / 3 / 1 | later sheet taken as the book; stamping un-anchored a legacy book; vacuous concurrency test; first-sheet race (R7-1-FS, owner-approved) | resolved; service re-asserts `create` on the locked visit | `f44453a5` |
+| #654 RM-number foundation | 0 / 1 / 3 | an oversized existing number would block a branch-year; dry run printed a reconstructable RM number | resolved | `0aa2b771` |
+| #655 memo quick wins | 0 / 0 / 5 | rule 238 index not loaded for payment code; soft-deleted transfer method passed | resolved | `af653175` |
+| #656 storage report | 0 / 0 / 4 | a stat failure aborted the run and printed a host path; top-level symlinks followed | resolved | `e11074fe` |
+| #657 lab backfill | (round 1 under #650) | `--apply` needs an explicit payment window | resolved | `85527d84` |
+
+A sequential merge simulation of all ten heads on the base is textually clean; combined rule-file sizes stay under the
+30,000-character budget (`rme-clinical.md` 29,973 — the next memo PR must condense it first).
+
 ## 9. Release and production
 
 ### 9.1 PR1 — #646
