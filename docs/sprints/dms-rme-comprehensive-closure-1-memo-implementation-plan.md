@@ -104,6 +104,20 @@ selected by the existing `MedicalRecordFinalization`, `Odontogram` and `RmeClini
 5. Performed treatments and prescriptions are excluded from this amendment. [excluded]
 6. The approver must not be the doctor of record. [yes]
 
+### Verification of the six defaults against the merged code (owner order "Verifikasi keenam default secara lengkap sebelum implementasi", base `82cb6e13`)
+
+| # | Default | Code fact checked | Verdict |
+|---|---|---|---|
+| 1 | Supervisor RME approves as checker only; Super Admin never on their own request | role `Supervisor RME` exists (`RoleSeeder`); `Gate::before` grants Super Admin every ability (`RepositoryServiceProvider`), so maker ≠ checker must be re-asserted in the service inside the transaction, as `approve_rme_invoice_correction` / `approve_rme_refund` already do | holds; service re-check mandatory |
+| 2 | Requester = doctor of record or finalizer | `trx_medical_records.doctor_id` → `mst_doctors.user_id`; `finalized_by` → `users`; odontogram carries `created_by`, `finalized_by`, `medical_record_id`, `clinic_visit_id` | holds; a doctor row without a linked user leaves only the finalizer as requester |
+| 3 | Records final at deploy are locked at once | `MedicalRecord::STATUS_FINAL = 'final'`, `Odontogram::STATUS_FINALIZED = 'finalized'` — the lock reads status, no backfill | holds |
+| 4 | A page after the encounter only as an amendment item | page rows carry `clinic_visit_id` of the **book's** visit (R7-1: the controller stores a new page on the book's visit), not the authoring encounter; Sprint 59 comment "handwriting RM is revisable after finalization" is the code to supersede | holds, and confirms that PR2 needs its own seal columns; page visit ids cannot express the seal |
+| 5 | Performed treatments and prescriptions excluded | prescriptions: `PrescriptionAuthoringAuthority::signedContentLocked()` (rule 237 §9); performed treatments: `RmePerformedTreatmentService::lockAuthorizedEncounter()` (rule 219) | holds; both keep their own locks |
+| 6 | Approver ≠ doctor of record | resolvable through `doctor_id` → `mst_doctors.user_id` inside the approval transaction | holds |
+
+Release constraint: PR1 (the lock) and PR5 (approve and apply) ship in the same release. No release is cut from a base
+that contains PR1 without PR5; each M3.3 PR body states it.
+
 ### Risks
 
 Deadlocks (keep the strict lock order); same-second timestamps in the legacy page rule (ties lock, fails closed);
