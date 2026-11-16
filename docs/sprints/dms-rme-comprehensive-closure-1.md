@@ -202,7 +202,7 @@ and production verification (§9.4). Nothing here is DEFERRED-as-resolved.
 | R8A-2 (+ 8D finding 3) | fix | consent and prescription FormRequests authorize through `Gate::inspect` before validation; the HTTP signed-lock audit moved into the request | #648, #650 | implemented |
 | OD-6-1 | page revision | each handwriting page carries an opaque revision; a stale save is refused under the record lock before any object is written, with a reload message | #650 | implemented |
 | OD-5-5 | refuse while in_progress | a new visit is refused while the patient has an examination in progress, decided under the lock, naming the active visit | #650 | implemented |
-| OD-7-5 | backfill | `rme:lab-candidates-backfill` (dry run default; `--apply` per invoice under its row lock, idempotent, one audit row per invoice filled, counts only) | #650 | implemented; production `--apply` needs the owner's approval (§10.6) |
+| OD-7-5 | backfill | `rme:lab-candidates-backfill` (dry run default with counts per paid month; `--apply` needs an explicit `--paid-from` clinic date, optional `--paid-to`; per invoice under its row lock, idempotent, one audit row per invoice filled, counts only) | #657 (split from #650 to keep #650 within the scope gate) | implemented; production `--apply` needs the owner's approval (§10.6) |
 | CC1-PERF | NO-GO order, item 7 | `DoctorIdentityResolver` memoised per routed request and cleared by `DoctorAccountLinkService` | #651 | implemented |
 | CC1-CG08 | NO-GO order, item 8 | `AndroidReleaseGovernanceScanner` reads flags through `FeatureFlagService` (CG-08) | #651 | implemented |
 | OD-7-7 | fix without silently changing rule 153 | lease in-flight grace (`doctor_access.lease.in_flight_grace_seconds`, 30 s); rule 153 and AIR-DAC-08 amended openly | #652 | implemented |
@@ -345,7 +345,7 @@ written approval of the full release SHA → owner signs locally (`scripts/relea
 | Owner approval | written approval of the full SHA (§2a), then signed in the owner's own terminal (Contract 3, rule 236): approval id `2d1425769ef560eef5a23d64b2a052bb`, bundle SHA-256 `2aa6b428d28f24b7efa7baf18e80050b30c38ad71c4fb5f9c9ec0824f2e50bf5`, record SHA-256 `091033d67c463f1967ed1d968ee0cc195225f5c909b0ba30688f89eb449008ef`, valid until 2026-11-18T14:17:59Z. The key and passphrase never left the owner's terminal |
 | Approval check | `submit-approval`, then `check-approval` = GO |
 | Deploy | `start` on the Biznet host through the deploy operator (runner on the VPS, never local): deploy id **`20261116-141906`**, `final exit=0`, `DEPLOY_APPROVED_TARGET_MATCH=YES`, `DEPLOY OK`; `verify 20261116-141906` → **`DEPLOY RUNNER OK`** |
-| Migrations | none in this release |
+| Migrations | none in this release (release 2 will carry additive migrations: the lease claim-nonce column of #652 and the RM-number sequence table of #654) |
 | Production verification (read-only) | HEAD = `cab3a4c1`; health / smoke 200 / 403 / 302 as expected; `LARAVEL_LOG_ERROR_LINES=166` = the baseline recorded at the last three GO closures (no new application errors); `PRIVSEP_DRIFT=NONE`; queue worker and timers unchanged |
 | Pre-deploy database dump | taken by the runner inside the deploy; the line itself sits in the root-only deploy log and is read by the owner (§10.3) |
 | Release id | spent; the next release uses a new id |

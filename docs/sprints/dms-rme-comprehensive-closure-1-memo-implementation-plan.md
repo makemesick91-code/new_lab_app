@@ -345,7 +345,7 @@ stay green.
 
 ### Migration and compatibility
 
-1. Owner runs the read-only measurement (below) before the automatic-number PR merges; counts recorded in the sprint
+1. Owner runs the read-only measurement (below) before the automatic-number PR merges — DONE 2026-11-17, recorded in the sprint
    record.
 2. Deploy the dormant foundation PR; `php artisan patient:rm-sequence-seed` dry run (counts only) as the runtime user;
    `--apply` only with owner approval (sets each counter to GREATEST(existing, computed), never lowers, idempotent,
