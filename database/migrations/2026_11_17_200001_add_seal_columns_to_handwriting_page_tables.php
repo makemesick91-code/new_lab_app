@@ -22,37 +22,48 @@ use Illuminate\Support\Facades\Schema;
  */
 return new class extends Migration
 {
-    /** @var list<string> */
-    private const TABLES = ['trx_medical_record_handwritings', 'trx_medical_record_handwriting_pages'];
+    /**
+     * Table => short prefix for the constraint names. The generated names
+     * (table_column_foreign) run to 64–72 characters, past PostgreSQL's 63, which
+     * it truncates silently; explicit short names stay exact and greppable.
+     *
+     * @var array<string, string>
+     */
+    private const TABLES = [
+        'trx_medical_record_handwritings' => 'trx_mrh',
+        'trx_medical_record_handwriting_pages' => 'trx_mrhp',
+    ];
 
     public function up(): void
     {
-        foreach (self::TABLES as $tableName) {
+        foreach (self::TABLES as $tableName => $prefix) {
             if (Schema::hasColumn($tableName, 'sealed_at')) {
                 continue;
             }
 
-            Schema::table($tableName, function (Blueprint $table) {
+            Schema::table($tableName, function (Blueprint $table) use ($prefix) {
                 $table->foreignId('authored_clinic_visit_id')->nullable()
-                    ->constrained('trx_clinic_visits')->cascadeOnUpdate()->restrictOnDelete();
+                    ->constrained('trx_clinic_visits', 'id', $prefix.'_authored_visit_fk')->cascadeOnUpdate()->restrictOnDelete();
                 $table->timestamp('sealed_at')->nullable();
                 $table->foreignId('sealed_by_medical_record_id')->nullable()
-                    ->constrained('trx_medical_records')->cascadeOnUpdate()->restrictOnDelete();
+                    ->constrained('trx_medical_records', 'id', $prefix.'_sealed_by_record_fk')->cascadeOnUpdate()->restrictOnDelete();
             });
         }
     }
 
     public function down(): void
     {
-        foreach (self::TABLES as $tableName) {
+        foreach (self::TABLES as $tableName => $prefix) {
             if (! Schema::hasColumn($tableName, 'sealed_at')) {
                 continue;
             }
 
-            Schema::table($tableName, function (Blueprint $table) {
-                $table->dropConstrainedForeignId('sealed_by_medical_record_id');
+            Schema::table($tableName, function (Blueprint $table) use ($prefix) {
+                $table->dropForeign($prefix.'_sealed_by_record_fk');
+                $table->dropColumn('sealed_by_medical_record_id');
                 $table->dropColumn('sealed_at');
-                $table->dropConstrainedForeignId('authored_clinic_visit_id');
+                $table->dropForeign($prefix.'_authored_visit_fk');
+                $table->dropColumn('authored_clinic_visit_id');
             });
         }
     }

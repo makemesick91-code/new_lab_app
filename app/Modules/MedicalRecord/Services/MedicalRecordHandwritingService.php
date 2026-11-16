@@ -53,6 +53,9 @@ final class MedicalRecordHandwritingService
     /** Rule 240 §4 (memo M3.3) — an overwrite of a page sealed by a finalized sheet. */
     public const MESSAGE_SEALED_PAGE = 'Halaman RM ini sudah terkunci karena termasuk rekam medis yang telah final. Koreksi hanya melalui amandemen yang disetujui; tulis catatan baru pada halaman baru.';
 
+    /** Rule 240 §4.4 (plan default 4) — an overwrite of a page another encounter wrote. */
+    public const MESSAGE_EARLIER_ENCOUNTER_PAGE = 'Halaman RM ini ditulis pada pemeriksaan lain dan tidak dapat ditimpa. Koreksi hanya melalui amandemen yang disetujui; tulis catatan baru pada halaman baru.';
+
     public function __construct(
         private readonly MedicalRecordHandwritingRepositoryInterface $handwritings,
         private readonly MedicalRecordRepositoryInterface $medicalRecords,
@@ -73,14 +76,18 @@ final class MedicalRecordHandwritingService
      * (a caller that never loaded a page, e.g. the first save of a new book).
      *
      * Rule 240 §4 (memo M3.3, owner decision 2026-11-17) — after that compare and
-     * before any object is written, an overwrite of a SEALED page is refused
-     * (a page sealed when a sheet was finalized, or a page from before rule 240
-     * that a finalize already covered). Decided on the rows read under the record
-     * lock, inside this transaction, so it binds every caller, Super Admin
-     * included. A NEW page (an empty slot) is never sealed: appending in a live,
-     * consented encounter stays allowed (OD-5-6, R7-1). The optional third element
-     * `$resolveTarget` returns is the authorized encounter; it is stamped on the
-     * page as its author, because the page itself is stored on the book's visit.
+     * before any object is written, an overwrite of an existing page is refused
+     * unless the page is not sealed AND the live encounter wrote it: a page sealed
+     * when a sheet was finalized, a page from before rule 240 that a finalize
+     * already covered, and a page another encounter wrote (plan default 4: a page
+     * after its encounter only as an amendment item) are all refused. Decided on
+     * the rows read under the visit and record locks, inside this transaction, so
+     * it binds every caller, Super Admin included. A NEW page (an empty slot) is
+     * never locked: appending in a live, consented encounter stays allowed
+     * (OD-5-6, R7-1). The optional third element `$resolveTarget` returns is the
+     * authorized encounter; it is the live encounter for this decision and is
+     * stamped on the page as its author, because the page itself is stored on the
+     * book's visit. Without it every stamped page is refused (fail closed).
      *
      * @param  Closure(): array{0: MedicalRecord, 1: ClinicVisit, 2?: ClinicVisit|null}  $resolveTarget
      * @return array{medical_record: MedicalRecord, storage_visit: ClinicVisit, page_number: int}
@@ -107,15 +114,20 @@ final class MedicalRecordHandwritingService
                     ]);
                 }
 
-                // Rule 240 §4 — a sealed page is never overwritten; nothing has been
-                // written yet, so the refusal leaves no object and no row behind.
-                if ($this->handwritings->pageSlotLocked($medicalRecord->id, $page, (int) $medicalRecord->patient_id)) {
+                $authoredBy = $encounter instanceof ClinicVisit ? (int) $encounter->getKey() : null;
+
+                // Rule 240 §4 — an existing page is overwritten only when it is not
+                // sealed and the live encounter wrote it (plan default 4); nothing
+                // has been written yet, so a refusal leaves no object and no row.
+                $lockMessage = self::lockMessage(
+                    $this->handwritings->pageSlotLock($medicalRecord->id, $page, (int) $medicalRecord->patient_id, $authoredBy),
+                );
+
+                if ($lockMessage !== null) {
                     throw ValidationException::withMessages([
-                        'handwriting_data' => self::MESSAGE_SEALED_PAGE,
+                        'handwriting_data' => $lockMessage,
                     ]);
                 }
-
-                $authoredBy = $encounter instanceof ClinicVisit ? (int) $encounter->getKey() : null;
 
                 $writtenKey = $this->objectKey($storageVisit, $page);
                 ClinicalEvidenceStorage::disk()->put($writtenKey, $png);
@@ -150,13 +162,34 @@ final class MedicalRecordHandwritingService
     }
 
     /**
-     * Rule 240 §4 — presentation twin of the refusal in save(): is this stored
-     * page sealed? The page renders read-only when it is, so the page offers no
-     * save the server would refuse (rule 135). Never the authority.
+     * Rule 240 §4 — presentation twin of the refusal in save(): why this stored
+     * page may not be overwritten by the live encounter, or null when it may. The
+     * page renders read-only with this reason, so it offers no save the server
+     * would refuse (rule 135). Never the authority.
      */
+    public function pageLockMessage(MedicalRecord $medicalRecord, int $page, ?int $liveEncounterId): ?string
+    {
+        return self::lockMessage($this->handwritings->pageSlotLock(
+            (int) $medicalRecord->getKey(),
+            $page,
+            (int) $medicalRecord->patient_id,
+            $liveEncounterId,
+        ));
+    }
+
+    /** Rule 240 §4 — is the stored page sealed (by a finalize, or a pre-rule page a finalize covered)? */
     public function isPageSealed(MedicalRecord $medicalRecord, int $page): bool
     {
-        return $this->handwritings->pageSlotLocked((int) $medicalRecord->getKey(), $page, (int) $medicalRecord->patient_id);
+        return $this->pageLockMessage($medicalRecord, $page, null) === self::MESSAGE_SEALED_PAGE;
+    }
+
+    private static function lockMessage(?string $lock): ?string
+    {
+        return match ($lock) {
+            MedicalRecordHandwritingRepositoryInterface::LOCK_SEALED => self::MESSAGE_SEALED_PAGE,
+            MedicalRecordHandwritingRepositoryInterface::LOCK_EARLIER_ENCOUNTER => self::MESSAGE_EARLIER_ENCOUNTER_PAGE,
+            default => null,
+        };
     }
 
     /** The page's revision as stored now (read under the record lock). */

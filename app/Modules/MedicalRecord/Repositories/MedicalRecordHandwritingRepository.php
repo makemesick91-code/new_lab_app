@@ -62,7 +62,7 @@ class MedicalRecordHandwritingRepository implements MedicalRecordHandwritingRepo
         return max($maxPage, 1) + 1;
     }
 
-    public function pageSlotLocked(int $medicalRecordId, int $pageNumber, int $patientId): bool
+    public function pageSlotLock(int $medicalRecordId, int $pageNumber, int $patientId, ?int $liveEncounterId): ?string
     {
         $query = $pageNumber <= 1
             ? MedicalRecordHandwriting::query()->where('medical_record_id', $medicalRecordId)
@@ -70,20 +70,30 @@ class MedicalRecordHandwritingRepository implements MedicalRecordHandwritingRepo
                 ->where('medical_record_id', $medicalRecordId)
                 ->where('page_number', $pageNumber);
 
+        $lock = null;
+
         foreach ($query->get(['id', 'authored_clinic_visit_id', 'sealed_at', 'created_at']) as $row) {
             if ($row->sealed_at !== null) {
-                return true;
+                return self::LOCK_SEALED;
             }
 
-            if ($row->authored_clinic_visit_id === null && $this->finalizedSince($patientId, $row->created_at)) {
-                return true;
+            if ($row->authored_clinic_visit_id === null) {
+                if ($this->finalizedSince($patientId, $row->created_at)) {
+                    return self::LOCK_SEALED;
+                }
+
+                continue;
+            }
+
+            if ($liveEncounterId === null || (int) $row->authored_clinic_visit_id !== $liveEncounterId) {
+                $lock = self::LOCK_EARLIER_ENCOUNTER;
             }
         }
 
-        return false;
+        return $lock;
     }
 
-    public function sealBookPages(int $patientId, int $sealingMedicalRecordId, ?int $sparedEncounterId = null): int
+    public function sealBookPages(int $patientId, int $sealingMedicalRecordId): int
     {
         // The seal is metadata about the page, not a new drawing: written through
         // the base query so the rows' `updated_at` keeps meaning "last drawn".
@@ -92,14 +102,9 @@ class MedicalRecordHandwritingRepository implements MedicalRecordHandwritingRepo
             'sealed_by_medical_record_id' => $sealingMedicalRecordId,
         ];
 
-        $scope = function (Builder $rows) use ($patientId, $sparedEncounterId): Builder {
-            return $rows
-                ->whereNull('sealed_at')
-                ->whereIn('medical_record_id', MedicalRecord::withTrashed()->where('patient_id', $patientId)->select('id'))
-                ->when($sparedEncounterId !== null, fn (Builder $q) => $q->where(fn (Builder $w) => $w
-                    ->whereNull('authored_clinic_visit_id')
-                    ->orWhere('authored_clinic_visit_id', '!=', $sparedEncounterId)));
-        };
+        $scope = fn (Builder $rows): Builder => $rows
+            ->whereNull('sealed_at')
+            ->whereIn('medical_record_id', MedicalRecord::withTrashed()->where('patient_id', $patientId)->select('id'));
 
         return $scope(MedicalRecordHandwriting::query())->toBase()->update($stamp)
             + $scope(MedicalRecordHandwritingPage::query())->toBase()->update($stamp);

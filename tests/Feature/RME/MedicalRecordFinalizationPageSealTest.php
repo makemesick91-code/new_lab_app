@@ -246,26 +246,209 @@ it('lets a later encounter append a new page to the one book, writable until tha
         ->assertSessionHasErrors(['handwriting_data' => MedicalRecordHandwritingService::MESSAGE_SEALED_PAGE]);
 });
 
-it('does not seal the live encounter\'s pages when an older sheet is finalized during it', function () {
+// Review HIGH-1 — flipped from "does not seal the live encounter's pages when an
+// older sheet is finalized during it": that spare left a returning patient's book
+// unsealed (the book lives on the canonical visit). Finalize now seals every page.
+it('seals the live encounter\'s pages too when an older sheet is finalized during it; the encounter keeps appending', function () {
     [$v1, $book] = m33sEncounter('2026-11-01');
     m33sSave($this->author, $v1, $book, 1, 1)->assertSessionHasNoErrors();
     // The first visit closed with its sheet still a draft.
     m33sCloseEncounter($v1);
 
-    [$v2, $sheet2] = m33sEncounter('2026-11-10');
+    [$v2] = m33sEncounter('2026-11-10');
     m33sSave($this->author, $v1, $book, 2, 2, MedicalRecord::HANDWRITING_REVISION_NONE)->assertSessionHasNoErrors();
 
-    // Finalizing the older sheet during the live encounter seals what existed
-    // before it, never the page the live encounter is still writing.
+    m33sFinalize($book, $this->author);
+
+    expect(m33sRow($book, 1)->sealed_by_medical_record_id)->toBe($book->id)
+        ->and(m33sRow($book, 2)->sealed_by_medical_record_id)->toBe($book->id);
+
+    m33sSave($this->author, $v1, $book, 2, 3, m33sRevision($book, 2))
+        ->assertSessionHasErrors(['handwriting_data' => MedicalRecordHandwritingService::MESSAGE_SEALED_PAGE]);
+    // Appending stays open in the live encounter.
+    m33sSave($this->author, $v1, $book, 3, 4, MedicalRecord::HANDWRITING_REVISION_NONE)->assertSessionHasNoErrors();
+    expect(m33sRow($book, 3)->authored_clinic_visit_id)->toBe($v2->id);
+});
+
+// ─── Review HIGH-1: a returning patient's book, through the real routes ──────
+
+it('seals a returning patient\'s whole book when the book is finalized, refusing overwrites in that and later encounters', function () {
+    // An earlier visit with no sheet: the book is created on it (the canonical
+    // visit, R7-1-FS) during the live encounter.
+    $v0 = ClinicVisit::factory()->create([
+        'branch_id' => $this->branch->id,
+        'patient_id' => $this->patient->id,
+        'status' => ClinicVisit::STATUS_COMPLETED,
+        'visit_date' => '2026-10-01',
+    ]);
+    $e = ClinicVisit::factory()->create(['branch_id' => $this->branch->id, 'patient_id' => $this->patient->id, 'visit_date' => '2026-11-10']);
+    rmeActiveConsentedEncounter($e);
+
+    $this->actingAs($this->author)->post(route('rme.visits.medical-record.store', $e))->assertSessionHasNoErrors();
+    $book = MedicalRecord::query()->where('patient_id', $this->patient->id)->sole();
+    expect($book->clinic_visit_id)->toBe($v0->id);
+
+    m33sSave($this->author, $v0, $book, 1, 1)->assertSessionHasNoErrors();
+    m33sSave($this->author, $v0, $book, 2, 2, MedicalRecord::HANDWRITING_REVISION_NONE)->assertSessionHasNoErrors();
+
+    $this->actingAs($this->author)
+        ->post(route('rme.visits.medical-record.finalize', [$v0, $book]))
+        ->assertSessionHasNoErrors();
+
+    expect($book->fresh()->status)->toBe(MedicalRecord::STATUS_FINAL)
+        ->and(m33sRow($book, 1)->sealed_at)->not->toBeNull()
+        ->and(m33sRow($book, 2)->sealed_at)->not->toBeNull();
+
+    $objects = m33sObjects();
+    foreach ([1, 2] as $page) {
+        m33sSave($this->author, $v0, $book, $page, 5, m33sRevision($book, $page))
+            ->assertSessionHasErrors(['handwriting_data' => MedicalRecordHandwritingService::MESSAGE_SEALED_PAGE]);
+    }
+
+    m33sCloseEncounter($e);
+    $e2 = ClinicVisit::factory()->create(['branch_id' => $this->branch->id, 'patient_id' => $this->patient->id, 'visit_date' => '2026-11-15']);
+    rmeActiveConsentedEncounter($e2);
+
+    m33sSave($this->author, $v0, $book, 2, 6, m33sRevision($book, 2))
+        ->assertSessionHasErrors(['handwriting_data' => MedicalRecordHandwritingService::MESSAGE_SEALED_PAGE]);
+    expect(m33sObjects())->toBe($objects);
+});
+
+// ─── Review MEDIUM-1: only the live encounter overwrites its own pages ───────
+
+it('refuses a later encounter overwriting an unsealed page an earlier encounter wrote, and shows it read-only', function () {
+    [$v1, $book] = m33sEncounter('2026-11-01');
+    m33sSave($this->author, $v1, $book, 1, 1)->assertSessionHasNoErrors();
+    // No sheet is finalized: the page stays unsealed.
+    m33sCloseEncounter($v1);
+    [$v2] = m33sEncounter('2026-11-10');
+
+    $path = m33sRow($book, 1)->handwriting_path;
+    $objects = m33sObjects();
+
+    m33sSave($this->author, $v1, $book, 1, 2, m33sRevision($book, 1))
+        ->assertSessionHasErrors(['handwriting_data' => MedicalRecordHandwritingService::MESSAGE_EARLIER_ENCOUNTER_PAGE]);
+    m33sSave(superAdmin(), $v1, $book, 1, 3, m33sRevision($book, 1))
+        ->assertSessionHasErrors(['handwriting_data' => MedicalRecordHandwritingService::MESSAGE_EARLIER_ENCOUNTER_PAGE]);
+
+    expect(m33sRow($book, 1)->handwriting_path)->toBe($path)
+        ->and(m33sRow($book, 1)->sealed_at)->toBeNull()
+        ->and(m33sObjects())->toBe($objects);
+
+    // The live encounter appends instead, and overwrites its own page.
+    m33sSave($this->author, $v1, $book, 2, 4, MedicalRecord::HANDWRITING_REVISION_NONE)->assertSessionHasNoErrors();
+    m33sSave($this->author, $v1, $book, 2, 5, m33sRevision($book, 2))->assertSessionHasNoErrors();
+    expect(m33sRow($book, 2)->authored_clinic_visit_id)->toBe($v2->id);
+
+    $this->actingAs($this->author)
+        ->get(route('rme.visits.medical-record.show', ['clinicVisit' => $v1, 'rm_page' => 1]))
+        ->assertOk()
+        ->assertSee(MedicalRecordHandwritingService::MESSAGE_EARLIER_ENCOUNTER_PAGE)
+        ->assertSee('data-sealed="1"', false)
+        ->assertDontSee('Klik untuk menulis');
+});
+
+// ─── Review LOW-3 guards ─────────────────────────────────────────────────────
+
+it('never touches another patient\'s pages when a sheet is finalized', function () {
+    [$v1, $book] = m33sEncounter('2026-11-01');
+    m33sSave($this->author, $v1, $book, 1, 1)->assertSessionHasNoErrors();
+
+    $otherVisit = ClinicVisit::factory()->create(['branch_id' => $this->branch->id]);
+    $otherBook = MedicalRecord::factory()->create([
+        'clinic_visit_id' => $otherVisit->id,
+        'branch_id' => $otherVisit->branch_id,
+        'patient_id' => $otherVisit->patient_id,
+    ]);
+    $otherPage = MedicalRecordHandwriting::factory()->create([
+        'medical_record_id' => $otherBook->id,
+        'clinic_visit_id' => $otherVisit->id,
+        'branch_id' => $otherVisit->branch_id,
+    ]);
+
     m33sFinalize($book, $this->author);
 
     expect(m33sRow($book, 1)->sealed_at)->not->toBeNull()
-        ->and(m33sRow($book, 2)->sealed_at)->toBeNull();
+        ->and($otherPage->fresh()->sealed_at)->toBeNull()
+        ->and($otherPage->fresh()->sealed_by_medical_record_id)->toBeNull();
+});
 
-    m33sSave($this->author, $v1, $book, 2, 3, m33sRevision($book, 2))->assertSessionHasNoErrors();
-
+it('refuses a sealed page of a non-canonical sheet through the edit-in-place path', function () {
+    [$v1, $book] = m33sEncounter('2026-11-01');
+    m33sSave($this->author, $v1, $book, 1, 1)->assertSessionHasNoErrors();
+    m33sCloseEncounter($v1);
+    [$v2, $sheet2] = m33sEncounter('2026-11-10');
+    // A later sheet carrying its own page 1 (the pre-Sprint-64.0.2 shape), written now.
+    $legacy = MedicalRecordHandwriting::factory()->create([
+        'medical_record_id' => $sheet2->id,
+        'clinic_visit_id' => $v2->id,
+        'branch_id' => $v2->branch_id,
+        'authored_clinic_visit_id' => $v2->id,
+    ]);
     m33sFinalize($sheet2, $this->author);
-    expect(m33sRow($book, 2)->sealed_by_medical_record_id)->toBe($sheet2->id);
+    expect($legacy->fresh()->sealed_by_medical_record_id)->toBe($sheet2->id);
+
+    $path = $legacy->handwriting_path;
+    m33sSave($this->author, $v2, $sheet2, 1, 2, MedicalRecord::handwritingRevision($path))
+        ->assertSessionHasErrors(['handwriting_data' => MedicalRecordHandwritingService::MESSAGE_SEALED_PAGE]);
+    expect($legacy->fresh()->handwriting_path)->toBe($path);
+});
+
+it('refuses a sealed page when the canonical-draft path adopts an existing book', function () {
+    [$v1, $book] = m33sEncounter('2026-11-01');
+    m33sSave($this->author, $v1, $book, 1, 1)->assertSessionHasNoErrors();
+    m33sFinalize($book, $this->author);
+    $objects = m33sObjects();
+    $png = base64_decode(substr(m33sDrawing(9), strlen('data:image/png;base64,')));
+    $this->actingAs($this->author);
+
+    $refused = null;
+    try {
+        app(MedicalRecordHandwritingService::class)->save(
+            function () use ($v1): array {
+                // What the controller's first-save path does: get or ADOPT the book.
+                $draft = app(MedicalRecordService::class)->getOrCreateCanonicalMedicalRecord($v1, $this->author->id, $v1->id);
+
+                return [$draft, $draft->clinicVisit, $v1];
+            },
+            1,
+            $png,
+            $this->author->id,
+            m33sRevision($book, 1),
+        );
+    } catch (ValidationException $e) {
+        $refused = $e->errors()['handwriting_data'][0] ?? null;
+    }
+
+    expect($refused)->toBe(MedicalRecordHandwritingService::MESSAGE_SEALED_PAGE)
+        ->and(m33sObjects())->toBe($objects)
+        ->and(MedicalRecord::query()->where('patient_id', $this->patient->id)->count())->toBe(1);
+});
+
+it('still locks a pre-rule page when the only final sheet that covers it is soft-deleted', function () {
+    [$v2, $book] = m33sEncounter('2026-11-10');
+    MedicalRecordHandwriting::factory()->create([
+        'medical_record_id' => $book->id,
+        'clinic_visit_id' => $v2->id,
+        'branch_id' => $v2->branch_id,
+        'created_at' => Carbon::parse('2026-11-01 02:00:00'),
+    ]);
+    $older = ClinicVisit::factory()->create([
+        'branch_id' => $this->branch->id,
+        'patient_id' => $this->patient->id,
+        'status' => ClinicVisit::STATUS_COMPLETED,
+        'visit_date' => '2026-11-12',
+    ]);
+    $final = MedicalRecord::factory()->final()->create([
+        'clinic_visit_id' => $older->id,
+        'branch_id' => $older->branch_id,
+        'patient_id' => $this->patient->id,
+        'finalized_at' => Carbon::parse('2026-11-02 02:00:00'),
+    ]);
+    $final->delete();
+
+    expect(MedicalRecord::query()->whereKey($final->id)->exists())->toBeFalse()
+        ->and(app(MedicalRecordHandwritingService::class)->isPageSealed($book->fresh(), 1))->toBeTrue();
 });
 
 // ─── Pages written before this rule (no seal, no authoring stamp) ────────────
@@ -380,6 +563,18 @@ it('renders an unsealed page as writable (positive control)', function () {
         ->assertSee('id="handwriting-page-input" value="1"', false)
         ->assertDontSee('data-sealed="1"', false)
         ->assertDontSee(MedicalRecordHandwritingService::MESSAGE_SEALED_PAGE);
+});
+
+it('names the seal-column foreign keys explicitly, within PostgreSQL\'s 63 characters (PostgreSQL)', function () {
+    if (DB::connection()->getDriverName() !== 'pgsql') {
+        $this->markTestSkipped('Constraint names are a PostgreSQL catalogue fact.');
+    }
+
+    $names = collect(DB::select("SELECT conname FROM pg_constraint WHERE conrelid IN ('trx_medical_record_handwritings'::regclass, 'trx_medical_record_handwriting_pages'::regclass) AND contype = 'f'"))
+        ->pluck('conname');
+
+    expect($names)->toContain('trx_mrh_authored_visit_fk', 'trx_mrh_sealed_by_record_fk', 'trx_mrhp_authored_visit_fk', 'trx_mrhp_sealed_by_record_fk')
+        ->and($names->every(fn (string $name): bool => strlen($name) <= 63))->toBeTrue();
 });
 
 // ─── Lock order (rule 223 §1 item 6) ────────────────────────────────────────────

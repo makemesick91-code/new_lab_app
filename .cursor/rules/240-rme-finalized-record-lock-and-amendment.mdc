@@ -1,5 +1,5 @@
 ---
-description: DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M3.3 (rule 240) — a finalized RME sheet (SOAP fields, notes, structured diagnoses, the emergency diagnosis override) and a finalized odontogram (the whole chart) are locked (owner decision 2026-11-17, reverses Sprint 59); a correction goes only through the supervised amendment the later M3.3 PRs build; three layers — route, MedicalRecordPolicy::editSheet / OdontogramPolicy::update (scope first, then final ⇒ deny), and the service re-deciding on the row it locked after the visit row, which binds Super Admin; rows final at deploy are locked by status, no backfill. Finalizing also seals the patient's handwriting pages (§4): a sealed page is never overwritten, a new page stays writable until the next finalize, a page from before rule 240 is locked when a final sheet was finalized at or after its creation. Release constraint — the lock and the amendment path ship in the same release.
+description: DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M3.3 (rule 240) — a finalized RME sheet (SOAP fields, notes, structured diagnoses, the emergency diagnosis override) and a finalized odontogram (the whole chart) are locked (owner decision 2026-11-17, reverses Sprint 59); a correction goes only through the supervised amendment the later M3.3 PRs build; three layers — route, MedicalRecordPolicy::editSheet / OdontogramPolicy::update (scope first, then final ⇒ deny), and the service re-deciding on the row it locked after the visit row, which binds Super Admin; rows final at deploy are locked by status, no backfill. Finalizing also seals every page of the patient's handwriting book (§4): a sealed page is never overwritten, only the live encounter overwrites its own unsealed pages, every encounter appends new ones, a page from before rule 240 is locked when a final sheet was finalized at or after its creation. Release constraint — the lock and the amendment path ship in the same release.
 globs: app/Modules/MedicalRecord/Services/MedicalRecordService.php, app/Modules/MedicalRecord/Services/MedicalRecordDiagnosisService.php, app/Modules/MedicalRecord/Services/DiagnosisRolloutService.php, app/Modules/MedicalRecord/Policies/MedicalRecordPolicy.php, app/Modules/MedicalRecord/Controllers/MedicalRecordController.php, app/Modules/MedicalRecord/Controllers/MedicalRecordDiagnosisController.php, app/Modules/MedicalRecord/Controllers/DiagnosisRolloutController.php, app/Modules/Odontogram/Services/OdontogramService.php, app/Modules/Odontogram/Policies/OdontogramPolicy.php, app/Modules/Odontogram/Controllers/OdontogramController.php, resources/views/rme/visits/medical-record/show.blade.php, resources/views/rme/visits/odontogram/show.blade.php, tests/Feature/RME/MedicalRecordFinalizationLockTest.php, tests/Feature/RME/OdontogramFinalizedLockTest.php, app/Modules/MedicalRecord/Services/MedicalRecordHandwritingService.php, app/Modules/MedicalRecord/Repositories/MedicalRecordHandwritingRepository.php, app/Modules/MedicalRecord/Controllers/MedicalRecordHandwritingController.php, tests/Feature/RME/MedicalRecordFinalizationPageSealTest.php
 alwaysApply: false
 ---
@@ -130,48 +130,66 @@ defaults the owner accepted on 2026-11-17) are in `docs/sprints/dms-rme-comprehe
   variants, declared in `critical_gate_mandatory_suites`). It pins: the seal on finalize with its stamps; the sealed
   page refused over HTTP and in the service, for a clinician and Super Admin, with no object written; the page
   revision compared first (a stale save still answers stale); a later encounter appending to the one book (R7-1,
-  stored on the book's visit, authored by the live encounter) and writable until its own sheet is finalized; the
-  live encounter's pages spared when an older sheet is finalized; the derived rule for unstamped pages (one second
-  before: writable; same second and after: locked; a final sheet without `finalized_at`: locked; an empty slot:
-  never locked); the page rendered read-only with the add-page control kept; visit → sheet → page seal order
-  (PostgreSQL). `MedicalRecordHandwritingTest` "final show page … keeps the canvas editable (Sprint 59)" was
+  stored on the book's visit, authored by the live encounter) and writable until a sheet is finalized; the live
+  encounter's pages sealed too when an older sheet is finalized (flipped from the dropped spare); the review HIGH-1
+  scenario through the real routes (a returning patient's book created on the canonical visit, finalized → every
+  page sealed, overwrite refused in that and a later encounter); a later encounter refused on an unsealed page an
+  earlier encounter wrote, and that page rendered read-only; another patient's pages untouched; a sealed page of a
+  non-canonical sheet refused through the edit-in-place path; the canonical-draft path adopting a book with a sealed
+  page; the derived rule for unstamped pages (one second before: writable; same second and after: locked; a final
+  sheet without `finalized_at`: locked; a soft-deleted covering final sheet: locked; an empty slot: never locked);
+  the page rendered read-only with the add-page control kept; the explicit foreign-key names (PostgreSQL); visit →
+  sheet → page seal order (PostgreSQL). `MedicalRecordHandwritingTest` "final show page … keeps the canvas editable (Sprint 59)" was
   flipped to the sealed rendering, never deleted.
 
 ## 4. Handwriting pages sealed on finalize (M3.3 PR2)
 
 1. **The seal.** `MedicalRecordService::finalize()` — after the visit lock, the sheet lock and every finalization
-   check, inside the same transaction — calls `MedicalRecordHandwritingRepositoryInterface::sealBookPages()`: every
+   check, inside the same transaction — calls `MedicalRecordHandwritingRepositoryInterface::sealBookPages()`: EVERY
    page of the patient's handwriting book (page 1 in `trx_medical_record_handwritings`, pages 2+ in
    `trx_medical_record_handwriting_pages`, on every sheet of the patient) that is not sealed yet gets `sealed_at`
-   (technical instant, UTC) and `sealed_by_medical_record_id` (the sheet finalized). An existing seal is never
-   re-stamped. When the sheet finalized is not the live encounter's own sheet, the pages the live encounter wrote
-   (`authored_clinic_visit_id`) are spared; its own sheet's finalize seals them. The seal columns are not
-   mass-assignable; only the repository writes them, through the base query (the row's `updated_at` keeps meaning
-   "last drawn").
+   (technical instant, UTC) and `sealed_by_medical_record_id` (the sheet finalized), the live encounter's own pages
+   included. An existing seal is never re-stamped; another patient's pages are never touched. The seal columns are
+   not mass-assignable; only the repository writes them, through the base query (the row's `updated_at` keeps
+   meaning "last drawn").
+   - *Why there is no exception.* The first version of this section spared the live encounter's pages when the sheet
+     finalized was not that encounter's own. The M3.3 PR2 review (HIGH-1) proved that this left a returning
+     patient's book completely unsealed: the book is created during the live encounter on the patient's CANONICAL
+     (earliest) visit (R7-1-FS), so finalizing it — the patient's only sheet — spared every page that encounter wrote,
+     and those pages of a FINAL sheet stayed overwritable then and in later encounters. The owner's rule is literal:
+     when a sheet is finalized, the pages are sealed. The live encounter keeps APPENDING new pages (§4.4).
 2. **The refusal.** `MedicalRecordHandwritingService::save()` — under the visit lock and the record lock, AFTER the
    page-revision compare (rule 237 §15, a stale save still answers stale) and BEFORE any object is written — refuses
-   an overwrite of a locked page with `MESSAGE_SEALED_PAGE` (key `handwriting_data`). Nothing is written: no object,
-   no row. It binds every caller, Super Admin included (`Gate::before` lets Super Admin past
-   `MedicalRecordPolicy::update`, which cannot see a page anyway).
-3. **What is locked** (`pageSlotLocked()`): a page row that is sealed; or a row with neither a seal nor an authoring
-   stamp (written before this rule) when a final sheet of the patient was finalized at or after the row's
+   an overwrite of an existing page the live encounter may not overwrite (§4.3, §4.4), key `handwriting_data`:
+   `MESSAGE_SEALED_PAGE` for a sealed (or pre-rule covered) page, `MESSAGE_EARLIER_ENCOUNTER_PAGE` for a page another
+   encounter wrote. Nothing is written: no object, no row. It binds every caller, Super Admin included
+   (`Gate::before` lets Super Admin past `MedicalRecordPolicy::update`, which cannot see a page anyway).
+3. **Sealed** (`pageSlotLock()` → `LOCK_SEALED`): a page row that is sealed; or a row with neither a seal nor an
+   authoring stamp (written before this rule) when a final sheet of the patient was finalized at or after the row's
    `created_at` — a tie locks, a missing `created_at` or a final sheet without `finalized_at` locks, a soft-deleted
    final sheet still counts. No backfill: such rows are judged by this derived rule until a finalize seals them.
-4. **Appending stays allowed.** A slot with no row (a new page 1 of an empty book, or the next page number) is never
+4. **Only the live encounter overwrites its own pages; everyone appends** (plan default 4, "a page after the encounter
+   only as an amendment item", accepted 2026-11-17). An existing page may be overwritten only when it is not sealed
+   AND its `authored_clinic_visit_id` is the live encounter (the authorized encounter the controller resolved,
+   `RmeVisitConsentService::assertRmeAuthoringAllowedForPatient()`). A page another encounter wrote — even one never
+   sealed because that encounter finalized nothing — is refused (`LOCK_EARLIER_ENCOUNTER`); a page with no author
+   stamp falls under the pre-rule derived lock of §4.3; a caller that names no encounter is refused for every
+   stamped page (fail closed). A slot with no row (a new page 1 of an empty book, or the next page number) is never
    locked: a live, consented encounter keeps adding pages to the one book (OD-5-6, R7-1 — stored on the book's
-   visit). Each write stamps `authored_clinic_visit_id` with the authorized encounter the controller resolved
-   (`RmeVisitConsentService::assertRmeAuthoringAllowedForPatient()`), because `clinic_visit_id` names the book's
-   visit, not the encounter. A page written after a finalize stays writable until a sheet is finalized again.
+   visit). Each write stamps `authored_clinic_visit_id` with the live encounter, because `clinic_visit_id` names the
+   book's visit, not the encounter.
 5. **Lock order (extends §1.4).** Finalize: visit → sheet → page rows (the seal UPDATE). Save: visit → book record
    (`lockForHandwriting`) → page read. Both are consent-gated writes of one patient, so they serialise on the
    encounter's visit row.
 6. **The page mirrors the server (rule 135).** `MedicalRecordController::show()` asks
-   `MedicalRecordHandwritingService::isPageSealed()` for the active native page; a sealed page renders read-only
-   (`data-sealed="1"`, no "Klik untuk menulis", the seal message), the shared editor targets only the next new page,
-   and "+ Tambah Halaman RM" stays where the server allows it.
+   `MedicalRecordHandwritingService::pageLockMessage()` for the active native page with the live encounter; a page
+   the live encounter may not overwrite renders read-only (`data-sealed="1"`, no "Klik untuk menulis", the service's
+   reason). The controller also prepares the editor's target: on such a page the shared editor posts only to the
+   next new page of the book, and "+ Tambah Halaman RM" stays where the server allows it.
 7. **Migration.** `2026_11_17_200001_add_seal_columns_to_handwriting_page_tables` adds `authored_clinic_visit_id`,
-   `sealed_at` and `sealed_by_medical_record_id` (nullable, foreign keys restrict on delete) to both page tables.
-   Additive only (CG-09); no existing row is touched.
+   `sealed_at` and `sealed_by_medical_record_id` (nullable, foreign keys restrict on delete, with explicit names
+   `trx_mrh_*` / `trx_mrhp_*` — the generated ones exceed PostgreSQL's 63 characters) to both page tables. Additive
+   only (CG-09); no existing row is touched.
 8. **Supersedes** the Sprint 59 comment "handwriting RM is revisable after finalization" in
    `MedicalRecordHandwritingController` and the corresponding part of rule 109 §2b's last bullet (already marked by
    §2).

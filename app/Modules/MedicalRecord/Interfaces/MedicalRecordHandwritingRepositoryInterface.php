@@ -31,23 +31,32 @@ interface MedicalRecordHandwritingRepositoryInterface
      */
     public function nextPageNumber(int $medicalRecordId): int;
 
+    /** Rule 240 §4 — the slot holds a sealed page (or a pre-rule page a finalize covered). */
+    public const LOCK_SEALED = 'sealed';
+
+    /** Rule 240 §4 — the slot holds a page another encounter wrote (plan default 4). */
+    public const LOCK_EARLIER_ENCOUNTER = 'earlier_encounter';
+
     /**
-     * Rule 240 §4 (memo M3.3) — is the stored page in this slot locked? Page 1 is
-     * every legacy row of the record, page N the pages row. Locked when a row is
-     * sealed, or — for a row with neither a seal nor an authoring stamp (written
-     * before rule 240) — when a final sheet of the patient was finalized at or
-     * after the row was created (a tie locks; a missing timestamp locks). A slot
-     * with no row is never locked: appending a page stays possible. Read inside
-     * the caller's transaction, under its record lock.
+     * Rule 240 §4 (memo M3.3) — may the stored page in this slot be overwritten by
+     * `$liveEncounterId`? Page 1 is every legacy row of the record, page N the
+     * pages row. Returns null when it may, otherwise why not:
+     *  - LOCK_SEALED: a row is sealed, or — for a row with neither a seal nor an
+     *    authoring stamp (written before rule 240) — a final sheet of the patient
+     *    was finalized at or after the row was created (a tie locks; a missing
+     *    timestamp or a final sheet without `finalized_at` locks; soft-deleted
+     *    final sheets count);
+     *  - LOCK_EARLIER_ENCOUNTER: a row was written by an encounter other than
+     *    `$liveEncounterId` (null locks every stamped row).
+     * A slot with no row is never locked: appending a page stays possible. Read
+     * inside the caller's transaction, under its record lock.
      */
-    public function pageSlotLocked(int $medicalRecordId, int $pageNumber, int $patientId): bool;
+    public function pageSlotLock(int $medicalRecordId, int $pageNumber, int $patientId, ?int $liveEncounterId): ?string;
 
     /**
      * Rule 240 §4 — seal every not-yet-sealed page of the patient's handwriting
      * book (every sheet of the patient, page 1 and pages 2+) for the sheet being
-     * finalized, except the pages authored by `$sparedEncounterId` (the live
-     * encounter, when the sheet finalized is not its own). An existing seal is
-     * never re-stamped. Returns the number of rows sealed.
+     * finalized. An existing seal is never re-stamped. Returns the rows sealed.
      */
-    public function sealBookPages(int $patientId, int $sealingMedicalRecordId, ?int $sparedEncounterId = null): int;
+    public function sealBookPages(int $patientId, int $sealingMedicalRecordId): int;
 }

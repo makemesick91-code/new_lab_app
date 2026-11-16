@@ -323,11 +323,11 @@
             $activeSrc = $activeRmPage['preview_url'] ?? '';
             $activeHasContent = $activeRmPage['has_content'] ?? false;
             $activeSavedAt = $activeRmPage['saved_at'] ?? null;
-            // Rule 240 §4 (memo M3.3) — a page sealed by a finalized sheet is
-            // read-only; the controller asks MedicalRecordHandwritingService, the
+            // Rule 240 §4 (memo M3.3) — a page the live encounter may not overwrite
+            // is read-only; the controller asks MedicalRecordHandwritingService, the
             // authority that refuses the overwrite. Adding a NEW page stays open.
-            $activePageSealed = (bool) ($activePageSealed ?? false);
-            $canEditActivePage = $canEditHandwriting && ! $activePageSealed;
+            $activePageLocked = ($activePageLockMessage ?? null) !== null;
+            $canEditActivePage = $canEditHandwriting && ! $activePageLocked;
         @endphp
 
         <x-ui.card
@@ -349,21 +349,9 @@
                 $rmPageUrl = fn ($page) => route('rme.visits.medical-record.show', array_merge([$workspaceVisit], $rmPageBase, ['rm_page' => $page]));
                 $prevSwipeUrl = $prevPage ? $rmPageUrl($prevPage) : '';
                 $nextSwipeUrl = $nextNavPage ? $rmPageUrl($nextNavPage) : '';
-                $canonicalHandwritingVisit = $handwritingRecord?->clinicVisit ?? $workspaceVisit;
-                $canonicalHandwritingFormAction = route('rme.visits.medical-record.handwriting.store', [
-                    $canonicalHandwritingVisit,
-                    $handwritingRecord ?? $handwritingFormRecord,
-                ]);
-                $storagePageNumber = $activeRmPage['storage_page_number'] ?? $activePageNumber;
-                // Rule 240 §4 — on a sealed page the editor's only target is the
-                // next, new page of the book (what "+ Tambah Halaman RM" opens).
-                $editorFormAction = $activePageSealed
-                    ? $canonicalHandwritingFormAction
-                    : route('rme.visits.medical-record.handwriting.store', [$handwritingFormVisit, $handwritingFormRecord]);
-                $editorPageNumber = $activePageSealed ? $nextRmPageNumber : $storagePageNumber;
-                $editorRevision = $activePageSealed
-                    ? \App\Modules\MedicalRecord\Models\MedicalRecord::HANDWRITING_REVISION_NONE
-                    : ($activeRmPage['revision'] ?? '');
+                // Rule 240 §4 — $canonicalHandwritingFormAction, $storagePageNumber
+                // and the editor's target ($editorFormAction, $editorPageNumber,
+                // $editorRevision) come from MedicalRecordController::show().
             @endphp
 
             <div
@@ -390,7 +378,7 @@
                     class="rm-page-preview group relative rounded-lg border border-gray-300 bg-white p-2 touch-pan-y {{ $canEditActivePage ? 'cursor-pointer transition hover:border-brand-500 hover:shadow' : '' }}"
                     data-page-number="{{ $activePageNumber }}"
                     data-storage-page="{{ $storagePageNumber }}"
-                    @if ($activePageSealed)
+                    @if ($activePageLocked)
                         data-sealed="1"
                     @else
                         data-revision="{{ $activeRmPage['revision'] ?? '' }}"
@@ -406,12 +394,11 @@
                         @endif
                     </figcaption>
 
-                    @if ($activePageSealed)
-                        {{-- Rule 240 §4 — the wording equals
-                             MedicalRecordHandwritingService::MESSAGE_SEALED_PAGE (pinned by
-                             MedicalRecordFinalizationPageSealTest). --}}
+                    @if ($activePageLocked)
+                        {{-- Rule 240 §4 — the service's own reason (sealed, or written by
+                             another encounter), pinned by MedicalRecordFinalizationPageSealTest. --}}
                         <p class="mb-2 rounded border border-gray-200 bg-gray-50 px-2 py-1 text-xs text-gray-700">
-                            Halaman RM ini sudah terkunci karena termasuk rekam medis yang telah final. Koreksi hanya melalui amandemen yang disetujui; tulis catatan baru pada halaman baru.
+                            {{ $activePageLockMessage }}
                         </p>
                     @endif
 

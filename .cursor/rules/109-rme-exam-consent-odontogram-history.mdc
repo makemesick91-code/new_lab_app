@@ -199,9 +199,10 @@ Anything else **fails closed**, including "there is no encounter at all" and
   editable at any time. Sprint 59's actual subject — that a FINALIZED record is not
   frozen — is preserved: during an authorized consented encounter a finalized
   record is still editable. What is refused is writing with no encounter at all.
-  **[SUPERSEDED by rule 240 §1 (owner decision 2026-11-17): a final sheet is locked
-  even inside an authorized consented encounter; this gate still applies to every
-  write a draft receives.]**
+  **[SUPERSEDED by rule 240 §1 and §4 (owner decision 2026-11-17): a final sheet is
+  locked (§1) and its handwriting pages are sealed on finalize (§4) even inside an
+  authorized consented encounter, which may still append new pages; this gate still
+  applies to every write a draft receives.]**
 
 ### 2c. What the gate covers, exactly — and what it does not
 

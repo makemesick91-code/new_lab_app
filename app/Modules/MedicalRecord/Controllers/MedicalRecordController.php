@@ -370,15 +370,6 @@ class MedicalRecordController extends Controller
             ?? $activeSheet;
         $handwritingFormVisit = $handwritingFormRecord->clinicVisit ?? $activeVisit;
 
-        // Rule 240 §4 (memo M3.3) — a page sealed by a finalized sheet renders
-        // read-only, so the page never offers an overwrite the service refuses
-        // (rule 135). Presentation only; MedicalRecordHandwritingService::save()
-        // is the authority. An archive page is read-only anyway.
-        $activePageSealed = ! $isLegacyActivePage && app(MedicalRecordHandwritingService::class)->isPageSealed(
-            $handwritingFormRecord,
-            (int) ($activeRmPage['storage_page_number'] ?? $activeRmPage['page_number'] ?? 1),
-        );
-
         $rmPageNumbers = $workspacePages->pluck('workspaceIndex');
         if ($rmPageNumbers->isEmpty()) {
             $rmPageNumbers = collect([1]);
@@ -387,6 +378,33 @@ class MedicalRecordController extends Controller
         $nextRmPageNumber = $handwritingRecord !== null
             ? $this->handwritings->nextPageNumber($handwritingRecord->id)
             : 1;
+
+        /*
+         * Rule 240 §4 (memo M3.3) — a page the live encounter may not overwrite
+         * (sealed by a finalize, or written by another encounter) renders
+         * read-only with the service's reason, so the page never offers an
+         * overwrite the service refuses (rule 135). Presentation only;
+         * MedicalRecordHandwritingService::save() is the authority. An archive
+         * page is read-only anyway. On such a page the shared editor targets only
+         * the next, new page of the book — what "+ Tambah Halaman RM" opens.
+         */
+        $storagePageNumber = (int) ($activeRmPage['storage_page_number'] ?? $activePageNumber);
+        $activePageLockMessage = $isLegacyActivePage ? null : app(MedicalRecordHandwritingService::class)->pageLockMessage(
+            $handwritingFormRecord,
+            $storagePageNumber,
+            $currentEncounter !== null ? (int) $currentEncounter->getKey() : null,
+        );
+        $canonicalHandwritingFormAction = route('rme.visits.medical-record.handwriting.store', [
+            $handwritingRecord?->clinicVisit ?? $workspaceVisit,
+            $handwritingRecord ?? $handwritingFormRecord,
+        ]);
+        $editorFormAction = $activePageLockMessage !== null
+            ? $canonicalHandwritingFormAction
+            : route('rme.visits.medical-record.handwriting.store', [$handwritingFormVisit, $handwritingFormRecord]);
+        $editorPageNumber = $activePageLockMessage !== null ? $nextRmPageNumber : $storagePageNumber;
+        $editorRevision = $activePageLockMessage !== null
+            ? MedicalRecord::HANDWRITING_REVISION_NONE
+            : (string) ($activeRmPage['revision'] ?? '');
 
         $prevRmPage = $activePageNumber > 1 ? $activePageNumber - 1 : null;
         $nextRmPage = $activePageNumber < $totalRmPages ? $activePageNumber + 1 : null;
@@ -416,7 +434,12 @@ class MedicalRecordController extends Controller
             'handwritingRecord' => $handwritingRecord,
             'handwritingFormRecord' => $handwritingFormRecord,
             'handwritingFormVisit' => $handwritingFormVisit,
-            'activePageSealed' => $activePageSealed,
+            'activePageLockMessage' => $activePageLockMessage,
+            'storagePageNumber' => $storagePageNumber,
+            'canonicalHandwritingFormAction' => $canonicalHandwritingFormAction,
+            'editorFormAction' => $editorFormAction,
+            'editorPageNumber' => $editorPageNumber,
+            'editorRevision' => $editorRevision,
             'prevRmPage' => $prevRmPage,
             'nextRmPage' => $nextRmPage,
             'hasRequiredHandwriting' => $this->service->hasRequiredHandwriting($activeSheet),

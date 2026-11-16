@@ -229,7 +229,7 @@ class MedicalRecordService
             // FIX-02 / CORRECTIVE-02 — finalization is a current-RME write, so it
             // needs the same authorized, consented, in-progress encounter. Inside
             // this transaction it locks the encounter's visit row first.
-            $encounter = $this->consents->assertRmeAuthoringAllowedForPatient($medicalRecord->patient_id);
+            $this->consents->assertRmeAuthoringAllowedForPatient($medicalRecord->patient_id);
 
             // Rule 240 §1 (memo M3.3) — re-decided on the sheet row, locked after
             // the visit (rule 223 §1 item 6): a finalize that committed after the caller
@@ -259,16 +259,14 @@ class MedicalRecordService
              * the patient's handwriting pages as they stand, under the visit and
              * sheet locks taken above (rule 223 §1 item 6): from now on a sealed page is
              * never overwritten (MedicalRecordHandwritingService::save()); a
-             * correction is a supervised amendment. A new page written later
-             * stays writable until a sheet is finalized again. When the sheet is
-             * not the live encounter's own, the pages that encounter is still
-             * writing are spared; its own sheet's finalize seals them.
+             * correction is a supervised amendment. EVERY not-yet-sealed page of
+             * the book is sealed, the live encounter's own included (a returning
+             * patient's book lives on the canonical visit, so sparing "the live
+             * encounter's pages" left a final book unsealed — review HIGH-1). The
+             * live encounter keeps APPENDING new pages; it overwrites only its
+             * own, unsealed pages (MedicalRecordHandwritingService::save()).
              */
-            $this->handwritings->sealBookPages(
-                (int) $locked->patient_id,
-                (int) $locked->getKey(),
-                (int) $encounter->getKey() !== (int) $locked->clinic_visit_id ? (int) $encounter->getKey() : null,
-            );
+            $this->handwritings->sealBookPages((int) $locked->patient_id, (int) $locked->getKey());
 
             $finalized = $this->medicalRecords->update($locked, [
                 'status' => MedicalRecord::STATUS_FINAL,
