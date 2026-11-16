@@ -444,6 +444,13 @@ deleted); the live runner is not edited by hand.
 Run once per host, by the administrator, while its passwordless sudo still exists (on Biznet: the first release that
 carries rule 235). Each mutating step is dry-run first, then `--apply`; stop at the first refusal.
 
+**Status on Biznet `DaengtisiaMS`: spent.** It ran on 2026-11-16 (release `dms-deploy-privsep-phase-2-r3`, deploy
+`20261116-022520`, `DEPLOY RUNNER OK`; passwordless sudo retired 02:28:48Z; `SUDO_POLICY=LEAST_PRIVILEGE`;
+`docs/sprints/dms-deploy-privsep-phase-2.md` §7 and §12). Two earlier attempts stopped before any deploy and are the
+reason steps 3 and 5 exist as written: the build rehearsal refused esbuild's in-tree hardlink (r2 fix), and the
+operator refused every action on the stock Node.js symlinks (r3 fix). Every Biznet deploy now follows §6b through
+the operator; administrator root steps need the owner's password.
+
 1. **Export the approved release** (§6c step 2, the whole `scripts` and `deploy` trees) into a new root-only
    `/root/dms-release-<APPROVED_SHA>` and prove every exported file byte-identical to the commit object (§6c step 3,
    for each file). Everything below runs from that export, never from the working tree.
@@ -459,7 +466,11 @@ carries rule 235). Each mutating step is dry-run first, then `--apply`; stop at 
 5. **Prove the boundary (read-only):** as the administrator, `sudo -l -U <operator> <entrypoint> <args>` answers for
    the positive requests and refuses the negative ones (a shell, `status; id`, rollback, any other command); over SSH
    the operator key refuses a shell and every non-allowlisted request (`DEPLOY_OPERATOR=DENIED`, exit 64) and answers
-   `posture`. Add the workstation alias (§2) and run `production-target-check.sh --operator --remote`.
+   `trust-check` (`RELEASE GUARD TRUST: READY`). Add the workstation alias (§2). `posture`, and with it
+   `production-target-check.sh --operator --remote`, answers only once the checkout carries
+   `scripts/production-posture.sh`, i.e. after step 6 on a host's first rule 235 release: until then the operator's
+   target rests on the administrator alias's `VERIFIED`, the operator alias's static checks (same pinned host key)
+   and the operator's `trust-check` (`HOST_KEY=OK`); run the `--operator --remote` check right after the deploy.
 6. **Deploy through the operator** (§6b steps 4–8 in their rule 235 form). This is the first proof that the restricted
    path carries a real deploy, and the first deploy whose composer and npm run as the build identity. Then remove the
    export (§6c step 7) and any rehearsal leftovers, while the administrator's root steps need no password yet.
