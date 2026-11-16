@@ -85,6 +85,8 @@ use Illuminate\Contracts\Auth\Guard as GuardContract;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
+use Illuminate\Testing\TestResponse;
 
 use function Pest\Laravel\actingAs;
 
@@ -1266,6 +1268,80 @@ test('OD-7-7 lets the dead lease be reclaimed once the in-flight window has pass
     $this->assertAuthenticatedAs($user);
     expect($leaseA->fresh()->released_reason)->toBe(DoctorSessionLease::RELEASE_DEAD_SESSION_RECLAIMED);
     daAssertActiveLeaseCount(1, $user);
+});
+
+/** A login POST that carries the page's CSRF token, as a real browser form does. */
+function dslLoginWithToken(User $user, string $csrfToken): TestResponse
+{
+    return test()->post('/login', ['email' => $user->email, 'password' => 'password', '_token' => $csrfToken]);
+}
+
+test('OD-7-7 never locks the doctor out on a same-browser double submit while the first login is in flight', function () {
+    daArmDoctorAccess();
+    $user = daDoctorUser([daBranch()]);
+    // ONE browser: both POSTs of a double tap carry the token of the same page.
+    $pageToken = Str::random(40);
+
+    dslLoginWithToken($user, $pageToken);
+    $leaseA = daCurrentLease($user);
+    // The first login's session row is not written yet: in flight.
+    daKillSessionsFor($user);
+
+    dslNewBrowser();
+    dslLoginWithToken($user, $pageToken)->assertSessionHasNoErrors();
+
+    // The browser keeps the second response: it must be signed in, holding the
+    // one active lease, and its own first, unwritten login is superseded.
+    $this->assertAuthenticatedAs($user);
+    daAssertActiveLeaseCount(1, $user);
+    expect((int) daCurrentLease($user)->id)->not->toBe((int) $leaseA->id)
+        ->and($leaseA->fresh()->released_reason)->toBe(DoctorSessionLease::RELEASE_SAME_BROWSER_RESUBMIT);
+});
+
+test('OD-7-7 still refuses another browser inside the in-flight window, whatever token it posts', function () {
+    daArmDoctorAccess();
+    $user = daDoctorUser([daBranch()]);
+
+    dslLoginWithToken($user, Str::random(40));
+    $leaseA = daCurrentLease($user);
+    daKillSessionsFor($user);
+
+    dslNewBrowser();
+    dslLoginWithToken($user, Str::random(40))->assertSessionHasErrors('email');
+
+    $this->assertGuest();
+    expect((int) daCurrentLease($user)->id)->toBe((int) $leaseA->id)
+        ->and($leaseA->fresh()->released_at)->toBeNull();
+});
+
+test('OD-7-7 recognises the same browser only inside the in-flight window', function () {
+    daArmDoctorAccess();
+    $user = daDoctorUser([daBranch()]);
+    $pageToken = Str::random(40);
+
+    dslLoginWithToken($user, $pageToken);
+    $leaseA = daCurrentLease($user);
+    // The first login completed: its session row is live.
+
+    dslPastInFlightWindow();
+    dslNewBrowser();
+    dslLoginWithToken($user, $pageToken)->assertSessionHasErrors('email');
+
+    // After the window only the session store decides; nothing is superseded.
+    expect($leaseA->fresh()->released_at)->toBeNull();
+});
+
+test('OD-7-7 stores only a digest of the posted pre-login token, never the raw value', function () {
+    daArmDoctorAccess();
+    $user = daDoctorUser([daBranch()]);
+    $pageToken = Str::random(40);
+
+    dslLoginWithToken($user, $pageToken);
+    $lease = daCurrentLease($user);
+    $row = (array) DB::table('trx_doctor_session_leases')->where('id', $lease->id)->first();
+
+    expect($lease->claim_nonce_hash)->toBe(hash('sha256', $pageToken))
+        ->and(json_encode($row))->not->toContain($pageToken);
 });
 
 test('OD-7-7 keeps the in-flight window a literal config value, never an environment override', function () {

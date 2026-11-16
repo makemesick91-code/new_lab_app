@@ -217,6 +217,15 @@ class DoctorSessionLeaseService
         $userId = (int) $user->id;
         $token = bin2hex(random_bytes(32));
         $sessionId = $request->session()->getId();
+        // OD-7-7 — a digest of the browser's PRE-LOGIN CSRF token as it posted
+        // it. The session's own token cannot serve: SessionGuard::updateSession()
+        // regenerates it before the Login event fires. VerifyCsrfToken has
+        // already proven the posted value equals this browser's pre-login
+        // session token, so every POST of one browser (a double tap) carries the
+        // same value and no other browser can present it. Never stored raw; a
+        // login with no posted token simply gets no same-browser recognition.
+        $postedToken = $request->input('_token') ?: $request->header('X-CSRF-TOKEN');
+        $claimNonceHash = is_string($postedToken) && $postedToken !== '' ? hash('sha256', $postedToken) : null;
 
         // The doctor record is audit context, recorded at claim time because
         // the link can be broken later and the lease must still say who this
@@ -233,13 +242,14 @@ class DoctorSessionLeaseService
             // digest is persisted, so the table is not a bearer-credential
             // store.
             'session_token_hash' => hash('sha256', $token),
+            'claim_nonce_hash' => $claimNonceHash,
             'effective_branch_id' => $effectiveBranchId,
             'effective_cover_id' => $effectiveCoverId,
             'claimed_at' => now(),
             'last_seen_at' => now(),
         ];
 
-        $verdict = DB::transaction(function () use ($userId, $attributes, $sessionId): DoctorSessionLeaseVerdict {
+        $verdict = DB::transaction(function () use ($userId, $attributes, $sessionId, $claimNonceHash): DoctorSessionLeaseVerdict {
             $incumbent = $this->leases->lockActiveForUser($userId);
 
             if ($incumbent === null) {
@@ -269,10 +279,17 @@ class DoctorSessionLeaseService
                 }
             }
 
-            if (! $this->probe->isLive($incumbent, $sessionId)) {
+            // OD-7-7 — the same browser's own first login, still in flight (a
+            // double tap): superseding it evicts nobody. Any other browser stays
+            // refused for the in-flight window by the probe below.
+            $sameBrowser = $this->probe->isSameBrowserInFlight($incumbent, $claimNonceHash);
+
+            if ($sameBrowser || ! $this->probe->isLive($incumbent, $sessionId)) {
                 // DEAD, NOT IDLE. The incumbent's session no longer exists, so
                 // nobody is evicted by taking the lease back.
-                $this->leases->release($incumbent, DoctorSessionLease::RELEASE_DEAD_SESSION_RECLAIMED);
+                $this->leases->release($incumbent, $sameBrowser
+                    ? DoctorSessionLease::RELEASE_SAME_BROWSER_RESUBMIT
+                    : DoctorSessionLease::RELEASE_DEAD_SESSION_RECLAIMED);
 
                 try {
                     $lease = DB::transaction(

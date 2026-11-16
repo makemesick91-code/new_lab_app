@@ -79,9 +79,7 @@ class IncumbentSessionProbe
         // reclaim the lease and evict the first browser, the one outcome rule 153
         // forbids ("refuse the second login, never evict the first"). This is no
         // idle timer: once the window passes, only the sessions row decides.
-        $grace = max(0, (int) config('doctor_access.lease.in_flight_grace_seconds', 30));
-
-        if ($grace > 0 && $lease->claimed_at !== null && $lease->claimed_at->greaterThan(now()->subSeconds($grace))) {
+        if ($this->inFlight($lease)) {
             return true;
         }
 
@@ -95,5 +93,39 @@ class IncumbentSessionProbe
             )
             ->where('last_activity', '>=', now()->subMinutes($lifetimeMinutes)->getTimestamp())
             ->exists();
+    }
+
+    /**
+     * DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-7-7) — is this the SAME browser that
+     * claimed the lease, logging in again while that claim is still in flight?
+     *
+     * Both POSTs of a double tap post the same page's CSRF token, which
+     * VerifyCsrfToken proved equal to that browser's pre-login session token;
+     * another browser cannot present it. The lease stores only a SHA-256 digest
+     * of it (`claim_nonce_hash`). Within the in-flight window a
+     * matching digest means "my own first login", which may be superseded —
+     * nobody else is evicted. Outside the window, or with no digest on either
+     * side, the answer is no and the ordinary rule applies.
+     */
+    public function isSameBrowserInFlight(DoctorSessionLease $lease, ?string $claimNonceHash): bool
+    {
+        return $claimNonceHash !== null
+            && is_string($lease->claim_nonce_hash)
+            && $lease->claim_nonce_hash !== ''
+            && hash_equals($lease->claim_nonce_hash, $claimNonceHash)
+            && $this->inFlight($lease);
+    }
+
+    /**
+     * A lease claimed less than `doctor_access.lease.in_flight_grace_seconds`
+     * ago belongs to a login whose session row may not be written yet.
+     */
+    private function inFlight(DoctorSessionLease $lease): bool
+    {
+        $grace = max(0, (int) config('doctor_access.lease.in_flight_grace_seconds', 30));
+
+        return $grace > 0
+            && $lease->claimed_at !== null
+            && $lease->claimed_at->greaterThan(now()->subSeconds($grace));
     }
 }

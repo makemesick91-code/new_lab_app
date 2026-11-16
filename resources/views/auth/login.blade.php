@@ -2,7 +2,15 @@
     <!-- Session Status -->
     <x-auth-session-status class="mb-4" :status="session('status')" />
 
-    <form method="POST" action="{{ route('login') }}">
+    {{-- DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-7-7) — defence in depth against a
+         double tap: the second submit of this page is dropped in the browser.
+         The server stays the authority (rule 153: the same browser's resubmit is
+         recognised by its pre-login token digest). pageshow re-arms the form
+         when the page is restored from the back/forward cache. --}}
+    <form method="POST" action="{{ route('login') }}"
+          x-data="{ submitting: false }"
+          x-on:submit="if (submitting) { $event.preventDefault(); return; } submitting = true"
+          x-on:pageshow.window="submitting = false">
         @csrf
 
         <!-- Email Address -->
@@ -39,7 +47,7 @@
                 </a>
             @endif
 
-            <x-primary-button class="ms-3">
+            <x-primary-button class="ms-3" x-bind:disabled="submitting">
                 {{ __('Login') }}
             </x-primary-button>
         </div>
