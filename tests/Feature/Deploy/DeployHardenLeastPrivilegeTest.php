@@ -127,6 +127,9 @@ function lpOperatorCommands(): array
         LP_ENTRY.' ^(status|follow|trust-check|drift-check|sudo-policy-check|posture)$',
         LP_ENTRY.' ^verify [0-9]{8}-[0-9]{6}$',
         LP_ENTRY.' ^start --release-id [a-z0-9][a-z0-9-][a-z0-9-]+ --approved-sha [0-9a-f]{40}$',
+        // DMS-RELEASE-APPROVAL-DIRECT-1: store one owner-signed approval (stdin).
+        LP_ENTRY.' ^submit-approval --release-id [a-z0-9][a-z0-9-][a-z0-9-]+$',
+        LP_ENTRY.' ^check-approval --release-id [a-z0-9][a-z0-9-][a-z0-9-]+ --approved-sha [0-9a-f]{40}$',
     ];
 }
 
@@ -142,6 +145,8 @@ function lpAllowedRequests(): array
         'verify' => ['verify 20261115-063339', 'verify 20261115-063339'],
         'start' => ['start --release-id dms-deploy-privsep-phase-2 --approved-sha '.LP_SHA, 'start --release-id dms-deploy-privsep-phase-2 --approved-sha '.LP_SHA],
         'start, 80-character id' => ['start --release-id '.str_repeat('a', 80).' --approved-sha '.LP_SHA, 'start --release-id '.str_repeat('a', 80).' --approved-sha '.LP_SHA],
+        'submit-approval' => ['submit-approval --release-id dms-release-approval-direct-1', 'submit-approval --release-id dms-release-approval-direct-1'],
+        'check-approval' => ['check-approval --release-id dms-release-approval-direct-1 --approved-sha '.LP_SHA, 'check-approval --release-id dms-release-approval-direct-1 --approved-sha '.LP_SHA],
     ];
 }
 
@@ -180,6 +185,11 @@ function lpDeniedRequests(): array
         'swapped flags' => ['start --approved-sha '.LP_SHA.' --release-id dms-x'],
         'a missing SHA' => ['start --release-id dms-x'],
         'over 200 characters' => [str_repeat('a', 201)],
+        'submit-approval without a release id' => ['submit-approval'],
+        'submit-approval with a path' => ['submit-approval --release-id ../etc'],
+        'submit-approval with a file argument' => ['submit-approval --release-id dms-x --bundle x'],
+        'check-approval with an abbreviated SHA' => ['check-approval --release-id dms-x --approved-sha '.substr(LP_SHA, 0, 12)],
+        'check-approval without a SHA' => ['check-approval --release-id dms-x'],
     ];
 }
 
@@ -358,7 +368,10 @@ it('reads no environment but the SSH request and reaches no break-glass program'
 
     preg_match_all('/\$\{?([A-Z_][A-Z0-9_]*)/', $code, $vars);
     foreach (array_unique($vars[1]) as $var) {
-        expect(str_starts_with($var, 'DMS_OPERATOR_') || in_array($var, ['SSH_ORIGINAL_COMMAND', 'BASH_SOURCE'], true))
+        // SUDO_USER is set by sudo itself after env_reset; the dispatcher hands a
+        // plain account name to the approval submission's receipt only
+        // (DMS-RELEASE-APPROVAL-DIRECT-1).
+        expect(str_starts_with($var, 'DMS_OPERATOR_') || in_array($var, ['SSH_ORIGINAL_COMMAND', 'BASH_SOURCE', 'SUDO_USER'], true))
             ->toBeTrue("reads \${$var}");
     }
     foreach (['rollback', 'restore', 'provision', 'bk2', 'allowed_signers', 'verify-transition'] as $word) {
@@ -367,7 +380,7 @@ it('reads no environment but the SSH request and reaches no break-glass program'
     expect($code)->toContain('export PATH="$DMS_OPERATOR_SAFE_PATH"')
         ->and($code)->toContain('dms_operator_require dms_operator_trusted_tree 0 "${DMS_OPERATOR_APP_DIR}/.git"')
         ->and($code)->toContain('dms_operator_require dms_operator_trusted_tools 0 $DMS_OPERATOR_TOOLS')
-        ->and($code)->toContain('readonly DMS_OPERATOR_TOOLS="bash env sudo git composer node npm php pg_dump runuser systemd-run sha256sum find stat"');
+        ->and($code)->toContain('readonly DMS_OPERATOR_TOOLS="bash env sudo git composer node npm php pg_dump runuser systemd-run sha256sum find stat ssh-keygen python3 curl flock"');
     expect($code)->toContain('exec /usr/bin/sudo -n -- "$DMS_OPERATOR_ENTRYPOINT"')
         ->and($code)->toContain('exec /usr/bin/env -i PATH="$DMS_OPERATOR_SAFE_PATH"')
         ->and($code)->toContain('/usr/bin/bash --noprofile --norc')
@@ -378,6 +391,8 @@ it('maps each action to its one in-tree program', function () {
     $src = lpSource('scripts/deploy-operator-entrypoint.sh');
     foreach ([
         'start' => 'scripts/deploy-vps-runner.sh', 'verify' => 'scripts/deploy-vps-runner.sh',
+        'submit-approval' => 'scripts/release-approval-submit.sh',
+        'check-approval' => 'scripts/deploy-vps-runner.sh',
         'drift-check' => 'scripts/privsep-drift-check.sh', 'sudo-policy-check' => 'scripts/sudo-policy-check.sh',
         'posture' => 'scripts/production-posture.sh',
     ] as $action => $program) {
@@ -438,10 +453,10 @@ it('renders an operator rule that parses, holds only the entrypoint and classifi
         ->and($rule)->toContain('opuser ALL=(root) NOPASSWD: ')
         ->and($rule)->not->toContain('SETENV')
         ->and($rule)->not->toMatch('/NOPASSWD:\s*ALL/')
-        ->and(substr_count($rule, LP_ENTRY.' ^'))->toBe(3);
+        ->and(substr_count($rule, LP_ENTRY.' ^'))->toBe(5);
 
     preg_match_all('#'.preg_quote(LP_ENTRY, '#').' (\^[^\n]*\$)#', $rule, $m);
-    expect($m[1])->toHaveCount(3);
+    expect($m[1])->toHaveCount(5);
     $commands = array_map(fn ($expr) => LP_ENTRY.' '.$expr, $m[1]);
     expect($commands)->toBe(lpOperatorCommands());
     [, $verdict] = lpClassify(lpListing('opuser', [['file' => '/etc/sudoers.d/20-dms-deploy-operator', 'runas' => 'root', 'options' => '!authenticate', 'commands' => $commands]], LP_OP_DEFAULTS), 0);

@@ -92,6 +92,10 @@ Before finalizing work:
   whose key runs only the root-owned entrypoint's allowlisted actions; the administrator's sudo needs the owner's
   password (rollback, restore, provisioning). composer/npm run only as the sandboxed build identity; restores need
   trusted digest evidence (`.cursor/rules/235-deploy-least-privilege-sudo.mdc`).
+- Release approval (rule 236): where the host accepts approval contract 3, the owner signs locally
+  (`scripts/release-approval-sign.sh`, owner only) and the operator submits it (`submit-approval`); no approval-only
+  PR, commit or CI. The host re-verifies the signature, the exact SHA and the target's CI
+  (`.cursor/rules/236-direct-signed-release-approval.mdc`).
 
 ## Developer toolchain (rule 234)
 

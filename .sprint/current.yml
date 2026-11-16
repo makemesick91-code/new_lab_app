@@ -1,28 +1,20 @@
-# DMS-DEPLOY-PRIVSEP-PHASE-2 (2026-11-15). Owner-ordered security hardening closing OD-6 (the deploy account held
-# unrestricted passwordless sudo, and its key sat unencrypted on a workstation) and the rule 233 §9 residuals R1
-# (composer/npm ran as root), R2 (tracked development scripts under storage/) and R4 (restores streamed an
-# unverified runtime-owned dump to the PostgreSQL superuser). Rule 235 (docs/sprints/dms-deploy-privsep-phase-2.md):
-# a dedicated deploy operator whose key is forced onto a root-owned entrypoint and whose only sudo right is that
-# entrypoint with allowlisted, regex-bounded requests; the administrator's sudo needs the owner's password
-# (break-glass); composer/npm as an unprivileged build identity in a sandboxed transient systemd service, trees handed
-# over and claimed back; restores only of a root-only copy whose SHA-256 matches trusted evidence; five dead
-# factory-based scripts removed from storage/. Deploy tooling, provisioning, authority, scanner, read-only checks and
-# tests. No schema, migration, permission, role, route, JS/CSS or package change; no flag, enforcement scope, branch
-# lock, queue worker, scheduler or timer change.
+# DMS-RELEASE-APPROVAL-DIRECT-1 (2026-11-16). Owner-ordered release-engineering change: approval contract 3 (rule
+# 236) — the owner signs a canonical release approval locally and the deploy operator submits it to the host's
+# root-only approval store, so a release needs no approval-only branch, commit, PR, CI run or merge; the host verifies
+# the signature, every exact binding and the target commit's CI (GitHub, critical tests actually run) itself. Deploy
+# tooling, authority, operator entrypoint, evidence and tests. No schema, migration, permission, role, route, JS/CSS
+# or package change.
 #
-# Foundation-First Sprint Lock stays ACTIVE (allowed category: security fix / deployment). Full Suite deferred (CG-18),
-# not passed. Production deployment needs the owner's written approval of the exact merged release commit and the
-# owner's signature on its record (rule 231); the one-time provisioning and cutover follow runbook
-# production-host-identity.md section 6f. The GO tag below is created only after that deploy and its verification.
+# Foundation-First Sprint Lock stays ACTIVE (allowed category: security / deployment). Full Suite deferred (CG-18).
+# This release itself is approved under contract 2 (approval PR, rule 229/231); contract 3 is used only for later
+# releases, after this one is production-verified and the operator re-provisioned (rule 236 §3).
 #
-# Previous manifest: DMS-DEPLOY-PRIVSEP-HARDENING-1 (rule 233; PR #633 9312818f), deployed 2026-11-15 (deploy
-# 20261115-063339) and GO tagged dms-deploy-privsep-hardening-1-go; its record stays in
-# docs/sprints/dms-deploy-privsep-hardening-1.md. Carried forward: LEGACY-RME-PROGRAM-CLOSURE-1 stays CLOSED and
-# inherited.
-id: DMS-DEPLOY-PRIVSEP-PHASE-2
+# Previous manifest: DMS-DEPLOY-PRIVSEP-PHASE-2 (rule 235); its record stays in docs/sprints/dms-deploy-privsep-phase-2.md.
+# Carried forward: LEGACY-RME-PROGRAM-CLOSURE-1 stays CLOSED and inherited.
+id: DMS-RELEASE-APPROVAL-DIRECT-1
 type: SECURITY_FIX
 module: Deploy
-title: "Least-privilege deploy identities (rule 235): operator entrypoint only, password-only admin, sandboxed build, restore digest evidence"
+title: "Direct signed release approval (rule 236): approval contract 3, host-verified CI, no approval-only PR"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 runtime_change: true
 schema_change: false
@@ -33,5 +25,5 @@ ledger_impact: false
 deploy_required: true
 browser_required: false
 test_profiles: [focused, security_regression]
-go_tag: dms-deploy-privsep-phase-2-go
+go_tag: dms-release-approval-direct-1-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1

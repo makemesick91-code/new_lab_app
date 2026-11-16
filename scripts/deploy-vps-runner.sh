@@ -46,6 +46,14 @@ set -euo pipefail
 # checkout, and the evidence contract (3) binds the record, the log and the
 # checkout to the approved commit.
 #
+# DIRECT SIGNED APPROVALS (DMS-RELEASE-APPROVAL-DIRECT-1, approval contract 3):
+# the same `start` also accepts an owner-signed approval submitted beforehand
+# through the operator entrypoint (`submit-approval --release-id <id>`) into
+# the root-only approval store, with no approval commit; the host then checks
+# the required CI of the exact commit itself. The record names the approval id
+# and the SHA-256 of the stored record and signature, and `verify` re-hashes
+# them. A release with no stored approval uses contract 2 as before.
+#
 # USAGE (run FROM the app dir on the VPS):
 #   bash scripts/deploy-vps-runner.sh start --release-id <id> --approved-sha <40-hex>
 #                                                           # detach and return immediately; prints the deploy id
@@ -243,9 +251,19 @@ start_detached() {
     printf 'boot_id=%s\n' "$boot_id"
     printf 'release_id=%s\n' "$RELEASE_ID"
     printf 'approved_sha=%s\n' "$APPROVED_SHA"
-    printf 'approval_record=%s:%s\n' "$DMS_RELEASE_APPROVAL_TIP" "$DMS_RELEASE_APPROVAL_PATH"
-    printf 'approval_blob=%s\n' "$DMS_RELEASE_APPROVAL_BLOB"
-    printf 'approval_signature_blob=%s\n' "$DMS_RELEASE_APPROVAL_SIGNATURE_BLOB"
+    printf 'approval_contract=%s\n' "$DMS_RELEASE_APPROVAL_VERIFIED_CONTRACT"
+    if [ "$DMS_RELEASE_APPROVAL_VERIFIED_CONTRACT" = "3" ]; then
+      # DMS-RELEASE-APPROVAL-DIRECT-1: the stored approval, bound by digest.
+      printf 'approval_id=%s\n' "$DMS_RELEASE_APPROVAL_ID"
+      printf 'approval_record_sha256=%s\n' "$DMS_RELEASE_APPROVAL_RECORD_SHA256"
+      printf 'approval_signature_sha256=%s\n' "$DMS_RELEASE_APPROVAL_SIGNATURE_SHA256"
+      printf 'approval_store_path=%s\n' "$DMS_RELEASE_APPROVAL_STORE_PATH"
+      printf 'approval_ci_run_id=%s\n' "$DMS_RELEASE_APPROVAL_VERIFIED_CI_RUN_ID"
+    else
+      printf 'approval_record=%s:%s\n' "$DMS_RELEASE_APPROVAL_TIP" "$DMS_RELEASE_APPROVAL_PATH"
+      printf 'approval_blob=%s\n' "$DMS_RELEASE_APPROVAL_BLOB"
+      printf 'approval_signature_blob=%s\n' "$DMS_RELEASE_APPROVAL_SIGNATURE_BLOB"
+    fi
     printf 'approval_signer_key=%s\n' "$DMS_RELEASE_APPROVAL_SIGNER_KEY"
   } >> "$DEPLOY_HOST_FILE"
   ln -sfn "$(basename "$DEPLOY_LOG_FILE")" "$LATEST_LOG_LINK"
@@ -302,7 +320,7 @@ verify_id() {
 
 # Read-only report of what rule 231 needs on this host. Changes nothing.
 trust_check() {
-  local anchor fp declared why rc=0
+  local anchor fp declared why contracts store rc=0
   echo "== Release guard trust check (rule 231, read-only) =="
   anchor="$(dms_runner_authority_value "$APPROVAL_AUTHORITY_FILE" DMS_PRODUCTION_RELEASE_TRUST_ANCHOR)"
   if why="$(dms_trusted_file "release trust anchor" "$anchor" "$DEPLOY_UID" "$APP_DIR")"; then
@@ -332,6 +350,21 @@ trust_check() {
     echo "EVIDENCE_DIR=OK (${RUN_DIR})"
   else
     echo "EVIDENCE_DIR=UNTRUSTED — ${why}"
+    rc=1
+  fi
+  # DMS-RELEASE-APPROVAL-DIRECT-1: the contract-3 approval store.
+  contracts="$(dms_release_approval_contracts "$APPROVAL_AUTHORITY_FILE")" || { contracts="INVALID"; rc=1; }
+  echo "APPROVAL_CONTRACTS=${contracts}"
+  store="$(dms_runner_authority_value "$APPROVAL_AUTHORITY_FILE" DMS_PRODUCTION_RELEASE_APPROVAL_STORE)"
+  if [ -z "$store" ]; then
+    echo "APPROVAL_STORE=NOT-DECLARED"
+    if dms_release_approval_in_words 3 "$contracts"; then rc=1; fi
+  elif [ ! -e "$store" ] && [ ! -L "$store" ]; then
+    echo "APPROVAL_STORE=ABSENT (${store}; the first submit-approval creates it, 0700)"
+  elif why="$(dms_trusted_dir "release approval store" "$store" "$DEPLOY_UID" "$APP_DIR")"; then
+    echo "APPROVAL_STORE=OK (${store})"
+  else
+    echo "APPROVAL_STORE=UNTRUSTED — ${why}"
     rc=1
   fi
   if [ "$rc" -eq 0 ]; then echo "RELEASE GUARD TRUST: READY"; else echo "RELEASE GUARD TRUST: NOT READY"; fi
@@ -377,9 +410,89 @@ follow_until_done() {
   fi
 }
 
+# ─── check-approval (rule 236) ──────────────────────────────────────────────
+# The lock root the bootstrap uses on this host (scripts/deploy-immutable-exec.sh:
+# DMS_DEPLOY_LOCK_DIR, else /run, else /var/lock). The operator entrypoint
+# starts this runner with an empty environment, so the operator never sets it.
+release_lock_root() {
+  if [ -n "${DMS_DEPLOY_LOCK_DIR:-}" ]; then
+    echo "$DMS_DEPLOY_LOCK_DIR"
+  elif [ -d /run ] && [ -w /run ]; then
+    echo /run/daengtisiams-deploy
+  else
+    echo /var/lock/daengtisiams-deploy
+  fi
+}
+
+check_approval_refuse() {
+  echo "deploy-runner: $* — nothing was checked" >&2
+  echo "DEPLOYMENT=DENIED"
+  exit 77
+}
+
+check_approval_busy() {
+  echo "deploy-runner: BUSY $* — nothing was checked; try again once it has finished" >&2
+  echo "RELEASE APPROVAL CHECK: BUSY"
+  exit 75
+}
+
+# One check at a time (an exclusive lock on check-approval.lock) and never
+# while a deploy or rollback runs (a SHARED lock on the release lock, which the
+# bootstrap takes exclusively: a deploy started during a check answers BUSY).
+# Both non-blocking, both held only while the guard runs (fds 8 and 9).
+check_approval_lock() {
+  local root owner_mode file
+  command -v flock >/dev/null 2>&1 || check_approval_refuse "flock is not installed"
+  root="$(release_lock_root)"
+  [ -L "$root" ] && check_approval_refuse "the lock root ${root} is a symlink"
+  (umask 077 && mkdir -p -- "$root") 2>/dev/null || check_approval_refuse "the lock root ${root} could not be created"
+  owner_mode="$(stat -c '%u %a' -- "$root" 2>/dev/null)" || check_approval_refuse "the lock root ${root} cannot be inspected"
+  if [ "${owner_mode% *}" != "$DEPLOY_UID" ] || ! dms_trusted_mode_private "${owner_mode#* }"; then
+    check_approval_refuse "the lock root ${root} is uid ${owner_mode% *} mode ${owner_mode#* }; it must be uid ${DEPLOY_UID} and not group/other-writable"
+  fi
+  for file in "${root}/check-approval.lock" "${root}/release.lock"; do
+    if [ -L "$file" ] || { [ -e "$file" ] && [ ! -f "$file" ]; }; then
+      check_approval_refuse "${file} is not a regular file"
+    fi
+  done
+  umask 077
+  exec 8>>"${root}/check-approval.lock"
+  flock -x -n 8 || check_approval_busy "another check-approval is running"
+  exec 9>>"${root}/release.lock"
+  flock -s -n 9 || check_approval_busy "a deploy or rollback holds the release lock ${root}/release.lock"
+}
+
+# The guard removes its private ref on every return; a signal (TERM, INT, HUP,
+# a dropped SSH pipe) skips that, so check-approval's EXIT trap removes this
+# process's refs/dms-release-approval/<pid>-* as well. Nothing else.
+# shellcheck disable=SC2317  # invoked from the EXIT trap of check-approval
+check_approval_cleanup() {
+  git -C "$APP_DIR" for-each-ref --format='%(refname)' "refs/dms-release-approval/$$-*" 2>/dev/null \
+    | while IFS= read -r ref; do git -C "$APP_DIR" update-ref -d "$ref" 2>/dev/null || true; done || true
+}
+
 rc=0
 case "$action" in
   start)  parse_release_args "$@"; start_detached ;;
+  check-approval)
+    # Rule 236: the whole release guard (contract 2 or 3, CI included) and
+    # nothing else — no claim, record, log, spend or launch. Lets an operator
+    # prove a stored approval without deploying. One check at a time, never
+    # during a deploy or rollback, its private ref removed even on a signal,
+    # and it leaves a deploy's GitHub API budget untouched (reserve 4).
+    parse_release_args "$@"
+    trap check_approval_cleanup EXIT
+    trap 'exit 143' TERM
+    trap 'exit 130' INT
+    trap 'exit 129' HUP
+    trap 'exit 141' PIPE
+    check_approval_lock
+    # shellcheck disable=SC2034  # read by the sourced release-approval library
+    DMS_RELEASE_APPROVAL_CI_RESERVE=4
+    approve_or_deny
+    exec 9>&- 8>&-
+    echo "RELEASE APPROVAL CHECK: GO — read-only: nothing was claimed, recorded or launched"
+    ;;
   follow) follow_until_done || rc=$? ;;
   status) verify_latest || rc=$? ;;
   trust-check) trust_check || rc=$? ;;
@@ -397,7 +510,7 @@ case "$action" in
     follow_until_done "$DEPLOY_LOG_FILE" "$DEPLOY_STATUS_FILE" "$STAMP" || rc=$?
     ;;
   *)
-    echo "usage: bash scripts/deploy-vps-runner.sh {start --release-id <id> --approved-sha <sha>|follow|status|verify <deploy-id>|trust-check|verify-transition <deploy-id> <target-sha>|run --release-id <id> --approved-sha <sha>}" >&2
+    echo "usage: bash scripts/deploy-vps-runner.sh {start --release-id <id> --approved-sha <sha>|check-approval --release-id <id> --approved-sha <sha>|follow|status|verify <deploy-id>|trust-check|verify-transition <deploy-id> <target-sha>|run --release-id <id> --approved-sha <sha>}" >&2
     exit 2
     ;;
 esac

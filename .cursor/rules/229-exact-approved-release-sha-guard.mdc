@@ -49,6 +49,11 @@ It is written only after the owner's explicit written approval of the exact merg
 with that approval in the evidence document it names, and merged through a pull request. Approval to implement or to
 merge is never approval to deploy.
 
+> **Rule 236 (approval contract 3, DMS-RELEASE-APPROVAL-DIRECT-1):** where the host accepts contract 3, a release may
+> instead be approved by an owner-signed record submitted to the host's approval store — no approval commit, PR or
+> CI. §4.4's commit-object reading and this section's PR requirement then apply to contract 2 only; every binding,
+> window, ancestry, forward-only and single-use check stays. See `.cursor/rules/236-direct-signed-release-approval.mdc`.
+
 ## 4. What the guard checks (all, or DENIED)
 
 1. `--release-id` is a lowercase slug; `--approved-sha` is a full 40-character lowercase SHA (no abbreviation, ref,

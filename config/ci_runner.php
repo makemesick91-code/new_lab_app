@@ -1715,6 +1715,14 @@ return [
         // the runtime trees (R2). Selected by the `DeployHarden` token in BOTH
         // critical variants; declared so it stays enforced.
         'tests/Feature/Deploy/DeployHardenLeastPrivilegeTest.php',
+        // DMS-RELEASE-APPROVAL-DIRECT-1 (approval contract 3): the canonical
+        // record and bundle, root's verified submission into the approval store,
+        // the deploy guard's no-fallback selection and store integrity, the
+        // required-CI gate (every failure DENIED), the contract-3 runner record
+        // and verify, the owner's signing helper and the operator interface.
+        // Selected by the `DeployHarden` token in BOTH critical variants;
+        // declared so it stays enforced.
+        'tests/Feature/Deploy/DeployHardenDirectApprovalTest.php',
     ],
 
     /*

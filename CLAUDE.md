@@ -124,7 +124,9 @@ it covers. When you plan work in a domain before opening any of its files, read 
   commit `6f22beb7`); later deploys follow §6b under the owner's current release governance. Rule 229: the runner
   deploys only the exact commit that a release approval record merged on the base names
   (`deploy/release-approvals/<id>.approval`, recording the owner's written approval of that full SHA) and never
-  substitutes the base-branch tip; anything else is `DEPLOYMENT=DENIED`. A deploy is complete only
+  substitutes the base-branch tip; anything else is `DEPLOYMENT=DENIED`. Rule 236: where the host accepts approval
+  contract 3, the owner-signed record is submitted to the host (`submit-approval`) instead of merged — no approval PR —
+  and the host verifies the target's CI itself. A deploy is complete only
   when its status file reports `exit=0` and its log reports `DEPLOY OK`, proven with `verify <deploy-id>` →
   `DEPLOY RUNNER OK` (never read `latest.status` raw); the SSH pipe may drop while the detached runner carries on. The
   runner takes the backup, pins the SHA and runs from an immutable snapshot, so never pre-pull or hand-edit the
