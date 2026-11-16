@@ -3,37 +3,19 @@
 return [
     /*
     |--------------------------------------------------------------------------
-    | Patient Code (Medical Record Number) Generation
+    | Patient Code (Medical Record Number) Generation — RETIRED
     |--------------------------------------------------------------------------
     |
-    | Sprint 23 Phase 23.3 — TEMPORARY pilot format, PENDING final business
-    | approval from the clinic owner. The generated value is stored in
-    | mst_patients.medical_record_number when a new patient is created
-    | without an explicit code.
+    | Sprint 23 Phase 23.3 shipped a TEMPORARY pilot generator here
+    | (`patient.code.*`, format {prefix}-{YYYYMM}-{sequence}) that ran when a
+    | patient was created without a branch and number, on the UTC clock.
     |
-    | Default format: {prefix}-{YYYYMM}-{sequence padded to `seq_length`}
-    | Example:        DG-202606-000001
-    |
-    | Do NOT treat this as the locked business format. It is collision-safe
-    | and configurable so the owner can confirm a final scheme later without
-    | a code change (only config / env values).
+    | DMS-RME-COMPREHENSIVE-CLOSURE-1 / memo M4.1 (rule 244 §2, PR-2) retired it
+    | together with `PatientCodeGenerator`: every new patient now needs a branch
+    | and receives its automatic Nomor RM DG-{KODE}-{TAHUN}-{NNNN} from
+    | `PatientRmNumberAllocator` on the clinic calendar. Nothing reads this file
+    | any more; a leftover PATIENT_CODE_* environment value is inert. Existing
+    | numbers in the old format are kept as they are.
     |
     */
-
-    'code' => [
-        // Whether to auto-generate a code when none is supplied on create.
-        'auto_generate' => env('PATIENT_CODE_AUTO_GENERATE', true),
-
-        // Static prefix segment.
-        'prefix' => env('PATIENT_CODE_PREFIX', 'DG'),
-
-        // Period segment date format (PHP date format). Empty string disables it.
-        'period_format' => env('PATIENT_CODE_PERIOD_FORMAT', 'Ym'),
-
-        // Zero-padding width of the running sequence segment.
-        'seq_length' => (int) env('PATIENT_CODE_SEQ_LENGTH', 6),
-
-        // Segment separator.
-        'separator' => env('PATIENT_CODE_SEPARATOR', '-'),
-    ],
 ];

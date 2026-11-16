@@ -69,7 +69,10 @@ class PatientController extends Controller
 
         $patient = $this->patientService->create($data);
 
-        $redirect = redirect()->route('settings.patients.index')->with('status', 'Pasien berhasil dibuat.');
+        // Rule 244 §2.8 — the automatic Nomor RM is shown once it exists (the
+        // form never previews one).
+        $redirect = redirect()->route('settings.patients.index')
+            ->with('status', 'Pasien berhasil dibuat dengan Nomor RM '.$patient->medical_record_number.'.');
 
         // Sprint 61.1 — promote a scanned KTP (if any) into the patient's
         // private document folder. Registration never fails because of the

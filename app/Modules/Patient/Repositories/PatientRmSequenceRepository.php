@@ -89,15 +89,26 @@ class PatientRmSequenceRepository implements PatientRmSequenceRepositoryInterfac
         return 'raised';
     }
 
+    /**
+     * Rule 244 §2.5 — compared case-insensitively (`dg-spn4-2026-0007` holds
+     * `DG-SPN4-2026-0007`), as the merge-alias lookup already is.
+     */
     public function anyNumberIssued(array $medicalRecordNumbers): bool
     {
-        $numbers = array_values(array_filter($medicalRecordNumbers, fn ($n) => is_string($n) && $n !== ''));
+        $numbers = array_values(array_unique(array_map(
+            static fn (string $n): string => mb_strtolower(trim($n)),
+            array_filter($medicalRecordNumbers, static fn ($n): bool => is_string($n) && trim($n) !== ''),
+        )));
 
-        if ($numbers === []) {
-            return false;
+        foreach (array_chunk($numbers, 1000) as $chunk) {
+            $placeholders = implode(', ', array_fill(0, count($chunk), '?'));
+
+            if (Patient::withTrashed()->whereRaw("LOWER(medical_record_number) IN ({$placeholders})", $chunk)->exists()) {
+                return true;
+            }
         }
 
-        return Patient::withTrashed()->whereIn('medical_record_number', $numbers)->exists();
+        return false;
     }
 
     public function issuedNumbersFor(array $branchCodes, int $year): LazyCollection
@@ -111,11 +122,13 @@ class PatientRmSequenceRepository implements PatientRmSequenceRepositoryInterfac
             return LazyCollection::empty();
         }
 
+        // Rule 244 §2.5 — case-insensitive, so a lower-case spelling of a number in
+        // this branch-year is read too (the comparison key uppercases it).
         return Patient::withTrashed()
             ->select(['id', 'medical_record_number'])
             ->where(function ($query) use ($prefixes): void {
                 foreach ($prefixes as $prefix) {
-                    $query->orWhere('medical_record_number', 'like', $this->likePrefix($prefix));
+                    $query->orWhereRaw('LOWER(medical_record_number) LIKE ?', [mb_strtolower($this->likePrefix($prefix))]);
                 }
             })
             ->lazyById(500)

@@ -617,6 +617,13 @@ return [
         'tests/Feature/RME/FrontOfficePatientRmNumberAllocatorTest.php',
         'tests/Feature/Patient/FrontOfficePatientRmSequenceSeedCommandTest.php',
         'tests/Feature/RME/ClinicVisitRegistrationConcurrencyPatientRmSequenceTest.php',
+        // Rule 244 §2 (PR-2) — the automatic number at registration (both forms,
+        // clinical year, 9999 → 10000, unique violation → 422) and the legacy
+        // CSV import beside it (every spelling, claimed under the counter lock).
+        // Selected by the existing `FrontOffice` and `LegacyPatient` tokens in
+        // BOTH critical variants.
+        'tests/Feature/Patient/FrontOfficePatientRmAutoNumberTest.php',
+        'tests/Feature/Patient/LegacyPatientRmAutoNumberCompatibilityTest.php',
 
         // DOCTOR-PWA-WEBAUTHN-1 — the browser device-credential login. A `|Pwa`
         // or `|DoctorDevice` token does not select it: --filter matches the test

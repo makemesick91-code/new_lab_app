@@ -3,7 +3,6 @@
 namespace App\Modules\Patient\Services;
 
 use App\Modules\Branch\Support\BranchCodeAlias;
-use App\Modules\Patient\Models\Patient;
 use App\Modules\Patient\Support\MedicalRecordNumberParts;
 use App\Support\Clinical\ClinicalClock;
 use Carbon\CarbonInterface;
@@ -29,17 +28,20 @@ use InvalidArgumentException;
  *   - The composed value must be globally unique in mst_patients.
  *
  * This composer never invents a sequence; the manual RM number always comes
- * from the user/admin. Legacy/auto-sequence behavior lives in the separate
- * {@see PatientCodeGenerator} and is untouched.
+ * from the user/admin. (The separate Sprint 23.3 `PatientCodeGenerator` UTC
+ * fallback was retired by rule 244 PR-2.)
  *
- * DMS-RME-COMPREHENSIVE-CLOSURE-1 / memo M4.1 (owner decision 2026-11-17, "Auto,
- * read-only"; rule 244) — the Sprint 23.8 "manual, never generated" rule is
- * SUPERSEDED for NEW registrations once rule 244 PR-2 activates the automatic
- * number: {@see PatientRmNumberAllocator} then issues the sequence per branch and
- * clinic year, padded to four digits ({@see self::formatSequence()}). It stays
- * in force for an old paper-card number entered under the Supervisor RME
- * exception, which is kept verbatim. compose() and parse() are unchanged, and no
- * existing Nomor RM is ever rewritten.
+ * REVISED BY RULE 244 §2–§3 (DMS-RME-COMPREHENSIVE-CLOSURE-1 / memo M4.1, owner
+ * decision 2026-11-17 "Auto, read-only"; active since rule 244 PR-2) — the
+ * Sprint 23.8 "manual, never generated" rule above no longer governs NEW
+ * registrations: {@see PatientRmNumberAllocator} issues the sequence per branch
+ * and clinic year, padded to four digits ({@see self::formatSequence()}), and no
+ * registration form or request field supplies it. A typed sequence survives only
+ * for a number that already exists outside the system — the legacy patient CSV
+ * import and (rule 244 PR-3) the Supervisor RME paper-card exception — and each
+ * is claimed through {@see PatientRmNumberAllocator::claimExisting()} under the
+ * branch-year counter lock. compose() and parse() are unchanged, and no existing
+ * Nomor RM is ever rewritten.
  */
 class PatientMedicalRecordNumberService
 {
@@ -334,16 +336,72 @@ class PatientMedicalRecordNumberService
     }
 
     /**
-     * Whether the composed medical record number already exists (including
-     * soft-deleted patients). Optionally ignore a specific patient id so an
-     * unchanged edit does not collide with itself.
+     * Rule 244 §2.5 — every spelling under which `$medicalRecordNumber`, or a
+     * number naming the same branch, year and sequence, may already be held: the
+     * value as given and — when it reads as a Nomor RM once uppercased — each
+     * equivalent branch code times every zero padding for a numeric sequence
+     * ({@see self::numericSpellings()}), or each equivalent branch code with the
+     * sequence verbatim otherwise ({@see self::equivalentNumbers()}). Callers
+     * compare these case-insensitively.
+     *
+     * @return list<string>
      */
-    public function exists(string $medicalRecordNumber, ?int $ignoreId = null): bool
+    public function collisionSpellings(?string $medicalRecordNumber): array
     {
-        return Patient::withTrashed()
-            ->where('medical_record_number', $medicalRecordNumber)
-            ->when($ignoreId, fn ($query) => $query->whereKeyNot($ignoreId))
-            ->exists();
+        $value = trim((string) $medicalRecordNumber);
+
+        if ($value === '') {
+            return [];
+        }
+
+        $upper = strtoupper($value);
+        $parts = $this->parse($upper);
+        $spellings = [$value];
+
+        if ($parts !== null) {
+            $sequence = $this->numericSequenceOf($upper);
+
+            $spellings = array_merge($spellings, $sequence !== null && $sequence >= 1
+                ? $this->numericSpellings($parts->branchCode, $parts->year, $sequence)
+                : $this->equivalentNumbers($upper));
+        }
+
+        return array_values(array_unique($spellings));
+    }
+
+    /**
+     * Rule 244 §2.5 — one comparison key per Nomor RM identity: `DG-TKM1-2026-7`,
+     * `DG-TLK1-2026-0007` and `dg-tlk1-2026-0007` share a key; a value that is not
+     * a canonical number with a numeric sequence keys on its uppercased self.
+     */
+    public function collisionKey(?string $medicalRecordNumber): string
+    {
+        $upper = strtoupper(trim((string) $medicalRecordNumber));
+        $parts = $this->parse($upper);
+        $sequence = $this->numericSequenceOf($upper);
+
+        if ($parts === null || $sequence === null || $sequence < 1) {
+            return $upper;
+        }
+
+        return self::PREFIX.'-'.BranchCodeAlias::canonicalize($parts->branchCode).'-'.$parts->year.'-#'.$sequence;
+    }
+
+    /**
+     * Whether the medical record number is already taken — rule 244 §2.5: in ANY
+     * spelling ({@see self::collisionSpellings()}), case-insensitively, by any
+     * patient (soft-deleted ones included) or by an active merge alias. The one
+     * answer is {@see PatientRmNumberAllocator::isTaken()}, resolved at call time
+     * because the allocator itself depends on this service.
+     *
+     * Advisory on its own: a writer that stores such a number claims it under the
+     * branch-year counter lock ({@see PatientRmNumberAllocator::claimExisting()}).
+     * The former `$ignoreId` argument went with the edit path, which no longer
+     * changes a number (rule 244 §2.3).
+     */
+    public function exists(string $medicalRecordNumber): bool
+    {
+        return app(PatientRmNumberAllocator::class)->isTaken($medicalRecordNumber);
     }
 
     private function normalizeYear(int|string $year): string

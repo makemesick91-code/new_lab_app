@@ -169,9 +169,11 @@ it('stores patient branch_id from the selected RME branch in new-patient mode', 
 
     $patient = Patient::firstWhere('name', 'Pasien Baru Telkomas');
 
+    // DMS-RME-COMPREHENSIVE-CLOSURE-1 / memo M4.1 (rule 244 §2) — the posted
+    // manual number is ignored; the branch still decides the number's code.
     expect($patient)->not->toBeNull()
         ->and($patient->branch_id)->toBe($this->rmeBranch->id)
-        ->and($patient->medical_record_number)->toBe('DG-TLK1-2026-0009');
+        ->and($patient->medical_record_number)->toBe('DG-TLK1-2026-0001');
 });
 
 it('stores visit branch_id from the selected RME branch in new-patient mode', function () {

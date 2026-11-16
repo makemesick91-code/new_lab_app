@@ -31,8 +31,9 @@ beforeEach(function () {
     $this->clinic = Clinic::factory()->create();
     $this->doctor = Doctor::factory()->create(['clinic_id' => $this->clinic->id]);
     $this->treatment = Treatment::factory()->create(['is_active' => true]);
-    $this->branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
-    $this->branch->update(['is_rme_enabled' => true]);
+    // Rule 244 §2 — MAIN is never an RME branch for a new patient (the
+    // automatic Nomor RM allocator refuses it), so the flow runs under RVK1.
+    $this->branch = Branch::factory()->create(['code' => 'RVK1', 'is_active' => true, 'is_rme_enabled' => true]);
     rmeMakeDoctorOnline($this->doctor, $this->branch);
 
     // Visit creation + new-patient creation require both rights (see controller).

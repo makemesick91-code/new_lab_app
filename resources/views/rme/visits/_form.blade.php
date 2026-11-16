@@ -98,7 +98,10 @@
 
             {{-- Mode: pasien baru --}}
             <div class="mt-3 hidden" data-mode-panel="new">
-                <p class="mb-2 text-xs text-ink-soft">Nomor RM final dibentuk otomatis: <span class="font-mono">DG-{KODE_CABANG}-{TAHUN_DAFTAR}-{NOMOR_RM_MANUAL}</span>. Nomor RM manual diisi oleh admin.</p>
+                {{-- Rule 244 (memo M4.1, "Auto, read-only") — the server issues the
+                     Nomor RM on save, on the clinic calendar; nothing is typed. --}}
+                @php $clinicalYear = app(\App\Support\Clinical\ClinicalClock::class)->today()->format('Y'); @endphp
+                <p class="mb-2 text-xs text-ink-soft">Nomor RM dibuat otomatis oleh sistem saat kunjungan disimpan, menurut cabang dan tahun daftar (kalender klinik).</p>
                 <div class="mb-3">
                     @include('patient-merge.partials.registration-duplicates', ['reasonField' => 'new_patient[duplicate_override_reason]', 'useRoute' => 'rme.visits.create', 'useParam' => 'patient_id'])
                 </div>
@@ -128,13 +131,10 @@
                         <p class="mt-1 text-xs text-ink-muted">Harus sama dengan Klinik/Cabang kunjungan di atas.</p>
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-ink">Tanggal Daftar</label>
-                        <input type="date" name="new_patient[registered_at]" data-rm-date value="{{ old('new_patient.registered_at', app(\App\Support\Clinical\ClinicalClock::class)->todayString()) }}" class="mt-1 block w-full rounded-lg border-hairline text-sm focus:border-brand-500 focus:ring-brand-500" />
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-ink">Nomor RM Manual</label>
-                        <input type="text" name="new_patient[manual_rm_number]" data-rm-manual inputmode="numeric" value="{{ old('new_patient.manual_rm_number') }}" placeholder="mis. 0001" class="mt-1 block w-full rounded-lg border-hairline text-sm focus:border-brand-500 focus:ring-brand-500" />
-                        @error('new_patient.manual_rm_number')<p class="mt-1 text-xs text-danger-700">{{ $message }}</p>@enderror
+                        <label class="block text-sm font-medium text-ink">Nomor RM</label>
+                        <input type="text" readonly tabindex="-1" data-rm-preview data-rm-year="{{ $clinicalYear }}" value="otomatis — DG-{KODE}-{{ $clinicalYear }}-####" class="mt-1 block w-full rounded-lg border-hairline bg-navy-50 font-mono text-sm text-ink" />
+                        @error('medical_record_number')<p class="mt-1 text-xs text-danger-700">{{ $message }}</p>@enderror
+                        <p class="mt-1 text-xs text-ink-muted">Nomor ditampilkan setelah disimpan.</p>
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-ink">Jenis Kelamin <span class="text-ink-muted">(opsional)</span></label>
@@ -192,10 +192,6 @@
                          inside the RME "Pasien Baru" panel. The hidden ktp_scan_token is
                          only attached when this new-patient form is submitted. --}}
                     @include('settings.patients._ktp-scan', ['ktpFieldPrefix' => 'new_patient'])
-                    <div class="sm:col-span-2">
-                        <label class="block text-sm font-medium text-ink">Nomor RM Final (Preview)</label>
-                        <input type="text" data-rm-preview readonly placeholder="DG-{KODE_CABANG}-{TAHUN_DAFTAR}-{NOMOR_RM_MANUAL}" class="mt-1 block w-full rounded-lg border-hairline bg-navy-50 font-mono text-sm text-ink" />
-                    </div>
                 </div>
             </div>
         </div>
@@ -275,8 +271,6 @@
             new: block.querySelector('[data-mode-panel="new"]'),
         };
         const branch = block.querySelector('[data-rm-branch]');
-        const dateEl = block.querySelector('[data-rm-date]');
-        const manual = block.querySelector('[data-rm-manual]');
         const preview = block.querySelector('[data-rm-preview]');
         const followUpPanel = document.querySelector('[data-follow-up-panel]');
         const followUpSelect = document.querySelector('[data-follow-up-select]');
@@ -381,6 +375,8 @@
             }
         });
 
+        // Rule 244 §2.8 — no number is previewed (two operators would see the
+        // same one); only the branch code fills the automatic pattern.
         const recompute = function () {
             if (!preview) return;
             const code = (
@@ -388,12 +384,9 @@
                 || branch?.dataset?.code
                 || ''
             ).trim().toUpperCase();
-            const year = (dateEl?.value || '').slice(0, 4);
-            const num = (manual?.value || '').trim();
-            preview.value = (code && year && num) ? `DG-${code}-${year}-${num}` : '';
+            preview.value = `otomatis — DG-${code || '{KODE}'}-${preview.dataset.rmYear || ''}-####`;
         };
 
-        [branch, dateEl, manual].forEach(el => el && el.addEventListener('input', recompute));
         branch && branch.addEventListener('change', recompute);
 
         applyMode(modeInput.value || 'existing');

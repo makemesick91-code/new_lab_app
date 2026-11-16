@@ -1,9 +1,8 @@
 @php
     $patient = $patient ?? null;
     $rmeBranches = $rmeBranches ?? collect();
-    $defaultYear = old('registered_at', optional($patient?->registered_at)->format('Y-m-d'))
-        ? \Carbon\Carbon::parse(old('registered_at', optional($patient?->registered_at)->format('Y-m-d')))->format('Y')
-        : now()->format('Y');
+    // Rule 244 §2 — the RM year is the clinic's calendar year, never the UTC one.
+    $clinicalYear = app(\App\Support\Clinical\ClinicalClock::class)->today()->format('Y');
 @endphp
 
 <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -25,47 +24,48 @@
             @endforeach
         </select>
     </div>
-    {{-- Identitas RME / Nomor Rekam Medis (Sprint 23 Phase 23.8) --}}
+    {{-- Identitas RME / Nomor Rekam Medis — rule 244 (memo M4.1, "Auto, read-only"):
+         the server issues the number on save; an edit never changes the number,
+         the branch or the registration date. --}}
     <div class="sm:col-span-2 rounded-lg border border-teal-100 bg-teal-50/40 p-4">
         <p class="text-xs font-semibold uppercase tracking-wide text-teal-700 mb-1">Identitas Rekam Medis (RME)</p>
-        <p class="mb-3 text-xs text-gray-500">Nomor RM final dibentuk otomatis dari format: <span class="font-mono">DG-{KODE_CABANG}-{TAHUN_DAFTAR}-{NOMOR_RM_MANUAL}</span>. Nomor RM manual diisi oleh admin.</p>
-        <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <div>
-                <label class="block text-sm font-medium text-gray-700">Cabang</label>
-                <select name="branch_id" data-rm-branch class="mt-1 block w-full rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
-                    <option value="" data-code="">- Pilih cabang RME -</option>
-                    @foreach ($rmeBranches as $branch)
-                        <option value="{{ $branch->id }}" data-code="{{ $branch->code }}" @selected((int) old('branch_id', $patient?->branch_id) === $branch->id)>{{ $branch->code }} — {{ $branch->name }}</option>
-                    @endforeach
-                </select>
-                @error('branch_id')<p class="mt-1 text-xs text-rose-600">{{ $message }}</p>@enderror
+        @if ($patient)
+            @php $patientBranch = $rmeBranches->firstWhere('id', $patient->branch_id); @endphp
+            <p class="mb-3 text-xs text-gray-500">Nomor RM, cabang, dan tanggal daftar tidak dapat diubah setelah pasien terdaftar.</p>
+            <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <div>
+                    <p class="block text-sm font-medium text-gray-700">Cabang</p>
+                    <p class="mt-1 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700">{{ $patientBranch ? $patientBranch->code.' — '.$patientBranch->name : '—' }}</p>
+                </div>
+                <div>
+                    <p class="block text-sm font-medium text-gray-700">Tanggal Daftar</p>
+                    <p class="mt-1 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700">{{ optional($patient->registered_at)->format('Y-m-d') ?: '—' }}</p>
+                </div>
+                <div>
+                    <p class="block text-sm font-medium text-gray-700">Nomor RM</p>
+                    <p class="mt-1 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 font-mono text-sm text-gray-700">{{ $patient->medical_record_number ?: '—' }}</p>
+                </div>
             </div>
-            <div>
-                <label class="block text-sm font-medium text-gray-700">Tanggal Daftar</label>
-                <input type="date" name="registered_at" data-rm-date value="{{ old('registered_at', optional($patient?->registered_at)->format('Y-m-d') ?: app(\App\Support\Clinical\ClinicalClock::class)->todayString()) }}" class="mt-1 block w-full rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500" />
-                @error('registered_at')<p class="mt-1 text-xs text-rose-600">{{ $message }}</p>@enderror
+        @else
+            <p class="mb-3 text-xs text-gray-500">Nomor RM dibuat otomatis oleh sistem saat pasien disimpan, menurut cabang dan tahun daftar (kalender klinik). Nomor ditampilkan setelah disimpan.</p>
+            <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Cabang <span class="text-rose-600">*</span></label>
+                    <select name="branch_id" required data-rm-branch class="mt-1 block w-full rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                        <option value="" data-code="">- Pilih cabang RME -</option>
+                        @foreach ($rmeBranches as $branch)
+                            <option value="{{ $branch->id }}" data-code="{{ $branch->code }}" @selected((int) old('branch_id') === $branch->id)>{{ $branch->code }} — {{ $branch->name }}</option>
+                        @endforeach
+                    </select>
+                    @error('branch_id')<p class="mt-1 text-xs text-rose-600">{{ $message }}</p>@enderror
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Nomor RM</label>
+                    <input type="text" readonly tabindex="-1" data-rm-auto data-rm-year="{{ $clinicalYear }}" value="otomatis — DG-{KODE}-{{ $clinicalYear }}-####" class="mt-1 block w-full rounded-md border-gray-200 bg-gray-50 font-mono text-sm text-gray-700" />
+                    @error('medical_record_number')<p class="mt-1 text-xs text-rose-600">{{ $message }}</p>@enderror
+                </div>
             </div>
-            <div>
-                <label class="block text-sm font-medium text-gray-700">Nomor RM Manual</label>
-                <input type="text" name="manual_rm_number" data-rm-manual inputmode="numeric" value="{{ old('manual_rm_number', $patient?->manual_rm_number) }}" placeholder="mis. 0001" class="mt-1 block w-full rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500" />
-                @error('manual_rm_number')<p class="mt-1 text-xs text-rose-600">{{ $message }}</p>@enderror
-            </div>
-        </div>
-        <div class="mt-3">
-            <label class="block text-sm font-medium text-gray-700">Nomor RM Final (Preview)</label>
-            <input type="text" data-rm-preview readonly value="{{ $patient?->medical_record_number }}" placeholder="DG-{KODE_CABANG}-{TAHUN_DAFTAR}-{NOMOR_RM_MANUAL}" class="mt-1 block w-full rounded-md border-gray-200 bg-gray-50 font-mono text-sm text-gray-700" />
-            <p class="mt-1 text-xs text-gray-500">Preview dibentuk dari Cabang + Tahun Daftar + Nomor RM manual. Nilai final divalidasi unik saat disimpan.</p>
-        </div>
-        @if ($patient && $patient->medical_record_number)
-            <p class="mt-2 text-xs text-gray-500">Nomor RM tersimpan saat ini: <span class="font-mono">{{ $patient->medical_record_number }}</span>. Tidak akan berubah kecuali Anda mengubah komponen identitas di atas.</p>
         @endif
-        {{-- Legacy / override langsung: pasien lama dengan format nomor lama --}}
-        <details class="mt-3">
-            <summary class="cursor-pointer text-xs font-medium text-gray-500">Override Nomor RM manual penuh (pasien lama / format lama)</summary>
-            <input type="text" name="medical_record_number" value="{{ old('medical_record_number', $patient && $patient->manual_rm_number ? null : $patient?->medical_record_number) }}" placeholder="Isi penuh hanya untuk pasien lama / format lama" class="mt-2 block w-full rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500" />
-            @error('medical_record_number')<p class="mt-1 text-xs text-rose-600">{{ $message }}</p>@enderror
-            <p class="mt-1 text-xs text-gray-400">Jika diisi, nilai ini dipakai apa adanya dan format DG di atas diabaikan.</p>
-        </details>
     </div>
     <div>
         <label class="block text-sm font-medium text-gray-700">Nama</label>
@@ -122,21 +122,18 @@
 
 <script>
     (function () {
+        // Rule 244 §2.8 — no number is previewed (two operators would see the
+        // same one); only the selected branch code fills the pattern.
         const branch = document.querySelector('[data-rm-branch]');
-        const dateEl = document.querySelector('[data-rm-date]');
-        const manual = document.querySelector('[data-rm-manual]');
-        const preview = document.querySelector('[data-rm-preview]');
-        if (!branch || !preview) return;
+        const auto = document.querySelector('[data-rm-auto]');
+        if (!branch || !auto) return;
 
-        const recompute = function () {
+        const render = function () {
             const code = (branch.selectedOptions[0]?.dataset.code || '').trim().toUpperCase();
-            const year = (dateEl?.value || '').slice(0, 4);
-            const num = (manual?.value || '').trim();
-            preview.value = (code && year && num) ? `DG-${code}-${year}-${num}` : '';
+            auto.value = `otomatis — DG-${code || '{KODE}'}-${auto.dataset.rmYear || ''}-####`;
         };
 
-        [branch, dateEl, manual].forEach(el => el && el.addEventListener('input', recompute));
-        branch.addEventListener('change', recompute);
-        recompute();
+        branch.addEventListener('change', render);
+        render();
     })();
 </script>

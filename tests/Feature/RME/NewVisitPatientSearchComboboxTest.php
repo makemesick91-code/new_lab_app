@@ -479,8 +479,10 @@ it('drops a stale existing-patient selection when registering a new patient', fu
 
     $created = Patient::firstWhere('name', 'Pasien Baru Combobox');
 
+    // Rule 244 §2 — the number is automatic (the posted manual one is ignored):
+    // LDK2 already holds DG-LDK2-2026-0128 in this fixture, so the next is 0129.
     expect($created)->not->toBeNull()
-        ->and($created->medical_record_number)->toBe('DG-LDK2-2026-0099')
+        ->and($created->medical_record_number)->toBe('DG-LDK2-2026-0129')
         ->and(ClinicVisit::where('patient_id', $created->id)->exists())->toBeTrue()
         ->and(ClinicVisit::where('patient_id', $this->nurbaya->id)->exists())->toBeFalse();
 });

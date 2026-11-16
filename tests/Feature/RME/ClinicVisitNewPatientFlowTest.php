@@ -44,18 +44,19 @@ it('registers a visit for an existing patient (default mode)', function () {
 });
 
 it('creates a new patient then the visit in new-patient mode', function () {
-    $this->branch->update(['is_rme_enabled' => true]);
-    rmeMakeDoctorOnline($this->doctor, $this->branch);
-
+    // DMS-RME-COMPREHENSIVE-CLOSURE-1 / memo M4.1 (rule 244 §2) — the number is
+    // automatic; a posted manual number is ignored. MAIN is never an RME branch
+    // for a new patient, so the fixture registers under RME1.
     $this->actingAs($this->actor)
         ->post(route('rme.visits.store'), [
             'patient_mode' => 'new',
+            'branch_id' => $this->rmeBranch->id,
             'clinic_id' => $this->clinic->id,
             'doctor_id' => $this->doctor->id,
             'initial_treatment_id' => $this->treatment->id,
             'new_patient' => [
                 'name' => 'Pasien Baru RME',
-                'branch_id' => $this->branch->id,
+                'branch_id' => $this->rmeBranch->id,
                 'registered_at' => '2026-06-13',
                 'manual_rm_number' => '0007',
             ],
@@ -65,7 +66,7 @@ it('creates a new patient then the visit in new-patient mode', function () {
     $patient = Patient::firstWhere('name', 'Pasien Baru RME');
 
     expect($patient)->not->toBeNull()
-        ->and($patient->medical_record_number)->toBe('DG-MAIN-2026-0007')
+        ->and($patient->medical_record_number)->toBe('DG-RME1-2026-0001')
         ->and(ClinicVisit::where('patient_id', $patient->id)->exists())->toBeTrue();
 });
 
@@ -78,7 +79,9 @@ it('requires new patient fields in new mode', function () {
             'initial_treatment_id' => $this->treatment->id,
             'new_patient' => ['name' => ''],
         ])
-        ->assertSessionHasErrors(['new_patient.name', 'new_patient.branch_id', 'new_patient.manual_rm_number']);
+        ->assertSessionHasErrors(['new_patient.name', 'new_patient.branch_id'])
+        // Rule 244 §2 — the Nomor RM is automatic; nothing about it is required.
+        ->assertSessionDoesntHaveErrors('new_patient.manual_rm_number');
 
     expect(Patient::count())->toBe(0);
 });
@@ -94,23 +97,28 @@ it('requires patient_id in existing mode', function () {
         ->assertSessionHasErrors('patient_id');
 });
 
-it('rejects a duplicate final RM number in new mode', function () {
-    Patient::factory()->create(['medical_record_number' => 'DG-MAIN-2026-0007']);
+it('never issues a number already held in new mode: it takes the next one', function () {
+    // Rule 244 §2.5 — the held number is skipped in any spelling (here unpadded).
+    Patient::factory()->create(['medical_record_number' => 'DG-RME1-2026-1']);
 
     $this->actingAs($this->actor)
         ->post(route('rme.visits.store'), [
             'patient_mode' => 'new',
+            'branch_id' => $this->rmeBranch->id,
             'clinic_id' => $this->clinic->id,
             'doctor_id' => $this->doctor->id,
             'initial_treatment_id' => $this->treatment->id,
             'new_patient' => [
                 'name' => 'Duplikat',
-                'branch_id' => $this->branch->id,
+                'branch_id' => $this->rmeBranch->id,
                 'registered_at' => '2026-06-13',
-                'manual_rm_number' => '0007',
+                'manual_rm_number' => '0001',
             ],
         ])
-        ->assertSessionHasErrors('new_patient.manual_rm_number');
+        ->assertSessionHasNoErrors()
+        ->assertRedirect();
+
+    expect(Patient::firstWhere('name', 'Duplikat')->medical_record_number)->toBe('DG-RME1-2026-0002');
 });
 
 it('offers registered patients by name and medical_record_number in the create form selector', function () {

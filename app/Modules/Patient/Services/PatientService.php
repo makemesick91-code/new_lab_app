@@ -3,23 +3,37 @@
 namespace App\Modules\Patient\Services;
 
 use App\Modules\Branch\Interfaces\BranchRepositoryInterface;
+use App\Modules\Branch\Models\Branch;
+use App\Modules\Patient\Exceptions\PatientRmNumberUnavailableException;
 use App\Modules\Patient\Interfaces\PatientRepositoryInterface;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\PatientMerge\Services\PatientMergeGuard;
 use App\Support\Clinical\ClinicalClock;
-use Carbon\Carbon;
-use Carbon\CarbonInterface;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
-use RuntimeException;
+use Illuminate\Validation\ValidationException;
 
 class PatientService
 {
+    /**
+     * Rule 244 §2.4 — how many automatic numbers one registration tries when the
+     * unique index refuses the insert, before it answers 422.
+     */
+    public const UNIQUE_RETRY_ATTEMPTS = 3;
+
+    /**
+     * Rule 244 §2.1/§2.3 — identity fields only the server writes: dropped from a
+     * registration payload and from an edit. An edit also keeps `branch_id`.
+     */
+    private const SERVER_OWNED_IDENTITY_FIELDS = ['medical_record_number', 'manual_rm_number', 'registered_at'];
+
     public function __construct(
         private readonly PatientRepositoryInterface $patients,
-        private readonly PatientCodeGenerator $codeGenerator,
-        private readonly PatientMedicalRecordNumberService $rmNumbers,
+        // DMS-RME-COMPREHENSIVE-CLOSURE-1 / memo M4.1 (rule 244 §2) — the only
+        // issuer of a new patient's Nomor RM.
+        private readonly PatientRmNumberAllocator $rmAllocator,
         private readonly BranchRepositoryInterface $branches,
         // FIX-03 — the clinical calendar authority for the registration day.
         private readonly ClinicalClock $clock,
@@ -55,102 +69,110 @@ class PatientService
         return $this->patients->legacyWithoutBranch();
     }
 
+    /**
+     * DMS-RME-COMPREHENSIVE-CLOSURE-1 / memo M4.1 (owner decision 2026-11-17,
+     * "Auto, read-only"; rule 244 §2) — register a new patient with an AUTOMATIC
+     * Nomor RM. Both registration forms (Master Data → Tambah Pasien and Kunjungan
+     * → Pasien Baru, through ClinicVisitService) end here.
+     *
+     *  - The number, the manual sequence and the registration date are never
+     *    taken from `$data`: `registered_at` is the clinic's calendar day
+     *    ({@see ClinicalClock}, so 00:30 WITA on 1 January is the new year while
+     *    UTC is still 31 December) and the number comes from
+     *    {@see PatientRmNumberAllocator::allocate()} for that branch and year.
+     *  - A branch is required (active, RME-enabled; the allocator refuses MAIN).
+     *    The Sprint 23.3 UTC fallback generator and the free override are retired.
+     *  - The allocator locks the branch-year counter row in THIS transaction; the
+     *    insert runs in a savepoint, so a unique violation (a writer that bypassed
+     *    the lock) rolls back the insert only and the next number is tried under
+     *    the same held lock, up to {@see self::UNIQUE_RETRY_ATTEMPTS}; then 422.
+     *    Any refusal is a ValidationException (422), never a 500, and the whole
+     *    transaction — counter included — rolls back.
+     */
     public function create(array $data): Patient
     {
-        return DB::transaction(function () use ($data) {
-            $data = $this->applyMedicalRecordNumber($data);
+        foreach (self::SERVER_OWNED_IDENTITY_FIELDS as $field) {
+            unset($data[$field]);
+        }
 
-            return $this->patients->create($data);
-        });
+        $branch = $this->registrationBranch($data['branch_id'] ?? null);
+        $data['branch_id'] = (int) $branch->getKey();
+
+        try {
+            return DB::transaction(function () use ($data, $branch): Patient {
+                $today = $this->clock->today();
+                $year = (int) $today->format('Y');
+                $data['registered_at'] = $today->toDateString();
+
+                for ($attempt = 1; ; $attempt++) {
+                    $data['medical_record_number'] = $this->rmAllocator->allocate($branch, $year);
+
+                    try {
+                        return DB::transaction(fn (): Patient => $this->patients->create($data));
+                    } catch (UniqueConstraintViolationException $e) {
+                        $this->refuseUniqueViolation($e, $attempt);
+                    }
+                }
+            });
+        } catch (PatientRmNumberUnavailableException $e) {
+            throw ValidationException::withMessages(['medical_record_number' => $e->getMessage()]);
+        }
     }
 
+    /**
+     * Rule 244 §2.3 (owner default 5) — an edit never changes the Nomor RM, the
+     * branch it was issued under or the registration date; there is no
+     * correction tool for existing numbers.
+     */
     public function update(Patient $patient, array $data): Patient
     {
         $this->mergeGuard->assertNotMerged($patient, 'name');
+
+        foreach ([...self::SERVER_OWNED_IDENTITY_FIELDS, 'branch_id'] as $field) {
+            unset($data[$field]);
+        }
 
         return DB::transaction(function () use ($patient, $data) {
             // Re-checked under the row lock: the model above may predate a
             // merge that committed while this request was in flight.
             $this->mergeGuard->assertNotMergedLocked((int) $patient->id, 'name');
-            $data = $this->applyMedicalRecordNumber($data, $patient);
 
             return $this->patients->update($patient, $data);
         });
     }
 
-    /**
-     * Resolve the patient's medical_record_number from the supplied data.
-     *
-     * Precedence:
-     *   1. An explicit, non-empty medical_record_number is always respected
-     *      (legacy patients and manual overrides keep working unchanged).
-     *   2. When a branch + manual RM number are supplied, compose the finalized
-     *      format DG-{KODE_CABANG}-{TAHUN_DAFTAR}-{NOMOR_RM_MANUAL}. The
-     *      registration year comes from registered_at (defaulting to today).
-     *   3. Otherwise fall back to the legacy auto-sequence generator (config).
-     *
-     * Existing patients are never rewritten unless their identity components
-     * are explicitly changed on update.
-     *
-     * @param  array<string, mixed>  $data
-     * @return array<string, mixed>
-     */
-    private function applyMedicalRecordNumber(array $data, ?Patient $patient = null): array
+    /** The active, RME-enabled branch a new patient is registered under. */
+    private function registrationBranch(mixed $branchId): Branch
     {
-        $explicitCode = trim((string) ($data['medical_record_number'] ?? ''));
+        $branch = filled($branchId) ? $this->branches->findById((int) $branchId) : null;
 
-        if ($explicitCode !== '') {
-            $data['medical_record_number'] = $explicitCode;
-
-            return $data;
+        if ($branch === null || ! $branch->is_active || ! $branch->is_rme_enabled) {
+            throw ValidationException::withMessages([
+                'branch_id' => 'Pilih cabang RME yang aktif. Nomor RM pasien baru dibuat otomatis untuk cabang tersebut.',
+            ]);
         }
 
-        $branchId = $data['branch_id'] ?? $patient?->branch_id;
-        $manualRmNumber = trim((string) ($data['manual_rm_number'] ?? $patient?->manual_rm_number ?? ''));
-
-        if ($branchId && $manualRmNumber !== '') {
-            $registeredAt = $this->resolveRegisteredAt($data, $patient);
-            $data['registered_at'] = $registeredAt->toDateString();
-            $data['manual_rm_number'] = $manualRmNumber;
-
-            $branch = $this->branches->findById((int) $branchId);
-
-            if (! $branch) {
-                throw new RuntimeException('Cabang RME yang dipilih tidak ditemukan.');
-            }
-
-            $data['medical_record_number'] = $this->rmNumbers->composeForRegistration(
-                $branch->code,
-                $registeredAt,
-                $manualRmNumber,
-            );
-
-            return $data;
-        }
-
-        // No explicit code and no branch/manual components: keep legacy behavior
-        // for backward compatibility (auto-sequence pilot codes) on create only.
-        if ($patient === null && config('patient.code.auto_generate', true)) {
-            $data['medical_record_number'] = $this->codeGenerator->generate();
-        }
-
-        return $data;
+        return $branch;
     }
 
     /**
-     * POST-RME-ODONTOGRAM-STABILIZATION-1 / FIX-03 — the PERSISTING site.
-     *
-     * This value becomes both `mst_patients.registered_at` and the year inside
-     * the patient's permanent Nomor RM, so "today" must be the clinic's
-     * calendar day ({@see ClinicalClock}, Asia/Makassar) and not the UTC one.
-     * A supplied date is parsed verbatim: it is a calendar date, not an
-     * instant, and must never be shifted.
+     * Rule 244 §2.4 — a refused insert. A KTP/NIK collision is reported at once
+     * (another number would not help); a Nomor RM collision lets the caller try
+     * the next number until the attempts run out. Only the driver's own message is
+     * read, for the column name: the exception message also carries the SQL and
+     * its bindings, so it is never shown or logged here.
      */
-    private function resolveRegisteredAt(array $data, ?Patient $patient): CarbonInterface
+    private function refuseUniqueViolation(UniqueConstraintViolationException $e, int $attempt): void
     {
-        $value = $data['registered_at'] ?? $patient?->registered_at;
+        if (str_contains((string) ($e->errorInfo[2] ?? ''), 'ktp_number')) {
+            throw ValidationException::withMessages(['ktp_number' => 'Nomor KTP sudah terdaftar pada pasien lain.']);
+        }
 
-        return $value ? Carbon::parse($value) : $this->clock->today();
+        if ($attempt >= self::UNIQUE_RETRY_ATTEMPTS) {
+            throw ValidationException::withMessages([
+                'medical_record_number' => 'Nomor RM otomatis bentrok dengan pendaftaran lain. Muat ulang halaman lalu simpan kembali.',
+            ]);
+        }
     }
 
     public function delete(Patient $patient): bool

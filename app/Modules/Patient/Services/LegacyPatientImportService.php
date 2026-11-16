@@ -3,12 +3,14 @@
 namespace App\Modules\Patient\Services;
 
 use App\Modules\Branch\Models\Branch;
+use App\Modules\Branch\Support\BranchCodeAlias;
 use App\Modules\ClinicRoom\Models\ClinicRoom;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\LabOrder\Services\AuditLogService;
 use App\Modules\LegacyImport\Services\LegacyImportDailyQuotaService;
 use App\Modules\LegacyImport\Support\LegacyImportType;
 use App\Modules\Patient\Exceptions\LegacyPatientImportBlockedException;
+use App\Modules\Patient\Exceptions\PatientRmNumberUnavailableException;
 use App\Modules\Patient\Models\LegacyPatientImportBatch;
 use App\Modules\Patient\Models\LegacyPatientImportRow;
 use App\Modules\Patient\Models\Patient;
@@ -20,6 +22,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use InvalidArgumentException;
 use RuntimeException;
 
 /**
@@ -67,6 +70,10 @@ class LegacyPatientImportService
 
     public function __construct(
         private readonly PatientMedicalRecordNumberService $rmNumbers,
+        // DMS-RME-COMPREHENSIVE-CLOSURE-1 / memo M4.1 (rule 244 §2.6) — the one
+        // answer to "is this Nomor RM taken?" in every spelling, and the counter
+        // lock a typed number is claimed under.
+        private readonly PatientRmNumberAllocator $rmAllocator,
         private readonly PatientDataCompletenessService $completeness,
         // FEATURE-LEGACY-IMPORT-HUB-1 — the canonical daily ceiling, shared with
         // the two archive importers so all three count the same way.
@@ -227,7 +234,9 @@ class LegacyPatientImportService
         if ($branch && $manualRm !== '' && $registeredAt !== null) {
             $composedRm = $this->rmNumbers->composeForRegistration($branch->code, $registeredAt, $manualRm);
 
-            if (in_array($composedRm, $seenRm, true)) {
+            // Rule 244 §2.5 — `7` and `0007` (or the alias code) in one file are
+            // the same number, so the in-file check compares identity keys.
+            if (in_array($this->rmNumbers->collisionKey($composedRm), $seenRm, true)) {
                 $errors[] = "Nomor RM final {$composedRm} duplikat di dalam file.";
             } elseif ($this->rmIsTaken($composedRm, $context)) {
                 $errors[] = "Nomor RM final {$composedRm} sudah digunakan pasien lain.";
@@ -339,7 +348,7 @@ class LegacyPatientImportService
         // Track identity keys for in-file duplicate detection on later rows.
         // (The first occurrence passes; a second identical RM/KTP is blocked.)
         if ($composedRm !== null) {
-            $seenRm[] = $composedRm;
+            $seenRm[] = $this->rmNumbers->collisionKey($composedRm);
         }
         if ($ktp !== '' && mb_strlen($ktp) <= 16) {
             $seenKtp[] = $ktp;
@@ -575,6 +584,17 @@ class LegacyPatientImportService
                     ->lockForUpdate()
                     ->get();
 
+                /*
+                 * DMS-RME-COMPREHENSIVE-CLOSURE-1 / memo M4.1 (rule 244 §2.6) —
+                 * an imported number must never collide with an automatic one.
+                 * Every branch-year counter this batch writes into is locked
+                 * FOR UPDATE before the first insert, in one fixed order (branch,
+                 * then year), so no registration in those branch-years issues a
+                 * number until this transaction ends, and two imports cannot
+                 * deadlock on the counters.
+                 */
+                $this->lockRmCounters($rows);
+
                 foreach ($rows as $row) {
                     $data = $row->normalized_payload ?? [];
                     $rm = $data['medical_record_number'] ?? null;
@@ -594,7 +614,9 @@ class LegacyPatientImportService
                         );
                     }
 
-                    $rmTaken = Patient::withTrashed()->where('medical_record_number', $rm)->lockForUpdate()->exists();
+                    // Under the counter lock: taken in ANY spelling, including by
+                    // a row this batch inserted a moment ago.
+                    $rmTaken = $this->rmAllocator->isTaken($rm);
                     $ktpTaken = $ktp ? Patient::withTrashed()->where('ktp_number', $ktp)->lockForUpdate()->exists() : false;
 
                     /*
@@ -784,7 +806,9 @@ class LegacyPatientImportService
         }
 
         // Pass 2 — resolve every claim in a bounded number of round trips.
-        $context['takenRm'] = $this->takenValues('medical_record_number', $claimedRm);
+        // Rule 244 §2.5 — taken in ANY spelling (alias code, padding, case, a
+        // soft-deleted patient, an active merge alias), not just this exact one.
+        $context['takenRm'] = $this->rmAllocator->takenAmong($claimedRm);
         $context['takenKtp'] = $this->takenValues('ktp_number', $claimedKtp);
 
         $seenRm = [];
@@ -1141,6 +1165,52 @@ class LegacyPatientImportService
     }
 
     /**
+     * Rule 244 §2.6 — lock the Nomor RM counter of every branch-year the rows
+     * will write into, sorted by branch then year. A row whose number names a
+     * different branch than its own, or that does not parse, contradicts its
+     * staged verdict, and the batch is refused rather than guessed at.
+     *
+     * @param  Collection<int, LegacyPatientImportRow>  $rows
+     */
+    private function lockRmCounters(Collection $rows): void
+    {
+        $branches = Branch::query()
+            ->whereIn('id', $rows->map(fn (LegacyPatientImportRow $row): int => (int) (($row->normalized_payload ?? [])['branch_id'] ?? 0))->unique()->values()->all())
+            ->get()
+            ->keyBy('id');
+        $pairs = [];
+
+        foreach ($rows as $row) {
+            $data = $row->normalized_payload ?? [];
+            $parts = $this->rmNumbers->parse(strtoupper((string) ($data['medical_record_number'] ?? '')));
+            $branch = $branches->get((int) ($data['branch_id'] ?? 0));
+
+            if ($parts === null || $branch === null
+                || BranchCodeAlias::canonicalize($parts->branchCode) !== BranchCodeAlias::canonicalize($branch->code)) {
+                throw new LegacyPatientImportBlockedException(
+                    LegacyPatientImportBlockedException::REASON_REVALIDATION_FAILED,
+                    sprintf('Baris %d tidak memiliki Nomor RM final yang cocok dengan cabangnya. Seluruh batch tidak diimpor.', $row->row_number),
+                );
+            }
+
+            $pairs[sprintf('%010d|%s', (int) $branch->getKey(), $parts->year)] = [$branch, (int) $parts->year];
+        }
+
+        ksort($pairs);
+
+        foreach ($pairs as [$branch, $year]) {
+            try {
+                $this->rmAllocator->lockCounter($branch, $year);
+            } catch (PatientRmNumberUnavailableException|InvalidArgumentException) {
+                throw new LegacyPatientImportBlockedException(
+                    LegacyPatientImportBlockedException::REASON_REVALIDATION_FAILED,
+                    'Nomor RM salah satu baris tidak dapat dikunci untuk cabang dan tahunnya. Seluruh batch tidak diimpor.',
+                );
+            }
+        }
+    }
+
+    /**
      * Which of the given values are already present on a patient — INCLUDING
      * soft-deleted ones, because a trashed patient still owns its RM and KTP
      * through the unique index, and an import that ignored that would fail on
@@ -1192,7 +1262,7 @@ class LegacyPatientImportService
             return isset($context['takenRm'][$composedRm]);
         }
 
-        return $this->rmNumbers->exists($composedRm);
+        return $this->rmAllocator->isTaken($composedRm);
     }
 
     /**
@@ -1458,7 +1528,7 @@ class LegacyPatientImportService
         $expected = array_map(static fn ($c) => Str::lower($c['label']), self::COLUMNS);
 
         if ($normalized !== $expected) {
-            throw new \InvalidArgumentException('Header CSV tidak sesuai template legacy pasien. Unduh template sistem.');
+            throw new InvalidArgumentException('Header CSV tidak sesuai template legacy pasien. Unduh template sistem.');
         }
     }
 

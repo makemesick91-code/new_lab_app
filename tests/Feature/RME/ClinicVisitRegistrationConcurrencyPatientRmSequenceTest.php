@@ -20,6 +20,11 @@ declare(strict_types=1);
 | pattern). The waiting side runs with `lock_timeout`, so "blocked" is a
 | deterministic 55P03 rather than a hang.
 |
+| Rule 244 PR-2 adds the real paths: a whole Front Office registration
+| (PatientService::create) holds the counter row until the patient commits, and
+| an import claim of the same number in another spelling waits for it and is
+| then refused.
+|
 | Selected by the existing `ClinicVisitRegistrationConcurrency` critical-gate token
 | in both runner variants and declared in critical_gate_mandatory_suites (CG-19).
 | Helper prefix `cvrs` is unique.
@@ -27,7 +32,9 @@ declare(strict_types=1);
 
 use App\Modules\Branch\Models\Branch;
 use App\Modules\Patient\Interfaces\PatientRmSequenceRepositoryInterface;
+use App\Modules\Patient\Models\Patient;
 use App\Modules\Patient\Services\PatientRmNumberAllocator;
+use App\Modules\Patient\Services\PatientService;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 
@@ -71,12 +78,15 @@ afterEach(function (): void {
     }
 
     $w = DB::connection(CVRS_WRITER);
+    // PR-2 cases commit patients through the real registration path.
+    $w->table('mst_patients')->where('branch_id', $this->branchId ?? 0)->delete();
     $w->table('mst_patient_rm_sequences')->where('branch_id', $this->branchId ?? 0)->delete();
     $w->table('mst_branches')->where('id', $this->branchId ?? 0)->delete();
 
     config()->set('database.default', $this->cvrsDefault);
     DB::purge(CVRS_WRITER);
     DB::purge(CVRS_PROBE);
+    freeTestClock();
 });
 
 function cvrsBranch(): Branch
@@ -228,4 +238,91 @@ it('reads the counter FOR UPDATE before it writes it, inside one allocation', fu
         ->and($write)->not->toBeFalse()
         ->and($read)->toBeLessThan($write)
         ->and($statements[$read])->toContain('for update');
+});
+
+// =============================================================================
+// Rule 244 PR-2 — the lock is held by the real registration and import paths
+// =============================================================================
+
+/** A Front Office registration through the real service, on the given connection. */
+function cvrsRegisterOn(string $connection, string $name): Patient
+{
+    config()->set('database.default', $connection);
+
+    return app(PatientService::class)->create([
+        'branch_id' => test()->branchId,
+        'name' => $name,
+        'is_active' => true,
+    ]);
+}
+
+it('holds the counter row through a whole Front Office registration until the patient commits (PR-2)', function (): void {
+    pinTestClock(CVRS_YEAR.'-03-01 02:00:00');
+    DB::connection(CVRS_WRITER)->table('mst_patient_rm_sequences')->insert([
+        'branch_id' => $this->branchId, 'year' => CVRS_YEAR, 'last_number' => 41,
+        'seed_source' => 'command', 'created_at' => now(), 'updated_at' => now(),
+    ]);
+    $code = cvrsBranch()->code;
+
+    DB::connection(CVRS_WRITER)->beginTransaction();
+    $first = cvrsRegisterOn(CVRS_WRITER, 'Cvrs Registrasi Satu');
+    expect($first->medical_record_number)->toBe("DG-{$code}-".CVRS_YEAR.'-0042')
+        ->and(cvrsCounterRowBlocked($this->branchId))->toBeTrue();
+
+    // A concurrent registration in the same branch-year waits on the counter row.
+    DB::purge(CVRS_PROBE);
+    DB::connection(CVRS_PROBE)->beginTransaction();
+    DB::connection(CVRS_PROBE)->statement("SET LOCAL lock_timeout = '300ms'");
+    $waited = false;
+    try {
+        cvrsRegisterOn(CVRS_PROBE, 'Cvrs Registrasi Tunggu');
+    } catch (QueryException $e) {
+        $waited = cvrsIsLockTimeout($e);
+    }
+    DB::connection(CVRS_PROBE)->rollBack();
+    expect($waited)->toBeTrue();
+
+    DB::connection(CVRS_WRITER)->commit();
+
+    $second = cvrsRegisterOn(CVRS_PROBE, 'Cvrs Registrasi Dua');
+
+    expect($second->medical_record_number)->toBe("DG-{$code}-".CVRS_YEAR.'-0043');
+    freeTestClock();
+});
+
+it('makes an import claim wait for an in-flight registration, then refuse the number it issued (PR-2)', function (): void {
+    pinTestClock(CVRS_YEAR.'-03-01 02:00:00');
+    DB::connection(CVRS_WRITER)->table('mst_patient_rm_sequences')->insert([
+        'branch_id' => $this->branchId, 'year' => CVRS_YEAR, 'last_number' => 6,
+        'seed_source' => 'command', 'created_at' => now(), 'updated_at' => now(),
+    ]);
+    $code = cvrsBranch()->code;
+    // The import spells the same number without its zero padding.
+    $imported = "DG-{$code}-".CVRS_YEAR.'-7';
+
+    DB::connection(CVRS_WRITER)->beginTransaction();
+    expect(cvrsRegisterOn(CVRS_WRITER, 'Cvrs Otomatis')->medical_record_number)->toBe("DG-{$code}-".CVRS_YEAR.'-0007');
+
+    DB::purge(CVRS_PROBE);
+    DB::connection(CVRS_PROBE)->beginTransaction();
+    DB::connection(CVRS_PROBE)->statement("SET LOCAL lock_timeout = '300ms'");
+    config()->set('database.default', CVRS_PROBE);
+    $waited = false;
+    try {
+        app(PatientRmNumberAllocator::class)->claimExisting(cvrsBranch(), $imported);
+    } catch (QueryException $e) {
+        $waited = cvrsIsLockTimeout($e);
+    }
+    DB::connection(CVRS_PROBE)->rollBack();
+    expect($waited)->toBeTrue();
+
+    DB::connection(CVRS_WRITER)->commit();
+
+    DB::connection(CVRS_PROBE)->beginTransaction();
+    config()->set('database.default', CVRS_PROBE);
+    $free = app(PatientRmNumberAllocator::class)->claimExisting(cvrsBranch(), $imported);
+    DB::connection(CVRS_PROBE)->rollBack();
+
+    expect($free)->toBeFalse();
+    freeTestClock();
 });

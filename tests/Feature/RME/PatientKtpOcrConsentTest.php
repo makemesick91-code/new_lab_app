@@ -228,7 +228,8 @@ it('keeps manual registration complete for a KTP holder who declines OCR', funct
     $this->actingAs($operator)->post(route('settings.patients.store'), [
         'clinic_id' => Clinic::factory()->create()->id,
         'doctor_id' => Doctor::factory()->create()->id,
-        'medical_record_number' => 'MRN-D7-MANUAL',
+        // Rule 244 §2 — the automatic Nomor RM needs the branch; none is typed.
+        'branch_id' => ktpPilotBranch()->id,
         'name' => 'Pasien Fiktif Tanpa OCR',
         'ktp_scan_token' => $upload['token'],
     ])->assertRedirect(route('settings.patients.index'));

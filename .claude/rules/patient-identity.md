@@ -67,9 +67,9 @@ time, CG-13 never fabricate a patient, CG-20 PostgreSQL verification matter most
 
 - **AIR-PAT-11** Compose and parse the Nomor RM `DG-{KODE_CABANG}-{TAHUN}-{NOMOR}` only through
   `PatientMedicalRecordNumberService`. The RM year and the registration date come from `ClinicalClock`
-  (`composeForRegistration()`, `PatientService::resolveRegisteredAt()`, and the `StorePatientRequest`,
-  `UpdatePatientRequest`, `StoreClinicVisitRequest` pre-checks); a supplied date is used verbatim. Never renumber an
-  existing patient. Source: `110-post-rme-odontogram-stabilization.mdc` §4.
+  (`composeForRegistration()` and, for a new patient, `PatientService::create()`; the request pre-checks went with the
+  typed number, AIR-PAT-34); a supplied legacy date is used verbatim. Never renumber an existing patient. Source:
+  `110-post-rme-odontogram-stabilization.mdc` §4.
 - **AIR-PAT-12** `branchCodeFrom()` reports the canonical code (`DG-TKM1-…` → `TLK1`), `literalBranchCodeFrom()` the
   printed one; `canonicalizeBranchCode()` changes only the branch segment and returns null for a non-canonical number.
   An old-card number is found by widening the search with `equivalentNumbers()`, never by a second patient row or a
@@ -230,3 +230,13 @@ file.
   `DatabaseRouteKey::PATTERN` per route (the resource via `Route::resource(...)->where([...])`), never `whereNumber`:
   `[0-9]+` let overflow reach PostgreSQL (500) and a leading-zero alias stream or DELETE a real KTP document.
   `patient` is generic: never global. Source: `.cursor/rules/222-rme-route-key-constraint-and-failure-log-redaction.mdc` §1.12–§1.13.
+
+### Automatic Nomor RM (rule 244)
+
+- **AIR-PAT-34** A new patient's Nomor RM comes only from `PatientRmNumberAllocator::allocate()` inside
+  `PatientService::create()` (branch required, MAIN refused, year and `registered_at` from `ClinicalClock`); no request
+  field supplies it, and an edit never changes the number, the branch or the registration date. "Taken" is always
+  `PatientRmNumberAllocator::isTaken()` (alias codes, any padding, any case, soft-deleted patients, merge aliases); a
+  number from outside the system (legacy CSV, PR-3 paper card) is stored verbatim only after `claimExisting()` locked
+  its branch-year counter. A unique violation is retried 3 times under the held lock, then 422. Source:
+  `.cursor/rules/244-patient-rm-auto-number-core-fields.mdc` §2–§3.

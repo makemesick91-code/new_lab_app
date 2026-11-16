@@ -116,7 +116,9 @@ it('creates a new patient visit at an active RME branch', function () {
         ->and($visit->branch_id)->toBe($this->atg3->id);
 });
 
-it('composes the new patient RM as DG-{branch_code}-{year}-{manual}', function () {
+it('issues the new patient RM automatically as DG-{branch_code}-{year}-{NNNN}, ignoring a posted manual number', function () {
+    // DMS-RME-COMPREHENSIVE-CLOSURE-1 / memo M4.1 (rule 244 §2) — the number is
+    // automatic and read-only; the posted manual number below is ignored.
     $this->actingAs($this->admin)
         ->post(route('rme.visits.store'), [
             'patient_mode' => 'new',
@@ -132,10 +134,11 @@ it('composes the new patient RM as DG-{branch_code}-{year}-{manual}', function (
         ->assertRedirect();
 
     expect(Patient::firstWhere('name', 'Megasanti')->medical_record_number)
-        ->toBe('DG-ATG3-2026-14023');
+        ->toBe('DG-ATG3-2026-0001');
 });
 
-it('preserves leading zeros in the manual RM number', function () {
+it('pads the automatic RM sequence to four digits', function () {
+    // Rule 244 §1 — four-digit padding replaces the preserved manual zeros.
     rmeMakeDoctorOnline($this->doctor, $this->tkm1);
 
     $this->actingAs($this->admin)
@@ -153,7 +156,7 @@ it('preserves leading zeros in the manual RM number', function () {
         ->assertRedirect();
 
     expect(Patient::firstWhere('name', 'Pasien Nol')->medical_record_number)
-        ->toBe('DG-TLK1-2026-0007');
+        ->toBe('DG-TLK1-2026-0001');
 });
 
 it('rejects MAIN as a new patient branch (not RME-enabled)', function () {
@@ -191,7 +194,7 @@ it('shows a new patient visit in the all-RME visit list', function () {
         ->get(route('rme.visits.index'))
         ->assertOk()
         ->assertSee('Megasanti')
-        ->assertSee('DG-ATG3-2026-14023');
+        ->assertSee('DG-ATG3-2026-0001');
 });
 
 // ─── B. Existing patient ─────────────────────────────────────────────────────

@@ -72,13 +72,19 @@ function kapTempPath(int $userId, string $token): string
     return $meta['file_path'];
 }
 
-/** Register through Master Data → Tambah Pasien. */
+/**
+ * Register through Master Data → Tambah Pasien. Rule 244 §2: a new patient needs
+ * the RME branch its automatic Nomor RM is issued under; no number is posted.
+ */
 function kapRegisterMasterData($actor, string $name, ?string $token)
 {
+    $branch = Branch::query()->where('code', 'KAP1')->first()
+        ?? Branch::factory()->create(['code' => 'KAP1', 'is_active' => true, 'is_rme_enabled' => true]);
+
     return test()->actingAs($actor)->post(route('settings.patients.store'), [
         'clinic_id' => Clinic::factory()->create()->id,
         'doctor_id' => Doctor::factory()->create()->id,
-        'medical_record_number' => 'MRN-'.Str::upper(Str::random(8)),
+        'branch_id' => $branch->id,
         'name' => $name,
         'ktp_scan_token' => $token,
     ]);
@@ -347,8 +353,9 @@ describe('visit registration', function () {
         $this->clinic = Clinic::factory()->create();
         $this->doctor = Doctor::factory()->create(['clinic_id' => $this->clinic->id]);
         $this->treatment = Treatment::factory()->create(['is_active' => true]);
-        $this->branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
-        $this->branch->update(['is_rme_enabled' => true]);
+        // Rule 244 §2 — MAIN is never an RME branch for a new patient (the
+        // allocator refuses it), so the visit flow registers under KAP2.
+        $this->branch = Branch::factory()->create(['code' => 'KAP2', 'is_active' => true, 'is_rme_enabled' => true]);
         rmeMakeDoctorOnline($this->doctor, $this->branch);
         $this->actor = userWith(['manage_clinic_visits', 'view_clinic_visits', 'manage patients']);
     });

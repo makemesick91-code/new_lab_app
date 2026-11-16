@@ -1,6 +1,6 @@
 ---
-description: DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M4.1/M4.2 (rule 244) — automatic Nomor RM per branch and clinic year (owner decision 2026-11-17 "Auto, read-only"); the counter row is locked FOR UPDATE inside the registration transaction; a number is never reissued in any spelling (alias codes, any padding, soft-deleted patients, merge aliases); existing numbers never rewritten; widens past 9999; MAIN refused; counters seeded by `patient:rm-sequence-seed` (dry run first, GREATEST, never lower). Supersedes the Sprint 23.8 manual-number rule for NEW registrations once PR-2 activates it.
-globs: app/Modules/Patient/Services/PatientRmNumberAllocator.php, app/Modules/Patient/Services/PatientRmSequenceSeedService.php, app/Modules/Patient/Services/PatientMedicalRecordNumberService.php, app/Modules/Patient/Repositories/PatientRmSequenceRepository.php, app/Modules/Patient/Interfaces/PatientRmSequenceRepositoryInterface.php, app/Modules/Patient/Models/PatientRmSequence.php, app/Console/Commands/PatientRmSequenceSeedCommand.php
+description: DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M4.1/M4.2 (rule 244) — automatic Nomor RM per branch and clinic year (owner decision 2026-11-17 "Auto, read-only"); the counter row is locked FOR UPDATE inside the registration transaction; a number is never reissued in any spelling (alias codes, any padding, soft-deleted patients, merge aliases); existing numbers never rewritten; widens past 9999; MAIN refused; counters seeded by `patient:rm-sequence-seed` (dry run first, GREATEST, never lower). PR-2 (active): every new registration takes the number from the allocator (branch required, clinical year, posted number/sequence/date ignored, unique violation retried 3x under the held lock then 422); the free override and the UTC generator are retired; an edit never changes number, branch or registration date; the legacy CSV import claims its typed numbers under the counter lock through one spelling-aware, case-insensitive `isTaken()`. Revises the Sprint 23.8 manual-number rule explicitly (§3).
+globs: app/Modules/Patient/Services/PatientRmNumberAllocator.php, app/Modules/Patient/Services/PatientRmSequenceSeedService.php, app/Modules/Patient/Services/PatientMedicalRecordNumberService.php, app/Modules/Patient/Repositories/PatientRmSequenceRepository.php, app/Modules/Patient/Interfaces/PatientRmSequenceRepositoryInterface.php, app/Modules/Patient/Models/PatientRmSequence.php, app/Console/Commands/PatientRmSequenceSeedCommand.php, app/Modules/Patient/Services/PatientService.php, app/Modules/Patient/Requests/StorePatientRequest.php, app/Modules/Patient/Requests/UpdatePatientRequest.php, app/Modules/Patient/Services/LegacyPatientImportService.php, app/Modules/ClinicVisit/Requests/StoreClinicVisitRequest.php
 alwaysApply: false
 ---
 
@@ -22,7 +22,7 @@ Source: the internal memo of 2026-10-17 (M4.1, M4.2) and the owner's written dec
   patient CSV import commit needs the paper-card permission (staging stays with Front Office; revises part of rule 168);
   (5) no correction tool for existing numbers in this sprint — number, branch and registration date are frozen on edit.
 
-## 1. The counter and the allocator (PR-1, dormant)
+## 1. The counter and the allocator (PR-1)
 
 1. **The counter.** `mst_patient_rm_sequences` holds one row per branch and year (`UNIQUE(branch_id, year)`):
    `last_number` is the highest sequence issued or seeded. Additive migration only (CG-09).
@@ -62,10 +62,10 @@ Source: the internal memo of 2026-10-17 (M4.1, M4.2) and the owner's written dec
    production is a separate owner-approved step. The allocator seeds a missing branch-year on first use itself, so
    correctness never depends on the command.
 5. **Lock order.** Counter row → patient insert → (later PRs) the visit's own locks. Nothing else locks the counter.
-6. **Dormant.** In PR-1 no registration path calls the allocator. PR-2 switches NEW registrations to it; until then
-   the Sprint 23.8 manual number stays in force, and it stays afterwards for the Supervisor RME paper-card exception.
+6. **Dormant (PR-1 only).** In PR-1 no registration path called the allocator. PR-2 switched NEW registrations to it
+   (§2); a typed number survives only for a number that already exists outside the system (§2.6).
 
-   **PR-2 must** close the other Nomor RM writers (recorded by the PR-1 independent review, not implemented in PR-1):
+   **PR-2 must** (done — §2.5, §2.6) close the other Nomor RM writers (recorded by the PR-1 independent review, not implemented in PR-1):
    the legacy patient CSV import validation (`LegacyPatientImportService::takenValues`) and commit (its
    `lockForUpdate()->exists()` check), the explicit-number path in `PatientService` (an explicit `medical_record_number`
    kept verbatim) and `PatientMedicalRecordNumberService::exists()` each check only the exact spelling and never take
@@ -78,3 +78,77 @@ Source: the internal memo of 2026-10-17 (M4.1, M4.2) and the owner's written dec
    `tests/Feature/RME/ClinicVisitRegistrationConcurrencyPatientRmSequenceTest.php` (PostgreSQL; committed writer + NOWAIT
    probe + `lock_timeout`; it pins that the counter row is locked when it is READ, not only when it is written) — token
    `ClinicVisitRegistrationConcurrency`. All three are declared in `critical_gate_mandatory_suites`.
+
+## 2. The automatic number at registration (PR-2, active)
+
+1. **One issuer for new patients.** `PatientService::create()` is the only path that registers a patient (Master Data →
+   Tambah Pasien and Kunjungan → Pasien Baru through `ClinicVisitService`). Inside its transaction it resolves the
+   branch (required — `branch_id` on the master form, the visit's branch on Pasien Baru; MAIN, an inactive or a
+   non-RME branch is refused), stamps `registered_at` with `ClinicalClock::today()` and takes the number from
+   `PatientRmNumberAllocator::allocate($branch, clinical year)`. A posted `medical_record_number`, `manual_rm_number`
+   or `registered_at` is dropped by the service (and no longer validated by `StorePatientRequest` or
+   `StoreClinicVisitRequest`); the request-time "Nomor RM final … sudah digunakan" pre-checks are gone because there is
+   nothing to pre-check. 00:30 WITA on 1 January belongs to the new year although UTC is still 31 December.
+2. **Retired.** The free override (a full `medical_record_number` typed on the master form) and the UTC fallback
+   generator (`PatientCodeGenerator`, a CG-12 deviation; deleted with `PatientCodeGenerationTest`, and the
+   `config/patient.php` block emptied) are gone. Existing rows
+   keep whatever number they hold.
+3. **Frozen on edit (default 5).** `PatientService::update()` drops `medical_record_number`, `manual_rm_number`,
+   `branch_id` and `registered_at`; `UpdatePatientRequest` no longer accepts them; the edit form shows them read-only.
+   There is no correction tool for existing numbers.
+4. **Unique violations.** The insert runs in a savepoint inside the registration transaction, so the counter row lock
+   taken by the allocator stays held across retries. A unique violation on `medical_record_number` (a writer that did
+   not take the counter lock, e.g. an old PHP process during a rolling deploy) rolls back the insert only, the
+   allocator issues the next number (the collided one is genuinely taken), up to `PatientService::UNIQUE_RETRY_ATTEMPTS`
+   (3) attempts; then a 422 on `medical_record_number` and the whole transaction rolls back (counter included). A
+   `ktp_number` violation answers 422 on `ktp_number` at once. Never a 500; no raw SQL or number in the message.
+   `PatientRmNumberUnavailableException` (MAIN, unknown or unparseable code, the 8-digit cap) answers 422 on
+   `medical_record_number` with its operator message.
+5. **One uniqueness question, in every spelling.** `PatientRmNumberAllocator::isTaken()` is the single answer to "is this
+   Nomor RM taken?": `PatientMedicalRecordNumberService::collisionSpellings()` (the value as given plus, once
+   uppercased, every equivalent branch code × every zero padding for a numeric sequence, or every equivalent code for a
+   non-numeric one) compared case-insensitively against every patient, soft-deleted ones included, and every active
+   merge alias. `PatientMedicalRecordNumberService::exists()` delegates to it; `collisionKey()` gives one comparison
+   key per identity (in-file duplicates in the legacy CSV); `takenAmong()` answers a whole batch in a bounded number of
+   queries (one read per branch-year, one alias query per chunk of 50, one more per alias found).
+6. **Numbers that already exist (legacy compatibility).** A number that comes from outside the system — the legacy
+   patient CSV import now, the Supervisor RME paper-card exception in PR-3 — is stored verbatim, never renumbered, and
+   only after `PatientRmNumberAllocator::claimExisting($branch, $number)` has locked that number's branch-year counter
+   row (lazily creating it, seeded like the allocator) and found no spelling taken. `LegacyPatientImportService`
+   stages and revalidates through `isTaken()`/`takenAmong()` and spelling-aware in-file keys, and its commit locks
+   every branch-year counter the batch touches, sorted by branch then year, before the first insert, then asks
+   `isTaken()` per row (seeing the batch's own earlier inserts). A claim does not move the counter: the allocator skips
+   a claimed number when it reaches it (never reissued). Archive branch derivation and alias folding are unchanged.
+7. **Lock order and namespace.** Counter row (`mst_patient_rm_sequences`, `SELECT … FOR UPDATE`) → patient insert →
+   the visit's own locks (`lockVisitSequence`, advisory 92_001, and later ones). The counter is a ROW lock, not an
+   advisory lock, so it takes no number in the 91_xxx/92_xxx advisory inventory on
+   `ClinicVisitRepository::PATIENT_ENCOUNTER_LOCK_NAMESPACE`. The legacy commit takes its batch header and staging-row
+   locks first, then the counters in sorted order, so two imports cannot deadlock on counters.
+8. **Views.** Both forms show "Nomor RM: otomatis — DG-{KODE}-{TAHUN}-####" with the clinical year (and the selected
+   branch code once chosen); no number is previewed, because two operators would see the same one. The master form's
+   success message carries the issued number; Pasien Baru shows it on the visit.
+9. **Deploy.** `patient:rm-sequence-seed --apply` is NOT a prerequisite: the allocator seeds a missing branch-year from
+   the highest number already issued (any spelling) on first use, under the same lock. Running the seed first only
+   makes the counters visible in advance and lets `--ignore-above` keep an unusually high number out of a counter.
+   Deploy outside clinic hours: a request served by a pre-deploy PHP process composes typed numbers without the lock
+   (item 4 covers the collision). Rollback is a code revert; the counter table becomes inert.
+10. **Tests.** `tests/Feature/Patient/FrontOfficePatientRmAutoNumberTest.php` (AN-01..AN-21) — token `FrontOffice`;
+    `tests/Feature/Patient/LegacyPatientRmAutoNumberCompatibilityTest.php` (LP-01..LP-08) — token `LegacyPatient`;
+    `tests/Feature/RME/ClinicVisitRegistrationConcurrencyPatientRmSequenceTest.php` (PostgreSQL; now also the full
+    registration and the import claim) — token `ClinicVisitRegistrationConcurrency`. All declared in
+    `critical_gate_mandatory_suites`.
+
+## 3. Sprint 23.8 revised explicitly
+
+Sprint 23 Phase 23.8 (`docs/sprint_23_phase_23_8_patient_id_registration_flow.md`, the
+`PatientMedicalRecordNumberService` docblock) said: the RM sequence is typed by the admin, "NOT auto-generated and NOT
+auto-padded", and the composed value is checked for uniqueness by exact match. Rule 244 revises it:
+
+- **Kept:** the format `DG-{KODE_CABANG}-{TAHUN}-{NOMOR}`, `compose()`/`parse()`, global uniqueness (now in every
+  spelling), the clinical calendar owning the year (rule 110 §4), and never renumbering an existing patient.
+- **Replaced for new registrations:** the sequence is issued by the allocator, padded to four digits, widened past
+  9999; the registration date is the server's clinical day; the admin types neither.
+- **Narrowed:** a typed sequence survives only for a number that already exists outside the system (legacy CSV import;
+  PR-3 paper card), claimed under the counter lock.
+- Rule 110 §4's list of request-time pre-check sites (`StorePatientRequest`, `UpdatePatientRequest`,
+  `StoreClinicVisitRequest`) no longer applies: those pre-checks were removed with the typed number.

@@ -2,16 +2,12 @@
 
 namespace App\Modules\ClinicVisit\Requests;
 
-use App\Modules\Branch\Interfaces\BranchRepositoryInterface;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\ClinicVisit\Services\ClinicVisitRegistrationGuard;
-use App\Modules\Patient\Services\PatientMedicalRecordNumberService;
 use App\Modules\Patient\Services\PatientSelectorSearchService;
 use App\Modules\PatientMerge\Services\PatientRegistrationDuplicateCheck;
 use App\Modules\RmeOnlineContext\Services\UserOnlineContextService;
 use App\Support\AccessControl\FrontOfficeBranchPinResolver;
-use App\Support\Clinical\ClinicalClock;
-use Carbon\Carbon;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -274,7 +270,10 @@ class StoreClinicVisitRequest extends FormRequest
             // Existing patient mode.
             'patient_id' => [Rule::requiredIf(! $isNew), 'nullable', 'integer', Rule::exists('mst_patients', 'id')],
 
-            // New patient mode — compose the finalized RM number.
+            // New patient mode. DMS-RME-COMPREHENSIVE-CLOSURE-1 / memo M4.1 (rule
+            // 244 §2) — the Nomor RM is automatic and read-only: no number,
+            // manual sequence or registration date is accepted (PatientService
+            // drops them and stamps the clinical day).
             'new_patient' => [Rule::requiredIf($isNew), 'array'],
             'new_patient.name' => [Rule::requiredIf($isNew), 'nullable', 'string', 'max:150'],
             'new_patient.branch_id' => [
@@ -283,8 +282,6 @@ class StoreClinicVisitRequest extends FormRequest
                 'integer',
                 Rule::exists('mst_branches', 'id')->where('is_active', true)->where('is_rme_enabled', true),
             ],
-            'new_patient.registered_at' => ['nullable', 'date'],
-            'new_patient.manual_rm_number' => [Rule::requiredIf($isNew), 'nullable', 'string', 'max:50', 'regex:/^[0-9]+$/'],
             'new_patient.gender' => ['nullable', 'string', 'in:Male,Female,Other'],
             'new_patient.date_of_birth' => ['nullable', 'date'],
             'new_patient.phone' => ['nullable', 'string', 'max:50'],
@@ -315,7 +312,6 @@ class StoreClinicVisitRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'new_patient.manual_rm_number.regex' => 'Nomor RM manual hanya boleh berisi angka.',
             'ktp_ocr_verified.accepted' => 'Konfirmasi bahwa data hasil baca KTP sudah dicocokkan dengan KTP asli sebelum menyimpan.',
             'ktp_ocr_verified.required' => 'Konfirmasi bahwa data hasil baca KTP sudah dicocokkan dengan KTP asli sebelum menyimpan.',
             'new_patient.name.required' => 'Nama pasien baru wajib diisi.',
@@ -323,7 +319,6 @@ class StoreClinicVisitRequest extends FormRequest
             'new_patient.branch_id.same' => 'Cabang RME pasien baru harus sama dengan Klinik/Cabang kunjungan.',
             'branch_id.required' => 'Cabang RME wajib dipilih untuk kunjungan pasien terdaftar.',
             'branch_id.exists' => 'Klinik/Cabang yang dipilih harus cabang RME aktif.',
-            'new_patient.manual_rm_number.required' => 'Nomor RM manual pasien baru wajib diisi.',
             'new_patient.ktp_number.unique' => 'Nomor KTP sudah terdaftar pada pasien lain.',
             'patient_id.required' => 'Pilih pasien terdaftar.',
             'visit_type.in' => 'Jenis kunjungan tidak valid.',
@@ -335,7 +330,7 @@ class StoreClinicVisitRequest extends FormRequest
     public function withValidator(Validator $validator): void
     {
         $validator->after(function (Validator $validator) {
-            $this->validateNewPatientRm($validator);
+            $this->validateNewPatientShape($validator);
             $this->validateExistingPatientSelectable($validator);
             $this->validateFollowUpVisit($validator);
             $this->validateOnlineDoctor($validator);
@@ -351,7 +346,12 @@ class StoreClinicVisitRequest extends FormRequest
         });
     }
 
-    private function validateNewPatientRm(Validator $validator): void
+    /**
+     * A new patient is a NEW visit in the visit's own branch. Its Nomor RM is no
+     * longer composed or pre-checked here (rule 244 §2): the allocator issues it
+     * inside the registration transaction.
+     */
+    private function validateNewPatientShape(Validator $validator): void
     {
         if ($this->input('patient_mode') !== 'new' || $validator->errors()->isNotEmpty()) {
             return;
@@ -375,36 +375,6 @@ class StoreClinicVisitRequest extends FormRequest
                 'new_patient.branch_id',
                 'Cabang RME pasien baru harus sama dengan Klinik/Cabang kunjungan.'
             );
-
-            return;
-        }
-
-        $branchId = $this->input('new_patient.branch_id');
-        $manual = trim((string) $this->input('new_patient.manual_rm_number', ''));
-
-        if (! $branchId || $manual === '') {
-            return;
-        }
-
-        $branch = app(BranchRepositoryInterface::class)->findById((int) $branchId);
-
-        if (! $branch) {
-            return;
-        }
-
-        $rmNumbers = app(PatientMedicalRecordNumberService::class);
-        $registeredAt = $this->input('new_patient.registered_at')
-            ? Carbon::parse($this->input('new_patient.registered_at'))
-            // FIX-03 — closes the residual recorded in
-            // docs/sprints/fix-clinic-ops-branch-context-wa-1.md: this fallback
-            // composed a new patient's RM year from the UTC day while the visit
-            // beside it already used ClinicalClock.
-            : app(ClinicalClock::class)->today();
-
-        $composed = $rmNumbers->composeForRegistration($branch->code, $registeredAt, $manual);
-
-        if ($rmNumbers->exists($composed)) {
-            $validator->errors()->add('new_patient.manual_rm_number', "Nomor RM final {$composed} sudah digunakan.");
         }
     }
 
