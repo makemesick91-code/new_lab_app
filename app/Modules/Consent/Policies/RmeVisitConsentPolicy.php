@@ -5,6 +5,7 @@ namespace App\Modules\Consent\Policies;
 use App\Models\User;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Consent\Models\RmeVisitConsent;
+use App\Modules\Consent\Services\RmeVisitConsentService;
 use App\Modules\RME\Services\DoctorPatientScopeService;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
 use Illuminate\Auth\Access\Response;
@@ -59,12 +60,15 @@ class RmeVisitConsentPolicy
     }
 
     /**
-     * Voiding is the correction path for signed evidence, so it is deliberately
-     * held to the same authority as signing.
+     * Voiding is the correction path for signed evidence. DMS-RME-COMPREHENSIVE-
+     * CLOSURE-1 (OD-5-8, owner decision 2026-11-16): a SUPERVISED act behind its
+     * own permission (`void_rme_consents`, Supervisor RME and Owner), never the
+     * signing permission; only while the examination runs. Maker ≠ checker is an
+     * identity rule and lives in the service, where Gate::before cannot skip it.
      */
     public function void(User $user, RmeVisitConsent $consent): Response|bool
     {
-        if (! $user->can('manage_rme_consents') || ! $this->withinWorkingBranchScope($user, $consent->branch_id)) {
+        if (! $user->can(RmeVisitConsentService::VOID_PERMISSION) || ! $this->withinWorkingBranchScope($user, $consent->branch_id)) {
             return false;
         }
 
@@ -74,7 +78,7 @@ class RmeVisitConsentPolicy
 
         $visit = $consent->clinicVisit;
 
-        if ($visit === null) {
+        if ($visit === null || $visit->status !== ClinicVisit::STATUS_IN_PROGRESS) {
             return false;
         }
 

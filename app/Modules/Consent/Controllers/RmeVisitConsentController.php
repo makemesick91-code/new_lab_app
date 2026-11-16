@@ -6,10 +6,10 @@ use App\Http\Controllers\Controller;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Consent\Models\RmeVisitConsent;
 use App\Modules\Consent\Requests\StoreRmeVisitConsentRequest;
+use App\Modules\Consent\Requests\VoidRmeVisitConsentRequest;
 use App\Modules\Consent\Services\RmeVisitConsentService;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -81,7 +81,29 @@ class RmeVisitConsentController extends Controller
     {
         $this->authorize('view', $consent);
 
-        return view('rme.consents.show', $this->documentData($consent));
+        return view('rme.consents.show', $this->documentData($consent) + [
+            // DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-5-8) — decided here, never in
+            // Blade; the policy, the route permission and the service decide again.
+            'canVoid' => (request()->user()?->can('void', $consent) ?? false)
+                && (int) $consent->signed_by !== (int) request()->user()?->getKey(),
+        ]);
+    }
+
+    /**
+     * DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-5-8, owner decision 2026-11-16) — the
+     * supervised void: dedicated permission, written reason, maker ≠ checker,
+     * only while the examination runs; the row is kept and a new consent may be
+     * signed afterwards. Authorization runs in the request before validation.
+     */
+    public function void(VoidRmeVisitConsentRequest $request, RmeVisitConsent $consent): RedirectResponse
+    {
+        $this->authorize('void', $consent);
+
+        $this->consents->void($consent, $request->user(), (string) $request->validated('void_reason'));
+
+        return redirect()
+            ->route('rme.visits.show', $consent->clinic_visit_id)
+            ->with('status', 'Persetujuan tindakan medis dibatalkan. Persetujuan baru dapat ditandatangani selama pemeriksaan berlangsung.');
     }
 
     public function print(RmeVisitConsent $consent): View
@@ -107,7 +129,8 @@ class RmeVisitConsentController extends Controller
 
         abort_if($path === null || $path === '', 404);
 
-        $disk = Storage::disk($this->consents->diskName());
+        // OD-5-9 — the clinical evidence disk (rule 121), as every reader does.
+        $disk = $this->consents->disk();
 
         abort_unless($disk->exists($path), 404);
 

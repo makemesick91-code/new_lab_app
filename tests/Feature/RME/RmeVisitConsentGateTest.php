@@ -11,6 +11,7 @@ use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Services\RmeInvoiceService;
 use App\Modules\RmeInvoice\Services\RmePaymentService;
 use App\Modules\Treatment\Models\Treatment;
+use App\Support\Storage\ClinicalEvidenceStorage;
 use Database\Seeders\BranchSeeder;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
@@ -32,6 +33,8 @@ beforeEach(function () {
     test()->seed(BranchSeeder::class);
     seedAccessControl();
     Storage::fake('local');
+    // DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-5-9) — signatures live on the clinical evidence disk.
+    Storage::fake(ClinicalEvidenceStorage::diskName());
 
     $this->branch = Branch::factory()->create([
         'code' => 'CNS1',
@@ -41,6 +44,8 @@ beforeEach(function () {
 
     $this->cashier = userWith(['manage_rme_billing', 'manage_rme_consents', 'view_rme_consents']);
     $this->consentOperator = $this->cashier;
+    // OD-5-8 — voids are supervised: their own permission, never the recorder.
+    $this->consentSupervisor = userWith(['void_rme_consents', 'view_rme_consents']);
 });
 
 // CORRECTIVE-01 — consent is signable only while the examination is running, so
@@ -168,7 +173,7 @@ it('keeps partial payment behaviour intact without any consent', function () {
 it('does not let a voided consent block a payment', function () {
     $visit = consentVisit();
     $consent = signConsentFor($visit);
-    app(RmeVisitConsentService::class)->void($consent, $this->consentOperator, 'salah pasien');
+    app(RmeVisitConsentService::class)->void($consent, $this->consentSupervisor, 'salah pasien');
 
     // The examination finishes, then the cashier takes payment.
     $visit->forceFill(['status' => ClinicVisit::STATUS_CASHIER_PENDING])->save();
@@ -362,7 +367,7 @@ it('stores the signature on a private disk and never as a public url', function 
     $consent = signConsentFor($visit);
 
     expect($consent->consenter_signature_path)->toStartWith('rme-consents/');
-    Storage::disk('local')->assertExists($consent->consenter_signature_path);
+    Storage::disk(ClinicalEvidenceStorage::diskName())->assertExists($consent->consenter_signature_path);
     // The public disk must not receive consent evidence.
     expect(Storage::disk('public')->exists($consent->consenter_signature_path))->toBeFalse();
 });
@@ -387,9 +392,9 @@ it('refuses to void a consent twice', function () {
     $visit = consentVisit();
     $consent = signConsentFor($visit);
 
-    app(RmeVisitConsentService::class)->void($consent, $this->consentOperator, 'Salah pasien.');
+    app(RmeVisitConsentService::class)->void($consent, $this->consentSupervisor, 'Salah pasien.');
 
-    expect(fn () => app(RmeVisitConsentService::class)->void($consent->refresh(), $this->consentOperator, 'Lagi.'))
+    expect(fn () => app(RmeVisitConsentService::class)->void($consent->refresh(), $this->consentSupervisor, 'Dibatalkan lagi.'))
         ->toThrow(ValidationException::class);
 });
 
@@ -397,7 +402,7 @@ it('requires a reason to void a consent', function () {
     $visit = consentVisit();
     $consent = signConsentFor($visit);
 
-    expect(fn () => app(RmeVisitConsentService::class)->void($consent, $this->consentOperator, '   '))
+    expect(fn () => app(RmeVisitConsentService::class)->void($consent, $this->consentSupervisor, '   '))
         ->toThrow(ValidationException::class);
 
     expect($consent->refresh()->isVoided())->toBeFalse();
@@ -407,7 +412,7 @@ it('keeps the voided consent as evidence rather than deleting it', function () {
     $visit = consentVisit();
     $consent = signConsentFor($visit);
 
-    app(RmeVisitConsentService::class)->void($consent, $this->consentOperator, 'Salah pasien.');
+    app(RmeVisitConsentService::class)->void($consent, $this->consentSupervisor, 'Salah pasien.');
 
     expect(RmeVisitConsent::find($consent->id))->not->toBeNull();
     expect($consent->refresh()->void_reason)->toBe('Salah pasien.');

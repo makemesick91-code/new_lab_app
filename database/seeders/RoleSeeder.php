@@ -574,6 +574,8 @@ class RoleSeeder extends Seeder
             // signed PERSETUJUAN TINDAKAN MEDIS that gates RME payment.
             'view_rme_consents',
             'manage_rme_consents',
+            // DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-5-8) — supervised consent void.
+            'void_rme_consents',
             // RME reports + patient data completeness audit
             'view_rme_patient_reports',
             'view_rme_payment_reports',

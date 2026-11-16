@@ -238,6 +238,11 @@ class DiagnosisRolloutService
         }
 
         return DB::transaction(function () use ($medicalRecord, $reason, $actor) {
+            // DMS-RME-COMPREHENSIVE-CLOSURE-1 (rule 223 §6, rule 219 §12a) — the
+            // override unlocks finalization, so it is re-decided under the
+            // encounter's visit lock like every consent-gated write.
+            app(RmeVisitConsentService::class)->assertRmeAuthoringAllowedForPatient($medicalRecord->patient_id, $actor);
+
             $ttl = max(1, (int) config('clinical_diagnosis_rollout.override.ttl_hours', 24));
 
             $override = DiagnosisRequirementOverride::create([

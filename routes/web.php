@@ -1375,6 +1375,11 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
         Route::get('consents/{consent}/print', [RmeVisitConsentController::class, 'print'])
             ->middleware('permission:view_rme_consents|manage_rme_consents')
             ->middleware('cache.headers:private;no_store;max_age=0')->name('consents.print');
+        // DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-5-8) — supervised void, own permission.
+        Route::post('consents/{consent}/void', [RmeVisitConsentController::class, 'void'])
+            ->middleware('permission:void_rme_consents')
+            ->where('consent', DatabaseRouteKey::PATTERN)
+            ->name('consents.void');
         Route::get('consents/{consent}/signature/{kind}', [RmeVisitConsentController::class, 'signature'])
             ->middleware('permission:view_rme_consents|manage_rme_consents')
             ->name('consents.signature');

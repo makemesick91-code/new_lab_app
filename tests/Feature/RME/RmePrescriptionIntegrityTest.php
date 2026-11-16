@@ -310,7 +310,8 @@ it('I4-01 serves the consent signature image with no-store', function () {
         'patient_id' => $visit->patient_id,
         'doctor_id' => $visit->doctor_id,
     ]);
-    Storage::disk('local')->put($consent->consenter_signature_path, base64_decode(substr(validPodSignatureData(), strlen('data:image/png;base64,'))));
+    // DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-5-9) — consent signatures live on the clinical evidence disk.
+    ClinicalEvidenceStorage::disk()->put($consent->consenter_signature_path, base64_decode(substr(validPodSignatureData(), strlen('data:image/png;base64,'))));
 
     $response = actingAs(userInRole('Super Admin'))
         ->get(route('rme.consents.signature', [$consent, 'consenter']))

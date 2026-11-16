@@ -162,6 +162,9 @@ function dptcFixture(): array
             'patient' => Patient::factory()->create(['branch_id' => $branch->id]),
             'doctor' => Doctor::factory()->create(['branch_id' => $branch->id]),
             'cashier' => userWith(['manage_rme_billing', 'view_clinic_visits']),
+            // DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-5-8) — a consent is voided by a
+            // supervisor holding void_rme_consents, never by its recorder.
+            'supervisor' => userWith(['void_rme_consents', 'view_rme_consents']),
             'scaling' => Treatment::factory()->create(['name' => 'Scaling DPTC '.uniqid(), 'treatment_category_id' => $restorative->id, 'is_active' => true, 'requires_lab' => false]),
             'consultation' => Treatment::factory()->create(['name' => 'Konsultasi DPTC '.uniqid(), 'treatment_category_id' => $consultationCategory->id, 'is_active' => true, 'requires_lab' => false]),
         ];
@@ -570,7 +573,7 @@ function dptcConsentId(ClinicVisit $visit): int
 it('DPT-RACE-N1 a save waiting behind a consent VOID is refused — never a row written under a consent void at commit (LOW-2 closed)', function () {
     $fx = dptcFixture();
     $consentId = dptcConsentId($fx['visit']);
-    $handle = dptcCompeting([['kind' => 'void_consent', 'consent' => $consentId, 'actor' => $fx['doctorUser']->id, 'reason' => 'Uji race persetujuan.']]);
+    $handle = dptcCompeting([['kind' => 'void_consent', 'consent' => $consentId, 'actor' => $fx['supervisor']->id, 'reason' => 'Uji race persetujuan.']]);
 
     test()->actingAs($fx['doctorUser']);
     $race = dptcRace(fn () => dptcSvc()->record($fx['visit']->fresh(), dptcData($fx['scaling']), $fx['doctorUser']));
@@ -588,7 +591,7 @@ it('DPT-RACE-N2 a consent VOID waiting behind a save serializes after it — the
     $handle = dptcCompeting([['kind' => 'record', 'visit' => $fx['visit']->id, 'actor' => $fx['doctorUser']->id, 'data' => dptcData($fx['scaling'])]]);
 
     $race = dptcRace(fn () => app(RmeVisitConsentService::class)->void(
-        RmeVisitConsent::query()->findOrFail($consentId), $fx['doctorUser'], 'Uji race persetujuan.',
+        RmeVisitConsent::query()->findOrFail($consentId), $fx['supervisor'], 'Uji race persetujuan.',
     ));
     dptcJoin($handle);
 
@@ -601,10 +604,10 @@ it('DPT-RACE-N2 a consent VOID waiting behind a save serializes after it — the
 it('DPT-RACE-N3 two concurrent voids of one consent cannot both succeed', function () {
     $fx = dptcFixture();
     $consentId = dptcConsentId($fx['visit']);
-    $handle = dptcCompeting([['kind' => 'void_consent', 'consent' => $consentId, 'actor' => $fx['doctorUser']->id, 'reason' => 'Void pertama.']]);
+    $handle = dptcCompeting([['kind' => 'void_consent', 'consent' => $consentId, 'actor' => $fx['supervisor']->id, 'reason' => 'Void pertama.']]);
 
     $race = dptcRace(fn () => app(RmeVisitConsentService::class)->void(
-        RmeVisitConsent::query()->findOrFail($consentId), $fx['doctorUser'], 'Void kedua.',
+        RmeVisitConsent::query()->findOrFail($consentId), $fx['supervisor'], 'Void kedua.',
     ));
     dptcJoin($handle);
 

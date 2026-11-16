@@ -124,6 +124,34 @@ sheet still starts on the canonical visit the controller derives (Sprint 64.0.2)
 Lembar RM" only when the source visit is the patient's current examination (`ActiveEncounterResolver::currentFor`),
 still disabled until consent.
 
+## 14. Consent integrity (OD-5-8, OD-5-9, R8A-2, rule 219 §12a) — owner decisions 2026-11-16
+
+1. **One valid consent per visit.** `RmeVisitConsentService::sign()` refuses (`MESSAGE_DUPLICATE`) when the LOCKED visit
+   already has a valid consent. Signing again is possible only after a void.
+2. **Supervised void** (`rme.consents.void`, POST, `DatabaseRouteKey::PATTERN`): dedicated permission
+   `void_rme_consents` (Supervisor RME; Super Admin through `Gate::before`), never the signing permission; a written
+   reason of 10–1000 characters; only while the visit is `in_progress`; maker ≠ checker — the account that recorded the
+   consent (`signed_by`) never voids it, decided in the service under the visit lock so it binds Super Admin too. The
+   row is kept (`voided_at`, `voided_by`, `void_reason`); one `RME_CONSENT_VOIDED` audit row with ids and the reason's
+   LENGTH only. After a permission change, production runs `PermissionSeeder`, then `RoleSeeder`, then
+   `permission:cache-reset` (CG-15).
+3. **Rule 219 §12a closed.** Inside a write transaction, `assertRmeAuthoringAllowedForPatient()` locks the encounter's
+   visit row FIRST (`lockForStatusDecision`, rule 223 §6) and re-decides status and consent on it. Every consent-gated
+   RME write calls it at the top of its transaction: sheet create/update/finalize (`MedicalRecordService`), handwriting
+   pages (also the edit-in-place path), structured diagnoses (`MedicalRecordDiagnosisService`), the diagnosis override
+   (`DiagnosisRolloutService::grantOverride`). A void or a finish committed meanwhile is seen; a later one waits.
+   Odontogram charting does not depend on consent (AIR-RMC-14) and is unaffected.
+4. **Authorization before validation (R8A-2).** `StoreRmeVisitConsentRequest::authorize()` and
+   `VoidRmeVisitConsentRequest::authorize()` return the policy's `Gate::inspect()` response, so a refused account gets
+   its 403/404 whatever its payload.
+5. **Storage (OD-5-9, rule 121).** New consent signatures are written to and read from `ClinicalEvidenceStorage`
+   (`RmeVisitConsentService::disk()` delegates to it; `config('rme_consent.legacy_signature_disk')` names only the
+   pre-change disk for the copy command). No reader falls back to the old disk (rule 121 §5). Objects written before
+   the change are copied key-for-key, SHA-256 verified, by `rme:consent-signatures-migrate` (dry run, then `--apply`;
+   never deletes — purge is a separate, owner-approved phase, rule 121 §6). A late failure inside `sign()` removes the
+   objects that call wrote (rule 224 pattern); a failure after the body finished keeps them.
+6. Tests: `RmeVisitConsentSupervisedVoidTest` (token `RmeVisitConsent`, declared mandatory).
+
 ## 11. A cancelled visit is never a Kontrol prior visit (OD-5-10a)
 
 `ClinicVisitRegistrationGuard::followUpViolation()` refuses a cancelled prior visit (read FOR SHARE under `$lock`, so a

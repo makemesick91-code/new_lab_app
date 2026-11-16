@@ -113,6 +113,8 @@ const SUPERVISOR_RME_PERMISSIONS = [
     // Doctor, Kasir and Admin Klinik, which this exact-list pin does not cover.
     'view_rme_consents',
     'manage_rme_consents',
+    // DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-5-8) — the supervised consent void.
+    'void_rme_consents',
     // DOCTOR-ACCESS-SINGLE-SESSION-BRANCH-LOCK-1 — doctor home-branch
     // assignment/transfer and temporary branch cover, plus the manual session
     // release that ends a login session and nothing else.
