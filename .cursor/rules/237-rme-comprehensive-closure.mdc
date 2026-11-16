@@ -1,6 +1,6 @@
 ---
-description: DMS-RME-COMPREHENSIVE-CLOSURE-1 (rule 237) — RME document numbers take the clinic month from ClinicalClock (P8R-S6); refused clinical forms never flash signatures or canvases into the session; every rendered clinical or patient-data document answers private, no-store; an RM handwriting page has a bounded payload, declared size and inflate cost; queue timing ordered worker < job < stop < retry_after (OPS-Q); legacy mass-upload batches read under their own type's archive scope (OD-7-6); deactivating or deleting an account drops its presence at once (OD-5-4); owner decisions of 2026-11-16 on OD-7-1 and unsigned prescription print.
-globs: app/Modules/RmeInvoice/Services/RmeInvoiceNumberGeneratorService.php, app/Modules/RmeInvoice/Services/RmePaymentNumberGeneratorService.php, app/Modules/RmeInvoice/Services/RmeInvoiceCorrectionService.php, app/Modules/RmeInvoice/Services/RmeBillingDisputeService.php, app/Modules/MedicalRecord/Services/HandwritingPayloadGuard.php, app/Modules/MedicalRecord/Controllers/MedicalRecordHandwritingController.php, app/Modules/LegacyImport/MassUpload/Policies/LegacyMassUploadBatchPolicy.php, app/Modules/LegacyImport/MassUpload/Controllers/LegacyMassUploadController.php, app/Modules/User/Services/UserService.php, bootstrap/app.php, routes/web.php, config/queue.php, deploy/systemd/daengtisiams-queue-worker.service
+description: DMS-RME-COMPREHENSIVE-CLOSURE-1 (rule 237) — RME document numbers take the clinic month from ClinicalClock (P8R-S6); refused clinical forms never flash signatures or canvases into the session; every rendered clinical or patient-data document answers private, no-store; an RM handwriting page has a bounded payload, declared size and inflate cost; queue timing ordered worker < job < stop < retry_after (OPS-Q); legacy mass-upload batches read under their own type's archive scope (OD-7-6); deactivating or deleting an account drops its presence at once (OD-5-4); owner decisions of 2026-11-16 on OD-7-1 and unsigned prescription print; a signed prescription is changed only by its own doctor and never signed over content changed since the page loaded; a new RM sheet only on the authorized consented encounter (OD-5-6); a cancelled visit is never a Kontrol prior visit (OD-5-10a).
+globs: app/Modules/RmeInvoice/Services/RmeInvoiceNumberGeneratorService.php, app/Modules/RmeInvoice/Services/RmePaymentNumberGeneratorService.php, app/Modules/RmeInvoice/Services/RmeInvoiceCorrectionService.php, app/Modules/RmeInvoice/Services/RmeBillingDisputeService.php, app/Modules/MedicalRecord/Services/HandwritingPayloadGuard.php, app/Modules/MedicalRecord/Controllers/MedicalRecordHandwritingController.php, app/Modules/LegacyImport/MassUpload/Policies/LegacyMassUploadBatchPolicy.php, app/Modules/LegacyImport/MassUpload/Controllers/LegacyMassUploadController.php, app/Modules/User/Services/UserService.php, bootstrap/app.php, routes/web.php, config/queue.php, deploy/systemd/daengtisiams-queue-worker.service, app/Modules/Prescription/**, app/Modules/MedicalRecord/Services/MedicalRecordService.php, app/Modules/MedicalRecord/Controllers/MedicalRecordController.php, app/Modules/ClinicVisit/Services/ClinicVisitRegistrationGuard.php, app/Modules/ClinicVisit/Services/ClinicVisitService.php, app/Modules/ClinicVisit/Controllers/ClinicVisitController.php
 alwaysApply: false
 ---
 
@@ -90,4 +90,43 @@ the worker stays an owner decision.
 `RmeDocumentNumberSequenceLock`) and the correction, obligation and dispute lifecycle suites (`RmeInvoiceCorrection`,
 `RmeBillingDispute`); the consent end-to-end flash case in `RmeVisitConsentSignatureBoundTest` (D-01); the queue
 order in `QueueProducerConsumerParityTest` (OPS-Q); OD-7-6 in `LegacyMassUploadWorkflowTest` (token
-`LegacyMassUpload`); OD-5-4 in `ActiveAccountSessionTest` (token `ActiveAccountSession`).
+`LegacyMassUpload`); OD-5-4 in `ActiveAccountSessionTest` (token `ActiveAccountSession`). PR2: the lock after
+signing in `RmePrescriptionIntegrityTest` I7 (token `RmePrescription`) and `DoctorPatientScopeTest` (token
+`DoctorPatientScope`); OD-5-6 in `RmeClinicalWriteAuthorityTest` (token `RmeClinicalWriteAuthority`); OD-5-10(a) in
+`ClinicVisitPatientSelectionAuthorityTest` (token `ClinicVisitPatientSelection`).
+
+## 9. A signed prescription is changed only by its own doctor (owner decision 2026-11-16, amends rule 228 §12.2)
+
+1. `PrescriptionAuthoringAuthority::signedContentLocked()`: once `doctor_signature_canvas_path` is set, only the
+   account `maySign()` accepts for the prescription's doctor (its own `doctor_id`, else the visit's — the doctor the
+   edit path derives) may change the prescription. Identity, not role: Super Admin, Owner and Supervisor RME that are
+   not that doctor are refused; `Gate::before` lets Super Admin past the policy, so the service decides too.
+2. Three layers. `RmePrescriptionPolicy::update` checks the scope (`view()`) FIRST, then the lock, so an out-of-scope
+   account is refused for scope and learns nothing about the signature. `RmePrescriptionService::update()` re-reads the
+   row after taking the visit lock (every prescription writer takes it first) and refuses with an
+   `AuthorizationException` before anything is decoded or written. The page offers no edit to anyone else and says why.
+3. A refusal for this reason writes one `RME_PRESCRIPTION_SIGNED_EDIT_REJECTED` row (ids, actor, reason code; no
+   value, no patient data): from the controller when the policy's denial message is the lock, from the service after
+   the rolled-back transaction otherwise. Other refusals write nothing (rule 228 §9: one row per write, unchanged).
+4. The reverse race: the edit form carries `content_version` (`RmePrescriptionService::contentVersion()`, a fingerprint
+   of the R/ canvas key and the audited fields). A signature submitted with a version older than the row is refused
+   (`MESSAGE_CONTENT_CHANGED_BEFORE_SIGNING`), so a doctor never signs content changed after their page loaded. A
+   caller that sends no version is not compared.
+5. Unsigned content stays open to the other clinical roles exactly as before (OD-5-1 kept). Tests that exercise what
+   ANOTHER clinician may author start from `RmePrescriptionFactory::unsigned()`.
+
+## 10. A new RM sheet only on the authorized encounter (OD-5-6, owner decision 2026-11-16)
+
+Once the patient has an RM book, `MedicalRecordService::createDraft()` refuses a new sheet on any visit other than the
+encounter `assertRmeAuthoringAllowedForPatient()` returns (`MESSAGE_SHEET_ONLY_ON_ENCOUNTER`). The patient's first
+sheet still starts on the canonical visit the controller derives (Sprint 64.0.2), and the canonical-book path
+(`getOrCreateCanonicalMedicalRecord`, `$adoptExisting`) is not a new sheet. The sheet navigation offers "Tambah
+Lembar RM" only when the source visit is the patient's current examination (`ActiveEncounterResolver::currentFor`),
+still disabled until consent.
+
+## 11. A cancelled visit is never a Kontrol prior visit (OD-5-10a)
+
+`ClinicVisitRegistrationGuard::followUpViolation()` refuses a cancelled prior visit (read FOR SHARE under `$lock`, so a
+cancellation cannot commit between the check and the insert); `ClinicVisitService::patientVisitOptions()` never
+offers one; the visit page offers no "Buat Kontrol" from a cancelled visit (`canStartKontrolFromHere`, decided in the
+controller). Existing links are not touched. Billing already refused a cancelled parent for the Rp0 Kontrol.

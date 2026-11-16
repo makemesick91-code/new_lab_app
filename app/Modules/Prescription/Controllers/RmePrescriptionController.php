@@ -15,6 +15,7 @@ use App\Modules\Prescription\Services\PrescriptionWhatsAppDeliveryService;
 use App\Modules\Prescription\Services\RmePrescriptionService;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\View\View;
 
 class RmePrescriptionController extends Controller
@@ -32,8 +33,13 @@ class RmePrescriptionController extends Controller
 
         $data = $this->service->showDataForVisit($clinicVisit, request()->user());
         $adjacentVisits = app(ClinicVisitService::class)->adjacentVisits($clinicVisit);
-        $canManage = auth()->user()?->can('create', [RmePrescription::class, $clinicVisit]) ?? false;
         $prescription = $data['prescription'];
+        // DMS-RME-COMPREHENSIVE-CLOSURE-1 — a signed prescription offers no edit
+        // to anyone but its own doctor (the policy and the service refuse it).
+        $signedContentLocked = $prescription !== null
+            && $this->authority->signedContentLocked($prescription, request()->user());
+        $canManage = ! $signedContentLocked
+            && (auth()->user()?->can('create', [RmePrescription::class, $clinicVisit]) ?? false);
         // FIX-02 — the WhatsApp hand-off is offered only for a saved prescription
         // the operator is actually authorised to transmit.
         $canSendWhatsApp = $prescription !== null
@@ -49,6 +55,8 @@ class RmePrescriptionController extends Controller
             'history' => $data['history'],
             'adjacentVisits' => $adjacentVisits,
             'canManage' => $canManage,
+            'signedContentLocked' => $signedContentLocked,
+            'contentVersion' => $prescription !== null ? $this->service->contentVersion($prescription) : null,
             // DMS-RME-REVISION-PROGRAM-8C (D3-NEW-2, rule 228 §12) — the signature
             // canvas is offered only to the prescription's own doctor; the service
             // refuses anyone else regardless.
@@ -109,6 +117,16 @@ class RmePrescriptionController extends Controller
 
     public function update(UpdateRmePrescriptionRequest $request, RmePrescription $rmePrescription): RedirectResponse
     {
+        // DMS-RME-COMPREHENSIVE-CLOSURE-1 — when the policy refuses BECAUSE the
+        // prescription is signed by its own doctor, the refusal is recorded here
+        // (rejections are audited from controllers, never policies). Any other
+        // refusal (closed visit, branch, permission) writes nothing, as before.
+        $decision = Gate::inspect('update', $rmePrescription);
+
+        if ($decision->denied() && $decision->message() === PrescriptionAuthoringAuthority::SIGNED_CONTENT_LOCK_MESSAGE) {
+            $this->service->recordSignedEditRejection($rmePrescription, $request->user());
+        }
+
         $this->authorize('update', $rmePrescription);
 
         $this->service->update(

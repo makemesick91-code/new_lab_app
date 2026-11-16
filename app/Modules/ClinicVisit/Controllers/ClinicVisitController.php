@@ -382,12 +382,14 @@ class ClinicVisitController extends Controller
             // DMS-RME-REVISION-PROGRAM-5 (CW5-02, AIR-RMC-25) — "Buat Rekam Medis"
             // follows the CAPABILITY, never `can('create', MedicalRecord)` alone:
             // offered only when THIS visit is the authorized, consented encounter.
-            // Presentation only, and deliberately STRICTER than the server:
-            // MedicalRecordService::createDraft() asserts the patient-level
-            // authority (an authorized, consented encounter exists), and whether a
-            // sheet may target a sibling visit is an open owner decision (sprint
-            // doc OD-5-6). The page never offers more than the server accepts.
+            // Presentation only; since DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-5-6,
+            // owner decision "current encounter only") the server agrees:
+            // MedicalRecordService::createDraft() refuses a new sheet on any visit
+            // other than that encounter once the patient has an RM book.
             'canCreateRecordHere' => $this->recordAuthorableHere($clinicVisit),
+            // DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-5-10a) — a cancelled visit is no
+            // prior visit, so the page offers no "Buat Kontrol" from it.
+            'canStartKontrolFromHere' => $clinicVisit->status !== ClinicVisit::STATUS_CANCELLED,
         ]);
     }
 

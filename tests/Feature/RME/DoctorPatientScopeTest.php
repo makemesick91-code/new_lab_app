@@ -106,7 +106,10 @@ function scopeClinicalArtifacts(Patient $patient, Doctor $doctor): array
         'clinic_visit_id' => $visit->id,
         'branch_id' => test()->rmeBranch->id,
     ]);
-    $prescription = RmePrescription::factory()->withStoredCanvases()->create([
+    // Unsigned: these tests are about the doctor-patient SCOPE. A prescription its
+    // own doctor has signed is locked to that doctor (DMS-RME-COMPREHENSIVE-
+    // CLOSURE-1, rule 237), which the shared-access test asserts separately.
+    $prescription = RmePrescription::factory()->withStoredCanvases()->unsigned()->create([
         'clinic_visit_id' => $visit->id,
         'branch_id' => test()->rmeBranch->id,
         'patient_id' => $patient->id,
@@ -279,6 +282,11 @@ it('lets doctor with prior patient visit history access another doctors clinical
     $actor->get(route('rme.visits.prescription.show', $doctorBVisit))->assertOk();
     $actor->patch(route('rme.prescriptions.update', $prescription), scopePrescriptionPatchPayload($doctorBVisit))->assertRedirect();
     $actor->get(route('rme.prescriptions.print', $prescription))->assertOk();
+
+    // Shared access never reaches past the signature: once doctor B (the
+    // prescription's own doctor) has signed, doctor A may no longer change it.
+    $prescription->forceFill(['doctor_signature_canvas_path' => $prescription->fresh()->prescription_canvas_path])->save();
+    $actor->patch(route('rme.prescriptions.update', $prescription), scopePrescriptionPatchPayload($doctorBVisit))->assertForbidden();
 });
 
 it('lets visit owner doctor access own clinical artifacts', function () {

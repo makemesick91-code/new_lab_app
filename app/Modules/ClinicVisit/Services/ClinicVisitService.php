@@ -510,7 +510,10 @@ class ClinicVisitService
             throw new AuthorizationException('Riwayat kunjungan pasien ini tidak tersedia untuk akun Anda.');
         }
 
+        // DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-5-10a) — the picker offers only
+        // what the registration guard accepts: never a cancelled visit.
         return $this->patientVisitHistory($patientId, $excludeVisitId)
+            ->reject(fn (ClinicVisit $visit) => $visit->status === ClinicVisit::STATUS_CANCELLED)
             ->map(fn (ClinicVisit $visit) => [
                 'id' => $visit->id,
                 'visit_number' => $visit->visit_number,

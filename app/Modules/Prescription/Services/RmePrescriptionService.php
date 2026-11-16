@@ -14,6 +14,7 @@ use App\Modules\Prescription\Models\RmePrescription;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
 use App\Support\Clinical\ClinicalClock;
 use App\Support\Storage\ClinicalEvidenceStorage;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -29,6 +30,15 @@ class RmePrescriptionService
     public const AUDIT_CREATED = 'RME_PRESCRIPTION_CREATED';
 
     public const AUDIT_UPDATED = 'RME_PRESCRIPTION_UPDATED';
+
+    /**
+     * DMS-RME-COMPREHENSIVE-CLOSURE-1 — another account tried to change a signed
+     * prescription. Written AFTER the refused transaction rolled back (a
+     * rejection, not a write: rule 228 §9's one row per write is unchanged).
+     */
+    public const AUDIT_SIGNED_EDIT_REJECTED = 'RME_PRESCRIPTION_SIGNED_EDIT_REJECTED';
+
+    public const MESSAGE_CONTENT_CHANGED_BEFORE_SIGNING = 'Resep telah diubah sejak halaman dibuka. Muat ulang halaman, periksa isinya, lalu tanda tangani lagi.';
 
     /**
      * The clinical content an audit row names. `updated_by` and the server-derived
@@ -300,10 +310,11 @@ class RmePrescriptionService
     {
         $written = [];
         $bodyDone = false;
+        $signedLockRefused = false;
 
         try {
-            return DB::transaction(function () use ($prescription, $payload, $user, &$written, &$bodyDone): RmePrescription {
-                $updated = $this->updateWithinTransaction($prescription, $payload, $user, $written);
+            return DB::transaction(function () use ($prescription, $payload, $user, &$written, &$bodyDone, &$signedLockRefused): RmePrescription {
+                $updated = $this->updateWithinTransaction($prescription, $payload, $user, $written, $signedLockRefused);
                 $bodyDone = true;
 
                 return $updated;
@@ -315,12 +326,16 @@ class RmePrescriptionService
                 $this->discardUncommitted($written);
             }
 
+            if ($signedLockRefused) {
+                $this->recordSignedEditRejection($prescription, $user);
+            }
+
             throw $e;
         }
     }
 
     /** @param  list<string>  $written  receives every canvas key this call wrote */
-    private function updateWithinTransaction(RmePrescription $prescription, array $payload, User $user, array &$written): RmePrescription
+    private function updateWithinTransaction(RmePrescription $prescription, array $payload, User $user, array &$written, bool &$signedLockRefused = false): RmePrescription
     {
         $this->assertRmeBranch($prescription->branch_id);
         $prescription->loadMissing('clinicVisit');
@@ -336,6 +351,33 @@ class RmePrescriptionService
 
         // Independent review F3 (AIR-RMC-38) — re-decided on the locked row, as in create().
         $this->authority->assertPermits($user, $lockedVisit);
+
+        // DMS-RME-COMPREHENSIVE-CLOSURE-1 — lock after signing. Decided on the row
+        // as committed when this request holds the visit lock: every prescription
+        // write takes that lock first, so a signature saved a moment ago is seen.
+        // Refused before anything is decoded or written; audited after rollback.
+        $prescription->refresh();
+
+        if ($this->authority->signedContentLocked($prescription, $user)) {
+            $signedLockRefused = true;
+
+            throw new AuthorizationException(PrescriptionAuthoringAuthority::SIGNED_CONTENT_LOCK_MESSAGE);
+        }
+
+        // The other direction of the same race: a signature is refused when the
+        // content changed after the signer's page loaded, so it never lands on
+        // content the doctor did not see. Only when the form sent its version
+        // (the page always does); a caller that sends none is not compared.
+        $submittedSignature = $payload['doctor_signature_canvas_data'] ?? null;
+        $seenVersion = $payload['content_version'] ?? null;
+
+        if ($submittedSignature !== null && $submittedSignature !== ''
+            && is_string($seenVersion) && $seenVersion !== ''
+            && ! hash_equals($this->contentVersion($prescription), $seenVersion)) {
+            throw ValidationException::withMessages([
+                'doctor_signature_canvas_data' => self::MESSAGE_CONTENT_CHANGED_BEFORE_SIGNING,
+            ]);
+        }
 
         // DMS-RME-REVISION-PROGRAM-8B / D6 — re-derived on every update from the
         // prescription's OWN doctor and patient (the visit's when the row never
@@ -479,6 +521,46 @@ class RmePrescriptionService
                 'clinic_visit_id' => (int) $visit->getKey(),
                 'visit_status' => (string) $visit->status,
                 'changed_fields' => $changedFields,
+            ],
+            $user,
+        );
+    }
+
+    /**
+     * DMS-RME-COMPREHENSIVE-CLOSURE-1 — a fingerprint of everything a signature
+     * vouches for, as stored: the R/ canvas key (a fresh key on every canvas
+     * write, rule 224) and the audited content fields. The form carries it so the
+     * service can tell whether the content changed after the page was loaded.
+     */
+    public function contentVersion(RmePrescription $prescription): string
+    {
+        $fields = array_merge(['prescription_canvas_path', 'doctor_signature_canvas_path'], self::AUDITED_FIELDS);
+        $raw = [];
+
+        foreach ($fields as $field) {
+            $value = $prescription->getRawOriginal($field);
+            $raw[$field] = $value === null ? null : (string) $value;
+        }
+
+        return sha1((string) json_encode($raw));
+    }
+
+    /**
+     * The rejection row for a refused edit of a signed prescription: ids, the
+     * actor and the reason code only — no value, no patient data, no storage key.
+     * Public so the controller records the HTTP refusal the policy makes
+     * (rejections are audited from controllers, never from policies).
+     */
+    public function recordSignedEditRejection(RmePrescription $prescription, User $user): void
+    {
+        $this->auditLog->log(
+            self::AUDIT_TABLE,
+            (int) $prescription->getKey(),
+            self::AUDIT_SIGNED_EDIT_REJECTED,
+            null,
+            [
+                'clinic_visit_id' => (int) $prescription->clinic_visit_id,
+                'reason' => 'signed_by_named_doctor',
             ],
             $user,
         );

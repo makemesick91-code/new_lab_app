@@ -140,7 +140,9 @@ prescription canvases already do.
 2. Another clinician keeps content authoring (OD-5-1 kept): on create the signature is optional for them and the
    prescription is stored unsigned; a submitted signature is refused before either canvas is decoded or written, and
    on update the stored signature is never replaced by another account. The named doctor signs on create as before,
-   or adds the signature later with an update.
+   or adds the signature later with an update. **Amended by DMS-RME-COMPREHENSIVE-CLOSURE-1 (owner decision
+   2026-11-16, rule 237 §9):** once the named doctor HAS signed, no other account may change the prescription at all,
+   and a signature is refused over content changed since the signer's page loaded.
 3. The form offers the signature canvas only to that doctor (`canSign` from the controller — never decided in Blade);
    anyone else sees the stored signature read-only or "Belum ditandatangani". Hiding it is not the boundary.
 4. An unsigned prescription prints without the signature image, under the doctor's name (unchanged print template).

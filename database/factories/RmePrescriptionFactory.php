@@ -83,4 +83,21 @@ class RmePrescriptionFactory extends Factory
             ]);
         });
     }
+
+    /**
+     * DMS-RME-COMPREHENSIVE-CLOSURE-1 — the R/ canvas stored, the named doctor's
+     * signature not added yet. Use after withStoredCanvases(). A signed
+     * prescription is locked to its own doctor (rule 237 §9), so a test of what
+     * ANOTHER clinician may author starts from this state (OD-5-1 kept).
+     */
+    public function unsigned(): static
+    {
+        return $this->afterCreating(function (RmePrescription $prescription) {
+            if ($prescription->doctor_signature_canvas_path) {
+                ClinicalEvidenceStorage::disk()->delete($prescription->doctor_signature_canvas_path);
+            }
+
+            $prescription->update(['doctor_signature_canvas_path' => null]);
+        });
+    }
 }

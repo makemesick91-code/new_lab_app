@@ -30,6 +30,8 @@ use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\ClinicVisit\Services\ClinicVisitService;
 use App\Modules\Consent\Services\RmeVisitConsentService;
 use App\Modules\Doctor\Models\Doctor;
+use App\Modules\MedicalRecord\Models\MedicalRecord;
+use App\Modules\MedicalRecord\Services\MedicalRecordService;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\Prescription\Models\RmePrescription;
 use App\Modules\Prescription\Services\RmePrescriptionService;
@@ -301,4 +303,110 @@ it('C5-02 keeps a clinical role (Supervisor RME) authoring the same encounter', 
 
     expect(app(RmeVisitConsentService::class)->canAuthorRmeForPatient($this->visitB->patient_id, rmeClinicalAuthor()))
         ->toBeTrue();
+});
+
+/*
+|--------------------------------------------------------------------------
+| DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-5-6) — a new sheet only on the encounter
+|--------------------------------------------------------------------------
+|
+| Owner decision 2026-11-16, "current encounter only": once the patient has an
+| RM book, "Tambah Lembar RM" creates a sheet only on the authorized, consented
+| encounter. Before, the server accepted any other visit of the patient named in
+| the URL (it checked only that SOME consented encounter existed).
+*/
+
+/** A patient with one sheet on an earlier visit, a consented encounter in room A and a second open visit in room A. */
+function cwaBookWithSibling(object $t): array
+{
+    $earlier = cwaVisit($t, $t->roomA, ClinicVisit::STATUS_COMPLETED);
+    $patientId = (int) $earlier->patient_id;
+    MedicalRecord::factory()->create([
+        'clinic_visit_id' => $earlier->id,
+        'patient_id' => $patientId,
+        'branch_id' => $earlier->branch_id,
+    ]);
+
+    $encounter = ClinicVisit::factory()->create([
+        'branch_id' => $t->branch->id, 'patient_id' => $patientId, 'doctor_id' => $t->doctorRecord->id,
+        'clinic_room_id' => $t->roomA->id, 'status' => ClinicVisit::STATUS_IN_PROGRESS,
+    ]);
+    rmeActiveConsentedEncounter($encounter);
+
+    $sibling = ClinicVisit::factory()->create([
+        'branch_id' => $t->branch->id, 'patient_id' => $patientId, 'doctor_id' => $t->doctorRecord->id,
+        'clinic_room_id' => $t->roomA->id, 'status' => ClinicVisit::STATUS_WAITING,
+    ]);
+
+    return [$earlier, $encounter, $sibling];
+}
+
+function cwaSheetCount(int $visitId): int
+{
+    return MedicalRecord::query()->where('clinic_visit_id', $visitId)->count();
+}
+
+it('OD-5-6 refuses a new sheet on another visit of the patient over HTTP, writing nothing', function () {
+    [, $encounter, $sibling] = cwaBookWithSibling($this);
+
+    actingAs($this->doctor)
+        ->post(route('rme.visits.medical-record.store', $sibling))
+        ->assertSessionHasErrors(['clinic_visit_id' => MedicalRecordService::MESSAGE_SHEET_ONLY_ON_ENCOUNTER]);
+
+    expect(cwaSheetCount((int) $sibling->id))->toBe(0)
+        ->and(cwaSheetCount((int) $encounter->id))->toBe(0);
+});
+
+it('OD-5-6 refuses the same at the service, for a caller that skips the route', function () {
+    [, , $sibling] = cwaBookWithSibling($this);
+    actingAs($this->doctor);
+
+    expect(fn () => app(MedicalRecordService::class)->createDraft($sibling, (int) $this->doctor->id))
+        ->toThrow(ValidationException::class, MedicalRecordService::MESSAGE_SHEET_ONLY_ON_ENCOUNTER);
+
+    expect(cwaSheetCount((int) $sibling->id))->toBe(0);
+});
+
+it('OD-5-6 still adds the sheet on the consented encounter itself', function () {
+    [, $encounter] = cwaBookWithSibling($this);
+
+    actingAs($this->doctor)
+        ->post(route('rme.visits.medical-record.store', $encounter))
+        ->assertSessionHasNoErrors()
+        ->assertRedirect();
+
+    expect(cwaSheetCount((int) $encounter->id))->toBe(1);
+});
+
+it('OD-5-6 keeps the first sheet of a book-less patient on the canonical visit, unchanged', function () {
+    $earlier = cwaVisit($this, $this->roomA, ClinicVisit::STATUS_COMPLETED);
+    $encounter = ClinicVisit::factory()->create([
+        'branch_id' => $this->branch->id, 'patient_id' => $earlier->patient_id, 'doctor_id' => $this->doctorRecord->id,
+        'clinic_room_id' => $this->roomA->id, 'status' => ClinicVisit::STATUS_IN_PROGRESS,
+        'visit_date' => clinicalToday()->toDateString(),
+    ]);
+    $earlier->forceFill(['visit_date' => clinicalToday()->subDays(30)->toDateString()])->save();
+    rmeActiveConsentedEncounter($encounter);
+
+    actingAs($this->doctor)
+        ->post(route('rme.visits.medical-record.store', $encounter))
+        ->assertSessionHasNoErrors();
+
+    // Sprint 64.0.2: the book starts on the canonical (earliest) visit.
+    expect(MedicalRecord::query()->where('patient_id', $earlier->patient_id)->count())->toBe(1)
+        ->and(cwaSheetCount((int) $earlier->id))->toBe(1);
+});
+
+it('OD-5-6 offers "Tambah Lembar RM" only for the current encounter, never for another visit', function () {
+    [$earlier, $encounter, $sibling] = cwaBookWithSibling($this);
+
+    actingAs($this->doctor)
+        ->get(route('rme.visits.medical-record.show', [$earlier, 'source_visit_id' => $sibling->id]))
+        ->assertOk()
+        ->assertDontSee('Tambah Lembar RM (Kunjungan #'.$sibling->visit_number.')', false);
+
+    actingAs($this->doctor)
+        ->get(route('rme.visits.medical-record.show', [$earlier, 'source_visit_id' => $encounter->id]))
+        ->assertOk()
+        ->assertSee('Tambah Lembar RM (Kunjungan #'.$encounter->visit_number.')', false);
 });

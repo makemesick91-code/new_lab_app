@@ -135,7 +135,9 @@ it('can store prescription with prescription and signature canvases', function (
 it('can update an existing prescription', function () {
     $manager = rmeClinicalAuthor(['manage_clinic_visits']);
     $visit = prescriptionVisit();
-    $prescription = RmePrescription::factory()->withStoredCanvases()->create([
+    // Unsigned: a signed prescription is changed only by its own doctor
+    // (DMS-RME-COMPREHENSIVE-CLOSURE-1, rule 237 §9); this test is about content.
+    $prescription = RmePrescription::factory()->withStoredCanvases()->unsigned()->create([
         'clinic_visit_id' => $visit->id,
         'branch_id' => $visit->branch_id,
         'patient_id' => $visit->patient_id,

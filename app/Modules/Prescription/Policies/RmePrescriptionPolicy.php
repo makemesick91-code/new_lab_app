@@ -87,7 +87,21 @@ class RmePrescriptionPolicy
             return Response::deny(PrescriptionAuthoringAuthority::LOCKED_MESSAGE);
         }
 
-        return $this->view($user, $prescription);
+        // Scope first: an account outside the doctor-patient / room scope is
+        // refused for THAT reason and learns nothing about the signature.
+        $view = $this->view($user, $prescription);
+
+        if ($view === false || ($view instanceof Response && $view->denied())) {
+            return $view;
+        }
+
+        // DMS-RME-COMPREHENSIVE-CLOSURE-1 — signed: only its own doctor changes it.
+        // The service asks again on the row it reads under the visit lock.
+        if (app(PrescriptionAuthoringAuthority::class)->signedContentLocked($prescription, $user)) {
+            return Response::deny(PrescriptionAuthoringAuthority::SIGNED_CONTENT_LOCK_MESSAGE);
+        }
+
+        return $view;
     }
 
     /**

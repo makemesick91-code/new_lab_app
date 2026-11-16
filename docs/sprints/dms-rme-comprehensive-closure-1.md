@@ -10,7 +10,7 @@ Full Suite deferred under the global temporary policy (CG-18): **not run, not pa
 ## 0. Status
 
 ```text
-PROGRAM_STATUS            = IN PROGRESS — implementation PR1 and PR2 written and tested locally (§5–§6)
+PROGRAM_STATUS            = IN PROGRESS — PR1 #646 MERGED (daf2ac15, tree = tested head tree); PR2 rebased on it (§5–§6)
 RELEASE                   = NOT YET (needs merge, post-merge CI, owner-signed approval, deploy, verification)
 GO tag                    = NOT CREATED (dms-rme-comprehensive-closure-1-go, declared in .sprint/current.yml)
 FULL_SUITE_STATUS         = SKIPPED_BY_GLOBAL_TEMPORARY_POLICY (execution count 0)
@@ -53,8 +53,14 @@ The brief itself orders the remediation of every confirmed RME pending item that
 ("KERJAKAN SELURUH PENDING YANG TERKONFIRMASI DALAM CAKUPAN PROGRAM RME"). Sprint 0 had recommended FIX, with
 acceptance criteria, for OD-7-6, OD-5-4 and OD-5-10(a), tightening-only changes that follow existing canonical rules
 (the separate archive scopes of FIX-04b, rule 200's deactivation semantics, billing's "a cancelled parent is a label,
-not a follow-up"). They are implemented under that brief; the owner is asked to confirm them explicitly together with
-the merge approval of each PR, and the answer is recorded in §9.
+not a follow-up"). They were implemented under that brief, and the owner then confirmed them explicitly (§2a).
+
+### 2a. Owner confirmations and merge approvals
+
+| When (2026-11-16) | Question | Owner answer |
+|---|---|---|
+| after PR #646 CI | Squash-merge #646 pinned to the tested head `37828b4f`? | **Yes, squash-merge #646** |
+| same question set | Confirm OD-7-6, OD-5-4 and OD-5-10(a), implemented under the brief | **Confirm all three** |
 
 ## 3. Historical items in the brief, verified
 
@@ -181,7 +187,10 @@ after the change. Keep-working controls pass both ways.
 | Handwriting bounds (HW-01..08) | 6 failed (PR2 controller version, and again after the move to `HandwritingPayloadGuard` in PR1) | 8 tests; the 15 suites that post handwriting + the no-store suite (21 routes) 549 tests, 2,248 assertions (PR1) |
 | Prescription lock (I7-01..07, I5-04b) | 6 failed | prescription + write-authority + read-scope suites 172 tests, 648 assertions |
 | Review fixes (I7-08 version, I7-11 scope order, I7-09/10, Buat Kontrol, `DoctorPatientScopeTest`) | I7-08, I7-11 failed with each fix removed | 49 tests, 152 assertions (PR2) |
-| Governance (SQLite): `tests/Feature/Cicd`, `DevflowAiInstructionSystemTest`, `ProductionShellCommandGuardTest`, queue, ENT-5 | — | 467 tests, 5,164 assertions; 1 skipped (Poppler, pre-existing); the one failure (domain rule size budget) fixed and re-run |
+| Governance (SQLite): `tests/Feature/Cicd`, `DevflowAiInstructionSystemTest`, `ProductionShellCommandGuardTest`, queue, ENT-5 | — | 467 tests, 5,164 assertions; 1 skipped (Poppler, pre-existing); the one failure (domain rule size budget) fixed and re-run; after the review round: 463 tests (Cicd, DevflowAi, shell guard, queue, storage) 0 failed, 1 skipped |
+| PR1 broad regression, PostgreSQL 16: every critical-gate token touching RME, legacy, doctor, patient, queue, oversight, odontogram, consent, prescription, cashier, payment, receivable | — | 6,994 tests, 30,461 assertions, 128 failed + 18 errors, 24 skipped (45 min). **The same 146 tests fail on the untouched base `a7b0bc99`** (16 suites re-run in a detached baseline worktree: 193 tests, 146 failed; set difference 0 in both directions): multi-connection concurrency suites whose competing child process cannot see the parent's data under this workstation's schema-isolated database, and Poppler-dependent legacy batch suites. Pre-existing and environmental (CG-21); CI runs them with its own database and Poppler |
+| PR1 report / receipt / cashier suites after the no-store extension | — | 504 tests, 1,960 assertions; 11 failed, all in the same concurrency suites and all failing identically on the base |
+| PR2 stacked on PR1, PostgreSQL 16: prescription, doctor-patient scope, write authority, read scope, registration, medical record, workspace, consent suites | — | 733 tests, 2,311 assertions, 0 failed |
 
 ## 7. DEVFLOW gates (PR1, local)
 
@@ -213,7 +222,15 @@ confirmed every intended behaviour A1–A6 and B1–B4 in code.
 
 ## 9. Release and production
 
-Pending. Release flow: PR → exact-head CI → owner merge approval → post-merge push CI on the exact merge SHA → owner's
+### 9.1 PR1 — #646
+
+| Item | Evidence |
+|---|---|
+| Tested head | `37828b4f67bb39256eb4a38977f551ec46f2bc83` |
+| PR CI | run `43850156576` (pull_request): all required checks success; NSF-R011 Critical Test Gate on PostgreSQL **10,455 passed, 51,892 assertions, 0 failed** (the three new suites and every touched suite in the log); Full Suite Gate SKIPPED (CG-18, not passed) |
+| Merge | squash, `--match-head-commit 37828b4f`, owner approval §2a → `daf2ac15b0a0809b604126a69b7ea1de4797509d`; merge tree `e6553990` = tested head tree |
+
+Pending for the release: PR2, post-merge CI on the release SHA, owner approval and signature, deploy, verification. Release flow: PR → exact-head CI → owner merge approval → post-merge push CI on the exact merge SHA → owner's
 written approval of the full release SHA → owner signs locally (`scripts/release-approval-sign.sh`) →
 `submit-approval` → `check-approval` GO → `start` on the Biznet host through the deploy operator → `follow` →
 `verify <deploy-id>` (`DEPLOY RUNNER OK`) → read-only production verification → GO tag. Not inside 02:25–02:40 WITA.
