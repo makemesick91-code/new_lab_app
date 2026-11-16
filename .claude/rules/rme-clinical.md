@@ -140,10 +140,9 @@ editable) → Persetujuan Tindakan Medis (RME + finish unlocked) → RME + Odont
   (`MedicalRecordService::hasRequiredHandwriting()`); a finalized record stays editable inside an authorized,
   consented encounter. Source: archive Sprint 20 closure; rule 109 §2b.
 - **AIR-RMC-23** Resolve the patient-centric book with `PatientRmWorkspaceResolver`: one sheet per visit
-  (`UNIQUE(clinic_visit_id)`), canonical anchor = earliest non-cancelled RME visit with a medical record, any other
-  visit redirects to the canonical URL with an IDOR-validated `?source_visit_id=`, and the handwriting book lives on
-  the canonical record. Per-visit actions use the active sheet's visit (`$activeSheet->clinicVisit`). Source: archive
-  Sprint 64.0; rule 100 §8.
+  (`UNIQUE(clinic_visit_id)`), canonical anchor = earliest non-cancelled RME visit, any other visit redirects to the
+  canonical URL with an IDOR-validated `?source_visit_id=`; the handwriting book is the earliest self-anchored sheet
+  (`bookOn()`, rule 237 §16). Per-visit actions use the active sheet's visit. Source: archive Sprint 64.0; rule 100 §8.
 - **AIR-RMC-24** Keep Medical Record page order Informasi Kunjungan → RME Tulisan Tangan → Dokumen RME Pasien, with
   exactly one Finalisasi and one Cetak RME, both in its header. Cetak RME is not on Detail Kunjungan (front office
   uses the Rekam Medis link); moving a button never adds a print endpoint. Source: rule 100 §8–9.

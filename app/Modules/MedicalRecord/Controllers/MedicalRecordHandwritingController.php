@@ -49,8 +49,13 @@ class MedicalRecordHandwritingController extends Controller
         // Sprint 64.0.2 — new handwriting pages always persist on the canonical
         // medical record. Existing legacy pages on later visits may still be
         // edited in place when the doctor re-saves that virtual page.
-        $canonicalVisit = $workspace->resolveCanonicalWorkspaceVisit($clinicVisit->patient_id) ?? $clinicVisit;
+        // DMS-RME-COMPREHENSIVE-CLOSURE-1 (R7-1) — the book is written on its own
+        // visit, which is no longer the canonical one once that visit was
+        // cancelled or a merge put an earlier visit in front of it.
         $canonicalRecord = $workspace->canonicalMedicalRecord($clinicVisit->patient_id);
+        $canonicalVisit = $canonicalRecord?->clinicVisit
+            ?? $workspace->resolveCanonicalWorkspaceVisit($clinicVisit->patient_id)
+            ?? $clinicVisit;
 
         $isNewCanonicalPage = $canonicalRecord === null
             || $medicalRecord->id === $canonicalRecord->id
@@ -118,10 +123,14 @@ class MedicalRecordHandwritingController extends Controller
                     $clinicVisit->id,
                 );
 
-                // A refusal here rolls the draft back with the rest of the save.
-                $this->assertWritableTarget($draft, $canonicalVisit, $consents);
+                // R7-1 — the service decides the book under the visit lock; it may
+                // be an existing one, so the page goes onto the book's own visit.
+                $storageVisit = $draft->clinicVisit ?? $canonicalVisit;
 
-                return [$draft, $canonicalVisit];
+                // A refusal here rolls the draft back with the rest of the save.
+                $this->assertWritableTarget($draft, $storageVisit, $consents);
+
+                return [$draft, $storageVisit];
             },
             $pageNumber,
             $decoded,
