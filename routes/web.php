@@ -1385,11 +1385,10 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
         Route::get('consents/{consent}/countersign', [RmeVisitConsentController::class, 'countersignForm'])
             ->middleware('permission:countersign_rme_consents')
             ->middleware('cache.headers:private;no_store;max_age=0')
-            ->where('consent', DatabaseRouteKey::PATTERN)
             ->name('consents.countersign.create');
+        // {consent} is constrained globally by DatabaseRouteKey (AIR-RMC-37).
         Route::post('consents/{consent}/countersign', [RmeVisitConsentController::class, 'countersign'])
             ->middleware('permission:countersign_rme_consents')
-            ->where('consent', DatabaseRouteKey::PATTERN)
             ->name('consents.countersign');
         Route::get('consents/{consent}/signature/{kind}', [RmeVisitConsentController::class, 'signature'])
             ->middleware('permission:view_rme_consents|manage_rme_consents')

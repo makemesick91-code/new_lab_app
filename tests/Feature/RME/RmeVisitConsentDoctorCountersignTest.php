@@ -48,6 +48,7 @@ use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Database\Events\TransactionBeginning;
 use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Schema;
@@ -358,7 +359,9 @@ it('CDS-06 refuses a missing, blank, oversized, over-declared or non-PNG canvas 
     $this->actingAs($this->doctor)
         ->from(route('rme.consents.countersign.create', $consent))
         ->post(route('rme.consents.countersign', $consent), ['doctor_signature' => $canvas])
-        ->assertSessionHasErrors('doctor_signature');
+        ->assertSessionHasErrors('doctor_signature')
+        // Rule 237 §3 — a refused canvas is never flashed into the session store.
+        ->assertSessionMissing('_old_input.doctor_signature');
 
     expect(RmeVisitConsentDoctorSignature::query()->count())->toBe(0)
         ->and(rcdcCountersignObjects())->toBe([]);
@@ -376,7 +379,7 @@ it('CDS-07 accepts a real 700x220 consent canvas (the bound sits above the drawn
 | Authorization matrix — service (CG-06 third layer) and HTTP
 */
 
-it('CDS-08 refuses every account other than the treating doctor in the service, writing nothing', function (string $who) {
+it('CDS-08 refuses every account other than the treating doctor in the service, writing nothing', function (string $who, string $guard) {
     $consent = rcdcPatientSigned(rcdcVisit());
 
     $actor = match ($who) {
@@ -388,12 +391,25 @@ it('CDS-08 refuses every account other than the treating doctor in the service, 
         default => rcdcRoleUser($who),
     };
 
-    expect(fn () => rcdcCountersign($consent, $actor))->toThrow(AuthorizationException::class);
+    // The message names the guard that refused, so each case proves which one fired.
+    expect(fn () => rcdcCountersign($consent, $actor))
+        ->toThrow(AuthorizationException::class, constant(RmeVisitConsentService::class.'::'.$guard));
 
     expect(RmeVisitConsentDoctorSignature::query()->count())->toBe(0)
         ->and(rcdcCountersignObjects())->toBe([])
         ->and(AuditLog::query()->where('action', 'RME_CONSENT_DOCTOR_SIGNED')->count())->toBe(0);
-})->with(['other doctor', 'Front Office', 'Kasir', 'Admin Klinik', 'Perawat', 'Supervisor RME', 'Super Admin', 'Super Admin linked to another doctor']);
+})->with([
+    'other doctor' => ['other doctor', 'MESSAGE_OUT_OF_SCOPE'],
+    'Front Office' => ['Front Office', 'MESSAGE_COUNTERSIGN_PERMISSION'],
+    'Kasir' => ['Kasir', 'MESSAGE_COUNTERSIGN_PERMISSION'],
+    'Admin Klinik' => ['Admin Klinik', 'MESSAGE_COUNTERSIGN_PERMISSION'],
+    'Perawat' => ['Perawat', 'MESSAGE_COUNTERSIGN_PERMISSION'],
+    'Supervisor RME' => ['Supervisor RME', 'MESSAGE_COUNTERSIGN_PERMISSION'],
+    // Gate::before lets Super Admin through every permission and policy; the
+    // identity guard is what refuses it.
+    'Super Admin' => ['Super Admin', 'MESSAGE_COUNTERSIGN_NOT_LINKED'],
+    'Super Admin linked to another doctor' => ['Super Admin linked to another doctor', 'MESSAGE_COUNTERSIGN_NOT_VISIT_DOCTOR'],
+]);
 
 it('CDS-09 answers 403 over HTTP to every account other than the treating doctor', function (string $who) {
     $consent = rcdcPatientSigned(rcdcVisit());
@@ -453,17 +469,93 @@ it('CDS-12 binds the identity to the locked visit AND the consent: a reassigned 
     $secondRecord = Doctor::query()->where('user_id', $second->id)->sole();
     DB::table('trx_clinic_visits')->where('id', $visit->id)->update(['doctor_id' => $secondRecord->id, 'clinic_room_id' => $room2->id]);
 
-    expect(fn () => rcdcCountersign($consent->fresh(), $second))->toThrow(AuthorizationException::class)
+    // The new treating doctor is the visit's doctor but not the consent's.
+    expect(fn () => rcdcCountersign($consent->fresh(), $second))
+        ->toThrow(AuthorizationException::class, RmeVisitConsentService::MESSAGE_COUNTERSIGN_NOT_CONSENT_DOCTOR)
+        // The consent's doctor no longer works this room (room scope).
         ->and(fn () => rcdcCountersign($consent->fresh(), $this->doctor))->toThrow(AuthorizationException::class);
 
     expect(RmeVisitConsentDoctorSignature::query()->count())->toBe(0);
 });
 
-it('CDS-13 refuses an inactive linked doctor', function () {
+it('CDS-12b refuses the consent\'s doctor once ONLY the visit\'s doctor changed (the visit-doctor identity guard)', function () {
+    $visit = rcdcVisit();
+    $consent = rcdcPatientSigned($visit);
+
+    // The consent's doctor keeps working this room and keeps a treating
+    // relationship with the patient (an earlier visit), so every other guard
+    // passes; only the visit now names another doctor.
+    ClinicVisit::factory()->create([
+        'branch_id' => $this->branch->id,
+        'patient_id' => $visit->patient_id,
+        'doctor_id' => $this->doctorRecord->id,
+        'clinic_room_id' => $this->room->id,
+        'status' => ClinicVisit::STATUS_COMPLETED,
+    ]);
+    $other = Doctor::factory()->withAllowedBranches([$this->branch])->create(['name' => 'drg. Pengganti']);
+    DB::table('trx_clinic_visits')->where('id', $visit->id)->update(['doctor_id' => $other->id]);
+
+    expect(fn () => rcdcCountersign($consent->fresh(), $this->doctor))
+        ->toThrow(AuthorizationException::class, RmeVisitConsentService::MESSAGE_COUNTERSIGN_NOT_VISIT_DOCTOR);
+
+    expect(RmeVisitConsentDoctorSignature::query()->count())->toBe(0)
+        ->and(rcdcCountersignObjects())->toBe([]);
+});
+
+it('CDS-13 refuses an inactive linked doctor (the is_active identity guard)', function () {
+    // A Doctor-role account whose doctor record is deactivated is already
+    // refused by the branch/patient scope guard, before identity is asked.
     $consent = rcdcPatientSigned(rcdcVisit());
     $this->doctorRecord->forceFill(['is_active' => false])->save();
 
-    expect(fn () => rcdcCountersign($consent, $this->doctor->fresh()))->toThrow(AuthorizationException::class);
+    expect(fn () => rcdcCountersign($consent, $this->doctor->fresh()))
+        ->toThrow(AuthorizationException::class, RmeVisitConsentService::MESSAGE_OUT_OF_SCOPE);
+
+    // Where every earlier guard passes — a Super Admin linked to the visit's own,
+    // now inactive, doctor — the is_active guard is the one that refuses.
+    $inactive = Doctor::factory()->withAllowedBranches([$this->branch])->create(['name' => 'drg. Nonaktif']);
+    $admin = userInRole('Super Admin');
+    $inactive->forceFill(['user_id' => $admin->id])->save();
+    $visit = rcdcVisit(doctor: $inactive);
+    $second = rcdcPatientSigned($visit);
+    $inactive->forceFill(['is_active' => false])->save();
+
+    expect(fn () => rcdcCountersign($second, $admin->fresh()))
+        ->toThrow(AuthorizationException::class, RmeVisitConsentService::MESSAGE_COUNTERSIGN_DOCTOR_INACTIVE);
+
+    expect(RmeVisitConsentDoctorSignature::query()->count())->toBe(0);
+});
+
+it('CDS-13b refuses a non-treating holder in the POLICY even where a state refusal would come later (403, never the form)', function () {
+    $visit = rcdcVisit();
+    $stale = rcdcPatientSigned($visit);
+    // A second, later non-voided consent makes the first one no longer the
+    // visit's live consent (a pre-OD-5-8 data shape): a state refusal.
+    RmeVisitConsent::factory()->create([
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $visit->branch_id,
+        'patient_id' => $visit->patient_id,
+        'doctor_id' => $visit->doctor_id,
+        // Later than the first by the same clock (validForVisit orders by signed_at).
+        'signed_at' => $stale->signed_at->addMinute(),
+    ]);
+
+    expect(app(RmeVisitConsentService::class)->validConsentFor($visit)?->is($stale))->toBeFalse();
+
+    // A clinical account outside doctor scope, given the permission at runtime.
+    $holder = userInRole('Supervisor RME');
+    $holder->givePermissionTo('countersign_rme_consents');
+    $holder = $holder->fresh();
+
+    $this->actingAs($holder)->get(route('rme.consents.countersign.create', $stale))->assertForbidden();
+    $this->actingAs($holder)
+        ->post(route('rme.consents.countersign', $stale), ['doctor_signature' => validPodSignatureData()])
+        ->assertForbidden();
+
+    expect(fn () => rcdcCountersign($stale->fresh(), $holder))
+        ->toThrow(AuthorizationException::class, RmeVisitConsentService::MESSAGE_COUNTERSIGN_NOT_LINKED);
+
+    expect(RmeVisitConsentDoctorSignature::query()->count())->toBe(0);
 });
 
 it('CDS-14 refuses the account that captured the patient signature (maker ≠ checker)', function () {
@@ -679,9 +771,11 @@ it('CDS-23 prints the doctor countersignature with name and time', function () {
         ->and($html)->not->toContain('src=""');
 });
 
-it('CDS-24 renders an old consent without a countersignature honestly, never an empty image', function () {
-    $consent = rcdcPatientSigned(rcdcVisit());
+it('CDS-24 says "Belum ditandatangani dokter" only while a countersignature is still possible', function () {
+    $visit = rcdcVisit();
+    $consent = rcdcPatientSigned($visit);
 
+    // In progress, valid, not countersigned: the doctor may still sign.
     foreach (['rme.consents.print', 'rme.consents.show'] as $route) {
         $html = $this->actingAs($this->operator)->get(route($route, $consent))->assertOk()->getContent();
 
@@ -689,7 +783,59 @@ it('CDS-24 renders an old consent without a countersignature honestly, never an 
             ->and($html)->not->toContain('data-testid="consent-doctor-countersignature"')
             ->and($html)->not->toContain('src=""');
     }
+
+    // Once the examination is over the consent is history: no placeholder, ever.
+    foreach ([ClinicVisit::STATUS_CASHIER_PENDING, ClinicVisit::STATUS_COMPLETED, ClinicVisit::STATUS_CANCELLED] as $status) {
+        DB::table('trx_clinic_visits')->where('id', $visit->id)->update(['status' => $status]);
+
+        foreach (['rme.consents.print', 'rme.consents.show'] as $route) {
+            $html = $this->actingAs($this->operator)->get(route($route, $consent))->assertOk()->getContent();
+
+            expect($html)->not->toContain('Belum ditandatangani dokter', "{$status} {$route}")
+                ->and($html)->not->toContain('data-testid="consent-doctor-countersign-state"', "{$status} {$route}")
+                ->and($html)->not->toContain('src=""');
+        }
+    }
+
+    // A voided consent is history too, even while the visit runs.
+    DB::table('trx_clinic_visits')->where('id', $visit->id)->update(['status' => ClinicVisit::STATUS_IN_PROGRESS]);
+    app(RmeVisitConsentService::class)->void($consent->fresh(), $this->supervisor, 'Salah pemberi persetujuan.');
+
+    $html = $this->actingAs($this->operator)->get(route('rme.consents.print', $consent))->assertOk()->getContent();
+    expect($html)->not->toContain('Belum ditandatangani dokter');
 });
+
+it('CDS-24b renders a historical consent byte for byte as the document did before rule 241', function (bool $legacyDrawing) {
+    $visit = rcdcVisit();
+    $consent = rcdcPatientSigned($visit, overrides: $legacyDrawing ? ['doctor_signature' => validPodSignatureData()] : []);
+    DB::table('trx_clinic_visits')->where('id', $visit->id)->update(['status' => ClinicVisit::STATUS_COMPLETED]);
+    $consent = $consent->fresh();
+    $consent->loadMissing(['clinicVisit.branch', 'patient', 'doctor', 'signedBy', 'voidedBy']);
+
+    $service = app(RmeVisitConsentService::class);
+    $before = [
+        'consent' => $consent,
+        'branch' => $consent->clinicVisit?->branch,
+        'relationships' => (array) config('rme_consent.relationships', []),
+        'genderLabels' => (array) config('rme_consent.gender_labels', []),
+        'consenterSignature' => $service->signatureDataUri($consent->consenter_signature_path),
+        'doctorSignature' => $service->signatureDataUri($consent->doctor_signature_path),
+    ];
+
+    // The partial exactly as it was at 82cb6e13, before rule 241.
+    $old = Blade::render((string) file_get_contents(base_path('tests/Fixtures/rme-consent-document-pre-rule-241.blade.php.txt')), $before);
+
+    // What the controller hands the partial now, for the same consent.
+    $html = $this->actingAs($this->operator)->get(route('rme.consents.print', $consent))->assertOk()->getContent();
+    $start = strpos($html, '<div class="consent-document">');
+    $end = strrpos($html, '</div>');
+    $current = substr($html, $start, $end - $start + strlen('</div>'));
+    $oldStart = strpos($old, '<div class="consent-document">');
+    $oldEnd = strrpos($old, '</div>');
+
+    expect($start)->not->toBeFalse()
+        ->and($current)->toBe(substr($old, $oldStart, $oldEnd - $oldStart + strlen('</div>')));
+})->with(['without the legacy drawing' => [false], 'with the legacy drawing' => [true]]);
 
 it('CDS-25 keeps the legacy optional doctor drawing as display history that never counts as the countersignature', function () {
     $consent = rcdcPatientSigned(rcdcVisit(), overrides: ['doctor_signature' => validPodSignatureData()]);
@@ -699,6 +845,27 @@ it('CDS-25 keeps the legacy optional doctor drawing as display history that neve
     expect($html)->toContain('alt="Tanda tangan dokter"')
         ->and($consent->fresh()->isDoctorCountersigned())->toBeFalse()
         ->and(app(RmeVisitConsentService::class)->canCountersign($consent->fresh(), $this->doctor))->toBeTrue();
+
+    // After the countersignature both stay visible, labelled apart.
+    rcdcCountersign($consent);
+
+    $after = $this->actingAs($this->operator)->get(route('rme.consents.print', $consent))->assertOk()->getContent();
+
+    expect($after)->toContain('alt="Tanda tangan dokter"')
+        ->and($after)->toContain('data-testid="consent-doctor-countersignature"')
+        ->and($after)->toContain('Tanda tangan dokter (PTM)')
+        ->and($after)->not->toContain('Belum ditandatangani dokter');
+});
+
+it('CDS-25b adds no per-route constraint to the governed {consent} key (AIR-RMC-37)', function () {
+    $routes = (string) file_get_contents(base_path('routes/web.php'));
+    preg_match_all("/Route::(?:get|post)\\('consents\\/\\{consent\\}\\/countersign'.*?->name\\('consents\\.countersign(?:\\.create)?'\\);/s", $routes, $blocks);
+
+    expect($blocks[0])->toHaveCount(2);
+
+    foreach ($blocks[0] as $block) {
+        expect($block)->not->toContain("->where('consent'");
+    }
 });
 
 it('CDS-26 says so honestly when a countersignature object is missing', function () {

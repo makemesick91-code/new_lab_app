@@ -25,6 +25,19 @@
 
         return ($age !== '' ? $age.' tahun' : '—').' / '.$genderLabel($gender);
     };
+
+    // Rule 241 §1.6 — the treating doctor's countersignature (its own record).
+    // The controller decides both values; the template only renders them:
+    //  - $doctorCountersignature: the record, or null;
+    //  - $doctorCountersignaturePending: true only while a countersignature is
+    //    still possible (live consent, visit in progress, none yet).
+    // A historical consent (neither) renders byte for byte as before rule 241,
+    // which is why the additions below use column-0 directives and no Blade
+    // comments: they emit nothing when they do not apply. The legacy optional
+    // doctor drawing ($doctorSignature) is display history and always renders
+    // as it did, also beside a countersignature.
+    $doctorCountersignature = $doctorCountersignature ?? null;
+    $doctorCountersignaturePending = (bool) ($doctorCountersignaturePending ?? false);
 @endphp
 
 <div class="consent-document">
@@ -146,24 +159,21 @@
         </tr>
         <tr>
             <td class="consent-signature-cell consent-signature-box">
-                {{-- Rule 241 §1 — the treating doctor's countersignature (its own
-                     insert-only record). Without one, the legacy optional drawing
-                     made on the capture form renders exactly as before (display
-                     history, never the countersignature step); with neither, the
-                     box says so instead of showing an empty image. --}}
-                @if ($doctorCountersignature ?? null)
-                    <div data-testid="consent-doctor-countersignature">
-                        @if (! empty($doctorCountersignatureImage))
-                            <img src="{{ $doctorCountersignatureImage }}" alt="Tanda tangan dokter (akun dokter)" class="consent-signature-image">
-                        @else
-                            <span class="consent-signature-note">Gambar tanda tangan dokter tidak tersedia.</span>
-                        @endif
-                    </div>
-                @elseif (! empty($doctorSignature))
+                @if (! empty($doctorSignature))
                     <img src="{{ $doctorSignature }}" alt="Tanda tangan dokter" class="consent-signature-image">
-                @else
-                    <span class="consent-signature-note">Belum ditandatangani dokter</span>
                 @endif
+@if ($doctorCountersignature)
+                <div class="consent-countersignature" data-testid="consent-doctor-countersignature">
+                    <div class="consent-signature-meta">Tanda tangan dokter (PTM)</div>
+@if (! empty($doctorCountersignatureImage))
+                    <img src="{{ $doctorCountersignatureImage }}" alt="Tanda tangan dokter (PTM)" class="consent-signature-image">
+@else
+                    <span class="consent-signature-note">Gambar tanda tangan dokter tidak tersedia.</span>
+@endif
+                </div>
+@elseif ($doctorCountersignaturePending)
+                <span class="consent-signature-note">Belum ditandatangani dokter</span>
+@endif
             </td>
             <td class="consent-signature-cell consent-signature-box">
                 @if (! empty($consenterSignature))
@@ -174,11 +184,12 @@
         <tr>
             <td class="consent-signature-cell consent-signature-name">
                 {{ $consent->doctor_name_snapshot ?: '—' }}
-                @if ($doctorCountersignature ?? null)
-                    <div class="consent-signature-meta">
-                        Ditandatangani dokter {{ $doctorCountersignature->signed_at?->format('d/m/Y H:i') }} WITA
-                    </div>
-                @endif
+@if ($doctorCountersignature)
+                <div class="consent-signature-meta">
+                    Tanda tangan dokter (PTM): {{ $doctorCountersignature->doctor?->name ?? ($consent->doctor_name_snapshot ?: '—') }},
+                    {{ $doctorCountersignature->signed_at?->format('d/m/Y H:i') }} WITA
+                </div>
+@endif
             </td>
             <td class="consent-signature-cell consent-signature-name">
                 {{ $consent->consenter_name ?: '—' }}

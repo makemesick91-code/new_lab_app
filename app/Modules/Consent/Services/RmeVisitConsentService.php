@@ -78,7 +78,16 @@ class RmeVisitConsentService
 
     public const MESSAGE_COUNTERSIGN_PERMISSION = 'Akun ini tidak berwenang menandatangani persetujuan tindakan medis sebagai dokter.';
 
-    public const MESSAGE_COUNTERSIGN_DOCTOR = 'Hanya dokter yang menangani kunjungan ini, dan yang tercantum pada persetujuannya, yang dapat menandatangani persetujuan tindakan medis ini.';
+    // One message per guard, so a refusal names the guard that fired.
+    public const MESSAGE_COUNTERSIGN_ENCOUNTER = 'Akun ini tidak dapat bekerja pada pemeriksaan kunjungan ini, sehingga tidak dapat menandatangani persetujuannya sebagai dokter.';
+
+    public const MESSAGE_COUNTERSIGN_NOT_LINKED = 'Akun ini tidak terhubung ke data dokter, sehingga tidak dapat menandatangani persetujuan tindakan medis sebagai dokter.';
+
+    public const MESSAGE_COUNTERSIGN_DOCTOR_INACTIVE = 'Data dokter yang terhubung ke akun ini tidak aktif.';
+
+    public const MESSAGE_COUNTERSIGN_NOT_VISIT_DOCTOR = 'Hanya dokter yang menangani kunjungan ini yang dapat menandatangani persetujuan tindakan medisnya.';
+
+    public const MESSAGE_COUNTERSIGN_NOT_CONSENT_DOCTOR = 'Persetujuan ini mencantumkan dokter lain. Bila dokter yang menangani berganti, persetujuan dibatalkan (void) dan ditandatangani ulang.';
 
     public const MESSAGE_COUNTERSIGN_WINDOW = 'Persetujuan tindakan medis hanya dapat ditandatangani dokter selama pemeriksaan kunjungan ini berlangsung.';
 
@@ -922,6 +931,11 @@ class RmeVisitConsentService
                 $visit = $this->visits->lockForStatusDecision((int) $consent->clinic_visit_id);
                 $consent->refresh();
 
+                // INFO-5 — the doctor identity is read again under the lock, not
+                // from the request's memo, so a deactivation or an unlink committed
+                // after the policy ran is seen here.
+                $this->doctorIdentity->forget((int) $actor->getKey());
+
                 $doctorId = $this->assertCountersignableUnderLock($consent, $visit, $actor);
 
                 $directory = trim((string) config('rme_consent.signature_directory', 'rme-consents'), '/');
@@ -1051,8 +1065,15 @@ class RmeVisitConsentService
     /**
      * Every countersign condition, decided on the rows given (the LOCKED visit
      * and the consent re-read under it, in countersign()). Returns the doctor id
-     * that signs. Authorization refusals are AuthorizationException (403); state
-     * refusals are ValidationException on `consent`.
+     * that signs.
+     *
+     * Order (review LOW-2): every AUTHORIZATION guard — permission, scope,
+     * encounter authority, doctor identity — runs before any STATE guard, and
+     * refuses with an AuthorizationException (403) naming its own message. Only
+     * an account that passed all of them can meet a state refusal (window, live
+     * consent, maker ≠ checker, already countersigned: ValidationException on
+     * `consent`), so the policy may treat a state refusal as "authorized, but
+     * not now".
      *
      * @throws AuthorizationException|ValidationException
      */
@@ -1060,19 +1081,49 @@ class RmeVisitConsentService
     {
         // CG-06 — the dedicated permission, re-asserted here (the route and the
         // policy ask first). Gate::before answers it for Super Admin; the
-        // identity condition below is what binds Super Admin.
+        // identity guards below are what bind Super Admin.
         if (! $actor->can(self::COUNTERSIGN_PERMISSION)) {
             throw new AuthorizationException(self::MESSAGE_COUNTERSIGN_PERMISSION);
         }
 
-        if ($visit === null) {
-            throw ValidationException::withMessages([
-                'consent' => 'Kunjungan tidak ditemukan.',
-            ]);
+        // A consent without its visit has no encounter anyone may work on.
+        if ($visit === null || (int) $consent->clinic_visit_id !== (int) $visit->getKey()) {
+            throw new AuthorizationException(self::MESSAGE_COUNTERSIGN_ENCOUNTER);
         }
 
         // Branch and patient scope, as sign() and void() re-assert them.
         $this->assertOperatorWithinScope($actor, $visit);
+
+        // The encounter authority every clinical writer uses: the front office
+        // never, a clinical role, branch, doctor room and patient scope.
+        if (! $this->actorMayWorkOnEncounter($actor, $visit)) {
+            throw new AuthorizationException(self::MESSAGE_COUNTERSIGN_ENCOUNTER);
+        }
+
+        // Identity, never role (the PrescriptionAuthoringAuthority::maySign()
+        // approach): the account linked to an ACTIVE doctor who is both the
+        // locked visit's doctor and the consent's doctor. A Super Admin, Owner or
+        // Supervisor RME that is not that doctor is refused; nothing in the
+        // request names the doctor. One guard per condition.
+        $doctor = $this->doctorIdentity->resolveForUser($actor);
+
+        if ($doctor === null) {
+            throw new AuthorizationException(self::MESSAGE_COUNTERSIGN_NOT_LINKED);
+        }
+
+        if (! $doctor->is_active) {
+            throw new AuthorizationException(self::MESSAGE_COUNTERSIGN_DOCTOR_INACTIVE);
+        }
+
+        $doctorId = (int) $doctor->getKey();
+
+        if ($doctorId !== (int) $visit->doctor_id) {
+            throw new AuthorizationException(self::MESSAGE_COUNTERSIGN_NOT_VISIT_DOCTOR);
+        }
+
+        if ($doctorId !== (int) $consent->doctor_id) {
+            throw new AuthorizationException(self::MESSAGE_COUNTERSIGN_NOT_CONSENT_DOCTOR);
+        }
 
         if ($visit->status !== ClinicVisit::STATUS_IN_PROGRESS) {
             throw ValidationException::withMessages([
@@ -1081,30 +1132,10 @@ class RmeVisitConsentService
         }
 
         // The consent must be THE live consent of this visit (one per visit, OD-5-8).
-        if ($consent->isVoided() || (int) $consent->clinic_visit_id !== (int) $visit->getKey()
-            || $this->validConsentFor($visit)?->getKey() !== $consent->getKey()) {
+        if ($consent->isVoided() || $this->validConsentFor($visit)?->getKey() !== $consent->getKey()) {
             throw ValidationException::withMessages([
                 'consent' => self::MESSAGE_COUNTERSIGN_VOIDED,
             ]);
-        }
-
-        // The encounter authority every clinical writer uses: the front office
-        // never, a clinical role, branch, doctor room and patient scope.
-        if (! $this->actorMayWorkOnEncounter($actor, $visit)) {
-            throw new AuthorizationException(self::MESSAGE_COUNTERSIGN_DOCTOR);
-        }
-
-        // Identity, never role (the PrescriptionAuthoringAuthority::maySign()
-        // approach): the account linked to an ACTIVE doctor who is both the
-        // locked visit's doctor and the consent's doctor. A Super Admin, Owner or
-        // Supervisor RME that is not that doctor is refused; nothing in the
-        // request names the doctor.
-        $doctorId = $this->linkedActiveDoctorId($actor);
-
-        if ($doctorId === null
-            || $doctorId !== (int) $visit->doctor_id
-            || $doctorId !== (int) $consent->doctor_id) {
-            throw new AuthorizationException(self::MESSAGE_COUNTERSIGN_DOCTOR);
         }
 
         // Maker ≠ checker (CG-07), identity-based so it binds Super Admin too:
@@ -1122,6 +1153,23 @@ class RmeVisitConsentService
         }
 
         return $doctorId;
+    }
+
+    /**
+     * Rule 241 §1.6 — is a countersignature still POSSIBLE for this consent,
+     * whoever the viewer is: the consent is the visit's live consent, the visit
+     * is in progress, and none is recorded yet. Decides whether the document
+     * says "Belum ditandatangani dokter"; a historical consent never does.
+     */
+    public function countersignaturePending(RmeVisitConsent $consent): bool
+    {
+        $visit = $consent->clinicVisit;
+
+        return $visit !== null
+            && $visit->status === ClinicVisit::STATUS_IN_PROGRESS
+            && ! $consent->isVoided()
+            && $this->validConsentFor($visit)?->getKey() === $consent->getKey()
+            && $this->doctorCountersignatureFor($consent) === null;
     }
 
     private function linkedActiveDoctorId(User $actor): ?int

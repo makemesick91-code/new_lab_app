@@ -90,17 +90,22 @@
                     <dt class="text-xs font-semibold uppercase tracking-wide text-ink-muted">Dicatat oleh</dt>
                     <dd class="mt-1 text-ink">{{ $consent->signedBy?->name ?? '—' }}</dd>
                 </div>
-                <div>
-                    <dt class="text-xs font-semibold uppercase tracking-wide text-ink-muted">Tanda Tangan Dokter</dt>
-                    <dd class="mt-1 text-ink" data-testid="consent-doctor-countersign-state">
-                        @if ($doctorCountersignature ?? null)
-                            Ditandatangani dokter {{ $doctorCountersignature->signed_at?->format('d/m/Y H:i') }} WITA
-                            &middot; {{ $doctorCountersignature->doctor?->name ?? '—' }}
-                        @else
-                            Belum ditandatangani dokter
-                        @endif
-                    </dd>
-                </div>
+                {{-- Rule 241 §1.6 — only where the step exists: a recorded
+                     countersignature, or one still possible. A historical consent
+                     shows no such row. --}}
+                @if (($doctorCountersignature ?? null) || ($doctorCountersignaturePending ?? false))
+                    <div>
+                        <dt class="text-xs font-semibold uppercase tracking-wide text-ink-muted">Tanda Tangan Dokter (PTM)</dt>
+                        <dd class="mt-1 text-ink" data-testid="consent-doctor-countersign-state">
+                            @if ($doctorCountersignature ?? null)
+                                Ditandatangani dokter {{ $doctorCountersignature->signed_at?->format('d/m/Y H:i') }} WITA
+                                &middot; {{ $doctorCountersignature->doctor?->name ?? '—' }}
+                            @else
+                                Belum ditandatangani dokter
+                            @endif
+                        </dd>
+                    </div>
+                @endif
                 <div>
                     <dt class="text-xs font-semibold uppercase tracking-wide text-ink-muted">Persetujuan Dokumentasi/Publikasi</dt>
                     <dd class="mt-1 text-ink">{{ $consent->documentation_consent ? 'YA' : 'TIDAK' }}</dd>

@@ -238,6 +238,10 @@ class RmeVisitConsentController extends Controller
             'doctorCountersignatureImage' => $countersignature !== null
                 ? $this->consents->signatureDataUri($countersignature->signature_path)
                 : null,
+            // Review MEDIUM-1 — "Belum ditandatangani dokter" only while a
+            // countersignature is still possible; a historical consent renders
+            // exactly as it did before rule 241.
+            'doctorCountersignaturePending' => $this->consents->countersignaturePending($consent),
         ];
     }
 

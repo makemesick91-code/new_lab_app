@@ -136,8 +136,11 @@ class RmeVisitConsentPolicy
         }
 
         // Identity and encounter authority, the service's own decision (no lock
-        // here). State refusals that the form explains (already countersigned,
-        // maker = checker) are left to the service so they reach the operator.
+        // here). The service runs every authorization guard (permission, scope,
+        // encounter, doctor identity) BEFORE any state guard, so a
+        // ValidationException can only reach an account that passed all of
+        // them: a state refusal (already countersigned, maker = checker) is left
+        // to the service so the operator sees why.
         try {
             app(RmeVisitConsentService::class)->assertCountersignable($consent, $user);
         } catch (AuthorizationException) {

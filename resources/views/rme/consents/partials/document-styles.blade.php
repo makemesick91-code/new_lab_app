@@ -153,4 +153,8 @@
         font-size: 9px;
         color: #374151;
     }
+
+    .consent-countersignature {
+        margin-top: 2px;
+    }
 </style>

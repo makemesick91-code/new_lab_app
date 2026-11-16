@@ -6,9 +6,8 @@ alwaysApply: false
 
 # PTM double signature (rule 241)
 
-Source: the internal memo of 2026-10-17 (M1.1–M1.3) and the owner's decisions of 2026-11-17, recorded with the plan,
-impact analysis and compatibility plan in `docs/sprints/dms-rme-comprehensive-closure-1-memo-implementation-plan.md`
-("M1.1–M1.3 + M4.4"). Delivered in PRs; each PR adds its section. Builds on rule 237 §14 (one valid consent per visit,
+Source: the internal memo of 2026-10-17 (M1.1–M1.3) and the owner's decisions of 2026-11-17, recorded in
+`docs/sprints/dms-rme-comprehensive-closure-1.md`. Delivered in PRs; each PR adds its section. Builds on rule 237 §14 (one valid consent per visit,
 supervised void, signatures on the clinical evidence disk).
 
 ## 0. Owner decisions (CG-22)
@@ -32,22 +31,27 @@ supervised void, signatures on the clinical evidence disk).
    (`trx_rme_visit_consents.doctor_signature_path`) is display history: it is not bound to an account, it never counts
    as the countersignature, and no consent is countersigned retroactively.
 3. **The one writer.** `RmeVisitConsentService::countersign(RmeVisitConsent, User, array)`:
-   - decodes `doctor_signature` FIRST with `PrescriptionCanvasDecoder` and `MAX_SIGNATURE_PAYLOAD_LENGTH` (the rule
-     228 §10 / rule 237 §5 bounds the patient's signature has); missing, blank, oversized, over-declared or non-PNG is
-     refused before anything is written;
-   - re-asserts `countersign_rme_consents` (CG-06; the route and the policy ask first);
+   - checks `countersign_rme_consents` FIRST (CG-06; the route and the policy ask before it), so an account without
+     it never has its payload parsed; then decodes `doctor_signature` with `PrescriptionCanvasDecoder` and
+     `MAX_SIGNATURE_PAYLOAD_LENGTH` (the rule 228 §10 / rule 237 §5 bounds the patient's signature has): missing,
+     blank, oversized, over-declared or non-PNG is refused before anything is written;
    - inside one transaction: locks the visit row FIRST (`lockForStatusDecision`, FOR NO KEY UPDATE, rule 223 §6 — the
-     lock and order of `sign()`, `void()` and `transitionStatus()`), re-reads the consent, then decides, in order:
-     branch and patient scope (`MESSAGE_OUT_OF_SCOPE`, 403); visit `in_progress` (`MESSAGE_COUNTERSIGN_WINDOW`); the
-     consent is the visit's live consent (`MESSAGE_COUNTERSIGN_VOIDED`); the encounter authority every clinical writer
-     uses (`actorMayWorkOnEncounter`: never the front-office tier, a clinical role, `manage_clinic_visits`, working
-     branch, doctor room, doctor-patient scope; 403); identity — the account's linked doctor
-     (`DoctorIdentityResolver`, `mst_doctors.user_id`) is ACTIVE and equals both the locked visit's `doctor_id` and the
-     consent's `doctor_id` (403, `MESSAGE_COUNTERSIGN_DOCTOR`); maker ≠ checker — not the account that captured the
-     patient signature (`signed_by`; `MESSAGE_COUNTERSIGN_SELF`); not yet countersigned
+     lock and order of `sign()`, `void()` and `transitionStatus()`), re-reads the consent, drops the request's memoised
+     doctor identity (`DoctorIdentityResolver::forget()`) so a deactivation or unlink committed meanwhile is seen, then
+     decides. Every AUTHORIZATION guard runs before any STATE guard, each with its own message (403,
+     `AuthorizationException`): permission (`MESSAGE_COUNTERSIGN_PERMISSION`); the consent's visit exists
+     (`MESSAGE_COUNTERSIGN_ENCOUNTER`); branch and patient scope (`MESSAGE_OUT_OF_SCOPE`); the encounter authority every
+     clinical writer uses (`actorMayWorkOnEncounter`: never the front-office tier, a clinical role,
+     `manage_clinic_visits`, working branch, doctor room, doctor-patient scope; `MESSAGE_COUNTERSIGN_ENCOUNTER`);
+     identity — a linked doctor (`DoctorIdentityResolver`, `mst_doctors.user_id`; `MESSAGE_COUNTERSIGN_NOT_LINKED`),
+     active (`MESSAGE_COUNTERSIGN_DOCTOR_INACTIVE`), equal to the locked visit's `doctor_id`
+     (`MESSAGE_COUNTERSIGN_NOT_VISIT_DOCTOR`) and to the consent's `doctor_id` (`MESSAGE_COUNTERSIGN_NOT_CONSENT_DOCTOR`).
+     Then the state guards (`ValidationException` on `consent`): visit `in_progress` (`MESSAGE_COUNTERSIGN_WINDOW`); the
+     consent is the visit's live consent (`MESSAGE_COUNTERSIGN_VOIDED`); maker ≠ checker — not the account that captured
+     the patient signature (`signed_by`; `MESSAGE_COUNTERSIGN_SELF`); not yet countersigned
      (`MESSAGE_COUNTERSIGN_DUPLICATE`). Identity, not role, so a Super Admin, Owner or Supervisor RME that is not that
      doctor is refused although `Gate::before` passes them through every policy. A doctor re-placed on the visit after
-     the patient signed cannot countersign until a void and a new patient signature.
+     the patient signed cannot countersign until a void and a new patient signature;
    - writes the object to `ClinicalEvidenceStorage` under `rme-consents/{consent_number}/doctor-countersign-<16 hex>.png`
      (fresh random key, rule 224 §3), then inserts the row inside a savepoint: a UNIQUE violation (the only unique key
      besides the id) becomes `MESSAGE_COUNTERSIGN_DUPLICATE`;
@@ -56,22 +60,29 @@ supervised void, signatures on the clinical evidence disk).
    - removes only the object this call wrote when the body fails before it finished (rule 224 §1a); never a committed
      object.
 4. **HTTP.** `rme.consents.countersign.create` (GET, `cache.headers:private;no_store;max_age=0` — it renders the
-   document) and `rme.consents.countersign` (POST), both `permission:countersign_rme_consents` and
-   `DatabaseRouteKey::PATTERN`. `RmeVisitConsentPolicy::countersign` (permission, working branch, not voided, visit
-   `in_progress`, doctor-patient scope, then the service's unlocked `assertCountersignable()` for identity);
+   document) and `rme.consents.countersign` (POST), both `permission:countersign_rme_consents`. `{consent}` is
+   constrained by the global `DatabaseRouteKey` pattern; no per-route `where` (AIR-RMC-37).
+   `RmeVisitConsentPolicy::countersign` (permission, working branch, not voided, visit `in_progress`, doctor-patient
+   scope, then the service's unlocked `assertCountersignable()`: an `AuthorizationException` denies; a state refusal,
+   reachable only after every authorization guard passed, allows so the operator learns why);
    `CountersignRmeVisitConsentRequest` authorizes before it validates (R8A-2) and accepts only `doctor_signature`
-   (already in `dontFlash`, rule 237 §3). An out-of-branch or other-doctor request answers 403, consistent with the
-   consent `view` (rule 237 §14.6); an unknown or non-canonical id answers 404. A state refusal (already countersigned,
-   maker = checker) reaches the form as a field error.
+   (already in `dontFlash`, rule 237 §3; never flashed back). An out-of-branch or other-doctor request answers 403,
+   consistent with the consent `view` (rule 237 §14.6); an unknown or non-canonical id answers 404. A state refusal
+   on the GET form redirects to the consent page with an error toast; on the POST it is a field error on `consent`.
 5. **Entry points.** Ruang Perawatan (`rme.treatment-room-worklist.index`) shows "Tanda Tangani PTM" on a row only when
    `RmeVisitConsentService::countersignableConsentsFor()` (called by the controller, never Blade) returns that visit's
    consent; the consent page shows the same button when `canCountersign()` is true. Both are presentation; the route,
    policy and service decide.
-6. **Rendering.** The consent document (show, print, the countersign form) renders the countersignature image as an
-   inline data URI with the doctor's name and "Ditandatangani dokter dd/mm/YYYY HH:mm WITA"; a recorded
-   countersignature whose object is unreadable says "Gambar tanda tangan dokter tidak tersedia."; with no
-   countersignature the legacy drawing renders exactly as before, and with neither the box says "Belum ditandatangani
-   dokter" — never an empty image (rule 224 §7). The consent page's trail shows the state.
+6. **Rendering.** The controller passes the countersignature record, its image (inline data URI, rule 121) and
+   `countersignaturePending()` (live consent, visit `in_progress`, none recorded — whoever views). The document's
+   doctor box adds, after the legacy optional drawing (which always renders exactly as before, also beside a
+   countersignature), the countersignature labelled "Tanda tangan dokter (PTM)" with the doctor's name and
+   "dd/mm/YYYY HH:mm WITA" — or "Gambar tanda tangan dokter tidak tersedia." when its object is unreadable — and, only
+   while pending, "Belum ditandatangani dokter". A historical consent (no countersignature, nothing pending: finished
+   or cancelled visit, voided consent) renders byte for byte as before rule 241 (the additions use column-0
+   directives and no Blade comments, so they emit nothing; pinned against a copy of the old partial in
+   `tests/Fixtures/rme-consent-document-pre-rule-241.blade.php.txt`). Never an empty image (rule 224 §7). The consent
+   page's trail shows the PTM doctor row only when a countersignature exists or is pending.
 7. **Unchanged in PR1.** Every authoring gate (`assertRmeAuthoringAllowedForPatient()`, the pre-consent odontogram
    authority of rule 134, performed treatments, "Selesai Pemeriksaan") still needs only the patient's valid consent;
    payment never consults consent (AIR-RMC-11); the supervised void works exactly as before and keeps a voided
