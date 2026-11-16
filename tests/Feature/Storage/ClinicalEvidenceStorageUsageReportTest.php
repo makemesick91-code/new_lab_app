@@ -168,3 +168,171 @@ it('SU-07 counts an unreadable sub-directory instead of failing', function () {
         chmod($locked, 0700);
     }
 });
+
+/**
+ * Output must never carry a host path: the clinical root, storage/ or the
+ * project directory (CG-11), whatever went wrong while measuring.
+ */
+function surExpectNoPath(string ...$outputs): void
+{
+    foreach ($outputs as $output) {
+        foreach ([Storage::disk('clinical_evidence')->path(''), storage_path(), base_path()] as $path) {
+            expect($output)->not->toContain(rtrim($path, '/'));
+        }
+    }
+}
+
+it('SU-08 a broken symlink at the clinical disk root is skipped: exit 0 and no host path', function () {
+    $root = rtrim(Storage::disk('clinical_evidence')->path(''), '/');
+    $link = $root.'/sur-dangling-link';
+    symlink(storage_path('framework/testing/sur-missing-target-'.uniqid()), $link);
+
+    try {
+        [$code, $text] = surRun();
+        [$jsonCode, $json] = surRun(['--json' => true]);
+        $report = json_decode($json, true, flags: JSON_THROW_ON_ERROR);
+
+        expect($code)->toBe(0)
+            ->and($jsonCode)->toBe(0)
+            ->and(surCategory($report, 'other'))->toMatchArray(['readable' => true, 'bytes' => 100, 'files' => 2])
+            ->and($text)->not->toContain('sur-dangling-link')
+            ->and($json)->not->toContain('sur-dangling-link');
+        surExpectNoPath($text, $json);
+    } finally {
+        @unlink($link);
+    }
+});
+
+it('SU-09 an entry that cannot be stat\'ed is counted unreadable, never fatal and never printed', function () {
+    if (function_exists('posix_geteuid') && posix_geteuid() === 0) {
+        $this->markTestSkipped('root stats every entry; permission denial cannot be shown.');
+    }
+
+    // Readable but not searchable: the names list, yet no entry can be stat'ed
+    // (the same failure as a file deleted between listing and sizing).
+    $root = rtrim(Storage::disk('clinical_evidence')->path(''), '/');
+    chmod($root, 0600);
+
+    try {
+        [$code, $text] = surRun();
+        [$jsonCode, $json] = surRun(['--json' => true]);
+        $report = json_decode($json, true, flags: JSON_THROW_ON_ERROR);
+
+        expect($code)->toBe(0)
+            ->and($jsonCode)->toBe(0)
+            ->and(surDisk($report, 'clinical_evidence'))->toMatchArray(['readable' => true, 'bytes' => 0, 'files' => 0, 'unreadable_entries' => 5])
+            ->and(surCategory($report, 'handwritings'))->toMatchArray(['readable' => false, 'bytes' => null, 'files' => null, 'unreadable_entries' => 1])
+            ->and(surCategory($report, 'other'))->toMatchArray(['readable' => false, 'bytes' => null, 'files' => null, 'unreadable_entries' => 2])
+            ->and(surCategory($report, 'lab-orders'))->toMatchArray(['readable' => true, 'bytes' => 0, 'files' => 0])
+            ->and($text)->toContain('CLINICAL handwritings UNREADABLE');
+        surExpectNoPath($text, $json);
+    } finally {
+        chmod($root, 0755);
+    }
+});
+
+it('SU-10 an unexpected failure prints only the exception class and still exits 0', function () {
+    app()->instance(StorageUsageReportService::class, new class extends StorageUsageReportService
+    {
+        public function report(): array
+        {
+            throw new RuntimeException('stat failed for '.storage_path('app/private/clinical/nama-pasien-sur.png'));
+        }
+    });
+
+    [$code, $text] = surRun();
+    [$jsonCode, $json] = surRun(['--json' => true]);
+    $decoded = json_decode($json, true, flags: JSON_THROW_ON_ERROR);
+
+    expect($code)->toBe(0)
+        ->and($jsonCode)->toBe(0)
+        ->and($text)->toContain('RuntimeException')
+        ->and($decoded)->toMatchArray(['report_failed' => true, 'exception' => 'RuntimeException'])
+        ->and($text.$json)->not->toContain('nama-pasien-sur')
+        ->and($text.$json)->not->toContain('stat failed');
+    surExpectNoPath($text, $json);
+});
+
+it('SU-11 a symlinked category directory pointing outside the clinical root is not followed', function () {
+    $outside = storage_path('framework/testing/sur-outside-'.uniqid());
+    mkdir($outside, 0755, true);
+    file_put_contents($outside.'/outside.bin', str_repeat('x', 9999));
+    $link = rtrim(Storage::disk('clinical_evidence')->path(''), '/').'/lab-orders';
+    symlink($outside, $link);
+
+    try {
+        $report = surJson();
+
+        expect(surCategory($report, 'lab-orders'))->toMatchArray(['readable' => true, 'bytes' => 0, 'files' => 0])
+            ->and(surCategory($report, 'other'))->toMatchArray(['bytes' => 100, 'files' => 2])
+            ->and(collect($report['clinical_evidence_categories'])->sum('bytes'))->toBe(2100)
+            ->and(surDisk($report, 'clinical_evidence'))->toMatchArray(['bytes' => 2100, 'files' => 6]);
+    } finally {
+        @unlink($link);
+        @unlink($outside.'/outside.bin');
+        @rmdir($outside);
+    }
+});
+
+it('SU-12 reports the categories as not measurable when the clinical disk is not local', function () {
+    config()->set('filesystems.disks.clinical_evidence.driver', 's3');
+
+    [$code, $text] = surRun();
+    $report = surJson();
+
+    expect($code)->toBe(0)
+        ->and(surDisk($report, 'clinical_evidence'))->toMatchArray(['measurable' => false, 'bytes' => null, 'files' => null])
+        ->and($text)->toContain('DISK clinical_evidence NOT_MEASURABLE')
+        ->and($text)->toContain('CLINICAL handwritings NOT_MEASURABLE')
+        ->and($text)->not->toContain('CLINICAL handwritings SIZE=');
+
+    foreach ($report['clinical_evidence_categories'] as $row) {
+        expect($row)->toMatchArray(['measurable' => false, 'readable' => false, 'bytes' => null, 'files' => null]);
+    }
+});
+
+it('SU-13 an unreadable clinical root or category directory reads UNREADABLE with its count, never as zero', function () {
+    if (function_exists('posix_geteuid') && posix_geteuid() === 0) {
+        $this->markTestSkipped('root reads every directory; permission denial cannot be shown.');
+    }
+
+    $clinical = Storage::disk('clinical_evidence');
+    $handwritings = $clinical->path('handwritings');
+    $prescriptionSub = $clinical->path('prescriptions/7');
+    chmod($handwritings, 0000);
+    chmod($prescriptionSub, 0000);
+
+    try {
+        [$code, $text] = surRun();
+        $report = surJson();
+
+        expect($code)->toBe(0)
+            ->and(surCategory($report, 'handwritings'))->toMatchArray(['measurable' => true, 'readable' => false, 'bytes' => null, 'files' => null, 'unreadable_dirs' => 1])
+            ->and(surCategory($report, 'prescriptions'))->toMatchArray(['readable' => true, 'bytes' => 0, 'files' => 0, 'unreadable_dirs' => 1])
+            ->and(surCategory($report, 'rme-consents'))->toMatchArray(['readable' => true, 'bytes' => 200, 'files' => 1, 'unreadable_dirs' => 0])
+            ->and($text)->toMatch('/CLINICAL handwritings UNREADABLE FILES=- UNREADABLE_DIRS=1 /')
+            ->and($text)->toMatch('/CLINICAL prescriptions SIZE=0 B FILES=0 UNREADABLE_DIRS=1 /');
+        surExpectNoPath($text);
+    } finally {
+        chmod($handwritings, 0755);
+        chmod($prescriptionSub, 0755);
+    }
+
+    $root = rtrim($clinical->path(''), '/');
+    chmod($root, 0000);
+
+    try {
+        [$code, $text] = surRun();
+        $report = surJson();
+
+        expect($code)->toBe(0)
+            ->and(surDisk($report, 'clinical_evidence'))->toMatchArray(['readable' => false, 'unreadable_dirs' => 1])
+            ->and($text)->toContain('CLINICAL handwritings UNREADABLE');
+
+        foreach ($report['clinical_evidence_categories'] as $row) {
+            expect($row)->toMatchArray(['measurable' => true, 'readable' => false, 'bytes' => null, 'files' => null]);
+        }
+    } finally {
+        chmod($root, 0755);
+    }
+});
