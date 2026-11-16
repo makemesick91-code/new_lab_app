@@ -57,9 +57,6 @@ class FeatureFlagService
     }
 
     /**
-     * @return array<string, mixed>
-     */
-    /**
      * DMS-RME-COMPREHENSIVE-CLOSURE-1 (CC1-CG08) — the default a flag's registry
      * entry DECLARES, or null when it declares none (or not as a boolean).
      * get() reads a missing default as false; a governance check that must
@@ -74,6 +71,9 @@ class FeatureFlagService
         return is_bool($default) ? $default : null;
     }
 
+    /**
+     * @return array<string, mixed>
+     */
     public function metadata(string $key): array
     {
         return $this->get($key);
