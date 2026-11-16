@@ -1537,6 +1537,10 @@ return [
         // parity), and that suite matched no token before.
         'tests/Feature/RME/RmeConcurrentFirstWriteIntegrityTest.php',
         'tests/Feature/RME/RmeConcurrentFirstWriteLockTest.php',
+        // DMS-RME-COMPREHENSIVE-CLOSURE-1 (rule 237 §16, R7-1) — one handwriting
+        // RM book per patient after the book's visit is cancelled or a merge
+        // puts an earlier visit in front of it.
+        'tests/Feature/RME/RmeConcurrentFirstWriteBookConvergenceTest.php',
         'tests/Feature/RME/DoctorPatientScopeTest.php',
 
         // DMS-RME-REVISION-PROGRAM-8A (rule 226) — P8-N1: a prescription write

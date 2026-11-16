@@ -76,17 +76,45 @@ class PatientRmWorkspaceResolver
     /**
      * Sprint 64.0.2 — the single handwriting RM book: the medical record attached
      * to the patient's canonical (earliest non-cancelled RME) visit, if any.
+     *
+     * DMS-RME-COMPREHENSIVE-CLOSURE-1 (R7-1) — when that visit holds no record,
+     * the book is the patient's self-anchored sheet (selfAnchoredBook()): the
+     * book stays where it was created after the visit holding it is cancelled, or
+     * after a patient merge puts an earlier visit in front of it. Answering "no
+     * book" there made the next save open a second book.
      */
     public function canonicalMedicalRecord(int $patientId): ?MedicalRecord
     {
         $visit = $this->resolveCanonicalWorkspaceVisit($patientId);
 
-        if ($visit === null) {
-            return null;
-        }
-
-        return MedicalRecord::query()
+        $onCanonicalVisit = $visit === null ? null : MedicalRecord::query()
             ->where('clinic_visit_id', $visit->id)
+            ->first();
+
+        return $onCanonicalVisit ?? $this->selfAnchoredBook($patientId);
+    }
+
+    /**
+     * DMS-RME-COMPREHENSIVE-CLOSURE-1 (R7-1) — the patient's earliest sheet that
+     * was created AS the book: its storage visit is its own canonical anchor
+     * (clinic_visit_id = canonical_visit_id), whatever that visit's status now.
+     * A later sheet of a multi-sheet patient is anchored to an earlier visit, so
+     * it is never taken for the book. A sheet older than Sprint 64.0 whose
+     * workspace columns were never stamped (stampWorkspaceFields() is lazy)
+     * counts too: the earliest one is what stamping would anchor to itself.
+     */
+    public function selfAnchoredBook(int $patientId): ?MedicalRecord
+    {
+        return MedicalRecord::query()
+            ->select('trx_medical_records.*')
+            ->join('trx_clinic_visits', 'trx_clinic_visits.id', '=', 'trx_medical_records.clinic_visit_id')
+            ->whereIn('trx_medical_records.branch_id', $this->rmeBranchIds())
+            ->where('trx_medical_records.patient_id', $patientId)
+            ->where(fn ($anchor) => $anchor
+                ->whereColumn('trx_medical_records.canonical_visit_id', 'trx_medical_records.clinic_visit_id')
+                ->orWhereNull('trx_medical_records.canonical_visit_id'))
+            ->orderBy('trx_clinic_visits.visit_date')
+            ->orderBy('trx_clinic_visits.id')
             ->first();
     }
 

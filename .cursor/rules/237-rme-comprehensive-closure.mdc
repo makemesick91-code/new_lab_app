@@ -31,6 +31,43 @@ session are recorded there (CG-22). This rule holds what later work must keep.
 2. **Unsigned prescription print — kept.** An unsigned prescription still prints without a signature image under the
    doctor's name (rule 228 §12.4, §15). Refusing print for a missing signature needs a new owner decision.
 
+## 16. One handwriting RM book per patient (R7-1, owner decision 2026-11-16)
+
+Rule 225 recorded R7-1 as "recorded, not reproduced"; this section supersedes that residual. Both sub-cases were
+reproduced deterministically and are fixed.
+
+1. **(a) The canonical visit changes.** The book is created on the patient's earliest non-cancelled RME visit. A
+   cancel of that visit (allowed from `registered`, `waiting` and `in_progress`, with no medical-record check) moved
+   the canonical visit to a later visit without a record, so `canonicalMedicalRecord()` answered "no book": the next
+   new page opened a second book, and a re-save of an existing page of the first book was written into the new one.
+   The concurrent form: a cancel commits between one first save's lookup and its insert, while a second first save,
+   already seeing the later visit, creates its book there.
+2. **(b) A patient merge.** A merge moves visits and records unchanged. When the source patient's earliest visit
+   precedes the visit holding the canonical patient's book, the earliest visit has no record, and the next save opened
+   a second book.
+3. **The book.** `PatientRmWorkspaceResolver::canonicalMedicalRecord()` returns the record on the canonical visit
+   and, when there is none, `selfAnchoredBook()`: the patient's earliest sheet with
+   `clinic_visit_id = canonical_visit_id` in the RME branches, whatever its visit's status now. A sheet older than
+   Sprint 64.0 whose workspace columns were never stamped (`canonical_visit_id` NULL; `stampWorkspaceFields()` is lazy)
+   counts too. A later sheet of a multi-sheet patient is anchored to an earlier visit, so it is never taken for the
+   book (Sprint 64.0.2 unchanged).
+4. **The first save.** `MedicalRecordService::getOrCreateCanonicalMedicalRecord()` decides the canonical visit on its
+   locked row (`lockForStatusDecision`, FOR NO KEY UPDATE, the lock the cancel path takes; rule 223 §6, visit first).
+   It re-resolves when the locked row is cancelled or re-pointed. It then adopts the record on that visit, or the
+   self-anchored book, before it creates one (savepoint-adopt, R6-1, unchanged).
+5. **The storage visit.** The handwriting controller writes a page on the book's own visit
+   (`$canonicalRecord->clinicVisit`, and `$draft->clinicVisit` once the service has decided), which is the visit the
+   show page already posts to.
+6. **Not changed.** No record is moved, merged or migrated. A patient whose two pre-merge identities each already
+   had a book keeps two records, both created before the merge and both shown in the virtual book; new pages go to the
+   book item 3 resolves.
+7. **Tests.** `tests/Feature/RME/RmeConcurrentFirstWriteBookConvergenceTest.php` (R71-A, A2, A3, D, E, B, B2, B3, C;
+   R71-E is PostgreSQL-only) is selected by the `RmeConcurrentFirstWrite` token in both critical variants and declared in
+   `critical_gate_mandatory_suites`. R71-D reproduces the cancel-between-lookup-and-insert interleaving
+   deterministically on one connection, and R71-E proves that the visit lock precedes the insert. There is no
+   committed two-connection probe: the authoring gate needs seeded roles and a consented encounter that a committing
+   writer would leave in the shared test schema.
+
 ## 3. Clinical canvases never reach the session store
 
 `bootstrap/app.php` adds `consenter_signature`, `doctor_signature`, `prescription_canvas_data`,

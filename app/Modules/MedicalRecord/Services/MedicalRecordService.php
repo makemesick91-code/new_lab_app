@@ -4,6 +4,7 @@ namespace App\Modules\MedicalRecord\Services;
 
 use App\Modules\Branch\Services\BranchService;
 use App\Modules\ClinicOversight\Support\ClinicalDayWindow;
+use App\Modules\ClinicVisit\Interfaces\ClinicVisitRepositoryInterface;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Consent\Services\RmeVisitConsentService;
 use App\Modules\MedicalRecord\Interfaces\MedicalRecordRepositoryInterface;
@@ -32,6 +33,8 @@ class MedicalRecordService
         // in this service asserts the consent gate before it touches a record.
         private readonly RmeVisitConsentService $consents,
         private readonly ClinicalClock $clock,
+        // R7-1 — the canonical visit row lock only; never a status transition.
+        private readonly ClinicVisitRepositoryInterface $visits,
     ) {}
 
     /**
@@ -313,9 +316,7 @@ class MedicalRecordService
         ?int $recordedBy = null,
         ?int $sourceVisitId = null,
     ): MedicalRecord {
-        $patientId = $contextVisit->patient_id;
-        $canonicalVisit = $this->workspace->resolveCanonicalWorkspaceVisit($patientId)
-            ?? $contextVisit;
+        $patientId = (int) $contextVisit->patient_id;
 
         /*
          * FIX-02 / CORRECTIVE-02 — the storage target is irrelevant to authority.
@@ -328,17 +329,56 @@ class MedicalRecordService
          */
         $this->consents->assertRmeAuthoringAllowedForPatient($patientId);
 
-        $existing = $this->medicalRecords->findByVisitId($canonicalVisit->id);
+        return DB::transaction(function () use ($contextVisit, $patientId, $recordedBy, $sourceVisitId): MedicalRecord {
+            /*
+             * DMS-RME-COMPREHENSIVE-CLOSURE-1 (R7-1) — one book per patient. The
+             * canonical visit is decided on its LOCKED row (rule 223 §6: the visit
+             * first), the lock the cancel path takes too, so a cancel of that visit
+             * and a first save serialise. The book is then looked up on that visit
+             * and, failing that, as the patient's self-anchored sheet, which may sit
+             * on a visit cancelled since or behind an earlier merged visit.
+             */
+            $canonicalVisit = $this->lockCanonicalVisit($patientId) ?? $contextVisit;
 
-        if ($existing !== null) {
-            return $existing;
+            $existing = $this->medicalRecords->findByVisitId($canonicalVisit->id)
+                ?? $this->workspace->selfAnchoredBook($patientId);
+
+            if ($existing !== null) {
+                return $existing;
+            }
+
+            // R6-1 — a concurrent first save may create the book between the lookup
+            // above and the insert; that book is this patient's book, so adopt it.
+            return $this->createDraftOn($canonicalVisit, $recordedBy, array_filter([
+                'source_visit_id' => $sourceVisitId ?? $contextVisit->id,
+            ], fn ($v) => $v !== null), adoptExisting: true);
+        });
+    }
+
+    /**
+     * DMS-RME-COMPREHENSIVE-CLOSURE-1 (R7-1) — the patient's canonical visit,
+     * locked FOR NO KEY UPDATE and re-checked on the locked row. A cancel (or a
+     * merge re-pointing the visit) that committed between the lookup and the
+     * lock moves the canonical visit, so the next candidate is locked instead.
+     * Each candidate is tried once, so the loop ends.
+     */
+    private function lockCanonicalVisit(int $patientId): ?ClinicVisit
+    {
+        $tried = [];
+
+        while (($candidate = $this->workspace->resolveCanonicalWorkspaceVisit($patientId)) !== null
+            && ! in_array((int) $candidate->getKey(), $tried, true)) {
+            $tried[] = (int) $candidate->getKey();
+            $locked = $this->visits->lockForStatusDecision((int) $candidate->getKey());
+
+            if ($locked !== null
+                && (int) $locked->patient_id === $patientId
+                && $locked->status !== ClinicVisit::STATUS_CANCELLED) {
+                return $locked;
+            }
         }
 
-        // R6-1 — a concurrent first save may create the book between the lookup
-        // above and the insert; that book is this patient's book, so adopt it.
-        return $this->createDraftOn($canonicalVisit, $recordedBy, array_filter([
-            'source_visit_id' => $sourceVisitId ?? $contextVisit->id,
-        ], fn ($v) => $v !== null), adoptExisting: true);
+        return null;
     }
 
     public function requiresHandwritingBeforeFinal(): bool
