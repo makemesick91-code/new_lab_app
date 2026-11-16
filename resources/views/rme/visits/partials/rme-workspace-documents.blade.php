@@ -34,6 +34,11 @@
 --}}
 @php
     $workspaceDocuments = $workspaceDocuments ?? collect();
+    // Rule 243 §1 — the source PDF link renders only for a reader who may
+    // download it; a Doctor reads the archive as page images. The byte route
+    // refuses a doctor on its own either way.
+    $mayOpenLegacySource = Route::has('rme.legacy-records.source')
+        && (auth()->user()?->can('downloadAny', \App\Modules\LegacyRme\Models\LegacyRmeRecord::class) ?? false);
     $legacyDocuments = $workspaceDocuments->filter(fn ($document) => $document->isLegacy())->values();
     $nativeDocuments = $workspaceDocuments->filter(fn ($document) => $document->isNative())->values();
 @endphp
@@ -95,7 +100,7 @@
                             pageUrlTemplate: @js($document->hasPages() && Route::has('rme.legacy-records.pages.show')
                                 ? route('rme.legacy-records.pages.show', [$document->id, '__PAGE__'])
                                 : null),
-                            sourceUrl: @js(Route::has('rme.legacy-records.source')
+                            sourceUrl: @js($mayOpenLegacySource
                                 ? route('rme.legacy-records.source', $document->id)
                                 : null),
                             detailUrl: @js($document->url),
@@ -234,6 +239,14 @@
                                         </a>
                                     </p>
                                 </object>
+                            </template>
+
+                            {{-- Rule 243 §1 — no rendered page and no source PDF for this
+                                 reader (a Doctor): say so instead of an empty viewer. --}}
+                            <template x-if="mode === 'pdf' && ! doc.sourceUrl">
+                                <p class="p-4 text-center text-sm text-ink-soft" data-rme-legacy-no-preview>
+                                    Gambar halaman arsip ini belum tersedia.
+                                </p>
                             </template>
                         </div>
 

@@ -18,10 +18,14 @@
             <x-slot:breadcrumb>RME / Arsip Odontogram Lama</x-slot:breadcrumb>
 
             <x-slot:actions>
-                <x-ui.button
-                    variant="secondary"
-                    :href="route('rme.legacy-odontograms.source', $record->getKey())"
-                >Buka PDF Sumber</x-ui.button>
+                {{-- Rule 243 §1 — the source PDF is a download; a Doctor reads the
+                     page images below instead. The server refuses it too. --}}
+                @can('download', $record)
+                    <x-ui.button
+                        variant="secondary"
+                        :href="route('rme.legacy-odontograms.source', $record->getKey())"
+                    >Buka PDF Sumber</x-ui.button>
+                @endcan
             </x-slot:actions>
         </x-ui.page-header>
 

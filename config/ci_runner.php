@@ -875,6 +875,14 @@ return [
         'tests/Feature/RME/DoctorRoomScopedWorklistTreatmentTest.php',
         'tests/Feature/RME/RmePaymentTransferReferenceTest.php',
 
+        // DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M2.4 (rule 243 §1, owner revision
+        // of rule 93 §12, 2026-11-17) — a Doctor is refused the legacy RME
+        // print/export/source PDF, the legacy odontogram source PDF and the PTM
+        // print (403, audited), keeps the inline page images and the prescription
+        // print; Front Office, Admin Klinik and Supervisor RME keep printing.
+        // Selected by the existing `DoctorRoomScoped` token in BOTH critical variants.
+        'tests/Feature/RME/DoctorRoomScopedArchiveAndConsentPrintDenyTest.php',
+
         // FEATURE-DOCTOR-TRUSTED-ANDROID-DEVICE-LOCK-1 Phase 2 — the clinic
         // device registry: lifecycle, terminal revocation, branch binding,
         // audit, and the guarantee that authentication is NOT coupled to the

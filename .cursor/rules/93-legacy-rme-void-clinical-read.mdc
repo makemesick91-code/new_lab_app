@@ -65,6 +65,10 @@ alwaysApply: false
     re-requests each with the caller's own session); export embeds them through
     the storage abstraction. No absolute path, no public URL, no signed direct
     link, no storage symlink.
+    **REVISED (owner, 2026-11-17, memo M2.4) by rule 243 §1**
+    (`243-rme-doctor-encounter-scope-downloads-fields.mdc`): a Doctor is refused
+    print, export and the source PDF (403, audited) and reads the archive as
+    inline page images; every other reader keeps this paragraph unchanged.
 
 13. **Output is visibly a legacy archive.** Print and export both carry
     "ARSIP RME LAMA — DOKUMEN HISTORIS (HANYA BACA)" and state that it is not a

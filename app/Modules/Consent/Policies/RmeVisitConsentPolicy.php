@@ -7,6 +7,7 @@ use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Consent\Models\RmeVisitConsent;
 use App\Modules\Consent\Services\RmeVisitConsentService;
 use App\Modules\RME\Services\DoctorPatientScopeService;
+use App\Modules\RME\Services\DoctorRoomScopeService;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
 use Illuminate\Auth\Access\Response;
 
@@ -39,6 +40,24 @@ class RmeVisitConsentPolicy
         }
 
         return app(DoctorPatientScopeService::class)->authorizeVisitAccess($user, $visit);
+    }
+
+    /**
+     * Rule 243 §1 (owner revision 2026-11-17, memo M2.4) — the PTM print. A
+     * Doctor reads the signed consent on screen (`view`) but never prints it;
+     * the refusal comes from the one print-deny authority (rule 138), which
+     * also hides the print control under `@can('print', …)`. Every other
+     * reader keeps exactly the `view` boundary.
+     */
+    public function print(User $user, RmeVisitConsent $consent): Response|bool
+    {
+        $print = app(DoctorRoomScopeService::class)->authorizeClinicalPrint($user);
+
+        if ($print !== true) {
+            return $print;
+        }
+
+        return $this->view($user, $consent);
     }
 
     /**

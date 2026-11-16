@@ -288,15 +288,30 @@ it('never renders a storage path or a KTP in the print view', function () {
         ->and($body)->not->toContain(storage_path());
 });
 
-it('lets a doctor print their own branch archive', function () {
+// FLIPPED by rule 243 §1 (owner revision of rule 93 §12, 2026-11-17, memo
+// M2.4): this used to pin that a treating doctor MAY print their own branch's
+// archive. A Doctor now reads it (show) but is refused the print and the
+// export, audited; Front Office, Admin Klinik and Supervisor RME keep printing
+// (DoctorRoomScopedArchiveAndConsentPrintDenyTest).
+it('refuses a treating doctor the print and export of their own branch archive (rule 243)', function () {
     $branch = lrme1dRmeBranch();
     $record = lrme1dPublishedInBranch($branch);
     $doctor = lrme1dTreatingDoctor((int) $branch->getKey(), $record);
 
     $this->actingAs($doctor)
         ->withoutMiddleware(EnsureRmeOnlineContext::class)
-        ->get(route('rme.legacy-records.print', $record->getKey()))
+        ->get(route('rme.legacy-records.show', $record->getKey()))
         ->assertOk();
+
+    foreach (['rme.legacy-records.print', 'rme.legacy-records.export'] as $routeName) {
+        $this->actingAs($doctor)
+            ->withoutMiddleware(EnsureRmeOnlineContext::class)
+            ->get(route($routeName, $record->getKey()))
+            ->assertForbidden();
+    }
+
+    expect(DB::table('sys_audit_logs')->where('action', 'DOCTOR_PRINT_LEGACY_RME_REJECTED')->count())->toBe(2)
+        ->and(DB::table('sys_audit_logs')->where('action', LegacyRmeAuditEvent::RECORD_PRINTED)->count())->toBe(0);
 });
 
 it('refuses to print an archive from another branch', function () {
