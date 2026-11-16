@@ -145,14 +145,50 @@ class OdontogramController extends Controller
          * and the history stay readable either way. Decided here (MEMO-F5).
          */
         $odontogramPtmBlock = $consents->odontogramPtmBlockFor($clinicVisit, $request->user());
+        // MEMO-F5 — "is this the live encounter's chart?", asked here rather than from Blade.
+        $odontogramIsLiveEncounter = app(ActiveEncounterResolver::class)->isCurrentEncounter($clinicVisit);
+
+        /*
+         * Rule 240 §1.7 (memo M3.3) — which state banner the page shows, decided
+         * here so the Blade only renders it. One chart, one reason:
+         *
+         *  - `lockedNotice`: a FINALIZED chart of the live encounter. It is locked
+         *    (OdontogramPolicy::update and OdontogramService refuse it); a
+         *    correction is a supervised amendment. It answers before the PTM
+         *    (rule 240 §1.8): a finalized chart shows no PTM banner, because
+         *    signing the PTM would not make it writable.
+         *  - the PTM banner (rule 241 §3): a draft live chart this account may
+         *    chart but for the PTM.
+         *  - `readOnlyNotice = history`: a chart of a visit that is not the live
+         *    encounter, finalized or not, shown to an account that could otherwise
+         *    chart that visit. "Past visit" is the reason it cannot be written; a
+         *    finalized history chart therefore shows the history banner, not the
+         *    lock banner.
+         *  - `readOnlyNotice = front_office`: the live encounter's chart, and the
+         *    account itself may not chart it (CW5-05) — not merely the PTM.
+         *
+         * `author` is the scope-only twin of `update` for this visit's chart (manage
+         * permission, RME branch, room, doctor-patient scope; no lock), so the
+         * audience stays exactly the one the banners had before the lock.
+         */
+        $mayChartThisVisit = $request->user()?->can('author', [Odontogram::class, $clinicVisit]) ?? false;
+        $odontogramLockedNotice = $odontogramIsLiveEncounter && $odontogram->isFinalized();
+        $odontogramReadOnlyNotice = match (true) {
+            ! $mayChartThisVisit => null,
+            ! $odontogramIsLiveEncounter => 'history',
+            ! $odontogramAuthoringAllowed && $odontogramPtmBlock === null => 'front_office',
+            default => null,
+        };
+
+        if ($odontogram->isFinalized()) {
+            $odontogramPtmBlock = null;
+        }
+
         $countersignOutlook = $odontogramPtmBlock === RmeVisitConsentService::PTM_AWAITING_DOCTOR
             ? ($consents->countersignOutlookFor($request->user(), [$clinicVisit])[(int) $clinicVisit->getKey()] ?? null)
             : null;
         $countersignConsent = $countersignOutlook !== null && $countersignOutlook['refusal'] === null ? $countersignOutlook['consent'] : null;
         $countersignRefusal = $countersignOutlook['refusal'] ?? null;
-        // MEMO-F5 — "is this the live encounter's chart?" for the read-only
-        // banner, asked here rather than from Blade.
-        $odontogramIsLiveEncounter = app(ActiveEncounterResolver::class)->isCurrentEncounter($clinicVisit);
 
         return view('rme.visits.odontogram.show', compact(
             'clinicVisit',
@@ -165,7 +201,8 @@ class OdontogramController extends Controller
             'odontogramPtmBlock',
             'countersignConsent',
             'countersignRefusal',
-            'odontogramIsLiveEncounter',
+            'odontogramLockedNotice',
+            'odontogramReadOnlyNotice',
         ));
     }
 

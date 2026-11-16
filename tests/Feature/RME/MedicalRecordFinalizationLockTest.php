@@ -13,7 +13,7 @@
 | Three layers: the route (manage_clinic_visits), MedicalRecordPolicy::editSheet
 | (scope first, then final ⇒ deny) and the services, which re-decide "final ⇒
 | refuse" on the row they lock inside the transaction (visit row first, rule 223
-| §6). The service layer binds Super Admin, whom Gate::before lets past the
+| §1 item 6). The service layer binds Super Admin, whom Gate::before lets past the
 | policy (CG-06). The handwriting book is NOT sealed here (PR2).
 |
 | Selected by the existing `MedicalRecordFinalization` critical-gate token in both runner variants
@@ -545,7 +545,7 @@ it('still renders the diagnosis form on a DRAFT sheet (positive control)', funct
         ->assertDontSee(MedicalRecordService::MESSAGE_FINAL_SHEET_LOCKED);
 });
 
-// ─── Lock order (rule 223 §6) ────────────────────────────────────────────────
+// ─── Lock order (rule 223 §1 item 6) ────────────────────────────────────────────
 
 it('locks the encounter visit row before the sheet row when deciding the lock (PostgreSQL)', function () {
     if (DB::connection()->getDriverName() !== 'pgsql') {

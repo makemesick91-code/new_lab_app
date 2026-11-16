@@ -229,7 +229,7 @@ class MedicalRecordService
             $this->consents->assertRmeAuthoringAllowedForPatient($medicalRecord->patient_id);
 
             // Rule 240 §1 (memo M3.3) — re-decided on the sheet row, locked after
-            // the visit (rule 223 §6): a finalize that committed after the caller
+            // the visit (rule 223 §1 item 6): a finalize that committed after the caller
             // loaded its copy is returned as it is, never rewritten.
             $locked = $this->lockSheet($medicalRecord);
 
@@ -312,7 +312,7 @@ class MedicalRecordService
 
             // FIX-02 / CORRECTIVE-02 — editing is a current-RME write. Inside this
             // transaction it locks the encounter's visit row first; rule 240 §1 —
-            // then the sheet row (rule 223 §6), a final sheet answering with its
+            // then the sheet row (rule 223 §1 item 6), a final sheet answering with its
             // lock before a missing PTM (§1.8).
             $locked = $this->assertSheetAuthoringAllowed($medicalRecord);
 
@@ -538,7 +538,7 @@ class MedicalRecordService
      * The sheet row under FOR NO KEY UPDATE — the record lock the handwriting save
      * takes too (MedicalRecordRepositoryInterface::lockForHandwriting), so an edit,
      * a finalize and a page save of one record serialise. Callers take it AFTER
-     * the encounter's visit row (rule 223 §6).
+     * the encounter's visit row (rule 223 §1 item 6).
      */
     private function lockSheet(MedicalRecord $medicalRecord): MedicalRecord
     {

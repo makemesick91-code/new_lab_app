@@ -242,7 +242,7 @@ class DiagnosisRolloutService
             // encounter's visit lock like every consent-gated write.
             // Rule 240 §1 (memo M3.3) — the override unlocks a FINALIZATION; a final
             // sheet has none left to unlock and is locked. Decided on the sheet row
-            // locked after the visit (rule 223 §6), binding Super Admin, before a
+            // locked after the visit (rule 223 §1 item 6), binding Super Admin, before a
             // missing PTM (§1.8).
             app(MedicalRecordService::class)->assertSheetAuthoringAllowed(
                 $medicalRecord,

@@ -91,11 +91,14 @@ class OdontogramPolicy
     /**
      * Role, branch and patient scope first, so an account outside it is refused
      * for that reason and learns nothing about the chart's state. Then rule 240
-     * §1 (memo M3.3, owner decision 2026-11-17): a FINALIZED chart is locked and
-     * corrected only through a supervised amendment. A previous visit's chart is
-     * still refused by OdontogramService with its own reason (rule 109 §4), not
-     * here. Super Admin passes through Gate::before, so the service re-decides
-     * the lock on the chart row it locks (CG-06).
+     * §1 (memo M3.3, owner decision 2026-11-17): a FINALIZED chart — of the live
+     * encounter or of a previous visit — is denied HERE with the lock message
+     * (HTTP 403). A DRAFT chart of a previous visit passes here and is refused by
+     * OdontogramService with the history reason (rule 109 §4). A finalized chart
+     * is corrected only through a supervised amendment (later M3.3 PRs): a
+     * supervised correction, never a "reopening" in the sense of rule 109 §4.
+     * Super Admin passes through Gate::before, so the service re-decides the lock
+     * on the chart row it locks (CG-06).
      */
     public function update(User $user, Odontogram $odontogram): Response|bool
     {

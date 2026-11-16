@@ -43,7 +43,7 @@ class OdontogramService
         // FIRST inside the write transaction — before this service locks or
         // writes the chart. Pre-consent charting ended; reading is unchanged.
         private readonly RmeVisitConsentService $consents,
-        // Rule 240 §1 / rule 223 §6 — the visit row is locked before the chart row.
+        // Rule 240 §1 / rule 223 §1 item 6 — the visit row is locked before the chart row.
         private readonly ClinicVisitRepositoryInterface $visits,
     ) {}
 
@@ -249,7 +249,7 @@ class OdontogramService
             // chart answers with its lock before a missing PTM (rule 240 §1.8).
             $this->assertChartAuthoringAllowed($clinicVisit, $user);
 
-            // Rule 223 §6 — the visit row before the chart row, the order
+            // Rule 223 §1 item 6 — the visit row before the chart row, the order
             // updatePlaceholder() below takes them in.
             $this->lockOpenVisit((int) $clinicVisit->getKey());
 
@@ -431,7 +431,7 @@ class OdontogramService
     }
 
     /**
-     * Rule 240 §1 / rule 223 §6 — lock the chart's visit row (FOR NO KEY UPDATE,
+     * Rule 240 §1 / rule 223 §1 item 6 — lock the chart's visit row (FOR NO KEY UPDATE,
      * the lock every RME write takes first), then the chart row, and return the
      * chart as it is now. Callers assert the authoring authority before this.
      */
@@ -451,7 +451,7 @@ class OdontogramService
     /**
      * The chart's visit, locked and re-checked: the authority above read it
      * before the lock, so a finish or cancel committed meanwhile is seen here
-     * (rule 223 §1) instead of a chart being written onto a closed encounter.
+     * (rule 223 §1 items 1–2) instead of a chart being written onto a closed encounter.
      */
     private function lockOpenVisit(int $clinicVisitId): ClinicVisit
     {

@@ -13,7 +13,7 @@
 | Three layers: the route (manage_clinic_visits + visit.room),
 | OdontogramPolicy::update (scope first, then finalized ⇒ deny) and
 | OdontogramService, which re-decides "finalized ⇒ refuse" on the chart row it
-| locks after the visit row (rule 223 §6). The service binds Super Admin (CG-06).
+| locks after the visit row (rule 223 §1 item 6). The service binds Super Admin (CG-06).
 | The authoring authority itself (rule 134; rule 241 §2 added the executed
 | consent) is unchanged: a previous visit's chart is still refused by it first,
 | with its own reason; the lock answers before a missing PTM (rule 240 §1.8,
@@ -296,7 +296,84 @@ it('still renders the chart form on a DRAFT chart (positive control)', function 
         ->assertDontSee(OdontogramService::MESSAGE_FINALIZED_CHART_LOCKED);
 });
 
-// ─── Lock order (rule 223 §6) ────────────────────────────────────────────────
+// ─── One reason per chart on the page (rule 240 §1.7) ───────────────────────
+
+/** Make the chart's visit history: it finished, and a new encounter is live. */
+function m33oMakeHistory(ClinicVisit $visit): ClinicVisit
+{
+    $visit->forceFill(['status' => ClinicVisit::STATUS_COMPLETED])->save();
+    $current = ClinicVisit::factory()->create(['branch_id' => $visit->branch_id, 'patient_id' => $visit->patient_id]);
+
+    return rmeActiveConsentedEncounter($current);
+}
+
+it('shows the history banner, not the lock banner, on a FINALIZED previous-visit chart; the policy refuses it 403', function () {
+    [$visit, $chart] = m33oFinalized($this->branch, $this->author);
+    m33oMakeHistory($visit);
+
+    $this->actingAs($this->author)
+        ->get(route('rme.visits.odontogram.show', $visit))
+        ->assertOk()
+        ->assertSee('Odontogram riwayat — hanya-baca')
+        ->assertDontSee(OdontogramService::MESSAGE_FINALIZED_CHART_LOCKED);
+
+    $this->patch(route('rme.odontograms.update', $chart), ['summary_notes' => 'x'])->assertForbidden();
+    expect($chart->fresh()->summary_notes)->toBe('catatan awal');
+});
+
+it('shows the history banner on a DRAFT previous-visit chart, whose write the service refuses with the history reason', function () {
+    [$visit, $chart] = m33oChart($this->branch);
+    m33oMakeHistory($visit);
+
+    $this->actingAs($this->author)
+        ->get(route('rme.visits.odontogram.show', $visit))
+        ->assertOk()
+        ->assertSee('Odontogram riwayat — hanya-baca')
+        ->assertDontSee(OdontogramService::MESSAGE_FINALIZED_CHART_LOCKED);
+
+    $this->patch(route('rme.odontograms.update', $chart), ['summary_notes' => 'x'])
+        ->assertSessionHasErrors('consent');
+    expect($chart->fresh()->summary_notes)->toBe('catatan awal');
+});
+
+it('shows the lock banner, not the history banner, on a FINALIZED chart of the live encounter', function () {
+    [$visit] = m33oFinalized($this->branch, $this->author);
+
+    $this->actingAs($this->author)
+        ->get(route('rme.visits.odontogram.show', $visit))
+        ->assertOk()
+        ->assertSee(OdontogramService::MESSAGE_FINALIZED_CHART_LOCKED)
+        ->assertDontSee('Odontogram riwayat — hanya-baca');
+});
+
+it('never tells the doctor a FINALIZED chart can still be written, even before consent', function () {
+    // A live encounter whose PTM is not signed yet: the PTM banner says the chart
+    // waits for the signatures; on a locked chart that would be false, because
+    // signing never unlocks it (rule 240 §1.8). The lock banner answers instead.
+    $visit = ClinicVisit::factory()->create(['branch_id' => $this->branch->id, 'status' => ClinicVisit::STATUS_IN_PROGRESS]);
+    Odontogram::factory()->create([
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $this->branch->id,
+        'status' => Odontogram::STATUS_FINALIZED,
+        'finalized_at' => now(),
+    ]);
+
+    $this->actingAs($this->author)
+        ->get(route('rme.visits.odontogram.show', $visit))
+        ->assertOk()
+        ->assertSee(OdontogramService::MESSAGE_FINALIZED_CHART_LOCKED)
+        ->assertDontSee('data-ptm-state', false)
+        ->assertDontSee('Odontogram sudah dapat dicatat dan disimpan sekarang.');
+
+    // Positive control: the same PTM state on a DRAFT chart names the PTM.
+    $draftVisit = ClinicVisit::factory()->create(['branch_id' => $this->branch->id, 'status' => ClinicVisit::STATUS_IN_PROGRESS]);
+    $this->get(route('rme.visits.odontogram.show', $draftVisit))
+        ->assertOk()
+        ->assertSee('data-ptm-state="awaiting_patient"', false)
+        ->assertDontSee(OdontogramService::MESSAGE_FINALIZED_CHART_LOCKED);
+});
+
+// ─── Lock order (rule 223 §1 item 6) ────────────────────────────────────────────
 
 it('locks the visit row before the chart row when deciding the lock (PostgreSQL)', function () {
     if (DB::connection()->getDriverName() !== 'pgsql') {

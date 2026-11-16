@@ -123,10 +123,12 @@
 
         {{-- Flash messages render as global toasts (see <x-flash-toasts />) --}}
 
-        {{-- Finalized notice — rule 240 §1; the wording equals
+        {{-- Finalized notice — rule 240 §1.7: a finalized chart of the LIVE
+             encounter (a finalized history chart shows the history banner below);
+             decided by OdontogramController. The wording equals
              OdontogramService::MESSAGE_FINALIZED_CHART_LOCKED (pinned by
              OdontogramFinalizedLockTest). --}}
-        @if ($isFinalized)
+        @if ($odontogramLockedNotice ?? false)
             <x-ui.alert variant="info">
                 Odontogram ini sudah final dan terkunci. Koreksi hanya dapat dilakukan melalui amandemen yang disetujui.
                 @if ($odontogram->finalized_at)
@@ -188,7 +190,8 @@
              PTM signatures (supersedes the rule 134 pre-consent reminder). When
              only the PTM stands between this account and the live chart, the page
              names it; the controller decides the state and the countersign link
-             (MEMO-F5). Reading the chart and its history stays open. --}}
+             (MEMO-F5). Reading the chart and its history stays open. A FINALIZED
+             chart shows its lock instead (rule 240 §1.8). --}}
         @if (($odontogramPtmBlock ?? null) === \App\Modules\Consent\Services\RmeVisitConsentService::PTM_AWAITING_DOCTOR)
             <div data-ptm-state="awaiting_doctor">
                 <x-ui.alert variant="warning" title="Odontogram menunggu tanda tangan dokter">
@@ -224,9 +227,7 @@
                     </div>
                 </x-ui.alert>
             </div>
-        @elseif (! ($odontogramAuthoringAllowed ?? false)
-            && (auth()->user()?->can('update', $odontogram) ?? false)
-            && ($odontogramIsLiveEncounter ?? false))
+        @elseif (($odontogramReadOnlyNotice ?? null) === 'front_office')
             {{-- DMS-RME-REVISION-PROGRAM-5 (CW5-05) — this IS the live
                  encounter's chart, so "past visit" would be the wrong reason: the
                  account itself may not chart it (e.g. the front office). --}}
@@ -236,9 +237,10 @@
                     yang memeriksa pasien. Akun ini dapat membaca odontogram dan riwayatnya.
                 </p>
             </x-ui.alert>
-        @elseif (! ($odontogramAuthoringAllowed ?? false) && (auth()->user()?->can('update', $odontogram) ?? false))
+        @elseif (($odontogramReadOnlyNotice ?? null) === 'history')
             {{-- Not the live encounter: this chart is clinical evidence of a past
-                 visit, and consent signed today does not reopen it. --}}
+                 visit, and consent signed today does not reopen it. Finalized or
+                 not, this is the banner a history chart shows (rule 240 §1.7). --}}
             <x-ui.alert variant="info" title="Odontogram riwayat — hanya-baca">
                 <p class="text-sm">
                     Odontogram ini milik kunjungan yang tidak sedang berjalan, sehingga

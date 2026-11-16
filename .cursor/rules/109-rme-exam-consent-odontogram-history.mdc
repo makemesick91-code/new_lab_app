@@ -252,9 +252,14 @@ same-visit encounter.
   the LIVE encounter is still revisable. What it may no longer do is reach back
   into an earlier encounter's chart.
   **[SUPERSEDED in part by rule 240 §1 (owner decision 2026-11-17): a finalized
-  chart is locked on the live encounter too, and `OdontogramPolicy::update` now
-  denies a finalized chart after the scope check. A previous visit's chart is still
-  refused by `OdontogramService` with its own reason, as below.]**
+  chart is locked on the live encounter too. `OdontogramPolicy::update` now denies
+  a FINALIZED chart — live or history — after the scope check, with the lock reason
+  (HTTP 403); a DRAFT chart of a previous visit is still refused by
+  `OdontogramService` with the history reason, as below, and the page shows the
+  history banner for any previous-visit chart. A finalized chart is corrected only
+  by the supervised amendment of rule 240 — a supervised correction, not a
+  "reopening" in the sense of this section; nothing that happens today reopens a
+  previous visit's chart for ordinary writing.]**
   - Enforced in `OdontogramService`, not by hiding a control, and not by a blanket
     "all odontograms are read-only" policy: `OdontogramPolicy::update` still
     answers only the role/branch/patient-scope question, so the refusal carries a
