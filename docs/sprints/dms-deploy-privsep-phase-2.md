@@ -551,4 +551,4 @@ rule file was needed: the gaps were three index rows (host identity, finding evi
 | Background processes | 0 (no CI watcher, test run, graph build or SSH session of this sprint) |
 | Workstation backups | the sprint's two (`~/.ssh` config before the operator alias; known-hosts before the approved key removal) removed after both target checks `VERIFIED`; two older ones from earlier sprints untouched |
 | Host | exports 0; rehearsal workspaces 0; build processes 0; transient units 0; deploy, release and rollback locks IDLE; `/root/sudoers-retired/` kept (recovery); the build identity's cache kept (in use) |
-| Deploy snapshot | removed by the bootstrap's exit trap by design (`DEPLOY_SNAPSHOT_CLEANED`); its root-only directory is no longer readable without the administrator's password, so this is reported from the design, not a read-out |
+| Deploy snapshot | **0 left**: the owner, with the administrator's password (the directory is root-only since the cutover), read `/run/daengtisiams-deploy` (no `deploy-…` snapshot directory) and the deploy log's tail (`DEPLOY_SNAPSHOT_CLEANED=YES`) |
