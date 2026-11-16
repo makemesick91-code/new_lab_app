@@ -45,10 +45,9 @@ class RmeVisitConsentPolicy
      * Capturing a signature. Note this is an authorisation question only —
      * WHEN a consent may be signed is a business rule and lives in
      * RmeVisitConsentService::assertSignable(), so it is enforced even for
-     * callers that never touch this policy. Since
-     * FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 / FIX-02 that window is every
-     * non-terminal visit, so consent is taken at the start of the examination
-     * rather than on the way to the cashier.
+     * callers that never touch this policy: the visit must be in_progress (the
+     * examination has started), so consent is taken at the start of the
+     * examination rather than on the way to the cashier.
      */
     public function create(User $user, ClinicVisit $visit): Response|bool
     {
@@ -62,7 +61,7 @@ class RmeVisitConsentPolicy
     /**
      * Voiding is the correction path for signed evidence. DMS-RME-COMPREHENSIVE-
      * CLOSURE-1 (OD-5-8, owner decision 2026-11-16): a SUPERVISED act behind its
-     * own permission (`void_rme_consents`, Supervisor RME and Owner), never the
+     * own permission (`void_rme_consents`, granted to Supervisor RME), never the
      * signing permission; only while the examination runs. Maker ≠ checker is an
      * identity rule and lives in the service, where Gate::before cannot skip it.
      */

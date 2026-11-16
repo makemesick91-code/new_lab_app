@@ -148,9 +148,17 @@ still disabled until consent.
    (`RmeVisitConsentService::disk()` delegates to it; `config('rme_consent.legacy_signature_disk')` names only the
    pre-change disk for the copy command). No reader falls back to the old disk (rule 121 §5). Objects written before
    the change are copied key-for-key, SHA-256 verified, by `rme:consent-signatures-migrate` (dry run, then `--apply`;
-   never deletes — purge is a separate, owner-approved phase, rule 121 §6). A late failure inside `sign()` removes the
-   objects that call wrote (rule 224 pattern); a failure after the body finished keeps them.
-6. Tests: `RmeVisitConsentSupervisedVoidTest` (token `RmeVisitConsent`, declared mandatory).
+   never deletes — purge is a separate, owner-approved phase, rule 121 §6). The copy runs as the runtime user
+   `daengtisiams` and refuses root (private disk: 0700/0600 objects owned by another user are unreadable to PHP-FPM);
+   an unreadable object is never copied as empty and never overwritten; a failed write is counted, never printed. A late
+   failure inside `sign()` removes the objects that call wrote (rule 224 pattern); a failure after the body finished
+   keeps them.
+6. **Review round (2026-11-17).** `sign()` and `void()` re-assert the policy's branch and patient scope on the locked
+   visit (CG-06 third layer, `MESSAGE_OUT_OF_SCOPE`), before any object is written; `void()` takes the same
+   `lockForStatusDecision` as signing. The void form also requires a valid consent on an `in_progress` visit, because
+   `Gate::before` answers `void` for Super Admin without the policy. Recorded INFO: an out-of-branch consent answers 403,
+   like the existing consent `view`, not 404 (CG-05 drift kept for consistency).
+7. Tests: `RmeVisitConsentSupervisedVoidTest` (token `RmeVisitConsent`, declared mandatory).
 
 ## 11. A cancelled visit is never a Kontrol prior visit (OD-5-10a)
 

@@ -32,11 +32,19 @@ use App\Modules\Consent\Interfaces\RmeVisitConsentRepositoryInterface;
 use App\Modules\Consent\Models\RmeVisitConsent;
 use App\Modules\Consent\Services\RmeVisitConsentService;
 use App\Modules\LabOrder\Models\AuditLog;
+use App\Modules\MedicalRecord\Models\ClinicalDiagnosis;
+use App\Modules\MedicalRecord\Models\DiagnosisRolloutSetting;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
+use App\Modules\MedicalRecord\Models\MedicalRecordDiagnosis;
+use App\Modules\MedicalRecord\Services\DiagnosisRolloutService;
+use App\Modules\MedicalRecord\Services\MedicalRecordDiagnosisService;
 use App\Support\Storage\ClinicalEvidenceStorage;
 use Database\Seeders\BranchSeeder;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Events\QueryExecuted;
+use Illuminate\Database\Events\TransactionBeginning;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 
@@ -229,10 +237,16 @@ it('CV-08 refuses a supervisor pinned to another working branch', function () {
 
 it('CV-09 offers the void form to a supervisor, never to the recorder or a signer without the permission', function () {
     $visit = rcsvVisit();
-    $consent = rcsvSign($visit);
+    // The recorder ALSO holds the void permission, so only the signed_by
+    // (maker ≠ checker) branch of the decision can hide the form from it.
+    $recorder = userWith(['view_clinic_visits', 'manage_rme_consents', 'view_rme_consents', 'void_rme_consents']);
+    $consent = rcsvSign($visit, $recorder);
 
     $this->actingAs($this->supervisor)->get(route('rme.consents.show', $consent))
         ->assertOk()->assertSee('data-testid="consent-void-form"', false);
+
+    $this->actingAs($recorder)->get(route('rme.consents.show', $consent))
+        ->assertOk()->assertDontSee('data-testid="consent-void-form"', false);
 
     $this->actingAs($this->operator)->get(route('rme.consents.show', $consent))
         ->assertOk()->assertDontSee('data-testid="consent-void-form"', false);
@@ -338,4 +352,206 @@ it('CV-14 refuses an RM write after the consent was voided, even inside a transa
     // …refused once it is voided.
     expect(fn () => DB::transaction(fn () => $consents->assertRmeAuthoringAllowedForPatient((int) $visit->patient_id, $author)))
         ->toThrow(ValidationException::class, 'Persetujuan Tindakan Medis belum ditandatangani');
+});
+
+/*
+| Review round (2026-11-17)
+*/
+
+/** An Admin Klinik holding both consent permissions, pinned to another branch. */
+function rcsvRemoteOperator(): User
+{
+    $other = Branch::factory()->create(['code' => 'CSV7', 'is_active' => true, 'is_rme_enabled' => true]);
+    $remote = userInRole('Admin Klinik');
+    $remote->givePermissionTo(['manage_rme_consents', 'void_rme_consents']);
+    rmeMakeAdminClinicActive($remote, $other);
+
+    return $remote->fresh();
+}
+
+/**
+ * True when, inside the transaction that holds the first statement matching
+ * $isAnchor, a visit row lock was taken BEFORE that statement. The BEGIN of
+ * every (nested) transaction is recorded, so a lock taken before the write's
+ * own transaction (e.g. a pre-check outside it) does not count.
+ */
+function rcsvVisitLockedBefore(callable $act, callable $isAnchor): bool
+{
+    $log = [];
+    Event::listen(TransactionBeginning::class, function () use (&$log): void {
+        $log[] = 'BEGIN';
+    });
+    DB::listen(function (QueryExecuted $q) use (&$log): void {
+        $log[] = strtolower($q->sql);
+    });
+
+    $act();
+
+    $anchor = null;
+    foreach ($log as $i => $entry) {
+        if ($entry !== 'BEGIN' && $isAnchor($entry)) {
+            $anchor = $i;
+            break;
+        }
+    }
+
+    $begin = null;
+    for ($i = ($anchor ?? 0) - 1; $i >= 0; $i--) {
+        if ($log[$i] === 'BEGIN') {
+            $begin = $i;
+            break;
+        }
+    }
+
+    if ($anchor === null || $begin === null) {
+        return false;
+    }
+
+    for ($i = $begin + 1; $i < $anchor; $i++) {
+        if (str_contains($log[$i], '"trx_clinic_visits"') && str_contains($log[$i], 'for no key update')) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/** A distinct, non-blank 10x10 RGBA page drawing. */
+function rcsvDrawing(int $seed): string
+{
+    $raw = '';
+    for ($y = 0; $y < 10; $y++) {
+        $raw .= "\0".str_repeat(pack('C4', ($seed * 37 + $y) % 256, 10, 10, 255), 10);
+    }
+
+    $chunk = static fn (string $type, string $data): string => pack('N', strlen($data)).$type.$data.pack('N', crc32($type.$data));
+
+    return 'data:image/png;base64,'.base64_encode("\x89PNG\r\n\x1a\n"
+        .$chunk('IHDR', pack('NNCCCCC', 10, 10, 8, 6, 0, 0, 0))
+        .$chunk('IDAT', gzcompress($raw))
+        .$chunk('IEND', ''));
+}
+
+it('CV-15 answers an account inside the route middleware but outside the policy before validating (R8A-2)', function () {
+    $visit = rcsvVisit();
+    $consent = rcsvSign($visit);
+    $remote = rcsvRemoteOperator();
+
+    // It passes both route middlewares…
+    expect($remote->can('manage_rme_consents'))->toBeTrue()
+        ->and($remote->can('void_rme_consents'))->toBeTrue();
+
+    // …so only the FormRequest's policy check can refuse its malformed payloads.
+    $store = $this->actingAs($remote)->post(route('rme.visits.consent.store', $visit), ['template_code' => 'X']);
+    $void = $this->actingAs($remote)->post(route('rme.consents.void', $consent), []);
+
+    expect($store->status())->toBeIn([403, 404])
+        ->and($void->status())->toBeIn([403, 404]);
+    $store->assertSessionHasNoErrors();
+    $void->assertSessionHasNoErrors();
+});
+
+it('CV-16 re-decides the consent under the visit lock inside every consent-gated write transaction', function () {
+    $visit = rcsvVisit();
+    rcsvSign($visit);
+    $record = MedicalRecord::query()->where('clinic_visit_id', $visit->id)->sole();
+    $author = rmeClinicalAuthor(['manage_clinic_visits']);
+    // The override is only relevant on a pilot_enforced branch (never a default).
+    DiagnosisRolloutSetting::query()->create([
+        'branch_id' => $this->branch->id,
+        'mode' => DiagnosisRolloutSetting::MODE_PILOT_ENFORCED,
+        'reason' => 'Pilot cabang untuk uji kunci baris kunjungan.',
+        'configured_by' => $author->id,
+    ]);
+    $diagnoses = app(MedicalRecordDiagnosisService::class);
+    $first = ClinicalDiagnosis::factory()->create();
+    $second = ClinicalDiagnosis::factory()->create();
+
+    $recordLock = fn (string $sql): bool => str_contains($sql, 'from "trx_medical_records"') && str_contains($sql, 'for update');
+
+    expect(rcsvVisitLockedBefore(
+        fn () => $diagnoses->record($record, ['clinical_diagnosis_id' => $first->id, 'diagnosis_role' => MedicalRecordDiagnosis::ROLE_SECONDARY], $author),
+        $recordLock,
+    ))->toBeTrue('record()');
+
+    $diagnosis = MedicalRecordDiagnosis::query()->where('medical_record_id', $record->id)->sole();
+
+    expect(rcsvVisitLockedBefore(fn () => $diagnoses->makePrimary($record, $diagnosis, $author), $recordLock))
+        ->toBeTrue('makePrimary()');
+
+    $diagnoses->record($record, ['clinical_diagnosis_id' => $second->id, 'diagnosis_role' => MedicalRecordDiagnosis::ROLE_SECONDARY], $author);
+    $removable = MedicalRecordDiagnosis::query()->where('clinical_diagnosis_id', $second->id)->sole();
+
+    expect(rcsvVisitLockedBefore(
+        fn () => $diagnoses->remove($record, $removable, $author),
+        // A soft delete is an UPDATE; either way the row write is the anchor.
+        fn (string $sql): bool => str_starts_with(ltrim($sql), 'delete from "trx_medical_record_diagnoses"')
+            || str_starts_with(ltrim($sql), 'update "trx_medical_record_diagnoses"'),
+    ))->toBeTrue('remove()');
+
+    expect(rcsvVisitLockedBefore(
+        fn () => app(DiagnosisRolloutService::class)->grantOverride($record, 'Darurat: pasien tidak sadar.', $author),
+        fn (string $sql): bool => str_starts_with(ltrim($sql), 'insert into "trx_diagnosis_requirement_overrides"'),
+    ))->toBeTrue('grantOverride()');
+})->skip(fn () => DB::connection()->getDriverName() !== 'pgsql', 'Row locks are only emitted on PostgreSQL.');
+
+it('CV-16b re-decides the consent under the visit lock before the record lock when a page is edited in place', function () {
+    $visit = ClinicVisit::factory()->create(['branch_id' => $this->branch->id, 'status' => ClinicVisit::STATUS_IN_PROGRESS]);
+    rmeActiveConsentedEncounter($visit);
+    $record = MedicalRecord::factory()->create([
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $visit->branch_id,
+        'patient_id' => $visit->patient_id,
+        'doctor_id' => $visit->doctor_id,
+    ]);
+    $author = rmeClinicalAuthor(['manage_clinic_visits']);
+    $save = fn (int $seed) => $this->actingAs($author)->post(
+        route('rme.visits.medical-record.handwriting.store', [$visit, $record]),
+        ['handwriting_data' => rcsvDrawing($seed), 'page_number' => 1],
+    );
+
+    $save(1)->assertSessionHasNoErrors();
+
+    expect(rcsvVisitLockedBefore(
+        fn () => $save(2)->assertSessionHasNoErrors(),
+        fn (string $sql): bool => str_contains($sql, 'from "trx_medical_records"') && str_contains($sql, 'for no key update'),
+    ))->toBeTrue();
+})->skip(fn () => DB::connection()->getDriverName() !== 'pgsql', 'Row locks are only emitted on PostgreSQL.');
+
+it('CV-17 refuses a direct service void or sign by an account outside the branch scope (CG-06)', function () {
+    $visit = rcsvVisit();
+    $consent = rcsvSign($visit);
+    $remote = rcsvRemoteOperator();
+
+    expect(fn () => app(RmeVisitConsentService::class)->void($consent, $remote, 'Dari cabang lain, langsung ke service.'))
+        ->toThrow(AuthorizationException::class);
+    expect($consent->fresh()->isVoided())->toBeFalse();
+
+    $other = rcsvVisit();
+
+    expect(fn () => rcsvSign($other, $remote))->toThrow(AuthorizationException::class);
+    expect(rcsvValidCount($other))->toBe(0)
+        ->and(Storage::disk(ClinicalEvidenceStorage::diskName())->allFiles())->toHaveCount(1);
+});
+
+it('CV-18 never offers Super Admin the void form on a voided consent or a visit no longer running', function () {
+    $superAdmin = userInRole('Super Admin');
+
+    $voidedVisit = rcsvVisit();
+    $voided = rcsvSign($voidedVisit);
+    app(RmeVisitConsentService::class)->void($voided, $this->supervisor, 'Dibatalkan sebelum diperiksa.');
+
+    $finishedVisit = rcsvVisit();
+    $finished = rcsvSign($finishedVisit);
+    $finishedVisit->forceFill(['status' => ClinicVisit::STATUS_CASHIER_PENDING])->save();
+
+    $this->actingAs($superAdmin)->get(route('rme.consents.show', $voided))
+        ->assertOk()->assertDontSee('data-testid="consent-void-form"', false);
+    $this->actingAs($superAdmin)->get(route('rme.consents.show', $finished))
+        ->assertOk()->assertDontSee('data-testid="consent-void-form"', false);
+
+    // Control: on a running visit Super Admin (not the recorder) is offered it.
+    $live = rcsvSign(rcsvVisit());
+    $this->actingAs($superAdmin)->get(route('rme.consents.show', $live))
+        ->assertOk()->assertSee('data-testid="consent-void-form"', false);
 });

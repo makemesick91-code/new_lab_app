@@ -84,8 +84,12 @@ class RmeVisitConsentController extends Controller
         return view('rme.consents.show', $this->documentData($consent) + [
             // DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-5-8) — decided here, never in
             // Blade; the policy, the route permission and the service decide again.
+            // The state checks are explicit: Gate::before answers `void` for
+            // Super Admin without ever reaching the policy (review F7).
             'canVoid' => (request()->user()?->can('void', $consent) ?? false)
-                && (int) $consent->signed_by !== (int) request()->user()?->getKey(),
+                && (int) $consent->signed_by !== (int) request()->user()?->getKey()
+                && ! $consent->isVoided()
+                && $consent->clinicVisit?->status === ClinicVisit::STATUS_IN_PROGRESS,
         ]);
     }
 

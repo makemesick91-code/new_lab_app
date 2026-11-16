@@ -17,6 +17,8 @@ use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
 use App\Support\AccessControl\FrontOfficeRole;
 use App\Support\Clinical\ClinicalClock;
 use App\Support\Storage\ClinicalEvidenceStorage;
+use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Auth\Access\Response;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -50,6 +52,8 @@ class RmeVisitConsentService
     public const MESSAGE_VOID_PERMISSION = 'Akun ini tidak berwenang membatalkan persetujuan tindakan medis.';
 
     public const VOID_PERMISSION = 'void_rme_consents';
+
+    public const MESSAGE_OUT_OF_SCOPE = 'Anda tidak memiliki akses ke persetujuan kunjungan ini.';
 
     public const VOID_REASON_MIN = 10;
 
@@ -649,6 +653,9 @@ class RmeVisitConsentService
             ]);
         }
 
+        // Before any signature object is written.
+        $this->assertOperatorWithinScope($operator, $current);
+
         $this->assertSignable($current);
 
         // DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-5-8, owner decision 2026-11-16) —
@@ -773,13 +780,19 @@ class RmeVisitConsentService
         }
 
         return DB::transaction(function () use ($consent, $operator, $reason): RmeVisitConsent {
-            $visit = $this->visits->lockForUpdate((int) $consent->clinic_visit_id);
+            // The same lock, in the same order, as signWithinTransaction() and
+            // transitionStatus(): FOR NO KEY UPDATE (rule 223 §1a), visit first.
+            $visit = $this->visits->lockForStatusDecision((int) $consent->clinic_visit_id);
             $consent->refresh();
 
             if ($consent->isVoided()) {
                 throw ValidationException::withMessages([
                     'consent' => 'Persetujuan ini sudah dibatalkan.',
                 ]);
+            }
+
+            if ($visit !== null) {
+                $this->assertOperatorWithinScope($operator, $visit);
             }
 
             // Maker ≠ checker (CG-07), inside the transaction and identity-based,
@@ -856,6 +869,24 @@ class RmeVisitConsentService
     public function signatureDataUri(?string $path): ?string
     {
         return ClinicalEvidenceStorage::dataUri($path);
+    }
+
+    /**
+     * DMS-RME-COMPREHENSIVE-CLOSURE-1 (review F6, CG-06 third layer) — the
+     * branch and patient scope the policy asks (RmeWorkingBranchScope, then
+     * DoctorPatientScopeService), re-asserted on the locked visit so a caller
+     * that never passes through the policy (a command, a job, a script) is held
+     * to it too.
+     */
+    private function assertOperatorWithinScope(User $operator, ClinicVisit $visit): void
+    {
+        $patientScope = app(DoctorPatientScopeService::class)->authorizeVisitAccess($operator, $visit);
+
+        if (! app(RmeWorkingBranchScope::class)->allows($operator, $visit->branch_id)
+            || $patientScope === false
+            || ($patientScope instanceof Response && $patientScope->denied())) {
+            throw new AuthorizationException(self::MESSAGE_OUT_OF_SCOPE);
+        }
     }
 
     /** @param  list<string>  $keys */
