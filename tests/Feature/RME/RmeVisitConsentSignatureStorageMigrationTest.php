@@ -15,7 +15,8 @@ declare(strict_types=1);
 | Review round (2026-11-17): a failed write is WRITE_FAILED and never stops the
 | run or prints the key; an object that exists but cannot be read is
 | UNREADABLE — never copied as an empty object, never overwritten on the
-| clinical disk; the command refuses root (it runs as the runtime user
+| clinical disk; the command refuses root, and fails closed when the effective
+| user cannot be determined (it runs as the runtime user
 | `daengtisiams`, because the clinical disk is private 0700/0600).
 |
 | Selected by the existing `RmeVisitConsent` critical-gate token in both runner
@@ -239,4 +240,31 @@ it('SM-11 refuses to run as root and writes nothing', function () {
         ->and($out)->toContain('Refusing to run as root')
         ->and(Storage::disk(ClinicalEvidenceStorage::diskName())->allFiles())->toBe([])
         ->and(AuditLog::query()->where('action', RmeConsentSignaturesMigrateCommand::AUDIT_ACTION)->count())->toBe(0);
+});
+
+it('SM-12 refuses to run when the effective user cannot be determined, and writes nothing', function () {
+    // Fails CLOSED: without the posix extension the effective user is unknown,
+    // so a root run cannot be ruled out and the run is refused (never assumed
+    // not to be root). The test cannot remove posix, so the seam reports
+    // "unknown" and the default seam is pinned at the source.
+    rcsmLegacyConsent();
+
+    Artisan::registerCommand(new class extends RmeConsentSignaturesMigrateCommand
+    {
+        protected function effectiveUserId(): ?int
+        {
+            return null;
+        }
+    });
+
+    [$code, $out] = rcsmRun(['--apply' => true]);
+
+    $source = (string) file_get_contents(app_path('Console/Commands/RmeConsentSignaturesMigrateCommand.php'));
+
+    expect($code)->toBe(1)
+        ->and($out)->toContain('effective user cannot be determined')
+        ->and(Storage::disk(ClinicalEvidenceStorage::diskName())->allFiles())->toBe([])
+        ->and(AuditLog::query()->where('action', RmeConsentSignaturesMigrateCommand::AUDIT_ACTION)->count())->toBe(0)
+        ->and($source)->toContain("function_exists('posix_geteuid') ? posix_geteuid() : null")
+        ->and($source)->not->toContain("function_exists('posix_geteuid') &&");
 });

@@ -37,7 +37,9 @@ use Throwable;
  * Runs as the runtime user `daengtisiams` only, and refuses root: the clinical
  * disk is private (directories 0700, files 0600), so objects or directories
  * created by another user are unreadable to PHP-FPM, and a root-owned
- * directory would make every later consent signing fail.
+ * directory would make every later consent signing fail. The refusal fails
+ * closed: when the effective user cannot be determined (no posix extension)
+ * the run is refused, never assumed not to be root.
  */
 class RmeConsentSignaturesMigrateCommand extends Command
 {
@@ -57,6 +59,12 @@ class RmeConsentSignaturesMigrateCommand extends Command
 
     public function handle(RmeVisitConsentRepositoryInterface $consents, AuditLogService $audit): int
     {
+        if ($this->effectiveUserId() === null) {
+            $this->error('Refusing to run: the effective user cannot be determined (the PHP posix extension is missing), so a root run cannot be ruled out. Run it as the runtime user with the posix extension enabled.');
+
+            return self::FAILURE;
+        }
+
         if ($this->runningAsRoot()) {
             $this->error('Refusing to run as root: run it as the runtime user, e.g. `runuser -u daengtisiams -- php artisan rme:consent-signatures-migrate`.');
 
@@ -214,10 +222,19 @@ class RmeConsentSignaturesMigrateCommand extends Command
         return is_string($bytes) ? [self::PRESENT, $bytes] : [self::UNREADABLE, null];
     }
 
+    /**
+     * The effective user id, or null when it cannot be determined (no posix
+     * extension); handle() refuses an unknown user. Overridable for the test.
+     */
+    protected function effectiveUserId(): ?int
+    {
+        return function_exists('posix_geteuid') ? posix_geteuid() : null;
+    }
+
     /** Overridable so the refusal is testable without running the suite as root. */
     protected function runningAsRoot(): bool
     {
-        return function_exists('posix_geteuid') && posix_geteuid() === 0;
+        return $this->effectiveUserId() === 0;
     }
 
     private function forget($disk, string $key): void
