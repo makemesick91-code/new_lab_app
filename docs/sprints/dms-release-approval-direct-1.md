@@ -231,7 +231,7 @@ pinned by `config/deployment_entrypoint.php`. Rules, runbooks and CLAUDE.md are 
 | Implemented, locally verified | §5, §7 |
 | Reviewed | §8 |
 | PR / CI / merge / post-merge CI | PR #643 run `43800039265`: Critical Test Gate **10,416 passed**, 0 failed (`DeployHardenDirectApprovalTest` ran); squash merge pinned to `5dd5ced7` → **`312337b4f8bf993595ff315c78e90a12820c361c`** (tree `ef2a896b1ece12248870c0a0c1c801738d9808be` = tested head tree); post-merge push run `43807868750` **success**, Critical Test Gate **10,416 passed**; Full Suite skipped = DEFERRED (CG-18) |
-| Release approval (contract 2, owner-signed, approval PR) — the migration release | owner approval 2026-11-16T06:27:41Z (§11.1); signature and approval PR pending |
+| Release approval (contract 2, owner-signed, approval PR) — the migration release | owner approval 2026-11-16T06:27:41Z (§11.1), signature verified (§11.2); approval PR pending |
 | Deploy through the operator (contract 2) | pending |
 | Operator re-provisioned (owner's password) → `submit-approval`, `check-approval` active | pending |
 | Production test of contract 3 (owner-signed test approval, `submit-approval`, `check-approval`, withdraw; no second deploy) | pending |
@@ -254,3 +254,11 @@ operator with the administrator's password); the owner signs a contract-3 test a
 `75ac3578808a8dd8c720bf38e98a86685183eb66`, code only. 48-hour window.
 
 Record: `deploy/release-approvals/dms-release-approval-direct-1.approval` (contract 2, window 2026-11-16T06:27:41Z → 2026-11-18T06:27:41Z).
+
+### 11.2 The owner's signature (verified on the workstation, read-only)
+
+Owner-signed in their own terminal (`ssh-keygen -Y sign`, namespace `dms-release-approval`, file form); signature
+blob `b405c9fcbc45cc02537e51c2bc2e0af631b85c7b` over the committed record blob
+`01402f59de2967ccc8efc603317677ff1460273a`: `Good "dms-release-approval" signature for owner with ED25519 key
+SHA256:0WGGTlMDzLPGAhQaRG+Ag7BqoypSLinSNOHalZKtgt4`. Refused (exit 255): namespace `git`; principal `someone`;
+`NOT_AFTER` one second later; and Phase 2's r3 signature against this record.
