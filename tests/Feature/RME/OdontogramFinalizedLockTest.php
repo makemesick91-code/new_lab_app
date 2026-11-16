@@ -336,6 +336,35 @@ it('shows the history banner on a DRAFT previous-visit chart, whose write the se
     expect($chart->fresh()->summary_notes)->toBe('catatan awal');
 });
 
+it('shows when and by whom any FINALIZED chart was finalized, in WITA, to a clinician and to a reader', function () {
+    [$visit, $chart] = m33oChart($this->branch, [
+        'status' => Odontogram::STATUS_FINALIZED,
+        // 02:30 UTC is 10:30 WITA (CG-12).
+        'finalized_at' => '2026-11-03 02:30:00',
+        'finalized_by' => $this->author->id,
+    ]);
+    m33oMakeHistory($visit);
+
+    foreach ([$this->author, rmeClinicalReader()] as $user) {
+        $this->actingAs($user)
+            ->get(route('rme.visits.odontogram.show', $visit))
+            ->assertOk()
+            ->assertSee('Difinalisasi pada 03/11/2026 10:30 WITA oleh '.$this->author->name.'.')
+            // A history chart: the lock wording belongs to the live chart only.
+            ->assertDontSee(OdontogramService::MESSAGE_FINALIZED_CHART_LOCKED);
+    }
+
+    // The live encounter's finalized chart shows the lock wording and the line once.
+    [$live] = m33oChart($this->branch, [
+        'status' => Odontogram::STATUS_FINALIZED,
+        'finalized_at' => '2026-11-17 01:05:00',
+        'finalized_by' => $this->author->id,
+    ]);
+    $html = $this->actingAs($this->author)->get(route('rme.visits.odontogram.show', $live))->assertOk()->getContent();
+    expect($html)->toContain(OdontogramService::MESSAGE_FINALIZED_CHART_LOCKED)
+        ->and(substr_count($html, 'Difinalisasi pada 17/11/2026 09:05 WITA'))->toBe(1);
+});
+
 it('shows the lock banner, not the history banner, on a FINALIZED chart of the live encounter', function () {
     [$visit] = m33oFinalized($this->branch, $this->author);
 

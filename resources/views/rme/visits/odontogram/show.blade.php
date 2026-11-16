@@ -131,15 +131,14 @@
         @if ($odontogramLockedNotice ?? false)
             <x-ui.alert variant="info">
                 Odontogram ini sudah final dan terkunci. Koreksi hanya dapat dilakukan melalui amandemen yang disetujui.
-                @if ($odontogram->finalized_at)
-                    Difinalisasi pada {{ $odontogram->finalized_at->format('d/m/Y H:i') }}
-                    @if ($odontogram->finalizer)
-                        oleh {{ $odontogram->finalizer->name }}.
-                    @else
-                        .
-                    @endif
+                @if ($odontogramFinalizedLine ?? null)
+                    {{ $odontogramFinalizedLine }}
                 @endif
             </x-ui.alert>
+        @elseif ($odontogramFinalizedLine ?? null)
+            {{-- Any other finalized chart (history, or a viewer outside the live
+                 encounter's banner): when and by whom, as before the lock. --}}
+            <p class="text-sm text-gray-600">{{ $odontogramFinalizedLine }}</p>
         @endif
 
         {{-- Header --}}

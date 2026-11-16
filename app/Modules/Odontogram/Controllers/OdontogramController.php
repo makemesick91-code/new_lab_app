@@ -14,6 +14,8 @@ use App\Modules\Odontogram\Requests\UpdateOdontogramPlaceholderRequest;
 use App\Modules\Odontogram\Services\OdontogramPrintFormatter;
 use App\Modules\Odontogram\Services\OdontogramService;
 use App\Modules\RME\Services\DoctorRoomScopeService;
+use App\Support\Clinical\ClinicalClock;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -149,8 +151,10 @@ class OdontogramController extends Controller
         $odontogramIsLiveEncounter = app(ActiveEncounterResolver::class)->isCurrentEncounter($clinicVisit);
 
         /*
-         * Rule 240 §1.7 (memo M3.3) — which state banner the page shows, decided
-         * here so the Blade only renders it. One chart, one reason:
+         * Rule 240 §1.7 (memo M3.3) — which state banners the page shows, decided
+         * here so the Blade only renders them. Each banner has one reason (an
+         * account may see two, e.g. the front office on a finalized live chart
+         * sees the lock and its own read-only banner, as before the lock):
          *
          *  - `lockedNotice`: a FINALIZED chart of the live encounter. It is locked
          *    (OdontogramPolicy::update and OdontogramService refuse it); a
@@ -190,6 +194,19 @@ class OdontogramController extends Controller
         $countersignConsent = $countersignOutlook !== null && $countersignOutlook['refusal'] === null ? $countersignOutlook['consent'] : null;
         $countersignRefusal = $countersignOutlook['refusal'] ?? null;
 
+        // When and by whom ANY finalized chart was finalized — live or history,
+        // for every viewer, as before the lock. Clinic-local time (CG-12, WITA).
+        $odontogramFinalizedLine = null;
+        if ($odontogram->isFinalized() && $odontogram->finalized_at !== null) {
+            $odontogramFinalizedLine = 'Difinalisasi pada '
+                .CarbonImmutable::instance($odontogram->finalized_at)
+                    ->setTimezone(app(ClinicalClock::class)->timezone())
+                    ->format('d/m/Y H:i')
+                .' WITA'
+                .($odontogram->finalizer?->name !== null ? ' oleh '.$odontogram->finalizer->name : '')
+                .'.';
+        }
+
         return view('rme.visits.odontogram.show', compact(
             'clinicVisit',
             'odontogram',
@@ -203,6 +220,7 @@ class OdontogramController extends Controller
             'countersignRefusal',
             'odontogramLockedNotice',
             'odontogramReadOnlyNotice',
+            'odontogramFinalizedLine',
         ));
     }
 
