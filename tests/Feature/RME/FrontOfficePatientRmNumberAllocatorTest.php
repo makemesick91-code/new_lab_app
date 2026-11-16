@@ -22,6 +22,7 @@ declare(strict_types=1);
 | `fprn` is unique because the critical gate loads every suite into one process.
 */
 
+use App\Models\User;
 use App\Modules\Branch\Models\Branch;
 use App\Modules\Patient\Exceptions\PatientRmNumberUnavailableException;
 use App\Modules\Patient\Models\Patient;
@@ -32,6 +33,7 @@ use App\Modules\PatientMerge\Interfaces\PatientRmAliasRepositoryInterface;
 use App\Modules\PatientMerge\Models\PatientRmAlias;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 const FPRN_YEAR = 2031;
 
@@ -194,4 +196,82 @@ it('AL-11 never touches an existing patient number while allocating', function (
     fprnAllocate($branch);
 
     expect($patient->fresh()->getAttributes())->toBe($before);
+});
+
+it('AL-12 seeds a missing branch-year from a number issued under the historical alias code', function () {
+    // No counter row: the first allocation seeds it lazily through the real
+    // BranchCodeAlias authority (TKM1 is TLK1's historical code), not a mock.
+    $telkomas = fprnBranch('TLK1');
+    fprnPatient($telkomas, 'DG-TKM1-2031-0007');
+
+    expect(PatientRmSequence::query()->count())->toBe(0)
+        ->and(fprnAllocate($telkomas))->toBe('DG-TLK1-2031-0008')
+        ->and(PatientRmSequence::query()->where('branch_id', $telkomas->id)->value('seed_source'))
+        ->toBe(PatientRmSequence::SOURCE_LAZY);
+});
+
+it('AL-13 skips a number held only by an active merge alias, through the real alias lookup', function () {
+    $telkomas = fprnBranch('TLK1');
+    fprnCounter($telkomas, 0);
+
+    // Neither number is on any patient row: only the real (unmocked) merge-alias
+    // repository can hold them — one under the historical code, one unpadded and
+    // lower-case (the alias lookup is case-insensitive).
+    $source = fprnPatient($telkomas, 'DG-TLK1-2030-0001');
+    $canonical = fprnPatient($telkomas, 'DG-TLK1-2030-0002');
+    $user = User::factory()->create();
+    $caseId = DB::table('trx_patient_merge_cases')->insertGetId([
+        'uuid' => (string) Str::uuid(),
+        'case_number' => 'FPRN-MERGE-1',
+        'patient_a_id' => $source->id,
+        'patient_b_id' => $canonical->id,
+        'requested_by' => $user->id,
+        'requested_at' => now(),
+        'request_reason' => 'Allocator alias fixture',
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    foreach (['DG-TKM1-2031-0001', 'dg-tlk1-2031-2'] as $alias) {
+        PatientRmAlias::query()->create([
+            'alias_medical_record_number' => $alias,
+            'source_patient_id' => $source->id,
+            'canonical_patient_id' => $canonical->id,
+            'merge_case_id' => $caseId,
+            'merged_at' => now(),
+        ]);
+    }
+
+    expect(fprnAllocate($telkomas))->toBe('DG-TLK1-2031-0003');
+});
+
+it('AL-14 ignores an existing number too wide for the allocator when it seeds, instead of exhausting the branch-year', function () {
+    // A phone number typed as the sequence can never collide with an issuable
+    // (at most eight-digit) number, so it must not lift the counter out of reach.
+    $branch = fprnBranch('FPA1');
+    fprnPatient($branch, 'DG-FPA1-2031-081234567890');
+    fprnPatient($branch, 'DG-FPA1-2031-123456789');
+    fprnPatient($branch, 'DG-FPA1-2031-0005');
+
+    expect(fprnAllocate($branch))->toBe('DG-FPA1-2031-0006')
+        ->and((int) PatientRmSequence::query()->where('branch_id', $branch->id)->value('last_number'))->toBe(6);
+
+    $empty = fprnBranch('FPA2');
+    fprnPatient($empty, 'DG-FPA2-2031-081234567890');
+
+    expect(fprnAllocate($empty))->toBe('DG-FPA2-2031-0001');
+});
+
+it('AL-15 refuses a branch code whose composed number would not parse back to the branch', function () {
+    $branch = fprnBranch('BR-01');
+
+    try {
+        fprnAllocate($branch);
+        $this->fail('A number that cannot be parsed back must never be issued.');
+    } catch (PatientRmNumberUnavailableException $e) {
+        expect($e->getMessage())->not->toContain('DG-')
+            ->and($e->getMessage())->not->toContain('BR-01');
+    }
+
+    expect(PatientRmSequence::query()->count())->toBe(0);
 });

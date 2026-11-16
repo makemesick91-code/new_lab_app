@@ -18,7 +18,12 @@ use Illuminate\Support\Facades\DB;
  * canonical branch code and its historical aliases, in any zero padding,
  * soft-deleted patients included — is the counter's floor, so the first
  * automatic number continues after it and never collides with a number on an
- * existing card. Non-numeric sequences are counted, never interpreted.
+ * existing card. Non-numeric sequences are counted, never interpreted. A
+ * sequence wider than the allocator ever issues ({@see self::isOversized()}, e.g.
+ * a phone number typed as the sequence) can never collide with an issuable
+ * number, so it is counted and never seeded: one such card would otherwise lift
+ * the counter past the allocator's cap and, because a counter is never lowered,
+ * stop automatic numbering for that branch-year for good.
  *
  * The allocator calls {@see self::highestIssued()} when a branch-year row does not
  * exist yet (lazy seed); `patient:rm-sequence-seed` reports {@see self::plan()} and,
@@ -40,7 +45,7 @@ final class PatientRmSequenceSeedService
         foreach ($this->sequences->issuedNumbersFor(BranchCodeAlias::equivalentCodes($canonicalCode), $year) as $number) {
             $value = $this->numbers->numericSequenceOf($number);
 
-            if ($value === null || ($ignoreAbove !== null && $value > $ignoreAbove)) {
+            if ($value === null || self::isOversized($value) || ($ignoreAbove !== null && $value > $ignoreAbove)) {
                 continue;
             }
 
@@ -50,11 +55,18 @@ final class PatientRmSequenceSeedService
         return $highest;
     }
 
+    /** Whether a sequence is wider than any number the allocator issues. */
+    public static function isOversized(int $value): bool
+    {
+        return strlen((string) $value) > PatientRmNumberAllocator::MAX_DIGITS;
+    }
+
     /**
      * The seeding report: one group per known, non-MAIN branch and year, with
-     * counts and the proposed counter, plus totals. It never holds a Nomor RM.
+     * counts and the proposed counter, plus totals. It never holds a Nomor RM;
+     * the command prints the proposed counter's digit count only.
      *
-     * @return array{groups: list<array{branch_id: int, code: string, year: int, numbers: int, non_numeric: int, above_9999: int, ignored_above: int, proposed: int}>, totals: array<string, int>}
+     * @return array{groups: list<array{branch_id: int, code: string, year: int, numbers: int, non_numeric: int, above_9999: int, ignored_oversized: int, ignored_above: int, proposed: int}>, totals: array<string, int>}
      */
     public function plan(?int $onlyYear, ?int $ignoreAbove): array
     {
@@ -68,6 +80,7 @@ final class PatientRmSequenceSeedService
             'unknown_code_numbers' => 0,
             'non_numeric' => 0,
             'above_9999' => 0,
+            'ignored_oversized' => 0,
             'ignored_above' => 0,
         ];
 
@@ -113,6 +126,7 @@ final class PatientRmSequenceSeedService
                 'numbers' => 0,
                 'non_numeric' => 0,
                 'above_9999' => 0,
+                'ignored_oversized' => 0,
                 'ignored_above' => 0,
                 'proposed' => 0,
             ];
@@ -132,6 +146,13 @@ final class PatientRmSequenceSeedService
             if ($value > 9999) {
                 $groups[$key]['above_9999']++;
                 $totals['above_9999']++;
+            }
+
+            if (self::isOversized($value)) {
+                $groups[$key]['ignored_oversized']++;
+                $totals['ignored_oversized']++;
+
+                continue;
             }
 
             if ($ignoreAbove !== null && $value > $ignoreAbove) {

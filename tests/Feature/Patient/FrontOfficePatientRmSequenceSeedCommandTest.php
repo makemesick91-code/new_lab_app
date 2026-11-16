@@ -63,17 +63,23 @@ function fprsCounter(Branch $branch, int $year = 2031): ?int
     return $value === null ? null : (int) $value;
 }
 
-it('SD-01 writes nothing on a dry run and prints no Nomor RM', function () {
+it('SD-01 writes nothing on a dry run and prints neither a Nomor RM nor the highest sequence', function () {
     $branch = fprsBranch('FPS1');
-    fprsPatient($branch, 'DG-FPS1-2031-0042');
+    fprsPatient($branch, 'DG-FPS1-2031-0587');
 
     [$code, $out] = fprsRun();
 
+    // The branch and year are printed, so the highest sequence would complete a
+    // real patient's Nomor RM (the repository is public, CG-11): only its digit
+    // count is printed, in no spelling the number itself.
     expect($code)->toBe(0)
         ->and($out)->toContain('PATIENT_RM_SEQUENCE_SEED=DRY_RUN')
         ->and($out)->toMatch('/^GROUPS=1$/m')
+        ->and($out)->toContain('PROPOSED_COUNTER_DIGITS=3')
         ->and($out)->not->toContain('DG-')
-        ->and($out)->not->toContain('0042')
+        ->and($out)->not->toContain('FPS1-2031-')
+        ->and($out)->not->toContain('0587')
+        ->and($out)->not->toMatch('/(?<!\\d)587(?!\\d)/')
         ->and(PatientRmSequence::query()->count())->toBe(0)
         ->and(AuditLog::query()->where('action', PatientRmSequenceSeedCommand::AUDIT_ACTION)->count())->toBe(0);
 });
@@ -90,6 +96,7 @@ it('SD-02 raises each counter of the current clinic year to the highest issued n
 
     expect($code)->toBe(0)
         ->and($out)->toContain('PATIENT_RM_SEQUENCE_SEED=APPLIED')
+        ->and($out)->not->toMatch('/(?<!\\d)0*42(?!\\d)/')
         ->and(fprsCounter($branch))->toBe(42)
         ->and(fprsCounter($branch, 2030))->toBeNull()
         ->and(PatientRmSequence::query()->where('branch_id', $branch->id)->value('seed_source'))->toBe(PatientRmSequence::SOURCE_COMMAND)
@@ -164,12 +171,57 @@ it('SD-07 counts MAIN and unknown branch codes and never seeds them', function (
         ->and($out)->not->toContain('ZZZ9');
 });
 
-it('SD-08 refuses to run as root before it reads anything', function () {
-    // The process cannot become root inside a test; the guard is pinned at the
-    // source, as the first statement of handle(), like rme:billing-dispute-status.
+it('SD-08 refuses to run as root, or as a user it cannot identify, before it reads anything', function () {
+    // The process cannot become root, nor lose the posix extension, inside a
+    // test; the guard is pinned at the source, as the first statement of
+    // handle(), like rme:billing-dispute-status. It fails CLOSED: without
+    // posix_geteuid() the effective user is unknown and the run is refused,
+    // never assumed not to be root.
     $source = (string) file_get_contents(app_path('Console/Commands/PatientRmSequenceSeedCommand.php'));
     $handle = substr($source, (int) strpos($source, 'public function handle('));
+    $plan = (int) strpos($handle, '->plan(');
 
     expect($handle)->toContain('posix_geteuid() === 0')
-        ->and(strpos($handle, 'posix_geteuid'))->toBeLessThan((int) strpos($handle, '->plan('));
+        ->and(strpos($handle, 'posix_geteuid'))->toBeLessThan($plan)
+        ->and($handle)->toContain("if (! function_exists('posix_geteuid')) {")
+        ->and(strpos($handle, "if (! function_exists('posix_geteuid')) {"))->toBeLessThan($plan)
+        ->and($handle)->not->toContain("function_exists('posix_geteuid') &&");
+});
+
+it('SD-09 leaves an existing number too wide for the allocator out of the counter, and counts it', function () {
+    // A phone number typed as the sequence (12 digits) can never collide with an
+    // issuable number (at most eight digits); seeding it would exhaust the
+    // branch-year for good, because a counter is never lowered.
+    $branch = fprsBranch('FPS1');
+    fprsPatient($branch, 'DG-FPS1-2031-0020');
+    fprsPatient($branch, 'DG-FPS1-2031-081234567890');
+
+    [, $dry] = fprsRun();
+
+    expect($dry)->toMatch('/^IGNORED_OVERSIZED=1$/m')
+        ->and($dry)->toContain('PROPOSED_COUNTER_DIGITS=2')
+        ->and($dry)->not->toContain('81234567890');
+
+    [, $out] = fprsRun(['--apply' => true]);
+
+    $audit = AuditLog::query()->where('action', PatientRmSequenceSeedCommand::AUDIT_ACTION)->sole();
+
+    expect(fprsCounter($branch))->toBe(20)
+        ->and($out)->toMatch('/^IGNORED_OVERSIZED=1$/m')
+        ->and($audit->new_values['ignored_oversized'])->toBe(1);
+});
+
+it('SD-10 scopes to the clinic year at 00:30 WITA on 1 January, while UTC is still in the previous year', function () {
+    // 2031-12-31 16:30 UTC is 2032-01-01 00:30 WITA: the clinic year is 2032.
+    Carbon::setTestNow(Carbon::parse('2031-12-31 16:30:00', 'UTC'));
+
+    $branch = fprsBranch('FPS1');
+    fprsPatient($branch, 'DG-FPS1-2032-0005');
+    fprsPatient($branch, 'DG-FPS1-2031-0900');
+
+    [, $out] = fprsRun(['--apply' => true]);
+
+    expect($out)->toMatch('/^SCOPE=YEAR_2032$/m')
+        ->and(fprsCounter($branch, 2032))->toBe(5)
+        ->and(fprsCounter($branch, 2031))->toBeNull();
 });

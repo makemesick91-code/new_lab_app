@@ -29,7 +29,10 @@ use LogicException;
  * - Widens past 9999 (10000, 10001, …) instead of stopping registration, warns
  *   from 9000 (no number in the log), and refuses once a sequence would need
  *   nine digits.
- * - Refuses MAIN, which is never an RME branch.
+ * - Refuses MAIN, which is never an RME branch, and a branch code the Nomor RM
+ *   format cannot carry: the composed number must parse back to the same branch
+ *   and sequence ({@see PatientMedicalRecordNumberService::parse()}), or nothing
+ *   is issued (a code with '-' or longer than 16 characters would not).
  *
  * Dormant in rule 244 PR-1: nothing in the registration path calls it yet.
  */
@@ -87,6 +90,16 @@ final class PatientRmNumberAllocator
             $spellings = $this->numbers->numericSpellings($code, $year, $next);
         } while ($this->sequences->anyNumberIssued($spellings) || $this->aliases->findActiveByNumbers($spellings) !== null);
 
+        $number = $this->numbers->compose($code, $year, $this->numbers->formatSequence($next));
+
+        // Checked before the counter moves: a number that the one Nomor RM parser
+        // does not read back to this branch and sequence is never issued.
+        if ($this->numbers->parse($number)?->toString() !== $number
+            || $this->numbers->branchCodeFrom($number) !== $code
+            || $this->numbers->numericSequenceOf($number) !== $next) {
+            throw PatientRmNumberUnavailableException::unparseableBranchCode();
+        }
+
         $this->sequences->advanceTo($sequence, $next);
 
         if ($next >= self::WARN_FROM) {
@@ -97,6 +110,6 @@ final class PatientRmNumberAllocator
             ]);
         }
 
-        return $this->numbers->compose($code, $year, $this->numbers->formatSequence($next));
+        return $number;
     }
 }
