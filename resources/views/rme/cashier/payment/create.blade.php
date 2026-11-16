@@ -370,11 +370,13 @@
                     <label for="payment_method_id" class="block text-sm font-medium text-ink mb-1">
                         Metode Pembayaran
                     </label>
+                    {{-- Rule 238 §3 — a hint only; the server decides from the stored method. --}}
                     <select name="payment_method_id" id="payment_method_id"
+                        x-on:change="$dispatch('rme-payment-method-changed', { requiresReference: $event.target.selectedOptions[0]?.dataset.requiresReference === '1' })"
                         class="block w-full max-w-xs rounded-md border-hairline shadow-sm text-sm focus:ring-brand-500 focus:border-brand-500 @error('payment_method_id') border-danger @enderror">
-                        <option value="">— Pilih Metode —</option>
+                        <option value="" data-requires-reference="0">— Pilih Metode —</option>
                         @foreach ($paymentMethods as $method)
-                            <option value="{{ $method->id }}" {{ old('payment_method_id') == $method->id ? 'selected' : '' }}>
+                            <option value="{{ $method->id }}" data-requires-reference="{{ $method->requiresTransferReference() ? '1' : '0' }}" {{ old('payment_method_id') == $method->id ? 'selected' : '' }}>
                                 {{ $method->name }}
                             </option>
                         @endforeach
@@ -421,13 +423,17 @@
                     @enderror
                 </div>
 
-                {{-- Reference Number --}}
-                <div>
+                {{-- Reference Number (rule 238 §3: required for Bank Transfer) --}}
+                <div x-data="{ requiresReference: false }"
+                    x-on:rme-payment-method-changed.window="requiresReference = $event.detail.requiresReference">
                     <label for="reference_number" class="block text-sm font-medium text-ink mb-1">
-                        No. Referensi <span class="text-ink-muted text-xs">(opsional, untuk QRIS/transfer)</span>
+                        No. Referensi
+                        <span class="text-danger" x-show="requiresReference" x-cloak>*</span>
+                        <span class="text-ink-muted text-xs">(wajib untuk Transfer Bank; opsional untuk metode lain)</span>
                     </label>
                     <input type="text" name="reference_number" id="reference_number"
                         value="{{ old('reference_number') }}"
+                        x-bind:required="requiresReference"
                         placeholder="Nomor transaksi / approval"
                         class="block w-full max-w-xs rounded-md border-hairline shadow-sm text-sm focus:ring-brand-500 focus:border-brand-500 @error('reference_number') border-danger @enderror">
                     @error('reference_number')
@@ -540,10 +546,11 @@
                             <div>
                                 <label for="co_payment_method_id" class="mb-1 block text-sm font-medium text-ink">Metode Pembayaran</label>
                                 <select name="payment_method_id" id="co_payment_method_id"
+                                    x-on:change="$dispatch('rme-co-payment-method-changed', { requiresReference: $event.target.selectedOptions[0]?.dataset.requiresReference === '1' })"
                                     class="block w-full rounded-md border-hairline text-sm shadow-sm focus:border-brand-500 focus:ring-brand-500">
-                                    <option value="">— Pilih Metode —</option>
+                                    <option value="" data-requires-reference="0">— Pilih Metode —</option>
                                     @foreach ($paymentMethods as $method)
-                                        <option value="{{ $method->id }}">{{ $method->name }}</option>
+                                        <option value="{{ $method->id }}" data-requires-reference="{{ $method->requiresTransferReference() ? '1' : '0' }}">{{ $method->name }}</option>
                                     @endforeach
                                 </select>
                             </div>
@@ -558,9 +565,11 @@
                                 <input type="datetime-local" name="paid_at" id="co_paid_at" value="{{ now()->format('Y-m-d\TH:i') }}"
                                     class="block w-full rounded-md border-hairline text-sm shadow-sm focus:border-brand-500 focus:ring-brand-500">
                             </div>
-                            <div>
-                                <label for="co_reference_number" class="mb-1 block text-sm font-medium text-ink">No. Referensi <span class="text-xs text-ink-muted">(opsional)</span></label>
+                            <div x-data="{ requiresReference: false }"
+                                x-on:rme-co-payment-method-changed.window="requiresReference = $event.detail.requiresReference">
+                                <label for="co_reference_number" class="mb-1 block text-sm font-medium text-ink">No. Referensi <span class="text-danger" x-show="requiresReference" x-cloak>*</span> <span class="text-xs text-ink-muted">(wajib untuk Transfer Bank)</span></label>
                                 <input type="text" name="reference_number" id="co_reference_number"
+                                    x-bind:required="requiresReference"
                                     class="block w-full rounded-md border-hairline text-sm shadow-sm focus:border-brand-500 focus:ring-brand-500">
                             </div>
                         </div>

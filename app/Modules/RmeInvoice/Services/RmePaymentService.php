@@ -8,6 +8,7 @@ use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\ClinicVisit\Services\ClinicVisitService;
 use App\Modules\LabOrder\Services\AuditLogService;
 use App\Modules\Observability\Support\TelemetryRedactor;
+use App\Modules\PaymentMethod\Models\PaymentMethod;
 use App\Modules\RmeInvoice\Interfaces\RmeBillingDisputeRepositoryInterface;
 use App\Modules\RmeInvoice\Interfaces\RmeInvoiceCorrectionRepositoryInterface;
 use App\Modules\RmeInvoice\Interfaces\RmeInvoiceRepositoryInterface;
@@ -1024,6 +1025,17 @@ class RmePaymentService
         ?string $paymentBatchUuid = null,
         ?string $notes = null,
     ): RmePayment {
+        // DMS-RME-COMPREHENSIVE-CLOSURE-1 PR8 (rule 238 §3) — the request refuses
+        // a Bank Transfer without its reference first; this is the one insert
+        // every payment path reaches, so it re-asserts the rule (the caller's
+        // transaction rolls back every row of the batch).
+        $reference = trim((string) ($data['reference_number'] ?? ''));
+        if ($reference === '' && PaymentMethod::idRequiresTransferReference($data['payment_method_id'] ?? null)) {
+            throw ValidationException::withMessages([
+                'reference_number' => PaymentMethod::MESSAGE_TRANSFER_REFERENCE_REQUIRED,
+            ]);
+        }
+
         // Read under the invoice lock every caller already holds, so the
         // before/after figures in the audit row describe this exact insert.
         $paidBefore = round((float) $invoice->paidAmount(), 2);

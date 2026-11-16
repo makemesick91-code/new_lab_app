@@ -13,6 +13,14 @@ class PaymentMethod extends Model
 
     public const TYPES = ['cash', 'bank_transfer', 'qris', 'card', 'other'];
 
+    public const TYPE_BANK_TRANSFER = 'bank_transfer';
+
+    /**
+     * DMS-RME-COMPREHENSIVE-CLOSURE-1 PR8 (rule 238 §3, memo M5.1) — a payment
+     * by bank transfer must carry the transfer's reference number.
+     */
+    public const MESSAGE_TRANSFER_REFERENCE_REQUIRED = 'Nomor referensi transfer wajib diisi untuk pembayaran Transfer Bank.';
+
     protected $table = 'mst_payment_methods';
 
     protected $fillable = [
@@ -30,6 +38,24 @@ class PaymentMethod extends Model
             'sort_order' => 'integer',
             'is_active' => 'boolean',
         ];
+    }
+
+    public function requiresTransferReference(): bool
+    {
+        return $this->type === self::TYPE_BANK_TRANSFER;
+    }
+
+    /**
+     * Rule 238 §3 — decided from the stored method record, never from anything
+     * the client sends about the method.
+     */
+    public static function idRequiresTransferReference(mixed $paymentMethodId): bool
+    {
+        if (! is_numeric($paymentMethodId)) {
+            return false;
+        }
+
+        return (bool) self::query()->whereKey((int) $paymentMethodId)->first()?->requiresTransferReference();
     }
 
     protected static function newFactory(): PaymentMethodFactory

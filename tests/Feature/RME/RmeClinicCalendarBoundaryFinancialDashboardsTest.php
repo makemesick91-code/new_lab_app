@@ -65,7 +65,8 @@ it('totals payments received on the clinic day on the RME dashboard', function (
     RmePayment::query()->whereKey($today->id)->update(['paid_at' => '2026-10-27 16:30:00']);     // 10-28 00:30 WITA
     RmePayment::query()->whereKey($yesterday->id)->update(['paid_at' => '2026-10-27 15:30:00']); // 10-27 23:30 WITA
 
-    $metrics = $this->actingAs(userWith(['view_clinic_visits']))
+    // Rule 238 §1 — payment totals need payment authority.
+    $metrics = $this->actingAs(userWith(['view_clinic_visits', 'view_rme_payment_reports']))
         ->get(route('rme.dashboard'))
         ->assertOk()
         ->viewData('metrics');

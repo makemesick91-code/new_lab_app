@@ -3,6 +3,7 @@
 namespace App\Modules\RmeDashboard\Controllers;
 
 use App\Http\Controllers\Controller;
+use App\Models\User;
 use App\Modules\ClinicOversight\Support\ClinicalDayWindow;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\ClinicVisit\Services\ClinicVisitService;
@@ -33,6 +34,14 @@ use Illuminate\View\View;
  * estate for a context-bound Kasir/Admin Klinik/Perawat, and `?branch_id=`
  * reached any other branch. Governance roles keep the full RME set, so their
  * dashboard is unchanged.
+ *
+ * DMS-RME-COMPREHENSIVE-CLOSURE-1 PR8 (internal memo 2026-10-17, M2.5; owner
+ * decision 2026-11-17, rule 238 §1) — the two payment cards ("Piutang RME
+ * Aktif", "Pembayaran Hari Ini") are payment information. They are computed
+ * only for an account that holds `manage_rme_billing` or
+ * `view_rme_payment_reports` (effective permissions, CG-06); for any other
+ * account the figures are never queried, so they cannot leak through the view
+ * data either.
  */
 class RmeDashboardController extends Controller
 {
@@ -94,24 +103,41 @@ class RmeDashboardController extends Controller
                 ->whereIn('branch_id', $branchIds)
                 ->where('status', ClinicVisit::STATUS_CASHIER_PENDING)
                 ->count(),
-            'active_receivables' => RmeInvoice::query()
+        ];
+
+        $showPaymentTotals = self::mayViewPaymentTotals($actor);
+
+        if ($showPaymentTotals) {
+            $metrics['active_receivables'] = RmeInvoice::query()
                 ->whereIn('branch_id', $branchIds)
                 ->whereIn('status', [RmeInvoice::STATUS_UNPAID, RmeInvoice::STATUS_PARTIAL])
                 ->where('grand_total', '>', 0)
                 ->whereRaw('trx_rme_invoices.grand_total > '.RmeInvoiceLedger::netReceivedSql('trx_rme_invoices.id'))
-                ->count(),
-            'payments_today_total' => (float) RmePayment::query()
+                ->count();
+            $metrics['payments_today_total'] = (float) RmePayment::query()
                 ->whereIn('branch_id', $branchIds)
                 ->where('paid_at', '>=', $today->startUtcString())
                 ->where('paid_at', '<', $today->endUtcString())
-                ->sum('amount'),
-        ];
+                ->sum('amount');
+        }
 
         return view('rme.dashboard.index', [
             'metrics' => $metrics,
+            'showPaymentTotals' => $showPaymentTotals,
             // Never offer a branch the actor cannot read (same source as the visit list).
             'rmeBranches' => $this->visits->selectableRmeBranches($actor),
             'selectedBranchId' => $selectedBranchId,
         ]);
+    }
+
+    /**
+     * Rule 238 §1 — payment totals need payment authority: cashier work
+     * (`manage_rme_billing`) or the payment report (`view_rme_payment_reports`).
+     * Decided on effective permissions, never on a role name.
+     */
+    public static function mayViewPaymentTotals(?User $actor): bool
+    {
+        return $actor !== null
+            && ($actor->can('manage_rme_billing') || $actor->can('view_rme_payment_reports'));
     }
 }

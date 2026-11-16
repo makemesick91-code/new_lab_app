@@ -851,6 +851,16 @@ return [
         // control.
         'tests/Feature/RME/DoctorRoomScopedAccessAndPrintDenyTest.php',
 
+        // DMS-RME-COMPREHENSIVE-CLOSURE-1 PR8 (rule 238, internal memo
+        // 2026-10-17, owner decisions 2026-11-17) — payment totals only with
+        // payment authority (M2.5), the planned treatment on the doctor's
+        // worklist (M3.2), and a reference for every Bank Transfer payment
+        // (M5.1). Selected by the existing `RmePayment` and `DoctorRoomScoped`
+        // tokens in BOTH critical variants.
+        'tests/Feature/RME/RmePaymentDashboardTotalsVisibilityTest.php',
+        'tests/Feature/RME/DoctorRoomScopedWorklistTreatmentTest.php',
+        'tests/Feature/RME/RmePaymentTransferReferenceTest.php',
+
         // FEATURE-DOCTOR-TRUSTED-ANDROID-DEVICE-LOCK-1 Phase 2 — the clinic
         // device registry: lifecycle, terminal revocation, branch binding,
         // audit, and the guarantee that authentication is NOT coupled to the
