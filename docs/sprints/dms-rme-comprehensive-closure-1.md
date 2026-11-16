@@ -395,6 +395,28 @@ SELECT code, is_active, is_rme_enabled FROM mst_branches ORDER BY code;
 ROLLBACK;
 ```
 
+**Result (owner, 2026-11-17, production, read-only `BEGIN READ ONLY … ROLLBACK` as the runtime user through
+`php artisan db`; counts and aggregates only — the extended query of the memo implementation plan, M4.1 section):**
+
+| Measure | Value |
+|---|---|
+| Live patients | 1,522 (all registered in the last 90 days) |
+| RM number missing / not canonical / unknown branch code / branch mismatch / registered in the future | 0 / 0 / 0 / 0 / 0 |
+| Generator-format (`DG-YYYYMM-NNNNNN`) / other free text / override-like (CC1-PAT-1) | 0 / 0 / **0** |
+| Number part differs from `manual_rm_number` / non-numeric / shorter than 4 digits / 4 digits / longer | 0 / 0 / 0 / 1,522 / 0 |
+| Number year ≠ registration year / future year | 0 / 0 |
+| Per branch-year | one group: SPN4, 2026 — 1,522 numbers, max 4 digits, none above 9999, no numerically equal duplicates, gaps present |
+| NIK present but not 16 digits (CC1-PAT-4) | 84 |
+| Core-field gaps among live patients (M4.2) | date of birth 1, phone and WhatsApp 5, address 2, occupation 103, gender 0 |
+| RM number unique index | `mst_patients_medical_record_number_unique`, unique |
+| Branch flags | ATG3, LDK2, SPN4, TLK1 active and RME-enabled; MAIN active, **RME disabled**; SYN4A inactive, RME disabled |
+
+Consequences: the free override was never used (CC1-PAT-1 = 0), so retiring it needs no reconciliation; every
+existing number is canonical, 4 digits and in one branch-year, so the sequence seed is a single counter (SPN4 2026 =
+the highest existing number, shown only by the host-side dry run; gaps are never reused); MAIN is not RME-enabled in
+production (CC1-PAT-3 is a fresh-seed concern only); the 84 non-16-digit NIK values and the core-field gaps are legacy
+data that the M4.2 rules never force (new patients only).
+
 ### 10.3 Release 1 — the pre-deploy dump line (root-only log, owner's admin password)
 
 The deploy operator replays only the summary of a finished deploy, and the full log is root-only. Read the dump and
