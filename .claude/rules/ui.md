@@ -189,6 +189,7 @@ Detailed standard (Indonesian/English): `docs/ui/daengtisiams-ui-governance.md`,
 | `.cursor/rules/135-rme-authoring-ui-capability-mirror.mdc` | Controls mirror server capability; disabled-with-reason |
 | `.cursor/rules/93-doctor-pwa-webauthn.mdc` | `@push`/`@stack` requirement for authentication layouts |
 | `.cursor/rules/226-rme-prescription-authoring-authority-and-blade-php-pairing.mdc` | Never mix the inline and block PHP directive in one template; compiled-view guard |
+| `.cursor/rules/238-rme-memo-2026-10-17-alignment.mdc` | Dashboard payment totals need payment authority; planned treatment on the worklist; transfer reference required |
 
 ## History
 

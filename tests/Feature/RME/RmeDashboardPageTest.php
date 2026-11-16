@@ -40,6 +40,9 @@ beforeEach(function () {
 
     $this->doctor = Doctor::factory()->create();
     $this->admin = userWith(['view_clinic_visits', 'manage_clinic_visits']);
+    // DMS-RME-COMPREHENSIVE-CLOSURE-1 PR8 (rule 238 §1) — the two payment cards
+    // need payment authority; the role-less admin fixture above has none.
+    $this->paymentViewer = userWith(['view_clinic_visits', 'manage_clinic_visits', 'view_rme_payment_reports']);
 });
 
 afterEach(fn () => Carbon::setTestNow());
@@ -77,7 +80,7 @@ it('forbids a user without RME permissions', function () {
 // --- KPI card labels -----------------------------------------------------------
 
 it('renders all required KPI card labels', function () {
-    $response = $this->actingAs($this->admin)->get(route('rme.dashboard'))->assertOk();
+    $response = $this->actingAs($this->paymentViewer)->get(route('rme.dashboard'))->assertOk();
 
     foreach ([
         'Kunjungan Hari Ini',
@@ -153,7 +156,7 @@ it('counts active receivables and today payments branch-scoped', function () {
         'paid_at' => Carbon::now(),
     ]);
 
-    $response = $this->actingAs($this->admin)->get(route('rme.dashboard'))->assertOk();
+    $response = $this->actingAs($this->paymentViewer)->get(route('rme.dashboard'))->assertOk();
 
     // Active receivable (grand_total 200k > 50k paid) and today's payment total.
     $response->assertSee('Piutang RME Aktif');

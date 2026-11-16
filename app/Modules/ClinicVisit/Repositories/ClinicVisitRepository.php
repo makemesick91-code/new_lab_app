@@ -63,8 +63,10 @@ class ClinicVisitRepository implements ClinicVisitRepositoryInterface
 
     public function worklistForBranches(array $branchIds, array $filters = [], int $perPage = 20, ?\Closure $scope = null): LengthAwarePaginator
     {
+        // DMS-RME-COMPREHENSIVE-CLOSURE-1 PR8 (rule 238 §2, memo M3.2) — the
+        // worklist shows the planned treatment; loaded with the page, not per row.
         $query = ClinicVisit::query()
-            ->with(['patient', 'doctor', 'clinicRoom', 'branch', 'medicalRecord'])
+            ->with(['patient', 'doctor', 'clinicRoom', 'branch', 'medicalRecord', 'initialTreatment'])
             ->whereIn('branch_id', $branchIds)
             ->whereNotNull('clinic_room_id')
             ->whereNotIn('status', [

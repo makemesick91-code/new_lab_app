@@ -1,0 +1,58 @@
+---
+description: DMS-RME-COMPREHENSIVE-CLOSURE-1 (rule 238) — alignment with the internal memo of 2026-10-17 (owner decisions 2026-11-17). The RME dashboard's payment totals are computed and shown only with payment authority; the doctor's treatment-room worklist shows the planned treatment; every RME payment by Bank Transfer carries its reference number, decided from the stored payment method and re-asserted at the single payment insert.
+globs: app/Modules/RmeDashboard/Controllers/RmeDashboardController.php, resources/views/rme/dashboard/index.blade.php, app/Modules/ClinicVisit/Repositories/ClinicVisitRepository.php, resources/views/rme/visits/room-worklist.blade.php, app/Modules/RmeInvoice/Requests/CreateRmePaymentRequest.php, app/Modules/RmeInvoice/Controllers/RmePaymentController.php, app/Modules/RmeInvoice/Services/RmePaymentService.php, app/Modules/PaymentMethod/Models/PaymentMethod.php, resources/views/rme/cashier/payment/create.blade.php, database/factories/PaymentMethodFactory.php
+alwaysApply: false
+---
+
+# RME alignment with the internal memo of 2026-10-17 (rule 238)
+
+Sprint record: `docs/sprints/dms-rme-comprehensive-closure-1.md` §2c (owner decisions 2026-11-17) and the memo
+traceability record `docs/sprints/dms-rme-comprehensive-closure-1-memo-traceability.md`. The memo is held by the
+owner; this public repository cites it by title and date only.
+
+## 1. Payment totals need payment authority (memo M2.5, finding MEMO-F2)
+
+The RME dashboard (`rme.dashboard`) is open to every holder of `view_clinic_visits`, clinicians included. Its two
+payment cards, "Piutang RME Aktif" and "Pembayaran Hari Ini", are computed and rendered only for an account that holds
+`manage_rme_billing` or `view_rme_payment_reports`, decided on effective permissions
+(`RmeDashboardController::mayViewPaymentTotals()`, CG-06), never on a role name. For any other account the two
+queries never run, so the figures cannot reach the view data. The clinical cards and the branch scope are unchanged.
+Tests: `tests/Feature/RME/RmePaymentDashboardTotalsVisibilityTest.php` (PDV-01..06).
+
+## 2. The planned treatment on the doctor's worklist (memo M3.2)
+
+The treatment-room worklist (`rme.treatment-room-worklist.index`, the doctor's landing list) shows each visit's
+"Tindakan Awal" (`initial_treatment_id`, required at registration), eager-loaded with the page
+(`ClinicVisitRepository::worklistForBranches`), so the page runs one treatment query for any number of rows. The room
+scope is unchanged. Tests: `tests/Feature/RME/DoctorRoomScopedWorklistTreatmentTest.php` (WT-01..04).
+
+## 3. A Bank Transfer payment carries its reference (memo M5.1)
+
+1. Every RME payment whose payment method has type `bank_transfer` (an instalment paid by transfer without a visit
+   included) must carry a non-blank `reference_number`. The type is read from the stored `mst_payment_methods` row
+   (`PaymentMethod::idRequiresTransferReference()`), never from anything the client sends about the method. It fails
+   closed: a soft-deleted transfer method still requires the reference (`withTrashed()`).
+2. `CreateRmePaymentRequest` refuses a missing reference with `PaymentMethod::MESSAGE_TRANSFER_REFERENCE_REQUIRED`.
+   `RmePaymentService::recordPayment()`, the only function that inserts an RME payment, re-asserts it, so the
+   ordinary payment, the Kontrol allocation, the control-only payment and the visit allocation are all covered; the
+   caller's transaction rolls back every row of the batch.
+3. The payment form marks each method option with `data-requires-reference` and shows the field as required for a
+   transfer (an Alpine hint; the server decides). `RmePaymentController::create()` provides the ids that need a
+   reference and the field's initial state: after a validation redirect the ordinary form re-selects the old method,
+   so a transfer starts as required. Blade only renders those values.
+4. Other methods are unchanged. Lab billing (`app/Modules/Invoice`) is a separate domain (AIR-RMB-01) and outgoing
+   refund settlements have their own method and proof rules (rules 213–216); neither is changed here.
+5. `PaymentMethodFactory` defaults to `cash` (deterministic, CG-20); `bankTransfer()` gives a transfer method.
+
+Tests: `tests/Feature/RME/RmePaymentTransferReferenceTest.php` (TR-01..09; TR-06 asserts the `reference_number` key
+and message, so it fails when the service re-assertion is removed).
+
+## 4. Not changed here (owner decision 2026-11-17: wait for the management payment discussion)
+
+Additional lab fees, post-payment correction (PP-10), the correction roll-out beyond SPN4 and a backdating limit (D24)
+stay REQUIRES OWNER DECISION. No supplementary invoice exists and an issued invoice stays immutable (rule 194).
+
+## 5. CI
+
+The three suites are selected by the existing `RmePayment` and `DoctorRoomScoped` critical-gate tokens in both runner
+variants and declared in `config/ci_runner.php` `critical_gate_mandatory_suites` (CG-19).

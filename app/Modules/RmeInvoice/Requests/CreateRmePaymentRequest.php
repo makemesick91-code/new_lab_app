@@ -4,6 +4,7 @@ namespace App\Modules\RmeInvoice\Requests;
 
 use App\Models\User;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
+use App\Modules\PaymentMethod\Models\PaymentMethod;
 use App\Modules\RmeInvoice\Interfaces\RmeBillingDisputeRepositoryInterface;
 use App\Modules\RmeInvoice\Interfaces\RmeInvoiceCorrectionRepositoryInterface;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
@@ -71,7 +72,19 @@ class CreateRmePaymentRequest extends FormRequest
             ],
             'amount' => ['required', 'numeric', 'min:0.01'],
             'paid_at' => ['required', 'date'],
-            'reference_number' => ['nullable', 'string', 'max:255'],
+            /*
+             * DMS-RME-COMPREHENSIVE-CLOSURE-1 PR8 (rule 238 §3, memo M5.1) — a
+             * Bank Transfer payment (an instalment paid without a visit included)
+             * must carry the transfer reference. The method's type comes from the
+             * stored payment-method record, never from the form; the service's
+             * single payment insert re-asserts it.
+             */
+            'reference_number' => [
+                Rule::requiredIf(fn (): bool => PaymentMethod::idRequiresTransferReference($this->input('payment_method_id'))),
+                'nullable',
+                'string',
+                'max:255',
+            ],
             'notes' => ['nullable', 'string', 'max:1000'],
             'selected_receivable_ids' => ['nullable', 'array'],
             'selected_receivable_ids.*' => ['integer'],
@@ -581,6 +594,7 @@ class CreateRmePaymentRequest extends FormRequest
     public function messages(): array
     {
         return [
+            'reference_number.required' => PaymentMethod::MESSAGE_TRANSFER_REFERENCE_REQUIRED,
             'invoice_versions.required' => RmeInvoiceVersionConflict::messageFor(RmeInvoiceVersionConflict::MISSING),
             'invoice_versions.array' => RmeInvoiceVersionConflict::messageFor(RmeInvoiceVersionConflict::MISSING),
             RmePaymentIntent::FIELD.'.required' => RmePaymentIntentRefused::messageFor(RmePaymentIntentRefused::MISSING),

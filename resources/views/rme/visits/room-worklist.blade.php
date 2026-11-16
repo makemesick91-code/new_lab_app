@@ -81,6 +81,8 @@
                                 <th scope="col" class="px-3 py-3 font-medium">No. Kunjungan</th>
                                 <th scope="col" class="px-3 py-3 font-medium">RM</th>
                                 <th scope="col" class="px-3 py-3 font-medium">Pasien</th>
+                                {{-- Rule 238 §2 (memo M3.2) — the planned treatment, so the doctor can prepare. --}}
+                                <th scope="col" class="px-3 py-3 font-medium">Tindakan Awal</th>
                                 <th scope="col" class="px-3 py-3 font-medium">Ruangan</th>
                                 <th scope="col" class="px-3 py-3 font-medium">Dokter</th>
                                 <th scope="col" class="px-3 py-3 font-medium">Status</th>
@@ -95,6 +97,7 @@
                                     <td class="px-3 py-3 font-mono text-ink">{{ $visit->visit_number }}</td>
                                     <td class="px-3 py-3 font-mono text-xs text-ink-muted">{{ $visit->patient?->medical_record_number ?? '—' }}</td>
                                     <td class="px-3 py-3 font-medium text-navy">{{ $visit->patient?->name ?? '—' }}</td>
+                                    <td class="px-3 py-3 text-ink" data-testid="worklist-initial-treatment">{{ $visit->initialTreatment?->name ?? '—' }}</td>
                                     <td class="px-3 py-3 font-medium text-ink">{{ $visit->clinicRoom?->name ?? '—' }}</td>
                                     <td class="px-3 py-3 text-ink-soft">{{ $visit->doctor?->name ?? '—' }}</td>
                                     <td class="px-3 py-3">

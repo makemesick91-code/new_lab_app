@@ -10,9 +10,14 @@
             ['label' => 'Rekam Medis Draft',             'value' => number_format($metrics['medical_records_draft'], 0, ',', '.')],
             ['label' => 'Rekam Medis Finalized',         'value' => number_format($metrics['medical_records_finalized_month'], 0, ',', '.')],
             ['label' => 'Menunggu Kasir',                'value' => number_format($metrics['cashier_pending'], 0, ',', '.')],
-            ['label' => 'Piutang RME Aktif',             'value' => number_format($metrics['active_receivables'], 0, ',', '.')],
-            ['label' => 'Pembayaran Hari Ini',           'value' => 'Rp ' . number_format($metrics['payments_today_total'], 0, ',', '.')],
         ];
+
+        // Rule 238 §1 — the controller decides; payment totals exist only for an
+        // account with payment authority.
+        if ($showPaymentTotals) {
+            $kpiCards[] = ['label' => 'Piutang RME Aktif',   'value' => number_format($metrics['active_receivables'], 0, ',', '.')];
+            $kpiCards[] = ['label' => 'Pembayaran Hari Ini', 'value' => 'Rp ' . number_format($metrics['payments_today_total'], 0, ',', '.')];
+        }
 
         $shortcuts = [
             ['label' => 'Kunjungan RME',       'desc' => 'Antrian dan riwayat kunjungan',  'href' => route('rme.visits.index', $branchQuery)],
