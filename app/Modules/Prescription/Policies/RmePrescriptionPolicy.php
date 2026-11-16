@@ -56,7 +56,7 @@ class RmePrescriptionPolicy
             return Response::deny(PrescriptionAuthoringAuthority::LOCKED_MESSAGE);
         }
 
-        return $this->clinicalVisitAccess($user, $clinicVisit);
+        return $this->clinicalVisitAccess($user, $clinicVisit, write: true);
     }
 
     /**
@@ -95,6 +95,14 @@ class RmePrescriptionPolicy
             return $view;
         }
 
+        // Rule 243 §2 — then the own in-service encounter (flag ON only; with it
+        // OFF this repeats the read scope above and changes nothing).
+        $write = app(DoctorPatientScopeService::class)->authorizeVisitWrite($user, $visit);
+
+        if ($write instanceof Response ? $write->denied() : ! $write) {
+            return $write;
+        }
+
         // DMS-RME-COMPREHENSIVE-CLOSURE-1 — signed: only its own doctor changes it.
         // The service asks again on the row it reads under the visit lock.
         if (app(PrescriptionAuthoringAuthority::class)->signedContentLocked($prescription, $user)) {
@@ -122,9 +130,12 @@ class RmePrescriptionPolicy
      * room. Post-examination and historical visits are never room-restricted
      * (rule 138 §17), and accounts that are not doctor-scoped are unaffected.
      */
-    private function clinicalVisitAccess(User $user, ClinicVisit $visit): Response|bool
+    private function clinicalVisitAccess(User $user, ClinicVisit $visit, bool $write = false): Response|bool
     {
-        $patientScope = app(DoctorPatientScopeService::class)->authorizeVisitAccess($user, $visit);
+        // Rule 243 §2 — a write asks for the doctor's own in-service encounter
+        // when the encounter scope is ON (exactly the read scope when OFF).
+        $scope = app(DoctorPatientScopeService::class);
+        $patientScope = $write ? $scope->authorizeVisitWrite($user, $visit) : $scope->authorizeVisitAccess($user, $visit);
 
         if ($patientScope instanceof Response ? $patientScope->denied() : ! $patientScope) {
             return $patientScope;

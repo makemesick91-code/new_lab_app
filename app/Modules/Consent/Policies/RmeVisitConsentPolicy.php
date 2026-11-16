@@ -76,7 +76,8 @@ class RmeVisitConsentPolicy
             return false;
         }
 
-        return app(DoctorPatientScopeService::class)->authorizeVisitAccess($user, $visit);
+        // Rule 243 §2 — recording the consent is a write on the encounter.
+        return app(DoctorPatientScopeService::class)->authorizeVisitWrite($user, $visit);
     }
 
     /**
@@ -102,7 +103,7 @@ class RmeVisitConsentPolicy
             return false;
         }
 
-        return app(DoctorPatientScopeService::class)->authorizeVisitAccess($user, $visit);
+        return app(DoctorPatientScopeService::class)->authorizeVisitWrite($user, $visit);
     }
 
     /**

@@ -38,6 +38,13 @@ class ClinicVisitPolicy
         return $this->canManage($user);
     }
 
+    /**
+     * Rule 243 §2 — update, transition, the examination start/finish and the
+     * performed-treatment record are WRITES: with `rme.doctor_encounter_scope`
+     * ON a Doctor writes only on their own in-service encounter
+     * (DoctorPatientScopeService::authorizeVisitWrite(), which is exactly
+     * authorizeVisitAccess() with the flag OFF).
+     */
     public function update(User $user, ClinicVisit $visit): Response|bool
     {
         if (! $this->canManage($user) || ! $this->withinWorkingBranchScope($user, $visit->branch_id)) {
@@ -50,7 +57,7 @@ class ClinicVisitPolicy
             return $room;
         }
 
-        return app(DoctorPatientScopeService::class)->authorizeVisitAccess($user, $visit);
+        return app(DoctorPatientScopeService::class)->authorizeVisitWrite($user, $visit);
     }
 
     public function transition(User $user, ClinicVisit $visit): Response|bool
@@ -65,7 +72,7 @@ class ClinicVisitPolicy
             return $room;
         }
 
-        return app(DoctorPatientScopeService::class)->authorizeVisitAccess($user, $visit);
+        return app(DoctorPatientScopeService::class)->authorizeVisitWrite($user, $visit);
     }
 
     /**
@@ -121,7 +128,7 @@ class ClinicVisitPolicy
             return false;
         }
 
-        return app(DoctorPatientScopeService::class)->authorizeVisitAccess($user, $visit);
+        return app(DoctorPatientScopeService::class)->authorizeVisitWrite($user, $visit);
     }
 
     /**
@@ -173,7 +180,7 @@ class ClinicVisitPolicy
             return $room;
         }
 
-        return app(DoctorPatientScopeService::class)->authorizeVisitAccess($user, $visit);
+        return app(DoctorPatientScopeService::class)->authorizeVisitWrite($user, $visit);
     }
 
     /**

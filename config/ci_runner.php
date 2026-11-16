@@ -909,6 +909,14 @@ return [
         // Selected by the existing `DoctorRoomScoped` token in BOTH critical variants.
         'tests/Feature/RME/DoctorRoomScopedArchiveAndConsentPrintDenyTest.php',
 
+        // DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M2.1/M2.2 (rule 243 §2, PR A1) —
+        // the doctor encounter scope behind `rme.doctor_encounter_scope`: flag OFF
+        // is the Sprint 66.2 scope exactly; flag ON = in-service window (WITA),
+        // read modes, 404 out of scope, writes on the own in-service encounter
+        // only, lists mirroring records. Selected by the existing
+        // `DoctorPatientScope` token in BOTH critical variants.
+        'tests/Feature/RME/DoctorPatientScopeEncounterWindowTest.php',
+
         // FEATURE-DOCTOR-TRUSTED-ANDROID-DEVICE-LOCK-1 Phase 2 — the clinic
         // device registry: lifecycle, terminal revocation, branch binding,
         // audit, and the guarantee that authentication is NOT coupled to the

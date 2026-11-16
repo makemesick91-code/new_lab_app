@@ -9,17 +9,115 @@ use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\RME\Models\PatientDoctorAssignment;
 use App\Modules\RmeOnlineContext\Services\DoctorUserResolver;
+use App\Services\Foundation\FeatureFlagService;
 use Illuminate\Auth\Access\Response;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Query\Builder as QueryBuilder;
+use Illuminate\Http\Request;
 
 /**
  * Sprint 66.2 — Doctor RM visibility scope by assignment and visit history.
+ *
+ * DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M2.1/M2.2 (rule 243 §2) — the ENCOUNTER
+ * scope, behind `rme.doctor_encounter_scope` (risky, default OFF, read only
+ * through FeatureFlagService, CG-08). With the flag OFF every method below
+ * answers exactly as before. With it ON, for a scoped Doctor:
+ *
+ *  - read mode per patient ({@see readModeFor()}): HISTORY while the doctor has
+ *    an own in-service encounter with the patient ({@see DoctorEncounterWindow}),
+ *    OWN when they only have own visits, NONE otherwise. Assignment rows no
+ *    longer grant anything (plan default 1);
+ *  - a visit is readable when it is the doctor's own (any date), or a
+ *    non-pre-exam visit of the patient while the mode is HISTORY; the patient
+ *    as a whole (workspace, patient lists) only in HISTORY;
+ *  - out-of-scope reads answer 404 (plan default 6), so existence never leaks;
+ *  - writes only on the doctor's own in-service encounter
+ *    ({@see doctorMayWriteVisit()}, {@see authorizeVisitWrite()}: 403
+ *    "ditangani dokter lain");
+ *  - every list scope stays the mirror image of its per-record check.
+ *
+ * This class stays the single authority: Owner, Super Admin and Supervisor RME
+ * are exempt ({@see shouldApplyDoctorScope()}), whatever the flag.
  */
 class DoctorPatientScopeService
 {
+    /** Rule 243 §2 — the encounter scope switch (risky, default OFF). */
+    public const ENCOUNTER_SCOPE_FLAG = 'rme.doctor_encounter_scope';
+
+    public const READ_NONE = 'none';
+
+    public const READ_OWN = 'own';
+
+    public const READ_HISTORY = 'history';
+
+    public const OUT_OF_SCOPE_MESSAGE = 'Anda tidak memiliki akses ke RM pasien ini.';
+
+    public const OTHER_DOCTOR_MESSAGE = 'Kunjungan ini ditangani dokter lain. Anda hanya dapat menulis pada pemeriksaan Anda sendiri.';
+
+    public const NOT_IN_SERVICE_MESSAGE = 'Pemeriksaan ini sudah selesai dilayani. Rekam medisnya hanya dapat dibaca.';
+
+    private const UNLINKED_MESSAGE = 'Akun dokter belum terhubung ke Master Dokter.';
+
+    private const MEMO_PREFIX = 'dms.doctor_read_mode.';
+
     public function __construct(
         private readonly DoctorUserResolver $doctorResolver,
+        private readonly FeatureFlagService $flags,
+        private readonly DoctorEncounterWindow $window,
     ) {}
+
+    /**
+     * Rule 243 §2 — the only place the encounter scope switch is read.
+     */
+    public function encounterScopeEnabled(): bool
+    {
+        return $this->flags->enabled(self::ENCOUNTER_SCOPE_FLAG);
+    }
+
+    /**
+     * Rule 243 §2 — how much of this patient's record the account may read:
+     * READ_HISTORY (everything this class admits), READ_OWN (only the doctor's
+     * own visits) or READ_NONE. An exempt account is READ_HISTORY. With the flag
+     * OFF the answer is today's relationship rule (HISTORY or NONE).
+     *
+     * Memoised for the current ROUTED request only, keyed by account and patient
+     * (the DoctorIdentityResolver pattern, rule 237 §12): a list asks once per
+     * row, and the answer cannot change between rows of one request. Queue jobs,
+     * commands and direct calls are never memoised.
+     */
+    public function readModeFor(User $user, int $patientId): string
+    {
+        if (! $this->shouldApplyDoctorScope($user)) {
+            return self::READ_HISTORY;
+        }
+
+        $doctor = $this->resolveDoctorForUser($user);
+
+        if ($doctor === null) {
+            return self::READ_NONE;
+        }
+
+        if (! $this->encounterScopeEnabled()) {
+            return $this->doctorHasPatientAccess((int) $doctor->id, $patientId) ? self::READ_HISTORY : self::READ_NONE;
+        }
+
+        $request = $this->routedRequest();
+        $key = self::MEMO_PREFIX.$user->getKey().'.'.$patientId;
+
+        if ($request !== null && $request->attributes->has($key)) {
+            return (string) $request->attributes->get($key);
+        }
+
+        $mode = match (true) {
+            $this->hasInServiceEncounter((int) $doctor->id, $patientId) => self::READ_HISTORY,
+            $this->hasOwnVisit((int) $doctor->id, $patientId) => self::READ_OWN,
+            default => self::READ_NONE,
+        };
+
+        $request?->attributes->set($key, $mode);
+
+        return $mode;
+    }
 
     public function shouldApplyDoctorScope(User $user): bool
     {
@@ -51,6 +149,12 @@ class DoctorPatientScopeService
             return false;
         }
 
+        // Rule 243 §2 — the patient as a whole only inside an own in-service
+        // encounter; the doctor's own visits stay readable per visit.
+        if ($this->encounterScopeEnabled()) {
+            return $this->readModeFor($user, (int) $patient->id) === self::READ_HISTORY;
+        }
+
         return $this->doctorHasPatientAccess((int) $doctor->id, (int) $patient->id);
     }
 
@@ -64,6 +168,10 @@ class DoctorPatientScopeService
             return false;
         }
 
+        if ($this->encounterScopeEnabled()) {
+            return $this->doctorCanReadVisitInEncounterScope($user, $visit);
+        }
+
         $patient = $visit->relationLoaded('patient')
             ? $visit->patient
             : Patient::query()->find($visit->patient_id);
@@ -73,6 +181,31 @@ class DoctorPatientScopeService
         }
 
         return $this->doctorCanAccessPatient($user, $patient);
+    }
+
+    /**
+     * Rule 243 §2 — may this account WRITE on this visit? With the flag ON a
+     * scoped Doctor writes only on their OWN encounter while it is in service;
+     * another doctor's encounter is never co-authored (owner M2.1). With the
+     * flag OFF this is exactly {@see doctorCanAccessVisit()}, so the third
+     * layers that ask it (RmeVisitConsentService::actorMayWorkOnEncounter,
+     * PrescriptionAuthoringAuthority::permits) behave as before.
+     */
+    public function doctorMayWriteVisit(User $user, ClinicVisit $visit): bool
+    {
+        if (! $this->encounterScopeEnabled()) {
+            return $this->doctorCanAccessVisit($user, $visit);
+        }
+
+        if (! $this->shouldApplyDoctorScope($user)) {
+            return true;
+        }
+
+        $doctor = $this->resolveDoctorForUser($user);
+
+        return $doctor !== null
+            && (int) $visit->doctor_id === (int) $doctor->id
+            && $this->window->isInService($visit);
     }
 
     /**
@@ -89,6 +222,16 @@ class DoctorPatientScopeService
 
         if ($doctor === null) {
             return $query->whereRaw('1 = 0');
+        }
+
+        // Rule 243 §2 — the mirror of doctorCanAccessPatient(): only patients
+        // with an own in-service encounter.
+        if ($this->encounterScopeEnabled()) {
+            $doctorId = (int) $doctor->id;
+
+            return $query->whereExists(
+                fn (QueryBuilder $sub) => $this->ownInServiceEncounterFor($sub, $doctorId, 'mst_patients.id'),
+            );
         }
 
         return $this->applyPatientScopeForDoctor($query, (int) $doctor->id);
@@ -108,6 +251,10 @@ class DoctorPatientScopeService
 
         if ($doctor === null) {
             return $query->whereRaw('1 = 0');
+        }
+
+        if ($this->encounterScopeEnabled()) {
+            return $this->applyVisitEncounterScopeForDoctor($query, (int) $doctor->id);
         }
 
         return $this->applyVisitScopeForDoctor($query, (int) $doctor->id);
@@ -130,6 +277,14 @@ class DoctorPatientScopeService
         }
 
         $doctorId = (int) $doctor->id;
+
+        // Rule 243 §2 — the mirror of MedicalRecordPolicy::view() (the patient
+        // as a whole): only with an own in-service encounter.
+        if ($this->encounterScopeEnabled()) {
+            return $query->whereExists(
+                fn (QueryBuilder $sub) => $this->ownInServiceEncounterFor($sub, $doctorId, 'trx_medical_records.patient_id'),
+            );
+        }
 
         return $query->where(function (Builder $q) use ($doctorId) {
             $q->whereExists(function ($sub) use ($doctorId) {
@@ -157,11 +312,11 @@ class DoctorPatientScopeService
         }
 
         if ($this->resolveDoctorForUser($user) === null) {
-            return Response::deny('Akun dokter belum terhubung ke Master Dokter.');
+            return Response::deny(self::UNLINKED_MESSAGE);
         }
 
         if (! $this->doctorCanAccessPatient($user, $patient)) {
-            return Response::deny('Anda tidak memiliki akses ke RM pasien ini.');
+            return $this->outOfScope();
         }
 
         return true;
@@ -174,11 +329,46 @@ class DoctorPatientScopeService
         }
 
         if ($this->resolveDoctorForUser($user) === null) {
-            return Response::deny('Akun dokter belum terhubung ke Master Dokter.');
+            return Response::deny(self::UNLINKED_MESSAGE);
         }
 
         if (! $this->doctorCanAccessVisit($user, $visit)) {
-            return Response::deny('Anda tidak memiliki akses ke RM pasien ini.');
+            return $this->outOfScope();
+        }
+
+        return true;
+    }
+
+    /**
+     * Rule 243 §2 — the policy form of {@see doctorMayWriteVisit()}. Out of the
+     * read scope is 404 (nothing leaks); a readable visit of another doctor is
+     * 403 "ditangani dokter lain"; the doctor's own visit out of service is 403.
+     * With the flag OFF this is exactly {@see authorizeVisitAccess()}.
+     */
+    public function authorizeVisitWrite(User $user, ClinicVisit $visit): Response|bool
+    {
+        if (! $this->encounterScopeEnabled()) {
+            return $this->authorizeVisitAccess($user, $visit);
+        }
+
+        $read = $this->authorizeVisitAccess($user, $visit);
+
+        if ($read !== true) {
+            return $read;
+        }
+
+        if (! $this->shouldApplyDoctorScope($user)) {
+            return true;
+        }
+
+        $doctor = $this->resolveDoctorForUser($user);
+
+        if ($doctor === null || (int) $visit->doctor_id !== (int) $doctor->id) {
+            return Response::deny(self::OTHER_DOCTOR_MESSAGE);
+        }
+
+        if (! $this->window->isInService($visit)) {
+            return Response::deny(self::NOT_IN_SERVICE_MESSAGE);
         }
 
         return true;
@@ -298,6 +488,111 @@ class DoctorPatientScopeService
         }
 
         return array_values($summary);
+    }
+
+    /**
+     * Rule 243 §2 — a refusal outside the scope is 404 with the flag ON, so a
+     * doctor cannot probe which visits or patients exist; today's 403 with it
+     * OFF.
+     */
+    private function outOfScope(): Response
+    {
+        return $this->encounterScopeEnabled()
+            ? Response::denyAsNotFound(self::OUT_OF_SCOPE_MESSAGE)
+            : Response::deny(self::OUT_OF_SCOPE_MESSAGE);
+    }
+
+    /**
+     * Rule 243 §2 — the per-record read; {@see applyVisitEncounterScopeForDoctor()}
+     * is its mirror image. Own visits at any date (but never a soft-deleted
+     * one); another doctor's visit only when it is past the pre-exam stage and
+     * the doctor is inside an own in-service encounter with the patient.
+     */
+    private function doctorCanReadVisitInEncounterScope(User $user, ClinicVisit $visit): bool
+    {
+        $doctor = $this->resolveDoctorForUser($user);
+
+        if ($doctor === null || $visit->trashed()) {
+            return false;
+        }
+
+        if ((int) $visit->doctor_id === (int) $doctor->id) {
+            return true;
+        }
+
+        if (in_array($visit->status, ClinicVisit::PRE_EXAM_STATUSES, true)) {
+            return false;
+        }
+
+        return $this->readModeFor($user, (int) $visit->patient_id) === self::READ_HISTORY;
+    }
+
+    /**
+     * Rule 243 §2 — the list mirror of {@see doctorCanReadVisitInEncounterScope()}.
+     *
+     * @param  Builder<ClinicVisit>  $query
+     * @return Builder<ClinicVisit>
+     */
+    private function applyVisitEncounterScopeForDoctor(Builder $query, int $doctorId): Builder
+    {
+        return $query->where(function (Builder $q) use ($doctorId) {
+            $q->where('trx_clinic_visits.doctor_id', $doctorId)
+                ->orWhere(function (Builder $history) use ($doctorId) {
+                    $history->whereNotIn('trx_clinic_visits.status', ClinicVisit::PRE_EXAM_STATUSES)
+                        ->whereExists(fn (QueryBuilder $sub) => $this->ownInServiceEncounterFor($sub, $doctorId, 'trx_clinic_visits.patient_id'));
+                });
+        });
+    }
+
+    /**
+     * "This doctor has an own in-service encounter with the patient in
+     * `$patientColumn`" as a correlated subquery; the window is
+     * {@see DoctorEncounterWindow::constrainInService()}, never re-derived.
+     */
+    private function ownInServiceEncounterFor(QueryBuilder $sub, int $doctorId, string $patientColumn): QueryBuilder
+    {
+        $sub->selectRaw('1')
+            ->from('trx_clinic_visits as dew')
+            ->whereColumn('dew.patient_id', $patientColumn)
+            ->where('dew.doctor_id', $doctorId);
+
+        $this->window->constrainInService($sub, 'dew');
+
+        return $sub;
+    }
+
+    private function hasInServiceEncounter(int $doctorId, int $patientId): bool
+    {
+        $query = ClinicVisit::query()
+            ->where('trx_clinic_visits.patient_id', $patientId)
+            ->where('trx_clinic_visits.doctor_id', $doctorId);
+
+        $this->window->constrainInService($query);
+
+        return $query->exists();
+    }
+
+    private function hasOwnVisit(int $doctorId, int $patientId): bool
+    {
+        return ClinicVisit::query()
+            ->where('patient_id', $patientId)
+            ->where('doctor_id', $doctorId)
+            ->exists();
+    }
+
+    /**
+     * The current ROUTED HTTP request, or null (DoctorIdentityResolver's rule:
+     * nothing is memoised in a queue job, a command or a direct call).
+     */
+    private function routedRequest(): ?Request
+    {
+        if (! app()->bound('request')) {
+            return null;
+        }
+
+        $request = app('request');
+
+        return $request instanceof Request && $request->route() !== null ? $request : null;
     }
 
     private function doctorHasPatientAccess(int $doctorId, int $patientId): bool

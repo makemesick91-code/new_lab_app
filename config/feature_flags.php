@@ -603,6 +603,19 @@ $registry = [
             'dependencies' => [],
             'rollback_action' => 'Set the environment override to false and rebuild the config cache as the runtime user; new consents return to version 2026.1. Nothing is reverted or deleted: consents already signed on 2026.2 keep their version, snapshot and both answers and keep rendering them. Never edit a signed consent to undo a rollout; a wrong consent is voided (supervised) and signed again.',
         ],
+
+        'rme.doctor_encounter_scope' => [
+            'name' => 'RME Doctor Encounter Scope',
+            'description' => 'ACCESS-SCOPE switch (DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M2.1/M2.2, rule 243 §2; owner decisions 2026-11-17) for what a Doctor account may read and write in the RME. While it is OFF the Sprint 66.2 relationship scope applies exactly as before: an active patient-doctor assignment or any visit with the doctor grants the whole patient record, refusals answer 403, and another clinician may co-author an encounter in the same room (OD-5-1). While it is ON, for a Doctor (Owner, Super Admin and Supervisor RME stay exempt): a visit is "in service" while registered, waiting, in progress or at the cashier, or completed TODAY on the clinical calendar (WITA); a cancelled visit never is. The doctor reads their own visits at any date, and the patient\'s other non-pre-exam visits and documents only while an own in-service encounter exists; assignment rows grant nothing; out-of-scope reads answer 404; writes are allowed only on the doctor\'s own in-service encounter (403 "ditangani dokter lain"), re-asserted in the RME authoring and prescription services. BranchContext, the rule 138 room scope and the session lock are unchanged. Turning it ON is a separate owner decision after a reviewed dry run and doctor UAT, once every encounter-scope PR (A1-A4) is merged: doctors lose the history of returning patients outside a service.',
+            'default' => false,
+            'env_key' => 'FEATURE_RME_DOCTOR_ENCOUNTER_SCOPE',
+            'owner' => 'rme',
+            'risk_level' => 'high',
+            'rollout_status' => 'implemented',
+            'review_target' => 'DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M2.1 (rule 243 §2)',
+            'dependencies' => [],
+            'rollback_action' => 'Set the environment override to false and rebuild the config cache as the runtime user. Nothing is written or deleted by this flag: it only narrows reads and writes at request time, so switching it off restores the relationship scope (assignments, any visit with the doctor, co-authoring) immediately for the next request.',
+        ],
     ],
 ];
 

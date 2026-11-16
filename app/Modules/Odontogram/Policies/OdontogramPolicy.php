@@ -85,7 +85,9 @@ class OdontogramPolicy
             return $room;
         }
 
-        return app(DoctorPatientScopeService::class)->authorizeVisitAccess($user, $clinicVisit);
+        // Rule 243 §2 — charting is a write: the doctor's own in-service
+        // encounter only, when the encounter scope is ON (unchanged when OFF).
+        return app(DoctorPatientScopeService::class)->authorizeVisitWrite($user, $clinicVisit);
     }
 
     /**
@@ -106,7 +108,7 @@ class OdontogramPolicy
             return false;
         }
 
-        $scope = $this->authorizePatientForOdontogram($user, $odontogram);
+        $scope = $this->authorizePatientForOdontogram($user, $odontogram, write: true);
 
         if ($scope === false || ($scope instanceof Response && $scope->denied())) {
             return $scope;
@@ -125,10 +127,10 @@ class OdontogramPolicy
             return false;
         }
 
-        return $this->authorizePatientForOdontogram($user, $odontogram);
+        return $this->authorizePatientForOdontogram($user, $odontogram, write: true);
     }
 
-    private function authorizePatientForOdontogram(User $user, Odontogram $odontogram): Response|bool
+    private function authorizePatientForOdontogram(User $user, Odontogram $odontogram, bool $write = false): Response|bool
     {
         $visit = $odontogram->clinicVisit;
 
@@ -139,7 +141,9 @@ class OdontogramPolicy
                 return $room;
             }
 
-            return app(DoctorPatientScopeService::class)->authorizeVisitAccess($user, $visit);
+            $scope = app(DoctorPatientScopeService::class);
+
+            return $write ? $scope->authorizeVisitWrite($user, $visit) : $scope->authorizeVisitAccess($user, $visit);
         }
 
         $patient = $odontogram->medicalRecord?->patient;

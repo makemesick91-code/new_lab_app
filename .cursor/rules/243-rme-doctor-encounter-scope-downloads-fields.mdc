@@ -1,5 +1,5 @@
 ---
-description: DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M2.1/M2.2 + M2.4 + M3.1 (rule 243) — doctor encounter scope, no doctor downloads, doctor-visible fields. §1 (PR "B — downloads", owner revision of rule 93 §12, 2026-11-17) refuses a Doctor the legacy RME print/export/source PDF, the legacy odontogram source PDF and the PTM print through the one rule 138 print-deny authority (403, audited, ids only); doctors keep reading archives as inline page images; prescription print stays; Front Office, Admin Klinik and Supervisor RME keep printing. Not behind the encounter-scope flag.
+description: DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M2.1/M2.2 + M2.4 + M3.1 (rule 243) — doctor encounter scope, no doctor downloads, doctor-visible fields. §1 (PR "B — downloads", owner revision of rule 93 §12, 2026-11-17) refuses a Doctor the legacy RME print/export/source PDF, the legacy odontogram source PDF and the PTM print through the one rule 138 print-deny authority (403, audited, ids only); doctors keep reading archives as inline page images; prescription print stays; Front Office, Admin Klinik and Supervisor RME keep printing. Not behind the encounter-scope flag. §2 (PR A1) adds the doctor encounter scope behind `rme.doctor_encounter_scope` (risky, default OFF): in-service window, read modes NONE/OWN/HISTORY, 404 out of scope, writes only on the own in-service encounter.
 globs:
   - "app/Modules/RME/Services/DoctorRoomScopeService.php"
   - "app/Modules/LegacyRme/Controllers/LegacyRmeRecordController.php"
@@ -18,6 +18,13 @@ globs:
   - "app/Modules/LegacyRme/Policies/LegacyRmeImportPolicy.php"
   - "resources/views/oversight/legacy/**"
   - "resources/views/settings/rme/legacy-imports/show.blade.php"
+  - "app/Modules/RME/Services/DoctorPatientScopeService.php"
+  - "app/Modules/RME/Services/DoctorEncounterWindow.php"
+  - "app/Modules/ClinicVisit/Policies/ClinicVisitPolicy.php"
+  - "app/Modules/Odontogram/Policies/OdontogramPolicy.php"
+  - "app/Modules/Prescription/Policies/RmePrescriptionPolicy.php"
+  - "app/Modules/Prescription/Services/PrescriptionAuthoringAuthority.php"
+  - "app/Modules/Consent/Services/RmeVisitConsentService.php"
 alwaysApply: false
 ---
 
@@ -106,3 +113,53 @@ added by their own PRs.
    follow-up is a dedicated oversight ability that applies the print-deny on both.
 9. **Tests.** `tests/Feature/RME/DoctorRoomScopedArchiveAndConsentPrintDenyTest.php` (critical-gate token
    `DoctorRoomScoped`, declared in `config/ci_runner.php` `critical_gate_mandatory_suites`).
+
+## 2. Encounter scope (flag, PR A1)
+
+1. **The switch.** `rme.doctor_encounter_scope` (config/feature_flags.php, risk `high`, default OFF, environment
+   override captured at config build) is read only through `FeatureFlagService`, by
+   `DoctorPatientScopeService::encounterScopeEnabled()` (CG-08; a dotted key breaks `config()` traversal). With it OFF
+   every method of `DoctorPatientScopeService` answers exactly as before (Sprint 66.2: an active assignment row or any
+   visit with the doctor grants the patient; refusals are 403; co-authoring an encounter in the same room, OD-5-1,
+   stays). Turning it ON is a separate owner decision after every A-PR (A1–A4) is merged, a reviewed dry run of
+   `rme:doctor-assignments-reconcile` (A4) and doctor UAT. The Android global enforcement is not touched.
+2. **The window.** `App\Modules\RME\Services\DoctorEncounterWindow`: a visit is in service while `registered`,
+   `waiting`, `in_progress` or `cashier_pending`, or `completed` with `completed_at` on TODAY's clinical date
+   (`ClinicalClock`, Asia/Makassar; at 00:30 WITA the UTC date is still yesterday's and is never used). A cancelled,
+   soft-deleted or undated completed visit is never in service. `isInService()` and its SQL twin
+   `constrainInService()` are mirror images; change both or neither.
+3. **One authority, read modes.** `DoctorPatientScopeService` stays the single authority; Owner, Super Admin and
+   Supervisor RME stay exempt (`shouldApplyDoctorScope()`). With the flag ON, for a Doctor,
+   `readModeFor($user, $patientId)` is `history` while the doctor has an own in-service encounter with the patient,
+   `own` when they only have own visits, `none` otherwise. It is memoised for the current ROUTED request only, keyed
+   by account and patient (rule 237 §12's pattern); jobs, commands and direct calls are never memoised. Assignment
+   rows (manual, shared, auto_visit) grant nothing (plan default 1).
+4. **Reads.** A visit is readable when it is the doctor's own (any date, never soft-deleted) or, in `history` mode,
+   a NON-pre-exam visit of the patient (cashier_pending, completed, cancelled) — so its sheets, odontogram,
+   prescription, consent and diagnoses follow its visit. The patient as a whole (`doctorCanAccessPatient()`,
+   patient-level policies, the patient-centric workspace) needs `history`. Out-of-scope reads answer **404**
+   (`Response::denyAsNotFound`, plan default 6; revises rule 99 §2 / AIR-LRM-25 for native records — the legacy
+   archive is A2). An unlinked doctor account keeps its 403 "belum terhubung". The rule 138 room scope is evaluated
+   first where it was, and keeps its own 403 for an active visit of another room.
+5. **Writes.** Only on the doctor's OWN encounter while it is in service: `doctorMayWriteVisit()` /
+   `authorizeVisitWrite()` (403 "Kunjungan ini ditangani dokter lain…" for another doctor's readable visit, 403
+   "sudah selesai dilayani" for the doctor's own visit out of service, 404 when not even readable). Policies:
+   `ClinicVisitPolicy::update`, `transition`, `completeExamination` (and `startExamination`),
+   `recordPerformedTreatments`; `OdontogramPolicy::author`, `update`, `finalize`; `RmePrescriptionPolicy::create`,
+   `update`; `RmeVisitConsentPolicy::create`, `void`. Third layer (re-asserted in the services, past `Gate::before`):
+   `RmeVisitConsentService::actorMayWorkOnEncounter()` (RME book, odontogram, performed treatments) and
+   `assertOperatorWithinScope()` (consent sign/void), and `PrescriptionAuthoringAuthority::permits()`. The handwriting
+   RM book is patient-level: `MedicalRecordPolicy` keeps the patient read scope and the third layer decides the
+   encounter. With the flag OFF all of these answer exactly the read scope, as before.
+6. **Lists mirror records.** `applyVisitScopeForUser()` = own visits OR (non-pre-exam AND an own in-service encounter
+   with that patient); `applyPatientScopeForUser()` and `applyMedicalRecordScopeForUser()` = patients with an own
+   in-service encounter. The correlated subquery uses the window's SQL twin, never a re-derivation.
+7. **Index.** `trx_clinic_visits (doctor_id, patient_id, status)` (`trx_clinic_visits_doctor_patient_status_index`,
+   additive) serves the per-patient probe and the per-row EXISTS.
+8. **Unchanged.** BranchContext, `RmeWorkingBranchScope`, the rule 138 room scope, room assignment (`assignRoom`; the
+   doctor change and its revocation are A4), the doctor session lock and the Android enforcement. Not in A1: the
+   legacy archive scope and its 404 (A2), the after-service workspace for `own` mode (A3; until then, outside a
+   service, the doctor opens their own visits one by one but not the patient-centric workspace), revocation and the
+   reconcile command (A4), doctor-visible fields (C1/C2). The flag stays OFF until all of them are merged.
+9. **Tests.** `tests/Feature/RME/DoctorPatientScopeEncounterWindowTest.php` (critical-gate token `DoctorPatientScope`,
+   declared in `critical_gate_mandatory_suites`); the existing doctor-scope suites run unchanged with the flag OFF.

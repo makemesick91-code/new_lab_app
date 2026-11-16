@@ -204,6 +204,12 @@ ceremonies and the login gate's proof mechanics belong to the sibling `.claude/r
   `download`/`print` plus a controller re-assertion on the clinical, staging and consent doors; controller + service
   only on the oversight doors (no download/print policy there; follow-up OD-MEMO-B-1). Doctors still read archives as
   inline page images and print prescriptions. Not behind the encounter-scope flag. Source: `.cursor/rules/243-rme-doctor-encounter-scope-downloads-fields.mdc` §1.
+- **AIR-DAC-43** `rme.doctor_encounter_scope` (default OFF; `FeatureFlagService` only): OFF = AIR-DAC-40 exactly. ON:
+  `DoctorEncounterWindow` (open status or completed today in WITA; cancelled never) and read modes
+  NONE/OWN/HISTORY in `DoctorPatientScopeService`: own visits at any date, other non-pre-exam visits and the patient
+  only inside an own in-service encounter, assignments grant nothing, out of scope 404, writes only on the own
+  in-service encounter (403 "ditangani dokter lain", re-asserted in the services); lists mirror records. Source:
+  `.cursor/rules/243-rme-doctor-encounter-scope-downloads-fields.mdc` §2.
 
 ## Current posture (snapshot 2026-10-25 — verify before relying on it)
 
@@ -250,7 +256,7 @@ ceremonies and the login gate's proof mechanics belong to the sibling `.claude/r
 | `.cursor/rules/93-doctor-pwa-webauthn.mdc` | WebAuthn device login (sibling domain) |
 | `.cursor/rules/222-rme-route-key-constraint-and-failure-log-redaction.mdc` | Doctor route keys constrained (404, never 500) |
 | `.cursor/rules/225-rme-concurrent-first-write-and-void-staging-integrity.mdc` | Visit list scope excludes soft-deleted visits; D1 lease in-flight race recorded |
-| `.cursor/rules/243-rme-doctor-encounter-scope-downloads-fields.mdc` | Memo M2.4: no doctor legacy/PTM downloads (§1) |
+| `.cursor/rules/243-rme-doctor-encounter-scope-downloads-fields.mdc` | Memo M2.4: no doctor legacy/PTM downloads (§1); M2.1/M2.2 encounter scope behind its flag (§2) |
 
 ## History
 
