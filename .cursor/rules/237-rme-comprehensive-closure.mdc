@@ -51,6 +51,22 @@ Every route that renders a clinical or patient-data document carries the framewo
 `rme.reports.payments.export`, `rme.patients.audit.export`. A new print/PDF/export route of that kind gets the same
 middleware. Authorization is unchanged (route permission, policy, service).
 
+## 18. Lab candidate backfill (OD-7-5) — owner decision 2026-11-16 ("fix with backfill command")
+
+1. `rme:lab-candidates-backfill` runs the idempotent `RmeLabIntegrationService::generateForPaidInvoice()` on PAID
+   invoices of the active RME branches that miss a candidate for a lab-requiring item, one invoice per transaction
+   under the invoice row lock, one `RME_LAB_CANDIDATES_BACKFILLED` audit row per invoice filled, counts only (no
+   invoice number, identifier or patient detail).
+2. **An explicit window (independent review).** "Paid and missing a candidate" is wider than "a generation that
+   failed": a treatment flagged `requires_lab` after payment, or an invoice paid before candidates existed, matches
+   too. `--apply` therefore refuses to run without `--paid-from=YYYY-MM-DD` (clinic date, WITA; optional inclusive
+   `--paid-to`), compared with the invoice's latest live payment through `ClinicalDayWindow`. The dry run prints
+   `PAID_MONTH_<YYYY-MM>=<n>` per clinic month so the window is chosen on counts first.
+3. The read query lives in `RmeInvoiceRepositoryInterface::paidMissingLabCandidates()` (CG-04); the service only
+   orchestrates. `--apply` on production needs the owner's approval of the window.
+4. Tests: `RmePaymentLabCandidateBackfillTest` LB-01…LB-08 (token `RmePayment`), declared in
+   `critical_gate_mandatory_suites`.
+
 ## 5. An RM handwriting page has bounded cost
 
 `HandwritingPayloadGuard` (the handwriting counterpart of rule 228 §10) is called by

@@ -5,6 +5,7 @@ namespace App\Modules\RmeInvoice\Services;
 use App\Models\User;
 use App\Modules\Branch\Services\BranchService;
 use App\Modules\LabOrder\Models\LabCaseCandidate;
+use App\Modules\RmeInvoice\Interfaces\RmeInvoiceRepositoryInterface;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Models\RmeInvoiceItem;
 use Illuminate\Support\Collection;
@@ -14,6 +15,8 @@ class RmeLabIntegrationService
 {
     public function __construct(
         private readonly BranchService $branches,
+        // DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-7-5) — the backfill's read query.
+        private readonly RmeInvoiceRepositoryInterface $invoices,
     ) {}
 
     /**
@@ -76,5 +79,20 @@ class RmeLabIntegrationService
                 'created_by' => $actor?->id,
             ]
         );
+    }
+
+    /**
+     * DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-7-5, owner decision 2026-11-16) — the
+     * PAID invoices of the active RME branches that still have a lab-requiring
+     * item without its candidate: what a failed generation after a payment left
+     * behind (RmePaymentService logs it and keeps the payment). Read-only; the
+     * query lives in the repository (CG-04). The backfill command feeds them to
+     * generateForPaidInvoice(), which is idempotent per item.
+     *
+     * @return Collection<int, RmeInvoice> id + last_paid_at (UTC) only
+     */
+    public function paidInvoicesMissingCandidates(?string $paidFromUtc = null, ?string $paidToUtc = null, ?int $limit = null): Collection
+    {
+        return $this->invoices->paidMissingLabCandidates($this->branches->rmeEnabledIds(), $paidFromUtc, $paidToUtc, $limit);
     }
 }

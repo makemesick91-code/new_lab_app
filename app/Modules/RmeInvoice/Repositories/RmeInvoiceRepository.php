@@ -227,4 +227,34 @@ class RmeInvoiceRepository implements RmeInvoiceRepositoryInterface
 
         return $counts;
     }
+
+    public function paidMissingLabCandidates(array $branchIds, ?string $paidFromUtc = null, ?string $paidToUtc = null, ?int $limit = null): Collection
+    {
+        if ($branchIds === []) {
+            return collect();
+        }
+
+        // The latest live payment of the invoice: soft-deleted payments are not
+        // payments (RmeInvoice::paidAmount() excludes them too).
+        $lastPaidSql = '(select max(p.paid_at) from trx_rme_payments p'
+            .' where p.rme_invoice_id = trx_rme_invoices.id and p.deleted_at is null)';
+
+        return RmeInvoice::query()
+            ->select('trx_rme_invoices.id')
+            ->selectRaw($lastPaidSql.' as last_paid_at')
+            ->where('trx_rme_invoices.status', RmeInvoice::STATUS_PAID)
+            ->whereIn('trx_rme_invoices.branch_id', $branchIds)
+            ->whereHas('items', fn ($items) => $items
+                ->whereNotNull('treatment_id')
+                ->whereHas('treatment', fn ($treatment) => $treatment->where('requires_lab', true))
+                ->whereNotExists(fn ($candidate) => $candidate
+                    ->selectRaw('1')
+                    ->from('trx_lab_case_candidates')
+                    ->whereColumn('trx_lab_case_candidates.rme_invoice_item_id', 'trx_rme_invoice_items.id')))
+            ->when($paidFromUtc !== null, fn ($query) => $query->whereRaw($lastPaidSql.' >= ?', [$paidFromUtc]))
+            ->when($paidToUtc !== null, fn ($query) => $query->whereRaw($lastPaidSql.' < ?', [$paidToUtc]))
+            ->orderBy('trx_rme_invoices.id')
+            ->when($limit !== null, fn ($query) => $query->limit($limit))
+            ->get();
+    }
 }

@@ -95,4 +95,16 @@ interface RmeInvoiceRepositoryInterface
      * @return array<int, array<string, int>> branch id => [price_source => count]
      */
     public function priceSourceCountsByBranch(array $branchIds): array;
+
+    /**
+     * DMS-RME-COMPREHENSIVE-CLOSURE-1 (OD-7-5) — the PAID invoices of these
+     * branches that still have a lab-requiring item without its candidate, each
+     * with the UTC instant of its latest payment (`last_paid_at`, null when the
+     * invoice has none), oldest id first. Read-only. `$paidFromUtc` /
+     * `$paidToUtc` bound that latest payment to [from, to).
+     *
+     * @param  list<int>  $branchIds
+     * @return Collection<int, RmeInvoice>
+     */
+    public function paidMissingLabCandidates(array $branchIds, ?string $paidFromUtc = null, ?string $paidToUtc = null, ?int $limit = null): Collection;
 }

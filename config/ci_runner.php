@@ -1447,6 +1447,10 @@ return [
         // redaction produces no error, only a leak. Selected by the existing
         // `RmePayment` token in BOTH critical variants.
         'tests/Feature/RME/RmePaymentLabCandidateFailureLogPrivacyTest.php',
+        // DMS-RME-COMPREHENSIVE-CLOSURE-1 (rule 237 §18, OD-7-5) — the lab candidate
+        // backfill: an explicit payment window for --apply, counts only. Selected by
+        // the existing `RmePayment` token in BOTH critical variants.
+        'tests/Feature/RME/RmePaymentLabCandidateBackfillTest.php',
 
         // DMS-RME-REVISION-PROGRAM-2 / R-03..R-07 — a non-key segment on an
         // invoice, medical record, prescription, consent or odontogram route
