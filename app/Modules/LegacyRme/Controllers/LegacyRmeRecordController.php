@@ -110,8 +110,8 @@ class LegacyRmeRecordController extends Controller
     {
         $legacyRecord = $this->resolve($request, $record);
         $this->authorize('viewFile', $legacyRecord);
-        $this->authorizeDownload($request, $legacyRecord, 'source');
         $this->assertStreamable($legacyRecord);
+        $this->authorizeDownload($request, $legacyRecord, 'source');
 
         $path = (string) $legacyRecord->source_pdf_path;
 
@@ -204,8 +204,8 @@ class LegacyRmeRecordController extends Controller
     {
         $legacyRecord = $this->resolve($request, $record);
         $this->authorize('view', $legacyRecord);
-        $this->authorizeDownload($request, $legacyRecord, 'print');
         $this->assertStreamable($legacyRecord);
+        $this->authorizeDownload($request, $legacyRecord, 'print');
 
         $this->audit->logRecordEvent(LegacyRmeAuditEvent::RECORD_PRINTED, $legacyRecord, [], $request->user());
 
@@ -237,8 +237,8 @@ class LegacyRmeRecordController extends Controller
     {
         $legacyRecord = $this->resolve($request, $record);
         $this->authorize('view', $legacyRecord);
-        $this->authorizeDownload($request, $legacyRecord, 'export');
         $this->assertStreamable($legacyRecord);
+        $this->authorizeDownload($request, $legacyRecord, 'export');
 
         $pages = $this->records->pagesFor($legacyRecord);
         $embedded = $this->embedPages($pages);
@@ -323,8 +323,10 @@ class LegacyRmeRecordController extends Controller
     /**
      * Rule 243 §1 — the three layers for a door that reproduces the archive.
      *
-     * Runs after the reader's own `view`/`viewFile` check, so only a doctor who
-     * could otherwise read this archive is audited (rule 138 §7: a real attempt,
+     * Runs after the reader's own `view`/`viewFile` check and after
+     * `assertStreamable()` (a VOIDed archive is 404 for everyone, before any
+     * download rule), so only a doctor who could otherwise receive this
+     * archive is audited (rule 138 §7: a real attempt,
      * recorded here and never in the policy, which also gates `@can`). The
      * policy then refuses, and the print-deny authority is asked once more so a
      * bypassed policy (Gate::before) still cannot serve a doctor.

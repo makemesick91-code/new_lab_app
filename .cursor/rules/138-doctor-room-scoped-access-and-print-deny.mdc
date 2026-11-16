@@ -104,7 +104,9 @@ for `@can` UI gating, and auditing there would record a "rejection" every time a
 button is merely hidden.
 
 Events: `DOCTOR_ROOM_ACCESS_REJECTED`, `DOCTOR_PRINT_RME_REJECTED`,
-`DOCTOR_PRINT_ODONTOGRAM_REJECTED` — written through the shared
+`DOCTOR_PRINT_ODONTOGRAM_REJECTED` (rule 243 §1 adds
+`DOCTOR_PRINT_LEGACY_RME_REJECTED`, `DOCTOR_PRINT_LEGACY_ODONTOGRAM_REJECTED`
+and `DOCTOR_PRINT_CONSENT_REJECTED`, same pattern) — written through the shared
 `AuditLogService` (`sys_audit_logs`). Payload is identifiers and status only:
 never patient PII, never KTP/NIK.
 

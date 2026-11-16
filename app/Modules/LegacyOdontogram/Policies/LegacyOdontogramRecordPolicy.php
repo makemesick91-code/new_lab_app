@@ -93,11 +93,6 @@ class LegacyOdontogramRecordPolicy
         return $this->viewFile($user, $record);
     }
 
-    public function downloadAny(User $user): bool
-    {
-        return $this->viewAny($user) && ! $this->printDeny->deniesClinicalPrint($user);
-    }
-
     public function void(User $user, LegacyOdontogramRecord $record): bool
     {
         return $user->can('void_legacy_odontogram_records')

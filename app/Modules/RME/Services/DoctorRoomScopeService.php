@@ -7,6 +7,7 @@ use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Consent\Models\RmeVisitConsent;
 use App\Modules\LabOrder\Services\AuditLogService;
 use App\Modules\LegacyOdontogram\Models\LegacyOdontogramRecord;
+use App\Modules\LegacyRme\Models\LegacyRmeImport;
 use App\Modules\LegacyRme\Models\LegacyRmeRecord;
 use App\Modules\Odontogram\Models\Odontogram;
 use App\Modules\RmeOnlineContext\Models\UserOnlineContext;
@@ -241,10 +242,13 @@ class DoctorRoomScopeService
     }
 
     /**
-     * Rule 243 §1 — `$action` is the door (`source`, `print` or `export`).
-     * Identifiers only: never the patient's name, RM number or KTP/NIK.
+     * Rule 243 §1 — `$action` is the door: `source`, `print`, `export` on the
+     * clinical archive, `staging_source` on the intake screen (the same PDF
+     * before and after publishing), `oversight_source|print|pdf` on the
+     * oversight screens. Identifiers only: never the patient's name, RM number
+     * or KTP/NIK.
      */
-    public function auditLegacyRmePrintRejected(User $user, LegacyRmeRecord $record, string $action): void
+    public function auditLegacyRmePrintRejected(User $user, LegacyRmeRecord|LegacyRmeImport $record, string $action): void
     {
         $this->auditLogs->log(
             $record->getTable(),

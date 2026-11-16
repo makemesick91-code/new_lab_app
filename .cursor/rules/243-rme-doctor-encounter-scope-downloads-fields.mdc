@@ -19,9 +19,8 @@ alwaysApply: false
 # Doctor encounter scope, no doctor downloads, doctor-visible fields (rule 243)
 
 Source: the internal memo of 2026-10-17 (M2.1, M2.2, M2.4, M3.1) and the owner's decisions of 2026-11-17 ("accept all
-defaults"); the plan, impact analysis and PR split are in
-`docs/sprints/dms-rme-comprehensive-closure-1-memo-implementation-plan.md`, section "M2.1/M2.2 + M2.4 + M3.1".
-Delivered in PRs; each PR adds its section. §2 (encounter scope, A1–A4) and §3 (doctor-visible fields, C1–C2) are
+defaults"), recorded with the program in `docs/sprints/dms-rme-comprehensive-closure-1.md` (the memo implementation
+plan, its impact analysis and PR split, section "M2.1/M2.2 + M2.4 + M3.1"). Delivered in PRs; each PR adds its section. §2 (encounter scope, A1–A4) and §3 (doctor-visible fields, C1–C2) are
 added by their own PRs.
 
 ## 0. Owner decisions (CG-22)
@@ -42,38 +41,51 @@ added by their own PRs.
    those rules changes.
 2. **One authority, one definition.** `App\Modules\RME\Services\DoctorRoomScopeService::deniesClinicalPrint()` decides
    every door below; it delegates to `DoctorPatientScopeService::shouldApplyDoctorScope()`: the Doctor role, unless
-   the account also holds Owner, Super Admin or Supervisor RME. A Doctor who also holds Front Office, Admin Klinik or
-   Kasir is still refused. Never add a second "is this a doctor" predicate.
+   the account also holds Owner, Super Admin or Supervisor RME. A Doctor who also holds Front Office, Admin Klinik,
+   Kasir or an oversight role (Finance Klinik, Data Analyst) is still refused on every door below, including the
+   staging and oversight doors that serve the same files. Never add a second "is this a doctor" predicate.
 3. **The doors.** For a Doctor, each answers **403** with the rule 138 message
    (`DoctorRoomScopeService::CLINICAL_PRINT_DENIED_MESSAGE`) and writes one audit row through `AuditLogService`:
 
-   | Route | Audit event | Payload |
+   | Route | Audit event | Payload `action` |
    |---|---|---|
-   | `rme.legacy-records.source`, `.print`, `.export` | `DOCTOR_PRINT_LEGACY_RME_REJECTED` | `action` |
-   | `rme.legacy-odontograms.source` | `DOCTOR_PRINT_LEGACY_ODONTOGRAM_REJECTED` | `action` |
-   | `rme.consents.print` | `DOCTOR_PRINT_CONSENT_REJECTED` | `action`, `clinic_visit_id` |
+   | `rme.legacy-records.source`, `.print`, `.export` | `DOCTOR_PRINT_LEGACY_RME_REJECTED` | `source`, `print`, `export` |
+   | `settings.rme.legacy-imports.source` (staging, the same PDF) | `DOCTOR_PRINT_LEGACY_RME_REJECTED` | `staging_source` |
+   | `oversight.legacy.rme.source`, `.print`, `.pdf` | `DOCTOR_PRINT_LEGACY_RME_REJECTED` | `oversight_source`, `oversight_print`, `oversight_pdf` |
+   | `rme.legacy-odontograms.source` | `DOCTOR_PRINT_LEGACY_ODONTOGRAM_REJECTED` | `source` |
+   | `oversight.legacy.odontogram.source`, `.print` | `DOCTOR_PRINT_LEGACY_ODONTOGRAM_REJECTED` | `oversight_source`, `oversight_print` |
+   | `rme.consents.print` | `DOCTOR_PRINT_CONSENT_REJECTED` | `print` (plus `clinic_visit_id`) |
 
    Rule 138 §6 stays as it was: `rme.visits.print`, `rme.visits.pdf`, `rme.odontograms.print` are refused;
    `rme.prescriptions.print` is **allowed** to the doctor. Payloads are identifiers only: never a name, an RM number
    or a KTP/NIK.
 4. **Three layers, in this order.** The route permission stays. The record resolves through the caller's branch scope
    first, so an out-of-branch id is still **404** before any download rule. The reader's own `view` / `viewFile`
-   check runs next, unchanged. Then the controller audits a doctor's real attempt (never the policy, which also gates
-   `@can`), the policy refuses (`download` on `LegacyRmeRecordPolicy` and `LegacyOdontogramRecordPolicy`, `print` on
-   `RmeVisitConsentPolicy`), and the controller asks `assertClinicalPrintAllowed()` once more, so a bypassed policy
-   (the global `Gate::before`, a regression) still cannot serve a doctor.
+   check runs next, unchanged, and then the "only published bytes" check (`assertStreamable()`, the staging
+   `assertBytesNotRetracted()`, the oversight resolver): a VOIDed archive answers **404** to everyone, a doctor
+   included, with no doctor-print audit row. Then the controller audits a doctor's real attempt (never the policy,
+   which also gates `@can`), the policy refuses (`download` on `LegacyRmeRecordPolicy`, `LegacyOdontogramRecordPolicy`
+   and `LegacyRmeImportPolicy`, `print` on `RmeVisitConsentPolicy`), and the controller asks
+   `assertClinicalPrintAllowed()` once more, so a bypassed policy (the global `Gate::before`, a regression) still
+   cannot serve a doctor. The oversight doors have no per-record policy: after the `clinic-oversight.export` gate,
+   `OversightLegacyArchiveController` audits and asserts through the same authority.
 5. **Doctors still read.** `show` and the page-image routes keep serving a doctor who may read the archive (inline
    PNG, `private, no-store`, `nosniff`); the consent page and its signature images stay readable. The workspace keeps
    the page images and the zoom/expand viewer of rule 104; an archive with no rendered page says so instead of
    falling back to the PDF. Honest limit: pixels on a screen can always be photographed.
-6. **The UI mirrors the server.** Source, print and export controls render only under `@can('download', $record)`,
-   the PTM print under `@can('print', $consent)`, and the workspace source link only when `downloadAny` allows it
-   (it renders from a projection, not a model). A hidden control is never the boundary.
+6. **The UI mirrors the server.** Source, print and export controls render only under `@can('download', $record)`
+   (the staging source under `@can('download', $import)`), the PTM print under `@can('print', $consent)`, the
+   workspace source link only when `LegacyRmeRecordPolicy::downloadAny` allows it (it renders from a projection, not a
+   model), and the oversight show screens' export controls only when the controller's `canExport` (export gate and
+   not a Doctor) is true. When a page image fails and the reader has no source PDF, the workspace viewer shows its
+   "no preview" message. A hidden control is never the boundary.
 7. **Everyone else is unchanged.** Front Office, Admin Klinik, Supervisor RME and Kasir (consent) keep their print
    path within their existing boundary (another branch's archive is 404, another branch's consent 403). Super Admin
    is exempt (and passes `Gate::before`). Owner holds no legacy or consent permission and stays refused at the route.
-8. **Out of this section.** The oversight routes (`oversight.legacy.*`, `export_oversight_data`) and the staging
-   import routes are not doctor doors: a Doctor holds neither permission and is refused at the route. The 404 for a
-   doctor outside the encounter scope (plan default 6) belongs to §2.
+8. **Out of this section.** A pure Doctor holds neither the intake nor the oversight permission and is refused at the
+   route on the staging and oversight doors; a dual-role Doctor is refused by item 3. The legacy odontogram staging
+   screen has page images only (no source door). Native RME/odontogram/prescription print through the oversight
+   screens (`oversight.rme.visits.*`) is rule 138's surface and is not changed here. The 404 for a doctor outside the
+   encounter scope (plan default 6) belongs to §2.
 9. **Tests.** `tests/Feature/RME/DoctorRoomScopedArchiveAndConsentPrintDenyTest.php` (critical-gate token
    `DoctorRoomScoped`, declared in `config/ci_runner.php` `critical_gate_mandatory_suites`).

@@ -214,9 +214,10 @@ mass upload, batch review/publish, visit-bound date attestation and single-activ
   the 9-digit page pattern, not the 18-digit key pattern; `0` and `01` are 404. The 14 import routes' `{import}`
   carries `DatabaseRouteKey::PATTERN` too (Program 4, R-16), not `whereNumber`. Source:
   `222-rme-route-key-constraint-and-failure-log-redaction.mdc` §1.10–§1.12.
-- **AIR-LRM-40** Rule 93 §12 is REVISED for doctors (owner, 2026-11-17): a Doctor gets 403 (audited) on
-  `rme.legacy-records.source`/`.print`/`.export` and `rme.legacy-odontograms.source`, keeps `show` and the page images,
-  and sees no source/print/export control (`@can('download', …)`). Other readers unchanged. Source:
+- **AIR-LRM-40** Rule 93 §12 is REVISED for doctors (owner, 2026-11-17): a Doctor, dual-role included, gets 403
+  (audited) on `rme.legacy-records.source`/`.print`/`.export`, `rme.legacy-odontograms.source`, the staging
+  `settings.rme.legacy-imports.source` and the `oversight.legacy.*` source/print/pdf doors; a VOIDed archive stays 404
+  first; doctors keep `show` and the page images and see no download control. Other readers unchanged. Source:
   `.cursor/rules/243-rme-doctor-encounter-scope-downloads-fields.mdc` §1.
 
 ## Current posture (snapshot 2026-10-25 — verify before relying on it)

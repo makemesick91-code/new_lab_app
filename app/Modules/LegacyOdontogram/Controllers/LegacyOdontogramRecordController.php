@@ -98,8 +98,8 @@ class LegacyOdontogramRecordController extends Controller
     {
         $legacyRecord = $this->resolve($request, $record);
         $this->authorize('viewFile', $legacyRecord);
-        $this->authorizeDownload($request, $legacyRecord, 'source');
         $this->assertStreamable($legacyRecord);
+        $this->authorizeDownload($request, $legacyRecord, 'source');
 
         $path = (string) $legacyRecord->source_pdf_path;
         $disk = $this->storage->diskFor($legacyRecord->source_disk);

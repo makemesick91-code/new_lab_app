@@ -30,6 +30,7 @@ use App\Modules\Consent\Models\RmeVisitConsent;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\LegacyOdontogram\Models\LegacyOdontogramRecord;
 use App\Modules\LegacyOdontogram\Models\LegacyOdontogramRecordPage;
+use App\Modules\LegacyRme\Models\LegacyRmeImport;
 use App\Modules\LegacyRme\Models\LegacyRmeRecord;
 use App\Modules\LegacyRme\Models\LegacyRmeRecordPage;
 use App\Modules\Patient\Models\Patient;
@@ -230,8 +231,7 @@ it('denies the download and print abilities at the policy, with the rule 138 mes
             ->and($decision->message())->toBe(DRSACP_DENY_MESSAGE);
     }
 
-    expect(Gate::forUser($doctor)->allows('downloadAny', LegacyRmeRecord::class))->toBeFalse()
-        ->and(Gate::forUser($doctor)->allows('downloadAny', LegacyOdontogramRecord::class))->toBeFalse();
+    expect(Gate::forUser($doctor)->allows('downloadAny', LegacyRmeRecord::class))->toBeFalse();
 });
 
 it('still answers 404 to a doctor outside the archive branch, before any download rule', function (string $route, string $subject) {
@@ -470,4 +470,196 @@ it('still renders the legacy source PDF URL in the workspace for a reader who ma
     $sourcePath = '/rme/legacy-records/'.$this->legacyRme->id.'/source';
 
     expect(str_contains($html, $sourcePath) || str_contains($html, str_replace('/', '\/', $sourcePath)))->toBeTrue();
+});
+
+/*
+|--------------------------------------------------------------------------
+| E — independent review: every other door a dual-role Doctor could use
+|--------------------------------------------------------------------------
+| A Doctor who also holds an intake role (Front Office, Admin Klinik) holds
+| `view_legacy_rme_imports`, so the STAGING source of the very same PDF is a
+| door; one who also holds an oversight role holds `export_oversight_data`, so
+| the OVERSIGHT print/pdf/source doors are too. Rule 243 §1.2 refuses them all.
+*/
+
+function drsacpStagingImport(Patient $patient, Branch $branch): LegacyRmeImport
+{
+    $import = LegacyRmeImport::factory()->readyForReview()->create([
+        'patient_id' => $patient->id,
+        'origin_branch_id' => $branch->id,
+        'source_disk' => 'legacy_rme_private',
+        'source_pdf_path' => 'drsacp/staging/source.pdf',
+    ]);
+
+    Storage::disk('legacy_rme_private')->put('drsacp/staging/source.pdf', legacyRmePdfBytes(1));
+
+    return $import->refresh();
+}
+
+/** The treating doctor, additionally holding $role (its context started, then the doctor one again). */
+function drsacpDualRoleDoctor(string $role): User
+{
+    $test = test();
+    $doctor = $test->doctor;
+
+    match ($role) {
+        'Front Office' => rmeMakeFrontOfficeActive($doctor, $test->branch),
+        'Admin Klinik' => rmeMakeAdminClinicActive($doctor, $test->branch),
+        default => $doctor->assignRole($role),
+    };
+
+    rmeMakeDoctorOnline($test->doctorRecord, $test->branch, $test->room, $doctor);
+
+    return $doctor->refresh();
+}
+
+/** Every oversight download door, as [route name, subject property, audit event, action]. */
+function drsacpOversightDoors(): array
+{
+    return [
+        'oversight legacy RME source' => ['oversight.legacy.rme.source', 'legacyRme', 'DOCTOR_PRINT_LEGACY_RME_REJECTED', 'oversight_source'],
+        'oversight legacy RME print' => ['oversight.legacy.rme.print', 'legacyRme', 'DOCTOR_PRINT_LEGACY_RME_REJECTED', 'oversight_print'],
+        'oversight legacy RME pdf' => ['oversight.legacy.rme.pdf', 'legacyRme', 'DOCTOR_PRINT_LEGACY_RME_REJECTED', 'oversight_pdf'],
+        'oversight legacy odontogram source' => ['oversight.legacy.odontogram.source', 'legacyOdontogram', 'DOCTOR_PRINT_LEGACY_ODONTOGRAM_REJECTED', 'oversight_source'],
+        'oversight legacy odontogram print' => ['oversight.legacy.odontogram.print', 'legacyOdontogram', 'DOCTOR_PRINT_LEGACY_ODONTOGRAM_REJECTED', 'oversight_print'],
+    ];
+}
+
+it('refuses a Doctor who also holds an intake role the staging source PDF, audited', function (string $role) {
+    $import = drsacpStagingImport($this->patient, $this->branch);
+    $actor = drsacpDualRoleDoctor($role);
+
+    $this->actingAs($actor)
+        ->get(route('settings.rme.legacy-imports.source', $import->getKey()))
+        ->assertForbidden();
+
+    $rows = drsacpAuditRows('DOCTOR_PRINT_LEGACY_RME_REJECTED');
+
+    expect($rows)->toHaveCount(1)
+        ->and($rows->first()->entity_type)->toBe($import->getTable())
+        ->and((int) $rows->first()->entity_id)->toBe((int) $import->getKey())
+        ->and((string) $rows->first()->new_values)->toContain('staging_source')
+        ->and(Gate::forUser($actor)->inspect('download', $import)->message())->toBe(DRSACP_DENY_MESSAGE);
+})->with(['Front Office', 'Admin Klinik']);
+
+it('still serves the staging source PDF to pure Front Office and Admin Klinik', function (string $role) {
+    $import = drsacpStagingImport($this->patient, $this->branch);
+    $actor = $role === 'Front Office' ? drsacpFrontOffice($this->branch) : drsacpAdminKlinik($this->branch);
+
+    $this->actingAs($actor)
+        ->get(route('settings.rme.legacy-imports.source', $import->getKey()))
+        ->assertOk()
+        ->assertHeader('content-type', 'application/pdf');
+
+    expect(Gate::forUser($actor)->allows('download', $import))->toBeTrue()
+        ->and(DB::table('sys_audit_logs')->where('action', 'like', 'DOCTOR_PRINT_%')->count())->toBe(0);
+})->with(['Front Office', 'Admin Klinik']);
+
+it('hides the staging source control from a dual-role doctor and shows it to Front Office', function () {
+    $import = drsacpStagingImport($this->patient, $this->branch);
+    $sourceUrl = route('settings.rme.legacy-imports.source', $import->getKey());
+
+    $frontOfficeHtml = $this->actingAs(drsacpFrontOffice($this->branch))
+        ->get(route('settings.rme.legacy-imports.show', $import->getKey()))
+        ->assertOk()
+        ->getContent();
+
+    $doctorHtml = $this->actingAs(drsacpDualRoleDoctor('Front Office'))
+        ->get(route('settings.rme.legacy-imports.show', $import->getKey()))
+        ->assertOk()
+        ->getContent();
+
+    expect($frontOfficeHtml)->toContain($sourceUrl)
+        ->and($doctorHtml)->not->toContain($sourceUrl);
+});
+
+it('refuses a Doctor who also holds an oversight role every oversight download door, audited', function (string $route, string $subject, string $event, string $action, string $role) {
+    $model = $this->{$subject};
+    $actor = drsacpDualRoleDoctor($role);
+
+    $this->actingAs($actor)
+        ->withoutMiddleware(EnsureRmeOnlineContext::class)
+        ->get(route($route, $model->getKey()))
+        ->assertForbidden();
+
+    $rows = drsacpAuditRows($event);
+
+    expect($rows)->toHaveCount(1)
+        ->and((int) $rows->first()->entity_id)->toBe((int) $model->getKey())
+        ->and((string) $rows->first()->new_values)->toContain($action);
+})->with(drsacpOversightDoors())->with(['Finance Klinik', 'Data Analyst']);
+
+it('still serves every oversight download door to a pure oversight role', function (string $route, string $subject, string $event, string $action, string $role) {
+    if ($route === 'oversight.legacy.rme.pdf' && ! extension_loaded('gd')) {
+        $this->markTestSkipped('requires the GD extension (dompdf image decoding)');
+    }
+
+    $actor = User::factory()->create()->assignRole($role);
+
+    $this->actingAs($actor)
+        ->withoutMiddleware(EnsureRmeOnlineContext::class)
+        ->get(route($route, $this->{$subject}->getKey()))
+        ->assertOk();
+
+    expect(DB::table('sys_audit_logs')->where('action', 'like', 'DOCTOR_PRINT_%')->count())->toBe(0);
+})->with(drsacpOversightDoors())->with(['Finance Klinik', 'Data Analyst']);
+
+it('hides the oversight print, pdf and source controls from a dual-role doctor and shows them to Finance Klinik', function () {
+    $urls = [
+        route('oversight.legacy.rme.print', $this->legacyRme->id),
+        route('oversight.legacy.rme.pdf', $this->legacyRme->id),
+        route('oversight.legacy.rme.source', $this->legacyRme->id),
+        route('oversight.legacy.odontogram.print', $this->legacyOdontogram->id),
+        route('oversight.legacy.odontogram.source', $this->legacyOdontogram->id),
+    ];
+
+    $render = fn (User $actor): string => $this->actingAs($actor)
+        ->withoutMiddleware(EnsureRmeOnlineContext::class)
+        ->get(route('oversight.legacy.rme.show', $this->legacyRme->id))
+        ->assertOk()
+        ->getContent()
+        .$this->actingAs($actor)
+            ->withoutMiddleware(EnsureRmeOnlineContext::class)
+            ->get(route('oversight.legacy.odontogram.show', $this->legacyOdontogram->id))
+            ->assertOk()
+            ->getContent();
+
+    $financeHtml = $render(User::factory()->create()->assignRole('Finance Klinik'));
+    $doctorHtml = $render(drsacpDualRoleDoctor('Finance Klinik'));
+
+    foreach ($urls as $url) {
+        expect($financeHtml)->toContain($url)
+            ->and($doctorHtml)->not->toContain($url);
+    }
+});
+
+it('answers a VOID archive 404 to a doctor before any download rule, with no doctor-print audit', function (string $route) {
+    $this->legacyRme->forceFill([
+        'status' => LegacyRmeRecord::STATUS_VOID,
+        'voided_at' => now(),
+        'void_reason' => 'Salah pasien, ditarik kembali.',
+    ])->save();
+
+    $this->actingAs($this->doctor)
+        ->get(route($route, $this->legacyRme->id))
+        ->assertNotFound();
+
+    expect(DB::table('sys_audit_logs')->where('action', 'like', 'DOCTOR_PRINT_%')->count())->toBe(0);
+})->with([
+    'legacy RME print' => ['rme.legacy-records.print'],
+    'legacy RME export' => ['rme.legacy-records.export'],
+]);
+
+it('degrades a broken page image to the "no preview" message when the reader has no source PDF', function () {
+    $html = $this->followingRedirects()
+        ->actingAs($this->doctor)
+        ->get(route('rme.visits.medical-record.show', $this->visit))
+        ->assertOk()
+        ->getContent();
+
+    // The viewer's image fallback must switch to the 'pdf' mode unconditionally:
+    // with no source URL that mode renders the "no preview" message rather than
+    // leaving a broken <img> in a clinical viewer.
+    expect($html)->toContain('data-rme-legacy-no-preview')
+        ->and(preg_match("/fallBackToPdf\\(\\)\\s*\\{(?:\\s*\\/\\/[^\\n]*)*\\s*this\\.mode = 'pdf';/", $html))->toBe(1);
 });

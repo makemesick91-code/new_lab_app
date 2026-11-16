@@ -312,11 +312,11 @@
                         },
 
                         // A missing rendered page must not leave a broken image
-                        // in a clinical viewer — degrade to the source PDF.
+                        // in a clinical viewer — degrade to the source PDF, or,
+                        // for a reader with no source PDF (rule 243 §1, a Doctor),
+                        // to the "no preview" message the 'pdf' mode renders then.
                         fallBackToPdf() {
-                            if (this.doc.sourceUrl) {
-                                this.mode = 'pdf';
-                            }
+                            this.mode = 'pdf';
                         },
 
                         zoomIn() {

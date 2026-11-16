@@ -26,6 +26,7 @@ use App\Modules\LegacyRme\Support\LegacyRmeImportStatus;
 use App\Modules\LegacyRme\Support\LegacyRmeLifecycleAction;
 use App\Modules\LegacyRme\Support\LegacyRmeWorkspaceScope;
 use App\Modules\LegacyRme\Support\SeparatePublisherGuard;
+use App\Modules\RME\Services\DoctorRoomScopeService;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -82,6 +83,7 @@ class LegacyRmeImportController extends Controller
         // already held; store() re-decides under a lock, and that call is the
         // boundary.
         private readonly LegacySingleActiveDocumentService $slots,
+        private readonly DoctorRoomScopeService $printDeny,
     ) {}
 
     public function index(Request $request): View
@@ -286,6 +288,22 @@ class LegacyRmeImportController extends Controller
         $record = $this->resolve($request, $import);
         $this->authorize('viewFile', $record);
         $this->assertBytesNotRetracted($record);
+
+        // Rule 243 §1 — the same PDF as the published archive, so the same
+        // doctor refusal: audit the real attempt here (never in the policy,
+        // which also gates `@can`), let the policy refuse, then re-assert so a
+        // bypassed policy still cannot serve a doctor who holds an intake role.
+        $user = $request->user();
+
+        if ($user !== null && $this->printDeny->deniesClinicalPrint($user)) {
+            $this->printDeny->auditLegacyRmePrintRejected($user, $record, 'staging_source');
+        }
+
+        $this->authorize('download', $record);
+
+        if ($user !== null) {
+            $this->printDeny->assertClinicalPrintAllowed($user);
+        }
 
         $path = (string) $record->source_pdf_path;
 
