@@ -131,12 +131,33 @@ it('QB-03 keeps every per-row answer: own active visits are editable, another do
 });
 
 it('QB-04 never carries one account\'s identity to another account in the same request', function () {
-    $resolver = app(DoctorIdentityResolver::class);
     $other = User::factory()->create();
+    $otherDoctor = Doctor::factory()->create(['branch_id' => test()->dpqbBranch->id]);
+    $unlinked = User::factory()->create();
+    DB::table('mst_doctors')->where('id', $otherDoctor->id)->update(['user_id' => $other->id]);
 
-    expect($resolver->resolveForUser(test()->dpqbUser)?->id)->toBe(test()->dpqbDoctor->id)
-        ->and($resolver->resolveForUser($other))->toBeNull()
-        ->and($resolver->resolveForUser(test()->dpqbUser)?->id)->toBe(test()->dpqbDoctor->id);
+    // Inside a ROUTED request, where the memo is live: three accounts asked in
+    // turn must each get their own answer, never the one memoised before them.
+    Route::middleware('web')->get('/_dpqb/identities', function () use ($other, $unlinked) {
+        $resolver = app(DoctorIdentityResolver::class);
+
+        return response()->json([
+            'first' => $resolver->resolveForUser(test()->dpqbUser)?->id,
+            'other' => $resolver->resolveForUser($other)?->id,
+            'unlinked' => $resolver->resolveForUser($unlinked)?->id,
+            'again' => $resolver->resolveForUser(test()->dpqbUser)?->id,
+        ]);
+    });
+
+    $this->actingAs(test()->dpqbUser)
+        ->getJson('/_dpqb/identities')
+        ->assertOk()
+        ->assertExactJson([
+            'first' => test()->dpqbDoctor->id,
+            'other' => $otherDoctor->id,
+            'unlinked' => null,
+            'again' => test()->dpqbDoctor->id,
+        ]);
 });
 
 it('QB-05 never reads a link change back stale inside the same request (the link service clears the memo)', function () {

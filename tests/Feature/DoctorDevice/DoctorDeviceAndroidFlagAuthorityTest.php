@@ -20,6 +20,7 @@ declare(strict_types=1);
 | `ddfa` is unique because the critical gate loads every suite into one process.
 */
 
+use App\Services\Foundation\FeatureFlagService;
 use App\Support\Android\AndroidReleaseGovernanceScanner;
 
 require_once __DIR__.'/helpers.php';
@@ -79,4 +80,25 @@ it('FA-05 reports the phase it applies, and the declared value beside it', funct
 
     expect($summary['governance_phase'])->toBe('phase_4a')
         ->and($summary['governance_phase_declared'])->toBe('phase_4a_typo');
+});
+
+it('FA-06 fails enforcement_off when the registry entry does not declare its default', function () {
+    $definition = (array) config('feature_flags.flags', [])[ddfaFlagKey()];
+    unset($definition['default']);
+    ddfaSetFlag(ddfaFlagKey(), $definition);
+
+    $check = androidCheck('enforcement_off');
+
+    // An undeclared default must never read as "off": the registry has to say so.
+    expect($check['status'])->toBe('FAIL')
+        ->and(json_encode($check))->toContain('does not declare');
+});
+
+it('FA-07 fails enforcement_off when the runtime value is on although the declared default is off', function () {
+    $definition = (array) config('feature_flags.flags', [])[ddfaFlagKey()];
+    // A captured environment override (`env_value`) turns the flag on at runtime.
+    ddfaSetFlag(ddfaFlagKey(), ['default' => false, 'env_value' => 'true'] + $definition);
+
+    expect(app(FeatureFlagService::class)->get(ddfaFlagKey())['enabled'])->toBeTrue()
+        ->and(androidCheck('enforcement_off')['status'])->toBe('FAIL');
 });

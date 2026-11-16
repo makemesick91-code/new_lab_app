@@ -104,7 +104,9 @@ signing in `RmePrescriptionIntegrityTest` I7 (token `RmePrescription`) and `Doct
    (104 → 174), the patient queue from 7 → 19 (64 → 112) to 1 → 1 (58 → 94). Every per-row authorization answer is
    unchanged. Never cache identity across requests or in a long-lived process.
 2. **CC1-CG08.** `AndroidReleaseGovernanceScanner` reads the enforcement flag through
-   `FeatureFlagService::get()` (CG-08), never `config('feature_flags…')`; an undeclared flag is still a FAIL. Its
+   `FeatureFlagService` (CG-08), never `config('feature_flags…')`. `enforcement_off` passes only when the registry
+   entry DECLARES `default => false` (`declaredDefault()`; a missing default never reads as off, FA-06) AND the
+   runtime value is off (an environment override counts, FA-07); an undeclared flag is still a FAIL. Its
    summary reports `governance_phase` as the phase it applies (unrecognised → `phase_4a`) and the declared value as
    `governance_phase_declared`.
 3. **CC1-ODO is not changed.** An empty saved odontogram prints the designed empty state ("Belum ada kondisi

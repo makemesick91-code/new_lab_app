@@ -1917,33 +1917,41 @@ class AndroidReleaseGovernanceScanner
         // not actually have. A missing or unreadable flag is a FAIL, not a pass:
         // an absence assertion over nothing proves nothing.
         $flagKey = (string) config('android_release.enforcement.flag_key');
-        $flagDefaultOff = null;
+        // DMS-RME-COMPREHENSIVE-CLOSURE-1 (CC1-CG08) — through the one flag
+        // authority (CG-08), which already reads dotted keys as literal array
+        // keys. "Off" needs BOTH a declared `default => false` (a missing default
+        // must never read as off) AND a runtime value that is off (an environment
+        // override counts). An undeclared flag stays a FAIL.
+        $flagState = 'undeclared';
 
         if ($flagKey !== '') {
-            // DMS-RME-COMPREHENSIVE-CLOSURE-1 (CC1-CG08) — through the one flag
-            // authority (CG-08), which already reads dotted keys as literal array
-            // keys. An undeclared flag stays "not declared" (FAIL); the registry
-            // governance check (FeatureFlagService::validateGovernance) requires
-            // every flag to declare its `default`.
             try {
-                $flagDefaultOff = app(FeatureFlagService::class)->get($flagKey)['default'] === false;
+                $flags = app(FeatureFlagService::class);
+                $declared = $flags->declaredDefault($flagKey);
+                $flagState = match (true) {
+                    $declared === null => 'default_undeclared',
+                    $declared === false && $flags->get($flagKey)['enabled'] === false => 'off',
+                    default => 'on',
+                };
             } catch (InvalidArgumentException) {
-                $flagDefaultOff = null;
+                $flagState = 'undeclared';
             }
         }
 
         $off = config('android_release.enforcement.active') === false
             && config('android_release.enforcement.doctor_browser_login_denied') === false
-            && $flagDefaultOff === true;
+            && $flagState === 'off';
 
         $checks[] = $this->check(
             'enforcement_off',
             $off ? 'PASS' : 'FAIL',
             $off
-                ? "Device enforcement is off, browser login is not denied, and the '{$flagKey}' flag defaults to false."
-                : ($flagDefaultOff === null
-                    ? "Enforcement flag '{$flagKey}' is not declared in the feature flag registry."
-                    : 'Configuration claims enforcement is active. It must ship off.'),
+                ? "Device enforcement is off, browser login is not denied, and the '{$flagKey}' flag defaults to false and is off at runtime."
+                : match ($flagState) {
+                    'undeclared' => "Enforcement flag '{$flagKey}' is not declared in the feature flag registry.",
+                    'default_undeclared' => "Enforcement flag '{$flagKey}' does not declare `default => false` in the feature flag registry.",
+                    default => 'Configuration claims enforcement is active. It must ship off.',
+                },
         );
 
         $token = (string) config('android_release.scanner.enforcement_coupling_token');
