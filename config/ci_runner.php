@@ -1684,6 +1684,12 @@ return [
         // before the rule follow the derived rule (ties lock). Selected by the existing `MedicalRecordFinalization`
         // token in BOTH critical variants.
         'tests/Feature/RME/MedicalRecordFinalizationPageSealTest.php',
+        // Same rule, §5 (M3.3 PR3) — finalize writes version 1 of the sheet or chart: an immutable,
+        // hash-chained snapshot (model guard + PostgreSQL trigger), idempotent on re-finalize, a baseline
+        // for records finalized before the rule, reads authorized like the record. Selected by the
+        // existing `MedicalRecordFinalization` and `Odontogram` tokens in BOTH critical variants.
+        'tests/Feature/RME/MedicalRecordFinalizationVersionHistoryTest.php',
+        'tests/Feature/RME/OdontogramVersionHistoryTest.php',
 
         // SECURITY-F4C-CLINIC-CALENDAR-LAB-ORDERS-1 (owner decision D16) — lab order dates, order and
         // delivery numbering, the due-date floor and "delivered today" on the clinic calendar

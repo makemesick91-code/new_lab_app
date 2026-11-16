@@ -1,6 +1,6 @@
 ---
-description: DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M3.3 (rule 240) — a finalized RME sheet (SOAP fields, notes, structured diagnoses, the emergency diagnosis override) and a finalized odontogram (the whole chart) are locked (owner decision 2026-11-17, reverses Sprint 59); a correction goes only through the supervised amendment the later M3.3 PRs build; three layers — route, MedicalRecordPolicy::editSheet / OdontogramPolicy::update (scope first, then final ⇒ deny), and the service re-deciding on the row it locked after the visit row, which binds Super Admin; rows final at deploy are locked by status, no backfill. Finalizing also seals every page of the patient's handwriting book (§4): a sealed page is never overwritten, only the live encounter overwrites its own unsealed pages, every encounter appends new ones, a page from before rule 240 is sealed when a final sheet was finalized at or after its creation and is otherwise never overwritten either (its encounter is unknown). Release constraint — the lock and the amendment path ship in the same release.
-globs: app/Modules/MedicalRecord/Services/MedicalRecordService.php, app/Modules/MedicalRecord/Services/MedicalRecordDiagnosisService.php, app/Modules/MedicalRecord/Services/DiagnosisRolloutService.php, app/Modules/MedicalRecord/Policies/MedicalRecordPolicy.php, app/Modules/MedicalRecord/Controllers/MedicalRecordController.php, app/Modules/MedicalRecord/Controllers/MedicalRecordDiagnosisController.php, app/Modules/MedicalRecord/Controllers/DiagnosisRolloutController.php, app/Modules/Odontogram/Services/OdontogramService.php, app/Modules/Odontogram/Policies/OdontogramPolicy.php, app/Modules/Odontogram/Controllers/OdontogramController.php, resources/views/rme/visits/medical-record/show.blade.php, resources/views/rme/visits/odontogram/show.blade.php, tests/Feature/RME/MedicalRecordFinalizationLockTest.php, tests/Feature/RME/OdontogramFinalizedLockTest.php, app/Modules/MedicalRecord/Services/MedicalRecordHandwritingService.php, app/Modules/MedicalRecord/Repositories/MedicalRecordHandwritingRepository.php, app/Modules/MedicalRecord/Controllers/MedicalRecordHandwritingController.php, tests/Feature/RME/MedicalRecordFinalizationPageSealTest.php
+description: DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M3.3 (rule 240) — a finalized RME sheet (SOAP fields, notes, structured diagnoses, the emergency diagnosis override) and a finalized odontogram (the whole chart) are locked (owner decision 2026-11-17, reverses Sprint 59); a correction goes only through the supervised amendment the later M3.3 PRs build; three layers — route, MedicalRecordPolicy::editSheet / OdontogramPolicy::update (scope first, then final ⇒ deny), and the service re-deciding on the row it locked after the visit row, which binds Super Admin; rows final at deploy are locked by status, no backfill. Finalizing also seals every page of the patient's handwriting book (§4): a sealed page is never overwritten, only the live encounter overwrites its own unsealed pages, every encounter appends new ones, a page from before rule 240 is sealed when a final sheet was finalized at or after its creation and is otherwise never overwritten either (its encounter is unknown). Finalize writes version 1 — an immutable, hash-chained snapshot (§5); a record finalized before the rule gets a baseline version on its first amendment. Release constraint — the lock and the amendment path ship in the same release.
+globs: app/Modules/MedicalRecord/Services/MedicalRecordService.php, app/Modules/MedicalRecord/Services/MedicalRecordDiagnosisService.php, app/Modules/MedicalRecord/Services/DiagnosisRolloutService.php, app/Modules/MedicalRecord/Policies/MedicalRecordPolicy.php, app/Modules/MedicalRecord/Controllers/MedicalRecordController.php, app/Modules/MedicalRecord/Controllers/MedicalRecordDiagnosisController.php, app/Modules/MedicalRecord/Controllers/DiagnosisRolloutController.php, app/Modules/Odontogram/Services/OdontogramService.php, app/Modules/Odontogram/Policies/OdontogramPolicy.php, app/Modules/Odontogram/Controllers/OdontogramController.php, resources/views/rme/visits/medical-record/show.blade.php, resources/views/rme/visits/odontogram/show.blade.php, tests/Feature/RME/MedicalRecordFinalizationLockTest.php, tests/Feature/RME/OdontogramFinalizedLockTest.php, app/Modules/MedicalRecord/Services/MedicalRecordHandwritingService.php, app/Modules/MedicalRecord/Repositories/MedicalRecordHandwritingRepository.php, app/Modules/MedicalRecord/Controllers/MedicalRecordHandwritingController.php, tests/Feature/RME/MedicalRecordFinalizationPageSealTest.php, app/Modules/RmeAmendment/**, tests/Feature/RME/MedicalRecordFinalizationVersionHistoryTest.php, tests/Feature/RME/OdontogramVersionHistoryTest.php
 alwaysApply: false
 ---
 
@@ -109,7 +109,7 @@ defaults the owner accepted on 2026-11-17) are in `docs/sprints/dms-rme-comprehe
 - **Unchanged:** rule 219 (performed treatments), rule 237 §9 (signed prescriptions), rule 237 §15 (handwriting page
   revision).
 
-## 3. Tests and CI selection (§1, §4)
+## 3. Tests and CI selection (§1, §4, §5)
 
 - `tests/Feature/RME/MedicalRecordFinalizationLockTest.php` (selected by the existing `MedicalRecordFinalization`
   token) and `tests/Feature/RME/OdontogramFinalizedLockTest.php` (existing `Odontogram` token), in BOTH critical-gate
@@ -148,6 +148,16 @@ defaults the owner accepted on 2026-11-17) are in `docs/sprints/dms-rme-comprehe
   now stamp it with that encounter (`RmeClinicalWriteAuthorityPageRevisionTest` HR-06, `Sprint60MultiPageHandwritingTest`
   "loads only the selected page"), and `RmeClinicalEvidenceWriteLockConcurrencyTest` names the encounter in its
   resolver (§4.4).
+
+- §5: `tests/Feature/RME/MedicalRecordFinalizationVersionHistoryTest.php` (existing `MedicalRecordFinalization`
+  token) and `tests/Feature/RME/OdontogramVersionHistoryTest.php` (existing `Odontogram` token), BOTH variants,
+  declared in `critical_gate_mandatory_suites`. They pin: version 1 on finalize for a sheet (fields, diagnoses in
+  order, the sealed pages with object key and the SHA-256 of the stored bytes) and for a chart (the payload);
+  nothing new on re-finalize, also from a stale copy; no version when the finalize is refused; the hash chain
+  verified and a forged link detected; immutability through the model and, on PostgreSQL, a raw UPDATE and DELETE
+  refused by the trigger; the baseline written once, only inside a transaction, only for a final subject; reads
+  authorized like the record; no snapshot content in any log message or `sys_audit_logs` row; visit → subject lock
+  → version insert (PostgreSQL).
 
 ## 4. Handwriting pages sealed on finalize (M3.3 PR2)
 
@@ -211,3 +221,48 @@ defaults the owner accepted on 2026-11-17) are in `docs/sprints/dms-rme-comprehe
 8. **Supersedes** the Sprint 59 comment "handwriting RM is revisable after finalization" in
    `MedicalRecordHandwritingController` and the corresponding part of rule 109 §2b's last bullet (already marked by
    §2).
+
+## 5. Version history (M3.3 PR3)
+
+1. **The table.** `trx_rme_record_versions` (migration `2026_11_17_300001_create_trx_rme_record_versions_table`,
+   additive): one row per version of a subject — `subject_type` (`medical_record` | `odontogram`) and `subject_id`,
+   `version` (UNIQUE per subject, ≥ 1), `kind` (`final` | `baseline` | `amendment`), `snapshot_schema_version`,
+   `snapshot` (jsonb), `previous_hash`, `hash`, `created_by`, `created_at` (technical instant, UTC; no
+   `updated_at`). PostgreSQL CHECK constraints pin the subject types, kinds and version ≥ 1.
+2. **Immutable.** `RmeRecordVersion` throws on update and delete; on PostgreSQL the trigger
+   `trx_rme_record_versions_immutable` refuses a raw UPDATE or DELETE (SQLite has no trigger; the model guard
+   stands). The repository has no update or delete. `down()` refuses to drop the table while a version exists.
+3. **Version 1.** `MedicalRecordService::finalize()` and `OdontogramService::finalize()` call
+   `RmeRecordVersionService::recordFinal()` inside their transaction, after the visit and subject locks (and, for a
+   sheet, after the page seal of §4), so the version commits with the finalize or not at all. The already-final
+   paths return before it, and `recordFinal()` itself returns an existing version 1, so a re-finalize writes nothing.
+   A version is written only inside a transaction and only for a final sheet or a finalized chart (LogicException
+   otherwise).
+4. **Baseline.** A record finalized before rule 240 has no version. `RmeRecordVersionService::ensureBaseline()`
+   writes its version 1 (`baseline`) from the record as it stands, once; M3.3 PR5 calls it inside the amendment
+   transaction, under the same locks, before the record changes, naming the amending (live) encounter so that
+   encounter's own unsealed pages — still writable under §4.4 — are not recorded as locked.
+5. **The snapshot.** A sheet: `fields` (subjective, objective, assessment, plan, notes), `diagnoses` (code system,
+   code, display, role, statuses, notes, diagnosed at; by id) and `pages` — every LOCKED page of the patient's
+   handwriting book by the rule of §4.3-§4.4 (sealed; written before rule 240 and covered by a finalize; or written
+   by an encounter other than the live one — `MedicalRecordHandwritingRepositoryInterface::lockedBookPages()`, the
+   same cases as `pageSlotLock()`; at a finalize every page has just been sealed, so it is the whole book), with its
+   record, page number, object key and SHA-256 (never bytes; an inline data-URI page reports no key), authoring
+   encounter and seal stamps. A chart: summary notes, additional conditions and `tooth_map_payload`. Both carry the
+   subject's ids, status, `finalized_at` and `finalized_by`. No patient identity field is copied; nothing is
+   logged and no audit row carries a snapshot.
+6. **The hash chain.** `hash` = SHA-256 of the canonical JSON (object keys sorted recursively, lists in order, the
+   flags of `RmeInvoiceSnapshot`) of subject type, subject id, version, kind, `previous_hash` and snapshot; version
+   1 has no previous hash, version n+1 carries version n's hash. The snapshot is stored as it decodes from that
+   encoding, so a jsonb round trip changes nothing hashed. `verifyChain()` checks numbering 1..n, each link and each
+   stored hash.
+7. **Reading.** `versionsFor()` and `version()` authorize the subject's `view` ability for the given account
+   (MedicalRecordPolicy / OdontogramPolicy) before reading; there are no routes or views yet (M3.3 PR4/PR5).
+8. **The "Diamandemen n×" marker.** `amendmentCount()` counts the subject's `amendment` versions. No marker column
+   is added: a counter would have to be written beside every amendment and could drift from the immutable rows it
+   summarises; the count reads one indexed set (`subject_type`, `subject_id`, `kind`) per printed record.
+9. **Page objects are never deleted.** A handwriting save writes every page to a fresh object key and never removes
+   the object a committed row names; the only removal in that path is the uncommitted object of a failed save
+   (`MedicalRecordHandwritingService::discardUncommitted()`), whose key no row references. A version therefore
+   always points at objects that still exist. No other code path deletes handwriting objects (the public-disk
+   migration command removes a public copy only after a byte-identical private copy is verified).

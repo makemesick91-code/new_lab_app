@@ -6,6 +6,7 @@ use App\Modules\MedicalRecord\Interfaces\MedicalRecordHandwritingRepositoryInter
 use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\MedicalRecord\Models\MedicalRecordHandwriting;
 use App\Modules\MedicalRecord\Models\MedicalRecordHandwritingPage;
+use App\Support\Storage\ClinicalEvidenceStorage;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 
@@ -113,6 +114,71 @@ class MedicalRecordHandwritingRepository implements MedicalRecordHandwritingRepo
 
         return $scope(MedicalRecordHandwriting::query())->toBase()->update($stamp)
             + $scope(MedicalRecordHandwritingPage::query())->toBase()->update($stamp);
+    }
+
+    public function lockedBookPages(int $patientId, ?int $liveEncounterId = null): array
+    {
+        $book = MedicalRecord::withTrashed()->where('patient_id', $patientId)->select('id');
+        $columns = ['id', 'medical_record_id', 'handwriting_path', 'handwriting_hash', 'authored_clinic_visit_id', 'sealed_at', 'sealed_by_medical_record_id', 'created_at'];
+
+        // The derived rule of finalizedSince(), read once for the whole book: a
+        // final sheet finalized at or after the page (max(finalized_at) >= its
+        // creation), and any final sheet without `finalized_at`, covers it.
+        $finals = MedicalRecord::withTrashed()
+            ->where('patient_id', $patientId)
+            ->where('status', MedicalRecord::STATUS_FINAL);
+        $anyFinal = (clone $finals)->exists();
+        $undatedFinal = (clone $finals)->whereNull('finalized_at')->exists();
+        $latestFinalizedAt = (clone $finals)->max('finalized_at');
+        $latestFinalizedAt = $latestFinalizedAt !== null ? Carbon::parse($latestFinalizedAt) : null;
+
+        // The same three cases as pageSlotLock(): sealed; written by another
+        // encounter than the live one; or a pre-rule page a finalize covers.
+        $locked = function (MedicalRecordHandwriting|MedicalRecordHandwritingPage $row) use ($anyFinal, $undatedFinal, $latestFinalizedAt, $liveEncounterId): bool {
+            if ($row->sealed_at !== null) {
+                return true;
+            }
+
+            if ($row->authored_clinic_visit_id !== null) {
+                return $liveEncounterId === null || (int) $row->authored_clinic_visit_id !== $liveEncounterId;
+            }
+
+            if (! $anyFinal) {
+                return false;
+            }
+
+            return $undatedFinal
+                || $row->created_at === null
+                || ($latestFinalizedAt !== null && $latestFinalizedAt->greaterThanOrEqualTo($row->created_at));
+        };
+
+        $describe = fn (MedicalRecordHandwriting|MedicalRecordHandwritingPage $row, int $pageNumber): array => [
+            'medical_record_id' => (int) $row->medical_record_id,
+            'page_number' => $pageNumber,
+            'row_id' => (int) $row->getKey(),
+            'object_key' => ClinicalEvidenceStorage::isInlineDataUri($row->handwriting_path) ? null : $row->handwriting_path,
+            'sha256' => $row->handwriting_hash,
+            'authored_clinic_visit_id' => $row->authored_clinic_visit_id !== null ? (int) $row->authored_clinic_visit_id : null,
+            'sealed_at' => $row->sealed_at?->toIso8601String(),
+            'sealed_by_medical_record_id' => $row->sealed_by_medical_record_id !== null ? (int) $row->sealed_by_medical_record_id : null,
+        ];
+
+        $pages = [];
+        foreach (MedicalRecordHandwriting::query()->whereIn('medical_record_id', $book)->get($columns) as $row) {
+            if ($locked($row)) {
+                $pages[] = $describe($row, 1);
+            }
+        }
+        foreach (MedicalRecordHandwritingPage::query()->whereIn('medical_record_id', $book)->get([...$columns, 'page_number']) as $row) {
+            if ($locked($row)) {
+                $pages[] = $describe($row, (int) $row->page_number);
+            }
+        }
+
+        usort($pages, fn (array $a, array $b): int => [$a['medical_record_id'], $a['page_number'], $a['row_id']]
+            <=> [$b['medical_record_id'], $b['page_number'], $b['row_id']]);
+
+        return $pages;
     }
 
     /**

@@ -12,6 +12,7 @@ use App\Modules\Consent\Services\RmeVisitConsentService;
 use App\Modules\MedicalRecord\Interfaces\MedicalRecordHandwritingRepositoryInterface;
 use App\Modules\MedicalRecord\Interfaces\MedicalRecordRepositoryInterface;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
+use App\Modules\RmeAmendment\Services\RmeRecordVersionService;
 use App\Support\Clinical\ClinicalClock;
 use Closure;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -47,6 +48,8 @@ class MedicalRecordService
         private readonly ClinicVisitRepositoryInterface $visits,
         // Rule 240 §4 — finalize seals the handwriting book's pages.
         private readonly MedicalRecordHandwritingRepositoryInterface $handwritings,
+        // Rule 240 §5 — finalize writes version 1 of the sheet.
+        private readonly RmeRecordVersionService $versions,
     ) {}
 
     /**
@@ -278,6 +281,13 @@ class MedicalRecordService
             // Sprint 64.0 — lazily backfill workspace audit columns (no-op once
             // stamped).
             $this->workspace->stampWorkspaceFields($finalized);
+
+            // Rule 240 §5 (memo M3.3 PR3) — version 1 of the final sheet: its fields,
+            // diagnoses and the pages just sealed, hash-chained and immutable,
+            // written under the visit and sheet locks so it commits with the
+            // finalize or not at all. The already-final paths above return before
+            // this line, so a re-finalize writes nothing.
+            $this->versions->recordFinal($finalized, Auth::id());
 
             /*
              * FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 / FIX-01 — finalizing a

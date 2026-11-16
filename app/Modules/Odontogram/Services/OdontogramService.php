@@ -10,6 +10,7 @@ use App\Modules\Consent\Services\RmeVisitConsentService;
 use App\Modules\Odontogram\Interfaces\OdontogramRepositoryInterface;
 use App\Modules\Odontogram\Models\Odontogram;
 use App\Modules\RME\Services\DoctorPatientScopeService;
+use App\Modules\RmeAmendment\Services\RmeRecordVersionService;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Collection;
@@ -45,6 +46,8 @@ class OdontogramService
         private readonly RmeVisitConsentService $consents,
         // Rule 240 §1 / rule 223 §1 item 6 — the visit row is locked before the chart row.
         private readonly ClinicVisitRepositoryInterface $visits,
+        // Rule 240 §5 — finalize writes version 1 of the chart.
+        private readonly RmeRecordVersionService $versions,
     ) {}
 
     /**
@@ -381,6 +384,10 @@ class OdontogramService
                 'updated_by' => $user->id,
             ]);
             $odontogram->refresh();
+
+            // Rule 240 §5 (memo M3.3 PR3) — version 1 of the finalized chart,
+            // written under the visit and chart locks; a re-finalize returned above.
+            $this->versions->recordFinal($finalized, (int) $user->getKey());
 
             return $finalized;
         });
