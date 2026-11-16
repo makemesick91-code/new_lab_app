@@ -609,6 +609,15 @@ return [
         'tests/Feature/RME/PatientOutstandingReceivableCarryOverTest.php',
         'tests/Feature/RME/RmeControlVisitReceivableCarryOverPaymentTest.php',
 
+        // DMS-RME-COMPREHENSIVE-CLOSURE-1 / memo M4.1 (rule 244 §1) — the automatic
+        // Nomor RM counter: never reissued in any spelling, locked FOR UPDATE when
+        // READ inside the registration transaction, seeded GREATEST-never-lower.
+        // Selected by the existing `FrontOffice` and
+        // `ClinicVisitRegistrationConcurrency` tokens in BOTH critical variants.
+        'tests/Feature/RME/FrontOfficePatientRmNumberAllocatorTest.php',
+        'tests/Feature/Patient/FrontOfficePatientRmSequenceSeedCommandTest.php',
+        'tests/Feature/RME/ClinicVisitRegistrationConcurrencyPatientRmSequenceTest.php',
+
         // DOCTOR-PWA-WEBAUTHN-1 — the browser device-credential login. A `|Pwa`
         // or `|DoctorDevice` token does not select it: --filter matches the test
         // IDENTITY, and this class is `DoctorPwaWebAuthnTest`, which contains

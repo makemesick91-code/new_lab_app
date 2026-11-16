@@ -199,6 +199,7 @@ time, CG-13 never fabricate a patient, CG-20 PostgreSQL verification matter most
 | `.cursor/rules/168-legacy-patient-staged-verification-cancel.mdc` | Legacy patient CSV staging and commit |
 | `.cursor/rules/169-legacy-patient-rollback-identity-reservation.mdc` | Rolled-back batches still reserve NIK and RM |
 | `.cursor/rules/222-rme-route-key-constraint-and-failure-log-redaction.mdc` | Patient master and patient document route keys constrained (404, never 500) |
+| `.cursor/rules/244-patient-rm-auto-number-core-fields.mdc` | Automatic Nomor RM per branch-year: locked counter, never reissued in any spelling (memo M4.1, 2026-11-17) |
 
 ## History
 

@@ -1,0 +1,80 @@
+---
+description: DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M4.1/M4.2 (rule 244) — automatic Nomor RM per branch and clinic year (owner decision 2026-11-17 "Auto, read-only"); the counter row is locked FOR UPDATE inside the registration transaction; a number is never reissued in any spelling (alias codes, any padding, soft-deleted patients, merge aliases); existing numbers never rewritten; widens past 9999; MAIN refused; counters seeded by `patient:rm-sequence-seed` (dry run first, GREATEST, never lower). Supersedes the Sprint 23.8 manual-number rule for NEW registrations once PR-2 activates it.
+globs: app/Modules/Patient/Services/PatientRmNumberAllocator.php, app/Modules/Patient/Services/PatientRmSequenceSeedService.php, app/Modules/Patient/Services/PatientMedicalRecordNumberService.php, app/Modules/Patient/Repositories/PatientRmSequenceRepository.php, app/Modules/Patient/Interfaces/PatientRmSequenceRepositoryInterface.php, app/Modules/Patient/Models/PatientRmSequence.php, app/Console/Commands/PatientRmSequenceSeedCommand.php
+alwaysApply: false
+---
+
+# Automatic Nomor RM and required patient fields (rule 244)
+
+Source: the internal memo of 2026-10-17 (M4.1, M4.2) and the owner's written decisions of 2026-11-17, recorded in
+`docs/sprints/dms-rme-comprehensive-closure-1.md` §2c; the plan, impact analysis and compatibility plan are in
+`docs/sprints/dms-rme-comprehensive-closure-1-memo-implementation-plan.md`. Delivered in PRs; each PR adds its section.
+
+## 0. Owner decisions (CG-22)
+
+- M4.1 "Auto, read-only": the system generates the Nomor RM; Front Office cannot edit it; the DaengtisiaMS format
+  `DG-{KODE_CABANG}-{TAHUN}-{NOMOR}` is kept; locking and database uniqueness; existing numbers never changed; Legacy
+  RME compatibility kept; CC1-PAT-1 measured read-only on production before the automatic number is switched on; safe
+  overflow handling; the Sprint 23.8 manual-number rule revised explicitly (this rule).
+- Plan defaults accepted (2026-11-17): (1) an old paper-card number only through Supervisor RME, with a reason,
+  audited; (2) the no-phone exception through Front Office with a reason code, audited and reportable; (3) after
+  unusually high existing numbers the sequence continues after the highest — a number is never reused; (4) the legacy
+  patient CSV import commit needs the paper-card permission (staging stays with Front Office; revises part of rule 168);
+  (5) no correction tool for existing numbers in this sprint — number, branch and registration date are frozen on edit.
+
+## 1. The counter and the allocator (PR-1, dormant)
+
+1. **The counter.** `mst_patient_rm_sequences` holds one row per branch and year (`UNIQUE(branch_id, year)`):
+   `last_number` is the highest sequence issued or seeded. Additive migration only (CG-09).
+2. **The allocator.** `PatientRmNumberAllocator::allocate(Branch, int $year)` is the only issuer:
+   - it refuses to run outside the caller's open transaction (the registration transaction), so the row lock lasts
+     until the patient row commits;
+   - it refuses MAIN (never an RME branch) and an unknown branch code;
+   - it locks the branch-year row FOR UPDATE BEFORE reading the counter (`lockOrCreate`: a missing row is created with
+     INSERT … ON CONFLICT DO NOTHING, seeded from the highest issued number, then locked), so two registrations in one
+     branch-year serialise and the second reads the first's committed value;
+   - it skips a candidate while it exists in ANY spelling (`PatientMedicalRecordNumberService::numericSpellings`: the
+     canonical code and its historical aliases from `BranchCodeAlias` — TKM1/TLK1, SUN4/SPN4 — times every zero padding
+     up to nine digits) on any patient, soft-deleted ones included (rule 169: they reserve their number), or as an
+     active merge alias (`PatientRmAliasRepositoryInterface::findActiveByNumbers`);
+   - it composes with four-digit padding (`formatSequence`), widens past 9999 (10000, …) rather than stopping
+     registration, logs a capacity warning from 9000 with branch id, year and digit count only (never a number), and
+     refuses once a sequence would need nine digits (`PatientRmNumberUnavailableException`, an operator message
+     without a number);
+   - before the counter moves, the composed number must round-trip through `PatientMedicalRecordNumberService::parse()`
+     to the same branch code and sequence; a branch code the format cannot carry (a '-' in it, more than 16 characters)
+     is refused with the same exception, never issued as an unparseable number.
+3. **Never rewritten.** Nothing here updates `mst_patients`. `compose()` and `parse()` are unchanged; numbers issued
+   before this rule, in any shape, stay as they are.
+4. **Seeding.** `php artisan patient:rm-sequence-seed` (runtime user; refuses root, and fails closed — refuses — when
+   the effective user cannot be determined, e.g. no posix extension): dry run by default — per branch-year counts
+   (numbers, non-numeric sequences, above 9999, ignored as oversized, ignored above `--ignore-above`) and the proposed
+   counter's DIGIT COUNT only (`PROPOSED_COUNTER_DIGITS`), totals for MAIN numbers, unknown codes and non-canonical
+   values; never a Nomor RM, never the counter value (printed beside the branch and year it would complete a real
+   patient's number; the repository is public, CG-11), never a patient detail. An existing sequence wider than the
+   allocator issues (more than `PatientRmNumberAllocator::MAX_DIGITS` digits, e.g. a phone number typed as the
+   sequence) can never collide with an issuable number, so the lazy seed and the plan both ignore it (counted as
+   `IGNORED_OVERSIZED`): seeded, it would push the counter past the cap and, since a counter is never lowered, stop
+   automatic numbering for that branch-year for good. `--apply` raises each counter
+   to GREATEST(current, proposed) — never lower, idempotent — and writes one `PATIENT_RM_SEQUENCE_SEEDED` audit row of
+   counts. Scope: the current clinic year (`ClinicalClock`) unless `--all-years`; `--ignore-above=N` keeps unusually
+   high numbers out of the counter (they stay reserved: the allocator still skips them). Running `--apply` on
+   production is a separate owner-approved step. The allocator seeds a missing branch-year on first use itself, so
+   correctness never depends on the command.
+5. **Lock order.** Counter row → patient insert → (later PRs) the visit's own locks. Nothing else locks the counter.
+6. **Dormant.** In PR-1 no registration path calls the allocator. PR-2 switches NEW registrations to it; until then
+   the Sprint 23.8 manual number stays in force, and it stays afterwards for the Supervisor RME paper-card exception.
+
+   **PR-2 must** close the other Nomor RM writers (recorded by the PR-1 independent review, not implemented in PR-1):
+   the legacy patient CSV import validation (`LegacyPatientImportService::takenValues`) and commit (its
+   `lockForUpdate()->exists()` check), the explicit-number path in `PatientService` (an explicit `medical_record_number`
+   kept verbatim) and `PatientMedicalRecordNumberService::exists()` each check only the exact spelling and never take
+   the branch-year counter lock. PR-2 routes every one of them through `numericSpellings` (every alias code and zero
+   padding) plus the active merge aliases, under the branch-year counter lock (lock order of item 5), and compares
+   case-insensitively (as `findActiveByNumbers` already does), so a manual or imported number can never take, or
+   duplicate in another spelling, a number the allocator issues or will issue.
+7. **Tests.** `tests/Feature/RME/FrontOfficePatientRmNumberAllocatorTest.php` (AL-01..AL-15) and
+   `tests/Feature/Patient/FrontOfficePatientRmSequenceSeedCommandTest.php` (SD-01..SD-10) — token `FrontOffice`;
+   `tests/Feature/RME/ClinicVisitRegistrationConcurrencyPatientRmSequenceTest.php` (PostgreSQL; committed writer + NOWAIT
+   probe + `lock_timeout`; it pins that the counter row is locked when it is READ, not only when it is written) — token
+   `ClinicVisitRegistrationConcurrency`. All three are declared in `critical_gate_mandatory_suites`.
