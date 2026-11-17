@@ -12,6 +12,7 @@ use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\MedicalRecord\Models\MedicalRecordHandwriting;
 use App\Modules\MedicalRecord\Models\MedicalRecordHandwritingPage;
+use App\Modules\MedicalRecord\Services\HandwritingPayloadGuard;
 use App\Modules\MedicalRecord\Support\UnifiedMedicalRecordSource;
 use App\Modules\Prescription\Models\RmePrescription;
 use App\Support\Storage\ClinicalEvidenceStorage;
@@ -254,6 +255,27 @@ class OversightClinicalRecordController extends Controller
     {
         $record = $handwritingPage->medicalRecord;
         $this->authorizeRecordImage($request, $record);
+
+        // Rule 240 §8.10 / §9 (memo M3.3 PR7, security review M1) — a page appended
+        // by an approved amendment is served only when its bytes match the
+        // recorded SHA-256: 404 when missing or tampered, 503 when the storage
+        // read fails (a fault to retry, review L2). Audited only when served.
+        if ($handwritingPage->getAttribute('rme_amendment_id') !== null) {
+            $stored = HandwritingPayloadGuard::storedPng($handwritingPage->handwriting_path, $handwritingPage->handwriting_hash);
+            abort_if($stored['status'] === HandwritingPayloadGuard::STORED_UNREADABLE, 503);
+            $bytes = $stored['bytes'];
+            abort_if($bytes === null, 404);
+
+            $this->auditStream($request, $record, 'page', (int) $handwritingPage->page_number);
+
+            return response()->stream(function () use ($bytes): void {
+                echo $bytes;
+            }, 200, [
+                'Content-Type' => 'image/png',
+                'X-Content-Type-Options' => 'nosniff',
+                'Cache-Control' => 'private, no-store, max-age=0',
+            ]);
+        }
 
         return $this->stream($handwritingPage->handwriting_path, $request, $record, 'page', (int) $handwritingPage->page_number);
     }

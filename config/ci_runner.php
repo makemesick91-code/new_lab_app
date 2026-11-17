@@ -1723,6 +1723,11 @@ return [
         // BOTH critical variants.
         'tests/Feature/RME/MedicalRecordFinalizationAmendmentPageTest.php',
         'tests/Feature/RME/RmeClinicalWriteAuthorityAmendmentPageAuthorizationTest.php',
+        // Same rule, §9 (M3.3 PR7) — the amendment page in the oversight and cashier displays: labelled on the
+        // oversight patient and visit pages and in the cashier summary, the oversight image route serving it only
+        // when its SHA-256 verifies (404 tampered, 503 read fault). Selected by the existing `ClinicOversight`
+        // token in BOTH critical variants.
+        'tests/Feature/ClinicOversight/ClinicOversightAmendmentPageDisplayTest.php',
 
         // SECURITY-F4C-CLINIC-CALENDAR-LAB-ORDERS-1 (owner decision D16) — lab order dates, order and
         // delivery numbering, the due-date floor and "delivered today" on the clinic calendar

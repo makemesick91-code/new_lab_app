@@ -74,11 +74,19 @@
                 <p class="text-xs font-semibold uppercase tracking-wide text-ink-soft">Halaman Tulisan Tangan</p>
                 <div class="mt-2 grid grid-cols-1 gap-4 md:grid-cols-2">
                     @foreach ($handwritingBook as $page)
-                        <img loading="lazy" class="w-full rounded border border-hairline bg-white"
-                             alt="Halaman RM {{ $page['position'] }}"
-                             src="{{ $page['kind'] === 'handwriting'
-                                ? route('oversight.rme.handwritings.image', $page['id'])
-                                : route('oversight.rme.handwriting-pages.image', $page['id']) }}">
+                        <figure>
+                            {{-- Rule 240 §8.10 / §9 (M3.3 PR7) — a page appended by an approved amendment says so. --}}
+                            @if (($page['amendment_label'] ?? null) !== null)
+                                <figcaption class="mb-2 rounded border border-brand-200 bg-brand-50 px-2 py-1 text-xs font-medium text-brand-800" data-amendment-page="{{ $page['rme_amendment_id'] }}">
+                                    Halaman buku RM {{ $page['page_number'] }} · {{ $page['amendment_label'] }}
+                                </figcaption>
+                            @endif
+                            <img loading="lazy" class="w-full rounded border border-hairline bg-white"
+                                 alt="Halaman RM {{ $page['position'] }}"
+                                 src="{{ $page['kind'] === 'handwriting'
+                                    ? route('oversight.rme.handwritings.image', $page['id'])
+                                    : route('oversight.rme.handwriting-pages.image', $page['id']) }}">
+                        </figure>
                     @endforeach
                 </div>
             @else

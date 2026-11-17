@@ -259,6 +259,12 @@ class OversightClinicalRecordService
      * names the row that holds the image so the oversight image route can
      * stream it after re-authorizing the parent record's branch.
      *
+     * Rule 240 §8.10 / §9 (memo M3.3 PR7, security review M1) — a page appended
+     * by an approved amendment also carries `rme_amendment_id` and its label
+     * (RmeAmendment::correctionPageLabel(): the amendment, the amended visit, the
+     * corrected book page, the approval), read in one query; the image route
+     * serves it only when its bytes verify.
+     *
      * @param  Collection<int, MedicalRecord>  $sheets
      * @return Collection<int, array<string, mixed>>
      */
@@ -266,6 +272,14 @@ class OversightClinicalRecordService
     {
         $book = collect();
         $position = 1;
+
+        $amendments = $this->records->correctionPageAmendments($sheets
+            ->flatMap(fn (MedicalRecord $sheet) => $sheet->handwritingPages->pluck('rme_amendment_id'))
+            ->filter()
+            ->map(fn ($id): int => (int) $id)
+            ->unique()
+            ->values()
+            ->all());
 
         foreach ($sheets as $sheet) {
             $legacy = $sheet->latestHandwriting();
@@ -281,6 +295,8 @@ class OversightClinicalRecordService
                     'id' => (int) $legacy->id,
                     'page_number' => 1,
                     'saved_at' => $legacy->saved_at,
+                    'rme_amendment_id' => null,
+                    'amendment_label' => null,
                 ]);
             }
 
@@ -288,6 +304,8 @@ class OversightClinicalRecordService
                 if (! filled($page->handwriting_path)) {
                     continue;
                 }
+
+                $amendmentId = $page->getAttribute('rme_amendment_id') !== null ? (int) $page->getAttribute('rme_amendment_id') : null;
 
                 $book->push([
                     'position' => $position++,
@@ -299,6 +317,8 @@ class OversightClinicalRecordService
                     'id' => (int) $page->id,
                     'page_number' => (int) $page->page_number,
                     'saved_at' => $page->saved_at,
+                    'rme_amendment_id' => $amendmentId,
+                    'amendment_label' => $amendmentId !== null ? $amendments->get($amendmentId)?->correctionPageLabel() : null,
                 ]);
             }
         }

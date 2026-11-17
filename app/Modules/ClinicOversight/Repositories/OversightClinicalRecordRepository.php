@@ -6,6 +6,7 @@ use App\Modules\ClinicOversight\Interfaces\OversightClinicalRecordRepositoryInte
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\Patient\Models\Patient;
+use App\Modules\RmeAmendment\Models\RmeAmendment;
 use Illuminate\Support\Collection;
 
 class OversightClinicalRecordRepository implements OversightClinicalRecordRepositoryInterface
@@ -85,5 +86,19 @@ class OversightClinicalRecordRepository implements OversightClinicalRecordReposi
             ->pluck('id')
             ->map(fn ($id) => (int) $id)
             ->all();
+    }
+
+    public function correctionPageAmendments(array $amendmentIds): Collection
+    {
+        if ($amendmentIds === []) {
+            return collect();
+        }
+
+        return RmeAmendment::query()
+            ->with(['decider:id,name', 'clinicVisit:id,visit_number,visit_date'])
+            ->whereKey($amendmentIds)
+            ->where('status', RmeAmendment::STATUS_APPLIED)
+            ->get()
+            ->keyBy(fn (RmeAmendment $amendment): int => (int) $amendment->getKey());
     }
 }

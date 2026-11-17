@@ -106,6 +106,10 @@
                                 &mdash; Tersimpan {{ $rmPage['saved_at']->format('d/m/Y H:i') }}
                             @endif
                         </p>
+                        {{-- Rule 240 §8.10 / §9 (M3.3 PR7, review L4) — a page appended by an approved amendment says so. --}}
+                        @if (($rmPage['amendment_label'] ?? null) !== null)
+                            <p class="mt-1 text-xs font-medium text-brand-800" data-amendment-page="{{ $rmPage['amendment_id'] }}">{{ $rmPage['amendment_label'] }}</p>
+                        @endif
                         <img src="{{ $rmPage['preview_url'] }}" alt="RME tulisan tangan dokter halaman {{ $rmPage['page_number'] }}"
                              class="mt-1 max-h-64 rounded-lg border border-gray-200 bg-white object-contain" />
                     </div>

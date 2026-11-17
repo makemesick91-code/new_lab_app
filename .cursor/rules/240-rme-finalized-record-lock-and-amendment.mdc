@@ -697,9 +697,9 @@ defaults the owner accepted on 2026-11-17) are in `docs/sprints/dms-rme-comprehe
    request as not applied.
 10. **Known limits (follow-ups, not in this PR's `app/` budget).** (a) The existing page route
     `rme.handwriting-pages.image` keeps its pinned out-of-scope answer, 403 (`RmeClinicalDocumentReadScopeTest`,
-    `ClinicalEvidencePrivacyTest`); the routes this PR adds answer 404. (b) The clinic oversight viewer
-    (`oversight.rme.handwriting-pages.image`, `OversightClinicalRecordService`) shows an amendment page without its
-    label and streams it without the SHA-256 check. (c) The RME print of a visit prints that visit's own sheet's
+    `ClinicalEvidencePrivacyTest`); the routes this PR adds answer 404. (b) CLOSED by §9 (M3.3 PR7): the clinic
+    oversight viewer and the cashier's clinical summary now label an amendment page and the oversight image route
+    verifies it. (c) The RME print of a visit prints that visit's own sheet's
     pages (unchanged): a correction appended to a book held by an EARLIER sheet (R7-1) prints with that sheet.
     (d) A page written before rule 240 has no visit stamp (`authored_clinic_visit_id` null), so §8.3 reads its owner
     from `sealed_by_medical_record_id`. `MedicalRecordHandwritingRepository::sealBookPages()` stamps EVERY unsealed
@@ -708,4 +708,23 @@ defaults the owner accepted on 2026-11-17) are in `docs/sprints/dms-rme-comprehe
     sheet: that later visit can name it as the corrected page and the encounter that really wrote it cannot. The
     original page is never changed (§8.1), so the effect is a wrong pointer (`mengoreksi halaman buku RM N`) only,
     never a lost or altered page.
+
+## 9. The amendment page in the oversight and cashier displays (M3.3 PR7)
+
+1. **Oversight (security review M1).** `OversightClinicalRecordService::handwritingBook()` — the patient history and
+   the visit detail of the read-only oversight module (Finance Klinik, Data Analyst) — carries `rme_amendment_id` and
+   the §8.5 label on a page an approved amendment appended (the amendments read in one query,
+   `OversightClinicalRecordRepositoryInterface::correctionPageAmendments()`, applied ones only); the patient and visit
+   pages render "Halaman buku RM N · <label>" (`data-amendment-page`), never an object key.
+   `OversightClinicalRecordController::handwritingPageImage()` serves such a page only through
+   `HandwritingPayloadGuard::storedPng()`: the verified bytes (`image/png`, `nosniff`, `private, no-store`, audited
+   `NATIVE_FILE_STREAMED` as before), 404 when missing or tampered, 503 when the storage read fails (review L2); out of
+   scope stays 404 and every other page streams exactly as before.
+2. **Cashier (review L4).** The cashier's clinical summary (`rme/cashier/partials/clinical-summary.blade.php`) shows
+   the label from `MedicalRecord::orderedHandwritingPages()` under the page; the image link is the §8.5 verified route.
+3. **Tests (§3).** `tests/Feature/ClinicOversight/ClinicOversightAmendmentPageDisplayTest.php` (existing
+   `ClinicOversight` token, BOTH variants, declared in `critical_gate_mandatory_suites`): the label on the oversight
+   patient and visit pages for both oversight roles, no key; the oversight image route serving verified bytes and
+   auditing them, the original page unchanged, a tampered page 404, a read fault 503, nothing audited when nothing is
+   served; out of scope 404; the label in the cashier summary; a rejected correction on no display.
 
