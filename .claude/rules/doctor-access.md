@@ -216,7 +216,10 @@ ceremonies and the login gate's proof mechanics belong to the sibling `.claude/r
   rule (`readableSheets()`), the consent banner and an unreadable book anchor are never named nor its content shown
   (`viewAnchorContent`), and `startBook` is the `appendPage` rule (R7-1 selector unchanged); A3b: unified RM pages
   and prescription history carry the visit scope's SQL twin, follow-up/odontogram parent links `listsVisitFor()`
-  (arrows: CC1-ADJ-1). ON needs A4, M3.3 and book pages filtered by M3.3's author stamp first. Source:
+  (arrows: CC1-ADJ-1); §2.12: the book's pages follow M3.3's author stamp (sequence, page routes via
+  `viewHandwritingPage`, version pages, print), a sheet's versions and amendments ask `viewAnchorContent`
+  (`RmeRecordVersionService::readAbility()`; the requester too), the PTM banner describes only a readable
+  encounter. ON needs A4 and M3.3 released first. Source:
   `.cursor/rules/243-rme-doctor-encounter-scope-downloads-fields.mdc` §2.
 
 ## Current posture (snapshot 2026-10-25 — verify before relying on it)

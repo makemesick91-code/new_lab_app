@@ -4,6 +4,7 @@ namespace App\Modules\MedicalRecord\Services;
 
 use App\Models\User;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
+use App\Modules\MedicalRecord\Interfaces\MedicalRecordHandwritingRepositoryInterface;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\RME\Services\DoctorPatientScopeService;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -31,7 +32,9 @@ use Illuminate\Support\Collection;
  *
  * LISTS ({@see readableSheets()}, PR A3): the workspace's sheet navigation,
  * document rail and handwriting page sequence keep exactly the sheets READ
- * admits for the viewer.
+ * admits for the viewer; of the BOOK, only the pages whose authoring encounter
+ * the viewer may read ({@see readableBookPages()}, {@see bookPageReadable()};
+ * rule 243 §2.8, on M3.3's author stamp).
  */
 class MedicalRecordSheetWriteScope
 {
@@ -40,6 +43,8 @@ class MedicalRecordSheetWriteScope
     public function __construct(
         private readonly DoctorPatientScopeService $doctorScope,
         private readonly PatientRmWorkspaceResolver $workspace,
+        // Rule 243 §2.8 — the book pages' author stamps (rule 240 §4.4).
+        private readonly MedicalRecordHandwritingRepositoryInterface $handwritings,
     ) {}
 
     public function followsItsVisit(MedicalRecord $sheet): bool
@@ -98,6 +103,97 @@ class MedicalRecordSheetWriteScope
                     : $this->doctorScope->readModeFor($viewer, $patientId) === DoctorPatientScopeService::READ_HISTORY;
             })
             ->values();
+    }
+
+    /**
+     * Rule 243 §2.8 (closed once M3.3 is in the base) — of the page entries of
+     * $sheet (MedicalRecord::orderedHandwritingPages()), the ones $viewer may
+     * read. The BOOK is read patient-level, but each of its pages carries the
+     * encounter that wrote it (rule 240 §4.4, `authored_clinic_visit_id`): while
+     * the encounter scope applies to the viewer, a stamped page is listed only
+     * when every encounter that wrote it is a visit the viewer may read
+     * (DoctorPatientScopeService::listsVisitFor()), so a page another doctor
+     * wrote during an encounter the viewer may not read is never listed. A page
+     * with no stamp (written before rule 240, its encounter never recorded)
+     * stays patient-level, like the book. A per-visit sheet's pages follow their
+     * sheet, which readableSheets() already decided. Unchanged without a viewer,
+     * with the flag OFF and for the exempt roles. $bookId is scopedBookId(),
+     * resolved ONCE by the caller (a bookless patient included, A3a review
+     * LOW-2), so a sheet costs no book lookup; two stamp queries and one visit
+     * query for the book, whatever its page count.
+     *
+     * @param  Collection<int, array<string, mixed>>  $pages
+     * @return Collection<int, array<string, mixed>>
+     */
+    public function readableBookPages(?User $viewer, MedicalRecord $sheet, Collection $pages, ?int $bookId): Collection
+    {
+        if ($viewer === null || $bookId === null || (int) $sheet->getKey() !== $bookId
+            || ! $this->doctorScope->encounterScopeAppliesTo($viewer)) {
+            return $pages;
+        }
+
+        $authors = $this->handwritings->pageAuthors((int) $sheet->getKey());
+        $readable = $this->readableVisitIds($viewer, array_merge([], ...array_values($authors)));
+
+        return $pages
+            ->filter(fn (array $page): bool => array_diff($authors[(int) $page['page_number']] ?? [], $readable) === [])
+            ->values();
+    }
+
+    /**
+     * The patient's book id for readableBookPages() while the encounter scope
+     * applies to $viewer (one lookup); null otherwise, or when there is no book —
+     * then nothing is filtered.
+     */
+    public function scopedBookId(?User $viewer, int $patientId): ?int
+    {
+        return $viewer !== null && $this->doctorScope->encounterScopeAppliesTo($viewer)
+            ? $this->bookIdFor($patientId)
+            : null;
+    }
+
+    /**
+     * The per-record twin of readableBookPages() for ONE stored page row of
+     * $sheet written by $authoredVisitId (MedicalRecordPolicy::viewHandwritingPage,
+     * the page image routes): false only for a stamped page of the BOOK whose
+     * authoring visit the viewer may not read while the encounter scope applies.
+     */
+    public function bookPageReadable(?User $viewer, MedicalRecord $sheet, ?int $authoredVisitId): bool
+    {
+        if ($authoredVisitId === null || $viewer === null || ! $this->doctorScope->encounterScopeAppliesTo($viewer) || ! $this->isTheBook($sheet)) {
+            return true;
+        }
+
+        return $this->readableVisitIds($viewer, [$authoredVisitId]) === [$authoredVisitId];
+    }
+
+    private function isTheBook(MedicalRecord $sheet): bool
+    {
+        return ! $this->isNotTheBook($sheet, $this->bookIdFor((int) $sheet->patient_id));
+    }
+
+    /**
+     * Of $visitIds, the ones $viewer may read (one query; a soft-deleted visit is
+     * never readable).
+     *
+     * @param  list<int>  $visitIds
+     * @return list<int>
+     */
+    private function readableVisitIds(User $viewer, array $visitIds): array
+    {
+        $visitIds = array_values(array_unique($visitIds));
+
+        if ($visitIds === []) {
+            return [];
+        }
+
+        return ClinicVisit::query()
+            ->whereKey($visitIds)
+            ->get()
+            ->filter(fn (ClinicVisit $visit): bool => $this->doctorScope->listsVisitFor($viewer, $visit))
+            ->map(fn (ClinicVisit $visit): int => (int) $visit->getKey())
+            ->values()
+            ->all();
     }
 
     /**

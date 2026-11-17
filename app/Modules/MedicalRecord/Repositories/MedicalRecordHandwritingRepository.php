@@ -208,6 +208,27 @@ class MedicalRecordHandwritingRepository implements MedicalRecordHandwritingRepo
         return MedicalRecordHandwritingPage::query()->where('rme_amendment_id', $amendmentId)->first();
     }
 
+    public function pageAuthors(int $medicalRecordId): array
+    {
+        $authors = [];
+
+        foreach (MedicalRecordHandwriting::query()
+            ->where('medical_record_id', $medicalRecordId)
+            ->whereNotNull('authored_clinic_visit_id')
+            ->pluck('authored_clinic_visit_id') as $visitId) {
+            $authors[1][] = (int) $visitId;
+        }
+
+        foreach (MedicalRecordHandwritingPage::query()
+            ->where('medical_record_id', $medicalRecordId)
+            ->whereNotNull('authored_clinic_visit_id')
+            ->get(['page_number', 'authored_clinic_visit_id']) as $row) {
+            $authors[(int) $row->page_number][] = (int) $row->authored_clinic_visit_id;
+        }
+
+        return $authors;
+    }
+
     /**
      * Rule 240 §4, the derived rule for a page written before rule 240: was a
      * sheet of this patient finalized at or after the page was created? Fails

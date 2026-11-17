@@ -296,7 +296,10 @@ defaults the owner accepted on 2026-11-17) are in `docs/sprints/dms-rme-comprehe
    stored hash against the stored text and stored schema version. Every version is written by one private writer
    (`RmeRecordVersionService::write()`), so the stored text and the hash come from the same `canonicalJson()` result.
 7. **Reading and verifying.** `versionsFor()` and `version()` authorize the subject's `view` ability for the given
-   account (MedicalRecordPolicy / OdontogramPolicy) before reading; the version history pages are §7. The chain is
+   account (MedicalRecordPolicy / OdontogramPolicy) before reading; the version history pages are §7. REVISED IN
+   PART by rule 243 §2.12 (doctor encounter scope, flag ON only): a sheet is asked `viewAnchorContent`
+   (`RmeRecordVersionService::readAbility()`), here and on every amendment surface, and a version page lists only
+   the locked pages the reader's page routes would serve. The chain is
    verified where it matters: `approve()` refuses (`MESSAGE_CHAIN_BROKEN`, nothing written) to chain a new version
    onto a history that does not verify, and the version page shows a warning (`data-version-chain-broken`) when it
    does not. The amendment detail page mirrors `approve()` (rule 135): for a pending amendment on a chain that does

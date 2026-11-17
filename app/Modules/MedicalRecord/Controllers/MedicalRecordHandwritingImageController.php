@@ -28,6 +28,11 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  * approved amendment) is served only when its bytes match the recorded SHA-256;
  * a missing or tampered object answers 404, like an absent one; a storage read
  * fault answers 503.
+ *
+ * Rule 243 §2.8 — a page is asked as itself (MedicalRecordPolicy::
+ * viewHandwritingPage, `view` plus, under the doctor encounter scope, the book
+ * page's authoring encounter), so the image route serves exactly the pages the
+ * workspace lists.
  */
 class MedicalRecordHandwritingImageController extends Controller
 {
@@ -39,7 +44,7 @@ class MedicalRecordHandwritingImageController extends Controller
 
         abort_if($record === null, 404);
 
-        $this->authorize('view', $record);
+        $this->authorize('viewHandwritingPage', [$record, self::authorOf($handwriting)]);
 
         return $this->stream($handwriting->handwriting_path);
     }
@@ -50,7 +55,7 @@ class MedicalRecordHandwritingImageController extends Controller
 
         abort_if($record === null, 404);
 
-        $this->authorize('view', $record);
+        $this->authorize('viewHandwritingPage', [$record, self::authorOf($handwritingPage)]);
 
         if ($handwritingPage->getAttribute('rme_amendment_id') !== null) {
             $stored = HandwritingPayloadGuard::storedPng($handwritingPage->handwriting_path, $handwritingPage->handwriting_hash);
@@ -70,6 +75,14 @@ class MedicalRecordHandwritingImageController extends Controller
         }
 
         return $this->stream($handwritingPage->handwriting_path);
+    }
+
+    /** Rule 240 §4.4 — the encounter that wrote the row, null before rule 240. */
+    private static function authorOf(MedicalRecordHandwriting|MedicalRecordHandwritingPage $row): ?int
+    {
+        $visitId = $row->getAttribute('authored_clinic_visit_id');
+
+        return $visitId !== null ? (int) $visitId : null;
     }
 
     private function stream(?string $path): StreamedResponse

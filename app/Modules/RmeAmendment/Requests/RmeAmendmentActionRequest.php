@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace App\Modules\RmeAmendment\Requests;
 
+use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\MedicalRecord\Services\HandwritingPayloadGuard;
+use App\Modules\Odontogram\Models\Odontogram;
 use App\Modules\RmeAmendment\Models\RmeAmendment;
 use App\Modules\RmeAmendment\Services\RmeAmendmentService;
+use App\Modules\RmeAmendment\Services\RmeRecordVersionService;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Gate;
 
@@ -34,7 +37,12 @@ class RmeAmendmentActionRequest extends FormRequest
         }
 
         $target = $this->route('amendment') ?? $this->route('medicalRecord') ?? $this->route('odontogram');
-        abort_unless(is_object($target) && Gate::forUser($user)->allows('view', $target), 404);
+        // Rule 243 §2.11 — a record is asked for its CONTENT (exactly `view`
+        // unless the doctor encounter scope applies).
+        $ability = $target instanceof MedicalRecord || $target instanceof Odontogram
+            ? RmeRecordVersionService::readAbility($target)
+            : 'view';
+        abort_unless(is_object($target) && Gate::forUser($user)->allows($ability, $target), 404);
 
         return true;
     }

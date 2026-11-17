@@ -109,6 +109,29 @@ class MedicalRecordPolicy
         return $visit !== null && $scope->listsVisitFor($user, $visit) ? true : Response::denyAsNotFound();
     }
 
+    /**
+     * Rule 243 §2.8 (closed once M3.3 is in the base) — ONE stored handwriting
+     * page of a readable sheet, written by $authoredVisitId (rule 240 §4.4's
+     * author stamp; null for a page written before rule 240). With the
+     * encounter scope applying to a Doctor, a stamped page of the patient's BOOK
+     * is served only when its authoring visit is one the viewer may read
+     * (MedicalRecordSheetWriteScope::bookPageReadable(), the twin of the page
+     * sequence's filter), else 404 like a missing page. With the flag OFF, for
+     * every other account and for every other page: exactly `view`.
+     */
+    public function viewHandwritingPage(User $user, MedicalRecord $medicalRecord, ?int $authoredVisitId = null): Response|bool
+    {
+        $view = $this->view($user, $medicalRecord);
+
+        if ($view instanceof Response ? $view->denied() : ! $view) {
+            return $view;
+        }
+
+        return app(MedicalRecordSheetWriteScope::class)->bookPageReadable($user, $medicalRecord, $authoredVisitId)
+            ? $view
+            : Response::denyAsNotFound();
+    }
+
     public function create(User $user, ClinicVisit $clinicVisit): Response|bool
     {
         if (! $this->canManage($user) || ! $this->belongsToActiveBranch($clinicVisit->branch_id)) {
@@ -208,8 +231,9 @@ class MedicalRecordPolicy
      * is patient-level: with the encounter scope ON a Doctor appends only inside
      * an own in-service encounter (HISTORY; RmeVisitConsentService then requires
      * the live encounter to be the doctor's own). Re-saving an existing book page
-     * goes through the same door until M3.3's page seal (rule 240 §4) — the flag
-     * stays OFF until that is released. With the flag OFF this is `update`.
+     * goes through the same door; rule 240 §4.4 (M3.3) then refuses, in
+     * MedicalRecordHandwritingService::save(), a page another encounter wrote or
+     * a sealed one. With the flag OFF this is `update`.
      */
     public function appendPage(User $user, MedicalRecord $medicalRecord): Response|bool
     {

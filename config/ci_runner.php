@@ -936,6 +936,12 @@ return [
         // list only records whose visit the doctor may read; flag OFF parity and
         // the index's query count. Same `DoctorPatientScope` token.
         'tests/Feature/RME/DoctorPatientScopeListSurfacesTest.php',
+        // Integration onto M3.3 + PTM (rule 243 §2.8, §2.11) — the book's pages
+        // by their author stamp (sequence, image routes, version page, print),
+        // a book on an unreadable anchor without versions or amendments (the
+        // requester included), the PTM banner never describing another doctor's
+        // encounter; flag OFF parity. Same `DoctorPatientScope` token.
+        'tests/Feature/RME/DoctorPatientScopeAmendmentSurfacesTest.php',
         // PR A2 (rule 243 §2.10) — the published legacy RME and legacy odontogram
         // archives under the encounter scope: read only inside an own in-service
         // encounter (read mode `history`), 404 outside (rule 99 §1/§2/§11 and

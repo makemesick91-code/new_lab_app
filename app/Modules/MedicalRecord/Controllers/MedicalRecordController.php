@@ -565,7 +565,11 @@ class MedicalRecordController extends Controller
             'diagnosisEnforcement' => $anchorContentReadable ? $this->diagnosisRollout->enforcementStateFor($activeSheet) : null,
             // Rule 240 §6 (memo M3.3 PR4) — the "Amandemen" block of a final sheet
             // (null on a draft); the request offer is the service's own answer.
-            'amendmentPanel' => app(RmeAmendmentService::class)->panelFor($activeSheet, $request->user()),
+            // Rule 243 §2.11 — it describes the sheet's typed content, so it is
+            // withheld with the rest of an unreadable anchor's content.
+            'amendmentPanel' => $anchorContentReadable
+                ? app(RmeAmendmentService::class)->panelFor($activeSheet, $request->user())
+                : null,
             // FEATURE-RME-DOCTOR-PERFORMED-TREATMENTS-1 (rule 219) — the treating
             // doctor's "Tindakan Dilakukan" record of the ACTIVE SHEET's visit; null
             // while the capability is OFF, so the page renders exactly as before.
@@ -605,13 +609,16 @@ class MedicalRecordController extends Controller
      * the patient's live encounter (awaiting the patient / the doctor /
      * executed), and, for the treating doctor, the consent to countersign or the
      * reason they cannot. Presentation only; the services decide every write.
+     * Rule 243 §2.11 — the encounter the banner may name (encounterNamedFor()):
+     * under the doctor encounter scope, never another doctor's encounter the
+     * viewer may not read, so its PTM state is not described either.
      *
      * @return array<string, mixed>
      */
     private function ptmBannerFor(int $patientId, ?User $viewer): array
     {
         $consents = app(RmeVisitConsentService::class);
-        $encounter = app(ActiveEncounterResolver::class)->currentFor($patientId);
+        $encounter = $this->encounterNamedFor($patientId, $viewer);
         $outlook = $encounter !== null && $viewer !== null
             ? ($consents->countersignOutlookFor($viewer, [$encounter])[(int) $encounter->getKey()] ?? null)
             : null;

@@ -158,7 +158,10 @@ class PatientRmWorkspaceResolver
      * Rule 243 §2.11 (PR A3) — with $viewer, only the pages of the sheets that
      * viewer may read ({@see sheetsForPatient()}), numbered in that viewer's own
      * sequence, so a page of a sheet the doctor may not open is never listed and
-     * the page indices the workspace and the save redirect use agree.
+     * the page indices the workspace and the save redirect use agree. Rule 243
+     * §2.8 — and of the BOOK only the pages whose authoring encounter the viewer
+     * may read (MedicalRecordSheetWriteScope::readableBookPages(), on rule 240's
+     * author stamp; unchanged with the encounter scope OFF).
      *
      * @return Collection<int, array<string, mixed>>
      */
@@ -166,9 +169,14 @@ class PatientRmWorkspaceResolver
     {
         $virtualPages = collect();
         $virtualIndex = 1;
+        $sheetScope = $viewer !== null ? app(MedicalRecordSheetWriteScope::class) : null;
+        $sheets = $this->sheetsForPatient($patientId, $viewer);
+        $bookId = $sheetScope?->scopedBookId($viewer, $patientId);
 
-        foreach ($this->sheetsForPatient($patientId, $viewer) as $sheet) {
-            foreach ($sheet->orderedHandwritingPages() as $page) {
+        foreach ($sheets as $sheet) {
+            $pages = $sheet->orderedHandwritingPages();
+
+            foreach ($sheetScope?->readableBookPages($viewer, $sheet, $pages, $bookId) ?? $pages as $page) {
                 $virtualPages->push(array_merge($page, [
                     'virtual_page_number' => $virtualIndex,
                     'medical_record_id' => $sheet->id,
