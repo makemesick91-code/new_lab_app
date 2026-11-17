@@ -438,13 +438,14 @@ NSF-R011 Critical Test Gate, read from the job log (PostgreSQL, `DB_CONNECTION: 
 
 | Item | Content |
 |---|---|
-| Candidate SHA | `c705f048377f558e872bba81b0f4f6e49d81efed` = the ten closure-wave squashes (§2a) + #658 (rules only) |
+| Candidate SHA (superseded) | `c705f048377f558e872bba81b0f4f6e49d81efed` = the ten closure-wave squashes (§2a) + #658 (rules only). Approved by the owner with conditions, then **superseded**: it had no read fallback for pre-release consent signatures, which conflicted with the owner's later directive (§2a, release 2 decisions); that approval is not reused |
+| Candidate SHA (current) | `0f3c3bb32a3a6b0e8a90f8ab9e43ca9fd7cc3ab3` = `c705f048` + #661 (temporary read-only fallback, rule 237 §14.5a; security review + re-review CLEAN; PR CI critical gate 10,664 passed / 0 failed on PostgreSQL); merge tree = tested head tree. Needs a NEW written owner approval and a NEW Contract 3 signature |
 | Migrations (additive) | `2026_11_17_100001_add_claim_nonce_hash_to_trx_doctor_session_leases_table` (#652), `2026_11_17_100001_create_mst_patient_rm_sequences_table` (#654, dormant) |
 | Permissions | `void_rme_consents` → Supervisor RME (#648); after deploy §10.4 |
 | Post-deploy, same window | §10.5 consent signature copy (dry run, then `--apply` with owner approval) — rule 121 has no read fallback |
 | Optional, owner approval | §10.6 lab backfill; `patient:rm-sequence-seed` is NOT needed until the automatic-number PR (memo RM PR-2) ships |
 | Excluded on purpose | memo M3.3 lock PRs (the lock ships only with its amendment path), PTM PR1–3 (one release), PR6 (needs the `workflow` scope) |
-| Post-merge CI | push run 43967765523 on `c705f048`: success, but the classifier diffed against the previous commit only (#658, Markdown) → `gate_profile=docs_only`, critical regression tests **SKIPPED** (CG-17: skipped is not passed). The push run on `82cb6e13` that would have run them was cancelled by the #658 push. Remedy: `workflow_dispatch` run 43968947617 on `c705f048` (no base → the classifier fails closed to the full critical gate): **NSF-R011 Critical Test Gate 10,638 passed, 52,938 assertions, 0 failed, PostgreSQL**; release safety and release evidence gates success; Full Suite SKIPPED (CG-18, deferred, not passed) |
+| Post-merge CI (superseded candidate) | push run 43967765523 on `c705f048`: success, but the classifier diffed against the previous commit only (#658, Markdown) → `gate_profile=docs_only`, critical regression tests **SKIPPED** (CG-17: skipped is not passed). The push run on `82cb6e13` that would have run them was cancelled by the #658 push. Remedy: `workflow_dispatch` run 43968947617 on `c705f048` (no base → the classifier fails closed to the full critical gate): **NSF-R011 Critical Test Gate 10,638 passed, 52,938 assertions, 0 failed, PostgreSQL**; release safety and release evidence gates success; Full Suite SKIPPED (CG-18, deferred, not passed) |
 
 ## 10. Owner actions prepared by this program
 
