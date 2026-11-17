@@ -499,20 +499,35 @@ it('keeps the existing HTTP refusals: a reader is 403 and a sheet named on anoth
 // ─── Branch isolation is unchanged ───────────────────────────────────────────
 
 it('still refuses a sheet outside the RME branch set before the lock is consulted', function () {
+    // The patient has a live encounter, EXECUTED, that this author may write on:
+    // nothing but the RME branch set stands between each write and the lock of
+    // this FINAL sheet, so the branch refusal must answer first — for the notes
+    // and for the three structured-diagnosis writes alike (review LOW-2).
+    [$encounter] = m33lSheet($this->branch);
     $nonRme = Branch::factory()->create(['is_rme_enabled' => false]);
-    $record = MedicalRecord::factory()->final()->create(['branch_id' => $nonRme->id]);
+    $record = MedicalRecord::factory()->final()->create(['branch_id' => $nonRme->id, 'patient_id' => $encounter->patient_id]);
+    $primary = m33lDiagnosis($record);
+    $secondary = m33lDiagnosis($record, MedicalRecordDiagnosis::ROLE_SECONDARY);
+    $diagnoses = app(MedicalRecordDiagnosisService::class);
     $this->actingAs($this->author);
 
-    try {
-        app(MedicalRecordService::class)->updateDraft($record, ['notes' => 'x']);
-        $refused = null;
-    } catch (ValidationException $e) {
-        $refused = $e->errors();
+    $writes = [
+        'notes' => fn () => app(MedicalRecordService::class)->updateDraft($record->fresh(), ['notes' => 'x']),
+        'record' => fn () => $diagnoses->record($record->fresh(), [
+            'clinical_diagnosis_id' => ClinicalDiagnosis::factory()->create()->id,
+            'diagnosis_role' => MedicalRecordDiagnosis::ROLE_SECONDARY,
+        ], $this->author),
+        'makePrimary' => fn () => $diagnoses->makePrimary($record->fresh(), $secondary->fresh(), $this->author),
+        'remove' => fn () => $diagnoses->remove($record->fresh(), $primary->fresh(), $this->author),
+    ];
+
+    foreach ($writes as $write => $call) {
+        expect(array_keys(m33lErrors($call)))->toBe(['medical_record_id'], $write);
     }
 
-    expect($refused)->toHaveKey('medical_record_id')
-        ->and(Gate::forUser($this->author)->inspect('editSheet', $record)->message())
-        ->not->toBe(MedicalRecordService::MESSAGE_FINAL_SHEET_LOCKED);
+    expect(Gate::forUser($this->author)->inspect('editSheet', $record)->message())
+        ->not->toBe(MedicalRecordService::MESSAGE_FINAL_SHEET_LOCKED)
+        ->and(MedicalRecordDiagnosis::query()->where('medical_record_id', $record->id)->count())->toBe(2);
 });
 
 // ─── The page mirrors the server (rule 135) ──────────────────────────────────
@@ -572,3 +587,53 @@ it('locks the encounter visit row before the sheet row when deciding the lock (P
         ->and($recordAt)->not->toBeFalse()
         ->and($visitAt)->toBeLessThan($recordAt);
 });
+
+it('locks the visit row before the sheet row on the PTM-only path, while the PTM is awaiting (PostgreSQL, rule 240 §1.8)', function (string $ptm, string $status) {
+    if (DB::connection()->getDriverName() !== 'pgsql') {
+        $this->markTestSkipped('Row locks compile to nothing on SQLite; this assertion needs PostgreSQL.');
+    }
+
+    app(DiagnosisRolloutService::class)->setMode(
+        $this->branch,
+        DiagnosisRolloutSetting::MODE_PILOT_ENFORCED,
+        'pilot enforcement cabang ini untuk urutan kunci',
+        userWith(['configure_diagnosis_rollout']),
+    );
+    [, $record] = m33lSheetWithPtm($this->branch, $ptm, $status);
+    $this->actingAs($this->author);
+    $writes = m33lSheetWrites($record, $this->author);
+    $expected = $status === MedicalRecord::STATUS_FINAL
+        ? ['medical_record' => [MedicalRecordService::MESSAGE_FINAL_SHEET_LOCKED]]
+        : ['consent' => [$ptm === RmeVisitConsentService::PTM_AWAITING_DOCTOR
+            ? RmeVisitConsentService::MESSAGE_RME_AWAITING_DOCTOR
+            : RmeVisitConsentService::MESSAGE_RME_AWAITING_PATIENT]];
+
+    $locks = [];
+    DB::listen(function ($query) use (&$locks) {
+        $sql = strtolower($query->sql);
+        if (preg_match('/for (no key )?update/', $sql)) {
+            $locks[] = str_contains($sql, 'trx_clinic_visits') ? 'visit' : (str_contains($sql, 'trx_medical_records') ? 'record' : 'other');
+        }
+    });
+
+    foreach ($writes as $write => $call) {
+        $locks = [];
+
+        // The authority refuses with the PTM before it locks anything; the
+        // helper then locks the encounter's visit row, THEN the sheet row
+        // (rule 223 §1 item 6), and answers with the lock or the consent.
+        expect(m33lErrors($call))->toBe($expected, $write);
+
+        $visitAt = array_search('visit', $locks, true);
+        $recordAt = array_search('record', $locks, true);
+
+        expect($visitAt)->not->toBeFalse($write)
+            ->and($recordAt)->not->toBeFalse($write)
+            ->and($visitAt)->toBeLessThan($recordAt, $write);
+    }
+})->with([
+    'awaiting the doctor, FINAL' => [RmeVisitConsentService::PTM_AWAITING_DOCTOR, MedicalRecord::STATUS_FINAL],
+    'awaiting the patient, FINAL' => [RmeVisitConsentService::PTM_AWAITING_PATIENT, MedicalRecord::STATUS_FINAL],
+    'awaiting the doctor, DRAFT' => [RmeVisitConsentService::PTM_AWAITING_DOCTOR, MedicalRecord::STATUS_DRAFT],
+    'awaiting the patient, DRAFT' => [RmeVisitConsentService::PTM_AWAITING_PATIENT, MedicalRecord::STATUS_DRAFT],
+]);

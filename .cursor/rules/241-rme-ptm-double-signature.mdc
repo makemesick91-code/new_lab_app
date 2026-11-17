@@ -129,7 +129,9 @@ supervised void, signatures on the clinical evidence disk).
    `countersignSelfCaptured`), `MedicalRecordController` (`activeEncounterPtmState`,
    `activeEncounterCountersignConsent`, `activeEncounterCountersignRefusal`, `clinicVisitConsentExecuted`),
    `OdontogramController::show()` (`odontogramPtmBlock` from `odontogramPtmBlockFor()`, the countersign link and
-   refusal, `odontogramIsLiveEncounter`), `RmeVisitConsentController::show()` (`countersignRefusal`).
+   refusal, `odontogramLockedNotice` / `odontogramReadOnlyNotice`; since rule 240 §1.7 "is this the live encounter's
+   chart?" is a controller local feeding those two, not a view variable), `RmeVisitConsentController::show()`
+   (`countersignRefusal`).
 2. Detail Kunjungan shows awaiting patient (front office: "Pilih Form Consent"), "Menunggu tanda tangan dokter" (the
    treating doctor: "Tanda Tangani PTM") or complete; "Selesai Pemeriksaan" is offered only when executed. Antrian
    Pasien and Ruang Perawatan show a PTM badge on every in-progress row (`rme.visits.partials.ptm-state-badge`). The RME
@@ -140,6 +142,10 @@ supervised void, signatures on the clinical evidence disk).
    Perawatan, Detail Kunjungan, the RME workspace, the odontogram page and the consent page say so
    (`RmeVisitConsentService::countersignRefusal()` / `countersignOutlookFor()`).
 4. Copy that was false is corrected: the capture form and the consent page no longer say payment waits for consent.
+5. **Amended by rule 240 §1.7–§1.8 (M3.3 PR1).** On a FINALIZED chart the odontogram page shows no PTM state and no
+   countersign link or refusal (items 2–3): `OdontogramController::show()` sets `odontogramPtmBlock` to null, and the
+   live encounter's finalized chart shows the lock banner instead, because signing the PTM never makes it writable.
+   A draft chart keeps items 2–3 unchanged.
 
 ## 4. Who captures the patient signature (PR2; owner default 1)
 

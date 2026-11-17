@@ -26,6 +26,8 @@
 
 use App\Modules\Branch\Models\Branch;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
+use App\Modules\Consent\Models\RmeVisitConsent;
+use App\Modules\Consent\Services\RmeVisitConsentService;
 use App\Modules\Odontogram\Models\Odontogram;
 use App\Modules\Odontogram\Services\OdontogramService;
 use Database\Seeders\BranchSeeder;
@@ -392,13 +394,15 @@ it('never tells the doctor a FINALIZED chart can still be written, even before c
         ->assertOk()
         ->assertSee(OdontogramService::MESSAGE_FINALIZED_CHART_LOCKED)
         ->assertDontSee('data-ptm-state', false)
-        ->assertDontSee('Odontogram sudah dapat dicatat dan disimpan sekarang.');
+        ->assertDontSee('Persetujuan Tindakan Medis belum ditandatangani');
 
-    // Positive control: the same PTM state on a DRAFT chart names the PTM.
+    // Positive control: the same PTM state on a DRAFT chart names the PTM, with
+    // the banner title the finalized page must not show.
     $draftVisit = ClinicVisit::factory()->create(['branch_id' => $this->branch->id, 'status' => ClinicVisit::STATUS_IN_PROGRESS]);
     $this->get(route('rme.visits.odontogram.show', $draftVisit))
         ->assertOk()
         ->assertSee('data-ptm-state="awaiting_patient"', false)
+        ->assertSee('Persetujuan Tindakan Medis belum ditandatangani')
         ->assertDontSee(OdontogramService::MESSAGE_FINALIZED_CHART_LOCKED);
 });
 
@@ -428,3 +432,89 @@ it('locks the visit row before the chart row when deciding the lock (PostgreSQL)
         ->and($chartAt)->not->toBeFalse()
         ->and($visitAt)->toBeLessThan($chartAt);
 });
+
+/** A chart on a live encounter whose PTM awaits the doctor (patient signature only) or the patient (none). */
+function m33oChartWithPtm(Branch $branch, string $ptm, string $status): array
+{
+    $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id, 'status' => ClinicVisit::STATUS_IN_PROGRESS]);
+
+    if ($ptm === RmeVisitConsentService::PTM_AWAITING_DOCTOR) {
+        RmeVisitConsent::factory()->create([
+            'clinic_visit_id' => $visit->id,
+            'branch_id' => $visit->branch_id,
+            'patient_id' => $visit->patient_id,
+            'doctor_id' => $visit->doctor_id,
+            'patient_name_snapshot' => $visit->patient?->name ?? 'Pasien',
+        ]);
+    }
+
+    expect(app(RmeVisitConsentService::class)->ptmStateFor($visit->fresh()))->toBe($ptm);
+
+    $chart = Odontogram::factory()->create([
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $branch->id,
+        'summary_notes' => 'catatan awal',
+        'status' => $status,
+        'finalized_at' => $status === Odontogram::STATUS_FINALIZED ? now() : null,
+    ]);
+
+    return [$visit->fresh(), $chart->fresh()];
+}
+
+it('locks the visit row before the chart row on the PTM-only path, while the PTM is awaiting (PostgreSQL, rule 240 §1.8)', function (string $ptm, string $status) {
+    if (DB::connection()->getDriverName() !== 'pgsql') {
+        $this->markTestSkipped('Row locks compile to nothing on SQLite; this assertion needs PostgreSQL.');
+    }
+
+    [$visit, $chart] = m33oChartWithPtm($this->branch, $ptm, $status);
+    $before = m33oSnapshot($chart);
+    $service = app(OdontogramService::class);
+    $expected = $status === Odontogram::STATUS_FINALIZED
+        ? ['odontogram' => [OdontogramService::MESSAGE_FINALIZED_CHART_LOCKED]]
+        : ['consent' => [$ptm === RmeVisitConsentService::PTM_AWAITING_DOCTOR
+            ? RmeVisitConsentService::MESSAGE_ODONTOGRAM_AWAITING_DOCTOR
+            : RmeVisitConsentService::MESSAGE_ODONTOGRAM_AWAITING_PATIENT]];
+
+    $locks = [];
+    DB::listen(function ($query) use (&$locks) {
+        $sql = strtolower($query->sql);
+        if (preg_match('/for (no key )?update/', $sql)) {
+            $locks[] = str_contains($sql, 'trx_clinic_visits') ? 'visit' : (str_contains($sql, 'trx_odontograms') ? 'chart' : 'other');
+        }
+    });
+
+    $writes = [
+        'updatePlaceholder' => fn () => $service->updatePlaceholder($chart->fresh(), m33oPayload(), $this->author),
+        'saveForVisit' => fn () => $service->saveForVisit($visit->fresh(), m33oPayload(), $this->author),
+    ];
+
+    foreach ($writes as $write => $call) {
+        $locks = [];
+
+        try {
+            $call();
+            $errors = [];
+        } catch (ValidationException $e) {
+            $errors = $e->errors();
+        }
+
+        // The authority refuses with the PTM before it locks anything; the
+        // helper then locks the chart's visit row, THEN the chart row (rule 223
+        // §1 item 6), and answers with the lock or the consent.
+        expect($errors)->toBe($expected, $write);
+
+        $visitAt = array_search('visit', $locks, true);
+        $chartAt = array_search('chart', $locks, true);
+
+        expect($visitAt)->not->toBeFalse($write)
+            ->and($chartAt)->not->toBeFalse($write)
+            ->and($visitAt)->toBeLessThan($chartAt, $write);
+    }
+
+    expect(m33oSnapshot($chart))->toBe($before);
+})->with([
+    'awaiting the doctor, FINALIZED' => [RmeVisitConsentService::PTM_AWAITING_DOCTOR, Odontogram::STATUS_FINALIZED],
+    'awaiting the patient, FINALIZED' => [RmeVisitConsentService::PTM_AWAITING_PATIENT, Odontogram::STATUS_FINALIZED],
+    'awaiting the doctor, DRAFT' => [RmeVisitConsentService::PTM_AWAITING_DOCTOR, Odontogram::STATUS_DRAFT],
+    'awaiting the patient, DRAFT' => [RmeVisitConsentService::PTM_AWAITING_PATIENT, Odontogram::STATUS_DRAFT],
+]);

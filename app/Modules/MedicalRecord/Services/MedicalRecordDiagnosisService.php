@@ -53,11 +53,13 @@ class MedicalRecordDiagnosisService
          * scope and consent conditions are unchanged.
          *
          * Rule 240 §1.8 — a final sheet answers with its lock before a missing
-         * PTM (MedicalRecordService::assertSheetAuthoringAllowed()).
+         * PTM (MedicalRecordService::assertSheetAuthoringAllowed()). The RME
+         * branch set is decided first, as updateDraft() does: a sheet outside it
+         * answers with the branch refusal, never with its lock.
          */
-        app(MedicalRecordService::class)->assertSheetAuthoringAllowed($medicalRecord, $actor);
-
         $this->assertRmeBranch($medicalRecord);
+
+        app(MedicalRecordService::class)->assertSheetAuthoringAllowed($medicalRecord, $actor);
 
         $master = ClinicalDiagnosis::query()->find((int) $data['clinical_diagnosis_id']);
         if ($master === null || $master->status !== ClinicalDiagnosis::STATUS_ACTIVE) {
@@ -158,11 +160,13 @@ class MedicalRecordDiagnosisService
          * scope and consent conditions are unchanged.
          *
          * Rule 240 §1.8 — a final sheet answers with its lock before a missing
-         * PTM (MedicalRecordService::assertSheetAuthoringAllowed()).
+         * PTM (MedicalRecordService::assertSheetAuthoringAllowed()). The RME
+         * branch set is decided first, as updateDraft() does: a sheet outside it
+         * answers with the branch refusal, never with its lock.
          */
-        app(MedicalRecordService::class)->assertSheetAuthoringAllowed($medicalRecord, $actor);
-
         $this->assertRmeBranch($medicalRecord);
+
+        app(MedicalRecordService::class)->assertSheetAuthoringAllowed($medicalRecord, $actor);
 
         if ((int) $diagnosis->medical_record_id !== (int) $medicalRecord->id) {
             throw ValidationException::withMessages(['diagnosis' => 'Diagnosis tidak sesuai rekam medis.']);
@@ -233,11 +237,13 @@ class MedicalRecordDiagnosisService
          * scope and consent conditions are unchanged.
          *
          * Rule 240 §1.8 — a final sheet answers with its lock before a missing
-         * PTM (MedicalRecordService::assertSheetAuthoringAllowed()).
+         * PTM (MedicalRecordService::assertSheetAuthoringAllowed()). The RME
+         * branch set is decided first, as updateDraft() does: a sheet outside it
+         * answers with the branch refusal, never with its lock.
          */
-        app(MedicalRecordService::class)->assertSheetAuthoringAllowed($medicalRecord, $actor);
-
         $this->assertRmeBranch($medicalRecord);
+
+        app(MedicalRecordService::class)->assertSheetAuthoringAllowed($medicalRecord, $actor);
 
         if ((int) $diagnosis->medical_record_id !== (int) $medicalRecord->id) {
             throw ValidationException::withMessages(['diagnosis' => 'Diagnosis tidak sesuai rekam medis.']);
