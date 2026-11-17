@@ -98,7 +98,10 @@
 
             {{-- Mode: pasien baru --}}
             <div class="mt-3 hidden" data-mode-panel="new">
-                <p class="mb-2 text-xs text-ink-soft">Nomor RM final dibentuk otomatis: <span class="font-mono">DG-{KODE_CABANG}-{TAHUN_DAFTAR}-{NOMOR_RM_MANUAL}</span>. Nomor RM manual diisi oleh admin.</p>
+                {{-- Rule 244 (memo M4.1, "Auto, read-only") — the server issues the
+                     Nomor RM on save, on the clinic calendar; nothing is typed. --}}
+                @php $clinicalYear = app(\App\Support\Clinical\ClinicalClock::class)->today()->format('Y'); @endphp
+                <p class="mb-2 text-xs text-ink-soft">Nomor RM dibuat otomatis oleh sistem saat kunjungan disimpan, menurut cabang dan tahun daftar (kalender klinik).</p>
                 <div class="mb-3">
                     @include('patient-merge.partials.registration-duplicates', ['reasonField' => 'new_patient[duplicate_override_reason]', 'useRoute' => 'rme.visits.create', 'useParam' => 'patient_id'])
                 </div>
@@ -128,38 +131,80 @@
                         <p class="mt-1 text-xs text-ink-muted">Harus sama dengan Klinik/Cabang kunjungan di atas.</p>
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-ink">Tanggal Daftar</label>
-                        <input type="date" name="new_patient[registered_at]" data-rm-date value="{{ old('new_patient.registered_at', app(\App\Support\Clinical\ClinicalClock::class)->todayString()) }}" class="mt-1 block w-full rounded-lg border-hairline text-sm focus:border-brand-500 focus:ring-brand-500" />
+                        <label class="block text-sm font-medium text-ink">Nomor RM</label>
+                        <input type="text" readonly tabindex="-1" data-rm-preview data-rm-year="{{ $clinicalYear }}" value="otomatis — DG-{KODE}-{{ $clinicalYear }}-####" class="mt-1 block w-full rounded-lg border-hairline bg-navy-50 font-mono text-sm text-ink" />
+                        @error('medical_record_number')<p class="mt-1 text-xs text-danger-700">{{ $message }}</p>@enderror
+                        <p class="mt-1 text-xs text-ink-muted">Nomor ditampilkan setelah disimpan.</p>
                     </div>
+                    {{-- Memo M4.2 (rule 244 §5) — the core fields of a new patient,
+                         enforced by the server with the same rules as Master Data
+                         → Tambah Pasien. Never a native `required`: this panel is
+                         hidden on an existing-patient visit, and a browser refuses
+                         a hidden required control silently (rule 184 §13). --}}
+                    <p class="sm:col-span-2 text-xs text-ink-soft">Kolom bertanda <span class="text-danger-700">*</span> wajib diisi untuk pasien baru (Ponsel atau Nomor WA, salah satu). NIK dan foto KTP tidak wajib.</p>
                     <div>
-                        <label class="block text-sm font-medium text-ink">Nomor RM Manual</label>
-                        <input type="text" name="new_patient[manual_rm_number]" data-rm-manual inputmode="numeric" value="{{ old('new_patient.manual_rm_number') }}" placeholder="mis. 0001" class="mt-1 block w-full rounded-lg border-hairline text-sm focus:border-brand-500 focus:ring-brand-500" />
-                        @error('new_patient.manual_rm_number')<p class="mt-1 text-xs text-danger-700">{{ $message }}</p>@enderror
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-ink">Jenis Kelamin <span class="text-ink-muted">(opsional)</span></label>
+                        <label class="block text-sm font-medium text-ink">Jenis Kelamin <span class="text-danger-700" data-core-field-required>*</span></label>
                         <select name="new_patient[gender]" class="mt-1 block w-full rounded-lg border-hairline text-sm focus:border-brand-500 focus:ring-brand-500">
                             <option value="">—</option>
                             @foreach (['Male' => 'Laki-laki', 'Female' => 'Perempuan', 'Other' => 'Lainnya'] as $val => $label)
                                 <option value="{{ $val }}" @selected(old('new_patient.gender') === $val)>{{ $label }}</option>
                             @endforeach
                         </select>
+                        @error('new_patient.gender')<p class="mt-1 text-xs text-danger-700">{{ $message }}</p>@enderror
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-ink">Tanggal Lahir <span class="text-ink-muted">(opsional)</span></label>
+                        <label class="block text-sm font-medium text-ink">Tempat Lahir <span class="text-danger-700" data-core-field-required>*</span></label>
+                        <input type="text" name="new_patient[place_of_birth]" maxlength="100" value="{{ old('new_patient.place_of_birth') }}" class="mt-1 block w-full rounded-lg border-hairline text-sm focus:border-brand-500 focus:ring-brand-500" />
+                        @error('new_patient.place_of_birth')<p class="mt-1 text-xs text-danger-700">{{ $message }}</p>@enderror
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-ink">Tanggal Lahir <span class="text-danger-700" data-core-field-required>*</span></label>
                         <input type="date" name="new_patient[date_of_birth]" value="{{ old('new_patient.date_of_birth') }}" class="mt-1 block w-full rounded-lg border-hairline text-sm focus:border-brand-500 focus:ring-brand-500" />
+                        @error('new_patient.date_of_birth')<p class="mt-1 text-xs text-danger-700">{{ $message }}</p>@enderror
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-ink">Telepon <span class="text-ink-muted">(opsional)</span></label>
+                        <label class="block text-sm font-medium text-ink">Telepon <span class="text-danger-700" data-core-field-required>*</span></label>
                         <input type="text" name="new_patient[phone]" value="{{ old('new_patient.phone') }}" class="mt-1 block w-full rounded-lg border-hairline text-sm focus:border-brand-500 focus:ring-brand-500" />
                         @error('new_patient.phone')<p class="mt-1 text-xs text-danger-700">{{ $message }}</p>@enderror
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-ink">Nomor WA <span class="text-ink-muted">(opsional)</span></label>
+                        <label class="block text-sm font-medium text-ink">Nomor WA <span class="text-danger-700">*</span></label>
                         <input type="text" name="new_patient[whatsapp_number]" value="{{ old('new_patient.whatsapp_number') }}" class="mt-1 block w-full rounded-lg border-hairline text-sm focus:border-brand-500 focus:ring-brand-500" />
                         <p class="mt-1 text-xs text-ink-soft">Dipakai untuk konfirmasi kehadiran kunjungan dan tindak lanjut piutang. Sistem tidak mengirim pesan WhatsApp otomatis.</p>
                         @error('new_patient.whatsapp_number')<p class="mt-1 text-xs text-danger-700">{{ $message }}</p>@enderror
                     </div>
+                    {{-- Rule 244 §5.3 (plan default 2) — the no-phone exception,
+                         rendered ONLY for a holder of register_patient_without_phone
+                         (rule 135 mirror; anyone else posting it gets 403). The
+                         reason fields stay disabled, so unsent, until ticked. --}}
+                    @can('register_patient_without_phone')
+                        <div class="sm:col-span-2 rounded-lg border border-warning-100 bg-warning-50/60 p-3"
+                             x-data="{ noPhone: {{ old('new_patient.no_phone_reason_code') ? 'true' : 'false' }} }">
+                            <label class="inline-flex items-center gap-2 text-sm font-medium text-ink">
+                                <input type="checkbox" x-model="noPhone" @checked(old('new_patient.no_phone_reason_code')) class="rounded border-hairline text-brand-600 focus:ring-brand-500" />
+                                Pasien tidak memiliki nomor ponsel/WhatsApp
+                            </label>
+                            <p class="mt-1 text-xs text-ink-soft">Pengecualian ini dicatat di audit (tanpa data pasien) dan tertutup otomatis saat nomor diisi kemudian.</p>
+                            <div class="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2" x-show="noPhone" @if (! old('new_patient.no_phone_reason_code')) style="display: none;" @endif>
+                                <div>
+                                    <label class="block text-sm font-medium text-ink">Alasan</label>
+                                    <select name="new_patient[no_phone_reason_code]" :disabled="!noPhone" @disabled(! old('new_patient.no_phone_reason_code')) class="mt-1 block w-full rounded-lg border-hairline text-sm focus:border-brand-500 focus:ring-brand-500">
+                                        <option value="">- Pilih alasan -</option>
+                                        @foreach (config('patient.no_phone_reasons', []) as $reasonCode => $reasonLabel)
+                                            <option value="{{ $reasonCode }}" @selected(old('new_patient.no_phone_reason_code') === $reasonCode)>{{ $reasonLabel }}</option>
+                                        @endforeach
+                                    </select>
+                                    @error('new_patient.no_phone_reason_code')<p class="mt-1 text-xs text-danger-700">{{ $message }}</p>@enderror
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-ink">Catatan (10–500 karakter; wajib untuk Lainnya)</label>
+                                    <textarea name="new_patient[no_phone_reason_note]" rows="2" maxlength="500" :disabled="!noPhone" @disabled(! old('new_patient.no_phone_reason_code')) class="mt-1 block w-full rounded-lg border-hairline text-sm focus:border-brand-500 focus:ring-brand-500"></textarea>
+                                    <p class="mt-1 text-xs text-ink-soft">Jangan menulis data identitas pasien (NIK, alamat) di catatan. Catatan hanya dapat dibaca Supervisor RME dan Owner, dan tidak diisi ulang bila formulir ditolak.</p>
+                                    @error('new_patient.no_phone_reason_note')<p class="mt-1 text-xs text-danger-700">{{ $message }}</p>@enderror
+                                </div>
+                            </div>
+                        </div>
+                    @endcan
                     <div>
                         <label class="block text-sm font-medium text-ink">Nomor KTP <span class="text-ink-muted">(opsional)</span></label>
                         <input
@@ -170,7 +215,7 @@
                             value="{{ old('new_patient.ktp_number') }}"
                             class="mt-1 block w-full rounded-lg border-hairline text-sm focus:border-brand-500 focus:ring-brand-500"
                         />
-                        <p class="mt-1 text-xs text-ink-soft">Digunakan untuk validasi identitas pasien. Tidak ditampilkan di RME/cetak.</p>
+                        <p class="mt-1 text-xs text-ink-soft">Jika diisi, 16 digit angka. Digunakan untuk validasi identitas pasien. Tidak ditampilkan di RME/cetak.</p>
                         @error('new_patient.ktp_number')<p class="mt-1 text-xs text-danger-700">{{ $message }}</p>@enderror
                     </div>
                     <div>
@@ -179,12 +224,12 @@
                         @error('new_patient.email')<p class="mt-1 text-xs text-danger-700">{{ $message }}</p>@enderror
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-ink">Pekerjaan <span class="text-ink-muted">(opsional)</span></label>
+                        <label class="block text-sm font-medium text-ink">Pekerjaan <span class="text-danger-700" data-core-field-required>*</span></label>
                         <input type="text" name="new_patient[occupation]" value="{{ old('new_patient.occupation') }}" class="mt-1 block w-full rounded-lg border-hairline text-sm focus:border-brand-500 focus:ring-brand-500" />
                         @error('new_patient.occupation')<p class="mt-1 text-xs text-danger-700">{{ $message }}</p>@enderror
                     </div>
                     <div class="sm:col-span-2">
-                        <label class="block text-sm font-medium text-ink">Alamat Lengkap <span class="text-ink-muted">(opsional)</span></label>
+                        <label class="block text-sm font-medium text-ink">Alamat Lengkap <span class="text-danger-700" data-core-field-required>*</span></label>
                         <textarea name="new_patient[address]" rows="2" class="mt-1 block w-full rounded-lg border-hairline text-sm focus:border-brand-500 focus:ring-brand-500">{{ old('new_patient.address') }}</textarea>
                         @error('new_patient.address')<p class="mt-1 text-xs text-danger-700">{{ $message }}</p>@enderror
                     </div>
@@ -192,10 +237,6 @@
                          inside the RME "Pasien Baru" panel. The hidden ktp_scan_token is
                          only attached when this new-patient form is submitted. --}}
                     @include('settings.patients._ktp-scan', ['ktpFieldPrefix' => 'new_patient'])
-                    <div class="sm:col-span-2">
-                        <label class="block text-sm font-medium text-ink">Nomor RM Final (Preview)</label>
-                        <input type="text" data-rm-preview readonly placeholder="DG-{KODE_CABANG}-{TAHUN_DAFTAR}-{NOMOR_RM_MANUAL}" class="mt-1 block w-full rounded-lg border-hairline bg-navy-50 font-mono text-sm text-ink" />
-                    </div>
                 </div>
             </div>
         </div>
@@ -275,8 +316,6 @@
             new: block.querySelector('[data-mode-panel="new"]'),
         };
         const branch = block.querySelector('[data-rm-branch]');
-        const dateEl = block.querySelector('[data-rm-date]');
-        const manual = block.querySelector('[data-rm-manual]');
         const preview = block.querySelector('[data-rm-preview]');
         const followUpPanel = document.querySelector('[data-follow-up-panel]');
         const followUpSelect = document.querySelector('[data-follow-up-select]');
@@ -381,6 +420,8 @@
             }
         });
 
+        // Rule 244 §2.8 — no number is previewed (two operators would see the
+        // same one); only the branch code fills the automatic pattern.
         const recompute = function () {
             if (!preview) return;
             const code = (
@@ -388,12 +429,9 @@
                 || branch?.dataset?.code
                 || ''
             ).trim().toUpperCase();
-            const year = (dateEl?.value || '').slice(0, 4);
-            const num = (manual?.value || '').trim();
-            preview.value = (code && year && num) ? `DG-${code}-${year}-${num}` : '';
+            preview.value = `otomatis — DG-${code || '{KODE}'}-${preview.dataset.rmYear || ''}-####`;
         };
 
-        [branch, dateEl, manual].forEach(el => el && el.addEventListener('input', recompute));
         branch && branch.addEventListener('change', recompute);
 
         applyMode(modeInput.value || 'existing');

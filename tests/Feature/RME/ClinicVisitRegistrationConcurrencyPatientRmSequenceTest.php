@@ -20,16 +20,31 @@ declare(strict_types=1);
 | pattern). The waiting side runs with `lock_timeout`, so "blocked" is a
 | deterministic 55P03 rather than a hang.
 |
+| Rule 244 PR-2 adds the real paths: a whole Front Office registration
+| (PatientService::create) holds the counter row until the patient commits, and
+| an import claim of the same number in another spelling waits for it and is
+| then refused.
+|
 | Selected by the existing `ClinicVisitRegistrationConcurrency` critical-gate token
 | in both runner variants and declared in critical_gate_mandatory_suites (CG-19).
 | Helper prefix `cvrs` is unique.
 */
 
+use App\Models\User;
 use App\Modules\Branch\Models\Branch;
+use App\Modules\Patient\Exceptions\LegacyPatientImportBlockedException;
+use App\Modules\Patient\Exceptions\PatientRmNumberUnavailableException;
 use App\Modules\Patient\Interfaces\PatientRmSequenceRepositoryInterface;
+use App\Modules\Patient\Models\LegacyPatientImportBatch;
+use App\Modules\Patient\Models\Patient;
+use App\Modules\Patient\Services\LegacyPatientImportService;
 use App\Modules\Patient\Services\PatientRmNumberAllocator;
+use App\Modules\Patient\Services\PatientService;
 use Illuminate\Database\QueryException;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
+use Spatie\Permission\PermissionRegistrar;
 
 const CVRS_WRITER = 'cvrs_sequence_writer';
 const CVRS_PROBE = 'cvrs_sequence_probe';
@@ -71,12 +86,31 @@ afterEach(function (): void {
     }
 
     $w = DB::connection(CVRS_WRITER);
+    // The review-F6 case commits a staged legacy batch and its audit trail.
+    if (($this->cvrsBatchId ?? null) !== null) {
+        $w->table('sys_audit_logs')->where('entity_type', LegacyPatientImportService::AUDIT_ENTITY)->where('entity_id', $this->cvrsBatchId)->delete();
+        $w->table('mst_patients')->where('import_batch_id', $this->cvrsBatchId)->delete();
+        $w->table('stg_legacy_patient_imports')->where('batch_id', $this->cvrsBatchId)->delete();
+        $w->table('stg_legacy_patient_import_batches')->where('id', $this->cvrsBatchId)->delete();
+    }
+    // Rule 244 §4 (PR-3) — the committed committer account and, when this test
+    // created it, the paper-card permission row.
+    if (($this->cvrsCommitterId ?? null) !== null) {
+        $w->table('model_has_permissions')->where('model_id', $this->cvrsCommitterId)->delete();
+        $w->table('users')->where('id', $this->cvrsCommitterId)->delete();
+    }
+    foreach ($this->cvrsCreatedPermissionIds ?? [] as $permissionId) {
+        $w->table('permissions')->where('id', $permissionId)->delete();
+    }
+    // PR-2 cases commit patients through the real registration path.
+    $w->table('mst_patients')->where('branch_id', $this->branchId ?? 0)->delete();
     $w->table('mst_patient_rm_sequences')->where('branch_id', $this->branchId ?? 0)->delete();
     $w->table('mst_branches')->where('id', $this->branchId ?? 0)->delete();
 
     config()->set('database.default', $this->cvrsDefault);
     DB::purge(CVRS_WRITER);
     DB::purge(CVRS_PROBE);
+    freeTestClock();
 });
 
 function cvrsBranch(): Branch
@@ -228,4 +262,285 @@ it('reads the counter FOR UPDATE before it writes it, inside one allocation', fu
         ->and($write)->not->toBeFalse()
         ->and($read)->toBeLessThan($write)
         ->and($statements[$read])->toContain('for update');
+});
+
+// =============================================================================
+// Rule 244 PR-2 — the lock is held by the real registration and import paths
+// =============================================================================
+
+/** A Front Office registration through the real service, on the given connection. */
+function cvrsRegisterOn(string $connection, string $name): Patient
+{
+    config()->set('database.default', $connection);
+
+    return app(PatientService::class)->create([
+        'branch_id' => test()->branchId,
+        'name' => $name,
+        'is_active' => true,
+    ]);
+}
+
+it('holds the counter row through a whole Front Office registration until the patient commits (PR-2)', function (): void {
+    pinTestClock(CVRS_YEAR.'-03-01 02:00:00');
+    DB::connection(CVRS_WRITER)->table('mst_patient_rm_sequences')->insert([
+        'branch_id' => $this->branchId, 'year' => CVRS_YEAR, 'last_number' => 41,
+        'seed_source' => 'command', 'created_at' => now(), 'updated_at' => now(),
+    ]);
+    $code = cvrsBranch()->code;
+
+    DB::connection(CVRS_WRITER)->beginTransaction();
+    $first = cvrsRegisterOn(CVRS_WRITER, 'Cvrs Registrasi Satu');
+    expect($first->medical_record_number)->toBe("DG-{$code}-".CVRS_YEAR.'-0042')
+        ->and(cvrsCounterRowBlocked($this->branchId))->toBeTrue();
+
+    // A concurrent registration in the same branch-year waits on the counter row.
+    DB::purge(CVRS_PROBE);
+    DB::connection(CVRS_PROBE)->beginTransaction();
+    DB::connection(CVRS_PROBE)->statement("SET LOCAL lock_timeout = '300ms'");
+    $waited = false;
+    try {
+        cvrsRegisterOn(CVRS_PROBE, 'Cvrs Registrasi Tunggu');
+    } catch (QueryException $e) {
+        $waited = cvrsIsLockTimeout($e);
+    }
+    DB::connection(CVRS_PROBE)->rollBack();
+    expect($waited)->toBeTrue();
+
+    DB::connection(CVRS_WRITER)->commit();
+
+    $second = cvrsRegisterOn(CVRS_PROBE, 'Cvrs Registrasi Dua');
+
+    expect($second->medical_record_number)->toBe("DG-{$code}-".CVRS_YEAR.'-0043');
+    freeTestClock();
+});
+
+it('makes an import claim wait for an in-flight registration, then refuse the number it issued (PR-2)', function (): void {
+    pinTestClock(CVRS_YEAR.'-03-01 02:00:00');
+    DB::connection(CVRS_WRITER)->table('mst_patient_rm_sequences')->insert([
+        'branch_id' => $this->branchId, 'year' => CVRS_YEAR, 'last_number' => 6,
+        'seed_source' => 'command', 'created_at' => now(), 'updated_at' => now(),
+    ]);
+    $code = cvrsBranch()->code;
+    // The import spells the same number without its zero padding.
+    $imported = "DG-{$code}-".CVRS_YEAR.'-7';
+
+    DB::connection(CVRS_WRITER)->beginTransaction();
+    expect(cvrsRegisterOn(CVRS_WRITER, 'Cvrs Otomatis')->medical_record_number)->toBe("DG-{$code}-".CVRS_YEAR.'-0007');
+
+    DB::purge(CVRS_PROBE);
+    DB::connection(CVRS_PROBE)->beginTransaction();
+    DB::connection(CVRS_PROBE)->statement("SET LOCAL lock_timeout = '300ms'");
+    config()->set('database.default', CVRS_PROBE);
+    $waited = false;
+    try {
+        app(PatientRmNumberAllocator::class)->claimExisting(cvrsBranch(), $imported);
+    } catch (QueryException $e) {
+        $waited = cvrsIsLockTimeout($e);
+    }
+    DB::connection(CVRS_PROBE)->rollBack();
+    expect($waited)->toBeTrue();
+
+    DB::connection(CVRS_WRITER)->commit();
+
+    DB::connection(CVRS_PROBE)->beginTransaction();
+    config()->set('database.default', CVRS_PROBE);
+    $free = app(PatientRmNumberAllocator::class)->claimExisting(cvrsBranch(), $imported);
+    DB::connection(CVRS_PROBE)->rollBack();
+
+    expect($free)->toBeFalse();
+    freeTestClock();
+});
+
+/**
+ * Rule 244 §4 (PR-3) — a COMMITTED account holding the paper-card permission and
+ * `manage patients` (review I6: the commit re-asserts both), so the legacy CSV
+ * commit on the probe connection accepts it as the committer.
+ */
+function cvrsCommitterId(): int
+{
+    config()->set('database.default', CVRS_WRITER);
+    $w = DB::connection(CVRS_WRITER);
+    $permissions = ['register_patient_paper_card_rm', 'manage patients'];
+
+    $created = [];
+
+    foreach ($permissions as $name) {
+        if (! $w->table('permissions')->where('name', $name)->where('guard_name', 'web')->exists()) {
+            $created[] = (int) $w->table('permissions')->insertGetId([
+                'name' => $name, 'guard_name' => 'web', 'created_at' => now(), 'updated_at' => now(),
+            ]);
+        }
+    }
+
+    test()->cvrsCreatedPermissionIds = $created;
+
+    app(PermissionRegistrar::class)->forgetCachedPermissions();
+    $user = User::factory()->create();
+    $user->givePermissionTo($permissions);
+    app(PermissionRegistrar::class)->forgetCachedPermissions();
+    test()->cvrsCommitterId = (int) $user->id;
+
+    return (int) $user->id;
+}
+
+/** A one-row legacy patient CSV for this branch and CVRS_YEAR. */
+function cvrsLegacyCsv(string $code, string $manual): UploadedFile
+{
+    $keys = array_map(fn ($c) => $c['key'], LegacyPatientImportService::COLUMNS);
+    $header = array_map(fn ($c) => $c['label'], LegacyPatientImportService::COLUMNS);
+    $row = ['branch' => $code, 'manual_rm_number' => $manual, 'timestamp' => CVRS_YEAR.'-02-01', 'name' => 'Cvrs Impor Legacy', 'gender' => 'Perempuan'];
+
+    $handle = fopen('php://temp', 'r+');
+    fputcsv($handle, $header);
+    fputcsv($handle, array_map(fn ($k) => $row[$k] ?? '', $keys));
+    rewind($handle);
+    $path = tempArtifactFile('cvrs');
+    file_put_contents($path, stream_get_contents($handle));
+    fclose($handle);
+
+    return new UploadedFile($path, 'legacy.csv', 'text/csv', null, true);
+}
+
+it('makes the REAL legacy import commit wait for an in-flight registration, then refuse its number (review F6)', function (): void {
+    pinTestClock(CVRS_YEAR.'-03-01 02:00:00');
+    Storage::fake('local');
+    DB::connection(CVRS_WRITER)->table('mst_patient_rm_sequences')->insert([
+        'branch_id' => $this->branchId, 'year' => CVRS_YEAR, 'last_number' => 6,
+        'seed_source' => 'command', 'created_at' => now(), 'updated_at' => now(),
+    ]);
+    $code = cvrsBranch()->code;
+
+    // Staged and committed on the writer connection: the CSV claims 7, unpadded.
+    $committer = cvrsCommitterId();
+    config()->set('database.default', CVRS_WRITER);
+    $batch = app(LegacyPatientImportService::class)->parseAndStage(cvrsLegacyCsv($code, '7'), null);
+    $this->cvrsBatchId = (int) $batch->id;
+    expect($batch->error_rows)->toBe(0);
+
+    // A registration holds the counter row and has issued 0007, uncommitted.
+    DB::connection(CVRS_WRITER)->beginTransaction();
+    expect(cvrsRegisterOn(CVRS_WRITER, 'Cvrs Otomatis Sebelum Impor')->medical_record_number)
+        ->toBe("DG-{$code}-".CVRS_YEAR.'-0007');
+
+    // The real commit() on a second connection queues on that counter row and
+    // gives up after lock_timeout: refused, nothing imported.
+    DB::purge(CVRS_PROBE);
+    DB::connection(CVRS_PROBE)->statement("SET lock_timeout = '300ms'");
+    config()->set('database.default', CVRS_PROBE);
+    $started = microtime(true);
+    $first = null;
+    try {
+        app(LegacyPatientImportService::class)->commit(LegacyPatientImportBatch::query()->findOrFail($batch->id), $committer);
+    } catch (LegacyPatientImportBlockedException $e) {
+        $first = $e;
+    }
+    $waited = microtime(true) - $started;
+
+    expect($first)->not->toBeNull()
+        ->and($waited)->toBeGreaterThan(0.25)
+        ->and(DB::connection(CVRS_PROBE)->table('mst_patients')->where('import_batch_id', $batch->id)->count())->toBe(0);
+
+    DB::connection(CVRS_WRITER)->commit();
+
+    // Once the registration has committed, the commit refuses the same number.
+    $second = null;
+    try {
+        app(LegacyPatientImportService::class)->commit(LegacyPatientImportBatch::query()->findOrFail($batch->id), $committer);
+    } catch (LegacyPatientImportBlockedException $e) {
+        $second = $e;
+    }
+
+    expect($second)->not->toBeNull()
+        ->and(DB::connection(CVRS_PROBE)->table('mst_patients')->where('import_batch_id', $batch->id)->count())->toBe(0)
+        ->and(DB::connection(CVRS_PROBE)->table('mst_patients')->where('branch_id', $this->branchId)->count())->toBe(1);
+    freeTestClock();
+});
+
+// =============================================================================
+// Rule 244 §2.6 — the claim cap (owner decision 2026-11-17) is decided under the lock
+// =============================================================================
+
+/** claimExisting() on the given connection, inside a transaction the caller controls. */
+function cvrsClaimOn(string $connection, string $number): bool
+{
+    config()->set('database.default', $connection);
+
+    return app(PatientRmNumberAllocator::class)->claimExisting(cvrsBranch(), $number);
+}
+
+it('serialises two claims on one branch-year: the second waits, then is judged against the committed counter (claim cap)', function (): void {
+    pinTestClock(CVRS_YEAR.'-03-01 02:00:00'); // CVRS_YEAR is the current clinical year
+    DB::connection(CVRS_WRITER)->table('mst_patient_rm_sequences')->insert([
+        'branch_id' => $this->branchId, 'year' => CVRS_YEAR, 'last_number' => 10,
+        'seed_source' => 'command', 'created_at' => now(), 'updated_at' => now(),
+    ]);
+    $code = cvrsBranch()->code;
+    $number = fn (int $sequence): string => "DG-{$code}-".CVRS_YEAR.'-'.str_pad((string) $sequence, 4, '0', STR_PAD_LEFT);
+
+    // The first claim is exactly +1000 and holds the counter row, uncommitted.
+    DB::connection(CVRS_WRITER)->beginTransaction();
+    expect(cvrsClaimOn(CVRS_WRITER, $number(1010)))->toBeTrue()
+        ->and(cvrsCounterRowBlocked($this->branchId))->toBeTrue();
+
+    // The racing claim (+2000 against the stale counter 10) is never decided on
+    // that stale value: it queues on the row lock.
+    DB::purge(CVRS_PROBE);
+    DB::connection(CVRS_PROBE)->beginTransaction();
+    DB::connection(CVRS_PROBE)->statement("SET LOCAL lock_timeout = '300ms'");
+    $waited = false;
+    try {
+        cvrsClaimOn(CVRS_PROBE, $number(2010));
+    } catch (QueryException $e) {
+        $waited = cvrsIsLockTimeout($e);
+    }
+    DB::connection(CVRS_PROBE)->rollBack();
+    expect($waited)->toBeTrue();
+
+    DB::connection(CVRS_WRITER)->commit();
+
+    // Judged against the committed counter (1010): +1001 is refused, the
+    // counter stays…
+    DB::connection(CVRS_PROBE)->beginTransaction();
+    $refused = null;
+    try {
+        cvrsClaimOn(CVRS_PROBE, $number(2011));
+    } catch (PatientRmNumberUnavailableException $e) {
+        $refused = $e;
+    }
+    DB::connection(CVRS_PROBE)->rollBack();
+
+    expect($refused)->toBeInstanceOf(PatientRmNumberUnavailableException::class)
+        ->and(PatientRmNumberAllocator::isClaimRefusal($refused))->toBeTrue()
+        ->and((int) DB::connection(CVRS_WRITER)->table('mst_patient_rm_sequences')->where('branch_id', $this->branchId)->where('year', CVRS_YEAR)->value('last_number'))->toBe(1010);
+
+    // …and +1000 is accepted, raising it once more (GREATEST, never lower).
+    DB::connection(CVRS_PROBE)->beginTransaction();
+    expect(cvrsClaimOn(CVRS_PROBE, $number(2010)))->toBeTrue();
+    DB::connection(CVRS_PROBE)->commit();
+
+    expect((int) DB::connection(CVRS_WRITER)->table('mst_patient_rm_sequences')->where('branch_id', $this->branchId)->where('year', CVRS_YEAR)->value('last_number'))->toBe(2010);
+    freeTestClock();
+});
+
+it('never lowers the counter: a later, lower claim on a second connection moves nothing (sequential, claim cap; review A7)', function (): void {
+    pinTestClock(CVRS_YEAR.'-03-01 02:00:00');
+    DB::connection(CVRS_WRITER)->table('mst_patient_rm_sequences')->insert([
+        'branch_id' => $this->branchId, 'year' => CVRS_YEAR, 'last_number' => 10,
+        'seed_source' => 'command', 'created_at' => now(), 'updated_at' => now(),
+    ]);
+    $code = cvrsBranch()->code;
+
+    DB::connection(CVRS_WRITER)->beginTransaction();
+    expect(cvrsClaimOn(CVRS_WRITER, "DG-{$code}-".CVRS_YEAR.'-0900'))->toBeTrue();
+    DB::connection(CVRS_WRITER)->commit();
+
+    // Not a race (the first claim has committed): the second connection reads
+    // the committed 900 and, being below it, moves nothing (GREATEST).
+    DB::purge(CVRS_PROBE);
+    DB::connection(CVRS_PROBE)->beginTransaction();
+    expect(cvrsClaimOn(CVRS_PROBE, "DG-{$code}-".CVRS_YEAR.'-0800'))->toBeTrue();
+    DB::connection(CVRS_PROBE)->commit();
+
+    expect((int) DB::connection(CVRS_WRITER)->table('mst_patient_rm_sequences')->where('branch_id', $this->branchId)->where('year', CVRS_YEAR)->value('last_number'))->toBe(900);
+    freeTestClock();
 });

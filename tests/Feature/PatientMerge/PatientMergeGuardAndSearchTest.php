@@ -160,9 +160,11 @@ it('warns on a strong duplicate at registration and requires a reason to continu
     $payload = [
         'clinic_id' => $existing->clinic_id,
         'doctor_id' => $existing->doctor_id,
+        // Rule 244 §2 — a new patient needs the branch its automatic Nomor RM is issued under.
+        'branch_id' => $existing->branch_id,
         'name' => 'Kartini Wulandari',
         'date_of_birth' => '1985-07-07',
-    ];
+    ] + newPatientCoreFields();
 
     $this->actingAs($admin)->post(route('settings.patients.store'), $payload)
         ->assertSessionHasErrors('duplicate_override_reason')
@@ -181,9 +183,10 @@ it('does not stop a genuinely different patient who shares a birthday', function
     $this->actingAs(pmUser('Super Admin'))->post(route('settings.patients.store'), [
         'clinic_id' => $existing->clinic_id,
         'doctor_id' => $existing->doctor_id,
+        'branch_id' => $existing->branch_id,
         'name' => 'Yohanes Siregar',
         'date_of_birth' => '1985-07-07',
-    ])->assertSessionHasNoErrors();
+    ] + newPatientCoreFields())->assertSessionHasNoErrors();
 });
 
 it('allows a safe reversal that restores both patients exactly', function (): void {

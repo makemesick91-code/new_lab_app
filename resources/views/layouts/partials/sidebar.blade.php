@@ -418,6 +418,11 @@
                                    class="menu-subitem {{ request()->routeIs('rme.patients.audit') ? $linkActive : $linkIdle }}">Audit Data Pasien</a>
                             @endunless
                         @endcanany
+                        {{-- Rule 244 §4.3 (PR-3b) — stored paper-card reasons (Supervisor RME, Owner). --}}
+                        @can('view_patient_rm_paper_card_reasons')
+                            <a href="{{ route('settings.patients.paper-card-registrations.index') }}"
+                               class="menu-subitem {{ request()->routeIs('settings.patients.paper-card-registrations.*') ? $linkActive : $linkIdle }}">Registrasi Nomor RM Kartu Lama</a>
+                        @endcan
                     </div>
                 </div>
             @endcanany

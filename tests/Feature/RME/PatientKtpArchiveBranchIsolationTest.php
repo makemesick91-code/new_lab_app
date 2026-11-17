@@ -27,6 +27,7 @@ use App\Modules\Patient\Models\Patient;
 use App\Modules\Patient\Models\PatientDocument;
 use App\Modules\Patient\Policies\PatientDocumentPolicy;
 use App\Modules\Patient\Services\PatientDocumentAccessService;
+use App\Modules\Patient\Services\PatientDocumentCaptureBranchResolver;
 use App\Modules\RmeOnlineContext\Middleware\EnsureRmeOnlineContext;
 use App\Modules\RmeOnlineContext\Services\BranchChangeApprovalService;
 use App\Modules\RmeOnlineContext\Services\UserOnlineContextService;
@@ -519,17 +520,26 @@ it('stamps the operator working branch when master data registration archives a 
         'filename' => 'ktp.png',
     ])->assertOk()->json('token');
 
-    // The form names branch B for the patient; the card was captured at A.
-    $this->actingAs($adminA)->post(route('settings.patients.store'), [
+    $payload = [
         'clinic_id' => Clinic::factory()->create()->id,
         'doctor_id' => Doctor::factory()->create()->id,
         'name' => 'Pasien Master Data Isolasi',
-        'branch_id' => $this->branchB->id,
-        'manual_rm_number' => '88123',
-        'registered_at' => '2026-10-01',
         'ktp_scan_token' => $token,
         'is_active' => 1,
-    ])->assertSessionMissing('warning');
+    ] + newPatientCoreFields();
+
+    // DMS-RME-COMPREHENSIVE-CLOSURE-1 / rule 244 §2.1 (PR-2 review F2, CG-05):
+    // the form may no longer name branch B for a desk account working at A —
+    // the request can only narrow — so nothing is registered and the card stays
+    // in the operator's temp area.
+    $this->actingAs($adminA)->post(route('settings.patients.store'), $payload + ['branch_id' => $this->branchB->id])
+        ->assertSessionHasErrors('branch_id');
+    expect(Patient::where('name', 'Pasien Master Data Isolasi')->exists())->toBeFalse();
+
+    // Registered at its working branch, the card is stamped with that branch,
+    // from the server — never from the form.
+    $this->actingAs($adminA)->post(route('settings.patients.store'), $payload + ['branch_id' => $this->branchA->id])
+        ->assertSessionMissing('warning');
 
     $document = Patient::where('name', 'Pasien Master Data Isolasi')->sole()->documents()->sole();
     expect($document->captured_branch_id)->toBe($this->branchA->id);
@@ -543,7 +553,7 @@ it('stamps the patient branch when a governance account registers through master
         'filename' => 'ktp.png',
     ])->assertOk()->json('token');
 
-    $this->actingAs($admin)->post(route('settings.patients.store'), [
+    $this->actingAs($admin)->post(route('settings.patients.store'), array_merge(newPatientCoreFields(), [
         'clinic_id' => Clinic::factory()->create()->id,
         'doctor_id' => Doctor::factory()->create()->id,
         'name' => 'Pasien Super Admin Isolasi',
@@ -552,7 +562,7 @@ it('stamps the patient branch when a governance account registers through master
         'registered_at' => '2026-10-01',
         'ktp_scan_token' => $token,
         'is_active' => 1,
-    ])->assertSessionMissing('warning');
+    ]))->assertSessionMissing('warning');
 
     $document = Patient::where('name', 'Pasien Super Admin Isolasi')->sole()->documents()->sole();
     expect($document->captured_branch_id)->toBe($this->branchB->id);
@@ -753,4 +763,19 @@ it('revokes the grant and the card closes on the next request', function () {
     expect($report['changed'])->toBeTrue()
         ->and(AuditLog::where('action', 'PATIENT_KTP_CROSS_BRANCH_ACCESS_REVOKED')->count())->toBe(1);
     $this->actingAs($supervisor->fresh())->get(kbiShowUrl($this->patient, $this->document))->assertNotFound();
+});
+
+// --- Rule 244 PR-3 review I1: the Master Data capture branch, resolved directly ---
+
+it('records the operator working branch as capture provenance, never the branch the patient row names (review I1)', function () {
+    $resolver = app(PatientDocumentCaptureBranchResolver::class);
+    // The patient row names branch B; the desk operator is working at branch A.
+    $patientAtB = Patient::factory()->create(['branch_id' => $this->branchB->id]);
+
+    expect($resolver->forMasterDataRegistration(kbiFrontOffice($this->branchA), $patientAtB))->toBe($this->branchA->id)
+        // A context-bound operator whose working context is gone records nothing,
+        // rather than falling back to the patient's branch.
+        ->and($resolver->forMasterDataRegistration(tap(kbiFrontOffice($this->branchA), fn (User $u) => app(UserOnlineContextService::class)->markOffline($u)), $patientAtB))->toBeNull()
+        // A governance account (no working branch) records the patient's branch.
+        ->and($resolver->forMasterDataRegistration(userWith(['manage patients']), $patientAtB))->toBe($this->branchB->id);
 });

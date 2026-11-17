@@ -234,6 +234,7 @@ use App\Modules\Odontogram\Policies\OdontogramPolicy;
 use App\Modules\Odontogram\Repositories\OdontogramRepository;
 use App\Modules\Patient\Interfaces\PatientDocumentProvenanceRepositoryInterface;
 use App\Modules\Patient\Interfaces\PatientRepositoryInterface;
+use App\Modules\Patient\Interfaces\PatientRmPaperCardRegistrationRepositoryInterface;
 use App\Modules\Patient\Interfaces\PatientRmSequenceRepositoryInterface;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\Patient\Models\PatientDocument;
@@ -241,6 +242,7 @@ use App\Modules\Patient\Policies\PatientDocumentPolicy;
 use App\Modules\Patient\Policies\PatientPolicy;
 use App\Modules\Patient\Repositories\PatientDocumentProvenanceRepository;
 use App\Modules\Patient\Repositories\PatientRepository;
+use App\Modules\Patient\Repositories\PatientRmPaperCardRegistrationRepository;
 use App\Modules\Patient\Repositories\PatientRmSequenceRepository;
 use App\Modules\PatientMerge\Interfaces\PatientDuplicateCandidateRepositoryInterface;
 use App\Modules\PatientMerge\Interfaces\PatientMergeCaseRepositoryInterface;
@@ -407,6 +409,8 @@ class RepositoryServiceProvider extends ServiceProvider
         PatientRepositoryInterface::class => PatientRepository::class,
         // DMS-RME-COMPREHENSIVE-CLOSURE-1 / memo M4.1 (rule 244) — automatic Nomor RM counters
         PatientRmSequenceRepositoryInterface::class => PatientRmSequenceRepository::class,
+        // Rule 244 §4.3 (PR-3b) — the paper-card reason (append and read only).
+        PatientRmPaperCardRegistrationRepositoryInterface::class => PatientRmPaperCardRegistrationRepository::class,
         // SECURITY-PATIENT-KTP-ARCHIVE-BRANCH-ISOLATION-1 — capture-branch backfill
         PatientDocumentProvenanceRepositoryInterface::class => PatientDocumentProvenanceRepository::class,
         // FEATURE-PATIENT-DUPLICATE-RESOLUTION-MERGE-1

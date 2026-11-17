@@ -111,7 +111,8 @@ function stagedBatchOf(int $valid, int $errors = 0): LegacyPatientImportBatch
 
 function confirmAs(LegacyPatientImportBatch $batch, array $payload = ['acknowledged' => '1'])
 {
-    return test()->actingAs(userWith(['manage patients']))
+    // Rule 244 §4 (plan default 4) — the commit needs the paper-card permission.
+    return test()->actingAs(userWith(['manage patients', 'register_patient_paper_card_rm']))
         ->post(route('settings.patients.import.commit', $batch), $payload);
 }
 
@@ -166,7 +167,7 @@ it('refuses a batch of nothing importable rather than reporting a successful imp
 
     expect($batch->isReadyToImport())->toBeFalse();
 
-    expect(fn () => $this->service->commit($batch, null))
+    expect(fn () => $this->service->commit($batch, legacyPatientCommitterId()))
         ->toThrow(LegacyPatientImportBlockedException::class);
 
     expect(Patient::count())->toBe(0);
@@ -186,7 +187,7 @@ it('imports zero patients from a 500-row batch when 3 rows carry errors', functi
         ->and($batch->valid_rows)->toBe(497)
         ->and($batch->error_rows)->toBe(3);
 
-    expect(fn () => $this->service->commit($batch, null))
+    expect(fn () => $this->service->commit($batch, legacyPatientCommitterId()))
         ->toThrow(LegacyPatientImportBlockedException::class);
 
     expect(Patient::count())->toBe(0)
@@ -208,7 +209,7 @@ it('names the error count and refuses with a stable reason code', function () {
     $batch = stagedBatchOf(1, 2);
 
     try {
-        $this->service->commit($batch, null);
+        $this->service->commit($batch, legacyPatientCommitterId());
         $this->fail('the batch should have been refused');
     } catch (LegacyPatientImportBlockedException $e) {
         expect($e->reason)->toBe(LegacyPatientImportBlockedException::REASON_ERROR_ROWS)
@@ -243,7 +244,7 @@ it('lets a warning-only batch import, and keeps the warnings visible', function 
         ->and($batch->error_rows)->toBe(0)
         ->and($batch->isReadyToImport())->toBeTrue();
 
-    $batch = $this->service->commit($batch, null);
+    $batch = $this->service->commit($batch, legacyPatientCommitterId());
 
     expect($batch->committed_rows)->toBe(1)
         ->and(Patient::count())->toBe(1)
@@ -262,7 +263,7 @@ it('keeps a warning a warning even when it sits beside an error row', function (
     expect($batch->warning_rows)->toBe(1)
         ->and($batch->error_rows)->toBe(1);
 
-    expect(fn () => $this->service->commit($batch, null))
+    expect(fn () => $this->service->commit($batch, legacyPatientCommitterId()))
         ->toThrow(LegacyPatientImportBlockedException::class);
 
     // The warning row was not silently promoted to an error to justify the refusal.
@@ -296,7 +297,7 @@ it('imports every approved row once the operator acknowledges', function () {
 it('creates no visit, medical record or clinical artefact when it imports', function () {
     $batch = stagedBatchOf(2);
 
-    $this->service->commit($batch, null);
+    $this->service->commit($batch, legacyPatientCommitterId());
 
     expect(Patient::count())->toBe(2)
         ->and(ClinicVisit::count())->toBe(0)
@@ -322,7 +323,7 @@ it('refuses to import when the stored source file changed after review', functio
     Storage::disk('local')->put($batch->stored_path, "tampered\n");
 
     try {
-        $this->service->commit($batch->refresh(), null);
+        $this->service->commit($batch->refresh(), legacyPatientCommitterId());
         $this->fail('a changed source must be refused');
     } catch (LegacyPatientImportBlockedException $e) {
         expect($e->reason)->toBe(LegacyPatientImportBlockedException::REASON_SOURCE_CHANGED);
@@ -339,7 +340,7 @@ it('refuses to import when the stored source file is gone', function () {
     Storage::disk('local')->delete($batch->stored_path);
 
     try {
-        $this->service->commit($batch->refresh(), null);
+        $this->service->commit($batch->refresh(), legacyPatientCommitterId());
         $this->fail('a missing source must be refused');
     } catch (LegacyPatientImportBlockedException $e) {
         expect($e->reason)->toBe(LegacyPatientImportBlockedException::REASON_SOURCE_MISSING);
@@ -352,7 +353,7 @@ it('stamps source_verified_at only when the hash actually matched', function () 
     $batch = stagedBatchOf(1);
     expect($batch->source_verified_at)->toBeNull();
 
-    $this->service->commit($batch, null);
+    $this->service->commit($batch, legacyPatientCommitterId());
 
     expect($batch->refresh()->source_verified_at)->not->toBeNull();
 });
@@ -369,7 +370,7 @@ it('catches at confirmation a conflict that did not exist at preview, and import
     Patient::factory()->create(['medical_record_number' => 'DG-TLK1-2024-0002']);
 
     try {
-        $this->service->commit($batch, null);
+        $this->service->commit($batch, legacyPatientCommitterId());
         $this->fail('the stale batch should have been refused');
     } catch (LegacyPatientImportBlockedException $e) {
         expect($e->reason)->toBe(LegacyPatientImportBlockedException::REASON_REVALIDATION_FAILED);
@@ -385,7 +386,7 @@ it('persists the refreshed verdict so the operator can see why it was refused', 
 
     Patient::factory()->create(['medical_record_number' => 'DG-TLK1-2024-0001']);
 
-    expect(fn () => $this->service->commit($batch, null))
+    expect(fn () => $this->service->commit($batch, legacyPatientCommitterId()))
         ->toThrow(LegacyPatientImportBlockedException::class);
 
     $batch->refresh();
@@ -406,12 +407,12 @@ it('lets the batch import after the blocking conflict is removed', function () {
 
     $blocker = Patient::factory()->create(['medical_record_number' => 'DG-TLK1-2024-0001']);
 
-    expect(fn () => $this->service->commit($batch, null))
+    expect(fn () => $this->service->commit($batch, legacyPatientCommitterId()))
         ->toThrow(LegacyPatientImportBlockedException::class);
 
     $blocker->forceDelete();
 
-    $batch = $this->service->commit($batch->refresh(), null);
+    $batch = $this->service->commit($batch->refresh(), legacyPatientCommitterId());
 
     expect($batch->committed_rows)->toBe(2)
         ->and(Patient::count())->toBe(2);
@@ -475,7 +476,7 @@ it('rolls back every insert when a later row fails mid-import', function () {
         }
     });
 
-    expect(fn () => $this->service->commit($batch->refresh(), null))
+    expect(fn () => $this->service->commit($batch->refresh(), legacyPatientCommitterId()))
         ->toThrow(RuntimeException::class);
 
     // Rows 1..3 were inserted and then discarded by the database itself.
@@ -490,7 +491,7 @@ it('imports exactly the number of rows it approved', function () {
     $batch = stagedBatchOf(7);
     $approved = $batch->valid_rows + $batch->warning_rows;
 
-    $batch = $this->service->commit($batch, null);
+    $batch = $this->service->commit($batch, legacyPatientCommitterId());
 
     expect($approved)->toBe(7)
         ->and($batch->committed_rows)->toBe(7)
@@ -529,11 +530,11 @@ it('refuses a stale confirmation with a lifecycle reason, not a stale-data one',
     $batch = stagedBatchOf(3);
     $stale = LegacyPatientImportBatch::findOrFail($batch->id);   // loaded before the win
 
-    $this->service->commit($batch, null);                        // the winner
+    $this->service->commit($batch, legacyPatientCommitterId());                        // the winner
     expect(Patient::count())->toBe(3);
 
     try {
-        $this->service->commit($stale, null);                    // the loser, holding a stale model
+        $this->service->commit($stale, legacyPatientCommitterId());                    // the loser, holding a stale model
         $this->fail('a stale confirmation must be refused');
     } catch (LegacyPatientImportBlockedException $e) {
         expect($e->reason)->toBe(LegacyPatientImportBlockedException::REASON_NOT_READY);
@@ -555,8 +556,8 @@ it('keeps a committed batch rollbackable after a losing concurrent confirmation'
     $batch = stagedBatchOf(3);
     $stale = LegacyPatientImportBatch::findOrFail($batch->id);
 
-    $this->service->commit($batch, null);
-    expect(fn () => $this->service->commit($stale, null))->toThrow(LegacyPatientImportBlockedException::class);
+    $this->service->commit($batch, legacyPatientCommitterId());
+    expect(fn () => $this->service->commit($stale, legacyPatientCommitterId()))->toThrow(LegacyPatientImportBlockedException::class);
 
     $this->service->rollback($batch->refresh(), null);
 
@@ -578,11 +579,11 @@ it('refuses a second batch claiming an RM the first batch already imported', fun
     $first = stagedBatchOf(1);
     $second = $this->service->parseAndStage(stagedCsv([stagedRow(['manual_rm_number' => '0001', 'name' => 'Duplikat'])]), null);
 
-    $this->service->commit($first, null);
+    $this->service->commit($first, legacyPatientCommitterId());
     expect(Patient::count())->toBe(1);
 
     // The second batch previewed clean; confirmation must catch the collision.
-    expect(fn () => $this->service->commit($second->refresh(), null))
+    expect(fn () => $this->service->commit($second->refresh(), legacyPatientCommitterId()))
         ->toThrow(LegacyPatientImportBlockedException::class);
 
     expect(Patient::count())->toBe(1);
@@ -638,7 +639,7 @@ it('accepts a cancellation with no reason', function () {
 
 it('refuses to cancel a batch that has already imported patients', function () {
     $batch = stagedBatchOf(2);
-    $this->service->commit($batch, null);
+    $this->service->commit($batch, legacyPatientCommitterId());
 
     expect($batch->refresh()->isCancellable())->toBeFalse();
 
@@ -652,7 +653,7 @@ it('refuses to cancel a batch that has already imported patients', function () {
 
 it('leaves rollback as the only way to withdraw imported patients', function () {
     $batch = stagedBatchOf(1);
-    $this->service->commit($batch, null);
+    $this->service->commit($batch, legacyPatientCommitterId());
 
     $this->service->rollback($batch->refresh(), null);
 
@@ -673,7 +674,7 @@ it('accepts a blank KTP and stores null, never a fabricated number', function ()
     expect($batch->error_rows)->toBe(0)
         ->and($batch->isReadyToImport())->toBeTrue();
 
-    $this->service->commit($batch, null);
+    $this->service->commit($batch, legacyPatientCommitterId());
 
     $patient = Patient::firstOrFail();
 
@@ -691,7 +692,7 @@ it('never derives a placeholder KTP for any blank-KTP row in a batch', function 
         stagedRow(['manual_rm_number' => '0003', 'name' => 'C', 'ktp_number' => '']),
     ]), null);
 
-    $this->service->commit($batch, null);
+    $this->service->commit($batch, legacyPatientCommitterId());
 
     // Three blank-KTP patients coexist. A sentinel would have collided on the
     // unique index and turned "no KTP" into a duplicate.
@@ -707,7 +708,7 @@ it('still blocks a malformed supplied KTP', function () {
     expect($batch->error_rows)->toBe(1)
         ->and($batch->isReadyToImport())->toBeFalse();
 
-    expect(fn () => $this->service->commit($batch, null))
+    expect(fn () => $this->service->commit($batch, legacyPatientCommitterId()))
         ->toThrow(LegacyPatientImportBlockedException::class);
 
     expect(Patient::count())->toBe(0);
@@ -722,7 +723,7 @@ it('still blocks an exact KTP duplicate against an existing patient', function (
 
     expect($batch->error_rows)->toBe(1);
 
-    expect(fn () => $this->service->commit($batch, null))
+    expect(fn () => $this->service->commit($batch, legacyPatientCommitterId()))
         ->toThrow(LegacyPatientImportBlockedException::class);
 
     expect(Patient::count())->toBe(1);
@@ -775,7 +776,7 @@ it('blocks a MAIN, inactive, non-RME or unknown branch and therefore the whole b
         expect($batch->error_rows)->toBe(1, "branch {$code} should be refused")
             ->and($batch->isReadyToImport())->toBeFalse();
 
-        expect(fn () => $this->service->commit($batch, null))
+        expect(fn () => $this->service->commit($batch, legacyPatientCommitterId()))
             ->toThrow(LegacyPatientImportBlockedException::class);
     }
 
@@ -790,7 +791,7 @@ it('charges the imported patient to the branch its own row resolved to', functio
         stagedRow(['branch' => 'LDK2', 'manual_rm_number' => '0002', 'name' => 'B']),
     ]), null);
 
-    $this->service->commit($batch, null);
+    $this->service->commit($batch, legacyPatientCommitterId());
 
     expect(Patient::where('name', 'A')->first()->medical_record_number)->toBe('DG-TLK1-2024-0001')
         ->and(Patient::where('name', 'B')->first()->medical_record_number)->toBe('DG-LDK2-2024-0002');
@@ -901,7 +902,7 @@ it('audits the upload, the refusal and the import without recording any PII', fu
 
 it('audits a successful import with the committed count', function () {
     $batch = stagedBatchOf(2);
-    $this->service->commit($batch, null);
+    $this->service->commit($batch, legacyPatientCommitterId());
 
     $log = AuditLog::where('entity_type', LegacyPatientImportService::AUDIT_ENTITY)
         ->where('action', LegacyPatientImportService::AUDIT_COMMITTED)

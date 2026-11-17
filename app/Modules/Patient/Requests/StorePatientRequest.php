@@ -2,19 +2,89 @@
 
 namespace App\Modules\Patient\Requests;
 
-use App\Modules\Branch\Interfaces\BranchRepositoryInterface;
-use App\Modules\Patient\Services\PatientMedicalRecordNumberService;
+use App\Modules\Patient\Services\PatientService;
+use App\Modules\Patient\Support\PatientCoreFields;
 use App\Modules\PatientMerge\Services\PatientRegistrationDuplicateCheck;
+use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
 use App\Support\Clinical\ClinicalClock;
-use Carbon\Carbon;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
 class StorePatientRequest extends FormRequest
 {
+    /**
+     * DMS-RME-COMPREHENSIVE-CLOSURE-1 / memo M4.1 (rule 244 §4) — a request that
+     * carries any paper-card field is the paper-card exception, and only an
+     * account holding the permission may send one (403 otherwise; the fields are
+     * never rendered for anyone else). The controller asks the policy and the
+     * service re-asserts it.
+     */
     public function authorize(): bool
     {
+        // Rule 244 §5.3 — the no-phone exception likewise: only a holder of
+        // `register_patient_without_phone` may send it (the checkbox is rendered
+        // for holders only); PatientService re-asserts it for every caller.
+        if ($this->hasNoPhoneInput() && ! $this->user()?->can(PatientCoreFields::WITHOUT_PHONE_PERMISSION)) {
+            return false;
+        }
+
+        return ! $this->hasPaperCardInput()
+            || (bool) $this->user()?->can(PatientService::PAPER_CARD_PERMISSION);
+    }
+
+    /** Rule 244 §5.3 — whether any no-phone exception field was sent. */
+    public function hasNoPhoneInput(): bool
+    {
+        foreach (PatientCoreFields::NO_PHONE_FIELDS as $field) {
+            if ($this->filled($field)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /** Rule 244 §4 — whether any paper-card field was sent. */
+    public function hasPaperCardInput(): bool
+    {
+        foreach (PatientService::PAPER_CARD_FIELDS as $field) {
+            if ($this->filled($field)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Owner decision 2026-11-17 (rule 244 §5.5) — whether this is a registration
+     * of a historical paper RM card, the ONE registration exempt from the core
+     * fields. True only when the actor holds BOTH halves of the paper-card pair
+     * (`register_patient_paper_card_rm` and `manage patients`, as
+     * PatientService::createWithPaperCardNumber() re-asserts them) AND the full
+     * card set — year, sequence and reason code — is sent. The set is then
+     * validated in this same request, the controller routes ANY card field to
+     * createWithPaperCardNumber() (a superset of this test), and that service
+     * re-asserts the pair and every bound and claims the typed number under the
+     * counter lock: a refusal anywhere writes nothing. An ordinary registration
+     * (no card set, a partial one, or no permission pair) is never exempt, and
+     * the Kunjungan → Pasien Baru form has no paper-card path at all.
+     */
+    public function isPaperCardRegistration(): bool
+    {
+        $user = $this->user();
+
+        if ($user === null || ! $user->can(PatientService::PAPER_CARD_PERMISSION) || ! $user->can('manage patients')) {
+            return false;
+        }
+
+        foreach (['paper_card_year', 'paper_card_sequence', 'paper_card_reason_code'] as $field) {
+            if (! $this->filled($field)) {
+                return false;
+            }
+        }
+
         return true;
     }
 
@@ -26,25 +96,60 @@ class StorePatientRequest extends FormRequest
         return [
             'clinic_id' => ['required', 'integer', 'exists:mst_clinics,id'],
             'doctor_id' => ['required', 'integer', 'exists:mst_doctors,id'],
+            // DMS-RME-COMPREHENSIVE-CLOSURE-1 / memo M4.1 (rule 244 §2) — the
+            // Nomor RM is automatic and read-only: the branch it is issued under
+            // is required, and no number, manual sequence or registration date is
+            // accepted (PatientService also drops them; the server stamps the
+            // clinical day). The Sprint 23.8 manual fields and the free override
+            // are retired.
+            // PR-2 review F2 (CG-05) — and only a branch the operator is working:
+            // a context-bound desk account (Front Office, Admin Klinik, Kasir,
+            // Perawat) may name its working branch only; the request may narrow,
+            // never widen. PatientService re-asserts it (403 for a non-HTTP caller).
             'branch_id' => [
-                'nullable',
-                'required_with:manual_rm_number',
+                'required',
                 'integer',
                 Rule::exists('mst_branches', 'id')->where('is_active', true)->where('is_rme_enabled', true),
+                Rule::in(app(RmeWorkingBranchScope::class)->branchIdsFor($this->user())),
             ],
-            'registered_at' => ['nullable', 'date'],
-            'manual_rm_number' => ['nullable', 'required_with:branch_id', 'string', 'max:50', 'regex:/^[0-9]+$/'],
-            'medical_record_number' => ['nullable', 'string', 'max:50', 'unique:mst_patients,medical_record_number'],
-            'ktp_number' => ['nullable', 'string', 'max:16', Rule::unique('mst_patients', 'ktp_number')],
-            'name' => ['required', 'string', 'max:150'],
-            'gender' => ['nullable', 'string', 'in:Male,Female,Other'],
-            'date_of_birth' => ['nullable', 'date'],
-            'phone' => ['nullable', 'string', 'max:50'],
-            'whatsapp_number' => ['nullable', 'string', 'max:50'],
-            'email' => ['nullable', 'email', 'max:150'],
-            'address' => ['nullable', 'string', 'max:1000'],
-            'occupation' => ['nullable', 'string', 'max:150'],
+            // Rule 244 §4 — the Supervisor RME paper-card exception: year,
+            // sequence and reason code together or none; the note is optional
+            // except for LAINNYA (rule 244 §4.3). PatientService re-checks every
+            // bound.
+            'paper_card_year' => [
+                'nullable', 'required_with:paper_card_sequence,paper_card_reason_code,paper_card_reason_note', 'integer', 'digits:4',
+                'min:'.PatientService::PAPER_CARD_MIN_YEAR,
+                'max:'.app(ClinicalClock::class)->today()->format('Y'),
+            ],
+            'paper_card_sequence' => [
+                'nullable', 'required_with:paper_card_year,paper_card_reason_code,paper_card_reason_note', 'string', 'regex:/^[0-9]{1,8}$/', 'not_regex:/^0+$/',
+            ],
+            'paper_card_reason_code' => [
+                'nullable', 'required_with:paper_card_year,paper_card_sequence,paper_card_reason_note', 'string',
+                Rule::in(array_keys(app(PatientService::class)->paperCardReasons())),
+            ],
+            'paper_card_reason_note' => [
+                'nullable', 'required_if:paper_card_reason_code,'.PatientService::PAPER_CARD_REASON_OTHER, 'string',
+                'min:'.PatientService::PAPER_CARD_REASON_MIN, 'max:'.PatientService::PAPER_CARD_REASON_MAX,
+                // PR-3b review B1 — valid UTF-8 without control characters (tab,
+                // line feed and carriage return allowed): the database would
+                // refuse anything else, and its error carries the value.
+                'regex:'.PatientService::PAPER_CARD_NOTE_PATTERN,
+            ],
+            // Memo M4.2 (rule 244 §5) — NIK stays optional; when given it is
+            // exactly 16 digits (new patients only; an edit keeps a legacy value).
+            'ktp_number' => ['nullable', 'string', ...PatientCoreFields::NIK_RULES, Rule::unique('mst_patients', 'ktp_number')],
+            // RM PR-4b (re-review M1) — text PostgreSQL can store (valid UTF-8,
+            // no NUL): a 422 here, never a failed insert that logs the row.
+            'name' => ['required', 'string', 'max:150', 'regex:'.PatientCoreFields::TEXT_PATTERN],
+            'email' => ['nullable', 'string', 'regex:'.PatientCoreFields::TEXT_PATTERN, 'email', 'max:150'],
             'is_active' => ['sometimes', 'boolean'],
+            // Memo M4.2 (rule 244 §5) — the core fields of a NEW patient (gender,
+            // place and date of birth, phone or WhatsApp, address, occupation)
+            // and the no-phone exception, from the ONE builder Kunjungan →
+            // Pasien Baru uses too. Owner decision 2026-11-17 (§5.5): on the
+            // paper-card path alone they keep their formats but are not required.
+            ...PatientCoreFields::rules($this->all(), required: ! $this->isPaperCardRegistration()),
             // Sprint 61.1 — opaque token for a KTP scan parked via the scanner
             // workflow. Attached to the patient after creation (controller).
             'ktp_scan_token' => ['nullable', 'string', 'max:64'],
@@ -56,7 +161,7 @@ class StorePatientRequest extends FormRequest
             'ktp_ocr_verified' => ['exclude_unless:ktp_ocr_applied,1', 'accepted'],
             // FEATURE-PATIENT-DUPLICATE-RESOLUTION-MERGE-1 — required only when
             // a strong duplicate is found (see withValidator).
-            'duplicate_override_reason' => ['nullable', 'string', 'max:1000'],
+            'duplicate_override_reason' => ['nullable', 'string', 'max:1000', 'regex:'.PatientCoreFields::TEXT_PATTERN],
         ];
     }
 
@@ -71,20 +176,29 @@ class StorePatientRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'manual_rm_number.regex' => 'Nomor RM manual hanya boleh berisi angka.',
             'ktp_ocr_verified.accepted' => 'Konfirmasi bahwa data hasil baca KTP sudah dicocokkan dengan KTP asli sebelum menyimpan.',
             'ktp_ocr_verified.required' => 'Konfirmasi bahwa data hasil baca KTP sudah dicocokkan dengan KTP asli sebelum menyimpan.',
-            'branch_id.required_with' => 'Cabang RME wajib dipilih saat mengisi Nomor RM manual.',
-            'manual_rm_number.required_with' => 'Nomor RM manual wajib diisi saat memilih Cabang RME.',
+            'branch_id.required' => 'Cabang RME wajib dipilih. Nomor RM dibuat otomatis untuk cabang tersebut.',
+            'branch_id.in' => 'Pasien baru hanya dapat didaftarkan di cabang tempat Anda bertugas.',
+            'paper_card_year.*' => 'Tahun pada kartu lama wajib 4 digit dan tidak melewati tahun ini.',
+            'paper_card_sequence.*' => 'Nomor urut kartu lama wajib angka (1–8 digit) dan bukan nol.',
+            'paper_card_reason_code.required_with' => 'Pilih alasan memakai Nomor RM kartu lama.',
+            'paper_card_reason_code.in' => 'Pilih alasan memakai Nomor RM kartu lama dari daftar.',
+            'paper_card_reason_note.required_if' => 'Catatan wajib diisi untuk alasan Lainnya.',
+            'paper_card_reason_note.min' => 'Catatan minimal :min karakter.',
+            'paper_card_reason_note.max' => 'Catatan maksimal :max karakter.',
+            'paper_card_reason_note.regex' => 'Catatan berisi karakter yang tidak valid.',
             'ktp_number.unique' => 'Nomor KTP sudah terdaftar pada pasien lain.',
+            'name.regex' => 'Nama berisi karakter yang tidak valid.',
+            'email.regex' => 'E-mail berisi karakter yang tidak valid.',
+            'duplicate_override_reason.regex' => 'Alasan berisi karakter yang tidak valid.',
+            ...PatientCoreFields::messages(),
         ];
     }
 
     public function withValidator(Validator $validator): void
     {
         $validator->after(function (Validator $validator) {
-            $this->validateComposedNumberUniqueness($validator);
-
             if ($validator->errors()->isEmpty()) {
                 app(PatientRegistrationDuplicateCheck::class)->validate(
                     $validator,
@@ -94,45 +208,6 @@ class StorePatientRequest extends FormRequest
                 );
             }
         });
-    }
-
-    /**
-     * When the final medical record number will be composed from
-     * branch + year + manual number, ensure it is globally unique.
-     */
-    private function validateComposedNumberUniqueness(Validator $validator): void
-    {
-        if ($validator->errors()->isNotEmpty()) {
-            return;
-        }
-
-        $explicit = trim((string) $this->input('medical_record_number', ''));
-        $branchId = $this->input('branch_id');
-        $manual = trim((string) $this->input('manual_rm_number', ''));
-
-        if ($explicit !== '' || ! $branchId || $manual === '') {
-            return;
-        }
-
-        $branch = app(BranchRepositoryInterface::class)->findById((int) $branchId);
-
-        if (! $branch) {
-            return;
-        }
-
-        $rmNumbers = app(PatientMedicalRecordNumberService::class);
-        // FIX-03 — the clinical calendar day, so this pre-check composes the same
-        // Nomor RM that PatientService will persist. A UTC today() would disagree
-        // with it for the first eight hours of every clinical day.
-        $registeredAt = $this->input('registered_at')
-            ? Carbon::parse($this->input('registered_at'))
-            : app(ClinicalClock::class)->today();
-
-        $composed = $rmNumbers->composeForRegistration($branch->code, $registeredAt, $manual);
-
-        if ($rmNumbers->exists($composed)) {
-            $validator->errors()->add('manual_rm_number', "Nomor RM final {$composed} sudah digunakan.");
-        }
     }
 
     private function normalizeKtpNumber(mixed $value): ?string

@@ -12,6 +12,9 @@ use App\Modules\Patient\Requests\UpdatePatientRequest;
 use App\Modules\Patient\Services\KtpScanService;
 use App\Modules\Patient\Services\PatientDocumentCaptureBranchResolver;
 use App\Modules\Patient\Services\PatientService;
+use App\Modules\Patient\Support\PatientCoreFields;
+use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
+use App\Support\Clinical\ClinicalClock;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -28,6 +31,8 @@ class PatientController extends Controller
         private readonly BranchService $branchService,
         private readonly KtpScanService $ktpScans,
         private readonly PatientDocumentCaptureBranchResolver $captureBranches,
+        private readonly RmeWorkingBranchScope $workingBranchScope,
+        private readonly ClinicalClock $clock,
     ) {}
 
     public function index(Request $request): View
@@ -48,14 +53,24 @@ class PatientController extends Controller
         ]);
     }
 
-    public function create(): View
+    public function create(Request $request): View
     {
         $this->authorize('create', Patient::class);
+
+        // PR-2 review F2 (CG-05) — offer only the branches the operator may
+        // register into (a context-bound desk account: its working branch).
+        $allowed = $this->workingBranchScope->branchIdsFor($request->user());
 
         return view('settings.patients.create', [
             'clinics' => $this->clinicService->listAll(),
             'doctors' => $this->doctorService->listAll(),
-            'rmeBranches' => $this->branchService->listRmeEnabled(),
+            'rmeBranches' => $this->branchService->listRmeEnabled()
+                ->filter(fn ($branch): bool => in_array((int) $branch->id, $allowed, true))
+                ->values(),
+            // Rule 244 §2.8 — the RM year shown on the form is the clinical year.
+            'clinicalYear' => $this->clock->today()->format('Y'),
+            // Rule 244 §4.3 — the paper-card reason list (config-driven labels).
+            'paperCardReasons' => $this->patientService->paperCardReasons(),
         ]);
     }
 
@@ -65,11 +80,31 @@ class PatientController extends Controller
 
         $data = $request->validated();
         $ktpScanToken = $data['ktp_scan_token'] ?? null;
+        $paperCard = array_intersect_key($data, array_flip(PatientService::PAPER_CARD_FIELDS));
         unset($data['ktp_scan_token'], $data['duplicate_override_reason'], $data['ktp_ocr_applied'], $data['ktp_ocr_verified']);
+        $data = array_diff_key($data, $paperCard);
 
-        $patient = $this->patientService->create($data);
+        // Rule 244 §4 — the Supervisor RME paper-card exception; every other
+        // registration takes the automatic number.
+        if ($request->hasPaperCardInput()) {
+            $this->authorize('registerWithPaperCardNumber', Patient::class);
 
-        $redirect = redirect()->route('settings.patients.index')->with('status', 'Pasien berhasil dibuat.');
+            $patient = $this->patientService->createWithPaperCardNumber(
+                $data,
+                $request->user(),
+                (int) $paperCard['paper_card_year'],
+                (string) $paperCard['paper_card_sequence'],
+                (string) ($paperCard['paper_card_reason_code'] ?? ''),
+                $paperCard['paper_card_reason_note'] ?? null,
+            );
+        } else {
+            $patient = $this->patientService->create($data, $request->user());
+        }
+
+        // Rule 244 §2.8 — the automatic Nomor RM is shown once it exists (the
+        // form never previews one).
+        $redirect = redirect()->route('settings.patients.index')
+            ->with('status', 'Pasien berhasil dibuat dengan Nomor RM '.$patient->medical_record_number.'.');
 
         // Sprint 61.1 — promote a scanned KTP (if any) into the patient's
         // private document folder. Registration never fails because of the
@@ -141,5 +176,43 @@ class PatientController extends Controller
         $this->patientService->deactivate($patient);
 
         return redirect()->route('settings.patients.index')->with('status', 'Pasien berhasil dinonaktifkan.');
+    }
+
+    /**
+     * DMS-RME-COMPREHENSIVE-CLOSURE-1 / memo M4.1 (rule 244 §4.3, PR-3b) — the
+     * stored paper-card registrations, WITHOUT the note, in the reader's branch
+     * scope. The route carries the read permission and `private, no-store`; the
+     * policy and the service re-assert it (CG-06).
+     *
+     * Rule 244 §5.3 (RM PR-4b, re-review L2) — and the OPEN no-phone exceptions
+     * in the same scope, also without the note: how the readers reach a note.
+     */
+    public function paperCardRegistrations(Request $request): View
+    {
+        $this->authorize('viewAnyPaperCardRegistrations', Patient::class);
+
+        return view('settings.patients.paper-card-registrations.index', [
+            'registrations' => $this->patientService->paperCardRegistrationList($request->user()),
+            'reasons' => $this->patientService->paperCardReasons(),
+            'noPhoneExceptions' => $this->patientService->openNoPhoneExceptionList($request->user()),
+            'noPhoneReasons' => PatientCoreFields::noPhoneReasons(),
+            'clinicalTimezone' => $this->clock->timezone(),
+        ]);
+    }
+
+    /**
+     * Rule 244 §4.3 — one patient's paper-card registrations, notes included.
+     * Out of the reader's branch scope: 404 from the service (CG-05).
+     */
+    public function paperCardRegistrationsForPatient(Request $request, Patient $patient): View
+    {
+        $this->authorize('viewPaperCardRegistrations', $patient);
+
+        return view('settings.patients.paper-card-registrations.show', [
+            'patient' => $patient,
+            'registrations' => $this->patientService->paperCardRegistrationsFor($patient, $request->user()),
+            'reasons' => $this->patientService->paperCardReasons(),
+            'clinicalTimezone' => $this->clock->timezone(),
+        ]);
     }
 }

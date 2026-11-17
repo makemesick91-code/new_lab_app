@@ -28,6 +28,11 @@ use Illuminate\Validation\ValidationException;
  * or doctor with the new visit's — the new visit's branch comes from the
  * registrar's working branch (ClinicVisitService::resolveBranchId) and its
  * doctor from the rules below, never from the prior visit.
+ *
+ * Rule 244 §5.3 (RM PR-4b, re-review L3) — `$data` is the registration payload
+ * (a new patient's values, the NIK and the no-phone note among them): every
+ * parameter that takes it is #[\SensitiveParameter], so a stack trace that
+ * keeps call arguments never carries it.
  */
 class ClinicVisitRegistrationGuard
 {
@@ -54,7 +59,7 @@ class ClinicVisitRegistrationGuard
      *
      * @param  array<string, mixed>  $data
      */
-    public function assertPatientSelectable(User $registrar, array $data): void
+    public function assertPatientSelectable(User $registrar, #[\SensitiveParameter] array $data): void
     {
         if ($this->isNewPatient($data)) {
             return;
@@ -79,7 +84,7 @@ class ClinicVisitRegistrationGuard
      * @param  array<string, mixed>  $data
      * @return array{0: string, 1: string}|null
      */
-    public function followUpViolation(array $data, bool $lock = false): ?array
+    public function followUpViolation(#[\SensitiveParameter] array $data, bool $lock = false): ?array
     {
         $visitType = (string) ($data['visit_type'] ?? ClinicVisit::VISIT_TYPE_NEW);
         $isFollowUpType = in_array($visitType, ClinicVisit::FOLLOW_UP_VISIT_TYPES, true);
@@ -201,7 +206,7 @@ class ClinicVisitRegistrationGuard
     }
 
     /** @param  array<string, mixed>  $data */
-    public function assertFollowUpLink(array $data, bool $lock = false): void
+    public function assertFollowUpLink(#[\SensitiveParameter] array $data, bool $lock = false): void
     {
         $violation = $this->followUpViolation($data, $lock);
 
@@ -224,7 +229,7 @@ class ClinicVisitRegistrationGuard
      * @param  array<string, mixed>  $data
      * @return array<string, mixed>
      */
-    public function resolveDoctor(User $registrar, array $data, int $branchId): array
+    public function resolveDoctor(User $registrar, #[\SensitiveParameter] array $data, int $branchId): array
     {
         if ($this->isFrontDeskRegistrar($registrar)) {
             $data['doctor_id'] = null;
@@ -251,7 +256,7 @@ class ClinicVisitRegistrationGuard
     }
 
     /** @param  array<string, mixed>  $data */
-    private function isNewPatient(array $data): bool
+    private function isNewPatient(#[\SensitiveParameter] array $data): bool
     {
         return ($data['patient_mode'] ?? 'existing') === 'new';
     }

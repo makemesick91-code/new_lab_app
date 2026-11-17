@@ -105,7 +105,15 @@
         </div>
 
         <div class="flex flex-wrap items-start gap-3">
+            {{-- Rule 244 §4 (plan default 4) — the commit stores typed Nomor RM,
+                 so it is offered only to the paper-card permission (rule 135
+                 mirror); the route, the request and the service enforce it. --}}
             @if ($batch->isReadyToImport())
+                @cannot('register_patient_paper_card_rm')
+                <div class="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+                    Batch siap diimpor. Konfirmasi impor dilakukan oleh Supervisor RME (izin Nomor RM kartu lama).
+                </div>
+                @else
                 <form method="POST" action="{{ route('settings.patients.import.commit', $batch) }}" class="rounded-lg border border-teal-200 bg-white p-4">
                     @csrf
                     <label class="flex items-start gap-2 text-sm text-gray-700">
@@ -114,6 +122,7 @@
                     </label>
                     <button type="submit" class="mt-3 inline-flex items-center rounded-lg bg-teal-700 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-teal-600">Konfirmasi &amp; Import Pasien</button>
                 </form>
+                @endcannot
             @endif
 
             @if ($batch->isCancellable())
