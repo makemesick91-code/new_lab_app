@@ -24,6 +24,7 @@ use App\Modules\RmeAmendment\Models\RmeAmendment;
 use App\Modules\RmeAmendment\Models\RmeRecordVersion;
 use App\Modules\RmeAmendment\Notifications\RmeAmendmentNotification;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
+use App\Modules\Satusehat\Services\SatusehatCandidateService;
 use App\Support\AccessControl\ActiveAccountResolver;
 use Closure;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -140,6 +141,10 @@ final class RmeAmendmentService
     public const MESSAGE_TOOTH_FIELD = 'Gigi memuat isian yang tidak dikenal.';
 
     public const MESSAGE_CONDITIONS = 'Kondisi gigi harus berupa daftar kondisi yang dikenal, tanpa kosong dan tanpa duplikat.';
+
+    public const MESSAGE_DIAGNOSIS_ROW = 'Usulan diagnosis tidak valid.';
+
+    public const MESSAGE_DIAGNOSIS_ROLE = 'Peran diagnosis tidak valid.';
 
     public const MESSAGE_STALE_BASE = 'Rekam medis sudah memiliki versi yang lebih baru daripada versi dasar amandemen ini. Pengaju perlu mengajukan amandemen baru.';
 
@@ -386,6 +391,7 @@ final class RmeAmendmentService
 
             $content = $this->revalidated($locked, $subject);
 
+            $sheetRowWritten = false;
             if ($subject instanceof Odontogram) {
                 $subject = $this->odontograms->updatePlaceholder($subject, [
                     'summary_notes' => $content['summary_notes'],
@@ -396,6 +402,7 @@ final class RmeAmendmentService
             } else {
                 if (($content['fields'] ?? []) !== []) {
                     $subject = $this->medicalRecords->update($subject, $content['fields']);
+                    $sheetRowWritten = true;
                 }
 
                 $diagnoses = $content['diagnoses'] ?? [];
@@ -407,6 +414,19 @@ final class RmeAmendmentService
             }
 
             $version = $this->versionService->recordAmendment($subject, $latest, (int) $approver->getKey(), $this->liveEncounterId($subject));
+
+            // Rule 240 §7.3 — every apply refreshes the visit's SATUSEHAT candidate
+            // after commit, so drift revokes an approval (`source_changed`); it
+            // decides no re-submission. A saved sheet row is refreshed by
+            // SatusehatMedicalRecordObserver (after commit, reading the diagnoses
+            // written here too) — a second refresh would overwrite that
+            // `source_changed` readiness — so this one runs for a diagnosis-only
+            // apply (as MedicalRecordDiagnosisService does), for a chart (it
+            // feeds the dental readiness), and whenever that observer is switched
+            // off (`satusehat.candidate.auto_generate`, which it reads itself).
+            if (! $sheetRowWritten || ! (bool) config('satusehat.candidate.auto_generate', true)) {
+                $this->refreshSatusehatCandidateAfterCommit((int) $subject->clinic_visit_id, $approver);
+            }
 
             $locked = $this->amendments->transition($locked, [
                 'status' => RmeAmendment::STATUS_APPLIED,
@@ -694,12 +714,17 @@ final class RmeAmendmentService
     {
         $this->assertVisibleSubject($subject, $user);
 
+        Gate::forUser($user)->authorize('view', $subject);
+        [$type, $id] = $this->subjectKey($subject);
+
+        // The list needs no snapshot: number, kind, author and time only, the
+        // authors eager-loaded (review LOW). The chain is verified where a
+        // snapshot is read in full, not on every list view.
         return [
             'subject' => $subject,
             'isChart' => $subject instanceof Odontogram,
-            'versions' => $this->versionService->versionsFor($user, $subject),
+            'versions' => $this->amendments->versionSummaries($type, $id),
             'amendmentCount' => $this->versionService->amendmentCount($subject),
-            'chainVerified' => $this->versionService->verifyChain($subject),
         ];
     }
 
@@ -777,6 +802,28 @@ final class RmeAmendmentService
         }
 
         return $content;
+    }
+
+    /**
+     * As MedicalRecordDiagnosisService::refreshCandidate(): after commit, the
+     * visit's existing candidate only (none is created here), failures logged
+     * with ids only and never thrown into the caller.
+     */
+    private function refreshSatusehatCandidateAfterCommit(int $clinicVisitId, User $actor): void
+    {
+        DB::afterCommit(function () use ($clinicVisitId, $actor): void {
+            try {
+                $candidate = $this->amendments->satusehatCandidateForVisit($clinicVisitId);
+                if ($candidate !== null) {
+                    app(SatusehatCandidateService::class)->refresh($candidate, $actor);
+                }
+            } catch (\Throwable $e) {
+                Log::warning('SATUSEHAT candidate refresh failed after an RME amendment was applied', [
+                    'clinic_visit_id' => $clinicVisitId,
+                    'error' => $e::class,
+                ]);
+            }
+        });
     }
 
     /**
@@ -963,7 +1010,9 @@ final class RmeAmendmentService
             }
 
             $value = $this->text($fields[$field]);
-            if ($value === $this->text($sheet->{$field})) {
+            // TrimStrings trims what the form posts; whitespace around a text is
+            // not a change (compared trimmed on both sides).
+            if ($this->comparable($value) === $this->comparable($sheet->{$field})) {
                 continue;
             }
 
@@ -1007,17 +1056,32 @@ final class RmeAmendmentService
         $rows = [];
         foreach ($this->arrayPart($input, 'add') as $row) {
             if (! is_array($row)) {
-                throw $this->refusal('proposed.diagnoses.add', 'Usulan diagnosis tidak valid.');
+                throw $this->refusal('proposed.diagnoses.add', self::MESSAGE_DIAGNOSIS_ROW);
             }
             $this->assertKeys($row, self::DIAGNOSIS_ROW_KEYS, 'proposed.diagnoses.add');
 
+            // Types first, never a cast of a malformed value (an array, '12abc').
+            $notes = $row['notes'] ?? null;
+            if ($notes !== null && ! is_string($notes)) {
+                throw $this->refusal('proposed.diagnoses.add', self::MESSAGE_DIAGNOSIS_ROW);
+            }
+
             // The form always posts one add row; an untouched one names no diagnosis.
-            if (($row['clinical_diagnosis_id'] ?? null) === null || $row['clinical_diagnosis_id'] === '') {
-                if ($this->text($row['notes'] ?? null) !== null) {
+            $masterId = $row['clinical_diagnosis_id'] ?? null;
+            if ($masterId === null || $masterId === '') {
+                if ($this->text($notes) !== null) {
                     throw $this->refusal('proposed.diagnoses.add', 'Pilih diagnosis untuk catatan yang diusulkan.');
                 }
 
                 continue;
+            }
+
+            if (! is_int($masterId) && ! (is_string($masterId) && ctype_digit($masterId))) {
+                throw $this->refusal('proposed.diagnoses.add', self::MESSAGE_DIAGNOSIS_ROW);
+            }
+
+            if (array_key_exists('diagnosis_role', $row) && ! is_string($row['diagnosis_role'])) {
+                throw $this->refusal('proposed.diagnoses.add', self::MESSAGE_DIAGNOSIS_ROLE);
             }
 
             $rows[] = $row;
@@ -1048,9 +1112,9 @@ final class RmeAmendmentService
                 throw $this->refusal('proposed.diagnoses.add', self::MESSAGE_MASTER_INACTIVE);
             }
 
-            $role = (string) ($row['diagnosis_role'] ?? '');
+            $role = $row['diagnosis_role'] ?? '';
             if (! in_array($role, MedicalRecordDiagnosis::ROLES, true)) {
-                throw $this->refusal('proposed.diagnoses.add', 'Peran diagnosis tidak valid.');
+                throw $this->refusal('proposed.diagnoses.add', self::MESSAGE_DIAGNOSIS_ROLE);
             }
 
             if (in_array($masterId, $onSheet, true)) {
@@ -1058,7 +1122,7 @@ final class RmeAmendmentService
             }
 
             $notes = $row['notes'] ?? null;
-            if ($notes !== null && (! is_string($notes) || mb_strlen($notes) > 500)) {
+            if ($notes !== null && mb_strlen($notes) > 500) {
                 throw $this->refusal('proposed.diagnoses.add', 'Catatan diagnosis maksimal 500 karakter.');
             }
 
@@ -1111,10 +1175,21 @@ final class RmeAmendmentService
                 $proposed['tooth_map_payload'] = is_array($decoded) ? $decoded : $proposed['tooth_map_payload'];
             }
 
-            if ($proposed['tooth_map_payload'] === null) {
+            // Never erase a chart from a null (a chart that has no tooth map yet
+            // keeps none — that is no change).
+            if ($proposed['tooth_map_payload'] === null && $chart->tooth_map_payload !== null) {
                 throw $this->refusal('proposed.tooth_map_payload', self::MESSAGE_TOOTH_MAP);
             }
         }
+
+        // The chart AFTER the change is what is validated (review LOW): an absent
+        // key keeps the current value, and that value must pass today's rules too,
+        // or a request could be accepted that no approval could ever apply.
+        $merged = [
+            'summary_notes' => array_key_exists('summary_notes', $proposed) ? $proposed['summary_notes'] : $chart->summary_notes,
+            'additional_conditions' => array_key_exists('additional_conditions', $proposed) ? $proposed['additional_conditions'] : $chart->additional_conditions,
+            'tooth_map_payload' => array_key_exists('tooth_map_payload', $proposed) ? $proposed['tooth_map_payload'] : $chart->tooth_map_payload,
+        ];
 
         $rules = [];
         foreach ((new UpdateOdontogramPlaceholderRequest)->rules() as $key => $rule) {
@@ -1123,9 +1198,9 @@ final class RmeAmendmentService
         $toothKeys = $this->toothKeys();
         $conditionValues = $this->conditionValues($rules);
 
-        $validator = Validator::make(['proposed' => $proposed], $rules);
-        $validator->after(function ($v) use ($proposed, $toothKeys, $conditionValues): void {
-            $map = $proposed['tooth_map_payload'] ?? null;
+        $validator = Validator::make(['proposed' => $merged], $rules);
+        $validator->after(function ($v) use ($merged, $toothKeys, $conditionValues): void {
+            $map = $merged['tooth_map_payload'] ?? null;
             if (! is_array($map)) {
                 return;
             }
@@ -1182,9 +1257,9 @@ final class RmeAmendmentService
             'tooth_map_payload' => $chart->tooth_map_payload,
         ];
         $after = [
-            'summary_notes' => array_key_exists('summary_notes', $proposed) ? $this->text($proposed['summary_notes']) : $current['summary_notes'],
-            'additional_conditions' => array_key_exists('additional_conditions', $proposed) ? $this->text($proposed['additional_conditions']) : $current['additional_conditions'],
-            'tooth_map_payload' => array_key_exists('tooth_map_payload', $proposed) ? $proposed['tooth_map_payload'] : $current['tooth_map_payload'],
+            'summary_notes' => $this->text($merged['summary_notes']),
+            'additional_conditions' => $this->text($merged['additional_conditions']),
+            'tooth_map_payload' => $merged['tooth_map_payload'],
         ];
 
         // "Changes nothing" is judged on what the reviewer sees (chartDiff()), so an
@@ -1253,7 +1328,7 @@ final class RmeAmendmentService
         foreach (['summary_notes' => 'Ringkasan', 'additional_conditions' => 'Kondisi tambahan'] as $key => $label) {
             $from = $this->text($before[$key] ?? null);
             $to = $this->text($after[$key] ?? null);
-            $notes[] = ['label' => $label, 'before' => $from, 'after' => $to, 'changed' => $from !== $to];
+            $notes[] = ['label' => $label, 'before' => $from, 'after' => $to, 'changed' => $this->comparable($from) !== $this->comparable($to)];
         }
 
         return ['rows' => $rows, 'notes' => $notes];
@@ -1348,6 +1423,14 @@ final class RmeAmendmentService
     }
 
     /** A textarea value as stored: LF line endings, empty is null. */
+    /** A text as compared for "did it change": line endings normalised, surrounding whitespace ignored. */
+    private function comparable(mixed $value): ?string
+    {
+        $text = $this->text($value);
+
+        return $text === null ? null : trim($text);
+    }
+
     private function text(mixed $value): ?string
     {
         if ($value === null) {

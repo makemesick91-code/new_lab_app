@@ -26,10 +26,6 @@
             </x-slot:actions>
         </x-ui.page-header>
 
-        @if (! $chainVerified)
-            <x-ui.alert variant="warning">Rantai hash riwayat versi ini tidak cocok. Laporkan ke Supervisor RME.</x-ui.alert>
-        @endif
-
         @if ($versions->isEmpty())
             <x-ui.empty-state title="Belum ada versi" description="Versi pertama ditulis saat rekam medis difinalkan, atau saat amandemen pertama diajukan untuk rekam medis yang difinalkan sebelum aturan amandemen." />
         @else

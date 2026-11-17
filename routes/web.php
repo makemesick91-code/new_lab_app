@@ -1597,16 +1597,20 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
     | history of a final sheet or a finalized chart, read like the record itself:
     | the clinic-visit read permission here, the record's own `view` policy in
     | RmeAmendmentService (404 outside its scope), private and no-store.
+    | `{medicalRecord}` / `{odontogram}` are governed keys, constrained globally
+    | (DatabaseRouteKey, AIR-RMC-37: never per route); `{amendment}` takes the
+    | bigint key pattern per route and `{version}` a 1-based int4 number (the
+    | PAGE_NUMBER_PATTERN bounds), so an out-of-range segment is a 404, never a 500.
     */
     Route::middleware(['permission:view_clinic_visits|manage_clinic_visits', 'cache.headers:private;no_store;max_age=0'])->group(function () {
         Route::get('medical-records/{medicalRecord}/versions', [RmeAmendmentController::class, 'sheetVersions'])
-            ->whereNumber('medicalRecord')->name('amendments.versions.sheet');
+            ->name('amendments.versions.sheet');
         Route::get('medical-records/{medicalRecord}/versions/{version}', [RmeAmendmentController::class, 'sheetVersion'])
-            ->whereNumber(['medicalRecord', 'version'])->name('amendments.versions.sheet.show');
+            ->where('version', DatabaseRouteKey::PAGE_NUMBER_PATTERN)->name('amendments.versions.sheet.show');
         Route::get('odontograms/{odontogram}/versions', [RmeAmendmentController::class, 'chartVersions'])
-            ->whereNumber('odontogram')->name('amendments.versions.chart');
+            ->name('amendments.versions.chart');
         Route::get('odontograms/{odontogram}/versions/{version}', [RmeAmendmentController::class, 'chartVersion'])
-            ->whereNumber(['odontogram', 'version'])->name('amendments.versions.chart.show');
+            ->where('version', DatabaseRouteKey::PAGE_NUMBER_PATTERN)->name('amendments.versions.chart.show');
     });
 
     /*

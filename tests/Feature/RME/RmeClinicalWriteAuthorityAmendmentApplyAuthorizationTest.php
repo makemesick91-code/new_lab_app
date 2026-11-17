@@ -29,6 +29,8 @@ use App\Modules\MedicalRecord\Models\MedicalRecordHandwritingPage;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\RmeAmendment\Models\RmeAmendment;
 use App\Modules\RmeAmendment\Services\RmeAmendmentService;
+use Illuminate\Database\Events\QueryExecuted;
+use Illuminate\Support\Facades\Event;
 
 beforeEach(function () {
     seedAccessControl();
@@ -166,4 +168,45 @@ it('marks the RME print and the sheet page "Diamandemen 1×" once an amendment i
         ->assertOk()
         ->assertSee('Diamandemen 1×')
         ->assertSee(route('rme.amendments.versions.sheet', $sheet), false);
+});
+
+// ─── Review fixes (M3.3 PR5 review) ──────────────────────────────────────────
+
+it('answers 404, never a server error, for an out-of-range key or version number (LOW)', function () {
+    $sheet = m3azSheet();
+    $huge = '99999999999999999999';
+
+    foreach ([
+        "/rme/medical-records/{$sheet->id}/versions/{$huge}",
+        "/rme/medical-records/{$huge}/versions",
+        "/rme/medical-records/{$huge}/amendments/create",
+        "/rme/odontograms/{$huge}/versions",
+        "/rme/amendments/{$huge}",
+        "/rme/medical-records/{$sheet->id}/versions/0",
+    ] as $uri) {
+        $this->actingAs($this->supervisor)->get($uri)->assertNotFound();
+    }
+});
+
+it('loads the version list without a query per version for its author (LOW)', function () {
+    $sheet = m3azSheet();
+    app(RmeAmendmentService::class)->approve(m3azPending($sheet), $this->supervisor);
+    app(RmeAmendmentService::class)->approve(
+        app(RmeAmendmentService::class)->request($sheet->fresh(), $this->doctorUser, 'm3az koreksi kedua sheet', ['fields' => ['assessment' => 'm3az pulpitis akut']]),
+        userInRole('Supervisor RME'),
+    );
+
+    $userQueries = 0;
+    Event::listen(QueryExecuted::class, function ($q) use (&$userQueries): void {
+        $sql = strtolower($q->sql);
+        if (str_contains($sql, 'from "users"') && str_contains($sql, '"users"."id" in')) {
+            $userQueries++;
+        }
+    });
+
+    $this->actingAs($this->supervisor)->get(route('rme.amendments.versions.sheet', $sheet))
+        ->assertOk()
+        ->assertSee('data-version-row="3"', false);
+
+    expect($userQueries)->toBe(1);
 });

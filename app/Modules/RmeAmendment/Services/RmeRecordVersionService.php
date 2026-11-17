@@ -10,6 +10,7 @@ use App\Modules\MedicalRecord\Models\DiagnosisRequirementOverride;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\MedicalRecord\Models\MedicalRecordDiagnosis;
 use App\Modules\Odontogram\Models\Odontogram;
+use App\Modules\RmeAmendment\Interfaces\RmeAmendmentRepositoryInterface;
 use App\Modules\RmeAmendment\Interfaces\RmeRecordVersionRepositoryInterface;
 use App\Modules\RmeAmendment\Models\RmeRecordVersion;
 use Illuminate\Support\Collection;
@@ -54,6 +55,7 @@ final class RmeRecordVersionService
     public function __construct(
         private readonly RmeRecordVersionRepositoryInterface $versions,
         private readonly MedicalRecordHandwritingRepositoryInterface $handwritings,
+        private readonly RmeAmendmentRepositoryInterface $amendments,
     ) {}
 
     /**
@@ -109,6 +111,18 @@ final class RmeRecordVersionService
         [$type, $id] = $this->subjectKey($subject);
 
         return $this->versions->countKind($type, $id, RmeRecordVersion::KIND_AMENDMENT);
+    }
+
+    /**
+     * Applied-amendment counts of every finalized chart of the patient a visit
+     * belongs to, keyed by chart id (zero included) — one grouped read for a
+     * whole odontogram history list instead of one count per chart.
+     *
+     * @return array<int, int>
+     */
+    public function chartAmendmentCountsForPatientOfVisit(int $clinicVisitId): array
+    {
+        return $this->amendments->chartAmendmentCountsForPatientOfVisit($clinicVisitId);
     }
 
     /**

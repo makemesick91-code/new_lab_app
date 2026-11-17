@@ -342,7 +342,9 @@ defaults the owner accepted on 2026-11-17) are in `docs/sprints/dms-rme-comprehe
    `trx_rme_amd_one_pending_uq` (a raced check) is rolled back to the savepoint and refused cleanly with the
    "already pending" message. Nothing in the record changes; the §1 lock keeps refusing direct edits.
    - *Sheet proposal:* `fields` — only the SOAP fields and notes (`SHEET_FIELDS`), line endings normalised, empty =
-     null; only the fields that differ are stored, and only a changed field is bounded (≤ 10 000 characters).
+     null; only the fields that differ (surrounding whitespace ignored, as `TrimStrings` posts them) are stored,
+     and only a changed field is bounded (≤ 10 000 characters). Every value is type-checked before it is cast: an
+     array role (`MESSAGE_DIAGNOSIS_ROLE`), array notes or a non-digit id (`MESSAGE_DIAGNOSIS_ROW`) answer 422.
      `diagnoses` — `remove` (integer ids of THIS sheet's diagnoses) and `add` (≤ 10 rows with only
      `clinical_diagnosis_id`, `diagnosis_role`, `notes`: an ACTIVE master, a valid role, notes ≤ 500, not already on
      the sheet unless removed in the same proposal; an untouched form row naming no diagnosis is ignored); at most
@@ -350,7 +352,9 @@ defaults the owner accepted on 2026-11-17) are in `docs/sprints/dms-rme-comprehe
      (`DiagnosisRolloutService::assertFinalizationAllowed()`): on a `pilot_enforced` branch an active primary or a
      usable override must remain (`MESSAGE_PRIMARY_REQUIRED`); M3.3 PR5 must re-check it when applying.
    - *Chart proposal:* the whole proposed chart (`summary_notes`, `additional_conditions`, `tooth_map_payload`;
-     an absent key keeps the current value), validated with the rules of a chart save — the rules of
+     an absent key keeps the current value). The chart AFTER the change — absent keys filled from the current
+     chart — is what is validated (M3.3 PR5 review), so a request is never accepted that no approval could apply;
+     a null tooth map is refused only when it would erase one. Validated with the rules of a chart save — the rules of
      `UpdateOdontogramPlaceholderRequest` are the source of truth (fields, statuses, conditions, lengths), plus FDI
      numbers, no duplicate condition, only `teeth` in the tooth map and only the per-tooth keys that request
      validates (every tooth an object). Sizes are therefore bounded like a chart save (52 FDI teeth, fixed
@@ -449,8 +453,16 @@ defaults the owner accepted on 2026-11-17) are in `docs/sprints/dms-rme-comprehe
    `RmeAmendmentRepositoryInterface::applySheetDiagnoses()` (removed rows soft-deleted, this sheet's only; added
    rows diagnosed by the requester, created by the approver). A chart: the whole proposed chart through
    `OdontogramRepositoryInterface::updatePlaceholder()`. Status, `finalized_at` and `finalized_by` never change.
-   Not run on apply: the SATUSEHAT diagnosis audit/candidate refresh of `MedicalRecordDiagnosisService` (gateway
-   disabled; the re-submission policy of an amended record is an open owner decision).
+   `applySheetDiagnoses()` itself refuses (LogicException) outside a transaction or on a sheet that is not final.
+   **SATUSEHAT:** every apply refreshes the visit's existing SATUSEHAT candidate after commit, so drift revokes an
+   approval (`source_changed`, `revoked_at`, review back to pending) — the conservative direction; it decides no
+   re-submission policy (gateway disabled; that policy is an open owner decision). A saved sheet row is refreshed
+   by `SatusehatMedicalRecordObserver` (after commit, so it reads the diagnoses written by the same apply);
+   `RmeAmendmentService` refreshes, as `MedicalRecordDiagnosisService::refreshCandidate()` does, after a
+   diagnosis-only apply, after a chart apply (the chart feeds the dental readiness) and whenever that observer is
+   off (`satusehat.candidate.auto_generate`) — never twice, because a second refresh would overwrite the
+   `source_changed` readiness of the first. Not run: the per-diagnosis SATUSEHAT audit events of
+   `MedicalRecordDiagnosisService`.
 4. **The next version.** `RmeRecordVersionService::recordAmendment()` writes version n+1 (`amendment`) of the
    changed record, `previous_hash` = the base version's hash, through the one writer (§5.6); it refuses unless the
    given version is still the latest. The snapshot's pages name the patient's live encounter, as the baseline
@@ -472,11 +484,17 @@ defaults the owner accepted on 2026-11-17) are in `docs/sprints/dms-rme-comprehe
    with ids only and changes nothing.
 7. **Markers and pages.** "Diamandemen n×" (`amendmentCount()`, the applied amendments counted from the versions)
    on the RME print and PDF (`ClinicVisitPrintDataBuilder`, shared with the oversight print), on the odontogram
-   print (`OdontogramPrintFormatter::format()['amendment_count']`, shared with the oversight odontogram print),
+   print (`OdontogramPrintFormatter::format()['amendment_count']`, shared with the oversight odontogram print; the
+   counts of all the patient's finalized charts are read in one grouped query per formatter, so the odontogram
+   history list does not count per chart),
    and in the "Amandemen" block of the final sheet and chart pages, with a link to the version history. Version
-   history: `rme.amendments.versions.sheet|chart` (list) and `...show` (one version beside the previous one),
-   behind `permission:view_clinic_visits|manage_clinic_visits` and `private, no-store`; the record's own `view`
-   policy decides (404 outside its scope). A sheet version shows its fields (changed ones marked), diagnoses,
+   history: `rme.amendments.versions.sheet|chart` (list: number, kind, author, time — no snapshot, authors
+   eager-loaded) and `...show` (one version beside the previous one), behind
+   `permission:view_clinic_visits|manage_clinic_visits` and `private, no-store`; the record's own `view` policy
+   decides (404 outside its scope). Route keys: `{medicalRecord}` and `{odontogram}` are governed and constrained
+   globally (AIR-RMC-37 — the per-route `whereNumber` of M3.3 PR4 is removed, it widened the global pattern);
+   `{amendment}` takes `DatabaseRouteKey::PATTERN` per route and `{version}` `DatabaseRouteKey::PAGE_NUMBER_PATTERN`
+   (a 1-based int4 number), so an out-of-range segment answers 404, never 500. A sheet version shows its fields (changed ones marked), diagnoses,
    emergency overrides and its locked pages — each only as the existing policy-gated, no-store page route
    (`rme.handwritings.image` for page 1, `rme.handwriting-pages.image` for pages 2+), never an object key; a chart
    version shows the §6 tooth-by-tooth diff against the previous version. The detail page offers "Setujui dan
@@ -487,7 +505,15 @@ defaults the owner accepted on 2026-11-17) are in `docs/sprints/dms-rme-comprehe
    version number is also UNIQUE per subject. Proven in-process with stale model copies and the PostgreSQL lock
    order (visit → sheet → amendment → the record write); a separate probe connection cannot see the test's own
    uncommitted rows, so a two-connection race needs the multi-process harness and is not part of this suite.
-9. **Tests (§3).** Apply writes exactly the proposal (fields, a field cleared, diagnoses removed and added), keeps
+9. **Tests (§3).** Review fixes: SATUSEHAT — a diagnosis-only apply and a chart apply revoke an approved candidate,
+   a notes apply still does (through the observer, once), and so does a field apply with the observer off; a
+   malformed diagnosis row (array role, array notes, `'<id>abc'`, a nested removal id) refused with its constant,
+   never a 500; surrounding whitespace is not a change; `MESSAGE_PROPOSAL_CHANGED` and `MESSAGE_NOT_FINAL` at
+   apply; an added diagnosis diagnosed by the requester and created by the approver; `applySheetDiagnoses()`
+   refused outside a transaction and on a draft; a chart request whose merged after-state fails today's rules
+   refused at request time; the history list counting amendments once per patient; the version list loading its
+   authors in one query; out-of-range keys and version numbers answering 404; each lock-order statement found.
+   Apply writes exactly the proposal (fields, a field cleared, diagnoses removed and added), keeps
    the record final with its finalizer, chains version 2 to the baseline with `verifyChain()` true and counts one
    amendment; the lock still refuses a normal edit after apply; a stale base refused with nothing written; the
    approve matrix (requester, finalizer, no permission, Super Admin on their own request refused; Super Admin

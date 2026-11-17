@@ -21,6 +21,7 @@ use App\Modules\Branch\Models\Branch;
 use App\Modules\ClinicRoom\Models\ClinicRoom;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Doctor\Models\Doctor;
+use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\Odontogram\Models\Odontogram;
 use App\Modules\Odontogram\Services\OdontogramService;
 use App\Modules\Patient\Models\Patient;
@@ -28,6 +29,10 @@ use App\Modules\RmeAmendment\Models\RmeAmendment;
 use App\Modules\RmeAmendment\Models\RmeRecordVersion;
 use App\Modules\RmeAmendment\Services\RmeAmendmentService;
 use App\Modules\RmeAmendment\Services\RmeRecordVersionService;
+use App\Modules\Satusehat\Models\SatusehatCandidate;
+use App\Modules\Satusehat\Services\SatusehatCandidateService;
+use Illuminate\Database\Events\QueryExecuted;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Validation\ValidationException;
 
 beforeEach(function () {
@@ -146,4 +151,75 @@ it('shows a chart version against the previous one with the changed tooth marked
         ->assertSeeInOrder(['m3aq catatan lama', 'm3aq catatan baru']);
 
     $this->actingAs($this->supervisor)->get(route('rme.amendments.versions.chart.show', [$chart, 9]))->assertNotFound();
+});
+
+// ─── Review fixes (M3.3 PR5 review) ──────────────────────────────────────────
+
+it('revokes an approved SATUSEHAT candidate after a chart apply: the chart feeds its dental readiness (MEDIUM)', function () {
+    $chart = m3aqChart();
+    // A candidate needs the visit's final sheet.
+    $sheet = MedicalRecord::factory()->create([
+        'clinic_visit_id' => $chart->clinic_visit_id,
+        'branch_id' => $chart->branch_id,
+        'patient_id' => $this->patient->id,
+        'doctor_id' => $this->doctor->id,
+    ]);
+    $sheet->forceFill(['status' => MedicalRecord::STATUS_FINAL, 'finalized_at' => now()->subDay(), 'finalized_by' => $this->doctorUser->id])->save();
+    $candidate = app(SatusehatCandidateService::class)->generateForVisit($chart->clinicVisit()->firstOrFail());
+    $candidate->forceFill([
+        'review_status' => SatusehatCandidate::REVIEW_APPROVED,
+        'approved_source_hash' => $candidate->source_hash,
+        'approved_dental_source_hash' => $candidate->dental_source_hash,
+    ])->save();
+
+    app(RmeAmendmentService::class)->approve(
+        app(RmeAmendmentService::class)->request($chart, $this->doctorUser, 'm3aq diagnosis gigi 36 salah', m3aqProposal()),
+        $this->supervisor,
+    );
+
+    $fresh = $candidate->fresh();
+    expect($fresh->dental_readiness_status)->toBe(SatusehatCandidate::DENTAL_SOURCE_CHANGED)
+        ->and($fresh->readiness_status)->toBe(SatusehatCandidate::READINESS_SOURCE_CHANGED)
+        ->and($fresh->revoked_at)->not->toBeNull();
+});
+
+it('validates the whole chart after the change at request time, so an accepted request can be approved (LOW)', function () {
+    $chart = m3aqChart();
+    // A chart saved under older rules: a per-tooth key the chart save no longer validates.
+    $chart->forceFill(['tooth_map_payload' => ['teeth' => ['36' => ['status' => 'caries', 'x_legacy' => 'lama']]]])->save();
+
+    try {
+        app(RmeAmendmentService::class)->request($chart->fresh(), $this->doctorUser, 'm3aq ringkasan saja dikoreksi', ['summary_notes' => 'm3aq ringkasan baru']);
+        $this->fail('Expected a refusal, the request was accepted.');
+    } catch (ValidationException $e) {
+        expect(collect($e->errors())->flatten()->implode(' '))->toContain(RmeAmendmentService::MESSAGE_TOOTH_FIELD);
+    }
+
+    expect(RmeAmendment::query()->count())->toBe(0);
+});
+
+it('counts the amendments of a patient\'s charts once for the whole history list, not per chart (LOW)', function () {
+    $countQueries = function (int $historyCharts): int {
+        foreach (range(1, $historyCharts) as $i) {
+            m3aqChart();
+        }
+        $current = m3aqChart();
+        $queries = 0;
+        Event::listen(QueryExecuted::class, function (QueryExecuted $q) use (&$queries): void {
+            $sql = strtolower($q->sql);
+            if (str_contains($sql, 'from "trx_rme_record_versions"') && str_contains($sql, 'count(')) {
+                $queries++;
+            }
+        });
+
+        $this->actingAs($this->doctorUser)->get(route('rme.visits.odontogram.show', $current->clinicVisit))->assertOk();
+
+        return $queries;
+    };
+
+    $few = $countQueries(1);
+    Event::forget(QueryExecuted::class);
+    $many = $countQueries(4);
+
+    expect($many)->toBe($few);
 });

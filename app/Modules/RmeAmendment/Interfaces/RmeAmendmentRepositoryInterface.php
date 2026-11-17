@@ -10,6 +10,8 @@ use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\MedicalRecord\Models\MedicalRecordDiagnosis;
 use App\Modules\Odontogram\Models\Odontogram;
 use App\Modules\RmeAmendment\Models\RmeAmendment;
+use App\Modules\RmeAmendment\Models\RmeRecordVersion;
+use App\Modules\Satusehat\Models\SatusehatCandidate;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
 
@@ -62,11 +64,31 @@ interface RmeAmendmentRepositoryInterface
      * locked sheet: soft-delete the removed rows (this sheet's only), then add the
      * new ones. Only RmeAmendmentService::approve() calls it, inside its
      * transaction; the normal diagnosis writes stay refused on a final sheet.
+     * Refuses (LogicException) outside a transaction or on a sheet that is not final.
      *
      * @param  list<array{clinical_diagnosis_id: int, diagnosis_role: string, notes: ?string}>  $add
      * @param  list<int>  $remove
      */
     public function applySheetDiagnoses(MedicalRecord $sheet, array $add, array $remove, int $diagnosedBy, int $createdBy): void;
+
+    /** The SATUSEHAT candidate of a visit, if one was generated (rule 240 §7.3: refreshed after an apply). */
+    public function satusehatCandidateForVisit(int $clinicVisitId): ?SatusehatCandidate;
+
+    /**
+     * Applied-amendment counts of every finalized chart of the patient a visit
+     * belongs to, in two queries (zero included) — the odontogram history list
+     * renders one marker per chart.
+     *
+     * @return array<int, int> keyed by odontogram id
+     */
+    public function chartAmendmentCountsForPatientOfVisit(int $clinicVisitId): array;
+
+    /**
+     * The version list of a subject without the snapshots, authors eager-loaded.
+     *
+     * @return Collection<int, RmeRecordVersion>
+     */
+    public function versionSummaries(string $subjectType, int $subjectId): Collection;
 
     /** @return Collection<int, User> accounts holding the permission (directly or by role), by id */
     public function approverCandidates(string $permission): Collection;

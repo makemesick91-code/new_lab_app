@@ -33,10 +33,13 @@ use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\MedicalRecord\Models\MedicalRecordDiagnosis;
 use App\Modules\MedicalRecord\Services\MedicalRecordService;
 use App\Modules\Patient\Models\Patient;
+use App\Modules\RmeAmendment\Interfaces\RmeAmendmentRepositoryInterface;
 use App\Modules\RmeAmendment\Models\RmeAmendment;
 use App\Modules\RmeAmendment\Models\RmeRecordVersion;
 use App\Modules\RmeAmendment\Services\RmeAmendmentService;
 use App\Modules\RmeAmendment\Services\RmeRecordVersionService;
+use App\Modules\Satusehat\Models\SatusehatCandidate;
+use App\Modules\Satusehat\Services\SatusehatCandidateService;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -237,7 +240,7 @@ it('re-validates the proposal under today\'s rules when applying (LOW-3 gate, in
     $master = ClinicalDiagnosis::factory()->create(['code' => 'K05.0', 'status' => ClinicalDiagnosis::STATUS_ACTIVE]);
     $second = m3apRequest($sheet->fresh(), ['diagnoses' => ['add' => [['clinical_diagnosis_id' => $master->id, 'diagnosis_role' => 'secondary']]]]);
     $master->forceFill(['status' => ClinicalDiagnosis::STATUS_DEPRECATED])->save();
-    expect(m3apRefusal(fn () => m3apService()->approve($second, $this->supervisor)))->not->toBe('')
+    expect(m3apRefusal(fn () => m3apService()->approve($second, $this->supervisor)))->toContain(RmeAmendmentService::MESSAGE_MASTER_INACTIVE)
         ->and($second->fresh()->status)->toBe(RmeAmendment::STATUS_PENDING);
 });
 
@@ -342,13 +345,144 @@ it('locks the visit, then the sheet, then the amendment before applying (Postgre
 
     m3apService()->approve($amendment, $this->supervisor);
 
-    $at = fn (callable $match): int => (int) collect($sql)->search(fn ($s) => $match($s));
+    $at = fn (callable $match): int|false => collect($sql)->search(fn ($s) => $match($s));
     $visit = $at(fn ($s) => str_contains($s, 'from "trx_clinic_visits"') && str_contains($s, 'for no key update'));
     $record = $at(fn ($s) => str_contains($s, 'from "trx_medical_records"') && str_contains($s, 'for no key update'));
     $row = $at(fn ($s) => str_contains($s, 'from "trx_rme_amendments"') && str_contains($s, 'for update'));
     $write = $at(fn ($s) => str_starts_with($s, 'update "trx_medical_records"'));
 
-    expect($visit)->toBeLessThan($record)
+    // Each statement is found (search() answers false, never 0, when it is not).
+    expect($visit)->toBeInt()
+        ->and($record)->toBeInt()
+        ->and($row)->toBeInt()
+        ->and($write)->toBeInt()
+        ->and($visit)->toBeLessThan($record)
         ->and($record)->toBeLessThan($row)
         ->and($row)->toBeLessThan($write);
 })->skip(fn () => DB::connection()->getDriverName() !== 'pgsql', 'PostgreSQL row locks');
+
+// ─── Review fixes (M3.3 PR5 review) ──────────────────────────────────────────
+
+/** An APPROVED SATUSEHAT candidate of the sheet's (completed) visit, pinned to today's source. */
+function m3apApprovedCandidate(MedicalRecord $sheet): SatusehatCandidate
+{
+    $candidate = app(SatusehatCandidateService::class)->generateForVisit($sheet->clinicVisit()->firstOrFail());
+    expect($candidate)->not->toBeNull();
+    $candidate->forceFill([
+        'review_status' => SatusehatCandidate::REVIEW_APPROVED,
+        'approved_source_hash' => $candidate->source_hash,
+        'approved_dental_source_hash' => $candidate->dental_source_hash,
+        'revoked_at' => null,
+    ])->save();
+
+    return $candidate->fresh();
+}
+
+it('revokes an approved SATUSEHAT candidate after a diagnosis-only apply, as a diagnosis write does (MEDIUM)', function () {
+    $sheet = m3apSheet();
+    $candidate = m3apApprovedCandidate($sheet);
+    $master = ClinicalDiagnosis::factory()->create(['code' => 'K02.9', 'status' => ClinicalDiagnosis::STATUS_ACTIVE]);
+
+    m3apService()->approve(m3apRequest($sheet, ['diagnoses' => ['add' => [['clinical_diagnosis_id' => $master->id, 'diagnosis_role' => 'secondary']]]]), $this->supervisor);
+
+    $fresh = $candidate->fresh();
+    expect($fresh->readiness_status)->toBe(SatusehatCandidate::READINESS_SOURCE_CHANGED)
+        ->and($fresh->review_status)->toBe(SatusehatCandidate::REVIEW_PENDING)
+        ->and($fresh->revoked_at)->not->toBeNull()
+        ->and($fresh->source_hash)->not->toBe($candidate->approved_source_hash);
+});
+
+it('revokes an approved SATUSEHAT candidate after a notes apply, as before (MEDIUM)', function () {
+    $sheet = m3apSheet();
+    $candidate = m3apApprovedCandidate($sheet);
+
+    m3apService()->approve(m3apRequest($sheet, ['fields' => ['notes' => 'm3ap catatan dikoreksi']]), $this->supervisor);
+
+    expect($candidate->fresh()->readiness_status)->toBe(SatusehatCandidate::READINESS_SOURCE_CHANGED)
+        ->and($candidate->fresh()->revoked_at)->not->toBeNull();
+});
+
+it('answers a malformed diagnosis row with its refusal, never a server error (LOW)', function () {
+    $sheet = m3apSheet();
+    $onSheet = m3apDiagnosis($sheet, 'K04.7', MedicalRecordDiagnosis::ROLE_SECONDARY);
+    $master = ClinicalDiagnosis::factory()->create(['code' => 'K04.8', 'status' => ClinicalDiagnosis::STATUS_ACTIVE]);
+    $add = fn (array $row) => m3apRequest($sheet, ['diagnoses' => ['add' => [$row]]]);
+
+    expect(m3apRefusal(fn () => $add(['clinical_diagnosis_id' => $master->id, 'diagnosis_role' => ['primary']])))->toContain(RmeAmendmentService::MESSAGE_DIAGNOSIS_ROLE)
+        ->and(m3apRefusal(fn () => $add(['clinical_diagnosis_id' => $master->id, 'diagnosis_role' => 'secondary', 'notes' => ['x']])))->toContain(RmeAmendmentService::MESSAGE_DIAGNOSIS_ROW)
+        ->and(m3apRefusal(fn () => $add(['clinical_diagnosis_id' => null, 'diagnosis_role' => 'secondary', 'notes' => ['x']])))->toContain(RmeAmendmentService::MESSAGE_DIAGNOSIS_ROW)
+        // (int) '<id>abc' would name a real master; the digits-only check refuses it.
+        ->and(m3apRefusal(fn () => $add(['clinical_diagnosis_id' => $master->id.'abc', 'diagnosis_role' => 'secondary'])))->toContain(RmeAmendmentService::MESSAGE_DIAGNOSIS_ROW)
+        ->and(m3apRefusal(fn () => m3apRequest($sheet, ['diagnoses' => ['remove' => [[$onSheet->id]]]])))->toContain(RmeAmendmentService::MESSAGE_DIAGNOSIS_NOT_ON_SHEET)
+        ->and(RmeAmendment::query()->count())->toBe(0);
+});
+
+it('does not count surrounding whitespace as a change (LOW)', function () {
+    $sheet = m3apSheet();
+    DB::table('trx_medical_records')->where('id', $sheet->id)->update(['plan' => "m3ap rencana awal\n"]);
+
+    expect(m3apRefusal(fn () => m3apRequest($sheet->fresh(), ['fields' => ['assessment' => 'm3ap pulpitis   ', 'plan' => 'm3ap rencana awal']])))->toContain(RmeAmendmentService::MESSAGE_NO_CHANGE)
+        ->and(RmeAmendment::query()->count())->toBe(0);
+});
+
+it('refuses at apply a proposal the record no longer matches, and a record that is no longer final', function () {
+    $sheet = m3apSheet();
+    $amendment = m3apRequest($sheet, ['fields' => ['assessment' => 'm3ap pulpitis ireversibel', 'plan' => 'm3ap rencana baru']]);
+
+    // Out of band, one of the two changes is already on the record: what would be
+    // applied is no longer what was approved.
+    DB::table('trx_medical_records')->where('id', $sheet->id)->update(['plan' => 'm3ap rencana baru']);
+    expect(m3apRefusal(fn () => m3apService()->approve($amendment, $this->supervisor)))->toContain(RmeAmendmentService::MESSAGE_PROPOSAL_CHANGED)
+        ->and($amendment->fresh()->status)->toBe(RmeAmendment::STATUS_PENDING);
+
+    DB::table('trx_medical_records')->where('id', $sheet->id)->update(['status' => MedicalRecord::STATUS_DRAFT]);
+    expect(m3apRefusal(fn () => m3apService()->approve($amendment, $this->supervisor)))->toContain(RmeAmendmentService::MESSAGE_NOT_FINAL)
+        ->and($amendment->fresh()->status)->toBe(RmeAmendment::STATUS_PENDING);
+});
+
+it('records an added diagnosis as diagnosed by the requester and created by the approver', function () {
+    $sheet = m3apSheet();
+    $master = ClinicalDiagnosis::factory()->create(['code' => 'K02.5', 'status' => ClinicalDiagnosis::STATUS_ACTIVE]);
+    m3apService()->approve(m3apRequest($sheet, ['diagnoses' => ['add' => [['clinical_diagnosis_id' => $master->id, 'diagnosis_role' => 'secondary']]]]), $this->supervisor);
+
+    $added = MedicalRecordDiagnosis::query()->where('medical_record_id', $sheet->id)->sole();
+    expect((int) $added->diagnosed_by)->toBe((int) $this->doctorUser->id)
+        ->and((int) $added->created_by)->toBe((int) $this->supervisor->id);
+});
+
+it('writes the diagnosis part of an apply only inside a transaction and only on a final sheet (INFO)', function () {
+    $repository = app(RmeAmendmentRepositoryInterface::class);
+    $sheet = m3apSheet();
+    $row = ['clinical_diagnosis_id' => ClinicalDiagnosis::factory()->create(['status' => ClinicalDiagnosis::STATUS_ACTIVE])->id, 'diagnosis_role' => 'secondary', 'notes' => null];
+
+    // Outside a transaction: RefreshDatabase wraps the test in one on the default
+    // connection, so a second connection (none open) stands for such a caller —
+    // the technique of the PR3 baseline test. The guard runs before any query.
+    $default = config('database.default');
+    config()->set('database.connections.m3ap_plain', config('database.connections.'.$default));
+    config()->set('database.default', 'm3ap_plain');
+    DB::purge('m3ap_plain');
+    try {
+        expect(DB::transactionLevel())->toBe(0)
+            ->and(fn () => $repository->applySheetDiagnoses($sheet, [$row], [], $this->doctorUser->id, $this->supervisor->id))->toThrow(LogicException::class);
+    } finally {
+        config()->set('database.default', $default);
+        DB::purge('m3ap_plain');
+    }
+
+    $draft = m3apSheet();
+    $draft->forceFill(['status' => MedicalRecord::STATUS_DRAFT, 'finalized_at' => null, 'finalized_by' => null])->save();
+    expect(fn () => DB::transaction(fn () => $repository->applySheetDiagnoses($draft->fresh(), [$row], [], $this->doctorUser->id, $this->supervisor->id)))->toThrow(LogicException::class)
+        ->and(MedicalRecordDiagnosis::query()->count())->toBe(0);
+});
+
+it('still refreshes the candidate after a field apply when the sheet observer is switched off (MEDIUM)', function () {
+    $sheet = m3apSheet();
+    $candidate = m3apApprovedCandidate($sheet);
+    config()->set('satusehat.candidate.auto_generate', false);
+
+    m3apService()->approve(m3apRequest($sheet, ['fields' => ['notes' => 'm3ap catatan dikoreksi']]), $this->supervisor);
+
+    expect($candidate->fresh()->readiness_status)->toBe(SatusehatCandidate::READINESS_SOURCE_CHANGED)
+        ->and($candidate->fresh()->revoked_at)->not->toBeNull();
+});

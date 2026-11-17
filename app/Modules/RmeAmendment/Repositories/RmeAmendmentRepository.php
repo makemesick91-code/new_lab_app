@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Modules\RmeAmendment\Repositories;
 
 use App\Models\User;
+use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\MedicalRecord\Models\ClinicalDiagnosis;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
@@ -13,8 +14,11 @@ use App\Modules\Odontogram\Models\Odontogram;
 use App\Modules\RmeAmendment\Interfaces\RmeAmendmentRepositoryInterface;
 use App\Modules\RmeAmendment\Models\RmeAmendment;
 use App\Modules\RmeAmendment\Models\RmeRecordVersion;
+use App\Modules\Satusehat\Models\SatusehatCandidate;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
+use LogicException;
 use Spatie\Permission\Models\Permission;
 
 class RmeAmendmentRepository implements RmeAmendmentRepositoryInterface
@@ -101,6 +105,15 @@ class RmeAmendmentRepository implements RmeAmendmentRepositoryInterface
 
     public function applySheetDiagnoses(MedicalRecord $sheet, array $add, array $remove, int $diagnosedBy, int $createdBy): void
     {
+        // Like the version writer: only inside the apply transaction, only on a final sheet.
+        if (DB::transactionLevel() < 1) {
+            throw new LogicException('The diagnoses of an amendment are applied only inside the apply transaction.');
+        }
+
+        if ($sheet->status !== MedicalRecord::STATUS_FINAL) {
+            throw new LogicException('An amendment is applied only to a final sheet.');
+        }
+
         if ($remove !== []) {
             MedicalRecordDiagnosis::query()
                 ->where('medical_record_id', (int) $sheet->getKey())
@@ -122,6 +135,54 @@ class RmeAmendmentRepository implements RmeAmendmentRepositoryInterface
                 'created_by' => $createdBy,
             ]);
         }
+    }
+
+    public function satusehatCandidateForVisit(int $clinicVisitId): ?SatusehatCandidate
+    {
+        return SatusehatCandidate::query()->where('clinic_visit_id', $clinicVisitId)->first();
+    }
+
+    public function chartAmendmentCountsForPatientOfVisit(int $clinicVisitId): array
+    {
+        $chartIds = Odontogram::query()
+            ->where('status', Odontogram::STATUS_FINALIZED)
+            ->whereIn('clinic_visit_id', ClinicVisit::query()
+                ->select('id')
+                ->where('patient_id', ClinicVisit::query()->select('patient_id')->whereKey($clinicVisitId)))
+            ->pluck('id')
+            ->map(fn ($id): int => (int) $id)
+            ->all();
+
+        if ($chartIds === []) {
+            return [];
+        }
+
+        $counts = RmeRecordVersion::query()
+            ->where('subject_type', RmeRecordVersion::SUBJECT_ODONTOGRAM)
+            ->where('kind', RmeRecordVersion::KIND_AMENDMENT)
+            ->whereIn('subject_id', $chartIds)
+            ->selectRaw('subject_id, count(*) as aggregate')
+            ->groupBy('subject_id')
+            ->pluck('aggregate', 'subject_id')
+            ->all();
+
+        $out = [];
+        foreach ($chartIds as $id) {
+            $out[$id] = (int) ($counts[$id] ?? 0);
+        }
+
+        return $out;
+    }
+
+    public function versionSummaries(string $subjectType, int $subjectId): Collection
+    {
+        return RmeRecordVersion::query()
+            ->select(['id', 'subject_type', 'subject_id', 'version', 'kind', 'created_by', 'created_at'])
+            ->with('creator:id,name')
+            ->where('subject_type', $subjectType)
+            ->where('subject_id', $subjectId)
+            ->orderBy('version')
+            ->get();
     }
 
     public function approverCandidates(string $permission): Collection

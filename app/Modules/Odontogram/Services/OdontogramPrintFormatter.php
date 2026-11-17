@@ -24,6 +24,9 @@ use App\Modules\RmeAmendment\Services\RmeRecordVersionService;
  */
 class OdontogramPrintFormatter
 {
+    /** @var array<int, int> applied-amendment counts by chart id, read once per patient */
+    private array $amendmentCounts = [];
+
     public function __construct(
         private readonly RmeRecordVersionService $versions,
     ) {}
@@ -123,10 +126,28 @@ class OdontogramPrintFormatter
             'table_rows' => $tableRows,
             'has_rows' => count($tableRows) > 0,
             'first_page_row_budget' => self::FIRST_PAGE_ROW_BUDGET,
-            'amendment_count' => $odontogram->exists && $odontogram->isFinalized()
-                ? $this->versions->amendmentCount($odontogram)
-                : 0,
+            'amendment_count' => $this->amendmentCountOf($odontogram),
         ];
+    }
+
+    /**
+     * The odontogram history formats every chart of the patient, so the counts of
+     * all the patient's finalized charts are read in one grouped query the first
+     * time and kept for this formatter (review LOW: never one count per chart).
+     */
+    private function amendmentCountOf(Odontogram $odontogram): int
+    {
+        if (! $odontogram->exists || ! $odontogram->isFinalized()) {
+            return 0;
+        }
+
+        $id = (int) $odontogram->getKey();
+        if (! array_key_exists($id, $this->amendmentCounts)) {
+            $this->amendmentCounts = $this->versions->chartAmendmentCountsForPatientOfVisit((int) $odontogram->clinic_visit_id) + $this->amendmentCounts;
+            $this->amendmentCounts[$id] ??= 0;
+        }
+
+        return $this->amendmentCounts[$id];
     }
 
     /**
