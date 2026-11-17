@@ -54,11 +54,18 @@ class LegacyOdontogramRecordPolicy
         return $user->canAny(self::READ_PERMISSIONS);
     }
 
-    public function view(User $user, LegacyOdontogramRecord $record): bool
+    /**
+     * Rule 243 §2.10 (PR A2) — with the encounter scope ON a Doctor outside an
+     * own in-service encounter with the patient is refused as NOT FOUND (404);
+     * with it OFF the answer is today's plain bool.
+     */
+    public function view(User $user, LegacyOdontogramRecord $record): Response|bool
     {
-        return $this->viewAny($user)
-            && $this->inScope($user, $record)
-            && $this->withinClinicalScope($user, $record);
+        if (! $this->viewAny($user) || ! $this->inScope($user, $record)) {
+            return false;
+        }
+
+        return $this->withinClinicalScope($user, $record);
     }
 
     /**
@@ -71,9 +78,11 @@ class LegacyOdontogramRecordPolicy
      * The row itself stays readable — retracted, not erased — so the metadata
      * and the void reason remain auditable.
      */
-    public function viewFile(User $user, LegacyOdontogramRecord $record): bool
+    public function viewFile(User $user, LegacyOdontogramRecord $record): Response|bool
     {
-        return $this->view($user, $record) && $record->isPublished();
+        $view = $this->view($user, $record);
+
+        return $view === true ? $record->isPublished() : $view;
     }
 
     /**
@@ -138,8 +147,13 @@ class LegacyOdontogramRecordPolicy
      * so the two can never drift into disagreeing about who is treating whom.
      * Non-doctor actors are unaffected: intake and governance tiers keep branch
      * scope plus their own named permissions.
+     *
+     * Rule 243 §2.10 (PR A2) — the answer is DoctorPatientScopeService's
+     * archive rule, shared with the controller's re-assertion and the history
+     * list: the same relationship with the encounter scope OFF, an own
+     * in-service encounter (read mode `history`) with it ON, 404 outside.
      */
-    private function withinClinicalScope(User $user, LegacyOdontogramRecord $record): bool
+    private function withinClinicalScope(User $user, LegacyOdontogramRecord $record): Response|bool
     {
         if (! $this->doctorScope->shouldApplyDoctorScope($user)) {
             return true;
@@ -149,10 +163,6 @@ class LegacyOdontogramRecordPolicy
             ? $record->patient
             : Patient::query()->find($record->patient_id);
 
-        if (! $patient instanceof Patient) {
-            return false;
-        }
-
-        return $this->doctorScope->doctorCanAccessPatient($user, $patient);
+        return $this->doctorScope->authorizeLegacyArchiveRead($user, $patient instanceof Patient ? $patient : null);
     }
 }

@@ -83,11 +83,14 @@ class LegacyOdontogramPatientHistoryService
         // 2. The treating relationship, for a doctor. Branch scope alone would
         //    make the archive broader than the native record: a same-branch
         //    doctor with no relationship to this patient cannot open their
-        //    native odontogram and must not list their archive either.
+        //    native odontogram and must not list their archive either. Rule 243
+        //    §2.10 (PR A2): the SAME answer the viewer policy asks, so with the
+        //    encounter scope ON the list shows the archive only inside an own
+        //    in-service encounter, exactly when the record itself is readable.
         if ($this->doctorScope->shouldApplyDoctorScope($user)) {
             $patient = Patient::query()->find($patientId);
 
-            if (! $patient instanceof Patient || ! $this->doctorScope->doctorCanAccessPatient($user, $patient)) {
+            if ($this->doctorScope->authorizeLegacyArchiveRead($user, $patient instanceof Patient ? $patient : null) !== true) {
                 return collect();
             }
         }

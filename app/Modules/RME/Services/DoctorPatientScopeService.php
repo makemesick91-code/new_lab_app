@@ -9,6 +9,7 @@ use App\Modules\Patient\Models\Patient;
 use App\Modules\RME\Models\PatientDoctorAssignment;
 use App\Modules\RmeOnlineContext\Services\DoctorUserResolver;
 use App\Services\Foundation\FeatureFlagService;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Auth\Access\Response;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Query\Builder as QueryBuilder;
@@ -33,7 +34,9 @@ use Illuminate\Http\Request;
  *  - writes only on the doctor's own in-service encounter
  *    ({@see doctorMayWriteVisit()}, {@see authorizeVisitWrite()}: 403
  *    "ditangani dokter lain");
- *  - every list scope stays the mirror image of its per-record check.
+ *  - every list scope stays the mirror image of its per-record check;
+ *  - the published legacy archives (PR A2) only in HISTORY
+ *    ({@see authorizeLegacyArchiveRead()}), 404 otherwise.
  *
  * This class stays the single authority: Owner, Super Admin and Supervisor RME
  * are exempt ({@see shouldApplyDoctorScope()}), whatever the flag.
@@ -274,6 +277,67 @@ class DoctorPatientScopeService
         }
 
         return true;
+    }
+
+    /**
+     * Rule 243 §2.10 (PR A2) — may this account read the patient's published
+     * LEGACY archive (legacy RME, legacy odontogram)? The one answer behind the
+     * archive policies' `view`/`viewFile`, their controllers' re-assertion and
+     * the archive lists (LegacyRmePatientHistoryService,
+     * LegacyOdontogramPatientHistoryService), so a list can never offer what
+     * the record refuses. The archive's branch gate (origin branch in
+     * DoctorClinicalBranchResolver's set) is the caller's and stays untouched.
+     *
+     * Flag OFF: today's answer exactly — the treating relationship of
+     * {@see doctorCanAccessPatient()} as a plain bool (the policy's 403).
+     * Flag ON: an archive is patient-level history, so a scoped Doctor reads it
+     * only in READ_HISTORY ({@see readModeFor()}, never re-derived); otherwise
+     * 404, so the archive's existence does not leak. An unlinked doctor account
+     * keeps its 403.
+     */
+    public function authorizeLegacyArchiveRead(User $user, ?Patient $patient): Response|bool
+    {
+        if (! $this->shouldApplyDoctorScope($user)) {
+            return true;
+        }
+
+        if (! $this->encounterScopeEnabled()) {
+            return $patient instanceof Patient && $this->doctorCanAccessPatient($user, $patient);
+        }
+
+        if ($this->resolveDoctorForUser($user) === null) {
+            return Response::deny(self::UNLINKED_MESSAGE);
+        }
+
+        if ($patient instanceof Patient && $this->readModeFor($user, (int) $patient->getKey()) === self::READ_HISTORY) {
+            return true;
+        }
+
+        return Response::denyAsNotFound(self::OUT_OF_SCOPE_MESSAGE);
+    }
+
+    /**
+     * Rule 243 §2.10 — the serving path's re-assertion of
+     * {@see authorizeLegacyArchiveRead()}, asked by the archive controllers
+     * after the policy, so a bypassed policy (a regression, `Gate::before`)
+     * still cannot serve a doctor outside the scope. Throws the same 404/403.
+     * A no-op with the flag OFF (A1's pattern for the service assertions): the
+     * policy stays today's only clinical gate there. The patient is loaded only
+     * when the rule applies, so other readers pay no query for it.
+     *
+     * @throws AuthorizationException
+     */
+    public function assertLegacyArchiveReadable(User $user, int $patientId): void
+    {
+        if (! $this->encounterScopeEnabled() || ! $this->shouldApplyDoctorScope($user)) {
+            return;
+        }
+
+        $decision = $this->authorizeLegacyArchiveRead($user, Patient::query()->find($patientId));
+
+        if ($decision !== true) {
+            ($decision instanceof Response ? $decision : Response::deny())->authorize();
+        }
     }
 
     public function authorizeVisitAccess(User $user, ClinicVisit $visit): Response|bool

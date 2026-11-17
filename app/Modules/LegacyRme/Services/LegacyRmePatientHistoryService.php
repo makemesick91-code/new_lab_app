@@ -82,10 +82,14 @@ class LegacyRmePatientHistoryService
         // through a real clinical relationship, so the archive of a patient
         // they are not treating is not theirs to list either — branch scope
         // alone would make the legacy history broader than the native one.
+        // Rule 243 §2.10 (PR A2): the SAME answer the viewer policy asks
+        // (DoctorPatientScopeService::authorizeLegacyArchiveRead), so with the
+        // encounter scope ON the list shows the archive only inside an own
+        // in-service encounter, exactly when the record itself is readable.
         if ($this->doctorScope->shouldApplyDoctorScope($user)) {
             $patient = Patient::query()->find($patientId);
 
-            if (! $patient instanceof Patient || ! $this->doctorScope->doctorCanAccessPatient($user, $patient)) {
+            if ($this->doctorScope->authorizeLegacyArchiveRead($user, $patient instanceof Patient ? $patient : null) !== true) {
                 return collect();
             }
         }

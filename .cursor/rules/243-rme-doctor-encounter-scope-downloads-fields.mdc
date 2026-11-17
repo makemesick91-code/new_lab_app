@@ -1,5 +1,5 @@
 ---
-description: DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M2.1/M2.2 + M2.4 + M3.1 (rule 243) — doctor encounter scope, no doctor downloads, doctor-visible fields. §1 (PR "B — downloads", owner revision of rule 93 §12, 2026-11-17) refuses a Doctor the legacy RME print/export/source PDF, the legacy odontogram source PDF and the PTM print through the one rule 138 print-deny authority (403, audited, ids only); doctors keep reading archives as inline page images; prescription print stays; Front Office, Admin Klinik and Supervisor RME keep printing. Not behind the encounter-scope flag. §2 (PR A1) adds the doctor encounter scope behind `rme.doctor_encounter_scope` (risky, default OFF): in-service window, read modes NONE/OWN/HISTORY, 404 out of scope, writes only on the own in-service encounter.
+description: DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M2.1/M2.2 + M2.4 + M3.1 (rule 243) — doctor encounter scope, no doctor downloads, doctor-visible fields. §1 (PR "B — downloads", owner revision of rule 93 §12, 2026-11-17) refuses a Doctor the legacy RME print/export/source PDF, the legacy odontogram source PDF and the PTM print through the one rule 138 print-deny authority (403, audited, ids only); doctors keep reading archives as inline page images; prescription print stays; Front Office, Admin Klinik and Supervisor RME keep printing. Not behind the encounter-scope flag. §2 (PR A1) adds the doctor encounter scope behind `rme.doctor_encounter_scope` (risky, default OFF): in-service window, read modes NONE/OWN/HISTORY, 404 out of scope, writes only on the own in-service encounter; §2.10 (PR A2) puts the published legacy RME and legacy odontogram archives under it (read only inside an own in-service encounter, 404 outside, lists mirroring records).
 globs:
   - "app/Modules/RME/Services/DoctorRoomScopeService.php"
   - "app/Modules/LegacyRme/Controllers/LegacyRmeRecordController.php"
@@ -32,6 +32,8 @@ globs:
   - "app/Modules/MedicalRecord/Services/MedicalRecordDiagnosisService.php"
   - "app/Modules/MedicalRecord/Services/DiagnosisRolloutService.php"
   - "app/Modules/ClinicVisit/Services/ClinicVisitService.php"
+  - "app/Modules/LegacyRme/Services/LegacyRmePatientHistoryService.php"
+  - "app/Modules/LegacyOdontogram/Services/LegacyOdontogramPatientHistoryService.php"
 alwaysApply: false
 ---
 
@@ -148,7 +150,7 @@ added by their own PRs.
    pre-exam visit. The patient's handwriting BOOK (`PatientRmWorkspaceResolver::canonicalMedicalRecord()`) and the
    patient as a whole (`doctorCanAccessPatient()`, patient-level policies, the patient-centric workspace) need
    `history`. Out-of-scope reads answer **404** (`Response::denyAsNotFound`, plan default 6; revises rule 99 §2 /
-   AIR-LRM-25 for native records — the legacy archive is A2). An unlinked doctor account keeps its 403 "belum
+   AIR-LRM-25 for native records; the legacy archives follow in item 10, PR A2). An unlinked doctor account keeps its 403 "belum
    terhubung". Two refusals still answer before the scope and keep their 403, so existence stays visible there: the
    rule 138 room scope (an active visit of another room) and the prescription `documentLocked` check.
 5. **Writes.** Only on the doctor's OWN encounter while it is in service: `doctorMayWriteVisit()` /
@@ -200,7 +202,7 @@ added by their own PRs.
    room scope, the doctor session lock and the Android enforcement are unchanged. Room assignment is unchanged for
    Front Office and Admin Klinik; with the flag ON a Doctor places or moves a room (`assignRoom` authorises `update`)
    only on their own in-service visit; the doctor change and its revocation are A4. Not in A1: the legacy archive
-   scope and its 404 (A2), the after-service workspace for `own` mode (A3; until then, outside a service, the doctor
+   scope and its 404 (A2 — done, item 10), the after-service workspace for `own` mode (A3; until then, outside a service, the doctor
    opens their own visits and sheets one by one but not the book or the patient-centric workspace), revocation and
    the reconcile command (A4), doctor-visible fields (C1/C2). The flag stays OFF until all of them are merged AND
    M3.3 is released: re-saving an EXISTING book page is still accepted from any doctor inside an own in-service
@@ -228,3 +230,39 @@ added by their own PRs.
    `tests/Feature/RME/DoctorPatientScopeSheetServiceHistoryTest.php` (A1b; A1c adds the workspace controls on a page
    of another doctor's sheet, flag ON and OFF) (critical-gate token `DoctorPatientScope`,
    declared in `critical_gate_mandatory_suites`); the existing doctor-scope suites run unchanged with the flag OFF.
+10. **Legacy archives (PR A2).** Revises rule 99 §1, §2, §11 (AIR-LRM-25/26) and rule 97 §5, §6 (AIR-LRM-27) for the
+    flag ON; each carries a REVISED IN PART marker. With the flag ON, for a scoped Doctor:
+    - **One answer.** `DoctorPatientScopeService::authorizeLegacyArchiveRead($user, $patient)` decides every read of a
+      published legacy RME and legacy odontogram archive. An archive is patient-level history, so it is readable only
+      in read mode `history` (`readModeFor()`, an own in-service encounter with the patient; never re-derived);
+      `own` mode (the doctor's own old or cancelled visits) and assignment rows of every type grant nothing (plan
+      default 1). Outside: **404** (`Response::denyAsNotFound`, plan default 6), so the archive's existence does not
+      leak; an unlinked doctor account keeps its 403. Flag OFF: exactly `doctorCanAccessPatient()` as a plain bool
+      (today's 403 through the policy).
+    - **The doors.** `LegacyRmeRecordPolicy` and `LegacyOdontogramRecordPolicy` `view`/`viewFile` ask it (they now
+      return `Response|bool`), so `rme.legacy-records.show|pages.show|source|print|export` and
+      `rme.legacy-odontograms.show|pages.show|source` answer 404 outside the scope, after the branch-scoped
+      `resolve()` (out-of-branch is still 404 first) and before the §1 download rule (no doctor-print audit row is
+      written for a refused read). Inside the scope §1 is unchanged: page images 200, source/print/export 403 audited.
+    - **Third layer.** Both controllers' `authorizeRead()` asks the policy and then
+      `assertLegacyArchiveReadable($user, $patientId)` of the same authority, so a bypassed policy (`Gate::before`, a
+      regression) still cannot serve a doctor; it is a no-op with the flag OFF (A1's pattern), so the flag-OFF read
+      path is untouched even then. Super Admin is exempt by design (`shouldApplyDoctorScope()`), so nothing here
+      must bind past `Gate::before`.
+    - **Lists mirror the record.** `LegacyRmePatientHistoryService::publishedRecordsFor()` and
+      `LegacyOdontogramPatientHistoryService::publishedRecordsFor()` ask the same method, so every list built on them
+      shows an archive exactly when the record opens: the visit page timeline (`timelineFor`), the workspace clinical
+      history, the inline legacy pages (`RmeWorkspacePageSequencer`), the legacy side of the document rail
+      (`RmeWorkspaceDocumentPresenter`), the unified patient page (`UnifiedMedicalRecordIndexService::patientWorkspace`)
+      and the native odontogram page's legacy list. The legacy lookups (`LegacyRmePatientLookupService`,
+      `LegacyOdontogramPatientRepository`) were scoped in A1 (`applyPatientScopeForUser()`) and mirror it.
+    - **Unchanged.** The archive branch gate (origin branch from the Nomor RM, `DoctorClinicalBranchResolver`,
+      AIR-LRM-07/AIR-DAC-04), Front Office, Admin Klinik and the other non-doctor readers, the exempt roles, VOID
+      handling and §1. **Not covered, recorded:** the staging import screens (`settings.rme.legacy-imports.*`,
+      `settings.rme.legacy-odontograms.*`) and the oversight legacy screens (`oversight.legacy.*`) never applied the
+      doctor patient scope; a Doctor reaches them only through a second role's permission (intake or oversight), as
+      with the native oversight screens in A1. Whether a dual-role Doctor is encounter-scoped there is an owner
+      question (follow-up OD-MEMO-A2-1, alongside OD-MEMO-B-1).
+    - **Tests.** `tests/Feature/LegacyRme/LegacyRmeDoctorEncounterScopeTest.php` (token `LegacyRme`) and
+      `tests/Feature/LegacyOdontogram/LegacyOdontogramDoctorEncounterScopeTest.php` (token `LegacyOdontogram`), both
+      declared in `critical_gate_mandatory_suites`.

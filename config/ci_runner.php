@@ -920,6 +920,14 @@ return [
         // services, histories scoped to the viewer, the access panel and the
         // prior-visit picker status. Same `DoctorPatientScope` token.
         'tests/Feature/RME/DoctorPatientScopeSheetServiceHistoryTest.php',
+        // PR A2 (rule 243 §2.10) — the published legacy RME and legacy odontogram
+        // archives under the encounter scope: read only inside an own in-service
+        // encounter (read mode `history`), 404 outside (rule 99 §1/§2/§11 and
+        // rule 97 §5/§6 revised), lists mirroring records, the controller
+        // re-assertion past a bypassed policy, flag OFF parity. Selected by the
+        // existing `LegacyRme` and `LegacyOdontogram` tokens in BOTH critical variants.
+        'tests/Feature/LegacyRme/LegacyRmeDoctorEncounterScopeTest.php',
+        'tests/Feature/LegacyOdontogram/LegacyOdontogramDoctorEncounterScopeTest.php',
 
         // FEATURE-DOCTOR-TRUSTED-ANDROID-DEVICE-LOCK-1 Phase 2 — the clinic
         // device registry: lifecycle, terminal revocation, branch binding,
