@@ -714,8 +714,10 @@ defaults the owner accepted on 2026-11-17) are in `docs/sprints/dms-rme-comprehe
 1. **Oversight (security review M1).** `OversightClinicalRecordService::handwritingBook()` — the patient history and
    the visit detail of the read-only oversight module (Finance Klinik, Data Analyst) — carries `rme_amendment_id` and
    the §8.5 label on a page an approved amendment appended (the amendments read in one query,
-   `OversightClinicalRecordRepositoryInterface::correctionPageAmendments()`, applied ones only); the patient and visit
-   pages render "Halaman buku RM N · <label>" (`data-amendment-page`), never an object key.
+   `OversightClinicalRecordRepositoryInterface::correctionPageAmendments()`, applied ones only — the label reader's
+   own filter, because a page row never links a pending, rejected or cancelled amendment in the first place: only
+   `approve()` appends one, in the transaction that applies it, §8.4); the patient and visit pages render "Halaman
+   buku RM N · <label>" (`data-amendment-page`), never an object key.
    `OversightClinicalRecordController::handwritingPageImage()` serves such a page only through
    `HandwritingPayloadGuard::storedPng()`: the verified bytes (`image/png`, `nosniff`, `private, no-store`, audited
    `NATIVE_FILE_STREAMED` as before), 404 when missing or tampered, 503 when the storage read fails (review L2); out of
@@ -726,5 +728,22 @@ defaults the owner accepted on 2026-11-17) are in `docs/sprints/dms-rme-comprehe
    `ClinicOversight` token, BOTH variants, declared in `critical_gate_mandatory_suites`): the label on the oversight
    patient and visit pages for both oversight roles, no key; the oversight image route serving verified bytes and
    auditing them, the original page unchanged, a tampered page 404, a read fault 503, nothing audited when nothing is
-   served; out of scope 404; the label in the cashier summary; a rejected correction on no display.
+   served; out of scope 404; the label in the cashier summary; a rejected and a pending correction on no display (the
+   patient, visit and print pages, the cashier summary), no page row linking either, and `correctionPageAmendments()`
+   answering only the applied one when asked for all three; §9.4: another branch's correction page in full while
+   that branch is in the reader's set, and once it leaves RME the neutral label on the patient, visit and print
+   pages and in the PDF view (for an amendment of that branch and for a drifted sheet row whose amended visit is
+   there), the page image still served.
+4. **Another branch's correction page (re-review).** R7-1 keeps one book per patient across branches, so a book an
+   oversight reader may see (its sheet in a branch of the reader's set) can hold a correction page appended by an
+   amendment of another branch's sheet, and that branch can leave the reader's set (for example it leaves RME).
+   The §8.5 label would then name that branch's visit number and date and its approver — proven by test before the
+   fix. `OversightClinicalRecordService` now decides the label per reader (`correctionPageLabel()`): the full label
+   only when the amendment's branch and its amended visit's branch are both in the reader's oversight set,
+   otherwise `NEUTRAL_CORRECTION_PAGE_LABEL` ("Halaman koreksi") — no visit number, date or approver. This holds on
+   the patient page, the visit page (`visitDetail($visit, $reader)`) and the print and PDF (`printData($visit,
+   $reader)` hands the print body `rmPagesForReader`, which it prints in place of its own pages; every other print is
+   unchanged). The page image itself stays as the R7-1 book shows it. Known limit, not decided here: the operational
+   RME surfaces (workspace, print, cashier summary) are unchanged and still show the full §8.5 label to whoever may
+   open the book there; whether they too should withhold another branch's details is an owner question (CG-22).
 

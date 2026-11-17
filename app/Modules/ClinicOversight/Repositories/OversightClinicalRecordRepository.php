@@ -95,7 +95,7 @@ class OversightClinicalRecordRepository implements OversightClinicalRecordReposi
         }
 
         return RmeAmendment::query()
-            ->with(['decider:id,name', 'clinicVisit:id,visit_number,visit_date'])
+            ->with(['decider:id,name', 'clinicVisit:id,branch_id,visit_number,visit_date'])
             ->whereKey($amendmentIds)
             ->where('status', RmeAmendment::STATUS_APPLIED)
             ->get()

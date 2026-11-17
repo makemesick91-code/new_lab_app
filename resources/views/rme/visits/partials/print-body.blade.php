@@ -24,7 +24,11 @@
     // inline. This partial is shared by the browser print view and the dompdf
     // PDF export, and dompdf cannot present a session cookie to the authorised
     // image route, so a linked image would export blank.
-    $rmPages = $medicalRecord ? $medicalRecord->orderedHandwritingPages(true)->filter(fn ($p) => $p['has_content']) : collect();
+    //
+    // Rule 240 §9.4 (memo M3.3 PR7) — the oversight print passes the pages as its
+    // reader may see them (OversightClinicalRecordService::printData()); every
+    // other print computes them here, as before.
+    $rmPages = $rmPagesForReader ?? ($medicalRecord ? $medicalRecord->orderedHandwritingPages(true)->filter(fn ($p) => $p['has_content']) : collect());
     // Rule 240 §8 (review M3) — where this sheet's correction pages sit in the book.
     $correctionPointers = $medicalRecord ? $medicalRecord->correctionPagePointers() : [];
 @endphp

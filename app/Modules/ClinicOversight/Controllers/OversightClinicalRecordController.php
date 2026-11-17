@@ -170,7 +170,7 @@ class OversightClinicalRecordController extends Controller
         ], $request->user());
 
         return view('oversight.rme.visit', [
-            ...$this->records->visitDetail($clinicVisit),
+            ...$this->records->visitDetail($clinicVisit, $request->user()),
             'canExport' => $request->user()->can('clinic-oversight.export', ClinicOversightScope::PERMISSION_CLINICAL),
         ]);
     }
@@ -183,7 +183,7 @@ class OversightClinicalRecordController extends Controller
         $this->auditOutput(OversightAuditService::NATIVE_RECORD_PRINTED, $clinicVisit, 'print', $request);
 
         return view('rme.visits.print', [
-            ...$this->records->printData($clinicVisit),
+            ...$this->records->printData($clinicVisit, $request->user()),
             'printPdfUrl' => route('oversight.rme.visits.pdf', $clinicVisit->id),
             'printBackUrl' => route('oversight.rme.visits.show', $clinicVisit->id),
         ]);
@@ -199,7 +199,7 @@ class OversightClinicalRecordController extends Controller
         // Generic download name: the visit number, never the patient's name.
         $filename = 'rme-visit-'.($clinicVisit->visit_number ?? $clinicVisit->id).'.pdf';
 
-        return Pdf::loadView('rme.visits.print-pdf', $this->records->printData($clinicVisit))->download($filename);
+        return Pdf::loadView('rme.visits.print-pdf', $this->records->printData($clinicVisit, $request->user()))->download($filename);
     }
 
     public function odontogramPrint(Request $request, int $visit): View

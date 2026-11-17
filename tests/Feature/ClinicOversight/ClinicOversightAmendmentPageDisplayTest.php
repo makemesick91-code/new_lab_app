@@ -19,7 +19,11 @@
 | `m3po`.
 */
 
+use App\Models\User;
+use App\Modules\Branch\Models\Branch;
+use App\Modules\ClinicOversight\Interfaces\OversightClinicalRecordRepositoryInterface;
 use App\Modules\ClinicOversight\Services\OversightAuditService;
+use App\Modules\ClinicOversight\Services\OversightClinicalRecordService;
 use App\Modules\ClinicRoom\Models\ClinicRoom;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Doctor\Models\Doctor;
@@ -180,16 +184,149 @@ it('shows the amendment page label in the cashier clinical summary', function ()
         ->assertDontSee($this->amendment->correction_page_path);
 });
 
-it('keeps the pending, rejected amendment out of every display', function () {
-    $second = app(RmeAmendmentService::class)->request($this->sheet->fresh(), $this->doctorUser, 'm3po koreksi kedua halaman', [], 'data:image/png;base64,'.base64_encode(m3poPng(11)));
-    app(RmeAmendmentService::class)->reject($second, $this->supervisor, 'm3po bukan koreksi yang tepat');
+it('keeps a pending and a rejected amendment out of every display; only an applied one is read for a label', function () {
+    $service = app(RmeAmendmentService::class);
+    $rejected = $service->request($this->sheet->fresh(), $this->doctorUser, 'm3po koreksi kedua halaman', [], 'data:image/png;base64,'.base64_encode(m3poPng(11)));
+    $service->reject($rejected, $this->supervisor, 'm3po bukan koreksi yang tepat');
+    $pending = $service->request($this->sheet->fresh(), $this->doctorUser, 'm3po koreksi ketiga halaman', [], 'data:image/png;base64,'.base64_encode(m3poPng(12)));
 
+    expect(RmeAmendment::query()->findOrFail($rejected->id)->status)->toBe(RmeAmendment::STATUS_REJECTED)
+        ->and(RmeAmendment::query()->findOrFail($pending->id)->status)->toBe(RmeAmendment::STATUS_PENDING)
+        // No page row ever links a pending or rejected amendment: only approve()
+        // appends one, in the transaction that applies it (rule 240 §8.4).
+        ->and(MedicalRecordHandwritingPage::query()->whereNotNull('rme_amendment_id')->pluck('rme_amendment_id')->map(fn ($id): int => (int) $id)->all())->toBe([$this->amendment->id]);
+
+    $responses = [];
     covActingAs(covUser('Data Analyst'));
-    $this->get(route('oversight.rme.patients.show', $this->patient->id))
-        ->assertOk()
-        ->assertDontSee('amandemen #'.$second->id)
-        ->assertDontSee('data-amendment-page="'.$second->id.'"', false);
+    foreach (m3poLabelSurfaces() as $url) {
+        $responses[] = $this->get($url);
+    }
+    $responses[] = $this->actingAs(userWith(['manage_rme_billing']))->get(route('rme.cashier.create', $this->visit));
 
-    expect(RmeAmendment::query()->findOrFail($second->id)->status)->toBe(RmeAmendment::STATUS_REJECTED)
-        ->and(MedicalRecordHandwritingPage::query()->whereNotNull('rme_amendment_id')->count())->toBe(1);
+    foreach ($responses as $response) {
+        $response->assertOk()->assertSee(m3poLabel());
+        foreach ([$rejected, $pending] as $other) {
+            $response->assertDontSee('data-amendment-page="'.$other->id.'"', false)
+                ->assertDontSee('amandemen #'.$other->id.' ')
+                ->assertDontSee('amandemen #'.$other->id.')');
+        }
+    }
+
+    // So the label reader's own filter is what keeps them out: asked for all
+    // three, it answers the applied amendment only (rule 240 §9.1).
+    expect(app(OversightClinicalRecordRepositoryInterface::class)->correctionPageAmendments([$this->amendment->id, $rejected->id, $pending->id])->keys()->all())
+        ->toBe([$this->amendment->id]);
 });
+
+/**
+ * Rule 240 §9.4 — a correction page appended to the book (branch AMO1) by an
+ * approved amendment of a later sheet in another branch (R7-1: one book per
+ * patient), approved by its own Supervisor RME. With $sheetRowInBookBranch the
+ * amended sheet's own row says the book's branch while its visit is in the
+ * other one (a drifted row), so the amendment row records the book's branch.
+ *
+ * @return array{branch: Branch, visit: ClinicVisit, amendment: RmeAmendment, page: MedicalRecordHandwritingPage, approver: User}
+ */
+function m3poForeignCorrection(bool $sheetRowInBookBranch = false): array
+{
+    $other = covBranch('AMO3', 'Cabang Amandemen Lain');
+    $room = ClinicRoom::factory()->create(['branch_id' => $other->id, 'status' => ClinicRoom::STATUS_ACTIVE]);
+    $doctorUser = userInRole('Doctor');
+    $doctor = Doctor::factory()->create(['user_id' => $doctorUser->id, 'branch_id' => $other->id, 'is_active' => true]);
+    $visit = ClinicVisit::factory()->create([
+        'branch_id' => $other->id,
+        'patient_id' => test()->patient->id,
+        'doctor_id' => $doctor->id,
+        'clinic_room_id' => $room->id,
+        'status' => ClinicVisit::STATUS_COMPLETED,
+        'visit_number' => 'VIS-M3PO-B-0907',
+    ]);
+    $sheet = MedicalRecord::factory()->create([
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $sheetRowInBookBranch ? test()->branch->id : $other->id,
+        'patient_id' => test()->patient->id,
+        'doctor_id' => $doctor->id,
+        'assessment' => 'm3po karies cabang lain',
+    ]);
+    // A later sheet anchored to the book's visit (R7-1): its pages go to the book.
+    $sheet->forceFill([
+        'canonical_visit_id' => test()->visit->id,
+        'status' => MedicalRecord::STATUS_FINAL,
+        'finalized_at' => now()->subHours(3),
+        'finalized_by' => $doctorUser->id,
+    ])->save();
+
+    $approver = userInRole('Supervisor RME');
+    $approver->forceFill(['name' => 'm3po Penyetuju Cabang Lain'])->save();
+    $amendment = app(RmeAmendmentService::class)->request($sheet->fresh(), $doctorUser, 'm3po koreksi dari cabang lain', [], 'data:image/png;base64,'.base64_encode(m3poPng(21)));
+    app(RmeAmendmentService::class)->approve($amendment, $approver->fresh());
+
+    return [
+        'branch' => $other,
+        'visit' => $visit,
+        'amendment' => $amendment->fresh(),
+        'page' => MedicalRecordHandwritingPage::query()->where('rme_amendment_id', $amendment->id)->sole(),
+        'approver' => $approver,
+    ];
+}
+
+/** The oversight surfaces that render the book's labels for the book's visit. */
+function m3poLabelSurfaces(): array
+{
+    return [
+        'patient' => route('oversight.rme.patients.show', test()->patient->id),
+        'visit' => route('oversight.rme.visits.show', test()->visit->id),
+        'print' => route('oversight.rme.visits.print', test()->visit->id),
+    ];
+}
+
+it('shows another branch\'s correction page label in full while that branch is in the oversight reader\'s set (§9.4)', function () {
+    $foreign = m3poForeignCorrection();
+    expect((int) $foreign['page']->medical_record_id)->toBe($this->sheet->id)
+        ->and((int) $foreign['page']->authored_clinic_visit_id)->toBe($foreign['visit']->id);
+    $fullLabel = $foreign['amendment']->correctionPageLabel();
+    expect($fullLabel)->toContain($foreign['visit']->visit_number)->toContain($foreign['approver']->name);
+
+    $reader = covUser('Data Analyst');
+    expect(app(OversightClinicalRecordService::class)->branchIdsFor($reader))->toContain($this->branch->id)->toContain($foreign['branch']->id);
+    covActingAs($reader);
+
+    foreach (m3poLabelSurfaces() as $url) {
+        $this->get($url)->assertOk()->assertSee(m3poLabel())->assertSee('data-amendment-page="'.$foreign['amendment']->id.'"', false)->assertSee($fullLabel);
+    }
+});
+
+it('never names a visit, date or approver of a branch outside the oversight reader\'s set in a correction page label (§9.4)', function (bool $sheetRowInBookBranch) {
+    $foreign = m3poForeignCorrection($sheetRowInBookBranch);
+    expect((int) $foreign['amendment']->branch_id)->toBe($sheetRowInBookBranch ? $this->branch->id : $foreign['branch']->id);
+    $marker = 'data-amendment-page="'.$foreign['amendment']->id.'"';
+
+    // That branch leaves RME: it is outside every oversight reader's set, the book is not.
+    $foreign['branch']->forceFill(['is_rme_enabled' => false])->save();
+    $reader = covUser('Data Analyst');
+    expect(app(OversightClinicalRecordService::class)->branchIdsFor($reader))->toContain($this->branch->id)->not->toContain($foreign['branch']->id);
+    covActingAs($reader);
+
+    foreach (m3poLabelSurfaces() as $surface => $url) {
+        $response = $this->get($url)
+            ->assertOk()
+            ->assertSee(m3poLabel())
+            ->assertSee($marker, false)
+            ->assertDontSee($foreign['visit']->visit_number)
+            ->assertDontSee($foreign['approver']->name)
+            ->assertDontSee('amandemen #'.$foreign['amendment']->id);
+        $surface === 'print'
+            ? $response->assertSee($marker.'>'.OversightClinicalRecordService::NEUTRAL_CORRECTION_PAGE_LABEL.'<', false)
+            : $response->assertSee('Halaman buku RM '.$foreign['page']->page_number.' · '.OversightClinicalRecordService::NEUTRAL_CORRECTION_PAGE_LABEL);
+    }
+
+    // The PDF export renders the same print body with the same reader-scoped pages.
+    $pdfHtml = view('rme.visits.print-pdf', app(OversightClinicalRecordService::class)->printData($this->visit->fresh(), $reader))->render();
+    expect($pdfHtml)->toContain($marker.'>'.OversightClinicalRecordService::NEUTRAL_CORRECTION_PAGE_LABEL.'<')
+        ->toContain(m3poLabel())
+        ->not->toContain($foreign['visit']->visit_number)
+        ->not->toContain($foreign['approver']->name);
+
+    // The page image itself stays as the R7-1 book shows it, verified.
+    $this->get(route('oversight.rme.handwriting-pages.image', $foreign['page']->id))->assertOk();
+})->with(['amendment of the other branch' => false, 'amended visit of the other branch, drifted sheet row' => true]);

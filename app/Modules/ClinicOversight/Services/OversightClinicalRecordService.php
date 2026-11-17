@@ -17,6 +17,7 @@ use App\Modules\Odontogram\Models\Odontogram;
 use App\Modules\Odontogram\Services\OdontogramPrintFormatter;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\Patient\Services\PatientMedicalRecordNumberService;
+use App\Modules\RmeAmendment\Models\RmeAmendment;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
@@ -40,6 +41,14 @@ use Illuminate\Support\Collection;
  */
 class OversightClinicalRecordService
 {
+    /**
+     * Rule 240 §9.4 (memo M3.3 PR7 re-review) — what an oversight reader sees on
+     * a correction page whose amendment belongs to a branch outside the reader's
+     * set: that it is a correction page, and nothing of that branch's visit,
+     * date or approver.
+     */
+    public const NEUTRAL_CORRECTION_PAGE_LABEL = 'Halaman koreksi';
+
     public function __construct(
         private readonly ClinicOversightScope $scope,
         private readonly OversightClinicalRecordRepositoryInterface $records,
@@ -139,7 +148,7 @@ class OversightClinicalRecordService
             'patient' => $patient,
             'visits' => $this->records->visitsForPatient($branchIds, (int) $patient->id),
             'sheets' => $sheets,
-            'handwritingBook' => $this->handwritingBook($sheets),
+            'handwritingBook' => $this->handwritingBook($sheets, $branchIds),
             'legacyRme' => $this->legacyRme->listPublishedForPatientInBranches($branchIds, (int) $patient->id, false)->load('originBranch'),
             'legacyOdontogram' => $this->legacyOdontogram->listPublishedForPatientInBranches($branchIds, (int) $patient->id, false)->load('branch'),
         ];
@@ -180,7 +189,7 @@ class OversightClinicalRecordService
      *
      * @return array<string, mixed>
      */
-    public function visitDetail(ClinicVisit $visit): array
+    public function visitDetail(ClinicVisit $visit, User $reader): array
     {
         $visit->load([
             'patient',
@@ -211,7 +220,7 @@ class OversightClinicalRecordService
             'visit' => $visit,
             'medicalRecord' => $visit->medicalRecord,
             'handwritingBook' => $visit->medicalRecord !== null
-                ? $this->handwritingBook(collect([$visit->medicalRecord]))
+                ? $this->handwritingBook(collect([$visit->medicalRecord]), $this->branchIdsFor($reader))
                 : collect(),
             'odontogram' => $odontogram,
             'structuredOdontogram' => $structuredOdontogram,
@@ -223,11 +232,37 @@ class OversightClinicalRecordService
     /**
      * The native RME print data — the SAME builder the operational print uses.
      *
+     * Rule 240 §9.4 (re-review) — plus the sheet's printed pages as this reader
+     * may see them (`rmPagesForReader`, which the shared print body prints in
+     * place of its own): a correction page from a branch outside the reader's
+     * set carries the neutral label.
+     *
      * @return array<string, mixed>
      */
-    public function printData(ClinicVisit $visit): array
+    public function printData(ClinicVisit $visit, User $reader): array
     {
-        return $this->printData->build($visit);
+        $data = $this->printData->build($visit);
+        $record = $visit->medicalRecord;
+
+        if ($record === null) {
+            return $data;
+        }
+
+        $pages = $record->orderedHandwritingPages(true)->filter(fn (array $page): bool => (bool) $page['has_content']);
+        $amendments = $this->records->correctionPageAmendments($pages
+            ->pluck('amendment_id')
+            ->filter()
+            ->map(fn ($id): int => (int) $id)
+            ->unique()
+            ->values()
+            ->all());
+        $branchIds = $this->branchIdsFor($reader);
+
+        return $data + [
+            'rmPagesForReader' => $pages->map(fn (array $page): array => isset($page['amendment_id'])
+                ? ['amendment_label' => $this->correctionPageLabel($amendments->get((int) $page['amendment_id']), $branchIds)] + $page
+                : $page),
+        ];
     }
 
     /**
@@ -263,12 +298,14 @@ class OversightClinicalRecordService
      * by an approved amendment also carries `rme_amendment_id` and its label
      * (RmeAmendment::correctionPageLabel(): the amendment, the amended visit, the
      * corrected book page, the approval), read in one query; the image route
-     * serves it only when its bytes verify.
+     * serves it only when its bytes verify. The label is the neutral one when
+     * the amendment's branch is outside the reader's set (§9.4).
      *
      * @param  Collection<int, MedicalRecord>  $sheets
+     * @param  list<int>  $branchIds  the reader's oversight branch set
      * @return Collection<int, array<string, mixed>>
      */
-    private function handwritingBook(Collection $sheets): Collection
+    private function handwritingBook(Collection $sheets, array $branchIds): Collection
     {
         $book = collect();
         $position = 1;
@@ -318,11 +355,36 @@ class OversightClinicalRecordService
                     'page_number' => (int) $page->page_number,
                     'saved_at' => $page->saved_at,
                     'rme_amendment_id' => $amendmentId,
-                    'amendment_label' => $amendmentId !== null ? $amendments->get($amendmentId)?->correctionPageLabel() : null,
+                    'amendment_label' => $amendmentId !== null ? $this->correctionPageLabel($amendments->get($amendmentId), $branchIds) : null,
                 ]);
             }
         }
 
         return $book;
+    }
+
+    /**
+     * Rule 240 §9.4 (memo M3.3 PR7 re-review) — a correction page's label for
+     * this reader. R7-1 keeps one book per patient across branches, so a page
+     * of a book the reader may see can come from an amendment of another
+     * branch's sheet (that branch since left the reader's set, e.g. it left
+     * RME). The full §8.5 label — that visit's number and date and the approver
+     * — only when the amendment's branch and its amended visit's branch are both
+     * in the reader's set; otherwise NEUTRAL_CORRECTION_PAGE_LABEL. Null when the
+     * page has no applied amendment.
+     *
+     * @param  list<int>  $branchIds
+     */
+    private function correctionPageLabel(?RmeAmendment $amendment, array $branchIds): ?string
+    {
+        $label = $amendment?->correctionPageLabel();
+
+        if ($amendment === null || $label === null) {
+            return null;
+        }
+
+        $branches = [(int) $amendment->branch_id, (int) ($amendment->clinicVisit->branch_id ?? $amendment->branch_id)];
+
+        return array_diff($branches, $branchIds) === [] ? $label : self::NEUTRAL_CORRECTION_PAGE_LABEL;
     }
 }
