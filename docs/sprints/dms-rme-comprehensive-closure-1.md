@@ -451,6 +451,22 @@ NSF-R011 Critical Test Gate, read from the job log (PostgreSQL, `DB_CONNECTION: 
 | Excluded on purpose | memo M3.3 lock PRs (the lock ships only with its amendment path), PTM PR1–3 (one release), PR6 (needs the `workflow` scope) |
 | Post-merge CI (superseded candidate) | push run 43967765523 on `c705f048`: success, but the classifier diffed against the previous commit only (#658, Markdown) → `gate_profile=docs_only`, critical regression tests **SKIPPED** (CG-17: skipped is not passed). The push run on `82cb6e13` that would have run them was cancelled by the #658 push. Remedy: `workflow_dispatch` run 43968947617 on `c705f048` (no base → the classifier fails closed to the full critical gate): **NSF-R011 Critical Test Gate 10,638 passed, 52,938 assertions, 0 failed, PostgreSQL**; release safety and release evidence gates success; Full Suite SKIPPED (CG-18, deferred, not passed) |
 
+### 9.6 Release 2 — `dms-rme-comprehensive-closure-1-r2` at `0f3c3bb3` (intermediate release; the program stays OPEN)
+
+| Item | Evidence |
+|---|---|
+| Owner approval | written approval of the full SHA `0f3c3bb32a3a6b0e8a90f8ab9e43ca9fd7cc3ab3` (§2a release 2 decisions; the `c705f048` approval was not reused), then signed in the owner's own WSL terminal (Contract 3, rule 236): approval id `2dddde3cd9fe5bba398688d418b95164`, bundle SHA-256 `56429db42764d00102cf9935c4315b4c1853d0fd4b4c455efc955ac009a0cc93` (re-computed locally before submission), record SHA-256 `00afa456655857c29a050ad447ee1a752c6e8fbccafe721105fa4b33dcd32d3c`, signature SHA-256 `f72a1fe20600adc2a24860305bcaa155869a0ab354761ee179aaf41f370a381d`, signer key `SHA256:0WGGTlMDzLPGAhQaRG+Ag7BqoypSLinSNOHalZKtgt4`, valid until 2026-11-19T08:16:48Z. The key and passphrase never left the owner's terminal |
+| Target and posture (read-only) | `production-target-check --operator --remote` → `PRODUCTION_TARGET=VERIFIED`; `sudo-policy-check` → `SUDO_POLICY=LEAST_PRIVILEGE`, entrypoint CURRENT; `trust-check` → `APPROVAL_CONTRACTS=2 3`, `APPROVAL_STORE=OK`, `RELEASE GUARD TRUST: READY` |
+| Approval check | `submit-approval` stored the record; `check-approval` = **GO** (signature against the host anchor, SHA = base tip, release and approval unspent, required CI push run 44023053296 success with "Run critical regression tests" ran) |
+| Deploy | `start` through the deploy operator (runner on the VPS, never local) at 16:18 WITA: deploy id **`20261117-081816`**, finished 08:19:54Z, `final exit=0`, `DEPLOY_APPROVED_TARGET_MATCH=YES`; `verify 20261117-081816` → **`DEPLOY RUNNER OK`** (runner contract 4, checkout HEAD matches) |
+| Migrations | the two additive migrations (`2026_11_17_100001_add_claim_nonce_hash_to_trx_doctor_session_leases_table`, `2026_11_17_100001_create_mst_patient_rm_sequences_table`) ran inside the runner's `migrate --force` after its pre-deploy dump; the runner aborts on a failed dump or migration, so `DEPLOY OK` implies both; the log lines sit in the root-only deploy log (owner read, §10.3b) |
+| Production verification (read-only) | `posture`: `HEAD=0f3c3bb3`, `LARAVEL_LOG_ERROR_LINES=166` (the baseline — no new application error), queue worker and timers unchanged; `drift-check`: `PRIVSEP_DRIFT=NONE`; HTTP on `https://daengtisia.online`: `/up` 200, `/login` 200, `/rme/visits`, `/settings/patients`, the consent signature stream → 302 to login (unauthenticated) |
+| BK-2 | SKIPPED (owner directive) |
+| Release id | spent |
+| GO | **none** — release 2 is intermediate; the final GO tag waits for the memo wave and every mandatory item |
+
+Pending owner steps after release 2: §10.3b (log read: backup + migrations), §10.4 (PermissionSeeder → RoleSeeder → permission:cache-reset), §10.5 (consent-signature copy **dry run only**, counts reported; `--apply` needs a separate approval; the fallback stays), and a visual check of one pre-release consent's signatures (rule 237 §14.5a).
+
 ## 10. Owner actions prepared by this program
 
 ### 10.1 OPS-KTP — install the KTP temporary-scan prune timer (root, owner's admin password)
