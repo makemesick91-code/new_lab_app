@@ -1,7 +1,8 @@
 <x-settings-shell title="Persetujuan Tindakan Medis">
     @php
+        // $template (the form this page renders), $templateCode and
+        // $refillConsentAnswers are decided by the controller (rule 241 §6).
         $patient = $clinicVisit->patient;
-        $template = $templates[$defaultTemplate] ?? reset($templates);
     @endphp
 
     <div class="space-y-6">
@@ -41,11 +42,14 @@
             <x-ui.card title="1. Pilih Form Persetujuan">
                 <x-ui.select name="template_code" label="Form Persetujuan" required>
                     @foreach ($templates as $code => $definition)
-                        <option value="{{ $code }}" @selected(old('template_code', $defaultTemplate) === $code)>
+                        <option value="{{ $code }}" @selected($templateCode === $code)>
                             {{ $definition['title'] }} (versi {{ $definition['version'] }})
                         </option>
                     @endforeach
                 </x-ui.select>
+                {{-- Rule 241 §6 — the version this page shows; the server refuses the
+                     signature if the version in force changed meanwhile. --}}
+                <input type="hidden" name="template_version" value="{{ $template['version'] }}">
             </x-ui.card>
 
             {{-- 2 — Identitas pemberi persetujuan --}}
@@ -119,7 +123,35 @@
                 <p class="mt-4 text-sm text-ink">{{ $template['declaration'] }}</p>
             </x-ui.card>
 
-            {{-- 5 — Clause 8: explicit YA/TIDAK --}}
+            {{-- 5 — Clause 8: explicit YA/TIDAK. Rule 241 §6 — a version with a
+                 separate clause 9 (v2026.2) asks two explicit answers instead:
+                 clause 8 clinical documentation, clause 9 publication. --}}
+            @if (! empty($template['publication_clause']))
+            <x-ui.card title="5. Persetujuan Dokumentasi Klinis & Publikasi">
+                <p class="mb-4 text-sm text-ink-soft">
+                    Dua jawaban terpisah. Masing-masing wajib dipilih secara tegas dan
+                    <span class="font-semibold">tidak memengaruhi</span> hak pasien atas perawatan maupun proses pembayaran.
+                </p>
+
+                @foreach (['documentation_consent' => $template['documentation_clause'], 'publication_consent' => $template['publication_clause']] as $answerField => $answerClause)
+                    <fieldset class="mb-4 space-y-2" data-testid="consent-answer-{{ $answerField }}">
+                        <legend class="mb-2 text-sm font-semibold text-ink">Poin {{ $answerClause }}</legend>
+                        <p class="text-sm text-ink">{{ $template['clauses'][$answerClause] ?? '' }}</p>
+                        <label class="flex items-start gap-3 rounded-lg border border-hairline p-3">
+                            <input type="radio" name="{{ $answerField }}" value="1" class="mt-1"
+                                   @checked($refillConsentAnswers && old($answerField) === '1')>
+                            <span class="text-sm font-semibold text-ink">YA</span>
+                        </label>
+                        <label class="flex items-start gap-3 rounded-lg border border-hairline p-3">
+                            <input type="radio" name="{{ $answerField }}" value="0" class="mt-1"
+                                   @checked($refillConsentAnswers && old($answerField) === '0')>
+                            <span class="text-sm font-semibold text-ink">TIDAK</span>
+                        </label>
+                        @error($answerField)<p class="mt-2 text-sm text-danger-700">{{ $message }}</p>@enderror
+                    </fieldset>
+                @endforeach
+            </x-ui.card>
+            @else
             <x-ui.card title="5. Persetujuan Dokumentasi & Publikasi">
                 <p class="mb-3 text-sm text-ink-soft">
                     Poin {{ $template['documentation_clause'] }} pada surat persetujuan. Jawaban ini wajib dipilih secara
@@ -130,17 +162,18 @@
                 <div class="space-y-2">
                     <label class="flex items-start gap-3 rounded-lg border border-hairline p-3">
                         <input type="radio" name="documentation_consent" value="1" class="mt-1"
-                               @checked(old('documentation_consent') === '1')>
+                               @checked($refillConsentAnswers && old('documentation_consent') === '1')>
                         <span class="text-sm text-ink"><span class="font-semibold">YA</span> — pasien menyetujui dokumentasi medis dan publikasi foto/video perawatan tanpa menampilkan informasi pribadi.</span>
                     </label>
                     <label class="flex items-start gap-3 rounded-lg border border-hairline p-3">
                         <input type="radio" name="documentation_consent" value="0" class="mt-1"
-                               @checked(old('documentation_consent') === '0')>
+                               @checked($refillConsentAnswers && old('documentation_consent') === '0')>
                         <span class="text-sm text-ink"><span class="font-semibold">TIDAK</span> — pasien tidak menyetujui publikasi foto/video perawatan.</span>
                     </label>
                 </div>
                 @error('documentation_consent')<p class="mt-2 text-sm text-danger-700">{{ $message }}</p>@enderror
             </x-ui.card>
+            @endif
 
             {{-- 6 — Tanda tangan --}}
             <x-ui.card title="6. Tanda Tangan">

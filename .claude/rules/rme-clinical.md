@@ -82,8 +82,9 @@ Pemeriksaan" (`cashier_pending`) → Kasir / Pembayaran, no consent check (`comp
 - **AIR-RMC-12** Treat a signed consent as immutable evidence: no update path, no hard delete; correction is void with
   a reason plus re-sign, and `validForVisit()` returns the latest non-voided consent by `signed_at`, then `id`.
   Snapshot wording from `config/rme_consent.php` and bump its `version` when substance changes; never rephrase the
-  clinic's clause text. Clause 8 is an explicit YA/TIDAK validated `present|boolean` and never blocks treatment or
-  payment. Source: rule 100 §4–5, rule 109 §2b.
+  clinic's clause text. Clause 8 (v2026.2: clauses 8 and 9) is an explicit YA/TIDAK — required by the service, bound
+  `nullable|boolean` by the request, never defaulted — and never blocks treatment or payment. Source: rule 100 §4–5,
+  rule 109 §2b, rule 241 §6.
 - **AIR-RMC-13** Gate consent routes on `manage_rme_consents` / `view_rme_consents` (capture: Front Office, Kasir,
   Admin Klinik, Supervisor RME fallback; the Doctor reads and countersigns, rule 241 §4), never on
   `manage_clinic_visits` (Kasir lacks it). Keep identity numbers and signature paths `$hidden`; only the consent
@@ -274,6 +275,9 @@ Pemeriksaan" (`cashier_pending`) → Kasir / Pembayaran, no consent check (`comp
   "Selesai Pemeriksaan" — on an EXECUTED consent (`hasExecutedConsent()`: live consent + treating-doctor
   countersignature) inside the single authorities, re-decided on the visit row locked first; reads, payment,
   prescriptions stay outside; a void reopens it. The Doctor no longer captures the patient signature. Rule 241 §2–§4.
+- **AIR-RMC-56** Sign a NEW consent on template v2026.2 (clause 8 documentation, clause 9 publication: two explicit
+  YA/TIDAK) only with flag `rme.consent_template_v2026_2` on AND wording `approved` without the draft marker; clause 9
+  gates nothing; history unchanged. Source: rule 241 §6.
 
 ## Current posture (snapshot 2026-11-17 — verify before relying on it)
 
@@ -319,7 +323,7 @@ Pemeriksaan" (`cashier_pending`) → Kasir / Pembayaran, no consent check (`comp
 | `.cursor/rules/228-rme-clinical-write-authority-and-prescription-integrity.mdc` | Room scope on writes; exam start; role allowlists; Rx lock/signer |
 | `.cursor/rules/237-rme-comprehensive-closure.mdc` | Clinic-month numbers; no-store; page bounds; signed Rx; consent integrity; lease; one RM book |
 | `.cursor/rules/243-rme-doctor-encounter-scope-downloads-fields.mdc` | Doctor encounter scope (flagged), no doctor downloads, doctor-visible fields |
-| `.cursor/rules/241-rme-ptm-double-signature.mdc` | PTM double signature: countersignature (§1); both signatures gate writing, UI states, capture roles (§2–§5) |
+| `.cursor/rules/241-rme-ptm-double-signature.mdc` | PTM double signature: countersignature (§1); both signatures gate writing, UI states, capture roles (§2–§5); consent template v2026.2, inactive until approved wording (§6) |
 
 ## History
 

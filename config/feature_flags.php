@@ -588,6 +588,21 @@ $registry = [
             'dependencies' => [],
             'rollback_action' => 'Set the environment override to false and rebuild the config cache as the runtime user. Nothing is deleted: recorded rows and declarations stay as clinical evidence (read-only, never consulted while off), and the rule 218 cross-check returns to its version 1 snapshot.',
         ],
+
+        // --- DMS memo M4.4, PTM plan PR3 (rule 241 §6) — consent template v2026.2 (built INACTIVE) ---
+
+        'rme.consent_template_v2026_2' => [
+            'name' => 'RME Consent Template v2026.2 (clause 8 documentation / clause 9 publication)',
+            'description' => 'Selects PERSETUJUAN TINDAKAN MEDIS version 2026.2 for NEW consents: clause 8 (clinical documentation) and clause 9 (publication/promotion) become two separate explicit YA/TIDAK answers, stored in documentation_consent and publication_consent (memo M4.4, rule 241 §6). THIS FLAG ALONE NEVER ACTIVATES IT: RmeVisitConsentService also requires the v2026.2 candidate in config/rme_consent.php to carry wording_status approved and no draft marker; otherwise it logs a refusal (form code, version and reason only, no patient data) and new consents keep version 2026.1 exactly as before. The wording is a product decision (rule 100 §4) still pending from the owner, so activation is blocked on the approved text. Historical consents keep their version, snapshot and single clause-8 answer and render unchanged whatever this flag says. No workflow reads the clause-9 answer: refusing publication never affects care, payment or any clinical write. Grants no role any access to photos or clinical documentation.',
+            'default' => false,
+            'env_key' => 'FEATURE_RME_CONSENT_TEMPLATE_V2026_2',
+            'owner' => 'rme',
+            'risk_level' => 'high',
+            'rollout_status' => 'implemented',
+            'review_target' => 'DMS-RME-MEMO-PTM-PR3',
+            'dependencies' => [],
+            'rollback_action' => 'Set the environment override to false and rebuild the config cache as the runtime user; new consents return to version 2026.1. Nothing is reverted or deleted: consents already signed on 2026.2 keep their version, snapshot and both answers and keep rendering them. Never edit a signed consent to undo a rollout; a wrong consent is voided (supervised) and signed again.',
+        ],
     ],
 ];
 

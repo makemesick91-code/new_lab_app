@@ -120,10 +120,23 @@
                         </dd>
                     </div>
                 @endif
-                <div>
-                    <dt class="text-xs font-semibold uppercase tracking-wide text-ink-muted">Persetujuan Dokumentasi/Publikasi</dt>
-                    <dd class="mt-1 text-ink">{{ $consent->documentation_consent ? 'YA' : 'TIDAK' }}</dd>
-                </div>
+                {{-- Rule 241 §6 — a version with a separate clause 9 (v2026.2) shows two
+                     answers; 2026.1 and older keep the single combined row. --}}
+                @if ($consent->publicationClause() !== null)
+                    <div>
+                        <dt class="text-xs font-semibold uppercase tracking-wide text-ink-muted">Persetujuan Dokumentasi Klinis (poin {{ $consent->content_snapshot['documentation_clause'] ?? '—' }})</dt>
+                        <dd class="mt-1 text-ink" data-testid="consent-documentation-answer">{{ $consent->documentation_consent ? 'YA' : 'TIDAK' }}</dd>
+                    </div>
+                    <div>
+                        <dt class="text-xs font-semibold uppercase tracking-wide text-ink-muted">Persetujuan Publikasi/Promosi (poin {{ $consent->publicationClause() }})</dt>
+                        <dd class="mt-1 text-ink" data-testid="consent-publication-answer">{{ $consent->publication_consent === null ? '—' : ($consent->publication_consent ? 'YA' : 'TIDAK') }}</dd>
+                    </div>
+                @else
+                    <div>
+                        <dt class="text-xs font-semibold uppercase tracking-wide text-ink-muted">Persetujuan Dokumentasi/Publikasi</dt>
+                        <dd class="mt-1 text-ink">{{ $consent->documentation_consent ? 'YA' : 'TIDAK' }}</dd>
+                    </div>
+                @endif
                 <div>
                     <dt class="text-xs font-semibold uppercase tracking-wide text-ink-muted">Cabang</dt>
                     <dd class="mt-1 text-ink">{{ $branch?->name ?? '—' }}</dd>
