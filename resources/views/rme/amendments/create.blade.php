@@ -15,7 +15,12 @@
         // The same table editor as the chart page (resources/js/app.js odontogramEditor).
         $statusLabels = ['normal' => 'Normal', 'caries' => 'Karies', 'missing' => 'Hilang', 'filling' => 'Tambalan', 'crown' => 'Crown', 'root_treated' => 'PSA'];
         $allTeeth = array_merge(range(11, 18), range(21, 28), range(31, 38), range(41, 48), range(51, 55), range(61, 65), range(71, 75), range(81, 85));
-        $editorConfig = ['canEdit' => true, 'teeth' => old('proposed.tooth_map_payload.teeth', $current['teeth']), 'statusLabels' => $statusLabels, 'allTeeth' => $allTeeth];
+        // After a refusal, restore what the doctor posted: the old input holds the
+        // editor's tooth map as the JSON string it was sent as (or, decoded, an array).
+        $postedMap = old('proposed.tooth_map_payload');
+        $postedMap = is_string($postedMap) ? json_decode($postedMap, true) : $postedMap;
+        $postedTeeth = is_array($postedMap) && is_array($postedMap['teeth'] ?? null) ? $postedMap['teeth'] : null;
+        $editorConfig = ['canEdit' => true, 'teeth' => $postedTeeth ?? $current['teeth'], 'statusLabels' => $statusLabels, 'allTeeth' => $allTeeth];
     }
 @endphp
 <x-settings-shell title="Ajukan Amandemen {{ $subjectLabel }}">

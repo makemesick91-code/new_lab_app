@@ -101,9 +101,19 @@ class RmeAmendmentActionRequest extends FormRequest
         ];
     }
 
-    /** @return array<string, mixed> */
+    /**
+     * The whole proposal as posted (with the chart editor's tooth map decoded).
+     * Never `validated()`: with nested rules present (the chart's tooth map),
+     * Laravel's excludeUnvalidatedArrayKeys would return only the validated
+     * keys and silently drop the notes (re-review HIGH-R1). The proposal's
+     * content is validated by RmeAmendmentService, the single authority.
+     *
+     * @return array<string, mixed>
+     */
     public function proposal(): array
     {
-        return (array) ($this->validated()['proposed'] ?? []);
+        $proposed = $this->input('proposed', []);
+
+        return is_array($proposed) ? $proposed : [];
     }
 }

@@ -314,8 +314,8 @@ defaults the owner accepted on 2026-11-17) are in `docs/sprints/dms-rme-comprehe
    `applied` (M3.3 PR5: approve and apply in one transaction). Every other transition is refused ("no longer
    pending"). A cancel sets `cancelled_at` and never `decided_by`, so the CHECK holds.
 3. **Requester (plan default 2).** First the account must be able to `view` the record (MedicalRecordPolicy /
-   OdontogramPolicy) — otherwise "not found" (404) before anything else, so a stranger never learns whether the
-   record is a draft or final. Then `RmeAmendmentService::requestRefusal()`, in order: the subject is a final sheet or
+   OdontogramPolicy) — otherwise "not found" (404) before anything else, the reason's length included, so a
+   stranger never learns whether the record is a draft or final. Then `RmeAmendmentService::requestRefusal()`, in order: the subject is a final sheet or
    a finalized chart; the account holds `request_rme_amendments`; it IS the doctor of record (the sheet's
    `doctor_id`, for a chart the chart visit's `doctor_id`, → `mst_doctors.user_id`) or the finalizer
    (`finalized_by`). A chart's doctor of record is the visit's CURRENT `doctor_id`: a reassignment of the visit
@@ -342,10 +342,16 @@ defaults the owner accepted on 2026-11-17) are in `docs/sprints/dms-rme-comprehe
      an absent key keeps the current value), validated with the rules of a chart save — the rules of
      `UpdateOdontogramPlaceholderRequest` are the source of truth (fields, statuses, conditions, lengths), plus FDI
      numbers, no duplicate condition, only `teeth` in the tooth map and only the per-tooth keys that request
-     validates. Sizes are therefore bounded like a chart save (52 FDI teeth, fixed per-field lengths). An explicit
-     null or an unreadable tooth map is refused (`MESSAGE_TOOTH_MAP`): it cannot be told apart from a broken editor,
-     and an approval must never erase a chart from it (an empty chart is `{"teeth": {}}`); the HTTP form requires
-     the editor's tooth map and keeps an unreadable string as it came, so the `array` rule refuses it.
+     validates (every tooth an object). Sizes are therefore bounded like a chart save (52 FDI teeth, fixed
+     per-field lengths); a tooth's `conditions` is a list of distinct known values (at most the number the save
+     rule allows, no null, never a map — as the editor writes it, `MESSAGE_CONDITIONS`). An explicit null, an
+     unreadable tooth map, or one without a `teeth` object (`{}`, `{"teeth": null}`) is refused
+     (`MESSAGE_TOOTH_MAP`): it cannot be told apart from a broken editor, and clearing a whole chart is not an
+     amendment intent (an empty chart is `{"teeth": {}}`); the HTTP form requires the editor's tooth map and keeps
+     an unreadable string as it came, so the `array` rule refuses it. The controller passes the posted proposal
+     (`RmeAmendmentActionRequest::proposal()` = the input, never `validated()`, whose excludeUnvalidatedArrayKeys
+     would drop the notes beside the validated tooth map) and the service validates all of it; after a refusal the
+     form restores the posted teeth.
    - Unknown keys are refused at every level, and so is a proposal that changes nothing (for a chart: nothing that
      the before/after view would show as changed). Performed treatments and prescriptions are not amendable (plan
      default 5); a handwriting "amendment page" is M3.3 PR5.
@@ -400,7 +406,14 @@ defaults the owner accepted on 2026-11-17) are in `docs/sprints/dms-rme-comprehe
    with the changed row marked; the last primary not removable on a `pilot_enforced` branch; only a changed field
    bounded; `status` not mass-assignable; the model and, on PostgreSQL, the trigger refusing edits of the request,
    any change of a decided row and DELETE; the tightened status CHECKs; queue identity hidden from an approver
-   outside the patient scope.
+   outside the patient scope. Re-review: a chart notes-only change and a notes-and-teeth change round-trip through
+   the form, and every part of a sheet proposal; `{"teeth": null}`, `{}`, a conditions map, a null condition or
+   too many conditions refused; the posted teeth restored after a refusal; a chart finalizer refused as checker
+   (service and HTTP); TRUNCATE of `trx_rme_amendments` refused on PostgreSQL; "not found" before the reason;
+   refusals asserted by their message constants (`MESSAGE_UNKNOWN_PART`, `MESSAGE_DIAGNOSIS_NOT_ON_SHEET` — also
+   for an id with trailing junk —, `MESSAGE_MASTER_INACTIVE`, `MESSAGE_SECOND_PRIMARY`, `MESSAGE_TOOTH_MAP_PART`,
+   `MESSAGE_TOOTH_NUMBER`, `MESSAGE_TOOTH_FIELD`, `MESSAGE_CONDITIONS`, and the §1 lock constants on a live
+   encounter).
 10. **Deploy.** The two permissions are new: run `PermissionSeeder`, then `RoleSeeder`, then
     `permission:cache-reset` (CG-15). Doctor gains `request_rme_amendments`; Supervisor RME gains
     `approve_rme_amendments`; Super Admin through '*'.

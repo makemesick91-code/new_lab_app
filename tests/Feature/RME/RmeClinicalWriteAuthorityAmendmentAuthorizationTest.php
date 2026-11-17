@@ -24,7 +24,9 @@ use App\Modules\Branch\Models\Branch;
 use App\Modules\ClinicRoom\Models\ClinicRoom;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Doctor\Models\Doctor;
+use App\Modules\MedicalRecord\Models\ClinicalDiagnosis;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
+use App\Modules\MedicalRecord\Models\MedicalRecordDiagnosis;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\RmeAmendment\Models\RmeAmendment;
 use App\Modules\RmeAmendment\Services\RmeAmendmentService;
@@ -341,4 +343,36 @@ it('shows patient identity in the queue only for a row the approver may open (LO
         ->assertSee('data-amendment-row="'.$amendment->id.'"', false)
         ->assertDontSee('M33Z Pasien Amandemen')
         ->assertDontSee(route('rme.amendments.show', $amendment), false);
+});
+
+it('round-trips every part of a sheet proposal from the form (HIGH-R1)', function () {
+    $sheet = m33zSheet();
+    $old = MedicalRecordDiagnosis::create([
+        'medical_record_id' => $sheet->id,
+        'clinic_visit_id' => $sheet->clinic_visit_id,
+        'branch_id' => $sheet->branch_id,
+        'clinical_diagnosis_id' => ClinicalDiagnosis::factory()->create(['code' => 'K04.0', 'status' => 'active'])->id,
+        'diagnosis_role' => 'primary',
+        'diagnosed_at' => now(),
+    ]);
+    $new = ClinicalDiagnosis::factory()->create(['code' => 'K04.1', 'status' => 'active']);
+
+    $this->actingAs($this->doctorUser)->post(route('rme.amendments.store-sheet', $sheet), [
+        'reason' => 'm33z diagnosis kerja salah ketik',
+        'proposed' => [
+            'fields' => ['subjective' => '', 'objective' => '', 'assessment' => 'm33z pulpitis ireversibel', 'plan' => 'm33z rencana baru', 'notes' => ''],
+            'diagnoses' => [
+                'remove' => [(string) $old->id],
+                'add' => [['clinical_diagnosis_id' => (string) $new->id, 'diagnosis_role' => 'primary', 'notes' => 'm33z koreksi']],
+            ],
+        ],
+    ])->assertSessionHasNoErrors();
+
+    expect(RmeAmendment::query()->sole()->proposed_content)->toBe([
+        'fields' => ['assessment' => 'm33z pulpitis ireversibel', 'plan' => 'm33z rencana baru'],
+        'diagnoses' => [
+            'add' => [['clinical_diagnosis_id' => (int) $new->id, 'diagnosis_role' => 'primary', 'notes' => 'm33z koreksi']],
+            'remove' => [(int) $old->id],
+        ],
+    ]);
 });

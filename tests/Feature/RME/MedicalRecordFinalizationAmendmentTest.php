@@ -42,6 +42,7 @@ use App\Modules\RmeAmendment\Models\RmeRecordVersion;
 use App\Modules\RmeAmendment\Repositories\RmeAmendmentRepository;
 use App\Modules\RmeAmendment\Services\RmeAmendmentService;
 use App\Modules\RmeAmendment\Services\RmeRecordVersionService;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
@@ -264,10 +265,10 @@ it('refuses a proposal that changes nothing, names a diagnosis of another sheet,
     $active = ClinicalDiagnosis::factory()->create(['code' => 'K02.1', 'status' => ClinicalDiagnosis::STATUS_ACTIVE]);
 
     expect(m33aRefusal(fn () => m33aRequest($sheet, proposal: ['fields' => ['assessment' => 'm33a pulpitis']])))->toContain(RmeAmendmentService::MESSAGE_NO_CHANGE)
-        ->and(m33aRefusal(fn () => m33aRequest($sheet, proposal: ['diagnoses' => ['remove' => [$foreign->id]]])))->not->toBe('')
-        ->and(m33aRefusal(fn () => m33aRequest($sheet, proposal: ['diagnoses' => ['add' => [['clinical_diagnosis_id' => $inactive->id, 'diagnosis_role' => 'secondary']]]])))->not->toBe('')
-        ->and(m33aRefusal(fn () => m33aRequest($sheet, proposal: ['diagnoses' => ['add' => [['clinical_diagnosis_id' => $active->id, 'diagnosis_role' => 'primary']]]])))->not->toBe('')
-        ->and(m33aRefusal(fn () => m33aRequest($sheet, proposal: ['fields' => ['patient_id' => '1']])))->not->toBe('')
+        ->and(m33aRefusal(fn () => m33aRequest($sheet, proposal: ['diagnoses' => ['remove' => [$foreign->id]]])))->toContain(RmeAmendmentService::MESSAGE_DIAGNOSIS_NOT_ON_SHEET)
+        ->and(m33aRefusal(fn () => m33aRequest($sheet, proposal: ['diagnoses' => ['add' => [['clinical_diagnosis_id' => $inactive->id, 'diagnosis_role' => 'secondary']]]])))->toContain(RmeAmendmentService::MESSAGE_MASTER_INACTIVE)
+        ->and(m33aRefusal(fn () => m33aRequest($sheet, proposal: ['diagnoses' => ['add' => [['clinical_diagnosis_id' => $active->id, 'diagnosis_role' => 'primary']]]])))->toContain(RmeAmendmentService::MESSAGE_SECOND_PRIMARY)
+        ->and(m33aRefusal(fn () => m33aRequest($sheet, proposal: ['fields' => ['patient_id' => '1']])))->toContain(RmeAmendmentService::MESSAGE_UNKNOWN_PART)
         ->and(RmeAmendment::query()->count())->toBe(0);
 
     // Replacing the primary is one proposal: remove the old one, add the new one.
@@ -398,8 +399,16 @@ it('keeps the sheet locked while an amendment is pending', function () {
     $sheet = m33aSheet();
     m33aRequest($sheet);
 
-    $this->actingAs($this->doctorUser);
-    expect(m33aRefusal(fn () => app(MedicalRecordService::class)->updateDraft($sheet->fresh(), ['assessment' => 'm33a langsung diubah'])))->not->toBe('')
+    // A live, consented encounter of the patient, so the authoring authority
+    // passes and the lock itself answers.
+    rmeActiveConsentedEncounter(ClinicVisit::factory()->create([
+        'branch_id' => $this->branch->id,
+        'patient_id' => $this->patient->id,
+        'doctor_id' => $this->doctor->id,
+        'clinic_room_id' => $this->room->id,
+    ]));
+    $this->actingAs(rmeClinicalAuthor(['view_clinic_visits', 'manage_clinic_visits']));
+    expect(m33aRefusal(fn () => app(MedicalRecordService::class)->updateDraft($sheet->fresh(), ['assessment' => 'm33a langsung diubah'])))->toContain(MedicalRecordService::MESSAGE_FINAL_SHEET_LOCKED)
         ->and($sheet->fresh()->assessment)->toBe('m33a pulpitis');
 });
 
@@ -487,8 +496,11 @@ it('refuses unknown keys inside a diagnosis row (LOW-1)', function () {
     $sheet = m33aSheet();
     $active = ClinicalDiagnosis::factory()->create(['code' => 'K02.2', 'status' => ClinicalDiagnosis::STATUS_ACTIVE]);
 
-    expect(m33aRefusal(fn () => m33aRequest($sheet, proposal: ['diagnoses' => ['add' => [['clinical_diagnosis_id' => $active->id, 'diagnosis_role' => 'secondary', 'x_extra' => str_repeat('x', 1000)]]]])))->not->toBe('')
-        ->and(m33aRefusal(fn () => m33aRequest($sheet, proposal: ['diagnoses' => ['remove' => ['x']]])))->not->toBe('')
+    $onSheet = m33aDiagnosis($sheet, 'K02.3', MedicalRecordDiagnosis::ROLE_SECONDARY);
+
+    expect(m33aRefusal(fn () => m33aRequest($sheet, proposal: ['diagnoses' => ['add' => [['clinical_diagnosis_id' => $active->id, 'diagnosis_role' => 'secondary', 'x_extra' => str_repeat('x', 1000)]]]])))->toContain(RmeAmendmentService::MESSAGE_UNKNOWN_PART)
+        // An id of THIS sheet with trailing junk: (int) would accept it, the digits-only check does not.
+        ->and(m33aRefusal(fn () => m33aRequest($sheet, proposal: ['diagnoses' => ['remove' => [$onSheet->id.'abc']]])))->toContain(RmeAmendmentService::MESSAGE_DIAGNOSIS_NOT_ON_SHEET)
         ->and(RmeAmendment::query()->count())->toBe(0);
 });
 
@@ -568,3 +580,22 @@ it('refuses the shape of each status at the database (PostgreSQL CHECKs, LOW-5)'
         ->and(fn () => $insert(['status' => 'rejected', 'cancelled_at' => now(), 'decided_by' => $this->supervisor->id, 'decided_at' => now(), 'decision_reason' => 'm33a alasan tolak']))->toThrow(QueryException::class, 'trx_rme_amd_decided_chk')
         ->and(fn () => $insert(['status' => 'pending', 'decision_reason' => 'm33a alasan tolak']))->toThrow(QueryException::class, 'trx_rme_amd_pending_chk');
 })->skip(fn () => DB::connection()->getDriverName() !== 'pgsql', 'PostgreSQL CHECK constraints');
+
+// ─── Re-review fixes (M3.3 PR4 re-review) ────────────────────────────────────
+
+it('answers "not found" before checking the reason when the account may not see the record (INFO)', function () {
+    $sheet = m33aSheet();
+    $stranger = userInRole('Doctor');
+    Doctor::factory()->create(['user_id' => $stranger->id, 'branch_id' => $this->branch->id]);
+
+    expect(fn () => m33aService()->request($sheet, $stranger, 'pendek', m33aProposal()))
+        ->toThrow(ModelNotFoundException::class);
+});
+
+it('refuses a TRUNCATE of the amendment table (PostgreSQL trigger)', function () {
+    m33aRequest(m33aSheet());
+
+    expect(fn () => DB::transaction(fn () => DB::statement('TRUNCATE trx_rme_amendments')))
+        ->toThrow(QueryException::class, 'immutable')
+        ->and(RmeAmendment::query()->count())->toBe(1);
+})->skip(fn () => DB::connection()->getDriverName() !== 'pgsql', 'PostgreSQL trigger');

@@ -117,6 +117,22 @@ final class RmeAmendmentService
 
     public const MESSAGE_TOOTH_MAP = 'Peta gigi usulan tidak terbaca. Muat ulang formulir lalu ajukan kembali.';
 
+    public const MESSAGE_UNKNOWN_PART = 'Usulan amandemen memuat bagian yang tidak dikenal.';
+
+    public const MESSAGE_DIAGNOSIS_NOT_ON_SHEET = 'Diagnosis yang akan dihapus bukan diagnosis rekam medis ini.';
+
+    public const MESSAGE_MASTER_INACTIVE = 'Diagnosis master tidak ditemukan atau tidak aktif.';
+
+    public const MESSAGE_SECOND_PRIMARY = 'Rekam medis hanya boleh memiliki satu diagnosis utama — hapus diagnosis utama sebelumnya dalam usulan yang sama.';
+
+    public const MESSAGE_TOOTH_MAP_PART = 'Peta gigi usulan memuat bagian yang tidak dikenal.';
+
+    public const MESSAGE_TOOTH_NUMBER = 'Nomor gigi tidak valid. Gunakan nomor FDI.';
+
+    public const MESSAGE_TOOTH_FIELD = 'Gigi memuat isian yang tidak dikenal.';
+
+    public const MESSAGE_CONDITIONS = 'Kondisi gigi harus berupa daftar kondisi yang dikenal, tanpa kosong dan tanpa duplikat.';
+
     /** The keys of a diagnosis row a proposal may add. */
     private const DIAGNOSIS_ROW_KEYS = ['clinical_diagnosis_id', 'diagnosis_role', 'notes'];
 
@@ -157,6 +173,9 @@ final class RmeAmendmentService
      */
     public function request(MedicalRecord|Odontogram $subject, User $requester, string $reason, array $proposed): RmeAmendment
     {
+        // "Not found" first, so an account that may not see the record learns
+        // nothing from the order of the answers either.
+        $this->assertVisibleSubject($subject, $requester);
         $reason = $this->boundedReason($reason, 'reason', self::MESSAGE_REASON);
         $this->assertRequester($subject, $requester);
 
@@ -668,10 +687,10 @@ final class RmeAmendmentService
         $remove = [];
         foreach ($this->arrayPart($input, 'remove') as $id) {
             if (! is_int($id) && ! (is_string($id) && ctype_digit($id))) {
-                throw $this->refusal('proposed.diagnoses.remove', 'Diagnosis yang akan dihapus bukan diagnosis rekam medis ini.');
+                throw $this->refusal('proposed.diagnoses.remove', self::MESSAGE_DIAGNOSIS_NOT_ON_SHEET);
             }
             if (! $current->has((int) $id)) {
-                throw $this->refusal('proposed.diagnoses.remove', 'Diagnosis yang akan dihapus bukan diagnosis rekam medis ini.');
+                throw $this->refusal('proposed.diagnoses.remove', self::MESSAGE_DIAGNOSIS_NOT_ON_SHEET);
             }
             $remove[(int) $id] = (int) $id;
         }
@@ -718,7 +737,7 @@ final class RmeAmendmentService
             $masterId = (int) $row['clinical_diagnosis_id'];
             $master = $masters->get($masterId);
             if (! $master instanceof ClinicalDiagnosis || $master->status !== ClinicalDiagnosis::STATUS_ACTIVE) {
-                throw $this->refusal('proposed.diagnoses.add', 'Diagnosis master tidak ditemukan atau tidak aktif.');
+                throw $this->refusal('proposed.diagnoses.add', self::MESSAGE_MASTER_INACTIVE);
             }
 
             $role = (string) ($row['diagnosis_role'] ?? '');
@@ -743,7 +762,7 @@ final class RmeAmendmentService
         }
 
         if ($primaries > 1) {
-            throw $this->refusal('proposed.diagnoses.add', 'Rekam medis hanya boleh memiliki satu diagnosis utama — hapus diagnosis utama sebelumnya dalam usulan yang sama.');
+            throw $this->refusal('proposed.diagnoses.add', self::MESSAGE_SECOND_PRIMARY);
         }
 
         $change = array_filter(['add' => $add, 'remove' => $remove], fn (array $part): bool => $part !== []);
@@ -794,36 +813,50 @@ final class RmeAmendmentService
             $rules['proposed.'.$key] = $rule;
         }
         $toothKeys = $this->toothKeys();
+        $conditionValues = $this->conditionValues($rules);
 
         $validator = Validator::make(['proposed' => $proposed], $rules);
-        $validator->after(function ($v) use ($proposed, $toothKeys): void {
+        $validator->after(function ($v) use ($proposed, $toothKeys, $conditionValues): void {
             $map = $proposed['tooth_map_payload'] ?? null;
             if (! is_array($map)) {
                 return;
             }
 
             if (array_diff(array_keys($map), ['teeth']) !== []) {
-                $v->errors()->add('proposed.tooth_map_payload', 'Peta gigi usulan memuat bagian yang tidak dikenal.');
+                $v->errors()->add('proposed.tooth_map_payload', self::MESSAGE_TOOTH_MAP_PART);
             }
 
+            // A tooth map always names its teeth; an empty chart is `{"teeth": {}}`.
+            // `{"teeth": null}` or `{}` would read as "every tooth removed" — clearing
+            // a whole chart is not an amendment intent.
             $teeth = $map['teeth'] ?? null;
             if (! is_array($teeth)) {
+                $v->errors()->add('proposed.tooth_map_payload', self::MESSAGE_TOOTH_MAP);
+
                 return;
             }
 
             $valid = FdiToothNumbers::all();
             foreach ($teeth as $tooth => $entry) {
                 if (! in_array((string) $tooth, $valid, true)) {
-                    $v->errors()->add('proposed.tooth_map_payload.teeth', "Nomor gigi '{$tooth}' tidak valid. Gunakan nomor FDI.");
+                    $v->errors()->add('proposed.tooth_map_payload.teeth', self::MESSAGE_TOOTH_NUMBER);
                 }
 
-                if (is_array($entry) && array_diff(array_keys($entry), $toothKeys) !== []) {
-                    $v->errors()->add("proposed.tooth_map_payload.teeth.{$tooth}", "Gigi '{$tooth}' memuat isian yang tidak dikenal.");
+                if (! is_array($entry) || array_diff(array_keys($entry), $toothKeys) !== []) {
+                    $v->errors()->add("proposed.tooth_map_payload.teeth.{$tooth}", self::MESSAGE_TOOTH_FIELD);
                 }
 
-                $conditions = is_array($entry) && is_array($entry['conditions'] ?? null) ? array_values(array_filter($entry['conditions'], fn ($c) => $c !== null)) : [];
-                if (count($conditions) !== count(array_unique($conditions))) {
-                    $v->errors()->add("proposed.tooth_map_payload.teeth.{$tooth}.conditions", "Gigi '{$tooth}' memiliki kondisi duplikat.");
+                // As the editor writes them (resources/js/app.js): a list of distinct
+                // known conditions — never a map, never a null, at most one of each.
+                if (is_array($entry) && array_key_exists('conditions', $entry) && $entry['conditions'] !== null) {
+                    $conditions = $entry['conditions'];
+                    if (! is_array($conditions)
+                        || ! array_is_list($conditions)
+                        || in_array(null, $conditions, true)
+                        || count($conditions) > count($conditionValues)
+                        || count($conditions) !== count(array_unique($conditions))) {
+                        $v->errors()->add("proposed.tooth_map_payload.teeth.{$tooth}.conditions", self::MESSAGE_CONDITIONS);
+                    }
                 }
             }
         });
@@ -851,6 +884,24 @@ final class RmeAmendmentService
         }
 
         return $after;
+    }
+
+    /**
+     * The condition values a chart save accepts (the `in:` list of its
+     * `teeth.*.conditions.*` rule) — so their number bounds a tooth's list.
+     *
+     * @param  array<string, mixed>  $rules
+     * @return list<string>
+     */
+    private function conditionValues(array $rules): array
+    {
+        foreach ((array) ($rules['proposed.tooth_map_payload.teeth.*.conditions.*'] ?? []) as $rule) {
+            if (is_string($rule) && str_starts_with($rule, 'in:')) {
+                return explode(',', substr($rule, 3));
+            }
+        }
+
+        return [];
     }
 
     /** @return list<string> the per-tooth keys a chart save validates */
@@ -1006,7 +1057,7 @@ final class RmeAmendmentService
     private function assertKeys(array $input, array $allowed, string $key): void
     {
         if (array_diff(array_keys($input), $allowed) !== []) {
-            throw $this->refusal($key, 'Usulan amandemen memuat bagian yang tidak dikenal.');
+            throw $this->refusal($key, self::MESSAGE_UNKNOWN_PART);
         }
     }
 

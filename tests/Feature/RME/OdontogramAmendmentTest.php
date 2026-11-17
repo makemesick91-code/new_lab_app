@@ -94,6 +94,18 @@ function m33qProposal(): array
     ];
 }
 
+/** @return array<string, list<string>> the refusal's errors, by key */
+function m33qErrors(callable $act): array
+{
+    try {
+        $act();
+    } catch (ValidationException $e) {
+        return $e->errors();
+    }
+
+    test()->fail('Expected a refusal, the action succeeded.');
+}
+
 function m33qRefusal(callable $act): string
 {
     try {
@@ -132,8 +144,9 @@ it('validates the proposed chart like a chart save and refuses a proposal that c
     $chart = m33qChart();
     $service = app(RmeAmendmentService::class);
 
-    expect(m33qRefusal(fn () => $service->request($chart, $this->doctorUser, 'm33q nomor gigi tidak valid', ['tooth_map_payload' => ['teeth' => ['99' => ['status' => 'caries']]]])))->not->toBe('')
-        ->and(m33qRefusal(fn () => $service->request($chart, $this->doctorUser, 'm33q status gigi tidak valid', ['tooth_map_payload' => ['teeth' => ['36' => ['status' => 'broken']]]])))->not->toBe('')
+    expect(m33qRefusal(fn () => $service->request($chart, $this->doctorUser, 'm33q nomor gigi tidak valid', ['tooth_map_payload' => ['teeth' => ['99' => ['status' => 'caries']]]])))->toContain(RmeAmendmentService::MESSAGE_TOOTH_NUMBER)
+        // A Laravel `in` rule of the chart save: asserted by its key.
+        ->and(m33qErrors(fn () => $service->request($chart, $this->doctorUser, 'm33q status gigi tidak valid', ['tooth_map_payload' => ['teeth' => ['36' => ['status' => 'broken']]]])))->toHaveKey('proposed.tooth_map_payload.teeth.36.status')
         ->and(m33qRefusal(fn () => $service->request($chart, $this->doctorUser, 'm33q tidak ada perubahan', ['summary_notes' => 'm33q ringkasan', 'tooth_map_payload' => m33qPayload()])))->toContain(RmeAmendmentService::MESSAGE_NO_CHANGE)
         ->and(RmeAmendment::query()->count())->toBe(0);
 });
@@ -164,10 +177,14 @@ it('refuses a draft chart, another doctor and a Super Admin who is neither', fun
 });
 
 it('keeps the chart locked while an amendment is pending', function () {
+    // The chart of the LIVE, consented encounter, so the authoring authority passes
+    // and the lock itself answers.
     $chart = m33qChart();
-    app(RmeAmendmentService::class)->request($chart, $this->doctorUser, 'm33q koreksi diagnosis gigi', m33qProposal());
+    $chart->clinicVisit->forceFill(['status' => ClinicVisit::STATUS_IN_PROGRESS])->save();
+    rmeActiveConsentedEncounter($chart->clinicVisit->fresh());
+    app(RmeAmendmentService::class)->request($chart->fresh(), $this->doctorUser, 'm33q koreksi diagnosis gigi', m33qProposal());
 
-    expect(m33qRefusal(fn () => app(OdontogramService::class)->updatePlaceholder($chart->fresh(), m33qProposal(), $this->doctorUser)))->not->toBe('')
+    expect(m33qRefusal(fn () => app(OdontogramService::class)->updatePlaceholder($chart->fresh(), m33qProposal(), $this->doctorUser)))->toContain(OdontogramService::MESSAGE_FINALIZED_CHART_LOCKED)
         ->and($chart->fresh()->tooth_map_payload['teeth']['36']['status'])->toBe('caries');
 });
 
@@ -255,7 +272,7 @@ it('refuses a malformed or empty tooth map from the form and never stores it as 
 
     // Through the service: an explicit null is refused; an absent key keeps the chart.
     $service = app(RmeAmendmentService::class);
-    expect(m33qRefusal(fn () => $service->request($chart, $this->doctorUser, 'm33q peta gigi kosong', ['summary_notes' => 'm33q ringkasan baru', 'tooth_map_payload' => null])))->not->toBe('');
+    expect(m33qRefusal(fn () => $service->request($chart, $this->doctorUser, 'm33q peta gigi kosong', ['summary_notes' => 'm33q ringkasan baru', 'tooth_map_payload' => null])))->toContain(RmeAmendmentService::MESSAGE_TOOTH_MAP);
 
     $amendment = $service->request($chart, $this->doctorUser, 'm33q hanya ringkasan berubah', ['summary_notes' => 'm33q ringkasan baru']);
     expect($amendment->proposed_content['tooth_map_payload'])->toBe($chart->tooth_map_payload)
@@ -266,8 +283,8 @@ it('refuses unknown keys at every level of the tooth map (LOW-1)', function () {
     $chart = m33qChart();
     $service = app(RmeAmendmentService::class);
 
-    expect(m33qRefusal(fn () => $service->request($chart, $this->doctorUser, 'm33q kunci tambahan peta', ['tooth_map_payload' => ['teeth' => m33qPayload('filling')['teeth'], 'x_top' => str_repeat('x', 5000)]])))->not->toBe('')
-        ->and(m33qRefusal(fn () => $service->request($chart, $this->doctorUser, 'm33q kunci tambahan gigi', ['tooth_map_payload' => ['teeth' => ['36' => ['status' => 'filling', 'x_extra' => str_repeat('x', 5000)]]]])))->not->toBe('')
+    expect(m33qRefusal(fn () => $service->request($chart, $this->doctorUser, 'm33q kunci tambahan peta', ['tooth_map_payload' => ['teeth' => m33qPayload('filling')['teeth'], 'x_top' => str_repeat('x', 5000)]])))->toContain(RmeAmendmentService::MESSAGE_TOOTH_MAP_PART)
+        ->and(m33qRefusal(fn () => $service->request($chart, $this->doctorUser, 'm33q kunci tambahan gigi', ['tooth_map_payload' => ['teeth' => ['36' => ['status' => 'filling', 'x_extra' => str_repeat('x', 5000)]]]])))->toContain(RmeAmendmentService::MESSAGE_TOOTH_FIELD)
         ->and(RmeAmendment::query()->count())->toBe(0);
 });
 
@@ -289,4 +306,79 @@ it('renders every stored tooth field in the before/after view and marks the chan
         ->assertDontSee('data-chart-row-changed="11"', false)
         ->assertSeeInOrder(['m33q catatan lama', 'm33q catatan baru'])
         ->assertSee('mobility');
+});
+
+// ─── Re-review fixes (M3.3 PR4 re-review) ────────────────────────────────────
+
+/** @return array<string, mixed> the chart form as the browser posts it */
+function m33qForm(array $teeth, ?string $notes = 'm33q ringkasan'): array
+{
+    return [
+        'reason' => 'm33q koreksi odontogram final',
+        'proposed' => [
+            'summary_notes' => $notes,
+            'additional_conditions' => '',
+            'tooth_map_payload' => json_encode(['teeth' => $teeth]),
+        ],
+    ];
+}
+
+it('stores a notes-only change, and a notes and teeth change, from the chart form (HIGH-R1)', function () {
+    $chart = m33qChart();
+
+    $this->actingAs($this->doctorUser)
+        ->post(route('rme.amendments.store-chart', $chart), m33qForm(m33qPayload()['teeth'], 'm33q ringkasan dikoreksi'))
+        ->assertSessionHasNoErrors();
+    $notesOnly = RmeAmendment::query()->sole();
+    expect($notesOnly->proposed_content['summary_notes'])->toBe('m33q ringkasan dikoreksi')
+        ->and($notesOnly->proposed_content['tooth_map_payload'])->toEqual(m33qPayload());
+
+    app(RmeAmendmentService::class)->cancel($notesOnly, $this->doctorUser);
+    $this->actingAs($this->doctorUser)
+        ->post(route('rme.amendments.store-chart', $chart), m33qForm(m33qPayload('filling', 'm33q tumpatan komposit')['teeth'], 'm33q ringkasan kedua'))
+        ->assertSessionHasNoErrors();
+    $both = RmeAmendment::query()->where('status', RmeAmendment::STATUS_PENDING)->sole();
+    expect($both->proposed_content['summary_notes'])->toBe('m33q ringkasan kedua')
+        ->and($both->proposed_content['tooth_map_payload']['teeth']['36']['status'])->toBe('filling');
+});
+
+it('refuses a tooth map whose teeth are null, and conditions that are not a short list of known values (LOW)', function () {
+    $chart = m33qChart();
+    $service = app(RmeAmendmentService::class);
+    $propose = fn (array $map) => $service->request($chart, $this->doctorUser, 'm33q peta gigi tidak lazim', ['tooth_map_payload' => $map]);
+
+    expect(m33qRefusal(fn () => $propose(['teeth' => null])))->toContain(RmeAmendmentService::MESSAGE_TOOTH_MAP)
+        ->and(m33qRefusal(fn () => $propose([])))->toContain(RmeAmendmentService::MESSAGE_TOOTH_MAP)
+        ->and(m33qRefusal(fn () => $propose(['teeth' => ['36' => ['status' => 'caries', 'conditions' => ['a' => 'caries']]]])))->toContain(RmeAmendmentService::MESSAGE_CONDITIONS)
+        ->and(m33qRefusal(fn () => $propose(['teeth' => ['36' => ['status' => 'caries', 'conditions' => ['caries', null]]]])))->toContain(RmeAmendmentService::MESSAGE_CONDITIONS)
+        ->and(m33qRefusal(fn () => $propose(['teeth' => ['36' => ['status' => 'caries', 'conditions' => array_fill(0, 8, 'caries')]]])))->toContain(RmeAmendmentService::MESSAGE_CONDITIONS)
+        ->and(RmeAmendment::query()->count())->toBe(0);
+
+    // An empty chart is an explicit, readable tooth map.
+    $cleared = $propose(['teeth' => []]);
+    expect($cleared->proposed_content['tooth_map_payload'])->toBe(['teeth' => []]);
+});
+
+it('restores the posted teeth in the chart form after a refusal (LOW)', function () {
+    $chart = m33qChart();
+    $form = m33qForm(['47' => ['status' => 'broken']]);
+
+    $this->actingAs($this->doctorUser)
+        ->from(route('rme.amendments.create-chart', $chart))
+        ->post(route('rme.amendments.store-chart', $chart), $form)
+        ->assertRedirect(route('rme.amendments.create-chart', $chart));
+
+    $this->actingAs($this->doctorUser)->get(route('rme.amendments.create-chart', $chart))
+        ->assertOk()
+        // The editor config (@js) carries the posted tooth 47, not only the chart's 36.
+        ->assertSee('\\u002247\\u0022', false);
+});
+
+it('never lets a chart\'s finalizer reject it (service and HTTP)', function () {
+    $chart = m33qChart($this->supervisor);
+    $amendment = app(RmeAmendmentService::class)->request($chart, $this->doctorUser, 'm33q koreksi diagnosis gigi', m33qProposal());
+
+    expect(m33qRefusal(fn () => app(RmeAmendmentService::class)->reject($amendment, $this->supervisor, 'm33q pemfinal menolak')))->toContain(RmeAmendmentService::MESSAGE_FINALIZER);
+    $this->actingAs($this->supervisor)->post(route('rme.amendments.reject', $amendment), ['decision_reason' => 'm33q pemfinal menolak'])->assertForbidden();
+    expect($amendment->fresh()->status)->toBe(RmeAmendment::STATUS_PENDING);
 });
