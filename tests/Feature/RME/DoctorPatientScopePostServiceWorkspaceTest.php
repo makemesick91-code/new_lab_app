@@ -228,7 +228,7 @@ it('lists in the workspace only the sheets and pages the doctor may open (histor
         ->and(dpswRailIds($response))->toBe($readable)
         ->and(dpswPageRecordIds($response))->toBe($readable)
         ->and($response->getContent())->not->toContain($f['bLive']->visit_number)
-        ->and($response->getContent())->toContain($f['bOld']->visit_number);
+        ->and($response->getContent())->toContain(e($f['bOld']->visit_number));
 })->with([ClinicVisit::STATUS_REGISTERED, ClinicVisit::STATUS_WAITING, ClinicVisit::STATUS_IN_PROGRESS]);
 
 it('never selects or names a hidden sheet or source visit asked for in the URL', function () {
@@ -640,7 +640,7 @@ it('keeps the workspace whole for a doctor out of service with the flag OFF', fu
     $response = dpswOpen($a, $own)->assertOk();
 
     expect(dpswSheetIds($response))->toBe(dpswIds($book, $ownSheet))
-        ->and($response->getContent())->toContain($bookVisit->visit_number);
+        ->and($response->getContent())->toContain(e($bookVisit->visit_number));
 });
 
 it('keeps an anchor of another doctor\'s pre-exam visit named and creatable with the flag OFF', function () {
@@ -651,7 +651,7 @@ it('keeps an anchor of another doctor\'s pre-exam visit named and creatable with
     $empty = dpswOpen($a, $f['aVisit'])->assertOk()->assertViewIs('rme.visits.medical-record.empty');
 
     expect($empty->viewData('canEdit'))->toBeTrue()
-        ->and($empty->getContent())->toContain($f['anchor']->visit_number);
+        ->and($empty->getContent())->toContain(e($f['anchor']->visit_number));
 });
 
 /*
@@ -807,7 +807,7 @@ it('shows the anchor-bound content of a book whose anchor the doctor may read', 
     expect(Gate::forUser(test()->dpswUserA)->allows('viewAnchorContent', $f['book']))->toBeTrue()
         ->and((int) $book->viewData('activeSheet')->id)->toBe((int) $f['book']->id)
         ->and($book->getContent())->toContain('Catatan buku yang boleh dibaca')
-        ->and($book->getContent())->toContain($f['bookVisit']->visit_number);
+        ->and($book->getContent())->toContain(e($f['bookVisit']->visit_number));
 });
 
 it('lets a roomless pre-exam anchor of another doctor neither bounce the workspace nor block the book (flag ON)', function (bool $on) {

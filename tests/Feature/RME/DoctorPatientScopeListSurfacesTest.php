@@ -208,7 +208,7 @@ it('keeps both unified pages whole with the flag OFF and for Supervisor RME', fu
 
     expect((int) $index->viewData('latestNative')->get(test()->dplsPatient->id)?->id)->toBe((int) $f['bLiveSheet']->id)
         ->and(dplsIds($page->viewData('nativeRecords')))->toBe(dplsIds([$f['book'], $f['bOldSheet'], $f['aSheet'], $f['bLiveSheet']]))
-        ->and($page->getContent())->toContain($f['bLive']->visit_number);
+        ->and($page->getContent())->toContain(e($f['bLive']->visit_number));
 })->with(['flag OFF, doctor' => [false], 'flag ON, Supervisor RME' => [true]]);
 
 it('scopes the unified index latest record in SQL, never per row', function () {
