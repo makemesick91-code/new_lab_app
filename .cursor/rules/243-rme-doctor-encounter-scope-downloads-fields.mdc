@@ -223,6 +223,15 @@ added by their own PRs.
    read B's encounter (item 11). Once M3.3 PR2 has merged, and before the flag is turned ON, the book page sequence
    must also be filtered by each page's author stamp (`authored_clinic_visit_id`) under the same readability rule
    (`listsVisitFor()` on the authoring visit), and own mode may then list the doctor's own book pages.
+   Recorded by the A3 re-review, each to be closed in A4 before the flag is turned ON (flag-ON only, reads only, no
+   write path): (a) at the anchor address `EnsureVisitRoomAssigned::gatedVisit()` gates the doctor's own roomless
+   visit only when the request's `source_visit_id` names it — choose the gated visit on the server (the doctor's own
+   live encounter, then an own in-service pre-exam visit of the patient) and use `source_visit_id` only to choose
+   among the doctor's own visits; until then the room gate there is a redirect only and the RME authoring gate is
+   what protects writes; (b) the workflow tabs (`visit-workflow-nav`) on the workspace show the UNREADABLE anchor's
+   room state — render them for the source visit or omit them when `anchorContentReadable` is false; (c) `visit.room`
+   runs before authorization, so another doctor's roomless pre-exam visit answers 302 where a placed one the doctor
+   may not read answers 404 — authorize (404) before the room redirect for a scoped doctor.
    The items recorded open in A1 (service-level sheet re-assertion, history scoping, the access panel, the picker
    status) are closed by PR A1b.
    **The A3 list (recorded in A1c), each a precondition for turning the flag ON, and its status.** The per-record
