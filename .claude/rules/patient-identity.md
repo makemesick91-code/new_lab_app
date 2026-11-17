@@ -245,8 +245,10 @@ file.
   `register_patient_paper_card_rm` plus `manage patients` (Supervisor RME; Super Admin via `'*'`): fields rendered
   only under `@can`, a posted value refused (403), both re-asserted in `PatientService::createWithPaperCardNumber()`
   and `LegacyPatientImportService::commit()`. The pilot backup importer (`rme:import-pilot-backup`) is a CLI command
-  with no actor or permission, gated by the claim alone. Every claim passes the claim cap (owner 2026-11-17): a
-  current-year (or later) claim raises its counter by at most +1000 and never above 9999; a value of zero or nine
-  digits and up is refused in any year; a refusal is escalated to Supervisor RME and moves nothing. The reason
+  with no actor or permission, gated by the claim alone. Every claim passes the claim cap (owner 2026-11-17): the
+  current-year counter rises by at most +1000 — per claim for a paper card, in total per legacy CSV batch or pilot run
+  (from the counter locked at its start) — and never above 9999; a later year is refused; a current-year non-digit
+  sequence or a value of zero or nine digits and up is refused; a refusal is escalated to Supervisor RME and moves
+  nothing. The reason
   (10–500) and the number checks live in the service, so they bind Super Admin; the audit holds ids and the reason
   length, never the number or reason. Source: `244-…` §2.6, §4.

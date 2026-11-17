@@ -15,6 +15,7 @@ use App\Modules\Patient\Exceptions\PatientRmNumberUnavailableException;
 use App\Modules\Patient\Models\LegacyPatientImportBatch;
 use App\Modules\Patient\Models\LegacyPatientImportRow;
 use App\Modules\Patient\Models\Patient;
+use App\Support\Clinical\ClinicalClock;
 use Carbon\Carbon;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\QueryException;
@@ -86,6 +87,9 @@ class LegacyPatientImportService
         // looks. Payloads are counts, statuses and ids — never a patient name,
         // never a KTP/NIK, never a filename.
         private readonly AuditLogService $audit,
+        // Rule 244 §2.6 (PR-3 review A4) — a registration year that has not
+        // started on the clinic calendar is refused at staging.
+        private readonly ClinicalClock $clock,
     ) {}
 
     /**
@@ -256,6 +260,11 @@ class LegacyPatientImportService
         $registeredAt = $this->parseDate($values['timestamp'] ?? '');
         if ($registeredAt === null) {
             $errors[] = 'Timestamp/Tanggal Daftar wajib diisi dan harus berupa tanggal valid.';
+        } elseif ((int) $registeredAt->format('Y') > (int) $this->clock->today()->format('Y')) {
+            // Rule 244 §2.6 (PR-3 review A4) — a Nomor RM for a year that has not
+            // started is never claimed; refused here, before the commit.
+            $errors[] = 'Timestamp/Tanggal Daftar berada pada tahun yang belum berjalan (kalender klinik). Eskalasikan ke Supervisor RME.';
+            $registeredAt = null;
         }
 
         // --- Composed RM (unique incl. trashed + in-file) ---
@@ -632,7 +641,7 @@ class LegacyPatientImportService
                  * number until this transaction ends, and two imports cannot
                  * deadlock on the counters.
                  */
-                $branchesByRow = $this->lockRmCounters($rows);
+                [$branchesByRow, $baselinesByRow] = $this->lockRmCounters($rows);
 
                 foreach ($rows as $row) {
                     $data = $row->normalized_payload ?? [];
@@ -657,7 +666,9 @@ class LegacyPatientImportService
                     // counter lock, taken in ANY spelling — including by a row
                     // this batch inserted a moment ago — and, when free, the
                     // counter is raised to it (owner default 3).
-                    $rmTaken = ! $this->claimRow($branchesByRow[$row->id], $rm, (int) $row->row_number);
+                    // Owner decision "Per batch" (2026-11-17): every claim of the
+                    // batch is capped against the counter locked at its start.
+                    $rmTaken = ! $this->claimRow($branchesByRow[$row->id], $rm, (int) $row->row_number, $baselinesByRow[$row->id]);
                     $ktpTaken = $ktp ? Patient::withTrashed()->where('ktp_number', $ktp)->lockForUpdate()->exists() : false;
 
                     /*
@@ -1232,8 +1243,12 @@ class LegacyPatientImportService
      * different branch than its own, or that does not parse, contradicts its
      * staged verdict, and the batch is refused rather than guessed at.
      *
+     * Owner decision "Per batch" (2026-11-17): the counter each lock returns is
+     * the batch BASELINE for its branch-year; every claim of the batch is capped
+     * against it, so the whole batch raises a branch-year by at most +1000.
+     *
      * @param  Collection<int, LegacyPatientImportRow>  $rows
-     * @return array<int, Branch> each row's branch, keyed by row id
+     * @return array{0: array<int, Branch>, 1: array<int, int>} each row's branch and its branch-year baseline, keyed by row id
      */
     private function lockRmCounters(Collection $rows): array
     {
@@ -1243,6 +1258,7 @@ class LegacyPatientImportService
             ->keyBy('id');
         $pairs = [];
         $byRow = [];
+        $keyByRow = [];
 
         foreach ($rows as $row) {
             $data = $row->normalized_payload ?? [];
@@ -1257,15 +1273,18 @@ class LegacyPatientImportService
                 );
             }
 
-            $pairs[sprintf('%010d|%s', (int) $branch->getKey(), $parts->year)] = [$branch, (int) $parts->year];
+            $key = sprintf('%010d|%s', (int) $branch->getKey(), $parts->year);
+            $pairs[$key] = [$branch, (int) $parts->year];
             $byRow[(int) $row->id] = $branch;
+            $keyByRow[(int) $row->id] = $key;
         }
 
         ksort($pairs);
+        $baselines = [];
 
-        foreach ($pairs as [$branch, $year]) {
+        foreach ($pairs as $key => [$branch, $year]) {
             try {
-                $this->rmAllocator->lockCounter($branch, $year);
+                $baselines[$key] = $this->rmAllocator->lockCounter($branch, $year);
             } catch (PatientRmNumberUnavailableException|InvalidArgumentException) {
                 throw new LegacyPatientImportBlockedException(
                     LegacyPatientImportBlockedException::REASON_REVALIDATION_FAILED,
@@ -1274,21 +1293,22 @@ class LegacyPatientImportService
             }
         }
 
-        return $byRow;
+        return [$byRow, array_map(fn (string $key): int => $baselines[$key], $keyByRow)];
     }
 
     /**
      * Rule 244 §2.6 — claim one row's Nomor RM through the allocator (the lock is
      * already held, so this re-lock is free); a number the format or the branch
      * cannot carry refuses the batch. A claim refused by the claim cap (owner
-     * 2026-11-17: a current-year jump past +1000 or 9999, or a number beyond the
-     * format capacity) names the row and sends the operator to Supervisor RME —
+     * 2026-11-17: the batch raising a current-year counter past +1000 from its
+     * baseline or past 9999, a number beyond the format capacity, a year that
+     * has not started) names the row and sends the operator to Supervisor RME —
      * never the number.
      */
-    private function claimRow(Branch $branch, string $rm, int $rowNumber): bool
+    private function claimRow(Branch $branch, string $rm, int $rowNumber, int $baseline): bool
     {
         try {
-            return $this->rmAllocator->claimExisting($branch, $rm);
+            return $this->rmAllocator->claimExisting($branch, $rm, $baseline);
         } catch (PatientRmNumberUnavailableException|InvalidArgumentException $e) {
             throw new LegacyPatientImportBlockedException(
                 LegacyPatientImportBlockedException::REASON_REVALIDATION_FAILED,

@@ -225,12 +225,17 @@ it('CC-06 treats a claim at or below the counter as no jump: accepted, the count
         ->and(frccCounterValue(2026))->toBe(5000);
 });
 
-it('CC-07 applies the cap to a later year too, whose counter becomes the current one', function (): void {
-    expect(frccClaimRefusal('DG-SPN4-2027-5000')?->getMessage())->toContain('Supervisor RME')
-        ->and(frccCounterValue(2027))->toBeNull()
-        ->and(frccClaimRefusal('DG-SPN4-2027-0900'))->toBeNull()
-        ->and(frccCounterValue(2027))->toBe(900);
-});
+it('CC-07 refuses a claim for a later year outright, whatever its value (review A4)', function (string $number): void {
+    $refusal = frccClaimRefusal($number);
+
+    expect(PatientRmNumberAllocator::isClaimRefusal($refusal ?? new RuntimeException))->toBeTrue()
+        ->and($refusal?->getMessage())->toContain('Supervisor RME')
+        ->and(frccCounterValue(2027))->toBeNull();
+})->with([
+    'within the jump' => ['DG-SPN4-2027-0900'],
+    'past the jump' => ['DG-SPN4-2027-5000'],
+    'not all digits' => ['DG-SPN4-2027-12A'],
+]);
 
 // =============================================================================
 // Past years and the format capacity
@@ -287,15 +292,85 @@ it('CC-10 refuses the whole legacy CSV batch when one current-year row jumps pas
         ->and($batch->refresh()->isCommitted())->toBeFalse();
 });
 
-it('CC-11 judges each CSV row against the counter the previous row left (the cap is per claim)', function (): void {
+it('CC-11 caps the WHOLE CSV batch at +1000 from the counter it started from: stepping 1000, 2000 is refused at the row past it (owner "Per batch")', function (): void {
     frccCounter(2026, 10);
     $batch = frccStage([
         ['manual_rm_number' => '1000', 'name' => 'Impor Langkah Satu'],
         ['manual_rm_number' => '2000', 'name' => 'Impor Langkah Dua'],
+        ['manual_rm_number' => '2500', 'name' => 'Impor Langkah Tiga'],
+    ]);
+
+    $refusal = null;
+    try {
+        app(LegacyPatientImportService::class)->commit($batch, legacyPatientCommitterId());
+    } catch (LegacyPatientImportBlockedException $e) {
+        $refusal = $e;
+    }
+
+    // Row 3 is +1990 from the batch's starting counter (10), although only +1000
+    // from the counter the previous row left.
+    expect($refusal)->not->toBeNull()
+        ->and($refusal->getMessage())->toContain('Baris 3')
+        ->and($refusal->getMessage())->toContain('Supervisor RME')
+        ->and($refusal->getMessage())->not->toContain('2000')
+        ->and(Patient::query()->where('name', 'like', 'Impor Langkah %')->exists())->toBeFalse()
+        ->and(frccCounterValue(2026))->toBe(10);
+});
+
+it('CC-15 commits a CSV batch whose total raise stays within +1000 of its starting counter', function (): void {
+    frccCounter(2026, 10);
+    $batch = frccStage([
+        ['manual_rm_number' => '0500', 'name' => 'Impor Total Satu'],
+        ['manual_rm_number' => '1010', 'name' => 'Impor Total Dua'],
     ]);
 
     expect(app(LegacyPatientImportService::class)->commit($batch, legacyPatientCommitterId())->committed_rows)->toBe(2)
-        ->and(frccCounterValue(2026))->toBe(2000);
+        ->and(frccCounterValue(2026))->toBe(1010);
+});
+
+it('CC-16 caps the WHOLE pilot run at +1000 from its starting counter, skipping the row past it (per-row skip)', function (): void {
+    frccCounter(2026, 10);
+    Doctor::factory()->create(['code' => 'FRCC-DOC']);
+
+    $result = app(PilotBackupImportService::class)->import(['tables' => [
+        'mst_doctors' => [['id' => '9', 'code' => 'FRCC-DOC', 'name' => 'Dokter Pilot']],
+        'mst_patients' => [
+            ['medical_record_number' => 'DG-SPN4-2026-0900', 'name' => 'Pilot Run Satu', 'doctor_id' => '9'],
+            // +600 from the counter row one left, +1490 from the run's start.
+            ['medical_record_number' => 'DG-SPN4-2026-1500', 'name' => 'Pilot Run Dua', 'doctor_id' => '9'],
+            ['medical_record_number' => 'DG-SPN4-2026-1010', 'name' => 'Pilot Run Tiga', 'doctor_id' => '9'],
+        ],
+    ], 'skipped_tables' => [], 'whitelisted_row_counts' => []], dryRun: false, only: 'patients');
+
+    expect(Patient::query()->where('name', 'Pilot Run Satu')->exists())->toBeTrue()
+        ->and(Patient::query()->where('name', 'Pilot Run Dua')->exists())->toBeFalse()
+        ->and(Patient::query()->where('name', 'Pilot Run Tiga')->exists())->toBeTrue()
+        ->and($result->skipped['mst_patients'] ?? 0)->toBe(1)
+        ->and(implode(' ', $result->messages))->toContain('Supervisor RME')
+        ->and(implode(' ', $result->messages))->not->toContain('1500')
+        ->and(frccCounterValue(2026))->toBe(1010);
+});
+
+it('CC-17 refuses a current-year sequence that is not all digits, and stays lenient for a past year (review A3)', function (): void {
+    $current = frccClaimRefusal('DG-SPN4-2026-12A');
+
+    expect(PatientRmNumberAllocator::isClaimRefusal($current ?? new RuntimeException))->toBeTrue()
+        ->and(frccClaimRefusal('DG-SPN4-2020-12A'))->toBeNull()
+        ->and(frccCounterValue(2026))->toBeNull();
+});
+
+it('CC-18 refuses at staging a CSV row whose registration year has not started yet (review A4)', function (): void {
+    $batch = frccStage([['manual_rm_number' => '0007', 'name' => 'Impor Tahun Depan', 'timestamp' => '2027-01-05']]);
+
+    expect($batch->error_rows)->toBe(1);
+});
+
+it('CC-19 keeps the paper card per claim: two cards each within +1000 of the counter are both accepted', function (): void {
+    frccCounter(2026, 10);
+
+    expect(frccPaperCard('2026', '1010', 'Kartu Per Klaim Satu')->medical_record_number)->toBe('DG-SPN4-2026-1010')
+        ->and(frccPaperCard('2026', '2010', 'Kartu Per Klaim Dua')->medical_record_number)->toBe('DG-SPN4-2026-2010')
+        ->and(frccCounterValue(2026))->toBe(2010);
 });
 
 it('CC-12 makes the pilot backup importer skip a current-year number past the cap, escalating without the number', function (): void {

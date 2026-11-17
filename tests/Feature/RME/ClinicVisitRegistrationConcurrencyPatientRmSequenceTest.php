@@ -522,7 +522,7 @@ it('serialises two claims on one branch-year: the second waits, then is judged a
     freeTestClock();
 });
 
-it('keeps the counter at the higher of two racing claims: the later, lower claim never lowers it (claim cap)', function (): void {
+it('never lowers the counter: a later, lower claim on a second connection moves nothing (sequential, claim cap; review A7)', function (): void {
     pinTestClock(CVRS_YEAR.'-03-01 02:00:00');
     DB::connection(CVRS_WRITER)->table('mst_patient_rm_sequences')->insert([
         'branch_id' => $this->branchId, 'year' => CVRS_YEAR, 'last_number' => 10,
@@ -534,8 +534,8 @@ it('keeps the counter at the higher of two racing claims: the later, lower claim
     expect(cvrsClaimOn(CVRS_WRITER, "DG-{$code}-".CVRS_YEAR.'-0900'))->toBeTrue();
     DB::connection(CVRS_WRITER)->commit();
 
-    // Read against the stale counter (10) it would have raised the counter to
-    // 800; under the lock it is below the committed 900 and moves nothing.
+    // Not a race (the first claim has committed): the second connection reads
+    // the committed 900 and, being below it, moves nothing (GREATEST).
     DB::purge(CVRS_PROBE);
     DB::connection(CVRS_PROBE)->beginTransaction();
     expect(cvrsClaimOn(CVRS_PROBE, "DG-{$code}-".CVRS_YEAR.'-0800'))->toBeTrue();

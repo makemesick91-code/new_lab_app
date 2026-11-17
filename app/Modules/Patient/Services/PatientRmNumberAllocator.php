@@ -54,9 +54,10 @@ final class PatientRmNumberAllocator
     public const MAX_DIGITS = 8;
 
     /**
-     * Rule 244 §2.6 (owner decision 2026-11-17, "RM CLAIM CAP: refuse jump >
-     * +1000") — the most one claim may raise the counter of the current clinical
-     * year (or a later one, whose counter becomes current).
+     * Rule 244 §2.6 (owner decisions 2026-11-17, "RM CLAIM CAP: refuse jump >
+     * +1000" and "Per batch") — the most the current clinical year's counter may
+     * be raised: by one paper-card claim, or by a whole legacy CSV batch or pilot
+     * backup run in total, measured from the counter the batch locked at its start.
      */
     public const CLAIM_MAX_JUMP = 1000;
 
@@ -75,7 +76,10 @@ final class PatientRmNumberAllocator
     public const CLAIM_JUMP_MESSAGE = 'Nomor RM ini melompat lebih dari 1000 nomor di atas nomor terakhir cabang untuk tahun berjalan, atau melewati 9999. Nomor tidak diterima otomatis: eskalasikan kasus ini ke Supervisor RME.';
 
     /** Rule 244 §2.6 — the operator message of a number the format cannot carry; no number in it. */
-    public const CLAIM_CAPACITY_MESSAGE = 'Nomor RM ini di luar kapasitas format Nomor RM (nomor urut 1 sampai 8 digit, bukan nol). Nomor tidak diterima: eskalasikan kasus ini ke Supervisor RME.';
+    public const CLAIM_CAPACITY_MESSAGE = 'Nomor RM ini di luar kapasitas format Nomor RM (nomor urut berupa angka 1 sampai 8 digit, bukan nol). Nomor tidak diterima: eskalasikan kasus ini ke Supervisor RME.';
+
+    /** Rule 244 §2.6 (review A4) — a claim for a year that has not started; no number in it. */
+    public const CLAIM_FUTURE_YEAR_MESSAGE = 'Tahun pada Nomor RM ini belum berjalan menurut kalender klinik. Nomor tidak diterima: eskalasikan kasus ini ke Supervisor RME.';
 
     public function __construct(
         private readonly PatientRmSequenceRepositoryInterface $sequences,
@@ -235,10 +239,17 @@ final class PatientRmNumberAllocator
      * transaction (creating and seeding it exactly as {@see self::allocate()} does
      * when it is missing), so no automatic number is issued for that branch-year
      * until the caller commits. MAIN and an unknown code are refused, as there.
+     *
+     * Returns the counter as locked — the batch BASELINE (owner decision
+     * 2026-11-17, "Per batch"): a legacy CSV commit or a pilot backup run passes
+     * it to every {@see self::claimExisting()} of the batch, so the batch as a
+     * whole raises the branch-year by at most {@see self::CLAIM_MAX_JUMP}.
      */
-    public function lockCounter(Branch $branch, int $year): void
+    public function lockCounter(Branch $branch, int $year): int
     {
-        $this->lockedCounter($branch, $year, 'A Nomor RM counter is locked only inside the caller\'s transaction.');
+        [$sequence] = $this->lockedCounter($branch, $year, 'A Nomor RM counter is locked only inside the caller\'s transaction.');
+
+        return (int) $sequence->last_number;
     }
 
     /**
@@ -250,21 +261,26 @@ final class PatientRmNumberAllocator
      * (GREATEST, never lower), so the sequence continues after the highest number
      * on record (owner default 3).
      *
-     * The claim cap (owner decision 2026-11-17, "RM CLAIM CAP: refuse jump >
-     * +1000") — refused with a {@see PatientRmNumberUnavailableException} whose
-     * code is {@see self::CLAIM_REFUSED}, before anything moves:
-     *  - an all-digit sequence whose value is zero or wider than
-     *    {@see self::MAX_DIGITS} digits (beyond the format capacity), in any
-     *    year, before the counter is even locked;
-     *  - for the current clinical year ({@see ClinicalClock}) or a later one, a
-     *    value above the counter by more than {@see self::CLAIM_MAX_JUMP}, or
-     *    above {@see self::CLAIM_MAX_CURRENT_YEAR_VALUE} — decided under the
-     *    counter row lock, against the committed counter. A value at or below
-     *    the counter moves nothing and is not a jump.
-     * A past year's claim only ever raises that year's counter. A sequence that
-     * is not all digits never reaches a counter and is only checked for "taken".
+     * The claim cap (owner decisions 2026-11-17, "RM CLAIM CAP: refuse jump >
+     * +1000" and "Per batch") — refused with a
+     * {@see PatientRmNumberUnavailableException} whose code is
+     * {@see self::CLAIM_REFUSED}, before anything moves:
+     *  - before the counter is even locked ({@see self::formatRefusal()}): a year
+     *    after the clinical year (review A4); for the current year a sequence
+     *    that is not all digits (review A3); in any year an all-digit sequence
+     *    whose value is zero or wider than {@see self::MAX_DIGITS} digits;
+     *  - for the current clinical year ({@see ClinicalClock}), a value above
+     *    {@see self::CLAIM_MAX_CURRENT_YEAR_VALUE}, or more than
+     *    {@see self::CLAIM_MAX_JUMP} above the reference: the locked counter,
+     *    including this transaction's earlier claims (a paper card: per claim),
+     *    or — for a batch — `$batchBaseline`, the counter {@see self::lockCounter()}
+     *    returned when the batch started, so the whole batch raises it by at most
+     *    +1000. Decided under the counter row lock, the unique index as backstop.
+     *    A value at or below the counter moves nothing and is not a jump.
+     * A past year's claim only ever raises that year's counter, and a past-year
+     * sequence that is not all digits never reaches a counter (only "taken").
      */
-    public function claimExisting(Branch $branch, string $medicalRecordNumber): bool
+    public function claimExisting(Branch $branch, string $medicalRecordNumber, ?int $batchBaseline = null): bool
     {
         $parts = $this->numbers->parse(strtoupper(trim($medicalRecordNumber)));
         $code = BranchCodeAlias::canonicalize($branch->code);
@@ -273,8 +289,8 @@ final class PatientRmNumberAllocator
             throw new InvalidArgumentException('A claimed Nomor RM must belong to the branch it is registered under.');
         }
 
-        if ($this->isBeyondFormatCapacity($medicalRecordNumber)) {
-            throw new PatientRmNumberUnavailableException(self::CLAIM_CAPACITY_MESSAGE, self::CLAIM_REFUSED);
+        if (($refusal = $this->formatRefusal($medicalRecordNumber)) !== null) {
+            throw new PatientRmNumberUnavailableException($refusal, self::CLAIM_REFUSED);
         }
 
         $value = $this->numbers->numericValueOf($medicalRecordNumber);
@@ -296,9 +312,12 @@ final class PatientRmNumberAllocator
 
         $claimed = (int) $value;
         $counter = (int) $sequence->last_number;
+        // Per batch: measured from where the batch started (never above the
+        // counter, which only this batch has raised since, under the held lock).
+        $reference = $batchBaseline !== null ? min($batchBaseline, $counter) : $counter;
 
-        if ($year >= (int) $this->clock->today()->format('Y') && $claimed > $counter
-            && ($claimed > self::CLAIM_MAX_CURRENT_YEAR_VALUE || $claimed - $counter > self::CLAIM_MAX_JUMP)) {
+        if ($year === (int) $this->clock->today()->format('Y') && $claimed > $counter
+            && ($claimed > self::CLAIM_MAX_CURRENT_YEAR_VALUE || $claimed - $reference > self::CLAIM_MAX_JUMP)) {
             throw new PatientRmNumberUnavailableException(self::CLAIM_JUMP_MESSAGE, self::CLAIM_REFUSED);
         }
 
@@ -310,24 +329,39 @@ final class PatientRmNumberAllocator
     }
 
     /**
-     * Rule 244 §2.6 — whether a Nomor RM's all-digit sequence is beyond the format
-     * capacity: zero, or a value wider than {@see self::MAX_DIGITS} digits. No
-     * claim ever accepts one. False for a value that is not a Nomor RM or whose
-     * sequence is not all digits (the same reading as
-     * {@see PatientMedicalRecordNumberService::numericValueOf()}). Static: it
-     * needs no counter, so a dry run can answer it too.
+     * Rule 244 §2.6 — why no claim may ever accept this Nomor RM, whatever the
+     * counter says (the operator message, without the number), or null:
+     *  - its year is after the clinical year (review A4: never plausible);
+     *  - for the current clinical year, its sequence is not all digits (review
+     *    A3); a past year stays lenient (only "taken" is checked);
+     *  - in any year, its all-digit sequence is zero or wider than
+     *    {@see self::MAX_DIGITS} digits (the format capacity).
+     * Null for a value that is not a Nomor RM. It reads no counter, so a dry run
+     * can answer it too. Digits are read as
+     * {@see PatientMedicalRecordNumberService::numericValueOf()} reads them.
      */
-    public function isBeyondFormatCapacity(string $medicalRecordNumber): bool
+    public function formatRefusal(string $medicalRecordNumber): ?string
     {
-        $sequence = $this->numbers->parse(strtoupper(trim($medicalRecordNumber)))?->sequence;
+        $parts = $this->numbers->parse(strtoupper(trim($medicalRecordNumber)));
 
-        if ($sequence === null || preg_match('/^[0-9]+$/', $sequence) !== 1) {
-            return false;
+        if ($parts === null) {
+            return null;
         }
 
-        $value = ltrim($sequence, '0');
+        $year = (int) $parts->year;
+        $currentYear = (int) $this->clock->today()->format('Y');
 
-        return $value === '' || strlen($value) > self::MAX_DIGITS;
+        if ($year > $currentYear) {
+            return self::CLAIM_FUTURE_YEAR_MESSAGE;
+        }
+
+        if (preg_match('/^[0-9]+$/', $parts->sequence) !== 1) {
+            return $year === $currentYear ? self::CLAIM_CAPACITY_MESSAGE : null;
+        }
+
+        $value = ltrim($parts->sequence, '0');
+
+        return $value === '' || strlen($value) > self::MAX_DIGITS ? self::CLAIM_CAPACITY_MESSAGE : null;
     }
 
     /** Rule 244 §2.6 — whether a claim was refused by the cap or the format capacity (escalate to Supervisor RME). */
