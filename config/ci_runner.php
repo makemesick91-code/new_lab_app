@@ -930,6 +930,12 @@ return [
         // the address, flag OFF parity and the query budget. Same
         // `DoctorPatientScope` token.
         'tests/Feature/RME/DoctorPatientScopePostServiceWorkspaceTest.php',
+        // PR A3b (rule 243 §2.11) — the unified RM pages (latest record, patient
+        // page, the native leg's count, sort and search), the prescription history
+        // and the visit page's follow-up links / the odontogram page's parent card
+        // list only records whose visit the doctor may read; flag OFF parity and
+        // the index's query count. Same `DoctorPatientScope` token.
+        'tests/Feature/RME/DoctorPatientScopeListSurfacesTest.php',
         // PR A2 (rule 243 §2.10) — the published legacy RME and legacy odontogram
         // archives under the encounter scope: read only inside an own in-service
         // encounter (read mode `history`), 404 outside (rule 99 §1/§2/§11 and

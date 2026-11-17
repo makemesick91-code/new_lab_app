@@ -11,10 +11,12 @@ use App\Modules\LabOrder\Services\AuditLogService;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\Prescription\Interfaces\RmePrescriptionRepositoryInterface;
 use App\Modules\Prescription\Models\RmePrescription;
+use App\Modules\RME\Services\DoctorPatientScopeService;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
 use App\Support\Clinical\ClinicalClock;
 use App\Support\Storage\ClinicalEvidenceStorage;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -64,6 +66,7 @@ class RmePrescriptionService
         private readonly PrescriptionAuthoringAuthority $authority,
         private readonly RmeWorkingBranchScope $workingBranch,
         private readonly AuditLogService $auditLog,
+        private readonly DoctorPatientScopeService $doctorScope,
     ) {}
 
     /**
@@ -83,6 +86,12 @@ class RmePrescriptionService
             $clinicVisit->patient_id,
             $branchIds,
             $clinicVisit->id,
+            // Rule 243 §2.11 (PR A3b) — with the encounter scope ON a doctor's
+            // history lists only prescriptions whose visit they may read (the
+            // visit scope's SQL twin, before the row limit); null otherwise.
+            $this->doctorScope->encounterScopeAppliesTo($viewer)
+                ? fn (Builder $visits) => $this->doctorScope->applyVisitScopeForUser($viewer, $visits)
+                : null,
         );
 
         return [

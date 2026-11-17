@@ -1,5 +1,5 @@
 ---
-description: DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M2.1/M2.2 + M2.4 + M3.1 (rule 243) — doctor encounter scope, no doctor downloads, doctor-visible fields. §1 (PR "B — downloads", owner revision of rule 93 §12, 2026-11-17) refuses a Doctor the legacy RME print/export/source PDF, the legacy odontogram source PDF and the PTM print through the one rule 138 print-deny authority (403, audited, ids only); doctors keep reading archives as inline page images; prescription print stays; Front Office, Admin Klinik and Supervisor RME keep printing. Not behind the encounter-scope flag. §2 (PR A1) adds the doctor encounter scope behind `rme.doctor_encounter_scope` (risky, default OFF): in-service window, read modes NONE/OWN/HISTORY, 404 out of scope, writes only on the own in-service encounter; §2.10 (PR A2) puts the published legacy RME and legacy odontogram archives under it (read only inside an own in-service encounter, 404 outside, lists mirroring records). §2.11 (PR A3a) opens the patient's RM workspace by read mode (history, or own = the after-service workspace limited to the doctor's own sheets), filters its sheet navigation, document rail and book pages by the sheet read rule, keeps the consent banner and the book's anchor from naming a visit the doctor may not read, and lets a doctor in an own in-service encounter start the book on an anchor they may not read (`startBook` = the `appendPage` rule).
+description: DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M2.1/M2.2 + M2.4 + M3.1 (rule 243) — doctor encounter scope, no doctor downloads, doctor-visible fields. §1 (PR "B — downloads", owner revision of rule 93 §12, 2026-11-17) refuses a Doctor the legacy RME print/export/source PDF, the legacy odontogram source PDF and the PTM print through the one rule 138 print-deny authority (403, audited, ids only); doctors keep reading archives as inline page images; prescription print stays; Front Office, Admin Klinik and Supervisor RME keep printing. Not behind the encounter-scope flag. §2 (PR A1) adds the doctor encounter scope behind `rme.doctor_encounter_scope` (risky, default OFF): in-service window, read modes NONE/OWN/HISTORY, 404 out of scope, writes only on the own in-service encounter; §2.10 (PR A2) puts the published legacy RME and legacy odontogram archives under it (read only inside an own in-service encounter, 404 outside, lists mirroring records). §2.11 (PRs A3a, A3b) opens the patient's RM workspace by read mode (history, or own = the after-service workspace limited to the doctor's own sheets), filters its sheet navigation, document rail and book pages by the sheet read rule, keeps the consent banner and the book's anchor from naming a visit the doctor may not read, and lets a doctor in an own in-service encounter start the book on an anchor they may not read (`startBook` = the `appendPage` rule); A3b scopes the unified RM pages, the prescription history and the follow-up / odontogram parent links the same way.
 globs:
   - "app/Modules/RME/Services/DoctorRoomScopeService.php"
   - "app/Modules/LegacyRme/Controllers/LegacyRmeRecordController.php"
@@ -41,6 +41,10 @@ globs:
   - "resources/views/rme/visits/medical-record/empty.blade.php"
   - "resources/views/rme/visits/partials/rm-sheet-nav.blade.php"
   - "app/Modules/ClinicVisit/Middleware/EnsureVisitRoomAssigned.php"
+  - "app/Modules/MedicalRecord/Repositories/UnifiedMedicalRecordIndexRepository.php"
+  - "app/Modules/Prescription/Services/RmePrescriptionService.php"
+  - "app/Modules/ClinicVisit/Controllers/ClinicVisitController.php"
+  - "app/Modules/Odontogram/Controllers/OdontogramController.php"
 alwaysApply: false
 ---
 
@@ -236,11 +240,14 @@ added by their own PRs.
      **done, A3a** (item 11: the selector is unchanged; `startBook` is the `appendPage` rule; the anchor is never
      named nor its content shown).
    - The unified RM pages (`UnifiedMedicalRecordIndexRepository::nativeRecordsForPatient`, `latestNativeRecordsFor`)
-     — **open, A3b**.
-   - The prescription history (`RmePrescriptionService::showDataForVisit` → `historyForPatient`) — **open, A3b**.
+     — **done, A3b** (item 11).
+   - The prescription history (`RmePrescriptionService::showDataForVisit` → `historyForPatient`) — **done, A3b**
+     (item 11).
    - The visit page's follow-up links (`rme/visits/show.blade.php`, "Kontrol dari" / "Kontrol lanjutan") and the
      odontogram page's parent link (`rme/visits/odontogram/show.blade.php`, "Odontogram Kunjungan Sebelumnya") —
-     **open, A3b**.
+     **done, A3b** (item 11).
+   The A3 list is closed; the flag still stays OFF until A4 is merged, M3.3 is released and the book pages are
+   filtered by M3.3's author stamp (above).
    The prev/next visit arrows are NOT an A3 item: CC1-ADJ-1 (rule 227 §1.8c, its own PR, merged before
    this series) offers only a visit whose page the viewer may open, asked through that page's own ability, so the
    working-branch read scope applies now and the encounter scope when the flag is ON; it also corrects the
@@ -296,7 +303,7 @@ added by their own PRs.
     - **Tests.** `tests/Feature/LegacyRme/LegacyRmeDoctorEncounterScopeTest.php` (token `LegacyRme`) and
       `tests/Feature/LegacyOdontogram/LegacyOdontogramDoctorEncounterScopeTest.php` (token `LegacyOdontogram`), both
       declared in `critical_gate_mandatory_suites`.
-11. **The after-service workspace and its lists (PR A3a).** With the flag ON, for a scoped Doctor
+11. **The after-service workspace and its lists (PRs A3a, A3b).** With the flag ON, for a scoped Doctor
     (`DoctorPatientScopeService::encounterScopeAppliesTo()`; the exempt roles, other accounts and the flag OFF answer
     every point below exactly as before):
     - **The address.** Every visit's RM URL redirects to the patient's canonical anchor visit (rule 237 §16, R7-1;
@@ -377,5 +384,30 @@ added by their own PRs.
       and a finalizer in the same and another room (withheld with the flag ON, unchanged with it OFF), a roomless
       registered anchor (flag ON and OFF), the room gate kept on the doctor's own roomless visit, and a
       context-bound dual-role Doctor held to the working branch.
-    - **Left for A3b:** the unified RM pages, the prescription history, the visit page's follow-up links and the
-      odontogram page's parent link (item 8's list).
+    - **The list surfaces outside the workspace (PR A3b).** Each lists a record exactly when the per-record check
+      of its visit admits it, through one of two mirrors of `doctorCanAccessVisit()`: in SQL, the visit scope's
+      twin (`applyVisitScopeForUser()`, attached through `whereHas('clinicVisit')` or an `EXISTS` on the record's
+      visit, so a soft-deleted visit is excluded as the per-record check excludes it, and a row limit counts only
+      readable rows); per visit in PHP, `listsVisitFor()`. Each is attached only while the encounter scope applies
+      (`encounterScopeAppliesTo()`), so with the flag OFF and for the exempt roles every query and list is exactly
+      as before.
+      - The unified RM pages: `UnifiedMedicalRecordIndexService::scopeFor()` sets
+        `UnifiedMedicalRecordScope::$nativeVisitScope`, which `UnifiedMedicalRecordIndexRepository` applies to
+        `latestNativeRecordsFor()` (each index row's newest record is the newest the doctor may read; one query
+        for the page, never one per row), `nativeRecordsForPatient()` (the patient page) and the native leg
+        `nativeExists()` behind eligibility, the per-row count, the sort key, the status/date filters and the
+        search over visit numbers and doctor names, so none of them can count or match a sheet the pages would
+        not list. Both pages are reached only in read mode `history` (the patient scope of item 6), so a record is
+        listed when its visit is the doctor's own or past the pre-exam stage. The book is a record of its anchor
+        visit there: on an anchor the doctor may not read it is not listed (never over-listed; it stays reachable in
+        the workspace, where it is not named).
+      - The prescription history beside the prescription form: `RmePrescriptionService::showDataForVisit()` passes
+        the same SQL twin to `RmePrescriptionRepositoryInterface::historyForPatient()`, applied before its 20-row
+        limit, so in `own` mode only the prescriptions of the doctor's own visits are listed and never one of
+        another doctor's pre-exam visit. `patientHistory()` (no viewer) is unchanged.
+      - The visit page's "Kontrol dari" / "Kontrol lanjutan" links: `ClinicVisitController::show` passes
+        `followUpOf` / `followUpVisits` filtered by `listsVisitFor()`; the odontogram page's "Odontogram Kunjungan
+        Sebelumnya" card (`OdontogramController::show`) appears only when the parent visit passes it.
+      - **Tests.** `tests/Feature/RME/DoctorPatientScopeListSurfacesTest.php` (token `DoctorPatientScope`, declared
+        in `critical_gate_mandatory_suites`): `history` and `own` modes, another doctor's pre-exam visit,
+        Supervisor RME, flag OFF parity per surface, and the index's query count constant in the patient count.

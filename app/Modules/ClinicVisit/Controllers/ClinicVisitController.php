@@ -388,8 +388,21 @@ class ClinicVisitController extends Controller
             viewer: request()->user(),
         );
 
+        // Rule 243 §2.11 (PR A3b) — the follow-up links name only visits the
+        // viewer may open (listsVisitFor(): everything with the encounter scope
+        // OFF and for the exempt roles).
+        $viewer = request()->user();
+        $followUpOf = $clinicVisit->followUpOf !== null && $this->doctorScope->listsVisitFor($viewer, $clinicVisit->followUpOf)
+            ? $clinicVisit->followUpOf
+            : null;
+        $followUpVisits = $clinicVisit->followUpVisits
+            ->filter(fn (ClinicVisit $followUp): bool => $this->doctorScope->listsVisitFor($viewer, $followUp))
+            ->values();
+
         return view('rme.visits.show', [
             'visit' => $clinicVisit,
+            'followUpOf' => $followUpOf,
+            'followUpVisits' => $followUpVisits,
             'patientVisitHistory' => $patientVisitHistory,
             // LEGACY-RME-PDF-1C — native RME history merged with the patient's
             // PUBLISHED legacy archive. The service resolves the legacy side

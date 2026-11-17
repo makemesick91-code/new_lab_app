@@ -214,9 +214,9 @@ ceremonies and the login gate's proof mechanics belong to the sibling `.claude/r
   visit/patient lists and histories mirror records; A3a: the workspace opens at its anchor by read mode
   (`viewWorkspace`; `own` = own sheets only, never the book), its sheets, rail and book pages follow the sheet read
   rule (`readableSheets()`), the consent banner and an unreadable book anchor are never named nor its content shown
-  (`viewAnchorContent`), and `startBook` is the `appendPage` rule (R7-1 selector unchanged); unified RM pages,
-  prescription history and follow-up/odontogram parent links wait for A3b (arrows: CC1-ADJ-1). ON needs A3b–A4,
-  M3.3 and book pages filtered by M3.3's author stamp first. Source:
+  (`viewAnchorContent`), and `startBook` is the `appendPage` rule (R7-1 selector unchanged); A3b: unified RM pages
+  and prescription history carry the visit scope's SQL twin, follow-up/odontogram parent links `listsVisitFor()`
+  (arrows: CC1-ADJ-1). ON needs A4, M3.3 and book pages filtered by M3.3's author stamp first. Source:
   `.cursor/rules/243-rme-doctor-encounter-scope-downloads-fields.mdc` §2.
 
 ## Current posture (snapshot 2026-10-25 — verify before relying on it)

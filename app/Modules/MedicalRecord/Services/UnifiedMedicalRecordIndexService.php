@@ -69,6 +69,13 @@ class UnifiedMedicalRecordIndexService
             patientScope: $this->doctorScope->shouldApplyDoctorScope($user)
                 ? fn (Builder $query) => $this->doctorScope->applyPatientScopeForUser($user, $query)
                 : null,
+            // Rule 243 §2.11 (PR A3b) — with the encounter scope ON a doctor's
+            // native side lists a record only when its visit passes the visit
+            // scope's SQL twin (the mirror of doctorCanAccessVisit()). Null
+            // otherwise, so every query is exactly as before.
+            nativeVisitScope: $this->doctorScope->encounterScopeAppliesTo($user)
+                ? fn (Builder $visits) => $this->doctorScope->applyVisitScopeForUser($user, $visits)
+                : null,
         );
     }
 
