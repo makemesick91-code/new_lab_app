@@ -28,6 +28,7 @@ declare(strict_types=1);
 use App\Models\User;
 use App\Modules\Branch\Models\Branch;
 use App\Modules\Clinic\Models\Clinic;
+use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\LabOrder\Models\AuditLog;
 use App\Modules\Patient\Interfaces\PatientRmPaperCardRegistrationRepositoryInterface;
@@ -399,16 +400,31 @@ it('PR-17 never writes the note to a log line, on success, on refusal or on read
 
 it('PR-18 keeps the note out of the general patient exports and the patient edit page', function (): void {
     $patient = fprrRegister($this->supervisor);
+    // The patient report lists visits: give the card patient one today so its
+    // row is in the export.
+    ClinicVisit::factory()->create([
+        'branch_id' => $this->sunu->id,
+        'patient_id' => $patient->id,
+        'doctor_id' => $this->doctor->id,
+        'visit_date' => '2026-06-13',
+    ]);
 
-    $this->actingAs($this->supervisor)
+    // Both exports stream: assertDontSee() on a streamed response reads an empty
+    // body. Read the streamed body and prove the patient is in it, so the
+    // absence of the note is not vacuous.
+    $report = $this->actingAs($this->supervisor)
         ->get(route('rme.reports.patients.export'))
         ->assertOk()
-        ->assertDontSee('zx81q');
-
-    $this->actingAs($this->supervisor)
+        ->streamedContent();
+    $audit = $this->actingAs($this->supervisor)
         ->get(route('rme.patients.audit.export'))
         ->assertOk()
-        ->assertDontSee('zx81q');
+        ->streamedContent();
+
+    expect($report)->toContain((string) $patient->medical_record_number)
+        ->not->toContain('zx81q')
+        ->and($audit)->toContain((string) $patient->medical_record_number)
+        ->not->toContain('zx81q');
 
     $this->actingAs($this->supervisor)
         ->get(route('settings.patients.edit', $patient))
