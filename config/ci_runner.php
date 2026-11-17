@@ -916,6 +916,10 @@ return [
         // only, lists mirroring records. Selected by the existing
         // `DoctorPatientScope` token in BOTH critical variants.
         'tests/Feature/RME/DoctorPatientScopeEncounterWindowTest.php',
+        // PR A1b (rule 243 §2.5, §2.6) — the sheet write rule re-asserted in the
+        // services, histories scoped to the viewer, the access panel and the
+        // prior-visit picker status. Same `DoctorPatientScope` token.
+        'tests/Feature/RME/DoctorPatientScopeSheetServiceHistoryTest.php',
 
         // FEATURE-DOCTOR-TRUSTED-ANDROID-DEVICE-LOCK-1 Phase 2 — the clinic
         // device registry: lifecycle, terminal revocation, branch binding,

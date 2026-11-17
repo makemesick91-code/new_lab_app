@@ -7,7 +7,7 @@ use App\Modules\Branch\Services\BranchService;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\MedicalRecord\Services\MedicalRecordService;
-use App\Modules\MedicalRecord\Services\PatientRmWorkspaceResolver;
+use App\Modules\MedicalRecord\Services\MedicalRecordSheetWriteScope;
 use App\Modules\RME\Services\DoctorPatientScopeService;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
 use Illuminate\Auth\Access\Response;
@@ -33,7 +33,11 @@ class MedicalRecordPolicy
         }
 
         if ($this->sheetFollowsItsVisit($medicalRecord)) {
-            return app(DoctorPatientScopeService::class)->authorizeVisitAccess($user, $medicalRecord->clinicVisit);
+            $visit = $medicalRecord->clinicVisit;
+
+            return $visit !== null
+                ? app(DoctorPatientScopeService::class)->authorizeVisitAccess($user, $visit)
+                : Response::denyAsNotFound(DoctorPatientScopeService::OUT_OF_SCOPE_MESSAGE);
         }
 
         return $this->authorizePatientForRecord($user, $medicalRecord);
@@ -163,17 +167,12 @@ class MedicalRecordPolicy
 
     /**
      * With the encounter scope ON, every sheet except the patient's handwriting
-     * BOOK follows its own visit; the book stays patient-level.
+     * BOOK follows its own visit — one definition, shared with the services
+     * ({@see MedicalRecordSheetWriteScope}).
      */
     private function sheetFollowsItsVisit(MedicalRecord $medicalRecord): bool
     {
-        if (! app(DoctorPatientScopeService::class)->encounterScopeEnabled() || $medicalRecord->clinicVisit === null) {
-            return false;
-        }
-
-        $book = app(PatientRmWorkspaceResolver::class)->canonicalMedicalRecord((int) $medicalRecord->patient_id);
-
-        return $book === null || (int) $book->getKey() !== (int) $medicalRecord->getKey();
+        return app(MedicalRecordSheetWriteScope::class)->followsItsVisit($medicalRecord);
     }
 
     private function authorizePatientForRecord(User $user, MedicalRecord $medicalRecord): Response|bool

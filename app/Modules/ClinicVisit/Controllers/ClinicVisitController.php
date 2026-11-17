@@ -286,7 +286,9 @@ class ClinicVisitController extends Controller
         $patient = Patient::query()->findOrFail($patientId);
         $access = $this->doctorScope->authorizePatientAccess($request->user(), $patient);
         if ($access instanceof \Illuminate\Auth\Access\Response) {
-            abort_if($access->denied(), 403, $access->message() ?? 'Forbidden');
+            // Rule 243 §2.4 — the scope's own status: 404 out of the encounter
+            // scope (flag ON), so the picker does not confirm the patient exists.
+            abort_if($access->denied(), $access->status() ?? 403, $access->message() ?? 'Forbidden');
         } elseif ($access === false) {
             abort(403);
         }
@@ -379,8 +381,11 @@ class ClinicVisitController extends Controller
             'rmePrescription',
         ]);
 
+        // Rule 243 §2.6 — the viewer is passed so the encounter scope (flag ON)
+        // filters the history and the legacy timeline built from it.
         $patientVisitHistory = $this->visits->patientVisitHistory(
             (int) $clinicVisit->patient_id,
+            viewer: request()->user(),
         );
 
         return view('rme.visits.show', [
@@ -397,7 +402,7 @@ class ClinicVisitController extends Controller
                 $patientVisitHistory,
             ),
             'doctorAccessSummary' => $clinicVisit->patient
-                ? $this->doctorScope->doctorsWithAccessSummary($clinicVisit->patient)
+                ? $this->doctorScope->doctorsWithAccessSummary($clinicVisit->patient, request()->user())
                 : [],
             // Hotfix Sprint 60.8 — branch-scoped active rooms for the inline
             // room-assignment selector when the visit still has no room.

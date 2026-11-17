@@ -50,6 +50,9 @@ class MedicalRecordService
         private readonly MedicalRecordHandwritingRepositoryInterface $handwritings,
         // Rule 240 §5 — finalize writes version 1 of the sheet.
         private readonly RmeRecordVersionService $versions,
+        // DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M2.1 (rule 243 §2.5) — the sheet
+        // write rule of the encounter scope, re-asserted here (third layer).
+        private readonly MedicalRecordSheetWriteScope $sheetScope,
     ) {}
 
     /**
@@ -216,9 +219,11 @@ class MedicalRecordService
         ]);
     }
 
-    public function finalize(MedicalRecord $medicalRecord): MedicalRecord
+    public function finalize(MedicalRecord $medicalRecord, ?User $actor = null): MedicalRecord
     {
-        return DB::transaction(function () use ($medicalRecord) {
+        $actor ??= Auth::user();
+
+        return DB::transaction(function () use ($medicalRecord, $actor) {
             if (! $this->isActiveRmeBranch($medicalRecord->branch_id)) {
                 throw ValidationException::withMessages([
                     'medical_record_id' => 'Rekam medis tidak berada di cabang RME aktif.',
@@ -232,7 +237,11 @@ class MedicalRecordService
             // FIX-02 / CORRECTIVE-02 — finalization is a current-RME write, so it
             // needs the same authorized, consented, in-progress encounter. Inside
             // this transaction it locks the encounter's visit row first.
-            $this->consents->assertRmeAuthoringAllowedForPatient($medicalRecord->patient_id);
+            $this->consents->assertRmeAuthoringAllowedForPatient($medicalRecord->patient_id, $actor);
+
+            // Rule 243 §2.5 — with the encounter scope ON, only the doctor of the
+            // sheet's own visit, while in service (flag OFF: no-op).
+            $this->sheetScope->assertWritable($medicalRecord, $actor);
 
             // Rule 240 §1 (memo M3.3) — re-decided on the sheet row, locked after
             // the visit (rule 223 §1 item 6): a finalize that committed after the caller
@@ -274,7 +283,7 @@ class MedicalRecordService
             $finalized = $this->medicalRecords->update($locked, [
                 'status' => MedicalRecord::STATUS_FINAL,
                 'finalized_at' => now(),
-                'finalized_by' => Auth::id(),
+                'finalized_by' => $actor?->getKey() ?? Auth::id(),
             ]);
             $medicalRecord->refresh();
 
@@ -328,9 +337,11 @@ class MedicalRecordService
      * partial save (e.g. only `notes`) never blanks out previously stored
      * fields the doctor did not touch.
      */
-    public function updateDraft(MedicalRecord $medicalRecord, array $data): MedicalRecord
+    public function updateDraft(MedicalRecord $medicalRecord, array $data, ?User $actor = null): MedicalRecord
     {
-        return DB::transaction(function () use ($medicalRecord, $data) {
+        $actor ??= Auth::user();
+
+        return DB::transaction(function () use ($medicalRecord, $data, $actor) {
             if (! $this->isActiveRmeBranch($medicalRecord->branch_id)) {
                 throw ValidationException::withMessages([
                     'medical_record_id' => 'Rekam medis tidak berada di cabang RME aktif.',
@@ -341,7 +352,11 @@ class MedicalRecordService
             // transaction it locks the encounter's visit row first; rule 240 §1 —
             // then the sheet row (rule 223 §1 item 6), a final sheet answering with its
             // lock before a missing PTM (§1.8).
-            $locked = $this->assertSheetAuthoringAllowed($medicalRecord);
+            $locked = $this->assertSheetAuthoringAllowed($medicalRecord, $actor);
+
+            // Rule 243 §2.5 — the sheet's own visit (encounter scope ON only),
+            // after the authoring gate and the rule 240 lock (§1.8 order kept).
+            $this->sheetScope->assertWritable($locked, $actor);
 
             $safe = array_intersect_key($data, array_flip([
                 'subjective', 'objective', 'assessment', 'plan', 'notes',

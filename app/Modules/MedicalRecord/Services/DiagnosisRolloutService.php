@@ -224,6 +224,10 @@ class DiagnosisRolloutService
          */
         app(MedicalRecordService::class)->assertSheetAuthoringAllowed($medicalRecord, $actor);
 
+        // Rule 243 §2.5 — with the encounter scope ON, only the doctor of the
+        // sheet's own visit, while in service (flag OFF: no-op).
+        app(MedicalRecordSheetWriteScope::class)->assertWritable($medicalRecord, $actor);
+
         $mode = $this->modeForBranch((int) $medicalRecord->branch_id);
         if ($mode !== DiagnosisRolloutSetting::MODE_PILOT_ENFORCED) {
             throw ValidationException::withMessages([
@@ -249,6 +253,9 @@ class DiagnosisRolloutService
                 $actor,
                 fn (): MedicalRecord => MedicalRecord::query()->lockForUpdate()->findOrFail($medicalRecord->id),
             );
+
+            // Rule 243 §2.5 — re-decided under the encounter's visit lock.
+            app(MedicalRecordSheetWriteScope::class)->assertWritable($medicalRecord, $actor);
 
             $ttl = max(1, (int) config('clinical_diagnosis_rollout.override.ttl_hours', 24));
 

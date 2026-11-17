@@ -192,7 +192,8 @@ class MedicalRecordController extends Controller
         $clinicalHistory = $this->legacyHistory->patientClinicalHistoryFor(
             $request->user(),
             $patientId,
-            $this->visits->patientVisitHistory($patientId),
+            // Rule 243 §2.6 — scoped to the viewer when the encounter scope is ON.
+            $this->visits->patientVisitHistory($patientId, viewer: $request->user()),
             (int) ($sourceVisit?->getKey() ?? $workspaceVisit->getKey()),
             $legacyRecords,
         );

@@ -378,10 +378,19 @@ class DoctorPatientScopeService
     }
 
     /**
+     * Rule 243 §2.6 (PR A1b) — with the encounter scope ON this panel describes
+     * the assignment-based scope that no longer grants anything, and it names
+     * other doctors; a doctor viewer is shown nothing. Every other viewer, and
+     * every viewer with the flag OFF, sees it exactly as before.
+     *
      * @return array<int, array{doctor: Doctor, badges: array<int, string>}>
      */
-    public function doctorsWithAccessSummary(Patient $patient): array
+    public function doctorsWithAccessSummary(Patient $patient, ?User $viewer = null): array
     {
+        if ($viewer !== null && $this->encounterScopeEnabled() && $this->shouldApplyDoctorScope($viewer)) {
+            return [];
+        }
+
         $patientId = (int) $patient->id;
         $summary = [];
 
