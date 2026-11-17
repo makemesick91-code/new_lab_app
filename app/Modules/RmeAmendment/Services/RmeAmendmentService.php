@@ -852,6 +852,9 @@ final class RmeAmendmentService
                     if (! is_array($conditions)
                         || ! array_is_list($conditions)
                         || in_array(null, $conditions, true)
+                        // Only strings reach array_unique(): a nested array would raise
+                        // "Array to string conversion" (a 500) instead of this 422.
+                        || count(array_filter($conditions, 'is_string')) !== count($conditions)
                         || count($conditions) > count($conditionValues)
                         || count($conditions) !== count(array_unique($conditions))) {
                         $v->errors()->add("proposed.tooth_map_payload.teeth.{$tooth}.conditions", self::MESSAGE_CONDITIONS);

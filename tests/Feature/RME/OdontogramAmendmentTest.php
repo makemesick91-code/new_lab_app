@@ -342,6 +342,19 @@ it('stores a notes-only change, and a notes and teeth change, from the chart for
         ->and($both->proposed_content['tooth_map_payload']['teeth']['36']['status'])->toBe('filling');
 });
 
+it('answers nested condition arrays posted to the chart form with 422, never a 500 (re-review)', function () {
+    $chart = m33qChart();
+    $teeth = m33qPayload()['teeth'];
+    $teeth['36']['conditions'] = [['filling'], ['crown']];
+
+    $this->actingAs($this->doctorUser)
+        ->post(route('rme.amendments.store-chart', $chart), m33qForm($teeth, 'm33q ringkasan bersarang'))
+        ->assertStatus(302)
+        ->assertSessionHasErrors();
+
+    expect(RmeAmendment::query()->count())->toBe(0);
+});
+
 it('refuses a tooth map whose teeth are null, and conditions that are not a short list of known values (LOW)', function () {
     $chart = m33qChart();
     $service = app(RmeAmendmentService::class);
@@ -352,6 +365,8 @@ it('refuses a tooth map whose teeth are null, and conditions that are not a shor
         ->and(m33qRefusal(fn () => $propose(['teeth' => ['36' => ['status' => 'caries', 'conditions' => ['a' => 'caries']]]])))->toContain(RmeAmendmentService::MESSAGE_CONDITIONS)
         ->and(m33qRefusal(fn () => $propose(['teeth' => ['36' => ['status' => 'caries', 'conditions' => ['caries', null]]]])))->toContain(RmeAmendmentService::MESSAGE_CONDITIONS)
         ->and(m33qRefusal(fn () => $propose(['teeth' => ['36' => ['status' => 'caries', 'conditions' => array_fill(0, 8, 'caries')]]])))->toContain(RmeAmendmentService::MESSAGE_CONDITIONS)
+        // Re-review: nested arrays must be a 422, never "Array to string conversion" (a 500).
+        ->and(m33qRefusal(fn () => $propose(['teeth' => ['36' => ['status' => 'caries', 'conditions' => [['filling'], ['crown']]]]])))->toContain(RmeAmendmentService::MESSAGE_CONDITIONS)
         ->and(RmeAmendment::query()->count())->toBe(0);
 
     // An empty chart is an explicit, readable tooth map.

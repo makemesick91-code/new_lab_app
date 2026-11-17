@@ -1567,25 +1567,25 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
     */
     Route::middleware(['permission:request_rme_amendments|approve_rme_amendments', 'cache.headers:private;no_store;max_age=0'])->group(function () {
         Route::get('amendments/{amendment}', [RmeAmendmentController::class, 'show'])
-            ->whereNumber('amendment')->name('amendments.show');
+            ->where('amendment', DatabaseRouteKey::PATTERN)->name('amendments.show');
 
         Route::middleware('permission:approve_rme_amendments')->group(function () {
             Route::get('amendments', [RmeAmendmentController::class, 'index'])->name('amendments.index');
             Route::post('amendments/{amendment}/reject', [RmeAmendmentController::class, 'reject'])
-                ->whereNumber('amendment')->name('amendments.reject');
+                ->where('amendment', DatabaseRouteKey::PATTERN)->name('amendments.reject');
         });
 
         Route::middleware('permission:request_rme_amendments')->group(function () {
             Route::get('medical-records/{medicalRecord}/amendments/create', [RmeAmendmentController::class, 'createForSheet'])
-                ->whereNumber('medicalRecord')->name('amendments.create-sheet');
+                ->name('amendments.create-sheet');
             Route::post('medical-records/{medicalRecord}/amendments', [RmeAmendmentController::class, 'storeForSheet'])
-                ->whereNumber('medicalRecord')->name('amendments.store-sheet');
+                ->name('amendments.store-sheet');
             Route::get('odontograms/{odontogram}/amendments/create', [RmeAmendmentController::class, 'createForChart'])
-                ->whereNumber('odontogram')->name('amendments.create-chart');
+                ->name('amendments.create-chart');
             Route::post('odontograms/{odontogram}/amendments', [RmeAmendmentController::class, 'storeForChart'])
-                ->whereNumber('odontogram')->name('amendments.store-chart');
+                ->name('amendments.store-chart');
             Route::post('amendments/{amendment}/cancel', [RmeAmendmentController::class, 'cancel'])
-                ->whereNumber('amendment')->name('amendments.cancel');
+                ->where('amendment', DatabaseRouteKey::PATTERN)->name('amendments.cancel');
         });
     });
 
