@@ -920,6 +920,14 @@ return [
         // services, histories scoped to the viewer, the access panel and the
         // prior-visit picker status. Same `DoctorPatientScope` token.
         'tests/Feature/RME/DoctorPatientScopeSheetServiceHistoryTest.php',
+        // PR A3a (rule 243 §2.11) — the patient's RM workspace under the scope:
+        // opened in read mode history or own (the after-service workspace), its
+        // sheet navigation, document rail and book page sequence mirroring the
+        // sheet read rule, the consent banner never naming another doctor's
+        // encounter, the book started on an anchor the doctor may not read
+        // (`startBook` = the `appendPage` rule) without naming it, flag OFF
+        // parity and the query budget. Same `DoctorPatientScope` token.
+        'tests/Feature/RME/DoctorPatientScopePostServiceWorkspaceTest.php',
         // PR A2 (rule 243 §2.10) — the published legacy RME and legacy odontogram
         // archives under the encounter scope: read only inside an own in-service
         // encounter (read mode `history`), 404 outside (rule 99 §1/§2/§11 and

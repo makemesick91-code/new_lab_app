@@ -211,9 +211,11 @@ ceremonies and the login gate's proof mechanics belong to the sibling `.claude/r
   lists) only inside an own in-service encounter; assignments grant nothing; out of scope 404; writes (every
   sheet's typed content by its anchor visit, re-asserted in the services) only on the own in-service encounter
   (403 "ditangani dokter lain"); book pages via `appendPage`, and each workspace control follows the record it writes;
-  visit/patient lists and histories mirror records; the workspace rail, book pages, book anchor, unified RM pages,
-  prescription history and follow-up/odontogram parent links wait for A3 (arrows: CC1-ADJ-1). ON needs A3–A4, the
-  A3 lists and M3.3 first. Source:
+  visit/patient lists and histories mirror records; A3a: the workspace opens at its anchor by read mode
+  (`viewWorkspace`; `own` = own sheets only, never the book), its sheets, rail and book pages follow the sheet read
+  rule (`readableSheets()`), the consent banner and an unreadable book anchor are never named, and `startBook` is the
+  `appendPage` rule (R7-1 selector unchanged); unified RM pages, prescription history and follow-up/odontogram parent
+  links wait for A3b (arrows: CC1-ADJ-1). ON needs A3b–A4 and M3.3 first. Source:
   `.cursor/rules/243-rme-doctor-encounter-scope-downloads-fields.mdc` §2.
 
 ## Current posture (snapshot 2026-10-25 — verify before relying on it)

@@ -434,7 +434,8 @@ class MedicalRecordService
      *
      * The authoring gate runs first, as on the handwriting path, so both paths
      * take the visit rows in the same order. The service itself re-asserts the
-     * `create` policy for $actor on the LOCKED target (CG-06), which may differ
+     * `startBook` policy (`create` unless the encounter scope applies, rule 243
+     * §2.11) for $actor on the LOCKED target (CG-06), which may differ
      * from the visit the caller saw before the lock; no caller can skip it. An
      * existing book is adopted (returned with false); otherwise the sheet is
      * created on the locked canonical visit (true).
@@ -452,7 +453,10 @@ class MedicalRecordService
 
             $target = $this->lockCanonicalVisit($patientId) ?? $contextVisit;
 
-            Gate::forUser($actor)->authorize('create', [MedicalRecord::class, $target]);
+            // Rule 243 §2.11 (PR A3) — `startBook`: exactly `create` on the
+            // anchor with the encounter scope OFF; for a scoped Doctor with it ON
+            // the patient-level `appendPage` rule the handwriting door asks too.
+            Gate::forUser($actor)->authorize('startBook', [MedicalRecord::class, $target]);
 
             $book = $this->workspace->bookOn($patientId, $target, $this->recordOnVisit(...));
 

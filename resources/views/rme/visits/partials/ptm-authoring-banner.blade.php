@@ -5,13 +5,24 @@
     addSheetConsentRequired); every fact below is decided in the controller
     (MEDIUM: MEMO-F5), never by a service call here. Reading stays open.
 
-    @param \App\Modules\ClinicVisit\Models\ClinicVisit|null $activeEncounter
+    @param \App\Modules\ClinicVisit\Models\ClinicVisit|null $activeEncounter  (rule 243 §2.11: never one the viewer may not read)
+    @param bool $encounterBannerOwnOnly  rule 243 §2.11 — the encounter scope applies to the viewer
     @param string|null $activeEncounterPtmState  awaiting_patient | awaiting_doctor | executed
     @param \App\Modules\Consent\Models\RmeVisitConsent|null $activeEncounterCountersignConsent
     @param string|null $activeEncounterCountersignRefusal
     @param string $ptmBannerSubject  what waits: the first sheet or the record
 --}}
-@if (($activeEncounter ?? null) === null)
+@if (($activeEncounter ?? null) === null && ($encounterBannerOwnOnly ?? false))
+    {{-- Rule 243 §2.11 (PR A3) — a doctor under the encounter scope is never
+         told about another doctor's encounter: this is true whether or not one
+         is running. --}}
+    <x-ui.alert variant="warning" title="Belum ada pemeriksaan Anda yang berjalan">
+        <p class="max-w-2xl text-sm">
+            Rekam medis hanya dapat ditulis pada pemeriksaan Anda sendiri saat pasien
+            sedang Anda periksa. Rekam medis yang dapat Anda baca tetap tersedia.
+        </p>
+    </x-ui.alert>
+@elseif (($activeEncounter ?? null) === null)
     <x-ui.alert variant="warning" title="Belum ada pemeriksaan yang berjalan">
         <p class="max-w-2xl text-sm">
             Rekam medis hanya dapat ditulis saat pasien sedang diperiksa. Mulai

@@ -26,6 +26,7 @@ use App\Modules\MedicalRecord\Support\UnifiedMedicalRecordSource;
 use App\Modules\Patient\Interfaces\PatientRepositoryInterface;
 use App\Modules\Patient\Services\CrossBranchPatientLookupService;
 use App\Modules\PerformedTreatment\Services\RmePerformedTreatmentService;
+use App\Modules\RME\Services\DoctorPatientScopeService;
 use App\Modules\RmeAmendment\Services\RmeAmendmentService;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
@@ -56,6 +57,9 @@ class MedicalRecordController extends Controller
         // and the published archive into ONE page sequence, so the archive is
         // reached with the same previous/next/swipe as a handwritten page.
         private readonly RmeWorkspacePageSequencer $workspacePages,
+        // Rule 243 §2.11 (PR A3) — with the encounter scope ON, every list in the
+        // workspace names only what the viewer may read.
+        private readonly DoctorPatientScopeService $doctorScope,
     ) {}
 
     /**
@@ -154,7 +158,15 @@ class MedicalRecordController extends Controller
         $canonicalVisit = $workspace->resolveCanonicalWorkspaceVisit($patientId);
         abort_if($canonicalVisit === null, 404);
 
-        $this->authorize('view', $clinicVisit);
+        // Rule 243 §2.11 (PR A3) — the canonical address is the patient's
+        // workspace (`viewWorkspace`: exactly the visit's `view` unless the
+        // encounter scope applies, where the anchor is storage and the read
+        // mode decides); any other visit's RM URL is that visit's own `view`.
+        if ($canonicalVisit->id === $clinicVisit->id) {
+            $this->authorize('viewWorkspace', [MedicalRecord::class, $clinicVisit]);
+        } else {
+            $this->authorize('view', $clinicVisit);
+        }
 
         if ($canonicalVisit->id !== $clinicVisit->id) {
             return redirect()->route('rme.visits.medical-record.show', [
@@ -164,12 +176,21 @@ class MedicalRecordController extends Controller
         }
 
         $workspaceVisit = $canonicalVisit;
+        $viewer = $request->user();
 
-        // All sheets of the patient, chronological (swipe order).
-        $sheets = $workspace->sheetsForPatient($patientId);
+        // All sheets of the patient the viewer may read, chronological (swipe
+        // order). Rule 243 §2.11 (PR A3) — with the encounter scope ON a doctor
+        // sees the sheets MedicalRecordPolicy::view admits: the book in read mode
+        // HISTORY, every other sheet by its own visit (OWN mode: own sheets only).
+        $sheets = $workspace->sheetsForPatient($patientId, $viewer);
 
-        // The visit the doctor opened the workspace from (IDOR-validated).
+        // The visit the doctor opened the workspace from (IDOR-validated). Rule
+        // 243 §2.11 — a visit the viewer may not read is never named as the
+        // source, whatever the URL says.
         $sourceVisit = $workspace->resolveSourceVisit($patientId, $request->integer('source_visit_id') ?: null);
+        if ($sourceVisit !== null && ! $this->doctorScope->listsVisitFor($viewer, $sourceVisit)) {
+            $sourceVisit = null;
+        }
 
         // LEGACY-RME-PDF-HISTORY-1 — one patient-centric clinical history for
         // this workspace: the patient's native RME visits with their PUBLISHED
@@ -209,6 +230,14 @@ class MedicalRecordController extends Controller
             $addSheetVisit = $workspaceVisit;
             $addSheetVisit->loadMissing(['patient', 'doctor', 'initialTreatment', 'branch']);
 
+            // Rule 243 §2.11 — a doctor may see no sheet while the PATIENT has
+            // some (OWN mode, or only sheets of visits they may not read). The
+            // book is started only while the patient has none at all — store()
+            // decides on that same fact — so nothing is offered then. With the
+            // encounter scope not applying, $sheets is every sheet: no query.
+            $patientHasSheets = $this->doctorScope->encounterScopeAppliesTo($viewer)
+                && $workspace->sheetsForPatient($patientId)->isNotEmpty();
+
             // LEGACY-RME-DOCTOR-WORKSPACE-1A — a migrated patient whose only RME
             // is the archive still gets the real page experience: the unified
             // sequence here is purely legacy pages, navigated with the same
@@ -239,7 +268,13 @@ class MedicalRecordController extends Controller
                 'patient' => $addSheetVisit->patient,
                 // Who may manage RME here at all: permission, branch, clinical
                 // scope. NOT "may they write right now" — that is the next key.
-                'canEdit' => auth()->user()?->can('create', [MedicalRecord::class, $workspaceVisit]) ?? false,
+                // Rule 243 §2.11 — starting the book asks `startBook` (`create`
+                // on the anchor unless the encounter scope applies).
+                'canEdit' => ! $patientHasSheets
+                    && ($viewer?->can('startBook', [MedicalRecord::class, $workspaceVisit]) ?? false),
+                // Rule 243 §2.11 — the anchor is named only to a viewer who may
+                // read it (always with the encounter scope OFF).
+                'workspaceVisitNamed' => $this->doctorScope->listsVisitFor($viewer, $workspaceVisit),
                 /*
                  * BUGFIX-RME-PRECONSENT-FIRST-PAGE-UI-GATE-1 — the empty state
                  * joins the authority the populated workspace already uses.
@@ -262,7 +297,10 @@ class MedicalRecordController extends Controller
                     ->canAuthorRmeForPatient($patientId, $request->user()),
                 // The encounter the doctor is actually in, if any — so the
                 // refusal names the real reason rather than a generic lock.
-                'activeEncounter' => app(ActiveEncounterResolver::class)->currentFor($patientId),
+                // Rule 243 §2.11 — never another doctor's encounter the viewer
+                // may not read.
+                'activeEncounter' => $this->encounterNamedFor($patientId, $viewer),
+                'encounterBannerOwnOnly' => $this->doctorScope->encounterScopeAppliesTo($viewer),
                 // A patient may hold a published legacy archive while having no
                 // native RM sheet yet — the archive is exactly the history the
                 // doctor needs here, so the empty state still shows it.
@@ -326,9 +364,10 @@ class MedicalRecordController extends Controller
         // Rule 240 §9.5 (memo M3.3 PR7) — a correction page's label as this
         // viewer may read it: the amended visit, its date and the approver only
         // when the viewer may open that visit (the service decides, per viewer).
+        // Rule 243 §2.11 — only the pages of the sheets the viewer may read.
         $handwritingBook = app(RmeAmendmentService::class)->correctionPagesFor(
             $request->user(),
-            $workspace->orderedHandwritingBookForPatient($patientId),
+            $workspace->orderedHandwritingBookForPatient($patientId, $viewer),
         );
         $handwritingRecord = $workspace->canonicalMedicalRecord($patientId);
 
@@ -423,7 +462,6 @@ class MedicalRecordController extends Controller
         // of a per-visit sheet on `update` of that sheet, "+ Tambah Lembar RM" on
         // `create` for the visit it creates on. With the encounter scope OFF
         // these answer exactly what `update` on the active sheet answered.
-        $viewer = $request->user();
         $handwritingIsBook = $handwritingRecord !== null
             && (int) $handwritingRecord->getKey() === (int) $handwritingFormRecord->getKey();
         $canEditHandwritingTarget = $viewer?->can($handwritingIsBook ? 'appendPage' : 'update', $handwritingFormRecord) ?? false;
@@ -439,7 +477,28 @@ class MedicalRecordController extends Controller
             ? ($viewer?->can('appendPage', $handwritingRecord) ?? false)
             : $canEditHandwritingTarget;
 
+        // Rule 243 §2.11 (PR A3) — the book is read patient-level, but its own
+        // (anchor) visit may be one the viewer may not read: another doctor's
+        // pre-exam visit. Such a visit is never named — not in the header, the
+        // visit details, the sheet tabs or the rail — and its per-visit data
+        // (performed treatments) is not shown. Only ever the book; empty with
+        // the encounter scope OFF.
+        $unnamedSheetIds = $sheets
+            ->filter(fn (MedicalRecord $sheet): bool => $sheet->clinicVisit !== null
+                && ! $this->doctorScope->listsVisitFor($viewer, $sheet->clinicVisit))
+            ->map(fn (MedicalRecord $sheet): int => (int) $sheet->getKey())
+            ->values()
+            ->all();
+        $activeVisitNamed = ! in_array((int) $activeSheet->getKey(), $unnamedSheetIds, true);
+        $activeFollowUpOf = $activeVisit->followUpOf !== null
+            && $this->doctorScope->listsVisitFor($viewer, $activeVisit->followUpOf)
+                ? $activeVisit->followUpOf
+                : null;
+
         return view('rme.visits.medical-record.show', [
+            'activeVisitNamed' => $activeVisitNamed,
+            'activeFollowUpOf' => $activeFollowUpOf,
+            'unnamedSheetIds' => $unnamedSheetIds,
             'clinicVisit' => $activeVisit,
             'medicalRecord' => $medicalRecord,
             'workspaceVisit' => $workspaceVisit,
@@ -489,8 +548,10 @@ class MedicalRecordController extends Controller
             'canAuthorRme' => app(RmeVisitConsentService::class)
                 ->canAuthorRmeForPatient($patientId, $request->user()),
             // The encounter the doctor is actually in, if any — drives the banner
-            // and the "sign consent" link so both name the right visit.
-            'activeEncounter' => app(ActiveEncounterResolver::class)->currentFor($patientId),
+            // and the "sign consent" link so both name the right visit. Rule 243
+            // §2.11 — never another doctor's encounter the viewer may not read.
+            'activeEncounter' => $this->encounterNamedFor($patientId, $viewer),
+            'encounterBannerOwnOnly' => $this->doctorScope->encounterScopeAppliesTo($viewer),
             // Adding a sheet is a current-RME write like any other, so it follows
             // the same single authority rather than a per-visit predicate.
             'addSheetConsentRequired' => ! app(RmeVisitConsentService::class)
@@ -505,8 +566,9 @@ class MedicalRecordController extends Controller
             // doctor's "Tindakan Dilakukan" record of the ACTIVE SHEET's visit; null
             // while the capability is OFF, so the page renders exactly as before.
             // Authoring controls mirror the service authority (never a permission).
-            'performedTreatments' => app(RmePerformedTreatmentService::class)
-                ->workspaceFor($activeVisit, $request->user()),
+            'performedTreatments' => $activeVisitNamed
+                ? app(RmePerformedTreatmentService::class)->workspaceFor($activeVisit, $request->user())
+                : null,
             // LEGACY-RME-PDF-HISTORY-1 — native RME history + published legacy
             // archive as one read-only patient-centric history.
             'clinicalHistory' => $clinicalHistory,
@@ -524,6 +586,7 @@ class MedicalRecordController extends Controller
                 // trip the canonical redirect, which drops `sheet`.
                 (int) $workspaceVisit->getKey(),
                 $legacyRecords,
+                $unnamedSheetIds,
             ),
             // DMS memo M1.1–M1.3 PR2 (rule 241 §2; MEMO-F5) — "Selesai
             // Pemeriksaan" in the header is offered only on an EXECUTED consent;
@@ -556,6 +619,20 @@ class MedicalRecordController extends Controller
         ];
     }
 
+    /**
+     * The patient's current examination for the consent banner. Rule 243 §2.11
+     * (PR A3) — with the encounter scope ON, null when the viewer may not read
+     * it (another doctor's live encounter), so the banner never names it; the
+     * view then says no examination OF THE VIEWER is running, which is true
+     * whether or not another doctor is examining.
+     */
+    private function encounterNamedFor(int $patientId, ?User $viewer): ?ClinicVisit
+    {
+        $encounter = app(ActiveEncounterResolver::class)->currentFor($patientId);
+
+        return $encounter !== null && $this->doctorScope->listsVisitFor($viewer, $encounter) ? $encounter : null;
+    }
+
     public function store(StoreMedicalRecordRequest $request, ClinicVisit $clinicVisit, PatientRmWorkspaceResolver $workspace): RedirectResponse
     {
         $patientId = $clinicVisit->patient_id;
@@ -580,7 +657,10 @@ class MedicalRecordController extends Controller
         // sheets already exist) still creates on the submitted visit.
         $targetVisit = $patientHasSheets ? $clinicVisit : $canonicalVisit;
 
-        $this->authorize('create', [MedicalRecord::class, $targetVisit]);
+        // Rule 243 §2.11 (PR A3) — the first sheet STARTS the book on the anchor
+        // (`startBook`: `create` unless the encounter scope applies, then the
+        // patient-level `appendPage` rule); a later sheet is `create` on its visit.
+        $this->authorize($patientHasSheets ? 'create' : 'startBook', [MedicalRecord::class, $targetVisit]);
 
         $data = array_merge($request->validated(), ['source_visit_id' => $sourceVisitId]);
 

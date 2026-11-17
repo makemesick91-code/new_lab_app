@@ -36,7 +36,10 @@ use Illuminate\Http\Request;
  *    "ditangani dokter lain");
  *  - every list scope stays the mirror image of its per-record check;
  *  - the published legacy archives (PR A2) only in HISTORY
- *    ({@see authorizeLegacyArchiveRead()}), 404 otherwise.
+ *    ({@see authorizeLegacyArchiveRead()}), 404 otherwise;
+ *  - the patient's RM workspace (PR A3) in HISTORY and OWN
+ *    ({@see authorizeWorkspaceRead()}), each list in it naming only what the
+ *    viewer may read ({@see listsVisitFor()}).
  *
  * This class stays the single authority: Owner, Super Admin and Supervisor RME
  * are exempt ({@see shouldApplyDoctorScope()}), whatever the flag.
@@ -119,6 +122,55 @@ class DoctorPatientScopeService
         $request?->attributes->set($key, $mode);
 
         return $mode;
+    }
+
+    /**
+     * Rule 243 §2.11 (PR A3) — does the encounter scope decide for this
+     * account? The flag is ON and the account is a scoped Doctor. False without
+     * an account, with the flag OFF and for the exempt roles, so every list that
+     * asks it stays exactly as before there.
+     */
+    public function encounterScopeAppliesTo(?User $user): bool
+    {
+        return $user !== null && $this->encounterScopeEnabled() && $this->shouldApplyDoctorScope($user);
+    }
+
+    /**
+     * Rule 243 §2.11 (PR A3) — may a list shown to $viewer name $visit (its
+     * number, date, doctor, a link to it)? With the encounter scope deciding,
+     * exactly when the viewer may read the visit ({@see doctorCanAccessVisit()}),
+     * so a list never names what the record refuses; otherwise always. Costs no
+     * query per visit once the identity and the read mode are memoised.
+     */
+    public function listsVisitFor(?User $viewer, ClinicVisit $visit): bool
+    {
+        if ($viewer === null || ! $this->encounterScopeAppliesTo($viewer)) {
+            return true;
+        }
+
+        return $this->doctorCanAccessVisit($viewer, $visit);
+    }
+
+    /**
+     * Rule 243 §2.11 (PR A3) — may a scoped Doctor open the patient's RM
+     * WORKSPACE (MedicalRecordPolicy::viewWorkspace)? The workspace is
+     * patient-level: it opens in read mode HISTORY (everything this class
+     * admits) and OWN (the after-service workspace: the doctor's own visits and
+     * sheets only), and answers 404 in NONE; an unlinked doctor account keeps
+     * its 403. What the workspace then lists is decided per record. With the
+     * flag OFF {@see readModeFor()} is today's relationship rule.
+     */
+    public function authorizeWorkspaceRead(User $user, int $patientId): Response|bool
+    {
+        if (! $this->shouldApplyDoctorScope($user)) {
+            return true;
+        }
+
+        if ($this->resolveDoctorForUser($user) === null) {
+            return Response::deny(self::UNLINKED_MESSAGE);
+        }
+
+        return $this->readModeFor($user, $patientId) === self::READ_NONE ? $this->outOfScope() : true;
     }
 
     public function shouldApplyDoctorScope(User $user): bool

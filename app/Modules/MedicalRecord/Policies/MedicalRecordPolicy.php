@@ -11,6 +11,7 @@ use App\Modules\MedicalRecord\Services\MedicalRecordSheetWriteScope;
 use App\Modules\RME\Services\DoctorPatientScopeService;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
 use Illuminate\Auth\Access\Response;
+use Illuminate\Support\Facades\Gate;
 
 class MedicalRecordPolicy
 {
@@ -43,6 +44,34 @@ class MedicalRecordPolicy
         return $this->authorizePatientForRecord($user, $medicalRecord);
     }
 
+    /**
+     * Rule 243 §2.11 (PR A3) — the patient's RM WORKSPACE at its canonical
+     * address: the patient's canonical anchor visit (rule 237 §16), to which
+     * MedicalRecordController::show redirects every visit's RM URL. With the
+     * encounter scope ON, for a scoped Doctor, that address is where the book is
+     * stored, never the encounter being read (it may be another doctor's
+     * pre-exam visit): the workspace opens in read mode HISTORY or OWN (the
+     * after-service workspace) and answers 404 in NONE
+     * (DoctorPatientScopeService::authorizeWorkspaceRead()); what it lists is
+     * decided per record (MedicalRecordSheetWriteScope::readableSheets()). With
+     * the flag OFF, and for every other account: the anchor visit's own `view`,
+     * exactly as before.
+     */
+    public function viewWorkspace(User $user, ClinicVisit $anchor): Response|bool
+    {
+        $scope = app(DoctorPatientScopeService::class);
+
+        if (! $scope->encounterScopeAppliesTo($user)) {
+            return Gate::forUser($user)->inspect('view', $anchor);
+        }
+
+        if (! $this->canView($user) || ! $this->mayReadDocumentAt($user, $anchor->branch_id)) {
+            return false;
+        }
+
+        return $scope->authorizeWorkspaceRead($user, (int) $anchor->patient_id);
+    }
+
     public function create(User $user, ClinicVisit $clinicVisit): Response|bool
     {
         if (! $this->canManage($user) || ! $this->belongsToActiveBranch($clinicVisit->branch_id)) {
@@ -50,6 +79,38 @@ class MedicalRecordPolicy
         }
 
         return app(DoctorPatientScopeService::class)->authorizeVisitAccess($user, $clinicVisit);
+    }
+
+    /**
+     * Rule 243 §2.11 (PR A3) — starting the patient's handwriting BOOK on its
+     * anchor: the canonical visit MedicalRecordService::startBook() locks ("Buat
+     * Halaman RM Pertama"); the first handwriting save creates the book on the
+     * same visit and asks `appendPage` of it. With the encounter scope ON, for a
+     * scoped Doctor, the book is patient-level like every page appended to it
+     * and its anchor is storage, not the encounter: this is the `appendPage`
+     * rule (read mode HISTORY, 404 otherwise), never a per-visit read of an
+     * anchor that may be another doctor's pre-exam visit — so both doors to the
+     * book answer alike. Typed content on the new book still needs the anchor's
+     * own doctor (MedicalRecordSheetWriteScope::assertTypedWriteOn()), and the
+     * RME authoring gate still requires the live encounter to be the doctor's
+     * own. With the flag OFF, and for every other account: exactly `create` on
+     * the anchor, as before.
+     */
+    public function startBook(User $user, ClinicVisit $anchor): Response|bool
+    {
+        $scope = app(DoctorPatientScopeService::class);
+
+        if (! $scope->encounterScopeAppliesTo($user)) {
+            return $this->create($user, $anchor);
+        }
+
+        if (! $this->canManage($user) || ! $this->belongsToActiveBranch($anchor->branch_id)) {
+            return false;
+        }
+
+        $patient = $anchor->patient;
+
+        return $patient !== null ? $scope->authorizePatientAccess($user, $patient) : false;
     }
 
     /**

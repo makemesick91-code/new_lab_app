@@ -8,6 +8,7 @@ use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\RME\Services\DoctorPatientScopeService;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 
 /**
  * DMS-RME-COMPREHENSIVE-CLOSURE-1 memo M2.1/M2.2 (rule 243 §2.5, PR A1b) — the
@@ -27,6 +28,10 @@ use Illuminate\Http\Request;
  * with typed fields), MedicalRecordDiagnosisService, DiagnosisRolloutService and
  * the in-place page save of a per-visit sheet, so a direct call or a bypassed
  * policy is refused the same way. With the flag OFF nothing here applies.
+ *
+ * LISTS ({@see readableSheets()}, PR A3): the workspace's sheet navigation,
+ * document rail and handwriting page sequence keep exactly the sheets READ
+ * admits for the viewer.
  */
 class MedicalRecordSheetWriteScope
 {
@@ -46,6 +51,33 @@ class MedicalRecordSheetWriteScope
         $bookId = $this->bookIdFor((int) $sheet->patient_id);
 
         return $bookId === null || $bookId !== (int) $sheet->getKey();
+    }
+
+    /**
+     * Rule 243 §2.11 (PR A3) — the list mirror of MedicalRecordPolicy::view's
+     * doctor scope: of $sheets, the ones $viewer may read. With the flag ON, for
+     * a scoped Doctor, a per-visit sheet by its own visit
+     * (DoctorPatientScopeService::doctorCanAccessVisit()) and the BOOK
+     * patient-level (read mode HISTORY) — so in OWN mode only the doctor's own
+     * sheets, never the book. Unchanged without a viewer, with the flag OFF and
+     * for the exempt roles. Expects `clinicVisit` loaded
+     * (PatientRmWorkspaceResolver::sheetsForPatient() eager-loads it), so a
+     * sheet costs no query once the read mode and the book are memoised.
+     *
+     * @param  Collection<int, MedicalRecord>  $sheets
+     * @return Collection<int, MedicalRecord>
+     */
+    public function readableSheets(?User $viewer, Collection $sheets): Collection
+    {
+        if ($viewer === null || ! $this->doctorScope->encounterScopeAppliesTo($viewer)) {
+            return $sheets;
+        }
+
+        return $sheets
+            ->filter(fn (MedicalRecord $sheet): bool => $this->followsItsVisit($sheet)
+                ? $sheet->clinicVisit !== null && $this->doctorScope->doctorCanAccessVisit($viewer, $sheet->clinicVisit)
+                : $this->doctorScope->readModeFor($viewer, (int) $sheet->patient_id) === DoctorPatientScopeService::READ_HISTORY)
+            ->values();
     }
 
     /**

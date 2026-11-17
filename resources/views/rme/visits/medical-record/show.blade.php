@@ -36,9 +36,14 @@
     @endphp
 
     <div class="space-y-6">
+        {{-- Rule 243 §2.11 (PR A3) — `$activeVisitNamed` is false only when the
+             active sheet is the book and its own (anchor) visit is one this viewer
+             may not read; that visit is then never named on this page. --}}
         <x-ui.page-header
             title="Rekam Medis"
-            :subtitle="$clinicVisit->visit_number.' — '.($clinicVisit->visit_date?->format('d/m/Y') ?? '-')"
+            :subtitle="($activeVisitNamed ?? true)
+                ? $clinicVisit->visit_number.' — '.($clinicVisit->visit_date?->format('d/m/Y') ?? '-')
+                : 'Buku RM pasien'"
         >
             <x-slot:breadcrumb>Rekam Medis Elektronik</x-slot:breadcrumb>
             <x-slot:actions>
@@ -132,9 +137,15 @@
                 {{-- FIX-PRE-68-45 Scope A — real "Kembali ke Kunjungan" button at the
                      top of the page, matching the Odontogram page placement/style so
                      the doctor reaches the handwriting area faster. --}}
-                <x-ui.button variant="secondary" :href="route('rme.visits.show', $clinicVisit)">
-                    &larr; Kembali ke Kunjungan
-                </x-ui.button>
+                @if ($activeVisitNamed ?? true)
+                    <x-ui.button variant="secondary" :href="route('rme.visits.show', $clinicVisit)">
+                        &larr; Kembali ke Kunjungan
+                    </x-ui.button>
+                @elseif ($sourceVisit)
+                    <x-ui.button variant="secondary" :href="route('rme.visits.show', $sourceVisit)">
+                        &larr; Kembali ke Kunjungan
+                    </x-ui.button>
+                @endif
             </x-slot:actions>
         </x-ui.page-header>
 
@@ -169,12 +180,14 @@
         {{-- Rule 240 §6 (memo M3.3 PR4) — amendment status and the request offer. --}}
         @include('rme.amendments.partials.record-panel')
 
-        @if ($clinicVisit->isFollowUpVisit())
+        {{-- Rule 243 §2.11 — the parent visit is named only when the viewer may
+             open it (`$activeFollowUpOf`, decided in the controller). --}}
+        @if (($activeVisitNamed ?? true) && $clinicVisit->isFollowUpVisit())
             <x-ui.alert variant="info">
                 <span class="font-medium">Jenis Kunjungan:</span> {{ $clinicVisit->visitTypeLabel() }}
-                @if ($clinicVisit->followUpOf)
+                @if ($activeFollowUpOf ?? null)
                     &mdash; <span class="font-medium">Kontrol dari:</span>
-                    <a href="{{ route('rme.visits.show', $clinicVisit->followUpOf) }}" class="font-mono underline">{{ $clinicVisit->followUpOf->visit_number }}</a>
+                    <a href="{{ route('rme.visits.show', $activeFollowUpOf) }}" class="font-mono underline">{{ $activeFollowUpOf->visit_number }}</a>
                 @endif
             </x-ui.alert>
         @endif
@@ -257,23 +270,26 @@
                 </table>
             </div>
 
-            {{-- Visit-level context retained below the patient biodata table. --}}
-            <dl class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                    <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Dokter</dt>
-                    <dd class="mt-1 text-sm text-gray-900">{{ $clinicVisit->doctor?->name ?? '—' }}</dd>
-                </div>
-                <div>
-                    <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Tindakan Awal</dt>
-                    <dd class="mt-1 text-sm text-gray-900">{{ $clinicVisit->initialTreatment?->name ?? '—' }}</dd>
-                </div>
-                @if ($clinicVisit->initial_service_note)
+            {{-- Visit-level context retained below the patient biodata table.
+                 Rule 243 §2.11 — omitted for an anchor visit the viewer may not read. --}}
+            @if ($activeVisitNamed ?? true)
+                <dl class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div>
-                        <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Catatan Layanan Awal</dt>
-                        <dd class="mt-1 text-sm text-gray-900 whitespace-pre-wrap">{{ $clinicVisit->initial_service_note }}</dd>
+                        <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Dokter</dt>
+                        <dd class="mt-1 text-sm text-gray-900">{{ $clinicVisit->doctor?->name ?? '—' }}</dd>
                     </div>
-                @endif
-            </dl>
+                    <div>
+                        <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Tindakan Awal</dt>
+                        <dd class="mt-1 text-sm text-gray-900">{{ $clinicVisit->initialTreatment?->name ?? '—' }}</dd>
+                    </div>
+                    @if ($clinicVisit->initial_service_note)
+                        <div>
+                            <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Catatan Layanan Awal</dt>
+                            <dd class="mt-1 text-sm text-gray-900 whitespace-pre-wrap">{{ $clinicVisit->initial_service_note }}</dd>
+                        </div>
+                    @endif
+                </dl>
+            @endif
         </x-ui.card>
 
         {{-- FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-03 — the gating variables that

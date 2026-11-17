@@ -155,7 +155,10 @@ class MedicalRecordHandwritingController extends Controller
         $clinicVisit = $saved['storage_visit'];
         $focusPage = $saved['page_number'];
 
-        $handwritingBook = $workspace->orderedHandwritingBookForPatient($medicalRecord->patient_id);
+        // Rule 243 §2.11 (PR A3) — the focus index is the saver's OWN page
+        // sequence (the pages of the sheets they may read), the same sequence the
+        // workspace renders for them after the redirect.
+        $handwritingBook = $workspace->orderedHandwritingBookForPatient($medicalRecord->patient_id, Auth::user());
         $virtualFocus = $handwritingBook->first(
             fn (array $page) => $page['medical_record_id'] === $medicalRecord->id
                 && (int) $page['storage_page_number'] === $focusPage
