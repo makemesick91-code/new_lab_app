@@ -50,8 +50,9 @@ class Patient extends Model
 
     /**
      * Rule 244 §5.3 — the no-phone note never leaves through the array/JSON
-     * form of a patient (selectors, exports, snapshots); only the patient's own
-     * edit page shows it.
+     * form of a patient (selectors, exports, snapshots). Owner decision
+     * 2026-11-17: only the restricted reasons page shows it (Supervisor RME and
+     * Owner); the edit page shows the reason code alone.
      *
      * @var list<string>
      */

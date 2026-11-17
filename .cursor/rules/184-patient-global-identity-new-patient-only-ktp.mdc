@@ -55,7 +55,10 @@ in the same sprint (classification C); everything else was already compliant.
 8. Scanner-agent capture and manual KTP file upload remain available where they
    are authorized today. No new capture permission is granted by this rule.
 9. New patient registration keeps the **manual workflow** — typed data entry with
-   no photo at all is a complete registration.
+   no photo at all is a complete registration. REVISED by rule 244 §5 (memo M4.2,
+   2026-11-17): a complete NEW registration also needs the core fields (gender,
+   place and date of birth, phone or WhatsApp, address, occupation; a paper-card
+   registration is exempt); a photo and NIK stay optional (§10 unchanged).
 10. A missing KTP photo **never blocks registration.** `ktp_scan_token` is
     `nullable` on both registration requests, and no `rules()` method of any
     Request under `app/` may make a KTP-keyed field `required*` or `present`

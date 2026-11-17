@@ -91,6 +91,13 @@ class PatientService
     /** Rule 244 §5.3 — the open exception closed by an edit that recorded a number; ids and the closed code only. */
     public const AUDIT_NO_PHONE_CLEARED = 'PATIENT_NO_PHONE_EXCEPTION_CLEARED';
 
+    /**
+     * Rule 244 §5.3 (owner decision 2026-11-17: the no-phone note is restricted
+     * like the paper-card reason note) — a read of an open exception's note on
+     * the restricted reasons page; ids only.
+     */
+    public const AUDIT_NO_PHONE_REASON_VIEWED = 'PATIENT_NO_PHONE_EXCEPTION_NOTE_VIEWED';
+
     /** Rule 244 §4 — no number in the message: the operator typed it, nobody else needs it. */
     private const PAPER_CARD_TAKEN_MESSAGE = 'Nomor RM kartu lama ini sudah terdaftar (termasuk penulisan lain, pasien terhapus, atau alias penggabungan).';
 
@@ -178,8 +185,10 @@ class PatientService
      *    on the row and audited (ids and the code only) in this transaction.
      *    The core fields themselves are validated by the forms' shared builder
      *    ({@see PatientCoreFields::rules()}).
+     *  - `$data` carries patient values and the no-phone note: never in a
+     *    logged stack trace (`#[\SensitiveParameter]`, rule 244 §5.3).
      */
-    public function create(array $data, ?User $actor = null, ?User $exceptionActor = null): Patient
+    public function create(#[\SensitiveParameter] array $data, ?User $actor = null, ?User $exceptionActor = null): Patient
     {
         foreach ([...self::SERVER_OWNED_IDENTITY_FIELDS, ...self::PAPER_CARD_FIELDS] as $field) {
             unset($data[$field]);
@@ -254,7 +263,8 @@ class PatientService
      *    card's own date is not invented.
      */
     public function createWithPaperCardNumber(
-        array $data,
+        // Rule 244 §5.3 — patient values and any no-phone note: never in a logged stack trace.
+        #[\SensitiveParameter] array $data,
         User $actor,
         #[\SensitiveParameter] int $year,
         #[\SensitiveParameter] string $sequence,
@@ -402,6 +412,13 @@ class PatientService
      * read only, those of patients merged INTO it (PR-3b review B4). A read that
      * returns rows is audited with ids only (review B8).
      *
+     * Rule 244 §5.3 (owner decision 2026-11-17, "the no-phone note is restricted
+     * like the paper-card reason note") — this call also admits the restricted
+     * page that shows the patient's OPEN no-phone exception note: the same
+     * permission (Supervisor RME, Owner), the same branch scope, and a read of a
+     * stored note is audited with ids only. Everyone else sees the reason code
+     * alone, on the patient's edit page.
+     *
      * @return Collection<int, PatientRmPaperCardRegistration>
      */
     public function paperCardRegistrationsFor(Patient $patient, User $actor): Collection
@@ -420,6 +437,14 @@ class PatientService
                 'patient_id' => (int) $patient->getKey(),
                 'actor_user_id' => (int) $actor->getKey(),
                 'registration_ids' => $registrations->pluck('id')->map(fn ($id): int => (int) $id)->values()->all(),
+            ], $actor);
+        }
+
+        // Rule 244 §5.3 — who read an open no-phone note: ids only.
+        if ($patient->no_phone_reason_note !== null) {
+            $this->audit->log('mst_patients', (int) $patient->getKey(), self::AUDIT_NO_PHONE_REASON_VIEWED, null, [
+                'patient_id' => (int) $patient->getKey(),
+                'actor_user_id' => (int) $actor->getKey(),
             ], $actor);
         }
 
@@ -507,7 +532,7 @@ class PatientService
      *
      * @param  array<string, mixed>  $data
      */
-    private function pullNoPhoneException(array &$data, ?User $actor): ?string
+    private function pullNoPhoneException(#[\SensitiveParameter] array &$data, ?User $actor): ?string
     {
         $code = trim((string) ($data['no_phone_reason_code'] ?? ''));
         $note = trim((string) ($data['no_phone_reason_note'] ?? ''));

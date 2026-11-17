@@ -32,6 +32,12 @@ use Illuminate\Validation\Rule;
  * An EDIT never uses these rules: every field stays optional there, so a legacy
  * or incomplete patient always saves (rule 244 §5.4).
  *
+ * Owner decision 2026-11-17 (rule 244 §5.5) — a legitimate registration of a
+ * historical paper RM card is exempt from the core fields: StorePatientRequest
+ * asks for `required: false` ONLY on the paper-card path
+ * (`StorePatientRequest::isPaperCardRegistration()`). The same fields keep
+ * their formats there; none is required.
+ *
  * A pure rule source: no database access, no state.
  */
 final class PatientCoreFields
@@ -76,9 +82,11 @@ final class PatientCoreFields
      * @param  string  $prefix  '' or 'new_patient.'
      * @param  bool  $applies  false on an existing-patient visit: the hidden Pasien Baru
      *                         panel's leftovers are excluded, never validated
+     * @param  bool  $required  false only for the paper-card exemption (rule 244 §5.5): every
+     *                          format below still applies to a value that is given
      * @return array<string, mixed>
      */
-    public static function rules(array $input, string $prefix = '', bool $applies = true): array
+    public static function rules(array $input, string $prefix = '', bool $applies = true, bool $required = true): array
     {
         $key = static fn (string $field): string => $prefix.$field;
         $fields = ['gender', 'place_of_birth', 'date_of_birth', 'phone', 'whatsapp_number', 'address', 'occupation', ...self::NO_PHONE_FIELDS];
@@ -87,17 +95,19 @@ final class PatientCoreFields
             return array_fill_keys(array_map($key, $fields), ['exclude']);
         }
 
+        $presence = $required ? 'required' : 'nullable';
+
         return [
-            $key('gender') => ['required', 'string', Rule::in(self::GENDERS)],
-            $key('place_of_birth') => self::placeOfBirthRules(required: true),
-            $key('date_of_birth') => ['required', 'date', ...self::birthDateBounds()],
+            $key('gender') => [$presence, 'string', Rule::in(self::GENDERS)],
+            $key('place_of_birth') => self::placeOfBirthRules(required: $required),
+            $key('date_of_birth') => [$presence, 'date', ...self::birthDateBounds()],
             $key('phone') => [
                 'nullable', 'string', 'max:50',
-                'required_without_all:'.$key('whatsapp_number').','.$key('no_phone_reason_code'),
+                ...($required ? ['required_without_all:'.$key('whatsapp_number').','.$key('no_phone_reason_code')] : []),
             ],
             $key('whatsapp_number') => ['nullable', 'string', 'max:50'],
-            $key('address') => ['required', 'string', 'max:1000'],
-            $key('occupation') => ['required', 'string', 'max:150'],
+            $key('address') => [$presence, 'string', 'max:1000'],
+            $key('occupation') => [$presence, 'string', 'max:150'],
             $key('no_phone_reason_code') => [
                 'nullable', 'string',
                 // The exception is for a patient WITHOUT a number: never beside one.

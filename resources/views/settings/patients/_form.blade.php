@@ -78,6 +78,9 @@
                 <details class="mt-3 rounded-md border border-amber-200 bg-amber-50/60 p-3" @if ($errors->hasAny(['paper_card_year', 'paper_card_sequence', 'paper_card_reason_code', 'paper_card_reason_note']) || old('paper_card_sequence')) open @endif>
                     <summary class="cursor-pointer text-xs font-semibold text-amber-800">Pakai Nomor RM kartu kertas lama (khusus Supervisor RME)</summary>
                     <p class="mt-2 text-xs text-gray-600">Hanya untuk pasien yang membawa kartu berobat lama. Nomor dibentuk dari cabang di atas: DG-{KODE}-{TAHUN KARTU}-{NOMOR URUT}, diperiksa terhadap semua penulisan yang sudah terdaftar, dan dicatat di audit tanpa nomornya.</p>
+                    {{-- Rule 244 §5.5 (owner decision 2026-11-17) — the server exempts a
+                         complete, authorized paper-card registration from the core fields. --}}
+                    <p class="mt-1 text-xs text-gray-600">Dengan tahun, nomor urut dan alasan kartu lama, kolom bertanda <span class="text-rose-600">*</span> tidak wajib; isi bila tersedia (formatnya tetap diperiksa).</p>
                     <div class="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-3">
                         <div>
                             <label class="block text-sm font-medium text-gray-700">Tahun pada kartu</label>
@@ -170,7 +173,8 @@
     {{-- Rule 244 §5.3 (plan default 2) — the no-phone exception. Rendered ONLY
          for an account the server accepts it from (rule 135 mirror); anyone else
          posting it is refused with 403. The reason fields are disabled (so not
-         sent) until the box is ticked. --}}
+         sent) until the box is ticked. The note is restricted (owner decision
+         2026-11-17): never refilled from old input, never flashed (dontFlash). --}}
     @if ($isNewPatient)
         @can('register_patient_without_phone')
             <div class="sm:col-span-2 rounded-md border border-amber-200 bg-amber-50/60 p-3"
@@ -193,8 +197,8 @@
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-gray-700">Catatan (10–500 karakter; wajib untuk Lainnya)</label>
-                        <textarea name="no_phone_reason_note" rows="2" maxlength="500" :disabled="!noPhone" @disabled(! old('no_phone_reason_code')) class="mt-1 block w-full rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">{{ old('no_phone_reason_note') }}</textarea>
-                        <p class="mt-1 text-xs text-amber-800">Jangan menulis data identitas pasien (NIK, alamat) di catatan.</p>
+                        <textarea name="no_phone_reason_note" rows="2" maxlength="500" :disabled="!noPhone" @disabled(! old('no_phone_reason_code')) class="mt-1 block w-full rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500"></textarea>
+                        <p class="mt-1 text-xs text-amber-800">Jangan menulis data identitas pasien (NIK, alamat) di catatan. Catatan hanya dapat dibaca Supervisor RME dan Owner, dan tidak diisi ulang bila formulir ditolak.</p>
                         @error('no_phone_reason_note')<p class="mt-1 text-xs text-rose-600">{{ $message }}</p>@enderror
                     </div>
                 </div>
@@ -202,12 +206,13 @@
         @endcan
     @elseif ($patient->no_phone_reason_code)
         {{-- Rule 244 §5.4 — an open exception is shown read-only; recording a
-             number on this form closes it (audited). --}}
+             number on this form closes it (audited). Rule 244 §5.3 (owner
+             decision 2026-11-17) — this page shows the reason CODE only: the
+             note is read on the restricted reasons page (Supervisor RME and
+             Owner; route, policy and PatientService decide, private, no-store). --}}
         <div class="sm:col-span-2 rounded-md border border-amber-200 bg-amber-50/60 p-3 text-sm text-amber-900">
             <p class="font-medium">Terdaftar tanpa nomor telepon: {{ $noPhoneReasons[$patient->no_phone_reason_code] ?? $patient->no_phone_reason_code }}</p>
-            @if ($patient->no_phone_reason_note)
-                <p class="mt-1 text-xs text-gray-700">Catatan: {{ $patient->no_phone_reason_note }}</p>
-            @endif
+            <p class="mt-1 text-xs text-gray-600">Catatan alasan (bila ada) hanya dapat dibaca Supervisor RME dan Owner.</p>
             <p class="mt-1 text-xs text-gray-600">Isi Ponsel atau Nomor WA untuk menutup pengecualian ini.</p>
         </div>
     @endif

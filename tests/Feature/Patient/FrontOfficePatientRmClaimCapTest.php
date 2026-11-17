@@ -175,7 +175,7 @@ it('CC-03 answers the refusal over HTTP as a 422 on the sequence field, writing 
     frccCounter(2026, 10);
 
     $this->actingAs($this->supervisor)
-        ->post(route('settings.patients.store'), newPatientCoreFields() + [
+        ->post(route('settings.patients.store'), array_merge(newPatientCoreFields(), [
             'clinic_id' => $this->clinic->id,
             'doctor_id' => $this->doctor->id,
             'branch_id' => $this->sunu->id,
@@ -185,7 +185,7 @@ it('CC-03 answers the refusal over HTTP as a 422 on the sequence field, writing 
             'paper_card_year' => '2026',
             'paper_card_sequence' => '5000',
             'paper_card_reason_code' => 'KARTU_LAMA_PASIEN_LAMA',
-        ])
+        ]))
         ->assertSessionHasErrors('paper_card_sequence');
 
     expect(Patient::query()->where('name', 'Kartu Lompat Http')->exists())->toBeFalse()

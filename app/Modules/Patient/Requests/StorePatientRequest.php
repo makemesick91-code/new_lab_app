@@ -58,6 +58,37 @@ class StorePatientRequest extends FormRequest
     }
 
     /**
+     * Owner decision 2026-11-17 (rule 244 §5.5) — whether this is a registration
+     * of a historical paper RM card, the ONE registration exempt from the core
+     * fields. True only when the actor holds BOTH halves of the paper-card pair
+     * (`register_patient_paper_card_rm` and `manage patients`, as
+     * PatientService::createWithPaperCardNumber() re-asserts them) AND the full
+     * card set — year, sequence and reason code — is sent. The set is then
+     * validated in this same request, the controller routes ANY card field to
+     * createWithPaperCardNumber() (a superset of this test), and that service
+     * re-asserts the pair and every bound and claims the typed number under the
+     * counter lock: a refusal anywhere writes nothing. An ordinary registration
+     * (no card set, a partial one, or no permission pair) is never exempt, and
+     * the Kunjungan → Pasien Baru form has no paper-card path at all.
+     */
+    public function isPaperCardRegistration(): bool
+    {
+        $user = $this->user();
+
+        if ($user === null || ! $user->can(PatientService::PAPER_CARD_PERMISSION) || ! $user->can('manage patients')) {
+            return false;
+        }
+
+        foreach (['paper_card_year', 'paper_card_sequence', 'paper_card_reason_code'] as $field) {
+            if (! $this->filled($field)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
      * @return array<string, mixed>
      */
     public function rules(): array
@@ -114,8 +145,9 @@ class StorePatientRequest extends FormRequest
             // Memo M4.2 (rule 244 §5) — the core fields of a NEW patient (gender,
             // place and date of birth, phone or WhatsApp, address, occupation)
             // and the no-phone exception, from the ONE builder Kunjungan →
-            // Pasien Baru uses too.
-            ...PatientCoreFields::rules($this->all()),
+            // Pasien Baru uses too. Owner decision 2026-11-17 (§5.5): on the
+            // paper-card path alone they keep their formats but are not required.
+            ...PatientCoreFields::rules($this->all(), required: ! $this->isPaperCardRegistration()),
             // Sprint 61.1 — opaque token for a KTP scan parked via the scanner
             // workflow. Attached to the patient after creation (controller).
             'ktp_scan_token' => ['nullable', 'string', 'max:64'],

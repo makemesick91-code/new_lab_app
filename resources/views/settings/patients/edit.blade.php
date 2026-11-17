@@ -11,13 +11,14 @@
     </div>
 
     {{-- Rule 244 §4.3 (PR-3b) — the stored paper-card reason lives on its own
-         restricted page; shown only to an account the route admits (rule 135). --}}
+         restricted page; shown only to an account the route admits (rule 135).
+         Rule 244 §5.3 — the same page shows an open no-phone exception note. --}}
     @can('view_patient_rm_paper_card_reasons')
         <div class="mt-6 bg-white shadow-sm sm:rounded-lg">
             <div class="p-6">
                 <a href="{{ route('settings.patients.paper-card-registrations.show', $patient) }}"
                    class="inline-flex items-center rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-medium text-amber-800 hover:bg-amber-50">
-                    Riwayat registrasi Nomor RM kartu lama
+                    Riwayat registrasi Nomor RM kartu lama dan catatan tanpa nomor telepon
                 </a>
             </div>
         </div>

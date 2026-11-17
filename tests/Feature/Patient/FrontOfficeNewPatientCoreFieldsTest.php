@@ -22,6 +22,14 @@ declare(strict_types=1);
 | audited with ids and the code only, and closed (audited) once an edit records
 | a number. An edit keeps every field optional.
 |
+| Owner decisions 2026-11-17 (rule 244 §5.5, §5.3): a legitimate registration
+| of a historical paper RM card is exempt from the core fields — only on the
+| paper-card path itself (permission pair, the full card set, its validation
+| and claim), never on an ordinary registration (CF-24..CF-27); and the
+| no-phone note is restricted like the paper-card reason note: readable only by
+| Supervisor RME and Owner on the restricted page, never flashed, refilled,
+| logged or exported (CF-28..CF-32).
+|
 | Selected by the existing `FrontOffice` critical-gate token in both runner
 | variants and declared in critical_gate_mandatory_suites (CG-19). Helper prefix
 | `fncf` is unique because the critical gate loads every suite into one process.
@@ -31,9 +39,13 @@ use App\Models\User;
 use App\Modules\Branch\Models\Branch;
 use App\Modules\Clinic\Models\Clinic;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
+use App\Modules\ClinicVisit\Services\ClinicVisitService;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\LabOrder\Models\AuditLog;
 use App\Modules\Patient\Models\Patient;
+use App\Modules\Patient\Models\PatientRmPaperCardRegistration;
+use App\Modules\Patient\Repositories\PatientRepository;
+use App\Modules\Patient\Requests\StorePatientRequest;
 use App\Modules\Patient\Services\PatientService;
 use App\Modules\Patient\Support\PatientCoreFields;
 use App\Modules\RmeOnlineContext\Middleware\EnsureRmeOnlineContext;
@@ -41,6 +53,8 @@ use App\Modules\Treatment\Models\Treatment;
 use Database\Seeders\BranchSeeder;
 use Database\Seeders\RoleSeeder;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Log\Events\MessageLogged;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Spatie\Permission\Models\Role;
@@ -133,6 +147,105 @@ function fncfAuditPayloads(): string
     return AuditLog::query()->get()
         ->map(fn (AuditLog $a): string => (string) json_encode([$a->old_values, $a->new_values]))
         ->implode(' ');
+}
+
+/** The core fields of a new patient (none of them sent by fncfPaperCardOnly()). */
+const FNCF_CORE_FIELDS = ['gender', 'place_of_birth', 'date_of_birth', 'phone', 'address', 'occupation'];
+
+/** A historical paper-card registration carrying NO core field (rule 244 §5.5 exemption). */
+function fncfPaperCardOnly(array $overrides = []): array
+{
+    return array_merge([
+        'clinic_id' => test()->clinic->id,
+        'doctor_id' => test()->doctor->id,
+        'branch_id' => test()->branch->id,
+        'name' => 'Pasien Kartu Bebas',
+        'is_active' => 1,
+        'paper_card_year' => '2025',
+        'paper_card_sequence' => '0012',
+        'paper_card_reason_code' => 'KARTU_LAMA_PASIEN_LAMA',
+    ], $overrides);
+}
+
+/** A patient Front Office registered without a number, with a LAINNYA note. */
+function fncfPatientWithNote(User $frontOffice, string $name = 'Pasien Catatan Terbatas'): Patient
+{
+    test()->actingAs($frontOffice)
+        ->post(route('settings.patients.store'), fncfMasterPayload([
+            'name' => $name,
+            'phone' => '',
+            'no_phone_reason_code' => 'LAINNYA',
+            'no_phone_reason_note' => FNCF_NOTE,
+        ]))
+        ->assertSessionHasNoErrors();
+
+    return Patient::query()->where('name', $name)->sole();
+}
+
+/** The restricted per-patient reasons page (rule 244 §4.3, §5.3). */
+function fncfReasonsUrl(Patient $patient): string
+{
+    return route('settings.patients.paper-card-registrations.show', $patient);
+}
+
+/** An account in `$role`; the context-bound desk roles work at `$branch` (default FCF1). */
+function fncfUser(string $role, ?Branch $branch = null): User
+{
+    $user = User::factory()->create();
+    $branch ??= test()->branch;
+
+    match ($role) {
+        'Front Office' => rmeMakeFrontOfficeActive($user, $branch),
+        'Admin Klinik' => rmeMakeAdminClinicActive($user, $branch),
+        'Kasir' => rmeMakeKasirActive($user, $branch),
+        'Super Admin' => $user->assignRole('Super Admin'),
+        default => $user->assignRole($role),
+    };
+
+    return $user->fresh();
+}
+
+/** Every log line `$action` writes, with its context and any reported exception. */
+function fncfLogLines(callable $action): string
+{
+    $lines = [];
+    Event::listen(MessageLogged::class, function (MessageLogged $event) use (&$lines): void {
+        $exception = $event->context['exception'] ?? null;
+        $lines[] = $event->message.' '.json_encode(array_diff_key($event->context, ['exception' => true]))
+            .($exception instanceof Throwable ? ' '.$exception : '');
+    });
+
+    $action();
+
+    return implode("\n", $lines);
+}
+
+/** Whether `$needle` appears in any string inside a stack trace's call arguments. */
+function fncfTraceArgsContain(Throwable $e, string $needle): bool
+{
+    $search = function (mixed $value) use (&$search, $needle): bool {
+        if (is_string($value)) {
+            return str_contains($value, $needle);
+        }
+
+        if (is_array($value)) {
+            foreach ($value as $item) {
+                if ($search($item)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    };
+
+    foreach ($e->getTrace() as $frame) {
+        if ($search($frame['args'] ?? [])) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 // =============================================================================
@@ -699,7 +812,7 @@ it('CF-23 seeds register_patient_without_phone for Front Office and Admin Klinik
     expect($holders)->toBe(['Admin Klinik', 'Front Office', 'Super Admin']);
 });
 
-it('CF-24 lets the paper-card path carry the exception too, recorded and audited the same way', function (): void {
+it('CF-24 lets the paper-card path carry the exception when its holder sends it; a paper-card holder without that permission may leave the number out but may not send the exception', function (): void {
     $actor = userWith(['manage patients', 'register_patient_paper_card_rm', FNCF_PERMISSION]);
 
     $this->actingAs($actor)
@@ -719,17 +832,362 @@ it('CF-24 lets the paper-card path carry the exception too, recorded and audited
         ->and($patient->no_phone_reason_code)->toBe('TIDAK_PUNYA_TELEPON')
         ->and(AuditLog::query()->where('action', PatientService::AUDIT_NO_PHONE_RECORDED)->where('entity_id', $patient->id)->exists())->toBeTrue();
 
-    // Without the no-phone permission the paper-card holder is refused (403).
-    $this->actingAs(userWith(['manage patients', 'register_patient_paper_card_rm']))
+    // Owner decision 2026-11-17 (rule 244 §5.5) — the paper-card registration
+    // is exempt from the core fields, phone included: no exception is needed.
+    $paperCardOnly = userWith(['manage patients', 'register_patient_paper_card_rm']);
+
+    $this->actingAs($paperCardOnly)
+        ->post(route('settings.patients.store'), fncfMasterPayload([
+            'name' => 'Pasien Kartu Tanpa Nomor',
+            'phone' => '',
+            'paper_card_year' => '2025',
+            'paper_card_sequence' => '0013',
+            'paper_card_reason_code' => 'KARTU_LAMA_PASIEN_LAMA',
+        ]))
+        ->assertSessionHasNoErrors();
+
+    $exempt = Patient::query()->where('name', 'Pasien Kartu Tanpa Nomor')->sole();
+
+    expect($exempt->medical_record_number)->toBe('DG-FCF1-2025-0013')
+        ->and($exempt->phone)->toBeNull()
+        ->and($exempt->no_phone_reason_code)->toBeNull()
+        ->and(AuditLog::query()->where('action', PatientService::AUDIT_NO_PHONE_RECORDED)->where('entity_id', $exempt->id)->exists())->toBeFalse();
+
+    // Sending the exception still needs its own permission (403): a posted value
+    // is refused, never silently honoured.
+    $this->actingAs($paperCardOnly)
         ->post(route('settings.patients.store'), fncfMasterPayload([
             'name' => 'Pasien Kartu Tolak',
             'phone' => '',
             'no_phone_reason_code' => 'TIDAK_PUNYA_TELEPON',
             'paper_card_year' => '2025',
-            'paper_card_sequence' => '0013',
+            'paper_card_sequence' => '0014',
             'paper_card_reason_code' => 'KARTU_LAMA_PASIEN_LAMA',
         ]))
         ->assertForbidden();
 
     expect(Patient::query()->where('name', 'Pasien Kartu Tolak')->exists())->toBeFalse();
+});
+
+// =============================================================================
+// Owner decision 2026-11-17 — the paper-card registration is exempt from the
+// core fields (rule 244 §5.5); an ordinary registration never is
+// =============================================================================
+
+it('CF-25 exempts a legitimate paper-card registration from every core field, keeping the typed number, the reason and the audit', function (): void {
+    $supervisor = fncfUser('Supervisor RME');
+
+    $this->actingAs($supervisor)
+        ->post(route('settings.patients.store'), fncfPaperCardOnly())
+        ->assertSessionHasNoErrors();
+
+    $patient = Patient::query()->where('name', 'Pasien Kartu Bebas')->sole();
+
+    expect($patient->medical_record_number)->toBe('DG-FCF1-2025-0012')
+        ->and($patient->manual_rm_number)->toBe('0012')
+        ->and($patient->only(['gender', 'place_of_birth', 'date_of_birth', 'phone', 'whatsapp_number', 'address', 'occupation', 'no_phone_reason_code']))
+        ->toBe(['gender' => null, 'place_of_birth' => null, 'date_of_birth' => null, 'phone' => null, 'whatsapp_number' => null, 'address' => null, 'occupation' => null, 'no_phone_reason_code' => null])
+        ->and(PatientRmPaperCardRegistration::query()->where('patient_id', $patient->id)->sole()->reason_code)->toBe('KARTU_LAMA_PASIEN_LAMA')
+        ->and(AuditLog::query()->where('action', PatientService::AUDIT_PAPER_CARD_REGISTERED)->where('entity_id', $patient->id)->exists())->toBeTrue()
+        ->and(AuditLog::query()->where('action', PatientService::AUDIT_NO_PHONE_RECORDED)->exists())->toBeFalse();
+});
+
+it('CF-26 never extends the exemption to an ordinary registration: without the authorized, complete and valid paper-card path the core fields still bind', function (): void {
+    $supervisor = fncfUser('Supervisor RME');
+    $ordinary = array_diff_key(fncfPaperCardOnly(), array_flip(PatientService::PAPER_CARD_FIELDS));
+
+    // The paper-card holder registering an ordinary (automatic-number) patient.
+    $this->actingAs($supervisor)
+        ->post(route('settings.patients.store'), $ordinary)
+        ->assertSessionHasErrors(FNCF_CORE_FIELDS);
+
+    // A partial card set is not the paper-card path: the core fields still bind.
+    foreach ([
+        ['paper_card_reason_code' => 'KARTU_LAMA_PASIEN_LAMA'],
+        ['paper_card_year' => '2025', 'paper_card_reason_code' => 'KARTU_LAMA_PASIEN_LAMA'],
+        ['paper_card_sequence' => '0012', 'paper_card_reason_code' => 'KARTU_LAMA_PASIEN_LAMA'],
+        ['paper_card_year' => '2025', 'paper_card_sequence' => '0012'],
+        ['paper_card_reason_note' => 'Catatan kartu yang cukup panjang'],
+    ] as $partial) {
+        $this->actingAs($supervisor)
+            ->post(route('settings.patients.store'), $ordinary + $partial)
+            ->assertSessionHasErrors(FNCF_CORE_FIELDS);
+    }
+
+    // A complete but invalid card is refused by the paper-card validation itself.
+    foreach ([
+        [['paper_card_sequence' => '0000'], 'paper_card_sequence'],
+        [['paper_card_year' => '2027'], 'paper_card_year'],
+        [['paper_card_reason_code' => 'BUKAN_KODE'], 'paper_card_reason_code'],
+        [['paper_card_reason_code' => 'LAINNYA'], 'paper_card_reason_note'],
+    ] as [$overrides, $errorKey]) {
+        $this->actingAs($supervisor)
+            ->post(route('settings.patients.store'), fncfPaperCardOnly($overrides))
+            ->assertSessionHasErrors($errorKey);
+    }
+
+    // A number already held is refused by the claim under the counter lock.
+    Patient::factory()->create(['branch_id' => $this->branch->id, 'medical_record_number' => 'DG-FCF1-2025-0099']);
+
+    $this->actingAs($supervisor)
+        ->post(route('settings.patients.store'), fncfPaperCardOnly(['paper_card_sequence' => '0099']))
+        ->assertSessionHasErrors('paper_card_sequence');
+
+    // Without the paper-card permission the card fields are refused (403).
+    $this->actingAs(fncfFrontOffice())
+        ->post(route('settings.patients.store'), fncfPaperCardOnly())
+        ->assertForbidden();
+    $this->actingAs(fncfMasterRegistrar())
+        ->post(route('settings.patients.store'), fncfPaperCardOnly())
+        ->assertForbidden();
+
+    // Kunjungan → Pasien Baru has no paper-card path: card fields change nothing.
+    $visitRegistrar = fncfVisitRegistrar();
+    $visitRegistrar->givePermissionTo('register_patient_paper_card_rm');
+    $card = ['paper_card_year' => '2025', 'paper_card_sequence' => '0012', 'paper_card_reason_code' => 'KARTU_LAMA_PASIEN_LAMA'];
+    $visit = fncfVisitPayload(['name' => 'Pasien Kartu Bebas'] + $card, $card);
+    $visit['new_patient'] = array_diff_key($visit['new_patient'], array_flip(FNCF_CORE_FIELDS));
+
+    $this->actingAs($visitRegistrar)
+        ->post(route('rme.visits.store'), $visit)
+        ->assertSessionHasErrors(array_map(fn (string $field): string => 'new_patient.'.$field, FNCF_CORE_FIELDS));
+
+    expect(Patient::query()->where('name', 'Pasien Kartu Bebas')->exists())->toBeFalse()
+        ->and(PatientRmPaperCardRegistration::query()->exists())->toBeFalse();
+
+    // The request decides on the permission pair AND the full card set; the
+    // controller routes every card field to the paper-card service path.
+    $decides = function (?User $user, array $payload): bool {
+        $request = StorePatientRequest::create('/settings/patients', 'POST', $payload);
+        $request->setUserResolver(fn () => $user);
+
+        return $request->isPaperCardRegistration();
+    };
+
+    expect($decides($supervisor, fncfPaperCardOnly()))->toBeTrue()
+        ->and($decides(superAdmin(), fncfPaperCardOnly()))->toBeTrue()
+        ->and($decides($supervisor, $ordinary + ['paper_card_year' => '2025', 'paper_card_sequence' => '0012']))->toBeFalse()
+        ->and($decides(fncfFrontOffice(), fncfPaperCardOnly()))->toBeFalse()
+        ->and($decides(userWith(['register_patient_paper_card_rm']), fncfPaperCardOnly()))->toBeFalse()
+        ->and($decides(userWith(['manage patients']), fncfPaperCardOnly()))->toBeFalse()
+        ->and($decides(null, fncfPaperCardOnly()))->toBeFalse();
+});
+
+it('CF-27 keeps NIK and every value format on the exempt paper-card path, writing nothing on a refusal', function (): void {
+    $supervisor = fncfUser('Supervisor RME');
+
+    foreach ([
+        [['ktp_number' => '737101170590000'], 'ktp_number'],
+        [['ktp_number' => '73710117059000AB'], 'ktp_number'],
+        [['date_of_birth' => '2026-06-14'], 'date_of_birth'],
+        [['date_of_birth' => '1899-12-31'], 'date_of_birth'],
+        [['place_of_birth' => "Makassar\x07"], 'place_of_birth'],
+        [['place_of_birth' => str_repeat('M', 101)], 'place_of_birth'],
+        [['gender' => 'X'], 'gender'],
+        [['occupation' => str_repeat('o', 151)], 'occupation'],
+    ] as [$overrides, $errorKey]) {
+        $this->actingAs($supervisor)
+            ->post(route('settings.patients.store'), fncfPaperCardOnly($overrides))
+            ->assertSessionHasErrors($errorKey);
+    }
+
+    expect(Patient::query()->where('name', 'Pasien Kartu Bebas')->exists())->toBeFalse();
+
+    // A value that IS given is stored as given.
+    $this->actingAs($supervisor)
+        ->post(route('settings.patients.store'), fncfPaperCardOnly(['ktp_number' => FNCF_NIK, 'place_of_birth' => 'Maros']))
+        ->assertSessionHasNoErrors();
+
+    expect(Patient::query()->where('name', 'Pasien Kartu Bebas')->sole()->only(['ktp_number', 'place_of_birth']))
+        ->toBe(['ktp_number' => FNCF_NIK, 'place_of_birth' => 'Maros']);
+});
+
+// =============================================================================
+// Owner decision 2026-11-17 — the no-phone note is restricted like the
+// paper-card reason note (rule 244 §5.3)
+// =============================================================================
+
+it('CF-28 shows the no-phone note only to Supervisor RME, Owner and Super Admin on the restricted page (private, no-store); other staff see the reason code only', function (): void {
+    $patient = fncfPatientWithNote(fncfFrontOffice());
+
+    // The edit page shows the code (label) to every `update` holder, the
+    // readers included, and never the note.
+    foreach ([fncfFrontOffice(), fncfUser('Supervisor RME'), superAdmin()] as $editor) {
+        $this->actingAs($editor)
+            ->get(route('settings.patients.edit', $patient))
+            ->assertOk()
+            ->assertSee('Terdaftar tanpa nomor telepon')
+            ->assertSee('Lainnya (wajib catatan)')
+            ->assertDontSee('pendamping panti');
+    }
+
+    foreach (['Supervisor RME', 'Owner', 'Super Admin'] as $role) {
+        $response = $this->actingAs(fncfUser($role))
+            ->get(fncfReasonsUrl($patient))
+            ->assertOk()
+            ->assertSee(FNCF_NOTE)
+            ->assertSee('Lainnya (wajib catatan)');
+
+        expect((string) $response->headers->get('Cache-Control'))->toContain('no-store')->toContain('private');
+    }
+
+    foreach (['Front Office', 'Admin Klinik', 'Kasir'] as $role) {
+        $response = $this->actingAs(fncfUser($role))->get(fncfReasonsUrl($patient))->assertForbidden();
+
+        expect((string) $response->getContent())->not->toContain('pendamping panti');
+    }
+
+    // A holder of the read permission outside the patient's branch: 404 (CG-05).
+    $elsewhere = Branch::factory()->create(['code' => 'FCF2', 'is_active' => true, 'is_rme_enabled' => true]);
+    $outside = fncfUser('Front Office', $elsewhere);
+    $outside->givePermissionTo(PatientService::PAPER_CARD_REASON_READ_PERMISSION);
+
+    $this->actingAs($outside->fresh())->get(fncfReasonsUrl($patient))->assertNotFound();
+
+    // The service re-asserts both for a non-HTTP caller.
+    expect(fn () => app(PatientService::class)->paperCardRegistrationsFor($patient, fncfFrontOffice()))
+        ->toThrow(AuthorizationException::class);
+});
+
+it('CF-29 audits each read of the no-phone note with ids only, and no read that was refused', function (): void {
+    $patient = fncfPatientWithNote(fncfFrontOffice());
+    $owner = fncfUser('Owner');
+
+    $this->actingAs(fncfUser('Kasir'))->get(fncfReasonsUrl($patient))->assertForbidden();
+    expect(AuditLog::query()->where('action', PatientService::AUDIT_NO_PHONE_REASON_VIEWED)->exists())->toBeFalse();
+
+    $this->actingAs($owner)->get(fncfReasonsUrl($patient))->assertOk();
+
+    $log = AuditLog::query()->where('action', PatientService::AUDIT_NO_PHONE_REASON_VIEWED)->sole();
+
+    expect($log->new_values)->toEqual(['patient_id' => $patient->id, 'actor_user_id' => $owner->id])
+        ->and((int) $log->entity_id)->toBe($patient->id)
+        ->and(fncfAuditPayloads())->not->toContain('pendamping panti');
+
+    // A patient without a note: nothing to read, nothing audited.
+    $this->actingAs(fncfFrontOffice())
+        ->post(route('settings.patients.store'), fncfMasterPayload(['name' => 'Pasien Tanpa Catatan']))
+        ->assertSessionHasNoErrors();
+    $plain = Patient::query()->where('name', 'Pasien Tanpa Catatan')->sole();
+    $this->actingAs($owner)->get(fncfReasonsUrl($plain))->assertOk();
+
+    expect(AuditLog::query()->where('action', PatientService::AUDIT_NO_PHONE_REASON_VIEWED)->count())->toBe(1);
+});
+
+it('CF-30 never flashes the no-phone note into the session and never refills it on either form', function (): void {
+    $frontOffice = fncfFrontOffice();
+    rmeMakeDoctorOnline($this->doctor, $this->branch);
+    $exception = ['phone' => '', 'occupation' => '', 'no_phone_reason_code' => 'LAINNYA', 'no_phone_reason_note' => FNCF_NOTE];
+
+    $this->actingAs($frontOffice)
+        ->post(route('settings.patients.store'), fncfMasterPayload(['name' => 'Pasien Sesi'] + $exception))
+        ->assertSessionHasErrors('occupation');
+
+    expect(json_encode(session()->getOldInput()))->not->toContain('pendamping panti')
+        ->and(session()->getOldInput('no_phone_reason_code'))->toBe('LAINNYA');
+
+    $this->actingAs($frontOffice)
+        ->post(route('rme.visits.store'), fncfVisitPayload(['name' => 'Pasien Sesi'] + $exception))
+        ->assertSessionHasErrors('new_patient.occupation');
+
+    expect(json_encode(session()->getOldInput()))->not->toContain('pendamping panti')
+        ->and(session()->getOldInput('new_patient.no_phone_reason_code'))->toBe('LAINNYA');
+
+    // Even an old input that holds a note is never written back into a form.
+    $this->actingAs($frontOffice)
+        ->withSession(['_old_input' => ['no_phone_reason_code' => 'LAINNYA', 'no_phone_reason_note' => FNCF_NOTE]])
+        ->get(route('settings.patients.create'))
+        ->assertOk()
+        ->assertSee('name="no_phone_reason_note"', false)
+        ->assertDontSee('pendamping panti');
+
+    $this->actingAs($frontOffice)
+        ->withSession(['_old_input' => ['patient_mode' => 'new', 'new_patient' => ['no_phone_reason_code' => 'LAINNYA', 'no_phone_reason_note' => FNCF_NOTE]]])
+        ->get(route('rme.visits.create'))
+        ->assertOk()
+        ->assertSee('name="new_patient[no_phone_reason_note]"', false)
+        ->assertDontSee('pendamping panti');
+
+    expect(Patient::query()->where('name', 'Pasien Sesi')->exists())->toBeFalse();
+});
+
+it('CF-31 keeps the no-phone note out of every log line and the general patient exports', function (): void {
+    $supervisor = fncfUser('Supervisor RME');
+    $frontOffice = fncfFrontOffice();
+    rmeMakeDoctorOnline($this->doctor, $this->branch);
+
+    $logged = fncfLogLines(function () use ($frontOffice, $supervisor): void {
+        $patient = fncfPatientWithNote($frontOffice);
+
+        $this->actingAs($frontOffice)
+            ->post(route('rme.visits.store'), fncfVisitPayload([
+                'name' => 'Pasien Kunjungan Catatan',
+                'phone' => '',
+                'no_phone_reason_code' => 'LAINNYA',
+                'no_phone_reason_note' => FNCF_NOTE,
+            ]))
+            ->assertSessionHasNoErrors();
+
+        // Refused (occupation missing), read, and refused a read.
+        $this->actingAs($frontOffice)
+            ->post(route('settings.patients.store'), fncfMasterPayload(['name' => 'Pasien Ditolak', 'phone' => '', 'occupation' => '', 'no_phone_reason_code' => 'LAINNYA', 'no_phone_reason_note' => FNCF_NOTE]))
+            ->assertSessionHasErrors('occupation');
+        $this->actingAs($supervisor)->get(fncfReasonsUrl($patient))->assertOk();
+        $this->actingAs($frontOffice)->get(fncfReasonsUrl($patient))->assertForbidden();
+    });
+
+    expect($logged)->not->toContain('pendamping panti');
+
+    // Both exports stream: read the streamed body, and prove the patients are
+    // in it so the absence of the note is not vacuous.
+    $masterPatient = Patient::query()->where('name', 'Pasien Catatan Terbatas')->sole();
+    $visitPatient = Patient::query()->where('name', 'Pasien Kunjungan Catatan')->sole();
+
+    $report = $this->actingAs($supervisor)->get(route('rme.reports.patients.export'))->assertOk()->streamedContent();
+    $audit = $this->actingAs($supervisor)->get(route('rme.patients.audit.export'))->assertOk()->streamedContent();
+
+    expect($report)->toContain($visitPatient->medical_record_number)
+        ->not->toContain('pendamping panti')
+        ->and($audit)->toContain($masterPatient->medical_record_number)
+        ->toContain($visitPatient->medical_record_number)
+        ->not->toContain('pendamping panti');
+});
+
+it('CF-32 marks every parameter the no-phone note passes through #[\SensitiveParameter], so a logged stack trace never carries it', function (): void {
+    foreach ([
+        [PatientService::class, 'create'],
+        [PatientService::class, 'createWithPaperCardNumber'],
+        [PatientService::class, 'pullNoPhoneException'],
+        [PatientRepository::class, 'create'],
+        [ClinicVisitService::class, 'create'],
+        [ClinicVisitService::class, 'resolvePatient'],
+    ] as [$class, $method]) {
+        $data = collect((new ReflectionMethod($class, $method))->getParameters())
+            ->first(fn (ReflectionParameter $parameter): bool => $parameter->getName() === 'data');
+
+        expect($data)->not->toBeNull("{$class}::{$method}")
+            ->and($data->getAttributes(SensitiveParameter::class))->not->toBeEmpty("{$class}::{$method}(\$data)");
+    }
+
+    // The settings a non-production php.ini may carry: traces keep arguments.
+    $ignoreArgs = ini_get('zend.exception_ignore_args');
+    ini_set('zend.exception_ignore_args', '0');
+
+    try {
+        // An accepted exception, then a refused branch: the trace is built
+        // after the note entered the registration payload.
+        app(PatientService::class)->create(fncfMasterPayload([
+            'branch_id' => 999999,
+            'phone' => null,
+            'no_phone_reason_code' => 'LAINNYA',
+            'no_phone_reason_note' => FNCF_NOTE,
+        ]), null, fncfFrontOffice());
+
+        $this->fail('The unknown branch must be refused.');
+    } catch (ValidationException $e) {
+        expect($e->errors())->toHaveKey('branch_id')
+            ->and(fncfTraceArgsContain($e, 'pendamping panti'))->toBeFalse();
+    } finally {
+        ini_set('zend.exception_ignore_args', (string) $ignoreArgs);
+    }
 });

@@ -231,7 +231,8 @@ class PatientRepository implements PatientRepositoryInterface
             ->get();
     }
 
-    public function create(array $data): Patient
+    /** Rule 244 §5.3 — patient values and any no-phone note: never in a logged stack trace. */
+    public function create(#[\SensitiveParameter] array $data): Patient
     {
         return Patient::create($data);
     }

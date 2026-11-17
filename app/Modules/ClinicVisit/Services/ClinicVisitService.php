@@ -336,8 +336,11 @@ class ClinicVisitService
      * The explicit actor must be able to register visits AND be working the
      * branch the visit lands in (the server-side twin of the FormRequest pin),
      * and is the one recorded as `created_by`.
+     *
+     * Rule 244 §5.3 — `$data` may carry a new patient's values and no-phone
+     * note: never in a logged stack trace (`#[\SensitiveParameter]`).
      */
-    public function create(array $data, User $actor): ClinicVisit
+    public function create(#[\SensitiveParameter] array $data, User $actor): ClinicVisit
     {
         $registrar = $this->actors->resolveRegistrar($actor);
 
@@ -805,7 +808,7 @@ class ClinicVisitService
      * @param  array<string, mixed>  $data
      * @return array<string, mixed>
      */
-    private function resolvePatient(array $data, User $registrar): array
+    private function resolvePatient(#[\SensitiveParameter] array $data, User $registrar): array
     {
         $mode = $data['patient_mode'] ?? 'existing';
         $newPatient = $data['new_patient'] ?? null;

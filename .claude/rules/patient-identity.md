@@ -265,4 +265,7 @@ file.
   `register_patient_without_phone` (Front Office + Admin Klinik) with a reason code (note for `LAINNYA`): 403 from both
   requests, re-asserted in `PatientService`, audited with ids and `reason_code` only, closed (audited once) when an
   edit records a number. An edit keeps every field optional and re-judges only a changed date of birth or NIK; legacy
-  rows are never forced. Source: `244-…` §5.
+  rows are never forced. A historical paper-card registration (`register_patient_paper_card_rm` + `manage patients`
+  + the full card set, validated and claimed) is exempt from the core fields, never an ordinary one. The no-phone note
+  is read only by Supervisor RME and Owner on the restricted reasons page (audited, ids only); others see the code;
+  never flashed or refilled (`dontFlash`), `#[\SensitiveParameter]` where it passes. Source: `244-…` §5.3, §5.5.

@@ -198,8 +198,8 @@
                                 </div>
                                 <div>
                                     <label class="block text-sm font-medium text-ink">Catatan (10–500 karakter; wajib untuk Lainnya)</label>
-                                    <textarea name="new_patient[no_phone_reason_note]" rows="2" maxlength="500" :disabled="!noPhone" @disabled(! old('new_patient.no_phone_reason_code')) class="mt-1 block w-full rounded-lg border-hairline text-sm focus:border-brand-500 focus:ring-brand-500">{{ old('new_patient.no_phone_reason_note') }}</textarea>
-                                    <p class="mt-1 text-xs text-ink-soft">Jangan menulis data identitas pasien (NIK, alamat) di catatan.</p>
+                                    <textarea name="new_patient[no_phone_reason_note]" rows="2" maxlength="500" :disabled="!noPhone" @disabled(! old('new_patient.no_phone_reason_code')) class="mt-1 block w-full rounded-lg border-hairline text-sm focus:border-brand-500 focus:ring-brand-500"></textarea>
+                                    <p class="mt-1 text-xs text-ink-soft">Jangan menulis data identitas pasien (NIK, alamat) di catatan. Catatan hanya dapat dibaca Supervisor RME dan Owner, dan tidak diisi ulang bila formulir ditolak.</p>
                                     @error('new_patient.no_phone_reason_note')<p class="mt-1 text-xs text-danger-700">{{ $message }}</p>@enderror
                                 </div>
                             </div>

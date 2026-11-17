@@ -227,13 +227,13 @@ it('AN-04 issues the automatic number on Kunjungan → Pasien Baru and ignores a
             'doctor_id' => $this->doctor->id,
             'initial_treatment_id' => $treatment->id,
             'visit_type' => ClinicVisit::VISIT_TYPE_NEW,
-            'new_patient' => newPatientCoreFields() + [
+            'new_patient' => array_merge(newPatientCoreFields(), [
                 'name' => 'Pasien Baru Kunjungan',
                 'branch_id' => $this->branch->id,
                 'registered_at' => '2020-02-02',
                 'manual_rm_number' => '0999',
                 'medical_record_number' => 'DG-FPN1-2026-0999',
-            ],
+            ]),
         ])
         ->assertSessionHasNoErrors()
         ->assertRedirect();

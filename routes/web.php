@@ -347,7 +347,9 @@ Route::middleware('auth')->prefix('settings')->name('settings.')->group(function
     // route, the policy and the service (CG-06); `private, no-store` because the
     // note may carry personal data; the per-patient page answers 404 outside the
     // reader's working-branch scope (CG-05). `{patient}` is mst_patients.id
-    // (rule 222: DatabaseRouteKey::PATTERN per route).
+    // (rule 222: DatabaseRouteKey::PATTERN per route). Rule 244 §5.3 (owner
+    // decision 2026-11-17) — the per-patient page also shows the open no-phone
+    // exception note, under the same three layers.
     Route::middleware(['permission:view_patient_rm_paper_card_reasons', 'cache.headers:private;no_store;max_age=0'])->group(function () {
         Route::get('patients/paper-card-registrations', [PatientController::class, 'paperCardRegistrations'])
             ->name('patients.paper-card-registrations.index');
