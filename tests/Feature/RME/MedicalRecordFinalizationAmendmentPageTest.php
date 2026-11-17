@@ -741,7 +741,8 @@ it('refuses on PostgreSQL a raw change of the correction columns, a malformed SH
             ->toThrow(QueryException::class);
     }
 
-    $constraints = collect(DB::select("SELECT conname FROM pg_constraint WHERE conname LIKE 'trx_rme_amd_correction%' OR conname LIKE 'trx_mrhp_rme_amendment%'"))->pluck('conname')->sort()->values()->all();
+    // This schema's constraints only: other schemas of the same database may hold the same names.
+    $constraints = collect(DB::select("SELECT c.conname FROM pg_constraint c JOIN pg_namespace n ON n.oid = c.connamespace WHERE n.nspname = current_schema() AND (c.conname LIKE 'trx_rme_amd_correction%' OR c.conname LIKE 'trx_mrhp_rme_amendment%')"))->pluck('conname')->sort()->values()->all();
     expect($constraints)->toBe(['trx_mrhp_rme_amendment_fk', 'trx_mrhp_rme_amendment_sealed_chk', 'trx_mrhp_rme_amendment_uq', 'trx_rme_amd_correction_page_chk', 'trx_rme_amd_correction_subject_chk']);
 
     m3pgService()->cancel($amendment, $this->doctorUser);
