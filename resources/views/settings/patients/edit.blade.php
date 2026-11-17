@@ -10,6 +10,19 @@
         </form>
     </div>
 
+    {{-- Rule 244 §4.3 (PR-3b) — the stored paper-card reason lives on its own
+         restricted page; shown only to an account the route admits (rule 135). --}}
+    @can('view_patient_rm_paper_card_reasons')
+        <div class="mt-6 bg-white shadow-sm sm:rounded-lg">
+            <div class="p-6">
+                <a href="{{ route('settings.patients.paper-card-registrations.show', $patient) }}"
+                   class="inline-flex items-center rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-medium text-amber-800 hover:bg-amber-50">
+                    Riwayat registrasi Nomor RM kartu lama
+                </a>
+            </div>
+        </div>
+    @endcan
+
     {{-- Sprint 61.1 — stored KTP scan (private document). Kept outside the
          update form to avoid nested forms. --}}
     {{-- SECURITY-PATIENT-KTP-ARCHIVE-BRANCH-ISOLATION-1 — shown only to an

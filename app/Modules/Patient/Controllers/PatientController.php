@@ -68,6 +68,8 @@ class PatientController extends Controller
                 ->values(),
             // Rule 244 §2.8 — the RM year shown on the form is the clinical year.
             'clinicalYear' => $this->clock->today()->format('Y'),
+            // Rule 244 §4.3 — the paper-card reason list (config-driven labels).
+            'paperCardReasons' => $this->patientService->paperCardReasons(),
         ]);
     }
 
@@ -91,7 +93,8 @@ class PatientController extends Controller
                 $request->user(),
                 (int) $paperCard['paper_card_year'],
                 (string) $paperCard['paper_card_sequence'],
-                (string) $paperCard['paper_card_reason'],
+                (string) ($paperCard['paper_card_reason_code'] ?? ''),
+                $paperCard['paper_card_reason_note'] ?? null,
             );
         } else {
             $patient = $this->patientService->create($data, $request->user());
@@ -172,5 +175,38 @@ class PatientController extends Controller
         $this->patientService->deactivate($patient);
 
         return redirect()->route('settings.patients.index')->with('status', 'Pasien berhasil dinonaktifkan.');
+    }
+
+    /**
+     * DMS-RME-COMPREHENSIVE-CLOSURE-1 / memo M4.1 (rule 244 §4.3, PR-3b) — the
+     * stored paper-card registrations, WITHOUT the note, in the reader's branch
+     * scope. The route carries the read permission and `private, no-store`; the
+     * policy and the service re-assert it (CG-06).
+     */
+    public function paperCardRegistrations(Request $request): View
+    {
+        $this->authorize('viewAnyPaperCardRegistrations', Patient::class);
+
+        return view('settings.patients.paper-card-registrations.index', [
+            'registrations' => $this->patientService->paperCardRegistrationList($request->user()),
+            'reasons' => $this->patientService->paperCardReasons(),
+            'clinicalTimezone' => $this->clock->timezone(),
+        ]);
+    }
+
+    /**
+     * Rule 244 §4.3 — one patient's paper-card registrations, notes included.
+     * Out of the reader's branch scope: 404 from the service (CG-05).
+     */
+    public function paperCardRegistrationsForPatient(Request $request, Patient $patient): View
+    {
+        $this->authorize('viewPaperCardRegistrations', $patient);
+
+        return view('settings.patients.paper-card-registrations.show', [
+            'patient' => $patient,
+            'registrations' => $this->patientService->paperCardRegistrationsFor($patient, $request->user()),
+            'reasons' => $this->patientService->paperCardReasons(),
+            'clinicalTimezone' => $this->clock->timezone(),
+        ]);
     }
 }

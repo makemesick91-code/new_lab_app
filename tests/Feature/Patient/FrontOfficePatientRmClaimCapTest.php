@@ -84,7 +84,8 @@ function frccPaperCard(string $year, string $sequence, string $name): Patient
         test()->supervisor,
         (int) $year,
         $sequence,
-        'Pasien membawa kartu berobat kertas lama dari cabang.',
+        'KARTU_LAMA_PASIEN_LAMA',
+        null,
     );
 }
 
@@ -183,7 +184,7 @@ it('CC-03 answers the refusal over HTTP as a 422 on the sequence field, writing 
             'is_active' => 1,
             'paper_card_year' => '2026',
             'paper_card_sequence' => '5000',
-            'paper_card_reason' => 'Pasien membawa kartu berobat kertas lama dari cabang.',
+            'paper_card_reason_code' => 'KARTU_LAMA_PASIEN_LAMA',
         ])
         ->assertSessionHasErrors('paper_card_sequence');
 

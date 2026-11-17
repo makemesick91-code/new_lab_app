@@ -249,6 +249,11 @@ file.
   current-year counter rises by at most +1000 — per claim for a paper card, in total per legacy CSV batch or pilot run
   (from the counter locked at its start) — and never above 9999; a later year is refused; a current-year non-digit
   sequence or a value of zero or nine digits and up is refused; a refusal is escalated to Supervisor RME and moves
-  nothing. The reason
-  (10–500) and the number checks live in the service, so they bind Super Admin; the audit holds ids and the reason
-  length, never the number or reason. Source: `244-…` §2.6, §4.
+  nothing. The reason and the number checks live in the service, so they bind Super Admin. Source: `244-…` §2.6, §4.
+- **AIR-PAT-36** The paper-card reason is a configured code (`patient.paper_card_reasons`) plus an optional note
+  (10–500, required for `LAINNYA`), stored only in `trx_patient_rm_paper_card_registrations` in the claim's
+  transaction: immutable for the life of the patient record (model throws on update/delete, no repository write
+  path; a future correction is a NEW row with its own audit). Read only with `view_patient_rm_paper_card_reasons`
+  (Supervisor RME, Owner; Super Admin via `Gate::before`) on two `private, no-store` routes outside `manage patients`,
+  re-asserted in `PatientService` with the working-branch scope (out of scope 404). The audit payload holds ids and
+  `reason_code` only; the note never reaches a log, an export or the session flash. Source: `244-…` §4.3, §4.7.

@@ -340,6 +340,22 @@ Route::middleware('auth')->prefix('settings')->name('settings.')->group(function
             ->name('patients.documents.destroy');
     });
 
+    // DMS-RME-COMPREHENSIVE-CLOSURE-1 / memo M4.1 (rule 244 §4.3, PR-3b; owner
+    // decision 2026-11-17, "PAPER-CARD REASON: store text, restricted") — the
+    // stored paper-card reasons. Deliberately OUTSIDE `manage patients`: the
+    // Owner reads them without managing patients. The read permission is on the
+    // route, the policy and the service (CG-06); `private, no-store` because the
+    // note may carry personal data; the per-patient page answers 404 outside the
+    // reader's working-branch scope (CG-05). `{patient}` is mst_patients.id
+    // (rule 222: DatabaseRouteKey::PATTERN per route).
+    Route::middleware(['permission:view_patient_rm_paper_card_reasons', 'cache.headers:private;no_store;max_age=0'])->group(function () {
+        Route::get('patients/paper-card-registrations', [PatientController::class, 'paperCardRegistrations'])
+            ->name('patients.paper-card-registrations.index');
+        Route::get('patients/{patient}/paper-card-registrations', [PatientController::class, 'paperCardRegistrationsForPatient'])
+            ->where('patient', DatabaseRouteKey::PATTERN)
+            ->name('patients.paper-card-registrations.show');
+    });
+
     // FEATURE-LEGACY-IMPORT-HUB-1 — Import Data Legacy (the landing page).
     //
     // ONE read-only page over the three legacy importers below it. It reports

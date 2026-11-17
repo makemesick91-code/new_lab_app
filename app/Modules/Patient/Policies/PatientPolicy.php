@@ -34,6 +34,23 @@ class PatientPolicy
         return $user->can('manage patients') && $user->can(PatientService::PAPER_CARD_PERMISSION);
     }
 
+    /**
+     * DMS-RME-COMPREHENSIVE-CLOSURE-1 / memo M4.1 (rule 244 §4.3, PR-3b) — read
+     * the stored paper-card reasons (Supervisor RME, Owner; Super Admin through
+     * Gate::before). PatientService re-asserts it and adds the branch scope
+     * (out of scope: 404).
+     */
+    public function viewAnyPaperCardRegistrations(User $user): bool
+    {
+        return $user->can(PatientService::PAPER_CARD_REASON_READ_PERMISSION);
+    }
+
+    /** Rule 244 §4.3 — one patient's paper-card reasons; same permission, branch scope in the service. */
+    public function viewPaperCardRegistrations(User $user, Patient $patient): bool
+    {
+        return $user->can(PatientService::PAPER_CARD_REASON_READ_PERMISSION);
+    }
+
     public function update(User $user, Patient $patient): bool
     {
         return $user->can('manage patients');

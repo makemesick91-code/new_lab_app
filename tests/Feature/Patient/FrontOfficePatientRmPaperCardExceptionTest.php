@@ -92,7 +92,9 @@ function fppcPayload(array $overrides = []): array
         'is_active' => 1,
         'paper_card_year' => '2025',
         'paper_card_sequence' => '0012',
-        'paper_card_reason' => 'Pasien membawa kartu berobat kertas lama dari cabang.',
+        // Rule 244 §4.3 (PR-3b) — a structured reason code and an optional note.
+        'paper_card_reason_code' => 'LAINNYA',
+        'paper_card_reason_note' => 'Pasien membawa kartu berobat kertas lama dari cabang.',
     ], $overrides);
 }
 
@@ -101,11 +103,12 @@ function fppcService(User $actor, array $overrides = []): Patient
     $payload = fppcPayload($overrides);
 
     return app(PatientService::class)->createWithPaperCardNumber(
-        array_diff_key($payload, array_flip(['paper_card_year', 'paper_card_sequence', 'paper_card_reason'])),
+        array_diff_key($payload, array_flip(PatientService::PAPER_CARD_FIELDS)),
         $actor,
         (int) $payload['paper_card_year'],
         (string) $payload['paper_card_sequence'],
-        (string) $payload['paper_card_reason'],
+        (string) $payload['paper_card_reason_code'],
+        $payload['paper_card_reason_note'],
     );
 }
 
@@ -206,23 +209,24 @@ it('PC-04 lets Super Admin through the wildcard, but the reason still binds it i
     expect(fppcService($super)->medical_record_number)->toBe('DG-SPN4-2025-0012');
 
     try {
-        fppcService($super, ['paper_card_sequence' => '0013', 'paper_card_reason' => 'singkat']);
+        fppcService($super, ['paper_card_sequence' => '0013', 'paper_card_reason_note' => 'singkat']);
         $this->fail('A Super Admin paper-card registration without a proper reason must be refused.');
     } catch (ValidationException $e) {
-        expect($e->errors())->toHaveKey('paper_card_reason');
+        expect($e->errors())->toHaveKey('paper_card_reason_note');
     }
 });
 
-it('PC-05 requires a written reason of 10 to 500 characters', function (?string $reason): void {
+it('PC-05 requires a reason code, and a note of 10 to 500 characters for LAINNYA (rule 244 §4.3)', function (array $overrides, string $field): void {
     $this->actingAs(fppcUser('Supervisor RME'))
-        ->post(route('settings.patients.store'), fppcPayload(['name' => 'Pasien Alasan', 'paper_card_reason' => $reason]))
-        ->assertSessionHasErrors('paper_card_reason');
+        ->post(route('settings.patients.store'), fppcPayload($overrides + ['name' => 'Pasien Alasan']))
+        ->assertSessionHasErrors($field);
 
     expect(Patient::query()->where('name', 'Pasien Alasan')->exists())->toBeFalse();
 })->with([
-    'missing' => [null],
-    'too short' => ['kartu'],
-    'too long' => [str_repeat('a', 501)],
+    'code missing' => [['paper_card_reason_code' => null], 'paper_card_reason_code'],
+    'note missing for LAINNYA' => [['paper_card_reason_note' => null], 'paper_card_reason_note'],
+    'note too short' => [['paper_card_reason_note' => 'kartu'], 'paper_card_reason_note'],
+    'note too long' => [['paper_card_reason_note' => str_repeat('a', 501)], 'paper_card_reason_note'],
 ]);
 
 it('PC-06 validates the format: four-digit past year, one to eight digits, never zero', function (array $overrides, string $field): void {
@@ -300,7 +304,7 @@ it('PC-09 reserves the paper-card number: the allocator steps over it', function
     expect($automatic->medical_record_number)->toBe('DG-SPN4-2026-0006');
 });
 
-it('PC-10 audits the exception with ids and the reason length only, never the number or the reason', function (): void {
+it('PC-10 audits the exception with ids and the reason code only, never the number or the note (rule 244 §4.3)', function (): void {
     $supervisor = fppcUser('Supervisor RME');
     $patient = fppcService($supervisor);
 
@@ -309,8 +313,8 @@ it('PC-10 audits the exception with ids and the reason length only, never the nu
 
     expect($log->entity_type)->toBe('mst_patients')
         ->and((int) $log->entity_id)->toBe((int) $patient->id)
-        ->and(array_keys($log->new_values))->toEqualCanonicalizing(['patient_id', 'branch_id', 'actor_user_id', 'reason_length'])
-        ->and($log->new_values['reason_length'])->toBe(mb_strlen(fppcPayload()['paper_card_reason']))
+        ->and(array_keys($log->new_values))->toEqualCanonicalizing(['patient_id', 'branch_id', 'actor_user_id', 'registration_id', 'reason_code'])
+        ->and($log->new_values['reason_code'])->toBe('LAINNYA')
         ->and($json)->not->toContain('0012')
         ->and($json)->not->toContain('DG-SPN4')
         ->and($json)->not->toContain('kartu berobat');
@@ -325,7 +329,7 @@ it('PC-11 renders the paper-card fields only for an account holding the permissi
         ->get(route('settings.patients.create'))
         ->assertOk()
         ->assertSee('name="paper_card_sequence"', false)
-        ->assertSee('name="paper_card_reason"', false);
+        ->assertSee('name="paper_card_reason_code"', false);
 
     foreach (['Front Office', 'Admin Klinik'] as $role) {
         $this->actingAs(fppcUser($role))
@@ -333,7 +337,7 @@ it('PC-11 renders the paper-card fields only for an account holding the permissi
             ->assertOk()
             ->assertDontSee('name="paper_card_sequence"', false)
             ->assertDontSee('name="paper_card_year"', false)
-            ->assertDontSee('name="paper_card_reason"', false);
+            ->assertDontSee('name="paper_card_reason_code"', false);
     }
 });
 
@@ -345,7 +349,8 @@ it('PC-12 keeps Kunjungan → Pasien Baru automatic even for Supervisor RME', fu
         'name' => 'Pasien Kunjungan Otomatis',
         'paper_card_year' => '2025',
         'paper_card_sequence' => '0012',
-        'paper_card_reason' => 'Tidak berlaku pada jalur pendaftaran biasa.',
+        'paper_card_reason_code' => 'LAINNYA',
+        'paper_card_reason_note' => 'Tidak berlaku pada jalur pendaftaran biasa.',
     ]);
 
     expect($patient->medical_record_number)->toBe('DG-SPN4-2026-0001');

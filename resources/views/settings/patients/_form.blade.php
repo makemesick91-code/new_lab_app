@@ -71,7 +71,7 @@
                  it from (rule 135 mirror); anyone else gets the automatic number
                  and a posted value is refused with 403. --}}
             @can('register_patient_paper_card_rm')
-                <details class="mt-3 rounded-md border border-amber-200 bg-amber-50/60 p-3" @if ($errors->hasAny(['paper_card_year', 'paper_card_sequence', 'paper_card_reason']) || old('paper_card_sequence')) open @endif>
+                <details class="mt-3 rounded-md border border-amber-200 bg-amber-50/60 p-3" @if ($errors->hasAny(['paper_card_year', 'paper_card_sequence', 'paper_card_reason_code', 'paper_card_reason_note']) || old('paper_card_sequence')) open @endif>
                     <summary class="cursor-pointer text-xs font-semibold text-amber-800">Pakai Nomor RM kartu kertas lama (khusus Supervisor RME)</summary>
                     <p class="mt-2 text-xs text-gray-600">Hanya untuk pasien yang membawa kartu berobat lama. Nomor dibentuk dari cabang di atas: DG-{KODE}-{TAHUN KARTU}-{NOMOR URUT}, diperiksa terhadap semua penulisan yang sudah terdaftar, dan dicatat di audit tanpa nomornya.</p>
                     <div class="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -85,10 +85,26 @@
                             <input type="text" name="paper_card_sequence" inputmode="numeric" maxlength="8" value="{{ old('paper_card_sequence') }}" placeholder="mis. 0012" class="mt-1 block w-full rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500" />
                             @error('paper_card_sequence')<p class="mt-1 text-xs text-rose-600">{{ $message }}</p>@enderror
                         </div>
+                        {{-- Rule 244 §4.3 (PR-3b) — a structured reason plus an optional
+                             note (required for Lainnya). Stored in its own immutable
+                             record, readable only by Supervisor RME and Owner; never in
+                             the audit trail, logs or exports. The note is not refilled
+                             after a refused submit (it is never flashed to the session). --}}
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Alasan</label>
+                            <select name="paper_card_reason_code" class="mt-1 block w-full rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                <option value="">- Pilih alasan -</option>
+                                @foreach (($paperCardReasons ?? []) as $reasonCode => $reasonLabel)
+                                    <option value="{{ $reasonCode }}" @selected(old('paper_card_reason_code') === $reasonCode)>{{ $reasonLabel }}</option>
+                                @endforeach
+                            </select>
+                            @error('paper_card_reason_code')<p class="mt-1 text-xs text-rose-600">{{ $message }}</p>@enderror
+                        </div>
                         <div class="sm:col-span-3">
-                            <label class="block text-sm font-medium text-gray-700">Alasan (10–500 karakter)</label>
-                            <textarea name="paper_card_reason" rows="2" maxlength="500" class="mt-1 block w-full rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">{{ old('paper_card_reason') }}</textarea>
-                            @error('paper_card_reason')<p class="mt-1 text-xs text-rose-600">{{ $message }}</p>@enderror
+                            <label class="block text-sm font-medium text-gray-700">Catatan (10–500 karakter; wajib untuk Lainnya)</label>
+                            <textarea name="paper_card_reason_note" rows="2" maxlength="500" class="mt-1 block w-full rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500"></textarea>
+                            <p class="mt-1 text-xs text-amber-800">Jangan menulis data identitas pasien (NIK, nama, alamat, nomor telepon) di catatan. Catatan disimpan permanen dan hanya dapat dibaca Supervisor RME dan Owner.</p>
+                            @error('paper_card_reason_note')<p class="mt-1 text-xs text-rose-600">{{ $message }}</p>@enderror
                         </div>
                     </div>
                 </details>

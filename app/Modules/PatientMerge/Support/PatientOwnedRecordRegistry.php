@@ -81,6 +81,11 @@ final class PatientOwnedRecordRegistry
         'trx_patient_merge_cases.source_patient_id' => 'Merge case provenance.',
         // No foreign key: import evidence of which row a legacy CSV created.
         'stg_legacy_patient_imports.committed_patient_id' => 'Legacy patient import provenance.',
+        // Rule 244 §4.3 (PR-3b) — immutable: records which patient an old
+        // paper-card Nomor RM was registered for, and why. It stays with that
+        // patient (whose number stays reserved), exactly like the RM alias
+        // source above; a merge never rewrites it.
+        'trx_patient_rm_paper_card_registrations.patient_id' => 'Records which patient the old paper-card Nomor RM was registered for (immutable reason).',
     ];
 
     /** Groups that must be conserved exactly: canonical_after == A + B. */

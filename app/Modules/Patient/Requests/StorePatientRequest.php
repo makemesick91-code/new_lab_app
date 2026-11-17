@@ -61,18 +61,24 @@ class StorePatientRequest extends FormRequest
                 Rule::exists('mst_branches', 'id')->where('is_active', true)->where('is_rme_enabled', true),
                 Rule::in(app(RmeWorkingBranchScope::class)->branchIdsFor($this->user())),
             ],
-            // Rule 244 §4 — the Supervisor RME paper-card exception: all three
-            // together or none (PatientService re-checks every bound).
+            // Rule 244 §4 — the Supervisor RME paper-card exception: year,
+            // sequence and reason code together or none; the note is optional
+            // except for LAINNYA (rule 244 §4.3). PatientService re-checks every
+            // bound.
             'paper_card_year' => [
-                'nullable', 'required_with:paper_card_sequence,paper_card_reason', 'integer', 'digits:4',
+                'nullable', 'required_with:paper_card_sequence,paper_card_reason_code,paper_card_reason_note', 'integer', 'digits:4',
                 'min:'.PatientService::PAPER_CARD_MIN_YEAR,
                 'max:'.app(ClinicalClock::class)->today()->format('Y'),
             ],
             'paper_card_sequence' => [
-                'nullable', 'required_with:paper_card_year,paper_card_reason', 'string', 'regex:/^[0-9]{1,8}$/', 'not_regex:/^0+$/',
+                'nullable', 'required_with:paper_card_year,paper_card_reason_code,paper_card_reason_note', 'string', 'regex:/^[0-9]{1,8}$/', 'not_regex:/^0+$/',
             ],
-            'paper_card_reason' => [
-                'nullable', 'required_with:paper_card_year,paper_card_sequence', 'string',
+            'paper_card_reason_code' => [
+                'nullable', 'required_with:paper_card_year,paper_card_sequence,paper_card_reason_note', 'string',
+                Rule::in(array_keys(app(PatientService::class)->paperCardReasons())),
+            ],
+            'paper_card_reason_note' => [
+                'nullable', 'required_if:paper_card_reason_code,'.PatientService::PAPER_CARD_REASON_OTHER, 'string',
                 'min:'.PatientService::PAPER_CARD_REASON_MIN, 'max:'.PatientService::PAPER_CARD_REASON_MAX,
             ],
             'ktp_number' => ['nullable', 'string', 'max:16', Rule::unique('mst_patients', 'ktp_number')],
@@ -117,9 +123,11 @@ class StorePatientRequest extends FormRequest
             'branch_id.in' => 'Pasien baru hanya dapat didaftarkan di cabang tempat Anda bertugas.',
             'paper_card_year.*' => 'Tahun pada kartu lama wajib 4 digit dan tidak melewati tahun ini.',
             'paper_card_sequence.*' => 'Nomor urut kartu lama wajib angka (1–8 digit) dan bukan nol.',
-            'paper_card_reason.required_with' => 'Alasan memakai Nomor RM kartu lama wajib diisi.',
-            'paper_card_reason.min' => 'Alasan minimal :min karakter.',
-            'paper_card_reason.max' => 'Alasan maksimal :max karakter.',
+            'paper_card_reason_code.required_with' => 'Pilih alasan memakai Nomor RM kartu lama.',
+            'paper_card_reason_code.in' => 'Pilih alasan memakai Nomor RM kartu lama dari daftar.',
+            'paper_card_reason_note.required_if' => 'Catatan wajib diisi untuk alasan Lainnya.',
+            'paper_card_reason_note.min' => 'Catatan minimal :min karakter.',
+            'paper_card_reason_note.max' => 'Catatan maksimal :max karakter.',
             'ktp_number.unique' => 'Nomor KTP sudah terdaftar pada pasien lain.',
         ];
     }

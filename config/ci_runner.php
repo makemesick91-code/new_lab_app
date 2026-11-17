@@ -632,6 +632,11 @@ return [
         // "refuse jump > +1000"): paper card, legacy CSV commit and pilot import.
         // Selected by the existing `FrontOffice` token in BOTH critical variants.
         'tests/Feature/Patient/FrontOfficePatientRmClaimCapTest.php',
+        // Rule 244 §4.3 (PR-3b) — the paper-card reason: structured code and
+        // note stored immutably, read only by Supervisor RME and Owner (branch
+        // scoped, no-store), never in logs, audit payloads or exports.
+        // Selected by the existing `FrontOffice` token in BOTH critical variants.
+        'tests/Feature/Patient/FrontOfficePatientRmPaperCardReasonTest.php',
 
         // DOCTOR-PWA-WEBAUTHN-1 — the browser device-credential login. A `|Pwa`
         // or `|DoctorDevice` token does not select it: --filter matches the test

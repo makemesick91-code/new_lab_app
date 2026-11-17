@@ -175,12 +175,18 @@ return Application::configure(basePath: dirname(__DIR__))
         // a whole handwriting page in the sessions table (CG-11, rule 121: that
         // evidence lives only on the private disk). No form restores these
         // fields with old(), so nothing a user sees changes.
+        //
+        // Rule 244 §4.3 (PR-3b) — the paper-card reason note is free text that
+        // may carry personal data and is stored only in its restricted table;
+        // a refused registration does not copy it into the session either (the
+        // Supervisor RME types it again).
         $exceptions->dontFlash([
             'consenter_signature',
             'doctor_signature',
             'prescription_canvas_data',
             'doctor_signature_canvas_data',
             'handwriting_data',
+            'paper_card_reason_note',
         ]);
 
         // FEATURE-DEV-CONSOLE-OBSERVABILITY-1 — every rendered exception passes

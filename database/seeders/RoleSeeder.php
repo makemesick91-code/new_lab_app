@@ -397,6 +397,10 @@ class RoleSeeder extends Seeder
             // Read only by construction: no upload, no review, no publish, no
             // void, no wave management, and no approval authority.
             'view_legacy_rme_migration_operations',
+            // DMS-RME-COMPREHENSIVE-CLOSURE-1 / memo M4.1 (rule 244 §4.3, PR-3b;
+            // owner decision 2026-11-17) — READ the stored paper-card reasons
+            // (code and note), read only: the Owner never enters a paper card.
+            'view_patient_rm_paper_card_reasons',
         ],
         'Kasir' => [
             'view dashboard',
@@ -568,6 +572,8 @@ class RoleSeeder extends Seeder
             // CSV commit. Supervisor RME only (not Admin Klinik, so the Front
             // Office = Admin Klinik + Kasir union is untouched).
             'register_patient_paper_card_rm',
+            // Rule 244 §4.3 (PR-3b) — read the stored paper-card reason and note.
+            'view_patient_rm_paper_card_reasons',
             // FEATURE-PATIENT-DUPLICATE-RESOLUTION-MERGE-1 — duplicate patient resolution.
             'view_patient_duplicate_resolution',
             'request_patient_merge',

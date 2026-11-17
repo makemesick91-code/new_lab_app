@@ -408,6 +408,12 @@ class PermissionSeeder extends Seeder
         // Supervisor RME only; Super Admin holds it through '*'. Everyone else
         // gets the automatic number.
         'register_patient_paper_card_rm',
+        // Rule 244 §4.3 (PR-3b; owner decision 2026-11-17, "PAPER-CARD REASON:
+        // store text, restricted") — READ the stored paper-card reason code and
+        // note, branch-scoped, on a private no-store page. Supervisor RME and
+        // Owner only; Super Admin through '*'. Entering the reason stays with
+        // register_patient_paper_card_rm. No write: the rows are immutable.
+        'view_patient_rm_paper_card_reasons',
 
         // FEATURE-FINANCE-KLINIK-DATA-ANALYST-ROLES-1 (rule 186) — the
         // read-only cross-branch OVERSIGHT surface used by the Finance Klinik

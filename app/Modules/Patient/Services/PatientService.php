@@ -9,7 +9,9 @@ use App\Modules\Branch\Support\BranchCodeAlias;
 use App\Modules\LabOrder\Services\AuditLogService;
 use App\Modules\Patient\Exceptions\PatientRmNumberUnavailableException;
 use App\Modules\Patient\Interfaces\PatientRepositoryInterface;
+use App\Modules\Patient\Interfaces\PatientRmPaperCardRegistrationRepositoryInterface;
 use App\Modules\Patient\Models\Patient;
+use App\Modules\Patient\Models\PatientRmPaperCardRegistration;
 use App\Modules\PatientMerge\Services\PatientMergeGuard;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
 use App\Support\Clinical\ClinicalClock;
@@ -20,6 +22,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 class PatientService
 {
@@ -44,12 +47,22 @@ class PatientService
     public const PAPER_CARD_PERMISSION = 'register_patient_paper_card_rm';
 
     /** Rule 244 §4 — the paper-card request fields; never read on the automatic path. */
-    public const PAPER_CARD_FIELDS = ['paper_card_year', 'paper_card_sequence', 'paper_card_reason'];
+    public const PAPER_CARD_FIELDS = ['paper_card_year', 'paper_card_sequence', 'paper_card_reason_code', 'paper_card_reason_note'];
 
-    /** Rule 244 §4 — the written reason's bounds, enforced here for every actor. */
+    /** Rule 244 §4.3 (PR-3b) — a note's bounds when one is given, enforced here for every actor. */
     public const PAPER_CARD_REASON_MIN = 10;
 
     public const PAPER_CARD_REASON_MAX = 500;
+
+    /** Rule 244 §4.3 — the reason code whose note is required. */
+    public const PAPER_CARD_REASON_OTHER = 'LAINNYA';
+
+    /**
+     * Rule 244 §4.3 (owner decision 2026-11-17, "PAPER-CARD REASON: store text,
+     * restricted") — the one permission that READS a stored paper-card reason:
+     * Supervisor RME and Owner; Super Admin through Gate::before.
+     */
+    public const PAPER_CARD_REASON_READ_PERMISSION = 'view_patient_rm_paper_card_reasons';
 
     /** Rule 244 §4 — the oldest year a paper card may carry. */
     public const PAPER_CARD_MIN_YEAR = 1900;
@@ -77,6 +90,8 @@ class PatientService
         // PR-2 review F2 (CG-05) — a new patient's branch must be one the actor
         // is working: a request branch may only narrow.
         private readonly RmeWorkingBranchScope $workingBranchScope,
+        // Rule 244 §4.3 (PR-3b) — the immutable paper-card reason rows.
+        private readonly PatientRmPaperCardRegistrationRepositoryInterface $paperCardRegistrations,
     ) {}
 
     public function list(array $filters = [], int $perPage = 10): LengthAwarePaginator
@@ -176,8 +191,10 @@ class PatientService
      *  - Only an actor holding {@see self::PAPER_CARD_PERMISSION} (Supervisor
      *    RME; Super Admin through '*') and `manage patients`, re-asserted here
      *    whatever the route or form said (CG-06).
-     *  - A written reason of {@see self::PAPER_CARD_REASON_MIN}..
-     *    {@see self::PAPER_CARD_REASON_MAX} characters, a year from
+     *  - A structured reason code from config `patient.paper_card_reasons` and
+     *    an optional note of {@see self::PAPER_CARD_REASON_MIN}..
+     *    {@see self::PAPER_CARD_REASON_MAX} characters, required for
+     *    {@see self::PAPER_CARD_REASON_OTHER} (rule 244 §4.3), a year from
      *    {@see self::PAPER_CARD_MIN_YEAR} to the clinical year, a sequence of one
      *    to eight digits that is not zero — enforced HERE, so they bind Super
      *    Admin too (Gate::before only answers the permission question).
@@ -189,25 +206,37 @@ class PatientService
      *    claim cap (rule 244 §2.6: a current-year jump past +1000 or 9999 is a
      *    422 that sends the case to Supervisor RME). The branch must be inside
      *    the actor's working-branch scope, as on the automatic path.
-     *  - Audited without the number and without the reason text: patient id,
-     *    branch id, actor id and the reason's length.
+     *  - The code and the note are stored in their own immutable row
+     *    ({@see PatientRmPaperCardRegistrationRepositoryInterface}) in the SAME
+     *    transaction as the claim, so a refused claim stores no reason.
+     *  - Audited without the number and without the note: patient id, branch
+     *    id, actor id, the registration id and the reason code.
      *  - `registered_at` is the clinical day the patient enters the system; the
      *    card's own date is not invented.
      */
-    public function createWithPaperCardNumber(array $data, User $actor, int $year, string $sequence, string $reason): Patient
+    public function createWithPaperCardNumber(array $data, User $actor, int $year, string $sequence, string $reasonCode, ?string $reasonNote): Patient
     {
         if (! $actor->can(self::PAPER_CARD_PERMISSION) || ! $actor->can('manage patients')) {
             throw new AuthorizationException('Nomor RM kartu lama hanya dapat didaftarkan oleh Supervisor RME.');
         }
 
-        $reason = trim($reason);
+        $reasonCode = trim($reasonCode);
+        $reasonNote = trim((string) $reasonNote);
+        $reasonNote = $reasonNote === '' ? null : $reasonNote;
         $sequence = trim($sequence);
-        $reasonLength = mb_strlen($reason);
         $today = $this->clock->today();
 
-        if ($reasonLength < self::PAPER_CARD_REASON_MIN || $reasonLength > self::PAPER_CARD_REASON_MAX) {
+        if (! array_key_exists($reasonCode, $this->paperCardReasons())) {
+            throw ValidationException::withMessages(['paper_card_reason_code' => 'Pilih alasan memakai Nomor RM kartu lama dari daftar.']);
+        }
+
+        if ($reasonNote === null && $reasonCode === self::PAPER_CARD_REASON_OTHER) {
+            throw ValidationException::withMessages(['paper_card_reason_note' => 'Catatan wajib diisi untuk alasan Lainnya.']);
+        }
+
+        if ($reasonNote !== null && (mb_strlen($reasonNote) < self::PAPER_CARD_REASON_MIN || mb_strlen($reasonNote) > self::PAPER_CARD_REASON_MAX)) {
             throw ValidationException::withMessages([
-                'paper_card_reason' => sprintf('Alasan wajib diisi, %d sampai %d karakter.', self::PAPER_CARD_REASON_MIN, self::PAPER_CARD_REASON_MAX),
+                'paper_card_reason_note' => sprintf('Catatan %d sampai %d karakter.', self::PAPER_CARD_REASON_MIN, self::PAPER_CARD_REASON_MAX),
             ]);
         }
 
@@ -232,7 +261,7 @@ class PatientService
         }
 
         try {
-            return DB::transaction(function () use ($data, $branch, $actor, $year, $sequence, $reasonLength, $today): Patient {
+            return DB::transaction(function () use ($data, $branch, $actor, $year, $sequence, $reasonCode, $reasonNote, $today): Patient {
                 $number = $this->rmNumbers->compose((string) BranchCodeAlias::canonicalize($branch->code), $year, $sequence);
 
                 if (! $this->rmAllocator->claimExisting($branch, $number)) {
@@ -262,11 +291,23 @@ class PatientService
                     throw ValidationException::withMessages(['paper_card_sequence' => self::PAPER_CARD_TAKEN_MESSAGE]);
                 }
 
+                // Rule 244 §4.3 (PR-3b) — the reason, immutable, in this transaction.
+                $registration = $this->paperCardRegistrations->record([
+                    'patient_id' => (int) $patient->getKey(),
+                    'branch_id' => (int) $branch->getKey(),
+                    'year' => $year,
+                    'reason_code' => $reasonCode,
+                    'reason_note' => $reasonNote,
+                    'actor_user_id' => (int) $actor->getKey(),
+                ]);
+
+                // Ids and the code only: never the note, never the number.
                 $this->audit->log('mst_patients', (int) $patient->getKey(), self::AUDIT_PAPER_CARD_REGISTERED, null, [
                     'patient_id' => (int) $patient->getKey(),
                     'branch_id' => (int) $branch->getKey(),
                     'actor_user_id' => (int) $actor->getKey(),
-                    'reason_length' => $reasonLength,
+                    'registration_id' => (int) $registration->getKey(),
+                    'reason_code' => $reasonCode,
                 ], $actor);
 
                 return $patient;
@@ -277,6 +318,58 @@ class PatientService
             throw ValidationException::withMessages([
                 'paper_card_sequence' => 'Nomor RM kartu lama tidak dapat dibentuk untuk cabang ini. Hubungi Super Admin.',
             ]);
+        }
+    }
+
+    /**
+     * Rule 244 §4.3 — the configured paper-card reasons, code => Indonesian label.
+     *
+     * @return array<string, string>
+     */
+    public function paperCardReasons(): array
+    {
+        $reasons = config('patient.paper_card_reasons', []);
+
+        return is_array($reasons) ? array_map('strval', $reasons) : [];
+    }
+
+    /**
+     * Rule 244 §4.3 (owner decision 2026-11-17, "PAPER-CARD REASON: store text,
+     * restricted") — a patient's stored paper-card reasons, notes included.
+     * Re-asserts {@see self::PAPER_CARD_REASON_READ_PERMISSION} (403; Super Admin
+     * passes through Gate::before) and the actor's working-branch scope (CG-05):
+     * a patient outside it is 404, so the reader does not even learn a reason
+     * exists. Only rows inside the scope are returned.
+     *
+     * @return Collection<int, PatientRmPaperCardRegistration>
+     */
+    public function paperCardRegistrationsFor(Patient $patient, User $actor): Collection
+    {
+        $this->assertMayReadPaperCardReasons($actor);
+
+        if (! $this->workingBranchScope->allows($actor, $patient->branch_id !== null ? (int) $patient->branch_id : null)) {
+            throw new NotFoundHttpException;
+        }
+
+        return $this->paperCardRegistrations->forPatient((int) $patient->getKey(), $this->workingBranchScope->branchIdsFor($actor));
+    }
+
+    /**
+     * Rule 244 §4.3 — every stored paper-card registration in the actor's
+     * working-branch scope, newest first, WITHOUT the note (it is shown only on
+     * the patient's own page). Same permission re-assertion.
+     */
+    public function paperCardRegistrationList(User $actor, int $perPage = 25): LengthAwarePaginator
+    {
+        $this->assertMayReadPaperCardReasons($actor);
+
+        return $this->paperCardRegistrations->paginateForBranches($this->workingBranchScope->branchIdsFor($actor), $perPage);
+    }
+
+    private function assertMayReadPaperCardReasons(User $actor): void
+    {
+        if (! $actor->can(self::PAPER_CARD_REASON_READ_PERMISSION)) {
+            throw new AuthorizationException('Alasan Nomor RM kartu lama hanya dapat dibaca Supervisor RME dan Owner.');
         }
     }
 
