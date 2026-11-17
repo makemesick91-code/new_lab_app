@@ -197,7 +197,8 @@ consent void (rule 237 §14.2). Committed evidence is never deleted (rule 224 §
 5. **Not gated** by the live encounter or the consent: a wrong photo found after the visit finished, or after its
    consent was voided, is still corrected.
 6. **Audit.** `RME_CLINICAL_PHOTO_VOIDED` with `clinic_visit_id` only; the reason is free text and stays on the row,
-   never in an audit payload or a log.
+   never in an audit payload or a log, and `RmeClinicalPhoto` keeps it in `$hidden`, so a serialised model never
+   carries it.
 7. **Deploy.** `PermissionSeeder` → `RoleSeeder` → `permission:cache-reset`; no migration (the void columns ship in §4).
 8. **Tests.** `tests/Feature/RME/RmeClinicalEvidencePhotoVoidTest.php` (token `ClinicalEvidence`, declared in
    `critical_gate_mandatory_suites`).

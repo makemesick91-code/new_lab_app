@@ -41,9 +41,15 @@ class RmeClinicalPhoto extends Model
         'uploaded_at',
     ];
 
+    /**
+     * Never serialised: the object key (rule 121) and the original's hash, and
+     * the void reason (free text a supervisor wrote, rule 242 §9.6), which a
+     * caller reads deliberately as an attribute or not at all.
+     */
     protected $hidden = [
         'photo_path',
         'original_sha256',
+        'void_reason',
     ];
 
     protected function casts(): array

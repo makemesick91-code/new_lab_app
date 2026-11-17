@@ -171,6 +171,9 @@ it('CPV-02 a Supervisor RME voids with a reason: the row is marked, the object a
     expect($row->isVoided())->toBeTrue()
         ->and($row->voided_by)->toBe($this->supervisor->id)
         ->and($row->void_reason)->toBe(RCPV_REASON)
+        // Free text: readable as an attribute, never serialised with the model.
+        ->and(array_key_exists('void_reason', $row->toArray()))->toBeFalse()
+        ->and(json_encode($row))->not->toContain('tertukar')
         ->and(rcpvEvidence($photo))->toBe($before)
         ->and(RmeClinicalPhoto::query()->count())->toBe(1);
 
