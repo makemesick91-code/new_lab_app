@@ -42,6 +42,10 @@ use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Consent\Models\RmeVisitConsent;
 use App\Modules\Consent\Services\RmeVisitConsentService;
 use App\Modules\Doctor\Models\Doctor;
+use App\Modules\MedicalRecord\Models\ClinicalDiagnosis;
+use App\Modules\MedicalRecord\Models\MedicalRecord;
+use App\Modules\MedicalRecord\Models\MedicalRecordDiagnosis;
+use App\Modules\MedicalRecord\Models\MedicalRecordHandwritingPage;
 use App\Modules\Odontogram\Models\Odontogram;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\Prescription\Models\RmePrescription;
@@ -50,6 +54,7 @@ use App\Modules\RME\Models\PatientDoctorAssignment;
 use App\Modules\RME\Services\DoctorEncounterWindow;
 use App\Modules\RME\Services\DoctorPatientScopeService;
 use App\Modules\RME\Services\DoctorRoomScopeService;
+use App\Modules\RmeOnlineContext\Services\DoctorUserResolver;
 use App\Services\Foundation\FeatureFlagService;
 use App\Support\Storage\ClinicalEvidenceStorage;
 use Carbon\Carbon;
@@ -418,6 +423,7 @@ it('refuses writes on the doctor\'s own encounter once it is out of service', fu
 
     expect($decision->denied())->toBeTrue()
         ->and($decision->status() ?? 403)->toBe(403)
+        ->and((string) $decision->message())->toContain('sudah selesai dilayani')
         ->and(dpewScope()->doctorMayWriteVisit($a, $ownYesterday))->toBeFalse();
 });
 
@@ -588,4 +594,236 @@ it('keeps the unlinked-doctor refusal a 403 with its own message', function () {
     expect($decision->denied())->toBeTrue()
         ->and($decision->status())->toBeNull()
         ->and($decision->message())->toBe('Akun dokter belum terhubung ke Master Dokter.');
+});
+
+/*
+|--------------------------------------------------------------------------
+| H — sheets follow their OWN visit (independent review of A1, HIGH + MEDIUM)
+|--------------------------------------------------------------------------
+| A per-visit sheet is read and written by its own visit's rule. The patient's
+| handwriting BOOK is patient-level: read in HISTORY, written only by appending
+| a page inside the doctor's own in-service encounter (`appendPage`); its typed
+| fields follow the book's own visit like any sheet. Re-saving an existing
+| book page across encounters stays possible until M3.3's page seal (rule 240
+| §4) — pinned below, and a prerequisite for turning the flag ON.
+*/
+
+/** A sheet on $visit; anchored to $book's visit unless it IS the book. */
+function dpewSheet(ClinicVisit $visit, ?MedicalRecord $book = null): MedicalRecord
+{
+    return MedicalRecord::factory()->create([
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $visit->branch_id,
+        'patient_id' => $visit->patient_id,
+        'doctor_id' => $visit->doctor_id,
+        'canonical_visit_id' => $book?->clinic_visit_id ?? $visit->id,
+    ])->refresh();
+}
+
+/** The patient's book on B's first visit, B's sheet last month, A's live consented encounter. */
+function dpewSheetFixture(): array
+{
+    $bookVisit = dpewCompleted(test()->dpewDoctorB, '2025-01-01 03:00:00');
+    $book = dpewSheet($bookVisit);
+    $bVisit = dpewCompleted(test()->dpewDoctorB, '2026-10-01 03:00:00');
+    $bSheet = dpewSheet($bVisit, $book);
+    $aVisit = dpewVisit(test()->dpewDoctorA, ClinicVisit::STATUS_IN_PROGRESS);
+    rmeSignedConsentFor($aVisit);
+
+    return compact('bookVisit', 'book', 'bVisit', 'bSheet', 'aVisit');
+}
+
+it('refuses a doctor every write on another doctor\'s sheet, over HTTP too', function () {
+    dpewFlag(true);
+    $f = dpewSheetFixture();
+    $a = test()->dpewUserA;
+
+    foreach (['update', 'finalize'] as $ability) {
+        $decision = Gate::forUser($a)->inspect($ability, $f['bSheet']);
+
+        expect($decision->denied())->toBeTrue("{$ability} must be refused")
+            ->and($decision->status() ?? 403)->toBe(403)
+            ->and((string) $decision->message())->toContain(DPEW_OTHER_DOCTOR);
+    }
+
+    $this->actingAs($a)
+        ->patch(route('rme.visits.medical-record.update', [$f['bVisit'], $f['bSheet']]), ['notes' => 'catatan dokter A'])
+        ->assertForbidden();
+    $this->actingAs($a)
+        ->post(route('rme.visits.medical-record.finalize', [$f['bVisit'], $f['bSheet']]))
+        ->assertForbidden();
+
+    // Diagnoses (record/remove/make-primary) and the override all authorize
+    // `update` on the sheet in their controllers.
+    $this->actingAs($a)
+        ->post(route('rme.visits.medical-record.diagnoses.store', [$f['bVisit'], $f['bSheet']]), [
+            'clinical_diagnosis_id' => ClinicalDiagnosis::factory()->create()->id,
+            'diagnosis_role' => MedicalRecordDiagnosis::ROLES[0],
+        ])
+        ->assertForbidden();
+
+    expect(MedicalRecordDiagnosis::query()->where('medical_record_id', $f['bSheet']->id)->exists())->toBeFalse();
+
+    expect($f['bSheet']->fresh()->notes)->toBeNull();
+});
+
+it('refuses a doctor the typed fields of a book anchored to another doctor\'s visit, but lets them append a page', function () {
+    dpewFlag(true);
+    $f = dpewSheetFixture();
+    $a = test()->dpewUserA;
+    Storage::fake('public');
+
+    expect(dpewStatus($a, 'update', $f['book']))->toBe(403)
+        ->and(dpewStatus($a, 'appendPage', $f['book']))->toBe(200);
+
+    $this->actingAs($a)
+        ->post(route('rme.visits.medical-record.handwriting.store', [$f['bookVisit'], $f['book']]), [
+            'handwriting_data' => validPodSignatureData(),
+            'page_number' => 2,
+        ])
+        ->assertRedirect()
+        ->assertSessionHasNoErrors();
+
+    expect(MedicalRecordHandwritingPage::query()->where('medical_record_id', $f['book']->id)->where('page_number', 2)->exists())->toBeTrue();
+});
+
+it('pins today\'s book page re-save across encounters until M3.3 seals pages (rule 240 §4)', function () {
+    dpewFlag(true);
+    $f = dpewSheetFixture();
+    $a = test()->dpewUserA;
+    Storage::fake('public');
+
+    // A page doctor B wrote on the book earlier.
+    MedicalRecordHandwritingPage::query()->create([
+        'medical_record_id' => $f['book']->id,
+        'clinic_visit_id' => $f['bookVisit']->id,
+        'branch_id' => $f['book']->branch_id,
+        'doctor_id' => test()->dpewDoctorB->id,
+        'page_number' => 2,
+        'handwriting_path' => 'rme/handwriting/dpew-b-page-2.png',
+        'handwriting_hash' => str_repeat('c', 64),
+        'saved_at' => now(),
+    ]);
+
+    // TODAY: the book is patient-level, so the re-save is accepted. M3.3 PR2's
+    // page seal / author stamp closes it; the flag must not be turned ON before.
+    $this->actingAs($a)
+        ->post(route('rme.visits.medical-record.handwriting.store', [$f['bookVisit'], $f['book']]), [
+            'handwriting_data' => validPodSignatureData(),
+            'page_number' => 2,
+        ])
+        ->assertRedirect()
+        ->assertSessionHasNoErrors();
+
+    expect(MedicalRecordHandwritingPage::query()->where('medical_record_id', $f['book']->id)->where('page_number', 2)->value('handwriting_path'))
+        ->not->toBe('rme/handwriting/dpew-b-page-2.png');
+});
+
+it('lets a doctor write their own in-service sheet and refuses their own sheet out of service', function () {
+    dpewFlag(true);
+    $f = dpewSheetFixture();
+    $a = test()->dpewUserA;
+    $aSheet = dpewSheet($f['aVisit'], $f['book']);
+    $aOld = dpewCompleted(test()->dpewDoctorA, '2025-06-01 03:00:00');
+    $aOldSheet = dpewSheet($aOld, $f['book']);
+
+    $old = Gate::forUser($a)->inspect('update', $aOldSheet);
+
+    expect(dpewStatus($a, 'update', $aSheet))->toBe(200)
+        ->and(dpewStatus($a, 'finalize', $aSheet))->toBe(200)
+        ->and($old->denied())->toBeTrue()
+        ->and((string) $old->message())->toContain('sudah selesai dilayani');
+
+    $this->actingAs($a)
+        ->patch(route('rme.visits.medical-record.update', [$f['aVisit'], $aSheet]), ['notes' => 'catatan pemeriksaan hari ini'])
+        ->assertRedirect()
+        ->assertSessionHasNoErrors();
+
+    expect($aSheet->fresh()->notes)->toBe('catatan pemeriksaan hari ini');
+});
+
+it('keeps sheet writes on the relationship scope with the flag OFF', function () {
+    dpewFlag(false);
+    $f = dpewSheetFixture();
+    $a = test()->dpewUserA;
+
+    expect(dpewStatus($a, 'update', $f['bSheet']))->toBe(200)
+        ->and(dpewStatus($a, 'update', $f['book']))->toBe(200)
+        ->and(dpewStatus($a, 'appendPage', $f['book']))->toBe(200)
+        ->and(dpewStatus($a, 'view', $f['bSheet']))->toBe(200);
+});
+
+it('reads a per-visit sheet by its own visit, and the book only inside service', function () {
+    dpewFlag(true);
+    $a = test()->dpewUserA;
+    $bookVisit = dpewCompleted(test()->dpewDoctorB, '2025-01-01 03:00:00');
+    $book = dpewSheet($bookVisit);
+    $aOld = dpewCompleted(test()->dpewDoctorA, '2025-06-01 03:00:00');
+    $aOldSheet = dpewSheet($aOld, $book);
+    $page = MedicalRecordHandwritingPage::query()->create([
+        'medical_record_id' => $book->id,
+        'clinic_visit_id' => $bookVisit->id,
+        'branch_id' => $book->branch_id,
+        'doctor_id' => test()->dpewDoctorB->id,
+        'page_number' => 2,
+        'handwriting_path' => 'rme/handwriting/dpew-book-page-2.png',
+        'handwriting_hash' => str_repeat('d', 64),
+        'saved_at' => now(),
+    ]);
+
+    // OWN mode: the doctor's own old sheet is readable, the book is not (404).
+    expect(dpewScope()->readModeFor($a, (int) test()->dpewPatient->id))->toBe(DoctorPatientScopeService::READ_OWN)
+        ->and(dpewStatus($a, 'view', $aOldSheet))->toBe(200)
+        ->and(dpewStatus($a, 'view', $book))->toBe(404)
+        ->and($page->medical_record_id)->toBe($book->id);
+
+    // HISTORY mode: another doctor's PRE-EXAM visit keeps its sheet hidden (404).
+    dpewVisit(test()->dpewDoctorA, ClinicVisit::STATUS_CASHIER_PENDING);
+    $bLive = dpewVisit(test()->dpewDoctorB, ClinicVisit::STATUS_IN_PROGRESS);
+    $bLiveSheet = dpewSheet($bLive, $book);
+
+    expect(dpewStatus($a, 'view', $bLiveSheet))->toBe(404)
+        ->and(dpewStatus($a, 'view', $book))->toBe(200);
+});
+
+it('never asks the write scope on a prescription update with the flag OFF', function () {
+    dpewFlag(false);
+    $a = test()->dpewUserA;
+    $own = dpewVisit(test()->dpewDoctorA, ClinicVisit::STATUS_IN_PROGRESS);
+    $prescription = RmePrescription::factory()->withStoredCanvases()->unsigned()->create([
+        'clinic_visit_id' => $own->id,
+        'branch_id' => test()->dpewBranch->id,
+        'patient_id' => test()->dpewPatient->id,
+        'doctor_id' => test()->dpewDoctorA->id,
+    ]);
+
+    $scope = Mockery::mock(DoctorPatientScopeService::class, [
+        app(DoctorUserResolver::class),
+        app(FeatureFlagService::class),
+        app(DoctorEncounterWindow::class),
+    ])->makePartial();
+    $scope->shouldNotReceive('authorizeVisitWrite');
+    app()->instance(DoctorPatientScopeService::class, $scope);
+
+    expect(Gate::forUser($a)->inspect('update', $prescription)->allowed())->toBeTrue();
+});
+
+it('answers a patient-level route with 404 outside the scope', function () {
+    dpewFlag(true);
+    $a = test()->dpewUserA;
+    $bookVisit = dpewCompleted(test()->dpewDoctorB, '2025-01-01 03:00:00');
+    $book = dpewSheet($bookVisit);
+    dpewCompleted(test()->dpewDoctorA, '2025-06-01 03:00:00'); // OWN mode only
+    $page = MedicalRecordHandwritingPage::query()->create([
+        'medical_record_id' => $book->id,
+        'clinic_visit_id' => $bookVisit->id,
+        'branch_id' => $book->branch_id,
+        'doctor_id' => test()->dpewDoctorB->id,
+        'page_number' => 2,
+        'handwriting_path' => 'rme/handwriting/dpew-book-page-2.png',
+        'handwriting_hash' => str_repeat('e', 64),
+        'saved_at' => now(),
+    ]);
+
+    $this->actingAs($a)->get(route('rme.handwriting-pages.image', $page))->assertNotFound();
 });

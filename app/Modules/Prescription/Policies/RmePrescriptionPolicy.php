@@ -95,12 +95,17 @@ class RmePrescriptionPolicy
             return $view;
         }
 
-        // Rule 243 §2 — then the own in-service encounter (flag ON only; with it
-        // OFF this repeats the read scope above and changes nothing).
-        $write = app(DoctorPatientScopeService::class)->authorizeVisitWrite($user, $visit);
+        // Rule 243 §2 — then the own in-service encounter. Asked only with the
+        // encounter scope ON: with it OFF it would only repeat the read scope
+        // above, at the cost of extra queries on every row of a list.
+        $scope = app(DoctorPatientScopeService::class);
 
-        if ($write instanceof Response ? $write->denied() : ! $write) {
-            return $write;
+        if ($scope->encounterScopeEnabled()) {
+            $write = $scope->authorizeVisitWrite($user, $visit);
+
+            if ($write instanceof Response ? $write->denied() : ! $write) {
+                return $write;
+            }
         }
 
         // DMS-RME-COMPREHENSIVE-CLOSURE-1 — signed: only its own doctor changes it.

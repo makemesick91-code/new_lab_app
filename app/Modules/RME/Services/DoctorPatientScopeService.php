@@ -5,7 +5,6 @@ namespace App\Modules\RME\Services;
 use App\Models\User;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Doctor\Models\Doctor;
-use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\RME\Models\PatientDoctorAssignment;
 use App\Modules\RmeOnlineContext\Services\DoctorUserResolver;
@@ -258,51 +257,6 @@ class DoctorPatientScopeService
         }
 
         return $this->applyVisitScopeForDoctor($query, (int) $doctor->id);
-    }
-
-    /**
-     * @param  Builder<MedicalRecord>  $query
-     * @return Builder<MedicalRecord>
-     */
-    public function applyMedicalRecordScopeForUser(User $user, Builder $query): Builder
-    {
-        if (! $this->shouldApplyDoctorScope($user)) {
-            return $query;
-        }
-
-        $doctor = $this->resolveDoctorForUser($user);
-
-        if ($doctor === null) {
-            return $query->whereRaw('1 = 0');
-        }
-
-        $doctorId = (int) $doctor->id;
-
-        // Rule 243 §2 — the mirror of MedicalRecordPolicy::view() (the patient
-        // as a whole): only with an own in-service encounter.
-        if ($this->encounterScopeEnabled()) {
-            return $query->whereExists(
-                fn (QueryBuilder $sub) => $this->ownInServiceEncounterFor($sub, $doctorId, 'trx_medical_records.patient_id'),
-            );
-        }
-
-        return $query->where(function (Builder $q) use ($doctorId) {
-            $q->whereExists(function ($sub) use ($doctorId) {
-                $sub->selectRaw('1')
-                    ->from('trx_rme_patient_doctor_assignments as pda')
-                    ->whereColumn('pda.patient_id', 'trx_medical_records.patient_id')
-                    ->where('pda.doctor_id', $doctorId)
-                    ->whereNull('pda.unassigned_at');
-            })->orWhereExists(function ($sub) use ($doctorId) {
-                $sub->selectRaw('1')
-                    ->from('trx_clinic_visits as v')
-                    ->whereColumn('v.patient_id', 'trx_medical_records.patient_id')
-                    ->where('v.doctor_id', $doctorId)
-                    // Match doctorHasPatientAccess(): a soft-deleted visit is
-                    // no clinical relationship (ClinicVisit uses SoftDeletes).
-                    ->whereNull('v.deleted_at');
-            });
-        });
     }
 
     public function authorizePatientAccess(User $user, Patient $patient): Response|bool

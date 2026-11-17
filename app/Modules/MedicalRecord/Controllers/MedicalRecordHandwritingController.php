@@ -79,7 +79,7 @@ class MedicalRecordHandwritingController extends Controller
                 $clinicVisit = $canonicalVisit;
             }
 
-            $this->assertWritableTarget($medicalRecord, $clinicVisit, $consents);
+            $this->assertWritableTarget($medicalRecord, $clinicVisit, $consents, bookPage: $isNewCanonicalPage);
         }
 
         // Rule 240 §4 (memo M3.3, supersedes the Sprint 59 "handwriting RM is
@@ -131,7 +131,7 @@ class MedicalRecordHandwritingController extends Controller
                 $storageVisit = $draft->clinicVisit ?? $canonicalVisit;
 
                 // A refusal here rolls the draft back with the rest of the save.
-                $encounter = $this->assertWritableTarget($draft, $storageVisit, $consents);
+                $encounter = $this->assertWritableTarget($draft, $storageVisit, $consents, bookPage: true);
 
                 return [$draft, $storageVisit, $encounter];
             },
@@ -172,11 +172,15 @@ class MedicalRecordHandwritingController extends Controller
      * allowed to update it, and the patient must have an authorized, consented
      * examination in progress.
      */
-    private function assertWritableTarget(MedicalRecord $medicalRecord, ClinicVisit $storageVisit, RmeVisitConsentService $consents): ClinicVisit
+    private function assertWritableTarget(MedicalRecord $medicalRecord, ClinicVisit $storageVisit, RmeVisitConsentService $consents, bool $bookPage = false): ClinicVisit
     {
         abort_if($medicalRecord->clinic_visit_id !== $storageVisit->id, 404);
 
-        $this->authorize('update', $medicalRecord);
+        // Rule 243 §2 — a page of the patient's BOOK is patient-level
+        // (`appendPage`: inside an own in-service encounter when the encounter
+        // scope is ON); an in-place page of a per-visit sheet follows that
+        // sheet's own visit (`update`). With the flag OFF both are `update`.
+        $this->authorize($bookPage ? 'appendPage' : 'update', $medicalRecord);
 
         /*
          * FIX-02 — handwriting is RME content, so it is gated exactly like the
