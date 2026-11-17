@@ -661,7 +661,7 @@ class ClinicVisitService
      *
      * @param  array<string, mixed>  $data
      */
-    private function resolveBranchId(array $data, User $registrar): int
+    private function resolveBranchId(#[\SensitiveParameter] array $data, User $registrar): int
     {
         $branchId = null;
 

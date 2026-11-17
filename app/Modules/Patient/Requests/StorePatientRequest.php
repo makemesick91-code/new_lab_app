@@ -139,8 +139,10 @@ class StorePatientRequest extends FormRequest
             // Memo M4.2 (rule 244 §5) — NIK stays optional; when given it is
             // exactly 16 digits (new patients only; an edit keeps a legacy value).
             'ktp_number' => ['nullable', 'string', ...PatientCoreFields::NIK_RULES, Rule::unique('mst_patients', 'ktp_number')],
-            'name' => ['required', 'string', 'max:150'],
-            'email' => ['nullable', 'email', 'max:150'],
+            // RM PR-4b (re-review M1) — text PostgreSQL can store (valid UTF-8,
+            // no NUL): a 422 here, never a failed insert that logs the row.
+            'name' => ['required', 'string', 'max:150', 'regex:'.PatientCoreFields::TEXT_PATTERN],
+            'email' => ['nullable', 'string', 'regex:'.PatientCoreFields::TEXT_PATTERN, 'email', 'max:150'],
             'is_active' => ['sometimes', 'boolean'],
             // Memo M4.2 (rule 244 §5) — the core fields of a NEW patient (gender,
             // place and date of birth, phone or WhatsApp, address, occupation)
@@ -159,7 +161,7 @@ class StorePatientRequest extends FormRequest
             'ktp_ocr_verified' => ['exclude_unless:ktp_ocr_applied,1', 'accepted'],
             // FEATURE-PATIENT-DUPLICATE-RESOLUTION-MERGE-1 — required only when
             // a strong duplicate is found (see withValidator).
-            'duplicate_override_reason' => ['nullable', 'string', 'max:1000'],
+            'duplicate_override_reason' => ['nullable', 'string', 'max:1000', 'regex:'.PatientCoreFields::TEXT_PATTERN],
         ];
     }
 
@@ -187,6 +189,9 @@ class StorePatientRequest extends FormRequest
             'paper_card_reason_note.max' => 'Catatan maksimal :max karakter.',
             'paper_card_reason_note.regex' => 'Catatan berisi karakter yang tidak valid.',
             'ktp_number.unique' => 'Nomor KTP sudah terdaftar pada pasien lain.',
+            'name.regex' => 'Nama berisi karakter yang tidak valid.',
+            'email.regex' => 'E-mail berisi karakter yang tidak valid.',
+            'duplicate_override_reason.regex' => 'Alasan berisi karakter yang tidak valid.',
             ...PatientCoreFields::messages(),
         ];
     }

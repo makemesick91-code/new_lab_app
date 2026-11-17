@@ -12,6 +12,7 @@ use App\Modules\Patient\Requests\UpdatePatientRequest;
 use App\Modules\Patient\Services\KtpScanService;
 use App\Modules\Patient\Services\PatientDocumentCaptureBranchResolver;
 use App\Modules\Patient\Services\PatientService;
+use App\Modules\Patient\Support\PatientCoreFields;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
 use App\Support\Clinical\ClinicalClock;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
@@ -182,6 +183,9 @@ class PatientController extends Controller
      * stored paper-card registrations, WITHOUT the note, in the reader's branch
      * scope. The route carries the read permission and `private, no-store`; the
      * policy and the service re-assert it (CG-06).
+     *
+     * Rule 244 §5.3 (RM PR-4b, re-review L2) — and the OPEN no-phone exceptions
+     * in the same scope, also without the note: how the readers reach a note.
      */
     public function paperCardRegistrations(Request $request): View
     {
@@ -190,6 +194,8 @@ class PatientController extends Controller
         return view('settings.patients.paper-card-registrations.index', [
             'registrations' => $this->patientService->paperCardRegistrationList($request->user()),
             'reasons' => $this->patientService->paperCardReasons(),
+            'noPhoneExceptions' => $this->patientService->openNoPhoneExceptionList($request->user()),
+            'noPhoneReasons' => PatientCoreFields::noPhoneReasons(),
             'clinicalTimezone' => $this->clock->timezone(),
         ]);
     }

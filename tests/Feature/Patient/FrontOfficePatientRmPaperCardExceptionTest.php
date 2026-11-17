@@ -458,13 +458,15 @@ it('PC-17 makes the pilot backup importer skip a number held in another spelling
 /** A repository whose insert fails with a unique violation on the named constraint. */
 function fppcUniqueViolation(string $constraint): UniqueConstraintViolationException
 {
+    // The driver's DETAIL and the SQL bindings carry the row's values.
     $driver = new PDOException('duplicate key');
-    $driver->errorInfo = ['23505', 7, 'ERROR:  duplicate key value violates unique constraint "'.$constraint.'"'];
+    $driver->errorInfo = ['23505', 7, 'ERROR:  duplicate key value violates unique constraint "'.$constraint.'"'
+        ."\nDETAIL:  Key (some_column)=(nilai-rahasia-77) already exists."];
 
-    return new UniqueConstraintViolationException('pgsql', 'insert into "mst_patients" ...', [], $driver);
+    return new UniqueConstraintViolationException('pgsql', 'insert into "mst_patients" (name) values (?)', ['Pasien Nilai Rahasia'], $driver);
 }
 
-it('PC-18 reports only a Nomor RM unique violation as taken; KTP stays its 422 and any other violation is rethrown (review I3)', function (string $constraint, ?string $field): void {
+it('PC-18 reports only a Nomor RM unique violation as taken; KTP stays its 422 and any other violation is refused without a value (review I3, rule 244 §5.3 re-review M1)', function (string $constraint, ?string $field): void {
     $violation = fppcUniqueViolation($constraint);
     app()->instance(PatientRepositoryInterface::class, new class($violation) extends PatientRepository
     {
@@ -484,7 +486,15 @@ it('PC-18 reports only a Nomor RM unique violation as taken; KTP stays its 422 a
     }
 
     if ($field === null) {
-        expect($thrown)->toBe($violation);
+        // Rule 244 §5.3 (re-review M1) — refused at once, without a value: only
+        // the SQLSTATE and the constraint name, no previous exception.
+        expect($thrown)->toBeInstanceOf(RuntimeException::class)
+            ->and($thrown)->not->toBeInstanceOf(UniqueConstraintViolationException::class)
+            ->and($thrown->getPrevious())->toBeNull()
+            ->and($thrown->getMessage())->toContain('SQLSTATE 23505')
+            ->toContain($constraint)
+            ->not->toContain('nilai-rahasia')
+            ->not->toContain('Nilai Rahasia');
     } else {
         expect($thrown)->toBeInstanceOf(ValidationException::class)
             ->and(array_keys($thrown->errors()))->toBe([$field]);

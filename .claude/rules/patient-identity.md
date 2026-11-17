@@ -268,4 +268,6 @@ file.
   rows are never forced. A historical paper-card registration (`register_patient_paper_card_rm` + `manage patients`
   + the full card set, validated and claimed) is exempt from the core fields, never an ordinary one. The no-phone note
   is read only by Supervisor RME and Owner on the restricted reasons page (audited, ids only); others see the code;
-  never flashed or refilled (`dontFlash`), `#[\SensitiveParameter]` where it passes. Source: `244-…` §5.3, §5.5.
+  never flashed or refilled (`dontFlash`), `#[\SensitiveParameter]` where it passes; the readers list open exceptions on
+  the restricted index. A failed patient insert or update logs only the SQLSTATE (never the row), and invalid UTF-8 or
+  NUL is a 422 on both registration forms. Source: `244-…` §5.3, §5.5.

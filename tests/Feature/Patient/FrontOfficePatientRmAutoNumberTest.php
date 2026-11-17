@@ -568,7 +568,7 @@ it('AN-23 keeps Kunjungan → Pasien Baru on the working branch: another branch 
         ->and(fpanCounter($other))->toBeNull();
 });
 
-it('AN-24 retries only a Nomor RM collision: any other unique violation is rethrown untouched', function (): void {
+it('AN-24 retries only a Nomor RM collision: any other unique violation is refused at once, without a value (rule 244 §5.3 re-review M1)', function (): void {
     $probe = (object) ['calls' => 0];
     app()->instance(PatientRepositoryInterface::class, new class($probe) extends PatientRepository
     {
@@ -577,15 +577,30 @@ it('AN-24 retries only a Nomor RM collision: any other unique violation is rethr
         public function create(array $data): Patient
         {
             $this->probe->calls++;
-            $pdo = new PDOException('SQLSTATE[23505]: duplicate key value violates unique constraint "mst_patients_other_unique"');
-            $pdo->errorInfo = ['23505', 7, 'ERROR:  duplicate key value violates unique constraint "mst_patients_other_unique"'];
+            // The driver's DETAIL and the SQL bindings carry the row's values.
+            $detail = 'ERROR:  duplicate key value violates unique constraint "mst_patients_other_unique"'
+                ."\nDETAIL:  Key (phone)=(0819 9988 7766) already exists.";
+            $pdo = new PDOException('SQLSTATE[23505]: '.$detail);
+            $pdo->errorInfo = ['23505', 7, $detail];
 
-            throw new UniqueConstraintViolationException('pgsql', 'insert into mst_patients', [], $pdo);
+            throw new UniqueConstraintViolationException('pgsql', 'insert into mst_patients (name, phone) values (?, ?)', ['Pasien Nilai Rahasia', '0819 9988 7766'], $pdo);
         }
     });
 
-    expect(fn () => app(PatientService::class)->create(fpanPayload()))
-        ->toThrow(UniqueConstraintViolationException::class);
+    $thrown = null;
+    try {
+        app(PatientService::class)->create(fpanPayload());
+    } catch (Throwable $e) {
+        $thrown = $e;
+    }
+
+    expect($thrown)->toBeInstanceOf(RuntimeException::class)
+        ->and($thrown)->not->toBeInstanceOf(UniqueConstraintViolationException::class)
+        ->and($thrown->getPrevious())->toBeNull()
+        ->and($thrown->getMessage())->toContain('SQLSTATE 23505')
+        ->toContain('mst_patients_other_unique')
+        ->not->toContain('9988')
+        ->not->toContain('Nilai Rahasia');
 
     expect($probe->calls)->toBe(1)
         ->and(fpanCounter($this->branch))->toBeNull();

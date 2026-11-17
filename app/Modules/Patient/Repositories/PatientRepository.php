@@ -8,7 +8,10 @@ use App\Modules\Patient\Services\PatientMedicalRecordNumberService;
 use Closure;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\QueryException;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Collection;
+use RuntimeException;
 
 class PatientRepository implements PatientRepositoryInterface
 {
@@ -231,17 +234,61 @@ class PatientRepository implements PatientRepositoryInterface
             ->get();
     }
 
-    /** Rule 244 §5.3 — patient values and any no-phone note: never in a logged stack trace. */
+    /**
+     * Rule 244 §5.3 — patient values and any no-phone note: never in a logged
+     * stack trace. RM PR-4b (re-review M1): nor in a logged database error. A
+     * unique violation goes to PatientService, which reads only the constraint
+     * name and never rethrows it with a value; anything else is replaced here.
+     */
     public function create(#[\SensitiveParameter] array $data): Patient
     {
-        return Patient::create($data);
+        try {
+            return Patient::create($data);
+        } catch (UniqueConstraintViolationException $e) {
+            throw $e;
+        } catch (QueryException $e) {
+            throw self::valueFree($e, 'stored');
+        }
     }
 
-    public function update(Patient $patient, array $data): Patient
+    /** Rule 244 §5.3 (RM PR-4b) — an edit's values (a changed NIK among them) never reach the log either. */
+    public function update(Patient $patient, #[\SensitiveParameter] array $data): Patient
     {
-        $patient->update($data);
+        try {
+            $patient->update($data);
+        } catch (QueryException $e) {
+            throw self::valueFree($e, 'updated');
+        }
 
         return $patient->refresh();
+    }
+
+    public function paginateOpenNoPhoneExceptions(array $branchIds, int $perPage, string $pageName): LengthAwarePaginator
+    {
+        return Patient::query()
+            ->with('branch:id,code,name')
+            ->whereNotNull('no_phone_reason_code')
+            ->whereIn('branch_id', $branchIds === [] ? [0] : array_values($branchIds))
+            ->orderByDesc('no_phone_recorded_at')
+            ->orderByDesc('id')
+            ->paginate($perPage, ['id', 'name', 'medical_record_number', 'branch_id', 'no_phone_reason_code', 'no_phone_recorded_at'], $pageName);
+    }
+
+    /**
+     * Rule 244 §5.3 (RM PR-4b, re-review M1) — the driver's error carries the SQL
+     * with its bindings (every patient value: the NIK, the no-phone note) and a
+     * reported exception lands in the log. It is replaced by one that keeps only
+     * the five-character SQLSTATE and no previous exception (the pattern of
+     * PatientRmPaperCardRegistrationRepository::record()); the caller's
+     * transaction rolls back and the request answers 500.
+     */
+    private static function valueFree(QueryException $e, string $action): RuntimeException
+    {
+        $state = is_array($e->errorInfo ?? null) && is_string($e->errorInfo[0] ?? null) && preg_match('/^[0-9A-Z]{5}$/', $e->errorInfo[0]) === 1
+            ? $e->errorInfo[0]
+            : 'unknown';
+
+        return new RuntimeException('The patient could not be '.$action.' (SQLSTATE '.$state.').');
     }
 
     public function closeNoPhoneException(Patient $patient): ?string

@@ -75,6 +75,14 @@ final class PatientCoreFields
     public const NOTE_PATTERN = '/^[^\x00-\x08\x0B\x0C\x0E-\x1F\x7F]*$/u';
 
     /**
+     * Rule 244 §5.3 (RM PR-4b, re-review M1) — any other text a registration
+     * writes: valid UTF-8 (`u`) without a NUL byte, the two things PostgreSQL
+     * refuses in a text column. Refused here as a 422, so the insert never fails
+     * with a database error whose message carries the row (note and NIK).
+     */
+    public const TEXT_PATTERN = '/^[^\x00]*$/u';
+
+    /**
      * The core-field rules of a new patient.
      *
      * @param  array<string, mixed>  $input  the new patient's own fields (the whole request
@@ -86,7 +94,7 @@ final class PatientCoreFields
      *                          format below still applies to a value that is given
      * @return array<string, mixed>
      */
-    public static function rules(array $input, string $prefix = '', bool $applies = true, bool $required = true): array
+    public static function rules(#[\SensitiveParameter] array $input, string $prefix = '', bool $applies = true, bool $required = true): array
     {
         $key = static fn (string $field): string => $prefix.$field;
         $fields = ['gender', 'place_of_birth', 'date_of_birth', 'phone', 'whatsapp_number', 'address', 'occupation', ...self::NO_PHONE_FIELDS];
@@ -102,12 +110,12 @@ final class PatientCoreFields
             $key('place_of_birth') => self::placeOfBirthRules(required: $required),
             $key('date_of_birth') => [$presence, 'date', ...self::birthDateBounds()],
             $key('phone') => [
-                'nullable', 'string', 'max:50',
+                'nullable', 'string', 'max:50', 'regex:'.self::TEXT_PATTERN,
                 ...($required ? ['required_without_all:'.$key('whatsapp_number').','.$key('no_phone_reason_code')] : []),
             ],
-            $key('whatsapp_number') => ['nullable', 'string', 'max:50'],
-            $key('address') => [$presence, 'string', 'max:1000'],
-            $key('occupation') => [$presence, 'string', 'max:150'],
+            $key('whatsapp_number') => ['nullable', 'string', 'max:50', 'regex:'.self::TEXT_PATTERN],
+            $key('address') => [$presence, 'string', 'max:1000', 'regex:'.self::TEXT_PATTERN],
+            $key('occupation') => [$presence, 'string', 'max:150', 'regex:'.self::TEXT_PATTERN],
             $key('no_phone_reason_code') => [
                 'nullable', 'string',
                 // The exception is for a patient WITHOUT a number: never beside one.
@@ -166,8 +174,12 @@ final class PatientCoreFields
             'date_of_birth.after_or_equal' => 'Tanggal lahir tidak boleh sebelum 1 Januari 1900.',
             'date_of_birth.before_or_equal' => 'Tanggal lahir tidak boleh melewati hari ini.',
             'phone.required_without_all' => 'Nomor ponsel atau nomor WhatsApp wajib diisi.',
+            'phone.regex' => 'Nomor ponsel berisi karakter yang tidak valid.',
+            'whatsapp_number.regex' => 'Nomor WhatsApp berisi karakter yang tidak valid.',
             'address.required' => 'Alamat wajib diisi.',
+            'address.regex' => 'Alamat berisi karakter yang tidak valid.',
             'occupation.required' => 'Pekerjaan wajib diisi.',
+            'occupation.regex' => 'Pekerjaan berisi karakter yang tidak valid.',
             'ktp_number.digits' => 'Nomor KTP (NIK) harus 16 digit angka.',
             'no_phone_reason_code.prohibited' => 'Pengecualian tanpa nomor telepon tidak berlaku: nomor ponsel atau WhatsApp sudah diisi.',
             'no_phone_reason_code.required_with' => 'Pilih alasan pasien tanpa nomor telepon.',
@@ -204,7 +216,7 @@ final class PatientCoreFields
      *
      * @param  array<string, mixed>  $fields
      */
-    public static function hasNumber(array $fields): bool
+    public static function hasNumber(#[\SensitiveParameter] array $fields): bool
     {
         // filled() treats a whitespace-only string as blank.
         return filled($fields['phone'] ?? null) || filled($fields['whatsapp_number'] ?? null);

@@ -30,6 +30,12 @@ declare(strict_types=1);
 | Supervisor RME and Owner on the restricted page, never flashed, refilled,
 | logged or exported (CF-28..CF-32).
 |
+| RM PR-4b (re-review of the note's log safety): text PostgreSQL would refuse
+| (invalid UTF-8, NUL) is a 422 on both forms, and a database failure on the
+| patient insert or update is value-free in the log (CF-33..CF-36); the readers
+| reach open exceptions from the restricted index (CF-37); the page shows and
+| audits a note only for an open exception (CF-38).
+|
 | Selected by the existing `FrontOffice` critical-gate token in both runner
 | variants and declared in critical_gate_mandatory_suites (CG-19). Helper prefix
 | `fncf` is unique because the critical gate loads every suite into one process.
@@ -39,6 +45,7 @@ use App\Models\User;
 use App\Modules\Branch\Models\Branch;
 use App\Modules\Clinic\Models\Clinic;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
+use App\Modules\ClinicVisit\Services\ClinicVisitRegistrationGuard;
 use App\Modules\ClinicVisit\Services\ClinicVisitService;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\LabOrder\Models\AuditLog;
@@ -54,6 +61,7 @@ use Database\Seeders\BranchSeeder;
 use Database\Seeders\RoleSeeder;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Log\Events\MessageLogged;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -62,6 +70,12 @@ use Spatie\Permission\Models\Role;
 const FNCF_PERMISSION = 'register_patient_without_phone';
 const FNCF_NIK = '7371011705900001';
 const FNCF_NOTE = 'Pasien datang bersama pendamping panti.';
+
+/** Bytes PostgreSQL refuses in a UTF-8 text column (SQLSTATE 22021): an invalid sequence. */
+const FNCF_BAD_UTF8 = "\xC3\x28";
+
+/** Enough of the NIK to find it in a log line even where PHP truncates string arguments at 15 bytes. */
+const FNCF_NIK_HEAD = '73710117059';
 
 beforeEach(function (): void {
     test()->seed(BranchSeeder::class);
@@ -1154,19 +1168,31 @@ it('CF-31 keeps the no-phone note out of every log line and the general patient 
 });
 
 it('CF-32 marks every parameter the no-phone note passes through #[\SensitiveParameter], so a logged stack trace never carries it', function (): void {
+    // Every application frame the registration payload (note and NIK) passes
+    // through. Framework frames (the validator, the router) cannot be marked:
+    // there the arrays print as "Array" in a logged trace (rule 244 §5.3).
     foreach ([
-        [PatientService::class, 'create'],
-        [PatientService::class, 'createWithPaperCardNumber'],
-        [PatientService::class, 'pullNoPhoneException'],
-        [PatientRepository::class, 'create'],
-        [ClinicVisitService::class, 'create'],
-        [ClinicVisitService::class, 'resolvePatient'],
-    ] as [$class, $method]) {
-        $data = collect((new ReflectionMethod($class, $method))->getParameters())
-            ->first(fn (ReflectionParameter $parameter): bool => $parameter->getName() === 'data');
+        [PatientService::class, 'create', 'data'],
+        [PatientService::class, 'createWithPaperCardNumber', 'data'],
+        [PatientService::class, 'pullNoPhoneException', 'data'],
+        [PatientRepository::class, 'create', 'data'],
+        [PatientRepository::class, 'update', 'data'],
+        [ClinicVisitService::class, 'create', 'data'],
+        [ClinicVisitService::class, 'resolvePatient', 'data'],
+        [ClinicVisitService::class, 'resolveBranchId', 'data'],
+        [ClinicVisitRegistrationGuard::class, 'resolveDoctor', 'data'],
+        [ClinicVisitRegistrationGuard::class, 'assertFollowUpLink', 'data'],
+        [ClinicVisitRegistrationGuard::class, 'followUpViolation', 'data'],
+        [ClinicVisitRegistrationGuard::class, 'assertPatientSelectable', 'data'],
+        [ClinicVisitRegistrationGuard::class, 'isNewPatient', 'data'],
+        [PatientCoreFields::class, 'rules', 'input'],
+        [PatientCoreFields::class, 'hasNumber', 'fields'],
+    ] as [$class, $method, $name]) {
+        $parameter = collect((new ReflectionMethod($class, $method))->getParameters())
+            ->first(fn (ReflectionParameter $candidate): bool => $candidate->getName() === $name);
 
-        expect($data)->not->toBeNull("{$class}::{$method}")
-            ->and($data->getAttributes(SensitiveParameter::class))->not->toBeEmpty("{$class}::{$method}(\$data)");
+        expect($parameter)->not->toBeNull("{$class}::{$method}(\${$name})")
+            ->and($parameter->getAttributes(SensitiveParameter::class))->not->toBeEmpty("{$class}::{$method}(\${$name})");
     }
 
     // The settings a non-production php.ini may carry: traces keep arguments.
@@ -1190,4 +1216,230 @@ it('CF-32 marks every parameter the no-phone note passes through #[\SensitivePar
     } finally {
         ini_set('zend.exception_ignore_args', (string) $ignoreArgs);
     }
+});
+
+// =============================================================================
+// RM PR-4b (re-review of 98726f39) — the note and the NIK never reach the log
+// through a database error; open exceptions are listed for the readers
+// =============================================================================
+
+it('CF-33 answers invalid UTF-8 in a registration with a 422, never a database error, on both forms (re-review M1)', function (): void {
+    $frontOffice = fncfFrontOffice();
+    rmeMakeDoctorOnline($this->doctor, $this->branch);
+
+    $logged = fncfLogLines(function () use ($frontOffice): void {
+        // The reviewer's case: Master Data → Tambah Pasien, invalid bytes in the name.
+        $this->actingAs($frontOffice)
+            ->post(route('settings.patients.store'), fncfMasterPayload([
+                'name' => 'Pasien '.FNCF_BAD_UTF8.' Rusak',
+                'phone' => '',
+                'ktp_number' => FNCF_NIK,
+                'no_phone_reason_code' => 'LAINNYA',
+                'no_phone_reason_note' => FNCF_NOTE,
+            ]))
+            ->assertStatus(302)
+            ->assertSessionHasErrors('name');
+
+        // And Kunjungan → Pasien Baru, invalid bytes in the address.
+        $this->actingAs($frontOffice)
+            ->post(route('rme.visits.store'), fncfVisitPayload([
+                'address' => 'Jl. '.FNCF_BAD_UTF8.' Rusak',
+                'phone' => '',
+                'ktp_number' => FNCF_NIK,
+                'no_phone_reason_code' => 'LAINNYA',
+                'no_phone_reason_note' => FNCF_NOTE,
+            ]))
+            ->assertStatus(302)
+            ->assertSessionHasErrors('new_patient.address');
+    });
+
+    expect(Patient::query()->count())->toBe(0)
+        ->and(ClinicVisit::query()->count())->toBe(0)
+        ->and($logged)->not->toContain('pendamping panti')
+        ->not->toContain(FNCF_NIK_HEAD);
+});
+
+it('CF-34 refuses invalid UTF-8 and the NUL byte in every text field either form writes (422), writing nothing', function (): void {
+    $frontOffice = fncfFrontOffice();
+    rmeMakeDoctorOnline($this->doctor, $this->branch);
+
+    // In the middle of the value: a request trims a NUL at either end.
+    $spoil = fn (string $field, string $bad): string => match ($field) {
+        'email' => 'pasien'.$bad.'@contoh.test',
+        'ktp_number' => substr(FNCF_NIK, 0, 8).$bad.substr(FNCF_NIK, 8),
+        default => 'Isi'.$bad.'Teks',
+    };
+
+    foreach ([FNCF_BAD_UTF8, "\x00"] as $bad) {
+        foreach (['name', 'email', 'phone', 'whatsapp_number', 'address', 'occupation', 'place_of_birth', 'ktp_number', 'duplicate_override_reason'] as $field) {
+            $this->actingAs($frontOffice)
+                ->post(route('settings.patients.store'), fncfMasterPayload([$field => $spoil($field, $bad)]))
+                ->assertStatus(302)
+                ->assertSessionHasErrors($field);
+
+            $this->actingAs($frontOffice)
+                ->post(route('rme.visits.store'), fncfVisitPayload([$field => $spoil($field, $bad)]))
+                ->assertStatus(302)
+                ->assertSessionHasErrors('new_patient.'.$field);
+        }
+
+        // The visit's own text, written in the same registration.
+        foreach (['chief_complaint', 'initial_service_note'] as $field) {
+            $this->actingAs($frontOffice)
+                ->post(route('rme.visits.store'), fncfVisitPayload([], [$field => $spoil($field, $bad)]))
+                ->assertStatus(302)
+                ->assertSessionHasErrors($field);
+        }
+    }
+
+    expect(Patient::query()->count())->toBe(0)
+        ->and(ClinicVisit::query()->count())->toBe(0);
+});
+
+it('CF-35 turns a database failure on the patient insert into a value-free error: the log holds neither the note, the NIK nor the name (re-review M1)', function (): void {
+    if (DB::connection()->getDriverName() !== 'pgsql') {
+        $this->markTestSkipped('Needs PostgreSQL: it enforces the column width and the UTF-8 encoding.');
+    }
+
+    // The settings a non-production php.ini may carry: traces keep arguments.
+    $ignoreArgs = ini_get('zend.exception_ignore_args');
+    ini_set('zend.exception_ignore_args', '0');
+
+    try {
+        // A configured code wider than its column (40) passes validation and
+        // fails the insert (SQLSTATE 22001) with the note and the NIK bound.
+        $tooWide = str_repeat('Y', 41);
+        config()->set('patient.no_phone_reasons', config('patient.no_phone_reasons') + [$tooWide => 'Kode terlalu panjang']);
+        $frontOffice = fncfFrontOffice();
+        rmeMakeDoctorOnline($this->doctor, $this->branch);
+        $exception = ['name' => 'Pasien Gagal Simpan', 'phone' => '', 'ktp_number' => FNCF_NIK, 'no_phone_reason_code' => $tooWide, 'no_phone_reason_note' => FNCF_NOTE];
+
+        $masterLog = fncfLogLines(fn () => $this->actingAs($frontOffice)->post(route('settings.patients.store'), fncfMasterPayload($exception))->assertStatus(500));
+        $visitLog = fncfLogLines(fn () => $this->actingAs($frontOffice)->post(route('rme.visits.store'), fncfVisitPayload($exception))->assertStatus(500));
+
+        foreach ([$masterLog, $visitLog] as $logged) {
+            expect($logged)->toContain('The patient could not be stored (SQLSTATE 22001).')
+                ->not->toContain('pendamping panti')
+                ->not->toContain(FNCF_NIK_HEAD)
+                ->not->toContain('Gagal Simpan');
+        }
+
+        // The validation bypassed: invalid UTF-8 reaches the insert (SQLSTATE 22021).
+        try {
+            app(PatientService::class)->create(fncfMasterPayload([
+                'name' => 'Pasien '.FNCF_BAD_UTF8.' Langsung',
+                'phone' => null,
+                'ktp_number' => FNCF_NIK,
+                'no_phone_reason_code' => 'LAINNYA',
+                'no_phone_reason_note' => FNCF_NOTE,
+            ]), null, $frontOffice);
+
+            $this->fail('The invalid bytes must be refused by the database.');
+        } catch (RuntimeException $e) {
+            $reported = fncfLogLines(fn () => report($e));
+
+            expect(get_class($e))->toBe(RuntimeException::class)
+                ->and($e->getPrevious())->toBeNull()
+                ->and($e->getMessage())->toBe('The patient could not be stored (SQLSTATE 22021).')
+                ->and($reported)->toContain('SQLSTATE 22021')
+                ->not->toContain('pendamping panti')
+                ->not->toContain(FNCF_NIK_HEAD)
+                ->not->toContain('Langsung');
+        }
+    } finally {
+        ini_set('zend.exception_ignore_args', (string) $ignoreArgs);
+    }
+
+    expect(Patient::query()->count())->toBe(0);
+});
+
+it('CF-36 keeps a failed patient update value-free too: an edited NIK never reaches the log (re-review M1)', function (): void {
+    if (DB::connection()->getDriverName() !== 'pgsql') {
+        $this->markTestSkipped('Needs PostgreSQL: it enforces the UTF-8 encoding.');
+    }
+
+    $patient = fncfPatientWithNote(fncfFrontOffice());
+
+    try {
+        app(PatientService::class)->update($patient, ['name' => 'Nama '.FNCF_BAD_UTF8.' Ubah', 'ktp_number' => FNCF_NIK]);
+
+        $this->fail('The invalid bytes must be refused by the database.');
+    } catch (RuntimeException $e) {
+        $reported = fncfLogLines(fn () => report($e));
+
+        expect(get_class($e))->toBe(RuntimeException::class)
+            ->and($e->getPrevious())->toBeNull()
+            ->and($e->getMessage())->toBe('The patient could not be updated (SQLSTATE 22021).')
+            ->and($reported)->not->toContain(FNCF_NIK_HEAD)
+            ->not->toContain('Ubah');
+    }
+
+    expect($patient->fresh()->ktp_number)->toBeNull();
+});
+
+it('CF-37 lists the open no-phone exceptions for the readers on the restricted index — never the note; others 403; another branch hidden (re-review L2)', function (): void {
+    $open = fncfPatientWithNote(fncfFrontOffice());
+
+    $elsewhere = Branch::factory()->create(['code' => 'FCF2', 'is_active' => true, 'is_rme_enabled' => true]);
+    $this->actingAs(fncfUser('Front Office', $elsewhere))
+        ->post(route('settings.patients.store'), fncfMasterPayload(['name' => 'Pasien Cabang Lain', 'branch_id' => $elsewhere->id, 'phone' => '', 'no_phone_reason_code' => 'TIDAK_PUNYA_TELEPON']))
+        ->assertSessionHasNoErrors();
+    $other = Patient::query()->where('name', 'Pasien Cabang Lain')->sole();
+
+    // A closed exception is no longer listed.
+    $closed = fncfPatientWithNote(fncfFrontOffice(), 'Pasien Sudah Bernomor');
+    app(PatientService::class)->update($closed, ['phone' => '081234500099'], fncfFrontOffice());
+    expect($closed->fresh()->no_phone_reason_code)->toBeNull();
+
+    // The registrations' success toasts name their numbers: not part of the list.
+    $this->flushSession();
+
+    $response = $this->actingAs(fncfUser('Owner'))
+        ->get(route('settings.patients.paper-card-registrations.index'))
+        ->assertOk()
+        ->assertSee('Pengecualian tanpa nomor telepon')
+        ->assertSee($open->medical_record_number)
+        ->assertSee($other->medical_record_number)
+        ->assertSee('Lainnya (wajib catatan)')
+        ->assertSee(fncfReasonsUrl($open), false)
+        ->assertDontSee($closed->medical_record_number)
+        ->assertDontSee('pendamping panti');
+
+    expect((string) $response->headers->get('Cache-Control'))->toContain('no-store')->toContain('private');
+
+    // A reader whose scope is the other branch sees that branch only (CG-05).
+    $reader = fncfUser('Front Office', $elsewhere);
+    $reader->givePermissionTo(PatientService::PAPER_CARD_REASON_READ_PERMISSION);
+
+    $this->actingAs($reader->fresh())
+        ->get(route('settings.patients.paper-card-registrations.index'))
+        ->assertOk()
+        ->assertSee($other->medical_record_number)
+        ->assertDontSee($open->medical_record_number);
+
+    foreach (['Front Office', 'Admin Klinik', 'Kasir'] as $role) {
+        $this->actingAs(fncfUser($role))->get(route('settings.patients.paper-card-registrations.index'))->assertForbidden();
+    }
+
+    expect(fn () => app(PatientService::class)->openNoPhoneExceptionList(fncfFrontOffice()))
+        ->toThrow(AuthorizationException::class)
+        ->and(app(PatientService::class)->openNoPhoneExceptionList(fncfUser('Owner'))->pluck('id')->all())
+        ->toEqualCanonicalizing([$open->id, $other->id]);
+});
+
+it('CF-38 shows and audits a note only with an open exception: a stray note without a reason code is neither shown nor audited', function (): void {
+    $this->actingAs(fncfFrontOffice())
+        ->post(route('settings.patients.store'), fncfMasterPayload(['name' => 'Pasien Catatan Liar']))
+        ->assertSessionHasNoErrors();
+    $patient = Patient::query()->where('name', 'Pasien Catatan Liar')->sole();
+
+    // Only PatientService writes these columns; a direct write stands for any drift.
+    DB::table('mst_patients')->where('id', $patient->id)->update(['no_phone_reason_note' => 'Catatan liar tanpa kode xq9z']);
+
+    $this->actingAs(fncfUser('Owner'))
+        ->get(fncfReasonsUrl($patient))
+        ->assertOk()
+        ->assertDontSee('xq9z');
+
+    expect(AuditLog::query()->where('action', PatientService::AUDIT_NO_PHONE_REASON_VIEWED)->exists())->toBeFalse();
 });

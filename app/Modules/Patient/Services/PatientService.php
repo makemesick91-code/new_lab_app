@@ -23,6 +23,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
+use RuntimeException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 class PatientService
@@ -173,8 +174,9 @@ class PatientService
      *    the lock) rolls back the insert only and the next number is tried under
      *    the same held lock, up to {@see self::UNIQUE_RETRIES} retries; then 422.
      *    Only a Nomor RM collision is retried; a KTP collision is a 422 at once;
-     *    any other unique violation is rethrown untouched.
-     *    Any refusal is a ValidationException (422), never a 500, and the whole
+     *    any other unique violation, and any other database failure, is an
+     *    error carrying only the SQLSTATE (RM PR-4b: never the row's values).
+     *    Any refusal is a ValidationException (422), and the whole
      *    transaction — counter included — rolls back.
      *  - Memo M4.2 (rule 244 §5.3) — a patient without a phone or WhatsApp
      *    number may carry the no-phone exception (`no_phone_reason_code`, and
@@ -344,7 +346,8 @@ class PatientService
                 } catch (UniqueConstraintViolationException $e) {
                     // Review I3 — as on the automatic path (§2.4): KTP is its own
                     // 422, only a Nomor RM violation is "taken" (no retry: the
-                    // number is the card's), anything else is rethrown untouched.
+                    // number is the card's), anything else is refused without a
+                    // value (RM PR-4b, re-review M1).
                     $driverMessage = (string) ($e->errorInfo[2] ?? '');
 
                     if (str_contains($driverMessage, 'ktp_number')) {
@@ -352,7 +355,7 @@ class PatientService
                     }
 
                     if (! str_contains($driverMessage, 'medical_record_number')) {
-                        throw $e;
+                        throw $this->valueFreeUniqueViolation($e);
                     }
 
                     throw ValidationException::withMessages(['paper_card_sequence' => self::PAPER_CARD_TAKEN_MESSAGE]);
@@ -440,8 +443,9 @@ class PatientService
             ], $actor);
         }
 
-        // Rule 244 §5.3 — who read an open no-phone note: ids only.
-        if ($patient->no_phone_reason_note !== null) {
+        // Rule 244 §5.3 — who read an open no-phone note: ids only. Keyed on
+        // exactly what the page shows: a note beside an OPEN exception (code set).
+        if ($patient->no_phone_reason_code !== null && $patient->no_phone_reason_note !== null) {
             $this->audit->log('mst_patients', (int) $patient->getKey(), self::AUDIT_NO_PHONE_REASON_VIEWED, null, [
                 'patient_id' => (int) $patient->getKey(),
                 'actor_user_id' => (int) $actor->getKey(),
@@ -461,6 +465,19 @@ class PatientService
         $this->assertMayReadPaperCardReasons($actor);
 
         return $this->paperCardRegistrations->paginateForBranches($this->workingBranchScope->branchIdsFor($actor), $perPage);
+    }
+
+    /**
+     * Rule 244 §5.3 (RM PR-4b, re-review L2) — the OPEN no-phone exceptions in
+     * the actor's working-branch scope, newest first, WITHOUT the note: the
+     * readers' way to the restricted per-patient page, where the note is shown
+     * and its read audited. Same permission re-assertion as the paper-card list.
+     */
+    public function openNoPhoneExceptionList(User $actor, int $perPage = 25): LengthAwarePaginator
+    {
+        $this->assertMayReadPaperCardReasons($actor);
+
+        return $this->patients->paginateOpenNoPhoneExceptions($this->workingBranchScope->branchIdsFor($actor), $perPage, 'no_phone_page');
     }
 
     private function assertMayReadPaperCardReasons(User $actor): void
@@ -612,9 +629,10 @@ class PatientService
      * Rule 244 §2.4 — a refused insert. A KTP/NIK collision is reported at once
      * (another number would not help); a Nomor RM collision lets the caller try
      * the next number until the retries run out; any other unique violation is
-     * not ours to interpret and is rethrown (review F4). Only the driver's own
-     * message is read, for the column name: the exception message also carries
-     * the SQL and its bindings, so it is never shown or logged here.
+     * not ours to interpret (review F4) and is refused at once WITHOUT a value
+     * (rule 244 §5.3, RM PR-4b re-review M1: rethrown, its message would carry
+     * the SQL bindings — NIK, note — into the log). Only the driver's own
+     * message is read, for the column name; it is never shown or logged here.
      */
     private function refuseUniqueViolation(UniqueConstraintViolationException $e, int $attempt): void
     {
@@ -625,7 +643,7 @@ class PatientService
         }
 
         if (! str_contains($driverMessage, 'medical_record_number')) {
-            throw $e;
+            throw $this->valueFreeUniqueViolation($e);
         }
 
         if ($attempt > self::UNIQUE_RETRIES) {
@@ -633,6 +651,24 @@ class PatientService
                 'medical_record_number' => 'Nomor RM otomatis bentrok dengan pendaftaran lain. Muat ulang halaman lalu simpan kembali.',
             ]);
         }
+    }
+
+    /**
+     * Rule 244 §5.3 (RM PR-4b, re-review M1) — a unique violation nobody here
+     * interprets, as an error with no value and no previous exception: only the
+     * five-character SQLSTATE and the constraint name (an identifier read from
+     * the driver's message; its DETAIL, which echoes the row, is dropped).
+     */
+    private function valueFreeUniqueViolation(UniqueConstraintViolationException $e): RuntimeException
+    {
+        $state = is_array($e->errorInfo ?? null) && is_string($e->errorInfo[0] ?? null) && preg_match('/^[0-9A-Z]{5}$/', $e->errorInfo[0]) === 1
+            ? $e->errorInfo[0]
+            : 'unknown';
+        $constraint = preg_match('/unique constraint "([a-z0-9_]{1,63})"/', (string) ($e->errorInfo[2] ?? ''), $match) === 1
+            ? $match[1]
+            : 'unknown';
+
+        return new RuntimeException('The patient could not be stored: unique constraint '.$constraint.' refused it (SQLSTATE '.$state.').');
     }
 
     public function delete(Patient $patient): bool

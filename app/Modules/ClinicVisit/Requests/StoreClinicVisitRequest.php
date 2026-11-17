@@ -285,9 +285,11 @@ class StoreClinicVisitRequest extends FormRequest
             // registration form never sent one; accepting it (existence-checked
             // only) let a crafted POST place a new visit straight into another
             // branch's room. The service drops it as well (rule 200).
-            'chief_complaint' => ['nullable', 'string', 'max:5000'],
+            // RM PR-4b (re-review M1) — text PostgreSQL can store (valid UTF-8,
+            // no NUL): a 422 here, never a failed insert that logs the row.
+            'chief_complaint' => ['nullable', 'string', 'max:5000', 'regex:'.PatientCoreFields::TEXT_PATTERN],
             'initial_treatment_id' => ['required', 'integer', Rule::exists('mst_treatments', 'id')->where('is_active', true)],
-            'initial_service_note' => ['nullable', 'string', 'max:2000'],
+            'initial_service_note' => ['nullable', 'string', 'max:2000', 'regex:'.PatientCoreFields::TEXT_PATTERN],
 
             'visit_type' => ['required', 'string', Rule::in(ClinicVisit::VISIT_TYPES)],
             'follow_up_of_visit_id' => ['nullable', 'integer', Rule::exists('trx_clinic_visits', 'id')],
@@ -300,7 +302,7 @@ class StoreClinicVisitRequest extends FormRequest
             // manual sequence or registration date is accepted (PatientService
             // drops them and stamps the clinical day).
             'new_patient' => [Rule::requiredIf($isNew), 'array'],
-            'new_patient.name' => [Rule::requiredIf($isNew), 'nullable', 'string', 'max:150'],
+            'new_patient.name' => [Rule::requiredIf($isNew), 'nullable', 'string', 'max:150', 'regex:'.PatientCoreFields::TEXT_PATTERN],
             'new_patient.branch_id' => [
                 Rule::requiredIf($isNew),
                 'nullable',
@@ -310,7 +312,8 @@ class StoreClinicVisitRequest extends FormRequest
             // Memo M4.2 (rule 244 §5) — NIK stays optional; when given it is
             // exactly 16 digits. Never read on an existing-patient visit.
             'new_patient.ktp_number' => [Rule::excludeIf(! $isNew), 'nullable', 'string', ...PatientCoreFields::NIK_RULES, Rule::unique('mst_patients', 'ktp_number')],
-            'new_patient.email' => ['nullable', 'email', 'max:150'],
+            // RM PR-4b (re-review M1) — text PostgreSQL can store (valid UTF-8, no NUL).
+            'new_patient.email' => ['nullable', 'string', 'regex:'.PatientCoreFields::TEXT_PATTERN, 'email', 'max:150'],
             // Memo M4.2 (rule 244 §5) — the core fields of a NEW patient and the
             // no-phone exception, from the ONE builder the Master Data form uses
             // too. On an existing-patient visit the hidden panel's leftovers are
@@ -318,7 +321,7 @@ class StoreClinicVisitRequest extends FormRequest
             ...PatientCoreFields::rules((array) $this->input('new_patient', []), 'new_patient.', $isNew),
             // FEATURE-PATIENT-DUPLICATE-RESOLUTION-MERGE-1 — required only when
             // a strong duplicate of the new patient is found.
-            'new_patient.duplicate_override_reason' => ['nullable', 'string', 'max:1000'],
+            'new_patient.duplicate_override_reason' => ['nullable', 'string', 'max:1000', 'regex:'.PatientCoreFields::TEXT_PATTERN],
 
             // Sprint 61.1.1 — optional temp token for a KTP scan captured in the
             // RME "Pasien Baru" panel; promoted to a PatientDocument after the
@@ -346,6 +349,11 @@ class StoreClinicVisitRequest extends FormRequest
             'branch_id.required' => 'Cabang RME wajib dipilih untuk kunjungan pasien terdaftar.',
             'branch_id.exists' => 'Klinik/Cabang yang dipilih harus cabang RME aktif.',
             'new_patient.ktp_number.unique' => 'Nomor KTP sudah terdaftar pada pasien lain.',
+            'new_patient.name.regex' => 'Nama berisi karakter yang tidak valid.',
+            'new_patient.email.regex' => 'E-mail berisi karakter yang tidak valid.',
+            'new_patient.duplicate_override_reason.regex' => 'Alasan berisi karakter yang tidak valid.',
+            'chief_complaint.regex' => 'Keluhan utama berisi karakter yang tidak valid.',
+            'initial_service_note.regex' => 'Catatan layanan berisi karakter yang tidak valid.',
             'patient_id.required' => 'Pilih pasien terdaftar.',
             'visit_type.in' => 'Jenis kunjungan tidak valid.',
             'follow_up_of_visit_id.required' => 'Kunjungan sebelumnya wajib dipilih untuk kunjungan kontrol atau lanjutan tindakan.',
