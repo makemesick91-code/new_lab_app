@@ -20,6 +20,9 @@ declare(strict_types=1);
 |    and branch rule is decided before the read, exactly as before.
 |  - New signatures are still written only to the clinical evidence disk.
 |
+|  - Security review: only the key shape sign() writes is ever looked up; the old
+|    disk is an allowlist (`local`); authorization and branch scope come first.
+|
 | Selected by the existing `RmeVisitConsent` critical-gate token in both runner
 | variants and declared in critical_gate_mandatory_suites (CG-19). Helper prefix
 | `rcsf` is unique because the critical gate loads every suite into one process.
@@ -284,4 +287,110 @@ it('FB-13 ships the fallback ON in configuration, with no environment override',
     expect($config['legacy_read_fallback'])->toBeTrue()
         ->and($config['legacy_signature_disk'])->toBe('local')
         ->and(preg_match("/'legacy_read_fallback'\\s*=>\\s*env\\(/", $source))->toBe(0);
+});
+
+/*
+|--------------------------------------------------------------------------
+| Security review round (2026-11-17)
+|--------------------------------------------------------------------------
+*/
+
+it('FB-14 refuses a reader pinned to another branch before any disk is touched', function () {
+    $consent = rcsfPreReleaseConsent();
+
+    $otherBranch = Branch::factory()->create([
+        'code' => 'CSF9',
+        'is_active' => true,
+        'is_rme_enabled' => true,
+    ]);
+
+    // Holds the consent view permission, so the route middleware lets it in:
+    // the refusal must come from the policy's branch scope.
+    $pinned = userWith(['manage_rme_billing', 'view_rme_consents']);
+    $pinned->forceFill(['branch_id' => $otherBranch->id])->save();
+    rmeMakeKasirActive($pinned, $otherBranch);
+
+    $this->partialMock(RmeVisitConsentService::class, function ($mock) {
+        $mock->shouldNotReceive('signatureReadDisk');
+        $mock->shouldNotReceive('readSignaturePng');
+        $mock->shouldNotReceive('signatureDataUri');
+    });
+
+    $this->actingAs($pinned)
+        ->get(route('rme.consents.signature', [$consent, 'consenter']))
+        ->assertForbidden();
+
+    $this->actingAs($pinned)
+        ->get(route('rme.consents.show', $consent))
+        ->assertForbidden();
+
+    $this->actingAs($pinned)
+        ->get(route('rme.consents.print', $consent))
+        ->assertForbidden();
+});
+
+it('FB-15 never looks up a crafted key on either disk: 404, no image, no 500', function (string $crafted) {
+    $consent = rcsfPreReleaseConsent();
+    // A real PNG the crafted key could otherwise reach on the old disk.
+    Storage::disk('local')->put('legacy-patient-imports/x.png', rcsfPng('elsewhere'));
+    $consent->forceFill(['consenter_signature_path' => $crafted])->save();
+
+    $this->actingAs($this->reader)
+        ->get(route('rme.consents.signature', [$consent, 'consenter']))
+        ->assertNotFound();
+
+    $this->actingAs($this->reader)
+        ->get(route('rme.consents.show', $consent))
+        ->assertOk()
+        ->assertDontSee('data:image/png;base64,', false);
+
+    expect(app(RmeVisitConsentService::class)->signatureReadDisk($crafted))->toBeNull();
+})->with([
+    'parent traversal' => ['../../../../etc/hostname'],
+    'traversal inside the directory' => ['rme-consents/../legacy-patient-imports/x.png'],
+    'absolute path' => ['/etc/abs.png'],
+    'another directory' => ['legacy-patient-imports/x.png'],
+    'carriage return' => ["rme-consents/CONSENT-1/consenter\r\n.png"],
+    'backslash' => ['rme-consents\\CONSENT-1\\consenter.png'],
+    'not a png name' => ['rme-consents/CONSENT-1/consenter.txt'],
+    'too deep' => ['rme-consents/CONSENT-1/sub/consenter.png'],
+    'dot segment' => ['rme-consents/./consenter.png'],
+]);
+
+it('FB-16 serves a pre-release DOCTOR signature through the same fallback', function () {
+    $consent = rcsfSignedConsent();
+    $key = 'rme-consents/'.$consent->consent_number.'/doctor-legacydrawing.png';
+    $consent->forceFill(['doctor_signature_path' => $key])->save();
+    Storage::disk('local')->put($key, rcsfPng('doctor-legacy'));
+
+    $response = $this->actingAs($this->reader)
+        ->get(route('rme.consents.signature', [$consent, 'doctor']))
+        ->assertOk();
+
+    expect($response->streamedContent())->toBe(rcsfPng('doctor-legacy'));
+});
+
+it('FB-17 fails closed when the fallback setting is absent from configuration', function () {
+    $consent = rcsfPreReleaseConsent();
+    $settings = config('rme_consent');
+    unset($settings['legacy_read_fallback']);
+    config()->set('rme_consent', $settings);
+
+    $this->actingAs($this->reader)
+        ->get(route('rme.consents.signature', [$consent, 'consenter']))
+        ->assertNotFound();
+});
+
+it('FB-18 opens only an allowlisted old disk, whatever configuration names', function () {
+    $consent = rcsfPreReleaseConsent();
+    $key = $consent->consenter_signature_path;
+    Storage::fake('elsewhere');
+    Storage::disk('elsewhere')->put($key, rcsfPng('elsewhere-copy'));
+    config()->set('rme_consent.legacy_signature_disk', 'elsewhere');
+
+    $this->actingAs($this->reader)
+        ->get(route('rme.consents.signature', [$consent, 'consenter']))
+        ->assertNotFound();
+
+    expect(RmeVisitConsentService::LEGACY_SIGNATURE_READ_DISKS)->toBe(['local']);
 });

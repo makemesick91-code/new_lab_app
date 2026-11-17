@@ -912,6 +912,16 @@ class RmeVisitConsentService
             return null;
         }
 
+        // Security review (2026-11-17) — defence in depth: only the shape sign()
+        // has always written (`<signature_directory>/<consent number>/<name>.png`)
+        // is ever looked up, on either disk. A row can never be pointed at some
+        // other object of the same disk.
+        if (! $this->isSignatureKeyShape($path)) {
+            Log::warning('A consent signature key has an unexpected shape.');
+
+            return null;
+        }
+
         try {
             $primary = ClinicalEvidenceStorage::disk();
 
@@ -958,6 +968,14 @@ class RmeVisitConsentService
         return $bytes;
     }
 
+    /**
+     * The only disks the temporary read fallback may ever open (an allowlist:
+     * the private disk consent signatures were written to before OD-5-9).
+     *
+     * @var list<string>
+     */
+    public const LEGACY_SIGNATURE_READ_DISKS = ['local'];
+
     private function legacySignatureReadDisk(): ?Filesystem
     {
         if (! (bool) config('rme_consent.legacy_read_fallback', false)) {
@@ -966,13 +984,40 @@ class RmeVisitConsentService
 
         $name = (string) config('rme_consent.legacy_signature_disk', '');
 
-        if ($name === ''
+        if (! in_array($name, self::LEGACY_SIGNATURE_READ_DISKS, true)
             || $name === ClinicalEvidenceStorage::diskName()
             || in_array($name, ClinicalEvidenceStorage::FORBIDDEN_DISKS, true)) {
             return null;
         }
 
         return Storage::disk($name);
+    }
+
+    /**
+     * `<signature_directory>/<one segment>/<one segment>.png`, relative, with no
+     * `.`/`..` segment, no backslash and no control character.
+     */
+    private function isSignatureKeyShape(string $path): bool
+    {
+        $directory = trim((string) config('rme_consent.signature_directory', 'rme-consents'), '/');
+
+        if ($directory === '' || preg_match('/[\\\\\x00-\x1F\x7F]/', $path) === 1) {
+            return false;
+        }
+
+        $segments = explode('/', $path);
+
+        if (count($segments) !== 3 || $segments[0] !== $directory || ! str_ends_with($segments[2], '.png')) {
+            return false;
+        }
+
+        foreach ($segments as $segment) {
+            if ($segment === '' || $segment === '.' || $segment === '..') {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**
