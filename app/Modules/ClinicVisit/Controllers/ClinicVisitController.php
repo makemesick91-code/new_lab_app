@@ -24,6 +24,7 @@ use App\Modules\Patient\Services\PatientDocumentCaptureBranchResolver;
 use App\Modules\Patient\Services\PatientSelectorSearchService;
 use App\Modules\RME\Services\DoctorPatientScopeService;
 use App\Modules\RME\Services\DoctorRoomScopeService;
+use App\Modules\RmeAmendment\Services\RmeAmendmentService;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeOnlineContext\Services\UserOnlineContextService;
 use App\Modules\Treatment\Models\Treatment;
@@ -524,7 +525,11 @@ class ClinicVisitController extends Controller
     {
         // FEATURE-FINANCE-KLINIK-DATA-ANALYST-ROLES-1 — the builder is shared with
         // the read-only oversight print so the two cannot drift apart.
-        return app(ClinicVisitPrintDataBuilder::class)->build($clinicVisit);
+        $data = app(ClinicVisitPrintDataBuilder::class)->build($clinicVisit);
+
+        // Rule 240 §9.5 (memo M3.3 PR7) — the printed pages and correction
+        // pointers with their labels as this viewer may read them.
+        return $data + app(RmeAmendmentService::class)->sheetPagesFor(request()->user(), $clinicVisit->medicalRecord, true);
     }
 
     /**

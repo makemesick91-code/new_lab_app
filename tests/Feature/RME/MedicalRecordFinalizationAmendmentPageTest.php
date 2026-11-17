@@ -797,7 +797,9 @@ it('labels the applied page for the workspace and the print, and prints only ver
     m3pgService()->approve($amendment, $this->supervisor);
     $applied = $amendment->fresh();
 
-    $entry = $sheet->fresh()->orderedHandwritingPages(true)->firstWhere('page_number', 2);
+    // The model names the amendment only; the label is the service's, per viewer (§9.5).
+    expect($sheet->fresh()->orderedHandwritingPages(true)->firstWhere('page_number', 2))->not->toHaveKey('amendment_label');
+    $entry = m3pgService()->correctionPagesFor($this->doctorUser, $sheet->fresh()->orderedHandwritingPages(true))->firstWhere('page_number', 2);
     $visit = $sheet->clinicVisit;
     // Review M3 — the label links back to the amended encounter (and the corrected page, when named).
     $label = 'Halaman koreksi — amandemen #'.$amendment->id.' untuk kunjungan '.$visit->visit_number
@@ -805,6 +807,7 @@ it('labels the applied page for the workspace and the print, and prints only ver
         .$applied->decided_at->copy()->setTimezone('Asia/Makassar')->format('d/m/Y H:i').' WITA oleh '.$this->supervisor->name;
     expect($entry['amendment_label'])->toBe($label)
         ->and($sheet->fresh()->correctionPagePointers())->toBe(['Halaman koreksi: buku RM halaman 2 (amandemen #'.$amendment->id.')'])
+        ->and(m3pgService()->correctionPointersFor($this->doctorUser, $sheet->fresh()))->toBe(['Halaman koreksi: buku RM halaman 2 (amandemen #'.$amendment->id.')'])
         ->and($entry['amendment_id'])->toBe($amendment->id)
         ->and($entry['preview_url'])->toBe(m3pgUri($bytes));
 

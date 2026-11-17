@@ -37,6 +37,21 @@ class RmeAmendmentRepository implements RmeAmendmentRepositoryInterface
         return RmeAmendment::query()->find($id);
     }
 
+    public function appliedCorrectionPageAmendments(array $ids): Collection
+    {
+        if ($ids === []) {
+            return collect();
+        }
+
+        return RmeAmendment::query()
+            ->with(['decider:id,name', 'clinicVisit'])
+            ->whereKey($ids)
+            ->where('status', RmeAmendment::STATUS_APPLIED)
+            ->whereNotNull('correction_page_path')
+            ->get()
+            ->keyBy(fn (RmeAmendment $amendment): int => (int) $amendment->getKey());
+    }
+
     public function findForUpdate(int $id): ?RmeAmendment
     {
         return RmeAmendment::query()->whereKey($id)->lockForUpdate()->first();

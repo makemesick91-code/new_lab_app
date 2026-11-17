@@ -322,7 +322,13 @@ class MedicalRecordController extends Controller
         // Sprint 64.0.2 — one patient = one handwriting RM book on the canonical
         // visit. Virtual navigation merges same-patient pages from all sheets;
         // new pages are always added to the canonical medical record.
-        $handwritingBook = $workspace->orderedHandwritingBookForPatient($patientId);
+        // Rule 240 §9.5 (memo M3.3 PR7) — a correction page's label as this
+        // viewer may read it: the amended visit, its date and the approver only
+        // when the viewer may open that visit (the service decides, per viewer).
+        $handwritingBook = app(RmeAmendmentService::class)->correctionPagesFor(
+            $request->user(),
+            $workspace->orderedHandwritingBookForPatient($patientId),
+        );
         $handwritingRecord = $workspace->canonicalMedicalRecord($patientId);
 
         // LEGACY-RME-DOCTOR-WORKSPACE-1A — ONE page navigation experience, two

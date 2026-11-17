@@ -25,12 +25,15 @@
     // PDF export, and dompdf cannot present a session cookie to the authorised
     // image route, so a linked image would export blank.
     //
-    // Rule 240 §9.4 (memo M3.3 PR7) — the oversight print passes the pages as its
-    // reader may see them (OversightClinicalRecordService::printData()); every
-    // other print computes them here, as before.
+    // Rule 240 §9.4 / §9.5 (memo M3.3 PR7) — every print passes the pages and the
+    // correction pointers with their labels as its reader may read them
+    // (RmeAmendmentService::sheetPagesFor() for the RME print,
+    // OversightClinicalRecordService::printData() for the oversight print). This
+    // partial decides nothing: given none, it shows the pages with no correction
+    // label and no pointer (the model names the amendment, never its details).
     $rmPages = $rmPagesForReader ?? ($medicalRecord ? $medicalRecord->orderedHandwritingPages(true)->filter(fn ($p) => $p['has_content']) : collect());
     // Rule 240 §8 (review M3) — where this sheet's correction pages sit in the book.
-    $correctionPointers = $medicalRecord ? $medicalRecord->correctionPagePointers() : [];
+    $correctionPointers = $correctionPointersForReader ?? [];
 @endphp
 
 {{-- Medical Record --}}

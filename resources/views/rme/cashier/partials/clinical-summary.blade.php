@@ -2,7 +2,9 @@
     $medicalRecord = $visit->medicalRecord;
     $odontogram = $visit->odontogram;
     // Sprint 60 — render every RM page (Page 1 legacy read-through + Page 2+).
-    $rmPages = $medicalRecord ? $medicalRecord->orderedHandwritingPages()->filter(fn ($p) => $p['has_content']) : collect();
+    // Rule 240 §9.5 (memo M3.3 PR7) — RmeInvoiceController passes them with a
+    // correction page's label as this cashier may read it; given none, no label.
+    $rmPages = $rmPagesForReader ?? ($medicalRecord ? $medicalRecord->orderedHandwritingPages()->filter(fn ($p) => $p['has_content']) : collect());
     $statusLabels = [
         'normal' => 'Normal',
         'caries' => 'Karies',

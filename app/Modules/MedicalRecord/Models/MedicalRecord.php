@@ -193,15 +193,6 @@ class MedicalRecord extends Model
 
         $rows = $this->handwritingPages()->get();
 
-        // Rule 240 §8 (memo M3.3 PR6) — an amendment page carries its label (the
-        // amendment, approved when and by whom), read in one query.
-        $amendmentIds = $rows->pluck('rme_amendment_id')->filter()->map(fn ($id): int => (int) $id)->values()->all();
-        $amendments = $amendmentIds === [] ? collect() : RmeAmendment::query()
-            ->with(['decider:id,name', 'clinicVisit:id,visit_number,visit_date'])
-            ->whereKey($amendmentIds)
-            ->get()
-            ->keyBy(fn (RmeAmendment $amendment): int => (int) $amendment->getKey());
-
         foreach ($rows as $page) {
             $amendmentId = $page->getAttribute('rme_amendment_id');
 
@@ -221,9 +212,13 @@ class MedicalRecord extends Model
                 'has_content' => filled($page->handwriting_path),
             ];
 
+            // Rule 240 §8 (memo M3.3 PR6) — an amendment page names its amendment.
+            // Its label is NOT decided here: what a viewer may read of it (the
+            // amended visit, its date, the approver) is RmeAmendmentService::
+            // correctionPagesFor()'s decision per viewer (§9.5). A surface that
+            // skips it shows no label at all — fail closed.
             if ($amendmentId !== null) {
                 $entry['amendment_id'] = (int) $amendmentId;
-                $entry['amendment_label'] = $amendments->get((int) $amendmentId)?->correctionPageLabel();
             }
 
             $pages->push($entry);

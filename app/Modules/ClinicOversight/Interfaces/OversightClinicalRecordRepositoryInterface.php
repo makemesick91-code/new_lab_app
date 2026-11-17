@@ -4,7 +4,6 @@ namespace App\Modules\ClinicOversight\Interfaces;
 
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
-use App\Modules\RmeAmendment\Models\RmeAmendment;
 use Illuminate\Support\Collection;
 
 /**
@@ -54,16 +53,4 @@ interface OversightClinicalRecordRepositoryInterface
      * @return list<int>
      */
     public function patientIdsByMedicalRecordNumbers(array $numbers): array;
-
-    /**
-     * Rule 240 §8.10 / §9 (memo M3.3 PR7) — the applied amendments that appended
-     * the given handwriting pages, keyed by id, with what their page label reads
-     * (the approver and the amended visit, with its branch for §9.4). Only for
-     * labelling pages the caller already scoped; nothing else of the amendment is
-     * exposed. A pending, rejected or cancelled amendment is never returned.
-     *
-     * @param  list<int>  $amendmentIds
-     * @return Collection<int, RmeAmendment>
-     */
-    public function correctionPageAmendments(array $amendmentIds): Collection;
 }

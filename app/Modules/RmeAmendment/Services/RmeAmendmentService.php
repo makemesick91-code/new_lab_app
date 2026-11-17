@@ -6,6 +6,7 @@ namespace App\Modules\RmeAmendment\Services;
 
 use App\Models\User;
 use App\Modules\ClinicVisit\Interfaces\ClinicVisitRepositoryInterface;
+use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\ClinicVisit\Services\ActiveEncounterResolver;
 use App\Modules\LabOrder\Services\AuditLogService;
 use App\Modules\MedicalRecord\Interfaces\MedicalRecordHandwritingRepositoryInterface;
@@ -87,6 +88,13 @@ use Throwable;
 final class RmeAmendmentService
 {
     public const PERMISSION_REQUEST = 'request_rme_amendments';
+
+    /**
+     * Rule 240 §9.5 (memo M3.3 PR7) — what a viewer who may not open the amended
+     * visit sees of a correction page: that it is one, and nothing of that
+     * visit's number or date, the approver or the amendment's number.
+     */
+    public const NEUTRAL_CORRECTION_PAGE_LABEL = 'Halaman koreksi';
 
     public const PERMISSION_APPROVE = 'approve_rme_amendments';
 
@@ -781,8 +789,9 @@ final class RmeAmendmentService
             // The closed ones, newest first (the pending one is shown on its own).
             'history' => $recent->reject(fn (RmeAmendment $amendment): bool => $amendment->isPending())->values(),
             'can_request' => $pending === null && $this->requestRefusal($subject, $user) === null,
-            // Rule 240 §8 (review M3) — where this sheet's correction pages sit in the book.
-            'correction_pages' => $subject instanceof MedicalRecord ? $subject->correctionPagePointers() : [],
+            // Rule 240 §8 (review M3) — where this sheet's correction pages sit in
+            // the book, as this viewer may read them (§9.5).
+            'correction_pages' => $subject instanceof MedicalRecord ? $this->correctionPointersFor($user, $subject) : [],
             'viewable' => $user === null ? [] : $recent
                 ->filter(fn (RmeAmendment $amendment): bool => $this->mayView($user, $amendment, $subject))
                 ->map(fn (RmeAmendment $amendment): int => (int) $amendment->getKey())
@@ -936,6 +945,13 @@ final class RmeAmendmentService
             return $detail + ['chart_diff' => $this->chartDiff($before, $snapshot)];
         }
 
+        // Rule 240 §8 / §9.5 — the appended correction pages' labels, as this
+        // reader may read them: one query for every amendment the snapshot names.
+        $pageLabels = $this->correctionPageLabelsFor($user, array_values(array_unique(array_map(
+            fn (array $page): int => (int) $page['rme_amendment_id'],
+            array_filter($snapshot['pages'] ?? [], fn (array $page): bool => isset($page['rme_amendment_id'])),
+        ))));
+
         return $detail + [
             'fields' => collect(self::SHEET_FIELDS)->map(fn (string $label, string $field): array => [
                 'label' => $label,
@@ -956,11 +972,113 @@ final class RmeAmendmentService
                     : route('rme.handwriting-pages.image', (int) $page['row_id']),
                 'sha256' => isset($page['sha256']) ? substr((string) $page['sha256'], 0, 12) : null,
                 // Rule 240 §8 — an appended correction page says which amendment wrote it.
-                'label' => isset($page['rme_amendment_id'])
-                    ? $this->amendments->find((int) $page['rme_amendment_id'])?->loadMissing(['decider:id,name', 'clinicVisit:id,visit_number,visit_date'])->correctionPageLabel()
-                    : null,
+                'label' => isset($page['rme_amendment_id']) ? ($pageLabels[(int) $page['rme_amendment_id']] ?? null) : null,
             ], $snapshot['pages'] ?? []),
         ];
+    }
+
+    // ─── Correction page labels per viewer (rule 240 §9.5) ──────────────────
+
+    /**
+     * Rule 240 §9.5 (memo M3.3 PR7) — the label of each applied correction page
+     * among $amendmentIds as THIS viewer may read it, keyed by amendment id. The
+     * full §8.5 label (the amended visit's number and date, the approver, the
+     * amendment's number) only when the viewer may open the amended visit through
+     * its own policy (`ClinicVisitPolicy::view`: the working-branch read scope,
+     * the active-room rule and, with the encounter-scope flag ON, the doctor
+     * scope); otherwise NEUTRAL_CORRECTION_PAGE_LABEL. R7-1 keeps one book per
+     * patient across branches, so the page itself (its image) stays visible.
+     * One query, and one policy check per distinct amended visit.
+     *
+     * @param  list<int>  $amendmentIds
+     * @return array<int, string>
+     */
+    public function correctionPageLabelsFor(?User $viewer, array $amendmentIds): array
+    {
+        $mayOpen = [];
+        $labels = [];
+
+        foreach ($this->amendments->appliedCorrectionPageAmendments($amendmentIds) as $id => $amendment) {
+            $label = $amendment->correctionPageLabel();
+
+            if ($label === null) {
+                continue;
+            }
+
+            $mayOpen[(int) $amendment->clinic_visit_id] ??= $this->mayOpenAmendedVisit($viewer, $amendment->clinicVisit);
+            $labels[(int) $id] = $mayOpen[(int) $amendment->clinic_visit_id] ? $label : self::NEUTRAL_CORRECTION_PAGE_LABEL;
+        }
+
+        return $labels;
+    }
+
+    /**
+     * Rule 240 §9.5 — handwriting page entries (MedicalRecord::orderedHandwritingPages()
+     * or the workspace book) with `amendment_label` set on each correction page as
+     * this viewer may read it (null when its amendment is not applied).
+     *
+     * @param  Collection<int|string, array<string, mixed>>  $pages
+     * @return Collection<int|string, array<string, mixed>>
+     */
+    public function correctionPagesFor(?User $viewer, Collection $pages): Collection
+    {
+        $labels = $this->correctionPageLabelsFor($viewer, $pages
+            ->pluck('amendment_id')
+            ->filter()
+            ->map(fn ($id): int => (int) $id)
+            ->unique()
+            ->values()
+            ->all());
+
+        return $pages->map(fn (array $page): array => isset($page['amendment_id'])
+            ? ['amendment_label' => $labels[(int) $page['amendment_id']] ?? null] + $page
+            : $page);
+    }
+
+    /**
+     * Rule 240 §9.5 — the amended sheet's pointers to its correction pages
+     * (MedicalRecord::correctionPagePointers(): "Halaman koreksi: buku RM halaman
+     * N (amandemen #id)") as this viewer may read them: each pointer's amended
+     * visit is the sheet's own, so one policy check decides them all; a viewer
+     * who may not open it reads NEUTRAL_CORRECTION_PAGE_LABEL for each.
+     *
+     * @return list<string>
+     */
+    public function correctionPointersFor(?User $viewer, MedicalRecord $sheet): array
+    {
+        $pointers = $sheet->correctionPagePointers();
+
+        if ($pointers === [] || $this->mayOpenAmendedVisit($viewer, $sheet->clinicVisit)) {
+            return $pointers;
+        }
+
+        return array_fill(0, count($pointers), self::NEUTRAL_CORRECTION_PAGE_LABEL);
+    }
+
+    /**
+     * Rule 240 §9.5 — a sheet's RM pages as the RME print ($embedBinary) or the
+     * cashier's clinical summary shows them, with its correction pointers, both
+     * as this viewer may read their labels. The views print these as given.
+     *
+     * @return array{rmPagesForReader: Collection<int|string, array<string, mixed>>, correctionPointersForReader: list<string>}
+     */
+    public function sheetPagesFor(?User $viewer, ?MedicalRecord $sheet, bool $embedBinary): array
+    {
+        if ($sheet === null) {
+            return ['rmPagesForReader' => collect(), 'correctionPointersForReader' => []];
+        }
+
+        return [
+            'rmPagesForReader' => $this->correctionPagesFor($viewer, $sheet->orderedHandwritingPages($embedBinary)
+                ->filter(fn (array $page): bool => (bool) $page['has_content'])),
+            'correctionPointersForReader' => $this->correctionPointersFor($viewer, $sheet),
+        ];
+    }
+
+    /** May this viewer open the amended visit — the visit page's own ability? */
+    private function mayOpenAmendedVisit(?User $viewer, ?ClinicVisit $visit): bool
+    {
+        return $viewer !== null && $visit !== null && Gate::forUser($viewer)->allows('view', $visit);
     }
 
     // ─── Internals ──────────────────────────────────────────────────────────

@@ -632,8 +632,8 @@ defaults the owner accepted on 2026-11-17) are in `docs/sprints/dms-rme-comprehe
    to what it corrects: `Halaman koreksi — amandemen #id untuk kunjungan <nomor> (<tanggal> WITA)[, mengoreksi halaman
    buku RM N]; disetujui <d/m/Y H:i> WITA oleh <nama>`. It shows in the RM workspace (the active page,
    `data-amendment-page`, beside its book number "Halaman buku RM N" — the workspace's own index may differ), the RME
-   print (`MedicalRecord::orderedHandwritingPages()` adds `amendment_id` / `amendment_label` to an amendment page only)
-   and the version history (`versionDetailFor()`). The amended sheet's page (the "Amandemen" block, `panelFor()`
+   print (`MedicalRecord::orderedHandwritingPages()` adds `amendment_id` to an amendment page only; its label is
+   §9.5's, per viewer) and the version history (`versionDetailFor()`). The amended sheet's page (the "Amandemen" block, `panelFor()`
    `correction_pages`) and its print carry, beside "Diamandemen n×", one pointer per applied correction page:
    `Halaman koreksi: buku RM halaman N (amandemen #id)` (`MedicalRecord::correctionPagePointers()`). Page numbers on
    the form and the detail page are the book's ("halaman buku RM N"). Images go only through policy-gated,
@@ -714,7 +714,7 @@ defaults the owner accepted on 2026-11-17) are in `docs/sprints/dms-rme-comprehe
 1. **Oversight (security review M1).** `OversightClinicalRecordService::handwritingBook()` — the patient history and
    the visit detail of the read-only oversight module (Finance Klinik, Data Analyst) — carries `rme_amendment_id` and
    the §8.5 label on a page an approved amendment appended (the amendments read in one query,
-   `OversightClinicalRecordRepositoryInterface::correctionPageAmendments()`, applied ones only — the label reader's
+   `RmeAmendmentRepositoryInterface::appliedCorrectionPageAmendments()`, applied ones only — the label reader's
    own filter, because a page row never links a pending, rejected or cancelled amendment in the first place: only
    `approve()` appends one, in the transaction that applies it, §8.4); the patient and visit pages render "Halaman
    buku RM N · <label>" (`data-amendment-page`), never an object key.
@@ -723,17 +723,23 @@ defaults the owner accepted on 2026-11-17) are in `docs/sprints/dms-rme-comprehe
    `NATIVE_FILE_STREAMED` as before), 404 when missing or tampered, 503 when the storage read fails (review L2); out of
    scope stays 404 and every other page streams exactly as before.
 2. **Cashier (review L4).** The cashier's clinical summary (`rme/cashier/partials/clinical-summary.blade.php`) shows
-   the label from `MedicalRecord::orderedHandwritingPages()` under the page; the image link is the §8.5 verified route.
+   the label under the page, as §9.5 decides it for the cashier; the image link is the §8.5 verified route.
 3. **Tests (§3).** `tests/Feature/ClinicOversight/ClinicOversightAmendmentPageDisplayTest.php` (existing
    `ClinicOversight` token, BOTH variants, declared in `critical_gate_mandatory_suites`): the label on the oversight
    patient and visit pages for both oversight roles, no key; the oversight image route serving verified bytes and
    auditing them, the original page unchanged, a tampered page 404, a read fault 503, nothing audited when nothing is
-   served; out of scope 404; the label in the cashier summary; a rejected and a pending correction on no display (the
-   patient, visit and print pages, the cashier summary), no page row linking either, and `correctionPageAmendments()`
-   answering only the applied one when asked for all three; §9.4: another branch's correction page in full while
-   that branch is in the reader's set, and once it leaves RME the neutral label on the patient, visit and print
-   pages and in the PDF view (for an amendment of that branch and for a drifted sheet row whose amended visit is
-   there), the page image still served.
+   served; out of scope 404; the label in the cashier summary (a Kasir of the book's branch); a rejected and a pending
+   correction on no display (the patient, visit and print pages, the cashier summary), no page row linking either,
+   and `appliedCorrectionPageAmendments()` answering only the applied one when asked for all three; §9.4: another
+   branch's correction page in full while that branch is in the reader's set, and once it leaves RME the neutral
+   label on the patient, visit and print pages and in the PDF view (for an amendment of that branch and for a
+   drifted sheet row whose amended visit is there), the printed sheet's own pointer whole, the page image still
+   served; §9.5, per surface, with the other branch still in RME: the RME workspace (the page label, and the pointer
+   on the amended sheet's panel), the RME print (the label over HTTP; the pointer through the service, since whoever
+   may print a visit may open it), the cashier summary and the version page — the full label for a viewer who may
+   open the amended visit (Supervisor RME; a billing account without a working branch), the neutral one for a
+   Perawat or a Kasir whose working branch is the book's, never the full label, the approver or the amendment's
+   number.
 4. **Another branch's correction page (re-review).** R7-1 keeps one book per patient across branches, so a book an
    oversight reader may see (its sheet in a branch of the reader's set) can hold a correction page appended by an
    amendment of another branch's sheet, and that branch can leave the reader's set (for example it leaves RME).
@@ -743,7 +749,24 @@ defaults the owner accepted on 2026-11-17) are in `docs/sprints/dms-rme-comprehe
    otherwise `NEUTRAL_CORRECTION_PAGE_LABEL` ("Halaman koreksi") — no visit number, date or approver. This holds on
    the patient page, the visit page (`visitDetail($visit, $reader)`) and the print and PDF (`printData($visit,
    $reader)` hands the print body `rmPagesForReader`, which it prints in place of its own pages; every other print is
-   unchanged). The page image itself stays as the R7-1 book shows it. Known limit, not decided here: the operational
-   RME surfaces (workspace, print, cashier summary) are unchanged and still show the full §8.5 label to whoever may
-   open the book there; whether they too should withhold another branch's details is an owner question (CG-22).
+   unchanged). The page image itself stays as the R7-1 book shows it. The operational RME surfaces follow §9.5.
+5. **The operational RME surfaces, per viewer (technical safety default).** Not an owner decision: it follows CG-05
+   ("where existence must not leak") and the CC1-ADJ-1 precedent, where a cross-branch visit number shown to Front
+   Office was treated as a leak. On the RME workspace (the active page's label and the amended sheet's pointers in
+   the "Amandemen" block), the RME print and PDF (the page labels and the pointers), the cashier's clinical summary
+   and the version page, a correction page's full §8.5 label — the amended visit's number and date, the approver,
+   "amandemen #id" — shows only when the viewer may open the amended visit through its own policy
+   (`ClinicVisitPolicy::view`, the ability the visit page uses: the working-branch read scope, the active-room rule
+   and, with the encounter-scope flag ON, the doctor scope); otherwise `RmeAmendmentService::
+   NEUTRAL_CORRECTION_PAGE_LABEL` ("Halaman koreksi"). A pointer's amended visit is its sheet's own, so one check
+   decides a sheet's pointers. The page image stays as the R7-1 book shows it. `RmeAmendmentService` decides it per
+   viewer, never Blade (CG-04): `correctionPageLabelsFor()` reads the applied amendments in one query
+   (`RmeAmendmentRepositoryInterface::appliedCorrectionPageAmendments()`, which `OversightClinicalRecordService` now
+   reads too) and checks the policy once per distinct amended visit; `correctionPagesFor()` labels page entries,
+   `correctionPointersFor()` the pointers (`panelFor()`), `sheetPagesFor()` both for a print (`ClinicVisitController`
+   passes `rmPagesForReader` and `correctionPointersForReader`; `RmeInvoiceController` passes `rmPagesForReader` to
+   the cashier summary), `versionDetailFor()` the version page (one query instead of a lookup per page).
+   `MedicalRecordController::show()` relabels the workspace book. `MedicalRecord::orderedHandwritingPages()` now
+   names the amendment (`amendment_id`) and never its details, so a view given no per-viewer pages shows no label
+   and the print body no pointer — fail closed.
 

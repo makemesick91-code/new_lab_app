@@ -17,7 +17,9 @@ use App\Modules\Odontogram\Models\Odontogram;
 use App\Modules\Odontogram\Services\OdontogramPrintFormatter;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\Patient\Services\PatientMedicalRecordNumberService;
+use App\Modules\RmeAmendment\Interfaces\RmeAmendmentRepositoryInterface;
 use App\Modules\RmeAmendment\Models\RmeAmendment;
+use App\Modules\RmeAmendment\Services\RmeAmendmentService;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
@@ -45,9 +47,9 @@ class OversightClinicalRecordService
      * Rule 240 §9.4 (memo M3.3 PR7 re-review) — what an oversight reader sees on
      * a correction page whose amendment belongs to a branch outside the reader's
      * set: that it is a correction page, and nothing of that branch's visit,
-     * date or approver.
+     * date or approver (the same words as the operational surfaces, §9.5).
      */
-    public const NEUTRAL_CORRECTION_PAGE_LABEL = 'Halaman koreksi';
+    public const NEUTRAL_CORRECTION_PAGE_LABEL = RmeAmendmentService::NEUTRAL_CORRECTION_PAGE_LABEL;
 
     public function __construct(
         private readonly ClinicOversightScope $scope,
@@ -58,6 +60,7 @@ class OversightClinicalRecordService
         private readonly ClinicVisitPrintDataBuilder $printData,
         private readonly OdontogramPrintFormatter $odontogramFormatter,
         private readonly PatientMedicalRecordNumberService $rmNumbers,
+        private readonly RmeAmendmentRepositoryInterface $amendments,
     ) {}
 
     /**
@@ -235,7 +238,9 @@ class OversightClinicalRecordService
      * Rule 240 §9.4 (re-review) — plus the sheet's printed pages as this reader
      * may see them (`rmPagesForReader`, which the shared print body prints in
      * place of its own): a correction page from a branch outside the reader's
-     * set carries the neutral label.
+     * set carries the neutral label. The sheet's own correction pointers
+     * (`correctionPointersForReader`) name this visit's amendments: shown when
+     * the sheet's and the visit's branches are in the reader's set.
      *
      * @return array<string, mixed>
      */
@@ -249,7 +254,7 @@ class OversightClinicalRecordService
         }
 
         $pages = $record->orderedHandwritingPages(true)->filter(fn (array $page): bool => (bool) $page['has_content']);
-        $amendments = $this->records->correctionPageAmendments($pages
+        $amendments = $this->amendments->appliedCorrectionPageAmendments($pages
             ->pluck('amendment_id')
             ->filter()
             ->map(fn ($id): int => (int) $id)
@@ -257,11 +262,15 @@ class OversightClinicalRecordService
             ->values()
             ->all());
         $branchIds = $this->branchIdsFor($reader);
+        $pointers = $record->correctionPagePointers();
 
         return $data + [
             'rmPagesForReader' => $pages->map(fn (array $page): array => isset($page['amendment_id'])
                 ? ['amendment_label' => $this->correctionPageLabel($amendments->get((int) $page['amendment_id']), $branchIds)] + $page
                 : $page),
+            'correctionPointersForReader' => $this->inReaderSet([(int) $record->branch_id, (int) $visit->branch_id], $branchIds)
+                ? $pointers
+                : array_fill(0, count($pointers), self::NEUTRAL_CORRECTION_PAGE_LABEL),
         ];
     }
 
@@ -310,7 +319,7 @@ class OversightClinicalRecordService
         $book = collect();
         $position = 1;
 
-        $amendments = $this->records->correctionPageAmendments($sheets
+        $amendments = $this->amendments->appliedCorrectionPageAmendments($sheets
             ->flatMap(fn (MedicalRecord $sheet) => $sheet->handwritingPages->pluck('rme_amendment_id'))
             ->filter()
             ->map(fn ($id): int => (int) $id)
@@ -385,6 +394,15 @@ class OversightClinicalRecordService
 
         $branches = [(int) $amendment->branch_id, (int) ($amendment->clinicVisit->branch_id ?? $amendment->branch_id)];
 
-        return array_diff($branches, $branchIds) === [] ? $label : self::NEUTRAL_CORRECTION_PAGE_LABEL;
+        return $this->inReaderSet($branches, $branchIds) ? $label : self::NEUTRAL_CORRECTION_PAGE_LABEL;
+    }
+
+    /**
+     * @param  list<int>  $branches
+     * @param  list<int>  $branchIds  the reader's oversight branch set
+     */
+    private function inReaderSet(array $branches, array $branchIds): bool
+    {
+        return array_diff($branches, $branchIds) === [];
     }
 }

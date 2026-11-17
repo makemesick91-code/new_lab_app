@@ -32,6 +32,18 @@ interface RmeAmendmentRepositoryInterface
 
     public function find(int $id): ?RmeAmendment;
 
+    /**
+     * Rule 240 §9.5 (memo M3.3 PR7) — the APPLIED amendments among $ids that
+     * carry a correction page, keyed by id, with what their page label reads:
+     * the approver's name and the amended visit (the whole row, so its policy
+     * can decide who may open it). A pending, rejected or cancelled amendment is
+     * never returned. One query.
+     *
+     * @param  list<int>  $ids
+     * @return Collection<int, RmeAmendment>
+     */
+    public function appliedCorrectionPageAmendments(array $ids): Collection;
+
     /** The row, locked FOR UPDATE (inside the caller's transaction). */
     public function findForUpdate(int $id): ?RmeAmendment;
 
