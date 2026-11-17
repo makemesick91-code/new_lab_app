@@ -486,10 +486,9 @@ class RmePerformedTreatmentService
             throw RmePerformedTreatmentRefusal::exception(RmePerformedTreatmentRefusal::BRANCH_NOT_IN_PILOT);
         }
 
-        // Rule 241 §2 — the EXECUTED consent (patient and treating doctor).
-        if (! $this->consent->hasExecutedConsent($locked)) {
-            throw RmePerformedTreatmentRefusal::exception(RmePerformedTreatmentRefusal::CONSENT_REQUIRED);
-        }
+        // Rule 241 §2 — the EXECUTED consent (patient and treating doctor), on
+        // the locked row; the refusal names the missing signature.
+        $this->consent->assertExecutedConsentForPerformedTreatment($locked);
 
         $account = $this->actors->resolveForVisit($actor, self::ABILITY, $locked);
 

@@ -22,9 +22,9 @@ Loaded automatically when you open a file under the paths above. Global rules CG
 are not repeated here. Authority: code > canonical `.cursor/rules/` > this file > archive. On disagreement follow the
 code, then the canonical rule, and report the drift.
 
-Canonical flow: Pendaftaran → Antrian → Input Ruangan → Dokter "Mulai Pemeriksaan" (`in_progress`, odontogram
-editable) → Persetujuan Tindakan Medis (RME + finish unlocked) → RME + Odontogram → Dokter "Selesai Pemeriksaan"
-(`cashier_pending`) → Kasir / Pembayaran, no consent check (`completed`).
+Canonical flow: Pendaftaran → Antrian → Input Ruangan → Dokter "Mulai Pemeriksaan" (`in_progress`) → PTM: pasien
+(front office), lalu dokter countersign (RME, odontogram + finish unlocked) → RME + Odontogram → Dokter "Selesai
+Pemeriksaan" (`cashier_pending`) → Kasir / Pembayaran, no consent check (`completed`).
 
 ## Invariants
 
@@ -43,10 +43,10 @@ editable) → Persetujuan Tindakan Medis (RME + finish unlocked) → RME + Odont
   `request()`, `session()` or `BranchContext`; usability and abilities come from `ClinicVisitActorGuard` asking
   `ClinicVisitPolicy`. Source: rule 199 §B–C.
 - **AIR-RMC-04** "Selesai Pemeriksaan" (`rme.visits.transition` to `cashier_pending`) requires
-  `complete_rme_examination` (Doctor, Perawat, Supervisor RME; Super Admin via `Gate::before`) **and** a valid signed
-  consent on that visit, both re-asserted in `ClinicVisitService::transitionStatus()`. Admin Klinik and Kasir never
-  close an examination. Several buttons may post to the one guarded route; there is no second path. Source: rule 109
-  §1–1a, rule 134 §5.
+  `complete_rme_examination` (Doctor, Perawat, Supervisor RME; Super Admin via `Gate::before`) **and** an EXECUTED
+  consent (patient + treating-doctor countersignature) on that visit, both re-asserted in
+  `ClinicVisitService::transitionStatus()`. Admin Klinik and Kasir never close an examination. Several buttons may
+  post to the one guarded route; there is no second path. Source: rule 109 §1–1a, rule 134 §5.
 - **AIR-RMC-05** Never let a clinical document complete an examination: finalizing a medical record, saving
   handwriting, or saving/finalizing an odontogram leaves the visit `in_progress`. `MedicalRecordService` must not
   depend on `ClinicVisitService`. If the doctor never clicks "Selesai Pemeriksaan", `RmeInvoiceService::create()`
@@ -59,10 +59,12 @@ editable) → Persetujuan Tindakan Medis (RME + finish unlocked) → RME + Odont
   `cancelled` server-side (supersedes rule 100 §2 "any non-terminal visit"). Source: rule 109 §2a.
 - **AIR-RMC-07** Gate every current-RME write on positive authority,
   `RmeVisitConsentService::assertRmeAuthoringAllowedForPatient()`: exactly one current encounter
-  (`ActiveEncounterResolver`), it is `in_progress`, the resolvable actor may work on it, and a valid signed consent
-  exists for that same encounter. No encounter, two `in_progress` visits or a null actor fail closed. Covered writers:
+  (`ActiveEncounterResolver`), it is `in_progress`, the resolvable actor may work on it, and an EXECUTED consent
+  (patient + treating-doctor countersignature) exists for that same encounter, re-decided on the visit row locked first
+  inside the write. No encounter, two `in_progress` visits or a null actor fail closed. Covered writers:
   `MedicalRecordService::createDraft/updateDraft/finalize/getOrCreateCanonicalMedicalRecord`,
-  `MedicalRecordDiagnosisService`, `DiagnosisRolloutService::grantOverride`, `MedicalRecordHandwritingController`.
+  `MedicalRecordDiagnosisService`, `DiagnosisRolloutService::grantOverride`, `MedicalRecordHandwritingController`,
+  `RmePerformedTreatmentService`.
   Source: rule 109 §2b.
 - **AIR-RMC-08** Never derive authoring authority from `trx_medical_records.clinic_visit_id` (the canonical book
   belongs to an old, finished visit) or from the request (`{clinicVisit}`, `source_visit_id`, `?sheet=`). A cancelled
@@ -83,19 +85,20 @@ editable) → Persetujuan Tindakan Medis (RME + finish unlocked) → RME + Odont
   Snapshot wording from `config/rme_consent.php` and bump its `version` when substance changes; never rephrase the
   clinic's clause text. Clause 8 is an explicit YA/TIDAK validated `present|boolean` and never blocks treatment or
   payment. Source: rule 100 §4–5, rule 109 §2b.
-- **AIR-RMC-13** Gate consent routes on `manage_rme_consents` / `view_rme_consents` (Doctor, Kasir, Admin Klinik,
-  Supervisor RME), never on `manage_clinic_visits` (Kasir lacks it). Keep identity numbers and signature paths
-  `$hidden`; only the consent document renders a full identity number; signatures stay on a private disk streamed
-  through the consent policy. Source: rule 100 §6–7.
+- **AIR-RMC-13** Gate consent routes on `manage_rme_consents` / `view_rme_consents` (capture: Front Office, Kasir,
+  Admin Klinik, Supervisor RME fallback; the Doctor reads and countersigns, rule 241 §4), never on
+  `manage_clinic_visits` (Kasir lacks it). Keep identity numbers and signature paths `$hidden`; only the consent
+  document renders a full identity number; signatures stay on a private disk streamed through the consent policy.
+  Source: rule 100 §6–7.
 
 ### Odontogram
 
-- **AIR-RMC-14** Let the authorized doctor chart the ACTIVE odontogram from "Mulai Pemeriksaan", before consent.
-  `RmeVisitConsentService::assertOdontogramAuthoringAllowed()` is the single authority (one `in_progress` encounter,
-  actor may work on it, chart belongs to that encounter; deliberately no consent condition), asserted before any
-  insert by `OdontogramService::saveForVisit/updatePlaceholder/finalize`. Add no second consent check in a
-  controller, FormRequest, Blade or JS. Saving never signs consent or changes visit status (supersedes rule 109
-  CORRECTIVE-03 and rule 110 §2 for the odontogram). Source: rule 134 §1–4.
+- **AIR-RMC-14** Chart the ACTIVE odontogram only on an EXECUTED consent (SUPERSEDES the rule 134 pre-consent
+  charting for writing). `RmeVisitConsentService::assertOdontogramAuthoringAllowed()` is the single authority (one
+  `in_progress` encounter, actor may work on it, chart belongs to that encounter, executed consent re-decided on the
+  visit row it locks before the chart), asserted before any insert by
+  `OdontogramService::saveForVisit/updatePlaceholder/finalize`. Add no second consent check in a controller,
+  FormRequest, Blade or JS. Saving never signs consent or changes visit status; reading stays open. Source: rule 241 §2.
 - **AIR-RMC-15** Keep `GET rme/visits/{clinicVisit}/odontogram` write-free: `OdontogramController::show()` uses
   `OdontogramService::draftForVisit()` (saved chart or unsaved instance); the first row is created by
   `rme.visits.odontogram.store` → `saveForVisit()`. `getOrCreateForVisit()` keeps zero production callers (pinned by
@@ -194,8 +197,9 @@ editable) → Persetujuan Tindakan Medis (RME + finish unlocked) → RME + Odont
 
 - **AIR-RMC-34** Prove these gates server-side (service/HTTP outcome and the rendered form, never a label). Active-RME
   fixtures build a real encounter (`rmeActiveConsentedEncounter()` / `rmeConsentedOdontogramVisit()`);
-  `rmeSignedConsentFor()` alone authorizes nothing; consent tests go through `RmeVisitConsentService`. Pinned suites
-  stay in `critical_gate_mandatory_suites` (CG-19). Source: rule 109 §6, rule 134 §7, rule 135 §7.
+  `rmeSignedConsentFor()` builds an EXECUTED consent (fixture countersignature) but alone authorizes nothing;
+  two-signature gate tests build state through the services; consent tests go through `RmeVisitConsentService`. Pinned
+  suites stay in `critical_gate_mandatory_suites` (CG-19). Source: rule 109 §6, rule 134 §7, rule 135 §7.
 - **AIR-RMC-35** Consent identity cannot be borrowed: the treating doctor comes from the visit, never from the request,
   and "Saya sendiri" copies the patient's `mst_patients` identity, which typed input cannot override. Source:
   rule 100 §3; `RmeVisitConsentService`.
@@ -266,11 +270,16 @@ editable) → Persetujuan Tindakan Medis (RME + finish unlocked) → RME + Odont
   signatures are bounded; only the prescription's own doctor (`maySign()`) saves the signature. Rule 228 §8–§13.
 - **AIR-RMC-54** The doctor countersigns the PTM only via `RmeVisitConsentService::countersign()`: own insert-only
   row (UNIQUE per consent), visit locked first, `in_progress`, live consent, linked active doctor = the visit's and the
-  consent's doctor (binds Super Admin), never the patient-signature capturer. No gate changes yet. Rule 241 §1.
+  consent's doctor (binds Super Admin), never the patient-signature capturer. Rule 241 §1; the gate is AIR-RMC-55.
+- **AIR-RMC-55** Gate every clinical write — RME sheet/page/diagnosis/override, performed treatments, odontogram,
+  "Selesai Pemeriksaan" — on an EXECUTED consent (`hasExecutedConsent()`: live consent + treating-doctor
+  countersignature) inside the single authorities, re-decided on the visit row locked first; reads, payment,
+  prescriptions stay outside; a void reopens it. The Doctor no longer captures the patient signature. Rule 241 §2–§4.
 
 ## Current posture (snapshot 2026-11-17 — verify before relying on it)
 
-- Live: pre-consent odontogram charting, consent-gated RME authoring and "Selesai Pemeriksaan", consent-free payment,
+- Live: pre-consent odontogram charting (ends when rule 241 §2 is released: both PTM signatures then gate RME,
+  odontogram and "Selesai Pemeriksaan"), consent-gated RME authoring and "Selesai Pemeriksaan", consent-free payment,
   room gate, doctor room isolation, doctor RME/odontogram print denial; performed treatments ARMED for SPN4 only
   (rule 219 §14).
 - In code since 2026-11-17 (check the deployed SHA): one valid consent per visit and a supervised void
@@ -294,7 +303,7 @@ editable) → Persetujuan Tindakan Medis (RME + finish unlocked) → RME + Odont
 | `.cursor/rules/110-post-rme-odontogram-stabilization.mdc` | Odontogram GET writes nothing; RM clinical year |
 | `.cursor/rules/121-clinical-evidence-private-storage.mdc` | Private-disk evidence; inline print embedding |
 | `.cursor/rules/127-rme-print-composition-no-duplicate-patient-card.mdc` | Print composition, shared print-body |
-| `.cursor/rules/134-odontogram-pre-consent-authoring.mdc` | Odontogram editable before consent; one authority |
+| `.cursor/rules/134-odontogram-pre-consent-authoring.mdc` | SUPERSEDED for writing by rule 241 §2; one authority |
 | `.cursor/rules/135-rme-authoring-ui-capability-mirror.mdc` | Controls mirror server capability |
 | `.cursor/rules/138-doctor-room-scoped-access-and-print-deny.mdc` | Doctor room isolation, print denial |
 | `.cursor/rules/173-unified-medical-record-index.mdc` | Unified native + legacy medical-record index |
@@ -311,7 +320,7 @@ editable) → Persetujuan Tindakan Medis (RME + finish unlocked) → RME + Odont
 | `.cursor/rules/228-rme-clinical-write-authority-and-prescription-integrity.mdc` | Room scope on writes; exam start; role allowlists; Rx lock/signer |
 | `.cursor/rules/237-rme-comprehensive-closure.mdc` | Clinic-month numbers; no-store; page bounds; signed Rx; consent integrity; lease; one RM book |
 | `.cursor/rules/243-rme-doctor-encounter-scope-downloads-fields.mdc` | Doctor encounter scope (flagged), no doctor downloads, doctor-visible fields |
-| `.cursor/rules/241-rme-ptm-double-signature.mdc` | PTM doctor countersignature: own record, identity, lock (gate in a later PR) |
+| `.cursor/rules/241-rme-ptm-double-signature.mdc` | PTM double signature: countersignature (§1); both signatures gate writing, UI states, capture roles (§2–§5) |
 
 ## History
 

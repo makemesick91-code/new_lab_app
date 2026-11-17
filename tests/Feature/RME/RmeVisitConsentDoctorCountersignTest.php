@@ -99,6 +99,22 @@ function rcdcPatientSigned(ClinicVisit $visit, ?User $by = null, array $override
     ], $overrides));
 }
 
+/**
+ * A consent that already carries the LEGACY optional doctor drawing — the shape
+ * of a consent captured before rule 241 §4 refused that field. Written as a
+ * fixture (object on the evidence disk + the column), since no current path
+ * stores it any more.
+ */
+function rcdcWithLegacyDrawing(RmeVisitConsent $consent): RmeVisitConsent
+{
+    $path = 'rme-consents/'.$consent->consent_number.'/doctor-legacy-fixture.png';
+    $png = base64_decode(substr(validPodSignatureData(), strlen('data:image/png;base64,')));
+    Storage::disk(ClinicalEvidenceStorage::diskName())->put($path, $png);
+    DB::table('trx_rme_visit_consents')->where('id', $consent->id)->update(['doctor_signature_path' => $path]);
+
+    return $consent->fresh();
+}
+
 function rcdcCountersign(RmeVisitConsent $consent, ?User $by = null, ?string $canvas = null): RmeVisitConsentDoctorSignature
 {
     return app(RmeVisitConsentService::class)->countersign($consent, $by ?? test()->doctor, [
@@ -807,7 +823,10 @@ it('CDS-24 says "Belum ditandatangani dokter" only while a countersignature is s
 
 it('CDS-24b renders a historical consent byte for byte as the document did before rule 241', function (bool $legacyDrawing) {
     $visit = rcdcVisit();
-    $consent = rcdcPatientSigned($visit, overrides: $legacyDrawing ? ['doctor_signature' => validPodSignatureData()] : []);
+    $consent = rcdcPatientSigned($visit);
+    if ($legacyDrawing) {
+        $consent = rcdcWithLegacyDrawing($consent);
+    }
     DB::table('trx_clinic_visits')->where('id', $visit->id)->update(['status' => ClinicVisit::STATUS_COMPLETED]);
     $consent = $consent->fresh();
     $consent->loadMissing(['clinicVisit.branch', 'patient', 'doctor', 'signedBy', 'voidedBy']);
@@ -838,7 +857,7 @@ it('CDS-24b renders a historical consent byte for byte as the document did befor
 })->with(['without the legacy drawing' => [false], 'with the legacy drawing' => [true]]);
 
 it('CDS-25 keeps the legacy optional doctor drawing as display history that never counts as the countersignature', function () {
-    $consent = rcdcPatientSigned(rcdcVisit(), overrides: ['doctor_signature' => validPodSignatureData()]);
+    $consent = rcdcWithLegacyDrawing(rcdcPatientSigned(rcdcVisit()));
 
     $html = $this->actingAs($this->operator)->get(route('rme.consents.print', $consent))->assertOk()->getContent();
 

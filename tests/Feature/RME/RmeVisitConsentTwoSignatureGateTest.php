@@ -230,7 +230,8 @@ it('TSG-03 refuses every RME writer with only the patient signature and allows i
 
     // 7. performed treatments (rule 219) take the same authority
     expect(fn () => app(RmeVisitConsentService::class)->assertPerformedTreatmentAuthoringAllowed($visit, $this->doctor))
-        ->toThrow(ValidationException::class, RmePerformedTreatmentRefusal::message(RmePerformedTreatmentRefusal::CONSENT_REQUIRED));
+        // Review LOW-4 — the refusal names the missing DOCTOR signature.
+        ->toThrow(ValidationException::class, RmePerformedTreatmentRefusal::message(RmePerformedTreatmentRefusal::DOCTOR_SIGNATURE_REQUIRED));
 
     expect(MedicalRecordDiagnosis::query()->count())->toBe(0)
         ->and($record->fresh()->status)->toBe(MedicalRecord::STATUS_DRAFT);
@@ -373,6 +374,45 @@ it('TSG-09 re-decides the countersignature under the visit lock taken first (Pos
     }
 
     expect($readAfterLock)->toBeTrue();
+})->skip(fn () => DB::connection()->getDriverName() !== 'pgsql', 'Row locks are only emitted on PostgreSQL.');
+
+it('TSG-20 re-decides the executed consent for "Selesai Pemeriksaan" on the locked visit row (PostgreSQL)', function () {
+    // Review INFO — the finish transition's locked re-check, like TSG-09 for the
+    // RME authority: after the visit row is locked, the countersignature is read
+    // again before the status is written.
+    $visit = rtsgVisit();
+    rtsgDoctorSigns(rtsgPatientSigns($visit));
+
+    $log = [];
+    DB::listen(function (QueryExecuted $q) use (&$log): void {
+        $log[] = strtolower($q->sql);
+    });
+
+    app(ClinicVisitService::class)
+        ->transitionStatus($visit->fresh(), ClinicVisit::STATUS_CASHIER_PENDING, $this->doctor);
+
+    $lock = $update = null;
+    foreach ($log as $i => $sql) {
+        if ($lock === null && str_contains($sql, '"trx_clinic_visits"') && str_contains($sql, 'for no key update')) {
+            $lock = $i;
+        }
+        if ($lock !== null && $update === null && str_starts_with(ltrim($sql), 'update "trx_clinic_visits"')) {
+            $update = $i;
+        }
+    }
+
+    $readUnderLock = false;
+    foreach ($log as $i => $sql) {
+        if ($lock !== null && $update !== null && $i > $lock && $i < $update
+            && str_contains($sql, 'from "trx_rme_visit_consent_doctor_signatures"')) {
+            $readUnderLock = true;
+        }
+    }
+
+    expect($lock)->not->toBeNull()
+        ->and($update)->not->toBeNull()
+        ->and($readUnderLock)->toBeTrue()
+        ->and($visit->fresh()->status)->toBe(ClinicVisit::STATUS_CASHIER_PENDING);
 })->skip(fn () => DB::connection()->getDriverName() !== 'pgsql', 'Row locks are only emitted on PostgreSQL.');
 
 /*

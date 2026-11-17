@@ -4,6 +4,7 @@ namespace App\Modules\Consent\Requests;
 
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Consent\Models\RmeVisitConsent;
+use App\Modules\Consent\Services\RmeVisitConsentService;
 use App\Modules\Prescription\Services\PrescriptionCanvasDecoder;
 use Illuminate\Auth\Access\Response;
 use Illuminate\Foundation\Http\FormRequest;
@@ -71,7 +72,9 @@ class StoreRmeVisitConsentRequest extends FormRequest
             // service passes the same limit to the decoder for callers that
             // skip this request.
             'consenter_signature' => ['required', 'string', 'max:'.PrescriptionCanvasDecoder::MAX_SIGNATURE_PAYLOAD_LENGTH],
-            'doctor_signature' => ['nullable', 'string', 'max:'.PrescriptionCanvasDecoder::MAX_SIGNATURE_PAYLOAD_LENGTH],
+            // DMS memo M1.1–M1.3 PR2 (rule 241 §4) — the capture takes no doctor
+            // drawing; the treating doctor countersigns from Ruang Perawatan.
+            'doctor_signature' => ['prohibited'],
         ];
     }
 
@@ -88,7 +91,7 @@ class StoreRmeVisitConsentRequest extends FormRequest
             'documentation_consent.boolean' => 'Persetujuan dokumentasi/publikasi harus dipilih YA atau TIDAK.',
             'consenter_signature.required' => 'Tanda tangan pemberi persetujuan wajib diisi.',
             'consenter_signature.max' => 'Ukuran gambar tanda tangan melebihi batas yang diizinkan.',
-            'doctor_signature.max' => 'Ukuran gambar tanda tangan melebihi batas yang diizinkan.',
+            'doctor_signature.prohibited' => RmeVisitConsentService::MESSAGE_DOCTOR_SIGNATURE_ON_CAPTURE,
         ];
     }
 }

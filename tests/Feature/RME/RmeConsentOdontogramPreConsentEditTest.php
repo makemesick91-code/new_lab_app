@@ -308,7 +308,10 @@ it('allows odontogram, RME and finish once consent is signed', function () {
 */
 
 it('denies odontogram authoring before the examination starts', function (string $status) {
+    // Review LOW-2 (rule 241 §2): the visit carries an EXECUTED consent, so the
+    // refusal can only come from the status condition this case pins.
     $visit = pceVisit($status);
+    rmeSignedConsentFor($visit);
     $odontogram = pceOdontogram($visit);
 
     expect(fn () => app(OdontogramService::class)
@@ -323,6 +326,7 @@ it('denies odontogram authoring before the examination starts', function (string
 
 it('denies creating a first chart before the examination starts', function () {
     $visit = pceVisit(ClinicVisit::STATUS_WAITING);
+    rmeSignedConsentFor($visit); // review LOW-2 — only the status can refuse
 
     expect(fn () => app(OdontogramService::class)
         ->saveForVisit($visit, pceToothPayload(), $this->doctorUser))
@@ -333,6 +337,7 @@ it('denies creating a first chart before the examination starts', function () {
 
 it('denies odontogram authoring on a visit past the examination', function (string $status) {
     $visit = pceVisit($status);
+    rmeSignedConsentFor($visit); // review LOW-2 — only the status can refuse
     $odontogram = pceOdontogram($visit);
 
     expect(fn () => app(OdontogramService::class)
@@ -400,8 +405,9 @@ it('denies the odontogram write ability to an actor without manage_clinic_visits
 });
 
 it('denies another doctor the active odontogram of a patient they do not handle', function () {
-    // IDOR: consent state must never weaken the clinical patient scope.
-    $visit = pceVisit(ClinicVisit::STATUS_IN_PROGRESS);
+    // IDOR: consent state must never weaken the clinical patient scope. Review
+    // LOW-2: the encounter is EXECUTED, so only the actor scope can refuse.
+    $visit = rmeActiveConsentedEncounter(pceVisit(ClinicVisit::STATUS_IN_PROGRESS));
     $odontogram = pceOdontogram($visit);
 
     $otherDoctorUser = userWith(['view_clinic_visits', 'manage_clinic_visits']);
@@ -426,11 +432,15 @@ it('denies another doctor the active odontogram of a patient they do not handle'
 |--------------------------------------------------------------------------
 */
 
-it('keeps a previous visit chart unwritable while the live encounter is unconsented', function () {
+// Review LOW-2 (rule 241 §2): was 'keeps a previous visit chart unwritable
+// while the live encounter is unconsented'. An unconsented live encounter now
+// refuses every chart, so the live encounter is EXECUTED here: only the
+// chart-identity condition can refuse the historical chart.
+it('keeps a previous visit chart unwritable even while the live encounter is consented', function () {
     $historical = pceVisit(ClinicVisit::STATUS_COMPLETED);
     $historicalChart = pceOdontogram($historical);
 
-    pceVisit(ClinicVisit::STATUS_IN_PROGRESS);
+    rmeActiveConsentedEncounter(pceVisit(ClinicVisit::STATUS_IN_PROGRESS));
 
     expect(fn () => app(OdontogramService::class)
         ->updatePlaceholder($historicalChart, pceToothPayload('missing'), $this->doctorUser))
@@ -446,7 +456,9 @@ it('never lets the request nominate which encounter authorises a chart', functio
     $historical = pceVisit(ClinicVisit::STATUS_COMPLETED);
     $historicalChart = pceOdontogram($historical);
 
-    $live = pceVisit(ClinicVisit::STATUS_IN_PROGRESS);
+    // Review LOW-2 — the live encounter is EXECUTED, so only the chart-identity
+    // condition can refuse.
+    $live = rmeActiveConsentedEncounter(pceVisit(ClinicVisit::STATUS_IN_PROGRESS));
 
     $this->withoutMiddleware(EnsureRmeOnlineContext::class)
         ->patch(route('rme.odontograms.update', $historicalChart), array_merge(

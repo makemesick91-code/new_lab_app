@@ -79,6 +79,9 @@ $closedStatuses = [
 
 it('refuses a FIRST chart and writes no row outside a live encounter', function (string $status) {
     $visit = odmVisit($status);
+    // Review LOW-2 (rule 241 §2) — an EXECUTED consent, so the refusal can only
+    // come from the status condition this case pins, not from the consent.
+    rmeSignedConsentFor($visit);
 
     expect(odmRefused(fn () => app(OdontogramService::class)->saveForVisit($visit, odmPayload(), $this->doctorUser)))->toBeTrue()
         ->and(Odontogram::query()->where('clinic_visit_id', $visit->id)->exists())->toBeFalse();
@@ -96,6 +99,9 @@ it('refuses a FIRST chart before attempting the insert, not by rolling it back',
     });
 
     $visit = odmVisit($status);
+    // Review LOW-2 (rule 241 §2) — an EXECUTED consent, so the refusal can only
+    // come from the status condition this case pins, not from the consent.
+    rmeSignedConsentFor($visit);
     expect(odmRefused(fn () => app(OdontogramService::class)->saveForVisit($visit, odmPayload(), $this->doctorUser)))->toBeTrue()
         ->and($attempts)->toBe(0);
 
@@ -106,6 +112,9 @@ it('refuses a FIRST chart before attempting the insert, not by rolling it back',
 
 it('refuses to FINALIZE a chart outside a live encounter and leaves it unchanged', function (string $status) {
     $visit = odmVisit($status);
+    // Review LOW-2 (rule 241 §2) — an EXECUTED consent, so the refusal can only
+    // come from the status condition this case pins, not from the consent.
+    rmeSignedConsentFor($visit);
     $chart = Odontogram::factory()->create(['clinic_visit_id' => $visit->id, 'branch_id' => $visit->branch_id]);
     $before = $chart->status;
 
@@ -115,6 +124,9 @@ it('refuses to FINALIZE a chart outside a live encounter and leaves it unchanged
 
 it('refuses a REVISION outside a live encounter and leaves the chart unchanged', function (string $status) {
     $visit = odmVisit($status);
+    // Review LOW-2 (rule 241 §2) — an EXECUTED consent, so the refusal can only
+    // come from the status condition this case pins, not from the consent.
+    rmeSignedConsentFor($visit);
     $chart = Odontogram::factory()->create(['clinic_visit_id' => $visit->id, 'branch_id' => $visit->branch_id]);
     $before = $chart->tooth_map_payload;
 

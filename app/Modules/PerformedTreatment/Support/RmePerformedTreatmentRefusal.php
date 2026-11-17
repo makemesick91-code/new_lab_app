@@ -29,6 +29,9 @@ final class RmePerformedTreatmentRefusal
 
     public const CONSENT_REQUIRED = 'DPT_CONSENT_REQUIRED';
 
+    /** Rule 241 §2 — the patient signed; the treating doctor's countersignature is missing. */
+    public const DOCTOR_SIGNATURE_REQUIRED = 'DPT_DOCTOR_SIGNATURE_REQUIRED';
+
     public const ACTOR_NOT_AUTHORIZED = 'DPT_ACTOR_NOT_AUTHORIZED';
 
     public const NOT_TREATING_DOCTOR = 'DPT_NOT_TREATING_DOCTOR';
@@ -63,6 +66,7 @@ final class RmePerformedTreatmentRefusal
             self::BRANCH_NOT_IN_PILOT => 'Pencatatan Tindakan Dilakukan belum diaktifkan untuk cabang kunjungan ini.',
             self::ENCOUNTER_NOT_ACTIVE => 'Tindakan hanya dapat dicatat saat kunjungan ini sedang dalam pemeriksaan (sudah "Mulai Pemeriksaan" dan belum "Selesai Pemeriksaan").',
             self::CONSENT_REQUIRED => 'Tindakan kunjungan ini belum dapat dicatat karena Persetujuan Tindakan Medis belum ditandatangani.',
+            self::DOCTOR_SIGNATURE_REQUIRED => 'Tindakan kunjungan ini belum dapat dicatat karena Persetujuan Tindakan Medis belum ditandatangani dokter.',
             self::ACTOR_NOT_AUTHORIZED => 'Anda tidak berwenang mencatat tindakan untuk pemeriksaan pasien ini.',
             self::NOT_TREATING_DOCTOR => 'Tindakan hanya dapat dicatat oleh dokter yang menangani kunjungan ini dengan akun yang terhubung ke data dokter aktif.',
             self::TREATMENT_NOT_SELECTABLE => 'Tindakan tidak ditemukan, tidak aktif, atau bukan tindakan medis yang dapat dicatat (konsultasi, kontrol, dan voucher tidak dicatat sebagai tindakan).',

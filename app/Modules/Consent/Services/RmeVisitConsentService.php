@@ -97,6 +97,9 @@ class RmeVisitConsentService
 
     public const MESSAGE_COUNTERSIGN_DUPLICATE = 'Persetujuan tindakan medis ini sudah ditandatangani dokter.';
 
+    /** Rule 241 §4 (review LOW-1) — the capture takes no doctor drawing any more. */
+    public const MESSAGE_DOCTOR_SIGNATURE_ON_CAPTURE = 'Tanda tangan dokter tidak diambil pada formulir persetujuan. Dokter yang menangani menandatangani persetujuan ini dari Ruang Perawatan.';
+
     /*
      * DMS memo M1.1–M1.3, PR2 (rule 241 §2; owner decisions 2026-11-17) — the
      * PTM is EXECUTED only when the patient signed AND the treating doctor
@@ -219,6 +222,23 @@ class RmeVisitConsentService
     public function assertExecutedConsentForFinish(ClinicVisit $visit): void
     {
         $this->assertExecutedConsent($visit, 'status', self::MESSAGE_FINISH_AWAITING_PATIENT, self::MESSAGE_FINISH_AWAITING_DOCTOR);
+    }
+
+    /**
+     * Rule 241 §2 — performed treatments (rule 219) need the EXECUTED consent;
+     * RmePerformedTreatmentService asks it again on the locked visit row.
+     */
+    public function assertExecutedConsentForPerformedTreatment(ClinicVisit $visit): void
+    {
+        $state = $this->ptmStateFor($visit);
+
+        if ($state === self::PTM_EXECUTED) {
+            return;
+        }
+
+        throw RmePerformedTreatmentRefusal::exception($state === self::PTM_AWAITING_DOCTOR
+            ? RmePerformedTreatmentRefusal::DOCTOR_SIGNATURE_REQUIRED
+            : RmePerformedTreatmentRefusal::CONSENT_REQUIRED);
     }
 
     private function assertExecutedConsent(ClinicVisit $visit, string $key, string $awaitingPatient, string $awaitingDoctor): void
@@ -639,10 +659,9 @@ class RmeVisitConsentService
             throw RmePerformedTreatmentRefusal::exception(RmePerformedTreatmentRefusal::ENCOUNTER_NOT_ACTIVE);
         }
 
-        // Rule 241 §2 — the EXECUTED consent (both signatures).
-        if (! $this->hasExecutedConsent($encounter)) {
-            throw RmePerformedTreatmentRefusal::exception(RmePerformedTreatmentRefusal::CONSENT_REQUIRED);
-        }
+        // Rule 241 §2 — the EXECUTED consent (both signatures); the refusal names
+        // which signature is missing (review LOW-4).
+        $this->assertExecutedConsentForPerformedTreatment($encounter);
 
         return $encounter;
     }
@@ -697,16 +716,6 @@ class RmeVisitConsentService
         return app(DoctorPatientScopeService::class)->doctorCanAccessVisit($actor, $encounter);
     }
 
-    /**
-     * Presentation predicate for the visit detail page: does THIS visit still need
-     * a signature before its examination can be recorded? Never an authorisation
-     * answer — assertRmeAuthoringAllowedForPatient() is.
-     */
-    public function requiresConsentBeforeRmeAuthoring(ClinicVisit $visit): bool
-    {
-        return $this->isWithinConsentWindow($visit) && ! $this->hasValidConsent($visit);
-    }
-
     /*
     |--------------------------------------------------------------------------
     | Writes
@@ -740,8 +749,19 @@ class RmeVisitConsentService
             ]);
         }
 
+        // DMS memo M1.1–M1.3 PR2 (rule 241 §4; review LOW-1) — the capture takes
+        // the patient's signature only. The legacy optional doctor drawing is
+        // REFUSED (any value, before anything is decoded or written): the treating
+        // doctor countersigns through countersign() instead. Historical consents
+        // that carry one keep rendering it (rule 241 §1.6).
+        if (array_key_exists('doctor_signature', $data) && $data['doctor_signature'] !== null && $data['doctor_signature'] !== '') {
+            throw ValidationException::withMessages([
+                'doctor_signature' => self::MESSAGE_DOCTOR_SIGNATURE_ON_CAPTURE,
+            ]);
+        }
+
         // The signature is the evidence. No signature, no consent.
-        // DMS-RME-REVISION-PROGRAM-8D (rule 228 §10.3) — both signatures carry
+        // DMS-RME-REVISION-PROGRAM-8D (rule 228 §10.3) — the signature carries
         // the signature payload bound here too, so a caller that never passes
         // through StoreRmeVisitConsentRequest is bounded the same way (CG-06).
         $consenterSignature = $this->canvas->decode(
@@ -755,15 +775,6 @@ class RmeVisitConsentService
                 'consenter_signature' => 'Tanda tangan pemberi persetujuan wajib diisi.',
             ]);
         }
-
-        // The doctor's signature area is supported but optional: by this point
-        // the doctor has finished the examination and may not be at the cashier.
-        // The doctor's IDENTITY, however, is always recorded — see below.
-        $doctorSignature = $this->canvas->decode(
-            $data['doctor_signature'] ?? null,
-            'doctor_signature',
-            maxLength: PrescriptionCanvasDecoder::MAX_SIGNATURE_PAYLOAD_LENGTH,
-        );
 
         $visit->loadMissing(['patient', 'doctor', 'branch']);
         $patient = $visit->patient;
@@ -792,14 +803,13 @@ class RmeVisitConsentService
                 $template,
                 $documentationConsent,
                 $consenterSignature,
-                $doctorSignature,
                 $patient,
                 $relationship,
                 $isSelf,
                 &$written,
                 &$bodyDone,
             ): RmeVisitConsent {
-                $consent = $this->signWithinTransaction($visit, $operator, $data, $template, $documentationConsent, $consenterSignature, $doctorSignature, $patient, $relationship, $isSelf, $written);
+                $consent = $this->signWithinTransaction($visit, $operator, $data, $template, $documentationConsent, $consenterSignature, $patient, $relationship, $isSelf, $written);
                 $bodyDone = true;
 
                 return $consent;
@@ -825,7 +835,6 @@ class RmeVisitConsentService
         array $template,
         bool $documentationConsent,
         string $consenterSignature,
-        ?string $doctorSignature,
         $patient,
         string $relationship,
         bool $isSelf,
@@ -867,13 +876,6 @@ class RmeVisitConsentService
         $consenterPath = $folder.'/consenter-'.Str::random(12).'.png';
         $this->disk()->put($consenterPath, $consenterSignature);
         $written[] = $consenterPath;
-
-        $doctorPath = null;
-        if ($doctorSignature !== null) {
-            $doctorPath = $folder.'/doctor-'.Str::random(12).'.png';
-            $this->disk()->put($doctorPath, $doctorSignature);
-            $written[] = $doctorPath;
-        }
 
         // The treating doctor comes from the visit, never from the request.
         // Whoever operates the tablet cannot nominate a different doctor.
@@ -923,7 +925,9 @@ class RmeVisitConsentService
             'documentation_consent' => $documentationConsent,
 
             'consenter_signature_path' => $consenterPath,
-            'doctor_signature_path' => $doctorPath,
+            // Rule 241 §4 — no doctor drawing on a new capture (column kept for
+            // historical consents, which keep rendering theirs).
+            'doctor_signature_path' => null,
             'doctor_name_snapshot' => $doctor?->name,
             'signed_location' => $template['location'] ?? null,
             'signed_at' => $this->clock->now(),
@@ -943,8 +947,9 @@ class RmeVisitConsentService
      * finalize) now re-decides the consent under that same visit lock
      * (assertRmeAuthoringAllowedForPatient() inside a transaction), so it either
      * commits under a still-valid consent or waits and sees it voided.
-     * Odontogram charting does not depend on consent (AIR-RMC-14) and is
-     * unaffected.
+     * Since rule 241 §2 the odontogram authority does the same (AIR-RMC-14,
+     * AIR-RMC-55), and every gate asks for the EXECUTED consent, so a void —
+     * which leaves no live consent — closes all of them again.
      */
     public function void(RmeVisitConsent $consent, User $operator, string $reason): RmeVisitConsent
     {

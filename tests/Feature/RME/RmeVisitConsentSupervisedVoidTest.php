@@ -279,11 +279,13 @@ it('CV-10 answers a refused account with 403 before validating its payload', fun
 */
 
 it('CV-11 writes new signatures to the clinical evidence disk, never to the served local disk', function () {
+    // Rule 241 §4 — the capture no longer takes a doctor drawing (the doctor
+    // countersigns separately), so the patient's signature is the one object.
     $visit = rcsvVisit();
-    $consent = app(RmeVisitConsentService::class)->sign($visit, $this->operator, rcsvPayload(['doctor_signature' => validPodSignatureData()]));
+    $consent = app(RmeVisitConsentService::class)->sign($visit, $this->operator, rcsvPayload());
 
     expect(Storage::disk(ClinicalEvidenceStorage::diskName())->exists($consent->consenter_signature_path))->toBeTrue()
-        ->and(Storage::disk(ClinicalEvidenceStorage::diskName())->exists($consent->doctor_signature_path))->toBeTrue()
+        ->and($consent->doctor_signature_path)->toBeNull()
         ->and(Storage::disk('local')->allFiles())->toBe([])
         ->and(app(RmeVisitConsentService::class)->signatureDataUri($consent->consenter_signature_path))->toStartWith('data:image/png;base64,');
 });
@@ -297,7 +299,7 @@ it('CV-12 removes the signature objects it wrote when the consent insert fails',
         $mock->shouldReceive('lockNumberSequence')->andReturnNull();
         $mock->shouldReceive('latestConsentNumberForMonth')->andReturnNull();
         $mock->shouldReceive('create')->andReturnUsing(function () use (&$seenAtFailure) {
-            // Both signature objects exist on the clinical evidence disk when the
+            // The signature object exists on the clinical evidence disk when the
             // insert fails…
             $seenAtFailure = count(Storage::disk(ClinicalEvidenceStorage::diskName())->allFiles());
 
@@ -305,11 +307,12 @@ it('CV-12 removes the signature objects it wrote when the consent insert fails',
         });
     });
 
-    expect(fn () => app(RmeVisitConsentService::class)->sign($visit, $this->operator, rcsvPayload(['doctor_signature' => validPodSignatureData()])))
+    expect(fn () => app(RmeVisitConsentService::class)->sign($visit, $this->operator, rcsvPayload()))
         ->toThrow(RuntimeException::class, 'insert failed');
 
-    // …and none is left afterwards, on either disk.
-    expect($seenAtFailure)->toBe(2)
+    // …and none is left afterwards, on either disk. (Rule 241 §4: one object,
+    // the patient's; the capture no longer stores a doctor drawing.)
+    expect($seenAtFailure)->toBe(1)
         ->and(Storage::disk(ClinicalEvidenceStorage::diskName())->allFiles())->toBe([])
         ->and(Storage::disk('local')->allFiles())->toBe([]);
 });

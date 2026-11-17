@@ -106,8 +106,9 @@ supervised void, signatures on the clinical evidence disk).
      condition 4 is the EXECUTED consent; inside a write transaction it is re-decided on the visit row locked FIRST.
      Covers sheet create/update/finalize, handwriting pages (also edit-in-place), structured diagnoses, the diagnosis
      override (`MESSAGE_RME_AWAITING_PATIENT` / `MESSAGE_RME_AWAITING_DOCTOR`).
-   - `assertPerformedTreatmentAuthoringAllowed()` and `RmePerformedTreatmentService`'s locked re-check: executed
-     (`RmePerformedTreatmentRefusal::CONSENT_REQUIRED`).
+   - `assertPerformedTreatmentAuthoringAllowed()` and `RmePerformedTreatmentService`'s locked re-check, both through
+     `assertExecutedConsentForPerformedTreatment()`: executed (`RmePerformedTreatmentRefusal::CONSENT_REQUIRED` while
+     the patient has not signed, `DOCTOR_SIGNATURE_REQUIRED` while the doctor has not).
    - `assertOdontogramAuthoringAllowed()`: condition 4 added (supersedes rule 134 for WRITING); inside a write
      transaction it locks the visit row FIRST, re-checks `in_progress` and the executed consent on it, and only then
      does `OdontogramService` lock (`findByClinicVisitForUpdate`) or write the chart
@@ -145,13 +146,17 @@ supervised void, signatures on the clinical evidence disk).
 1. `RoleSeeder`: the Doctor role loses `manage_rme_consents` (it keeps `view_rme_consents` and
    `countersign_rme_consents`); Front Office, Kasir and Admin Klinik capture, Supervisor RME is the fallback. RoleSeeder
    syncs role permissions, so the deploy removes it from the role (a direct grant on an account is untouched).
-2. The front-office capture form offers no doctor canvas any more. The `doctor_signature` field of the store request
-   and `sign()` stay bounded for older callers; a legacy optional drawing never counts as the countersignature (§1.2).
+2. The front-office capture form offers no doctor canvas any more, and a doctor drawing on a NEW capture is refused:
+   `StoreRmeVisitConsentRequest` marks `doctor_signature` `prohibited` and `sign()` refuses any non-empty value before
+   anything is decoded or written (`MESSAGE_DOCTOR_SIGNATURE_ON_CAPTURE`); `doctor_signature_path` is written as
+   null. A historical consent that carries the legacy optional drawing keeps rendering it (§1.6); it never counts as
+   the countersignature (§1.2).
 3. Deploy: `PermissionSeeder` → `RoleSeeder` → `permission:cache-reset` (CG-15).
 
 ## 5. Compatibility (PR2)
 
-No data changes and no migration. A visit `in_progress` at deploy with only a patient consent reads as AWAITING DOCTOR:
+No data changes and no migration (the `doctor_signature_path` column stays for historical consents). A visit
+`in_progress` at deploy with only a patient consent reads as AWAITING DOCTOR:
 what is written stays and stays readable; further writes and finishing wait for the treating doctor's countersignature
 (the legacy optional drawing is not account-bound, so it is not grandfathered). Historical consents are never
 countersigned afterwards (§1.6 renders them as before). Production is a testing database (CLAUDE.md), so no operational
