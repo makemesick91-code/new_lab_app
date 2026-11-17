@@ -177,6 +177,11 @@ Source: the internal memo of 2026-10-17 (M4.1, M4.2) and the owner's written dec
    importer on every path, a code with no branch included). The seed command's `raiseTo()` is not a claim and is not
    capped (an owner-approved step, §1.4). Not built (review A5, A6, optional): a seed-plan warning for a large
    counter jump and an advisory jump warning at CSV staging (both would need a counter read outside the allocator).
+   Known limit (re-review INFO, accepted): the pilot importer reads the clinical year at the pre-lock and again at each
+   claim (`formatRefusal()` → `ClinicalClock`). A live run that crosses midnight WITA on 31 December skips a
+   next-year row at the pre-lock (a later year is refused) but claims it once that year has started, without a
+   baseline — for that row's branch-year the cap then applies per claim, not per run, and its counter is locked
+   outside the sorted pre-lock order. Such a row is invalid data until midnight; run imports outside that minute.
 7. **Lock order and namespace.** Counter row (`mst_patient_rm_sequences`, `SELECT … FOR UPDATE`) → patient insert →
    the visit's own locks (`lockVisitSequence`, advisory 92_001, and later ones). The counter is a ROW lock, not an
    advisory lock, so it takes no number in the 91_xxx/92_xxx advisory inventory on
