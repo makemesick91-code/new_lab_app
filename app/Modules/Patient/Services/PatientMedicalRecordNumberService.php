@@ -310,9 +310,12 @@ class PatientMedicalRecordNumberService
      * Rule 244 §1 — every spelling under which sequence `$number` may already have
      * been issued for this branch and year: each equivalent branch code (the
      * canonical code and its historical aliases, {@see BranchCodeAlias}) times
-     * every zero-padding width from the bare digits up to nine digits. A number
-     * is taken when ANY of these exists, so the allocator never reissues `0007`
-     * because `7` or `DG-TKM1-…-0007` is already on a card.
+     * every zero-padding width from the bare digits up to
+     * {@see self::MAX_NUMERIC_DIGITS} digits. A number is taken when ANY of these
+     * exists, so the allocator never reissues `0007` because `7` or
+     * `DG-TKM1-…-0007` is already on a card. (Patients are compared by numeric
+     * VALUE in any width — {@see self::numericValueOf()}; the explicit spellings
+     * also serve the merge-alias lookup, which compares exact strings.)
      *
      * @return list<string>
      */
@@ -323,7 +326,7 @@ class PatientMedicalRecordNumberService
         }
 
         $digits = (string) $number;
-        $widest = max(9, strlen($digits));
+        $widest = max(self::MAX_NUMERIC_DIGITS, strlen($digits));
         $spellings = [];
 
         foreach (BranchCodeAlias::equivalentCodes($branchCode) as $code) {
@@ -378,13 +381,35 @@ class PatientMedicalRecordNumberService
     {
         $upper = strtoupper(trim((string) $medicalRecordNumber));
         $parts = $this->parse($upper);
-        $sequence = $this->numericSequenceOf($upper);
+        $value = $this->numericValueOf($upper);
 
-        if ($parts === null || $sequence === null || $sequence < 1) {
+        if ($parts === null || $value === null) {
             return $upper;
         }
 
-        return self::PREFIX.'-'.BranchCodeAlias::canonicalize($parts->branchCode).'-'.$parts->year.'-#'.$sequence;
+        return self::PREFIX.'-'.BranchCodeAlias::canonicalize($parts->branchCode).'-'.$parts->year.'-#'.$value;
+    }
+
+    /**
+     * Rule 244 §2.5 (PR-2 review F1) — the numeric VALUE of a canonical Nomor RM's
+     * all-digit sequence, in ANY width, as a digit string without leading zeros
+     * (`0006`, `6` and `000000000006` are all "6"); null when the value is not a
+     * canonical number, its sequence is not all digits, or it is zero. This is
+     * the one notion of "the same number" that {@see collisionKey()}, the
+     * repository's taken query and the allocator share, so no zero padding —
+     * however wide — escapes the comparison.
+     */
+    public function numericValueOf(?string $medicalRecordNumber): ?string
+    {
+        $sequence = $this->parse(strtoupper(trim((string) $medicalRecordNumber)))?->sequence;
+
+        if ($sequence === null || preg_match('/^[0-9]+$/', $sequence) !== 1) {
+            return null;
+        }
+
+        $value = ltrim($sequence, '0');
+
+        return $value === '' ? null : $value;
     }
 
     /**

@@ -35,12 +35,13 @@ afterEach(fn () => Carbon::setTestNow());
 
 /**
  * Rule 244 §2 — Master Data registration needs the RME branch the automatic
- * Nomor RM is issued under; no number is posted any more.
+ * Nomor RM is issued under; no number is posted any more. The OCR operator is a
+ * pilot operator working that pilot branch, and (PR-2 review F2, CG-05) a
+ * context-bound account registers only into its working branch.
  */
 function ktpOcrRmBranch(): Branch
 {
-    return Branch::query()->where('code', 'KOC1')->first()
-        ?? Branch::factory()->create(['code' => 'KOC1', 'is_active' => true, 'is_rme_enabled' => true]);
+    return ktpPilotBranch();
 }
 
 /** The flag key contains a dot, so the whole registry array is rewritten. */

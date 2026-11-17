@@ -3,6 +3,7 @@
 namespace App\Modules\Patient\Requests;
 
 use App\Modules\PatientMerge\Services\PatientRegistrationDuplicateCheck;
+use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -28,10 +29,15 @@ class StorePatientRequest extends FormRequest
             // accepted (PatientService also drops them; the server stamps the
             // clinical day). The Sprint 23.8 manual fields and the free override
             // are retired.
+            // PR-2 review F2 (CG-05) — and only a branch the operator is working:
+            // a context-bound desk account (Front Office, Admin Klinik, Kasir,
+            // Perawat) may name its working branch only; the request may narrow,
+            // never widen. PatientService re-asserts it (403 for a non-HTTP caller).
             'branch_id' => [
                 'required',
                 'integer',
                 Rule::exists('mst_branches', 'id')->where('is_active', true)->where('is_rme_enabled', true),
+                Rule::in(app(RmeWorkingBranchScope::class)->branchIdsFor($this->user())),
             ],
             'ktp_number' => ['nullable', 'string', 'max:16', Rule::unique('mst_patients', 'ktp_number')],
             'name' => ['required', 'string', 'max:150'],
@@ -72,6 +78,7 @@ class StorePatientRequest extends FormRequest
             'ktp_ocr_verified.accepted' => 'Konfirmasi bahwa data hasil baca KTP sudah dicocokkan dengan KTP asli sebelum menyimpan.',
             'ktp_ocr_verified.required' => 'Konfirmasi bahwa data hasil baca KTP sudah dicocokkan dengan KTP asli sebelum menyimpan.',
             'branch_id.required' => 'Cabang RME wajib dipilih. Nomor RM dibuat otomatis untuk cabang tersebut.',
+            'branch_id.in' => 'Pasien baru hanya dapat didaftarkan di cabang tempat Anda bertugas.',
             'ktp_number.unique' => 'Nomor KTP sudah terdaftar pada pasien lain.',
         ];
     }

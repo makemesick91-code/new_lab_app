@@ -255,3 +255,67 @@ it('LP-08 never touches another branch-year: an import into a past year leaves t
         ->and(PatientRmSequence::query()->where('branch_id', $this->sunu->id)->where('year', 2026)->exists())->toBeFalse()
         ->and(lpacRegister($this->sunu, 'Tahun Berjalan')->medical_record_number)->toBe('DG-SPN4-2026-0001');
 });
+
+// =============================================================================
+// Review fixes (PR-2 review, 2026-11-17)
+// =============================================================================
+
+it('LP-09 refuses at staging a manual number zero-padded past nine digits, or longer than eighteen digits (F1)', function (string $manual): void {
+    $batch = lpacStage([lpacRow(['manual_rm_number' => $manual, 'name' => 'Pasien Padding'])]);
+
+    expect($batch->error_rows)->toBe(1)
+        ->and(Patient::query()->where('name', 'Pasien Padding')->exists())->toBeFalse();
+})->with([
+    '10 digits, value 6' => ['0000000006'],
+    '12 digits, value 6' => ['000000000006'],
+    '19 digits' => ['1000000000000000006'],
+    '19 digits, value 6' => [str_repeat('0', 18).'6'],
+]);
+
+it('LP-10 keeps a wide number that can never be issued (value past eight digits) importable', function (): void {
+    $batch = lpacStage([lpacRow(['manual_rm_number' => '1234567890', 'name' => 'Pasien Nomor Panjang'])]);
+
+    expect($batch->error_rows)->toBe(0);
+});
+
+it('LP-11 agrees with isTaken() for numbers padded past nine digits (F1)', function (string $padding): void {
+    Patient::factory()->create(['branch_id' => $this->sunu->id, 'medical_record_number' => 'DG-SUN4-2026-'.$padding.'7']);
+    $allocator = app(PatientRmNumberAllocator::class);
+
+    expect($allocator->isTaken('DG-SPN4-2026-0007'))->toBeTrue()
+        ->and($allocator->takenAmong(['DG-SPN4-2026-0007']))->toBe(['DG-SPN4-2026-0007' => true]);
+
+    $batch = lpacStage([lpacRow(['manual_rm_number' => '7'])]);
+
+    expect($batch->error_rows)->toBe(1)
+        ->and($this->service->revalidate($batch, null)->error_rows)->toBe(1);
+})->with([
+    '10 digits' => [str_repeat('0', 9)],
+    '12 digits' => [str_repeat('0', 11)],
+    '19 digits' => [str_repeat('0', 18)],
+]);
+
+it('LP-12 continues after the highest: a committed import raises the counter (owner default 3)', function (): void {
+    PatientRmSequence::query()->create([
+        'branch_id' => $this->sunu->id, 'year' => 2026, 'last_number' => 10,
+        'seed_source' => PatientRmSequence::SOURCE_COMMAND, 'seeded_at' => now(),
+    ]);
+
+    $this->service->commit(lpacStage([lpacRow(['manual_rm_number' => '0050', 'name' => 'Impor Tinggi'])]), null);
+
+    expect((int) PatientRmSequence::query()->where('branch_id', $this->sunu->id)->where('year', 2026)->value('last_number'))->toBe(50)
+        ->and(lpacRegister($this->sunu, 'Otomatis Setelah Impor Tinggi')->medical_record_number)->toBe('DG-SPN4-2026-0051');
+});
+
+it('LP-13 never raises the counter for a number the allocator could never issue (nine digits and up)', function (): void {
+    PatientRmSequence::query()->create([
+        'branch_id' => $this->sunu->id, 'year' => 2026, 'last_number' => 10,
+        'seed_source' => PatientRmSequence::SOURCE_COMMAND, 'seeded_at' => now(),
+    ]);
+
+    $this->service->commit(lpacStage([lpacRow(['manual_rm_number' => '123456789', 'name' => 'Impor Raksasa'])]), null);
+
+    expect(Patient::query()->where('name', 'Impor Raksasa')->value('medical_record_number'))->toBe('DG-SPN4-2026-123456789')
+        ->and((int) PatientRmSequence::query()->where('branch_id', $this->sunu->id)->where('year', 2026)->value('last_number'))->toBe(10)
+        ->and(lpacRegister($this->sunu, 'Otomatis Sesudah Raksasa')->medical_record_number)->toBe('DG-SPN4-2026-0011');
+});

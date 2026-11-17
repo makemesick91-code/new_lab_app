@@ -1,8 +1,9 @@
 @php
     $patient = $patient ?? null;
     $rmeBranches = $rmeBranches ?? collect();
-    // Rule 244 §2 — the RM year is the clinic's calendar year, never the UTC one.
-    $clinicalYear = app(\App\Support\Clinical\ClinicalClock::class)->today()->format('Y');
+    // Rule 244 §2 — the RM year is the clinical year (ClinicalClock), passed by
+    // PatientController::create(); the edit form shows the stored number only.
+    $clinicalYear = $clinicalYear ?? '';
 @endphp
 
 <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">

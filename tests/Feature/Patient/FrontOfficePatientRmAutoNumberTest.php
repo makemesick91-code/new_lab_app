@@ -29,15 +29,20 @@ use App\Modules\Branch\Support\BranchCodeAlias;
 use App\Modules\Clinic\Models\Clinic;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Doctor\Models\Doctor;
+use App\Modules\Patient\Interfaces\PatientRepositoryInterface;
 use App\Modules\Patient\Interfaces\PatientRmSequenceRepositoryInterface;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\Patient\Models\PatientRmSequence;
+use App\Modules\Patient\Repositories\PatientRepository;
 use App\Modules\Patient\Services\PatientMedicalRecordNumberService;
+use App\Modules\Patient\Services\PatientRmNumberAllocator;
 use App\Modules\Patient\Services\PatientService;
 use App\Modules\PatientMerge\Models\PatientRmAlias;
 use App\Modules\RmeOnlineContext\Middleware\EnsureRmeOnlineContext;
 use App\Modules\Treatment\Models\Treatment;
 use Database\Seeders\BranchSeeder;
+use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\LazyCollection;
 use Illuminate\Support\Str;
@@ -302,9 +307,11 @@ it('AN-09 reports a taken number in every spelling through exists(), case-insens
 // Failure is a clean 422
 // =============================================================================
 
-it('AN-10 retries an injected unique violation under the held lock and answers 422 after three, writing nothing', function (): void {
+it('AN-10 retries an injected unique violation three times under the held lock, then answers 422, writing nothing', function (): void {
+    // One attempt plus three retries (owner wording "retried up to 3 times"):
+    // four colliding numbers exhaust them.
     fpanSeedCounter($this->branch, 0);
-    foreach (['0001', '0002', '0003'] as $sequence) {
+    foreach (['0001', '0002', '0003', '0004'] as $sequence) {
         Patient::factory()->create(['branch_id' => $this->branch->id, 'medical_record_number' => 'DG-FPN1-2026-'.$sequence]);
     }
     $before = Patient::withTrashed()->count();
@@ -320,15 +327,15 @@ it('AN-10 retries an injected unique violation under the held lock and answers 4
         ->and(fpanCounter($this->branch))->toBe(0);
 });
 
-it('AN-11 succeeds on the third attempt when two issued numbers collide on the unique index', function (): void {
+it('AN-11 succeeds on the last retry when three issued numbers collide on the unique index', function (): void {
     fpanSeedCounter($this->branch, 0);
-    foreach (['0001', '0002'] as $sequence) {
+    foreach (['0001', '0002', '0003'] as $sequence) {
         Patient::factory()->create(['branch_id' => $this->branch->id, 'medical_record_number' => 'DG-FPN1-2026-'.$sequence]);
     }
     fpanBlindSequences();
 
-    expect(fpanRegister()->medical_record_number)->toBe('DG-FPN1-2026-0003')
-        ->and(fpanCounter($this->branch))->toBe(3);
+    expect(fpanRegister()->medical_record_number)->toBe('DG-FPN1-2026-0004')
+        ->and(fpanCounter($this->branch))->toBe(4);
 });
 
 it('AN-12 answers a KTP unique violation with a KTP error instead of a 500, writing nothing', function (): void {
@@ -493,3 +500,138 @@ it('AN-20 renders Kunjungan → Pasien Baru with the number read-only and the cl
         ->assertDontSee('name="new_patient[registered_at]"', false)
         ->assertDontSee('name="new_patient[medical_record_number]"', false);
 });
+
+// =============================================================================
+// Review fixes (PR-2 review, 2026-11-17)
+// =============================================================================
+
+it('AN-22 confines a context-bound desk account to its working branch on the master form (CG-05)', function (): void {
+    $other = fpanBranch('FPN2');
+    $frontOffice = User::factory()->create();
+    rmeMakeFrontOfficeActive($frontOffice, $this->branch);
+
+    // The form offers only the working branch.
+    $this->actingAs($frontOffice)
+        ->get(route('settings.patients.create'))
+        ->assertOk()
+        ->assertSee('data-code="FPN1"', false)
+        ->assertDontSee('data-code="FPN2"', false);
+
+    // A request naming another branch is refused (422) and consumes nothing.
+    $this->actingAs($frontOffice)
+        ->post(route('settings.patients.store'), fpanPayload(['branch_id' => $other->id, 'name' => 'Pasien Cabang Lain']))
+        ->assertSessionHasErrors('branch_id');
+
+    expect(Patient::query()->where('name', 'Pasien Cabang Lain')->exists())->toBeFalse()
+        ->and(fpanCounter($other))->toBeNull();
+
+    // The service refuses the same actor whatever the caller (403).
+    expect(fn () => app(PatientService::class)->create(fpanPayload(['branch_id' => $other->id]), $frontOffice))
+        ->toThrow(AuthorizationException::class);
+
+    // Its own working branch works.
+    $this->actingAs($frontOffice)
+        ->post(route('settings.patients.store'), fpanPayload(['name' => 'Pasien Cabang Sendiri']))
+        ->assertSessionHasNoErrors();
+
+    expect(Patient::query()->where('name', 'Pasien Cabang Sendiri')->value('medical_record_number'))->toBe('DG-FPN1-2026-0001');
+});
+
+it('AN-23 keeps Kunjungan → Pasien Baru on the working branch: another branch in the request only narrows', function (): void {
+    $other = fpanBranch('FPN2');
+    $treatment = Treatment::factory()->create(['is_active' => true]);
+    rmeMakeDoctorOnline($this->doctor, $this->branch);
+    rmeMakeDoctorOnline($this->doctor, $other);
+    $frontOffice = User::factory()->create();
+    rmeMakeFrontOfficeActive($frontOffice, $this->branch);
+
+    $response = $this->actingAs($frontOffice)
+        ->post(route('rme.visits.store'), [
+            'patient_mode' => 'new',
+            'branch_id' => $other->id,
+            'doctor_id' => $this->doctor->id,
+            'initial_treatment_id' => $treatment->id,
+            'visit_type' => ClinicVisit::VISIT_TYPE_NEW,
+            'new_patient' => ['name' => 'Pasien Kunjungan Cabang Lain', 'branch_id' => $other->id],
+        ]);
+
+    // StoreClinicVisitRequest pins a pinned desk account's visit AND new
+    // patient to its working branch, and ClinicVisitService::resolveBranchId()
+    // re-asserts the scope: the request's other branch can only narrow, so the
+    // patient lands in the working branch and the other branch's counter is
+    // never touched.
+    $response->assertSessionHasNoErrors();
+    $patient = Patient::query()->where('name', 'Pasien Kunjungan Cabang Lain')->sole();
+
+    expect($patient->branch_id)->toBe($this->branch->id)
+        ->and($patient->medical_record_number)->toBe('DG-FPN1-2026-0001')
+        ->and(fpanCounter($other))->toBeNull();
+});
+
+it('AN-24 retries only a Nomor RM collision: any other unique violation is rethrown untouched', function (): void {
+    $probe = (object) ['calls' => 0];
+    app()->instance(PatientRepositoryInterface::class, new class($probe) extends PatientRepository
+    {
+        public function __construct(private readonly object $probe) {}
+
+        public function create(array $data): Patient
+        {
+            $this->probe->calls++;
+            $pdo = new PDOException('SQLSTATE[23505]: duplicate key value violates unique constraint "mst_patients_other_unique"');
+            $pdo->errorInfo = ['23505', 7, 'ERROR:  duplicate key value violates unique constraint "mst_patients_other_unique"'];
+
+            throw new UniqueConstraintViolationException('pgsql', 'insert into mst_patients', [], $pdo);
+        }
+    });
+
+    expect(fn () => app(PatientService::class)->create(fpanPayload()))
+        ->toThrow(UniqueConstraintViolationException::class);
+
+    expect($probe->calls)->toBe(1)
+        ->and(fpanCounter($this->branch))->toBeNull();
+});
+
+it('AN-25 makes PatientService::update() drop the Nomor RM, the branch and the registration date', function (): void {
+    $other = fpanBranch('FPN2');
+    $patient = Patient::factory()->create([
+        'branch_id' => $this->branch->id,
+        'medical_record_number' => 'DG-FPN1-2025-0042',
+        'manual_rm_number' => '0042',
+        'registered_at' => '2025-02-03',
+        'name' => 'Pasien Edit Langsung',
+    ]);
+
+    app(PatientService::class)->update($patient, [
+        'name' => 'Pasien Edit Langsung Baru',
+        'medical_record_number' => 'DG-FPN2-2026-0001',
+        'manual_rm_number' => '0001',
+        'branch_id' => $other->id,
+        'registered_at' => '2026-06-13',
+    ]);
+
+    $patient->refresh();
+
+    expect($patient->name)->toBe('Pasien Edit Langsung Baru')
+        ->and($patient->medical_record_number)->toBe('DG-FPN1-2025-0042')
+        ->and($patient->manual_rm_number)->toBe('0042')
+        ->and($patient->branch_id)->toBe($this->branch->id)
+        ->and($patient->registered_at->toDateString())->toBe('2025-02-03');
+});
+
+it('AN-26 counts a number zero-padded past nine digits as taken, everywhere (F1)', function (string $padding): void {
+    $held = 'DG-FPN1-2026-'.$padding.'6';
+    Patient::factory()->create(['branch_id' => $this->branch->id, 'medical_record_number' => $held]);
+    fpanSeedCounter($this->branch, 5);
+    $allocator = app(PatientRmNumberAllocator::class);
+
+    expect($allocator->isTaken('DG-FPN1-2026-6'))->toBeTrue()
+        ->and($allocator->isTaken('dg-fpn1-2026-0006'))->toBeTrue()
+        ->and(app(PatientMedicalRecordNumberService::class)->exists('DG-FPN1-2026-0006'))->toBeTrue()
+        ->and($allocator->takenAmong(['DG-FPN1-2026-6', 'DG-FPN1-2026-7']))->toBe(['DG-FPN1-2026-6' => true])
+        ->and(fpanRegister()->medical_record_number)->toBe('DG-FPN1-2026-0007');
+})->with([
+    '10 digits' => [str_repeat('0', 9)],
+    '12 digits' => [str_repeat('0', 11)],
+    '19 digits' => [str_repeat('0', 18)],
+    '30 digits' => [str_repeat('0', 29)],
+]);

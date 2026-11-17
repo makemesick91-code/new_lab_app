@@ -234,9 +234,10 @@ file.
 ### Automatic Nomor RM (rule 244)
 
 - **AIR-PAT-34** A new patient's Nomor RM comes only from `PatientRmNumberAllocator::allocate()` inside
-  `PatientService::create()` (branch required, MAIN refused, year and `registered_at` from `ClinicalClock`); no request
-  field supplies it, and an edit never changes the number, the branch or the registration date. "Taken" is always
-  `PatientRmNumberAllocator::isTaken()` (alias codes, any padding, any case, soft-deleted patients, merge aliases); a
-  number from outside the system (legacy CSV, PR-3 paper card) is stored verbatim only after `claimExisting()` locked
-  its branch-year counter. A unique violation is retried 3 times under the held lock, then 422. Source:
-  `.cursor/rules/244-patient-rm-auto-number-core-fields.mdc` §2–§3.
+  `PatientService::create()` (branch required and inside the actor's working-branch scope, MAIN refused, year and
+  `registered_at` from `ClinicalClock`); no request field supplies it, and an edit never changes the number, the branch
+  or the registration date. "Taken" is always `PatientRmNumberAllocator::isTaken()` (alias codes, numeric value in any
+  zero padding, any case, soft-deleted patients, merge aliases); a number from outside the system (legacy CSV, PR-3
+  paper card) is stored verbatim only after `claimExisting()` locked its branch-year counter, and the claim raises the
+  counter (continue after the highest). A Nomor RM unique violation is retried up to 3 times (4 attempts) under the
+  held lock, then 422. Source: `.cursor/rules/244-patient-rm-auto-number-core-fields.mdc` §2–§3.

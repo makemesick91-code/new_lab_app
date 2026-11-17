@@ -12,6 +12,8 @@ use App\Modules\Patient\Requests\UpdatePatientRequest;
 use App\Modules\Patient\Services\KtpScanService;
 use App\Modules\Patient\Services\PatientDocumentCaptureBranchResolver;
 use App\Modules\Patient\Services\PatientService;
+use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
+use App\Support\Clinical\ClinicalClock;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -28,6 +30,8 @@ class PatientController extends Controller
         private readonly BranchService $branchService,
         private readonly KtpScanService $ktpScans,
         private readonly PatientDocumentCaptureBranchResolver $captureBranches,
+        private readonly RmeWorkingBranchScope $workingBranchScope,
+        private readonly ClinicalClock $clock,
     ) {}
 
     public function index(Request $request): View
@@ -48,14 +52,22 @@ class PatientController extends Controller
         ]);
     }
 
-    public function create(): View
+    public function create(Request $request): View
     {
         $this->authorize('create', Patient::class);
+
+        // PR-2 review F2 (CG-05) — offer only the branches the operator may
+        // register into (a context-bound desk account: its working branch).
+        $allowed = $this->workingBranchScope->branchIdsFor($request->user());
 
         return view('settings.patients.create', [
             'clinics' => $this->clinicService->listAll(),
             'doctors' => $this->doctorService->listAll(),
-            'rmeBranches' => $this->branchService->listRmeEnabled(),
+            'rmeBranches' => $this->branchService->listRmeEnabled()
+                ->filter(fn ($branch): bool => in_array((int) $branch->id, $allowed, true))
+                ->values(),
+            // Rule 244 §2.8 — the RM year shown on the form is the clinical year.
+            'clinicalYear' => $this->clock->today()->format('Y'),
         ]);
     }
 
@@ -67,7 +79,7 @@ class PatientController extends Controller
         $ktpScanToken = $data['ktp_scan_token'] ?? null;
         unset($data['ktp_scan_token'], $data['duplicate_override_reason'], $data['ktp_ocr_applied'], $data['ktp_ocr_verified']);
 
-        $patient = $this->patientService->create($data);
+        $patient = $this->patientService->create($data, $request->user());
 
         // Rule 244 §2.8 — the automatic Nomor RM is shown once it exists (the
         // form never previews one).

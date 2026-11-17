@@ -66,17 +66,26 @@ final class PatientRmNumberAllocator
         );
         $branchId = (int) $branch->getKey();
 
-        $next = (int) $sequence->last_number;
+        // PR-2 review item 2 — the candidate after the counter is almost always
+        // free (the seed and every claim raise the counter to the highest). When
+        // it is not, ONE set-based read of the branch-year finds the first value
+        // above it that no patient holds in any padding; the per-candidate check
+        // stays as the safety net (and covers merge aliases).
+        $next = (int) $sequence->last_number + 1;
 
-        do {
-            $next++;
-
+        while (true) {
             if (strlen((string) $next) > self::MAX_DIGITS) {
                 throw PatientRmNumberUnavailableException::exhausted();
             }
 
             $spellings = $this->numbers->numericSpellings($code, $year, $next);
-        } while ($this->sequences->anyNumberIssued($spellings) || $this->aliases->findActiveByNumbers($spellings) !== null);
+
+            if (! $this->sequences->anyNumberIssued($spellings) && $this->aliases->findActiveByNumbers($spellings) === null) {
+                break;
+            }
+
+            $next = $this->firstFreeAbove($code, $year, $next);
+        }
 
         $number = $this->numbers->compose($code, $year, $this->numbers->formatSequence($next));
 
@@ -207,9 +216,10 @@ final class PatientRmNumberAllocator
      * Rule 244 §2.6 — claim a number that already exists outside the system (a
      * legacy CSV row; in PR-3 an old paper card): lock its branch-year counter,
      * then report whether it is free in every spelling. TRUE means the caller may
-     * store it verbatim before its transaction ends; FALSE means it is taken. The
-     * counter does not move: the allocator skips a claimed number when it reaches
-     * it, so nothing is ever reissued.
+     * store it verbatim before its transaction ends; FALSE means it is taken. A
+     * successful claim raises the counter to the claimed value (GREATEST, never
+     * lower) when the allocator could ever reach it, so the sequence continues
+     * after the highest number on record (owner default 3).
      */
     public function claimExisting(Branch $branch, string $medicalRecordNumber): bool
     {
@@ -220,9 +230,55 @@ final class PatientRmNumberAllocator
             throw new InvalidArgumentException('A claimed Nomor RM must belong to the branch it is registered under.');
         }
 
-        $this->lockCounter($branch, (int) $parts->year);
+        [$sequence] = $this->lockedCounter(
+            $branch,
+            (int) $parts->year,
+            'A Nomor RM is claimed only inside the caller\'s transaction.',
+        );
 
-        return ! $this->isTaken($medicalRecordNumber);
+        if ($this->isTaken($medicalRecordNumber)) {
+            return false;
+        }
+
+        // Owner default 3 ("continue after the highest", PR-2 review item 2): a
+        // claimed number the allocator could reach raises the counter —
+        // GREATEST, never lower — under the same lock. A wider value (the seed's
+        // oversized filter) is only reserved: raising to it would exhaust the
+        // branch-year.
+        $value = $this->numbers->numericValueOf($medicalRecordNumber);
+
+        if ($value !== null && strlen($value) <= self::MAX_DIGITS) {
+            $this->sequences->advanceTo($sequence, (int) $value);
+        }
+
+        return true;
+    }
+
+    /**
+     * PR-2 review item 2 — the first value above `$after` that no patient holds
+     * in this branch-year, in any alias code, letter case or zero padding: one
+     * pass over the branch-year's issued numbers ({@see PatientRmSequenceRepositoryInterface::issuedNumbersFor()}),
+     * compared by numeric value ({@see PatientMedicalRecordNumberService::numericValueOf()}).
+     */
+    private function firstFreeAbove(string $code, int $year, int $after): int
+    {
+        $held = [];
+
+        foreach ($this->sequences->issuedNumbersFor(BranchCodeAlias::equivalentCodes($code), $year) as $issued) {
+            $value = $this->numbers->numericValueOf($issued);
+
+            if ($value !== null && strlen($value) <= self::MAX_DIGITS && (int) $value > $after) {
+                $held[(int) $value] = true;
+            }
+        }
+
+        $next = $after + 1;
+
+        while (isset($held[$next])) {
+            $next++;
+        }
+
+        return $next;
     }
 
     /**

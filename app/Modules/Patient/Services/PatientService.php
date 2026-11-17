@@ -2,13 +2,16 @@
 
 namespace App\Modules\Patient\Services;
 
+use App\Models\User;
 use App\Modules\Branch\Interfaces\BranchRepositoryInterface;
 use App\Modules\Branch\Models\Branch;
 use App\Modules\Patient\Exceptions\PatientRmNumberUnavailableException;
 use App\Modules\Patient\Interfaces\PatientRepositoryInterface;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\PatientMerge\Services\PatientMergeGuard;
+use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
 use App\Support\Clinical\ClinicalClock;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Collection;
@@ -18,10 +21,11 @@ use Illuminate\Validation\ValidationException;
 class PatientService
 {
     /**
-     * Rule 244 §2.4 — how many automatic numbers one registration tries when the
-     * unique index refuses the insert, before it answers 422.
+     * Rule 244 §2.4 — how many times a registration RETRIES with the next
+     * automatic number after the unique index refused a Nomor RM collision: one
+     * attempt plus three retries (owner wording "retried up to 3 times"), then 422.
      */
-    public const UNIQUE_RETRY_ATTEMPTS = 3;
+    public const UNIQUE_RETRIES = 3;
 
     /**
      * Rule 244 §2.1/§2.3 — identity fields only the server writes: dropped from a
@@ -40,6 +44,9 @@ class PatientService
         // FEATURE-PATIENT-DUPLICATE-RESOLUTION-MERGE-1 — a merged patient is
         // read-only; identity edits go to the canonical patient.
         private readonly PatientMergeGuard $mergeGuard,
+        // PR-2 review F2 (CG-05) — a new patient's branch must be one the actor
+        // is working: a request branch may only narrow.
+        private readonly RmeWorkingBranchScope $workingBranchScope,
     ) {}
 
     public function list(array $filters = [], int $perPage = 10): LengthAwarePaginator
@@ -80,16 +87,24 @@ class PatientService
      *    ({@see ClinicalClock}, so 00:30 WITA on 1 January is the new year while
      *    UTC is still 31 December) and the number comes from
      *    {@see PatientRmNumberAllocator::allocate()} for that branch and year.
-     *  - A branch is required (active, RME-enabled; the allocator refuses MAIN).
+     *  - A branch is required (active, RME-enabled; the allocator refuses MAIN)
+     *    and must be inside `$actor`'s working-branch scope
+     *    ({@see RmeWorkingBranchScope::allows()}; CG-05, 403 otherwise). The
+     *    master form passes its actor. Kunjungan → Pasien Baru passes none: its
+     *    branch was already pinned by StoreClinicVisitRequest and re-asserted by
+     *    ClinicVisitService::resolveBranchId() for the registrar, and a null
+     *    actor here means "every active RME branch" (the scope's own answer).
      *    The Sprint 23.3 UTC fallback generator and the free override are retired.
      *  - The allocator locks the branch-year counter row in THIS transaction; the
      *    insert runs in a savepoint, so a unique violation (a writer that bypassed
      *    the lock) rolls back the insert only and the next number is tried under
-     *    the same held lock, up to {@see self::UNIQUE_RETRY_ATTEMPTS}; then 422.
+     *    the same held lock, up to {@see self::UNIQUE_RETRIES} retries; then 422.
+     *    Only a Nomor RM collision is retried; a KTP collision is a 422 at once;
+     *    any other unique violation is rethrown untouched.
      *    Any refusal is a ValidationException (422), never a 500, and the whole
      *    transaction — counter included — rolls back.
      */
-    public function create(array $data): Patient
+    public function create(array $data, ?User $actor = null): Patient
     {
         foreach (self::SERVER_OWNED_IDENTITY_FIELDS as $field) {
             unset($data[$field]);
@@ -97,6 +112,10 @@ class PatientService
 
         $branch = $this->registrationBranch($data['branch_id'] ?? null);
         $data['branch_id'] = (int) $branch->getKey();
+
+        if (! $this->workingBranchScope->allows($actor, (int) $branch->getKey())) {
+            throw new AuthorizationException('Pasien baru hanya dapat didaftarkan di cabang tempat Anda bertugas.');
+        }
 
         try {
             return DB::transaction(function () use ($data, $branch): Patient {
@@ -158,17 +177,24 @@ class PatientService
     /**
      * Rule 244 §2.4 — a refused insert. A KTP/NIK collision is reported at once
      * (another number would not help); a Nomor RM collision lets the caller try
-     * the next number until the attempts run out. Only the driver's own message is
-     * read, for the column name: the exception message also carries the SQL and
-     * its bindings, so it is never shown or logged here.
+     * the next number until the retries run out; any other unique violation is
+     * not ours to interpret and is rethrown (review F4). Only the driver's own
+     * message is read, for the column name: the exception message also carries
+     * the SQL and its bindings, so it is never shown or logged here.
      */
     private function refuseUniqueViolation(UniqueConstraintViolationException $e, int $attempt): void
     {
-        if (str_contains((string) ($e->errorInfo[2] ?? ''), 'ktp_number')) {
+        $driverMessage = (string) ($e->errorInfo[2] ?? '');
+
+        if (str_contains($driverMessage, 'ktp_number')) {
             throw ValidationException::withMessages(['ktp_number' => 'Nomor KTP sudah terdaftar pada pasien lain.']);
         }
 
-        if ($attempt >= self::UNIQUE_RETRY_ATTEMPTS) {
+        if (! str_contains($driverMessage, 'medical_record_number')) {
+            throw $e;
+        }
+
+        if ($attempt > self::UNIQUE_RETRIES) {
             throw ValidationException::withMessages([
                 'medical_record_number' => 'Nomor RM otomatis bentrok dengan pendaftaran lain. Muat ulang halaman lalu simpan kembali.',
             ]);

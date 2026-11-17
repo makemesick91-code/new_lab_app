@@ -86,6 +86,13 @@ class LegacyPatientImportService
         private readonly AuditLogService $audit,
     ) {}
 
+    /**
+     * Rule 244 §2.6 (PR-2 review F1) — the widest a manual sequence may be written
+     * when its value is one the allocator can issue (eight digits): wider means
+     * zero padding beyond nine characters, refused at staging.
+     */
+    public const MAX_PADDED_MANUAL_WIDTH = 9;
+
     /** The `sys_audit_logs` entity type for a legacy patient import batch. */
     public const AUDIT_ENTITY = 'stg_legacy_patient_import_batches';
 
@@ -219,8 +226,17 @@ class LegacyPatientImportService
         $manualRm = $this->digitsOnly($values['manual_rm_number'] ?? '');
         if ($manualRm === '') {
             $errors[] = 'Nomor RM Manual wajib diisi dan hanya boleh berisi angka.';
-        } elseif (mb_strlen($manualRm) > 50) {
-            $errors[] = 'Nomor RM Manual maksimal 50 digit.';
+        } elseif (strlen($manualRm) > PatientMedicalRecordNumberService::MAX_NUMERIC_DIGITS) {
+            // Rule 244 §2.6 (PR-2 review F1) — no Nomor RM sequence is wider.
+            $errors[] = sprintf('Nomor RM Manual maksimal %d digit.', PatientMedicalRecordNumberService::MAX_NUMERIC_DIGITS);
+        } elseif (strlen($manualRm) > self::MAX_PADDED_MANUAL_WIDTH
+            && strlen(ltrim($manualRm, '0')) <= PatientRmNumberAllocator::MAX_DIGITS) {
+            // A number the allocator can issue, hidden behind more than nine
+            // characters of zero padding, would be a second spelling of it.
+            $errors[] = sprintf(
+                'Nomor RM Manual memakai nol di depan melebihi %d digit; tulis tanpa nol berlebih.',
+                self::MAX_PADDED_MANUAL_WIDTH,
+            );
         }
 
         // --- Timestamp / registration date (required; drives RM year) ---
@@ -593,7 +609,7 @@ class LegacyPatientImportService
                  * number until this transaction ends, and two imports cannot
                  * deadlock on the counters.
                  */
-                $this->lockRmCounters($rows);
+                $branchesByRow = $this->lockRmCounters($rows);
 
                 foreach ($rows as $row) {
                     $data = $row->normalized_payload ?? [];
@@ -614,9 +630,11 @@ class LegacyPatientImportService
                         );
                     }
 
-                    // Under the counter lock: taken in ANY spelling, including by
-                    // a row this batch inserted a moment ago.
-                    $rmTaken = $this->rmAllocator->isTaken($rm);
+                    // The one claim path (rule 244 §2.6, review F6): under the
+                    // counter lock, taken in ANY spelling — including by a row
+                    // this batch inserted a moment ago — and, when free, the
+                    // counter is raised to it (owner default 3).
+                    $rmTaken = ! $this->claimRow($branchesByRow[$row->id], $rm);
                     $ktpTaken = $ktp ? Patient::withTrashed()->where('ktp_number', $ktp)->lockForUpdate()->exists() : false;
 
                     /*
@@ -1171,14 +1189,16 @@ class LegacyPatientImportService
      * staged verdict, and the batch is refused rather than guessed at.
      *
      * @param  Collection<int, LegacyPatientImportRow>  $rows
+     * @return array<int, Branch> each row's branch, keyed by row id
      */
-    private function lockRmCounters(Collection $rows): void
+    private function lockRmCounters(Collection $rows): array
     {
         $branches = Branch::query()
             ->whereIn('id', $rows->map(fn (LegacyPatientImportRow $row): int => (int) (($row->normalized_payload ?? [])['branch_id'] ?? 0))->unique()->values()->all())
             ->get()
             ->keyBy('id');
         $pairs = [];
+        $byRow = [];
 
         foreach ($rows as $row) {
             $data = $row->normalized_payload ?? [];
@@ -1194,6 +1214,7 @@ class LegacyPatientImportService
             }
 
             $pairs[sprintf('%010d|%s', (int) $branch->getKey(), $parts->year)] = [$branch, (int) $parts->year];
+            $byRow[(int) $row->id] = $branch;
         }
 
         ksort($pairs);
@@ -1207,6 +1228,25 @@ class LegacyPatientImportService
                     'Nomor RM salah satu baris tidak dapat dikunci untuk cabang dan tahunnya. Seluruh batch tidak diimpor.',
                 );
             }
+        }
+
+        return $byRow;
+    }
+
+    /**
+     * Rule 244 §2.6 — claim one row's Nomor RM through the allocator (the lock is
+     * already held, so this re-lock is free); a number the format or the branch
+     * cannot carry refuses the batch.
+     */
+    private function claimRow(Branch $branch, string $rm): bool
+    {
+        try {
+            return $this->rmAllocator->claimExisting($branch, $rm);
+        } catch (PatientRmNumberUnavailableException|InvalidArgumentException) {
+            throw new LegacyPatientImportBlockedException(
+                LegacyPatientImportBlockedException::REASON_REVALIDATION_FAILED,
+                'Nomor RM salah satu baris tidak dapat diklaim untuk cabangnya. Seluruh batch tidak diimpor.',
+            );
         }
     }
 

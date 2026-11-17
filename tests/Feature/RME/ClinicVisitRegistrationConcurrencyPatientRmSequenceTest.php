@@ -31,12 +31,17 @@ declare(strict_types=1);
 */
 
 use App\Modules\Branch\Models\Branch;
+use App\Modules\Patient\Exceptions\LegacyPatientImportBlockedException;
 use App\Modules\Patient\Interfaces\PatientRmSequenceRepositoryInterface;
+use App\Modules\Patient\Models\LegacyPatientImportBatch;
 use App\Modules\Patient\Models\Patient;
+use App\Modules\Patient\Services\LegacyPatientImportService;
 use App\Modules\Patient\Services\PatientRmNumberAllocator;
 use App\Modules\Patient\Services\PatientService;
 use Illuminate\Database\QueryException;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 
 const CVRS_WRITER = 'cvrs_sequence_writer';
 const CVRS_PROBE = 'cvrs_sequence_probe';
@@ -78,6 +83,13 @@ afterEach(function (): void {
     }
 
     $w = DB::connection(CVRS_WRITER);
+    // The review-F6 case commits a staged legacy batch and its audit trail.
+    if (($this->cvrsBatchId ?? null) !== null) {
+        $w->table('sys_audit_logs')->where('entity_type', LegacyPatientImportService::AUDIT_ENTITY)->where('entity_id', $this->cvrsBatchId)->delete();
+        $w->table('mst_patients')->where('import_batch_id', $this->cvrsBatchId)->delete();
+        $w->table('stg_legacy_patient_imports')->where('batch_id', $this->cvrsBatchId)->delete();
+        $w->table('stg_legacy_patient_import_batches')->where('id', $this->cvrsBatchId)->delete();
+    }
     // PR-2 cases commit patients through the real registration path.
     $w->table('mst_patients')->where('branch_id', $this->branchId ?? 0)->delete();
     $w->table('mst_patient_rm_sequences')->where('branch_id', $this->branchId ?? 0)->delete();
@@ -324,5 +336,77 @@ it('makes an import claim wait for an in-flight registration, then refuse the nu
     DB::connection(CVRS_PROBE)->rollBack();
 
     expect($free)->toBeFalse();
+    freeTestClock();
+});
+
+/** A one-row legacy patient CSV for this branch and CVRS_YEAR. */
+function cvrsLegacyCsv(string $code, string $manual): UploadedFile
+{
+    $keys = array_map(fn ($c) => $c['key'], LegacyPatientImportService::COLUMNS);
+    $header = array_map(fn ($c) => $c['label'], LegacyPatientImportService::COLUMNS);
+    $row = ['branch' => $code, 'manual_rm_number' => $manual, 'timestamp' => CVRS_YEAR.'-02-01', 'name' => 'Cvrs Impor Legacy', 'gender' => 'Perempuan'];
+
+    $handle = fopen('php://temp', 'r+');
+    fputcsv($handle, $header);
+    fputcsv($handle, array_map(fn ($k) => $row[$k] ?? '', $keys));
+    rewind($handle);
+    $path = tempArtifactFile('cvrs');
+    file_put_contents($path, stream_get_contents($handle));
+    fclose($handle);
+
+    return new UploadedFile($path, 'legacy.csv', 'text/csv', null, true);
+}
+
+it('makes the REAL legacy import commit wait for an in-flight registration, then refuse its number (review F6)', function (): void {
+    pinTestClock(CVRS_YEAR.'-03-01 02:00:00');
+    Storage::fake('local');
+    DB::connection(CVRS_WRITER)->table('mst_patient_rm_sequences')->insert([
+        'branch_id' => $this->branchId, 'year' => CVRS_YEAR, 'last_number' => 6,
+        'seed_source' => 'command', 'created_at' => now(), 'updated_at' => now(),
+    ]);
+    $code = cvrsBranch()->code;
+
+    // Staged and committed on the writer connection: the CSV claims 7, unpadded.
+    config()->set('database.default', CVRS_WRITER);
+    $batch = app(LegacyPatientImportService::class)->parseAndStage(cvrsLegacyCsv($code, '7'), null);
+    $this->cvrsBatchId = (int) $batch->id;
+    expect($batch->error_rows)->toBe(0);
+
+    // A registration holds the counter row and has issued 0007, uncommitted.
+    DB::connection(CVRS_WRITER)->beginTransaction();
+    expect(cvrsRegisterOn(CVRS_WRITER, 'Cvrs Otomatis Sebelum Impor')->medical_record_number)
+        ->toBe("DG-{$code}-".CVRS_YEAR.'-0007');
+
+    // The real commit() on a second connection queues on that counter row and
+    // gives up after lock_timeout: refused, nothing imported.
+    DB::purge(CVRS_PROBE);
+    DB::connection(CVRS_PROBE)->statement("SET lock_timeout = '300ms'");
+    config()->set('database.default', CVRS_PROBE);
+    $started = microtime(true);
+    $first = null;
+    try {
+        app(LegacyPatientImportService::class)->commit(LegacyPatientImportBatch::query()->findOrFail($batch->id), null);
+    } catch (LegacyPatientImportBlockedException $e) {
+        $first = $e;
+    }
+    $waited = microtime(true) - $started;
+
+    expect($first)->not->toBeNull()
+        ->and($waited)->toBeGreaterThan(0.25)
+        ->and(DB::connection(CVRS_PROBE)->table('mst_patients')->where('import_batch_id', $batch->id)->count())->toBe(0);
+
+    DB::connection(CVRS_WRITER)->commit();
+
+    // Once the registration has committed, the commit refuses the same number.
+    $second = null;
+    try {
+        app(LegacyPatientImportService::class)->commit(LegacyPatientImportBatch::query()->findOrFail($batch->id), null);
+    } catch (LegacyPatientImportBlockedException $e) {
+        $second = $e;
+    }
+
+    expect($second)->not->toBeNull()
+        ->and(DB::connection(CVRS_PROBE)->table('mst_patients')->where('import_batch_id', $batch->id)->count())->toBe(0)
+        ->and(DB::connection(CVRS_PROBE)->table('mst_patients')->where('branch_id', $this->branchId)->count())->toBe(1);
     freeTestClock();
 });
